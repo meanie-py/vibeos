@@ -22,6 +22,27 @@ state="$1"
 [ "$state" = "prepared" ] || exit 0                       # only veto while preparing
 [ "${VIBEOS_ALLOW_MAINLINE_REWIND:-}" = "1" ] && exit 0   # control-plane escape hatch
 
+# Ref-storage MAINTENANCE is not a rewind — don't veto it. `git pack-refs` (run
+# directly or by auto-`gc`) migrates a loose ref into packed-refs, which the
+# transaction reports as a DELETE of the loose ref (new=0000) even though the
+# value is preserved. That tripped the delete guard below and made every commit/
+# fetch spew "refusing to DELETE ... failed to run pack-refs / gc failed" while
+# the real op still succeeded. Ref-packing can never rewind history, so allow it.
+#
+# We inspect ONLY the hook's direct parent (PPID) — never grandparents. The
+# process that runs this hook is always the git subprocess performing the ref
+# transaction, so PPID is always a git binary, never the invoking shell. Even
+# under auto-`gc`, gc delegates ref-packing to a child `git pack-refs`, so the
+# hook's parent is that pack-refs, not gc. Walking further up would read the
+# caller's shell cmdline and could excuse a genuine `reset`/`branch -f`/`push`
+# whenever that command line merely mentioned one of these words (it did — this
+# very guard's own test string moved master once by exactly that mistake).
+_maint_re='([ /]|git-)(pack-refs|maintenance)( |$)'
+_pcmd="$(tr '\0' ' ' < "/proc/$PPID/cmdline" 2>/dev/null)"
+if printf '%s' "$_pcmd" | grep -Eq "$_maint_re"; then
+    exit 0                                                # ref-maintenance — safe
+fi
+
 zero="0000000000000000000000000000000000000000"
 blocked=0
 

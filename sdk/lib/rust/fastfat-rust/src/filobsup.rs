@@ -60,7 +60,7 @@ const FAT_NTC_CCB: u32 = 0x0507;
 const FO_TEMPORARY_FILE: u32 = 0x8000;
 const FCB_STATE_TEMPORARY: u32 = 0x20; // placeholder, real value unknown
 
-const STATUS_CANT_WAIT: i32 = -1073740519i32; // 0xC0000258
+const STATUS_CANT_WAIT: i32 = 0xC00000D8_u32 as i32; // 0xC0000258
 const VCB_STATE_FLAG_LOCKED: u32 = 0x01; // FIXME: unknown value
 const VCB_STATE_FLAG_DELETED_FCB: u32 = 0x0100; // FIXME: unknown value
 const FCB_STATE_FORCE_MISS_IN_PROGRESS: u32 = 0x08; // FIXME: unknown value

@@ -30,7 +30,7 @@ extern "system" {
 }
 
 const Isa: INTERFACE_TYPE = 1;
-const NotificationEvent: u32 = 1;
+const NotificationEvent: u32 = 0x00;
 const REG_MULTI_SZ: ULONG = 7;
 const REG_SZ: ULONG = 1;
 const REG_DWORD: ULONG = 4;

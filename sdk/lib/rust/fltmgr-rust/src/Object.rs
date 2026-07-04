@@ -35,7 +35,7 @@ pub const EX_PUSH_LOCK_PTR_BITS: usize = 0xf;
 const FM_TAG_UNICODE_STRING: ULONG = 0x6d556d46;
 #[no_mangle]
 pub unsafe extern "system" fn FltObjectReference(mut Object: PVOID) -> NTSTATUS {
-    const STATUS_FLT_DELETING_OBJECT: NTSTATUS = 0xC01C0009u32 as NTSTATUS;
+    const STATUS_FLT_DELETING_OBJECT: NTSTATUS = 0xC01C000B_u32 as i32;
 
     if FltpExAcquireRundownProtection(
         core::ptr::addr_of_mut!((*(Object as PFLT_OBJECT)).RundownRef),

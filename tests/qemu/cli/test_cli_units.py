@@ -21,6 +21,7 @@ from tests.qemu import qmp_client, serial_client
 
 from . import build as build_mod
 from . import config as config_mod
+from . import gdbengine as ge_mod
 from . import lints, provenance, repro, triage
 from .artifacts import Run, Stage
 
@@ -290,6 +291,78 @@ def test_cohab_stale_overrides_tier1_fresh(arm64_cohab_repo: Path):
     assert any("foo.sys" in r for r in v.reasons), v.reasons
 
 
+@pytest.fixture
+def cargo_link_repo(tmp_path: Path) -> Path:
+    """An x86 repo with one cargo-LINKED module (bar-cargo -> bar/bar.exe on the
+    livecd manifest) — the fixture for the cargo-link freshness net (the
+    2026-07-04 stale-ntoskrnl-inside-a-fresh-ISO class)."""
+    r = tmp_path / "repo"
+    ws = r / "sdk" / "lib" / "rust"
+    (ws / "bar-rust" / "src").mkdir(parents=True)
+    (ws / "bar-rust" / "Cargo.toml").write_text("[package]\nname = 'bar-rust'\n")
+    (ws / "bar-rust" / "src" / "lib.rs").write_text("// body\n")
+    (r / "bar").mkdir()
+    (r / "bar" / "CMakeLists.txt").write_text(
+        "add_cargo_module(bar bar-cargo bar.exe\n    KIND kernelexe\n    BODY_CRATE bar-rust)\n"
+        "add_cargo_kernel_dll(${_t} v-cargo ${_t}.dll)\n"  # variable output — must be skipped
+    )
+    (r / "build-amd64" / "bar").mkdir(parents=True)
+    (r / "build-amd64" / "bar" / "bar.exe").write_bytes(b"PE")
+    (r / "build-amd64" / "boot").mkdir()
+    (r / "build-amd64" / "boot" / "livecd.cmake.lst").write_text(
+        "reactos/system32/bar.exe=/tmp/vibeos/build-amd64/bar/bar.exe\n"
+        "/tmp/vibeos/build-amd64/boot/empty\n"
+    )
+    (r / "build-amd64" / "livecd.iso").write_bytes(b"ISO")
+    _git(r, "init", "-q")
+    _git(r, "config", "user.email", "t@t")
+    _git(r, "config", "user.name", "t")
+    _git(r, "add", "-A")
+    _git(r, "commit", "-qm", "init")
+    provenance.make_stamp(r, "amd64", cold=True, ts=1).write(r / "build-amd64")
+    return r
+
+
+def test_cargo_module_rels_parsed(cargo_link_repo: Path):
+    rels = provenance.cargo_module_rels(cargo_link_repo)
+    assert rels == ["bar/bar.exe"]  # ${_t}.dll variable call site skipped
+
+
+def test_cargo_link_fresh_binary_not_stale(cargo_link_repo: Path):
+    exe = cargo_link_repo / "build-amd64" / "bar" / "bar.exe"
+    crate = cargo_link_repo / "sdk" / "lib" / "rust" / "bar-rust"
+    os.utime(crate / "src" / "lib.rs", (1000, 1000))
+    os.utime(crate / "Cargo.toml", (1000, 1000))  # .toml is a workspace src too
+    os.utime(exe, (2000, 2000))
+    assert provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64") == []
+
+
+def test_cargo_link_stale_binary_flagged_x86(cargo_link_repo: Path):
+    """The crux of the 2026-07-04 incident: a fresh ISO around a stale cargo-linked
+    PE, on x86 (which the cohab net exempts). Tier-1 fingerprint matches the stamp,
+    so only this net can catch it."""
+    exe = cargo_link_repo / "build-amd64" / "bar" / "bar.exe"
+    rs = cargo_link_repo / "sdk" / "lib" / "rust" / "bar-rust" / "src" / "lib.rs"
+    os.utime(exe, (1000, 1000))
+    os.utime(rs, (2000, 2000))  # .rs newer == cargo link never re-ran
+    reasons = provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64")
+    assert any("bar.exe" in x and "stale" in x for x in reasons), reasons
+    v = provenance.check_staleness(cargo_link_repo, "amd64")
+    assert v.stale and not v.fresh, v.reasons
+
+
+def test_cargo_link_scope_excludes_off_media_modules(cargo_link_repo: Path):
+    """A cargo module NOT on the boot media (e.g. rosload on a UEFI-only arch)
+    must not block smoke when it goes stale — scope is the CD manifest."""
+    lst = cargo_link_repo / "build-amd64" / "boot" / "livecd.cmake.lst"
+    lst.write_text("/tmp/vibeos/build-amd64/boot/empty\n")  # bar.exe not on CD
+    exe = cargo_link_repo / "build-amd64" / "bar" / "bar.exe"
+    rs = cargo_link_repo / "sdk" / "lib" / "rust" / "bar-rust" / "src" / "lib.rs"
+    os.utime(exe, (1000, 1000))
+    os.utime(rs, (2000, 2000))
+    assert provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64") == []
+
+
 def test_discover_rust_targets(tmp_path: Path):
     bd = tmp_path / "build-i386"
     (bd / "ntoskrnl" / "rust-kernel-target").mkdir(parents=True)
@@ -343,10 +416,14 @@ def test_triage_rust_panic():
 
 
 def test_triage_bugcheck_and_known_flake():
+    # tWinMain_0xF4_race was RETIRED 2026-07-03 (verify-gone by absence): a 0xF4 after
+    # _tWinMain no longer matches a known flake, so it BLOCKS as a plain BUGCHECK — a
+    # recurrence must surface, not be auto-retried.
     serial = "[EXPLORER] _tWinMain entered\nBugCheck 0xF4 (CRITICAL_OBJECT...)\n"
     r = triage.classify(serial, reached=False, fail_marker=None, debugcon=None)
-    assert r["classification"] == "KNOWN_FLAKE"
-    assert r["known_flake"] == "tWinMain_0xF4_race"
+    assert r["classification"] == "BUGCHECK"
+    assert r["bugcheck"] == "0xF4"
+    assert r["known_flake"] is None
     # a different bugcheck with no flake match stays BUGCHECK
     r2 = triage.classify("BugCheck 0x7E (foo)\n", reached=False, fail_marker=None, debugcon=None)
     assert r2["classification"] == "BUGCHECK" and r2["bugcheck"] == "0x7E"
@@ -362,27 +439,33 @@ def test_triage_hang_surfaces_tails():
 
 
 def test_triage_known_hang_flakes():
-    # nettest race (i386 + arm64): nettest spawned, explorer never reached _tWinMain
+    # nettest_explorer_race is RETIRED (root fix: winlogon gates the nettest.exe
+    # spawn on NIC presence, so plain smokes never spawn it). A hang whose serial
+    # somehow still carries the nettest marker now classifies as a plain
+    # HANG_TIMEOUT — no longer masked as an expected flake.
     nettest = "...\n[WINLOGON] nettest.exe created (PID 268)\n[NETSTACK] TDI self-test: skipped\n"
     r = triage.classify(nettest, reached=False, fail_marker=None, debugcon=None)
-    assert r["classification"] == "KNOWN_FLAKE"
-    assert r["known_flake"] == "nettest_explorer_race"
+    assert r["classification"] == "HANG_TIMEOUT"
+    assert r["known_flake"] is None
 
-    # the `none` guard: if explorer DID reach _tWinMain it's NOT this flake
+    # explorer reaching _tWinMain is a normal (non-flake) hang either way
     r2 = triage.classify(
         nettest + "[EXPLORER] _tWinMain entered\n", reached=False, fail_marker=None, debugcon=None
     )
     assert r2["classification"] == "HANG_TIMEOUT" and r2["known_flake"] is None
 
-    # arm64 LpcExitThread race
+    # arm64_lpcexitthread_race is RETIRED (root cause = undersized arm64 kernel
+    # stack, fixed by the 0xC000 bump). An arm64 exit-path hang with the
+    # LpcExitThread trace but no nettest marker now classifies as a plain
+    # HANG_TIMEOUT (honest, no longer masked as an expected flake).
     arm = "[PS] PspExitThread Image=System -> about to call LpcExitThread\n"
     r3 = triage.classify(arm, reached=False, fail_marker=None, debugcon=None)
-    assert r3["classification"] == "KNOWN_FLAKE"
-    assert r3["known_flake"] == "arm64_lpcexitthread_race"
+    assert r3["classification"] == "HANG_TIMEOUT"
+    assert r3["known_flake"] is None
 
     # a hang-stage flake signature must NOT match a bugcheck (when-gated)
     r4 = triage.classify(
-        "BugCheck 0x7E\n[WINLOGON] nettest.exe created\n",
+        "BugCheck 0x7E\n[PS] ... LpcExitThread ...\n",
         reached=False,
         fail_marker=None,
         debugcon=None,
@@ -718,6 +801,7 @@ def _launch_vm(backend: str = "windows-host"):
     v._backend = backend
     v._proc = None
     v._early_stderr = ""
+    v._gdb = False
     return v
 
 
@@ -804,6 +888,167 @@ def test_launch_qemu_raises_after_exhausting_retries(monkeypatch):
     monkeypatch.setattr(v, "_discard_failed_launch", lambda p: None)
     with pytest.raises(RuntimeError, match="hostfwd-bind failed after 2"):
         v._launch_qemu()
+
+
+def test_launch_qemu_retries_gdb_bind_race(monkeypatch):
+    # A windows-host gdbstub binds a Windows-stack port with the same pick-then-bind
+    # TOCTOU as a hostfwd → must be retried with a fresh port (no hostfwd present).
+    v = _launch_vm("windows-host")
+    v._gdb = True
+    monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "-gdb", "tcp:0.0.0.0:1234"])
+    procs = [_FakeProc(), _FakeProc()]
+    launched: list = []
+
+    def fake_popen(cmd, **kw):
+        p = procs[len(launched)]
+        launched.append(p)
+        return p
+
+    monkeypatch.setattr(vm.subprocess, "Popen", fake_popen)
+    seq = iter([vm.GDB_BIND_ERROR + " on device 'tcp:0.0.0.0:1234'", None])
+    monkeypatch.setattr(v, "_early_exit_stderr", lambda proc, budget=2.0: next(seq))
+    discarded: list = []
+    monkeypatch.setattr(v, "_discard_failed_launch", discarded.append)
+
+    cmd = v._launch_qemu()
+    assert "-gdb" in cmd
+    assert v._proc is procs[1]  # healthy 2nd attempt
+    assert discarded == [procs[0]]  # first (raced) torn down
+
+
+def _gdb_vm(gdb: bool = False, wait: bool = False, backend: str = "native"):
+    v = vm.QemuVM.__new__(vm.QemuVM)
+    v._backend = backend
+    v._gdb = gdb
+    v._gdb_wait = wait
+    v.gdb_port = None
+    return v
+
+
+def test_gdb_args_off_emits_nothing():
+    assert _gdb_vm(gdb=False)._gdb_args(win_stack=False) == []
+    assert _gdb_vm(gdb=False)._gdb_args(win_stack=True) == []  # even on the win path
+
+
+def test_gdb_args_native_binds_loopback():
+    v = _gdb_vm(gdb=True)
+    a = v._gdb_args(win_stack=False)
+    assert a[0] == "-gdb" and a[1].startswith("tcp:127.0.0.1:") and "-S" not in a
+    assert v.gdb_port is not None and str(v.gdb_port) in a[1]
+
+
+def test_gdb_args_wait_adds_dash_S():
+    assert _gdb_vm(gdb=True, wait=True)._gdb_args(win_stack=False)[-1] == "-S"
+
+
+def test_gdb_args_windows_binds_wildcard_on_windows_port(monkeypatch):
+    # windows-host: QEMU.exe is the gdb SERVER → bind 0.0.0.0 on a WINDOWS-picked port.
+    monkeypatch.setattr(be_mod, "windows_free_tcp_port", lambda: 54321)
+    v = _gdb_vm(gdb=True, backend="windows-host")
+    assert v._gdb_args(win_stack=True) == ["-gdb", "tcp:0.0.0.0:54321"]
+    assert v.gdb_port == 54321
+
+
+def test_gdb_host_native_vs_windows(monkeypatch):
+    assert _gdb_vm(backend="native").gdb_host == "127.0.0.1"
+    monkeypatch.setattr(be_mod, "gateway_ip", lambda: "172.26.176.1")
+    assert _gdb_vm(backend="windows-host").gdb_host == "172.26.176.1"
+
+
+# --- gdbengine: the Python gdb engine's pure logic (no QEMU) ---------------
+
+
+def test_gdbengine_gdb_arch_map():
+    assert ge_mod._gdb_arch("amd64") == "i386:x86-64"
+    assert ge_mod._gdb_arch("i386") == "i386"
+    assert ge_mod._gdb_arch("arm64") == "aarch64"
+
+
+def test_gdbengine_expand_verb():
+    assert ge_mod._expand_verb("bt 50") == "bt-tagged 50"
+    assert ge_mod._expand_verb("bt") == "bt-tagged"  # no trailing space
+    assert ge_mod._expand_verb("triage-bugcheck") == "triage-bugcheck"
+    assert ge_mod._expand_verb("dump-thread 0xffff") == "dump-thread 0xffff"
+    assert ge_mod._expand_verb("raw info registers rax") == "info registers rax"
+    with pytest.raises(ValueError, match="unknown verb"):
+        ge_mod._expand_verb("frobnicate")
+
+
+def test_gdbengine_all_helper_files_exist():
+    missing = [h for h in ge_mod.HELPER_FILES if not (ge_mod.GDB_HELPERS / h).is_file()]
+    assert missing == [], f"missing gdb helpers: {missing}"
+    # _helper_source_args emits a `source <path>` -ex pair per existing helper
+    args = ge_mod._helper_source_args()
+    assert args.count("-ex") == len(ge_mod.HELPER_FILES)
+
+
+def test_gdbengine_manifest_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path)
+    run = ge_mod.DebugRun(
+        run_id="amd64-xy",
+        arch="amd64",
+        backend="windows-host",
+        gdb_host="172.26.176.1",
+        gdb_port=54321,
+        serial_log="/mnt/c/x/serial.log",
+        kernel_image="/k/ntoskrnl.exe",
+        win_uid="vibeos-dbg-1-2",
+    )
+    run.save()
+    got = ge_mod.DebugRun.load("amd64-xy")
+    assert got.gdb_port == 54321 and got.win_uid == "vibeos-dbg-1-2" and got.arch == "amd64"
+
+
+def test_gdbengine_load_rejects_foreign_manifest(tmp_path, monkeypatch):
+    # qemu/runs/ is shared with the bash toolkit, whose manifest lacks our fields.
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path)
+    (tmp_path / "bash-run").mkdir()
+    (tmp_path / "bash-run" / "manifest.json").write_text('{"run_id":"bash-run","qemu_pid":9}')
+    with pytest.raises(ValueError, match="not a gdbengine run manifest"):
+        ge_mod.DebugRun.load("bash-run")
+
+
+def test_gdbengine_status_uses_process_liveness_not_gdb_connect(monkeypatch):
+    # Connecting to QEMU's gdbstub HALTS the guest — it wedged early boots (serial
+    # stuck at 0, PC parked in OVMF). status() must report liveness via the Windows
+    # process, never a socket connect to gdb_host:gdb_port. Guard against regressing.
+    seen = {"uid": None}
+    monkeypatch.setattr(ge_mod, "_win_alive", lambda uid: seen.__setitem__("uid", uid) or True)
+    run = ge_mod.DebugRun(
+        run_id="r",
+        arch="amd64",
+        backend="windows-host",
+        gdb_host="1.2.3.4",
+        gdb_port=9,
+        serial_log="/does/not/exist",
+        kernel_image="/k",
+        win_uid="vibeos-dbg-1-9",
+    )
+    st = ge_mod.status(run)
+    assert st["alive"] is True and seen["uid"] == "vibeos-dbg-1-9"
+    assert "gdb_reachable" not in st  # the halting probe must stay gone
+    assert st["serial_bytes"] == 0
+    # tight-poll variant skips even the process query
+    assert "alive" not in ge_mod.status(run, check_alive=False)
+
+
+def test_gdbengine_run_until_builds_break_and_then(monkeypatch):
+    # run_until must emit `break <sym>`, `bounded-continue <t>`, then each expanded verb.
+    captured = {}
+
+    def fake_run_gdb(run, verb_ex, *, timeout):
+        captured["ex"] = verb_ex
+        captured["timeout"] = timeout
+        return "BREAKPOINT HIT"
+
+    monkeypatch.setattr(ge_mod, "_run_gdb", fake_run_gdb)
+    run = ge_mod.DebugRun.__new__(ge_mod.DebugRun)
+    out = ge_mod.run_until(run, "KeBugCheckEx", timeout=30, then=["bt 10", "triage-bugcheck"])
+    ex = captured["ex"]
+    assert "break KeBugCheckEx" in ex and "bounded-continue 30" in ex
+    assert "bt-tagged 10" in ex and "triage-bugcheck" in ex
+    assert captured["timeout"] == 30 + 30  # in-gdb budget + teardown headroom
+    assert out == "BREAKPOINT HIT"
 
 
 def test_early_exit_stderr_reports_exit_vs_healthy():
@@ -1100,9 +1345,20 @@ def test_backend_rewrite_accel():
     base = ["-M", "pc", "-accel", "kvm", "-cpu", "host", "-m", "512M"]
     # tcg: kvm->tcg AND drop the paired -cpu host
     assert be_mod.rewrite_accel(base, "tcg") == ["-M", "pc", "-accel", "tcg", "-m", "512M"]
-    # whpx: kvm->whpx (irqchip off) and ALSO drop -cpu host — it faults OVMF on FXSAVE in
-    # early firmware, so whpx must fall back to qemu's default cpu model.
-    assert be_mod.rewrite_accel(base, "whpx") == [
+    # whpx: kvm->whpx with PER-ARCH kernel-irqchip (amd64 needs the Hyper-V in-kernel
+    # APIC — QEMU's userspace APIC under irqchip=off zeroes guest CR8/IRQL on every VM
+    # exit, bugchecking amd64; i386's PIC HAL needs irqchip=off) and ALSO drop -cpu
+    # host — it faults OVMF on FXSAVE in early firmware, so whpx must fall back to
+    # qemu's default cpu model.
+    assert be_mod.rewrite_accel(base, "whpx", "amd64") == [
+        "-M",
+        "pc",
+        "-accel",
+        "whpx,kernel-irqchip=on",
+        "-m",
+        "512M",
+    ]
+    assert be_mod.rewrite_accel(base, "whpx", "i386-uefi") == [
         "-M",
         "pc",
         "-accel",

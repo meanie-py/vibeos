@@ -122,7 +122,7 @@ const PSP_FIXED_QUANTUMS: ULONG = 0x8;
 const PSP_LONG_QUANTUMS: ULONG = 0x10;
 const PSP_SHORT_QUANTUMS: ULONG = 0x20;
 
-const MEMORY_PRIORITY_FOREGROUND: UCHAR = 0;
+const MEMORY_PRIORITY_FOREGROUND: UCHAR = 0x02;
 const MEMORY_PRIORITY_BACKGROUND: UCHAR = 0x0;
 
 const PROCESS_CREATE_FLAGS_BREAKAWAY: ULONG = 0x00000001;
@@ -145,8 +145,8 @@ const SEM_NOALIGNMENTFAULTEXCEPT: ULONG = 0x0004;
 
 const TAG_SEPA: ULONG = 0x61506553;
 
-const PsProcessPriorityBackground: ULONG = 0;
-const PsProcessPriorityForeground: ULONG = 1;
+const PsProcessPriorityBackground: ULONG = 0x01;
+const PsProcessPriorityForeground: ULONG = 0x00;
 const PsProcessPrioritySpinning: ULONG = 2;
 
 #[no_mangle]

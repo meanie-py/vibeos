@@ -108,7 +108,7 @@ const DPC_THREADED: usize = 1;
 const IPI_DPC: ULONG = 0x2;
 
 const TimerNotificationObject: KOBJECTS = 8;
-const ThreadedDpcObject: KOBJECTS = 7;
+const ThreadedDpcObject: KOBJECTS = 0x18;
 const DpcObject: KOBJECTS = 19;
 
 const HighImportance: KDPC_IMPORTANCE = 2;

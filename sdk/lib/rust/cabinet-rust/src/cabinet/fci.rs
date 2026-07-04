@@ -1029,7 +1029,7 @@ unsafe fn add_file_data(
         return 0;
     }
 
-    const _A_EXEC: u16 = 0x20; // _A_EXEC
+    const _A_EXEC: u16 = 0x40; // _A_EXEC
     if execute != 0 {
         (*file).attribs |= _A_EXEC;
     }

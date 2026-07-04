@@ -49,9 +49,21 @@ layer fits — see "Relationship to `qemu/`" below.
 
 ## Subcommands — what each is for, and the strategy
 
-### `build --arch X [--clean] [--no-check] [--strict] [--no-cache]`
+### `build --arch X [--clean] [--incremental] [--no-check] [--strict] [--no-cache]`
 Compile the boot media for one arch, lint the binary, index symbols, and write a
 provenance stamp.
+
+- **Fast local iteration:** `--incremental --no-check` is the inner-loop combo.
+  A warm build is dominated by two things that neither caching nor the compiler
+  touch: the **source-lint suite** (~53s, led by `scan_inline_flag_literals`
+  AST-walking every `.rs`) and **linking**. `--no-check` skips the source lints
+  (they're a gate concern, not an every-edit one); `--incremental` turns on rustc
+  incremental (a kernel `.rs` edit recompiles the ~13s `ntoskrnl-rust` crate in
+  ~5s instead), trading the Rust sccache wrapper (sccache + incremental are
+  mutually exclusive) — ccache for C/C++ stays on. **Both are LOCAL-only:**
+  incremental artifacts are non-reproducible and the lints gate correctness, so
+  the `gate`/CI path uses neither. Measured: warm i386 build ~97s → ~40s with the
+  combo (under load; the ratio holds quiet).
 
 - **Canonical build path (2026-07-03):** every build runs with the worktree
   bind-mounted at `/tmp/vibeos` (unprivileged userns — `tools/canon-run.sh`,
@@ -214,6 +226,32 @@ RUN=$(./vibeos-cli debug start amd64 --gdb | tail -1)
 ./vibeos-cli debug wait-for $RUN --pattern "ACPI Timer" --timeout 60
 ./vibeos-cli debug run-until $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck
 ```
+
+### `gdb <verb> ...` — GDB over the **windows-host** backend (native-Python engine)
+The `debug` verbs above shell out to `qemu/*.sh`, which are **native-only** (Linux
+qemu, KVM — where software breakpoints don't reliably fire). `gdb` is the full
+Python port (`gdbengine.py`) that drives the **default windows-host TCG** QEMU,
+where breakpoints DO fire. It reuses the same `qemu/gdb-helpers/*.py` verbs (they
+run inside gdb, transport-agnostic); only the launch + gdb orchestration is
+re-owned in Python. QemuVM emits the gdbstub bound `0.0.0.0` on the Windows stack
+(`vm._gdb_args`), reached from WSL via `gdb_host = gateway_ip()` — the same
+inbound path as a slirp hostfwd.
+
+```bash
+RUN=$(./vibeos-cli gdb start amd64 | grep run-id | awk '{print $3}')
+./vibeos-cli gdb wait-for $RUN --pattern IoInitSystem --timeout 200
+./vibeos-cli gdb run-until $RUN --break KeBugCheckEx --timeout 180 --then triage-bugcheck --then "bt 30"
+./vibeos-cli gdb inspect $RUN bt 30      # one-shot verb (bt/triage-bugcheck/dump-trapframe/...)
+./vibeos-cli gdb ps                      # list debug runs + liveness
+./vibeos-cli gdb stop $RUN
+```
+
+**CRITICAL gotcha (baked into the engine):** connecting to QEMU's gdbstub *halts
+the vCPUs*. So liveness (`status`/`ps`) checks the **Windows process + serial-file
+growth**, NEVER a socket connect to the stub — a connect-probe freezes the guest
+mid-boot (serial stuck at 0, PC parked in OVMF). Only `run-until`/`inspect` connect
+(they intend to halt, then `detach` resumes). The detached QEMU persists across CLI
+invocations (a separate Windows process); address it by run-id, kill by uid tag.
 
 ### `ps [--json]`
 Every QEMU running **across all worktrees** + slot-pool usage. Run it first when

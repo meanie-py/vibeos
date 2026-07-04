@@ -387,12 +387,21 @@ pub const KERNEL_LARGE_STACK_SIZE: usize = 60 * 1024; // 60KB — matches xdk/x8
 #[cfg(target_arch = "x86")]
 pub const KERNEL_LARGE_STACK_COMMIT: usize = 16 * 1024; // 16KB — Rust-port margin
 
+// arm64 is a 64-bit arch and must use amd64's stack sizing, NOT i386's. The
+// original port copied i386's 12KB value into xdk/arm64/ke.h, but the Rust port
+// has deeper kernel call stacks than the C original (see the note above), arm64
+// has no dedicated exception stack (a guard-page overflow nest-faults into a
+// hang, not a clean bugcheck), and PsConvertToGuiThread does NOT switch win32k
+// GUI threads to a large stack on arm64 (ps/win32.rs) — so deep win32k/exit-path
+// chains run on this base stack. 12KB intermittently overflows on the thread-exit
+// teardown path (the historical arm64_lpcexitthread_race / fastfat 0x50). Match
+// amd64: 48KB base / 72KB large.
 #[cfg(target_arch = "aarch64")]
-pub const KERNEL_STACK_SIZE: usize = 12 * 1024; // 12KB — matches xdk/arm64/ke.h
+pub const KERNEL_STACK_SIZE: usize = 0xC000; // 48KB — matches xdk/amd64/ke.h sizing
 #[cfg(target_arch = "aarch64")]
-pub const KERNEL_LARGE_STACK_SIZE: usize = 60 * 1024; // 60KB — matches xdk/arm64/ke.h
+pub const KERNEL_LARGE_STACK_SIZE: usize = 0x12000; // 72KB — matches xdk/amd64/ke.h sizing
 #[cfg(target_arch = "aarch64")]
-pub const KERNEL_LARGE_STACK_COMMIT: usize = KERNEL_STACK_SIZE; // 12KB — matches xdk/arm64/ke.h
+pub const KERNEL_LARGE_STACK_COMMIT: usize = KERNEL_STACK_SIZE; // 48KB — matches xdk/amd64/ke.h sizing
 pub const EXCEPTION_CHAIN_END: ULONG_PTR = ULONG_PTR::MAX;
 pub const EVENT_MODIFY_STATE: ULONG = 0x0002;
 pub const IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG: usize = 10;
@@ -1155,7 +1164,7 @@ pub const HighPagePriority: ULONG = 2;
 
 pub const TableFoundNode: ULONG = 1;
 
-pub const VadDevicePhysicalMemory: ULONG = 5;
+pub const VadDevicePhysicalMemory: ULONG = 0x01;
 
 // PrototypePte — soft PTE template used in MmArmAccessFault when constructing
 // a prototype PTE for an address whose VAD has FirstPrototypePte set

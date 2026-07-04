@@ -52,7 +52,7 @@ const DbgKmExitProcessApi: ULONG = 3;
 const DbgKmExitThreadApi: ULONG = 4;
 const DbgKmUnloadDllApi: ULONG = 5;
 
-const LPC_DEBUG_EVENT: i16 = 9;
+const LPC_DEBUG_EVENT: i16 = 0x08;
 
 extern "C" {
     fn PspSetProcessFlag(Process: PEPROCESS, Flags: ULONG) -> ULONG;

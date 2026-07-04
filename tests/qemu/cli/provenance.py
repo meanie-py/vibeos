@@ -167,7 +167,11 @@ def boot_set_cohab_rels(repo: Path, arch: str) -> list[str]:
     cohab crate — i.e. the Rust binaries that actually boot. Used by both the
     staleness net (gate) and `build` (so they're force-rebuilt regardless of
     whether anyone remembered to add them to archcfg.ninja_targets). Empty for
-    x86, which does a full `ninja livecd` and can't ship a stale cohab binary."""
+    x86, where `ninja livecd` rebuilds every CMAKE-linked cohab binary. (That
+    exemption is NOT safe for cargo-LINKED modules — `ninja livecd` only re-runs
+    the cargo link if its declared deps changed, which false-greened a stale
+    ntoskrnl.exe on 2026-07-04; cargo_link_staleness_reasons covers those on
+    all arches.)"""
     cfg = archcfg.arch_build(arch)
     if not cfg.needs_mkramdisk:
         return []
@@ -210,6 +214,129 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
             reasons.append(
                 f"{rel}: stale — {crate.name} has .rs newer than the built binary "
                 f"(cohab flip not rebuilt; `build` force-rebuilds it, or add to ninja_targets)"
+            )
+    return reasons
+
+
+_CARGO_CALL_RE = re.compile(
+    r"^\s*add_cargo_(?:module|kernel_dll)\(\s*(\S+)\s+(\S+)\s+(\S+)", re.MULTILINE
+)
+
+
+def cargo_module_rels(repo: Path) -> list[str]:
+    """Build-relative artifact paths of every cargo-LINKED module, parsed from
+    the `add_cargo_module`/`add_cargo_kernel_dll` call sites in the tree
+    (self-maintaining, like mkramdisk_required_rels: a module graduated to the
+    cargo link auto-joins the freshness net). The custom command's OUTPUT is
+    `${CMAKE_CURRENT_BINARY_DIR}/<output>`, i.e. the call-site dir mirrored
+    into the build dir — true for the two .cmake-included call sites too
+    (rosload.cmake/uefi.cmake live in their includer's dir). Call sites whose
+    output is a `${var}` (bootvid) are skipped — unresolvable statically."""
+    files = _run(
+        ["git", "grep", "-lE", r"add_cargo_(module|kernel_dll)\(", "--", "*.txt", "*.cmake"],
+        repo,
+    ).splitlines()
+    rels = []
+    for rel_file in files:
+        p = repo / rel_file
+        if p.name != "CMakeLists.txt" and p.suffix != ".cmake":
+            continue
+        try:
+            text = p.read_text(errors="ignore")
+        except OSError:
+            continue
+        for m in _CARGO_CALL_RE.finditer(text):
+            out = m.group(3).rstrip(")")
+            if "$" in m.group(1) or "$" in out:
+                continue  # variable target/output (bootvid) — not resolvable here
+            rels.append(str(Path(rel_file).parent / out))
+    return sorted(set(rels))
+
+
+def _newest_ws_src(repo: Path) -> tuple[float, str]:
+    """(mtime, repo-rel path) of the newest .rs/.toml in the rust workspace,
+    excluding cargo target dirs. This is a cargo-linked module's source-change
+    signal: since 2026-07-04 add_cargo_module's DEPENDS is the whole workspace
+    glob (one dependency graph — any workspace .rs can be in any module's link
+    closure), so a fresh build always leaves every cargo-linked binary newer
+    than this."""
+    ws = repo / "sdk" / "lib" / "rust"
+    newest, newest_rel = 0.0, ""
+    for pat in ("*.rs", "*.toml"):
+        for p in ws.rglob(pat):
+            parts = p.relative_to(ws).parts
+            if parts and parts[0] == "target":
+                continue
+            try:
+                mt = p.stat().st_mtime
+            except OSError:
+                continue
+            if mt > newest:
+                newest, newest_rel = mt, str(p.relative_to(repo))
+    return newest, newest_rel
+
+
+def _media_manifest_rels(repo: Path, arch: str) -> set[str] | None:
+    """Build-relative source paths staged onto the x86 boot CD, parsed from the
+    generated boot/<media>.cmake.lst manifest (`cdpath=srcpath` lines, srcpath
+    under the canonical /tmp/vibeos build dir). None if the manifest is absent
+    (never configured) — caller treats that as 'no scope known, skip'."""
+    base = archcfg.base_arch(arch)
+    media_stem = Path(archcfg.arch_build(arch).boot_media_rel).stem  # e.g. livecd
+    lst = repo / f"build-{base}" / "boot" / f"{media_stem}.cmake.lst"
+    try:
+        text = lst.read_text(errors="ignore")
+    except OSError:
+        return None
+    prefix = f"/tmp/vibeos/build-{base}/"
+    rels = set()
+    for line in text.splitlines():
+        if "=" not in line:
+            continue
+        src = line.split("=", 1)[1].strip()
+        if src.startswith(prefix):
+            rels.add(src[len(prefix) :])
+    return rels
+
+
+def cargo_link_staleness_reasons(repo: Path, arch: str) -> list[str]:
+    """The cargo-LINK false-green net (the 2026-07-04 ntoskrnl class) — ALL arches.
+
+    A cargo-linked PE (add_cargo_module) is produced by a custom command; before
+    2026-07-04 its DEPENDS globbed only the bin+body crates, so a kernel .rs edit
+    rebuilt libkernel_rust.a but never re-ran the LINK: `ninja livecd` re-rolled
+    a fresh ISO around a PRE-FIX ntoskrnl.exe and the gate false-greened
+    i386+amd64 smoke. This disproved boot_set_cohab_rels' x86 exemption ("a full
+    ninja livecd can't ship a stale cohab binary") for cargo-linked modules. The
+    build stamp is blind to it (a build RAN and re-stamped; ninja just did no
+    work), so — like the cohab net — this is mtime-based and gates both tiers.
+
+    Contract (matches add_cargo_module's workspace-glob DEPENDS): every
+    boot-relevant cargo-linked artifact must be NEWER than the newest workspace
+    .rs/.toml. Scope = the arch's boot set (arm64) or the CD manifest (x86);
+    absent artifacts are skipped (arch-gated/optional modules)."""
+    cfg = archcfg.arch_build(arch)
+    build_dir = repo / f"build-{archcfg.base_arch(arch)}"
+    if cfg.needs_mkramdisk:
+        scope = set(mkramdisk_required_rels(repo)) | set(cfg.staged_bins_rel)
+    else:
+        scope = _media_manifest_rels(repo, arch)
+        if scope is None:
+            return []  # no manifest yet — media absent, other checks report that
+    newest, newest_rel = _newest_ws_src(repo)
+    if not newest:
+        return []
+    reasons = []
+    for rel in cargo_module_rels(repo):
+        if rel not in scope:
+            continue
+        artifact = build_dir / rel
+        if not artifact.is_file():
+            continue
+        if artifact.stat().st_mtime < newest:
+            reasons.append(
+                f"{rel}: stale — {newest_rel} newer than the cargo-linked binary "
+                f"(cargo link not re-run; run `build`)"
             )
     return reasons
 
@@ -361,7 +488,8 @@ def check_staleness(repo: Path, arch: str) -> Staleness:
     # The arm64 cohab false-green is invisible to the fingerprint: a flip that
     # was never rebuilt leaves the stamp matching, so this check must gate BOTH
     # tiers (it cannot live behind the tier-2 escalation like the re-stage trap).
-    cohab = cohab_staleness_reasons(repo, arch)
+    # Same for the cargo-link net (stale cargo-linked PE inside a fresh ISO).
+    cohab = cohab_staleness_reasons(repo, arch) + cargo_link_staleness_reasons(repo, arch)
 
     # Tier 1: cheap fingerprint compare → FRESH (unless a cohab binary is stale).
     if git_fingerprint(repo) == stamp.git_fingerprint:

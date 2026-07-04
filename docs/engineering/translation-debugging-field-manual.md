@@ -37,6 +37,12 @@ The #1 i386 crash class: on i386, `extern "C"` is cdecl and `extern "system"` is
 **Fix:** Sibling rlibs (`*-inlines`, `*-macros`) must declare NTAPI fns `extern "system"`. Check each fn's `.h` decl: `NTAPI`/`NTKERNELAPI...NTAPI` → `extern "system"`. i386 fastcall fns (`Obf*`, `KfRaiseIrql`) need `#[cfg(target_arch="x86")] extern "fastcall"` else `extern "C"`. Statics have no calling convention — any block is fine. Fixed commit `0965a48a`.
 **Source:** `feedback_sibling_rlib_ntapi_abi.md`
 
+### Array passed BARE to a C-variadic (`...`) extern — Rust arrays do NOT decay to pointers
+**Symptom (i386 uefildr under WHPX, 2026-07-03):** boot "hangs at `[freeldr] Switching stack...`" forever — the wedged PC is `streamout`'s `%s` handler running `strnlen(0x6f636553, SIZE_MAX)`: the "pointer" is ASCII `"Seco"` — the first 4 BYTES of the string that should have been passed by reference. Caller disasm shows a `rep movsl` copying the whole array into the outgoing vararg area. Under TCG the bad scan terminates instantly (unmapped-phys reads return 0) so the bug is LATENT for months; under hardware virt (WHPX/KVM) every probe of unmapped guest-phys is a VM exit → a ~4G-iteration crawl ≈ hours = "hang".
+**Root cause:** C array arguments decay to pointers; **Rust `[T; N]` passed to an `extern "C" fn(..., ...)` variadic is passed BY VALUE** — all N bytes land in the vararg area and `%s`/`%p` consume the first word as the pointer. rustc accepts it silently. Worse, on amd64 (Win64 ABI) >8-byte aggregates go by reference, so the SAME code accidentally works on 64-bit and only breaks i386.
+**Fix:** `.as_ptr()` every array/static passed to a variadic (tuimenu.rs `UiTimeText`, fixed this round). **Sweep recipe:** collect every `static/let` ident with an array type crate-wide, then flag variadic call args that are a bare matching ident without `.as_ptr()`/`.as_mut_ptr()`; also disasm-grep for `rep movs` with const count feeding a call to a known printf. Watch every rustconv translation of a C file that printfs a global `char[]`.
+**Source:** WHPX bring-up spike (docs/engineering/windows-host-qemu-whpx-spike.md), fix in `sdk/lib/rust/freeldr-rust/src/tuimenu.rs`
+
 ### Same fn name, two ABIs in one crate → ud2 stub even though linker is happy
 **Symptom:** Function dramatically smaller than expected (0x30 vs 0x1df bytes), ends in `0f 0b` shortly after a call; `nm` shows BOTH `_Name` and `_Name@N` (smoking gun). IR marks outparams `readnone captures(none)`.
 **Root cause:** Def is `extern "C"` (`_Name`), decl elsewhere is `extern "system"` (`_Name@N`) — linker sees distinct symbols, but LLVM shares the bare IR name `@Name`, detects the call-conv contradiction → `unreachable` folds the rest of the caller.
@@ -221,6 +227,13 @@ Plus two non-ABI link gotchas from the same drivers: (a) **x86 compiler intrinsi
 **Root cause:** `ntkrnl_sys::constants::PROCESS_ALL_ACCESS` = `0x001FFFFF` (Vista+), but the C kernel is NT 5.x where it's `0x001F0FFF`. Using the Rust constant in `Psp{Process,Thread}Mapping.GenericAll` mismatches the C-built access-check callsite. (Surfaced when `kernel_c_helpers.c` was deleted and the Rust storage took effect.)
 **Fix:** In `#[no_mangle] pub static mut` access-mask globals hard-code `STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFF` (with a comment). `THREAD_ALL_ACCESS` (`...|0x03FF`) already matches — no workaround. Long-term: correct the Rust constant after a callers audit.
 **Source:** `feedback_process_all_access_constant.md`
+
+### Translated file re-declares C ENUM members as local consts with GUESSED values (SILENT scheduler/dispatcher deformation)
+**Symptom:** none, at first — the kernel boots and works, but a whole behavior block is dead or misrouted. Found 2026-07-04: `ke/wait.rs` had `const AdjustUnwait: u8 = 3` (header: **1**) so `KiUnwaitThread` stamped a value `KiDeferredReadyThread` matches against nothing → the unwait priority-boost/quantum-recharge block was dead code for EVERY thread wakeup since the translation landed; `ke/thrdschd.rs` had Boost/Unwait swapped-and-shifted (1/2 vs the header's 2/1) so `KeSetEventBoostPriority` wakes took the wrong branch (over-boost to ~15 + bogus decrement). Sibling hits in the same sweep: `ThreadedDpcObject=7` (collides with `GateObject`!), `EventPairObject=2` (=MutantObject), swapped `NotificationEvent`/`SynchronizationEvent` in four files (an event created with the wrong type wakes ONE waiter instead of ALL — a lost-wakeup landmine), `SynchronizationTimer=0` (=NotificationTimer), wrong `KAPC_ENVIRONMENT` values.
+**Root cause:** the translator re-declares enum members it needs as local `const NAME: T = <value>;` and *guesses* the value (often the intuitive-but-wrong one, or the value of a *different* enum's member with a similar name) instead of reading `ndk/ketypes.h`. Each file guesses independently, so setter and reader can disagree **while both compile clean and the reader is self-consistent within its own file**.
+**Fix:** align to the header. **Detection is mechanical:** `PYTHONPATH=tools/rustconv python3 tools/rustconv/rustconv/verify_constants.py --enums <files>` — after 2026-07-04 the catalog includes the ndk type headers (ketypes/pstypes/obtypes/mmtypes/extypes/lpctypes/cmtypes: ADJUST_REASON, KTHREAD_STATE, KOBJECTS, KWAIT_REASON, EVENT_TYPE, TIMER_TYPE, KAPC_ENVIRONMENT, LPC_TYPE, PS_* pool/priority, MMVAD types, …). Run it over any kernel crate you're auditing; `--fix` auto-rewrites. **Anything it reports resolved to exactly ONE header value** (the ambiguity rule drops multi-enum names) → a strong real-bug signal, not the usual `--enums` noise. **Two deliberate blind spots you must review by hand:** (a) `TAG_*` pool tags are SKIPPED (Rust `from_le_bytes` vs the checker's big-endian multichar disagree on byte order — the tags need a byte-order-aware check; drift there is cosmetic pool-dump display); (b) untagged inline literals at call sites (`KeInitializeEvent(e, 1, 0)` with no `/* … */` comment) still escape — `scan_inline_flag_literals` only catches the commented ones. Prefer bindgen enums (`ddk::_EVENT_TYPE_*`) over local consts in new translations.
+**Also caught by the same tool the same day** (once `pub const` / path-typed / suffixed-decimal parsing was added — the checker had been blind to ~27K `pub const`s): the **LPC message-type enum** shifted in `lpc/send.rs` (live `if MessageType < LPC_DATAGRAM || > LPC_CLIENT_DIED` validation window, csrss-CreateProcess reply path), `MEMORY_PRIORITY_FOREGROUND` writer(0)/reader(2) disagreement killing the scheduler foreground boost, swapped Ps pool-quota/priority enums, wrong MMVAD types, ~10 wrong hand-written STATUS codes. 41 total in one sweep.
+**Source:** 2026-07-04 dispatcher audit + constant sweep (`docs/engineering/sync-instrumentation-design.md` §8).
 
 ### Hardcoded HIGH_LEVEL=31 on amd64 → `mov cr8, 0x1F` #GP at boot
 **Symptom:** BUGCHECK 0x1E with `c0000005` during boot-driver init / process create; reported faulting Rip unreliable (false symbol e.g. `MiAcquireExpansionLock+7`).
@@ -1166,10 +1179,11 @@ Hard-won lessons on libcntpr/CRT translation bugs, smoke-harness flakes that are
 **Fix:** Do NOT treat input/mouse failures as a regression until reproduced by a clean full re-run (and/or `-k post_shell_ready_input` in isolation). `boot_and_serial` + `shell ready` milestone + screenshot passing = the OS booted to desktop. For arch-neutral pointer-free rtl/cnt structs: amd64+i386 10/10 plus a fault-free arm64 kernel log (grep `BUGCHECK|PANIC:|0xC000|Rtl.*Acl|exception`, absent + `shell ready` present) proves soundness; commit, don't revert.
 **Source:** `feedback_smoke_input_flake.md`
 
-### 0xF4(0x3) at `[EXPLORER] _tWinMain entered` on smss-csrss branches — KNOWN RACE
-**Symptom:** Intermittent `BUGCHECK 0x000000F4 (0x3, <obj>, <obj>, 0x805adbd4)` right after a flood of `msgqueue.split2.c:87 'Sending to Suspended Thread' Msg 121` + `painting.split2.c` dirty-windows warning + a `[CSRSRV] LPC_REQ … dispatch` line. Byte-IDENTICAL binaries give green one run, 0xF4 the next.
-**Root cause:** A win32k/explorer/csrss startup-ordering RACE, not a build regression — verified by `cmp`-identical win32k.sys producing opposite outcomes. PC `0x805adbd4` is the ntoskrnl `PspCatchCriticalBreak` bugcheck caller; arg2 is the dying critical process.
-**Fix:** Re-run the SAME build ≥3× before concluding your change caused or fixed it; one green or one red proves nothing. This is the smss/win32k owners' domain, not ntdll/kernel-FFI work. Real (race-independent) hygiene: after a merge touching `ntkrnl-sys`/any `-sys` bindgen or adding a workspace member, `rm -rf build-<arch>/ntoskrnl/rust-kernel-target` before trusting smoke. Note the marker wait is hardcoded ~360s (pytest `--timeout` doesn't extend it).
+### 0xF4(0x3) at `[EXPLORER] _tWinMain entered` on smss-csrss branches — RETIRED 2026-07-03 (verify-gone by absence)
+**Status:** The `tWinMain_0xF4_race` known-flake catalog entry (`tests/qemu/cli/triage.py`) was **removed 2026-07-03**. It did not reproduce in **36 desktop-reaching windows-host TCG boots** (sequential + 3-wide contended) on a warm amd64 build, nor in 10 native-KVM boots (wrong regime — nested-virt in WSL, discounted). Under heavy 3-wide contention boots die *earlier* — at the service-startup storage stall (`ScmStartUserModeService(DcomLaunch/EventLog)` + `[GAP] read# gap=~9–20M us`) and the `nettest.exe` explorer-handoff race — **before** ever reaching the post-explorer window this 0xF4 lived in, so contention masks rather than surfaces it (see `nettest_explorer_race` + the amd64-net EventLog stall). No live crash could be caught to root-cause, and code audit of the suspect paths (`msgqueue.rs` send/wait/cleanup, `ke/thrdobj.rs` + `ps/state.rs` suspend/resume/freeze/thaw, the `SuspendCount`/`FreezeCount` accessors) found them all **faithful to upstream ReactOS** — consistent with the "byte-identical binaries flip" property below (a genuine inherited timing race, not a localizable translation bug). Removing the entry means a recurrence now **blocks as a plain `BUGCHECK 0xF4`** instead of being auto-retried — we *want* the next one to surface so it can be caught live. Re-add a signature only if a real recurrence is captured.
+**Symptom (historical):** Intermittent `BUGCHECK 0x000000F4 (0x3, <obj>, <obj>, 0x805adbd4)` right after a flood of `msgqueue.split2.c:87 'Sending to Suspended Thread' Msg 121` + `painting.split2.c` dirty-windows warning + a `[CSRSRV] LPC_REQ … dispatch` line. Byte-IDENTICAL binaries give green one run, 0xF4 the next. The suspended-thread flood is a genuine crash-*correlate* (absent in clean boots): a receiver thread is momentarily suspended (created-suspended, not yet resumed) so `co_MsqSendMessage` drops the message — the same mechanism as the still-open win32k `DialogBoxParamW`/`WM_INITDIALOG`-never-dispatched race (§9.12).
+**Root cause:** A win32k/explorer/csrss startup-ordering RACE, not a build regression — verified by `cmp`-identical win32k.sys producing opposite outcomes. PC `0x805adbd4` is the ntoskrnl `PspCatchCriticalBreak` bugcheck caller (arg1=3 ⇒ a critical *process* terminated via `PspTerminateProcess`+`BreakOnTermination`); arg2 is the dying critical process.
+**If it recurs — how to catch it live:** repro is *windows-host TCG* (fast + cold timing), NOT native KVM (nested-virt, warm, suppresses it). Enough contention to stretch timing but not so much boots die pre-explorer — sequential `./vibeos-cli smoke --arch amd64 --repeat N` or a 2-wide parallel gate is the sweet spot; 3-wide over-starves into the storage-stall hang. The `[CRIT-TERM] Process=%p ImageName=%s` print (`ps/kill.rs`) names the dying critical process; symbolicate the faulting PC via the offline index (`qemu/build-index.sh amd64`). Re-run the SAME build ≥3× before concluding a change caused or fixed it; one green or one red proves nothing.
 **Source:** `feedback_smss_csrss_harness_smoke_twinmain_flake.md`
 
 ### Serial logfile stays at 0 bytes through entire boot
@@ -1480,6 +1494,24 @@ never moved.
   a stale *and* a fresh build (PE is section-padded), so adding several `nsprint!` calls didn't
   move the byte count. The only reliable signal is `strings … | grep <unique-marker>` (or a
   fresh source string in the binary), exactly like the kernel case above.
+
+- ✅ **STRUCTURALLY FIXED 2026-07-04** (after one more gate false-green: a kernel-constants
+  batch's i386+amd64 smokes passed on a **pre-fix ntoskrnl.exe inside a freshly-rolled ISO**
+  — 37 cargo-linked binaries stale on x86, 18 on arm64, including lsass/services/smss/
+  winlogon/csrss/win32k; only arm64's binary-vs-`.rs` staleness probe caught it). Two fixes:
+  1. **Build side (the root):** `add_cargo_module` (sdk/cmake/gcc.cmake) now DEPENDS on a
+     **whole-workspace glob** (`sdk/lib/rust/**.rs|toml` minus `target/`, cached in a global
+     property) — the workspace is one dependency graph, so any `.rs` edit re-runs every cargo
+     link (a cheap cargo freshness no-op for unaffected modules). This is the same medicine
+     `rust_kernel`'s DEPENDS got earlier; the cargo-LINK layer had been left on hand-listed
+     `BODY_CRATES` (for ntoskrnl: the one-file `kernel-rust` umbrella — hence no kernel edge).
+  2. **Detection net (defense-in-depth):** `cargo_link_staleness_reasons` in
+     `tests/qemu/cli/provenance.py` — self-maintaining scan of `add_cargo_module` call sites;
+     every boot-relevant cargo-linked artifact (CD manifest on x86, boot set on arm64) must be
+     NEWER than the newest workspace `.rs`/`.toml`. Gates both staleness tiers (the build
+     stamp is blind: a build RAN and re-stamped; ninja just did no work).
+  The hand recipes above remain useful for *cargo-internal* staleness (incremental-cache
+  masking — nuke the target dir), but the "ninja never re-ran the link" leg is closed.
 
 ### 9.6c ⚠️ A kernel ABI change needs ALL drivers rebuilt — the staged arm64 smoke build is insufficient
 
@@ -2059,3 +2091,88 @@ these INFINITE waits convert a soft failure into a boot-blocker.
 race the stale objects were masking — and audit any `WaitForSingleObject(…, INFINITE)`
 whose signal sits on a lone happy path; make the wait bounded and the shared state
 owned by the side that outlives the wait.
+
+### 9.13 ✅ The Mm WS-pushlock SELF-DEADLOCK — PROVEN LIVE 2026-07-04 via the sync-instrumentation stack (2-line trace, ~30 min, no GDB archaeology)
+
+The amd64 service-startup wedge's hypothesized root cause (§9 wedge notes /
+MEMORY open-item: "a page fault inside the WS-locked teardown re-acquires the
+working-set lock") is now a **filmed mechanism**, captured the same night the
+instrumentation landed (`860452569ef` + the WS-lock tap):
+
+**What the census showed (every boot, even green ones):** 3–6 freshly-created
+processes (eventlog.exe, svchost, rundll32, setup.exe…) each have their FIRST
+thread permanently parked acquiring their own `EPROCESS.Vm.WorkingSetMutex`
+(+0x368 amd64; = ActiveProcessLinks+0xd8 + 0x290). Those processes never
+execute one user instruction — **eventlog.exe is silently dead on every boot**;
+historically services.exe wedged waiting on it via LPC, which is why the wedge
+read as "service-startup" and was probabilistic (~50%): the stranding is
+deterministic, the boot only died when a boot-critical thread was among the
+caught. (11/11 boots green after the 2026-07-04 constants campaign — the LPC
+STATUS/ViewUnmap fixes apparently de-fatalized the propagation — but the
+stranding itself persisted, invisible until the census.)
+
+**The 2-line proof** (`vibeos-flightrec obj=<stuck WS pushlock>` over the
+temporary `ws-lock-EXCL` tap on `MiLockProcessWorkingSet*`):
+```
+seq=170109  ws-lock-EXCL   thr=0xfffffa80012e4040  data=1   ; MiLockProcessWorkingSetUnsafe
+seq=170110  pushlock-park  thr=0xfffffa80012e4040           ; SAME thread parks on the SAME lock
+```
+And the parked thread's kernel stack (symbolicated via raw stack scan —
+`dump-thread.py`'s pinned offsets have rotted; use the debug block):
+```
+MmAccessFault+356 → MiLockProcessWorkingSetShared+47 → ExfAcquirePushLockShared+1077
+  → KeWaitForGate → KiSwapThread   (with MiDeletePte+788 on the stack)
+```
+I.e. **inside the WS-EXCLUSIVE(Unsafe) section, `MiDeletePte`-path code touched
+a pageable address → #PF → MmAccessFault re-acquires the WS lock SHARED →
+self-deadlock** (pushlocks are non-recursive). Matches the earlier csrss
+analysis (`MiDecrementShareCount+0x71` reading a pageable prototype PTE);
+upstream avoids it by running this under the PFN spinlock at DISPATCH
+(non-faultable). Suspect list unchanged: MMPFN accessor layout /
+`prototype_pte()`/`pte_address()` mis-decode sending the code down a
+pageable-deref branch, or genuinely pageable prototype PTEs that upstream's
+IRQL discipline tolerates.
+
+**Reusable recipe (the point of this entry):** for ANY stuck-thread report —
+1. Boot with `vibeos-cli gdb start <arch>`; wait for `[CENSUS] STUCK` (the
+   wedge self-reports; the report already contains the lost-wakeup vs
+   holder-stuck verdict + recent events).
+2. `vibeos-cli gdb inspect <run> "raw vibeos-synctrace"` → stuck object list.
+3. `... "raw vibeos-flightrec obj=0x..."` → who locked/signalled last.
+4. `... "raw vibeos-threads gatewait"` → all parked threads, offset-free.
+5. Stack-scan the parked KTHREAD (KernelStack via debug block) + `info symbol`.
+Total cost tonight: ~30 min. The identical conclusion previously took days.
+
+**Fix status:** NOT yet fixed — mechanism proven, faulting site bracketed
+(MiDeletePte path under `MiLockProcessWorkingSetUnsafe`). Next: pin the exact
+faulting VA/instruction (trap frame lives in the parked thread's stack above
+MmAccessFault) and check the MMPFN accessors, then either fix the layout bug
+or make the teardown path non-faultable like upstream.
+
+**§9.13 addendum (same night, ~04:15): faulting instruction pinned; MMPFN
+layout hypothesis RULED OUT.** Trap-frame extraction from the parked thread's
+stack (scan for Rip+SegCs=0x10 pattern; KTRAP_FRAME base = hit-0x168):
+`Rip = MiDecrementShareCount+0x71` — the same PC as the original csrss
+analysis — faulting on `temp_pte = *pointer_pte` with
+`rcx = PteAddress = 0xfffff8a000421660` (paged pool). Disasm shows the
+preceding `testb $0x8, 0x1a(%rax)` = PrototypePte bit test; audit of the
+hand-rolled MMPFN accessor layer (`ntkrnl-sys/src/mm.rs pfn_offsets` +
+`mmpfnentry()` @ U3+2) against THIS PORT's `ntoskrnl/include/internal/mm.h`
+shows the port's u3 is `{ USHORT ReferenceCount; MMPFNENTRY e1; }` —
+**ReferenceCount first** — so the accessors are CORRECT (bit positions match
+MMPFNENTRY: PrototypePte=bit3, PageLocation=bits8-10, CacheAttribute=12-13).
+The MEMORY open-item's "FIX (check first): MMPFN layout / accessor mis-decode"
+is therefore ruled out at instruction level.
+
+**Refined suspect:** the PFN *is* a genuine prototype PFN; its prototype-PTE
+page (paged pool) is simply NOT RESIDENT when share count hits 0. Upstream
+guarantees residency via the PteFrame share-count chain (every active PTE
+holds a share on the page containing it — MiDecrementShareCount cascades up
+via u4.PteFrame). So the real bug is that chain: either (a) the
+prototype-PTE pool page's share count is decremented too early / never taken
+(check MiResolveProtoPteFault + MiCompleteProtoPteFault's PteFrame
+bookkeeping in the Rust translation), or (b) PFN reuse leaves a stale
+PteAddress (the "PFN state corruption" TODO in pfnlist.rs
+MiDecrementShareCount is adjacent evidence). Next session: flightrec-tap
+MiDecrementShareCount's PteFrame cascade or add a share-count trace on the
+pool page containing 0xfffff8a000421660-class addresses.

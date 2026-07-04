@@ -1003,6 +1003,31 @@ impl Linker {
             );
         }
 
+        // Watch EVERY workspace crate's src/ (+ Cargo.toml). Because we emit
+        // explicit `rerun-if-changed` lines, cargo's default whole-package
+        // watching is disabled — and the inner `cargo build -p <crate>` below
+        // is only change-aware when it actually RUNS, i.e. when this build
+        // script re-runs. Before this, an edit in a transitive path-dep (e.g.
+        // ntoskrnl-rust behind the kernel-rust umbrella) left the outer cargo
+        // reporting the module fresh while shipping a STALE binary — a
+        // false-fresh that cost a debug round-trip on the WHPX spike (the
+        // vibeos-cli build printed success with a stale ntoskrnl.exe). The
+        // cost when nothing changed is one mtime sweep + a ~0.1s no-op inner
+        // cargo invocation per module.
+        let workspace_root = self.repo_root.join("sdk/lib/rust");
+        if let Ok(entries) = std::fs::read_dir(&workspace_root) {
+            for e in entries.flatten() {
+                let src = e.path().join("src");
+                if src.is_dir() {
+                    println!("cargo:rerun-if-changed={}", src.display());
+                }
+                let manifest = e.path().join("Cargo.toml");
+                if manifest.is_file() {
+                    println!("cargo:rerun-if-changed={}", manifest.display());
+                }
+            }
+        }
+
         // ---- Rust staticlib(s) (per-crate target dir) ----------------
         // A Win32Dll is USER-mode: its main body crate AND its rust_lib
         // siblings build the STANDARD user-mode target (hardfloat, precompiled

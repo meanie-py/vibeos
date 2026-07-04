@@ -14,6 +14,7 @@ from pathlib import Path
 from . import build as build_mod
 from . import cargoswap, debugcmd, hostlock, tooling
 from . import gate as gate_mod
+from . import gdbengine as gdb_mod
 from . import prune as prune_mod
 from . import repro as repro_mod
 from . import smoke as smoke_mod
@@ -49,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("build", help="ninja + binary-lints + build-index + stamp")
     arch_arg(b)
     b.add_argument("--clean", action="store_true", help="cold: nuke all rust targets")
+    b.add_argument(
+        "--incremental",
+        action="store_true",
+        help="fast-iterate: rustc incremental (Rust sccache OFF; non-reproducible, not for gate)",
+    )
     b.add_argument("--no-check", action="store_true", help="skip auto source-lints")
     b.add_argument("--strict", action="store_true")
     b.add_argument(
@@ -133,6 +139,46 @@ def build_parser() -> argparse.ArgumentParser:
     dd.add_argument("run_a")
     dd.add_argument("run_b")
     dd.set_defaults(fn=debugcmd.debug, verb="diff")
+
+    # gdb — native-Python GDB engine over the windows-host backend (breakpoints fire
+    # under TCG, unlike native KVM). Full port of the qemu/*.sh debug toolkit.
+    gdbp = sub.add_parser("gdb", help="debug a windows-host QEMU via gdb (Python engine)")
+    gdbsub = gdbp.add_subparsers(dest="gverb", required=True)
+
+    gst = gdbsub.add_parser("start", help="launch a detached debug QEMU + gdbstub")
+    gst.add_argument("arch", choices=ACCEPTED_ARCHES)
+    gst.add_argument("--wait", action="store_true", help="halt at reset (-S) for boot-from-zero")
+    gst.set_defaults(fn=gdb_mod.cmd_start)
+
+    gstat = gdbsub.add_parser("status", help="gdbstub reachability + serial size for a run")
+    gstat.add_argument("run_id")
+    gstat.set_defaults(fn=gdb_mod.cmd_status)
+
+    gwf = gdbsub.add_parser("wait-for", help="poll the serial log for a regex")
+    gwf.add_argument("run_id")
+    gwf.add_argument("--pattern", required=True)
+    gwf.add_argument("--timeout", type=float, default=120.0)
+    gwf.set_defaults(fn=gdb_mod.cmd_wait_for)
+
+    gru = gdbsub.add_parser("run-until", help="break at a symbol, then run inspect verbs on hit")
+    gru.add_argument("run_id")
+    gru.add_argument("--break", dest="brk", required=True, help="breakpoint symbol/addr")
+    gru.add_argument("--timeout", type=float, default=180.0)
+    gru.add_argument("--then", action="append", help="verb to run on hit (repeatable)")
+    gru.set_defaults(fn=gdb_mod.cmd_run_until)
+
+    gin = gdbsub.add_parser("inspect", help="run one inspect verb (bt/triage-bugcheck/...)")
+    gin.add_argument("run_id")
+    gin.add_argument("verb", nargs=argparse.REMAINDER, help="e.g. bt 30 | triage-bugcheck")
+    gin.add_argument("--timeout", type=float, default=60.0)
+    gin.set_defaults(fn=gdb_mod.cmd_inspect)
+
+    gstop = gdbsub.add_parser("stop", help="kill the debug QEMU + clean staging")
+    gstop.add_argument("run_id")
+    gstop.set_defaults(fn=gdb_mod.cmd_stop)
+
+    gps = gdbsub.add_parser("ps", help="list debug runs + liveness")
+    gps.set_defaults(fn=gdb_mod.cmd_ps)
 
     cs = sub.add_parser(
         "cargo-swap", help="runtime gate: boot-swap cargo-driven ntdll DLLs + ntoskrnl (x86)"

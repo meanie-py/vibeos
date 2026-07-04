@@ -24,14 +24,18 @@ _PC = re.compile(r"\bPC[:=]\s*(0x[0-9A-Fa-f]+)|\b(?:RIP|EIP)[:=]\s*(0x[0-9A-Fa-f
 # specific; RETIRE an entry (delete it) once its root fix lands and a re-gate
 # confirms the signature no longer appears (verify-gone).
 KNOWN_FLAKES = [
-    {
-        # cross-worktree _tWinMain 0xF4 race (smss-csrss/ntdll/win32k all hit it).
-        "name": "tWinMain_0xF4_race",
-        "when": "bugcheck",
-        "any": ["[EXPLORER] _tWinMain"],
-        "code": "0xF4",
-        "note": "known win32k/smss suspended-thread race; re-run to confirm",
-    },
+    # RETIRED 2026-07-03: `tWinMain_0xF4_race` (0xF4 after `[EXPLORER] _tWinMain`).
+    # Did not reproduce in 36 desktop-reaching windows-host TCG boots (sequential +
+    # 3-wide contended) — under heavy contention boots die EARLIER at the
+    # service-startup storage stall / nettest handoff (separately-tracked flakes:
+    # nettest_explorer_race + the amd64-net EventLog/DcomLaunch stall), before ever
+    # reaching the post-explorer window this 0xF4 lived in. Gating the nettest spawn
+    # (now landed, see below) removes that shared explorer-handoff disruptor. With no
+    # live repro to root-cause and the signature verify-gone-by-absence, the entry is
+    # removed so any recurrence BLOCKS as a fresh BUGCHECK 0xF4 (we WANT to catch it)
+    # rather than being silently auto-retried. History: field-manual §"0xF4(0x3) at
+    # _tWinMain entered". Re-add a signature here only if a real recurrence is caught.
+    #
     # RETIRED 2026-07-03 — nettest_explorer_race: winlogon spawned nettest.exe
     # unconditionally every boot and raced explorer's csrss/win32k handoff
     # (~1/3 i386 boots hung; arm64 variant too). Root fix landed: netstack.sys
@@ -39,16 +43,20 @@ KNOWN_FLAKES = [
     # (no NIC) never spawn nettest — the marker "[WINLOGON] nettest.exe created"
     # can no longer appear on a plain boot, so the signature is unreachable.
     # Verify-gone: i386 smoke ×8 = 8/8 green; cold gate ×3 all-arch green.
-    {
-        # arm64: PspExitThread -> LpcExitThread System-thread-exit/timer race,
-        # intermittent on mainline. (Formerly listed after nettest_explorer_race,
-        # now retired; this catches an arm64 exit-path hang on its own.)
-        "name": "arm64_lpcexitthread_race",
-        "when": "hang",
-        "any": ["LpcExitThread"],
-        "none": ["[EXPLORER] _tWinMain entered"],
-        "note": "arm64 flake: PspExitThread->LpcExitThread exit race",
-    },
+    #
+    # RETIRED 2026-07-03 — arm64_lpcexitthread_race. The signature ("LpcExitThread"
+    # in serial, no _tWinMain) was a broad catch-all — that UART trace fires on
+    # every arm64 system-thread exit, so it matched any arm64 hang after an early
+    # thread exit. Its deterministic root causes were fixed earlier (fastfat
+    # FILE_CORRUPT constants 65c82a286a0, 0xC2 double-free fddff701ac9, fastfat
+    # recursion 0x50 3b3f9744c0a); the residual intermittent exit-path hang was
+    # arm64's per-thread kernel stack being mis-sized at i386's 12KB while the
+    # 64-bit sibling amd64 uses 48KB (deep Rust stacks + no arm64 exception stack
+    # + no GUI large-stack switch on arm64 → intermittent guard-page overflow on
+    # the exit teardown). Fixed by bumping arm64 KERNEL_STACK_SIZE to 0xC000
+    # (xdk/arm64/ke.h + ARM3/helpers.rs + the stack-bounds sites). An arm64 exit
+    # hang now classifies HANG_TIMEOUT (still gate-retryable) — the honest signal,
+    # no longer masked as an expected flake.
 ]
 
 

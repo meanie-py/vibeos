@@ -117,7 +117,7 @@ pub unsafe extern "system" fn SepRegQueryHelper(
     Status = ZwQueryValueKey(
         KeyHandle,
         &mut ValueNameString,
-        0, // KeyValuePartialInformation
+        2, // KeyValuePartialInformation
         &mut KeyValueInformation.Partial as *mut _ as PVOID,
         core::mem::size_of::<KeyValueInfo>() as ULONG,
         &mut ResultLength,
@@ -209,7 +209,7 @@ pub unsafe extern "system" fn SeRmInitPhase1() -> BOOLEAN {
         &mut SeLsaInitEvent,
         GENERIC_WRITE,
         &mut ObjectAttributes,
-        1, // NotificationEvent
+        0, // NotificationEvent (EVENT_TYPE: Notification=0, Synchronization=1)
         0u8,
     );
     if Status < 0 {
@@ -879,7 +879,7 @@ pub unsafe extern "system" fn SeGetLogonIdDeviceMap(
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut DirectoryName,
-        OBJ_KERNEL_HANDLE | 0x00000040 | OBJ_CASE_INSENSITIVE, // OBJ_OPENIF
+        OBJ_KERNEL_HANDLE | 0x00000080 | OBJ_CASE_INSENSITIVE, // OBJ_OPENIF
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
@@ -897,7 +897,7 @@ pub unsafe extern "system" fn SeGetLogonIdDeviceMap(
             InitializeObjectAttributes(
                 &mut ObjectAttributes,
                 &mut LinkName,
-                OBJ_KERNEL_HANDLE | 0x00000040 | OBJ_CASE_INSENSITIVE | OBJ_PERMANENT, // OBJ_OPENIF
+                OBJ_KERNEL_HANDLE | 0x00000080 | OBJ_CASE_INSENSITIVE | OBJ_PERMANENT, // OBJ_OPENIF
                 DirectoryHandle,
                 core::ptr::null_mut(),
             );

@@ -2142,6 +2142,7 @@ pub unsafe extern "C" fn KxSingleThreadWait(
 pub unsafe extern "C" fn KxDelayThreadWait(
     interval: *mut _LARGE_INTEGER,
     wait_mode: KPROCESSOR_MODE,
+    alertable: ntkrnl_sys::base::BOOLEAN,
     swappable: *mut ntkrnl_sys::base::BOOLEAN,
     due_time: *mut _LARGE_INTEGER,
     hand: *mut ntkrnl_sys::base::ULONG,
@@ -2150,7 +2151,7 @@ pub unsafe extern "C" fn KxDelayThreadWait(
     let swappable = opaque_ptr(swappable);
     let due_time = opaque_ptr(due_time);
     let hand = opaque_ptr(hand);
-    ntkrnl_sys::inline::ke::KxDelayThreadWait(interval, wait_mode, swappable, due_time, hand)
+    ntkrnl_sys::inline::ke::KxDelayThreadWait(interval, wait_mode, alertable, swappable, due_time, hand)
 }
 
 #[no_mangle]

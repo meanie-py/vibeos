@@ -32,7 +32,7 @@ unsafe extern "C" fn KdbpSafeReadMemory(dest: *mut c_void, src: *const c_void, s
         ptr::copy_nonoverlapping(TEST_BYTES.as_ptr().add(offset), dest as *mut u8, size);
         0 // STATUS_SUCCESS
     } else {
-        1 // STATUS_UNSUCCESSFUL
+        1 // nonzero = fail sentinel (NOT an NTSTATUS)
     }
 }
 
@@ -1836,7 +1836,7 @@ impl Disassembler {
         }
         let needed = addr_idx - self.max_fetched + 1;
         if self.max_fetched + needed > self.the_buffer.len() {
-            return Err(1); // STATUS_UNSUCCESSFUL
+            return Err(1); // internal fail sentinel (NOT an NTSTATUS)
         }
         let status = unsafe {
             KdbpSafeReadMemory(

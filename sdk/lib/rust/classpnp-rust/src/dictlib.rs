@@ -21,7 +21,7 @@ extern "C" {
 pub const MdlMappingNoExecute: u32 = 0;
 pub const NonPagedPoolNx: POOL_TYPE = NonPagedPool;
 pub const NonPagedPoolNxCacheAligned: POOL_TYPE = NonPagedPoolCacheAligned;
-pub const POOL_NX_ALLOCATION: u32 = 0;
+pub const POOL_NX_ALLOCATION: u32 = 0x0200;
 pub const DICTIONARY_SIGNATURE: u32 = 0x44696374; // 'tciD'
 
 #[repr(C)]

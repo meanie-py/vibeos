@@ -16,7 +16,7 @@ pub unsafe extern "system" fn CsrProbeForRead(Address: PVOID, Length: ULONG, Ali
     }
 
     if (Address as ULONG_PTR) & ((Alignment as ULONG_PTR) - 1) != 0 {
-        RtlRaiseStatus(0xC0000002u32 as NTSTATUS); // STATUS_DATATYPE_MISALIGNMENT
+        RtlRaiseStatus(0x80000002u32 as NTSTATUS); // STATUS_DATATYPE_MISALIGNMENT
     }
 
     Pointer = Address as *mut u8;
@@ -36,7 +36,7 @@ pub unsafe extern "system" fn CsrProbeForWrite(Address: PVOID, Length: ULONG, Al
     }
 
     if (Address as ULONG_PTR) & ((Alignment as ULONG_PTR) - 1) != 0 {
-        RtlRaiseStatus(0xC0000002u32 as NTSTATUS); // STATUS_DATATYPE_MISALIGNMENT
+        RtlRaiseStatus(0x80000002u32 as NTSTATUS); // STATUS_DATATYPE_MISALIGNMENT
     }
 
     Pointer = Address as *mut u8;

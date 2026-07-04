@@ -83,7 +83,7 @@ extern "C" {
 }
 
 const IO_NO_INCREMENT: u8 = 0;
-const CurrentApcEnvironment: u8 = 0;
+const CurrentApcEnvironment: u8 = 0x02;
 const ICIF_PROBE_READ_WRITE: ULONG = 0x00000003;
 
 #[no_mangle]

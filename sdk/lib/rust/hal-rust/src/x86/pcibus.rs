@@ -64,7 +64,7 @@ const HIGH_LEVEL: KIRQL = 31;
 #[cfg(target_arch = "x86_64")]
 const HIGH_LEVEL: KIRQL = 15;
 const MAXULONG: ULONG = 0xFFFF_FFFF;
-const CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE: USHORT = 0x0001;
+const CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE: USHORT = 0x00;
 const CM_RESOURCE_MEMORY_READ_WRITE: USHORT = 0x0000;
 const CM_RESOURCE_PORT_IO: USHORT = 0x0001;
 
@@ -1687,7 +1687,7 @@ pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_I
         // It exists, so let's query it
         status = ZwQueryKey(
             card_list_handle,
-            1, // KeyFullInformation
+            2, // KeyFullInformation
             &raw mut key_information as *mut _ as _,
             core::mem::size_of::<KEY_FULL_INFORMATION>() as ULONG,
             &raw mut result_length,

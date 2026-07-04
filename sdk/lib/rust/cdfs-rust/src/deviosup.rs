@@ -223,7 +223,7 @@ const IRP_CONTEXT_FLAG_TOP_LEVEL: u32 = 0x00000010; // cdstruc.h
 // Constants (TODO: replace with correct numeric values)
 const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 0x0100;
 const VCB_STATE_AUDIO_DISK: u32 = 0x80;
-const NotificationEvent: u32 = 1;
+const NotificationEvent: u32 = 0x00;
 const STATUS_CANT_WAIT: NTSTATUS = 0xC00000D8u32 as i32; // real value (was fabricated 0xC0002001)
 const STATUS_PENDING: NTSTATUS = 0x00000103;
 #[no_mangle]
