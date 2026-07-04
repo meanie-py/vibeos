@@ -1,7 +1,14 @@
 # explorer.exe → Rust Translation Plan
 
-**Status:** ACTIVE (2026-07-04). util.cpp swap BOOTED (i386 smoke green); scanner
-extracts C++ methods. See the Status Log at the bottom for the current edge.
+**Status:** ✅ **COMPLETE (2026-07-04) — ALL 22 explorer.exe .cpp files are Rust
+and the shell boots to a graphical desktop on i386.** Every file swapped via the
+cohab pattern (per-file `# replaced by Rust` in CMakeLists + `extern "C"` factory
+in precomp.h + `#[no_mangle]` Rust), each atomic swap boot-gated and committed.
+The only C++ TUs left in the explorer target are the two intentional variadic/
+method shims (util_vararg.cpp, settings_shim.cpp). Remaining verification (not
+yet done): a `--clean` i386 build to trust the WARM-build greens, and amd64/arm64
+boots (cargo-check-clean ×3 throughout, but only i386 was booted this run). See
+the Status Log for the full per-file history.
 *(§1–§6 below are the 2026-07-03 scoping — still the design of record, but two
 facts have moved: the scanner now extracts C++ methods (§2's "blindness" and
 §5's tier-B/C extraction blocker are FIXED), and the tier-A substrate
