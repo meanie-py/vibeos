@@ -236,7 +236,8 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
         # the gate retries instead of flapping red. A REAL netstack regression
         # also fails the retry, so it still ends red — retries only absorb
         # nondeterminism, never determinism.
-        runs = [s for s in run.stages if s.name.startswith("run")]
+        # boot stage is "boot" for a single boot, "runN" under --repeat
+        runs = [s for s in run.stages if s.name == "boot" or s.name.startswith("run")]
         boots_green = bool(runs) and all(s.status == "ok" for s in runs)
         if boots_green and not run.classification:
             run.classification = "NET_FLAKE"
