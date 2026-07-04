@@ -970,6 +970,36 @@ pub mod externs {
         DPA_InsertPtr(hdpa, 0x7FFF_FFFF, p)
     }
 
+    // shell32 PIDL + folder helpers (startctxmnu). stdcall → extern "system".
+    use winsrv_sys::winsrv::{INT, LPCSTR, LPSTR};
+    use crate::com::{IShellFolder, LPCITEMIDLIST, LPITEMIDLIST};
+    extern "system" {
+        pub fn SHCloneSpecialIDList(hwnd: HWND, csidl: INT, fCreate: BOOL) -> LPITEMIDLIST;
+        pub fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
+        pub fn ILFindLastID(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
+        pub fn ILRemoveLastID(pidl: LPITEMIDLIST) -> BOOL;
+        pub fn ILFree(pidl: LPITEMIDLIST);
+        pub fn SHGetDesktopFolder(ppshf: *mut *mut IShellFolder) -> HRESULT;
+        pub fn SHGetFolderPathW(
+            hwnd: HWND,
+            nFolder: INT,
+            hToken: HANDLE,
+            dwFlags: DWORD,
+            pszPath: LPWSTR,
+        ) -> HRESULT;
+        pub fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, pszPath: LPWSTR) -> BOOL;
+        pub fn IsUserAnAdmin() -> BOOL;
+        pub fn SHAnsiToUnicode(src: LPCSTR, dst: LPWSTR, iLen: INT) -> DWORD;
+        pub fn SHUnicodeToAnsi(src: LPCWSTR, dst: LPSTR, iLen: INT) -> INT;
+    }
+    pub const CSIDL_STARTMENU: INT = 0x000b;
+    pub const CSIDL_COMMON_STARTMENU: INT = 0x0016;
+    pub const SHGFP_TYPE_CURRENT: DWORD = 0;
+    pub const REST_NOCOMMONGROUPS: u32 = 0x0040_0000;
+    pub const IDS_PROPERTIES: UINT = 720;
+    pub const IDS_OPEN_ALL_USERS: UINT = 718;
+    pub const IDS_EXPLORE_ALL_USERS: UINT = 719;
+
     // version.dll
     extern "system" {
         pub fn GetFileVersionInfoSizeW(lptstrFilename: LPCWSTR, lpdwHandle: *mut DWORD) -> DWORD;

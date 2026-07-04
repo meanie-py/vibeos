@@ -14,7 +14,8 @@ list(APPEND SOURCE
     # TaskbarSettings::Save/Load method entry points forward from settings_shim.cpp.
     settings_shim.cpp
     # shellservice.cpp — replaced by Rust (explorer-rust shellservice.rs)
-    startctxmnu.cpp
+    # startctxmnu.cpp — replaced by Rust (explorer-rust startctxmnu.rs); the
+    # single-interface IContextMenu Start-button context menu.
     # startmnu.cpp — replaced by Rust (explorer-rust startmnu.rs)
     startmnucust.cpp
     # startmnusite.cpp — replaced by Rust (explorer-rust startmnusite.rs); the

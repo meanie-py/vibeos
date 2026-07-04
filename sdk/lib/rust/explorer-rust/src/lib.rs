@@ -39,6 +39,9 @@ pub mod explorer {
     // Tier C — startmnusite.cpp: CStartMenuSite (start-menu site COM object,
     // IServiceProvider/ITrayPriv/IOleCommandTarget/IMenuPopup).
     pub mod startmnusite;
+    // Tier C — startctxmnu.cpp: CStartMenuBtnCtxMenu (Start-button context menu,
+    // single-interface IContextMenu; consumes IShellFolder + PIDLs).
+    pub mod startctxmnu;
     // TODO(next round): startmnucust.rs is translated (.rs present) but NOT
     // yet integrated — it needs the TaskbarSettings/TW_STUCKRECTS2 bitfield
     // mirror + comctl32 treeview substrate in explorer-sys. startmnucust.cpp

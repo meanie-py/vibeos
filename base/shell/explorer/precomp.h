@@ -361,7 +361,9 @@ HRESULT CTrayBandSite_CreateInstance(IN ITrayWindow *tray, IN IDeskBand* pTaskBa
 /*
  * startctxmnu.cpp
  */
-HRESULT CStartMenuBtnCtxMenu_CreateInstance(ITrayWindow * TrayWnd, IN HWND hWndOwner, IContextMenu ** ppCtxMenu);
+/* startctxmnu.cpp → Rust (explorer-rust startctxmnu.rs); C linkage so the
+ * traywnd.cpp caller binds the Rust #[no_mangle] extern "C" factory. */
+extern "C" HRESULT CStartMenuBtnCtxMenu_CreateInstance(ITrayWindow * TrayWnd, IN HWND hWndOwner, IContextMenu ** ppCtxMenu);
 
 /*
  * startmnu.cpp
