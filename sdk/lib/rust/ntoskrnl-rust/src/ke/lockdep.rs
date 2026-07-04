@@ -507,6 +507,45 @@ pub fn lockdep_check_park(thread: usize, lock: usize, wanted_mode: u32) {
     }
 }
 
+/// FAULT-UNDER-WS tripwire (field-manual §9.13 family): MmAccessFault passes
+/// the WS lock(s) its handling will acquire; if the faulting thread ALREADY
+/// holds one of them, report AT THE FAULT — with the faulting address — rather
+/// than (maybe) at park time. This adds coverage the park check cannot give:
+/// a shared re-acquire of a shared-held pushlock SUCCEEDS without parking
+/// (silent recursion, no self-deadlock record), and the park-time report has
+/// no fault context (which address, that a #PF triggered the re-acquire).
+/// Prints immediately because in the excl case the census may never run.
+pub fn lockdep_fault_check(thread: usize, fault_addr: usize, ws_locks: &[usize]) {
+    if thread == 0 {
+        return;
+    }
+    let t = match thread_slot(thread, false) {
+        Some(t) => t,
+        None => return,
+    };
+    for h in t.held.iter() {
+        let lk = h.lock.load(Relaxed);
+        if lk == 0 {
+            continue;
+        }
+        if ws_locks.iter().any(|&w| w != 0 && w == lk) {
+            let mode = h.mode.load(Relaxed);
+            let site = h.site.load(Relaxed);
+            crate::dbg_print!(
+                b"[LOCKDEP] FAULT-UNDER-WS: thread=%p faults on %p while holding WS lock=%p(%s) site=%p - the fault path re-acquires it (self-deadlock / silent recursion)\n\0",
+                thread as *const (),
+                fault_addr as *const (),
+                lk as *const (),
+                mode_name(mode),
+                site as *const (),
+            );
+            // Violation record for the census/GDB decoders: site2 = fault addr.
+            record_violation(KIND_SELF_DEADLOCK, thread, lk, 0, 0, site, fault_addr, mode, 0);
+            return;
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn record_violation(
     kind: u32,
