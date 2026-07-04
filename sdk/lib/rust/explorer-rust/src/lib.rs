@@ -54,6 +54,9 @@ pub mod explorer {
     // + CHardErrorThread. IOleWindow window class; embeds a subclassed comctl32
     // toolbar (the task buttons) + a hard-error balloon thread.
     pub mod taskswnd;
+    // trayprop.cpp — Taskbar & Start-Menu Properties dialog (3 WTL property
+    // pages → flat DLGPROCs). Not boot-path (runs on user action).
+    pub mod trayprop;
     // TODO(next round): startmnucust.rs is translated (.rs present) but NOT
     // yet integrated — it needs the TaskbarSettings/TW_STUCKRECTS2 bitfield
     // mirror + comctl32 treeview substrate in explorer-sys. startmnucust.cpp

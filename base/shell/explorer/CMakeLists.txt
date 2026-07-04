@@ -35,7 +35,8 @@ list(APPEND SOURCE
     # tier-C CWindowImpl+CComObjectRootEx+IOleWindow class on explorer_sys::server.
     traydeskbtn.cpp
     trayntfy.cpp
-    trayprop.cpp
+    # trayprop.cpp — replaced by Rust (explorer-rust trayprop.rs); the Taskbar &
+    # Start-Menu Properties dialog (3 WTL property pages → flat DLGPROCs).
     traywnd.cpp
     # util.cpp — replaced by Rust (sdk/lib/rust/explorer-rust/src/explorer/util.rs);
     # only the C-variadic FormatMenuString shell stays C++ (util_vararg.cpp).

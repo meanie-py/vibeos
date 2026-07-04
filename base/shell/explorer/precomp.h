@@ -287,7 +287,9 @@ static inline VOID DoFinishStartupItems() { ReleaseStartupMutex(); }
  * trayprop.h
  */
 
-VOID
+/* trayprop.cpp → Rust (explorer-rust trayprop.rs); C linkage so the traywnd.cpp
+ * caller binds the Rust #[no_mangle] extern "C" factory. */
+extern "C" VOID
 DisplayTrayProperties(IN HWND hwndOwner, IN HWND hwndTaskbar);
 
 /*
