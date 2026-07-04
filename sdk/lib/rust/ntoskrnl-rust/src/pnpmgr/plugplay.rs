@@ -234,9 +234,9 @@ const PlugPlayControlGetDeviceDepth: ULONG = 15;
 const PlugPlayControlQueryDeviceRelations: ULONG = 16;
 const PlugPlayControlResetDevice: ULONG = 20;
 
-const DeviceClassChangeEvent: ULONG = 3;
-const DeviceInstallEvent: ULONG = 2;
-const TargetDeviceChangeEvent: ULONG = 0;
+const DeviceClassChangeEvent: ULONG = 0x02;
+const DeviceInstallEvent: ULONG = 0x04;
+const TargetDeviceChangeEvent: ULONG = 0x01;
 
 const SynchronizationEvent: ULONG = 0x01;
 const UserRequest: ULONG = 0x06;

@@ -342,7 +342,14 @@ def parse_c_enums(text: str, enum_acc: dict[str, set]) -> None:
     value for the rest of that enum. The caller drops any name that collected
     more than one distinct value (ambiguous — the same identifier lives in
     multiple enums, e.g. `UserRequest`/`Isa`) so we never false-positive on it."""
-    for body in re.findall(r"\benum\b[^{};]*\{([^}]*)\}", text):
+    for raw_body in re.findall(r"\benum\b[^{};]*\{([^}]*)\}", text):
+        # Preprocessor lines inside enum bodies (e.g. GateWait behind
+        # `#if (NTDDI_VERSION >= NTDDI_WS03)` in ndk/ketypes.h) used to poison
+        # the tail of the enum. Strip them and take the union of all branches —
+        # a member whose value differs across branches then collects multiple
+        # values and is dropped by the ambiguity rule below, which is the safe
+        # outcome for arch/version-divergent enums.
+        body = "\n".join(ln for ln in raw_body.splitlines() if not ln.lstrip().startswith("#"))
         # Strip comments, then split members on top-level commas.
         body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
         body = re.sub(r"//.*", "", body)
@@ -394,8 +401,18 @@ def build_c_catalog(reactos_root: Path, include_enums: bool = False) -> dict[str
         # `const AdjustUnwait = 3` (header: 1) ship in ke/wait.rs and silently
         # kill the unwait priority boost for every thread wakeup (found by the
         # 2026-07-04 dispatcher audit). Keep it in the catalog so `--enums`
-        # catches dispatcher-enum drift.
+        # catches dispatcher-enum drift. The sibling ndk type headers joined it
+        # the same day (info classes, LPC message types, object/section enums).
+        # NB: some ndk enums legitimately diverge between the NTOS_MODE_USER
+        # and kernel branches (e.g. KWAIT_REASON's WrGuardedMutex: 22 user-mode
+        # vs 35 kernel/xdk) — the multi-value ambiguity rule drops those.
         reactos_root / "sdk/include/ndk/ketypes.h",
+        reactos_root / "sdk/include/ndk/pstypes.h",
+        reactos_root / "sdk/include/ndk/obtypes.h",
+        reactos_root / "sdk/include/ndk/mmtypes.h",
+        reactos_root / "sdk/include/ndk/extypes.h",
+        reactos_root / "sdk/include/ndk/lpctypes.h",
+        reactos_root / "sdk/include/ndk/cmtypes.h",
         reactos_root / "sdk/include/ndk/iotypes.h",
         reactos_root / "sdk/include/reactos/drivers/ntddrdsk.h",
     ]
@@ -498,21 +515,29 @@ def build_c_catalog(reactos_root: Path, include_enums: bool = False) -> dict[str
 
 def parse_rust_const(line: str) -> tuple[str, int] | None:
     """Parse a Rust const definition, return (name, value) or None."""
-    # Pattern: const NAME: TYPE = VALUE;  (NAME may be mixed-case, e.g.
-    # enum-derived constants like NonPagedPoolNx — not just SCREAMING_CASE)
-    m = re.match(r"const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*\w+\s*=\s*(.+?)\s*;", line.strip())
+    # Pattern: [pub[(crate|super|in …)]] const NAME: TYPE = VALUE;  (NAME may be
+    # mixed-case, e.g. enum-derived constants like NonPagedPoolNx — not just
+    # SCREAMING_CASE). TYPE may be path-qualified (ntkrnl_sys::ddk::ULONG).
+    # `pub const` was invisible until 2026-07-04 — ~27K kernel-crate consts
+    # escaped the checker (the AdjustUnwait=3 bug would have been undetectable
+    # had the translator written `pub const`).
+    m = re.match(
+        r"(?:pub(?:\([^)]*\))?\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[\w:]+\s*=\s*(.+?)\s*;",
+        line.strip(),
+    )
     if not m:
         return None
     name, expr = m.group(1), m.group(2).strip()
 
     # Hex literal
-    hm = re.match(r"(0x[0-9A-Fa-f_]+)(?:_?u\d+)?", expr)
+    hm = re.match(r"(0x[0-9A-Fa-f_]+)(?:_?[ui]\d+)?", expr)
     if hm:
         return name, int(hm.group(1).replace("_", ""), 16)
 
-    # Decimal literal
-    if expr.replace("_", "").lstrip("-").isdigit():
-        val = int(expr.replace("_", ""))
+    # Decimal literal (optionally type-suffixed: 3u8, 2_i32, 5usize)
+    dm = re.match(r"(-?[0-9][0-9_]*)(?:_?[ui](?:8|16|32|64|size))?$", expr)
+    if dm:
+        val = int(dm.group(1).replace("_", ""))
         if val < 0:
             val = val & 0xFFFFFFFF
         return name, val
@@ -546,7 +571,12 @@ def fix_const_line(line: str, name: str, c_val: int) -> str:
     # parse_rust_const strips the line so it detects them, but without this the
     # rewrite silently no-op'd on any `    const NAME = ...` (e.g. cdrom-rust's
     # IOCTL_CDROM_GET_INQUIRY_DATA / IOCTL_SCSI_PASS_THROUGH_DIRECT_EX).
-    m = re.match(r"(\s*const\s+" + re.escape(name) + r"\s*:\s*\w+\s*=\s*)(.+?)(;.*)", line.rstrip())
+    m = re.match(
+        r"(\s*(?:pub(?:\([^)]*\))?\s+)?const\s+"
+        + re.escape(name)
+        + r"\s*:\s*[\w:]+\s*=\s*)(.+?)(;.*)",
+        line.rstrip(),
+    )
     if not m:
         return line
     prefix, _old_val, suffix = m.group(1), m.group(2), m.group(3)
@@ -571,6 +601,17 @@ def fix_const_line(line: str, name: str, c_val: int) -> str:
 # Constants that differ per architecture (#ifdef _WIN64 etc.) — skip auto-fix
 ARCH_DEPENDENT_CONSTANTS = {
     "PORT_MAXIMUM_MESSAGE_LENGTH",  # 512 on 64-bit, 256 on 32-bit
+    # ndk/mmtypes.h defines this TWICE under a bitness #ifdef (0x7FFFFFFF vs
+    # 0x7FF). The flat catalog keeps whichever it parses last, so a correct
+    # per-arch Rust value would false-mismatch. Skip.
+    "MMWSLE_PREVIOUS_FREE_MASK",
+    # PS_QUOTA_TYPE's max sentinel: the enum has NTDDI_LONGHORN-gated members
+    # (PsWorkingSet, PsCpuRate) that the flat catalog counts but the build's
+    # NTDDI level excludes → catalog says 5, real build (bindgen) is 3. It's a
+    # QuotaEntry[] loop bound, so a wrong value is an OOB read — the checker
+    # must NOT push the raw-header count here. (Cross-check named enum maxes
+    # against bindgen, not the raw header.)
+    "PsQuotaTypes",
 }
 
 
@@ -589,8 +630,22 @@ def verify_file(rs_path: Path, catalog: dict[str, int], fix: bool = False) -> li
         if name in ARCH_DEPENDENT_CONSTANTS:
             continue
 
+        # Pool tags (`TAG_*`) are compared unreliably: the C catalog parses
+        # `#define TAG_MDL ' LDM'` via parse_c_multichar (big-endian nibble
+        # order) while the Rust side is `u32::from_le_bytes(*b"...")` — the two
+        # conventions disagree on byte order, so every tag "mismatches" even
+        # when both spell the same 4 chars. Skip until the comparison is made
+        # byte-order-aware. (Tag drift is cosmetic — pool-dump display — not
+        # boot-affecting; a dedicated tag check is tracked separately.)
+        if name.startswith("TAG_"):
+            continue
+
         if name in catalog:
             c_val = catalog[name]
+            # Signed C values (e.g. THREAD_BASE_PRIORITY_MIN = -2) vs Rust's
+            # 32-bit-masked parse (0xFFFFFFFE): compare as u32.
+            if c_val < 0:
+                c_val = c_val & 0xFFFFFFFF
             if rust_val != c_val:
                 mismatches.append(
                     {

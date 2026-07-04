@@ -417,7 +417,7 @@ pub unsafe extern "system" fn CmpSetValueKeyExisting(
     return STATUS_SUCCESS;
 }
 
-const STATUS_NO_LOG_SPACE: i32 = -1073741670i32;
+const STATUS_NO_LOG_SPACE: i32 = 0xC000017D_u32 as i32;
 const CM_KEY_VALUE_SMALL: u32 = 4;
 const CM_KEY_VALUE_SPECIAL_SIZE: u32 = 0x80000000;
 const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;

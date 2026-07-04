@@ -98,9 +98,9 @@ use ntkrnl_sys::ddk::{
 
 // Types/functions not in bindgen — define locally
 const VadNone: u32 = 0;
-const VadAwe: u32 = 5;
+const VadAwe: u32 = 0x03;
 const VadDevicePhysicalMemory: u32 = 1;
-const VadLargePages: u32 = 3;
+const VadLargePages: u32 = 0x05;
 const VadImageMap: u32 = 2;
 const VadRotatePhysical: u32 = 6;
 const VadLargePageSection: u32 = 7;

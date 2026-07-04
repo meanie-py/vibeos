@@ -106,15 +106,63 @@ NotificationEvent (arm64), `SeLsaInitEvent` created as SynchronizationEvent
 waiter), and a Count=1-masked WaitAll in `MiZeroPageThread`. All fixed
 2026-07-04.
 
+**Second pass 2026-07-04 — the checker had bigger blind spots than the catalog.**
+Auditing the checker ITSELF (prompted by "what else is missing?") found the
+`parse_rust_const` regex silently ignored:
+- **`pub const` / `pub(crate) const`** — the leading visibility kept ~27K
+  kernel-crate consts entirely invisible. (The AdjustUnwait bug would have been
+  undetectable had the translator written `pub const`.)
+- **Path-qualified types** (`const X: ntkrnl_sys::ddk::ULONG = …`) — the `\w+`
+  type pattern didn't match `::`.
+- **Type-suffixed decimals** (`2u8`, `5usize`) — only hex-suffixed and bare
+  decimals parsed.
+- Signed C enum values (`-2`) compared against Rust's u32-masked parse.
+
+Fixing those + adding the ndk type headers (pstypes/obtypes/mmtypes/extypes/
+lpctypes/cmtypes) surfaced **41 more real constant bugs**, all fixed the same
+day — headlined by the **LPC message-type enum** (LPC_DATAGRAM/PORT_CLOSED/
+CLIENT_DIED/EXCEPTION/DEBUG_EVENT/ERROR_EVENT all shifted in `lpc/send.rs`,
+where they gate `if MessageType < LPC_DATAGRAM || MessageType > LPC_CLIENT_DIED`
+— i.e. a live LPC validation window off by the drift, in the csrss-CreateProcess
+reply path the amd64 wedge sits in), the **`MEMORY_PRIORITY_FOREGROUND` writer/
+reader disagreement** (ps wrote 0, scheduler read `==2` → foreground boost never
+applied), swapped Ps pool-quota/priority enums, wrong Vad types (`VadAwe`/
+`VadLargePages`/`VadDevicePhysicalMemory` — mixed in the same functions with
+hardcoded-correct header literals, so provably the outliers), and ~10 wrong
+hand-written STATUS codes in ntkrnl-sys/constants.rs.
+
+**Trap the auto-fix walked into (and how it was caught):** `PsQuotaTypes` — a
+PS_QUOTA_TYPE *max sentinel* used as a `QuotaEntry[]` loop bound. The flat
+header parse counted the `NTDDI_LONGHORN`-gated members (`PsWorkingSet`,
+`PsCpuRate`) that this build's NTDDI level excludes, so the catalog said 5 while
+the real value (bindgen ground truth) is 3. `--fix` "corrected" 3→5, which would
+have been an OOB read over the quota array. Caught by cross-checking all 41
+fixes against `bindgen_amd64.rs` (compiled at the real NTDDI) before gating —
+**always validate named enum maxes / version-conditional members against bindgen,
+not the raw header.** Reverted + added to `ARCH_DEPENDENT_CONSTANTS`. Lesson for
+the tool: the `--enums` catalog should ideally be built from bindgen output (NTDDI-
+correct) rather than raw `#ifdef`-laden headers; until then, sentinel/max members
+of version-gated enums are a known FP class.
+
+Two more FP classes were identified and guarded, NOT fixed:
+- **`TAG_*` pool tags** — Rust `u32::from_le_bytes(*b"…")` vs the checker's
+  big-endian `parse_c_multichar` disagree on byte order; every tag
+  "mismatches" though both spell the same 4 chars. Skipped (cosmetic pool-dump
+  display; a byte-order-aware tag check is the proper follow-up).
+- **`MMWSLE_PREVIOUS_FREE_MASK`** — two arch-dependent `#define`s
+  (0x7FFFFFFF/0x7FF); added to `ARCH_DEPENDENT_CONSTANTS`.
+
 Remaining work:
-- The `--enums` finder is not a gate (FP-prone on generic names). Consider a
+- The `--enums` finder is still not a gate (FP-prone on generic names) — but
+  note the multi-value ambiguity rule means anything it *does* report resolved
+  to exactly one header value, which is a strong real-bug signal. Consider a
   scoped gate: kernel crates only, dispatcher-relevant enums only.
-- Only `const NAME: T = value;` lines and `literal /* Tag */` comments are
-  checked — UNtagged inline literals at call sites (`KeInitializeEvent(e, 1,
-  0)` with no comment) still escape. A tree-sitter pass mapping
-  known-signature call args to enum params would close that.
-- Consider more NDK headers in the catalog (pstypes.h, obtypes.h, …) + a
-  triaged baseline.
+- A proper byte-order-aware `TAG_*` check (the one class deliberately skipped).
+- Untagged inline literals at call sites (`KeInitializeEvent(e, 1, 0)` with no
+  `/* … */`) still escape — `scan_inline_flag_literals` only catches the
+  *commented* ones. A tree-sitter pass mapping known-signature call args to
+  enum params would close that.
+- More NDK/PSDK headers + a triaged baseline so `--enums` can eventually gate.
 
 ---
 

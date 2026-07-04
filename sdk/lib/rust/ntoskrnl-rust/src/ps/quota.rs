@@ -55,7 +55,7 @@ const TAG_QUOTA_BLOCK: ULONG = 0x62517350;
 const PsNonPagedPool: usize = 0;
 const PsPagedPool: usize = 1;
 const PsPageFile: usize = 2;
-const PsQuotaTypes: usize = 3;
+const PsQuotaTypes: usize = 3; // MaximumQuotaType for this NTDDI: NonPagedPool/PagedPool/PageFile (PsWorkingSet/PsCpuRate are NTDDI_LONGHORN-gated OUT); also the QuotaEntry[] loop bound — do NOT raise to the raw-header count of 5
 
 type PS_QUOTA_TYPE = usize;
 

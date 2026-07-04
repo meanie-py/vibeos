@@ -74,8 +74,8 @@ const ThreadBreakOnTermination: THREADINFOCLASS = _THREADINFOCLASS_ThreadBreakOn
 const ThreadIsTerminated: THREADINFOCLASS = _THREADINFOCLASS_ThreadIsTerminated;
 
 // Quota pool index constants
-const PsPagedPool: usize = 0;
-const PsNonPagedPool: usize = 1;
+const PsPagedPool: usize = 0x01;
+const PsNonPagedPool: usize = 0x00;
 const PsPageFile: usize = 2;
 
 // TLS constants

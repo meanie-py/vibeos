@@ -1164,7 +1164,7 @@ pub const HighPagePriority: ULONG = 2;
 
 pub const TableFoundNode: ULONG = 1;
 
-pub const VadDevicePhysicalMemory: ULONG = 5;
+pub const VadDevicePhysicalMemory: ULONG = 0x01;
 
 // PrototypePte — soft PTE template used in MmArmAccessFault when constructing
 // a prototype PTE for an address whose VAD has FirstPrototypePte set
