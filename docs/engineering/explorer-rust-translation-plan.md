@@ -396,6 +396,21 @@ i386 smoke `✓ boot`, committed clean:
   CLSID). Subagent-drafted, integrating (the biggest so far; only fix needed was
   disambiguating `IStream` — it exists in BOTH winsrv bindgen and our com).
 
+**Status after the overnight run: 15 of 22 explorer .cpp files are Rust + boot
+i386.** Tier A (6): util/notifyiconscust/rshell/shellservice/startmnu/startup.
+Tier B (2): settings/desktop. Tier C (7): trayclock/taskband/startmnusite/
+startctxmnu/tbsite/syspager/taskswnd — ALL the independent tier-C files are done
+(each an atomic per-class swap, boot-gated, committed). syspager (`166ad4f`) +
+taskswnd (`db2548c`) both embed a subclassed comctl32 toolbar (GWLP_USERDATA
+`this` + CallWindowProcW super-proc chain, arch-split subclass proc) and both
+compiled clean ×3 nearly first-try from the subagent drafts.
+**Remaining 7 (the hardest):** the entangled taskbar-core cluster — traywnd
+(3.7K, drafting) + appbar (base) + CStartButton (member) as ONE Rust file, then
+trayntfy + traydeskbtn (button embedded in trayntfy, accessed by traywnd) — plus
+the standalone trayprop (property sheet, drafting), explorer.cpp (wWinMain entry
++ the g_* globals that explorer_sys::globals currently externs — highest risk,
+do last), and startmnucust (treeview customize dialog; a raw inert .rs exists).
+
 **Fan-out model that works:** the reusable substrate (COM vtables/IIDs/structs
 in `explorer_sys::com`, shell externs in `::externs`) MUST be added centrally by
 the integrator (subagents can't touch shared files); the class body follows the
