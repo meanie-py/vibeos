@@ -1,0 +1,14 @@
+[package]
+name = "explorer-sys"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# rlib declaration dependency (mirrors winlogon-sys): COM vtable/object types,
+# the shlwapi/version.dll externs winsrv-sys stops short of, and the extern
+# homes for explorer.exe's C++ globals during cohabitation.
+crate-type = ["rlib"]
+
+[dependencies]
+ntdll-sys = { path = "../ntdll-sys" }
+winsrv-sys = { path = "../winsrv-sys" }

@@ -88,6 +88,12 @@ SetWindowExStyle(IN HWND hWnd,
     return SHSetWindowBits(hWnd, GWL_EXSTYLE, dwStyleMask, dwStyle);
 }
 
+/* util.cpp is replaced by Rust (explorer-rust util.rs) — the definitions are
+ * #[no_mangle] extern "C", so the declarations must carry C linkage too.
+ * FormatMenuString keeps its C-variadic shell in util_vararg.cpp (also
+ * extern "C") forwarding to the Rust FormatMenuStringV. */
+extern "C" {
+
 HMENU
 LoadPopupMenu(IN HINSTANCE hInstance,
               IN LPCWSTR lpMenuName);
@@ -107,15 +113,18 @@ FormatMenuString(IN HMENU hMenu,
                  IN UINT uFlags,
                  ...);
 
-BOOL GetRegValue(IN LPCWSTR pszSubKey, IN LPCWSTR pszValueName, IN BOOL bDefaultValue);
 BOOL SetRegDword(IN LPCWSTR pszSubKey, IN LPCWSTR pszValueName, IN DWORD dwValue);
 BOOL GetAdvancedBool(IN LPCWSTR pszValueName, IN BOOL bDefaultValue);
 BOOL SetAdvancedDword(IN LPCWSTR pszValueName, IN DWORD dwValue);
+
+} /* extern "C" */
 
 /*
  *  rshell.c
  */
 
+/* rshell.cpp is replaced by Rust (explorer-rust rshell.rs) — C linkage. */
+extern "C" {
 VOID InitRSHELL(VOID);
 HRESULT WINAPI _CStartMenu_CreateInstance(REFIID riid, void **ppv);
 HANDLE WINAPI _SHCreateDesktop(IShellDesktopTray *ShellDesk);
@@ -124,6 +133,7 @@ BOOL WINAPI _WinList_Init(void);
 void WINAPI _ShellDDEInit(BOOL bInit);
 HRESULT WINAPI _CBandSiteMenu_CreateInstance(REFIID riid, void **ppv);
 HRESULT WINAPI _CBandSite_CreateInstance(LPUNKNOWN pUnkOuter, REFIID riid, void **ppv);
+} /* extern "C" */
 
 /*
  * traywnd.c
@@ -175,13 +185,18 @@ DECLARE_INTERFACE_(ITrayWindow, IUnknown)
 #define ITrayWindow_NotifyFullScreenToAppBars(p,a,b) (p)->lpVtbl->NotifyFullScreenToAppBars(p,a,b)
 #endif
 
-HRESULT CreateTrayWindow(ITrayWindow ** ppTray);
+/* traywnd.cpp → Rust (explorer-rust traywnd.rs); C linkage so the explorer.cpp
+ * caller (still C++) binds the Rust #[no_mangle] extern "C" factory. */
+extern "C" HRESULT CreateTrayWindow(ITrayWindow ** ppTray);
 
+/* C linkage: called from Rust (explorer-rust startup.rs/desktop paths). */
+extern "C" {
 VOID
 TrayProcessMessages(IN OUT ITrayWindow *Tray);
 
 VOID
 TrayMessageLoop(IN OUT ITrayWindow *Tray);
+} /* extern "C" */
 
 /*
  * settings.c
@@ -248,17 +263,25 @@ extern TaskbarSettings g_TaskbarSettings;
 /*
  * shellservice.cpp
  */
+/* shellservice.cpp is replaced by Rust (explorer-rust shellservice.rs). */
+extern "C" {
 HRESULT InitShellServices(HDPA * phdpa);
 HRESULT ShutdownShellServices(HDPA hdpa);
+} /* extern "C" */
 
 /*
  * startup.cpp
  */
 
+/* startup.cpp is replaced by Rust (explorer-rust startup.rs) — C linkage on
+ * the definitions; the no-arg ProcessStartupItems overload stays a C++
+ * inline wrapper (C++ allows one "C"-linkage function among overloads). */
+extern "C" {
 VOID ReleaseStartupMutex();
 VOID ProcessRunOnceItems();
 BOOL DoStartStartupItems(ITrayWindow *Tray);
 INT ProcessStartupItems(BOOL bRunOnce);
+} /* extern "C" */
 static inline INT ProcessStartupItems() { return ProcessStartupItems(FALSE); }
 static inline VOID DoFinishStartupItems() { ReleaseStartupMutex(); }
 
@@ -266,31 +289,39 @@ static inline VOID DoFinishStartupItems() { ReleaseStartupMutex(); }
  * trayprop.h
  */
 
-VOID
+/* trayprop.cpp → Rust (explorer-rust trayprop.rs); C linkage so the traywnd.cpp
+ * caller binds the Rust #[no_mangle] extern "C" factory. */
+extern "C" VOID
 DisplayTrayProperties(IN HWND hwndOwner, IN HWND hwndTaskbar);
 
 /*
- * desktop.cpp
+ * desktop.cpp — replaced by Rust (explorer-rust desktop.rs). C linkage.
  */
+extern "C" {
 HANDLE
 DesktopCreateWindow(IN OUT ITrayWindow *Tray);
 
 VOID
 DesktopDestroyShellWindow(IN HANDLE hDesktop);
+} /* extern "C" */
 
 
 /*
  * notifyiconscust.cpp
  */
-VOID
+/* notifyiconscust.cpp is replaced by Rust (explorer-rust notifyiconscust.rs). */
+extern "C" VOID
 ShowCustomizeNotifyIcons(HINSTANCE, HWND);
 
 /*
  * taskband.cpp
  */
 
-extern const GUID CLSID_ITaskBand;  /* Internal Task Band CLSID */
-HRESULT CTaskBand_CreateInstance(IN ITrayWindow *Tray, HWND hWndStartButton, REFIID riid, void **ppv);
+extern const GUID CLSID_ITaskBand;  /* Internal Task Band CLSID (now a Rust
+                                     * #[no_mangle] static in taskband.rs). */
+/* taskband.cpp → Rust (explorer-rust taskband.rs); C linkage so the traywnd.cpp
+ * caller binds the Rust #[no_mangle] extern "C" factory. */
+extern "C" HRESULT CTaskBand_CreateInstance(IN ITrayWindow *Tray, HWND hWndStartButton, REFIID riid, void **ppv);
 
 /*
  * tbsite.cpp
@@ -329,16 +360,22 @@ DECLARE_INTERFACE_(ITrayBandSite, IUnknown)
 #define ITrayBandSite_Lock(p,a)                         (p)->lpVtbl->Lock(p,a)
 #endif
 
-HRESULT CTrayBandSite_CreateInstance(IN ITrayWindow *tray, IN IDeskBand* pTaskBand, OUT ITrayBandSite** pBandSite);
+/* tbsite.cpp → Rust (explorer-rust tbsite.rs); C linkage so the traywnd.cpp
+ * caller binds the Rust #[no_mangle] extern "C" factory. */
+extern "C" HRESULT CTrayBandSite_CreateInstance(IN ITrayWindow *tray, IN IDeskBand* pTaskBand, OUT ITrayBandSite** pBandSite);
 
 /*
  * startctxmnu.cpp
  */
-HRESULT CStartMenuBtnCtxMenu_CreateInstance(ITrayWindow * TrayWnd, IN HWND hWndOwner, IContextMenu ** ppCtxMenu);
+/* startctxmnu.cpp → Rust (explorer-rust startctxmnu.rs); C linkage so the
+ * traywnd.cpp caller binds the Rust #[no_mangle] extern "C" factory. */
+extern "C" HRESULT CStartMenuBtnCtxMenu_CreateInstance(ITrayWindow * TrayWnd, IN HWND hWndOwner, IContextMenu ** ppCtxMenu);
 
 /*
  * startmnu.cpp
  */
+/* startmnu.cpp is replaced by Rust (explorer-rust startmnu.rs). */
+extern "C" {
 IMenuPopup*
 CreateStartMenu(IN ITrayWindow *Tray,
                 OUT IMenuBand **ppMenuBand,
@@ -349,27 +386,35 @@ UpdateStartMenu(IN OUT IMenuPopup *pMenuPopup,
                 IN HBITMAP hbmBanner  OPTIONAL,
                 IN BOOL bSmallIcons,
                 IN BOOL bRefresh);
+} /* extern "C" */
 
 /*
  * startmnucust.cpp
  */
+/* startmnucust.cpp is replaced by Rust (explorer-rust startmnucust.rs). */
+extern "C" {
 VOID
 ShowCustomizeClassic(HINSTANCE, HWND);
 VOID
 ClearRecentAndMru();
+} /* extern "C" */
 
 /*
 * startmnusite.cpp
 */
-HRESULT
+/* C linkage: called from Rust (explorer-rust startmnu.rs). The C++ reference
+ * param (const IID &) is ABI-identical to a pointer. */
+extern "C" HRESULT
 CStartMenuSite_CreateInstance(IN OUT ITrayWindow *Tray, const IID & riid, PVOID * ppv);
 
 /*
  * trayntfy.c
  */
 
-/* TrayClockWnd */
-HRESULT CTrayClockWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
+/* TrayClockWnd — replaced by Rust (explorer-rust trayclock.rs). C linkage so
+ * the trayntfy.cpp caller binds the Rust #[no_mangle] extern "C" factory
+ * (REFIID `const IID&` is ABI-identical to the Rust `*const IID`). */
+extern "C" HRESULT CTrayClockWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
 
 static inline BOOL GetHideClock()
 {
@@ -383,10 +428,14 @@ static inline BOOL GetHideClock()
 
 #define NTNWM_REALIGN   (0x1)
 
-HRESULT CTrayNotifyWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
+/* C linkage: called from Rust (explorer-rust traywnd.rs). Still C++
+ * (trayntfy.cpp) — the extern "C" makes it emit the C symbol. */
+extern "C" HRESULT CTrayNotifyWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
 
 /* SysPagerWnd */
-HRESULT CSysPagerWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
+/* syspager.cpp → Rust (explorer-rust syspager.rs); C linkage so the trayntfy.cpp
+ * caller binds the Rust #[no_mangle] extern "C" factory. */
+extern "C" HRESULT CSysPagerWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
 
 #include "traydeskbtn.h"
 
@@ -396,12 +445,17 @@ HRESULT CSysPagerWnd_CreateInstance(HWND hwndParent, REFIID riid, void **ppv);
 
 #define TSWM_UPDATETASKBARPOS   (WM_USER + 2)
 
-HRESULT CTaskSwitchWnd_CreateInstance(IN HWND hWndParent, IN OUT ITrayWindow *Tray, REFIID riid, void **ppv);
+/* C linkage: called from Rust (explorer-rust taskband.rs SetSite). Still C++
+ * (taskswnd.cpp) — the extern "C" makes it emit/consume the C symbol. */
+extern "C" HRESULT CTaskSwitchWnd_CreateInstance(IN HWND hWndParent, IN OUT ITrayWindow *Tray, REFIID riid, void **ppv);
 
-HRESULT
+/* C linkage: called from Rust (explorer-rust startmnusite.rs SetSubMenu).
+ * Still C++ (traywnd.cpp). */
+extern "C" HRESULT
 Tray_OnStartMenuDismissed(ITrayWindow* Tray);
 
-HRESULT
+/* Rust (explorer-rust util.rs) — C linkage; see the util.cpp block above. */
+extern "C" HRESULT
 IsSameObject(IN IUnknown *punk1, IN IUnknown *punk2);
 
 #endif /* _EXPLORER_PRECOMP__H_ */

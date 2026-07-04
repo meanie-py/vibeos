@@ -207,6 +207,8 @@ members = [
     "userinit-rust",
     "winlogon-sys",
     "winlogon-rust",
+    "explorer-sys",
+    "explorer-rust",
     "lsass-rust",
     "services-rust",
     "midl-rt",
