@@ -44,7 +44,7 @@ pub unsafe extern "system" fn SmConnectToSm(
 
     if !SbApiPortName.is_null() {
         if SbApiPort.is_null() || ImageType == IMAGE_SUBSYSTEM_UNKNOWN {
-            return 0xC00000BCu32 as NTSTATUS; // STATUS_INVALID_PARAMETER_MIX
+            return 0xC0000030u32 as NTSTATUS; // STATUS_INVALID_PARAMETER_MIX
         }
 
         if (*SbApiPortName).Length as usize >= core::mem::size_of_val(&ConnectInfo.SbApiPortName) {
@@ -92,7 +92,7 @@ pub unsafe extern "system" fn SmConnectToSm(
 #[no_mangle]
 pub unsafe extern "system" fn SmSendMsgToSm(SmApiPort: HANDLE, SmApiMsg: PSM_API_MSG) -> NTSTATUS {
     if (*SmApiMsg).ApiNumber as usize >= 7 {
-        return 0xC00000BBu32 as NTSTATUS; // STATUS_NOT_IMPLEMENTED
+        return 0xC0000002u32 as NTSTATUS; // STATUS_NOT_IMPLEMENTED
     }
 
     let DataLength = RTLP_SM_MESSAGE_INFO[(*SmApiMsg).ApiNumber as usize];

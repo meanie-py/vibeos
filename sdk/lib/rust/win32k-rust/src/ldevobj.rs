@@ -90,7 +90,7 @@ extern "C" {
 unsafe fn RtlStringCbCopyW(dest: PWSTR, cb_dest: usize, src: PWSTR) -> i32 {
     let cch_dest = cb_dest / core::mem::size_of::<u16>();
     if cch_dest == 0 {
-        return 0xC0000023u32 as i32; // STATUS_BUFFER_OVERFLOW
+        return 0x80000005u32 as i32; // STATUS_BUFFER_OVERFLOW
     }
     let mut i = 0usize;
     while i < cch_dest - 1 {

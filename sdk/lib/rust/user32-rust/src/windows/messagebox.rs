@@ -94,7 +94,7 @@ extern "C" {
 // strsafe.h RtlStringCchCopyNW (inline in C; no ntdll export) — bounded copy + NUL-terminate.
 #[inline]
 unsafe fn RtlStringCchCopyNW(dest: PWSTR, cch_dest: usize, src: PCWSTR, cch_src: usize) -> i32 {
-    if cch_dest == 0 { return -2147483645; } // STRSAFE_E_INVALID_PARAMETER
+    if cch_dest == 0 { return -2147024809; } // STRSAFE_E_INVALID_PARAMETER (0x80070057)
     let mut n = 0usize;
     while n < cch_src && n < cch_dest - 1 && *src.add(n) != 0 {
         *dest.add(n) = *src.add(n);

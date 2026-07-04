@@ -3259,7 +3259,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
     // KeGetCurrentIrql returns KIRQL (u8); DISPATCH_LEVEL is a constant
     if KeGetCurrentIrql() >= DISPATCH_LEVEL {
         TracePrint(
-            0 /* TRACE_LEVEL_ERROR */,
+            2 /* TRACE_LEVEL_ERROR */,
             0 /* TRACE_FLAG_IOCTL */,
             b"RequestSynchronousProcessWithSerialQueue called at DISPATCH_LEVEL or above\0".as_ptr() as *const i8,
         );
@@ -3306,7 +3306,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
             } else if waitStatus != STATUS_ALERTED {
                 // non-alerted, non-success error
                 TracePrint(
-                    0 /* TRACE_LEVEL_FATAL */,
+                    1 /* TRACE_LEVEL_FATAL */,
                     0 /* TRACE_FLAG_IOCTL */,
                     b"Request %p on device object %p had a non-alert, non-success result from wait (%!HRESULT!)\n\0"
                         .as_ptr() as *const i8,
@@ -3322,7 +3322,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
                 // Thread alerted and terminating – cancel IRP
                 if IoCancelIrp(irp) != 0 {
                     TracePrint(
-                        0 /* TRACE_LEVEL_WARNING */,
+                        3 /* TRACE_LEVEL_WARNING */,
                         0 /* TRACE_FLAG_IOCTL */,
                         b"Sychronize Ioctl: request %p cancelled from device %p\n\0".as_ptr()
                             as *const i8,
@@ -3331,7 +3331,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
                     );
                 } else {
                     TracePrint(
-                        0 /* TRACE_LEVEL_WARNING */,
+                        3 /* TRACE_LEVEL_WARNING */,
                         0 /* TRACE_FLAG_IOCTL */,
                         b"Sychronize Ioctl: request %p could not be cancelled from device %p\n\0"
                             .as_ptr() as *const i8,
@@ -3341,7 +3341,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
                 }
             } else {
                 TracePrint(
-                    0 /* TRACE_LEVEL_WARNING */,
+                    3 /* TRACE_LEVEL_WARNING */,
                     0 /* TRACE_FLAG_IOCTL */,
                     b"SPURIOUS ALERT waiting for Request %p on device %p (%!STATUS!)\n\0".as_ptr()
                         as *const i8,
@@ -3385,7 +3385,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
             status = RequestIsIoctlBlockedByExclusiveAccess(Request, &mut isBlocked);
             if isBlocked != 0 {
                 TracePrint(
-                    0 /* TRACE_LEVEL_ERROR */,
+                    2 /* TRACE_LEVEL_ERROR */,
                     0 /* TRACE_FLAG_IOCTL */,
                     b"Access Denied! Device in exclusive mode.Failing Ioctl %lx\n\0".as_ptr()
                         as *const i8,
@@ -3396,7 +3396,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
                 return STATUS_ACCESS_DENIED;
             } else {
                 TracePrint(
-                    1 /* TRACE_LEVEL_INFORMATION */,
+                    4 /* TRACE_LEVEL_INFORMATION */,
                     0 /* TRACE_FLAG_IOCTL */,
                     b"Ioctl %lx not blocked by cdrom being in exclusive mode\n\0".as_ptr()
                         as *const i8,

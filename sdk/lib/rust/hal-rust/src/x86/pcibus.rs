@@ -1687,7 +1687,7 @@ pub unsafe extern "system" fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_I
         // It exists, so let's query it
         status = ZwQueryKey(
             card_list_handle,
-            1, // KeyFullInformation
+            2, // KeyFullInformation
             &raw mut key_information as *mut _ as _,
             core::mem::size_of::<KEY_FULL_INFORMATION>() as ULONG,
             &raw mut result_length,

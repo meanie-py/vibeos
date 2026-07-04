@@ -152,17 +152,53 @@ Two more FP classes were identified and guarded, NOT fixed:
 - **`MMWSLE_PREVIOUS_FREE_MASK`** — two arch-dependent `#define`s
   (0x7FFFFFFF/0x7FF); added to `ARCH_DEPENDENT_CONSTANTS`.
 
+**Third pass 2026-07-04 — the non-kernel crates + the tagged-literal class.**
+Extending the sweep past the kernel (verify_constants now skips `bindgen_*`
+files — they're generated ground truth; catalog disagreements there are
+`#ifdef`-branch or generic-name-collision FPs) found **86 more const drifts**
+across driver/usermode crates (acpi-rust's whole `CM_RESOURCE_*` block —
+`CM_RESOURCE_PORT_IO=0` marked port resources as memory; scsiport/storport
+DMA widths + inverted `Latched`/`LevelSensitive`; classpnp/ntdll-sys STATUS
+codes; disk/cdfs/mountmgr/usbhub IOCTL/FSCTL wire values). All bindgen- or
+header-verified before `--fix`; landed `4e175a23dbc`.
+
+Then a two-agent C-reference triage of the 85 `scan_inline_flag_literals`
+findings: **60 real value bugs** (38 garbage `TRACE_LEVEL_*` levels in
+cdrom-rust, 6 invented SMART/ATA command bytes in disk-rust diskwmi
+(`SMART_CMD` as 0/0x85 instead of 0xB0), csrss capture raising
+`STATUS_NOT_IMPLEMENTED` instead of `STATUS_DATATYPE_MISALIGNMENT`,
+se/srm.rs `KeyValueBasicInformation`-vs-Partial + `OBJ_CASE_INSENSITIVE`
+duplicated where `OBJ_OPENIF` intended ×2, lpc/complete.rs `ViewShare` for
+`ViewUnmap`, win32k/ldevobj + inflib returning `STATUS_BUFFER_TOO_SMALL`
+(error!) where `STATUS_BUFFER_OVERFLOW` (warning) is the contract, hal
+BUGCHECK code + `KeyFullInformation`, user32 STRSAFE HRESULTs, kernel32
+DATE/TIME flag values, cabinet `_A_EXEC`), 6 misleading comments fixed, and
+**three scanner FP classes fixed in the tool**: (1) tree-sitter's
+`integer_literal` excludes the unary minus, so every negative NTSTATUS
+return was compared by magnitude — now both two's-complement widths match,
+on the literal AND catalog side (`HFILE_ERROR=-1`); (2) single-bit flags
+contained in a composite OR mask (`GHND=0x42 /* GMEM_MOVEABLE */`) no longer
+flag; (3) the name-segment regex's greedy parenthetical made arithmetic
+prose (`// NonPagedPoolNx (512) + CacheAligned (4)`) parse as an annotation,
+and an |-list annotating ONE literal now compares against the OR of the
+names (`const LPTR = 0x40; // LMEM_FIXED | LMEM_ZEROINIT`). Post-fix sweep:
+0 findings workspace-wide for BOTH tools.
+
+Running tally for the class: 21 (dispatcher audit) + 40 (kernel 2nd pass) +
+86 (driver consts) + 60 (tagged literals) = **207 real constant/enum bugs**.
+
 Remaining work:
 - The `--enums` finder is still not a gate (FP-prone on generic names) — but
   note the multi-value ambiguity rule means anything it *does* report resolved
   to exactly one header value, which is a strong real-bug signal. Consider a
-  scoped gate: kernel crates only, dispatcher-relevant enums only.
+  scoped gate: kernel crates only, dispatcher-relevant enums only. (Both tools
+  now report 0 across the workspace, so a 0-baseline gate is finally viable.)
 - A proper byte-order-aware `TAG_*` check (the one class deliberately skipped).
 - Untagged inline literals at call sites (`KeInitializeEvent(e, 1, 0)` with no
   `/* … */`) still escape — `scan_inline_flag_literals` only catches the
   *commented* ones. A tree-sitter pass mapping known-signature call args to
   enum params would close that.
-- More NDK/PSDK headers + a triaged baseline so `--enums` can eventually gate.
+- More NDK/PSDK headers so the catalog covers more names.
 
 ---
 
