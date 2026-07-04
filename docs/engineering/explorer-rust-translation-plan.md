@@ -396,6 +396,23 @@ i386 smoke `✓ boot`, committed clean:
   CLSID). Subagent-drafted, integrating (the biggest so far; only fix needed was
   disambiguating `IStream` — it exists in BOTH winsrv bindgen and our com).
 
+**UPDATE — 19 of 22 explorer .cpp files are Rust + boot i386, INCLUDING THE
+TASKBAR CORE.** After the 15 below, the overnight fan-out also landed: trayprop
+(`ff1e4d9`), startmnucust (`47c6b9b`), and the mega-cluster **traywnd + appbar +
+CStartButton** (`b0475283`) — CTrayWindow, the "Shell_TrayWnd" taskbar window
+that wWinMain creates and that hosts the entire (Rust) shell: band site → task
+band → task switch, notify area → syspager + clock, start button + start menu,
+desktop thread. A Rust CTrayWindow reaching `shell ready` means the whole
+translated shell works together. Integration cost of the 4949-line cluster: 3
+import lines + inlining `DPA_GetPtrCount` (a commctrl MACRO, not an export — it
+LINK_FAILed as `_DPA_GetPtrCount@4`). `IID_IShellDesktopTray` flipped C++→Rust
+(`#[no_mangle] static`, resolves the existing extern like CLSID_ITaskBand); the
+still-C++ CTrayShowDesktopButton is reached via `traydeskbtn_shim.cpp` (7
+extern "C" wrappers). **Remaining 3:** trayntfy + traydeskbtn (cluster — when
+done, the shim retires: the 7 `TrayShowDesktopButton_*` symbols move from C++
+shim to Rust `#[no_mangle]`) and explorer.cpp (wWinMain + the g_* process
+globals flip — highest risk, last). Both drafting.
+
 **Status after the overnight run: 15 of 22 explorer .cpp files are Rust + boot
 i386.** Tier A (6): util/notifyiconscust/rshell/shellservice/startmnu/startup.
 Tier B (2): settings/desktop. Tier C (7): trayclock/taskband/startmnusite/
