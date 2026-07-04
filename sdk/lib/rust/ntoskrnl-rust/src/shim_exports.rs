@@ -753,7 +753,14 @@ pub unsafe extern "system" fn ExInitializePushLock(
 pub unsafe extern "C" fn ExAcquirePushLockExclusive(
     push_lock: PEX_PUSH_LOCK,
 ) {
-    ntkrnl_sys::inline::ex::ExAcquirePushLockExclusive(push_lock)
+    // lockdep §4: this #[inline(never)] shim's return address IS the true
+    // acquiring caller (the ddk→shim funnel otherwise collapses every call
+    // site to this one function). Symbolize with qemu/addr2sym.sh.
+    #[cfg(feature = "lockdep")]
+    let site = crate::ke::lockdep::return_address0();
+    #[cfg(not(feature = "lockdep"))]
+    let site = 0usize;
+    ntkrnl_sys::inline::ex::ExAcquirePushLockExclusiveSited(push_lock, site)
 }
 
 #[no_mangle]
@@ -761,7 +768,12 @@ pub unsafe extern "C" fn ExAcquirePushLockExclusive(
 pub unsafe extern "C" fn ExAcquirePushLockShared(
     push_lock: PEX_PUSH_LOCK,
 ) {
-    ntkrnl_sys::inline::ex::ExAcquirePushLockShared(push_lock)
+    // lockdep §4: see ExAcquirePushLockExclusive above.
+    #[cfg(feature = "lockdep")]
+    let site = crate::ke::lockdep::return_address0();
+    #[cfg(not(feature = "lockdep"))]
+    let site = 0usize;
+    ntkrnl_sys::inline::ex::ExAcquirePushLockSharedSited(push_lock, site)
 }
 
 #[no_mangle]

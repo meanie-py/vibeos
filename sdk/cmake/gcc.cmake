@@ -639,6 +639,18 @@ function(add_cargo_module _target _crate _output)
     set(_cargo_exe "${_ws}/target/${_stem}/release/${_bin}.exe")
     set(_out "${CMAKE_CURRENT_BINARY_DIR}/${_output}")
 
+    # sync-instrumentation §4 lockdep (Tier-2 opt-in): -DVIBEOS_LOCKDEP=ON lights
+    # up the self-deadlock detector. Plumbed as ENV to the kernel modules' cargo
+    # drive — their build.rs (ntoskrnl-cargo/ntkrnlmp-cargo) reads it and adds
+    # `--features lockdep` to the INNER `cargo build -p kernel-rust` (the body
+    # crate is not a cargo dep of the bin crate, so an outer --features can't
+    # reach it). Confined to the kernel — other modules' build.rs ignore the
+    # env. Default off = zero cost.
+    set(_cargo_env "")
+    if(VIBEOS_LOCKDEP AND _crate MATCHES "^(ntoskrnl-cargo|ntkrnlmp-cargo)$")
+        set(_cargo_env VIBEOS_LOCKDEP=1)
+    endif()
+
     # Rebuild triggers: glob the bin crate (build.rs + target jsons + Cargo.toml
     # + any src), the shared reactos-link engine, and the rust body crate. A
     # cargo build is otherwise opaque to cmake; an incomplete DEPENDS lets a
@@ -738,7 +750,7 @@ function(add_cargo_module _target _crate _output)
         # cargo +nightly build-std drive of the reactos-link manifest: build.rs
         # links the cmake-built leaf libs / reused objects + self-built rust
         # staticlib into the final PE, then the kind post-link runs.
-        COMMAND ${CMAKE_COMMAND} -E env RUSTUP_TOOLCHAIN=nightly
+        COMMAND ${CMAKE_COMMAND} -E env RUSTUP_TOOLCHAIN=nightly ${_cargo_env}
             cargo build --release
                 --target ${_ws}/${_crate}/${_stem}.json
                 -Z build-std=core,alloc,compiler_builtins

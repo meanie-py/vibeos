@@ -39,6 +39,12 @@ pub const OP_PL_WAKE: u32 = 6;
 // leaked WS lock that blocks a shared waiter is by definition exclusive.
 pub const OP_WS_LOCK_EXCL: u32 = 16;
 pub const OP_WS_UNLOCK_EXCL: u32 = 17;
+// Lockdep (§4) self-deadlock: a thread about to block on a pushlock/gmutex it
+// already holds. data = wanted mode (1=shared 2=excl 3=gmutex). See ke/lockdep.rs.
+pub const OP_LOCKDEP_SELFDEADLOCK: u32 = 32;
+// Lockdep (§4) Phase B ABBA: the lock pair was taken in both orders. Logged on
+// the lock being acquired; data = its mode. Details in VIBEOS_LOCKDEP.violations.
+pub const OP_LOCKDEP_ABBA: u32 = 33;
 
 /// Link-time tap for crates below ntoskrnl-rust in the dep graph (ntkrnl-sys
 /// inlines can't `use` this crate — the dependency points the other way).

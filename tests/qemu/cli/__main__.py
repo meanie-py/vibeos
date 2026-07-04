@@ -56,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="fast-iterate: rustc incremental (Rust sccache OFF; non-reproducible, not for gate)",
     )
     b.add_argument("--no-check", action="store_true", help="skip auto source-lints")
+    b.add_argument(
+        "--lockdep",
+        action="store_true",
+        help="sync-instrumentation §4: build ntoskrnl with the self-deadlock detector "
+        "(-DVIBEOS_LOCKDEP=ON). Debug/repro only — has a per-pushlock cost; off by default",
+    )
     b.add_argument("--strict", action="store_true")
     b.add_argument(
         "--cache",
