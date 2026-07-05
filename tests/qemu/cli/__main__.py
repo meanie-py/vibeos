@@ -97,6 +97,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--until", default="", help="success marker (default: arch boot marker)")
     s.add_argument("--fail-on", default=None, help="regex; abort at first match")
     s.add_argument(
+        "--tripwire",
+        default="",
+        help="per-boot kernel debug knobs via fw_cfg, e.g. 'SPECIALPOOL=Gla5' or "
+        "'SPECIALPOOL=*'; KEY=VAL tokens separated by spaces/semicolons (no commas). "
+        "See ntoskrnl-rust src/tripwire.rs",
+    )
+    s.add_argument(
         "--no-net",
         action="store_true",
         help="skip the amd64 netstack net-suite (default-on; escape hatch for fast iteration)",

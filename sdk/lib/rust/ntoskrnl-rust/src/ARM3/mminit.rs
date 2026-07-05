@@ -1506,6 +1506,9 @@ unsafe fn MiBuildPagedPool() {
 
     MiInitializeSpecialPool();
 
+    // Tripwire: report arming outcome loudly + optional destructive selftest.
+    crate::tripwire::vibe_tripwire_post_pool_init();
+
     // DBG: after MiInitializeSpecialPool
 
     MiLowPagedPoolThreshold = (30 * _1MB) >> PAGE_SHIFT;
@@ -1556,6 +1559,13 @@ pub unsafe extern "system" fn MmArmInitSystem(
 
     if MiDbgEnableMdDump != 0 {
         MiDbgDumpMemoryDescriptors();
+    }
+
+    // vibeos tripwire channel: read per-boot debug knobs (special pool arming)
+    // from QEMU fw_cfg BEFORE system-PTE sizing and MiInitializeSpecialPool so
+    // an armed MmSpecialPoolTag influences both. No-op without -fw_cfg.
+    if phase == 0 {
+        crate::tripwire::vibe_tripwire_init();
     }
 
     for i in 0..LoaderMaximum {

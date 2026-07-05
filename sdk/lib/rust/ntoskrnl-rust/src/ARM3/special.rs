@@ -122,7 +122,9 @@ pub unsafe extern "system" fn MiInitializeSpecialPool() {
         special_pool_ptes = 0x6000;
     }
 
-    special_pool_ptes = (special_pool_ptes as usize & !(PAGE_SIZE - 1)) as ULONG;
+    // C: PAGE_ROUND_UP — round UP, not down (down can yield 0 on small-PTE
+    // configs, silently disabling special pool; must stay >= PTE_PER_PAGE).
+    special_pool_ptes = ((special_pool_ptes as usize + PAGE_SIZE - 1) & !(PAGE_SIZE - 1)) as ULONG;
 
     loop {
         pointer_pte = MiReserveAlignedSystemPtes(special_pool_ptes, SystemPteSpace, 0);
@@ -227,7 +229,11 @@ pub unsafe extern "system" fn MmAllocateSpecialPool(
         );
     }
 
-    if Tag == u32::from_le_bytes(*b"tSmM") {
+    // Some allocations from Mm must never use special pool (recursion under the
+    // PFN/segment paths). C uses 'tSmM' (= from_be_bytes, displays "MmSt"); the
+    // live Rust segment allocator (ARM3/section.rs) actually tags 0x744D6D4D, so
+    // exclude both the C-intent value and the as-shipped value.
+    if Tag == u32::from_be_bytes(*b"tSmM") || Tag == 0x744D6D4D {
         return core::ptr::null_mut();
     }
 
@@ -307,7 +313,9 @@ pub unsafe extern "system" fn MmAllocateSpecialPool(
     }
 
     (*header).PoolTag = Tag;
-    (*header).set_BlockSize((tick_count as u32) as u16);
+    // C stores (UCHAR)TickCount.LowPart; keep to 8 bits so the 9-bit BlockSize
+    // field can never disagree with the 8-bit fill pattern checks.
+    (*header).set_BlockSize((tick_count as u32 as u8) as u16);
     entry_final
 }
 
