@@ -47,13 +47,10 @@ def arch(request: pytest.FixtureRequest) -> str:
     return request.config.getoption("--arch")
 
 
-def _base_arch(arch: str) -> str:
-    """Map a smoke variant to its build directory arch. Variants like
-    'i386-uefi', 'arm64-test' and 'amd64-uefi-net' build from the base
-    'build-i386'/'build-arm64'/'build-amd64' trees (same binaries, different
-    boot media/firmware/devices). Strip '-net' BEFORE '-uefi' so
-    'amd64-uefi-net' resolves to 'amd64', not 'amd64-net'."""
-    return arch.replace("-net", "").replace("-uefi", "").replace("-test", "")
+# base-arch mapping (smoke variant → build tree) lives in archcfg — the single
+# build-side source of truth. conftest used to keep a private copy that drifted
+# from archcfg's (archcfg didn't strip '-net'); reconciled + deduped 2026-07-05.
+from .cli.archcfg import base_arch as _base_arch  # noqa: E402
 
 
 def _ensure_clean_rust_build(arch: str) -> None:
