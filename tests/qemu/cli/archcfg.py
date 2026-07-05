@@ -19,8 +19,12 @@ ACCEPTED_ARCHES = ("i386", "i386-uefi", "amd64", "amd64-uefi", "arm64")
 
 
 def base_arch(arch: str) -> str:
-    """Build-side arch: build-<base>, ninja, stamp. Strips firmware/test suffix."""
-    return arch.replace("-uefi", "").replace("-test", "")
+    """Build-side arch: build-<base>, ninja, stamp. Strips every smoke-variant
+    suffix (firmware/test/net) so all variants map to their base build tree —
+    e.g. 'amd64-uefi-net' → 'amd64'. Strip '-net' before '-uefi' so the compound
+    'amd64-uefi-net' doesn't leave a stray '-net'. This is THE base-arch mapping;
+    conftest imports it rather than keeping a private copy (T2 one-source dedup)."""
+    return arch.replace("-net", "").replace("-uefi", "").replace("-test", "")
 
 
 def vm_arch(arch: str) -> str:

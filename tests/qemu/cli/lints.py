@@ -222,13 +222,29 @@ def run_source_lints(run: Run, repo: Path, *, strict: bool) -> None:
         _lint_stage(run, repo, name, cmd, strict=strict, findings_from=src)
 
 
-def write_baselines(repo: Path) -> dict:
+def lint_tool_names(repo: Path) -> set[str]:
+    """Every source-lint tool name (for --update-baseline validation)."""
+    return {name for name, _, _ in source_lint_specs(repo)}
+
+
+def write_baselines(repo: Path, only: set[str] | None = None) -> dict:
     """Capture current findings into tools/lint-baseline/<name>.txt so the gate
-    becomes 'zero NEW vs baseline' (plan §20.3). Returns {name: count}."""
-    out = {}
+    becomes 'zero NEW vs baseline' (plan §20.3).
+
+    `only` restricts the rewrite to those tool names — the per-tool update
+    (T2 item 1b). The blanket rewrite (only=None) is a footgun once the gate
+    BLOCKS on lints: re-blessing every baseline to accept ONE intended change
+    silently accepts any *unrelated* regression that drifted in at the same
+    time. Scoping to the tool you actually changed keeps the others enforcing.
+
+    Returns {name: {"count", "added", "removed"}} so the caller can print the
+    exact delta being blessed — blessing a NEW finding is never silent."""
+    out: dict = {}
     bdir = repo / BASELINE_DIR
     bdir.mkdir(parents=True, exist_ok=True)
     for name, cmd, src in source_lint_specs(repo):
+        if only is not None and name not in only:
+            continue
         if cmd[0] == "MISSING":
             continue
         try:
@@ -236,9 +252,15 @@ def write_baselines(repo: Path) -> dict:
         except (OSError, subprocess.SubprocessError):
             continue
         text = _rel(cp.stdout if src == "stdout" else (cp.stdout + "\n" + cp.stderr), repo)
-        findings = sorted(_finding_lines(text))
+        cur = _finding_lines(text)
+        prev = _baseline(repo, name)
+        findings = sorted(cur)
         (bdir / f"{name}.txt").write_text("\n".join(findings) + ("\n" if findings else ""))
-        out[name] = len(findings)
+        out[name] = {
+            "count": len(findings),
+            "added": len(cur - prev),
+            "removed": len(prev - cur),
+        }
     return out
 
 

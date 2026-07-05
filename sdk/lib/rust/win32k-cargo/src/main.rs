@@ -57,5 +57,5 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
             buf.as_ptr(),
         );
     }
-    loop {}
+    loop {} // nolint: silent-failure (post-panic halt — RUST PANIC self-report already printed above)
 }

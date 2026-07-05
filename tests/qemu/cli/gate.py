@@ -12,6 +12,15 @@ was serial was the *orchestrator* — i.e. the human. This driver removes that:
 
   1. builds — serial (still gated by the exclusive host CPU lease; parallel builds
      are a separate follow-up, see docs/engineering). Opt out with --no-build.
+  1.5. lint gate (BLOCKING) — `check --strict --arch <a>` per built arch, in
+     parallel (the full scanner suite: source lints baseline-diff NEW=0,
+     cargo-link/committed-drift bit-rot guards, per-arch binary lints). Reuses
+     the `check` command verbatim so there is ONE strict-check code path, not a
+     reimplementation that could drift. A NEW finding (classification LINT_FAIL)
+     blocks the push stamp; smokes still run so the matrix stays informative.
+     Opt out with --no-lint. This closes the "detection without enforcement"
+     gap where the arsenal ran warn-only in `build` and nothing forced
+     `check --strict` before a land.
   2. smokes — ALL arches launched concurrently. Wall-clock goes sum -> max.
   3. flake-retries — a *documented* flake (KNOWN_FLAKE / FLAKY), an environment
      failure (LAUNCH_FAIL), or a contention-characterized HANG_TIMEOUT (serial
@@ -140,8 +149,13 @@ def _lint_once(repo: Path, arch: str, root: Path) -> dict:
         if "✗" in ln or "FAIL" in ln:
             salient = ln.strip()
             break
-    return {"arch": arch, "ok": proc.returncode == 0, "seconds": dt,
-            "salient": salient, "exit": proc.returncode}
+    return {
+        "arch": arch,
+        "ok": proc.returncode == 0,
+        "seconds": dt,
+        "salient": salient,
+        "exit": proc.returncode,
+    }
 
 
 def _resolve_arches(raw: str | None) -> list[str]:
@@ -359,7 +373,11 @@ def gate(args, repo: Path) -> int:
         # on their own condition.
         and all(lint_ok.get(a, True) for a in requested)
     )
-    if all_ok:
+    # Defense-in-depth: never mint the credential when ANY stage failed. all_ok
+    # is computed over smoke + lint_ok only; this also catches any future stage
+    # that fails the run (sets a fail Stage → verdict FAIL) without being wired
+    # into all_ok — the stamp is the push credential, so err on the safe side.
+    if all_ok and run.verdict != "FAIL":
         _write_gate_stamp(run, repo, requested)
 
     run.extra["arches"] = arches

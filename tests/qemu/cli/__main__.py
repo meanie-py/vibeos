@@ -77,8 +77,14 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--strict", action="store_true", help="block on NEW findings")
     c.add_argument(
         "--update-baseline",
-        action="store_true",
-        help="capture current findings as the accepted baseline",
+        nargs="?",
+        const="__ALL__",
+        default=None,
+        metavar="TOOL[,TOOL...]",
+        help="capture current findings as the accepted baseline. Bare = ALL tools "
+        "(footgun once the gate blocks — silently accepts unrelated drift); pass a "
+        "tool name (or comma-list) to re-bless only that tool, e.g. "
+        "--update-baseline lint_kernel",
     )
     c.set_defaults(fn=debugcmd.check)
 

@@ -1770,7 +1770,16 @@ from . import gate as gate_mod  # noqa: E402
 
 
 def _gate_args(**kw):
-    base = dict(arches="i386,amd64,arm64", retries=2, no_build=True, clean=False, no_net=False)
+    # no_lint=True by default so retry/verdict tests don't invoke the real
+    # per-arch strict-lint subprocess; the lint-gate tests pass no_lint=False.
+    base = dict(
+        arches="i386,amd64,arm64",
+        retries=2,
+        no_build=True,
+        clean=False,
+        no_net=False,
+        no_lint=True,
+    )
     base.update(kw)
     return Namespace(**base)
 
@@ -1928,6 +1937,154 @@ def test_retryable_policy_unit():
     assert not gate_mod._retryable("RUST_PANIC", {})
     assert not gate_mod._retryable("SHELL_NOT_READY", {})
     assert not gate_mod._retryable("STALE_MEDIA", {})
+
+
+# --- gate: BLOCKING lint gate (T2 item 1 — enforce, don't just detect) ------
+
+
+def _spy_smoke_ok(seen):
+    def fake(repo, arch, root, extra):
+        seen.append(arch)
+        return {
+            "arch": arch,
+            "verdict": "OK",
+            "classification": "",
+            "ok": True,
+            "retryable": False,
+            "hang_kind": None,
+            "wedge_confirmed": False,
+            "census_stuck": 0,
+            "seconds": 0.01,
+            "run_dir": str(root),
+            "flake_rate": None,
+            "screenshot": None,
+            "salient": "",
+        }
+
+    return fake
+
+
+def _lint_once_stub(ok: bool):
+    """Stand-in for gate._lint_once (which shells `check --strict --arch X`)."""
+
+    def stub(repo, arch, root):
+        return {
+            "arch": arch,
+            "ok": ok,
+            "seconds": 0.01,
+            "salient": "" if ok else f"{arch}: NEW lint findings",
+            "exit": 0 if ok else 1,
+        }
+
+    return stub
+
+
+def test_gate_lint_failure_blocks_stamp_but_smokes_run(tmp_path, monkeypatch):
+    """A NEW lint finding fails the gate and blocks the push stamp; smokes still
+    run so the matrix stays informative (the landed T3 policy)."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    seen: list = []
+    monkeypatch.setattr(gate_mod, "_smoke_once", _spy_smoke_ok(seen))
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=False))
+    stamped: list = []
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
+    assert rc == 1, "a lint regression must fail the gate"
+    assert not stamped, "no push stamp on a lint failure"
+    assert seen, "smokes still run under the T3 policy (informative matrix)"
+
+
+def test_gate_lint_pass_proceeds_and_stamps(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    stamped: list = []
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
+    assert rc == 0
+    assert fake.calls, "a passing lint gate must proceed to smokes"
+    assert stamped, "a full green gate (lints + smokes) mints the push stamp"
+
+
+def test_gate_no_lint_skips_lint_phase(tmp_path, monkeypatch):
+    """--no-lint bypasses the strict lint gate entirely (escape hatch)."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    called: list = []
+    monkeypatch.setattr(gate_mod, "_lint_once", lambda *a, **k: called.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=True), tmp_path)
+    assert rc == 0
+    assert not called, "--no-lint must not invoke the lint subprocess"
+
+
+# --- check --update-baseline: per-tool scoping (T2 item 1b) -----------------
+
+from . import debugcmd as debugcmd_mod  # noqa: E402
+
+
+def test_check_update_baseline_per_tool_scopes(tmp_path, monkeypatch):
+    """--update-baseline lint_kernel re-blesses ONLY that tool (not a blanket
+    re-bless that would silently accept unrelated drift)."""
+    cap: dict = {}
+
+    def _cap(repo, only=None):
+        cap["only"] = only
+        return {"lint_kernel": {"count": 3, "added": 1, "removed": 0}}
+
+    monkeypatch.setattr(lints, "lint_tool_names", lambda repo: {"lint_kernel", "verify_abi"})
+    monkeypatch.setattr(lints, "write_baselines", _cap)
+    args = Namespace(update_baseline="lint_kernel", arch=None, strict=False)
+    assert debugcmd_mod.check(args, tmp_path) == 0
+    assert cap["only"] == {"lint_kernel"}
+
+
+def test_check_update_baseline_blanket_is_none(tmp_path, monkeypatch):
+    cap: dict = {}
+
+    def _cap(repo, only=None):
+        cap["only"] = only
+        return {}
+
+    monkeypatch.setattr(lints, "write_baselines", _cap)
+    args = Namespace(update_baseline="__ALL__", arch=None, strict=False)
+    assert debugcmd_mod.check(args, tmp_path) == 0
+    assert cap["only"] is None  # blanket rewrites every baseline
+
+
+def test_check_update_baseline_rejects_unknown_tool(tmp_path, monkeypatch):
+    called: list = []
+    monkeypatch.setattr(lints, "lint_tool_names", lambda repo: {"lint_kernel"})
+    monkeypatch.setattr(lints, "write_baselines", lambda *a, **k: called.append(1) or {})
+    args = Namespace(update_baseline="bogus_tool", arch=None, strict=False)
+    assert debugcmd_mod.check(args, tmp_path) == 2
+    assert not called, "an unknown tool name must not rewrite any baseline"
+
+
+def test_write_baselines_only_filter(tmp_path, monkeypatch):
+    """write_baselines(only={...}) rewrites just those tools' files."""
+    bdir = tmp_path / lints.BASELINE_DIR
+    bdir.mkdir(parents=True)
+    (bdir / "toolA.txt").write_text("old-A\n")
+    (bdir / "toolB.txt").write_text("old-B\n")
+    monkeypatch.setattr(
+        lints,
+        "source_lint_specs",
+        lambda repo: [("toolA", ["true"], "stdout"), ("toolB", ["true"], "stdout")],
+    )
+
+    def fake_run(cmd, cwd, capture_output, text, timeout):
+        import subprocess as _sp
+
+        return _sp.CompletedProcess(cmd, 0, "new-line\n", "")
+
+    monkeypatch.setattr(lints.subprocess, "run", fake_run)
+    out = lints.write_baselines(tmp_path, only={"toolA"})
+    assert set(out) == {"toolA"}
+    assert (bdir / "toolA.txt").read_text().strip() == "new-line"
+    assert (bdir / "toolB.txt").read_text().strip() == "old-B"  # untouched
+    assert out["toolA"] == {"count": 1, "added": 1, "removed": 1}
 
 
 # --- smoke._watch: early-hang watchdog + net opt-in (no QEMU) ---------------

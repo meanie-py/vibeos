@@ -216,9 +216,10 @@ fn main() {
     // libX_rust.a added to static_libs, gated arm64-only then x86-ungated in
     // `bacd1fc64d3`; the layout shift once tipped a latent cmlib Hv* hive-write
     // miscompile [cold amd64 HANG at hivewrt.c "Failed to write the primary
-    // hive"], now guarded by the cmlib-rust no-prepopulate-passes class-guard in
-    // reactos-link. Building the crates cargo-native instead of reusing cmake's
-    // copy keeps the same guard in force; the amd64 cold boot is the oracle.)
+    // hive"]. NB the cmlib-rust no-prepopulate-passes guard once credited here
+    // was REMOVED 2026-06-18 (red herring — the real blocker was a cmlib
+    // stdcall/cdecl ABI mismatch, see reactos-link's no_prepop comment); the
+    // amd64 cold boot + the VIBEOS_LAYOUT_CANARY build below are the oracles.)
 
     // cnt-rust integration: the irreducible C floor cnt-rust-lib can't provide.
     // As of the WS1 cmake-off batches (2026-06-21) it is EMPTY for the kernel —
@@ -304,34 +305,84 @@ fn main() {
     if env::var("VIBEOS_LOCKDEP").is_ok() {
         linker = linker.rust_features(&["lockdep"]);
     }
+    linker = linker.rust_staticlib("kernel-rust");
+    // Tier-B sibling Rust crates: cargo-compiled directly by the engine (was
+    // reuse of the cmake-built librtl_rust.a / libcntpr_rust.a). Built
+    // against the same target mode as the main kernel-rust crate: i386 uses
+    // the softfloat kernel json + build-std; amd64/arm64 use cmake's builtin
+    // precompiled-std targets. The engine emits these AFTER the cmake C
+    // archives (C-first cohab precedence) and applies the per-crate RUSTFLAGS
+    // cmake gives them (i386 -sse + the class-wide -C no-prepopulate-passes;
+    // see reactos-link build_rust_crate). cnt-rust-lib `float` is per-arch.
+    //
+    // rtl/cnt emission order is canary-controlled (see the canary block
+    // below for the full story): these two archives are the heavily-pulled
+    // pair (500+ extracted members), so swapping them genuinely shifts the
+    // pulled-member layout — the cport/csq swap alone was proven a no-op
+    // (0 extracted members each; byte-identical kernel).
+    let layout_canary = env::var("VIBEOS_LAYOUT_CANARY").as_deref() == Ok("1");
+    println!("cargo:rerun-if-env-changed=VIBEOS_LAYOUT_CANARY");
+    if layout_canary {
+        println!(
+            "cargo:warning=VIBEOS_LAYOUT_CANARY=1: kernel link layout deliberately perturbed (rtl/cnt + cport/csq order swap + rossym dup)"
+        );
+        linker = linker
+            .rust_lib("cnt-rust-lib", cnt_feats, true)
+            .rust_lib("rtl-rust", &[], true);
+    } else {
+        linker = linker
+            .rust_lib("rtl-rust", &[], true)
+            .rust_lib("cnt-rust-lib", cnt_feats, true);
+    }
     linker = linker
-        .rust_staticlib("kernel-rust")
-        // Tier-B sibling Rust crates: cargo-compiled directly by the engine (was
-        // reuse of the cmake-built librtl_rust.a / libcntpr_rust.a). Built
-        // against the same target mode as the main kernel-rust crate: i386 uses
-        // the softfloat kernel json + build-std; amd64/arm64 use cmake's builtin
-        // precompiled-std targets. The engine emits these AFTER the cmake C
-        // archives (C-first cohab precedence) and applies the per-crate RUSTFLAGS
-        // cmake gives them (i386 -sse + the class-wide -C no-prepopulate-passes;
-        // see reactos-link build_rust_crate). cnt-rust-lib `float` is per-arch.
-        .rust_lib("rtl-rust", &[], true)
-        .rust_lib("cnt-rust-lib", cnt_feats, true)
         // cmlib hive library: flipped C→Rust (kernel cmlib is 100% Rust). The
         // cmake `libcmlib.a` in static_libs is now just the cohab placeholder —
         // the real Hv*/Cmp*/Cm* symbols live in cmlib-rust (DEFAULT features, the
         // full kernel variant; NOT `bldr`, which is the loader's read-only build).
         .rust_lib("cmlib-rust", &[], true)
         // The kernel's GUID data libs (wdmguid/poguid/ioevent C) → Rust.
-        .rust_lib("guids-rust", &[], true)
-        // The 5 cohab driver/serial libs, now cargo-native (was the cmake-built
-        // libX_rust.a in static_libs + the empty C-body stubs, both dropped
-        // above). Same crates cmake compiled into libX_rust.a — building them
-        // here via the engine is symbol-identical. All 3 arches uniformly.
-        .rust_lib("cport-rust", &[], true)
-        .rust_lib("csq-rust", &[], true)
+        .rust_lib("guids-rust", &[], true);
+    // The 5 cohab driver/serial libs, now cargo-native (was the cmake-built
+    // libX_rust.a in static_libs + the empty C-body stubs, both dropped
+    // above). Same crates cmake compiled into libX_rust.a — building them
+    // here via the engine is symbol-identical. All 3 arches uniformly.
+    //
+    // Layout canary (the captures(none)/layout-tip tripwire, task: layout
+    // robustness): VIBEOS_LAYOUT_CANARY=1 deliberately perturbs the kernel
+    // link layout with ZERO semantic delta — (a) swaps the cport/csq archive
+    // emission order (shifts every downstream section address), (b) re-appends
+    // rossym-rust as a redundant duplicate archive after the group (perturbs
+    // lazy member pull; first-match wins under --allow-multiple-definition).
+    // History (field-manual "Incomplete Rust cohab flip", 2026-06-14/15): on
+    // the pre-flip layout ANY such perturbation deterministically tipped a
+    // latent layout-sensitive miscompile (0x50 at uniata enum → later a
+    // crypt32 DllMain hang). A green canary boot = the kernel is layout-
+    // robust; a red one = the class is live and the canary binary is the
+    // deterministic lab rat. Normal builds (env unset) keep the exact
+    // shipping order: cport, csq, arbiter, lsalib, rossym.
+    // ⚠ Toggling this env var ALONE does not reach this build.rs — the ninja
+    // edge's DEPENDS glob watches files, not env (§9.6b staleness class).
+    // `touch` this file (tools/audit-captures.sh does) when flipping
+    // VIBEOS_LAYOUT_CANARY / VIBEOS_EMIT_LLVM_IR / VIBEOS_LINK_MAP with no
+    // source change, then VERIFY the kernel md5 actually changed.
+    linker = if layout_canary {
+        linker
+            .rust_lib("csq-rust", &[], true)
+            .rust_lib("cport-rust", &[], true)
+    } else {
+        linker
+            .rust_lib("cport-rust", &[], true)
+            .rust_lib("csq-rust", &[], true)
+    };
+    linker = linker
         .rust_lib("arbiter-rust", &[], true)
         .rust_lib("lsalib-rust", &[], true)
-        .rust_lib("rossym-rust", &[], true)
+        .rust_lib("rossym-rust", &[], true);
+    if layout_canary {
+        // (b) the redundant duplicate — the historical tipping shape.
+        linker = linker.rust_lib("rossym-rust", &[], true);
+    }
+    linker = linker
         // Header-free C shims (built above; kdbg shim is x86-only).
         .c_shims(&c_shims)
         // -DCRT_PRINTF_HEADERLESS selects the hand-defined FILE/_TCHAR/flags in

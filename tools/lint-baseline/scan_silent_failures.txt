@@ -21,8 +21,6 @@ sdk/lib/rust/advapi32-rust/src/sec/misc.rs:1240: [UNWRAP] .unwrap() — panics o
 sdk/lib/rust/advapi32-rust/src/sec/misc.rs:1413: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/advapi32-rust/src/sec/misc.rs:1478: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/advapi32-rust/src/service/sctrl.rs:134: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/advapi32-rust/src/service/sctrl.rs:515: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/advapi32-rust/src/service/sctrl.rs:525: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/advapi32-rust/src/wine/crypt.rs:1423: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/advapi32-rust/src/wine/crypt.rs:1465: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/advapi32-rust/src/wine/crypt.rs:1630: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1728,7 +1726,6 @@ sdk/lib/rust/user32-rust/src/windows/message.rs:3386: [UNWRAP] .unwrap() — pan
 sdk/lib/rust/user32-rust/src/windows/message.rs:52: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/user32-rust/src/windows/prop.rs:308: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/userinit-cargo/src/main.rs:13: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
-sdk/lib/rust/win32k-cargo/src/main.rs:60: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/win32k-rust/src/bitblt.rs:1036: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/win32k-rust/src/bitblt.rs:1062: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/win32k-rust/src/bitblt.rs:1117: [UNWRAP] .unwrap() — panics on Err/None in kernel code

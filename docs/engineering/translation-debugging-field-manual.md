@@ -283,6 +283,8 @@ Plus two non-ABI link gotchas from the same drivers: (a) **x86 compiler intrinsi
 
 The partial-Rust kernel trips a family of LLVM optimizer bugs where interprocedural analysis sees enough to optimize but not enough to be correct; these entries cover the symptoms, the `lto=false`+`codegen-units=256` firewall, and the workarounds that are (and aren't) still load-bearing.
 
+**⚠ 2026-07-05 STATUS: the volatile-blind attribute-deduction root is FIXED in the shipping toolchains (LLVM 21.1.3 stable / 21.1.5 nightly — volatile stores now block `readnone captures(none)` deduction; plain out-writes deduce fold-proof `writeonly initializes(...)`), and a post-opt IR audit of the amd64 kernel body found ZERO committed folds** (every `ptr poison` callsite = a genuinely-unused source param). See rust-kernel-patterns.md "RESOLVED AT THE TOOLCHAIN". Layout-robustness is also empirically proven: the `VIBEOS_LAYOUT_CANARY=1` deliberately-perturbed kernel (451 symbols relocated) **booted 5/5** on amd64 — see the "✅ CLOSED" note under "Incomplete Rust cohab flip" below. The ABI-mismatch → `noreturn`/ud2 cascade entries below remain fully live (toolchain-independent). Detector: `tools/audit-captures.sh <arch>` (scan_captures.py over `VIBEOS_EMIT_LLVM_IR=1` builds) — rerun after every rustc/LLVM bump. Historical entries below are kept for the day a toolchain bump regresses this.
+
 ### ud2 in a NAMED function / success path folded away after a call
 **Symptom:** `scan_ud2.py` reports `ud2` (0f 0b) in a named `#[no_mangle]` function; post-call code looks dead; cascade to 66+ functions made `noreturn`.
 **Root cause:** LLVM's attribute pass deduces `readnone captures(none)` on output-pointer params (ignoring `write_volatile`), callers pass `ptr poison`, stores through poison are UB → body collapses to `ud2` → `unreachable` cascades. opt-level=1 introduces the attributes; opt-level=0 has none.
@@ -360,6 +362,12 @@ The partial-Rust kernel trips a family of LLVM optimizer bugs where interprocedu
 - **But a debuggable-yet-bootable kernel is STILL the wall.** `list-threads` needs Rust DWARF in the linked `ntoskrnl.exe`; the release kernel has `Rust=0`. Methods that DON'T get DWARF in: (i) `reactos-link` `compile()`'s `no_prepop`/RUSTFLAGS path — the **main body (`kernel-rust`) builds via `build_rust_crate` (lib.rs ~849), NOT `compile()`**, so editing the `no_prepop` match is a no-op on the body (this also means a `no-prepopulate-passes` systemic-guard test must go through `rust_build_rustflags`/`build_rust_crate`, NOT the `no_prepop` arm — the body was never actually tested with it); (ii) `[profile.release.package.{kernel-rust,ntoskrnl-rust}] debug=2` → `libkernel_rust.a` still has **0 DW_TAG** (per-package profile didn't apply under the `-Z build-std` json-target build). The method that DOES apply — workspace `[profile.release] debug=true` — **bloats the kernel so freeldr dies at "Switching stack…"** (per the 2026-06-14 note). **→ the real prerequisite for the GDB hunt is split-debuginfo: `-C debuginfo=2 -C split-debuginfo=packed` (or `objcopy --only-keep-debug` + strip the loaded image) so the booted PE stays lean but GDB has a sidecar `.dwp`/`.debug`.** That's a tooling sub-project, owed before the site can be named.
 
 **Updated bottom line (2026-06-15):** the x86 cohab ungate is a confirmed layout-fragile *class* wall and remains **non-blocking** (baseline green; the 5 libs already run as Rust on arm64, as C on x86). Keep the `if arch=="aarch64"` gate. The durable path is two stacked sub-projects: **(A) split-debuginfo bootable-debug kernel** → walk PID 112's blocked thread → name the wait-site; **(B) kernel layout-robustness** for the captures(none) class (test `-C no-prepopulate-passes` on the kernel BODY via `build_rust_crate`/`rust_build_rustflags`, watching boot-size; understand why `cgu=256` doesn't neutralize within-crate/internal-helper captures(none)). Until (A)+(B), the ungate cannot land.
+
+**✅ CLOSED (2026-07-05, whpx-bringup lane): the layout-fragility wall is GONE — proven empirically, tripwired permanently.** Three facts settled it:
+1. **The flip completed by another route** (2026-06-20): the 5 deep-C cohabs went cargo-native `.rust_lib` on ALL arches — the "ungate" this entry blocks no longer exists on the link line, and that flip (a far bigger layout change than the 2026-06 perturbations) landed green.
+2. **The captures(none) root is toolchain-fixed**: LLVM 21 (21.1.3 stable / 21.1.5 nightly — both shipping pipelines) respects volatile stores in attribute deduction, and plain out-writes deduce fold-proof `writeonly initializes(...)`. Post-opt IR audit of the shipping amd64 kernel (4335 CGU .ll files, `tools/scan_captures.py`): **zero live folds** — every poison callsite is a genuinely-unused source param. So sub-project (A) has no site left to name for this class, and the 2026-06 faults were probably never IR-committed folds at all (the class attribution was inferred from 2026-03 history, not IR-verified) — more likely an address-layout-sensitive **runtime** bug in the §9.13 Mm family, since fixed (or masked) by the constants/enum/LPC campaigns.
+3. **Layout-robustness (B) proven empirically**: `VIBEOS_LAYOUT_CANARY=1` (ntoskrnl-cargo/build.rs) deliberately perturbs the kernel link with zero semantic delta — rtl-rust↔cnt-rust-lib order swap (the heavily-pulled pair; 451 symbols relocated, 0 provider flips per the `VIBEOS_LINK_MAP=1` lld-map diff) + cport/csq swap + a redundant rossym dup. **Canary kernel booted 5/5 to shell-ready** (2026-07-05, amd64 windows-host TCG). In the 2026-06 era this deterministically 0x50'd at uniata enum before the desktop.
+Tripwires now standing: `tools/audit-captures.sh <arch> [--lint]` (rerun after every rustc/LLVM bump — a future LLVM could regress the volatile fix) and the canary build for any suspected layout-sensitivity report. Gotcha both share: env-only toggles don't re-run the cargo edge (§9.6b — ninja DEPENDS watches files, not env); touch `ntoskrnl-cargo/build.rs` and **verify the kernel md5 actually changed** (the first canary attempt no-op'd twice: once on stale-edge, once because cport/csq/rossym-dup extract 0 members — a duplicate archive AFTER the original pulls nothing).
 
 ### cnt-rust CRT shim returns garbage / hangs ONLY on amd64/arm64
 **Symptom:** A `libcntpr` CRT symbol misbehaves only on amd64/arm64 — memset dead-store-eliminated into a guard-only spin (freeldr hung after "Starting freeldr from UEFI"); `_strnicmp` collapsed to "always equal"; or (cargo-drive) arm64 ntdll printf misformats (`0xc000003a`→`0xc`) → 0x6A bugcheck.
@@ -2632,3 +2640,42 @@ its `++` targets vs. which frame teardown's proto branch decrements, for the sam
 they differ, fix the arm64 self-map helper (or `MiCompleteProtoPteFault`'s PT-page lookup) so the
 `++` and `−−` agree. The fix is a core-Mm change with cross-path blast radius (COW, section fault,
 teardown) → validate all 3 arches ×3 before landing.
+
+### 9.17 amd64 intermittent post-marker 0x50 with a driver-region PC that symbolicates to garbage = wild control transfer INTO a mapped system-space DATA VIEW (win32k/GDI dispatch family, NOT the layout class)
+
+**Symptom:** rare amd64 gate flake — `BUGCHECK 0x50 (referenced=0xfffff8a0…,
+read, PC=0xfffff880_03xxxxxx)` AFTER `shell ready` (taskbar already created,
+fonts just loaded); binary byte-identical to a green baseline; `addr2sym` /
+`info symbol` returns garbage for the PC. Observed 2026-07-05 ~01:52 (ghosts
+lane): `0x50 (0xfffff8a0003c6000, read, PC=0xfffff88003fb3050)`.
+
+**Attribution recipe (validated end-to-end, ~15 min):**
+1. `./vibeos-cli gdb start amd64` → `wait-for --pattern "shell ready"` → walk
+   `PsLoadedModuleList` (qemu/runtime_symbolicate.py with
+   `SYMIDX_TARGETS=<pc>`, or a hand LDR walk: DllBase@0x30 SizeOfImage@0x40
+   BaseDllName.Buffer@0x60). Verdict here: PC is in NO loaded module — it lies
+   BELOW the lowest session image (framebuf/dxg/ftfd/win32k stack at
+   `0xfffff88004278000+`), in dynamic system-PTE space.
+2. `x/16bx <pc page>` on the live boot: the page IS mapped and holds DATA
+   (font/section-view bytes `05 04 00 03 08 08 08…`, zeros at the PC itself).
+
+**Reading:** the faulting boot *executed data* — a corrupted function pointer /
+dispatch-table entry / return address transferred control into a
+`MmMapViewInSystemSpace` view (font file via ftfd, or a section win32k maps);
+the "instructions" there did a wild read of non-resident paged pool → 0x50.
+The PC is meaningless as code; the bug is whoever published the wild pointer.
+
+**What it is NOT:** the captures(none)/layout class — ruled out the same night
+by (a) zero live folds in the shipping-pipeline IR audit (scan_captures) and
+(b) the layout canary booting 5/5 (this section's banner + "Incomplete Rust
+cohab flip" ✅ CLOSED note).
+
+**Suspect family:** win32k session wild-pointer corruption — the amd64 cousin
+of the documented i386 `KeSignalGateBoostPriority: BAD gate` session-pool
+UAF/wild-write flake (same family, different victim: i386 corrupts a gate,
+amd64 corrupts a code pointer). Timing (right after WINLOGON font loads +
+explorer taskbar) and the mapped-font-view landing zone both point at the GDI
+font/driver dispatch path (PFE/PDEV/DRVFN tables — cf. the long-standing
+`LDEVOBJ_bEnableDriver` `Option<unsafe extern fn>` PFN/DRVFN layout suspect).
+Next diagnostic on a repro: special-pool / GDB watchpoint on the dispatch
+table slot, not PC symbolication.

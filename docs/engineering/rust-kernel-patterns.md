@@ -711,21 +711,53 @@ The `out(reg) + in(reg)` forces the pointer through an opaque register transform
 
 **Fragility:** CGU assignment is not deterministic — any code change CAN reshuffle partitioning. CGU=256 minimizes the risk but doesn't eliminate it. The only durable fix is opaque_ptr barriers.
 
-### Next: Automated `opaque_ptr` Tool (planned)
+### RESOLVED AT THE TOOLCHAIN — LLVM 21 respects volatile stores in attribute deduction (2026-07-05)
 
-Build a Python tool that:
-1. Parses all `#[no_mangle] pub unsafe extern` functions in ntoskrnl-rust
-2. Finds all pointer parameters (`*mut T`, `*const T`, PVOID, HANDLE, etc.)
-3. Inserts `let param = opaque_ptr(param);` after the opening brace
-4. Runs across all source files
+**The root cause above ("LLVM Ignores Volatile Stores in Attribute Deduction",
+2026-03-28) is FIXED in the toolchains we ship on** — stable rustc 1.92
+(LLVM 21.1.3) and nightly 1.94 (LLVM 21.1.5). Synthetic repro of the exact
+historical shape (a `#[no_mangle]` fn whose body is a lone `write_volatile`
+through its pointer param, same-CGU caller, opt-level=1):
 
-Once applied, we can:
-- Re-enable the write_volatile sweep (now safe because opaque_ptr blocks attribute deduction)
-- Re-enable the ABI unification (CGU reshuffling can't cause ud2 because opaque_ptr blocks the cascade)
-- Lower CGU count back to 16 or even 1 (the interprocedural analysis finds nothing to exploit)
-- Enable iofunc.rs, arcname.rs, and other holdouts
+- **Then (LLVM 19/20):** `define @VolWriter(ptr readnone captures(none) %out)`,
+  callers pass `ptr poison`, store folds, body may collapse to `ud2`.
+- **Now (LLVM 21):** `define @VolWriter(ptr noundef %out)` — NO memory
+  attributes deduced; the volatile store survives at every callsite. And plain
+  (non-volatile) out-param stores now deduce `writeonly captures(none)
+  initializes(...)`, which is equally fold-proof — callers must pass real
+  pointers to anything the callee stores through, volatile or not.
 
-The key insight: **opaque_ptr transforms the LLVM problem from "prevent interprocedural analysis from finding false UB" to "prevent interprocedural analysis from starting."** All the downstream defenses (write_volatile, guards, asm barriers) then work correctly because the attribute deduction that undermines them is blocked at the source.
+Empirical confirmation on the real kernel body (`tools/scan_captures.py` over
+the 256 post-opt CGU .ll files of ntoskrnl-rust, amd64, shipping profile):
+**zero committed folds.** Every `ptr poison` callsite in the build traces to a
+param the Rust source genuinely never uses (`let _ = param;` discards or
+`_`-prefixed params — MiLoadImageSection's non-session `file_name`/`ldr_entry`,
+FsRtlCancelOplockIIIrp's `DeviceObject`, NOT_IMPLEMENTED arbiter stubs), where
+poison is legal and harmless. Every remaining `readnone captures(none)` param
+(42 across 33 fns) is likewise an unused-in-source param, not an elided write.
+
+Consequences:
+- **write_volatile is a sound defense again.** The "Failed: write_volatile
+  Sweep" lesson above is obsolete on LLVM ≥ 21 (its CGU-reshuffle caveat about
+  mass changes remains true of any mass change).
+- **The planned automated `opaque_ptr` tool below is unnecessary.** Existing
+  `opaque_ptr` laundering stays (harmless, one reg-move), but new code doesn't
+  need it for attribute-deduction protection.
+- **`cgu=256` + `lto=false` stays** as belt-and-suspenders (it also firewalls
+  the ABI-mismatch `noreturn` cascade, which is toolchain-independent).
+- **The tripwire matters more than the fix:** rustc upgrades bump LLVM
+  regularly, and a future LLVM could regress this. `tools/scan_captures.py`
+  (post-opt IR audit: POISON_ARG / READNONE_OUTPARAM / UNREACHABLE_BODY,
+  emitted via `VIBEOS_EMIT_LLVM_IR=1` through reactos-link) is the permanent
+  detector — run it after every toolchain bump.
+
+### Superseded: Automated `opaque_ptr` Tool (planned 2026-03, retired 2026-07-05)
+
+Made unnecessary by the LLVM 21 fix above — kept for history. The plan was to
+insert `let param = opaque_ptr(param);` for every pointer param of every
+`#[no_mangle]` fn, to block the (then-broken) attribute deduction wholesale,
+then re-enable the write_volatile sweep, ABI unification, and lower CGU counts.
+The toolchain fix delivers the first two for free; CGU stays at 256 by choice.
 
 ## Relationship to Other Docs
 
