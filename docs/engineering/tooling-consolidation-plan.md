@@ -84,16 +84,28 @@ never sources `debug_block.py`.
 Each is a deletion/archive with near-zero behavioral risk. `git log`-check the orphaned scripts
 before deleting (some may be episodically hand-run) — **archive, don't delete**, when unsure.
 
-- [ ] Delete `tools/check_calling_conventions.py` (orphan; proper subset of verify_abi/ffi).
-- [ ] Delete the unreachable `_maybe_dedup` body (`build.py:263-282`) + `_DEDUP_INTERVAL`; keep the
-      early-`return` disable or drop the fn entirely (the dedup script's auto-path is dead).
-- [ ] Delete `qemu/gdb-helpers/list-threads.py`; remove its refs (`inspect.sh:93`, gdbengine `HELPER_FILES`);
-      delete the phantom `walk-procs.py` refs (`debug_block.py:211`, `sync-instrumentation-design.md:65`).
-- [ ] Merge the two guard-migration impls: keep `migrate_guards_ts.py` (tree-sitter, matches the doc),
-      delete `migrate_guards.py` (regex).
-- [ ] GC/gitignore stale rustconv dirs: `.responses-backup-pre-c2rust/`, `classpnp-gap-staging/`,
-      `out/`, `.semdiff/`; add a `.responses/` GC policy (41 MB, keyed on body-hash not model).
-- [ ] Archive the 25 orphaned one-off scripts → `tools/rustconv/archive/` (git-log-check first).
+- [x] **DONE 2026-07-04** — Deleted `tools/check_calling_conventions.py` (orphan; only a docstring
+      mention in `verify_signatures.py:5`, which was tidied).
+- [x] **DONE 2026-07-04** — Dropped the whole dead `_maybe_dedup` fn + `_DEDUP_INTERVAL` + call site
+      (`build.py`); left a one-line tombstone comment at the call site pointing to the retirement rationale.
+- [x] **DONE 2026-07-04** — Archived 24 orphaned campaign one-off scripts → `tools/rustconv/archive/`
+      (freeldr_* ×13, fix_ke_* ×3, dedup_* ×2, bindgen_flatten_forwarders, remove_shadow_defs,
+      strip_wdf_externs, triage_residual, autocast, fix_misc_method_variadic — all ref-count-0). README added.
+- [x] **DONE 2026-07-04** — Removed local scratch `tools/rustconv/.semdiff/` (untracked, gitignored).
+- [ ] `qemu/gdb-helpers/list-threads.py` — **NOT a clean delete** (plan was wrong): it's wired into
+      `gdbengine.py:55,79` (HELPER_FILES + command map) and `inspect.sh:93,155,156`, and the field manual
+      (`:360`) treats reviving it (once split-debuginfo lands) as owed. This is an archive-**and**-rewire, or
+      leave-as-is. **The phantom `walk-procs.py` refs are PROSE** (`debug_block.py:211`, design-doc:65 mention
+      it positively as *retired*), not broken refs — nothing to fix there.
+- [ ] Guard-migration impls (`migrate_guards.py` regex vs `migrate_guards_ts.py` tree-sitter): both refs-0
+      but documented as a complementary **pair** (scanner + transform) in `rust-kernel-patterns.md:213`.
+      Merge is a judgment call, not mechanical — deferred.
+- [ ] **HELD — needs user approval (paid artifacts, NOT dead weight — plan's D4 was wrong):**
+      `classpnp-gap-staging/` holds 3 paid Rust translations (`ClasspBuildRequestEx.rs`, `class_gap*.rs`);
+      `out/` holds a *live* cache (`seh_llm_lower_cache.json`, used by `seh_llm_lower.py:25`) + a deliberately
+      `misroute-preserved` paid `api.rs`; `.responses-backup-pre-c2rust/` is a backup of paid responses.
+      None may be removed without explicit approval (AGENTS.md translation-preservation rule). Separately:
+      `.responses/` (41 MB) still wants a body-hash-keyed GC policy — real, deferred.
 - [ ] Drop legacy model aliases (`__main__.py:119-121`); reconcile the 4 backends + Codex path to one list.
 - [ ] Prune det-remap/copy-recipe doc tombstones to one; fix the AGENTS.md "Worktree Discipline #3"
       copy-recipe if it's now stale post-canon (`canon-run.sh:17-22`).
