@@ -239,49 +239,6 @@ def _ninja_known_targets(repo: Path, build_dir: Path, wrap, env) -> set[str]:
     return {ln.split(":", 1)[0].strip() for ln in cp.stdout.splitlines() if ":" in ln}
 
 
-_DEDUP_INTERVAL = 24 * 3600  # hardlink-dedup the cache trees at most daily
-
-
-def _maybe_dedup(run: Run, repo: Path) -> None:
-    """DISABLED 2026-07-04 — cross-worktree hardlink dedup of LIVE cache trees is
-    unsound, twice over (see tools/dedup-build-cache.sh SAFETY):
-      1. build-* cmake trees: in-place O_TRUNC writers (spec2def, cmake -E copy,
-         ccache-miss clang) truncate a shared inode under a sibling's running
-         ld.lld mmap → SIGBUS (two amd64 builds died at the d3dx9 links).
-      2. cargo target trees: cargo invalidation is MTIME-based, and dedup makes
-         fingerprints/invoked.timestamp/build-script binaries shared inodes —
-         sibling builds refresh their mtimes, cargo concludes "fresh" and
-         silently re-runs STALE build scripts / reuses stale artifacts (caught
-         live: a 00:16 build-script-build with 4 links re-ran at 13:27 after
-         its source was edited at 13:06 — the edit never took effect). That is
-         the false-green class vibeos-cli exists to kill.
-    Disk reclaim levers that remain: `vibeos-cli prune` (idle worktrees) and a
-    MANUAL dedup of trees you know are idle. Do not re-enable the detached call
-    without solving mtime-shared-state (e.g. copy-on-write filesystem reflinks,
-    which ext4 lacks)."""
-    return  # intentionally disabled — see docstring
-    script = repo / "tools" / "dedup-build-cache.sh"
-    if not script.is_file():
-        return
-    stamp = cachecfg.vibeos_root(repo) / ".dedup-last"
-    try:
-        if stamp.is_file() and time.time() - stamp.stat().st_mtime < _DEDUP_INTERVAL:
-            return
-        stamp.touch()
-    except OSError:
-        return
-    log = run.dir / "dedup.log"
-    with open(log, "ab") as fh:
-        subprocess.Popen(
-            ["bash", str(script), "--apply"],
-            stdout=fh,
-            stderr=fh,
-            start_new_session=True,
-            cwd=repo,
-        )
-    run.add(Stage("dedup", status="ok", detail=f"detached, ≤1/day → {log}"))
-
-
 def build(args, repo: Path) -> int:
     arch = archcfg.base_arch(args.arch)  # build side keys on the base arch
     cfg = archcfg.arch_build(arch)
@@ -752,8 +709,9 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     stamp.write(build_dir)
     run.add(Stage("stamp", status="ok", detail="cold" if cold else "warm"))
 
-    # --- opportunistic hardlink dedup of cache trees (detached, throttled) ---
-    _maybe_dedup(run, repo)
+    # NOTE: auto hardlink-dedup of cache trees was RETIRED 2026-07-04 (unsound on
+    # live trees — SIGBUS + mtime-poisoned false-green; see tools/dedup-build-cache.sh
+    # SAFETY + AGENTS.md "Fleet isolation law"). Disk reclaim is manual: `vibeos-cli prune`.
     if not cold:
         run.add(
             Stage(
