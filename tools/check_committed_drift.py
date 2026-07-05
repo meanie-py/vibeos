@@ -48,6 +48,10 @@ import gen_cflags
 import gen_committed_res
 
 REPO = Path(__file__).resolve().parent.parent
+# The canonical build mountpoint (tools/canon-run.sh). compile_commands.json bakes
+# /tmp/vibeos paths; outside a canon-run mount they're remapped to REPO so replays
+# (the .res windres check) still run. Kept in sync with gen_cflags.CANON_ROOT.
+CANON_ROOT = "/tmp/vibeos"
 ARCHES = ("i386", "amd64", "arm64")
 NM = ".build-tools/llvm-mingw/bin/llvm-nm"
 LLVM_MINGW = REPO / ".build-tools/llvm-mingw"
@@ -248,15 +252,23 @@ def check_res(arches: tuple[str, ...]) -> list[tuple]:
             continue
         for stem, committed_rel, toks, cwd in jobs:
             committed = REPO / committed_rel
-            # The replay cwd comes from compile_commands.json, which bakes the
-            # CANONICAL build path (/tmp/vibeos/build-<arch>) that only exists
+            # The replay cwd + tokens come from compile_commands.json, which bakes
+            # the CANONICAL build path (/tmp/vibeos/build-<arch>), present only
             # inside a canon-run bind mount. Standalone (e.g. `check --strict`
-            # outside a build), that dir is absent — the replay CAN'T run, which
-            # is a SKIP, not a DRIFT. Misclassifying it as DRIFT produced a
-            # spurious gate failure (2026-07-04).
+            # outside a build), that dir is absent. Rather than SKIP (which left
+            # .res drift un-gated — the T3 tail), REMAP /tmp/vibeos → the real
+            # repo tree and run the replay there: windres output is resource DATA
+            # (no embedded build paths), so a real-path build is byte-identical to
+            # the canonical one. Same canonical-templatize idea as gen_cflags.
+            # Only SKIP if neither the canonical nor the remapped cwd exists.
             if not os.path.isdir(cwd):
-                rows.append((".res", f"{stem}-{arch}", SKIP, "canonical build mount absent"))
-                continue
+                real_cwd = cwd.replace(CANON_ROOT, str(REPO))
+                if os.path.isdir(real_cwd):
+                    cwd = real_cwd
+                    toks = [t.replace(CANON_ROOT, str(REPO)) for t in toks]
+                else:
+                    rows.append((".res", f"{stem}-{arch}", SKIP, "build dir absent (canonical + real)"))
+                    continue
             with tempfile.TemporaryDirectory() as td:
                 dst = os.path.join(td, "out.res")
                 cmd = list(toks)
