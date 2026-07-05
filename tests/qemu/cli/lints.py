@@ -162,6 +162,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # stderr to keep the baseline stable — only `MISMATCH:` finding lines on stdout.
     vc = rc / "verify_constants.py"
     specs.append(("verify_constants", [py, str(vc)] if vc.is_file() else ["MISSING"], "stdout"))
+    # Enum-member drift — the AdjustUnwait class: a mistranslated C enum value
+    # silently deforms dispatch/scheduling and compiles clean on every arch (19
+    # such drifts found in the 2026-07-04 dispatcher audit; none were gated).
+    # `--enums` is FP-prone on generic names, which is exactly what the baseline
+    # mechanism is for (same pattern as verify_signatures): current accepted
+    # findings live in the baseline, the gate is NEW-only.
+    specs.append(
+        (
+            "verify_constants_enums",
+            [py, str(vc), "--enums"] if vc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     specs.append(("lint_kernel", [py, str(lk)] if lk.is_file() else ["MISSING"], "stdout"))
     # C↔Rust differential oracles in tools/ (offsets are a compile-time gate, not
     # here). tables + match_consts are clean today (empty baseline = strict);

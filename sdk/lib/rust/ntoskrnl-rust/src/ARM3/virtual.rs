@@ -429,12 +429,11 @@ pub unsafe extern "system" fn MiDeleteSystemPageableVm(
                 Pfn2 = MiGetPfnEntry(PageTableIndex);
 
                 OldIrql = MiAcquirePfnLock();
+                MiDecrementShareCount(Pfn2 as ntkrnl_sys::ddk::PMMPFN, PageTableIndex as ntkrnl_sys::ddk::PFN_NUMBER);
                 MI_SET_PFN_DELETED(Pfn1);
                 MiDecrementShareCount(Pfn1 as ntkrnl_sys::ddk::PMMPFN, PageFrameIndex as ntkrnl_sys::ddk::PFN_NUMBER);
-                MiDecrementShareCount(Pfn2 as ntkrnl_sys::ddk::PMMPFN, PageTableIndex as ntkrnl_sys::ddk::PFN_NUMBER);
-                MiReleasePfnLock(OldIrql);
-
                 MI_ERASE_PTE(PointerPte);
+                MiReleasePfnLock(OldIrql);
             } else {
                 MI_ERASE_PTE(PointerPte);
             }
@@ -481,9 +480,10 @@ pub unsafe extern "system" fn MiDeletePte(
 
             MI_ERASE_PTE(PointerPte);
 
-            let pte_frame_pfn = MiGetPfnEntry((*Pfn1).pte_frame());
+            let pte_frame = (*Pfn1).pte_frame();
+            let pte_frame_pfn = MiGetPfnEntry(pte_frame);
             if !pte_frame_pfn.is_null() {
-                MiDecrementShareCount(pte_frame_pfn as ntkrnl_sys::ddk::PMMPFN, (*Pfn1).pte_frame() as ntkrnl_sys::ddk::PFN_NUMBER);
+                MiDecrementShareCount(pte_frame_pfn as ntkrnl_sys::ddk::PMMPFN, pte_frame as ntkrnl_sys::ddk::PFN_NUMBER);
             }
 
             MI_SET_PFN_DELETED(Pfn1);
@@ -580,9 +580,10 @@ pub unsafe extern "system" fn MiDeletePte(
         }
 
         MI_ERASE_PTE(PointerPte);
-        let pte_frame_pfn = MiGetPfnEntry((*Pfn1).pte_frame());
+        let pte_frame = (*Pfn1).pte_frame();
+        let pte_frame_pfn = MiGetPfnEntry(pte_frame);
         if !pte_frame_pfn.is_null() {
-            MiDecrementShareCount(pte_frame_pfn as ntkrnl_sys::ddk::PMMPFN, (*Pfn1).pte_frame() as ntkrnl_sys::ddk::PFN_NUMBER);
+            MiDecrementShareCount(pte_frame_pfn as ntkrnl_sys::ddk::PMMPFN, pte_frame as ntkrnl_sys::ddk::PFN_NUMBER);
         }
         MI_SET_PFN_DELETED(Pfn1);
         MiDecrementShareCount(Pfn1 as ntkrnl_sys::ddk::PMMPFN, PageFrameIndex as ntkrnl_sys::ddk::PFN_NUMBER);
@@ -1463,7 +1464,6 @@ pub unsafe extern "system" fn MiProcessValidPteList(
         PageFrameIndex = PFN_FROM_PTE(core::ptr::addr_of!(TempPte) as PMMPTE);
         Pfn1 = MiGetPfnEntry(PageFrameIndex);
         Pfn2 = MiGetPfnEntry((*Pfn1).pte_frame());
-
         MiDecrementShareCount(Pfn2 as ntkrnl_sys::ddk::PMMPFN, (*Pfn1).pte_frame() as ntkrnl_sys::ddk::PFN_NUMBER);
         MI_SET_PFN_DELETED(Pfn1);
         MiDecrementShareCount(Pfn1 as ntkrnl_sys::ddk::PMMPFN, PageFrameIndex as ntkrnl_sys::ddk::PFN_NUMBER);

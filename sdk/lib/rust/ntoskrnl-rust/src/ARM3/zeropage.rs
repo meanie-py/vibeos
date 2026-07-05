@@ -68,20 +68,13 @@ pub unsafe extern "system" fn MmZeroPageThread() {
                 free_page = MiRemoveAnyPage(MI_GET_PAGE_COLOR(page_index as ULONG));
 
                 if free_page != page_index {
-                    #[cfg(target_arch = "aarch64")]
-                    {
-                        // Continue with FreePage instead of bugchecking
-                    }
-                    #[cfg(not(target_arch = "aarch64"))]
-                    {
-                        KeBugCheckEx(
-                            PFN_LIST_CORRUPT,
-                            0x8F,
-                            free_page as ULONG_PTR,
-                            page_index as ULONG_PTR,
-                            0,
-                        );
-                    }
+                    KeBugCheckEx(
+                        PFN_LIST_CORRUPT,
+                        0x8F,
+                        free_page as ULONG_PTR,
+                        page_index as ULONG_PTR,
+                        0,
+                    );
                 }
 
                 pfn2 = MiGetPfnEntry(page_index);

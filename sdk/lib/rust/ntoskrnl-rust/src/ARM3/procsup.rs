@@ -204,7 +204,6 @@ pub unsafe extern "system" fn MmDeleteKernelStack(StackBase: PVOID, GuiStack: BO
             }
 
             MI_SET_PFN_DELETED(Pfn1);
-
             MiDecrementShareCount(Pfn1 as *mut _MMPFN, (PageFrameNumber) as _);
         }
 
@@ -681,11 +680,9 @@ pub unsafe extern "system" fn MmInitializeProcessAddressSpace(
 
     OldIrql = MiAcquirePfnLock();
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let PointerPte = MiAddressToPte(PXE_BASE as PVOID);
-    #[cfg(all(not(target_arch = "aarch64"), target_arch = "x86_64"))]
-    let PointerPte = MiAddressToPte(PPE_BASE as PVOID);
-    #[cfg(all(not(target_arch = "aarch64"), not(target_arch = "x86_64")))]
+    #[cfg(all(not(target_arch = "x86_64"), not(target_arch = "aarch64")))]
     let PointerPte = MiAddressToPte(PDE_BASE as PVOID);
 
     PageFrameNumber = PFN_FROM_PTE(PointerPte);
@@ -701,7 +698,14 @@ pub unsafe extern "system" fn MmInitializeProcessAddressSpace(
         PageFrameNumber = PFN_FROM_PTE(PointerPpe as PMMPTE);
         MiInitializePfn((PageFrameNumber) as _, PointerPpe as *mut _MMPTE, 1u8);
     }
-    #[cfg(target_arch = "aarch64")]
+    // _MI_PAGING_LEVELS == 4 (amd64 AND arm64) — init the PFN for the hyperspace
+    // PXE's target (the top-level page-directory-pointer page = DirectoryTableBase[1]).
+    // This block was previously gated aarch64-only, so on amd64 the hyperspace PDPT's
+    // PFN entry was never initialized (stayed loc=ZeroedPageList / ref=0 with garbage
+    // u4.PteFrame). MmDeleteProcessAddressSpace then read that garbage PteFrame and
+    // called MiDecrementShareCount(NULL, garbage) → BUGCHECK 0x4E (0x98) at process
+    // teardown. amd64 is also 4-level paging, so it needs this exactly like arm64.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         let PointerPxe = MiAddressToPxe(HYPER_SPACE as PVOID);
         PageFrameNumber = PFN_FROM_PTE(PointerPxe as PMMPTE);

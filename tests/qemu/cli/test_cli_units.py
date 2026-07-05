@@ -473,6 +473,80 @@ def test_triage_known_hang_flakes():
     assert r4["classification"] == "BUGCHECK"  # bugcheck branch, hang sig ignored
 
 
+def test_triage_arm64_bugcheck_banner():
+    # ke/bug.c prints `*** BUGCHECK: 0xNN …` (the canonical Rust/arm64 banner);
+    # until 2026-07-04 the regex only knew `BugCheck 0xNN` / `*** STOP`, so a
+    # real arm64 0xF4 classified as HANG_TIMEOUT — which the old gate policy
+    # would then have auto-retried as a "flake".
+    serial = "*** BUGCHECK: 0x000000F4 (0x03, 0xfffffa00063809, 0xfffffa000638, 0xfffff8004)\n"
+    r = triage.classify(serial, reached=False, fail_marker=None, debugcon=None)
+    assert r["classification"] == "BUGCHECK"
+    assert r["bugcheck"] == "0x000000F4"
+
+
+def test_triage_kernel_panic_via_debugcon():
+    # kernel-mode Rust panic reaches debugcon 0xE9 only (serial goes silent) —
+    # must classify RUST_PANIC (never retried), not HANG_TIMEOUT (retryable)
+    r = triage.classify(
+        "[SMSS] _main entered\n",
+        reached=False,
+        fail_marker=None,
+        debugcon=None,
+        debugcon_raw="KMPSC...PANIC:mm/ARM3/pagfault.rs:412\n",
+    )
+    assert r["classification"] == "RUST_PANIC"
+    assert r["panic_loc"] == "mm/ARM3/pagfault.rs:412"
+    assert any("debugcon" in s for s in r["salient"])
+
+
+def test_triage_census_confirms_wedge():
+    serial = (
+        "[SMSS] _main entered\n"
+        "[CENSUS] 3 thread(s) GateWait >10s (scan #4, synctrace dropped=0)\n"
+        "[CENSUS] STUCK services.exe pid=724 tid=804 GateWait verdict=HOLDER-STUCK\n"
+        "[CENSUS] STUCK csrss.exe pid=512 tid=520 GateWait (no synctrace entry)\n"
+    )
+    r = triage.classify(serial, reached=False, fail_marker=None, debugcon=None)
+    assert r["classification"] == "HANG_TIMEOUT"
+    assert r["wedge_confirmed"] is True
+    assert r["census_stuck"] == 2
+    assert any("wedge CONFIRMED" in s for s in r["salient"])
+
+
+def test_triage_wedge_evidence_counts():
+    # real emission shapes from ke/lockdep.rs (Phase A SELF-DEADLOCK, Phase B ABBA);
+    # the "[LOCKDEP] N violation(s) recorded" header and reverse-order context
+    # lines are deliberately NOT counted as violations.
+    serial = (
+        "noise\n"
+        "[CENSUS] STUCK a\n"
+        "[LOCKDEP] 2 violation(s) recorded (thread-slot drops=0, edge drops=0, edges=6200):\n"
+        "[LOCKDEP]   SELF-DEADLOCK #1 thread=0xfff WAIT(shared) on lock=0xabc"
+        " already held(excl) site=0x123\n"
+        "[LOCKDEP]   ABBA #2 thr=0xfff holds 0xaaa(excl) acquiring 0xbbb(excl) site=0x456\n"
+        "[LOCKDEP]        reverse order seen: thr=0xeee took 0xbbb before 0xaaa site=0x789\n"
+        "noise\n"
+    )
+    ev = triage.wedge_evidence(serial)
+    assert ev["census_stuck"] == 1 and ev["lockdep"] == 2
+    assert triage.wedge_evidence("clean boot\n") == {"census_stuck": 0, "lockdep": 0, "lines": []}
+
+
+def test_triage_post_boot_check():
+    # clean settle window → None
+    assert triage.post_boot_check("[EXPLORER] _tWinMain entered\nshell ready\n") is None
+    # BugCheck AFTER the marker (previously a structural false green)
+    r = triage.post_boot_check("[EXPLORER] _tWinMain entered\nBugCheck 0xF4 (0x3, ...)\n")
+    assert r is not None and r["classification"] == "BUGCHECK" and r["bugcheck"] == "0xF4"
+    # kernel panic that only reached debugcon
+    r2 = triage.post_boot_check("_tWinMain entered\n", debugcon_raw="PANIC:ke/wait.rs:99\n")
+    assert r2 is not None and r2["classification"] == "RUST_PANIC"
+    assert r2["panic_loc"] == "ke/wait.rs:99"
+    # user-mode panic in the settle window
+    r3 = triage.post_boot_check("_tWinMain entered\npanicked at 'oops', tray.rs:7\n")
+    assert r3 is not None and r3["classification"] == "RUST_PANIC"
+
+
 # --- artifacts: summary.json is the machine-true verdict -------------------
 
 
@@ -1704,7 +1778,10 @@ def _gate_args(**kw):
 def _fake_smoke(mapping):
     """Return a stand-in for gate._smoke_once. `mapping[arch]` is a list of
     per-attempt verdicts, e.g. ['KNOWN_FLAKE', 'OK']. Attempt index derives from
-    the root dir suffix (a1 = first pass, r1/r2 = retries)."""
+    the root dir suffix (a1 = first pass, r1/r2 = retries). A HANG_TIMEOUT can
+    carry its smoke characterization as a suffix: 'HANG_TIMEOUT:slow' (serial
+    still flowing — contention-shaped), 'HANG_TIMEOUT:wedged' (silent), or
+    'HANG_TIMEOUT:census' (kernel census/lockdep self-confirmed the wedge)."""
     calls: dict[str, int] = {}
 
     def fake(repo, arch, root, extra):
@@ -1717,13 +1794,24 @@ def _fake_smoke(mapping):
         idx = min(idx, len(seq) - 1)
         calls[f"{arch}:{name}"] = calls.get(f"{arch}:{name}", 0) + 1
         verdict = seq[idx]
+        fields: dict = {}
+        if ":" in verdict:
+            verdict, kind = verdict.split(":", 1)
+            if kind == "census":
+                fields.update(hang_kind="wedged", wedge_confirmed=True, census_stuck=3)
+            else:
+                fields["hang_kind"] = kind
         ok = verdict in ("OK", "WARN")
+        classification = "" if ok else verdict
         return {
             "arch": arch,
             "verdict": verdict if ok else "FAIL",
-            "classification": "" if ok else verdict,
+            "classification": classification,
             "ok": ok,
-            "retryable": verdict in gate_mod.RETRYABLE,
+            "retryable": gate_mod._retryable(classification, fields),
+            "hang_kind": fields.get("hang_kind"),
+            "wedge_confirmed": bool(fields.get("wedge_confirmed")),
+            "census_stuck": fields.get("census_stuck", 0),
             "seconds": 0.01,
             "run_dir": str(root),
             "flake_rate": None,
@@ -1786,6 +1874,62 @@ def test_gate_retries_zero_disables_retry(tmp_path, monkeypatch):
     assert not any("-r" in k for k in fake.calls), fake.calls
 
 
+def test_gate_slow_hang_timeout_is_retried(tmp_path, monkeypatch):
+    # serial still flowing at deadline = contention-shaped → retryable
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["HANG_TIMEOUT:slow", "OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    rc = gate_mod.gate(_gate_args(), tmp_path)
+    assert rc == 0
+    assert any(k.startswith("amd64:") and "-r" in k for k in fake.calls), fake.calls
+
+
+def test_gate_wedged_hang_timeout_not_retried(tmp_path, monkeypatch):
+    # serial went silent — a wedge is a regression signature, never a retry.
+    # (The old blanket HANG_TIMEOUT retry let a ~50% service wedge pass a
+    # 3-attempt gate ~87% of the time.)
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["HANG_TIMEOUT:wedged", "OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    rc = gate_mod.gate(_gate_args(), tmp_path)
+    assert rc == 1, "a wedged hang must fail the gate, not be retried away"
+    assert not any(k.startswith("amd64:") and "-r" in k for k in fake.calls), fake.calls
+
+
+def test_gate_census_confirmed_wedge_not_retried(tmp_path, monkeypatch):
+    # the kernel itself reported stuck threads — definitely not contention
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"amd64": ["HANG_TIMEOUT:census", "OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    rc = gate_mod.gate(_gate_args(arches="amd64"), tmp_path)
+    assert rc == 1
+    assert not any("-r" in k for k in fake.calls), fake.calls
+
+
+def test_gate_launch_fail_is_retried(tmp_path, monkeypatch):
+    # a QEMU/interop launch hiccup is an environment failure, not a regression
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"amd64": ["LAUNCH_FAIL", "OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    rc = gate_mod.gate(_gate_args(arches="amd64"), tmp_path)
+    assert rc == 0, "an env launch failure that greens on retry must pass"
+    assert any("-r" in k for k in fake.calls), fake.calls
+
+
+def test_retryable_policy_unit():
+    assert gate_mod._retryable("KNOWN_FLAKE", {})
+    assert gate_mod._retryable("FLAKY", {})
+    assert gate_mod._retryable("LAUNCH_FAIL", {})
+    assert gate_mod._retryable("HANG_TIMEOUT", {"hang_kind": "slow"})
+    assert not gate_mod._retryable("HANG_TIMEOUT", {})  # uncharacterized blocks
+    assert not gate_mod._retryable("HANG_TIMEOUT", {"hang_kind": "wedged"})
+    assert not gate_mod._retryable("HANG_TIMEOUT", {"hang_kind": "slow", "wedge_confirmed": True})
+    assert not gate_mod._retryable("BUGCHECK", {})
+    assert not gate_mod._retryable("RUST_PANIC", {})
+    assert not gate_mod._retryable("SHELL_NOT_READY", {})
+    assert not gate_mod._retryable("STALE_MEDIA", {})
+
+
 # --- smoke._watch: early-hang watchdog + net opt-in (no QEMU) ---------------
 
 from . import smoke as smoke_mod  # noqa: E402
@@ -1841,6 +1985,30 @@ def test_watch_no_early_hang_when_disabled():
     outcome, _buf, diag = smoke_mod._watch(vm, until="NEVER", fail_on=None, timeout=0.3)  # type: ignore[arg-type]
     assert outcome == "timeout"
     assert diag["early_hang"] is False
+
+
+def test_settle_watch_keeps_serial_and_sees_milestone():
+    # settle serial is KEPT (for the post-marker health scan) and the milestone
+    # is detected — previously the drain discarded everything it read.
+    vm = _FakeVM(["taskbar building...\n", "[WIN32K] shell ready\n"], hang_silence=0.0)
+    text, seen = smoke_mod._settle_watch(vm, 0.15, "shell ready", grace=0.1)  # type: ignore[arg-type]
+    assert "shell ready" in text
+    assert seen is True
+
+
+def test_settle_watch_milestone_missing_after_grace():
+    vm = _FakeVM(["taskbar building...\n"], hang_silence=0.0)
+    t0 = time.monotonic()
+    text, seen = smoke_mod._settle_watch(vm, 0.1, "shell ready", grace=0.2)  # type: ignore[arg-type]
+    assert seen is False
+    assert "taskbar" in text
+    assert time.monotonic() - t0 < 5
+
+
+def test_settle_watch_no_milestone_required():
+    vm = _FakeVM(["whatever\n"], hang_silence=0.0)
+    text, seen = smoke_mod._settle_watch(vm, 0.1, None)  # type: ignore[arg-type]
+    assert seen is True and "whatever" in text
 
 
 # --- hostlock: build(cpuheavy) vs boot(bootcpu) pools are DECOUPLED --------

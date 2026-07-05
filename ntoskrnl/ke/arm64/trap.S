@@ -165,6 +165,17 @@
  * restore SP_EL0 from TfSp before eret.
  */
 KiTrapReturn:
+    /* The exception return must be atomic w.r.t. interrupts: ELR_EL1/SPSR_EL1
+     * are banked per-EXCEPTION, not per-frame, so an IRQ taken after the msr
+     * writes below clobbers them with the interrupted state (ELR =
+     * KiTrapReturn+0xC — the insn after `msr spsr_el1`) and the outer eret
+     * then targets the nested-IRQ state instead of the frame's. Observed live
+     * 2026-07-04: user threads (smss.exe, explorer.exe) resuming at
+     * KiTrapReturn+0xC -> UEXC C000001D kill -> 0xF4, plus wandering
+     * driver-region 0x50s from the double frame-teardown flavor. Masking here
+     * never leaks into the resumed context — eret reloads PSTATE.DAIF from the
+     * frame's SPSR. */
+    msr daifset, #3
 #ifdef ARM64_TRAP_DEBUG
     /* [TRAP-PROBE] inspect the frame for a bad EL0-return state (Spsr/Pc) at
      * the point of use, just before the eret. x0/x1/x30 are dead here (all

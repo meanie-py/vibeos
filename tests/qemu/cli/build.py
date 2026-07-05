@@ -709,6 +709,27 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     stamp.write(build_dir)
     run.add(Stage("stamp", status="ok", detail="cold" if cold else "warm"))
 
+    # --- artifact self-check: a "successful" build must end with real, fresh
+    # boot media. Catches the silent-false-success class at the source instead
+    # of at smoke time (or never): sandbox/overlay runs that report rc=0 with no
+    # persisted artifacts (previously tribal knowledge in AGENTS.md only), and a
+    # ninja run that skipped a stale cargo-linked PE / cohab binary (the same
+    # mtime nets smoke's preflight uses — the 2026-07-04 ntoskrnl cargo-link
+    # false-green class, now caught before anyone boots it).
+    st = provenance.check_staleness(repo, arch)
+    if st.media_missing or st.stale:
+        run.classification = "BUILD_INCOMPLETE"
+        run.add(
+            Stage(
+                "artifact-check",
+                status="fail",
+                detail="boot media missing or stale after a 'successful' build",
+                salient=st.reasons[:4],
+            )
+        )
+        return run.finalize(repo)
+    run.add(Stage("artifact-check", status="ok", detail="media present + fresh"))
+
     # NOTE: auto hardlink-dedup of cache trees was RETIRED 2026-07-04 (unsound on
     # live trees — SIGBUS + mtime-poisoned false-green; see tools/dedup-build-cache.sh
     # SAFETY + AGENTS.md "Fleet isolation law"). Disk reclaim is manual: `vibeos-cli prune`.

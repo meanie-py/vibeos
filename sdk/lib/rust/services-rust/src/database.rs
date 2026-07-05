@@ -252,22 +252,28 @@ unsafe fn ScmCreateNewControlPipe(
             return dwError;
         }
 
-        if dwKeyDisposition == REG_OPENED_EXISTING_KEY {
-            dwKeySize = core::mem::size_of::<DWORD>() as DWORD;
-            dwError = RegQueryValueExW(
-                hServiceCurrentKey,
-                wstr!("\0").as_ptr(),
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-                &mut dwServiceCurrent as *mut DWORD as *mut BYTE,
-                &mut dwKeySize,
-            ) as DWORD;
-            if dwError != ERROR_SUCCESS {
-                RegCloseKey(hServiceCurrentKey);
-                return dwError;
-            }
-
-            dwServiceCurrent += 1;
+        // Advance the counter so each service image gets a UNIQUE control pipe
+        // (\\.\pipe\net\NtControlPipe<N>). We must NOT gate this on
+        // dwKeyDisposition == REG_OPENED_EXISTING_KEY: RegCreateKeyExW reports
+        // REG_CREATED_NEW_KEY *every* time for this volatile key (the key value
+        // still persists, but the disposition is wrong), so the old gated read
+        // never ran → the counter was stuck at 1 → every service collided on
+        // NtControlPipe1 → control-pipe connect cross-talk → intermittent 1053
+        // service-connect timeouts → EventLog cascade-wedged the boot (~50% x86).
+        // Read the existing value unconditionally; if present, advance past it.
+        let _ = dwKeyDisposition;
+        dwKeySize = core::mem::size_of::<DWORD>() as DWORD;
+        let mut dwExisting: DWORD = 0;
+        if RegQueryValueExW(
+            hServiceCurrentKey,
+            wstr!("\0").as_ptr(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            &mut dwExisting as *mut DWORD as *mut BYTE,
+            &mut dwKeySize,
+        ) as DWORD == ERROR_SUCCESS
+        {
+            dwServiceCurrent = dwExisting + 1;
         }
 
         dwError = RegSetValueExW(
@@ -319,6 +325,15 @@ unsafe fn ScmCreateNewControlPipe(
     if (*pServiceImage).hControlPipe == INVALID_HANDLE_VALUE {
         return GetLastError();
     }
+
+    // Temp control-pipe-race instrumentation (DcomLaunch wedge investigation):
+    // SCM created NtControlPipe<dwServiceCurrent>. Compare against the service's
+    // [SCTRL] connecting-pipe number; a mismatch = the shared-ServiceCurrent race.
+    DbgPrint(
+        b"[SERVICES] ScmCreateNewControlPipe: created NtControlPipe%lu (disposition=%lu 1=NEW 2=EXISTING)\n\0".as_ptr() as *const i8,
+        dwServiceCurrent,
+        dwKeyDisposition,
+    );
 
     ERROR_SUCCESS
 }
@@ -1846,6 +1861,7 @@ unsafe fn ScmStartUserModeService(
             }
 
             if ScmIsSecurityService((*Service).lpImage) == 0 {
+                DbgPrint(b"[SERVICES] SUMS(%S): before CreateProcessW\n\0".as_ptr() as *const i8, (*Service).lpServiceName);
                 Result = CreateProcessW(
                     core::ptr::null_mut(),
                     (*(*Service).lpImage).pszImagePath,
@@ -1875,16 +1891,20 @@ unsafe fn ScmStartUserModeService(
             return dwError;
         }
 
+        DbgPrint(b"[SERVICES] SUMS(%S): CreateProcessW returned pid=%lu\n\0".as_ptr() as *const i8, (*Service).lpServiceName, ProcessInformation.dwProcessId);
         /* Get the process handle and ID */
         (*(*Service).lpImage).hProcess = ProcessInformation.hProcess;
         (*(*Service).lpImage).dwProcessId = ProcessInformation.dwProcessId;
 
         /* Resume the main thread and close its handle */
         ResumeThread(ProcessInformation.hThread);
+        DbgPrint(b"[SERVICES] SUMS(%S): after ResumeThread\n\0".as_ptr() as *const i8, (*Service).lpServiceName);
         CloseHandle(ProcessInformation.hThread);
 
         /* Connect control pipe */
+        DbgPrint(b"[SERVICES] ScmStartUserModeService(%S): waiting for connect\n\0".as_ptr() as *const i8, (*Service).lpServiceName);
         dwError = ScmWaitForServiceConnect(Service);
+        DbgPrint(b"[SERVICES] ScmStartUserModeService(%S): connect result=%lu\n\0".as_ptr() as *const i8, (*Service).lpServiceName, dwError);
         if dwError != ERROR_SUCCESS {
             (*(*Service).lpImage).dwProcessId = 0;
             return dwError;
@@ -1892,7 +1912,8 @@ unsafe fn ScmStartUserModeService(
     }
 
     /* Send the start command and return */
-    ScmControlServiceEx(
+    DbgPrint(b"[SERVICES] ScmStartUserModeService(%S): sending START (untimed?)\n\0".as_ptr() as *const i8, (*Service).lpServiceName);
+    let _r = ScmControlServiceEx(
         (*(*Service).lpImage).hControlPipe,
         (*Service).lpServiceName,
         if ((*Service).Status.dwServiceType & SERVICE_WIN32_OWN_PROCESS) != 0 {
@@ -1904,7 +1925,9 @@ unsafe fn ScmStartUserModeService(
         (*Service).dwServiceTag,
         argc,
         argv,
-    )
+    );
+    DbgPrint(b"[SERVICES] ScmStartUserModeService(%S): START returned=%lu\n\0".as_ptr() as *const i8, (*Service).lpServiceName, _r);
+    _r
 }
 
 unsafe fn ScmLoadService(

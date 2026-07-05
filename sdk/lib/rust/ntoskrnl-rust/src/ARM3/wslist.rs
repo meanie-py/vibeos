@@ -388,7 +388,6 @@ unsafe fn TrimWsList(WsList: PMMWSL) -> ULONG {
             MI_MAKE_TRANSITION_PTE(&mut *PointerPte, Page, Protection as ULONG);
             // C: KeInvalidateTlbEntry(MiAddressToPte(PointerPte)) — this is the PTE that maps PointerPte
             KeInvalidateTlbEntry(MiAddressToPte(PointerPte as PVOID) as PVOID);
-
             MiDecrementShareCount(Pfn as *mut _MMPFN, Page as _);
 
             // [guard-drop] MiReleasePfnLock(OldIrql);

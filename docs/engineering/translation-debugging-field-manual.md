@@ -2235,3 +2235,222 @@ share-count chain teardown order, PFN reuse with stale PteAddress). The
 tripwire also catches the shared→shared re-entry the park check cannot see
 (re-acquire succeeds silently), and records the fault addr in the violation's
 `site2` (GDB decoder prints `fault_addr=`).
+
+### 9.14 amd64 BUGCHECK 0xBE (write to read-only) on a session/GDI view — the `/* ReactOS Hack */` in `MiUnlinkPageFromList` destroys a prototype page's protection across a standby round-trip
+
+**Symptom.** After the PFN-state cleanup landed, amd64 smoke deterministically
+`BUGCHECK 0x000000BE (0xfffff97fde280000, 0x…6021, …, 0xC)` — a write to a **read-only**
+session-space page (`0xfffff97f…` = win32k session view) that was created from a
+`PAGE_READWRITE` section. The PTE was present+accessed but not writable. i386/arm64 were green.
+
+**Root-cause technique (the decisive trace).** Session PTEs can't be read from a
+halted GDB context (the bugcheck CPU isn't in the target session; session space is
+unmapped there), so instrument the fault-completion path instead. Session-gated
+`dbg_print!` in `MiResolveProtoPteFault` (compute site) and `MiCompleteProtoPteFault`
+(consume site), logging the derived `Protection`, the `OriginalProtection` branch, and
+`Pfn1->OriginalPte`, for `Address >= 0xFFFFF90000000000`. The faulting page stood out
+against every healthy neighbour by exactly one field:
+```
+healthy:  Complete VA=…de290000 prot=4 origProt=1 origPTE=0x80   → MM_READWRITE ✓
+FAULTING: Complete VA=…de280000 prot=0 origProt=1 origPTE=0x00   → MM_NOACCESS ✗
+```
+`MiCompleteProtoPteFault`'s else-branch (`PointerPte.PageFileHigh != MI_PTE_LOOKUP_NEEDED`,
+i.e. a pure prototype-pointer PTE) reads protection from `Pfn1->OriginalPte`. Healthy
+first-fault (demand-zero) pages carry `OriginalPte=0x80` (`MM_READWRITE<<5`); the faulting
+page was a **transition** page (trimmed to standby, brought back — its Resolve `protoPTE`
+was a transition PTE `…882`, Transition=1/Prototype=0/Prot=RW) whose `OriginalPte` had been
+**zeroed to 0** → protection `MM_NOACCESS` → PTE mapped non-writable → first win32k/GDI write
+faults.
+
+**Root cause.** `MiUnlinkPageFromList` (pfnlist.rs) ends with a line the C literally labels
+`/* ReactOS Hack */`: `Pfn->OriginalPte.u.Long = 0`. That is correct only for *private*
+(modified-list) pages. **Standby/modified lists link via `u1.Flink`/`u2.Blink` (the
+`flink()`/`share_count()` accessors) — `OriginalPte` is NOT the list linkage for them; only
+the free/zeroed COLOR lists reuse `OriginalPte` as their Flink.** For a shared **prototype**
+page, `OriginalPte` holds the segment prototype PTE that encodes the page protection, and
+`MiCompleteProtoPteFault` reads it back every time the page is faulted in from transition.
+Zeroing it on the standby→active unlink discards the protection.
+
+**Fix.** Guard the hack so it skips prototype pages:
+```rust
+if !(*Pfn).prototype_pte() {
+    mmpfn_set_original_pte_long(Pfn, 0);   // the /* ReactOS Hack */ — private pages only
+}
+```
+(`sdk/lib/rust/ntoskrnl-rust/src/ARM3/pfnlist.rs`, `MiUnlinkPageFromList`.) Preserving
+`OriginalPte` for prototype pages is safe: any later free-list insertion overwrites it
+(`MiInsertPageInFreeList` sets it to `LIST_HEAD`; the color path re-links it), and
+`MiInitializePfn` re-sets it on re-init. **Verified:** the previously-faulting page then
+resolves `prot=4 origPTE=0x80`, no 0xBE, boot reaches `_tWinMain`; i386/arm64 gate-green.
+
+**Takeaway.** `OriginalPte` in this port is triple-duty (proto-template protection for active
+prototype pages / pagefile descriptor for private pages / color-list Flink for free pages).
+Any code that writes it must know which role the page is in. A blanket "hack" that zeroes it
+is a landmine for the prototype-page role.
+
+### 9.15 (FIXED 2026-07-04) amd64 BUGCHECK 0x4E `PFN_LIST_CORRUPT` at process-exit teardown — `MmInitializeProcessAddressSpace` never init'd the hyperspace PDPT's PFN on amd64 (cfg-drift: the `_MI_PAGING_LEVELS == 4` PXE block was gated `aarch64`-only)
+
+**Exposed by** the 9.14 fix (boot now reaches process exits it never used to).
+**Symptom.** Deterministic `BUGCHECK 0x0000004E (0x98, 0x01ffffffffffffff, 0, 0)` shortly
+after `_tWinMain`, during the first full user-process teardown (`setup.exe`/`winlogon.exe`
+exit). Subcode `0x98` = `MiDecrementShareCount` entry validation; `Pfn1=0`,
+`PageFrameIndex=0x01ffffffffffffff`.
+
+**The COLORED_LIST_HEAD fingerprint was a red herring.** The bogus `0x01ffffffffffffff`
+argument is not itself the corruption — it is whatever garbage sits in the *uninitialized*
+`u4.PteFrame` after `MI_SET_PFN_DELETED` munges it. Live DIAG (guarded `dbg_print!` at the
+three `(*Pfn).pte_frame()`-reading teardown sites — `MmDeleteProcessAddressSpace` ×2,
+`MiRemoveWsle` shrink, valid-PTE-list drain) pinned the crashing read to
+**`site=HYPER`** = `MmDeleteProcessAddressSpace`'s second decrement,
+`Pfn1 = DirectoryTableBase[1]` (the process hyperspace **PDPT**). The DIAG printed
+`loc=0 ref=0` — the PDPT page's PFN entry was **never initialized** (still reads as a free
+zeroed-list page with a garbage frame), not double-freed.
+
+**Root cause (cfg-drift translation bug).** `MmInitializeProcessAddressSpace`
+(`ARM3/procsup.rs`) mirrors the C, which for `_MI_PAGING_LEVELS == 4` runs an *extra* block:
+```c
+#if (_MI_PAGING_LEVELS == 4)      /* amd64 AND arm64 */
+    PointerPxe = MiAddressToPxe((PVOID)HYPER_SPACE);
+    PageFrameNumber = PFN_FROM_PTE(PointerPxe);
+    MiInitializePfn(PageFrameNumber, PointerPxe, TRUE);   /* inits the hyperspace PDPT PFN */
+#endif
+```
+The port had gated this block **`#[cfg(target_arch = "aarch64")]` only** — dropping it for
+amd64, which is *also* 4-level paging. So on amd64 the hyperspace PDPT (`DirectoryTableBase[1]`,
+allocated in `MmCreateProcessAddressSpace` via `MiRemoveZeroPageSafe`/`MiRemoveAnyPage`, which
+leave a page in a free-ish PFN state) never had `MiInitializePfn` set its `pte_frame` /
+reference_count / `ActiveAndValid` location. Teardown then read that garbage `pte_frame` and
+called `MiDecrementShareCount(MiGetPfnEntry(garbage)→NULL, garbage)` → 0x98. i386 (2-level in
+this port's sense — no PXE level) legitimately skips the block, so it never bit x86-32; arm64
+had the block and was fine. Classic per-arch `#if` that got collapsed to one arch in translation.
+
+**Fix.** One line — extend the cfg to include amd64:
+`#[cfg(target_arch = "aarch64")]` → `#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]`
+on that PXE-init block in `MmInitializeProcessAddressSpace` (`ARM3/procsup.rs`). `MiAddressToPxe`
+is already `#[cfg(any(x86_64, aarch64))]` in `ntkrnl_sys::mm`, so amd64 has the helper.
+**Verified:** post-fix amd64 boots clean past the `setup.exe`/`winlogon` teardown to `shell
+ready` / full desktop, DIAG fires 0×, no bugcheck.
+
+**Lesson.** When a per-arch `#if (_MI_PAGING_LEVELS == N)` guards a block, remember BOTH amd64
+and arm64 are 4-level — a `#[cfg(target_arch = "aarch64")]` that should have been
+`any(x86_64, aarch64)` is an easy translation miss. Grep `MmInitializeProcessAddressSpace`-style
+paging-level blocks for the same drift (see also §9.14 for the sibling Mm PFN-state fix).
+
+### 9.16 (FIXED 2026-07-04) arm64 BUGCHECK 0x4E `PFN_LIST_CORRUPT` (subcode 0x99) at `nettest.exe` teardown — arm64's `MiPteToPde` was one self-map recursion level too high (returned the **PPE**), so `MiDeletePte`'s proto branch decremented the page-**directory**'s share instead of the page table's
+
+**RESOLUTION.** The whole `MiPteToX` navigation family was off by one level on aarch64 — in BOTH
+copies (`sdk/lib/rust/ntkrnl-sys/src/mm.rs` and `ntoskrnl/include/internal/arm64/mm.h`):
+
+| helper | correct (amd64, arch-independent recursion) | arm64 had (wrong) | actually returned |
+|---|---|---|---|
+| `MiPteToPde` | `MiAddressToPte(pte)` | `MiAddressToPde(pte)` | the **PPE** of X |
+| `MiPteToPpe` | `MiAddressToPde(pte)` | `MiAddressToPpe(pte)` | the **PXE** of X |
+| `MiPteToPxe` | `MiAddressToPpe(pte)` | `MiAddressToPxe(pte)` | self-map PXE junk |
+
+The self-map recursion is pure VA-bit arithmetic — PDE-of-X **is** PTE-of-(PTE-of-X) — and the
+PTE_BASE/PDE_BASE constants are identical to amd64, so there was never a reason for an arm64
+branch. With the bug, `MiAddressToPde(PTE-of-X)` = `0xFFFFF6FB7DA00000 + (X>>30)*8` — for every
+user VA under 1GB that's exactly `0xFFFFF6FB7DA00000`, whose `page_frame_number` is the **page
+directory** for user [0,1GB). So:
+- `MiCompleteProtoPteFault`'s PT-share `++` (via `MiAddressToPte`, correct) hit the true PT frame;
+- `MiDeletePte`'s proto-branch `−−` (via `MiPteToPde`, wrong) hit the **PD** frame (`0x46720`) —
+  one wrong decrement per deleted proto page, while the PT's share leaked high.
+The PD's share crossed 0 with live PDEs remaining (`usedpte=2`) → PD listed on ModifiedPageList →
+next `MiDeletePte` decrements a listed page → `0x4E (0x99)`. The "ledger" below is fully explained:
+the `site=initpfn` INCs were **PT-page creations** (parent-bump on the PD — correct), the non-proto
+DECs were PT deletions (correct), and the 3 proto DECs were the wrong-frame decrements.
+
+**Proof.** (1) Arithmetic: `MiAddressToPde(PTE-of-X) ≠ PDE-of-X` for all X (it equals PPE-of-X);
+(2) live: instrumented boot printed `[PDEC] proto pte=fffff68000001350 va=000000000026a000
+pdeshare=ffffffffffffffff` right before the 0x99 — a plain user VA whose PTE round-tripped to the
+PPE, and the PD's share already **underflowed to −1**. amd64/i386 were immune (their `MiPteToPde`
+was correct); the bogus-looking "user VA 0xF680'00000000" that the culprit PDE index decodes to is
+just the PPE region's self-map offset — recognizing that decode was the pivotal clue.
+
+**Debugging lessons.** (a) When a `++`/`−−` ledger shows a *systematic* per-page-kind imbalance,
+suspect the two sides *resolving different frames* before suspecting a missing call — print FULL
+64-bit pointers (`%p`, not the 32-bit `%lx`) and *decode the self-map index back to a VA*; the
+earlier session "ruled out" this exact divergence because two *different* self-map objects share
+the same low-32 bits (`0x7da00000`). (b) An `#[inline]` chokepoint (`MI_WRITE_VALID_PTE`) +
+`asm!("adr {}, .")` PC capture is a cheap way to attribute every PTE write when you need it.
+
+---
+
+#### Original open-lead analysis (kept for the record)
+
+**Status.** arm64 boots to the desktop (`[WIN32K] shell ready`) cleanly, then deterministically
+BUGCHECKs `0x4E (0x99, 0x46720, 0x3, 0)` a bit later during `nettest.exe` process teardown
+(`NtTerminateProcess → PspExitThread → MmCleanProcessAddressSpace → MiRemoveMappedView →
+MiDeleteVirtualAddresses → MiDeletePte → MiDecrementShareCount`). The new post-marker settle-scan
+catches it; the old harness gave a false green here. **amd64 + i386 run the same `nettest` and are
+green** (3/3 each) — this is arm64-only. This is the branch's namesake (`flake-arm64-lpcexit`).
+
+**What 0x99 means.** `MiDecrementShareCount` subcode `0x99` = the page being share-decremented is
+neither `ActiveAndValid` nor on the Standby list — here it is on the **ModifiedPageList** (arg3=3).
+The page `0x46720` is a properly-initialized process **page-table page** (its own PDE
+`0x…7da00000` is valid and points back at it): its PFN `u4.PteFrame`/`PteAddress` are set. It
+reached the ModifiedPageList because its **PFN share count hit 0 while it still had live PTEs**
+(`UsedPageTableEntries == 2` at the moment share crossed 0), so `MiDecrementReferenceCount` listed
+the still-live PT page (`Modified` bit set → modified list); the next `MiDeletePte` on a surviving
+PTE then decrements a listed page → 0x99.
+
+**Root cause (proven by a per-PFN share-count ledger).** Instrumenting every `share_count` ++/−−
+on frame `0x46720` (filter on its stable VA-derived PDE self-map address; NB the mini-printf `%lx`
+is **32-bit** on Windows LLP64, so filter/compare on the *low 32 bits*) gave this ledger:
+```
+INC site=initpfn child=46721 →2    INC 466a4 →3    INC 4639a →4
+DEC(MiDeletePte non-proto, virtual.rs:597 via Pfn->pte_frame) →3   INC 4639f →4   DEC →3
+INC 463a0 →4   DEC →3   INC 463b1 →4   DEC →3
+DEC(MiDeletePte proto branch, virtual.rs:550 via PDE frame) →2 →1 →0   [share→0, usedpte=2]
+```
+- **6 increments, all `site=initpfn`** (`MiInitializePfn`, i.e. private demand-zero pages), **zero
+  `site=proto`** (`MiCompleteProtoPteFault` never fired for this PT page).
+- **7 decrements**: 4 from `MiDeletePte`'s **non-proto** branch (correct — private pages that ++'d),
+  then 3 from `MiDeletePte`'s **proto** branch (`MiDecrementShareCount(pde_pfn, PDE.PageFrameNumber)`)
+  — i.e. **3 valid *prototype/section* pages in this PT are deleted and each decrements the PT-page
+  share, but none of them ever incremented it.** That 3-count over-decrement drives share below the
+  live-PTE count → 0 with `usedpte=2` → crash.
+
+So the invariant that breaks: **every valid page that decrements its PT page's share at teardown
+must have incremented it at fault-in.** On arm64, 3 proto section pages decrement without a matching
+increment. The C is faithful in `MiDeletePte` (both x86 arches decrement identically and are green),
+so the missing increment is upstream in whatever arm64 path makes those proto pages *valid*.
+
+**Ruled out (empirically / by inspection):**
+- **RosMm `MmCreateVirtualMappingUnsafeEx` (`arm64/page.rs`)** — the one path that touches
+  `UsedPageTableEntries` but not the PT-page share. Adding a `set_pte_frame` + PT-page-share `++`
+  there (mirroring `MiInitializePfn`) left `usedpte=2` **unchanged** → these 3 pages do *not* go
+  through it. (Reverted.)
+- **All ARM3 proto-resolution paths end at `MiCompleteProtoPteFault`** (`pagfault.rs:979`, plus the
+  resident/COW branches), which *does* bump the PT-page share (`Pfn2`, line 557-559) — yet
+  `site=proto` never fired for `0x46720`. So the 3 proto pages are made valid **outside**
+  `MiCompleteProtoPteFault` — that is the hole to close. Candidate non-fault paths: eager mapping at
+  `MmMapViewOfSection`/segment-map time, the RosMm section handler (`mm/section.rs`), or a
+  `MI_WRITE_VALID_PTE` on the process PTE that bypasses the fault path.
+- **`MiAddressToPte(pte)` vs `MiPteToPde(pte)` arm64 divergence (investigated, not the cause).** Note
+  arm64's `MiPteToPde` uses `MiAddressToPde` while x86 uses `MiAddressToPte` (`ntkrnl-sys/mm.rs:684`);
+  `MiCompleteProtoPteFault`'s `++` uses `MiAddressToPte(PointerPte)` and `MiDeletePte`'s proto `−−`
+  uses `MiPteToPde(PointerPte)`. But the ledger shows `MiInitializePfn` (via `MiAddressToPte`) and the
+  teardown `−−` (via `MiPteToPde`) both resolved to `0x46720`, so both formulas agree for these PTEs —
+  the `++`/`−−` land on the same frame. Ruled out as the cause; the missing `++` is a missing *call*,
+  not a mis-targeted one.
+- **The interleaved INC-then-DEC pattern** (each `site=initpfn` immediately followed by a non-proto
+  DEC) is consistent with **copy-on-write** (`MiResolveProtoPteFault` COW: `MiDeletePte(old proto)`
+  then `MiInitializePfn(new private)`), which is net-zero *iff* the old proto page had ++'d the PT —
+  the same missing-proto-++ hole.
+
+**How to reproduce + drive it:** boot arm64 under `vibeos-cli gdb`, `wait-for 'shell ready'`, then let
+it run to the `nettest.exe` teardown (~a few minutes after the marker). Serial-instrument
+`MiDecrementShareCount` (ledger the target PT frame + `_ReturnAddress` via
+`asm!("ldr {}, [x29,#8]")`) and the three PT-page `share_count += 1` sites (`MiInitializePfn`,
+`MiInitializePfnAndMakePteValid`, `MiCompleteProtoPteFault`). GDB is impractical here — the crash is
+>300s past `shell ready` and QEMU runs free, so the breakpoint-attach window is missed; serial
+instrumentation is the tool. Symbolicate return addresses with `qemu/build-index.sh arm64` +
+`llvm-addr2line -e build-arm64/ntoskrnl/ntoskrnl.exe -f -i 0x<fileoffset>` where
+`fileoffset = runtime_low32 − reloc_low32` (reloc `0x…41d90000`, i.e. kbase − 0x400000).
+
+**Next step to close it:** instrument the proto-page-becomes-valid path to log which PT-page frame
+its `++` targets vs. which frame teardown's proto branch decrements, for the same `PointerPte`. If
+they differ, fix the arm64 self-map helper (or `MiCompleteProtoPteFault`'s PT-page lookup) so the
+`++` and `−−` agree. The fix is a core-Mm change with cross-path blast radius (COW, section fault,
+teardown) → validate all 3 arches ×3 before landing.
