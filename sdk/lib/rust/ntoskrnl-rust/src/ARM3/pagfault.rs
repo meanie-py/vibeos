@@ -563,22 +563,32 @@ unsafe fn MiCompleteProtoPteFault(
         OriginalProtection = (false) as u8;
     } else {
         OriginalPte = mmpfn_original_pte_ptr(Pfn1);
-        Protection = (*OriginalPte).soft_protection() as ULONG_PTR;
         OriginalProtection = (true) as u8;
 
-        // Heal an uninitialized OriginalPte (protection == MM_ZERO_ACCESS) on a KERNEL
-        // prototype-backed page whose prototype PTE is validly mapped. A non-MiInitializePfn
-        // path made the shared segment proto valid without ARM3-initializing the backing
-        // PFN's OriginalPte (its Long stays 0 from the free-list link), so its protection
-        // reads back as MM_ZERO_ACCESS. Derive the real protection from the authoritative
-        // (valid) prototype PTE and write it back, so this view AND every later consumer
-        // (MiDecrementShareCount transition-PTE build, re-fault, the valid-write RO check)
-        // see the section's true protection. Without this the kernel session view of a
-        // read-write section (win32k GdiHandleTable->DevCaps) maps read-only and the first
-        // write BUGCHECKs 0xBE. Gated on kernel addresses so user views are untouched.
-        // (field-manual §9.13 — devcaps-0xBE)
-        #[cfg(target_arch = "x86_64")]
-        {
+        if MI_IS_ROS_PFN(Pfn1) {
+            // ROS PFN (MmAllocPage — legacy/ROS section pages, e.g. the win32k GDI handle
+            // table section): the OriginalPte union slot holds RmapListHead, NOT a PTE —
+            // never read protection from it and never write it (a write would corrupt a
+            // live rmap chain). Derive the real protection from the authoritative (valid)
+            // prototype PTE instead. Without this the kernel session view of a read-write
+            // ROS section maps read-only (garbage/zero protection bits) and the first
+            // write BUGCHECKs 0xBE (win32k GdiHandleTable->DevCaps).
+            // (field-manual §9.13 — devcaps-0xBE)
+            Protection = if MI_IS_PAGE_WRITEABLE(&*PointerProtoPte) != 0 {
+                MM_READWRITE as ULONG_PTR
+            } else {
+                MM_READONLY as ULONG_PTR
+            };
+        } else {
+            Protection = (*OriginalPte).soft_protection() as ULONG_PTR;
+
+            // Defensive heal for a genuine ARM3 PFN whose OriginalPte was never
+            // initialized (protection reads MM_ZERO_ACCESS, Long stays 0 from the
+            // free-list link) while its prototype PTE is validly mapped: derive the real
+            // protection from the proto PTE and write it back so every later consumer
+            // (MiDecrementShareCount transition-PTE build, re-fault, the valid-write RO
+            // check) sees the section's true protection. Gated on kernel addresses so
+            // user views are untouched. (field-manual §9.13 — devcaps-0xBE)
             if (Protection as ULONG) == MM_ZERO_ACCESS
                 && (Address as u64) >= (MmSystemRangeStart as u64)
                 && ((*PointerProtoPte).valid() as usize) == 1

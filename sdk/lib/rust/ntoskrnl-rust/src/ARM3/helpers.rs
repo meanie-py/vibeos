@@ -572,8 +572,11 @@ pub fn MI_IS_PAGE_WRITEABLE(pte: *const MMPTE) -> BOOLEAN {
         let long = (*pte).Long;
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         { if (long & (1 << 1)) != 0 { TRUE } else { FALSE } }
+        // arm64 port convention (ke/arm64/stubs.rs PTE map): bit 55 = software Writable
+        // (PTE_READWRITE = 0x00C0... = bits 55+54). Bit 7 is NotDirty/AP[2] — 1 means
+        // hardware READ-ONLY — so the old `bit 7 set → writeable` test was inverted.
         #[cfg(target_arch = "aarch64")]
-        { if (long & (1 << 7)) != 0 { TRUE } else { FALSE } }
+        { if (long & (1u64 << 55) as ULONG_PTR) != 0 { TRUE } else { FALSE } }
     }
 }
 
@@ -583,8 +586,10 @@ pub fn MI_IS_PAGE_COPY_ON_WRITE(pte: *const MMPTE) -> BOOLEAN {
         let long = (*pte).Long;
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         { if (long & (1 << 9)) != 0 { TRUE } else { FALSE } }
+        // arm64 port convention: bit 56 = software CopyOnWrite (PTE_WRITECOPY =
+        // 0x0140... = bits 56+54(+7)). Bit 8 is SH[0] (shareability) — wrong field.
         #[cfg(target_arch = "aarch64")]
-        { if (long & (1 << 8)) != 0 { TRUE } else { FALSE } }
+        { if (long & (1u64 << 56) as ULONG_PTR) != 0 { TRUE } else { FALSE } }
     }
 }
 
