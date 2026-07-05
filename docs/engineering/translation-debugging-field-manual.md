@@ -2315,7 +2315,47 @@ and arm64 are 4-level — a `#[cfg(target_arch = "aarch64")]` that should have b
 `any(x86_64, aarch64)` is an easy translation miss. Grep `MmInitializeProcessAddressSpace`-style
 paging-level blocks for the same drift (see also §9.14 for the sibling Mm PFN-state fix).
 
-### 9.16 (OPEN LEAD — root-caused, not yet fixed) arm64 BUGCHECK 0x4E `PFN_LIST_CORRUPT` (subcode 0x99) at `nettest.exe` teardown — a section-view PT page's PFN share count is over-decremented (proto-branch `MiDeletePte` decrements it without a matching fault-in increment)
+### 9.16 (FIXED 2026-07-04) arm64 BUGCHECK 0x4E `PFN_LIST_CORRUPT` (subcode 0x99) at `nettest.exe` teardown — arm64's `MiPteToPde` was one self-map recursion level too high (returned the **PPE**), so `MiDeletePte`'s proto branch decremented the page-**directory**'s share instead of the page table's
+
+**RESOLUTION.** The whole `MiPteToX` navigation family was off by one level on aarch64 — in BOTH
+copies (`sdk/lib/rust/ntkrnl-sys/src/mm.rs` and `ntoskrnl/include/internal/arm64/mm.h`):
+
+| helper | correct (amd64, arch-independent recursion) | arm64 had (wrong) | actually returned |
+|---|---|---|---|
+| `MiPteToPde` | `MiAddressToPte(pte)` | `MiAddressToPde(pte)` | the **PPE** of X |
+| `MiPteToPpe` | `MiAddressToPde(pte)` | `MiAddressToPpe(pte)` | the **PXE** of X |
+| `MiPteToPxe` | `MiAddressToPpe(pte)` | `MiAddressToPxe(pte)` | self-map PXE junk |
+
+The self-map recursion is pure VA-bit arithmetic — PDE-of-X **is** PTE-of-(PTE-of-X) — and the
+PTE_BASE/PDE_BASE constants are identical to amd64, so there was never a reason for an arm64
+branch. With the bug, `MiAddressToPde(PTE-of-X)` = `0xFFFFF6FB7DA00000 + (X>>30)*8` — for every
+user VA under 1GB that's exactly `0xFFFFF6FB7DA00000`, whose `page_frame_number` is the **page
+directory** for user [0,1GB). So:
+- `MiCompleteProtoPteFault`'s PT-share `++` (via `MiAddressToPte`, correct) hit the true PT frame;
+- `MiDeletePte`'s proto-branch `−−` (via `MiPteToPde`, wrong) hit the **PD** frame (`0x46720`) —
+  one wrong decrement per deleted proto page, while the PT's share leaked high.
+The PD's share crossed 0 with live PDEs remaining (`usedpte=2`) → PD listed on ModifiedPageList →
+next `MiDeletePte` decrements a listed page → `0x4E (0x99)`. The "ledger" below is fully explained:
+the `site=initpfn` INCs were **PT-page creations** (parent-bump on the PD — correct), the non-proto
+DECs were PT deletions (correct), and the 3 proto DECs were the wrong-frame decrements.
+
+**Proof.** (1) Arithmetic: `MiAddressToPde(PTE-of-X) ≠ PDE-of-X` for all X (it equals PPE-of-X);
+(2) live: instrumented boot printed `[PDEC] proto pte=fffff68000001350 va=000000000026a000
+pdeshare=ffffffffffffffff` right before the 0x99 — a plain user VA whose PTE round-tripped to the
+PPE, and the PD's share already **underflowed to −1**. amd64/i386 were immune (their `MiPteToPde`
+was correct); the bogus-looking "user VA 0xF680'00000000" that the culprit PDE index decodes to is
+just the PPE region's self-map offset — recognizing that decode was the pivotal clue.
+
+**Debugging lessons.** (a) When a `++`/`−−` ledger shows a *systematic* per-page-kind imbalance,
+suspect the two sides *resolving different frames* before suspecting a missing call — print FULL
+64-bit pointers (`%p`, not the 32-bit `%lx`) and *decode the self-map index back to a VA*; the
+earlier session "ruled out" this exact divergence because two *different* self-map objects share
+the same low-32 bits (`0x7da00000`). (b) An `#[inline]` chokepoint (`MI_WRITE_VALID_PTE`) +
+`asm!("adr {}, .")` PC capture is a cheap way to attribute every PTE write when you need it.
+
+---
+
+#### Original open-lead analysis (kept for the record)
 
 **Status.** arm64 boots to the desktop (`[WIN32K] shell ready`) cleanly, then deterministically
 BUGCHECKs `0x4E (0x99, 0x46720, 0x3, 0)` a bit later during `nettest.exe` process teardown

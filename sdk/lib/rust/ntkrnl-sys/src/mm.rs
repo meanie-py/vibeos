@@ -680,15 +680,22 @@ pub fn MiPdeToPte(pde: PMMPDE) -> PMMPTE {
 }
 
 /// Convert PTE pointer to PDE pointer (MiPteToPde).
+///
+/// One self-map recursion step: the PDE of X *is* the PTE of (the PTE of X),
+/// so `MiPteToPde(pte) == MiAddressToPte(pte)` on every self-mapped arch.
+/// (An earlier aarch64 branch used `MiAddressToPde(pte)` here — that returns
+/// the **PPE** of the original VA, which made `MiDeletePte` decrement the
+/// page-*directory*'s share count instead of the page table's: BUGCHECK 0x4E
+/// subcode 0x99 at process teardown. See field-manual §9.16.)
 #[inline]
 pub fn MiPteToPde(pte: PMMPTE) -> PMMPDE {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(target_arch = "x86")]
     {
         MiAddressToPte(pte as PVOID) as PMMPDE
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
-        MiAddressToPde(pte as PVOID)
+        MiAddressToPte(pte as PVOID) as PMMPDE
     }
 }
 
@@ -1344,31 +1351,23 @@ pub fn MiPxeToPte(pxe: PMMPTE) -> PMMPTE {
 }
 
 /// MiPteToPpe — PTE to its corresponding PPE
+///
+/// Two recursion steps: PPE-of-X = PDE-of-(PTE-of-X) = `MiAddressToPde(pte)`.
+/// Arch-independent on 4-level self-map (the old aarch64 branch was one level
+/// too high — see MiPteToPde above / field-manual §9.16).
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[inline]
 pub fn MiPteToPpe(pte: PMMPTE) -> PMMPTE {
-    #[cfg(target_arch = "x86_64")]
-    {
-        MiAddressToPde(pte as PVOID)
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        MiAddressToPpe(pte as PVOID)
-    }
+    MiAddressToPde(pte as PVOID)
 }
 
 /// MiPteToPxe — PTE to its corresponding PXE
+///
+/// Three recursion steps: PXE-of-X = PPE-of-(PTE-of-X) = `MiAddressToPpe(pte)`.
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[inline]
 pub fn MiPteToPxe(pte: PMMPTE) -> PMMPTE {
-    #[cfg(target_arch = "x86_64")]
-    {
-        MiAddressToPpe(pte as PVOID)
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        MiAddressToPxe(pte as PVOID)
-    }
+    MiAddressToPpe(pte as PVOID)
 }
 
 /// MiPdeToPpe — PDE to its corresponding PPE
