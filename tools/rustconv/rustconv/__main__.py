@@ -155,7 +155,6 @@ def resolve_c_path(path_str: str) -> Path:
     sys.exit(1)
 
 
-
 def _gate_unextracted(scan, allow_partial: bool):
     """Fail-loud gate: refuse to run a paid per-function translation over a
     file whose bodies the scanner could only PARTIALLY extract (C++ methods —

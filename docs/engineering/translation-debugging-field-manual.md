@@ -2364,3 +2364,24 @@ as-built). Two consequences for debugging:
   (~6.2K edges on amd64). Proof run verdict: **zero ABBA inversions** with
   0 dropped edges — the boot's pushlock+gmutex ordering is instance-level
   consistent; the wedge family is entirely self-deadlock.
+
+**§9.13 addendum 3-parallel (2026-07-04 eve, sync-instrumentation lane): FAULT-UNDER-WS
+tripwire fires AT the fault and pins the faulting VA — it is `0x80`, i.e. a NULL-based deref.**
+`MmAccessFault` entry (cfg lockdep) now checks the held-set for the very WS
+lock the fault path will re-acquire and prints before any wedge:
+
+```
+[LOCKDEP] FAULT-UNDER-WS: thread=fffffa8001477040 faults on 0000000000000080
+          while holding WS lock=fffffa800147bf58(excl)
+          site=fffff80003536332   ->  MiLockProcessWorkingSetUnsafe+34
+```
+
+3×/green boot (one per victim process), fault VA **deterministically 0x80**.
+That KILLS the "valid but non-resident paged-pool prototype PTE" reading of
+`MiDecrementShareCount+0x71`: the pointer being dereferenced is ~NULL with a
++0x80 field offset — a FREED/ZEROED PteAddress / prototype-chain pointer, not
+paging state. Narrows the owed Mm fix to the stale-pointer suspects (PteFrame
+share-count chain teardown order, PFN reuse with stale PteAddress). The
+tripwire also catches the shared→shared re-entry the park check cannot see
+(re-acquire succeeds silently), and records the fault addr in the violation's
+`site2` (GDB decoder prints `fault_addr=`).

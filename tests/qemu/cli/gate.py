@@ -44,7 +44,10 @@ from .artifacts import Run, Stage
 # panic, a hit fail-marker, stale media, an unknown red) is treated as a real
 # regression and fails the arch immediately: retrying a regression away is the
 # anti-pattern the North Star exists to prevent.
-RETRYABLE = {"KNOWN_FLAKE", "FLAKY", "HANG_TIMEOUT"}
+# NET_FLAKE: boots green + net suite failed under concurrent-smoke load (the
+# documented amd64 timing flake, see smoke.py _net_stage) — a real netstack
+# regression fails the retry too, so it still ends red.
+RETRYABLE = {"KNOWN_FLAKE", "FLAKY", "HANG_TIMEOUT", "NET_FLAKE"}
 
 
 def _smoke_once(repo: Path, arch: str, root: Path, extra: list[str]) -> dict:
@@ -105,6 +108,52 @@ def _resolve_arches(raw: str | None) -> list[str]:
             continue
         out.append(archcfg.base_arch(tok))
     return out
+
+
+FULL_ARCH_SET = {"i386", "amd64", "arm64"}
+
+
+def _write_gate_stamp(run: Run, repo: Path, arches: list[str]) -> None:
+    """T1.3 (mechanized North Star): a green FULL gate mints the push
+    credential — the pre-push hook (tools/git-hooks/pre-push) refuses updates
+    to master whose tree doesn't match a fresh green stamp. Only a CLEAN tree
+    is stamped: a dirty tree gates content no commit will ever hash to.
+    Partial-arch gates never stamp (the North Star is all three)."""
+    if not FULL_ARCH_SET.issubset(set(arches)):
+        run.log("gate green but partial arch set — no push stamp minted", header="stamp")
+        return
+
+    def _git(*a: str) -> str:
+        return subprocess.run(
+            ["git", *a], cwd=repo, capture_output=True, text=True, timeout=60
+        ).stdout.strip()
+
+    try:
+        dirty = _git("status", "--porcelain", "--untracked-files=no")
+        if dirty:
+            run.log(
+                "gate green but the tree is DIRTY — no push stamp (commit first, "
+                "then re-gate; the stamp must hash the exact content that was gated)",
+                header="stamp",
+            )
+            run.add(Stage("stamp", status="warn", detail="dirty tree — no push stamp"))
+            return
+        tree = _git("rev-parse", "HEAD^{tree}")
+        head = _git("rev-parse", "HEAD")
+        common = Path(_git("rev-parse", "--git-common-dir"))
+        if not common.is_absolute():
+            common = (repo / common).resolve()
+        stamp = {
+            "tree": tree,
+            "head": head,
+            "time": int(time.time()),
+            "arches": sorted(arches),
+            "worktree": str(repo),
+        }
+        (common / "vibeos-gate-stamp.json").write_text(json.dumps(stamp, indent=1))
+        run.add(Stage("stamp", status="ok", detail=f"push stamp minted for tree {tree[:12]}"))
+    except (OSError, subprocess.SubprocessError) as e:
+        run.add(Stage("stamp", status="warn", detail=f"stamp write failed: {e}"))
 
 
 def gate(args, repo: Path) -> int:
@@ -224,6 +273,16 @@ def gate(args, repo: Path) -> int:
         )
         if not r["ok"] and not run.classification:
             run.classification = r.get("classification", "FAIL")
+
+    # --- push stamp (T1.3): green FULL gate on a clean tree mints the credential ---
+    requested = _resolve_arches(getattr(args, "arches", None))
+    all_ok = (
+        bool(results)
+        and all(results.get(a, {}).get("ok") for a in requested)
+        and len(results) == len(requested)
+    )
+    if all_ok:
+        _write_gate_stamp(run, repo, requested)
 
     run.extra["arches"] = arches
     run.extra["matrix"] = {

@@ -228,6 +228,19 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
     if proc.returncode == 0:
         run.add(Stage("net", status="ok", detail=summary.strip("= ")))
     else:
+        # DOCUMENTED FLAKE (2026-07-04, T1.4): when the boot runs themselves are
+        # green, a net-suite failure under gate load is a known timing flake —
+        # observed twice as "2 failed, 13 passed" while 3 arch smokes ran
+        # concurrently on TCG, and 15/15 standalone immediately after, on both
+        # instrumented and plain kernels. Classify NET_FLAKE (gate-retryable) so
+        # the gate retries instead of flapping red. A REAL netstack regression
+        # also fails the retry, so it still ends red — retries only absorb
+        # nondeterminism, never determinism.
+        # boot stage is "boot" for a single boot, "runN" under --repeat
+        runs = [s for s in run.stages if s.name == "boot" or s.name.startswith("run")]
+        boots_green = bool(runs) and all(s.status == "ok" for s in runs)
+        if boots_green and not run.classification:
+            run.classification = "NET_FLAKE"
         run.add(
             Stage(
                 "net",

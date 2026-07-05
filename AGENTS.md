@@ -157,11 +157,39 @@ Why it matters (all are real incidents, not hypotheticals):
 8. **Paid translation outputs go to `~/vibeos-rust-staging/`, never `/tmp`** (a reboot
    wipes `/tmp`; regenerating costs real API money). The durable per-function cache is
    also in-repo at `tools/rustconv/.responses/` (gitignored).
+9. **Fleet isolation law (2026-07-04 hardlink-dedup incident).** A tool may NEVER
+   mutate another worktree's files — not even "safe" dedup/hardlinking of
+   byte-identical content. Hardlinking live build/cargo trees failed BOTH ways:
+   in-place writers (spec2def, `cmake -E copy`, ccache-miss clang) truncated shared
+   inodes under a sibling's running `ld.lld` mmap (SIGBUS), and shared fingerprint/
+   timestamp mtimes silently defeated cargo invalidation (an edited build.rs whose
+   stale compiled script kept executing — false-green, no error anywhere). Sharing
+   belongs ONLY in content-addressed caches designed for it (ccache/sccache).
+   Fleet-scoped maintenance must be delete-only (`vibeos-cli prune`), run from ONE
+   pinned copy, under the host lock, and kill-switchable via a stamp OUTSIDE all
+   worktrees (a future-dated `$VIBEOS_ROOT/.dedup-last` is what actually stopped the
+   incident — root-level stamps reach every lane instantly, regardless of each
+   lane's code version; in-tree fixes propagate only at merge speed). `vibeos-cli
+   build` enforces the invariant mechanically: an `ISOLATION_FAIL` preflight refuses
+   to build a tree that shares inodes (build-* at links>1; cargo target at links>2 —
+   cargo hardlinks deps↔final internally).
 
 Build operational reality that interacts with the above: judge build success by
 **artifact existence** (`ls livecd.iso`), not reported exit code — `run_in_background`
 and some sandboxed Bash run in a copy-on-write overlay that reports `rc=0` with no real
 artifacts; only **foreground Bash with `dangerouslyDisableSandbox: true`** persists.
+Two more rc-masking traps from the same family: piping `vibeos-cli` through `| tail`
+in a background shell swallows the exit code (its stdout is already bounded — don't
+pipe it; read `summary.json`), and shell **cwd persists between calls and drifts** —
+launch repo tools with an explicit `cd <repo-root> &&` or absolute paths (a build once
+"succeeded" (rc=0 via the pipe) having never run: `./vibeos-cli` didn't exist in the
+drifted cwd).
+
+**Landing is mechanized (2026-07-04):** a green FULL `vibeos-cli gate` on a clean tree
+mints a push stamp (`$GIT_COMMON_DIR/vibeos-gate-stamp.json`); the `pre-push` hook
+refuses updates to `master` whose tree doesn't match a fresh (<24h) stamp. Docs-only
+deltas pass automatically. Emergency override: `VIBEOS_SKIP_GATE_CHECK=1 git push`
+(loud — report every use). Partial-arch or dirty-tree gates never stamp.
 
 ## Directory Layout
 
@@ -492,6 +520,15 @@ bash tools/verify_sacred_primitives.sh build-i386
 
 # Check ABI mismatches
 .venv/bin/python tools/rustconv/rustconv/verify_ffi.py
+
+# Silent-failure shapes: bare loop{} spins, unwrap/expect in kernel code,
+# swallowed Err arms (AST/tree-sitter; wired into `vibeos-cli check`, 0-NEW gate)
+.venv/bin/python tools/scan_silent_failures.py           # sweep no-std workspace
+# Suppress a sanctioned loud halt: // nolint: silent-failure (reason)
+
+# Boot coverage map: which functions a real boot EXERCISES (TCG plugin boot)
+tools/coverage/run.sh amd64        # -> per-function exercised set + the
+                                   #    never-executed-rust.txt landmine registry
 ```
 
 `scan_ud2.py` finds `ud2` (0f 0b) in named functions — LLVM proved the body has UB (almost always captures(none) or an ABI mismatch); it's wired into smoke as `test_no_unexpected_ud2`. `lint_kernel.py` finds `*OutputParam = value` writes in `#[no_mangle]` functions that skip `write_volatile` (a captures(none) target) before compilation. (The smoke harness also nukes `rust-kernel-target/` per session unless `--skip-clean-build`, runs the ud2 scan pre-boot, and auto-symbolicates BSODs — see `tests/qemu/cli/README.md`.)
