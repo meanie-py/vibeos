@@ -238,19 +238,12 @@ unsafe fn MiIsPageTablePresent(Address: PVOID) -> BOOLEAN {
     }
 }
 
-// On 64-bit, MiIsPageTablePresent uses UsedPageTableEntries stored in soft PTE bits
-// for invalid PTEs (not in PFN database when page is not present).
-// This helper extracts UsedPageTableEntries from a non-valid PTE's soft bits.
-// For our purposes, when a PDE is not valid and not transition, the soft
-// UsedPageTableEntries is stored in bits [31:12] on 32-bit or bits [63:32] on 64-bit
-// of the PTE (= the PageFileHigh / soft_page_file_high field).
+// On 64-bit, MiIsPageTablePresent uses UsedPageTableEntries stored in soft PTE
+// bits for invalid PTEs, not in the PFN database.
 #[cfg(not(target_arch = "x86"))]
 #[inline]
 unsafe fn mmpfn_used_page_table_entries_from_pte(pte: &MMPTE) -> ULONG {
-    // When PDE is not valid and not transition, UsedPageTableEntries is
-    // stored in the PDE's soft UsedPageTableEntries bitfield (bits 12-21),
-    // matching _MMPTE_SOFTWARE::UsedPageTableEntries in mmtypes.h.
-    ((pte.Long as u64 >> 12) & 0x3FF) as ULONG
+    pte.soft_used_page_table_entries()
 }
 
 #[no_mangle]

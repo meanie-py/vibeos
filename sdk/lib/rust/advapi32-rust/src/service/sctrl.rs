@@ -205,9 +205,17 @@ unsafe fn ScConnectControlPipe(hPipe: *mut HANDLE) -> DWORD {
         dwServiceCurrent,
     );
 
+    // Temp control-pipe-race instrumentation (DcomLaunch wedge). DbgPrint reaches
+    // serial (OutputDebugString's exception path does not under DUMMY_PSEH).
+    extern "C" {
+        fn DbgPrint(fmt: *const u8, ...) -> u32;
+    }
+    DbgPrint(b"[SCTRL] pid=%lu connecting pipe=%ws\n\0".as_ptr(), GetCurrentProcessId(), NtControlPipeName.as_ptr());
     if WaitNamedPipeW(NtControlPipeName.as_ptr(), 30000) == 0 {
+        DbgPrint(b"[SCTRL] pid=%lu WaitNamedPipe FAILED err=%lu\n\0".as_ptr(), GetCurrentProcessId(), GetLastError());
         return ERROR_FAILED_SERVICE_CONTROLLER_CONNECT;
     }
+    DbgPrint(b"[SCTRL] pid=%lu WaitNamedPipe OK\n\0".as_ptr(), GetCurrentProcessId());
 
     *hPipe = CreateFileW(
         NtControlPipeName.as_ptr(),
@@ -501,23 +509,23 @@ unsafe fn ScControlService(lpService: PACTIVE_SERVICE,
 
     dwControl = (*ControlPacket).dwControl;
 
-    if (*lpService).HandlerFunction.is_some() {
+    if let Some(handler) = (*lpService).HandlerFunction {
         if ((dwControl >= SERVICE_CONTROL_STOP) && (dwControl <= SERVICE_CONTROL_NETBINDDISABLE)) ||
            ((dwControl >= 128) && (dwControl <= 255)) {
-            ((*lpService).HandlerFunction.unwrap())(dwControl);
+            handler(dwControl);
         } else {
             dwError = ERROR_INVALID_SERVICE_CONTROL;
         }
-    } else if (*lpService).HandlerFunctionEx.is_some() {
+    } else if let Some(handler_ex) = (*lpService).HandlerFunctionEx {
         if dwControl == SERVICE_CONTROL_DEVICEEVENT {
             dwEventType = *((ControlPacket as ULONG_PTR + core::mem::size_of::<SCM_CONTROL_PACKET>() as ULONG_PTR) as LPDWORD);
             pEventData = (ControlPacket as ULONG_PTR + core::mem::size_of::<SCM_CONTROL_PACKET>() as ULONG_PTR + core::mem::size_of::<DWORD>() as ULONG_PTR) as PVOID;
         }
 
-        ((*lpService).HandlerFunctionEx.unwrap())(dwControl,
-                                                  dwEventType,
-                                                  pEventData,
-                                                  (*lpService).HandlerContext);
+        handler_ex(dwControl,
+                   dwEventType,
+                   pEventData,
+                   (*lpService).HandlerContext);
     } else {
         dwError = ERROR_SERVICE_CANNOT_ACCEPT_CTRL;
     }

@@ -1,8 +1,7 @@
-  ABI: 62
+  ABI: 61
   C_MACRO: 61
   PARAM_COUNT: 12
-  TOTAL: 135 issues across 411 files
-  [ABI] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:945: PsGetCurrentThread: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
+  TOTAL: 134 issues across 411 files
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs:25: InterlockedExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ARM3/section.rs:396: RtlFillMemoryUlong: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ARM3/session.rs:22: InterlockedCompareExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
@@ -125,9 +124,9 @@
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/se/semgr.rs:89: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/se/srm.rs:15: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/wmi/guidobj.rs:26: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:932: RtlImageDirectoryEntryToData: Rust declares 1 params, bindgen_i386.rs has 4
-  [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:937: RtlSetDaclSecurityDescriptor: Rust declares 1 params, bindgen_i386.rs has 4
-  [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:940: SeInitializeProcessAuditName: Rust declares 1 params, bindgen_i386.rs has 3
+  [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:937: RtlImageDirectoryEntryToData: Rust declares 1 params, bindgen_i386.rs has 4
+  [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:942: RtlSetDaclSecurityDescriptor: Rust declares 1 params, bindgen_i386.rs has 4
+  [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:945: SeInitializeProcessAuditName: Rust declares 1 params, bindgen_i386.rs has 3
   [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/section.rs:370: MmMapViewInSystemSpace: Rust declares 1 params, bindgen_i386.rs has 3
   [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/mcb.rs:16: FsRtlAddLargeMcbEntry: Rust declares 4 params, ntoskrnl.spec has 7
   [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/mcb.rs:20: FsRtlLookupLargeMcbEntry: Rust declares 7 params, ntoskrnl.spec has 8

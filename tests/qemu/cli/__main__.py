@@ -77,8 +77,14 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--strict", action="store_true", help="block on NEW findings")
     c.add_argument(
         "--update-baseline",
-        action="store_true",
-        help="capture current findings as the accepted baseline",
+        nargs="?",
+        const="__ALL__",
+        default=None,
+        metavar="TOOL[,TOOL...]",
+        help="capture current findings as the accepted baseline. Bare = ALL tools "
+        "(footgun once the gate blocks — silently accepts unrelated drift); pass a "
+        "tool name (or comma-list) to re-bless only that tool, e.g. "
+        "--update-baseline lint_kernel",
     )
     c.set_defaults(fn=debugcmd.check)
 
@@ -114,6 +120,11 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--no-build", action="store_true", help="smoke only (media must be current)")
     g.add_argument("--clean", action="store_true", help="cold builds (implies build)")
     g.add_argument("--no-net", action="store_true", help="skip the amd64 net stage (default-on)")
+    g.add_argument(
+        "--no-lint",
+        action="store_true",
+        help="skip the strict scanner suite (default-on; blocks the stamp on NEW findings)",
+    )
     g.set_defaults(fn=gate_mod.gate)
 
     bo = sub.add_parser("boot", help="raw fast boot (shares smoke arch-config)")

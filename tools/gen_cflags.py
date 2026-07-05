@@ -42,10 +42,21 @@ OUTDIR = "sdk/lib/rust/reactos-link/cflags"
 # flag template + native-hpp xdk headers fully reproduce cmake's compile).
 DEFAULT_TARGETS = ["blrtl", "libcntpr", "win32k_residue", "genincdata"]
 
+# The canonical build mountpoint (tools/canon-run.sh). Builds run at /tmp/vibeos
+# via a bind mount, so compile_commands.json bakes /tmp/vibeos paths regardless
+# of the real worktree location. The committed template must be portable, so
+# BOTH the real repo root AND this canonical root templatize to {REPO} — else a
+# canonical-built tree reads every -I flag as DRIFT vs the committed {REPO} copy
+# (a false-positive that silently broke the committed_drift guard; 2026-07-04).
+CANON_ROOT = "/tmp/vibeos"
+
 
 def candidate_flags(toks, arch, repo):
     """cmake command tokens -> flag-only template tokens (PCH + build-dir -I +
-    compiler + source + -o stripped; repo root -> {REPO})."""
+    compiler + source + -o stripped; repo root -> {REPO}).
+
+    Both the real `repo` root and the canonical build root (CANON_ROOT) map to
+    {REPO}: a build may bake either depending on whether it ran under canon-run."""
     out = []
     i = 1  # skip toks[0] = the compiler path
     while i < len(toks):
@@ -71,7 +82,7 @@ def candidate_flags(toks, arch, repo):
         if t.endswith(".c") and os.path.isabs(t):
             i += 1  # the source positional (engine appends it)
             continue
-        out.append(t.replace(repo, "{REPO}"))
+        out.append(t.replace(repo, "{REPO}").replace(CANON_ROOT, "{REPO}"))
         i += 1
     return out
 

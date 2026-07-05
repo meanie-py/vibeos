@@ -84,13 +84,28 @@ def debug(args, repo: Path) -> int:
 
 
 def check(args, repo: Path) -> int:
-    if getattr(args, "update_baseline", False):
-        counts = lints.write_baselines(repo)
-        for name, n in counts.items():
-            print(f"  baseline {name}: {n} findings")
+    ub = getattr(args, "update_baseline", None)
+    if ub is not None:
+        # --update-baseline           -> "__ALL__" (blanket; the footgun, see lints)
+        # --update-baseline lint_kernel[,tool2,...] -> just those tools (T2 1b)
+        only = None if ub == "__ALL__" else {t.strip() for t in ub.split(",") if t.strip()}
+        if only is not None:
+            known = lints.lint_tool_names(repo)
+            unknown = only - known
+            if unknown:
+                print(f"unknown lint tool(s): {', '.join(sorted(unknown))}")
+                print(f"known: {', '.join(sorted(known))}")
+                return 2
+        counts = lints.write_baselines(repo, only=only)
+        for name, d in counts.items():
+            delta = (
+                f"+{d['added']}/-{d['removed']}" if (d["added"] or d["removed"]) else "unchanged"
+            )
+            print(f"  baseline {name}: {d['count']} findings ({delta})")
+        scope = "ALL tools" if only is None else ", ".join(sorted(only))
         print(
-            f"wrote {len(counts)} baselines to tools/lint-baseline/ "
-            "(review before committing — captures CURRENT known findings as accepted)"
+            f"wrote {len(counts)} baseline(s) [{scope}] to tools/lint-baseline/ — review the "
+            "+added lines before committing (each is a NEW finding now accepted as debt)"
         )
         return 0
     run = Run("check", args.arch if getattr(args, "arch", None) else "all")

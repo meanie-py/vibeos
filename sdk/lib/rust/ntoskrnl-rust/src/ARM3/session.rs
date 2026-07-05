@@ -586,6 +586,8 @@ let process = PsGetCurrentProcess() as *mut _EPROCESS;
     MiInitializePfnForOtherProcess((session_page_dir_index) as _, pointer_pde as PVOID, session_page_dir_index as _);
 
     temp_pte = ValidKernelPteLocal;
+    MI_MAKE_WRITE_PAGE(core::ptr::addr_of_mut!(temp_pte));
+    MI_MAKE_DIRTY_PAGE(core::ptr::addr_of_mut!(temp_pte));
     pointer_pte = MiAddressToPte(MmSessionSpace as PVOID);
     i = 0;
     while i < MiSessionDataPages as ULONG {

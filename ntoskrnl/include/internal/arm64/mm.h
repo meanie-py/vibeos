@@ -215,9 +215,13 @@ FORCEINLINE PVOID MiPxeToAddress(PMMPTE PointerPxe)
     return (PVOID)(((LONG64)PointerPxe << 52) >> 16);
 }
 
-/* Translate between P*Es */
+/* Translate between P*Es.
+ * NB: PDE-of-X is PTE-of-(PTE-of-X), i.e. ONE self-map recursion step, so
+ * MiPteToPde is MiAddressToPte (NOT MiAddressToPde, which lands one level
+ * too high on the PPE and once corrupted PT-page share counts at teardown —
+ * BUGCHECK 0x4E/0x99, see field-manual §9.16). Matches amd64/mm.h. */
 #define MiPdeToPte(_Pde)   ((PMMPTE)MiPteToAddress(_Pde))
-#define MiPteToPde(_Pte)   ((PMMPDE)MiAddressToPde(_Pte))
+#define MiPteToPde(_Pte)   ((PMMPDE)MiAddressToPte(_Pte))
 #define MiPpeToPde(_Ppe)   ((PMMPDE)MiPdeToAddress(_Ppe))
 
 /* Convert a PPE into its lowest PTE */
@@ -236,20 +240,20 @@ MiPxeToPte(PMMPXE PointerPxe)
     return (PMMPTE)MiPpeToAddress(PointerPxe);
 }
 
-/* Convert a PTE to a corresponding PPE */
+/* Convert a PTE to a corresponding PPE (two recursion steps — matches amd64) */
 FORCEINLINE
 PMMPPE
 MiPteToPpe(PMMPTE PointerPte)
 {
-    return (PMMPPE)MiAddressToPpe(PointerPte);
+    return (PMMPPE)MiAddressToPde(PointerPte);
 }
 
-/* Convert a PTE to a corresponding PXE */
+/* Convert a PTE to a corresponding PXE (three recursion steps — matches amd64) */
 FORCEINLINE
 PMMPXE
 MiPteToPxe(PMMPTE PointerPte)
 {
-    return (PMMPXE)MiAddressToPxe(PointerPte);
+    return (PMMPXE)MiAddressToPpe(PointerPte);
 }
 
 /* Convert a PDE to a corresponding PPE */

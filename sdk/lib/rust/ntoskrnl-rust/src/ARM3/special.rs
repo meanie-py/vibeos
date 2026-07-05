@@ -457,7 +457,6 @@ pub unsafe extern "system" fn MmFreeSpecialPool(P: PVOID) {
         irql = MiAcquirePfnLock();
 
         MI_SET_PFN_DELETED(pfn);
-
         MiDecrementShareCount(pfn as *mut ntkrnl_sys::ddk::_MMPFN, (*pointer_pte).page_frame_number() as _);
 
         MI_ERASE_PTE(pointer_pte);

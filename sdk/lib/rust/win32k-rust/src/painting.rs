@@ -485,7 +485,7 @@ unsafe extern "fastcall" fn IntGetNCUpdateRgn(Window: PWND, Validate: i32) -> HR
 
         if Validate != 0 {
             if NtGdiCombineRgn((*Window).hrgnUpdate, (*Window).hrgnUpdate, hRgnWindow, RGN_AND as i32) as u32 == NULLREGION {
-                IntGdiSetRegionOwner((*Window).hrgnUpdate, (GDI_OBJ_HMGR_POWNED as i32).try_into().unwrap());
+                IntGdiSetRegionOwner((*Window).hrgnUpdate, GDI_OBJ_HMGR_POWNED);
                 GreDeleteObject(((*Window).hrgnUpdate as _));
                 (*Window).state &= !WNDS_UPDATEDIRTY;
                 (*Window).hrgnUpdate = core::ptr::null_mut();
@@ -877,7 +877,7 @@ unsafe extern "fastcall" fn IntInvalidateWindows(Wnd: PWND, Rgn: PREGION, mut Fl
             if RgnType != NULLREGION as INT && Rgn as usize > PRGN_WINDOW as usize {
                 if (*Wnd).hrgnUpdate.is_null() {
                     (*Wnd).hrgnUpdate = NtGdiCreateRectRgn(0, 0, 0, 0);
-                    IntGdiSetRegionOwner((*Wnd).hrgnUpdate, (GDI_OBJ_HMGR_PUBLIC as INT).try_into().unwrap());
+                    IntGdiSetRegionOwner((*Wnd).hrgnUpdate, GDI_OBJ_HMGR_PUBLIC);
                 }
 
                 if (*Wnd).hrgnUpdate != HRGN_WINDOW {
@@ -886,7 +886,7 @@ unsafe extern "fastcall" fn IntInvalidateWindows(Wnd: PWND, Rgn: PREGION, mut Fl
                         RgnType = IntGdiCombineRgn(RgnUpdate, RgnUpdate, Rgn, RGN_OR as INT);
                         REGION_UnlockRgn(RgnUpdate);
                         if RgnType == NULLREGION as INT {
-                            IntGdiSetRegionOwner((*Wnd).hrgnUpdate, (GDI_OBJ_HMGR_POWNED as INT).try_into().unwrap());
+                            IntGdiSetRegionOwner((*Wnd).hrgnUpdate, GDI_OBJ_HMGR_POWNED);
                             GreDeleteObject(((*Wnd).hrgnUpdate as _));
                             (*Wnd).hrgnUpdate = core::ptr::null_mut();
                         }
@@ -928,7 +928,7 @@ unsafe extern "fastcall" fn IntInvalidateWindows(Wnd: PWND, Rgn: PREGION, mut Fl
                     REGION_UnlockRgn(RgnUpdate);
 
                     if RgnType == NULLREGION as INT {
-                        IntGdiSetRegionOwner((*Wnd).hrgnUpdate, (GDI_OBJ_HMGR_POWNED as INT).try_into().unwrap());
+                        IntGdiSetRegionOwner((*Wnd).hrgnUpdate, GDI_OBJ_HMGR_POWNED);
                         GreDeleteObject(((*Wnd).hrgnUpdate as _));
                         (*Wnd).hrgnUpdate = core::ptr::null_mut();
                     }

@@ -12,12 +12,24 @@ was serial was the *orchestrator* — i.e. the human. This driver removes that:
 
   1. builds — serial (still gated by the exclusive host CPU lease; parallel builds
      are a separate follow-up, see docs/engineering). Opt out with --no-build.
+  1.5. lint gate (BLOCKING) — `check --strict --arch <a>` per built arch, in
+     parallel (the full scanner suite: source lints baseline-diff NEW=0,
+     cargo-link/committed-drift bit-rot guards, per-arch binary lints). Reuses
+     the `check` command verbatim so there is ONE strict-check code path, not a
+     reimplementation that could drift. A NEW finding (classification LINT_FAIL)
+     blocks the push stamp; smokes still run so the matrix stays informative.
+     Opt out with --no-lint. This closes the "detection without enforcement"
+     gap where the arsenal ran warn-only in `build` and nothing forced
+     `check --strict` before a land.
   2. smokes — ALL arches launched concurrently. Wall-clock goes sum -> max.
-  3. flake-retries — a *documented* flake (KNOWN_FLAKE / FLAKY / contended
-     HANG_TIMEOUT) triggers up to --retries concurrent fresh attempts; the arch
+  3. flake-retries — a *documented* flake (KNOWN_FLAKE / FLAKY), an environment
+     failure (LAUNCH_FAIL), or a contention-characterized HANG_TIMEOUT (serial
+     still flowing at the deadline AND no kernel census/lockdep wedge
+     self-report) triggers up to --retries concurrent fresh attempts; the arch
      passes on the first green. A fresh regression (BUGCHECK / RUST_PANIC /
-     FAIL_MARKER / STALE_MEDIA / UNKNOWN) is NEVER retried — retrying would hide
-     it, which is exactly what the North Star forbids.
+     FAIL_MARKER / SHELL_NOT_READY / STALE_MEDIA / a wedged or self-confirmed
+     HANG_TIMEOUT / UNKNOWN) is NEVER retried — retrying would hide it, which
+     is exactly what the North Star forbids.
   4. a results matrix — every arch's final verdict + attempt count + flake note.
      Exit 0 only if every arch is ultimately green.
 
@@ -39,15 +51,35 @@ from pathlib import Path
 from . import archcfg
 from .artifacts import Run, Stage
 
-# A failure with one of these classifications is a *documented* flake or a
-# host-contention timeout — safe to retry. Anything else (a BUGCHECK, a Rust
-# panic, a hit fail-marker, stale media, an unknown red) is treated as a real
-# regression and fails the arch immediately: retrying a regression away is the
-# anti-pattern the North Star exists to prevent.
-# NET_FLAKE: boots green + net suite failed under concurrent-smoke load (the
-# documented amd64 timing flake, see smoke.py _net_stage) — a real netstack
-# regression fails the retry too, so it still ends red.
-RETRYABLE = {"KNOWN_FLAKE", "FLAKY", "HANG_TIMEOUT", "NET_FLAKE"}
+# A failure with one of these classifications is a *documented* flake or an
+# environment failure — safe to retry. Anything else (a BUGCHECK, a Rust panic,
+# a hit fail-marker, stale media, an unknown red) is a real regression and fails
+# the arch immediately: retrying a regression away is what the North Star forbids.
+#   - LAUNCH_FAIL: a QEMU/interop launch hiccup (env, not the OS).
+#   - NET_FLAKE: boots green + net suite failed under concurrent-smoke load (the
+#     documented amd64 timing flake, see smoke.py _net_stage) — a real netstack
+#     regression fails the retry too, so it still ends red.
+#
+# HANG_TIMEOUT is deliberately NOT a blanket member: "HANG_TIMEOUT ≈ host
+# contention" dates from the native-KVM era, but on the default windows-host TCG
+# backend the dominant real bugs (service wedge, lost wakeups, silent kernel
+# panics) present exactly as HANG_TIMEOUT — a ~50% wedge passed a 3-attempt gate
+# ~87% of the time. It is retryable ONLY when smoke characterized it as
+# slow/contended (serial still flowing at the deadline) AND the kernel didn't
+# self-report stuck threads — see _retryable().
+RETRYABLE = {"KNOWN_FLAKE", "FLAKY", "LAUNCH_FAIL", "NET_FLAKE"}
+
+
+def _retryable(classification: str, summary: dict) -> bool:
+    """Retry policy: documented flakes and environment failures retry; a
+    HANG_TIMEOUT retries only when it looks like contention (smoke's
+    hang_kind == "slow": serial was still flowing at the deadline) and the
+    kernel's census/lockdep instrumentation did NOT confirm a wedge."""
+    if classification in RETRYABLE:
+        return True
+    if classification == "HANG_TIMEOUT":
+        return summary.get("hang_kind") == "slow" and not summary.get("wedge_confirmed")
+    return False
 
 
 def _smoke_once(repo: Path, arch: str, root: Path, extra: list[str]) -> dict:
@@ -67,7 +99,10 @@ def _smoke_once(repo: Path, arch: str, root: Path, extra: list[str]) -> dict:
         "verdict": verdict,
         "classification": classification,
         "ok": verdict in ("OK", "WARN"),
-        "retryable": classification in RETRYABLE,
+        "retryable": _retryable(classification, summary),
+        "hang_kind": summary.get("hang_kind"),
+        "wedge_confirmed": bool(summary.get("wedge_confirmed")),
+        "census_stuck": summary.get("census_stuck", 0),
         "seconds": dt,
         "run_dir": summary.get("_dir", str(root)),
         "flake_rate": summary.get("flake_rate"),
@@ -96,6 +131,31 @@ def _first_salient(summary: dict) -> str:
             for s in st.get("salient", []):
                 return str(s)
     return ""
+
+
+def _lint_once(repo: Path, arch: str, root: Path) -> dict:
+    """Run `vibeos-cli check --strict --arch <arch>` for one built arch. This is
+    the T3 land-gate: the scanner suite (verify_*, lint_kernel, scan_ud2,
+    committed_drift, cargo_link, …) enforces baseline-diff NEW=0 instead of the
+    old warn-only path. Returns a compact result; exit != 0 blocks the stamp."""
+    root.mkdir(parents=True, exist_ok=True)
+    cmd = [str(repo / "vibeos-cli"), "check", "--strict", "--arch", arch]
+    env = dict(os.environ, VIBEOS_ARTIFACT_ROOT=str(root))
+    t0 = time.monotonic()
+    proc = subprocess.run(cmd, cwd=str(repo), env=env, capture_output=True, text=True)
+    dt = time.monotonic() - t0
+    salient = ""
+    for ln in (proc.stdout or "").splitlines():
+        if "✗" in ln or "FAIL" in ln:
+            salient = ln.strip()
+            break
+    return {
+        "arch": arch,
+        "ok": proc.returncode == 0,
+        "seconds": dt,
+        "salient": salient,
+        "exit": proc.returncode,
+    }
 
 
 def _resolve_arches(raw: str | None) -> list[str]:
@@ -201,6 +261,33 @@ def gate(args, repo: Path) -> int:
             run.classification = "BUILD_FAIL"
             return run.finalize(repo)
 
+    # --- phase 1.5: strict lint gate per built arch (T3 — blocks the stamp) ---
+    # Runs the scanner suite blocking (baseline-diff NEW=0) so the arsenal
+    # enforces on the land path instead of warn-only. Independent per arch →
+    # parallel; a NEW finding fails the gate but smokes still run (informative).
+    lint_ok: dict[str, bool] = {}
+    if not getattr(args, "no_lint", False):
+        with cf.ThreadPoolExecutor(max_workers=min(len(arches), 4) or 1) as lex:
+            lfut = {lex.submit(_lint_once, repo, a, gate_root / f"lint-{a}"): a for a in arches}
+            for f in cf.as_completed(lfut):
+                r = f.result()
+                lint_ok[r["arch"]] = r["ok"]
+                run.add(
+                    Stage(
+                        f"lint:{r['arch']}",
+                        seconds=r["seconds"],
+                        status="ok" if r["ok"] else "fail",
+                        detail="check --strict clean"
+                        if r["ok"]
+                        else f"NEW lint findings (exit {r['exit']})",
+                        salient=[]
+                        if r["ok"]
+                        else [r["salient"] or f"check --strict --arch {r['arch']} failed"],
+                    )
+                )
+                if not r["ok"] and not run.classification:
+                    run.classification = "LINT_FAIL"
+
     # --- phase 2: first-pass smokes, all arches in parallel ---
     max_workers = min(len(arches) * (1 + retries), 12) or 1
     results: dict[str, dict] = {}
@@ -280,8 +367,17 @@ def gate(args, repo: Path) -> int:
         bool(results)
         and all(results.get(a, {}).get("ok") for a in requested)
         and len(results) == len(requested)
+        # T3: strict lints must be clean for every requested arch. lint_ok has no
+        # entry when --no-lint or the arch didn't build (the latter already fails
+        # the results check above), so default True there and let those paths gate
+        # on their own condition.
+        and all(lint_ok.get(a, True) for a in requested)
     )
-    if all_ok:
+    # Defense-in-depth: never mint the credential when ANY stage failed. all_ok
+    # is computed over smoke + lint_ok only; this also catches any future stage
+    # that fails the run (sets a fail Stage → verdict FAIL) without being wired
+    # into all_ok — the stamp is the push credential, so err on the safe side.
+    if all_ok and run.verdict != "FAIL":
         _write_gate_stamp(run, repo, requested)
 
     run.extra["arches"] = arches
@@ -291,6 +387,9 @@ def gate(args, repo: Path) -> int:
             "classification": r["classification"],
             "attempts": r.get("attempts", 1),
             "recovered": bool(r.get("recovered")),
+            "hang_kind": r.get("hang_kind"),
+            "wedge_confirmed": bool(r.get("wedge_confirmed")),
+            "census_stuck": r.get("census_stuck", 0),
             "run_dir": r["run_dir"],
         }
         for a, r in results.items()

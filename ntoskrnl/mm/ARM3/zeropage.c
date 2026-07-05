@@ -89,17 +89,11 @@ MmZeroPageThread(VOID)
                 /* The first global free page should also be the first on its own list */
                 if (FreePage != PageIndex)
                 {
-#ifdef _M_ARM64
-                    DPRINT1("MmZeroPageThread: FreePage (0x%lx) != PageIndex (0x%lx)\n",
-                            FreePage, PageIndex);
-                    /* Continue with FreePage instead of bugchecking */
-#else
                     KeBugCheckEx(PFN_LIST_CORRUPT,
                                 0x8F,
                                 FreePage,
                                 PageIndex,
                                 0);
-#endif
                 }
 
                 Pfn2 = MiGetPfnEntry(PageIndex);

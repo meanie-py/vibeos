@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """verify_signatures.py — Full function-SIGNATURE verifier for exported Rust kernel fns.
 
-Extends the calling-convention-only checks (`verify_abi.py`,
-`check_calling_conventions.py`) to the actual parameter/return TYPES at the ABI
-boundary. It catches the bug class where an exported
+Extends the calling-convention-only checks (`verify_abi.py`) to the actual
+parameter/return TYPES at the ABI boundary. It catches the bug class where an
+exported
 
     #[no_mangle] pub extern "system" fn Foo(a: ULONG, b: PVOID) -> NTSTATUS
 
