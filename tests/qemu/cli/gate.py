@@ -98,6 +98,26 @@ def _first_salient(summary: dict) -> str:
     return ""
 
 
+def _lint_once(repo: Path, arch: str, root: Path) -> dict:
+    """Run `vibeos-cli check --strict --arch <arch>` for one built arch. This is
+    the T3 land-gate: the scanner suite (verify_*, lint_kernel, scan_ud2,
+    committed_drift, cargo_link, …) enforces baseline-diff NEW=0 instead of the
+    old warn-only path. Returns a compact result; exit != 0 blocks the stamp."""
+    root.mkdir(parents=True, exist_ok=True)
+    cmd = [str(repo / "vibeos-cli"), "check", "--strict", "--arch", arch]
+    env = dict(os.environ, VIBEOS_ARTIFACT_ROOT=str(root))
+    t0 = time.monotonic()
+    proc = subprocess.run(cmd, cwd=str(repo), env=env, capture_output=True, text=True)
+    dt = time.monotonic() - t0
+    salient = ""
+    for ln in (proc.stdout or "").splitlines():
+        if "✗" in ln or "FAIL" in ln:
+            salient = ln.strip()
+            break
+    return {"arch": arch, "ok": proc.returncode == 0, "seconds": dt,
+            "salient": salient, "exit": proc.returncode}
+
+
 def _resolve_arches(raw: str | None) -> list[str]:
     if not raw:
         return ["i386", "amd64", "arm64"]
@@ -201,6 +221,33 @@ def gate(args, repo: Path) -> int:
             run.classification = "BUILD_FAIL"
             return run.finalize(repo)
 
+    # --- phase 1.5: strict lint gate per built arch (T3 — blocks the stamp) ---
+    # Runs the scanner suite blocking (baseline-diff NEW=0) so the arsenal
+    # enforces on the land path instead of warn-only. Independent per arch →
+    # parallel; a NEW finding fails the gate but smokes still run (informative).
+    lint_ok: dict[str, bool] = {}
+    if not getattr(args, "no_lint", False):
+        with cf.ThreadPoolExecutor(max_workers=min(len(arches), 4) or 1) as lex:
+            lfut = {lex.submit(_lint_once, repo, a, gate_root / f"lint-{a}"): a for a in arches}
+            for f in cf.as_completed(lfut):
+                r = f.result()
+                lint_ok[r["arch"]] = r["ok"]
+                run.add(
+                    Stage(
+                        f"lint:{r['arch']}",
+                        seconds=r["seconds"],
+                        status="ok" if r["ok"] else "fail",
+                        detail="check --strict clean"
+                        if r["ok"]
+                        else f"NEW lint findings (exit {r['exit']})",
+                        salient=[]
+                        if r["ok"]
+                        else [r["salient"] or f"check --strict --arch {r['arch']} failed"],
+                    )
+                )
+                if not r["ok"] and not run.classification:
+                    run.classification = "LINT_FAIL"
+
     # --- phase 2: first-pass smokes, all arches in parallel ---
     max_workers = min(len(arches) * (1 + retries), 12) or 1
     results: dict[str, dict] = {}
@@ -280,6 +327,11 @@ def gate(args, repo: Path) -> int:
         bool(results)
         and all(results.get(a, {}).get("ok") for a in requested)
         and len(results) == len(requested)
+        # T3: strict lints must be clean for every requested arch. lint_ok has no
+        # entry when --no-lint or the arch didn't build (the latter already fails
+        # the results check above), so default True there and let those paths gate
+        # on their own condition.
+        and all(lint_ok.get(a, True) for a in requested)
     )
     if all_ok:
         _write_gate_stamp(run, repo, requested)
