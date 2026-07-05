@@ -529,9 +529,17 @@ bash tools/verify_sacred_primitives.sh build-i386
 # Boot coverage map: which functions a real boot EXERCISES (TCG plugin boot)
 tools/coverage/run.sh amd64        # -> per-function exercised set + the
                                    #    never-executed-rust.txt landmine registry
+
+# captures(none)-class post-opt IR audit (POISON_ARG committed folds /
+# READNONE_OUTPARAM latents / UNREACHABLE_BODY). Class is toolchain-FIXED on
+# LLVM >= 21 — rerun this after every rustc/LLVM bump to prove it stayed fixed.
+VIBEOS_EMIT_LLVM_IR=1 ./vibeos-cli build --arch amd64   # emit per-CGU .ll
+.venv/bin/python tools/scan_captures.py sdk/lib/rust/target/ntoskrnl-cargo-*-rustlib
+# Related: VIBEOS_LINK_MAP=1 (lld -Map per cargo module — layout ground truth);
+# VIBEOS_LAYOUT_CANARY=1 (deliberately perturbed kernel link — boot tripwire)
 ```
 
-`scan_ud2.py` finds `ud2` (0f 0b) in named functions — LLVM proved the body has UB (almost always captures(none) or an ABI mismatch); it's wired into smoke as `test_no_unexpected_ud2`. `lint_kernel.py` finds `*OutputParam = value` writes in `#[no_mangle]` functions that skip `write_volatile` (a captures(none) target) before compilation. (The smoke harness also nukes `rust-kernel-target/` per session unless `--skip-clean-build`, runs the ud2 scan pre-boot, and auto-symbolicates BSODs — see `tests/qemu/cli/README.md`.)
+`scan_ud2.py` finds `ud2` (0f 0b) in named functions — LLVM proved the body has UB (on LLVM ≥ 21 almost always an ABI mismatch; the captures(none) volatile-blind root is toolchain-fixed, see rust-kernel-patterns.md "RESOLVED AT THE TOOLCHAIN"); it's wired into smoke as `test_no_unexpected_ud2`. `lint_kernel.py` finds `*OutputParam = value` writes in `#[no_mangle]` functions that skip `write_volatile` (a captures(none) target) before compilation. (The smoke harness also nukes `rust-kernel-target/` per session unless `--skip-clean-build`, runs the ud2 scan pre-boot, and auto-symbolicates BSODs — see `tests/qemu/cli/README.md`.)
 
 ## ARM64 Specifics
 
