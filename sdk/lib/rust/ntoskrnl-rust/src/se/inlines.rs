@@ -109,7 +109,7 @@ pub unsafe extern "C" fn SeLengthSid(sid: PSID) -> ULONG {
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn SeDeleteClientSecurity(
+pub unsafe extern "system" fn SeDeleteClientSecurity(
     ctx: *mut _SECURITY_CLIENT_CONTEXT,
 ) {
     let ctx = opaque_ptr(ctx);

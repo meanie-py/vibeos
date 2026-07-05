@@ -115,7 +115,6 @@ unsafe fn ProbeForReadUnicodeString(ptr: PUNICODE_STRING) -> _UNICODE_STRING {
 // Probe shims (defined as `extern "C"` in shim_exports.rs)
 extern "C" {
     fn ProbeForWriteHandle(Address: PHANDLE);
-    fn ProbeForWriteUlong(Address: *mut ULONG);
     fn ProbeAndCaptureUnicodeString(
         CapturedString: *mut _UNICODE_STRING,
         PreviousMode: KPROCESSOR_MODE,
@@ -125,6 +124,10 @@ extern "C" {
         CapturedString: *mut _UNICODE_STRING,
         PreviousMode: KPROCESSOR_MODE,
     );
+}
+// NTAPI (stdcall on i386) — defs in shim_exports/common_inlines are extern "system"
+extern "system" {
+    fn ProbeForWriteUlong(Address: *mut ULONG);
 }
 
 // Cross-module Rust functions referenced by name (these are #[no_mangle] elsewhere)

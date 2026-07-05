@@ -272,7 +272,7 @@ pub unsafe extern "C" fn QueryBusInterface(
     return Status;
 }
 #[no_mangle]
-pub unsafe extern "C" fn TranslateResourceListAddress(
+pub unsafe extern "system" fn TranslateResourceListAddress(
     mut DeviceExtension: PFDO_DEVICE_EXTENSION,
     mut BusType: INTERFACE_TYPE,
     mut SystemIoBusNumber: ULONG,
@@ -491,7 +491,7 @@ pub unsafe extern "C" fn GetResourceListInterrupt(
     return STATUS_NOT_FOUND;
 }
 #[no_mangle]
-pub unsafe extern "C" fn AllocateAddressMapping(
+pub unsafe extern "system" fn AllocateAddressMapping(
     MappedAddressList: *mut PMAPPED_ADDRESS,
     IoAddress: STOR_PHYSICAL_ADDRESS,
     MappedAddress: PVOID,

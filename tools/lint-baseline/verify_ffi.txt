@@ -58,7 +58,7 @@
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/callback.rs:30: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/init.rs:235: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/sysinfo.rs:128: RtlMoveMemory: RtlMoveMemory is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/timer.rs:82: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/timer.rs:85: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/filelock.rs:46: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/stackovf.rs:20: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/tunnel.rs:37: RtlMoveMemory: RtlMoveMemory is a C macro, not a real function — should be inlined in Rust
@@ -84,7 +84,7 @@
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ke/thrdschd.rs:45: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/lpc/connect.rs:113: ObReferenceObject: ObReferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/lpc/connect.rs:120: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/lpc/reply.rs:55: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/lpc/reply.rs:58: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/mm/marea.rs:44: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/mm/mminit.rs:48: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/mm/mminit.rs:49: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust

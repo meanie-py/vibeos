@@ -23,9 +23,21 @@ extern "C" {
     fn PortPdoScsi(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 extern "system" {
-    fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
+    // crate-internal NTAPI (defs in misc.rs, also extern "system")
     fn TranslateResourceListAddress( DeviceExtension: PFDO_DEVICE_EXTENSION, BusType: INTERFACE_TYPE, SystemIoBusNumber: ULONG, IoAddress: STOR_PHYSICAL_ADDRESS, NumberOfBytes: ULONG, InIoSpace: BOOLEAN, TranslatedAddress: PPHYSICAL_ADDRESS, ) -> BOOLEAN;
     fn AllocateAddressMapping( MappedAddressList: PLIST_ENTRY, IoAddress: STOR_PHYSICAL_ADDRESS, MappedAddress: PVOID, NumberOfBytes: ULONG, SystemIoBusNumber: ULONG, ) -> NTSTATUS;
+}
+// IofCompleteRequest is FASTCALL on i386 per ntoskrnl.spec
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
+}
+// CRT — cdecl on all arches
+extern "C" {
     fn memmove( dest: *mut ::core::ffi::c_void, src: *const ::core::ffi::c_void, n: usize, ) -> *mut ::core::ffi::c_void;
 }
 

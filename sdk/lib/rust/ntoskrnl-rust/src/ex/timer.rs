@@ -79,6 +79,9 @@ extern "C" {
     fn ProbeForWriteHandle(Address: PHANDLE);
     fn ProbeForReadLargeInteger(Address: PLARGE_INTEGER) -> LARGE_INTEGER;
     fn DefaultQueryInfoBufferCheck( Class: u32, InfoClassArray: *const INFORMATION_CLASS_INFO, InfoClassArrayEntries: ULONG, Flags: ULONG, Buffer: PVOID, Length: ULONG, ReturnLength: *mut ULONG, ReturnLengthPtr: *mut ULONG, PreviousMode: KPROCESSOR_MODE, ) -> NTSTATUS;
+}
+// NTAPI (stdcall on i386) — defs in shim_exports/common_inlines are extern "system"
+extern "system" {
     fn InsertTailList(ListHead: PLIST_ENTRY, Entry: PLIST_ENTRY);
 }
 

@@ -127,7 +127,6 @@ extern "C" {
     fn CONTAINING_RECORD(address: PVOID, ty: PVOID, field: PVOID) -> PVOID;
     fn ProbeForWriteHandle(ptr: *mut HANDLE);
     fn ProbeForReadLargeInteger(ptr: *const LARGE_INTEGER);
-    fn ProbeForWriteUlong(ptr: *mut ULONG);
     fn DefaultSetInfoBufferCheck(
         OperationClass: ULONG,
         ClassList: *const _INFORMATION_CLASS_INFO,
@@ -139,6 +138,10 @@ extern "C" {
     fn PspSetProcessFlag(Process: PEPROCESS, Flags: ULONG) -> ULONG;
     fn PspSetCrossThreadFlag(Thread: PETHREAD, Flags: ULONG) -> ULONG;
     fn NtCurrentProcess() -> HANDLE;
+}
+// NTAPI (stdcall on i386) — defs in shim_exports/common_inlines are extern "system"
+extern "system" {
+    fn ProbeForWriteUlong(ptr: *mut ULONG);
 }
 extern "system" {
     #[link_name = "IoGetCurrentProcess"]

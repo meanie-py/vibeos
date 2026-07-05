@@ -44,11 +44,14 @@ extern "system" {
     ) -> NTSTATUS;
 }
 extern "C" {
-    fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;
-    fn LpcpCompleteWait(Semaphore: PVOID);
     fn LpcpReceiveWait(Semaphore: PVOID, WaitMode: KPROCESSOR_MODE) -> NTSTATUS;
     fn ProbeForWritePointer(Address: *mut PVOID);
     fn ProbeForReadLargeInteger(Address: PLARGE_INTEGER);
+}
+// NTAPI (stdcall on i386) — defs in shim_exports/common_inlines are extern "system"
+extern "system" {
+    fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;
+    fn LpcpCompleteWait(Semaphore: PVOID);
 }
 extern "system" {
     fn PsGetCurrentProcess() -> PEPROCESS;

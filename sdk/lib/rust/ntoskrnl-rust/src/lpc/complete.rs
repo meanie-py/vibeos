@@ -64,6 +64,9 @@ extern "system" {
 }
 extern "C" {
     fn ProbeForWriteHandle(address: *mut HANDLE);
+}
+// NTAPI (stdcall on i386) — defs in shim_exports/common_inlines are extern "system"
+extern "system" {
     fn LpcpCompleteWait(semaphore: PVOID);
 }
 extern "system" {

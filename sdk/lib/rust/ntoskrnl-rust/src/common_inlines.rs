@@ -123,7 +123,7 @@ pub unsafe extern "C" fn ProbeForWritePointer(address: *mut PVOID) {
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn ProbeForWriteUlong(address: *mut ULONG) {
+pub unsafe extern "system" fn ProbeForWriteUlong(address: *mut ULONG) {
     let address = opaque_ptr(address);
     ntkrnl_sys::inline::common::ProbeForWriteUlong(address)
 }
@@ -324,7 +324,7 @@ pub unsafe extern "C" fn RtlInitEmptyUnicodeString(
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn InsertTailList(
+pub unsafe extern "system" fn InsertTailList(
     list_head: PLIST_ENTRY,
     entry: PLIST_ENTRY,
 ) {

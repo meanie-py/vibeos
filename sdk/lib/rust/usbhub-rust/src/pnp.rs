@@ -83,6 +83,10 @@ extern "system" {
     fn USBD_ParseConfigurationDescriptorEx( ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR, StartPosition: PVOID, InterfaceNumber: LONG, AlternateSetting: LONG, InterfaceClass: LONG, InterfaceSubClass: LONG, InterfaceProtocol: LONG, ) -> PUSB_INTERFACE_DESCRIPTOR;
     fn USBD_CreateConfigurationRequestEx( ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR, InterfaceList: PUSBD_INTERFACE_LIST_ENTRY, ) -> PURB;
 }
+// CRT — cdecl on all arches
+extern "C" {
+    fn wcslen(str: *const u16) -> usize;
+}
 
 // variadic — cdecl on all arches (never stdcall)
 extern "C" {
@@ -107,7 +111,6 @@ extern "system" {
     fn USBHUB_DumpingIDs(Buffer: *mut core::ffi::c_void);
     fn USBH_CheckDeviceLanguage(DeviceObject: PDEVICE_OBJECT, LanguageId: USHORT) -> NTSTATUS;
     fn USBH_SyncGetStringDescriptor( DeviceObject: PDEVICE_OBJECT, Index: UCHAR, LanguageId: USHORT, Descriptor: PUSB_STRING_DESCRIPTOR, DescriptorLength: ULONG, LengthReturned: *mut ULONG, FlagValue: BOOLEAN, ) -> NTSTATUS;
-    fn wcslen(str: *const u16) -> usize;
     // USBH_SetPdoRegistryParameter is NTAPI (stdcall) in usbhub.h/pnp.c — it is defined
     // below in this module as `extern "system"`. The old `extern "C"` decl here was an
     // ABI infidelity (produced a cdecl `_USBH_SetPdoRegistryParameter` undefined symbol);

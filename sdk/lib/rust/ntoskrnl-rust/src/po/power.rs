@@ -133,6 +133,9 @@ extern "system" {
     static GUID_DEVICE_BATTERY: GUID;
 }
 extern "C" {
+}
+// NTAPI (stdcall on i386) — defs in shim_exports/common_inlines are extern "system"
+extern "system" {
     fn ProbeForWriteUlong(address: *mut ULONG);
 }
 

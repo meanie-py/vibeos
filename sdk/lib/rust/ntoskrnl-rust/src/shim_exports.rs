@@ -137,7 +137,7 @@ pub unsafe extern "C" fn ExFreeToNPagedLookasideList(
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn ExAllocateFromPagedLookasideList(
+pub unsafe extern "system" fn ExAllocateFromPagedLookasideList(
     lookaside: PPAGED_LOOKASIDE_LIST,
 ) -> PVOID {
     ntkrnl_sys::inline::ex::ExAllocateFromPagedLookasideList(lookaside)
@@ -212,7 +212,7 @@ pub unsafe extern "C" fn NtCurrentProcess() -> HANDLE {
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn PsGetCurrentProcess() -> PEPROCESS {
+pub unsafe extern "system" fn PsGetCurrentProcess() -> PEPROCESS {
     ntkrnl_sys::inline::tier1::PsGetCurrentProcess()
 }
 
@@ -233,7 +233,7 @@ pub unsafe extern "C" fn _rs_PsCurrentProcessTokenAddr() -> *mut PVOID {
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn RtlUnicodeStringToOemSize(
+pub unsafe extern "system" fn RtlUnicodeStringToOemSize(
     unicode_string: PCUNICODE_STRING,
 ) -> ULONG {
     ntkrnl_sys::inline::tier1::RtlUnicodeStringToOemSize(unicode_string)
@@ -245,7 +245,7 @@ pub unsafe extern "C" fn RtlUnicodeStringToOemSize(
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn ExFreeToPagedLookasideList(
+pub unsafe extern "system" fn ExFreeToPagedLookasideList(
     lookaside: PPAGED_LOOKASIDE_LIST,
     entry: PVOID,
 ) {
@@ -267,7 +267,7 @@ pub unsafe extern "C" fn LpcpReceiveWait(
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn LpcpReplyWait(
+pub unsafe extern "system" fn LpcpReplyWait(
     semaphore: PVOID,
     wait_mode: KPROCESSOR_MODE,
 ) {
@@ -277,7 +277,7 @@ pub unsafe extern "C" fn LpcpReplyWait(
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn LpcpConnectWait(
+pub unsafe extern "system" fn LpcpConnectWait(
     semaphore: PVOID,
     wait_mode: KPROCESSOR_MODE,
 ) {
@@ -287,7 +287,7 @@ pub unsafe extern "C" fn LpcpConnectWait(
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn LpcpCompleteWait(semaphore: PVOID) {
+pub unsafe extern "system" fn LpcpCompleteWait(semaphore: PVOID) {
     let semaphore = opaque_ptr(semaphore);
     ntkrnl_sys::inline::tier1::LpcpCompleteWait(semaphore)
 }
@@ -296,7 +296,7 @@ pub unsafe extern "C" fn LpcpCompleteWait(semaphore: PVOID) {
 
 #[no_mangle]
 #[inline(never)]
-pub unsafe extern "C" fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE {
+pub unsafe extern "system" fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE {
     ntkrnl_sys::inline::tier1::LpcpAllocateFromPortZone()
 }
 

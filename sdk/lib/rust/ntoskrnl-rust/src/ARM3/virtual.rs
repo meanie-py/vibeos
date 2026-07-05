@@ -179,6 +179,9 @@ use ntkrnl_sys::ddk::{ExAllocatePoolZero, ExFreePool};
 // Must use extern "system" (stdcall on i386) to match the NTAPI calling convention.
 extern "C" {
     fn ProbeForWritePointer(Address: *mut PVOID);
+}
+// NTAPI (stdcall on i386) — defs in shim_exports/common_inlines are extern "system"
+extern "system" {
     fn ProbeForWriteUlong(Address: *mut ULONG);
 }
 

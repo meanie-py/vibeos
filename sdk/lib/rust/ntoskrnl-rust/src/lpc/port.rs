@@ -44,7 +44,7 @@ extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn ProbeForRead(address: PVOID, length: SIZE_T, alignment: ULONG);
 }
-extern "C" {
+extern "system" {
     fn SeDeleteClientSecurity(ClientContext: *mut _SECURITY_CLIENT_CONTEXT);
 }
 

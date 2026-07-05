@@ -4,6 +4,9 @@ use ntkrnl_sys::base::*;
 use core::ffi::c_void;
 
 extern "system" {
+}
+// CRT — cdecl on all arches
+extern "C" {
     fn wcslen(str: *const u16) -> usize;
 }
 
