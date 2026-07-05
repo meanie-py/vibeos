@@ -366,6 +366,29 @@ After WoW64/WoWARM64 thunking is working:
 
 ---
 
+## 10. Real-Hardware Device Path — kill the VM-only shortcuts — Size: L
+
+Today the port leans on **paravirtual, VM-only devices** and dev shortcuts that won't
+survive real hardware: virtio-input/blk/net, an arm64 **RAM disk** (the whole OS in
+memory), and **polling instead of interrupts** on arm64 (its HAL `HalGetInterruptVector`
+is a stub). The unifying insight: **USB is the one bus that carries input, storage (and
+more) on real machines across every arch**, and the entire USB+HID+mass-storage stack is
+*already translated to Rust* — possibly never exercised. So the work is a shared beachhead
+(does the Rust USB host stack enumerate a QEMU device?) that unlocks input **and** storage
+together, plus a foundational arm64-interrupts effort that ends the polling class.
+
+| # | Quest | Doc | Size | Depends on |
+|---|-------|-----|------|-----------|
+| 10a | **USB HID input** (the beachhead; also fixes arm64's monolith miniport) | [`../engineering/input-architecture-and-unification.md`](../engineering/input-architecture-and-unification.md) | M | USB host stack enumerating |
+| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) | [`../engineering/usb-mass-storage-real-storage-quest.md`](../engineering/usb-mass-storage-real-storage-quest.md) | M | same USB host stack as 10a — one probe gates both |
+| 10c | **arm64 GIC interrupts** (real routing + dispatch + hardware-backed IRQL) — foundational; ends polling everywhere | *(doc TBD — after USB HID)* | L | timer path in `hal-rust/arm64/clock.rs` is a working template |
+| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack) | [`../engineering/real-nic-networking-quest.md`](../engineering/real-nic-networking-quest.md) | M–L | amd64 e1000 sooner (real PIC/APIC); arm64 downstream of 10c |
+
+Not trash, leave alone: the GOP linear-framebuffer display driver (`arm64vid`, shared all
+arches) and the PL011 UART (a real ARM peripheral).
+
+---
+
 ## Priority Order (suggested)
 
 | # | Item | Size | Blocked By | Impact |
