@@ -1,3 +1,9 @@
+> ⚠️ **ARCHIVED 2026-07-03 — superseded by [`rust-port-status.md`](../rust-port-status.md).**
+> This per-surface audit is a point-in-time historical record. Its per-file counts were
+> measured ~2026-06-21 (before the last swarm wind-down) and are **stale** — several
+> "0% / in-progress" claims here are now done. For current Rust-vs-C coverage use the
+> status doc; this file is kept only for the detailed per-file mapping and history.
+
 # NTDLL C→Rust Translation Audit
 
 > **Ground-truth re-verified 2026-06-21** against `dll/ntdll/CMakeLists.txt` + the Rust tree — still accurate: ntdll PE body 100% Rust; the only active non-Rust inputs are the per-arch `dispatch/{i386,amd64,arm64}/dispatch.S` trap trampolines (asm by design, 708 LOC), the generated `ntdll_stubs.c` (spec2def syscall stubs), pre-expanded setjmp/longjmp asm (`ntdll-cargo/data/asm/*-amd64.s`), and the empty cohab stub TUs (`rtl_um_rust_stub.c`, `etwtrace_rust_stub.c`, `nt_0600/ldr/ldrnotify_rust_stub.c`, `nt_0600/ntdll_vista_rust_stub.c`).
