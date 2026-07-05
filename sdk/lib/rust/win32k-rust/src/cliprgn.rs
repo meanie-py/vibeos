@@ -1047,7 +1047,13 @@ unsafe fn CLIPPING_UpdateGCRegion_impl(pDC: PDC) {
     IntEngUpdateClipRegion(
         core::ptr::addr_of_mut!((*pDC).co),
         (*(*pDC).prgnRao).rdh.nCount,
-        core::ptr::addr_of_mut!((*(*pDC).prgnRao).Buffer) as _,
+        // C: `pDC->prgnRao->Buffer` — the POINTER VALUE (PRECTL rect array). A prior
+        // translation passed addr_of!(Buffer) (the address of the pointer field
+        // itself), so IntEngUpdateClipRegion memcpy'd nCount rects starting INSIDE
+        // the REGION struct — overrunning its paged-pool allocation (intermittent
+        // post-boot BUGCHECK 0x50 @ region+page-end when the next page was
+        // uncommitted; silent garbage clip rects when it wasn't).
+        (*(*pDC).prgnRao).Buffer as _,
         core::ptr::addr_of_mut!((*pDC).erclClip),
     );
 

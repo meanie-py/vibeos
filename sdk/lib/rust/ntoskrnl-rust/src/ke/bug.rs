@@ -1188,6 +1188,107 @@ pub unsafe extern "system" fn KeBugCheckEx(
         BugCheckParameter3 as PVOID,
         BugCheckParameter4 as PVOID,
     );
+    // Self-symbolicate: any parameter that lands inside a loaded image prints
+    // module+offset right in the banner, so post-boot-marker crashes are
+    // self-reporting on serial (no GDB round-trip; module bases vary per boot,
+    // making post-mortem cross-boot symbolication unreliable). Best-effort —
+    // KiPcToFileHeader only reads PsLoadedModuleList, safe at bugcheck time.
+    {
+        let params = [
+            BugCheckParameter1,
+            BugCheckParameter2,
+            BugCheckParameter3,
+            BugCheckParameter4,
+        ];
+        let mut idx = 0usize;
+        while idx < 4 {
+            let p = params[idx];
+            if p > 0x10000 {
+                let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                let mut in_kernel: BOOLEAN = 0;
+                let base = KiPcToFileHeader(p as PVOID, &mut le, 0u8, &mut in_kernel);
+                if !base.is_null() && !le.is_null() {
+                    let mut ansi = [0i8; 64];
+                    KeBugCheckUnicodeToAnsi(
+                        &(*le).BaseDllName as *const _ as PUNICODE_STRING,
+                        ansi.as_mut_ptr(),
+                        64,
+                    );
+                    crate::dbg_print!(
+                        b"***   P%u = %s+0x%lX\n\0",
+                        (idx + 1) as u32,
+                        ansi.as_ptr(),
+                        (p - base as ULONG_PTR) as ULONG,
+                    );
+                }
+            }
+            idx += 1;
+        }
+        // Mm bugchecks (0x50 PAGE_FAULT_IN_NONPAGED_AREA, 0xBE
+        // ATTEMPTED_WRITE_TO_READONLY_MEMORY, 0x1E-family) pass TrapInformation
+        // as P3, not a PC — the real faulting PC is inside that KTRAP_FRAME.
+        // Extract and symbolicate it too (bindgen field access, not a raw offset).
+        #[cfg(target_arch = "x86_64")]
+        if (BugCheckCode == 0x50 || BugCheckCode == 0xBE || BugCheckCode == 0x7E || BugCheckCode == 0x1E)
+            && BugCheckParameter3 > 0xFFFF800000000000
+        {
+            let rip = (*(BugCheckParameter3 as *const ntkrnl_sys::ddk::_KTRAP_FRAME)).Rip as u64;
+            if rip > 0xFFFF800000000000 {
+                let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                let mut in_kernel: BOOLEAN = 0;
+                let base = KiPcToFileHeader(rip as PVOID, &mut le, 0u8, &mut in_kernel);
+                if !base.is_null() && !le.is_null() {
+                    let mut ansi = [0i8; 64];
+                    KeBugCheckUnicodeToAnsi(
+                        &(*le).BaseDllName as *const _ as PUNICODE_STRING,
+                        ansi.as_mut_ptr(),
+                        64,
+                    );
+                    crate::dbg_print!(
+                        b"***   TrapFrame.Rip = 0x%p = %s+0x%lX\n\0",
+                        rip as PVOID,
+                        ansi.as_ptr(),
+                        (rip as ULONG_PTR - base as ULONG_PTR) as ULONG,
+                    );
+                } else {
+                    crate::dbg_print!(b"***   TrapFrame.Rip = 0x%p (no module)\n\0", rip as PVOID);
+                }
+            }
+            // Mini-backtrace: scan the faulting stack for return addresses that
+            // land inside loaded images (scan-based, frame-pointer-free — noisy
+            // but names the caller chain without a debugger).
+            let rsp = (*(BugCheckParameter3 as *const ntkrnl_sys::ddk::_KTRAP_FRAME)).Rsp as u64;
+            if rsp > 0xFFFF800000000000 {
+                let mut printed = 0u32;
+                let mut qi = 0u64;
+                while qi < 64 && printed < 8 {
+                    let sp = rsp + qi * 8;
+                    let val = *(sp as *const u64);
+                    if val > 0xFFFF800000000000 {
+                        let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                        let mut in_kernel: BOOLEAN = 0;
+                        let base = KiPcToFileHeader(val as PVOID, &mut le, 0u8, &mut in_kernel);
+                        if !base.is_null() && !le.is_null() {
+                            let mut ansi = [0i8; 64];
+                            KeBugCheckUnicodeToAnsi(
+                                &(*le).BaseDllName as *const _ as PUNICODE_STRING,
+                                ansi.as_mut_ptr(),
+                                64,
+                            );
+                            crate::dbg_print!(
+                                b"***   stack[+0x%03lX] = %s+0x%lX\n\0",
+                                (qi * 8) as ULONG,
+                                ansi.as_ptr(),
+                                (val as ULONG_PTR - base as ULONG_PTR) as ULONG,
+                            );
+                            printed += 1;
+                        }
+                    }
+                    qi += 1;
+                }
+            }
+        }
+    }
     #[cfg(target_arch = "aarch64")]
     {
         let u = Arm64UartKernelBase as *mut ULONG;

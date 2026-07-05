@@ -673,6 +673,10 @@ unsafe fn write_data_blocks(
     handle: INT_PTR,
     status_callback: PFNFCISTATUS,
 ) -> i32 {
+    // Wine C passes a local `int err` to the seek/read/write callbacks' err
+    // out-param; a prior translation passed &fci->pv cast to *mut i32, letting
+    // callback error writes corrupt the low bytes of the user context pointer.
+    let mut cb_err: i32 = 0;
     let header_size: u16 = (core::mem::size_of::<CFDATA>() as u16) + (*fci).ccab.cbReserveCFData as u16;
     let cfdata = (*fci).data_out.as_mut_ptr() as *mut CFDATA;
     // memset(cfdata, 0, header_size)
@@ -685,7 +689,7 @@ unsafe fn write_data_blocks(
         let folder = (current as *const u8).sub(core::mem::offset_of!(folder, entry)) as *mut folder;
 
         // Seek in folder's temp data file
-        if ((*fci).seek)((*folder).data.handle as isize, 0, SEEK_SET, core::ptr::addr_of_mut!((*fci).pv) as *mut i32, (*fci).pv) != 0 {
+        if ((*fci).seek)((*folder).data.handle as isize, 0, SEEK_SET, &mut cb_err, (*fci).pv) != 0 {
             set_error(fci, FCIERR_CAB_FILE as i32, (*fci).pv as i32); // FCIERR_CAB_FILE usage; assume value exists
             return 0;
         }
@@ -699,7 +703,7 @@ unsafe fn write_data_blocks(
                 (*folder).data.handle as isize,
                 data,
                 (*block).compressed as u32,
-                core::ptr::addr_of_mut!((*fci).pv) as *mut i32,
+                &mut cb_err,
                 (*fci).pv,
             ) as i32;
             if len != (*block).compressed as i32 {
@@ -722,7 +726,7 @@ unsafe fn write_data_blocks(
                 handle as isize,
                 (*fci).data_out.as_ptr() as *mut core::ffi::c_void,
                 len_plus_header as u32,
-                core::ptr::addr_of_mut!((*fci).pv) as *mut i32,
+                &mut cb_err,
                 (*fci).pv,
             ) != len_plus_header as u32
             {
