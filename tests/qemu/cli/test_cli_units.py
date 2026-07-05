@@ -1770,7 +1770,16 @@ from . import gate as gate_mod  # noqa: E402
 
 
 def _gate_args(**kw):
-    base = dict(arches="i386,amd64,arm64", retries=2, no_build=True, clean=False, no_net=False)
+    # no_lint=True by default so retry/verdict tests don't invoke the real
+    # per-arch strict-lint subprocess; the lint-gate tests pass no_lint=False.
+    base = dict(
+        arches="i386,amd64,arm64",
+        retries=2,
+        no_build=True,
+        clean=False,
+        no_net=False,
+        no_lint=True,
+    )
     base.update(kw)
     return Namespace(**base)
 
@@ -1828,7 +1837,6 @@ def test_gate_all_green_no_retries(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
-    monkeypatch.setattr(gate_mod, "_lint_gate", lambda *a, **k: True)
     rc = gate_mod.gate(_gate_args(), tmp_path)
     assert rc == 0
     # no retry dirs requested
@@ -1839,7 +1847,6 @@ def test_gate_flake_recovers_on_retry(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"i386": ["OK"], "amd64": ["KNOWN_FLAKE", "OK"], "arm64": ["OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
-    monkeypatch.setattr(gate_mod, "_lint_gate", lambda *a, **k: True)
     rc = gate_mod.gate(_gate_args(), tmp_path)
     assert rc == 0, "a documented flake that goes green on retry must pass the gate"
     # amd64 was retried
@@ -1850,7 +1857,6 @@ def test_gate_bugcheck_not_retried(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"i386": ["OK"], "amd64": ["BUGCHECK"], "arm64": ["OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
-    monkeypatch.setattr(gate_mod, "_lint_gate", lambda *a, **k: True)
     rc = gate_mod.gate(_gate_args(), tmp_path)
     assert rc == 1, "a real regression must fail the gate"
     # a non-retryable classification must NOT trigger retries (would hide the bug)
@@ -1861,7 +1867,6 @@ def test_gate_flake_stays_red_if_all_retries_fail(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"i386": ["OK"], "amd64": ["KNOWN_FLAKE"], "arm64": ["OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
-    monkeypatch.setattr(gate_mod, "_lint_gate", lambda *a, **k: True)
     rc = gate_mod.gate(_gate_args(retries=2), tmp_path)
     assert rc == 1, "a flake that never recovers must still fail (hides nothing)"
     # it DID retry (2 parallel attempts)
@@ -1873,7 +1878,6 @@ def test_gate_retries_zero_disables_retry(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"i386": ["KNOWN_FLAKE", "OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
-    monkeypatch.setattr(gate_mod, "_lint_gate", lambda *a, **k: True)
     rc = gate_mod.gate(_gate_args(arches="i386", retries=0), tmp_path)
     assert rc == 1
     assert not any("-r" in k for k in fake.calls), fake.calls
@@ -1884,7 +1888,6 @@ def test_gate_slow_hang_timeout_is_retried(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"i386": ["OK"], "amd64": ["HANG_TIMEOUT:slow", "OK"], "arm64": ["OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
-    monkeypatch.setattr(gate_mod, "_lint_gate", lambda *a, **k: True)
     rc = gate_mod.gate(_gate_args(), tmp_path)
     assert rc == 0
     assert any(k.startswith("amd64:") and "-r" in k for k in fake.calls), fake.calls
@@ -1897,7 +1900,6 @@ def test_gate_wedged_hang_timeout_not_retried(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"i386": ["OK"], "amd64": ["HANG_TIMEOUT:wedged", "OK"], "arm64": ["OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
-    monkeypatch.setattr(gate_mod, "_lint_gate", lambda *a, **k: True)
     rc = gate_mod.gate(_gate_args(), tmp_path)
     assert rc == 1, "a wedged hang must fail the gate, not be retried away"
     assert not any(k.startswith("amd64:") and "-r" in k for k in fake.calls), fake.calls
@@ -1908,7 +1910,6 @@ def test_gate_census_confirmed_wedge_not_retried(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"amd64": ["HANG_TIMEOUT:census", "OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
-    monkeypatch.setattr(gate_mod, "_lint_gate", lambda *a, **k: True)
     rc = gate_mod.gate(_gate_args(arches="amd64"), tmp_path)
     assert rc == 1
     assert not any("-r" in k for k in fake.calls), fake.calls
@@ -1919,7 +1920,6 @@ def test_gate_launch_fail_is_retried(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"amd64": ["LAUNCH_FAIL", "OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
-    monkeypatch.setattr(gate_mod, "_lint_gate", lambda *a, **k: True)
     rc = gate_mod.gate(_gate_args(arches="amd64"), tmp_path)
     assert rc == 0, "an env launch failure that greens on retry must pass"
     assert any("-r" in k for k in fake.calls), fake.calls
@@ -1964,77 +1964,59 @@ def _spy_smoke_ok(seen):
     return fake
 
 
-def test_gate_lint_failure_fails_fast_no_smoke(tmp_path, monkeypatch):
-    """A NEW lint finding fails the gate BEFORE any smoke boots (fail-fast)."""
+def _lint_once_stub(ok: bool):
+    """Stand-in for gate._lint_once (which shells `check --strict --arch X`)."""
+
+    def stub(repo, arch, root):
+        return {
+            "arch": arch,
+            "ok": ok,
+            "seconds": 0.01,
+            "salient": "" if ok else f"{arch}: NEW lint findings",
+            "exit": 0 if ok else 1,
+        }
+
+    return stub
+
+
+def test_gate_lint_failure_blocks_stamp_but_smokes_run(tmp_path, monkeypatch):
+    """A NEW lint finding fails the gate and blocks the push stamp; smokes still
+    run so the matrix stays informative (the landed T3 policy)."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     seen: list = []
     monkeypatch.setattr(gate_mod, "_smoke_once", _spy_smoke_ok(seen))
-    monkeypatch.setattr(gate_mod, "_lint_gate", lambda *a, **k: False)
-    rc = gate_mod.gate(_gate_args(), tmp_path)
-    assert rc == 1, "a lint regression must fail the gate"
-    assert seen == [], "smokes must NOT run when the lint gate fails (fail-fast)"
-
-
-def test_gate_lint_failure_blocks_push_stamp(tmp_path, monkeypatch):
-    """A lint failure must never mint the push credential, even though the
-    lint gate short-circuits before the stamp code entirely."""
-    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
-    monkeypatch.setattr(gate_mod, "_smoke_once", _spy_smoke_ok([]))
-    monkeypatch.setattr(gate_mod, "_lint_gate", lambda *a, **k: False)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=False))
     stamped: list = []
     monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
-    rc = gate_mod.gate(_gate_args(), tmp_path)
-    assert rc == 1
+    rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
+    assert rc == 1, "a lint regression must fail the gate"
     assert not stamped, "no push stamp on a lint failure"
+    assert seen, "smokes still run under the T3 policy (informative matrix)"
 
 
-def test_gate_lint_pass_proceeds_to_smoke(tmp_path, monkeypatch):
+def test_gate_lint_pass_proceeds_and_stamps(tmp_path, monkeypatch):
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
     fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
     monkeypatch.setattr(gate_mod, "_smoke_once", fake)
-    monkeypatch.setattr(gate_mod, "_lint_gate", lambda *a, **k: True)
-    rc = gate_mod.gate(_gate_args(), tmp_path)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    stamped: list = []
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=False), tmp_path)
     assert rc == 0
     assert fake.calls, "a passing lint gate must proceed to smokes"
+    assert stamped, "a full green gate (lints + smokes) mints the push stamp"
 
 
-def test_lint_gate_returns_false_on_any_fail_stage(tmp_path, monkeypatch):
-    """_lint_gate is False iff a lint helper added a fail stage (its verdict is
-    NEW-vs-baseline, not the tool exit code — that's the helpers' job)."""
+def test_gate_no_lint_skips_lint_phase(tmp_path, monkeypatch):
+    """--no-lint bypasses the strict lint gate entirely (escape hatch)."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
-    run = Run("gate", "test")
-    monkeypatch.setattr(
-        lints,
-        "run_source_lints",
-        lambda run, repo, strict: run.add(Stage("lint:x", status="fail")),
-    )
-    monkeypatch.setattr(lints, "run_cargo_link_guard", lambda *a, **k: None)
-    monkeypatch.setattr(lints, "run_committed_drift_guard", lambda *a, **k: None)
-    monkeypatch.setattr(lints, "run_binary_lints", lambda *a, **k: None)
-    assert gate_mod._lint_gate(run, tmp_path, ["i386"]) is False
-
-
-def test_lint_gate_true_when_all_ok_or_skip(tmp_path, monkeypatch):
-    """SKIPs (absent nightly / build dir) are not failures — only fail is."""
-    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
-    run = Run("gate", "test")
-    monkeypatch.setattr(
-        lints,
-        "run_source_lints",
-        lambda run, repo, strict: run.add(Stage("lint:x", status="ok")),
-    )
-    monkeypatch.setattr(
-        lints,
-        "run_cargo_link_guard",
-        lambda run, repo, arch: run.add(Stage("cargo", status="skip")),
-    )
-    monkeypatch.setattr(lints, "run_committed_drift_guard", lambda *a, **k: None)
-    monkeypatch.setattr(
-        lints,
-        "run_binary_lints",
-        lambda run, repo, arch, strict: run.add(Stage("ud2", status="skip")),
-    )
-    assert gate_mod._lint_gate(run, tmp_path, ["i386"]) is True
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    called: list = []
+    monkeypatch.setattr(gate_mod, "_lint_once", lambda *a, **k: called.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=True), tmp_path)
+    assert rc == 0
+    assert not called, "--no-lint must not invoke the lint subprocess"
 
 
 # --- check --update-baseline: per-tool scoping (T2 item 1b) -----------------

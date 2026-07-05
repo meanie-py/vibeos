@@ -111,16 +111,22 @@ before deleting (some may be episodically hand-run) — **archive, don't delete*
       copy-recipe if it's now stale post-canon (`canon-run.sh:17-22`).
 
 ### T1 — Within-estate merges (S/M, Low-Med)
-- [ ] **Fold `verify_abi` into `verify_ffi`** (verify_ffi already re-implements it against the same
-      catalogs) — confirm byte-equivalence, then drop `verify_abi` from `lints.py:154-159` + its baseline.
+> **2026-07-05 re-scope: the tree moved a lot since this plan was drafted (`b245730b27a`);
+> several T1 specifics are now STALE.** The rustconv CLI is down to ~15 subcommands with only
+> 2 `seh-*` win32k passes (not "10 of 26") — other lanes already trimmed it. Re-verify each
+> item against HEAD before doing it; the win32k-namespacing item in particular is now moot.
+- [x] **DONE 2026-07-05 (commit e0ddb35efee)** — Fold `verify_abi` into `verify_ffi`. Confirmed
+      zero coverage gap (verify_abi's 62 findings ⊆ verify_ffi's 135); dropped the redundant lint
+      run + orphaned baseline. verify_abi.py kept (abi_map.py imports its parse fns — it's a library).
 - [ ] **Merge `verify_constants` + `scan_inline_flag_literals`** into one constant-value rule (two matchers).
-- [ ] **Retire `submit`/`batch` → `translate --batch`** (keep the Batch-API 50%-off discount as a flag;
-      delete the whole-file prompt path). Verify no gate depends on them first.
-- [ ] **Fold `boot` → `smoke --fast/--no-gate`** (`boot()` at `smoke.py:346` already calls the same `_one_boot`).
+- [ ] **Retire `submit`/`batch` → `translate --batch`** — CAREFUL: touches the paid-translation path;
+      verify no gate/script depends on them first. (Deferred — cost-sensitive, low streamlining value.)
+- [ ] **Fold `boot` → `smoke --fast/--no-gate`** — LOW VALUE: `boot()`/`smoke()` already share
+      `_one_boot` (`smoke.py:432` / `:350`); only the thin wrappers differ (boot adds `--until`/no-gate).
 - [ ] **Collapse the 4 cache→crate reassemblers** (`reassemble_from_cache`/`restitch_decls`/`reinject_dropped`/`preseed_cache`)
-      into one `rustconv reassemble` subcommand (preserve the drop-recovery behavior).
-- [ ] **Namespace the win32k passes**: 10 of 26 subcommands (`seh-*`, `callout-annotate`, `gdi-locks`,
-      `user-locks`, `split-*`, `switch-extract`) → a `rustconv win32k <pass>` subgroup (~40% surface cut).
+      into one `rustconv reassemble` subcommand (preserve the drop-recovery behavior). Re-verify they still exist.
+- [x] ~~Namespace the win32k passes~~ **MOOT 2026-07-05** — rustconv now has only 2 `seh-*` passes
+      (`seh-classify`/`seh-inventory`), not the 10 the plan cited; namespacing 2 commands isn't worth it.
 
 ### T2 — Cross-cutting structure (M/L, Med)
 - [ ] **One arch source of truth.** Merge build-side `archcfg.py` + runtime `vm.ARCH_CONFIGS`; delete
@@ -136,8 +142,8 @@ before deleting (some may be episodically hand-run) — **archive, don't delete*
 - [ ] **Collapse `test_smoke.py` ↔ `smoke.py` boot/screenshot dup** (`smoke.py:73-101` mirrors
       `test_smoke::test_screenshot`) into one shared boot-and-capture helper.
 
-### T3 — The correctness fix ⚠ (M, Med) — priority regardless of streamlining appetite
-- [ ] **Make `gate` run the scanner suite blocking** (invoke `check --strict` per built arch, baseline-diff
+### T3 — The correctness fix ⚠ (M, Med) — **DONE + VALIDATED 2026-07-04**
+- [x] **Make `gate` run the scanner suite blocking** (invoke `check --strict` per built arch, baseline-diff
       NEW=0), so the arsenal enforces on the land path instead of warn-only. Natural next footgun increment
       (pre-push already requires the gate stamp; add lint-blocking to what mints it). Highest correctness
       value: on arm64, `lint_kernel` is the sole `captures(none)` defense and is currently advisory.
@@ -163,6 +169,18 @@ before deleting (some may be episodically hand-run) — **archive, don't delete*
   the gate's strict pass runs them (skip outside canon, as now) or the check moves into the build (canon
   context). Risk from the plan ("surfaces baselined-but-real findings") turned out NIL — the arsenal's
   current output is all-accepted; the only real bug it caught was the widl codegen staleness above.
+
+  **LANDED green on master (push `fc794e7c29e..8ed66e12e01`, 2026-07-05).** First full gate was red
+  ONLY on the pre-existing arm64 `LpcExitThread`/`0x4E` wedge (non-causal to T3 — tooling-only edits);
+  after merging the `flake-arm64-lpcexit` fix (`MiPteToX` self-map recursion), the re-gate was **×3
+  green + stamp minted**: build ×3 ✓, **lint phase 1.5 ✓ on all three arches** (`check --strict` clean),
+  smoke i386 ✓ amd64 ✓ (net-flake recovered on retry) arm64 ✓. The T3 mechanism is proven live: a NEW
+  lint finding on any built arch fails the gate + blocks the push stamp; `--no-lint` opts out. Landing
+  also fixed 3 real scanner bugs (committed_drift canonical-path family) + bootstrapped two baselines
+  (all deltas triaged: line-drift + tool FPs, zero actionable bugs).
+  **Residual (owed): committed_drift's canonical checks (`.res`) still SKIP outside a canon-mount — a
+  follow-up should run committed_drift INSIDE the build (canon context) so `.res` drift is actually
+  gated, not skipped.**
 
 ### Longer-term (after T1)
 - [ ] **Unify the FFI cluster on `verify_signatures`** (clang-AST — the strongest oracle) + fold in

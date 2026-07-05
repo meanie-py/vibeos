@@ -1,4 +1,3 @@
-qemu/catch_bugcheck.sh:14:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
 qemu/inspect.sh:55:20: warning: JSON appears unused. Verify use (or export if used externally). [SC2034]
 qemu/lib/common.sh:1:1: error: Tips depend on target shell and yours is unknown. Add a shebang or a 'shell' directive. [SC2148]
 qemu/lib/common.sh:21:1: warning: QEMU_MAX_LIFETIME_SECONDS appears unused. Verify use (or export if used externally). [SC2034]
