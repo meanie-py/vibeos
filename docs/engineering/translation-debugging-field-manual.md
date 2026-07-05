@@ -2322,6 +2322,34 @@ protection. Kernel-gated so user (RO) views are untouched — no security regres
 is a consumption-point repair of a real invariant violation ("a validly-mapped
 prototype-backed page must not have `MM_ZERO_ACCESS` OriginalPte"); the deeper
 proto-validation path that leaves it 0 is still owed. **Result: amd64 5/5 green, no 0xBE.**
+
+**§9.13 addendum 6 (2026-07-05, flake-nettest-explorer — the "deeper path" FOUND; a whole
+DEFECT CLASS fixed).** The 0xBE page is a **ROS PFN**: the GDI handle table is a ROS
+section (`MiIsRosSectionObject`), its pages come from **`MmAllocPage`**
+(`mm/freelist.rs`), which — faithfully to C — never writes `OriginalPte` (ROS PFNs don't
+have one: in the C `_MMPFN` union, **`RmapListHead` overlays `OriginalPte`**, mm.h:421-428).
+Upstream never reads OriginalPte for these pages because ROS-section views never route
+through ARM3 proto-fault completion; our hybrid's session view does. So
+`MiCompleteProtoPteFault` now branches on `MI_IS_ROS_PFN`: derive protection from the
+authoritative valid proto PTE and **never read or write the union slot** (a write would
+corrupt a live rmap chain). The MM_ZERO_ACCESS heal stays as the non-ROS defensive path
+(now all arches).
+
+Chasing this exposed a one-slot **offset shift in `ntkrnl-sys` `pfn_offsets_extra`**
+(mm.rs): the hand-rolled accessors for `NextLRU`/`PreviousLRU`/`RmapListHead` missed the
+embedded `Wsle` field — `NEXT_LRU=48` landed on `Wsle` (so `freelist.rs` LRU links and
+`virtual.rs`/`wslist.rs` WS-lock bits, which use the **bindgen** struct = C truth, fought
+over the same bytes), and `RMAP_LIST_HEAD=64` landed on `PreviousLRU` instead of
+overlaying `OriginalPte@32`. Same shift on 32-bit (Wsle@24 missed). Consequence found in
+the wild: `MmGetRmapListHeadPage` had an arm64-only "reject non-page-aligned heads" hack —
+paper over garbage reads from the wrong slot — which **silently disabled rmaps on arm64**.
+Offsets fixed (64-bit: 56/64/32; 32-bit: 28/32/16), hack removed. Also found adjacent:
+**`MI_IS_PAGE_WRITEABLE` was inverted on arm64** (tested bit 7 = NotDirty/AP[2] = hw
+READ-ONLY; correct is software Writable bit 55) and `MI_IS_PAGE_COPY_ON_WRITE` tested
+bit 8 (SH[0] shareability; correct is soft CoW bit 56) — ~9 fault-path callers affected on
+arm64. **Lesson (recurring class): hand-rolled offset tables and bit tests drift; anywhere
+a bindgen struct exists, use it — and when a hack "rejects garbage" reads of a field,
+suspect the offset, not the data.**
 Debug recipe that worked: `VIBEOS_NO_KVM=1 qemu/start.sh amd64 --gdb` → `run-until
 KeBugCheckEx` → read trap-frame `Rip`+regs → walk `PsLoadedModuleList` → symbolicate vs
 module nm → self-reporting diagnostic `KeBugCheckEx(0x0BAD…)` codes to bisect the fault
