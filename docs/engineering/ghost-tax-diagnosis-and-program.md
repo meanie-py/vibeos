@@ -148,6 +148,23 @@ almost none got promoted to a blocking gate.**
 Promote or delete; and any warning that fires on every run must either become a
 hard gate on some cadence or carry no gate semantics at all.**
 
+A live specimen from the arm64 campaign (§5.4), because it is the exact shape
+of D2 one layer below the documented cases: the **cargo-link dependency graph
+did not track kernel asm sources.** The kernel `.exe`/`.sys`/`.dll` are
+cargo-linked, and reactos-link assembles `ntoskrnl/ke/<arch>/*.S` (+ cc-rs C
+shims) into them — but cmake's `add_cargo_module` `DEPENDS` globbed only the
+Rust workspace (`sdk/lib/rust/**`), so an edit to `ke/arm64/trap.S` never
+re-invoked cargo and shipped a **stale kernel with zero signal**. This is the
+2026-07-04 Rust false-green (`gcc.cmake` comment) recurring against a different
+source language: same root (the cargo link is opaque to cmake, so DEPENDS must
+be complete), same failure (a "verified-fixed" binary that never rebuilt the
+fix). Tier-1's build artifact-check does NOT catch it — media *was* freshly
+staged from a genuinely-rebuilt-but-wrong ninja graph. The fix (glob the kernel
+asm/`.inc` trees for the kernel module kinds) is landed; the general lesson is
+that **any opaque build step must over-declare its inputs, and "I rebuilt and
+re-tested" is not proof unless you confirmed the specific source object changed**
+(objdump the symbol, or diff the artifact) — the discipline that caught this.
+
 ### 2.3 D3: Verdict semantics tuned for the wrong era
 
 The harness's judgment calls encode the threat model of May (KVM contention,
