@@ -162,6 +162,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # stderr to keep the baseline stable — only `MISMATCH:` finding lines on stdout.
     vc = rc / "verify_constants.py"
     specs.append(("verify_constants", [py, str(vc)] if vc.is_file() else ["MISSING"], "stdout"))
+    # Enum-member drift — the AdjustUnwait class: a mistranslated C enum value
+    # silently deforms dispatch/scheduling and compiles clean on every arch (19
+    # such drifts found in the 2026-07-04 dispatcher audit; none were gated).
+    # `--enums` is FP-prone on generic names, which is exactly what the baseline
+    # mechanism is for (same pattern as verify_signatures): current accepted
+    # findings live in the baseline, the gate is NEW-only.
+    specs.append(
+        (
+            "verify_constants_enums",
+            [py, str(vc), "--enums"] if vc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     specs.append(("lint_kernel", [py, str(lk)] if lk.is_file() else ["MISSING"], "stdout"))
     # C↔Rust differential oracles in tools/ (offsets are a compile-time gate, not
     # here). tables + match_consts are clean today (empty baseline = strict);
@@ -181,6 +194,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_inline_flag_literals",
             [py, str(sif), "--lint"] if sif.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # Silent-failure shapes (AST/tree-sitter): bare `loop {}` spins, unwrap/
+    # expect in no-std kernel code, swallowed Err arms. The arm64 explorer
+    # regression hid for weeks behind exactly this (win32k's bare-loop panic
+    # handler = silent spin), and the POWNED paint-mask panic WAS an unwrap.
+    # Stock is large (~2.1K, mostly unwraps) → baseline gates NEW only; the
+    # baseline doubles as the fix-campaign work queue.
+    ssf = repo / "tools" / "scan_silent_failures.py"
+    specs.append(
+        (
+            "scan_silent_failures",
+            [py, str(ssf), "--lint"] if ssf.is_file() else ["MISSING"],
             "stdout",
         )
     )

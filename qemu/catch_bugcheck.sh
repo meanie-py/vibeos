@@ -11,7 +11,7 @@
 #
 # Usage: qemu/catch_bugcheck.sh <arch> [max_boots] [shellready_timeout] [crash_window]
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 source qemu/lib/runid.sh 2>/dev/null || true
 
 ARCH="${1:-amd64}"

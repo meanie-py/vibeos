@@ -186,15 +186,15 @@ case "$ARCH" in
         # UEFI boot (system OVMF → uefildr.efi), mirroring vm.py Amd64UefiConfig.
         ISO="$(arch_build_dir amd64)/livecd.iso"
         [ -f "$ISO" ] || die "missing $ISO — run: ninja -C $(arch_build_dir amd64) livecd"
-        # VIBEOS_NO_KVM=1 forces the TCG interpreter (breakpoints work; also
-        # reproduces TCG-timing-sensitive races the fast KVM path hides — e.g.
-        # the DcomLaunch control-pipe connect wedge). Mirrors the i386 branch.
+        # VIBEOS_NO_KVM=1 forces the TCG interpreter (same env i386 honors):
+        # needed for TCG plugins (coverage), icount/record-replay, and reliable
+        # software breakpoints. Default stays KVM.
         AMD64_ACCEL=(-accel kvm -cpu host)
         if [ -n "${VIBEOS_NO_KVM:-}" ]; then
             AMD64_ACCEL=(-accel tcg -cpu max)
-            log_info "VIBEOS_NO_KVM set — using TCG (breakpoints work, TCG timing, slower boot)"
+            log_info "VIBEOS_NO_KVM set — using TCG (plugins/rr/breakpoints work, slower boot)"
         else
-            [ -r /dev/kvm ] || die "amd64 requires /dev/kvm but it's not readable; check kvm group membership (or set VIBEOS_NO_KVM=1 for TCG)"
+            [ -r /dev/kvm ] || die "amd64 requires /dev/kvm but it's not readable; set VIBEOS_NO_KVM=1 for TCG or check kvm group membership"
         fi
         OVMF_CODE="/usr/share/OVMF/OVMF_CODE_4M.fd"
         [ -f "$OVMF_CODE" ] || die "missing $OVMF_CODE — apt install ovmf"

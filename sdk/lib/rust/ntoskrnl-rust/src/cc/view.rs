@@ -1346,7 +1346,9 @@ pub unsafe extern "system" fn CcInitView() {
     CcInitCacheZeroPage();
 }
 
-extern "C" {
+extern "system" {
+    // stdcall per ntoskrnl.spec (_DbgBreakPoint@0 on i386); zero args so only the
+    // link decoration differs from cdecl — declared right so i386 binds the real export.
     fn DbgBreakPoint();
 }
 #[cfg(target_arch = "x86")]

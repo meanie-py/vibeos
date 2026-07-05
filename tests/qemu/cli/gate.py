@@ -13,11 +13,14 @@ was serial was the *orchestrator* — i.e. the human. This driver removes that:
   1. builds — serial (still gated by the exclusive host CPU lease; parallel builds
      are a separate follow-up, see docs/engineering). Opt out with --no-build.
   2. smokes — ALL arches launched concurrently. Wall-clock goes sum -> max.
-  3. flake-retries — a *documented* flake (KNOWN_FLAKE / FLAKY / contended
-     HANG_TIMEOUT) triggers up to --retries concurrent fresh attempts; the arch
+  3. flake-retries — a *documented* flake (KNOWN_FLAKE / FLAKY), an environment
+     failure (LAUNCH_FAIL), or a contention-characterized HANG_TIMEOUT (serial
+     still flowing at the deadline AND no kernel census/lockdep wedge
+     self-report) triggers up to --retries concurrent fresh attempts; the arch
      passes on the first green. A fresh regression (BUGCHECK / RUST_PANIC /
-     FAIL_MARKER / STALE_MEDIA / UNKNOWN) is NEVER retried — retrying would hide
-     it, which is exactly what the North Star forbids.
+     FAIL_MARKER / SHELL_NOT_READY / STALE_MEDIA / a wedged or self-confirmed
+     HANG_TIMEOUT / UNKNOWN) is NEVER retried — retrying would hide it, which
+     is exactly what the North Star forbids.
   4. a results matrix — every arch's final verdict + attempt count + flake note.
      Exit 0 only if every arch is ultimately green.
 
@@ -39,15 +42,35 @@ from pathlib import Path
 from . import archcfg
 from .artifacts import Run, Stage
 
-# A failure with one of these classifications is a *documented* flake or a
-# host-contention timeout — safe to retry. Anything else (a BUGCHECK, a Rust
-# panic, a hit fail-marker, stale media, an unknown red) is treated as a real
-# regression and fails the arch immediately: retrying a regression away is the
-# anti-pattern the North Star exists to prevent.
-# NET_FLAKE: boots green + net suite failed under concurrent-smoke load (the
-# documented amd64 timing flake, see smoke.py _net_stage) — a real netstack
-# regression fails the retry too, so it still ends red.
-RETRYABLE = {"KNOWN_FLAKE", "FLAKY", "HANG_TIMEOUT", "NET_FLAKE"}
+# A failure with one of these classifications is a *documented* flake or an
+# environment failure — safe to retry. Anything else (a BUGCHECK, a Rust panic,
+# a hit fail-marker, stale media, an unknown red) is a real regression and fails
+# the arch immediately: retrying a regression away is what the North Star forbids.
+#   - LAUNCH_FAIL: a QEMU/interop launch hiccup (env, not the OS).
+#   - NET_FLAKE: boots green + net suite failed under concurrent-smoke load (the
+#     documented amd64 timing flake, see smoke.py _net_stage) — a real netstack
+#     regression fails the retry too, so it still ends red.
+#
+# HANG_TIMEOUT is deliberately NOT a blanket member: "HANG_TIMEOUT ≈ host
+# contention" dates from the native-KVM era, but on the default windows-host TCG
+# backend the dominant real bugs (service wedge, lost wakeups, silent kernel
+# panics) present exactly as HANG_TIMEOUT — a ~50% wedge passed a 3-attempt gate
+# ~87% of the time. It is retryable ONLY when smoke characterized it as
+# slow/contended (serial still flowing at the deadline) AND the kernel didn't
+# self-report stuck threads — see _retryable().
+RETRYABLE = {"KNOWN_FLAKE", "FLAKY", "LAUNCH_FAIL", "NET_FLAKE"}
+
+
+def _retryable(classification: str, summary: dict) -> bool:
+    """Retry policy: documented flakes and environment failures retry; a
+    HANG_TIMEOUT retries only when it looks like contention (smoke's
+    hang_kind == "slow": serial was still flowing at the deadline) and the
+    kernel's census/lockdep instrumentation did NOT confirm a wedge."""
+    if classification in RETRYABLE:
+        return True
+    if classification == "HANG_TIMEOUT":
+        return summary.get("hang_kind") == "slow" and not summary.get("wedge_confirmed")
+    return False
 
 
 def _smoke_once(repo: Path, arch: str, root: Path, extra: list[str]) -> dict:
@@ -67,7 +90,10 @@ def _smoke_once(repo: Path, arch: str, root: Path, extra: list[str]) -> dict:
         "verdict": verdict,
         "classification": classification,
         "ok": verdict in ("OK", "WARN"),
-        "retryable": classification in RETRYABLE,
+        "retryable": _retryable(classification, summary),
+        "hang_kind": summary.get("hang_kind"),
+        "wedge_confirmed": bool(summary.get("wedge_confirmed")),
+        "census_stuck": summary.get("census_stuck", 0),
         "seconds": dt,
         "run_dir": summary.get("_dir", str(root)),
         "flake_rate": summary.get("flake_rate"),
@@ -291,6 +317,9 @@ def gate(args, repo: Path) -> int:
             "classification": r["classification"],
             "attempts": r.get("attempts", 1),
             "recovered": bool(r.get("recovered")),
+            "hang_kind": r.get("hang_kind"),
+            "wedge_confirmed": bool(r.get("wedge_confirmed")),
+            "census_stuck": r.get("census_stuck", 0),
             "run_dir": r["run_dir"],
         }
         for a, r in results.items()

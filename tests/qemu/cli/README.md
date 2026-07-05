@@ -122,27 +122,43 @@ all included), then auto-triage on failure.
 - `--repeat N` runs N independent boots to characterize a flake; a partial pass
   (`0 < pass < N`) is reported `FLAKY` and counts as **FAIL** — a flake is a real
   signal, not green.
-- `--until` overrides the success marker (default is the arch's boot marker —
-  `shell ready` on x86, idle on arm64); `--fail-on RE` aborts at the first match
-  of a hard-failure regex.
+- `--until` overrides the success marker (default: the arch's boot marker
+  `[EXPLORER] _tWinMain entered`, on **all three arches**); `--fail-on RE`
+  aborts at the first match of a hard-failure regex.
+- **Green requires `shell ready`, not just the boot marker.** After the marker,
+  the settle-window serial is scanned (not discarded): a BugCheck / Rust panic
+  / kernel debugcon `PANIC:` during settle fails the boot, and `shell ready`
+  must follow the marker (else `SHELL_NOT_READY`). A custom `--until` skips the
+  shell-ready requirement (early-marker debug boots).
 - On failure it captures a screenshot + debugcon triage, classifies
-  (`RUST_PANIC` with file:line / `BUGCHECK 0xNN` / `HANG_TIMEOUT` /
-  `FAIL_MARKER` / `KNOWN_FLAKE`), and symbolicates the faulting PC via the
+  (`RUST_PANIC` with file:line — including kernel panics that only reach
+  debugcon / `BUGCHECK 0xNN` / `HANG_TIMEOUT` with a slow-vs-wedged
+  characterization + census/lockdep wedge self-confirmation / `FAIL_MARKER` /
+  `SHELL_NOT_READY` / `KNOWN_FLAKE`), and symbolicates the faulting PC via the
   offline index. All in the summary — no manual objdump round-trip.
+- On a green boot, kernel `[CENSUS] STUCK` / `[LOCKDEP]` self-reports surface
+  as a `health` WARN stage (+ `census_stuck` in summary.json) — the
+  "boots green but threads are silently parked forever" signal, trendable
+  across runs.
 
 ### `gate [--arches i386,amd64,arm64] [--retries N] [--no-build] [--clean] [--no-net]`
 **The parallel pre-land verdict** — the North Star "gate ×3 (all arches green)"
 done concurrently instead of by a serial human loop. It builds each arch (serial,
 still under the exclusive host CPU lease — `--no-build` to skip), then launches
 **all arches' smokes in parallel** (wall-clock goes sum→max), then for any arch
-that fails with a *documented* flake (`KNOWN_FLAKE` / `FLAKY` / contended
-`HANG_TIMEOUT`) launches up to `--retries` (default 2) concurrent fresh attempts
-and passes the arch on the first green.
+that fails retryably launches up to `--retries` (default 2) concurrent fresh
+attempts and passes the arch on the first green. Retry-eligible: a *documented*
+flake (`KNOWN_FLAKE` / `FLAKY`), an environment failure (`LAUNCH_FAIL`), or a
+`HANG_TIMEOUT` that smoke characterized as **slow/contended** (serial still
+flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
 
 - **A fresh regression is never retried.** `BUGCHECK` / `RUST_PANIC` /
-  `FAIL_MARKER` / `STALE_MEDIA` / `UNKNOWN` fail the arch immediately — retrying
-  a regression away is exactly what the North Star forbids. Only the documented
-  flake classifications (see `triage.KNOWN_FLAKES`) are retry-eligible.
+  `FAIL_MARKER` / `SHELL_NOT_READY` / `STALE_MEDIA` / `UNKNOWN` — and a
+  HANG_TIMEOUT that went **silent** (wedge-shaped) or that the kernel's own
+  `[CENSUS]`/`[LOCKDEP]` instrumentation confirmed — fail the arch immediately;
+  retrying a regression away is exactly what the North Star forbids. (The old
+  blanket HANG_TIMEOUT retry dated from the native-KVM contention era and let a
+  ~50% service wedge pass a 3-attempt gate ~87% of the time.)
 - **Concurrency is safe to over-submit.** Each smoke is a `vibeos-cli smoke`
   subprocess that self-throttles on the host CPU-lease pool (`hostlock`, 4
   leases) and the global QEMU cap (10); the per-arch serialize cap is bypassed on

@@ -404,10 +404,13 @@ class VibeosLockdepCmd(gdb.Command):
                     f"took {lock:#x} before {lock2:#x} site={site2:#x}"
                 )
             else:
+                # site2 nonzero on a kind-1 record = the FAULT-UNDER-WS tripwire
+                # (MmAccessFault entry): site2 carries the faulting address.
+                fault = f" fault_addr={site2:#x}" if site2 else ""
                 print(
                     f"  *** SELF-DEADLOCK #{seq} thread={thread:#x} "
                     f"WAIT({MODE_NAMES.get(wanted_mode, wanted_mode)}) on lock={lock:#x} "
-                    f"already held({MODE_NAMES.get(held_mode, held_mode)}) site={site:#x}"
+                    f"already held({MODE_NAMES.get(held_mode, held_mode)}) site={site:#x}{fault}"
                 )
             shown += 1
         if shown == 0:
