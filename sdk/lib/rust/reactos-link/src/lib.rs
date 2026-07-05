@@ -1465,6 +1465,20 @@ impl Linker {
         if env::var_os("VIBEOS_STRIP_RELEASE").is_some() {
             println!("cargo:rustc-link-arg=-Wl,--strip-debug");
         }
+        // Layout ground truth (captures(none)/layout-tip debugging): env-gated
+        // lld map file — records every archive member pulled and which twin of
+        // a duplicated symbol won first-match under --allow-multiple-definition.
+        // Diff two maps to see exactly what a link-layout perturbation changed
+        // (tools/scan_captures.py is the compile-time half of the same audit).
+        println!("cargo:rerun-if-env-changed=VIBEOS_LINK_MAP");
+        if env::var("VIBEOS_LINK_MAP").as_deref() == Ok("1") {
+            println!(
+                "cargo:rustc-link-arg=-Wl,-Map,{}",
+                self.build_dir
+                    .join(format!("{}.map", self.pkg_name))
+                    .display()
+            );
+        }
         // By default disable lld's stdcall-fixup (a decorated-vs-undecorated
         // symbol mismatch is a real ABI bug, not something to paper over). But
         // winsrv.dll's cmake link relies on the fixup to resolve winsrv-rust's
@@ -1626,6 +1640,7 @@ impl Linker {
         // may skip build.rs after a body-crate edit and relink a STALE .a (the
         // libcntpr.cmake staleness class). rerun-if-changed on a dir recurses.
         let crate_dir = workspace.join(crate_name);
+        println!("cargo:rerun-if-env-changed=VIBEOS_EMIT_LLVM_IR");
         println!("cargo:rerun-if-changed={}", crate_dir.join("src").display());
         println!(
             "cargo:rerun-if-changed={}",
@@ -1768,7 +1783,16 @@ impl Linker {
             } else {
                 ""
             };
-            let rustflags = format!("{sse}{no_prepop}{allow}");
+            // Opt-in post-opt LLVM-IR emission for the captures(none) audit
+            // (tools/scan_captures.py). Adds per-CGU .ll files next to the
+            // normal artifacts in this crate's -rustlib target dir; the emit
+            // is additive (rustc unions --emit), so the .a still builds.
+            let emit_ir = if env::var("VIBEOS_EMIT_LLVM_IR").as_deref() == Ok("1") {
+                "--emit=llvm-ir "
+            } else {
+                ""
+            };
+            let rustflags = format!("{sse}{no_prepop}{emit_ir}{allow}");
             cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
             cmd.env_remove("CARGO_BUILD_RUSTFLAGS");
             if !rustflags.is_empty() {
