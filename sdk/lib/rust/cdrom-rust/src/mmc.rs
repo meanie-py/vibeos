@@ -861,10 +861,12 @@ pub unsafe extern "C" fn MmcDataFindProfileInProfiles(
     }
 }
 
-// Local constant definitions for unknown symbols. Use placeholder values; caller should replace with actual values.
-const WRITE_RETRY_DELAY_CD_4x: i64 = 1000;
-const WRITE_RETRY_DELAY_DVD_1x: i64 = 2000;
-const WRITE_RETRY_DELAY_HDDVD_1x: i64 = 3000;
+// C cdrom.h:116-121 (100ns units): CD_4x=1066667 (106.7ms), DVD_1x=473373 (47.3ms),
+// HDDVD_1x=143498 (14.3ms). Were 1000/2000/3000 (LLM-invented ~0.1ms placeholders,
+// ~1000x too small — a busy-retry storm on any read error).
+const WRITE_RETRY_DELAY_CD_4x: i64 = 1_066_667;
+const WRITE_RETRY_DELAY_DVD_1x: i64 = 473_373;
+const WRITE_RETRY_DELAY_HDDVD_1x: i64 = 143_498;
 #[no_mangle]
 pub unsafe extern "C" fn DeviceRetryTimeGuessBasedOnProfile(Profile: FEATURE_PROFILE_TYPE) -> i64 {
     // PAGED_CODE();

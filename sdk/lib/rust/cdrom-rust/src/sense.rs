@@ -2093,7 +2093,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
     retry
 }
 
-const BECOMING_READY_RETRY_INTERNVAL_IN_100NS: i64 = 8_000_000;
+const BECOMING_READY_RETRY_INTERNVAL_IN_100NS: i64 = 2_000_000; // 0.2s — C cdromp.h:262 (2*1000*1000); was 8_000_000 (LLM-invented, 4x too large)
 #[no_mangle]
 pub unsafe extern "C" fn SenseInfoInterpretForZPODD(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,

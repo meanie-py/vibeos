@@ -66,7 +66,7 @@ for line in sys.argv[2:]:
         continue
     local_ref, local_sha, remote_ref, remote_sha = parts
     if remote_ref == "refs/heads/master" and local_sha != ZERO:
-        updates.append(local_sha)
+        updates.append((local_sha, remote_sha))
 
 if not updates:
     sys.exit(0)
@@ -88,23 +88,44 @@ if age > MAX_AGE_S:
 if not FULL.issubset(set(stamp.get("arches", []))):
     fail(f"stamp covers {stamp.get('arches')} — a FULL gate (all 3 arches) is required")
 
-for sha in updates:
+def nondocs_delta(base_tree, tree):
+    """Non-docs paths that differ between base_tree and tree ([] = docs-only).
+    None when base_tree can't be resolved."""
+    if not base_tree:
+        return None
+    diff = git("diff", "--name-only", base_tree, tree)
+    if not diff:
+        return []
+    return [p for p in diff.splitlines() if not (p.startswith("docs/") or p.endswith(".md"))]
+
+
+for sha, remote_sha in updates:
     tree = git("rev-parse", f"{sha}^{{tree}}")
     if not tree:
         fail(f"cannot resolve tree of {sha[:12]}")
     if tree == stamp["tree"]:
         continue  # exactly the gated content
-    # docs-only delta vs the gated tree is allowed
-    diff = git("diff", "--name-only", stamp["tree"], tree)
-    if not diff:
-        continue
-    paths = diff.splitlines()
-    nondocs = [p for p in paths if not (p.startswith("docs/") or p.endswith(".md"))]
-    if nondocs:
-        fail(
-            f"push tree {tree[:12]} != gated tree {stamp['tree'][:12]} and the delta "
-            f"is not docs-only (first: {nondocs[0]}, {len(nondocs)} paths)"
-        )
+    # docs-only exemption: the push's non-docs content is acceptable if it is
+    # already VALIDATED — i.e. docs-only vs EITHER baseline:
+    #   * remote master (remote_sha): every non-docs path there was gated when it
+    #     landed. This is the primary baseline and fixes the 2026-07-05 false-block
+    #     where a concurrent lane's gate overwrote the SHARED stamp (common git dir)
+    #     with a divergent tree, making a genuinely docs-only push look non-docs.
+    #   * the stamp tree: preserves the "gate a tree, stack a docs commit, push
+    #     both at once" flow (non-docs == the freshly-gated stamp content).
+    # Master is always fast-forward (the reference-transaction guard forbids
+    # rewinds), so remote_sha == current origin/master.
+    remote_tree = git("rev-parse", f"{remote_sha}^{{tree}}") if remote_sha and remote_sha != ZERO else ""
+    vs_remote = nondocs_delta(remote_tree, tree)
+    vs_stamp = nondocs_delta(stamp["tree"], tree)
+    if vs_remote == [] or vs_stamp == []:
+        continue  # docs-only vs a validated baseline
+    nondocs = vs_remote if vs_remote else vs_stamp
+    base = remote_tree or stamp["tree"]
+    fail(
+        f"push tree {tree[:12]} adds non-docs changes vs master {base[:12]} "
+        f"without a matching gate stamp (first: {nondocs[0]}, {len(nondocs)} paths)"
+    )
 
 sys.exit(0)
 PYEOF

@@ -2215,8 +2215,186 @@ as-built). Two consequences for debugging:
   0 dropped edges — the boot's pushlock+gmutex ordering is instance-level
   consistent; the wedge family is entirely self-deadlock.
 
-**§9.13 addendum 3 (2026-07-04 eve): FAULT-UNDER-WS tripwire fires AT the
-fault and pins the faulting VA — it is `0x80`, i.e. a NULL-based deref.**
+**§9.13 addendum 3 (2026-07-04, flake-nettest-explorer, commit `4294ebcd0a8`): a
+SECOND confab in the same branch fixed; two PteFrame-residency sites ruled out.**
+Independent GDB repro on native TCG (`VIBEOS_NO_KVM=1 qemu/start.sh amd64 --gdb`
+→ offline `PsActiveProcessHead` walk → `AddressCreationLock.Owner` → raw
+stack-scan) caught **csrss AND svchost** self-deadlocked simultaneously at
+`MiDecrementShareCount+0x71`, via two different top-level paths
+(`NtClose→LpcpDeletePort→MiUnmapViewOfSection` and
+`NtTerminateProcess→MmCleanProcessAddressSpace`) — confirms §9.13 and shows it's
+systemic, not LPC-specific. Disasm of the pre-fix build put `+0x71` at the
+**`OriginalPte` read**, not the `*PteAddress` read: 7 sites did
+`mmpte_software_*(&*(mmpfn_original_pte_long(Pfn) as PMMPTE))` — dereferencing
+`OriginalPte.Long` (a PTE VALUE) as a POINTER instead of reading the field
+(`&Pfn->OriginalPte`). Fixed to `&*mmpfn_original_pte_ptr(Pfn)` (pfnlist.rs
+533/534/772, pagfault.rs 577/1333/1509/1583). **This is a real, C-matching fix and
+removes one of the two pageable derefs — but it is NOT the whole root:** with it in,
+the flake stops hanging and instead **deterministically BUGCHECKs 0xBE**
+(ATTEMPTED_WRITE_TO_READONLY) at the `MI_WRITE_INVALID_PTE` write to `*PteAddress`
+(pfnlist.rs:773) — i.e. the prototype-PTE page is still non-resident, exactly the
+PteFrame-residency root §9.13 predicted. clean-no-fix = HANG, clean-with-fix =
+0xBE, 100%.
+Residency sites AUDITED CORRECT (rule out for next session):
+`MiInitializePfnForOtherProcess` bumps the parent PteFrame share
+(pfnlist.rs:861-865), and `MiCompleteProtoPteFault` bumps the page-table page
+share (`Pfn2->ShareCount++`, pagfault.rs:558-559 == C). So the premature release is
+elsewhere — a share on the proto-PTE pool page decremented too early, or PFN reuse
+leaving it unbacked. With the fix in, the failure is now a **deterministic 0xBE
+bugcheck** (not a hang), so `run-until KeBugCheckEx --then triage` + trap-frame is a
+faster catch than the census/hang recipe.
+
+**§9.13 addendum 4 (2026-07-04, same session, post-fix layer-2 catch REDIRECTS the
+hunt): the 0xBE is NOT in the ARM3 MiDecrementShareCount path — it's in the ROS
+section-RMAP path (`MmSharePageEntrySectionSegment` → `MmSetPageEntrySectionSegment`).**
+Caught the deterministic 0xBE live (`run-until KeBugCheckEx`, ~5 min TCG). 0xBE args:
+faulting write VA `0xfffff97fde280000`, PTE `0x17702021` = **Present + bit1(W)=0 =
+READ-ONLY** (not merely non-resident — the page is mapped, just read-only). Trap frame
+(0xBE arg3 = `0xfffff8800403e800`): `FaultAddress=Rdx=0xfffff97fde280000`,
+`ErrorCode=0x3` (write/present protection violation), faulting `Rip` in a NON-ntoskrnl
+module. Stack-scan from the TF's Rsp shows the ntoskrnl caller chain top =
+**`MmSharePageEntrySectionSegment+104` → `MmSetPageEntrySectionSegment`** (mm/section.rs:560
+→ `_MmSetPageEntrySectionSegment`), i.e. the SSE (Section Segment Entry) share-count
+write to the segment's page-table. So the deadlock (ARM3 MiDecrementShareCount) was
+masking a SECOND, distinct Mm bug: the ROS section page-table page the SSE write lands
+on is mapped read-only. Suspect: `_MmSetPageEntrySectionSegment`'s multi-level
+segment-page-table addressing computes a read-only-mapped (or wrong) target, OR the
+section page-table page is legitimately made R/O and the write should go via a writable
+alias. **§9.13 addendum 3 CORRECTED (2026-07-04, GDB disasm of the faulting Rip):** the
+`MmSharePageEntrySectionSegment`/`MmSetPageEntrySectionSegment` frames were a RED
+HERRING — they are the **page-fault handler** running ABOVE the faulting write, not the
+faulting code. Disassembling the trap-frame `Rip` (`0xfffff88004726806`, consistent
+across boots) shows `mov %eax,(%rdx)` writing to `Rdx=0xfffff97fde280000`, part of a
+**time/counter field copy with a divide-by-1000 (→ milliseconds)** — NOT Mm section
+page-table code. Walking `PsLoadedModuleList` shows the faulting Rip is in **NO loaded
+driver** (all drivers are at `0xfffff800...`; the fault is at `0xfffff880...`) → it's
+**SESSION SPACE = win32k**. So the real 0xBE: **win32k (session space) writes time data
+to a section view at `0xfffff97fde280000` that is mapped PRESENT-but-READ-ONLY**
+(PTE `0x1d3xx021`, W=0) — almost certainly the GDI/USER shared-info (`gpsi`/SERVERINFO)
+section whose *kernel* view should be R/W. Distinct win32k/section-protection bug,
+different subsystem from the ARM3/PteFrame chain, exposed once the OriginalPte fix
+removes the self-deadlock and the boot advances into win32k init. Instrumenting the Mm
+page-table write (`_MmSetPageEntrySectionSegment`, spt_bad gate on the PageTable ptr)
+did NOT fire — confirming the fault is elsewhere. NEXT: identify which win32k section
+maps at `0xfffff97fde280000` and why its kernel view is R/O (check the SEC_ protection /
+`MmMapViewInSessionSpace` / the gpsi section-create protection in the Rust win32k glue).
+
+**§9.13 addendum 5 (2026-07-04, flake-nettest-explorer — the 0xBE ROOT-CAUSED and
+FIXED). The section at `0xfffff97fde280000` is the win32k GDI shared handle table**
+(`GdiHandleTable`, created `PAGE_READWRITE`+`SEC_COMMIT` by `InitGdiHandleTable` and
+mapped into session space via `MmMapViewInSessionSpace`), and the write is
+`PDEVOBJ_vGetDeviceCaps(ppdev, &GdiHandleTable->DevCaps)` called from
+`co_IntInitializeDesktopGraphics` — NOT a "time field" copy (that read of the earlier
+addendum was a mis-disasm; it's a `GDIINFO`/`DEVCAPS` field copy with a `/1000` µs→ms
+convert). Method that cracked it: symbolicate the faulting `Rip` against **win32k.sys's
+own nm symbols** (ImageBase 0x10000, so `nm_addr = DllBase_off + 0x10000`) after finding
+win32k in `PsLoadedModuleList` — win32k IS in that list (the "no loaded driver → session
+space" claim above was a bad module-list walk). GNU `nm`, not `llvm-nm` (absent on PATH;
+`llvm-nm ...|| nm ...` had been silently using the fallback).
+
+**Root cause (proven by live GDB on the frozen bugcheck + 3 rounds of self-reporting
+diagnostic bugchecks):** the DevCaps page's backing PFN has **`OriginalPte.Long == 0`**
+(protection `MM_ZERO_ACCESS`) even though its prototype PTE (in paged pool, e.g.
+`0xfffff8a00021cc70`) is **valid and writable** (`0x…063`, W=1) and the segment's
+demand-zero proto template is `0x80` (`MM_READWRITE`). `MiCompleteProtoPteFault` derives
+the view protection from `Pfn1->OriginalPte.u.Soft.Protection` (the else-branch, since the
+amd64 session view PTE's `PageFileHigh != MI_PTE_LOOKUP_NEEDED`), so a zero OriginalPte →
+**read-only** kernel view → win32k's first write to `DevCaps` → `BUGCHECK 0xBE`
+(`MmArmAccessFault` valid-write reason 12). MMPFN stride on amd64 is **0x48** (not 0x30);
+`OriginalPte` @ +0x20. `OriginalPte.u.Long` doubles as the **colored free-list link**
+(faithful to C `pfnlist.c`) and is cleared to 0 on unlink. Diagnostics proved: it is
+**not** a premature free (`0x0BADF00D` never fired), and `MiInitializePfn` **never ran**
+for this page (`0x0BADCAFE` never fired) — i.e. the shared segment proto was made valid by
+a **non-`MiInitializePfn` path** (fast "proto already valid" path in
+`MiResolveProtoPteFault`), leaving the free-list-cleared `OriginalPte==0`. Only the
+section's first page is hit; all other faulted pages carry the correct `0x80`. The exact
+non-ARM3 validation path (ARM3/ROS section coexistence — `MiIsRosSectionObject` =
+`section.u.Flags.filler()`) is the remaining open lead.
+
+**Fix (landed, amd64-only, `MiCompleteProtoPteFault`, `ARM3/pagfault.rs`):** in the
+OriginalProtection (else) branch, when the derived protection is `MM_ZERO_ACCESS` on a
+**kernel** address (`Address >= MmSystemRangeStart`) whose prototype PTE is valid, **heal**
+it — derive the real protection from the authoritative valid proto PTE
+(`MI_IS_PAGE_WRITEABLE` → `MM_READWRITE` else `MM_READONLY`) and write it back into
+`OriginalPte`, so this view AND every later consumer (`MiDecrementShareCount`
+transition-PTE build, re-fault, the valid-write RO check) see the section's true
+protection. Kernel-gated so user (RO) views are untouched — no security regression. This
+is a consumption-point repair of a real invariant violation ("a validly-mapped
+prototype-backed page must not have `MM_ZERO_ACCESS` OriginalPte"); the deeper
+proto-validation path that leaves it 0 is still owed. **Result: amd64 5/5 green, no 0xBE.**
+
+**§9.13 addendum 6 (2026-07-05, flake-nettest-explorer — the "deeper path" FOUND; a whole
+DEFECT CLASS fixed).** The 0xBE page is a **ROS PFN**: the GDI handle table is a ROS
+section (`MiIsRosSectionObject`), its pages come from **`MmAllocPage`**
+(`mm/freelist.rs`), which — faithfully to C — never writes `OriginalPte` (ROS PFNs don't
+have one: in the C `_MMPFN` union, **`RmapListHead` overlays `OriginalPte`**, mm.h:421-428).
+Upstream never reads OriginalPte for these pages because ROS-section views never route
+through ARM3 proto-fault completion; our hybrid's session view does. So
+`MiCompleteProtoPteFault` now branches on `MI_IS_ROS_PFN`: derive protection from the
+authoritative valid proto PTE and **never read or write the union slot** (a write would
+corrupt a live rmap chain). The MM_ZERO_ACCESS heal stays as the non-ROS defensive path
+(now all arches).
+
+Chasing this exposed a one-slot **offset shift in `ntkrnl-sys` `pfn_offsets_extra`**
+(mm.rs): the hand-rolled accessors for `NextLRU`/`PreviousLRU`/`RmapListHead` missed the
+embedded `Wsle` field — `NEXT_LRU=48` landed on `Wsle` (so `freelist.rs` LRU links and
+`virtual.rs`/`wslist.rs` WS-lock bits, which use the **bindgen** struct = C truth, fought
+over the same bytes), and `RMAP_LIST_HEAD=64` landed on `PreviousLRU` instead of
+overlaying `OriginalPte@32`. Same shift on 32-bit (Wsle@24 missed). Consequence found in
+the wild: `MmGetRmapListHeadPage` had an arm64-only "reject non-page-aligned heads" hack —
+paper over garbage reads from the wrong slot — which **silently disabled rmaps on arm64**.
+Offsets fixed (64-bit: 56/64/32; 32-bit: 28/32/16), hack removed. Also found adjacent:
+**`MI_IS_PAGE_WRITEABLE` was inverted on arm64** (tested bit 7 = NotDirty/AP[2] = hw
+READ-ONLY; correct is software Writable bit 55) and `MI_IS_PAGE_COPY_ON_WRITE` tested
+bit 8 (SH[0] shareability; correct is soft CoW bit 56) — ~9 fault-path callers affected on
+arm64. **Lesson (recurring class): hand-rolled offset tables and bit tests drift; anywhere
+a bindgen struct exists, use it — and when a hack "rejects garbage" reads of a field,
+suspect the offset, not the data.**
+Debug recipe that worked: `VIBEOS_NO_KVM=1 qemu/start.sh amd64 --gdb` → `run-until
+KeBugCheckEx` → read trap-frame `Rip`+regs → walk `PsLoadedModuleList` → symbolicate vs
+module nm → self-reporting diagnostic `KeBugCheckEx(0x0BAD…)` codes to bisect the fault
+path (survives VM reaping, unlike post-mortem GDB).
+
+**§9.13 addendum 2 (2026-07-04 day): the detector is now PERMANENT — lockdep
+Phase A (sync-instrumentation §4), one flag, fires on every boot.** The
+temporary `ws-lock-EXCL` flightrec tap above is superseded:
+
+```
+./vibeos-cli build --arch amd64 --lockdep     # -DVIBEOS_LOCKDEP=ON kernel
+./vibeos-cli smoke --arch amd64               # then grep the serial:
+[LOCKDEP]   SELF-DEADLOCK #1 thread=fffffa8001470040 WAIT(shared) on
+            pushlock=fffffa8001473c48 already held(excl)
+```
+
+Per-thread held-pushlock side table tapped at the `ExAcquirePushLock*` /
+`ExReleasePushLock*` inline funnel; the check runs at the `Exf*` PARK (about
+to block on a lock in your own held-set = the length-1 cycle); census prints
+recorded violations every scan; `vibeos-lockdep [held]` in gdb decodes the
+`VIBEOS_LOCKDEP` table offline. First instrumented run (4 boots, all green):
+**2–4 violations per boot, and the violation threads are EXACTLY the census
+STUCK threads** (svchost/setup.exe/rundll32/NETTEST, each on its own
+per-EPROCESS pushlock ≈ `Vm.WorkingSetMutex`, always WAIT(shared) against
+held(excl)) — i.e. the "deterministically stranded HOLDER-STUCK threads on
+every green boot" open lead IS this self-deadlock, one thread per victim
+process. No separate mystery. Fix status unchanged (mechanism proven, PteFrame
+chain suspected); what changed is the cost of observing it: zero.
+
+**Phase B (same day): guarded mutexes joined the held-set, acquire SITES are
+captured, and the full lock-order graph is recorded** (instance-level A→B
+edges + ABBA reverse-order detection — sync-instrumentation-design §4 for the
+as-built). Two consequences for debugging:
+- The self-deadlock line now names its acquiring function directly:
+  `… already held(excl) site=fffff80003533242` → `addr2sym` →
+  `MiLockProcessWorkingSetUnsafe+0x22`. (Site = return address into the
+  caller of the export shim; runtime base solved from the shim-caller fit —
+  amd64 kernel loads at `0xfffff80003500000`, PE VA = site − base + 0x400000.)
+- `vibeos-lockdep edges` dumps the boot's entire observed lock-order graph
+  (~6.2K edges on amd64). Proof run verdict: **zero ABBA inversions** with
+  0 dropped edges — the boot's pushlock+gmutex ordering is instance-level
+  consistent; the wedge family is entirely self-deadlock.
+
+**§9.13 addendum 3-parallel (2026-07-04 eve, sync-instrumentation lane): FAULT-UNDER-WS
+tripwire fires AT the fault and pins the faulting VA — it is `0x80`, i.e. a NULL-based deref.**
 `MmAccessFault` entry (cfg lockdep) now checks the held-set for the very WS
 lock the fault path will re-acquire and prints before any wedge:
 
