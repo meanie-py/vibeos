@@ -2267,21 +2267,50 @@ prototype pages / pagefile descriptor for private pages / color-list Flink for f
 Any code that writes it must know which role the page is in. A blanket "hack" that zeroes it
 is a landmine for the prototype-page role.
 
-### 9.15 (OPEN LEAD) amd64 BUGCHECK 0x4E `PFN_LIST_CORRUPT` at process-exit teardown — a WSLE page carries `u4.PteFrame == COLORED_LIST_HEAD`
+### 9.15 (FIXED 2026-07-04) amd64 BUGCHECK 0x4E `PFN_LIST_CORRUPT` at process-exit teardown — `MmInitializeProcessAddressSpace` never init'd the hyperspace PDPT's PFN on amd64 (cfg-drift: the `_MI_PAGING_LEVELS == 4` PXE block was gated `aarch64`-only)
 
-**Exposed by** the 9.13 fix (boot now reaches process exits it never used to).
+**Exposed by** the 9.14 fix (boot now reaches process exits it never used to).
 **Symptom.** Deterministic `BUGCHECK 0x0000004E (0x98, 0x01ffffffffffffff, 0, 0)` shortly
-after `_tWinMain`, during process teardown (rundll32/userenv/lsass exit). Subcode `0x98` =
-`MiDecrementShareCount` entry validation; `Pfn1=0`, `PageFrameIndex=0x01ffffffffffffff`.
+after `_tWinMain`, during the first full user-process teardown (`setup.exe`/`winlogon.exe`
+exit). Subcode `0x98` = `MiDecrementShareCount` entry validation; `Pfn1=0`,
+`PageFrameIndex=0x01ffffffffffffff`.
 
-**Fingerprint.** `0x01ffffffffffffff == (1<<57)-1 == COLORED_LIST_HEAD` (amd64;
-`MI_PTE_FRAME_BITS=57`). The caller pattern `MiDecrementShareCount(MiGetPfnEntry(pte_frame), pte_frame)`
-with `MiGetPfnEntry(out-of-range)→null` matches the WS-array shrink path
-(`wslist.rs` `MiRemoveWsle`, the `pte_frame = (*Pfn).pte_frame()` site). So a WSLE-array
-backing page reaches teardown with its `u4.PteFrame` still holding the **free-color-list-head
-sentinel** — i.e. a page that is (or recently was) a free-list head is being torn down as an
-active WSLE page (a PFN-state double-accounting bug). Amd64-specific because the 57-bit
-`PteFrame` sentinel differs on i386 (`MI_PTE_FRAME_BITS=25`). This is the next item for the
-PFN-state-tracking completion work (`PFN-STATE-HANDOFF.md`); the grow path
-(`MiInitializePfnAndMakePteValid`) *does* set `PteFrame`, so suspect a page freed to a color
-list while still live as a WSLE page, or an init path that skips `PteFrame`.
+**The COLORED_LIST_HEAD fingerprint was a red herring.** The bogus `0x01ffffffffffffff`
+argument is not itself the corruption — it is whatever garbage sits in the *uninitialized*
+`u4.PteFrame` after `MI_SET_PFN_DELETED` munges it. Live DIAG (guarded `dbg_print!` at the
+three `(*Pfn).pte_frame()`-reading teardown sites — `MmDeleteProcessAddressSpace` ×2,
+`MiRemoveWsle` shrink, valid-PTE-list drain) pinned the crashing read to
+**`site=HYPER`** = `MmDeleteProcessAddressSpace`'s second decrement,
+`Pfn1 = DirectoryTableBase[1]` (the process hyperspace **PDPT**). The DIAG printed
+`loc=0 ref=0` — the PDPT page's PFN entry was **never initialized** (still reads as a free
+zeroed-list page with a garbage frame), not double-freed.
+
+**Root cause (cfg-drift translation bug).** `MmInitializeProcessAddressSpace`
+(`ARM3/procsup.rs`) mirrors the C, which for `_MI_PAGING_LEVELS == 4` runs an *extra* block:
+```c
+#if (_MI_PAGING_LEVELS == 4)      /* amd64 AND arm64 */
+    PointerPxe = MiAddressToPxe((PVOID)HYPER_SPACE);
+    PageFrameNumber = PFN_FROM_PTE(PointerPxe);
+    MiInitializePfn(PageFrameNumber, PointerPxe, TRUE);   /* inits the hyperspace PDPT PFN */
+#endif
+```
+The port had gated this block **`#[cfg(target_arch = "aarch64")]` only** — dropping it for
+amd64, which is *also* 4-level paging. So on amd64 the hyperspace PDPT (`DirectoryTableBase[1]`,
+allocated in `MmCreateProcessAddressSpace` via `MiRemoveZeroPageSafe`/`MiRemoveAnyPage`, which
+leave a page in a free-ish PFN state) never had `MiInitializePfn` set its `pte_frame` /
+reference_count / `ActiveAndValid` location. Teardown then read that garbage `pte_frame` and
+called `MiDecrementShareCount(MiGetPfnEntry(garbage)→NULL, garbage)` → 0x98. i386 (2-level in
+this port's sense — no PXE level) legitimately skips the block, so it never bit x86-32; arm64
+had the block and was fine. Classic per-arch `#if` that got collapsed to one arch in translation.
+
+**Fix.** One line — extend the cfg to include amd64:
+`#[cfg(target_arch = "aarch64")]` → `#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]`
+on that PXE-init block in `MmInitializeProcessAddressSpace` (`ARM3/procsup.rs`). `MiAddressToPxe`
+is already `#[cfg(any(x86_64, aarch64))]` in `ntkrnl_sys::mm`, so amd64 has the helper.
+**Verified:** post-fix amd64 boots clean past the `setup.exe`/`winlogon` teardown to `shell
+ready` / full desktop, DIAG fires 0×, no bugcheck.
+
+**Lesson.** When a per-arch `#if (_MI_PAGING_LEVELS == N)` guards a block, remember BOTH amd64
+and arm64 are 4-level — a `#[cfg(target_arch = "aarch64")]` that should have been
+`any(x86_64, aarch64)` is an easy translation miss. Grep `MmInitializeProcessAddressSpace`-style
+paging-level blocks for the same drift (see also §9.14 for the sibling Mm PFN-state fix).
