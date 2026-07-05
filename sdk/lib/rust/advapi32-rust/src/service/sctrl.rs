@@ -205,9 +205,17 @@ unsafe fn ScConnectControlPipe(hPipe: *mut HANDLE) -> DWORD {
         dwServiceCurrent,
     );
 
+    // Temp control-pipe-race instrumentation (DcomLaunch wedge). DbgPrint reaches
+    // serial (OutputDebugString's exception path does not under DUMMY_PSEH).
+    extern "C" {
+        fn DbgPrint(fmt: *const u8, ...) -> u32;
+    }
+    DbgPrint(b"[SCTRL] pid=%lu connecting pipe=%ws\n\0".as_ptr(), GetCurrentProcessId(), NtControlPipeName.as_ptr());
     if WaitNamedPipeW(NtControlPipeName.as_ptr(), 30000) == 0 {
+        DbgPrint(b"[SCTRL] pid=%lu WaitNamedPipe FAILED err=%lu\n\0".as_ptr(), GetCurrentProcessId(), GetLastError());
         return ERROR_FAILED_SERVICE_CONTROLLER_CONNECT;
     }
+    DbgPrint(b"[SCTRL] pid=%lu WaitNamedPipe OK\n\0".as_ptr(), GetCurrentProcessId());
 
     *hPipe = CreateFileW(
         NtControlPipeName.as_ptr(),

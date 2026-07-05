@@ -120,6 +120,26 @@ pub static mut MmPageLocationList: [PMMPFNLIST; 8] = unsafe {[
     core::ptr::null_mut(),
 ]};
 
+#[inline]
+unsafe fn mi_pfn_corrupt(code: ULONG_PTR, p1: ULONG_PTR, p2: ULONG_PTR, p3: ULONG_PTR) {
+    KeBugCheckEx(PFN_LIST_CORRUPT, code, p1, p2, p3);
+}
+
+#[inline]
+unsafe fn mi_validate_pfn_index(page_frame_index: PFN_NUMBER, code: ULONG_PTR) {
+    if page_frame_index == 0
+        || page_frame_index > MmHighestPhysicalPage
+        || page_frame_index < MmLowestPhysicalPage
+    {
+        mi_pfn_corrupt(
+            code,
+            page_frame_index as ULONG_PTR,
+            MmLowestPhysicalPage as ULONG_PTR,
+            MmHighestPhysicalPage as ULONG_PTR,
+        );
+    }
+}
+
 #[no_mangle]
 pub static mut MI_PFN_CURRENT_USAGE: ULONG = 0;
 #[no_mangle]
@@ -177,7 +197,22 @@ pub unsafe extern "system" fn MiUnlinkFreeOrZeroedPage(Entry: PMMPFN) {
     let pfn1: PMMPFN;
 
     list_head = MmPageLocationList[(*Entry).page_location() as usize];
+    if list_head.is_null() {
+        mi_pfn_corrupt(0xA0, MiGetPfnEntryIndex(Entry) as ULONG_PTR, (*Entry).page_location() as ULONG_PTR, 0);
+    }
     list_name = (*list_head).ListName;
+    if (*Entry).end_of_allocation()
+        || (*Entry).start_of_allocation()
+        || list_name > FreePageList as u32
+        || (*list_head).Total == 0
+    {
+        mi_pfn_corrupt(
+            0xA0,
+            MiGetPfnEntryIndex(Entry) as ULONG_PTR,
+            list_name as ULONG_PTR,
+            (*list_head).Total as ULONG_PTR,
+        );
+    }
 
     (*list_head).Total -= 1;
 
@@ -210,6 +245,14 @@ pub unsafe extern "system" fn MiUnlinkFreeOrZeroedPage(Entry: PMMPFN) {
             (*color_table).Blink = LIST_HEAD as PVOID;
         }
     } else {
+        if (*Entry).pte_frame() == COLORED_LIST_HEAD as PFN_NUMBER {
+            mi_pfn_corrupt(
+                0xA1,
+                MiGetPfnEntryIndex(Entry) as ULONG_PTR,
+                (*Entry).pte_frame() as ULONG_PTR,
+                mmpfn_original_pte_long(Entry) as ULONG_PTR,
+            );
+        }
         let pfn1 = MI_PFN_ELEMENT((*Entry).pte_frame());
         mmpfn_set_original_pte_long(pfn1, (mmpfn_original_pte_long(Entry)) as usize);
 
@@ -221,6 +264,9 @@ pub unsafe extern "system" fn MiUnlinkFreeOrZeroedPage(Entry: PMMPFN) {
         }
     }
 
+    if (*color_table).Count == 0 {
+        mi_pfn_corrupt(0xA2, old_blink as ULONG_PTR, list_name as ULONG_PTR, color as ULONG_PTR);
+    }
     (*color_table).Count -= 1;
 
     mmpfn_set_original_pte_long(Entry, (0) as usize);
@@ -238,17 +284,55 @@ pub unsafe extern "system" fn MiUnlinkPageFromList(Pfn: PMMPFN) {
     let old_blink: PFN_NUMBER;
 
     list_head = MmPageLocationList[(*Pfn).page_location() as usize];
+    if list_head.is_null() {
+        mi_pfn_corrupt(0xA3, MiGetPfnEntryIndex(Pfn) as ULONG_PTR, (*Pfn).page_location() as ULONG_PTR, 0);
+    }
+    if (*Pfn).reference_count() != 0 || (*list_head).ListName < StandbyPageList as u32 {
+        mi_pfn_corrupt(
+            0xA3,
+            MiGetPfnEntryIndex(Pfn) as ULONG_PTR,
+            (*Pfn).reference_count() as ULONG_PTR,
+            (*list_head).ListName as ULONG_PTR,
+        );
+    }
 
     if list_head == core::ptr::addr_of_mut!(MmStandbyPageListHead) {
+        if mmpfn_rom_pte(Pfn) || !(*Pfn).prototype_pte() {
+            mi_pfn_corrupt(
+                0xA4,
+                MiGetPfnEntryIndex(Pfn) as ULONG_PTR,
+                mmpfn_rom_pte(Pfn) as ULONG_PTR,
+                (*Pfn).prototype_pte() as ULONG_PTR,
+            );
+        }
         list_head = &mut MmStandbyPageListByPriority[mmpfn_priority(Pfn) as usize];
         MiDecrementAvailablePages();
         MmTransitionSharedPages -= 1;
     } else if list_head == core::ptr::addr_of_mut!(MmModifiedPageListHead) {
+        let original_pte = mmpfn_original_pte(Pfn);
+        if mmpte_software_prototype(&original_pte) {
+            mi_pfn_corrupt(
+                0xA5,
+                MiGetPfnEntryIndex(Pfn) as ULONG_PTR,
+                mmpfn_original_pte_long(Pfn) as ULONG_PTR,
+                0,
+            );
+        }
         (*list_head).Total -= 1;
         MmTotalPagesForPagingFile -= 1;
         list_head = &mut MmModifiedPageListByColor[0];
         MmTransitionSharedPages -= 1;
     } else if list_head == core::ptr::addr_of_mut!(MmModifiedNoWritePageListHead) {
+        mi_pfn_corrupt(0xA6, MiGetPfnEntryIndex(Pfn) as ULONG_PTR, 0, 0);
+    }
+
+    if (*Pfn).end_of_allocation() || (*Pfn).start_of_allocation() || (*list_head).Total == 0 {
+        mi_pfn_corrupt(
+            0xA7,
+            MiGetPfnEntryIndex(Pfn) as ULONG_PTR,
+            (*Pfn).end_of_allocation() as ULONG_PTR,
+            (*Pfn).start_of_allocation() as ULONG_PTR,
+        );
     }
 
     old_flink = (*Pfn).flink();
@@ -266,7 +350,22 @@ pub unsafe extern "system" fn MiUnlinkPageFromList(Pfn: PMMPFN) {
         (*list_head).Flink = old_flink;
     }
 
-    mmpfn_set_original_pte_long(Pfn, (0) as usize);
+    // Upstream carries a `/* ReactOS Hack */` that unconditionally zeroes
+    // OriginalPte here. That is fine for private (modified-list) pages, but it
+    // is WRONG for prototype (standby-list) pages: standby/modified lists link
+    // via u1.Flink (flink()) and u2.Blink (share_count()), which we clear just
+    // below — OriginalPte is NOT the list linkage for these lists (only the
+    // free/zeroed COLOR lists reuse OriginalPte as their Flink). For a shared
+    // prototype page, OriginalPte holds the segment prototype PTE that encodes
+    // the page protection; MiCompleteProtoPteFault reads it back when the page
+    // is faulted in from transition. Zeroing it here made the page resolve as
+    // MM_NOACCESS on the next proto fault -> read-only mapping despite a
+    // PAGE_READWRITE section -> BUGCHECK 0xBE on the first win32k/GDI write to
+    // a session view brought back from standby. Preserve OriginalPte for
+    // prototype pages so the protection survives the standby round-trip.
+    if !(*Pfn).prototype_pte() {
+        mmpfn_set_original_pte_long(Pfn, (0) as usize);
+    }
     (*Pfn).set_flink(0);
     (*Pfn).set_share_count((0) as ULONG_PTR);
 
@@ -293,7 +392,23 @@ pub unsafe extern "system" fn MiRemovePageByColor(
     old_cache = (*pfn1).cache_attribute();
 
     list_head = MmPageLocationList[(*pfn1).page_location() as usize];
+    if list_head.is_null() {
+        mi_pfn_corrupt(0xA8, PageIndex as ULONG_PTR, (*pfn1).page_location() as ULONG_PTR, Color as ULONG_PTR);
+    }
     list_name = (*list_head).ListName;
+    if Color > MmSecondaryColorMask
+        || (*pfn1).removal_requested()
+        || mmpfn_rom_pte(pfn1)
+        || list_name > FreePageList as u32
+        || (*list_head).Total == 0
+    {
+        mi_pfn_corrupt(
+            0xA8,
+            PageIndex as ULONG_PTR,
+            Color as ULONG_PTR,
+            list_name as ULONG_PTR,
+        );
+    }
 
     (*list_head).Total -= 1;
 
@@ -329,6 +444,9 @@ pub unsafe extern "system" fn MiRemovePageByColor(
         (*MI_PFN_ELEMENT((*color_table).Flink)).set_pte_frame(COLORED_LIST_HEAD as PFN_NUMBER);
     }
 
+    if (*color_table).Count == 0 {
+        mi_pfn_corrupt(0xA9, PageIndex as ULONG_PTR, list_name as ULONG_PTR, Color as ULONG_PTR);
+    }
     (*color_table).Count -= 1;
 
     mmpfn_set_original_pte_long(pfn1, (0) as usize);
@@ -419,7 +537,21 @@ pub unsafe extern "system" fn MiInsertPageInFreeList(PageFrameIndex: PFN_NUMBER)
     let blink: PMMPFN;
     let color_table: PMMCOLOR_TABLES;
 
+    mi_validate_pfn_index(PageFrameIndex, 0xAA);
     pfn1 = MI_PFN_ELEMENT(PageFrameIndex);
+    if (*pfn1).must_be_cached()
+        || mmpfn_rom_pte(pfn1)
+        || (*pfn1).removal_requested()
+        || (*pfn1).verifier_allocation()
+        || (*pfn1).reference_count() != 0
+    {
+        mi_pfn_corrupt(
+            0xAB,
+            PageFrameIndex as ULONG_PTR,
+            (*pfn1).reference_count() as ULONG_PTR,
+            (*pfn1).entire_frame() as ULONG_PTR,
+        );
+    }
 
     list_head = core::ptr::addr_of_mut!(MmFreePageListHead);
     (*list_head).Total += 1;
@@ -487,7 +619,20 @@ unsafe fn MiInsertStandbyListAtFrontImpl(PageFrameIndex: PFN_NUMBER) {
     let pfn1: PMMPFN;
     let mut pfn2: PMMPFN;
 
+    mi_validate_pfn_index(PageFrameIndex, 0xAC);
     pfn1 = MI_PFN_ELEMENT(PageFrameIndex);
+    if (*pfn1).must_be_cached()
+        || (*pfn1).reference_count() != 0
+        || !(*pfn1).prototype_pte()
+        || mmpfn_rom_pte(pfn1)
+    {
+        mi_pfn_corrupt(
+            0xAD,
+            PageFrameIndex as ULONG_PTR,
+            (*pfn1).reference_count() as ULONG_PTR,
+            (*pfn1).entire_frame() as ULONG_PTR,
+        );
+    }
 
     MmTransitionSharedPages += 1;
 
@@ -526,12 +671,25 @@ pub unsafe extern "system" fn MiInsertPageInList(
     let color: usize;
     let mut list_head = ListHead;
 
+    if list_head == core::ptr::addr_of_mut!(MmFreePageListHead) {
+        mi_pfn_corrupt(0xAE, PageFrameIndex as ULONG_PTR, list_head as ULONG_PTR, 0);
+    }
+    mi_validate_pfn_index(PageFrameIndex, 0xAF);
     pfn1 = MI_PFN_ELEMENT(PageFrameIndex);
+    if (*pfn1).reference_count() != 0 || mmpfn_rom_pte(pfn1) {
+        mi_pfn_corrupt(
+            0xB0,
+            PageFrameIndex as ULONG_PTR,
+            (*pfn1).reference_count() as ULONG_PTR,
+            mmpfn_rom_pte(pfn1) as ULONG_PTR,
+        );
+    }
 
     list_name = (*list_head).ListName;
     if (list_name == StandbyPageList as u32) || (list_name == ModifiedPageList as u32) {
-        if (!mmpte_software_prototype(&*mmpfn_original_pte_ptr(pfn1)))
-            && (mmpte_software_transition(&*mmpfn_original_pte_ptr(pfn1)))
+        let original_pte = mmpfn_original_pte(pfn1);
+        if (!mmpte_software_prototype(&original_pte))
+            && (mmpte_software_transition(&original_pte))
         {
             KeBugCheckEx(MEMORY_MANAGEMENT, 0x8888, 0, 0, 0);
         }
@@ -539,14 +697,28 @@ pub unsafe extern "system" fn MiInsertPageInList(
 
     if list_head == core::ptr::addr_of_mut!(MmStandbyPageListHead) {
         list_head = &mut MmStandbyPageListByPriority[mmpfn_priority(pfn1) as usize];
+        if (*list_head).ListName != list_name {
+            mi_pfn_corrupt(0xB1, PageFrameIndex as ULONG_PTR, list_name as ULONG_PTR, (*list_head).ListName as ULONG_PTR);
+        }
     }
 
     (*list_head).Total += 1;
 
     if list_head == core::ptr::addr_of_mut!(MmModifiedPageListHead) {
+        let original_pte = mmpfn_original_pte(pfn1);
+        if mmpte_software_prototype(&original_pte) {
+            mi_pfn_corrupt(0xB2, PageFrameIndex as ULONG_PTR, mmpfn_original_pte_long(pfn1) as ULONG_PTR, 0);
+        }
         list_head = &mut MmModifiedPageListByColor[0];
+        if (*list_head).ListName != list_name {
+            mi_pfn_corrupt(0xB3, PageFrameIndex as ULONG_PTR, list_name as ULONG_PTR, (*list_head).ListName as ULONG_PTR);
+        }
         (*list_head).Total += 1;
         MmTotalPagesForPagingFile += 1;
+    }
+
+    if (*pfn1).removal_requested() {
+        mi_pfn_corrupt(0xB4, PageFrameIndex as ULONG_PTR, 0, 0);
     }
 
     if list_name == (ZeroedPageList) as u32 {
@@ -580,6 +752,14 @@ pub unsafe extern "system" fn MiInsertPageInList(
 
     if list_name <= (StandbyPageList) as u32 {
         MiIncrementAvailablePages();
+        if list_name != ZeroedPageList as u32 || mmpfn_in_page_error_u4(pfn1) {
+            mi_pfn_corrupt(
+                0xB5,
+                PageFrameIndex as ULONG_PTR,
+                list_name as ULONG_PTR,
+                mmpfn_in_page_error_u4(pfn1) as ULONG_PTR,
+            );
+        }
 
         color = (PageFrameIndex & MmSecondaryColorMask as usize) as usize;
         color_head = &mut *MmFreePagesByColor[ZeroedPageList as usize].add(color);
@@ -599,9 +779,14 @@ pub unsafe extern "system" fn MiInsertPageInList(
 
         (*color_head).Count += 1;
     } else if list_name == (ModifiedPageList) as u32 {
+        let original_pte = mmpfn_original_pte(pfn1);
+        if mmpte_software_prototype(&original_pte) || original_pte.soft_page_file_high() != 0 {
+            mi_pfn_corrupt(0xB6, PageFrameIndex as ULONG_PTR, mmpfn_original_pte_long(pfn1) as ULONG_PTR, 0);
+        }
         MmTransitionSharedPages += 1;
         (*(PsGetCurrentProcess() as *mut _EPROCESS)).ModifiedPageCount += 1;
     } else if list_name == (ModifiedNoWritePageList) as u32 {
+        mi_pfn_corrupt(0xB7, PageFrameIndex as ULONG_PTR, list_name as ULONG_PTR, 0);
     }
 }
 
@@ -740,36 +925,77 @@ pub unsafe extern "system" fn MiDecrementShareCount(Pfn1: PMMPFN, PageFrameIndex
     let mut pointer_pte: PMMPTE;
     let pointer_pte_pte: PMMPTE;
     let mut temp_pte: MMPTE;
+    let expected_pfn = if PageFrameIndex != 0 && PageFrameIndex <= MmHighestPhysicalPage {
+        MI_PFN_ELEMENT(PageFrameIndex)
+    } else {
+        core::ptr::null_mut()
+    };
 
-    // Guard against NULL Pfn1 — can happen when MiGetPfnEntry returns NULL
-    // (PFN out of range or not in MiPfnBitMap) and the caller doesn't check.
-    // Use read_volatile to prevent LLVM from optimizing away the check
-    // (it would otherwise deduce non-null from the later dereferences).
-    if unsafe { core::ptr::read_volatile(&Pfn1) }.is_null() {
-        return;
+    if Pfn1.is_null()
+        || PageFrameIndex == 0
+        || PageFrameIndex > MmHighestPhysicalPage
+        || Pfn1 != expected_pfn
+        || MI_IS_ROS_PFN(Pfn1)
+    {
+        KeBugCheckEx(
+            PFN_LIST_CORRUPT,
+            0x98,
+            PageFrameIndex as ULONG_PTR,
+            Pfn1 as ULONG_PTR,
+            expected_pfn as ULONG_PTR,
+        );
     }
 
-    // Soft fixup: PFN state tracking has incomplete coverage in the Rust
-    // translations. Force page_location to ActiveAndValid rather than bugcheck.
-    // TODO: Find and fix the root cause of PFN state corruption.
     if ((*Pfn1).page_location() != ActiveAndValid)
         && ((*Pfn1).page_location() != StandbyPageList)
     {
-        (*Pfn1).set_page_location((ActiveAndValid) as u16);
+        KeBugCheckEx(
+            PFN_LIST_CORRUPT,
+            0x99,
+            PageFrameIndex as ULONG_PTR,
+            (*Pfn1).page_location() as ULONG_PTR,
+            0,
+        );
     }
 
-    (*Pfn1).set_share_count((*Pfn1).share_count().wrapping_sub((1) as ULONG_PTR));
+    if (*Pfn1).reference_count() == 0
+        || (*Pfn1).share_count() == 0
+        || (*Pfn1).share_count() >= 0xF000000
+    {
+        KeBugCheckEx(
+            PFN_LIST_CORRUPT,
+            0x9A,
+            PageFrameIndex as ULONG_PTR,
+            (*Pfn1).reference_count() as ULONG_PTR,
+            (*Pfn1).share_count() as ULONG_PTR,
+        );
+    }
+
+    (*Pfn1).set_share_count((*Pfn1).share_count() - 1);
     if (*Pfn1).share_count() == 0 {
         if ((*Pfn1).prototype_pte() as u16) != 0 {
             pointer_pte = (*Pfn1).pte_address();
             pointer_pte_pte = MiAddressToPte(pointer_pte as PVOID);
+            if (pointer_pte as usize) < (MmPagedPoolStart as usize)
+                || (pointer_pte as usize) > (MmPagedPoolEnd as usize)
+                || !(*pointer_pte_pte).valid()
+            {
+                KeBugCheckEx(
+                    PFN_LIST_CORRUPT,
+                    0x9B,
+                    PageFrameIndex as ULONG_PTR,
+                    pointer_pte as ULONG_PTR,
+                    (*pointer_pte_pte).Long as ULONG_PTR,
+                );
+            }
 
             pointer_pte = (*Pfn1).pte_address();
             temp_pte = *pointer_pte;
             temp_pte.set_transition(true);
             temp_pte.set_valid(false);
             temp_pte.set_prototype(false);
-            temp_pte.set_soft_protection((mmpte_software_protection(&*mmpfn_original_pte_ptr(Pfn1))) as ULONG);
+            let original_pte = mmpfn_original_pte(Pfn1);
+            temp_pte.set_soft_protection((mmpte_software_protection(&original_pte)) as ULONG);
             MI_WRITE_INVALID_PTE(pointer_pte, temp_pte);
         }
 
@@ -792,12 +1018,38 @@ pub unsafe extern "system" fn MiDecrementShareCount(Pfn1: PMMPFN, PageFrameIndex
 #[no_mangle]
 pub unsafe extern "system" fn MiDecrementReferenceCount(Pfn1: PMMPFN, PageFrameIndex: PFN_NUMBER) {
     let Pfn1 = opaque_ptr(Pfn1);
-    if unsafe { core::ptr::read_volatile(&Pfn1) }.is_null() {
-        return;
+    if Pfn1.is_null() {
+        KeBugCheckEx(
+            PFN_LIST_CORRUPT,
+            0x9C,
+            PageFrameIndex as ULONG_PTR,
+            0,
+            0,
+        );
     }
+
     if MI_IS_ROS_PFN(Pfn1) {
         MmDereferencePage((PageFrameIndex) as _);
         return;
+    }
+
+    let expected_pfn = if PageFrameIndex <= MmHighestPhysicalPage {
+        MI_PFN_ELEMENT(PageFrameIndex)
+    } else {
+        core::ptr::null_mut()
+    };
+    if PageFrameIndex > MmHighestPhysicalPage
+        || Pfn1 != expected_pfn
+        || (*Pfn1).reference_count() == 0
+        || (*Pfn1).reference_count() >= 2500
+    {
+        KeBugCheckEx(
+            PFN_LIST_CORRUPT,
+            0x9C,
+            PageFrameIndex as ULONG_PTR,
+            Pfn1 as ULONG_PTR,
+            (*Pfn1).reference_count() as ULONG_PTR,
+        );
     }
 
     { let _rc = (*Pfn1).reference_count(); (*Pfn1).set_reference_count(_rc - 1); }
@@ -806,21 +1058,13 @@ pub unsafe extern "system" fn MiDecrementReferenceCount(Pfn1: PMMPFN, PageFrameI
     }
 
     if (*Pfn1).share_count() != 0 {
-        #[cfg(target_arch = "aarch64")]
-        {
-            (*Pfn1).set_share_count((0) as ULONG_PTR);
-        }
-
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            KeBugCheckEx(
-                PFN_LIST_CORRUPT,
-                7,
-                PageFrameIndex as ULONG_PTR,
-                (*Pfn1).share_count() as ULONG_PTR,
-                0,
-            );
-        }
+        KeBugCheckEx(
+            PFN_LIST_CORRUPT,
+            7,
+            PageFrameIndex as ULONG_PTR,
+            (*Pfn1).share_count() as ULONG_PTR,
+            0,
+        );
     }
 
     if MI_IS_PFN_DELETED(Pfn1) {
@@ -2028,27 +2272,12 @@ pub unsafe extern "system" fn MiInitializePfnForOtherProcess(
 //     if ((Pfn1->u3.e1.PageLocation != ActiveAndValid) &&
 //         (Pfn1->u3.e1.PageLocation != StandbyPageList))
 //     {
-// #ifdef _M_ARM64
-//         /* ARM64: PFN state tracking is incomplete — log and fixup instead of bugcheck.
-//          * TODO: Fix the root cause of PFN state corruption. */
-//         {
-//             static ULONG PfnBadCount = 0;
-//             if (PfnBadCount < 5)
-//             {
-//                 DPRINT1("[PFN] PageLoc=%d for PFN 0x%lx (expected Active/Standby) — fixing up\n",
-//                         Pfn1->u3.e1.PageLocation, PageFrameIndex);
-//             }
-//             PfnBadCount++;
-//         }
-//         Pfn1->u3.e1.PageLocation = ActiveAndValid;
-// #else
 //         /* Otherwise we have PFN corruption */
 //         KeBugCheckEx(PFN_LIST_CORRUPT,
 //                      0x99,
 //                      PageFrameIndex,
 //                      Pfn1->u3.e1.PageLocation,
 //                      0);
-// #endif
 //     }
 //
 //     /* Page should at least have one reference */
@@ -2155,14 +2384,8 @@ pub unsafe extern "system" fn MiInitializePfnForOtherProcess(
 //     /* Nobody should still have reference to this page */
 //     if (Pfn1->u2.ShareCount != 0)
 //     {
-// #ifdef _M_ARM64
-//         DPRINT1("MiDecrementReferenceCount: PFN 0x%lx still has ShareCount=%d with RefCount=0\n",
-//                 PageFrameIndex, Pfn1->u2.ShareCount);
-//         Pfn1->u2.ShareCount = 0;
-// #else
 //         /* Otherwise something's really wrong */
 //         KeBugCheckEx(PFN_LIST_CORRUPT, 7, PageFrameIndex, Pfn1->u2.ShareCount, 0);
-// #endif
 //     }
 //
 //     /* And it should be lying on some page list */

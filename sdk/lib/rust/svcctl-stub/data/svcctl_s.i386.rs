@@ -145,7 +145,7 @@ unsafe extern "system" fn svcctl_RGetServiceDisplayNameWExprEval_0000(p_stub_msg
     let ps = (*p_stub_msg).stack_top as *const ParamStruct;
     let _ = &ps;
     (*p_stub_msg).offset = 0;
-    (*p_stub_msg).max_count = ((*(*ps).lpcchBuffer).wrapping_add(1)) as usize;
+    (*p_stub_msg).max_count = (((*(*ps).lpcchBuffer as u32)).wrapping_add(1u32)) as usize;
 }
 
 unsafe extern "system" fn svcctl_RGetServiceKeyNameWExprEval_0001(p_stub_msg: *mut midl_rt::MIDL_STUB_MESSAGE) {
@@ -159,7 +159,7 @@ unsafe extern "system" fn svcctl_RGetServiceKeyNameWExprEval_0001(p_stub_msg: *m
     let ps = (*p_stub_msg).stack_top as *const ParamStruct;
     let _ = &ps;
     (*p_stub_msg).offset = 0;
-    (*p_stub_msg).max_count = ((*(*ps).lpcchBuffer).wrapping_add(1)) as usize;
+    (*p_stub_msg).max_count = (((*(*ps).lpcchBuffer as u32)).wrapping_add(1u32)) as usize;
 }
 
 static EXPR_EVAL_ROUTINES: PtrTable<2> = PtrTable([svcctl_RGetServiceDisplayNameWExprEval_0000 as *const c_void, svcctl_RGetServiceKeyNameWExprEval_0001 as *const c_void]);

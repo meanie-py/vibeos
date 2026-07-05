@@ -600,7 +600,8 @@ unsafe fn MiCompleteProtoPteFault(
     DirtyPage = (false) as u8;
     if (StoreInstruction != 0) && ((Protection as ULONG & MM_WRITECOPY) != MM_WRITECOPY) {
         DirtyPage = (true) as u8;
-        ASSERT!(mmpte_software_prototype(&*mmpfn_original_pte_ptr(Pfn1)) );
+        let original_pte = mmpfn_original_pte(Pfn1);
+        ASSERT!(mmpte_software_prototype(&original_pte));
     }
 
     if !(*LockedProtoPfn).is_null() {
@@ -881,7 +882,7 @@ unsafe fn MiResolveProtoPteFault(
 
     PteContents = *PointerPte;
     if PteContents.soft_page_file_high() != MI_PTE_LOOKUP_NEEDED {
-        if PteContents.Long & (1 << 8) /* ReadOnly bit */ == 0 {
+        if !PteContents.proto_read_only() {
             Protection = TempPte.soft_protection();
         } else {
             Protection = MM_READONLY;
@@ -1355,8 +1356,9 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
         if MI_IS_WRITE_ACCESS((FaultCode) as usize) {
             Pfn1 = MI_PFN_ELEMENT((*PointerPte).page_frame_number() as PFN_NUMBER);
+            let original_pte = mmpfn_original_pte(Pfn1);
             if ((*PointerPte).Long & PTE_READWRITE) == 0
-                && (mmpte_software_protection(&*mmpfn_original_pte_ptr(Pfn1)) & MM_READWRITE) == 0
+                && (mmpte_software_protection(&original_pte) & MM_READWRITE) == 0
             {
                 KeBugCheckEx(
                     ATTEMPTED_WRITE_TO_READONLY_MEMORY,
@@ -1531,8 +1533,9 @@ pub unsafe extern "system" fn MmArmAccessFault(
                 if (TempPte.valid() as usize) != 0 {
                     if MI_IS_WRITE_ACCESS((FaultCode) as usize) {
                         Pfn1 = MI_PFN_ELEMENT((*PointerPte).page_frame_number() as PFN_NUMBER);
+                        let original_pte = mmpfn_original_pte(Pfn1);
                         if ((*PointerPte).Long & PTE_READWRITE) == 0
-                            && (mmpte_software_protection(&*mmpfn_original_pte_ptr(Pfn1)) & MM_READWRITE) == 0
+                            && (mmpte_software_protection(&original_pte) & MM_READWRITE) == 0
                         {
                             KeBugCheckEx(
                                 ATTEMPTED_WRITE_TO_READONLY_MEMORY,
@@ -1605,8 +1608,9 @@ pub unsafe extern "system" fn MmArmAccessFault(
         if (TempPte.valid() as usize) == 1 {
             if MI_IS_WRITE_ACCESS((FaultCode) as usize) {
                 Pfn1 = MI_PFN_ELEMENT((*PointerPte).page_frame_number() as PFN_NUMBER);
+                let original_pte = mmpfn_original_pte(Pfn1);
                 if !(TempPte.Long & PTE_READWRITE != 0)
-                    && !(mmpte_software_protection(&*mmpfn_original_pte_ptr(Pfn1)) & MM_READWRITE != 0)
+                    && !(mmpte_software_protection(&original_pte) & MM_READWRITE != 0)
                     && (MI_IS_PAGE_COPY_ON_WRITE(&TempPte) == 0)
                 {
                     ASSERT!(IsSessionAddress == 0);
@@ -2151,7 +2155,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
             } else {
                 ProtoPte = MiProtoPteToPte(&mut TempPte as PMMPTE);
 
-                if TempPte.Long & (1 << 8) /* ReadOnly bit */ != 0 {
+                if TempPte.proto_read_only() {
                     ProtectionCode = MM_READONLY;
                 } else {
                     ProtectionCode = 0x100;

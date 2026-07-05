@@ -685,6 +685,29 @@ function(add_cargo_module _target _crate _output)
     endif()
     list(APPEND _srcs ${_ws_srcs})
 
+    # …and the workspace glob STILL isn't sufficient for the KERNEL cargo links:
+    # reactos-link assembles kernel `.S` (and cc-rs C shims) from SOURCE trees
+    # OUTSIDE the rust workspace — ntoskrnl/ke/<arch>/*.S, hal/**/*.S, ex/*.S,
+    # listed in each bin crate's build.rs `asm`/`c_shims`, invisible to cmake.
+    # cargo DOES rerun-if-changed those (reactos-link/src/lib.rs:1131), but ninja
+    # never re-invokes cargo because none of them are in this DEPENDS — so a
+    # kernel-asm edit ships a STALE binary with zero signal. Cost a full arm64
+    # debug cycle 2026-07-04: a KiTrapReturn IRQ-atomicity fix in ke/arm64/trap.S
+    # "verified fixed" against a kernel that never re-assembled it (same masking
+    # class as the 2026-07-04 rust false-green above, one layer down). Depend on
+    # the kernel source asm/C/headers for the kernel-linking kinds; globbed once
+    # (cached) — an unaffected edit is a cheap cargo freshness no-op.
+    if(_acm_KIND MATCHES "^(kernelexe|kerneldll|kernelmodedriver|win32dll)$")
+        get_property(_kern_srcs GLOBAL PROPERTY _REACTOS_CARGO_KERN_SRCS)
+        if(NOT _kern_srcs)
+            file(GLOB_RECURSE _kern_srcs CONFIGURE_DEPENDS
+                ${REACTOS_SOURCE_DIR}/ntoskrnl/*.S ${REACTOS_SOURCE_DIR}/ntoskrnl/*.inc
+                ${REACTOS_SOURCE_DIR}/hal/*.S ${REACTOS_SOURCE_DIR}/hal/*.inc)
+            set_property(GLOBAL PROPERTY _REACTOS_CARGO_KERN_SRCS "${_kern_srcs}")
+        endif()
+        list(APPEND _srcs ${_kern_srcs})
+    endif()
+
     # Kind-specific post-link (cmake passes these as the target's POST_BUILD).
     set(_postlink)
     set(_postdep)

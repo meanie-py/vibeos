@@ -58,16 +58,29 @@ def _watch(vm: QemuVM, until: str, fail_on: str | None, timeout: float):
     return "timeout", buf, diag
 
 
-def _settle(vm: QemuVM, seconds: float) -> None:
+def _settle_watch(
+    vm: QemuVM, seconds: float, milestone: str | None, grace: float = 60.0
+) -> tuple[str, bool]:
     """After the boot marker, let user-mode finish drawing the desktop before
     the screenshot. The marker (`_tWinMain entered`) fires the instant explorer
     starts — the taskbar/Start button/tray are built ~15s later. Without this,
     the canonical screenshot is a half-built (taskbar-less) desktop, which both
-    hides real shell regressions and looks alarmingly blank. Drains serial while
-    waiting so the chardev buffer can't stall the VM."""
+    hides real shell regressions and looks alarmingly blank.
+
+    The drained serial is KEPT and returned (not discarded): a BugCheck or panic
+    during this window used to be a structural false green (the marker had
+    already matched). If `milestone` is given (`shell ready` — the documented
+    North-Star marker, which fires AFTER `_tWinMain`), waits up to `grace` extra
+    seconds for it past the settle window; returns (settle_text, milestone_seen)."""
+    buf = ""
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
-        vm.serial.read_available(timeout=0.5)
+        buf += vm.serial.read_available(timeout=0.5) or ""
+    if milestone and milestone not in buf:
+        extra = time.monotonic() + grace
+        while time.monotonic() < extra and milestone not in buf:
+            buf += vm.serial.read_available(timeout=0.5) or ""
+    return buf, (milestone in buf) if milestone else True
 
 
 def _screenshot(vm: QemuVM, work: Path, repo: Path, arch: str) -> str | None:
@@ -133,15 +146,58 @@ def _one_boot(
         outcome, text, diag = _watch(vm, marker, fail_on, config.boot_timeout)
         run.log(text[-8000:], header=f"{label} serial tail")
         # On success, let the desktop settle (taskbar/tray render ~15s after the
-        # marker) so the canonical screenshot shows the real shell. On failure,
+        # marker) so the canonical screenshot shows the real shell, KEEPING the
+        # settle-window serial for the post-marker health check. On failure,
         # screenshot immediately to capture the broken state.
+        shell_seen = True
         if outcome == "reached" and config.desktop_settle_seconds > 0:
             run.log(f"settling {config.desktop_settle_seconds:.0f}s for desktop", header=label)
-            _settle(vm, config.desktop_settle_seconds)
+            # `shell ready` is the documented North-Star marker and fires after
+            # `_tWinMain` — require it unless the caller asked for a custom
+            # --until (early-marker debug boots) or the config doesn't emit it.
+            need_shell = (
+                not until
+                and any("shell ready" in m for m in config.required_milestones)
+                and "shell ready" not in text
+            )
+            settle_txt, shell_seen = _settle_watch(
+                vm, config.desktop_settle_seconds, "shell ready" if need_shell else None
+            )
+            if settle_txt:
+                text += settle_txt
+                run.log(settle_txt[-4000:], header=f"{label} settle serial")
         # Always capture a PNG screenshot (pass or fail), while the VM is alive.
         shot = _screenshot(vm, work, repo, arch)
+        dbg_raw = ""
+        try:
+            dbg_raw = vm.read_debugcon().decode("ascii", errors="replace")
+        except Exception:
+            pass
         if outcome == "reached":
+            # Post-marker health: a BugCheck/panic during settle, a kernel panic
+            # on debugcon, or a missing `shell ready` is a failure — the early
+            # marker alone used to green all of these.
+            post = triage.post_boot_check(text, dbg_raw)
+            if post is None and not shell_seen:
+                last = [ln for ln in text.splitlines() if ln.strip()][-2:]
+                post = {
+                    "classification": "SHELL_NOT_READY",
+                    "salient": [
+                        "boot marker reached but `shell ready` never followed "
+                        f"(settle+{60:.0f}s grace)",
+                        *[f"serial tail: {ln[:120]}" for ln in last],
+                    ],
+                }
+            if post is not None:
+                if shot:
+                    post["screenshot"] = shot
+                return {"ok": False, "outcome": "post-marker", **post}
             res = {"ok": True, "outcome": "reached", "classification": ""}
+            ev = triage.wedge_evidence(text)
+            if ev["census_stuck"] or ev["lockdep"]:
+                res["census_stuck"] = ev["census_stuck"]
+                res["lockdep_hits"] = ev["lockdep"]
+                res["census_lines"] = ev["lines"]
             if shot:
                 res["screenshot"] = shot
             return res
@@ -156,6 +212,7 @@ def _one_boot(
             reached=False,
             fail_marker=(marker if outcome == "failmarker" and fail_on else None),
             debugcon=dbg,
+            debugcon_raw=dbg_raw,
         )
         sym = triage.symbolicate_pc(repo, arch, text)
         if sym:
@@ -170,10 +227,12 @@ def _one_boot(
                     f"serial STILL FLOWING at deadline (silent {silent_s:.0f}s) — "
                     "likely SLOW/CONTENDED host; retry before assuming a wedge"
                 )
+                tri["hang_kind"] = "slow"
             else:
                 hint = f"serial SILENT {silent_s:.0f}s before deadline — likely genuinely WEDGED"
                 if diag.get("early_hang"):
                     hint += " (early-hang abort — failed fast, skipped the rest of boot_timeout)"
+                tri["hang_kind"] = "wedged"
             last_line = diag.get("last_line", "")
             tail = f"; last serial: {last_line}" if last_line else ""
             tri["salient"].insert(0, f"timeout: {hint}{tail}")
@@ -300,9 +359,15 @@ def smoke(args, repo: Path) -> int:
                 salient=r.get("salient", []),
             )
         )
-        # carry first failure's evidence to the top-level verdict
+        # carry first failure's evidence to the top-level verdict, including the
+        # retry-policy fields the gate reads from summary.json (hang_kind: a
+        # slow/contended timeout is retryable; a wedge or self-confirmed wedge
+        # is a regression and blocks).
         if not r["ok"] and not run.classification:
             run.classification = r.get("classification", "FAIL")
+            for k in ("hang_kind", "wedge_confirmed", "census_stuck", "lockdep_hits"):
+                if k in r:
+                    run.extra[k] = r[k]
             if r.get("screenshot"):
                 run.extra["screenshot"] = r["screenshot"]
         # fail-fast within a single run already handled by _watch; across runs
@@ -321,6 +386,27 @@ def smoke(args, repo: Path) -> int:
     run.extra["passes"] = npass
     run.extra["runs"] = total
     run.extra["live_log"] = str(repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke_live.log")
+
+    # Kernel sync-instrumentation health on GREEN boots: [CENSUS] STUCK /
+    # [LOCKDEP] self-reports mean threads are permanently parked even though the
+    # desktop came up (the "11/11 green yet eventlog silently dead" class). WARN
+    # — visible and trendable in summary.json — not FAIL, because the known Mm
+    # WS self-deadlock currently strands threads on every boot until its fix
+    # lands; gating red on it would block all landings on a pre-existing bug.
+    stuck = max((r.get("census_stuck", 0) for r in results), default=0)
+    lockdep = max((r.get("lockdep_hits", 0) for r in results), default=0)
+    if stuck or lockdep:
+        run.extra["census_stuck"] = stuck
+        run.extra["lockdep_hits"] = lockdep
+        lines = next((r["census_lines"] for r in results if r.get("census_lines")), [])
+        run.add(
+            Stage(
+                "health",
+                status="warn",
+                detail=f"{stuck} [CENSUS] STUCK, {lockdep} [LOCKDEP] on a green boot",
+                salient=lines[:2],
+            )
+        )
 
     # Fold the netstack net-suite into the verdict (amd64 only — the virtio-net
     # config). ALWAYS run by default so a netstack regression turns the North Star

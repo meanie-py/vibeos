@@ -335,6 +335,28 @@ impl MMPTE {
         }
     }
 
+    /// MMPTE_PROTOTYPE.ReadOnly.
+    ///
+    /// This field is only meaningful when the PTE is in prototype format.  The
+    /// bit position differs from software protection fields on ARM64, so keep
+    /// callers off raw masks.
+    #[inline]
+    pub fn proto_read_only(&self) -> bool {
+        #[cfg(target_arch = "aarch64")]
+        { (self.Long & (1 << 8)) != 0 }
+        #[cfg(not(target_arch = "aarch64"))]
+        { (self.Long & (1 << 8)) != 0 }
+    }
+
+    #[inline]
+    pub fn set_proto_read_only(&mut self, read_only: bool) {
+        if read_only {
+            self.Long |= 1 << 8;
+        } else {
+            self.Long &= !(1 << 8);
+        }
+    }
+
     /// Extract PageFrameNumber from a valid hardware PTE.
     #[inline]
     pub fn page_frame_number(&self) -> PFN_NUMBER {
@@ -432,6 +454,34 @@ impl MMPTE {
     pub fn set_soft_protection(&mut self, val: ULONG) {
         let shift = Self::SOFT_PROTECTION_SHIFT;
         self.Long = (self.Long & !(0x1F << shift)) | (((val as ULONG_PTR) & 0x1F) << shift);
+    }
+
+    /// UsedPageTableEntries in a software PTE.
+    /// amd64: bits 12..=21; arm64: bits 14..=23; i386 reuses PageFileHigh.
+    #[inline]
+    pub fn soft_used_page_table_entries(&self) -> ULONG {
+        #[cfg(target_arch = "aarch64")]
+        { ((self.Long >> 14) & 0x3FF) as ULONG }
+        #[cfg(target_arch = "x86_64")]
+        { ((self.Long >> 12) & 0x3FF) as ULONG }
+        #[cfg(target_arch = "x86")]
+        { ((self.Long >> 12) & 0xFFFFF) as ULONG }
+    }
+
+    #[inline]
+    pub fn set_soft_used_page_table_entries(&mut self, val: ULONG) {
+        #[cfg(target_arch = "aarch64")]
+        {
+            self.Long = (self.Long & !(0x3FFusize << 14)) | (((val as ULONG_PTR) & 0x3FF) << 14);
+        }
+        #[cfg(target_arch = "x86_64")]
+        {
+            self.Long = (self.Long & !(0x3FFusize << 12)) | (((val as ULONG_PTR) & 0x3FF) << 12);
+        }
+        #[cfg(target_arch = "x86")]
+        {
+            self.Long = (self.Long & !0xFFFFF000usize) | (((val as ULONG_PTR) & 0xFFFFF) << 12);
+        }
     }
 
     /// PageFileHigh — bits [31:12] on i386, bits [63:32] on 64-bit
@@ -630,15 +680,22 @@ pub fn MiPdeToPte(pde: PMMPDE) -> PMMPTE {
 }
 
 /// Convert PTE pointer to PDE pointer (MiPteToPde).
+///
+/// One self-map recursion step: the PDE of X *is* the PTE of (the PTE of X),
+/// so `MiPteToPde(pte) == MiAddressToPte(pte)` on every self-mapped arch.
+/// (An earlier aarch64 branch used `MiAddressToPde(pte)` here — that returns
+/// the **PPE** of the original VA, which made `MiDeletePte` decrement the
+/// page-*directory*'s share count instead of the page table's: BUGCHECK 0x4E
+/// subcode 0x99 at process teardown. See field-manual §9.16.)
 #[inline]
 pub fn MiPteToPde(pte: PMMPTE) -> PMMPDE {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(target_arch = "x86")]
     {
         MiAddressToPte(pte as PVOID) as PMMPDE
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
-        MiAddressToPde(pte as PVOID)
+        MiAddressToPte(pte as PVOID) as PMMPDE
     }
 }
 
@@ -982,6 +1039,23 @@ impl MMPFN {
         self.set_entire_frame((cur & !mask) | (val & mask));
     }
 
+    /// u4.InPageError — bit immediately after PteFrame.
+    #[inline]
+    pub unsafe fn in_page_error(&self) -> bool {
+        (self.entire_frame() & (1usize << pfn_offsets::MI_PTE_FRAME_BITS)) != 0
+    }
+
+    #[inline]
+    pub unsafe fn set_in_page_error(&mut self, val: bool) {
+        let bit = 1usize << pfn_offsets::MI_PTE_FRAME_BITS;
+        let cur = self.entire_frame();
+        if val {
+            self.set_entire_frame(cur | bit);
+        } else {
+            self.set_entire_frame(cur & !bit);
+        }
+    }
+
     /// u4.VerifierAllocation — bit at MI_PTE_FRAME_BITS + 1.
     #[inline]
     pub unsafe fn verifier_allocation(&self) -> bool {
@@ -1277,31 +1351,23 @@ pub fn MiPxeToPte(pxe: PMMPTE) -> PMMPTE {
 }
 
 /// MiPteToPpe — PTE to its corresponding PPE
+///
+/// Two recursion steps: PPE-of-X = PDE-of-(PTE-of-X) = `MiAddressToPde(pte)`.
+/// Arch-independent on 4-level self-map (the old aarch64 branch was one level
+/// too high — see MiPteToPde above / field-manual §9.16).
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[inline]
 pub fn MiPteToPpe(pte: PMMPTE) -> PMMPTE {
-    #[cfg(target_arch = "x86_64")]
-    {
-        MiAddressToPde(pte as PVOID)
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        MiAddressToPpe(pte as PVOID)
-    }
+    MiAddressToPde(pte as PVOID)
 }
 
 /// MiPteToPxe — PTE to its corresponding PXE
+///
+/// Three recursion steps: PXE-of-X = PPE-of-(PTE-of-X) = `MiAddressToPpe(pte)`.
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[inline]
 pub fn MiPteToPxe(pte: PMMPTE) -> PMMPTE {
-    #[cfg(target_arch = "x86_64")]
-    {
-        MiAddressToPpe(pte as PVOID)
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        MiAddressToPxe(pte as PVOID)
-    }
+    MiAddressToPpe(pte as PVOID)
 }
 
 /// MiPdeToPpe — PDE to its corresponding PPE
@@ -1880,15 +1946,29 @@ impl MMPFN {
         }
     }
 
+    /// u4.Priority — 3 bits after AweAllocation.
+    #[inline]
+    pub unsafe fn priority(&self) -> u16 {
+        ((self.entire_frame() >> (pfn_offsets::MI_PTE_FRAME_BITS + 3)) & 0x7) as u16
+    }
+
+    #[inline]
+    pub unsafe fn set_priority(&mut self, val: u16) {
+        let shift = pfn_offsets::MI_PTE_FRAME_BITS + 3;
+        let mask = 0x7usize << shift;
+        let cur = self.entire_frame();
+        self.set_entire_frame((cur & !mask) | (((val as usize) & 0x7) << shift));
+    }
+
     /// u4.MustBeCached bit
     #[inline]
     pub unsafe fn must_be_cached(&self) -> bool {
-        (self.entire_frame() & (1usize << (pfn_offsets::MI_PTE_FRAME_BITS + 3))) != 0
+        (self.entire_frame() & (1usize << (pfn_offsets::MI_PTE_FRAME_BITS + 6))) != 0
     }
 
     #[inline]
     pub unsafe fn set_must_be_cached(&mut self, val: bool) {
-        let bit = 1usize << (pfn_offsets::MI_PTE_FRAME_BITS + 3);
+        let bit = 1usize << (pfn_offsets::MI_PTE_FRAME_BITS + 6);
         let cur = self.entire_frame();
         if val {
             self.set_entire_frame(cur | bit);
@@ -1955,16 +2035,29 @@ impl MMPFN {
         self.set_mmpfnentry(e);
     }
 
-    /// u3.e1.RemovalRequested bit (bit 5)
+    /// u3.e1.RemovalRequested bit (bit 11)
     #[inline]
     pub unsafe fn removal_requested(&self) -> bool {
-        (self.mmpfnentry() & (1 << 5)) != 0
+        (self.mmpfnentry() & (1 << 11)) != 0
     }
 
-    /// u3.e1.ParityError bit (bit 6)
+    /// u3.e1.Rom bit (bit 14)
+    #[inline]
+    pub unsafe fn rom(&self) -> bool {
+        (self.mmpfnentry() & (1 << 14)) != 0
+    }
+
+    #[inline]
+    pub unsafe fn set_rom(&mut self, val: bool) {
+        let mut e = self.mmpfnentry();
+        if val { e |= 1 << 14; } else { e &= !(1 << 14); }
+        self.set_mmpfnentry(e);
+    }
+
+    /// u3.e1.ParityError bit (bit 15)
     #[inline]
     pub unsafe fn parity_error(&self) -> bool {
-        (self.mmpfnentry() & (1 << 6)) != 0
+        (self.mmpfnentry() & (1 << 15)) != 0
     }
 
     /// u3.e2.ReferenceCount — same as reference_count(), alias for C naming

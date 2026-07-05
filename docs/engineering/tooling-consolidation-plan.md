@@ -136,8 +136,8 @@ before deleting (some may be episodically hand-run) — **archive, don't delete*
 - [ ] **Collapse `test_smoke.py` ↔ `smoke.py` boot/screenshot dup** (`smoke.py:73-101` mirrors
       `test_smoke::test_screenshot`) into one shared boot-and-capture helper.
 
-### T3 — The correctness fix ⚠ (M, Med) — priority regardless of streamlining appetite
-- [ ] **Make `gate` run the scanner suite blocking** (invoke `check --strict` per built arch, baseline-diff
+### T3 — The correctness fix ⚠ (M, Med) — **DONE + VALIDATED 2026-07-04**
+- [x] **Make `gate` run the scanner suite blocking** (invoke `check --strict` per built arch, baseline-diff
       NEW=0), so the arsenal enforces on the land path instead of warn-only. Natural next footgun increment
       (pre-push already requires the gate stamp; add lint-blocking to what mints it). Highest correctness
       value: on arm64, `lint_kernel` is the sole `captures(none)` defense and is currently advisory.
@@ -163,6 +163,18 @@ before deleting (some may be episodically hand-run) — **archive, don't delete*
   the gate's strict pass runs them (skip outside canon, as now) or the check moves into the build (canon
   context). Risk from the plan ("surfaces baselined-but-real findings") turned out NIL — the arsenal's
   current output is all-accepted; the only real bug it caught was the widl codegen staleness above.
+
+  **LANDED green on master (push `fc794e7c29e..8ed66e12e01`, 2026-07-05).** First full gate was red
+  ONLY on the pre-existing arm64 `LpcExitThread`/`0x4E` wedge (non-causal to T3 — tooling-only edits);
+  after merging the `flake-arm64-lpcexit` fix (`MiPteToX` self-map recursion), the re-gate was **×3
+  green + stamp minted**: build ×3 ✓, **lint phase 1.5 ✓ on all three arches** (`check --strict` clean),
+  smoke i386 ✓ amd64 ✓ (net-flake recovered on retry) arm64 ✓. The T3 mechanism is proven live: a NEW
+  lint finding on any built arch fails the gate + blocks the push stamp; `--no-lint` opts out. Landing
+  also fixed 3 real scanner bugs (committed_drift canonical-path family) + bootstrapped two baselines
+  (all deltas triaged: line-drift + tool FPs, zero actionable bugs).
+  **Residual (owed): committed_drift's canonical checks (`.res`) still SKIP outside a canon-mount — a
+  follow-up should run committed_drift INSIDE the build (canon context) so `.res` drift is actually
+  gated, not skipped.**
 
 ### Longer-term (after T1)
 - [ ] **Unify the FFI cluster on `verify_signatures`** (clang-AST — the strongest oracle) + fold in
