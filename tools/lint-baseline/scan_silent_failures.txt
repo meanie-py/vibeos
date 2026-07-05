@@ -56,7 +56,7 @@ sdk/lib/rust/beep-rust/src/lib.rs:16: [SILENT_LOOP] empty `loop {}` — silent b
 sdk/lib/rust/bootvid-cargo/src/main.rs:24: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/buslogic-rust/src/lib.rs:33: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/cabinet-cargo/src/main.rs:11: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
-sdk/lib/rust/cabinet-rust/src/cabinet/fci.rs:774: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/cabinet-rust/src/cabinet/fci.rs:778: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/cabinet-rust/src/cabinet/fdi.rs:2703: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/cabinet-rust/src/cabinet/fdi.rs:2736: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/cabinet-rust/src/cabinet/fdi.rs:2743: [UNWRAP] .unwrap() — panics on Err/None in kernel code
