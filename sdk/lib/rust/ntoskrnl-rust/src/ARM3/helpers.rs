@@ -946,7 +946,8 @@ extern "system" {
         FileObject: PVOID, bInit: BOOLEAN, AuditInfo: *mut PVOID,
     ) -> NTSTATUS;
 }
-extern "C" {
+extern "system" {
+    // NTAPI (stdcall on i386) per ntoskrnl.spec — extern "system" resolves correctly per arch
     pub fn PsGetCurrentThread() -> PVOID;
 }
 

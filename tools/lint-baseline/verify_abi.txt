@@ -1,4 +1,3 @@
-  ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:945: PsGetCurrentThread: declared C (cdecl), should be stdcall (per ntoskrnl.spec)
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs:25: InterlockedExchange: declared C (cdecl), should be fastcall (per ntoskrnl.spec)
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ARM3/section.rs:396: RtlFillMemoryUlong: declared C (cdecl), should be stdcall (per ntoskrnl.spec)
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ARM3/session.rs:22: InterlockedCompareExchange: declared C (cdecl), should be fastcall (per ntoskrnl.spec)
@@ -60,6 +59,6 @@
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ps/thread.rs:56: InterlockedCompareExchange: declared C (cdecl), should be fastcall (per ntoskrnl.spec)
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/ps/win32.rs:11: PsGetCurrentThread: declared C (cdecl), should be stdcall (per ntoskrnl.spec)
   ABI MISMATCH: sdk/lib/rust/ntoskrnl-rust/src/rtl/libsupp.rs:91: PsGetCurrentThread: declared C (cdecl), should be stdcall (per ntoskrnl.spec)
-62 ABI mismatches found across 411 files
+61 ABI mismatches found across 411 files
 Bindgen catalog: 4617 functions (+1696 win32k, +248 win32k.spec)
 Spec catalog: 1570 exports
