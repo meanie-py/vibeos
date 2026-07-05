@@ -381,7 +381,7 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 |---|-------|-----|------|-----------|
 | 10a | **USB HID input** (the beachhead; also fixes arm64's monolith miniport) | [`../engineering/input-architecture-and-unification.md`](../engineering/input-architecture-and-unification.md) | M | USB host stack enumerating |
 | 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) | [`../engineering/usb-mass-storage-real-storage-quest.md`](../engineering/usb-mass-storage-real-storage-quest.md) | M | same USB host stack as 10a — one probe gates both |
-| 10c | **arm64 GIC interrupts** (real routing + dispatch + hardware-backed IRQL) — foundational; ends polling everywhere | *(doc TBD — after USB HID)* | L | timer path in `hal-rust/arm64/clock.rs` is a working template |
+| 10c | **arm64 GIC interrupts** (real routing + dispatch + hardware-backed IRQL) — foundational; ends polling everywhere | [`../engineering/arm64-interrupts-quest.md`](../engineering/arm64-interrupts-quest.md) | L | timer path in `hal-rust/arm64/clock.rs` is a working template |
 | 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack) | [`../engineering/real-nic-networking-quest.md`](../engineering/real-nic-networking-quest.md) | M–L | amd64 e1000 sooner (real PIC/APIC); arm64 downstream of 10c |
 
 Not trash, leave alone: the GOP linear-framebuffer display driver (`arm64vid`, shared all
