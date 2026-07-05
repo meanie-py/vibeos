@@ -239,49 +239,6 @@ def _ninja_known_targets(repo: Path, build_dir: Path, wrap, env) -> set[str]:
     return {ln.split(":", 1)[0].strip() for ln in cp.stdout.splitlines() if ":" in ln}
 
 
-_DEDUP_INTERVAL = 24 * 3600  # hardlink-dedup the cache trees at most daily
-
-
-def _maybe_dedup(run: Run, repo: Path) -> None:
-    """DISABLED 2026-07-04 — cross-worktree hardlink dedup of LIVE cache trees is
-    unsound, twice over (see tools/dedup-build-cache.sh SAFETY):
-      1. build-* cmake trees: in-place O_TRUNC writers (spec2def, cmake -E copy,
-         ccache-miss clang) truncate a shared inode under a sibling's running
-         ld.lld mmap → SIGBUS (two amd64 builds died at the d3dx9 links).
-      2. cargo target trees: cargo invalidation is MTIME-based, and dedup makes
-         fingerprints/invoked.timestamp/build-script binaries shared inodes —
-         sibling builds refresh their mtimes, cargo concludes "fresh" and
-         silently re-runs STALE build scripts / reuses stale artifacts (caught
-         live: a 00:16 build-script-build with 4 links re-ran at 13:27 after
-         its source was edited at 13:06 — the edit never took effect). That is
-         the false-green class vibeos-cli exists to kill.
-    Disk reclaim levers that remain: `vibeos-cli prune` (idle worktrees) and a
-    MANUAL dedup of trees you know are idle. Do not re-enable the detached call
-    without solving mtime-shared-state (e.g. copy-on-write filesystem reflinks,
-    which ext4 lacks)."""
-    return  # intentionally disabled — see docstring
-    script = repo / "tools" / "dedup-build-cache.sh"
-    if not script.is_file():
-        return
-    stamp = cachecfg.vibeos_root(repo) / ".dedup-last"
-    try:
-        if stamp.is_file() and time.time() - stamp.stat().st_mtime < _DEDUP_INTERVAL:
-            return
-        stamp.touch()
-    except OSError:
-        return
-    log = run.dir / "dedup.log"
-    with open(log, "ab") as fh:
-        subprocess.Popen(
-            ["bash", str(script), "--apply"],
-            stdout=fh,
-            stderr=fh,
-            start_new_session=True,
-            cwd=repo,
-        )
-    run.add(Stage("dedup", status="ok", detail=f"detached, ≤1/day → {log}"))
-
-
 def build(args, repo: Path) -> int:
     arch = archcfg.base_arch(args.arch)  # build side keys on the base arch
     cfg = archcfg.arch_build(arch)
@@ -422,7 +379,151 @@ def _maybe_canonize(run, repo: Path, build_dir: Path, arch: str, lockdep: bool) 
     return True
 
 
+def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
+    """Footgun guard (the 2026-07-04 dedup incident, both failure modes): a
+    multi-link file inside a build tree means some cross-worktree hardlink
+    tool has fused this tree's artifacts with another's. In-place writers
+    (spec2def, `cmake -E copy`, ccache-MISS clang) then corrupt the sibling
+    through the shared inode — SIGBUS under a running ld.lld — and shared
+    mtimes silently defeat cargo invalidation (stale build scripts re-run
+    with no error anywhere). Refuse to build until the tree is private again.
+
+    Thresholds: cmake outputs never legitimately hardlink → `-links +1`
+    fails. CARGO target dirs DO hardlink internally (deps/ ↔ final artifact,
+    2 links, same tree) → only `-links +2` fails there (a 2-way cross-tree
+    link slips through; the mass-dedup signature is 3+, observed up to 1003).
+    Cargo dirs are detected by their CACHEDIR.TAG marker — several nest
+    INSIDE build-<arch> (rust-kernel-target, rust-wmilib-target, …), so the
+    cmake scan prunes them and they get the cargo threshold instead. See
+    tools/dedup-build-cache.sh SAFETY for history."""
+
+    def _cargo_roots(root: Path) -> list[Path]:
+        try:
+            cp = subprocess.run(
+                ["find", str(root), "-name", "CACHEDIR.TAG"],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        dirs = sorted(Path(ln).parent for ln in cp.stdout.splitlines() if ln.strip())
+        # keep only top-most roots (cargo stamps per-triple subdirs too)
+        tops: list[Path] = []
+        for d in dirs:
+            if not any(str(d).startswith(str(t) + os.sep) for t in tops):
+                tops.append(d)
+        return tops
+
+    def _probe(root: Path, links: str, prune: list[Path]) -> str | None:
+        cmd: list[str] = ["find", str(root)]
+        for p in prune:
+            cmd += ["-path", str(p), "-prune", "-o"]
+        cmd += ["-type", "f", "-links", links, "-print", "-quit"]
+        try:
+            cp = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        except (OSError, subprocess.SubprocessError):
+            run.add(Stage("isolation", status="warn", detail=f"probe failed for {root} — skipped"))
+            return None
+        return cp.stdout.strip() or None
+
+    hits: list[str] = []
+    if build_dir.is_dir():
+        nested_cargo = _cargo_roots(build_dir)
+        hit = _probe(build_dir, "+1", nested_cargo)  # cmake outputs: any sharing is foreign
+        if hit:
+            hits.append(f"{hit} (links 2+ in a cmake tree)")
+        for c in nested_cargo:
+            hit = _probe(c, "+2", [])
+            if hit:
+                hits.append(f"{hit} (links 3+ in a cargo dir)")
+    ws = repo / "sdk" / "lib" / "rust" / "target"
+    if ws.is_dir():
+        hit = _probe(ws, "+2", [])
+        if hit:
+            hits.append(f"{hit} (links 3+ in a cargo dir)")
+    if not hits:
+        return True
+    run.classification = "ISOLATION_FAIL"
+    run.add(
+        Stage(
+            "isolation",
+            status="fail",
+            detail="build tree shares inodes with another worktree — refusing to build",
+            salient=[f"first hit: {h}" for h in hits]
+            + [
+                "fix: find <dir> -type f -links +N -print0 | xargs -0 -P8 -I{} "
+                'sh -c \'cp -p "{}" "{}.t" && mv "{}.t" "{}"\'  (or delete + rebuild)',
+                "cause: a cross-worktree hardlink dedup ran — see the SAFETY header of "
+                "tools/dedup-build-cache.sh",
+            ],
+        )
+    )
+    return False
+
+
+# T1.2 flag→artifact verification: a requested build feature must PROVE itself
+# in the output binary, and must be ABSENT when not requested — the --lockdep
+# flag was silently dead for 3 builds (canonize early-return) and only a manual
+# `llvm-nm` caught it. Table rows: (cache flag, requested?, artifact, symbol).
+_FLAG_SIGNATURES = [
+    (
+        "VIBEOS_LOCKDEP",
+        lambda args: bool(getattr(args, "lockdep", False)),
+        Path("ntoskrnl") / "ntoskrnl.exe",
+        "VIBEOS_LOCKDEP",
+    ),
+]
+
+
+def _verify_flag_artifacts(run, repo: Path, build_dir: Path, args) -> bool:
+    nm = repo / ".build-tools" / "llvm-mingw" / "bin" / "llvm-nm"
+    ok = True
+    for flag, wanted_fn, rel, symbol in _FLAG_SIGNATURES:
+        artifact = build_dir / rel
+        if not nm.is_file() or not artifact.is_file():
+            continue  # ninja already failed / non-standard tree; nothing to verify
+        wanted = wanted_fn(args)
+        try:
+            cp = subprocess.run(
+                [str(nm), str(artifact)], capture_output=True, text=True, timeout=120
+            )
+            present = any(ln.endswith(f" {symbol}") for ln in cp.stdout.splitlines())
+        except (OSError, subprocess.SubprocessError):
+            run.add(Stage("flag-verify", status="warn", detail=f"llvm-nm failed for {rel}"))
+            continue
+        if present == wanted:
+            run.add(
+                Stage(
+                    "flag-verify",
+                    status="ok",
+                    detail=f"{flag}={'ON' if wanted else 'OFF'} ↔ {symbol} "
+                    f"{'present' if present else 'absent'} in {rel.name}",
+                )
+            )
+        else:
+            ok = False
+            run.classification = run.classification or "FLAG_VERIFY_FAIL"
+            run.add(
+                Stage(
+                    "flag-verify",
+                    status="fail",
+                    detail=(
+                        f"{flag} requested but {symbol} ABSENT from {rel} — the flag is "
+                        f"silently dead (plumbing broke somewhere between cmake and cargo)"
+                        if wanted
+                        else f"{flag} OFF but {symbol} PRESENT in {rel} — instrumentation "
+                        f"leaked into a production build"
+                    ),
+                    salient=[f"artifact: {artifact}"],
+                )
+            )
+    return ok
+
+
 def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: bool) -> int:
+    if not _isolation_preflight(run, repo, build_dir):
+        return run.finalize(repo)
     wrapped = _maybe_canonize(run, repo, build_dir, arch, getattr(args, "lockdep", False))
     if wrapped is None:
         return run.finalize(repo)
@@ -548,6 +649,11 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         return run.finalize(repo)
     run.add(Stage("ninja", status="ok", detail="+".join(targets)))
 
+    # --- flag→artifact verification (T1.2): requested features must PROVE
+    # themselves in the output; unrequested ones must be absent. ---
+    if not _verify_flag_artifacts(run, repo, build_dir, args):
+        return run.finalize(repo)
+
     # optional arch-specific targets (best-effort)
     if cfg.ninja_targets_optional:
         run.run(
@@ -624,8 +730,9 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         return run.finalize(repo)
     run.add(Stage("artifact-check", status="ok", detail="media present + fresh"))
 
-    # --- opportunistic hardlink dedup of cache trees (detached, throttled) ---
-    _maybe_dedup(run, repo)
+    # NOTE: auto hardlink-dedup of cache trees was RETIRED 2026-07-04 (unsound on
+    # live trees — SIGBUS + mtime-poisoned false-green; see tools/dedup-build-cache.sh
+    # SAFETY + AGENTS.md "Fleet isolation law"). Disk reclaim is manual: `vibeos-cli prune`.
     if not cold:
         run.add(
             Stage(

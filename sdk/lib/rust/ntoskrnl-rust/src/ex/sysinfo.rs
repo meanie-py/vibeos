@@ -2087,8 +2087,11 @@ unsafe extern "C" fn QSI_SystemNumaProcessorMap(Buffer: PVOID, Size: ULONG, ReqS
     }
     if Size >= header && MaxEntries != 0 {
         *ReqSize = header + (MaxEntries * core::mem::size_of::<ULONGLONG>()) as ULONG;
+        // Data is a bindgen [ULONGLONG; 1] flexible array — indexing past [0] via the
+        // array is UB (the optimizer knows the bound). Walk it by raw pointer instead.
+        let data = core::ptr::addr_of_mut!((*NumaInformation).Data) as *mut ULONGLONG;
         for Node in 0..MaxEntries {
-            (*NumaInformation).Data[Node] = (*KeNodeBlock[Node]).ProcessorMask as ULONGLONG;
+            *data.add(Node) = (*KeNodeBlock[Node]).ProcessorMask as ULONGLONG;
         }
     } else {
         *ReqSize = core::mem::size_of::<ULONG>() as ULONG;
@@ -2132,9 +2135,11 @@ unsafe extern "C" fn QSI_SystemNumaAvailableMemory(Buffer: PVOID, Size: ULONG, R
         if MaxEntries == 1 {
             (*NumaInformation).Data[0] = (ntkrnl_sys::mm::MmAvailablePages as ULONGLONG) << PAGE_SHIFT;
         } else {
+            // Flexible-array walk — see the SystemNumaProcessorMap note above ([T; 1] UB).
+            let data = core::ptr::addr_of_mut!((*NumaInformation).Data) as *mut ULONGLONG;
             for Node in 0..MaxEntries {
                 let n = KeNodeBlock[Node];
-                (*NumaInformation).Data[Node] =
+                *data.add(Node) =
                     (((*n).FreeCount[0] + (*n).FreeCount[1]) as ULONGLONG) << PAGE_SHIFT;
             }
         }

@@ -169,6 +169,17 @@ would need classing for long uptimes); `ExConvertPushLockSharedToExclusive`
 leaves the recorded mode stale (shared) until release (label-only);
 `ExWaitOnPushLock` waiters are not park-checked.
 
+**FAULT-UNDER-WS tripwire (added 2026-07-04 eve):** `MmAccessFault` entry
+(cfg lockdep) passes the process + system-cache `Vm.WorkingSetMutex`
+addresses to `lockdep_fault_check`; if the faulting thread already holds one,
+it DbgPrints `[LOCKDEP] FAULT-UNDER-WS` immediately — at the fault, with the
+faulting address (also recorded as a kind-1 violation with `site2=fault
+addr`; the GDB decoder prints it). Two things the park check can't give:
+(a) the excl-hold case wedges before the census can run — this prints as it
+happens; (b) a SHARED re-acquire of a shared-held WS lock succeeds without
+parking (silent recursion, no violation record at all) — this is the only
+detector that sees it.
+
 ## 5. Debugger data block — PLANNED, tiny effort, permanent payoff
 
 What NT does with `KDDEBUGGER_DATA64`: export a `#[used]` static populated at

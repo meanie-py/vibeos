@@ -248,6 +248,15 @@ def check_res(arches: tuple[str, ...]) -> list[tuple]:
             continue
         for stem, committed_rel, toks, cwd in jobs:
             committed = REPO / committed_rel
+            # The replay cwd comes from compile_commands.json, which bakes the
+            # CANONICAL build path (/tmp/vibeos/build-<arch>) that only exists
+            # inside a canon-run bind mount. Standalone (e.g. `check --strict`
+            # outside a build), that dir is absent — the replay CAN'T run, which
+            # is a SKIP, not a DRIFT. Misclassifying it as DRIFT produced a
+            # spurious gate failure (2026-07-04).
+            if not os.path.isdir(cwd):
+                rows.append((".res", f"{stem}-{arch}", SKIP, "canonical build mount absent"))
+                continue
             with tempfile.TemporaryDirectory() as td:
                 dst = os.path.join(td, "out.res")
                 cmd = list(toks)

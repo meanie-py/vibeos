@@ -416,7 +416,7 @@ def _format_method_context(func: FunctionDep, scan: ScanResult) -> str:
 
     cls = func.cpp_class
     m = func.cpp_method
-    if not cls or not m:  # not a C++ method — no method context to build
+    if not cls or not m:  # not a C++ method (or no method name) — no contract to emit
         return ""
     lines = [
         "\n## C++ Method → Free Function\n",

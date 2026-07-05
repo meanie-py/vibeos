@@ -197,6 +197,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Silent-failure shapes (AST/tree-sitter): bare `loop {}` spins, unwrap/
+    # expect in no-std kernel code, swallowed Err arms. The arm64 explorer
+    # regression hid for weeks behind exactly this (win32k's bare-loop panic
+    # handler = silent spin), and the POWNED paint-mask panic WAS an unwrap.
+    # Stock is large (~2.1K, mostly unwraps) → baseline gates NEW only; the
+    # baseline doubles as the fix-campaign work queue.
+    ssf = repo / "tools" / "scan_silent_failures.py"
+    specs.append(
+        (
+            "scan_silent_failures",
+            [py, str(ssf), "--lint"] if ssf.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     return specs
 
 
