@@ -294,7 +294,7 @@ pub unsafe extern "C" fn ClassRetrieveDeviceRelations(
     if !oldRelations.is_null() {
         i = 0;
         while i < (*oldRelations).Count {
-            (*deviceRelations).Objects[i as usize] = (*oldRelations).Objects[i as usize];
+            *core::ptr::addr_of_mut!((*deviceRelations).Objects).cast::<PDEVICE_OBJECT>().add(i as usize) = *core::ptr::addr_of!((*oldRelations).Objects).cast::<PDEVICE_OBJECT>().add(i as usize);
             i += 1;
         }
 
@@ -316,7 +316,7 @@ pub unsafe extern "C" fn ClassRetrieveDeviceRelations(
 
         _Analysis_assume_(if i >= 1 { 1u8 } else { 0u8 });
         i -= 1;
-        (*deviceRelations).Objects[i as usize] = (*nextChild).DeviceObject;
+        *core::ptr::addr_of_mut!((*deviceRelations).Objects).cast::<PDEVICE_OBJECT>().add(i as usize) = (*nextChild).DeviceObject;
 
         let status = ObReferenceObjectByPointer(
             (*nextChild).DeviceObject as PVOID,

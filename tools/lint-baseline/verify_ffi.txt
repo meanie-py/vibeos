@@ -1,10 +1,8 @@
-  C_MACRO: 113
-  FLEX_ARRAY: 118
-  TOTAL: 231 issues across 2335 files
+  C_MACRO: 94
+  FLEX_ARRAY: 66
+  TOTAL: 160 issues across 2335 files
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/cachesup.rs:170: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/close.rs:45: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/cdfs-rust/src/create.rs:137: RtlCopyMemory: RtlCopyMemory is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/cdfs-rust/src/create.rs:195: RtlMoveMemory: RtlMoveMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/fileinfo.rs:49: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/fsctrl.rs:27: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/strucsup.rs:84: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
@@ -18,14 +16,11 @@
   [C_MACRO] sdk/lib/rust/disk-rust/src/disk.rs:61: IsListEmpty: IsListEmpty is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/disk-rust/src/disk.rs:62: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/disk-rust/src/disk.rs:63: RemoveHeadList: RemoveHeadList is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/evtlib-rust/src/evtlib.rs:40: RtlCopyMemory: RtlCopyMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/cachesup.rs:37: KeAcquireSpinLock: KeAcquireSpinLock is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/cachesup.rs:38: KeReleaseSpinLock: KeReleaseSpinLock is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/cachesup.rs:50: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/fastfat-rust/src/create.rs:109: RtlCopyMemory: RtlCopyMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/create.rs:116: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/create.rs:146: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/fastfat-rust/src/create.rs:151: RtlMoveMemory: RtlMoveMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/devctrl.rs:28: IoSetCompletionRoutine: IoSetCompletionRoutine is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/dirctrl.rs:40: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/fileinfo.rs:175: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
@@ -38,18 +33,14 @@
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/verfysup.rs:63: IoGetNextIrpStackLocation: IoGetNextIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/hal-rust/src/x86/pcibus.rs:294: KeAcquireSpinLock: KeAcquireSpinLock is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/hal-rust/src/x86/pcibus.rs:295: KeReleaseSpinLock: KeReleaseSpinLock is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kbdhid-rust/src/glue.rs:138: RtlMoveMemory: RtlMoveMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ke-inlines/src/lib.rs:171: KeReleaseSpinLock: KeReleaseSpinLock is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ks-rust/src/glue.rs:207: ExRaiseStatus: ExRaiseStatus is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/mountmgr-rust/src/device.rs:5915: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntkrnl-sys/src/ke.rs:276: KeReleaseSpinLock_impl: KeReleaseSpinLock is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ARM3/mminit.rs:19: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ARM3/special.rs:24: RtlFillMemory: RtlFillMemory is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ARM3/vadnode.rs:47: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ARM3/virtual.rs:112: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/amd64/init.rs:68: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/cc/cacheman.rs:38: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/cc/view.rs:26: RtlFillMemory: RtlFillMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/config/cmdelay.rs:54: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/config/cmlazy.rs:32: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/dbgk/dbgkobj.rs:127: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
@@ -57,11 +48,9 @@
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/callback.rs:29: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/callback.rs:30: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/init.rs:235: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/sysinfo.rs:128: RtlMoveMemory: RtlMoveMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/timer.rs:85: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/filelock.rs:46: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/stackovf.rs:20: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/tunnel.rs:37: RtlMoveMemory: RtlMoveMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/tunnel.rs:45: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/unc.rs:25: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/iomgr/bootlog.rs:26: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
@@ -78,14 +67,11 @@
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/kdbg/kdb.rs:332: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/kdbg/kdb_symbols.rs:55: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/kdbg/kdb_symbols.rs:56: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ke/i386/cpu.rs:24: RtlFillMemory: RtlFillMemory is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ke/i386/v86vdm.rs:25: RtlMoveMemory: RtlMoveMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ke/procobj.rs:127: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ke/thrdschd.rs:45: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/lpc/connect.rs:113: ObReferenceObject: ObReferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/lpc/connect.rs:120: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/lpc/reply.rs:58: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/mm/marea.rs:44: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/mm/mminit.rs:48: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/mm/mminit.rs:49: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/mm/rmap.rs:59: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
@@ -104,36 +90,11 @@
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/se/semgr.rs:89: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/se/srm.rs:15: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/wmi/guidobj.rs:26: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/smss-csrss-rust/src/basesrv/nls.rs:33: RtlFillMemory: RtlFillMemory is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/smss-csrss-rust/src/csrlib/capture.rs:6: RtlMoveMemory: RtlMoveMemory is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/smss-csrss-rust/src/csrlib/connect.rs:6: RtlMoveMemory: RtlMoveMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/usbhub-rust/src/usbhub.rs:41: IoSizeOfIrp: IoSizeOfIrp is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/usbport-rust/src/queue.rs:28: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/usbstor-rust/src/pdo.rs:33: IoSetCompletionRoutine: IoSetCompletionRoutine is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/user32-rust/src/controls/appswitch.rs:98: RtlMoveMemory: RtlMoveMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/winsrv-rust/src/consrv/condrv/coninput.rs:8: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/winsrv-rust/src/consrv/condrv/coninput.rs:9: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/winsrv-rust/src/consrv/condrv/conoutput.rs:8: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
-  [FLEX_ARRAY] sdk/lib/rust/classpnp-rust/src/class_part_d.rs:438: Objects: Direct indexing of flexible array DEVICE_RELATIONS.Objects — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/classpnp-rust/src/class_part_d.rs:438: Objects: Direct indexing of flexible array _DEVICE_RELATIONS.Objects — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/classpnp-rust/src/class_part_d.rs:460: Objects: Direct indexing of flexible array DEVICE_RELATIONS.Objects — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/classpnp-rust/src/class_part_d.rs:460: Objects: Direct indexing of flexible array _DEVICE_RELATIONS.Objects — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/classpnp-rust/src/classpnp/class_gap3.rs:297: Objects: Direct indexing of flexible array DEVICE_RELATIONS.Objects — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/classpnp-rust/src/classpnp/class_gap3.rs:297: Objects: Direct indexing of flexible array _DEVICE_RELATIONS.Objects — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/classpnp-rust/src/classpnp/class_gap3.rs:319: Objects: Direct indexing of flexible array DEVICE_RELATIONS.Objects — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/classpnp-rust/src/classpnp/class_gap3.rs:319: Objects: Direct indexing of flexible array _DEVICE_RELATIONS.Objects — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/cmlib-rust/src/cmindex.rs:1469: List: Direct indexing of flexible array CM_RESOURCE_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/cmlib-rust/src/cmindex.rs:1469: List: Direct indexing of flexible array _CM_RESOURCE_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/cmlib-rust/src/cmindex.rs:1469: List: Direct indexing of flexible array _IO_RESOURCE_REQUIREMENTS_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/cmlib-rust/src/cmindex.rs:1495: List: Direct indexing of flexible array CM_RESOURCE_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/cmlib-rust/src/cmindex.rs:1495: List: Direct indexing of flexible array _CM_RESOURCE_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/cmlib-rust/src/cmindex.rs:1495: List: Direct indexing of flexible array _IO_RESOURCE_REQUIREMENTS_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/cmlib-rust/src/cmindex.rs:1508: List: Direct indexing of flexible array CM_RESOURCE_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/cmlib-rust/src/cmindex.rs:1508: List: Direct indexing of flexible array _CM_RESOURCE_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/cmlib-rust/src/cmindex.rs:1508: List: Direct indexing of flexible array _IO_RESOURCE_REQUIREMENTS_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/cmlib-rust/src/cmindex.rs:1525: List: Direct indexing of flexible array CM_RESOURCE_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/cmlib-rust/src/cmindex.rs:1525: List: Direct indexing of flexible array _CM_RESOURCE_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/cmlib-rust/src/cmindex.rs:1525: List: Direct indexing of flexible array _IO_RESOURCE_REQUIREMENTS_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/dirsup.rs:1680: FileName: Direct indexing of flexible array _FILE_BOTH_DIR_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/dirsup.rs:1680: FileName: Direct indexing of flexible array _FILE_DIRECTORY_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/dirsup.rs:1680: FileName: Direct indexing of flexible array _FILE_FULL_DIR_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
@@ -184,42 +145,10 @@
   [FLEX_ARRAY] sdk/lib/rust/freeldr-rust/src/iso.rs:409: FileName: Direct indexing of flexible array _FILE_DIRECTORY_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/freeldr-rust/src/iso.rs:409: FileName: Direct indexing of flexible array _FILE_FULL_DIR_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/freeldr-rust/src/iso.rs:409: FileName: Direct indexing of flexible array _FILE_NAMES_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/freeldr-rust/src/pxe.rs:284: FileName: Direct indexing of flexible array _FILE_BOTH_DIR_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/freeldr-rust/src/pxe.rs:284: FileName: Direct indexing of flexible array _FILE_DIRECTORY_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/freeldr-rust/src/pxe.rs:284: FileName: Direct indexing of flexible array _FILE_FULL_DIR_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/freeldr-rust/src/pxe.rs:284: FileName: Direct indexing of flexible array _FILE_NAMES_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:331: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:331: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:375: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:375: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:377: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:377: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:379: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:379: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:407: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:407: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:446: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:446: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:46: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:46: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:47: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/client/fiber.rs:47: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/file/volume.rs:216: FileName: Direct indexing of flexible array _FILE_BOTH_DIR_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/file/volume.rs:216: FileName: Direct indexing of flexible array _FILE_DIRECTORY_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/file/volume.rs:216: FileName: Direct indexing of flexible array _FILE_FULL_DIR_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/kernel32-rust/src/file/volume.rs:216: FileName: Direct indexing of flexible array _FILE_NAMES_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/ks-rust/src/swenum.rs:1205: Objects: Direct indexing of flexible array DEVICE_RELATIONS.Objects — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/ks-rust/src/swenum.rs:1205: Objects: Direct indexing of flexible array _DEVICE_RELATIONS.Objects — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:1227: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:1227: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:1228: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:1228: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/partmgr-rust/src/partmgr.rs:1306: Objects: Direct indexing of flexible array DEVICE_RELATIONS.Objects — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/partmgr-rust/src/partmgr.rs:1306: Objects: Direct indexing of flexible array _DEVICE_RELATIONS.Objects — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/pcix-rust/src/enumr.rs:179: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/pcix-rust/src/enumr.rs:179: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/pcix-rust/src/pci/ppbridge.rs:473: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/pcix-rust/src/pci/ppbridge.rs:473: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/storahci-rust/src/storahci.rs:1258: List: Direct indexing of flexible array CM_RESOURCE_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/storahci-rust/src/storahci.rs:1258: List: Direct indexing of flexible array _CM_RESOURCE_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/storahci-rust/src/storahci.rs:1258: List: Direct indexing of flexible array _IO_RESOURCE_REQUIREMENTS_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])

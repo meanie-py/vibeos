@@ -43,8 +43,8 @@ pub unsafe extern "system" fn BaseRundownFls(FlsData: PVOID) {
     n = 1;
     while n <= FlsHighIndex {
         lpCallback = *fls_callbacks(NtCurrentPeb()).add(n as usize);
-        if lpCallback.is_some() && !(*pFlsData).Data[n as usize].is_null() {
-            (lpCallback.unwrap())((*pFlsData).Data[n as usize]);
+        if lpCallback.is_some() && !(*core::ptr::addr_of!((*pFlsData).Data).cast::<PVOID>().add(n as usize)).is_null() {
+            (lpCallback.unwrap())(*core::ptr::addr_of!((*pFlsData).Data).cast::<PVOID>().add(n as usize));
         }
         n += 1;
     }
@@ -328,7 +328,7 @@ pub unsafe extern "system" fn FlsAlloc(lpCallback: PFLS_CALLBACK_FUNCTION) -> DW
                     InsertTailList(&mut (*Peb).FlsListHead, &mut (*pFlsData).ListEntry);
                 }
 
-                (*pFlsData).Data[dwFlsIndex as usize] = core::ptr::null_mut();
+                *core::ptr::addr_of_mut!((*pFlsData).Data).cast::<PVOID>().add(dwFlsIndex as usize) = core::ptr::null_mut();
                 *fls_callbacks(Peb).add(dwFlsIndex as usize) = lpCallback;
 
                 if dwFlsIndex > (*Peb).FlsHighIndex {
@@ -372,11 +372,11 @@ pub unsafe extern "system" fn FlsFree(dwFlsIndex: DWORD) -> BOOL {
                     let _offset = core::mem::offset_of!(RTL_FLS_DATA, ListEntry) as isize;
                     _addr.offset(-_offset) as *mut RTL_FLS_DATA
                 };
-                if (*pFlsData).Data[dwFlsIndex as usize] != core::ptr::null_mut() {
+                if *core::ptr::addr_of!((*pFlsData).Data).cast::<PVOID>().add(dwFlsIndex as usize) != core::ptr::null_mut() {
                     if let Some(cb) = lpCallback {
-                        cb((*pFlsData).Data[dwFlsIndex as usize]);
+                        cb(*core::ptr::addr_of!((*pFlsData).Data).cast::<PVOID>().add(dwFlsIndex as usize));
                     }
-                    (*pFlsData).Data[dwFlsIndex as usize] = core::ptr::null_mut();
+                    *core::ptr::addr_of_mut!((*pFlsData).Data).cast::<PVOID>().add(dwFlsIndex as usize) = core::ptr::null_mut();
                 }
                 Entry = (*Entry).Flink;
             }
@@ -404,7 +404,7 @@ pub unsafe extern "system" fn FlsGetValue(dwFlsIndex: DWORD) -> LPVOID {
         return core::ptr::null_mut();
     }
     SetLastError(ERROR_SUCCESS);
-    return (*pFlsData).Data[dwFlsIndex as usize];
+    return *core::ptr::addr_of!((*pFlsData).Data).cast::<PVOID>().add(dwFlsIndex as usize);
 }
 
 #[no_mangle]
@@ -443,7 +443,7 @@ pub unsafe extern "system" fn FlsSetValue(
         );
         RtlReleasePebLock();
     }
-    (*pFlsData).Data[dwFlsIndex as usize] = lpFlsData;
+    *core::ptr::addr_of_mut!((*pFlsData).Data).cast::<PVOID>().add(dwFlsIndex as usize) = lpFlsData;
     return 1;
 }
 

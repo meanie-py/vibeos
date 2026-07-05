@@ -176,7 +176,7 @@ pub unsafe extern "system" fn PciComputeNewCurrentSettings(
                         }
                         3 => {
                             /* ASSERT(BaseResource == NULL); omitted */
-                            DrainPartial = (*Partial).u.DevicePrivate.Data[1] as u8;
+                            DrainPartial = *core::ptr::addr_of!((*Partial).u.DevicePrivate.Data).cast::<ULONG>().add(1) as u8;
                             /* ASSERT(DrainPartial == TRUE); omitted */
                         }
                         _ => {}

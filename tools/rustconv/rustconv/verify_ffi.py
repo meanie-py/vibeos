@@ -54,7 +54,12 @@ C_MACROS = {
 C_MACRO_EXCEPTIONS = {
     "ObfReferenceObject",  # real fastcall export
     "ObfDereferenceObject",
-    "RtlZeroMemory",  # real export on some arches
+    # Real ntoskrnl.spec exports despite header-macro forms (RtlCopyMemory is
+    # x86_64-only in the spec but resolves via memmove/shims on the others):
+    "RtlZeroMemory",
+    "RtlFillMemory",
+    "RtlMoveMemory",
+    "RtlCopyMemory",
 }
 
 # Known flexible-array structs: struct name → field name

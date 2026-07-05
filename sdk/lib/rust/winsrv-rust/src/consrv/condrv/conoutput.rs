@@ -5,7 +5,6 @@ use winsrv_sys::consts::*;
 use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
 
 extern "system" {
-    pub fn CONTAINING_RECORD(addr: *const u8, Type: usize, field_offset: usize) -> *mut u8;
 }
 
 // These condrv buffer fns are defined plain-cdecl (no NTAPI) in the still-C

@@ -1224,8 +1224,8 @@ pub unsafe extern "system" fn LdrShutdownThread() -> NTSTATUS {
                 .offset(n as isize)
                 .read();
             lpCallback = core::mem::transmute::<PVOID, PFLS_CALLBACK_FUNCTION>(raw_cb);
-            if lpCallback.is_some() && !(*pFlsData).Data[n as usize].is_null() {
-                (lpCallback.unwrap())((*pFlsData).Data[n as usize]);
+            if lpCallback.is_some() && !(*core::ptr::addr_of!((*pFlsData).Data).cast::<PVOID>().add(n as usize)).is_null() {
+                (lpCallback.unwrap())(*core::ptr::addr_of!((*pFlsData).Data).cast::<PVOID>().add(n as usize));
             }
             n += 1;
         }

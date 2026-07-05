@@ -1303,7 +1303,7 @@ pub unsafe extern "C" fn FdoHandleDeviceRelations(
             (*partExt).IsEnumerated = 1u8;
 
             let count = &mut (*deviceRelations).Count;
-            (*deviceRelations).Objects[*count as usize] = (*partExt).DeviceObject;
+            *core::ptr::addr_of_mut!((*deviceRelations).Objects).cast::<PDEVICE_OBJECT>().add(*count as usize) = (*partExt).DeviceObject;
             *count = *count + 1;
 
             ObReferenceObject((*partExt).DeviceObject as PVOID);

@@ -281,7 +281,7 @@ unsafe extern "C" fn PxeGetFileInformation(FileId: u32, Information: *mut FILEIN
     (*Information).FileNameLength = strlen(FileName) as u32;
     (*Information).FileNameLength = min((*Information).FileNameLength, (core::mem::size_of_val(&(*Information).FileName) - 1) as u32);
     core::ptr::copy_nonoverlapping(FileName as *const u8, ((*Information).FileName.as_mut_ptr() as *mut u8), (*Information).FileNameLength as usize);
-    (*Information).FileName[(*Information).FileNameLength as usize] = 0;
+    *core::ptr::addr_of_mut!((*Information).FileName).cast::<u8>().add((*Information).FileNameLength as usize) = 0;
 
     TRACE(b"PxeGetFileInformation(%lu) -> FileSize = %lu, FilePointer = 0x%lx\n\0".as_ptr() as PCSTR, (FileId) as usize, ((*Information).EndingAddress.__bindgen_anon_1.LowPart) as usize, ((*Information).CurrentAddress.__bindgen_anon_1.LowPart) as usize);
 

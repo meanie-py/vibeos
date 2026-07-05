@@ -1202,7 +1202,7 @@ pub unsafe extern "C" fn KspQueryBusRelations(
         if !(*DeviceEntry).PDO.is_null()
             && ((*DeviceEntry).DeviceState == NotStarted || (*DeviceEntry).DeviceState == Started)
         {
-            (*DeviceRelations).Objects[(*DeviceRelations).Count as usize] = (*DeviceEntry).PDO;
+            *core::ptr::addr_of_mut!((*DeviceRelations).Objects).cast::<PDEVICE_OBJECT>().add((*DeviceRelations).Count as usize) = (*DeviceEntry).PDO;
             ObReferenceObject((*DeviceEntry).PDO as PVOID);
             (*DeviceRelations).Count += 1;
         }

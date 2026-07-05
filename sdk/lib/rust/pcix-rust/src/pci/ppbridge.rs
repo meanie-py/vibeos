@@ -470,7 +470,7 @@ pub unsafe extern "system" fn PPBridge_GetAdditionalResourceDescriptors(
     if (*PciData).u.type1.BridgeControl & PCI_ENABLE_BRIDGE_VGA as u16 != 0 {
         (*IoDescriptor).Type = CmResourceTypeDevicePrivate as u8;
         (*IoDescriptor).u.DevicePrivate.Data[0] = 3;
-        (*IoDescriptor).u.DevicePrivate.Data[1] = 3;
+        *core::ptr::addr_of_mut!((*IoDescriptor).u.DevicePrivate.Data).cast::<ULONG>().add(1) = 3;
 
         let iodesc1 = IoDescriptor.add(1);
         (*iodesc1).Type = CmResourceTypeMemory as u8;

@@ -43,9 +43,6 @@ extern "system" {
     fn RtlIsLeftChildAvl(Node: PMMADDRESS_NODE) -> BOOLEAN;
     fn MI_WS_OWNER(Process: PEPROCESS) -> BOOLEAN;
 }
-extern "C" {
-    fn CONTAINING_RECORD(address: PVOID, type_size: usize, field_offset: usize) -> PVOID;
-}
 
 
 type TABLE_SEARCH_RESULT = i32;

@@ -1466,7 +1466,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
 
             /* It didn't fit, so proceed to splitting */
         } else {
-            LeafCell = (*IndexKey).List[SubKeyIndex as usize];
+            LeafCell = *core::ptr::addr_of!((*IndexKey).List).cast::<HCELL_INDEX>().add(SubKeyIndex as usize);
             LeafKey = HvGetCell(Hive, LeafCell) as PCM_KEY_INDEX;
 
             if LeafKey.is_null() {
@@ -1492,7 +1492,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
             debug_assert!(Result != 0);
 
             if Result >= 0 {
-                LeafCell = (*IndexKey).List[SubKeyIndex as usize];
+                LeafCell = *core::ptr::addr_of!((*IndexKey).List).cast::<HCELL_INDEX>().add(SubKeyIndex as usize);
                 LeafKey = HvGetCell(Hive, LeafCell) as PCM_KEY_INDEX;
 
                 if LeafKey.is_null() {
@@ -1505,7 +1505,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
                 }
 
                 if (SubKeyIndex + 1) < (*IndexKey).Count as u32 {
-                    LeafCell = (*IndexKey).List[(SubKeyIndex + 1) as usize];
+                    LeafCell = *core::ptr::addr_of!((*IndexKey).List).cast::<HCELL_INDEX>().add((SubKeyIndex + 1) as usize);
                     LeafKey = HvGetCell(Hive, LeafCell) as PCM_KEY_INDEX;
 
                     if LeafKey.is_null() {
@@ -1522,7 +1522,7 @@ pub unsafe extern "system" fn CmpSelectLeaf(
             } else {
                 /* No, it's below, check the subkey index */
                 if SubKeyIndex > 0 {
-                    LeafCell = (*IndexKey).List[(SubKeyIndex - 1) as usize];
+                    LeafCell = *core::ptr::addr_of!((*IndexKey).List).cast::<HCELL_INDEX>().add((SubKeyIndex - 1) as usize);
                     LeafKey = HvGetCell(Hive, LeafCell) as PCM_KEY_INDEX;
 
                     if LeafKey.is_null() {

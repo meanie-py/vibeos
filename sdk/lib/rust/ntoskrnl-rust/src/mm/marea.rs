@@ -40,9 +40,7 @@ use ntkrnl_sys::ddk::{
     SWAPENTRY,
 };
 
-extern "C" {
-    fn CONTAINING_RECORD(ptr: PVOID, type_size: usize, field_offset: usize) -> PVOID;
-}
+
 
 // Local extern declarations with correct calling convention (NTAPI = extern "system").
 // These MUST NOT come from ntkrnl_sys::ddk because bindgen declares some as extern "C",
