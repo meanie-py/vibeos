@@ -607,11 +607,7 @@ mod _force_common_inlines_symbols {
         fn ProbeForWriteLangId();
         fn ProbeForWritePointer();
         fn ProbeForWriteUlong();
-    }
-    extern "system" {
         fn PsGetCurrentThread();
-    }
-    extern "C" {
         fn PspClearCrossThreadFlag();
         fn ReleaseCapturedUnicodeString();
         fn RtlInitEmptyAnsiString();
@@ -711,11 +707,7 @@ mod _force_mm_util_inlines_symbols {
         fn _rs_ProbeForWriteSize_t();
         fn _rs_ProbeForWriteIoStatusBlock();
         fn _rs_ExAllocatePoolZero();
-    }
-    extern "system" {
         fn ExAllocatePoolZero();
-    }
-    extern "C" {
     }
     #[used]
     static REFS: [unsafe extern "C" fn(); 7] = [
@@ -907,18 +899,11 @@ mod _force_shim_symbols {
         fn ExAcquirePushLockExclusive();
         fn ExAcquirePushLockShared();
         fn ExAllocateFromNPagedLookasideList();
-    }
-    extern "system" {
         fn ExAllocateFromPagedLookasideList();
-        fn ExFreeToPagedLookasideList(Lookaside: PGENERIC_LOOKASIDE_POOL, Entry: PVOID);
-    }
-    extern "system" {
-        fn ExFreeToPagedLookasideList();
-    }
-    extern "C" {
         fn ExCompareSwapFastReference();
         fn ExConvertPushLockSharedToExclusive();
         fn ExFreeToNPagedLookasideList();
+        fn ExFreeToPagedLookasideList();
         fn ExGetCountFastReference();
         fn ExGetObjectFastReference();
         fn ExGetRunRefForGivenProcessor();
@@ -938,11 +923,7 @@ mod _force_shim_symbols {
         fn FsRtlExitFileSystem();
         fn HalEndOfBoot();
         fn HalSetWakeEnable();
-    }
-    extern "system" {
         fn IoGetCurrentProcess();
-    }
-    extern "C" {
         fn IS_SWAP_FROM_SSE();
         fn InitializeObjectAttributes();
         fn InsertTailList();
@@ -972,11 +953,7 @@ mod _force_shim_symbols {
         fn KeGetExceptionFrame();
         fn KeGetTrapFrame();
         fn KeGetTrapFrameInterruptState();
-    }
-    extern "system" {
         fn KeInitializeSpinLock();
-    }
-    extern "C" {
         fn KeInvalidateTlbEntry();
         fn KeLeaveGuardedRegionThread();
         fn KeRestoreInterrupts();
@@ -1128,24 +1105,14 @@ mod _force_shim_symbols {
         fn ProbeForWritePointer();
         fn ProbeForWriteSize_t();
         fn ProbeForWriteUlong();
-    }
-    extern "system" {
         fn PsGetCurrentProcess();
-    }
-    extern "C" {
         fn PspClearCrossThreadFlag();
         // Other Psp* wrappers extracted into the ps-inlines rlib (see
         // _force_ps_inlines_symbols above).
         fn RMAP_IS_SEGMENT();
         fn ReleaseCapturedUnicodeString();
-    }
-    extern "system" {
         fn RtlAcquireSRWLockExclusive();
         fn RtlAcquireSRWLockShared();
-        fn RtlReleaseSRWLockExclusive(SRWLock: PRTL_SRWLOCK);
-        fn RtlReleaseSRWLockShared(SRWLock: PRTL_SRWLOCK);
-    }
-    extern "C" {
         fn RtlInitEmptyAnsiString();
         fn RtlInitEmptyUnicodeString();
         fn RtlInitializeSplayLinks();
@@ -1154,14 +1121,10 @@ mod _force_shim_symbols {
         fn RtlIsLeftChild();
         fn RtlLongLongAdd();
         fn RtlParent();
-        fn RtlStringCbCopyA();
-    }
-    extern "system" {
-        fn RtlUnicodeStringToOemSize();
         fn RtlReleaseSRWLockExclusive();
         fn RtlReleaseSRWLockShared();
-    }
-    extern "C" {
+        fn RtlStringCbCopyA();
+        fn RtlUnicodeStringToOemSize();
         fn SWAPENTRY_FROM_SSE();
         fn SeDeleteClientSecurity();
         fn SeLengthSid();
@@ -1279,18 +1242,14 @@ mod _force_shim_symbols {
 
     #[cfg(not(target_arch = "x86"))]
     mod not_x86 {
-        extern "fastcall" {
+        extern "C" {
             fn ExAcquireRundownProtection();
             fn ExInitializeRundownProtection();
             fn ExReleaseRundownProtection();
             fn ExRundownCompleted();
             fn ExWaitForRundownProtectionRelease();
-        }
-        extern "system" {
             fn KeQueryInterruptTime();
             fn KeQuerySystemTime();
-        }
-        extern "C" {
             fn MiIsPdeForAddressValid();
             // devaction.rs PnP functions called from C shims
             fn IopCancelRemoveChildDevices();
@@ -1332,8 +1291,6 @@ mod _force_shim_symbols {
             fn KiGetGdtEntry();
             fn KiSetGdtDescriptorBase();
             fn MiSynchronizeSystemPde();
-        }
-        extern "system" {
             fn RtlFillMemoryUlong();
         }
         #[used]
@@ -1346,7 +1303,7 @@ mod _force_shim_symbols {
 
     #[cfg(target_arch = "x86_64")]
     mod x64 {
-        extern "stdcall" {
+        extern "C" {
             fn KeGetCurrentIrql();
             fn KeGetPcr();
             fn KeLowerIrql();
@@ -1365,10 +1322,6 @@ mod _force_shim_symbols {
             fn KiSendEOI();
             fn KiSetGdtDescriptorBase();
             fn KiSetGdtDescriptorLimit();
-        }
-        extern "stdcall" {
-            fn KeGetCurrentIrql() -> KIRQL;
-            fn KeRaiseIrqlToDpcLevel() -> KIRQL;
             fn RtlFillMemoryUlong();
             fn __lgdt();
             fn __lidt();

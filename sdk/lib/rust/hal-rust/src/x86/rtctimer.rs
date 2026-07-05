@@ -30,6 +30,10 @@ unsafe extern "system" {
     fn KeUpdateSystemTime(TrapFrame: PKTRAP_FRAME, Increment: ULONG, Irql: KIRQL);
     fn KeUpdateRunTime(TrapFrame: PKTRAP_FRAME, Irql: KIRQL);
     // TEMP clock-rate probe.
+}
+
+// variadic — cdecl on all arches (never stdcall)
+extern "C" {
     fn DbgPrint(Format: *const u8, ...) -> u32;
 }
 

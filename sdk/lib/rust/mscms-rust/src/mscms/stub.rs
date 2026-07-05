@@ -2,7 +2,6 @@ use ntdll_sys::nt::*;
 use core::ffi::c_void;
 
 extern "C" {
-    fn FIXME(format: *const i8, ...);
     fn dbgstr_tag(id: u32) -> *const i8;
     fn debugstr_w(s: PCWSTR) -> *const i8;
 }
@@ -10,6 +9,11 @@ extern "C" {
 unsafe extern "system" {
     fn FIXME(format: *const i8, ...);
     fn debugstr_w(s: *const u16) -> *const i8;
+}
+
+// variadic — cdecl on all arches (never stdcall)
+extern "C" {
+    fn FIXME(format: *const i8, ...);
 }
 
 #[no_mangle]

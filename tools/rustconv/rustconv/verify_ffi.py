@@ -218,6 +218,14 @@ def scan_extern_blocks(rs_path: Path, spec: dict, bindgen: dict) -> list[dict]:
       bindgen counts real args and is compared exactly.
     """
     issues = []
+
+    # kernel-rust/src/lib.rs is the symbol-force umbrella: zero-arg extern "C"
+    # placeholder decls feeding `unsafe extern "C" fn()` arrays that pin symbols
+    # into the link. Conventions there are Rust type-system plumbing, not ABI —
+    # a "fix" breaks the arrays (E0308) without changing any call.
+    if rs_path.as_posix().endswith("kernel-rust/src/lib.rs"):
+        return issues
+
     lines = rs_path.read_text().splitlines()
 
     # File-level arch gating: a file only compiled on non-x86 arches (by naming

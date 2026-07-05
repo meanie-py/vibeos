@@ -83,6 +83,12 @@ extern "system" {
     fn USBD_ParseConfigurationDescriptorEx( ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR, StartPosition: PVOID, InterfaceNumber: LONG, AlternateSetting: LONG, InterfaceClass: LONG, InterfaceSubClass: LONG, InterfaceProtocol: LONG, ) -> PUSB_INTERFACE_DESCRIPTOR;
     fn USBD_CreateConfigurationRequestEx( ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR, InterfaceList: PUSBD_INTERFACE_LIST_ENTRY, ) -> PURB;
 }
+
+// variadic — cdecl on all arches (never stdcall)
+extern "C" {
+    fn DbgPrint(Format: *const i8, ...) -> u32;
+    fn RtlStringCbPrintfExW( pszDest: *mut u16, cbDest: usize, ppszDestEnd: *mut *mut u16, pcbRemaining: *mut usize, dwFlags: u32, pszFormat: *const u16, ... ) -> NTSTATUS;
+}
 extern "C" {
     fn USBH_FdoSyncSubmitUrb(DeviceObject: PDEVICE_OBJECT, Urb: PURB) -> NTSTATUS;
     fn USBH_SyncGetPortStatus( HubExtension: PUSBHUB_FDO_EXTENSION, Port: USHORT, PortStatus: PVOID, Length: ULONG, ) -> NTSTATUS;
@@ -98,8 +104,6 @@ extern "C" {
 extern "system" {
     fn InterlockedIncrement(Addend: *mut core::ffi::c_long) -> core::ffi::c_long;
     fn InterlockedDecrement(Addend: *mut core::ffi::c_long) -> core::ffi::c_long;
-    fn DbgPrint(Format: *const i8, ...) -> u32;
-    fn RtlStringCbPrintfExW( pszDest: *mut u16, cbDest: usize, ppszDestEnd: *mut *mut u16, pcbRemaining: *mut usize, dwFlags: u32, pszFormat: *const u16, ... ) -> NTSTATUS;
     fn USBHUB_DumpingIDs(Buffer: *mut core::ffi::c_void);
     fn USBH_CheckDeviceLanguage(DeviceObject: PDEVICE_OBJECT, LanguageId: USHORT) -> NTSTATUS;
     fn USBH_SyncGetStringDescriptor( DeviceObject: PDEVICE_OBJECT, Index: UCHAR, LanguageId: USHORT, Descriptor: PUSB_STRING_DESCRIPTOR, DescriptorLength: ULONG, LengthReturned: *mut ULONG, FlagValue: BOOLEAN, ) -> NTSTATUS;

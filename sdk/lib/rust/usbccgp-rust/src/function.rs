@@ -17,7 +17,12 @@ extern "C" {
 }
 extern "system" {
     fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
+}
+// variadic — cdecl on all arches (never stdcall)
+extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> u32;
+}
+extern "system" {
     fn AllocateItem(PoolType: u32, NumberOfBytes: ULONG) -> *mut core::ffi::c_void;
     fn USBCCGP_GetStringDescriptor( DeviceObject: PDEVICE_OBJECT, DescriptorLength: ULONG, DescriptorIndex: u8, LanguageId: u16, OutDescriptor: *mut PVOID, ) -> NTSTATUS;
     fn FreeItem(Item: PVOID);

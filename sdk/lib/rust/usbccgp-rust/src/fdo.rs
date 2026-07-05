@@ -14,7 +14,12 @@ use core::ffi::c_void;
 extern "system" {
     fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
     fn AllocateItem(PoolType: u32, NumberOfBytes: ULONG) -> PVOID;
+}
+// variadic — cdecl on all arches (never stdcall)
+extern "C" {
     fn DbgPrint(Format: *const i8, ...) -> u32;
+}
+extern "system" {
     fn USBCCGP_SyncUrbRequest(DeviceObject: PDEVICE_OBJECT, Urb: PURB) -> NTSTATUS;
     fn USBCCGP_GetDescriptors(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
     fn USBCCGP_SelectConfiguration( DeviceObject: PDEVICE_OBJECT, FDODeviceExtension: PFDO_DEVICE_EXTENSION, ) -> NTSTATUS;

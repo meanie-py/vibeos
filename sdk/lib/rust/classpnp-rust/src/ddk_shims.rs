@@ -294,18 +294,30 @@ use crate::types::{PTRANSFER_PACKET, PCLASS_PRIVATE_FDO_DATA};
 
 // ============================ Interlocked intrinsics (i386 has no kernel export) ============================
 use core::sync::atomic::{AtomicI32, Ordering};
+// Interlocked* are FASTCALL on i386 (per bindgen/ntoskrnl.spec — decls in class.rs
+// match); plain C on other arches. One body each, cfg'd per convention.
+#[cfg(target_arch = "x86")]
+#[no_mangle] pub unsafe extern "fastcall" fn InterlockedCompareExchange(Dest: *mut i32, Exch: i32, Comp: i32) -> i32 {
+    let a = &*(Dest as *const AtomicI32);
+    match a.compare_exchange(Comp, Exch, Ordering::SeqCst, Ordering::SeqCst) { Ok(v) => v, Err(v) => v }
+}
+#[cfg(not(target_arch = "x86"))]
 #[no_mangle] pub unsafe extern "C" fn InterlockedCompareExchange(Dest: *mut i32, Exch: i32, Comp: i32) -> i32 {
     let a = &*(Dest as *const AtomicI32);
     match a.compare_exchange(Comp, Exch, Ordering::SeqCst, Ordering::SeqCst) { Ok(v) => v, Err(v) => v }
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle] pub unsafe extern "fastcall" fn InterlockedDecrement(Addend: *mut i32) -> i32 {
+    (&*(Addend as *const AtomicI32)).fetch_sub(1, Ordering::SeqCst) - 1
+}
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle] pub unsafe extern "C" fn InterlockedDecrement(Addend: *mut i32) -> i32 {
     (&*(Addend as *const AtomicI32)).fetch_sub(1, Ordering::SeqCst) - 1
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle] pub unsafe extern "fastcall" fn InterlockedExchange(Target: *mut i32, Value: i32) -> i32 {
+    (&*(Target as *const AtomicI32)).swap(Value, Ordering::SeqCst)
+}
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle] pub unsafe extern "C" fn InterlockedExchange(Target: *mut i32, Value: i32) -> i32 {
     (&*(Target as *const AtomicI32)).swap(Value, Ordering::SeqCst)

@@ -17,6 +17,11 @@ extern "system" {
     fn ExInterlockedPopEntryList(ListHead: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY, Lock: *mut u64) -> *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY;
     fn ExInterlockedPushEntryList(ListHead: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY, ListEntry: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY, Lock: *mut u64) -> *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY;
 }
+
+// variadic — cdecl on all arches (never stdcall)
+extern "C" {
+    fn StorDebugPrint(level: u32, flags: u32, msg: *const i8, ...);
+}
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{_SRBEXDATATYPE_SrbExDataTypeScsiCdb16 as SrbExDataTypeScsiCdb16, _STORAGE_FAILURE_PREDICT_DATA as STORAGE_FAILURE_PREDICT_DATA, _STORAGE_FAILURE_PREDICT_STATUS as STORAGE_FAILURE_PREDICT_STATUS};
 use ntkrnl_sys::constants::{STATUS_INVALID_DEVICE_REQUEST};
@@ -46,7 +51,6 @@ extern "system" {
 }
 extern "system" {
     fn KeFlushIoBuffers(Mdl: *mut core::ffi::c_void, ReadOperation: i32, DmaOperation: i32) -> i32;
-    fn StorDebugPrint(level: u32, flags: u32, msg: *const i8, ...);
     fn REVERSE_BYTES(Dst: *mut u8, Src: *const u8);
     fn PAGED_CODE();
     fn FREE_POOL(ptr: *mut core::ffi::c_void);

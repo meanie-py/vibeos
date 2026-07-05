@@ -1,6 +1,6 @@
-  C_MACRO: 126
+  C_MACRO: 113
   FLEX_ARRAY: 118
-  TOTAL: 244 issues across 2335 files
+  TOTAL: 231 issues across 2335 files
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/cachesup.rs:170: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/close.rs:45: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/create.rs:137: RtlCopyMemory: RtlCopyMemory is a C macro, not a real function — should be inlined in Rust
@@ -40,19 +40,6 @@
   [C_MACRO] sdk/lib/rust/hal-rust/src/x86/pcibus.rs:295: KeReleaseSpinLock: KeReleaseSpinLock is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/kbdhid-rust/src/glue.rs:138: RtlMoveMemory: RtlMoveMemory is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ke-inlines/src/lib.rs:171: KeReleaseSpinLock: KeReleaseSpinLock is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kernel-rust/src/lib.rs:1113: ObReferenceObject: ObReferenceObject is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kernel-rust/src/lib.rs:595: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kernel-rust/src/lib.rs:596: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kernel-rust/src/lib.rs:902: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kernel-rust/src/lib.rs:928: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kernel-rust/src/lib.rs:947: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kernel-rust/src/lib.rs:948: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kernel-rust/src/lib.rs:956: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kernel-rust/src/lib.rs:958: IoGetNextIrpStackLocation: IoGetNextIrpStackLocation is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kernel-rust/src/lib.rs:959: IoMarkIrpPending: IoMarkIrpPending is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kernel-rust/src/lib.rs:961: IoSetCompletionRoutine: IoSetCompletionRoutine is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kernel-rust/src/lib.rs:962: IoSetNextIrpStackLocation: IoSetNextIrpStackLocation is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/kernel-rust/src/lib.rs:963: IoSkipCurrentIrpStackLocation: IoSkipCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ks-rust/src/glue.rs:207: ExRaiseStatus: ExRaiseStatus is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/mountmgr-rust/src/device.rs:5915: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntkrnl-sys/src/ke.rs:276: KeReleaseSpinLock_impl: KeReleaseSpinLock is a C macro, not a real function — should be inlined in Rust
