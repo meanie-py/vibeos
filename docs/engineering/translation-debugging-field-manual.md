@@ -2685,3 +2685,46 @@ font/driver dispatch path (PFE/PDEV/DRVFN tables — cf. the long-standing
 `LDEVOBJ_bEnableDriver` `Option<unsafe extern fn>` PFN/DRVFN layout suspect).
 Next diagnostic on a repro: special-pool / GDB watchpoint on the dispatch
 table slot, not PC symbolication.
+
+### 9.18 Special pool is LIVE — arm it per-boot via the fw_cfg tripwire channel (no media rebuild)
+
+**The tool §9.17 asks for exists now (2026-07-05).** Special pool
+(`ARM3/special.rs`) was fully translated but dead — `MmSpecialPoolTag` was
+never set by anything. The tripwire channel arms it per boot:
+
+```bash
+# One suspect tag (as DISPLAYED in pool dumps, e.g. Gla5 / Usqu):
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Gla5"
+# Every eligible allocation (≤ PAGE_SIZE - header) — boots green to desktop:
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=*"
+# Catch underruns instead of overruns:
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Gla5 SPECIALPOOL_UNDERRUNS=1"
+# Prove the detector end-to-end (deliberate corruption => bugcheck):
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Vibe SPECIALPOOL_SELFTEST=guard"    # 0x50 AT the store
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Vibe SPECIALPOOL_SELFTEST=pattern"  # 0xC1/0x23 at free
+```
+
+What you get on a hit, on serial, zero GDB: an overrun past the allocation
+faults the **guard page at the corrupting instruction** — BUGCHECK 0x50 whose
+banner symbolicates `TrapFrame.Rip` to the culprit; in-page slack corruption
+bugchecks 0xC1 at free with case code (0x23 before-buffer / 0x24 after).
+Underrun mode flips data to page start. Serial markers: `[TRIPWIRE] special
+pool armed/ACTIVE` (assert these when scripting; `ERROR:` lines are the
+fail-loud path).
+
+Mechanics: harness passes `-fw_cfg name=opt/org.vibeos.tripwire,string=…`
+(vm.py `_tripwire_args`, env `VIBEOS_TRIPWIRE`); the kernel reads it at
+`MmArmInitSystem` Phase 0 (`ntoskrnl-rust/src/tripwire.rs`, x86 port I/O
+0x510/0x511) BEFORE PTE sizing + `MiInitializeSpecialPool`. x86 only for now
+(arm64 fw_cfg is MMIO on virt — stub returns; wire an early device mapping to
+extend). Tokens are space/semicolon-separated; **no commas** (QEMU owns the
+comma). Tags are `from_le_bytes` of the display form. Session-pool allocs are
+NOT excluded — win32k allocations divert into (global) special pool, which is
+exactly what the §9.17 / BAD-gate hunts want; watch for session-VA-assumption
+side effects if a hunt behaves oddly.
+
+Pair with the flake farm for rare flakes: `./vibeos-cli farm --arches amd64
+--minutes 480 --tripwire "SPECIALPOOL=*"` soaks boots overnight into
+`~/vibeos-flake-farm/corpus.jsonl` (stop code + symbolicated banner lines per
+failure, artifacts preserved out of /tmp); `./vibeos-cli farm-report` clusters
+failures into ranked (classification, stop, symbol) families.
