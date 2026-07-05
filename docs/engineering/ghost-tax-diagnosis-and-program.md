@@ -235,11 +235,31 @@ marker/retry claims.
    repro gauge (`repro verify`) becomes a weekly scheduled check. This converts
    the dead warm-WARN into a real invariant without making every iteration pay
    the ~5 min cold cost.
-3. **Gate runs the lint arsenal in blocking mode**: `gate` invokes
-   `check --strict` (baseline-diff NEW=0) + binary lints per built arch. The
-   baselines make this a no-new-regressions bar, not a boil-the-ocean bar.
-   Prerequisite hygiene: a **single-tool** `--update-baseline <tool>` so
-   accepting one tool's FP never silently blesses another tool's regression.
+3. **Gate runs the lint arsenal in blocking mode** — **DONE 2026-07-05
+   (ghosts-writeup).** `gate` now has a BLOCKING lint phase (`gate.py:_lint_gate`)
+   that runs the full `check --strict` arsenal — source lints (baseline-diff
+   NEW=0), the cargo-link/committed-drift bit-rot guards, and per-arch binary
+   lints (scan_ud2/sacred) against the just-built binaries — AFTER builds and
+   BEFORE the (minutes-long) smokes, so a NEW finding fails fast and never
+   reaches the push stamp (the stamp guard also gained a `verdict != FAIL`
+   defense-in-depth). Fail classification is `LINT_GATE`. The baselines make
+   this a no-new-regressions bar, not boil-the-ocean.
+   Prerequisite hygiene **also DONE**: a **single-tool**
+   `--update-baseline <TOOL[,TOOL...]>` (`lints.write_baselines(only=…)`,
+   `debugcmd.check`) so accepting one tool's FP never silently blesses another
+   tool's regression; bare `--update-baseline` still does the blanket rewrite
+   (labelled a footgun in `--help`), and every update now prints the exact
+   `+added/-removed` delta so blessing a NEW finding is never silent.
+   **Validation of the D2 thesis:** wiring enforcement immediately red-walled a
+   tree that had been rolling "green" — `check --strict` was failing on the
+   *clean* HEAD with 25 stale `lint_kernel` findings (relocated by the landed mm
+   line-shifts), 3 new silent-failure findings (2 guarded `sctrl.rs` unwraps + a
+   win32k panic-handler halt-loop), and 5 drifted widl RPC stubs (the generator
+   gained an `as u32` cast; the committed fallbacks were never refreshed). None
+   were real regressions, but *nothing had been enforcing the lints*, so the
+   drift accumulated invisibly — exactly D2. All cleaned up before landing (unwraps
+   → `if let Some`, halt-loop `nolint`-suppressed, stubs regenerated, baseline
+   per-tool-updated); `check --strict` and the gate lint phase are now green ×3-arch.
 4. **verify_abi internal-symbol coverage**: harvest Rust-side `#[no_mangle]`
    defs (the `verify_signatures` harvest already exists) and check every
    def↔decl pair crate-wide, not just spec/bindgen names. This is the #1

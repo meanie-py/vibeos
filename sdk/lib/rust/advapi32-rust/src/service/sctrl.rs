@@ -509,23 +509,23 @@ unsafe fn ScControlService(lpService: PACTIVE_SERVICE,
 
     dwControl = (*ControlPacket).dwControl;
 
-    if (*lpService).HandlerFunction.is_some() {
+    if let Some(handler) = (*lpService).HandlerFunction {
         if ((dwControl >= SERVICE_CONTROL_STOP) && (dwControl <= SERVICE_CONTROL_NETBINDDISABLE)) ||
            ((dwControl >= 128) && (dwControl <= 255)) {
-            ((*lpService).HandlerFunction.unwrap())(dwControl);
+            handler(dwControl);
         } else {
             dwError = ERROR_INVALID_SERVICE_CONTROL;
         }
-    } else if (*lpService).HandlerFunctionEx.is_some() {
+    } else if let Some(handler_ex) = (*lpService).HandlerFunctionEx {
         if dwControl == SERVICE_CONTROL_DEVICEEVENT {
             dwEventType = *((ControlPacket as ULONG_PTR + core::mem::size_of::<SCM_CONTROL_PACKET>() as ULONG_PTR) as LPDWORD);
             pEventData = (ControlPacket as ULONG_PTR + core::mem::size_of::<SCM_CONTROL_PACKET>() as ULONG_PTR + core::mem::size_of::<DWORD>() as ULONG_PTR) as PVOID;
         }
 
-        ((*lpService).HandlerFunctionEx.unwrap())(dwControl,
-                                                  dwEventType,
-                                                  pEventData,
-                                                  (*lpService).HandlerContext);
+        handler_ex(dwControl,
+                   dwEventType,
+                   pEventData,
+                   (*lpService).HandlerContext);
     } else {
         dwError = ERROR_SERVICE_CANNOT_ACCEPT_CTRL;
     }

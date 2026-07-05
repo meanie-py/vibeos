@@ -12,6 +12,12 @@ was serial was the *orchestrator* — i.e. the human. This driver removes that:
 
   1. builds — serial (still gated by the exclusive host CPU lease; parallel builds
      are a separate follow-up, see docs/engineering). Opt out with --no-build.
+  1.5. lint gate (BLOCKING) — the full `check --strict` arsenal (source lints
+     baseline-diff NEW=0, cargo-link/committed-drift bit-rot guards, per-arch
+     binary lints) runs AFTER builds and BEFORE smokes. A NEW finding fails the
+     gate fast (classification LINT_GATE) and never reaches the push stamp —
+     closing the "detection without enforcement" gap where these lints ran
+     warn-only in `build` and nothing forced `check --strict` before a land.
   2. smokes — ALL arches launched concurrently. Wall-clock goes sum -> max.
   3. flake-retries — a *documented* flake (KNOWN_FLAKE / FLAKY), an environment
      failure (LAUNCH_FAIL), or a contention-characterized HANG_TIMEOUT (serial
@@ -39,7 +45,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import archcfg
+from . import archcfg, lints
 from .artifacts import Run, Stage
 
 # A failure with one of these classifications is a *documented* flake or an
@@ -71,6 +77,39 @@ def _retryable(classification: str, summary: dict) -> bool:
     if classification == "HANG_TIMEOUT":
         return summary.get("hang_kind") == "slow" and not summary.get("wedge_confirmed")
     return False
+
+
+def _lint_gate(run: Run, repo: Path, arches: list[str]) -> bool:
+    """BLOCKING lint gate (T2 item 1 — the D2 "detection without enforcement"
+    closure). Runs the SAME strict lint arsenal as `check --strict` — source
+    lints (baseline-diff, strict), the cargo-link / committed-drift bit-rot
+    guards, and the per-arch binary lints (scan_ud2 / sacred primitives) against
+    the just-built binaries — as a gate PHASE, so a NEW finding fails the gate
+    and (via the stamp guard below) is never minted into a push credential.
+
+    Before this, the lints ran WARN-only inside `build` (build.py) and
+    `check --strict` was a separate manual step nothing forced — so a lint
+    regression (an unprotected output write, a silent panic-loop, an ABI/enum
+    drift, a ud2 miscompile) could ride onto master through the sanctioned
+    build→gate→stamp→push path with nothing to stop it. That is precisely the
+    ghost that shipped the stale arm64 trap.S (a lint existed; it didn't block).
+
+    Runs AFTER builds (binaries + fresh build dirs exist for the binary lints
+    and drift guards) and BEFORE the slower parallel smokes, so a lint
+    regression fails fast without burning three QEMU boots. Returns True iff no
+    lint stage failed. SKIPs (absent nightly / build dir) are not failures."""
+    before = len(run.stages)
+    run.log("lint gate: strict source + guards + per-arch binary lints", header="lint-gate")
+    lints.run_source_lints(run, repo, strict=True)
+    # off-default-path bit-rot guards (match `check --strict`): cargo-link
+    # defaults to i386 (the only arch with all three link PoCs); committed-drift
+    # with arch=None checks every arch it finds a build dir for. Both self-skip
+    # cleanly when a prerequisite (nightly / build-<arch>) is absent.
+    lints.run_cargo_link_guard(run, repo, None)
+    lints.run_committed_drift_guard(run, repo, None)
+    for arch in arches:
+        lints.run_binary_lints(run, repo, arch, strict=True)
+    return not any(s.status == "fail" for s in run.stages[before:])
 
 
 def _smoke_once(repo: Path, arch: str, root: Path, extra: list[str]) -> dict:
@@ -227,6 +266,17 @@ def gate(args, repo: Path) -> int:
             run.classification = "BUILD_FAIL"
             return run.finalize(repo)
 
+    # --- phase 1.5: BLOCKING lint gate (enforce, don't just detect) ---
+    # A NEW lint finding must stop the land, not merely warn: fail fast here,
+    # before the (minutes-long) parallel smokes, and never reach the push stamp.
+    if not _lint_gate(run, repo, arches):
+        # _lint_gate already added the failing stage(s); mark the run failed
+        # explicitly so the exit code doesn't depend on that side-effect.
+        run.verdict = "FAIL"
+        run.classification = "LINT_GATE"
+        run.extra["arches"] = arches
+        return run.finalize(repo)
+
     # --- phase 2: first-pass smokes, all arches in parallel ---
     max_workers = min(len(arches) * (1 + retries), 12) or 1
     results: dict[str, dict] = {}
@@ -307,7 +357,11 @@ def gate(args, repo: Path) -> int:
         and all(results.get(a, {}).get("ok") for a in requested)
         and len(results) == len(requested)
     )
-    if all_ok:
+    # Defense-in-depth: never mint the credential when ANY stage failed. The
+    # lint gate already fail-fast-returns above, so a lint failure can't reach
+    # here — but a future stage added between here and the smokes must not be
+    # able to slip past an all_ok computed only over smoke results.
+    if all_ok and run.verdict != "FAIL":
         _write_gate_stamp(run, repo, requested)
 
     run.extra["arches"] = arches
