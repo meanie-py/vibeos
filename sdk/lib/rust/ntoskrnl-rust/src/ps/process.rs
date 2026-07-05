@@ -96,6 +96,8 @@ extern "C" {
     fn PspPrioritySeparationFromMask(mask: ULONG) -> ULONG;
     fn PspQuantumTypeFromMask(mask: ULONG) -> ULONG;
     fn PspQuantumLengthFromMask(mask: ULONG) -> ULONG;
+}
+extern "system" {
     fn PsGetCurrentThread() -> PETHREAD;
 }
 extern "C" {

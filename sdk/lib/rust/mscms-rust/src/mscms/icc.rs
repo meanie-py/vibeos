@@ -1,7 +1,7 @@
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 
-extern "C" {
+extern "fastcall" {
     fn RtlUlongByteSwap(ul: u32) -> u32;
     fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
 }

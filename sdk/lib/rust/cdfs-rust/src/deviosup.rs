@@ -149,7 +149,7 @@ extern "system" {
 extern "C" {
     fn ClearFlag(flags: *mut u32, mask: u32);
 }
-extern "C" {
+extern "system" {
     fn KeFlushIoBuffers(mdl: *mut MDL, flush_io: i32, flush_cpu_cache: i32);
 }
 extern "C" {

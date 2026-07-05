@@ -10,7 +10,7 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ddk::{_DEVICE_RELATION_TYPE_BusRelations as BusRelations, DEVICE_RELATIONS, INT32, IoAllocateWorkItem, IoCopyCurrentIrpStackLocationToNext, IoDeleteDevice, IoDetachDevice, IoForwardIrpSynchronously, IoFreeWorkItem, IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation, IoStopTimer, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP};
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR);
 }
 

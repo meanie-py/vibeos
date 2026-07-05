@@ -902,7 +902,7 @@ extern "system" {
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
-extern "C" {
+extern "system" {
     pub fn IoWMIDeviceObjectToProviderId(DeviceObject: PDEVICE_OBJECT) -> ULONG;
     
 }

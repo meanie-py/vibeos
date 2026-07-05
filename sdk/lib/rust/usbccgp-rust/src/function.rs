@@ -15,7 +15,7 @@ use core::ffi::c_void;
 extern "C" {
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
 }
-extern "C" {
+extern "system" {
     fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
     fn DbgPrint(Format: PCSTR, ...) -> u32;
     fn AllocateItem(PoolType: u32, NumberOfBytes: ULONG) -> *mut core::ffi::c_void;

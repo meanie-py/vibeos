@@ -20,7 +20,7 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
-extern "C" {
+extern "system" {
     fn ExAllocateFromPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::_PAGED_LOOKASIDE_LIST) -> PVOID;
     fn ExFreeToPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::_PAGED_LOOKASIDE_LIST, Entry: PVOID);
 }

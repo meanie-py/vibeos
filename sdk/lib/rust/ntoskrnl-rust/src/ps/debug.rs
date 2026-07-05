@@ -24,7 +24,7 @@ extern "system" {
         timeout: PVOID,
     ) -> NTSTATUS;
 }
-extern "C" {
+extern "system" {
     fn PsGetCurrentThread() -> PETHREAD;
 }
 

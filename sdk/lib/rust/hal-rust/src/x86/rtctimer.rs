@@ -26,7 +26,7 @@ unsafe fn KiEnterInterruptTrap(_TrapFrame: PKTRAP_FRAME) {}
 
 // KeUpdateSystemTime + KeUpdateRunTime are exported by ntoskrnl.exe.
 // Use the kernel import library (matches the C HAL path).
-unsafe extern "C" {
+unsafe extern "system" {
     fn KeUpdateSystemTime(TrapFrame: PKTRAP_FRAME, Increment: ULONG, Irql: KIRQL);
     fn KeUpdateRunTime(TrapFrame: PKTRAP_FRAME, Irql: KIRQL);
     // TEMP clock-rate probe.
@@ -43,7 +43,7 @@ unsafe fn KiEndInterrupt(Irql: KIRQL, TrapFrame: PKTRAP_FRAME) {
     HalEndSystemInterrupt(Irql as u32, TrapFrame as _);
 }
 
-unsafe extern "C" {
+unsafe extern "system" {
     // Provided by another hal-rust module (apic_halinit.rs / pic_halinit.rs).
     fn HalEnableSystemInterrupt(Vector: ULONG, Irql: KIRQL, Mode: u32) -> u8;
     // Provided by HAL itself (apic_halinit / apic.c).

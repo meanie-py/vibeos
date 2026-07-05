@@ -44,7 +44,7 @@ extern "system" {
     fn ClassFindModePage( DataBuffer: *mut i8, DataBufferLength: u32, PageMode: u8, Reposition: i32, ) -> *mut core::ffi::c_void;
     fn ExFreePool(P: *mut core::ffi::c_void);
 }
-extern "C" {
+extern "system" {
     fn KeFlushIoBuffers(Mdl: *mut core::ffi::c_void, ReadOperation: i32, DmaOperation: i32) -> i32;
     fn StorDebugPrint(level: u32, flags: u32, msg: *const i8, ...);
     fn REVERSE_BYTES(Dst: *mut u8, Src: *const u8);

@@ -357,7 +357,7 @@ extern "fastcall" {
     fn ObfDereferenceObject(Object: PVOID) -> ULONG;
 }
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn ObfDereferenceObject(Object: PVOID) -> ULONG;
 }
 extern "system" {

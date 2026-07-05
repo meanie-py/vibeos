@@ -25,9 +25,11 @@ extern "C" {
     fn USBSTOR_QueueResetDevice(FDODeviceExtension: PFDO_DEVICE_EXTENSION);
     fn USBSTOR_QueueTerminateRequest(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
     fn SrbGetCdb(Srb: PSCSI_REQUEST_BLOCK) -> PCDB;
-    fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: PCHAR, );
     fn DbgPrint(Format: PCSTR, ...) -> ULONG;
     fn USBSTOR_QueueNextRequest(DeviceObject: PDEVICE_OBJECT);
+}
+extern "system" {
+    fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: PCHAR, );
 }
 
 // ---- file-scope preamble (translated) ----

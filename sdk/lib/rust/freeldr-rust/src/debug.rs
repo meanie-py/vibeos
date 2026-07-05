@@ -18,6 +18,8 @@ extern "C" {
     fn Rs232PortPutByte(b: u8);
     fn MachConsPutChar(c: i32);
     fn WRITE_PORT_UCHAR(port: *mut u8, val: u8);
+}
+extern "system" {
     fn DbgBreakPoint();
 }
 

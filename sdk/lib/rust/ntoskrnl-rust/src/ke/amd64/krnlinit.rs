@@ -32,6 +32,8 @@ extern "C" {
     static mut RtlpUse16ByteSLists: BOOLEAN;
     fn KiCpuId(CpuInfo: *mut CPU_INFO, function: ULONG);
     fn __rdtsc() -> u64;
+}
+extern "system" {
     fn KiGetCacheInformation();
     fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
     fn _enable();

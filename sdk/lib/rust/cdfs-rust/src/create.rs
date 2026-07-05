@@ -133,7 +133,7 @@ extern "C" {
 extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
 }
-extern "C" {
+extern "system" {
     fn RtlCopyMemory(Destination: *mut core::ffi::c_void, Source: *const core::ffi::c_void, Length: usize);
 }
 extern "C" {

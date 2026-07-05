@@ -3454,6 +3454,12 @@ extern "system" {
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    pub fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
+    pub fn InterlockedDecrement(Addend: *mut LONG) -> LONG;
+}
+#[cfg(not(target_arch = "x86"))]
 extern "C" {
     pub fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
     pub fn InterlockedDecrement(Addend: *mut LONG) -> LONG;

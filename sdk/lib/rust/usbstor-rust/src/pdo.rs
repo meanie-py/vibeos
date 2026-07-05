@@ -15,15 +15,21 @@ use core::ffi::c_void;
 extern "C" {
     fn sprintf(buf: *mut ::core::ffi::c_char, fmt: *const ::core::ffi::c_char, ...) -> ::core::ffi::c_int;
     fn strlen(s: *const ::core::ffi::c_char) -> usize;
+}
+extern "system" {
     fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR);
 }
 extern "C" {
     fn RtlStringCchPrintfW( pszDest: NTSTRSAFE_PWSTR, cchDest: size_t, pszFormat: NTSTRSAFE_PCWSTR, ... ) -> NTSTATUS;
+}
+extern "system" {
     fn IoAllocateMdl( VirtualAddress: PVOID, Length: ULONG, SecondaryBuffer: BOOLEAN, ChargeQuota: BOOLEAN, Irp: PIRP, ) -> PMDL;
     fn IoFreeMdl(Mdl: PMDL);
     fn MmBuildMdlForNonPagedPool(MemoryDescriptorList: PMDL);
     fn IoAllocateIrp(StackSize: i8, ChargeQuota: BOOLEAN) -> PIRP;
     fn IoFreeIrp(Irp: PIRP);
+}
+extern "C" {
     fn IoSetCompletionRoutine( Irp: PIRP, CompletionRoutine: Option< unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PVOID) -> NTSTATUS, >, Context: PVOID, InvokeOnSuccess: BOOLEAN, InvokeOnError: BOOLEAN, InvokeOnCancel: BOOLEAN, );
     fn DbgPrint(Format: PCSTR, ...) -> u32;
 }

@@ -17,10 +17,13 @@ use core::ffi::c_void;
 
 extern "C" {
     pub static mut InfpHeap: *mut c_void;
-    fn RtlAllocateHeap(HeapHandle: *mut c_void, Flags: ULONG, Size: SIZE_T) -> *mut c_void;
-    fn RtlFreeHeap(HeapHandle: *mut c_void, Flags: ULONG, BaseAddress: *mut c_void);
     fn DbgPrint(fmt: *const u8, ...) -> i32;
     fn wcscpy(dst: *mut u16, src: *const u16) -> *mut u16;
+}
+
+extern "system" {
+    fn RtlAllocateHeap(HeapHandle: *mut c_void, Flags: ULONG, Size: SIZE_T) -> *mut c_void;
+    fn RtlFreeHeap(HeapHandle: *mut c_void, Flags: ULONG, BaseAddress: *mut c_void);
 
     fn NtOpenFile(
         FileHandle:       *mut HANDLE,

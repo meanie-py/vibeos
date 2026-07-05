@@ -21,6 +21,8 @@ extern "C" {
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
     fn PortFdoScsi(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
     fn PortPdoScsi(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+}
+extern "system" {
     fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
     fn TranslateResourceListAddress( DeviceExtension: PFDO_DEVICE_EXTENSION, BusType: INTERFACE_TYPE, SystemIoBusNumber: ULONG, IoAddress: STOR_PHYSICAL_ADDRESS, NumberOfBytes: ULONG, InIoSpace: BOOLEAN, TranslatedAddress: PPHYSICAL_ADDRESS, ) -> BOOLEAN;
     fn AllocateAddressMapping( MappedAddressList: PLIST_ENTRY, IoAddress: STOR_PHYSICAL_ADDRESS, MappedAddress: PVOID, NumberOfBytes: ULONG, SystemIoBusNumber: ULONG, ) -> NTSTATUS;

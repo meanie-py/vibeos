@@ -62,7 +62,7 @@ extern "fastcall" {
     fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
 }
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn InterlockedCompareExchange(destination: *mut LONG, exchange: LONG, comparand: LONG) -> LONG;
 }
 #[cfg(target_arch = "x86")]
@@ -70,7 +70,7 @@ extern "fastcall" {
     fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG;
 }
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG;
 }
 

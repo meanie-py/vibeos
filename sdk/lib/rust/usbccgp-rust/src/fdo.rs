@@ -11,7 +11,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{_DEVICE_RELATION_TYPE_BusRelations as BusRelations, DEVICE_CAPABILITIES, DEVICE_RELATIONS, ExFreePool, _KWAIT_REASON_Executive, IRP, IoAllocateIrp, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoForwardIrpSynchronously, IoFreeIrp, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation, IoInvalidateDeviceRelations, IoMarkIrpPending, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, LIST_ENTRY, _EVENT_TYPE_NotificationEvent, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP, PRKEVENT};
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
     fn AllocateItem(PoolType: u32, NumberOfBytes: ULONG) -> PVOID;
     fn DbgPrint(Format: *const i8, ...) -> u32;

@@ -138,10 +138,12 @@ extern "C" {
     ) -> NTSTATUS;
     fn PspSetProcessFlag(Process: PEPROCESS, Flags: ULONG) -> ULONG;
     fn PspSetCrossThreadFlag(Thread: PETHREAD, Flags: ULONG) -> ULONG;
+    fn NtCurrentProcess() -> HANDLE;
+}
+extern "system" {
     #[link_name = "IoGetCurrentProcess"]
     fn PsGetCurrentProcess() -> PEPROCESS;
     fn PsGetCurrentThread() -> PETHREAD;
-    fn NtCurrentProcess() -> HANDLE;
 }
 extern "system" {
     fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);

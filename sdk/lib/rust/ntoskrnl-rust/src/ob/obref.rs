@@ -30,6 +30,8 @@ pub const MAX_FAST_REFS: LONG = 7;
 
 extern "C" {
     static mut PsThreadType: POBJECT_TYPE;
+}
+extern "system" {
     fn PsGetCurrentThread() -> *mut _ETHREAD;
 }
 

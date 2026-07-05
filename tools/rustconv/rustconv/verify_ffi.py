@@ -124,71 +124,79 @@ def parse_spec(spec_path: Path) -> dict[str, dict]:
 
 
 def parse_bindgen(bindgen_path: Path) -> dict[str, dict]:
-    """Parse bindgen_i386.rs → {name: {conv, param_count, return_type}} mapping."""
+    """Parse bindgen_i386.rs → {name: {conv, param_count, return_type}} mapping.
+
+    Declarations are buffered from `pub fn` to `;` and params counted by splitting
+    on top-level commas (the old per-line counter miscounted every declaration whose
+    param list and return type were split across lines).
+    """
     catalog = {}
     if not bindgen_path.exists():
         return catalog
 
-    current_conv = None
-    in_fn = False
-    fn_name = None
-    param_count = 0
-    return_type = None
-
-    extern_re = re.compile(r'^\s*unsafe\s+extern\s+"(\w+)"')
+    extern_re = re.compile(r'^\s*(?:pub\s+)?unsafe\s+extern\s+"(\w+)"')
     fn_start_re = re.compile(r"^\s*pub\s+fn\s+(\w+)\s*\(")
-    fn_end_re = re.compile(r"\)\s*(?:->.*)?;")
-    param_re = re.compile(r"^\s*\w+\s*:")
+
+    def count_params(decl: str) -> int:
+        decl = decl.replace("->", "\u2192")
+        try:
+            open_i = decl.index("(")
+        except ValueError:
+            return 0
+        depth, close_i = 0, -1
+        for i in range(open_i, len(decl)):
+            if decl[i] in "([<":
+                depth += 1
+            elif decl[i] in ")]>":
+                depth -= 1
+                if depth == 0:
+                    close_i = i
+                    break
+        if close_i < 0:
+            return 0
+        inner = decl[open_i + 1 : close_i]
+        parts, depth, cur = [], 0, []
+        for ch in inner:
+            if ch in "([<":
+                depth += 1
+            elif ch in ")]>":
+                depth -= 1
+            if ch == "," and depth == 0:
+                parts.append("".join(cur))
+                cur = []
+            else:
+                cur.append(ch)
+        parts.append("".join(cur))
+        return len([q for q in parts if ":" in q])  # `...` varargs not counted (spec omits them)
+
+    current_conv = None
+    fn_name = None
+    fn_buf = None
 
     for line in bindgen_path.read_text().splitlines():
-        m = extern_re.match(line)
-        if m:
-            current_conv = m.group(1)
-            continue
-        if line.strip() == "}":
-            if not in_fn:
+        if fn_buf is None:
+            m = extern_re.match(line)
+            if m:
+                current_conv = m.group(1)
+                continue
+            if line.strip() == "}":
                 current_conv = None
-            continue
-
-        if not in_fn:
+                continue
             m = fn_start_re.match(line)
             if m and current_conv:
                 fn_name = m.group(1)
-                in_fn = True
-                param_count = 0
-                # Check if single-line fn
-                if fn_end_re.search(line):
-                    # Count params on this line
-                    params_part = line[line.index("(") + 1 : line.rindex(")")]
-                    param_count = (
-                        len([p for p in params_part.split(",") if ":" in p])
-                        if params_part.strip()
-                        else 0
-                    )
-                    ret_match = re.search(r"->\s*(\S+)", line)
-                    return_type = ret_match.group(1).rstrip(";") if ret_match else "void"
-                    catalog[fn_name] = {
-                        "conv": current_conv,
-                        "params": param_count,
-                        "ret": return_type,
-                    }
-                    in_fn = False
-                else:
-                    # Count first line params
-                    after_paren = line[line.index("(") + 1 :]
-                    if param_re.match(after_paren.strip()):
-                        param_count = 1
+                fn_buf = line.strip()
         else:
-            if fn_end_re.search(line):
-                # Last line of fn — might have a param and return type
-                if param_re.match(line.strip()):
-                    param_count += 1
-                ret_match = re.search(r"->\s*(\S+)", line)
-                return_type = ret_match.group(1).rstrip(";") if ret_match else "void"
-                catalog[fn_name] = {"conv": current_conv, "params": param_count, "ret": return_type}
-                in_fn = False
-            elif param_re.match(line.strip()):
-                param_count += 1
+            fn_buf += " " + line.strip()
+
+        if fn_buf is not None and fn_buf.rstrip().endswith(";"):
+            ret_match = re.search(r"->\s*(\S+)\s*;\s*$", fn_buf)
+            catalog[fn_name] = {
+                "conv": current_conv,
+                "params": count_params(fn_buf),
+                "ret": ret_match.group(1) if ret_match else "void",
+            }
+            fn_buf = None
 
     return catalog
 
@@ -197,130 +205,208 @@ def parse_bindgen(bindgen_path: Path) -> dict[str, dict]:
 
 
 def scan_extern_blocks(rs_path: Path, spec: dict, bindgen: dict) -> list[dict]:
-    """Scan for ABI, param count, and C macro issues in extern blocks."""
+    """Scan for ABI, param count, and C macro issues in extern blocks.
+
+    Parser notes (each fixed a real false-positive class, 2026-07-05):
+    - fn declarations are BUFFERED from `fn` to `;` and params counted by splitting
+      on top-level commas — continuation lines holding several params used to count
+      as one, flagging every wrapped multi-param decl as an arity mismatch.
+    - a #[cfg] that excludes i386 (not(target_arch = "x86")) suppresses ABI findings:
+      stdcall/fastcall are i386-isms; on amd64/arm64 extern "C" is the same ABI.
+    - spec param counts are i386 STACK SLOTS (LONGLONG/ULONGLONG/double = 2), so a
+      spec-based arity check only flags rust_params > spec_slots (a definite bug);
+      bindgen counts real args and is compared exactly.
+    """
     issues = []
     lines = rs_path.read_text().splitlines()
 
-    current_conv = None
-    in_extern = False
-    brace_depth = 0
-    pending_link_name = None
+    # File-level arch gating: a file only compiled on non-x86 arches (by naming
+    # convention: *_amd64.rs / *_arm64.rs, or an amd64/ / arm64/ path segment)
+    # can't produce i386 ABI bugs — suppress ABI findings exactly like a
+    # not(target_arch="x86") cfg block. i386-suffixed files stay fully checked.
+    parts = set(rs_path.parts)
+    stem = rs_path.stem
+    file_skips_x86 = (
+        stem.endswith("_amd64")
+        or stem.endswith("_arm64")
+        or "amd64" in parts
+        or "arm64" in parts
+        or "arm" in parts
+    )
 
-    # Also collect fn params for count check
-    in_fn_decl = False
-    fn_name = None
-    fn_rust_name = None
-    fn_line = 0
-    fn_param_count = 0
-
-    extern_re = re.compile(r'^\s*extern\s+"(C|system|stdcall|cdecl)"\s*\{')
+    extern_re = re.compile(r'^\s*(?:pub\s+)?(?:unsafe\s+)?extern\s+"(C|system|stdcall|cdecl)"\s*\{')
     fn_re = re.compile(r"^\s*(?:pub\s+)?fn\s+(\w+)\s*\(")
     link_name_re = re.compile(r'#\[link_name\s*=\s*"(\w+)"\]')
     static_re = re.compile(r"^\s*(?:pub\s+)?(?:static\s+(?:mut\s+)?)\w+")
-    fn_end_re = re.compile(r"\)\s*(?:->.*)?;")
-    param_re = re.compile(r"^\s*\w+\s*:")
+    cfg_re = re.compile(r"#\[cfg\((.*)\)\]")
+
+    def cfg_excludes_x86(cfg_text: str) -> bool:
+        t = cfg_text.replace(" ", "")
+        if 'not(target_arch="x86")' in t:
+            return True
+        # cfg targeting only specific non-x86 arch(es)
+        arches = re.findall(r'target_arch="(\w+)"', t)
+        return bool(arches) and "x86" not in arches and "not(" not in t
+
+    def count_params(decl: str) -> int:
+        # decl is the full text from `fn` to `;`. Extract the top-level ( ... ).
+        # Neutralize `->` first: its '>' is not a closing angle bracket (nested
+        # fn-pointer types like Option<unsafe extern fn(..) -> PVOID> undercounted).
+        decl = decl.replace("->", "\u2192")
+        try:
+            open_i = decl.index("(")
+        except ValueError:
+            return 0
+        depth, close_i = 0, -1
+        for i in range(open_i, len(decl)):
+            if decl[i] in "([<":
+                depth += 1
+            elif decl[i] in ")]>":
+                depth -= 1
+                if depth == 0:
+                    close_i = i
+                    break
+        if close_i < 0:
+            return 0
+        inner = decl[open_i + 1 : close_i]
+        # split on top-level commas
+        parts, depth, cur = [], 0, []
+        for ch in inner:
+            if ch in "([<":
+                depth += 1
+            elif ch in ")]>":
+                depth -= 1
+            if ch == "," and depth == 0:
+                parts.append("".join(cur))
+                cur = []
+            else:
+                cur.append(ch)
+        parts.append("".join(cur))
+        return len([q for q in parts if ":" in q])  # `...` varargs not counted (spec omits them)
+
+    in_extern = False
+    current_conv = None
+    brace_depth = 0
+    pending_link_name = None
+    pending_cfg = None       # cfg attr immediately preceding the extern block
+    block_skips_x86 = False
+    fn_buf = None            # buffered decl text
+    fn_line = 0
 
     for lineno, line in enumerate(lines, 1):
-        stripped = line.strip()
+        # Strip line comments BEFORE any parsing: braces inside comments corrupt the
+        # depth count (a stray '{' in a comment left the parser "inside" the previous
+        # extern "C" block, misattributing conventions), and a trailing comment after
+        # `;` broke decl-end detection.
+        stripped = line.split("//")[0].strip()
+
+        if not in_extern:
+            cm = cfg_re.search(stripped)
+            if cm:
+                pending_cfg = cm.group(1)
+                continue
+            em = extern_re.match(stripped)
+            if em:
+                current_conv = em.group(1)
+                # Net brace count on the header line itself: a one-line block
+                # (`extern "C" { static X: T; }`) opens AND closes here — entering
+                # block state with depth=1 used to leave the parser "inside" that
+                # block for the rest of the file, misattributing every later
+                # block's convention.
+                brace_depth = stripped.count("{") - stripped.count("}")
+                in_extern = brace_depth > 0
+                block_skips_x86 = file_skips_x86 or (
+                    bool(pending_cfg) and cfg_excludes_x86(pending_cfg)
+                )
+                pending_cfg = None
+                if not in_extern:
+                    # scan any inline fn decl in the one-liner
+                    inner = stripped[stripped.index("{") + 1 : stripped.rindex("}")]
+                    fm = fn_re.match(inner.strip())
+                    if fm and inner.rstrip().rstrip("}").rstrip().endswith(";"):
+                        _check_fn(
+                            issues,
+                            rs_path,
+                            lineno,
+                            fm.group(1),
+                            fm.group(1),
+                            current_conv,
+                            count_params(inner),
+                            spec,
+                            bindgen,
+                            skip_abi=block_skips_x86,
+                        )
+                    current_conv = None
+                continue
+            if stripped and not stripped.startswith("//") and not stripped.startswith("#["):
+                pending_cfg = None
+            continue
+
+        brace_depth += stripped.count("{") - stripped.count("}")
+        if brace_depth <= 0:
+            in_extern = False
+            current_conv = None
+            pending_link_name = None
+            fn_buf = None
+            continue
 
         lm = link_name_re.search(stripped)
         if lm:
             pending_link_name = lm.group(1)
             continue
 
-        em = extern_re.match(stripped)
-        if em:
-            current_conv = em.group(1)
-            in_extern = True
-            brace_depth = 1
-            continue
-
-        if in_extern:
-            brace_depth += stripped.count("{") - stripped.count("}")
-            if brace_depth <= 0:
-                in_extern = False
-                current_conv = None
-                pending_link_name = None
-                in_fn_decl = False
-                continue
-
-            # Skip statics
+        if fn_buf is None:
             if static_re.match(stripped):
                 pending_link_name = None
                 continue
-
-            if not in_fn_decl:
-                fm = fn_re.match(stripped)
-                if fm:
-                    fn_rust_name = fm.group(1)
-                    fn_name = pending_link_name or fn_rust_name
-                    fn_line = lineno
-                    fn_param_count = 0
+            fm = fn_re.match(stripped)
+            if not fm:
+                if stripped and not stripped.startswith("//") and not stripped.startswith("#["):
                     pending_link_name = None
+                continue
+            fn_rust_name = fm.group(1)
+            fn_name = pending_link_name or fn_rust_name
+            fn_line = lineno
+            pending_link_name = None
+            fn_buf = stripped
 
-                    # Check for C macro
-                    if fn_name in C_MACROS and fn_name not in C_MACRO_EXCEPTIONS:
-                        issues.append(
-                            {
-                                "file": str(rs_path),
-                                "line": lineno,
-                                "type": "C_MACRO",
-                                "fn_name": fn_rust_name,
-                                "detail": f"{fn_name} is a C macro, not a real function "
-                                "— should be inlined in Rust",
-                            }
-                        )
+            if fn_name in C_MACROS and fn_name not in C_MACRO_EXCEPTIONS:
+                issues.append(
+                    {
+                        "file": str(rs_path),
+                        "line": lineno,
+                        "type": "C_MACRO",
+                        "fn_name": fn_rust_name,
+                        "detail": f"{fn_name} is a C macro, not a real function "
+                        "— should be inlined in Rust",
+                    }
+                )
+        else:
+            fn_buf += " " + stripped
 
-                    # Check if single-line
-                    if fn_end_re.search(stripped):
-                        params_part = stripped[stripped.index("(") + 1 : stripped.rindex(")")]
-                        fn_param_count = (
-                            len([p for p in params_part.split(",") if ":" in p])
-                            if params_part.strip()
-                            else 0
-                        )
-                        _check_fn(
-                            issues,
-                            rs_path,
-                            fn_line,
-                            fn_name,
-                            fn_rust_name,
-                            current_conv,
-                            fn_param_count,
-                            spec,
-                            bindgen,
-                        )
-                    else:
-                        in_fn_decl = True
-                        # Count params on first line
-                        after_paren = stripped[stripped.index("(") + 1 :]
-                        if param_re.match(after_paren.strip()):
-                            fn_param_count = 1
-                else:
-                    pending_link_name = None
-            else:
-                if fn_end_re.search(stripped):
-                    if param_re.match(stripped):
-                        fn_param_count += 1
-                    _check_fn(
-                        issues,
-                        rs_path,
-                        fn_line,
-                        fn_name,
-                        fn_rust_name,
-                        current_conv,
-                        fn_param_count,
-                        spec,
-                        bindgen,
-                    )
-                    in_fn_decl = False
-                elif param_re.match(stripped):
-                    fn_param_count += 1
+        if fn_buf is not None and fn_buf.rstrip().endswith(";"):
+            # slot-style decl (every param `_: usize`, e.g. the ke/ssdt.rs syscall
+            # table) encodes i386 stack slots by design — skip the arity check by
+            # reporting param_count 0 (0 is never compared).
+            slot_style = re.search(r"\(\s*_\s*:\s*usize", fn_buf) is not None
+            _check_fn(
+                issues,
+                rs_path,
+                fn_line,
+                fn_name,
+                fn_rust_name,
+                current_conv,
+                0 if slot_style else count_params(fn_buf),
+                spec,
+                bindgen,
+                skip_abi=block_skips_x86,
+            )
+            fn_buf = None
 
     return issues
 
 
-def _check_fn(issues, rs_path, lineno, fn_name, rust_name, conv, param_count, spec, bindgen):
+def _check_fn(issues, rs_path, lineno, fn_name, rust_name, conv, param_count, spec, bindgen, skip_abi=False):
     """Check a single extern fn declaration against spec/bindgen."""
     # Skip allowlisted
     if fn_name in CDECL_ALLOWLIST:
@@ -328,8 +414,9 @@ def _check_fn(issues, rs_path, lineno, fn_name, rust_name, conv, param_count, sp
     if any(fn_name.endswith(s) for s in SHIM_SUFFIXES):
         return
 
-    # ABI check
-    if conv == "C":
+    # ABI check (suppressed for decls cfg-gated off i386 — stdcall/fastcall
+    # are i386-isms; extern "C" is the same ABI on amd64/arm64)
+    if conv == "C" and not skip_abi:
         expected_conv = None
         source = None
         if fn_name in spec and spec[fn_name]["conv"] in ("stdcall", "fastcall"):
@@ -350,7 +437,11 @@ def _check_fn(issues, rs_path, lineno, fn_name, rust_name, conv, param_count, sp
                 }
             )
 
-    # Parameter count check
+    # Parameter count check — skipped for C-macro names: a crate-local shim decl
+    # for a macro is not comparable to bindgen's inline-fn signature (the C_MACRO
+    # finding already covers these).
+    if fn_name in C_MACROS:
+        return
     ref = None
     ref_source = None
     if fn_name in spec:
@@ -360,7 +451,15 @@ def _check_fn(issues, rs_path, lineno, fn_name, rust_name, conv, param_count, sp
         ref = bindgen[fn_name]
         ref_source = "bindgen_i386.rs"
 
-    if ref and ref["params"] > 0 and param_count > 0 and param_count != ref["params"]:
+    mismatch = False
+    if ref and ref["params"] > 0 and param_count > 0:
+        if ref_source == "ntoskrnl.spec":
+            # spec counts i386 stack slots (8-byte args take 2) — rust arg count can
+            # only be <= slots, so only rust > slots is a definite arity bug
+            mismatch = param_count > ref["params"]
+        else:
+            mismatch = param_count != ref["params"]
+    if mismatch:
         issues.append(
             {
                 "file": str(rs_path),
@@ -429,7 +528,22 @@ def main():
     if args.files:
         rs_files = [Path(f) for f in args.files]
     else:
-        rs_files = sorted((reactos_root / "sdk/lib/rust/ntoskrnl-rust/src").rglob("*.rs"))
+        # Scan every workspace crate's src/, not just ntoskrnl-rust: kernel-side crates
+        # (win32k-rust, hal-rust, driver crates, ...) import the same NTAPI symbols and
+        # carry the same extern "C"-vs-"system" hazard. The spec/bindgen maps are keyed
+        # by function name, so unknown (crate-internal) externs are simply skipped.
+        # Generated/assertion files are excluded — they aren't hand-written decls.
+        rust_root = reactos_root / "sdk/lib/rust"
+        rs_files = sorted(
+            f
+            for src_dir in rust_root.glob("*/src")
+            for f in src_dir.rglob("*.rs")
+            if not (
+                f.name.startswith("bindgen_")
+                or f.name.startswith("size_check_")
+                or f.name.startswith("offset_check_")
+            )
+        )
 
     counts = {"ABI": 0, "PARAM_COUNT": 0, "C_MACRO": 0, "FLEX_ARRAY": 0}
     for rs_file in rs_files:

@@ -2533,7 +2533,7 @@ pub fn PFN_FROM_SSE(entry: ULONG_PTR) -> PFN_NUMBER {
 pub unsafe fn MA_GetStartingAddress(marea: PVOID) -> ULONG_PTR {
     // Memory area structure: offset 0 is MMVAD_NODE, starting address at specific offset
     // For now, use extern declaration
-    extern "C" {
+    extern "system" {
         fn MmLocateMemoryAreaByAddress(
             AddressSpace: PVOID,
             Address: PVOID,

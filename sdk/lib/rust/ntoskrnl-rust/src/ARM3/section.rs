@@ -392,7 +392,7 @@ extern "system" {
         FileObject: PFILE_OBJECT, ResourceToRelease: PVOID,
     );
 }
-extern "C" {
+extern "system" {
     fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
 }
 extern "C" {

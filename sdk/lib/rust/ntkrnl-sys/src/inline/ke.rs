@@ -493,7 +493,7 @@ extern "system" {
     fn KiCheckForKernelApcDelivery();
 }
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn KiCheckForKernelApcDelivery();
 }
 
@@ -724,7 +724,7 @@ extern "system" {
     fn PsGetCurrentThread() -> ddk::PETHREAD;
 }
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn PsGetCurrentThread() -> ddk::PETHREAD;
 }
 
@@ -782,7 +782,7 @@ extern "fastcall" {
 }
 
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn KeAcquireInStackQueuedSpinLockRaiseToSynch(
         SpinLock: *mut ULONG_PTR,
         LockHandle: ddk::PKLOCK_QUEUE_HANDLE,

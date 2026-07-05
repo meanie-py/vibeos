@@ -298,9 +298,15 @@ use core::sync::atomic::{AtomicI32, Ordering};
     let a = &*(Dest as *const AtomicI32);
     match a.compare_exchange(Comp, Exch, Ordering::SeqCst, Ordering::SeqCst) { Ok(v) => v, Err(v) => v }
 }
+#[cfg(target_arch = "x86")]
+#[no_mangle] pub unsafe extern "fastcall" fn InterlockedDecrement(Addend: *mut i32) -> i32 {
+#[cfg(not(target_arch = "x86"))]
 #[no_mangle] pub unsafe extern "C" fn InterlockedDecrement(Addend: *mut i32) -> i32 {
     (&*(Addend as *const AtomicI32)).fetch_sub(1, Ordering::SeqCst) - 1
 }
+#[cfg(target_arch = "x86")]
+#[no_mangle] pub unsafe extern "fastcall" fn InterlockedExchange(Target: *mut i32, Value: i32) -> i32 {
+#[cfg(not(target_arch = "x86"))]
 #[no_mangle] pub unsafe extern "C" fn InterlockedExchange(Target: *mut i32, Value: i32) -> i32 {
     (&*(Target as *const AtomicI32)).swap(Value, Ordering::SeqCst)
 }

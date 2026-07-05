@@ -166,7 +166,7 @@ extern "C" {
 // the cdecl `KeAcquireSpinLockRaiseToDpc` + `KeReleaseSpinLock` exports;
 // i386 uses HAL's fastcall `KfAcquireSpinLock` / `KfReleaseSpinLock`.
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn KeAcquireSpinLockRaiseToDpc(spin_lock: *mut ULONG_PTR) -> KIRQL;
     fn KeReleaseSpinLock(spin_lock: *mut ULONG_PTR, new_irql: KIRQL);
 }
@@ -220,12 +220,12 @@ extern "stdcall" {
     fn KiCheckForKernelApcDelivery();
 }
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn KiCheckForKernelApcDelivery();
 }
 
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "fastcall" {
     fn KeAcquireInStackQueuedSpinLockRaiseToSynch(
         spin_lock: *mut ULONG_PTR,
         lock_handle: PKLOCK_QUEUE_HANDLE,

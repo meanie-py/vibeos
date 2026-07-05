@@ -111,15 +111,19 @@ extern "system" {
 }
 extern "C" {
     fn ObReferenceObject(Object: PVOID);
+}
+extern "system" {
     fn PsGetCurrentProcess() -> PEPROCESS;
     fn ProbeForWriteHandle(Address: PHANDLE);
     fn ProbeForWriteUlong(Address: *mut ULONG);
     fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;
     fn InsertTailList(ListHead: PLIST_ENTRY, Entry: PLIST_ENTRY);
     fn LpcpCompleteWait(Semaphore: PVOID);
+    fn LpcpConnectWait(Semaphore: PVOID, PreviousMode: KPROCESSOR_MODE);
+}
+extern "system" {
     fn KeEnterCriticalRegion();
     fn KeLeaveCriticalRegion();
-    fn LpcpConnectWait(Semaphore: PVOID, PreviousMode: KPROCESSOR_MODE);
 }
 
 const LPCP_PORT_TYPE_MASK: ULONG = 0x0000000F;

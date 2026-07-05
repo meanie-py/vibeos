@@ -215,7 +215,7 @@ extern "fastcall" {
 }
 
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     pub fn KeInitializeGuardedMutex(Mutex: PKGUARDED_MUTEX);
     pub fn KeAcquireGuardedMutex(Mutex: PKGUARDED_MUTEX);
     pub fn KeReleaseGuardedMutex(Mutex: PKGUARDED_MUTEX);
@@ -310,7 +310,7 @@ extern "fastcall" {
 }
 
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     pub fn KeAcquireSpinLockForDpc(SpinLock: PKSPIN_LOCK) -> KIRQL;
     pub fn KeReleaseSpinLockForDpc(SpinLock: PKSPIN_LOCK, OldIrql: KIRQL);
 }

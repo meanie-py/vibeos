@@ -1400,7 +1400,7 @@ unsafe fn kf_raise_irql(_new_irql: KIRQL) -> KIRQL {
     // raw-dylib (so the linker resolves it via the ntoskrnl IAT instead of
     // expecting a local strong symbol).  Caller always passes DISPATCH_LEVEL.
     #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
-    unsafe extern "C" {
+    unsafe extern "system" {
         fn KeRaiseIrqlToDpcLevel() -> KIRQL;
     }
     unsafe { KeRaiseIrqlToDpcLevel() }

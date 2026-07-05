@@ -80,7 +80,7 @@ pub unsafe fn kdbg_apclist(tag: &[u8]) {
     #[cfg(target_arch = "aarch64")]
     {
         use ntkrnl_sys::ddk;
-        extern "C" { fn PsGetCurrentThread() -> ddk::PETHREAD; }
+        extern "system" { fn PsGetCurrentThread() -> ddk::PETHREAD; }
         let t = PsGetCurrentThread();
         kdbg_str(tag);
         if t.is_null() { kdbg_hex(0); return; }

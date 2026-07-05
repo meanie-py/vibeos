@@ -22,6 +22,9 @@ extern "C" {
     fn USBSTOR_SendCSWRequest(FDODeviceExtension: PFDO_DEVICE_EXTENSION, Irp: PIRP);
     fn USBSTOR_ResetDevice( DeviceObject: PDEVICE_OBJECT, FDODeviceExtension: PFDO_DEVICE_EXTENSION, ) -> NTSTATUS;
     fn USBSTOR_QueueNextRequest(FdoDevice: PDEVICE_OBJECT);
+}
+extern "system" {
+    // NTAPI (stdcall on i386) per ntoskrnl.spec
     fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
 }
 

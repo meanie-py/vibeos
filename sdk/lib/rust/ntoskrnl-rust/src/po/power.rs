@@ -146,6 +146,9 @@ extern "stdcall" {
 
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
+    // NOTE: must stay extern "C" (not "system") — the fn is passed as a value to
+    // IoRegisterPlugPlayNotification, whose bindgen callback type is `extern "C" fn`
+    // on non-x86; extern "system" is ABI-identical there but a distinct Rust type.
     fn PopAddRemoveSysCapsCallback(
         notification_structure: PVOID,
         context: PVOID,

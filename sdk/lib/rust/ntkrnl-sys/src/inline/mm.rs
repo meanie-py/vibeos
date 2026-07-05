@@ -1089,7 +1089,7 @@ extern "system" {
     fn MiDecrementReferenceCount(Pfn1: ddk::PMMPFN, PageFrameIndex: ULONG_PTR);
 }
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn MiDecrementReferenceCount(Pfn1: ddk::PMMPFN, PageFrameIndex: ULONG_PTR);
 }
 

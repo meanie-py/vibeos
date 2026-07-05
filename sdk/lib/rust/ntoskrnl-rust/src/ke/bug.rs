@@ -90,7 +90,7 @@ extern "system" {
     fn KdInitSystem(BootPhase: ULONG, LoaderBlock: PVOID);
     fn DbgUnLoadImageSymbols(FileName: PANSI_STRING, BaseOfDll: PVOID, ProcessId: ULONG_PTR);
 }
-extern "C" {
+extern "system" {
     fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
 }
 extern "system" {

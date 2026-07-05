@@ -21,8 +21,12 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 extern "C" {
     static mut LpcpLock: KGUARDED_MUTEX;
     static mut LpcpMessagesLookaside: ntkrnl_sys::ddk::PAGED_LOOKASIDE_LIST;
+}
+extern "system" {
     fn PsGetCurrentProcess() -> PEPROCESS;
     fn SeDeleteClientSecurity(ClientContext: *mut _SECURITY_CLIENT_CONTEXT);
+}
+extern "system" {
     fn ExFreeToPagedLookasideList(Lookaside: *mut ntkrnl_sys::ddk::PAGED_LOOKASIDE_LIST, Entry: PVOID);
 }
 

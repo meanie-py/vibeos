@@ -94,6 +94,8 @@ extern "C" {
     fn USBH_PassIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
     fn USBD_RemoveDeviceEx(HubExtension: PUSBHUB_FDO_EXTENSION, DeviceHandle: PVOID, Flags: ULONG);
     fn PdoExt(PdoDevice: PDEVICE_OBJECT) -> PUSBHUB_PORT_PDO_EXTENSION;
+}
+extern "system" {
     fn InterlockedIncrement(Addend: *mut core::ffi::c_long) -> core::ffi::c_long;
     fn InterlockedDecrement(Addend: *mut core::ffi::c_long) -> core::ffi::c_long;
     fn DbgPrint(Format: *const i8, ...) -> u32;

@@ -10,10 +10,9 @@ use ntkrnl_sys::ddk::{
     PsLookupProcessByProcessId, PsLookupThreadByThreadId,
 };
 
-extern "C" {
-    /// Defined in shim_exports.rs as `extern "C"` — see comment there:
-    /// "PsGetCurrentProcess (NTAPI)". The shim itself is cdecl, the comment
-    /// is just labelling the C-source declaration site.
+extern "system" {
+    /// Defined in shim_exports.rs as `extern "system"` — see comment there:
+    /// "PsGetCurrentProcess (NTAPI)". The kernel function follows NTAPI/stdcall convention.
     fn PsGetCurrentProcess() -> PEPROCESS;
 }
 

@@ -21,7 +21,7 @@ extern "fastcall" {
     fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
 }
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn InterlockedExchange(Target: *mut LONG, Value: LONG) -> LONG;
 }
 

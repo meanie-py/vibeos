@@ -87,8 +87,10 @@ extern "system" {
     fn KeGetCurrentThread() -> PKTHREAD;
     fn ExFreePool(P: PVOID);
 }
-extern "C" {
+extern "system" {
     fn PsGetCurrentThread() -> PETHREAD;
+}
+extern "C" {
     fn KeGetTrapFrame(Thread: PKTHREAD) -> PKTRAP_FRAME;
 }
 

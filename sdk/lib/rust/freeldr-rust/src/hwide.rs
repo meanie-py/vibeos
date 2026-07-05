@@ -12,6 +12,8 @@ extern "C" {
     fn StallExecutionProcessor(Microseconds: ULONG);
     fn ERR(fmt: *const i8, ...);
     fn TRACE(fmt: *const i8, ...);
+}
+extern "fastcall" {
     fn RtlUshortByteSwap(Source: USHORT) -> USHORT;
     fn RtlUlongByteSwap(Source: ULONG) -> ULONG;
     fn RtlUlonglongByteSwap(Source: ULONGLONG) -> ULONGLONG;

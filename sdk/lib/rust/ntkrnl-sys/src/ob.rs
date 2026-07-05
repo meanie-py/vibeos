@@ -12,7 +12,7 @@ extern "fastcall" {
 }
 
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn ObfReferenceObject(Object: PVOID);
     fn ObfDereferenceObject(Object: PVOID);
 }

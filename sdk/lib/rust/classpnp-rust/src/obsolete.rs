@@ -216,6 +216,11 @@ extern "system" {
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    pub fn InterlockedDecrement(addend: *mut i32) -> i32;
+}
+#[cfg(not(target_arch = "x86"))]
 extern "C" {
     pub fn InterlockedDecrement(addend: *mut i32) -> i32;
 }

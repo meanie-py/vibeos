@@ -19,11 +19,17 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use core::ffi::c_void;
 
-extern "C" {
+extern "system" {
     fn RtlAllocateHeap(HeapHandle: *mut c_void, Flags: ULONG, Size: SIZE_T) -> *mut c_void;
     fn RtlFreeHeap(HeapHandle: *mut c_void, Flags: ULONG, BaseAddress: *mut c_void);
+}
+
+extern "C" {
     fn DbgPrint(fmt: *const u8, ...) -> i32;
 
+}
+
+extern "system" {
     fn RtlCreateHeap(
         Flags:       ULONG,
         HeapBase:    PVOID,

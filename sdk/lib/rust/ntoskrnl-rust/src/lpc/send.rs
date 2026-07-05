@@ -44,7 +44,7 @@ extern "system" {
         info: PVOID,
     ) -> NTSTATUS;
 }
-extern "C" {
+extern "system" {
     fn KeEnterCriticalRegion();
     fn KeLeaveCriticalRegion();
     fn LpcpAllocateFromPortZone() -> PLPCP_MESSAGE;

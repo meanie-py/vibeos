@@ -80,12 +80,17 @@ extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
     fn DbgBreakPoint();
 }
-extern "C" {
+extern "system" {
     fn PsGetCurrentThread() -> PETHREAD;
+}
+extern "C" {
     fn KeLowerIrql(irql: KIRQL);
+}
+extern "system" {
     #[link_name = "IoGetCurrentProcess"]
     fn PsGetCurrentProcess() -> PEPROCESS;
-
+}
+extern "C" {
     fn PspSetCrossThreadFlag(thread: PETHREAD, flag: ULONG);
     fn PspSetProcessFlag(process: PEPROCESS, flag: ULONG);
 }

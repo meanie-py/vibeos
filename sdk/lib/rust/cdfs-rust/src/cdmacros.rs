@@ -1168,7 +1168,7 @@ pub unsafe extern "C" fn CdSetFidFromParentAndDirent(
 // rtlfuncs.h: #define RtlCopyMemory(d,s,len)  memcpy(d,s,len)
 // stdcall (@12).
 #[no_mangle]
-pub unsafe extern "C" fn RtlCopyMemory(
+pub unsafe extern "system" fn RtlCopyMemory(
     Destination: *mut c_void,
     Source: *const c_void,
     Length: usize,
@@ -1671,7 +1671,7 @@ pub unsafe extern "C" fn _Analysis_assume_(_Condition: bool) {}
 // i386: #define KeFlushIoBuffers(...) <empty>  (only ARM exports a real fn).
 // Caller declares it extern "system" -> _KeFlushIoBuffers@12. No-op stdcall shim.
 #[no_mangle]
-pub unsafe extern "C" fn KeFlushIoBuffers(
+pub unsafe extern "system" fn KeFlushIoBuffers(
     _Mdl: *mut MDL,
     _ReadOperation: i32,
     _DmaOperation: i32,

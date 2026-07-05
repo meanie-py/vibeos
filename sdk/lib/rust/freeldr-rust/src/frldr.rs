@@ -716,7 +716,7 @@ pub unsafe extern "C" fn ULongToPtr(ul: ULONG) -> *mut core::ffi::c_void {
 // owns the real `brk #0xF000` implementation (uefi.cmake:41) — exclude the
 // Rust stub on aarch64 to avoid a duplicate-symbol cold-link collision.
 #[cfg(not(target_arch = "aarch64"))]
-#[no_mangle] extern "C" fn DbgBreakPoint() {}
+#[no_mangle] extern "system" fn DbgBreakPoint() {}
 
 // fs.h DEVVTBL — vtable; ARC_* are ddk Option<extern "C" fn> (bindgen-exact).
 use ntkrnl_sys::ddk::{ARC_CLOSE, ARC_GET_FILE_INFORMATION, ARC_OPEN, ARC_READ, ARC_SEEK};

@@ -935,7 +935,7 @@ extern "system" {
     pub fn ProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     pub fn RtlImageNtHeader(Base: PVOID) -> PVOID;
     pub fn RtlImageDirectoryEntryToData(
-        Base: PVOID, MappedAsImage: BOOLEAN, DirectoryEntry: USHORT, Size: *mut ULONG,
+        BaseAddress: PVOID, MappedAsImage: BOOLEAN, Directory: USHORT, Size: *mut ULONG,
     ) -> PVOID;
     pub fn RtlRandom(Seed: *mut ULONG) -> ULONG;
     pub fn RtlSetBits(BitMapHeader: PVOID, StartingIndex: ULONG, NumberToSet: ULONG);
@@ -943,7 +943,7 @@ extern "system" {
         SecurityDescriptor: PVOID, DaclPresent: BOOLEAN, Dacl: PVOID, DaclDefaulted: BOOLEAN,
     ) -> NTSTATUS;
     pub fn SeInitializeProcessAuditName(
-        FileObject: PVOID, bInit: BOOLEAN, AuditInfo: *mut PVOID,
+        FileObject: PVOID, DoAudit: BOOLEAN, AuditInfo: *mut PVOID,
     ) -> NTSTATUS;
 }
 extern "system" {

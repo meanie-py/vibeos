@@ -36,10 +36,13 @@ use ntkrnl_sys::ddk::{
 extern "system" {
     fn RtlMoveMemory(destination: PVOID, source: PVOID, length: usize);
 }
-extern "C" {
-    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PUNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
+extern "system" {
+    // NTAPI (stdcall on i386) per ntoskrnl.spec
     fn ExAllocateFromPagedLookasideList(lookaside: *mut _PAGED_LOOKASIDE_LIST) -> PVOID;
     fn ExFreeToPagedLookasideList(lookaside: *mut _PAGED_LOOKASIDE_LIST, entry: PVOID);
+}
+extern "C" {
+    fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PUNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
     fn RtlInitializeSplayLinks(links: PRTL_SPLAY_LINKS);
     fn RtlInsertAsLeftChild(parent: PRTL_SPLAY_LINKS, child: PRTL_SPLAY_LINKS);
     fn RtlInsertAsRightChild(parent: PRTL_SPLAY_LINKS, child: PRTL_SPLAY_LINKS);

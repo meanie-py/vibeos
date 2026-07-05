@@ -2587,9 +2587,18 @@ extern "C" {
     pub fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     
     pub fn KeLowerIrql(OldIrql: KIRQL);
+
+}
+// Interlocked* are FASTCALL on i386 per ntoskrnl.spec; plain C elsewhere
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
     pub fn InterlockedCompareExchange(Destination: *mut LONG, ExChange: LONG, Comparand: LONG) -> LONG;
     pub fn InterlockedExchange(Destination: *mut LONG, Value: LONG) -> LONG;
-    
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    pub fn InterlockedCompareExchange(Destination: *mut LONG, ExChange: LONG, Comparand: LONG) -> LONG;
+    pub fn InterlockedExchange(Destination: *mut LONG, Value: LONG) -> LONG;
 }
 extern "system" {
     fn ClassReleaseQueue(Fdo: PDEVICE_OBJECT);

@@ -51,10 +51,10 @@ extern "C" {
     fn KiGetGdtDescriptorBase(Entry: PKGDTENTRY64) -> PKTSS64;
     fn KiInitGdtEntry(Entry: PKGDTENTRY64, Base: u64, Limit: u32, Type: u8, Dpl: u8);
 }
-extern "C" {
+extern "system" {
     fn KiSetProcessorType();
 }
-extern "C" {
+extern "system" {
     fn KiGetFeatureBits() -> u64;
 }
 
