@@ -164,15 +164,17 @@ before deleting (some may be episodically hand-run) — **archive, don't delete*
   context). Risk from the plan ("surfaces baselined-but-real findings") turned out NIL — the arsenal's
   current output is all-accepted; the only real bug it caught was the widl codegen staleness above.
 
-  **LANDED (commit 0539465ac6f) + validated by a full `vibeos-cli gate` (31m):** build ×3 ✓, the new
-  **lint phase 1.5 ✓ on all three arches** (`check --strict` clean), smoke i386 ✓ amd64 ✓. Gate is red
-  ONLY on the **pre-existing arm64 `LpcExitThread` exit wedge** (HANG_TIMEOUT, known ghosts-lane
-  regression) — non-causal to T3 (tooling-only edits; arm64 smoke boots the cmake image, not the
-  regenerated cargo-off stubs). Stamp correctly NOT minted (gate red). The T3 mechanism is proven: a
-  NEW lint finding on any built arch now fails the gate + blocks the push stamp; `--no-lint` opts out.
-  **Residual (owed): the committed_drift canonical checks (`.res`) still SKIP outside a canon-mount — a
+  **LANDED green on master (push `fc794e7c29e..8ed66e12e01`, 2026-07-05).** First full gate was red
+  ONLY on the pre-existing arm64 `LpcExitThread`/`0x4E` wedge (non-causal to T3 — tooling-only edits);
+  after merging the `flake-arm64-lpcexit` fix (`MiPteToX` self-map recursion), the re-gate was **×3
+  green + stamp minted**: build ×3 ✓, **lint phase 1.5 ✓ on all three arches** (`check --strict` clean),
+  smoke i386 ✓ amd64 ✓ (net-flake recovered on retry) arm64 ✓. The T3 mechanism is proven live: a NEW
+  lint finding on any built arch fails the gate + blocks the push stamp; `--no-lint` opts out. Landing
+  also fixed 3 real scanner bugs (committed_drift canonical-path family) + bootstrapped two baselines
+  (all deltas triaged: line-drift + tool FPs, zero actionable bugs).
+  **Residual (owed): committed_drift's canonical checks (`.res`) still SKIP outside a canon-mount — a
   follow-up should run committed_drift INSIDE the build (canon context) so `.res` drift is actually
-  gated, not skipped.** And the arm64 regression itself is the real blocker to a green ×3 (not T3's).
+  gated, not skipped.**
 
 ### Longer-term (after T1)
 - [ ] **Unify the FFI cluster on `verify_signatures`** (clang-AST — the strongest oracle) + fold in
