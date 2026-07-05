@@ -301,9 +301,9 @@ def scan_extern_blocks(rs_path: Path, spec: dict, bindgen: dict) -> list[dict]:
     current_conv = None
     brace_depth = 0
     pending_link_name = None
-    pending_cfg = None       # cfg attr immediately preceding the extern block
+    pending_cfg = None  # cfg attr immediately preceding the extern block
     block_skips_x86 = False
-    fn_buf = None            # buffered decl text
+    fn_buf = None  # buffered decl text
     fn_line = 0
 
     for lineno, line in enumerate(lines, 1):
@@ -419,7 +419,9 @@ def scan_extern_blocks(rs_path: Path, spec: dict, bindgen: dict) -> list[dict]:
     return issues
 
 
-def _check_fn(issues, rs_path, lineno, fn_name, rust_name, conv, param_count, spec, bindgen, skip_abi=False):
+def _check_fn(
+    issues, rs_path, lineno, fn_name, rust_name, conv, param_count, spec, bindgen, skip_abi=False
+):
     """Check a single extern fn declaration against spec/bindgen."""
     # Skip allowlisted
     if fn_name in CDECL_ALLOWLIST:
@@ -464,7 +466,6 @@ def _check_fn(issues, rs_path, lineno, fn_name, rust_name, conv, param_count, sp
         ref = bindgen[fn_name]
         ref_source = "bindgen_i386.rs"
 
-    mismatch = False
     if ref and ref["params"] > 0 and param_count > 0:
         if ref_source == "ntoskrnl.spec":
             # spec counts i386 stack slots (8-byte args take 2) — rust arg count can
@@ -472,16 +473,18 @@ def _check_fn(issues, rs_path, lineno, fn_name, rust_name, conv, param_count, sp
             mismatch = param_count > ref["params"]
         else:
             mismatch = param_count != ref["params"]
-    if mismatch:
-        issues.append(
-            {
-                "file": str(rs_path),
-                "line": lineno,
-                "type": "PARAM_COUNT",
-                "fn_name": rust_name,
-                "detail": f"Rust declares {param_count} params, {ref_source} has {ref['params']}",
-            }
-        )
+        if mismatch:
+            issues.append(
+                {
+                    "file": str(rs_path),
+                    "line": lineno,
+                    "type": "PARAM_COUNT",
+                    "fn_name": rust_name,
+                    "detail": (
+                        f"Rust declares {param_count} params, {ref_source} has {ref['params']}"
+                    ),
+                }
+            )
 
 
 # ── Flexible Array Scanner ───────────────────────────────────────────

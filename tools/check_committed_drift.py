@@ -267,7 +267,9 @@ def check_res(arches: tuple[str, ...]) -> list[tuple]:
                     cwd = real_cwd
                     toks = [t.replace(CANON_ROOT, str(REPO)) for t in toks]
                 else:
-                    rows.append((".res", f"{stem}-{arch}", SKIP, "build dir absent (canonical + real)"))
+                    rows.append(
+                        (".res", f"{stem}-{arch}", SKIP, "build dir absent (canonical + real)")
+                    )
                     continue
             with tempfile.TemporaryDirectory() as td:
                 dst = os.path.join(td, "out.res")

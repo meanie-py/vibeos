@@ -13,6 +13,7 @@ from pathlib import Path
 
 from . import build as build_mod
 from . import cargoswap, debugcmd, hostlock, tooling
+from . import farm as farm_mod
 from . import gate as gate_mod
 from . import gdbengine as gdb_mod
 from . import health as health_mod
@@ -133,6 +134,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip the strict scanner suite (default-on; blocks the stamp on NEW findings)",
     )
     g.set_defaults(fn=gate_mod.gate)
+
+    f = sub.add_parser(
+        "farm", help="flake farm: soak boots into a durable corpus (~/vibeos-flake-farm)"
+    )
+    f.add_argument(
+        "--arches", default="amd64", help="comma list (default amd64); parallel worker per arch"
+    )
+    f.add_argument(
+        "--boots",
+        type=int,
+        default=0,
+        help="max boots per arch (default 5, or unlimited with --minutes)",
+    )
+    f.add_argument("--minutes", type=float, default=0, help="wall-clock budget (overnight soak)")
+    f.add_argument(
+        "--tripwire",
+        default="",
+        help="arm every boot, e.g. 'SPECIALPOOL=*' (see smoke --tripwire)",
+    )
+    f.add_argument("--allow-stale", action="store_true")
+    f.set_defaults(fn=farm_mod.farm)
+
+    fr = sub.add_parser("farm-report", help="cluster the farm corpus into failure families")
+    fr.add_argument("--since", default="", help="only records with ts >= YYYYMMDD[-HHMMSS]")
+    fr.add_argument("--sha", default="", help="only records from this short sha")
+    fr.set_defaults(fn=farm_mod.farm_report)
 
     bo = sub.add_parser("boot", help="raw fast boot (shares smoke arch-config)")
     arch_arg(bo)
