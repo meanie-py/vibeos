@@ -1,15 +1,12 @@
-  ABI: 64
+  ABI: 62
   C_MACRO: 61
-  FLEX_ARRAY: 4
   PARAM_COUNT: 12
-  TOTAL: 141 issues across 405 files
-  [ABI] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:928: PsGetCurrentThread: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
+  TOTAL: 135 issues across 411 files
+  [ABI] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:945: PsGetCurrentThread: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs:25: InterlockedExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/ntoskrnl-rust/src/ARM3/section.rs:2204: ProbeForWrite: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ARM3/section.rs:396: RtlFillMemoryUlong: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ARM3/session.rs:22: InterlockedCompareExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/ntoskrnl-rust/src/cc/view.rs:1350: DbgBreakPoint: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/ntoskrnl-rust/src/cc/view.rs:1358: InterlockedCompareExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
+  [ABI] sdk/lib/rust/ntoskrnl-rust/src/cc/view.rs:1360: InterlockedCompareExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/dbgk/dbgkobj.rs:142: PsGetCurrentProcess: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/dbgk/dbgkobj.rs:143: PsGetCurrentThread: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/dbgk/dbgkutil.rs:30: PsGetCurrentProcess: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
@@ -23,11 +20,11 @@
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/tunnel.rs:41: ExAllocateFromPagedLookasideList: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/tunnel.rs:42: ExFreeToPagedLookasideList: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/inbv/inbv.rs:62: RtlUnicodeStringToOemSize: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/ntoskrnl-rust/src/iomgr/file.rs:211: InterlockedExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/ntoskrnl-rust/src/iomgr/inlines.rs:114: ObfReferenceObject: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/ntoskrnl-rust/src/iomgr/inlines.rs:115: ObfDereferenceObject: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
+  [ABI] sdk/lib/rust/ntoskrnl-rust/src/iomgr/file.rs:212: InterlockedExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
+  [ABI] sdk/lib/rust/ntoskrnl-rust/src/iomgr/inlines.rs:146: ObfReferenceObject: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
+  [ABI] sdk/lib/rust/ntoskrnl-rust/src/iomgr/inlines.rs:147: ObfDereferenceObject: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/iomgr/iofunc.rs:118: InterlockedExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/ntoskrnl-rust/src/iomgr/irp.rs:166: InterlockedExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
+  [ABI] sdk/lib/rust/ntoskrnl-rust/src/iomgr/irp.rs:228: InterlockedExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/kd64/kdapi.rs:198: InterlockedCompareExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/kd64/kdlock.rs:31: KiAcquireSpinLock: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/kd64/kdlock.rs:39: KiReleaseSpinLock: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
@@ -43,7 +40,7 @@
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ke/i386/v86vdm.rs:49: KiEoiHelper: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ke/ke_defs.rs:20: KeEnterCriticalRegion: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/ke/ke_defs.rs:21: KeLeaveCriticalRegion: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
-  [ABI] sdk/lib/rust/ntoskrnl-rust/src/ke/wait.rs:71: InterlockedCompareExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
+  [ABI] sdk/lib/rust/ntoskrnl-rust/src/ke/wait.rs:72: InterlockedCompareExchange: declared extern "C" (cdecl), should be fastcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/lpc/close.rs:24: PsGetCurrentProcess: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/lpc/close.rs:26: ExFreeToPagedLookasideList: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
   [ABI] sdk/lib/rust/ntoskrnl-rust/src/lpc/complete.rs:68: PsGetCurrentProcess: declared extern "C" (cdecl), should be stdcall (per ntoskrnl.spec)
@@ -128,13 +125,9 @@
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/se/semgr.rs:89: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/se/srm.rs:15: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/wmi/guidobj.rs:26: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [FLEX_ARRAY] sdk/lib/rust/ntoskrnl-rust/src/ex/sysinfo.rs:2091: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/ntoskrnl-rust/src/ex/sysinfo.rs:2091: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/ntoskrnl-rust/src/ex/sysinfo.rs:2137: Data: Direct indexing of flexible array _KEY_VALUE_FULL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/ntoskrnl-rust/src/ex/sysinfo.rs:2137: Data: Direct indexing of flexible array _KEY_VALUE_PARTIAL_INFORMATION.Data — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:915: RtlImageDirectoryEntryToData: Rust declares 1 params, bindgen_i386.rs has 4
-  [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:920: RtlSetDaclSecurityDescriptor: Rust declares 1 params, bindgen_i386.rs has 4
-  [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:923: SeInitializeProcessAuditName: Rust declares 1 params, bindgen_i386.rs has 3
+  [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:932: RtlImageDirectoryEntryToData: Rust declares 1 params, bindgen_i386.rs has 4
+  [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:937: RtlSetDaclSecurityDescriptor: Rust declares 1 params, bindgen_i386.rs has 4
+  [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:940: SeInitializeProcessAuditName: Rust declares 1 params, bindgen_i386.rs has 3
   [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ARM3/section.rs:370: MmMapViewInSystemSpace: Rust declares 1 params, bindgen_i386.rs has 3
   [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/mcb.rs:16: FsRtlAddLargeMcbEntry: Rust declares 4 params, ntoskrnl.spec has 7
   [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/fsrtl/mcb.rs:20: FsRtlLookupLargeMcbEntry: Rust declares 7 params, ntoskrnl.spec has 8
@@ -145,5 +138,5 @@
   [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/iomgr/device.rs:119: ObReferenceObjectByHandle: Rust declares 2 params, bindgen_i386.rs has 6
   [PARAM_COUNT] sdk/lib/rust/ntoskrnl-rust/src/ke/ssdt.rs:272: NtSetLdtEntries: Rust declares 6 params, bindgen_i386.rs has 4
 Bindgen catalog: 2909 functions
-Spec catalog: 1569 exports
+Spec catalog: 1570 exports
 Summary:

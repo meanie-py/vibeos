@@ -199,6 +199,23 @@ pub unsafe extern "system" fn MmAccessFault(
     let mut Status: NTSTATUS;
     let mut IsArm3Fault = 0u8;
 
+    // lockdep tripwire (field-manual §9.13): faulting while already holding a
+    // WS lock this fault's handling will re-acquire is a guaranteed
+    // self-deadlock (excl hold) or a silent recursion (shared hold). Report at
+    // the fault, with the faulting address, instead of wedging mutely.
+    #[cfg(feature = "lockdep")]
+    {
+        let proc_ws = core::ptr::addr_of_mut!(
+            (*(PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS)).Vm.WorkingSetMutex
+        ) as usize;
+        let sys_ws = core::ptr::addr_of_mut!(MmSystemCacheWs.WorkingSetMutex) as usize;
+        crate::ke::lockdep::lockdep_fault_check(
+            PsGetCurrentThread() as usize,
+            Address as usize,
+            &[proc_ws, sys_ws],
+        );
+    }
+
     if (Address as ULONG_PTR) >= MmSystemRangeStart as ULONG_PTR {
         #[cfg(target_arch = "x86")]
         {
