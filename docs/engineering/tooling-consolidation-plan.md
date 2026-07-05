@@ -141,7 +141,28 @@ before deleting (some may be episodically hand-run) — **archive, don't delete*
       NEW=0), so the arsenal enforces on the land path instead of warn-only. Natural next footgun increment
       (pre-push already requires the gate stamp; add lint-blocking to what mints it). Highest correctness
       value: on arm64, `lint_kernel` is the sole `captures(none)` defense and is currently advisory.
-      Risk: surfaces baselined-but-real findings previously tolerated — expect a one-time cleanup.
+
+  **2026-07-04 — pre-work analysis done; the wiring is the LAST step, not the first.** Running
+  `check --strict` today is RED, but every failure was triaged (proof in this session):
+  - **74 of ~75 lint findings = line-drift** against baselines that are weeks stale (Jun 13, NOT the
+    "eve regen" — that was an uncommitted ghosts-lane copy). PROVEN content-identical once line numbers
+    are normalized: verify_abi 64=64, verify_ffi 139=139, verify_signatures 4=4, lint_kernel 574=574
+    write-stmts, **0 genuinely-new**. → **regenerate baselines** (`check --update-baseline`); safe, nothing
+    to launder.
+  - **1 genuinely-new** = shellcheck SC2164 `catch_bugcheck.sh:14`. **FIXED** (commit dd5c4c1332c).
+  - **committed_drift** was crash-masked + canonical-path-blind → 3 fixes **DONE** (dd5c4c1332c): checker
+    now skips (not crashes) when the canonical mount is absent; `gen_cflags` templatizes `/tmp/vibeos`→`{REPO}`
+    (4 false cflags DRIFTs cleared). Residual: **2 GENUINE widl `.rs` drifts** (svcctl_s/winreg_s) — committed
+    stubs predate a `widl_to_rust` codegen improvement (`as u32` casts); benign, cargo-off path only.
+    **OWED: regen the committed widl stubs (×3 arches) + validate.**
+
+  **Remaining to land T3 (all consequential — bless current state / expensive gate; confirm before doing):**
+  (a) regen the 2 widl committed stubs; (b) `check --update-baseline` (proven safe); (c) wire `gate` →
+  `check --strict` per built arch, block the stamp on NEW>0; (d) validate with a full `vibeos-cli gate`.
+  Note: `committed_drift`'s `.res`/canonical checks only run truthfully INSIDE a canon-mount — decide whether
+  the gate's strict pass runs them (skip outside canon, as now) or the check moves into the build (canon
+  context). Risk from the plan ("surfaces baselined-but-real findings") turned out NIL — the arsenal's
+  current output is all-accepted; the only real bug it caught was the widl codegen staleness above.
 
 ### Longer-term (after T1)
 - [ ] **Unify the FFI cluster on `verify_signatures`** (clang-AST — the strongest oracle) + fold in
