@@ -245,11 +245,18 @@ unsafe fn KiRosPcToUserFileHeader(
     let ListHead: PLIST_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
 
-    let CurrentThread = KeGetCurrentThread();
-    let Teb = (*(CurrentThread as *mut u8 as *mut PVOID).offset(0x1e8 / core::mem::size_of::<PVOID>() as isize)) as *mut PVOID;
-    let Peb = *Teb.offset(0x60 / core::mem::size_of::<PVOID>() as isize) as *mut PVOID;
-    let Ldr = *Peb.offset(0x18 / core::mem::size_of::<PVOID>() as isize) as *mut LIST_ENTRY;
-    ListHead = Ldr.offset(0x10 / core::mem::size_of::<LIST_ENTRY>() as isize);
+    // C: ListHead = &KeGetCurrentThread()->Teb->ProcessEnvironmentBlock->Ldr->
+    //               InLoadOrderModuleList;
+    // Typed bindgen field access — a previous version hand-rolled these hops with a
+    // hard-coded KTHREAD.Teb offset of 0x1e8 (real-Windows x64), but this port's
+    // _KTHREAD has Teb at 176 (amd64/arm64) / 116 (i386), so it read garbage on
+    // every arch. (Caller guarantees validity per the C comment: only reached after
+    // a successful UserMode RtlWalkFrameChain.)
+    let CurrentThread = KeGetCurrentThread() as *mut ntkrnl_sys::ddk::_KTHREAD;
+    let Teb = (*CurrentThread).Teb;
+    let Peb = (*Teb).ProcessEnvironmentBlock;
+    let Ldr = (*Peb).Ldr;
+    ListHead = core::ptr::addr_of_mut!((*Ldr).InLoadOrderModuleList);
 
     NextEntry = (*ListHead).Flink;
     if !NextEntry.is_null() {

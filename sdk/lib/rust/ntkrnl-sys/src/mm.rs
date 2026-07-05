@@ -1889,17 +1889,27 @@ pub const LIST_HEAD: PFN_NUMBER = PFN_NUMBER::MAX;
 #[cfg(target_pointer_width = "64")]
 mod pfn_offsets_extra {
     pub const U1: usize = 0;           // u1 union (Flink/SwapEntry/WsIndex) at offset 0
-    pub const NEXT_LRU: usize = 48;    // NextLRU at offset after u4
-    pub const PREVIOUS_LRU: usize = 56; // PreviousLRU
-    pub const RMAP_LIST_HEAD: usize = 64; // RmapListHead
+    // C layout (mm.h _MMPFN, WIN64): u1@0 PteAddress@8 u2@16 u3@24 UsedPageTableEntries@28
+    // {OriginalPte|AweReferenceCount|RmapListHead}@32 u4@40 Wsle@48 NextLRU@56 PreviousLRU@64
+    // (sizeof == 72, asserted in size_check_*). These were previously shifted one slot
+    // (48/56/64 — the embedded Wsle@48 was missed), so NextLRU collided with Wsle (WS lock
+    // bits vs LRU link), PreviousLRU with NextLRU, and RmapListHead landed on PreviousLRU
+    // instead of overlaying OriginalPte as the C union intends.
+    pub const NEXT_LRU: usize = 56;    // NextLRU (after embedded Wsle@48)
+    pub const PREVIOUS_LRU: usize = 64; // PreviousLRU
+    pub const RMAP_LIST_HEAD: usize = 32; // RmapListHead — C union overlay with OriginalPte
 }
 
 #[cfg(target_pointer_width = "32")]
 mod pfn_offsets_extra {
     pub const U1: usize = 0;
-    pub const NEXT_LRU: usize = 24;
-    pub const PREVIOUS_LRU: usize = 28;
-    pub const RMAP_LIST_HEAD: usize = 32;
+    // C layout (mm.h _MMPFN, 32-bit): u1@0 PteAddress@4 u2@8 u3@12
+    // {OriginalPte|AweReferenceCount|RmapListHead}@16 u4@20 Wsle@24 NextLRU@28 PreviousLRU@32
+    // (sizeof == 36, asserted in size_check_i386). Same one-slot shift as 64-bit previously
+    // (24/28/32 — Wsle@24 missed).
+    pub const NEXT_LRU: usize = 28;
+    pub const PREVIOUS_LRU: usize = 32;
+    pub const RMAP_LIST_HEAD: usize = 16; // C union overlay with OriginalPte
 }
 
 impl MMPFN {

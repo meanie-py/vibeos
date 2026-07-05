@@ -337,18 +337,12 @@ pub unsafe extern "system" fn MmGetRmapListHeadPage(pfn: PFN_NUMBER) -> PMM_RMAP
         return core::ptr::null_mut();
     }
 
-    #[cfg(target_arch = "aarch64")]
-    {
-        let head = (*pfn1).rmap_list_head() as PMM_RMAP_ENTRY;
-        if !head.is_null() && ((head as usize) & 0xFFF) != 0 {
-            return core::ptr::null_mut();
-        }
-        return head;
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        (*pfn1).rmap_list_head() as PMM_RMAP_ENTRY
-    }
+    // NOTE: an arm64-only "reject non-page-aligned heads" hack used to live here. It was
+    // papering over the RMAP_LIST_HEAD accessor reading the wrong MMPFN slot (PreviousLRU —
+    // an unaligned PFN-database pointer), which made every real head look like garbage and
+    // silently disabled rmaps on arm64. The offset is fixed (mm.rs pfn_offsets_extra), so
+    // the head is trustworthy again on all arches.
+    (*pfn1).rmap_list_head() as PMM_RMAP_ENTRY
 }
 
 #[no_mangle]
