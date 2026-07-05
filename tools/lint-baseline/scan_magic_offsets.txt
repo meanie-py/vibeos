@@ -1,0 +1,47 @@
+[PTR_RECAST_ARITH] sdk/lib/rust/ntoskrnl-rust/src/rtl/path.rs:881: *((teb as usize + 0x60) as *const *mut _NT_PEB)
+[PTR_RECAST_ARITH] sdk/lib/rust/ntoskrnl-rust/src/rtl/path.rs:887: *((teb as usize + 0x30) as *const *mut _NT_PEB)
+[U8_BYTE_ARITH] sdk/lib/rust/avltable/src/tree.rs:17: (node as *mut u8).add(NODE_HEADER_SIZE) as *mut c_void
+[U8_BYTE_ARITH] sdk/lib/rust/freeldr-rust/src/heap.rs:57: ((*b).Data.as_ptr() as *mut u8).add(16 + *REDZONE_SIZE(b) as usize) as *mut u64
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/inline/tier1.rs:65: (irp as *mut u8).add(IRP_CURRENT_STACK_LOCATION_OFFSET) as *mut ddk::PIO_STACK_LOCATION
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1096: let p = (self as *const _ as *const u8).add(pfn_offsets_orig_pte::ORIGINAL_PTE);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1102: let p = (self as *mut _ as *mut u8).add(pfn_offsets_orig_pte::ORIGINAL_PTE);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1412: let p = (pfn as *mut u8).add(pfn_offsets::PTE_ADDRESS);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1420: let p = (pfn as *const u8).add(pfn_offsets::PTE_ADDRESS);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1993: let p = (self as *const _ as *const u8).add(pfn_offsets_extra::NEXT_LRU);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1999: let p = (self as *mut _ as *mut u8).add(pfn_offsets_extra::NEXT_LRU);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:2006: let p = (self as *const _ as *const u8).add(pfn_offsets_extra::PREVIOUS_LRU);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:2012: let p = (self as *mut _ as *mut u8).add(pfn_offsets_extra::PREVIOUS_LRU);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:2025: let p = (self as *const _ as *const u8).add(pfn_offsets_extra::RMAP_LIST_HEAD);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:2031: let p = (self as *mut _ as *mut u8).add(pfn_offsets_extra::RMAP_LIST_HEAD);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:924: let p = (self as *const _ as *const u8).add(pfn_offsets::PTE_ADDRESS);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:930: let p = (self as *mut _ as *mut u8).add(pfn_offsets::PTE_ADDRESS);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1010: let refcount_ptr = (pfn as *mut u8).add(U3_OFFSET) as *mut i16;
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1293: let p = (pfn as *const u8).add(MMPFN_ORIGINAL_PTE_OFFSET);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1300: let p = (pfn as *mut u8).add(MMPFN_ORIGINAL_PTE_OFFSET);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1307: (pfn as *mut u8).add(MMPFN_ORIGINAL_PTE_OFFSET) as PMMPTE
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1313: let p = (pfn as *const u8).add(MMPFN_ORIGINAL_PTE_OFFSET);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1320: let p = (pfn as *mut u8).add(MMPFN_ORIGINAL_PTE_OFFSET);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1370: let p = (pfn as *const u8).add(MMPFN_U3_OFFSET + 2);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1377: let p = (pfn as *mut u8).add(MMPFN_U3_OFFSET + 2);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs:1711: let eip = *((TrapInformation as *const u8).add(104) as *const u32);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/amd64/init.rs:629: let entry_p = (pfn as *mut u8).add(26) as *mut u16; // u3 offset + 2 for MMPFNENTRY
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ex/sysinfo.rs:611: let src = (AllData as *const u8).add(48 + 16);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/iomgr/inlines.rs:44: *((irp as *mut u8).add(IRP_CURRENT_STACK_LOCATION_OFFSET) as *mut PIO_STACK_LOCATION)
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/iomgr/irp.rs:167: (irp as *mut u8).add(IRP_CURRENT_STACK_LOCATION_OFFSET) as *mut PIO_STACK_LOCATION
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/kd64/kdapi.rs:1819: *((SharedUserData as *mut u8).add(0x2d8)) = 0u8;
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/kd64/kddata.rs:1446: d.KdPrintCircularBufferEnd = ptr_to_ul64((core::ptr::addr_of!(KdPrintDefaultCircularBuffer) as *const u8).add(KD_DEFAULT_LOG_BUFFER_SIZE) as *const _);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/kiinit.rs:527: KiP0BootStack = (KiP0BootStack as *mut u8).add(KERNEL_STACK_SIZE) as PVOID;
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/kiinit.rs:530: KiP0DoubleFaultStack = (KiP0DoubleFaultStack as *mut u8).add(KERNEL_STACK_SIZE) as PVOID;
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/thrdini.rs:71: let mut InitialStack = ((*Thread).InitialStack as *mut u8).sub(512);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ke/i386/kiinit.rs:943: core::ptr::addr_of!(P0BootStackData).cast::<u8>().add(KERNEL_STACK_SIZE) as ULONG_PTR;
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/pnpmap.rs:420: (ParentBootResources as *const u8).add(HEADER),
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/pnpmap.rs:432: (ParentBootResources as *const u8).add(HEADER),
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/pnpmap.rs:433: (LocalBootResources as *mut u8).add(HEADER),
+[U8_BYTE_ARITH] sdk/lib/rust/pcix-rust/src/enumr.rs:1235: (pci_data as *mut u8).add(PCI_COMMON_HDR_LENGTH as usize) as *mut _PCI_COMMON_HEADER;
+[U8_BYTE_ARITH] sdk/lib/rust/pl011-rust/src/pl011.rs:38: let dr = (g_UartBase as *mut u8).add(UARTDR as usize) as *mut u32;
+[U8_BYTE_ARITH] sdk/lib/rust/pl011-rust/src/pl011.rs:39: let fr = (g_UartBase as *mut u8).add(UARTFR as usize) as *mut u32;
+[U8_BYTE_ARITH] sdk/lib/rust/pl011-rust/src/pl011.rs:46: let fr = (g_UartBase as *mut u8).add(UARTFR as usize) as *mut u32;
+[U8_BYTE_ARITH] sdk/lib/rust/pl011-rust/src/pl011.rs:51: let dr = (g_UartBase as *mut u8).add(UARTDR as usize) as *mut u32;
+[U8_BYTE_ARITH] sdk/lib/rust/pl011-rust/src/pl011.rs:80: let cr = (g_UartBase as *mut u8).add(UARTCR as usize) as *mut u32;
+[U8_BYTE_ARITH] sdk/lib/rust/shell32-rust/src/wine/pidl.rs:1994: let wsz_name = (p_file_struct_w as *const u8).add(20) as *const WCHAR; // FileStructW.wszName
+[U8_BYTE_ARITH] sdk/lib/rust/user32-rust/src/windows/cursoricon.rs:1959: pvBits = (pvBits as *mut u8).sub(12) as *mut core::ffi::c_void;

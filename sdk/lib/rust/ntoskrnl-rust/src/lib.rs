@@ -199,6 +199,7 @@ pub mod rtl;
 pub mod se;
 pub mod shim_exports;
 pub mod tests;
+pub mod tripwire;
 pub mod vdm;
 pub mod vf;
 pub mod wmi;

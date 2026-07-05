@@ -84,6 +84,9 @@ The QEMU smoke tests (`tests/qemu/test_smoke.py`) are the **single source of tru
 ./vibeos-cli check-tooling                  # ruff+pyright+pytest gate for OUR python (rustconv/cli/tools)
 ./vibeos-cli debug  start amd64 --gdb       # wraps qemu/*.sh (POSITIONAL arch); GDB over the real (UEFI) boot
 ./vibeos-cli ps                             # every QEMU across all worktrees + slot usage
+./vibeos-cli smoke  --arch amd64 --tripwire "SPECIALPOOL=Gla5"   # arm per-boot kernel tripwires via fw_cfg
+./vibeos-cli farm   --arches amd64 --minutes 480 --tripwire "SPECIALPOOL=*"   # overnight flake soak
+./vibeos-cli farm-report                    # cluster the farm corpus into ranked failure families
 ```
 
 Why it matters (the bugs it prevents):
@@ -91,6 +94,7 @@ Why it matters (the bugs it prevents):
 - **No per-arch divergence.** `archcfg.py` is the single source of truth for build targets + boot media (x86 = `ninja livecd`; arm64 = staged set + `mkramdisk --refresh`). `boot` reuses smoke's exact arch-config so the fast path can't drift from the real test.
 - **No token-flooding.** Stdout is a bounded summary; the durable verdict is `summary.json` + `full.log` under `/tmp/vibeos-cli/<ts>-<cmd>-<arch>/`. **Read `summary.json`, don't scrape stdout.**
 - **Auto-triage on failure.** Classifies `RUST_PANIC` (file:line) / `BUGCHECK 0xNN` / `HANG_TIMEOUT` / `KNOWN_FLAKE`, symbolicates the faulting PC, captures a screenshot — no manual objdump round-trip.
+- **Corruption bugs: arm special pool BEFORE forensics.** `--tripwire "SPECIALPOOL=<tag|*>"` (fw_cfg channel, no media rebuild, x86) makes a wild write/overrun fault **at the corrupting store** with the culprit PC symbolicated on serial, instead of surfacing minutes later as an innocent-victim BUGCHECK. For a *rare* flake, don't hand-loop boots — `farm` soaks armed boots into `~/vibeos-flake-farm/corpus.jsonl` and `farm-report` clusters the failures by (classification, stop code, symbol). Recipe + grammar: field manual **§9.18**.
 
 **No default arch** (always pass `--arch`; `i386`/`amd64` alias to the UEFI boot configs). This is the front door; the raw `pytest tests/qemu/test_smoke.py` path and the `qemu/*.sh` toolkit still work underneath (see `tests/qemu/cli/README.md` → "Relationship to `qemu/`" for which layer to use when).
 
@@ -525,6 +529,12 @@ bash tools/verify_sacred_primitives.sh build-i386
 # swallowed Err arms (AST/tree-sitter; wired into `vibeos-cli check`, 0-NEW gate)
 .venv/bin/python tools/scan_silent_failures.py           # sweep no-std workspace
 # Suppress a sanctioned loud halt: // nolint: silent-failure (reason)
+
+# Hand-written NUMERIC struct offsets (the MMPFN offset-shift / KTHREAD.Teb-0x1e8
+# drift class — verify_offsets.py proves bindgen DECLS, this catches USAGE sites;
+# fix = core::mem::offset_of!(bindgen type, field), never a bare number)
+python3 tools/scan_magic_offsets.py                      # sweep sdk/lib/rust
+# Suppress a verified FP: // nolint: magic-offset (reason)
 
 # Boot coverage map: which functions a real boot EXERCISES (TCG plugin boot)
 tools/coverage/run.sh amd64        # -> per-function exercised set + the
