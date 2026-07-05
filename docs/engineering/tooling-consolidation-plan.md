@@ -111,16 +111,22 @@ before deleting (some may be episodically hand-run) — **archive, don't delete*
       copy-recipe if it's now stale post-canon (`canon-run.sh:17-22`).
 
 ### T1 — Within-estate merges (S/M, Low-Med)
-- [ ] **Fold `verify_abi` into `verify_ffi`** (verify_ffi already re-implements it against the same
-      catalogs) — confirm byte-equivalence, then drop `verify_abi` from `lints.py:154-159` + its baseline.
+> **2026-07-05 re-scope: the tree moved a lot since this plan was drafted (`b245730b27a`);
+> several T1 specifics are now STALE.** The rustconv CLI is down to ~15 subcommands with only
+> 2 `seh-*` win32k passes (not "10 of 26") — other lanes already trimmed it. Re-verify each
+> item against HEAD before doing it; the win32k-namespacing item in particular is now moot.
+- [x] **DONE 2026-07-05 (commit e0ddb35efee)** — Fold `verify_abi` into `verify_ffi`. Confirmed
+      zero coverage gap (verify_abi's 62 findings ⊆ verify_ffi's 135); dropped the redundant lint
+      run + orphaned baseline. verify_abi.py kept (abi_map.py imports its parse fns — it's a library).
 - [ ] **Merge `verify_constants` + `scan_inline_flag_literals`** into one constant-value rule (two matchers).
-- [ ] **Retire `submit`/`batch` → `translate --batch`** (keep the Batch-API 50%-off discount as a flag;
-      delete the whole-file prompt path). Verify no gate depends on them first.
-- [ ] **Fold `boot` → `smoke --fast/--no-gate`** (`boot()` at `smoke.py:346` already calls the same `_one_boot`).
+- [ ] **Retire `submit`/`batch` → `translate --batch`** — CAREFUL: touches the paid-translation path;
+      verify no gate/script depends on them first. (Deferred — cost-sensitive, low streamlining value.)
+- [ ] **Fold `boot` → `smoke --fast/--no-gate`** — LOW VALUE: `boot()`/`smoke()` already share
+      `_one_boot` (`smoke.py:432` / `:350`); only the thin wrappers differ (boot adds `--until`/no-gate).
 - [ ] **Collapse the 4 cache→crate reassemblers** (`reassemble_from_cache`/`restitch_decls`/`reinject_dropped`/`preseed_cache`)
-      into one `rustconv reassemble` subcommand (preserve the drop-recovery behavior).
-- [ ] **Namespace the win32k passes**: 10 of 26 subcommands (`seh-*`, `callout-annotate`, `gdi-locks`,
-      `user-locks`, `split-*`, `switch-extract`) → a `rustconv win32k <pass>` subgroup (~40% surface cut).
+      into one `rustconv reassemble` subcommand (preserve the drop-recovery behavior). Re-verify they still exist.
+- [x] ~~Namespace the win32k passes~~ **MOOT 2026-07-05** — rustconv now has only 2 `seh-*` passes
+      (`seh-classify`/`seh-inventory`), not the 10 the plan cited; namespacing 2 commands isn't worth it.
 
 ### T2 — Cross-cutting structure (M/L, Med)
 - [ ] **One arch source of truth.** Merge build-side `archcfg.py` + runtime `vm.ARCH_CONFIGS`; delete
