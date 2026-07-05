@@ -362,6 +362,42 @@ The new verdicts produced three real findings before this doc was even landed:
    one specimen — a 2-of-3-arches-validated landing, plus a gate whose old
    retry policy could have kept it green.
 
+### 5.4 The arm64 regression, run to ground (2026-07-04 eve) — three bugs, one specimen of each diagnosis
+
+Taking the §5.3 regression to a fix surfaced one bug per systemic cause:
+
+- **D1 (two copies of truth / XLAT).** `win32k-rust/src/painting.rs` passed the
+  GDI owner mask as `(GDI_OBJ_HMGR_POWNED as INT).try_into().unwrap()`.
+  `GDI_OBJ_HMGR_POWNED` is `0x80000002`; the `as i32` makes it negative and the
+  fallible `u32` conversion `Err`s *every* execution — a deterministic panic the
+  C original never had (it passes the bits through). Located by live-GDB
+  byte-fingerprinting the wedge PC to win32k + reading the `PanicInfo` out of
+  guest registers (`painting.rs:931`). The dominant regression face. Fixed
+  (`03ab86b9679`); it is one of 68 `try_into().unwrap()` sites in win32k-rust —
+  a ready-made Tier-3 XLAT-lint target (high-bit constant → fallible narrowing).
+- **D3 (verdict / observability).** win32k's `#[panic_handler]` was a bare
+  `loop {}`; on arm64 a panic compiled to a silent `isb; b .-4` spin at
+  `rust_begin_unwind` — the thread runs, so census sees nothing and the boot
+  just "wedges." Replaced with a DbgPrint of `RUST PANIC HIT` / `PANIC LOC:`
+  in the shape triage classifies as `RUST_PANIC` (never retried). A recurrence
+  is now a one-line diagnosis, not a GDB campaign.
+- **D2 (detection without enforcement / stale artifact).** The KiTrapReturn IRQ
+  race (`ke/arm64/trap.S`: ELR_EL1/SPSR_EL1 written non-atomically vs `eret`,
+  see the commit) was fixed — but the fix *silently never built* because the
+  cargo-link `DEPENDS` graph didn't track kernel `.S` sources (§2.2 specimen).
+  The first "verified fixed, repeat-8" was a stale-binary false signal; the bug
+  reappeared under live GDB because that path forced the real fault. Caught only
+  by `objdump`ing the `msr daifset` into the built kernel — *confirm the object
+  changed, don't trust the rebuild.* After the DEPENDS fix (`dfa073c0412`) put
+  the fix in the kernel, arm64 went **8/8 green** (was ~1/5): both the
+  KiTrapReturn kill and the driver-region 0x50 (its double-teardown flavor)
+  vanished together.
+
+Net: arm64 mainline restored from ~1/5 to 8/8 across four commits; every one of
+the three diagnoses (D1/D2/D3) produced a concrete, fixed bug in a single
+regression. The campaign is the doc's own thesis executed — and the D2 stale-asm
+hole it exposed would have kept masking *future* kernel-asm fixes indefinitely.
+
 ## 6. Measuring whether this works
 
 - **Ghost-tax rate**: re-run the commit classification (subject-line buckets,
