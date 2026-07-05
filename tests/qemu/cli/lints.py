@@ -214,6 +214,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Hand-written numeric struct offsets (the MMPFN pfn_offsets shift + the
+    # KTHREAD.Teb 0x1e8 class, both real kernel bugs 2026-07-05). verify_offsets
+    # proves bindgen DECLS match C; this catches USAGE-site numerology — byte
+    # arithmetic into structs that should be core::mem::offset_of!(bindgen, f).
+    # Stock (~47) is the conversion work queue; baseline gates NEW only.
+    smo = repo / "tools" / "scan_magic_offsets.py"
+    specs.append(
+        (
+            "scan_magic_offsets",
+            [py, str(smo), "--lint"] if smo.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     return specs
 
 
