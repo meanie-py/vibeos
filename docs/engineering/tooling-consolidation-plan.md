@@ -136,8 +136,8 @@ before deleting (some may be episodically hand-run) — **archive, don't delete*
 - [ ] **Collapse `test_smoke.py` ↔ `smoke.py` boot/screenshot dup** (`smoke.py:73-101` mirrors
       `test_smoke::test_screenshot`) into one shared boot-and-capture helper.
 
-### T3 — The correctness fix ⚠ (M, Med) — priority regardless of streamlining appetite
-- [ ] **Make `gate` run the scanner suite blocking** (invoke `check --strict` per built arch, baseline-diff
+### T3 — The correctness fix ⚠ (M, Med) — **DONE + VALIDATED 2026-07-04**
+- [x] **Make `gate` run the scanner suite blocking** (invoke `check --strict` per built arch, baseline-diff
       NEW=0), so the arsenal enforces on the land path instead of warn-only. Natural next footgun increment
       (pre-push already requires the gate stamp; add lint-blocking to what mints it). Highest correctness
       value: on arm64, `lint_kernel` is the sole `captures(none)` defense and is currently advisory.
@@ -163,6 +163,16 @@ before deleting (some may be episodically hand-run) — **archive, don't delete*
   the gate's strict pass runs them (skip outside canon, as now) or the check moves into the build (canon
   context). Risk from the plan ("surfaces baselined-but-real findings") turned out NIL — the arsenal's
   current output is all-accepted; the only real bug it caught was the widl codegen staleness above.
+
+  **LANDED (commit 0539465ac6f) + validated by a full `vibeos-cli gate` (31m):** build ×3 ✓, the new
+  **lint phase 1.5 ✓ on all three arches** (`check --strict` clean), smoke i386 ✓ amd64 ✓. Gate is red
+  ONLY on the **pre-existing arm64 `LpcExitThread` exit wedge** (HANG_TIMEOUT, known ghosts-lane
+  regression) — non-causal to T3 (tooling-only edits; arm64 smoke boots the cmake image, not the
+  regenerated cargo-off stubs). Stamp correctly NOT minted (gate red). The T3 mechanism is proven: a
+  NEW lint finding on any built arch now fails the gate + blocks the push stamp; `--no-lint` opts out.
+  **Residual (owed): the committed_drift canonical checks (`.res`) still SKIP outside a canon-mount — a
+  follow-up should run committed_drift INSIDE the build (canon context) so `.res` drift is actually
+  gated, not skipped.** And the arm64 regression itself is the real blocker to a green ×3 (not T3's).
 
 ### Longer-term (after T1)
 - [ ] **Unify the FFI cluster on `verify_signatures`** (clang-AST — the strongest oracle) + fold in
