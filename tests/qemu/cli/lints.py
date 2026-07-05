@@ -151,12 +151,15 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         ),
         ("py-syntax", [py, "-m", "compileall", "-q", "tests/qemu", "tools"], "both"),
     ]
-    for tool, rel in (
-        ("verify_abi", "verify_abi.py"),
-        ("verify_ffi", "verify_ffi.py"),
-    ):
-        f = rc / rel
-        specs.append((tool, [py, str(f)] if f.is_file() else ["MISSING"], "both"))
+    # verify_ffi is a strict SUPERSET of verify_abi: its ABI-mismatch check
+    # (extern "C" vs "system" on i386) is byte-for-byte the same, plus it adds
+    # param-count, macro-as-extern, and flex-array-UB checks (verified 2026-07-05:
+    # verify_abi's 62 findings ⊆ verify_ffi's 135, zero coverage gap). The
+    # redundant verify_abi lint run was folded out here (T1) + its baseline
+    # dropped. verify_abi.py STAYS — abi_map.py imports its parse_spec /
+    # parse_bindgen_conventions, so it's a library, not just a lint.
+    ffi = rc / "verify_ffi.py"
+    specs.append(("verify_ffi", [py, str(ffi)] if ffi.is_file() else ["MISSING"], "both"))
     # verify_constants reads stdout only: it now scans the whole rust workspace
     # (driver crates included), so its volatile catalog/file-count summary goes to
     # stderr to keep the baseline stable — only `MISMATCH:` finding lines on stdout.

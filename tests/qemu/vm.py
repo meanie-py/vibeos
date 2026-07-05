@@ -260,11 +260,17 @@ class Arm64Config(ArchConfig):
     # appears to fail silently). Idle detection alone is too weak — every
     # silent kernel passes.
     # On arm64 we emulate via TCG (no KVM in WSL2 for aarch64), so user-mode
-    # boot is much slower than on i386/amd64. Wait for explorer.exe to enter
-    # _tWinMain — that proves the entire user-mode chain (smss → csrss →
-    # winlogon → explorer) is up. Boot takes ~5 min cold-cache TCG.
+    # boot is slower than i386/amd64. Wait for explorer.exe to enter _tWinMain —
+    # that proves the entire user-mode chain (smss → csrss → winlogon → explorer)
+    # is up. Post the 2026-07 arm64 MiPteToX self-map fix (which made teardown
+    # ~10× faster — the old "~5 min TCG" lore was mostly that bug), a healthy
+    # boot reaches the marker in ~36–40s even under parallel-gate contention.
     boot_marker: str = "[EXPLORER] _tWinMain entered"
-    boot_timeout: float = 540.0
+    # 180s = ~4.5× the observed ~40s worst case — ample margin for a slow-but-
+    # progressing boot, while a genuine wedge now fails in ≤180s not 540s. (Was
+    # 540s, sized for the pre-fix ~5min boots.) A rare contention-slow boot that
+    # trips this is classified HANG_TIMEOUT=slow and retried by the gate.
+    boot_timeout: float = 180.0
     min_boot_bytes: int = 5000
     # QMP can be slow to respond when the kernel is in tight context-switch
     # loops on TCG — give it more headroom than i386/amd64.
@@ -272,11 +278,11 @@ class Arm64Config(ArchConfig):
     # Brief settle after _tWinMain to let the taskbar/desktop draw before
     # screenshot/snapshot tests run.
     desktop_settle_seconds: float = 15.0
-    # aarch64-on-x86 TCG is the slowest boot; a healthy one reaches the marker
-    # well under 240s, so 240s of pure silence with no marker = a real wedge
-    # (nettest/LpcExit hangs sit silent ~520s under the 540s timeout → caught at
-    # ~240s, saving ~5min per wedged boot).
-    hang_silence_seconds: float = 240.0
+    # A healthy boot reaches the marker in ~40s with continuous output, so 120s
+    # of pure silence with no marker = a real wedge (3× the whole healthy boot,
+    # well above any legitimate inter-line gap). Catches a wedge in ~2min instead
+    # of ~4min. (Was 240s, sized against the pre-fix ~520s silent hangs.)
+    hang_silence_seconds: float = 120.0
     # Boot milestones for test_milestones. "IoInitSystem returning TRUE" is
     # silenced on arm64 (iomgr.rs::io_trace is a no-op for aarch64) so we
     # don't gate on it; the surrounding [SMSS]/[CSRSS] entries already prove
