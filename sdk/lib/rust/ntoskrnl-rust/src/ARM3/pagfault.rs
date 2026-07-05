@@ -566,6 +566,32 @@ unsafe fn MiCompleteProtoPteFault(
         Protection = (*OriginalPte).soft_protection() as ULONG_PTR;
         OriginalProtection = (true) as u8;
 
+        // Heal an uninitialized OriginalPte (protection == MM_ZERO_ACCESS) on a KERNEL
+        // prototype-backed page whose prototype PTE is validly mapped. A non-MiInitializePfn
+        // path made the shared segment proto valid without ARM3-initializing the backing
+        // PFN's OriginalPte (its Long stays 0 from the free-list link), so its protection
+        // reads back as MM_ZERO_ACCESS. Derive the real protection from the authoritative
+        // (valid) prototype PTE and write it back, so this view AND every later consumer
+        // (MiDecrementShareCount transition-PTE build, re-fault, the valid-write RO check)
+        // see the section's true protection. Without this the kernel session view of a
+        // read-write section (win32k GdiHandleTable->DevCaps) maps read-only and the first
+        // write BUGCHECKs 0xBE. Gated on kernel addresses so user views are untouched.
+        // (field-manual §9.13 — devcaps-0xBE)
+        #[cfg(target_arch = "x86_64")]
+        {
+            if (Protection as ULONG) == MM_ZERO_ACCESS
+                && (Address as u64) >= (MmSystemRangeStart as u64)
+                && ((*PointerProtoPte).valid() as usize) == 1
+            {
+                Protection = if MI_IS_PAGE_WRITEABLE(&*PointerProtoPte) != 0 {
+                    MM_READWRITE as ULONG_PTR
+                } else {
+                    MM_READONLY as ULONG_PTR
+                };
+                (*OriginalPte).set_soft_protection(Protection as ULONG);
+            }
+        }
+
         if (StoreInstruction != 0) && !((Protection as ULONG) & MM_READWRITE != 0) {
             StoreInstruction = 0;
         }

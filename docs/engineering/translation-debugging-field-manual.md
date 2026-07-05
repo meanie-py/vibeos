@@ -2278,6 +2278,55 @@ page-table write (`_MmSetPageEntrySectionSegment`, spt_bad gate on the PageTable
 did NOT fire — confirming the fault is elsewhere. NEXT: identify which win32k section
 maps at `0xfffff97fde280000` and why its kernel view is R/O (check the SEC_ protection /
 `MmMapViewInSessionSpace` / the gpsi section-create protection in the Rust win32k glue).
+
+**§9.13 addendum 5 (2026-07-04, flake-nettest-explorer — the 0xBE ROOT-CAUSED and
+FIXED). The section at `0xfffff97fde280000` is the win32k GDI shared handle table**
+(`GdiHandleTable`, created `PAGE_READWRITE`+`SEC_COMMIT` by `InitGdiHandleTable` and
+mapped into session space via `MmMapViewInSessionSpace`), and the write is
+`PDEVOBJ_vGetDeviceCaps(ppdev, &GdiHandleTable->DevCaps)` called from
+`co_IntInitializeDesktopGraphics` — NOT a "time field" copy (that read of the earlier
+addendum was a mis-disasm; it's a `GDIINFO`/`DEVCAPS` field copy with a `/1000` µs→ms
+convert). Method that cracked it: symbolicate the faulting `Rip` against **win32k.sys's
+own nm symbols** (ImageBase 0x10000, so `nm_addr = DllBase_off + 0x10000`) after finding
+win32k in `PsLoadedModuleList` — win32k IS in that list (the "no loaded driver → session
+space" claim above was a bad module-list walk). GNU `nm`, not `llvm-nm` (absent on PATH;
+`llvm-nm ...|| nm ...` had been silently using the fallback).
+
+**Root cause (proven by live GDB on the frozen bugcheck + 3 rounds of self-reporting
+diagnostic bugchecks):** the DevCaps page's backing PFN has **`OriginalPte.Long == 0`**
+(protection `MM_ZERO_ACCESS`) even though its prototype PTE (in paged pool, e.g.
+`0xfffff8a00021cc70`) is **valid and writable** (`0x…063`, W=1) and the segment's
+demand-zero proto template is `0x80` (`MM_READWRITE`). `MiCompleteProtoPteFault` derives
+the view protection from `Pfn1->OriginalPte.u.Soft.Protection` (the else-branch, since the
+amd64 session view PTE's `PageFileHigh != MI_PTE_LOOKUP_NEEDED`), so a zero OriginalPte →
+**read-only** kernel view → win32k's first write to `DevCaps` → `BUGCHECK 0xBE`
+(`MmArmAccessFault` valid-write reason 12). MMPFN stride on amd64 is **0x48** (not 0x30);
+`OriginalPte` @ +0x20. `OriginalPte.u.Long` doubles as the **colored free-list link**
+(faithful to C `pfnlist.c`) and is cleared to 0 on unlink. Diagnostics proved: it is
+**not** a premature free (`0x0BADF00D` never fired), and `MiInitializePfn` **never ran**
+for this page (`0x0BADCAFE` never fired) — i.e. the shared segment proto was made valid by
+a **non-`MiInitializePfn` path** (fast "proto already valid" path in
+`MiResolveProtoPteFault`), leaving the free-list-cleared `OriginalPte==0`. Only the
+section's first page is hit; all other faulted pages carry the correct `0x80`. The exact
+non-ARM3 validation path (ARM3/ROS section coexistence — `MiIsRosSectionObject` =
+`section.u.Flags.filler()`) is the remaining open lead.
+
+**Fix (landed, amd64-only, `MiCompleteProtoPteFault`, `ARM3/pagfault.rs`):** in the
+OriginalProtection (else) branch, when the derived protection is `MM_ZERO_ACCESS` on a
+**kernel** address (`Address >= MmSystemRangeStart`) whose prototype PTE is valid, **heal**
+it — derive the real protection from the authoritative valid proto PTE
+(`MI_IS_PAGE_WRITEABLE` → `MM_READWRITE` else `MM_READONLY`) and write it back into
+`OriginalPte`, so this view AND every later consumer (`MiDecrementShareCount`
+transition-PTE build, re-fault, the valid-write RO check) see the section's true
+protection. Kernel-gated so user (RO) views are untouched — no security regression. This
+is a consumption-point repair of a real invariant violation ("a validly-mapped
+prototype-backed page must not have `MM_ZERO_ACCESS` OriginalPte"); the deeper
+proto-validation path that leaves it 0 is still owed. **Result: amd64 5/5 green, no 0xBE.**
+Debug recipe that worked: `VIBEOS_NO_KVM=1 qemu/start.sh amd64 --gdb` → `run-until
+KeBugCheckEx` → read trap-frame `Rip`+regs → walk `PsLoadedModuleList` → symbolicate vs
+module nm → self-reporting diagnostic `KeBugCheckEx(0x0BAD…)` codes to bisect the fault
+path (survives VM reaping, unlike post-mortem GDB).
+
 **§9.13 addendum 2 (2026-07-04 day): the detector is now PERMANENT — lockdep
 Phase A (sync-instrumentation §4), one flag, fires on every boot.** The
 temporary `ws-lock-EXCL` flightrec tap above is superseded:
