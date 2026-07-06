@@ -760,6 +760,33 @@ pub unsafe extern "system" fn WinMain(
         }
     }
 
+    /* ARM64: make the shell's desktop (WinSta0\Default, where explorer's tray/
+     * taskbar windows live) the ACTIVE INPUT DESKTOP. A normal logon reaches
+     * this via userinit -> WlxSwitchDesktopToUser, but the arm64 shortcut path
+     * skips GINA/logon entirely and RunSetup's async thread can leave the input
+     * desktop stranded on "Winlogon". When gpdeskInputDesktop != the shell's
+     * desktop, win32k's IntGetPaintMessage walks the wrong desktop tree and
+     * never finds explorer's dirty windows -> the tray clock (and every window)
+     * never repaints, and the "cPaintsReady but no dirty window" leak fires
+     * forever (field manual §9.21; root-caused 2026-07-06 via a live
+     * gpdeskInputDesktop=Default poke that made the clock tick). SwitchDesktop
+     * also drives co_IntShowDesktop so the desktop is mapped to the display. */
+    #[cfg(target_arch = "aarch64")]
+    if !(*WLSession).ApplicationDesktop.is_null() {
+        if SwitchDesktop((*WLSession).ApplicationDesktop) != 0 {
+            DbgPrint(
+                b"[WINLOGON] ARM64: switched active input desktop to Default (shell)\n\0".as_ptr()
+                    as *const i8,
+            );
+        } else {
+            DbgPrint(
+                b"[WINLOGON] ARM64: SwitchDesktop(Default) FAILED (error %lu)\n\0".as_ptr()
+                    as *const i8,
+                GetLastError(),
+            );
+        }
+    }
+
     /* netstack (smoltcp) usermode winsock proof: spawn nettest.exe directly here
      * rather than via explorer's HKCU..\Run / Startup-folder processing, which on
      * amd64 doesn't reliably reach ProcessStartupItems() (the shell startup is
