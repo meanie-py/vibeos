@@ -14,8 +14,8 @@ ntprintf_w = { path = "../ntprintf_w" }
 # leaf so extracted subsystems can share it without depending on ntoskrnl-rust.
 dbgprint-rust = { path = "../dbgprint-rust" }
 
-[dev-dependencies]
-iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "intel", "gas"] }
+# iced-x86 dev-dep relocated to kdbg-rust with i386_dis.rs (crate-split Phase 1b) —
+# it was used only by that file's #[cfg(test)] disassembler roundtrip.
 
 [features]
 default = []

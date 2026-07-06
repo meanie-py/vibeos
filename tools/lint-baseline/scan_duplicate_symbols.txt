@@ -1,1 +1,12 @@
+KdbGetHistoryEntry	kdbg-rust,ntoskrnl-rust
+KdbInitialize	kdbg-rust,ntoskrnl-rust
+KdbRegisterCliCallback	kdbg-rust,ntoskrnl-rust
+KdbSymPrintAddress	kdbg-rust,ntoskrnl-rust
+KdbgD0Transition	kdbg-rust,ntoskrnl-rust
+KdbgD3Transition	kdbg-rust,ntoskrnl-rust
+KdbgReceivePacket	kdbg-rust,ntoskrnl-rust
+KdbgRestore	kdbg-rust,ntoskrnl-rust
+KdbgSave	kdbg-rust,ntoskrnl-rust
+KdbgSendPacket	kdbg-rust,ntoskrnl-rust
+KdbpGetHexNumber	kdbg-rust,ntoskrnl-rust
 KeGetCurrentIrql	arbiter-rust,ntoskrnl-rust

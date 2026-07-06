@@ -216,16 +216,12 @@ pub static mut IoOtherTransferCount: LARGE_INTEGER = unsafe { core::mem::zeroed(
 #[no_mangle]
 pub static mut IoStatisticsLock: KSPIN_LOCK = 0;
 
-#[no_mangle]
-pub static mut IopAutoReboot: ULONG = 0;
-
-// Registry-controlled values owned by iomgr. Concatenated into
-// CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
-pub static IOMGR_CONTROL_VECTOR: ntkrnl_sys::SubVector<1> =
-    ntkrnl_sys::SubVector(unsafe { [
-        ntkrnl_sys::cv!("CrashControl", "AutoReboot",
-            core::ptr::addr_of_mut!(IopAutoReboot)),
-    ] });
+// IopAutoReboot + its IOMGR_CONTROL_VECTOR registry slice were relocated to
+// ntoskrnl-rust/src/config/cmdata.rs (crate-split Phase 1b): the kernel's
+// CmControlVector is a *const*-concatenated table, and const-eval cannot reference
+// an extern (severed-crate) static's address — so IopAutoReboot must live in the
+// same crate as that table. iomgr had no runtime use of it beyond the table; its
+// reader is ke/bug.rs (via extern decl).
 
 #[no_mangle]
 pub static mut IopNumTriageDumpDataBlocks: ULONG = 0;

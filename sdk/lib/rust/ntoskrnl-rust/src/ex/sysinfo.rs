@@ -130,7 +130,15 @@ use crate::ex::lookas::{
     ExpPagedLookasideListHead, ExpPagedLookasideListLock,
 };
 use crate::ob::obinit::ObpObjectSecurityMode;
-use crate::se::priv_::{SeSystemEnvironmentPrivilege, SeLoadDriverPrivilege, SeDebugPrivilege, SeTcbPrivilege, SeSystemtimePrivilege};
+// se privilege LUIDs now live in se-rust (crate-split Phase 1b); reach the
+// #[no_mangle] const statics by symbol (statics carry no calling convention).
+extern "C" {
+    static SeSystemEnvironmentPrivilege: LUID;
+    static SeLoadDriverPrivilege: LUID;
+    static SeDebugPrivilege: LUID;
+    static SeTcbPrivilege: LUID;
+    static SeSystemtimePrivilege: LUID;
+}
 
 extern "system" {
     fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);

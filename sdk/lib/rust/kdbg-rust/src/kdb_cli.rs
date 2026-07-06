@@ -200,8 +200,6 @@ extern "C" {
         pLdrEntry: *mut PLDR_DATA_TABLE_ENTRY,
     ) -> BOOLEAN;
     fn KdbpCommandHistoryAppend(Command: PCSTR);
-    fn KdbpAcquireLock(SpinLock: PKSPIN_LOCK) -> KIRQL;
-    fn KdbpReleaseLock(SpinLock: PKSPIN_LOCK, OldIrql: KIRQL);
     fn KdpInitTerminal();
     fn KdpUpdateTerminalSize(Size: *mut SIZE);
     fn KdpReadTermKey(ScanCode: *mut ULONG) -> CHAR;
@@ -213,6 +211,13 @@ extern "system" {
     // bare-name `KeGetTrapFramePc` to a stdcall Rust impl in ke-macros
     // surfaced the mismatch.
     fn KeGetTrapFramePc(TrapFrame: *mut core::ffi::c_void) -> ULONG_PTR;
+    // KdbpAcquireLock/KdbpReleaseLock are NTAPI (stdcall on i386) per ntoskrnl/kd/kd.h
+    // and defined `#[no_mangle] extern "system"` in ntoskrnl-rust kd/kdio.rs. They were
+    // in the preceding extern "C" (cdecl) block and only linked while kdb_cli.rs shared
+    // ntoskrnl-rust's crate (rustc resolved the call to the local def, ignoring the
+    // wrong-ABI decl). The crate-split severed that; declare them stdcall here.
+    fn KdbpAcquireLock(SpinLock: PKSPIN_LOCK) -> KIRQL;
+    fn KdbpReleaseLock(SpinLock: PKSPIN_LOCK, OldIrql: KIRQL);
     fn KdSystemDebugControl(
         Command: ULONG,
         InputBuffer: PVOID,
