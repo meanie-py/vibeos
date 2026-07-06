@@ -26,6 +26,6 @@ Scanning exported Rust fns...
 [MEDIUM] NtSetLdtEntries  (sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/stubs.rs:137)
 [MEDIUM] ObpSetHandleAttributes  (sdk/lib/rust/ntoskrnl-rust/src/ob/obhandle.rs:227)
 clang:  .build-tools/llvm-mingw/bin/clang
-crates: sdk/lib/rust/ntoskrnl-rust/src, sdk/lib/rust/lpc-rust/src, sdk/lib/rust/fsrtl-rust/src, sdk/lib/rust/dbgk-rust/src, sdk/lib/rust/wmi-rust/src
+crates: sdk/lib/rust/ntoskrnl-rust/src, sdk/lib/rust/lpc-rust/src, sdk/lib/rust/fsrtl-rust/src, sdk/lib/rust/dbgk-rust/src, sdk/lib/rust/wmi-rust/src, sdk/lib/rust/dbgprint-rust/src
 headers: build-amd64
 ── coverage ──

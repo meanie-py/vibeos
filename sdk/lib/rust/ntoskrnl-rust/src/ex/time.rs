@@ -70,10 +70,12 @@ const TICKSPERMINUTE: i64 = 600000000;
 
 #[no_mangle]
 pub static mut ExpTimeZoneInfo: RTL_TIME_ZONE_INFORMATION = unsafe { core::mem::zeroed() };
-static mut ExpLastTimeZoneBias: ULONG = 0xFFFFFFFF;
+// pub: Phase1InitializationDiscard (ex/init.rs) reads/writes these while
+// seeding the boot time from the RTC.
+pub static mut ExpLastTimeZoneBias: ULONG = 0xFFFFFFFF;
 #[no_mangle]
 pub static mut ExpTimeZoneBias: LARGE_INTEGER = unsafe { core::mem::zeroed() };
-static mut ExpAltTimeZoneBias: ULONG = 0;
+pub static mut ExpAltTimeZoneBias: ULONG = 0;
 #[no_mangle]
 pub static mut ExpTimeZoneId: ULONG = 0;
 static mut ExpTickCountMultiplier: ULONG = 0;

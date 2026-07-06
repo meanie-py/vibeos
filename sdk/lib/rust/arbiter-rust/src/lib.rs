@@ -15,15 +15,21 @@ fn panic(_info: &core::panic::PanicInfo) -> ! { loop {} }
 #[no_mangle]
 pub extern "C" fn rust_eh_personality() {}
 
-// KeGetCurrentIrql is a real ntoskrnl export on i386 but a FORCEINLINE (read cr8)
-// on amd64/arm64, so the kernel does not export it on amd64. arbiter.rs calls it
-// out-of-line; when libarbiter_rust.a is linked into pcix.sys (which links the
-// partial libntoskrnl.a static archive, not the full cargo kernel) the symbol is
-// undefined on a from-scratch amd64 link. Provide the trivial cr8-read shim for
-// amd64 only — same cohab-shim pattern as cdrom-rust/cdfs-rust ddk_shims. In the
-// ntoskrnl link the kernel's own ke definition wins first under
-// --allow-multiple-definition (this copy is harmless there). arm64 resolves via
-// the kernel's exported helper, so no shim needed.
+// arbiter.rs calls KeGetCurrentIrql OUT-OF-LINE. On i386 the kernel exports a real
+// `_KeGetCurrentIrql@0` symbol so this resolves; on amd64/arm64 it's a FORCEINLINE
+// (read cr8 / PCR.Irql) that the kernel materializes only in ntoskrnl-rust/
+// shim_exports.rs. But arbiter-rust is a SEPARATE staticlib that links BEFORE
+// libkernel_rust.a in the kernel's single-pass rlib order — so arbiter's undefined
+// ref cannot back-resolve to the kernel's (earlier, unpulled) definition. arbiter
+// therefore needs its OWN amd64 definition, kept here.
+//
+// NOTE (--allow-multiple-definition ratchet): the source-level dup scanner
+// (tools/scan_duplicate_symbols.py) flags this as an arbiter+ntoskrnl collision,
+// but it is NOT a real masked duplicate — the kernel's shim_exports copy is never
+// pulled (nothing references the out-of-line symbol on the kernel side; it's
+// inlined), so only this def links. It stays in the ratchet baseline as an
+// accepted source-level entry. Deleting it breaks the amd64 link (KeGetCurrentIrql
+// undefined). arm64 resolves via the kernel's exported helper, so no shim needed.
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "C" fn KeGetCurrentIrql() -> u8 {

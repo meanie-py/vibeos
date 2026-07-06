@@ -1,6 +1,6 @@
   C_MACRO: 94
   FLEX_ARRAY: 66
-  TOTAL: 160 issues across 2340 files
+  TOTAL: 160 issues across 2341 files
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/cachesup.rs:170: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/close.rs:45: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/fileinfo.rs:49: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
@@ -54,7 +54,7 @@
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/config/cmlazy.rs:32: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/callback.rs:49: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/callback.rs:50: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/init.rs:257: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/init.rs:259: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/timer.rs:85: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/iomgr/bootlog.rs:46: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/iomgr/device.rs:85: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust

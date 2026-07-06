@@ -69,6 +69,7 @@ KERNEL_LINK_CRATES = [
     "fsrtl-rust",
     "dbgk-rust",
     "wmi-rust",
+    "dbgprint-rust",
     "guids-rust",
     "rtl-rust",
     "cnt-rust-lib",

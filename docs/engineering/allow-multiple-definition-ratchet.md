@@ -21,7 +21,7 @@ Census of the 40 distinct duplicates lld masks on the i386 kernel link:
 |---|---|---|
 | **Rust runtime** — `rust_eh_personality`, `rust_begin_unwind`, `memcpy`, compiler-builtins | ~3 (×N archives) | **Structural, partly IMPOSSIBLE.** The kernel PE links ~11 *independent* `crate-type=["staticlib"]` graphs (kernel-rust umbrella + rtl / cmlib / guids / cport / csq / arbiter / lsalib / rossym / cnt-rust-lib / pseh). Each bundles its own copy of the panic/eh/builtins runtime — irreducible while N>1 staticlibs feed one link. And they *can't* be merged into one graph: `rtl-rust` / `cnt-rust-lib` build a **different rustc target** (user-mode hardfloat + precompiled std) than the kernel-json softfloat `kernel-rust` (reactos-link `build_rust_crate` doc) — physically incompatible in one crate graph. |
 | **GUID data** — `BATTERY_*_WMI_GUID`, `GUID_DEVICE_*`, `GUID_CLASS_INPUT` | ~17 | **Reducible — DONE.** `ntoskrnl-rust/src/guid.rs` carried byte-identical copies of GUIDs that `guids-rust/src/defs.rs` (the auto-generated wdmguid/poguid/ioevent replacement, `#[used]`, in the kernel link) already owns. Removed from ntoskrnl-rust; guids-rust is the single owner. Consumers still reference the symbol via `extern { static … }` and resolve to it. |
-| **Deliberate cohab primitives** — e.g. `KeGetCurrentIrql` | few | **Reducible but low-value / intentional.** `arbiter-rust` defines its own amd64 `KeGetCurrentIrql` (a standalone `cr8` read, `#[cfg(x86_64)]`) so the arbiter lib is self-contained; `ntoskrnl-rust/shim_exports.rs` has the canonical one. Deduping would add a cross-crate link dependency for one amd64 symbol — not worth it. Baselined as accepted. |
+| **Cohab primitives** — e.g. `KeGetCurrentIrql` | few | **Not actually reducible — a source-census artifact.** `arbiter-rust` defines its own amd64 `KeGetCurrentIrql` (`cr8` read, `#[cfg(x86_64)]`). The source scanner flags arbiter+ntoskrnl, but it is NOT a real masked duplicate — it was never among the 40 link warnings. arbiter-rust links *before* libkernel_rust.a in the single-pass rlib order, so arbiter's out-of-line call **can't back-resolve** to the kernel's (earlier, unpulled) definition; arbiter needs its own local def, and the kernel's copy is never pulled. Deleting arbiter's shim breaks the amd64 link (`KeGetCurrentIrql: undefined`, verified). Stays baselined as an accepted source-level entry. |
 
 Note: nm-over-archives *over-reports* this massively (it counts unpulled
 `ntkrnl-sys` members bundled into each staticlib — the linker never pulls them,
@@ -50,12 +50,19 @@ It is a deliberately **differential** check, not an exact model of the link:
 Structural runtime symbols (`rust_eh_personality`, `__rust_*`, …) are excluded
 from the census so they don't read as debt.
 
-Current baseline: **1** entry (`KeGetCurrentIrql`, the deliberate arbiter cohab).
+Current baseline: **1** — `KeGetCurrentIrql`, a *source-level* collision that
+is NOT a real link duplicate (see the table): arbiter needs its own local def
+for link-order reasons; the kernel's copy is never pulled. It's the one accepted
+entry. The 17 GUID data duplicates (genuine masked dups) were deduped away.
+
+The census is a source scan, so it can flag a source-level collision that the
+linker never sees (single-pass rlib order means an earlier def is never pulled to
+satisfy a later ref). That's fine for a *ratchet* — such entries freeze into the
+baseline; only NET-NEW collisions fail the gate. `KeGetCurrentIrql` is the
+canonical example.
 
 ## Owed / future shrink
 
-- **Reducible primitive cohab** (`KeGetCurrentIrql`, and any that surface): route
-  to a single owner if the cross-crate link dependency is acceptable. Low priority.
 - **C-side cohab** (a `.c` still compiled beside its Rust replacement): a separate
   concern; not covered by this ratchet.
 - The **structural runtime** class is only removable by collapsing the
