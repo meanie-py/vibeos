@@ -110,6 +110,16 @@ pattern generalizes to all of them.
 4. The path is ready for the real-NIC and interrupt-driven-USB quests to build on.
 5. Gate ×3 green (all arches — you're touching shared HAL/trap code; x86 must not regress).
 
+**Downstream cleanup this unblocks:** the scheduler carries an arm64-only ReadySummary
+preemption recheck in `ke/wait.rs` (KiExitDispatcher) and `ke/thrdschd.rs` (KiSwapThread,
+NtYieldExecution), mirroring C `#ifdef _M_ARM64` (ntoskrnl/ke/thrdschd.c:444). It exists
+*specifically* because arm64 has no working `HalRequestSoftwareInterrupt`, so a stale
+`Prcb->NextThread` is never re-dispatched via a DISPATCH software interrupt and a
+higher-priority ready thread can starve. **Once Half B delivers real software-interrupt
+preemption, verify this recheck is dead (instrument that the branch never fires on a boot)
+and remove all three sites** — the invariant will then be kept the x86 way. Cross-ref:
+`per-arch-cfg-divergence-audit.md` Tier 4.
+
 ---
 
 ## Tooling you should build (explicitly in scope)
