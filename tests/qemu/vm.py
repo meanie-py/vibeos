@@ -594,6 +594,14 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
     """
 
     arch: str = "amd64-uefi-net"
+    # Short settle: every post-boot net assertion goes through
+    # test_net._wait_for_marker, which polls the LIVE log with its own
+    # timeout — nothing reads late markers out of the static _boot_output
+    # capture (boot milestones all fire before the marker). The inherited
+    # 15s idle-settle was pure dead time on this config (measured: guest
+    # self-tests done by +13.4s, last boot output +15.6s, settle then idled
+    # to +30.6s). 2s keeps a minimal post-marker health window.
+    desktop_settle_seconds: float = 2.0
     # Guest-side TCP echo port the netstack self-test listens on (M2+).
     ECHO_GUEST_PORT: int = 7777
     # Host port forwarded to the guest echo port; allocated in qemu_args().
@@ -643,6 +651,8 @@ class I386UefiNetConfig(I386UefiConfig):
     """
 
     arch: str = "i386-uefi-net"
+    # See Amd64UefiNetConfig: marker tests poll the live log; idle-settle is dead time.
+    desktop_settle_seconds: float = 2.0
     ECHO_GUEST_PORT: int = 7777
     echo_hostfwd_port: int = 0
     TDI_SRV_GUEST_PORT: int = 8888

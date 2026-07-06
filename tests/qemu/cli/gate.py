@@ -149,8 +149,13 @@ def _net_once(repo: Path, root: Path) -> dict:
     if not test_file.exists():
         return {"arch": "net", "verdict": "SKIP", "classification": "", "ok": True,
                 "retryable": False, "seconds": 0.0, "run_dir": str(root), "salient": ""}
+    # --skip-clean-build: the gate's own build stage produced the media this
+    # lane boots (builds strictly precede smokes), so the conftest fixture's
+    # nuke-cargo-target + `ninja livecd` re-run is redundant here — measured
+    # 17.6s of the lane's wall. Standalone `pytest test_net.py` keeps the
+    # clean-build guard by default (raw pytest has no staleness gate).
     cmd = [_sys.executable, "-m", "pytest", str(test_file), "--arch", "amd64-uefi-net",
-           "--timeout", "600", "-q", "-p", "no:cacheprovider"]
+           "--timeout", "600", "-q", "-p", "no:cacheprovider", "--skip-clean-build"]
     t0 = time.monotonic()
     try:
         proc = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True, timeout=1200)
