@@ -53,114 +53,18 @@ pub static PARTITION_LDM_DATA_GUID: GUID = GUID {
 };
 
 // ---------------------------------------------------------------------------
-// poclass.h — power management class GUIDs.
+// poclass.h / batclass.h — power-management + battery class GUIDs.
+//
+// REMOVED (crate-split dup dedup, 2026-07-06): the 17 poclass/batclass GUIDs
+// (GUID_CLASS_INPUT, GUID_DEVICE_*, GUID_DEVICE_BATTERY, BATTERY_*_WMI_GUID)
+// used to be defined here AND — byte-identically — in guids-rust/src/defs.rs
+// (the auto-generated wdmguid/poguid/ioevent replacement, which is in the
+// kernel link and marks each `#[no_mangle] #[used]`). Two definitions of the
+// same symbol were only tolerated by `--allow-multiple-definition`. guids-rust
+// is the single canonical owner now; consumers still reference the symbol via
+// `extern { static FOO: GUID; }` and resolve to it. Only the diskguid.h
+// PARTITION_* GUIDs (NOT provided by guids-rust) remain here.
 // ---------------------------------------------------------------------------
-
-#[no_mangle]
-pub static GUID_CLASS_INPUT: GUID = GUID {
-    Data1: 0x4D1E55B2, Data2: 0xF16F, Data3: 0x11CF,
-    Data4: [0x88, 0xCB, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30],
-};
-
-#[no_mangle]
-pub static GUID_DEVICE_LID: GUID = GUID {
-    Data1: 0x4AFA3D52, Data2: 0x74A7, Data3: 0x11d0,
-    Data4: [0xbe, 0x5e, 0x00, 0xA0, 0xC9, 0x06, 0x28, 0x57],
-};
-
-#[no_mangle]
-pub static GUID_DEVICE_MEMORY: GUID = GUID {
-    Data1: 0x3fd0f03d, Data2: 0x92e0, Data3: 0x45fb,
-    Data4: [0xb7, 0x5c, 0x5e, 0xd8, 0xff, 0xb0, 0x10, 0x21],
-};
-
-#[no_mangle]
-pub static GUID_DEVICE_MESSAGE_INDICATOR: GUID = GUID {
-    Data1: 0xCD48A365, Data2: 0xfa94, Data3: 0x4ce2,
-    Data4: [0xa2, 0x32, 0xa1, 0xb7, 0x64, 0xe5, 0xd8, 0xb4],
-};
-
-#[no_mangle]
-pub static GUID_DEVICE_PROCESSOR: GUID = GUID {
-    Data1: 0x97fadb10, Data2: 0x4e33, Data3: 0x40ae,
-    Data4: [0x35, 0x9c, 0x8b, 0xef, 0x02, 0x9d, 0xbd, 0xd0],
-};
-
-#[no_mangle]
-pub static GUID_DEVICE_SYS_BUTTON: GUID = GUID {
-    Data1: 0x4AFA3D53, Data2: 0x74A7, Data3: 0x11d0,
-    Data4: [0xbe, 0x5e, 0x00, 0xA0, 0xC9, 0x06, 0x28, 0x57],
-};
-
-#[no_mangle]
-pub static GUID_DEVICE_THERMAL_ZONE: GUID = GUID {
-    Data1: 0x4AFA3D51, Data2: 0x74A7, Data3: 0x11d0,
-    Data4: [0xbe, 0x5e, 0x00, 0xA0, 0xC9, 0x06, 0x28, 0x57],
-};
-
-#[no_mangle]
-pub static GUID_DEVICE_FAN: GUID = GUID {
-    Data1: 0x05ecd13d, Data2: 0x81da, Data3: 0x4a2a,
-    Data4: [0x8a, 0x4c, 0x52, 0x4f, 0x23, 0xdd, 0x4d, 0xc9],
-};
-
-// ---------------------------------------------------------------------------
-// batclass.h — battery class GUIDs.
-// ---------------------------------------------------------------------------
-
-#[no_mangle]
-pub static GUID_DEVICE_BATTERY: GUID = GUID {
-    Data1: 0x72631e54, Data2: 0x78A4, Data3: 0x11d0,
-    Data4: [0xbc, 0xf7, 0x00, 0xaa, 0x00, 0xb7, 0xb3, 0x2a],
-};
-
-#[no_mangle]
-pub static BATTERY_STATUS_WMI_GUID: GUID = GUID {
-    Data1: 0xfc4670d1, Data2: 0xebbf, Data3: 0x416e,
-    Data4: [0x87, 0xce, 0x37, 0x4a, 0x4e, 0xbc, 0x11, 0x1a],
-};
-
-#[no_mangle]
-pub static BATTERY_RUNTIME_WMI_GUID: GUID = GUID {
-    Data1: 0x535a3767, Data2: 0x1ac2, Data3: 0x49bc,
-    Data4: [0xa0, 0x77, 0x3f, 0x7a, 0x02, 0xe4, 0x0a, 0xec],
-};
-
-#[no_mangle]
-pub static BATTERY_TEMPERATURE_WMI_GUID: GUID = GUID {
-    Data1: 0x1a52a14d, Data2: 0xadce, Data3: 0x4a44,
-    Data4: [0x9a, 0x3e, 0xc8, 0xd8, 0xf1, 0x5f, 0xf2, 0xc2],
-};
-
-#[no_mangle]
-pub static BATTERY_FULL_CHARGED_CAPACITY_WMI_GUID: GUID = GUID {
-    Data1: 0x40b40565, Data2: 0x96f7, Data3: 0x4435,
-    Data4: [0x86, 0x94, 0x97, 0xe0, 0xe4, 0x39, 0x59, 0x05],
-};
-
-#[no_mangle]
-pub static BATTERY_CYCLE_COUNT_WMI_GUID: GUID = GUID {
-    Data1: 0xef98db24, Data2: 0x0014, Data3: 0x4c25,
-    Data4: [0xa5, 0x0b, 0xc7, 0x24, 0xae, 0x5c, 0xd3, 0x71],
-};
-
-#[no_mangle]
-pub static BATTERY_STATIC_DATA_WMI_GUID: GUID = GUID {
-    Data1: 0x05e1e463, Data2: 0xe4e2, Data3: 0x4ea9,
-    Data4: [0x80, 0xcb, 0x9b, 0xd4, 0xb3, 0xca, 0x06, 0x55],
-};
-
-#[no_mangle]
-pub static BATTERY_STATUS_CHANGE_WMI_GUID: GUID = GUID {
-    Data1: 0xcddfa0c3, Data2: 0x7c5b, Data3: 0x4e43,
-    Data4: [0xa0, 0x34, 0x05, 0x9f, 0xa5, 0xb8, 0x43, 0x64],
-};
-
-#[no_mangle]
-pub static BATTERY_TAG_CHANGE_WMI_GUID: GUID = GUID {
-    Data1: 0x5e1f6e19, Data2: 0x8786, Data3: 0x4d23,
-    Data4: [0x94, 0xfc, 0x9e, 0x74, 0x6b, 0xd5, 0xd8, 0x88],
-};
 
 // Force the linker to pull this CGU out of the staticlib archive even though
 // the only references come from C-side `extern GUID` declarations. Without
@@ -172,29 +76,12 @@ mod _force_guid_symbols {
     unsafe impl Sync for SyncPtr {}
 
     #[used]
-    static REFS: [SyncPtr; 23] = [
+    static REFS: [SyncPtr; 6] = [
         SyncPtr(&PARTITION_ENTRY_UNUSED_GUID),
         SyncPtr(&PARTITION_SYSTEM_GUID),
         SyncPtr(&PARTITION_MSFT_RESERVED_GUID),
         SyncPtr(&PARTITION_BASIC_DATA_GUID),
         SyncPtr(&PARTITION_LDM_METADATA_GUID),
         SyncPtr(&PARTITION_LDM_DATA_GUID),
-        SyncPtr(&GUID_CLASS_INPUT),
-        SyncPtr(&GUID_DEVICE_LID),
-        SyncPtr(&GUID_DEVICE_MEMORY),
-        SyncPtr(&GUID_DEVICE_MESSAGE_INDICATOR),
-        SyncPtr(&GUID_DEVICE_PROCESSOR),
-        SyncPtr(&GUID_DEVICE_SYS_BUTTON),
-        SyncPtr(&GUID_DEVICE_THERMAL_ZONE),
-        SyncPtr(&GUID_DEVICE_FAN),
-        SyncPtr(&GUID_DEVICE_BATTERY),
-        SyncPtr(&BATTERY_STATUS_WMI_GUID),
-        SyncPtr(&BATTERY_RUNTIME_WMI_GUID),
-        SyncPtr(&BATTERY_TEMPERATURE_WMI_GUID),
-        SyncPtr(&BATTERY_FULL_CHARGED_CAPACITY_WMI_GUID),
-        SyncPtr(&BATTERY_CYCLE_COUNT_WMI_GUID),
-        SyncPtr(&BATTERY_STATIC_DATA_WMI_GUID),
-        SyncPtr(&BATTERY_STATUS_CHANGE_WMI_GUID),
-        SyncPtr(&BATTERY_TAG_CHANGE_WMI_GUID),
     ];
 }
