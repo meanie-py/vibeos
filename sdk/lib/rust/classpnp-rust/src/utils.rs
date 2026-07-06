@@ -1558,7 +1558,7 @@ pub unsafe extern "C" fn ClassReadCapacity16(
             debug_assert!(false, "Should not occur");
         }
     } else {
-        core::ptr::write_bytes(Srb, 0, core::mem::size_of::<_SCSI_REQUEST_BLOCK>());
+        core::ptr::write_bytes(Srb as *mut u8, 0, core::mem::size_of::<_SCSI_REQUEST_BLOCK>());
         (*Srb).Length = core::mem::size_of::<_SCSI_REQUEST_BLOCK>() as _;
         (*Srb).Function = (SRB_FUNCTION_EXECUTE_SCSI) as u8;
     }
@@ -2322,7 +2322,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
                     NT_ASSERT(FALSE);
                 }
             } else {
-                core::ptr::write_bytes(srb, 0, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
+                core::ptr::write_bytes(srb as *mut u8, 0, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
                 (*srb).Length = (core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u8) as u16;
                 (*srb).Function = (SRB_FUNCTION_EXECUTE_SCSI) as u8;
                 status = STATUS_SUCCESS;
@@ -2871,7 +2871,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
     needToSendCommand = 0u8;
     tempDataSetRangeFullyConverted = 1u8;
     dataSetRangeIndex = 0;
-    core::ptr::write_bytes(&mut tempDataSetRange as *mut _DEVICE_DATA_SET_RANGE, 0, core::mem::size_of::<_DEVICE_DATA_SET_RANGE>());
+    core::ptr::write_bytes(&mut tempDataSetRange as *mut _DEVICE_DATA_SET_RANGE as *mut u8, 0, core::mem::size_of::<_DEVICE_DATA_SET_RANGE>());
     blockDescrIndex = 0;
     lbaCount = 0;
 
@@ -5056,7 +5056,7 @@ pub unsafe extern "C" fn ClasspGetCopyOffloadMaxDuration(
 ) -> NTSTATUS {
     const RTL_QUERY_REGISTRY_TYPECHECK_SHIFT: u32 = 24;
     let mut queryTable: [RTL_QUERY_REGISTRY_TABLE; 2] = core::mem::zeroed();
-    core::ptr::write_bytes(&mut queryTable as *mut _, 0u8, core::mem::size_of_val(&queryTable));
+    core::ptr::write_bytes(&mut queryTable as *mut _ as *mut u8, 0u8, core::mem::size_of_val(&queryTable));
     let mut value: ULONG = 0;
     let status: NTSTATUS;
 

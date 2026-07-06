@@ -826,10 +826,10 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
                 // ...then the OUTERMOST frames (original context that started the
                 // recursion) — ring-buffer the last 16 resolvable entries across
                 // the whole plausible stack extent and dump them.
-                let mut ring: [(u64, u64); 16] = [(0, 0); 16];
+                let mut ring: [(u64, u64); 64] = [(0, 0); 64];
                 let mut nhits: u64 = 0;
                 let mut qj = 0u64;
-                while qj < 3072 {
+                while qj < 16384 {
                     let sp = rsp + qj * 8;
                     // Guard each page: walking past StackBase into unmapped VA
                     // would nest-fault inside the bugcheck path.
@@ -844,18 +844,81 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
                         let mut in_kernel3: BOOLEAN = 0;
                         let base3 = KiPcToFileHeader(val as PVOID, &mut le3, 0u8, &mut in_kernel3);
                         if !base3.is_null() && !le3.is_null() {
-                            ring[(nhits % 16) as usize] = (qj * 8, val);
+                            ring[(nhits % 64) as usize] = (qj * 8, val);
                             nhits += 1;
                         }
                     }
                     qj += 1;
                 }
+                // Oldest nested KTRAP_FRAME = the FIRST fault of the recursion.
+                // Each KiTrap0E invocation leaves the same return address on the
+                // stack (the recursion is a fixed cycle); the highest-offset match
+                // is the first fault, and its KTRAP_FRAME sits just above the slot.
+                {
+                    let ret0 = *((rsp + 0x18) as *const u64);
+                    let mut best_sp: u64 = 0;
+                    let mut qk = 0u64;
+                    while qk < 16384 {
+                        let sp = rsp + qk * 8;
+                        if sp & 0xFFF == 0 || qk == 0 {
+                            if ntkrnl_sys::ddk::MmIsAddressValid(sp as PVOID) == 0 {
+                                break;
+                            }
+                        }
+                        if *(sp as *const u64) == ret0 {
+                            best_sp = sp;
+                        }
+                        qk += 1;
+                    }
+                    if best_sp != 0 {
+                        let tf0 = (best_sp + 8) as *const ntkrnl_sys::ddk::_KTRAP_FRAME;
+                        crate::dbg_print!(
+                            b"***   FIRST-FAULT KTRAP_FRAME @0x%p: Rip=0x%p FaultAddress=0x%p Rsp=0x%p\n\0",
+                            tf0 as PVOID,
+                            (*tf0).Rip as PVOID,
+                            (*tf0).__bindgen_anon_2.FaultAddress as PVOID,
+                            (*tf0).Rsp as PVOID,
+                        );
+                        // Callers of the faulting leaf: symbolicate the first
+                        // resolvable slots above the faulting frame's Rsp.
+                        let frsp = (*tf0).Rsp as u64;
+                        let mut fp = 0u32;
+                        let mut fq = 0u64;
+                        while fq < 64 && fp < 8 {
+                            let sp = frsp + fq * 8;
+                            if ntkrnl_sys::ddk::MmIsAddressValid(sp as PVOID) != 0 {
+                                let val = *(sp as *const u64);
+                                if val > 0xFFFF800000000000 {
+                                    let mut le5: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                                    let mut ik5: BOOLEAN = 0;
+                                    let base5 = KiPcToFileHeader(val as PVOID, &mut le5, 0u8, &mut ik5);
+                                    if !base5.is_null() && !le5.is_null() {
+                                        let mut ansi5 = [0i8; 64];
+                                        KeBugCheckUnicodeToAnsi(
+                                            &(*le5).BaseDllName as *const _ as PUNICODE_STRING,
+                                            ansi5.as_mut_ptr(),
+                                            64,
+                                        );
+                                        crate::dbg_print!(
+                                            b"***   ffstack[+0x%03lX] = %s+0x%lX\n\0",
+                                            (fq * 8) as ULONG,
+                                            ansi5.as_ptr(),
+                                            (val as ULONG_PTR - base5 as ULONG_PTR) as ULONG,
+                                        );
+                                        fp += 1;
+                                    }
+                                }
+                            }
+                            fq += 1;
+                        }
+                    }
+                }
                 if nhits > 12 {
                     crate::dbg_print!(b"***   --- outermost frames (of %lu hits) ---\n\0", nhits as ULONG);
-                    let start = if nhits >= 16 { nhits - 16 } else { 0 };
+                    let start = if nhits >= 64 { nhits - 64 } else { 0 };
                     let mut k = start;
                     while k < nhits {
-                        let (soff, val) = ring[(k % 16) as usize];
+                        let (soff, val) = ring[(k % 64) as usize];
                         let mut le4: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
                         let mut in_kernel4: BOOLEAN = 0;
                         let base4 = KiPcToFileHeader(val as PVOID, &mut le4, 0u8, &mut in_kernel4);

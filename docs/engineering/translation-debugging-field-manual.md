@@ -946,6 +946,33 @@ inputs; you get an `unreachable-pattern` *warning*, never an error.
   re-run `cargo check` on every crate that globs the module and grep `unreachable pattern`
   (`tools/scan_bind_all_matches.py` is the workspace-wide sweep).
 
+### `write_bytes` typed-pointer element-count confusion → sizeof² memset
+
+`core::ptr::write_bytes::<T>(dst, val, count)` fills `count * size_of::<T>()` BYTES —
+`count` is in **elements of T**, not bytes. rustconv translates
+`RtlZeroMemory(ptr, sizeof(X))` to `write_bytes(ptr_as_mut_X, 0, size_of::<X>())`,
+which zeroes `sizeof(X)²` bytes. For small structs that's a silent overrun of
+neighboring fields; for big ones it's a wild multi-GB memset.
+
+- **Real case (2026-07-06 usbstor bring-up):** classpnp `ClassPnpStartDevice` zeroed
+  the freshly-allocated 0x15470-byte `CLASS_PRIVATE_FDO_DATA` with a
+  **0x1C4B9B100-byte (7.6 GB) memset** → ran off the pool block into unmapped VA →
+  page-fault whose handling re-faulted → recursive `MmAccessFault` →
+  `MiLockProcessWorkingSetShared` cycle → stack exhausted → **BUGCHECK 0x7F (double
+  fault)** ~47KB of recursion frames deep. First-ever execution: no prior boot ran a
+  disk-class AddDevice/START (LiveCD boots from CD+ramdisk) — never-executed-Rust
+  landmine. Found via the 0x7F banner's tfstack + FIRST-FAULT KTRAP_FRAME dump
+  (Rip=memset, FaultAddress page-aligned = overrun signature), then disasm of the
+  call site showed `mov edx, 0x15470` (alloc) vs `movabs r8, 0x1C4B9B100` (memset).
+- **Fix idiom:** cast the destination: `write_bytes(ptr as *mut u8, 0, size_of::<X>())`
+  (byte elements → count is bytes). ~20 sites fixed workspace-wide same day
+  (classpnp ×8, disk ×2, fastfat ×5, kernel32 res.rs ×7, ks ×2, mountmgr, pcix,
+  mscms, freeldr).
+- **Grep:** multi-line-aware scan for `write_bytes(` whose last arg contains
+  `size_of` and whose first arg is NOT cast to `*mut u8`/`c_void`/`PVOID`.
+  A `size_of::<T>() / size_of::<T>()` (=1) count with typed dst is the other
+  correct spelling — don't "fix" it.
+
 ### Dropped `FIELD_OFFSET(T, Array[N])` array-subscript scaling → heap under-alloc
 
 When a C size/offset uses an **array-subscripted** field — `FIELD_OFFSET(T, Addr.Address[N])`
