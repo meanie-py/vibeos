@@ -596,16 +596,8 @@ pub unsafe extern "C" fn _global_write_barrier() {
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::ke::timerobj::KiTimeIncrementReciprocal), core::ptr::read_volatile(core::ptr::addr_of!(crate::ke::timerobj::KiTimeIncrementReciprocal)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::ke::timerobj::KiTimeIncrementShiftCount), core::ptr::read_volatile(core::ptr::addr_of!(crate::ke::timerobj::KiTimeIncrementShiftCount)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::ke::timerobj::KiEnableTimerWatchdog), core::ptr::read_volatile(core::ptr::addr_of!(crate::ke::timerobj::KiEnableTimerWatchdog)));
-    // lpc/port.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::lpc::port::LpcPortObjectType), core::ptr::read_volatile(core::ptr::addr_of!(crate::lpc::port::LpcPortObjectType)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::lpc::port::LpcWaitablePortObjectType), core::ptr::read_volatile(core::ptr::addr_of!(crate::lpc::port::LpcWaitablePortObjectType)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::lpc::port::LpcpMaxMessageSize), core::ptr::read_volatile(core::ptr::addr_of!(crate::lpc::port::LpcpMaxMessageSize)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::lpc::port::LpcpMessagesLookaside), core::ptr::read_volatile(core::ptr::addr_of!(crate::lpc::port::LpcpMessagesLookaside)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::lpc::port::LpcpLock), core::ptr::read_volatile(core::ptr::addr_of!(crate::lpc::port::LpcpLock)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::lpc::port::LpcpTraceLevel), core::ptr::read_volatile(core::ptr::addr_of!(crate::lpc::port::LpcpTraceLevel)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::lpc::port::LpcpNextMessageId), core::ptr::read_volatile(core::ptr::addr_of!(crate::lpc::port::LpcpNextMessageId)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::lpc::port::LpcpNextCallbackId), core::ptr::read_volatile(core::ptr::addr_of!(crate::lpc::port::LpcpNextCallbackId)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::lpc::port::LpcpPortMapping), core::ptr::read_volatile(core::ptr::addr_of!(crate::lpc::port::LpcpPortMapping)));
+    // lpc statics moved to lpc-rust's own _lpc_global_write_barrier (crate-split
+    // PoC — lpc is now a separate crate; its const-fold barrier lives with it).
     // mm/freelist.rs
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::mm::freelist::MmPfnDatabase), core::ptr::read_volatile(core::ptr::addr_of!(crate::mm::freelist::MmPfnDatabase)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::mm::freelist::MmAvailablePages), core::ptr::read_volatile(core::ptr::addr_of!(crate::mm::freelist::MmAvailablePages)));
