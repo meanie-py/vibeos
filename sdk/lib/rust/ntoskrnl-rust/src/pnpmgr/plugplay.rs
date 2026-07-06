@@ -71,6 +71,26 @@ use ntkrnl_sys::ddk::{
 use ntkrnl_sys::probe::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "C" {
     static mut IopRootDeviceNode: PDEVICE_NODE;
 }
@@ -1045,7 +1065,7 @@ unsafe fn IopGetRelatedDevice(
         return e;
     }
 
-    RtlInitUnicodeString(&mut RootDeviceName, b"H\0T\0R\0E\0E\0\\\0R\0O\0O\0T\0\\\x000\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut RootDeviceName, w!("HTREE\\ROOT\\0").as_ptr() as *const u16);
     
     if RtlEqualUnicodeString(&mut TargetDeviceInstance, &mut RootDeviceName, 1u8) != 0 {
         DeviceNode = IopRootDeviceNode;

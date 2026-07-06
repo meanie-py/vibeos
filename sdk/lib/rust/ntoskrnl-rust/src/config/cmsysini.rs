@@ -47,6 +47,25 @@ extern "system" {
 }
 use core::ffi::c_void;
 
+// w! macro: convert a string literal to a NUL-terminated UTF-16 array literal.
+// Use at compile time so the array has 'static lifetime.
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 const CM_NUMBER_OF_MACHINE_HIVES: usize = 6;
 
 // ============================================================================
@@ -95,7 +114,7 @@ pub unsafe extern "system" fn CmGetSystemDriverList() -> *mut PUNICODE_STRING {
     // UTF-16 LE bytes, NUL-terminated.
     RtlInitUnicodeString(
         &mut KeyName,
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\0\0".as_ptr() as *const u16,
+        w!("\\Registry\\Machine\\System").as_ptr() as *const u16,
     );
 
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
@@ -145,7 +164,7 @@ pub unsafe extern "system" fn CmGetSystemDriverList() -> *mut PUNICODE_STRING {
     // Open the current control set key. RtlInitUnicodeString of L"Current".
     RtlInitUnicodeString(
         &mut KeyName,
-        b"C\0u\0r\0r\0e\0n\0t\0\0\0".as_ptr() as *const u16,
+        w!("Current").as_ptr() as *const u16,
     );
 
     // EndPath label is implemented via a single-iteration loop with `break`s.
@@ -512,23 +531,6 @@ unsafe fn KeBugCheck(code: u32) -> ! {
     KeBugCheckEx(code, 0, 0, 0, 0)
 }
 
-// w! macro: convert a string literal to a NUL-terminated UTF-16 array literal.
-// Use at compile time so the array has 'static lifetime.
-macro_rules! w {
-    ($s:literal) => {{
-        const __W: &[u16] = &{
-            const BYTES: &[u8] = $s.as_bytes();
-            let mut out = [0u16; { BYTES.len() + 1 }];
-            let mut i = 0;
-            while i < BYTES.len() {
-                out[i] = BYTES[i] as u16;
-                i += 1;
-            }
-            out
-        };
-        __W
-    }};
-}
 
 // RTL_CONSTANT_STRING: const-eval a UNICODE_STRING from a literal.
 #[inline(always)]
@@ -866,7 +868,7 @@ pub unsafe extern "system" fn CmpInitHiveFromFile(
 
     Status = CmpOpenHiveFiles(
         HiveName,
-        b".\0L\0O\0G\0\0\0".as_ptr() as *const u16,
+        w!(".LOG").as_ptr() as *const u16,
         &mut FileHandle,
         &mut LogHandle,
         &mut HiveDisposition,
@@ -1419,7 +1421,7 @@ pub unsafe extern "system" fn CmpInitializeSystemHive(
     static mut HIVE_NAME: _UNICODE_STRING = _UNICODE_STRING {
         Length: 14,
         MaximumLength: 16,
-        Buffer: b"S\0Y\0S\0T\0E\0M\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("SYSTEM").as_ptr() as *mut u16,
     };
 
     let mut HiveBase: PVOID;
@@ -2011,8 +2013,12 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
 
     i = 0;
     while i < CM_NUMBER_OF_MACHINE_HIVES as u32 {
-        if (*CmpMachineHiveList.as_ptr().add(i as usize)).CmHive2 != core::ptr::null_mut() {
-            (*CmpMachineHiveList.as_mut_ptr().add(i as usize)).HHiveFlags |= 0x00000001;
+        // C: if (CmpShareSystemHives) CmpMachineHiveList[i].HHiveFlags |= HIVE_VOLATILE;
+        // (was mistranslated as `if CmHive2 != null` — CmHive2 is only set later BY the
+        // load threads, so MININT hives were never marked volatile and CmpLoadHiveThread
+        // spent ~5.5s failing to write CD-backed hives; perf doc "hive-flush stall")
+        if CmpShareSystemHives != 0 {
+            (*CmpMachineHiveList.as_mut_ptr().add(i as usize)).HHiveFlags |= HIVE_VOLATILE;
         }
 
         let status = PsCreateSystemThread(

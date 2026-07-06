@@ -1,6 +1,26 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "system" {
     fn IsHKCRKey(hKey: HKEY) -> BOOL;
     fn RegCloseKey(hKey: HKEY) -> LONG;
@@ -17,7 +37,7 @@ unsafe impl Sync for SyncUnicodeString {}
 pub static HKLM_ClassesPath: SyncUnicodeString = SyncUnicodeString(_UNICODE_STRING {
     Length: 64,
     MaximumLength: 66,
-    Buffer: b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0o\0f\0t\0w\0a\0r\0e\0\\\0C\0l\0a\0s\0s\0e\0s\0\0\0".as_ptr() as *mut u16,
+    Buffer: w!("\\Registry\\Machine\\Software\\Classes").as_ptr() as *mut u16,
 });
 
 unsafe fn ValueExists(hNormalKey: HKEY, Name: PUNICODE_STRING) -> BOOL {

@@ -8,6 +8,26 @@ use crate::msgina::hDllInstance;
 use crate::utils::{ReadRegDwordValue, ReadRegSzValue, RegOpenLoggedOnHKCU, TestTokenPrivilege, DuplicateString};
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // All cross-DLL out-calls used here come from crate::msgina_externs (registry,
 // gdi32, GetKeyState) — local re-declarations removed to avoid ABI/type drift.
 
@@ -780,8 +800,8 @@ pub unsafe extern "C" fn LoadShutdownSelState(hKeyCurrentUser: HKEY) -> DWORD {
     let mut dwTemp: DWORD = 0;
     let mut dwSize: DWORD = 0;
     let mut hKey: HKEY = core::ptr::null_mut();
-    let subkey: PCWSTR = b"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\0".as_ptr() as PCWSTR;
-    let value_name: PCWSTR = b"Shutdown Setting\0".as_ptr() as PCWSTR;
+    let subkey: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer").as_ptr() as PCWSTR;
+    let value_name: PCWSTR = w!("Shutdown Setting").as_ptr() as PCWSTR;
     let mut lRet: DWORD;
 
     lRet = RegOpenKeyExW(hKeyCurrentUser, subkey, 0, KEY_QUERY_VALUE, &mut hKey);
@@ -1430,12 +1450,12 @@ pub unsafe extern "system" fn ShellShutdownDialog(
         StringCbCopyW(gContext.UserName.as_mut_ptr(), size, pUserName);
     } else {
         let mut hKey: HKEY = core::ptr::null_mut();
-        let key_path: PCWSTR = b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0E\0x\0p\0l\0o\0r\0e\0r\0\0".as_ptr() as PCWSTR;
+        let key_path: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer").as_ptr() as PCWSTR;
         let lRet: LONG = RegOpenKeyExW(HKEY_CURRENT_USER, key_path, 0, KEY_QUERY_VALUE, core::ptr::addr_of_mut!(hKey)).try_into().unwrap();
         if lRet == ERROR_SUCCESS.try_into().unwrap() {
             let mut dwType: DWORD = 0;
             let mut cbData: DWORD = core::mem::size_of_val(&gContext.UserName) as DWORD;
-            let logon_name: PCWSTR = b"L\0o\0g\0o\0n\0 \0U\0s\0e\0r\0 \0N\0a\0m\0e\0\0".as_ptr() as PCWSTR;
+            let logon_name: PCWSTR = w!("Logon User Name").as_ptr() as PCWSTR;
             let lRet2 = RegQueryValueExW(
                 hKey,
                 logon_name,
@@ -1474,8 +1494,8 @@ pub unsafe extern "system" fn ShellShutdownDialog(
         }
     } else if dlgValue == IDHELP as INT_PTR {
         FIXME!(b"Help is not implemented yet.\n".as_ptr() as PCHAR);
-        let msg: PCWSTR = b"H\0e\0l\0p\0 \0i\0s\0 \0n\0o\0t\0 \0i\0m\0p\0l\0e\0m\0e\0n\0t\0e\0d\0 \0y\0e\0t\0.\0\0".as_ptr() as PCWSTR;
-        let caption: PCWSTR = b"M\0e\0s\0s\0a\0g\0e\0\0".as_ptr() as PCWSTR;
+        let msg: PCWSTR = w!("Help is not implemented yet.").as_ptr() as PCWSTR;
+        let caption: PCWSTR = w!("Message").as_ptr() as PCWSTR;
         MessageBoxW(hWndParent, msg, caption, MB_OK | MB_ICONEXCLAMATION);
     } else if dlgValue == -1 {
         ERR!(b"Failed to create dialog\n".as_ptr() as PCHAR);

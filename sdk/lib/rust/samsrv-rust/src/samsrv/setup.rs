@@ -1,6 +1,26 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "C" {
     fn SampCreateAliasSD(Sd: *mut PSECURITY_DESCRIPTOR, SdSize: *mut ULONG) -> NTSTATUS;
     fn SampRegCloseKey(KeyHandle: *mut HANDLE) -> NTSTATUS;
@@ -253,7 +273,7 @@ unsafe fn SampSetupAddMemberToGroup(
 
     swprintf(
         szKeyName.as_mut_ptr(),
-        b"G\0r\0o\0u\0p\0s\0\\\0%\00\08\0l\0X\0\0\0".as_ptr() as *const u16,
+        w!("Groups\\%08lX").as_ptr() as *const u16,
         GroupId,
     );
 
@@ -270,7 +290,7 @@ unsafe fn SampSetupAddMemberToGroup(
     'done: loop {
         Status = SampRegQueryValue(
             hGroupKey,
-            b"M\0e\0m\0b\0e\0r\0s\0\0\0".as_ptr() as *const u16,
+            w!("Members").as_ptr() as *const u16,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             &mut Length,
@@ -290,7 +310,7 @@ unsafe fn SampSetupAddMemberToGroup(
         if Status != STATUS_OBJECT_NAME_NOT_FOUND {
             Status = SampRegQueryValue(
                 hGroupKey,
-                b"M\0e\0m\0b\0e\0r\0s\0\0\0".as_ptr() as *const u16,
+                w!("Members").as_ptr() as *const u16,
                 core::ptr::null_mut(),
                 MembersBuffer as _,
                 &mut Length,
@@ -316,7 +336,7 @@ unsafe fn SampSetupAddMemberToGroup(
 
         Status = SampRegSetValue(
             hGroupKey,
-            b"M\0e\0m\0b\0e\0r\0s\0\0\0".as_ptr() as *const u16,
+            w!("Members").as_ptr() as *const u16,
             REG_BINARY,
             MembersBuffer as _,
             Length,
@@ -856,7 +876,7 @@ unsafe fn SampSetupCreateDomain(
 
     wcscpy(
         szDomainKeyName.as_mut_ptr(),
-        b"D\0o\0m\0a\0i\0n\0s\0\\\0\0\0".as_ptr() as LPCWSTR,
+        w!("Domains\\").as_ptr() as LPCWSTR,
     );
     wcscat(szDomainKeyName.as_mut_ptr(), lpKeyName);
 
@@ -873,7 +893,7 @@ unsafe fn SampSetupCreateDomain(
 
         Status = SampRegSetValue(
             hDomainKey,
-            b"F\0\0\0".as_ptr() as LPCWSTR,
+            w!("F").as_ptr() as LPCWSTR,
             REG_BINARY,
             core::ptr::addr_of_mut!(FixedData) as LPVOID,
             core::mem::size_of::<SAM_DOMAIN_FIXED_DATA>() as ULONG,
@@ -885,7 +905,7 @@ unsafe fn SampSetupCreateDomain(
         if !lpDomainSid.is_null() {
             Status = SampRegSetValue(
                 hDomainKey,
-                b"N\0a\0m\0e\0\0\0".as_ptr() as LPCWSTR,
+                w!("Name").as_ptr() as LPCWSTR,
                 REG_SZ,
                 lpDomainName as LPVOID,
                 ((wcslen(lpDomainName) + 1) * core::mem::size_of::<WCHAR>()) as ULONG,
@@ -896,7 +916,7 @@ unsafe fn SampSetupCreateDomain(
 
             Status = SampRegSetValue(
                 hDomainKey,
-                b"S\0I\0D\0\0\0".as_ptr() as LPCWSTR,
+                w!("SID").as_ptr() as LPCWSTR,
                 REG_BINARY,
                 lpDomainSid as LPVOID,
                 RtlLengthSid(lpDomainSid),
@@ -908,7 +928,7 @@ unsafe fn SampSetupCreateDomain(
 
         Status = SampRegSetValue(
             hDomainKey,
-            b"O\0e\0m\0I\0n\0f\0o\0r\0m\0a\0t\0i\0o\0n\0\0\0".as_ptr() as LPCWSTR,
+            w!("OemInformation").as_ptr() as LPCWSTR,
             REG_SZ,
             lpEmptyString.as_mut_ptr() as LPVOID,
             core::mem::size_of::<WCHAR>() as ULONG,
@@ -919,7 +939,7 @@ unsafe fn SampSetupCreateDomain(
 
         Status = SampRegSetValue(
             hDomainKey,
-            b"R\0e\0p\0l\0i\0c\0a\0S\0o\0u\0r\0c\0e\0N\0o\0d\0e\0N\0a\0m\0e\0\0\0".as_ptr()
+            w!("ReplicaSourceNodeName").as_ptr()
                 as LPCWSTR,
             REG_SZ,
             lpEmptyString.as_mut_ptr() as LPVOID,
@@ -931,7 +951,7 @@ unsafe fn SampSetupCreateDomain(
 
         Status = SampRegCreateKey(
             hDomainKey,
-            b"A\0l\0i\0a\0s\0e\0s\0\0\0".as_ptr() as LPCWSTR,
+            w!("Aliases").as_ptr() as LPCWSTR,
             KEY_ALL_ACCESS,
             &mut hAliasesKey,
         );
@@ -941,7 +961,7 @@ unsafe fn SampSetupCreateDomain(
 
         Status = SampRegCreateKey(
             hAliasesKey,
-            b"N\0a\0m\0e\0s\0\0\0".as_ptr() as LPCWSTR,
+            w!("Names").as_ptr() as LPCWSTR,
             KEY_ALL_ACCESS,
             &mut hNamesKey,
         );
@@ -953,7 +973,7 @@ unsafe fn SampSetupCreateDomain(
 
         Status = SampRegCreateKey(
             hDomainKey,
-            b"G\0r\0o\0u\0p\0s\0\0\0".as_ptr() as LPCWSTR,
+            w!("Groups").as_ptr() as LPCWSTR,
             KEY_ALL_ACCESS,
             &mut hGroupsKey,
         );
@@ -963,7 +983,7 @@ unsafe fn SampSetupCreateDomain(
 
         Status = SampRegCreateKey(
             hGroupsKey,
-            b"N\0a\0m\0e\0s\0\0\0".as_ptr() as LPCWSTR,
+            w!("Names").as_ptr() as LPCWSTR,
             KEY_ALL_ACCESS,
             &mut hNamesKey,
         );
@@ -975,7 +995,7 @@ unsafe fn SampSetupCreateDomain(
 
         Status = SampRegCreateKey(
             hDomainKey,
-            b"U\0s\0e\0r\0s\0\0\0".as_ptr() as LPCWSTR,
+            w!("Users").as_ptr() as LPCWSTR,
             KEY_ALL_ACCESS,
             &mut hUsersKey,
         );
@@ -985,7 +1005,7 @@ unsafe fn SampSetupCreateDomain(
 
         Status = SampRegCreateKey(
             hUsersKey,
-            b"N\0a\0m\0e\0s\0\0\0".as_ptr() as LPCWSTR,
+            w!("Names").as_ptr() as LPCWSTR,
             KEY_ALL_ACCESS,
             &mut hNamesKey,
         );
@@ -1005,7 +1025,7 @@ unsafe fn SampSetupCreateDomain(
 
         Status = SampRegSetValue(
             hServerKey,
-            b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as LPCWSTR,
+            w!("SecDesc").as_ptr() as LPCWSTR,
             REG_BINARY,
             Sd,
             SdSize,

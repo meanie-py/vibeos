@@ -13,6 +13,26 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // Registry constants not in ntkrnl-sys
 const KEY_ALL_ACCESS: ULONG = 0xF003F;
 const REG_OPTION_NON_VOLATILE: ULONG = 0x00000000;
@@ -93,7 +113,7 @@ pub unsafe extern "system" fn IopBootLog(DriverName: PUNICODE_STRING, Success: B
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(KeyName),
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\0\0".as_ptr() as *const u16,
+        w!("\\Registry\\Machine\\System\\CurrentControlSet").as_ptr() as *const u16,
     );
     InitializeObjectAttributes(
         core::ptr::addr_of_mut!(ObjectAttributes),
@@ -114,7 +134,7 @@ pub unsafe extern "system" fn IopBootLog(DriverName: PUNICODE_STRING, Success: B
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(KeyName),
-        b"B\0o\0o\0t\0L\0o\0g\0\0\0".as_ptr() as *const u16,
+        w!("BootLog").as_ptr() as *const u16,
     );
     InitializeObjectAttributes(
         core::ptr::addr_of_mut!(ObjectAttributes),
@@ -165,12 +185,12 @@ unsafe fn IopWriteLogFile(LogText: PWSTR) -> NTSTATUS {
     let mut FileName: _UNICODE_STRING = core::mem::zeroed();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut FileHandle: HANDLE = core::ptr::null_mut();
-    let CrLf: *const u16 = b"\r\0\n\0\0\0".as_ptr() as *const u16;
+    let CrLf: *const u16 = w!("\r\n").as_ptr() as *const u16;
     let mut Status: NTSTATUS;
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(FileName),
-        b"\\\0S\0y\0s\0t\0e\0m\0R\0o\0o\0t\0\\\0r\0o\0s\0b\0o\0o\0t\0.\0l\0o\0g\0\0\0".as_ptr() as *const u16,
+        w!("\\SystemRoot\\rosboot.log").as_ptr() as *const u16,
     );
     InitializeObjectAttributes(
         core::ptr::addr_of_mut!(ObjectAttributes),
@@ -245,7 +265,7 @@ unsafe fn IopCreateLogFile() -> NTSTATUS {
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(FileName),
-        b"\\\0S\0y\0s\0t\0e\0m\0R\0o\0o\0t\0\\\0r\0o\0s\0b\0o\0o\0t\0.\0l\0o\0g\0\0\0".as_ptr() as *const u16,
+        w!("\\SystemRoot\\rosboot.log").as_ptr() as *const u16,
     );
     InitializeObjectAttributes(
         core::ptr::addr_of_mut!(ObjectAttributes),
@@ -332,7 +352,7 @@ pub unsafe extern "system" fn IopSaveBootLogToFile() {
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(KeyName),
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0B\0o\0o\0t\0L\0o\0g\0\0\0".as_ptr() as *const u16,
+        w!("\\Registry\\Machine\\System\\CurrentControlSet\\BootLog").as_ptr() as *const u16,
     );
     InitializeObjectAttributes(
         core::ptr::addr_of_mut!(ObjectAttributes),

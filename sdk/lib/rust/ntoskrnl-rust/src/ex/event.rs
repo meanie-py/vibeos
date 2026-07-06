@@ -17,6 +17,26 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "system" {
     fn KeInitializeEvent(Event: PKEVENT, Type: EVENT_TYPE, State: BOOLEAN);
 }
@@ -66,7 +86,7 @@ pub unsafe extern "system" fn ExpInitializeEventImplementation() -> BOOLEAN {
         0,
         core::mem::size_of::<OBJECT_TYPE_INITIALIZER>(),
     );
-    RtlInitUnicodeString(&mut Name, b"E\0v\0e\0n\0t\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut Name, w!("Event").as_ptr() as *const u16);
     ObjectTypeInitializer.Length = core::mem::size_of::<OBJECT_TYPE_INITIALIZER>() as u16;
     ObjectTypeInitializer.DefaultNonPagedPoolCharge = core::mem::size_of::<KEVENT>() as ULONG;
     ObjectTypeInitializer.GenericMapping = ExpEventMapping;

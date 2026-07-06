@@ -586,6 +586,105 @@ unsafe fn KiRetireDpcList_body(Prcb: PKPRCB) {
     }
 }
 
+/// Drain the plain (device) DPC queue WITHOUT touching TimerRequest — the
+/// IRQ-exception-exit retire path (arm64 KiIrqHandler). KiRetireDpcList runs
+/// KiTimerExpiration when TimerRequest is set, and timer expiration from
+/// exception context reliably wedges boot (field manual §9.19) — so the IRQ
+/// exit must retire ONLY the device-DPC list and leave timer work to thread
+/// context. Crucially, TimerRequest being set must NOT block device-DPC
+/// delivery: on this port TimerRequest can sit non-zero indefinitely when a
+/// busy thread starves the idle loop (its only consumer), and gating device
+/// DPCs on it turned one starved flag into a dead input pipeline.
+#[no_mangle]
+pub unsafe extern "C" fn KiRetireDeviceDpcs(Prcb: PKPRCB) {
+    let DpcData: PKDPC_DATA = &mut (*Prcb).DpcData[DPC_NORMAL] as *mut _;
+    let ListHead: PLIST_ENTRY = &mut (*DpcData).DpcListHead as *mut LIST_ENTRY;
+
+    (*Prcb).DpcRoutineActive = 1;
+
+    while (*DpcData).DpcQueueDepth != 0 {
+        let dpc_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(
+            &mut (*DpcData).DpcLock as *mut _ as ntkrnl_sys::ke::PKSPIN_LOCK
+        ) };
+        let DpcEntry = (*ListHead).Flink;
+
+        if DpcEntry != ListHead {
+            RemoveEntryList(DpcEntry);
+            let Dpc = ((DpcEntry as usize) - core::mem::offset_of!(_KDPC, DpcListEntry)) as PKDPC;
+
+            (*Dpc).DpcData = core::ptr::null_mut();
+            let DeferredRoutine = (*Dpc).DeferredRoutine;
+            let DeferredContext = (*Dpc).DeferredContext;
+            let SystemArgument1 = (*Dpc).SystemArgument1;
+            let SystemArgument2 = (*Dpc).SystemArgument2;
+
+            (*DpcData).DpcQueueDepth -= 1;
+
+            drop(dpc_lock_guard);
+
+            if let Some(routine) = DeferredRoutine {
+                _enable();
+                routine(Dpc, DeferredContext, SystemArgument1, SystemArgument2);
+                _disable();
+            } else {
+                crate::dbg_print!(b"KiRetireDeviceDpcs: NULL DeferredRoutine, KDPC %p\n\0", Dpc as usize);
+            }
+        } else {
+            drop(dpc_lock_guard);
+        }
+    }
+
+    (*Prcb).DpcRoutineActive = 0;
+    (*Prcb).DpcInterruptRequested = 0;
+}
+
+/// arm64 DISPATCH-level software-interrupt body — the delivery half of
+/// `HalRequestSoftwareInterrupt(DISPATCH_LEVEL)`. hal's KfLowerIrql calls this
+/// (via the ntoskrnl export) when the soft IRQL crosses below DISPATCH_LEVEL
+/// with the DISPATCH bit pended (clock tick saw due timers, DPC queued outside
+/// an ISR, ...). Runs in NORMAL THREAD context at DISPATCH_LEVEL with IRQs
+/// enabled — the §9.19 exception-context wake hazard does not apply here, so
+/// unlike the IRQ-exit path (KiRetireDeviceDpcs) this MAY run KiTimerExpiration
+/// and wake/swap threads.
+///
+/// This closes landmine #4's second half: timer expiration used to depend on
+/// the idle loop alone, so ONE ready-spinning thread froze every kernel timer.
+/// A spinner still crosses DISPATCH constantly in its own context (syscall
+/// paths, spinlock releases), so its own IRQL crossings now expire timers.
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub unsafe extern "system" fn KiDispatchSoftwareIntArm64() {
+    let Prcb = KeGetCurrentPrcb();
+    if (*Prcb).DpcRoutineActive != 0 {
+        return;
+    }
+
+    if (*Prcb).TimerRequest != 0 {
+        let TimerHand = (*Prcb).TimerHand as ULONG_PTR;
+        (*Prcb).TimerRequest = 0;
+        // Mirror the idle-loop call in KiRetireDpcList_body: DpcRoutineActive
+        // set (so KiExitDispatcher inside the expiration DEFERS a woken
+        // higher-priority thread instead of swapping mid-delivery), entry at
+        // DISPATCH_LEVEL, IRQs enabled (KfLowerIrql thread context).
+        (*Prcb).DpcRoutineActive = 1;
+        KiTimerExpiration(
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            TimerHand as PVOID,
+            core::ptr::null_mut(),
+        );
+        (*Prcb).DpcRoutineActive = 0;
+    }
+
+    if (*Prcb).DpcData[DPC_NORMAL].DpcQueueDepth != 0 {
+        // KiRetireDeviceDpcs expects entry with IRQs masked (it _enable()s
+        // around each DPC body and leaves them masked).
+        _disable();
+        KiRetireDeviceDpcs(Prcb);
+        _enable();
+    }
+}
+
 unsafe fn KiInitializeDpc(
     Dpc: PKDPC,
     DeferredRoutine: PKDEFERRED_ROUTINE,

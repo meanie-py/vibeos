@@ -4,7 +4,10 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IRP, _IO_STACK_LOCATION, _UNICODE_STRING, IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoReleaseCancelSpinLock, IofCompleteRequest, KEYBOARD_ATTRIBUTES, KEYBOARD_INDICATOR_PARAMETERS, KEYBOARD_INPUT_DATA, KeDelayExecutionThread, LARGE_INTEGER, LIST_ENTRY, MOUSE_ATTRIBUTES, MOUSE_INPUT_DATA, MmAllocateContiguousMemory, MmGetPhysicalAddress, MmMapIoSpace, MmUnmapIoSpace, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKEYBOARD_ATTRIBUTES, PKEYBOARD_INDICATOR_PARAMETERS, PMOUSE_ATTRIBUTES, PMOUSE_INPUT_DATA, PUNICODE_STRING, PsCreateSystemThread, PsTerminateSystemThread, RtlInitUnicodeString};
+use ntkrnl_sys::ddk::{IRP, _IO_STACK_LOCATION, _UNICODE_STRING, IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoReleaseCancelSpinLock, IofCompleteRequest, KEYBOARD_ATTRIBUTES, KEYBOARD_INDICATOR_PARAMETERS, KEYBOARD_INPUT_DATA, KeDelayExecutionThread, LARGE_INTEGER, LIST_ENTRY, MOUSE_ATTRIBUTES, MOUSE_INPUT_DATA, MmAllocateContiguousMemory, MmGetPhysicalAddress, MmMapIoSpace, MmUnmapIoSpace, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKEYBOARD_ATTRIBUTES, PKEYBOARD_INDICATOR_PARAMETERS, PMOUSE_ATTRIBUTES, PMOUSE_INPUT_DATA, PUNICODE_STRING, PsCreateSystemThread, PsTerminateSystemThread, RtlInitUnicodeString,
+    HalGetInterruptVector, IoConnectInterrupt, IoDisconnectInterrupt, KAFFINITY, KDPC,
+    KeInitializeDpc, KeInsertQueueDpc, PKDEFERRED_ROUTINE, PKINTERRUPT, PKSERVICE_ROUTINE,
+    _KDPC, _KINTERRUPT};
 // FORCEINLINE DDK helpers — bindgen surfaces these as extern decls with no
 // exported symbol; use ntkrnl-sys's real inline impls (AGENTS.md gotcha).
 use ntkrnl_sys::inline::ke::KeInitializeSpinLock;
@@ -238,6 +241,12 @@ pub struct _VIRTIO_INPUT_DEV {
     pub HasMove: u8,
     pub HasButton: u8,
     pub AbsValid: u8,
+    /// virtio-mmio transport slot (QEMU virt: GIC INTID = 48 + slot).
+    pub Slot: u32,
+    /// ISR→DPC deferral: the DPC drains the used ring at DISPATCH_LEVEL.
+    pub Dpc: KDPC,
+    /// Connected KINTERRUPT (null when running in poll-thread fallback).
+    pub Interrupt: PKINTERRUPT,
 }
 
 pub type VIRTIO_INPUT_DEV = _VIRTIO_INPUT_DEV;
@@ -989,6 +998,7 @@ unsafe fn VirtioScanDevices() {
         core::ptr::write_bytes(Dev as *mut _VIRTIO_INPUT_DEV, 0, 1);
         (*Dev).Mmio = Mmio;
         (*Dev).MmioVersion = Version;
+        (*Dev).Slot = i;
 
         VirtioWrite32(Mmio, VIRTIO_MMIO_STATUS, 0);
         virtio_mb();
@@ -1072,9 +1082,9 @@ unsafe fn VirtioProcessKeyEvent(EvdevCode: USHORT, Value: ULONG) {
     TryCompleteIrp(DevExt);
 
     // One-shot delivery oracle for the arm64 input smoke gate: proves the
-    // QMP -> virtio-mmio -> poll thread -> scancode xlate -> KeyboardClass0
-    // ring -> read-IRP path completed end-to-end. Fires exactly once so a
-    // sustained key storm doesn't spam serial.
+    // QMP -> virtio-mmio -> ISR->DPC drain (or poll fallback) -> scancode
+    // xlate -> KeyboardClass0 ring -> read-IRP path completed end-to-end.
+    // Fires exactly once so a sustained key storm doesn't spam serial.
     static KBD_DELIVERED: core::sync::atomic::AtomicBool =
         core::sync::atomic::AtomicBool::new(false);
     if KBD_DELIVERED
@@ -1285,6 +1295,151 @@ unsafe fn VirtioPollDevice(Dev: *mut VIRTIO_INPUT_DEV) -> BOOLEAN {
     FoundEvents
 }
 
+// ---------------------------------------------------------------------------
+// Interrupt-driven input (ISR → DPC), replacing the poll thread.
+//
+// QEMU virt wires virtio-mmio transport slot i to SPI 16+i (GIC INTID 48+i).
+// The ISR runs at DIRQL: it only reads+acks VIRTIO_MMIO_INTERRUPT_STATUS
+// (deasserting the level-triggered line) and queues the per-device DPC. The
+// DPC drains the used ring at DISPATCH_LEVEL via VirtioPollDevice — the same
+// single consumer the poll thread was, so ring ownership is unchanged (the
+// poll thread and interrupts are never active together; see DriverEntry).
+// ---------------------------------------------------------------------------
+
+/// GIC INTID of the first virtio-mmio transport on QEMU `virt` (SPI 16).
+const VIRTIO_MMIO_INTID_BASE: u32 = 48;
+
+/// One-shot serial oracle proving the ISR→DPC→ring-drain path is live.
+static FIRST_INPUT_IRQ: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+unsafe extern "system" fn VirtioInputIsr(
+    _Interrupt: *mut _KINTERRUPT,
+    Context: PVOID,
+) -> u8 {
+    let Dev = Context as *mut VIRTIO_INPUT_DEV;
+    let status = VirtioRead32((*Dev).Mmio as *mut u8, VIRTIO_MMIO_INTERRUPT_STATUS);
+    if status == 0 {
+        // Quiet device — a GIC-selftest fire (software-pended) or a shared
+        // line. Nothing to ack or drain.
+        return 0; // not ours (line is dedicated, but stay shared-safe)
+    }
+    // Ack first (deasserts the level line), then defer the drain to DISPATCH.
+    VirtioWrite32((*Dev).Mmio as *mut u8, VIRTIO_MMIO_INTERRUPT_ACK, status);
+    KeInsertQueueDpc(
+        core::ptr::addr_of_mut!((*Dev).Dpc),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+    1
+}
+
+unsafe extern "system" fn VirtioInputDpc(
+    _Dpc: *mut _KDPC,
+    Context: PVOID,
+    _Arg1: PVOID,
+    _Arg2: PVOID,
+) {
+    let Dev = Context as *mut VIRTIO_INPUT_DEV;
+    let found = VirtioPollDevice(Dev);
+    if found != 0
+        && FIRST_INPUT_IRQ
+            .compare_exchange(
+                false,
+                true,
+                core::sync::atomic::Ordering::SeqCst,
+                core::sync::atomic::Ordering::SeqCst,
+            )
+            .is_ok()
+    {
+        DbgPrint(
+            b"[ARM64INPUT] first interrupt-driven input event (INTID %lu, poll thread retired)\n\0"
+                .as_ptr() as *const i8,
+            VIRTIO_MMIO_INTID_BASE + (*Dev).Slot,
+        );
+    }
+}
+
+/// Connect every discovered device's virtio-mmio SPI through
+/// HalGetInterruptVector + IoConnectInterrupt. All-or-nothing: on any failure
+/// the already-connected lines are disconnected and the caller falls back to
+/// the poll thread for everything — the used ring must have exactly one
+/// consumer (DPC xor poll thread).
+unsafe fn VirtioConnectInterrupts() -> u8 {
+    let mut i: u32 = 0;
+    while i < VirtioInputCount {
+        let Dev = &mut VirtioInputs[i as usize] as *mut VIRTIO_INPUT_DEV;
+        let intid = VIRTIO_MMIO_INTID_BASE + (*Dev).Slot;
+        let mut irql: u8 = 0;
+        let mut affinity: KAFFINITY = 0;
+        let vector = HalGetInterruptVector(0, 0, intid, intid, &mut irql, &mut affinity);
+
+        let mut ok = vector != 0;
+        if ok {
+            let dpc_routine: PKDEFERRED_ROUTINE =
+                Some(core::mem::transmute(VirtioInputDpc as *const ()));
+            let isr_routine: PKSERVICE_ROUTINE =
+                Some(core::mem::transmute(VirtioInputIsr as *const ()));
+            KeInitializeDpc(
+                core::ptr::addr_of_mut!((*Dev).Dpc),
+                dpc_routine,
+                Dev as PVOID,
+            );
+            let status = IoConnectInterrupt(
+                core::ptr::addr_of_mut!((*Dev).Interrupt),
+                isr_routine,
+                Dev as PVOID,
+                core::ptr::null_mut(),
+                vector,
+                irql,
+                irql,
+                0, // LevelSensitive — virtio-mmio INTx is level-triggered
+                0,
+                affinity,
+                0,
+            );
+            ok = NT_SUCCESS(status);
+            if !ok {
+                DbgPrint(
+                    b"[ARM64INPUT] IoConnectInterrupt(INTID %lu) failed: 0x%08lx\n\0".as_ptr()
+                        as *const i8,
+                    intid,
+                    status,
+                );
+            }
+        } else {
+            DbgPrint(
+                b"[ARM64INPUT] HalGetInterruptVector(INTID %lu) returned 0\n\0".as_ptr()
+                    as *const i8,
+                intid,
+            );
+        }
+
+        if !ok {
+            // Roll back: one consumer rule — all interrupts or all polling.
+            let mut j: u32 = 0;
+            while j < i {
+                let Prev = &mut VirtioInputs[j as usize] as *mut VIRTIO_INPUT_DEV;
+                if !(*Prev).Interrupt.is_null() {
+                    IoDisconnectInterrupt((*Prev).Interrupt);
+                    (*Prev).Interrupt = core::ptr::null_mut();
+                }
+                j += 1;
+            }
+            return 0;
+        }
+
+        DbgPrint(
+            b"[ARM64INPUT] slot %lu on IRQ (INTID %lu, DIRQL %lu)\n\0".as_ptr() as *const i8,
+            (*Dev).Slot,
+            intid,
+            irql as u32,
+        );
+        i += 1;
+    }
+    1
+}
+
 unsafe extern "C" fn VirtioPollThread(Context: PVOID) {
     let mut Delay: LARGE_INTEGER = core::mem::zeroed();
 
@@ -1415,7 +1570,18 @@ pub unsafe extern "system" fn DriverEntry(
     DbgPrint(b"[ARM64INPUT] \\Device\\PointerClass0 created\n\0".as_ptr() as _);
 
     VirtioScanDevices();
-    if VirtioInputCount > 0 {
+    if VirtioInputCount > 0 && VirtioConnectInterrupts() != 0 {
+        DbgPrint(b"[ARM64INPUT] interrupt mode: all devices on GIC IRQs, no poll thread\n\0"
+            .as_ptr() as _);
+        // Software-pend the first device's line: `[GIC] selftest ... DELIVERED`
+        // on serial proves GIC→dispatch→ISR wiring every boot, independent of
+        // the device asserting (field-manual §9.19 tooling).
+        extern "system" {
+            fn HalSelfTestGicSpiArm64(intid: u32);
+        }
+        HalSelfTestGicSpiArm64(VIRTIO_MMIO_INTID_BASE + VirtioInputs[0].Slot);
+    } else if VirtioInputCount > 0 {
+        // Fallback: no usable interrupt routing — poll as before.
         VirtioPollRunning = 1u8;
         Status = PsCreateSystemThread(
             &mut VirtioPollThreadHandle,

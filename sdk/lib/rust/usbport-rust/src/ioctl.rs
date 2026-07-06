@@ -318,9 +318,9 @@ pub unsafe extern "system" fn USBPORT_PdoInternalDeviceControl(
 ) -> NTSTATUS {
 
     const IOCTL_INTERNAL_USB_SUBMIT_URB: u32 = 0x00220003;
-    const IOCTL_INTERNAL_USB_GET_ROOTHUB_PDO: u32 = 0x00220013;
-    const IOCTL_INTERNAL_USB_GET_HUB_COUNT: u32 = 0x00220018;
-    const IOCTL_INTERNAL_USB_GET_DEVICE_HANDLE: u32 = 0x00220023;
+    const IOCTL_INTERNAL_USB_GET_ROOTHUB_PDO: u32 = 0x0022000F; // FIXED 2026-07-05: translation invented wrong value; verified vs usbioctl.h
+    const IOCTL_INTERNAL_USB_GET_HUB_COUNT: u32 = 0x0022001B; // FIXED 2026-07-05: translation invented wrong value; verified vs usbioctl.h
+    const IOCTL_INTERNAL_USB_GET_DEVICE_HANDLE: u32 = 0x00220433; // FIXED 2026-07-05: translation invented wrong value; verified vs usbioctl.h
     const IOCTL_INTERNAL_USB_SUBMIT_IDLE_NOTIFICATION: u32 = 0x00220027;
 
     let mut PdoExtension: PUSBPORT_RHDEVICE_EXTENSION = core::ptr::null_mut();
@@ -383,7 +383,7 @@ pub unsafe extern "system" fn USBPORT_FdoDeviceControl(
     const IOCTL_USB_GET_NODE_INFORMATION: ULONG = 2229256;
     const IOCTL_GET_HCD_DRIVERKEY_NAME: ULONG = 2229284;
     const IOCTL_USB_USER_REQUEST: ULONG = 2229304;
-    const USBPORT_FLAG_DIAGNOSTIC_MODE: ULONG = 0x00000080;
+    const USBPORT_FLAG_DIAGNOSTIC_MODE: ULONG = 0x00800000; // FIXED 2026-07-05: translation invented 0x80; verified vs usbport.h/usbmport.h
 
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION =
         core::ptr::null_mut::<USBPORT_DEVICE_EXTENSION>();

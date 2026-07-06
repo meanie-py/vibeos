@@ -9,6 +9,26 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::probe::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 #[cfg(target_arch = "aarch64")]
 extern "C" {
     static mut Arm64UartKernelBase: PVOID;
@@ -412,7 +432,7 @@ unsafe fn SepImpersonateAnonymousToken(
     let status = SepRegQueryHelper(
         b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0L\0s\0a\0\0\0"
             .as_ptr() as *mut u16,
-        b"E\0v\0e\0r\0y\0o\0n\0e\0I\0n\0c\0l\0u\0d\0e\0s\0A\0n\0o\0n\0y\0m\0o\0u\0s\0\0\0".as_ptr() as *mut u16,
+        w!("EveryoneIncludesAnonymous").as_ptr() as *mut u16,
         REG_DWORD,
         core::mem::size_of::<ULONG>() as ULONG,
         &mut include_everyone_value_data,
@@ -1127,7 +1147,7 @@ pub unsafe extern "system" fn SepInitializeTokenImplementation() {
     let mut object_type_initializer: _OBJECT_TYPE_INITIALIZER = core::mem::zeroed();
 
     core::ptr::write_bytes(&mut object_type_initializer as *mut _OBJECT_TYPE_INITIALIZER as *mut u8, 0, core::mem::size_of::<_OBJECT_TYPE_INITIALIZER>());
-    RtlInitUnicodeString(&mut name, b"T\0o\0k\0e\0n\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut name, w!("Token").as_ptr() as *const u16);
     object_type_initializer.Length = core::mem::size_of::<_OBJECT_TYPE_INITIALIZER>() as u16;
     object_type_initializer.InvalidAttributes = OBJ_OPENLINK;
     object_type_initializer.SecurityRequired = 1u8;

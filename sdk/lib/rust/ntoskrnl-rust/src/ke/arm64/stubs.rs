@@ -197,6 +197,8 @@ static INTERRUPT_TABLE: [core::sync::atomic::AtomicPtr<_KINTERRUPT>; GIC_MAX_INT
 extern "system" {
     fn HalEnableSystemInterrupt(Vector: ULONG, Irql: KIRQL, Mode: KINTERRUPT_MODE) -> BOOLEAN;
     fn HalDisableSystemInterrupt(Vector: ULONG, Irql: KIRQL);
+    fn HalpEnterInterruptIrql(NewIrql: KIRQL) -> KIRQL;
+    fn HalpExitInterruptIrql(RestoreIrql: KIRQL);
 }
 
 #[no_mangle]
@@ -261,10 +263,30 @@ pub unsafe extern "system" fn KiDispatchInterruptArm64(Intid: ULONG) -> BOOLEAN 
     if interrupt.is_null() {
         return 0u8;
     }
-    match (*interrupt).ServiceRoutine {
-        Some(svc) => svc(interrupt, (*interrupt).ServiceContext),
-        None => 0u8,
-    }
+    let Some(svc) = (*interrupt).ServiceRoutine else {
+        return 0u8;
+    };
+    // Run the ISR at its DIRQL (SynchronizeIrql; falls back to the line's
+    // Irql for a zero-initialized object), per KiInterruptDispatch. Hardware
+    // (PSTATE.I + the GIC active-priority) already blocks nesting for the
+    // exception's duration; the soft raise makes KeGetCurrentIrql truthful
+    // and the PMR mask correct if the ISR body ever re-enables IRQs (e.g.
+    // via KiRetireDpcList on the exit path). Restore bypasses the KfLowerIrql
+    // soft-interrupt drain — no APC delivery in interrupt context.
+    //
+    // No ActualLock acquire: UP port — the interrupt spinlock's cross-CPU
+    // role is vacuous, and ISR-vs-thread exclusion is exactly what the PMR
+    // raise in KeAcquireInterruptSpinLock (KfRaiseIrql to SynchronizeIrql)
+    // now provides for real.
+    let dirql = if (*interrupt).SynchronizeIrql != 0 {
+        (*interrupt).SynchronizeIrql
+    } else {
+        (*interrupt).Irql
+    };
+    let old_irql = HalpEnterInterruptIrql(dirql);
+    let handled = svc(interrupt, (*interrupt).ServiceContext);
+    HalpExitInterruptIrql(old_irql);
+    handled
 }
 
 #[no_mangle]

@@ -3,6 +3,26 @@ use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_DISK_SIGNATURE, ARC_STATUS, BOOT_DRIVER_LIST_ENTRY, BOOT_DRIVER_NODE, FILEINFORMATION, HEADLESS_LOADER_BLOCK, KiSystemStartup, LOADER_PARAMETER_EXTENSION, MEMORY_ALLOCATION_DESCRIPTOR, PARC_DISK_SIGNATURE, PBOOT_DRIVER_LIST_ENTRY, PBOOT_DRIVER_NODE, PCCH, PCSTR, PLDR_DATA_TABLE_ENTRY, PLOADER_PARAMETER_BLOCK, PLOADER_PARAMETER_EXTENSION, PMEMORY_ALLOCATION_DESCRIPTOR, PSETUP_LOADER_BLOCK, PSTR, PUNICODE_STRING, _BOOT_DRIVER_LIST_ENTRY, _LDR_DATA_TABLE_ENTRY};
 // freeldr_ddk_imports dropped (not in ddk): File, PaeEnabled
 use core::ffi::c_void;
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 pub use ntkrnl_sys::ddk::_ARC_CODES_EINVAL as EINVAL;
 pub use ntkrnl_sys::ddk::_ARC_CODES_ENOEXEC as ENOEXEC;
 pub use ntkrnl_sys::ddk::_ARC_CODES_ESUCCESS as ESUCCESS;
@@ -114,6 +134,7 @@ extern "C" {
     fn AppendBootTimeOptions(Options: PCHAR);
     fn RamDiskInitialize(bReportError: u8, LoadOptions: PCSTR, SystemPartition: PCSTR) -> ARC_STATUS;
     fn UiResetForSOS();
+    fn DbgPrint(fmt: *const i8, ...) -> i32;
     fn WinLdrInitSystemHive(LoaderBlock: PLOADER_PARAMETER_BLOCK, BootPath: PCSTR, bUpdate: u8) -> u8;
     fn WinLdrScanSystemHive(LoaderBlock: PLOADER_PARAMETER_BLOCK, SystemRoot: PCSTR) -> u8;
 }
@@ -133,6 +154,17 @@ pub unsafe extern "C" fn NtLdrOutputLoadMsg(
     FileName: PCSTR,
     Description: PCSTR)
 {
+
+    // Boot-phase timing stamp on the freeldr debug port (livecd.ini
+    // [FREELOADER] Debug=): the framebuffer prints below are invisible on
+    // serial, which made the whole load phase one silent multi-second gap.
+    // tools/boot_phase_report.py turns these into per-file load timing.
+    // Assembled from three raw prints: DbgPrint is non-variadic on the
+    // stable channel (see debug.rs) and rosload imports it from freeldr.sys's
+    // export table — no formatting, no new export needed.
+    DbgPrint(b"[FLDR] load \0".as_ptr() as *const i8);
+    DbgPrint(FileName as *const i8);
+    DbgPrint(b"\n\0".as_ptr() as *const i8);
 
     if SosEnabled != 0 {
         printf(b"  %s\n\0".as_ptr() as PCSTR, FileName);
@@ -567,7 +599,7 @@ unsafe fn WinLdrDetectVersion() -> USHORT {
     
     let rc = RegOpenKey(
         CurrentControlSetKey,
-        b"C\0o\0n\0t\0r\0o\0l\0\\\0T\0e\0r\0m\0i\0n\0a\0l\0 \0S\0e\0r\0v\0e\0r\0\0\0".as_ptr() as *const u16,
+        w!("Control\\Terminal Server").as_ptr() as *const u16,
         &mut hKey
     );
     
@@ -980,11 +1012,11 @@ unsafe fn WinLdrInitErrataInf(
 
     if OperatingSystemVersion >= 0x0600 {
         rc = RegOpenKey(CurrentControlSetKey, 
-                       b"C\0o\0n\0t\0r\0o\0l\0\\\0E\0r\0r\0a\0t\0a\0\0\0".as_ptr() as *const u16,
+                       w!("Control\\Errata").as_ptr() as *const u16,
                        &mut hKey);
     } else {
         rc = RegOpenKey(CurrentControlSetKey,
-                       b"C\0o\0n\0t\0r\0o\0l\0\\\0B\0i\0o\0s\0I\0n\0f\0o\0\0\0".as_ptr() as *const u16,
+                       w!("Control\\BiosInfo").as_ptr() as *const u16,
                        &mut hKey);
     }
     
@@ -995,7 +1027,7 @@ unsafe fn WinLdrInitErrataInf(
 
     BufferSize = core::mem::size_of::<[u16; 80]>() as u32;
     rc = RegQueryValue(hKey,
-                      b"I\0n\0f\0N\0a\0m\0e\0\0\0".as_ptr() as *const u16,
+                      w!("InfName").as_ptr() as *const u16,
                       core::ptr::null_mut(),
                       szFileName.as_mut_ptr() as *mut u8,
                       &mut BufferSize);
@@ -1142,6 +1174,7 @@ pub unsafe extern "C" fn LoadAndBootWindows(
 
     AllocateAndInitLPB(OperatingSystemVersion, &mut LoaderBlock);
 
+    DbgPrint(b"[FLDR] phase: system hive load begin\n\0".as_ptr() as *const i8);
     UiUpdateProgressBar(15, b"Loading system hive...\0".as_ptr() as PCSTR);
     Success = WinLdrInitSystemHive(LoaderBlock, BootPath.as_ptr() as PCSTR, 0u8);
     TRACE(b"SYSTEM hive %s\n\0".as_ptr() as PCSTR, (if Success != 0 { b"loaded\0".as_ptr() } else { b"not loaded\0".as_ptr() }) as usize);
@@ -1155,6 +1188,7 @@ pub unsafe extern "C" fn LoadAndBootWindows(
     (*(*LoaderBlock).Extension).MajorVersion = (((OperatingSystemVersion & 0xFF00) >> 8) as u32);
     (*(*LoaderBlock).Extension).MinorVersion = (OperatingSystemVersion & 0xFF) as u32;
 
+    DbgPrint(b"[FLDR] phase: system hive loaded\n\0".as_ptr() as *const i8);
     Success = WinLdrScanSystemHive(LoaderBlock, BootPath.as_ptr() as PCSTR);
     TRACE(b"SYSTEM hive %s\n\0".as_ptr() as PCSTR, (if Success != 0 { b"scanned\0".as_ptr() } else { b"not scanned\0".as_ptr() }) as usize);
     if Success == 0 {
@@ -1188,11 +1222,13 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
 
     SystemRoot = (strstr((BootPath as *const u8), (b"\\\0".as_ptr() as PCSTR as *const u8)) as *const i8);
 
+    DbgPrint(b"[FLDR] phase: hw-detect begin\n\0".as_ptr() as *const i8);
     UiUpdateProgressBar(20, b"Detecting hardware...\0".as_ptr() as PCSTR);
     (*LoaderBlock).ConfigurationRoot = MachHwDetect(BootOptions) as _;
 
     PeLdrImportDllLoadCallback = NtLdrImportDllLoadCallback as *mut core::ffi::c_void;
 
+    DbgPrint(b"[FLDR] phase: core (kernel/HAL/kd) load begin\n\0".as_ptr() as *const i8);
     Success = LoadWindowsCore(
         OperatingSystemVersion,
         LoaderBlock,
@@ -1211,6 +1247,7 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
 
     UiSetProgressBarSubset(40, 90);
 
+    DbgPrint(b"[FLDR] phase: boot drivers load begin\n\0".as_ptr() as *const i8);
     UiSetProgressBarText(b"Loading boot drivers...\0".as_ptr() as PCSTR);
     Success = WinLdrLoadBootDrivers(LoaderBlock, BootPath);
 
@@ -1218,6 +1255,7 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
 
     PeLdrImportDllLoadCallback = core::ptr::null_mut();
 
+    DbgPrint(b"[FLDR] phase: boot drivers loaded\n\0".as_ptr() as *const i8);
     WinLdrInitializePhase1(
         LoaderBlock,
         BootOptions,
@@ -1308,6 +1346,7 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
         );
     }
 
+    DbgPrint(b"[FLDR] phase: handoff to kernel\n\0".as_ptr() as *const i8);
     WinLdrpDumpMemoryDescriptors(LoaderBlockVA);
     WinLdrpDumpBootDriver(LoaderBlockVA);
     #[cfg(not(target_arch = "x86_64"))]

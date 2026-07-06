@@ -19,8 +19,8 @@ extern "system" {
     fn PAGED_CODE();
 }
 
-const IOCTL_AACS_READ_MEDIA_KEY_BLOCK: u32 = 0x002D4C04;
-const IOCTL_AACS_READ_MEDIA_KEY_BLOCK_SIZE: u32 = 0x002D4C00;
+const IOCTL_AACS_READ_MEDIA_KEY_BLOCK: u32 = 0x003350C4; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_AACS_READ_MEDIA_KEY_BLOCK_SIZE: u32 = 0x003350C0; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
 const AACS_MKB_PACK_SIZE: u32 = 0x8000;
 const SCSIOP_READ_DVD_STRUCTURE: u8 = 0xAD;
 const TRACE_LEVEL_WARNING: i32 = 0;

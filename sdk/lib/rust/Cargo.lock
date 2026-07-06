@@ -489,6 +489,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fsrtl-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "gdi32-rust"
 version = "0.1.0"
 dependencies = [
@@ -729,8 +736,10 @@ name = "kernel-rust"
 version = "0.1.0"
 dependencies = [
  "cmboot-rust",
+ "fsrtl-rust",
  "ke-inlines",
  "ke-macros",
+ "lpc-rust",
  "ntoskrnl-rust",
  "ntprintf",
  "ntprintf_w",
@@ -822,6 +831,13 @@ dependencies = [
  "scoped-tls",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "lpc-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

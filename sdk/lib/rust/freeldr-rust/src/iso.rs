@@ -1,6 +1,9 @@
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, FILEINFORMATION, LARGE_INTEGER, PCSTR};
+// ADDED 2026-07-05: patterns below were unresolved names -> silent bind-all
+// catch-alls (bind-all match-arm bug class); import the real ddk consts.
+use ntkrnl_sys::ddk::{_SEEKMODE_SeekAbsolute as SEEKMODE_SeekAbsolute, _SEEKMODE_SeekRelative as SEEKMODE_SeekRelative};
 use core::ffi::c_void;
 
 // ---- restored from iso.h / iso.c (rustconv drops non-fn header content) ----

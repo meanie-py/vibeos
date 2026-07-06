@@ -6,6 +6,8 @@ members = [
     "netstack-rust",
     "netstack-cargo",
     "fastfat-rust",
+    "lpc-rust",
+    "fsrtl-rust",
     "conutils-rust",
     "dnslib-rust",
     "skiplist-rust",

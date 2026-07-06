@@ -7,6 +7,26 @@ use ntkrnl_sys::interlocked::{InterlockedDecrement, InterlockedIncrement};
 use win32k_sys::win32k::MAX_PATH;   // disambiguate the two glob-imported MAX_PATH
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ERR/TRACE/WARN/FIXME — DbgPrint-style no-ops (release).
 macro_rules! ERR { ($($t:tt)*) => {{}}; }
 macro_rules! TRACE { ($($t:tt)*) => {{}}; }
@@ -478,7 +498,7 @@ unsafe fn UserLoadKbdFile(pwszKLID: PUNICODE_STRING) -> PKBDFILE {
 
     swprintf(
         (*pkf).awchKF.as_mut_ptr(),
-        b"%wZ\0".as_ptr() as *const u16 as *const _,
+        w!("%wZ").as_ptr() as *const u16 as *const _,
         pwszKLID,
     );
 
@@ -505,7 +525,7 @@ unsafe fn UserLoadKbdFile(pwszKLID: PUNICODE_STRING) -> PKBDFILE {
 
         let Status2 = RegQueryValue(
             hKey,
-            b"Layout File\0".as_ptr() as *const u16 as *const _,
+            w!("Layout File").as_ptr() as *const u16 as *const _,
             REG_SZ,
             wszLayoutPath.as_mut_ptr().add(wcslen(wszLayoutPath.as_ptr()) as usize) as *mut _,
             &mut cbSize,

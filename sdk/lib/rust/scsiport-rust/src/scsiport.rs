@@ -1871,7 +1871,7 @@ pub unsafe extern "system" fn SpiAdapterControl(
     const MAX_SG_LIST: u32 = 26;
     // SCSI request flags
     const SRB_FLAGS_DATA_OUT: u32 = 0x00000080;
-    const SRB_FLAGS_SGLIST_FROM_POOL: u32 = 0x00000400;
+    const SRB_FLAGS_SGLIST_FROM_POOL: u32 = 0x00040000;
     // IO_ALLOCATION_ACTION return value
     const DeallocateObjectKeepRegisters: i32 = 3;
 
@@ -2486,9 +2486,9 @@ unsafe fn SpiParseDeviceInfo(
     const REG_DWORD: u32 = 4;
     const REG_SZ: u32 = 1;
     const REG_FULL_RESOURCE_DESCRIPTOR_TYPE: u32 = 0x0000000D;
-    const SCSI_MAXIMUM_LOGICAL_UNITS: u8 = 0; // unknown, placeholder
-    const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0; // placeholder
-    const SRB_FLAGS_DISABLE_DISCONNECT: u32 = 0; // placeholder
+    const SCSI_MAXIMUM_LOGICAL_UNITS: u8 = 0x08; // unknown, placeholder
+    const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x08; // placeholder
+    const SRB_FLAGS_DISABLE_DISCONNECT: u32 = 0x04; // placeholder
     const CmResourceTypePort: u8 = 0; // placeholder
     const CmResourceTypeMemory: u8 = 1; // placeholder
     const CmResourceTypeInterrupt: u8 = 2; // placeholder

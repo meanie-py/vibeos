@@ -28,6 +28,16 @@ static mut HalpNextIntervalCount: ddk::ULONG = 0;
 static mut HalpCurrentIrql: ddk::KIRQL = PASSIVE_LEVEL;
 
 static HalpSoftwareInterruptPending: AtomicU32 = AtomicU32::new(0);
+/// Nesting depth of exception-context interrupt dispatch. Bumped for the whole
+/// IRQ-vector body (HalClockInterruptArm64) and again by each
+/// HalpEnterInterruptIrql/HalpExitInterruptIrql bracket (ISR dispatch, IRQ-exit
+/// DPC retire). Non-zero means we are inside an IRQ exception window —
+/// software-interrupt delivery that can wake/swap threads (DISPATCH work) must
+/// NOT run there (§9.19 DAIF-inheritance class). Notably the clock-tick branch
+/// runs KeUpdateSystemTime with NO IRQL bracket at all, so without the vector-
+/// wide bump a raise/lower pair inside the tick path delivers DISPATCH work in
+/// exception context (BUGCHECK 0x1E, EC=0x0E illegal-execution-state).
+pub(crate) static HalpInterruptContextDepth: AtomicU32 = AtomicU32::new(0);
 static HalpSoftIntDeliveryInProgress: AtomicI32 = AtomicI32::new(0);
 
 #[unsafe(no_mangle)]
@@ -189,7 +199,7 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
     if Vector as usize >= 1020 {
         return FALSE;
     }
-    super::clock::enable_gic_interrupt(Vector as u32);
+    super::clock::enable_gic_interrupt(Vector as u32, Irql);
     TRUE
 }
 
@@ -409,7 +419,31 @@ pub unsafe extern "system" fn HalGetInterruptVector(
     Irql: ddk::PKIRQL,
     Affinity: ddk::PKAFFINITY,
 ) -> ddk::ULONG {
-    0
+    // On arm64 the "vector" IS the GIC INTID: drivers pass the device's INTID
+    // (QEMU virt: SPI n = INTID 32+n, e.g. UART=33, virtio-mmio slot i=48+i)
+    // as the bus interrupt level and/or vector, and get it back verbatim plus
+    // the DIRQL it will run at. Valid range: PPIs+SPIs (16..1019); SGIs (<16)
+    // and the special INTIDs (>=1020) are not connectable device lines.
+    let intid = if BusInterruptVector != 0 {
+        BusInterruptVector
+    } else {
+        BusInterruptLevel
+    };
+    if !(16..1020).contains(&intid) {
+        return 0;
+    }
+    unsafe {
+        if !Irql.is_null() {
+            // All device SPIs run at one DIRQL (UP port; per-line DIRQLs are a
+            // later refinement) — above DISPATCH, below CLOCK_LEVEL, so a DIRQL
+            // raise masks every device but never the system tick.
+            *Irql = super::clock::DEVICE_IRQL;
+        }
+        if !Affinity.is_null() {
+            *Affinity = 1;
+        }
+    }
+    intid
 }
 
 #[unsafe(no_mangle)]
@@ -684,12 +718,48 @@ pub unsafe extern "system" fn KeGetCurrentIrql() -> ddk::KIRQL {
     unsafe { HalpCurrentIrql }
 }
 
+extern "system" {
+    /// ntoskrnl export (ke/dpc.rs): the DISPATCH-level software-interrupt body
+    /// — timer expiration (Prcb.TimerRequest → KiTimerExpiration) + device-DPC
+    /// drain, in normal thread context. Called below when the soft IRQL
+    /// crosses under DISPATCH_LEVEL with the DISPATCH bit pended.
+    fn KiDispatchSoftwareIntArm64();
+}
+
 unsafe fn HalpDispatchSoftwareInterrupts(OldIrql: ddk::KIRQL, NewIrql: ddk::KIRQL) {
     if HalpSoftIntDeliveryInProgress
         .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
         return;
+    }
+
+    // DISPATCH delivery first (timers + DPCs), then APC — mirrors the NT
+    // lowering order (higher software level drains before the lower one).
+    // Without this, timer expiration ran ONLY from the idle loop, so one
+    // ready-spinning thread froze every kernel timer on arm64 (landmine #4,
+    // field manual §9.20) — a spinner still crosses DISPATCH in its own
+    // context constantly (syscalls, spinlock releases), so delivery here keeps
+    // timers flowing no matter how busy the ready queue is.
+    //
+    // GATED on interrupt-context depth == 0: KfLowerIrql is also reachable
+    // from inside IRQ exception windows (raise/lower pairs in ISR- and
+    // DPC-called kernel code), and running KiTimerExpiration's thread-wake
+    // machinery from exception context is the §9.19 wedge/crash class
+    // (first attempt BUGCHECKed 0x1E with an EC=0x0E illegal-execution-state
+    // return to EL0). HalpEnter/ExitInterruptIrql bracket every exception-
+    // context dispatch window, so depth 0 == genuine thread/SVC context.
+    let dispatch_bit = software_interrupt_bit(DISPATCH_LEVEL);
+    if NewIrql < DISPATCH_LEVEL
+        && HalpInterruptContextDepth.load(Ordering::SeqCst) == 0
+        && (HalpSoftwareInterruptPending.load(Ordering::SeqCst) & dispatch_bit) != 0
+    {
+        HalpSoftwareInterruptPending.fetch_and(!dispatch_bit, Ordering::SeqCst);
+        unsafe {
+            HalpCurrentIrql = DISPATCH_LEVEL;
+            KiDispatchSoftwareIntArm64();
+            HalpCurrentIrql = NewIrql;
+        }
     }
 
     let apc_bit = software_interrupt_bit(APC_LEVEL);
@@ -722,11 +792,50 @@ unsafe fn HalpDispatchSoftwareInterrupts(OldIrql: ddk::KIRQL, NewIrql: ddk::KIRQ
     HalpSoftIntDeliveryInProgress.store(0, Ordering::SeqCst);
 }
 
+// --- IRQL-violation tripwire (serial self-reporting) -----------------------
+// Raising DOWN or lowering UP is the classic imbalance that ends in a masked
+// clock or a re-entered spinlock; catch it at the violation site with the
+// caller's address symbolicatable via addr2sym.sh. Reports the first few then
+// goes quiet (a broken caller in a hot path must not flood the UART).
+
+static HalpIrqlViolations: AtomicU32 = AtomicU32::new(0);
+const IRQL_VIOLATION_REPORT_MAX: u32 = 8;
+
+extern "C" {
+    fn DbgPrint(Format: *const u8, ...) -> u32;
+}
+
+#[inline(never)]
+unsafe fn irql_violation(kind: &'static [u8], old: ddk::KIRQL, new: ddk::KIRQL) {
+    if HalpIrqlViolations.fetch_add(1, Ordering::Relaxed) < IRQL_VIOLATION_REPORT_MAX {
+        // x30 here is our caller = the KfRaiseIrql/KfLowerIrql frame's caller
+        // is already gone; the violating site is 1-2 frames up — print our
+        // return address (inside Kf*Irql's caller) as the best cheap anchor.
+        let ra: u64;
+        core::arch::asm!("mov {0}, x30", out(reg) ra, options(nomem, nostack, preserves_flags));
+        DbgPrint(
+            b"[IRQL] VIOLATION: %s %u -> %u, caller near %p\n\0".as_ptr(),
+            kind.as_ptr(),
+            old as u32,
+            new as u32,
+            ra as usize,
+        );
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn KfLowerIrql(NewIrql: ddk::KIRQL) {
     unsafe {
         let OldIrql = HalpCurrentIrql;
+        if NewIrql > OldIrql {
+            irql_violation(b"lower-UP\0", OldIrql, NewIrql);
+        }
         HalpCurrentIrql = NewIrql;
+        // Hardware half: reopen the GIC priority mask for the new level (MMIO
+        // skipped inside the software band) BEFORE draining soft interrupts,
+        // so a device IRQ deliverable at the new level isn't held off by a
+        // stale mask while we run APC delivery.
+        super::clock::update_pmr(OldIrql, NewIrql);
 
         if OldIrql > NewIrql && HalpSoftwareInterruptPending.load(Ordering::SeqCst) != 0 {
             HalpDispatchSoftwareInterrupts(OldIrql, NewIrql);
@@ -738,8 +847,43 @@ pub unsafe extern "system" fn KfLowerIrql(NewIrql: ddk::KIRQL) {
 pub unsafe extern "system" fn KfRaiseIrql(NewIrql: ddk::KIRQL) -> ddk::KIRQL {
     unsafe {
         let OldIrql = HalpCurrentIrql;
+        if NewIrql < OldIrql {
+            irql_violation(b"raise-DOWN\0", OldIrql, NewIrql);
+        }
         HalpCurrentIrql = NewIrql;
+        // Hardware half: mask GIC lines at-or-below the new level (MMIO
+        // skipped inside the software band, so spinlocks stay register-only).
+        super::clock::update_pmr(OldIrql, NewIrql);
         OldIrql
+    }
+}
+
+/// Enter interrupt-dispatch IRQL (called by ntoskrnl's KiDispatchInterruptArm64
+/// around a device ISR). Same as KfRaiseIrql but exempt from the raise-DOWN
+/// tripwire: an IRQ delivered while the soft IRQL was transiently higher than
+/// the line's DIRQL (PMR write windows) must still dispatch at ITS level.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalpEnterInterruptIrql(NewIrql: ddk::KIRQL) -> ddk::KIRQL {
+    unsafe {
+        HalpInterruptContextDepth.fetch_add(1, Ordering::SeqCst);
+        let OldIrql = HalpCurrentIrql;
+        HalpCurrentIrql = NewIrql;
+        super::clock::update_pmr(OldIrql, NewIrql);
+        OldIrql
+    }
+}
+
+/// Exit interrupt-dispatch IRQL: restore the interrupted level WITHOUT the
+/// KfLowerIrql soft-interrupt drain — delivering APCs from inside the IRQ
+/// exception would run them in interrupt context (see the clock ISR's note).
+/// Pending DPC/APC work is picked up on the trap-exit path / next real lower.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalpExitInterruptIrql(RestoreIrql: ddk::KIRQL) {
+    unsafe {
+        let OldIrql = HalpCurrentIrql;
+        HalpCurrentIrql = RestoreIrql;
+        super::clock::update_pmr(OldIrql, RestoreIrql);
+        HalpInterruptContextDepth.fetch_sub(1, Ordering::SeqCst);
     }
 }
 

@@ -36,7 +36,7 @@ extern "C" {
 // #define NDEBUG_USBPORT_URB  (empty macro, skipped)
 
 
-const USBD_FLAG_ALLOCATED_MDL: u32 = 0x00000001;
+const USBD_FLAG_ALLOCATED_MDL: u32 = 0x00000002; // FIXED 2026-07-05: translation invented 0x1; verified vs usbport.h/usbmport.h
 
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_HandleGetConfiguration(Urb: PURB) -> NTSTATUS {
@@ -110,7 +110,7 @@ pub unsafe extern "system" fn USBPORT_AbortPipe(
     Urb: PURB,
 ) -> NTSTATUS {
 
-    const PIPE_HANDLE_FLAG_NULL_PACKET_SIZE: u32 = 0x00000001; // PIPE_HANDLE_FLAG_NULL_PACKET_SIZE
+    const PIPE_HANDLE_FLAG_NULL_PACKET_SIZE: u32 = 0x00000002; // FIXED 2026-07-05: translation invented 0x1; verified vs usbport.h/usbmport.h // PIPE_HANDLE_FLAG_NULL_PACKET_SIZE
     const USBD_STATUS_SUCCESS: USBD_STATUS = 0x00000000u32 as USBD_STATUS; // USBD_STATUS_SUCCESS
     const USBD_STATUS_INVALID_PIPE_HANDLE: USBD_STATUS = 0x80000600u32 as USBD_STATUS; // USBD_STATUS_INVALID_PIPE_HANDLE
 
@@ -153,10 +153,10 @@ pub unsafe extern "system" fn USBPORT_ResetPipe(
     Urb: PURB,
 ) -> NTSTATUS {
 
-    const USBD_STATUS_INVALID_PIPE_HANDLE: USBD_STATUS = 0xC0000005u32 as USBD_STATUS;
+    const USBD_STATUS_INVALID_PIPE_HANDLE: USBD_STATUS = 0x80000600u32 as i32;
     const USBD_STATUS_SUCCESS: USBD_STATUS = 0;
-    const USBD_STATUS_ERROR_BUSY: USBD_STATUS = 0xC0000007u32 as USBD_STATUS;
-    const USBD_FLAG_NOT_ISO_TRANSFER: u32 = 0x00000002;
+    const USBD_STATUS_ERROR_BUSY: USBD_STATUS = 0x80000400u32 as i32;
+    const USBD_FLAG_NOT_ISO_TRANSFER: u32 = 0x00000010; // FIXED 2026-07-05: translation invented 0x2; verified vs usbport.h/usbmport.h
     const ENDPOINT_FLAG_QUEUENE_EMPTY: u32 = 0x00000010;
     const USBPORT_ENDPOINT_RUN: u32 = 0;
 
@@ -232,13 +232,13 @@ pub unsafe extern "system" fn USBPORT_SyncResetPipeAndClearStall(
     Urb: PURB,
 ) -> NTSTATUS {
 
-    const USBD_STATUS_INVALID_PIPE_HANDLE: USBD_STATUS = 0xC0000B00u32 as USBD_STATUS;
+    const USBD_STATUS_INVALID_PIPE_HANDLE: USBD_STATUS = 0x80000600u32 as i32;
     const USBD_STATUS_SUCCESS: USBD_STATUS = 0x00000000u32 as USBD_STATUS;
-    const PIPE_HANDLE_FLAG_NULL_PACKET_SIZE: ULONG = 0x00000001;
-    const USBPORT_TRANSFER_TYPE_ISOCHRONOUS: ULONG = 1;
-    const USBD_FLAG_NOT_ISO_TRANSFER: ULONG = 0x00000004;
+    const PIPE_HANDLE_FLAG_NULL_PACKET_SIZE: ULONG = 0x00000002; // FIXED 2026-07-05: translation invented 0x1; verified vs usbport.h/usbmport.h
+    const USBPORT_TRANSFER_TYPE_ISOCHRONOUS: ULONG = 0x00000000; // FIXED 2026-07-05: translation invented 0x1; verified vs usbport.h/usbmport.h
+    const USBD_FLAG_NOT_ISO_TRANSFER: ULONG = 0x00000010; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
     const USBPORT_ENDPOINT_PAUSED: ULONG = 2;
-    const USBPORT_ENDPOINT_ACTIVE: ULONG = 0;
+    const USBPORT_ENDPOINT_ACTIVE: ULONG = 0x00000003; // FIXED 2026-07-05: translation invented 0x0; verified vs usbport.h/usbmport.h
 
     let DeviceHandle: PUSBPORT_DEVICE_HANDLE;
     let PipeHandle: PUSBPORT_PIPE_HANDLE;

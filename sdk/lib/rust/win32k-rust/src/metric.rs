@@ -6,6 +6,26 @@ use ntkrnl_sys::ddk::ZwClose;
 use ntkrnl_sys::base::NT_SUCCESS;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // aiSysMet lives in the anonymous PERUSERSERVERINFO tail of tagSERVERINFO,
 // which bindgen made opaque (`__bindgen_padding_0`). Reach it via a cast at
 // that field's offset (same opaque-base pattern as W32PROCESS in PROCESSINFO).
@@ -61,8 +81,8 @@ unsafe fn user_is_imm_enabled() -> BOOL {
         return TRUE as BOOL;
     }
     (RegGetSectionDWORD(
-        b"I\0M\0M\0\0\0".as_ptr() as *const u16,
-        b"L\0o\0a\0d\0I\0M\0M\0\0\0".as_ptr() as *const u16,
+        w!("IMM").as_ptr() as *const u16,
+        w!("LoadIMM").as_ptr() as *const u16,
         FALSE as DWORD,
     ) != 0) as BOOL
 }
@@ -80,8 +100,8 @@ pub unsafe extern "C" fn UserIsCTFIMEEnabled() -> BOOL {
 
 unsafe fn user_is_ctfime_enabled() -> BOOL {
     if RegGetSectionDWORD(
-        b"I\0M\0M\0\0\0".as_ptr() as *const u16,
-        b"D\0o\0n\0t\0L\0o\0a\0d\0C\0T\0F\0I\0M\0E\0\0\0".as_ptr() as *const u16,
+        w!("IMM").as_ptr() as *const u16,
+        w!("DontLoadCTFIME").as_ptr() as *const u16,
         FALSE as DWORD,
     ) != 0
     {
@@ -102,10 +122,10 @@ pub unsafe extern "system" fn InitMetrics() -> BOOL {
     /* Clean boot (SM_CLEANBOOT fallback 0 = normal mode) */
     *pi_sys_met.offset(SM_CLEANBOOT as isize) = 0;
     if NT_SUCCESS(RegOpenKey(
-        b"\\\0R\0E\0G\0I\0S\0T\0R\0Y\0\\\0M\0A\0C\0H\0I\0N\0E\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0S\0a\0f\0e\0B\0o\0o\0t\0\\\0O\0p\0t\0i\0o\0n\0\0\0".as_ptr() as *const u16,
+        w!("\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Control\\SafeBoot\\Option").as_ptr() as *const u16,
         &mut h_key,
     )) {
-        if RegReadDWORD(h_key, b"O\0p\0t\0i\0o\0n\0V\0a\0l\0u\0e\0\0\0".as_ptr() as *const u16, &mut dw_value) != 0 {
+        if RegReadDWORD(h_key, w!("OptionValue").as_ptr() as *const u16, &mut dw_value) != 0 {
             *pi_sys_met.offset(SM_CLEANBOOT as isize) = dw_value as INT;
         }
         ZwClose(h_key as *mut c_void);

@@ -121,6 +121,10 @@ pub unsafe extern "system" fn KbdHid_InternalDeviceControl(
         (*DeviceExtension).ClassDeviceObject = (*Data).ClassDeviceObject;
         (*DeviceExtension).ClassService = (*Data).ClassService;
 
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[KBDHID] keyboard connected to class driver\n\0".as_ptr() as *const i8,
+        );
+
         /* completed successfully */
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
         (*Irp).IoStatus.Information = 0;

@@ -1,7 +1,75 @@
 # arm64 interrupts — make the interrupt subsystem real (routing + dispatch + hardware IRQL)
 
-**Status:** quest brief, opened 2026-07-05. Foundational — this is the root that forces
-polling across arm64 and blocks every interrupt-driven driver (real NIC, interrupt-driven
+**Status:** LANDED 2026-07-05 (same day as the brief); delivery bug fixed 2026-07-06
+(`test_arm64input_delivery` green — see landmine #3 / field manual §9.20). Both halves +
+the beachhead are in:
+real `HalGetInterruptVector` (INTID passthrough, `DEVICE_IRQL`=8), GIC SPI routing with
+per-IRQL line priorities, ISR dispatch at DIRQL, **hardware-backed IRQL via `GICC_PMR`**
+(lazy — no MMIO inside the PASSIVE..DISPATCH band, so spinlocks stay register-only), DPC
+retirement on IRQ exit, and **arm64input converted from `VirtioPollThread` to ISR+DPC**
+(virtio-mmio slot i → INTID 48+i; all-or-nothing connect with poll fallback). Tooling left
+in tree: IRQL-violation tripwire, per-INTID delivery counters + one-shot unhandled-INTID
+report, `HalDumpGicArm64()` state dumper, masked-swap tripwire in `KiSwapContextResume`.
+
+**Landmines discovered (read before touching arm64 trap/IRQL code):**
+1. **PSTATE.DAIF is inherited across `KiSwapContext` — it is NOT per-thread state.**
+   A context switch entered with IRQs masked resumes the next context masked. SVC waits
+   do exactly this today (see #2) and self-heal at ERET; but a **new** thread would run
+   with the inherited mask forever (system threads never ERET) → clock starves → total
+   machine wedge. Fixed: `KiThreadStartup` opens with `msr daifclr, #2` (ctxswitch.S).
+   Symptom signature: boot wedges with serial silent, wedged CPU shows `cpsr` DAIF=0xF
+   (full exception-entry mask) below a `KiSwapContext` frame.
+2. **SVC (syscall) handlers run with DAIF fully masked end-to-end** — kernel code entered
+   via syscall is never interrupted, and every syscall WAIT parks a masked context (the
+   `[SWAP-TRIPWIRE]` sees these constantly if you widen its filter). This is pre-existing,
+   self-healing, and NOT fixed by this quest — but it means (a) kernel-mode interrupt
+   latency is bounded by syscall length, and (b) making SVC entry re-enable IRQs after the
+   trap frame save is the natural next step if latency matters. Do it as its own change
+   with a full gate — it alters every syscall's preemption behavior.
+3. **DPC/timer retirement on arm64 was idle-loop-only** before this quest; the IRQ-exit
+   retire in `KiIrqHandler` (trap.rs) is what gives device ISR→DPC latency independent of
+   idle. It must use `HalpEnterInterruptIrql`/`HalpExitInterruptIrql` (no soft-interrupt
+   drain — APC delivery from exception context) and it retires **plain DPCs only**, via
+   `KiRetireDeviceDpcs` (ke/dpc.rs) — a drain of `DpcData[DPC_NORMAL]` that never touches
+   `TimerRequest`. Running `KiTimerExpiration` (thread wakes) from exception context wedges
+   boot even with landmine #1 fixed — masked wake/swap chains break thread-lifecycle paths
+   in ways the daifclr fix doesn't cover (field manual §9.19). Timer expiration runs from
+   the idle loop AND (since 2026-07-06, §9.21) from `KfLowerIrql`'s thread-context
+   DISPATCH-softint delivery — never from exception context. **Do NOT gate this drain on
+   `TimerRequest == 0`** (the original landing did; field manual §9.20): `TimerRequest`'s
+   only consumer is the idle loop, a busy thread starves idle indefinitely, and the stale
+   flag then permanently killed all device-DPC delivery at desktop (the 2026-07-06
+   virtio-input "ISR fires, DPC never runs" bug).
+4. **(CLOSED 2026-07-06 — field manual §9.21)** Kernel timer expiration froze whenever the
+   idle loop was starved. Root causes found and fixed the same day:
+   - The "QPC spinner" was `KeDelayExecutionThread` still STUBBED to `NtYieldExecution()`
+     on arm64 (wait.rs, dead "no HAL timer interrupt yet" lore) — every kernel/user sleep
+     busy-yielded (the hal-QPC-hot thread was netstack's poll worker). Stub deleted; the
+     real timer-wait path works now that the vtimer ticks.
+   - A second spinner: explorer's main thread on a stuck QS_PAINT wake bit
+     (`MsgWaitForMultipleObjects` insta-returns, `PeekMessage` retrieves nothing) — the
+     upstream `IntGetPaintMessage` dirty-window-leak bandaid zeroes `cPaintsReady` without
+     clearing the wake bits, silently (win32k-rust `ERR!` is a no-op). Fixed in
+     win32k-rust painting.rs/message.rs + made loud via DbgPrint.
+   - The DISPATCH software interrupt is now DELIVERED: `KfLowerIrql` crossing below
+     DISPATCH calls ntoskrnl's `KiDispatchSoftwareIntArm64()` (timer expiration with
+     DpcRoutineActive set + device-DPC drain, thread context). Gated on
+     `HalpInterruptContextDepth == 0` — KfLowerIrql is reachable from IRQ exception
+     windows (the clock-tick branch runs KeUpdateSystemTime with NO IRQL bracket), and
+     ungated delivery ran timer expiration in exception context → BUGCHECK 0x1E
+     (EC=0x0E), the §9.19 class. The depth counter is bumped vector-wide in
+     `HalClockInterruptArm64` and by every HalpEnter/ExitInterruptIrql pair.
+   Still open (pre-existing, separate win32k hunt — forensics in §9.21): win32k
+   user-timer WM_TIMER posting never reaches explorer (tray clock never repaints,
+   `ProcessTimers` fires but `cTimersReady` stays 0) and the underlying dirty-window
+   leak the QS_PAINT bandaid papers over (now visible on serial).
+
+Original brief follows (current-state description below is now historical).
+
+---
+
+Foundational — this was the root that forced
+polling across arm64 and blocked every interrupt-driven driver (real NIC, interrupt-driven
 USB, disk).
 
 **Mandate:** get arm64 device interrupts genuinely working and **production-ready** — not

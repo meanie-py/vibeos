@@ -35,6 +35,8 @@ use crate::lsasrv::registry::{
     LsapRegCloseKey, LsapRegEnumerateSubKey, LsapRegOpenKey, LsapRegQueryKeyInfo, LsapRegQueryValue,
 };
 use crate::lsasrv::policy::{
+
+
     LsarQueryAccountDomain, LsarQueryAuditEvents, LsarQueryAuditFull, LsarQueryAuditLog,
     LsarQueryDefaultQuota, LsarQueryDnsDomain, LsarQueryDnsDomainInt, LsarQueryLocalAccountDomain,
     LsarQueryModification, LsarQueryPdAccount, LsarQueryPrimaryDomain, LsarQueryReplicaSource,
@@ -42,6 +44,26 @@ use crate::lsasrv::policy::{
     LsarSetDefaultQuota, LsarSetDnsDomain, LsarSetDnsDomainInt, LsarSetLocalAccountDomain,
     LsarSetModification, LsarSetPrimaryDomain, LsarSetReplicaSource, LsarSetServerRole,
 };
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 
 // ---- Win32 / RPC-runtime imports (WINAPI/__stdcall) ----
 extern "system" {
@@ -92,9 +114,9 @@ pub unsafe extern "C" fn LsarStartRpcServer() -> NTSTATUS {
     RtlInitializeCriticalSection(core::ptr::addr_of_mut!(PolicyHandleTableLock));
 
     Status = RpcServerUseProtseqEpW(
-        b"n\0c\0a\0c\0n\0_\0n\0p\0\0\0".as_ptr() as PWSTR,
+        w!("ncacn_np").as_ptr() as PWSTR,
         RPC_C_PROTSEQ_MAX_REQS_DEFAULT,
-        b"\\\0p\0i\0p\0e\0\\\0l\0s\0a\0r\0p\0c\0\0\0".as_ptr() as PWSTR,
+        w!("\\pipe\\lsarpc").as_ptr() as PWSTR,
         core::ptr::null_mut(),
     );
     if Status != RPC_S_OK {
@@ -121,7 +143,7 @@ pub unsafe extern "C" fn LsarStartRpcServer() -> NTSTATUS {
         core::ptr::null_mut(),
         1,
         0,
-        b"L\0S\0A\0_\0R\0P\0C\0_\0S\0E\0R\0V\0E\0R\0_\0A\0C\0T\0I\0V\0E\0\0\0".as_ptr() as PWSTR,
+        w!("LSA_RPC_SERVER_ACTIVE").as_ptr() as PWSTR,
     );
     if hEvent.is_null() {
         dwError = GetLastError();
@@ -248,7 +270,7 @@ pub unsafe extern "system" fn LsarQuerySecurityObject(
 
     Status = LsapGetObjectAttribute(
         DbObject,
-        b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as PWSTR,
+        w!("SecDesc").as_ptr() as PWSTR,
         core::ptr::null_mut(),
         &mut RelativeSdSize,
     );
@@ -264,7 +286,7 @@ pub unsafe extern "system" fn LsarQuerySecurityObject(
     'done: {
         Status = LsapGetObjectAttribute(
             DbObject,
-            b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as PWSTR,
+            w!("SecDesc").as_ptr() as PWSTR,
             RelativeSd as *mut core::ffi::c_void,
             &mut RelativeSdSize,
         );
@@ -423,7 +445,7 @@ pub unsafe extern "system" fn LsarSetSecurityObject(
 
     Status = LsapGetObjectAttribute(
         DbObject,
-        b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as PWSTR,
+        w!("SecDesc").as_ptr() as PWSTR,
         core::ptr::null_mut(),
         &mut RelativeSdSize,
     );
@@ -439,7 +461,7 @@ pub unsafe extern "system" fn LsarSetSecurityObject(
     'done: {
         Status = LsapGetObjectAttribute(
             DbObject,
-            b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as PWSTR,
+            w!("SecDesc").as_ptr() as PWSTR,
             RelativeSd,
             &mut RelativeSdSize,
         );
@@ -478,7 +500,7 @@ pub unsafe extern "system" fn LsarSetSecurityObject(
 
         Status = LsapSetObjectAttribute(
             DbObject,
-            b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as PWSTR,
+            w!("SecDesc").as_ptr() as PWSTR,
             RelativeSd,
             RtlLengthSecurityDescriptor(RelativeSd),
         );
@@ -522,7 +544,7 @@ pub unsafe extern "system" fn LsarOpenPolicy(
     Status = LsapOpenDbObject(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        b"P\0o\0l\0i\0c\0y\0\0\0".as_ptr() as PWSTR,
+        w!("Policy").as_ptr() as PWSTR,
         LsaDbPolicyObject,
         DesiredAccess,
         0u8,
@@ -939,7 +961,7 @@ pub unsafe extern "system" fn LsarEnumerateAccounts(
 
     Status = LsapRegOpenKey(
         (*PolicyObject).KeyHandle,
-        b"A\0c\0c\0o\0u\0n\0t\0s\0\0\0".as_ptr() as PWSTR,
+        w!("Accounts").as_ptr() as PWSTR,
         KEY_READ,
         &mut AccountsKeyHandle,
     );
@@ -988,7 +1010,7 @@ pub unsafe extern "system" fn LsarEnumerateAccounts(
         if NT_SUCCESS(Status) {
             Status = LsapRegOpenKey(
                 AccountKeyHandle,
-                b"S\0i\0d\0\0\0".as_ptr() as PWSTR,
+                w!("Sid").as_ptr() as PWSTR,
                 KEY_READ,
                 &mut SidKeyHandle,
             );
@@ -1057,7 +1079,7 @@ pub unsafe extern "system" fn LsarEnumerateAccounts(
             if NT_SUCCESS(Status) {
                 Status = LsapRegOpenKey(
                     AccountKeyHandle,
-                    b"S\0i\0d\0\0\0".as_ptr() as PWSTR,
+                    w!("Sid").as_ptr() as PWSTR,
                     KEY_READ,
                     &mut SidKeyHandle,
                 );
@@ -1420,7 +1442,7 @@ unsafe fn LsarpOpenAccount(
 
     Status = LsapOpenDbObject(
         PolicyObject,
-        b"A\0c\0c\0o\0u\0n\0t\0s\0\0\0".as_ptr() as PWSTR,
+        w!("Accounts").as_ptr() as PWSTR,
         SidString,
         LsaDbAccountObject,
         DesiredAccess,
@@ -1498,7 +1520,7 @@ pub unsafe extern "system" fn LsarEnumeratePrivilegesAccount(
 
     Status = LsapGetObjectAttribute(
         AccountObject,
-        b"P\0r\0i\0v\0i\0l\0g\0s\0\0\0".as_ptr() as PWSTR,
+        w!("Privilgs").as_ptr() as PWSTR,
         core::ptr::null_mut(),
         &mut PrivilegeSetSize,
     );
@@ -1513,7 +1535,7 @@ pub unsafe extern "system" fn LsarEnumeratePrivilegesAccount(
 
     Status = LsapGetObjectAttribute(
         AccountObject,
-        b"P\0r\0i\0v\0i\0l\0g\0s\0\0\0".as_ptr() as PWSTR,
+        w!("Privilgs").as_ptr() as PWSTR,
         PrivilegeSet as *mut core::ffi::c_void,
         &mut PrivilegeSetSize,
     );
@@ -1554,7 +1576,7 @@ pub unsafe extern "system" fn LsarAddPrivilegesToAccount(
 
     Status = LsapGetObjectAttribute(
         AccountObject,
-        b"P\0r\0i\0v\0i\0l\0g\0s\0\0\0".as_ptr() as PWSTR,
+        w!("Privilgs").as_ptr() as PWSTR,
         core::ptr::null_mut(),
         &mut PrivilegeSetSize,
     );
@@ -1564,7 +1586,7 @@ pub unsafe extern "system" fn LsarAddPrivilegesToAccount(
                 * (core::mem::size_of::<LUID_AND_ATTRIBUTES>() as ULONG);
         Status = LsapSetObjectAttribute(
             AccountObject,
-            b"P\0r\0i\0v\0i\0l\0g\0s\0\0\0".as_ptr() as PWSTR,
+            w!("Privilgs").as_ptr() as PWSTR,
             Privileges as *mut core::ffi::c_void,
             PrivilegeSetSize,
         );
@@ -1577,7 +1599,7 @@ pub unsafe extern "system" fn LsarAddPrivilegesToAccount(
         'done: {
             Status = LsapGetObjectAttribute(
                 AccountObject,
-                b"P\0r\0i\0v\0i\0l\0g\0s\0\0\0".as_ptr() as PWSTR,
+                w!("Privilgs").as_ptr() as PWSTR,
                 CurrentPrivileges as *mut core::ffi::c_void,
                 &mut PrivilegeSetSize,
             );
@@ -1660,7 +1682,7 @@ pub unsafe extern "system" fn LsarAddPrivilegesToAccount(
 
             Status = LsapSetObjectAttribute(
                 AccountObject,
-                b"P\0r\0i\0v\0i\0l\0g\0s\0\0\0".as_ptr() as PWSTR,
+                w!("Privilgs").as_ptr() as PWSTR,
                 NewPrivileges as *mut core::ffi::c_void,
                 PrivilegeSetSize,
             );
@@ -1860,7 +1882,7 @@ pub unsafe extern "system" fn LsarGetQuotasForAccount(
 
     Status = LsapGetObjectAttribute(
         AccountObject,
-        b"D\0e\0f\0Q\0u\0o\0t\0a\0\0\0".as_ptr() as PWSTR,
+        w!("DefQuota").as_ptr() as PWSTR,
         QuotaLimits as *mut core::ffi::c_void,
         &mut Size,
     );
@@ -1950,7 +1972,7 @@ pub unsafe extern "system" fn LsarGetSystemAccessAccount(
 
     Status = LsapGetObjectAttribute(
         AccountObject,
-        b"A\0c\0t\0S\0y\0s\0A\0c\0\0\0".as_ptr() as PWSTR,
+        w!("ActSysAc").as_ptr() as PWSTR,
         SystemAccess as *mut core::ffi::c_void,
         &mut Size,
     );
@@ -1979,7 +2001,7 @@ pub unsafe extern "system" fn LsarSetSystemAccessAccount(
     let mut SystemAccess = SystemAccess;
     Status = LsapSetObjectAttribute(
         AccountObject,
-        b"A\0c\0t\0S\0y\0s\0A\0c\0\0\0".as_ptr() as PWSTR,
+        w!("ActSysAc").as_ptr() as PWSTR,
         core::ptr::addr_of_mut!(SystemAccess) as *mut core::ffi::c_void,
         core::mem::size_of::<ACCESS_MASK>() as u32,
     );
@@ -2042,7 +2064,7 @@ pub unsafe extern "system" fn LsarOpenSecret(
 
     Status = LsapOpenDbObject(
         PolicyObject,
-        b"S\0e\0c\0r\0e\0t\0s\0\0\0".as_ptr() as PWSTR,
+        w!("Secrets").as_ptr() as PWSTR,
         (*SecretName).Buffer,
         LsaDbSecretObject,
         DesiredAccess,

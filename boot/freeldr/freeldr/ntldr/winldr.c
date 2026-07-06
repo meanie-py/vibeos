@@ -53,6 +53,14 @@ NtLdrOutputLoadMsg(
     _In_ PCSTR FileName,
     _In_opt_ PCSTR Description)
 {
+    /* Boot-phase timing stamp: the framebuffer prints below are invisible on
+     * serial, which made freeldr's whole load phase one silent multi-second
+     * gap in every boot log. Plain DbgPrint reaches the freeldr debug port
+     * (livecd.ini [FREELOADER] Debug=) so a host-timestamped serial log
+     * attributes the load time per file (tools/boot_phase_report.py). No-op
+     * when freeldr debug is off. */
+    DbgPrint("[FLDR] load %s\n", FileName);
+
     if (SosEnabled)
     {
         printf("  %s\n", FileName);
@@ -1134,6 +1142,7 @@ LoadAndBootWindows(
     AllocateAndInitLPB(OperatingSystemVersion, &LoaderBlock);
 
     /* Load the system hive */
+    DbgPrint("[FLDR] phase: system hive load begin\n");
     UiUpdateProgressBar(15, "Loading system hive...");
     Success = WinLdrInitSystemHive(LoaderBlock, BootPath, FALSE);
     TRACE("SYSTEM hive %s\n", (Success ? "loaded" : "not loaded"));
@@ -1147,6 +1156,7 @@ LoadAndBootWindows(
     LoaderBlock->Extension->MajorVersion = (OperatingSystemVersion & 0xFF00) >> 8;
     LoaderBlock->Extension->MinorVersion = (OperatingSystemVersion & 0xFF);
 
+    DbgPrint("[FLDR] phase: system hive loaded\n");
     /* Load NLS data, OEM font, and prepare boot drivers list */
     Success = WinLdrScanSystemHive(LoaderBlock, BootPath);
     TRACE("SYSTEM hive %s\n", (Success ? "scanned" : "not scanned"));
@@ -1189,6 +1199,7 @@ LoadAndBootWindowsCommon(
     /* Convert BootPath to SystemRoot */
     SystemRoot = strstr(BootPath, "\\");
 
+    DbgPrint("[FLDR] phase: hw-detect begin\n");
     /* Detect hardware */
     UiUpdateProgressBar(20, "Detecting hardware...");
     LoaderBlock->ConfigurationRoot = MachHwDetect(BootOptions);
@@ -1197,6 +1208,7 @@ LoadAndBootWindowsCommon(
      * feedback (for example during SOS) on the PE images that get loaded. */
     PeLdrImportDllLoadCallback = NtLdrImportDllLoadCallback;
 
+    DbgPrint("[FLDR] phase: core (kernel/HAL/kd) load begin\n");
     /* Load the operating system core: the Kernel, the HAL and the Kernel Debugger Transport DLL */
     Success = LoadWindowsCore(OperatingSystemVersion,
                               LoaderBlock,
@@ -1222,6 +1234,7 @@ LoadAndBootWindowsCommon(
     UiSetProgressBarSubset(40, 90); // NTOS goes from 25 to 75%
 
     /* Load boot drivers */
+    DbgPrint("[FLDR] phase: boot drivers load begin\n");
     UiSetProgressBarText("Loading boot drivers...");
     Success = WinLdrLoadBootDrivers(LoaderBlock, BootPath);
 
@@ -1230,6 +1243,7 @@ LoadAndBootWindowsCommon(
     /* Reset the PE loader import-DLL callback */
     PeLdrImportDllLoadCallback = NULL;
 
+    DbgPrint("[FLDR] phase: boot drivers loaded\n");
     /* Initialize Phase 1 - no drivers loading anymore */
     WinLdrInitializePhase1(LoaderBlock,
                            BootOptions,
@@ -1316,6 +1330,7 @@ LoadAndBootWindowsCommon(
     ERR(">>> Calling KiSystemStartup(%p)...\n", LoaderBlockVA);
 #endif
 
+    DbgPrint("[FLDR] phase: handoff to kernel\n");
     WinLdrpDumpMemoryDescriptors(LoaderBlockVA);
     WinLdrpDumpBootDriver(LoaderBlockVA);
 #ifndef _M_AMD64

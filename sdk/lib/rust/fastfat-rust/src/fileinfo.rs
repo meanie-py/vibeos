@@ -3022,9 +3022,9 @@ unsafe extern "system" fn FatDeleteFile(
     }
 
     // Placeholder constants (values unknown, but required for compilation)
-    const FCB_STATE_NAMES_IN_SPLAY_TREE: u32 = 0x0001;
-    const FCB_STATE_DELETE_ON_CLOSE: u32 = 0x0002;
-    const FAT_NTC_FCB: u32 = 0x0501;
+    const FCB_STATE_NAMES_IN_SPLAY_TREE: u32 = 0x0100;
+    const FCB_STATE_DELETE_ON_CLOSE: u32 = 0x01;
+    const FAT_NTC_FCB: u32 = 0x0502;
 
     PAGED_CODE();
 

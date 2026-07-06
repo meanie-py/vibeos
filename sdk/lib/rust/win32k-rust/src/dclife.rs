@@ -9,6 +9,26 @@ use ntkrnl_sys::base::STATUS_SUCCESS;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as i32;
 // GDITAG_HMGR_LOOKASIDE_DC_TYPE = '1alG' (big-endian multichar)
 use crate::dib_helpers::BitsPerFormat;
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 // EXLATEOBJ_* real ENGAPI (xlateobj.rs) — declare extern, same-ABI (mirror fillshap).
 extern "system" {
     fn EXLATEOBJ_vInitialize(pexlo: PEXLATEOBJ, ppalSrc: *mut PALETTE, ppalDst: *mut PALETTE, c1: COLORREF, c2: COLORREF, c3: COLORREF);
@@ -1192,7 +1212,7 @@ pub unsafe extern "stdcall" fn NtGdiOpenDCW(
     }
 
     if !pustrDevice.is_null() {
-        let ustrDISPLAY = RTL_CONSTANT_STRING(b"D\0I\0S\0P\0L\0A\0Y\0\0\0".as_ptr() as *const u16);
+        let ustrDISPLAY = RTL_CONSTANT_STRING(w!("DISPLAY").as_ptr() as *const u16);
         if RtlEqualUnicodeString(core::ptr::addr_of!(ustrDevice) as *const _, core::ptr::addr_of!(ustrDISPLAY) as *const _, 1) != 0 {
             pustrDevice = core::ptr::null_mut();
         }
@@ -1274,7 +1294,7 @@ pub unsafe extern "C" fn NtGdiOpenDCW(
     }
 
     if !pustrDevice.is_null() {
-        let ustrDISPLAY = RTL_CONSTANT_STRING(b"D\0I\0S\0P\0L\0A\0Y\0\0\0".as_ptr() as *const u16);
+        let ustrDISPLAY = RTL_CONSTANT_STRING(w!("DISPLAY").as_ptr() as *const u16);
         if RtlEqualUnicodeString(core::ptr::addr_of!(ustrDevice) as *const _, core::ptr::addr_of!(ustrDISPLAY) as *const _, 1) != 0 {
             pustrDevice = core::ptr::null_mut();
         }

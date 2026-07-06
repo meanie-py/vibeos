@@ -28,7 +28,7 @@
 
 #![cfg(target_arch = "aarch64")]
 
-use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 // ---------------------------------------------------------------------------
 // GICv2 register offsets (QEMU `virt`: GICD @ 0x08000000, GICC @ 0x08010000).
@@ -40,6 +40,10 @@ const GICD_CTLR: usize = 0x000;
 const GICD_ISENABLER: usize = 0x100;
 /// Clear-enable, 1 bit per interrupt, 32 per 32-bit register.
 const GICD_ICENABLER: usize = 0x180;
+/// Set-pending, 1 bit per interrupt (read = pending set).
+const GICD_ISPENDR: usize = 0x200;
+/// Set-active, 1 bit per interrupt (read = active set).
+const GICD_ISACTIVER: usize = 0x300;
 /// Priority, 1 byte per interrupt.
 const GICD_IPRIORITYR: usize = 0x400;
 /// Interrupt processor targets, 1 byte per interrupt (SPIs only; SGIs/PPIs RO).
@@ -53,6 +57,61 @@ const GICC_PMR: usize = 0x004;
 const GICC_IAR: usize = 0x00C;
 /// End-of-interrupt (write the acknowledged IAR value back).
 const GICC_EOIR: usize = 0x010;
+/// Running priority (priority of the highest active interrupt, 0xFF = idle).
+const GICC_RPR: usize = 0x014;
+
+// ---------------------------------------------------------------------------
+// IRQL ↔ GIC priority map — the contract that makes IRQL hardware-real.
+//
+// GICv2 priorities: lower value = higher priority; an interrupt is delivered
+// iff its priority is numerically BELOW GICC_PMR. We carve the 8-bit priority
+// space in 0x10 steps (QEMU's GICv2 implements ≥4 priority bits, so 16 levels
+// are architecturally safe):
+//
+//     priority(irql) = (15 - irql) << 4
+//
+// IRQL layout on arm64 (NT-style, 4-bit IRQL space):
+//     0  PASSIVE / 1 APC / 2 DISPATCH   — software levels, no GIC line lives
+//                                         here; PMR stays open (0xF0..0xD0)
+//     3..=11  DIRQL                      — device SPIs (HalGetInterruptVector
+//                                         hands out DEVICE_IRQL=8, prio 0x70)
+//     13 CLOCK_LEVEL                     — vtimer PPI 27, prio 0x20 (a DIRQL
+//                                         raise must NOT mask the clock)
+//     15 HIGH_LEVEL                      — PMR 0x00, everything masked
+//
+// Raising IRQL to X programs PMR = priority(X), so every line whose IRQL ≤ X
+// is masked by the GIC itself — a DISPATCH/DIRQL spinlock can no longer be
+// broken by its own device's ISR. Transitions entirely inside the software
+// band (old,new ≤ DISPATCH) skip the MMIO write: no line has a priority in
+// [0xD0,0xF0), so the mask set is unchanged and the hot spinlock raise/lower
+// path stays register-only.
+// ---------------------------------------------------------------------------
+
+pub(crate) const CLOCK_LEVEL: u8 = 13;
+/// The DIRQL this port assigns to every device SPI (see HalGetInterruptVector).
+pub(crate) const DEVICE_IRQL: u8 = 8;
+const SOFT_IRQL_MAX: u8 = 2; // DISPATCH_LEVEL — top of the no-MMIO band
+
+/// GIC priority byte for a line owned by `irql` (also the PMR value that masks
+/// it: delivered iff prio < PMR, so PMR = priority(irql) masks IRQL ≤ irql).
+#[inline(always)]
+pub(crate) fn gic_priority(irql: u8) -> u8 {
+    (15u8.saturating_sub(irql.min(15))) << 4
+}
+
+/// Program GICC_PMR for a software IRQL transition. Skips the MMIO write when
+/// both levels are in the software band (no maskable line lives there) or the
+/// GIC isn't mapped yet (early boot: IRQs can't fire before clock init anyway).
+#[inline(always)]
+pub(crate) unsafe fn update_pmr(old_irql: u8, new_irql: u8) {
+    if old_irql <= SOFT_IRQL_MAX && new_irql <= SOFT_IRQL_MAX {
+        return;
+    }
+    let gicc = GICC_BASE.load(Ordering::Relaxed);
+    if gicc != 0 {
+        mmio_write(gicc, GICC_PMR, gic_priority(new_irql) as u32);
+    }
+}
 
 /// EL1 virtual-timer PPI on the GIC (architectural INTID for CNTV).
 const VTIMER_INTID: u32 = 27;
@@ -101,16 +160,21 @@ extern "system" {
 // enable/disable lives here next to the distributor programming it mirrors.
 // ---------------------------------------------------------------------------
 
-/// Enable a device interrupt line (SPI) in the GIC distributor: mid priority,
-/// routed to CPU0, then set-enable. No-op until the GIC is mapped (clock init).
-pub(crate) unsafe fn enable_gic_interrupt(intid: u32) {
+/// Enable a device interrupt line (SPI) in the GIC distributor at the GIC
+/// priority derived from its IRQL, routed to CPU0, then set-enable. No-op
+/// until the GIC is mapped (clock init).
+pub(crate) unsafe fn enable_gic_interrupt(intid: u32, irql: u8) {
     let gicd = GICD_BASE.load(Ordering::SeqCst);
     if gicd == 0 || intid as usize >= 1020 {
         return;
     }
     let id = intid as usize;
-    // Mid priority (numerically below GICC_PMR=0xF0 so it is deliverable).
-    core::ptr::write_volatile((gicd + GICD_IPRIORITYR + id) as *mut u8, 0x80u8);
+    // Priority from the line's IRQL, so raising IRQL to (or above) it masks it
+    // at the GIC (see the IRQL ↔ priority map above).
+    core::ptr::write_volatile(
+        (gicd + GICD_IPRIORITYR + id) as *mut u8,
+        gic_priority(irql),
+    );
     // SPIs (>=32) need an explicit CPU target; SGI/PPI target registers are RO.
     if id >= 32 {
         core::ptr::write_volatile((gicd + GICD_ITARGETSR + id) as *mut u8, 0x01u8);
@@ -126,6 +190,135 @@ pub(crate) unsafe fn disable_gic_interrupt(intid: u32) {
     }
     let id = intid as usize;
     mmio_write(gicd, GICD_ICENABLER + (id / 32) * 4, 1u32 << (id % 32));
+}
+
+// ---------------------------------------------------------------------------
+// Interrupt-delivery trace + GIC state dump (debugging tooling — serial
+// self-reporting, no GDB needed). Lost / spurious / storming interrupts and
+// mask bugs show up here instead of as silent hangs.
+// ---------------------------------------------------------------------------
+
+/// Per-INTID delivery counters for INTIDs 0..63 (covers every QEMU `virt`
+/// source we route: SGIs, PPIs incl. the vtimer 27, UART SPI 33, virtio-mmio
+/// SPIs 48..79 alias into the overflow bucket only above 63).
+const TRACE_SLOTS: usize = 64;
+static IRQ_COUNTS: [AtomicU32; TRACE_SLOTS] =
+    [const { AtomicU32::new(0) }; TRACE_SLOTS];
+static IRQ_COUNT_OTHER: AtomicU32 = AtomicU32::new(0);
+/// Spurious IAR reads (1020..1023).
+static IRQ_SPURIOUS: AtomicU32 = AtomicU32::new(0);
+/// One-shot "fired but no ISR connected" bitmap for INTIDs 0..63 (+1 global
+/// latch for the rest) so a mis-routed line reports once instead of flooding.
+static UNHANDLED_SEEN: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
+static UNHANDLED_SEEN_OTHER: AtomicU32 = AtomicU32::new(0);
+/// INTID armed by HalSelfTestGicSpiArm64 (0 = none): its delivery is reported
+/// as a selftest success, not an unhandled-line anomaly.
+static SELFTEST_INTID: AtomicU32 = AtomicU32::new(0);
+
+extern "C" {
+    fn DbgPrint(Format: *const u8, ...) -> u32;
+}
+
+#[inline]
+fn trace_delivery(intid: u32) {
+    if (intid as usize) < TRACE_SLOTS {
+        IRQ_COUNTS[intid as usize].fetch_add(1, Ordering::Relaxed);
+    } else {
+        IRQ_COUNT_OTHER.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Report (once per line per boot) a GIC INTID that fired with no connected
+/// ISR. Runs in IRQ context — DbgPrint on arm64 is the polled UART, safe here.
+unsafe fn report_unhandled(intid: u32) {
+    let fresh = if (intid as usize) < TRACE_SLOTS {
+        let bit = 1u32 << (intid % 32);
+        UNHANDLED_SEEN[(intid / 32) as usize].fetch_or(bit, Ordering::Relaxed) & bit == 0
+    } else {
+        UNHANDLED_SEEN_OTHER.swap(1, Ordering::Relaxed) == 0
+    };
+    if fresh {
+        DbgPrint(
+            b"[GIC] unhandled INTID %u fired (no ISR connected) - acked+dropped\n\0".as_ptr(),
+            intid,
+        );
+        // Full GIC state at first anomaly — a misrouted/storming line is
+        // diagnosable from the serial log alone.
+        HalDumpGicArm64();
+    }
+}
+
+/// GIC delivery self-test: software-pend an SPI via GICD_ISPENDR and report
+/// the line's enable/priority state. If GIC→CPU→dispatch wiring works, the
+/// pended interrupt fires as soon as PSTATE.I opens (its ISR sees a quiet
+/// device and returns FALSE → one `[GIC] unhandled`-style trace, harmless).
+/// Distinguishes "the GIC never delivered" from "the device never asserted" —
+/// the two failure modes a dead device interrupt collapses into.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalSelfTestGicSpiArm64(intid: u32) {
+    let gicd = GICD_BASE.load(Ordering::SeqCst);
+    if gicd == 0 || !(32..1020).contains(&(intid as usize)) {
+        DbgPrint(b"[GIC] selftest: GIC unmapped or INTID %u not an SPI\n\0".as_ptr(), intid);
+        return;
+    }
+    let id = intid as usize;
+    DbgPrint(
+        b"[GIC] selftest INTID %u: enabled=%u prio=%02x target=%02x -> set-pending\n\0".as_ptr(),
+        intid,
+        (mmio_read(gicd, GICD_ISENABLER + (id / 32) * 4) >> (id % 32)) & 1,
+        core::ptr::read_volatile((gicd + GICD_IPRIORITYR + id) as *const u8) as u32,
+        core::ptr::read_volatile((gicd + GICD_ITARGETSR + id) as *const u8) as u32,
+    );
+    SELFTEST_INTID.store(intid, Ordering::SeqCst);
+    mmio_write(gicd, GICD_ISPENDR + (id / 32) * 4, 1u32 << (id % 32));
+}
+
+/// Dump the GIC distributor + CPU-interface state and the delivery counters to
+/// serial: enabled/pending/active sets (first 96 INTIDs — all of QEMU virt),
+/// PMR/RPR, the software IRQL, and every nonzero per-INTID delivery count.
+/// Callable on demand (debugger `call`, test hooks, crash paths).
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalDumpGicArm64() {
+    let gicd = GICD_BASE.load(Ordering::SeqCst);
+    let gicc = GICC_BASE.load(Ordering::SeqCst);
+    if gicd == 0 || gicc == 0 {
+        DbgPrint(b"[GIC] not initialized\n\0".as_ptr());
+        return;
+    }
+    DbgPrint(
+        b"[GIC] CTLR=%x PMR=%02x RPR=%02x soft-IRQL=%u\n\0".as_ptr(),
+        mmio_read(gicc, GICC_CTLR),
+        mmio_read(gicc, GICC_PMR),
+        mmio_read(gicc, GICC_RPR),
+        super::halstubs::KeGetCurrentIrql() as u32,
+    );
+    for bank in 0..3usize {
+        DbgPrint(
+            b"[GIC] bank%u (INTID %u..%u): enabled=%08x pending=%08x active=%08x\n\0".as_ptr(),
+            bank as u32,
+            (bank * 32) as u32,
+            (bank * 32 + 31) as u32,
+            mmio_read(gicd, GICD_ISENABLER + bank * 4),
+            mmio_read(gicd, GICD_ISPENDR + bank * 4),
+            mmio_read(gicd, GICD_ISACTIVER + bank * 4),
+        );
+    }
+    for id in 0..TRACE_SLOTS {
+        let n = IRQ_COUNTS[id].load(Ordering::Relaxed);
+        if n != 0 {
+            DbgPrint(
+                b"[GIC] INTID %u: %u delivered, prio=%02x\n\0".as_ptr(),
+                id as u32,
+                n,
+                core::ptr::read_volatile((gicd + GICD_IPRIORITYR + id) as *const u8) as u32,
+            );
+        }
+    }
+    let other = IRQ_COUNT_OTHER.load(Ordering::Relaxed);
+    let spurious = IRQ_SPURIOUS.load(Ordering::Relaxed);
+    if other != 0 || spurious != 0 {
+        DbgPrint(b"[GIC] INTID>=64: %u delivered; spurious: %u\n\0".as_ptr(), other, spurious);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -184,9 +377,12 @@ pub unsafe extern "system" fn HalInitializeClockArm64(
     // Enable group-0 forwarding (single security state ⇒ group 0 + FIQEn=0 is
     // delivered as IRQ to EL1).
     mmio_write(gicd, GICD_CTLR, 1);
-    // Mid priority for PPI 27 (byte register; lower value = higher priority,
-    // must be numerically below GICC_PMR to be delivered).
-    core::ptr::write_volatile((gicd + GICD_IPRIORITYR + VTIMER_INTID as usize) as *mut u8, 0x80u8);
+    // The clock runs at CLOCK_LEVEL (prio 0x20): above every device DIRQL, so
+    // a driver raising to DIRQL never masks the system tick.
+    core::ptr::write_volatile(
+        (gicd + GICD_IPRIORITYR + VTIMER_INTID as usize) as *mut u8,
+        gic_priority(CLOCK_LEVEL),
+    );
     // Set-enable PPI 27 (ISENABLER0, bit 27).
     mmio_write(
         gicd,
@@ -194,8 +390,8 @@ pub unsafe extern "system" fn HalInitializeClockArm64(
         1u32 << (VTIMER_INTID % 32),
     );
 
-    // --- GICv2 CPU interface: unmask all priorities, enable. ---
-    mmio_write(gicc, GICC_PMR, 0xF0);
+    // --- GICv2 CPU interface: PMR open for the current (PASSIVE) IRQL. ---
+    mmio_write(gicc, GICC_PMR, gic_priority(0) as u32);
     mmio_write(gicc, GICC_CTLR, 1);
 
     // --- ARM generic virtual timer: arm the first 10ms deadline. ---
@@ -204,6 +400,15 @@ pub unsafe extern "system" fn HalInitializeClockArm64(
     TIMER_INTERVAL.store(interval, Ordering::SeqCst);
     if interval != 0 {
         vtimer_rearm(interval);
+    }
+}
+
+/// Drop-guard that decrements `HalpInterruptContextDepth` on every exit path
+/// out of `HalClockInterruptArm64` (early returns included).
+struct DepthGuard;
+impl Drop for DepthGuard {
+    fn drop(&mut self) {
+        super::halstubs::HalpInterruptContextDepth.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -219,13 +424,24 @@ pub unsafe extern "system" fn HalClockInterruptArm64(trap_frame: *mut core::ffi:
         return;
     }
 
+    // Mark the whole IRQ exception window: KfLowerIrql must not deliver
+    // DISPATCH software-interrupt work (timer expiration wakes/swaps threads)
+    // from exception context — §9.19. The clock branch below runs
+    // KeUpdateSystemTime with no IRQL bracket, so this vector-wide depth bump
+    // is what keeps raise/lower pairs inside the tick path from dispatching.
+    super::halstubs::HalpInterruptContextDepth.fetch_add(1, Ordering::SeqCst);
+    let _depth_guard = DepthGuard;
+
     let iar = mmio_read(gicc, GICC_IAR);
     let intid = iar & 0x3FF;
 
     // Spurious (1020-1023): no EOI required.
     if intid >= GIC_SPURIOUS_MIN {
+        IRQ_SPURIOUS.fetch_add(1, Ordering::Relaxed);
         return;
     }
+
+    trace_delivery(intid);
 
     if intid == VTIMER_INTID {
         // Re-arm for the next deadline first so the timer PPI line deasserts
@@ -247,8 +463,22 @@ pub unsafe extern "system" fn HalClockInterruptArm64(trap_frame: *mut core::ffi:
         // Device interrupt (SPI etc.): dispatch to the ISR connected via
         // IoConnectInterrupt. ntoskrnl owns the KINTERRUPT registry; we EOI
         // below regardless of whether an ISR claimed it (an unconnected line
-        // that somehow fired is acked-and-dropped, same as before).
-        KiDispatchInterruptArm64(intid);
+        // that somehow fired is acked-and-dropped, reported once per line).
+        let handled = KiDispatchInterruptArm64(intid);
+        if SELFTEST_INTID
+            .compare_exchange(intid, 0, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            // Armed by HalSelfTestGicSpiArm64: reaching here proves the
+            // GIC→IRQ→dispatch wiring for this line end-to-end.
+            DbgPrint(
+                b"[GIC] selftest INTID %u DELIVERED (dispatch=%u)\n\0".as_ptr(),
+                intid,
+                handled as u32,
+            );
+        } else if handled == 0 {
+            report_unhandled(intid);
+        }
     }
 
     // EOI (write the acknowledged IAR value back).

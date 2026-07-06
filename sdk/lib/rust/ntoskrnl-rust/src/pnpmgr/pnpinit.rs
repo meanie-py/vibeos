@@ -49,6 +49,26 @@ const PHASE1_INITIALIZATION_FAILED: ULONG = 0x00000031;
 
 use ntkrnl_sys::ddk::{_DRIVER_OBJECT, _DEVICE_NODE, PDEVICE_NODE, PDRIVER_OBJECT};
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 type DRIVER_OBJECT = _DRIVER_OBJECT;
 type DEVICE_NODE = _DEVICE_NODE;
 
@@ -176,7 +196,7 @@ pub unsafe extern "system" fn PiInitCacheGroupInformation() -> NTSTATUS {
 
     Status = IopOpenRegistryKeyEx(&mut KeyHandle, core::ptr::null_mut(), &mut GroupString, KEY_READ);
     if Status >= 0 {
-        Status = IopGetRegistryValue(KeyHandle, b"L\0i\0s\0t\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformation);
+        Status = IopGetRegistryValue(KeyHandle, w!("List").as_ptr() as *mut u16, &mut KeyValueInformation);
         ZwClose(KeyHandle);
 
         if Status >= 0 {
@@ -226,7 +246,7 @@ pub unsafe extern "system" fn PpInitGetGroupOrderIndex(ServiceHandle: HANDLE) ->
         return PiInitGroupOrderTableCount + 1;
     }
 
-    Status = IopGetRegistryValue(ServiceHandle, b"G\0r\0o\0u\0p\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformation);
+    Status = IopGetRegistryValue(ServiceHandle, w!("Group").as_ptr() as *mut u16, &mut KeyValueInformation);
     if Status < 0 {
         return PiInitGroupOrderTableCount;
     }
@@ -275,7 +295,7 @@ pub unsafe extern "system" fn PipGetDriverTagPriority(ServiceHandle: HANDLE) -> 
         return u16::MAX;
     }
 
-    Status = IopGetRegistryValue(ServiceHandle, b"G\0r\0o\0u\0p\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformation);
+    Status = IopGetRegistryValue(ServiceHandle, w!("Group").as_ptr() as *mut u16, &mut KeyValueInformation);
     if Status < 0 {
         if !KeyHandle.is_null() {
             NtClose(KeyHandle);
@@ -290,7 +310,7 @@ pub unsafe extern "system" fn PipGetDriverTagPriority(ServiceHandle: HANDLE) -> 
         Group.Buffer = Buffer as *mut u16;
     }
 
-    Status = IopGetRegistryValue(ServiceHandle, b"T\0a\0g\0\0\0".as_ptr() as *mut u16, &mut KeyValueInformationTag);
+    Status = IopGetRegistryValue(ServiceHandle, w!("Tag").as_ptr() as *mut u16, &mut KeyValueInformationTag);
     if Status < 0 {
         if !KeyValueInformation.is_null() {
             ExFreePool(KeyValueInformation as PVOID);
@@ -389,7 +409,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 
     RtlInitUnicodeString(
         &mut KeyName,
-        b"\\\0R\0E\0G\0I\0S\0T\0R\0Y\0\\\0M\0A\0C\0H\0I\0N\0E\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0U\0R\0R\0E\0N\0T\0C\0O\0N\0T\0R\0O\0L\0S\0E\0T\0\0\0".as_ptr() as *mut u16,
+        w!("\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET").as_ptr() as *mut u16,
     );
     pnp_trace(b"[PNP] open CurrentControlSet\r\n\0");
     Status = IopOpenRegistryKeyEx(&mut KeyHandle, core::ptr::null_mut(), &mut KeyName, KEY_ALL_ACCESS);
@@ -398,7 +418,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
         return Status;
     }
 
-    RtlInitUnicodeString(&mut KeyName, b"C\0o\0n\0t\0r\0o\0l\0\0\0".as_ptr() as *mut u16);
+    RtlInitUnicodeString(&mut KeyName, w!("Control").as_ptr() as *mut u16);
     pnp_trace(b"[PNP] create Control\r\n\0");
     Status = IopCreateRegistryKeyEx(
         &mut ControlHandle,
@@ -416,7 +436,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
     if Disposition == REG_CREATED_NEW_KEY {
         let mut DeviceClassesHandle: HANDLE = core::ptr::null_mut();
 
-        RtlInitUnicodeString(&mut KeyName, b"D\0e\0v\0i\0c\0e\0C\0l\0a\0s\0s\0e\0s\0\0\0".as_ptr() as *mut u16);
+        RtlInitUnicodeString(&mut KeyName, w!("DeviceClasses").as_ptr() as *mut u16);
         Status = IopCreateRegistryKeyEx(
             &mut DeviceClassesHandle,
             ControlHandle,
@@ -469,7 +489,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
 
     RtlInitUnicodeString(
         &mut KeyName,
-        b"\\\0R\0E\0G\0I\0S\0T\0R\0Y\0\\\0M\0A\0C\0H\0I\0N\0E\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0U\0R\0R\0E\0N\0T\0C\0O\0N\0T\0R\0O\0L\0S\0E\0T\0\\\0E\0N\0U\0M\0\0\0".as_ptr() as *mut u16,
+        w!("\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET\\ENUM").as_ptr() as *mut u16,
     );
     Status = IopOpenRegistryKeyEx(&mut EnumHandle, core::ptr::null_mut(), &mut KeyName, KEY_ALL_ACCESS);
     if Status >= 0 {

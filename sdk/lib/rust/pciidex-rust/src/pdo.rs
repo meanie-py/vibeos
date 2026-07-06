@@ -18,6 +18,26 @@ use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, DEVICE_C
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{GUID, NTSTRSAFE_PCWSTR, NTSTRSAFE_PWSTR, PCSTR, RtlAssert, _DEVICE_CAPABILITIES, _GUID, _LARGE_INTEGER};
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 // resolve_imports.py: explicit kernel/private-type imports
 
 // ---- file-scope preamble (translated) ----
@@ -1306,13 +1326,13 @@ pub unsafe extern "C" fn PciIdeXGetControllerDeviceId(FdoExtension: PFDO_DEVICE_
     if (*FdoExtension).VendorId as i32 == 0x8086i32 {
         match (*FdoExtension).DeviceId as i32 {
             0x1230 => {
-                return b"P\0I\0I\0X\0\0\0".as_ptr() as PCWSTR;
+                return w!("PIIX").as_ptr() as PCWSTR;
             }
             0x7010 => {
-                return b"P\0I\0I\0X\0\x33\0\0\0".as_ptr() as PCWSTR;
+                return w!("PIIX3").as_ptr() as PCWSTR;
             }
             0x7111 => {
-                return b"P\0I\0I\0X\0\x34\0\0\0".as_ptr() as PCWSTR;
+                return w!("PIIX4").as_ptr() as PCWSTR;
             }
             _ => {}
         }

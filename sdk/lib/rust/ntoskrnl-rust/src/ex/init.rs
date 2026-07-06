@@ -18,6 +18,8 @@ use crate::ke::procobj::{KeServiceDescriptorTable, KeServiceDescriptorTableShado
 
 // Types only available in bindgen (not in hand-written modules)
 use ntkrnl_sys::ddk::{
+
+
     _UNICODE_STRING, _OBJECT_ATTRIBUTES, _EPROCESS, _KSERVICE_TABLE_DESCRIPTOR, _KUSER_SHARED_DATA,
     PLOADER_PARAMETER_BLOCK, LOADER_PARAMETER_EXTENSION,
     _MEMORY_ALLOCATION_DESCRIPTOR, PMEMORY_ALLOCATION_DESCRIPTOR,
@@ -63,6 +65,26 @@ use ntkrnl_sys::ddk::{
     InbvNotifyDisplayOwnershipLost, InbvSetProgressBarSubset, InbvUpdateProgressBar,
     PsInitSystem,
 };
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 
 // Symbols not in bindgen — declare as extern
 extern "system" {
@@ -245,7 +267,7 @@ unsafe fn ExpCreateSystemRootLink(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTA
     let mut TargetString: ANSI_STRING = core::mem::zeroed();
     let mut TargetName: _UNICODE_STRING = core::mem::zeroed();
 
-    RtlInitUnicodeString(&mut LinkName, b"\\\0A\0r\0c\0N\0a\0m\0e\0\0\0".as_ptr() as *mut u16);
+    RtlInitUnicodeString(&mut LinkName, w!("\\ArcName").as_ptr() as *mut u16);
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut LinkName,
@@ -265,7 +287,7 @@ unsafe fn ExpCreateSystemRootLink(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTA
 
     NtClose(LinkHandle);
 
-    RtlInitUnicodeString(&mut LinkName, b"\\\0D\0e\0v\0i\0c\0e\0\0\0".as_ptr() as *mut u16);
+    RtlInitUnicodeString(&mut LinkName, w!("\\Device").as_ptr() as *mut u16);
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut LinkName,
@@ -507,7 +529,7 @@ unsafe fn ExpLoadInitialProcess(
     let mut Size: ntkrnl_sys::ddk::ULONG_PTR;
     let mut p: *mut u16;
     let mut NullString: _UNICODE_STRING = core::mem::zeroed();
-    NullString.Buffer = b"\0\0".as_ptr() as *mut u16;
+    NullString.Buffer = w!("").as_ptr() as *mut u16;
     NullString.Length = 2;
     NullString.MaximumLength = 2;
     let mut SmssName: _UNICODE_STRING = core::mem::zeroed();
@@ -554,7 +576,7 @@ unsafe fn ExpLoadInitialProcess(
     (*ProcessParams).DllPath.MaximumLength = (520 * 2) as USHORT;
 
     RtlCopyUnicodeString(&mut (*ProcessParams).DllPath, &(*ProcessParams).CurrentDirectory.DosPath);
-    RtlAppendUnicodeToString(&mut (*ProcessParams).DllPath, b"\\\0S\0y\0s\0t\0e\0m\03\02\0\0\0".as_ptr() as *mut u16);
+    RtlAppendUnicodeToString(&mut (*ProcessParams).DllPath, w!("\\System32").as_ptr() as *mut u16);
 
     p = ((*ProcessParams).DllPath.Buffer as usize + (*ProcessParams).DllPath.MaximumLength as usize) as *mut u16;
     (*ProcessParams).ImagePathName.Buffer = p;
@@ -595,18 +617,18 @@ unsafe fn ExpLoadInitialProcess(
         env_size as USHORT,
     );
 
-    RtlAppendUnicodeToString(&mut Environment, b"P\0a\0t\0h\0=\0\0\0".as_ptr() as *mut u16);
+    RtlAppendUnicodeToString(&mut Environment, w!("Path=").as_ptr() as *mut u16);
     RtlAppendUnicodeStringToString(&mut Environment, &(*ProcessParams).DllPath);
     RtlAppendUnicodeStringToString(&mut Environment, &NullString);
 
     SystemDriveString = NtSystemRoot;
     SystemDriveString.Length = 4;
 
-    RtlAppendUnicodeToString(&mut Environment, b"S\0y\0s\0t\0e\0m\0D\0r\0i\0v\0e\0=\0\0\0".as_ptr() as *mut u16);
+    RtlAppendUnicodeToString(&mut Environment, w!("SystemDrive=").as_ptr() as *mut u16);
     RtlAppendUnicodeStringToString(&mut Environment, &SystemDriveString);
     RtlAppendUnicodeStringToString(&mut Environment, &NullString);
 
-    RtlAppendUnicodeToString(&mut Environment, b"S\0y\0s\0t\0e\0m\0R\0o\0o\0t\0=\0\0\0".as_ptr() as *mut u16);
+    RtlAppendUnicodeToString(&mut Environment, w!("SystemRoot=").as_ptr() as *mut u16);
     RtlAppendUnicodeStringToString(&mut Environment, &NtSystemRoot);
     RtlAppendUnicodeStringToString(&mut Environment, &NullString);
 
@@ -624,14 +646,14 @@ unsafe fn ExpLoadInitialProcess(
         ProcessInformation,
     );
     if Status < 0 {
-        RtlInitUnicodeString(&mut DebugString, b"I\0N\0I\0T\0:\0 \0U\0n\0a\0b\0l\0e\0 \0t\0o\0 \0c\0r\0e\0a\0t\0e\0 \0S\0e\0s\0s\0i\0o\0n\0 \0M\0a\0n\0a\0g\0e\0r\0.\0\0\0".as_ptr() as *mut u16);
+        RtlInitUnicodeString(&mut DebugString, w!("INIT: Unable to create Session Manager.").as_ptr() as *mut u16);
         ZwDisplayString(&mut DebugString);
         KeBugCheckEx(0x64, Status as ULONG_PTR, 0, 0, 0);
     }
 
     Status = ZwResumeThread((*ProcessInformation).ThreadHandle, core::ptr::null_mut());
     if Status < 0 {
-        RtlInitUnicodeString(&mut DebugString, b"I\0N\0I\0T\0:\0 \0U\0n\0a\0b\0l\0e\0 \0t\0o\0 \0r\0e\0s\0u\0m\0e\0 \0S\0e\0s\0s\0i\0o\0n\0 \0M\0a\0n\0a\0g\0e\0r\0.\0\0\0".as_ptr() as *mut u16);
+        RtlInitUnicodeString(&mut DebugString, w!("INIT: Unable to resume Session Manager.").as_ptr() as *mut u16);
         ZwDisplayString(&mut DebugString);
         KeBugCheckEx(0x65, Status as ULONG_PTR, 0, 0, 0);
     }

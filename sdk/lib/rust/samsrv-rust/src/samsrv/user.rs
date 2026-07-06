@@ -1,5 +1,25 @@
 use crate::prelude::*;
 use core::ffi::c_void;
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn SampOpenUserObject(
     DomainObject: PSAM_DB_OBJECT,
@@ -17,13 +37,8 @@ pub unsafe extern "C" fn SampOpenUserObject(
         UserObject,
     );
 
-    swprintf(
-        szRid.as_mut_ptr(),
-        b"%\0%\0%\0%\0".as_ptr() as *const u16,
-    );
-
-    let wfmt: [u16; 6] = [0x25, 0x30, 0x38, 0x6C, 0x58, 0x00];
-    swprintf(szRid.as_mut_ptr(), wfmt.as_ptr(), UserId);
+    // C: swprintf(szRid, L"%08lX", UserId) — a dead broken duplicate call removed
+    swprintf(szRid.as_mut_ptr(), w!("%08lX").as_ptr(), UserId);
 
     let users: [u16; 6] = [0x55, 0x73, 0x65, 0x72, 0x73, 0x00];
 
@@ -140,7 +155,7 @@ pub unsafe extern "C" fn SampRemoveGroupMembershipFromUser(
 
     SampGetObjectAttribute(
         UserObject,
-        b"G\0r\0o\0u\0p\0s\0\0\0".as_ptr() as *mut u16,
+        w!("Groups").as_ptr() as *mut u16,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         &mut Length,
@@ -159,7 +174,7 @@ pub unsafe extern "C" fn SampRemoveGroupMembershipFromUser(
 
         Status = SampGetObjectAttribute(
             UserObject,
-            b"G\0r\0o\0u\0p\0s\0\0\0".as_ptr() as *mut u16,
+            w!("Groups").as_ptr() as *mut u16,
             core::ptr::null_mut(),
             GroupsBuffer as *mut core::ffi::c_void,
             &mut Length,
@@ -198,7 +213,7 @@ pub unsafe extern "C" fn SampRemoveGroupMembershipFromUser(
 
         Status = SampSetObjectAttribute(
             UserObject,
-            b"G\0r\0o\0u\0p\0s\0\0\0".as_ptr() as *mut u16,
+            w!("Groups").as_ptr() as *mut u16,
             REG_BINARY,
             GroupsBuffer as *mut core::ffi::c_void,
             Length,
@@ -236,7 +251,7 @@ pub unsafe extern "C" fn SampGetUserGroupAttributes(
 
     SampGetObjectAttribute(
         UserObject,
-        b"G\0r\0o\0u\0p\0s\0\0\0".as_ptr() as *mut u16,
+        w!("Groups").as_ptr() as *mut u16,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         &mut Length,
@@ -255,7 +270,7 @@ pub unsafe extern "C" fn SampGetUserGroupAttributes(
 
         Status = SampGetObjectAttribute(
             UserObject,
-            b"G\0r\0o\0u\0p\0s\0\0\0".as_ptr() as *mut u16,
+            w!("Groups").as_ptr() as *mut u16,
             core::ptr::null_mut(),
             GroupsBuffer as *mut core::ffi::c_void,
             &mut Length,
@@ -703,7 +718,7 @@ pub unsafe extern "C" fn SampGetLogonHoursAttribute(
 
     Status = SampGetObjectAttribute(
         UserObject,
-        b"L\0o\0g\0o\0n\0H\0o\0u\0r\0s\0\0\0".as_ptr() as *mut u16,
+        w!("LogonHours").as_ptr() as *mut u16,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         &mut Length,
@@ -728,7 +743,7 @@ pub unsafe extern "C" fn SampGetLogonHoursAttribute(
 
             Status = SampGetObjectAttribute(
                 UserObject,
-                b"L\0o\0g\0o\0n\0H\0o\0u\0r\0s\0\0\0".as_ptr() as *mut u16,
+                w!("LogonHours").as_ptr() as *mut u16,
                 core::ptr::null_mut(),
                 RawBuffer as PVOID,
                 &mut Length,

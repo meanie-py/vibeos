@@ -1,6 +1,26 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // Enum-variant bare-name consts (kept module-local — see prelude.rs note).
 const LsapLookupWksta: LSAP_LOOKUP_LEVEL = advapi32_sys::_LSAP_LOOKUP_LEVEL_LsapLookupWksta;
 const ForestTrustDomainInfo: advapi32_sys::LSA_FOREST_TRUST_RECORD_TYPE =
@@ -54,9 +74,9 @@ pub unsafe extern "system" fn PLSAPR_SERVER_NAME_bind(pszSystemName: PLSAPR_SERV
 
     status = RpcStringBindingComposeW(
         core::ptr::null_mut(),
-        b"n\0c\0a\0c\0n\0_\0n\0p\0\0\0".as_ptr() as *mut u16,
+        w!("ncacn_np").as_ptr() as *mut u16,
         pszSystemName,
-        b"\\\0p\0i\0p\0e\0\\\0l\0s\0a\0r\0p\0c\0\0\0".as_ptr() as *mut u16,
+        w!("\\pipe\\lsarpc").as_ptr() as *mut u16,
         core::ptr::null_mut(),
         &mut pszStringBinding,
     );

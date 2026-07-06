@@ -936,7 +936,7 @@ pub unsafe extern "system" fn USBH_SyncGetRootHubPdo(
     OutPdo1: *mut PDEVICE_OBJECT,
     OutPdo2: *mut PDEVICE_OBJECT,
 ) -> NTSTATUS {
-    const IOCTL_INTERNAL_USB_GET_ROOTHUB_PDO: u32 = 0x00220404; // IOCTL_INTERNAL_USB_GET_ROOTHUB_PDO
+    const IOCTL_INTERNAL_USB_GET_ROOTHUB_PDO: u32 = 0x0022000F; // FIXED 2026-07-05: translation invented wrong value; verified vs usbioctl.h
 
     let mut Event: KEVENT = core::mem::zeroed();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
@@ -990,7 +990,7 @@ pub unsafe extern "system" fn USBH_SyncGetHubCount(
     DeviceObject: PDEVICE_OBJECT,
     OutHubCount: PULONG,
 ) -> NTSTATUS {
-    const IOCTL_INTERNAL_USB_GET_HUB_COUNT: u32 = 0x00220419;
+    const IOCTL_INTERNAL_USB_GET_HUB_COUNT: u32 = 0x0022001B; // FIXED 2026-07-05: translation invented wrong value; verified vs usbioctl.h
     const Suspended: i32 = 5;
 
     let mut Event: KEVENT = core::mem::zeroed();
@@ -1093,7 +1093,7 @@ pub unsafe extern "system" fn USBH_GetDeviceDescriptor(
     DeviceObject: PDEVICE_OBJECT,
     HubDeviceDescriptor: PUSB_DEVICE_DESCRIPTOR,
 ) -> NTSTATUS {
-    const USB_HUB_TAG: u32 = 0x42485355; // 'USHB'
+    const USB_HUB_TAG: u32 = 0x42554855; // 'USHB'
     const URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE: u16 = 0x000B;
     const USB_DEVICE_DESCRIPTOR_TYPE: u8 = 0x01;
 
@@ -1196,7 +1196,7 @@ pub unsafe extern "system" fn USBH_GetConfigurationDescriptor(
     OutDescriptor: *mut PUSB_CONFIGURATION_DESCRIPTOR,
 ) -> NTSTATUS {
     const MAXUCHAR: SIZE_T = 0xff;
-    const USB_HUB_TAG: ULONG = 0x42485355; // 'USHB' approximation
+    const USB_HUB_TAG: ULONG = 0x42554855; // 'USHB' approximation
 
     let mut ConfigDescriptor: PUSB_CONFIGURATION_DESCRIPTOR;
     let mut ReturnedLen: ULONG = 0;
@@ -2856,7 +2856,7 @@ pub unsafe extern "system" fn USBD_GetDeviceInformationEx(
     mut Length: ULONG,
     DeviceHandle: PUSB_DEVICE_HANDLE,
 ) -> NTSTATUS {
-    const USB_HUB_TAG: u32 = 0x42485355; // 'USHB'
+    const USB_HUB_TAG: u32 = 0x42554855; // 'USHB'
 
     let QueryDeviceInformation: PUSB_BUSIFFN_GET_DEVICE_INFORMATION;
     let mut DeviceInfo: PUSB_DEVICE_INFORMATION_0;
@@ -4553,6 +4553,12 @@ pub unsafe extern "system" fn USBH_CreateDevice(
     let mut IgnoringHwSerial: BOOLEAN = 0;
     let mut Status: NTSTATUS;
     let mut DestinationString: _UNICODE_STRING = core::mem::zeroed();
+
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[USBHUB] CreateDevice port=%u status=0x%x\n\0".as_ptr() as *const i8,
+        Port as u32,
+        *UsbPortStatus.AsUshort16.as_ref() as u32,
+    );
 
     loop {
         // L"\\Device\\USBPDO-%d" as a NUL-terminated UTF-16 literal (no_std: fixed array, not Vec).

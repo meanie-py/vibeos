@@ -6,6 +6,8 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
+
+
     _EPROCESS, _UNICODE_STRING,
     ACCESS_MASK,
     _GENERIC_MAPPING,
@@ -32,6 +34,26 @@ use ntkrnl_sys::ddk::{
     WIN32_OPENMETHOD_PARAMETERS,
     WIN32_PARSEMETHOD_PARAMETERS,
 };
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 
 #[repr(C)]
 struct WIN32_KERNEL_OBJECT_HEADER {
@@ -290,7 +312,7 @@ pub unsafe extern "system" fn ExpWin32kInit() -> BOOLEAN {
         &mut ObjectTypeInitializer as *mut OBJECT_TYPE_INITIALIZER as PVOID,
         core::mem::size_of::<OBJECT_TYPE_INITIALIZER>(),
     );
-    RtlInitUnicodeString(&mut Name as *mut _UNICODE_STRING, b"W\0i\0n\0d\0o\0w\0S\0t\0a\0t\0i\0o\0n\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut Name as *mut _UNICODE_STRING, w!("WindowStation").as_ptr() as *const u16);
     ObjectTypeInitializer.Length = core::mem::size_of::<OBJECT_TYPE_INITIALIZER>() as u16;
     ObjectTypeInitializer.GenericMapping = ExpWindowStationMapping;
     ObjectTypeInitializer.PoolType = NonPagedPool as u32;
@@ -310,7 +332,7 @@ pub unsafe extern "system" fn ExpWin32kInit() -> BOOLEAN {
         return 0u8;
     }
 
-    RtlInitUnicodeString(&mut Name as *mut _UNICODE_STRING, b"D\0e\0s\0k\0t\0o\0p\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut Name as *mut _UNICODE_STRING, w!("Desktop").as_ptr() as *const u16);
     ObjectTypeInitializer.GenericMapping = ExpDesktopMapping;
     ObjectTypeInitializer.DeleteProcedure = core::mem::transmute(ExpDesktopDelete as usize);
     ObjectTypeInitializer.ParseProcedure = None;

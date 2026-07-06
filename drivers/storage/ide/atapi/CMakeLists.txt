@@ -22,6 +22,7 @@ elseif(ARCH STREQUAL "arm64")
     set(ATAPI_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(ATAPI_RUST_RUSTFLAGS "")
 endif()
+file(GLOB_RECURSE ATAPI_RUST_SRCS ${ATAPI_RUST_WORKSPACE_DIR}/atapi-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${ATAPI_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -34,16 +35,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${ATAPI_RUST_TARGET_DIR}/${ATAPI_RUST_TARGET}/release/libatapi_rust.a
         ${ATAPI_RUST_LIB}
-    DEPENDS ${ATAPI_RUST_WORKSPACE_DIR}/atapi-rust/Cargo.toml
-            ${ATAPI_RUST_WORKSPACE_DIR}/atapi-rust/src/lib.rs
-            ${ATAPI_RUST_WORKSPACE_DIR}/atapi-rust/src/types.rs
-            ${ATAPI_RUST_WORKSPACE_DIR}/atapi-rust/src/inlines.rs
-            ${ATAPI_RUST_WORKSPACE_DIR}/atapi-rust/src/helpers.rs
-            ${ATAPI_RUST_WORKSPACE_DIR}/atapi-rust/src/identify.rs
-            ${ATAPI_RUST_WORKSPACE_DIR}/atapi-rust/src/commands.rs
-            ${ATAPI_RUST_WORKSPACE_DIR}/atapi-rust/src/io.rs
-            ${ATAPI_RUST_WORKSPACE_DIR}/atapi-rust/src/startio.rs
-            ${ATAPI_RUST_WORKSPACE_DIR}/atapi-rust/src/entry.rs
+    DEPENDS ${ATAPI_RUST_SRCS}
+            ${ATAPI_RUST_WORKSPACE_DIR}/atapi-rust/Cargo.toml
     WORKING_DIRECTORY ${ATAPI_RUST_WORKSPACE_DIR}
     COMMENT "Building atapi-rust (${ATAPI_RUST_TARGET})"
     VERBATIM)

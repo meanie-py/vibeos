@@ -133,6 +133,54 @@ def _first_salient(summary: dict) -> str:
     return ""
 
 
+def _net_once(repo: Path, root: Path) -> dict:
+    """Run the amd64 netstack suite as its OWN gate lane (a full amd64-uefi-net
+    boot + 15 tests, ~110-150s). Historically this ran INSIDE `smoke --arch
+    amd64` serially after the plain boot (smoke.py _net_stage), which made the
+    amd64 lane two-boots-long (~200s) and THE gate critical path. As a parallel
+    lane the gate smoke wall drops to max(plain boots, net suite). Mirrors
+    _net_stage's semantics: a first-attempt failure is classified NET_FLAKE
+    (documented 2026-07-04 timing flake under concurrent-smoke load) and is
+    gate-retryable; a real regression fails the retry too and ends red."""
+    import sys as _sys
+
+    root.mkdir(parents=True, exist_ok=True)
+    test_file = repo / "tests" / "qemu" / "test_net.py"
+    if not test_file.exists():
+        return {"arch": "net", "verdict": "SKIP", "classification": "", "ok": True,
+                "retryable": False, "seconds": 0.0, "run_dir": str(root), "salient": ""}
+    cmd = [_sys.executable, "-m", "pytest", str(test_file), "--arch", "amd64-uefi-net",
+           "--timeout", "600", "-q", "-p", "no:cacheprovider"]
+    t0 = time.monotonic()
+    try:
+        proc = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True, timeout=1200)
+    except subprocess.TimeoutExpired:
+        return {"arch": "net", "verdict": "FAIL", "classification": "NET_HANG", "ok": False,
+                "retryable": False, "seconds": time.monotonic() - t0,
+                "run_dir": str(root), "salient": "tests/qemu/test_net.py hung > 1200s"}
+    dt = time.monotonic() - t0
+    try:
+        (root / "pytest.out").write_text((proc.stdout or "") + "\n" + (proc.stderr or ""))
+    except OSError:
+        pass
+    tail = (proc.stdout or "").strip().splitlines()
+    summary = next(
+        (ln for ln in reversed(tail) if " passed" in ln or " failed" in ln or " error" in ln),
+        tail[-1] if tail else "",
+    )
+    ok = proc.returncode == 0
+    return {
+        "arch": "net",
+        "verdict": "OK" if ok else "FAIL",
+        "classification": "" if ok else "NET_FLAKE",
+        "ok": ok,
+        "retryable": not ok,
+        "seconds": dt,
+        "run_dir": str(root),
+        "salient": "" if ok else summary.strip("= "),
+    }
+
+
 def _lint_once(repo: Path, arch: str, root: Path) -> dict:
     """Run `vibeos-cli check --strict --arch <arch>` for one built arch. This is
     the T3 land-gate: the scanner suite (verify_*, lint_kernel, scan_ud2,
@@ -220,9 +268,11 @@ def gate(args, repo: Path) -> int:
     arches = _resolve_arches(getattr(args, "arches", None))
     retries = max(0, int(getattr(args, "retries", 2) or 0))
     do_build = not getattr(args, "no_build", False)
-    smoke_extra: list[str] = []
-    if getattr(args, "no_net", False):
-        smoke_extra.append("--no-net")
+    # The net suite always runs OUTSIDE the amd64 smoke now: either as its own
+    # parallel gate lane (default) or not at all (--no-net). The smoke itself
+    # therefore always gets --no-net — its net stage is the serial-two-boots
+    # shape this lane split removes.
+    smoke_extra: list[str] = ["--no-net"]
 
     run = Run("gate", "+".join(arches))
     gate_root = run.dir
@@ -231,7 +281,14 @@ def gate(args, repo: Path) -> int:
     if do_build:
         for arch in arches:
             bt0 = time.monotonic()
+            # --no-check: skip the build's warn-only source-lint arsenal (~20-40s
+            # per arch, serial). Phase 1.5 below runs the SAME suite strict and
+            # blocking (`check --strict`), so the warn-only pass inside a gate
+            # build is pure duplication — the gate loses no coverage. Only safe
+            # when the lint phase actually runs: --no-lint keeps the in-build pass.
             cmd = [str(repo / "vibeos-cli"), "build", "--arch", arch]
+            if not getattr(args, "no_lint", False):
+                cmd.append("--no-check")
             if getattr(args, "clean", False):
                 cmd.append("--clean")
             cp = run.run(cmd, cwd=repo, stage=f"build:{arch}")
@@ -265,43 +322,65 @@ def gate(args, repo: Path) -> int:
     # Runs the scanner suite blocking (baseline-diff NEW=0) so the arsenal
     # enforces on the land path instead of warn-only. Independent per arch →
     # parallel; a NEW finding fails the gate but smokes still run (informative).
+    # Lints are launched here but collected AFTER the smokes are submitted (they
+    # run concurrently with the smokes): `check --strict` gates the push stamp,
+    # not the boots, so serializing lint (~60s wall) before the smokes was pure
+    # added critical path. CPU-wise the 3 lint runs (~3 cores) coexist fine with
+    # the TCG smokes on this host; the smokes self-throttle on hostlock anyway.
     lint_ok: dict[str, bool] = {}
+    lex = None
+    lfut: dict = {}
     if not getattr(args, "no_lint", False):
-        with cf.ThreadPoolExecutor(max_workers=min(len(arches), 4) or 1) as lex:
-            lfut = {lex.submit(_lint_once, repo, a, gate_root / f"lint-{a}"): a for a in arches}
-            for f in cf.as_completed(lfut):
-                r = f.result()
-                lint_ok[r["arch"]] = r["ok"]
-                run.add(
-                    Stage(
-                        f"lint:{r['arch']}",
-                        seconds=r["seconds"],
-                        status="ok" if r["ok"] else "fail",
-                        detail="check --strict clean"
-                        if r["ok"]
-                        else f"NEW lint findings (exit {r['exit']})",
-                        salient=[]
-                        if r["ok"]
-                        else [r["salient"] or f"check --strict --arch {r['arch']} failed"],
-                    )
+        lex = cf.ThreadPoolExecutor(max_workers=min(len(arches), 4) or 1)
+        lfut = {lex.submit(_lint_once, repo, a, gate_root / f"lint-{a}"): a for a in arches}
+
+    def _collect_lints() -> None:
+        for f in cf.as_completed(lfut):
+            r = f.result()
+            lint_ok[r["arch"]] = r["ok"]
+            run.add(
+                Stage(
+                    f"lint:{r['arch']}",
+                    seconds=r["seconds"],
+                    status="ok" if r["ok"] else "fail",
+                    detail="check --strict clean"
+                    if r["ok"]
+                    else f"NEW lint findings (exit {r['exit']})",
+                    salient=[]
+                    if r["ok"]
+                    else [r["salient"] or f"check --strict --arch {r['arch']} failed"],
                 )
-                if not r["ok"] and not run.classification:
-                    run.classification = "LINT_FAIL"
+            )
+            if not r["ok"] and not run.classification:
+                run.classification = "LINT_FAIL"
+        if lex is not None:
+            lex.shutdown(wait=False)
 
     # --- phase 2: first-pass smokes, all arches in parallel ---
-    max_workers = min(len(arches) * (1 + retries), 12) or 1
+    # The amd64 net suite runs as its own concurrent lane (pseudo-arch "net"):
+    # it needs the amd64 build and is skipped with --no-net.
+    net_lane = ("amd64" in arches) and not getattr(args, "no_net", False)
+    lanes = list(arches) + (["net"] if net_lane else [])
+    max_workers = min(len(lanes) * (1 + retries), 12) or 1
     results: dict[str, dict] = {}
+
+    def _lane_once(lane: str, root: Path) -> dict:
+        if lane == "net":
+            return _net_once(repo, root)
+        return _smoke_once(repo, lane, root, smoke_extra)
+
     with cf.ThreadPoolExecutor(max_workers=max_workers) as ex:
         fut = {
-            ex.submit(_smoke_once, repo, a, gate_root / f"smoke-{a}-a1", smoke_extra): a
-            for a in arches
+            ex.submit(_lane_once, a, gate_root / f"smoke-{a}-a1"): a
+            for a in lanes
         }
+        _collect_lints()  # concurrent with the smokes just submitted
         for f in cf.as_completed(fut):
             r = f.result()
             results[r["arch"]] = r
 
         # --- phase 3: parallel flake-retries for retryable failures ---
-        pending = [a for a in arches if not results[a]["ok"] and results[a]["retryable"]]
+        pending = [a for a in lanes if not results[a]["ok"] and results[a]["retryable"]]
         if pending and retries > 0:
             run.log(
                 f"flake-retry: {', '.join(pending)} "
@@ -313,7 +392,7 @@ def gate(args, repo: Path) -> int:
             for a in pending:
                 for k in range(retries):
                     root = gate_root / f"smoke-{a}-r{k + 1}"
-                    retry_fut[ex.submit(_smoke_once, repo, a, root, smoke_extra)] = a
+                    retry_fut[ex.submit(_lane_once, a, root)] = a
             # collect all retries; an arch passes on its first green attempt.
             for f in cf.as_completed(retry_fut):
                 r = f.result()
@@ -329,7 +408,7 @@ def gate(args, repo: Path) -> int:
                     prev["attempts"] = r["attempts"]
 
     # --- verdict matrix ---
-    for arch in _resolve_arches(getattr(args, "arches", None)):
+    for arch in _resolve_arches(getattr(args, "arches", None)) + (["net"] if net_lane else []):
         r = results.get(arch)
         if r is None:
             continue  # build-failed arch already has its Stage
@@ -363,10 +442,11 @@ def gate(args, repo: Path) -> int:
 
     # --- push stamp (T1.3): green FULL gate on a clean tree mints the credential ---
     requested = _resolve_arches(getattr(args, "arches", None))
+    requested_lanes = requested + (["net"] if net_lane else [])
     all_ok = (
         bool(results)
-        and all(results.get(a, {}).get("ok") for a in requested)
-        and len(results) == len(requested)
+        and all(results.get(a, {}).get("ok") for a in requested_lanes)
+        and len(results) == len(requested_lanes)
         # T3: strict lints must be clean for every requested arch. lint_ok has no
         # entry when --no-lint or the arch didn't build (the latter already fails
         # the results check above), so default True there and let those paths gate

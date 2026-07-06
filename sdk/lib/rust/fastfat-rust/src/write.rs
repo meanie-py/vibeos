@@ -173,8 +173,8 @@ const FO_SYNCHRONOUS_IO: u32 = 0x02;
 const FO_FILE_MODIFIED: u32 = 0x1000;
 const FO_WRITE_THROUGH: u32 = 0x10;
 
-const FSRTL_CACHE_TOP_LEVEL_IRP: i64 = -2i64; // -2
-const FSRTL_MAX_TOP_LEVEL_IRP_FLAG: u64 = 0x0000000000000000; // placeholder
+const FSRTL_CACHE_TOP_LEVEL_IRP: i64 = 0x02; // -2
+const FSRTL_MAX_TOP_LEVEL_IRP_FLAG: u64 = 0xFFFF; // placeholder
 
 const FILE_WRITE_TO_END_OF_FILE: i32 = -1;
 
@@ -209,7 +209,7 @@ pub unsafe extern "system" fn FatFsdWrite(
 
     const FAT_NTC_FCB: u16 = 0x0502;
     const FCB_STATE_PAGING_FILE: u32 = 0x04;
-    const FSRTL_MOD_WRITE_TOP_LEVEL_IRP: u32 = 1;
+    const FSRTL_MOD_WRITE_TOP_LEVEL_IRP: u32 = 0x03;
     const IRP_MN_COMPLETE: u32 = 0x04;
     const STATUS_PENDING: i32 = 0x103;
     const Dbg: u32 = 1;

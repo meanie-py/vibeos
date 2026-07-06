@@ -526,10 +526,44 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 **Symptom:** `SetFlag(f, 0x2 /* IRP_CONTEXT_FLAG_TOP_LEVEL */)` (0x2 is MORE_PROCESSING; TOP_LEVEL=0x10); `PALETTE_AllocPalette(0x4 /* PAL_BITFIELDS */ ...)` (PAL_BITFIELDS=0x2, 0x4=PAL_RGB); `RtlRaiseStatus(0xC0000002 /* STATUS_DATATYPE_MISALIGNMENT */)` (0xC0000002=NOT_IMPLEMENTED; MISALIGN=0x80000002). The LLM hardcodes a literal it labels with the intended name but the value is wrong/placeholder. Compiles & links clean; pure runtime/semantic. cdfs alone had 7 (TOP_LEVEL/TOP_LEVEL_CDFS/DISABLE_POPUPS/CDFS_NTC_IRP_CONTEXT/FSP_FLAGS/CCB_FLAG_DISMOUNT/CDFS_RESIDUAL); the codebase sweep found more in scsiport (LUNEX, HIGH), ntoskrnl se/srm (OBJ_OPENIF), win32k dibobj, disk, cabinet, smss.
 **Oracle:** `tools/scan_inline_flag_literals.py <crate/src/*.rs> --headers <driver C dir>` — **`verify_constants.py` is BLIND to this** (it only checks `const NAME = VALUE;` defs, not bare literals). The tool is tree-sitter/AST-based (regex can't pair a literal with its naming-comment across nested `|`/parens/casts — not a regular language); catalog = kernel headers + sdk/include/{xdk,ndk,psdk} + driver `--headers`. It's a TRIAGE AID not a verifier — residual FP classes need a human eye: flag-MASK unions (`A|B|C // N1|N2|N3` where the union is right but order differs), informational args (KWAIT_REASON `Wr*`, WPP TRACE_LEVEL), and value-tables labeled by index (COLOR_*, suppressed).
 
+### Bind-all match arms + invented named constants — the 2026-07-05 sweep (killed USB enumeration)
+
+Two adjacent defect classes, found together and best hunted together:
+
+**(1) Bind-all match arm.** A translated `match` arm names a constant that is NOT in scope (`IRP_MN_QUERY_ID => ...` with no such const imported). Rust silently treats it as a *fresh binding that matches everything*; every later arm is dead code, and the linker GCs the dead arms' dependencies (hiding missing symbols). rustc only warns (`unreachable_patterns`/`unused_variables`/`non_snake_case`) and the crates' blanket `#[allow]`s ate the warnings. **Real impact:** usbport's PDO answered *every* PnP minor with the first arm's STATUS_NOT_SUPPORTED -> root hub never enumerated -> no USB at all. fastfat `cleanup.rs` imported every TYPE_OF_OPEN alias *except* `EaFile` -> the EaFile arm swallowed user file/dir cleanup. freeldr `iso.rs`/`fat.rs` treated every seek as absolute (`SEEKMODE_SeekAbsolute` unresolved).
+**Oracle (ground truth, use this):** `python3 tools/scan_bind_all_matches.py` — runs `cargo check --release` with `--force-warn unreachable_patterns,unused_variables,non_snake_case` (overriding the blanket allows), parses JSON diagnostics, flags SCREAMING_CASE bindings in match arms. Wired into `vibeos-cli check` (strict empty baseline). The older `tools/verify_match_consts.py` (regex/heuristic) MISSED every real site — "exists somewhere in workspace + file has glob imports" demoted them all to LOW; treat it as a fast pre-filter only, the compiler is the truth.
+
+**(2) Invented named-constant values** (the `const NAME = <guess>;` twin of the inline-literal class above). The translator declares local consts with confidently wrong values — sometimes marked `// typical` (grep for it: 30 hits, ~10 wrong), sometimes not. Found 2026-07-05: cdrom-rust had **28 wrong IOCTLs** (DVD ioctls invented as `0x2D00xx`, real `0x335xxx`; AACS ioctls colliding with real CDROM ioctls so arms went unreachable), usbport listened for `IOCTL_INTERNAL_USB_GET_ROOTHUB_PDO` on **0x220013** (= GET_PORT_STATUS!) while usbhub sent the correct 0x22000F — the request could never match; ke/bug.rs had 14 wrong bugcheck codes (`KERNEL_MODE_EXCEPTION_NOT_HANDLED` = 0x1E, duplicating KMODE -> unreachable OR-pattern; special-pool codes shifted so a special-pool BSOD would be mis-labeled); fastfat `UserFileOpen = 4 // typical` (4 is UserVolumeOpen; real = 2), cdfs `FSRTL_VOLUME_LOCK = 1` (real 3), classpnp `SRB_FUNCTION_STORAGE_REQUEST_BLOCK = 0` (real 0x28).
+**Tells:** `// typical` / "actual value may differ" comments; the same IOCTL const defined with *different* values in different files of one crate; UNREACHABLE warnings on arms whose patterns are all real named consts (= two consts share a value). **Oracle:** compute CTL_CODE/NTSTATUS/bugcode ground truth from the C headers and diff every `const NAME: u32 = ...` against it (ad-hoc script per header family; `verify_constants.py` covers the ntoskrnl-side named consts, but driver crates' local consts need the header-diff pass). When an IRP flows down a stack, remember BOTH sides must agree: check the sender's const AND the handler's.
+
+### Same-named constant, DIFFERENT value per driver — cross-driver value bleed (cdfs vs fastfat WAIT flag, 2026-07-06)
+
+**Symptom:** LiveCD boots to `shell ready`, then BUGCHECK **0x1E** a few seconds later (during services/lsass CD I/O), failing amd64 smoke on a *post-marker* crash. Raise is `ExRaiseStatus(STATUS_CANT_WAIT 0xC00000D8)` amplified by a `RtlVirtualUnwind` fault (the translated unwinder derefs a wild slot dispatching the raise → messy 0x1E instead of a clean fatal). Presents as a "WDF crash" (cdrom.sys is KMDF and is on the stack) — it is NOT; the raiser is **cdfs**.
+**Cause:** `cdfs-rust` defined `IRP_CONTEXT_FLAG_WAIT = 0x02`. That is **fastfat's** value (`fatstruc.h`); cdfs's own `cdstruc.h` defines it as **0x04**. The two filesystems reuse the same flag *names* with *different bit assignments*. So `CdCreateIrpContext(Wait=TRUE)` set bit 0x02, while `CdAcquireResource` tests 0x04 → the WAIT flag was **never effective** → every cdfs resource acquire ran non-blocking → failed under any contention → `CdRaiseStatus(CANT_WAIT)`, which under DUMMY_PSEH is fatal. (0x02 also collided with `MORE_PROCESSING`=0x02; `DISABLE_POPUPS` 0x20 and `IN_FSP` 0x200 were shifted too — a whole scrambled cluster.)
+**Why it hid:** the wrong value is *internally consistent* within the crate (the LLM guessed one value and used it everywhere) AND *plausible* (it's a real IRP_CONTEXT flag value — just fastfat's). Master boots green because it either doesn't reach the contended CD-read window or its other-wrong constants alter the interleaving; a CORRECT storage-const fix elsewhere changed I/O timing and made the contention manifest. Classic latent-bug-unmasked-by-a-correct-fix.
+**Tell / oracle:** any constant family shared by sibling drivers (`IRP_CONTEXT_FLAG_*`, `*_NTC_*` node types, driver-private `*_FLAG_*`) — verify each crate against ITS OWN header, never a sibling's. `verify_constants.py` flat catalog DROPS these (same name, ≥2 values = ambiguous), so they need a **per-crate targeted** check: `verify-constants sdk/lib/rust/cdfs-rust/src/*.rs` with only cdfs headers in scope. Localize a live one with the `[EXRAISE]` module-range stack scan (ntkrnl-sys `ExRaiseStatus`, gated on the status, filtered to the loaded-module VA window) → names the exact driver+offset that raised.
+
+### Facility-status return-convention confusion — `return 0` where SUCCESS is a nonzero facility code (hidparser, 2026-07-06)
+
+**Symptom:** a subsystem with its OWN status space (HIDP_STATUS_* = `HIDP_ERROR_CODES(sev,code)`, facility 0x11 — SUCCESS is **0x00110000, not 0**) silently misbehaves: hidclass got "NT success" with `collections=0` from real report descriptors, created no kbd/mouse PDOs, and USB HID input dead-ended after a fully successful enumeration. No warning, no error, all green.
+**Cause:** the translation emitted `return 0; // HIDP_STATUS_SUCCESS` (hidparser-rust `context.rs` HidParser_BuildCollectionContext). Callers compare `!= HIDP_STATUS_SUCCESS` (0x110000), so the SUCCESS return read as FAILURE — and the error path then propagated the raw 0 upward, where NT_SUCCESS(0) reads as… success. One wrong literal produced "failed inside, succeeded outside" with zeroed out-params.
+**Tell:** `return 0;` (or a literal) with a comment naming a facility-specific constant; mixed status spaces in one call chain (HIDP_STATUS vs NTSTATUS here — the boundary fn `TranslateStatusForUpperLayer` only maps a few codes and passes the rest through). **Oracle:** grep the crate for `return 0` / literal returns in fns whose C original returns a `FACILITY_*`/`*_STATUS_*` constant; also check every status-space boundary fn maps ALL codes (a passthrough `_ =>` arm leaks foreign facility codes into NTSTATUS space).
+
 #### Sub-class: correct literal for the WRONG named constant — a range BOUND, not a flag (scanner-invisible)
 **Symptom (2026-06-21, user32-rust):** `IS_ATOM(x)` coded `v > 0 && v < 0xC000` with a comment "MAXINTATOM is 0xC000". The C macro (`user32p.h`) is `(x > 0) && (x < 0x10000)` — the upper bound is **0x10000** (high 48 bits clear), NOT `MAXINTATOM`. MAXINTATOM (0xC000) is the *base* of registered-class atoms; they start at 0xC000 and increment. So once the shell registers ~100 window classes, a real class atom (e.g. `0xC06A`) is `>= 0xC000` and `IS_ATOM` returns false → it flows into `RtlInitUnicodeString`, whose `wcslen` derefs the tiny integer → **AV 0xC0000005 in explorer at "taskbar: creating tray window"**, crash-looping the shell post-`shell ready` (so the smoke gate stays green; only the *desktop* is broken). Two copies (`window.rs:42` `User32CreateWindowEx`, `class.rs:111`) had the bug; `message.rs:224` had it right (0x10000). Fixed in `67c9e5849c7`.
 **Why the literal-scanner misses it:** the literal `0xC000` *matches* its naming comment (`MAXINTATOM` really is 0xC000) — so `scan_inline_flag_literals.py` sees a consistent literal/label pair and stays silent. The defect is one level up: the translator picked the **wrong named constant** for an *unnamed* numeric bound in the source (the C `0x10000` had no symbol). This is the residual "correct value, wrong concept" class. **Tell:** a range/threshold compare (`< CONST`, `>= CONST`, `>> N`) where the C original used a bare numeric literal — re-derive the bound from the C, don't trust a plausible-looking named-constant comment. **Cross-arch:** `user32-rust` (and most usermode `*-rust` crates) are cohab'd on all 3 arches, so a usermode-DLL translation bug breaks amd64/i386 identically — it just hides *past* their `shell ready` gate. To see it, boot past the gate and watch for `[UEXC]`/`PspExitThread ExitStatus=0xC0000005`.
 
+### Translator ships the `#if !DBG` STUB branch of a dual-implementation file — the real body silently vanishes (freeldr DbgPrint, 2026-07-06)
+**Symptom:** an entire diagnostic/feature channel goes quiet with zero errors: freeldr-rust's `debug.rs` translated C `lib/debug.c`'s `#else` (release, !DBG) branch — `DebugInit`/`DbgPrint`/`DbgPrint2` as literal no-ops — even though every build sets `-DDBG=1`. ALL freeldr serial debug output (TRACE/ERR/WARN and plain DbgPrint from uefildr, rosload, and every freeldr-rust module that declared `fn DbgPrint` expecting it to work) has been dead since the translation landed. Consequence for debugging: freeldr's whole load phase (~22s of every x86 boot) was one silent serial gap — the observability that would have flagged it was itself the casualty.
+**Cause:** the C file has TWO complete implementations under `#if DBG` / `#else`; the LLM translated the (much shorter) stub half. Compiles, links, boots — nothing checks that a debug channel emits.
+**Tell:** any translated file whose C original contains a `#if DBG`/`#if defined(NDEBUG)`-style dual implementation — diff the Rust against the *DBG* branch, not just "a" branch. Grep the crate for bodies that are pure `UNREFERENCED_PARAMETER`/`0`/`{}` where the C DBG branch is substantial.
+**Fix:** real port restored in freeldr-rust `debug.rs` — DebugInit parses DEBUGPORT/BAUDRATE + lazy pre-init on first print; DbgPrint prints the string RAW (freeldr's cargo path pins STABLE, no `c_variadic` — constant messages intact, %-formats literal; full formatting owed on a nightly move); `[FLDR]` boot-phase stamps ride on it.
+
+### C `switch` case labels → Rust or-pattern that silently swallows a neighboring case (LCMapString OS-wide failure, 2026-07-06)
+**Symptom:** a translated function fails with an "invalid parameter/flags" error for a plainly valid call, on every arch, forever — no crash, no link error. Found because svchost logged `SvchostCharLowerW failed` at every service start: **every `LCMapStringW(LCMAP_LOWERCASE/UPPERCASE)` call in the OS had returned ERROR_INVALID_FLAGS since the 2026-06-14 kernel32 locale port**.
+**Cause:** C fallthrough case labels `case NORM_IGNORENONSPACE: case NORM_IGNORESYMBOLS: case NORM_IGNORENONSPACE|NORM_IGNORESYMBOLS:` (the last one a BITWISE value, 6) were rendered as the Rust or-pattern `NORM_IGNORENONSPACE | NORM_IGNORESYMBOLS | 0 =>`. In a Rust pattern, `|` is ALTERNATION, not bitwise-or — this arm matches 2, 4, **and 0**, so it captured `switch_flags == 0` (the plain LOWERCASE/UPPERCASE path), whose flag-validation then rejected the call; the real `0 =>` arm below became dead code (kernel32-rust locale.rs `lcmap_string`; fixed on `performance-investigation`).
+**Tells:** (a) any Rust match arm `CONST_A | CONST_B =>` where the C original had `case CONST_A|CONST_B:` as a single bitwise label — the translation changed its meaning from "value 6" to "2 or 4"; (b) a literal `0` alternative inside an or-pattern arm ABOVE a dedicated `0 =>` arm (rustc's unreachable-pattern lint flags the dead arm — don't let translated crates build with that warning suppressed); (c) `grep -rn ' | 0 =>' sdk/lib/rust` — two other hits (msgina `1 | 0`, win32k `MA_ACTIVATE | 0`) audited correct because their C really had `case X: case 0:` fallthrough.
+**Oracle:** for every translated `match` on a flags/mask variable, diff the arm set against the C switch: each C `case A|B:` must become `_ if x == (A | B) =>` (or a named const), never a bare or-pattern.
 ### Match arm on an UNDEFINED constant — silently becomes an irrefutable catch-all binding, killing every later arm (win32k WM_CTLCOLOR, 2026-07-05)
 **Symptom:** the entire desktop rendered with **no non-client chrome** (no captions/borders/buttons on any top-level window) and **no taskbar children** (no Start button, no clock), deterministic on all 3 arches, no crash, boot marker green. Root: `IntDefWindowProc`'s `match Msg` in `win32k-rust/src/defwnd.rs` had a `WM_CTLCOLOR => …` arm, but `WM_CTLCOLOR` (a 16-bit-compat windowsx.h macro, 0x19) does **not exist** in the win32k-sys bindgen constants — so Rust parsed it as a **variable-binding pattern that matches every value**. Every message after that arm in the match — WM_SETCURSOR, WM_ERASEBKGND, WM_NCHITTEST, WM_PAINT, WM_SYNCPAINT, WM_WINDOWPOSCHANGING/CHANGED, **WM_NCCALCSIZE, WM_NCACTIVATE, WM_NCPAINT** — was swallowed and returned a garbage brush handle. WM_NCCALCSIZE never inset `rcClient`, so `rcClient == rcWindow` for every window, which (correctly) no-ops all NC painting. Same class found same-day in `ntoskrnl-rust`: `pnpmgr/devaction.rs` (`STATUS_FAILED_DRIVER_ENTRY` arm — not in ntkrnl-sys → catch-all, misclassifying every driver-load failure) and `ke/balmgr.rs` (`STATUS_WAIT_0` arm — not imported → catch-all; benign only because all arms were empty). Related value-typo cousin: `ke/bug.rs` `KERNEL_MODE_EXCEPTION_NOT_HANDLED` defined as 0x1E (dup of KMODE) instead of 0x8E.
 **Why it ships:** compiles and links clean — rustc only emits **warnings** (`unreachable pattern`, "this pattern matches any value", and `variable X should have a snake case name`), which scroll by unread in a 40-crate build.
@@ -542,6 +576,18 @@ The specific ways the LLM C→Rust output is wrong — each entry is a distinct 
 **Why it ships:** compiles clean; the shadow is only a `unused_variables` warning — and the translation crates **blanket-`#![allow(unused_variables, unused_assignments)]`** in lib.rs, so not even a warning is emitted.
 **Oracle (the sweep, reusable):** force the lint back on over the crate attrs and filter for shadows of *function params*: `RUSTFLAGS='--force-warn unused_variables' cargo check --release --keep-going --workspace --target <T> --target-dir <scratch> --message-format=short` (run under `tools/canon-run.sh` so the `*-stub`/link build.rs find `/tmp/vibeos`; exclude the `*-cargo` link crates + `cnt-difftest`), then keep only warnings whose line is a `let <name>` at indent ≥8 where `<name>` is also a param of the enclosing fn (the filter script lives in the 2026-07-06 session scratchpad; ~6,000 raw warnings → 5 real bugs, zero FPs). Run per-target — x86-only/arm64-only cfg variants each need their own pass.
 **Fix pattern:** make the param binding `mut` in the signature (ABI-neutral) and turn the `let` back into an assignment. Never "fix" by underscoring the shadow — the C semantics *require* the reassignment.
+
+### ANSI byte string cast to a WIDE pointer — every lookup silently falls back to defaults (workspace-wide sweep, 2026-07-06)
+**Symptom:** no crash, no error — registry lookups/opens just fail and the code takes its default/fallback path. Found via the 31s-per-service SCM stall (ScConnectControlPipe's `b"\0"` as an "empty PWSTR" — a wide empty string needs TWO zero bytes) and then swept: ~140 sites in 121 files, all fixed 2026-07-06.
+**Cause (4 sub-shapes, all from translating C `L"..."` literals):** (1) plain ANSI cast wide: `b"ScrollWidth\0".as_ptr() as PCWSTR` — a u16 read packs byte PAIRS, so the name never matches (win32k sysparams: all 27 window metrics silently ignored the registry). (2) hand-interleaved UTF-16LE (`b"F\0o\0o\0\0\0"`): content-correct but **align-1** — a `*const u16` into a byte literal is UB and has faulted before (basesrv CSDVersion). (3) phase-broken interleaving: one mis-escaped run (`\\0C` = '\', '0', 'C') desyncs the byte phase and the tail decodes as CJK garbage (msgina's `SYSTEM\CurrentControlSet\Control` — RegOpenKey always failed; cmboot's `System32\Drivers\` broken past "System3"; partmgr copied packed-ANSI `VOLMGR` as u16s). (4) unterminated: odd byte counts / missing final NUL (`b".\0l\0n\0k\0\0"`; SAM's `[u16; 5]` "%08lx" hand-fix with no terminator).
+**Oracle:** `grep -rnP 'b"(?:[^"\\\\]|\\\\.)*"\.as_ptr\(\) as (PWSTR|PCWSTR|LPWSTR|LPCWSTR|\*const u16|\*mut u16)' sdk/lib/rust` plus the `as *const u8 as *const u16` variant. ZERO non-comment hits is the healthy state post-sweep. (`transmute::<[u8;N],[u16;N/2]>(*b"...")` sites are aligned and fine.)
+**Fix pattern:** the per-file `w!` macro (const-eval NUL-terminated `&'static [u16]`, 2-aligned): `w!("ScrollWidth").as_ptr()`. For new translations the rule is absolute: a C `L"..."` literal NEVER becomes a `b"..."` byte string.
+
+### Guard condition swapped for a DIFFERENT nearby variable — logic silently inverted per boot mode (CmpInitializeHiveList MININT, 2026-07-06)
+**Symptom:** 5–9s boot stalls ×4 on livecd with `Failed to write the primary hive` on serial — the registry tried real writes to CD-backed hives on a MININT boot. No crash, boot marker green; pure latency + scary serial noise. First misclassified as "upstream-inherited" because the C `CmpNoWrite = FALSE` clobber in the same function *is* upstream — the actual bug was ours.
+**Cause:** C `if (CmpShareSystemHives) CmpMachineHiveList[i].HHiveFlags |= HIVE_VOLATILE;` was translated as `if CmHive2 != null { HHiveFlags |= 1 }` — a *different variable* that happens to appear near the loop in the C source. `CmHive2` is only assigned later BY the load threads this loop spawns, so the condition is always false: MININT hives never got HIVE_VOLATILE, and `CmpLoadHiveThread` + every downstream write path (which all gate on HIVE_VOLATILE, not CmpNoWrite) attempted doomed CD writes (cmsysini.rs `CmpInitializeHiveList`; fixed on `performance-investigation`).
+**Tells:** (a) a translated `if` whose tested variable does not appear in the corresponding C condition at all — worse than an inverted test because nothing looks wrong locally; (b) behavior that differs by BOOT MODE (MININT/setup/normal) when the C gates that mode via a flag the Rust never reads — `grep` the .rs for each mode flag the C file tests (`CmpShareSystemHives`, `CmpMiniNTBoot`, `ExpInTextModeSetup`, `InitIsWinPEMode`…) and diff the count against the C file; (c) a "should never fire" serial message (a doomed-write error, a hard-error popup) that fires reliably in one boot flavor only.
+**Oracle:** for every translated condition, check the C original tests the SAME symbol — mechanical to spot-check per file: list `if (`-condition variables in the C, list them in the Rust, diff. A missing mode-flag read is this bug.
 
 ### Indexing a bindgen flexible-array extern (`static NAME: [T; 0]`) panics unconditionally (win32k NtGdiMaskBlt, 2026-07-05)
 **Symptom:** deterministic **kernel RUST_PANIC** post-boot-marker (smoke `RUST_PANIC` classification), e.g. `win32k-rust/src/ntbitblt.rs:968` in `NtGdiMaskBlt`, the instant that code path first runs (here: notepad's window paint issuing a masked blit). The panic is a bounds-check: `panic_bounds_check(index, 0)`.
@@ -894,6 +940,17 @@ inputs; you get an `unreachable-pattern` *warning*, never an error.
   a **binding**, not a path — `git grep -nE '^\s*[A-Z][A-Z0-9_]+\s*=>'` and confirm each name
   is a real `const`/imported path. A value match must be `path::FOO =>` or a guarded
   `x if x == FOO =>`.
+- **The deletion variant (2026-07-06):** you can *create* this bug without touching the
+  match — **deleting a `pub const` out from under a `use module::*` glob** turns every match
+  arm naming it, possibly in a different file, into a catch-all. Real case: a const-dedup
+  edit removed `IRP_MN_QUERY_DEVICE_TEXT`/`IRP_MN_QUERY_ID` from scsiport-rust `glue.rs`;
+  `pdo.rs`'s PnP dispatch then swallowed **every unhandled minor code** into
+  `PdoHandleQueryDeviceText`, so `IRP_MN_QUERY_RESOURCES` returned "success" with a *text
+  string* as the resource list → PnP stored it as `BootResources` → deterministic BUGCHECK
+  0x1E walking text as CM descriptors (i386 smoke; amd64 walked the same garbage without
+  faulting — arch greenness is luck, not proof). Rule: after ANY const removal/rename,
+  re-run `cargo check` on every crate that globs the module and grep `unreachable pattern`
+  (`tools/scan_bind_all_matches.py` is the workspace-wide sweep).
 
 ### Dropped `FIELD_OFFSET(T, Array[N])` array-subscript scaling → heap under-alloc
 
@@ -2394,3 +2451,178 @@ Pair with the flake farm for rare flakes: `./vibeos-cli farm --arches amd64
 `~/vibeos-flake-farm/corpus.jsonl` (stop code + symbolicated banner lines per
 failure, artifacts preserved out of /tmp); `./vibeos-cli farm-report` clusters
 failures into ranked (classification, stop, symbol) families.
+
+### 9.19 (FIXED 2026-07-05) arm64 total-silence boot wedge = a context switch LEAKED exception-entry DAIF into a new thread — PSTATE.DAIF is NOT per-thread state
+
+**Symptom:** boot wedges with serial completely silent (no BUGCHECK, no output at
+all — the clock itself has stopped). Wedge point varies run-to-run (first hit:
+right after `[WINLOGON] ARM64: cmd.exe created`). GDB shows the CPU parked with
+`cpsr` DAIF bits ALL set (0x3C0-family = raw exception-entry mask) at a PC below a
+`KiSwapContext` frame.
+
+**Mechanism:** `KiSwapContext` does not save/restore PSTATE — whoever swaps in a
+context hands it their own DAIF. Two facts make this lethal:
+(1) on this port, **SVC handlers run DAIF-masked end-to-end**, so every syscall
+wait parks a masked context (self-healing: it unmasks at ERET back to user);
+(2) a **brand-new thread** (`KiThreadStartup`) inherits the swapper's DAIF and, if
+it's a system thread, never ERETs — so if its first swap-in comes from a
+masked-context wake chain it runs IRQ-masked *forever*. Once enough of the ready
+set is masked, no clock tick ever fires again → machine dead, serial silent.
+Trigger was the interrupt quest's IRQ-exit DPC retirement (`KiIrqHandler` →
+`KiRetireDpcList` → `KiTimerExpiration` → thread wakes rooted in exception
+context); before that, all wake chains were rooted in the idle loop, which
+`daifclr`s before swapping — the landmine was unreachable.
+
+**Fix (layered — the first alone is NOT sufficient):**
+1. `KiThreadStartup` opens with `msr daifclr, #2` (ctxswitch.S) — threads start
+   with IRQs enabled, matching NT. Necessary (closes the new-thread inheritance
+   leak) but empirically insufficient: with exception-context timer wakes still
+   enabled, boot still wedged at thread-lifecycle events (winlogon→cmd handoff
+   on windows-host TCG; `LpcExitThread` during a System-thread exit on native) —
+   masked wake/swap chains break more paths than new-thread startup.
+2. **The IRQ-exit DPC retire excludes timer expiration entirely**
+   (`TimerRequest == 0` guard in `KiIrqHandler`, trap.rs): `KiTimerExpiration` —
+   the thread-wake machinery — must NOT run from exception context on this port
+   until SVC entry re-enables IRQs (arm64-interrupts quest doc, landmine #2).
+   Timer expiration stays with the idle loop (pre-quest semantics); only plain
+   device DPCs retire at IRQ exit.
+
+**Detector left in tree:** masked-swap tripwire in `KiSwapContextResume`
+(thrdini.rs) self-reports `[SWAP-TRIPWIRE]` on serial if a masked swap ever
+happens under the IRQ-exit retire again; the IRQ-exit retire must also use
+`HalpEnterInterruptIrql`/`HalpExitInterruptIrql` (NOT `KeLowerIrql` — its
+soft-interrupt drain delivers APCs in exception context).
+
+**Debug recipe that cracked it** (generalizes to any silent arm64 wedge):
+`RUN=$(qemu/start.sh arm64 --gdb)` → `qemu/wait-for.sh $RUN --pattern <last-line>`
+→ `qemu/inspect.sh $RUN --command regs` — read `cpsr` FIRST: DAIF=0xF means "who
+masked me" (this class), not "what crashed". Then instrument the save side
+(tripwire print in `KiSwapContextResume`) rather than post-morteming the resume side.
+
+### 9.20 (FIXED 2026-07-06) arm64 ISR-queued DPCs never ran at desktop — device-DPC delivery gated on a starved `TimerRequest` flag
+
+**Symptom.** A device ISR fires and `KeInsertQueueDpc` returns 1 (queued), then
+returns 0 forever after (`Dpc->DpcData` non-null = still queued): the DPC never
+runs. Worked fine at DriverEntry time; broke only once the desktop was up.
+First hit: virtio-input's ISR→DPC conversion — mouse IRQs delivered and acked,
+`test_arm64input_delivery` red because the drain DPC never retired.
+
+**Why (three stacked facts, each individually reasonable):**
+1. On this port there were exactly TWO DPC-retire sites: the idle loop
+   (`KiIdleLoop` → `KiRetireDpcList`) and the interrupt quest's IRQ-exception-exit
+   drain (`KiIrqHandler`). The DISPATCH software interrupt is a no-op —
+   `HalpDispatchSoftwareInterrupts` (arm64 halstubs) delivers only the APC bit,
+   so `HalRequestSoftwareInterrupt(DISPATCH_LEVEL)` sets a bit nothing consumes.
+2. At desktop a busy thread that never blocks (a user thread hammering
+   `NtQueryPerformanceCounter` — 75% of PC samples inside hal
+   `KeQueryPerformanceCounter`) starved the idle thread INDEFINITELY. Idle
+   swap-out happened once at boot and it never resumed. Idle-loop retirement: gone.
+3. The IRQ-exit drain was gated on `TimerRequest == 0` (to keep KiTimerExpiration
+   out of exception context — the §9.19 wedge). But `TimerRequest`'s ONLY
+   consumer is `KiRetireDpcList`, i.e. the idle loop — so with idle starved,
+   `TimerRequest` sat non-zero FOREVER (it holds a stale TrapFrame pointer, not
+   a bool!), and the gate turned "timer bookkeeping is stale" into "no device
+   DPC ever runs".
+
+**Fix.** `ke/dpc.rs::KiRetireDeviceDpcs` — drains ONLY `DpcData[DPC_NORMAL]`'s
+list (never touches `TimerRequest`/`KiTimerExpiration`), called from
+`KiIrqHandler` exit with the `TimerRequest == 0` gate REMOVED (guards kept:
+interrupted IRQL < DISPATCH, `DpcRoutineActive == 0`). Device-DPC delivery must
+never depend on timer bookkeeping. Timer expiration itself stays idle-loop-only
+(exception-context KiTimerExpiration still wedges — §9.19 / quest landmine #2).
+
+**Debug recipe (generalizes to "who eats my DPC/why is the queue stuck"):**
+- Rate-limited prints at the three actors: insert result in the ISR, a
+  first-N print in the DPC body, and a "skip-retire: irql=%u active=%u timer=%u
+  depth=%d pc=%p" print in KiIrqHandler when the queue is non-empty but the
+  drain is skipped. The `pc=` of the skip print names the loop the CPU parks
+  in (it's the interrupted context of every IRQ) — one boot pinpointed both the
+  stuck `TimerRequest` and the QPC busy-spinner.
+- `qemu/sample-pc.sh <run-id>` (GDB toolkit) for a PC histogram of where the
+  CPU actually lives; `[IDLE] enter/beat/swap-out/resume` prints in KiIdleLoop
+  answer "does idle ever run" definitively.
+
+**Both follow-ups CLOSED 2026-07-06 (same-day hunt, §9.21):** the
+"unidentified QPC busy-spinner" turned out to be TWO stacked spinners with one
+root — `KeDelayExecutionThread` was still stubbed to `NtYieldExecution()` on
+arm64 ("no HAL timer interrupt yet" — dead lore), so EVERY kernel/user sleep
+busy-yielded; and explorer's main thread separately spun on a stuck QS_PAINT
+wake bit. The DISPATCH soft-interrupt delivery gap is also closed —
+`KfLowerIrql` now delivers timer expiration + device-DPC drain in thread
+context. Full writeup: §9.21.
+
+### 9.21 (FIXED 2026-07-06) arm64 desktop timer freeze — `KeDelayExecutionThread` busy-yield stub + stuck QS_PAINT spin + no DISPATCH softint delivery
+
+**Symptom.** At desktop: taskbar never populates / clock frozen / no caret,
+70s-apart QMP screendumps byte-identical, `sample-pc.sh` shows ZERO idle-loop
+samples — CPU 100% split between hal `KeQueryPerformanceCounter` (~70%, a
+"System" thread) and one user PC (~20%, deterministic across boots).
+
+**Three stacked bugs, one visible freeze:**
+1. **`KeDelayExecutionThread` was a bring-up stub on arm64**
+   (`ke/wait.rs`, inherited from C `#ifdef _M_ARM64`: "no HAL timer interrupt
+   yet — would sleep forever"): `NtYieldExecution(); return SUCCESS`. Every
+   kernel sleep (netstack's `delay_ms` poll loop → the hal-QPC-hot System
+   thread) and every user `Sleep`/`NtDelayExecution` became a busy-yield.
+   Ready threads yielded to each other forever → idle starved → idle-only
+   timer expiration frozen → every real timer wait dead. The stub's premise
+   died when the interrupts quest wired the vtimer: `KeTickCount` and
+   `KUSER_SHARED_DATA.InterruptTime` demonstrably advance. Fix: deleted the
+   stub; the real timer-wait path just works.
+2. **Explorer's main thread spun on a stuck `QS_PAINT` wake bit** (the ~20%
+   user PC = user32 `NtUserPeekMessage` syscall stub; identified via
+   KTHREAD→ETHREAD walk + PEB module-list walk from a KiIrqHandler
+   breakpoint). `pcti->fsChangeBits/fsWakeBits == 0x20 (QS_PAINT)` with
+   `pti->cPaintsReady == 0`: `MsgWaitForMultipleObjects` returns "input
+   available" immediately (fsChangeBits early-out) while `PeekMessage`
+   retrieves nothing → infinite spin. Source of the stale state:
+   `IntGetPaintMessage`'s upstream dirty-window-leak bandaid zeroes
+   `cPaintsReady` WITHOUT clearing the wake bits — and fired invisibly
+   because win32k-rust's `ERR!` macro is a NO-OP. Fixes (win32k-rust): the
+   bandaid now clears the QS_PAINT bits too (painting.rs), co_IntPeekMessage
+   reconciles stale QS_PAINT bits when `cPaintsReady == 0` (message.rs), and
+   the bandaid prints via real `DbgPrint` so the underlying leak is visible.
+3. **DISPATCH software-interrupt delivery implemented** (closes §9.20 (b)):
+   `HalRequestSoftwareInterrupt(DISPATCH)`'s pended bit is now consumed by
+   `KfLowerIrql` when the soft IRQL crosses below DISPATCH — hal calls the
+   new ntoskrnl export `KiDispatchSoftwareIntArm64()` (ke/dpc.rs): TimerRequest
+   → `KiTimerExpiration` (with `DpcRoutineActive=1` so wakes DEFER, mirroring
+   the idle loop) + `KiRetireDeviceDpcs`. Timer expiration no longer depends
+   on the idle loop — a busy thread expires timers from its own syscall/
+   spinlock IRQL crossings.
+
+**The §9.19 trap, round two (BUGCHECK 0x1E, EC=0x0E illegal-execution-state):**
+the first delivery attempt ran timer expiration from EXCEPTION context,
+because `KfLowerIrql` is reachable from inside IRQ windows — notably the
+clock-tick branch (`HalClockInterruptArm64` → `KeUpdateSystemTime`) runs with
+NO IRQL bracket at all, so any raise/lower pair inside it crosses below
+DISPATCH. Fix: hal tracks `HalpInterruptContextDepth` — bumped vector-wide in
+`HalClockInterruptArm64` (drop-guard) and by every
+`HalpEnterInterruptIrql`/`HalpExitInterruptIrql` bracket — and
+softint delivery requires depth == 0 (genuine thread/SVC context).
+
+**Verified:** boot green ~36s; clock IRQ now interrupts the *Idle* process;
+`KiTimerExpiration` + win32k `ProcessTimers` fire repeatedly (GDB breakpoints);
+timer table shows live sub-second traffic; explorer main blocks in
+`GetMessage`; netstack worker alive in real `delay_ms` waits (WaitReason=4);
+`test_arm64input_delivery` green.
+
+**Still open (pre-existing, forensics preserved):** explorer's tray clock
+never repaints and window paint is incomplete (notepad title bar sometimes
+missing — also true on pre-quest master) — `ProcessTimers` fires but
+explorer's `cTimersReady` stays 0, i.e. win32k user-timer → WM_TIMER posting
+to the owning thread doesn't deliver; and the underlying dirty-window leak
+that IntGetPaintMessage's bandaid papers over (now visible on serial as
+`[WIN32K] IntGetPaintMessage: cPaintsReady=%u but no dirty window`). Both are
+win32k message/paint bookkeeping, not interrupt/IRQL work.
+
+**Debug recipe additions** (beyond §9.20's): identify a user-PC spinner from a
+`KiIrqHandler` breakpoint — read `KPCR(tpidr_el1)+0xD80 → Prcb.CurrentThread
+(+8) → KTHREAD.Process(+512) → EPROCESS.ImageFileName(+608)`, offsets from
+`ntkrnl-sys/src/offset_check_arm64.rs`; walk the user module list
+(`TEB(+176)→PEB(+0x60)→Ldr(+0x18)`) to name the module at a user PC; walk
+`PsLoadedModuleList` for kernel/driver PCs (module bases move per boot — never
+reuse a previous boot's symbolication). `gdb` can't read kernel VAs while
+stopped at EL0 — break on a kernel PC first. And REBUILD THE SYMBOL INDEX
+after every build: a stale `sym2addr` address put a 5-minute breakpoint on
+dead code and nearly "proved" timers were frozen when they weren't.

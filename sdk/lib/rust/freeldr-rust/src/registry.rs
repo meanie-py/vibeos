@@ -3,6 +3,26 @@ use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, CMHIVE, CM_CHECK_REGISTRY_STATUS, CmCheckRegistry, CmpCompressedNameSize, CmpCopyCompressedName, CmpFindControlSet, CmpFindSubKeyByName, CmpFindSubKeyByNumber, CmpFindValueByName, CmpValueToData, FILEINFORMATION, HCELL_INDEX, LARGE_INTEGER, PCELL_DATA, PCMHIVE, PCM_KEY_NODE, PCM_KEY_VALUE, PCSTR, PHBASE_BLOCK, PHHIVE, PUNICODE_STRING, RtlEqualUnicodeString, RtlInitUnicodeString, _HHIVE, _UNICODE_STRING};
 // freeldr_ddk_imports dropped (not in ddk): Type
 use core::ffi::c_void;
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 pub use ntkrnl_sys::ddk::_ARC_CODES_ESUCCESS as ESUCCESS;
 pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderRegistryData as LoaderRegistryData;
 pub use ntkrnl_sys::ddk::_OPENMODE_OpenReadOnly as OpenReadOnly;
@@ -464,9 +484,9 @@ pub unsafe extern "C" fn RegInitCurrentControlSet(LastKnownGood: u8) -> u8 {
     RtlInitUnicodeString(
         &mut ControlSetName,
         if LastKnownGood != 0 {
-            b"L\0a\0s\0t\0K\0n\0o\0w\0n\0G\0o\0o\0d\0\0\0".as_ptr() as *const u16
+            w!("LastKnownGood").as_ptr() as *const u16
         } else {
-            b"D\0e\0f\0a\0u\0l\0t\0\0\0".as_ptr() as *const u16
+            w!("Default").as_ptr() as *const u16
         },
     );
 
@@ -600,7 +620,7 @@ pub unsafe extern "C" fn RegOpenKey(
 ) -> i32 {
     let mut RemainingPath: _UNICODE_STRING = core::mem::zeroed();
     let mut SubKeyName: _UNICODE_STRING = core::mem::zeroed();
-    let mut CurrentControlSet: _UNICODE_STRING = RTL_CONSTANT_STRING(b"C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\0\0".as_ptr() as *const u16);
+    let mut CurrentControlSet: _UNICODE_STRING = RTL_CONSTANT_STRING(w!("CurrentControlSet").as_ptr() as *const u16);
     let Hive: PHHIVE = if ParentKey != core::ptr::null_mut() {
         GET_HHIVE_FROM_HKEY(ParentKey)
     } else {
@@ -617,9 +637,9 @@ pub unsafe extern "C" fn RegOpenKey(
         let mut SubKeyName1: _UNICODE_STRING = core::mem::zeroed();
         let mut SubKeyName2: _UNICODE_STRING = core::mem::zeroed();
         let mut SubKeyName3: _UNICODE_STRING = core::mem::zeroed();
-        let RegistryPath: _UNICODE_STRING = RTL_CONSTANT_STRING(b"R\0e\0g\0i\0s\0t\0r\0y\0\0\0".as_ptr() as *const u16);
-        let MachinePath: _UNICODE_STRING = RTL_CONSTANT_STRING(b"M\0A\0C\0H\0I\0N\0E\0\0\0".as_ptr() as *const u16);
-        let SystemPath: _UNICODE_STRING = RTL_CONSTANT_STRING(b"S\0Y\0S\0T\0E\0M\0\0\0".as_ptr() as *const u16);
+        let RegistryPath: _UNICODE_STRING = RTL_CONSTANT_STRING(w!("Registry").as_ptr() as *const u16);
+        let MachinePath: _UNICODE_STRING = RTL_CONSTANT_STRING(w!("MACHINE").as_ptr() as *const u16);
+        let SystemPath: _UNICODE_STRING = RTL_CONSTANT_STRING(w!("SYSTEM").as_ptr() as *const u16);
 
         TRACE(b"RegOpenKey: absolute path\n\0".as_ptr() as *const i8);
 

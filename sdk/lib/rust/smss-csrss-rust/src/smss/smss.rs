@@ -1,5 +1,25 @@
 use ntdll_sys::nt::*;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 const STATUS_WAIT_0: NTSTATUS = 0x00000000;
 const STATUS_WAIT_1: NTSTATUS = 0x00000001;
 
@@ -255,7 +275,7 @@ pub unsafe extern "system" fn SmpInvokeAutoChk(
             (Buffer.len() * core::mem::size_of::<u16>()) as u16,
         );
         RtlAppendUnicodeStringToString(&mut Destination, FileName);
-        RtlAppendUnicodeToString(&mut Destination, b" \0".as_ptr() as *const u16);
+        RtlAppendUnicodeToString(&mut Destination, w!(" ").as_ptr() as *const u16);
         RtlAppendUnicodeStringToString(&mut Destination, Arguments);
 
         SmpExecuteImage(

@@ -99,7 +99,7 @@ provenance stamp.
 - arm64 automatically re-stages into `ramdisk.img`/`boot.img` (the trap that
   silently boots a stale kernel otherwise).
 
-### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--tripwire CFG] [--no-net]`
+### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--tripwire CFG] [--timing] [--no-net]`
 **The verdict front door.** Staleness preflight, then boot the real media via
 the same `QemuVM` the pytest harness uses (slots, reaper, lifetime cap, live-log
 all included), then auto-triage on failure.
@@ -144,6 +144,17 @@ all included), then auto-triage on failure.
   fw_cfg (no media rebuild; kernel side `ntoskrnl-rust/src/tripwire.rs`) —
   special pool turns silent pool corruption into an immediate symbolicated
   bugcheck at the corrupting store. Full recipe: field manual §9.18.
+- `--timing` stamps every live-log serial line with elapsed seconds
+  (`VIBEOS_SERIAL_TIMESTAMPS=1`, serial_client.py tee — never touches the
+  marker-matching buffer) and prints a boot-phase report after the boot:
+  phase table (firmware → freeldr → kernel → SMSS/csrss → explorer), the
+  largest silent gaps, and per-file freeldr load throughput (the `[FLDR]`
+  stamps from `boot/freeldr/freeldr/ntldr/winldr.c`, enabled by the
+  `Debug=` line in `boot/bootdata/livecd.ini`). Standalone analyzer:
+  `python3 tools/boot_phase_report.py qemu/<vm_arch>_smoke_live.log
+  [--sizes build-<arch>]`. This is how the 27s freeldr silent gap and the
+  5s menu-countdown tax were found (docs/engineering/
+  performance-investigation.md).
 
 ### `farm [--arches L] [--boots N | --minutes M] [--tripwire CFG]` / `farm-report [--since TS] [--sha S]`
 **The flake farm** — soak independent boots (parallel worker per arch; the

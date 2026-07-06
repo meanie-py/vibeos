@@ -8,10 +8,32 @@ use crate::internal::{ValidateHwnd, HIWORD, LOWORD};
 use crate::winbase::{CreatePen, DeleteObject, GetTextMetricsW, SelectObject};
 // NtUserx* multiplexers for the user32 syscall-forwarder exports.
 use crate::ntwrapper::{
+
+
     BeginPaint, DestroyWindow, EndPaint, GetDC, InvalidateRect, MoveWindow, NtUserxReleaseCapture,
     NtUserxReleaseDC, NtUserxSwitchToThisWindow, SetCapture, SetWindowPos, ShowWindowAsync,
     WaitMessage,
 };
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 
 // ── No-op debug macro (TRACE compiles to nothing; consume args so they type-check).
 macro_rules! TRACE { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
@@ -211,7 +233,7 @@ unsafe fn LoadCoolSwitchSettings() {
 
     if RegOpenKeyExW(
         HKEY_CURRENT_USER,
-        b"C\0o\0n\0t\0r\0o\0l\0 \0P\0a\0n\0e\0l\0\\\0D\0e\0s\0k\0t\0o\0p\0\0\0".as_ptr() as PCWSTR,
+        w!("Control Panel\\Desktop").as_ptr() as PCWSTR,
         0,
         KEY_READ,
         &mut hKey,
@@ -219,17 +241,17 @@ unsafe fn LoadCoolSwitchSettings() {
     {
         CoolSwitch = GetRegInt(
             hKey,
-            b"C\0o\0o\0l\0S\0w\0i\0t\0c\0h\0\0\0".as_ptr() as PCWSTR,
+            w!("CoolSwitch").as_ptr() as PCWSTR,
             1,
         );
         CoolSwitchRows = GetRegInt(
             hKey,
-            b"C\0o\0o\0l\0S\0w\0i\0t\0c\0h\0R\0o\0w\0s\0\0\0".as_ptr() as PCWSTR,
+            w!("CoolSwitchRows").as_ptr() as PCWSTR,
             DefSwitchRows as i32,
         );
         CoolSwitchColumns = GetRegInt(
             hKey,
-            b"C\0o\0o\0l\0S\0w\0i\0t\0c\0h\0C\0o\0l\0u\0m\0n\0s\0\0\0".as_ptr() as PCWSTR,
+            w!("CoolSwitchColumns").as_ptr() as PCWSTR,
             DefSwitchColumns as i32,
         );
         RegCloseKey(hKey);
@@ -570,7 +592,7 @@ unsafe fn CreateSwitcherWindow(hInstance: HINSTANCE) -> DWORD {
     switchdialog = CreateWindowExW(
         (WS_EX_TOPMOST | WS_EX_DLGMODALFRAME | WS_EX_TOOLWINDOW) as u32,
         WC_SWITCH,
-        b"\0\0".as_ptr() as PCWSTR,
+        w!("").as_ptr() as PCWSTR,
         (WS_POPUP | WS_BORDER | WS_DISABLED) as u32,
         CW_USEDEFAULT,
         CW_USEDEFAULT,

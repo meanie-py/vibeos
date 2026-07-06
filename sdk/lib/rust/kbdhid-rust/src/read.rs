@@ -50,6 +50,10 @@ pub unsafe fn KbdHid_DispatchInputData(
     InputData: *mut KEYBOARD_INPUT_DATA,
 ) {
     if (*DeviceExtension).ClassService.is_null() {
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[KBDHID] input report dropped: no class service connected\n\0".as_ptr()
+                as *const i8,
+        );
         return;
     }
 

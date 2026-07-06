@@ -176,12 +176,12 @@ pub unsafe extern "system" fn USBPORT_FreeBandwidth(
     FdoDevice: PDEVICE_OBJECT,
     Endpoint: PUSBPORT_ENDPOINT,
 ) {
-    const USBPORT_TRANSFER_TYPE_CONTROL: ULONG = 0;
-    const USBPORT_TRANSFER_TYPE_ISOCHRONOUS: ULONG = 1;
+    const USBPORT_TRANSFER_TYPE_CONTROL: ULONG = 0x00000001; // FIXED 2026-07-05: translation invented 0x0; verified vs usbport.h/usbmport.h
+    const USBPORT_TRANSFER_TYPE_ISOCHRONOUS: ULONG = 0x00000000; // FIXED 2026-07-05: translation invented 0x1; verified vs usbport.h/usbmport.h
     const USBPORT_TRANSFER_TYPE_BULK: ULONG = 2;
     const USBPORT_TRANSFER_TYPE_INTERRUPT: ULONG = 3;
-    const ENDPOINT_FLAG_ROOTHUB_EP0: ULONG = 0x00000001;
-    const USB2_FRAMES: ULONG = 8;
+    const ENDPOINT_FLAG_ROOTHUB_EP0: ULONG = 0x00000002; // FIXED 2026-07-05: translation invented 0x1; verified vs usbport.h/usbmport.h
+    const USB2_FRAMES: ULONG = 0x00000020; // FIXED 2026-07-05: translation invented 0x8; verified vs usbport.h/usbmport.h
 
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let mut EndpointProperties: PUSBPORT_ENDPOINT_PROPERTIES;
@@ -567,7 +567,7 @@ pub unsafe extern "system" fn USBPORT_DeleteEndpoint(
     FdoDevice: PDEVICE_OBJECT,
     Endpoint: PUSBPORT_ENDPOINT,
 ) -> BOOLEAN {
-    const USB_PORT_TAG: u32 = 0x7270_7355;
+    const USB_PORT_TAG: u32 = 0x70627375;
 
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let Result: BOOLEAN;
@@ -1852,10 +1852,10 @@ pub unsafe extern "system" fn USBPORT_DmaEndpointWorker(Endpoint: PUSBPORT_ENDPO
 
 // Note: I need to declare the externs and constants used. Here they are above the function:
 
-const USBPORT_ENDPOINT_PAUSED: ULONG = 4;
-const USBPORT_ENDPOINT_ACTIVE: ULONG = 2;
+const USBPORT_ENDPOINT_PAUSED: ULONG = 0x00000002; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
+const USBPORT_ENDPOINT_ACTIVE: ULONG = 0x00000003; // FIXED 2026-07-05: translation invented 0x2; verified vs usbport.h/usbmport.h
 const USBPORT_ENDPOINT_UNKNOWN: ULONG = 0;
-const INVALIDATE_ENDPOINT_WORKER_THREAD: ULONG = 3;
+const INVALIDATE_ENDPOINT_WORKER_THREAD: ULONG = 0x00000001; // FIXED 2026-07-05: translation invented 0x3; verified vs usbport.h/usbmport.h
 
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_EndpointWorker(

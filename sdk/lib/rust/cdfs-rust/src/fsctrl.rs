@@ -243,7 +243,7 @@ pub static mut CdDisable: BOOLEAN = 0;
 pub static mut CdNoJoliet: BOOLEAN = 0;
 
 // Constants not already provided by the crate (values from typical CDFS driver)
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x04;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH
 const VPB_LOCKED: u32 = 0x02;
 const VCB_STATE_LOCKED: u32 = 0x00000010;  // cdstruc.h
 const STATUS_DEVICE_BUSY: i32 = 0x80000011u32 as i32;
@@ -257,7 +257,7 @@ const IOCTL_CDROM_CHECK_VERIFY: u32 = (2u32 << 16) | (1u32 << 14) | (0x200u32 <<
 
 // Placeholder constants – values are unknown and must be corrected in later passes
 const VcbMounted: u32 = 2;                            // VcbCondition::VcbMounted
-const VCB_STATE_VPB_NOT_ON_DEVICE: u32 = 0x00000200;  // cdstruc.h
+const VCB_STATE_VPB_NOT_ON_DEVICE: u32 = 0x00000200; // FIXED 2026-07-06: cdfs value-bleed (verified vs cdstruc.h)  // cdstruc.h
 const CD_SEC_CACHE_CHUNKS: u32 = 4;                   // cdstruc.h
 const CD_SEC_CHUNK_BLOCKS: u32 = 0x18;               // cdstruc.h
 const SECTOR_SIZE: usize = 2048;                      // typical CD sector size
@@ -265,10 +265,10 @@ const SECTOR_SIZE: usize = 2048;                      // typical CD sector size
 // Forward extern declarations for functions not in imports
 
 const UserVolumeOpen: i32 = UserVolumeOpenValue as i32; // TYPE_OF_OPEN::UserVolumeOpen == 2
-const FSRTL_VOLUME_LOCK: ULONG = 1;   // typical; actual value may differ
-const FSRTL_VOLUME_LOCK_FAILED: ULONG = 2; // typical
+const FSRTL_VOLUME_LOCK: ULONG = 3;   // FIXED 2026-07-05: was LLM-guessed "typical" value; verified vs C header (fsrtltypes.h)
+const FSRTL_VOLUME_LOCK_FAILED: ULONG = 4; // FIXED 2026-07-05: was LLM-guessed "typical" value; verified vs C header (fsrtltypes.h)
 
-const FSRTL_VOLUME_DISMOUNT: u32 = 2u32;
+const FSRTL_VOLUME_DISMOUNT: u32 = 0x01;
 const VcbDismountInProgress: u32 = 4u32;  // _VCB_CONDITION (cdstruc.h)
 const VcbInvalid: u32 = 3u32;
 const VCB_STATE_DISMOUNTED: u32 = 0x00000800;  // cdstruc.h
@@ -278,7 +278,7 @@ const STATUS_VOLUME_DISMOUNTED: i32 = 0xC000026Eu32 as i32;
 const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000E8u32 as i32; // ntstatus.h STATUS_INVALID_USER_BUFFER (grind fabricated 0xC00000F6=STATUS_INVALID_PARAMETER_8)
 
 // Constants: these placeholder values must be replaced by the real definitions from the C code.
-const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 0x20;
+const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 0x00000020; // FIXED 2026-07-06: cdfs value-bleed (verified vs cdstruc.h)
 
 // Constants that are not imported
 const FIRST_VD_SECTOR: u32 = 16;

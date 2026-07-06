@@ -39,6 +39,26 @@ use ntkrnl_sys::ddk::{
 use core::ffi::c_void;
 use ntkrnl_sys::CONTAINING_RECORD;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ---- file-scope preamble (translated) ----
 // NB: the per-function preamble emitted a DEFECTIVE _CLASS_DRIVER_EXTENSION
 // (hallucinated `GrandMaster` field; missing MainClassDeviceObject). The
@@ -311,7 +331,7 @@ unsafe fn CreateClassDeviceObject(
     DriverExtension =
         IoGetDriverObjectExtension(DriverObject, DriverObject as *mut _) as PCLASS_DRIVER_EXTENSION;
     DeviceNameU.Length = 0;
-    DeviceNameU.MaximumLength = (wcslen(b"\\\0D\0e\0v\0i\0c\0e\0\\\0\0\0".as_ptr() as PWSTR)
+    DeviceNameU.MaximumLength = (wcslen(w!("\\Device\\").as_ptr() as PWSTR)
         as USHORT)
         .wrapping_mul(core::mem::size_of::<u16>() as USHORT)
         .wrapping_add((*DriverExtension).DeviceBaseName.Length)
@@ -474,6 +494,26 @@ unsafe extern "system" fn ClassCallback(
 		&mut OldIrql,
 	);
 	if InputCount > 0 {
+		static mut g_FirstMouDeliveredLogged: LONG = 0;
+		if {
+			let dest = core::ptr::addr_of_mut!(g_FirstMouDeliveredLogged);
+			let old = *dest;
+			if old == 0 {
+				*dest = 1;
+			}
+			old
+		} == 0
+		{
+			DbgPrint(
+				b"[MOUCLASS] first packet delivered btn=0x%x dx=%ld dy=%ld cnt=%lu\n\0"
+					.as_ptr() as *const i8,
+				(*DataStart).ButtonFlags as u32,
+				(*DataStart).LastX,
+				(*DataStart).LastY,
+				InputCount as ULONG,
+			);
+		}
+
 		if (*ClassDeviceExtension).InputCount + InputCount
 			> (*(*ClassDeviceExtension).DriverExtension).DataQueueSize as usize
 		{

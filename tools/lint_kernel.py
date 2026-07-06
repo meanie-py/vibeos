@@ -240,12 +240,13 @@ def main():
         # Scan specific files
         files = [Path(a) for a in args]
     else:
-        # Scan all ntoskrnl-rust source
-        src_dir = Path("sdk/lib/rust/ntoskrnl-rust/src")
-        if not src_dir.exists():
-            print(f"ERROR: {src_dir} not found. Run from vibeos/ root.")
+        # Scan all kernel-crate source (ntoskrnl-rust + extracted subsystems —
+        # single source of truth so the crate-split doesn't drop coverage).
+        from kernel_crate_roots import kernel_rs_files
+        files = kernel_rs_files(Path("."))
+        if not files:
+            print("ERROR: no kernel-crate sources found. Run from vibeos/ root.")
             sys.exit(1)
-        files = sorted(src_dir.rglob("*.rs"))
 
     all_violations = []
     for f in files:

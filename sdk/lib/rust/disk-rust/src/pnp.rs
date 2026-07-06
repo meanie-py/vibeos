@@ -19,6 +19,26 @@ use crate::types::{_DISK_GEOMETRY_SOURCE_DiskGeometryFromNT4 as DiskGeometryFrom
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, EVENT_TYPE, HANDLE, KPROCESSOR_MODE, KWAIT_REASON, POOL_TYPE, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{ExFreePool};
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 // moved from extern "system": types_i386 declares these cdecl (no NTAPI in disk.h);
 // the defs are extern "C" — CC must agree or LLVM folds callers to ud2.
 extern "C" {
@@ -222,7 +242,7 @@ pub unsafe extern "system" fn DiskAddDevice(
     } else {
         RtlInitUnicodeString(
             &raw mut diskKeyName,
-            b"D\0i\0s\0k\0\0\0".as_ptr() as *const u16,
+            w!("Disk").as_ptr() as *const u16,
         );
 
         objectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;

@@ -3,6 +3,26 @@ use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, FILEINFORMATION, LARGE_INTEGER, LIST_ENTRY, PCCH, PCSTR, PSTR, PULONGLONG};
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "C" {
     fn IsoGetVolumeSize(DeviceId: ULONG) -> ULONGLONG;
     fn FatGetVolumeSize(DeviceId: ULONG) -> ULONGLONG;
@@ -558,14 +578,14 @@ pub unsafe extern "C" fn FsOpenFile(
 
 #[cfg(not(target_arch = "arm"))]
     {
-        if _wcsicmp(ServiceName, b"c\0d\0f\0s\0\0\0".as_ptr() as PCWSTR) == 0 {
+        if _wcsicmp(ServiceName, w!("cdfs").as_ptr() as PCWSTR) == 0 {
             pFsGetVolumeSize = Some(IsoGetVolumeSize);
         }
     }
     
     if pFsGetVolumeSize.is_none() &&
-        (_wcsicmp(ServiceName, b"f\0a\0s\0t\0f\0a\0t\0\0\0".as_ptr() as PCWSTR) == 0 ||
-         _wcsicmp(ServiceName, b"v\0f\0a\0t\0f\0s\0\0\0".as_ptr() as PCWSTR) == 0)
+        (_wcsicmp(ServiceName, w!("fastfat").as_ptr() as PCWSTR) == 0 ||
+         _wcsicmp(ServiceName, w!("vfatfs").as_ptr() as PCWSTR) == 0)
     {
         pFsGetVolumeSize = Some(FatGetVolumeSize);
     }

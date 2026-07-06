@@ -14,6 +14,26 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{DEVICE_RELATIONS, ExQueueWorkItem, _KWAIT_REASON_Executive, IoAcquireCancelSpinLock, IoAttachDeviceToDeviceStack, IoCreateDevice, IoFreeMdl, IoGetCurrentIrpStackLocation, IoReleaseCancelSpinLock, IoSetCancelRoutine, IoSkipCurrentIrpStackLocation, KEY_VALUE_FULL_INFORMATION, KeDelayExecutionThread, KeInitializeDpc, KeInitializeEvent, KeInitializeSemaphore, KeInitializeSpinLock, KeInitializeTimer, KeInsertQueueDpc, KeQueryTimeIncrement, KeReleaseSemaphore, KeSetTimer, KeWaitForSingleObject, LARGE_INTEGER, LIST_ENTRY, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDEVICE_RELATIONS, PDMA_ADAPTER, PDMA_OPERATIONS, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKEY_VALUE_FULL_INFORMATION, PKINTERRUPT, PMDL, PRKDPC, PRKEVENT, PUNICODE_STRING, PsCreateSystemThread, PsTerminateSystemThread, _KWAIT_REASON_Suspended, ZwSetValueKey, ZwWaitForSingleObject};
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "system" {
     fn IoOpenDeviceRegistryKey( DeviceObject: PDEVICE_OBJECT, DevInstKeyType: ULONG, DesiredAccess: ACCESS_MASK, DevInstRegKey: *mut HANDLE, ) -> NTSTATUS;
     fn RtlInitUnicodeString(DestinationString: PUNICODE_STRING, SourceString: PCWSTR);
@@ -345,7 +365,7 @@ pub unsafe extern "system" fn USBPORT_GetRegistryKeyValueFullInfo(
 ) -> NTSTATUS {
     const PLUGPLAY_REGKEY_DEVICE: u32 = 0x00000001;
     const PLUGPLAY_REGKEY_DRIVER: u32 = 0x00000002;
-    const USB_PORT_TAG: u32 = 0x7472_4255; // 'UBrt'
+    const USB_PORT_TAG: u32 = 0x70627375; // 'UBrt'
 
     let mut Status: NTSTATUS;
     let mut KeyValue: PKEY_VALUE_FULL_INFORMATION = core::ptr::null_mut();
@@ -1260,7 +1280,7 @@ pub unsafe extern "system" fn USBPORT_SignalWorkerThread(FdoDevice: PDEVICE_OBJE
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_WorkerThreadHandler(FdoDevice: PDEVICE_OBJECT) {
 
-    const USBPORT_FLAG_HC_SUSPEND: u32 = 0x00000200;
+    const USBPORT_FLAG_HC_SUSPEND: u32 = 0x00000100; // FIXED 2026-07-05: translation invented 0x200; verified vs usbport.h/usbmport.h
 
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let mut Packet: PUSBPORT_REGISTRATION_PACKET;
@@ -1379,13 +1399,13 @@ pub unsafe extern "system" fn USBPORT_SynchronizeRootHubCallback(
     Usb2FdoDevice: PDEVICE_OBJECT,
 ) {
 
-    const USB_MINIPORT_FLAGS_USB2: ULONG = 0x00000040;
-    const USBPORT_FLAG_RH_INIT_CALLBACK: ULONG = 0x00000800;
+    const USB_MINIPORT_FLAGS_USB2: ULONG = 0x00000010; // FIXED 2026-07-05: translation invented 0x40; verified vs usbport.h/usbmport.h
+    const USBPORT_FLAG_RH_INIT_CALLBACK: ULONG = 0x80000000; // FIXED 2026-07-05: translation invented 0x800; verified vs usbport.h/usbmport.h
     const USBPORT_FLAG_COMPANION_HC: ULONG = 0x01000000;
     const USBPORT_FLAG_PWR_AND_CHIRP_LOCK: ULONG = 0x10000000;
-    const USBPORT_FLAG_HC_SUSPEND: ULONG = 0x00000200;
-    const USBPORT_FLAG_POWER_AND_CHIRP_OK: ULONG = 0x20000000;
-    const USB_PORT_TAG: ULONG = 0x7472_4F55;
+    const USBPORT_FLAG_HC_SUSPEND: ULONG = 0x00000100; // FIXED 2026-07-05: translation invented 0x200; verified vs usbport.h/usbmport.h
+    const USBPORT_FLAG_POWER_AND_CHIRP_OK: ULONG = 0x40000000; // FIXED 2026-07-05: translation invented 0x20000000; verified vs usbport.h/usbmport.h
+    const USB_PORT_TAG: ULONG = 0x70627375;
 
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let Packet: PUSBPORT_REGISTRATION_PACKET;
@@ -2021,7 +2041,7 @@ pub unsafe extern "system" fn USBPORT_AddDevice(
 ) -> NTSTATUS {
 
     const FILE_DEVICE_CONTROLLER: u32 = 0x00000004;
-    const USB_MINIPORT_FLAGS_USB2: u32 = 0x00000100;
+    const USB_MINIPORT_FLAGS_USB2: u32 = 0x00000010; // FIXED 2026-07-05: translation invented 0x100; verified vs usbport.h/usbmport.h
 
     let mut Status: NTSTATUS;
     let mut MiniPortInterface: PUSBPORT_MINIPORT_INTERFACE;
@@ -2050,7 +2070,7 @@ pub unsafe extern "system" fn USBPORT_AddDevice(
         RtlStringCbPrintfW(
             CharDeviceName.as_mut_ptr(),
             core::mem::size_of::<[u16; 64]>(),
-            b"\\\0D\0e\0v\0i\0c\0e\0\\\0U\0S\0B\0F\0D\0O\0-\0%\0d\0\0\0".as_ptr() as PCWSTR,
+            w!("\\Device\\USBFDO-%d").as_ptr() as PCWSTR,
             DeviceNumber,
         );
 
@@ -2893,7 +2913,7 @@ pub unsafe extern "system" fn USBPORT_Dispatch(
     Irp: PIRP,
 ) -> NTSTATUS {
 
-    const USBPORT_PNP_STATE_FAILED: u32 = 0x00000010;
+    const USBPORT_PNP_STATE_FAILED: u32 = 0x00000004; // FIXED 2026-07-05: translation invented 0x10; verified vs usbport.h/usbmport.h
 
     let mut DeviceExtension: PUSBPORT_COMMON_DEVICE_EXTENSION;
     let mut IoStack: PIO_STACK_LOCATION;
@@ -2938,6 +2958,11 @@ pub unsafe extern "system" fn USBPORT_Dispatch(
             }
         }
         IRP_MJ_PNP => {
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"[USBPORT] Dispatch PNP minor=0x%x IsPDO=%u\n\0".as_ptr() as *const i8,
+                (*IoStack).MinorFunction as u32,
+                (*DeviceExtension).IsPDO as u32,
+            );
             if (*DeviceExtension).IsPDO != 0 {
                 Status = USBPORT_PdoPnP(DeviceObject, Irp);
             } else {

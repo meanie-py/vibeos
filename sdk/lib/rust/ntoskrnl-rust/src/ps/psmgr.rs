@@ -8,6 +8,26 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use crate::ke::krnlinit::KeFeatureBits;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // PS-subsystem storage moved to ps/ps_globals.rs (was in
 // kernel_c_helpers.c). Pull the new defs into scope so this file's
 // callers don't need to qualify them.
@@ -500,14 +520,14 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     object_type_initializer.PoolType = NonPagedPool as u32;
     object_type_initializer.SecurityRequired = 1u8;
 
-    RtlInitUnicodeString(&mut name, b"P\0r\0o\0c\0e\0s\0s\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut name, w!("Process").as_ptr() as *const u16);
     object_type_initializer.DefaultNonPagedPoolCharge = core::mem::size_of::<_EPROCESS>() as ULONG;
     object_type_initializer.GenericMapping = PspProcessMapping;
     object_type_initializer.ValidAccessMask = PROCESS_ALL_ACCESS;
     object_type_initializer.DeleteProcedure = Some(PspDeleteProcess);
     ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &mut PsProcessType);
 
-    RtlInitUnicodeString(&mut name, b"T\0h\0r\0e\0a\0d\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut name, w!("Thread").as_ptr() as *const u16);
     object_type_initializer.Length = core::mem::size_of::<_OBJECT_TYPE_INITIALIZER>() as USHORT;
     object_type_initializer.DefaultNonPagedPoolCharge = core::mem::size_of::<_ETHREAD>() as ULONG;
     object_type_initializer.GenericMapping = PspThreadMapping;
@@ -515,7 +535,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     object_type_initializer.DeleteProcedure = Some(PspDeleteThread);
     ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &mut PsThreadType);
 
-    RtlInitUnicodeString(&mut name, b"J\0o\0b\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut name, w!("Job").as_ptr() as *const u16);
     object_type_initializer.Length = core::mem::size_of::<_OBJECT_TYPE_INITIALIZER>() as USHORT;
     object_type_initializer.DefaultNonPagedPoolCharge = core::mem::size_of::<_EJOB>() as ULONG;
     object_type_initializer.GenericMapping = PspJobMapping;

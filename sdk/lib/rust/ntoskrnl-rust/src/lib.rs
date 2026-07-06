@@ -174,7 +174,9 @@ pub mod dbgk;
 pub mod dbgprint;
 pub mod debugblock;
 pub mod ex;
-pub mod fsrtl;
+// fsrtl extracted to its own crate (crate-split) — see fsrtl-rust. Deliberately
+// NOT depended on here (severed): cross-calls into fsrtl resolve at link time via
+// #[no_mangle]; kernel-rust force-includes its symbols via `extern crate fsrtl_rust`.
 pub mod fstub;
 pub mod guid;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -189,7 +191,11 @@ pub mod kd64;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod kdbg;
 pub mod ke;
-pub mod lpc;
+// lpc extracted to its own crate (crate-split PoC) — see lpc-rust. Deliberately
+// NOT depended on here: severing the ntoskrnl-rust→lpc-rust edge is what makes
+// the split pay off (touching lpc no longer rebuilds the monolith). Cross-calls
+// into lpc resolve at link time via #[no_mangle]; kernel-rust force-includes its
+// symbols via `extern crate lpc_rust`.
 pub mod mm;
 pub mod ob;
 pub mod pnpmgr;  // Phase 1: pnputil + pnpirp only (leaf files)
