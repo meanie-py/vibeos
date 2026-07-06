@@ -1989,16 +1989,18 @@ unsafe extern "C" fn QSI_SystemLookasideInformation(Buffer: PVOID, Size: ULONG, 
         ExpCopyLookasideInformation(&mut Info, &mut Remaining, &mut ExSystemLookasideListHead, 1u8);
     }
     if Remaining > 0 {
-        let mut OldIrql: KIRQL = 0;
-        KeAcquireSpinLock(&mut ExpNonPagedLookasideListLock, &mut OldIrql);
+        // RAII: guard drops (releases) at block end — release was already the
+        // block's last statement, so this is a behavior-identical 1:1 swap.
+        let _lk = ntkrnl_sys::guards::SpinLockGuard::acquire(
+            core::ptr::addr_of_mut!(ExpNonPagedLookasideListLock) as ntkrnl_sys::ke::PKSPIN_LOCK,
+        );
         ExpCopyLookasideInformation(&mut Info, &mut Remaining, &mut ExpNonPagedLookasideListHead, 1u8);
-        KeReleaseSpinLock(&mut ExpNonPagedLookasideListLock, OldIrql);
     }
     if Remaining > 0 {
-        let mut OldIrql: KIRQL = 0;
-        KeAcquireSpinLock(&mut ExpPagedLookasideListLock, &mut OldIrql);
+        let _lk = ntkrnl_sys::guards::SpinLockGuard::acquire(
+            core::ptr::addr_of_mut!(ExpPagedLookasideListLock) as ntkrnl_sys::ke::PKSPIN_LOCK,
+        );
         ExpCopyLookasideInformation(&mut Info, &mut Remaining, &mut ExpPagedLookasideListHead, 1u8);
-        KeReleaseSpinLock(&mut ExpPagedLookasideListLock, OldIrql);
     }
 
     ExUnlockUserBuffer(Mdl);

@@ -1,0 +1,1208 @@
+[
+ {
+  "file": "sdk/lib/rust/usbport-rust/src/device.rs",
+  "line": 882,
+  "function": "USBPORT_RemoveDeviceHandle",
+  "rationale": "Whole-function critical section: KeAcquireSpinLock(DeviceHandleSpinLock,&OldIrql) at 882, a single RemoveEntryList, then KeReleaseSpinLock at 887 which is the last statement of the function. OldIrql is a plain local, no hand-off. Guard drop at scope end lands exactly where the manual release is \u2014 a mechanical 1:1 swap to SpinLockGuard::acquire(&FdoExtension->DeviceHandleSpinLock).",
+  "risk": "trivial",
+  "crate": "usbport-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbport-rust/src/device.rs",
+  "line": 906,
+  "function": "USBPORT_ValidateDeviceHandle",
+  "rationale": "Acquire at 906, list walk that only mutates the local Result (with an in-region break), KeReleaseSpinLock at 926 immediately before `return Result`. Result is fully computed inside the locked region, so guard-drop-then-return preserves behavior. Local OldIrql, no hand-off. The break is inside the held region so it's not an exit path.",
+  "risk": "trivial",
+  "crate": "usbport-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbport-rust/src/iface.rs",
+  "line": 621,
+  "function": "USBHI_RootHubInitNotification",
+  "rationale": "Acquire RootHubCallbackSpinLock at 621, two field stores, release at 627 as the function's final statement. Local OldIrql, no work after release, no hand-off. Direct SpinLockGuard::acquire replacement.",
+  "risk": "trivial",
+  "crate": "usbport-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbport-rust/src/power.rs",
+  "line": 322,
+  "function": "USBPORT_CancelPendingWakeIrp",
+  "rationale": "Acquire PowerWakeSpinLock at 322, a single conditional field clear, KeReleaseSpinLock at 331 as the last statement of the function. Local OldIrql, no hand-off, nothing runs after the release. Clean 1:1 guard conversion.",
+  "risk": "trivial",
+  "crate": "usbport-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ntoskrnl-rust/src/po/povolume.rs",
+  "line": 118,
+  "function": "PopGetDope",
+  "rationale": "KeAcquireSpinLock(PopDopeGlobalLock,&old_irql) at 118 and KeReleaseSpinLock at 128 are a straight-line same-scope pair with no early return, ?, or branch between them; the dope-swap body is a couple statements. Mechanical wrap in SpinLockGuard::acquire(&raw mut PopDopeGlobalLock).",
+  "risk": "trivial",
+  "crate": "ntoskrnl-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ntoskrnl-rust/src/po/povolume.rs",
+  "line": 179,
+  "function": "PoRemoveVolumeDevice",
+  "rationale": "Second spinlock region (acquire 179 / release 185) clears device_extension.Dope with no intervening exit. Clean 1:1 guard swap; the earlier guarded-mutex region in the same fn is unaffected.",
+  "risk": "trivial",
+  "crate": "ntoskrnl-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ntoskrnl-rust/src/ex/sysinfo.rs",
+  "line": 1993,
+  "function": "QSI_SystemLookasideInformation",
+  "rationale": "Already wrapped in a `{ let mut OldIrql; KeAcquireSpinLock(&mut ExpNonPagedLookasideListLock,..); ExpCopyLookasideInformation(..); KeReleaseSpinLock(..); }` block with no early exit. SpinLockGuard::acquire drops at end of the same block.",
+  "risk": "trivial",
+  "crate": "ntoskrnl-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ntoskrnl-rust/src/ex/sysinfo.rs",
+  "line": 1999,
+  "function": "QSI_SystemLookasideInformation",
+  "rationale": "Identical scoped acquire/release pair over ExpPagedLookasideListLock immediately after 1993; same trivial guard swap.",
+  "risk": "trivial",
+  "crate": "ntoskrnl-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ntoskrnl-rust/src/ex/pool/expool.rs",
+  "line": 765,
+  "function": "ExpAddTagForBigPages",
+  "rationale": "Clean pair but the critical section has an in-loop `return TRUE` (release+return) AND a fall-through release; a SpinLockGuard would auto-release on both exits, removing the two hand-written KeReleaseSpinLock calls and the duplication risk. Needs care to delete the manual releases and let Drop cover the early return.",
+  "risk": "moderate",
+  "crate": "ntoskrnl-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ntoskrnl-rust/src/ex/pool/expool.rs",
+  "line": 811,
+  "function": "ExpFindAndRemoveTagBigPages",
+  "rationale": "Same shape as 765: in-loop `return key` and fall-through both currently release manually; guard drop would cover the early-return path automatically. Same-scope, no ownership hand-off.",
+  "risk": "moderate",
+  "crate": "ntoskrnl-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ntoskrnl-rust/src/ex/pool/expool.rs",
+  "line": 735,
+  "function": "ExpInsertPoolTracker",
+  "rationale": "Short scoped acquire/release sub-region of ExpTaggedPoolLock inside a larger fn; convertible by introducing a block scope so SpinLockGuard drops at region end. No exit crosses the region.",
+  "risk": "moderate",
+  "crate": "ntoskrnl-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ntoskrnl-rust/src/ex/pool/expool.rs",
+  "line": 1641,
+  "function": "ExpCheckPoolAllocation",
+  "rationale": "Already a `{ let mut old_irql; acquire; for-loop with break; release; }` block. Guard swap is clean; note the KeBugCheckEx inside halts (neither manual release nor Drop runs on that path \u2014 behavior-identical).",
+  "risk": "moderate",
+  "crate": "ntoskrnl-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ntoskrnl-rust/src/ex/timer.rs",
+  "line": 346,
+  "function": "NtCancelTimer",
+  "rationale": "Outer KeAcquireSpinLock((*Timer).Lock) at 346 and KeReleaseSpinLock at 383 are a clean same-scope pair with no early return between; body nests KeAcquireSpinLockAtDpcLevel regions that are independently balanced. SpinLockGuard for the outer lock is safe; the nested DPC-level locks make it moderate rather than trivial.",
+  "risk": "moderate",
+  "crate": "ntoskrnl-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/debug.rs",
+  "line": 373,
+  "function": "DbgLogSendPacket",
+  "rationale": "Straight-line: KeAcquireSpinLock at 373, KeReleaseSpinLock at 378 is the last statement of the function. SpinLockGuard::acquire(&raw mut (*fdoData).SpinLock) drops at fn end with identical semantics; no ownership hand-off.",
+  "risk": "trivial",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/debug.rs",
+  "line": 388,
+  "function": "DbgLogReturnPacket",
+  "rationale": "Acquire at 388, release at 394 is the final statement. Guard drop == release; pure same-scope pair.",
+  "risk": "trivial",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/clntirp.rs",
+  "line": 56,
+  "function": "EnqueueDeferredClientIrp",
+  "rationale": "Acquire at 56, single InsertTailList, release at 61 is the last statement. Textbook trivial guard conversion.",
+  "risk": "trivial",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/utils.rs",
+  "line": 809,
+  "function": "ClasspPerfIncrementErrorCount",
+  "rationale": "Acquire at 809, release at 839 is the last statement of the function; all work in between is field updates on fdoData under the lock. Guard drop at fn end is a 1:1 replacement.",
+  "risk": "trivial",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/utils.rs",
+  "line": 866,
+  "function": "ClasspPerfIncrementSuccessfulIo",
+  "rationale": "All early returns occur BEFORE the acquire at 866; release at 916 is the last statement. Clean same-scope pair, no hand-off.",
+  "risk": "trivial",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/class_part_c.rs",
+  "line": 438,
+  "function": "ClasspRetryRequest",
+  "rationale": "Acquire at 438, release at 469 is the last statement before the closing brace (470). Body is list-insert + retry-timer arm under lock; guard drop == release.",
+  "risk": "trivial",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/class.rs",
+  "line": 2159,
+  "function": "ServiceTransferRequest",
+  "rationale": "Acquire/release (2159/2165) are fully contained inside the `if priority==High` block with no intervening return/break; wrap in SpinLockGuard scoped to that block.",
+  "risk": "trivial",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/class.rs",
+  "line": 2168,
+  "function": "ServiceTransferRequest",
+  "rationale": "Acquire/release (2168/2176) self-contained inside the nested `if NumHighPriorityPagingIo!=0` block, no early exit; block-scoped guard is mechanical.",
+  "risk": "trivial",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/class.rs",
+  "line": 2329,
+  "function": "ServiceTransferRequest",
+  "rationale": "Acquire/release (2329/2346) contained in the `else` deferral `if priority==High` block; no intervening exit. Block-scoped guard.",
+  "risk": "trivial",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/class_part_b.rs",
+  "line": 3244,
+  "function": "ClassInterpretSenseInfo (error-log path)",
+  "rationale": "Acquire/release (3244/3252) fully inside the `if logErrorInternal!=0` block, straight-line memcpy + index bump. Block-scoped guard is 1:1.",
+  "risk": "trivial",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/lock.rs",
+  "line": 181,
+  "function": "ClasspUninitializeRemoveTracking",
+  "rationale": "Acquire/release (181/190) already isolated inside the `if !removeTrackingList.is_null()` block; ExFreePool + null-store under lock, release ends the block. Block-scoped guard is mechanical.",
+  "risk": "trivial",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/residual_part_b.rs",
+  "line": 138,
+  "function": "ClassAcquireRemoveLockEx",
+  "rationale": "Acquire/release (138/168) contained in the `if IsRemoved != REMOVE_COMPLETE` debug block with no intervening return; the rundown work after 169 does not touch this lock. Block-scoped guard.",
+  "risk": "trivial",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/dictlib.rs",
+  "line": 157,
+  "function": "FreeDictionaryEntry",
+  "rationale": "Acquire at 157, release at 170. The post-release code (DbgPrint on assert failure) must stay outside the lock, so the guard must be wrapped in an inner `{}` block scoped to lines 157-170 rather than fn-scope \u2014 needs care to not extend the critical section.",
+  "risk": "moderate",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/xferpkt.rs",
+  "line": 660,
+  "function": "DestroyTransferPacket",
+  "rationale": "Acquire at 660, release at 671; substantial post-release work (IoFreeMdl/IoFreeIrp/ExFreePool) must run OUTSIDE the lock, so a fn-scope guard would wrongly extend the critical section \u2014 convert only with an explicit inner block scoping the guard to 660-671.",
+  "risk": "moderate",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/lock.rs",
+  "line": 59,
+  "function": "ClassCompleteRequest",
+  "rationale": "Acquire at 59, release at 93, then IoCompleteRequest at 95 must not hold the lock. Requires an inner-block-scoped guard, not fn-scope.",
+  "risk": "moderate",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/clntirp.rs",
+  "line": 73,
+  "function": "DequeueDeferredClientIrp",
+  "rationale": "Acquire/release (73/79) inside the `else` branch; the CONTAINING_RECORD/InitializeListHead work at 80+ runs after release and must not be under the lock. Scope the guard to an inner block spanning 73-79.",
+  "risk": "moderate",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/classpnp-rust/src/class_part_c.rs",
+  "line": 915,
+  "function": "ClasspRetryDpc",
+  "rationale": "Acquire at 915, release at 930, then a while loop (932+) processing the drained retry list must run lock-free. The pair is already nicely wrapped in a `{}` block (916-929), so scoping the guard there is straightforward but must preserve that boundary.",
+  "risk": "moderate",
+  "crate": "classpnp-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ks-rust/src/worker.rs",
+  "line": 181,
+  "function": "KsQueueWorkItem",
+  "rationale": "Single acquire at 181, single matching release at 190, no intervening reacquire, no early return between them - the lock spans a straight-line body ending in `STATUS_SUCCESS`. Mechanical 1:1 SpinLockGuard::acquire(&mut (*KsWorker).Lock).",
+  "risk": "trivial",
+  "crate": "ks-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ks-rust/src/irp.rs",
+  "line": 998,
+  "function": "KsRemoveSpecificIrpFromCancelableQueue",
+  "rationale": "Acquire 998 / release 1002 wrap a single RemoveEntryList with no branches or early exits - textbook clean same-scope pair.",
+  "risk": "trivial",
+  "crate": "ks-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ks-rust/src/swenum.rs",
+  "line": 506,
+  "function": "KspInstallInterface",
+  "rationale": "Acquire 506 / release 511 wrap an InsertTailList inside a single `if ItemExists == 0` block; the whole pair is confined to that block scope with no early exit - a guard scoped to the block is 1:1.",
+  "risk": "trivial",
+  "crate": "ks-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ks-rust/src/event.rs",
+  "line": 59,
+  "function": "KspSynchronizedEventRoutine",
+  "rationale": "Acquire 59 / release 61 form a clean pair inside the KSEVENTS_SPINLOCK branch. A guard would additionally make the `SynchronizedRoutine.unwrap()` panic path at line 60 release the lock automatically (fixes the latent leak below).",
+  "risk": "trivial",
+  "crate": "ks-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ks-rust/src/swenum.rs",
+  "line": 1169,
+  "function": "KspQueryBusRelations",
+  "rationale": "Acquire 1169 with two release sites (early-return path 1194 on allocation failure, normal path 1213). A SpinLockGuard collapses both into one Drop and is exactly the case a guard prevents mishandling, but the early-return restructure needs care.",
+  "risk": "moderate",
+  "crate": "ks-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/ks-rust/src/worker.rs",
+  "line": 105,
+  "function": "KsUnregisterWorker",
+  "rationale": "Acquire 105 with symmetric releases on both if/else branches (108/111); a guard collapses them, but the lock must be dropped before the trailing FreeItem(KsWorker) which frees the struct containing the lock - explicit drop placement required.",
+  "risk": "moderate",
+  "crate": "ks-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/pnpmgr-rust/src/devnode.rs",
+  "line": 87,
+  "function": "PiInsertDevNode",
+  "rationale": "Single acquire (87) / single release (97) in one straight-line body over IopDeviceTreeLock, no branches or early exits between; mechanical 1:1 SpinLockGuard::acquire.",
+  "risk": "trivial",
+  "crate": "pnpmgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/pnpmgr-rust/src/devnode.rs",
+  "line": 108,
+  "function": "PiSetDevNodeState",
+  "rationale": "Acquire (108) / release (118) bracket a straight-line update of State/StateHistory, return value computed after release; clean same-scope pair.",
+  "risk": "trivial",
+  "crate": "pnpmgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/pnpmgr-rust/src/devnode.rs",
+  "line": 147,
+  "function": "IopFreeDeviceNode",
+  "rationale": "Acquire (147) / release (172) enclose a single critical section (sibling unlink); the inner while loop has no early exit and all frees happen after release. One-to-one guard.",
+  "risk": "trivial",
+  "crate": "pnpmgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/pnpmgr-rust/src/pnpmgr.rs",
+  "line": 642,
+  "function": "IopGetSystemPowerDeviceObject",
+  "rationale": "Conditional acquire inside an `if`; acquire (642) and release (647) both live in the same block with only a write_volatile between them, then `return STATUS_SUCCESS`. A block-scoped guard drops at the return.",
+  "risk": "trivial",
+  "crate": "pnpmgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/pnpmgr-rust/src/devaction.rs",
+  "line": 2721,
+  "function": "PiQueueDeviceAction",
+  "rationale": "Single acquire (2721) with three release branches (2730, 2737, 2742) and early returns \u2014 exactly the shape a Drop guard cleans up. Moderate because at 2730 the lock must be dropped BEFORE the PipDeviceActionWorker callout, so the guard needs an explicit early drop() in that branch rather than a pure fall-off-scope.",
+  "risk": "moderate",
+  "crate": "pnpmgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/msfs-rust/src/rw.rs",
+  "line": 54,
+  "function": "MsfsRead",
+  "rationale": "Acquire at 54, released on both branches (58 message-dequeue path, 76 empty path) with only RemoveHeadList + counter decrement in between; no early exit, no fallible calls. A single SpinLockGuard scoped to the if/else covers both releases.",
+  "risk": "trivial",
+  "crate": "msfs-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/msfs-rust/src/rw.rs",
+  "line": 164,
+  "function": "MsfsWrite",
+  "rationale": "Acquire at 164, release at 170; body is InsertTailList + MessageCount increment, straight-line, no branch or fallible op. Mechanical 1:1 guard replacement.",
+  "risk": "trivial",
+  "crate": "msfs-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/msfs-rust/src/finfo.rs",
+  "line": 38,
+  "function": "MsfsQueryMailslotInformation",
+  "rationale": "Acquire at 38, release at 47; the intervening if/else only reads MessageCount and computes a CONTAINING_RECORD offset (no panic/return). The STATUS_BUFFER_OVERFLOW early return at line 31 is before the acquire, so a guard over lines 38-47 is safe.",
+  "risk": "trivial",
+  "crate": "msfs-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/msfs-rust/src/create.rs",
+  "line": 89,
+  "function": "MsfsCreate",
+  "rationale": "Acquire at 89, release at 94; body is a single InsertTailList. Clean same-scope pair, no ownership hand-off, direct guard swap.",
+  "risk": "trivial",
+  "crate": "msfs-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/msfs-rust/src/create.rs",
+  "line": 216,
+  "function": "MsfsCreateMailslot",
+  "rationale": "Acquire at 216, release at 221; body is a single InsertTailList. Clean same-scope pair, mechanical.",
+  "risk": "trivial",
+  "crate": "msfs-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/msfs-rust/src/create.rs",
+  "line": 263,
+  "function": "MsfsClose",
+  "rationale": "Acquire at 263, release at 273, unconditional; a while-loop frees the message list and MessageCount is zeroed while held. Same-scope and safe, but the release must drop BEFORE line 274 (ServerCcb=null), so the guard needs an explicit inner block rather than a bare 1:1 line swap.",
+  "risk": "moderate",
+  "crate": "msfs-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/msfs-rust/src/create.rs",
+  "line": 278,
+  "function": "MsfsClose",
+  "rationale": "Acquire at 278, release at 280; body is a single RemoveEntryList. Clean same-scope pair. Guard would need to drop before the ExFreePoolWithTag(Ccb) at 281, so scope it to a small block; otherwise mechanical.",
+  "risk": "trivial",
+  "crate": "msfs-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbaudio-rust/src/pin.rs",
+  "line": 1068,
+  "function": "PinGetIrpFromReadyList",
+  "rationale": "Textbook single acquire/single release covering the whole body: acquire at 1068, IsListEmpty/RemoveHeadList under lock, release at 1075, then `return Irp`. The release is literally the last statement before the return, so `let _g = SpinLockGuard::acquire(&mut (*PinContext).IrpListLock as *mut _ as PKSPIN_LOCK)` dropping at fn-end is exactly equivalent. guards reachable via ntkrnl_sys (already the crate's ke dependency).",
+  "risk": "trivial",
+  "crate": "usbaudio-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbaudio-rust/src/pin.rs",
+  "line": 1004,
+  "function": "UsbAudioRenderComplete",
+  "rationale": "Clean same-scope pair: acquire 1004, single InsertTailList, release 1009. Convertible but the release is deliberately BEFORE the KsStreamPointer* work at 1011+, so the guard must be wrapped in an explicit `{ }` block to drop before that work rather than extend the critical section to fn-end \u2014 hence moderate, not mechanical.",
+  "risk": "moderate",
+  "crate": "usbaudio-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/serial-rust/src/misc.rs",
+  "line": 68,
+  "function": "SerialReceiveByte",
+  "rationale": "InputBufferLock acquired at 68, released at 105-108; single straight-line body, a while-loop with no return/break past the release, no ownership hand-off. Mechanical SpinLockGuard::acquire(&raw mut (*DeviceExtension).InputBufferLock).",
+  "risk": "trivial",
+  "crate": "serial-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/serial-rust/src/misc.rs",
+  "line": 139,
+  "function": "SerialSendByte",
+  "rationale": "OutputBufferLock acquired at 139, released at 175-178; the inner while has a break that falls through to the single release, no early return, no hand-off. 1:1 guard replacement.",
+  "risk": "trivial",
+  "crate": "serial-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/serial-rust/src/devctrl.rs",
+  "line": 441,
+  "function": "SerialGetCommStatus",
+  "rationale": "InputBufferLock acquired at 441, released at 451; two-statement critical section, no branch/return between. Clean same-scope pair.",
+  "risk": "trivial",
+  "crate": "serial-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/serial-rust/src/devctrl.rs",
+  "line": 456,
+  "function": "SerialGetCommStatus",
+  "rationale": "OutputBufferLock acquired at 456, released at 466; identical straight-line shape to the sibling above. Clean same-scope pair.",
+  "risk": "trivial",
+  "crate": "serial-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/serial-rust/src/devctrl.rs",
+  "line": 929,
+  "function": "SerialDeviceControl",
+  "rationale": "InputBufferLock acquired at 929 inside the SET_QUEUE_SIZE arm, released at 937; only an IncreaseCircularBufferSize call (returns Status, does not early-exit caller) sits between. Same-scope pair \u2014 a scoped guard inside the `if` block works.",
+  "risk": "trivial",
+  "crate": "serial-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/serial-rust/src/devctrl.rs",
+  "line": 945,
+  "function": "SerialDeviceControl",
+  "rationale": "OutputBufferLock acquired at 945, released at 953; same straight-line IncreaseCircularBufferSize pattern as 929. Same-scope pair.",
+  "risk": "trivial",
+  "crate": "serial-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/serial-rust/src/devctrl.rs",
+  "line": 763,
+  "function": "SerialDeviceControl",
+  "rationale": "InputBufferLock acquired at 763 (PURGE_RXCLEAR arm), released at 783; balanced, but a nested IoAcquireRemoveLock/IoReleaseRemoveLock pair lives inside the held region \u2014 a guard is fine but the reviewer must scope it so Drop runs at 783 and not swallow the nested remove-lock logic. Needs a small amount of care.",
+  "risk": "moderate",
+  "crate": "serial-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/serial-rust/src/devctrl.rs",
+  "line": 790,
+  "function": "SerialDeviceControl",
+  "rationale": "OutputBufferLock acquired at 790 (PURGE_TXCLEAR arm), released at 810; same nested-removelock shape as the RXCLEAR arm. Same-scope, guard needs deliberate block scoping.",
+  "risk": "moderate",
+  "crate": "serial-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/serial-rust/src/rw.rs",
+  "line": 446,
+  "function": "SerialWrite",
+  "rationale": "OutputBufferLock acquired at 446, released at 486; same-scope and balanced, but the loop body does a mid-loop release (457) + SerialSendByte + re-acquire (467) on STATUS_BUFFER_TOO_SMALL. A guard conversion must model that drop/re-create dance (explicit drop() then reacquire), so not a mechanical 1:1.",
+  "risk": "moderate",
+  "crate": "serial-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/serial-rust/src/rw.rs",
+  "line": 131,
+  "function": "ReadBytes",
+  "rationale": "KeAcquireSpinLockRaiseToDpc on InputBufferLock at 131, released at 153 every iteration before the break/KeWaitForMultipleObjects; same-scope, no leak. Maps to SpinLockGuard::acquire (raise-to-dispatch + acquire), but because the wait must happen with the lock DROPPED, the guard must be inner-scoped per loop iteration so Drop fires before the wait \u2014 care required.",
+  "risk": "moderate",
+  "crate": "serial-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/scsiport-rust/src/scsiport.rs",
+  "line": 1947,
+  "function": "ScsiPortFlushDma (ScsiPortAllocateAdapterChannel path)",
+  "rationale": "KeAcquireSpinLock(&SpinLock,&irql) at 1947 with its only release at 1953; nothing lock-sensitive happens after the release (function just returns DeallocateObjectKeepRegisters). Clean same-scope pair, no ownership hand-off. SpinLockGuard::acquire(&raw mut (*device_extension).SpinLock) drops at scope end == current release point.",
+  "risk": "trivial",
+  "crate": "scsiport-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/scsiport-rust/src/scsiport.rs",
+  "line": 2588,
+  "function": "ScsiPortAllocateAdapterChannel",
+  "rationale": "KeAcquireSpinLock(&SpinLock,&irql) at 2588, single release at 2595, then only `KeepObject` return. No early exit, no callee hand-off, no post-release work under a would-be guard. Mechanical 1:1 SpinLockGuard.",
+  "risk": "trivial",
+  "crate": "scsiport-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/scsiport-rust/src/scsi.rs",
+  "line": 70,
+  "function": "SpiHandleAttachRelease",
+  "rationale": "KeAcquireSpinLockRaiseToDpc at 70 with three same-scope release sites (74, 80, 96), each followed by a return \u2014 the exact multi-early-return shape a SpinLockGuard eliminates. No ownership hand-off. Moderate because the current code writes (*Srb).SrbStatus AFTER each manual release; a guard would drop at scope end so those benign field writes move (harmlessly) back under the lock \u2014 needs a glance to confirm no reordering matters.",
+  "risk": "moderate",
+  "crate": "scsiport-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/scsiport-rust/src/scsi.rs",
+  "line": 307,
+  "function": "ScsiPortDispatchScsi (pending_execute_scsi else-branch)",
+  "rationale": "KeRaiseIrql(DISPATCH_LEVEL,&oldIrql) at 307 balanced by KeLowerIrql(oldIrql) at 321, both in one linear else-block, no hand-off. IrqlGuard::raise_to_dpc() scoped to the else-block restores at the same point. Moderate: needs an explicit inner scope so the guard drops exactly where 321 sits (before `return STATUS_PENDING`).",
+  "risk": "moderate",
+  "crate": "scsiport-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/scsiport-rust/src/fdo.rs",
+  "line": 511,
+  "function": "FdoStartAdapter (HwInitialize sync)",
+  "rationale": "KeRaiseIrql(DISPATCH_LEVEL,&OldIrql) at 511 has two lower sites: an early-return path (533 KeLowerIrql then return STATUS_ADAPTER_HARDWARE_ERROR) and the normal path (546 KeLowerIrql then return STATUS_SUCCESS). IrqlGuard::raise_to_dpc() auto-lowers on both exits and deletes the duplicated manual lower. Moderate because ScsiPortDpcForIsr at 537 must keep running under the raised IRQL \u2014 a guard preserves that since it drops only at function end.",
+  "risk": "moderate",
+  "crate": "scsiport-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/iomgr-rust/src/iotimer.rs",
+  "line": 69,
+  "function": "IopTimerDispatch",
+  "rationale": "KeAcquireSpinLock(IopTimerLock) @69 / KeReleaseSpinLock @89 are a same-scope pair with no ownership hand-off. Converting to SpinLockGuard::acquire additionally fixes the (*Timer).TimerRoutine.unwrap() @82 panic-leak, since Drop would release on unwind.",
+  "risk": "trivial",
+  "crate": "iomgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/iomgr-rust/src/iotimer.rs",
+  "line": 97,
+  "function": "IopRemoveTimerFromTimerList",
+  "rationale": "Acquire @97 / release @107, single straight-line body, no early exit. Mechanical 1:1 SpinLockGuard::acquire.",
+  "risk": "trivial",
+  "crate": "iomgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/iomgr-rust/src/iotimer.rs",
+  "line": 159,
+  "function": "IoStartTimer",
+  "rationale": "Conditional acquire @159 with its release @169 both inside the same if-block; clean same-scope pair.",
+  "risk": "trivial",
+  "crate": "iomgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/iomgr-rust/src/iotimer.rs",
+  "line": 179,
+  "function": "IoStopTimer",
+  "rationale": "Acquire @179 / release @189, straight-line, same scope.",
+  "risk": "trivial",
+  "crate": "iomgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/iomgr-rust/src/remlock.rs",
+  "line": 127,
+  "function": "IoAcquireRemoveLockEx",
+  "rationale": "Acquire @127 / release @130 both inside the same else-branch block, no exit between them. SpinLockGuard::acquire on (*Lock).Dbg.Spin.",
+  "risk": "trivial",
+  "crate": "iomgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/iomgr-rust/src/remlock.rs",
+  "line": 159,
+  "function": "IoReleaseRemoveLockEx",
+  "rationale": "Acquire @159 / release @184 both inside the same if-block with an ExFreePoolWithTag loop between; no early return. Clean same-scope pair.",
+  "risk": "trivial",
+  "crate": "iomgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/iomgr-rust/src/driver.rs",
+  "line": 1758,
+  "function": "IoAllocateDriverObjectExtension",
+  "rationale": "OldIrql=KeRaiseIrqlToDpcLevel() @1758 / KeLowerIrql @1777; the STATUS_OBJECT_NAME_COLLISION early return @1781 is AFTER the lower. IrqlGuard::raise_to_dpc() maps 1:1.",
+  "risk": "trivial",
+  "crate": "iomgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/iomgr-rust/src/driver.rs",
+  "line": 1798,
+  "function": "IoGetDriverObjectExtension",
+  "rationale": "KeRaiseIrqlToDpcLevel() @1798 / KeLowerIrql @1809; both returns are after the lower. IrqlGuard::raise_to_dpc() maps 1:1.",
+  "risk": "trivial",
+  "crate": "iomgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/iomgr-rust/src/irp.rs",
+  "line": 441,
+  "function": "IopAbortInterruptedIrp",
+  "rationale": "KeRaiseIrql(APC_LEVEL) @441 is lowered on BOTH branches (@445 and @462). A single IrqlGuard::raise(APC_LEVEL) replaces the two hand-balanced KeLowerIrql calls; needs care because the current code intentionally lowers early @445 before the wait, so the guard's scope must end there.",
+  "risk": "moderate",
+  "crate": "iomgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/iomgr-rust/src/irp.rs",
+  "line": 476,
+  "function": "IopDisassociateThreadIrp",
+  "rationale": "KeRaiseIrql(APC_LEVEL) @476 is balanced on three exit paths (@480, @494, @508). IrqlGuard::raise(APC_LEVEL) collapses the three manual lowers; moderate because a nested KeAcquireQueuedSpinLock (not in the guard set) must still be released before the IRQL drop, so ordering matters.",
+  "risk": "moderate",
+  "crate": "iomgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbhub-rust/src/usbhub.rs",
+  "line": 314,
+  "function": "USBH_SyncIrpComplete",
+  "rationale": "Clean same-scope pair: acquire at 314, KeReleaseSpinLock at 320 on UrbTimeoutSpinLock; critical section is two statements (set IsNormalCompleted, KeCancelTimer) with no early exit. Post-release KeSetEvent must stay outside the lock, so wrap the CS in an inner block { let _g = SpinLockGuard::acquire(...); ... }.",
+  "risk": "trivial",
+  "crate": "usbhub-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbhub-rust/src/usbhub.rs",
+  "line": 348,
+  "function": "USBH_UrbTimeoutDPC",
+  "rationale": "Clean same-scope pair: acquire 348, release 353 on UrbTimeoutSpinLock; CS is a single field read into IsCompleted, no early exit. Wrap CS in an inner block so post-release IoCancelIrp/KeSetEvent stay unlocked.",
+  "risk": "trivial",
+  "crate": "usbhub-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbhub-rust/src/usbhub.rs",
+  "line": 3098,
+  "function": "USBH_WorkItemWorker (WorkItemSpinLock region)",
+  "rationale": "Clean same-scope pair: acquire 3098, release 3103; CS is a single RemoveEntryList, no early exit, no panic path inside. The unwrap() at 3093 is before the acquire. Wrap CS in an inner block; post-release ExFreePoolWithTag stays unlocked.",
+  "risk": "trivial",
+  "crate": "usbhub-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbhub-rust/src/ioctl.rs",
+  "line": 111,
+  "function": "USBH_PdoUrbCompletion (PortTimeoutSpinLock region)",
+  "rationale": "Clean same-scope pair: acquire 111, release 122 on PortTimeoutSpinLock; CS reads BndwTimeoutContext with only a DbgBreakPoint() in between (does not unwind). No early return between acquire and release. Wrap CS in an inner block; post-release PortPdoFlags/ConnectionStatus updates stay unlocked.",
+  "risk": "trivial",
+  "crate": "usbhub-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbhub-rust/src/usbhub.rs",
+  "line": 4007,
+  "function": "USBH_CheckHubIdle (non-working power-state branch)",
+  "rationale": "Clean same-scope pair: acquire 4007, release 4012, immediately followed by return 4013 \u2014 CS clears CHECK_IDLE_LOCK then exits. Release is at the natural end of the branch; maps 1:1 to a guard whose scope is the branch block.",
+  "risk": "trivial",
+  "crate": "usbhub-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbhub-rust/src/usbhub.rs",
+  "line": 4113,
+  "function": "USBH_CheckHubIdle (final unlock)",
+  "rationale": "Clean same-scope pair: acquire 4113, release 4118 are the last statements of the unreachable_code block; CS clears CHECK_IDLE_LOCK. Release is at scope end, mechanical 1:1 guard. (Whole function is currently dead code behind the return at 3987, but the pattern is still clean.)",
+  "risk": "trivial",
+  "crate": "usbhub-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbhub-rust/src/usbhub.rs",
+  "line": 2120,
+  "function": "USBH_ChangeIndicationWorker (RelationsWorkerSpinLock region)",
+  "rationale": "Same-scope pair but has a mid-CS early-return branch: the D3 branch releases at 2126 then does IoInvalidateDeviceRelations + return 2131 AFTER releasing; the fall-through releases at 2144 then does more work unlocked. A guard held to block-end would over-hold across the post-release IoInvalidate/InterlockedExchange, so conversion needs restructuring (early break out of the guarded block before the post-release calls).",
+  "risk": "moderate",
+  "crate": "usbhub-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbhub-rust/src/pnp.rs",
+  "line": 1469,
+  "function": "USBH_QueryDeviceRelations (RelationsWorkerSpinLock region)",
+  "rationale": "Same-scope pair, acquire 1469 / release 1535, no early exit between them (the return at 1466 precedes the acquire). But the CS is ~65 lines and substantial GhostPdoList work follows the release unlocked, so a guard must scope only lines 1469-1535 via an inner block. Mechanically wrappable but large; verify no post-release code accidentally lands inside the guard scope.",
+  "risk": "moderate",
+  "crate": "usbhub-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbhub-rust/src/usbhub.rs",
+  "line": 3991,
+  "function": "USBH_CheckHubIdle (CHECK_IDLE_LOCK acquire)",
+  "rationale": "Same-scope pair with branch-dependent release: acquire 3991 releases either at 3997 (then return) or at 4002 (then CONTINUE running the long idle-check body unlocked). Because the intended release is mid-function and the code proceeds without the lock, a scope-end guard would wrongly hold the lock across the whole body \u2014 convert only by scoping the short 3991-4002 window in its own block.",
+  "risk": "moderate",
+  "crate": "usbhub-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbstor-rust/src/queue.rs",
+  "line": 104,
+  "function": "USBSTOR_Cancel",
+  "rationale": "KeAcquireSpinLockAtDpcLevel at 104, RemoveEntryList, KeReleaseSpinLockFromDpcLevel at 106 \u2014 clean same-scope pair, caller already at DISPATCH (ASSERT_IRQL_EQUAL). SpinLockAtDpcGuard fits, but function continues (IoReleaseCancelSpinLock/IoCompleteRequest) after 106, so a guard must be block-scoped to avoid extending the hold.",
+  "risk": "moderate",
+  "crate": "usbstor-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbstor-rust/src/queue.rs",
+  "line": 135,
+  "function": "USBSTOR_QueueAddIrp",
+  "rationale": "KeAcquireSpinLock(IrpListLock,&OldLevel) at 135 released at 159; no early exit in between. Same-scope pair, no ownership hand-off. Release is mid-function (cancel-routine logic follows), so a SpinLockGuard needs an explicit inner scope to end the hold at 159.",
+  "risk": "moderate",
+  "crate": "usbstor-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbstor-rust/src/queue.rs",
+  "line": 201,
+  "function": "USBSTOR_RemoveIrp",
+  "rationale": "KeAcquireSpinLock(IrpListLock,&OldLevel) at 201 released at 215, then `return Irp`. Release sits at end of the critical logic; SpinLockGuard drop at function end is behaviorally equivalent.",
+  "risk": "trivial",
+  "crate": "usbstor-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbstor-rust/src/queue.rs",
+  "line": 251,
+  "function": "USBSTOR_QueueTerminateRequest",
+  "rationale": "KeAcquireSpinLock(IrpListLock,&OldLevel) at 251 released at 276 which is the last statement of the function. Mechanical 1:1 SpinLockGuard conversion.",
+  "risk": "trivial",
+  "crate": "usbstor-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbstor-rust/src/queue.rs",
+  "line": 343,
+  "function": "USBSTOR_QueueRelease",
+  "rationale": "KeAcquireSpinLock(IrpListLock,&OldLevel) at 343 released at 348; clean pair. Function then does IoStartPacket work after 348, so guard must be block-scoped to keep the hold short.",
+  "risk": "moderate",
+  "crate": "usbstor-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbstor-rust/src/queue.rs",
+  "line": 403,
+  "function": "USBSTOR_StartIo",
+  "rationale": "KeAcquireSpinLock(CommonLock,&OldLevel) at 403 released at 411 after reading a flag; clean pair. Substantial code follows the release, so a SpinLockGuard needs an inner scope.",
+  "risk": "moderate",
+  "crate": "usbstor-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbstor-rust/src/error.rs",
+  "line": 241,
+  "function": "USBSTOR_ResetDevice",
+  "rationale": "KeAcquireSpinLock(CommonLock,&OldIrql) at 241 released at 246 (clears DEVICE_RESETTING flag). Clean pair after the pipe-reset loop; USBSTOR_QueueNextRequest is called after release, so block-scope the guard.",
+  "risk": "moderate",
+  "crate": "usbstor-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbstor-rust/src/error.rs",
+  "line": 273,
+  "function": "USBSTOR_QueueResetDevice",
+  "rationale": "KeAcquireSpinLock(CommonLock,&OldIrql) at 273 released at 281 (sets DEVICE_RESETTING flag). IoQueueWorkItem follows the release, so guard needs an inner scope to avoid holding across the queue call.",
+  "risk": "moderate",
+  "crate": "usbstor-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/usbstor-rust/src/error.rs",
+  "line": 384,
+  "function": "USBSTOR_TimerRoutine",
+  "rationale": "KeAcquireSpinLockAtDpcLevel(IrpListLock) at 384 released at 413; timer DPC runs at DISPATCH. SpinLockAtDpcGuard fits, but WorkItem allocation/queue logic follows 413, so block-scope the guard.",
+  "risk": "moderate",
+  "crate": "usbstor-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/afd-rust/src/select.rs",
+  "line": 155,
+  "function": "SelectTimeout",
+  "rationale": "Straight-line acquire at 155 / release at 157 with only SignalSocket between; no early exit. Mechanical swap to SpinLockGuard::acquire((*DeviceExt).Lock).",
+  "risk": "trivial",
+  "crate": "afd-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/afd-rust/src/select.rs",
+  "line": 175,
+  "function": "KillSelectsForFCB",
+  "rationale": "acquire 175 / release 197 wrap a while-loop with no return/break/? inside; single same-scope pair, no ownership hand-off.",
+  "risk": "trivial",
+  "crate": "afd-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/afd-rust/src/select.rs",
+  "line": 253,
+  "function": "AfdSelect",
+  "rationale": "acquire 253 / release 326 span the poll body with no early return between them (all returns are before the acquire); clean same-scope pair.",
+  "risk": "trivial",
+  "crate": "afd-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/afd-rust/src/select.rs",
+  "line": 515,
+  "function": "PollReeval",
+  "rationale": "acquire 515 / release 540, but an early return at 521 manually releases first; converting to a guard removes the manual release and lets Drop cover the early return \u2014 needs care to scope the guard so KeSetEvent at 547 runs after release.",
+  "risk": "moderate",
+  "crate": "afd-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/afd-rust/src/event.rs",
+  "line": 96,
+  "function": "AfdEventReceive",
+  "rationale": "acquire 96 / release 105 wrap InsertTailList + TryToSatisfyRecvRequest with no early exit; trivial 1:1 guard swap.",
+  "risk": "trivial",
+  "crate": "afd-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/afd-rust/src/event.rs",
+  "line": 207,
+  "function": "AfdEventReceiveDatagramHandler",
+  "rationale": "acquire 207 / release 236 wrap an if/else that assigns CompleteIrp; no return inside the region; clean same-scope pair.",
+  "risk": "trivial",
+  "crate": "afd-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/afd-rust/src/main.rs",
+  "line": 1401,
+  "function": "AfdCancelHandler",
+  "rationale": "acquire 1401 / release 1417, with an early return at 1411 that manually releases (1409) before SocketStateUnlock. A guard must be inner-block-scoped so release precedes SocketStateUnlock(FCB) in both the match-and normal paths.",
+  "risk": "moderate",
+  "crate": "afd-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/acpi-rust/src/osl.rs",
+  "line": 719,
+  "function": "AcpiOsSignalSemaphore",
+  "rationale": "KeAcquireSpinLock at 719 pairs with the single KeReleaseSpinLock at 722 in the same scope; only CurrentUnits+= and KeSetEvent run between, no branches/returns/panics, no ownership hand-off \u2014 mechanical 1:1 to SpinLockGuard::acquire(addr_of_mut!((*sem).Lock).cast()).",
+  "risk": "trivial",
+  "crate": "acpi-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/acpi-rust/src/bus.rs",
+  "line": 766,
+  "function": "acpi_bus_generate_event_dpc_impl",
+  "rationale": "KeAcquireSpinLock at 766 pairs with KeReleaseSpinLock at 768; only list_add_tail runs between, no early exit, static acpi_bus_event_lock is same-scope \u2014 clean SpinLockGuard::acquire candidate.",
+  "risk": "trivial",
+  "crate": "acpi-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/acpi-rust/src/bus.rs",
+  "line": 821,
+  "function": "acpi_bus_receive_event",
+  "rationale": "KeAcquireSpinLock at 821 pairs with KeReleaseSpinLock at 826; the list_entry!/list_del between are non-panicking pointer ops and the only return (828) is AFTER the release \u2014 same-scope pair, safe as SpinLockGuard.",
+  "risk": "trivial",
+  "crate": "acpi-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/mountmgr-rust/src/notify.rs",
+  "line": 208,
+  "function": "PostOnlineNotification",
+  "rationale": "KeAcquireSpinLockRaiseToDpc at 208 with its only release at 220 which is the last statement of the function; straight-line body (no branches, no early return, nothing runs after the release). A SpinLockGuard::acquire whose Drop releases at end of scope is behaviorally exact \u2014 RaiseToDpc and SpinLockGuard's KeAcquireSpinLock both raise to DISPATCH and save the prior IRQL.",
+  "risk": "trivial",
+  "crate": "mountmgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/mountmgr-rust/src/database.rs",
+  "line": 1512,
+  "function": "QueueWorkItem",
+  "rationale": "Clean same-scope acquire(1512)/release(1520) around a single InsertTailList, no early exit. Safe to convert but NOT a bare 1:1: KeReleaseSemaphore(1525) runs after the release and must stay outside the lock, so the guard must be block-scoped ({ let _g = SpinLockGuard::acquire(..); InsertTailList(..); }) to avoid extending the critical section over the semaphore release.",
+  "risk": "moderate",
+  "crate": "mountmgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/mountmgr-rust/src/notify.rs",
+  "line": 128,
+  "function": "SendOnlineNotificationWorker",
+  "rationale": "Same-scope acquire(128) with release on both branches (144/150), no hand-off to a caller. Convertible but needs care: ExQueueWorkItem and the two ExFreePoolWithTag calls deliberately run AFTER the release, so a function-scope guard would wrongly hold the lock over them \u2014 a block-scoped guard around only the list/count critical section is required.",
+  "risk": "moderate",
+  "crate": "mountmgr-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/hidclass-rust/src/hidclass.rs",
+  "line": 472,
+  "function": "HidClass_GetIrp",
+  "rationale": "Clean same-scope pair (472 acquire / 488 release); release is the last lock action and only `Irp` is returned afterward, so a function-scope SpinLockGuard::acquire drops at end and is a mechanical 1:1 replacement.",
+  "risk": "trivial",
+  "crate": "hidclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/hidclass-rust/src/hidclass.rs",
+  "line": 304,
+  "function": "HidClass_Close",
+  "rationale": "Same-scope pair (304/315), no early exit. Convertible but the guard must be wrapped in an explicit inner block ending before the KeWaitForSingleObject at 319, so the critical section is not extended across the wait.",
+  "risk": "moderate",
+  "crate": "hidclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/hidclass-rust/src/hidclass.rs",
+  "line": 329,
+  "function": "HidClass_Close",
+  "rationale": "Same-scope pair (329/351), while-drain loop with no break/return inside. Needs an explicit inner block ending before line 353: the lock lives inside IrpContext which is freed at 357, so a tail-scope guard drop would be a use-after-free on the lock.",
+  "risk": "moderate",
+  "crate": "hidclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/hidclass-rust/src/hidclass.rs",
+  "line": 427,
+  "function": "HidClass_ReadCompleteIrp",
+  "rationale": "Same-scope pair (427/442) on (*IrpContext).FileOp.Lock. Convertible but needs an inner block ending at 442; a tail-scope guard would hold the lock across IoCompleteRequest/KeSetEvent and past ExFreePoolWithTag(IrpContext) at 458.",
+  "risk": "moderate",
+  "crate": "hidclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/hidclass-rust/src/hidclass.rs",
+  "line": 643,
+  "function": "HidClass_Read",
+  "rationale": "Same-scope pair (643/662). Convertible but needs an inner block ending at 662; the function continues to IoMarkIrpPending and dispatch afterward, which must run outside the lock.",
+  "risk": "moderate",
+  "crate": "hidclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/cdrom-rust/src/common.rs",
+  "line": 1237,
+  "function": "DevicePerfIncrementErrorCount",
+  "rationale": "Straight-line acquire at 1237, single release at 1275, no branches/early-returns between; classic same-scope pair with no ownership hand-off. SpinLockGuard::acquire on &raw mut (*fdoData).SpinLock, drop at end of fn.",
+  "risk": "trivial",
+  "crate": "cdrom-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/cdrom-rust/src/scratch.rs",
+  "line": 576,
+  "function": "ScratchBuffer_ReadWriteTimerRoutine",
+  "rationale": "Acquire 576 / release 584 wrap a tiny straight-line critical section (an if/else assigning status); no early exit. Mechanical SpinLockGuard swap over ReadWriteCancelSpinLock.",
+  "risk": "trivial",
+  "crate": "cdrom-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/cdrom-rust/src/scratch.rs",
+  "line": 612,
+  "function": "ScratchBuffer_ReadWriteEvtRequestCancel",
+  "rationale": "Acquire 612 / release 623 bracket a straight-line section (KeCancelTimer + set ReadWriteIsCompleted); single scope, no early return. SpinLockGuard 1:1.",
+  "risk": "trivial",
+  "crate": "cdrom-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/cdrom-rust/src/sense.rs",
+  "line": 1441,
+  "function": "SenseInfoLogError (error-log ring update block)",
+  "rationale": "Self-contained { } block: acquire 1441, release 1449, no early exit; oldIrql local to the block. Ideal SpinLockGuard scope where the block's closing brace drops the guard.",
+  "risk": "trivial",
+  "crate": "cdrom-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/cdrom-rust/src/common.rs",
+  "line": 1128,
+  "function": "DeviceReleaseQueue",
+  "rationale": "KeRaiseIrql(DISPATCH_LEVEL) at 1128 with two lower sites (early-return 1135 + final 1163) \u2014 an IrqlGuard::raise(DISPATCH_LEVEL) collapses both into Drop. Moderate: an inner WdfSpinLockAcquire/Release nests inside the raised region and the early return must drop the guard AFTER the WDF release, so the guard's lifetime must span the whole body \u2014 needs care to preserve the raise>wdf-lock ordering.",
+  "risk": "moderate",
+  "crate": "cdrom-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/cdrom-rust/src/scratch.rs",
+  "line": 738,
+  "function": "ScratchBuffer_ReadWriteCompletionRoutine",
+  "rationale": "Acquire 738 released on BOTH branches (753 fall-through path, 770 before return at 775). A single SpinLockGuard unifies the two release sites into one Drop, but the branches diverge afterward (one falls through to continue processing, one returns), and a timer is armed while holding the lock \u2014 restructuring so the guard drops at the right point on each path needs care.",
+  "risk": "moderate",
+  "crate": "cdrom-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/npfs-rust/src/waitsup.rs",
+  "line": 57,
+  "function": "NpCancelWaitQueueIrp",
+  "rationale": "Straight-line acquire at 57 / release at 68 in one function; between them only RemoveEntryList/KeCancelTimer/field stores, no return/?/unwrap/panic, no ownership hand-off. Mechanical 1:1 SpinLockGuard::acquire replacement.",
+  "risk": "trivial",
+  "crate": "npfs-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/npfs-rust/src/waitsup.rs",
+  "line": 90,
+  "function": "NpTimerDispatch",
+  "rationale": "Acquire at 90 / release at 105 same scope; body is RemoveEntryList + IoSetCancelRoutine + field stores, no early exit, OldIrql balanced locally. Clean guard candidate.",
+  "risk": "trivial",
+  "crate": "npfs-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/npfs-rust/src/waitsup.rs",
+  "line": 298,
+  "function": "NpAddWaiter",
+  "rationale": "Acquire at 298 / release at 321 same scope; critical section sets WaitEntry=null on the success branch and the post-release `if !WaitEntry.is_null()` reads that. A guard works but the locked region must be a scoped block so the guard drops before the null-check, so slightly more than mechanical.",
+  "risk": "moderate",
+  "crate": "npfs-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/npfs-rust/src/waitsup.rs",
+  "line": 173,
+  "function": "NpCancelWaiter",
+  "rationale": "Acquire at 173 / release at 222 wraps a while-loop over the wait list; no break/continue/return/unwrap inside, so a guard is safe, but the longer critical section with list mutation and the trailing Linkage drain (after release) mean the guard scope must be carefully bounded.",
+  "risk": "moderate",
+  "crate": "npfs-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/mouclass-rust/src/mouclass.rs",
+  "line": 133,
+  "function": "(IRP_MJ_READ dispatch)",
+  "rationale": "KeAcquireSpinLock(SpinLock,&mut OldIrql) at 133, single HandleReadIrp call, KeReleaseSpinLock at 135, return at 136 \u2014 clean same-scope pair, no ownership hand-off.",
+  "risk": "trivial",
+  "crate": "mouclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/mouclass-rust/src/mouclass.rs",
+  "line": 492,
+  "function": "ClassCallback",
+  "rationale": "Acquire at 492, straight-line body (incl. nested HandleReadIrp at 544 which balances its own cancel lock), release at 547, return 1u8 at 552 with nothing between release and return \u2014 guard held to scope end is equivalent. Longer body with a nested lock-held call warrants a second look.",
+  "risk": "moderate",
+  "crate": "mouclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/mouclass-rust/src/mouclass.rs",
+  "line": 662,
+  "function": "DestroyPortDriver",
+  "rationale": "Acquire ListSpinLock at 662, RemoveEntryList, release at 664 \u2014 mechanical 1:1 pair.",
+  "risk": "trivial",
+  "crate": "mouclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/mouclass-rust/src/mouclass.rs",
+  "line": 794,
+  "function": "ClassCancelRoutine",
+  "rationale": "Acquire SpinLock at 794, small if-body, release at 803, then post-release completion work \u2014 clean same-scope pair (guard would drop at function end after the completion block, still equivalent since release currently precedes it and no lock-held state is touched after).",
+  "risk": "moderate",
+  "crate": "mouclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/mouclass-rust/src/mouclass.rs",
+  "line": 963,
+  "function": "ClassStartIo",
+  "rationale": "Acquire SpinLock at 963, single HandleReadIrp call, release at 965, function returns \u2014 mechanical 1:1 pair.",
+  "risk": "trivial",
+  "crate": "mouclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/kbdclass-rust/src/kbdclass.rs",
+  "line": 132,
+  "function": "ClassRead",
+  "rationale": "KeAcquireSpinLock(&DeviceExtension.SpinLock) at 132, HandleReadIrp call, KeReleaseSpinLock at 137, then `Status` returned at 138. Release is the last use of the lock and sits at function end, so a SpinLockGuard::acquire whose Drop fires at end of scope is an exact 1:1 replacement.",
+  "risk": "trivial",
+  "crate": "kbdclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/kbdclass-rust/src/kbdclass.rs",
+  "line": 523,
+  "function": "ClassCallback",
+  "rationale": "KeAcquireSpinLock(&ClassDeviceExtension.SpinLock) at 523; the entire body is one straight-line if-block with no early return; KeReleaseSpinLock at 570 followed only by `1u8` at 575. Guard Drop at scope end matches the release point exactly.",
+  "risk": "trivial",
+  "crate": "kbdclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/kbdclass-rust/src/kbdclass.rs",
+  "line": 987,
+  "function": "ClassStartIo",
+  "rationale": "KeAcquireSpinLock(&DeviceExtension.SpinLock) at 987, HandleReadIrp call, KeReleaseSpinLock at 989, function ends at 990. Release is at function end; mechanical guard conversion.",
+  "risk": "trivial",
+  "crate": "kbdclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/kbdclass-rust/src/kbdclass.rs",
+  "line": 687,
+  "function": "DestroyPortDriver",
+  "rationale": "KeAcquireSpinLock(&ClassDeviceExtension.ListSpinLock) at 687, RemoveEntryList, KeReleaseSpinLock at 689 \u2014 a clean same-scope pair. But substantial unlocked work follows (RtlDeleteRegistryValue, IoDetachDevice, ObDereferenceObject, ExFreePoolWithTag, IoDeleteDevice) that must run OUTSIDE the lock, so a guard must be wrapped in an explicit `{ }` scope around lines 687-689 to preserve the early release \u2014 not a naive 1:1.",
+  "risk": "moderate",
+  "crate": "kbdclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/kbdclass-rust/src/kbdclass.rs",
+  "line": 813,
+  "function": "ClassCancelRoutine",
+  "rationale": "KeAcquireSpinLock(&ClassDeviceExtension.SpinLock) at 813, KeReleaseSpinLock at 822 \u2014 same-scope pair. The lock is deliberately released BEFORE the IoCompleteRequest block at 827-831, so a guard must be scoped to lines 813-825 to avoid extending the hold across IoCompleteRequest. Needs care.",
+  "risk": "moderate",
+  "crate": "kbdclass-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/arm64input-rust/src/arm64input.rs",
+  "line": 633,
+  "function": "InputRead",
+  "rationale": "Clean same-scope pair: acquire at 633, release at 639, and the only code after the release is `STATUS_PENDING` (the return value). A function-tail SpinLockGuard::acquire(addr_of_mut!((*DevExt).IrpLock)) dropping at end of scope is a mechanical 1:1 replacement with no behavior change \u2014 nothing lock-sensitive runs between the current release point and function return.",
+  "risk": "trivial",
+  "crate": "arm64input-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/arm64input-rust/src/arm64input.rs",
+  "line": 527,
+  "function": "InputCancelIrp",
+  "rationale": "Same-scope pair (acquire 527, release 529) guarding a single RemoveEntryList. Safe as a guard, but the release is deliberately EARLY: IoStatus writes + IoCompleteRequest at 531-533 must run with the lock released and at lowered IRQL. So it must be a block-scoped guard `{ let _g = SpinLockGuard::acquire(...); RemoveEntryList(...); }` rather than a whole-function guard, hence not a mechanical 1:1.",
+  "risk": "moderate",
+  "crate": "arm64input-rust",
+  "guard_reachable": true
+ },
+ {
+  "file": "sdk/lib/rust/arm64input-rust/src/arm64input.rs",
+  "line": 570,
+  "function": "InputCleanup",
+  "rationale": "Same-scope pair (acquire 570, release 582) around the pending-IRP walk. Convertible to a block-scoped SpinLockGuard, but the release is intentionally before the cancel-completion loop at 584+ (IoCompleteRequest must run lock-released/at-lowered-IRQL), so the guard must be confined to an explicit inner block, not the whole function.",
+  "risk": "moderate",
+  "crate": "arm64input-rust",
+  "guard_reachable": true
+ }
+]
