@@ -8,6 +8,7 @@ use crate::types::*;
 use crate::regidx::*;
 use crate::*; // sibling uniata functions + ScsiPortGetBusDataByOffset
 use ntkrnl_sys::ddk::*;
+use ntkrnl_sys::driver_ddk::DbgPrint; // perf phase markers
 use crate::io_port::{
     AtapiReadPort1, AtapiReadPort2, AtapiReadPort4, AtapiReadPortEx1, AtapiReadPortEx4,
     AtapiWritePort1, AtapiWritePort2, AtapiWritePort4, AtapiWritePortEx1, AtapiWritePortEx4,
@@ -1045,6 +1046,7 @@ pub unsafe extern "system" fn UniataFindBusMasterController(
     let mut BaseIoAddress1: [ULONG_PTR; IDE_MAX_CHAN as usize] = [0; IDE_MAX_CHAN as usize];
     let mut BaseIoAddress2: [ULONG_PTR; IDE_MAX_CHAN as usize] = [0; IDE_MAX_CHAN as usize];
 
+    DbgPrint(b"[UNIATA] FindBusMasterController entry\n\0".as_ptr().cast()); // perf phase marker
     let mut status: NTSTATUS;
     let _ConfigInfo: PPORT_CONFIGURATION_INFORMATION_COMMON =
         ConfigInfo as PPORT_CONFIGURATION_INFORMATION_COMMON;
@@ -2494,6 +2496,7 @@ pub unsafe extern "system" fn CheckDevice(
     let mut waitCount: ULONG = g_opt_WaitBusyResetCount;
     let mut at_home: ULONG = 0;
 
+    DbgPrint(b"[UNIATA] CheckDevice ch=%u dev=%u rst=%u\n\0".as_ptr().cast(), lChannel, deviceNumber, ResetDev as ULONG); // perf phase marker
     if deviceNumber >= (*chan).NumberLuns {
         return 0;
     }
@@ -2734,6 +2737,7 @@ pub unsafe extern "system" fn FindDevices(
     let max_ldev: ULONG;
     let mut AtapiOnly: BOOLEAN = FALSE as BOOLEAN;
 
+    DbgPrint(b"[UNIATA] FindDevices ch=%u\n\0".as_ptr().cast(), Channel); // perf phase marker
     // Disable interrupts
     AtapiDisableInterrupts(deviceExtension as PVOID, Channel);
     UniataExpectChannelInterrupt(chan, FALSE as BOOLEAN);
@@ -2860,6 +2864,7 @@ pub unsafe extern "system" fn FindDevices(
     AtapiEnableInterrupts(deviceExtension as PVOID, Channel);
     statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
 
+    DbgPrint(b"[UNIATA] FindDevices ch=%u done resp=%u\n\0".as_ptr().cast(), Channel, deviceResponded as ULONG); // perf phase marker
     deviceResponded
 } // end FindDevices()
 

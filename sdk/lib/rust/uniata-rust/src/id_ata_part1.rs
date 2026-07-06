@@ -7,6 +7,7 @@ use crate::types::*;
 use crate::regidx::*;
 use crate::*; // sibling uniata functions + ScsiPortGetBusDataByOffset
 use ntkrnl_sys::ddk::*;
+use ntkrnl_sys::driver_ddk::DbgPrint; // perf phase markers
 use crate::io_port::{
     AtapiReadPort1, AtapiReadPort2, AtapiReadPort4, AtapiReadPortEx1, AtapiReadPortEx4,
     AtapiWritePort1, AtapiWritePort2, AtapiWritePort4, AtapiWritePortEx1, AtapiWritePortEx4,
@@ -503,6 +504,7 @@ pub unsafe extern "system" fn AtapiSoftReset(chan: PHW_CHANNEL, DeviceNumber: UL
     let statusByte0: UCHAR;
     let mut statusByte2: UCHAR;
 
+    DbgPrint(b"[UNIATA] SoftReset ch=%u dev=%u\n\0".as_ptr().cast(), (*chan).lChannel, DeviceNumber); // perf phase marker
     if ((*(*chan).DeviceExtension).HwFlags & UNIATA_AHCI) != 0 {
         UniataAhciSoftReset(
             (*chan).DeviceExtension as PVOID,
@@ -533,7 +535,11 @@ pub unsafe extern "system" fn AtapiSoftReset(chan: PHW_CHANNEL, DeviceNumber: UL
         // Do not wait for BUSY assertion if it was initially set, jump to
         // BUSY release wait loop
         if (statusByte0 & IDE_STATUS_BUSY as UCHAR) == 0 {
-            if g_opt_VirtualMachine == VM_BOCHS {
+            // QEMU's IDE model (same lineage as Bochs) completes ATAPI RESET
+            // instantly and never asserts BUSY — the 100ms wait below (10000
+            // x 10us stalls + port reads, ~167ms real under TCG) is pure loss.
+            // Measured: 12 soft resets/boot x 167ms = ~2.0s of amd64 boot.
+            if g_opt_VirtualMachine == VM_BOCHS || g_opt_VirtualMachine == VM_QEMU {
                 i = 100;
             } else {
                 i = 10 * 1000;
@@ -604,6 +610,7 @@ pub unsafe extern "system" fn AtapiSoftReset(chan: PHW_CHANNEL, DeviceNumber: UL
         );
     }
     let _ = statusByte2;
+    DbgPrint(b"[UNIATA] SoftReset ch=%u dev=%u done\n\0".as_ptr().cast(), (*chan).lChannel, DeviceNumber); // perf phase marker
 }
 
 // ---------------------------------------------------------------------------

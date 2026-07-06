@@ -250,6 +250,24 @@ explorer ~6.8s (flat ~0.5s gaps: comctl32 actctx, winsrv load) · post-marker
 tail ~2.4s. arm64: EDK2 5.9s dominates; post-shell TDI self-test CONNECT
 timeout (0xC00000B5, 9.2s, post-marker — flagged for the net lane).
 
+**[DONE 2026-07-06] uniata IDE-probe gap: 2.35s → ~120ms.** Attributed with
+permanent `[UNIATA]` DbgPrint phase markers (FindBusMasterController /
+FindDevices / CheckDevice / SoftReset / IssueIdentify / HwInitialize —
+uniata-rust, live; mirrored in the out-of-build C). Two VM-blind waits in the
+(upstream-inherited) UniATA code, both fixed by gating on the driver's own
+`g_opt_VirtualMachine` detection (QEMU is detected via PCI subsys 1af4:1100):
+1. `AtapiSoftReset` waited up to 100ms for BUSY to *assert* after ATAPI
+   RESET — QEMU (same IDE lineage as Bochs, which already had the `i=100`
+   shortcut) completes the reset instantly and never asserts BUSY, so all
+   10000×10µs iterations burned every time: ~167ms real under TCG × 12 soft
+   resets/boot ≈ 2.0s. Fix: extend the Bochs shortcut to `VM_QEMU`.
+2. `AtapiHwInitialize__` ran an unconditional 500ms (5000×100µs, ~880ms real
+   under TCG) "get the device ready" mechanical-settle stall per ATAPI lun.
+   Fix: skip when `g_opt_VirtualMachine > VM_NONE`.
+Verified: FindDevices→"Found device" now 4ms; explorer entry 13.0→~10.1s.
+Class writeup: field manual "Driver hardware-settle delays are pure loss in
+a VM". i386 shares the same driver+path; arm64 has no IDE.
+
 ## Older section — measurement in progress
 
 Tooling added on this branch:
