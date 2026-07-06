@@ -25,6 +25,18 @@ headers/upstream:
 
 Re-run: `python3 tools/scan_arch_cfg.py -o /tmp/cand.txt`.
 
+> **Caveat — arm64-only divergences have NO upstream to diff against.** ReactOS has no
+> ARM64 port; *all* arm64 code in this tree (the Rust **and** the `#ifdef _M_ARM64` C in
+> this fork) is vibeos-authored, so "confirm vs stock ReactOS arm64" is a category error and
+> our own arm64 C is **not** a source of truth. Judge an arm64-only divergence by (a) the
+> arch-*independent* logic in **stock x86** ReactOS — the reference for what the algorithm
+> should do — (b) Windows-ARM64 semantics, and (c) reasoning about the invariant. When an
+> arm64-only branch adds behavior the x86 arches lack, the real question is "do i386/amd64
+> *also* need it (arm64 fixed a latent arch-independent bug)?" vs "is it spurious?" —
+> answerable from x86 stock + reasoning, never from a nonexistent arm64 upstream. (The
+> "verify against C/upstream" rubric below implicitly assumes an upstream; that only holds
+> for the x86 arches.)
+
 ---
 
 ## TIER 1 — latent bugs (fix)
@@ -106,7 +118,10 @@ faithfully mirror the C's `#ifdef _M_ARM64`; all retire-able:
 - `ntoskrnl-rust/ke/ipi.rs:129` — amd64 IPI_SYNCH_REQUEST handler is a `DbgBreakPoint` stub.
 - `ntkrnl-sys/mm.rs:344` — identical-body cfg + misleading comment (value correct; bit 8 all arches).
 - `ntoskrnl-rust/ke/{wait.rs:351, thrdschd.rs:474/826}` — arm64-only ReadySummary preemption
-  recheck the x86 arches lack (drift-watch — confirm vs stock ReactOS).
+  recheck the x86 arches lack. Judge vs **stock x86** ReactOS (the arch-independent scheduler
+  reference) + the preemption invariant, **not** "stock arm64" — none exists (see the
+  Method caveat). Open question: do i386/amd64 *also* need this recheck (arm64 fixed a real
+  arch-independent preemption gap) or is it spurious arm64-only? Needs reasoning, not a diff.
 
 ---
 
