@@ -1052,6 +1052,7 @@ UniataFindBusMasterController(
     PPORT_CONFIGURATION_INFORMATION_COMMON _ConfigInfo =
         (PPORT_CONFIGURATION_INFORMATION_COMMON)ConfigInfo;
 
+    DbgPrint("[UNIATA] FindBusMasterController entry\n"); // perf phase marker
     if(!WinVer_WDM_Model) {
         *Again = FALSE;
     } else {
@@ -2916,6 +2917,7 @@ CheckDevice(
 
     KdPrint2((PRINT_PREFIX "CheckDevice: Device %#x\n",
                deviceNumber));
+    DbgPrint("[UNIATA] CheckDevice ch=%u dev=%u rst=%u\n", lChannel, deviceNumber, ResetDev); // perf phase marker
 
     if(deviceNumber >= chan->NumberLuns) {
         return 0;
@@ -3201,6 +3203,7 @@ FindDevices(
     BOOLEAN              AtapiOnly = FALSE;
 
     KdPrint2((PRINT_PREFIX "FindDevices:\n"));
+    DbgPrint("[UNIATA] FindDevices ch=%u\n", Channel); // perf phase marker
 
     // Disable interrupts
     AtapiDisableInterrupts(deviceExtension, Channel);
@@ -3387,6 +3390,7 @@ FindDevices(
     KdPrint2((PRINT_PREFIX
                "FindDevices: returning %d\n",
                deviceResponded));
+    DbgPrint("[UNIATA] FindDevices ch=%u done resp=%u\n", Channel, deviceResponded); // perf phase marker
 
     return deviceResponded;
 

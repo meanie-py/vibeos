@@ -2653,3 +2653,35 @@ reuse a previous boot's symbolication). `gdb` can't read kernel VAs while
 stopped at EL0 — break on a kernel PC first. And REBUILD THE SYMBOL INDEX
 after every build: a stale `sym2addr` address put a 5-minute breakpoint on
 dead code and nearly "proved" timers were frozen when they weren't.
+
+### 9.22 Driver hardware-settle delays are pure loss in a VM — gate them on the driver's own VM detection (uniata cost 2.85s/boot)
+
+**Symptom shape:** a boot phase is "slow" with zero serial output and no
+faults — just wall-clock disappearing inside a driver's init/probe path.
+Under TCG every `KeStallExecutionProcessor` microsecond is real (and costs
+~1.7× nominal once the port-I/O in the polling loop is added).
+
+**The class:** hardware drivers inherited from real-metal code are full of
+fixed settle delays and worst-case polling budgets (wait-for-BUSY-assert,
+post-reset mechanical settle, bus-settle stalls). Virtual devices complete
+these operations instantly, so the *entire* budget burns on every boot.
+The tell that it's this class and not a real wait: the delay is identical
+run-to-run and the device works fine afterwards.
+
+**Recipe:** (1) drop permanent `DbgPrint` phase markers at the suspect
+driver's probe/init milestones (entry/exit of each stage), boot once with
+`VIBEOS_SERIAL_TIMESTAMPS=1 ./vibeos-cli smoke`, read the per-stage deltas
+from the live log. (2) For each hot stall, gate it on the driver's own VM
+detection rather than deleting it — most storage/NIC drivers already detect
+the hypervisor (uniata: `g_opt_VirtualMachine`, set from PCI subsys
+1af4:1100 for QEMU).
+
+**uniata instance (fixed 2026-07-06, amd64/i386):** 12 × `AtapiSoftReset`
+each burned a 100ms wait for BUSY to *assert* after ATAPI RESET (QEMU never
+asserts it; Bochs already had an `i=100` shortcut — QEMU is the same IDE
+lineage, extend the shortcut: uniata-rust `id_ata_part1.rs`) ≈ 2.0s, plus an
+unconditional 500ms "mechanical settle" per ATAPI lun in
+`AtapiHwInitialize__` (`id_ata_part2.rs`) ≈ 0.88s real. Probe: 2.35s →
+120ms; FindDevices→INQUIRY-complete: 880ms → 4ms. The `[UNIATA]` markers are
+permanent — future regressions in this window are attributable from any
+timestamped smoke log.

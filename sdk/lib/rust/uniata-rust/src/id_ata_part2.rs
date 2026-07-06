@@ -22,6 +22,7 @@ use crate::types::*;
 use crate::regidx::*;
 use crate::*;
 use ntkrnl_sys::ddk::*;
+use ntkrnl_sys::driver_ddk::DbgPrint; // perf phase markers
 use core::ffi::{c_uint, c_int};
 use ntkrnl_sys::base::{TRUE, FALSE, PCVOID};
 use ntkrnl_sys::interlocked::{InterlockedIncrement, InterlockedDecrement, InterlockedExchangeAdd};
@@ -294,6 +295,7 @@ pub unsafe extern "system" fn IssueIdentify(
     use_ahci = (UniataIsSATARangeAvailable(deviceExtension, lChannel) != 0
         && ((*deviceExtension).HwFlags & UNIATA_AHCI) != 0) as BOOLEAN;
 
+    DbgPrint(b"[UNIATA] IssueIdentify ch=%u dev=%u cmd=%x\n\0".as_ptr().cast(), lChannel, DeviceNumber, Command as ULONG); // perf phase marker
     if (*chan).ChannelCtrlFlags & CTRFLAGS_AHCI_PM != 0 {
         if (*chan).PmLunMap & (1 << DeviceNumber) != 0 {
             // OK
@@ -845,6 +847,7 @@ unsafe fn issue_identify_finish(
 
     statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status); // GetBaseStatus
     let _ = statusByte;
+    DbgPrint(b"[UNIATA] IssueIdentify done\n\0".as_ptr().cast()); // perf phase marker
     TRUE
 }
 
@@ -1541,6 +1544,7 @@ pub unsafe extern "system" fn AtapiHwInitialize(HwDeviceExtension: PVOID) -> BOO
     let numberChannels = (*deviceExtension).NumberChannels;
     let mut c: ULONG;
 
+    DbgPrint(b"[UNIATA] HwInitialize entry\n\0".as_ptr().cast()); // perf phase marker
     if WinVer_WDM_Model != 0 {
         AtapiResetController__(HwDeviceExtension, CHAN_NOT_SPECIFIED, RESET_COMPLETE_ALL);
     }
@@ -1754,7 +1758,10 @@ pub unsafe extern "system" fn AtapiHwInitialize__(
                 waitCount -= 1;
             }
 
-            if statusByte as u32 != IDE_STATUS_WRONG {
+            // Mechanical-settle delay for real ATAPI hardware. Virtual drives
+            // are ready the instant the reset completes — skip the 500ms
+            // (5000 x 100us, ~880ms real under TCG) dead stall in a VM.
+            if statusByte as u32 != IDE_STATUS_WRONG && g_opt_VirtualMachine <= VM_NONE {
                 waitCount = 5000;
                 loop {
                     ScsiPortStallExecution(100);

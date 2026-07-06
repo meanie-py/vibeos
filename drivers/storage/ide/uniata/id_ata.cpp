@@ -848,6 +848,7 @@ AtapiSoftReset(
     ULONG i = 30 * 1000;
     UCHAR dma_status = 0;
     KdPrint2((PRINT_PREFIX "AtapiSoftReset:\n"));
+    DbgPrint("[UNIATA] SoftReset ch=%u dev=%u\n", chan->lChannel, DeviceNumber); // perf phase marker
     UCHAR statusByte0, statusByte2;
 
     if(chan->DeviceExtension->HwFlags & UNIATA_AHCI) {
@@ -885,7 +886,10 @@ AtapiSoftReset(
         if(!(statusByte0 & IDE_STATUS_BUSY)) {
             // Wait for BUSY assertion, in some cases delay may occure
             // 100ms should be enough
-            if(g_opt_VirtualMachine == VM_BOCHS) {
+            // QEMU's IDE model (same lineage as Bochs) completes ATAPI RESET
+            // instantly and never asserts BUSY — the wait below is pure loss.
+            // (Mirror of the live fix in uniata-rust id_ata_part1.rs.)
+            if(g_opt_VirtualMachine == VM_BOCHS || g_opt_VirtualMachine == VM_QEMU) {
                 i = 100;
             } else {
                 i = 10*1000;
@@ -941,6 +945,7 @@ AtapiSoftReset(
             UniataSataClearErr(chan->DeviceExtension, chan->lChannel, UNIATA_SATA_IGNORE_CONNECT, 1);
         }*/
     }
+    DbgPrint("[UNIATA] SoftReset ch=%u dev=%u done\n", chan->lChannel, DeviceNumber); // perf phase marker
     return;
 
 } // end AtapiSoftReset()
@@ -1551,6 +1556,7 @@ IssueIdentify(
     use_ahci = UniataIsSATARangeAvailable(deviceExtension, lChannel) &&
         (deviceExtension->HwFlags & UNIATA_AHCI);
 
+    DbgPrint("[UNIATA] IssueIdentify ch=%u dev=%u cmd=%x\n", lChannel, DeviceNumber, Command); // perf phase marker
     if(chan->ChannelCtrlFlags & CTRFLAGS_AHCI_PM) {
         if(chan->PmLunMap & (1 << DeviceNumber)) {
             // OK
@@ -2317,6 +2323,7 @@ skip_lba_staff:
 
     GetBaseStatus(chan, statusByte);
     KdPrint2((PRINT_PREFIX "IssueIdentify: final Status on exit (%#x)\n", statusByte));
+    DbgPrint("[UNIATA] IssueIdentify ch=%u dev=%u done\n", lChannel, DeviceNumber); // perf phase marker
     return TRUE;
 
 } // end IssueIdentify()
@@ -3350,6 +3357,7 @@ AtapiHwInitialize(
     ULONG c;
 
     KdPrint2((PRINT_PREFIX "AtapiHwInitialize: (base)\n"));
+    DbgPrint("[UNIATA] HwInitialize entry\n"); // perf phase marker
 
     if(WinVer_WDM_Model) {
         AtapiResetController__(HwDeviceExtension, CHAN_NOT_SPECIFIED, RESET_COMPLETE_ALL);
@@ -3645,7 +3653,10 @@ AtapiHwInitialize__(
             }
 
             // 5000 * 100us = 500,000us = 500ms = 0.5s
-            if(statusByte != IDE_STATUS_WRONG) {
+            // Mechanical-settle delay for real ATAPI hardware; skipped in VMs
+            // (virtual drives are ready instantly). Mirror of the live fix in
+            // uniata-rust id_ata_part2.rs.
+            if(statusByte != IDE_STATUS_WRONG && g_opt_VirtualMachine <= VM_NONE) {
                 waitCount = 5000;
                 do {
                     AtapiStallExecution(100);
