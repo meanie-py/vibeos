@@ -2799,3 +2799,44 @@ which looks like a broken detector but isn't.
      leaked `HalpCurrentIrql`; (c) audit the arm64 net/TDI ISR path for a
      `HalBeginSystemInterrupt`/`KfRaiseIrql(HIGH_LEVEL)` without a matching lower.
      Rare enough that a soak (`farm`, host-quiet only) may be needed to catch it live.
+
+### 9.25 Static analysis for leaked IRQL raises / spinlock acquires — `scan_irql_balance.py`
+
+The §9.24 arm64 IRQL-leak hunt raised the right question: we're almost entirely
+Rust, so a raise/lower pair is a *lifecycle* we should be able to check
+statically instead of catching at runtime. Two durable answers, both landed:
+
+**RAII is the real fix.** `ntkrnl_sys::guards::{IrqlGuard, SpinLockGuard}` make
+a leak impossible by construction (Drop lowers/releases on every exit path,
+including `?` and early `return`). Adoption is partial — most translated sites
+still use the raw C pattern `KeAcquireSpinLock(&l, &mut old); …; KeReleaseSpinLock(&l, old)`.
+Converting a raw pair to a guard is the permanent cure; the lint below is the
+bridge until adoption is complete.
+
+**The lint: `tools/scan_irql_balance.py`** (tree-sitter, wired into
+`vibeos-cli check` as a 0-baseline gate). Model: per function, walk statements
+tracking a HELD set — `KeRaiseIrql(CONST_LEVEL,&mut v)` / `KfRaiseIrql`-into-
+local / `KeAcquireSpinLock(l,&mut v)` add `v`; `KeLowerIrql(v)` /
+`KeReleaseSpinLock(l,v)` remove it. An early `return`/`?` with a non-empty held
+set = a leak, UNLESS the return hands the var back (`return old;` — ownership
+transfer). Only functions that lower *something* internally are checked (a
+raise-only function is the cross-function acquire-API contract, not a leak).
+
+FP-avoidance that matters (a noisy lint gets ignored — these took it 140→1):
+- **Strip lvalue wrapper noise**: `core::ptr::addr_of_mut!(OldIrql)` /
+  `&mut OldIrql as *mut KIRQL` must reduce to `{OldIrql}` — drop the path/macro
+  tokens (`core ptr addr_of_mut addr_of mut raw`) and cut the `as <type>` cast.
+- **Field stores are cross-call, not intraprocedural**: `(*FastMutex).OldIrql =
+  KfRaiseIrql(APC_LEVEL)` stashes IRQL for a PAIRED release fn — only a *plain
+  local* lvalue is checked (`ExTryToAcquireFastMutex` returning TRUE-holding was
+  the FP that proved this).
+- **Raise-to-a-VARIABLE is a restore, not an acquire**: `KeRaiseIrql(OldIrql,
+  &mut OldIrql)` is the lower-then-restore pattern (kdb.rs) — `KeRaiseIrql`
+  counts only when its level arg is a `*_LEVEL` constant.
+
+**First catch (2026-07-06):** `usbport-rust usbport.rs` `USBPORT_MiniportCompleteTransfer`
+leaked `TransferSpinLock` + IRQL on the empty-`SplitTransfersList` path — and it's
+an **upstream ReactOS bug** (usbport.c:2059 `goto Exit` jumps PAST the
+`KeReleaseSpinLock`), faithfully reproduced as a bare `return`. The
+goto-cleanup-mistranslated-as-return shape is the exact thing the lint exists to
+catch. Fixed by releasing before the early return (divergence from stock).
