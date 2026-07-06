@@ -24,11 +24,9 @@
 [U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1370: let p = (pfn as *const u8).add(MMPFN_U3_OFFSET + 2);
 [U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1377: let p = (pfn as *mut u8).add(MMPFN_U3_OFFSET + 2);
 [U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs:1711: let eip = *((TrapInformation as *const u8).add(104) as *const u32);
-[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/amd64/init.rs:629: let entry_p = (pfn as *mut u8).add(26) as *mut u16; // u3 offset + 2 for MMPFNENTRY
 [U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ex/sysinfo.rs:611: let src = (AllData as *const u8).add(48 + 16);
 [U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/iomgr/inlines.rs:44: *((irp as *mut u8).add(IRP_CURRENT_STACK_LOCATION_OFFSET) as *mut PIO_STACK_LOCATION)
 [U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/iomgr/irp.rs:167: (irp as *mut u8).add(IRP_CURRENT_STACK_LOCATION_OFFSET) as *mut PIO_STACK_LOCATION
-[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/kd64/kdapi.rs:1819: *((SharedUserData as *mut u8).add(0x2d8)) = 0u8;
 [U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/kd64/kddata.rs:1446: d.KdPrintCircularBufferEnd = ptr_to_ul64((core::ptr::addr_of!(KdPrintDefaultCircularBuffer) as *const u8).add(KD_DEFAULT_LOG_BUFFER_SIZE) as *const _);
 [U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/kiinit.rs:527: KiP0BootStack = (KiP0BootStack as *mut u8).add(KERNEL_STACK_SIZE) as PVOID;
 [U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/kiinit.rs:530: KiP0DoubleFaultStack = (KiP0DoubleFaultStack as *mut u8).add(KERNEL_STACK_SIZE) as PVOID;
