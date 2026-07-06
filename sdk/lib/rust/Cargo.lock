@@ -345,6 +345,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dbgprint-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "ntprintf",
+ "ntprintf_w",
+]
+
+[[package]]
 name = "defmt"
 version = "0.3.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1089,6 +1098,7 @@ dependencies = [
 name = "ntoskrnl-rust"
 version = "0.1.0"
 dependencies = [
+ "dbgprint-rust",
  "iced-x86",
  "ntkrnl-sys",
  "ntprintf",

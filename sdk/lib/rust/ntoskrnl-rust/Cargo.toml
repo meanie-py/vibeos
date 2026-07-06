@@ -10,6 +10,9 @@ crate-type = ["rlib"]
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 ntprintf = { path = "../ntprintf" }
 ntprintf_w = { path = "../ntprintf_w" }
+# Debug-print infra (macros + dbgprint runtime), hoisted out of this crate into a
+# leaf so extracted subsystems can share it without depending on ntoskrnl-rust.
+dbgprint-rust = { path = "../dbgprint-rust" }
 
 [dev-dependencies]
 iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "intel", "gas"] }
