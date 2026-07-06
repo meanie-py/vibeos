@@ -54,7 +54,7 @@ pub unsafe extern "system" fn arbusno_Initializer(Instance: PVOID) -> NTSTATUS {
 
     // RtlZeroMemory(&Arbiter->CommonInstance, sizeof(Arbiter->CommonInstance));
     core::ptr::write_bytes(
-        core::ptr::addr_of_mut!((*Arbiter).CommonInstance),
+        core::ptr::addr_of_mut!((*Arbiter).CommonInstance) as *mut u8,
         0,
         core::mem::size_of::<ARBITER_INSTANCE>(),
     );

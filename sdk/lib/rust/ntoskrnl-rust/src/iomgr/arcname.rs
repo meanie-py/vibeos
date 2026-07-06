@@ -83,8 +83,17 @@ unsafe fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
 unsafe fn IoAssignArcName(ArcName: *mut _UNICODE_STRING, DeviceName: *mut _UNICODE_STRING) {
     IoCreateSymbolicLink(ArcName, DeviceName);
 }
-extern "C" {
-    fn IsEqualGUID(guid1: PGUID, guid2: PGUID) -> BOOLEAN;
+// C `IsEqualGUID` (guiddef.h) is not a real symbol — for non-C++ it's the macro
+// `(!memcmp(rguid1, rguid2, sizeof(GUID)))`. The prior `extern "C"` decl demanded a
+// symbol that exists nowhere; it only linked on amd64/arm64 because --gc-sections
+// dead-stripped the caller, and broke on i386 where the reference is retained. Mirror
+// the C macro inline so it resolves on every arch with no phantom external dependency.
+#[inline(always)]
+unsafe fn IsEqualGUID(guid1: PGUID, guid2: PGUID) -> BOOLEAN {
+    let n = core::mem::size_of::<GUID>();
+    let a = core::slice::from_raw_parts(guid1 as *const u8, n);
+    let b = core::slice::from_raw_parts(guid2 as *const u8, n);
+    (a == b) as BOOLEAN
 }
 
 #[no_mangle]

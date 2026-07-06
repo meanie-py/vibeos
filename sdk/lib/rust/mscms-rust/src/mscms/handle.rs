@@ -231,7 +231,7 @@ pub unsafe extern "C" fn close_transform(handle: HTRANSFORM) -> BOOL {
     transform = transformtable.wrapping_add(index);
 
     cmsDeleteTransform((*transform).cmstransform as *mut core::ffi::c_void);
-    core::ptr::write_bytes(transform, 0u8, core::mem::size_of::<Transform>());
+    core::ptr::write_bytes(transform as *mut u8, 0u8, core::mem::size_of::<Transform>());
 
     LeaveCriticalSection(core::ptr::addr_of_mut!(mscms_handle_cs));
     return 1;

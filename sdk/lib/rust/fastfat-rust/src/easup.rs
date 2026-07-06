@@ -257,7 +257,7 @@ pub unsafe extern "system" fn FatGetNeedEaCount(
         let mut LockedEaFcb: i32 = 0; // FALSE
         let mut EaSetRange: EA_RANGE = unsafe { core::mem::zeroed() };
         core::ptr::write_bytes(
-            &mut EaSetRange as *mut EA_RANGE,
+            &mut EaSetRange as *mut EA_RANGE as *mut u8,
             0u8,
             core::mem::size_of::<EA_RANGE>(),
         );
@@ -2401,7 +2401,7 @@ pub unsafe extern "system" fn FatPinEaRange(
             TAG_BCB,
         )).cast();
         core::ptr::write_bytes(
-            (*EaRange).BcbChain,
+            (*EaRange).BcbChain as *mut u8,
             0,
             (core::mem::size_of::<*mut BCB>() as usize) * (*EaRange).BcbChainLength as usize,
         );

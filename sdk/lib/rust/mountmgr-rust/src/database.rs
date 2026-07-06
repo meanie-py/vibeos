@@ -4474,7 +4474,7 @@ pub unsafe extern "system" fn CreateRemoteDatabase(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    core::ptr::write_bytes(WorkItem, 0, core::mem::size_of::<MIGRATE_WORK_ITEM>());
+    core::ptr::write_bytes(WorkItem as *mut u8, 0, core::mem::size_of::<MIGRATE_WORK_ITEM>());
     (*WorkItem).Event = core::ptr::addr_of_mut!(Event);
     (*WorkItem).DeviceInformation = DeviceInformation;
     (*WorkItem).WorkItem = IoAllocateWorkItem((*(*DeviceInformation).DeviceExtension).DeviceObject);
