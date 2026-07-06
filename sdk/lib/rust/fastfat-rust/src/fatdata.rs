@@ -666,7 +666,7 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
 
     // RtlZeroMemory on IrpContext
     core::ptr::write_bytes(
-        &mut IrpContext as *mut IRP_CONTEXT,
+        &mut IrpContext as *mut IRP_CONTEXT as *mut u8,
         0u8,
         core::mem::size_of::<IRP_CONTEXT>(),
     );

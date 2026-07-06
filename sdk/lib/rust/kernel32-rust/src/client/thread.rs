@@ -872,7 +872,7 @@ pub unsafe extern "system" fn QueueUserAPC(
     let mut ActCtxInfo: ACTIVATION_CONTEXT_BASIC_INFORMATION = core::mem::zeroed();
 
     /* Zero the activation context and query information on it */
-    core::ptr::write_bytes(&mut ActCtxInfo as *mut _, 0, core::mem::size_of::<ACTIVATION_CONTEXT_BASIC_INFORMATION>());
+    core::ptr::write_bytes(&mut ActCtxInfo as *mut _ as *mut u8, 0, core::mem::size_of::<ACTIVATION_CONTEXT_BASIC_INFORMATION>());
     Status = RtlQueryInformationActivationContext(
         RTL_QUERY_ACTIVATION_CONTEXT_FLAG_USE_ACTIVE_ACTIVATION_CONTEXT,
         core::ptr::null_mut(),

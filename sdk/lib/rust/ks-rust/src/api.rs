@@ -382,7 +382,7 @@ pub unsafe extern "system" fn KsAllocateDeviceHeader(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    core::ptr::write_bytes(Header, 0, core::mem::size_of::<KSIDEVICE_HEADER>());
+    core::ptr::write_bytes(Header as *mut u8, 0, core::mem::size_of::<KSIDEVICE_HEADER>());
 
     KeInitializeMutex(&mut (*Header).DeviceMutex, 0);
 
@@ -448,7 +448,7 @@ pub unsafe extern "system" fn KsAllocateObjectHeader(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    core::ptr::write_bytes(ObjectHeader, 0, core::mem::size_of::<KSIOBJECT_HEADER>());
+    core::ptr::write_bytes(ObjectHeader as *mut u8, 0, core::mem::size_of::<KSIOBJECT_HEADER>());
     InitializeListHead(&mut (*ObjectHeader).ItemList);
 
     if !(*((*IoStack).FileObject)).FileName.Buffer.is_null() {

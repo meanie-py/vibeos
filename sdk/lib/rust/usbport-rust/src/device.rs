@@ -34,6 +34,26 @@ extern "system" {
 // ---- file-scope preamble (translated) ----
 // #define NDEBUG  (skipped: no constant value)
 
+// C flexible-array members land in the bindgen types as `[T; 1]`; Rust's `arr[ix]`
+// bounds-checks EVEN inside addr_of_mut!, so `Pipes[1]` / `PipeHandle[1]` panics at
+// runtime (found live: 2-endpoint usb-storage interface -> RUST PANIC device.rs:386).
+// Index flexible arrays through raw-pointer arithmetic instead.
+#[inline]
+unsafe fn pipe_info_at(
+    InterfaceInfo: PUSBD_INTERFACE_INFORMATION,
+    ix: usize,
+) -> *mut USBD_PIPE_INFORMATION {
+    (core::ptr::addr_of_mut!((*InterfaceInfo).Pipes) as *mut USBD_PIPE_INFORMATION).add(ix)
+}
+
+#[inline]
+unsafe fn pipe_handle_at(
+    InterfaceHandle: PUSBPORT_INTERFACE_HANDLE,
+    ix: usize,
+) -> *mut USBPORT_PIPE_HANDLE {
+    (core::ptr::addr_of_mut!((*InterfaceHandle).PipeHandle) as *mut USBPORT_PIPE_HANDLE).add(ix)
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_SendSetupPacket(
     DeviceHandle: PUSBPORT_DEVICE_HANDLE,
@@ -383,7 +403,7 @@ pub unsafe extern "system" fn USBPORT_OpenInterface(
 
             ix = 0;
             while ix < NumEndpoints {
-                PipeHandle = core::ptr::addr_of_mut!((*InterfaceHandle).PipeHandle[ix as usize]);
+                PipeHandle = pipe_handle_at(InterfaceHandle, ix as usize);
 
                 (*PipeHandle).Flags = PIPE_HANDLE_FLAG_CLOSED;
                 (*PipeHandle).Endpoint = core::ptr::null_mut();
@@ -414,7 +434,7 @@ pub unsafe extern "system" fn USBPORT_OpenInterface(
 
         ix = 0;
         while ix < NumEndpoints {
-            PipeHandle = core::ptr::addr_of_mut!((*InterfaceHandle).PipeHandle[ix as usize]);
+            PipeHandle = pipe_handle_at(InterfaceHandle, ix as usize);
 
             while (*Descriptor).bDescriptorType != USB_ENDPOINT_DESCRIPTOR_TYPE {
                 if (*Descriptor).bLength == 0 {
@@ -426,9 +446,9 @@ pub unsafe extern "system" fn USBPORT_OpenInterface(
                 }
             }
 
-            if (*InterfaceInfo).Pipes[ix as usize].PipeFlags & USBD_PF_CHANGE_MAX_PACKET != 0 {
+            if (*pipe_info_at(InterfaceInfo, ix as usize)).PipeFlags & USBD_PF_CHANGE_MAX_PACKET != 0 {
                 (*Descriptor).wMaxPacketSize =
-                    (*InterfaceInfo).Pipes[ix as usize].MaximumPacketSize as USHORT;
+                    (*pipe_info_at(InterfaceInfo, ix as usize)).MaximumPacketSize as USHORT;
             }
 
             RtlCopyMemory(
@@ -438,7 +458,7 @@ pub unsafe extern "system" fn USBPORT_OpenInterface(
             );
 
             (*PipeHandle).Flags = PIPE_HANDLE_FLAG_CLOSED;
-            (*PipeHandle).PipeFlags = (*InterfaceInfo).Pipes[ix as usize].PipeFlags;
+            (*PipeHandle).PipeFlags = (*pipe_info_at(InterfaceInfo, ix as usize)).PipeFlags;
             (*PipeHandle).Endpoint = core::ptr::null_mut();
 
             wMaxPacketSize = (*Descriptor).wMaxPacketSize;
@@ -446,13 +466,13 @@ pub unsafe extern "system" fn USBPORT_OpenInterface(
             MaxPacketSize =
                 (wMaxPacketSize & 0x7FF) * (((wMaxPacketSize >> 11) & 3) + 1);
 
-            (*InterfaceInfo).Pipes[ix as usize].EndpointAddress =
+            (*pipe_info_at(InterfaceInfo, ix as usize)).EndpointAddress =
                 (*Descriptor).bEndpointAddress;
-            (*InterfaceInfo).Pipes[ix as usize].PipeType =
+            (*pipe_info_at(InterfaceInfo, ix as usize)).PipeType =
                 ((*Descriptor).bmAttributes & USB_ENDPOINT_TYPE_MASK) as USBD_PIPE_TYPE;
-            (*InterfaceInfo).Pipes[ix as usize].MaximumPacketSize = MaxPacketSize as USHORT;
-            (*InterfaceInfo).Pipes[ix as usize].PipeHandle = (-1isize) as USBD_PIPE_HANDLE;
-            (*InterfaceInfo).Pipes[ix as usize].Interval = (*Descriptor).bInterval;
+            (*pipe_info_at(InterfaceInfo, ix as usize)).MaximumPacketSize = MaxPacketSize as USHORT;
+            (*pipe_info_at(InterfaceInfo, ix as usize)).PipeHandle = (-1isize) as USBD_PIPE_HANDLE;
+            (*pipe_info_at(InterfaceInfo, ix as usize)).Interval = (*Descriptor).bInterval;
 
             Descriptor = ((Descriptor as ULONG_PTR) + (*Descriptor).bLength as ULONG_PTR)
                 as PUSB_ENDPOINT_DESCRIPTOR;
@@ -463,8 +483,8 @@ pub unsafe extern "system" fn USBPORT_OpenInterface(
         if USBD_SUCCESS(USBDStatus) {
             ix = 0;
             while ix < NumEndpoints {
-                PipeInfo = core::ptr::addr_of_mut!((*InterfaceInfo).Pipes[ix as usize]);
-                PipeHandle = core::ptr::addr_of_mut!((*InterfaceHandle).PipeHandle[ix as usize]);
+                PipeInfo = pipe_info_at(InterfaceInfo, ix as usize);
+                PipeHandle = pipe_handle_at(InterfaceHandle, ix as usize);
 
                 Status = USBPORT_OpenPipe(
                     FdoDevice,

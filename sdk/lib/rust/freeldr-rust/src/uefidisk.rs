@@ -1246,7 +1246,12 @@ pub unsafe extern "C" fn UefiInitializeBootDevices() -> BOOLEAN {
     let Signature: ULONG;
     let mut i: ULONG;
 
-    DiskReadBufferSize = ((EFI_PAGE_SIZE) as usize);
+    // 64KB, not EFI_PAGE_SIZE: every ReadBlocks call is a full firmware ATAPI
+    // round trip (expensive under TCG). 4KB chunks meant ~9000 calls for the
+    // ~35MB boot set — the per-call overhead capped mid-size files at ~4MB/s
+    // (perf doc: freeldr load-phase decomposition). 64KB amortizes it; 1MB
+    // hangs OVMF's ATAPI path at the first read (bisected 2026-07-06).
+    DiskReadBufferSize = 64 * 1024;
     DiskReadBuffer = core::ptr::null_mut();
     DiskReadBufferRaw = core::ptr::null_mut();
     DiskReadBufferAlignment = 1;

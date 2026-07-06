@@ -1706,7 +1706,7 @@ unsafe fn write_resources(
     core::ptr::write_bytes(base, 0, (*si).total_size as usize);
 
     root = base as *mut IMAGE_RESOURCE_DIRECTORY;
-    core::ptr::write_bytes(root, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>());
+    core::ptr::write_bytes(root as *mut u8, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>());
     (*root).MajorVersion = 4;
     (*si).types_ofs = core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>() as DWORD;
     LIST_FOR_EACH_ENTRY!(
@@ -1719,7 +1719,7 @@ unsafe fn write_resources(
         let namedir: *mut IMAGE_RESOURCE_DIRECTORY;
 
         e1 = base.offset((*si).types_ofs as isize) as *mut IMAGE_RESOURCE_DIRECTORY_ENTRY;
-        core::ptr::write_bytes(e1, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>());
+        core::ptr::write_bytes(e1 as *mut u8, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>());
         if IS_INTRESOURCE!((*types).id) == 0 {
             let strings: *mut WCHAR;
             let len: DWORD;
@@ -1746,7 +1746,7 @@ unsafe fn write_resources(
         (*si).types_ofs += core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>() as DWORD;
 
         namedir = base.offset((*si).names_ofs as isize) as *mut IMAGE_RESOURCE_DIRECTORY;
-        core::ptr::write_bytes(namedir, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>());
+        core::ptr::write_bytes(namedir as *mut u8, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>());
         (*namedir).MajorVersion = 4;
         (*si).names_ofs += core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>() as DWORD;
 
@@ -1760,7 +1760,7 @@ unsafe fn write_resources(
             let langdir: *mut IMAGE_RESOURCE_DIRECTORY;
 
             e2 = base.offset((*si).names_ofs as isize) as *mut IMAGE_RESOURCE_DIRECTORY_ENTRY;
-            core::ptr::write_bytes(e2, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>());
+            core::ptr::write_bytes(e2 as *mut u8, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>());
             if IS_INTRESOURCE!((*names).id) == 0 {
                 let strings: *mut WCHAR;
                 let len: DWORD;
@@ -1787,7 +1787,7 @@ unsafe fn write_resources(
             (*si).names_ofs += core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>() as DWORD;
 
             langdir = base.offset((*si).langs_ofs as isize) as *mut IMAGE_RESOURCE_DIRECTORY;
-            core::ptr::write_bytes(langdir, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>());
+            core::ptr::write_bytes(langdir as *mut u8, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>());
             (*langdir).MajorVersion = 4;
             (*si).langs_ofs += core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY>() as DWORD;
 
@@ -1802,7 +1802,7 @@ unsafe fn write_resources(
                 let pad_size: i32;
 
                 e3 = base.offset((*si).langs_ofs as isize) as *mut IMAGE_RESOURCE_DIRECTORY_ENTRY;
-                core::ptr::write_bytes(e3, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>());
+                core::ptr::write_bytes(e3 as *mut u8, 0, core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>());
                 (*langdir).NumberOfIdEntries += 1;
                 rde_set_id(e3, (LOWORD!((*data).lang)) as WORD);
                 rde_set_offset_to_data(e3, ((*si).data_entry_ofs) as DWORD);
@@ -1810,7 +1810,7 @@ unsafe fn write_resources(
                 (*si).langs_ofs += core::mem::size_of::<IMAGE_RESOURCE_DIRECTORY_ENTRY>() as DWORD;
 
                 de = base.offset((*si).data_entry_ofs as isize) as *mut IMAGE_RESOURCE_DATA_ENTRY;
-                core::ptr::write_bytes(de, 0, core::mem::size_of::<IMAGE_RESOURCE_DATA_ENTRY>());
+                core::ptr::write_bytes(de as *mut u8, 0, core::mem::size_of::<IMAGE_RESOURCE_DATA_ENTRY>());
                 (*de).OffsetToData = (*si).data_ofs + rva;
                 (*de).Size = (*data).cbData;
                 (*de).CodePage = (*data).codepage;
