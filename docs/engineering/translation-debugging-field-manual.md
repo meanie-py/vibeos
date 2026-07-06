@@ -2800,7 +2800,7 @@ which looks like a broken detector but isn't.
      `HalBeginSystemInterrupt`/`KfRaiseIrql(HIGH_LEVEL)` without a matching lower.
      Rare enough that a soak (`farm`, host-quiet only) may be needed to catch it live.
 
-### 9.25 Static analysis for leaked IRQL raises / spinlock acquires — `scan_irql_balance.py`
+### 9.26 Static analysis for leaked IRQL raises / spinlock acquires — `scan_irql_balance.py`
 
 The §9.24 arm64 IRQL-leak hunt raised the right question: we're almost entirely
 Rust, so a raise/lower pair is a *lifecycle* we should be able to check
@@ -2840,3 +2840,45 @@ an **upstream ReactOS bug** (usbport.c:2059 `goto Exit` jumps PAST the
 `KeReleaseSpinLock`), faithfully reproduced as a bare `return`. The
 goto-cleanup-mistranslated-as-return shape is the exact thing the lint exists to
 catch. Fixed by releasing before the early return (divergence from stock).
+
+### 9.25 A foreign binary parked in a wait, or spinning on `b .`, is usually one of three shapes (Doom bring-up)
+
+Running a *foreign* Win32 binary (the Doom-on-vibeos quest — full writeup +
+build recipe in **`doom-on-vibeos.md`**) surfaced a reusable triage ladder for
+"a usermode process launched but nothing renders." The CPU is in `KiIdleLoop`
+(everything blocked) or pinned at one usermode PC (spinning). Walk it:
+
+1. **Sample the guest PC a dozen times** (QMP `info registers`). *All* samples at
+   `KiIdleLoop` = the process is **parked in a wait** (not crashed, not spinning).
+   *All* samples at one fixed usermode PC = a **busy spin** — disassemble that PC.
+   A *mix* of usermode + varied kernel PCs = the process is **running fine**
+   (syscalls cycling) and the problem is elsewhere (display/focus).
+2. **Parked in a wait, no file I/O** (break on `NtReadFile`/`NtDelayExecution` for
+   ~20s → zero hits): the process is past its reads, stuck on a dispatcher object.
+   For a fresh Win32 GUI process, suspect a **console-subsystem exe spawned by a
+   console-less parent** — CRT startup blocks on csrss/consrv console allocation
+   before `main` ever runs. Check `objdump -p exe | grep Subsystem` (3 = CUI =
+   the trap; want 2 = GUI). Fix at the *build*: `-Wl,--subsystem,windows
+   -Wl,-e,mainCRTStartup`.
+3. **Spinning at a fixed usermode PC that disassembles to `b .`** (opcode
+   `0x14000000`, branch-to-self): a **compiler-emitted infinite loop**. In a
+   pointer-chase loop (`while(p) p = p->next;`) this is LLVM hoisting `p` out as
+   loop-invariant and dropping the reload — the same aliasing/LICM miscompile
+   class as the kernel `captures(none)` bugs, but here in a stock-`-O2`/`-Os`
+   foreign build. `objdump -d exe | grep -E '14000000'` finds every self-branch;
+   **`-O0` is the workaround** until the pass is identified.
+
+To backtrace a *blocked usermode thread* offline (gdb can't resolve the Rust
+kernel's `_EPROCESS` type by name): hardcode `PsActiveProcessHead`'s relocated
+address, walk `ActiveProcessLinks` scanning each node for a NUL-terminated
+`ImageFileName`, then `ThreadListHead`→`ThreadListEntry`→`KTHREAD` using the
+compile-time offsets asserted in `ntkrnl-sys/src/offset_check_arm64.rs` (validate
+by checking `KTHREAD.Process` equals the EPROCESS base — a mismatch means an
+offset is stale). The `WaitReason` byte alone (Executive vs UserRequest vs
+DelayExecution) often localizes the block without a full unwind.
+
+**Bugs #1–2 this quest also landed:** the `arm64input` avail-ring
+`panic_bounds_check` (safe-indexing a `[u16; 0]` FAM → silent `loop{}` at
+DISPATCH → first-keypress machine wedge; see `doom-on-vibeos.md` §Bug 1) and the
+loud-panic-handler port for `arm64input-cargo` (bare `loop{}` handlers hide every
+driver panic — ~40 `*-cargo` mains still have them, sweep owed).
