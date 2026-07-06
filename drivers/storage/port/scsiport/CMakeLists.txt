@@ -33,6 +33,7 @@ elseif(ARCH STREQUAL "arm64")
     set(SCSIPORT_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(SCSIPORT_RUST_RUSTFLAGS "")
 endif()
+file(GLOB_RECURSE SCSIPORT_RUST_SRCS ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${SCSIPORT_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -45,20 +46,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${SCSIPORT_RUST_TARGET_DIR}/${SCSIPORT_RUST_TARGET}/release/libscsiport_rust.a
         ${SCSIPORT_RUST_LIB}
-    DEPENDS ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/Cargo.toml
-            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/lib.rs
-            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/fdo.rs
-            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/ioctl.rs
-            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/pdo.rs
-            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/power.rs
-            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/registry.rs
-            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/scsi.rs
-            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/scsiport.rs
-            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/stubs.rs
-            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/glue.rs
-            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/inlines.rs
-            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/ddk_shims.rs
-            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/types.rs
+    DEPENDS ${SCSIPORT_RUST_SRCS}
+            ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/Cargo.toml
     WORKING_DIRECTORY ${SCSIPORT_RUST_WORKSPACE_DIR}
     COMMENT "Building scsiport-rust (${SCSIPORT_RUST_TARGET})"
     VERBATIM)

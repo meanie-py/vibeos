@@ -22,6 +22,7 @@ elseif(ARCH STREQUAL "arm64")
     set(WMILIB_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(WMILIB_RUST_RUSTFLAGS "")
 endif()
+file(GLOB_RECURSE WMILIB_RUST_SRCS ${WMILIB_RUST_WORKSPACE_DIR}/wmilib-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${WMILIB_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -33,8 +34,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${WMILIB_RUST_TARGET_DIR}/${WMILIB_RUST_TARGET}/release/libwmilib_rust.a
         ${WMILIB_RUST_LIB}
-    DEPENDS ${WMILIB_RUST_WORKSPACE_DIR}/wmilib-rust/Cargo.toml
-            ${WMILIB_RUST_WORKSPACE_DIR}/wmilib-rust/src/lib.rs
+    DEPENDS ${WMILIB_RUST_SRCS}
+            ${WMILIB_RUST_WORKSPACE_DIR}/wmilib-rust/Cargo.toml
     WORKING_DIRECTORY ${WMILIB_RUST_WORKSPACE_DIR}
     COMMENT "Building wmilib-rust (${WMILIB_RUST_TARGET})"
     VERBATIM)

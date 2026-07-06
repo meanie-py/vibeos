@@ -1420,11 +1420,6 @@
   ke/procobj.rs:
   ke/spinlock.rs:
   ke/thrdobj.rs:
-  lpc/complete.rs:
-  lpc/connect.rs:
-  lpc/create.rs:
-  lpc/reply.rs:
-  lpc/send.rs:
   mm/balance.rs:
   mm/region.rs:
   mm/rmap.rs:
@@ -1451,6 +1446,11 @@
   rtl/libsupp.rs:
   rtl/misc.rs:
   rtl/path.rs:
+  sdk/lib/rust/lpc-rust/src/complete.rs:
+  sdk/lib/rust/lpc-rust/src/connect.rs:
+  sdk/lib/rust/lpc-rust/src/create.rs:
+  sdk/lib/rust/lpc-rust/src/reply.rs:
+  sdk/lib/rust/lpc-rust/src/send.rs:
   se/accesschk.rs:
   se/acl.rs:
   se/audit.rs:

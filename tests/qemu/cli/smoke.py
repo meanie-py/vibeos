@@ -318,6 +318,12 @@ def smoke(args, repo: Path) -> int:
     arch = archcfg.base_arch(args.arch)  # base for staleness/build dir; boot resolves vm_arch
     run = Run("smoke", arch)
 
+    # --timing: stamp the live serial log with elapsed seconds so the boot can
+    # be decomposed into phases afterwards. The env var is read by the
+    # SerialClient tee (serial_client.py) in THIS process's children.
+    if getattr(args, "timing", False):
+        os.environ["VIBEOS_SERIAL_TIMESTAMPS"] = "1"
+
     # --- staleness preflight (hard boundary) ---
     st = provenance.check_staleness(repo, arch)
     if st.stale and not args.allow_stale:
@@ -434,6 +440,20 @@ def smoke(args, repo: Path) -> int:
             # a flake is a real signal — don't call it green
             run.verdict = "FAIL"
             run.add(Stage("flake", status="fail", detail=f"{npass}/{total} pass"))
+
+    # --timing: decompose the stamped live log into boot phases + biggest gaps.
+    if getattr(args, "timing", False):
+        live = repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke_live.log"
+        tool = repo / "tools" / "boot_phase_report.py"
+        if live.is_file() and tool.is_file():
+            cp = subprocess.run(
+                [sys.executable, str(tool), str(live), "--sizes", str(repo / f"build-{arch}")],
+                capture_output=True, text=True, timeout=120,
+            )
+            report = (cp.stdout or "").strip()
+            if report:
+                run.log(report[:12000], header="boot-phase timing")
+
     return run.finalize(repo)
 
 

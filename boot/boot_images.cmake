@@ -145,12 +145,21 @@ file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/livecd.cmake.lst "reactos/TEMP=${CMAKE_C
 add_allusers_profile_dirs(${CMAKE_CURRENT_BINARY_DIR}/livecd.cmake.lst "Profiles")
 add_user_profile_dirs(${CMAKE_CURRENT_BINARY_DIR}/livecd.cmake.lst "Profiles" "Default User")
 
+# Graft debug-stripped PE twins onto the CD instead of the build binaries:
+# the boot set is 70-92% DWARF that the PE loader never maps but freeldr
+# streams off the CD at ~2.2MB/s (see docs/engineering/performance-investigation.md).
+# The build tree keeps full DWARF — every sym tool reads build-dir binaries.
 add_custom_target(livecd
+    COMMAND ${CMAKE_COMMAND} -E env python3 ${REACTOS_SOURCE_DIR}/tools/strip_cd_media.py
+        --lst ${CMAKE_CURRENT_BINARY_DIR}/livecd.$<CONFIG>.lst
+        --out ${CMAKE_CURRENT_BINARY_DIR}/livecd.stripped.lst
+        --cache ${CMAKE_CURRENT_BINARY_DIR}/stripped
+        --objcopy ${CMAKE_OBJCOPY}
     COMMAND native-mkisofs -quiet -o ${REACTOS_BINARY_DIR}/livecd.iso -iso-level 4
         -publisher ${ISO_MANUFACTURER} -preparer ${ISO_MANUFACTURER} -volid ${ISO_VOLNAME} -volset ${ISO_VOLNAME}
         ${ISO_EFI_BOOT_PARAMS} -hide boot.catalog
         -sort ${CMAKE_CURRENT_BINARY_DIR}/bootfiles.sort
-        -no-cache-inodes -graft-points -path-list ${CMAKE_CURRENT_BINARY_DIR}/livecd.$<CONFIG>.lst
+        -no-cache-inodes -graft-points -path-list ${CMAKE_CURRENT_BINARY_DIR}/livecd.stripped.lst
     DEPENDS native-mkisofs
     VERBATIM)
 

@@ -27905,7 +27905,18 @@ unsafe fn lcmap_string(
                 ret = map_to_traditional_chinese(flags, src, srclen, dst, dstlen);
                 break 'switch;
             }
-            NORM_IGNORENONSPACE | NORM_IGNORESYMBOLS | 0 => {
+            // C original: `case NORM_IGNORENONSPACE: case NORM_IGNORESYMBOLS:
+            // case NORM_IGNORENONSPACE|NORM_IGNORESYMBOLS:`. The translation
+            // rendered this as the Rust OR-PATTERN `NORM_IGNORENONSPACE |
+            // NORM_IGNORESYMBOLS | 0`, whose literal `0` alternative captured
+            // switch_flags == 0 — so every plain LCMAP_LOWERCASE/UPPERCASE call
+            // (flags still nonzero) hit this arm's flag check and failed with
+            // ERROR_INVALID_FLAGS, making the real `0 =>` arm below dead code.
+            // Every LCMapString case-mapping in the OS failed this way (loudest
+            // victim: svchost's SvchostCharLowerW at service start).
+            _ if switch_flags == NORM_IGNORENONSPACE
+                || switch_flags == NORM_IGNORESYMBOLS
+                || switch_flags == (NORM_IGNORENONSPACE | NORM_IGNORESYMBOLS) => {
                 if flags & !(NORM_IGNORENONSPACE | NORM_IGNORESYMBOLS | LCMAP_BYTEREV) != 0 {
                     SetLastError(ERROR_INVALID_FLAGS);
                     return 0;

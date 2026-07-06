@@ -731,6 +731,7 @@ dependencies = [
  "cmboot-rust",
  "ke-inlines",
  "ke-macros",
+ "lpc-rust",
  "ntoskrnl-rust",
  "ntprintf",
  "ntprintf_w",
@@ -822,6 +823,13 @@ dependencies = [
  "scoped-tls",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "lpc-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

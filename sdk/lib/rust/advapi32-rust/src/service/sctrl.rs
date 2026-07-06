@@ -181,7 +181,16 @@ unsafe fn ScConnectControlPipe(hPipe: *mut HANDLE) -> DWORD {
             core::mem::size_of::<[RTL_QUERY_REGISTRY_TABLE; 2]>() as _,
         );
 
-        QueryTable[0].Name = b"\0".as_ptr() as PWSTR;
+        // C: `QueryTable[0].Name = L"";` (query the key's DEFAULT value).
+        // Was `b"\0"` — ONE byte cast to PWSTR, which as WCHARs is not an
+        // empty string (u16[0] = 0x00nn from the neighboring rodata byte), so
+        // this REQUIRED query failed, ScConnectControlPipe bailed before its
+        // own [SCTRL] trace, StartServiceCtrlDispatcherW returned FALSE, and
+        // every svchost exited 0 ~0.4s after spawn — costing the SCM a full
+        // 31s pipe-connect timeout per hosted service on EVERY boot
+        // (DcomLaunch/RPCSS dead since the translation). An empty WIDE string
+        // needs two zero bytes.
+        QueryTable[0].Name = b"\0\0".as_ptr() as PWSTR;
         QueryTable[0].Flags = (RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_REQUIRED) as _;
         QueryTable[0].EntryContext = core::ptr::addr_of_mut!(dwServiceCurrent) as *mut _;
 

@@ -15,6 +15,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(SKIPLIST_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
+file(GLOB_RECURSE SKIPLIST_RUST_SRCS ${SKIPLIST_RUST_WORKSPACE_DIR}/skiplist-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${SKIPLIST_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -25,9 +26,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${SKIPLIST_RUST_TARGET_DIR}/${SKIPLIST_RUST_TARGET}/release/libskiplist_rust.a
         ${SKIPLIST_RUST_LIB}
-    DEPENDS ${SKIPLIST_RUST_WORKSPACE_DIR}/skiplist-rust/Cargo.toml
-            ${SKIPLIST_RUST_WORKSPACE_DIR}/skiplist-rust/src/lib.rs
-            ${SKIPLIST_RUST_WORKSPACE_DIR}/skiplist-rust/src/skiplist.rs
+    DEPENDS ${SKIPLIST_RUST_SRCS}
+            ${SKIPLIST_RUST_WORKSPACE_DIR}/skiplist-rust/Cargo.toml
     WORKING_DIRECTORY ${SKIPLIST_RUST_WORKSPACE_DIR}
     COMMENT "Building skiplist-rust (${SKIPLIST_RUST_TARGET})"
     VERBATIM)

@@ -57,6 +57,14 @@ class SerialClient:
         # side-channel: a write failure here must NEVER stall the drainer (see
         # the class docstring — a stalled drainer re-starves the polled guest).
         self._tee = None
+        # VIBEOS_SERIAL_TIMESTAMPS=1 prefixes every tee'd line with the elapsed
+        # seconds since the first serial byte ("[+ 12.345] ..."), turning any
+        # live log into a boot-phase timing trace (tools/boot_phase_report.py
+        # buckets it into firmware/freeldr/kernel/... phases). Tee-only: the
+        # in-memory buffer that markers match against is never modified.
+        self._tee_stamp = os.environ.get("VIBEOS_SERIAL_TIMESTAMPS", "") == "1"
+        self._tee_t0: float | None = None
+        self._tee_at_bol = True
 
     def listen(self, path: str) -> None:
         """Create Unix socket server. Call BEFORE starting QEMU."""
@@ -156,7 +164,8 @@ class SerialClient:
             # Live-log tee (side-channel, never allowed to break the drain).
             if self._tee is not None:
                 try:
-                    self._tee.write(text)
+                    self._tee.write(self._stamp_tee_text(text)
+                                    if self._tee_stamp else text)
                     self._tee.flush()
                 except (OSError, ValueError):
                     pass
@@ -169,6 +178,21 @@ class SerialClient:
                     conn.sendall(b" ")
             except OSError:
                 pass
+
+    def _stamp_tee_text(self, text: str) -> str:
+        """Prefix each line-start in `text` with elapsed-seconds since the
+        first serial byte. Only used for the tee file; cheap string work."""
+        now = time.monotonic()
+        if self._tee_t0 is None:
+            self._tee_t0 = now
+        stamp = f"[+{now - self._tee_t0:9.3f}] "
+        out = []
+        for ch_line in text.splitlines(keepends=True):
+            if self._tee_at_bol:
+                out.append(stamp)
+            out.append(ch_line)
+            self._tee_at_bol = ch_line.endswith(("\n", "\r"))
+        return "".join(out)
 
     def _snapshot(self) -> tuple[str, float, bool]:
         with self._lock:
