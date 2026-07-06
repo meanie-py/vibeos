@@ -202,6 +202,9 @@ use core::ffi::c_void;
 #[no_mangle] pub unsafe extern "C" fn WPP_CLEANUP(_drv: PVOID) {}
 const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 #[no_mangle] pub unsafe extern "C" fn DbgGetScsiOpStr(_s: PVOID) -> *const i8 { EMPTY }
+// C debug.h: #define DBGGETIOCTLSTR(_ioctl) DbgGetIoctlStr(_ioctl) — string-table
+// lookup for trace text only; empty string is faithful to the other Dbg* stubs here.
+#[no_mangle] pub unsafe extern "C" fn DBGGETIOCTLSTR(_code: u32) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DbgGetSenseCodeStr(_a: u8, _b: u8) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DbgGetAdditionalSenseCodeStr(_a: u8, _b: u8) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DbgGetSrbStatusStr(_s: u8) -> *const i8 { EMPTY }
@@ -468,3 +471,38 @@ use core::sync::atomic::{AtomicI32, Ordering};
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle] pub static mut SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA =
     0xFFFFF78000000000usize as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
+
+/// utils.c ClasspDeviceCopyOffloadProperty — StorageDeviceCopyOffloadProperty
+/// query handler. Minimal-faithful: PropertyExistsQuery succeeds (consistency
+/// with the other property handlers); PropertyStandardQuery reports
+/// STATUS_NOT_SUPPORTED (no ODX/copy-offload support in this stack — same
+/// answer the full C gives for a device without the ODX VPD pages). Exit
+/// semantics mirror the C label: set IoStatus, release remove lock, complete.
+/// (Definition was missing entirely; linked only while the query-property arm
+/// was bind-all-dead.)
+#[no_mangle]
+pub unsafe extern "C" fn ClasspDeviceCopyOffloadProperty(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    _Srb: *mut crate::types::_SCSI_REQUEST_BLOCK,
+) -> NTSTATUS {
+    unsafe extern "system" {
+        fn ClassReleaseRemoveLock(DeviceObject: PDEVICE_OBJECT, Tag: PIRP);
+        fn ClassCompleteRequest(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Boost: i8);
+    }
+    const STATUS_SUCCESS: NTSTATUS = 0;
+    const STATUS_NOT_SUPPORTED: NTSTATUS = 0xC00000BBu32 as NTSTATUS;
+
+    let query = (*Irp).AssociatedIrp.SystemBuffer as *mut _STORAGE_PROPERTY_QUERY;
+    let status = if (*query).QueryType == _STORAGE_QUERY_TYPE_PropertyExistsQuery {
+        STATUS_SUCCESS
+    } else {
+        STATUS_NOT_SUPPORTED
+    };
+
+    (*Irp).IoStatus.Information = 0;
+    (*Irp).IoStatus.__bindgen_anon_1.Status = status;
+    ClassReleaseRemoveLock(DeviceObject, Irp);
+    ClassCompleteRequest(DeviceObject, Irp, 0 /* IO_NO_INCREMENT */);
+    status
+}

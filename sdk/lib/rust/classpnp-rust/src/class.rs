@@ -145,7 +145,8 @@ extern "C" {
 // ---- file-scope preamble (translated) ----
 pub const CLASS_INIT_GUID: u32 = 1;
 pub const DEBUG_MAIN_SOURCE: u32 = 1;
-pub static mut ClassCheckVerifyComplete: IO_COMPLETION_ROUTINE = None;
+// ClassCheckVerifyComplete: real definition below (was a bogus `static mut ... = None`
+// stub that linked only while the CHECK_VERIFY ioctl arm was dead under the bind-all).
 pub static mut ClassPnpAllowUnload: ULONG = 1u32;
 // ClassMaxInterleavePerCriticalIo / IdlePowerFDOList / IdlePowerFDOListMutex /
 // PowerSettingNotificationHandle / ScreenStateNotificationHandle / DiskIdleTimeoutInMS:
@@ -177,6 +178,37 @@ pub static mut InitSecurityCookie: BOOLEAN = 0u8;
 pub static mut MaxTokenOperationListIdentifier: ULONG = MAX_TOKEN_LIST_IDENTIFIERS;
 pub static mut TokenOperationListIdentifier: ULONG = 0xFFFFFFFFu32;
 // (IdlePowerFDOList family: see globals.rs — imported above, do not redefine here.)
+/// class.c ClassCheckVerifyComplete — completion routine for the internal
+/// CHECK_VERIFY ioctl the FDO forwards to the port driver: copy the media change
+/// count + status into the ORIGINAL (master) irp stashed in Others.Argument1,
+/// complete it, free the forwarded irp. (Was a bogus `static mut = None` stub;
+/// linked only while the ClassDeviceControl CHECK_VERIFY arm was bind-all-dead.)
+#[no_mangle]
+pub unsafe extern "system" fn ClassCheckVerifyComplete(
+    Fdo: *mut _DEVICE_OBJECT,
+    Irp: *mut _IRP,
+    _Context: *mut c_void,
+) -> NTSTATUS {
+    let irp_stack = IoGetCurrentIrpStackLocation(Irp);
+    let fdo_extension = (*Fdo).DeviceExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION;
+
+    let original_irp = (*irp_stack).Parameters.Others.Argument1 as *mut _IRP;
+
+    // Copy the media change count and status
+    *((*original_irp).AssociatedIrp.SystemBuffer as *mut ULONG) =
+        (*fdo_extension).MediaChangeCount;
+
+    (*original_irp).IoStatus.__bindgen_anon_1.Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+    (*original_irp).IoStatus.Information = core::mem::size_of::<ULONG>() as _;
+
+    ClassReleaseRemoveLock(Fdo, original_irp);
+    ClassCompleteRequest(Fdo, original_irp, ntkrnl_sys::constants::IO_DISK_INCREMENT);
+
+    IoFreeIrp(Irp);
+
+    STATUS_MORE_PROCESSING_REQUIRED
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn DllUnload() -> i32 {
     DbgPrintEx(DPFLTR_CLASSPNP_ID, DPFLTR_INFO_LEVEL, b"classpnp.sys is now unloading\n\0".as_ptr() as *const i8);
