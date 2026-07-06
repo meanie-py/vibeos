@@ -191,17 +191,22 @@ gap" is fully attributed (amd64, TCG, per-file):
   its extra costs are EDK2 firmware 6s (TCG) instead.
 
 Ranked fixes:
-1. **Strip DWARF from CD-staged binaries (TOP: measured ~4x on the whole
-   load phase).** wdf01000.sys is 13.5MB of which ~12.5MB is .debug_*
-   (code+data ≈ 0.8MB); the boot set is likely 70–80% DWARF overall. The PE
-   loader never maps debug sections — freeldr streams them off the CD at
-   2.2MB/s for nothing. Stripped CD twins would cut the ~20s load phase to
-   ~5s, shrink the ISO 508MB → ~180MB (staging copy 3.9s → ~1.4s), and cost
-   NOTHING at runtime; every sym tool (sym.sh/addr2sym/build-index/GDB)
-   reads build-dir binaries, not the ISO. Caveat to verify: pefixup checksum
-   + any tool that expects CD binaries byte-identical to build outputs
-   (provenance stamps hash... check provenance.py). wdf01000 cannot be
-   demoted from boot-start instead — cdrom.sys is KMDF (wdf01000_reg.inf).
+1. **[DONE 2026-07-06] Strip DWARF from CD-staged binaries — landed as
+   `tools/strip_cd_media.py` + a pre-mkisofs pass in the livecd target**
+   (boot/boot_images.cmake). Rewrites the graft list to point PE files at
+   debug-stripped twins (llvm-objcopy --strip-debug, cached by mtime+size in
+   build-<arch>/boot/stripped/, PE CheckSum recomputed — validated against
+   pefile). Measured: 675 PEs, 466MB→172MB grafted; ISO 508MB→214MB; **amd64
+   kernel entry 24s→6.3s, i386 →7.6s; amd64 explorer entry 32s→15.6s guest
+   time**. Caveats resolved: ReactOS `LdrVerifyMappedImageMatchesChecksum` is
+   `#if 0` (always TRUE) and all build PEs carry CheckSum=0 anyway; provenance
+   hashes build-dir binaries + whole media separately, never assumes CD bytes
+   == build bytes. Build tree keeps full DWARF (sym tools unaffected).
+   Follow-ups: bootcd/regtest lst + reactos.cab not yet stripped (installer
+   path, not smoked); arm64 ramdisk staging could take the same pass.
+   Historical detail preserved: wdf01000.sys is 13.5MB of which ~12.5MB is
+   .debug_* (code+data ≈ 0.8MB); wdf01000 cannot be demoted from boot-start —
+   cdrom.sys is KMDF (wdf01000_reg.inf).
 2. **Attack the 2.2MB/s transfer**: check whether OVMF is stuck in ATAPI PIO
    (vs UDMA) on the i440fx IDE path; a DMA-capable attach (or a QEMU option)
    would multiply throughput. Guest-side constraint: uniata must still see
@@ -212,8 +217,11 @@ Ranked fixes:
 
 | | baseline | now |
 |---|---|---|
-| boot-only smoke wall | ~82s | **56s** |
-| boot to explorer (guest) | 36.5s | 32.0s |
+| boot-only smoke wall | ~82s | **~39s** (i386 post-strip) |
+| boot to explorer (guest, amd64) | 36.5s | **15.6s** |
+| pre-kernel load phase (amd64) | ~24s | **6.3s** (DWARF strip) |
+| pre-kernel load phase (i386) | ~24s | **7.6s** (DWARF strip) |
+| livecd.iso | 508MB | **214MB** |
 | freeldr menu | 5s | 0 |
 | settle | 30s | 15s |
 | amd64 smoke incl. net (gate lane) | ~200s serial | net runs parallel |
