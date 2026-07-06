@@ -292,7 +292,7 @@ pub unsafe extern "system" fn FatPostStackOverflowRead(
     const KernelMode: u32 = 0;
     const IRP_PAGING_IO: u32 = 0x02;
     const FAT_NTC_VCB: u16 = 0x0501; // nodetype.h: real value
-    const IRP_CONTEXT_FLAG_VERIFY_READ: u32 = 0x00001000;
+    const IRP_CONTEXT_FLAG_VERIFY_READ: u32 = 0x80;
     // KEVENT Event; PERESOURCE Resource; PVCB Vcb;
     let mut event: KEVENT = core::mem::zeroed();
     let resource: PERESOURCE;
@@ -362,14 +362,14 @@ pub unsafe extern "system" fn FatPostStackOverflowRead(
 // ==== re-stitched from bank (dropped by _merge_extern_blocks) ====
 #[no_mangle]
 pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS {
-    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0001;
-    const IRP_CONTEXT_FLAG_USER_IO: u32 = 0x0002;
-    const IRP_CONTEXT_STACK_IO_CONTEXT: u32 = 0x0004;
-    const CCB_FLAG_COMPLETE_DISMOUNT: u32 = 0x0010;
-    const CCB_FLAG_SENT_FORMAT_UNIT: u32 = 0x0020;
-    const CCB_FLAG_DASD_FLUSH_DONE: u32 = 0x0040;
-    const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 0x0080;
-    const IRP_CONTEXT_FLAG_OVERRIDE_VERIFY: u32 = 0x0100;
+    const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
+    const IRP_CONTEXT_FLAG_USER_IO: u32 = 0x0400;
+    const IRP_CONTEXT_STACK_IO_CONTEXT: u32 = 0x0100;
+    const CCB_FLAG_COMPLETE_DISMOUNT: u32 = 0x00010000;
+    const CCB_FLAG_SENT_FORMAT_UNIT: u32 = 0x00040000;
+    const CCB_FLAG_DASD_FLUSH_DONE: u32 = 0x0100;
+    const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 0x2000;
+    const IRP_CONTEXT_FLAG_OVERRIDE_VERIFY: u32 = 0x1000;
     const VCB_STATE_FLAG_LOCKED: u32 = 0x0001;
     const READ_AHEAD_GRANULARITY: u32 = 0x10000;
     const TAG_FAT_IO_CONTEXT: u32 = 0x74614644;

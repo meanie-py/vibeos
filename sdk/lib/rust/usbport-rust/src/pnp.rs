@@ -47,7 +47,7 @@ pub const NDEBUG: u32 = 1;
 
 pub const NDEBUG_USBPORT_CORE: u32 = 1;
 
-const USBPORT_FLAG_DOS_SYMBOLIC_NAME: u32 = 0x00000040;
+const USBPORT_FLAG_DOS_SYMBOLIC_NAME: u32 = 0x00010000; // FIXED 2026-07-05: translation invented 0x40; verified vs usbport.h/usbmport.h
 
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_FdoStartCompletion(
@@ -545,23 +545,23 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     const PCI_COMMON_HDR_LENGTH: ULONG = 64; // FIELD_OFFSET(PCI_COMMON_CONFIG, DeviceSpecific)
     const DEVICE_DESCRIPTION_VERSION: ULONG = 0;
     const MAXIMUM_LENGTH_MAXULONG: ULONG = MAXULONG;
-    const USBPORT_FLAG_BIOS_DISABLE_SS: ULONG = 0x00000080;
-    const USBPORT_FLAG_SELECTIVE_SUSPEND: ULONG = 0x00000040;
-    const USB_MINIPORT_FLAGS_POLLING: ULONG = 0x00000001;
-    const USB_MINIPORT_FLAGS_WAKE_SUPPORT: ULONG = 0x00000004;
+    const USBPORT_FLAG_BIOS_DISABLE_SS: ULONG = 0x08000000; // FIXED 2026-07-05: translation invented 0x80; verified vs usbport.h/usbmport.h
+    const USBPORT_FLAG_SELECTIVE_SUSPEND: ULONG = 0x00000800; // FIXED 2026-07-05: translation invented 0x40; verified vs usbport.h/usbmport.h
+    const USB_MINIPORT_FLAGS_POLLING: ULONG = 0x00000080; // FIXED 2026-07-05: translation invented 0x1; verified vs usbport.h/usbmport.h
+    const USB_MINIPORT_FLAGS_WAKE_SUPPORT: ULONG = 0x00000200; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
     const USB_MINIPORT_FLAGS_DISABLE_SS: ULONG = 0x00000020;
-    const USBPORT_FLAG_HC_POLLING: ULONG = 0x00000800;
-    const USBPORT_FLAG_HC_WAKE_SUPPORT: ULONG = 0x00001000;
+    const USBPORT_FLAG_HC_POLLING: ULONG = 0x00000004; // FIXED 2026-07-05: translation invented 0x800; verified vs usbport.h/usbmport.h
+    const USBPORT_FLAG_HC_WAKE_SUPPORT: ULONG = 0x00200000; // FIXED 2026-07-05: translation invented 0x1000; verified vs usbport.h/usbmport.h
     const PCI_CLASS_SERIAL_BUS_CTLR: UCHAR = 0x0C;
     const PCI_SUBCLASS_SB_USB: UCHAR = 0x03;
     const PCI_INTERFACE_USB_ID_EHCI: UCHAR = 0x20;
-    const USBPORT_FLAG_COMPANION_HC: ULONG = 0x00000100;
+    const USBPORT_FLAG_COMPANION_HC: ULONG = 0x01000000; // FIXED 2026-07-05: translation invented 0x100; verified vs usbport.h/usbmport.h
     const USB2_FRAMES: ULONG = 32;
-    const USB_PORT_TAG: ULONG = 0x70737355; // 'Ussp'
-    const USBPORT_FLAG_INT_CONNECTED: ULONG = 0x00000004;
-    const USBPORT_FLAG_LEGACY_SUPPORT: ULONG = 0x00040000;
+    const USB_PORT_TAG: ULONG = 0x70627375; // 'Ussp'
+    const USBPORT_FLAG_INT_CONNECTED: ULONG = 0x00000001; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
+    const USBPORT_FLAG_LEGACY_SUPPORT: ULONG = 0x00080000; // FIXED 2026-07-05: translation invented 0x40000; verified vs usbport.h/usbmport.h
     const USBPORT_MPFLAG_INTERRUPTS_ENABLED: ULONG = 0x00000001;
-    const USBPORT_FLAG_HC_STARTED: ULONG = 0x00000020;
+    const USBPORT_FLAG_HC_STARTED: ULONG = 0x00000002; // FIXED 2026-07-05: translation invented 0x20; verified vs usbport.h/usbmport.h
     const Width32Bits: i32 = 0x02;
 
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;
@@ -1027,8 +1027,8 @@ pub unsafe extern "system" fn USBPORT_ParseResources(
     const CM_RESOURCE_PORT_IO: u16 = 0x0001;
     const CM_RESOURCE_INTERRUPT_LATCHED: u16 = 0x0001;
     const USBPORT_RESOURCES_PORT: u32 = 1;
-    const USBPORT_RESOURCES_MEMORY: u32 = 2;
-    const USBPORT_RESOURCES_INTERRUPT: u32 = 4;
+    const USBPORT_RESOURCES_MEMORY: u32 = 0x00000004; // FIXED 2026-07-05: translation invented 0x2; verified vs usbport.h/usbmport.h
+    const USBPORT_RESOURCES_INTERRUPT: u32 = 0x00000002; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
     const STATUS_NONE_MAPPED: NTSTATUS = 0xC0000073u32 as NTSTATUS;
 
     let AllocatedResourcesTranslated: PCM_RESOURCE_LIST;
@@ -1159,6 +1159,7 @@ pub unsafe extern "system" fn USBPORT_CreatePdo(
             CharDeviceName.as_mut_ptr(),
             core::mem::size_of::<[u16; 64]>(),
             wstr!("\\Device\\USBPDO-%d\0"),
+            DeviceNumber,
         );
 
         RtlInitUnicodeString(
@@ -1227,13 +1228,13 @@ pub unsafe extern "system" fn USBPORT_FdoPnP(
     Irp: PIRP,
 ) -> NTSTATUS {
 
-    const USBPORT_PNP_STATE_STOPPED: ULONG = 0x00000002;
+    const USBPORT_PNP_STATE_STOPPED: ULONG = 0x00000008; // FIXED 2026-07-05: translation invented 0x2; verified vs usbport.h/usbmport.h
     const USBPORT_PNP_STATE_NOT_INIT: ULONG = 0x00000001;
-    const USBPORT_PNP_STATE_STARTED: ULONG = 0x00000004;
-    const USBPORT_PNP_STATE_FAILED: ULONG = 0x00000008;
-    const USB_MINIPORT_FLAGS_USB2: ULONG = 0x00000002;
-    const USB_PORT_TAG: ULONG = u32::from_le_bytes(*b"PSBU");
-    const USBPORT_INVALIDATE_CONTROLLER_SURPRISE_REMOVE: ULONG = 3;
+    const USBPORT_PNP_STATE_STARTED: ULONG = 0x00000002; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
+    const USBPORT_PNP_STATE_FAILED: ULONG = 0x00000004; // FIXED 2026-07-05: translation invented 0x8; verified vs usbport.h/usbmport.h
+    const USB_MINIPORT_FLAGS_USB2: ULONG = 0x00000010; // FIXED 2026-07-05: translation invented 0x2; verified vs usbport.h/usbmport.h
+    const USB_PORT_TAG: ULONG = 0x70627375;
+    const USBPORT_INVALIDATE_CONTROLLER_SURPRISE_REMOVE: ULONG = 0x00000002; // FIXED 2026-07-05: translation invented 0x3; verified vs usbport.h/usbmport.h
 
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION =
         (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
@@ -1290,17 +1291,33 @@ pub unsafe extern "system" fn USBPORT_FdoPnP(
 
             'exit: loop {
                 if !NT_SUCCESS(Status) {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"[USBPORT] FDO start: lower driver failed 0x%x\n\0".as_ptr()
+                            as *const i8,
+                        Status,
+                    );
                     break 'exit;
                 }
 
                 Status = USBPORT_ParseResources(FdoDevice, Irp, UsbPortResources);
 
                 if !NT_SUCCESS(Status) {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"[USBPORT] FDO start: ParseResources failed 0x%x\n\0".as_ptr()
+                            as *const i8,
+                        Status,
+                    );
                     (*FdoCommonExtension).PnpStateFlags |= USBPORT_PNP_STATE_STOPPED;
                     break 'exit;
                 }
 
                 Status = USBPORT_StartDevice(FdoDevice, UsbPortResources);
+
+                ntkrnl_sys::driver_ddk::DbgPrint(
+                    b"[USBPORT] FDO start: USBPORT_StartDevice -> 0x%x\n\0".as_ptr()
+                        as *const i8,
+                    Status,
+                );
 
                 if !NT_SUCCESS(Status) {
                     (*FdoCommonExtension).PnpStateFlags |= USBPORT_PNP_STATE_STOPPED;
@@ -1415,6 +1432,12 @@ pub unsafe extern "system" fn USBPORT_FdoPnP(
                             core::ptr::addr_of_mut!((*FdoExtension).RootHubPdo),
                         );
 
+                        ntkrnl_sys::driver_ddk::DbgPrint(
+                            b"[USBPORT] QDR BusRelations: CreatePdo(roothub) -> 0x%x\n\0"
+                                .as_ptr() as *const i8,
+                            Status,
+                        );
+
                         if !NT_SUCCESS(Status) {
                             ExFreePoolWithTag(
                                 DeviceRelations as *mut core::ffi::c_void,
@@ -1527,8 +1550,8 @@ pub unsafe extern "system" fn USBPORT_GetDeviceHwIds(
     RevisionID: USHORT,
 ) -> PVOID {
 
-    const USB_MINIPORT_FLAGS_USB2: u32 = 0x00000004;
-    const USB_PORT_TAG: u32 = 0x00000000; // 'PsbU'
+    const USB_MINIPORT_FLAGS_USB2: u32 = 0x00000010; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
+    const USB_PORT_TAG: u32 = crate::glue::USB_PORT_TAG; // 'usbp' (translation had zeroed this)
     const UNICODE_NULL: u16 = 0;
 
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;
@@ -1542,6 +1565,12 @@ pub unsafe extern "system" fn USBPORT_GetDeviceHwIds(
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
     Packet = core::ptr::addr_of_mut!((*(*FdoExtension).MiniPortInterface).Packet);
 
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[USBPORT] GetDeviceHwIds vid=%x pid=%x\n\0".as_ptr() as *const i8,
+        VendorID as u32,
+        DeviceID as u32,
+    );
+
     if ((*Packet).MiniPortFlags & USB_MINIPORT_FLAGS_USB2) != 0 {
         RtlStringCbPrintfExW(
             Buffer.as_mut_ptr(),
@@ -1553,6 +1582,11 @@ pub unsafe extern "system" fn USBPORT_GetDeviceHwIds(
             VendorID as u32,
             DeviceID as u32,
             RevisionID as u32,
+        );
+
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[USBPORT] GetDeviceHwIds fmt1 done rem=%u\n\0".as_ptr() as *const i8,
+            Remaining as u32,
         );
 
         EndBuffer = EndBuffer.offset(1);
@@ -1627,7 +1661,17 @@ pub unsafe extern "system" fn USBPORT_GetDeviceHwIds(
         USBPORT_DumpingIDs(Buffer.as_mut_ptr() as PVOID);
     }
 
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[USBPORT] GetDeviceHwIds alloc len=%u\n\0".as_ptr() as *const i8,
+        Length as u32,
+    );
+
     Id = ExAllocatePoolWithTag(PagedPool, Length, USB_PORT_TAG);
+
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[USBPORT] GetDeviceHwIds alloc done id=%p\n\0".as_ptr() as *const i8,
+        Id,
+    );
 
     if Id.is_null() {
         return core::ptr::null_mut();
@@ -1655,7 +1699,10 @@ pub unsafe extern "system" fn USBPORT_PdoPnP(
 
     let mut Status: NTSTATUS = (*Irp).IoStatus.__bindgen_anon_1.Status;
 
-    // DPRINT("USBPORT_PdoPnP: PdoDevice - %p - %x\n", PdoDevice, Minor);
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[USBPORT] PdoPnP minor=0x%x\n\0".as_ptr() as *const i8,
+        Minor as u32,
+    );
 
     let DeviceCapabilities: PDEVICE_CAPABILITIES;
     let BusInformation: PPNP_BUS_INFORMATION;
@@ -1805,7 +1852,10 @@ pub unsafe extern "system" fn USBPORT_PdoPnP(
             Status = STATUS_SUCCESS;
             IdType = (*IoStack).Parameters.QueryId.IdType;
 
-            // DPRINT("IRP_MN_QUERY_ID/Type %x\n", IdType);
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"[USBPORT] PdoPnP QUERY_ID IdType=%u\n\0".as_ptr() as *const i8,
+                IdType as u32,
+            );
 
             if IdType == BusQueryDeviceID {
                 let Packet: PUSBPORT_REGISTRATION_PACKET;
@@ -1913,6 +1963,12 @@ pub unsafe extern "system" fn USBPORT_PdoPnP(
         }
     }
 
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[USBPORT] PdoPnP done minor=0x%x -> 0x%x info=%p\n\0".as_ptr() as *const i8,
+        Minor as u32,
+        Status,
+        (*Irp).IoStatus.Information,
+    );
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
     IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
     return Status;

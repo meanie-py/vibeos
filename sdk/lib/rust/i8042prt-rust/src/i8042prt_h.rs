@@ -524,8 +524,8 @@ pub type PI8042_HOOK_WORKITEM = *mut I8042_HOOK_WORKITEM;
 // =====================================================================
 
 // ---- ntdd8042.h: keyboard scan-state E0/E1 prefix flags ----
-pub const KEY_E0: u32 = 0x00000020; // ntdd8042.h:103
-pub const KEY_E1: u32 = 0x00000040; // ntdd8042.h:104
+pub const KEY_E0: u32 = 2; // FIXED 2026-07-05: was invented 0x20 with an invented ntdd8042.h citation; real value per ntddkbd.h:72
+pub const KEY_E1: u32 = 4; // FIXED 2026-07-05: was invented 0x40; real value per ntddkbd.h:73
 
 // ---- ntdd8042.h: filter-hook IOCTLs ----
 // CTL_CODE(DeviceType, Function, Method, Access) =
@@ -561,10 +561,8 @@ pub const IOCTL_MOUSE_QUERY_ATTRIBUTES: u32 = 0x000F_0000;
 pub const IOCTL_GET_SYS_BUTTON_CAPS: u32 = 0x0029_4140;
 pub const IOCTL_GET_SYS_BUTTON_EVENT: u32 = 0x0029_4144;
 
-// ---- iotypes.h: PnP IRP minor function codes (MinorFunction is UCHAR) ----
-pub const IRP_MN_QUERY_CAPABILITIES: u8 = 0x09;
-pub const IRP_MN_FILTER_RESOURCE_REQUIREMENTS: u8 = 0x0D;
-pub const IRP_MN_QUERY_PNP_DEVICE_STATE: u8 = 0x14;
+// ---- iotypes.h: PnP IRP minor function codes now come from ntkrnl_sys::driver_ddk
+// (full 0x00-0x18 set added there; local dupes removed to avoid glob ambiguity) ----
 
 // ---- cmtypes.h: CM_RESOURCE_TYPE values (resource descriptor Type field) ----
 pub const CmResourceTypePort: u32 = 1;
@@ -607,9 +605,9 @@ pub const MOUSE_BUTTON_5_DOWN: u32 = 0x0100; // ntddmou.h
 pub const MOUSE_WHEEL: u32 = 0x0400; // ntddmou.h
 
 // ---- ntddmou.h: i8042 hardware-present identifier flags ----
-pub const BALLPOINT_I8042_HARDWARE: u32 = 0x20; // BALLPOINT_I8042_HARDWARE_PRESENT
-pub const WHEELMOUSE_I8042_HARDWARE: u32 = 0x40; // WHEELMOUSE_I8042_HARDWARE_PRESENT
-pub const MOUSE_I8042_HARDWARE: u32 = 0x80; // MOUSE_I8042_HARDWARE_PRESENT
+pub const BALLPOINT_I8042_HARDWARE: u32 = 0x08; // FIXED 2026-07-05: was invented 0x20; real value per ntddmou.h:100
+pub const WHEELMOUSE_I8042_HARDWARE: u32 = 0x20; // FIXED 2026-07-05: was invented 0x40; real value per ntddmou.h:102
+pub const MOUSE_I8042_HARDWARE: u32 = 0x02; // FIXED 2026-07-05: was invented 0x80; real value per ntddmou.h:98
 
 // ---- ntddk.h / kdfuncs.h: crash + debug-control ----
 pub const MANUALLY_INITIATED_CRASH: u32 = 0xDEADDEAD; // ntddk.h:5612

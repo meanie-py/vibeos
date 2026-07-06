@@ -121,12 +121,12 @@ fn MAKELANGID(p: USHORT, s: USHORT) -> USHORT {
 const MESSAGE_RESOURCE_UNICODE: USHORT = 0x0001;
 const ANSI_NULL: u8 = 0;
 
-const BUGCHECK_MESSAGE_INTRO: ULONG = 0;
-const BUGCODE_ID_DRIVER: ULONG = 1;
-const PSS_MESSAGE_INTRO: ULONG = 2;
-const BUGCHECK_TECH_INFO: ULONG = 3;
-const BUGCODE_PSS_MESSAGE: ULONG = 4;
-const BUGCODE_PSS_MESSAGE_SIGNATURE: ULONG = 5;
+const BUGCHECK_MESSAGE_INTRO: ULONG = 0x8000007F; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
+const BUGCODE_ID_DRIVER: ULONG = 0x80000080; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
+const PSS_MESSAGE_INTRO: ULONG = 0x80000081; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
+const BUGCHECK_TECH_INFO: ULONG = 0x80000083; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
+const BUGCODE_PSS_MESSAGE: ULONG = 0x80000082; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
+const BUGCODE_PSS_MESSAGE_SIGNATURE: ULONG = 0x000000C3; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
 
 const BufferEmpty: UCHAR = 0;
 const BufferInserted: UCHAR = 1;
@@ -149,7 +149,7 @@ const HeadlessCmdSendBlueScreenData: ULONG = 2;
 
 const HalRebootRoutine: ULONG = 1;
 
-const POWER_FAILURE_SIMULATE: ULONG = 0x000000E8;
+const POWER_FAILURE_SIMULATE: ULONG = 0x000000E5; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
 const UNEXPECTED_KERNEL_MODE_TRAP: ULONG = 0x0000007F;
 const DRIVER_CORRUPTED_EXPOOL: ULONG = 0x000000C5;
 const ACPI_BIOS_ERROR: ULONG = 0x000000A5;
@@ -159,7 +159,7 @@ const DATA_BUS_ERROR: ULONG = 0x0000002E;
 const FAT_FILE_SYSTEM: ULONG = 0x00000023;
 const NO_MORE_SYSTEM_PTES: ULONG = 0x0000003F;
 const INACCESSIBLE_BOOT_DEVICE: ULONG = 0x0000007B;
-const KERNEL_MODE_EXCEPTION_NOT_HANDLED: ULONG = 0x0000001E;
+const KERNEL_MODE_EXCEPTION_NOT_HANDLED: ULONG = 0x0000008E; // FIXED 2026-07-05: translation had 0x1E (dup of KMODE_) -> unreachable OR-pattern; real value per bugcodes.h
 const SYSTEM_THREAD_EXCEPTION_NOT_HANDLED: ULONG = 0x0000007E;
 const KMODE_EXCEPTION_NOT_HANDLED: ULONG = 0x0000001E;
 const NTFS_FILE_SYSTEM: ULONG = 0x00000024;
@@ -168,15 +168,15 @@ const STATUS_SYSTEM_IMAGE_BAD_SIGNATURE: ULONG = 0xC00002D1;
 const ATTEMPTED_WRITE_TO_READONLY_MEMORY: ULONG = 0x000000BE;
 const ATTEMPTED_EXECUTE_OF_NOEXECUTE_MEMORY: ULONG = 0x000000FC;
 const IRQL_NOT_LESS_OR_EQUAL: ULONG = 0x0000000A;
-const DRIVER_PORTION_MUST_BE_NONPAGED: ULONG = 0x000000CB;
-const SYSTEM_SCAN_AT_RAISED_IRQL_CAUGHT_IMPROPER_DRIVER_UNLOAD: ULONG = 0x000000D6;
+const DRIVER_PORTION_MUST_BE_NONPAGED: ULONG = 0x000000D3; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
+const SYSTEM_SCAN_AT_RAISED_IRQL_CAUGHT_IMPROPER_DRIVER_UNLOAD: ULONG = 0x000000D4; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
 const DRIVER_IRQL_NOT_LESS_OR_EQUAL: ULONG = 0x000000D1;
 const FATAL_UNHANDLED_HARD_ERROR: ULONG = 0x0000004C;
 const PAGE_FAULT_IN_NONPAGED_AREA: ULONG = 0x00000050;
-const PAGE_FAULT_IN_FREED_SPECIAL_POOL: ULONG = 0x0000007A;
-const DRIVER_PAGE_FAULT_IN_FREED_SPECIAL_POOL: ULONG = 0x0000007B;
-const PAGE_FAULT_BEYOND_END_OF_ALLOCATION: ULONG = 0x0000007C;
-const DRIVER_PAGE_FAULT_BEYOND_END_OF_ALLOCATION: ULONG = 0x0000007D;
+const PAGE_FAULT_IN_FREED_SPECIAL_POOL: ULONG = 0x000000CC; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
+const DRIVER_PAGE_FAULT_IN_FREED_SPECIAL_POOL: ULONG = 0x000000D5; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
+const PAGE_FAULT_BEYOND_END_OF_ALLOCATION: ULONG = 0x000000CD; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
+const DRIVER_PAGE_FAULT_BEYOND_END_OF_ALLOCATION: ULONG = 0x000000D6; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
 const DRIVER_UNLOADED_WITHOUT_CANCELLING_PENDING_OPERATIONS: ULONG = 0x000000CE;
 const DRIVER_LEFT_LOCKED_PAGES_IN_PROCESS: ULONG = 0x000000CB;
 const DRIVER_USED_EXCESSIVE_PTES: ULONG = 0x000000D8;
@@ -722,6 +722,10 @@ unsafe fn KiDisplayBlueScreen(
     }
 }
 
+// Set once the bugcheck banner has printed (by Ex or WithTf) — prevents a
+// double banner on the Ex->WithTf path.
+static mut KiBannerDone: BOOLEAN = 0;
+
 #[no_mangle]
 pub unsafe extern "system" fn KeBugCheckWithTf(
     BugCheckCode: ULONG,
@@ -749,6 +753,45 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
 
     KeBugCheckActive = 1;
     KiBugCheckDriver = core::ptr::null_mut();
+
+    // Direct callers (KiSystemFatalException on double fault, trap handlers)
+    // reach WithTf WITHOUT going through KeBugCheckEx — historically NO banner
+    // printed, and when the BSOD display path then faulted (KeGetBugMessageText
+    // in-page, 2026-07-06), the nested 0x1E banner MASKED the primary bugcheck
+    // entirely. Print the banner here when Ex hasn't already (KiBannerDone).
+    if KiBannerDone == 0 {
+        KiBannerDone = 1;
+        crate::dbg_print!(b"\n*** BUGCHECK: 0x%08lX (0x%p, 0x%p, 0x%p, 0x%p) [via WithTf]\n\0",
+            BugCheckCode,
+            BugCheckParameter1 as PVOID,
+            BugCheckParameter2 as PVOID,
+            BugCheckParameter3 as PVOID,
+            BugCheckParameter4 as PVOID,
+        );
+        #[cfg(target_arch = "x86_64")]
+        if !TrapFrame.is_null() {
+            let rip = (*(TrapFrame as *const ntkrnl_sys::ddk::_KTRAP_FRAME)).Rip as u64;
+            if rip > 0xFFFF800000000000 {
+                let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                let mut in_kernel: BOOLEAN = 0;
+                let base = KiPcToFileHeader(rip as PVOID, &mut le, 0u8, &mut in_kernel);
+                if !base.is_null() && !le.is_null() {
+                    let mut ansi = [0i8; 64];
+                    KeBugCheckUnicodeToAnsi(
+                        &(*le).BaseDllName as *const _ as PUNICODE_STRING,
+                        ansi.as_mut_ptr(),
+                        64,
+                    );
+                    crate::dbg_print!(
+                        b"***   TrapFrame.Rip = 0x%p = %s+0x%lX\n\0",
+                        rip as PVOID,
+                        ansi.as_ptr(),
+                        (rip as ULONG_PTR - base as ULONG_PTR) as ULONG,
+                    );
+                }
+            }
+        }
+    }
 
     if BugCheckCode == POWER_FAILURE_SIMULATE {
         KiDoBugCheckCallbacks();
@@ -1188,6 +1231,7 @@ pub unsafe extern "system" fn KeBugCheckEx(
         BugCheckParameter3 as PVOID,
         BugCheckParameter4 as PVOID,
     );
+    KiBannerDone = 1; // WithTf must not re-print (Ex -> WithTf path)
     // Self-symbolicate: any parameter that lands inside a loaded image prints
     // module+offset right in the banner, so post-boot-marker crashes are
     // self-reporting on serial (no GDB round-trip; module bases vary per boot,

@@ -58,9 +58,15 @@ extern "system" {
     fn TEST_FLAG(value: u8, flag: u8) -> bool;
     fn SET_FLAG(var: &mut u32, flag: u32);
     fn CLEAR_FLAG(var: &mut u32, flag: u32);
-    fn GetSrbScsiData( srbEx: PSTORAGE_REQUEST_BLOCK, cdbLength8: *mut UCHAR, cdbLength32: *mut ULONG, cdb10: *mut UCHAR, senseBuffer: *mut PVOID, senseBufferLength: *mut UCHAR, );
     fn SetSrbScsiData( srbEx: PSTORAGE_REQUEST_BLOCK, cdbLength8: UCHAR, cdbLength32: ULONG, cdb10: UCHAR, senseBuffer: PVOID, senseBufferLength: UCHAR, );
     fn DiskIsValidSmartSelfTest(Subcommand: u8) -> BOOLEAN;
+}
+
+// GetSrbScsiData is defined `extern "C"` in ddk_shims.rs — its decl must match
+// that decoration (i386 was declaring it `extern "system"` → undefined
+// `_GetSrbScsiData@24`; the C def emits the cdecl `_GetSrbScsiData`). 2026-07-06.
+extern "C" {
+    fn GetSrbScsiData( srbEx: PSTORAGE_REQUEST_BLOCK, cdbLength8: *mut UCHAR, cdbLength32: *mut ULONG, cdb10: *mut UCHAR, senseBuffer: *mut PVOID, senseBufferLength: *mut UCHAR, );
 }
 extern "system" {
     fn IoGetIoPriorityHint(Irp: PIRP) -> u32;

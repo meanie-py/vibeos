@@ -87,6 +87,16 @@ RtlRaiseStatus(IN NTSTATUS Status)
     EXCEPTION_RECORD ExceptionRecord;
     CONTEXT Context;
 
+    /* vibeos: with DUMMY_PSEH every kernel-mode software raise is fatal (the
+     * _SEH2_EXCEPT handlers are dead code), so name the raiser BEFORE the
+     * inevitable 0x1E - the bugcheck banner only shows RtlRaiseStatus itself.
+     * Kernel-mode callers only (high-bit VA) - this lib also links into ntdll,
+     * where raises are routine (RPC) and legitimately caught. */
+    if ((ULONG_PTR)_ReturnAddress() >> (sizeof(void*) * 8 - 1))
+    {
+        DbgPrint("[RAISE] RtlRaiseStatus(0x%08lX) from %p\n", Status, _ReturnAddress());
+    }
+
     /* Capture the context */
     RtlCaptureContext(&Context);
 

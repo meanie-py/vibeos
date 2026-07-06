@@ -246,7 +246,7 @@ const TRACE_FLAG_IOCTL: u32 = 2;
 
 // Constants (approximate values; some are typical Windows DDK constants)
 const NonPagedPoolNx: u32 = 0x200; // POOL_TYPE
-const CDROM_TAG_COMPLETION_CONTEXT: u32 = 0; // placeholder, replace with actual tag
+const CDROM_TAG_COMPLETION_CONTEXT: u32 = 0x63436353; // placeholder, replace with actual tag
 
 const START_UNIT_TIMEOUT: u32 = 0xf0; // typical timeout in seconds  // was 60 (LLM-invented); bindgen-correct
 
@@ -272,7 +272,7 @@ const WDF_REQUEST_SEND_OPTION_IGNORE_TARGET_STATE: u32 = 0x00000004;
 const CDROM_READ_CAPACITY_TIMEOUT: u32 = 0x14; // typical value, if incorrect caller should override  // was 10 (LLM-invented); bindgen-correct
 const SCSIOP_READ_CAPACITY: u8 = 0x25;
 
-const CDROM_TAG_STREAM: u32 = 0x6D727453;
+const CDROM_TAG_STREAM: u32 = 0x4F434353;
 const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
 const SCSIOP_SET_STREAMING: u8 = 0xB6;
 #[no_mangle]
@@ -563,7 +563,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
     }
 
     const SENSE_BUFFER_SIZE: u32 = 18; // placeholder
-    const CDROM_TAG_SENSE_INFO: u32 = 0x53454E53; // 'SENS' placeholder
+    const CDROM_TAG_SENSE_INFO: u32 = 0x49436353; // 'SENS' placeholder
     const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
     const SRB_FUNCTION_EXECUTE_SCSI: u32 = 0x00;
     const SRB_SIMPLE_TAG_REQUEST: u32 = 0x20;
@@ -850,7 +850,7 @@ pub unsafe extern "C" fn DeviceSendNotification(
     const TRACE_LEVEL_WARNING: u32 = 3;
     const TRACE_FLAG_MCN: u32 = 0x100;
     const NonPagedPoolNx: u32 = 0x200;
-    const CDROM_TAG_NOTIFICATION: u32 = 0x4E544643;
+    const CDROM_TAG_NOTIFICATION: u32 = 0x6F436353;
 
     let mut notification: *mut TARGET_DEVICE_CUSTOM_NOTIFICATION;
     let mut requiredSize: u32 = 0;

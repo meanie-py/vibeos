@@ -1212,12 +1212,12 @@ sdk/lib/rust/ntoskrnl-rust/src/ke/apc.rs:372: [UNWRAP] .unwrap() — panics on E
 sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/stubs.rs:348: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/thrdini.rs:216: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/trap.rs:218: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:1011: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
+sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:1024: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
+sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:1034: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:504: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:511: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:593: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:968: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
-sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:981: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
-sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:991: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/dpc.rs:271: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/dpc.rs:301: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/dpc.rs:336: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1253,7 +1253,7 @@ sdk/lib/rust/ntoskrnl-rust/src/ob/obsecure.rs:533: [UNWRAP] .unwrap() — panics
 sdk/lib/rust/ntoskrnl-rust/src/ob/obsecure.rs:556: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ob/obsecure.rs:604: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ob/obsecure.rs:659: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/devaction.rs:1018: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/devaction.rs:1033: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/devnode.rs:242: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/pnpdma.rs:75: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/pnpmgr/pnpdma.rs:81: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1521,7 +1521,7 @@ sdk/lib/rust/usbehci-rust/src/usbehci.rs:4110: [UNWRAP] .expect() — panics on 
 sdk/lib/rust/usbehci-rust/src/usbehci.rs:4127: [UNWRAP] .expect() — panics on Err/None in kernel code
 sdk/lib/rust/usbehci-rust/src/usbehci.rs:559: [UNWRAP] .expect() — panics on Err/None in kernel code
 sdk/lib/rust/usbehci-rust/src/usbehci.rs:571: [UNWRAP] .expect() — panics on Err/None in kernel code
-sdk/lib/rust/usbhub-rust/src/lib.rs:20: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
+sdk/lib/rust/usbhub-rust/src/lib.rs:21: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/usbhub-rust/src/pnp.rs:523: [UNWRAP] .expect() — panics on Err/None in kernel code
 sdk/lib/rust/usbhub-rust/src/usbhub.rs:2742: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/usbhub-rust/src/usbhub.rs:2767: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1630,7 +1630,7 @@ sdk/lib/rust/usbport-rust/src/usbport.rs:463: [UNWRAP] .expect() — panics on E
 sdk/lib/rust/usbport-rust/src/usbport.rs:471: [UNWRAP] .expect() — panics on Err/None in kernel code
 sdk/lib/rust/usbport-rust/src/usbport.rs:602: [UNWRAP] .expect() — panics on Err/None in kernel code
 sdk/lib/rust/usbport-rust/src/usbport.rs:606: [UNWRAP] .expect() — panics on Err/None in kernel code
-sdk/lib/rust/usbstor-rust/src/lib.rs:24: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
+sdk/lib/rust/usbstor-rust/src/lib.rs:25: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/usbstor-rust/src/queue.rs:181: [UNWRAP] .expect() — panics on Err/None in kernel code
 sdk/lib/rust/usbuhci-rust/src/lib.rs:19: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/usbuhci-rust/src/roothub.rs:224: [UNWRAP] .expect() — panics on Err/None in kernel code

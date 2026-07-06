@@ -453,8 +453,8 @@ pub unsafe extern "system" fn UhciTakeControlHC(
     Resources: PUSBPORT_RESOURCES,
 ) -> MPSTATUS {
 
-    const USBPORT_RESOURCES_PORT: u32 = 0x00000004;
-    const USBPORT_RESOURCES_INTERRUPT: u32 = 0x00000001;
+    const USBPORT_RESOURCES_PORT: u32 = 0x01;
+    const USBPORT_RESOURCES_INTERRUPT: u32 = 0x02;
     const PCI_LEGSUP: u32 = 0xC0;
     const UHCI_USB_STATUS_MASK: u32 = 0x003F;
 
@@ -2645,8 +2645,8 @@ pub unsafe extern "system" fn UhciPollEndpoint(
 
 #[no_mangle]
 pub unsafe extern "system" fn UhciCheckController(uhciExtension: PVOID) {
-    const UHCI_MAX_HC_SCHEDULE_ERRORS: ULONG = 50;
-    const USBPORT_INVALIDATE_CONTROLLER_SURPRISE_REMOVE: ULONG = 3;
+    const UHCI_MAX_HC_SCHEDULE_ERRORS: ULONG = 16; // FIXED 2026-07-05: translation invented 50; verified vs C header
+    const USBPORT_INVALIDATE_CONTROLLER_SURPRISE_REMOVE: ULONG = 0x02;
 
     let UhciExtension: PUHCI_EXTENSION = uhciExtension as PUHCI_EXTENSION;
 

@@ -172,6 +172,18 @@ use crate::types::{PSTORAGE_REQUEST_BLOCK, STORAGE_REQUEST_BLOCK, PSRBEX_DATA,
     SRBEX_DATA_SCSI_CDB16, SRBEX_DATA_SCSI_CDB32, SRBEX_DATA_SCSI_CDB_VAR, CDB,
     SRB_FUNCTION_STORAGE_REQUEST_BLOCK, SRB_FUNCTION_EXECUTE_SCSI};
 
+
+// REVERSE_BYTES (storport.h macro) — 4-byte endian reverse. A C macro with no
+// exported symbol; diskwmi.rs declares it `extern "system"` so provide a matching
+// def (i386 was undefined `_REVERSE_BYTES@8`). 2026-07-06.
+#[no_mangle]
+pub unsafe extern "system" fn REVERSE_BYTES(destination: *mut u8, source: *const u8) {
+    *destination.add(3) = *source.add(0);
+    *destination.add(2) = *source.add(1);
+    *destination.add(1) = *source.add(2);
+    *destination.add(0) = *source.add(3);
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn GetSrbScsiData(
     SrbEx: PSTORAGE_REQUEST_BLOCK,

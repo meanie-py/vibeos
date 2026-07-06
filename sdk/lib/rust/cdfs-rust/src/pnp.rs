@@ -13,7 +13,7 @@ use crate::glue::{CDFS_BUG_CHECK_PNP, CDFS_NTC_VCB, Vcb};
 use crate::types::{_VCB_CONDITION_VcbDismountInProgress as VcbDismountInProgress, _VCB_CONDITION_VcbInvalid as VcbInvalid};
 
 // cdstruc.h: #define IRP_CONTEXT_FLAG_WAIT (0x00000004)
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH
 // ntstatus.h: STATUS_DEVICE_BUSY ((NTSTATUS)0x80000011) — not in ntkrnl_sys constants.
 const STATUS_DEVICE_BUSY: i32 = 0x80000011u32 as i32;
 

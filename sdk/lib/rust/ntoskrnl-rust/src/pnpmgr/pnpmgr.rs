@@ -266,6 +266,11 @@ pub unsafe extern "system" fn IopInstallCriticalDevice(DeviceNode: PDEVICE_NODE)
         return;
     }
 
+    crate::dbg_print!(
+        b"[CDDB] check %wZ\r\n\0",
+        core::ptr::addr_of!((*DeviceNode).InstancePath)
+    );
+
     Status = ZwQueryValueKey(
         InstanceKey,
         &mut HardwareIdU,
@@ -390,6 +395,15 @@ pub unsafe extern "system" fn IopInstallCriticalDevice(DeviceNode: PDEVICE_NODE)
         let StringLength = wcslen(IdBuffer) as USHORT + 1;
 
         IopFixupDeviceId(IdBuffer);
+
+        {
+            let IdU = _UNICODE_STRING {
+                Length: (StringLength - 1) * core::mem::size_of::<WCHAR>() as USHORT,
+                MaximumLength: StringLength * core::mem::size_of::<WCHAR>() as USHORT,
+                Buffer: IdBuffer,
+            };
+            crate::dbg_print!(b"[CDDB]   try %wZ\r\n\0", core::ptr::addr_of!(IdU));
+        }
 
         let mut Index: USHORT = 0;
         loop {
@@ -581,6 +595,11 @@ pub unsafe extern "system" fn IopInstallCriticalDevice(DeviceNode: PDEVICE_NODE)
                         }
                     }
 
+                    crate::dbg_print!(
+                        b"[CDDB]   MATCH %wZ -> Service/ClassGUID written\r\n\0",
+                        core::ptr::addr_of!(ChildIdNameU)
+                    );
+
                     ExFreePool(OriginalIdBuffer as PVOID);
                     ExFreePool(PartialInfo as PVOID);
                     ExFreePool(BasicInfo as PVOID);
@@ -602,6 +621,8 @@ pub unsafe extern "system" fn IopInstallCriticalDevice(DeviceNode: PDEVICE_NODE)
 
         IdBuffer = IdBuffer.add(StringLength as usize);
     }
+
+    crate::dbg_print!(b"[CDDB]   no match\r\n\0");
 
     ExFreePool(OriginalIdBuffer as PVOID);
     ZwClose(InstanceKey);

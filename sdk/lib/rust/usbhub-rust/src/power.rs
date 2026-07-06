@@ -98,7 +98,7 @@ pub unsafe extern "system" fn USBH_HubESDRecoverySetD0Completion(
     Context: PVOID,
     IoStatus: PIO_STATUS_BLOCK,
 ) {
-    const USBHUB_FDO_FLAG_ESD_RECOVERING: u32 = 0x00080000;
+    const USBHUB_FDO_FLAG_ESD_RECOVERING: u32 = 0x00000200; // FIXED 2026-07-06: translation invented 0x80000; real value is a (1<<N) define in usbhub.h
 
     let HubExtension: PUSBHUB_FDO_EXTENSION = Context as PUSBHUB_FDO_EXTENSION;
 
@@ -148,8 +148,8 @@ pub unsafe extern "system" fn USBH_FdoDeferPoRequestCompletion(
 #[no_mangle]
 pub unsafe extern "system" fn USBH_HubSetD0(HubExtension: PUSBHUB_FDO_EXTENSION) -> NTSTATUS {
     const STATUS_INVALID_DEVICE_STATE: NTSTATUS = 0xC0000184u32 as NTSTATUS;
-    const USBHUB_FDO_FLAG_WAIT_IDLE_REQUEST: ULONG = 0x00000004;
-    const USBHUB_FDO_FLAG_WAKEUP_START: ULONG = 0x00000010;
+    const USBHUB_FDO_FLAG_WAIT_IDLE_REQUEST: ULONG = 0x00001000; // FIXED 2026-07-06: translation invented 0x4; real value is a (1<<N) define in usbhub.h
+    const USBHUB_FDO_FLAG_WAKEUP_START: ULONG = 0x00020000; // FIXED 2026-07-06: translation invented 0x10; real value is a (1<<N) define in usbhub.h
 
     let mut RootHubDevExt: PUSBHUB_FDO_EXTENSION;
     let mut Status: NTSTATUS;
@@ -435,8 +435,8 @@ pub unsafe extern "system" fn USBH_FdoWWIrpIoCompletion(
     Context: PVOID,
 ) -> NTSTATUS {
 
-    const USBHUB_FDO_FLAG_PENDING_WAKE_IRP: u32 = 0x00000400;
-    const USBHUB_FDO_FLAG_WAKEUP_START: u32 = 0x00000800;
+    const USBHUB_FDO_FLAG_PENDING_WAKE_IRP: u32 = 0x00000080; // FIXED 2026-07-06: translation invented 0x400; real value is a (1<<N) define in usbhub.h
+    const USBHUB_FDO_FLAG_WAKEUP_START: u32 = 0x00020000; // FIXED 2026-07-06: translation invented 0x800; real value is a (1<<N) define in usbhub.h
     const EVENT_INCREMENT: i32 = 1;
     const STATUS_MORE_PROCESSING_REQUIRED: NTSTATUS = 0xC0000016u32 as NTSTATUS;
 
@@ -513,10 +513,10 @@ pub unsafe extern "system" fn USBH_PowerIrpCompletion(
     Irp: PIRP,
     Context: PVOID,
 ) -> NTSTATUS {
-    const USBHUB_FDO_FLAG_SET_D0_STATE: u32 = 0x00000800;
-    const USBHUB_FDO_FLAG_HIBERNATE_STATE: u32 = 0x00010000;
-    const USBHUB_FDO_FLAG_DEVICE_STOPPED: u32 = 0x00000010;
-    const USBHUB_FDO_FLAG_DO_ENUMERATION: u32 = 0x00000080;
+    const USBHUB_FDO_FLAG_SET_D0_STATE: u32 = 0x00000400; // FIXED 2026-07-06: translation invented 0x800; real value is a (1<<N) define in usbhub.h
+    const USBHUB_FDO_FLAG_HIBERNATE_STATE: u32 = 0x00400000; // FIXED 2026-07-06: translation invented 0x10000; real value is a (1<<N) define in usbhub.h
+    const USBHUB_FDO_FLAG_DEVICE_STOPPED: u32 = 0x00000020; // FIXED 2026-07-06: translation invented 0x10; real value is a (1<<N) define in usbhub.h
+    const USBHUB_FDO_FLAG_DO_ENUMERATION: u32 = 0x00100000; // FIXED 2026-07-06: translation invented 0x80; real value is a (1<<N) define in usbhub.h
     const STATUS_MORE_PROCESSING_REQUIRED: NTSTATUS = 0xC0000016u32 as i32;
 
     let mut HubExtension: PUSBHUB_FDO_EXTENSION;

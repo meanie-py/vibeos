@@ -208,7 +208,7 @@ const FILE_ADD_FILE: u32 = 0x00000002;
 const FILE_ADD_SUBDIRECTORY: u32 = 0x00000004;
 const FILE_DELETE_CHILD: u32 = 0x00000040;
 const CDFS_RESIDUAL_USER_REFERENCE: i32 = 3;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH
 const UserVolumeOpen: u32 = 2;
 const UserFileOpen: u32 = 4;
 const FILE_OPBATCH_BREAK_UNDERWAY: u32 = 0x00000009;

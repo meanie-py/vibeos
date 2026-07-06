@@ -32,13 +32,13 @@ extern "C" {
 // ---- file-scope preamble (translated) ----
 // #define NDEBUG
 
-const USBPORT_FLAG_BIOS_DISABLE_SS: ULONG = 0x00000080;
-const USBPORT_FLAG_SELECTIVE_SUSPEND: ULONG = 0x00000200;
+const USBPORT_FLAG_BIOS_DISABLE_SS: ULONG = 0x08000000; // FIXED 2026-07-05: translation invented 0x80; verified vs usbport.h/usbmport.h
+const USBPORT_FLAG_SELECTIVE_SUSPEND: ULONG = 0x00000800; // FIXED 2026-07-05: translation invented 0x200; verified vs usbport.h/usbmport.h
 
-const USB_MINIPORT_FLAGS_USB2: u32 = 0x00000400;
-const USB_PORTATTR_SHARED_USB2: u32 = 0x00000001;
-const USB_PORTATTR_OWNED_BY_CC: u32 = 0x00000002;
-const USB_PORTATTR_NO_OVERCURRENT_UI: u32 = 0x00000004;
+const USB_MINIPORT_FLAGS_USB2: u32 = 0x00000010; // FIXED 2026-07-05: translation invented 0x400; verified vs usbport.h/usbmport.h
+const USB_PORTATTR_SHARED_USB2: u32 = 0x00000002; // FIXED 2026-07-05: translation invented 0x1; verified vs usbport.h/usbmport.h
+const USB_PORTATTR_OWNED_BY_CC: u32 = 0x01000000; // FIXED 2026-07-05: translation invented 0x2; verified vs usbport.h/usbmport.h
+const USB_PORTATTR_NO_OVERCURRENT_UI: u32 = 0x02000000; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
 const USBPORT_FLAG_COMPANION_HC: u32 = 0x01000000;
 
 #[no_mangle]

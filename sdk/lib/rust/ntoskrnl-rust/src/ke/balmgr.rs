@@ -39,6 +39,12 @@ use super::clock::KeTickCount;
 const THREAD_BOOST_PRIORITY: ULONG = 23;
 const LOW_REALTIME_PRIORITY: ULONG = 16;
 const WAIT_QUANTUM_DECREMENT: ULONG = 1;
+// Were unresolved in the KeBalanceSetManager match — Rust silently turned the
+// first arm into a bind-all catch-all (bind-all match-arm bug class,
+// 2026-07-05 sweep). Behaviorally harmless here (all arms empty, matching the
+// C original), fixed for hygiene so the arms mean what they say.
+const STATUS_WAIT_0: NTSTATUS = 0;
+const STATUS_WAIT_1: NTSTATUS = 1;
 
 static mut KiReadyScanLast: ULONG = 0;
 

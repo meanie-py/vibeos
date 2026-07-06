@@ -107,6 +107,13 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const LockQueueIoDatabaseLock: KSPIN_LOCK_QUEUE_NUMBER = 10;
 
+// Were unresolved in the driver-load error match — Rust silently turned the
+// STATUS_FAILED_DRIVER_ENTRY arm into a bind-all catch-all, so EVERY non-
+// INSUFFICIENT_RESOURCES failure was reported as CM_PROB_FAILED_DRIVER_ENTRY
+// (bind-all match-arm bug class, 2026-07-05 sweep). Values per ntstatus.h.
+const STATUS_ILL_FORMED_SERVICE_ENTRY: NTSTATUS = 0xC0000160_u32 as i32;
+const STATUS_FAILED_DRIVER_ENTRY: NTSTATUS = 0xC0000365_u32 as i32;
+
 // Type aliases for enum types used as parameter types
 type BUS_QUERY_ID_TYPE = _BUS_QUERY_ID_TYPE;
 type DEVICE_ACTION = _DEVICE_ACTION;
@@ -538,6 +545,10 @@ unsafe fn IopCreateDeviceInstancePath(
         &mut Stack as *mut _,
     );
     if Status < 0 {
+        crate::dbg_print!(
+            b"[DA]   CreateDeviceInstancePath: QUERY_ID(DeviceID) -> 0x%x\r\n\0",
+            Status as u32
+        );
         return Status;
     }
 
@@ -554,6 +565,10 @@ unsafe fn IopCreateDeviceInstancePath(
 
     Status = IopQueryDeviceCapabilities(DeviceNode, &mut DeviceCapabilities as *mut _);
     if Status < 0 {
+        crate::dbg_print!(
+            b"[DA]   CreateDeviceInstancePath: QUERY_CAPABILITIES -> 0x%x\r\n\0",
+            Status as u32
+        );
         if Status != STATUS_NOT_SUPPORTED {
         }
         RtlFreeUnicodeString(&mut DeviceId as *mut _);
@@ -1016,9 +1031,19 @@ unsafe fn PiCallDriverAddDevice(
 
         if !driverObject.is_null() && !(*driverObject).DriverExtension.is_null() && (*(*driverObject).DriverExtension).AddDevice.is_some() {
             Status = ((*(*driverObject).DriverExtension).AddDevice.unwrap())((*driverEntry).DriverObject, (*DeviceNode).PhysicalDeviceObject);
+            crate::dbg_print!(
+                b"[DA] AddDevice %wZ (drv %wZ) -> 0x%x\r\n\0",
+                core::ptr::addr_of!((*DeviceNode).InstancePath),
+                core::ptr::addr_of!((*driverObject).DriverName),
+                Status as u32
+            );
         } else if driverObject.is_null() {
             Status = STATUS_SUCCESS;
         } else {
+            crate::dbg_print!(
+                b"[DA] AddDevice %wZ: legacy driver (no AddDevice) -> UNSUCCESSFUL\r\n\0",
+                core::ptr::addr_of!((*DeviceNode).InstancePath)
+            );
             (*DeviceNode).Flags |= DNF_LEGACY_DRIVER;
             Status = STATUS_UNSUCCESSFUL;
         }
@@ -1429,6 +1454,11 @@ unsafe fn PiInitializeDevNode(
 
     Status = IopCreateDeviceInstancePath(DeviceNode, &mut InstancePathU as *mut _);
     if Status < 0 {
+        crate::dbg_print!(
+            b"[DA] PiInitializeDevNode pdo=%p: CreateDeviceInstancePath FAILED 0x%x\r\n\0",
+            (*DeviceNode).PhysicalDeviceObject as u64,
+            Status as u32
+        );
         if Status != STATUS_PLUGPLAY_NO_DEVICE {
         }
         return Status;
@@ -2198,9 +2228,21 @@ unsafe fn PiEnumerateDevice(
     (*DeviceNode).OverUsed1.PendingDeviceRelations = core::ptr::null_mut();
 
     if DeviceRelations.is_null() {
+        crate::dbg_print!(
+            b"[DA] PiEnumerateDevice %wZ: no PDOs (cs=0x%x)\r\n\0",
+            core::ptr::addr_of!((*DeviceNode).InstancePath),
+            (*DeviceNode).CompletionStatus as u32
+        );
         PiSetDevNodeState(DeviceNode, DeviceNodeStarted);
         return STATUS_SUCCESS;
     }
+
+    crate::dbg_print!(
+        b"[DA] PiEnumerateDevice %wZ: %u children (cs=0x%x)\r\n\0",
+        core::ptr::addr_of!((*DeviceNode).InstancePath),
+        (*DeviceRelations).Count,
+        (*DeviceNode).CompletionStatus as u32
+    );
 
     let mut child = (*DeviceNode).Child;
     while !child.is_null() {
@@ -2459,6 +2501,13 @@ unsafe fn PiDevNodeStateMachine(
                 if ((*currentNode).Flags & DNF_REENUMERATE) != 0 {
                     (*currentNode).Flags &= !DNF_REENUMERATE;
                     status = PiIrpQueryDeviceRelations(currentNode, BusRelations);
+
+                    crate::dbg_print!(
+                        b"[DA] QDR(bus) %wZ -> 0x%x rel=%p\r\n\0",
+                        core::ptr::addr_of!((*currentNode).InstancePath),
+                        status as u32,
+                        (*currentNode).OverUsed1.PendingDeviceRelations as u64
+                    );
 
                     PiSetDevNodeState(currentNode, DeviceNodeEnumerateCompletion);
                     doProcessAgain = 1;

@@ -164,15 +164,199 @@ pub unsafe extern "C" fn IoCopyCurrentIrpStackLocationToNext(Irp: PIRP) {
     (*next).Control = 0;
 }
 
-// RtlStringCchPrintfW — ntstrsafe.h FORCEINLINE wide formatted print. Variadic formatting is
-// not reconstructible from the fixed extern decl; usbstor uses it only on a DbgPrint-adjacent
-// device-string path (non-boot). Match cdrom-rust's shim but null-terminate the destination so
-// it's a valid empty string. NOTE: known fidelity gap — owed a faithful ntstrsafe port.
+// Real ntstrsafe wide formatter — ported from usbport-rust/src/glue.rs 2026-07-06
+// (was a null-terminate-only stub; same empty-string disease that broke usbhub's
+// PDO IDs). Cch variant wraps the byte-count core.
+// TODO: factor into a shared strsafe rlib instead of per-crate copies.
+const STATUS_BUFFER_OVERFLOW_W: NTSTATUS = 0x80000005u32 as NTSTATUS;
+const STATUS_INVALID_PARAMETER_W: NTSTATUS = 0xC000000Du32 as NTSTATUS;
+
+struct WOut {
+    dest: *mut u16,
+    cap_chars: usize, // capacity in WCHARs, including the NUL slot
+    len: usize,
+    overflow: bool,
+}
+
+impl WOut {
+    #[inline]
+    unsafe fn push(&mut self, c: u16) {
+        if self.len + 1 < self.cap_chars {
+            *self.dest.add(self.len) = c;
+            self.len += 1;
+        } else {
+            self.overflow = true;
+        }
+    }
+
+    unsafe fn push_num(&mut self, val: u64, base: u64, upper: bool, zero_pad: bool, width: usize, negative: bool) {
+        let digits = if upper {
+            b"0123456789ABCDEF"
+        } else {
+            b"0123456789abcdef"
+        };
+        let mut tmp = [0u16; 24];
+        let mut n = val;
+        let mut i = 0usize;
+        loop {
+            tmp[i] = digits[(n % base) as usize] as u16;
+            n /= base;
+            i += 1;
+            if n == 0 {
+                break;
+            }
+        }
+        let body = i + if negative { 1 } else { 0 };
+        if zero_pad && negative {
+            self.push(b'-' as u16);
+        }
+        let mut pad = width.saturating_sub(body);
+        while pad > 0 {
+            self.push(if zero_pad { b'0' as u16 } else { b' ' as u16 });
+            pad -= 1;
+        }
+        if !zero_pad && negative {
+            self.push(b'-' as u16);
+        }
+        while i > 0 {
+            i -= 1;
+            self.push(tmp[i]);
+        }
+    }
+}
+
+/// Shared ntstrsafe-style formatter core. Returns (chars_written, status).
+unsafe fn strsafe_vformat_w(
+    pszDest: *mut u16,
+    cbDest: usize,
+    pszFormat: *const u16,
+    args: &mut core::ffi::VaListImpl,
+) -> (usize, NTSTATUS) {
+    if pszDest.is_null() || pszFormat.is_null() || cbDest < core::mem::size_of::<u16>() {
+        return (0, STATUS_INVALID_PARAMETER_W);
+    }
+    let mut out = WOut {
+        dest: pszDest,
+        cap_chars: cbDest / core::mem::size_of::<u16>(),
+        len: 0,
+        overflow: false,
+    };
+    let mut p = pszFormat;
+    while *p != 0 {
+        let c = *p;
+        p = p.add(1);
+        if c != b'%' as u16 {
+            out.push(c);
+            continue;
+        }
+        // parse [0][width] then specifier
+        let mut zero_pad = false;
+        let mut width = 0usize;
+        if *p == b'0' as u16 {
+            zero_pad = true;
+            p = p.add(1);
+        }
+        while *p >= b'0' as u16 && *p <= b'9' as u16 {
+            width = width * 10 + (*p - b'0' as u16) as usize;
+            p = p.add(1);
+        }
+        // skip C length prefix 'l' (e.g. %lx) — args are still 32-bit-promoted here
+        if *p == b'l' as u16 {
+            p = p.add(1);
+        }
+        let spec = *p;
+        p = p.add(1);
+        match spec as u8 {
+            b'd' | b'i' => {
+                let v = args.arg::<i32>();
+                out.push_num(v.unsigned_abs() as u64, 10, false, zero_pad, width, v < 0);
+            }
+            b'u' => {
+                let v = args.arg::<u32>();
+                out.push_num(v as u64, 10, false, zero_pad, width, false);
+            }
+            b'x' | b'X' => {
+                let v = args.arg::<u32>();
+                out.push_num(v as u64, 16, spec as u8 == b'X', zero_pad, width, false);
+            }
+            b's' => {
+                let mut s = args.arg::<*const u16>();
+                if !s.is_null() {
+                    while *s != 0 {
+                        out.push(*s);
+                        s = s.add(1);
+                    }
+                }
+            }
+            b'c' => {
+                let v = args.arg::<u32>();
+                out.push(v as u16);
+            }
+            b'%' => out.push(b'%' as u16),
+            other => {
+                ntkrnl_sys::driver_ddk::DbgPrint(
+                    b"[USBSTOR] strsafe_vformat_w: unsupported format specifier '%%%c' - FIX THE FORMATTER\n\0"
+                        .as_ptr() as *const i8,
+                    other as u32,
+                );
+                *pszDest.add(out.len.min(out.cap_chars - 1)) = 0;
+                return (out.len, STATUS_INVALID_PARAMETER_W);
+            }
+        }
+    }
+    *out.dest.add(out.len.min(out.cap_chars - 1)) = 0;
+    if out.overflow {
+        (out.len, STATUS_BUFFER_OVERFLOW_W)
+    } else {
+        (out.len, 0)
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbPrintfW(
+    pszDest: *mut u16,
+    cbDest: usize,
+    pszFormat: *const u16,
+    mut args: ...
+) -> NTSTATUS {
+    let (_len, status) = strsafe_vformat_w(pszDest, cbDest, pszFormat, &mut args);
+    status
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbCopyW(
+    pszDest: *mut u16,
+    cbDest: usize,
+    pszSrc: *const u16,
+) -> NTSTATUS {
+    if pszDest.is_null() || pszSrc.is_null() || cbDest < core::mem::size_of::<u16>() {
+        return STATUS_INVALID_PARAMETER_W;
+    }
+    let cap_chars = cbDest / core::mem::size_of::<u16>();
+    let mut i = 0usize;
+    while *pszSrc.add(i) != 0 {
+        if i + 1 >= cap_chars {
+            *pszDest.add(i) = 0;
+            return STATUS_BUFFER_OVERFLOW_W;
+        }
+        *pszDest.add(i) = *pszSrc.add(i);
+        i += 1;
+    }
+    *pszDest.add(i) = 0;
+    0
+}
+
+
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn RtlStringCchPrintfW(Dst: *mut u16, CchDst: usize, _Format: *const u16) -> NTSTATUS {
-    if !Dst.is_null() && CchDst > 0 { *Dst = 0; }
-    0
+pub unsafe extern "C" fn RtlStringCchPrintfW(
+    Dst: *mut u16,
+    CchDst: usize,
+    Format: *const u16,
+    mut args: ...
+) -> NTSTATUS {
+    let (_len, status) = strsafe_vformat_w(Dst, CchDst * core::mem::size_of::<u16>(), Format, &mut args);
+    status
 }
 
 // KeGetCurrentIrql — amd64 reads CR8 (TPR). i386 exports it; arm64 didn't reference it here.
