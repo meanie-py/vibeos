@@ -8,7 +8,7 @@
 #![cfg(target_arch = "aarch64")]
 #![allow(unused_variables)]
 
-use core::sync::atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicI32, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use ntkrnl_sys::ddk;
 
 const TRUE: ddk::BOOLEAN = 1;
@@ -863,6 +863,16 @@ unsafe fn HalpDispatchSoftwareInterrupts(OldIrql: ddk::KIRQL, NewIrql: ddk::KIRQ
 static HalpIrqlViolations: AtomicU32 = AtomicU32::new(0);
 const IRQL_VIOLATION_REPORT_MAX: u32 = 8;
 
+// The raise-DOWN/lower-UP violations (field manual §9.24) are the symptom of a
+// LEAKED HIGH_LEVEL raise: current soft IRQL is stuck at 15 when a spinlock
+// acquire raises to SYNCH(=DISPATCH=2), so the "raise" drops 15->2. The victim
+// is easy to see; the leaker is not. Record the caller RA of the most recent
+// raise UP TO HIGH_LEVEL so the violation report can name the site that raised
+// and never lowered — turning a rare arm64-net flake's forensics from an
+// anonymous later-module caller into the exact leaking raiser. Zero cost off the
+// raise path; only stored on a genuine raise-to-HIGH.
+static HalpLastHighRaiseRa: AtomicU64 = AtomicU64::new(0);
+
 extern "C" {
     fn DbgPrint(Format: *const u8, ...) -> u32;
 }
@@ -875,12 +885,20 @@ unsafe fn irql_violation(kind: &'static [u8], old: ddk::KIRQL, new: ddk::KIRQL) 
         // return address (inside Kf*Irql's caller) as the best cheap anchor.
         let ra: u64;
         core::arch::asm!("mov {0}, x30", out(reg) ra, options(nomem, nostack, preserves_flags));
+        // Leaked-HIGH case (old IRQL already at HIGH_LEVEL): also print the last
+        // raise-to-HIGH site — that's the raiser that never lowered (§9.24).
+        let leaker = if old as u32 >= 15 {
+            HalpLastHighRaiseRa.load(Ordering::Relaxed)
+        } else {
+            0
+        };
         DbgPrint(
-            b"[IRQL] VIOLATION: %s %u -> %u, caller near %p\n\0".as_ptr(),
+            b"[IRQL] VIOLATION: %s %u -> %u, caller near %p, last raise-to-HIGH @ %p\n\0".as_ptr(),
             kind.as_ptr(),
             old as u32,
             new as u32,
             ra as usize,
+            leaker as usize,
         );
     }
 }
@@ -911,6 +929,13 @@ pub unsafe extern "system" fn KfRaiseIrql(NewIrql: ddk::KIRQL) -> ddk::KIRQL {
         let OldIrql = HalpCurrentIrql;
         if NewIrql < OldIrql {
             irql_violation(b"raise-DOWN\0", OldIrql, NewIrql);
+        }
+        // Track raises to HIGH_LEVEL so a later leaked-HIGH violation (§9.24)
+        // can name the raiser that never lowered.
+        if NewIrql as u32 >= 15 {
+            let ra: u64;
+            core::arch::asm!("mov {0}, x30", out(reg) ra, options(nomem, nostack, preserves_flags));
+            HalpLastHighRaiseRa.store(ra, Ordering::Relaxed);
         }
         HalpCurrentIrql = NewIrql;
         // Hardware half: mask GIC lines at-or-below the new level (MMIO
