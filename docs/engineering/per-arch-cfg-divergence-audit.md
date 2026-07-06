@@ -60,16 +60,26 @@ offending top-level entry is almost always resident for the VAs the path touches
   mark as a tracked TODO if timers genuinely aren't ready).
 
 ## TIER 2 — divergence-from-C, verify + unify
-- **`ex/init.rs:1383` — amd64 alone skips the SMSS wait + `SESSION5_INITIALIZATION_FAILED`
-  (0x6A) bugcheck** (Rust-only, amd64-only; the C does it unconditionally,
-  `ntoskrnl/ex/init.c:2350`). Defeats the "Session Manager terminated" guard on the arch
-  with the wedge history. Verify why, then unify.
-- **`mm/mmfault.rs:255` — WS-lock recursion guard gated arm64-only**, with a *false*
-  "amd64/i386 KVM schedules around it" comment (default backend is TCG). Note **§9.13 is
-  already resolved** (amd64 green ×3), so this is *verify whether now-redundant + fix the
-  false premise*, not "the open wedge root."
-- **`win32k/main.rs:673` — `co_IntClientThreadSetup()` gated i386-only** → skipped on
-  amd64+arm64; upstream calls it for every non-SYSTEM/CSRSS thread. Verify.
+- **✅ DONE `ex/init.rs` — amd64 alone skipped the SMSS wait + `SESSION5_INITIALIZATION_FAILED`
+  (0x6A) bugcheck** (Rust-only carve-out `#[cfg(not(x86_64))]`; the C does it unconditionally,
+  `ntoskrnl/ex/init.c:2350`). Verified: a March bring-up shortcut (5802b15) masking an
+  early-smss-death rooted in the pre-fix Mm/pushlock wedges (§9.13-9.17). Restored the guard
+  on all arches to match C (`8738b221955`) — gate ×3 green, amd64 smss confirmed healthy
+  (STATUS_TIMEOUT, no bugcheck), so no latent death was hiding behind the shortcut.
+- **✅ DONE `mm/mmfault.rs` — WS-lock recursion guard was arm64-only**, with a *false*
+  "amd64/i386 KVM schedules around it" comment. Verified now-redundant: it band-aided the
+  §9.13-class fault-inside-teardown self-deadlock, and amd64 (which never had the guard) has
+  booted green ×3 since §9.13's PFN-union root fix. Removed it — all arches now take the WS
+  lock unconditionally, matching C + the amd64/i386 path (`4be55078de3`); also deletes a
+  per-arch `__bindgen_anon_9` layout-drift hazard. Gate ×3 green (arm64 under test, no
+  self-deadlock).
+- **➡ ROUTED `win32k/main.rs:673` — `co_IntClientThreadSetup()` call gated i386-only** →
+  skipped on amd64+arm64 (fully implemented on all arches; only the call site is gated).
+  Verified = deliberate bring-up shortcut skipping the per-GUI-thread CLIENTTHREADSTARTUP
+  user-callback on **exactly the two render-gap arches**. Re-enabling is a real behavioral
+  change (extra kernel→user callback per GUI thread) *and* a plausible cause of the
+  non-client-paint gap → routed to the **screen-painting fable** as a diagnostic lead
+  (`ui-render-completeness-investigation.md`) rather than unified blind.
 
 ## TIER 3 — arm64 bring-up shortcuts (retire now that arm64 boots to desktop)
 A coherent ARM64-native-boot cluster in win32k/userland. Some Rust-introduced, some
@@ -101,8 +111,14 @@ faithfully mirror the C's `#ifdef _M_ARM64`; all retire-able:
 ---
 
 ## Status / work queue
-- **Tier 1** — being fixed (this session, ourselves; gate ×3).
-- **Tier 2** — verify each against C/upstream before unifying.
+- **Tier 1** — ✅ PXE cluster + KERNEL_STACK_SIZE landed (`475c10677e9`), gate ×3 green.
+  Remaining: `KeDelayExecutionThread` arm64 stub (ke/wait.rs:411) — **routed to the
+  arm64-interrupts fable** (it depends on the timer/interrupt machinery that lane is
+  actively rebuilding; flipping arm64 onto the real timer-block wait solo would build on
+  not-yet-ready arm64 timer-wake and collide with their changes).
+- **Tier 2** — ✅ both actionable items landed (ex/init SMSS guard `8738b221955`, mmfault
+  guard removal `4be55078de3`); win32k `co_IntClientThreadSetup` routed to the
+  screen-painting fable. Tier 2 complete.
 - **Tier 3** — track under "retire arm64 native-boot scaffolding"; some blocked on the
   arm64-interrupts + service-subsystem bring-up.
 - **Tier 4** — opportunistic.
