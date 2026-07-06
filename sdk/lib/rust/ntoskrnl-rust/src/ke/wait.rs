@@ -348,6 +348,14 @@ unsafe fn KiExitDispatcherImpl(OldIrql: KIRQL) {
     NextThread = (*Prcb).NextThread;
     Thread = (*Prcb).CurrentThread;
 
+    // ARM64-only, mirrors C #ifdef _M_ARM64 (ntoskrnl/ke/thrdschd.c KiSwapThread /
+    // this KiExitDispatcher). arm64 has no working HalRequestSoftwareInterrupt, so a
+    // Prcb->NextThread set earlier is never dispatched via a DISPATCH-level software
+    // interrupt; a higher-priority thread queued afterwards (e.g. by NtYieldExecution)
+    // would be starved. Re-enforce NextThread->Priority >= max(ReadySummary) here.
+    // NOT per-arch drift: on x86 the software interrupt keeps this invariant for free,
+    // so the branch never fires there. Removable once arm64 gains real
+    // software-interrupt preemption — see docs/engineering/arm64-interrupts-quest.md.
     #[cfg(target_arch = "aarch64")]
     {
         if (*Prcb).ReadySummary != 0 {
