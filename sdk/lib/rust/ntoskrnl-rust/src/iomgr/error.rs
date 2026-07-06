@@ -37,6 +37,26 @@ const IO_TYPE_ERROR_MESSAGE: USHORT = 12;
 use ntkrnl_sys::ddk::ExInterlockedInsertHeadList;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 #[cfg(target_arch = "x86")]
 unsafe fn ExInterlockedInsertHeadList(
     ListHead: PLIST_ENTRY,
@@ -389,7 +409,7 @@ unsafe extern "system" fn IopLogWorker(_Parameter: PVOID) {
             if Status < 0 || (*ObjectNameInfo).Name.Length == 0 {
                 RtlInitEmptyUnicodeString(
                     core::ptr::addr_of_mut!((*ObjectNameInfo).Name),
-                    b"\0\0".as_ptr() as *mut u16,
+                    w!("").as_ptr() as *mut u16,
                     0,
                 );
 
@@ -413,7 +433,7 @@ unsafe extern "system" fn IopLogWorker(_Parameter: PVOID) {
             NameString = (*ObjectNameInfo).Name.Buffer;
             DeviceNameLength = (*ObjectNameInfo).Name.Length as ULONG;
         } else {
-            NameString = b"\0\0".as_ptr() as *mut u16;
+            NameString = w!("").as_ptr() as *mut u16;
             DeviceNameLength = 0;
         }
 

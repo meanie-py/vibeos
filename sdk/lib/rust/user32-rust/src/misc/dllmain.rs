@@ -68,6 +68,26 @@ use crate::winbase::{CRITICAL_SECTION, LPCRITICAL_SECTION};
 use crate::windows::accel::U32AccelCacheLock;
 use crate::misc::usrapihk::gcsUserApiHook;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "C" {
     // ntoskrnl/ntdll cdecl variadic debug print.
     fn DbgPrint(Format: *const i8, ...) -> ULONG;
@@ -170,7 +190,7 @@ unsafe fn StringCchCatW(dst: PWSTR, cch: SIZE_T, src: PCWSTR) -> HRESULT {
 unsafe fn User32GetSystemFilePath(lpBuffer: PWSTR, cchBuffer: SIZE_T, pszFileName: PCWSTR) -> HRESULT {
     let length: UINT = GetSystemDirectoryW(lpBuffer, cchBuffer as UINT);
     if length != 0 && (length as SIZE_T) < cchBuffer {
-        StringCchCatW(lpBuffer, cchBuffer, b"\\\0\0\0".as_ptr() as PCWSTR);
+        StringCchCatW(lpBuffer, cchBuffer, w!("\\").as_ptr() as PCWSTR);
         return StringCchCatW(lpBuffer, cchBuffer, pszFileName);
     }
     StringCchCopyW(lpBuffer, cchBuffer, pszFileName);

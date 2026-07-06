@@ -2,6 +2,26 @@ use win32k_sys::win32k::*;
 use core::ffi::{c_int, c_char};
 use ntkrnl_sys::interlocked::{InterlockedIncrement, InterlockedDecrement};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ---------------------------------------------------------------------------
 // Real exported kernel symbols, re-declared against win32k-sys nominal types.
 // (Same pattern as gdiobj.rs.) The symbol/ABI is unchanged; only Rust nominal
@@ -469,28 +489,28 @@ pub unsafe extern "C" fn DbgUserDumpHandleTable() {
     let mut ppiList: PPROCESSINFO;
     let mut i: i32;
     let TypeNames: [*const u16; 22] = [
-        b"F\0r\0e\0e\0\0\0".as_ptr() as *const u16,
-        b"W\0i\0n\0d\0o\0w\0\0\0".as_ptr() as *const u16,
-        b"M\0e\0n\0u\0\0\0".as_ptr() as *const u16,
-        b"C\0u\0r\0s\0o\0r\0I\0c\0o\0n\0\0\0".as_ptr() as *const u16,
-        b"S\0M\0W\0P\0\0\0".as_ptr() as *const u16,
-        b"H\0o\0o\0k\0\0\0".as_ptr() as *const u16,
-        b"C\0l\0i\0p\0B\0o\0a\0r\0d\0D\0a\0t\0a\0\0\0".as_ptr() as *const u16,
-        b"C\0a\0l\0l\0P\0r\0o\0c\0\0\0".as_ptr() as *const u16,
-        b"A\0c\0c\0e\0l\0\0\0".as_ptr() as *const u16,
-        b"D\0D\0E\0a\0c\0c\0e\0s\0s\0\0\0".as_ptr() as *const u16,
-        b"D\0D\0E\0c\0o\0n\0v\0\0\0".as_ptr() as *const u16,
-        b"D\0D\0E\0x\0a\0c\0t\0\0\0".as_ptr() as *const u16,
-        b"M\0o\0n\0i\0t\0o\0r\0\0\0".as_ptr() as *const u16,
-        b"K\0B\0D\0l\0a\0y\0o\0u\0t\0\0\0".as_ptr() as *const u16,
-        b"K\0B\0D\0f\0i\0l\0e\0\0\0".as_ptr() as *const u16,
-        b"E\0v\0e\0n\0t\0\0\0".as_ptr() as *const u16,
-        b"T\0i\0m\0e\0r\0\0\0".as_ptr() as *const u16,
-        b"I\0n\0p\0u\0t\0C\0o\0n\0t\0e\0x\0t\0\0\0".as_ptr() as *const u16,
-        b"H\0i\0d\0D\0a\0t\0a\0\0\0".as_ptr() as *const u16,
-        b"D\0e\0v\0i\0c\0e\0I\0n\0f\0o\0\0\0".as_ptr() as *const u16,
-        b"T\0o\0u\0c\0h\0I\0n\0p\0u\0t\0\0\0".as_ptr() as *const u16,
-        b"G\0e\0s\0t\0u\0r\0e\0I\0n\0f\0o\0\0\0".as_ptr() as *const u16,
+        w!("Free").as_ptr() as *const u16,
+        w!("Window").as_ptr() as *const u16,
+        w!("Menu").as_ptr() as *const u16,
+        w!("CursorIcon").as_ptr() as *const u16,
+        w!("SMWP").as_ptr() as *const u16,
+        w!("Hook").as_ptr() as *const u16,
+        w!("ClipBoardData").as_ptr() as *const u16,
+        w!("CallProc").as_ptr() as *const u16,
+        w!("Accel").as_ptr() as *const u16,
+        w!("DDEaccess").as_ptr() as *const u16,
+        w!("DDEconv").as_ptr() as *const u16,
+        w!("DDExact").as_ptr() as *const u16,
+        w!("Monitor").as_ptr() as *const u16,
+        w!("KBDlayout").as_ptr() as *const u16,
+        w!("KBDfile").as_ptr() as *const u16,
+        w!("Event").as_ptr() as *const u16,
+        w!("Timer").as_ptr() as *const u16,
+        w!("InputContext").as_ptr() as *const u16,
+        w!("HidData").as_ptr() as *const u16,
+        w!("DeviceInfo").as_ptr() as *const u16,
+        w!("TouchInput").as_ptr() as *const u16,
+        w!("GestureInfo").as_ptr() as *const u16,
     ];
 
     ERR!(b"Total handles count: %lu\n\0", (*gpsi).cHandleEntries);

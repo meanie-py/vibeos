@@ -1380,8 +1380,26 @@ unsafe extern "fastcall" fn IntGetPaintMessage(
     };
 
     if (*Message).hwnd.is_null() && (*Thread).cPaintsReady != 0 {
-        ERR!(b"WARNING SOMETHING HAS GONE WRONG: Thread marked as containing dirty windows, but no dirty windows found! Counts %u\n\0".as_ptr() as *const i8, (*Thread).cPaintsReady);
+        // ERR! is a no-op macro in this port — print for real: this firing
+        // means the dirty-window bookkeeping leaked (cPaintsReady counted a
+        // window IntFindWindowToRepaint can no longer find), which is the
+        // root the stuck-QS_PAINT spin below papers over. Keep it visible.
+        extern "C" {
+            fn DbgPrint(Format: *const u8, ...) -> u32;
+        }
+        DbgPrint(
+            b"[WIN32K] IntGetPaintMessage: cPaintsReady=%u but no dirty window (leak) - resetting paint state\n\0".as_ptr(),
+            (*Thread).cPaintsReady,
+        );
         (*Thread).cPaintsReady = 0;
+        // Upstream zeroes the count but leaves the QS_PAINT wake/change bits
+        // set — MsgWaitForMultipleObjects then returns "input available"
+        // forever while PeekMessage retrieves nothing, and the caller spins at
+        // 100% CPU (hit on arm64: explorer's main thread, 2026-07-06). Clear
+        // the bits along with the count so the bandaid actually resets the
+        // paint bookkeeping it claims to.
+        (*(*Thread).pcti).fsWakeBits &= !(QS_PAINT as u16);
+        (*(*Thread).pcti).fsChangeBits &= !(QS_PAINT as u16);
         return 0;
     }
 

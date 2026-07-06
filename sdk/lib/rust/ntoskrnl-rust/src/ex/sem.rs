@@ -28,6 +28,26 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 const SEMAPHORE_QUERY_STATE: ACCESS_MASK = 0x0001;
 const SEMAPHORE_MODIFY_STATE: ACCESS_MASK = 0x0002;
 const SEMAPHORE_ALL_ACCESS: ACCESS_MASK = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x3;
@@ -76,7 +96,7 @@ pub unsafe extern "system" fn ExpInitializeSemaphoreImplementation() -> BOOLEAN 
         &mut ObjectTypeInitializer as *mut _ as PVOID,
         core::mem::size_of::<OBJECT_TYPE_INITIALIZER>(),
     );
-    RtlInitUnicodeString(&mut Name, b"S\0e\0m\0a\0p\0h\0o\0r\0e\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut Name, w!("Semaphore").as_ptr() as *const u16);
     ObjectTypeInitializer.Length = core::mem::size_of::<OBJECT_TYPE_INITIALIZER>() as USHORT;
     ObjectTypeInitializer.DefaultNonPagedPoolCharge = core::mem::size_of::<KSEMAPHORE>() as ULONG;
     ObjectTypeInitializer.GenericMapping = ExSemaphoreMapping;

@@ -13,6 +13,26 @@ use super::super::super::coninput::ConioProcessInputEvent;
 use super::super::super::{wcslen, wcscat, wcschr, wcscpy, wcscmp, wcsncpy, memcmp};
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // `ConioPause`/`ConioUnpause` are plain-cdecl (no NTAPI) in console.c
 // (now the Rust consrv::console) → extern "C", UCHAR Flags.
 extern "C" {
@@ -195,7 +215,7 @@ pub unsafe fn RegisterConWndClass(hInstance: HINSTANCE) -> u8 {
 }
 
 pub unsafe fn UnRegisterConWndClass(hInstance: HINSTANCE) -> u8 {
-    if UnregisterClassW(b"C\0o\0n\0W\0n\0d\0C\0l\0a\0s\0s\0\0\0".as_ptr() as *const u16, hInstance) != 0 {
+    if UnregisterClassW(w!("ConWndClass").as_ptr() as *const u16, hInstance) != 0 {
         1u8
     } else {
         0u8
@@ -906,7 +926,7 @@ pub unsafe fn UpdateSelection(
 
                 wcsncpy(WindowTitle, SelTypeStr, SelTypeStrLength);
                 *WindowTitle.add(SelTypeStrLength) = 0u16;
-                wcscat(WindowTitle, b"L\0 \0-\0 \0\0\0".as_ptr() as *const u16);
+                wcscat(WindowTitle, w!("L - ").as_ptr() as *const u16);
                 wcscat(WindowTitle, (*Console).Title.Buffer);
 
                 SetWindowTextW((*GuiData).hWindow, WindowTitle);
@@ -1982,7 +2002,7 @@ unsafe fn OnDropFiles(Console: PCONSRV_CONSOLE, hDrop: HDROP) {
     DragFinish(hDrop);
 
     if !wcschr(szPath.as_ptr().add(1), b' ' as u16).is_null() {
-        StringCchCatW(szPath.as_mut_ptr(), ARRAYSIZE(&szPath), b"\"\0".as_ptr() as *const u16);
+        StringCchCatW(szPath.as_mut_ptr(), ARRAYSIZE(&szPath), w!("\"").as_ptr() as *const u16);
         pszPath = szPath.as_mut_ptr();
     } else {
         pszPath = szPath.as_mut_ptr().add(1);

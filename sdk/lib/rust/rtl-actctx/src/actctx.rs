@@ -19,6 +19,26 @@ use crate::{FIELD_OFFSET, wine_dbg_sprintf, TRACE, FIXME, WARN, ERR, HIWORD};
 // the ddk Rtl*/Nt* signatures line up.
 use ntkrnl_sys::ddk::{_UNICODE_STRING, _UNICODE_STRING as UNICODE_STRING};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ── file-static globals (actctx.c; the "preamble" rustconv couldn't
 //    emit — hand-written here). ───────────────────────────────────────
 static empty_xmlstr: xmlstr_t = xmlstr_t { ptr: core::ptr::null(), len: 0 };
@@ -2942,7 +2962,7 @@ unsafe fn get_manifest_in_pe_file(
     if (resname as ULONG_PTR) >> 16 == 0 {
         _swprintf(
             resnameBuf.as_mut_ptr(),
-            b"#\0\0".as_ptr() as LPCWSTR,
+            w!("#").as_ptr() as LPCWSTR,
             PtrToUlong(resname as *mut core::ffi::c_void),
         );
         resptr = resnameBuf.as_ptr();

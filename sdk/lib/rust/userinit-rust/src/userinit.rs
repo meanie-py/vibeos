@@ -3,6 +3,26 @@ use core::ffi::c_void;
 use crate::types::*;
 use crate::preamble::*;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // CRT + ExpandEnvironmentStringsW live in crate::preamble (shared).
 // WINAPI (stdcall on i386).
 extern "system" {
@@ -127,7 +147,7 @@ unsafe fn IsConsoleShell() -> BOOL {
 
         rc = ReadRegSzKey(
             ControlKey,
-            b"S\0y\0s\0t\0e\0m\0S\0t\0a\0r\0t\0O\0p\0t\0i\0o\0n\0s\0\0\0".as_ptr() as LPCWSTR,
+            w!("SystemStartOptions").as_ptr() as LPCWSTR,
             &mut SystemStartOptions,
         );
         if rc != ERROR_SUCCESS as LONG {
@@ -142,7 +162,7 @@ unsafe fn IsConsoleShell() -> BOOL {
             }
             if _wcsicmp(
                 CurrentOption,
-                b"C\0O\0N\0S\0O\0L\0E\0\0\0".as_ptr() as LPCWSTR,
+                w!("CONSOLE").as_ptr() as LPCWSTR,
             ) == 0
             {
                 ret = 1;
@@ -561,7 +581,7 @@ pub unsafe extern "C" fn ExpandInstallerPath(
 
     match SystemInfo.__bindgen_anon_1.__bindgen_anon_1.wProcessorArchitecture as u32 {
         PROCESSOR_ARCHITECTURE_INTEL => {
-            StringCchCatW(lpInstallerPath, PathSize, b"I\0\x33\x008\x006\0\0\0".as_ptr() as LPCWSTR);
+            StringCchCatW(lpInstallerPath, PathSize, w!("I386").as_ptr() as LPCWSTR);
         }
         PROCESSOR_ARCHITECTURE_MIPS => {
             let s: [u16; 5] = [b'M' as u16, b'I' as u16, b'P' as u16, b'S' as u16, 0];

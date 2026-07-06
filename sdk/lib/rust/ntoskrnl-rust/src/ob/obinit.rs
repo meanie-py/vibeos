@@ -38,6 +38,26 @@ const OBJ_OPENLINK: ULONG = 0x00000100;
 // Use actual definitions, not extern declarations (lto=false splits them)
 use crate::ke::processor::KeNumberProcessors;
 use crate::ke::krnlinit::KiProcessorBlock;
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 extern "C" {
     static mut SePublicDefaultUnrestrictedSd: PVOID; // PSECURITY_DESCRIPTOR
     static mut ObpTypeObjectType: POBJECT_TYPE;
@@ -233,7 +253,7 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
 
         RtlInitUnicodeString(
             core::ptr::addr_of_mut!(name),
-            b"\\\0\0\0".as_ptr() as *const u16,
+            w!("\\").as_ptr() as *const u16,
         );
 
         object_attributes = _OBJECT_ATTRIBUTES {
@@ -278,7 +298,7 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
 
         RtlInitUnicodeString(
             core::ptr::addr_of_mut!(name),
-            b"\\\0K\0e\0r\0n\0e\0l\0O\0b\0j\0e\0c\0t\0s\0\0\0".as_ptr() as *const u16,
+            w!("\\KernelObjects").as_ptr() as *const u16,
         );
 
         object_attributes = _OBJECT_ATTRIBUTES {
@@ -307,7 +327,7 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
 
         RtlInitUnicodeString(
             core::ptr::addr_of_mut!(name),
-            b"\\\0O\0b\0j\0e\0c\0t\0T\0y\0p\0e\0s\0\0\0".as_ptr() as *const u16,
+            w!("\\ObjectTypes").as_ptr() as *const u16,
         );
 
         object_attributes = _OBJECT_ATTRIBUTES {
@@ -462,7 +482,7 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
     );
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(name),
-        b"T\0y\0p\0e\0\0\0".as_ptr() as *const u16,
+        w!("Type").as_ptr() as *const u16,
     );
     object_type_initializer.Length = core::mem::size_of::<_OBJECT_TYPE_INITIALIZER>() as USHORT;
     object_type_initializer.ValidAccessMask = OBJECT_TYPE_ALL_ACCESS;
@@ -484,7 +504,7 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(name),
-        b"D\0i\0r\0e\0c\0t\0o\0r\0y\0\0\0".as_ptr() as *const u16,
+        w!("Directory").as_ptr() as *const u16,
     );
     object_type_initializer.PoolType = PagedPool;
     object_type_initializer.ValidAccessMask = DIRECTORY_ALL_ACCESS;
@@ -506,7 +526,7 @@ pub unsafe extern "system" fn ObInitSystem() -> BOOLEAN {
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(name),
-        b"S\0y\0m\0b\0o\0l\0i\0c\0L\0i\0n\0k\0\0\0".as_ptr() as *const u16,
+        w!("SymbolicLink").as_ptr() as *const u16,
     );
     object_type_initializer.DefaultNonPagedPoolCharge = core::mem::size_of::<_OBJECT_SYMBOLIC_LINK>() as ULONG;
     object_type_initializer.GenericMapping = ObpSymbolicLinkMapping;

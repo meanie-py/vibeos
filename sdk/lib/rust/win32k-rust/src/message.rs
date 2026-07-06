@@ -1532,6 +1532,23 @@ pub unsafe extern "system" fn co_IntPeekMessage(
             return 1;
         }
 
+        /* Reconcile a stale QS_PAINT: with cPaintsReady == 0 nothing above can
+         * retrieve a paint message, but if the wake/change bits still claim one
+         * (e.g. IntGetPaintMessage's dirty-window-leak bandaid zeroed the count
+         * without clearing them), MsgWaitForMultipleObjects keeps returning
+         * "input available" while PeekMessage returns nothing — the caller
+         * spins at 100% CPU forever (hit on arm64: explorer's main thread,
+         * 2026-07-06, fsChangeBits stuck at 0x20). Bits and count are only
+         * ever set/cleared together under the user lock, so a mismatch here is
+         * always stale state — clear it. */
+        if (ProcessMask & QS_PAINT) != 0
+            && (*pti).cPaintsReady == 0
+            && ((*(*pti).pcti).fsWakeBits | (*(*pti).pcti).fsChangeBits) & (QS_PAINT as u16) != 0
+        {
+            (*(*pti).pcti).fsWakeBits &= !(QS_PAINT as u16);
+            (*(*pti).pcti).fsChangeBits &= !(QS_PAINT as u16);
+        }
+
         if (ProcessMask & QS_TIMER) != 0 && PostTimerMessages(Window) != 0 {
             continue;
         }

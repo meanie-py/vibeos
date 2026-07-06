@@ -5,7 +5,9 @@ monolith (one rlib) into per-subsystem crates, so touching one subsystem no long
 re-runs rustc's whole-crate frontend over all 453K LOC (and so sccache, which is
 crate-granular, can partition it).
 
-Status: **lpc extracted as the PoC (2026-07-06) — validated end-to-end.** fsrtl next.
+Status: **lpc + fsrtl extracted (2026-07-06) — recipe validated at two scales.** lpc (4K,
+touch 20.5s→11.2s) and fsrtl (21K, touch 20.5s→11.96s) — same ~link-floor result regardless
+of subsystem size, monolith untouched in both. Phase 1 (the remaining clean leaves) next.
 
 ---
 
@@ -65,6 +67,16 @@ each extracted crate gets its **own** barrier (`_lpc_global_write_barrier`) over
 statics; the monolith's barrier drops those lines. → `gen_global_barrier.py` must become
 crate-aware (regenerate one barrier per kernel crate) — **owed follow-up**.
 
+**4. Crate-root macros are hidden coupling — invisible to a `crate::`/`use` audit.** fsrtl
+invokes `abi_cast!` (a `macro_rules!` at ntoskrnl-rust `lib.rs`, in scope crate-wide by
+textual ordering). Bare `name!(…)` invocations don't show in a `crate::` or `use` grep, so
+the pre-flight audit misses them → `cannot find macro` at build. Pre-flight MUST also
+`grep -rl '<macro>!'` each ntoskrnl-rust crate-root macro (ASSERT, dbg_print, wstr,
+abi_cast, …) against the subsystem. lpc used none; fsrtl used `abi_cast!` (copied in for now).
+**Owed:** hoist the shared kernel macros into `ntkrnl-sys` (or an `ntos-macros` crate) so
+every extracted crate shares one definition instead of copying — do this in Phase 1 before
+the copies multiply.
+
 ### And one integration trap: lint/verify tools with hardcoded scan roots
 Several tools hardcode `sdk/lib/rust/ntoskrnl-rust/src` as their sole root; extracting a
 subsystem silently DROPS it from coverage (lint_kernel lost lpc's 34 findings — a
@@ -92,12 +104,14 @@ re-run against a split kernel.
    + gate ×3 (boots).
 
 Pre-flight per subsystem: `grep -rhoE "crate::[a-z]" src/<sub>` (what it needs FROM the
-monolith — must be ~empty for a clean leaf) and `grep -rn "crate::<sub>" src/` outside the
-sub (what the monolith needs FROM it — each becomes an FFI/sever site).
+monolith — must be ~empty for a clean leaf); `grep -rn "crate::<sub>" src/` outside the sub
+(what the monolith needs FROM it — each becomes an FFI/sever site); AND, per rule 4, for each
+crate-root `macro_rules!` in ntoskrnl-rust `lib.rs`, `grep -rl '<macro>!' src/<sub>` (hidden
+macro coupling the first two greps miss).
 
 ## Phased plan
 
-- **Phase 0 — PoC**: ✅ lpc (done, this doc). ⏳ fsrtl (21K, next — bigger, still a clean leaf).
+- **Phase 0 — PoC**: ✅ lpc (4K) + ✅ fsrtl (21K) — done, recipe validated at two scales.
 - **Phase 1 — clean leaves**: se, iomgr, pnpmgr, cc, dbgk, kdbg, wmi, fstub (~150K LOC, ~zero
   dep surgery). Biggest bang for the least risk.
 - **Phase 2 — hub + cycles**: ke (foundational — many depend on it), mm/ARM3, ex, ps, ob,

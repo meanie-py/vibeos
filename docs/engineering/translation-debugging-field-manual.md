@@ -571,6 +571,18 @@ Two adjacent defect classes, found together and best hunted together:
 **Fix pattern:** define the missing const locally (with the real header value, e.g. `const WM_CTLCOLOR: UINT = 0x0019;`) or fully qualify the path (`ntkrnl_sys::mm::STATUS_WAIT_0 =>`). When translating any C `switch`, every `case` label MUST resolve to a const in scope — if bindgen lacks it, the translator must emit the const, not trust the bare name.
 **Debug methodology that found it:** serial-marker bisection of the message round-trip (kernel send → user32 callback → app wndproc → DefWindowProc → `NtUserMessageCall` → kernel handler) with one `DbgPrint` per hop — the cut was "dispatch arm entered, handler never called", i.e. *inside one function*, which pointed straight at the match. User-mode `DbgPrint` from user32-rust lands on the same serial as kernel prints — instrument both sides.
 
+### ANSI byte string cast to a WIDE pointer — every lookup silently falls back to defaults (workspace-wide sweep, 2026-07-06)
+**Symptom:** no crash, no error — registry lookups/opens just fail and the code takes its default/fallback path. Found via the 31s-per-service SCM stall (ScConnectControlPipe's `b"\0"` as an "empty PWSTR" — a wide empty string needs TWO zero bytes) and then swept: ~140 sites in 121 files, all fixed 2026-07-06.
+**Cause (4 sub-shapes, all from translating C `L"..."` literals):** (1) plain ANSI cast wide: `b"ScrollWidth\0".as_ptr() as PCWSTR` — a u16 read packs byte PAIRS, so the name never matches (win32k sysparams: all 27 window metrics silently ignored the registry). (2) hand-interleaved UTF-16LE (`b"F\0o\0o\0\0\0"`): content-correct but **align-1** — a `*const u16` into a byte literal is UB and has faulted before (basesrv CSDVersion). (3) phase-broken interleaving: one mis-escaped run (`\\0C` = '\', '0', 'C') desyncs the byte phase and the tail decodes as CJK garbage (msgina's `SYSTEM\CurrentControlSet\Control` — RegOpenKey always failed; cmboot's `System32\Drivers\` broken past "System3"; partmgr copied packed-ANSI `VOLMGR` as u16s). (4) unterminated: odd byte counts / missing final NUL (`b".\0l\0n\0k\0\0"`; SAM's `[u16; 5]` "%08lx" hand-fix with no terminator).
+**Oracle:** `grep -rnP 'b"(?:[^"\\\\]|\\\\.)*"\.as_ptr\(\) as (PWSTR|PCWSTR|LPWSTR|LPCWSTR|\*const u16|\*mut u16)' sdk/lib/rust` plus the `as *const u8 as *const u16` variant. ZERO non-comment hits is the healthy state post-sweep. (`transmute::<[u8;N],[u16;N/2]>(*b"...")` sites are aligned and fine.)
+**Fix pattern:** the per-file `w!` macro (const-eval NUL-terminated `&'static [u16]`, 2-aligned): `w!("ScrollWidth").as_ptr()`. For new translations the rule is absolute: a C `L"..."` literal NEVER becomes a `b"..."` byte string.
+
+### Guard condition swapped for a DIFFERENT nearby variable — logic silently inverted per boot mode (CmpInitializeHiveList MININT, 2026-07-06)
+**Symptom:** 5–9s boot stalls ×4 on livecd with `Failed to write the primary hive` on serial — the registry tried real writes to CD-backed hives on a MININT boot. No crash, boot marker green; pure latency + scary serial noise. First misclassified as "upstream-inherited" because the C `CmpNoWrite = FALSE` clobber in the same function *is* upstream — the actual bug was ours.
+**Cause:** C `if (CmpShareSystemHives) CmpMachineHiveList[i].HHiveFlags |= HIVE_VOLATILE;` was translated as `if CmHive2 != null { HHiveFlags |= 1 }` — a *different variable* that happens to appear near the loop in the C source. `CmHive2` is only assigned later BY the load threads this loop spawns, so the condition is always false: MININT hives never got HIVE_VOLATILE, and `CmpLoadHiveThread` + every downstream write path (which all gate on HIVE_VOLATILE, not CmpNoWrite) attempted doomed CD writes (cmsysini.rs `CmpInitializeHiveList`; fixed on `performance-investigation`).
+**Tells:** (a) a translated `if` whose tested variable does not appear in the corresponding C condition at all — worse than an inverted test because nothing looks wrong locally; (b) behavior that differs by BOOT MODE (MININT/setup/normal) when the C gates that mode via a flag the Rust never reads — `grep` the .rs for each mode flag the C file tests (`CmpShareSystemHives`, `CmpMiniNTBoot`, `ExpInTextModeSetup`, `InitIsWinPEMode`…) and diff the count against the C file; (c) a "should never fire" serial message (a doomed-write error, a hard-error popup) that fires reliably in one boot flavor only.
+**Oracle:** for every translated condition, check the C original tests the SAME symbol — mechanical to spot-check per file: list `if (`-condition variables in the C, list them in the Rust, diff. A missing mode-flag read is this bug.
+
 ### Indexing a bindgen flexible-array extern (`static NAME: [T; 0]`) panics unconditionally (win32k NtGdiMaskBlt, 2026-07-05)
 **Symptom:** deterministic **kernel RUST_PANIC** post-boot-marker (smoke `RUST_PANIC` classification), e.g. `win32k-rust/src/ntbitblt.rs:968` in `NtGdiMaskBlt`, the instant that code path first runs (here: notepad's window paint issuing a masked blit). The panic is a bounds-check: `panic_bounds_check(index, 0)`.
 **Cause:** C `extern UCHAR gajBitsPerFormat[];` (unknown-size array) is emitted by bindgen as `pub static mut gajBitsPerFormat: [UCHAR; 0usize];`. A Rust file that pulls it in via a glob `use xxx_sys::...::*;` and does `gajBitsPerFormat[fmt]` or `.len()` bounds-checks against length **0** → every access panics. The real array is defined (sized) in some *other* Rust module (`surface.rs`: `[u8; 11]`), so files that `use crate::surface::gajBitsPerFormat;` or use `addr_of!`-pointer arithmetic are fine — only the glob-resolved sites are landmines. Same-day sweep of all zero-len bindgen statics (`gajBitsPerFormat`, `DibFunctionsForBitmapFormat`, `StockObjects`, `appalSurfaceDefault`, `gasyscur/gasysico`, `gpDxFuncs`, `KiBugCheckData`, …) found one more live site (`stretchblt.rs` `DibFunctionsForBitmapFormat`); most sites already shadow the extern with a local sized `extern "C"` decl or explicit import.
@@ -2524,16 +2536,87 @@ never depend on timer bookkeeping. Timer expiration itself stays idle-loop-only
   CPU actually lives; `[IDLE] enter/beat/swap-out/resume` prints in KiIdleLoop
   answer "does idle ever run" definitively.
 
-**Still open from this hunt** (both PRE-EXISTING — A/B-verified on a master
-boot 2026-07-06, identical PC histogram): (a) an unidentified always-ready user
-thread busy-polls `NtQueryPerformanceCounter` at desktop (user PC
-0x7ffb2002268, deterministic across boots AND across master/branch), starving
-idle — so `TimerRequest` stays stale and KERNEL TIMER EXPIRATION IS FROZEN at
-desktop whenever that thread spins (observed: taskbar never populates, no
-caret blink, 70s-apart QMP screendumps byte-identical). Smoke stays green
-because boot marker + tests finish inside the early window — and note master's
-POLL-THREAD input dies under the freeze (it sleeps on kernel timers), while
-interrupt-driven input keeps working. (b) the DISPATCH soft-interrupt delivery
-gap (fact 1) — the port should deliver DPC drains on KfLowerIrql crossing
-below DISPATCH, in thread context, so retirement doesn't depend on
-idle/IRQ-exit alone. Tracked in the quest doc (landmine #4).
+**Both follow-ups CLOSED 2026-07-06 (same-day hunt, §9.21):** the
+"unidentified QPC busy-spinner" turned out to be TWO stacked spinners with one
+root — `KeDelayExecutionThread` was still stubbed to `NtYieldExecution()` on
+arm64 ("no HAL timer interrupt yet" — dead lore), so EVERY kernel/user sleep
+busy-yielded; and explorer's main thread separately spun on a stuck QS_PAINT
+wake bit. The DISPATCH soft-interrupt delivery gap is also closed —
+`KfLowerIrql` now delivers timer expiration + device-DPC drain in thread
+context. Full writeup: §9.21.
+
+### 9.21 (FIXED 2026-07-06) arm64 desktop timer freeze — `KeDelayExecutionThread` busy-yield stub + stuck QS_PAINT spin + no DISPATCH softint delivery
+
+**Symptom.** At desktop: taskbar never populates / clock frozen / no caret,
+70s-apart QMP screendumps byte-identical, `sample-pc.sh` shows ZERO idle-loop
+samples — CPU 100% split between hal `KeQueryPerformanceCounter` (~70%, a
+"System" thread) and one user PC (~20%, deterministic across boots).
+
+**Three stacked bugs, one visible freeze:**
+1. **`KeDelayExecutionThread` was a bring-up stub on arm64**
+   (`ke/wait.rs`, inherited from C `#ifdef _M_ARM64`: "no HAL timer interrupt
+   yet — would sleep forever"): `NtYieldExecution(); return SUCCESS`. Every
+   kernel sleep (netstack's `delay_ms` poll loop → the hal-QPC-hot System
+   thread) and every user `Sleep`/`NtDelayExecution` became a busy-yield.
+   Ready threads yielded to each other forever → idle starved → idle-only
+   timer expiration frozen → every real timer wait dead. The stub's premise
+   died when the interrupts quest wired the vtimer: `KeTickCount` and
+   `KUSER_SHARED_DATA.InterruptTime` demonstrably advance. Fix: deleted the
+   stub; the real timer-wait path just works.
+2. **Explorer's main thread spun on a stuck `QS_PAINT` wake bit** (the ~20%
+   user PC = user32 `NtUserPeekMessage` syscall stub; identified via
+   KTHREAD→ETHREAD walk + PEB module-list walk from a KiIrqHandler
+   breakpoint). `pcti->fsChangeBits/fsWakeBits == 0x20 (QS_PAINT)` with
+   `pti->cPaintsReady == 0`: `MsgWaitForMultipleObjects` returns "input
+   available" immediately (fsChangeBits early-out) while `PeekMessage`
+   retrieves nothing → infinite spin. Source of the stale state:
+   `IntGetPaintMessage`'s upstream dirty-window-leak bandaid zeroes
+   `cPaintsReady` WITHOUT clearing the wake bits — and fired invisibly
+   because win32k-rust's `ERR!` macro is a NO-OP. Fixes (win32k-rust): the
+   bandaid now clears the QS_PAINT bits too (painting.rs), co_IntPeekMessage
+   reconciles stale QS_PAINT bits when `cPaintsReady == 0` (message.rs), and
+   the bandaid prints via real `DbgPrint` so the underlying leak is visible.
+3. **DISPATCH software-interrupt delivery implemented** (closes §9.20 (b)):
+   `HalRequestSoftwareInterrupt(DISPATCH)`'s pended bit is now consumed by
+   `KfLowerIrql` when the soft IRQL crosses below DISPATCH — hal calls the
+   new ntoskrnl export `KiDispatchSoftwareIntArm64()` (ke/dpc.rs): TimerRequest
+   → `KiTimerExpiration` (with `DpcRoutineActive=1` so wakes DEFER, mirroring
+   the idle loop) + `KiRetireDeviceDpcs`. Timer expiration no longer depends
+   on the idle loop — a busy thread expires timers from its own syscall/
+   spinlock IRQL crossings.
+
+**The §9.19 trap, round two (BUGCHECK 0x1E, EC=0x0E illegal-execution-state):**
+the first delivery attempt ran timer expiration from EXCEPTION context,
+because `KfLowerIrql` is reachable from inside IRQ windows — notably the
+clock-tick branch (`HalClockInterruptArm64` → `KeUpdateSystemTime`) runs with
+NO IRQL bracket at all, so any raise/lower pair inside it crosses below
+DISPATCH. Fix: hal tracks `HalpInterruptContextDepth` — bumped vector-wide in
+`HalClockInterruptArm64` (drop-guard) and by every
+`HalpEnterInterruptIrql`/`HalpExitInterruptIrql` bracket — and
+softint delivery requires depth == 0 (genuine thread/SVC context).
+
+**Verified:** boot green ~36s; clock IRQ now interrupts the *Idle* process;
+`KiTimerExpiration` + win32k `ProcessTimers` fire repeatedly (GDB breakpoints);
+timer table shows live sub-second traffic; explorer main blocks in
+`GetMessage`; netstack worker alive in real `delay_ms` waits (WaitReason=4);
+`test_arm64input_delivery` green.
+
+**Still open (pre-existing, forensics preserved):** explorer's tray clock
+never repaints and window paint is incomplete (notepad title bar sometimes
+missing — also true on pre-quest master) — `ProcessTimers` fires but
+explorer's `cTimersReady` stays 0, i.e. win32k user-timer → WM_TIMER posting
+to the owning thread doesn't deliver; and the underlying dirty-window leak
+that IntGetPaintMessage's bandaid papers over (now visible on serial as
+`[WIN32K] IntGetPaintMessage: cPaintsReady=%u but no dirty window`). Both are
+win32k message/paint bookkeeping, not interrupt/IRQL work.
+
+**Debug recipe additions** (beyond §9.20's): identify a user-PC spinner from a
+`KiIrqHandler` breakpoint — read `KPCR(tpidr_el1)+0xD80 → Prcb.CurrentThread
+(+8) → KTHREAD.Process(+512) → EPROCESS.ImageFileName(+608)`, offsets from
+`ntkrnl-sys/src/offset_check_arm64.rs`; walk the user module list
+(`TEB(+176)→PEB(+0x60)→Ldr(+0x18)`) to name the module at a user PC; walk
+`PsLoadedModuleList` for kernel/driver PCs (module bases move per boot — never
+reuse a previous boot's symbolication). `gdb` can't read kernel VAs while
+stopped at EL0 — break on a kernel PC first. And REBUILD THE SYMBOL INDEX
+after every build: a stale `sym2addr` address put a 5-minute breakpoint on
+dead code and nearly "proved" timers were frozen when they weren't.

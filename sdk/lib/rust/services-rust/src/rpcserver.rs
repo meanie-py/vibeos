@@ -214,6 +214,26 @@ unsafe fn HeapAlloc<N: TryInto<SIZE_T>>(hHeap: HANDLE, dwFlags: DWORD, dwBytes: 
 
 use core::cmp::{max, min};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ---- file-scope preamble (translated) ----
 pub const MANAGER_TAG: DWORD = 0x72674D68;
 
@@ -292,9 +312,9 @@ pub unsafe extern "C" fn ScmStartRpcServer() {
     let mut Status: RPC_STATUS;
 
     Status = RpcServerUseProtseqEpW(
-        b"n\0c\0a\0c\0n\0_\0n\0p\0\0\0".as_ptr() as *mut u16,
+        w!("ncacn_np").as_ptr() as *mut u16,
         10,
-        b"\\\0p\0i\0p\0e\0\\\0n\0t\0s\0v\0c\0s\0\0\0".as_ptr() as *mut u16,
+        w!("\\pipe\\ntsvcs").as_ptr() as *mut u16,
         core::ptr::null_mut(),
     );
     if Status != RPC_S_OK as RPC_STATUS {
@@ -1050,7 +1070,7 @@ pub unsafe extern "system" fn RControlService(
     if dwControl == SERVICE_CONTROL_STOP {
         dwError = RegOpenKeyExW(
             HKEY_LOCAL_MACHINE,
-            b"S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\0\0".as_ptr() as LPCWSTR,
+            w!("System\\CurrentControlSet\\Services").as_ptr() as LPCWSTR,
             0,
             KEY_READ,
             &mut hServicesKey,
@@ -2213,7 +2233,7 @@ pub unsafe extern "system" fn RCreateServiceW(
     }
 
     if (dwServiceType == (SERVICE_WIN32_OWN_PROCESS | SERVICE_INTERACTIVE_PROCESS)) && !lpServiceStartName.is_null() {
-        if _wcsicmp(lpServiceStartName, b"L\0o\0c\0a\0l\0S\0y\0s\0t\0e\0m\0\0\0".as_ptr() as LPCWSTR) != 0 {
+        if _wcsicmp(lpServiceStartName, w!("LocalSystem").as_ptr() as LPCWSTR) != 0 {
             return ERROR_INVALID_PARAMETER;
         }
     }
@@ -2307,7 +2327,7 @@ pub unsafe extern "system" fn RCreateServiceW(
         if !lpDisplayName.is_null() && *lpDisplayName != 0 {
             RegSetValueExW(
                 hServiceKey,
-                b"D\0i\0s\0p\0l\0a\0y\0N\0a\0m\0e\0\0\0".as_ptr() as LPCWSTR,
+                w!("DisplayName").as_ptr() as LPCWSTR,
                 0,
                 REG_SZ,
                 lpDisplayName as *const u8,
@@ -2317,7 +2337,7 @@ pub unsafe extern "system" fn RCreateServiceW(
 
         dwError = RegSetValueExW(
             hServiceKey,
-            b"T\0y\0p\0e\0\0\0".as_ptr() as LPCWSTR,
+            w!("Type").as_ptr() as LPCWSTR,
             0,
             REG_DWORD,
             core::ptr::addr_of!(dwServiceType) as *const u8,
@@ -2329,7 +2349,7 @@ pub unsafe extern "system" fn RCreateServiceW(
 
         dwError = RegSetValueExW(
             hServiceKey,
-            b"S\0t\0a\0r\0t\0\0\0".as_ptr() as LPCWSTR,
+            w!("Start").as_ptr() as LPCWSTR,
             0,
             REG_DWORD,
             core::ptr::addr_of!(dwStartType) as *const u8,
@@ -2341,7 +2361,7 @@ pub unsafe extern "system" fn RCreateServiceW(
 
         dwError = RegSetValueExW(
             hServiceKey,
-            b"E\0r\0r\0o\0r\0C\0o\0n\0t\0r\0o\0l\0\0\0".as_ptr() as LPCWSTR,
+            w!("ErrorControl").as_ptr() as LPCWSTR,
             0,
             REG_DWORD,
             core::ptr::addr_of!(dwErrorControl) as *const u8,
@@ -2354,7 +2374,7 @@ pub unsafe extern "system" fn RCreateServiceW(
         if dwServiceType & SERVICE_WIN32 != 0 {
             dwError = RegSetValueExW(
                 hServiceKey,
-                b"I\0m\0a\0g\0e\0P\0a\0t\0h\0\0\0".as_ptr() as LPCWSTR,
+                w!("ImagePath").as_ptr() as LPCWSTR,
                 0,
                 REG_EXPAND_SZ,
                 lpBinaryPathName as *const u8,
@@ -2366,7 +2386,7 @@ pub unsafe extern "system" fn RCreateServiceW(
         } else if dwServiceType & SERVICE_DRIVER != 0 {
             dwError = RegSetValueExW(
                 hServiceKey,
-                b"I\0m\0a\0g\0e\0P\0a\0t\0h\0\0\0".as_ptr() as LPCWSTR,
+                w!("ImagePath").as_ptr() as LPCWSTR,
                 0,
                 REG_EXPAND_SZ,
                 lpImagePath as *const u8,
@@ -2380,7 +2400,7 @@ pub unsafe extern "system" fn RCreateServiceW(
         if !lpLoadOrderGroup.is_null() && *lpLoadOrderGroup != 0 {
             dwError = RegSetValueExW(
                 hServiceKey,
-                b"G\0r\0o\0u\0p\0\0\0".as_ptr() as LPCWSTR,
+                w!("Group").as_ptr() as LPCWSTR,
                 0,
                 REG_SZ,
                 lpLoadOrderGroup as *const u8,
@@ -2394,7 +2414,7 @@ pub unsafe extern "system" fn RCreateServiceW(
         if !lpdwTagId.is_null() {
             dwError = RegSetValueExW(
                 hServiceKey,
-                b"T\0a\0g\0\0\0".as_ptr() as LPCWSTR,
+                w!("Tag").as_ptr() as LPCWSTR,
                 0,
                 REG_DWORD,
                 core::ptr::addr_of!((*lpService).dwTag) as *const u8,
@@ -2416,11 +2436,11 @@ pub unsafe extern "system" fn RCreateServiceW(
             lpObjectName = if !lpServiceStartName.is_null() {
                 lpServiceStartName as LPWSTR
             } else {
-                b"L\0o\0c\0a\0l\0S\0y\0s\0t\0e\0m\0\0\0".as_ptr() as LPWSTR
+                w!("LocalSystem").as_ptr() as LPWSTR
             };
             dwError = RegSetValueExW(
                 hServiceKey,
-                b"O\0b\0j\0e\0c\0t\0N\0a\0m\0e\0\0\0".as_ptr() as LPCWSTR,
+                w!("ObjectName").as_ptr() as LPCWSTR,
                 0,
                 REG_SZ,
                 lpObjectName as *const u8,
@@ -2537,7 +2557,7 @@ pub unsafe extern "system" fn REnumDependentServicesW(
 
     dwError = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\0\0".as_ptr() as LPCWSTR,
+        w!("System\\CurrentControlSet\\Services").as_ptr() as LPCWSTR,
         0,
         KEY_READ,
         &mut hServicesKey,
@@ -3808,7 +3828,7 @@ pub unsafe extern "system" fn RQueryServiceConfigA(
 
         dwError = ScmReadString(
             hServiceKey,
-            b"I\0m\0a\0g\0e\0P\0a\0t\0h\0\0\0".as_ptr() as LPWSTR,
+            w!("ImagePath").as_ptr() as LPWSTR,
             &mut lpImagePath,
         );
         if dwError != ERROR_SUCCESS {
@@ -3817,7 +3837,7 @@ pub unsafe extern "system" fn RQueryServiceConfigA(
 
         ScmReadString(
             hServiceKey,
-            b"O\0b\0j\0e\0c\0t\0N\0a\0m\0e\0\0\0".as_ptr() as LPWSTR,
+            w!("ObjectName").as_ptr() as LPWSTR,
             &mut lpServiceStartName,
         );
 
@@ -5016,7 +5036,7 @@ pub unsafe extern "system" fn RChangeServiceConfig2W(
                 if *(*lpServiceDescription).lpDescription == 0 {
                     dwError = RegDeleteValueW(
                         hServiceKey,
-                        b"D\0e\0s\0c\0r\0i\0p\0t\0i\0o\0n\0\0\0".as_ptr() as *const u16,
+                        w!("Description").as_ptr() as *const u16,
                     ) as DWORD;
 
                     if dwError == ERROR_FILE_NOT_FOUND {
@@ -5025,7 +5045,7 @@ pub unsafe extern "system" fn RChangeServiceConfig2W(
                 } else {
                     dwError = RegSetValueExW(
                         hServiceKey,
-                        b"D\0e\0s\0c\0r\0i\0p\0t\0i\0o\0n\0\0\0".as_ptr() as *const u16,
+                        w!("Description").as_ptr() as *const u16,
                         0,
                         REG_SZ,
                         (*lpServiceDescription).lpDescription as LPBYTE,
@@ -5115,7 +5135,7 @@ pub unsafe extern "system" fn RQueryServiceConfig2A(
 
             dwError = ScmReadString(
                 hServiceKey,
-                b"D\0e\0s\0c\0r\0i\0p\0t\0i\0o\0n\0\0\0".as_ptr() as LPWSTR,
+                w!("Description").as_ptr() as LPWSTR,
                 core::ptr::addr_of_mut!(lpDescriptionW),
             );
             if dwError != ERROR_SUCCESS && dwError != ERROR_FILE_NOT_FOUND {
@@ -5159,7 +5179,7 @@ pub unsafe extern "system" fn RQueryServiceConfig2A(
 
             dwError = RegQueryValueExW(
                 hServiceKey,
-                b"F\0a\0i\0l\0u\0r\0e\0A\0c\0t\0i\0o\0n\0s\0\0\0".as_ptr() as LPWSTR,
+                w!("FailureActions").as_ptr() as LPWSTR,
                 core::ptr::null_mut(),
                 core::ptr::addr_of_mut!(dwType),
                 core::ptr::null_mut(),
@@ -5183,13 +5203,13 @@ pub unsafe extern "system" fn RQueryServiceConfig2A(
 
             ScmReadString(
                 hServiceKey,
-                b"F\0a\0i\0l\0u\0r\0e\0C\0o\0m\0m\0a\0n\0d\0\0\0".as_ptr() as LPWSTR,
+                w!("FailureCommand").as_ptr() as LPWSTR,
                 core::ptr::addr_of_mut!(lpFailureCommandW),
             );
 
             ScmReadString(
                 hServiceKey,
-                b"R\0e\0b\0o\0o\0t\0M\0e\0s\0s\0a\0g\0e\0\0\0".as_ptr() as LPWSTR,
+                w!("RebootMessage").as_ptr() as LPWSTR,
                 core::ptr::addr_of_mut!(lpRebootMessageW),
             );
 
@@ -5212,7 +5232,7 @@ pub unsafe extern "system" fn RQueryServiceConfig2A(
             if dwError != ERROR_FILE_NOT_FOUND && dwType == REG_BINARY {
                 dwError = RegQueryValueExW(
                     hServiceKey,
-                    b"F\0a\0i\0l\0u\0r\0e\0A\0c\0t\0i\0o\0n\0s\0\0\0".as_ptr() as LPWSTR,
+                    w!("FailureActions").as_ptr() as LPWSTR,
                     core::ptr::null_mut(),
                     core::ptr::null_mut(),
                     lpFailureActions as LPBYTE,

@@ -12,6 +12,26 @@ use crate::types::*;
 use crate::glue::*;
 use crate::cb;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ---- local helpers (C macros / CRT fns not in scope) ----
 #[allow(non_snake_case, unused_variables)]
 #[inline(always)]
@@ -2005,7 +2025,7 @@ pub unsafe extern "C" fn USBAudioInitComponentId(
             if NT_SUCCESS(Status) {
                 let Status = USBAudioRegCreateMediaCategoriesKey(&mut GuidString, &mut hKey);
                 if NT_SUCCESS(Status) {
-                    RtlInitUnicodeString(&mut Name, b"Name\0".as_ptr() as PCWSTR);
+                    RtlInitUnicodeString(&mut Name, w!("Name").as_ptr() as PCWSTR);
                     ZwSetValueKey(
                         hKey,
                         &mut Name,

@@ -403,6 +403,15 @@ pub unsafe extern "system" fn HalInitializeClockArm64(
     }
 }
 
+/// Drop-guard that decrements `HalpInterruptContextDepth` on every exit path
+/// out of `HalClockInterruptArm64` (early returns included).
+struct DepthGuard;
+impl Drop for DepthGuard {
+    fn drop(&mut self) {
+        super::halstubs::HalpInterruptContextDepth.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// IRQ-vector entry for arm64 — invoked by `KiIrqHandler` on every IRQ.
 ///
 /// Acknowledges the GIC, and if it is the virtual-timer tick, re-arms the timer
@@ -414,6 +423,14 @@ pub unsafe extern "system" fn HalClockInterruptArm64(trap_frame: *mut core::ffi:
         // Clock not initialized yet — nothing to acknowledge.
         return;
     }
+
+    // Mark the whole IRQ exception window: KfLowerIrql must not deliver
+    // DISPATCH software-interrupt work (timer expiration wakes/swaps threads)
+    // from exception context — §9.19. The clock branch below runs
+    // KeUpdateSystemTime with no IRQL bracket, so this vector-wide depth bump
+    // is what keeps raise/lower pairs inside the tick path from dispatching.
+    super::halstubs::HalpInterruptContextDepth.fetch_add(1, Ordering::SeqCst);
+    let _depth_guard = DepthGuard;
 
     let iar = mmio_read(gicc, GICC_IAR);
     let intid = iar & 0x3FF;

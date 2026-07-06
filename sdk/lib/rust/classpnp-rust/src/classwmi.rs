@@ -31,6 +31,26 @@ use ntkrnl_sys::inline::ke::KeQuerySystemTime;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{__BindgenUnionField, PWMIREGINFO, PWMIREGINFOW, PWNODE_ALL_DATA, PWNODE_HEADER, PWNODE_METHOD_ITEM, PWNODE_SINGLE_INSTANCE, PWNODE_SINGLE_ITEM, WMIREGGUIDW, WMIREGGUIDW__bindgen_ty_1, WMIREGINFO, WNODE_ALL_DATA, WNODE_METHOD_ITEM, WNODE_SINGLE_INSTANCE, WNODE_TOO_SMALL};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "C" {
     static SharedSystemTime: LARGE_INTEGER;
 }
@@ -293,7 +313,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                 );
                 RtlInitUnicodeString(&mut mofName, MOFRESOURCENAME.as_ptr() as PCWSTR);
             } else if !(*classWmiInfo).GuidRegInfo.is_null() && ClassQueryWmiRegInfoEx.is_some() {
-                RtlInitUnicodeString(&mut mofName, b"\0\0".as_ptr() as PCWSTR);
+                RtlInitUnicodeString(&mut mofName, w!("").as_ptr() as PCWSTR);
                 status = ClassQueryWmiRegInfoEx.unwrap()(
                     DeviceObject,
                     &mut nameFlags,
@@ -301,7 +321,7 @@ pub unsafe extern "system" fn ClassSystemControl(
                     &mut mofName,
                 );
             } else {
-                RtlInitUnicodeString(&mut mofName, b"\0\0".as_ptr() as PCWSTR);
+                RtlInitUnicodeString(&mut mofName, w!("").as_ptr() as PCWSTR);
                 nameFlags = WMIREG_FLAG_INSTANCE_PDO as ULONG;
                 status = STATUS_SUCCESS;
             }

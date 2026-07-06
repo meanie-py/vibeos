@@ -14,6 +14,26 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{DEVICE_RELATIONS, ExQueueWorkItem, _KWAIT_REASON_Executive, IoAcquireCancelSpinLock, IoAttachDeviceToDeviceStack, IoCreateDevice, IoFreeMdl, IoGetCurrentIrpStackLocation, IoReleaseCancelSpinLock, IoSetCancelRoutine, IoSkipCurrentIrpStackLocation, KEY_VALUE_FULL_INFORMATION, KeDelayExecutionThread, KeInitializeDpc, KeInitializeEvent, KeInitializeSemaphore, KeInitializeSpinLock, KeInitializeTimer, KeInsertQueueDpc, KeQueryTimeIncrement, KeReleaseSemaphore, KeSetTimer, KeWaitForSingleObject, LARGE_INTEGER, LIST_ENTRY, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDEVICE_RELATIONS, PDMA_ADAPTER, PDMA_OPERATIONS, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKEY_VALUE_FULL_INFORMATION, PKINTERRUPT, PMDL, PRKDPC, PRKEVENT, PUNICODE_STRING, PsCreateSystemThread, PsTerminateSystemThread, _KWAIT_REASON_Suspended, ZwSetValueKey, ZwWaitForSingleObject};
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "system" {
     fn IoOpenDeviceRegistryKey( DeviceObject: PDEVICE_OBJECT, DevInstKeyType: ULONG, DesiredAccess: ACCESS_MASK, DevInstRegKey: *mut HANDLE, ) -> NTSTATUS;
     fn RtlInitUnicodeString(DestinationString: PUNICODE_STRING, SourceString: PCWSTR);
@@ -2050,7 +2070,7 @@ pub unsafe extern "system" fn USBPORT_AddDevice(
         RtlStringCbPrintfW(
             CharDeviceName.as_mut_ptr(),
             core::mem::size_of::<[u16; 64]>(),
-            b"\\\0D\0e\0v\0i\0c\0e\0\\\0U\0S\0B\0F\0D\0O\0-\0%\0d\0\0\0".as_ptr() as PCWSTR,
+            w!("\\Device\\USBFDO-%d").as_ptr() as PCWSTR,
             DeviceNumber,
         );
 

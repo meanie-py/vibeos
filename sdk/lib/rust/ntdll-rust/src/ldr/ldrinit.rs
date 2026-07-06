@@ -5,6 +5,26 @@
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ===========================================================================
 // Prelude — ntdllp.h / ntstatus.h / compat_undoc.h / intrin surface absent
 // from the ntdll-sys prelude. (See memory feedback_rustconv_header_types_integration.)
@@ -911,7 +931,7 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
             if (*Peb).BeingDebugged != 0 || (*Peb).ReadImageFileExecOptions != 0 {
                 Status = LdrQueryImageFileExecutionOptions(
                     core::ptr::addr_of_mut!((*LdrEntry).BaseDllName),
-                    b"B\0r\0e\0a\0k\0O\0n\0D\0l\0l\0L\0o\0a\0d\0\0\0".as_ptr() as PCWSTR,
+                    w!("BreakOnDllLoad").as_ptr() as PCWSTR,
                     REG_DWORD,
                     core::ptr::addr_of_mut!(BreakOnDllLoad) as PVOID,
                     core::mem::size_of::<ULONG>() as ULONG,
@@ -1395,7 +1415,7 @@ pub unsafe extern "system" fn LdrpInitializeExecutionOptions(
     if !KeyHandle.is_null() {
         Status = LdrQueryImageFileKeyOption(
             KeyHandle,
-            b"E\0x\0e\0c\0u\0t\0e\0O\0p\0t\0i\0o\0n\0s\0\0\0".as_ptr() as PCWSTR,
+            w!("ExecuteOptions").as_ptr() as PCWSTR,
             4,
             core::ptr::addr_of_mut!(ExecuteOptions) as PVOID,
             core::mem::size_of::<ULONG>() as ULONG,
@@ -1412,7 +1432,7 @@ pub unsafe extern "system" fn LdrpInitializeExecutionOptions(
 
         LdrQueryImageFileKeyOption(
             KeyHandle,
-            b"D\0i\0s\0a\0b\0l\0e\0H\0e\0a\0p\0L\0o\0o\0k\0a\0s\0i\0d\0e\0\0\0".as_ptr() as PCWSTR,
+            w!("DisableHeapLookaside").as_ptr() as PCWSTR,
             REG_DWORD,
             core::ptr::addr_of_mut!(RtlpDisableHeapLookaside) as PVOID,
             core::mem::size_of_val(&RtlpDisableHeapLookaside) as ULONG,
@@ -1421,7 +1441,7 @@ pub unsafe extern "system" fn LdrpInitializeExecutionOptions(
 
         LdrQueryImageFileKeyOption(
             KeyHandle,
-            b"S\0h\0u\0t\0d\0o\0w\0n\0F\0l\0a\0g\0s\0\0\0".as_ptr() as PCWSTR,
+            w!("ShutdownFlags").as_ptr() as PCWSTR,
             REG_DWORD,
             core::ptr::addr_of_mut!(RtlpShutdownProcessFlags) as PVOID,
             core::mem::size_of_val(&RtlpShutdownProcessFlags) as ULONG,
@@ -1430,7 +1450,7 @@ pub unsafe extern "system" fn LdrpInitializeExecutionOptions(
 
         LdrQueryImageFileKeyOption(
             KeyHandle,
-            b"M\0i\0n\0i\0m\0u\0m\0S\0t\0a\0c\0k\0C\0o\0m\0m\0i\0t\0I\0n\0B\0y\0t\0e\0s\0\0\0".as_ptr() as PCWSTR,
+            w!("MinimumStackCommitInBytes").as_ptr() as PCWSTR,
             REG_DWORD,
             core::ptr::addr_of_mut!(MinimumStackCommit) as PVOID,
             core::mem::size_of::<ULONG>() as ULONG,
@@ -1443,7 +1463,7 @@ pub unsafe extern "system" fn LdrpInitializeExecutionOptions(
 
         Status = LdrQueryImageFileKeyOption(
             KeyHandle,
-            b"G\0l\0o\0b\0a\0l\0F\0l\0a\0g\0\0\0".as_ptr() as PCWSTR,
+            w!("GlobalFlag").as_ptr() as PCWSTR,
             REG_DWORD,
             core::ptr::addr_of_mut!(GlobalFlag) as PVOID,
             core::mem::size_of::<ULONG>() as ULONG,
@@ -2029,7 +2049,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     if !OptionsKey.is_null() {
         Status = LdrQueryImageFileKeyOption(
             OptionsKey,
-            b"D\0e\0b\0u\0g\0P\0r\0o\0c\0e\0s\0s\0H\0e\0a\0p\0O\0n\0l\0y\0\0\0".as_ptr() as PCWSTR,
+            w!("DebugProcessHeapOnly").as_ptr() as PCWSTR,
             REG_DWORD,
             core::ptr::addr_of_mut!(DebugProcessHeapOnly) as PVOID,
             core::mem::size_of::<ULONG>() as ULONG,
@@ -2052,13 +2072,13 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     RtlAppendUnicodeStringToString(&mut FullPath, &NtSystemRoot);
     RtlAppendUnicodeToString(
         &mut FullPath,
-        b"\\\0S\0y\0s\0t\0e\0m\03\02\0\\\0\0\0".as_ptr() as PCWSTR,
+        w!("\\System32\\").as_ptr() as PCWSTR,
     );
 
     /* Open the Known DLLs directory */
     RtlInitUnicodeString(
         &mut KnownDllString,
-        b"\\\0K\0n\0o\0w\0n\0D\0l\0l\0s\0\0\0".as_ptr() as PCWSTR,
+        w!("\\KnownDlls").as_ptr() as PCWSTR,
     );
     // InitializeObjectAttributes
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
@@ -2077,7 +2097,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     if NT_SUCCESS(Status) {
         RtlInitUnicodeString(
             &mut KnownDllString,
-            b"K\0n\0o\0w\0n\0D\0l\0l\0P\0a\0t\0h\0\0\0".as_ptr() as PCWSTR,
+            w!("KnownDllPath").as_ptr() as PCWSTR,
         );
         ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
         ObjectAttributes.RootDirectory = LdrpKnownDllObjectDirectory;
@@ -2412,7 +2432,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
         i_res = _snwprintf(
             szCSDVersion.as_mut_ptr(),
             Length as usize,
-            b"S\0e\0r\0v\0i\0c\0e\0 \0P\0a\0c\0k\0 \0%\0d\0\0\0".as_ptr() as PCWSTR,
+            w!("Service Pack %d").as_ptr() as PCWSTR,
             (((*Peb).OSCSDVersion >> 8) & 0xFF) as ULONG,
         );
         if i_res < 0 {

@@ -1,5 +1,25 @@
 use crate::prelude::*;
 use core::ffi::c_void;
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn SampOpenAliasObject(
     DomainObject: PSAM_DB_OBJECT,
@@ -19,13 +39,13 @@ pub unsafe extern "C" fn SampOpenAliasObject(
 
     swprintf(
         szRid.as_mut_ptr(),
-        b"%\0\x00\x000\x008\x00l\x00X\x00\0\0".as_ptr() as *const u16,
+        w!("%08lX").as_ptr(),
         AliasId,
     );
 
     SampOpenDbObject(
         DomainObject,
-        b"A\0l\0i\0a\0s\0e\0s\0\0\0".as_ptr() as *mut u16,
+        w!("Aliases").as_ptr() as *mut u16,
         szRid.as_mut_ptr(),
         AliasId,
         SamDbAliasObject,

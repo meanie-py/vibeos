@@ -4,6 +4,26 @@ use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES
 use ntkrnl_sys::constants::STATUS_UNSUCCESSFUL;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // win32k ERR()/TRACE() are debug-channel macros; route to a no-op fn (call sites
 // use ERR(...) call syntax — see cliprgn.rs).
 #[inline(always)] unsafe fn ERR(_msg: *const i8) {}
@@ -77,55 +97,55 @@ unsafe extern "C" fn InitUserAtoms() -> NTSTATUS {
     (*gpsi).atomSysClass[ICLS_TOOLTIPS as usize] = 32774;
 
     AtomMessage = IntAddGlobalAtom(
-        b"M\0e\0s\0s\0a\0g\0e\0\0\0".as_ptr() as *mut u16,
+        w!("Message").as_ptr() as *mut u16,
         1,
     );
     (*gpsi).atomSysClass[ICLS_HWNDMESSAGE as usize] = AtomMessage;
 
     (*gpsi).atomContextHelpIdProp = IntAddGlobalAtom(
-        b"S\0y\0s\0C\0H\0\0\0".as_ptr() as *mut u16,
+        w!("SysCH").as_ptr() as *mut u16,
         1,
     );
 
     (*gpsi).atomIconSmProp = IntAddGlobalAtom(
-        b"S\0y\0s\0I\0C\0S\0\0\0".as_ptr() as *mut u16,
+        w!("SysICS").as_ptr() as *mut u16,
         1,
     );
     (*gpsi).atomIconProp = IntAddGlobalAtom(
-        b"S\0y\0s\0I\0C\0\0\0".as_ptr() as *mut u16,
+        w!("SysIC").as_ptr() as *mut u16,
         1,
     );
 
     (*gpsi).atomFrostedWindowProp = IntAddGlobalAtom(
-        b"S\0y\0s\0F\0r\0o\0s\0t\0e\0d\0W\0i\0n\0d\0o\0w\0\0\0".as_ptr() as *mut u16,
+        w!("SysFrostedWindow").as_ptr() as *mut u16,
         1,
     );
 
     AtomDDETrack = IntAddGlobalAtom(
-        b"S\0y\0s\0D\0T\0\0\0".as_ptr() as *mut u16,
+        w!("SysDT").as_ptr() as *mut u16,
         1,
     );
     AtomQOS = IntAddGlobalAtom(
-        b"S\0y\0s\0Q\0O\0S\0\0\0".as_ptr() as *mut u16,
+        w!("SysQOS").as_ptr() as *mut u16,
         1,
     );
     AtomImeLevel = IntAddGlobalAtom(
-        b"S\0y\0s\0I\0M\0E\0L\0\0\0".as_ptr() as *mut u16,
+        w!("SysIMEL").as_ptr() as *mut u16,
         1,
     );
 
     NtAddAtom(
-        b"S\0y\0s\0W\0N\0D\0O\0\0\0".as_ptr() as *mut u16,
+        w!("SysWNDO").as_ptr() as *mut u16,
         14,
         core::ptr::addr_of_mut!(AtomWndObj),
     );
 
     AtomLayer = IntAddGlobalAtom(
-        b"S\0y\0s\0L\0a\0y\0e\0r\0\0\0".as_ptr() as *mut u16,
+        w!("SysLayer").as_ptr() as *mut u16,
         1,
     );
     AtomFlashWndState = IntAddGlobalAtom(
-        b"F\0l\0a\0s\0h\0W\0S\0t\0a\0t\0e\0\0\0".as_ptr() as *mut u16,
+        w!("FlashWState").as_ptr() as *mut u16,
         1,
     );
 
@@ -151,14 +171,14 @@ pub unsafe extern "system" fn InitUserImpl() -> NTSTATUS {
     InitUserAtoms();
 
     Status = RegOpenKey(
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0W\0i\0n\0d\0o\0w\0s\0\0\0".as_ptr() as *mut u16,
+        w!("\\Registry\\Machine\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows").as_ptr() as *mut u16,
         core::ptr::addr_of_mut!(hKey),
     );
     if NT_SUCCESS(Status) {
         let mut dwValue: DWORD = 0;
         RegReadDWORD(
             hKey,
-            b"D\0i\0s\0p\0l\0a\0y\0V\0e\0r\0s\0i\0o\0n\0\0\0".as_ptr() as *mut u16,
+            w!("DisplayVersion").as_ptr() as *mut u16,
             core::ptr::addr_of_mut!(dwValue),
         );
         g_AlwaysDisplayVersion = (dwValue != 0) as BOOL;

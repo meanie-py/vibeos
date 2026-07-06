@@ -7,6 +7,26 @@ use ntkrnl_sys::ddk::{CmpFindControlSet, CmpFindSubKeyByName, CmpFindValueByName
 use core::ffi::c_void;
 
 use ntkrnl_sys::opaque_ptr;
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
 
 extern "system" {
@@ -146,13 +166,13 @@ pub unsafe extern "system" fn CmGetSystemControlValues(
     
     RootCell = (*(SystemHiveData as PHBASE_BLOCK)).RootCell;
     
-    RtlInitUnicodeString(&mut KeyName, b"c\0u\0r\0r\0e\0n\0t\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut KeyName, w!("current").as_ptr() as *const u16);
     BaseCell = CmpFindControlSet(SystemHive, RootCell, &mut KeyName, &mut Auto);
     if BaseCell == HCELL_NIL {
         KeBugCheckEx(BAD_SYSTEM_CONFIG_INFO, 1, 2, 0, 0);
     }
     
-    RtlInitUnicodeString(&mut KeyName, b"c\0o\0n\0t\0r\0o\0l\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut KeyName, w!("control").as_ptr() as *const u16);
     Node = HvGetCell(SystemHive, BaseCell) as PCM_KEY_NODE;
     BaseCell = CmpFindSubKeyByName(SystemHive, Node, &mut KeyName);
     if BaseCell == HCELL_NIL {

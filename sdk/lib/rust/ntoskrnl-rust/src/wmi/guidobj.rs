@@ -22,6 +22,26 @@ use ntkrnl_sys::ddk::{
 use ntkrnl_sys::ddk::PEPROCESS;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "C" {
     fn InitializeObjectAttributes(
         p: *mut _OBJECT_ATTRIBUTES,
@@ -132,7 +152,7 @@ pub unsafe extern "system" fn WmipInitializeGuidObjectType() -> NTSTATUS {
     pub static mut GUID_OBJECT_NAME: _UNICODE_STRING = _UNICODE_STRING {
         Length: 14,
         MaximumLength: 16,
-        Buffer: b"W\0m\0i\0G\0u\0i\0d\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("WmiGuid").as_ptr() as *mut u16,
     };
     let mut object_type_initializer: OBJECT_TYPE_INITIALIZER = core::mem::zeroed();
 
@@ -289,7 +309,7 @@ pub unsafe extern "system" fn WmipOpenGuidObjectByName(
     pub static mut PREFIX: _UNICODE_STRING = _UNICODE_STRING {
         Length: 18,
         MaximumLength: 20,
-        Buffer: b"\\\0W\0m\0i\0G\0u\0i\0d\0\\\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("\\WmiGuid\\").as_ptr() as *mut u16,
     };
     let mut guid_string: _UNICODE_STRING;
     let mut guid: GUID = core::mem::zeroed();

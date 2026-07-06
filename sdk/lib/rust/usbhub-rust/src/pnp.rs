@@ -29,6 +29,26 @@ use core::ffi::c_void;
 use ntkrnl_sys::ddk::{RtlInitUnicodeString, IoOpenDeviceRegistryKey, ZwSetValueKey, ZwClose, HANDLE, UNICODE_STRING};
 
 // sdk/include/psdk/usbiodef.h:76-77 — DEFINE_GUID device-interface class GUIDs.
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 static GUID_DEVINTERFACE_USB_HUB: GUID = GUID {
     Data1: 0xF18A0E88,
     Data2: 0xc30C,
@@ -2105,7 +2125,7 @@ pub unsafe extern "system" fn USBH_SymbolicLink(
         if NT_SUCCESS(Status) {
             USBH_SetPdoRegistryParameter(
                 (*PortExtension).Common.SelfDevice,
-                b"S\0y\0m\0b\0o\0l\0i\0c\0N\0a\0m\0e\0\0\0".as_ptr() as PCWSTR,
+                w!("SymbolicName").as_ptr() as PCWSTR,
                 (*PortExtension).SymbolicLinkName.Buffer as PVOID,
                 (*PortExtension).SymbolicLinkName.Length as ULONG,
                 REG_SZ as ULONG,
@@ -4975,6 +4995,8 @@ pub unsafe extern "system" fn USBH_SetPdoRegistryParameter(
 
 // _INTERFACE_TYPE_PNPBus (bindgen prefixed enum member; iotypes.h: PNPBus == 15)
 use ntkrnl_sys::ddk::_INTERFACE_TYPE_PNPBus as PNPBus;
+
+
 
 // iotypes.h:1003  #define PNP_DEVICE_FAILED  0x00000004
 const PNP_DEVICE_FAILED: u32 = 0x00000004;

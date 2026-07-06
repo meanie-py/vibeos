@@ -37,6 +37,26 @@ use ntkrnl_sys::ddk::{
     _KWAIT_REASON_Suspended, _GUID,
 };
 use core::ffi::c_void;
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 // ---- file-scope preamble (translated) ----
 pub const KEYBOARD_BUFFER_SIZE: u32 = 100;
 
@@ -357,7 +377,7 @@ unsafe fn CreateClassDeviceObject(
 
     DriverExtension = IoGetDriverObjectExtension(DriverObject, DriverObject as *mut _) as PCLASS_DRIVER_EXTENSION;
     DeviceNameU.Length = 0;
-    DeviceNameU.MaximumLength = (wcslen(b"\\\0D\0e\0v\0i\0c\0e\0\\\0\0\0".as_ptr() as PWSTR) as USHORT)
+    DeviceNameU.MaximumLength = (wcslen(w!("\\Device\\").as_ptr() as PWSTR) as USHORT)
         .wrapping_mul(core::mem::size_of::<u16>() as USHORT)
         + (*DriverExtension).DeviceBaseName.Length
         + (4 * core::mem::size_of::<u16>()) as USHORT

@@ -5,6 +5,8 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 
 use ntkrnl_sys::ddk::{
+
+
     CM_FULL_RESOURCE_DESCRIPTOR,
     ExAllocatePool,
     ExFreePool,
@@ -29,6 +31,26 @@ use ntkrnl_sys::ddk::{
     ZwSetValueKey,
     SIZE_T,
 };
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 
 extern "C" {
 }
@@ -71,72 +93,72 @@ struct PnpDetectIdentifierMap {
 static mut IdentifierU: _UNICODE_STRING = _UNICODE_STRING {
     Length: 20,
     MaximumLength: 22,
-    Buffer: b"I\0d\0e\0n\0t\0i\0f\0i\0e\0r\0\0\0".as_ptr() as *mut u16,
+    Buffer: w!("Identifier").as_ptr() as *mut u16,
 };
 
 static mut HardwareIDU: _UNICODE_STRING = _UNICODE_STRING {
     Length: 20,
     MaximumLength: 22,
-    Buffer: b"H\0a\0r\0d\0w\0a\0r\0e\0I\0D\0\0\0".as_ptr() as *mut u16,
+    Buffer: w!("HardwareID").as_ptr() as *mut u16,
 };
 
 static mut ConfigurationDataU: _UNICODE_STRING = _UNICODE_STRING {
     Length: 34,
     MaximumLength: 36,
-    Buffer: b"C\0o\0n\0f\0i\0g\0u\0r\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0".as_ptr() as *mut u16,
+    Buffer: w!("Configuration Data").as_ptr() as *mut u16,
 };
 
 static mut BootConfigU: _UNICODE_STRING = _UNICODE_STRING {
     Length: 20,
     MaximumLength: 22,
-    Buffer: b"B\0o\0o\0t\0C\0o\0n\0f\0i\0g\0\0\0".as_ptr() as *mut u16,
+    Buffer: w!("BootConfig").as_ptr() as *mut u16,
 };
 
 static mut LogConfU: _UNICODE_STRING = _UNICODE_STRING {
     Length: 14,
     MaximumLength: 16,
-    Buffer: b"L\0o\0g\0C\0o\0n\0f\0\0\0".as_ptr() as *mut u16,
+    Buffer: w!("LogConf").as_ptr() as *mut u16,
 };
 
 static mut KeyboardMap: [PnpMapperDeviceId; 16] = [
-    PnpMapperDeviceId { TypeName: b"X\0T\0_\08\03\0K\0E\0Y\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\03\00\00\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"P\0C\0A\0T\0_\08\06\0K\0E\0Y\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\03\00\01\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"P\0C\0X\0T\0_\08\04\0K\0E\0Y\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\03\00\02\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"X\0T\0_\08\04\0K\0E\0Y\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\03\00\02\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"1\00\01\0-\0K\0E\0Y\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\03\00\03\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"O\0L\0I\0_\08\03\0K\0E\0Y\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\03\00\04\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"A\0T\0T\0_\03\00\01\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\03\00\04\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"O\0L\0I\0_\01\00\02\0K\0E\0Y\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\03\00\05\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"O\0L\0I\0_\08\06\0K\0E\0Y\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\03\00\06\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"O\0L\0I\0_\0A\01\00\01\0_\01\00\02\0K\0E\0Y\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\03\00\09\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"A\0T\0T\0_\03\00\02\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\03\00\0a\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"P\0C\0A\0T\0_\0E\0N\0H\0A\0N\0C\0E\0D\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\03\00\0b\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"P\0C\09\08\0_\01\00\06\0K\0E\0Y\0\0\0".as_ptr() as *const u16, PnPId: b"*\0n\0E\0C\01\03\00\00\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"P\0C\09\08\0_\0L\0a\0p\0t\0o\0p\0K\0E\0Y\0\0\0".as_ptr() as *const u16, PnPId: b"*\0n\0E\0C\01\03\00\00\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"P\0C\09\08\0_\0N\01\00\06\0K\0E\0Y\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\03\00\03\0\0\0\0\0".as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("XT_83KEY").as_ptr() as *const u16, PnPId: w!("*PNP0300").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("PCAT_86KEY").as_ptr() as *const u16, PnPId: w!("*PNP0301").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("PCXT_84KEY").as_ptr() as *const u16, PnPId: w!("*PNP0302").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("XT_84KEY").as_ptr() as *const u16, PnPId: w!("*PNP0302").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("101-KEY").as_ptr() as *const u16, PnPId: w!("*PNP0303").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("OLI_83KEY").as_ptr() as *const u16, PnPId: w!("*PNP0304").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("ATT_301").as_ptr() as *const u16, PnPId: w!("*PNP0304").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("OLI_102KEY").as_ptr() as *const u16, PnPId: w!("*PNP0305").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("OLI_86KEY").as_ptr() as *const u16, PnPId: w!("*PNP0306").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("OLI_A101_102KEY").as_ptr() as *const u16, PnPId: w!("*PNP0309").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("ATT_302").as_ptr() as *const u16, PnPId: w!("*PNP030a").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("PCAT_ENHANCED").as_ptr() as *const u16, PnPId: w!("*PNP030b").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("PC98_106KEY").as_ptr() as *const u16, PnPId: w!("*nEC1300").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("PC98_LaptopKEY").as_ptr() as *const u16, PnPId: w!("*nEC1300").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("PC98_N106KEY").as_ptr() as *const u16, PnPId: w!("*PNP0303").as_ptr() as *mut u16 },
     PnpMapperDeviceId { TypeName: core::ptr::null(), PnPId: core::ptr::null_mut() },
 ];
 
 static mut PointerMap: [PnpMapperDeviceId; 11] = [
-    PnpMapperDeviceId { TypeName: b"P\0S\02\0 \0M\0O\0U\0S\0E\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\0F\00\0E\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"S\0E\0R\0I\0A\0L\0 \0M\0O\0U\0S\0E\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\0F\00\0C\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"M\0I\0C\0R\0O\0S\0O\0F\0T\0 \0P\0S\02\0 \0M\0O\0U\0S\0E\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\0F\00\03\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"L\0O\0G\0I\0T\0E\0C\0H\0 \0P\0S\02\0 \0M\0O\0U\0S\0E\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\0F\01\02\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"M\0I\0C\0R\0O\0S\0O\0F\0T\0 \0I\0N\0P\0O\0R\0T\0 \0M\0O\0U\0S\0E\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\0F\00\02\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"M\0I\0C\0R\0O\0S\0O\0F\0T\0 \0S\0E\0R\0I\0A\0L\0 \0M\0O\0U\0S\0E\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\0F\00\01\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"M\0I\0C\0R\0O\0S\0O\0F\0T\0 \0B\0A\0L\0L\0P\0O\0I\0N\0T\0 \0S\0E\0R\0I\0A\0L\0 \0M\0O\0U\0S\0E\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\0F\00\09\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"L\0O\0G\0I\0T\0E\0C\0H\0 \0S\0E\0R\0I\0A\0L\0 \0M\0O\0U\0S\0E\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\0F\00\08\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"M\0I\0C\0R\0O\0S\0O\0F\0T\0 \0B\0U\0S\0 \0M\0O\0U\0S\0E\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\0F\00\00\0\0\0\0\0".as_ptr() as *mut u16 },
-    PnpMapperDeviceId { TypeName: b"N\0E\0C\0 \0P\0C\0-\09\08\00\00\0 \0B\0U\0S\0 \0M\0O\0U\0S\0E\0\0\0".as_ptr() as *const u16, PnPId: b"*\0n\0E\0C\01\0F\00\00\0\0\0\0\0".as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("PS2 MOUSE").as_ptr() as *const u16, PnPId: w!("*PNP0F0E").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("SERIAL MOUSE").as_ptr() as *const u16, PnPId: w!("*PNP0F0C").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("MICROSOFT PS2 MOUSE").as_ptr() as *const u16, PnPId: w!("*PNP0F03").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("LOGITECH PS2 MOUSE").as_ptr() as *const u16, PnPId: w!("*PNP0F12").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("MICROSOFT INPORT MOUSE").as_ptr() as *const u16, PnPId: w!("*PNP0F02").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("MICROSOFT SERIAL MOUSE").as_ptr() as *const u16, PnPId: w!("*PNP0F01").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("MICROSOFT BALLPOINT SERIAL MOUSE").as_ptr() as *const u16, PnPId: w!("*PNP0F09").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("LOGITECH SERIAL MOUSE").as_ptr() as *const u16, PnPId: w!("*PNP0F08").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("MICROSOFT BUS MOUSE").as_ptr() as *const u16, PnPId: w!("*PNP0F00").as_ptr() as *mut u16 },
+    PnpMapperDeviceId { TypeName: w!("NEC PC-9800 BUS MOUSE").as_ptr() as *const u16, PnPId: w!("*nEC1F00").as_ptr() as *mut u16 },
     PnpMapperDeviceId { TypeName: core::ptr::null(), PnPId: core::ptr::null_mut() },
 ];
 
 static mut PnPMap: [PnpDetectIdentifierMap; 8] = [
-    PnpDetectIdentifierMap { DetectId: b"S\0e\0r\0i\0a\0l\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\05\00\01\0\0\0\0\0".as_ptr() as *mut u16, PeripheralMap: core::ptr::null_mut(), Counter: 0 },
-    PnpDetectIdentifierMap { DetectId: b"K\0e\0y\0b\0o\0a\0r\0d\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as *const u16, PnPId: core::ptr::null_mut(), PeripheralMap: core::ptr::null_mut(), Counter: 0 },
-    PnpDetectIdentifierMap { DetectId: b"P\0o\0i\0n\0t\0e\0r\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as *const u16, PnPId: core::ptr::null_mut(), PeripheralMap: core::ptr::null_mut(), Counter: 0 },
-    PnpDetectIdentifierMap { DetectId: b"P\0a\0r\0a\0l\0l\0e\0l\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\04\00\00\0\0\0\0\0".as_ptr() as *mut u16, PeripheralMap: core::ptr::null_mut(), Counter: 0 },
-    PnpDetectIdentifierMap { DetectId: b"F\0l\0o\0p\0p\0y\0D\0i\0s\0k\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as *const u16, PnPId: b"*\0P\0N\0P\00\07\00\00\0\0\0\0\0".as_ptr() as *mut u16, PeripheralMap: core::ptr::null_mut(), Counter: 0 },
+    PnpDetectIdentifierMap { DetectId: w!("SerialController").as_ptr() as *const u16, PnPId: w!("*PNP0501").as_ptr() as *mut u16, PeripheralMap: core::ptr::null_mut(), Counter: 0 },
+    PnpDetectIdentifierMap { DetectId: w!("KeyboardPeripheral").as_ptr() as *const u16, PnPId: core::ptr::null_mut(), PeripheralMap: core::ptr::null_mut(), Counter: 0 },
+    PnpDetectIdentifierMap { DetectId: w!("PointerPeripheral").as_ptr() as *const u16, PnPId: core::ptr::null_mut(), PeripheralMap: core::ptr::null_mut(), Counter: 0 },
+    PnpDetectIdentifierMap { DetectId: w!("ParallelController").as_ptr() as *const u16, PnPId: w!("*PNP0400").as_ptr() as *mut u16, PeripheralMap: core::ptr::null_mut(), Counter: 0 },
+    PnpDetectIdentifierMap { DetectId: w!("FloppyDiskPeripheral").as_ptr() as *const u16, PnPId: w!("*PNP0700").as_ptr() as *mut u16, PeripheralMap: core::ptr::null_mut(), Counter: 0 },
     PnpDetectIdentifierMap { DetectId: core::ptr::null(), PnPId: core::ptr::null_mut(), PeripheralMap: core::ptr::null_mut(), Counter: 0 },
     PnpDetectIdentifierMap { DetectId: core::ptr::null(), PnPId: core::ptr::null_mut(), PeripheralMap: core::ptr::null_mut(), Counter: 0 },
     PnpDetectIdentifierMap { DetectId: core::ptr::null(), PnPId: core::ptr::null_mut(), PeripheralMap: core::ptr::null_mut(), Counter: 0 },
@@ -723,12 +745,12 @@ unsafe fn IopIsFirmwareMapperDisabled() -> BOOLEAN {
     let mut KeyPathU: _UNICODE_STRING = _UNICODE_STRING {
         Length: 96,
         MaximumLength: 98,
-        Buffer: b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0U\0R\0R\0E\0N\0T\0C\0O\0N\0T\0R\0O\0L\0S\0E\0T\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0P\0n\0p\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("\\Registry\\Machine\\SYSTEM\\CURRENTCONTROLSET\\Control\\Pnp").as_ptr() as *mut u16,
     };
     let mut KeyNameU: _UNICODE_STRING = _UNICODE_STRING {
         Length: 42,
         MaximumLength: 44,
-        Buffer: b"D\0i\0s\0a\0b\0l\0e\0F\0i\0r\0m\0w\0a\0r\0e\0M\0a\0p\0p\0e\0r\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("DisableFirmwareMapper").as_ptr() as *mut u16,
     };
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut hPnpKey: HANDLE = core::ptr::null_mut();
@@ -780,17 +802,17 @@ pub unsafe extern "system" fn IopUpdateRootKey() -> NTSTATUS {
     let mut EnumU: _UNICODE_STRING = _UNICODE_STRING {
         Length: 88,
         MaximumLength: 90,
-        Buffer: b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0E\0n\0u\0m\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Enum").as_ptr() as *mut u16,
     };
     let mut RootPathU: _UNICODE_STRING = _UNICODE_STRING {
         Length: 8,
         MaximumLength: 10,
-        Buffer: b"R\0o\0o\0t\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("Root").as_ptr() as *mut u16,
     };
     let mut MultiKeyPathU: _UNICODE_STRING = _UNICODE_STRING {
         Length: 130,
         MaximumLength: 132,
-        Buffer: b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0H\0A\0R\0D\0W\0A\0R\0E\0\\\0D\0E\0S\0C\0R\0I\0P\0T\0I\0O\0N\0\\\0S\0y\0s\0t\0e\0m\0\\\0M\0u\0l\0t\0i\0f\0u\0n\0c\0t\0i\0o\0n\0A\0d\0a\0p\0t\0e\0r\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("\\Registry\\Machine\\HARDWARE\\DESCRIPTION\\System\\MultifunctionAdapter").as_ptr() as *mut u16,
     };
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut hEnum: HANDLE = core::ptr::null_mut();

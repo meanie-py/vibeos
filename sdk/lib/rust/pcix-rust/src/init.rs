@@ -23,6 +23,26 @@ use ntkrnl_sys::ddk::{DISPATCHER_HEADER, KEY_FULL_INFORMATION, PCSTR, PCUNICODE_
 use ntkrnl_sys::ke::{DbgBreakPoint};
 use ntkrnl_sys::ddk::LARGE_INTEGER;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ---- ACPI private types (from sdk/include/reactos/drivers/acpi/acpi.h) ----
 // gen_driver_types did not bind these (acpi.h not in pcix bindgen allowlist);
 // defined here faithfully so c2rust's references resolve. Layout matches the C.
@@ -247,7 +267,7 @@ pub unsafe extern "system" fn PciAcpiFindRsdt(
 
             RtlInitUnicodeString(
                 &mut ValueName,
-                b"I\0d\0e\0n\0t\0i\0f\0i\0e\0r\0\0\0".as_ptr() as PCWSTR,
+                w!("Identifier").as_ptr() as PCWSTR,
             );
             Status = ZwQueryValueKey(
                 SubKey,
@@ -262,7 +282,7 @@ pub unsafe extern "system" fn PciAcpiFindRsdt(
             if NT_SUCCESS(Status) {
                 if wcsncmp(
                     (*ValueInfo).Data.as_ptr() as *const u16,
-                    b"A\0C\0P\0I\0 \0B\0I\0O\0S\0\0\0".as_ptr() as *const u16,
+                    w!("ACPI BIOS").as_ptr() as *const u16,
                     (*ValueInfo).DataLength as usize,
                 ) == 0
                 {
@@ -570,7 +590,7 @@ pub unsafe extern "system" fn PciGetIrqRoutingTableFromRegistry(
             if open_result != 0 {
                 RtlInitUnicodeString(
                     &mut value_name,
-                    b"I\0d\0e\0n\0t\0i\0f\0i\0e\0r\0\0\0".as_ptr() as PCWSTR,
+                    w!("Identifier").as_ptr() as PCWSTR,
                 );
                 Status = ZwQueryValueKey(
                     SubKey,
@@ -584,7 +604,7 @@ pub unsafe extern "system" fn PciGetIrqRoutingTableFromRegistry(
                 if NT_SUCCESS(Status) {
                     let data_ptr = (*ValueInfo).Data.as_ptr() as *const u16;
                     let pci_bios_ptr =
-                        b"P\0C\0I\0 \0B\0I\0O\0S\0\0\0".as_ptr() as *const u16;
+                        w!("PCI BIOS").as_ptr() as *const u16;
                     if wcsncmp(data_ptr, pci_bios_ptr, (*ValueInfo).DataLength as usize) == 0 {
                         Status = PciGetRegistryValue(
                             b"C\0o\0n\0f\0i\0g\0u\0r\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0"

@@ -3,6 +3,26 @@ use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_DISK_SIGNATURE, ARC_STATUS, BOOT_DRIVER_LIST_ENTRY, BOOT_DRIVER_NODE, FILEINFORMATION, HEADLESS_LOADER_BLOCK, KiSystemStartup, LOADER_PARAMETER_EXTENSION, MEMORY_ALLOCATION_DESCRIPTOR, PARC_DISK_SIGNATURE, PBOOT_DRIVER_LIST_ENTRY, PBOOT_DRIVER_NODE, PCCH, PCSTR, PLDR_DATA_TABLE_ENTRY, PLOADER_PARAMETER_BLOCK, PLOADER_PARAMETER_EXTENSION, PMEMORY_ALLOCATION_DESCRIPTOR, PSETUP_LOADER_BLOCK, PSTR, PUNICODE_STRING, _BOOT_DRIVER_LIST_ENTRY, _LDR_DATA_TABLE_ENTRY};
 // freeldr_ddk_imports dropped (not in ddk): File, PaeEnabled
 use core::ffi::c_void;
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 pub use ntkrnl_sys::ddk::_ARC_CODES_EINVAL as EINVAL;
 pub use ntkrnl_sys::ddk::_ARC_CODES_ENOEXEC as ENOEXEC;
 pub use ntkrnl_sys::ddk::_ARC_CODES_ESUCCESS as ESUCCESS;
@@ -579,7 +599,7 @@ unsafe fn WinLdrDetectVersion() -> USHORT {
     
     let rc = RegOpenKey(
         CurrentControlSetKey,
-        b"C\0o\0n\0t\0r\0o\0l\0\\\0T\0e\0r\0m\0i\0n\0a\0l\0 \0S\0e\0r\0v\0e\0r\0\0\0".as_ptr() as *const u16,
+        w!("Control\\Terminal Server").as_ptr() as *const u16,
         &mut hKey
     );
     
@@ -992,11 +1012,11 @@ unsafe fn WinLdrInitErrataInf(
 
     if OperatingSystemVersion >= 0x0600 {
         rc = RegOpenKey(CurrentControlSetKey, 
-                       b"C\0o\0n\0t\0r\0o\0l\0\\\0E\0r\0r\0a\0t\0a\0\0\0".as_ptr() as *const u16,
+                       w!("Control\\Errata").as_ptr() as *const u16,
                        &mut hKey);
     } else {
         rc = RegOpenKey(CurrentControlSetKey,
-                       b"C\0o\0n\0t\0r\0o\0l\0\\\0B\0i\0o\0s\0I\0n\0f\0o\0\0\0".as_ptr() as *const u16,
+                       w!("Control\\BiosInfo").as_ptr() as *const u16,
                        &mut hKey);
     }
     
@@ -1007,7 +1027,7 @@ unsafe fn WinLdrInitErrataInf(
 
     BufferSize = core::mem::size_of::<[u16; 80]>() as u32;
     rc = RegQueryValue(hKey,
-                      b"I\0n\0f\0N\0a\0m\0e\0\0\0".as_ptr() as *const u16,
+                      w!("InfName").as_ptr() as *const u16,
                       core::ptr::null_mut(),
                       szFileName.as_mut_ptr() as *mut u8,
                       &mut BufferSize);

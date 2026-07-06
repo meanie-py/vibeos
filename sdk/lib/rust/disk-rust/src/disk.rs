@@ -559,6 +559,26 @@ unsafe extern "system" {
 
 // Constants
 use ntkrnl_sys::ddk::ULONG_PTR; // per-arch: u64 on amd64/arm64, u32 on i386 (matches IoStatus.Information)
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 // moved from extern "system": types_i386 declares these cdecl (no NTAPI in disk.h);
 // the defs are extern "C" — CC must agree or LLVM folds callers to ud2.
 extern "C" {
@@ -986,10 +1006,7 @@ pub unsafe extern "C" fn DiskCreateFdo(
         status = RtlStringCchPrintfW(
             (&raw mut dirBuffer) as *mut u16,
             (core::mem::size_of::<[u16; 64]>() / core::mem::size_of::<u16>()).wrapping_sub(1),
-            // L"\Device\Harddisk%d" — interleaved-NUL UTF-16LE bytes; a plain ASCII
-            // byte string cast to *const u16 made WCHAR[0]=0x445C (no leading '\')
-            // -> ZwCreateDirectoryObject STATUS_OBJECT_PATH_SYNTAX_BAD (0xC000003B).
-            (b"\\\0D\0e\0v\0i\0c\0e\0\\\0H\0a\0r\0d\0d\0i\0s\0k\0%\0d\0\0\0".as_ptr() as *const u16),
+            (w!("\\Device\\Harddisk%d").as_ptr() as *const u16),
             *DeviceCount,
         );
         if !(status >= 0) {

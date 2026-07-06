@@ -8,6 +8,26 @@ use crate::preamble::*;
 use crate::userinit::{ReadRegSzKey, ExpandInstallerPath};
 use crate::preamble::{EnumSystemLocalesW, DialogBoxParamW};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // CRT (swprintf/wcslen/wcstoul/_wcsicmp/wcstol/…) lives in crate::preamble.
 
 // ---- file-scope preamble (translated) ----
@@ -141,7 +161,7 @@ pub unsafe extern "C" fn IsLiveCD() -> BOOL {
 
         rc = ReadRegSzKey(
             ControlKey,
-            b"S\0y\0s\0t\0e\0m\0S\0t\0a\0r\0t\0O\0p\0t\0i\0o\0n\0s\0\0\0".as_ptr() as LPWSTR,
+            w!("SystemStartOptions").as_ptr() as LPWSTR,
             &mut SystemStartOptions,
         );
         if rc != ERROR_SUCCESS as LONG {
@@ -156,7 +176,7 @@ pub unsafe extern "C" fn IsLiveCD() -> BOOL {
             }
             if _wcsicmp(
                 CurrentOption,
-                b"M\0I\0N\0I\0N\0T\0\0\0".as_ptr() as LPWSTR,
+                w!("MININT").as_ptr() as LPWSTR,
             ) == 0
             {
                 ret = 1;
@@ -497,46 +517,46 @@ unsafe fn InitializeDefaultUserLocale(pNewLcid: PLCID) {
     const HKEY_USERS: HKEY = 0x80000003u32 as usize as HKEY;
 
     let locale_data: [LocaleDataEntry; 37] = [
-        LocaleDataEntry { LCType: LOCALE_SDECIMAL, pValue: b"s\0D\0e\0c\0i\0m\0a\0l\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_STHOUSAND, pValue: b"s\0T\0h\0o\0u\0s\0a\0n\0d\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_SNEGATIVESIGN, pValue: b"s\0N\0e\0g\0a\0t\0i\0v\0e\0S\0i\0g\0n\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_SPOSITIVESIGN, pValue: b"s\0P\0o\0s\0i\0t\0i\0v\0e\0S\0i\0g\0n\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_SGROUPING, pValue: b"s\0G\0r\0o\0u\0p\0i\0n\0g\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_SLIST, pValue: b"s\0L\0i\0s\0t\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_SNATIVEDIGITS, pValue: b"s\0N\0a\0t\0i\0v\0e\0D\0i\0g\0i\0t\0s\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_INEGNUMBER, pValue: b"i\0N\0e\0g\0N\0u\0m\0b\0e\0r\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_IDIGITS, pValue: b"i\0D\0i\0g\0i\0t\0s\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_ILZERO, pValue: b"i\0L\0Z\0e\0r\0o\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_IMEASURE, pValue: b"i\0M\0e\0a\0s\0u\0r\0e\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_IDIGITSUBSTITUTION, pValue: b"N\0u\0m\0S\0h\0a\0p\0e\0\0\0".as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SDECIMAL, pValue: w!("sDecimal").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_STHOUSAND, pValue: w!("sThousand").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SNEGATIVESIGN, pValue: w!("sNegativeSign").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SPOSITIVESIGN, pValue: w!("sPositiveSign").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SGROUPING, pValue: w!("sGrouping").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SLIST, pValue: w!("sList").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SNATIVEDIGITS, pValue: w!("sNativeDigits").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_INEGNUMBER, pValue: w!("iNegNumber").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_IDIGITS, pValue: w!("iDigits").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_ILZERO, pValue: w!("iLZero").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_IMEASURE, pValue: w!("iMeasure").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_IDIGITSUBSTITUTION, pValue: w!("NumShape").as_ptr() as PWSTR },
 
-        LocaleDataEntry { LCType: LOCALE_SCURRENCY, pValue: b"s\0C\0u\0r\0r\0e\0n\0c\0y\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_SMONDECIMALSEP, pValue: b"s\0M\0o\0n\0D\0e\0c\0i\0m\0a\0l\0S\0e\0p\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_SMONTHOUSANDSEP, pValue: b"s\0M\0o\0n\0T\0h\0o\0u\0s\0a\0n\0d\0S\0e\0p\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_SMONGROUPING, pValue: b"s\0M\0o\0n\0G\0r\0o\0u\0p\0i\0n\0g\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_ICURRENCY, pValue: b"i\0C\0u\0r\0r\0e\0n\0c\0y\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_INEGCURR, pValue: b"i\0N\0e\0g\0C\0u\0r\0r\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_ICURRDIGITS, pValue: b"i\0C\0u\0r\0r\0D\0i\0g\0i\0t\0s\0\0\0".as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SCURRENCY, pValue: w!("sCurrency").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SMONDECIMALSEP, pValue: w!("sMonDecimalSep").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SMONTHOUSANDSEP, pValue: w!("sMonThousandSep").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SMONGROUPING, pValue: w!("sMonGrouping").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_ICURRENCY, pValue: w!("iCurrency").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_INEGCURR, pValue: w!("iNegCurr").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_ICURRDIGITS, pValue: w!("iCurrDigits").as_ptr() as PWSTR },
 
-        LocaleDataEntry { LCType: LOCALE_STIMEFORMAT, pValue: b"s\0T\0i\0m\0e\0F\0o\0r\0m\0a\0t\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_STIME, pValue: b"s\0T\0i\0m\0e\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_S1159, pValue: b"s\01\01\05\09\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_S2359, pValue: b"s\02\03\05\09\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_ITIME, pValue: b"i\0T\0i\0m\0e\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_ITIMEMARKPOSN, pValue: b"i\0T\0i\0m\0e\0P\0r\0e\0f\0i\0x\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_ITLZERO, pValue: b"i\0T\0L\0Z\0e\0r\0o\0\0\0".as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_STIMEFORMAT, pValue: w!("sTimeFormat").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_STIME, pValue: w!("sTime").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_S1159, pValue: w!("s1159").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_S2359, pValue: w!("s2359").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_ITIME, pValue: w!("iTime").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_ITIMEMARKPOSN, pValue: w!("iTimePrefix").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_ITLZERO, pValue: w!("iTLZero").as_ptr() as PWSTR },
 
-        LocaleDataEntry { LCType: LOCALE_SLONGDATE, pValue: b"s\0L\0o\0n\0g\0D\0a\0t\0e\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_SSHORTDATE, pValue: b"s\0S\0h\0o\0r\0t\0D\0a\0t\0e\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_SDATE, pValue: b"s\0D\0a\0t\0e\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_IFIRSTDAYOFWEEK, pValue: b"i\0F\0i\0r\0s\0t\0D\0a\0y\0O\0f\0W\0e\0e\0k\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_IFIRSTWEEKOFYEAR, pValue: b"i\0F\0i\0r\0s\0t\0W\0e\0e\0k\0O\0f\0Y\0e\0a\0r\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_IDATE, pValue: b"i\0D\0a\0t\0e\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_ICALENDARTYPE, pValue: b"i\0C\0a\0l\0e\0n\0d\0a\0r\0T\0y\0p\0e\0\0\0".as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SLONGDATE, pValue: w!("sLongDate").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SSHORTDATE, pValue: w!("sShortDate").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SDATE, pValue: w!("sDate").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_IFIRSTDAYOFWEEK, pValue: w!("iFirstDayOfWeek").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_IFIRSTWEEKOFYEAR, pValue: w!("iFirstWeekOfYear").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_IDATE, pValue: w!("iDate").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_ICALENDARTYPE, pValue: w!("iCalendarType").as_ptr() as PWSTR },
 
-        LocaleDataEntry { LCType: LOCALE_SCOUNTRY, pValue: b"s\0C\0o\0u\0n\0t\0r\0y\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_SABBREVLANGNAME, pValue: b"s\0L\0a\0n\0g\0u\0a\0g\0e\0\0\0".as_ptr() as PWSTR },
-        LocaleDataEntry { LCType: LOCALE_ICOUNTRY, pValue: b"i\0C\0o\0u\0n\0t\0r\0y\0\0\0".as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SCOUNTRY, pValue: w!("sCountry").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_SABBREVLANGNAME, pValue: w!("sLanguage").as_ptr() as PWSTR },
+        LocaleDataEntry { LCType: LOCALE_ICOUNTRY, pValue: w!("iCountry").as_ptr() as PWSTR },
         LocaleDataEntry { LCType: 0, pValue: core::ptr::null_mut() },
     ];
 

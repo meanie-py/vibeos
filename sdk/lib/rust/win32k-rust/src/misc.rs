@@ -7,6 +7,26 @@ use ntkrnl_sys::ob::ObDereferenceObject;
 use ntkrnl_sys::inline::ke::NtCurrentTeb;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // Debug-channel macros — no kernel symbol, no-op.
 macro_rules! ERR   { ($($t:tt)*) => {{}}; }
 macro_rules! TRACE { ($($t:tt)*) => {{}}; }
@@ -261,7 +281,7 @@ pub unsafe extern "fastcall" fn UserGetLanguageToggle(
     let mut szBuff: [WCHAR; 4] = [0; 4];
 
     let Status: NTSTATUS = RegReadUserSetting(
-        b"Keyboard Layout\\Toggle\0".as_ptr() as PCWSTR,
+        w!("Keyboard Layout\\Toggle").as_ptr() as PCWSTR,
         pszType,
         REG_SZ,
         szBuff.as_mut_ptr() as *mut core::ffi::c_void,
@@ -286,7 +306,7 @@ pub unsafe extern "C" fn UserGetLanguageToggle(
     let mut szBuff: [WCHAR; 4] = [0; 4];
 
     let Status: NTSTATUS = RegReadUserSetting(
-        b"Keyboard Layout\\Toggle\0".as_ptr() as PCWSTR,
+        w!("Keyboard Layout\\Toggle").as_ptr() as PCWSTR,
         pszType,
         REG_SZ,
         szBuff.as_mut_ptr() as *mut core::ffi::c_void,

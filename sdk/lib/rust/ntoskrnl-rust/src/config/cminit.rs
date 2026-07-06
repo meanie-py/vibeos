@@ -20,6 +20,26 @@ use ntkrnl_sys::ddk::{
 };
 
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 // TAG constants (from sdk/lib/cmlib/cmlib.h). C uses big-endian char literals;
 // 'vHMC' → bytes 'C','M','H','v' in memory → little-endian u32.
 const TAG_CMHIVE: u32 = u32::from_le_bytes(*b"CMHv");
@@ -569,7 +589,7 @@ pub unsafe extern "system" fn CmpOpenHiveFiles(
     let IoFlags = 0x00000008 | 0x00000004;
 
     let mut AttributeFlags = 0x00000080;
-    if _wcsnicmp(Extension, b".\0l\0o\0g\0\0\0".as_ptr() as *const u16, 4) == 0 {
+    if _wcsnicmp(Extension, w!(".log").as_ptr() as *const u16, 4) == 0 {
         AttributeFlags |= 0x00000002;
     }
 

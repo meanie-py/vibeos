@@ -15,6 +15,26 @@ use crate::types::*;
 use crate::wstr;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ntstatus.h code not carried by winsrv-sys.
 const STATUS_NO_MORE_ENTRIES: NTSTATUS = 0x8000001Au32 as NTSTATUS;
 
@@ -485,7 +505,7 @@ unsafe fn ScmIsLocalSystemAccount(pszAccountName: PCWSTR) -> BOOL {
     if pszAccountName.is_null()
         || _wcsicmp(
             pszAccountName,
-            b"L\0o\0c\0a\0l\0S\0y\0s\0t\0e\0m\0\0\0".as_ptr() as *const u16,
+            w!("LocalSystem").as_ptr() as *const u16,
         ) == 0
     {
         return 1;
@@ -589,7 +609,7 @@ unsafe fn ScmLogonService(
             break 'done;
         }
 
-        wcscpy(pszPassword, b"_\0S\0C\0_\0\0\0".as_ptr() as *const u16);
+        wcscpy(pszPassword, w!("_SC_").as_ptr() as *const u16);
         wcscat(pszPassword, (*pService).lpServiceName);
 
         /* Do the service logon */
