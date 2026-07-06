@@ -110,6 +110,11 @@ struct KTSS {
 #[repr(C)]
 struct FX_SAVE_AREA {
     U: FX_SAVE_AREA_U,
+    /// Present in the C layout (ndk/i386/ketypes.h) — this local struct had
+    /// DROPPED it, so every Cr0NpxState access below hit +0x200 (NpxSavedCpu's
+    /// slot) instead of +0x204: KeContextToTrapFrame's sanitize never touched
+    /// the real Cr0NpxState and KeTrapFrameToContext read the wrong dword.
+    NpxSavedCpu: ULONG,
     Cr0NpxState: ULONG,
 }
 
