@@ -2810,3 +2810,82 @@ wedge: lock word `0` with a parked waiter = lost wakeup; lock word =
 `dump-thread` → `WaitReason 0x23/0x1c` distinguishes guarded-mutex vs pushlock
 chains, and `KGUARDED_MUTEX.Owner` (+4) names the holder for the chain walk.
 
+
+### 9.25 (FIXED 2026-07-06) i386 NPX `Cr0NpxState` garbage → 0x7F GP in `KiFlushNPXState` — hand-rolled `FX_SAVE_AREA` local structs modelled the union U as 512 bytes, but the C `FXSAVE_FORMAT` is **520**
+
+Same bindgen-drop *class* as §9.24, different struct. After the §9.24 pushlock fix
+got i386 to `shell ready`, a `BUGCHECK 0x7F (0x0000000d GP)` fired in
+`KiFlushNPXState` at the `mov cr0, <val>` — `val` was a pointer-shaped garbage
+(observed `0x7ffea000`, a user Teb) OR'd into CR0's reserved bits.
+
+**Root:** the C `_FXSAVE_FORMAT` (`sdk/include/ndk/i386/ketypes.h`) carries a trailing
+`Align16Byte[8]` after `Reserved4[224]`, making it **520 bytes (0x208)**, not 512. So in
+`FX_SAVE_AREA`, the union `U` is 520, putting `NpxSavedCpu@0x208` and `Cr0NpxState@0x20C`,
+with `sizeof(FX_SAVE_AREA)=528 (0x210)` — which `KiGetThreadNpxArea` confirms
+(`InitialStack - 0x210`) and bindgen models correctly (size-asserted 528, `Cr0NpxState`
+offset-asserted 524). `traphdlr.rs`/`usercall.rs` correctly use the bindgen `_FX_SAVE_AREA`.
+
+But **four files hand-rolled local `FX_SAVE_AREA`/`FXSAVE_FORMAT` with a short U**, so every
+`Cr0NpxState`/`NpxSavedCpu` access landed 8 bytes low, inside the FXSAVE register/align
+region → pointer garbage:
+- `ke/i386/cpu.rs`   — `U:[u8;512]` → `Cr0NpxState@0x204` (this is the `KiFlushNPXState` reader that GP-faulted)
+- `ke/i386/exp.rs`   — a hand-rolled `FXSAVE_FORMAT` of only **288 bytes** (truncated `Reserved4[128]`, missing `Reserved4[224]`+`Align16Byte[8]`) → `Cr0NpxState@0x124`
+- `ke/i386/kiinit.rs` — `FX_AREA{_padding[24], MXCsrMask}` → read `MXCsrMask@0x18` (that's `MXCsr`), stashed `0x1F80` in `KiMXCsrMask`
+- `ke/i386/v86vdm.rs` — `[u8;512]` → `sizeof` for a `RtlCopyMemory(FX_SAVE_AREA)` short by 16
+
+**Fix (commit `88ee2c3461c`):** all four sized to the true 520/528 C layout. Boot confirms
+the `[NPX] Cr0NpxState GARBAGE` prints are gone (0 hits). **Lesson:** whenever you see a
+hand-rolled `FXSAVE_FORMAT` in a translation, check for the `Align16Byte[8]` tail — it is
+easy to drop and size-asserts on the *local* struct won't catch it (there are none). Prefer
+the bindgen `_FX_SAVE_AREA`/`_FXSAVE_FORMAT` (size-verified) over hand-rolled copies.
+
+### 9.26 (OPEN as of 2026-07-06) i386 `0x0A @ Eip=0x10c` ~2s after `shell ready` — a thread-SUSPEND APC delivered on the syscall-exit path corrupts `KiDeliverApc`'s return chain across the suspend/resume context switch
+
+The LAST i386 boot blocker after §9.24 + §9.25. i386 reaches the real `shell ready`
+boot marker (desktop renders), then within ~2s (during `shell32!CDefView` /
+`RegisterDragDrop` / OLE marshaling startup) BUGCHECKs `0x0000000A
+(0x0000010c, 0xffffffff, 0x00000000, 0x0000010c)`.
+
+**What it is (fully triaged; the hard part is *why*):**
+- The fault is a **kernel-mode (SegCs=0x8) instruction fetch at `0x10c`** with **IF=0**
+  (`EFlags=0x10046`). `KiTrap0EHandler` bugchecks `0x0A` at line ~796 precisely *because*
+  IF=0 (it treats an IF-clear fault as `IRQL_NOT_LESS_OR_EQUAL`), so `cr2=Eip=0x10c`.
+- IF=0 + kernel = a `cli`-protected region: `KiServiceExit` does `__disable` (cli) then
+  `call KiCheckForApcDelivery` → `KfRaiseIrql(APC)` → `KiDeliverApc` → `KfLowerIrql`.
+- Raw hardware-frame capture at the asm `KiTrap0E` entry (break `*<KiTrap0E>` **if
+  `*(unsigned*)($esp+4)==0x10c`**, then `x/40wx ($esp+16)`) shows the pre-fault stack top =
+  `KiServiceExit+0x1b` (the return addr right after `call KiCheckForApcDelivery`). **No
+  register holds 0x10c** (edx is a trap-frame ptr) → it was a `ret`/`ret N` to a **corrupted
+  stack slot = 0x10c**, NOT a `jmp reg`.
+- A `[T0E]` diagnostic in `KiTrap0EHandler` (fires on `Eip<0x1000`) plus a `KiLastApc*`
+  recorder in `KiDeliverApc` names the culprit APC every boot: **the thread-suspend APC**
+  — `KernelRoutine=KiSuspendNop@20`, `NormalRoutine=KiSuspendThread@12`, `type=0x12`
+  (ApcObject). `KiSuspendThread` blocks on the suspend semaphore (`KeWaitForSingleObject`)
+  → context-switch out, then resume.
+- The `prevTF` (thread->TrapFrame) is a **normal user syscall** (`Eip=0x7e001785`, `cs=0x1b`
+  — an ntdll SYSENTER return), consistent across every boot.
+
+**Ruled OUT (all verified):**
+- Bad routine pointers — `[APC]` bogus-pointer check never fires; both routines are valid.
+- ABI/cleanup mismatch — `KiSuspendNop` compiles to `ret 0x14`, `KiSuspendThread` to
+  `ret 0xc` (correct stdcall); `PKKERNEL_ROUTINE`/`PKNORMAL_ROUTINE` bindgen types are
+  `extern "stdcall"`.
+- `Esp0`/NPX frame math — `KiSwapContextExit` sets `Esp0 = InitialStack - 0x10 - NPX_FRAME_LENGTH`
+  = `InitialStack - 0x220`, which places the trap frame adjacent to the (correct, 528-byte)
+  NPX area. `NPX_FRAME_LENGTH = size_of::<_FX_SAVE_AREA>()` = 528 (bindgen).
+- The `KiServiceExit`/`KiServiceExit2` guards — the `[KTF]`/`[KX2]` `Eip<0x8000_0000` checks
+  are placed correctly but *cannot* be the jumper: the kernel-path `jmp edx` is guarded and
+  edx≠0x10c at fault; the observed transfer is a `ret`, not that `jmp`. The `KiServiceExit`
+  frames on the stack are partly **stale** (reused kernel stack) — do not over-trust them.
+
+**Current best hypothesis:** the suspend/resume **context-switch stack save/restore**
+(`KiSwapContextEntry`/`Exit` Rust + `ctxswitch.S` `KiSwitchThreads` `mov esp,edx`) leaves
+`KiDeliverApc`/`KiCheckForApcDelivery`'s saved return address = `0x10c` after the round-trip,
+so the epilogue `ret`s to `0x10c`. Next steps for whoever picks this up: capture ESP
+immediately across the `KeWaitForSingleObject`/context-switch in `KiSuspendThread` (or
+`KiDeliverApc`'s `NormalRoutine` call) to prove the resume shifts the stack; then audit
+`KiSwapContextEntry` (`OldThread->KernelStack = SwitchFrame`) vs the asm push/pop balance and
+the resumed-thread ESP restore. Diagnostics are staged (uncommitted) in
+`ke/i386/traphdlr.rs` (`[T0E]`, `[KX2]`, `[KTF]`, `[FCH]`), `ke/i386/thrdini.rs` (`[TCTX]`),
+and `ke/apc.rs` (`KiLastApc*` recorder) — strip before landing. amd64/arm64 are unaffected
+(green), so this is i386-specific (asm or i386 Rust translation).
