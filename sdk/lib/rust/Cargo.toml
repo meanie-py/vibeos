@@ -8,6 +8,8 @@ members = [
     "fastfat-rust",
     "lpc-rust",
     "fsrtl-rust",
+    "dbgk-rust",
+    "wmi-rust",
     "conutils-rust",
     "dnslib-rust",
     "skiplist-rust",

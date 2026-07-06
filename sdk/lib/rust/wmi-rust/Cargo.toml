@@ -1,0 +1,14 @@
+# wmi-rust — the kernel WMI subsystem, extracted from ntoskrnl-rust into its
+# own rlib (crate-split — docs/engineering/ntoskrnl-crate-split-plan.md). Zero deps
+# on the rest of ntoskrnl-rust; objects bundle into libkernel_rust.a via
+# `extern crate wmi_rust` in the kernel-rust umbrella.
+[package]
+name = "wmi-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

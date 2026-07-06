@@ -170,7 +170,7 @@ pub mod ARM3;
 pub mod arm64_dbg;
 pub mod cc;
 pub mod config;
-pub mod dbgk;
+// dbgk extracted to dbgk-rust (crate-split); symbols via kernel-rust extern crate.
 pub mod dbgprint;
 pub mod debugblock;
 pub mod ex;
@@ -208,7 +208,7 @@ pub mod tests;
 pub mod tripwire;
 pub mod vdm;
 pub mod vf;
-pub mod wmi;
+// wmi extracted to wmi-rust (crate-split); symbols via kernel-rust extern crate.
 
 // Arch-specific MM modules
 #[cfg(target_arch = "x86_64")]
