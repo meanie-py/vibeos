@@ -111,6 +111,26 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 const LockQueueIoDatabaseLock: KSPIN_LOCK_QUEUE_NUMBER = 10;
 
 
@@ -635,7 +655,7 @@ unsafe fn IopCreateDeviceInstancePath(
 
     RtlAppendUnicodeStringToString(InstancePath, &mut ParentIdPrefix as *mut _);
     if ParentIdPrefix.Length != 0 && InstanceId.Length != 0 {
-        RtlAppendUnicodeToString(InstancePath, b"&\0\0\0" as *const u8 as *const u16);
+        RtlAppendUnicodeToString(InstancePath, w!("&").as_ptr());
     }
 
     RtlAppendUnicodeStringToString(InstancePath, &mut InstanceId as *mut _);
@@ -825,7 +845,7 @@ unsafe fn PiAttachFilterDrivers(
     routineContext.DriverType = if Lower != 0 { ADD_DEV_DRIVER_TYPE::LowerFilter } else { ADD_DEV_DRIVER_TYPE::UpperFilter };
     QueryTable[0] = RTL_QUERY_REGISTRY_TABLE {
         QueryRoutine: Some(core::mem::transmute(PiAttachFilterDriversCallback as unsafe extern "system" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS)),
-        Name: if Lower != 0 { b"L\0o\0w\0e\0r\0F\0i\0l\0t\0e\0r\0s\0\0\0" as *const u8 as *const u16 } else { b"U\0p\0p\0e\0r\0F\0i\0l\0t\0e\0r\0s\0\0\0" as *const u8 as *const u16 },
+        Name: if Lower != 0 { w!("LowerFilters").as_ptr() } else { w!("UpperFilters").as_ptr() },
         DefaultType: REG_NONE,
         EntryContext: LoadDrivers as ULONG_PTR as PVOID,
         ..core::mem::zeroed()
@@ -845,7 +865,7 @@ unsafe fn PiAttachFilterDrivers(
     routineContext.DriverType = if Lower != 0 { ADD_DEV_DRIVER_TYPE::LowerClassFilter } else { ADD_DEV_DRIVER_TYPE::UpperClassFilter };
     QueryTable[0] = RTL_QUERY_REGISTRY_TABLE {
         QueryRoutine: Some(core::mem::transmute(PiAttachFilterDriversCallback as unsafe extern "system" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS)),
-        Name: if Lower != 0 { b"L\0o\0w\0e\0r\0F\0i\0l\0t\0e\0r\0s\0\0\0" as *const u8 as *const u16 } else { b"U\0p\0p\0e\0r\0F\0i\0l\0t\0e\0r\0s\0\0\0" as *const u8 as *const u16 },
+        Name: if Lower != 0 { w!("LowerFilters").as_ptr() } else { w!("UpperFilters").as_ptr() },
         DefaultType: REG_NONE,
         EntryContext: LoadDrivers as ULONG_PTR as PVOID,
         ..core::mem::zeroed()
@@ -966,7 +986,7 @@ unsafe fn PiCallDriverAddDevice(
     let mut queryTable: [RTL_QUERY_REGISTRY_TABLE; 2] = [
         RTL_QUERY_REGISTRY_TABLE {
             QueryRoutine: Some(core::mem::transmute(PiAttachFilterDriversCallback as unsafe extern "system" fn(PWSTR, ULONG, PVOID, ULONG, PVOID, PVOID) -> NTSTATUS)),
-            Name: b"S\0e\0r\0v\0i\0c\0e\0\0\0" as *const u8 as *const u16,
+            Name: w!("Service").as_ptr(),
             Flags: RTL_QUERY_REGISTRY_REQUIRED,
             DefaultType: REG_SZ,
             DefaultData: b"\0\0\0\0" as *const u8 as PVOID,
@@ -1253,7 +1273,7 @@ unsafe fn IopQueryHardwareIds(
             TotalLength += Length;
         }
 
-        RtlInitUnicodeString(&mut ValueName as *mut _, b"H\0a\0r\0d\0w\0a\0r\0e\0I\0D\0\0\0" as *const u8 as *const u16);
+        RtlInitUnicodeString(&mut ValueName as *mut _, w!("HardwareID").as_ptr());
         Status = ZwSetValueKey(
             InstanceKey,
             &mut ValueName as *mut _,
@@ -1307,7 +1327,7 @@ unsafe fn IopQueryCompatibleIds(
             TotalLength += Length;
         }
 
-        RtlInitUnicodeString(&mut ValueName as *mut _, b"C\0o\0m\0p\0a\0t\0i\0b\0l\0e\0I\0D\0s\0\0\0" as *const u8 as *const u16);
+        RtlInitUnicodeString(&mut ValueName as *mut _, w!("CompatibleIDs").as_ptr());
         Status = ZwSetValueKey(
             InstanceKey,
             &mut ValueName as *mut _,
@@ -1633,7 +1653,7 @@ unsafe fn IopSetServiceEnumData(
         return Status;
     }
 
-    RtlInitUnicodeString(&mut EnumKeyName as *mut _, b"E\0n\0u\0m\0\0\0" as *const u8 as *const u16);
+    RtlInitUnicodeString(&mut EnumKeyName as *mut _, w!("Enum").as_ptr());
     Status = IopCreateRegistryKeyEx(
         &mut ServiceEnumKey as *mut _,
         ServiceKey,
@@ -1710,7 +1730,7 @@ unsafe fn IopSetServiceEnumData(
         Count += 1;
         NextInstance += 1;
 
-        RtlInitUnicodeString(&mut ValueName as *mut _, b"C\0o\0u\0n\0t\0\0\0" as *const u8 as *const u16);
+        RtlInitUnicodeString(&mut ValueName as *mut _, w!("Count").as_ptr());
         Status = ZwSetValueKey(
             ServiceEnumKey,
             &mut ValueName as *mut _,
@@ -1731,7 +1751,7 @@ unsafe fn IopSetServiceEnumData(
             return Status;
         }
 
-        RtlInitUnicodeString(&mut ValueName as *mut _, b"N\0e\0x\0t\0I\0n\0s\0t\0a\0n\0c\0e\0\0\0" as *const u8 as *const u16);
+        RtlInitUnicodeString(&mut ValueName as *mut _, w!("NextInstance").as_ptr());
         Status = ZwSetValueKey(
             ServiceEnumKey,
             &mut ValueName as *mut _,

@@ -10,6 +10,26 @@ use crate::gui::GinaGraphicalUI;
 use crate::tui::GinaTextUI;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // WINAPI = stdcall on i386 → extern "system" (NOT extern "C"/cdecl: a cdecl decl
 // references the undecorated `_LoadLibraryW` and fails to link vs the importlib's
 // stdcall `_LoadLibraryW@4`).
@@ -82,7 +102,9 @@ unsafe fn ChooseGinaUI() {
 
     rc = RegOpenKeyExW(
         0x80000002u32 as HKEY, // HKEY_LOCAL_MACHINE
-        b"S\0Y\0S\0T\0E\0M\0\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\0C\0o\0n\0t\0r\0o\0l\0\0\0".as_ptr() as *const u16,
+        // was a phase-broken interleaved literal (`\\0C` = '\', '0', 'C') that
+        // decoded as "SYSTE M" + CJK garbage — RegOpenKeyExW always failed
+        w!("SYSTEM\\CurrentControlSet\\Control").as_ptr(),
         0u32,
         KEY_QUERY_VALUE,
         &raw mut ControlKey,
@@ -90,7 +112,7 @@ unsafe fn ChooseGinaUI() {
 
     rc = ReadRegSzValue(
         ControlKey,
-        b"S\0y\0s\0t\0e\0m\0S\0t\0a\0r\0t\0O\0p\0t\0i\0o\0n\0s\0\0\0".as_ptr() as *const u16,
+        w!("SystemStartOptions").as_ptr() as *const u16,
         &raw mut SystemStartOptions,
     ) as i32;
 
@@ -101,7 +123,7 @@ unsafe fn ChooseGinaUI() {
             if !NextOption.is_null() {
                 *NextOption = 0;
             }
-            if _wcsicmp(CurrentOption, b"C\0O\0N\0S\0O\0L\0E\0\0\0".as_ptr() as *const u16) == 0 {
+            if _wcsicmp(CurrentOption, w!("CONSOLE").as_ptr() as *const u16) == 0 {
                 TRACE!(
                     b"Found %S. Switching to console boot\n\0".as_ptr() as *const i8,
                     CurrentOption,

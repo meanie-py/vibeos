@@ -6,6 +6,26 @@ use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES
 use ntkrnl_sys::constants::{STATUS_BUFFER_TOO_SMALL, STATUS_INVALID_PARAMETER_1, STATUS_INVALID_PARAMETER_2, STATUS_UNSUCCESSFUL};
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // C debug macros — silenced via macro_rules! (variadic no-op).
 #[allow(unused_macros)] macro_rules! TRACE { ($($t:tt)*) => { () }; }
 #[allow(unused_macros)] macro_rules! ERR { ($($t:tt)*) => { () }; }
@@ -299,7 +319,7 @@ pub unsafe extern "system" fn InitVideo() -> NTSTATUS {
     ERR!();
 
     Status = RegOpenKey(
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0G\0r\0a\0p\0h\0i\0c\0s\0D\0r\0i\0v\0e\0r\0s\0\\\0B\0a\0s\0e\0V\0i\0d\0e\0o\0\0\0".as_ptr() as *const u16,
+        w!("\\Registry\\Machine\\System\\CurrentControlSet\\Control\\GraphicsDrivers\\BaseVideo").as_ptr() as *const u16,
         &mut hkey,
     );
     if NT_SUCCESS(Status) {

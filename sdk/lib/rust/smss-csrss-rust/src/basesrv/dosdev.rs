@@ -4,6 +4,26 @@ use super::vdm_types::{
 use core::ffi::c_void;
 use ntdll_sys::nt::*;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
 pub struct _BSM_REQUEST {
@@ -612,7 +632,7 @@ pub unsafe extern "system" fn BaseSrvDefineDosDevice(
         CchLength = _snwprintf(
             lpBuffer,
             0x1000,
-            b"\\\0?\0?\0\\\0%\0w\0Z\0\0\0".as_ptr() as PWSTR,
+            w!("\\??\\%wZ").as_ptr() as PWSTR,
             core::ptr::addr_of_mut!((*DefineDosDeviceRequest).DeviceName),
         ) as ULONG;
         CchLengthLeft = 0x1000 - 1 - CchLength;
@@ -688,7 +708,7 @@ pub unsafe extern "system" fn BaseSrvDefineDosDevice(
                     CchLength = _snwprintf(
                         lpBuffer,
                         0x1000,
-                        b"\\\0G\0L\0O\0B\0A\0L\0?\0?\0\\\0%\0w\0Z\0\0\0".as_ptr() as PWSTR,
+                        w!("\\GLOBAL??\\%wZ").as_ptr() as PWSTR,
                         core::ptr::addr_of_mut!((*DefineDosDeviceRequest).DeviceName),
                     ) as ULONG;
                     CchLengthLeft = 0x1000 - 1 - CchLength;

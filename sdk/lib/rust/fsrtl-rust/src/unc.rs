@@ -18,6 +18,26 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // Redefine as HANDLE (*mut c_void) rather than isize
 const INVALID_HANDLE_VALUE_PTR: HANDLE = -1isize as HANDLE;
 
@@ -154,7 +174,7 @@ unsafe fn FsRtlpSetSymbolicLink(device_name: PCUNICODE_STRING) {
     let mut status: NTSTATUS;
     let mut unc_device: _UNICODE_STRING = core::mem::zeroed();
 
-    RtlInitUnicodeString(&mut unc_device, b"\\\0D\0o\0s\0D\0e\0v\0i\0c\0e\0s\0\\\0U\0N\0C\0\0\0".as_ptr() as PCWSTR);
+    RtlInitUnicodeString(&mut unc_device, w!("\\DosDevices\\UNC").as_ptr() as PCWSTR);
     IoDeleteSymbolicLink(&mut unc_device);
     if !device_name.is_null() {
         status = IoCreateSymbolicLink(&mut unc_device, device_name as PUNICODE_STRING);
@@ -277,7 +297,7 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
     }
 
     if FsRtlpRedirs == 0 {
-        status = FsRtlpOpenDev(&mut device_handle, b"\\\0D\0e\0v\0i\0c\0e\0\\\0N\0u\0l\0l\0\0\0".as_ptr() as PCWSTR);
+        status = FsRtlpOpenDev(&mut device_handle, w!("\\Device\\Null").as_ptr() as PCWSTR);
         if status < 0 {
             'cleanup: {
                 break 'cleanup;
@@ -336,14 +356,14 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
 
         FsRtlpSetSymbolicLink(RedirectorDeviceName);
     } else {
-        status = FsRtlpOpenDev(&mut device_handle, b"\\\0D\0e\0v\0i\0c\0e\0\\\0M\0u\0p\0\0\0".as_ptr() as PCWSTR);
+        status = FsRtlpOpenDev(&mut device_handle, w!("\\Device\\Mup").as_ptr() as PCWSTR);
         if status < 0 {
             RtlInitUnicodeString(
                 &mut mup_string,
-                b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0M\0u\0p\0\0\0".as_ptr() as PCWSTR,
+                w!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Mup").as_ptr() as PCWSTR,
             );
             ZwLoadDriver(&mut mup_string);
-            status = FsRtlpOpenDev(&mut device_handle, b"\\\0D\0e\0v\0i\0c\0e\0\\\0M\0u\0p\0\0\0".as_ptr() as PCWSTR);
+            status = FsRtlpOpenDev(&mut device_handle, w!("\\Device\\Mup").as_ptr() as PCWSTR);
             if status < 0 {
                 'cleanup3: {
                     break 'cleanup3;
@@ -394,7 +414,7 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
             ExFreePoolWithTag(FsRtlpDRD.RedirectorDeviceName.Buffer as PVOID, TAG_UNC);
             FsRtlpDRD.RedirectorDeviceName.Buffer = core::ptr::null_mut();
 
-            status = FsRtlpOpenDev(&mut device_handle, b"\\\0D\0e\0v\0i\0c\0e\0\\\0M\0u\0p\0\0\0".as_ptr() as PCWSTR);
+            status = FsRtlpOpenDev(&mut device_handle, w!("\\Device\\Mup").as_ptr() as PCWSTR);
             if status < 0 {
                 'cleanup5: {
                     break 'cleanup5;
@@ -415,7 +435,7 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
             }
         }
 
-        RtlInitUnicodeString(&mut mup_string, b"\\\0D\0e\0v\0i\0c\0e\0\\\0M\0u\0p\0\0\0".as_ptr() as PCWSTR);
+        RtlInitUnicodeString(&mut mup_string, w!("\\Device\\Mup").as_ptr() as PCWSTR);
         FsRtlpSetSymbolicLink(&mup_string);
 
         status = FsRtlpRegisterProviderWithMUP(device_handle, RedirectorDeviceName, MailslotsSupported);

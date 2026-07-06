@@ -7,6 +7,26 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "system" {
     fn RtlEqualLuid(l1: PLUID, l2: PLUID) -> BOOLEAN;
     static mut PsInitialSystemProcess: PVOID;
@@ -178,7 +198,7 @@ pub unsafe extern "system" fn SeRmInitPhase1() -> BOOLEAN {
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut ThreadHandle: HANDLE = core::ptr::null_mut();
 
-    RtlInitUnicodeString(&mut Name, b"\\\0S\0e\0R\0m\0C\0o\0m\0m\0a\0n\0d\0P\0o\0r\0t\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut Name, w!("\\SeRmCommandPort").as_ptr() as *const u16);
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut Name,
@@ -197,7 +217,7 @@ pub unsafe extern "system" fn SeRmInitPhase1() -> BOOLEAN {
         return 0u8;
     }
 
-    RtlInitUnicodeString(&mut Name, b"\\\0S\0e\0L\0s\0a\0I\0n\0i\0t\0E\0v\0e\0n\0t\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut Name, w!("\\SeLsaInitEvent").as_ptr() as *const u16);
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut Name,
@@ -243,8 +263,8 @@ unsafe fn SepAdtInitializeBounds() {
     let mut ListBounds: ListBoundsStruct = core::mem::zeroed();
 
     let Status = SepRegQueryHelper(
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0L\0s\0a\0\0\0".as_ptr() as *const u16,
-        b"B\0o\0u\0n\0d\0s\0\0\0".as_ptr() as *const u16,
+        w!("\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Lsa").as_ptr() as *const u16,
+        w!("Bounds").as_ptr() as *const u16,
         REG_BINARY,
         core::mem::size_of::<ListBoundsStruct>() as ULONG,
         &mut ListBounds as *mut _ as PVOID,
@@ -727,7 +747,7 @@ unsafe fn SepRmCommandServerThreadInit() -> BOOLEAN {
                         SecurityQos.ContextTrackingMode = 1; // SECURITY_DYNAMIC_TRACKING
                         SecurityQos.EffectiveOnly = 1u8;
 
-                        RtlInitUnicodeString(&mut PortName, b"\\\0S\0e\0L\0s\0a\0C\0o\0m\0m\0a\0n\0d\0P\0o\0r\0t\0\0\0".as_ptr() as *const u16);
+                        RtlInitUnicodeString(&mut PortName, w!("\\SeLsaCommandPort").as_ptr() as *const u16);
                         Status = ZwConnectPort(
                             &mut PortHandle,
                             &mut PortName,
@@ -891,8 +911,8 @@ pub unsafe extern "system" fn SeGetLogonIdDeviceMap(
             let mut LinkName: _UNICODE_STRING = core::mem::zeroed();
             let mut TargetName: _UNICODE_STRING = core::mem::zeroed();
 
-            RtlInitUnicodeString(&mut LinkName, b"G\0l\0o\0b\0a\0l\0\0\0".as_ptr() as *const u16);
-            RtlInitUnicodeString(&mut TargetName, b"\\\0G\0l\0o\0b\0a\0l\0?\0?\0\0\0".as_ptr() as *const u16);
+            RtlInitUnicodeString(&mut LinkName, w!("Global").as_ptr() as *const u16);
+            RtlInitUnicodeString(&mut TargetName, w!("\\Global??").as_ptr() as *const u16);
 
             InitializeObjectAttributes(
                 &mut ObjectAttributes,

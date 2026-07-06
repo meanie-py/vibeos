@@ -21,6 +21,26 @@ extern "system" {
 use ntkrnl_sys::constants::{STATUS_ACCESS_DENIED, STATUS_INVALID_PARAMETER, STATUS_INVALID_HANDLE};
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ---- Debug-channel macros — no kernel symbol, no-op. ----
 macro_rules! ERR    { ($($t:tt)*) => {{}}; }
 macro_rules! WARN   { ($($t:tt)*) => {{}}; }
@@ -3064,7 +3084,7 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
         } else if (*Cs).lpszClass != MAKEINTATOM((*gpsi).atomSysClass[ICLS_DESKTOP as usize]) as LPCWSTR
             && (IS_INTRESOURCE!((*Cs).lpszClass) != 0
                 || (*Cs).lpszClass != MAKEINTATOM((*gpsi).atomSysClass[ICLS_HWNDMESSAGE as usize]) as LPCWSTR
-                || _wcsicmp((*Cs).lpszClass, b"M\0e\0s\0s\0a\0g\0e\0\0\0".as_ptr() as LPCWSTR) != 0)
+                || _wcsicmp((*Cs).lpszClass, w!("Message").as_ptr() as LPCWSTR) != 0)
         {
             if ((*(*pti).ppi).dwLayout & LAYOUT_RTL) != 0 {
                 (*Cs).dwExStyle |= WS_EX_LAYOUTRTL;
@@ -3455,7 +3475,7 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
         } else if (*Cs).lpszClass != MAKEINTATOM((*gpsi).atomSysClass[ICLS_DESKTOP as usize]) as LPCWSTR
             && (IS_INTRESOURCE!((*Cs).lpszClass) != 0
                 || (*Cs).lpszClass != MAKEINTATOM((*gpsi).atomSysClass[ICLS_HWNDMESSAGE as usize]) as LPCWSTR
-                || _wcsicmp((*Cs).lpszClass, b"M\0e\0s\0s\0a\0g\0e\0\0\0".as_ptr() as LPCWSTR) != 0)
+                || _wcsicmp((*Cs).lpszClass, w!("Message").as_ptr() as LPCWSTR) != 0)
         {
             if ((*(*pti).ppi).dwLayout & LAYOUT_RTL) != 0 {
                 (*Cs).dwExStyle |= WS_EX_LAYOUTRTL;

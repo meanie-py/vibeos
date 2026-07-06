@@ -1,6 +1,26 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // SE_OBJECT_TYPE enum variants used as match patterns (module-local — see prelude.rs).
 const SE_FILE_OBJECT: SE_OBJECT_TYPE = advapi32_sys::_SE_OBJECT_TYPE_SE_FILE_OBJECT;
 const SE_REGISTRY_KEY: SE_OBJECT_TYPE = advapi32_sys::_SE_OBJECT_TYPE_SE_REGISTRY_KEY;
@@ -42,7 +62,7 @@ pub type PINTERNAL_FNPROGRESSW_DATA = *mut _INTERNAL_FNPROGRESSW_DATA;
 
 unsafe fn LoadAndInitializeNtMarta() -> DWORD {
     NtMartaStatic.hDllInstance = LoadLibraryW(
-        b"n\0t\0m\0a\0r\0t\0a\0.\0d\0l\0l\0\0\0".as_ptr() as LPCWSTR,
+        w!("ntmarta.dll").as_ptr() as LPCWSTR,
     );
     if NtMartaStatic.hDllInstance.is_null() {
         return GetLastError();

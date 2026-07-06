@@ -11,6 +11,26 @@ use ntkrnl_sys::ddk::{_BUS_QUERY_ID_TYPE_BusQueryCompatibleIDs as BusQueryCompat
 use ntkrnl_sys::ddk::LANGID;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "C" {
     fn AllocateItem(PoolType: u32, NumberOfBytes: ULONG) -> *mut core::ffi::c_void;
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> core::ffi::c_int;
@@ -203,7 +223,7 @@ pub unsafe extern "C" fn USBCCGP_PdoAppendInterfaceNumber(
     while *DeviceId != 0 {
         StringLength = (swprintf(
             String,
-            b"%\0s\0&\0M\0I\0_\0%\x000\x002\0x\0\0\0".as_ptr() as *const u16,
+            w!("%s&MI_%02x").as_ptr() as *const u16,
             DeviceId,
             InterfaceNumber,
         ) + 1) as ULONG;

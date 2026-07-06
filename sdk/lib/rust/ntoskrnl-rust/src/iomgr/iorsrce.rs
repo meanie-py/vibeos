@@ -28,6 +28,26 @@ use ntkrnl_sys::ddk::{
 use ntkrnl_sys::inline::common::InitializeObjectAttributes;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 const ArbiterRequestLegacyAssigned: _ARBITER_REQUEST_SOURCE = _ARBITER_REQUEST_SOURCE_ArbiterRequestLegacyAssigned;
 const IoQueryDeviceConfigurationData: usize = _IO_QUERY_DEVICE_DATA_FORMAT_IoQueryDeviceConfigurationData as usize;
 
@@ -71,54 +91,54 @@ struct IO_QUERY {
 // These arrays contain read-only pointers to static byte string data.
 // They are never mutated at runtime, but use `static mut` to avoid Sync bounds on raw pointers.
 static mut ARC_TYPES: [PCWSTR; MaximumType + 1] = [
-    b"S\0y\0s\0t\0e\0m\0\0\0".as_ptr() as PCWSTR,
-    b"C\0e\0n\0t\0r\0a\0l\0P\0r\0o\0c\0e\0s\0s\0o\0r\0\0\0".as_ptr() as PCWSTR,
-    b"F\0l\0o\0a\0t\0i\0n\0g\0P\0o\0i\0n\0t\0P\0r\0o\0c\0e\0s\0s\0o\0r\0\0\0".as_ptr() as PCWSTR,
-    b"P\0r\0i\0m\0a\0r\0y\0I\0C\0a\0c\0h\0e\0\0\0".as_ptr() as PCWSTR,
-    b"P\0r\0i\0m\0a\0r\0y\0D\0C\0a\0c\0h\0e\0\0\0".as_ptr() as PCWSTR,
-    b"S\0e\0c\0o\0n\0d\0a\0r\0y\0I\0C\0a\0c\0h\0e\0\0\0".as_ptr() as PCWSTR,
-    b"S\0e\0c\0o\0n\0d\0a\0r\0y\0D\0C\0a\0c\0h\0e\0\0\0".as_ptr() as PCWSTR,
-    b"S\0e\0c\0o\0n\0d\0a\0r\0y\0C\0a\0c\0h\0e\0\0\0".as_ptr() as PCWSTR,
-    b"E\0i\0s\0a\0A\0d\0a\0p\0t\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"T\0c\0A\0d\0a\0p\0t\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"S\0c\0s\0i\0A\0d\0a\0p\0t\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"D\0t\0i\0A\0d\0a\0p\0t\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"M\0u\0l\0t\0i\0f\0u\0n\0c\0t\0i\0o\0n\0A\0d\0a\0p\0t\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"D\0i\0s\0k\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"T\0a\0p\0e\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"C\0d\0R\0o\0m\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"W\0o\0r\0m\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"S\0e\0r\0i\0a\0l\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"N\0e\0t\0w\0o\0r\0k\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"D\0i\0s\0p\0l\0a\0y\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"P\0a\0r\0a\0l\0l\0e\0l\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"P\0o\0i\0n\0t\0e\0r\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"K\0e\0y\0b\0o\0a\0r\0d\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"A\0u\0d\0i\0o\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"O\0t\0h\0e\0r\0C\0o\0n\0t\0r\0o\0l\0l\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"D\0i\0s\0k\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as PCWSTR,
-    b"F\0l\0o\0p\0p\0y\0D\0i\0s\0k\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as PCWSTR,
-    b"T\0a\0p\0e\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as PCWSTR,
-    b"M\0o\0d\0e\0m\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as PCWSTR,
-    b"M\0o\0n\0i\0t\0o\0r\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as PCWSTR,
-    b"P\0r\0i\0n\0t\0e\0r\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as PCWSTR,
-    b"P\0o\0i\0n\0t\0e\0r\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as PCWSTR,
-    b"K\0e\0y\0b\0o\0a\0r\0d\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as PCWSTR,
-    b"T\0e\0r\0m\0i\0n\0a\0l\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as PCWSTR,
-    b"O\0t\0h\0e\0r\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as PCWSTR,
-    b"L\0i\0n\0e\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as PCWSTR,
-    b"N\0e\0t\0w\0o\0r\0k\0P\0e\0r\0i\0p\0h\0e\0r\0a\0l\0\0\0".as_ptr() as PCWSTR,
-    b"S\0y\0s\0t\0e\0m\0M\0e\0m\0o\0r\0y\0\0\0".as_ptr() as PCWSTR,
-    b"D\0o\0c\0k\0i\0n\0g\0I\0n\0f\0o\0r\0m\0a\0t\0i\0o\0n\0\0\0".as_ptr() as PCWSTR,
-    b"R\0e\0a\0l\0M\0o\0d\0e\0I\0r\0q\0R\0o\0u\0t\0i\0n\0g\0T\0a\0b\0l\0e\0\0\0".as_ptr() as PCWSTR,
-    b"R\0e\0a\0l\0M\0o\0d\0e\0P\0C\0I\0E\0n\0u\0m\0e\0r\0a\0t\0i\0o\0n\0\0\0".as_ptr() as PCWSTR,
-    b"U\0n\0d\0e\0f\0i\0n\0e\0d\0\0\0".as_ptr() as PCWSTR,
+    w!("System").as_ptr() as PCWSTR,
+    w!("CentralProcessor").as_ptr() as PCWSTR,
+    w!("FloatingPointProcessor").as_ptr() as PCWSTR,
+    w!("PrimaryICache").as_ptr() as PCWSTR,
+    w!("PrimaryDCache").as_ptr() as PCWSTR,
+    w!("SecondaryICache").as_ptr() as PCWSTR,
+    w!("SecondaryDCache").as_ptr() as PCWSTR,
+    w!("SecondaryCache").as_ptr() as PCWSTR,
+    w!("EisaAdapter").as_ptr() as PCWSTR,
+    w!("TcAdapter").as_ptr() as PCWSTR,
+    w!("ScsiAdapter").as_ptr() as PCWSTR,
+    w!("DtiAdapter").as_ptr() as PCWSTR,
+    w!("MultifunctionAdapter").as_ptr() as PCWSTR,
+    w!("DiskController").as_ptr() as PCWSTR,
+    w!("TapeController").as_ptr() as PCWSTR,
+    w!("CdRomController").as_ptr() as PCWSTR,
+    w!("WormController").as_ptr() as PCWSTR,
+    w!("SerialController").as_ptr() as PCWSTR,
+    w!("NetworkController").as_ptr() as PCWSTR,
+    w!("DisplayController").as_ptr() as PCWSTR,
+    w!("ParallelController").as_ptr() as PCWSTR,
+    w!("PointerController").as_ptr() as PCWSTR,
+    w!("KeyboardController").as_ptr() as PCWSTR,
+    w!("AudioController").as_ptr() as PCWSTR,
+    w!("OtherController").as_ptr() as PCWSTR,
+    w!("DiskPeripheral").as_ptr() as PCWSTR,
+    w!("FloppyDiskPeripheral").as_ptr() as PCWSTR,
+    w!("TapePeripheral").as_ptr() as PCWSTR,
+    w!("ModemPeripheral").as_ptr() as PCWSTR,
+    w!("MonitorPeripheral").as_ptr() as PCWSTR,
+    w!("PrinterPeripheral").as_ptr() as PCWSTR,
+    w!("PointerPeripheral").as_ptr() as PCWSTR,
+    w!("KeyboardPeripheral").as_ptr() as PCWSTR,
+    w!("TerminalPeripheral").as_ptr() as PCWSTR,
+    w!("OtherPeripheral").as_ptr() as PCWSTR,
+    w!("LinePeripheral").as_ptr() as PCWSTR,
+    w!("NetworkPeripheral").as_ptr() as PCWSTR,
+    w!("SystemMemory").as_ptr() as PCWSTR,
+    w!("DockingInformation").as_ptr() as PCWSTR,
+    w!("RealModeIrqRoutingTable").as_ptr() as PCWSTR,
+    w!("RealModePCIEnumeration").as_ptr() as PCWSTR,
+    w!("Undefined").as_ptr() as PCWSTR,
 ];
 
 static mut IO_DEVICE_INFO_NAMES: [PCWSTR; IoQueryDeviceMaxData] = [
-    b"I\0d\0e\0n\0t\0i\0f\0i\0e\0r\0\0\0".as_ptr() as PCWSTR,
-    b"C\0o\0n\0f\0i\0g\0u\0r\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0".as_ptr() as PCWSTR,
-    b"C\0o\0m\0p\0o\0n\0e\0n\0t\0 \0I\0n\0f\0o\0r\0m\0a\0t\0i\0o\0n\0\0\0".as_ptr() as PCWSTR,
+    w!("Identifier").as_ptr() as PCWSTR,
+    w!("Configuration Data").as_ptr() as PCWSTR,
+    w!("Component Information").as_ptr() as PCWSTR,
 ];
 
 unsafe fn IopQueryDeviceDescription(
@@ -158,7 +178,7 @@ unsafe fn IopQueryDeviceDescription(
 
     RtlInitEmptyUnicodeString(&mut TempString, TempBuffer.as_mut_ptr(), core::mem::size_of_val(&TempBuffer) as u16);
 
-    RtlAppendUnicodeToString(&mut ControllerRootRegName, b"\\\0\0\0".as_ptr() as PCWSTR);
+    RtlAppendUnicodeToString(&mut ControllerRootRegName, w!("\\").as_ptr() as PCWSTR);
     RtlAppendUnicodeToString(&mut ControllerRootRegName, ARC_TYPES[*(*Query).ControllerType as usize]);
 
     if !(*Query).ControllerNumber.is_null() {
@@ -223,7 +243,7 @@ unsafe fn IopQueryDeviceDescription(
 
         Status = RtlIntegerToUnicodeString(ControllerNum, 10, &mut TempString);
 
-        Status |= RtlAppendUnicodeToString(&mut ControllerRootRegName, b"\\\0\0\0".as_ptr() as PCWSTR);
+        Status |= RtlAppendUnicodeToString(&mut ControllerRootRegName, w!("\\").as_ptr() as PCWSTR);
         Status |= RtlAppendUnicodeStringToString(&mut ControllerRootRegName, &mut TempString);
 
         if Status < 0 {
@@ -331,7 +351,7 @@ unsafe fn IopQueryDeviceDescription(
             continue;
         }
 
-        Status = RtlAppendUnicodeToString(&mut ControllerRootRegName, b"\\\0\0\0".as_ptr() as PCWSTR);
+        Status = RtlAppendUnicodeToString(&mut ControllerRootRegName, w!("\\").as_ptr() as PCWSTR);
         Status |= RtlAppendUnicodeToString(&mut ControllerRootRegName, ARC_TYPES[*(*Query).PeripheralType as usize]);
 
         if Status < 0 {
@@ -435,7 +455,7 @@ unsafe fn IopQueryDeviceDescription(
 
             Status = RtlIntegerToUnicodeString(PeripheralNum, 10, &mut TempString);
 
-            Status |= RtlAppendUnicodeToString(&mut ControllerRootRegName, b"\\\0\0\0".as_ptr() as PCWSTR);
+            Status |= RtlAppendUnicodeToString(&mut ControllerRootRegName, w!("\\").as_ptr() as PCWSTR);
             Status |= RtlAppendUnicodeStringToString(&mut ControllerRootRegName, &mut TempString);
 
             if Status < 0 {
@@ -687,7 +707,7 @@ unsafe fn IopQueryBusDescription(
         }
 
         SubRootRegName = RootKey;
-        RtlAppendUnicodeToString(&mut SubRootRegName, b"\\\0\0\0".as_ptr() as PCWSTR);
+        RtlAppendUnicodeToString(&mut SubRootRegName, w!("\\").as_ptr() as PCWSTR);
         RtlAppendUnicodeStringToString(&mut SubRootRegName, &mut BusString);
 
         if KeyIsRoot == 0 {
@@ -869,7 +889,7 @@ pub unsafe extern "C" fn IopStoreSystemPartitionInformation(
     let mut CmRegistryMachineSystemName: _UNICODE_STRING = core::mem::zeroed();
     RtlInitUnicodeString(
         &mut CmRegistryMachineSystemName,
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0Y\0S\0T\0E\0M\0\0\0".as_ptr() as PCWSTR,
+        w!("\\Registry\\Machine\\SYSTEM").as_ptr() as PCWSTR,
     );
 
     /* First define needed stuff to open NtSystemPartitionDeviceName symbolic link */
@@ -925,7 +945,7 @@ pub unsafe extern "C" fn IopStoreSystemPartitionInformation(
     /* Open or create the Setup subkey */
     RtlInitUnicodeString(
         &mut KeyName,
-        b"S\0e\0t\0u\0p\0\0\0".as_ptr() as PCWSTR,
+        w!("Setup").as_ptr() as PCWSTR,
     );
 
     Status = IopCreateRegistryKeyEx(
@@ -947,7 +967,7 @@ pub unsafe extern "C" fn IopStoreSystemPartitionInformation(
     /* Write SystemPartition value */
     RtlInitUnicodeString(
         &mut KeyName,
-        b"S\0y\0s\0t\0e\0m\0P\0a\0r\0t\0i\0t\0i\0o\0n\0\0\0".as_ptr() as PCWSTR,
+        w!("SystemPartition").as_ptr() as PCWSTR,
     );
 
     ZwSetValueKey(
@@ -962,7 +982,7 @@ pub unsafe extern "C" fn IopStoreSystemPartitionInformation(
     /* Prepare for second data writing */
     RtlInitUnicodeString(
         &mut KeyName,
-        b"O\0s\0L\0o\0a\0d\0e\0r\0P\0a\0t\0h\0\0\0".as_ptr() as PCWSTR,
+        w!("OsLoaderPath").as_ptr() as PCWSTR,
     );
 
     /* Remove trailing slash if any (one slash only excepted) */
@@ -1145,7 +1165,7 @@ pub unsafe extern "system" fn IoQueryDeviceDescription(
 
     RtlAppendUnicodeToString(
         &mut RootRegKey,
-        b"\\\0R\0E\0G\0I\0S\0T\0R\0Y\0\\\0M\0A\0C\0H\0I\0N\0E\0\\\0H\0A\0R\0D\0W\0A\0R\0E\0\\\0D\0E\0S\0C\0R\0I\0P\0T\0I\0O\0N\0\\\0S\0Y\0S\0T\0E\0M\0\0\0".as_ptr() as PCWSTR,
+        w!("\\REGISTRY\\MACHINE\\HARDWARE\\DESCRIPTION\\SYSTEM").as_ptr() as PCWSTR,
     );
 
     InitializeObjectAttributes(
@@ -1202,7 +1222,7 @@ pub unsafe extern "system" fn IoReportHalResourceUsage(
     let mut HalKey: HANDLE = core::ptr::null_mut();
     let mut DescriptionKey: HANDLE = core::ptr::null_mut();
 
-    RtlInitUnicodeString(&mut Name, b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0H\0A\0R\0D\0W\0A\0R\0E\0\\\0R\0E\0S\0O\0U\0R\0C\0E\0M\0A\0P\0\0\0".as_ptr() as PCWSTR);
+    RtlInitUnicodeString(&mut Name, w!("\\Registry\\Machine\\HARDWARE\\RESOURCEMAP").as_ptr() as PCWSTR);
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut Name,
@@ -1223,7 +1243,7 @@ pub unsafe extern "system" fn IoReportHalResourceUsage(
         return Status;
     }
 
-    RtlInitUnicodeString(&mut Name, b"H\0a\0r\0d\0w\0a\0r\0e\0 \0A\0b\0s\0t\0r\0a\0c\0t\0i\0o\0n\0 \0L\0a\0y\0e\0r\0\0\0".as_ptr() as PCWSTR);
+    RtlInitUnicodeString(&mut Name, w!("Hardware Abstraction Layer").as_ptr() as PCWSTR);
     InitializeObjectAttributes(
         &mut ObjectAttributes,
         &mut Name,
@@ -1266,7 +1286,7 @@ pub unsafe extern "system" fn IoReportHalResourceUsage(
         return Status;
     }
 
-    RtlInitUnicodeString(&mut Name, b".\0R\0a\0w\0\0\0".as_ptr() as PCWSTR);
+    RtlInitUnicodeString(&mut Name, w!(".Raw").as_ptr() as PCWSTR);
     Status = ZwSetValueKey(
         DescriptionKey,
         &mut Name,
@@ -1280,7 +1300,7 @@ pub unsafe extern "system" fn IoReportHalResourceUsage(
         return Status;
     }
 
-    RtlInitUnicodeString(&mut Name, b".\0T\0r\0a\0n\0s\0l\0a\0t\0e\0d\0\0\0".as_ptr() as PCWSTR);
+    RtlInitUnicodeString(&mut Name, w!(".Translated").as_ptr() as PCWSTR);
     Status = ZwSetValueKey(
         DescriptionKey,
         &mut Name,

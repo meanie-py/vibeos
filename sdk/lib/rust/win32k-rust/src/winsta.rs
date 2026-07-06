@@ -9,6 +9,26 @@ use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_NO_MEMORY, STATUS_INSU
 use ntkrnl_sys::constants::{STATUS_ACCESS_DENIED, STATUS_BUFFER_OVERFLOW, STATUS_BUFFER_TOO_SMALL, STATUS_INVALID_HANDLE, STATUS_INVALID_PARAMETER, STATUS_NO_MORE_ENTRIES, STATUS_OBJECT_PATH_INVALID, STATUS_OBJECT_TYPE_MISMATCH, STATUS_UNSUCCESSFUL};
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // Not present in the ntkrnl-sys constant tables — define locally.
 const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC00000E5_u32 as i32;
 const STATUS_NAME_TOO_LONG: NTSTATUS = 0xC0000106_u32 as i32;
@@ -256,7 +276,7 @@ pub unsafe extern "stdcall" fn UserCreateWinstaDirectory() -> NTSTATUS {
         Status = snwprintf_status(_snwprintf(
             wstrWindowStationsDir.as_mut_ptr(),
             core::mem::size_of_val(&wstrWindowStationsDir) / core::mem::size_of::<u16>(),
-            b"%\0w\0s\0\\\0%\0l\0u\0%\0w\0s\0\0\0".as_ptr() as *const u16,
+            w!("%ws\\%lu%ws").as_ptr() as *const u16,
             SESSION_DIR_W.as_ptr(),
             (*Peb).SessionId,
             WINSTA_OBJ_DIR_W.as_ptr(),
@@ -315,7 +335,7 @@ pub unsafe extern "C" fn UserCreateWinstaDirectory() -> NTSTATUS {
         Status = snwprintf_status(_snwprintf(
             wstrWindowStationsDir.as_mut_ptr(),
             core::mem::size_of_val(&wstrWindowStationsDir) / core::mem::size_of::<u16>(),
-            b"%\0w\0s\0\\\0%\0l\0u\0%\0w\0s\0\0\0".as_ptr() as *const u16,
+            w!("%ws\\%lu%ws").as_ptr() as *const u16,
             SESSION_DIR_W.as_ptr(),
             (*Peb).SessionId,
             WINSTA_OBJ_DIR_W.as_ptr(),
@@ -642,7 +662,7 @@ pub unsafe extern "C" fn co_IntInitializeDesktopGraphics() -> BOOL {
 unsafe fn co_IntInitializeDesktopGraphics_impl() -> BOOL {
     let lRet: LONG;
     let mut DriverName: _UNICODE_STRING = core::mem::zeroed();
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(DriverName) as _, b"D\0I\0S\0P\0L\0A\0Y\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(DriverName) as _, w!("DISPLAY").as_ptr() as *const u16);
     let pdesk: PDESKTOP;
 
     if !gpmdev.is_null() {
@@ -756,7 +776,7 @@ unsafe fn co_IntInitializeDesktopGraphics_impl() -> BOOL {
 
     {
         let mut DriverName2: _UNICODE_STRING = core::mem::zeroed();
-        RtlInitUnicodeString(core::ptr::addr_of_mut!(DriverName2) as _, b"D\0I\0S\0P\0L\0A\0Y\0\0\0".as_ptr() as *const u16);
+        RtlInitUnicodeString(core::ptr::addr_of_mut!(DriverName2) as _, w!("DISPLAY").as_ptr() as *const u16);
         let mut DisplayName: _UNICODE_STRING = core::mem::zeroed();
         let mut hdc: HDC;
         let mut iDevNum: ULONG = 1;

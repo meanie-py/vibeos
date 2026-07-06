@@ -1,5 +1,25 @@
 use ntdll_sys::nt::*;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // User-mode constants the rustconv translation referenced as if extern;
 // they're macros in C and not in ntdll-sys bindgen output. Hand-pinned
 // here. Values from <ntpsapi.h> / <ntstatus.h>.
@@ -936,7 +956,7 @@ pub unsafe extern "system" fn SmpLoadSubSystemsForMuSession(
             RtlStringCbCatW(
                 InitialCommandBuffer.as_mut_ptr(),
                 core::mem::size_of::<[u16; 256]>(),
-                b" \0".as_ptr() as *const u16,
+                w!(" ").as_ptr() as *const u16,
             );
             RtlStringCbCatW(
                 InitialCommandBuffer.as_mut_ptr(),

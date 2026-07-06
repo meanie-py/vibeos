@@ -23,6 +23,26 @@ extern "C" {
 }
 
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 // Local constants — values match cmtypes.h / ntoskrnl C definitions.
 const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
 const SERVICE_ERROR_CRITICAL: u32 = 0x00000003;
@@ -119,7 +139,7 @@ pub unsafe extern "system" fn CmpFindControlSet(
     let ControlSetId: *mut u32;
     let mut Buffer: [u16; 128] = [0; 128];
 
-    RtlInitUnicodeString(&mut Name, b"s\0e\0l\0e\0c\0t\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut Name, w!("select").as_ptr() as *const u16);
     Node = HvGetCell(SystemHive, RootCell) as PCM_KEY_NODE;
     if Node.is_null() {
         return 0xffffffff;
@@ -129,7 +149,7 @@ pub unsafe extern "system" fn CmpFindControlSet(
         return 0xffffffff;
     }
 
-    RtlInitUnicodeString(&mut Name, b"A\0u\0t\0o\0S\0e\0l\0e\0c\0t\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut Name, w!("AutoSelect").as_ptr() as *const u16);
     Node = HvGetCell(SystemHive, SelectCell) as PCM_KEY_NODE;
     if Node.is_null() {
         return 0xffffffff;
@@ -190,7 +210,7 @@ pub unsafe extern "system" fn CmpFindControlSet(
         return 0xffffffff;
     }
 
-    RtlInitUnicodeString(&mut Name, b"C\0u\0r\0r\0e\0n\0t\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut Name, w!("Current").as_ptr() as *const u16);
     Node = HvGetCell(SystemHive, SelectCell) as PCM_KEY_NODE;
     if Node.is_null() {
         return 0xffffffff;
@@ -474,7 +494,7 @@ unsafe fn CmpAddDriverToList(
         );
     }
 
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), b"I\0m\0a\0g\0e\0P\0a\0t\0h\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), w!("ImagePath").as_ptr() as *const u16);
     ValueCell = CmpFindValueByName(Hive, Node, core::ptr::addr_of!(Name));
     if ValueCell == HCELL_NIL {
         Length = (core::mem::size_of::<u16>() * 18) as u32 + NameLength as u32 + (core::mem::size_of::<u16>() * 4) as u32;
@@ -510,9 +530,9 @@ unsafe fn CmpAddDriverToList(
             }
         }
 
-        if !NT_SUCCESS(RtlAppendUnicodeToString(FilePath, b"S\0y\0s\0t\0e\0m\x003\0\x002\0\\\0D\0r\0i\0v\0e\0r\0s\0\\\0\0\0".as_ptr() as *const u16)) ||
+        if !NT_SUCCESS(RtlAppendUnicodeToString(FilePath, w!("System32\\Drivers\\").as_ptr())) ||
            !NT_SUCCESS(RtlAppendUnicodeStringToString(FilePath, core::ptr::addr_of!((*DriverNode).Name))) ||
-           !NT_SUCCESS(RtlAppendUnicodeToString(FilePath, b".\0s\0y\0s\0\0\0".as_ptr() as *const u16))
+           !NT_SUCCESS(RtlAppendUnicodeToString(FilePath, w!(".sys").as_ptr() as *const u16))
         {
             'Failure: {
                 if !(*DriverEntry).RegistryPath.Buffer.is_null() {
@@ -736,7 +756,7 @@ unsafe fn CmpAddDriverToList(
 
     InsertHeadList(DriverListHead, core::ptr::addr_of_mut!((*DriverEntry).Link));
 
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), b"E\0r\0r\0o\0r\0C\0o\0n\0t\0r\0o\0l\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), w!("ErrorControl").as_ptr() as *const u16);
     ValueCell = CmpFindValueByName(Hive, Node, core::ptr::addr_of!(Name));
     if ValueCell == HCELL_NIL {
         (*DriverNode).ErrorControl = NormalError;
@@ -843,7 +863,7 @@ unsafe fn CmpAddDriverToList(
         (*DriverNode).ErrorControl = *ErrorControl;
     }
 
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), b"g\0r\0o\0u\0p\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), w!("group").as_ptr() as *const u16);
     ValueCell = CmpFindValueByName(Hive, Node, core::ptr::addr_of!(Name));
     if ValueCell == HCELL_NIL {
         RtlInitEmptyUnicodeString(core::ptr::addr_of_mut!((*DriverNode).Group), core::ptr::null_mut(), 0);
@@ -932,7 +952,7 @@ unsafe fn CmpAddDriverToList(
         (*DriverNode).Group.MaximumLength = (*DriverNode).Group.Length;
     }
 
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), b"T\0a\0g\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), w!("Tag").as_ptr() as *const u16);
     TagCell = CmpFindValueByName(Hive, Node, core::ptr::addr_of!(Name));
     if TagCell == HCELL_NIL {
         (*DriverNode).Tag = 0xFFFFFFFFu32;
@@ -962,7 +982,7 @@ unsafe fn CmpIsLoadType(
 ) -> BOOLEAN {
     let mut Node: PCM_KEY_NODE;
     let mut Value: PCM_KEY_VALUE;
-    let mut Name: _UNICODE_STRING = RTL_CONSTANT_STRING(b"S\0t\0a\0r\0t\0\0\0".as_ptr() as *mut u16);
+    let mut Name: _UNICODE_STRING = RTL_CONSTANT_STRING(w!("Start").as_ptr() as *mut u16);
     let mut ValueCell: HCELL_INDEX;
     let mut Length: ULONG = 0;
     let mut Data: PULONG;
@@ -1027,7 +1047,7 @@ pub unsafe extern "system" fn CmpFindDrivers(
         return 0u8;
     }
 
-    RtlInitUnicodeString(&mut Name, b"S\0e\0r\0v\0i\0c\0e\0s\0\0\0".as_ptr() as *mut u16);
+    RtlInitUnicodeString(&mut Name, w!("Services").as_ptr() as *mut u16);
     ServicesCell = CmpFindSubKeyByName(Hive, ControlNode, &Name);
     if ServicesCell == HCELL_NIL {
         return 0u8;
@@ -1038,7 +1058,7 @@ pub unsafe extern "system" fn CmpFindDrivers(
         return 0u8;
     }
 
-    RtlInitUnicodeString(&mut Name, b"C\0o\0n\0t\0r\0o\0l\0\0\0".as_ptr() as *mut u16);
+    RtlInitUnicodeString(&mut Name, w!("Control").as_ptr() as *mut u16);
     ControlCell = CmpFindSubKeyByName(Hive, ControlNode, &Name);
     if ControlCell == HCELL_NIL {
         return 0u8;
@@ -1048,14 +1068,14 @@ pub unsafe extern "system" fn CmpFindDrivers(
     if Node.is_null() {
         return 0u8;
     }
-    RtlInitUnicodeString(&mut Name, b"G\0r\0o\0u\0p\0O\0r\0d\0e\0r\0L\0i\0s\0t\0\0\0".as_ptr() as *mut u16);
+    RtlInitUnicodeString(&mut Name, w!("GroupOrderList").as_ptr() as *mut u16);
     GroupOrderCell = CmpFindSubKeyByName(Hive, Node, &Name);
     if GroupOrderCell == HCELL_NIL {
         return 0u8;
     }
 
     if InitSafeBootMode != 0 {
-        RtlInitUnicodeString(&mut Name, b"S\0a\0f\0e\0B\0o\0o\0t\0\0\0".as_ptr() as *mut u16);
+        RtlInitUnicodeString(&mut Name, w!("SafeBoot").as_ptr() as *mut u16);
         Node = HvGetCell(Hive, ControlCell) as PCM_KEY_NODE;
         if Node.is_null() {
             return 0u8;
@@ -1070,8 +1090,8 @@ pub unsafe extern "system" fn CmpFindDrivers(
             return 0u8;
         }
         match InitSafeBootMode {
-            1 | 3 => RtlInitUnicodeString(&mut Name, b"M\0i\0n\0i\0m\0a\0l\0\0\0".as_ptr() as *mut u16),
-            2 => RtlInitUnicodeString(&mut Name, b"N\0e\0t\0w\0o\0r\0k\0\0\0".as_ptr() as *mut u16),
+            1 | 3 => RtlInitUnicodeString(&mut Name, w!("Minimal").as_ptr() as *mut u16),
+            2 => RtlInitUnicodeString(&mut Name, w!("Network").as_ptr() as *mut u16),
             _ => return 0u8,
         }
         SafeBootCell = CmpFindSubKeyByName(Hive, Node, &Name);
@@ -1080,7 +1100,7 @@ pub unsafe extern "system" fn CmpFindDrivers(
         }
     }
 
-    RtlInitUnicodeString(&mut KeyPath, b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0\0\0".as_ptr() as *mut u16);
+    RtlInitUnicodeString(&mut KeyPath, w!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\").as_ptr() as *mut u16);
 
     i = 0;
     DriverCell = CmpFindSubKeyByNumber(Hive, ServicesNode, i);
@@ -1184,7 +1204,7 @@ pub unsafe extern "system" fn CmpSortDriverList(
     if Node.is_null() {
         return 0u8;
     }
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), b"C\0o\0n\0t\0r\0o\0l\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), w!("Control").as_ptr() as *const u16);
     ControlCell = CmpFindSubKeyByName(Hive, Node, core::ptr::addr_of_mut!(Name));
     if ControlCell == 0xFFFFFFFF {
         return 0u8;
@@ -1194,7 +1214,7 @@ pub unsafe extern "system" fn CmpSortDriverList(
     if Node.is_null() {
         return 0u8;
     }
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), b"S\0e\0r\0v\0i\0c\0e\0G\0r\0o\0u\0p\0O\0r\0d\0e\0r\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), w!("ServiceGroupOrder").as_ptr() as *const u16);
     GroupOrder = CmpFindSubKeyByName(Hive, Node, core::ptr::addr_of_mut!(Name));
     if GroupOrder == 0xFFFFFFFF {
         return 0u8;
@@ -1204,7 +1224,7 @@ pub unsafe extern "system" fn CmpSortDriverList(
     if Node.is_null() {
         return 0u8;
     }
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), b"l\0i\0s\0t\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(core::ptr::addr_of_mut!(Name), w!("list").as_ptr() as *const u16);
     ListCell = CmpFindValueByName(Hive, Node, core::ptr::addr_of_mut!(Name));
     if ListCell == 0xFFFFFFFF {
         return 0u8;
@@ -1362,7 +1382,7 @@ unsafe fn CmpIsSafe(
         return 0u8;
     }
 
-    RtlInitUnicodeString(&mut Name, b"G\0r\0o\0u\0p\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut Name, w!("Group").as_ptr() as *const u16);
     CellIndex = CmpFindValueByName(Hive, DriverNode, &Name);
     if CellIndex != HCELL_NIL {
         KeyValue = HvGetCell(Hive, CellIndex) as PCM_KEY_VALUE;
@@ -1430,7 +1450,7 @@ unsafe fn CmpIsSafe(
         return 1u8;
     }
 
-    RtlInitUnicodeString(&mut Name, b"I\0m\0a\0g\0e\0P\0a\0t\0h\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut Name, w!("ImagePath").as_ptr() as *const u16);
     CellIndex = CmpFindValueByName(Hive, DriverNode, &Name);
     if CellIndex != HCELL_NIL {
         KeyValue = HvGetCell(Hive, CellIndex) as PCM_KEY_VALUE;

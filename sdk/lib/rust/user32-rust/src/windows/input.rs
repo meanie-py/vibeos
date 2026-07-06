@@ -4,6 +4,26 @@ use crate::internal::{RtlAllocateHeap, RtlFreeHeap, RtlGetProcessHeap, RtlInitEm
 use crate::ntwrapper::{NtUserxEnableWindow, NtUserxGetKeyboardLayout, NtUserxGetKeyboardType, NtUserxSwapMouseButton};
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // `Input` was a bindgen mis-resolution; the real type is `INPUT` (= tagINPUT) from
 // win32k_sys::win32k::*, already in scope. No import needed (keybd_event/mouse_event
 // shadow the name with a local `Input` variable of type INPUT anyway).
@@ -537,9 +557,9 @@ unsafe fn CliSetSingleHotKeyImpl(pszSubKey: LPCWSTR, hKey: HANDLE) -> BOOL {
     RtlInitUnicodeString(&mut ustrName, pszSubKey);
     RtlUnicodeStringToInteger(&mut ustrName, 16, &mut dwHotKeyId);
 
-    uModifiers = CliReadRegistryValue(hSubKey as HANDLE, b"K\0e\0y\0 \0M\0o\0d\0i\0f\0i\0e\0r\0s\0\0\0".as_ptr() as LPCWSTR);
-    hKL = CliReadRegistryValue(hSubKey as HANDLE, b"T\0a\0r\0g\0e\0t\0 \0I\0M\0E\0\0\0".as_ptr() as LPCWSTR) as ULONG_PTR as HKL;
-    uVirtualKey = CliReadRegistryValue(hSubKey as HANDLE, b"V\0i\0r\0t\0u\0a\0l\0 \0K\0e\0y\0\0\0".as_ptr() as LPCWSTR);
+    uModifiers = CliReadRegistryValue(hSubKey as HANDLE, w!("Key Modifiers").as_ptr() as LPCWSTR);
+    hKL = CliReadRegistryValue(hSubKey as HANDLE, w!("Target IME").as_ptr() as LPCWSTR) as ULONG_PTR as HKL;
+    uVirtualKey = CliReadRegistryValue(hSubKey as HANDLE, w!("Virtual Key").as_ptr() as LPCWSTR);
 
     RegCloseKey(hSubKey);
 
@@ -624,7 +644,7 @@ pub unsafe extern "system" fn CliGetPreloadKeyboardLayouts(pbFlags: PBYTE) {
 
     let error = RegOpenKeyExW(
         HKEY_CURRENT_USER,
-        b"K\0e\0y\0b\0o\0a\0r\0d\0 \0L\0a\0y\0o\0u\0t\0\\\0P\0r\0e\0l\0o\0a\0d\0\0\0".as_ptr() as LPCWSTR,
+        w!("Keyboard Layout\\Preload").as_ptr() as LPCWSTR,
         0,
         KEY_READ,
         &mut hKey,
@@ -958,7 +978,7 @@ unsafe fn GetSystemLibraryPath(pszPath: LPWSTR, cchPath: INT, pszFileName: LPCWS
     GetSystemDirectoryW(szSysDir.as_mut_ptr(), szSysDir.len() as u32);
     wsprintfW(
         pszPath,
-        b"%\0s\0\\\0%\0s\0\0\0".as_ptr() as LPCWSTR,
+        w!("%s\\%s").as_ptr() as LPCWSTR,
         szSysDir.as_ptr(),
         pszFileName,
     );
@@ -1010,7 +1030,7 @@ pub unsafe extern "system" fn IntLoadKeyboardLayout(
     if (Flags & KLF_SUBSTITUTE_OK) != 0 {
         if RegOpenKeyExW(
             HKEY_CURRENT_USER,
-            b"K\0e\0y\0b\0o\0a\0r\0d\0 \0L\0a\0y\0o\0u\0t\0\\\0S\0u\0b\0s\0t\0i\0t\0u\0t\0e\0s\0\0\0".as_ptr() as LPCWSTR,
+            w!("Keyboard Layout\\Substitutes").as_ptr() as LPCWSTR,
             0,
             KEY_READ,
             &mut hKey,
@@ -1053,7 +1073,7 @@ pub unsafe extern "system" fn IntLoadKeyboardLayout(
         dwSize = core::mem::size_of_val(&wszLayoutId) as DWORD;
         if RegQueryValueExW(
             hKey,
-            b"L\0a\0y\0o\0u\0t\0 \0I\0d\0\0\0".as_ptr() as LPCWSTR,
+            w!("Layout Id").as_ptr() as LPCWSTR,
             core::ptr::null_mut(),
             &mut dwType,
             wszLayoutId.as_mut_ptr() as LPBYTE,
@@ -1068,7 +1088,7 @@ pub unsafe extern "system" fn IntLoadKeyboardLayout(
             dwSize = core::mem::size_of_val(&szImeFileName) as DWORD;
             if RegQueryValueExW(
                 hKey,
-                b"I\0M\0E\0 \0F\0i\0l\0e\0\0\0".as_ptr() as LPCWSTR,
+                w!("IME File").as_ptr() as LPCWSTR,
                 core::ptr::null_mut(),
                 &mut dwType,
                 szImeFileName.as_mut_ptr() as LPBYTE,
@@ -1088,7 +1108,7 @@ pub unsafe extern "system" fn IntLoadKeyboardLayout(
 
                 if dwType != REG_SZ
                     || szImeFileName[0] == 0
-                    || wcscspn(szImeFileName.as_ptr(), b":\0\\\0/\0\0\0".as_ptr() as LPCWSTR)
+                    || wcscspn(szImeFileName.as_ptr(), w!(":\\/").as_ptr() as LPCWSTR)
                         != wcslen(szImeFileName.as_ptr())
                     || GetFileAttributesW(szPath.as_ptr()) == INVALID_FILE_ATTRIBUTES
                 {

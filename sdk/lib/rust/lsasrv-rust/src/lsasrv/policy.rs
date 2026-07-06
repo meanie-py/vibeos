@@ -1,9 +1,31 @@
 use crate::prelude::*;
 // DB object model fns live in the Rust database module (same crate).
 use crate::lsasrv::database::{
+
+
     LsapOpenDbObject, LsapCloseDbObject, LsapValidateDbObject,
     LsapGetObjectAttribute, LsapSetObjectAttribute,
 };
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -32,7 +54,7 @@ pub unsafe extern "system" fn LsaIOpenPolicyTrusted(PolicyHandle: *mut LSAPR_HAN
     Status = LsapOpenDbObject(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        b"P\0o\0l\0i\0c\0y\0\0\0".as_ptr() as *const u16 as LPWSTR,
+        w!("Policy").as_ptr() as *const u16 as LPWSTR,
         _LSA_DB_OBJECT_TYPE_LsaDbPolicyObject,
         POLICY_ALL_ACCESS,
         1u8,
@@ -222,7 +244,7 @@ pub unsafe extern "C" fn LsarQueryPrimaryDomain(
         attribute_size = 0;
         status = LsapGetObjectAttribute(
             PolicyObject,
-            b"P\0o\0l\0P\0r\0D\0m\0N\0\0\0".as_ptr() as LPWSTR,
+            w!("PolPrDmN").as_ptr() as LPWSTR,
             core::ptr::null_mut(),
             &mut attribute_size,
         );
@@ -237,7 +259,7 @@ pub unsafe extern "C" fn LsarQueryPrimaryDomain(
             }
             status = LsapGetObjectAttribute(
                 PolicyObject,
-                b"P\0o\0l\0P\0r\0D\0m\0N\0\0\0".as_ptr() as LPWSTR,
+                w!("PolPrDmN").as_ptr() as LPWSTR,
                 domain_name as LPVOID,
                 &mut attribute_size,
             );
@@ -269,7 +291,7 @@ pub unsafe extern "C" fn LsarQueryPrimaryDomain(
         attribute_size = 0;
         status = LsapGetObjectAttribute(
             PolicyObject,
-            b"P\0o\0l\0P\0r\0D\0m\0S\0\0\0".as_ptr() as LPWSTR,
+            w!("PolPrDmS").as_ptr() as LPWSTR,
             core::ptr::null_mut(),
             &mut attribute_size,
         );
@@ -285,7 +307,7 @@ pub unsafe extern "C" fn LsarQueryPrimaryDomain(
             (*p).Sid = sid as PRPC_SID;
             status = LsapGetObjectAttribute(
                 PolicyObject,
-                b"P\0o\0l\0P\0r\0D\0m\0S\0\0\0".as_ptr() as LPWSTR,
+                w!("PolPrDmS").as_ptr() as LPWSTR,
                 sid,
                 &mut attribute_size,
             );
@@ -351,7 +373,7 @@ pub unsafe extern "C" fn LsarQueryAccountDomain(
     // Get Domain Name size
     Status = LsapGetObjectAttribute(
         PolicyObject,
-        b"P\0o\0l\0A\0c\0D\0m\0N\0\0\0".as_ptr() as LPWSTR,
+        w!("PolAcDmN").as_ptr() as LPWSTR,
         core::ptr::null_mut(),
         &raw mut AttributeSize,
     );
@@ -367,7 +389,7 @@ pub unsafe extern "C" fn LsarQueryAccountDomain(
             } else {
                 Status = LsapGetObjectAttribute(
                     PolicyObject,
-                    b"P\0o\0l\0A\0c\0D\0m\0N\0\0\0".as_ptr() as LPWSTR,
+                    w!("PolAcDmN").as_ptr() as LPWSTR,
                     DomainName as LPVOID,
                     &raw mut AttributeSize,
                 );
@@ -401,7 +423,7 @@ pub unsafe extern "C" fn LsarQueryAccountDomain(
             AttributeSize = 0;
             Status = LsapGetObjectAttribute(
                 PolicyObject,
-                b"P\0o\0l\0A\0c\0D\0m\0S\0\0\0".as_ptr() as LPWSTR,
+                w!("PolAcDmS").as_ptr() as LPWSTR,
                 core::ptr::null_mut(),
                 &raw mut AttributeSize,
             );
@@ -414,7 +436,7 @@ pub unsafe extern "C" fn LsarQueryAccountDomain(
                     } else {
                         Status = LsapGetObjectAttribute(
                             PolicyObject,
-                            b"P\0o\0l\0A\0c\0D\0m\0S\0\0\0".as_ptr() as LPWSTR,
+                            w!("PolAcDmS").as_ptr() as LPWSTR,
                             (*p).Sid as *mut core::ffi::c_void,
                             &raw mut AttributeSize,
                         );
@@ -460,7 +482,7 @@ pub unsafe extern "C" fn LsarQueryServerRole(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    let wide_str: *const u16 = b"P\0o\0l\0S\0r\0v\0R\0o\0\0\0".as_ptr() as *const u16;
+    let wide_str: *const u16 = w!("PolSrvRo").as_ptr() as *const u16;
     Status = LsapGetObjectAttribute(
         PolicyObject,
         wide_str as LPWSTR,
@@ -572,7 +594,7 @@ pub unsafe extern "C" fn LsarQueryAuditFull(
 
     let status = LsapGetObjectAttribute(
         PolicyObject,
-        b"P\0o\0l\0A\0d\0t\0F\0l\0\0\0".as_ptr() as *const u16 as LPWSTR,
+        w!("PolAdtFl").as_ptr() as *const u16 as LPWSTR,
         audit_full_info as LPVOID,
         core::ptr::addr_of_mut!(attribute_size),
     );
@@ -902,7 +924,7 @@ pub unsafe extern "C" fn LsarSetAuditEvents(
 
     Status = LsapSetObjectAttribute(
         PolicyObject,
-        b"P\0o\0l\0A\0d\0t\0E\0v\0\0\0".as_ptr() as LPWSTR,
+        w!("PolAdtEv").as_ptr() as LPWSTR,
         AuditData as LPVOID,
         AttributeSize,
     );

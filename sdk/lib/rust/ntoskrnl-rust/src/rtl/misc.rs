@@ -11,6 +11,26 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 const PRODUCT_TAG: ULONG = u32::from_be_bytes(*b"RtPi");
 
 extern "system" {
@@ -81,31 +101,31 @@ pub unsafe extern "system" fn RtlGetNtProductType(ProductType: PNT_PRODUCT_TYPE)
     pub static mut WORKSTATION_PRODUCT: _UNICODE_STRING = _UNICODE_STRING {
         Length: 10,
         MaximumLength: 12,
-        Buffer: b"W\0i\0n\0N\0T\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("WinNT").as_ptr() as *mut u16,
     };
     #[no_mangle]
     pub static mut LANMAN_PRODUCT: _UNICODE_STRING = _UNICODE_STRING {
         Length: 16,
         MaximumLength: 18,
-        Buffer: b"L\0a\0n\0m\0a\0n\0N\0T\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("LanmanNT").as_ptr() as *mut u16,
     };
     #[no_mangle]
     pub static mut SERVER_PRODUCT: _UNICODE_STRING = _UNICODE_STRING {
         Length: 16,
         MaximumLength: 18,
-        Buffer: b"S\0e\0r\0v\0e\0r\0N\0T\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("ServerNT").as_ptr() as *mut u16,
     };
     #[no_mangle]
     pub static mut KEY_PRODUCT: _UNICODE_STRING = _UNICODE_STRING {
         Length: 160,
         MaximumLength: 162,
-        Buffer: b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0P\0r\0o\0d\0u\0c\0t\0O\0p\0t\0i\0o\0n\0s\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\ProductOptions").as_ptr() as *mut u16,
     };
     #[no_mangle]
     pub static mut VALUE_NT_PRODUCT: _UNICODE_STRING = _UNICODE_STRING {
         Length: 22,
         MaximumLength: 24,
-        Buffer: b"P\0r\0o\0d\0u\0c\0t\0T\0y\0p\0e\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("ProductType").as_ptr() as *mut u16,
     };
 
     let buffer_key = ExAllocatePoolWithTag(PagedPool, buffer_key_length as SIZE_T, PRODUCT_TAG);

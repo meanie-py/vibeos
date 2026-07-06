@@ -1,9 +1,31 @@
 use crate::prelude::*;
 use crate::lsasrv::utils::LsapLoadString;
 use crate::lsasrv::database::{
+
+
     NtAuthority, NullSidAuthority, WorldSidAuthority, LocalSidAuthority, CreatorSidAuthority,
     BuiltinDomainSid, AccountDomainSid, BuiltinDomainName, AccountDomainName,
 };
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 
 extern "C" {
     fn ConvertSidToStringSidW(sid: PSID, string: *mut LPWSTR) -> BOOL;
@@ -1049,7 +1071,7 @@ unsafe fn LsapLookupIsolatedNames(
     let mut EmptyDomainName = _UNICODE_STRING {
         Length: 0,
         MaximumLength: core::mem::size_of::<[u16; 1]>() as u16,
-        Buffer: b"\0\0".as_ptr() as *const u16 as *mut u16,
+        Buffer: w!("").as_ptr() as *const u16 as *mut u16,
     };
     let mut ptr: *mut _WELL_KNOWN_SID = core::ptr::null_mut();
     let mut ptr2: *mut _WELL_KNOWN_SID = core::ptr::null_mut();

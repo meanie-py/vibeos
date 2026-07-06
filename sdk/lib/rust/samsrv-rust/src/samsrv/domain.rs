@@ -1,5 +1,25 @@
 use crate::prelude::*;
 use core::ffi::c_void;
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn SampSetAccountNameInDomain(
     DomainObject: PSAM_DB_OBJECT,
@@ -73,7 +93,7 @@ pub unsafe extern "C" fn SampRemoveAccountNameFromDomain(
     'done: {
         Status = SampRegOpenKey(
             ContainerKeyHandle,
-            b"N\0a\0m\0e\0s\0\0\0".as_ptr() as LPCWSTR,
+            w!("Names").as_ptr() as LPCWSTR,
             KEY_SET_VALUE,
             &mut NamesKeyHandle,
         );
@@ -322,7 +342,7 @@ pub unsafe extern "C" fn SampCreateAccountSid(
     'done: {
         Status = SampGetObjectAttribute(
             DomainObject,
-            b"S\0I\0D\0\0\0".as_ptr() as LPWSTR,
+            w!("SID").as_ptr() as LPWSTR,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             &mut Length,
@@ -342,7 +362,7 @@ pub unsafe extern "C" fn SampCreateAccountSid(
 
         Status = SampGetObjectAttribute(
             DomainObject,
-            b"S\0I\0D\0\0\0".as_ptr() as LPWSTR,
+            w!("SID").as_ptr() as LPWSTR,
             core::ptr::null_mut(),
             DomainSid as LPVOID,
             &mut Length,

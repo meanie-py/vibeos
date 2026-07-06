@@ -7,6 +7,26 @@ use core::ffi::c_void;
 // INF cache types live in inffile.rs (rustconv dropped the cross-module use)
 use crate::inffile::{HINF, PINFCONTEXT, INFCONTEXT};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // SERVICE_ERROR_CRITICAL: cmtypes.h #define SERVICE_ERROR_CRITICAL 0x00000003
 pub const SERVICE_ERROR_CRITICAL: ULONG = 0x00000003;
 // TAG_BOOT_OPTIONS 'pOtB' (C multi-char literal is big-endian)
@@ -257,7 +277,7 @@ unsafe fn SetupLdrScanBootDrivers(
                     RtlStringCbPrintfW(
                         ImagePathW.as_mut_ptr(),
                         core::mem::size_of_val(&ImagePathW),
-                        b"%S\\%S\0".as_ptr() as *const u16,
+                        w!("%S\\%S").as_ptr() as *const u16,
                         ImagePath,
                         DriverName,
                     );
@@ -265,7 +285,7 @@ unsafe fn SetupLdrScanBootDrivers(
                     RtlStringCbPrintfW(
                         DriverNameW.as_mut_ptr(),
                         core::mem::size_of_val(&DriverNameW),
-                        b"%S\0".as_ptr() as *const u16,
+                        w!("%S").as_ptr() as *const u16,
                         DriverName,
                     );
                     DriverNameW[wcslen(DriverNameW.as_ptr()) - 4] = 0;
@@ -300,7 +320,7 @@ unsafe fn SetupLdrScanBootDrivers(
             0u8,
             BootFileSystem,
             core::ptr::null(),
-            b"Boot File System\0".as_ptr() as *const u16,
+            w!("Boot File System").as_ptr() as *const u16,
             SERVICE_ERROR_CRITICAL,
             ((-1i32) as u32),
         );

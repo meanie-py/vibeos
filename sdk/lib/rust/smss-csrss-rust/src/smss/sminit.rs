@@ -1,6 +1,26 @@
 use core::ffi::c_void;
 use ntdll_sys::nt::*;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // CRT helpers — cdecl exports from ntdll. extern "C", NOT "system": on i386
 // extern "system" = stdcall, which would mis-decorate these cdecl symbols.
 extern "C" {
@@ -751,7 +771,7 @@ pub unsafe extern "system" fn SmpConfigureKnownDlls(
 ) -> i32 {
     if _wcsicmp(
         ValueName,
-        b"D\0l\0l\0D\0i\0r\0e\0c\0t\0o\0r\0y\0\0\0".as_ptr() as *const u16,
+        w!("DllDirectory").as_ptr() as *const u16,
     ) == 0
     {
         SmpInitializeKnownDllPath(
@@ -789,7 +809,7 @@ pub unsafe extern "system" fn SmpConfigureEnvironment(
         return Status;
     }
 
-    if _wcsicmp(ValueName, b"P\0a\0t\0h\0\0\0".as_ptr() as PWSTR) == 0 {
+    if _wcsicmp(ValueName, w!("Path").as_ptr() as PWSTR) == 0 {
         SmpCalledConfigEnv += 1;
         if SmpCalledConfigEnv == 2 {
             SmpDefaultLibPathBuffer =
@@ -824,16 +844,16 @@ pub unsafe extern "system" fn SmpConfigureSubSystems(
 
     if (_wcsicmp(
         ValueName,
-        b"R\0e\0q\0u\0i\0r\0e\0d\0\0\0".as_ptr() as *const u16,
+        w!("Required").as_ptr() as *const u16,
     ) != 0)
         && (_wcsicmp(
             ValueName,
-            b"O\0p\0t\0i\0o\0n\0a\0l\0\0\0".as_ptr() as *const u16,
+            w!("Optional").as_ptr() as *const u16,
         ) != 0)
     {
         if (_wcsicmp(
             ValueName,
-            b"P\0o\0s\0i\0x\0S\0i\0n\0g\0l\0e\0I\0n\0s\0t\0a\0n\0c\0e\0\0\0".as_ptr() as *const u16,
+            w!("PosixSingleInstance").as_ptr() as *const u16,
         ) != 0)
             || (ValueType != REG_DWORD)
         {
@@ -860,7 +880,7 @@ pub unsafe extern "system" fn SmpConfigureSubSystems(
 
                 if _wcsicmp(
                     ValueName,
-                    b"R\0e\0q\0u\0i\0r\0e\0d\0\0\0".as_ptr() as *const u16,
+                    w!("Required").as_ptr() as *const u16,
                 ) == 0
                 {
                     InsertTailList(
@@ -906,7 +926,7 @@ pub unsafe extern "system" fn SmpTranslateSystemPartitionInformation() {
     /* Open the setup key */
     RtlInitUnicodeString(
         &mut UnicodeString,
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0S\0e\0t\0u\0p\0\0\0".as_ptr() as *const u16,
+        w!("\\Registry\\Machine\\System\\Setup").as_ptr() as *const u16,
     );
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
@@ -922,7 +942,7 @@ pub unsafe extern "system" fn SmpTranslateSystemPartitionInformation() {
     /* Query the system partition */
     RtlInitUnicodeString(
         &mut UnicodeString,
-        b"S\0y\0s\0t\0e\0m\0P\0a\0r\0t\0i\0t\0i\0o\0n\0\0\0".as_ptr() as *const u16,
+        w!("SystemPartition").as_ptr() as *const u16,
     );
     Status = NtQueryValueKey(
         KeyHandle,
@@ -955,7 +975,7 @@ pub unsafe extern "system" fn SmpTranslateSystemPartitionInformation() {
     /* Enumerate the directory looking for the symbolic link string */
     RtlInitUnicodeString(
         &mut SearchString,
-        b"S\0y\0m\0b\0o\0l\0i\0c\0L\0i\0n\0k\0\0\0".as_ptr() as *const u16,
+        w!("SymbolicLink").as_ptr() as *const u16,
     );
     RtlInitEmptyUnicodeString(
         &mut LinkTarget,
@@ -1030,7 +1050,7 @@ pub unsafe extern "system" fn SmpTranslateSystemPartitionInformation() {
     /* Open the setup key again, for full access this time */
     RtlInitUnicodeString(
         &mut UnicodeString,
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0S\0e\0t\0u\0p\0\0\0".as_ptr() as *const u16,
+        w!("\\Registry\\Machine\\Software\\Microsoft\\Windows\\CurrentVersion\\Setup").as_ptr() as *const u16,
     );
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
@@ -1051,7 +1071,7 @@ pub unsafe extern "system" fn SmpTranslateSystemPartitionInformation() {
     /* Now set this as the "BootDir" */
     RtlInitUnicodeString(
         &mut UnicodeString,
-        b"B\0o\0o\0t\0D\0i\0r\0\0\0".as_ptr() as *const u16,
+        w!("BootDir").as_ptr() as *const u16,
     );
     Status = NtSetValueKey(
         KeyHandle,
@@ -1688,7 +1708,7 @@ unsafe extern "system" fn SmpInitializeKnownDllsInternal(
 
         RtlInitUnicodeString(
             &mut SymLinkName,
-            b"K\0n\0o\0w\0n\0D\0l\0l\0P\0a\0t\0h\0\0\0".as_ptr() as PWSTR,
+            w!("KnownDllPath").as_ptr() as PWSTR,
         );
 
         ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
@@ -1758,7 +1778,7 @@ unsafe extern "system" fn SmpInitializeKnownDllsInternal(
                 &mut ImageCharacteristics,
             );
             if !NT_SUCCESS(Status) {
-                RtlInitUnicodeString(&mut ErrorResponse, b"V\0e\0r\0i\0f\0i\0c\0a\0t\0i\0o\0n\0 \0o\0f\0 \0a\0 \0K\0n\0o\0w\0n\0D\0L\0L\0 \0f\0a\0i\0l\0e\0d\0.\0\0\0".as_ptr() as PWSTR);
+                RtlInitUnicodeString(&mut ErrorResponse, w!("Verification of a KnownDLL failed.").as_ptr() as PWSTR);
                 ErrorParameters[0] = &mut ErrorResponse as *mut _ as ULONG_PTR;
                 ErrorParameters[1] = Status as ULONG_PTR;
                 ErrorParameters[2] = &mut (*RegEntry).Value as *mut _ as ULONG_PTR;
@@ -1768,7 +1788,7 @@ unsafe extern "system" fn SmpInitializeKnownDllsInternal(
                     ErrorParameters.len() as ULONG,
                 );
             } else if (ImageCharacteristics & IMAGE_FILE_DLL as USHORT) == 0 {
-                RtlInitUnicodeString(&mut ErrorResponse, b"N\0o\0n\0-\0D\0L\0L\0 \0f\0i\0l\0e\0 \0i\0n\0c\0l\0u\0d\0e\0d\0 \0i\0n\0 \0K\0n\0o\0w\0n\0D\0L\0L\0 \0l\0i\0s\0t\0.\0\0\0".as_ptr() as PWSTR);
+                RtlInitUnicodeString(&mut ErrorResponse, w!("Non-DLL file included in KnownDLL list.").as_ptr() as PWSTR);
                 ErrorParameters[0] = &mut ErrorResponse as *mut _ as ULONG_PTR;
                 ErrorParameters[1] = STATUS_INVALID_IMPORT_OF_NON_DLL as ULONG_PTR;
                 ErrorParameters[2] = &mut (*RegEntry).Value as *mut _ as ULONG_PTR;

@@ -8,6 +8,26 @@ use ntkrnl_sys::ddk::{CmpCompressedNameSize, CmpCopyCompressedName, HCELL_INDEX,
 use core::ffi::c_void;
 
 use ntkrnl_sys::opaque_ptr;
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 const TAG_CM: u32 = u32::from_le_bytes(*b"CM  ");
 const KEY_READ: u32 = 0x00020019;
 const KEY_WRITE: u32 = 0x00020006;
@@ -56,7 +76,7 @@ pub unsafe extern "system" fn CmpGetHiveName(
     let mut RegistryName: _UNICODE_STRING = _UNICODE_STRING {
         Length: 20,
         MaximumLength: 22,
-        Buffer: b"\\REGISTRY\\\0".as_ptr() as *mut u16,
+        Buffer: w!("\\REGISTRY\\").as_ptr() as *mut u16,
     };
 
     RootCell = (*(*Hive).Hive.BaseBlock).RootCell;
@@ -265,7 +285,7 @@ pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
             }
         }
     } else {
-        FilePath = b"\0\0".as_ptr() as *mut u16;
+        FilePath = w!("").as_ptr() as *mut u16;
         Length = core::mem::size_of::<u16>() as u32;
     }
 

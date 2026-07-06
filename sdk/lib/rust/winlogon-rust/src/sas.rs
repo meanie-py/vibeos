@@ -13,6 +13,26 @@ use core::ffi::c_void;
 use core::ptr::{addr_of, addr_of_mut, null, null_mut};
 use winlogon_sys::nt::*;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // Debug macros dropped (as in the other flipped files; call-sites already `!`).
 macro_rules! ERR {
     ($($t:tt)*) => {{}};
@@ -505,7 +525,7 @@ pub unsafe extern "C" fn PlaySoundRoutine(
     let hLibrary: HMODULE;
     let mut Ret: BOOL = 0;
 
-    hLibrary = LoadLibraryW(b"w\0i\0n\0m\0m\0.\0d\0l\0l\0\0\0".as_ptr() as LPCWSTR);
+    hLibrary = LoadLibraryW(w!("winmm.dll").as_ptr() as LPCWSTR);
     if hLibrary.is_null() {
         return 0;
     }
@@ -555,7 +575,7 @@ unsafe extern "system" fn PlayLogonSoundThread(lpParameter: LPVOID) -> DWORD {
         /* Open the wdmaud service */
         hService = OpenServiceW(
             hSCManager,
-            b"w\0d\0m\0a\0u\0d\0\0\0".as_ptr() as LPCWSTR,
+            w!("wdmaud").as_ptr() as LPCWSTR,
             GENERIC_READ,
         );
         if hService.is_null() {
@@ -604,9 +624,9 @@ unsafe extern "system" fn PlayLogonSoundThread(lpParameter: LPVOID) -> DWORD {
         } else {
             PlaySoundRoutine(
                 if (*SoundData).IsStartup != 0 {
-                    b"S\0y\0s\0t\0e\0m\0S\0t\0a\0r\0t\0\0\0".as_ptr() as LPCWSTR
+                    w!("SystemStart").as_ptr() as LPCWSTR
                 } else {
-                    b"W\0i\0n\0d\0o\0w\0s\0L\0o\0g\0o\0n\0\0\0".as_ptr() as LPCWSTR
+                    w!("WindowsLogon").as_ptr() as LPCWSTR
                 },
                 1,
                 SND_ALIAS | SND_NODEFAULT,
@@ -655,9 +675,9 @@ unsafe fn PlayLogoffShutdownSound(
 
     PlaySoundRoutine(
         if bShutdown != 0 {
-            b"S\0y\0s\0t\0e\0m\0E\0x\0i\0t\0\0\0".as_ptr() as LPCWSTR
+            w!("SystemExit").as_ptr() as LPCWSTR
         } else {
-            b"W\0i\0n\0d\0o\0w\0s\0L\0o\0g\0o\0f\0f\0\0\0".as_ptr() as LPCWSTR
+            w!("WindowsLogoff").as_ptr() as LPCWSTR
         },
         0,
         SND_ALIAS | SND_NODEFAULT,

@@ -11,6 +11,26 @@ use crate::winbase::{wcslen, NT_SUCCESS};
 // not an external link symbol — import it instead of declaring it extern.
 use crate::ntwrapper::GetProcessWindowStation;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // Nt*/Rtl error-mapping syscalls + the Logon notifier (cross-TU, cdecl on amd64/arm64,
 // fastcall for Logon on i386 — declared per its export ABI).
 // ntdll Nt*/Rtl* exports are stdcall on i386 (`_Name@N`) — declare extern "system".
@@ -104,7 +124,7 @@ pub unsafe extern "system" fn CreateWindowStationW(
     let mut WindowStationsDir: _UNICODE_STRING = core::mem::zeroed();
     RtlInitUnicodeString(
         &mut WindowStationsDir,
-        b"\\\0W\0i\0n\0d\0o\0w\0s\0\\\0W\0i\0n\0d\0o\0w\0S\0t\0a\0t\0i\0o\0n\0s\0\0\0".as_ptr() as LPCWSTR,
+        w!("\\Windows\\WindowStations").as_ptr() as LPCWSTR,
     );
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut hWindowStationsDir: *mut core::ffi::c_void = core::ptr::null_mut();

@@ -12,6 +12,26 @@ use super::super::input::ConioProcessKey;
 use super::super::super::coninput::ConioProcessInputEvent;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "C" {
     /// `InitTTFontCache`/`RefreshTTFontCache` — concfg-side helpers (cdecl;
     /// concfg exports the undecorated `_InitTTFontCache`).
@@ -363,7 +383,7 @@ pub unsafe fn GuiInit(
         DesktopPath.Length = DesktopPath.MaximumLength - core::mem::size_of::<WCHAR>() as u16;
         DesktopPath.Buffer = (*ConsoleInitInfo).Desktop;
     } else {
-        RtlInitUnicodeString(&mut DesktopPath, b"D\0e\0f\0a\0u\0l\0t\0\0\0".as_ptr() as *const u16);
+        RtlInitUnicodeString(&mut DesktopPath, w!("Default").as_ptr() as *const u16);
     }
 
     hDesk = NtUserResolveDesktop(

@@ -2,6 +2,26 @@ use crate::types::*;
 use crate::glue::*;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // stdcall Win32/ntdll/ws2_32 imports: `extern "system"` so i386 gets the `_Name@N`
 // decoration matching the DLL exports (extern "C" -> `_Name` cdecl -> undefined at link).
 // Heap*/GetProcessHeap/SleepEx come from glue (extern "system") via `use crate::glue::*`;
@@ -4348,7 +4368,7 @@ pub unsafe extern "C" fn SockGetAsyncSelectHelperAfdHandle() -> BOOLEAN {
         return 1u8;
     }
 
-    RtlInitUnicodeString(&mut AfdHelper, b"\\Device\\Afd\\AsyncSelectHlp\0".as_ptr() as LPWSTR);
+    RtlInitUnicodeString(&mut AfdHelper, w!("\\Device\\Afd\\AsyncSelectHlp").as_ptr() as LPWSTR);
     
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();

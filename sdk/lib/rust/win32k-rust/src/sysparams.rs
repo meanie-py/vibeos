@@ -9,6 +9,26 @@ use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // C debug-channel macros — no kernel symbol, no-op.
 macro_rules! ERR   { ($($t:tt)*) => {{}}; }
 #[allow(unused_macros)] macro_rules! WARN  { ($($t:tt)*) => {{}}; }
@@ -382,33 +402,33 @@ unsafe fn SpiUpdatePerUserSystemParameters() {
     /* Load NONCLIENTMETRICS */
     gspv.ncm.cbSize = core::mem::size_of::<NONCLIENTMETRICSW>() as _;
     gspv.ncm.iBorderWidth = SpiLoadMetric(VAL_BORDER.as_ptr(), 1);
-    gspv.ncm.iScrollWidth = SpiLoadMetric(b"ScrollWidth\0".as_ptr() as PCWSTR, 16);
-    gspv.ncm.iScrollHeight = SpiLoadMetric(b"ScrollHeight\0".as_ptr() as PCWSTR, 16);
-    gspv.ncm.iCaptionWidth = SpiLoadMetric(b"CaptionWidth\0".as_ptr() as PCWSTR, 19);
-    gspv.ncm.iCaptionHeight = SpiLoadMetric(b"CaptionHeight\0".as_ptr() as PCWSTR, 19);
-    gspv.ncm.iSmCaptionWidth = SpiLoadMetric(b"SmCaptionWidth\0".as_ptr() as PCWSTR, 12);
-    gspv.ncm.iSmCaptionHeight = SpiLoadMetric(b"SmCaptionHeight\0".as_ptr() as PCWSTR, 15);
-    gspv.ncm.iMenuWidth = SpiLoadMetric(b"MenuWidth\0".as_ptr() as PCWSTR, 18);
-    gspv.ncm.iMenuHeight = SpiLoadMetric(b"MenuHeight\0".as_ptr() as PCWSTR, 18);
-    SpiLoadFont(core::ptr::addr_of_mut!(gspv.ncm.lfCaptionFont), b"CaptionFont\0".as_ptr() as LPWSTR, core::ptr::addr_of_mut!(lf2));
-    SpiLoadFont(core::ptr::addr_of_mut!(gspv.ncm.lfSmCaptionFont), b"SmCaptionFont\0".as_ptr() as LPWSTR, core::ptr::addr_of_mut!(lf1));
-    SpiLoadFont(core::ptr::addr_of_mut!(gspv.ncm.lfMenuFont), b"MenuFont\0".as_ptr() as LPWSTR, core::ptr::addr_of_mut!(lf1));
-    SpiLoadFont(core::ptr::addr_of_mut!(gspv.ncm.lfStatusFont), b"StatusFont\0".as_ptr() as LPWSTR, core::ptr::addr_of_mut!(lf1));
-    SpiLoadFont(core::ptr::addr_of_mut!(gspv.ncm.lfMessageFont), b"MessageFont\0".as_ptr() as LPWSTR, core::ptr::addr_of_mut!(lf1));
+    gspv.ncm.iScrollWidth = SpiLoadMetric(w!("ScrollWidth").as_ptr() as PCWSTR, 16);
+    gspv.ncm.iScrollHeight = SpiLoadMetric(w!("ScrollHeight").as_ptr() as PCWSTR, 16);
+    gspv.ncm.iCaptionWidth = SpiLoadMetric(w!("CaptionWidth").as_ptr() as PCWSTR, 19);
+    gspv.ncm.iCaptionHeight = SpiLoadMetric(w!("CaptionHeight").as_ptr() as PCWSTR, 19);
+    gspv.ncm.iSmCaptionWidth = SpiLoadMetric(w!("SmCaptionWidth").as_ptr() as PCWSTR, 12);
+    gspv.ncm.iSmCaptionHeight = SpiLoadMetric(w!("SmCaptionHeight").as_ptr() as PCWSTR, 15);
+    gspv.ncm.iMenuWidth = SpiLoadMetric(w!("MenuWidth").as_ptr() as PCWSTR, 18);
+    gspv.ncm.iMenuHeight = SpiLoadMetric(w!("MenuHeight").as_ptr() as PCWSTR, 18);
+    SpiLoadFont(core::ptr::addr_of_mut!(gspv.ncm.lfCaptionFont), w!("CaptionFont").as_ptr() as LPWSTR, core::ptr::addr_of_mut!(lf2));
+    SpiLoadFont(core::ptr::addr_of_mut!(gspv.ncm.lfSmCaptionFont), w!("SmCaptionFont").as_ptr() as LPWSTR, core::ptr::addr_of_mut!(lf1));
+    SpiLoadFont(core::ptr::addr_of_mut!(gspv.ncm.lfMenuFont), w!("MenuFont").as_ptr() as LPWSTR, core::ptr::addr_of_mut!(lf1));
+    SpiLoadFont(core::ptr::addr_of_mut!(gspv.ncm.lfStatusFont), w!("StatusFont").as_ptr() as LPWSTR, core::ptr::addr_of_mut!(lf1));
+    SpiLoadFont(core::ptr::addr_of_mut!(gspv.ncm.lfMessageFont), w!("MessageFont").as_ptr() as LPWSTR, core::ptr::addr_of_mut!(lf1));
 
     /* Load MINIMIZEDMETRICS */
     gspv.mm.cbSize = core::mem::size_of::<MINIMIZEDMETRICS>() as _;
-    gspv.mm.iWidth = SpiLoadMetric(b"MinWidth\0".as_ptr() as PCWSTR, 160);
-    gspv.mm.iHorzGap = SpiLoadMetric(b"MinHorzGap\0".as_ptr() as PCWSTR, 160);
-    gspv.mm.iVertGap = SpiLoadMetric(b"MinVertGap\0".as_ptr() as PCWSTR, 24);
-    gspv.mm.iArrange = SpiLoadInt(KEY_METRIC.as_ptr(), b"MinArrange\0".as_ptr() as PCWSTR, ARW_HIDE as _);
+    gspv.mm.iWidth = SpiLoadMetric(w!("MinWidth").as_ptr() as PCWSTR, 160);
+    gspv.mm.iHorzGap = SpiLoadMetric(w!("MinHorzGap").as_ptr() as PCWSTR, 160);
+    gspv.mm.iVertGap = SpiLoadMetric(w!("MinVertGap").as_ptr() as PCWSTR, 24);
+    gspv.mm.iArrange = SpiLoadInt(KEY_METRIC.as_ptr(), w!("MinArrange").as_ptr() as PCWSTR, ARW_HIDE as _);
 
     /* Load ICONMETRICS */
     gspv.im.cbSize = core::mem::size_of::<ICONMETRICSW>() as _;
     gspv.im.iHorzSpacing = SpiLoadMetric(VAL_ICONSPC.as_ptr(), 64);
     gspv.im.iVertSpacing = SpiLoadMetric(VAL_ICONVSPC.as_ptr(), 64);
     gspv.im.iTitleWrap = SpiLoadMetric(VAL_ITWRAP.as_ptr(), 1);
-    SpiLoadFont(core::ptr::addr_of_mut!(gspv.im.lfFont), b"IconFont\0".as_ptr() as LPWSTR, core::ptr::addr_of_mut!(lf1));
+    SpiLoadFont(core::ptr::addr_of_mut!(gspv.im.lfFont), w!("IconFont").as_ptr() as LPWSTR, core::ptr::addr_of_mut!(lf1));
 
     /* Load desktop settings */
     gspv.bDragFullWindows = SpiLoadInt(KEY_DESKTOP.as_ptr(), VAL_DRAG.as_ptr(), 0);
@@ -431,7 +451,7 @@ unsafe fn SpiUpdatePerUserSystemParameters() {
     gspv.uiFocusBorderWidth = 1;
     gspv.uiFocusBorderHeight = 1;
     gspv.bMenuDropAlign = 0;
-    gspv.dwMenuShowDelay = SpiLoadInt(KEY_DESKTOP.as_ptr(), b"MenuShowDelay\0".as_ptr() as PCWSTR, 400) as _;
+    gspv.dwMenuShowDelay = SpiLoadInt(KEY_DESKTOP.as_ptr(), w!("MenuShowDelay").as_ptr() as PCWSTR, 400) as _;
     gspv.dwForegroundFlashCount = 3;
 
     gspv.iScrSaverTimeout = SpiLoadTimeOut() as _;
@@ -477,8 +497,8 @@ unsafe fn SpiUpdatePerUserSystemParameters() {
             (*pusi(gpsi)).PUSIFlags |= PUSIF_LISTBOXSMOOTHSCROLLING;
         }
     }
-    gdwLanguageToggleKey = UserGetLanguageToggle(b"Language Hotkey\0".as_ptr() as LPWSTR, 1);
-    gdwLayoutToggleKey = UserGetLanguageToggle(b"Layout Hotkey\0".as_ptr() as LPWSTR, 2);
+    gdwLanguageToggleKey = UserGetLanguageToggle(w!("Language Hotkey").as_ptr() as LPWSTR, 1);
+    gdwLayoutToggleKey = UserGetLanguageToggle(w!("Layout Hotkey").as_ptr() as LPWSTR, 2);
 }
 
 // InitSysParams (sysparams.h: cdecl `BOOL InitSysParams()`) — exported for main.rs.
@@ -1268,7 +1288,7 @@ unsafe fn SpiGetSet_SPI_SETHANDHELD(uiParam: UINT, fl: FLONG) -> UINT_PTR {
         core::ptr::addr_of_mut!(gspv.bHandHeld),
         uiParam as INT,
         KEY_DESKTOP.as_ptr(),
-        b"H\0a\0n\0d\0H\0e\0l\0d\0\0\0".as_ptr() as PCWSTR,
+        w!("HandHeld").as_ptr() as PCWSTR,
         fl,
     )
 }
@@ -1286,7 +1306,7 @@ unsafe fn SpiGetSet_SPI_SETLOWPOWERTIMEOUT(uiParam: UINT, fl: FLONG) -> UINT_PTR
         core::ptr::addr_of_mut!(gspv.iLowPwrTimeout) as *mut core::ffi::c_void,
         uiParam as INT,
         KEY_DESKTOP.as_ptr(),
-        b"L\0o\0w\0P\0o\0w\0e\0r\0T\0i\0m\0e\0O\0u\0t\0\0\0".as_ptr() as PCWSTR,
+        w!("LowPowerTimeOut").as_ptr() as PCWSTR,
         fl,
     )
 }
@@ -1296,7 +1316,7 @@ unsafe fn SpiGetSet_SPI_SETPOWEROFFTIMEOUT(uiParam: UINT, fl: FLONG) -> UINT_PTR
         core::ptr::addr_of_mut!(gspv.iPwrOffTimeout) as *mut core::ffi::c_void,
         uiParam as INT,
         KEY_DESKTOP.as_ptr(),
-        b"P\0o\0w\0e\0r\0O\0f\0f\0T\0i\0m\0e\0O\0u\0t\0\0\0".as_ptr() as PCWSTR,
+        w!("PowerOffTimeOut").as_ptr() as PCWSTR,
         fl,
     )
 }
@@ -1324,7 +1344,7 @@ unsafe fn SpiGetSet_SPI_SETPOWEROFFACTIVE(uiParam: UINT, fl: FLONG) -> UINT_PTR 
         core::ptr::addr_of_mut!(gspv.bPwrOffActive),
         uiParam as INT,
         KEY_DESKTOP.as_ptr(),
-        b"P\0o\0w\0e\0r\0O\0f\0f\0A\0c\0t\0i\0v\0e\0\0\0".as_ptr() as PCWSTR,
+        w!("PowerOffActive").as_ptr() as PCWSTR,
         fl,
     )
 }
@@ -1344,11 +1364,11 @@ unsafe fn SpiGetSet_SPI_GETDEFAULTINPUTLANG(pvParam: PVOID, fl: FLONG) -> UINT_P
 
 unsafe fn SpiGetSet_SPI_SETLANGTOGGLE() -> UINT_PTR {
     gdwLayoutToggleKey = UserGetLanguageToggle(
-        b"L\0a\0y\0o\0u\0t\0 \0H\0o\0t\0k\0e\0y\0\0\0".as_ptr() as LPWSTR,
+        w!("Layout Hotkey").as_ptr() as LPWSTR,
         2,
     );
     gdwLanguageToggleKey = UserGetLanguageToggle(
-        b"L\0a\0n\0g\0u\0a\0g\0e\0 \0H\0o\0t\0k\0e\0y\0\0\0".as_ptr() as LPWSTR,
+        w!("Language Hotkey").as_ptr() as LPWSTR,
         1,
     );
     gdwLanguageToggleKey as UINT_PTR
@@ -1455,7 +1475,7 @@ unsafe fn SpiGetSet_SPI_SETSHOWIMEUI(uiParam: UINT, fl: FLONG) -> UINT_PTR {
         core::ptr::addr_of_mut!(gspv.bShowImeUi),
         uiParam as INT,
         KEY_DESKTOP.as_ptr(),
-        b"\0".as_ptr() as PCWSTR,
+        w!("").as_ptr() as PCWSTR,
         fl,
     )
 }
@@ -1473,7 +1493,7 @@ unsafe fn SpiGetSet_SPI_SETSCREENSAVERRUNNING(uiParam: UINT, fl: FLONG) -> UINT_
         core::ptr::addr_of_mut!(gspv.bScrSaverRunning),
         uiParam as INT,
         KEY_MOUSE.as_ptr(),
-        b"\0".as_ptr() as PCWSTR,
+        w!("").as_ptr() as PCWSTR,
         fl,
     )
 }
@@ -1596,7 +1616,7 @@ unsafe fn SpiGetSet_SPI_SETMOUSESONAR(uiParam: UINT, fl: FLONG) -> UINT_PTR {
         core::ptr::addr_of_mut!(gspv.bMouseSonar),
         uiParam as INT,
         KEY_MOUSE.as_ptr(),
-        b"\0".as_ptr() as PCWSTR,
+        w!("").as_ptr() as PCWSTR,
         fl,
     )
 }
@@ -1619,7 +1639,7 @@ unsafe fn SpiGetSet_SPI_SETMOUSEVANISH(uiParam: UINT, fl: FLONG) -> UINT_PTR {
         core::ptr::addr_of_mut!(gspv.bMouseVanish),
         uiParam as INT,
         KEY_MOUSE.as_ptr(),
-        b"\0".as_ptr() as PCWSTR,
+        w!("").as_ptr() as PCWSTR,
         fl,
     )
 }
@@ -1663,7 +1683,7 @@ unsafe fn SpiGetSet_SPI_SETFOREGROUNDLOCKTIMEOUT(uiParam: UINT, fl: FLONG) -> UI
         core::ptr::addr_of_mut!(gspv.dwForegroundLockTimeout) as *mut core::ffi::c_void,
         uiParam as INT,
         KEY_MOUSE.as_ptr(),
-        b"\0".as_ptr() as PCWSTR,
+        w!("").as_ptr() as PCWSTR,
         fl,
     )
 }
@@ -1677,7 +1697,7 @@ unsafe fn SpiGetSet_SPI_SETACTIVEWNDTRKTIMEOUT(uiParam: UINT, fl: FLONG) -> UINT
         core::ptr::addr_of_mut!(gspv.dwActiveTrackingTimeout) as *mut core::ffi::c_void,
         uiParam as INT,
         KEY_MOUSE.as_ptr(),
-        b"\0\0".as_ptr() as PCWSTR,
+        w!("").as_ptr() as PCWSTR,
         fl,
     )
 }
@@ -1761,7 +1781,7 @@ unsafe fn SpiGetSet_SPI_SETFOCUSBORDERWIDTH(uiParam: UINT, fl: FLONG) -> UINT_PT
         core::ptr::addr_of_mut!(gspv.uiFocusBorderWidth) as *mut core::ffi::c_void,
         uiParam as INT,
         KEY_MOUSE.as_ptr(),
-        b"\0".as_ptr() as PCWSTR,
+        w!("").as_ptr() as PCWSTR,
         fl,
     )
 }
@@ -1871,19 +1891,19 @@ unsafe fn SpiGetSet(uiAction: UINT, uiParam: UINT, pvParam: PVOID, fl: FLONG) ->
             }
             if (fl & SPIF_UPDATEINIFILE) != 0 {
                 SpiStoreMetric(VAL_BORDER.as_ptr(), gspv.ncm.iBorderWidth);
-                SpiStoreMetric(b"S\0c\0r\0o\0l\0l\0W\0i\0d\0t\0h\0\0\0".as_ptr() as LPCWSTR, gspv.ncm.iScrollWidth);
-                SpiStoreMetric(b"S\0c\0r\0o\0l\0l\0H\0e\0i\0g\0h\0t\0\0\0".as_ptr() as LPCWSTR, gspv.ncm.iScrollHeight);
-                SpiStoreMetric(b"C\0a\0p\0t\0i\0o\0n\0W\0i\0d\0t\0h\0\0\0".as_ptr() as LPCWSTR, gspv.ncm.iCaptionWidth);
-                SpiStoreMetric(b"C\0a\0p\0t\0i\0o\0n\0H\0e\0i\0g\0h\0t\0\0\0".as_ptr() as LPCWSTR, gspv.ncm.iCaptionHeight);
-                SpiStoreMetric(b"S\0m\0C\0a\0p\0t\0i\0o\0n\0W\0i\0d\0t\0h\0\0\0".as_ptr() as LPCWSTR, gspv.ncm.iSmCaptionWidth);
-                SpiStoreMetric(b"S\0m\0C\0a\0p\0t\0i\0o\0n\0H\0e\0i\0g\0h\0t\0\0\0".as_ptr() as LPCWSTR, gspv.ncm.iSmCaptionHeight);
-                SpiStoreMetric(b"M\0e\0n\0u\0W\0i\0d\0t\0h\0\0\0".as_ptr() as LPCWSTR, gspv.ncm.iMenuWidth);
-                SpiStoreMetric(b"M\0e\0n\0u\0H\0e\0i\0g\0h\0t\0\0\0".as_ptr() as LPCWSTR, gspv.ncm.iMenuHeight);
-                SpiStoreFont(b"C\0a\0p\0t\0i\0o\0n\0F\0o\0n\0t\0\0\0".as_ptr() as PCWSTR, core::ptr::addr_of_mut!(gspv.ncm.lfCaptionFont));
-                SpiStoreFont(b"S\0m\0C\0a\0p\0t\0i\0o\0n\0F\0o\0n\0t\0\0\0".as_ptr() as PCWSTR, core::ptr::addr_of_mut!(gspv.ncm.lfSmCaptionFont));
-                SpiStoreFont(b"M\0e\0n\0u\0F\0o\0n\0t\0\0\0".as_ptr() as PCWSTR, core::ptr::addr_of_mut!(gspv.ncm.lfMenuFont));
-                SpiStoreFont(b"S\0t\0a\0t\0u\0s\0F\0o\0n\0t\0\0\0".as_ptr() as PCWSTR, core::ptr::addr_of_mut!(gspv.ncm.lfStatusFont));
-                SpiStoreFont(b"M\0e\0s\0s\0a\0g\0e\0F\0o\0n\0t\0\0\0".as_ptr() as PCWSTR, core::ptr::addr_of_mut!(gspv.ncm.lfMessageFont));
+                SpiStoreMetric(w!("ScrollWidth").as_ptr() as LPCWSTR, gspv.ncm.iScrollWidth);
+                SpiStoreMetric(w!("ScrollHeight").as_ptr() as LPCWSTR, gspv.ncm.iScrollHeight);
+                SpiStoreMetric(w!("CaptionWidth").as_ptr() as LPCWSTR, gspv.ncm.iCaptionWidth);
+                SpiStoreMetric(w!("CaptionHeight").as_ptr() as LPCWSTR, gspv.ncm.iCaptionHeight);
+                SpiStoreMetric(w!("SmCaptionWidth").as_ptr() as LPCWSTR, gspv.ncm.iSmCaptionWidth);
+                SpiStoreMetric(w!("SmCaptionHeight").as_ptr() as LPCWSTR, gspv.ncm.iSmCaptionHeight);
+                SpiStoreMetric(w!("MenuWidth").as_ptr() as LPCWSTR, gspv.ncm.iMenuWidth);
+                SpiStoreMetric(w!("MenuHeight").as_ptr() as LPCWSTR, gspv.ncm.iMenuHeight);
+                SpiStoreFont(w!("CaptionFont").as_ptr() as PCWSTR, core::ptr::addr_of_mut!(gspv.ncm.lfCaptionFont));
+                SpiStoreFont(w!("SmCaptionFont").as_ptr() as PCWSTR, core::ptr::addr_of_mut!(gspv.ncm.lfSmCaptionFont));
+                SpiStoreFont(w!("MenuFont").as_ptr() as PCWSTR, core::ptr::addr_of_mut!(gspv.ncm.lfMenuFont));
+                SpiStoreFont(w!("StatusFont").as_ptr() as PCWSTR, core::ptr::addr_of_mut!(gspv.ncm.lfStatusFont));
+                SpiStoreFont(w!("MessageFont").as_ptr() as PCWSTR, core::ptr::addr_of_mut!(gspv.ncm.lfMessageFont));
             }
             if SpiNotifyNCMetricsChanged() == 0 {
                 return 0;
@@ -1904,10 +1924,10 @@ unsafe fn SpiGetSet(uiAction: UINT, uiParam: UINT, pvParam: PVOID, fl: FLONG) ->
             gspv.mm.iVertGap = core::cmp::max(0, gspv.mm.iVertGap);
             gspv.mm.iArrange = gspv.mm.iArrange & 0xf;
             if (fl & SPIF_UPDATEINIFILE) != 0 {
-                SpiStoreMetric(b"M\0i\0n\0W\0i\0d\0t\0h\0\0\0".as_ptr() as LPCWSTR, gspv.mm.iWidth);
-                SpiStoreMetric(b"M\0i\0n\0H\0o\0r\0z\0G\0a\0p\0\0\0".as_ptr() as LPCWSTR, gspv.mm.iHorzGap);
-                SpiStoreMetric(b"M\0i\0n\0V\0e\0r\0t\0G\0a\0p\0\0\0".as_ptr() as LPCWSTR, gspv.mm.iVertGap);
-                SpiStoreMetric(b"M\0i\0n\0A\0r\0r\0a\0n\0g\0e\0\0\0".as_ptr() as LPCWSTR, gspv.mm.iArrange);
+                SpiStoreMetric(w!("MinWidth").as_ptr() as LPCWSTR, gspv.mm.iWidth);
+                SpiStoreMetric(w!("MinHorzGap").as_ptr() as LPCWSTR, gspv.mm.iHorzGap);
+                SpiStoreMetric(w!("MinVertGap").as_ptr() as LPCWSTR, gspv.mm.iVertGap);
+                SpiStoreMetric(w!("MinArrange").as_ptr() as LPCWSTR, gspv.mm.iArrange);
             }
             return KEY_METRIC.as_ptr() as UINT_PTR;
         }
@@ -1924,7 +1944,7 @@ unsafe fn SpiGetSet(uiAction: UINT, uiParam: UINT, pvParam: PVOID, fl: FLONG) ->
                 SpiStoreMetric(VAL_ICONSPC.as_ptr(), gspv.im.iHorzSpacing);
                 SpiStoreMetric(VAL_ICONVSPC.as_ptr(), gspv.im.iVertSpacing);
                 SpiStoreMetric(VAL_ITWRAP.as_ptr(), gspv.im.iTitleWrap);
-                SpiStoreFont(b"I\0c\0o\0n\0F\0o\0n\0t\0\0\0".as_ptr() as PCWSTR, core::ptr::addr_of_mut!(gspv.im.lfFont));
+                SpiStoreFont(w!("IconFont").as_ptr() as PCWSTR, core::ptr::addr_of_mut!(gspv.im.lfFont));
             }
             return KEY_METRIC.as_ptr() as UINT_PTR;
         }
