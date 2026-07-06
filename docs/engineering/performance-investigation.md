@@ -73,6 +73,36 @@ From commands.jsonl of a no-change amd64 build: ninja livecd 1.2s + primed
 targets 0.6s; everything else is scanners + symbol indexing + stats. The
 "build" cost people feel in the loop is ~95% lint/verify tooling.
 
+### F4b. [FIXED 2026-07-06] host-tools BUILD_ALWAYS phantom-dirtied every warm build — no-op ninja 87s → 1s
+F4's "ninja ~2s" stopped being true as cargo modules accumulated: by
+2026-07-06 a literal no-op `ninja livecd` took **87s**. Root: upstream's
+`BUILD_ALWAYS TRUE` on the host-tools ExternalProject omits the build stamp,
+so the phony host-tools chain was dirty on EVERY build; the dirt reached
+~53k graph nodes, and the ~40 cargo-module custom commands (which re-RUN on
+phony-dirty deps — restat can't save a custom command) each re-invoked cargo
+concurrently, serializing on cargo's package-cache lock at 33–51s per edge.
+Fix (`sdk/cmake/host-tools.cmake`): build-once + file-level
+`ExternalProject_Add_StepDependencies` on the sub-build's real source tree;
+BUILD_BYPRODUCTS + restat prune downstream when tools come out unchanged.
+Verified: no-op ninja 87s → 0–1s; tool-source edit still propagates (6s
+targeted rebuild); warm `vibeos-cli build` ~40s, now genuinely lint-dominated
+(verify_ffi 17s is the top stage). This also invalidated the "cargo module
+links are 35s each" reading of the ninja log — those were phantom re-runs.
+
+### F4c. Link speed is DEAD LORE — measured 2026-07-06
+The remembered "link is the worst offender" no longer holds (canonical-path +
+shared-sccache work likely fixed it): kernel cargo link (reactos-link → lld)
+is seconds; a warm no-op `cargo build -p ntoskrnl-cargo` is 5.7s; a REAL
+one-line kernel .rs edit → rebuilt+relinked ntoskrnl.exe in **12.6s**; a tiny
+cargo module (beep) warm no-op is 0.12s, forced re-link 1.4s. The cold-build
+critical path is the single-crate `ntoskrnl-rust` rustc (~400s class) — the
+module-factoring lane is the right attack. Cold-adjacent facts: sccache marks
+`crate-type: staticlib` non-cacheable (38/396 requests last build), so the
+~50 per-driver staticlib shells never cache (keep bodies in rlibs); those 50
+per-driver `rust-*-target` dirs also each recompile the ntkrnl-sys world
+(~90MB each, ~4.5GB/arch) — consolidation into the shared workspace target
+(as the cargo modules already do) would cut cold time and disk.
+
 ### F5. Gate is a 3-barrier pipeline; per-arch pipelining would cut ~40%
 Gate = builds (serial, ~130s warm) → lint (parallel barrier, ~60s) → smokes
 (parallel, wall = amd64 ~200s). Nothing starts smoking until ALL arches built
@@ -218,24 +248,55 @@ Ranked fixes:
    Historical detail preserved: wdf01000.sys is 13.5MB of which ~12.5MB is
    .debug_* (code+data ≈ 0.8MB); wdf01000 cannot be demoted from boot-start —
    cdrom.sys is KMDF (wdf01000_reg.inf).
-2. **Attack the 2.2MB/s transfer**: check whether OVMF is stuck in ATAPI PIO
-   (vs UDMA) on the i440fx IDE path; a DMA-capable attach (or a QEMU option)
-   would multiply throughput. Guest-side constraint: uniata must still see
-   the CD for the livecd session (that's why the CD is IDE, not AHCI).
-   Combined with #1 the load phase approaches ~1-2s.
+2. **[DONE 2026-07-06] The "slow transfer" was freeldr's own 4KB read
+   chunking, not PIO bandwidth.** `UefiInitializeBootDevices` set
+   `DiskReadBufferSize = EFI_PAGE_SIZE` — every 4KB of the ~35MB boot set
+   paid a full firmware ReadBlocks/ATAPI round trip (~9000 calls/boot),
+   which is what capped mid-size files at ~4MB/s and looked like "2.2MB/s
+   PIO". Fix: 64KB read buffer (uefidisk.rs; 1MB HANGS OVMF's ATAPI path at
+   the first read — bisected). Measured: amd64 kernel entry 6.1s → **2.3s**,
+   ntoskrnl reads at 46MB/s, wdf01000 at 103MB/s, serial log end 15.4s.
+   arm64 uses the same uefidisk path (RAM-backed FAT) and benefits too.
 
 ## Verified wins so far (timed smokes, amd64)
 
 | | baseline | now |
 |---|---|---|
-| boot-only smoke wall | ~82s | **~39s** (i386 post-strip) |
-| boot to explorer (guest, amd64) | 36.5s | **15.6s** |
-| pre-kernel load phase (amd64) | ~24s | **6.3s** (DWARF strip) |
-| pre-kernel load phase (i386) | ~24s | **7.6s** (DWARF strip) |
+| boot to explorer (guest, amd64) | 36.5s | **13.0s** |
+| pre-kernel phase (amd64) | ~24s | **2.3s** (DWARF strip + 64KB reads) |
+| amd64 serial log end (boot complete) | ~40s | **15.4s** |
+| arm64 boot to explorer | ~40s | **11.8s** (EDK2 firmware now 5.9s of it) |
 | livecd.iso | 508MB | **214MB** |
+| SCM service starts (DcomLaunch etc.) | 31s timeout each | connect=0 instantly |
+| MININT hive-write stalls | 5–9s ×4/boot | gone |
 | freeldr menu | 5s | 0 |
 | settle | 30s | 15s |
 | amd64 smoke incl. net (gate lane) | ~200s serial | net runs parallel |
+| warm full gate | 664s median | **~120-130s** |
+
+Remaining boot profile (amd64, 15.4s): EDK2+freeldr 2.3s · kernel init 3.9s
+(1.36s = uniata secondary-IDE probe, the top single remaining gap) · csrss→
+explorer ~6.8s (flat ~0.5s gaps: comctl32 actctx, winsrv load) · post-marker
+tail ~2.4s. arm64: EDK2 5.9s dominates; post-shell TDI self-test CONNECT
+timeout (0xC00000B5, 9.2s, post-marker — flagged for the net lane).
+
+**[DONE 2026-07-06] uniata IDE-probe gap: 2.35s → ~120ms.** Attributed with
+permanent `[UNIATA]` DbgPrint phase markers (FindBusMasterController /
+FindDevices / CheckDevice / SoftReset / IssueIdentify / HwInitialize —
+uniata-rust, live; mirrored in the out-of-build C). Two VM-blind waits in the
+(upstream-inherited) UniATA code, both fixed by gating on the driver's own
+`g_opt_VirtualMachine` detection (QEMU is detected via PCI subsys 1af4:1100):
+1. `AtapiSoftReset` waited up to 100ms for BUSY to *assert* after ATAPI
+   RESET — QEMU (same IDE lineage as Bochs, which already had the `i=100`
+   shortcut) completes the reset instantly and never asserts BUSY, so all
+   10000×10µs iterations burned every time: ~167ms real under TCG × 12 soft
+   resets/boot ≈ 2.0s. Fix: extend the Bochs shortcut to `VM_QEMU`.
+2. `AtapiHwInitialize__` ran an unconditional 500ms (5000×100µs, ~880ms real
+   under TCG) "get the device ready" mechanical-settle stall per ATAPI lun.
+   Fix: skip when `g_opt_VirtualMachine > VM_NONE`.
+Verified: FindDevices→"Found device" now 4ms; explorer entry 13.0→~10.1s.
+Class writeup: field manual "Driver hardware-settle delays are pure loss in
+a VM". i386 shares the same driver+path; arm64 has no IDE.
 
 ## Older section — measurement in progress
 

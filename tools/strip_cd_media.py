@@ -104,15 +104,56 @@ def strip_one(src: Path, dst: Path, objcopy: str) -> None:
     dst.write_bytes(data)
 
 
+def twin_for(src: Path, cache: Path, objcopy: str, manifest: dict) -> Path | None:
+    """Return the stripped twin for src (creating/refreshing it), or None if src
+    is not a PE with debug sections. Raises on strip/checksum failure."""
+    try:
+        head = src.open("rb").read(2)
+    except OSError:
+        return None
+    if head != b"MZ":
+        return None
+    parsed = parse_pe(src.read_bytes())
+    if parsed is None or not has_debug_sections(parsed[1]):
+        return None
+    st = src.stat()
+    key = str(src)
+    twin = cache / f"{hashlib.sha1(key.encode()).hexdigest()[:12]}-{src.name}"
+    entry = manifest.get(key)
+    if not (
+        entry
+        and entry.get("mtime_ns") == st.st_mtime_ns
+        and entry.get("size") == st.st_size
+        and twin.is_file()
+    ):
+        strip_one(src, twin, objcopy)
+        manifest[key] = {"mtime_ns": st.st_mtime_ns, "size": st.st_size}
+    return twin
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--lst", required=True, type=Path, help="input graft list")
-    ap.add_argument("--out", required=True, type=Path, help="rewritten graft list")
+    ap.add_argument("--lst", type=Path, help="input graft list")
+    ap.add_argument("--out", type=Path, help="rewritten graft list")
+    ap.add_argument("--file", type=Path, help="single-file mode: print twin (or original) path")
     ap.add_argument("--cache", required=True, type=Path, help="stripped-twin cache dir")
     ap.add_argument("--objcopy", required=True, help="llvm-objcopy (or prefixed wrapper)")
     args = ap.parse_args()
+    if bool(args.file) == bool(args.lst):
+        ap.error("exactly one of --file or (--lst + --out) required")
 
     args.cache.mkdir(parents=True, exist_ok=True)
+    if args.file:
+        manifest_path = args.cache / MANIFEST
+        try:
+            manifest = json.loads(manifest_path.read_text())
+        except (OSError, ValueError):
+            manifest = {}
+        twin = twin_for(args.file, args.cache, args.objcopy, manifest)
+        manifest_path.write_text(json.dumps(manifest))
+        print(twin if twin else args.file)
+        return 0
+
     manifest_path = args.cache / MANIFEST
     try:
         manifest = json.loads(manifest_path.read_text())

@@ -6,6 +6,7 @@ import atexit
 import fcntl
 import json
 import os
+import shlex
 import shutil
 import signal
 import socket
@@ -594,6 +595,14 @@ class Amd64UefiNetConfig(Amd64UefiConfig):
     """
 
     arch: str = "amd64-uefi-net"
+    # Short settle: every post-boot net assertion goes through
+    # test_net._wait_for_marker, which polls the LIVE log with its own
+    # timeout — nothing reads late markers out of the static _boot_output
+    # capture (boot milestones all fire before the marker). The inherited
+    # 15s idle-settle was pure dead time on this config (measured: guest
+    # self-tests done by +13.4s, last boot output +15.6s, settle then idled
+    # to +30.6s). 2s keeps a minimal post-marker health window.
+    desktop_settle_seconds: float = 2.0
     # Guest-side TCP echo port the netstack self-test listens on (M2+).
     ECHO_GUEST_PORT: int = 7777
     # Host port forwarded to the guest echo port; allocated in qemu_args().
@@ -643,6 +652,8 @@ class I386UefiNetConfig(I386UefiConfig):
     """
 
     arch: str = "i386-uefi-net"
+    # See Amd64UefiNetConfig: marker tests poll the live log; idle-settle is dead time.
+    desktop_settle_seconds: float = 2.0
     ECHO_GUEST_PORT: int = 7777
     echo_hostfwd_port: int = 0
     TDI_SRV_GUEST_PORT: int = 8888
@@ -938,6 +949,41 @@ class QemuVM:
             )
         return ["-fw_cfg", f"name=opt/org.vibeos.tripwire,string={cfg}"]
 
+    def _extra_qemu_args(self) -> list[str]:
+        """VIBEOS_QEMU_EXTRA_ARGS=<raw qemu args> appends arbitrary devices/options to
+        the boot (shlex-split). Intended for device-bring-up rigs (usb-kbd, usb-tablet,
+        usb-ehci, ...) without editing arch configs. CAVEAT (windows-host backend): file
+        paths inside these args are NOT staged/rewritten to Windows paths — reference
+        only harness-managed backends (e.g. drive=scratch) or non-file devices, or use
+        VIBEOS_QEMU_USB_DISK for a staged USB disk."""
+        raw = os.environ.get("VIBEOS_QEMU_EXTRA_ARGS", "").strip()
+        if not raw:
+            return []
+        return shlex.split(raw)
+
+    def _usb_disk_args(self) -> list[str]:
+        """VIBEOS_QEMU_USB_DISK=1 attaches an EHCI controller + usb-storage device backed
+        by a fresh 64M qcow2 next to the scratch disk (usbstor bring-up rig). The drive
+        path lives beside scratch_path so the windows-host backend stages it like any
+        other media (route through be.stage_media_paths there, same as scratch)."""
+        if os.environ.get("VIBEOS_QEMU_USB_DISK", "").strip() not in ("1", "true", "yes"):
+            return []
+        usb_disk = self.scratch_path.parent / "usbdisk.qcow2"
+        if not usb_disk.exists():
+            subprocess.run(
+                ["qemu-img", "create", "-f", "qcow2", str(usb_disk), "64M"],
+                check=True,
+                capture_output=True,
+            )
+        return [
+            "-device",
+            "usb-ehci,id=xehci",
+            "-drive",
+            f"file={usb_disk},format=qcow2,if=none,id=usbstor0",
+            "-device",
+            "usb-storage,bus=xehci.0,drive=usbstor0",
+        ]
+
     def _set_live_tee(self) -> None:
         """Tee serial to a predictable per-arch live log (`tail -f`). Truncated per session."""
         self.live_log_path = LIVE_LOG_DIR / f"{self.config.arch}_smoke_live.log"
@@ -967,7 +1013,9 @@ class QemuVM:
             "-serial",
             "chardev:ser0",
             *self._scratch_device_args(),
+            *self._usb_disk_args(),
             *self._tripwire_args(),
+            *self._extra_qemu_args(),
             "-monitor",
             "none",
             *self._gdb_args(win_stack=False),
@@ -1090,7 +1138,9 @@ class QemuVM:
             "-serial",
             "chardev:ser0",
             *be.stage_media_paths(self._scratch_device_args(), staging),
+            *be.stage_media_paths(self._usb_disk_args(), staging),
             *self._tripwire_args(),
+            *self._extra_qemu_args(),
             "-monitor",
             "none",
             # debugcon = x86 ISA port 0xE9, absent on the arm64 `virt` machine

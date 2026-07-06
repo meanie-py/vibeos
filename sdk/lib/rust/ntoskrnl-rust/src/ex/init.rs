@@ -12,7 +12,8 @@ use ntkrnl_sys::interlocked::*;
 
 // Use actual definitions, not extern declarations (lto=false splits them)
 use crate::ke::krnlinit::{KeLoaderBlock, KiServiceLimit};
-use crate::ke::clock::KeMaximumIncrement;
+use crate::ke::clock::{KeMaximumIncrement, KeBootTime, KeBootTimeBias};
+use crate::ex::time::{ExpLastTimeZoneBias, ExpAltTimeZoneBias, ExpTimeZoneBias};
 use crate::ke::processor::KeNumberProcessors;
 use crate::ke::procobj::{KeServiceDescriptorTable, KeServiceDescriptorTableShadow};
 
@@ -41,6 +42,8 @@ use ntkrnl_sys::ddk::{
     RtlCreateUserProcess, RtlDeNormalizeProcessParams, RtlFindMessage,
     RtlInitializeRangeListPackage,
     HalInitSystem, HalReportResourceUsage,
+    HalQueryRealTimeClock, RtlTimeFieldsToTime, KeSetSystemTime,
+    ExLocalTimeToSystemTime, ZwSetSystemTime,
     CmGetSystemControlValues, CmInitSystem1,
     CcInitializeCacheManager, CcPfInitializePrefetcher,
     IoInitSystem, LpcInitSystem, DbgkInitialize,
@@ -110,7 +113,6 @@ extern "system" {
     static MmSectionObjectType: PVOID;
     static mut CmNtGlobalFlag: ULONG;
     static mut SharedUserData: *mut _KUSER_SHARED_DATA;
-    static mut ExpLastTimeZoneBias: ULONG;
     static mut ExpTimeRefreshLock: ERESOURCE;
     static mut ExpEnvironmentLock: FAST_MUTEX;
     static mut ExpFirmwareTableProviderListHead: LIST_ENTRY;
@@ -1311,8 +1313,76 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     InbvUpdateProgressBar(15);
 
+    // Query the RTC and seed the system time — the C original's "Query the
+    // clock" block (ntoskrnl/ex/init.c: `if ((ExCmosClockIsSane) &&
+    // (HalQueryRealTimeClock(&TimeFields)))`). This was dropped in
+    // translation, so SystemTime accumulated from 0 == 1601-01-01 on every
+    // boot (found via the arm64 tray clock stuck at "12:00 AM", 2026-07-06).
+    // The Y2K "YEAR=" command-line hack is intentionally not carried over.
+    if ExCmosClockIsSane != 0 && HalQueryRealTimeClock(core::ptr::addr_of_mut!(TimeFields)) != 0 {
+        RtlTimeFieldsToTime(
+            core::ptr::addr_of_mut!(TimeFields),
+            core::ptr::addr_of_mut!(SystemBootTime) as *mut ntkrnl_sys::ddk::_LARGE_INTEGER,
+        );
+        UniversalBootTime = SystemBootTime;
+
+        // Check if real time is GMT
+        if ExpRealTimeIsUniversal == 0 {
+            // Check if we don't have a valid bias
+            if ExpLastTimeZoneBias == 0xFFFFFFFF {
+                ResetBias = 1;
+                ExpLastTimeZoneBias = ExpAltTimeZoneBias;
+            }
+
+            // Calculate the bias in seconds
+            ExpTimeZoneBias.QuadPart = (ExpLastTimeZoneBias as i32 as i64 * 60) * 10000000;
+
+            // Set the boot time-zone bias
+            (*SharedUserData).TimeZoneBias.High2Time = ExpTimeZoneBias.u.HighPart;
+            (*SharedUserData).TimeZoneBias.LowPart = ExpTimeZoneBias.u.LowPart;
+            (*SharedUserData).TimeZoneBias.High1Time = ExpTimeZoneBias.u.HighPart;
+
+            // Convert the boot time to local time, and set it
+            UniversalBootTime.QuadPart = SystemBootTime.QuadPart + ExpTimeZoneBias.QuadPart;
+        }
+
+        // Update the system time and notify the system
+        KeSetSystemTime(
+            core::ptr::addr_of_mut!(UniversalBootTime) as *mut ntkrnl_sys::ddk::_LARGE_INTEGER,
+            core::ptr::addr_of_mut!(OldTime) as *mut ntkrnl_sys::ddk::_LARGE_INTEGER,
+            0u8,
+            core::ptr::null_mut(),
+        );
+        PoNotifySystemTimeSet();
+
+        // Remember this as the boot time
+        KeBootTime = UniversalBootTime;
+        KeBootTimeBias = 0;
+    }
+
     LastTzBias = ExpLastTimeZoneBias;
     ExRefreshTimeZoneInformation(core::ptr::addr_of!(SystemBootTime) as *mut ntkrnl_sys::ddk::_LARGE_INTEGER);
+
+    // Post-refresh bias handling — also from the C original: a reset bias
+    // re-derives UTC boot time from local time; a changed timezone re-syncs
+    // via ZwSetSystemTime.
+    if ResetBias != 0 {
+        ExLocalTimeToSystemTime(
+            core::ptr::addr_of_mut!(SystemBootTime) as *mut ntkrnl_sys::ddk::_LARGE_INTEGER,
+            core::ptr::addr_of_mut!(UniversalBootTime) as *mut ntkrnl_sys::ddk::_LARGE_INTEGER,
+        );
+        KeBootTime = UniversalBootTime;
+        KeBootTimeBias = 0;
+
+        KeSetSystemTime(
+            core::ptr::addr_of_mut!(UniversalBootTime) as *mut ntkrnl_sys::ddk::_LARGE_INTEGER,
+            core::ptr::addr_of_mut!(OldTime) as *mut ntkrnl_sys::ddk::_LARGE_INTEGER,
+            0u8,
+            core::ptr::null_mut(),
+        );
+    } else if LastTzBias != ExpLastTimeZoneBias {
+        ZwSetSystemTime(core::ptr::null_mut(), core::ptr::null_mut());
+    }
 
     if FsRtlInitSystem() == 0 {
         KeBugCheck(0x45);

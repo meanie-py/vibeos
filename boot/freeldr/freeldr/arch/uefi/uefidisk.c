@@ -1290,7 +1290,10 @@ UefiInitializeBootDevices(VOID)
     ULONG Signature;
     ULONG i;
 
-    DiskReadBufferSize = EFI_PAGE_SIZE;
+    /* 1MB, not EFI_PAGE_SIZE: every ReadBlocks call is a full firmware ATAPI
+     * round trip; 4KB chunks meant ~9000 calls for the ~35MB boot set.
+     * (Mirror of the live Rust uefidisk.rs — this file is out of the build.) */
+    DiskReadBufferSize = 1024 * 1024;
     DiskReadBuffer = NULL;
     DiskReadBufferRaw = NULL;
     DiskReadBufferAlignment = 1;

@@ -33,7 +33,21 @@ BOOT_SIZE_MB=280
 # populate call idempotent (harmless on a fresh image, overwrite on refresh)
 # — zero list drift vs the full build path (same calls run either way).
 REFRESH=""
-RMC() { mcopy -o -i "$RAMDISK_IMG" "$@"; }
+
+# Stage debug-stripped PE twins into the ramdisk (same rationale as the livecd
+# strip pass in boot/boot_images.cmake): DWARF sections are never mapped, and
+# they'd bloat the ramdisk ~3x. The strip tool prints the twin path for PE
+# files with debug sections, or the original path otherwise; it HARD-FAILS on
+# a strip error (never silently stages an unstripped file).
+STRIP_CACHE="$BUILD_DIR/boot/stripped"
+STRIP_OBJCOPY="$PROJECT_DIR/.build-tools/llvm-mingw/bin/llvm-objcopy"
+RMC() {
+    local src
+    src="$(python3 "$PROJECT_DIR/tools/strip_cd_media.py" --file "$1" \
+            --cache "$STRIP_CACHE" --objcopy "$STRIP_OBJCOPY")" || exit 1
+    shift
+    mcopy -o -i "$RAMDISK_IMG" "$src" "$@"
+}
 
 # Parse arguments
 for arg in "$@"; do

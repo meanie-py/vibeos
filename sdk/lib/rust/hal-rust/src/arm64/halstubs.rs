@@ -481,10 +481,47 @@ pub unsafe extern "system" fn HalQueryDisplayParameters(
     }
 }
 
+/// QEMU virt PL031 RTC: DR register at +0x00 holds seconds since the Unix
+/// epoch (UTC). Lazily mapped, same pattern as `ecam_bus0_va`.
+const PL031_BASE: u64 = 0x0901_0000;
+static PL031_VA: AtomicUsize = AtomicUsize::new(0);
+const PL031_VA_NONE: usize = usize::MAX;
+
+unsafe fn pl031_va() -> *mut u32 {
+    let cached = PL031_VA.load(Ordering::Acquire);
+    if cached == PL031_VA_NONE {
+        return core::ptr::null_mut();
+    }
+    if cached != 0 {
+        return cached as *mut u32;
+    }
+    let va = unsafe {
+        ddk::MmMapIoSpace(
+            phys(PL031_BASE),
+            0x1000,
+            ddk::_MEMORY_CACHING_TYPE_MmNonCached as _,
+        )
+    } as *mut u32;
+    if va.is_null() {
+        PL031_VA.store(PL031_VA_NONE, Ordering::Release);
+        return core::ptr::null_mut();
+    }
+    PL031_VA.store(va as usize, Ordering::Release);
+    va
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalQueryRealTimeClock(Time: ddk::PTIME_FIELDS) -> ddk::BOOLEAN {
+    if Time.is_null() {
+        return TRUE;
+    }
+
     unsafe {
-        if !Time.is_null() {
+        let rtc = pl031_va();
+        if rtc.is_null() {
+            // No PL031 (or MmMapIoSpace not up yet) — be loud, then fall back
+            // to a fixed date so callers still get *a* sane time.
+            DbgPrint(b"[HAL] HalQueryRealTimeClock: PL031 unavailable, using fallback date\n\0".as_ptr());
             (*Time).Year = 2025;
             (*Time).Month = 1;
             (*Time).Day = 1;
@@ -493,7 +530,32 @@ pub unsafe extern "system" fn HalQueryRealTimeClock(Time: ddk::PTIME_FIELDS) -> 
             (*Time).Second = 0;
             (*Time).Milliseconds = 0;
             (*Time).Weekday = 0;
+            return TRUE;
         }
+
+        let secs = core::ptr::read_volatile(rtc) as u64; // seconds since 1970-01-01 UTC
+
+        let days = secs / 86_400;
+        let rem = secs % 86_400;
+        (*Time).Hour = (rem / 3600) as i16;
+        (*Time).Minute = ((rem % 3600) / 60) as i16;
+        (*Time).Second = (rem % 60) as i16;
+        (*Time).Milliseconds = 0;
+        (*Time).Weekday = ((days + 4) % 7) as i16; // 1970-01-01 was a Thursday
+
+        // Civil-date conversion (Howard Hinnant's algorithm), epoch 1970-01-01.
+        let z = days as i64 + 719_468;
+        let era = z.div_euclid(146_097);
+        let doe = z.rem_euclid(146_097) as u64;          // [0, 146096]
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365; // [0, 399]
+        let y = yoe as i64 + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+        let mp = (5 * doy + 2) / 153;                      // [0, 11]
+        let d = doy - (153 * mp + 2) / 5 + 1;              // [1, 31]
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };     // [1, 12]
+        (*Time).Year = (if m <= 2 { y + 1 } else { y }) as i16;
+        (*Time).Month = m as i16;
+        (*Time).Day = d as i16;
     }
 
     TRUE
