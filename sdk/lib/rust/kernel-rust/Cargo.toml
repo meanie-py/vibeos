@@ -17,6 +17,7 @@ lpc-rust = { path = "../lpc-rust" }
 fsrtl-rust = { path = "../fsrtl-rust" }
 dbgk-rust = { path = "../dbgk-rust" }
 wmi-rust = { path = "../wmi-rust" }
+cc-rust = { path = "../cc-rust" }
 cmboot-rust = { path = "../cmboot-rust" }
 ntprintf = { path = "../ntprintf" }
 ntprintf_w = { path = "../ntprintf_w" }

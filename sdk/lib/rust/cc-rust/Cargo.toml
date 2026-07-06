@@ -1,0 +1,20 @@
+# cc-rust — the Cache Controller (Cc*), extracted from ntoskrnl-rust into its own
+# rlib so it type-checks/codegens/caches independently of the ~450K-LOC kernel
+# monolith (crate-split Phase 1b — see docs/engineering/ntoskrnl-crate-split-plan.md).
+# Pure Cc* logic on the ntkrnl-sys FFI substrate + the dbgprint-rust print macros;
+# zero deps on the rest of ntoskrnl-rust (all inter-module calls cross extern/
+# #[no_mangle] symbol boundaries resolved at the kernel link). Its objects bundle
+# into libkernel_rust.a via `extern crate cc_rust` in the kernel-rust umbrella (a
+# Cargo dep alone would compile the rlib but drop its #[no_mangle] symbols — same
+# pattern as lpc-rust / fsrtl-rust).
+[package]
+name = "cc-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+dbgprint-rust = { path = "../dbgprint-rust" }

@@ -186,6 +186,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "cdfs-rust"
 version = "0.1.0"
 dependencies = [
@@ -751,6 +759,7 @@ dependencies = [
 name = "kernel-rust"
 version = "0.1.0"
 dependencies = [
+ "cc-rust",
  "cmboot-rust",
  "dbgk-rust",
  "fsrtl-rust",
