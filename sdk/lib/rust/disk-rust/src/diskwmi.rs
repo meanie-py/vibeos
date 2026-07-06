@@ -50,7 +50,16 @@ extern "system" {
     fn ExFreePool(P: *mut core::ffi::c_void);
 }
 extern "system" {
+    // Real stdcall NTAPI (resolves to the ntoskrnl export; called at line ~854).
     fn KeFlushIoBuffers(Mdl: *mut core::ffi::c_void, ReadOperation: i32, DmaOperation: i32) -> i32;
+}
+// These are all C macros / FORCEINLINEs shimmed as cdecl functions in
+// ddk_shims.rs (extern "C"). The block MUST be extern "C": on i386 an
+// extern "system" decl decorates them stdcall (`_Name@N`) and fails to link
+// against the cdecl defs (`_Name`) — REVERSE_BYTES/GetSrbScsiData surfaced as
+// `undefined _REVERSE_BYTES@8`/`_GetSrbScsiData@24`. No-op on amd64/arm64
+// where system==C. (verify_ffi FFI-ABI-mismatch class; field manual §ABI.)
+extern "C" {
     fn REVERSE_BYTES(Dst: *mut u8, Src: *const u8);
     fn PAGED_CODE();
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
@@ -58,15 +67,9 @@ extern "system" {
     fn TEST_FLAG(value: u8, flag: u8) -> bool;
     fn SET_FLAG(var: &mut u32, flag: u32);
     fn CLEAR_FLAG(var: &mut u32, flag: u32);
+    fn GetSrbScsiData( srbEx: PSTORAGE_REQUEST_BLOCK, cdbLength8: *mut UCHAR, cdbLength32: *mut ULONG, cdb10: *mut UCHAR, senseBuffer: *mut PVOID, senseBufferLength: *mut UCHAR, );
     fn SetSrbScsiData( srbEx: PSTORAGE_REQUEST_BLOCK, cdbLength8: UCHAR, cdbLength32: ULONG, cdb10: UCHAR, senseBuffer: PVOID, senseBufferLength: UCHAR, );
     fn DiskIsValidSmartSelfTest(Subcommand: u8) -> BOOLEAN;
-}
-
-// GetSrbScsiData is defined `extern "C"` in ddk_shims.rs — its decl must match
-// that decoration (i386 was declaring it `extern "system"` → undefined
-// `_GetSrbScsiData@24`; the C def emits the cdecl `_GetSrbScsiData`). 2026-07-06.
-extern "C" {
-    fn GetSrbScsiData( srbEx: PSTORAGE_REQUEST_BLOCK, cdbLength8: *mut UCHAR, cdbLength32: *mut ULONG, cdb10: *mut UCHAR, senseBuffer: *mut PVOID, senseBufferLength: *mut UCHAR, );
 }
 extern "system" {
     fn IoGetIoPriorityHint(Irp: PIRP) -> u32;

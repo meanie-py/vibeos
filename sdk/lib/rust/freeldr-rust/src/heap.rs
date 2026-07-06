@@ -54,7 +54,7 @@ pub unsafe fn REDZONE_SIZE(b: PHEAP_BLOCK) -> *mut u64 {
 pub unsafe fn REDZONE_LOW(b: PHEAP_BLOCK) -> *mut u64 { (REDZONE_SIZE(b)).add(1) }
 #[allow(non_snake_case)] #[inline(always)]
 pub unsafe fn REDZONE_HI(b: PHEAP_BLOCK) -> *mut u64 {
-    ((*b).Data.as_ptr() as *mut u8).add(16 + *REDZONE_SIZE(b) as usize) as *mut u64
+    ((*b).Data.as_ptr() as *mut u8).add(16 + *REDZONE_SIZE(b) as usize) as *mut u64 // nolint: magic-offset (freeldr heap redzone layout, crate-local struct)
 }
 #[no_mangle]
 pub static mut FrLdrDefaultHeap: PVOID = core::ptr::null_mut();

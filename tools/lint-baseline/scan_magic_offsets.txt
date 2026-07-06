@@ -1,0 +1,20 @@
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1087: let p = (self as *const _ as *const u8).add(pfn_offsets_orig_pte::ORIGINAL_PTE);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1093: let p = (self as *mut _ as *mut u8).add(pfn_offsets_orig_pte::ORIGINAL_PTE);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1403: let p = (pfn as *mut u8).add(pfn_offsets::PTE_ADDRESS);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1411: let p = (pfn as *const u8).add(pfn_offsets::PTE_ADDRESS);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1972: let p = (self as *const _ as *const u8).add(pfn_offsets_extra::NEXT_LRU);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1978: let p = (self as *mut _ as *mut u8).add(pfn_offsets_extra::NEXT_LRU);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1985: let p = (self as *const _ as *const u8).add(pfn_offsets_extra::PREVIOUS_LRU);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1991: let p = (self as *mut _ as *mut u8).add(pfn_offsets_extra::PREVIOUS_LRU);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:2004: let p = (self as *const _ as *const u8).add(pfn_offsets_extra::RMAP_LIST_HEAD);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:2010: let p = (self as *mut _ as *mut u8).add(pfn_offsets_extra::RMAP_LIST_HEAD);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:920: let p = (self as *const _ as *const u8).add(pfn_offsets::PTE_ADDRESS);
+[U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:926: let p = (self as *mut _ as *mut u8).add(pfn_offsets::PTE_ADDRESS);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1007: let refcount_ptr = (pfn as *mut u8).add(U3_OFFSET) as *mut i16;
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1288: let p = (pfn as *const u8).add(MMPFN_ORIGINAL_PTE_OFFSET);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1295: let p = (pfn as *mut u8).add(MMPFN_ORIGINAL_PTE_OFFSET);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1302: (pfn as *mut u8).add(MMPFN_ORIGINAL_PTE_OFFSET) as PMMPTE
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1308: let p = (pfn as *const u8).add(MMPFN_ORIGINAL_PTE_OFFSET);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1315: let p = (pfn as *mut u8).add(MMPFN_ORIGINAL_PTE_OFFSET);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1363: let p = (pfn as *const u8).add(MMPFN_U3_OFFSET + 2);
+[U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1370: let p = (pfn as *mut u8).add(MMPFN_U3_OFFSET + 2);

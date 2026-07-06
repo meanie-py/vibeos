@@ -471,6 +471,13 @@ unsafe fn KiSwapThreadImpl(
 
     NextThread = (*Prcb).NextThread;
     if !NextThread.is_null() {
+        // ARM64-only, mirrors C #ifdef _M_ARM64 (ntoskrnl/ke/thrdschd.c KiSwapThread):
+        // arm64 lacks working HalRequestSoftwareInterrupt, so a stale Prcb->NextThread
+        // is never re-dispatched via a DISPATCH software interrupt and a higher-priority
+        // ready thread (e.g. queued by NtYieldExecution) can be starved — re-select the
+        // true highest here. NOT drift: x86's software interrupt keeps this invariant so
+        // the branch never fires there. Removable once arm64 has real software-interrupt
+        // preemption — see docs/engineering/arm64-interrupts-quest.md.
         #[cfg(target_arch = "aarch64")]
         {
             if (*Prcb).ReadySummary != 0 {
@@ -823,6 +830,13 @@ pub unsafe extern "system" fn NtYieldExecution() -> NTSTATUS {
         KiAcquireThreadLock(Thread);
         KiAcquirePrcbLock(Prcb);
 
+        // ARM64-only, mirrors C #ifdef _M_ARM64 (ntoskrnl/ke/thrdschd.c): without a
+        // working HalRequestSoftwareInterrupt, the thread NtYieldExecution just queued
+        // could lose to a stale Prcb->NextThread of lower priority — drop the stale
+        // NextThread so the reselect below picks the true highest. NOT drift: x86's
+        // software interrupt makes this unnecessary (the branch never fires). Removable
+        // once arm64 has real software-interrupt preemption — see
+        // docs/engineering/arm64-interrupts-quest.md.
         #[cfg(target_arch = "aarch64")]
         {
             if !(*Prcb).NextThread.is_null() && (*Prcb).ReadySummary != 0 {

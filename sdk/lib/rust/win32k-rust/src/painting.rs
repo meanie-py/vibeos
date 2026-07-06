@@ -18,8 +18,8 @@ pub const FW_COMPLETED: u32 = 0;
 const HRGN_WINDOW: HRGN = 1 as HRGN;
 const PRGN_WINDOW: PREGION = 1 as PREGION;
 
-// DC_NC (nc.h NC_DoNCPaint flag).
-const DC_NC: u32 = 0x0001;
+// DC_NC (winuser.h: DC_CAPTION|DC_FRAME = 0x900C).
+const DC_NC: u32 = DC_CAPTION | DC_FRAME;
 
 // USERTAG pool tag ('lwsU').
 const USERTAG_WINDOWLIST: u32 = u32::from_le_bytes(*b"Uswl");
@@ -501,6 +501,7 @@ unsafe extern "fastcall" fn IntGetNCUpdateRgn(Window: PWND, Validate: i32) -> HR
 
             if IntEqualRect(&mut window as *mut _ as _, &mut update as *mut _ as _) != 0 {
                 GreDeleteObject((hRgnNonClient as _));
+                GreDeleteObject((hRgnWindow as _));
                 return HRGN_WINDOW;
             }
         }
@@ -585,7 +586,6 @@ unsafe extern "fastcall" fn co_IntPaintWindows(mut Wnd: PWND, Flags: ULONG, Recu
             if head_pti(Wnd) == PsGetCurrentThreadWin32Thread() as _ {
                 if ((*Wnd).state & WNDS_SENDNCPAINT) != 0 {
                     TempRegion = IntGetNCUpdateRgn(Wnd, 1);
-
                     IntSendNCPaint(Wnd, TempRegion);
 
                     if TempRegion > HRGN_WINDOW && GreIsHandleValid((TempRegion as _)) != 0 {
@@ -2593,8 +2593,12 @@ unsafe extern "system" fn UserDrawCaptionText(
     GreGetTextExtentExW(
         hDc,
         (*Text).Buffer,
-        (((*Text).Length / core::mem::size_of::<u16>() as u16) as i32).try_into().unwrap(),
-        (r.right - r.left).try_into().unwrap(),
+        ((*Text).Length / core::mem::size_of::<u16>() as u16) as ULONG,
+        // C-exact: a negative width (narrow caption after the sysmenu
+        // adjustments above) wraps to a huge ULONG MaxExtent — "everything
+        // fits" — exactly like the C implicit INT->ULONG conversion.
+        // try_into().unwrap() here panicked the kernel on narrow captions.
+        (r.right - r.left) as ULONG,
         core::ptr::addr_of_mut!(fit),
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(Size),
@@ -2619,7 +2623,8 @@ unsafe extern "system" fn UserDrawCaptionText(
             ETO_CLIPPED,
             lpRc as *mut RECTL,
             (*Text).Buffer,
-            Length.try_into().unwrap(),
+            // C-exact: implicit ULONG->INT truncation, never a panic.
+            Length as INT,
         );
     } else {
         DrawTextW(
@@ -2930,11 +2935,14 @@ pub unsafe extern "stdcall" fn NtUserDrawCaptionTemp(
                 Ret = 1;
                 if uFlags & DC_DRAWCAPTIONMD != 0 {
                     ERR!(b"NC Caption Mode\n\0".as_ptr() as *const core::ffi::c_char);
-                    UserDrawCaptionBar(pWnd, hDC, uFlags.try_into().unwrap());
+                    // C-exact UINT->INT: uFlags is user-controlled (syscall
+                    // param) — try_into().unwrap() was a user-triggerable
+                    // kernel panic on uFlags >= 0x80000000.
+                    UserDrawCaptionBar(pWnd, hDC, uFlags as _);
                     break 'block;
                 } else if uFlags & DC_DRAWFRAMEMD != 0 {
                     ERR!(b"NC Paint Mode\n\0".as_ptr() as *const core::ffi::c_char);
-                    NC_DoNCPaint(pWnd, hDC, uFlags.try_into().unwrap());
+                    NC_DoNCPaint(pWnd, hDC, uFlags as _); // same: user-controlled uFlags
                     break 'block;
                 }
             }

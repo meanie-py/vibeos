@@ -918,6 +918,22 @@ class QemuVM:
             ),
         ]
 
+    def _tripwire_args(self) -> list[str]:
+        """vibeos tripwire channel: VIBEOS_TRIPWIRE=<cfg> injects per-boot kernel
+        debug knobs (e.g. SPECIALPOOL=Gla5) via QEMU fw_cfg — no media rebuild.
+        The kernel reads opt/org.vibeos.tripwire in MmArmInitSystem Phase 0
+        (ntoskrnl-rust src/tripwire.rs). Space/semicolon-separated KEY=VAL tokens;
+        commas are forbidden (QEMU's -fw_cfg parser owns the comma)."""
+        cfg = os.environ.get("VIBEOS_TRIPWIRE", "").strip()
+        if not cfg:
+            return []
+        if "," in cfg:
+            raise ValueError(
+                f"VIBEOS_TRIPWIRE must not contain commas (got {cfg!r}); "
+                "use spaces or semicolons between KEY=VAL tokens"
+            )
+        return ["-fw_cfg", f"name=opt/org.vibeos.tripwire,string={cfg}"]
+
     def _set_live_tee(self) -> None:
         """Tee serial to a predictable per-arch live log (`tail -f`). Truncated per session."""
         self.live_log_path = LIVE_LOG_DIR / f"{self.config.arch}_smoke_live.log"
@@ -947,6 +963,7 @@ class QemuVM:
             "-serial",
             "chardev:ser0",
             *self._scratch_device_args(),
+            *self._tripwire_args(),
             "-monitor",
             "none",
             *self._gdb_args(win_stack=False),
@@ -1069,6 +1086,7 @@ class QemuVM:
             "-serial",
             "chardev:ser0",
             *be.stage_media_paths(self._scratch_device_args(), staging),
+            *self._tripwire_args(),
             "-monitor",
             "none",
             # debugcon = x86 ISA port 0xE9, absent on the arm64 `virt` machine

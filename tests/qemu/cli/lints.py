@@ -214,6 +214,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Hand-written numeric struct offsets (the MMPFN pfn_offsets shift + the
+    # KTHREAD.Teb 0x1e8 class, both real kernel bugs 2026-07-05). verify_offsets
+    # proves bindgen DECLS match C; this catches USAGE-site numerology — byte
+    # arithmetic into structs that should be core::mem::offset_of!(bindgen, f).
+    # Stock (~47) is the conversion work queue; baseline gates NEW only.
+    smo = repo / "tools" / "scan_magic_offsets.py"
+    specs.append(
+        (
+            "scan_magic_offsets",
+            [py, str(smo), "--lint"] if smo.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # NOTE: scan_bind_all_matches (bind-all match-arm detector) is intentionally
     # NOT wired here yet. It runs `cargo check` in a SEPARATE cold target dir
     # (to avoid force-warn polluting the shared cache), which cold-triggers
@@ -227,6 +240,7 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # cargo-cache invalidation) or teach reactos-link's build.rs to degrade to a
     # no-op under a check-only scan — then wire it here as a strict 0-baseline.
     # The bind-all *fixes* themselves are already in the tree and compile-verified.
+
     return specs
 
 

@@ -1772,7 +1772,7 @@ pub unsafe extern "C" fn _ILCreateFromFindDataW(wfd: *const WIN32_FIND_DATAW) ->
         );
         // memcpy(fsw->wszName(+20), wfd->cFileName, wlen*sizeof(WCHAR))
         r_memcpy(
-            fsw.add(20),
+            fsw.add(20), // nolint: magic-offset (Wine FileStructW layout, matches Wine C)
             addr_of!((*wfd).cFileName) as *const u8,
             (wlen * 2) as usize,
         );
@@ -1991,7 +1991,7 @@ pub unsafe extern "C" fn _ILSimpleGetTextW(pidl: LPCITEMIDLIST, szOut: LPWSTR, u
     let p_file_struct_w = _ILGetFileStructW(pidl);
 
     if !p_file_struct_w.is_null() {
-        let wsz_name = (p_file_struct_w as *const u8).add(20) as *const WCHAR; // FileStructW.wszName
+        let wsz_name = (p_file_struct_w as *const u8).add(20) as *const WCHAR; // FileStructW.wszName // nolint: magic-offset (Wine FileStructW layout, matches Wine C)
         lstrcpynW(szOut, wsz_name, uOutSize as INT);
         dw_return = lstrlenW(wsz_name) as DWORD;
     } else {

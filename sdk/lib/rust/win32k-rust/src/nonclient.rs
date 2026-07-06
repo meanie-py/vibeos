@@ -1371,7 +1371,9 @@ unsafe extern "C" fn UserDrawCaptionBar(pWnd: PWND, hDC: HDC, mut Flags: INT) {
 #[no_mangle]
 unsafe extern "C" fn NC_DoNCPaint(pWnd: PWND, hDC: HDC, mut Flags: INT) -> LRESULT {
 
-    const DC_NC: DWORD = DC_FRAME | DC_ACTIVE;
+    // winuser.h: DC_NC = DC_CAPTION | DC_FRAME (0x900C). The translation had
+    // invented DC_FRAME|DC_ACTIVE here, dropping caption icon/text/buttons.
+    const DC_NC: DWORD = DC_CAPTION | DC_FRAME;
 
     let Style: DWORD;
     let ExStyle: DWORD;

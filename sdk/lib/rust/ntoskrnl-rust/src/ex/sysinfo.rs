@@ -608,7 +608,7 @@ unsafe fn ExpGetRawSMBiosTable(
     if !Buffer.is_null() {
         if BufferSize >= TableSize {
             // Copy data after the WNODE_ALL_DATA header
-            let src = (AllData as *const u8).add(48 + 16);
+            let src = (AllData as *const u8).add(48 + 16); // nolint: magic-offset (WNODE_ALL_DATA header strip, self-consistent with TableSize)
             RtlMoveMemory(Buffer, src as PVOID, TableSize as usize);
         } else {
             FinalStatus = STATUS_BUFFER_TOO_SMALL;

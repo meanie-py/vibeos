@@ -417,7 +417,7 @@ unsafe fn IopEnumerateDetectedDevices(
                     (*pValueInformation).DataLength as usize,
                 );
                 core::ptr::copy_nonoverlapping(
-                    (ParentBootResources as *const u8).add(HEADER),
+                    (ParentBootResources as *const u8).add(HEADER), // nolint: magic-offset (offset_of!-derived const)
                     (LocalBootResources as *mut u8).add((*pValueInformation).DataLength as usize),
                     ParentBootResourcesLength as usize - HEADER,
                 );
@@ -429,12 +429,12 @@ unsafe fn IopEnumerateDetectedDevices(
                     HEADER,
                 );
                 core::ptr::copy_nonoverlapping(
-                    (ParentBootResources as *const u8).add(HEADER),
-                    (LocalBootResources as *mut u8).add(HEADER),
+                    (ParentBootResources as *const u8).add(HEADER), // nolint: magic-offset (offset_of!-derived const)
+                    (LocalBootResources as *mut u8).add(HEADER), // nolint: magic-offset (offset_of!-derived const)
                     ParentBootResourcesLength as usize - HEADER,
                 );
                 core::ptr::copy_nonoverlapping(
-                    (*pValueInformation).Data.as_ptr().add(HEADER),
+                    (*pValueInformation).Data.as_ptr().add(HEADER), // nolint: magic-offset (offset_of!-derived const)
                     (LocalBootResources as *mut u8).add(ParentBootResourcesLength as usize),
                     (*pValueInformation).DataLength as usize - HEADER,
                 );

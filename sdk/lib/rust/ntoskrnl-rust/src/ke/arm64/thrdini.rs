@@ -68,7 +68,7 @@ pub unsafe extern "system" fn KiInitializeContextThread(
 ) {
     let Thread = opaque_ptr(Thread);
     let StartContext = opaque_ptr(StartContext);
-    let mut InitialStack = ((*Thread).InitialStack as *mut u8).sub(512);
+    let mut InitialStack = ((*Thread).InitialStack as *mut u8).sub(512); // nolint: magic-offset (stack reservation size, mirrors C thrdini)
     InitialStack = (InitialStack as usize & !(15usize)) as *mut u8;
     (*Thread).InitialStack = InitialStack as PVOID;
 
@@ -134,6 +134,34 @@ pub unsafe extern "system" fn KiSwapContextResume(
     let OldProcess = (*OldThread).__bindgen_anon_1.ApcState.Process;
     let NewProcess = (*NewThread).__bindgen_anon_1.ApcState.Process;
 
+    // Interrupt-quest tripwire. Context switches entered with IRQs masked are
+    // ROUTINE on this port (SVC exceptions run DAIF-masked, so every syscall
+    // wait parks a masked context that self-heals at ERET — a known
+    // characteristic, see the arm64-interrupts quest doc). The FATAL shape is
+    // a masked swap performed while the IRQ trap-exit path is retiring DPCs:
+    // its wake chain can hand a brand-new thread a masked DAIF (mitigated by
+    // KiThreadStartup's daifclr, ctxswitch.S) — report it loudly so any
+    // recurrence is diagnosable from serial instead of a silent wedge.
+    {
+        let daif: u64;
+        core::arch::asm!("mrs {0}, daif", out(reg) daif, options(nomem, nostack, preserves_flags));
+        if daif & 0x80 != 0
+            && crate::ke::arm64::trap::KI_IN_IRQ_EXCEPTION_RETIRE
+                .load(core::sync::atomic::Ordering::SeqCst)
+        {
+            static SWAP_MASKED: core::sync::atomic::AtomicU32 =
+                core::sync::atomic::AtomicU32::new(0);
+            if SWAP_MASKED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 8 {
+                crate::dbg_print!(
+                    b"[SWAP-TRIPWIRE] masked KiSwapContext inside IRQ-exit DPC retire! daif=%p old=%p new=%p\n\0",
+                    daif as usize,
+                    OldThread,
+                    NewThread
+                );
+            }
+        }
+    }
+
     if OldProcess != NewProcess {
         KiSwapProcess(NewProcess, OldProcess);
     }
@@ -167,6 +195,16 @@ pub unsafe extern "system" fn KiSwapContextResume(
 #[cfg(target_arch = "aarch64")]
 pub unsafe extern "C" fn KiIdleLoop() -> ! {
     let Prcb = KeGetCurrentPrcb();
+
+    // The idle loop runs at DISPATCH_LEVEL (as on x86/NT): it retires DPCs and
+    // calls KiSwapContext with IRQs enabled, and the IRQ trap-exit DPC-retire
+    // path (KiIrqHandler) keys off IRQL >= DISPATCH to know it must NOT retire
+    // from exception context here — pinning the level closes that race. The
+    // idle thread's WaitIrql is DISPATCH, so swaps back into idle restore it.
+    {
+        let mut OldIrql: KIRQL = 0;
+        KeRaiseIrql(DISPATCH_LEVEL, &mut OldIrql);
+    }
 
     loop {
         core::arch::asm!("msr daifclr, #2");

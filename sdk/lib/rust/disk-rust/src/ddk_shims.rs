@@ -120,6 +120,12 @@ pub unsafe extern "C" fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i
 }
 
 // ---------- macros-as-functions ----------
+// scsi.h REVERSE_BYTES(Dst, Src): reverse 4 bytes (Dst[0]=Src[3]…Dst[3]=Src[0]).
+// A C macro the translator externalized; disk had no def → i386 undefined symbol.
+#[no_mangle] pub unsafe extern "C" fn REVERSE_BYTES(dst: *mut u8, src: *const u8) {
+    *dst = *src.add(3); *dst.add(1) = *src.add(2);
+    *dst.add(2) = *src.add(1); *dst.add(3) = *src;
+}
 #[no_mangle] pub unsafe extern "C" fn PAGED_CODE() {}
 #[no_mangle] pub unsafe extern "C" fn CHECK_IRQL() {}
 #[no_mangle] pub unsafe extern "C" fn NT_ASSERT(_expression: i32) {}
@@ -171,18 +177,6 @@ use crate::types::{PSTORAGE_REQUEST_BLOCK, STORAGE_REQUEST_BLOCK, PSRBEX_DATA,
     PSRBEX_DATA_SCSI_CDB16, PSRBEX_DATA_SCSI_CDB32, PSRBEX_DATA_SCSI_CDB_VAR,
     SRBEX_DATA_SCSI_CDB16, SRBEX_DATA_SCSI_CDB32, SRBEX_DATA_SCSI_CDB_VAR, CDB,
     SRB_FUNCTION_STORAGE_REQUEST_BLOCK, SRB_FUNCTION_EXECUTE_SCSI};
-
-
-// REVERSE_BYTES (storport.h macro) — 4-byte endian reverse. A C macro with no
-// exported symbol; diskwmi.rs declares it `extern "system"` so provide a matching
-// def (i386 was undefined `_REVERSE_BYTES@8`). 2026-07-06.
-#[no_mangle]
-pub unsafe extern "system" fn REVERSE_BYTES(destination: *mut u8, source: *const u8) {
-    *destination.add(3) = *source.add(0);
-    *destination.add(2) = *source.add(1);
-    *destination.add(1) = *source.add(2);
-    *destination.add(0) = *source.add(3);
-}
 
 #[no_mangle]
 pub unsafe extern "C" fn GetSrbScsiData(

@@ -553,6 +553,19 @@ Two adjacent defect classes, found together and best hunted together:
 **Symptom (2026-06-21, user32-rust):** `IS_ATOM(x)` coded `v > 0 && v < 0xC000` with a comment "MAXINTATOM is 0xC000". The C macro (`user32p.h`) is `(x > 0) && (x < 0x10000)` — the upper bound is **0x10000** (high 48 bits clear), NOT `MAXINTATOM`. MAXINTATOM (0xC000) is the *base* of registered-class atoms; they start at 0xC000 and increment. So once the shell registers ~100 window classes, a real class atom (e.g. `0xC06A`) is `>= 0xC000` and `IS_ATOM` returns false → it flows into `RtlInitUnicodeString`, whose `wcslen` derefs the tiny integer → **AV 0xC0000005 in explorer at "taskbar: creating tray window"**, crash-looping the shell post-`shell ready` (so the smoke gate stays green; only the *desktop* is broken). Two copies (`window.rs:42` `User32CreateWindowEx`, `class.rs:111`) had the bug; `message.rs:224` had it right (0x10000). Fixed in `67c9e5849c7`.
 **Why the literal-scanner misses it:** the literal `0xC000` *matches* its naming comment (`MAXINTATOM` really is 0xC000) — so `scan_inline_flag_literals.py` sees a consistent literal/label pair and stays silent. The defect is one level up: the translator picked the **wrong named constant** for an *unnamed* numeric bound in the source (the C `0x10000` had no symbol). This is the residual "correct value, wrong concept" class. **Tell:** a range/threshold compare (`< CONST`, `>= CONST`, `>> N`) where the C original used a bare numeric literal — re-derive the bound from the C, don't trust a plausible-looking named-constant comment. **Cross-arch:** `user32-rust` (and most usermode `*-rust` crates) are cohab'd on all 3 arches, so a usermode-DLL translation bug breaks amd64/i386 identically — it just hides *past* their `shell ready` gate. To see it, boot past the gate and watch for `[UEXC]`/`PspExitThread ExitStatus=0xC0000005`.
 
+### Match arm on an UNDEFINED constant — silently becomes an irrefutable catch-all binding, killing every later arm (win32k WM_CTLCOLOR, 2026-07-05)
+**Symptom:** the entire desktop rendered with **no non-client chrome** (no captions/borders/buttons on any top-level window) and **no taskbar children** (no Start button, no clock), deterministic on all 3 arches, no crash, boot marker green. Root: `IntDefWindowProc`'s `match Msg` in `win32k-rust/src/defwnd.rs` had a `WM_CTLCOLOR => …` arm, but `WM_CTLCOLOR` (a 16-bit-compat windowsx.h macro, 0x19) does **not exist** in the win32k-sys bindgen constants — so Rust parsed it as a **variable-binding pattern that matches every value**. Every message after that arm in the match — WM_SETCURSOR, WM_ERASEBKGND, WM_NCHITTEST, WM_PAINT, WM_SYNCPAINT, WM_WINDOWPOSCHANGING/CHANGED, **WM_NCCALCSIZE, WM_NCACTIVATE, WM_NCPAINT** — was swallowed and returned a garbage brush handle. WM_NCCALCSIZE never inset `rcClient`, so `rcClient == rcWindow` for every window, which (correctly) no-ops all NC painting. Same class found same-day in `ntoskrnl-rust`: `pnpmgr/devaction.rs` (`STATUS_FAILED_DRIVER_ENTRY` arm — not in ntkrnl-sys → catch-all, misclassifying every driver-load failure) and `ke/balmgr.rs` (`STATUS_WAIT_0` arm — not imported → catch-all; benign only because all arms were empty). Related value-typo cousin: `ke/bug.rs` `KERNEL_MODE_EXCEPTION_NOT_HANDLED` defined as 0x1E (dup of KMODE) instead of 0x8E.
+**Why it ships:** compiles and links clean — rustc only emits **warnings** (`unreachable pattern`, "this pattern matches any value", and `variable X should have a snake case name`), which scroll by unread in a 40-crate build.
+**Oracle (cheap, run it):** grep the cargo output of a **clean** build for the fingerprints: `grep -E "matches any value|unreachable pattern|should have a snake case name" full.log`. "matches any value" on a SCREAMING_CASE identifier is ALWAYS this bug. Warm builds only re-emit warnings for recompiled crates — only a `--clean` build sweeps the whole workspace.
+**Fix pattern:** define the missing const locally (with the real header value, e.g. `const WM_CTLCOLOR: UINT = 0x0019;`) or fully qualify the path (`ntkrnl_sys::mm::STATUS_WAIT_0 =>`). When translating any C `switch`, every `case` label MUST resolve to a const in scope — if bindgen lacks it, the translator must emit the const, not trust the bare name.
+**Debug methodology that found it:** serial-marker bisection of the message round-trip (kernel send → user32 callback → app wndproc → DefWindowProc → `NtUserMessageCall` → kernel handler) with one `DbgPrint` per hop — the cut was "dispatch arm entered, handler never called", i.e. *inside one function*, which pointed straight at the match. User-mode `DbgPrint` from user32-rust lands on the same serial as kernel prints — instrument both sides.
+
+### Indexing a bindgen flexible-array extern (`static NAME: [T; 0]`) panics unconditionally (win32k NtGdiMaskBlt, 2026-07-05)
+**Symptom:** deterministic **kernel RUST_PANIC** post-boot-marker (smoke `RUST_PANIC` classification), e.g. `win32k-rust/src/ntbitblt.rs:968` in `NtGdiMaskBlt`, the instant that code path first runs (here: notepad's window paint issuing a masked blit). The panic is a bounds-check: `panic_bounds_check(index, 0)`.
+**Cause:** C `extern UCHAR gajBitsPerFormat[];` (unknown-size array) is emitted by bindgen as `pub static mut gajBitsPerFormat: [UCHAR; 0usize];`. A Rust file that pulls it in via a glob `use xxx_sys::...::*;` and does `gajBitsPerFormat[fmt]` or `.len()` bounds-checks against length **0** → every access panics. The real array is defined (sized) in some *other* Rust module (`surface.rs`: `[u8; 11]`), so files that `use crate::surface::gajBitsPerFormat;` or use `addr_of!`-pointer arithmetic are fine — only the glob-resolved sites are landmines. Same-day sweep of all zero-len bindgen statics (`gajBitsPerFormat`, `DibFunctionsForBitmapFormat`, `StockObjects`, `appalSurfaceDefault`, `gasyscur/gasysico`, `gpDxFuncs`, `KiBugCheckData`, …) found one more live site (`stretchblt.rs` `DibFunctionsForBitmapFormat`); most sites already shadow the extern with a local sized `extern "C"` decl or explicit import.
+**Oracle:** `grep -hE "pub static (mut )?[A-Za-z_0-9]+: \[[^;]*; 0usize\]" sdk/lib/rust/*-sys/src/*.rs` to list the zero-len externs, then for each, check every `NAME[` / `NAME.len()` site: does the file import a real sized definition (or use `addr_of!`), or does it glob-resolve to the `[T;0]` extern? A `panic_bounds_check(_, 0)` in a named kernel fn is this bug.
+**Fix:** `use crate::<realmodule>::NAME;` (the sized definition) at the top of the offending file — a one-liner, minimal blast radius. If no sized Rust definition exists anywhere (symbol is C/asm-only), convert the site to `addr_of!(NAME).cast::<T>().add(i)` pointer access. Also bounds-check explicitly if the index comes from untrusted data (C indexes unchecked — UB there but in practice rejects; Rust must not panic the kernel).
+
 ### `addr_of!(field)` where C passes the pointer-field's VALUE — buffer becomes struct innards (win32k clip-region 0x50, 2026-07-05)
 **Symptom:** master-wide intermittent **BUGCHECK 0x50** post-boot-marker on ~20-25% of amd64 boots, `P1` a paged-pool VA constant across boots, `P4=0` (invalid PTE, `soft_protection == MM_ZERO_ACCESS` — i.e. a never-committed pool page), during explorer taskbar paint. `TrapFrame.Rip` = win32k's own `memcpy`; caller chain `NtGdiGetAppClipBox → GdiGetClipBox → CLIPPING_UpdateGCRegion → IntEngUpdateClipRegion`. On the ~75% of boots where the neighboring pool page happened to be committed: **no crash, silently garbage clip rects** (struct innards copied as RECTLs).
 **Cause:** C `IntEngUpdateClipRegion(&pDC->co, nCount, pDC->prgnRao->Buffer, …)` passes the pointer-typed field's VALUE (PRECTL rect array). The translation passed `core::ptr::addr_of_mut!((*prgnRao).Buffer)` — the address OF the pointer field — so the rect copy sourced from inside the REGION struct and overran its paged-pool allocation by `nCount*16 - remaining` bytes (`cliprgn.rs` CLIPPING_UpdateGCRegion; fixed on master 2026-07-05). Same shape found in cabinet `fci.rs`: `&fci->pv as *mut i32` passed as a callback's `int* err` out-param (Wine C passes a local `&err`) — error writes corrupted the context pointer.
@@ -2250,6 +2263,18 @@ and arm64 are 4-level — a `#[cfg(target_arch = "aarch64")]` that should have b
 `any(x86_64, aarch64)` is an easy translation miss. Grep `MmInitializeProcessAddressSpace`-style
 paging-level blocks for the same drift (see also §9.14 for the sibling Mm PFN-state fix).
 
+**§9.15 addendum (2026-07-05): this drift is SYSTEMIC, not a one-off.** A workspace-wide
+per-arch `#[cfg]` audit (`tools/scan_arch_cfg.py` +
+[`per-arch-cfg-divergence-audit.md`](per-arch-cfg-divergence-audit.md)) found the same
+"4-level PXE block gated to ONE 4-level arch" pattern in **~8 more Mm functions, in both
+directions** — `MiDeleteVirtualAddresses`/`MmProbeAndLockPages`/`MiCalculatePageCommitment`/
+`MiQueryAddressState`/`MiIsEntireRangeCommitted`/`MiMakePdeExistAndMakeValid` drop the PXE
+on **arm64** (x86_64-only), while `MiLock`/`MiUnlockVirtualMemory` drop it on **amd64**
+(aarch64-only). All latent (the top-level entry is usually resident), all the same fix:
+gate the PXE walk/validate/fault-in `any(x86_64, aarch64)`. **Durable rule: any PXE / top-
+level-paging block must be `any(x86_64, aarch64)` — never one 4-level arch alone.** The
+audit tool is the recurring check.
+
 ### 9.16 (FIXED 2026-07-04) arm64 BUGCHECK 0x4E `PFN_LIST_CORRUPT` (subcode 0x99) at `nettest.exe` teardown — arm64's `MiPteToPde` was one self-map recursion level too high (returned the **PPE**), so `MiDeletePte`'s proto branch decremented the page-**directory**'s share instead of the page table's
 
 **RESOLUTION.** The whole `MiPteToX` navigation family was off by one level on aarch64 — in BOTH
@@ -2342,3 +2367,151 @@ source of the "whoever published the wild pointer" above. A full ×3 gate on
 9.17 as *likely-closed-pending-recurrence* rather than confirmed-fixed (it was
 rare to begin with, so one clean gate isn't proof). Re-open with the attribution
 recipe if it recurs.
+
+### 9.18 Special pool is LIVE — arm it per-boot via the fw_cfg tripwire channel (no media rebuild)
+
+**The tool §9.17 asks for exists now (2026-07-05).** Special pool
+(`ARM3/special.rs`) was fully translated but dead — `MmSpecialPoolTag` was
+never set by anything. The tripwire channel arms it per boot:
+
+```bash
+# One suspect tag (as DISPLAYED in pool dumps, e.g. Gla5 / Usqu):
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Gla5"
+# Every eligible allocation (≤ PAGE_SIZE - header) — boots green to desktop:
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=*"
+# Catch underruns instead of overruns:
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Gla5 SPECIALPOOL_UNDERRUNS=1"
+# Prove the detector end-to-end (deliberate corruption => bugcheck):
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Vibe SPECIALPOOL_SELFTEST=guard"    # 0x50 AT the store
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Vibe SPECIALPOOL_SELFTEST=pattern"  # 0xC1/0x23 at free
+```
+
+What you get on a hit, on serial, zero GDB: an overrun past the allocation
+faults the **guard page at the corrupting instruction** — BUGCHECK 0x50 whose
+banner symbolicates `TrapFrame.Rip` to the culprit; in-page slack corruption
+bugchecks 0xC1 at free with case code (0x23 before-buffer / 0x24 after).
+Underrun mode flips data to page start. Serial markers: `[TRIPWIRE] special
+pool armed/ACTIVE` (assert these when scripting; `ERROR:` lines are the
+fail-loud path).
+
+Mechanics: harness passes `-fw_cfg name=opt/org.vibeos.tripwire,string=…`
+(vm.py `_tripwire_args`, env `VIBEOS_TRIPWIRE`); the kernel reads it at
+`MmArmInitSystem` Phase 0 (`ntoskrnl-rust/src/tripwire.rs`) BEFORE PTE sizing
++ `MiInitializeSpecialPool`. Transports: x86 port I/O 0x510/0x511; arm64 MMIO
+0x09020000 (virt) via a Device-attr identity page the arm64 winldr maps
+explicitly (`MempMapDevicePage`) — the signature probe guards non-QEMU.
+Tokens are space/semicolon-separated; **no commas** (QEMU owns the
+comma). Tags are `from_le_bytes` of the display form. Session-pool allocs are
+NOT excluded — win32k allocations divert into (global) special pool, which is
+exactly what the §9.17 / BAD-gate hunts want; watch for session-VA-assumption
+side effects if a hunt behaves oddly.
+
+Pair with the flake farm for rare flakes: `./vibeos-cli farm --arches amd64
+--minutes 480 --tripwire "SPECIALPOOL=*"` soaks boots overnight into
+`~/vibeos-flake-farm/corpus.jsonl` (stop code + symbolicated banner lines per
+failure, artifacts preserved out of /tmp); `./vibeos-cli farm-report` clusters
+failures into ranked (classification, stop, symbol) families.
+
+### 9.19 (FIXED 2026-07-05) arm64 total-silence boot wedge = a context switch LEAKED exception-entry DAIF into a new thread — PSTATE.DAIF is NOT per-thread state
+
+**Symptom:** boot wedges with serial completely silent (no BUGCHECK, no output at
+all — the clock itself has stopped). Wedge point varies run-to-run (first hit:
+right after `[WINLOGON] ARM64: cmd.exe created`). GDB shows the CPU parked with
+`cpsr` DAIF bits ALL set (0x3C0-family = raw exception-entry mask) at a PC below a
+`KiSwapContext` frame.
+
+**Mechanism:** `KiSwapContext` does not save/restore PSTATE — whoever swaps in a
+context hands it their own DAIF. Two facts make this lethal:
+(1) on this port, **SVC handlers run DAIF-masked end-to-end**, so every syscall
+wait parks a masked context (self-healing: it unmasks at ERET back to user);
+(2) a **brand-new thread** (`KiThreadStartup`) inherits the swapper's DAIF and, if
+it's a system thread, never ERETs — so if its first swap-in comes from a
+masked-context wake chain it runs IRQ-masked *forever*. Once enough of the ready
+set is masked, no clock tick ever fires again → machine dead, serial silent.
+Trigger was the interrupt quest's IRQ-exit DPC retirement (`KiIrqHandler` →
+`KiRetireDpcList` → `KiTimerExpiration` → thread wakes rooted in exception
+context); before that, all wake chains were rooted in the idle loop, which
+`daifclr`s before swapping — the landmine was unreachable.
+
+**Fix (layered — the first alone is NOT sufficient):**
+1. `KiThreadStartup` opens with `msr daifclr, #2` (ctxswitch.S) — threads start
+   with IRQs enabled, matching NT. Necessary (closes the new-thread inheritance
+   leak) but empirically insufficient: with exception-context timer wakes still
+   enabled, boot still wedged at thread-lifecycle events (winlogon→cmd handoff
+   on windows-host TCG; `LpcExitThread` during a System-thread exit on native) —
+   masked wake/swap chains break more paths than new-thread startup.
+2. **The IRQ-exit DPC retire excludes timer expiration entirely**
+   (`TimerRequest == 0` guard in `KiIrqHandler`, trap.rs): `KiTimerExpiration` —
+   the thread-wake machinery — must NOT run from exception context on this port
+   until SVC entry re-enables IRQs (arm64-interrupts quest doc, landmine #2).
+   Timer expiration stays with the idle loop (pre-quest semantics); only plain
+   device DPCs retire at IRQ exit.
+
+**Detector left in tree:** masked-swap tripwire in `KiSwapContextResume`
+(thrdini.rs) self-reports `[SWAP-TRIPWIRE]` on serial if a masked swap ever
+happens under the IRQ-exit retire again; the IRQ-exit retire must also use
+`HalpEnterInterruptIrql`/`HalpExitInterruptIrql` (NOT `KeLowerIrql` — its
+soft-interrupt drain delivers APCs in exception context).
+
+**Debug recipe that cracked it** (generalizes to any silent arm64 wedge):
+`RUN=$(qemu/start.sh arm64 --gdb)` → `qemu/wait-for.sh $RUN --pattern <last-line>`
+→ `qemu/inspect.sh $RUN --command regs` — read `cpsr` FIRST: DAIF=0xF means "who
+masked me" (this class), not "what crashed". Then instrument the save side
+(tripwire print in `KiSwapContextResume`) rather than post-morteming the resume side.
+
+### 9.20 (FIXED 2026-07-06) arm64 ISR-queued DPCs never ran at desktop — device-DPC delivery gated on a starved `TimerRequest` flag
+
+**Symptom.** A device ISR fires and `KeInsertQueueDpc` returns 1 (queued), then
+returns 0 forever after (`Dpc->DpcData` non-null = still queued): the DPC never
+runs. Worked fine at DriverEntry time; broke only once the desktop was up.
+First hit: virtio-input's ISR→DPC conversion — mouse IRQs delivered and acked,
+`test_arm64input_delivery` red because the drain DPC never retired.
+
+**Why (three stacked facts, each individually reasonable):**
+1. On this port there were exactly TWO DPC-retire sites: the idle loop
+   (`KiIdleLoop` → `KiRetireDpcList`) and the interrupt quest's IRQ-exception-exit
+   drain (`KiIrqHandler`). The DISPATCH software interrupt is a no-op —
+   `HalpDispatchSoftwareInterrupts` (arm64 halstubs) delivers only the APC bit,
+   so `HalRequestSoftwareInterrupt(DISPATCH_LEVEL)` sets a bit nothing consumes.
+2. At desktop a busy thread that never blocks (a user thread hammering
+   `NtQueryPerformanceCounter` — 75% of PC samples inside hal
+   `KeQueryPerformanceCounter`) starved the idle thread INDEFINITELY. Idle
+   swap-out happened once at boot and it never resumed. Idle-loop retirement: gone.
+3. The IRQ-exit drain was gated on `TimerRequest == 0` (to keep KiTimerExpiration
+   out of exception context — the §9.19 wedge). But `TimerRequest`'s ONLY
+   consumer is `KiRetireDpcList`, i.e. the idle loop — so with idle starved,
+   `TimerRequest` sat non-zero FOREVER (it holds a stale TrapFrame pointer, not
+   a bool!), and the gate turned "timer bookkeeping is stale" into "no device
+   DPC ever runs".
+
+**Fix.** `ke/dpc.rs::KiRetireDeviceDpcs` — drains ONLY `DpcData[DPC_NORMAL]`'s
+list (never touches `TimerRequest`/`KiTimerExpiration`), called from
+`KiIrqHandler` exit with the `TimerRequest == 0` gate REMOVED (guards kept:
+interrupted IRQL < DISPATCH, `DpcRoutineActive == 0`). Device-DPC delivery must
+never depend on timer bookkeeping. Timer expiration itself stays idle-loop-only
+(exception-context KiTimerExpiration still wedges — §9.19 / quest landmine #2).
+
+**Debug recipe (generalizes to "who eats my DPC/why is the queue stuck"):**
+- Rate-limited prints at the three actors: insert result in the ISR, a
+  first-N print in the DPC body, and a "skip-retire: irql=%u active=%u timer=%u
+  depth=%d pc=%p" print in KiIrqHandler when the queue is non-empty but the
+  drain is skipped. The `pc=` of the skip print names the loop the CPU parks
+  in (it's the interrupted context of every IRQ) — one boot pinpointed both the
+  stuck `TimerRequest` and the QPC busy-spinner.
+- `qemu/sample-pc.sh <run-id>` (GDB toolkit) for a PC histogram of where the
+  CPU actually lives; `[IDLE] enter/beat/swap-out/resume` prints in KiIdleLoop
+  answer "does idle ever run" definitively.
+
+**Still open from this hunt** (both PRE-EXISTING — A/B-verified on a master
+boot 2026-07-06, identical PC histogram): (a) an unidentified always-ready user
+thread busy-polls `NtQueryPerformanceCounter` at desktop (user PC
+0x7ffb2002268, deterministic across boots AND across master/branch), starving
+idle — so `TimerRequest` stays stale and KERNEL TIMER EXPIRATION IS FROZEN at
+desktop whenever that thread spins (observed: taskbar never populates, no
+caret blink, 70s-apart QMP screendumps byte-identical). Smoke stays green
+because boot marker + tests finish inside the early window — and note master's
+POLL-THREAD input dies under the freeze (it sleeps on kernel timers), while
+interrupt-driven input keeps working. (b) the DISPATCH soft-interrupt delivery
+gap (fact 1) — the port should deliver DPC drains on KfLowerIrql crossing
+below DISPATCH, in thread context, so retirement doesn't depend on
+idle/IRQ-exit alone. Tracked in the quest doc (landmine #4).

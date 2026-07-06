@@ -1,4 +1,10 @@
 use ntkrnl_sys::globals::*;
+
+// ntstatus.h values NOT present in ntkrnl-sys. Without these consts the match
+// arms below silently become irrefutable catch-all bindings (the WM_CTLCOLOR
+// bug class — see field manual). Keep them defined.
+const STATUS_FAILED_DRIVER_ENTRY: NTSTATUS = 0xC0000365_u32 as NTSTATUS;
+const STATUS_ILL_FORMED_SERVICE_ENTRY: NTSTATUS = 0xC0000160_u32 as NTSTATUS;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::macros::*;
@@ -107,12 +113,6 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 const LockQueueIoDatabaseLock: KSPIN_LOCK_QUEUE_NUMBER = 10;
 
-// Were unresolved in the driver-load error match — Rust silently turned the
-// STATUS_FAILED_DRIVER_ENTRY arm into a bind-all catch-all, so EVERY non-
-// INSUFFICIENT_RESOURCES failure was reported as CM_PROB_FAILED_DRIVER_ENTRY
-// (bind-all match-arm bug class, 2026-07-05 sweep). Values per ntstatus.h.
-const STATUS_ILL_FORMED_SERVICE_ENTRY: NTSTATUS = 0xC0000160_u32 as i32;
-const STATUS_FAILED_DRIVER_ENTRY: NTSTATUS = 0xC0000365_u32 as i32;
 
 // Type aliases for enum types used as parameter types
 type BUS_QUERY_ID_TYPE = _BUS_QUERY_ID_TYPE;

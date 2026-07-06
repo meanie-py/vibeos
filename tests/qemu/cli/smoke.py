@@ -8,6 +8,7 @@ QemuVM (which already owns slots/reaper/cap/live-log). Supports --repeat N
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -344,6 +345,13 @@ def smoke(args, repo: Path) -> int:
     total = max(1, int(getattr(args, "repeat", 1) or 1))
     until = getattr(args, "until", None) or ""
     fail_on = getattr(args, "fail_on", None)
+
+    # Tripwire channel: hand the config to QemuVM via env (read by
+    # vm.py _tripwire_args -> QEMU -fw_cfg -> kernel tripwire.rs).
+    tripwire = (getattr(args, "tripwire", "") or "").strip()
+    if tripwire:
+        os.environ["VIBEOS_TRIPWIRE"] = tripwire
+        run.add(Stage("tripwire", status="warn", detail=tripwire))
 
     results = []
     for i in range(total):

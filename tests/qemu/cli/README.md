@@ -99,7 +99,7 @@ provenance stamp.
 - arm64 automatically re-stages into `ramdisk.img`/`boot.img` (the trap that
   silently boots a stale kernel otherwise).
 
-### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--no-net]`
+### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--tripwire CFG] [--no-net]`
 **The verdict front door.** Staleness preflight, then boot the real media via
 the same `QemuVM` the pytest harness uses (slots, reaper, lifetime cap, live-log
 all included), then auto-triage on failure.
@@ -140,6 +140,22 @@ all included), then auto-triage on failure.
   as a `health` WARN stage (+ `census_stuck` in summary.json) — the
   "boots green but threads are silently parked forever" signal, trendable
   across runs.
+- `--tripwire "SPECIALPOOL=Gla5"` arms per-boot kernel debug knobs via QEMU
+  fw_cfg (no media rebuild; kernel side `ntoskrnl-rust/src/tripwire.rs`) —
+  special pool turns silent pool corruption into an immediate symbolicated
+  bugcheck at the corrupting store. Full recipe: field manual §9.18.
+
+### `farm [--arches L] [--boots N | --minutes M] [--tripwire CFG]` / `farm-report [--since TS] [--sha S]`
+**The flake farm** — soak independent boots (parallel worker per arch; the
+hostlock CPU-lease pool is the throttle) into a durable corpus at
+`~/vibeos-flake-farm/corpus.jsonl`: one JSONL record per boot with verdict,
+classification, stop code, the self-symbolicating bugcheck banner lines,
+tripwire arming, sha and duration; failure artifacts are copied out of
+reboot-volatile `/tmp`. `farm-report` clusters failures into ranked
+`(arch, classification, stop code, top symbol)` families with sample paths —
+a 1-in-50 flake becomes overnight statistics instead of lore. Canonical
+overnight soak: `farm --arches i386,amd64,arm64 --minutes 480 --tripwire
+"SPECIALPOOL=*"`. Staleness-gated like smoke.
 
 ### `gate [--arches i386,amd64,arm64] [--retries N] [--no-build] [--clean] [--no-net]`
 **The parallel pre-land verdict** — the North Star "gate ×3 (all arches green)"

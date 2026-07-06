@@ -690,7 +690,7 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
     let mut PointerPde: PMMPTE;
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let mut PointerPpe: PMMPTE;
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let mut PointerPxe: PMMPTE;
     let mut PageFrameIndex: PFN_NUMBER;
     let UsePfnLock: BOOLEAN;
@@ -747,7 +747,7 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
     {
         PointerPpe = MiAddressToPpe(StartAddress);
     }
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         PointerPxe = MiAddressToPxe(StartAddress);
     }
@@ -783,9 +783,9 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
     loop {
         *MdlPages = LIST_HEAD;
         while {
-            #[cfg(target_arch = "x86_64")]
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             let px_invalid = ((*PointerPxe).valid() as usize) == 0;
-            #[cfg(not(target_arch = "x86_64"))]
+            #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
             let px_invalid = false;
 
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -883,7 +883,7 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
         if MiIsPteOnPpeBoundary(PointerPte) {
             PointerPpe = PointerPpe.add(1);
         }
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if MiIsPteOnPxeBoundary(PointerPte) {
             PointerPxe = PointerPxe.add(1);
         }

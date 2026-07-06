@@ -623,15 +623,11 @@ unsafe fn MiAddDescriptorToDatabase(
             (*pfn).set_share_count(0); // u2.ShareCount = 0
             (*pfn).set_page_location(0); // u3.e1.PageLocation = 0
             (*pfn).set_cache_attribute(MiNonCached as u16);
-            // u3.e1.Rom = 1, u3.e1.PrototypePte = 1 — set via mmpfnentry bitfield
-            // Rom is bit 4, PrototypePte is bit 3
-            {
-                let entry_p = (pfn as *mut u8).add(26) as *mut u16; // u3 offset + 2 for MMPFNENTRY
-                let mut e = *entry_p;
-                e |= 1 << 4; // Rom
-                e |= 1 << 3; // PrototypePte
-                *entry_p = e;
-            }
+            // u3.e1.Rom = 1, u3.e1.PrototypePte = 1 (C: amd64/init.c ROM-page loop).
+            // Was raw `pfn+26 |= 1<<4` — bit 4 is PageColor bit 0, NOT Rom (bit 14);
+            // use the typed MMPFNENTRY accessors (found by scan_magic_offsets audit).
+            (*pfn).set_rom(true);
+            (*pfn).set_prototype_pte(true);
             (*pfn).set_reference_count(0);
             (*pfn).set_pte_frame(0); // u4.PteFrame = 0 (also clears InPageError)
 
