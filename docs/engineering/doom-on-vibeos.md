@@ -16,6 +16,29 @@ adversarial integration test we don't otherwise have: every crash it hits is a r
 compat bug our own binaries mask. Getting Doom to render surfaced **three real bugs**
 (two in our kernel, one a toolchain miscompile) plus one open win32k gap — see below.
 
+## Quick start (the `VIBEOS_DOOM=1` opt-in)
+
+Doom is wired as an **off-by-default** image flag. Two commands:
+
+```bash
+tools/doom/build.sh arm64                          # fetch + cross-compile doomgeneric (-O0)
+VIBEOS_DOOM=1 ./vibeos-cli build --arch arm64      # stage doom.exe + doom1.wad into the ramdisk
+bash qemu/start.sh arm64                            # boot — winlogon autostarts Doom
+```
+
+How the flag stays off by default and safe to ship:
+- `mkramdisk.sh` only stages `doom.exe`/`doom1.wad` when `VIBEOS_DOOM=1` (env
+  inherited straight through `vibeos-cli build` → mkramdisk). A normal build
+  stages nothing.
+- `winlogon` (arm64) launches Doom **only if `GetFileAttributesW` finds
+  `X:\reactos\system32\doom.exe`**. No file (every normal build) → silent no-op,
+  zero serial noise. So the winlogon hunk is landable on mainline.
+- Assets (`tools/doom/doomgeneric/`, `doom1.wad`, `doom-*.exe`) are gitignored —
+  fetched/built on demand, never committed.
+
+The rest of this doc is the *why* behind each build flag and the bugs the bring-up
+exposed — read it before touching `tools/doom/build.sh`.
+
 ## The build (host side, no OS rebuild needed)
 
 `doomgeneric` (https://github.com/ozkl/doomgeneric) with the `doomgeneric_win.c` backend,
