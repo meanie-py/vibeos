@@ -1,4 +1,7 @@
 use win32k_sys::win32k::*;
+// Shadow the bindgen extern `gajBitsPerFormat: [UCHAR; 0]` (flexible-array decl —
+// indexing THAT panics unconditionally) with the real [u8; 11] definition.
+use crate::surface::gajBitsPerFormat;
 use crate::brushbody::pbrushbody;
 
 use core::ffi::c_void;
@@ -748,7 +751,11 @@ pub unsafe extern "stdcall" fn NtGdiMaskBlt(
             return 0;
         }
 
-        if gajBitsPerFormat[(*psurfMask).SurfObj.iBitmapFormat as usize] != 1 {
+        // C indexes gajBitsPerFormat[] unchecked (an OOB read on a garbage
+        // iBitmapFormat is UB there but in practice rejects); in Rust that
+        // panics the kernel — bounds-check explicitly and reject like != 1.
+        let fmt = (*psurfMask).SurfObj.iBitmapFormat as usize;
+        if fmt >= gajBitsPerFormat.len() || gajBitsPerFormat[fmt] != 1 {
             SURFACE_ShareUnlockSurface(psurfMask);
             EngSetLastError(ERROR_INVALID_HANDLE);
             return 0;
@@ -965,7 +972,11 @@ pub unsafe extern "C" fn NtGdiMaskBlt(
             return 0;
         }
 
-        if gajBitsPerFormat[(*psurfMask).SurfObj.iBitmapFormat as usize] != 1 {
+        // C indexes gajBitsPerFormat[] unchecked (an OOB read on a garbage
+        // iBitmapFormat is UB there but in practice rejects); in Rust that
+        // panics the kernel — bounds-check explicitly and reject like != 1.
+        let fmt = (*psurfMask).SurfObj.iBitmapFormat as usize;
+        if fmt >= gajBitsPerFormat.len() || gajBitsPerFormat[fmt] != 1 {
             SURFACE_ShareUnlockSurface(psurfMask);
             EngSetLastError(ERROR_INVALID_HANDLE);
             return 0;

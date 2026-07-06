@@ -195,9 +195,9 @@ pub unsafe extern "system" fn KeBalanceSetManager(Context: PVOID) {
         );
 
         match Status {
-            STATUS_WAIT_0 => {
+            ntkrnl_sys::mm::STATUS_WAIT_0 => {
             }
-            STATUS_WAIT_1 => {
+            ntkrnl_sys::mm::STATUS_WAIT_1 => {
             }
             _ => {
             }

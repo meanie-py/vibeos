@@ -259,8 +259,6 @@ pub const PLACE_RECT: u32 = 0x0004;
 #[inline(always)]
 fn MAKELONG(a: u32, b: u32) -> LONG { ((a & 0xffff) | ((b & 0xffff) << 16)) as LONG }
 
-#[cfg_attr(target_arch = "x86", export_name = "co_WinPosGetMinMaxInfo")]
-
 unsafe fn dump_winpos_flags(flags: u32) {
     let dumped_flags: u32 = SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOREDRAW |
                             SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW |
@@ -475,7 +473,7 @@ unsafe extern "fastcall" fn IsChildVisible(mut pWnd: PWND) -> BOOL {
         }
         pWnd = (*pWnd).spwndParent;
         if pWnd.is_null() {
-            return TRUE as BOOL;
+            return FALSE as BOOL;
         }
         if (*pWnd).style & WS_VISIBLE == 0 {
             break;
@@ -492,7 +490,7 @@ unsafe extern "C" fn IsChildVisible(mut pWnd: PWND) -> BOOL {
         }
         pWnd = (*pWnd).spwndParent;
         if pWnd.is_null() {
-            return TRUE as BOOL;
+            return FALSE as BOOL;
         }
         if (*pWnd).style & WS_VISIBLE == 0 {
             break;
@@ -1215,7 +1213,7 @@ unsafe fn IntGetWindowBorders(Style: DWORD, ExStyle: DWORD) -> DWORD {
     adjust
 }
 
-#[cfg_attr(not(target_arch = "x86"), no_mangle)]
+#[no_mangle]
 unsafe extern "fastcall" fn co_WinPosGetMinMaxInfo(
     Window: PWND,
     MaxSize: *mut POINT,
@@ -4974,7 +4972,7 @@ unsafe extern "C" fn co_IntCalculateSnapPosition(
 unsafe extern "fastcall" fn co_IntSnapWindow(Wnd: PWND, Edge: UINT) {
     let mut newPos: RECT = core::mem::zeroed();
     let wasSnapped: BOOLEAN = IntIsWindowSnapped(Wnd);
-    let normal: UINT = (!((*Wnd).style & (WS_MAXIMIZE | WS_MINIMIZE)) != 0) as UINT;
+    let normal: UINT = (((*Wnd).style & (WS_MAXIMIZE | WS_MINIMIZE)) == 0) as UINT;
     let mut r#ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
     let mut hasRef: BOOLEAN = 0u8;
 
