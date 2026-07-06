@@ -2248,6 +2248,14 @@ pub unsafe extern "system" fn USBPORT_MiniportCompleteTransfer(
     );
 
     if IsListEmpty(core::ptr::addr_of_mut!((*ParentTransfer).SplitTransfersList)) {
+        // Upstream ReactOS `goto Exit` here skips KeReleaseSpinLock — a leaked
+        // spinlock + raised IRQL on the empty-list path (usbport.c:2059). We
+        // acquired TransferSpinLock just above; release it before completing.
+        // (Divergence from stock ReactOS: fixes the leak the C leaves behind.)
+        KeReleaseSpinLock(
+            (core::ptr::addr_of_mut!((*ParentTransfer).TransferSpinLock) as *mut usize),
+            OldIrql,
+        );
         USBPORT_QueueDoneTransfer(Transfer, USBDStatus);
         return;
     }
