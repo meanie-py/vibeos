@@ -162,5 +162,5 @@
   [FLEX_ARRAY] sdk/lib/rust/storahci-rust/src/storahci.rs:1270: List: Direct indexing of flexible array _CM_RESOURCE_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/storahci-rust/src/storahci.rs:1270: List: Direct indexing of flexible array _IO_RESOURCE_REQUIREMENTS_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
 Bindgen catalog: 2921 functions
-Spec catalog: 1570 exports
+Spec catalog: 1571 exports
 Summary:

@@ -33,26 +33,36 @@ report, `HalDumpGicArm64()` state dumper, masked-swap tripwire in `KiSwapContext
    `KiRetireDeviceDpcs` (ke/dpc.rs) — a drain of `DpcData[DPC_NORMAL]` that never touches
    `TimerRequest`. Running `KiTimerExpiration` (thread wakes) from exception context wedges
    boot even with landmine #1 fixed — masked wake/swap chains break thread-lifecycle paths
-   in ways the daifclr fix doesn't cover (field manual §9.19). Timer expiration stays with
-   the idle loop until landmine #2 is fixed. **Do NOT gate this drain on
+   in ways the daifclr fix doesn't cover (field manual §9.19). Timer expiration runs from
+   the idle loop AND (since 2026-07-06, §9.21) from `KfLowerIrql`'s thread-context
+   DISPATCH-softint delivery — never from exception context. **Do NOT gate this drain on
    `TimerRequest == 0`** (the original landing did; field manual §9.20): `TimerRequest`'s
    only consumer is the idle loop, a busy thread starves idle indefinitely, and the stale
    flag then permanently killed all device-DPC delivery at desktop (the 2026-07-06
    virtio-input "ISR fires, DPC never runs" bug).
-4. **Kernel timer expiration is FROZEN whenever the idle loop is starved** (PRE-EXISTING —
-   verified on master 2026-07-06 by A/B PC-sampling: identical spinner, same user PC):
-   the DISPATCH software interrupt is delivered by nothing
-   (`HalpDispatchSoftwareInterrupts` handles only the APC bit), so `TimerRequest` retires
-   only in idle. An always-ready thread — on BOTH master and this branch, an unidentified
-   user thread busy-polling `NtQueryPerformanceCounter` at desktop (user PC 0x7ffb2002268,
-   ~30% of samples; ~60% in hal `KeQueryPerformanceCounter` servicing it) — starves idle
-   and freezes ALL kernel timers while it spins. Observed effects at desktop: taskbar never
-   finishes populating, no caret blink, 70s-apart screenshots byte-identical. Smoke stays
-   green because the boot marker + tests complete inside the early window. Master's
-   poll-thread input DIED under this freeze (poll thread sleeps on kernel timers); the
-   interrupt-driven input from this quest is immune. Fix direction: deliver DPC/timer
-   drains on `KfLowerIrql` crossing below DISPATCH (thread context), and/or land landmine
-   #2's SVC-IRQ-reenable then revisit; also identify + fix the QPC spinner itself.
+4. **(CLOSED 2026-07-06 — field manual §9.21)** Kernel timer expiration froze whenever the
+   idle loop was starved. Root causes found and fixed the same day:
+   - The "QPC spinner" was `KeDelayExecutionThread` still STUBBED to `NtYieldExecution()`
+     on arm64 (wait.rs, dead "no HAL timer interrupt yet" lore) — every kernel/user sleep
+     busy-yielded (the hal-QPC-hot thread was netstack's poll worker). Stub deleted; the
+     real timer-wait path works now that the vtimer ticks.
+   - A second spinner: explorer's main thread on a stuck QS_PAINT wake bit
+     (`MsgWaitForMultipleObjects` insta-returns, `PeekMessage` retrieves nothing) — the
+     upstream `IntGetPaintMessage` dirty-window-leak bandaid zeroes `cPaintsReady` without
+     clearing the wake bits, silently (win32k-rust `ERR!` is a no-op). Fixed in
+     win32k-rust painting.rs/message.rs + made loud via DbgPrint.
+   - The DISPATCH software interrupt is now DELIVERED: `KfLowerIrql` crossing below
+     DISPATCH calls ntoskrnl's `KiDispatchSoftwareIntArm64()` (timer expiration with
+     DpcRoutineActive set + device-DPC drain, thread context). Gated on
+     `HalpInterruptContextDepth == 0` — KfLowerIrql is reachable from IRQ exception
+     windows (the clock-tick branch runs KeUpdateSystemTime with NO IRQL bracket), and
+     ungated delivery ran timer expiration in exception context → BUGCHECK 0x1E
+     (EC=0x0E), the §9.19 class. The depth counter is bumped vector-wide in
+     `HalClockInterruptArm64` and by every HalpEnter/ExitInterruptIrql pair.
+   Still open (pre-existing, separate win32k hunt — forensics in §9.21): win32k
+   user-timer WM_TIMER posting never reaches explorer (tray clock never repaints,
+   `ProcessTimers` fires but `cTimersReady` stays 0) and the underlying dirty-window
+   leak the QS_PAINT bandaid papers over (now visible on serial).
 
 Original brief follows (current-state description below is now historical).
 

@@ -28,6 +28,16 @@ static mut HalpNextIntervalCount: ddk::ULONG = 0;
 static mut HalpCurrentIrql: ddk::KIRQL = PASSIVE_LEVEL;
 
 static HalpSoftwareInterruptPending: AtomicU32 = AtomicU32::new(0);
+/// Nesting depth of exception-context interrupt dispatch. Bumped for the whole
+/// IRQ-vector body (HalClockInterruptArm64) and again by each
+/// HalpEnterInterruptIrql/HalpExitInterruptIrql bracket (ISR dispatch, IRQ-exit
+/// DPC retire). Non-zero means we are inside an IRQ exception window —
+/// software-interrupt delivery that can wake/swap threads (DISPATCH work) must
+/// NOT run there (§9.19 DAIF-inheritance class). Notably the clock-tick branch
+/// runs KeUpdateSystemTime with NO IRQL bracket at all, so without the vector-
+/// wide bump a raise/lower pair inside the tick path delivers DISPATCH work in
+/// exception context (BUGCHECK 0x1E, EC=0x0E illegal-execution-state).
+pub(crate) static HalpInterruptContextDepth: AtomicU32 = AtomicU32::new(0);
 static HalpSoftIntDeliveryInProgress: AtomicI32 = AtomicI32::new(0);
 
 #[unsafe(no_mangle)]
@@ -708,12 +718,48 @@ pub unsafe extern "system" fn KeGetCurrentIrql() -> ddk::KIRQL {
     unsafe { HalpCurrentIrql }
 }
 
+extern "system" {
+    /// ntoskrnl export (ke/dpc.rs): the DISPATCH-level software-interrupt body
+    /// — timer expiration (Prcb.TimerRequest → KiTimerExpiration) + device-DPC
+    /// drain, in normal thread context. Called below when the soft IRQL
+    /// crosses under DISPATCH_LEVEL with the DISPATCH bit pended.
+    fn KiDispatchSoftwareIntArm64();
+}
+
 unsafe fn HalpDispatchSoftwareInterrupts(OldIrql: ddk::KIRQL, NewIrql: ddk::KIRQL) {
     if HalpSoftIntDeliveryInProgress
         .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
         return;
+    }
+
+    // DISPATCH delivery first (timers + DPCs), then APC — mirrors the NT
+    // lowering order (higher software level drains before the lower one).
+    // Without this, timer expiration ran ONLY from the idle loop, so one
+    // ready-spinning thread froze every kernel timer on arm64 (landmine #4,
+    // field manual §9.20) — a spinner still crosses DISPATCH in its own
+    // context constantly (syscalls, spinlock releases), so delivery here keeps
+    // timers flowing no matter how busy the ready queue is.
+    //
+    // GATED on interrupt-context depth == 0: KfLowerIrql is also reachable
+    // from inside IRQ exception windows (raise/lower pairs in ISR- and
+    // DPC-called kernel code), and running KiTimerExpiration's thread-wake
+    // machinery from exception context is the §9.19 wedge/crash class
+    // (first attempt BUGCHECKed 0x1E with an EC=0x0E illegal-execution-state
+    // return to EL0). HalpEnter/ExitInterruptIrql bracket every exception-
+    // context dispatch window, so depth 0 == genuine thread/SVC context.
+    let dispatch_bit = software_interrupt_bit(DISPATCH_LEVEL);
+    if NewIrql < DISPATCH_LEVEL
+        && HalpInterruptContextDepth.load(Ordering::SeqCst) == 0
+        && (HalpSoftwareInterruptPending.load(Ordering::SeqCst) & dispatch_bit) != 0
+    {
+        HalpSoftwareInterruptPending.fetch_and(!dispatch_bit, Ordering::SeqCst);
+        unsafe {
+            HalpCurrentIrql = DISPATCH_LEVEL;
+            KiDispatchSoftwareIntArm64();
+            HalpCurrentIrql = NewIrql;
+        }
     }
 
     let apc_bit = software_interrupt_bit(APC_LEVEL);
@@ -819,6 +865,7 @@ pub unsafe extern "system" fn KfRaiseIrql(NewIrql: ddk::KIRQL) -> ddk::KIRQL {
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpEnterInterruptIrql(NewIrql: ddk::KIRQL) -> ddk::KIRQL {
     unsafe {
+        HalpInterruptContextDepth.fetch_add(1, Ordering::SeqCst);
         let OldIrql = HalpCurrentIrql;
         HalpCurrentIrql = NewIrql;
         super::clock::update_pmr(OldIrql, NewIrql);
@@ -836,6 +883,7 @@ pub unsafe extern "system" fn HalpExitInterruptIrql(RestoreIrql: ddk::KIRQL) {
         let OldIrql = HalpCurrentIrql;
         HalpCurrentIrql = RestoreIrql;
         super::clock::update_pmr(OldIrql, RestoreIrql);
+        HalpInterruptContextDepth.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
