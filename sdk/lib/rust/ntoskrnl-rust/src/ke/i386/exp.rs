@@ -110,10 +110,9 @@ struct KTSS {
 #[repr(C)]
 struct FX_SAVE_AREA {
     U: FX_SAVE_AREA_U,
-    /// Present in the C layout (ndk/i386/ketypes.h) — this local struct had
-    /// DROPPED it, so every Cr0NpxState access below hit +0x200 (NpxSavedCpu's
-    /// slot) instead of +0x204: KeContextToTrapFrame's sanitize never touched
-    /// the real Cr0NpxState and KeTrapFrameToContext read the wrong dword.
+    /// NpxSavedCpu@+0x208, Cr0NpxState@+0x20C — correct once FXSAVE_FORMAT is the
+    /// full 520-byte C layout (see FXSAVE_FORMAT below). A short union U silently
+    /// slides both fields low and corrupts NPX save/restore.
     NpxSavedCpu: ULONG,
     Cr0NpxState: ULONG,
 }
@@ -140,7 +139,14 @@ struct FXSAVE_FORMAT {
     MXCsr: ULONG,
     Reserved3: ULONG,
     RegisterArea: [UCHAR; 128],
+    // C FXSAVE_FORMAT (ndk/i386/ketypes.h) is 520 bytes: Reserved3[128],
+    // Reserved4[224], Align16Byte[8] follow RegisterArea[128]. Truncating the
+    // tail to 128 made this struct 288 bytes, so U was 288 and Cr0NpxState landed
+    // at +0x124 instead of +0x20C — KeContextToTrapFrame's Cr0NpxState sanitize
+    // and KeTrapFrameToContext both hit the wrong dword. Match bindgen (size 520).
     Reserved4: [UCHAR; 128],
+    Reserved5: [UCHAR; 224],
+    Align16Byte: [UCHAR; 8],
 }
 
 #[repr(C)]
