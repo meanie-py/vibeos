@@ -416,13 +416,13 @@ pub unsafe extern "system" fn KeDelayExecutionThread(
     mut Interval: PLARGE_INTEGER,
 ) -> NTSTATUS {
     let mut Interval = opaque_ptr(Interval);
-    #[cfg(target_arch = "aarch64")]
-    {
-        NtYieldExecution();
-        return STATUS_SUCCESS;
-    }
-
-    #[cfg(not(target_arch = "aarch64"))]
+    // arm64 note: this used to be stubbed to `NtYieldExecution(); STATUS_SUCCESS`
+    // ("no HAL timer interrupt yet"). That lore died with the interrupts quest —
+    // the vtimer clock tick fires and KiTimerExpiration runs from the idle loop.
+    // Worse, the stub was landmine #4's ROOT CAUSE: every kernel/user sleep
+    // (netstack's poll delay, user Sleep via NtDelayExecution) became a busy-
+    // yield, ready threads yielded to each other forever, idle starved, and
+    // idle-driven timer expiration froze the desktop (field manual §9.20).
     {
         let mut Timer: PKTIMER;
         let mut TimerBlock: PKWAIT_BLOCK;
