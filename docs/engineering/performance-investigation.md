@@ -147,10 +147,20 @@ serial stamps (winldr.c + livecd.ini `Debug=` line; no-op when debug off).
    service; RPC/DCOM absent for anything that needs it. The cdrom [GAP] 21s
    "stall" is this wait seen from the disk. Whether the LCMap fix cures the
    svchost death is the first post-fix check.
-3. **Registry lazy-flush attempts real hive writes on MININT livecd**
-   ("Failed to write the primary hive" ×4/boot, 5–9s gaps): `CmpNoWrite`
-   should be TRUE on MININT (`CmpNoWrite = CmpMiniNTBoot` in CmpCmdInit) —
-   flush attempts imply the gate isn't holding on some path. OPEN.
+3. **[FIXED 2026-07-06] Registry hive writes on MININT livecd**
+   ("Failed to write the primary hive" ×4/boot, 5–9s gaps): root cause was a
+   TRANSLATION bug, not upstream-inherited as first classified. C
+   CmpInitializeHiveList: `if (CmpShareSystemHives) HHiveFlags |= HIVE_VOLATILE`
+   (marks all machine hives volatile on MININT so CmpLoadHiveThread and every
+   write path skip them). The Rust translation tested `CmHive2 != null`
+   instead — always false at that point (CmHive2 is set later BY the load
+   threads), so MININT hives were never volatile and CmpLoadHiveThread spent
+   ~5.5s failing to write CD-backed hives. Fix: cmsysini.rs restores the
+   CmpShareSystemHives condition. Verified: stall gone, amd64 log end
+   23.1s → 17.4s. (The upstream `CmpNoWrite = FALSE` clobber in
+   CmpInitializeHiveList is real but harmless once volatile marking works —
+   kept faithful to C.) Bug-class: mistranslated condition variable — same
+   family as the or-pattern/`!DBG`-stub entries in the field manual.
 4. **Taskbar still unpainted 30s after creation** (screenshot evidence) —
    the known render-completeness issue; controls exist at marker+0.9s but
    paint doesn't complete. Separate lane (ui-render-completeness doc).

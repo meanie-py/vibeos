@@ -2011,8 +2011,12 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
 
     i = 0;
     while i < CM_NUMBER_OF_MACHINE_HIVES as u32 {
-        if (*CmpMachineHiveList.as_ptr().add(i as usize)).CmHive2 != core::ptr::null_mut() {
-            (*CmpMachineHiveList.as_mut_ptr().add(i as usize)).HHiveFlags |= 0x00000001;
+        // C: if (CmpShareSystemHives) CmpMachineHiveList[i].HHiveFlags |= HIVE_VOLATILE;
+        // (was mistranslated as `if CmHive2 != null` — CmHive2 is only set later BY the
+        // load threads, so MININT hives were never marked volatile and CmpLoadHiveThread
+        // spent ~5.5s failing to write CD-backed hives; perf doc "hive-flush stall")
+        if CmpShareSystemHives != 0 {
+            (*CmpMachineHiveList.as_mut_ptr().add(i as usize)).HHiveFlags |= HIVE_VOLATILE;
         }
 
         let status = PsCreateSystemThread(
