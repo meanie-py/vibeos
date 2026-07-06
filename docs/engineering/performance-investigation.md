@@ -191,16 +191,22 @@ gap" is fully attributed (amd64, TCG, per-file):
   its extra costs are EDK2 firmware 6s (TCG) instead.
 
 Ranked fixes:
-1. **Demote wdf01000/wdfldr from boot-start** if no boot-critical driver is
-   KMDF (instant −6.8s on every x86 boot; verify nothing in the boot set
-   needs WDF before PnP).
+1. **Strip DWARF from CD-staged binaries (TOP: measured ~4x on the whole
+   load phase).** wdf01000.sys is 13.5MB of which ~12.5MB is .debug_*
+   (code+data ≈ 0.8MB); the boot set is likely 70–80% DWARF overall. The PE
+   loader never maps debug sections — freeldr streams them off the CD at
+   2.2MB/s for nothing. Stripped CD twins would cut the ~20s load phase to
+   ~5s, shrink the ISO 508MB → ~180MB (staging copy 3.9s → ~1.4s), and cost
+   NOTHING at runtime; every sym tool (sym.sh/addr2sym/build-index/GDB)
+   reads build-dir binaries, not the ISO. Caveat to verify: pefixup checksum
+   + any tool that expects CD binaries byte-identical to build outputs
+   (provenance stamps hash... check provenance.py). wdf01000 cannot be
+   demoted from boot-start instead — cdrom.sys is KMDF (wdf01000_reg.inf).
 2. **Attack the 2.2MB/s transfer**: check whether OVMF is stuck in ATAPI PIO
    (vs UDMA) on the i440fx IDE path; a DMA-capable attach (or a QEMU option)
    would multiply throughput. Guest-side constraint: uniata must still see
    the CD for the livecd session (that's why the CD is IDE, not AHCI).
-3. **Debug-binary size**: the 10–13MB debug PEs pay real load time; consider
-   stripping non-essential debug sections from CD-staged copies of the
-   biggest files (keep symbols out-of-band for the debug toolkit).
+   Combined with #1 the load phase approaches ~1-2s.
 
 ## Verified wins so far (timed smokes, amd64)
 
