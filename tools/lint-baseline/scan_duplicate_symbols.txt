@@ -1,0 +1,1 @@
+KeGetCurrentIrql	arbiter-rust,ntoskrnl-rust
