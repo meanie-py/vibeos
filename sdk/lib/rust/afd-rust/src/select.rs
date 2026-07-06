@@ -458,8 +458,8 @@ pub unsafe extern "system" fn AfdEnumEvents(
 
     (*EnumReq).PollEvents = (*FCB).PollState & !(*FCB).EventSelectDisabled;
     core::ptr::copy_nonoverlapping(
-        (*FCB).PollStatus.as_ptr(),
-        (*EnumReq).EventStatus.as_mut_ptr(),
+        (*FCB).PollStatus.as_ptr() as *const u8,
+        (*EnumReq).EventStatus.as_mut_ptr() as *mut u8,
         core::mem::size_of_val(&(*EnumReq).EventStatus)
     );
 

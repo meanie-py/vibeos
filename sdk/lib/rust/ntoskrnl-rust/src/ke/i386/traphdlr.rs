@@ -992,6 +992,20 @@ pub unsafe extern "fastcall" fn KiSystemServiceHandler(
     (*KeGetCurrentPrcb()).KeSystemCalls += 1;
     let stack_bytes = *(*descriptor_table).Number.add(id as usize);
     let handler = *(*descriptor_table).Base.add(id as usize) as PVOID;
+    if handler.is_null() {
+        // A NULL service-table slot means the table was built with a hole —
+        // calling it jumps to 0 and bugchecks 0xA with nothing to symbolicate.
+        // Fail loud with the number instead (and keep the process alive).
+        crate::dbg_print!(
+            b"[SSDT] NULL service entry: eax=0x%lx table-off=%d id=%d - returning STATUS_INVALID_SYSTEM_SERVICE\n\0",
+            system_call_number as ULONG_PTR,
+            offset,
+            id,
+        );
+        let status = STATUS_INVALID_SYSTEM_SERVICE;
+        (*(thread as *mut _ETHREAD)).Tcb.TrapFrame = (*TrapFrame).Edx as PKTRAP_FRAME;
+        KiServiceExit(TrapFrame, status);
+    }
     let status = KiSystemCallTrampoline(handler, Arguments, stack_bytes as ULONG);
     KiExitSystemCallDebugChecks(id, TrapFrame);
     (*(thread as *mut _ETHREAD)).Tcb.TrapFrame = (*TrapFrame).Edx as PKTRAP_FRAME;

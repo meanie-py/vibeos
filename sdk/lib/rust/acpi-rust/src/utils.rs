@@ -471,13 +471,13 @@ unsafe fn acpi_create_registry_table(
     // C_ASSERT(...) → no-op.
 
     // RtlCopyMemory(OemId, OutTable->OemId, sizeof(OutTable->OemId)); (6 bytes)
-    ptr::copy_nonoverlapping(
+    ptr::copy_nonoverlapping( // nolint: silent-failure (byte-array pointee — count==bytes)
         (*OutTable).OemId.as_ptr(),
         OemId.as_mut_ptr(),
         core::mem::size_of_val(&(*OutTable).OemId),
     );
     // RtlCopyMemory(OemTableId, OutTable->OemTableId, sizeof(OutTable->OemTableId)); (8 bytes)
-    ptr::copy_nonoverlapping(
+    ptr::copy_nonoverlapping( // nolint: silent-failure (byte-array pointee — count==bytes)
         (*OutTable).OemTableId.as_ptr(),
         OemTableId.as_mut_ptr(),
         core::mem::size_of_val(&(*OutTable).OemTableId),

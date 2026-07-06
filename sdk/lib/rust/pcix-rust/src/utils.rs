@@ -1926,7 +1926,7 @@ pub unsafe extern "system" fn PciQueryPowerCapabilities(
         core::ptr::copy_nonoverlapping(
             AttachedCaps.DeviceState.as_ptr(),
             (*DeviceCapability).DeviceState.as_mut_ptr(),
-            core::mem::size_of::<[DEVICE_POWER_STATE; 7]>(),
+            7, // element count — size_of here copied 4x too much (kernel-stack overrun)
         );
         return STATUS_SUCCESS;
     }

@@ -1553,7 +1553,7 @@ pub unsafe extern "C" fn IKsFilter_CreateDescriptors(
                 core::ptr::copy_nonoverlapping(
                     (*NodeDescriptor).Type,
                     (*This).Topology.TopologyNodes.add(Index as usize) as *mut GUID,
-                    core::mem::size_of::<GUID>(),
+                    1, // one GUID — size_of here copied 16 GUIDs
                 );
             }
 
@@ -1561,7 +1561,7 @@ pub unsafe extern "C" fn IKsFilter_CreateDescriptors(
                 core::ptr::copy_nonoverlapping(
                     (*NodeDescriptor).Name,
                     (*This).Topology.TopologyNodesNames.add(Index as usize) as *mut GUID,
-                    core::mem::size_of::<GUID>(),
+                    1, // one GUID — size_of here copied 16 GUIDs
                 );
             }
 
