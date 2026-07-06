@@ -127,11 +127,12 @@ serial stamps (winldr.c + livecd.ini `Debug=` line; no-op when debug off).
    connect timeout per hosted service on every boot; DcomLaunch/RPCSS have
    been dead since the translation. (Diagnosed via a loud svchost wmain
    print — cmdline/options were perfect, pinning the dispatcher.) Same
-   hand-encoded-UTF-16 class as field manual §; **12+ more latent instances
-   found** by `grep -rnE 'b"[^"\\]{2,}\\0"\.as_ptr\(\) as
-   (PWSTR|PCWSTR|LPWSTR|LPCWSTR|\*const u16|\*mut u16)'` in samsrv-rust
-   (many), msgina ("Shutdown Setting"), winsrv harderror/tuiterm,
-   usbaudio-rust — OWED sweep (off boot path, silently wrong at runtime).
+   hand-encoded-UTF-16 class as field manual §; **[SWEPT 2026-07-06]** the
+   owed workspace sweep converted ~140 sites in 121 files to aligned `w!()`
+   arrays (3 mechanical passes + hand fixes for phase-broken strings: SAM
+   %08lX ×5, msgina Control key, cmboot System32\Drivers\, partmgr VOLMGR).
+   Full class writeup: field manual "ANSI byte string cast to a WIDE
+   pointer". Post-sweep the oracle grep returns zero non-comment hits.
 
 1. **LCMapStringW(LCMAP_LOWERCASE/UPPERCASE) has failed OS-wide since the
    2026-06-14 kernel32 locale port.** Translation bug in `lcmap_string`
