@@ -338,6 +338,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "dbgk-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "dbgprint-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "ntprintf",
+ "ntprintf_w",
+]
+
+[[package]]
 name = "defmt"
 version = "0.3.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -736,6 +752,7 @@ name = "kernel-rust"
 version = "0.1.0"
 dependencies = [
  "cmboot-rust",
+ "dbgk-rust",
  "fsrtl-rust",
  "ke-inlines",
  "ke-macros",
@@ -743,6 +760,7 @@ dependencies = [
  "ntoskrnl-rust",
  "ntprintf",
  "ntprintf_w",
+ "wmi-rust",
 ]
 
 [[package]]
@@ -1080,6 +1098,7 @@ dependencies = [
 name = "ntoskrnl-rust"
 version = "0.1.0"
 dependencies = [
+ "dbgprint-rust",
  "iced-x86",
  "ntkrnl-sys",
  "ntprintf",
@@ -2045,6 +2064,13 @@ name = "winsrv-sys"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
+]
+
+[[package]]
+name = "wmi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]

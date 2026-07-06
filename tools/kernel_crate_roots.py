@@ -25,6 +25,9 @@ KERNEL_CRATE_SRC_ROOTS = [
     "sdk/lib/rust/ntoskrnl-rust/src",
     "sdk/lib/rust/lpc-rust/src",  # extracted 2026-07 (crate-split PoC)
     "sdk/lib/rust/fsrtl-rust/src",  # extracted 2026-07 (crate-split)
+    "sdk/lib/rust/dbgk-rust/src",  # extracted 2026-07 (crate-split)
+    "sdk/lib/rust/wmi-rust/src",  # extracted 2026-07 (crate-split)
+    "sdk/lib/rust/dbgprint-rust/src",  # print-infra leaf hoisted 2026-07 (crate-split Phase 1b)
 ]
 
 

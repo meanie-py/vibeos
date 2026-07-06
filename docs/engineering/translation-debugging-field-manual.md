@@ -37,6 +37,12 @@ The #1 i386 crash class: on i386, `extern "C"` is cdecl and `extern "system"` is
 **Fix:** Sibling rlibs (`*-inlines`, `*-macros`) must declare NTAPI fns `extern "system"`. Check each fn's `.h` decl: `NTAPI`/`NTKERNELAPI...NTAPI` → `extern "system"`. i386 fastcall fns (`Obf*`, `KfRaiseIrql`) need `#[cfg(target_arch="x86")] extern "fastcall"` else `extern "C"`. Statics have no calling convention — any block is fine. Fixed commit `0965a48a`.
 **Source:** `feedback_sibling_rlib_ntapi_abi.md`
 
+### C **inline/macro** helper declared `extern` → phantom symbol, i386-only undefined (arcname `IsEqualGUID`, 2026-07-06)
+**Symptom:** i386 kernel link `undefined symbol: _IsEqualGUID`, referenced from `iomgr/arcname.rs` (`IopVerifyDiskSignature`); amd64/arm64 link + boot fine. Intermittent onset — was green for weeks, surfaced only after an unrelated change stopped the caller being dead-stripped.
+**Root cause:** `IsEqualGUID` is **not a real symbol** — in C (non-C++) guiddef.h it's a *macro* `(!memcmp(a,b,sizeof(GUID)))`. The translation declared it `extern "C" fn IsEqualGUID`, demanding a symbol that exists nowhere. It only ever "resolved" by accident: `wmi-rust` has a `#[no_mangle] extern "system" fn IsEqualGUID`. On amd64/arm64 `"system"`==cdecl so the export name (`IsEqualGUID`) coincides with the cdecl reference and links; on i386 `"system"`==stdcall → `_IsEqualGUID@8`, but the `extern "C"` reference wants `_IsEqualGUID` → mismatch → undefined. `--gc-sections` masked it on all three until the caller stopped being stripped, then it broke on i386 only.
+**Fix:** Don't declare a C macro/`__inline` as an `extern` fn — **implement it inline in Rust** mirroring the macro (`arcname.rs` now has a private `#[inline(always)] unsafe fn IsEqualGUID` doing the `memcmp`). Kills the phantom dependency on all arches. General rule: before writing `extern { fn Foo }`, confirm `Foo` is a *real out-of-line symbol* (`nm`/grep for a def), not a header macro/`FORCEINLINE`. Fixed `8ac73dd02ce`.
+**Detection gap:** `verify_ffi`/`verify_abi` miss it — the bad decl is a private extern in one crate, the accidental provider is a `no_mangle` export in another; neither is spec/bindgen-visible. Same family as the `DsSetupInit`/`TranslateStdHandle` internal-decl blind spots above.
+
 ### Array passed BARE to a C-variadic (`...`) extern — Rust arrays do NOT decay to pointers
 **Symptom (i386 uefildr under WHPX, 2026-07-03):** boot "hangs at `[freeldr] Switching stack...`" forever — the wedged PC is `streamout`'s `%s` handler running `strnlen(0x6f636553, SIZE_MAX)`: the "pointer" is ASCII `"Seco"` — the first 4 BYTES of the string that should have been passed by reference. Caller disasm shows a `rep movsl` copying the whole array into the outgoing vararg area. Under TCG the bad scan terminates instantly (unmapped-phys reads return 0) so the bug is LATENT for months; under hardware virt (WHPX/KVM) every probe of unmapped guest-phys is a VM exit → a ~4G-iteration crawl ≈ hours = "hang".
 **Root cause:** C array arguments decay to pointers; **Rust `[T; N]` passed to an `extern "C" fn(..., ...)` variadic is passed BY VALUE** — all N bytes land in the vararg area and `%s`/`%p` consume the first word as the pointer. rustc accepts it silently. Worse, on amd64 (Win64 ABI) >8-byte aggregates go by reference, so the SAME code accidentally works on 64-bit and only breaks i386.
@@ -2676,14 +2682,12 @@ timer table shows live sub-second traffic; explorer main blocks in
 `GetMessage`; netstack worker alive in real `delay_ms` waits (WaitReason=4);
 `test_arm64input_delivery` green.
 
-**Still open (pre-existing, forensics preserved):** explorer's tray clock
-never repaints and window paint is incomplete (notepad title bar sometimes
-missing — also true on pre-quest master) — `ProcessTimers` fires but
-explorer's `cTimersReady` stays 0, i.e. win32k user-timer → WM_TIMER posting
-to the owning thread doesn't deliver; and the underlying dirty-window leak
-that IntGetPaintMessage's bandaid papers over (now visible on serial as
-`[WIN32K] IntGetPaintMessage: cPaintsReady=%u but no dirty window`). Both are
-win32k message/paint bookkeeping, not interrupt/IRQL work.
+**Follow-up CLOSED 2026-07-06 (§9.23): tray clock / window repaint freeze was
+the WRONG ACTIVE INPUT DESKTOP, not timer delivery.** See §9.23 — the timer
+path was fine all along; `gpdeskInputDesktop` was stranded on "Winlogon" while
+the shell runs on "Default", so win32k's paint retrieval walked the wrong
+desktop tree. Fixed in winlogon (arm64 boot path). The `cTimersReady`-stays-0
+observation was a red herring (measured mid-consume); WM_TIMER *does* post.
 
 **Debug recipe additions** (beyond §9.20's): identify a user-PC spinner from a
 `KiIrqHandler` breakpoint — read `KPCR(tpidr_el1)+0xD80 → Prcb.CurrentThread
@@ -2695,3 +2699,94 @@ reuse a previous boot's symbolication). `gdb` can't read kernel VAs while
 stopped at EL0 — break on a kernel PC first. And REBUILD THE SYMBOL INDEX
 after every build: a stale `sym2addr` address put a 5-minute breakpoint on
 dead code and nearly "proved" timers were frozen when they weren't.
+
+### 9.23 (FIXED 2026-07-06) arm64 desktop never repaints — wrong ACTIVE INPUT DESKTOP + SystemTime never seeded from the RTC
+
+Two independent bugs behind "the arm64 desktop is frozen at boot": the tray
+clock never ticked (both a wrong *value* and no *repaint*), and no window ever
+redrew after its first paint (notepad title bar / taskbar bare).
+
+**Bug A — window paint freeze: `gpdeskInputDesktop` stranded on "Winlogon".**
+The shell (explorer.exe) is launched on `WinSta0\Default`, but the kernel's
+*active input desktop* (`gpdeskInputDesktop`, win32k `desktop.rs`) was the
+**Winlogon** desktop. `IntGetPaintMessage` → `IntFindWindowToRepaint(
+UserGetDesktopWindow(), pti)` starts the repaint walk from the *global active*
+desktop's window — so it walked the (empty) Winlogon tree and never found
+explorer's dirty windows on Default. Every repaint silently no-op'd, and the
+"`cPaintsReady=%u but no dirty window`" bandaid (§9.21) fired forever. The
+taskbar you *see* is stale pixels drawn once — arm64 skips `IntHideDesktop`, so
+switching away never cleared them.
+
+*How it got stranded:* the arm64 winlogon shortcut path (`winlogon.rs`, no
+GINA/logon) relies on `CreateWindowStationAndDesktops` switching to Default,
+but `RunSetup`'s async thread (`setup.rs`) switches to Default then, on the
+setup-shell `CreateProcess` **failure** path, `SwitchDesktop(WinlogonDesktop)`
+— leaving the input desktop on Winlogon. Nothing switched it back before the
+shell came up.
+
+*Root-cause proof (the technique):* from GDB, walk the win32k timer list to the
+explorer clock timer → its `pti` → `THREADINFO.rpdesk (+0x78)`; compare to
+`gpdeskInputDesktop` (win32k `+0x131978` this build). They differed
+(`rpdesk`=Default, active=Winlogon). Read each `_DESKTOP`'s object name by
+scanning ~0x80 bytes before the body for a `UNICODE_STRING{len,max,ptr}` →
+`[Winlogon]` vs `[Default]`. Then **overwrite** `gpdeskInputDesktop` with the
+Default pointer and wait one 60 s timer tick — the clock repainted (`6:35`→
+`6:47`) and the paint-leak count stopped climbing. That poke *is* the fix,
+proven live before touching source.
+
+*Fix (winlogon-rust):* after spawning explorer in the arm64 boot path,
+`SwitchDesktop((*WLSession).ApplicationDesktop)` so the active input desktop is
+the shell's desktop (what a normal logon reaches via `WlxSwitchDesktopToUser`);
+and skip `setup.rs`'s failure-path `SwitchDesktop(WinlogonDesktop)` on arm64
+(no GINA UI to fall back to) so the async setup thread can't re-strand it.
+
+**Bug B — SystemTime never seeded: the "Query the clock" block was dropped in
+translation.** `Phase1InitializationDiscard` (C `ex/init.c`) seeds boot time
+from `HalQueryRealTimeClock` → `KeSetSystemTime`; the whole `if
+((ExCmosClockIsSane) && (HalQueryRealTimeClock(&TimeFields)))` block was missing
+from `ex/init.rs`, so `SharedUserData.SystemTime` accumulated from 0 ==
+1601-01-01 (tray clock stuck at "12:00 AM"). This hit **all three arches**
+(x86/amd64 too — no separate seed path existed). Fix: restored the block in
+`ex/init.rs`. On arm64 the HAL RTC stub returned a hardcoded 2025-01-01;
+`hal-rust/src/arm64/halstubs.rs::HalQueryRealTimeClock` now reads the QEMU virt
+**PL031** RTC (`DR` @ `0x0901_0000`, seconds since the Unix epoch) with a
+civil-date conversion, so arm64 shows real wall-clock time.
+
+**Verified:** clean boot (no GDB), zero `no dirty window` leaks (was 4/boot),
+tray clock shows real RTC time and ticks on its own (`6:56`→`6:58`), full
+notepad title bar + Start button + taskbar button render. `IntGetPaintMessage`
+walking the wrong desktop is the general shape — if windows draw once then
+freeze, check `gpdeskInputDesktop` vs the shell thread's `rpdesk` before
+suspecting the timer/paint bookkeeping.
+
+### 9.22 Driver hardware-settle delays are pure loss in a VM — gate them on the driver's own VM detection (uniata cost 2.85s/boot)
+
+**Symptom shape:** a boot phase is "slow" with zero serial output and no
+faults — just wall-clock disappearing inside a driver's init/probe path.
+Under TCG every `KeStallExecutionProcessor` microsecond is real (and costs
+~1.7× nominal once the port-I/O in the polling loop is added).
+
+**The class:** hardware drivers inherited from real-metal code are full of
+fixed settle delays and worst-case polling budgets (wait-for-BUSY-assert,
+post-reset mechanical settle, bus-settle stalls). Virtual devices complete
+these operations instantly, so the *entire* budget burns on every boot.
+The tell that it's this class and not a real wait: the delay is identical
+run-to-run and the device works fine afterwards.
+
+**Recipe:** (1) drop permanent `DbgPrint` phase markers at the suspect
+driver's probe/init milestones (entry/exit of each stage), boot once with
+`VIBEOS_SERIAL_TIMESTAMPS=1 ./vibeos-cli smoke`, read the per-stage deltas
+from the live log. (2) For each hot stall, gate it on the driver's own VM
+detection rather than deleting it — most storage/NIC drivers already detect
+the hypervisor (uniata: `g_opt_VirtualMachine`, set from PCI subsys
+1af4:1100 for QEMU).
+
+**uniata instance (fixed 2026-07-06, amd64/i386):** 12 × `AtapiSoftReset`
+each burned a 100ms wait for BUSY to *assert* after ATAPI RESET (QEMU never
+asserts it; Bochs already had an `i=100` shortcut — QEMU is the same IDE
+lineage, extend the shortcut: uniata-rust `id_ata_part1.rs`) ≈ 2.0s, plus an
+unconditional 500ms "mechanical settle" per ATAPI lun in
+`AtapiHwInitialize__` (`id_ata_part2.rs`) ≈ 0.88s real. Probe: 2.35s →
+120ms; FindDevices→INQUIRY-complete: 880ms → 4ms. The `[UNIATA]` markers are
+permanent — future regressions in this window are attributable from any
+timestamped smoke log.

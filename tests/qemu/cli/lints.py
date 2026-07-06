@@ -227,6 +227,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Duplicate #[no_mangle] symbol ratchet: symbols defined in >=2 crates that
+    # link into the kernel PE are masked by --allow-multiple-definition (which is
+    # load-bearing — the multi-staticlib runtime dups are irreducible). We can't
+    # drop the flag, so we FREEZE its masked set and gate NEW cross-crate
+    # collisions — the IsEqualGUID-class near-miss where a translation re-defines
+    # a symbol another crate already owns. Baseline = accepted deliberate cohab
+    # (today: arbiter's amd64 KeGetCurrentIrql). See the tool docstring +
+    # docs/engineering/allow-multiple-definition-ratchet.md.
+    sds = repo / "tools" / "scan_duplicate_symbols.py"
+    specs.append(
+        (
+            "scan_duplicate_symbols",
+            [py, str(sds), "--lint"] if sds.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # NOTE: scan_bind_all_matches (bind-all match-arm detector) is intentionally
     # NOT wired here yet. It runs `cargo check` in a SEPARATE cold target dir
     # (to avoid force-warn polluting the shared cache), which cold-triggers

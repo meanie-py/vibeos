@@ -260,11 +260,7 @@ pub unsafe extern "C" fn _global_write_barrier() {
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::view::CcTotalDirtyPages), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::view::CcTotalDirtyPages)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::view::CcDeferredWrites), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::view::CcDeferredWrites)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::view::CcDeferredWriteSpinLock), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::view::CcDeferredWriteSpinLock)));
-    // dbgk/dbgkobj.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::dbgk::dbgkobj::DbgkDebugObjectType), core::ptr::read_volatile(core::ptr::addr_of!(crate::dbgk::dbgkobj::DbgkDebugObjectType)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::dbgk::dbgkobj::DbgkpProcessDebugPortMutex), core::ptr::read_volatile(core::ptr::addr_of!(crate::dbgk::dbgkobj::DbgkpProcessDebugPortMutex)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::dbgk::dbgkobj::DbgkpTraceLevel), core::ptr::read_volatile(core::ptr::addr_of!(crate::dbgk::dbgkobj::DbgkpTraceLevel)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::dbgk::dbgkobj::DbgkDebugObjectMapping), core::ptr::read_volatile(core::ptr::addr_of!(crate::dbgk::dbgkobj::DbgkDebugObjectMapping)));
+    // dbgk statics moved to dbgk-rust's _dbgk_global_write_barrier (crate-split).
     // ex/callback.rs
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::ex::callback::SetSystemTimeCallback), core::ptr::read_volatile(core::ptr::addr_of!(crate::ex::callback::SetSystemTimeCallback)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::ex::callback::SetSystemStateCallback), core::ptr::read_volatile(core::ptr::addr_of!(crate::ex::callback::SetSystemStateCallback)));
@@ -793,11 +789,5 @@ pub unsafe extern "C" fn _global_write_barrier() {
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::shim_exports::StopChecking), core::ptr::read_volatile(core::ptr::addr_of!(crate::shim_exports::StopChecking)));
     // vdm/vdmexec.rs
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::vdm::vdmexec::VdmBopCount), core::ptr::read_volatile(core::ptr::addr_of!(crate::vdm::vdmexec::VdmBopCount)));
-    // wmi/guidobj.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::wmi::guidobj::WmipGuidObjectType), core::ptr::read_volatile(core::ptr::addr_of!(crate::wmi::guidobj::WmipGuidObjectType)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::wmi::guidobj::WmipGenericMapping), core::ptr::read_volatile(core::ptr::addr_of!(crate::wmi::guidobj::WmipGenericMapping)));
-    // wmi/wmidrv.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::wmi::wmidrv::WmipServiceDeviceObject), core::ptr::read_volatile(core::ptr::addr_of!(crate::wmi::wmidrv::WmipServiceDeviceObject)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::wmi::wmidrv::WmipAdminDeviceObject), core::ptr::read_volatile(core::ptr::addr_of!(crate::wmi::wmidrv::WmipAdminDeviceObject)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::wmi::wmidrv::WmipFastIoDispatch), core::ptr::read_volatile(core::ptr::addr_of!(crate::wmi::wmidrv::WmipFastIoDispatch)));
+    // wmi statics moved to wmi-rust's _wmi_global_write_barrier (crate-split).
 }

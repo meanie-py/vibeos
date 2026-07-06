@@ -10,18 +10,20 @@ tests/qemu/vm.py:892-902) and the per-arch cap is bypassed (vm.py:1295-1299), so
 concurrent same-arch AND cross-arch boots are collision-safe. The only thing that
 was serial was the *orchestrator* — i.e. the human. This driver removes that:
 
-  1. builds — serial (still gated by the exclusive host CPU lease; parallel builds
-     are a separate follow-up, see docs/engineering). Opt out with --no-build.
-  1.5. lint gate (BLOCKING) — `check --strict --arch <a>` per built arch, in
-     parallel (the full scanner suite: source lints baseline-diff NEW=0,
-     cargo-link/committed-drift bit-rot guards, per-arch binary lints). Reuses
-     the `check` command verbatim so there is ONE strict-check code path, not a
-     reimplementation that could drift. A NEW finding (classification LINT_FAIL)
-     blocks the push stamp; smokes still run so the matrix stays informative.
-     Opt out with --no-lint. This closes the "detection without enforcement"
-     gap where the arsenal ran warn-only in `build` and nothing forced
-     `check --strict` before a land.
-  2. smokes — ALL arches launched concurrently. Wall-clock goes sum -> max.
+  1+2. builds + lanes, PIPELINED (F5, 2026-07-06) — builds run serially among
+     themselves (build-vs-build is the exclusive cpuheavy lease + shared-cache
+     thrash; amd64 first, since it feeds two lanes), but each arch's smoke, its
+     strict lint, and (for amd64) the net lane launch THE MOMENT its own build
+     lands rather than behind an all-arches barrier. Safe by hostlock design:
+     windows-host boots run on the Windows scheduling domain (`bootcpu` pool)
+     and coexist with the next WSL-side build (build ∥ boot is the documented
+     contract). Opt out of builds with --no-build (all lanes launch at once).
+     The lint gate (BLOCKING) is `check --strict --arch <a>` per built arch —
+     the full scanner suite: source lints baseline-diff NEW=0, cargo-link/
+     committed-drift bit-rot guards, per-arch binary lints. Reuses the `check`
+     command verbatim so there is ONE strict-check code path. A NEW finding
+     (classification LINT_FAIL) blocks the push stamp; smokes still run so the
+     matrix stays informative. Opt out with --no-lint.
   3. flake-retries — a *documented* flake (KNOWN_FLAKE / FLAKY), an environment
      failure (LAUNCH_FAIL), or a contention-characterized HANG_TIMEOUT (serial
      still flowing at the deadline AND no kernel census/lockdep wedge
@@ -149,8 +151,13 @@ def _net_once(repo: Path, root: Path) -> dict:
     if not test_file.exists():
         return {"arch": "net", "verdict": "SKIP", "classification": "", "ok": True,
                 "retryable": False, "seconds": 0.0, "run_dir": str(root), "salient": ""}
+    # --skip-clean-build: the gate's own build stage produced the media this
+    # lane boots (builds strictly precede smokes), so the conftest fixture's
+    # nuke-cargo-target + `ninja livecd` re-run is redundant here — measured
+    # 17.6s of the lane's wall. Standalone `pytest test_net.py` keeps the
+    # clean-build guard by default (raw pytest has no staleness gate).
     cmd = [_sys.executable, "-m", "pytest", str(test_file), "--arch", "amd64-uefi-net",
-           "--timeout", "600", "-q", "-p", "no:cacheprovider"]
+           "--timeout", "600", "-q", "-p", "no:cacheprovider", "--skip-clean-build"]
     t0 = time.monotonic()
     try:
         proc = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True, timeout=1200)
@@ -277,104 +284,118 @@ def gate(args, repo: Path) -> int:
     run = Run("gate", "+".join(arches))
     gate_root = run.dir
 
-    # --- phase 1: builds (serial — exclusive host CPU lease) ---
-    if do_build:
-        for arch in arches:
-            bt0 = time.monotonic()
-            # --no-check: skip the build's warn-only source-lint arsenal (~20-40s
-            # per arch, serial). Phase 1.5 below runs the SAME suite strict and
-            # blocking (`check --strict`), so the warn-only pass inside a gate
-            # build is pure duplication — the gate loses no coverage. Only safe
-            # when the lint phase actually runs: --no-lint keeps the in-build pass.
-            cmd = [str(repo / "vibeos-cli"), "build", "--arch", arch]
-            if not getattr(args, "no_lint", False):
-                cmd.append("--no-check")
-            if getattr(args, "clean", False):
-                cmd.append("--clean")
-            cp = run.run(cmd, cwd=repo, stage=f"build:{arch}")
-            bdt = time.monotonic() - bt0
-            if cp.returncode != 0:
-                run.add(
-                    Stage(
-                        f"build:{arch}",
-                        exit=cp.returncode,
-                        seconds=bdt,
-                        status="fail",
-                        detail="build failed",
-                        salient=[f"vibeos-cli build --arch {arch} exited {cp.returncode}"],
-                    )
-                )
-                # a build failure is fatal for that arch; keep building the rest so
-                # the matrix is complete, but this arch won't smoke (filtered below).
-            else:
-                run.add(Stage(f"build:{arch}", seconds=bdt, status="ok", detail="built"))
-        built = {
-            s.name.split(":", 1)[1]
-            for s in run.stages
-            if s.name.startswith("build:") and s.status == "ok"
-        }
-        arches = [a for a in arches if a in built]
-        if not arches:
-            run.classification = "BUILD_FAIL"
-            return run.finalize(repo)
-
-    # --- phase 1.5: strict lint gate per built arch (T3 — blocks the stamp) ---
-    # Runs the scanner suite blocking (baseline-diff NEW=0) so the arsenal
-    # enforces on the land path instead of warn-only. Independent per arch →
-    # parallel; a NEW finding fails the gate but smokes still run (informative).
-    # Lints are launched here but collected AFTER the smokes are submitted (they
-    # run concurrently with the smokes): `check --strict` gates the push stamp,
-    # not the boots, so serializing lint (~60s wall) before the smokes was pure
-    # added critical path. CPU-wise the 3 lint runs (~3 cores) coexist fine with
-    # the TCG smokes on this host; the smokes self-throttle on hostlock anyway.
-    lint_ok: dict[str, bool] = {}
-    lex = None
-    lfut: dict = {}
-    if not getattr(args, "no_lint", False):
-        lex = cf.ThreadPoolExecutor(max_workers=min(len(arches), 4) or 1)
-        lfut = {lex.submit(_lint_once, repo, a, gate_root / f"lint-{a}"): a for a in arches}
-
-    def _collect_lints() -> None:
-        for f in cf.as_completed(lfut):
-            r = f.result()
-            lint_ok[r["arch"]] = r["ok"]
-            run.add(
-                Stage(
-                    f"lint:{r['arch']}",
-                    seconds=r["seconds"],
-                    status="ok" if r["ok"] else "fail",
-                    detail="check --strict clean"
-                    if r["ok"]
-                    else f"NEW lint findings (exit {r['exit']})",
-                    salient=[]
-                    if r["ok"]
-                    else [r["salient"] or f"check --strict --arch {r['arch']} failed"],
-                )
-            )
-            if not r["ok"] and not run.classification:
-                run.classification = "LINT_FAIL"
-        if lex is not None:
-            lex.shutdown(wait=False)
-
-    # --- phase 2: first-pass smokes, all arches in parallel ---
-    # The amd64 net suite runs as its own concurrent lane (pseudo-arch "net"):
-    # it needs the amd64 build and is skipped with --no-net.
-    net_lane = ("amd64" in arches) and not getattr(args, "no_net", False)
-    lanes = list(arches) + (["net"] if net_lane else [])
-    max_workers = min(len(lanes) * (1 + retries), 12) or 1
+    # --- phases 1+1.5+2, PIPELINED (F5, 2026-07-06) ---
+    # Builds stay serial among THEMSELVES (build-vs-build is the exclusive
+    # cpuheavy lease + shared-cache thrash), but each arch's lint + smoke (+ the
+    # amd64 net lane) launch THE MOMENT its own build lands instead of waiting
+    # for the all-arches build barrier. This is safe by hostlock design:
+    # windows-host QEMU boots run on the WINDOWS scheduling domain and throttle
+    # on the separate `bootcpu` pool, so a boot coexists with the next WSL-side
+    # build (which leaves physical-core headroom via VIBEOS_BUILD_CORE_RESERVE)
+    # — build ∥ boot is the documented contract, build-vs-build is not.
+    # amd64 builds FIRST: it feeds two lanes (own smoke + net, the longest), so
+    # its lanes should start earliest. Modeled wall-clock (warm): ~390s → ~230s.
+    #
+    # Lint (`check --strict`, T3) is source-only per arch → independent of the
+    # build artifacts; it launches alongside the arch's smoke and gates the push
+    # stamp, not the boots.
+    net_requested = not getattr(args, "no_net", False)
+    do_lint = not getattr(args, "no_lint", False)
+    build_order = sorted(arches, key=lambda a: a != "amd64")  # amd64 first, rest in order
     results: dict[str, dict] = {}
+    lint_ok: dict[str, bool] = {}
+    fut: dict = {}
+    lfut: dict = {}
 
     def _lane_once(lane: str, root: Path) -> dict:
         if lane == "net":
             return _net_once(repo, root)
         return _smoke_once(repo, lane, root, smoke_extra)
 
+    # Workers: every lane's first pass can be in flight while retries queue, plus
+    # the (cheap, thread-blocking) lint runs share the same executor.
+    n_lanes = len(arches) + (1 if net_requested and "amd64" in arches else 0)
+    max_workers = min(n_lanes * (1 + retries) + (len(arches) if do_lint else 0), 16) or 1
+
     with cf.ThreadPoolExecutor(max_workers=max_workers) as ex:
-        fut = {
-            ex.submit(_lane_once, a, gate_root / f"smoke-{a}-a1"): a
-            for a in lanes
-        }
-        _collect_lints()  # concurrent with the smokes just submitted
+
+        def _launch_lanes(arch: str) -> None:
+            """Submit an arch's post-build lanes (smoke [+ net] + lint) immediately."""
+            fut[ex.submit(_lane_once, arch, gate_root / f"smoke-{arch}-a1")] = arch
+            if arch == "amd64" and net_requested:
+                fut[ex.submit(_lane_once, "net", gate_root / "smoke-net-a1")] = "net"
+            if do_lint:
+                lfut[ex.submit(_lint_once, repo, arch, gate_root / f"lint-{arch}")] = arch
+
+        if do_build:
+            for arch in build_order:
+                bt0 = time.monotonic()
+                # --no-check: skip the build's warn-only source-lint arsenal
+                # (~20-40s per arch, serial). The strict lint lane runs the SAME
+                # suite blocking (`check --strict`), so the warn-only pass inside
+                # a gate build is pure duplication — the gate loses no coverage.
+                # Only safe when the lint lanes actually run: --no-lint keeps the
+                # in-build pass.
+                cmd = [str(repo / "vibeos-cli"), "build", "--arch", arch]
+                if do_lint:
+                    cmd.append("--no-check")
+                if getattr(args, "clean", False):
+                    cmd.append("--clean")
+                cp = run.run(cmd, cwd=repo, stage=f"build:{arch}")
+                bdt = time.monotonic() - bt0
+                if cp.returncode != 0:
+                    run.add(
+                        Stage(
+                            f"build:{arch}",
+                            exit=cp.returncode,
+                            seconds=bdt,
+                            status="fail",
+                            detail="build failed",
+                            salient=[f"vibeos-cli build --arch {arch} exited {cp.returncode}"],
+                        )
+                    )
+                    # a build failure is fatal for that arch; keep building the
+                    # rest so the matrix is complete, but this arch won't smoke.
+                else:
+                    run.add(Stage(f"build:{arch}", seconds=bdt, status="ok", detail="built"))
+                    _launch_lanes(arch)  # pipeline: this arch smokes while the next builds
+            built = {
+                s.name.split(":", 1)[1]
+                for s in run.stages
+                if s.name.startswith("build:") and s.status == "ok"
+            }
+            arches = [a for a in arches if a in built]
+            if not arches:
+                run.classification = "BUILD_FAIL"
+                return run.finalize(repo)
+        else:
+            for arch in build_order:
+                _launch_lanes(arch)
+
+        net_lane = ("amd64" in arches) and net_requested
+        lanes = list(arches) + (["net"] if net_lane else [])
+
+        def _collect_lints() -> None:
+            for f in cf.as_completed(lfut):
+                r = f.result()
+                lint_ok[r["arch"]] = r["ok"]
+                run.add(
+                    Stage(
+                        f"lint:{r['arch']}",
+                        seconds=r["seconds"],
+                        status="ok" if r["ok"] else "fail",
+                        detail="check --strict clean"
+                        if r["ok"]
+                        else f"NEW lint findings (exit {r['exit']})",
+                        salient=[]
+                        if r["ok"]
+                        else [r["salient"] or f"check --strict --arch {r['arch']} failed"],
+                    )
+                )
+                if not r["ok"] and not run.classification:
+                    run.classification = "LINT_FAIL"
+
+        _collect_lints()  # concurrent with the in-flight smokes
         for f in cf.as_completed(fut):
             r = f.result()
             results[r["arch"]] = r

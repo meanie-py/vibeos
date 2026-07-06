@@ -117,10 +117,34 @@ function(setup_host_tools)
             -DTARGET_BUILD_TYPE=${CMAKE_BUILD_TYPE}
             -DCMAKE_BUILD_TYPE=${HOST_BUILD_TYPE}
             ${CMAKE_HOST_TOOLS_EXTRA_ARGS}
-        BUILD_ALWAYS TRUE
         INSTALL_COMMAND ${CMAKE_COMMAND} -E true
         BUILD_BYPRODUCTS ${HOST_TOOLS_OUTPUT}
     )
+
+    # Upstream used BUILD_ALWAYS TRUE here. That omits the build stamp, so the
+    # phony host-tools chain was DIRTY ON EVERY BUILD and the dirt propagated
+    # into ~53k graph nodes — most expensively the ~40 cargo-module custom
+    # commands (custom commands re-RUN when any dep is phony-dirty; restat only
+    # stops further propagation afterwards), all re-invoking cargo concurrently
+    # and serializing on cargo's package-cache lock. Measured cost 2026-07-06:
+    # ~87s of phantom re-runs on a literal no-op `ninja livecd`, per arch, on
+    # every warm build (so ~4.5 min of pure waste per full gate).
+    # Instead: build once, and re-run the step only when a host-tool source
+    # actually changes, via file-level step dependencies on the sub-build's
+    # real input tree (sdk/tools + the host-built libs + shared headers — the
+    # source dirs compiled by host-tools/bin/build.ninja). The inner ninja is
+    # incremental, and BUILD_BYPRODUCTS + restat prune downstream when the tool
+    # binaries come out unchanged. An over-broad glob is safe (worst case: a
+    # cheap inner no-op ninja run); a MISSED input would ship a stale tool, so
+    # the glob deliberately sweeps whole directories, all extensions.
+    file(GLOB_RECURSE _host_tools_srcs CONFIGURE_DEPENDS
+        ${REACTOS_SOURCE_DIR}/sdk/tools/*
+        ${REACTOS_SOURCE_DIR}/sdk/lib/cmlib/*
+        ${REACTOS_SOURCE_DIR}/sdk/lib/inflib/*
+        ${REACTOS_SOURCE_DIR}/sdk/lib/3rdparty/*
+        ${REACTOS_SOURCE_DIR}/dll/win32/dbghelp/*
+        ${REACTOS_SOURCE_DIR}/sdk/include/*.h)
+    ExternalProject_Add_StepDependencies(host-tools build ${_host_tools_srcs})
 
     ExternalProject_Get_Property(host-tools INSTALL_DIR)
 

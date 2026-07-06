@@ -1,0 +1,29 @@
+# dbgprint-rust — the kernel's Rust-native debug-print infrastructure, hoisted out
+# of ntoskrnl-rust into a leaf crate (ntoskrnl crate-split Phase 1b). It holds the
+# format-and-emit macros (dbg_print!, kdbp_print!, swprintf!, wstr!, …) plus the
+# `dbgprint` runtime module (rust_dbg_print/rust_swprintf/… + the IntoSlot trait)
+# that bypass the C variadic trampolines and route through ntprintf. The actual
+# kernel sinks (KdbPutsN/KdpPrintString/DbgPrintEmitPreformatted) are reached via
+# extern blocks resolved at the kernel link — so this crate has ZERO deps on the
+# rest of ntoskrnl-rust. Extracting it is the prerequisite for peeling se/iomgr/
+# pnpmgr/cc off the monolith: those subsystems use the print macros, so they can
+# now depend on THIS leaf instead of on ntoskrnl-rust.
+#
+# NOTE: this is a LEAF that ntoskrnl-rust DEPENDS ON (not a severed staticlib like
+# lpc/fsrtl/dbgk/wmi). Its `pub fn`s are monomorphized into callers, so it exports
+# no #[no_mangle] symbols and needs no `extern crate` force-link in kernel-rust and
+# no global write-barrier.
+[package]
+name = "dbgprint-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+# Type + opaque_ptr substrate (matches ntoskrnl-rust so feature unification is a
+# no-op), plus the ANSI/wide ntprintf formatters the sinks render through.
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+ntprintf = { path = "../ntprintf" }
+ntprintf_w = { path = "../ntprintf_w" }
