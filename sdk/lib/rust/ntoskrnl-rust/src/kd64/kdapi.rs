@@ -1816,7 +1816,11 @@ pub unsafe extern "system" fn KdDisableDebuggerWithLock(need_lock: BOOLEAN) -> N
             KiDebugRoutine = Some(abi_cast!(KdpStub));
 
             KdDebuggerEnabled = 0u8;
-            *((SharedUserData as *mut u8).add(0x2d8)) = 0u8;
+            // C: SharedUserData->KdDebuggerEnabled = FALSE. Was a raw +0x2d8 poke —
+            // KdDebuggerEnabled is at 0x2d4 (ketypes.h), so the old code cleared a
+            // neighboring field and left the user-visible flag stale (found by
+            // scan_magic_offsets audit). Use the typed field.
+            (*(SharedUserData as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA)).KdDebuggerEnabled = 0;
         }
     }
 

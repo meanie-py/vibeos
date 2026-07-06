@@ -1001,12 +1001,9 @@ pub unsafe extern "C" fn MiDereferencePfnAndDropLockCount(Pfn1: *mut _MMPFN) {
             return;
         }
 
-        // Atomic CAS on the reference count (at offset U3, first 2 bytes)
-        // U3 offset: 24 on 64-bit, 12 on 32-bit (same as reference_count() accessor)
-        #[cfg(target_pointer_width = "64")]
-        const U3_OFFSET: usize = 24;
-        #[cfg(target_pointer_width = "32")]
-        const U3_OFFSET: usize = 12;
+        // Atomic CAS on the reference count (at offset U3, first 2 bytes).
+        // Derived from bindgen (offset_check-asserted vs C) — never a numeral.
+        const U3_OFFSET: usize = core::mem::offset_of!(ntkrnl_sys::ddk::_MMPFN, u3);
         let refcount_ptr = (pfn as *mut u8).add(U3_OFFSET) as *mut i16;
         RefCount = InterlockedCompareExchange16(
             refcount_ptr,
@@ -1276,12 +1273,10 @@ extern "C" {
 // ============================================================================
 
 // OriginalPte offset in MMPFN:
-// 64-bit: u1(8) + PteAddress(8) + u2(8) + u3(4) + UsedPageTableEntries(4) = 32
-// 32-bit: u1(4) + PteAddress(4) + u2(4) + u3(4) = 16
-#[cfg(target_pointer_width = "64")]
-const MMPFN_ORIGINAL_PTE_OFFSET: usize = 32;
-#[cfg(target_pointer_width = "32")]
-const MMPFN_ORIGINAL_PTE_OFFSET: usize = 16;
+// OriginalPte union ({OriginalPte|AweReferenceCount|RmapListHead}, bindgen
+// __bindgen_anon_1). Derived from bindgen (offset_check-asserted vs C).
+const MMPFN_ORIGINAL_PTE_OFFSET: usize =
+    core::mem::offset_of!(ntkrnl_sys::ddk::_MMPFN, __bindgen_anon_1);
 
 // Note: MMPFN has a dedicated ULONG UsedPageTableEntries at offset 28 on _WIN64,
 // but ReactOS C code (miarm.h) uses OriginalPte.u.Soft.UsedPageTableEntries
@@ -1359,11 +1354,9 @@ pub unsafe fn mmpfn_set_page_color(pfn: PMMPFN, color: ULONG) {
     mmpfn_set_mmpfnentry_raw(pfn, entry);
 }
 
-/// Get raw MMPFNENTRY u16 (at u3 + 2)
-#[cfg(target_pointer_width = "64")]
-const MMPFN_U3_OFFSET: usize = 24;
-#[cfg(target_pointer_width = "32")]
-const MMPFN_U3_OFFSET: usize = 12;
+/// Get raw MMPFNENTRY u16 (at u3 + 2). Derived from bindgen (offset_check-
+/// asserted vs C).
+const MMPFN_U3_OFFSET: usize = core::mem::offset_of!(ntkrnl_sys::ddk::_MMPFN, u3);
 
 #[inline]
 pub unsafe fn mmpfn_mmpfnentry_raw(pfn: PMMPFN) -> u16 {

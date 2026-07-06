@@ -32,7 +32,7 @@ const PowerDeviceD3: ntkrnl_sys::ddk::DEVICE_POWER_STATE = 4;
 const CmResourceShareShared: u8 = 3;
 const CmResourceTypeDevicePrivate: u32 = 129;
 // FIELD_OFFSET(PCI_COMMON_CONFIG, DeviceSpecific) == 0x40
-const PCI_COMMON_HDR_LENGTH: u32 = 0x40;
+const PCI_COMMON_HDR_LENGTH: u32 = 0x40; // nolint: magic-offset (PCI config-space header length, protocol constant)
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{CM_FULL_RESOURCE_DESCRIPTOR, _DEVICE_RELATIONS, _IO_RESOURCE_DESCRIPTOR, _IO_RESOURCE_REQUIREMENTS_LIST, _PCI_COMMON_HEADER};
@@ -269,7 +269,7 @@ pub unsafe extern "system" fn PcipUpdateHardware(
 
     // Update device configuration
     (*PciData).Status = 0;
-    PciWriteDeviceConfig(PdoExtension, PciData, 0, PCI_COMMON_HDR_LENGTH);
+    PciWriteDeviceConfig(PdoExtension, PciData, 0, PCI_COMMON_HDR_LENGTH); // nolint: magic-offset (PCI config-space header length, protocol constant)
 
     // Turn decodes back on
     PciDecodeEnable(
@@ -610,7 +610,7 @@ pub unsafe extern "system" fn PciQueryRequirements(
             PdoExtension,
             (core::ptr::addr_of_mut!(PciHeader)).cast(),
             0,
-            PCI_COMMON_HDR_LENGTH,
+            PCI_COMMON_HDR_LENGTH, // nolint: magic-offset (PCI config-space header length, protocol constant)
         );
 
         Status = PciBuildRequirementsList(
@@ -1039,7 +1039,7 @@ pub unsafe extern "system" fn PciGetEnhancedCapabilities(
         } else {
             (*PciData).u.type0.CapabilitiesPtr
         };
-        if (cap_ptr & 0x3) != 0 || (cap_ptr as u32) < PCI_COMMON_HDR_LENGTH {
+        if (cap_ptr & 0x3) != 0 || (cap_ptr as u32) < PCI_COMMON_HDR_LENGTH { // nolint: magic-offset (PCI config-space header length, protocol constant)
             (*PdoExtension).CapabilitiesPtr = 0;
             (*PdoExtension).HackFlags |= (PCI_HACK_NO_PM_CAPS as u64);
         } else {
@@ -1147,13 +1147,13 @@ pub unsafe extern "system" fn PciWriteLimitsAndRestoreCurrent(
     let PciData = (*Context).PciData;
 
     // Write limit discovery header
-    PciWriteDeviceConfig(PdoExtension, PciData, 0, PCI_COMMON_HDR_LENGTH);
+    PciWriteDeviceConfig(PdoExtension, PciData, 0, PCI_COMMON_HDR_LENGTH); // nolint: magic-offset (PCI config-space header length, protocol constant)
 
     // Read what the device indicated the limits are
-    PciReadDeviceConfig(PdoExtension, PciData.cast(), 0, PCI_COMMON_HDR_LENGTH);
+    PciReadDeviceConfig(PdoExtension, PciData.cast(), 0, PCI_COMMON_HDR_LENGTH); // nolint: magic-offset (PCI config-space header length, protocol constant)
 
     // Write back the original configuration header
-    PciWriteDeviceConfig(PdoExtension, Current, 0, PCI_COMMON_HDR_LENGTH);
+    PciWriteDeviceConfig(PdoExtension, Current, 0, PCI_COMMON_HDR_LENGTH); // nolint: magic-offset (PCI config-space header length, protocol constant)
 
     // Copy back the original command from the context
     (*Current).Command = (*Context).Command;
@@ -1190,7 +1190,7 @@ pub unsafe extern "system" fn PcipGetFunctionLimits(Context: *mut _PCI_CONFIGURA
     core::ptr::copy_nonoverlapping(
         current as *const u8,
         pci_data as *mut u8,
-        PCI_COMMON_HDR_LENGTH as usize,
+        PCI_COMMON_HDR_LENGTH as usize, // nolint: magic-offset (PCI config-space header length, protocol constant)
     );
 
     let configurator: *mut _PCI_CONFIGURATOR =
@@ -1232,15 +1232,15 @@ pub unsafe extern "system" fn PcipGetFunctionLimits(Context: *mut _PCI_CONFIGURA
 
     if (*pdo_extension).ExpectedWritebackFailure == 0 {
         let header_after =
-            (pci_data as *mut u8).add(PCI_COMMON_HDR_LENGTH as usize) as *mut _PCI_COMMON_HEADER;
-        PciReadDeviceConfig(pdo_extension, (header_after).cast(), 0, PCI_COMMON_HDR_LENGTH);
+            (pci_data as *mut u8).add(PCI_COMMON_HDR_LENGTH as usize) as *mut _PCI_COMMON_HEADER; // nolint: magic-offset (PCI config-space header length, protocol constant)
+        PciReadDeviceConfig(pdo_extension, (header_after).cast(), 0, PCI_COMMON_HDR_LENGTH); // nolint: magic-offset (PCI config-space header length, protocol constant)
 
         let offset = RtlCompareMemory(
             header_after as *const core::ffi::c_void,
             current as *const core::ffi::c_void,
-            PCI_COMMON_HDR_LENGTH as usize as _,
+            PCI_COMMON_HDR_LENGTH as usize as _, // nolint: magic-offset (PCI config-space header length, protocol constant)
         );
-        if offset != PCI_COMMON_HDR_LENGTH as usize as _ {
+        if offset != PCI_COMMON_HDR_LENGTH as usize as _ { // nolint: magic-offset (PCI config-space header length, protocol constant)
             DbgPrint(
                 b"PCI - CFG space write verify failed at offset 0x%x\n\0".as_ptr() as _,
                 offset as u32,
@@ -1308,7 +1308,7 @@ pub unsafe extern "system" fn PciGetFunctionLimits(
 
     let PciData: *mut _PCI_COMMON_HEADER = ExAllocatePoolWithTag(
         0,
-        (2 * PCI_COMMON_HDR_LENGTH) as usize,
+        (2 * PCI_COMMON_HDR_LENGTH) as usize, // nolint: magic-offset (PCI config-space header length, protocol constant)
         u32::from_le_bytes([b'B', b'i', b'c', b'P']),
     ) as *mut _PCI_COMMON_HEADER;
     if PciData.is_null() {
@@ -1370,8 +1370,8 @@ pub unsafe extern "system" fn PciScanBus(DeviceExtension: PPCI_FDO_EXTENSION) ->
     let mut temp_offset: u16;
     let mut hack_flags: i64;
     let mut device_object: PDEVICE_OBJECT = core::ptr::null_mut();
-    let mut buffer: [u8; PCI_COMMON_HDR_LENGTH as usize] = [0u8; PCI_COMMON_HDR_LENGTH as usize];
-    let mut bios_buffer: [u8; PCI_COMMON_HDR_LENGTH as usize] = [0u8; PCI_COMMON_HDR_LENGTH as usize];
+    let mut buffer: [u8; PCI_COMMON_HDR_LENGTH as usize] = [0u8; PCI_COMMON_HDR_LENGTH as usize]; // nolint: magic-offset (PCI config-space header length, protocol constant)
+    let mut bios_buffer: [u8; PCI_COMMON_HDR_LENGTH as usize] = [0u8; PCI_COMMON_HDR_LENGTH as usize]; // nolint: magic-offset (PCI config-space header length, protocol constant)
     let pci_data = buffer.as_mut_ptr() as PPCI_COMMON_HEADER;
     let bios_data = bios_buffer.as_mut_ptr() as PPCI_COMMON_HEADER;
     let mut pci_slot: PCI_SLOT_NUMBER = core::mem::zeroed();
@@ -1428,7 +1428,7 @@ pub unsafe extern "system" fn PciScanBus(DeviceExtension: PPCI_FDO_EXTENSION) ->
                               pci_slot,
                               core::ptr::addr_of_mut!((*pci_data).DeviceID).cast(),
                               core::mem::size_of::<u16>() as u32,
-                              PCI_COMMON_HDR_LENGTH - core::mem::size_of::<u16>() as u32);
+                              PCI_COMMON_HDR_LENGTH - core::mem::size_of::<u16>() as u32); // nolint: magic-offset (PCI config-space header length, protocol constant)
 
             PciApplyHacks(DeviceExtension,
                           pci_data,
@@ -1810,7 +1810,7 @@ pub unsafe extern "system" fn PciSetResources(
         PdoExtension,
         (core::ptr::addr_of_mut!(pci_data)).cast(),
         0,
-        PCI_COMMON_HDR_LENGTH as u32,
+        PCI_COMMON_HDR_LENGTH as u32, // nolint: magic-offset (PCI config-space header length, protocol constant)
     );
 
     if PcipIsSameDevice((PdoExtension).cast(), core::ptr::addr_of_mut!(pci_data)) == 0 {

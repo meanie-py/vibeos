@@ -1956,7 +1956,7 @@ unsafe fn BITMAP_LoadImageW(
             && (bpp == 16 || bpp == 32)
             && (*pbmiCopy).bmiHeader.biSizeImage + (*pbmiCopy).bmiHeader.biSize == ResSize
         {
-            pvBits = (pvBits as *mut u8).sub(12) as *mut core::ffi::c_void;
+            pvBits = (pvBits as *mut u8).sub(12) as *mut core::ffi::c_void; // nolint: magic-offset (Wine GCC-resource workaround: 3 DWORD masks)
             WARN!(b"Found GCC Resource Compiled 16-bpp or 32-bpp error\n\0".as_ptr());
         }
 

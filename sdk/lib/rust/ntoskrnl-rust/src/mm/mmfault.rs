@@ -246,27 +246,25 @@ pub unsafe extern "system" fn MmAccessFault(
                 MiUnlockWorkingSetShared(PsGetCurrentThread() as ntkrnl_sys::ddk::PETHREAD, core::ptr::addr_of_mut!(MmSystemCacheWs) as ntkrnl_sys::ddk::PMMSUPPORT);
             }
         } else {
-            // ARM64-only recursion guard: MmAccessFault can be invoked
-            // recursively from MiDeleteVirtualAddresses → MiMakeSystemAddressValid
-            // → page fault on a kernel page table page that resolves through a
-            // user-VAD lookup; on TCG single-CPU arm64 this self-deadlocks the
-            // process WS lock. amd64/i386 KVM happen to schedule around it.
-            // Skip the lock if the caller already owns the WS.
-            #[cfg(target_arch = "aarch64")]
-            let owns = {
-                let t = PsGetCurrentThread();
-                let f = &(*t).__bindgen_anon_9.__bindgen_anon_1;
-                f.OwnsProcessWorkingSetExclusive() != 0 || f.OwnsProcessWorkingSetShared() != 0
-            };
-            #[cfg(not(target_arch = "aarch64"))]
-            let owns = false;
-
-            if !owns {
-                MiLockProcessWorkingSetShared(
-                    PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS,
-                    PsGetCurrentThread(),
-                );
-            }
+            // Acquire the process WS lock, locate the VAD, release. Matches the
+            // C (ntoskrnl/mm/mmfault.c) and the amd64/i386 path — all arches take
+            // the lock unconditionally.
+            //
+            // Previously arm64 carried an `owns`-guard here that skipped the
+            // re-acquire when the thread already held the WS lock, band-aiding a
+            // fault-inside-teardown self-deadlock (MmAccessFault →
+            // MiLockProcessWorkingSetShared while already holding it). That was a
+            // §9.13-era workaround: its false "amd64/i386 KVM schedules around it"
+            // comment predates the TCG default, and amd64 — which NEVER had the
+            // guard — was itself wedging ~50% until §9.13's OriginalPte/RmapListHead
+            // PFN-union root fix (and arm64's §9.16 MiPteToPde fix) landed
+            // 2026-07-04/05. With the root faults fixed the recursion no longer
+            // occurs, so the guard is redundant and removed — arm64 now runs the
+            // exact unconditional-lock path amd64/i386 have always booted green on.
+            MiLockProcessWorkingSetShared(
+                PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS,
+                PsGetCurrentThread(),
+            );
             Vad = MiLocateVad(
                 core::ptr::addr_of_mut!((*(PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS)).VadRoot),
                 Address,
@@ -276,12 +274,10 @@ pub unsafe extern "system" fn MmAccessFault(
                 IsArm3Fault = 1;
             }
 
-            if !owns {
-                MiUnlockProcessWorkingSetShared(
-                    PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS,
-                    PsGetCurrentThread(),
-                );
-            }
+            MiUnlockProcessWorkingSetShared(
+                PsGetCurrentProcess() as *mut ntkrnl_sys::ddk::_EPROCESS,
+                PsGetCurrentThread(),
+            );
         }
     }
 

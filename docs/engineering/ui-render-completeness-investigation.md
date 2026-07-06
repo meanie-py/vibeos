@@ -159,6 +159,23 @@ drops non-client + certain children. Less likely (client paint clearly works), b
 The two observed gaps (top-level chrome; tray children) may be **one root** (H1 reaching
 both) or **two** (H1 for chrome + H2 for bands). Instrumentation will tell.
 
+**H4 — GUI threads on amd64/arm64 skip their client-thread-setup callback (fresh lead,
+2026-07-05).** `co_IntClientThreadSetup()` — the per-GUI-thread `KeUserModeCallback(
+USER32_CALLBACK_CLIENTTHREADSTARTUP)` that runs user32's client-side thread init — is
+**called only on i386**; the call site at `win32k-rust/src/main.rs:673` is gated
+`#[cfg(not(any(x86_64, aarch64)))]` (empty `skip_client_thread_setup` block on amd64/arm64).
+The function itself is fully implemented on all arches — *only the call is skipped*. This
+was found by the per-arch cfg-divergence audit (Tier 2) and is suggestive because **the skip
+is on exactly the two arches with the render gap** and it's per-*GUI-thread* client init.
+If user32's `ClientThreadSetup` primes any per-thread state the NC/band paint path depends
+on, the missing callback would present as incomplete paint on amd64/arm64 only. Cheap to
+test: drop the cfg gate (call it on all arches) and see if chrome/tray paint appears —
+but note re-enabling adds a kernel→user round-trip per GUI thread and may have been skipped
+because that path was fragile in bring-up, so gate ×3. See
+`per-arch-cfg-divergence-audit.md` Tier 2. *(Ranking uncertain vs H1/H2 — verify the
+`ClientThreadSetup` body's actual side-effects first; it may be a near-no-op in our user32,
+in which case demote.)*
+
 ---
 
 ## Diagnostic plan — render milestones (the boot-marker philosophy, applied to UI)

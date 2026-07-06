@@ -41,7 +41,7 @@ const IRP_CURRENT_STACK_LOCATION_OFFSET: usize = 0xb8;
 unsafe fn irp_current_stack_location(irp: PIRP) -> PIO_STACK_LOCATION {
     #[cfg(target_arch = "aarch64")]
     {
-        *((irp as *mut u8).add(IRP_CURRENT_STACK_LOCATION_OFFSET) as *mut PIO_STACK_LOCATION)
+        *((irp as *mut u8).add(IRP_CURRENT_STACK_LOCATION_OFFSET) as *mut PIO_STACK_LOCATION) // nolint: magic-offset (arm64 C-truth: bindgen _IRP layout diverges from the C ABI)
     }
     #[cfg(not(target_arch = "aarch64"))]
     {

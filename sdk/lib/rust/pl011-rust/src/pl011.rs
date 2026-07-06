@@ -35,20 +35,20 @@ const PL011_REG_SIZE: u32 = 0x1000;
 static mut g_UartBase: PVOID = core::ptr::null_mut();
 
 unsafe fn Pl011WriteByte(ch: UCHAR) {
-    let dr = (g_UartBase as *mut u8).add(UARTDR as usize) as *mut u32;
-    let fr = (g_UartBase as *mut u8).add(UARTFR as usize) as *mut u32;
+    let dr = (g_UartBase as *mut u8).add(UARTDR as usize) as *mut u32; // nolint: magic-offset (PL011 MMIO register map)
+    let fr = (g_UartBase as *mut u8).add(UARTFR as usize) as *mut u32; // nolint: magic-offset (PL011 MMIO register map)
     // Spin-wait until TX FIFO is not full
     while core::ptr::read_volatile(fr) & UARTFR_TXFF != 0 {}
     core::ptr::write_volatile(dr, ch as u32);
 }
 
 unsafe fn Pl011RxReady() -> BOOLEAN {
-    let fr = (g_UartBase as *mut u8).add(UARTFR as usize) as *mut u32;
+    let fr = (g_UartBase as *mut u8).add(UARTFR as usize) as *mut u32; // nolint: magic-offset (PL011 MMIO register map)
     ((core::ptr::read_volatile(fr) & UARTFR_RXFE) == 0) as BOOLEAN
 }
 
 unsafe fn Pl011ReadByte() -> UCHAR {
-    let dr = (g_UartBase as *mut u8).add(UARTDR as usize) as *mut u32;
+    let dr = (g_UartBase as *mut u8).add(UARTDR as usize) as *mut u32; // nolint: magic-offset (PL011 MMIO register map)
     (core::ptr::read_volatile(dr) & 0xFF) as UCHAR
 }
 
@@ -77,7 +77,7 @@ pub unsafe extern "system" fn DriverEntry(
     DbgPrint(b"[PL011] UART mapped at %p\n\0".as_ptr() as *const i8, g_UartBase);
 
     // Ensure UART is enabled for TX and RX
-    let cr = (g_UartBase as *mut u8).add(UARTCR as usize) as *mut u32;
+    let cr = (g_UartBase as *mut u8).add(UARTCR as usize) as *mut u32; // nolint: magic-offset (PL011 MMIO register map)
     let mut crVal: u32 = core::ptr::read_volatile(cr);
     DbgPrint(
         b"[PL011] UARTCR = 0x%08lx (UARTEN=%d TXE=%d RXE=%d)\n\0".as_ptr() as *const i8,

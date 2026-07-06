@@ -44,9 +44,15 @@ DBG_DEFAULT_CHANNEL(WINDOWS);
 #define ARM64_PTE_AP_RO         (1ULL << 7)     /* Read-Only */
 #define ARM64_PTE_ATTR_NORMAL   (0ULL << 2)     /* Normal memory */
 
+#define ARM64_PTE_ATTR_DEVICE   (1ULL << 2)     /* Device-nGnRnE (MAIR Attr1) */
+
 /* Standard page entry for kernel memory */
 #define ARM64_KERNEL_PAGE_FLAGS (ARM64_PTE_VALID | ARM64_PTE_PAGE | ARM64_PTE_AF | \
                                  ARM64_PTE_SH_INNER | ARM64_PTE_AP_RW | ARM64_PTE_ATTR_NORMAL)
+
+/* Device MMIO page entry (Device-nGnRnE via MAIR Attr1, no shareability bits) */
+#define ARM64_DEVICE_PAGE_FLAGS (ARM64_PTE_VALID | ARM64_PTE_PAGE | ARM64_PTE_AF | \
+                                 ARM64_PTE_AP_RW | ARM64_PTE_ATTR_DEVICE)
 /* Table descriptors (L0/L1/L2) include AF and SH_INNER even though ARM64 ignores
  * bits[11:2] for table descriptors. The kernel's recursive self-map reinterprets
  * table descriptors as L3 page descriptors where AF IS checked — without it, the
@@ -163,6 +169,31 @@ MempMapSinglePage(ULONG64 VirtualAddress, ULONG64 PhysicalAddress)
 
     /* Create the page entry */
     Pte[Index] = (PhysicalAddress & ~0xFFFULL) | ARM64_KERNEL_PAGE_FLAGS;
+
+    return TRUE;
+}
+
+static
+BOOLEAN
+MempMapDevicePage(ULONG64 PhysicalAddress)
+{
+    PARM64_PTE Pud, Pmd, Pte;
+
+    /* Identity-map one MMIO page with Device-nGnRnE attributes */
+    Pud = MempGetOrCreatePageDir(Arm64Pgd, ARM64_PGD_INDEX(PhysicalAddress));
+    if (!Pud)
+        return FALSE;
+
+    Pmd = MempGetOrCreatePageDir(Pud, ARM64_PUD_INDEX(PhysicalAddress));
+    if (!Pmd)
+        return FALSE;
+
+    Pte = MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(PhysicalAddress));
+    if (!Pte)
+        return FALSE;
+
+    Pte[ARM64_PTE_INDEX(PhysicalAddress)] =
+        (PhysicalAddress & ~0xFFFULL) | ARM64_DEVICE_PAGE_FLAGS;
 
     return TRUE;
 }
@@ -323,6 +354,13 @@ WinLdrMapSpecialPages(VOID)
     Pmd = MempGetOrCreatePageDir(Pud, ARM64_PUD_INDEX(MM_HAL_VA_START));
     MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(MM_HAL_VA_START));
     MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(MM_HAL_VA_START + 2 * 1024 * 1024));
+
+    /* Identity-map the QEMU virt fw_cfg MMIO page (0x09020000, Device attrs)
+     * so the kernel's Phase-0 tripwire-channel probe (ntoskrnl-rust
+     * src/tripwire.rs) is safe regardless of what the UEFI memory map covered.
+     * Non-fatal: without it the probe would fault, so only tripwire loses. */
+    if (!MempMapDevicePage(0x09020000ULL))
+        ERR("Could not map fw_cfg page (tripwire channel disabled)\n");
 
     return TRUE;
 }

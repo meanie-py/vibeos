@@ -14,7 +14,7 @@ use crate::types::*;
 /// Return pointer to user data area past the RtlBalancedLinks header.
 #[inline(always)]
 pub(crate) unsafe fn node_user_data(node: *mut RtlBalancedLinks) -> *mut c_void {
-    (node as *mut u8).add(NODE_HEADER_SIZE) as *mut c_void
+    (node as *mut u8).add(NODE_HEADER_SIZE) as *mut c_void // nolint: magic-offset (size_of-derived const)
 }
 
 /// Check if node is the left child of its parent.

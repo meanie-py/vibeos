@@ -17,8 +17,17 @@ use ntkrnl_sys::inline::ke_i386::RtlFillMemoryUlong;
 #[cfg(target_arch = "aarch64")]
 #[allow(dead_code)]
 unsafe fn RtlFillMemoryUlong(dest: *mut core::ffi::c_void, length: usize, pattern: u32) {
-    core::ptr::write_bytes(dest as *mut u32, 0, length / 4);
-    let _ = pattern;
+    // Fill length/4 ULONGs with `pattern` — RtlFillMemoryUlong semantics, matching
+    // the x86 ke_amd64/ke_i386 inline. The old body zero-filled and dropped the
+    // pattern, which on arm64 would blind the FAT_FILL_FREE poison-fill's UAF
+    // detection (dormant today: the caller is gated on FAT_FILL_FREE != 0).
+    let d = dest as *mut u32;
+    let count = length / 4;
+    let mut i = 0;
+    while i < count {
+        core::ptr::write(d.add(i), pattern);
+        i += 1;
+    }
 }
 use ntkrnl_sys::inline::ex::ExAllocateFromNPagedLookasideList;
 use core::ffi::c_void;

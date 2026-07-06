@@ -2240,6 +2240,18 @@ and arm64 are 4-level — a `#[cfg(target_arch = "aarch64")]` that should have b
 `any(x86_64, aarch64)` is an easy translation miss. Grep `MmInitializeProcessAddressSpace`-style
 paging-level blocks for the same drift (see also §9.14 for the sibling Mm PFN-state fix).
 
+**§9.15 addendum (2026-07-05): this drift is SYSTEMIC, not a one-off.** A workspace-wide
+per-arch `#[cfg]` audit (`tools/scan_arch_cfg.py` +
+[`per-arch-cfg-divergence-audit.md`](per-arch-cfg-divergence-audit.md)) found the same
+"4-level PXE block gated to ONE 4-level arch" pattern in **~8 more Mm functions, in both
+directions** — `MiDeleteVirtualAddresses`/`MmProbeAndLockPages`/`MiCalculatePageCommitment`/
+`MiQueryAddressState`/`MiIsEntireRangeCommitted`/`MiMakePdeExistAndMakeValid` drop the PXE
+on **arm64** (x86_64-only), while `MiLock`/`MiUnlockVirtualMemory` drop it on **amd64**
+(aarch64-only). All latent (the top-level entry is usually resident), all the same fix:
+gate the PXE walk/validate/fault-in `any(x86_64, aarch64)`. **Durable rule: any PXE / top-
+level-paging block must be `any(x86_64, aarch64)` — never one 4-level arch alone.** The
+audit tool is the recurring check.
+
 ### 9.16 (FIXED 2026-07-04) arm64 BUGCHECK 0x4E `PFN_LIST_CORRUPT` (subcode 0x99) at `nettest.exe` teardown — arm64's `MiPteToPde` was one self-map recursion level too high (returned the **PPE**), so `MiDeletePte`'s proto branch decremented the page-**directory**'s share instead of the page table's
 
 **RESOLUTION.** The whole `MiPteToX` navigation family was off by one level on aarch64 — in BOTH
@@ -2332,3 +2344,47 @@ source of the "whoever published the wild pointer" above. A full ×3 gate on
 9.17 as *likely-closed-pending-recurrence* rather than confirmed-fixed (it was
 rare to begin with, so one clean gate isn't proof). Re-open with the attribution
 recipe if it recurs.
+
+### 9.18 Special pool is LIVE — arm it per-boot via the fw_cfg tripwire channel (no media rebuild)
+
+**The tool §9.17 asks for exists now (2026-07-05).** Special pool
+(`ARM3/special.rs`) was fully translated but dead — `MmSpecialPoolTag` was
+never set by anything. The tripwire channel arms it per boot:
+
+```bash
+# One suspect tag (as DISPLAYED in pool dumps, e.g. Gla5 / Usqu):
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Gla5"
+# Every eligible allocation (≤ PAGE_SIZE - header) — boots green to desktop:
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=*"
+# Catch underruns instead of overruns:
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Gla5 SPECIALPOOL_UNDERRUNS=1"
+# Prove the detector end-to-end (deliberate corruption => bugcheck):
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Vibe SPECIALPOOL_SELFTEST=guard"    # 0x50 AT the store
+./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Vibe SPECIALPOOL_SELFTEST=pattern"  # 0xC1/0x23 at free
+```
+
+What you get on a hit, on serial, zero GDB: an overrun past the allocation
+faults the **guard page at the corrupting instruction** — BUGCHECK 0x50 whose
+banner symbolicates `TrapFrame.Rip` to the culprit; in-page slack corruption
+bugchecks 0xC1 at free with case code (0x23 before-buffer / 0x24 after).
+Underrun mode flips data to page start. Serial markers: `[TRIPWIRE] special
+pool armed/ACTIVE` (assert these when scripting; `ERROR:` lines are the
+fail-loud path).
+
+Mechanics: harness passes `-fw_cfg name=opt/org.vibeos.tripwire,string=…`
+(vm.py `_tripwire_args`, env `VIBEOS_TRIPWIRE`); the kernel reads it at
+`MmArmInitSystem` Phase 0 (`ntoskrnl-rust/src/tripwire.rs`) BEFORE PTE sizing
++ `MiInitializeSpecialPool`. Transports: x86 port I/O 0x510/0x511; arm64 MMIO
+0x09020000 (virt) via a Device-attr identity page the arm64 winldr maps
+explicitly (`MempMapDevicePage`) — the signature probe guards non-QEMU.
+Tokens are space/semicolon-separated; **no commas** (QEMU owns the
+comma). Tags are `from_le_bytes` of the display form. Session-pool allocs are
+NOT excluded — win32k allocations divert into (global) special pool, which is
+exactly what the §9.17 / BAD-gate hunts want; watch for session-VA-assumption
+side effects if a hunt behaves oddly.
+
+Pair with the flake farm for rare flakes: `./vibeos-cli farm --arches amd64
+--minutes 480 --tripwire "SPECIALPOOL=*"` soaks boots overnight into
+`~/vibeos-flake-farm/corpus.jsonl` (stop code + symbolicated banner lines per
+failure, artifacts preserved out of /tmp); `./vibeos-cli farm-report` clusters
+failures into ranked (classification, stop, symbol) families.
