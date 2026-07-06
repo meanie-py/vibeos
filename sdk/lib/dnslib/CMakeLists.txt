@@ -32,6 +32,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(DNSLIB_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
+file(GLOB_RECURSE DNSLIB_RUST_SRCS ${DNSLIB_RUST_WORKSPACE_DIR}/dnslib-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${DNSLIB_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -42,16 +43,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${DNSLIB_RUST_TARGET_DIR}/${DNSLIB_RUST_TARGET}/release/libdnslib_rust.a
         ${DNSLIB_RUST_LIB}
-    DEPENDS ${DNSLIB_RUST_WORKSPACE_DIR}/dnslib-rust/Cargo.toml
-            ${DNSLIB_RUST_WORKSPACE_DIR}/dnslib-rust/src/lib.rs
-            ${DNSLIB_RUST_WORKSPACE_DIR}/dnslib-rust/src/dnslib/addr.rs
-            ${DNSLIB_RUST_WORKSPACE_DIR}/dnslib-rust/src/dnslib/dnsaddr.rs
-            ${DNSLIB_RUST_WORKSPACE_DIR}/dnslib-rust/src/dnslib/flatbuf.rs
-            ${DNSLIB_RUST_WORKSPACE_DIR}/dnslib-rust/src/dnslib/hostent.rs
-            ${DNSLIB_RUST_WORKSPACE_DIR}/dnslib-rust/src/dnslib/memory.rs
-            ${DNSLIB_RUST_WORKSPACE_DIR}/dnslib-rust/src/dnslib/sablob.rs
-            ${DNSLIB_RUST_WORKSPACE_DIR}/dnslib-rust/src/dnslib/straddr.rs
-            ${DNSLIB_RUST_WORKSPACE_DIR}/dnslib-rust/src/dnslib/string.rs
+    DEPENDS ${DNSLIB_RUST_SRCS}
+            ${DNSLIB_RUST_WORKSPACE_DIR}/dnslib-rust/Cargo.toml
     WORKING_DIRECTORY ${DNSLIB_RUST_WORKSPACE_DIR}
     COMMENT "Building dnslib-rust (${DNSLIB_RUST_TARGET})"
     VERBATIM)

@@ -228,6 +228,7 @@ elseif(ARCH STREQUAL "arm64")
     set(ACPI_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(ACPI_RUST_RUSTFLAGS "")
 endif()
+file(GLOB_RECURSE ACPI_RUST_SRCS ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${ACPI_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -239,23 +240,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${ACPI_RUST_TARGET_DIR}/${ACPI_RUST_TARGET}/release/libacpi_rust.a
         ${ACPI_RUST_LIB}
-    DEPENDS ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/Cargo.toml
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/lib.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/osl.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/shared.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/types.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/bus.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/buspdo.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/interface.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/power.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/acpienum.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/button.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/system.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/pnp.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/utils.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/busmgr_power.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/eval.rs
-            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/src/driver_main.rs
+    DEPENDS ${ACPI_RUST_SRCS}
+            ${ACPI_RUST_WORKSPACE_DIR}/acpi-rust/Cargo.toml
     WORKING_DIRECTORY ${ACPI_RUST_WORKSPACE_DIR}
     COMMENT "Building acpi-rust (${ACPI_RUST_TARGET})"
     VERBATIM)

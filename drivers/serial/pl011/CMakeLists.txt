@@ -22,6 +22,7 @@ elseif(ARCH STREQUAL "arm64")
     set(PL011_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(PL011_RUST_RUSTFLAGS "")
 endif()
+file(GLOB_RECURSE PL011_RUST_SRCS ${PL011_RUST_WORKSPACE_DIR}/pl011-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${PL011_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -33,9 +34,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${PL011_RUST_TARGET_DIR}/${PL011_RUST_TARGET}/release/libpl011_rust.a
         ${PL011_RUST_LIB}
-    DEPENDS ${PL011_RUST_WORKSPACE_DIR}/pl011-rust/Cargo.toml
-            ${PL011_RUST_WORKSPACE_DIR}/pl011-rust/src/lib.rs
-            ${PL011_RUST_WORKSPACE_DIR}/pl011-rust/src/pl011.rs
+    DEPENDS ${PL011_RUST_SRCS}
+            ${PL011_RUST_WORKSPACE_DIR}/pl011-rust/Cargo.toml
     WORKING_DIRECTORY ${PL011_RUST_WORKSPACE_DIR}
     COMMENT "Building pl011-rust (${PL011_RUST_TARGET})"
     VERBATIM)

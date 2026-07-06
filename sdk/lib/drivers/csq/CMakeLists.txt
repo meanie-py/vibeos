@@ -21,6 +21,7 @@ elseif(ARCH STREQUAL "arm64")
     set(CSQ_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(CSQ_RUST_RUSTFLAGS "")
 endif()
+file(GLOB_RECURSE CSQ_RUST_SRCS ${CSQ_RUST_WORKSPACE_DIR}/csq-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${CSQ_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -32,9 +33,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${CSQ_RUST_TARGET_DIR}/${CSQ_RUST_TARGET}/release/libcsq_rust.a
         ${CSQ_RUST_LIB}
-    DEPENDS ${CSQ_RUST_WORKSPACE_DIR}/csq-rust/Cargo.toml
-            ${CSQ_RUST_WORKSPACE_DIR}/csq-rust/src/lib.rs
-            ${CSQ_RUST_WORKSPACE_DIR}/csq-rust/src/csq.rs
+    DEPENDS ${CSQ_RUST_SRCS}
+            ${CSQ_RUST_WORKSPACE_DIR}/csq-rust/Cargo.toml
     WORKING_DIRECTORY ${CSQ_RUST_WORKSPACE_DIR}
     COMMENT "Building csq-rust (${CSQ_RUST_TARGET})"
     VERBATIM)

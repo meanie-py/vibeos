@@ -24,6 +24,7 @@ elseif(ARCH STREQUAL "arm64")
     set(PCIIDEX_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(PCIIDEX_RUST_RUSTFLAGS "")
 endif()
+file(GLOB_RECURSE PCIIDEX_RUST_SRCS ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${PCIIDEX_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -36,15 +37,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${PCIIDEX_RUST_TARGET_DIR}/${PCIIDEX_RUST_TARGET}/release/libpciidex_rust.a
         ${PCIIDEX_RUST_LIB}
-    DEPENDS ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/Cargo.toml
-            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/lib.rs
-            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/fdo.rs
-            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/miniport.rs
-            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/pciidex.rs
-            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/pdo.rs
-            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/power.rs
-            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/glue.rs
-            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/src/inlines.rs
+    DEPENDS ${PCIIDEX_RUST_SRCS}
+            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/Cargo.toml
     WORKING_DIRECTORY ${PCIIDEX_RUST_WORKSPACE_DIR}
     COMMENT "Building pciidex-rust (${PCIIDEX_RUST_TARGET})"
     VERBATIM)
