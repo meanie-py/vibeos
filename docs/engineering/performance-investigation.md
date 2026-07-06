@@ -218,11 +218,15 @@ Ranked fixes:
    Historical detail preserved: wdf01000.sys is 13.5MB of which ~12.5MB is
    .debug_* (code+data ≈ 0.8MB); wdf01000 cannot be demoted from boot-start —
    cdrom.sys is KMDF (wdf01000_reg.inf).
-2. **Attack the 2.2MB/s transfer**: check whether OVMF is stuck in ATAPI PIO
-   (vs UDMA) on the i440fx IDE path; a DMA-capable attach (or a QEMU option)
-   would multiply throughput. Guest-side constraint: uniata must still see
-   the CD for the livecd session (that's why the CD is IDE, not AHCI).
-   Combined with #1 the load phase approaches ~1-2s.
+2. **[DONE 2026-07-06] The "slow transfer" was freeldr's own 4KB read
+   chunking, not PIO bandwidth.** `UefiInitializeBootDevices` set
+   `DiskReadBufferSize = EFI_PAGE_SIZE` — every 4KB of the ~35MB boot set
+   paid a full firmware ReadBlocks/ATAPI round trip (~9000 calls/boot),
+   which is what capped mid-size files at ~4MB/s and looked like "2.2MB/s
+   PIO". Fix: 64KB read buffer (uefidisk.rs; 1MB HANGS OVMF's ATAPI path at
+   the first read — bisected). Measured: amd64 kernel entry 6.1s → **2.3s**,
+   ntoskrnl reads at 46MB/s, wdf01000 at 103MB/s, serial log end 15.4s.
+   arm64 uses the same uefidisk path (RAM-backed FAT) and benefits too.
 
 ## Verified wins so far (timed smokes, amd64)
 
