@@ -2227,6 +2227,18 @@ and arm64 are 4-level — a `#[cfg(target_arch = "aarch64")]` that should have b
 `any(x86_64, aarch64)` is an easy translation miss. Grep `MmInitializeProcessAddressSpace`-style
 paging-level blocks for the same drift (see also §9.14 for the sibling Mm PFN-state fix).
 
+**§9.15 addendum (2026-07-05): this drift is SYSTEMIC, not a one-off.** A workspace-wide
+per-arch `#[cfg]` audit (`tools/scan_arch_cfg.py` +
+[`per-arch-cfg-divergence-audit.md`](per-arch-cfg-divergence-audit.md)) found the same
+"4-level PXE block gated to ONE 4-level arch" pattern in **~8 more Mm functions, in both
+directions** — `MiDeleteVirtualAddresses`/`MmProbeAndLockPages`/`MiCalculatePageCommitment`/
+`MiQueryAddressState`/`MiIsEntireRangeCommitted`/`MiMakePdeExistAndMakeValid` drop the PXE
+on **arm64** (x86_64-only), while `MiLock`/`MiUnlockVirtualMemory` drop it on **amd64**
+(aarch64-only). All latent (the top-level entry is usually resident), all the same fix:
+gate the PXE walk/validate/fault-in `any(x86_64, aarch64)`. **Durable rule: any PXE / top-
+level-paging block must be `any(x86_64, aarch64)` — never one 4-level arch alone.** The
+audit tool is the recurring check.
+
 ### 9.16 (FIXED 2026-07-04) arm64 BUGCHECK 0x4E `PFN_LIST_CORRUPT` (subcode 0x99) at `nettest.exe` teardown — arm64's `MiPteToPde` was one self-map recursion level too high (returned the **PPE**), so `MiDeletePte`'s proto branch decremented the page-**directory**'s share instead of the page table's
 
 **RESOLUTION.** The whole `MiPteToX` navigation family was off by one level on aarch64 — in BOTH
