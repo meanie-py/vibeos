@@ -832,43 +832,47 @@ pub unsafe extern "system" fn WinMain(
      * shell's first paint already has g_FontListHead populated. The old async
      * CreateThread(FontLoadThread) here raced the shell and lost on i386. */
 
+    /* Spawn notepad.exe LAST among GUI apps so it gets keyboard focus.
+     * arm64-only: on amd64/i386 notepad hits a separate pre-existing
+     * desktop-heap handle-validation AV (pci->pDeskInfo bogus in user32
+     * ValidateHandleNoErr) and is reaped by csrss — tracked follow-up in
+     * docs/engineering/ui-render-completeness-investigation.md. The NC-paint
+     * fix itself is proven on x86 by the tray Start button/clock + dialog
+     * chrome, so notepad stays arm64-only until that AV is fixed. */
     #[cfg(target_arch = "aarch64")]
     {
-        /* Spawn notepad.exe LAST among GUI apps so it gets keyboard focus */
-        {
-            let mut Si: STARTUPINFOW = zeroed();
-            let mut Pi: PROCESS_INFORMATION = zeroed();
-            let mut NoteLine: [u16; 12] = wstr_arr!("notepad.exe");
-            Si.cb = size_of::<STARTUPINFOW>() as DWORD;
-            Si.lpDesktop = wstr!("WinSta0\\Default").as_ptr() as PWSTR;
-            let bResult = CreateProcessW(
-                wstr!("notepad.exe").as_ptr(),
-                NoteLine.as_mut_ptr(),
-                null_mut(),
-                null_mut(),
-                0,
-                0,
-                null_mut(),
-                null(),
-                &mut Si,
-                &mut Pi,
+        let mut Si: STARTUPINFOW = zeroed();
+        let mut Pi: PROCESS_INFORMATION = zeroed();
+        let mut NoteLine: [u16; 12] = wstr_arr!("notepad.exe");
+        Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+        Si.lpDesktop = wstr!("WinSta0\\Default").as_ptr() as PWSTR;
+        let bResult = CreateProcessW(
+            wstr!("notepad.exe").as_ptr(),
+            NoteLine.as_mut_ptr(),
+            null_mut(),
+            null_mut(),
+            0,
+            0,
+            null_mut(),
+            null(),
+            &mut Si,
+            &mut Pi,
+        );
+        if bResult != 0 {
+            DbgPrint(
+                b"[WINLOGON] notepad.exe created (PID %lu, TID %lu)\n\0".as_ptr()
+                    as *const i8,
+                Pi.dwProcessId,
+                Pi.dwThreadId,
             );
-            if bResult != 0 {
-                DbgPrint(
-                    b"[WINLOGON] ARM64: notepad.exe created (PID %lu, TID %lu)\n\0".as_ptr()
-                        as *const i8,
-                    Pi.dwProcessId,
-                    Pi.dwThreadId,
-                );
-                CloseHandle(Pi.hThread);
-                CloseHandle(Pi.hProcess);
-            } else {
-                DbgPrint(
-                    b"[WINLOGON] ARM64: CreateProcessW(notepad.exe) FAILED (error %lu)\n\0".as_ptr()
-                        as *const i8,
-                    GetLastError(),
-                );
-            }
+            CloseHandle(Pi.hThread);
+            CloseHandle(Pi.hProcess);
+        } else {
+            DbgPrint(
+                b"[WINLOGON] CreateProcessW(notepad.exe) FAILED (error %lu)\n\0".as_ptr()
+                    as *const i8,
+                GetLastError(),
+            );
         }
 
         /* Spawn interactive cmd.exe with console (CONSRV available) */

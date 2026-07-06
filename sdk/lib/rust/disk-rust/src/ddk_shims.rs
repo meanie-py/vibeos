@@ -120,6 +120,12 @@ pub unsafe extern "C" fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i
 }
 
 // ---------- macros-as-functions ----------
+// scsi.h REVERSE_BYTES(Dst, Src): reverse 4 bytes (Dst[0]=Src[3]…Dst[3]=Src[0]).
+// A C macro the translator externalized; disk had no def → i386 undefined symbol.
+#[no_mangle] pub unsafe extern "C" fn REVERSE_BYTES(dst: *mut u8, src: *const u8) {
+    *dst = *src.add(3); *dst.add(1) = *src.add(2);
+    *dst.add(2) = *src.add(1); *dst.add(3) = *src;
+}
 #[no_mangle] pub unsafe extern "C" fn PAGED_CODE() {}
 #[no_mangle] pub unsafe extern "C" fn CHECK_IRQL() {}
 #[no_mangle] pub unsafe extern "C" fn NT_ASSERT(_expression: i32) {}

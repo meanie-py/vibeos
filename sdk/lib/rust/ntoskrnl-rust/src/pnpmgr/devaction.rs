@@ -1,4 +1,10 @@
 use ntkrnl_sys::globals::*;
+
+// ntstatus.h values NOT present in ntkrnl-sys. Without these consts the match
+// arms below silently become irrefutable catch-all bindings (the WM_CTLCOLOR
+// bug class — see field manual). Keep them defined.
+const STATUS_FAILED_DRIVER_ENTRY: NTSTATUS = 0xC0000365_u32 as NTSTATUS;
+const STATUS_ILL_FORMED_SERVICE_ENTRY: NTSTATUS = 0xC0000160_u32 as NTSTATUS;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::macros::*;

@@ -18,8 +18,8 @@ pub const FW_COMPLETED: u32 = 0;
 const HRGN_WINDOW: HRGN = 1 as HRGN;
 const PRGN_WINDOW: PREGION = 1 as PREGION;
 
-// DC_NC (nc.h NC_DoNCPaint flag).
-const DC_NC: u32 = 0x0001;
+// DC_NC (winuser.h: DC_CAPTION|DC_FRAME = 0x900C).
+const DC_NC: u32 = DC_CAPTION | DC_FRAME;
 
 // USERTAG pool tag ('lwsU').
 const USERTAG_WINDOWLIST: u32 = u32::from_le_bytes(*b"Uswl");
@@ -501,6 +501,7 @@ unsafe extern "fastcall" fn IntGetNCUpdateRgn(Window: PWND, Validate: i32) -> HR
 
             if IntEqualRect(&mut window as *mut _ as _, &mut update as *mut _ as _) != 0 {
                 GreDeleteObject((hRgnNonClient as _));
+                GreDeleteObject((hRgnWindow as _));
                 return HRGN_WINDOW;
             }
         }
@@ -585,7 +586,6 @@ unsafe extern "fastcall" fn co_IntPaintWindows(mut Wnd: PWND, Flags: ULONG, Recu
             if head_pti(Wnd) == PsGetCurrentThreadWin32Thread() as _ {
                 if ((*Wnd).state & WNDS_SENDNCPAINT) != 0 {
                     TempRegion = IntGetNCUpdateRgn(Wnd, 1);
-
                     IntSendNCPaint(Wnd, TempRegion);
 
                     if TempRegion > HRGN_WINDOW && GreIsHandleValid((TempRegion as _)) != 0 {
