@@ -1557,7 +1557,7 @@ pub unsafe extern "system" fn FatRenameEAs(
     // PagedCode(); // no-op in Rust
 
     core::ptr::write_bytes(
-        core::ptr::addr_of_mut!(ea_set_range),
+        core::ptr::addr_of_mut!(ea_set_range) as *mut u8,
         0,
         core::mem::size_of::<EA_RANGE>(),
     );

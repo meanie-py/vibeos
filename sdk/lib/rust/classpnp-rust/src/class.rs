@@ -105,11 +105,13 @@ extern "C" {
 }
 
 // CLASS_DRIVER_EXTENSION_KEY is #define CLASS_DRIVER_EXTENSION_KEY ((PVOID)ClassInitialize)
-// Use a file-local static address as the unique key — matches the C pattern.
-static CLASS_DRIVER_EXTENSION_KEY_STORAGE: u8 = 0;
+// MUST be exactly C's key (the ClassInitialize fn address): several translated call
+// sites spell the lookup as `ClassInitialize as PVOID` directly, so a private static
+// address here split-brains the registration from those lookups (NULL extension ->
+// AV in ClassAddDevice on the first USB disk). One key, both spellings.
 #[inline(always)]
 fn CLASS_DRIVER_EXTENSION_KEY() -> *mut core::ffi::c_void {
-    unsafe { &CLASS_DRIVER_EXTENSION_KEY_STORAGE as *const u8 as *mut core::ffi::c_void }
+    ClassInitialize as *mut core::ffi::c_void
 }
 
 extern "C" {
@@ -555,7 +557,10 @@ pub unsafe extern "system" fn ClassAddDevice(
     if KeGetCurrentIrql() > APC_LEVEL {
         KeBugCheckEx(0x35u32, 0, 0, 0, 0);
     }
-    let driver_extension = IoGetDriverObjectExtension(DriverObject, 1 as *mut core::ffi::c_void) as *mut _CLASS_DRIVER_EXTENSION;
+    // Key MUST match ClassInitialize's IoAllocateDriverObjectExtension registration —
+    // a literal `1` here returned NULL and AV'd on the first-ever ClassAddDevice call
+    // (USB disk bring-up; no prior boot exercised a disk AddDevice).
+    let driver_extension = IoGetDriverObjectExtension(DriverObject, CLASS_DRIVER_EXTENSION_KEY()) as *mut _CLASS_DRIVER_EXTENSION;
     let status = (*driver_extension).InitData.ClassAddDevice.expect("ClassAddDevice")(DriverObject, PhysicalDeviceObject);
     status
 }
@@ -1252,7 +1257,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             core::ptr::write_bytes(
-                (*fdo_extension).PrivateFdoData,
+                (*fdo_extension).PrivateFdoData as *mut u8,
                 0u8,
                 size_of::<_CLASS_PRIVATE_FDO_DATA>(),
             );
@@ -1271,7 +1276,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 core::ptr::write_bytes(
-                    (*fdo_extension).AdditionalFdoData,
+                    (*fdo_extension).AdditionalFdoData as *mut u8,
                     0u8,
                     size_of::<_ADDITIONAL_FDO_DATA>(),
                 );
@@ -1303,7 +1308,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             }
 
             core::ptr::write_bytes(
-                (*fdo_extension).FunctionSupportInfo,
+                (*fdo_extension).FunctionSupportInfo as *mut u8,
                 0u8,
                 size_of::<_CLASS_FUNCTION_SUPPORT_INFO>(),
             );
@@ -2018,7 +2023,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut _DEVICE_OBJECT) {
 
             (*srbEx).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
         } else {
-            core::ptr::write_bytes(srb, 0u8, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
+            core::ptr::write_bytes(srb as *mut u8, 0u8, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
             (*srb).Length = (core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u8) as u16;
             (*srb).Function = (SRB_FUNCTION_EXECUTE_SCSI) as u8;
         }

@@ -2707,7 +2707,7 @@ pub unsafe extern "system" fn FatSetFatRun(
         if (*Vcb).AllocationSupport.FatIndexBitSize == 12 {
             // Zero first two rows of SavedBcbs
             core::ptr::write_bytes(
-                core::ptr::addr_of_mut!(SavedBcbs[0][0]),
+                core::ptr::addr_of_mut!(SavedBcbs[0][0]) as *mut u8,
                 0,
                 2 * core::mem::size_of::<*mut core::ffi::c_void>() * 2,
             );

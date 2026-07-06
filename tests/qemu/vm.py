@@ -6,6 +6,7 @@ import atexit
 import fcntl
 import json
 import os
+import shlex
 import shutil
 import signal
 import socket
@@ -948,6 +949,41 @@ class QemuVM:
             )
         return ["-fw_cfg", f"name=opt/org.vibeos.tripwire,string={cfg}"]
 
+    def _extra_qemu_args(self) -> list[str]:
+        """VIBEOS_QEMU_EXTRA_ARGS=<raw qemu args> appends arbitrary devices/options to
+        the boot (shlex-split). Intended for device-bring-up rigs (usb-kbd, usb-tablet,
+        usb-ehci, ...) without editing arch configs. CAVEAT (windows-host backend): file
+        paths inside these args are NOT staged/rewritten to Windows paths — reference
+        only harness-managed backends (e.g. drive=scratch) or non-file devices, or use
+        VIBEOS_QEMU_USB_DISK for a staged USB disk."""
+        raw = os.environ.get("VIBEOS_QEMU_EXTRA_ARGS", "").strip()
+        if not raw:
+            return []
+        return shlex.split(raw)
+
+    def _usb_disk_args(self) -> list[str]:
+        """VIBEOS_QEMU_USB_DISK=1 attaches an EHCI controller + usb-storage device backed
+        by a fresh 64M qcow2 next to the scratch disk (usbstor bring-up rig). The drive
+        path lives beside scratch_path so the windows-host backend stages it like any
+        other media (route through be.stage_media_paths there, same as scratch)."""
+        if os.environ.get("VIBEOS_QEMU_USB_DISK", "").strip() not in ("1", "true", "yes"):
+            return []
+        usb_disk = self.scratch_path.parent / "usbdisk.qcow2"
+        if not usb_disk.exists():
+            subprocess.run(
+                ["qemu-img", "create", "-f", "qcow2", str(usb_disk), "64M"],
+                check=True,
+                capture_output=True,
+            )
+        return [
+            "-device",
+            "usb-ehci,id=xehci",
+            "-drive",
+            f"file={usb_disk},format=qcow2,if=none,id=usbstor0",
+            "-device",
+            "usb-storage,bus=xehci.0,drive=usbstor0",
+        ]
+
     def _set_live_tee(self) -> None:
         """Tee serial to a predictable per-arch live log (`tail -f`). Truncated per session."""
         self.live_log_path = LIVE_LOG_DIR / f"{self.config.arch}_smoke_live.log"
@@ -977,7 +1013,9 @@ class QemuVM:
             "-serial",
             "chardev:ser0",
             *self._scratch_device_args(),
+            *self._usb_disk_args(),
             *self._tripwire_args(),
+            *self._extra_qemu_args(),
             "-monitor",
             "none",
             *self._gdb_args(win_stack=False),
@@ -1100,7 +1138,9 @@ class QemuVM:
             "-serial",
             "chardev:ser0",
             *be.stage_media_paths(self._scratch_device_args(), staging),
+            *be.stage_media_paths(self._usb_disk_args(), staging),
             *self._tripwire_args(),
+            *self._extra_qemu_args(),
             "-monitor",
             "none",
             # debugcon = x86 ISA port 0xE9, absent on the arm64 `virt` machine

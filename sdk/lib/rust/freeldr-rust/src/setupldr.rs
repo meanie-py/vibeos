@@ -448,7 +448,7 @@ unsafe fn NtLdrGetHigherPriorityOptions(
         return;
     }
 
-    core::ptr::write_bytes(Masks.as_mut_ptr(), 0, core::mem::size_of_val(&Masks));
+    core::ptr::write_bytes(Masks.as_mut_ptr() as *mut u8, 0, core::mem::size_of_val(&Masks));
     
     i = 0;
     while i < HighPriorOptionsMap.len() as u32 {
