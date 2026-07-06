@@ -114,6 +114,7 @@ extern "C" {
     fn AppendBootTimeOptions(Options: PCHAR);
     fn RamDiskInitialize(bReportError: u8, LoadOptions: PCSTR, SystemPartition: PCSTR) -> ARC_STATUS;
     fn UiResetForSOS();
+    fn DbgPrint(fmt: *const i8, ...) -> i32;
     fn WinLdrInitSystemHive(LoaderBlock: PLOADER_PARAMETER_BLOCK, BootPath: PCSTR, bUpdate: u8) -> u8;
     fn WinLdrScanSystemHive(LoaderBlock: PLOADER_PARAMETER_BLOCK, SystemRoot: PCSTR) -> u8;
 }
@@ -133,6 +134,17 @@ pub unsafe extern "C" fn NtLdrOutputLoadMsg(
     FileName: PCSTR,
     Description: PCSTR)
 {
+
+    // Boot-phase timing stamp on the freeldr debug port (livecd.ini
+    // [FREELOADER] Debug=): the framebuffer prints below are invisible on
+    // serial, which made the whole load phase one silent multi-second gap.
+    // tools/boot_phase_report.py turns these into per-file load timing.
+    // Assembled from three raw prints: DbgPrint is non-variadic on the
+    // stable channel (see debug.rs) and rosload imports it from freeldr.sys's
+    // export table — no formatting, no new export needed.
+    DbgPrint(b"[FLDR] load \0".as_ptr() as *const i8);
+    DbgPrint(FileName as *const i8);
+    DbgPrint(b"\n\0".as_ptr() as *const i8);
 
     if SosEnabled != 0 {
         printf(b"  %s\n\0".as_ptr() as PCSTR, FileName);
@@ -1142,6 +1154,7 @@ pub unsafe extern "C" fn LoadAndBootWindows(
 
     AllocateAndInitLPB(OperatingSystemVersion, &mut LoaderBlock);
 
+    DbgPrint(b"[FLDR] phase: system hive load begin\n\0".as_ptr() as *const i8);
     UiUpdateProgressBar(15, b"Loading system hive...\0".as_ptr() as PCSTR);
     Success = WinLdrInitSystemHive(LoaderBlock, BootPath.as_ptr() as PCSTR, 0u8);
     TRACE(b"SYSTEM hive %s\n\0".as_ptr() as PCSTR, (if Success != 0 { b"loaded\0".as_ptr() } else { b"not loaded\0".as_ptr() }) as usize);
@@ -1155,6 +1168,7 @@ pub unsafe extern "C" fn LoadAndBootWindows(
     (*(*LoaderBlock).Extension).MajorVersion = (((OperatingSystemVersion & 0xFF00) >> 8) as u32);
     (*(*LoaderBlock).Extension).MinorVersion = (OperatingSystemVersion & 0xFF) as u32;
 
+    DbgPrint(b"[FLDR] phase: system hive loaded\n\0".as_ptr() as *const i8);
     Success = WinLdrScanSystemHive(LoaderBlock, BootPath.as_ptr() as PCSTR);
     TRACE(b"SYSTEM hive %s\n\0".as_ptr() as PCSTR, (if Success != 0 { b"scanned\0".as_ptr() } else { b"not scanned\0".as_ptr() }) as usize);
     if Success == 0 {
@@ -1188,11 +1202,13 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
 
     SystemRoot = (strstr((BootPath as *const u8), (b"\\\0".as_ptr() as PCSTR as *const u8)) as *const i8);
 
+    DbgPrint(b"[FLDR] phase: hw-detect begin\n\0".as_ptr() as *const i8);
     UiUpdateProgressBar(20, b"Detecting hardware...\0".as_ptr() as PCSTR);
     (*LoaderBlock).ConfigurationRoot = MachHwDetect(BootOptions) as _;
 
     PeLdrImportDllLoadCallback = NtLdrImportDllLoadCallback as *mut core::ffi::c_void;
 
+    DbgPrint(b"[FLDR] phase: core (kernel/HAL/kd) load begin\n\0".as_ptr() as *const i8);
     Success = LoadWindowsCore(
         OperatingSystemVersion,
         LoaderBlock,
@@ -1211,6 +1227,7 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
 
     UiSetProgressBarSubset(40, 90);
 
+    DbgPrint(b"[FLDR] phase: boot drivers load begin\n\0".as_ptr() as *const i8);
     UiSetProgressBarText(b"Loading boot drivers...\0".as_ptr() as PCSTR);
     Success = WinLdrLoadBootDrivers(LoaderBlock, BootPath);
 
@@ -1218,6 +1235,7 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
 
     PeLdrImportDllLoadCallback = core::ptr::null_mut();
 
+    DbgPrint(b"[FLDR] phase: boot drivers loaded\n\0".as_ptr() as *const i8);
     WinLdrInitializePhase1(
         LoaderBlock,
         BootOptions,
@@ -1308,6 +1326,7 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
         );
     }
 
+    DbgPrint(b"[FLDR] phase: handoff to kernel\n\0".as_ptr() as *const i8);
     WinLdrpDumpMemoryDescriptors(LoaderBlockVA);
     WinLdrpDumpBootDriver(LoaderBlockVA);
     #[cfg(not(target_arch = "x86_64"))]
