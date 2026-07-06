@@ -2640,3 +2640,50 @@ reuse a previous boot's symbolication). `gdb` can't read kernel VAs while
 stopped at EL0 — break on a kernel PC first. And REBUILD THE SYMBOL INDEX
 after every build: a stale `sym2addr` address put a 5-minute breakpoint on
 dead code and nearly "proved" timers were frozen when they weren't.
+
+### 9.22 (FIXED 2026-07-06) i386 lost-wakeup wedge + "BAD gate" + BSOD roulette — bindgen DROPPED `__ALIGNED(16)` on `EX_PUSH_LOCK_WAIT_BLOCK`
+
+**Symptom family (all one root):** post-`shell ready` i386 boots either (a)
+bugcheck-roulette'd — `0x7F` #GP in `KiFlushNPXState`, `0xA Eip=0x10c`
+(`KiSystemCallReturn` jmp through a corrupt kernel trap-frame Eip), `0x1E
+c0000006` in `ExfWakePushLock`/`KeSignalGateBoostPriority` reading freed-stack
+VAs, `0xF4` — or (b) wedged: `[CENSUS] STUCK winlogon/LSASS ... GateWait ...
+verdict=HOLDER-STUCK(no signal ever)` with an empty desktop (explorer alive,
+no icons/taskbar). Historic `KeSignalGateBoostPriority: BAD gate ... Type=<garbage>`
+prints are the same bug.
+
+**Root cause:** the pushlock word encodes 4 FLAG bits (Locked/Waiting/Waking/
+MultipleShared) in the LOW NIBBLE of the wait-block pointer, so
+`EX_PUSH_LOCK_WAIT_BLOCK` is `__ALIGNED(16)` in C (ndk/extypes.h). **bindgen
+dropped the alignment attribute** (`#[repr(C)]` only, natural align 4 on
+i386), so the Rust stack locals in `ExfAcquirePushLock{Exclusive,Shared}` /
+`ExpBlockOnLockedHandleEntry` landed at `addr % 16 ∈ {4,8,12}`:
+
+- block at `%16==4` → pointer bit2 reads as **Waking** → every releaser skips
+  `ExfWakePushLock` ("already waking") → waiter parks forever = the wedge.
+- chain walks decode the block base with `& ~0xF` → ±4/±8 off → garbage
+  `Next/Last/WakeGate` → BAD-gate prints, wild reads of freed stacks, and the
+  crash roulette above.
+- amd64/arm64 natural align is 8 → `%16==8` → pointer bit3 reads as
+  **MultipleShared** — subtler flake source on those arches too.
+
+**Fix:** `#[repr(C, align(16))] AlignedPlWaitBlock(EX_PUSH_LOCK_WAIT_BLOCK)`
+wrapper at all three stack-allocation sites (ex/pushlock.rs ×2, ex/handle.rs).
+`ExBlockPushLock`'s `debug_assert!((ptr & 0xF) == 0)` was already there — it
+compiles out in release; the C ASSERT does too.
+
+**Class lesson + sweep:** bindgen silently drops `__attribute__((aligned)))`
+on some structs — and the size-assert generator shares bindgen's view (both
+said 52 where C sizeof is 64), so size asserts DON'T catch it. Swept
+`sdk/include/ndk|xdk` for `__ALIGNED|DECLSPEC_ALIGN` struct decls:
+`EX_PUSH_LOCK_WAIT_BLOCK` was the only kernel type affected. If you add such
+a type, verify `align_of` in Rust matches, or wrap at the use site.
+
+**Debug recipe that cracked it** (generic for any lost-wakeup): census/`STUCK`
+lines give the parked GATE (per-wait stack object — useless as a key) — log
+the PUSHLOCK address at park time (`synctrace_pl_park` + temp `[PLPARK]`
+dbg_print), then `qemu/inspect.sh <run> --command raw "x/8wx <lock>"` on the
+wedge: lock word `0` with a parked waiter = lost wakeup; lock word =
+`<block>|flags` with a MISALIGNED block address = this bug. Also:
+`dump-thread` → `WaitReason 0x23/0x1c` distinguishes guarded-mutex vs pushlock
+chains, and `KGUARDED_MUTEX.Owner` (+4) names the holder for the chain walk.
