@@ -360,7 +360,7 @@ pub unsafe extern "system" fn DiskInitFdo(Fdo: PDEVICE_OBJECT) -> NTSTATUS {
     );
 
     core::ptr::write_bytes(
-        core::ptr::addr_of_mut!((*fdo_extension).DiskGeometry),
+        core::ptr::addr_of_mut!((*fdo_extension).DiskGeometry) as *mut u8,
         0,
         core::mem::size_of::<DISK_GEOMETRY>(),
     );
@@ -532,7 +532,7 @@ pub unsafe extern "system" fn DiskInitFdo(Fdo: PDEVICE_OBJECT) -> NTSTATUS {
     );
 
     core::ptr::write_bytes(
-        core::ptr::addr_of_mut!((*disk_data).FlushContext),
+        core::ptr::addr_of_mut!((*disk_data).FlushContext) as *mut u8,
         0,
         core::mem::size_of::<DISK_GROUP_CONTEXT>(),
     );

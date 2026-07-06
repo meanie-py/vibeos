@@ -428,7 +428,7 @@ unsafe fn NtLdrGetHigherPriorityOptions(
         return;
     }
 
-    core::ptr::write_bytes(Masks.as_mut_ptr(), 0, core::mem::size_of_val(&Masks));
+    core::ptr::write_bytes(Masks.as_mut_ptr(), 0, core::mem::size_of_val(&Masks)); // nolint: silent-failure (byte array — count==bytes)
     
     i = 0;
     while i < HighPriorOptionsMap.len() as u32 {

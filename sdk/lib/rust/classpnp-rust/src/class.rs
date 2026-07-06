@@ -1252,7 +1252,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             core::ptr::write_bytes(
-                (*fdo_extension).PrivateFdoData,
+                (*fdo_extension).PrivateFdoData as *mut u8,
                 0u8,
                 size_of::<_CLASS_PRIVATE_FDO_DATA>(),
             );
@@ -1271,7 +1271,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
                 core::ptr::write_bytes(
-                    (*fdo_extension).AdditionalFdoData,
+                    (*fdo_extension).AdditionalFdoData as *mut u8,
                     0u8,
                     size_of::<_ADDITIONAL_FDO_DATA>(),
                 );
@@ -1303,7 +1303,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             }
 
             core::ptr::write_bytes(
-                (*fdo_extension).FunctionSupportInfo,
+                (*fdo_extension).FunctionSupportInfo as *mut u8,
                 0u8,
                 size_of::<_CLASS_FUNCTION_SUPPORT_INFO>(),
             );
@@ -2018,7 +2018,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut _DEVICE_OBJECT) {
 
             (*srbEx).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
         } else {
-            core::ptr::write_bytes(srb, 0u8, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
+            core::ptr::write_bytes(srb as *mut u8, 0u8, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
             (*srb).Length = (core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u8) as u16;
             (*srb).Function = (SRB_FUNCTION_EXECUTE_SCSI) as u8;
         }

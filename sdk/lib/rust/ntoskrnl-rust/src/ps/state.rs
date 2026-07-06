@@ -335,6 +335,7 @@ pub unsafe extern "system" fn NtQueueApcThreadEx(
     let mut thread: PETHREAD = core::ptr::null_mut();
     let mut status = STATUS_SUCCESS;
 
+
     status = ObReferenceObjectByHandle(
         thread_handle as PVOID,
         THREAD_SET_CONTEXT,
