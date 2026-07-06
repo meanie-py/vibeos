@@ -2500,6 +2500,11 @@ unsafe fn PiDevNodeStateMachine(
             DeviceNodeStartCompletion => {
                 status = (*currentNode).CompletionStatus;
                 doProcessAgain = 1;
+                crate::dbg_print!(
+                    b"[DA] START %wZ -> 0x%x\r\n\0",
+                    core::ptr::addr_of!((*currentNode).InstancePath),
+                    status as u32
+                );
                 if status < 0 {
                     let problem = if status == STATUS_PNP_REBOOT_REQUIRED {
                         CM_PROB_NEED_RESTART

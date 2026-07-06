@@ -1093,11 +1093,14 @@ pub unsafe extern "C" fn PartitionHandleDeviceControl(DeviceObject: PDEVICE_OBJE
                 }
 
                 if (*fdoExtension).DiskData.PartitionStyle == PARTITION_STYLE_MBR && (*fdoExtension).IsSuperFloppy == 0 {
-                    // C: sizeof(basicVolId->Mbr) — union field size (0x0C), NOT a type
-                    (*uniqueId).UniqueIdLength = core::mem::size_of_val(&(*basicVolId).Mbr) as u16;
+                    // C: sizeof(basicVolId->Mbr) — union member size (0x0C). NB: Mbr is a
+                    // __BindgenUnionField ZST marker, so size_of_val on it returns 0; size the
+                    // member's target type instead.
+                    (*uniqueId).UniqueIdLength = core::mem::size_of::<crate::types::_BASIC_VOLUME_UNIQUE_ID__bindgen_ty_1>() as u16;
                 } else if (*fdoExtension).DiskData.PartitionStyle == PARTITION_STYLE_GPT {
-                    // C: sizeof(basicVolId->Gpt) — union field size (0x18), NOT a type
-                    (*uniqueId).UniqueIdLength = core::mem::size_of_val(&(*basicVolId).Gpt) as u16;
+                    // C: sizeof(basicVolId->Gpt) — union member size (0x18). Same ZST-marker
+                    // hazard as Mbr above.
+                    (*uniqueId).UniqueIdLength = core::mem::size_of::<crate::types::_BASIC_VOLUME_UNIQUE_ID__bindgen_ty_2>() as u16;
                 } else if (*InterfaceName).Buffer.is_null() || (*InterfaceName).Length == 0 {
                     PartMgrReleaseLayoutLock(fdoExtension);
                     status = STATUS_INVALID_PARAMETER;

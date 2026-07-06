@@ -1113,6 +1113,13 @@ pub unsafe extern "C" fn FdoHandleStartDevice(
         0u8, // FALSE
     );
     if !NT_SUCCESS(status) {
+        DbgPrintEx(
+            DPFLTR_DISK_ID as u32,
+            DPFLTR_ERROR_LEVEL as u32,
+            b"[PARTMGR] FdoHandleStartDevice: GET_DEVICE_NUMBER failed 0x%x\n\0".as_ptr()
+                as *const i8,
+            status,
+        );
         return status;
     }
 

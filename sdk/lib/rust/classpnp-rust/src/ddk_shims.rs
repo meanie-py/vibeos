@@ -186,7 +186,17 @@ use core::ffi::c_void;
 #[no_mangle] pub unsafe extern "system" fn GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdo: PVOID) -> u8 { 18 }
 
 // ============================ tracing / WPP / ETW (no-ops) ============================
-#[no_mangle] pub unsafe extern "C" fn TracePrint(_lvl: u32, _flags: u32, _fmt: *const i8) {}
+// TracePrint: error/warning levels forward the (raw) format string to the debug
+// serial so classpnp failure paths are not silent. Callsites are C-variadic; we
+// declare non-variadic and ignore the args (safe: extra args are caller-cleaned
+// on all our ABIs), so %-specifiers print literally — enough to identify the site.
+#[no_mangle] pub unsafe extern "C" fn TracePrint(lvl: u32, _flags: u32, fmt: *const i8) {
+    const TRACE_LEVEL_WARNING: u32 = 3; // ETW: 1=critical 2=error 3=warning
+    if lvl <= TRACE_LEVEL_WARNING && !fmt.is_null() {
+        unsafe extern "C" { fn DbgPrint(Format: *const i8, ...) -> u32; }
+        DbgPrint(c"[CLASSPNP] %s".as_ptr(), fmt);
+    }
+}
 #[no_mangle] pub unsafe extern "C" fn StorDebugPrint(_lvl: u32, _fmt: *const i8) {}
 #[no_mangle] pub unsafe extern "C" fn WPP_INIT_TRACING(_drv: PVOID, _reg: PVOID) {}
 #[no_mangle] pub unsafe extern "C" fn WPP_CLEANUP(_drv: PVOID) {}

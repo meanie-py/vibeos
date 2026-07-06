@@ -282,6 +282,11 @@ pub unsafe extern "C" fn CreateNewDriveLetterName(
         *buffer.add(DosDevices.Length as usize / core::mem::size_of::<u16>()) = Letter as u16;
         status = GlobalCreateSymbolicLink(DriveLetter, DeviceName);
         if status >= 0 {
+            DbgPrint(
+                c"[MNTMGR] assigned drive %c: to %wZ\n".as_ptr(),
+                Letter as u32,
+                DeviceName,
+            );
             return status;
         }
     }
@@ -303,7 +308,11 @@ pub unsafe extern "C" fn CreateNewDriveLetterName(
         *buffer.add(DosDevices.Length as usize / core::mem::size_of::<u16>()) = Letter as u16;
         status = GlobalCreateSymbolicLink(DriveLetter, DeviceName);
         if status >= 0 {
-            // DPRINT("Assigned drive %c: to %wZ\n", Letter, DeviceName);
+            DbgPrint(
+                c"[MNTMGR] assigned drive %c: to %wZ\n".as_ptr(),
+                Letter as u32,
+                DeviceName,
+            );
             return status;
         }
         Letter = Letter.wrapping_add(1);
@@ -311,7 +320,11 @@ pub unsafe extern "C" fn CreateNewDriveLetterName(
 
     // We failed to allocate a letter
     ExFreePoolWithTag(buffer as *mut core::ffi::c_void, tag);
-    // DPRINT("Failed to create a drive letter for %wZ\n", DeviceName);
+    DbgPrint(
+        c"[MNTMGR] FAILED to create a drive letter for %wZ (0x%x)\n".as_ptr(),
+        DeviceName,
+        status as u32,
+    );
     status
 }
 #[no_mangle]

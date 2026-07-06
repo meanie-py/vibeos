@@ -973,6 +973,54 @@ neighboring fields; for big ones it's a wild multi-GB memset.
   A `size_of::<T>() / size_of::<T>()` (=1) count with typed dst is the other
   correct spelling — don't "fix" it.
 
+### `size_of_val` on a `__BindgenUnionField` marker → size 0
+
+C `sizeof(x->UnionMember)` naively becomes `size_of_val(&(*x).UnionMember)` — but in
+bindgen's **old-style** union layout (`#[repr(C)] struct` with `__BindgenUnionField<T>`
+markers + one real `bindgen_union_field` storage array), each member field is a **ZST
+marker**, so `size_of_val` returns **0**. The 0 then flows somewhere size-sensitive and
+fails far away with a *parameter*-flavored status, not a crash.
+
+- **Symptom (found 2026-07-06):** USB disk PnP START failed 0xC000000D; classpnp's
+  `InitializeStorageRequestBlock` rejected `ByteSize=0` from
+  `size_of_val(&PrivateFdoData.ReleaseQueueSrb.ReleaseQueueSrbBuffer)` (a
+  `__BindgenUnionField<[UCHAR;144]>`). Sweep found 2 more live sites:
+  classpnp `class.rs` SrbExBuffer (same call, power path) and partmgr
+  `partition.rs` `sizeof(basicVolId->Mbr/Gpt)` → `UniqueIdLength=0` (breaks
+  MOUNTDEV_QUERY_UNIQUE_ID / mountmgr bookkeeping). The partmgr site's comment even
+  said "union field size, NOT a type" — knowing the C intent doesn't save you.
+- **Fix:** size the **target type** (`size_of::<_BASIC_VOLUME_UNIQUE_ID__bindgen_ty_1>()`)
+  or the **whole union struct** when the C took the largest member's size. Never
+  `size_of_val` a bindgen union member.
+- **Sweep recipe:** collect `pub X: __BindgenUnionField` field names per crate, then flag
+  `size_of_val` callsites whose last `.Field)` token matches one (nested-paren tolerant).
+  Note only *some* crates use old-style unions — verify the hit against the same crate's
+  `types_*.rs` before "fixing" (new-style real `union` members are fine).
+- **Related latent hazard:** `write_bytes(ptr_to_union_field, 0, size_of_val(...))` and
+  friends — any `size_of_val` in a bindgen-heavy crate deserves a second look.
+
+### Dropped term in a hand-derived `sizeof` `#define` → extension-layout overlap
+
+C `#define FUNCTIONAL_EXTENSION_SIZE sizeof(FUNCTIONAL_DEVICE_EXTENSION) + sizeof(DISK_DATA)`
+was hand-translated to `size_of::<FUNCTIONAL_DEVICE_EXTENSION>()` — the **second sizeof
+dropped**. disk.sys registered a device extension with no room for DISK_DATA; classpnp
+laid its PrivateCommonData + remove-lock rundown right after the FDE; disk's
+`DISK_DATA.Mbr.{Signature,CheckSum}` write then corrupted the rundown's `RunRefs`.
+
+- **Symptom (2026-07-06, USB-disk START):** AV in `ExfAcquireRundownProtectionCacheAware`
+  minutes of call-chain away from the corrupting store. The kill shot: the faulting
+  register held `0x<CheckSum><Signature>` — **the disk's literal MBR identifier**
+  (`sfdisk` had printed `Disk identifier: 0x0a2da154`). When a "pointer" faults with
+  recognizable DATA in it, ask *whose data is that* — it names the overwriter.
+- **Recipe that found it:** serial 0x1E banner → `dump-trapframe <P3>` on the parked
+  GDB run → recognize Rax as the disk signature → grep who writes `Mbr.Signature` →
+  compare the C `#define` against the Rust const.
+- **Rule:** any `glue.rs` "sizeof-based #define" must quote the FULL C macro text in a
+  comment next to the Rust expression (this file's convention) — the reviewable unit is
+  the C-to-Rust pair, not the Rust alone. When debugging extension-layout corruption
+  between a class driver and classpnp, diff `DeviceExtensionSize` registration against
+  the C macro FIRST — it's one line and this class lives there.
+
 ### Dropped `FIELD_OFFSET(T, Array[N])` array-subscript scaling → heap under-alloc
 
 When a C size/offset uses an **array-subscripted** field — `FIELD_OFFSET(T, Addr.Address[N])`

@@ -164,3 +164,27 @@ pub use crate::types::_SRBEXDATATYPE_SrbExDataTypeWmi as _SRBEX_DATA_TYPE_SrbExD
 // STORAGE_QUERY_TYPE enum (ntddstor.h) not emitted by bindgen here; faithful literal values.
 pub const _STORAGE_PROPERTY_ID_PropertyStandardQuery: u32 = 0;
 pub const _STORAGE_PROPERTY_ID_PropertyExistsQuery: u32 = 1;
+
+// --- IOCTLs used as match arms in ClassDeviceControl (class_part_b.rs) that had NO
+//     definition -> bind-all catch-alls (first arm swallowed EVERY ioctl; found via the
+//     USB-disk START 0xC000000D, 2026-07-06). CTL_CODE-resolved from the C headers.
+pub const IOCTL_MOUNTDEV_QUERY_UNIQUE_ID: u32 = 0x004D0000;          // CTL_CODE('M',0,BUFFERED,ANY)  [ddk/mountdev.h]
+pub const IOCTL_MOUNTDEV_QUERY_DEVICE_NAME: u32 = 0x004D0008;        // CTL_CODE('M',2,BUFFERED,ANY)  [ddk/mountmgr.h]
+pub const IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME: u32 = 0x004D000C; // CTL_CODE('M',3,BUFFERED,ANY) [ddk/mountdev.h]
+pub const IOCTL_STORAGE_GET_DEVICE_NUMBER: u32 = 0x002D1080;         // CTL_CODE(0x2D,0x420,BUFFERED,ANY)   [psdk/winioctl.h]
+pub const IOCTL_STORAGE_FIND_NEW_DEVICES: u32 = 0x002D4818;          // CTL_CODE(0x2D,0x206,BUFFERED,READ)  [psdk/winioctl.h]
+pub const IOCTL_STORAGE_GET_HOTPLUG_INFO: u32 = 0x002D0C14;          // CTL_CODE(0x2D,0x305,BUFFERED,ANY)   [psdk/ntddstor.h]
+pub const IOCTL_STORAGE_SET_HOTPLUG_INFO: u32 = 0x002DCC18;          // CTL_CODE(0x2D,0x306,BUFFERED,RW)    [psdk/ntddstor.h]
+pub const IOCTL_STORAGE_MCN_CONTROL: u32 = 0x002D0944;               // CTL_CODE(0x2D,0x251,BUFFERED,ANY)   [psdk/winioctl.h]
+pub const IOCTL_STORAGE_READ_CAPACITY: u32 = 0x002D5140;             // CTL_CODE(0x2D,0x450,BUFFERED,READ)  [psdk/ntddstor.h]
+pub const IOCTL_STORAGE_EVENT_NOTIFICATION: u32 = 0x002D1C90;        // CTL_CODE(0x2D,0x724,BUFFERED,ANY)   [psdk/ntddstor.h]
+pub const IOCTL_STORAGE_CHECK_PRIORITY_HINT_SUPPORT: u32 = 0x002D1880; // CTL_CODE(0x2D,0x620,BUFFERED,ANY) [psdk/ntddstor.h]
+pub const IOCTL_STORAGE_FIRMWARE_DOWNLOAD: u32 = 0x002DDC04;         // CTL_CODE(0x2D,0x701,BUFFERED,RW)    [psdk/ntddstor.h]
+pub const IOCTL_STORAGE_GET_LB_PROVISIONING_MAP_RESOURCES: u32 = 0x002D5408; // CTL_CODE(0x2D,0x502,BUFFERED,READ) [psdk/ntddstor.h]
+pub const IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES: u32 = 0x002D9404; // CTL_CODE(0x2D,0x501,BUFFERED,WRITE) [psdk/ntddstor.h]
+// GESN notification-class codes matched against NOTIFICATION_EVENT_STATUS_HEADER
+// .NotificationClass() (UCHAR) in autorun.rs -- same bind-all hazard.
+pub const NOTIFICATION_OPERATIONAL_CHANGE_CLASS_EVENTS: u8 = 0x1;    // [ddk/scsi.h]
+pub const NOTIFICATION_EXTERNAL_REQUEST_CLASS_EVENTS: u8 = 0x3;      // [ddk/scsi.h]
+pub const NOTIFICATION_MEDIA_STATUS_CLASS_EVENTS: u8 = 0x4;          // [ddk/scsi.h]
+pub const NOTIFICATION_DEVICE_BUSY_CLASS_EVENTS: u8 = 0x6;           // [ddk/scsi.h]

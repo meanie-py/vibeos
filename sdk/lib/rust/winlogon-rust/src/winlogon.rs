@@ -318,6 +318,27 @@ unsafe fn NetTestBootEnabled() -> bool {
     lError == ERROR_SUCCESS as LONG && dwType == REG_DWORD && dwValue == 1
 }
 
+/// True when a USB mass-storage device was enumerated this boot: PnP creates
+/// `HKLM\SYSTEM\CurrentControlSet\Enum\USBSTOR` the moment usbstor reports a
+/// child PDO, which happens long before winlogon runs. Plain smokes (no USB
+/// disk attached) never have the key, so stortest.exe is never spawned there —
+/// same explorer-race rationale as NetTestBootEnabled above.
+unsafe fn StorTestBootEnabled() -> bool {
+    let mut hKey: HKEY = null_mut();
+    if RegOpenKeyExW(
+        HKEY_LOCAL_MACHINE,
+        wstr!("SYSTEM\\CurrentControlSet\\Enum\\USBSTOR").as_ptr(),
+        0,
+        KEY_QUERY_VALUE,
+        &mut hKey,
+    ) != ERROR_SUCCESS as LONG
+    {
+        return false;
+    }
+    RegCloseKey(hKey);
+    true
+}
+
 // Loads the user's preloaded keyboard layouts. Called on ARM64 (and disabled
 // behind `#if 0` on x86 in the C, hence #[allow(dead_code)] off the ARM64 path).
 #[allow(dead_code)]
@@ -826,6 +847,55 @@ pub unsafe extern "system" fn WinMain(
             b"[WINLOGON] no NIC (NicPresent!=1); skipping nettest.exe spawn\n\0".as_ptr()
                 as *const i8,
         );
+    }
+
+    /* USB mass-storage usermode proof: spawn stortest.exe (same pattern and
+     * rationale as nettest above). Gated on the PnP Enum key that only exists
+     * when a USBSTOR device was enumerated this boot, so plain smokes never
+     * pay the process-creation race against explorer's handoff. stortest finds
+     * the VIBEUSB FAT volume by label, reads MARKER.TXT, writes + reads back a
+     * file, and emits [STORTEST] markers to the debug serial. */
+    if StorTestBootEnabled() {
+        let mut Si: STARTUPINFOW = zeroed();
+        let mut Pi: PROCESS_INFORMATION = zeroed();
+        let mut StorTestPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+        let mut StorTestLine: [u16; 13] = wstr_arr!("stortest.exe");
+
+        GetWindowsDirectoryW(StorTestPath.as_mut_ptr(), MAX_PATH);
+        wcscat(StorTestPath.as_mut_ptr(), wstr!("\\system32\\stortest.exe").as_ptr());
+
+        Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+        Si.lpDesktop = wstr!("WinSta0\\Default").as_ptr() as PWSTR;
+
+        // DETACHED_PROCESS: same console-less-parent reasoning as nettest above.
+        const DETACHED_PROCESS: DWORD = 0x0000_0008;
+        let bResult = CreateProcessW(
+            StorTestPath.as_ptr(),
+            StorTestLine.as_mut_ptr(),
+            null_mut(),
+            null_mut(),
+            0,
+            DETACHED_PROCESS,
+            null_mut(),
+            null(),
+            &mut Si,
+            &mut Pi,
+        );
+
+        if bResult != 0 {
+            DbgPrint(
+                b"[WINLOGON] stortest.exe created (PID %lu)\n\0".as_ptr() as *const i8,
+                Pi.dwProcessId,
+            );
+            CloseHandle(Pi.hThread);
+            CloseHandle(Pi.hProcess);
+        } else {
+            DbgPrint(
+                b"[WINLOGON] CreateProcessW(stortest.exe) FAILED (error %lu)\n\0".as_ptr()
+                    as *const i8,
+                GetLastError(),
+            );
+        }
     }
 
     /* Fonts are now loaded synchronously BEFORE explorer.exe (see above), so the

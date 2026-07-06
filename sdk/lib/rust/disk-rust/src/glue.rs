@@ -15,7 +15,7 @@ pub const WMIREG_ACTION_UPDATE_GUIDS: u32 = 4;
 
 // --- computed #defines (CTL_CODE / FourCC pool tags / sizeof) hand-derived from
 //     the C headers (harvest_consts can't eval CTL_CODE/sizeof). ---
-use crate::types::{FUNCTIONAL_DEVICE_EXTENSION, SCSI_REQUEST_BLOCK, SENSE_DATA_EX,
+use crate::types::{DISK_DATA, FUNCTIONAL_DEVICE_EXTENSION, SCSI_REQUEST_BLOCK, SENSE_DATA_EX,
     STORAGE_REQUEST_BLOCK, STOR_ADDR_BTL8, SRBEX_DATA_SCSI_CDB16};
 
 // CTL_CODE(IOCTL_DISK_BASE=FILE_DEVICE_DISK(0x7), 0, METHOD_BUFFERED(0), FILE_ANY_ACCESS(0))
@@ -34,7 +34,15 @@ pub const DISK_TAG_SRB: u32 = 0x53446353;            // 'SDcS'
 pub const NonPagedPoolNxCacheAligned: i32 = 516;
 
 // sizeof-based #defines.
-pub const FUNCTIONAL_EXTENSION_SIZE: u32 = core::mem::size_of::<FUNCTIONAL_DEVICE_EXTENSION>() as u32;
+// C: #define FUNCTIONAL_EXTENSION_SIZE sizeof(FUNCTIONAL_DEVICE_EXTENSION) + sizeof(DISK_DATA)
+// The `+ sizeof(DISK_DATA)` term was DROPPED in the original translation: disk then
+// registered a device extension with no room for DISK_DATA, classpnp packed its
+// PrivateCommonData + remove-lock rundown right after the FDE, and disk's first
+// DISK_DATA.Mbr.{Signature,CheckSum} write smashed the rundown's RunRefs pointer —
+// AV on the next remove-lock acquire with the disk's MBR signature IN the fault
+// register (USB-disk START, 2026-07-06).
+pub const FUNCTIONAL_EXTENSION_SIZE: u32 =
+    (core::mem::size_of::<FUNCTIONAL_DEVICE_EXTENSION>() + core::mem::size_of::<DISK_DATA>()) as u32;
 pub const SCSI_REQUEST_BLOCK_SIZE: u32 = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u32;
 pub const SENSE_BUFFER_SIZE_EX: u32 = core::mem::size_of::<SENSE_DATA_EX>() as u32;
 // (20*sizeof(UCHAR)) + sizeof(ULONG) + sizeof(PVOID)

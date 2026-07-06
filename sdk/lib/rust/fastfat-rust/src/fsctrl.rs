@@ -11253,6 +11253,15 @@ pub unsafe extern "system" fn FatMountVolume(
     }
     FatReleaseGlobal(IrpContext);
     DebugTrace(-1, Dbg, b"FatMountVolume -> %08lx\n\0".as_ptr() as _, Status as ULONG);
+    {
+        unsafe extern "C" {
+            fn DbgPrint(Format: *const i8, ...) -> u32;
+        }
+        DbgPrint(
+            c"[FASTFAT] FatMountVolume -> 0x%x\n".as_ptr(),
+            Status as ULONG,
+        );
+    }
 
     if !RootDirectoryFile.is_null() {
         FsRtlNotifyVolumeEvent(RootDirectoryFile, FSRTL_VOLUME_MOUNT);

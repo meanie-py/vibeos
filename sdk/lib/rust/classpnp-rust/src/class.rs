@@ -147,7 +147,14 @@ pub const CLASS_INIT_GUID: u32 = 1;
 pub const DEBUG_MAIN_SOURCE: u32 = 1;
 pub static mut ClassCheckVerifyComplete: IO_COMPLETION_ROUTINE = None;
 pub static mut ClassPnpAllowUnload: ULONG = 1u32;
-pub static mut ClassMaxInterleavePerCriticalIo: ULONG = CLASS_MAX_INTERLEAVE_PER_CRITICAL_IO;
+// ClassMaxInterleavePerCriticalIo / IdlePowerFDOList / IdlePowerFDOListMutex /
+// PowerSettingNotificationHandle / ScreenStateNotificationHandle / DiskIdleTimeoutInMS:
+// the single no_mangle definitions live in globals.rs; local twins here caused a
+// split-brain (ClassInitialize initialized the local list, power.rs walked the shared
+// zeroed one). Imported via crate::types externs below.
+use crate::types::{DiskIdleTimeoutInMS, IdlePowerFDOList, IdlePowerFDOListMutex,
+    PowerSettingNotificationHandle, ScreenStateNotificationHandle,
+    ClassMaxInterleavePerCriticalIo};
 pub const Magic10000: LARGE_INTEGER = LARGE_INTEGER {
     __bindgen_anon_1: LARGE_INTEGER__bindgen_ty_1 {
         LowPart: 0xe219652c,
@@ -169,14 +176,7 @@ pub static mut InitSecurityCookie: BOOLEAN = 0u8;
 #[no_mangle]
 pub static mut MaxTokenOperationListIdentifier: ULONG = MAX_TOKEN_LIST_IDENTIFIERS;
 pub static mut TokenOperationListIdentifier: ULONG = 0xFFFFFFFFu32;
-pub static mut IdlePowerFDOList: LIST_ENTRY = LIST_ENTRY {
-    Flink: core::ptr::null_mut(),
-    Blink: core::ptr::null_mut(),
-};
-pub static mut IdlePowerFDOListMutex: KGUARDED_MUTEX = unsafe { core::mem::zeroed() };
-pub static mut PowerSettingNotificationHandle: PVOID = core::ptr::null_mut();
-pub static mut ScreenStateNotificationHandle: PVOID = core::ptr::null_mut();
-pub static mut DiskIdleTimeoutInMS: ULONG = 0xFFFFFFFFu32;
+// (IdlePowerFDOList family: see globals.rs — imported above, do not redefine here.)
 #[no_mangle]
 pub unsafe extern "C" fn DllUnload() -> i32 {
     DbgPrintEx(DPFLTR_CLASSPNP_ID, DPFLTR_INFO_LEVEL, b"classpnp.sys is now unloading\n\0".as_ptr() as *const i8);
@@ -371,7 +371,7 @@ pub unsafe extern "system" fn ClassInitialize(
 
     if IdlePowerFDOList.Flink.is_null() {
         InitializeListHead(&raw mut IdlePowerFDOList);
-        KeInitializeGuardedMutex(&raw mut IdlePowerFDOListMutex);
+        KeInitializeGuardedMutex((&raw mut IdlePowerFDOListMutex).cast());
     }
 
     STATUS_SUCCESS
@@ -1335,13 +1335,28 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             (*(*fdo_extension).PrivateFdoData).InterpretSenseInfo = (*driver_extension).InterpretSenseInfo;
             (*(*fdo_extension).PrivateFdoData).MaxNumberOfIoRetries = (NUM_IO_RETRIES) as u8;
 
+            // NB: sizeof the whole union, NOT size_of_val(&...ReleaseQueueSrbBuffer) —
+            // that field is a bindgen __BindgenUnionField<[UCHAR;144]> ZST marker, so
+            // size_of_val on it returns 0 and InitializeStorageRequestBlock rejects the
+            // "0-byte" buffer (START then fails 0xC000000D; cost a USB-disk debug hunt).
             status = InitializeStorageRequestBlock(
                 (*(*fdo_extension).PrivateFdoData).ReleaseQueueSrb.SrbEx.as_mut() as *mut _,
                 STORAGE_ADDRESS_TYPE_BTL8 as u16,
-                size_of_val(&(*(*fdo_extension).PrivateFdoData).ReleaseQueueSrb.ReleaseQueueSrbBuffer) as u32,
+                size_of::<crate::types::_CLASS_PRIVATE_FDO_DATA__bindgen_ty_2>() as u32,
                 0,
             );
             if !NT_SUCCESS(status) {
+                {
+                    unsafe extern "C" { fn DbgPrint(Format: *const i8, ...) -> u32; }
+                    DbgPrint(
+                        c"[CLASSPNP] InitSRB dbg: status=0x%x addrtype=%u bytesize=%u sizeof(SRB)=%u sizeof(BTL8)=%u\n".as_ptr(),
+                        status as u32,
+                        STORAGE_ADDRESS_TYPE_BTL8 as u32,
+                        size_of_val(&(*(*fdo_extension).PrivateFdoData).ReleaseQueueSrb.ReleaseQueueSrbBuffer) as u32,
+                        size_of::<crate::types::STORAGE_REQUEST_BLOCK>() as u32,
+                        size_of::<crate::types::STOR_ADDR_BTL8>() as u32,
+                    );
+                }
                 NT_ASSERT(0u8);
                 TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,
                     b"ClassPnpStartDevice: fail to initialize release queue extended SRB 0x%x\n\0".as_ptr() as PCHAR, status);
@@ -1456,6 +1471,14 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
 
         if NT_SUCCESS(status) {
             status = (*dev_info).ClassInitDevice.expect("ClassInitDevice")(device_object);
+            {
+                unsafe extern "C" { fn DbgPrint(Format: *const i8, ...) -> u32; }
+                DbgPrint(
+                    c"[CLASSPNP] ClassInitDevice(%p) -> 0x%x\n".as_ptr(),
+                    device_object,
+                    status as u32,
+                );
+            }
         }
 
         if (*common_extension).__bindgen_anon_1.IsFdo() != 0 {
@@ -1545,6 +1568,14 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
     }
 
     status = (*dev_info).ClassStartDevice.expect("ClassStartDevice")(device_object);
+    {
+        unsafe extern "C" { fn DbgPrint(Format: *const i8, ...) -> u32; }
+        DbgPrint(
+            c"[CLASSPNP] ClassStartDevice(%p) -> 0x%x\n".as_ptr(),
+            device_object,
+            status as u32,
+        );
+    }
     if NT_SUCCESS(status) {
         (*common_extension).CurrentState = IRP_MN_START_DEVICE;
 
@@ -2005,7 +2036,10 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut _DEVICE_OBJECT) {
 
         if (*((*fdo_extension).AdapterDescriptor as *mut crate::types::_STORAGE_ADAPTER_DESCRIPTOR)).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK as u8 {
             let srbEx: *mut STORAGE_REQUEST_BLOCK = (*context).Srb.SrbEx.as_mut() as *mut _;
-            let srbExBufSize = core::mem::size_of_val(&(*context).Srb.SrbExBuffer) as u32;
+            // NB: SrbExBuffer is a __BindgenUnionField ZST marker — size_of_val on it is 0
+            // (same class as the ReleaseQueueSrb bug in ClassPnpStartDevice). Size the whole
+            // union instead (== the SrbExBuffer byte array, its largest member).
+            let srbExBufSize = core::mem::size_of::<crate::types::_COMPLETION_CONTEXT__bindgen_ty_1>() as u32;
 
             let status = InitializeStorageRequestBlock(
                 srbEx,
