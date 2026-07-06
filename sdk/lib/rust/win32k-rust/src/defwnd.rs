@@ -23,9 +23,15 @@ fn HIWORD(l: DWORD) -> DWORD { (l >> 16) & 0xffff }
 #[inline(always)]
 fn MAKELONG(low: u16, high: u16) -> LPARAM { (((low as u32) | ((high as u32) << 16)) as LONG) as LPARAM }
 
-// DC_NC — nonclient redraw flag (winuser.h DC_NC = DC_CAPTION|DC_FRAME; win32k uses
-// DC_FRAME|DC_ACTIVE internally, mirroring nonclient.rs).
-const DC_NC: DWORD = DC_FRAME | DC_ACTIVE;
+// DC_NC — nonclient redraw flag (winuser.h: DC_NC = DC_CAPTION|DC_FRAME = 0x900C).
+const DC_NC: DWORD = DC_CAPTION | DC_FRAME;
+
+// WM_CTLCOLOR (windowsx.h, 16-bit compat) — NOT in the bindgen constants. Without
+// this const the `WM_CTLCOLOR =>` match arm in IntDefWindowProc silently became an
+// irrefutable catch-all binding that swallowed every message after it in the match
+// (WM_NCCALCSIZE/WM_NCPAINT/WM_NCACTIVATE/WM_ERASEBKGND/...), which is why no window
+// ever painted non-client chrome. Keep this defined.
+const WM_CTLCOLOR: UINT = 0x0019;
 
 // HOOKID_TO_FLAG(HookId) = 1 << (HookId + 1) (hook.h).
 #[inline(always)]
@@ -1206,10 +1212,12 @@ unsafe extern "fastcall" fn IntDefWindowProc(
                     );
                 }
             }
-            let lwin_down = (*gafAsyncKeyState.as_ptr().offset((VK_LWIN as usize / 8) as isize)
-                & (1 << (VK_LWIN as usize % 8))) != 0;
-            let rwin_down = (*gafAsyncKeyState.as_ptr().offset((VK_RWIN as usize / 8) as isize)
-                & (1 << (VK_RWIN as usize % 8))) != 0;
+            // input.h IS_KEY_DOWN: async key state is 2 bits per key —
+            // byte (vk*2)/8, KS_DOWN_BIT mask 1 << ((vk%4)*2).
+            let lwin_down = (*gafAsyncKeyState.as_ptr().offset((VK_LWIN as usize * 2 / 8) as isize)
+                & (1 << ((VK_LWIN as usize % 4) * 2))) != 0;
+            let rwin_down = (*gafAsyncKeyState.as_ptr().offset((VK_RWIN as usize * 2 / 8) as isize)
+                & (1 << ((VK_RWIN as usize % 4) * 2))) != 0;
             if g_bWindowSnapEnabled != 0 && (lwin_down || rwin_down) {
                 let hwndTop = UserGetForegroundWindow();
                 let topWnd = UserGetWindowObject(hwndTop);

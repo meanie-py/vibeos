@@ -1,6 +1,8 @@
 use win32k_sys::win32k::*;
 use core::ffi::c_void;
 use ntkrnl_sys::base::NT_SUCCESS;
+// bindgen flexible-array extern is [T;0] — indexing it panics; use the real [DIB_FUNCTIONS; 11].
+use crate::dib::DibFunctionsForBitmapFormat;
 
 // `RtlCopyMemory` is a Microsoft `#define memcpy` macro — inline locally
 // (same pattern as win32k-rust/src/clip.rs).
