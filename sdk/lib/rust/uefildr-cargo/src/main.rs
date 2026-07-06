@@ -14,9 +14,75 @@
 #![allow(internal_features)]
 
 // rustc requires a `#[panic_handler]` visible in main.rs's crate graph (it
-// cannot see the staticlib at compile time). libfreeldr_rust_uefi.a defines
-// its own; `--allow-multiple-definition` lets lld take the first match.
+// cannot see the staticlib at compile time). NOTE the old lore here ("the
+// staticlib's handler wins first-match") was backwards: lld resolves
+// `rust_begin_unwind` to THIS object (the bin object precedes the archives on
+// the link line), so freeldr-rust's loud handler is gc'd dead — verified
+// 2026-07-06 by `strings uefildr.efi | grep FREELDR-RUST-PANIC` → 0 hits on
+// all 3 arches. So the loud handler must live HERE. Mirrors
+// freeldr-rust/src/lib.rs::panic: debugcon 0xe9 on x86, PL011 DR on arm64.
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    unsafe {
+        let putc = |c: u8| core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") c);
+        for &b in b"\n!!FREELDR-RUST-PANIC@" {
+            putc(b);
+        }
+        if let Some(loc) = info.location() {
+            for &b in loc.file().as_bytes() {
+                putc(b);
+            }
+            putc(b':');
+            let mut line = loc.line();
+            let mut buf = [0u8; 10];
+            let mut n = 0usize;
+            if line == 0 {
+                putc(b'0');
+            }
+            while line > 0 {
+                buf[n] = b'0' + (line % 10) as u8;
+                line /= 10;
+                n += 1;
+            }
+            while n > 0 {
+                n -= 1;
+                putc(buf[n]);
+            }
+        }
+        putc(b'\n');
+    }
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        // QEMU virt PL011 UART DR (identity-mapped at this stage of boot).
+        let uart_dr = 0x0900_0000usize as *mut u32;
+        let putc = |c: u8| core::ptr::write_volatile(uart_dr, c as u32);
+        for &b in b"\n!!FREELDR-RUST-PANIC@" {
+            putc(b);
+        }
+        if let Some(loc) = info.location() {
+            for &b in loc.file().as_bytes() {
+                putc(b);
+            }
+            putc(b':');
+            let mut line = loc.line();
+            let mut buf = [0u8; 10];
+            let mut n = 0usize;
+            if line == 0 {
+                putc(b'0');
+            }
+            while line > 0 {
+                buf[n] = b'0' + (line % 10) as u8;
+                line /= 10;
+                n += 1;
+            }
+            while n > 0 {
+                n -= 1;
+                putc(buf[n]);
+            }
+        }
+        putc(b'\n');
+    }
+    let _ = info;
+    loop {} // nolint: silent-failure (post-panic halt — FREELDR-RUST-PANIC marker already emitted above)
 }

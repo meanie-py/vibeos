@@ -18,7 +18,12 @@
 // `#[panic_handler]` visible in main.rs's crate graph (it cannot see
 // the staticlib at compile time). libkdcom_rust.a's own handler wins
 // via `--allow-multiple-definition` if both are linked.
+// DELIBERATELY bare (2026-07-06 loud-panic sweep judgment): this IS the KD
+// transport — DbgPrint routes *through* this module, so a panic here calling
+// DbgPrint would recurse into the broken transport. A raw-port fallback would
+// duplicate per-arch serial bring-up for a module that owns the serial port
+// anyway. Accepted: a panic in the KD transport is a silent halt.
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+    loop {} // nolint: silent-failure (KD transport — DbgPrint here would recurse into the broken transport)
 }
