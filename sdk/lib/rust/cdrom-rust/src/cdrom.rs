@@ -41,6 +41,15 @@ const TRACE_FLAG_POWER: u32 = 0x10;
 const TRACE_FLAG_QUEUE: u32 = 0x20;
 const TRACE_LEVEL_WARNING: u32 = 2;
 
+// These two WDF ioctl handlers are DEFINED `extern "C"` (aacs.rs / ioctl.rs);
+// their decls must match that decoration — i386 was declaring them
+// `extern "system"` -> undefined `_..@36`. Exposed once the corrected IOCTL
+// consts routed dispatch into them. 2026-07-06.
+extern "C" {
+    fn DeviceHandleAacsReadMediaKeyBlock( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
+    fn RequestHandleGetPerformance( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
+}
+
 extern "system" {
     fn KeQueryPerformanceCounter(PerformanceFrequency: *mut i64) -> i64;
 }
@@ -196,7 +205,6 @@ extern "system" {
     fn DeviceHandleDvdStartSessionReadKey( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn DeviceHandleDvdSendKey( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn DeviceHandleSetReadAhead( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
-    fn DeviceHandleAacsReadMediaKeyBlock( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn DeviceHandleAacsStartSession( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn DeviceHandleAacsEndSession( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn DeviceHandleAacsSendCertificate( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
@@ -214,7 +222,6 @@ extern "system" {
     fn RequestHandlePersistentReserve( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn RequestHandleEnableStreaming( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, info: *mut usize, ) -> i32;
     fn RequestHandleSendOpcInformation( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, info: *mut usize, ) -> i32;
-    fn RequestHandleGetPerformance( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn RequestHandleMcnSyncFakeIoctl( dev: *mut CDROM_DEVICE_EXTENSION, info: *mut usize, ) -> i32;
     fn RequestHandleAreVolumesReady( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn RequestHandleVolumeOnline( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;

@@ -376,7 +376,7 @@ impl WOut {
         }
     }
 
-    unsafe fn push_num(&mut self, val: u64, base: u64, upper: bool, zero_pad: bool, width: usize, negative: bool) {
+    unsafe fn push_num(&mut self, val: u32, base: u32, upper: bool, zero_pad: bool, width: usize, negative: bool) {
         let digits = if upper {
             b"0123456789ABCDEF"
         } else {
@@ -456,15 +456,15 @@ unsafe fn strsafe_vformat_w(
         match spec as u8 {
             b'd' | b'i' => {
                 let v = args.arg::<i32>();
-                out.push_num(v.unsigned_abs() as u64, 10, false, zero_pad, width, v < 0);
+                out.push_num(v.unsigned_abs() as u32, 10, false, zero_pad, width, v < 0);
             }
             b'u' => {
                 let v = args.arg::<u32>();
-                out.push_num(v as u64, 10, false, zero_pad, width, false);
+                out.push_num(v as u32, 10, false, zero_pad, width, false);
             }
             b'x' | b'X' => {
                 let v = args.arg::<u32>();
-                out.push_num(v as u64, 16, spec as u8 == b'X', zero_pad, width, false);
+                out.push_num(v as u32, 16, spec as u8 == b'X', zero_pad, width, false);
             }
             b's' => {
                 let mut s = args.arg::<*const u16>();

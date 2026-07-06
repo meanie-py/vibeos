@@ -32,7 +32,6 @@ extern "system" {
     fn RtlStringCbCopyW(pszDest: PWSTR, cbDest: usize, pszSrc: *const u16) -> NTSTATUS;
     fn USBPORT_PdoQueryInterface( FdoDevice: PDEVICE_OBJECT, PdoDevice: PDEVICE_OBJECT, Irp: PIRP, ) -> NTSTATUS;
     fn USBPORT_RootHubCreateDevice( FdoDevice: PDEVICE_OBJECT, PdoDevice: PDEVICE_OBJECT, ) -> NTSTATUS;
-    fn wcslen(str: *const u16) -> usize;
     fn USBPORT_AddUSB1Fdo(FdoDevice: PDEVICE_OBJECT) -> NTSTATUS;
     fn USBPORT_AddUSB2Fdo(FdoDevice: PDEVICE_OBJECT) -> NTSTATUS;
     fn USBPORT_InvalidateControllerHandler( FdoDevice: PDEVICE_OBJECT, Type: ULONG, ) -> ();
@@ -1875,7 +1874,7 @@ pub unsafe extern "system" fn USBPORT_PdoPnP(
                     );
                 }
 
-                Length = (wcslen(Buffer.as_ptr()) + 1) as LONG;
+                Length = (crate::glue::wcslen(Buffer.as_ptr()) + 1) as LONG;
 
                 Id = ExAllocatePoolWithTag(
                     PagedPool,
@@ -3690,7 +3689,7 @@ pub unsafe extern "system" fn USBPORT_PdoPnP(
 //                                        L"USB\\ROOT_HUB");
 //                 }
 //
-//                 Length = (LONG)(wcslen(Buffer) + 1);
+//                 Length = (LONG)(crate::glue::wcslen(Buffer) + 1);
 //
 //                 Id = ExAllocatePoolWithTag(PagedPool,
 //                                            Length * sizeof(WCHAR),
