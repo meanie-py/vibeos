@@ -2601,14 +2601,12 @@ timer table shows live sub-second traffic; explorer main blocks in
 `GetMessage`; netstack worker alive in real `delay_ms` waits (WaitReason=4);
 `test_arm64input_delivery` green.
 
-**Still open (pre-existing, forensics preserved):** explorer's tray clock
-never repaints and window paint is incomplete (notepad title bar sometimes
-missing — also true on pre-quest master) — `ProcessTimers` fires but
-explorer's `cTimersReady` stays 0, i.e. win32k user-timer → WM_TIMER posting
-to the owning thread doesn't deliver; and the underlying dirty-window leak
-that IntGetPaintMessage's bandaid papers over (now visible on serial as
-`[WIN32K] IntGetPaintMessage: cPaintsReady=%u but no dirty window`). Both are
-win32k message/paint bookkeeping, not interrupt/IRQL work.
+**Follow-up CLOSED 2026-07-06 (§9.22): tray clock / window repaint freeze was
+the WRONG ACTIVE INPUT DESKTOP, not timer delivery.** See §9.22 — the timer
+path was fine all along; `gpdeskInputDesktop` was stranded on "Winlogon" while
+the shell runs on "Default", so win32k's paint retrieval walked the wrong
+desktop tree. Fixed in winlogon (arm64 boot path). The `cTimersReady`-stays-0
+observation was a red herring (measured mid-consume); WM_TIMER *does* post.
 
 **Debug recipe additions** (beyond §9.20's): identify a user-PC spinner from a
 `KiIrqHandler` breakpoint — read `KPCR(tpidr_el1)+0xD80 → Prcb.CurrentThread
@@ -2620,3 +2618,62 @@ reuse a previous boot's symbolication). `gdb` can't read kernel VAs while
 stopped at EL0 — break on a kernel PC first. And REBUILD THE SYMBOL INDEX
 after every build: a stale `sym2addr` address put a 5-minute breakpoint on
 dead code and nearly "proved" timers were frozen when they weren't.
+
+### 9.22 (FIXED 2026-07-06) arm64 desktop never repaints — wrong ACTIVE INPUT DESKTOP + SystemTime never seeded from the RTC
+
+Two independent bugs behind "the arm64 desktop is frozen at boot": the tray
+clock never ticked (both a wrong *value* and no *repaint*), and no window ever
+redrew after its first paint (notepad title bar / taskbar bare).
+
+**Bug A — window paint freeze: `gpdeskInputDesktop` stranded on "Winlogon".**
+The shell (explorer.exe) is launched on `WinSta0\Default`, but the kernel's
+*active input desktop* (`gpdeskInputDesktop`, win32k `desktop.rs`) was the
+**Winlogon** desktop. `IntGetPaintMessage` → `IntFindWindowToRepaint(
+UserGetDesktopWindow(), pti)` starts the repaint walk from the *global active*
+desktop's window — so it walked the (empty) Winlogon tree and never found
+explorer's dirty windows on Default. Every repaint silently no-op'd, and the
+"`cPaintsReady=%u but no dirty window`" bandaid (§9.21) fired forever. The
+taskbar you *see* is stale pixels drawn once — arm64 skips `IntHideDesktop`, so
+switching away never cleared them.
+
+*How it got stranded:* the arm64 winlogon shortcut path (`winlogon.rs`, no
+GINA/logon) relies on `CreateWindowStationAndDesktops` switching to Default,
+but `RunSetup`'s async thread (`setup.rs`) switches to Default then, on the
+setup-shell `CreateProcess` **failure** path, `SwitchDesktop(WinlogonDesktop)`
+— leaving the input desktop on Winlogon. Nothing switched it back before the
+shell came up.
+
+*Root-cause proof (the technique):* from GDB, walk the win32k timer list to the
+explorer clock timer → its `pti` → `THREADINFO.rpdesk (+0x78)`; compare to
+`gpdeskInputDesktop` (win32k `+0x131978` this build). They differed
+(`rpdesk`=Default, active=Winlogon). Read each `_DESKTOP`'s object name by
+scanning ~0x80 bytes before the body for a `UNICODE_STRING{len,max,ptr}` →
+`[Winlogon]` vs `[Default]`. Then **overwrite** `gpdeskInputDesktop` with the
+Default pointer and wait one 60 s timer tick — the clock repainted (`6:35`→
+`6:47`) and the paint-leak count stopped climbing. That poke *is* the fix,
+proven live before touching source.
+
+*Fix (winlogon-rust):* after spawning explorer in the arm64 boot path,
+`SwitchDesktop((*WLSession).ApplicationDesktop)` so the active input desktop is
+the shell's desktop (what a normal logon reaches via `WlxSwitchDesktopToUser`);
+and skip `setup.rs`'s failure-path `SwitchDesktop(WinlogonDesktop)` on arm64
+(no GINA UI to fall back to) so the async setup thread can't re-strand it.
+
+**Bug B — SystemTime never seeded: the "Query the clock" block was dropped in
+translation.** `Phase1InitializationDiscard` (C `ex/init.c`) seeds boot time
+from `HalQueryRealTimeClock` → `KeSetSystemTime`; the whole `if
+((ExCmosClockIsSane) && (HalQueryRealTimeClock(&TimeFields)))` block was missing
+from `ex/init.rs`, so `SharedUserData.SystemTime` accumulated from 0 ==
+1601-01-01 (tray clock stuck at "12:00 AM"). This hit **all three arches**
+(x86/amd64 too — no separate seed path existed). Fix: restored the block in
+`ex/init.rs`. On arm64 the HAL RTC stub returned a hardcoded 2025-01-01;
+`hal-rust/src/arm64/halstubs.rs::HalQueryRealTimeClock` now reads the QEMU virt
+**PL031** RTC (`DR` @ `0x0901_0000`, seconds since the Unix epoch) with a
+civil-date conversion, so arm64 shows real wall-clock time.
+
+**Verified:** clean boot (no GDB), zero `no dirty window` leaks (was 4/boot),
+tray clock shows real RTC time and ticks on its own (`6:56`→`6:58`), full
+notepad title bar + Start button + taskbar button render. `IntGetPaintMessage`
+walking the wrong desktop is the general shape — if windows draw once then
+freeze, check `gpdeskInputDesktop` vs the shell thread's `rpdesk` before
+suspecting the timer/paint bookkeeping.

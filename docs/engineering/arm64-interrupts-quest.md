@@ -59,10 +59,14 @@ report, `HalDumpGicArm64()` state dumper, masked-swap tripwire in `KiSwapContext
      ungated delivery ran timer expiration in exception context → BUGCHECK 0x1E
      (EC=0x0E), the §9.19 class. The depth counter is bumped vector-wide in
      `HalClockInterruptArm64` and by every HalpEnter/ExitInterruptIrql pair.
-   Still open (pre-existing, separate win32k hunt — forensics in §9.21): win32k
-   user-timer WM_TIMER posting never reaches explorer (tray clock never repaints,
-   `ProcessTimers` fires but `cTimersReady` stays 0) and the underlying dirty-window
-   leak the QS_PAINT bandaid papers over (now visible on serial).
+   CLOSED 2026-07-06 (§9.22): the tray-clock/window repaint freeze was NOT a timer
+   bug — `gpdeskInputDesktop` was stranded on the "Winlogon" desktop while the shell
+   runs on "Default", so win32k's `IntGetPaintMessage` walked the wrong desktop tree
+   and never found explorer's dirty windows. Fixed in winlogon-rust (arm64 boot path
+   now `SwitchDesktop(ApplicationDesktop)` after spawning explorer; setup.rs skips its
+   Winlogon-fallback switch on arm64). Also restored the dropped RTC boot-time seed
+   (`ex/init.rs`, all arches) + a real PL031 RTC read on arm64 (`hal-rust`), so the
+   clock shows real wall-clock time and ticks. `cTimersReady`-stays-0 was a red herring.
 
 Original brief follows (current-state description below is now historical).
 
