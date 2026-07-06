@@ -878,13 +878,13 @@ pub unsafe extern "system" fn RtlGetFullPathName_Ustr(
         {
             let teb: *mut u8;
             core::arch::asm!("mov {}, gs:[0x30]", out(reg) teb);
-            *((teb as usize + 0x60) as *const *mut _NT_PEB)
+            *((teb as usize + 0x60) as *const *mut _NT_PEB) // nolint: magic-offset (Windows ABI TEB self/PEB offsets, cfg-correct)
         }
         #[cfg(target_arch = "x86")]
         {
             let teb: *mut u8;
             core::arch::asm!("mov {}, fs:[0x18]", out(reg) teb);
-            *((teb as usize + 0x30) as *const *mut _NT_PEB)
+            *((teb as usize + 0x30) as *const *mut _NT_PEB) // nolint: magic-offset (Windows ABI TEB self/PEB offsets, cfg-correct)
         }
     };
     CurDirName =

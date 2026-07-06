@@ -1443,7 +1443,7 @@ pub unsafe extern "system" fn KdpInitDebuggerDataBlock() {
     d.MmSystemRangeStart = ptr_to_ul64(core::ptr::addr_of!(MmSystemRangeStart) as *const _);
     d.MmUserProbeAddress = ptr_to_ul64(core::ptr::addr_of!(MmUserProbeAddress) as *const _);
     d.KdPrintCircularBuffer = ptr_to_ul64(core::ptr::addr_of!(KdPrintDefaultCircularBuffer) as *const _);
-    d.KdPrintCircularBufferEnd = ptr_to_ul64((core::ptr::addr_of!(KdPrintDefaultCircularBuffer) as *const u8).add(KD_DEFAULT_LOG_BUFFER_SIZE) as *const _);
+    d.KdPrintCircularBufferEnd = ptr_to_ul64((core::ptr::addr_of!(KdPrintDefaultCircularBuffer) as *const u8).add(KD_DEFAULT_LOG_BUFFER_SIZE) as *const _); // nolint: magic-offset (buffer size, not a field offset)
     d.KdPrintWritePointer = ptr_to_ul64(core::ptr::addr_of!(KdPrintWritePointer) as *const _);
     d.KdPrintRolloverCount = ptr_to_ul64(core::ptr::addr_of!(KdPrintRolloverCount) as *const _);
     d.MmLoadedUserImageList = ptr_to_ul64(core::ptr::addr_of!(MmLoadedUserImageList) as *const _);

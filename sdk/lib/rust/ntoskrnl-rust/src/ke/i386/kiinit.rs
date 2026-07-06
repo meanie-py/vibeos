@@ -940,10 +940,10 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
         __writefsdword(KPCR_PROCESSOR_NUMBER, Cpu);
 
         P0BootStack =
-            core::ptr::addr_of!(P0BootStackData).cast::<u8>().add(KERNEL_STACK_SIZE) as ULONG_PTR;
+            core::ptr::addr_of!(P0BootStackData).cast::<u8>().add(KERNEL_STACK_SIZE) as ULONG_PTR; // nolint: magic-offset (stack size, not a field offset)
         KiDoubleFaultStack = core::ptr::addr_of!(KiDoubleFaultStackData)
             .cast::<u8>()
-            .add(KERNEL_STACK_SIZE) as ULONG_PTR;
+            .add(KERNEL_STACK_SIZE) as ULONG_PTR; // nolint: magic-offset (stack size, not a field offset)
 
         (*LoaderBlock).KernelStack = P0BootStack as ULONG;
         (*LoaderBlock).Thread = core::ptr::addr_of!(KiInitialThread) as ULONG;
