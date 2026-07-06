@@ -41,6 +41,16 @@
  */
 .globl KiThreadStartup
 KiThreadStartup:
+    /*
+     * Enable IRQs. A new thread inherits PSTATE.DAIF from whichever context
+     * performed the swap-in — if that context was DAIF-masked (an SVC wait
+     * or an IRQ-exception wake chain), a system thread would otherwise run
+     * masked FOREVER (it never ERETs), eventually starving the clock and
+     * wedging the machine. Threads start at APC_LEVEL with interrupts on,
+     * matching NT (2026-07-05, arm64-interrupts quest).
+     */
+    msr     daifclr, #2
+
     /* Lower IRQL to APC_LEVEL (1) to allow APCs */
     mov     x0, #1
     bl      KfLowerIrql

@@ -2375,3 +2375,107 @@ Pair with the flake farm for rare flakes: `./vibeos-cli farm --arches amd64
 `~/vibeos-flake-farm/corpus.jsonl` (stop code + symbolicated banner lines per
 failure, artifacts preserved out of /tmp); `./vibeos-cli farm-report` clusters
 failures into ranked (classification, stop, symbol) families.
+
+### 9.19 (FIXED 2026-07-05) arm64 total-silence boot wedge = a context switch LEAKED exception-entry DAIF into a new thread — PSTATE.DAIF is NOT per-thread state
+
+**Symptom:** boot wedges with serial completely silent (no BUGCHECK, no output at
+all — the clock itself has stopped). Wedge point varies run-to-run (first hit:
+right after `[WINLOGON] ARM64: cmd.exe created`). GDB shows the CPU parked with
+`cpsr` DAIF bits ALL set (0x3C0-family = raw exception-entry mask) at a PC below a
+`KiSwapContext` frame.
+
+**Mechanism:** `KiSwapContext` does not save/restore PSTATE — whoever swaps in a
+context hands it their own DAIF. Two facts make this lethal:
+(1) on this port, **SVC handlers run DAIF-masked end-to-end**, so every syscall
+wait parks a masked context (self-healing: it unmasks at ERET back to user);
+(2) a **brand-new thread** (`KiThreadStartup`) inherits the swapper's DAIF and, if
+it's a system thread, never ERETs — so if its first swap-in comes from a
+masked-context wake chain it runs IRQ-masked *forever*. Once enough of the ready
+set is masked, no clock tick ever fires again → machine dead, serial silent.
+Trigger was the interrupt quest's IRQ-exit DPC retirement (`KiIrqHandler` →
+`KiRetireDpcList` → `KiTimerExpiration` → thread wakes rooted in exception
+context); before that, all wake chains were rooted in the idle loop, which
+`daifclr`s before swapping — the landmine was unreachable.
+
+**Fix (layered — the first alone is NOT sufficient):**
+1. `KiThreadStartup` opens with `msr daifclr, #2` (ctxswitch.S) — threads start
+   with IRQs enabled, matching NT. Necessary (closes the new-thread inheritance
+   leak) but empirically insufficient: with exception-context timer wakes still
+   enabled, boot still wedged at thread-lifecycle events (winlogon→cmd handoff
+   on windows-host TCG; `LpcExitThread` during a System-thread exit on native) —
+   masked wake/swap chains break more paths than new-thread startup.
+2. **The IRQ-exit DPC retire excludes timer expiration entirely**
+   (`TimerRequest == 0` guard in `KiIrqHandler`, trap.rs): `KiTimerExpiration` —
+   the thread-wake machinery — must NOT run from exception context on this port
+   until SVC entry re-enables IRQs (arm64-interrupts quest doc, landmine #2).
+   Timer expiration stays with the idle loop (pre-quest semantics); only plain
+   device DPCs retire at IRQ exit.
+
+**Detector left in tree:** masked-swap tripwire in `KiSwapContextResume`
+(thrdini.rs) self-reports `[SWAP-TRIPWIRE]` on serial if a masked swap ever
+happens under the IRQ-exit retire again; the IRQ-exit retire must also use
+`HalpEnterInterruptIrql`/`HalpExitInterruptIrql` (NOT `KeLowerIrql` — its
+soft-interrupt drain delivers APCs in exception context).
+
+**Debug recipe that cracked it** (generalizes to any silent arm64 wedge):
+`RUN=$(qemu/start.sh arm64 --gdb)` → `qemu/wait-for.sh $RUN --pattern <last-line>`
+→ `qemu/inspect.sh $RUN --command regs` — read `cpsr` FIRST: DAIF=0xF means "who
+masked me" (this class), not "what crashed". Then instrument the save side
+(tripwire print in `KiSwapContextResume`) rather than post-morteming the resume side.
+
+### 9.20 (FIXED 2026-07-06) arm64 ISR-queued DPCs never ran at desktop — device-DPC delivery gated on a starved `TimerRequest` flag
+
+**Symptom.** A device ISR fires and `KeInsertQueueDpc` returns 1 (queued), then
+returns 0 forever after (`Dpc->DpcData` non-null = still queued): the DPC never
+runs. Worked fine at DriverEntry time; broke only once the desktop was up.
+First hit: virtio-input's ISR→DPC conversion — mouse IRQs delivered and acked,
+`test_arm64input_delivery` red because the drain DPC never retired.
+
+**Why (three stacked facts, each individually reasonable):**
+1. On this port there were exactly TWO DPC-retire sites: the idle loop
+   (`KiIdleLoop` → `KiRetireDpcList`) and the interrupt quest's IRQ-exception-exit
+   drain (`KiIrqHandler`). The DISPATCH software interrupt is a no-op —
+   `HalpDispatchSoftwareInterrupts` (arm64 halstubs) delivers only the APC bit,
+   so `HalRequestSoftwareInterrupt(DISPATCH_LEVEL)` sets a bit nothing consumes.
+2. At desktop a busy thread that never blocks (a user thread hammering
+   `NtQueryPerformanceCounter` — 75% of PC samples inside hal
+   `KeQueryPerformanceCounter`) starved the idle thread INDEFINITELY. Idle
+   swap-out happened once at boot and it never resumed. Idle-loop retirement: gone.
+3. The IRQ-exit drain was gated on `TimerRequest == 0` (to keep KiTimerExpiration
+   out of exception context — the §9.19 wedge). But `TimerRequest`'s ONLY
+   consumer is `KiRetireDpcList`, i.e. the idle loop — so with idle starved,
+   `TimerRequest` sat non-zero FOREVER (it holds a stale TrapFrame pointer, not
+   a bool!), and the gate turned "timer bookkeeping is stale" into "no device
+   DPC ever runs".
+
+**Fix.** `ke/dpc.rs::KiRetireDeviceDpcs` — drains ONLY `DpcData[DPC_NORMAL]`'s
+list (never touches `TimerRequest`/`KiTimerExpiration`), called from
+`KiIrqHandler` exit with the `TimerRequest == 0` gate REMOVED (guards kept:
+interrupted IRQL < DISPATCH, `DpcRoutineActive == 0`). Device-DPC delivery must
+never depend on timer bookkeeping. Timer expiration itself stays idle-loop-only
+(exception-context KiTimerExpiration still wedges — §9.19 / quest landmine #2).
+
+**Debug recipe (generalizes to "who eats my DPC/why is the queue stuck"):**
+- Rate-limited prints at the three actors: insert result in the ISR, a
+  first-N print in the DPC body, and a "skip-retire: irql=%u active=%u timer=%u
+  depth=%d pc=%p" print in KiIrqHandler when the queue is non-empty but the
+  drain is skipped. The `pc=` of the skip print names the loop the CPU parks
+  in (it's the interrupted context of every IRQ) — one boot pinpointed both the
+  stuck `TimerRequest` and the QPC busy-spinner.
+- `qemu/sample-pc.sh <run-id>` (GDB toolkit) for a PC histogram of where the
+  CPU actually lives; `[IDLE] enter/beat/swap-out/resume` prints in KiIdleLoop
+  answer "does idle ever run" definitively.
+
+**Still open from this hunt** (both PRE-EXISTING — A/B-verified on a master
+boot 2026-07-06, identical PC histogram): (a) an unidentified always-ready user
+thread busy-polls `NtQueryPerformanceCounter` at desktop (user PC
+0x7ffb2002268, deterministic across boots AND across master/branch), starving
+idle — so `TimerRequest` stays stale and KERNEL TIMER EXPIRATION IS FROZEN at
+desktop whenever that thread spins (observed: taskbar never populates, no
+caret blink, 70s-apart QMP screendumps byte-identical). Smoke stays green
+because boot marker + tests finish inside the early window — and note master's
+POLL-THREAD input dies under the freeze (it sleeps on kernel timers), while
+interrupt-driven input keeps working. (b) the DISPATCH soft-interrupt delivery
+gap (fact 1) — the port should deliver DPC drains on KfLowerIrql crossing
+below DISPATCH, in thread context, so retirement doesn't depend on
+idle/IRQ-exit alone. Tracked in the quest doc (landmine #4).

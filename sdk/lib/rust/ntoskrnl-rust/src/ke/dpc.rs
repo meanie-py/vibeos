@@ -586,6 +586,58 @@ unsafe fn KiRetireDpcList_body(Prcb: PKPRCB) {
     }
 }
 
+/// Drain the plain (device) DPC queue WITHOUT touching TimerRequest — the
+/// IRQ-exception-exit retire path (arm64 KiIrqHandler). KiRetireDpcList runs
+/// KiTimerExpiration when TimerRequest is set, and timer expiration from
+/// exception context reliably wedges boot (field manual §9.19) — so the IRQ
+/// exit must retire ONLY the device-DPC list and leave timer work to thread
+/// context. Crucially, TimerRequest being set must NOT block device-DPC
+/// delivery: on this port TimerRequest can sit non-zero indefinitely when a
+/// busy thread starves the idle loop (its only consumer), and gating device
+/// DPCs on it turned one starved flag into a dead input pipeline.
+#[no_mangle]
+pub unsafe extern "C" fn KiRetireDeviceDpcs(Prcb: PKPRCB) {
+    let DpcData: PKDPC_DATA = &mut (*Prcb).DpcData[DPC_NORMAL] as *mut _;
+    let ListHead: PLIST_ENTRY = &mut (*DpcData).DpcListHead as *mut LIST_ENTRY;
+
+    (*Prcb).DpcRoutineActive = 1;
+
+    while (*DpcData).DpcQueueDepth != 0 {
+        let dpc_lock_guard = unsafe { ntkrnl_sys::guards::SpinLockAtDpcGuard::acquire(
+            &mut (*DpcData).DpcLock as *mut _ as ntkrnl_sys::ke::PKSPIN_LOCK
+        ) };
+        let DpcEntry = (*ListHead).Flink;
+
+        if DpcEntry != ListHead {
+            RemoveEntryList(DpcEntry);
+            let Dpc = ((DpcEntry as usize) - core::mem::offset_of!(_KDPC, DpcListEntry)) as PKDPC;
+
+            (*Dpc).DpcData = core::ptr::null_mut();
+            let DeferredRoutine = (*Dpc).DeferredRoutine;
+            let DeferredContext = (*Dpc).DeferredContext;
+            let SystemArgument1 = (*Dpc).SystemArgument1;
+            let SystemArgument2 = (*Dpc).SystemArgument2;
+
+            (*DpcData).DpcQueueDepth -= 1;
+
+            drop(dpc_lock_guard);
+
+            if let Some(routine) = DeferredRoutine {
+                _enable();
+                routine(Dpc, DeferredContext, SystemArgument1, SystemArgument2);
+                _disable();
+            } else {
+                crate::dbg_print!(b"KiRetireDeviceDpcs: NULL DeferredRoutine, KDPC %p\n\0", Dpc as usize);
+            }
+        } else {
+            drop(dpc_lock_guard);
+        }
+    }
+
+    (*Prcb).DpcRoutineActive = 0;
+    (*Prcb).DpcInterruptRequested = 0;
+}
+
 unsafe fn KiInitializeDpc(
     Dpc: PKDPC,
     DeferredRoutine: PKDEFERRED_ROUTINE,

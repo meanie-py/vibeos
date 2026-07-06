@@ -28,8 +28,17 @@ extern "C" {
     /// No-op until HalInitializeClockArm64 runs in Phase 1.
     fn HalClockInterruptArm64(TrapFrame: PKTRAP_FRAME);
 }
+
+extern "system" {
+    /// HAL interrupt-context IRQL pair (hal-rust arm64/halstubs.rs): raise /
+    /// restore WITHOUT the KfLowerIrql software-interrupt drain — safe in IRQ
+    /// exception context where APC delivery would be fatal.
+    fn HalpEnterInterruptIrql(NewIrql: KIRQL) -> KIRQL;
+    fn HalpExitInterruptIrql(RestoreIrql: KIRQL);
+}
 use crate::ps::win32::KeGdiFlushUserBatch;
 use crate::ke::procobj::KeServiceDescriptorTable;
+use crate::ke::dpc::KiRetireDeviceDpcs;
 
 unsafe fn TrapPutChar(c: u8) {
     let pl011_base = Arm64UartKernelBase as *mut ULONG;
@@ -455,10 +464,70 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
 
 #[no_mangle]
 pub unsafe extern "C" fn KiIrqHandler(TrapFrame: PKTRAP_FRAME) {
-    /* Dispatch the GIC interrupt: clock tick → KeUpdateSystemTime, then EOI.
+    /* Dispatch the GIC interrupt: clock tick → KeUpdateSystemTime, device SPI
+     * → connected ISR at DIRQL (KiDispatchInterruptArm64), then EOI.
      * (No per-IRQ UART trace — the clock fires at 100Hz and would flood.) */
     HalClockInterruptArm64(TrapFrame);
+
+    /* Retire pending DPC work before returning, iff we interrupted code below
+     * DISPATCH_LEVEL — the software-interrupt delivery an ISR's DPC queueing
+     * would trigger on x86 (KiEndInterrupt). Without this, a DPC queued while
+     * a busy thread runs waits for the idle loop, and interrupt-driven I/O
+     * completions stall behind compute. Guards:
+     *   - IRQL >= DISPATCH (incl. the idle loop, pinned at DISPATCH): the
+     *     interrupted context retires its own work — retiring here would
+     *     re-enter KiRetireDpcList / KiSwapContext mid-flight;
+     *   - DpcRoutineActive: a nested IRQ during a DPC must not recurse.
+     * KiRetireDpcList expects entry at DISPATCH with IRQs masked (we're in the
+     * IRQ exception, so PSTATE.I is set) and does its own _enable/_disable
+     * around each DPC body; nested device IRQs during a DPC land back here
+     * and skip (IRQL == DISPATCH).
+     *
+     * The raise/restore MUST be the interrupt-context pair (HalpEnter/
+     * HalpExitInterruptIrql), NOT KeRaise/KeLowerIrql: KfLowerIrql drains
+     * pending software interrupts, i.e. delivers kernel APCs — and delivering
+     * an APC from IRQ exception context wedges the machine (first hit: cmd.exe's
+     * initial thread's startup APC delivered out of its bootstrap path during
+     * boot — 2026-07-05). Pending APC bits stay set and drain at the thread's
+     * next natural KfLowerIrql. */
+    /* Scope: plain (device) DPCs ONLY — KiRetireDeviceDpcs, never the full
+     * KiRetireDpcList. The full retire runs KiTimerExpiration when
+     * TimerRequest is set, i.e. the thread-WAKE machinery, from exception
+     * context — and that reliably wedges boot (field manual §9.19):
+     * wake/swap chains rooted in a DAIF-masked exception context interact
+     * with this port's SVC-masked waits and thread-lifecycle paths in more
+     * ways than the KiThreadStartup daifclr fix covers (empirical:
+     * winlogon→cmd handoff wedge on windows-host TCG; LpcExitThread wedge on
+     * native). Timer expiration stays with the idle loop exactly as before
+     * this quest. Re-attempting exception-context timer retire is gated on
+     * making SVC entry re-enable IRQs (quest doc, landmine #2).
+     *
+     * Deliberately NOT gated on TimerRequest == 0: TimerRequest's only
+     * consumer is the idle loop, and a busy thread that never blocks starves
+     * idle indefinitely — TimerRequest then sits non-zero forever and a
+     * TimerRequest gate here turns that into a dead device-DPC pipeline
+     * (2026-07-06: exactly how virtio-input's ISR-queued DPCs never ran at
+     * desktop). Device-DPC delivery must not depend on timer bookkeeping. */
+    let Prcb = KeGetCurrentPrcb();
+    if KeGetCurrentIrql() < DISPATCH_LEVEL
+        && (*Prcb).DpcRoutineActive == 0
+        && (*Prcb).DpcData[0].DpcQueueDepth != 0
+    {
+        let OldIrql = HalpEnterInterruptIrql(DISPATCH_LEVEL);
+        KI_IN_IRQ_EXCEPTION_RETIRE.store(true, core::sync::atomic::Ordering::SeqCst);
+        KiRetireDeviceDpcs(Prcb);
+        KI_IN_IRQ_EXCEPTION_RETIRE.store(false, core::sync::atomic::Ordering::SeqCst);
+        HalpExitInterruptIrql(OldIrql);
+    }
 }
+
+/// True while KiIrqHandler is retiring DPCs in IRQ exception context. A
+/// context switch in that window is FATAL (the switched-to thread inherits
+/// exception-entry DAIF, masking interrupts forever) — KiSwapContextResume
+/// self-reports it with the culprit visible on serial. Diagnostic tooling for
+/// the interrupt quest; keep (the check is two loads on the switch path).
+pub static KI_IN_IRQ_EXCEPTION_RETIRE: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
 
 #[no_mangle]
 pub unsafe extern "C" fn KiSErrorHandler(TrapFrame: PKTRAP_FRAME) {

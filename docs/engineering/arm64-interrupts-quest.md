@@ -1,7 +1,65 @@
 # arm64 interrupts — make the interrupt subsystem real (routing + dispatch + hardware IRQL)
 
-**Status:** quest brief, opened 2026-07-05. Foundational — this is the root that forces
-polling across arm64 and blocks every interrupt-driven driver (real NIC, interrupt-driven
+**Status:** LANDED 2026-07-05 (same day as the brief); delivery bug fixed 2026-07-06
+(`test_arm64input_delivery` green — see landmine #3 / field manual §9.20). Both halves +
+the beachhead are in:
+real `HalGetInterruptVector` (INTID passthrough, `DEVICE_IRQL`=8), GIC SPI routing with
+per-IRQL line priorities, ISR dispatch at DIRQL, **hardware-backed IRQL via `GICC_PMR`**
+(lazy — no MMIO inside the PASSIVE..DISPATCH band, so spinlocks stay register-only), DPC
+retirement on IRQ exit, and **arm64input converted from `VirtioPollThread` to ISR+DPC**
+(virtio-mmio slot i → INTID 48+i; all-or-nothing connect with poll fallback). Tooling left
+in tree: IRQL-violation tripwire, per-INTID delivery counters + one-shot unhandled-INTID
+report, `HalDumpGicArm64()` state dumper, masked-swap tripwire in `KiSwapContextResume`.
+
+**Landmines discovered (read before touching arm64 trap/IRQL code):**
+1. **PSTATE.DAIF is inherited across `KiSwapContext` — it is NOT per-thread state.**
+   A context switch entered with IRQs masked resumes the next context masked. SVC waits
+   do exactly this today (see #2) and self-heal at ERET; but a **new** thread would run
+   with the inherited mask forever (system threads never ERET) → clock starves → total
+   machine wedge. Fixed: `KiThreadStartup` opens with `msr daifclr, #2` (ctxswitch.S).
+   Symptom signature: boot wedges with serial silent, wedged CPU shows `cpsr` DAIF=0xF
+   (full exception-entry mask) below a `KiSwapContext` frame.
+2. **SVC (syscall) handlers run with DAIF fully masked end-to-end** — kernel code entered
+   via syscall is never interrupted, and every syscall WAIT parks a masked context (the
+   `[SWAP-TRIPWIRE]` sees these constantly if you widen its filter). This is pre-existing,
+   self-healing, and NOT fixed by this quest — but it means (a) kernel-mode interrupt
+   latency is bounded by syscall length, and (b) making SVC entry re-enable IRQs after the
+   trap frame save is the natural next step if latency matters. Do it as its own change
+   with a full gate — it alters every syscall's preemption behavior.
+3. **DPC/timer retirement on arm64 was idle-loop-only** before this quest; the IRQ-exit
+   retire in `KiIrqHandler` (trap.rs) is what gives device ISR→DPC latency independent of
+   idle. It must use `HalpEnterInterruptIrql`/`HalpExitInterruptIrql` (no soft-interrupt
+   drain — APC delivery from exception context) and it retires **plain DPCs only**, via
+   `KiRetireDeviceDpcs` (ke/dpc.rs) — a drain of `DpcData[DPC_NORMAL]` that never touches
+   `TimerRequest`. Running `KiTimerExpiration` (thread wakes) from exception context wedges
+   boot even with landmine #1 fixed — masked wake/swap chains break thread-lifecycle paths
+   in ways the daifclr fix doesn't cover (field manual §9.19). Timer expiration stays with
+   the idle loop until landmine #2 is fixed. **Do NOT gate this drain on
+   `TimerRequest == 0`** (the original landing did; field manual §9.20): `TimerRequest`'s
+   only consumer is the idle loop, a busy thread starves idle indefinitely, and the stale
+   flag then permanently killed all device-DPC delivery at desktop (the 2026-07-06
+   virtio-input "ISR fires, DPC never runs" bug).
+4. **Kernel timer expiration is FROZEN whenever the idle loop is starved** (PRE-EXISTING —
+   verified on master 2026-07-06 by A/B PC-sampling: identical spinner, same user PC):
+   the DISPATCH software interrupt is delivered by nothing
+   (`HalpDispatchSoftwareInterrupts` handles only the APC bit), so `TimerRequest` retires
+   only in idle. An always-ready thread — on BOTH master and this branch, an unidentified
+   user thread busy-polling `NtQueryPerformanceCounter` at desktop (user PC 0x7ffb2002268,
+   ~30% of samples; ~60% in hal `KeQueryPerformanceCounter` servicing it) — starves idle
+   and freezes ALL kernel timers while it spins. Observed effects at desktop: taskbar never
+   finishes populating, no caret blink, 70s-apart screenshots byte-identical. Smoke stays
+   green because the boot marker + tests complete inside the early window. Master's
+   poll-thread input DIED under this freeze (poll thread sleeps on kernel timers); the
+   interrupt-driven input from this quest is immune. Fix direction: deliver DPC/timer
+   drains on `KfLowerIrql` crossing below DISPATCH (thread context), and/or land landmine
+   #2's SVC-IRQ-reenable then revisit; also identify + fix the QPC spinner itself.
+
+Original brief follows (current-state description below is now historical).
+
+---
+
+Foundational — this was the root that forced
+polling across arm64 and blocked every interrupt-driven driver (real NIC, interrupt-driven
 USB, disk).
 
 **Mandate:** get arm64 device interrupts genuinely working and **production-ready** — not
