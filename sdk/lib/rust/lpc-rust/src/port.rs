@@ -7,6 +7,8 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
+
+
     _CLIENT_ID,
     ExInitializePagedLookasideList,
     _GENERIC_MAPPING,
@@ -39,6 +41,26 @@ use ntkrnl_sys::ddk::{
     _UNICODE_STRING,
     _EVENT_TYPE_NotificationEvent,
 };
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
@@ -114,7 +136,7 @@ pub unsafe extern "system" fn LpcInitSystem() -> BOOLEAN {
     );
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(name),
-        b"P\0o\0r\0t\0\0\0".as_ptr() as *mut u16,
+        w!("Port").as_ptr() as *mut u16,
     );
     object_type_initializer.Length = core::mem::size_of::<OBJECT_TYPE_INITIALIZER>() as u16;
     object_type_initializer.DefaultNonPagedPoolCharge =
@@ -136,7 +158,7 @@ pub unsafe extern "system" fn LpcInitSystem() -> BOOLEAN {
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(name),
-        b"W\0a\0i\0t\0a\0b\0l\0e\0P\0o\0r\0t\0\0\0".as_ptr() as *mut u16,
+        w!("WaitablePort").as_ptr() as *mut u16,
     );
     object_type_initializer.PoolType = NonPagedPool;
     object_type_initializer.DefaultNonPagedPoolCharge += core::mem::size_of::<LPCP_PORT_OBJECT>() as ULONG;

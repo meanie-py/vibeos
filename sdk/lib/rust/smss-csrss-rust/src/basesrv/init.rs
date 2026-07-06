@@ -1,6 +1,26 @@
 use core::ffi::c_void;
 use ntdll_sys::nt::*;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // RtlCopyMemory is a memmove macro (C). Re-translate as memcpy.
 #[inline]
 unsafe fn RtlCopyMemory(dst: PVOID, src: *const core::ffi::c_void, len: usize) {
@@ -644,7 +664,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     // UNICODE_STRING value name; ProbeAndCaptureUnicodeString does
     // ProbeForRead(Buffer, Length, sizeof(WCHAR)) which raises
     // STATUS_DATATYPE_MISALIGNMENT on amd64 if the buffer is odd-addressed.
-    // The old `b"CSDVersion\0".as_ptr() as *mut u16` landed at an odd offset in
+    // The old `w!("CSDVersion").as_ptr() as *mut u16` landed at an odd offset in
     // basesrv.dll on amd64 → BUGCHECK 0x1E. (i386/arm64 only got lucky.)
     static CSDVERSION_NAME: [u16; 11] = [
         b'C' as u16,

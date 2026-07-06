@@ -20,6 +20,26 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // Keyed event access rights (from extypes.h)
 const KEYEDEVENT_WAIT: ACCESS_MASK = 0x0001;
 const KEYEDEVENT_WAKE: ACCESS_MASK = 0x0002;
@@ -67,12 +87,12 @@ pub unsafe extern "system" fn ExpInitializeKeyedEventImplementation() -> BOOLEAN
     let mut TypeName = _UNICODE_STRING {
         Length: 20,
         MaximumLength: 22,
-        Buffer: b"K\0e\0y\0e\0d\0E\0v\0e\0n\0t\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("KeyedEvent").as_ptr() as *mut u16,
     };
     let mut Name = _UNICODE_STRING {
         Length: 76,
         MaximumLength: 78,
-        Buffer: b"\\\0K\0e\0r\0n\0e\0l\0O\0b\0j\0e\0c\0t\0s\0\\\0C\0r\0i\0t\0S\0e\0c\0O\0u\0t\0O\0f\0M\0e\0m\0o\0r\0y\0E\0v\0e\0n\0t\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("\\KernelObjects\\CritSecOutOfMemoryEvent").as_ptr() as *mut u16,
     };
     let mut EventHandle: HANDLE = core::ptr::null_mut();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();

@@ -11,6 +11,26 @@ use ntkrnl_sys::base::{NT_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, STATUS_NO_MEMO
 use ntkrnl_sys::constants::{STATUS_ACCESS_DENIED, STATUS_BUFFER_OVERFLOW, STATUS_OBJECT_NAME_COLLISION, STATUS_OBJECT_NAME_EXISTS, STATUS_OBJECT_NAME_NOT_FOUND, STATUS_UNSUCCESSFUL};
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // Real cdecl-exported ntoskrnl symbols.
 extern "C" {
     fn wcschr(str_: *const u16, c: u16) -> *mut u16;
@@ -2373,7 +2393,7 @@ pub unsafe extern "C" fn co_IntShellHookNotify(Message: WPARAM, wParam: WPARAM, 
     let HwndList: *mut HWND;
 
     if (*gpsi).uiShellMsg == 0 {
-        (*gpsi).uiShellMsg = IntAddAtom(b"S\0H\0E\0L\0L\0H\0O\0O\0K\0\0\0".as_ptr() as *mut u16) as _;
+        (*gpsi).uiShellMsg = IntAddAtom(w!("SHELLHOOK").as_ptr() as *mut u16) as _;
 
         if (*gpsi).uiShellMsg == 0 {
             ERR!(b"LastError: %x\n\0".as_ptr() as *const i8, EngGetLastError());

@@ -758,17 +758,25 @@ def main():
     ap.add_argument("--json", help="write full findings to JSON file")
     args = ap.parse_args()
 
-    crate = Path(args.crate)
-    if not crate.is_absolute():
-        crate = REPO / crate
-    if not crate.exists():
-        sys.exit(f"crate src not found: {crate}")
+    # Default: scan every kernel crate (single source of truth) so the
+    # crate-split doesn't silently drop signature coverage. An explicit --crate
+    # overrides to a single dir.
+    if args.crate == "sdk/lib/rust/ntoskrnl-rust/src":
+        sys.path.insert(0, str(SCRIPT_DIR))
+        from kernel_crate_roots import KERNEL_CRATE_SRC_ROOTS
+        crate_dirs = [REPO / r for r in KERNEL_CRATE_SRC_ROOTS]
+    else:
+        c = Path(args.crate)
+        crate_dirs = [c if c.is_absolute() else REPO / c]
+    crate_dirs = [c for c in crate_dirs if c.exists()]
+    if not crate_dirs:
+        sys.exit(f"crate src not found: {args.crate}")
 
     arch = ARCHS[args.arch]
     print(f"=== verify_signatures — arch={args.arch} ===")
     print(f"clang:  {CLANG}")
     print(f"headers: {BUILD_REPO}/build-{args.arch}")
-    print(f"crate:  {crate}")
+    print(f"crates: {', '.join(str(c) for c in crate_dirs)}")
     print()
 
     print("Dumping C AST (clang)...", flush=True)
@@ -777,7 +785,9 @@ def main():
     print(f"  C prototypes: {len(c_protos)} FunctionDecls, {len(c_typedefs)} typedefs")
 
     print("Scanning exported Rust fns...", flush=True)
-    rust_fns = scan_rust_crate(crate)
+    rust_fns = []
+    for c in crate_dirs:
+        rust_fns.extend(scan_rust_crate(c))
     if args.only:
         rust_fns = [r for r in rust_fns if r["name"] == args.only]
     print(f"  exported Rust fns: {len(rust_fns)} (deduped twins)")

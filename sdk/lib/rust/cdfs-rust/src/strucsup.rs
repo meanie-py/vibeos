@@ -1202,7 +1202,7 @@ pub unsafe extern "C" fn CdCleanupIrpContext(
 }
 
 const CDFS_NTC_IRP_CONTEXT: u32 = 0x0308; // nodetype.h CDFS_NTC_IRP_CONTEXT
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // cdstruc.h IRP_CONTEXT_FLAG_WAIT
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH // cdstruc.h IRP_CONTEXT_FLAG_WAIT
 #[no_mangle]
 pub unsafe extern "C" fn CdInitializeStackIrpContext(IrpContext: *mut IRP_CONTEXT, IrpContextLite: *mut IRP_CONTEXT_LITE) {
     // PAGED_CODE();

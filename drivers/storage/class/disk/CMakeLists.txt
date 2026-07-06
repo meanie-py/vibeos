@@ -23,6 +23,7 @@ elseif(ARCH STREQUAL "arm64")
     set(DISK_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(DISK_RUST_RUSTFLAGS "")
 endif()
+file(GLOB_RECURSE DISK_RUST_SRCS ${DISK_RUST_WORKSPACE_DIR}/disk-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${DISK_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -34,8 +35,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${DISK_RUST_TARGET_DIR}/${DISK_RUST_TARGET}/release/libdisk_rust.a
         ${DISK_RUST_LIB}
-    DEPENDS ${DISK_RUST_WORKSPACE_DIR}/disk-rust/Cargo.toml
-            ${DISK_RUST_WORKSPACE_DIR}/disk-rust/src/lib.rs
+    DEPENDS ${DISK_RUST_SRCS}
+            ${DISK_RUST_WORKSPACE_DIR}/disk-rust/Cargo.toml
     WORKING_DIRECTORY ${DISK_RUST_WORKSPACE_DIR}
     COMMENT "Building disk-rust (${DISK_RUST_TARGET})"
     VERBATIM)

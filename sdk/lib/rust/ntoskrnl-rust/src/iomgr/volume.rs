@@ -24,6 +24,26 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "system" {
     fn KeGetPreviousMode() -> i8;
     #[link_name = "IoGetDevObjExtension_shim"]
@@ -1090,7 +1110,7 @@ pub unsafe extern "system" fn IoSetSystemPartition(VolumeNameString: *mut _UNICO
     };
     let mut Buffer = [0u16; 16];
 
-    RtlInitUnicodeString(&mut HKLMSystem, b"\\\0R\0E\0G\0I\0S\0T\0R\0Y\0\\\0M\0A\0C\0H\0I\0N\0E\0\\\0S\0Y\0S\0T\0E\0M\0\0\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut HKLMSystem, w!("\\REGISTRY\\MACHINE\\SYSTEM").as_ptr() as *const u16);
 
     let mut Status = IopOpenRegistryKeyEx(&mut RootHandle, core::ptr::null_mut(), &mut HKLMSystem, KEY_ALL_ACCESS);
     if Status < 0 {

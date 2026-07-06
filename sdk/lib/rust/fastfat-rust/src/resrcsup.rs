@@ -209,7 +209,7 @@ pub unsafe extern "system" fn FatAcquireFcbForLazyWrite(
 
     // Local constants that would normally come from headers
     const FAT_NTC_FCB: u32 = 0x0502; // TODO: actual value unknown
-    const FSRTL_CACHE_TOP_LEVEL_IRP: isize = 1;
+    const FSRTL_CACHE_TOP_LEVEL_IRP: isize = 0x02;
 
     let fcb_ptr = Fcb as *mut FCB;
 

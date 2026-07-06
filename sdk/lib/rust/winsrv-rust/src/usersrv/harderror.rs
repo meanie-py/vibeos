@@ -4,6 +4,26 @@ use winsrv_sys::consts::*;
 use winsrv_sys::{w, RTL_CONSTANT_STRING};
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // C-runtime helpers not in the winsrv-sys NTAPI surface. These are
 // truly cdecl C-runtime entry points (msvcrt/ntdll exports) — not
 // NTAPI — so `extern "C"` is correct here.
@@ -554,7 +574,7 @@ unsafe fn UserpFormatMessages(
 
     FormatA.Buffer = core::ptr::null_mut();
     Status = RtlFindMessage(
-        GetModuleHandleW(b"n\0t\0d\0l\0l\0\0\0".as_ptr() as PCWSTR) as PVOID,
+        GetModuleHandleW(w!("ntdll").as_ptr() as PCWSTR) as PVOID,
         RT_MESSAGETABLE,
         MAKELANGID(LANG_NEUTRAL as u16, SUBLANG_NEUTRAL as u16) as u32,
         (*Message).Status as u32,
@@ -603,7 +623,7 @@ unsafe fn UserpFormatMessages(
         }
     }
 
-    RtlInitEmptyUnicodeString(&mut WindowTitleU, b"\0\0".as_ptr() as PWSTR, 0);
+    RtlInitEmptyUnicodeString(&mut WindowTitleU, w!("").as_ptr() as PWSTR, 0);
     hwndOwner = core::ptr::null_mut();
     // FindTopLevelWnd: bindgen-declared (extern "stdcall") + Rust-side
     // definition in init.rs (extern "system"). i386 codegen identical;
@@ -628,7 +648,7 @@ unsafe fn UserpFormatMessages(
                     WindowTitleU.MaximumLength as i32 / core::mem::size_of::<u16>() as i32,
                 ) as usize;
                 WindowTitleU.Length = (cszBuffer * core::mem::size_of::<u16>()) as u16;
-                RtlAppendUnicodeToString(&mut WindowTitleU, b":\0 \0\0\0".as_ptr() as PCWSTR);
+                RtlAppendUnicodeToString(&mut WindowTitleU, w!(": ").as_ptr() as PCWSTR);
             }
         }
     }
@@ -648,7 +668,7 @@ unsafe fn UserpFormatMessages(
     RtlStringCbPrintfW(
         (*CaptionStringU).Buffer,
         (*CaptionStringU).MaximumLength as usize,
-        b"%\0w\0Z\0%\0w\0Z\0 \0-\0 \0%\0w\0Z\0\0\0".as_ptr() as PCWSTR,
+        w!("%wZ%wZ - %wZ").as_ptr() as PCWSTR,
         &WindowTitleU,
         &FileNameU,
         &TempStringU,
@@ -721,7 +741,7 @@ unsafe fn UserpFormatMessages(
         let ExceptionCode: u32 = CopyParameters[0] as u32;
 
         Status = RtlFindMessage(
-            GetModuleHandleW(b"n\0t\0d\0l\0l\0\0\0".as_ptr() as PCWSTR) as PVOID,
+            GetModuleHandleW(w!("ntdll").as_ptr() as PCWSTR) as PVOID,
             RT_MESSAGETABLE,
             MAKELANGID(LANG_NEUTRAL as u16, SUBLANG_NEUTRAL as u16) as u32,
             ExceptionCode,
@@ -754,7 +774,7 @@ unsafe fn UserpFormatMessages(
                 CopyParameters[1] = CopyParameters[0];
 
                 pszBuffer = Format2U.Buffer;
-                if _wcsnicmp(pszBuffer, b"{\0E\0X\0C\0E\0P\0T\0I\0O\0N\0}\0\0\0".as_ptr() as *const u16, 11) == 0 {
+                if _wcsnicmp(pszBuffer, w!("{EXCEPTION}").as_ptr() as *const u16, 11) == 0 {
                     pszBuffer = pszBuffer.offset(11);
                     pszBuffer = pszBuffer.offset(2);
                     CopyParameters[0] = pszBuffer as ULONG_PTR;
@@ -848,7 +868,7 @@ unsafe fn UserpFormatMessages(
                     &mut pszBuffer,
                     &mut cszBuffer,
                     0,
-                    b"\n\0%\0w\0Z\0\0\0".as_ptr() as PCWSTR,
+                    w!("\n%wZ").as_ptr() as PCWSTR,
                     &g_OKTerminateU,
                 );
             }
@@ -859,7 +879,7 @@ unsafe fn UserpFormatMessages(
                     &mut pszBuffer,
                     &mut cszBuffer,
                     0,
-                    b"\n\0%\0w\0Z\0\0\0".as_ptr() as PCWSTR,
+                    w!("\n%wZ").as_ptr() as PCWSTR,
                     &g_CancelDebugU,
                 );
             }
@@ -940,8 +960,8 @@ unsafe fn UserpShowInformationBalloon(
     let mut dwResult: DWORD_PTR;
 
     ShellErrorMode = GetRegInt(
-        b"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Windows\0".as_ptr() as *const u16,
-        b"ShellErrorMode\0".as_ptr() as *const u16,
+        w!("\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Windows").as_ptr() as *const u16,
+        w!("ShellErrorMode").as_ptr() as *const u16,
         0,
     );
 
@@ -976,7 +996,7 @@ unsafe fn UserpShowInformationBalloon(
     RtlStringCbCopyNW(pCaption, cbTitleLen as usize, (*CaptionStringU).Buffer, (*CaptionStringU).Length as usize);
     RtlStringCbCopyNW(pText, cbTextLen as usize, (*TextStringU).Buffer, (*TextStringU).Length as usize);
 
-    CopyData.dwData = RegisterWindowMessageW(b"HardError\0".as_ptr() as *const u16) as ULONG_PTR;
+    CopyData.dwData = RegisterWindowMessageW(w!("HardError").as_ptr() as *const u16) as ULONG_PTR;
     CopyData.cbData = dwSize;
     CopyData.lpData = pdata as *mut core::ffi::c_void;
 
@@ -1191,43 +1211,43 @@ pub unsafe extern "system" fn UserInitHardErrorsCache() {
         UserServerDllInstance,
         IDS_SEVERITY_SUCCESS,
         core::ptr::addr_of_mut!(g_SuccessU),
-        b"S\0u\0c\0c\0e\0s\0s\0\0\0".as_ptr() as PCWSTR,
+        w!("Success").as_ptr() as PCWSTR,
     );
     RtlLoadUnicodeString(
         UserServerDllInstance,
         IDS_SEVERITY_INFORMATIONAL,
         core::ptr::addr_of_mut!(g_InformationU),
-        b"S\0y\0s\0t\0e\0m\0 \0I\0n\0f\0o\0r\0m\0a\0t\0i\0o\0n\0\0\0".as_ptr() as PCWSTR,
+        w!("System Information").as_ptr() as PCWSTR,
     );
     RtlLoadUnicodeString(
         UserServerDllInstance,
         IDS_SEVERITY_WARNING,
         core::ptr::addr_of_mut!(g_WarningU),
-        b"S\0y\0s\0t\0e\0m\0 \0W\0a\0r\0n\0i\0n\0g\0\0\0".as_ptr() as PCWSTR,
+        w!("System Warning").as_ptr() as PCWSTR,
     );
     RtlLoadUnicodeString(
         UserServerDllInstance,
         IDS_SEVERITY_ERROR,
         core::ptr::addr_of_mut!(g_ErrorU),
-        b"S\0y\0s\0t\0e\0m\0 \0E\0r\0r\0o\0r\0\0\0".as_ptr() as PCWSTR,
+        w!("System Error").as_ptr() as PCWSTR,
     );
     RtlLoadUnicodeString(
         UserServerDllInstance,
         IDS_SYSTEM_PROCESS,
         core::ptr::addr_of_mut!(g_SystemProcessU),
-        b"S\0y\0s\0t\0e\0m\0 \0P\0r\0o\0c\0e\0s\0s\0\0\0".as_ptr() as PCWSTR,
+        w!("System Process").as_ptr() as PCWSTR,
     );
     RtlLoadUnicodeString(
         UserServerDllInstance,
         IDS_OK_TERMINATE_PROGRAM,
         core::ptr::addr_of_mut!(g_OKTerminateU),
-        b"C\0l\0i\0c\0k\0 \0o\0n\0 \0O\0K\0 \0t\0o\0 \0t\0e\0r\0m\0i\0n\0a\0t\0e\0 \0t\0h\0e\0 \0p\0r\0o\0g\0r\0a\0m\0.\0\0\0".as_ptr() as PCWSTR,
+        w!("Click on OK to terminate the program.").as_ptr() as PCWSTR,
     );
     RtlLoadUnicodeString(
         UserServerDllInstance,
         IDS_CANCEL_DEBUG_PROGRAM,
         core::ptr::addr_of_mut!(g_CancelDebugU),
-        b"C\0l\0i\0c\0k\0 \0o\0n\0 \0C\0A\0N\0C\0E\0L\0 \0t\0o\0 \0d\0e\0b\0u\0g\0 \0t\0h\0e\0 \0p\0r\0o\0g\0r\0a\0m\0.\0\0\0".as_ptr() as PCWSTR,
+        w!("Click on CANCEL to debug the program.").as_ptr() as PCWSTR,
     );
 
     g_CurrentUserLangId = LANGIDFROMLCID(CurrentUserLCID);

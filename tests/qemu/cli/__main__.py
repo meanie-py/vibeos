@@ -92,6 +92,13 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("smoke", help="staleness-gated boot verdict (front door)")
     arch_arg(s)
     s.add_argument("--allow-stale", action="store_true")
+    s.add_argument(
+        "--timing",
+        action="store_true",
+        help="boot-phase timing: stamp the live serial log with elapsed seconds "
+        "(VIBEOS_SERIAL_TIMESTAMPS=1) and print a boot-phase report "
+        "(tools/boot_phase_report.py) after each boot",
+    )
     s.add_argument("--no-gdb", action="store_true")
     s.add_argument("--attach-on-fail", action="store_true")
     s.add_argument("--repeat", type=int, default=1, help="N independent boots (flake rate)")

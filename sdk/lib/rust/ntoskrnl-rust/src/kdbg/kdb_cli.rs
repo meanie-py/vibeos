@@ -75,6 +75,26 @@ pub struct ROSSYM_AGGREGATE {
 // for non-i386 builds, and use bindgen forms on i386.
 #[cfg(target_arch = "x86")]
 use ntkrnl_sys::ddk::{KDESCRIPTOR, PKDESCRIPTOR, KGDTENTRY, KTSS, PKTSS};
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 #[cfg(not(target_arch = "x86"))]
 #[repr(C)] #[derive(Copy, Clone, Default)]
 pub struct KDESCRIPTOR { pub Pad: [u16; 3], pub Limit: u16, pub Base: ULONG_PTR }
@@ -3462,7 +3482,7 @@ pub unsafe extern "system" fn KdbpCliInit() -> NTSTATUS {
         return STATUS_SUCCESS;
     }
 
-    RtlInitUnicodeString(&mut FileName, b"\\SystemRoot\\System32\\drivers\\etc\\KDBinit\0".as_ptr() as *const u16);
+    RtlInitUnicodeString(&mut FileName, w!("\\SystemRoot\\System32\\drivers\\etc\\KDBinit").as_ptr() as *const u16);
     
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();

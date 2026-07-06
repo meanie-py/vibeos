@@ -5,6 +5,25 @@
 
 pub use crate::types::*;
 
+// PnP minor function codes (wdm.h). usbport's PDO/dispatch match arms use these;
+// they live here (not driver_ddk) because every driver crate keeps its own copy —
+// a shared driver_ddk::* glob collides with each crate's local set (E0659).
+pub const IRP_MN_QUERY_INTERFACE: u8 = 0x08;
+pub const IRP_MN_QUERY_CAPABILITIES: u8 = 0x09;
+pub const IRP_MN_QUERY_RESOURCES: u8 = 0x0A;
+pub const IRP_MN_QUERY_RESOURCE_REQUIREMENTS: u8 = 0x0B;
+pub const IRP_MN_QUERY_DEVICE_TEXT: u8 = 0x0C;
+pub const IRP_MN_FILTER_RESOURCE_REQUIREMENTS: u8 = 0x0D;
+pub const IRP_MN_READ_CONFIG: u8 = 0x0F;
+pub const IRP_MN_WRITE_CONFIG: u8 = 0x10;
+pub const IRP_MN_EJECT: u8 = 0x11;
+pub const IRP_MN_SET_LOCK: u8 = 0x12;
+pub const IRP_MN_QUERY_ID: u8 = 0x13;
+pub const IRP_MN_QUERY_PNP_DEVICE_STATE: u8 = 0x14;
+pub const IRP_MN_QUERY_BUS_INFORMATION: u8 = 0x15;
+pub const IRP_MN_DEVICE_USAGE_NOTIFICATION: u8 = 0x16;
+pub const IRP_MN_QUERY_LEGACY_BUS_INFORMATION: u8 = 0x18;
+
 // ---- kernel type aliases the modules name bare but don't import from ddk ----
 pub use ntkrnl_sys::ddk::PCSTR;
 use ntkrnl_sys::base::PVOID;
@@ -50,14 +69,14 @@ use ntkrnl_sys::ddk::LONG;
 pub const USBD_STATUS_SUCCESS: LONG = 0x00000000u32 as LONG;
 pub const USBD_STATUS_HALTED: LONG = 0xC0000000u32 as LONG;
 pub const USBD_STATUS_STALL_PID: LONG = 0xC0000004u32 as LONG;
-pub const USBD_STATUS_DEVICE_GONE: LONG = 0xC0000005u32 as LONG;
+pub const USBD_STATUS_DEVICE_GONE: LONG = 0xC0007000u32 as i32;
 pub const USBD_STATUS_NOT_SUPPORTED: LONG = 0xC0000E00u32 as LONG;
 pub const USBD_STATUS_INVALID_URB_FUNCTION: LONG = 0x80000200u32 as LONG;
 pub const USBD_STATUS_INVALID_PARAMETER: LONG = 0x80000300u32 as LONG;
 pub const USBD_STATUS_INVALID_PIPE_HANDLE: LONG = 0x80000600u32 as LONG;
-pub const USBD_STATUS_INVALID_PIPE_FLAGS: LONG = 0x80000700u32 as LONG;
-pub const USBD_STATUS_INSUFFICIENT_RESOURCES: LONG = 0x80000C00u32 as LONG;
-pub const USBD_STATUS_INTERFACE_NOT_FOUND: LONG = 0x80000A00u32 as LONG;
+pub const USBD_STATUS_INVALID_PIPE_FLAGS: LONG = 0xC0005000u32 as i32;
+pub const USBD_STATUS_INSUFFICIENT_RESOURCES: LONG = 0xC0001000u32 as i32;
+pub const USBD_STATUS_INTERFACE_NOT_FOUND: LONG = 0xC0004000u32 as i32;
 pub const USBD_STATUS_DEVICE_NOT_RESPONDING: LONG = 0xC0000005u32 as LONG;
 
 // ---- DPRINT family — NDEBUG-disabled DbgPrint wrappers (usbdebug.h). Variadic decls put the
@@ -329,16 +348,189 @@ pub unsafe extern "system" fn USBD_SUCCESS(Status: USBD_STATUS) -> BOOLEAN {
 pub unsafe extern "system" fn USBD_ERROR(Status: USBD_STATUS) -> BOOLEAN {
     ((Status as i32) < 0) as BOOLEAN
 }
-// RtlStringCbPrintfW: ntstrsafe FORCEINLINE (no exported symbol). usbport uses it only to
-// format a registry path in a non-boot path; link-clean stub (usbport is NOT boot-loaded).
+// RtlStringCbPrintfW / RtlStringCbPrintfExW / RtlStringCbCopyW: ntstrsafe FORCEINLINEs
+// (no exported kernel symbol), so the crate must carry real bodies. usbport IS boot-loaded
+// (usbehci/ohci/uhci import usbport.sys and are Boot Bus Extender services), and these
+// format the FDO/PDO device names and the root-hub device/hardware IDs — an empty string
+// here breaks PnP enumeration of the entire USB bus. Mini formatter below supports the
+// specifiers usbport actually uses (%d, %u, %[0][width]x/X, %s, %c, %%) and FAILS LOUD
+// (DbgPrint + STATUS_INVALID_PARAMETER) on anything else.
+const STATUS_BUFFER_OVERFLOW_W: NTSTATUS = 0x80000005u32 as NTSTATUS;
+const STATUS_INVALID_PARAMETER_W: NTSTATUS = 0xC000000Du32 as NTSTATUS;
+
+struct WOut {
+    dest: *mut u16,
+    cap_chars: usize, // capacity in WCHARs, including the NUL slot
+    len: usize,
+    overflow: bool,
+}
+
+impl WOut {
+    #[inline]
+    unsafe fn push(&mut self, c: u16) {
+        if self.len + 1 < self.cap_chars {
+            *self.dest.add(self.len) = c;
+            self.len += 1;
+        } else {
+            self.overflow = true;
+        }
+    }
+
+    unsafe fn push_num(&mut self, val: u32, base: u32, upper: bool, zero_pad: bool, width: usize, negative: bool) {
+        let digits = if upper {
+            b"0123456789ABCDEF"
+        } else {
+            b"0123456789abcdef"
+        };
+        let mut tmp = [0u16; 24];
+        let mut n = val;
+        let mut i = 0usize;
+        loop {
+            tmp[i] = digits[(n % base) as usize] as u16;
+            n /= base;
+            i += 1;
+            if n == 0 {
+                break;
+            }
+        }
+        let body = i + if negative { 1 } else { 0 };
+        if zero_pad && negative {
+            self.push(b'-' as u16);
+        }
+        let mut pad = width.saturating_sub(body);
+        while pad > 0 {
+            self.push(if zero_pad { b'0' as u16 } else { b' ' as u16 });
+            pad -= 1;
+        }
+        if !zero_pad && negative {
+            self.push(b'-' as u16);
+        }
+        while i > 0 {
+            i -= 1;
+            self.push(tmp[i]);
+        }
+    }
+}
+
+/// Shared ntstrsafe-style formatter core. Returns (chars_written, status).
+unsafe fn strsafe_vformat_w(
+    pszDest: *mut u16,
+    cbDest: usize,
+    pszFormat: *const u16,
+    args: &mut core::ffi::VaListImpl,
+) -> (usize, NTSTATUS) {
+    if pszDest.is_null() || pszFormat.is_null() || cbDest < core::mem::size_of::<u16>() {
+        return (0, STATUS_INVALID_PARAMETER_W);
+    }
+    let mut out = WOut {
+        dest: pszDest,
+        cap_chars: cbDest / core::mem::size_of::<u16>(),
+        len: 0,
+        overflow: false,
+    };
+    let mut p = pszFormat;
+    while *p != 0 {
+        let c = *p;
+        p = p.add(1);
+        if c != b'%' as u16 {
+            out.push(c);
+            continue;
+        }
+        // parse [0][width] then specifier
+        let mut zero_pad = false;
+        let mut width = 0usize;
+        if *p == b'0' as u16 {
+            zero_pad = true;
+            p = p.add(1);
+        }
+        while *p >= b'0' as u16 && *p <= b'9' as u16 {
+            width = width * 10 + (*p - b'0' as u16) as usize;
+            p = p.add(1);
+        }
+        // skip C length prefix 'l' (e.g. %lx) — args are still 32-bit-promoted here
+        if *p == b'l' as u16 {
+            p = p.add(1);
+        }
+        let spec = *p;
+        p = p.add(1);
+        match spec as u8 {
+            b'd' | b'i' => {
+                let v = args.arg::<i32>();
+                out.push_num(v.unsigned_abs() as u32, 10, false, zero_pad, width, v < 0);
+            }
+            b'u' => {
+                let v = args.arg::<u32>();
+                out.push_num(v as u32, 10, false, zero_pad, width, false);
+            }
+            b'x' | b'X' => {
+                let v = args.arg::<u32>();
+                out.push_num(v as u32, 16, spec as u8 == b'X', zero_pad, width, false);
+            }
+            b's' => {
+                let mut s = args.arg::<*const u16>();
+                if !s.is_null() {
+                    while *s != 0 {
+                        out.push(*s);
+                        s = s.add(1);
+                    }
+                }
+            }
+            b'c' => {
+                let v = args.arg::<u32>();
+                out.push(v as u16);
+            }
+            b'%' => out.push(b'%' as u16),
+            other => {
+                ntkrnl_sys::driver_ddk::DbgPrint(
+                    b"[USBPORT] strsafe_vformat_w: unsupported format specifier '%%%c' - FIX THE FORMATTER\n\0"
+                        .as_ptr() as *const i8,
+                    other as u32,
+                );
+                *pszDest.add(out.len.min(out.cap_chars - 1)) = 0;
+                return (out.len, STATUS_INVALID_PARAMETER_W);
+            }
+        }
+    }
+    *out.dest.add(out.len.min(out.cap_chars - 1)) = 0;
+    if out.overflow {
+        (out.len, STATUS_BUFFER_OVERFLOW_W)
+    } else {
+        (out.len, 0)
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn RtlStringCbPrintfW(
-    _pszDest: *mut u16,
-    _cbDest: usize,
-    _pszFormat: *const u16,
-    mut _args: ...
+    pszDest: *mut u16,
+    cbDest: usize,
+    pszFormat: *const u16,
+    mut args: ...
 ) -> NTSTATUS {
-    0 // STATUS_SUCCESS
+    let (_len, status) = strsafe_vformat_w(pszDest, cbDest, pszFormat, &mut args);
+    status
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbCopyW(
+    pszDest: *mut u16,
+    cbDest: usize,
+    pszSrc: *const u16,
+) -> NTSTATUS {
+    if pszDest.is_null() || pszSrc.is_null() || cbDest < core::mem::size_of::<u16>() {
+        return STATUS_INVALID_PARAMETER_W;
+    }
+    let cap_chars = cbDest / core::mem::size_of::<u16>();
+    let mut i = 0usize;
+    while *pszSrc.add(i) != 0 {
+        if i + 1 >= cap_chars {
+            *pszDest.add(i) = 0;
+            return STATUS_BUFFER_OVERFLOW_W;
+        }
+        *pszDest.add(i) = *pszSrc.add(i);
+        i += 1;
+    }
+    *pszDest.add(i) = 0;
+    0
 }
 
 // IsEqualGUIDAligned (wdm FORCEINLINE) — compares the two 8-byte halves. iface.rs declares
@@ -369,8 +561,8 @@ pub const PCI_USE_LOCAL_BUS: u32 = 0x00000020;
 pub const PCI_USE_LOCAL_DEVICE: u32 = 0x00000040;
 pub const PCI_CLASS_SERIAL_BUS_CTLR: u32 = 0x0c;
 pub const PCI_SUBCLASS_SB_USB: u32 = 0x03;
-pub const IRP_MN_QUERY_INTERFACE: u8 = 8;
-pub const IRP_MN_QUERY_CAPABILITIES: u8 = 9;
+// IRP_MN_QUERY_INTERFACE / IRP_MN_QUERY_CAPABILITIES now come from
+// ntkrnl_sys::driver_ddk with the full PnP minor set (bind-all match-arm fix).
 
 extern "C" {
     pub static GUID_BUS_INTERFACE_STANDARD: GUID;
@@ -419,16 +611,27 @@ pub unsafe extern "C" fn IoSetCompletionRoutine(
         Irp, CompletionRoutine, Context, InvokeOnSuccess, InvokeOnError, InvokeOnCancel,
     )
 }
-// RtlStringCbPrintfExW: ntstrsafe FORCEINLINE, no export. Link-clean stub (non-boot path).
+// RtlStringCbPrintfExW: ntstrsafe FORCEINLINE, no export. Real body — usbport builds the
+// root-hub HardwareIDs multi-sz with it and dereferences the returned DestEnd, so the old
+// no-op stub (which never set the out-params) was a latent NULL-offset crash.
 #[no_mangle]
 pub unsafe extern "C" fn RtlStringCbPrintfExW(
-    _pszDest: *mut u16,
-    _cbDest: usize,
-    _ppszDestEnd: *mut *mut u16,
-    _pcbRemaining: *mut usize,
+    pszDest: *mut u16,
+    cbDest: usize,
+    ppszDestEnd: *mut *mut u16,
+    pcbRemaining: *mut usize,
     _dwFlags: u32,
-    _pszFormat: *const u16,
-    mut _args: ...
+    pszFormat: *const u16,
+    mut args: ...
 ) -> i32 {
-    0 // STATUS_SUCCESS
+    let (len, status) = strsafe_vformat_w(pszDest, cbDest, pszFormat, &mut args);
+    if status >= 0 {
+        if !ppszDestEnd.is_null() {
+            *ppszDestEnd = pszDest.add(len);
+        }
+        if !pcbRemaining.is_null() {
+            *pcbRemaining = cbDest - len * core::mem::size_of::<u16>();
+        }
+    }
+    status
 }

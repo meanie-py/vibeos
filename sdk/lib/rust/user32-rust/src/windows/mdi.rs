@@ -15,9 +15,31 @@ use crate::winbase::{
 // SetFocus, GetDC, RedrawWindow, DestroyWindow, MoveWindow, DeleteMenu, DestroyMenu,
 // RemoveMenu, SetMenuDefaultItem, InvalidateRect, ShowScrollBar, KillTimer, SetTimer).
 use crate::ntwrapper::{
+
+
     DeleteMenu, DestroyMenu, DestroyWindow, GetDC, InvalidateRect, MoveWindow, RemoveMenu,
     RedrawWindow, SetFocus, SetMenuDefaultItem, SetWindowPos, ShowScrollBar, ShowWindow,
 };
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 
 // ── NT_SUCCESS (ntdef.h) ──────────────────────────────────────────────────────
 #[inline]
@@ -2211,11 +2233,11 @@ pub unsafe extern "system" fn CascadeWindows(
     core::ptr::write_bytes(&mut info as *mut CASCADE_INFO, 0, 1);
     info.hwndDesktop = GetDesktopWindow();
     info.hTrayWnd = FindWindowW(
-        b"S\0h\0e\0l\0l\0_\0T\0r\0a\0y\0W\0n\0d\0\0\0".as_ptr() as LPCWSTR,
+        w!("Shell_TrayWnd").as_ptr() as LPCWSTR,
         core::ptr::null_mut(),
     );
     info.hwndProgman = FindWindowW(
-        b"P\0r\0o\0g\0m\0a\0n\0\0\0".as_ptr() as LPCWSTR,
+        w!("Progman").as_ptr() as LPCWSTR,
         core::ptr::null_mut(),
     );
     info.hwndParent = hwndParent;
@@ -2396,11 +2418,11 @@ pub unsafe extern "system" fn TileWindows(
     core::ptr::write_bytes(&mut info as *mut CASCADE_INFO, 0, 1);
     info.hwndDesktop = GetDesktopWindow();
     info.hTrayWnd = FindWindowW(
-        b"S\0h\0e\0l\0l\0_\0T\0r\0a\0y\0W\0n\0d\0\0\0".as_ptr() as LPCWSTR,
+        w!("Shell_TrayWnd").as_ptr() as LPCWSTR,
         core::ptr::null_mut(),
     );
     info.hwndProgman = FindWindowW(
-        b"P\0r\0o\0g\0m\0a\0n\0\0\0".as_ptr() as LPCWSTR,
+        w!("Progman").as_ptr() as LPCWSTR,
         core::ptr::null_mut(),
     );
     info.hwndParent = hwndParent;

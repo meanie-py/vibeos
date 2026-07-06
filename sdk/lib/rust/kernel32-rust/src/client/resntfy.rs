@@ -2,6 +2,26 @@ use ntdll_sys::nt::*;
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ---- file-scope preamble (translated) ----
 
 #[no_mangle]
@@ -32,9 +52,9 @@ pub unsafe extern "system" fn CreateMemoryResourceNotification(
     RtlInitUnicodeString(
         &mut EventName,
         if NotificationType != 0 {
-            b"\\\0K\0e\0r\0n\0e\0l\0O\0b\0j\0e\0c\0t\0s\0\\\0H\0i\0g\0h\0M\0e\0m\0o\0r\0y\0C\0o\0n\0d\0i\0t\0i\0o\0n\0\0\0".as_ptr() as PCWSTR
+            w!("\\KernelObjects\\HighMemoryCondition").as_ptr() as PCWSTR
         } else {
-            b"\\\0K\0e\0r\0n\0e\0l\0O\0b\0j\0e\0c\0t\0s\0\\\0L\0o\0w\0M\0e\0m\0o\0r\0y\0C\0o\0n\0d\0i\0t\0i\0o\0n\0\0\0".as_ptr() as PCWSTR
+            w!("\\KernelObjects\\LowMemoryCondition").as_ptr() as PCWSTR
         },
     );
 

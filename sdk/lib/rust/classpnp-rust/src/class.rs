@@ -2363,12 +2363,12 @@ pub unsafe extern "system" fn ClassIoComplete(
     // Forward declarations for unknown functions/macros
 
     // Constants
-    const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: UCHAR = 0x00; // typical value
-    const SRB_STATUS_SUCCESS: UCHAR = 0x00;
+    const SRB_FUNCTION_STORAGE_REQUEST_BLOCK: UCHAR = 0x28; // FIXED 2026-07-05: was LLM-guessed "typical" value; verified vs C header (srb.h)
+    const SRB_STATUS_SUCCESS: UCHAR = 0x01;
     const SRB_STATUS_QUEUE_FROZEN: UCHAR = 0x40;
-    const SRB_CLASS_FLAGS_FREE_MDL: ULONG = 0x00010000;
-    const SRB_CLASS_FLAGS_PERSISTANT: ULONG = 0x00020000;
-    const SRB_FLAGS_DONT_START_NEXT_PACKET: ULONG = 0x00000008;
+    const SRB_CLASS_FLAGS_FREE_MDL: ULONG = 0x80000000;
+    const SRB_CLASS_FLAGS_PERSISTANT: ULONG = 0x20000000;
+    const SRB_FLAGS_DONT_START_NEXT_PACKET: ULONG = 0x00800000;
     const SL_OVERRIDE_VERIFY_VOLUME: ULONG = 0x00000002; // guessed
     const IRP_PAGING_IO: ULONG = 0x00000002; // guessed
     const IOCTL_STORAGE_FIRMWARE_ACTIVATE: ULONG = 0x002DDC08; // typical
@@ -2378,7 +2378,7 @@ pub unsafe extern "system" fn ClassIoComplete(
     const STATUS_DATA_OVERRUN: NTSTATUS = 0xC000003C_u32 as i32;
     const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185u32 as i32;
     const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x80000016_u32 as i32;
-    const MAXIMUM_RETRIES: u32 = 5; // typical
+    const MAXIMUM_RETRIES: u32 = 4; // FIXED 2026-07-05: was LLM-guessed "typical" value; verified vs C header (classpnp.h)
     const FALSE: BOOLEAN = 0;
     const TRUE: BOOLEAN = 1;
     const DISPATCH_LEVEL: KIRQL = 2;

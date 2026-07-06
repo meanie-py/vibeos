@@ -5,6 +5,26 @@
 use ntdll_sys::nt::*;
 use core::mem::offset_of;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ===========================================================================
 // Prelude — ntdllp.h / ntstatus.h surface absent from the ntdll-sys prelude.
 // (See memory feedback_rustconv_header_types_integration.)
@@ -1238,7 +1258,7 @@ pub unsafe extern "system" fn LdrpMapDll(
         if OverlapDllFound == 0u8 {
             RtlInitUnicodeString(
                 core::ptr::addr_of_mut!(OverlapDll),
-                b"D\0y\0n\0a\0m\0i\0c\0a\0l\0l\0y\0 \0A\0l\0l\0o\0c\0a\0t\0e\0d\0 \0M\0e\0m\0o\0r\0y\0\0\0".as_ptr() as PWSTR,
+                w!("Dynamically Allocated Memory").as_ptr() as PWSTR,
             );
         }
 
@@ -1263,7 +1283,7 @@ pub unsafe extern "system" fn LdrpMapDll(
 
                     RtlInitUnicodeString(
                         core::ptr::addr_of_mut!(IllegalDll),
-                        b"u\0s\0e\0r\03\02\0.\0d\0l\0l\0\0\0".as_ptr() as PWSTR,
+                        w!("user32.dll").as_ptr() as PWSTR,
                     );
                     if RtlEqualUnicodeString(
                         core::ptr::addr_of!(BaseDllName),
@@ -1275,7 +1295,7 @@ pub unsafe extern "system" fn LdrpMapDll(
                     } else {
                         RtlInitUnicodeString(
                             core::ptr::addr_of_mut!(IllegalDll),
-                            b"k\0e\0r\0n\0e\0l\03\02\0.\0d\0l\0l\0\0\0".as_ptr() as PWSTR,
+                            w!("kernel32.dll").as_ptr() as PWSTR,
                         );
                         if RtlEqualUnicodeString(
                             core::ptr::addr_of!(BaseDllName),
@@ -2010,7 +2030,7 @@ pub unsafe extern "system" fn LdrpLoadDll(
             DbgPrint(
                 b"LDR: LdrLoadDll, loading %wZ from %ws\n\0".as_ptr() as PCHAR,
                 &RawDllName,
-                if !DllPath.is_null() { DllPath } else { b"\0\0".as_ptr() as PWSTR },
+                if !DllPath.is_null() { DllPath } else { w!("").as_ptr() as PWSTR },
             );
         }
 

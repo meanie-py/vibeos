@@ -6,6 +6,8 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use ntkrnl_sys::ddk::{
+
+
     _LUID,
     _UNICODE_STRING,
     KPROCESSOR_MODE,
@@ -33,6 +35,26 @@ use ntkrnl_sys::ddk::{
     RtlInitEmptyAnsiString,
     RtlUnicodeStringToOemString,
 };
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 
 type LUID = _LUID;
 
@@ -188,12 +210,12 @@ pub unsafe extern "system" fn FindBitmapResource(
     let mut UpString = _UNICODE_STRING {
         Length: 24,
         MaximumLength: 26,
-        Buffer: b"n\0t\0o\0s\0k\0r\0n\0l\0.\0e\0x\0e\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("ntoskrnl.exe").as_ptr() as *mut u16,
     };
     let mut MpString = _UNICODE_STRING {
         Length: 26,
         MaximumLength: 28,
-        Buffer: b"n\0t\0k\0r\0n\0l\0m\0p\0.\0e\0x\0e\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("ntkrnlmp.exe").as_ptr() as *mut u16,
     };
     let mut NextEntry: PLIST_ENTRY;
     let ListHead: PLIST_ENTRY;

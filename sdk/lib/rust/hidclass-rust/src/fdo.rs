@@ -374,6 +374,12 @@ pub unsafe fn HidClassFDO_StartDevice(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -
         NonPagedPool,
         &mut (*FDODeviceExtension).Common.DeviceDescription,
     );
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[HIDCLASS] GetCollectionDescription -> 0x%x collections=%u reportlen=%u\n\0".as_ptr() as *const i8,
+        Status as u32,
+        (*FDODeviceExtension).Common.DeviceDescription.CollectionDescLength,
+        (*FDODeviceExtension).HidDescriptor.DescriptorList[0].wReportLength as u32,
+    );
     if !nt_success(Status) {
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);

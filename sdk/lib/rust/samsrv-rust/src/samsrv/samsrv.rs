@@ -1,6 +1,26 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "system" {
     // __RPC_USER = stdcall; defined in samrpc.rs (_MIDL_user_free@4).
     fn MIDL_user_free(ptr: *mut core::ffi::c_void);
@@ -66,7 +86,7 @@ pub unsafe extern "system" fn SamIConnect(
     Status = SampOpenDbObject(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        b"S\0A\0M\0\0\0".as_ptr() as *mut u16,
+        w!("SAM").as_ptr() as *mut u16,
         0,
         SamDbServerObject,
         DesiredAccess,

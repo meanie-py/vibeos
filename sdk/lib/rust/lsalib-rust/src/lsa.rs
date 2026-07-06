@@ -19,6 +19,26 @@ use lsass_sys::{
     _LSA_API_NUMBER_LSASS_REQUEST_LOGON_USER as LSASS_REQUEST_LOGON_USER,
     _LSA_API_NUMBER_LSASS_REQUEST_LOOKUP_AUTHENTICATION_PACKAGE as LSASS_REQUEST_LOOKUP_AUTHENTICATION_PACKAGE,
 };
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 // LSA_PORT_MESSAGE_SIZE is `sizeof(LSA_API_MSG)` (a macro bindgen can't eval).
 const LSA_PORT_MESSAGE_SIZE: u32 = core::mem::size_of::<LSA_API_MSG>() as u32;
 
@@ -396,7 +416,7 @@ pub unsafe extern "system" fn LsaRegisterLogonProcess(
 
     RtlInitUnicodeString(
         &raw mut EventName,
-        b"\\\0S\0E\0C\0U\0R\0I\0T\0Y\0\\\0L\0S\0A\0_\0A\0U\0T\0H\0E\0N\0T\0I\0C\0A\0T\0I\0O\0N\0_\0I\0N\0I\0T\0I\0A\0L\0I\0Z\0E\0D\0\0\0" as *const u8 as *const u16,
+        w!("\\SECURITY\\LSA_AUTHENTICATION_INITIALIZED").as_ptr(),
     );
 
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
@@ -464,7 +484,7 @@ pub unsafe extern "system" fn LsaRegisterLogonProcess(
 
     RtlInitUnicodeString(
         &raw mut PortName,
-        b"\\\0L\0s\0a\0A\0u\0t\0h\0e\0n\0t\0i\0c\0a\0t\0i\0o\0n\0P\0o\0r\0t\0\0\0" as *const u8 as *const u16,
+        w!("\\LsaAuthenticationPort").as_ptr(),
     );
 
     SecurityQos.Length = core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>() as u32;

@@ -12,6 +12,26 @@ use ntkrnl_sys::ddk::{BUS_INTERFACE_STANDARD, _KWAIT_REASON_Executive, GUID, _IO
 const IRP_MN_QUERY_INTERFACE: u8 = 0x08;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "C" {
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
 }
@@ -485,7 +505,7 @@ pub unsafe extern "C" fn USBCCGP_InitFunctionDescriptor(
             //
             RtlInitUnicodeString(
                 core::ptr::addr_of_mut!((*FunctionDescriptor).FunctionDescription),
-                b"\0\0".as_ptr() as PCWSTR,
+                w!("").as_ptr() as PCWSTR,
             );
         } else {
             //

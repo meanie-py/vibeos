@@ -7,6 +7,26 @@ use winsrv_sys::consts::*;
 use winsrv_sys::w;
 use winsrv_sys::winsrv::*;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // Win32 APIs are stdcall (extern "system") — declaring them extern "C"
 // links on amd64/arm64 but produces the wrong `_Name` (vs `_Name@N`)
 // decoration on i386, an undefined-symbol link failure. (SUCCEEDED and
@@ -125,7 +145,7 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
 
     res = RegOpenKeyExW(
         hkRoot,
-        b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\0\0".as_ptr() as LPCWSTR,
+        w!("Software\\Microsoft\\Windows\\CurrentVersion").as_ptr() as LPCWSTR,
         0,
         KEY_READ,
         &mut hkWin,
@@ -388,7 +408,7 @@ unsafe fn AutoStartupApplications(nCSIDL_Folder: i32) -> u8 {
         return 0u8;
     }
 
-    StringCbCatW(szPath.as_mut_ptr(), core::mem::size_of_val(&szPath), b"\\\0*\0".as_ptr() as *const u16);
+    StringCbCatW(szPath.as_mut_ptr(), core::mem::size_of_val(&szPath), w!("\\*").as_ptr() as *const u16);
 
     hFind = FindFirstFileW(szPath.as_ptr(), core::ptr::addr_of_mut!(FoundData));
     if hFind == INVALID_HANDLE_VALUE {
@@ -397,8 +417,8 @@ unsafe fn AutoStartupApplications(nCSIDL_Folder: i32) -> u8 {
     }
 
     loop {
-        if wcscmp(FoundData.cFileName.as_ptr(), b".\0\0\0".as_ptr() as *const u16) == 0 ||
-           wcscmp(FoundData.cFileName.as_ptr(), b".\0.\0\0\0".as_ptr() as *const u16) == 0 {
+        if wcscmp(FoundData.cFileName.as_ptr(), w!(".").as_ptr() as *const u16) == 0 ||
+           wcscmp(FoundData.cFileName.as_ptr(), w!("..").as_ptr() as *const u16) == 0 {
             if FindNextFileW(hFind, core::ptr::addr_of_mut!(FoundData)) == 0 {
                 break;
             }
@@ -461,25 +481,25 @@ pub unsafe extern "C" fn ProcessStartupItems(bRunOnce: i32) -> i32 {
         }
 
         if res != 0 && SHRestricted(REST_NOLOCALMACHINERUNONCE) == 0 {
-            res = ProcessRunKeys(HKEY_LOCAL_MACHINE, b"R\0u\0n\0O\0n\0c\0e\0\0\0".as_ptr() as LPCWSTR, 1, 1) as u32;
+            res = ProcessRunKeys(HKEY_LOCAL_MACHINE, w!("RunOnce").as_ptr() as LPCWSTR, 1, 1) as u32;
         }
 
         return (res == 0) as i32;
     }
 
     if res != 0 && bNormalBoot != 0 && SHRestricted(REST_NOLOCALMACHINERUN) == 0 {
-        res = ProcessRunKeys(HKEY_LOCAL_MACHINE, b"R\0u\0n\0\0\0".as_ptr() as LPCWSTR, 0, 0) as u32;
+        res = ProcessRunKeys(HKEY_LOCAL_MACHINE, w!("Run").as_ptr() as LPCWSTR, 0, 0) as u32;
     }
 
     if res != 0 && bNormalBoot != 0 && SHRestricted(REST_NOCURRENTUSERRUNONCE) == 0 {
-        res = ProcessRunKeys(HKEY_CURRENT_USER, b"R\0u\0n\0\0\0".as_ptr() as LPCWSTR, 0, 0) as u32;
+        res = ProcessRunKeys(HKEY_CURRENT_USER, w!("Run").as_ptr() as LPCWSTR, 0, 0) as u32;
     }
 
     AutoStartupApplications(CSIDL_COMMON_STARTUP);
     AutoStartupApplications(CSIDL_STARTUP);
 
     if res != 0 && bNormalBoot != 0 && SHRestricted(REST_NOCURRENTUSERRUNONCE) == 0 {
-        res = ProcessRunKeys(HKEY_CURRENT_USER, b"R\0u\0n\0O\0n\0c\0e\0\0\0".as_ptr() as LPCWSTR, 1, 0) as u32;
+        res = ProcessRunKeys(HKEY_CURRENT_USER, w!("RunOnce").as_ptr() as LPCWSTR, 1, 0) as u32;
     }
 
     TRACE!(b"Operation done\n\0".as_ptr() as *const i8);
@@ -501,7 +521,7 @@ unsafe fn InitializeStartupMutex() -> u8 {
     }
 
     if s_hStartupMutex.is_null() {
-        s_hStartupMutex = CreateMutexW(core::ptr::null_mut(), 0, b"E\0x\0p\0l\0o\0r\0e\0r\0I\0s\0S\0h\0e\0l\0l\0M\0u\0t\0e\0x\0\0\0".as_ptr() as *const u16);
+        s_hStartupMutex = CreateMutexW(core::ptr::null_mut(), 0, w!("ExplorerIsShellMutex").as_ptr() as *const u16);
         if s_hStartupMutex.is_null() {
             return 0u8;
         }
@@ -538,7 +558,7 @@ pub unsafe extern "C" fn DoStartStartupItems(Tray: *mut core::ffi::c_void) -> BO
         let mut dwDisp: u32 = 0;
         let Error: i32 = RegCreateKeyExW(
             hSessionKey,
-            b"S\0t\0a\0r\0t\0u\0p\0H\0a\0s\0B\0e\0e\0n\0R\0u\0n\0\0\0".as_ptr() as LPCWSTR,
+            w!("StartupHasBeenRun").as_ptr() as LPCWSTR,
             0,
             core::ptr::null_mut(),
             REG_OPTION_VOLATILE,

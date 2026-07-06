@@ -7,6 +7,26 @@ use core::mem::size_of;
 use crate::lsasrv::registry::{LsapRegDeleteSubKey, LsapRegDeleteKey, LsapRegEnumerateSubKey};
 use crate::lsasrv::security::LsapCreatePolicySd;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // Genuinely external imports (advapi32/kernel32/ntdll; WINAPI/NTAPI = stdcall on
 // i386 → extern "system" resolves per-arch).
 extern "system" {
@@ -303,7 +323,7 @@ unsafe fn LsapCreateDatabaseObjects() -> NTSTATUS {
     Status = LsapOpenDbObject(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        b"P\0o\0l\0i\0c\0y\0\0\0".as_ptr() as *mut u16,
+        w!("Policy").as_ptr() as *mut u16,
         _LSA_DB_OBJECT_TYPE_LsaDbPolicyObject,
         0,
         1u8,
@@ -313,56 +333,56 @@ unsafe fn LsapCreateDatabaseObjects() -> NTSTATUS {
         break 'done;
     }
 
-    LsapSetObjectAttribute(PolicyObject, b"P\0o\0l\0P\0r\0D\0m\0N\0\0\0".as_ptr() as *mut u16, core::ptr::null_mut(), 0);
-    LsapSetObjectAttribute(PolicyObject, b"P\0o\0l\0P\0r\0D\0m\0S\0\0\0".as_ptr() as *mut u16, core::ptr::null_mut(), 0);
-    LsapSetObjectAttribute(PolicyObject, b"P\0o\0l\0A\0c\0D\0m\0N\0\0\0".as_ptr() as *mut u16, core::ptr::null_mut(), 0);
+    LsapSetObjectAttribute(PolicyObject, w!("PolPrDmN").as_ptr() as *mut u16, core::ptr::null_mut(), 0);
+    LsapSetObjectAttribute(PolicyObject, w!("PolPrDmS").as_ptr() as *mut u16, core::ptr::null_mut(), 0);
+    LsapSetObjectAttribute(PolicyObject, w!("PolAcDmN").as_ptr() as *mut u16, core::ptr::null_mut(), 0);
     LsapSetObjectAttribute(
         PolicyObject,
-        b"P\0o\0l\0A\0c\0D\0m\0S\0\0\0".as_ptr() as *mut u16,
+        w!("PolAcDmS").as_ptr() as *mut u16,
         LocalAccountDomainSid,
         RtlLengthSid(LocalAccountDomainSid),
     );
     LsapSetObjectAttribute(
         PolicyObject,
-        b"D\0e\0f\0Q\0u\0o\0t\0a\0\0\0".as_ptr() as *mut u16,
+        w!("DefQuota").as_ptr() as *mut u16,
         &QuotaInfo as *const _ as *mut core::ffi::c_void,
         core::mem::size_of::<_POLICY_DEFAULT_QUOTA_INFO>() as u32,
     );
     LsapSetObjectAttribute(
         PolicyObject,
-        b"P\0o\0l\0M\0o\0d\0\0\0".as_ptr() as *mut u16,
+        w!("PolMod").as_ptr() as *mut u16,
         &ModificationInfo as *const _ as *mut core::ffi::c_void,
         core::mem::size_of::<_POLICY_MODIFICATION_INFO>() as u32,
     );
     LsapSetObjectAttribute(
         PolicyObject,
-        b"P\0o\0l\0A\0d\0t\0F\0l\0\0\0".as_ptr() as *mut u16,
+        w!("PolAdtFl").as_ptr() as *mut u16,
         &AuditFullInfo as *const _ as *mut core::ffi::c_void,
         core::mem::size_of::<_POLICY_AUDIT_FULL_QUERY_INFO>() as u32,
     );
     LsapSetObjectAttribute(
         PolicyObject,
-        b"P\0o\0l\0A\0d\0t\0L\0g\0\0\0".as_ptr() as *mut u16,
+        w!("PolAdtLg").as_ptr() as *mut u16,
         &AuditLogInfo as *const _ as *mut core::ffi::c_void,
         core::mem::size_of::<_POLICY_AUDIT_LOG_INFO>() as u32,
     );
     LsapSetObjectAttribute(
         PolicyObject,
-        b"P\0o\0l\0A\0d\0t\0E\0v\0\0\0".as_ptr() as *mut u16,
+        w!("PolAdtEv").as_ptr() as *mut u16,
         AuditEventsInfo as *mut core::ffi::c_void,
         core::mem::size_of::<_LSAP_POLICY_AUDIT_EVENTS_DATA>() as u32,
     );
-    LsapSetObjectAttribute(PolicyObject, b"P\0o\0l\0D\0n\0D\0D\0N\0\0\0".as_ptr() as *mut u16, core::ptr::null_mut(), 0);
-    LsapSetObjectAttribute(PolicyObject, b"P\0o\0l\0D\0n\0T\0r\0N\0\0\0".as_ptr() as *mut u16, core::ptr::null_mut(), 0);
+    LsapSetObjectAttribute(PolicyObject, w!("PolDnDDN").as_ptr() as *mut u16, core::ptr::null_mut(), 0);
+    LsapSetObjectAttribute(PolicyObject, w!("PolDnTrN").as_ptr() as *mut u16, core::ptr::null_mut(), 0);
     LsapSetObjectAttribute(
         PolicyObject,
-        b"P\0o\0l\0D\0n\0D\0m\0G\0\0\0".as_ptr() as *mut u16,
+        w!("PolDnDmG").as_ptr() as *mut u16,
         &DnsDomainGuid as *const _ as *mut core::ffi::c_void,
         core::mem::size_of::<GUID>() as u32,
     );
     LsapSetObjectAttribute(
         PolicyObject,
-        b"S\0e\0c\0D\0e\0s\0c\0\0\0".as_ptr() as *mut u16,
+        w!("SecDesc").as_ptr() as *mut u16,
         PolicySd,
         PolicySdSize,
     );

@@ -101,6 +101,26 @@ use crate::types::{SCSI_PASS_THROUGH32};
 #[cfg(target_pointer_width = "64")]
 use ntkrnl_sys::ddk::{IoIs32bitProcess};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ==== Missing constants not in glue.rs ====
 // CTL_CODE(DeviceType, Function, Method, Access) = (DevType<<16)|(Access<<14)|(Func<<2)|Method
 // IOCTL_SCSI_BASE = FILE_DEVICE_CONTROLLER = 4
@@ -126,7 +146,7 @@ const IRP_MN_SCSI_CLASS: u8 = 0x01u8;
 // WMIREG_ACTION_DEREGISTER
 const WMIREG_ACTION_DEREGISTER: u32 = 2u32;
 // CLASS_TAG_DEVICE_CONTROL pool tag
-const CLASS_TAG_DEVICE_CONTROL: u32 = u32::from_le_bytes(*b"4CcS");
+const CLASS_TAG_DEVICE_CONTROL: u32 = 0x4F496353;
 // ERROR_LOG_MAXIMUM_SIZE = IO_ERROR_LOG_MESSAGE_LENGTH(256) - IO_ERROR_LOG_MESSAGE_HEADER_LENGTH(8) = 248
 const ERROR_LOG_MAXIMUM_SIZE: u32 = 248u32;
 // Missing STATUS codes
@@ -848,7 +868,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                 status = RtlQueryRegistryValues(
                     RTL_REGISTRY_ABSOLUTE,
-                    b"\\Registry\\Machine\\System\\DISK\0".as_ptr() as PWSTR,
+                    w!("\\Registry\\Machine\\System\\DISK").as_ptr() as PWSTR,
                     queryTable.as_mut_ptr(),
                     core::ptr::null_mut(),
                     core::ptr::null_mut()
@@ -889,7 +909,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                 RtlDeleteRegistryValue(
                     RTL_REGISTRY_ABSOLUTE,
-                    b"\\Registry\\Machine\\System\\DISK\0".as_ptr() as PWSTR,
+                    w!("\\Registry\\Machine\\System\\DISK").as_ptr() as PWSTR,
                     valueName as PWSTR
                 );
 
@@ -3492,7 +3512,7 @@ pub unsafe extern "system" fn ClassQueryTimeOutRegistryValue(
     );
 
     (*parameters.offset(0)).Flags = RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_TYPECHECK;
-    (*parameters.offset(0)).Name = b"T\0i\0m\0e\0O\0u\0t\0V\0a\0l\0u\0e\0\0\0".as_ptr() as PWSTR;
+    (*parameters.offset(0)).Name = w!("TimeOutValue").as_ptr() as PWSTR;
     (*parameters.offset(0)).EntryContext = core::ptr::addr_of_mut!(timeOut) as PVOID;
     (*parameters.offset(0)).DefaultType = ((REG_DWORD << RTL_QUERY_REGISTRY_TYPECHECK_SHIFT) | REG_DWORD) as ULONG;
     (*parameters.offset(0)).DefaultData = core::ptr::addr_of!(zero) as PVOID;
@@ -4499,7 +4519,7 @@ pub unsafe extern "system" fn ClassUpdateInformationInRegistry(
                 if NT_SUCCESS(status) {
                     RtlInitUnicodeString(
                         (core::ptr::addr_of_mut!(unicodeName)).cast(),
-                        b"D\0e\0v\0i\0c\0e\0N\0a\0m\0e\0\0\0".as_ptr() as PWSTR
+                        w!("DeviceName").as_ptr() as PWSTR
                     );
 
                     status = RtlStringCchPrintfA(
@@ -4534,7 +4554,7 @@ pub unsafe extern "system" fn ClassUpdateInformationInRegistry(
 
                             RtlInitUnicodeString(
                                 (core::ptr::addr_of_mut!(unicodeName)).cast(),
-                                b"I\0n\0q\0u\0i\0r\0y\0D\0a\0t\0a\0\0\0".as_ptr() as PWSTR
+                                w!("InquiryData").as_ptr() as PWSTR
                             );
                             status = ZwSetValueKey(
                                 targetKey,

@@ -1,6 +1,26 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
 pub struct _SERVICE_THREAD_PARAMSA {
@@ -65,9 +85,9 @@ unsafe fn ScCreateStatusBinding() -> RPC_STATUS {
 
     status = RpcStringBindingComposeW(
         core::ptr::null_mut(),
-        b"n\0c\0a\0c\0n\0_\0n\0p\0\0\0".as_ptr() as LPWSTR,
+        w!("ncacn_np").as_ptr() as LPWSTR,
         core::ptr::null_mut(),
-        b"\\\0p\0i\0p\0e\0\\\0n\0t\0s\0v\0c\0s\0\0\0".as_ptr() as LPWSTR,
+        w!("\\pipe\\ntsvcs").as_ptr() as LPWSTR,
         core::ptr::null_mut(),
         &mut pszStringBinding,
     );
@@ -181,7 +201,16 @@ unsafe fn ScConnectControlPipe(hPipe: *mut HANDLE) -> DWORD {
             core::mem::size_of::<[RTL_QUERY_REGISTRY_TABLE; 2]>() as _,
         );
 
-        QueryTable[0].Name = b"\0".as_ptr() as PWSTR;
+        // C: `QueryTable[0].Name = L"";` (query the key's DEFAULT value).
+        // Was `b"\0"` — ONE byte cast to PWSTR, which as WCHARs is not an
+        // empty string (u16[0] = 0x00nn from the neighboring rodata byte), so
+        // this REQUIRED query failed, ScConnectControlPipe bailed before its
+        // own [SCTRL] trace, StartServiceCtrlDispatcherW returned FALSE, and
+        // every svchost exited 0 ~0.4s after spawn — costing the SCM a full
+        // 31s pipe-connect timeout per hosted service on EVERY boot
+        // (DcomLaunch/RPCSS dead since the translation). An empty WIDE string
+        // needs two zero bytes.
+        QueryTable[0].Name = w!("").as_ptr() as PWSTR;
         QueryTable[0].Flags = (RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_REQUIRED) as _;
         QueryTable[0].EntryContext = core::ptr::addr_of_mut!(dwServiceCurrent) as *mut _;
 

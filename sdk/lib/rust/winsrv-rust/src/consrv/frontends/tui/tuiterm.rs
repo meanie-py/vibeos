@@ -21,6 +21,26 @@ use super::super::super::condrv::console::ConDrvValidateConsoleUnsafe;
 
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // IOCTL_CONSOLE_* — from sdk/include/reactos/drivers/blue/ntddblue.h.
 // Hand-evaluated CTL_CODE values to avoid pulling that header into bindgen.
 // CTL_CODE(FILE_DEVICE_SCREEN=0x1C, fn, method, access)
@@ -215,7 +235,7 @@ pub(crate) unsafe fn ScmLoadDriver(lpServiceName: LPCWSTR) -> u32 {
 
     wcscpy(
         pszDriverPath,
-        b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\\0".as_ptr() as *const u16,
+        w!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\").as_ptr() as *const u16,
     );
     wcscat(pszDriverPath, lpServiceName);
 
@@ -450,7 +470,7 @@ unsafe extern "system" fn TuiConsoleThread(Param: PVOID) -> DWORD {
     let mut msg: MSG = core::mem::zeroed();
 
     NewWindow = CreateWindowW(
-        b"TuiConsoleWindowClass\0".as_ptr() as *const u16,
+        w!("TuiConsoleWindowClass").as_ptr() as *const u16,
         (*Console).Title.Buffer,
         0,
         -32000,
@@ -493,7 +513,7 @@ pub(crate) unsafe fn TuiSetConsoleOutputCP(
     let mut FontFile: _UNICODE_STRING = core::mem::zeroed();
     FontFile.Length = 48;
     FontFile.MaximumLength = 50;
-    FontFile.Buffer = b"\\SystemRoot\\vgafonts.cab\0".as_ptr() as *mut u16;
+    FontFile.Buffer = w!("\\SystemRoot\\vgafonts.cab").as_ptr() as *mut u16;
     let mut FontName: [CHAR; 20] = [0; 20];
 
     let mut Status: NTSTATUS;
@@ -777,10 +797,10 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
         return 1;
     }
 
-    ScmLoadDriver(b"B\0l\0u\0e\0\0\0".as_ptr() as *const u16);
+    ScmLoadDriver(w!("Blue").as_ptr() as *const u16);
 
     ConsoleDeviceHandle = CreateFileW(
-        b"\\\0\\\0.\0\\\0B\0l\0u\0e\0S\0c\0r\0e\0e\0n\0\0\0".as_ptr() as *const u16,
+        w!("\\\\.\\BlueScreen").as_ptr() as *const u16,
         FILE_ALL_ACCESS,
         0,
         core::ptr::null_mut(),
@@ -855,7 +875,7 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
 
     core::ptr::write_bytes(&mut wc as *mut WNDCLASSEXW, 0, 1);
     wc.cbSize = core::mem::size_of::<WNDCLASSEXW>() as u32;
-    wc.lpszClassName = b"T\0u\0i\0C\0o\0n\0s\0o\0l\0e\0W\0i\0n\0d\0o\0w\0C\0l\0a\0s\0s\0\0\0".as_ptr() as *const u16;
+    wc.lpszClassName = w!("TuiConsoleWindowClass").as_ptr() as *const u16;
     wc.lpfnWndProc = Some(core::mem::transmute(TuiConsoleWndProc as *const ()));
     wc.cbWndExtra = 0;
     wc.hInstance = ConSrvDllInstance;

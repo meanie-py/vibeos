@@ -10,6 +10,26 @@ use ntkrnl_sys::ddk::{
 use ntkrnl_sys::probe::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 #[no_mangle]
 pub static mut PsDefaultSystemLocaleId: LCID = 0x00000409;
 
@@ -234,7 +254,7 @@ unsafe fn ExpGetCurrentUserUILanguage(
     static mut KeyName: _UNICODE_STRING = _UNICODE_STRING {
         Length: 42,
         MaximumLength: 44,
-        Buffer: b"C\0o\0n\0t\0r\0o\0l\0 \0P\0a\0n\0e\0l\0\\\0D\0e\0s\0k\0t\0o\0p\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("Control Panel\\Desktop").as_ptr() as *mut u16,
     };
     let mut ValueName: _UNICODE_STRING = core::mem::zeroed();
     let mut ValueString: _UNICODE_STRING;
@@ -303,7 +323,7 @@ unsafe fn ExpSetCurrentUserUILanguage(
     static mut KeyName: _UNICODE_STRING = _UNICODE_STRING {
         Length: 42,
         MaximumLength: 44,
-        Buffer: b"C\0o\0n\0t\0r\0o\0l\0 \0P\0a\0n\0e\0l\0\\\0D\0e\0s\0k\0t\0o\0p\0\0\0".as_ptr() as *mut u16,
+        Buffer: w!("Control Panel\\Desktop").as_ptr() as *mut u16,
     };
     let mut ValueName: _UNICODE_STRING = core::mem::zeroed();
     let mut ValueBuffer: [u16; 8] = [0; 8];
@@ -429,16 +449,16 @@ pub unsafe extern "system" fn NtSetDefaultLocale(
 
         RtlInitUnicodeString(
             &mut KeyName,
-            b"C\0o\0n\0t\0r\0o\0l\0 \0P\0a\0n\0e\0l\0\\\0I\0n\0t\0e\0r\0n\0a\0t\0i\0o\0n\0a\0l\0\0\0".as_ptr() as *const u16,
+            w!("Control Panel\\International").as_ptr() as *const u16,
         );
-        RtlInitUnicodeString(&mut ValueName, b"L\0o\0c\0a\0l\0e\0\0\0".as_ptr() as *const u16);
+        RtlInitUnicodeString(&mut ValueName, w!("Locale").as_ptr() as *const u16);
     } else {
         RtlInitUnicodeString(
             &mut KeyName,
             b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0l\0s\0\\\0L\0a\0n\0g\0u\0a\0g\0e\0\0\0"
                 .as_ptr() as *const u16,
         );
-        RtlInitUnicodeString(&mut ValueName, b"D\0e\0f\0a\0u\0l\0t\0\0\0".as_ptr() as *const u16);
+        RtlInitUnicodeString(&mut ValueName, w!("Default").as_ptr() as *const u16);
     }
 
     ObjectAttributes = _OBJECT_ATTRIBUTES {
@@ -578,7 +598,7 @@ pub unsafe extern "system" fn NtQueryDefaultUILanguage(LanguageId: *mut LANGID) 
     let mut SafeLanguageId: LANGID = 0;
 
     let Status = ExpGetCurrentUserUILanguage(
-        b"M\0u\0l\0t\0i\0U\0I\0L\0a\0n\0g\0u\0a\0g\0e\0I\0d\0\0\0".as_ptr() as *const u16,
+        w!("MultiUILanguageId").as_ptr() as *const u16,
         &mut SafeLanguageId,
     );
 
@@ -616,13 +636,13 @@ pub unsafe extern "system" fn NtSetDefaultUILanguage(LanguageId: LANGID) -> NTST
 
     if LanguageId != 0 {
         Status = ExpSetCurrentUserUILanguage(
-            b"M\0U\0I\0L\0a\0n\0g\0u\0a\0g\0e\0P\0e\0n\0d\0i\0n\0g\0\0\0".as_ptr() as *const u16,
+            w!("MUILanguagePending").as_ptr() as *const u16,
             LanguageId,
         );
     } else {
         let mut LocalLanguageId: LANGID = 0;
         let mut TempStatus = ExpGetCurrentUserUILanguage(
-            b"M\0U\0I\0L\0a\0n\0g\0u\0a\0g\0e\0P\0e\0n\0d\0i\0n\0g\0\0\0".as_ptr() as *const u16,
+            w!("MUILanguagePending").as_ptr() as *const u16,
             &mut LocalLanguageId,
         );
         if TempStatus < 0 {
@@ -630,7 +650,7 @@ pub unsafe extern "system" fn NtSetDefaultUILanguage(LanguageId: LANGID) -> NTST
         }
 
         TempStatus = ExpSetCurrentUserUILanguage(
-            b"M\0u\0l\0t\0i\0U\0I\0L\0a\0n\0g\0u\0a\0g\0e\0I\0d\0\0\0".as_ptr() as *const u16,
+            w!("MultiUILanguageId").as_ptr() as *const u16,
             LocalLanguageId,
         );
         Status = TempStatus;

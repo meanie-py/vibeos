@@ -26,6 +26,26 @@ unsafe fn IntUnLockFreeType() {
 // ---- integration preamble (consts/macros/globals the translation needs) ----
 use ntkrnl_sys::base::NT_SUCCESS;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // NTSTATUS codes (not in the win32k_sys glob).
 pub const STATUS_SUCCESS: NTSTATUS = 0;
 pub const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009Au32 as NTSTATUS;
@@ -80,8 +100,8 @@ pub const ft_sfnt_hhea: FT_Sfnt_Tag_ = FT_Sfnt_Tag__FT_SFNT_HHEA;
 pub const ft_sfnt_post: FT_Sfnt_Tag_ = FT_Sfnt_Tag__FT_SFNT_POST;
 
 #[inline(always)] fn min<T: PartialOrd>(a: T, b: T) -> T { if a < b { a } else { b } }
-#[inline(always)] unsafe fn w_str_space() -> *const u16 { b"\x20\x00\x00\x00".as_ptr() as *const u16 }
-#[inline(always)] unsafe fn w_str_amp() -> *const u16 { b"\x26\x00\x00\x00".as_ptr() as *const u16 }
+#[inline(always)] unsafe fn w_str_space() -> *const u16 { w!(" ").as_ptr() as *const u16 }
+#[inline(always)] unsafe fn w_str_amp() -> *const u16 { w!("&").as_ptr() as *const u16 }
 
 // CRT cdecl helpers + the extern-const default matrix (defined in another gdi TU).
 extern "C" {
@@ -517,7 +537,7 @@ unsafe fn FontLink_LoadSettings() -> NTSTATUS {
     s_chFontLinkDefaultChar = FONTLINK_DEFAULT_CHAR;
 
     Status = RegOpenKey(
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0F\0o\0n\0t\0L\0i\0n\0k\0\0\0".as_ptr() as *const u16,
+        w!("\\Registry\\Machine\\Software\\Microsoft\\Windows NT\\CurrentVersion\\FontLink").as_ptr() as *const u16,
         &mut hKey,
     );
     if !NT_SUCCESS(Status) {
@@ -527,7 +547,7 @@ unsafe fn FontLink_LoadSettings() -> NTSTATUS {
     cbData = core::mem::size_of::<DWORD>() as DWORD;
     Status = RegQueryValue(
         hKey,
-        b"F\0o\0n\0t\0L\0i\0n\0k\0D\0e\0f\0a\0u\0l\0t\0C\0h\0a\0r\0\0\0".as_ptr() as *const u16,
+        w!("FontLinkDefaultChar").as_ptr() as *const u16,
         REG_DWORD,
         core::ptr::addr_of_mut!(dwValue) as *mut core::ffi::c_void,
         &mut cbData,
@@ -1104,7 +1124,7 @@ unsafe fn IntLoadFontSubstList_impl(pHead: PLIST_ENTRY) -> BOOL {
     let mut pEntry: *mut FONTSUBST_ENTRY;
 
     let mut FontSubstKey: _UNICODE_STRING = RTL_CONSTANT_STRING(
-        b"\x5c\x00\x52\x00\x65\x00\x67\x00\x69\x00\x73\x00\x74\x00\x72\x00\x79\x00\x5c\x00\x4d\x00\x61\x00\x63\x00\x68\x00\x69\x00\x6e\x00\x65\x00\x5c\x00\x53\x00\x6f\x00\x66\x00\x74\x00\x77\x00\x61\x00\x72\x00\x65\x00\x5c\x00\x4d\x00\x69\x00\x63\x00\x72\x00\x6f\x00\x73\x00\x6f\x00\x66\x00\x74\x00\x5c\x00\x57\x00\x69\x00\x6e\x00\x64\x00\x6f\x00\x77\x00\x73\x00\x20\x00\x4e\x00\x54\x00\x5c\x00\x43\x00\x75\x00\x72\x00\x72\x00\x65\x00\x6e\x00\x74\x00\x56\x00\x65\x00\x72\x00\x73\x00\x69\x00\x6f\x00\x6e\x00\x5c\x00\x46\x00\x6f\x00\x6e\x00\x74\x00\x53\x00\x75\x00\x62\x00\x73\x00\x74\x00\x69\x00\x74\x00\x75\x00\x74\x00\x65\x00\x73\x00\x00\x00".as_ptr() as LPWSTR,
+        w!("\\Registry\\Machine\\Software\\Microsoft\\Windows NT\\CurrentVersion\\FontSubstitutes").as_ptr() as LPWSTR,
     );
 
     /* InitializeObjectAttributes */
@@ -1589,7 +1609,7 @@ unsafe fn FontLink_Chain_LoadReg(
     let mut pszzFontLink: PZZWSTR = core::ptr::null_mut();
 
     Status = RegOpenKey(
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0F\0o\0n\0t\0L\0i\0n\0k\0\\\0S\0y\0s\0t\0e\0m\0L\0i\0n\0k\0\0\0".as_ptr() as *const u16,
+        w!("\\Registry\\Machine\\Software\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink").as_ptr() as *const u16,
         &mut hKey,
     );
     if !NT_SUCCESS(Status) {
@@ -1838,7 +1858,7 @@ unsafe fn FontLink_Chain_Populate(pChain: PFONTLINK_CHAIN) -> NTSTATUS {
         w32r_RtlStringCchCatW(
             szEntry.as_mut_ptr(),
             _countof!(szEntry),
-            b",\0".as_ptr() as *const u16,
+            w!(",").as_ptr() as *const u16,
         );
         w32r_RtlStringCchCatW(
             szEntry.as_mut_ptr(),
@@ -2346,7 +2366,7 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
     let pszBuffer: LPWSTR;
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
     let TrueTypePostfix: _UNICODE_STRING = RTL_CONSTANT_STRING(
-        b"\x20\x00(\x00T\x00r\x00u\x00e\x00T\x00y\x00p\x00e\x00)\x00\x00\x00".as_ptr() as LPWSTR,
+        w!(" (TrueType)").as_ptr() as LPWSTR,
     );
 
     /* Build PathName */
@@ -2485,10 +2505,10 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
                 RtlAppendUnicodeStringToString(&mut NewString, &LoadFont.RegValueName);
                 RtlAppendUnicodeToString(
                     (core::ptr::addr_of_mut!(NewString) as _),
-                    b" \x00(\x00\x00\x00".as_ptr() as PCWSTR,
+                    w!(" (").as_ptr() as PCWSTR,
                 );
                 RtlAppendUnicodeToString((core::ptr::addr_of_mut!(NewString) as _), CharSetName);
-                RtlAppendUnicodeToString((core::ptr::addr_of_mut!(NewString) as _), b")\x00\x00\x00".as_ptr() as PCWSTR);
+                RtlAppendUnicodeToString((core::ptr::addr_of_mut!(NewString) as _), w!(")").as_ptr() as PCWSTR);
                 RtlFreeUnicodeString((core::ptr::addr_of_mut!(LoadFont.RegValueName) as _));
                 LoadFont.RegValueName = NewString;
             }
@@ -6797,9 +6817,9 @@ unsafe fn IntAddNameFromFamInfo(psz: LPWSTR, FamInfo: *mut FONTFAMILYINFO) {
     wcscat(psz, core::ptr::addr_of!((*FamInfo).EnumLogFontEx.elfLogFont.lfFaceName) as *const u16);
     if (*FamInfo).EnumLogFontEx.elfStyle[0] != 0 &&
         _wcsicmp(core::ptr::addr_of!((*FamInfo).EnumLogFontEx.elfStyle) as *const u16,
-                 b"R\0e\0g\0u\0l\0a\0r\0\0\0".as_ptr() as *const u16) != 0
+                 w!("Regular").as_ptr() as *const u16) != 0
     {
-        wcscat(psz, b" \0\0\0".as_ptr() as *const u16);
+        wcscat(psz, w!(" ").as_ptr() as *const u16);
         wcscat(psz, core::ptr::addr_of!((*FamInfo).EnumLogFontEx.elfStyle) as *const u16);
     }
 }
@@ -6982,7 +7002,7 @@ unsafe fn IntGdiGetFontResourceInfoImpl(
                         core::ptr::addr_of!(
                             (*FamInfo.offset(i as isize)).EnumLogFontEx.elfStyle
                         ) as *const u16,
-                        b"R\0e\0g\0u\0l\0a\0r\0\0\0".as_ptr() as *const u16,
+                        w!("Regular").as_ptr() as *const u16,
                     ) != 0
                 {
                     Size += 1 + wcslen(
@@ -7006,7 +7026,7 @@ unsafe fn IntGdiGetFontResourceInfoImpl(
                     i = 0;
                     while i < Count {
                         if i > 0 {
-                            wcscat(psz, b" \0&\0 \0\0\0".as_ptr() as *const u16);
+                            wcscat(psz, w!(" & ").as_ptr() as *const u16);
                         }
                         IntAddNameFromFamInfo(psz, FamInfo.offset(i as isize));
                         i += 1;

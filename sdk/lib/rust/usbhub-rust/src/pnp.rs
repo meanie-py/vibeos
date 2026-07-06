@@ -29,6 +29,26 @@ use core::ffi::c_void;
 use ntkrnl_sys::ddk::{RtlInitUnicodeString, IoOpenDeviceRegistryKey, ZwSetValueKey, ZwClose, HANDLE, UNICODE_STRING};
 
 // sdk/include/psdk/usbiodef.h:76-77 — DEFINE_GUID device-interface class GUIDs.
+
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 static GUID_DEVINTERFACE_USB_HUB: GUID = GUID {
     Data1: 0xF18A0E88,
     Data2: 0xc30C,
@@ -383,8 +403,8 @@ pub unsafe extern "system" fn USBH_OpenConfiguration(
     HubExtension: PUSBHUB_FDO_EXTENSION,
 ) -> NTSTATUS {
 
-    const USBHUB_FDO_FLAG_USB20_HUB: u32 = 0x00000004;
-    const USBHUB_FDO_FLAG_MULTIPLE_TTS: u32 = 0x00000008;
+    const USBHUB_FDO_FLAG_USB20_HUB: u32 = 0x00008000; // FIXED 2026-07-06: translation invented 0x4; real value is a (1<<N) define in usbhub.h
+    const USBHUB_FDO_FLAG_MULTIPLE_TTS: u32 = 0x00040000; // FIXED 2026-07-06: translation invented 0x8; real value is a (1<<N) define in usbhub.h
     const USB_DEVICE_CLASS_HUB: i32 = 0x09;
 
     let mut current_block: u64;
@@ -573,12 +593,12 @@ pub unsafe extern "system" fn USBH_AbortInterruptPipe(
 pub unsafe extern "system" fn USBH_FdoCleanup(HubExtension: PUSBHUB_FDO_EXTENSION) {
 
     const USBHUB_FDO_FLAG_DEVICE_STOPPING: u32 = 0x00000004; // USBHUB_FDO_FLAG_DEVICE_STOPPING
-    const USBHUB_FDO_FLAG_WAIT_IDLE_REQUEST: u32 = 0x00080000; // USBHUB_FDO_FLAG_WAIT_IDLE_REQUEST
-    const USBHUB_PDO_FLAG_IDLE_NOTIFICATION: u32 = 0x00000008; // USBHUB_PDO_FLAG_IDLE_NOTIFICATION
-    const USBHUB_PDO_FLAG_WAIT_WAKE: u32 = 0x00000010; // USBHUB_PDO_FLAG_WAIT_WAKE
-    const USBHUB_PDO_FLAG_POWER_D3: u32 = 0x00000004; // USBHUB_PDO_FLAG_POWER_D3
+    const USBHUB_FDO_FLAG_WAIT_IDLE_REQUEST: u32 = 0x00001000; // FIXED 2026-07-06: translation invented 0x80000; real value is a (1<<N) define in usbhub.h // USBHUB_FDO_FLAG_WAIT_IDLE_REQUEST
+    const USBHUB_PDO_FLAG_IDLE_NOTIFICATION: u32 = 0x00400000; // FIXED 2026-07-06: translation invented 0x8; real value is a (1<<N) define in usbhub.h // USBHUB_PDO_FLAG_IDLE_NOTIFICATION
+    const USBHUB_PDO_FLAG_WAIT_WAKE: u32 = 0x00000020; // FIXED 2026-07-06: translation invented 0x10; real value is a (1<<N) define in usbhub.h // USBHUB_PDO_FLAG_WAIT_WAKE
+    const USBHUB_PDO_FLAG_POWER_D3: u32 = 0x00000100; // FIXED 2026-07-06: translation invented 0x4; real value is a (1<<N) define in usbhub.h // USBHUB_PDO_FLAG_POWER_D3
     const USBHUB_FDO_FLAG_DEVICE_STARTED: u32 = 0x00000001; // USBHUB_FDO_FLAG_DEVICE_STARTED
-    const USB_HUB_TAG: u32 = 0x42755348; // USB_HUB_TAG 'HSuB'
+    const USB_HUB_TAG: u32 = 0x42554855; // USB_HUB_TAG 'HSuB'
     const EVENT_INCREMENT: i32 = 1; // EVENT_INCREMENT
 
     let mut IdleIrp: PIRP = core::ptr::null_mut();
@@ -932,6 +952,7 @@ pub unsafe extern "system" fn USBH_StartHubFdoDevice(
                 (*HubExtension).RootHubPdo,
                 core::ptr::addr_of_mut!((*HubExtension).BusInterface),
             );
+            ntkrnl_sys::driver_ddk::DbgPrint(b"[USBHUB] stage USBHUB_GetBusInterface -> 0x%x\n\0".as_ptr() as *const i8, Status);
 
             if !NT_SUCCESS(Status) {
                 error = true;
@@ -940,6 +961,7 @@ pub unsafe extern "system" fn USBH_StartHubFdoDevice(
                     (*HubExtension).LowerDevice,
                     core::ptr::addr_of_mut!((*HubExtension).BusInterfaceUSBDI),
                 );
+                ntkrnl_sys::driver_ddk::DbgPrint(b"[USBHUB] stage USBHUB_GetBusInterfaceUSBDI -> 0x%x\n\0".as_ptr() as *const i8, Status);
 
                 if !NT_SUCCESS(Status) {
                     error = true;
@@ -953,6 +975,7 @@ pub unsafe extern "system" fn USBH_StartHubFdoDevice(
                             DeviceHandle,
                             core::ptr::addr_of_mut!(DeviceType),
                         );
+                        ntkrnl_sys::driver_ddk::DbgPrint(b"[USBHUB] stage USBH_GetDeviceType -> 0x%x\n\0".as_ptr() as *const i8, Status);
 
                         if !NT_SUCCESS(Status) {
                             error = true;
@@ -1007,6 +1030,7 @@ pub unsafe extern "system" fn USBH_StartHubFdoDevice(
                             (*HubExtension).Common.SelfDevice,
                             core::ptr::addr_of_mut!((*HubExtension).HubDeviceDescriptor),
                         );
+                        ntkrnl_sys::driver_ddk::DbgPrint(b"[USBHUB] stage USBH_GetDeviceDescriptor -> 0x%x\n\0".as_ptr() as *const i8, Status);
 
                         if !NT_SUCCESS(Status) {
                             error = true;
@@ -1015,11 +1039,13 @@ pub unsafe extern "system" fn USBH_StartHubFdoDevice(
                                 (*HubExtension).Common.SelfDevice,
                                 core::ptr::addr_of_mut!((*HubExtension).HubConfigDescriptor),
                             );
+                            ntkrnl_sys::driver_ddk::DbgPrint(b"[USBHUB] stage USBH_GetConfigurationDescriptor -> 0x%x\n\0".as_ptr() as *const i8, Status);
 
                             if !NT_SUCCESS(Status) {
                                 error = true;
                             } else {
                                 Status = USBH_SyncGetHubDescriptor(HubExtension);
+                                ntkrnl_sys::driver_ddk::DbgPrint(b"[USBHUB] stage USBH_SyncGetHubDescriptor -> 0x%x\n\0".as_ptr() as *const i8, Status);
 
                                 if !NT_SUCCESS(Status) {
                                     error = true;
@@ -1037,12 +1063,14 @@ pub unsafe extern "system" fn USBH_StartHubFdoDevice(
                                     }
 
                                     Status = USBH_OpenConfiguration(HubExtension);
+                                    ntkrnl_sys::driver_ddk::DbgPrint(b"[USBHUB] stage USBH_OpenConfiguration -> 0x%x\n\0".as_ptr() as *const i8, Status);
 
                                     if !NT_SUCCESS(Status) {
                                         error = true;
                                     } else {
                                         if (*HubExtension).HubFlags & USBHUB_FDO_FLAG_USB20_HUB != 0 {
                                             Status = USBD_Initialize20Hub(HubExtension);
+                                            ntkrnl_sys::driver_ddk::DbgPrint(b"[USBHUB] stage USBD_Initialize20Hub -> 0x%x\n\0".as_ptr() as *const i8, Status);
                                         }
 
                                         if !NT_SUCCESS(Status) {
@@ -1084,6 +1112,7 @@ pub unsafe extern "system" fn USBH_StartHubFdoDevice(
                                                     );
 
                                                     Status = USBH_SyncPowerOnPorts(HubExtension);
+                                                    ntkrnl_sys::driver_ddk::DbgPrint(b"[USBHUB] stage USBH_SyncPowerOnPorts -> 0x%x\n\0".as_ptr() as *const i8, Status);
 
                                                     if !NT_SUCCESS(Status) {
                                                         error = true;
@@ -1118,6 +1147,7 @@ pub unsafe extern "system" fn USBH_StartHubFdoDevice(
                                                             USBH_SubmitStatusChangeTransfer(
                                                                 HubExtension,
                                                             );
+                                                            ntkrnl_sys::driver_ddk::DbgPrint(b"[USBHUB] stage USBH_SubmitStatusChangeTransfer -> 0x%x\n\0".as_ptr() as *const i8, Status);
                                                         }
                                                     }
                                                 }
@@ -1171,23 +1201,23 @@ pub unsafe extern "system" fn USBH_FdoQueryBusRelations(
     Irp: PIRP,
 ) -> NTSTATUS {
 
-    const USBHUB_FDO_FLAG_DEVICE_STARTED: u32 = 0x00000400;
-    const USBHUB_FDO_FLAG_DO_ENUMERATION: u32 = 0x00000004;
-    const USBHUB_FDO_FLAG_NOT_ENUMERATED: u32 = 0x00000800;
-    const USBHUB_FDO_FLAG_ESD_RECOVERING: u32 = 0x00400000;
-    const USBHUB_FDO_FLAG_ENUM_POST_RECOVER: u32 = 0x00800000;
-    const USBHUB_FDO_FLAG_DEVICE_FAILED: u32 = 0x00001000;
-    const USBHUB_FDO_FLAG_USB20_HUB: u32 = 0x00000200;
-    const USBHUB_PDO_FLAG_OVERCURRENT_PORT: u32 = 0x00000040;
-    const USBHUB_PDO_FLAG_DELETE_PENDING: u32 = 0x00000004;
-    const USBHUB_PDO_FLAG_POWER_D1_OR_D2: u32 = 0x00000080;
-    const USBHUB_PDO_FLAG_PORT_LOW_SPEED: u32 = 0x00000001;
-    const USBHUB_PDO_FLAG_PORT_HIGH_SPEED: u32 = 0x00000002;
-    const USBHUB_PDO_FLAG_HS_USB1_DUALMODE: u32 = 0x00000800;
+    const USBHUB_FDO_FLAG_DEVICE_STARTED: u32 = 0x00000001; // FIXED 2026-07-06: translation invented 0x400; real value is a (1<<N) define in usbhub.h
+    const USBHUB_FDO_FLAG_DO_ENUMERATION: u32 = 0x00100000; // FIXED 2026-07-06: translation invented 0x4; real value is a (1<<N) define in usbhub.h
+    const USBHUB_FDO_FLAG_NOT_ENUMERATED: u32 = 0x00800000; // FIXED 2026-07-06: translation invented 0x800; real value is a (1<<N) define in usbhub.h
+    const USBHUB_FDO_FLAG_ESD_RECOVERING: u32 = 0x00000200; // FIXED 2026-07-06: translation invented 0x400000; real value is a (1<<N) define in usbhub.h
+    const USBHUB_FDO_FLAG_ENUM_POST_RECOVER: u32 = 0x00080000; // FIXED 2026-07-06: translation invented 0x800000; real value is a (1<<N) define in usbhub.h
+    const USBHUB_FDO_FLAG_DEVICE_FAILED: u32 = 0x00000008; // FIXED 2026-07-06: translation invented 0x1000; real value is a (1<<N) define in usbhub.h
+    const USBHUB_FDO_FLAG_USB20_HUB: u32 = 0x00008000; // FIXED 2026-07-06: translation invented 0x200; real value is a (1<<N) define in usbhub.h
+    const USBHUB_PDO_FLAG_OVERCURRENT_PORT: u32 = 0x00004000; // FIXED 2026-07-06: translation invented 0x40; real value is a (1<<N) define in usbhub.h
+    const USBHUB_PDO_FLAG_DELETE_PENDING: u32 = 0x00000080; // FIXED 2026-07-06: translation invented 0x4; real value is a (1<<N) define in usbhub.h
+    const USBHUB_PDO_FLAG_POWER_D1_OR_D2: u32 = 0x00002000; // FIXED 2026-07-06: translation invented 0x80; real value is a (1<<N) define in usbhub.h
+    const USBHUB_PDO_FLAG_PORT_LOW_SPEED: u32 = 0x00000008; // FIXED 2026-07-06: translation invented 0x1; real value is a (1<<N) define in usbhub.h
+    const USBHUB_PDO_FLAG_PORT_HIGH_SPEED: u32 = 0x00800000; // FIXED 2026-07-06: translation invented 0x2; real value is a (1<<N) define in usbhub.h
+    const USBHUB_PDO_FLAG_HS_USB1_DUALMODE: u32 = 0x00000400; // FIXED 2026-07-06: translation invented 0x800; real value is a (1<<N) define in usbhub.h
     const USBHUB_ENUM_FLAG_DEVICE_PRESENT: u32 = 0x00000001;
     const USBHUB_ENUM_FLAG_GHOST_DEVICE: u32 = 0x00000002;
     const STATUS_INVALID_DEVICE_STATE: NTSTATUS = 0xC0000184u32 as NTSTATUS;
-    const USB_HUB_TAG: u32 = 0x42485355;
+    const USB_HUB_TAG: u32 = 0x42554855;
     const EVENT_INCREMENT: i32 = 1;
     const NoDeviceConnected: u32 = 0;
     const DeviceConnected: u32 = 1;
@@ -1916,8 +1946,8 @@ pub unsafe extern "system" fn USBH_PdoQueryDeviceText(
     const LANG_ENGLISH: u32 = 0x9;
     const SUBLANG_ENGLISH_US: u32 = 0x1;
     const MAXIMUM_USB_STRING_LENGTH: u32 = 255;
-    const USB_HUB_TAG: u32 = 0x42485355; // 'BHSU'
-    const USBHUB_PDO_FLAG_INIT_PORT_FAILED: u32 = 0x00000200;
+    const USB_HUB_TAG: u32 = 0x42554855; // 'BHSU'
+    const USBHUB_PDO_FLAG_INIT_PORT_FAILED: u32 = 0x00000004; // FIXED 2026-07-06: translation invented 0x200; real value is a (1<<N) define in usbhub.h
 
     let mut DeviceObject: PDEVICE_OBJECT;
     let mut IoStack: PIO_STACK_LOCATION;
@@ -2095,7 +2125,7 @@ pub unsafe extern "system" fn USBH_SymbolicLink(
         if NT_SUCCESS(Status) {
             USBH_SetPdoRegistryParameter(
                 (*PortExtension).Common.SelfDevice,
-                b"S\0y\0m\0b\0o\0l\0i\0c\0N\0a\0m\0e\0\0\0".as_ptr() as PCWSTR,
+                w!("SymbolicName").as_ptr() as PCWSTR,
                 (*PortExtension).SymbolicLinkName.Buffer as PVOID,
                 (*PortExtension).SymbolicLinkName.Length as ULONG,
                 REG_SZ as ULONG,
@@ -2132,9 +2162,9 @@ pub unsafe extern "system" fn USBH_RestoreDevice(
 ) -> NTSTATUS {
 
     const STATUS_NO_SUCH_DEVICE: NTSTATUS = 0xC000000E_u32 as NTSTATUS;
-    const USBHUB_PDO_FLAG_POWER_D3: u32 = 0x00000020;
-    const USBHUB_PDO_FLAG_PORT_RESTORE_FAIL: u32 = 0x00000400;
-    const USBHUB_PDO_FLAG_INIT_PORT_FAILED: u32 = 0x00000080;
+    const USBHUB_PDO_FLAG_POWER_D3: u32 = 0x00000100; // FIXED 2026-07-06: translation invented 0x20; real value is a (1<<N) define in usbhub.h
+    const USBHUB_PDO_FLAG_PORT_RESTORE_FAIL: u32 = 0x00001000; // FIXED 2026-07-06: translation invented 0x400; real value is a (1<<N) define in usbhub.h
+    const USBHUB_PDO_FLAG_INIT_PORT_FAILED: u32 = 0x00000004; // FIXED 2026-07-06: translation invented 0x80; real value is a (1<<N) define in usbhub.h
 
     let mut HubExtension: PUSBHUB_FDO_EXTENSION;
     let PortData: PUSBHUB_PORT_DATA;
@@ -4604,7 +4634,10 @@ pub unsafe extern "system" fn USBH_FdoStartDevice(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    // DPRINT("USBH_FdoStartDevice: HubExtension - %p\n", HubExtension);
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[USBHUB] FdoStartDevice hub=%p\n\0".as_ptr() as *const i8,
+        HubExtension,
+    );
 
     (*HubExtension).RootHubPdo = core::ptr::null_mut();
 
@@ -4614,9 +4647,19 @@ pub unsafe extern "system" fn USBH_FdoStartDevice(
         core::ptr::addr_of_mut!((*HubExtension).RootHubPdo2),
     );
 
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[USBHUB] SyncGetRootHubPdo -> 0x%x pdo=%p\n\0".as_ptr() as *const i8,
+        Status,
+        (*HubExtension).RootHubPdo,
+    );
+
     if NT_SUCCESS(Status) {
         if !(*HubExtension).RootHubPdo.is_null() {
             Status = USBH_StartHubFdoDevice(HubExtension, Irp);
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"[USBHUB] StartHubFdoDevice -> 0x%x\n\0".as_ptr() as *const i8,
+                Status,
+            );
         } else {
             // DPRINT1("USBH_FdoStartDevice: FIXME. start ParentDevice\n");
             DbgBreakPoint();
@@ -4952,6 +4995,8 @@ pub unsafe extern "system" fn USBH_SetPdoRegistryParameter(
 
 // _INTERFACE_TYPE_PNPBus (bindgen prefixed enum member; iotypes.h: PNPBus == 15)
 use ntkrnl_sys::ddk::_INTERFACE_TYPE_PNPBus as PNPBus;
+
+
 
 // iotypes.h:1003  #define PNP_DEVICE_FAILED  0x00000004
 const PNP_DEVICE_FAILED: u32 = 0x00000004;

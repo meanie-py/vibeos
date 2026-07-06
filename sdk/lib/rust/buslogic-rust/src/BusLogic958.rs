@@ -166,7 +166,7 @@ pub unsafe extern "C" fn BT958HwFindAdapter(
     const SP_RETURN_ERROR: ULONG = 2;
     const SP_RETURN_FOUND: ULONG = 1;
     const MAX_TRANSFER_SIZE: ULONG = 0x10000; // MAX_TRANSFER_SIZE
-    const SP_INTERNAL_ADAPTER_ERROR: ULONG = 0xFFFF; // SP_INTERNAL_ADAPTER_ERROR
+    const SP_INTERNAL_ADAPTER_ERROR: ULONG = 0x06; // SP_INTERNAL_ADAPTER_ERROR
 
     let mut deviceExtension: PHW_DEVICE_EXTENSION = HwDeviceExtension as PHW_DEVICE_EXTENSION;
     let mut hcsp: *mut BusLogic_HostAdapter_T = core::ptr::addr_of_mut!((*deviceExtension).hcs);
@@ -277,7 +277,7 @@ pub unsafe extern "C" fn Buslogic_InitBT958(
     mut deviceExtension: PHW_DEVICE_EXTENSION,
     mut ConfigInfo: PPORT_CONFIGURATION_INFORMATION,
 ) -> BOOLEAN {
-    const SP_INTERNAL_ADAPTER_ERROR: u32 = 4;
+    const SP_INTERNAL_ADAPTER_ERROR: u32 = 0x06;
 
     let mut ch: CHAR = 0;
     let mut HostAdapter: *mut BusLogic_HostAdapter_T = core::ptr::addr_of_mut!((*deviceExtension).hcs);

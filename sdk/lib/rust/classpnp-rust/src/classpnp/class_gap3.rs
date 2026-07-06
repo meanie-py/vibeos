@@ -1,6 +1,26 @@
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "C" {
     
     
@@ -750,7 +770,7 @@ pub unsafe extern "system" fn ClassLogThresholdEvent(
             stringIndex = (errorLogEntry as ULONG_PTR + core::mem::size_of::<IO_ERROR_LOG_PACKET>()) as PWCHAR;
             stringSize = (logEntrySize - core::mem::size_of::<IO_ERROR_LOG_PACKET>() as ULONG) as LONG;
 
-            status = RtlStringCbPrintfW(stringIndex, stringSize as usize, b"L\0%\0d\0\0".as_ptr() as PWSTR, (*fdoExtension).DeviceNumber);
+            status = RtlStringCbPrintfW(stringIndex, stringSize as usize, w!("L%d").as_ptr() as PWSTR, (*fdoExtension).DeviceNumber);
 
             if NT_SUCCESS(status) {
                 (*errorLogEntry).NumberOfStrings += 1;
@@ -761,7 +781,7 @@ pub unsafe extern "system" fn ClassLogThresholdEvent(
                     stringIndex = stringIndex.offset((wcslen(stringIndex) + 1) as isize);
                     stringSize -= ((wcslen(stringIndex.offset(-((wcslen(stringIndex.offset(-1)) + 1) as isize))) + 1) * core::mem::size_of::<WCHAR>()) as LONG;
 
-                    status = RtlStringCbPrintfW(stringIndex, stringSize as usize, b"L\0%\0I\06\04\0u\0\0".as_ptr() as PWSTR, (*resources).UsedMappingResources);
+                    status = RtlStringCbPrintfW(stringIndex, stringSize as usize, w!("L%I64u").as_ptr() as PWSTR, (*resources).UsedMappingResources);
 
                     if NT_SUCCESS(status) {
                         (*errorLogEntry).NumberOfStrings += 1;
@@ -769,7 +789,7 @@ pub unsafe extern "system" fn ClassLogThresholdEvent(
                         stringIndex = stringIndex.offset((wcslen(stringIndex) + 1) as isize);
                         stringSize -= ((wcslen(stringIndex.offset(-((wcslen(stringIndex.offset(-1)) + 1) as isize))) + 1) * core::mem::size_of::<WCHAR>()) as LONG;
 
-                        status = RtlStringCbPrintfW(stringIndex, stringSize as usize, b"L\0%\0I\06\04\0u\0\0".as_ptr() as PWSTR, (*resources).AvailableMappingResources);
+                        status = RtlStringCbPrintfW(stringIndex, stringSize as usize, w!("L%I64u").as_ptr() as PWSTR, (*resources).AvailableMappingResources);
 
                         if NT_SUCCESS(status) {
                             (*errorLogEntry).NumberOfStrings += 1;

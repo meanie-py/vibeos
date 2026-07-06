@@ -30,6 +30,26 @@ use ntkrnl_sys::ddk::{CCHAR, DISK_DETECTION_INFO};
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{ExFreePool, KPROCESSOR_MODE};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 extern "C" {
     fn TracePrint(level: i32, flag: u32, format: *const i8, ...);
     fn DbgPrint(format: *const i8, ...);
@@ -285,7 +305,7 @@ pub unsafe extern "system" fn DiskSaveGeometryDetectInfo(
 
     RtlInitUnicodeString(
         &raw mut unicodeString,
-        b"C\0o\0n\0f\0i\0g\0u\0r\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0".as_ptr() as *const u16,
+        w!("Configuration Data").as_ptr() as *const u16,
     );
 
     keyData = ExAllocatePoolWithTag(
@@ -737,7 +757,7 @@ pub unsafe extern "system" fn DiskSaveBusDetectInfo(
 
     RtlInitUnicodeString(
         &raw mut unicodeString,
-        b"I\0d\0e\0n\0t\0i\0f\0i\0e\0r\0\0\0".as_ptr() as *const u16,
+        w!("Identifier").as_ptr() as *const u16,
     );
 
     keyData = ExAllocatePoolWithTag(

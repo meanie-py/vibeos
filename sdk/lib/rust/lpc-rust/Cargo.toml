@@ -1,0 +1,21 @@
+# lpc-rust — the LPC (Local Procedure Call) subsystem, extracted from
+# ntoskrnl-rust into its own rlib so it type-checks/codegens/caches independently
+# of the ~450K-LOC kernel monolith. First subsystem of the ntoskrnl crate-split
+# PoC (docs/engineering/ntoskrnl-crate-split-plan.md). Pure NT LPC logic on the
+# ntkrnl-sys FFI substrate — zero deps on the rest of ntoskrnl-rust. Its objects
+# bundle into libkernel_rust.a via `extern crate lpc_rust` in the kernel-rust
+# umbrella (a Cargo dep alone would compile the rlib but drop its #[no_mangle]
+# symbols — same pattern as cmboot-rust).
+[package]
+name = "lpc-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+# Type + extern-fn substrate (LPCP_MESSAGE, PORT_MESSAGE, Ob*/Ke*/Ex*/Mm*/Rtl*).
+# Default features to match ntoskrnl-rust so workspace feature unification is a
+# no-op.
+ntkrnl-sys = { path = "../ntkrnl-sys" }

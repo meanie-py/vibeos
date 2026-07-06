@@ -19,6 +19,26 @@ use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{BUS_QUERY_ID_TYPE, IRP, MOUNTMGR_MOUNT_POINT, MOUNTMGR_MOUNT_POINTS, PARTITION_STYLE, PCSTR, PWCH, RtlAssert, _DEVICE_OBJECT, _DPFLTR_TYPE_DPFLTR_DISK_ID as DPFLTR_DISK_ID, _GET_LENGTH_INFORMATION, _LARGE_INTEGER, _PARTITION_INFORMATION, _PARTITION_INFORMATION_EX, _PARTITION_INFORMATION_EX__bindgen_ty_1, _PARTITION_INFORMATION_GPT, _PARTITION_INFORMATION_MBR, _SET_PARTITION_INFORMATION, _SET_PARTITION_INFORMATION_EX, _STORAGE_DEVICE_NUMBER, _UNICODE_STRING, _VERIFY_INFORMATION, wchar_t};
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 pub const MOUNTMGR_DEVICE_NAME: [::core::ffi::c_ushort; 26] = unsafe {
@@ -81,7 +101,7 @@ pub unsafe extern "C" fn PartitionCreateDevice(
 
     swprintf(
         nameBuf.as_mut_ptr(),
-        b"\\\0D\0e\0v\0i\0c\0e\0\\\0H\0a\0r\0d\0d\0i\0s\0k\0V\0o\0l\0u\0m\0e\0%\0l\0u\0\0\0" as *const u8 as *const u16,
+        w!("\\Device\\HarddiskVolume%lu").as_ptr(),
         volumeNum,
     );
     RtlCreateUnicodeString(&mut deviceName, nameBuf.as_ptr());
@@ -1007,7 +1027,9 @@ pub unsafe extern "C" fn PartitionHandleDeviceControl(DeviceObject: PDEVICE_OBJE
                 PartMgrAcquireLayoutLock(fdoExtension);
                 (*volNum).VolumeNumber = (*partExt).VolumeNumber as u32;
                 core::ptr::copy_nonoverlapping(
-                    b"VOLMGR  \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0".as_ptr() as *const u16,
+                    // C: L"VOLMGR  " (8 space-padded WIDE chars) — the old byte
+                    // literal was packed ANSI, so the copied u16s were garbage
+                    w!("VOLMGR  ").as_ptr(),
                     (*volNum).VolumeManagerName.as_mut_ptr(),
                     8,
                 );

@@ -120,7 +120,7 @@ const IOCTL_SCSI_EXECUTE_NONE: u32 = 0x001B0013;
 const FALSE: u8 = 0;
 const IOCTL_SCSI_GET_ADDRESS: u32 = 0x41018; // CTL_CODE(IOCTL_SCSI_BASE,0x406,METHOD_BUFFERED,FILE_ANY_ACCESS); was 0x41018c (fabricated extra digit)
 const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D1400; // typical value, replace if needed
-const CDROM_TAG_DESCRIPTOR: u32 = 0x00000000; // placeholder
+const CDROM_TAG_DESCRIPTOR: u32 = 0x44436353; // placeholder
 const NonPagedPoolNx: u32 = 0x200;
 const PropertyStandardQuery: u32 = 0;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as i32;
@@ -130,8 +130,8 @@ const FDO_HACK_CANNOT_LOCK_MEDIA: u32 = 0x1; // unknown actual value, placeholde
 
 type DEVICE_REMOVAL_POLICY = u32;
 
-const CDROM_TAG_INQUIRY: u32 = 0x43717279; // 'C' 'q' 'r' 'y'
-const CDROM_TAG_STRINGS: u32 = 0x4D524443; // 'CDRM'
+const CDROM_TAG_INQUIRY: u32 = 0x69436353; // 'C' 'q' 'r' 'y'
+const CDROM_TAG_STRINGS: u32 = 0x73436353; // 'CDRM'
 const SCSIOP_INQUIRY: u8 = 0x12;
 const SRB_STATUS_DATA_OVERRUN: u8 = 0x12;
 const MINIMUM_CDROM_INQUIRY_SIZE: u32 = 36;
@@ -153,14 +153,14 @@ const FeatureProfileList: u32 = 0x0003; // example value
 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL: u32 = 0;
 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE: u32 = 0x2;  // was 1 (LLM-invented); bindgen-correct
 
-const CDROM_TAG_GET_CONFIG: u32 = 0x20207463; // 'CteG' tag
+const CDROM_TAG_GET_CONFIG: u32 = 0x43436353; // 'CteG' tag
 const MAXUSHORT: u32 = 65535;
 
 const SCSIOP_MODE_SENSE10: u8 = 0x5A;
 const SCSIOP_MODE_SENSE: u8 = 0x1A;
 const MODE_PAGE_CAPABILITIES: u8 = 0x2A;
 const Dbd: u8 = 1;
-const CDROM_TAG_MODE_DATA: u32 = 0x20202020; // typical tag
+const CDROM_TAG_MODE_DATA: u32 = 0x4D436353; // FIXED 2026-07-05: was LLM-guessed "typical" value; verified vs C header ('MCcS' per cdrom.h, displays as ScCM)
 
 const CDROM_HACK_TOSHIBA_SD_W1101: u32 = 0x10;  // was 0x0001 (LLM-invented); bindgen-correct
 const CDROM_HACK_HITACHI_GD_2000: u32 = 0x8;  // was 0x0002 (LLM-invented); bindgen-correct
@@ -199,8 +199,8 @@ const DO_SYSTEM_BOOT_PARTITION: u32 = 0x0100;
 const DO_SYSTEM_CRITICAL_PARTITION: u32 = 0x00400000;
 
 // DVD copy-protect / RPC constants (init.c -> ntddcdvd.h)
-const IOCTL_DVD_READ_KEY: u32 = 0x2D0014;
-const DVD_TAG_RPC2_CHECK: u32 = 0x32435052; // 'RPC2'
+const IOCTL_DVD_READ_KEY: u32 = 0x00335004; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const DVD_TAG_RPC2_CHECK: u32 = 0x56436353; // 'RPC2'
 const DvdGetRpcKey: u32 = 8; // _DVD_KEY_TYPE_DvdGetRpcKey
 const DVD_RPC_KEY_LENGTH: u32 =
     (core::mem::size_of::<DVD_RPC_KEY>() + core::mem::size_of::<DVD_COPY_PROTECT_KEY>()) as u32;

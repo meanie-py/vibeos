@@ -526,6 +526,10 @@ pub unsafe extern "system" fn HidInternalDeviceControl(DeviceObject: PDEVICE_OBJ
         return STATUS_SUCCESS;
     } else if ioctl == IOCTL_HID_GET_REPORT_DESCRIPTOR {
         Status = HidUsb_GetReportDescriptor(DeviceObject, Irp);
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[HIDUSB] get report descriptor -> 0x%x\n\0".as_ptr() as *const i8,
+            Status,
+        );
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
         return Status;
@@ -814,6 +818,8 @@ pub unsafe extern "system" fn DriverEntry(
 ) -> NTSTATUS { unsafe {
     let mut Registration: HID_MINIDRIVER_REGISTRATION = core::mem::zeroed();
     let Status: NTSTATUS;
+
+    ntkrnl_sys::driver_ddk::DbgPrint(b"[HIDUSB] DriverEntry\n\0".as_ptr() as *const i8);
 
     //
     // initialize driver object

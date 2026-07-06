@@ -10,6 +10,26 @@ use crate::shutdown::{GetAllowedShutdownOptions, LoadShutdownSelState, SaveShutd
 use crate::utils::{ReadRegSzValue, ReadRegDwordValue, RegOpenLoggedOnHKCU, TestTokenPrivilege, DuplicateString};
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // wine debug-channel statics (WINE_DEFAULT_DEBUG_CHANNEL(msgina) preamble).
 static mut __wine_dbch_msgina: __wine_debug_channel = unsafe {
     __wine_debug_channel {
@@ -218,7 +238,7 @@ unsafe fn SetWelcomeText(hWnd: HWND) {
         dwWelcomeSize = 0;
         let rc = RegQueryValueExW(
             hKey,
-            b"Welcome\0".as_ptr() as *const u16,
+            w!("Welcome").as_ptr() as *const u16,
             core::ptr::null_mut(),
             &mut dwType,
             core::ptr::null_mut(),
@@ -243,7 +263,7 @@ unsafe fn SetWelcomeText(hWnd: HWND) {
 
         RegQueryValueExW(
             hKey,
-            b"Welcome\0".as_ptr() as *const u16,
+            w!("Welcome").as_ptr() as *const u16,
             core::ptr::null_mut(),
             &mut dwType,
             p as *mut u8,

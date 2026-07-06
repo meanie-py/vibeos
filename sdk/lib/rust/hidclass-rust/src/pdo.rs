@@ -704,6 +704,10 @@ pub unsafe fn HidClassPDO_CreatePDO(
     }
 
     // store device relations
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[HIDCLASS] CreatePDO done count=%u\n\0".as_ptr() as *const i8,
+        (*DeviceRelations).Count,
+    );
     *OutDeviceRelations = DeviceRelations;
 
     STATUS_SUCCESS

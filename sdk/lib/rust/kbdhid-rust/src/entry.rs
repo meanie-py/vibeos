@@ -290,6 +290,7 @@ pub unsafe extern "system" fn DriverEntry(
     DriverObject: PDRIVER_OBJECT,
     _RegPath: PUNICODE_STRING,
 ) -> NTSTATUS {
+    ntkrnl_sys::driver_ddk::DbgPrint(b"[KBDHID] DriverEntry\n\0".as_ptr() as *const i8);
     /* initialize driver object */
     (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] =
         core::mem::transmute::<DispatchFn, PDRIVER_DISPATCH>(KbdHid_Create);

@@ -341,11 +341,14 @@ class I386Config(ArchConfig):
     boot_marker: str = "[EXPLORER] _tWinMain entered"
     boot_timeout: float = 360.0
     min_boot_bytes: int = 500
-    # See Amd64Config: marker fires before the taskbar paints. i386 is at least
-    # as fast as amd64 (taskbar measured up by +15.5s on amd64), so 30s of margin
-    # captures the rendered shell. 5s was too short — it screenshotted the bare
-    # blue desktop before explorer built the tray.
-    desktop_settle_seconds: float = 30.0
+    # See Amd64Config: marker fires before the taskbar paints. 5s was too short
+    # (bare blue desktop). 30s was sized on "taskbar up by +15.5s" lore, but a
+    # 2026-07-05 timestamped boot measured taskbar child controls created at
+    # marker+0.9s, and the +30s screenshot STILL shows an unpainted tray (the
+    # known render-completeness issue) — the extra 15s bought nothing. 15s keeps
+    # 3x the old too-short value and a real post-marker health window while
+    # cutting a pure fixed wait from every green boot.
+    desktop_settle_seconds: float = 15.0
     # Healthy i386 boot reaches the marker in ~60s; 120s of pure silence with no
     # marker = wedged. Above the ~30s storage/EventLog gap so that flake is not
     # false-tripped, well under the 360s timeout (saves ~4min per wedge).
@@ -437,14 +440,15 @@ class Amd64Config(ArchConfig):
     boot_timeout: float = 360.0
     min_boot_bytes: int = 1000
     # The boot marker (`_tWinMain entered`) fires the instant explorer starts;
-    # the taskbar/Start button/tray paint a few seconds later. Measured 2026-06-05
-    # (post gmxWorldToDeviceDefault GDI fix): the taskbar is up and stable by
-    # +15.5s after the marker. 30s gives ~2x margin so the canonical screenshot
-    # always captures the rendered shell, not a bare blue desktop. (A known
-    # intermittent KiUnwaitThread CPU storm can delay it further on some boots;
-    # the storm never gates the taskbar, and the smoke verdict is the serial
-    # marker, not the screenshot, so an occasional early shot is only cosmetic.)
-    desktop_settle_seconds: float = 30.0
+    # the taskbar/Start button/tray paint a few seconds later. 2026-06-05 lore
+    # said "taskbar up by +15.5s" and sized this 30s for 2x margin. A 2026-07-05
+    # timestamped boot measured taskbar child controls created at marker+0.9s,
+    # and the +30s screenshot still shows an unpainted tray (render-completeness
+    # issue, tracked separately) — the second 15s buys nothing. 15s preserves
+    # the post-marker health window (BugCheck/panic-during-settle detection)
+    # while halving a fixed wait paid by every green boot, twice per amd64
+    # smoke (plain + net-config boots).
+    desktop_settle_seconds: float = 15.0
     # Healthy amd64 boot reaches the marker in ~60s; 120s of pure silence with no
     # marker = wedged. Above the ~30s storage/EventLog gap (so that KNOWN_FLAKE is
     # not false-tripped), well under the 360s timeout (saves ~4min per wedge).

@@ -674,7 +674,7 @@ pub unsafe extern "system" fn FatQueryFsSectorSizeInfo(
 // Forward declarations for unknown externs
 
 // Constants (placeholders; actual values from the kernel)
-const UserVolumeOpen: TYPE_OF_OPEN = 2; // typical value for FAT volume open
+const UserVolumeOpen: TYPE_OF_OPEN = 4; // FIXED 2026-07-05: was LLM-guessed "typical" value; verified vs C header (_TYPE_OF_OPEN_UserVolumeOpen=4; 2 is UserFileOpen!)
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFsdSetVolumeInformation(

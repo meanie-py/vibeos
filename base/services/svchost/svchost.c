@@ -1266,10 +1266,22 @@ wmainCRTStartup (
     /* Get the command-line and parse it to get the service group */
     pszCmdLine = GetCommandLineW();
     lpOptions = BuildCommandOptions(pszCmdLine);
+    /* Loud diagnosis (2026-07 perf investigation): svchost has been exiting
+     * 0 within ~0.4s of spawn on every boot, costing the SCM a full 31s
+     * pipe-connect timeout per svchost-hosted service (DcomLaunch et al).
+     * Print what this process actually SEES so the failing layer (empty
+     * cmdline from CreateProcessW/PEB vs option-parse vs service table) is
+     * attributable from the boot serial log. */
+    DBG_ERR("wmain: cmdline=\"%ws\" options=%p group=%ws\n",
+            pszCmdLine ? pszCmdLine : L"(null)",
+            lpOptions,
+            (lpOptions && lpOptions->HasServiceGroup && lpOptions->ServiceGroupName)
+                ? lpOptions->ServiceGroupName : L"(none)");
     if (lpOptions == NULL)
     {
         /* Without a valid command-line, there's nothing for us to do */
-        DBG_TRACE("Calling ExitProcess for %ws\n", pszCmdLine);
+        DBG_ERR("wmain: NO valid options — ExitProcess(0) (cmdline was \"%ws\")\n",
+                pszCmdLine ? pszCmdLine : L"(null)");
         ExitProcess(0);
     }
 
@@ -1281,6 +1293,8 @@ wmainCRTStartup (
     if (pServiceTable == NULL)
     {
         /* This is critical, bail out without it */
+        DBG_ERR("wmain: BuildServiceTable returned NULL (%d services) — exiting\n",
+                ServiceCount);
         MemFree(lpOptions);
         return;
     }

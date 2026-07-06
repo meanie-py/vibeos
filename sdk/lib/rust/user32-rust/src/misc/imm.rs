@@ -20,6 +20,26 @@ use crate::winbase::{wcslen, RtlZeroMemory, WideCharToMultiByte, CP_ACP};
 // ── gSharedInfo is owned by misc/dllmain.rs (pub static mut SHAREDINFO).
 use crate::misc::dllmain::gSharedInfo;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // win32k-sys defines FALSE/TRUE as `u32`, but BOOL is `c_int` (i32). Shadow them
 // with BOOL-typed constants (same pattern as windows/menu.rs / defwnd.rs).
 const FALSE: BOOL = 0;
@@ -502,7 +522,7 @@ unsafe fn User32GetSystemFilePath(
 ) -> HRESULT {
     let length: UINT = GetSystemDirectoryW(lpBuffer, cchBuffer as UINT);
     if length != 0 && (length as SIZE_T) < cchBuffer {
-        StringCchCatW(lpBuffer, cchBuffer, b"\\\0\0\0".as_ptr() as PCWSTR);
+        StringCchCatW(lpBuffer, cchBuffer, w!("\\").as_ptr() as PCWSTR);
         return StringCchCatW(lpBuffer, cchBuffer, pszFileName);
     }
     let dwError: DWORD = GetLastError();
@@ -522,7 +542,7 @@ unsafe fn IntInitializeImmEntryTable() -> BOOL {
     User32GetSystemFilePath(
         ImmFile.as_mut_ptr(),
         ImmFile.len() as SIZE_T,
-        b"i\0m\0m\x003\x002\0.\0d\0l\0l\0\0\0".as_ptr() as PCWSTR,
+        w!("imm32.dll").as_ptr() as PCWSTR,
     );
     TRACE!(b"File %s\n\0".as_ptr(), debugstr_w(ImmFile.as_ptr()));
 
@@ -642,7 +662,7 @@ pub unsafe extern "stdcall" fn User32InitializeImmEntryTable(magic: DWORD) -> BO
         User32GetSystemFilePath(
             ImmFile.as_mut_ptr(),
             ImmFile.len() as SIZE_T,
-            b"i\0m\0m\03\02\0.\0d\0l\0l\0\0\0".as_ptr() as PCWSTR,
+            w!("imm32.dll").as_ptr() as PCWSTR,
         );
         ghImm32 = LoadLibraryW(ImmFile.as_ptr());
         if ghImm32.is_null() {
@@ -671,7 +691,7 @@ pub unsafe extern "C" fn User32InitializeImmEntryTable(magic: DWORD) -> BOOL {
         User32GetSystemFilePath(
             ImmFile.as_mut_ptr(),
             ImmFile.len() as SIZE_T,
-            b"i\0m\0m\03\02\0.\0d\0l\0l\0\0\0".as_ptr() as PCWSTR,
+            w!("imm32.dll").as_ptr() as PCWSTR,
         );
         ghImm32 = LoadLibraryW(ImmFile.as_ptr());
         if ghImm32.is_null() {
@@ -1285,13 +1305,13 @@ unsafe extern "system" fn User32GetPenMenuData(
     if s_pGetPenMenuData.is_none() {
         let mut szPath: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
         let mut hIndicDll = GetModuleHandleW(
-            b"i\0n\0d\0i\0c\0d\0l\0l\0.\0d\0l\0l\0\0\0".as_ptr() as PCWSTR,
+            w!("indicdll.dll").as_ptr() as PCWSTR,
         );
         if hIndicDll.is_null() {
             User32GetSystemFilePath(
                 szPath.as_mut_ptr(),
                 szPath.len() as SIZE_T,
-                b"i\0n\0d\0i\0c\0d\0l\0l\0.\0d\0l\0l\0\0\0".as_ptr() as PCWSTR,
+                w!("indicdll.dll").as_ptr() as PCWSTR,
             );
             hIndicDll = LoadLibraryW(szPath.as_ptr());
         }
@@ -1826,12 +1846,12 @@ pub unsafe extern "system" fn UpdatePerUserImmEnabling() -> BOOL {
         return 0;
     }
 
-    let imm32_existing = GetModuleHandleW(b"i\0m\0m\x003\x002\0.\0d\0l\0l\0\0\0".as_ptr() as PCWSTR);
+    let imm32_existing = GetModuleHandleW(w!("imm32.dll").as_ptr() as PCWSTR);
     if !imm32_existing.is_null() {
         return 1;
     }
 
-    imm32 = LoadLibraryW(b"i\0m\0m\x003\x002\0.\0d\0l\0l\0\0\0".as_ptr() as PCWSTR);
+    imm32 = LoadLibraryW(w!("imm32.dll").as_ptr() as PCWSTR);
     if imm32.is_null() {
         ERR!(b"Imm32 not installed!\n\0".as_ptr() as *const i8);
         ret = 0;

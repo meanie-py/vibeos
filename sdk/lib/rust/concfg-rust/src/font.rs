@@ -2,6 +2,26 @@ use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // RtlGetProcessHeap is a PEB inline (TEB->Peb->ProcessHeap), not an export.
 // NtCurrentTeb is exported by both the nt and winsrv globs — qualify it.
 #[inline]
@@ -761,7 +781,7 @@ pub unsafe extern "C" fn InitTTFontCache() {
 
     if RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0C\0o\0n\0s\0o\0l\0e\0\\\0T\0r\0u\0e\0T\0y\0p\0e\0F\0o\0n\0t\0\0\0".as_ptr() as *const u16,
+        w!("Software\\Microsoft\\Windows NT\\CurrentVersion\\Console\\TrueTypeFont").as_ptr() as *const u16,
         0,
         KEY_QUERY_VALUE,
         &mut hKey,

@@ -128,13 +128,124 @@ unsafe fn DbgAddDebugChannel(channel: *mut i8, level: *mut i8, op: i8) -> u8 {
     1u8
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn DebugInit(DebugString: PCSTR) {
-    UNREFERENCED_PARAMETER(DebugString);
+// Faithful port of C debug.c DebugInit/DbgPrint/DbgPrint2. The original
+// translation shipped the C file's `#else` (!DBG) NO-OP stubs here, which
+// silenced ALL freeldr debug output on serial — freeldr's whole load phase
+// became one unattributable silent gap in every boot log, and rosload's
+// diagnostics were lost entirely (found during the 2026-07 performance
+// investigation; the [FLDR] boot-phase stamps ride on this channel).
+
+static mut DebugInitialized: bool = false;
+static mut DbgComPort: ULONG = 0; // 0 = probe COM4..COM1 (rs232.rs)
+static mut DbgBaudRate: ULONG = 115200;
+
+/// Case-sensitive substring find over a NUL-terminated C string (freeldr's
+/// DebugString is upper-cased by settings.c / hand-written in the ini).
+unsafe fn c_strstr(hay: *const i8, needle: &[u8]) -> *const i8 {
+    if hay.is_null() { return core::ptr::null(); }
+    let mut p = hay;
+    while *p != 0 {
+        let mut i = 0usize;
+        while i < needle.len() && *p.add(i) as u8 == needle[i] { i += 1; }
+        if i == needle.len() { return p; }
+        p = p.add(1);
+    }
+    core::ptr::null()
+}
+
+unsafe fn c_atol(mut p: *const i8) -> ULONG {
+    let mut v: ULONG = 0;
+    while *p == b' ' as i8 { p = p.add(1); }
+    while (*p as u8).is_ascii_digit() {
+        v = v.wrapping_mul(10).wrapping_add((*p as u8 - b'0') as ULONG);
+        p = p.add(1);
+    }
+    v
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn DbgPrint(_Format: PCCH) -> u32 {
+pub unsafe extern "C" fn DebugInit(DebugString: PCSTR) {
+    // Empty/NULL string: pre-initialization — bring the port up with default
+    // settings the first time; on later calls without a string, keep whatever
+    // the main initialization configured (C semantics).
+    if DebugString.is_null() || *DebugString == 0 {
+        if DebugInitialized { return; }
+    } else {
+        // Parse DEBUGPORT= (SCREEN / BOCHS / COMn, OR-able) and BAUDRATE=.
+        let mut port = c_strstr(DebugString as *const i8, b"DEBUGPORT");
+        if !port.is_null() { DebugPort = 0; }
+        while !port.is_null() {
+            let mut q = port.add(b"DEBUGPORT".len() as usize);
+            while *q == b' ' as i8 { q = q.add(1); }
+            q = q.add(1); // '='
+            if !c_strstr(q, b"SCREEN").is_null() && c_strstr(q, b"SCREEN") == q {
+                DebugPort |= SCREEN;
+            } else if !c_strstr(q, b"BOCHS").is_null() && c_strstr(q, b"BOCHS") == q {
+                DebugPort |= BOCHS;
+            } else {
+                let com = c_strstr(q, b"COM");
+                if com == q {
+                    DebugPort |= RS232;
+                    let v = c_atol(com.add(3));
+                    if v != 0 { DbgComPort = v; }
+                }
+            }
+            port = c_strstr(q, b"DEBUGPORT");
+        }
+        let baud = c_strstr(DebugString as *const i8, b"BAUDRATE");
+        if !baud.is_null() {
+            let mut q = baud.add(b"BAUDRATE".len());
+            while *q == b' ' as i8 { q = q.add(1); }
+            let v = c_atol(q.add(1));
+            if v != 0 { DbgBaudRate = v; }
+        }
+    }
+
+    DebugInitialized = true;
+
+    /* Try to initialize the port; if it fails, drop the RS232 flag */
+    extern "C" {
+        fn Rs232PortInitialize(ComPort: ULONG, BaudRate: ULONG) -> u8;
+    }
+    if (DebugPort & RS232) != 0 {
+        if Rs232PortInitialize(DbgComPort, DbgBaudRate) == 0 {
+            DebugPort &= !RS232;
+        }
+    }
+}
+
+unsafe fn DbgPrintString(s: *const i8) {
+    let mut p = s;
+    while *p != 0 {
+        DebugPrintChar(*p as u8);
+        p = p.add(1);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn DbgPrintSz(Str: PCSTR) {
+    // Unformatted string print for Rust callers (freeldr-rust builds on the
+    // STABLE channel — no c_variadic, so no varargs DbgPrint definition).
+    if !DebugInitialized {
+        DebugInit(core::ptr::null());
+    }
+    DbgPrintString(Str as *const i8);
+}
+
+/// NOTE: the C prototype is variadic (`DbgPrint(fmt, ...)`); defining a
+/// C-variadic fn needs nightly `c_variadic`, and the freeldr cargo path pins
+/// STABLE (same E0554 wall as the arm64 lockdep probe). A non-variadic
+/// definition is ABI-compatible with variadic callers (cdecl caller-pop /
+/// win64 register args are simply ignored), so this prints the format string
+/// RAW: constant messages come out intact, `%`-formatted ones print their
+/// format literally. Strictly better than the silent stub this replaced;
+/// full formatting is owed once freeldr builds on nightly.
+#[no_mangle]
+pub unsafe extern "C" fn DbgPrint(Format: PCCH) -> u32 {
+    if !DebugInitialized {
+        DebugInit(core::ptr::null());
+    }
+    DbgPrintString(Format as *const i8);
     0
 }
 
@@ -146,11 +257,20 @@ pub unsafe extern "C" fn DbgPrint2(
     Line: ULONG,
     Format: *mut CHAR,
 ) {
-    let _ = Mask;
-    let _ = Level;
-    let _ = File;
-    let _ = Line;
-    let _ = Format;
+    if Mask as usize >= crate::frldr::DBG_CHANNELS_COUNT
+        || (DbgChannels[Mask as usize] as u32 & Level) == 0 {
+        return;
+    }
+    if !DebugInitialized {
+        DebugInit(core::ptr::null());
+    }
+    if DebugStartOfLine != 0 {
+        let mut hdr: [i8; 128] = [0; 128];
+        sprintf(hdr.as_mut_ptr(), b"(%s:%lu) \0".as_ptr() as *const i8, File, Line);
+        DbgPrintString(hdr.as_ptr());
+        DebugStartOfLine = 0;
+    }
+    DbgPrintString(Format);
 }
 
 #[no_mangle]

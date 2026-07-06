@@ -16,6 +16,26 @@ use ntkrnl_sys::ddk::{DEVICE_CAPABILITIES, DEVICE_RELATIONS, DISK_GEOMETRY, ExAc
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoCopyCurrentIrpStackLocationToNext, IoMarkIrpPending, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation};
 use core::ffi::c_void;
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
+
 // NTAPI (stdcall on i386 -> _Name@N; cdecl on amd64/arm64). MUST be extern "system",
 // not "C": a cdecl decl links on amd64/arm64 but emits the undecorated `_Rtl...` on i386.
 extern "system" {
@@ -2543,7 +2563,7 @@ pub unsafe extern "system" fn RamdiskAddDevice(
     /* Create the bus FDO */
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(DeviceName),
-        b"\\\0D\0e\0v\0i\0c\0e\0\\\0R\0a\0m\0d\0i\0s\0k\0\0\0".as_ptr() as PWSTR,
+        w!("\\Device\\Ramdisk").as_ptr() as PWSTR,
     );
     let mut DeviceObject_local: PDEVICE_OBJECT = core::ptr::null_mut();
     Status = IoCreateDevice(

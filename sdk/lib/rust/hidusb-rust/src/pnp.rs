@@ -507,6 +507,7 @@ pub unsafe fn Hid_GetProtocol(DeviceObject: PDEVICE_OBJECT) { unsafe {
 }}
 
 pub unsafe fn Hid_PnpStart(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS { unsafe {
+    ntkrnl_sys::driver_ddk::DbgPrint(b"[HIDUSB] PnpStart\n\0".as_ptr() as *const i8);
     let HidDeviceExtension: PHID_USB_DEVICE_EXTENSION;
     let DeviceExtension: PHID_DEVICE_EXTENSION;
     let mut Status: NTSTATUS;
