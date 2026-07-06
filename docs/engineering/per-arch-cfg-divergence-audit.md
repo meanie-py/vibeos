@@ -117,11 +117,18 @@ faithfully mirror the C's `#ifdef _M_ARM64`; all retire-able:
 - `rtl-diag/exception.rs:132` — no arm64 register dump (diagnostic-only).
 - `ntoskrnl-rust/ke/ipi.rs:129` — amd64 IPI_SYNCH_REQUEST handler is a `DbgBreakPoint` stub.
 - `ntkrnl-sys/mm.rs:344` — identical-body cfg + misleading comment (value correct; bit 8 all arches).
-- `ntoskrnl-rust/ke/{wait.rs:351, thrdschd.rs:474/826}` — arm64-only ReadySummary preemption
-  recheck the x86 arches lack. Judge vs **stock x86** ReactOS (the arch-independent scheduler
-  reference) + the preemption invariant, **not** "stock arm64" — none exists (see the
-  Method caveat). Open question: do i386/amd64 *also* need this recheck (arm64 fixed a real
-  arch-independent preemption gap) or is it spurious arm64-only? Needs reasoning, not a diff.
+- **✅ RESOLVED `ntoskrnl-rust/ke/{wait.rs, thrdschd.rs ×2}` — LEGIT arm64 workaround, not
+  drift.** The arm64-only ReadySummary preemption recheck faithfully mirrors the C
+  `#ifdef _M_ARM64` (ntoskrnl/ke/thrdschd.c:444). arm64 has no working
+  HalRequestSoftwareInterrupt, so a stale `Prcb->NextThread` is never re-dispatched via a
+  DISPATCH software interrupt and a higher-priority thread (e.g. queued by NtYieldExecution)
+  starves; the recheck re-enforces `NextThread->Priority >= max(ReadySummary)` at swap time.
+  **x86 does NOT need it** — working software interrupts keep the invariant, so the branch
+  never fires there. It was flagged only because the Rust translation dropped the C's
+  rationale comment; restored at all three sites (`ke/wait.rs`, `ke/thrdschd.rs` KiSwapThread
+  + NtYieldExecution). **Removable once arm64 gains real software-interrupt preemption →
+  tracked in `arm64-interrupts-quest.md`.** (Textbook Method-caveat case: resolved by
+  reasoning + the C's own `_M_ARM64` intent, not a nonexistent arm64 upstream.)
 
 ---
 

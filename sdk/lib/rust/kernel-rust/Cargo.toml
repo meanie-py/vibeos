@@ -13,6 +13,7 @@ lockdep = ["ntoskrnl-rust/lockdep"]
 
 [dependencies]
 ntoskrnl-rust = { path = "../ntoskrnl-rust" }
+lpc-rust = { path = "../lpc-rust" }
 cmboot-rust = { path = "../cmboot-rust" }
 ntprintf = { path = "../ntprintf" }
 ntprintf_w = { path = "../ntprintf_w" }
