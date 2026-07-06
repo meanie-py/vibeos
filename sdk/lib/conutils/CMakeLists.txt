@@ -28,6 +28,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(CONUTILS_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
+file(GLOB_RECURSE CONUTILS_RUST_SRCS ${CONUTILS_RUST_WORKSPACE_DIR}/conutils-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${CONUTILS_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -38,13 +39,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${CONUTILS_RUST_TARGET_DIR}/${CONUTILS_RUST_TARGET}/release/libconutils_rust.a
         ${CONUTILS_RUST_LIB}
-    DEPENDS ${CONUTILS_RUST_WORKSPACE_DIR}/conutils-rust/Cargo.toml
-            ${CONUTILS_RUST_WORKSPACE_DIR}/conutils-rust/src/lib.rs
-            ${CONUTILS_RUST_WORKSPACE_DIR}/conutils-rust/src/conutils/outstream.rs
-            ${CONUTILS_RUST_WORKSPACE_DIR}/conutils-rust/src/conutils/pager.rs
-            ${CONUTILS_RUST_WORKSPACE_DIR}/conutils-rust/src/conutils/screen.rs
-            ${CONUTILS_RUST_WORKSPACE_DIR}/conutils-rust/src/conutils/stream.rs
-            ${CONUTILS_RUST_WORKSPACE_DIR}/conutils-rust/src/conutils/utils.rs
+    DEPENDS ${CONUTILS_RUST_SRCS}
+            ${CONUTILS_RUST_WORKSPACE_DIR}/conutils-rust/Cargo.toml
     WORKING_DIRECTORY ${CONUTILS_RUST_WORKSPACE_DIR}
     COMMENT "Building conutils-rust (${CONUTILS_RUST_TARGET})"
     VERBATIM)

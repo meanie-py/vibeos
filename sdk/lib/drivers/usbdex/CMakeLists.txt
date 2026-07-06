@@ -22,6 +22,7 @@ elseif(ARCH STREQUAL "arm64")
     set(USBDEX_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(USBDEX_RUST_RUSTFLAGS "")
 endif()
+file(GLOB_RECURSE USBDEX_RUST_SRCS ${USBDEX_RUST_WORKSPACE_DIR}/usbdex-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${USBDEX_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -33,8 +34,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${USBDEX_RUST_TARGET_DIR}/${USBDEX_RUST_TARGET}/release/libusbdex_rust.a
         ${USBDEX_RUST_LIB}
-    DEPENDS ${USBDEX_RUST_WORKSPACE_DIR}/usbdex-rust/Cargo.toml
-            ${USBDEX_RUST_WORKSPACE_DIR}/usbdex-rust/src/lib.rs
+    DEPENDS ${USBDEX_RUST_SRCS}
+            ${USBDEX_RUST_WORKSPACE_DIR}/usbdex-rust/Cargo.toml
     WORKING_DIRECTORY ${USBDEX_RUST_WORKSPACE_DIR}
     COMMENT "Building usbdex-rust (${USBDEX_RUST_TARGET})"
     VERBATIM)

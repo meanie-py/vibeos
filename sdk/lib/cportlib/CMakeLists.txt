@@ -19,6 +19,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(CPORT_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
+file(GLOB_RECURSE CPORT_RUST_SRCS ${CPORT_RUST_WORKSPACE_DIR}/cport-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${CPORT_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -29,8 +30,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${CPORT_RUST_TARGET_DIR}/${CPORT_RUST_TARGET}/release/libcport_rust.a
         ${CPORT_RUST_LIB}
-    DEPENDS ${CPORT_RUST_WORKSPACE_DIR}/cport-rust/Cargo.toml
-            ${CPORT_RUST_WORKSPACE_DIR}/cport-rust/src/lib.rs
+    DEPENDS ${CPORT_RUST_SRCS}
+            ${CPORT_RUST_WORKSPACE_DIR}/cport-rust/Cargo.toml
     WORKING_DIRECTORY ${CPORT_RUST_WORKSPACE_DIR}
     COMMENT "Building cport-rust (${CPORT_RUST_TARGET})"
     VERBATIM)

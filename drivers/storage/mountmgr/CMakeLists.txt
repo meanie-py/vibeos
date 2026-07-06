@@ -21,6 +21,7 @@ elseif(ARCH STREQUAL "arm64")
     set(MOUNTMGR_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(MOUNTMGR_RUST_RUSTFLAGS "")
 endif()
+file(GLOB_RECURSE MOUNTMGR_RUST_SRCS ${MOUNTMGR_RUST_WORKSPACE_DIR}/mountmgr-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${MOUNTMGR_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -32,8 +33,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${MOUNTMGR_RUST_TARGET_DIR}/${MOUNTMGR_RUST_TARGET}/release/libmountmgr_rust.a
         ${MOUNTMGR_RUST_LIB}
-    DEPENDS ${MOUNTMGR_RUST_WORKSPACE_DIR}/mountmgr-rust/Cargo.toml
-            ${MOUNTMGR_RUST_WORKSPACE_DIR}/mountmgr-rust/src/lib.rs
+    DEPENDS ${MOUNTMGR_RUST_SRCS}
+            ${MOUNTMGR_RUST_WORKSPACE_DIR}/mountmgr-rust/Cargo.toml
     WORKING_DIRECTORY ${MOUNTMGR_RUST_WORKSPACE_DIR}
     COMMENT "Building mountmgr-rust (${MOUNTMGR_RUST_TARGET})"
     VERBATIM)

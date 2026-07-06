@@ -410,7 +410,7 @@ sdk/lib/rust/freeldr-rust/src/arcemul.rs:79: [UNWRAP] .unwrap() — panics on Er
 sdk/lib/rust/freeldr-rust/src/arcemul.rs:84: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/freeldr-rust/src/arcemul.rs:92: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/freeldr-rust/src/arcemul.rs:97: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/freeldr-rust/src/debug.rs:198: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
+sdk/lib/rust/freeldr-rust/src/debug.rs:318: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/freeldr-rust/src/fs.rs:336: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/freeldr-rust/src/fs.rs:384: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/freeldr-rust/src/fs.rs:399: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -687,15 +687,15 @@ sdk/lib/rust/kernel32-rust/src/string/lcformat.rs:2795: [UNWRAP] .expect() — p
 sdk/lib/rust/kernel32-rust/src/string/lcformat.rs:2798: [UNWRAP] .expect() — panics on Err/None in kernel code
 sdk/lib/rust/kernel32-rust/src/string/locale.rs:27132: [UNWRAP] .expect() — panics on Err/None in kernel code
 sdk/lib/rust/kernel32-rust/src/string/locale.rs:27158: [UNWRAP] .expect() — panics on Err/None in kernel code
-sdk/lib/rust/kernel32-rust/src/string/locale.rs:28715: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/kernel32-rust/src/string/locale.rs:28747: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/kernel32-rust/src/string/locale.rs:28923: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/kernel32-rust/src/string/locale.rs:28943: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/kernel32-rust/src/string/locale.rs:29230: [UNWRAP] .expect() — panics on Err/None in kernel code
-sdk/lib/rust/kernel32-rust/src/string/locale.rs:29259: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/kernel32-rust/src/string/locale.rs:29389: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/kernel32-rust/src/string/locale.rs:29403: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/kernel32-rust/src/string/locale.rs:29715: [UNWRAP] .expect() — panics on Err/None in kernel code
+sdk/lib/rust/kernel32-rust/src/string/locale.rs:28726: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/kernel32-rust/src/string/locale.rs:28758: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/kernel32-rust/src/string/locale.rs:28934: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/kernel32-rust/src/string/locale.rs:28954: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/kernel32-rust/src/string/locale.rs:29241: [UNWRAP] .expect() — panics on Err/None in kernel code
+sdk/lib/rust/kernel32-rust/src/string/locale.rs:29270: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/kernel32-rust/src/string/locale.rs:29400: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/kernel32-rust/src/string/locale.rs:29414: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/kernel32-rust/src/string/locale.rs:29726: [UNWRAP] .expect() — panics on Err/None in kernel code
 sdk/lib/rust/kernel32-rust/src/wine/comm.rs:1545: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/kernel32-rust/src/wine/comm.rs:1635: [UNWRAP] .expect() — panics on Err/None in kernel code
 sdk/lib/rust/kernel32-rust/src/wine/lzexpand.rs:556: [UNWRAP] .expect() — panics on Err/None in kernel code

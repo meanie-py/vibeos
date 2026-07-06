@@ -21,6 +21,7 @@ elseif(ARCH STREQUAL "arm64")
     set(ARBITER_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(ARBITER_RUST_RUSTFLAGS "")
 endif()
+file(GLOB_RECURSE ARBITER_RUST_SRCS ${ARBITER_RUST_WORKSPACE_DIR}/arbiter-rust/src/*.rs)
 add_custom_command(
     OUTPUT ${ARBITER_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -32,9 +33,8 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy
         ${ARBITER_RUST_TARGET_DIR}/${ARBITER_RUST_TARGET}/release/libarbiter_rust.a
         ${ARBITER_RUST_LIB}
-    DEPENDS ${ARBITER_RUST_WORKSPACE_DIR}/arbiter-rust/Cargo.toml
-            ${ARBITER_RUST_WORKSPACE_DIR}/arbiter-rust/src/lib.rs
-            ${ARBITER_RUST_WORKSPACE_DIR}/arbiter-rust/src/arbiter.rs
+    DEPENDS ${ARBITER_RUST_SRCS}
+            ${ARBITER_RUST_WORKSPACE_DIR}/arbiter-rust/Cargo.toml
     WORKING_DIRECTORY ${ARBITER_RUST_WORKSPACE_DIR}
     COMMENT "Building arbiter-rust (${ARBITER_RUST_TARGET})"
     VERBATIM)
