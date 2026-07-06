@@ -1349,10 +1349,10 @@ unsafe fn FatSetDirtyBcb(
     Reversible: u8,
 ) {
     const IRP_CONTEXT_FLAG_DISABLE_DIRTY: u32 = 0x01; // fatstruc.h: was wrongly 0x100 (placeholder) → guard never fired → FatSetDirtyBcb↔FatMarkVolume↔FatSetFatEntry↔FatPrepareWriteVolumeFile infinite recursion → arm64 stack overflow 0x50
-    const VCB_STATE_FLAG_DEFERRED_FLUSH: u32 = 0x1;
-    const VCB_STATE_FLAG_VOLUME_DIRTY: u32 = 0x2;
-    const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x4;
-    const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x8;
+    const VCB_STATE_FLAG_DEFERRED_FLUSH: u32 = 0x1000;
+    const VCB_STATE_FLAG_VOLUME_DIRTY: u32 = 0x04;
+    const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x10;
+    const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x02;
     const VolumeDirty: u32 = 1;
     const Dbg: u32 = 0;
     // DebugTrace calls preserved

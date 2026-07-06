@@ -160,7 +160,7 @@ pub unsafe extern "system" fn ScratchBuffer_Allocate(
     const TRACE_LEVEL_WARNING: u32 = 4;
     const TRACE_FLAG_INIT: u32 = 0x00000001;
     const NonPagedPoolNx: u32 = 0x200;
-    const CDROM_TAG_SCRATCH: u32 = 0x72534343; // 'CScr'
+    const CDROM_TAG_SCRATCH: u32 = 0x42436353; // 'CScr'
 
     // Forward declarations for unknown symbols
     unsafe extern "system" {

@@ -41,6 +41,15 @@ const TRACE_FLAG_POWER: u32 = 0x10;
 const TRACE_FLAG_QUEUE: u32 = 0x20;
 const TRACE_LEVEL_WARNING: u32 = 2;
 
+// These two WDF ioctl handlers are DEFINED `extern "C"` (aacs.rs / ioctl.rs);
+// their decls must match that decoration — i386 was declaring them
+// `extern "system"` -> undefined `_..@36`. Exposed once the corrected IOCTL
+// consts routed dispatch into them. 2026-07-06.
+extern "C" {
+    fn DeviceHandleAacsReadMediaKeyBlock( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
+    fn RequestHandleGetPerformance( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
+}
+
 extern "system" {
     fn KeQueryPerformanceCounter(PerformanceFrequency: *mut i64) -> i64;
 }
@@ -196,7 +205,6 @@ extern "system" {
     fn DeviceHandleDvdStartSessionReadKey( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn DeviceHandleDvdSendKey( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn DeviceHandleSetReadAhead( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
-    fn DeviceHandleAacsReadMediaKeyBlock( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn DeviceHandleAacsStartSession( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn DeviceHandleAacsEndSession( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn DeviceHandleAacsSendCertificate( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
@@ -214,7 +222,6 @@ extern "system" {
     fn RequestHandlePersistentReserve( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn RequestHandleEnableStreaming( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, info: *mut usize, ) -> i32;
     fn RequestHandleSendOpcInformation( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, info: *mut usize, ) -> i32;
-    fn RequestHandleGetPerformance( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn RequestHandleMcnSyncFakeIoctl( dev: *mut CDROM_DEVICE_EXTENSION, info: *mut usize, ) -> i32;
     fn RequestHandleAreVolumesReady( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn RequestHandleVolumeOnline( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
@@ -256,7 +263,7 @@ const TRACE_FLAG_INIT: u32 = 0x00000001;
 // Forward‑declared constants (unknown values, placeholders)
 const TRACE_LEVEL_FATAL: u32 = 1;          // placeholder
 const TRACE_FLAG_PNP: u32 = 0x00000001;     // placeholder
-const CDROM_TAG_STRINGS: u32 = 0x4D524443; // 'CDRM' in LE
+const CDROM_TAG_STRINGS: u32 = 0x73436353; // 'CDRM' in LE
 const SCSI_CDROM_TIMEOUT: u32 = 0xa;       // seconds, placeholder  // was 1800 (LLM-invented); bindgen-correct
 const WRITE_RETRY_DELAY_DVD_1x: u64 = 473_373; // 100ns units (47.3ms) — C cdrom.h:118 ((LONGLONG)473373); was 10_000_000 (LLM-invented 1s placeholder)
 const SRB_FLAGS_DISABLE_SYNCH_TRANSFER: u32 = 0x8; // placeholder  // was 0x10 (LLM-invented); bindgen-correct
@@ -328,32 +335,33 @@ const IOCTL_CDROM_SEEK_AUDIO_MSF: u32 = 0x24004;
 const IOCTL_CDROM_STOP_AUDIO: u32 = 0x24008;
 const IOCTL_CDROM_GET_VOLUME: u32 = 0x24014;
 const IOCTL_CDROM_SET_VOLUME: u32 = 0x24028;
-const IOCTL_DVD_GET_REGION: u32 = 0x2D0004;
-const IOCTL_DVD_READ_STRUCTURE: u32 = 0x2D0008;
-const IOCTL_DVD_END_SESSION: u32 = 0x2D0010;
-const IOCTL_DVD_START_SESSION: u32 = 0x2D000C;
-const IOCTL_DVD_READ_KEY: u32 = 0x2D0014;
-const IOCTL_DVD_SEND_KEY: u32 = 0x2D0018;
-const IOCTL_DVD_SEND_KEY2: u32 = 0x2D001C;
-const IOCTL_STORAGE_SET_READ_AHEAD: u32 = 0x2D0020;
+const IOCTL_DVD_GET_REGION: u32 = 0x00335014; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_DVD_READ_STRUCTURE: u32 = 0x00335140; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_DVD_END_SESSION: u32 = 0x0033500C; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_DVD_START_SESSION: u32 = 0x00335000; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_DVD_READ_KEY: u32 = 0x00335004; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_DVD_SEND_KEY: u32 = 0x00335008; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_DVD_SEND_KEY2: u32 = 0x0033D018; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_STORAGE_SET_READ_AHEAD: u32 = 0x002D4400; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
 const IOCTL_CDROM_SET_SPEED: u32 = 0x24060;
-const IOCTL_AACS_READ_MEDIA_KEY_BLOCK_SIZE: u32 = 0x24050;
-const IOCTL_AACS_READ_MEDIA_KEY_BLOCK: u32 = 0x24054;
-const IOCTL_AACS_START_SESSION: u32 = 0x24058;
-const IOCTL_AACS_END_SESSION: u32 = 0x2405C;
-const IOCTL_AACS_SEND_CERTIFICATE: u32 = 0x24060;
-const IOCTL_AACS_GET_CERTIFICATE: u32 = 0x24064;
-const IOCTL_AACS_GET_CHALLENGE_KEY: u32 = 0x24068;
-const IOCTL_AACS_SEND_CHALLENGE_KEY: u32 = 0x2406C;
-const IOCTL_AACS_READ_VOLUME_ID: u32 = 0x24070;
-const IOCTL_AACS_READ_SERIAL_NUMBER: u32 = 0x24074;
-const IOCTL_AACS_READ_MEDIA_ID: u32 = 0x24078;
-const IOCTL_AACS_READ_BINDING_NONCE: u32 = 0x2407C;
-const IOCTL_AACS_GENERATE_BINDING_NONCE: u32 = 0x24080;
+const IOCTL_CDROM_EXCLUSIVE_ACCESS: u32 = 0x0002C05C; // ADDED 2026-07-05: was unresolved in RequestDispatchSyncWithSequentialQueue match -> bind-all catch-all swallowed every ioctl
+const IOCTL_AACS_READ_MEDIA_KEY_BLOCK_SIZE: u32 = 0x003350C0; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_AACS_READ_MEDIA_KEY_BLOCK: u32 = 0x003350C4; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_AACS_START_SESSION: u32 = 0x003350C8; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_AACS_END_SESSION: u32 = 0x003350CC; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_AACS_SEND_CERTIFICATE: u32 = 0x003350D0; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_AACS_GET_CERTIFICATE: u32 = 0x003350D4; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_AACS_GET_CHALLENGE_KEY: u32 = 0x003350D8; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_AACS_SEND_CHALLENGE_KEY: u32 = 0x003350DC; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_AACS_READ_VOLUME_ID: u32 = 0x003350E0; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_AACS_READ_SERIAL_NUMBER: u32 = 0x003350E4; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_AACS_READ_MEDIA_ID: u32 = 0x003350E8; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_AACS_READ_BINDING_NONCE: u32 = 0x003350EC; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
+const IOCTL_AACS_GENERATE_BINDING_NONCE: u32 = 0x0033D0F0; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
 const IOCTL_CDROM_ENABLE_STREAMING: u32 = 0x24068;
 const IOCTL_CDROM_SEND_OPC_INFORMATION: u32 = 0x2C06C;
 const IOCTL_CDROM_GET_PERFORMANCE: u32 = 0x24070;
-const IOCTL_MCN_SYNC_FAKE_IOCTL: u32 = 0x2D0810;
+const IOCTL_MCN_SYNC_FAKE_IOCTL: u32 = 0x0007C0C8; // FIXED 2026-07-05: = IOCTL_DISK_UPDATE_DRIVE_SIZE (cdrom.h); translation invented wrong value
 const IOCTL_STORAGE_MEDIA_REMOVAL: u32 = 0x2D4804;
 const IOCTL_STORAGE_EJECTION_CONTROL: u32 = 0x2D0940;
 const IOCTL_STORAGE_EJECT_MEDIA: u32 = 0x2D4808;

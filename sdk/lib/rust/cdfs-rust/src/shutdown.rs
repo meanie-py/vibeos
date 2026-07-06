@@ -43,7 +43,7 @@ extern "C" {
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_SHUTDOWN;
 
 // cdstruc.h verified values:
-const IRP_CONTEXT_FLAG_DISABLE_POPUPS: u32 = 0x00000200;
+const IRP_CONTEXT_FLAG_DISABLE_POPUPS: u32 = 0x00000200; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH
 const CD_FLAGS_SHUTDOWN: u16 = 0x0001;
 const VCB_STATE_SHUTDOWN: u32 = 0x00000400;
 const VcbMounted: u32 = 2; // _VCB_CONDITION::VcbMounted

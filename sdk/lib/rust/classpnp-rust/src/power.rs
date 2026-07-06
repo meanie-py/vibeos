@@ -90,7 +90,7 @@ pub const CLASSP_REG_DISABLE_D3COLD: [::core::ffi::c_ushort; 14] = unsafe {
     )
 };
 
-pub const CLASS_TAG_POWER: u32 = 0x53634C57u32;
+pub const CLASS_TAG_POWER: u32 = 0x574C6353;
 pub const DEFAULT_POWER_IRP_TIMEOUT_VALUE: u32 = 10 * 60;
 pub const TIME_LEFT_FOR_LOWER_DRIVERS: u32 = 30;
 pub const TIME_LEFT_FOR_UPPER_DRIVERS: u32 = 5;

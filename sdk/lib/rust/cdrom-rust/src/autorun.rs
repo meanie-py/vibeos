@@ -105,7 +105,7 @@ const WDF_REQUEST_SEND_OPTION_SYNCHRONOUS: u32 = 0x02;
 
 // Constants needed by this module
 const KEY_ALL_ACCESS: u32 = 0xF003F;
-const CDROM_TAG_AUTORUN_DISABLE: u32 = 0x44434154; // 'DCAT'
+const CDROM_TAG_AUTORUN_DISABLE: u32 = 0x41436353; // 'DCAT'
 const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC00000E5_u32 as i32;
 const NonPagedPoolNx: u32 = 0x200; // NonPagedPoolNx
 
@@ -131,7 +131,7 @@ const STATUS_DEVICE_PROTOCOL_ERROR: NTSTATUS = 0xC0000186u32 as i32;
 const STATUS_INVALID_DEVICE_STATE: NTSTATUS = (0xC0000184u32 as i32) as NTSTATUS;
 
 // Constants
-const CDROM_TAG_GESN: u32 = 0x4E534547; // 'GESN' tag (little-endian)
+const CDROM_TAG_GESN: u32 = 0x47436353; // 'GESN' tag (little-endian)
 const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
 
 // Registry key/value name strings (wide strings, matching DeviceGetParameter/DeviceSetParameter PWSTR args)
@@ -163,7 +163,7 @@ const CdromDetectionUnsupported: u32 = 1;
 const CdromDetectionSupported: u32 = 2;
 
 // Pool / SRB constants (caller expected to provide correct values)
-const CDROM_TAG_MEDIA_CHANGE_DETECTION: u32 = 0x4D434D43; // 'CMCM'
+const CDROM_TAG_MEDIA_CHANGE_DETECTION: u32 = 0x61436353; // 'CMCM'
 const SENSE_BUFFER_SIZE: usize = 18; // Example; actual value unknown
 const FDO_HACK_NO_ASYNCHRONOUS_NOTIFICATION: u64 = 0x40; // matches HackFlags (ULONG_PTR)  // was 0x20000 (LLM-invented); bindgen-correct
 const SRB_CLASS_FLAGS_LOW_PRIORITY: u32 = 0x10000000; // Unknown  // was 0x100 (LLM-invented); bindgen-correct

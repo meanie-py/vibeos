@@ -1,9 +1,9 @@
   -> MISMATCH             : 0
-  -> clean (identical)    : 24
+  -> clean (identical)    : 23
   -> unverifiable         : 14
-  matched to a C array    : 38
-  no C counterpart        : 215
+  matched to a C array    : 37
+  no C counterpart        : 211
 (14 unverifiable tables not shown; use --verbose)
 ==============================================================================
 DATA-TABLE DIFFER REPORT
-Rust integer tables found : 253
+Rust integer tables found : 248

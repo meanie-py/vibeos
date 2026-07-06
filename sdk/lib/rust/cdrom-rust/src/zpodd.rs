@@ -32,7 +32,7 @@ extern "system" {
 const IRP_MN_QUERY_INTERFACE: u8 = 0x08u8;
 
 const NonPagedPoolNx: u32 = 512;
-const CDROM_TAG_ZERO_POWER_ODD: u32 = 0;
+const CDROM_TAG_ZERO_POWER_ODD: u32 = 0x5A436353;
 const FeatureRemovableMedium: u32 = 0x0D; // actual value unknown, dummy
 const LOADING_MECHANISM_TRAY: u32 = 1;
 const LOADING_MECHANISM_CADDY: u32 = 0x0;  // was 2 (LLM-invented); bindgen-correct

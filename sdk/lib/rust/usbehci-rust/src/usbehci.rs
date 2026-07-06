@@ -1133,7 +1133,7 @@ pub unsafe extern "system" fn EHCI_CloseEndpoint(
     DisablePeriodic: BOOLEAN,
 ) {
     const USBPORT_TRANSFER_TYPE_ISOCHRONOUS: ULONG = 0;
-    const USBPORT_TRANSFER_TYPE_INTERRUPT: ULONG = 1;
+    const USBPORT_TRANSFER_TYPE_INTERRUPT: ULONG = 0x03;
 
     let EhciExtension: PEHCI_EXTENSION = ehciExtension as PEHCI_EXTENSION;
     let EhciEndpoint: PEHCI_ENDPOINT = ehciEndpoint as PEHCI_ENDPOINT;

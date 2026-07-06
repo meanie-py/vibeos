@@ -227,6 +227,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # NOTE: scan_bind_all_matches (bind-all match-arm detector) is intentionally
+    # NOT wired here yet. It runs `cargo check` in a SEPARATE cold target dir
+    # (to avoid force-warn polluting the shared cache), which cold-triggers
+    # reactos-link's build.rs — and that build.rs hard-panics when it can't find
+    # a matching compile_commands.json (`no compile_commands.json entry for
+    # …/bitmap.c in target blrtl`). So a whole-workspace scan from a fresh dir
+    # fails to compile before it can report findings. It works standalone with a
+    # WARM target dir (`SCAN_BINDALL_TARGET_DIR=sdk/lib/rust/target`) or when
+    # scoped to non-boot crates (`-p usbhub-rust …`). OWED (task #5): make the
+    # scanner robust — either reuse the warm dir by default (accepting a
+    # cargo-cache invalidation) or teach reactos-link's build.rs to degrade to a
+    # no-op under a check-only scan — then wire it here as a strict 0-baseline.
+    # The bind-all *fixes* themselves are already in the tree and compile-verified.
+
     return specs
 
 

@@ -45,14 +45,14 @@ pub unsafe extern "system" fn USBPORT_SendSetupPacket(
     pUSBDStatus: PUSBD_STATUS,
 ) -> NTSTATUS {
 
-    const USB_PORT_TAG: u32 = 0x4D425355;
+    const USB_PORT_TAG: u32 = 0x70627375;
     const URB_FUNCTION_CONTROL_TRANSFER: u16 = 0x0008;
     const USBD_SHORT_TRANSFER_OK: u32 = 0x00000002;
     const USBD_TRANSFER_DIRECTION: u32 = 0x00000001;
     const USBD_TRANSFER_DIRECTION_IN: u32 = 0x00000001;
     const BMREQUEST_DEVICE_TO_HOST: u32 = 1;
-    const USBD_FLAG_ALLOCATED_MDL: u32 = 0x00000008;
-    const USBD_STATUS_INSUFFICIENT_RESOURCES: USBD_STATUS = 0x80000300u32 as USBD_STATUS;
+    const USBD_FLAG_ALLOCATED_MDL: u32 = 0x00000002; // FIXED 2026-07-05: translation invented 0x8; verified vs usbport.h/usbmport.h
+    const USBD_STATUS_INSUFFICIENT_RESOURCES: USBD_STATUS = 0xC0001000u32 as i32;
 
     let Urb: PURB;
     let Mdl: PMDL;
@@ -299,11 +299,11 @@ pub unsafe extern "system" fn USBPORT_OpenInterface(
     const BMREQUEST_STANDARD: UCHAR = 0;
     const BMREQUEST_TO_INTERFACE: UCHAR = 1;
     const USB_REQUEST_SET_INTERFACE: UCHAR = 0x0B;
-    const PIPE_HANDLE_FLAG_CLOSED: ULONG = 0x80000000;
+    const PIPE_HANDLE_FLAG_CLOSED: ULONG = 0x00000001; // FIXED 2026-07-05: translation invented 0x80000000; verified vs usbport.h/usbmport.h
     const USB_ENDPOINT_DESCRIPTOR_TYPE: UCHAR = 0x05;
     const USBD_PF_CHANGE_MAX_PACKET: ULONG = 0x00000001;
     const USB_ENDPOINT_TYPE_MASK: UCHAR = 0x03;
-    const USB_PORT_TAG: ULONG = 0x7472_4255; // 'UBrt'
+    const USB_PORT_TAG: ULONG = 0x70627375; // 'UBrt'
 
     let InterfaceDescriptor: PUSB_INTERFACE_DESCRIPTOR;
     let mut InterfaceHandle: PUSBPORT_INTERFACE_HANDLE = core::ptr::null_mut();
@@ -515,7 +515,7 @@ pub unsafe extern "system" fn USBPORT_CloseConfiguration(
     FdoDevice: PDEVICE_OBJECT,
 ) {
 
-    const USB_PORT_TAG: u32 = 0x5062_5355; // 'USPb'
+    const USB_PORT_TAG: u32 = 0x70627375; // 'USPb'
 
     let mut ConfigHandle: PUSBPORT_CONFIGURATION_HANDLE;
     let mut iHandleList: PLIST_ENTRY;
@@ -630,10 +630,10 @@ pub unsafe extern "system" fn USBPORT_HandleSelectConfiguration(
 
     const USB_REQUEST_SET_CONFIGURATION: u8 = 0x09;
     const USBD_STATUS_SUCCESS: USBD_STATUS = 0;
-    const USBD_STATUS_INVALID_CONFIGURATION_DESCRIPTOR: USBD_STATUS = 0xC0000200u32 as USBD_STATUS;
-    const USBD_STATUS_INSUFFICIENT_RESOURCES: USBD_STATUS = 0xC1000000u32 as USBD_STATUS;
-    const USBD_STATUS_SET_CONFIG_FAILED: USBD_STATUS = 0xC0010000u32 as USBD_STATUS;
-    const USB_PORT_TAG: ULONG = 0x70627355;
+    const USBD_STATUS_INVALID_CONFIGURATION_DESCRIPTOR: USBD_STATUS = 0xC0000F00u32 as i32;
+    const USBD_STATUS_INSUFFICIENT_RESOURCES: USBD_STATUS = 0xC0001000u32 as i32;
+    const USBD_STATUS_SET_CONFIG_FAILED: USBD_STATUS = 0xC0002000u32 as i32;
+    const USB_PORT_TAG: ULONG = 0x70627375;
 
     let ConfigDescriptor: PUSB_CONFIGURATION_DESCRIPTOR;
     let DeviceHandle: PUSBPORT_DEVICE_HANDLE;
@@ -1022,10 +1022,10 @@ pub unsafe extern "system" fn USBPORT_CreateDevice(
     Port: USHORT,
 ) -> NTSTATUS {
 
-    const USB_MINIPORT_FLAGS_USB2: ULONG = 0x00000200;
+    const USB_MINIPORT_FLAGS_USB2: ULONG = 0x00000010; // FIXED 2026-07-05: translation invented 0x200; verified vs usbport.h/usbmport.h
     const USB_PORT_STATUS_HIGH_SPEED: USHORT = 0x0400;
     const USB_PORT_STATUS_LOW_SPEED: USHORT = 0x0200;
-    const USB_PORT_TAG: ULONG = 0x70627355; // 'Ubp '
+    const USB_PORT_TAG: ULONG = 0x70627375; // 'Ubp '
     const PIPE_HANDLE_FLAG_CLOSED: ULONG = 0x00000001;
     const USB_ENDPOINT_DESCRIPTOR_TYPE: UCHAR = 0x05;
     const USB_DEFAULT_MAX_PACKET: USHORT = 64;
@@ -1375,7 +1375,7 @@ pub unsafe extern "system" fn USBPORT_InitializeDevice(
     const USB_REQUEST_GET_DESCRIPTOR: UCHAR = 0x06;
     const USB_DEVICE_DESCRIPTOR_TYPE: UCHAR = 0x01;
     const USB_DEVICE_CLASS_HUB: UCHAR = 0x09;
-    const DEVICE_HANDLE_FLAG_USB2HUB: ULONG = 0x00000004;
+    const DEVICE_HANDLE_FLAG_USB2HUB: ULONG = 0x00000010; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
     const UsbHighSpeed: i32 = 2; // UsbHighSpeed
 
     let Endpoint: PUSBPORT_ENDPOINT;
@@ -1661,11 +1661,11 @@ pub unsafe extern "system" fn USBPORT_RemoveDevice(
 
     const USBD_KEEP_DEVICE_DATA: ULONG = 0x00000001;
     const USBD_MARK_DEVICE_BUSY: ULONG = 0x00000002;
-    const DEVICE_HANDLE_FLAG_REMOVED: ULONG = 0x00000004;
-    const DEVICE_HANDLE_FLAG_ROOTHUB: ULONG = 0x00000010;
+    const DEVICE_HANDLE_FLAG_REMOVED: ULONG = 0x00000008; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
+    const DEVICE_HANDLE_FLAG_ROOTHUB: ULONG = 0x00000002; // FIXED 2026-07-05: translation invented 0x10; verified vs usbport.h/usbmport.h
     const USB2_TT_EXTENSION_FLAG_DELETED: ULONG = 0x00000001;
     const USB2_FRAMES: ULONG = 32;
-    const USB_PORT_TAG: ULONG = 0x7472_6F50;
+    const USB_PORT_TAG: ULONG = 0x70627375;
 
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let mut TtExtension: PUSB2_TT_EXTENSION;
@@ -1780,13 +1780,13 @@ pub unsafe extern "system" fn USBPORT_RestoreDevice(
     const BMREQUEST_TO_INTERFACE: UCHAR = 1;
     const USB_REQUEST_SET_CONFIGURATION: UCHAR = 0x09;
     const USB_REQUEST_SET_INTERFACE: UCHAR = 0x0B;
-    const DEVICE_HANDLE_FLAG_USB2HUB: ULONG = 0x00000008;
-    const PIPE_HANDLE_FLAG_NULL_PACKET_SIZE: ULONG = 0x00000001;
-    const ENDPOINT_FLAG_NUKE: ULONG = 0x00000004;
-    const ENDPOINT_FLAG_ABORTING: ULONG = 0x00000002;
-    const USBPORT_ENDPOINT_RUN: ULONG = 3;
-    const USBPORT_ENDPOINT_ACTIVE: ULONG = 2;
-    const USB_PORT_TAG: ULONG = 0x7472504D;
+    const DEVICE_HANDLE_FLAG_USB2HUB: ULONG = 0x00000010; // FIXED 2026-07-05: translation invented 0x8; verified vs usbport.h/usbmport.h
+    const PIPE_HANDLE_FLAG_NULL_PACKET_SIZE: ULONG = 0x00000002; // FIXED 2026-07-05: translation invented 0x1; verified vs usbport.h/usbmport.h
+    const ENDPOINT_FLAG_NUKE: ULONG = 0x00000008; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
+    const ENDPOINT_FLAG_ABORTING: ULONG = 0x00000020; // FIXED 2026-07-05: translation invented 0x2; verified vs usbport.h/usbmport.h
+    const USBPORT_ENDPOINT_RUN: ULONG = 0x00000000; // FIXED 2026-07-05: translation invented 0x3; verified vs usbport.h/usbmport.h
+    const USBPORT_ENDPOINT_ACTIVE: ULONG = 0x00000003; // FIXED 2026-07-05: translation invented 0x2; verified vs usbport.h/usbmport.h
+    const USB_PORT_TAG: ULONG = 0x70627375;
 
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let mut iHandleList: PLIST_ENTRY;
@@ -2074,9 +2074,9 @@ pub unsafe extern "system" fn USBPORT_InitializeTT(
     HubDeviceHandle: PUSBPORT_DEVICE_HANDLE,
     TtNumber: ULONG,
 ) -> NTSTATUS {
-    const USB_PORT_TAG: u32 = 0x7472_6F50; // 'Port'
+    const USB_PORT_TAG: u32 = 0x70627375; // 'Port'
     const TOTAL_USB11_BUS_BANDWIDTH: ULONG = 12000;
-    const USB2_FRAMES: ULONG = 8;
+    const USB2_FRAMES: ULONG = 0x00000020; // FIXED 2026-07-05: translation invented 0x8; verified vs usbport.h/usbmport.h
 
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let TtExtension: PUSB2_TT_EXTENSION;

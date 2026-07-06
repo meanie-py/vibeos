@@ -71,7 +71,7 @@ const IOCTL_DISK_GET_DRIVE_LAYOUT: u32 = 0x0007400C;
 const IOCTL_DISK_GET_DRIVE_LAYOUT_EX: u32 = 0x00070050;
 const IOCTL_CDROM_GET_VOLUME: u32 = 0x00024014;
 // misc pool tags / SCSI constants
-const CDROM_TAG_MODE_DATA: u32 = 0x4D4F5243; // 'CROM'
+const CDROM_TAG_MODE_DATA: u32 = 0x4D436353; // 'CROM'
 const SP_UNTAGGED: u8 = 0xFF;
 const SCSI_REQUEST_BLOCK_SIZE: usize = core::mem::size_of::<SCSI_REQUEST_BLOCK>();
 const STATUS_INVALID_LEVEL: NTSTATUS = 0xC0000148u32 as i32;
@@ -209,7 +209,7 @@ const IOCTL_CDROM_TRACK_ISRC: u32 = 0x3;  // was 0x002D5010 (LLM-invented); bind
 const FILE_DEVICE_DVD: u32 = 0x33;
 
 const TRACE_LEVEL_ERROR: u32 = 2;
-const IOCTL_DVD_SEND_KEY: u32 = 0x2D0000;
+const IOCTL_DVD_SEND_KEY: u32 = 0x00335008; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
 const DVD_CHALLENGE_KEY: u32 = 1;
 const DVD_BUS_KEY1: u32 = 2;
 const DVD_BUS_KEY2: u32 = 3;
@@ -338,7 +338,7 @@ const SCSIOP_RELEASE_UNIT: u8 = 0x17;             // actual value unknown  // wa
 const FDO_HACK_NO_RESERVE6: u32 = 0x8;           // actual value unknown  // was 0 (LLM-invented); bindgen-correct
 const SRB_FLAGS_QUEUE_ACTION_ENABLE: u8 = 0x2;    // actual value unknown  // was 0 (LLM-invented); bindgen-correct
 const SRB_SIMPLE_TAG_REQUEST: u8 = 0x20;          // actual value unknown  // was 0 (LLM-invented); bindgen-correct
-const CDROM_TAG_SRB: u32 = 0;                 // actual value unknown
+const CDROM_TAG_SRB: u32 = 0x53436353;                 // actual value unknown
 const NonPagedPoolNx: u32 = 0x200;           // POOL_TYPE NonPagedPoolNx (512)
 
 // PAGED_CODE();
@@ -726,7 +726,7 @@ const TRACE_FLAG_POWER: u32 = 0x00000008; // typical
 
 // Forward declarations of extern functions not in available imports
 
-const STATUS_INVALID_USER_BUFFER: i32 = (0xC0000146u32 as i32); // typical value
+const STATUS_INVALID_USER_BUFFER: i32 = (0xC00000E8u32 as i32); // FIXED 2026-07-05: was LLM-guessed "typical" value; verified vs C header (ntstatus.h; 0xC0000146 is STATUS_FLOAT_STACK_CHECK)
 const RESERVATION_ACTION_READ_KEYS: u8 = 0;
 const RESERVATION_ACTION_READ_RESERVATIONS: u8 = 1;
 const RESERVATION_ACTION_REGISTER: u8 = 0;
@@ -738,14 +738,14 @@ const RESERVATION_ACTION_PREEMPT: u8 = 0x4;  // was 5 (LLM-invented); bindgen-co
 const RESERVATION_ACTION_PREEMPT_ABORT: u8 = 0x5;  // was 6 (LLM-invented); bindgen-correct
 
 const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
-const CDROM_TAG_PLAY_ACTIVE: u32 = 0x0; // CDROM_TAG_PLAY_ACTIVE placeholder
+const CDROM_TAG_PLAY_ACTIVE: u32 = 0x70436353; // CDROM_TAG_PLAY_ACTIVE placeholder
 const AUDIO_STATUS_IN_PROGRESS: u8 = 0x11; // AUDIO_STATUS_IN_PROGRESS
 
 // Forward declarations for unknown externs / macros
 
 // Constants (placeholders – actual values from DDK/ntifs)
-const IOCTL_DVD_READ_KEY: u32 = 0x34008;          // approximate
-const IOCTL_DVD_START_SESSION: u32 = 0x34004;     // approximate
+const IOCTL_DVD_READ_KEY: u32 = 0x00335004; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)          // approximate
+const IOCTL_DVD_START_SESSION: u32 = 0x00335000; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)     // approximate
 const DvdDiskKeyDescriptor: u8 = 0x10;
 const DVD_DISK_KEY_LENGTH: u32 = 2048;
 const STATUS_INTERNAL_ERROR: i32 = (0xC00000E0u32 as i32);   // NTSTATUS
@@ -753,7 +753,7 @@ const STATUS_INSUFFICIENT_RESOURCES: i32 = (0xC000009Au32 as i32);
 const STATUS_SUCCESS: i32 = 0;
 const SCSIOP_REPORT_KEY: u8 = 0xA4;
 const DVD_REPORT_AGID: u8 = 0x0;  // was 0xFE (LLM-invented); bindgen-correct
-const DVD_TAG_READ_KEY: u32 = 0x524b4420; // "RBM "?? placeholder
+const DVD_TAG_READ_KEY: u32 = 0x75436353; // "RBM "?? placeholder
 
 // Function translation
 
@@ -3676,7 +3676,7 @@ pub unsafe extern "C" fn RequestHandleMountQueryDeviceName(
     status
 }
 
-const CDROM_TAG_STRINGS: u32 = 0; // placeholder
+const CDROM_TAG_STRINGS: u32 = 0x73436353; // placeholder
 const RTL_QUERY_REGISTRY_TYPECHECK: u32 = 0x00010000;
 const RTL_QUERY_REGISTRY_TYPECHECK_SHIFT: u32 = 16;
 #[no_mangle]

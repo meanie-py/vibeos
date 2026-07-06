@@ -352,10 +352,8 @@ pub unsafe extern "C" fn _global_write_barrier() {
     // ex/work.rs
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::ex::work::ExCriticalWorkerThreads), core::ptr::read_volatile(core::ptr::addr_of!(crate::ex::work::ExCriticalWorkerThreads)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::ex::work::ExDelayedWorkerThreads), core::ptr::read_volatile(core::ptr::addr_of!(crate::ex::work::ExDelayedWorkerThreads)));
-    // fsrtl/filelock.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::fsrtl::filelock::FsRtlFileLockLookasideList), core::ptr::read_volatile(core::ptr::addr_of!(crate::fsrtl::filelock::FsRtlFileLockLookasideList)));
-    // fsrtl/unc.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::fsrtl::unc::FsRtlpUncSemaphore), core::ptr::read_volatile(core::ptr::addr_of!(crate::fsrtl::unc::FsRtlpUncSemaphore)));
+    // fsrtl statics moved to fsrtl-rust's own _fsrtl_global_write_barrier
+    // (crate-split — fsrtl is now a separate crate; its barrier lives with it).
     // inbv/bootanim.rs
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::inbv::bootanim::RotBarThreadActive), core::ptr::read_volatile(core::ptr::addr_of!(crate::inbv::bootanim::RotBarThreadActive)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::inbv::bootanim::DotHack), core::ptr::read_volatile(core::ptr::addr_of!(crate::inbv::bootanim::DotHack)));

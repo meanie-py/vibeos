@@ -47,8 +47,8 @@ const USBD_PORT_CONNECTED: u32 = 0x00000002;
 const EVENT_INCREMENT: KPRIORITY = 1;
 
 const USBD_MARK_DEVICE_BUSY: ULONG = 0x00000004;
-const USBHUB_PDO_FLAG_PORT_RESSETING: ULONG = 0x00000080;
-const USBHUB_PDO_FLAG_PORT_RESTORE_FAIL: ULONG = 0x00000100;
+const USBHUB_PDO_FLAG_PORT_RESSETING: ULONG = 0x00080000; // FIXED 2026-07-06: translation invented 0x80; real value is a (1<<N) define in usbhub.h
+const USBHUB_PDO_FLAG_PORT_RESTORE_FAIL: ULONG = 0x00001000; // FIXED 2026-07-06: translation invented 0x100; real value is a (1<<N) define in usbhub.h
 
 // USBD_STATUS_* from sdk/include/psdk/usb.h
 const USBD_STATUS_INVALID_PARAMETER: USBD_STATUS = 0x80000300u32 as USBD_STATUS; // usb.h:192
@@ -470,7 +470,7 @@ pub unsafe extern "system" fn USBH_PdoIoctlResetPort(
     Irp: PIRP,
 ) -> NTSTATUS {
 
-    const USBHUB_PDO_FLAG_PORT_RESSETING: u32 = 0x00000040; // USBHUB_PDO_FLAG_PORT_RESSETING
+    const USBHUB_PDO_FLAG_PORT_RESSETING: u32 = 0x00080000; // FIXED 2026-07-06: translation invented 0x40; real value is a (1<<N) define in usbhub.h // USBHUB_PDO_FLAG_PORT_RESSETING
 
     let HubExtension: PUSBHUB_FDO_EXTENSION;
     let mut HubWorkItemBuffer: PUSBHUB_RESET_PORT_CONTEXT = core::ptr::null_mut();
@@ -593,7 +593,7 @@ pub unsafe extern "system" fn USBH_PortIdleNotificationRequest(
 ) -> NTSTATUS {
     const STATUS_DEVICE_BUSY: NTSTATUS = 0x80000011u32 as NTSTATUS;
     const STATUS_NO_CALLBACK_ACTIVE: NTSTATUS = 0xC0000258u32 as NTSTATUS;
-    const USBHUB_PDO_FLAG_IDLE_NOTIFICATION: u32 = 0x00000800;
+    const USBHUB_PDO_FLAG_IDLE_NOTIFICATION: u32 = 0x00400000; // FIXED 2026-07-06: translation invented 0x800; real value is a (1<<N) define in usbhub.h
 
     let mut HubExtension: PUSBHUB_FDO_EXTENSION;
     let mut IoStack: PIO_STACK_LOCATION;
@@ -866,7 +866,7 @@ pub unsafe extern "system" fn USBH_IoctlGetHubCapabilities(
     Irp: PIRP,
 ) -> NTSTATUS {
 
-    const USBHUB_FDO_FLAG_USB20_HUB: u32 = 0x00000040; // USBHUB_FDO_FLAG_USB20_HUB
+    const USBHUB_FDO_FLAG_USB20_HUB: u32 = 0x00008000; // FIXED 2026-07-06: translation invented 0x40; real value is a (1<<N) define in usbhub.h // USBHUB_FDO_FLAG_USB20_HUB
 
     let mut Capabilities: PUSB_HUB_CAPABILITIES = core::ptr::null_mut();
     let mut IoStack: PIO_STACK_LOCATION;
@@ -1269,8 +1269,8 @@ pub unsafe extern "system" fn USBH_DeviceControl(
 ) -> NTSTATUS {
 
     const STATUS_DEVICE_BUSY: NTSTATUS = 0x80000011u32 as NTSTATUS;
-    const USBHUB_FDO_FLAG_DEVICE_STARTED: u32 = 0x00000004; // USBHUB_FDO_FLAG_DEVICE_STARTED
-    const USBHUB_FDO_FLAG_DEVICE_STOPPED: u32 = 0x00000008; // USBHUB_FDO_FLAG_DEVICE_STOPPED
+    const USBHUB_FDO_FLAG_DEVICE_STARTED: u32 = 0x00000001; // FIXED 2026-07-06: translation invented 0x4; real value is a (1<<N) define in usbhub.h // USBHUB_FDO_FLAG_DEVICE_STARTED
+    const USBHUB_FDO_FLAG_DEVICE_STOPPED: u32 = 0x00000020; // FIXED 2026-07-06: translation invented 0x8; real value is a (1<<N) define in usbhub.h // USBHUB_FDO_FLAG_DEVICE_STOPPED
 
     const IOCTL_USB_GET_HUB_CAPABILITIES: u32 = 2229308;
     const IOCTL_USB_HUB_CYCLE_PORT: u32 = 2229316;

@@ -474,6 +474,26 @@ unsafe extern "system" fn ClassCallback(
 		&mut OldIrql,
 	);
 	if InputCount > 0 {
+		static mut g_FirstMouDeliveredLogged: LONG = 0;
+		if {
+			let dest = core::ptr::addr_of_mut!(g_FirstMouDeliveredLogged);
+			let old = *dest;
+			if old == 0 {
+				*dest = 1;
+			}
+			old
+		} == 0
+		{
+			DbgPrint(
+				b"[MOUCLASS] first packet delivered btn=0x%x dx=%ld dy=%ld cnt=%lu\n\0"
+					.as_ptr() as *const i8,
+				(*DataStart).ButtonFlags as u32,
+				(*DataStart).LastX,
+				(*DataStart).LastY,
+				InputCount as ULONG,
+			);
+		}
+
 		if (*ClassDeviceExtension).InputCount + InputCount
 			> (*(*ClassDeviceExtension).DriverExtension).DataQueueSize as usize
 		{

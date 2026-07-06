@@ -31,8 +31,8 @@ extern "system" {
 unsafe extern "C" {
 }
 
-const RH_STATUS_NO_CHANGES: RHSTATUS = 0;
-const RH_STATUS_SUCCESS: RHSTATUS = 1;
+const RH_STATUS_NO_CHANGES: RHSTATUS = 0x01;
+const RH_STATUS_SUCCESS: RHSTATUS = 0x00;
 const RH_STATUS_UNSUCCESSFUL: RHSTATUS = 2;
 
 #[no_mangle]
@@ -757,9 +757,9 @@ pub unsafe extern "system" fn USBPORT_RootHubCreateDevice(
     PdoDevice: PDEVICE_OBJECT,
 ) -> NTSTATUS {
 
-    const USB_PORT_TAG: u32 = 0x7470_7355; // 'Uptp'
+    const USB_PORT_TAG: u32 = 0x70627375; // 'Uptp'
     const UsbFullSpeed: u32 = 0;
-    const DEVICE_HANDLE_FLAG_ROOTHUB: u32 = 0x00000010;
+    const DEVICE_HANDLE_FLAG_ROOTHUB: u32 = 0x00000002; // FIXED 2026-07-05: translation invented 0x10; verified vs usbport.h/usbmport.h
     const USB_DEVICE_DESCRIPTOR_TYPE: u8 = 0x01;
     const USB_CONFIGURATION_DESCRIPTOR_TYPE: u8 = 0x02;
     const USB_INTERFACE_DESCRIPTOR_TYPE: u8 = 0x04;
@@ -947,10 +947,10 @@ pub unsafe extern "system" fn USBPORT_RootHubCreateDevice(
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_InvalidateRootHub(MiniPortExtension: PVOID) -> ULONG {
 
-    const USBPORT_FLAG_HC_SUSPEND: u32 = 0x00000080;
-    const USBPORT_FLAG_HC_WAKE_SUPPORT: u32 = 0x00040000;
-    const USBPORT_MPFLAG_SUSPENDED: u32 = 0x00000004;
-    const USBPORT_TMFLAG_WAKE: u32 = 0x00000008;
+    const USBPORT_FLAG_HC_SUSPEND: u32 = 0x00000100; // FIXED 2026-07-05: translation invented 0x80; verified vs usbport.h/usbmport.h
+    const USBPORT_FLAG_HC_WAKE_SUPPORT: u32 = 0x00200000; // FIXED 2026-07-05: translation invented 0x40000; verified vs usbport.h/usbmport.h
+    const USBPORT_MPFLAG_SUSPENDED: u32 = 0x00000002; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
+    const USBPORT_TMFLAG_WAKE: u32 = 0x00000020; // FIXED 2026-07-05: translation invented 0x8; verified vs usbport.h/usbmport.h
     const INVALIDATE_ENDPOINT_WORKER_THREAD: u32 = 1;
 
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;

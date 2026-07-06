@@ -47,6 +47,16 @@ pub const IDE_DRIVE_SELECT: UCHAR = 0xA0;
 pub const ATAPI_INT_REASON_COD: UCHAR = 0x01;
 pub const ATAPI_INT_REASON_IO: UCHAR = 0x02;
 pub const ATAPI_INT_REASON_MASK: UCHAR = ATAPI_INT_REASON_IO | ATAPI_INT_REASON_COD;
+// ADDED 2026-07-05: these four were unresolved in the AtapProcessAtapiRequest
+// match — Rust silently made the first arm a bind-all catch-all (bind-all
+// match-arm bug class). Values per boot/freeldr/freeldr/arch/drivers/hwidep.h.
+pub const ATAPI_INT_REASON_STATUS_NEC: UCHAR = 0x00;
+pub const ATAPI_INT_REASON_STATUS: UCHAR = ATAPI_INT_REASON_IO | ATAPI_INT_REASON_COD;
+pub const ATAPI_INT_REASON_AWAIT_CDB: UCHAR = IDE_STATUS_DRQ | ATAPI_INT_REASON_COD;
+pub const ATAPI_INT_REASON_DATA_IN: UCHAR = ATAPI_INT_REASON_IO | IDE_STATUS_DRQ;
+// Same class, AtapAtapiHandleError match; values per sdk/include/ddk/scsi.h.
+pub const SCSI_SENSEQ_BECOMING_READY: UCHAR = 0x01;
+pub const SCSI_SENSEQ_INIT_COMMAND_REQUIRED: UCHAR = 0x02;
 
 pub const MAXIMUM_CDROM_SIZE: ULONG = 804;
 
