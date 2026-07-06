@@ -12,6 +12,9 @@ extern crate ntoskrnl_rust;
 // PoC). extern crate forces its #[no_mangle] Nt*/Lpcp* symbols into the archive
 // (a Cargo dep alone would drop them) — same pattern as cmboot_rust below.
 extern crate lpc_rust;
+// fsrtl subsystem, extracted from ntoskrnl-rust (crate-split). extern crate forces
+// its #[no_mangle] FsRtl* symbols into the archive — same pattern as lpc_rust.
+extern crate fsrtl_rust;
 // cmboot.c is the shared kernel+bootloader CM boot-init unit, moved out of
 // ntoskrnl-rust into its own crate (cmboot-rust) so the loaders can link the
 // SAME translation. Pull its #[no_mangle] CmpFind*/CmpAddDriverToList symbols

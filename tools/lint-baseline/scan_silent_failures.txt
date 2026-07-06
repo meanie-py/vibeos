@@ -531,6 +531,12 @@ sdk/lib/rust/freeldr-rust/src/ui.rs:652: [UNWRAP] .unwrap() — panics on Err/No
 sdk/lib/rust/freeldr-rust/src/ui.rs:663: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/freeldr-rust/src/ui.rs:665: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/fs_rec-rust/src/lib.rs:30: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
+sdk/lib/rust/fsrtl-rust/src/oplock.rs:1107: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/fsrtl-rust/src/oplock.rs:116: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/fsrtl-rust/src/stackovf.rs:121: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/fsrtl-rust/src/stackovf.rs:127: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/fsrtl-rust/src/stackovf.rs:129: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/fsrtl-rust/src/stackovf.rs:45: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/gdi32-rust/src/lib.rs:35: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/gdi32-rust/src/misc/misc.rs:954: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/gdi32-rust/src/misc/wingl.rs:157: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1142,12 +1148,6 @@ sdk/lib/rust/ntoskrnl-rust/src/ex/work.rs:187: [UNWRAP] .unwrap() — panics on 
 sdk/lib/rust/ntoskrnl-rust/src/ex/work.rs:197: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ex/work.rs:546: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ex/work.rs:551: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/fsrtl/oplock.rs:1107: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/fsrtl/oplock.rs:116: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/fsrtl/stackovf.rs:121: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/fsrtl/stackovf.rs:127: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/fsrtl/stackovf.rs:129: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/fsrtl/stackovf.rs:45: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/fstub/disksup.rs:3201: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/fstub/disksup.rs:3217: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/fstub/disksup.rs:3233: [UNWRAP] .unwrap() — panics on Err/None in kernel code

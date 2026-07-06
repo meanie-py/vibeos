@@ -1374,13 +1374,6 @@
   ex/sysinfo.rs:
   ex/time.rs:
   ex/uuid.rs:
-  fsrtl/fastio.rs:
-  fsrtl/largemcb.rs:
-  fsrtl/mcb.rs:
-  fsrtl/notify.rs:
-  fsrtl/oplock.rs:
-  fsrtl/tunnel.rs:
-  fsrtl/unc.rs:
   fstub/disksup.rs:
   fstub/fstubex.rs:
   fstub/translate.rs:
@@ -1446,6 +1439,13 @@
   rtl/libsupp.rs:
   rtl/misc.rs:
   rtl/path.rs:
+  sdk/lib/rust/fsrtl-rust/src/fastio.rs:
+  sdk/lib/rust/fsrtl-rust/src/largemcb.rs:
+  sdk/lib/rust/fsrtl-rust/src/mcb.rs:
+  sdk/lib/rust/fsrtl-rust/src/notify.rs:
+  sdk/lib/rust/fsrtl-rust/src/oplock.rs:
+  sdk/lib/rust/fsrtl-rust/src/tunnel.rs:
+  sdk/lib/rust/fsrtl-rust/src/unc.rs:
   sdk/lib/rust/lpc-rust/src/complete.rs:
   sdk/lib/rust/lpc-rust/src/connect.rs:
   sdk/lib/rust/lpc-rust/src/create.rs:
