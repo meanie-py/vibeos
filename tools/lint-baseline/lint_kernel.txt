@@ -1365,7 +1365,6 @@
   config/cmsysini.rs:
   config/cmvalche.rs:
   config/ntapi.rs:
-  dbgk/dbgkobj.rs:
   ex/callback.rs:
   ex/handle.rs:
   ex/harderr.rs:
@@ -1439,6 +1438,7 @@
   rtl/libsupp.rs:
   rtl/misc.rs:
   rtl/path.rs:
+  sdk/lib/rust/dbgk-rust/src/dbgkobj.rs:
   sdk/lib/rust/fsrtl-rust/src/fastio.rs:
   sdk/lib/rust/fsrtl-rust/src/largemcb.rs:
   sdk/lib/rust/fsrtl-rust/src/mcb.rs:
@@ -1451,6 +1451,9 @@
   sdk/lib/rust/lpc-rust/src/create.rs:
   sdk/lib/rust/lpc-rust/src/reply.rs:
   sdk/lib/rust/lpc-rust/src/send.rs:
+  sdk/lib/rust/wmi-rust/src/guidobj.rs:
+  sdk/lib/rust/wmi-rust/src/smbios.rs:
+  sdk/lib/rust/wmi-rust/src/wmidrv.rs:
   se/accesschk.rs:
   se/acl.rs:
   se/audit.rs:
@@ -1465,9 +1468,6 @@
   se/tokencls.rs:
   se/tokenlif.rs:
   vdm/vdmexec.rs:
-  wmi/guidobj.rs:
-  wmi/smbios.rs:
-  wmi/wmidrv.rs:
 Found 771 unprotected output pointer writes in 125 files:
 Run with --fix to see suggested replacements
 Total: 771 violations in 125 files
