@@ -1,8 +1,33 @@
 # UI Render-Completeness — the desktop reaches a *stable but incomplete* render
 
-**Status:** OPEN investigation, opened 2026-07-05. Characterized + proven-not-timing;
-root cause not yet found. Cross-arch (i386/amd64/arm64). Likely a shared win32k/user32
-non-client-paint + tray child-paint gap.
+**Status: ROOT CAUSE FOUND + FIXED 2026-07-05.** One shared root, exactly as predicted:
+`win32k-rust/src/defwnd.rs` `IntDefWindowProc` had a `WM_CTLCOLOR =>` match arm whose
+constant **did not exist** in win32k-sys (windowsx.h macro, 0x19, never bindgen'd) — in
+Rust an unresolvable identifier in a match pattern silently becomes an **irrefutable
+catch-all binding**, so every message after that arm in the match (WM_SETCURSOR,
+WM_ERASEBKGND, WM_NCHITTEST, WM_PAINT, WM_SYNCPAINT, WM_WINDOWPOSCHANGING/CHANGED,
+**WM_NCCALCSIZE, WM_NCACTIVATE, WM_NCPAINT**) was swallowed by the kernel DefWindowProc
+and returned a garbage brush handle. WM_NCCALCSIZE never inset `rcClient`, so
+`rcClient == rcWindow` for every window and win32k (correctly) skipped all NC painting;
+the tray children starved on the same swallowed message tail. Fix: define the const
+(`defwnd.rs`), value 0x0019. Post-fix amd64 renders the Start button + tray clock and
+NC_DoNCPaint runs. Full defect-class writeup + oracle (`grep "matches any value"` on a
+clean-build log) + same-day sibling instances (pnpmgr/devaction.rs, ke/balmgr.rs,
+ke/bug.rs): field manual → "Match arm on an UNDEFINED constant".
+
+Diagnosis method (for the record): serial-marker bisection of the WM_NCCALCSIZE
+round-trip, one DbgPrint per hop across the kernel→user32→kernel boundary — plus five
+parallel subagent semantic diffs of the translated paint chain vs the retired C
+(painting/nonclient/winpos/defwnd/windc/vis), which cleared every layer and cornered
+the bug in the one unaudited function, and found six adjacent real bugs (wrong DC_NC
+constant ×3 files, i386 `co_WinPosGetMinMaxInfo` export hijacked by a stray attribute,
+`IsChildVisible` null-parent inversion, snap bitwise-NOT, Win-key 2-bit keystate
+indexing, `IntGetNCUpdateRgn` region leak) — all fixed in the same change.
+
+Remaining follow-ups tracked at the bottom of this doc. The original investigation
+brief follows unchanged.
+
+---
 
 **Why this is a big one:** it is the gap between *"boots to the desktop marker"* and
 *"usable desktop."* Every top-level window comes up **chromeless** — no title bar, no
@@ -134,6 +159,23 @@ drops non-client + certain children. Less likely (client paint clearly works), b
 The two observed gaps (top-level chrome; tray children) may be **one root** (H1 reaching
 both) or **two** (H1 for chrome + H2 for bands). Instrumentation will tell.
 
+**H4 — GUI threads on amd64/arm64 skip their client-thread-setup callback (fresh lead,
+2026-07-05).** `co_IntClientThreadSetup()` — the per-GUI-thread `KeUserModeCallback(
+USER32_CALLBACK_CLIENTTHREADSTARTUP)` that runs user32's client-side thread init — is
+**called only on i386**; the call site at `win32k-rust/src/main.rs:673` is gated
+`#[cfg(not(any(x86_64, aarch64)))]` (empty `skip_client_thread_setup` block on amd64/arm64).
+The function itself is fully implemented on all arches — *only the call is skipped*. This
+was found by the per-arch cfg-divergence audit (Tier 2) and is suggestive because **the skip
+is on exactly the two arches with the render gap** and it's per-*GUI-thread* client init.
+If user32's `ClientThreadSetup` primes any per-thread state the NC/band paint path depends
+on, the missing callback would present as incomplete paint on amd64/arm64 only. Cheap to
+test: drop the cfg gate (call it on all arches) and see if chrome/tray paint appears —
+but note re-enabling adds a kernel→user round-trip per GUI thread and may have been skipped
+because that path was fragile in bring-up, so gate ×3. See
+`per-arch-cfg-divergence-audit.md` Tier 2. *(Ranking uncertain vs H1/H2 — verify the
+`ClientThreadSetup` body's actual side-effects first; it may be a near-no-op in our user32,
+in which case demote.)*
+
 ---
 
 ## Diagnostic plan — render milestones (the boot-marker philosophy, applied to UI)
@@ -177,3 +219,35 @@ where it can be debugged with the faster x86 toolkits.
 - Tray construction: `base/shell/explorer/explorer.cpp`, `trayntfy.cpp`, `trayclock.cpp`.
 - Notepad window: `base/applications/notepad/main.c:603,631`.
 - win32k coverage history: `docs/engineering/archive/win32k-translation-audit.md`.
+
+---
+
+## Post-fix follow-ups (2026-07-05, owed — not silent deferrals)
+
+1. **amd64/i386 notepad exit 0x80 — separate desktop-heap AV (notepad kept arm64-only).**
+   Enabling notepad cross-arch (the brief's "supporting change") surfaced a *pre-existing*
+   amd64/i386 bug unrelated to NC paint: notepad paints its caption then takes a user-mode
+   `0xC0000005` at user32 `ValidateHandleNoErr+0xed` (`user32.dll` VA 0x…b79d) — the faulting
+   read is `*(pci->pDeskInfo)` where `pci->pDeskInfo` is a bogus small value (~0x80010) in
+   notepad's TEB `CLIENTINFO`, **even though** the kernel's `IntSetThreadDesktop` computed and
+   wrote the correct user pointer (verified: `[DESKMAP] setdesk img=NOTEPAD.EXE kDeskInfo=…dd0
+   delta=… uDeskInfo=0x15e0dd0` — a valid mapped VA). csrss then reaps it via
+   `LPC_EXCEPTION → NtTerminateProcess(STATUS_ABANDONED=0x80)` (`smss-csrss-rust csrsrv/api.rs`).
+   So between `IntSetThreadDesktop` and the `UpdateWindow`-triggered paint, notepad's
+   user-side `CLIENTINFO.pDeskInfo` reads wrong — a desktop-heap/`CLIENTINFO`/`gSharedInfo`
+   mapping issue specific to a *freshly-CreateProcess'd* GUI app on x86 (explorer/winlogon
+   validate handles fine, so it is not universal). arm64 notepad is unaffected (ran fine
+   pre-fix, renders full chrome now). **Notepad is therefore kept arm64-only** (winlogon-rust
+   `#[cfg(target_arch = "aarch64")]`) until this AV is root-caused; the NC-paint fix is proven
+   on x86 without it (Start button + clock + dialog chrome). Next step: trace whether the
+   wrong value is written by the kernel on a *second* pass, or notepad's TEB `Win32ClientInfo`
+   region differs from the one the kernel wrote (offset/section-mapping mismatch).
+2. **Workspace `unreachable_patterns = "deny"` lint** — the mechanical tripwire for the
+   catch-all-binding class. Size it against the clean-build ×3 warning sweep; if legit
+   unreachable patterns are few, flip to deny + per-site `#[allow]`.
+3. **Render-completeness smoke markers** (diagnostic-plan item 4): emit
+   `[EXPLORER] start button painted` / `clock painted` / `[NOTEPAD] painted` and assert
+   in smoke, so a half-painted shell can never green again.
+4. **user32-rust DefWindowProc GoSS arm order** — while auditing, noted RealDefWindowProcW
+   is faithful; no action. The five paint-chain diffs cleared painting/nonclient/winpos/
+   defwnd/windc/vis (kernel) — reusable clearance record.

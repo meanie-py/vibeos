@@ -25,6 +25,18 @@ headers/upstream:
 
 Re-run: `python3 tools/scan_arch_cfg.py -o /tmp/cand.txt`.
 
+> **Caveat — arm64-only divergences have NO upstream to diff against.** ReactOS has no
+> ARM64 port; *all* arm64 code in this tree (the Rust **and** the `#ifdef _M_ARM64` C in
+> this fork) is vibeos-authored, so "confirm vs stock ReactOS arm64" is a category error and
+> our own arm64 C is **not** a source of truth. Judge an arm64-only divergence by (a) the
+> arch-*independent* logic in **stock x86** ReactOS — the reference for what the algorithm
+> should do — (b) Windows-ARM64 semantics, and (c) reasoning about the invariant. When an
+> arm64-only branch adds behavior the x86 arches lack, the real question is "do i386/amd64
+> *also* need it (arm64 fixed a latent arch-independent bug)?" vs "is it spurious?" —
+> answerable from x86 stock + reasoning, never from a nonexistent arm64 upstream. (The
+> "verify against C/upstream" rubric below implicitly assumes an upstream; that only holds
+> for the x86 arches.)
+
 ---
 
 ## TIER 1 — latent bugs (fix)
@@ -60,16 +72,26 @@ offending top-level entry is almost always resident for the VAs the path touches
   mark as a tracked TODO if timers genuinely aren't ready).
 
 ## TIER 2 — divergence-from-C, verify + unify
-- **`ex/init.rs:1383` — amd64 alone skips the SMSS wait + `SESSION5_INITIALIZATION_FAILED`
-  (0x6A) bugcheck** (Rust-only, amd64-only; the C does it unconditionally,
-  `ntoskrnl/ex/init.c:2350`). Defeats the "Session Manager terminated" guard on the arch
-  with the wedge history. Verify why, then unify.
-- **`mm/mmfault.rs:255` — WS-lock recursion guard gated arm64-only**, with a *false*
-  "amd64/i386 KVM schedules around it" comment (default backend is TCG). Note **§9.13 is
-  already resolved** (amd64 green ×3), so this is *verify whether now-redundant + fix the
-  false premise*, not "the open wedge root."
-- **`win32k/main.rs:673` — `co_IntClientThreadSetup()` gated i386-only** → skipped on
-  amd64+arm64; upstream calls it for every non-SYSTEM/CSRSS thread. Verify.
+- **✅ DONE `ex/init.rs` — amd64 alone skipped the SMSS wait + `SESSION5_INITIALIZATION_FAILED`
+  (0x6A) bugcheck** (Rust-only carve-out `#[cfg(not(x86_64))]`; the C does it unconditionally,
+  `ntoskrnl/ex/init.c:2350`). Verified: a March bring-up shortcut (5802b15) masking an
+  early-smss-death rooted in the pre-fix Mm/pushlock wedges (§9.13-9.17). Restored the guard
+  on all arches to match C (`8738b221955`) — gate ×3 green, amd64 smss confirmed healthy
+  (STATUS_TIMEOUT, no bugcheck), so no latent death was hiding behind the shortcut.
+- **✅ DONE `mm/mmfault.rs` — WS-lock recursion guard was arm64-only**, with a *false*
+  "amd64/i386 KVM schedules around it" comment. Verified now-redundant: it band-aided the
+  §9.13-class fault-inside-teardown self-deadlock, and amd64 (which never had the guard) has
+  booted green ×3 since §9.13's PFN-union root fix. Removed it — all arches now take the WS
+  lock unconditionally, matching C + the amd64/i386 path (`4be55078de3`); also deletes a
+  per-arch `__bindgen_anon_9` layout-drift hazard. Gate ×3 green (arm64 under test, no
+  self-deadlock).
+- **➡ ROUTED `win32k/main.rs:673` — `co_IntClientThreadSetup()` call gated i386-only** →
+  skipped on amd64+arm64 (fully implemented on all arches; only the call site is gated).
+  Verified = deliberate bring-up shortcut skipping the per-GUI-thread CLIENTTHREADSTARTUP
+  user-callback on **exactly the two render-gap arches**. Re-enabling is a real behavioral
+  change (extra kernel→user callback per GUI thread) *and* a plausible cause of the
+  non-client-paint gap → routed to the **screen-painting fable** as a diagnostic lead
+  (`ui-render-completeness-investigation.md`) rather than unified blind.
 
 ## TIER 3 — arm64 bring-up shortcuts (retire now that arm64 boots to desktop)
 A coherent ARM64-native-boot cluster in win32k/userland. Some Rust-introduced, some
@@ -95,14 +117,30 @@ faithfully mirror the C's `#ifdef _M_ARM64`; all retire-able:
 - `rtl-diag/exception.rs:132` — no arm64 register dump (diagnostic-only).
 - `ntoskrnl-rust/ke/ipi.rs:129` — amd64 IPI_SYNCH_REQUEST handler is a `DbgBreakPoint` stub.
 - `ntkrnl-sys/mm.rs:344` — identical-body cfg + misleading comment (value correct; bit 8 all arches).
-- `ntoskrnl-rust/ke/{wait.rs:351, thrdschd.rs:474/826}` — arm64-only ReadySummary preemption
-  recheck the x86 arches lack (drift-watch — confirm vs stock ReactOS).
+- **✅ RESOLVED `ntoskrnl-rust/ke/{wait.rs, thrdschd.rs ×2}` — LEGIT arm64 workaround, not
+  drift.** The arm64-only ReadySummary preemption recheck faithfully mirrors the C
+  `#ifdef _M_ARM64` (ntoskrnl/ke/thrdschd.c:444). arm64 has no working
+  HalRequestSoftwareInterrupt, so a stale `Prcb->NextThread` is never re-dispatched via a
+  DISPATCH software interrupt and a higher-priority thread (e.g. queued by NtYieldExecution)
+  starves; the recheck re-enforces `NextThread->Priority >= max(ReadySummary)` at swap time.
+  **x86 does NOT need it** — working software interrupts keep the invariant, so the branch
+  never fires there. It was flagged only because the Rust translation dropped the C's
+  rationale comment; restored at all three sites (`ke/wait.rs`, `ke/thrdschd.rs` KiSwapThread
+  + NtYieldExecution). **Removable once arm64 gains real software-interrupt preemption →
+  tracked in `arm64-interrupts-quest.md`.** (Textbook Method-caveat case: resolved by
+  reasoning + the C's own `_M_ARM64` intent, not a nonexistent arm64 upstream.)
 
 ---
 
 ## Status / work queue
-- **Tier 1** — being fixed (this session, ourselves; gate ×3).
-- **Tier 2** — verify each against C/upstream before unifying.
+- **Tier 1** — ✅ PXE cluster + KERNEL_STACK_SIZE landed (`475c10677e9`), gate ×3 green.
+  Remaining: `KeDelayExecutionThread` arm64 stub (ke/wait.rs:411) — **routed to the
+  arm64-interrupts fable** (it depends on the timer/interrupt machinery that lane is
+  actively rebuilding; flipping arm64 onto the real timer-block wait solo would build on
+  not-yet-ready arm64 timer-wake and collide with their changes).
+- **Tier 2** — ✅ both actionable items landed (ex/init SMSS guard `8738b221955`, mmfault
+  guard removal `4be55078de3`); win32k `co_IntClientThreadSetup` routed to the
+  screen-painting fable. Tier 2 complete.
 - **Tier 3** — track under "retire arm64 native-boot scaffolding"; some blocked on the
   arm64-interrupts + service-subsystem bring-up.
 - **Tier 4** — opportunistic.

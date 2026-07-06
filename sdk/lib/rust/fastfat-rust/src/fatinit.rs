@@ -66,13 +66,18 @@ extern "system" {
 unsafe fn ExInitializeSListHead(slist_head: *mut SLIST_HEADER) {
     core::ptr::write_bytes(slist_head as *mut u8, 0, core::mem::size_of::<SLIST_HEADER>());
 }
-// __int2c is a compiler intrinsic (INT 0x2C) — implement inline
+// __int2c is a compiler intrinsic (INT 0x2C — DbgRaiseAssertionFailure, raises
+// STATUS_ASSERTION_FAILURE) — implement inline. INT 0x2C is a valid instruction on
+// BOTH x86 arches (i386 + amd64); arm64 uses `brk`. The old non-x86 body was
+// unreachable_unchecked() — UB — which is wrong because __int2c IS reachable
+// (assertion paths in fatinit.rs:532 / workque.rs:195,205), so on amd64/arm64 it
+// invoked UB instead of a defined assertion trap.
 #[inline(never)]
 unsafe fn __int2c() {
-    #[cfg(target_arch = "x86")]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     core::arch::asm!("int 0x2c", options(nostack, nomem));
-    #[cfg(not(target_arch = "x86"))]
-    core::hint::unreachable_unchecked();
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("brk #0xf000", options(nostack, nomem));
 }
 
 // ---- file-scope preamble (translated) ----

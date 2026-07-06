@@ -335,17 +335,15 @@ impl MMPTE {
         }
     }
 
-    /// MMPTE_PROTOTYPE.ReadOnly.
+    /// MMPTE_PROTOTYPE.ReadOnly — bit 8 on all arches.
     ///
-    /// This field is only meaningful when the PTE is in prototype format.  The
-    /// bit position differs from software protection fields on ARM64, so keep
-    /// callers off raw masks.
+    /// Only meaningful when the PTE is in prototype format. Kept as a named
+    /// accessor (not a raw mask at call sites) because the *software*-protection
+    /// ReadOnly bit sits at a different position on ARM64 — don't conflate the two.
+    /// (The prior per-arch cfg here had byte-identical branches — spurious.)
     #[inline]
     pub fn proto_read_only(&self) -> bool {
-        #[cfg(target_arch = "aarch64")]
-        { (self.Long & (1 << 8)) != 0 }
-        #[cfg(not(target_arch = "aarch64"))]
-        { (self.Long & (1 << 8)) != 0 }
+        (self.Long & (1 << 8)) != 0
     }
 
     #[inline]
