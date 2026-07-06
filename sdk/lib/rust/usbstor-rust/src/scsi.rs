@@ -41,9 +41,9 @@ unsafe fn USBSTOR_SrbStatusToNtStatus(mut Srb: PSCSI_REQUEST_BLOCK) -> NTSTATUS 
     const SRB_STATUS_SUCCESS: ::core::ffi::c_int = 0x01;
     const SRB_STATUS_DATA_OVERRUN: ::core::ffi::c_int = 0x12;
     const SRB_STATUS_BAD_FUNCTION: ::core::ffi::c_int = 0x22;
-    const SRB_STATUS_BAD_SRB_BLOCK_LENGTH: ::core::ffi::c_int = 0x24;
+    const SRB_STATUS_BAD_SRB_BLOCK_LENGTH: ::core::ffi::c_int = 0x15;
     const SRB_STATUS_INVALID_LUN: ::core::ffi::c_int = 0x20;
-    const SRB_STATUS_INVALID_TARGET_ID: ::core::ffi::c_int = 0x1F;
+    const SRB_STATUS_INVALID_TARGET_ID: ::core::ffi::c_int = 0x21;
     const SRB_STATUS_NO_HBA: ::core::ffi::c_int = 0x11;
     const SRB_STATUS_NO_DEVICE: ::core::ffi::c_int = 0x08;
     const SRB_STATUS_TIMEOUT: ::core::ffi::c_int = 0x09;

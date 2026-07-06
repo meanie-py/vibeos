@@ -995,8 +995,8 @@ pub unsafe extern "system" fn FatMarkFcbCondition(
     Recursive: i32,
 ) {
     const Dbg: u32 = /* DEBUG_TRACE_VERFYSUP */ 0;
-    const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x00000001;
-    const FCB_STATE_PAGING_FILE: u32 = 0x00000010;
+    const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x02;
+    const FCB_STATE_PAGING_FILE: u32 = 0x04;
     const FAT_NTC_FCB: i16 = 0x0502;
     const FAT_NTC_DCB: i16 = 0x0503;
     const FAT_NTC_ROOT_DCB: i16 = 0x0504;
@@ -1092,7 +1092,7 @@ pub unsafe extern "system" fn FatMarkVolume(
     Vcb: *mut VCB,
     VolumeState: i32,
 ) {
-    const VCB_STATE_FLAG_WRITE_PROTECTED: u32 = 0x08;
+    const VCB_STATE_FLAG_WRITE_PROTECTED: u32 = 0x4000;
     const VolumeClean: i32 = 0;
     const VolumeDirty: i32 = 1;
     const VolumeDirtyWithSurfaceTest: i32 = 2;

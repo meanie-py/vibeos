@@ -172,11 +172,11 @@ pub unsafe extern "system" fn USBPORT_SuspendController(FdoDevice: PDEVICE_OBJEC
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_ResumeController(FdoDevice: PDEVICE_OBJECT) -> NTSTATUS {
 
-    const USBPORT_FLAG_HC_SUSPEND: u32 = 0x00010000;
-    const USBPORT_TMFLAG_HC_SUSPENDED: u32 = 0x00000004;
+    const USBPORT_FLAG_HC_SUSPEND: u32 = 0x00000100; // FIXED 2026-07-05: translation invented 0x10000; verified vs usbport.h/usbmport.h
+    const USBPORT_TMFLAG_HC_SUSPENDED: u32 = 0x00000002; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
     const USBPORT_TMFLAG_RH_SUSPENDED: u32 = 0x00000008;
-    const USBPORT_TMFLAG_HC_RESUME: u32 = 0x00000010;
-    const USBPORT_MPFLAG_SUSPENDED: u32 = 0x00000001;
+    const USBPORT_TMFLAG_HC_RESUME: u32 = 0x00000004; // FIXED 2026-07-05: translation invented 0x10; verified vs usbport.h/usbmport.h
+    const USBPORT_MPFLAG_SUSPENDED: u32 = 0x00000002; // FIXED 2026-07-05: translation invented 0x1; verified vs usbport.h/usbmport.h
 
     let mut Status: NTSTATUS = STATUS_UNSUCCESSFUL;
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;
@@ -344,8 +344,8 @@ pub unsafe extern "system" fn USBPORT_PdoPower(
     Irp: PIRP,
 ) -> NTSTATUS {
 
-    const USBPORT_FLAG_HC_STARTED: u32 = 0x00000004;
-    const USBPORT_TMFLAG_WAKE: u32 = 0x00000008;
+    const USBPORT_FLAG_HC_STARTED: u32 = 0x00000002; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
+    const USBPORT_TMFLAG_WAKE: u32 = 0x00000020; // FIXED 2026-07-05: translation invented 0x8; verified vs usbport.h/usbmport.h
     const STATUS_DEVICE_BUSY: NTSTATUS = 0x80000011u32 as NTSTATUS;
 
     let PdoExtension: PUSBPORT_RHDEVICE_EXTENSION;

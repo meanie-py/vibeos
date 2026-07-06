@@ -209,7 +209,12 @@ pub unsafe extern "C" fn HidParser_BuildCollectionContext(
             core::ptr::null_mut::<core::ffi::c_void>(),
         );
     }
-    return 0; // HIDP_STATUS_SUCCESS
+    // FIXED 2026-07-06: was `return 0; // HIDP_STATUS_SUCCESS` — but
+    // HIDP_STATUS_SUCCESS is 0x00110000, NOT 0. Callers compare against the
+    // real value, so 0 read as FAILURE in HidParser_GetCollectionDescription,
+    // which then returned the raw 0 upward — hidclass saw "NT success" with
+    // zero collections and never created kbd/mouse PDOs.
+    return hid_sys::HIDP_STATUS_SUCCESS;
 }
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_SearchReportInCollection(

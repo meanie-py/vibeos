@@ -1166,7 +1166,7 @@ pub unsafe extern "system" fn OHCI_HardwarePresent(
     OhciExtension: POHCI_EXTENSION,
     IsInvalidateController: BOOLEAN,
 ) -> BOOLEAN {
-    const USBPORT_INVALIDATE_CONTROLLER_SURPRISE_REMOVE: u32 = 3;
+    const USBPORT_INVALIDATE_CONTROLLER_SURPRISE_REMOVE: u32 = 0x02;
 
     let mut OperationalRegs: POHCI_OPERATIONAL_REGISTERS;
     let mut CommandStatusReg: PULONG;
@@ -2638,8 +2638,8 @@ pub unsafe extern "system" fn OHCI_SetEndpointStatus(
     ohciEndpoint: PVOID,
     EndpointStatus: ULONG,
 ) {
-    const USBPORT_ENDPOINT_RUN: u32 = 1;
-    const USBPORT_ENDPOINT_HALT: u32 = 2;
+    const USBPORT_ENDPOINT_RUN: u32 = 0x00;
+    const USBPORT_ENDPOINT_HALT: u32 = 0x01;
     const OHCI_ED_HEAD_POINTER_HALT: u32 = 1;
 
     let OhciExtension: POHCI_EXTENSION = ohciExtension as POHCI_EXTENSION;

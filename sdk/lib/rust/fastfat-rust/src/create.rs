@@ -198,10 +198,10 @@ const FCB_STATE_TRUNCATE_ON_CLOSE: u32 = 0x02; // typical
 const CCB_FLAG_OPENED_BY_SHORTNAME: u32 = 0x0800;
 const CCB_FLAG_MANAGE_VOLUME_ACCESS: u32 = 0x00020000;
 const FO_NO_INTERMEDIATE_BUFFERING: u32 = 0x00000008;
-const UserFileOpen: i32 = 4; // typical
+const UserFileOpen: i32 = 2; // FIXED 2026-07-05: was LLM-guessed "typical" value; verified vs C header (_TYPE_OF_OPEN_UserFileOpen=2; 4 is UserVolumeOpen!)
 const FILE_NOTIFY_CHANGE_FILE_NAME: u32 = 1;
 const FatLargeZero: LARGE_INTEGER = LARGE_INTEGER { QuadPart: 0 }; // provided elsewhere, need reference
-const OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY: u32 = 0x00000008;
+const OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY: u32 = 0x02;
 const OPLOCK_FLAG_PARENT_OBJECT: u32 = 0x00000010;
 
 // FatData is defined externally in fatdata.rs; extern reference here.

@@ -583,8 +583,8 @@ pub unsafe extern "system" fn USBPORT_CancelActiveTransferIrp(
     Irp: PIRP,
 ) {
 
-    const TRANSFER_FLAG_CANCELED: ULONG = 0x00000010;
-    const TRANSFER_FLAG_PARENT: ULONG = 0x00000200;
+    const TRANSFER_FLAG_CANCELED: ULONG = 0x00000001; // FIXED 2026-07-05: translation invented 0x10; verified vs usbport.h/usbmport.h
+    const TRANSFER_FLAG_PARENT: ULONG = 0x00000400; // FIXED 2026-07-05: translation invented 0x200; verified vs usbport.h/usbmport.h
     const INVALIDATE_ENDPOINT_WORKER_THREAD: ULONG = 1;
 
     let mut PdoExtension: PUSBPORT_RHDEVICE_EXTENSION;

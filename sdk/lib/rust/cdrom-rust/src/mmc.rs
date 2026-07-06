@@ -313,7 +313,7 @@ pub unsafe extern "system" fn DeviceGetConfigurationWithAlloc(
 ) -> i32 {
     // Forward declarations for external symbols not in imports
     const STATUS_INTERNAL_ERROR: i32 = (0xC000000Fu32 as i32);
-    const CDROM_TAG_FEATURE: u32 = 0x52444443; // 'CDDR' little-endian? typical tag
+    const CDROM_TAG_FEATURE: u32 = 0x46436353; // 'CDDR' little-endian? typical tag
     const NonPagedPoolNxCacheAligned: u32 = 0x204; // NonPagedPoolNx (512) + CacheAligned (4)
     const TRACE_LEVEL_ERROR: u32 = 1;
     const TRACE_FLAG_IOCTL: u32 = 1;

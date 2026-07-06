@@ -117,10 +117,10 @@ pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_CLOSE;
 const CDFS_NTC_IRP_CONTEXT_LITE: u16 = 0x0309;
 // cdstruc.h flag bits.
 const IRP_CONTEXT_FLAG_MORE_PROCESSING: u32 = 0x00000002;
-const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004;
+const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH
 const IRP_CONTEXT_FLAG_TOP_LEVEL: u32 = 0x00000010;
 // IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS (0x20) imported from crate::types.
-const IRP_CONTEXT_FLAG_IN_FSP: u32 = 0x00000040;
+const IRP_CONTEXT_FLAG_IN_FSP: u32 = 0x00000040; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH
 // cdstruc.h: IRP_CONTEXT_FSP_FLAGS = WAIT | TOP_LEVEL | TOP_LEVEL_CDFS | IN_FSP
 #[allow(dead_code)]
 const IRP_CONTEXT_FSP_FLAGS: u32 =

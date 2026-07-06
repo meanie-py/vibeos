@@ -46,13 +46,13 @@ pub type PCSCAN_LIST_ENTRY = *mut _CSCAN_LIST_ENTRY;
 const TRACE_LEVEL_WARNING: u32 = 4;
 const TRACE_LEVEL_INFORMATION: u32 = 4; // Adjust as needed, often 4.
 const TRACE_FLAG_GENERAL: u32 = 0x00000001;
-const SRB_STATUS_QUEUE_FROZEN: u8 = 0x80;
-const MAXIMUM_RETRIES: u32 = 3;
+const SRB_STATUS_QUEUE_FROZEN: u8 = 0x40;
+const MAXIMUM_RETRIES: u32 = 0x04;
 const SL_OVERRIDE_VERIFY_VOLUME: u8 = 0x02; // approximate, actual may differ
 const STATUS_VERIFY_REQUIRED: i32 = 0x80000016_u32 as i32;
 const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185_u32 as i32;
 const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016_u32 as i32;
-const SRB_STATUS_SUCCESS: u8 = 0x04;
+const SRB_STATUS_SUCCESS: u8 = 0x01;
 
 #[no_mangle]
 pub unsafe extern "system" fn ClassSplitRequest(

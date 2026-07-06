@@ -322,7 +322,7 @@ pub const VCB_STATE_REMOVABLE_MEDIA: u32 = 32;
 pub const VCB_STATE_CDXA: u32 = 64;
 pub const VCB_STATE_AUDIO_DISK: u32 = 128;
 pub const VCB_STATE_NOTIFY_REMOUNT: u32 = 256;
-pub const VCB_STATE_VPB_NOT_ON_DEVICE: u32 = 512;
+pub const VCB_STATE_VPB_NOT_ON_DEVICE: u32 = 0x00000200; // FIXED 2026-07-06: cdfs value-bleed (verified vs cdstruc.h)
 pub const VCB_STATE_SHUTDOWN: u32 = 1024;
 pub const VCB_STATE_DISMOUNTED: u32 = 2048;
 pub const FCB_STATE_INITIALIZED: u32 = 1;
@@ -336,7 +336,7 @@ pub const CCB_FLAG_OPEN_RELATIVE_BY_ID: u32 = 2;
 pub const CCB_FLAG_IGNORE_CASE: u32 = 4;
 pub const CCB_FLAG_OPEN_WITH_VERSION: u32 = 8;
 pub const CCB_FLAG_DISMOUNT_ON_CLOSE: u32 = 16;
-pub const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 32;
+pub const CCB_FLAG_ALLOW_EXTENDED_DASD_IO: u32 = 0x00000020; // FIXED 2026-07-06: cdfs value-bleed (verified vs cdstruc.h)
 pub const CCB_FLAG_ENUM_NAME_EXP_HAS_WILD: u32 = 65536;
 pub const CCB_FLAG_ENUM_VERSION_EXP_HAS_WILD: u32 = 131072;
 pub const CCB_FLAG_ENUM_MATCH_ALL: u32 = 262144;
@@ -346,14 +346,14 @@ pub const CCB_FLAG_ENUM_INITIALIZED: u32 = 2097152;
 pub const CCB_FLAG_ENUM_NOMATCH_CONSTANT_ENTRY: u32 = 4194304;
 pub const IRP_CONTEXT_FLAG_ON_STACK: u32 = 1;
 pub const IRP_CONTEXT_FLAG_MORE_PROCESSING: u32 = 2;
-pub const IRP_CONTEXT_FLAG_WAIT: u32 = 4;
+pub const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH
 pub const IRP_CONTEXT_FLAG_FORCE_POST: u32 = 8;
 pub const IRP_CONTEXT_FLAG_TOP_LEVEL: u32 = 16;
 pub const IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS: u32 = 32;
-pub const IRP_CONTEXT_FLAG_IN_FSP: u32 = 64;
+pub const IRP_CONTEXT_FLAG_IN_FSP: u32 = 0x00000040; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH
 pub const IRP_CONTEXT_FLAG_IN_TEARDOWN: u32 = 128;
 pub const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 256;
-pub const IRP_CONTEXT_FLAG_DISABLE_POPUPS: u32 = 512;
+pub const IRP_CONTEXT_FLAG_DISABLE_POPUPS: u32 = 0x00000200; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH
 pub const IRP_CONTEXT_FLAG_FORCE_VERIFY: u32 = 1024;
 pub const IRP_CONTEXT_FLAG_FULL_NAME: u32 = 268435456;
 pub const IRP_CONTEXT_FLAG_TRAIL_BACKSLASH: u32 = 536870912;

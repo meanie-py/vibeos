@@ -792,7 +792,7 @@ pub unsafe extern "system" fn AhciHwStartIo(
     const SRB_STATUS_PENDING: UCHAR = 0x00;
 
     const SRB_FUNCTION_EXECUTE_SCSI: UCHAR = 0x00;
-    const SRB_FUNCTION_PNP: UCHAR = 0x24;
+    const SRB_FUNCTION_PNP: UCHAR = 0x25;
 
     const SRB_PNP_FLAGS_ADAPTER_REQUEST: ULONG = 0x00000001;
 

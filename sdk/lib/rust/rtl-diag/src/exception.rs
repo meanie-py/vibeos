@@ -49,9 +49,62 @@ pub unsafe extern "system" fn RtlRaiseStatus(mut Status: NTSTATUS) {
     let mut ExceptionRecord: EXCEPTION_RECORD = core::mem::zeroed();
     let mut Context: CONTEXT = core::mem::zeroed();
 
+    // _ReturnAddress(): kernel targets build with frame-pointer=always, so the
+    // return address is recoverable per-arch. Capture FIRST, before any call.
+    // Setting ExceptionAddress=NULL (the old stub) blinded the whole diagnosis
+    // chain: an unhandled raise bugchecked 0x1E with P2=0 and no raiser named
+    // (2026-07-06, the post-shell-ready C00000D8 hunt).
+    // amd64: LLVM's kernel prologue is `lea rbp, [rsp+0x80]` (NOT a classic
+    // [saved-rbp][ret] frame), so [rbp+8] is garbage. Scan the stack upward for
+    // the first kernel-text-looking qword instead — that's the raise site (or
+    // a frame or two above it; symbolicate offline against the banner's bases).
+    #[cfg(target_arch = "x86_64")]
+    let return_address: usize = {
+        let rsp: usize;
+        core::arch::asm!("mov {}, rsp", out(reg) rsp, options(nomem, nostack, preserves_flags));
+        // Print the first four text-like qwords: the scan starts inside this
+        // fn's own (uninitialized) frame, so candidate #1 can be a stale local;
+        // four candidates make the raiser unambiguous.
+        let mut found: usize = 0;
+        let mut printed = 0u32;
+        let mut i = 0usize;
+        while i < 0x400 && printed < 4 {
+            let v = *((rsp + i * 8) as *const usize);
+            if v >= 0xFFFF_F800_0000_0000 && v < 0xFFFF_F8FF_FFFF_FFFF {
+                if found == 0 {
+                    found = v;
+                }
+                {
+                    DbgPrint(
+                        b"[RAISE]   stack[+0x%03lX] = %p\n\0".as_ptr() as PCSTR,
+                        (i * 8) as u32,
+                        v as *const core::ffi::c_void,
+                    );
+                }
+                printed += 1;
+            }
+            i += 1;
+        }
+        found
+    };
+    #[cfg(target_arch = "aarch64")]
+    let return_address: usize = {
+        let lr: usize;
+        core::arch::asm!("mov {}, x30", out(reg) lr, options(nomem, nostack, preserves_flags));
+        lr
+    };
+
+    // With DUMMY_PSEH every kernel-mode software raise is fatal (dead except
+    // handlers) — name the raiser BEFORE the inevitable 0x1E.
+    DbgPrint(
+        b"[RAISE] RtlRaiseStatus(0x%08lX) from %p\n\0".as_ptr() as PCSTR,
+        Status as u32,
+        return_address as *const core::ffi::c_void,
+    );
+
     RtlCaptureContext(&mut Context);
 
-    ExceptionRecord.ExceptionAddress = core::ptr::null_mut(); // _ReturnAddress() N/A in stable Rust
+    ExceptionRecord.ExceptionAddress = return_address as *mut core::ffi::c_void;
     ExceptionRecord.ExceptionCode = Status;
     ExceptionRecord.ExceptionRecord = core::ptr::null_mut();
     ExceptionRecord.NumberParameters = 0;

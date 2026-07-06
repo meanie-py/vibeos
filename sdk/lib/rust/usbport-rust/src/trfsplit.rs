@@ -264,10 +264,10 @@ pub unsafe extern "system" fn USBPORT_SplitTransfer(
     List: PLIST_ENTRY,
 ) {
     const USBD_STATUS_SUCCESS: u32 = 0;
-    const USBPORT_TRANSFER_TYPE_BULK: u32 = 3;
-    const USBPORT_TRANSFER_TYPE_INTERRUPT: u32 = 1;
+    const USBPORT_TRANSFER_TYPE_BULK: u32 = 0x00000002; // FIXED 2026-07-05: translation invented 0x3; verified vs usbport.h/usbmport.h
+    const USBPORT_TRANSFER_TYPE_INTERRUPT: u32 = 0x00000003; // FIXED 2026-07-05: translation invented 0x1; verified vs usbport.h/usbmport.h
     const USBPORT_TRANSFER_TYPE_ISOCHRONOUS: u32 = 0;
-    const USBPORT_TRANSFER_TYPE_CONTROL: u32 = 2;
+    const USBPORT_TRANSFER_TYPE_CONTROL: u32 = 0x00000001; // FIXED 2026-07-05: translation invented 0x2; verified vs usbport.h/usbmport.h
     const BUGCODE_USB_DRIVER: u32 = 0xFE;
 
     let mut TransferType: ULONG;

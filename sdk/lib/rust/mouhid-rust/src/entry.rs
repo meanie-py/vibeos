@@ -274,6 +274,7 @@ pub unsafe extern "system" fn DriverEntry(
     DriverObject: PDRIVER_OBJECT,
     _RegPath: PUNICODE_STRING,
 ) -> NTSTATUS {
+    ntkrnl_sys::driver_ddk::DbgPrint(b"[MOUHID] DriverEntry\n\0".as_ptr() as *const i8);
     // FIXME check for parameters 'UseOnlyMice', 'TreatAbsoluteAsRelative',
     //       'TreatAbsolutePointerAsAbsolute'
 

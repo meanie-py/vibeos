@@ -238,6 +238,55 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
     match a.checked_sub(b) { Some(v) => { *out = v; 0 } None => { *out = 0; 0xC0000095u32 as i32 } }
 }
 
+// ============================ resurrected-PnP-arm deps ============================
+// These three became live when the missing IRP_MN_* constants were added to
+// ntkrnl_sys::driver_ddk (the PnP dispatch match arms referencing them had been
+// silent catch-all bindings — dead code — so their deps never surfaced at link).
+
+/// IoAdjustPagingPathCount — wdm.h macro (InterlockedIncrement/Decrement on Count).
+#[no_mangle] pub unsafe extern "C" fn IoAdjustPagingPathCount(Count: *mut i32, Increment: u8) {
+    let a = &*(Count as *const core::sync::atomic::AtomicI32);
+    if Increment != 0 {
+        a.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+    } else {
+        a.fetch_sub(1, core::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// NT_ASSERTMSG — assertion with message; fre-build semantics (report, don't halt).
+#[no_mangle] pub unsafe extern "C" fn NT_ASSERTMSG(Msg: *const i8, Expr: u8) {
+    if Expr == 0 {
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[CLASSPNP] NT_ASSERTMSG failed: %s\n\0".as_ptr() as *const i8,
+            Msg,
+        );
+    }
+}
+
+/// ClassQueryPnpCapabilities — faithful translation of classpnp class.c: route the
+/// QUERY_CAPABILITIES request to the class driver's Fdo/Pdo query routine, if any.
+#[no_mangle] pub unsafe extern "C" fn ClassQueryPnpCapabilities(
+    DeviceObject: PDEVICE_OBJECT,
+    Capabilities: PDEVICE_CAPABILITIES,
+) -> i32 {
+    use crate::types::{ClassGetDriverExtension, PCOMMON_DEVICE_EXTENSION};
+    const STATUS_NOT_IMPLEMENTED: i32 = 0xC0000002u32 as i32;
+
+    let driverExtension = ClassGetDriverExtension((*DeviceObject).DriverObject);
+    let commonExtension = (*DeviceObject).DeviceExtension as PCOMMON_DEVICE_EXTENSION;
+
+    let queryRoutine = if (*commonExtension).__bindgen_anon_1.IsFdo() != 0 {
+        (*driverExtension).InitData.FdoData.ClassQueryPnpCapabilities
+    } else {
+        (*driverExtension).InitData.PdoData.ClassQueryPnpCapabilities
+    };
+
+    match queryRoutine {
+        Some(f) => f(DeviceObject, Capabilities),
+        None => STATUS_NOT_IMPLEMENTED,
+    }
+}
+
 // ============================ Mm / Ke ============================
 #[no_mangle] pub unsafe extern "C" fn MmGetMdlVirtualAddress(Mdl: PMDL) -> PVOID {
     ((*Mdl).StartVa as *mut u8).add((*Mdl).ByteOffset as usize) as PVOID

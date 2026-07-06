@@ -99,6 +99,10 @@ pub unsafe extern "system" fn MouHid_InternalDeviceControl(
             ext.ClassDeviceObject = (*Data).ClassDeviceObject;
             ext.ClassService = (*Data).ClassService;
 
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"[MOUHID] mouse connected to class driver\n\0".as_ptr() as *const i8,
+            );
+
             // completed successfully
             (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
             (*Irp).IoStatus.Information = 0;
