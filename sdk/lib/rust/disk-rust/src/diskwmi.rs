@@ -51,6 +51,14 @@ extern "system" {
 }
 extern "system" {
     fn KeFlushIoBuffers(Mdl: *mut core::ffi::c_void, ReadOperation: i32, DmaOperation: i32) -> i32;
+}
+// Macro/inline shims, NOT kernel exports: provided cdecl by rust_cohab_stub.c
+// (REVERSE_BYTES) and ddk_shims.rs (`extern "C"`). Declaring them
+// `extern "system"` linked on amd64/arm64 (system == C there) but broke the
+// i386 COLD link with undefined `_REVERSE_BYTES@8`/`_GetSrbScsiData@24`
+// (stdcall decoration nothing provides) — masked in warm builds by the
+// already-linked disk.sys.
+extern "C" {
     fn REVERSE_BYTES(Dst: *mut u8, Src: *const u8);
     fn PAGED_CODE();
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
