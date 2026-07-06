@@ -2479,16 +2479,87 @@ never depend on timer bookkeeping. Timer expiration itself stays idle-loop-only
   CPU actually lives; `[IDLE] enter/beat/swap-out/resume` prints in KiIdleLoop
   answer "does idle ever run" definitively.
 
-**Still open from this hunt** (both PRE-EXISTING — A/B-verified on a master
-boot 2026-07-06, identical PC histogram): (a) an unidentified always-ready user
-thread busy-polls `NtQueryPerformanceCounter` at desktop (user PC
-0x7ffb2002268, deterministic across boots AND across master/branch), starving
-idle — so `TimerRequest` stays stale and KERNEL TIMER EXPIRATION IS FROZEN at
-desktop whenever that thread spins (observed: taskbar never populates, no
-caret blink, 70s-apart QMP screendumps byte-identical). Smoke stays green
-because boot marker + tests finish inside the early window — and note master's
-POLL-THREAD input dies under the freeze (it sleeps on kernel timers), while
-interrupt-driven input keeps working. (b) the DISPATCH soft-interrupt delivery
-gap (fact 1) — the port should deliver DPC drains on KfLowerIrql crossing
-below DISPATCH, in thread context, so retirement doesn't depend on
-idle/IRQ-exit alone. Tracked in the quest doc (landmine #4).
+**Both follow-ups CLOSED 2026-07-06 (same-day hunt, §9.21):** the
+"unidentified QPC busy-spinner" turned out to be TWO stacked spinners with one
+root — `KeDelayExecutionThread` was still stubbed to `NtYieldExecution()` on
+arm64 ("no HAL timer interrupt yet" — dead lore), so EVERY kernel/user sleep
+busy-yielded; and explorer's main thread separately spun on a stuck QS_PAINT
+wake bit. The DISPATCH soft-interrupt delivery gap is also closed —
+`KfLowerIrql` now delivers timer expiration + device-DPC drain in thread
+context. Full writeup: §9.21.
+
+### 9.21 (FIXED 2026-07-06) arm64 desktop timer freeze — `KeDelayExecutionThread` busy-yield stub + stuck QS_PAINT spin + no DISPATCH softint delivery
+
+**Symptom.** At desktop: taskbar never populates / clock frozen / no caret,
+70s-apart QMP screendumps byte-identical, `sample-pc.sh` shows ZERO idle-loop
+samples — CPU 100% split between hal `KeQueryPerformanceCounter` (~70%, a
+"System" thread) and one user PC (~20%, deterministic across boots).
+
+**Three stacked bugs, one visible freeze:**
+1. **`KeDelayExecutionThread` was a bring-up stub on arm64**
+   (`ke/wait.rs`, inherited from C `#ifdef _M_ARM64`: "no HAL timer interrupt
+   yet — would sleep forever"): `NtYieldExecution(); return SUCCESS`. Every
+   kernel sleep (netstack's `delay_ms` poll loop → the hal-QPC-hot System
+   thread) and every user `Sleep`/`NtDelayExecution` became a busy-yield.
+   Ready threads yielded to each other forever → idle starved → idle-only
+   timer expiration frozen → every real timer wait dead. The stub's premise
+   died when the interrupts quest wired the vtimer: `KeTickCount` and
+   `KUSER_SHARED_DATA.InterruptTime` demonstrably advance. Fix: deleted the
+   stub; the real timer-wait path just works.
+2. **Explorer's main thread spun on a stuck `QS_PAINT` wake bit** (the ~20%
+   user PC = user32 `NtUserPeekMessage` syscall stub; identified via
+   KTHREAD→ETHREAD walk + PEB module-list walk from a KiIrqHandler
+   breakpoint). `pcti->fsChangeBits/fsWakeBits == 0x20 (QS_PAINT)` with
+   `pti->cPaintsReady == 0`: `MsgWaitForMultipleObjects` returns "input
+   available" immediately (fsChangeBits early-out) while `PeekMessage`
+   retrieves nothing → infinite spin. Source of the stale state:
+   `IntGetPaintMessage`'s upstream dirty-window-leak bandaid zeroes
+   `cPaintsReady` WITHOUT clearing the wake bits — and fired invisibly
+   because win32k-rust's `ERR!` macro is a NO-OP. Fixes (win32k-rust): the
+   bandaid now clears the QS_PAINT bits too (painting.rs), co_IntPeekMessage
+   reconciles stale QS_PAINT bits when `cPaintsReady == 0` (message.rs), and
+   the bandaid prints via real `DbgPrint` so the underlying leak is visible.
+3. **DISPATCH software-interrupt delivery implemented** (closes §9.20 (b)):
+   `HalRequestSoftwareInterrupt(DISPATCH)`'s pended bit is now consumed by
+   `KfLowerIrql` when the soft IRQL crosses below DISPATCH — hal calls the
+   new ntoskrnl export `KiDispatchSoftwareIntArm64()` (ke/dpc.rs): TimerRequest
+   → `KiTimerExpiration` (with `DpcRoutineActive=1` so wakes DEFER, mirroring
+   the idle loop) + `KiRetireDeviceDpcs`. Timer expiration no longer depends
+   on the idle loop — a busy thread expires timers from its own syscall/
+   spinlock IRQL crossings.
+
+**The §9.19 trap, round two (BUGCHECK 0x1E, EC=0x0E illegal-execution-state):**
+the first delivery attempt ran timer expiration from EXCEPTION context,
+because `KfLowerIrql` is reachable from inside IRQ windows — notably the
+clock-tick branch (`HalClockInterruptArm64` → `KeUpdateSystemTime`) runs with
+NO IRQL bracket at all, so any raise/lower pair inside it crosses below
+DISPATCH. Fix: hal tracks `HalpInterruptContextDepth` — bumped vector-wide in
+`HalClockInterruptArm64` (drop-guard) and by every
+`HalpEnterInterruptIrql`/`HalpExitInterruptIrql` bracket — and
+softint delivery requires depth == 0 (genuine thread/SVC context).
+
+**Verified:** boot green ~36s; clock IRQ now interrupts the *Idle* process;
+`KiTimerExpiration` + win32k `ProcessTimers` fire repeatedly (GDB breakpoints);
+timer table shows live sub-second traffic; explorer main blocks in
+`GetMessage`; netstack worker alive in real `delay_ms` waits (WaitReason=4);
+`test_arm64input_delivery` green.
+
+**Still open (pre-existing, forensics preserved):** explorer's tray clock
+never repaints and window paint is incomplete (notepad title bar sometimes
+missing — also true on pre-quest master) — `ProcessTimers` fires but
+explorer's `cTimersReady` stays 0, i.e. win32k user-timer → WM_TIMER posting
+to the owning thread doesn't deliver; and the underlying dirty-window leak
+that IntGetPaintMessage's bandaid papers over (now visible on serial as
+`[WIN32K] IntGetPaintMessage: cPaintsReady=%u but no dirty window`). Both are
+win32k message/paint bookkeeping, not interrupt/IRQL work.
+
+**Debug recipe additions** (beyond §9.20's): identify a user-PC spinner from a
+`KiIrqHandler` breakpoint — read `KPCR(tpidr_el1)+0xD80 → Prcb.CurrentThread
+(+8) → KTHREAD.Process(+512) → EPROCESS.ImageFileName(+608)`, offsets from
+`ntkrnl-sys/src/offset_check_arm64.rs`; walk the user module list
+(`TEB(+176)→PEB(+0x60)→Ldr(+0x18)`) to name the module at a user PC; walk
+`PsLoadedModuleList` for kernel/driver PCs (module bases move per boot — never
+reuse a previous boot's symbolication). `gdb` can't read kernel VAs while
+stopped at EL0 — break on a kernel PC first. And REBUILD THE SYMBOL INDEX
+after every build: a stale `sym2addr` address put a 5-minute breakpoint on
+dead code and nearly "proved" timers were frozen when they weren't.
