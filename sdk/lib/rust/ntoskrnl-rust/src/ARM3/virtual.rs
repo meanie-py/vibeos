@@ -236,9 +236,9 @@ pub unsafe extern "system" fn MiCalculatePageCommitment(
     let mut PointerPpe: PMMPTE;
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let mut OnPpeBoundary = true;
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let mut PointerPxe: PMMPTE;
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let mut OnPxeBoundary = true;
 
     PointerPte = MiAddressToPte(StartingAddress as PVOID);
@@ -251,7 +251,7 @@ pub unsafe extern "system" fn MiCalculatePageCommitment(
     };
 
     while PointerPte <= LastPte {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
             if OnPxeBoundary {
                 PointerPxe = MiPteToPxe(PointerPte);
@@ -273,7 +273,7 @@ pub unsafe extern "system" fn MiCalculatePageCommitment(
                 if (*PointerPpe).Long == 0 {
                     PointerPpe = PointerPpe.add(1);
                     PointerPte = MiPpeToPte(PointerPpe);
-                    #[cfg(target_arch = "x86_64")]
+                    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
                     { OnPxeBoundary = MiIsPteOnPxeBoundary(PointerPte); }
                     continue;
                 }
@@ -290,7 +290,7 @@ pub unsafe extern "system" fn MiCalculatePageCommitment(
                 PointerPte = MiPdeToPte(PointerPde);
                 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
                 { OnPpeBoundary = MiIsPteOnPpeBoundary(PointerPte); }
-                #[cfg(target_arch = "x86_64")]
+                #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
                 { OnPxeBoundary = MiIsPteOnPxeBoundary(PointerPte); }
                 continue;
             }
@@ -317,7 +317,7 @@ pub unsafe extern "system" fn MiCalculatePageCommitment(
         OnPdeBoundary = MiIsPteOnPdeBoundary(PointerPte);
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         { OnPpeBoundary = MiIsPteOnPpeBoundary(PointerPte); }
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         { OnPxeBoundary = MiIsPteOnPxeBoundary(PointerPte); }
     }
 
@@ -608,7 +608,7 @@ pub unsafe extern "system" fn MiDeleteVirtualAddresses(
     let mut PointerPde: PMMPDE;
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let mut PointerPpe: PMMPTE;
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let mut PointerPxe: PMMPTE;
     let mut TempPte: MMPTE;
     let CurrentProcess: PEPROCESS;
@@ -627,7 +627,7 @@ pub unsafe extern "system" fn MiDeleteVirtualAddresses(
     }
 
     while Va <= EndingAddress {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
             PointerPxe = MiAddressToPxe(Va as PVOID);
             if !(*PointerPxe).valid() {
@@ -992,7 +992,7 @@ pub unsafe extern "system" fn MiQueryAddressState(
     let mut PointerPde: PMMPDE;
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let mut PointerPpe: PMMPTE;
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let mut PointerPxe: PMMPTE;
     let mut TempPte: MMPTE;
     let mut TempProtoPte: MMPTE;
@@ -1005,13 +1005,13 @@ pub unsafe extern "system" fn MiQueryAddressState(
     PointerPte = MiAddressToPte(Va);
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     { PointerPpe = MiAddressToPpe(Va); }
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     { PointerPxe = MiAddressToPxe(Va); }
 
     *NextVa = ((Va as ULONG_PTR) + PAGE_SIZE) as PVOID;
 
     loop {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
             if (*PointerPxe).Long == 0 {
                 *NextVa = MiPxeToAddress(PointerPxe.add(1));
@@ -1302,16 +1302,16 @@ pub unsafe extern "system" fn MiIsEntireRangeCommitted(
     let mut PointerPpe: PMMPTE;
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let mut OnPpeBoundary = true;
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let mut PointerPxe: PMMPTE;
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let mut OnPxeBoundary = true;
 
     PointerPte = MiAddressToPte(StartingAddress as PVOID);
     LastPte = MiAddressToPte(EndingAddress as PVOID);
 
     while PointerPte <= LastPte {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
             if OnPxeBoundary {
                 PointerPxe = MiPteToPxe(PointerPte);
@@ -1340,7 +1340,7 @@ pub unsafe extern "system" fn MiIsEntireRangeCommitted(
                     if (*Vad).u.VadFlags.MemCommit() == 0 { return 0u8; }
                     PointerPpe = PointerPpe.add(1);
                     PointerPte = MiPpeToPte(PointerPpe);
-                    #[cfg(target_arch = "x86_64")]
+                    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
                     { OnPxeBoundary = MiIsPteOnPxeBoundary(PointerPte); }
                     continue;
                 }
@@ -1359,7 +1359,7 @@ pub unsafe extern "system" fn MiIsEntireRangeCommitted(
                 PointerPte = MiPdeToPte(PointerPde);
                 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
                 { OnPpeBoundary = MiIsPteOnPpeBoundary(PointerPte); }
-                #[cfg(target_arch = "x86_64")]
+                #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
                 { OnPxeBoundary = MiIsPteOnPxeBoundary(PointerPte); }
                 continue;
             }
@@ -1380,7 +1380,7 @@ pub unsafe extern "system" fn MiIsEntireRangeCommitted(
         OnPdeBoundary = MiIsPteOnPdeBoundary(PointerPte);
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         { OnPpeBoundary = MiIsPteOnPpeBoundary(PointerPte); }
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         { OnPxeBoundary = MiIsPteOnPxeBoundary(PointerPte); }
     }
 
@@ -1397,21 +1397,15 @@ pub unsafe extern "system" fn MiMakePdeExistAndMakeValid(
     let PointerPte: PMMPTE;
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let PointerPpe = MiPdeToPpe(PointerPde);
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let PointerPxe = MiPdeToPxe(PointerPde);
 
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         if (*PointerPxe).valid() &&
            (*PointerPpe).valid() &&
            (*PointerPde).valid()
         {
-            return;
-        }
-    }
-    #[cfg(all(target_arch = "aarch64", not(target_arch = "x86_64")))]
-    {
-        if (*PointerPpe).valid() && (*PointerPde).valid() {
             return;
         }
     }
@@ -1425,7 +1419,7 @@ pub unsafe extern "system" fn MiMakePdeExistAndMakeValid(
     PointerPte = MiPteToAddress(PointerPde) as PMMPTE;
 
     loop {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
             if !(*PointerPxe).valid() {
                 MiMakeSystemAddressValid(PointerPpe as PVOID, TargetProcess);
@@ -2946,7 +2940,7 @@ pub unsafe extern "system" fn MmGetPhysicalAddress(
 
     let pde_valid = {
         let mut result = true;
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
             if !(*MiAddressToPxe(Address)).valid() { result = false; }
         }
@@ -3366,7 +3360,7 @@ unsafe fn MiLockVirtualMemory(
     let mut PointerPde: PMMPDE;
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     let mut PointerPpe: PMMPPE;
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     let mut PointerPxe: PMMPXE;
     let mut Pfn1: PMMPFN;
     let mut Status: NTSTATUS;
@@ -3402,7 +3396,7 @@ unsafe fn MiLockVirtualMemory(
     {
         PointerPpe = MiAddressToPpe(*BaseAddress);
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     {
         PointerPxe = MiAddressToPxe(*BaseAddress);
     }
@@ -3412,30 +3406,10 @@ unsafe fn MiLockVirtualMemory(
     MiLockProcessWorkingSet(CurrentProcess, PsGetCurrentThread() as PETHREAD);
 
     loop {
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         {
             while !(*PointerPxe).valid() ||
                   !(*PointerPpe).valid() ||
-                  !(*PointerPde).valid() ||
-                  !(*PointerPte).valid() {
-                MiUnlockProcessWorkingSet(CurrentProcess, PsGetCurrentThread() as PETHREAD);
-
-                CurrentVa = MiPteToAddress(PointerPte);
-
-                TempStatus = MmAccessFault(1u32, CurrentVa, 0i8, 0xBADBADA3BADBADA3u64 as PVOID);
-                if TempStatus < 0 {
-                    debug_assert!(false);
-                    Status = TempStatus;
-                    MmUnlockAddressSpace(AddressSpace as PVOID);
-                    return Status;
-                }
-
-                MiLockProcessWorkingSet(CurrentProcess, PsGetCurrentThread() as PETHREAD);
-            }
-        }
-        #[cfg(target_arch = "x86_64")]
-        {
-            while !(*PointerPpe).valid() ||
                   !(*PointerPde).valid() ||
                   !(*PointerPte).valid() {
                 MiUnlockProcessWorkingSet(CurrentProcess, PsGetCurrentThread() as PETHREAD);
@@ -3493,7 +3467,7 @@ unsafe fn MiLockVirtualMemory(
                 PointerPpe = PointerPpe.add(1);
             }
         }
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         {
             if MiIsPteOnPxeBoundary(PointerPte) {
                 PointerPxe = PointerPxe.add(1);
@@ -3615,7 +3589,7 @@ unsafe fn MiUnlockVirtualMemory(
     let mut PointerPde: PMMPDE;
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     let mut PointerPpe: PMMPPE;
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     let mut PointerPxe: PMMPXE;
     let mut Pfn1: PMMPFN;
     let mut Status: NTSTATUS;
@@ -3644,7 +3618,7 @@ unsafe fn MiUnlockVirtualMemory(
     {
         PointerPpe = MiAddressToPpe(*BaseAddress);
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     {
         PointerPxe = MiAddressToPxe(*BaseAddress);
     }
@@ -3654,30 +3628,10 @@ unsafe fn MiUnlockVirtualMemory(
     MiLockProcessWorkingSet(CurrentProcess, PsGetCurrentThread() as PETHREAD);
 
     loop {
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         {
             if !(*PointerPxe).valid() ||
                !(*PointerPpe).valid() ||
-               !(*PointerPde).valid() ||
-               !(*PointerPte).valid() {
-                Status = STATUS_NOT_LOCKED;
-            } else {
-                Pfn1 = MiGetPfnEntry(PFN_FROM_PTE(PointerPte));
-                debug_assert!(!Pfn1.is_null());
-
-                if (((MapType & MAP_SYSTEM) != 0) && (MI_IS_LOCKED_VA(Pfn1, MAP_SYSTEM) == 0)) ||
-                   (((MapType & MAP_PROCESS) != 0) && (MI_IS_LOCKED_VA(Pfn1, MAP_PROCESS) == 0)) {
-                    Status = STATUS_NOT_LOCKED;
-
-                    if MI_IS_LOCKED_VA(Pfn1, MAP_PROCESS | MAP_SYSTEM) == 0 {
-                        // Should remove page from WS
-                    }
-                }
-            }
-        }
-        #[cfg(target_arch = "x86_64")]
-        {
-            if !(*PointerPpe).valid() ||
                !(*PointerPde).valid() ||
                !(*PointerPte).valid() {
                 Status = STATUS_NOT_LOCKED;
@@ -3726,7 +3680,7 @@ unsafe fn MiUnlockVirtualMemory(
                 PointerPpe = PointerPpe.add(1);
             }
         }
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         {
             if MiIsPteOnPxeBoundary(PointerPte) {
                 PointerPxe = PointerPxe.add(1);
@@ -3750,7 +3704,7 @@ unsafe fn MiUnlockVirtualMemory(
     {
         PointerPpe = MiAddressToPpe(*BaseAddress);
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     {
         PointerPxe = MiAddressToPxe(*BaseAddress);
     }
@@ -3770,7 +3724,7 @@ unsafe fn MiUnlockVirtualMemory(
                 PointerPpe = PointerPpe.add(1);
             }
         }
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         {
             if MiIsPteOnPxeBoundary(PointerPte) {
                 PointerPxe = PointerPxe.add(1);

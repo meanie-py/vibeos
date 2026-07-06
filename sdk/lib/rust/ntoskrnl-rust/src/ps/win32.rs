@@ -14,10 +14,15 @@ extern "system" {
 use crate::ke::procobj::{KeServiceDescriptorTable, KeServiceDescriptorTableShadow};
 
 const ERROR_NOT_ENOUGH_MEMORY: ULONG = 8;
-#[cfg(target_arch = "x86_64")]
+// Matches the xdk KERNEL_STACK_SIZE macro per arch: amd64/arm64 0xC000 (48KB),
+// i386 0x3000 (12KB). The old not(x86_64)=0x6000 was wrong for BOTH i386 (double
+// the 0x3000 header value → GUI-thread KeSwitchKernelStack computed StackLimit
+// 0x3000 too low) and arm64 (should be 0xC000; dead there — KeSwitchKernelStack
+// unimplemented on arm64 — but still wrong). See per-arch-cfg-divergence-audit.md.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 const KERNEL_STACK_SIZE: ULONG_PTR = 0xC000;
-#[cfg(not(target_arch = "x86_64"))]
-const KERNEL_STACK_SIZE: ULONG_PTR = 0x6000;
+#[cfg(target_arch = "x86")]
+const KERNEL_STACK_SIZE: ULONG_PTR = 0x3000;
 const STATUS_ALREADY_WIN32: NTSTATUS = 0x4000001B;
 
 const PsW32ThreadCalloutInitialize: ULONG = 0;
