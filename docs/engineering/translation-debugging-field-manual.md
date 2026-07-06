@@ -2742,3 +2742,60 @@ unconditional 500ms "mechanical settle" per ATAPI lun in
 120ms; FindDevices→INQUIRY-complete: 880ms → 4ms. The `[UNIATA]` markers are
 permanent — future regressions in this window are attributable from any
 timestamped smoke log.
+
+### 9.24 Ground-truthing the "3 open corruption bugs" (2026-07-06) — 2 don't reproduce, 1 reframed, 1 live arm64 lead
+
+A corruption-bug sweep with the special-pool tripwire (§9.18) + the arm64 IRQL
+self-checks, run against current master, materially changed the picture the
+stale open-bugs notes painted. Recorded so nobody re-chases the closed ones or
+re-derives the reframing.
+
+**Tool validation first (always).** `--tripwire "SPECIALPOOL=* SPECIALPOOL_SELFTEST=guard"`
+→ BUGCHECK 0x50 as designed: the detector barks, so its *silence* is trustworthy.
+NB the selftest needs a tag armed too (`SPECIALPOOL=*`) — alone,
+`SPECIALPOOL_SELFTEST=guard` early-returns (no pool initialized) and boots clean,
+which looks like a broken detector but isn't.
+
+1. **i386 "session-pool gate" corruption (`KeSignalGateBoostPriority: BAD gate
+   Type=128`) — REFRAMED, not reproducing.** The fingerprint `Type=128`=0x80 is
+   *not* random garbage: `Type & KOBJECT_TYPE_MASK(0x7F)` on 0x80 = 0, so the
+   whole low type byte was zeroed with bit 7 set. Crucially the corrupted gate is
+   the `WakeGate` field of **`_EX_PUSH_LOCK_WAIT_BLOCK`** — a **stack-resident**
+   pushlock wait block, NOT a session-pool allocation. So (a) special pool can
+   never catch it (it guards *pool*, not stack), which is why armed boots come
+   back clean, and (b) it's a **pushlock-class** bug — cousin of the fixed §9.13
+   WS-pushlock family — most likely closed by those fixes. 5 boots (3 unarmed +
+   2 `SPECIALPOOL=*`) reach desktop clean. Re-open only on a live `BAD gate`
+   recurrence; if it recurs, the tool is a **GDB watchpoint on the wait-block's
+   WakeGate.Type byte**, not special pool.
+2. **amd64 post-marker 0x50 (wild code pointer, §9.17) — not reproducing.**
+   Clean armed + unarmed. Consistent with §9.17's own "likely-closed by the
+   2026-07-05 clip-region `addr_of!`-on-pointer-field fix" call. Treat closed
+   pending recurrence.
+3. **arm64 0x1E in the TDI self-test — RARE (≈1/4) but a LIVE, localized lead.**
+   The one that still bites. Forensics from the 2026-07-06 gate failure:
+   - Crash PC symbolicates to `InterlockedExchangeAdd64+0x10` with
+     `0xC0000005` = an **atomic on a wild pointer** (classic post-corruption
+     death: a stale/clobbered pointer handed to an interlocked op).
+   - Immediately preceding it, the arm64 IRQL self-check (hal-rust
+     `halstubs.rs`) spams **`[IRQL] VIOLATION: raise-DOWN 15 -> 2`** paired with
+     **`lower-UP 2 -> 15`**. These are ABSENT in clean boots (verified across 3)
+     — they *correlate with the crash*, they are not benign detector noise.
+   - Reading: current soft IRQL is stuck at **15 (HIGH_LEVEL)** when a spinlock
+     acquire raises to SYNCH (which is `DISPATCH_LEVEL`=2 on arm64, `halstubs.rs:23`)
+     → the "raise" actually DROPS 15→2, opening a preemption window mid-critical-
+     section → state corruption → the wild-pointer interlocked death. The 15 is a
+     **leaked HIGH_LEVEL** (a raise via the ISR path / `HalBeginSystemInterrupt`
+     never lowered — same family as §9.19's leaked-DAIF-across-context-switch).
+   - The violation `caller near` addresses land PAST ntoskrnl's last symbol
+     (calibrate base off a known symbol: 0x1E PC = `InterlockedExchangeAdd64+0x10`
+     ⇒ tsv base `runtime_pc − tsv_rva`), i.e. in a later-loaded module — the
+     net/TDI path (netstack.sys / arm64 HAL interrupt path). `build-index.sh`
+     only indexes ntoskrnl, so symbolicating the caller needs a netstack index.
+   - **Next diagnostic on a repro:** it's IRQL-leak, not pool overrun, so special
+     pool is the wrong tool. Right tools: (a) make `irql_violation()` capture a
+     backtrace / `KeBugCheckEx` on first violation so the *leaking raise* is
+     caught with a live stack instead of the downstream victim; (b) GDB watch the
+     leaked `HalpCurrentIrql`; (c) audit the arm64 net/TDI ISR path for a
+     `HalBeginSystemInterrupt`/`KfRaiseIrql(HIGH_LEVEL)` without a matching lower.
+     Rare enough that a soak (`farm`, host-quiet only) may be needed to catch it live.
