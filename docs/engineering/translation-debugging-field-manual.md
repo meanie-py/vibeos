@@ -2348,10 +2348,11 @@ fail-loud path).
 
 Mechanics: harness passes `-fw_cfg name=opt/org.vibeos.tripwire,string=…`
 (vm.py `_tripwire_args`, env `VIBEOS_TRIPWIRE`); the kernel reads it at
-`MmArmInitSystem` Phase 0 (`ntoskrnl-rust/src/tripwire.rs`, x86 port I/O
-0x510/0x511) BEFORE PTE sizing + `MiInitializeSpecialPool`. x86 only for now
-(arm64 fw_cfg is MMIO on virt — stub returns; wire an early device mapping to
-extend). Tokens are space/semicolon-separated; **no commas** (QEMU owns the
+`MmArmInitSystem` Phase 0 (`ntoskrnl-rust/src/tripwire.rs`) BEFORE PTE sizing
++ `MiInitializeSpecialPool`. Transports: x86 port I/O 0x510/0x511; arm64 MMIO
+0x09020000 (virt) via a Device-attr identity page the arm64 winldr maps
+explicitly (`MempMapDevicePage`) — the signature probe guards non-QEMU.
+Tokens are space/semicolon-separated; **no commas** (QEMU owns the
 comma). Tags are `from_le_bytes` of the display form. Session-pool allocs are
 NOT excluded — win32k allocations divert into (global) special pool, which is
 exactly what the §9.17 / BAD-gate hunts want; watch for session-VA-assumption

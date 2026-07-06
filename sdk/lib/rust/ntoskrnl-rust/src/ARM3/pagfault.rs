@@ -1708,7 +1708,9 @@ pub unsafe extern "system" fn MmArmAccessFault(
                 #[cfg(target_arch = "x86")]
                 {
                     if !TrapInformation.is_null() {
-                        let eip = *((TrapInformation as *const u8).add(104) as *const u32);
+                        let eip = *((TrapInformation as *const u8)
+                            .add(core::mem::offset_of!(ntkrnl_sys::ddk::_KTRAP_FRAME, Eip))
+                            as *const u32);
                         let mut s: i32 = 28;
                         while s >= 0 {
                             let d = ((eip >> s) & 0xF) as u8;

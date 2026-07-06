@@ -18,9 +18,11 @@
 //!                       after pool init and expect BUGCHECK 0xC1 (pattern) or
 //!                       0x50 (guard page) — end-to-end detection proof.
 //!
-//! x86 (i386/amd64) only for now: fw_cfg is port I/O 0x510/0x511 there. arm64's
-//! fw_cfg is MMIO on the virt machine and needs an early device mapping — stubbed
-//! until that's wired.
+//! Transports: x86 (i386/amd64) = port I/O 0x510/0x511; arm64 = MMIO at
+//! 0x09020000 on the QEMU virt machine, reached through the early-boot identity
+//! map (same mechanism the pre-Phase1 UART writes to phys 0x09000000 use — the
+//! whole 0x09000000 2MB device block is identity-mapped during MmArmInitSystem
+//! Phase 0). The signature probe guards non-QEMU/real hardware.
 
 #![allow(non_snake_case)]
 
@@ -42,27 +44,46 @@ const TRIPWIRE_FILE: &[u8] = b"opt/org.vibeos.tripwire";
 const CFG_MAX: usize = 256;
 
 // ---------------------------------------------------------------------------
-// fw_cfg transport (x86: ports 0x510 selector / 0x511 data)
+// fw_cfg transport (x86: ports 0x510 selector / 0x511 data;
+//                   arm64: MMIO 0x09020000 — data @+0, selector @+8 big-endian)
 // ---------------------------------------------------------------------------
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod fwcfg {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     use core::arch::asm;
-
-    const PORT_SEL: u16 = 0x510;
-    const PORT_DATA: u16 = 0x511;
 
     const FW_CFG_SIGNATURE: u16 = 0x0000;
     const FW_CFG_FILE_DIR: u16 = 0x0019;
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     unsafe fn select(key: u16) {
+        const PORT_SEL: u16 = 0x510;
         asm!("out dx, ax", in("dx") PORT_SEL, in("ax") key, options(nomem, nostack));
     }
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     unsafe fn read_u8() -> u8 {
+        const PORT_DATA: u16 = 0x511;
         let v: u8;
         asm!("in al, dx", in("dx") PORT_DATA, out("al") v, options(nomem, nostack));
         v
+    }
+
+    // QEMU virt fw_cfg MMIO block, reached via the early-boot identity map
+    // (proven live for this 2MB device block by the pre-Phase1 UART writes to
+    // phys 0x09000000). Selector is BIG-ENDIAN on the MMIO transport; the data
+    // register streams successive bytes on repeated 1-byte reads.
+    #[cfg(target_arch = "aarch64")]
+    const FW_CFG_MMIO_BASE: usize = 0x0902_0000;
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe fn select(key: u16) {
+        core::ptr::write_volatile((FW_CFG_MMIO_BASE + 8) as *mut u16, key.to_be());
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe fn read_u8() -> u8 {
+        core::ptr::read_volatile(FW_CFG_MMIO_BASE as *const u8)
     }
 
     unsafe fn read_into(buf: &mut [u8]) {
@@ -119,15 +140,6 @@ mod fwcfg {
                 return Some(n);
             }
         }
-        None
-    }
-}
-
-#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-mod fwcfg {
-    /// arm64: fw_cfg is MMIO at 0x09020000 on the virt machine; needs an early
-    /// device mapping (Arm64UartKernelBase-style) before this can be wired.
-    pub unsafe fn read_file(_name: &[u8], _out: &mut [u8]) -> Option<usize> {
         None
     }
 }

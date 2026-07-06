@@ -886,22 +886,20 @@ pub const NonPagedPoolExpansion: ULONG = 1;
 // MMPFN field accessors
 // ============================================================================
 
-// MMPFN field offsets by architecture
-#[cfg(target_pointer_width = "64")]
+// MMPFN field offsets — derived from bindgen (which offset_check_<arch>.rs
+// asserts against C __builtin_offsetof), so they CANNOT drift, on any arch.
+// The hand-maintained per-arch numeric tables here caused the 2026-07-05
+// one-slot-shift bug (0xBE); never reintroduce numerals.
 mod pfn_offsets {
-    pub const PTE_ADDRESS: usize = 8;
-    pub const U2: usize = 16;          // ShareCount (ULONG_PTR)
-    pub const U3: usize = 24;          // ReferenceCount(u16) + MMPFNENTRY(u16)
-    pub const U4: usize = 40;          // EntireFrame / PteFrame / VerifierAllocation
+    use core::mem::offset_of;
+    use crate::ddk::_MMPFN;
+    pub const PTE_ADDRESS: usize = offset_of!(_MMPFN, PteAddress);
+    pub const U2: usize = offset_of!(_MMPFN, u2); // ShareCount (ULONG_PTR)
+    pub const U3: usize = offset_of!(_MMPFN, u3); // ReferenceCount(u16) + MMPFNENTRY(u16)
+    pub const U4: usize = offset_of!(_MMPFN, u4); // EntireFrame / PteFrame / VerifierAllocation
+    #[cfg(target_pointer_width = "64")]
     pub const MI_PTE_FRAME_BITS: u32 = 57;
-}
-
-#[cfg(target_pointer_width = "32")]
-mod pfn_offsets {
-    pub const PTE_ADDRESS: usize = 4;
-    pub const U2: usize = 8;
-    pub const U3: usize = 12;
-    pub const U4: usize = 20;
+    #[cfg(target_pointer_width = "32")]
     pub const MI_PTE_FRAME_BITS: u32 = 25;
 }
 
@@ -1078,15 +1076,10 @@ impl MMPFN {
 // MMPFN OriginalPte accessors
 // ============================================================================
 
-// OriginalPte offset: 64-bit = 32 (u1:8 + PteAddress:8 + u2:8 + u3:4 + UsedPageTableEntries:4)
-//                     32-bit = 16 (u1:4 + PteAddress:4 + u2:4 + u3:4)
-#[cfg(target_pointer_width = "64")]
+// OriginalPte — the {OriginalPte|AweReferenceCount|RmapListHead} union, which
+// bindgen names __bindgen_anon_1. Derived from bindgen (see pfn_offsets banner).
 mod pfn_offsets_orig_pte {
-    pub const ORIGINAL_PTE: usize = 32;
-}
-#[cfg(target_pointer_width = "32")]
-mod pfn_offsets_orig_pte {
-    pub const ORIGINAL_PTE: usize = 16;
+    pub const ORIGINAL_PTE: usize = core::mem::offset_of!(crate::ddk::_MMPFN, __bindgen_anon_1);
 }
 
 impl MMPFN {
@@ -1886,30 +1879,18 @@ pub const LIST_HEAD: PFN_NUMBER = PFN_NUMBER::MAX;
 // Additional MMPFN field accessors (u1.Flink, u1.SwapEntry, NextLRU, PreviousLRU, RmapListHead)
 // ============================================================================
 
-#[cfg(target_pointer_width = "64")]
+// Derived from bindgen (see pfn_offsets banner). The hand-maintained numeric
+// version of THIS table was the 2026-07-05 one-slot-shift bug: NextLRU collided
+// with the embedded Wsle, PreviousLRU with NextLRU, and RmapListHead landed on
+// PreviousLRU instead of overlaying OriginalPte as the C union intends.
 mod pfn_offsets_extra {
-    pub const U1: usize = 0;           // u1 union (Flink/SwapEntry/WsIndex) at offset 0
-    // C layout (mm.h _MMPFN, WIN64): u1@0 PteAddress@8 u2@16 u3@24 UsedPageTableEntries@28
-    // {OriginalPte|AweReferenceCount|RmapListHead}@32 u4@40 Wsle@48 NextLRU@56 PreviousLRU@64
-    // (sizeof == 72, asserted in size_check_*). These were previously shifted one slot
-    // (48/56/64 — the embedded Wsle@48 was missed), so NextLRU collided with Wsle (WS lock
-    // bits vs LRU link), PreviousLRU with NextLRU, and RmapListHead landed on PreviousLRU
-    // instead of overlaying OriginalPte as the C union intends.
-    pub const NEXT_LRU: usize = 56;    // NextLRU (after embedded Wsle@48)
-    pub const PREVIOUS_LRU: usize = 64; // PreviousLRU
-    pub const RMAP_LIST_HEAD: usize = 32; // RmapListHead — C union overlay with OriginalPte
-}
-
-#[cfg(target_pointer_width = "32")]
-mod pfn_offsets_extra {
-    pub const U1: usize = 0;
-    // C layout (mm.h _MMPFN, 32-bit): u1@0 PteAddress@4 u2@8 u3@12
-    // {OriginalPte|AweReferenceCount|RmapListHead}@16 u4@20 Wsle@24 NextLRU@28 PreviousLRU@32
-    // (sizeof == 36, asserted in size_check_i386). Same one-slot shift as 64-bit previously
-    // (24/28/32 — Wsle@24 missed).
-    pub const NEXT_LRU: usize = 28;
-    pub const PREVIOUS_LRU: usize = 32;
-    pub const RMAP_LIST_HEAD: usize = 16; // C union overlay with OriginalPte
+    use core::mem::offset_of;
+    use crate::ddk::_MMPFN;
+    pub const U1: usize = offset_of!(_MMPFN, u1); // Flink/SwapEntry/WsIndex union
+    pub const NEXT_LRU: usize = offset_of!(_MMPFN, NextLRU);
+    pub const PREVIOUS_LRU: usize = offset_of!(_MMPFN, PreviousLRU);
+    // RmapListHead — C union overlay with OriginalPte (bindgen __bindgen_anon_1)
+    pub const RMAP_LIST_HEAD: usize = offset_of!(_MMPFN, __bindgen_anon_1);
 }
 
 impl MMPFN {

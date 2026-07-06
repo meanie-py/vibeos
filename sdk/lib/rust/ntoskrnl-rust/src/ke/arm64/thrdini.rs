@@ -68,7 +68,7 @@ pub unsafe extern "system" fn KiInitializeContextThread(
 ) {
     let Thread = opaque_ptr(Thread);
     let StartContext = opaque_ptr(StartContext);
-    let mut InitialStack = ((*Thread).InitialStack as *mut u8).sub(512);
+    let mut InitialStack = ((*Thread).InitialStack as *mut u8).sub(512); // nolint: magic-offset (stack reservation size, mirrors C thrdini)
     InitialStack = (InitialStack as usize & !(15usize)) as *mut u8;
     (*Thread).InitialStack = InitialStack as PVOID;
 

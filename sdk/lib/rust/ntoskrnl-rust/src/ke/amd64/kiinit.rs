@@ -524,10 +524,10 @@ unsafe fn KiInitializeP0BootStructures(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
     // can't take the address of a static in a const initializer.
     KiP0BootStack = core::ptr::addr_of_mut!(KiP0BootStackData) as *mut u8
         as *mut core::ffi::c_void;
-    KiP0BootStack = (KiP0BootStack as *mut u8).add(KERNEL_STACK_SIZE) as PVOID;
+    KiP0BootStack = (KiP0BootStack as *mut u8).add(KERNEL_STACK_SIZE) as PVOID; // nolint: magic-offset (stack size, not a field offset)
     KiP0DoubleFaultStack = core::ptr::addr_of_mut!(KiP0DoubleFaultStackData) as *mut u8
         as *mut core::ffi::c_void;
-    KiP0DoubleFaultStack = (KiP0DoubleFaultStack as *mut u8).add(KERNEL_STACK_SIZE) as PVOID;
+    KiP0DoubleFaultStack = (KiP0DoubleFaultStack as *mut u8).add(KERNEL_STACK_SIZE) as PVOID; // nolint: magic-offset (stack size, not a field offset)
 
     let mut GdtDescriptor = KDESCRIPTOR {
         Pad: [0u16; 3],
