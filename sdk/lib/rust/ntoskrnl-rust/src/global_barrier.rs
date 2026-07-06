@@ -326,74 +326,10 @@ pub unsafe extern "C" fn _global_write_barrier() {
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::inbv::inbv::ResourceCount), core::ptr::read_volatile(core::ptr::addr_of!(crate::inbv::inbv::ResourceCount)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::inbv::inbv::InbvTerminalTextColor), core::ptr::read_volatile(core::ptr::addr_of!(crate::inbv::inbv::InbvTerminalTextColor)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::inbv::inbv::InbvTerminalBkgdColor), core::ptr::read_volatile(core::ptr::addr_of!(crate::inbv::inbv::InbvTerminalBkgdColor)));
-    // iomgr/adapter.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::adapter::IoAdapterObjectType), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::adapter::IoAdapterObjectType)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::adapter::IoDeviceHandlerObjectType), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::adapter::IoDeviceHandlerObjectType)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::adapter::IoDeviceHandlerObjectSize), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::adapter::IoDeviceHandlerObjectSize)));
-    // iomgr/arcname.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::arcname::IoArcHalDeviceName), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::arcname::IoArcHalDeviceName)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::arcname::IoArcBootDeviceName), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::arcname::IoArcBootDeviceName)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::arcname::IoLoaderArcBootDeviceName), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::arcname::IoLoaderArcBootDeviceName)));
-    // iomgr/controller.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::controller::IoControllerObjectType), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::controller::IoControllerObjectType)));
-    // iomgr/device.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::device::ShutdownListHead), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::device::ShutdownListHead)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::device::LastChanceShutdownListHead), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::device::LastChanceShutdownListHead)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::device::ShutdownListLock), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::device::ShutdownListLock)));
-    // iomgr/driver.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::driver::IopDriverLoadResource), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::driver::IopDriverLoadResource)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::driver::DriverReinitListHead), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::driver::DriverReinitListHead)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::driver::DriverReinitListLock), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::driver::DriverReinitListLock)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::driver::DriverBootReinitListHead), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::driver::DriverBootReinitListHead)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::driver::DriverBootReinitListLock), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::driver::DriverBootReinitListLock)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::driver::IopHardwareDatabaseKey), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::driver::IopHardwareDatabaseKey)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::driver::IoDriverObjectType), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::driver::IoDriverObjectType)));
-    // iomgr/error.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::error::IopTotalLogSize), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::error::IopTotalLogSize)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::error::IopErrorLogListHead), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::error::IopErrorLogListHead)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::error::IopLogListLock), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::error::IopLogListLock)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::error::IopErrorLogWorkItem), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::error::IopErrorLogWorkItem)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::error::IopErrorLogObject), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::error::IopErrorLogObject)));
-    // iomgr/iocomp.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iocomp::IoCompletionType), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iocomp::IoCompletionType)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iocomp::IoCompletionPacketLookaside), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iocomp::IoCompletionPacketLookaside)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iocomp::IopCompletionMapping), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iocomp::IopCompletionMapping)));
-    // iomgr/iofunc.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iofunc::IoPageReadIrpAllocationFailure), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iofunc::IoPageReadIrpAllocationFailure)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iofunc::IoPageReadNonPagefileIrpAllocationFailure), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iofunc::IoPageReadNonPagefileIrpAllocationFailure)));
-    // iomgr/iomgr.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IopTraceLevel), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IopTraceLevel)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::PnpSystemInit), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::PnpSystemInit)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IoDeviceObjectType), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IoDeviceObjectType)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IoFileObjectType), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IoFileObjectType)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IoCountOperations), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IoCountOperations)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IoReadOperationCount), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IoReadOperationCount)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IoReadTransferCount), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IoReadTransferCount)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IoWriteOperationCount), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IoWriteOperationCount)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IoWriteTransferCount), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IoWriteTransferCount)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IoOtherOperationCount), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IoOtherOperationCount)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IoOtherTransferCount), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IoOtherTransferCount)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IoStatisticsLock), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IoStatisticsLock)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IopAutoReboot), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IopAutoReboot)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IopNumTriageDumpDataBlocks), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IopNumTriageDumpDataBlocks)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IopFileMapping), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IopFileMapping)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IopSecurityResource), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IopSecurityResource)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iomgr::IopLoaderBlock), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iomgr::IopLoaderBlock)));
-    // iomgr/iotimer.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iotimer::IopTimerLock), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iotimer::IopTimerLock)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iotimer::IopTimerQueueHead), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iotimer::IopTimerQueueHead)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iotimer::IopTimerDpc), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iotimer::IopTimerDpc)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iotimer::IopTimer), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iotimer::IopTimer)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::iotimer::IopTimerCount), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::iotimer::IopTimerCount)));
-    // iomgr/irp.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::irp::IopReserveIrpAllocator), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::irp::IopReserveIrpAllocator)));
-    // iomgr/volume.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::volume::IopDatabaseResource), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::volume::IopDatabaseResource)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::volume::IopDiskFileSystemQueueHead), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::volume::IopDiskFileSystemQueueHead)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::volume::IopNetworkFileSystemQueueHead), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::volume::IopNetworkFileSystemQueueHead)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::volume::IopCdRomFileSystemQueueHead), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::volume::IopCdRomFileSystemQueueHead)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::volume::IopTapeFileSystemQueueHead), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::volume::IopTapeFileSystemQueueHead)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::iomgr::volume::IopFsNotifyChangeQueueHead), core::ptr::read_volatile(core::ptr::addr_of!(crate::iomgr::volume::IopFsNotifyChangeQueueHead)));
+    // iomgr statics moved to iomgr-rust's own _iomgr_global_write_barrier (crate-split
+    // Phase 1b). 55 entries there; IopAutoReboot stayed here (const CmControlVector
+    // needs its in-crate address) so it's barriered here:
+    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::config::cmdata::IopAutoReboot), core::ptr::read_volatile(core::ptr::addr_of!(crate::config::cmdata::IopAutoReboot)));
     // ke/amd64/cpu.rs
     #[cfg(target_arch = "x86_64")]
     {
@@ -612,32 +548,7 @@ pub unsafe extern "C" fn _global_write_barrier() {
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::ob::obname::ObpTypeDirectoryObject), core::ptr::read_volatile(core::ptr::addr_of!(crate::ob::obname::ObpTypeDirectoryObject)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::ob::obname::ObpDosDevicesShortName), core::ptr::read_volatile(core::ptr::addr_of!(crate::ob::obname::ObpDosDevicesShortName)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::ob::obname::ObpUnsecureGlobalNamesLength), core::ptr::read_volatile(core::ptr::addr_of!(crate::ob::obname::ObpUnsecureGlobalNamesLength)));
-    // pnpmgr/devaction.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::devaction::IopDeviceActionRequestList), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::devaction::IopDeviceActionRequestList)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::devaction::IopDeviceActionWorkItem), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::devaction::IopDeviceActionWorkItem)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::devaction::IopDeviceActionInProgress), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::devaction::IopDeviceActionInProgress)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::devaction::IopDeviceActionLock), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::devaction::IopDeviceActionLock)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::devaction::PiEnumerationFinished), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::devaction::PiEnumerationFinished)));
-    // pnpmgr/devnode.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::devnode::IopRootDeviceNode), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::devnode::IopRootDeviceNode)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::devnode::IopDeviceTreeLock), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::devnode::IopDeviceTreeLock)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::devnode::IopNumberDeviceNodes), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::devnode::IopNumberDeviceNodes)));
-    // pnpmgr/pnpinit.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpinit::PiInitGroupOrderTable), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpinit::PiInitGroupOrderTable)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpinit::PiInitGroupOrderTableCount), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpinit::PiInitGroupOrderTableCount)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpinit::PnPBootDriversLoaded), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpinit::PnPBootDriversLoaded)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpinit::PnPBootDriversInitialized), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpinit::PnPBootDriversInitialized)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpinit::IopRootBusNumberArbiter), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpinit::IopRootBusNumberArbiter)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpinit::IopRootIrqArbiter), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpinit::IopRootIrqArbiter)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpinit::IopRootDmaArbiter), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpinit::IopRootDmaArbiter)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpinit::IopRootMemArbiter), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpinit::IopRootMemArbiter)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpinit::IopRootPortArbiter), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpinit::IopRootPortArbiter)));
-    // pnpmgr/pnpmgr.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpmgr::PpRegistryDeviceResource), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpmgr::PpRegistryDeviceResource)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpmgr::PpDeviceReferenceTableLock), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpmgr::PpDeviceReferenceTableLock)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpmgr::PpDeviceReferenceTable), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpmgr::PpDeviceReferenceTable)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpmgr::IopRootDriverObject), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpmgr::IopRootDriverObject)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::pnpmgr::pnpmgr::PnpBusTypeGuidList), core::ptr::read_volatile(core::ptr::addr_of!(crate::pnpmgr::pnpmgr::PnpBusTypeGuidList)));
+    // pnpmgr statics moved to pnpmgr-rust's _pnpmgr_global_write_barrier (crate-split Phase 1b).
     // po/events.rs
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::po::events::PopEventCallout), core::ptr::read_volatile(core::ptr::addr_of!(crate::po::events::PopEventCallout)));
     // po/poshtdwn.rs
@@ -677,70 +588,7 @@ pub unsafe extern "C" fn _global_write_barrier() {
     // rtl/libsupp.rs
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::rtl::libsupp::RtlpRangeListEntryLookasideList), core::ptr::read_volatile(core::ptr::addr_of!(crate::rtl::libsupp::RtlpRangeListEntryLookasideList)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::rtl::libsupp::RtlpAllocDeallocQueryBufferSize), core::ptr::read_volatile(core::ptr::addr_of!(crate::rtl::libsupp::RtlpAllocDeallocQueryBufferSize)));
-    // se/acl.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::acl::SePublicDefaultDacl), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::acl::SePublicDefaultDacl)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::acl::SeSystemDefaultDacl), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::acl::SeSystemDefaultDacl)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::acl::SePublicDefaultUnrestrictedDacl), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::acl::SePublicDefaultUnrestrictedDacl)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::acl::SePublicOpenDacl), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::acl::SePublicOpenDacl)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::acl::SePublicOpenUnrestrictedDacl), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::acl::SePublicOpenUnrestrictedDacl)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::acl::SeUnrestrictedDacl), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::acl::SeUnrestrictedDacl)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::acl::SeSystemAnonymousLogonDacl), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::acl::SeSystemAnonymousLogonDacl)));
-    // se/sd.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sd::SePublicDefaultSd), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sd::SePublicDefaultSd)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sd::SePublicDefaultUnrestrictedSd), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sd::SePublicDefaultUnrestrictedSd)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sd::SePublicOpenSd), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sd::SePublicOpenSd)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sd::SePublicOpenUnrestrictedSd), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sd::SePublicOpenUnrestrictedSd)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sd::SeSystemDefaultSd), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sd::SeSystemDefaultSd)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sd::SeUnrestrictedSd), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sd::SeUnrestrictedSd)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sd::SeSystemAnonymousLogonSd), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sd::SeSystemAnonymousLogonSd)));
-    // se/semgr.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::semgr::SeAnonymousLogonToken), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::semgr::SeAnonymousLogonToken)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::semgr::SeAnonymousLogonTokenNoEveryone), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::semgr::SeAnonymousLogonTokenNoEveryone)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::semgr::SeExports), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::semgr::SeExports)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::semgr::SidInTokenCalls), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::semgr::SidInTokenCalls)));
-    // se/sid.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeNullSidAuthority), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeNullSidAuthority)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeWorldSidAuthority), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeWorldSidAuthority)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeLocalSidAuthority), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeLocalSidAuthority)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeCreatorSidAuthority), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeCreatorSidAuthority)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeNtSidAuthority), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeNtSidAuthority)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeNullSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeNullSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeWorldSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeWorldSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeLocalSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeLocalSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeCreatorOwnerSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeCreatorOwnerSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeCreatorGroupSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeCreatorGroupSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeCreatorOwnerServerSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeCreatorOwnerServerSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeCreatorGroupServerSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeCreatorGroupServerSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeNtAuthoritySid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeNtAuthoritySid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeDialupSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeDialupSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeNetworkSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeNetworkSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeBatchSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeBatchSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeInteractiveSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeInteractiveSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeServiceSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeServiceSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SePrincipalSelfSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SePrincipalSelfSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeLocalSystemSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeLocalSystemSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeAuthenticatedUserSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeAuthenticatedUserSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeRestrictedCodeSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeRestrictedCodeSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeAliasAdminsSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeAliasAdminsSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeAliasUsersSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeAliasUsersSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeAliasGuestsSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeAliasGuestsSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeAliasPowerUsersSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeAliasPowerUsersSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeAliasAccountOpsSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeAliasAccountOpsSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeAliasSystemOpsSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeAliasSystemOpsSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeAliasPrintOpsSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeAliasPrintOpsSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeAliasBackupOpsSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeAliasBackupOpsSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeAuthenticatedUsersSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeAuthenticatedUsersSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeRestrictedSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeRestrictedSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeAnonymousLogonSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeAnonymousLogonSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeLocalServiceSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeLocalServiceSid)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::sid::SeNetworkServiceSid), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::sid::SeNetworkServiceSid)));
-    // se/subject.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::subject::SepSubjectContextLock), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::subject::SepSubjectContextLock)));
-    // se/token.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::token::SeTokenObjectType), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::token::SeTokenObjectType)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::token::SeSystemTokenSource), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::token::SeSystemTokenSource)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::token::SeSystemAuthenticationId), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::token::SeSystemAuthenticationId)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::se::token::SeAnonymousAuthenticationId), core::ptr::read_volatile(core::ptr::addr_of!(crate::se::token::SeAnonymousAuthenticationId)));
+    // se statics moved to se-rust's _se_global_write_barrier (crate-split Phase 1b).
     // shim_exports.rs
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::shim_exports::LdrpShutdownInProgress), core::ptr::read_volatile(core::ptr::addr_of!(crate::shim_exports::LdrpShutdownInProgress)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::shim_exports::LdrpShutdownThreadId), core::ptr::read_volatile(core::ptr::addr_of!(crate::shim_exports::LdrpShutdownThreadId)));

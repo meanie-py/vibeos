@@ -18,6 +18,11 @@ fsrtl-rust = { path = "../fsrtl-rust" }
 dbgk-rust = { path = "../dbgk-rust" }
 wmi-rust = { path = "../wmi-rust" }
 cc-rust = { path = "../cc-rust" }
+iomgr-rust = { path = "../iomgr-rust" }
+kdbg-rust = { path = "../kdbg-rust" }
+fstub-rust = { path = "../fstub-rust" }
+se-rust = { path = "../se-rust" }
+pnpmgr-rust = { path = "../pnpmgr-rust" }
 cmboot-rust = { path = "../cmboot-rust" }
 ntprintf = { path = "../ntprintf" }
 ntprintf_w = { path = "../ntprintf_w" }

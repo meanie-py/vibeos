@@ -1,0 +1,37 @@
+# kdbg-rust — the integrated kernel debugger (KDBG), extracted from ntoskrnl-rust
+# into its own rlib so it type-checks/codegens/caches independently of the
+# ~450K-LOC kernel monolith (crate-split Phase 1b — see
+# docs/engineering/ntoskrnl-crate-split-plan.md).
+#
+# KDBG is x86-ONLY (disabled on ARM64). The whole crate is gated behind
+# `#![cfg(any(target_arch = "x86", target_arch = "x86_64"))]` in src/lib.rs, so on
+# arm64 it compiles to an empty rlib and kernel-rust's `extern crate kdbg_rust` is
+# itself cfg-gated out — nothing references it there. See lib.rs for the rationale.
+#
+# Pure KDBG logic on the ntkrnl-sys FFI substrate + the dbgprint-rust print macros;
+# zero deps on the rest of ntoskrnl-rust (every kdbg<->kernel call already crosses
+# an extern/#[no_mangle] symbol boundary resolved at the kernel link). Its objects
+# bundle into libkernel_rust.a via `extern crate kdbg_rust` in the kernel-rust
+# umbrella (a Cargo dep alone would compile the rlib but drop its #[no_mangle]
+# symbols — same pattern as cc-rust / lpc-rust / fsrtl-rust).
+#
+# CYCLE NOTE: kdbg DEFINES KdbPutsN / KdbpPagerInternal, which dbgprint-rust's
+# extern blocks CALL — this is resolved at the kernel link, NOT a Cargo edge. Do
+# NOT add a dbgprint-rust -> kdbg-rust dependency (it would be circular).
+[package]
+name = "kdbg-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+dbgprint-rust = { path = "../dbgprint-rust" }
+
+# iced-x86 is used ONLY by i386_dis.rs's #[cfg(test)] disassembler-roundtrip module,
+# so it is a dev-dependency (never linked into the kernel). Relocated verbatim from
+# ntoskrnl-rust/Cargo.toml [dev-dependencies].
+[dev-dependencies]
+iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "intel", "gas"] }

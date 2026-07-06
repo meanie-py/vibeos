@@ -34,6 +34,20 @@ const MaximumClass: usize = 7;
 // without depending on ntoskrnl-rust. See cm_control.rs.
 use ntkrnl_sys::{cv, w, SubVector};
 
+// IopAutoReboot: registry CrashControl\AutoReboot flag. Relocated here from iomgr
+// (crate-split Phase 1b): the const CmControlVector table below must reference its
+// address as an IN-CRATE relocation — const-eval cannot point at an extern
+// (severed-crate) static. iomgr had no runtime use of it; it's read by ke/bug.rs
+// (extern decl) and populated by the registry via CmControlVector.
+#[no_mangle]
+pub static mut IopAutoReboot: ULONG = 0;
+
+// iomgr's registry slice (was IOMGR_CONTROL_VECTOR in iomgr.rs). Local const so the
+// const CmControlVector concatenation can reference it. crate-split Phase 1b.
+const IOMGR_CONTROL_VECTOR: SubVector<1> = SubVector(unsafe {
+    [cv!("CrashControl", "AutoReboot", core::ptr::addr_of_mut!(IopAutoReboot))]
+});
+
 // (CM_DEBUG_PRINT_FILTER entries moved to kd64::kddata::KD_FILTER_CONTROL_VECTOR)
 
 // ============================================================================
@@ -493,7 +507,7 @@ const SLICES: &[&[_CM_SYSTEM_CONTROL_VECTOR]] = &[
     &crate::ex::init::INIT_CONTROL_VECTOR.0,
     &crate::ex::resource::RESOURCE_CONTROL_VECTOR.0,
     &crate::ps::process::PROCESS_CONTROL_VECTOR.0,
-    &crate::iomgr::iomgr::IOMGR_CONTROL_VECTOR.0,
+    &IOMGR_CONTROL_VECTOR.0,
     &crate::config::cmlazy::CMLAZY_CONTROL_VECTOR.0,
     &crate::config::cmdelay::CMDELAY_CONTROL_VECTOR.0,
     &crate::ex::pool::globals::POOL_CONTROL_VECTOR.0,
