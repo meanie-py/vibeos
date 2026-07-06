@@ -790,6 +790,93 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
                     );
                 }
             }
+            // Mini-backtrace off the trap frame's Rsp (same scan as the P3 path
+            // below). Critical for 0x7F double faults: the recursion cycle that
+            // blew the stack is only visible on the overflowed stack itself.
+            let rsp = (*(TrapFrame as *const ntkrnl_sys::ddk::_KTRAP_FRAME)).Rsp as u64;
+            if rsp > 0xFFFF800000000000 {
+                // Innermost frames (the repeating cycle on a blown stack)...
+                let mut printed = 0u32;
+                let mut qi = 0u64;
+                while qi < 256 && printed < 12 {
+                    let sp = rsp + qi * 8;
+                    let val = *(sp as *const u64);
+                    if val > 0xFFFF800000000000 {
+                        let mut le2: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                        let mut in_kernel2: BOOLEAN = 0;
+                        let base2 = KiPcToFileHeader(val as PVOID, &mut le2, 0u8, &mut in_kernel2);
+                        if !base2.is_null() && !le2.is_null() {
+                            let mut ansi2 = [0i8; 64];
+                            KeBugCheckUnicodeToAnsi(
+                                &(*le2).BaseDllName as *const _ as PUNICODE_STRING,
+                                ansi2.as_mut_ptr(),
+                                64,
+                            );
+                            crate::dbg_print!(
+                                b"***   tfstack[+0x%03lX] = %s+0x%lX\n\0",
+                                (qi * 8) as ULONG,
+                                ansi2.as_ptr(),
+                                (val as ULONG_PTR - base2 as ULONG_PTR) as ULONG,
+                            );
+                            printed += 1;
+                        }
+                    }
+                    qi += 1;
+                }
+                // ...then the OUTERMOST frames (original context that started the
+                // recursion) — ring-buffer the last 16 resolvable entries across
+                // the whole plausible stack extent and dump them.
+                let mut ring: [(u64, u64); 16] = [(0, 0); 16];
+                let mut nhits: u64 = 0;
+                let mut qj = 0u64;
+                while qj < 3072 {
+                    let sp = rsp + qj * 8;
+                    // Guard each page: walking past StackBase into unmapped VA
+                    // would nest-fault inside the bugcheck path.
+                    if sp & 0xFFF == 0 || qj == 0 {
+                        if ntkrnl_sys::ddk::MmIsAddressValid(sp as PVOID) == 0 {
+                            break;
+                        }
+                    }
+                    let val = *(sp as *const u64);
+                    if val > 0xFFFF800000000000 {
+                        let mut le3: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                        let mut in_kernel3: BOOLEAN = 0;
+                        let base3 = KiPcToFileHeader(val as PVOID, &mut le3, 0u8, &mut in_kernel3);
+                        if !base3.is_null() && !le3.is_null() {
+                            ring[(nhits % 16) as usize] = (qj * 8, val);
+                            nhits += 1;
+                        }
+                    }
+                    qj += 1;
+                }
+                if nhits > 12 {
+                    crate::dbg_print!(b"***   --- outermost frames (of %lu hits) ---\n\0", nhits as ULONG);
+                    let start = if nhits >= 16 { nhits - 16 } else { 0 };
+                    let mut k = start;
+                    while k < nhits {
+                        let (soff, val) = ring[(k % 16) as usize];
+                        let mut le4: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                        let mut in_kernel4: BOOLEAN = 0;
+                        let base4 = KiPcToFileHeader(val as PVOID, &mut le4, 0u8, &mut in_kernel4);
+                        if !base4.is_null() && !le4.is_null() {
+                            let mut ansi4 = [0i8; 64];
+                            KeBugCheckUnicodeToAnsi(
+                                &(*le4).BaseDllName as *const _ as PUNICODE_STRING,
+                                ansi4.as_mut_ptr(),
+                                64,
+                            );
+                            crate::dbg_print!(
+                                b"***   tfstack[+0x%04lX] = %s+0x%lX\n\0",
+                                soff as ULONG,
+                                ansi4.as_ptr(),
+                                (val as ULONG_PTR - base4 as ULONG_PTR) as ULONG,
+                            );
+                        }
+                        k += 1;
+                    }
+                }
+            }
         }
     }
 
