@@ -2634,8 +2634,8 @@ timer table shows live sub-second traffic; explorer main blocks in
 `GetMessage`; netstack worker alive in real `delay_ms` waits (WaitReason=4);
 `test_arm64input_delivery` green.
 
-**Follow-up CLOSED 2026-07-06 (§9.22): tray clock / window repaint freeze was
-the WRONG ACTIVE INPUT DESKTOP, not timer delivery.** See §9.22 — the timer
+**Follow-up CLOSED 2026-07-06 (§9.23): tray clock / window repaint freeze was
+the WRONG ACTIVE INPUT DESKTOP, not timer delivery.** See §9.23 — the timer
 path was fine all along; `gpdeskInputDesktop` was stranded on "Winlogon" while
 the shell runs on "Default", so win32k's paint retrieval walked the wrong
 desktop tree. Fixed in winlogon (arm64 boot path). The `cTimersReady`-stays-0
@@ -2652,7 +2652,7 @@ stopped at EL0 — break on a kernel PC first. And REBUILD THE SYMBOL INDEX
 after every build: a stale `sym2addr` address put a 5-minute breakpoint on
 dead code and nearly "proved" timers were frozen when they weren't.
 
-### 9.22 (FIXED 2026-07-06) arm64 desktop never repaints — wrong ACTIVE INPUT DESKTOP + SystemTime never seeded from the RTC
+### 9.23 (FIXED 2026-07-06) arm64 desktop never repaints — wrong ACTIVE INPUT DESKTOP + SystemTime never seeded from the RTC
 
 Two independent bugs behind "the arm64 desktop is frozen at boot": the tray
 clock never ticked (both a wrong *value* and no *repaint*), and no window ever
@@ -2710,3 +2710,35 @@ notepad title bar + Start button + taskbar button render. `IntGetPaintMessage`
 walking the wrong desktop is the general shape — if windows draw once then
 freeze, check `gpdeskInputDesktop` vs the shell thread's `rpdesk` before
 suspecting the timer/paint bookkeeping.
+
+### 9.22 Driver hardware-settle delays are pure loss in a VM — gate them on the driver's own VM detection (uniata cost 2.85s/boot)
+
+**Symptom shape:** a boot phase is "slow" with zero serial output and no
+faults — just wall-clock disappearing inside a driver's init/probe path.
+Under TCG every `KeStallExecutionProcessor` microsecond is real (and costs
+~1.7× nominal once the port-I/O in the polling loop is added).
+
+**The class:** hardware drivers inherited from real-metal code are full of
+fixed settle delays and worst-case polling budgets (wait-for-BUSY-assert,
+post-reset mechanical settle, bus-settle stalls). Virtual devices complete
+these operations instantly, so the *entire* budget burns on every boot.
+The tell that it's this class and not a real wait: the delay is identical
+run-to-run and the device works fine afterwards.
+
+**Recipe:** (1) drop permanent `DbgPrint` phase markers at the suspect
+driver's probe/init milestones (entry/exit of each stage), boot once with
+`VIBEOS_SERIAL_TIMESTAMPS=1 ./vibeos-cli smoke`, read the per-stage deltas
+from the live log. (2) For each hot stall, gate it on the driver's own VM
+detection rather than deleting it — most storage/NIC drivers already detect
+the hypervisor (uniata: `g_opt_VirtualMachine`, set from PCI subsys
+1af4:1100 for QEMU).
+
+**uniata instance (fixed 2026-07-06, amd64/i386):** 12 × `AtapiSoftReset`
+each burned a 100ms wait for BUSY to *assert* after ATAPI RESET (QEMU never
+asserts it; Bochs already had an `i=100` shortcut — QEMU is the same IDE
+lineage, extend the shortcut: uniata-rust `id_ata_part1.rs`) ≈ 2.0s, plus an
+unconditional 500ms "mechanical settle" per ATAPI lun in
+`AtapiHwInitialize__` (`id_ata_part2.rs`) ≈ 0.88s real. Probe: 2.35s →
+120ms; FindDevices→INQUIRY-complete: 880ms → 4ms. The `[UNIATA]` markers are
+permanent — future regressions in this window are attributable from any
+timestamped smoke log.

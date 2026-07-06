@@ -59,7 +59,7 @@ report, `HalDumpGicArm64()` state dumper, masked-swap tripwire in `KiSwapContext
      ungated delivery ran timer expiration in exception context → BUGCHECK 0x1E
      (EC=0x0E), the §9.19 class. The depth counter is bumped vector-wide in
      `HalClockInterruptArm64` and by every HalpEnter/ExitInterruptIrql pair.
-   CLOSED 2026-07-06 (§9.22): the tray-clock/window repaint freeze was NOT a timer
+   CLOSED 2026-07-06 (§9.23): the tray-clock/window repaint freeze was NOT a timer
    bug — `gpdeskInputDesktop` was stranded on the "Winlogon" desktop while the shell
    runs on "Default", so win32k's `IntGetPaintMessage` walked the wrong desktop tree
    and never found explorer's dirty windows. Fixed in winlogon-rust (arm64 boot path
