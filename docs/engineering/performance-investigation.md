@@ -73,6 +73,36 @@ From commands.jsonl of a no-change amd64 build: ninja livecd 1.2s + primed
 targets 0.6s; everything else is scanners + symbol indexing + stats. The
 "build" cost people feel in the loop is ~95% lint/verify tooling.
 
+### F4b. [FIXED 2026-07-06] host-tools BUILD_ALWAYS phantom-dirtied every warm build — no-op ninja 87s → 1s
+F4's "ninja ~2s" stopped being true as cargo modules accumulated: by
+2026-07-06 a literal no-op `ninja livecd` took **87s**. Root: upstream's
+`BUILD_ALWAYS TRUE` on the host-tools ExternalProject omits the build stamp,
+so the phony host-tools chain was dirty on EVERY build; the dirt reached
+~53k graph nodes, and the ~40 cargo-module custom commands (which re-RUN on
+phony-dirty deps — restat can't save a custom command) each re-invoked cargo
+concurrently, serializing on cargo's package-cache lock at 33–51s per edge.
+Fix (`sdk/cmake/host-tools.cmake`): build-once + file-level
+`ExternalProject_Add_StepDependencies` on the sub-build's real source tree;
+BUILD_BYPRODUCTS + restat prune downstream when tools come out unchanged.
+Verified: no-op ninja 87s → 0–1s; tool-source edit still propagates (6s
+targeted rebuild); warm `vibeos-cli build` ~40s, now genuinely lint-dominated
+(verify_ffi 17s is the top stage). This also invalidated the "cargo module
+links are 35s each" reading of the ninja log — those were phantom re-runs.
+
+### F4c. Link speed is DEAD LORE — measured 2026-07-06
+The remembered "link is the worst offender" no longer holds (canonical-path +
+shared-sccache work likely fixed it): kernel cargo link (reactos-link → lld)
+is seconds; a warm no-op `cargo build -p ntoskrnl-cargo` is 5.7s; a REAL
+one-line kernel .rs edit → rebuilt+relinked ntoskrnl.exe in **12.6s**; a tiny
+cargo module (beep) warm no-op is 0.12s, forced re-link 1.4s. The cold-build
+critical path is the single-crate `ntoskrnl-rust` rustc (~400s class) — the
+module-factoring lane is the right attack. Cold-adjacent facts: sccache marks
+`crate-type: staticlib` non-cacheable (38/396 requests last build), so the
+~50 per-driver staticlib shells never cache (keep bodies in rlibs); those 50
+per-driver `rust-*-target` dirs also each recompile the ntkrnl-sys world
+(~90MB each, ~4.5GB/arch) — consolidation into the shared workspace target
+(as the cargo modules already do) would cut cold time and disk.
+
 ### F5. Gate is a 3-barrier pipeline; per-arch pipelining would cut ~40%
 Gate = builds (serial, ~130s warm) → lint (parallel barrier, ~60s) → smokes
 (parallel, wall = amd64 ~200s). Nothing starts smoking until ALL arches built
