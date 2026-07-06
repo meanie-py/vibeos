@@ -29,6 +29,11 @@ KERNEL_CRATE_SRC_ROOTS = [
     "sdk/lib/rust/wmi-rust/src",  # extracted 2026-07 (crate-split)
     "sdk/lib/rust/dbgprint-rust/src",  # print-infra leaf hoisted 2026-07 (crate-split Phase 1b)
     "sdk/lib/rust/cc-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
+    "sdk/lib/rust/iomgr-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
+    "sdk/lib/rust/kdbg-rust/src",  # extracted 2026-07 (crate-split Phase 1b, x86-only)
+    "sdk/lib/rust/fstub-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
+    "sdk/lib/rust/se-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
+    "sdk/lib/rust/pnpmgr-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
 ]
 
 

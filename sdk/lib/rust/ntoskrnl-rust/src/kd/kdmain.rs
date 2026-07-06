@@ -4,6 +4,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{
+    HAL_DISPATCH,
     HalDisplayString, IoCreateDriver, IoDeleteDriver, IoRegisterBootDriverReinitialization,
     IoRegisterDriverReinitialization, ObMakeTemporaryObject, ANSI_STRING, CPPORT, PCSTR,
     PDRIVER_OBJECT, PLOADER_PARAMETER_BLOCK, PUNICODE_STRING, UNICODE_STRING, USHORT,
@@ -79,7 +80,11 @@ pub const KD_DEBUG_KDNOECHO: ULONG = 0x2;
 // `HalInitPnpDriver` is a C macro: `#define HalInitPnpDriver HALDISPATCH->HalInitPnpDriver`
 // — a field in the `HalDispatchTable` global (defined in fstub/halstub.rs).
 // We access it directly via `crate::fstub::halstub::HalDispatchTable.HalInitPnpDriver`.
-use crate::fstub::halstub::HalDispatchTable;
+// HalDispatchTable now lives in fstub-rust (crate-split Phase 1b); reference the
+// #[no_mangle] global by extern decl instead of a monolith crate:: path.
+extern "C" {
+    static mut HalDispatchTable: HAL_DISPATCH;
+}
 
 #[no_mangle]
 pub static mut orgHalInitPnpDriver: pHalInitPnpDriver = None;

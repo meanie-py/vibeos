@@ -629,8 +629,12 @@ pub unsafe extern "system" fn IopInstallCriticalDevice(DeviceNode: PDEVICE_NODE)
     ZwClose(CriticalDeviceKey);
 }
 
+// True C ABI is cdecl (declared in ntoskrnl/include/internal/io.h WITHOUT NTAPI),
+// so `extern "C"` — matches the ntkrnl_sys::ddk bindgen decl callers now resolve
+// through post-extraction. The old `extern "system"` (i386 stdcall → `@4`
+// decoration) only linked while the sole caller was an intra-crate Rust path.
 #[no_mangle]
-pub unsafe extern "system" fn IopGetSystemPowerDeviceObject(DeviceObject: *mut PDEVICE_OBJECT) -> NTSTATUS {
+pub unsafe extern "C" fn IopGetSystemPowerDeviceObject(DeviceObject: *mut PDEVICE_OBJECT) -> NTSTATUS {
     let DeviceObject = opaque_ptr(DeviceObject);
     let mut OldIrql: KIRQL = 0;
 
