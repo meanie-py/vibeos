@@ -911,6 +911,17 @@ inputs; you get an `unreachable-pattern` *warning*, never an error.
   a **binding**, not a path — `git grep -nE '^\s*[A-Z][A-Z0-9_]+\s*=>'` and confirm each name
   is a real `const`/imported path. A value match must be `path::FOO =>` or a guarded
   `x if x == FOO =>`.
+- **The deletion variant (2026-07-06):** you can *create* this bug without touching the
+  match — **deleting a `pub const` out from under a `use module::*` glob** turns every match
+  arm naming it, possibly in a different file, into a catch-all. Real case: a const-dedup
+  edit removed `IRP_MN_QUERY_DEVICE_TEXT`/`IRP_MN_QUERY_ID` from scsiport-rust `glue.rs`;
+  `pdo.rs`'s PnP dispatch then swallowed **every unhandled minor code** into
+  `PdoHandleQueryDeviceText`, so `IRP_MN_QUERY_RESOURCES` returned "success" with a *text
+  string* as the resource list → PnP stored it as `BootResources` → deterministic BUGCHECK
+  0x1E walking text as CM descriptors (i386 smoke; amd64 walked the same garbage without
+  faulting — arch greenness is luck, not proof). Rule: after ANY const removal/rename,
+  re-run `cargo check` on every crate that globs the module and grep `unreachable pattern`
+  (`tools/scan_bind_all_matches.py` is the workspace-wide sweep).
 
 ### Dropped `FIELD_OFFSET(T, Array[N])` array-subscript scaling → heap under-alloc
 
