@@ -232,14 +232,23 @@ Ranked fixes:
 
 | | baseline | now |
 |---|---|---|
-| boot-only smoke wall | ~82s | **~39s** (i386 post-strip) |
-| boot to explorer (guest, amd64) | 36.5s | **15.6s** |
-| pre-kernel load phase (amd64) | ~24s | **6.3s** (DWARF strip) |
-| pre-kernel load phase (i386) | ~24s | **7.6s** (DWARF strip) |
+| boot to explorer (guest, amd64) | 36.5s | **13.0s** |
+| pre-kernel phase (amd64) | ~24s | **2.3s** (DWARF strip + 64KB reads) |
+| amd64 serial log end (boot complete) | ~40s | **15.4s** |
+| arm64 boot to explorer | ~40s | **11.8s** (EDK2 firmware now 5.9s of it) |
 | livecd.iso | 508MB | **214MB** |
+| SCM service starts (DcomLaunch etc.) | 31s timeout each | connect=0 instantly |
+| MININT hive-write stalls | 5–9s ×4/boot | gone |
 | freeldr menu | 5s | 0 |
 | settle | 30s | 15s |
 | amd64 smoke incl. net (gate lane) | ~200s serial | net runs parallel |
+| warm full gate | 664s median | **~120-130s** |
+
+Remaining boot profile (amd64, 15.4s): EDK2+freeldr 2.3s · kernel init 3.9s
+(1.36s = uniata secondary-IDE probe, the top single remaining gap) · csrss→
+explorer ~6.8s (flat ~0.5s gaps: comctl32 actctx, winsrv load) · post-marker
+tail ~2.4s. arm64: EDK2 5.9s dominates; post-shell TDI self-test CONNECT
+timeout (0xC00000B5, 9.2s, post-marker — flagged for the net lane).
 
 ## Older section — measurement in progress
 
