@@ -1379,13 +1379,21 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     ProcessInfo = core::ptr::addr_of_mut!((*InitBuffer).ProcessInfo);
     ExpLoadInitialProcess(InitBuffer, &mut ProcessParameters, &mut Environment);
 
+    // Wait 5s for the initial process (smss) to prove it doesn't immediately
+    // die. A SUCCESS return means smss TERMINATED — fatal: bugcheck 0x6A
+    // (SESSION5_INITIALIZATION_FAILED). Matches ntoskrnl/ex/init.c:2350-2360,
+    // which does this on ALL arches unconditionally. The wait runs on the
+    // Phase-1 thread after smss is spawned, so on a healthy boot it just hits
+    // STATUS_TIMEOUT and doesn't gate the desktop marker.
+    //
+    // The old amd64 carve-out (#[cfg(not(x86_64))], added 5802b15 during March
+    // bring-up) masked an early-smss-death rooted in the pre-fix Mm/pushlock
+    // wedges (§9.13-9.17, resolved 2026-07-05). With those fixed and amd64
+    // green ×3, the guard is restored here to match C.
     Timeout.QuadPart = -50000000i64;
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        Status = ZwWaitForSingleObject((*ProcessInfo).ProcessHandle, 0u8, &mut Timeout);
-        if Status == STATUS_SUCCESS {
-            KeBugCheck(0x6A);
-        }
+    Status = ZwWaitForSingleObject((*ProcessInfo).ProcessHandle, 0u8, &mut Timeout);
+    if Status == STATUS_SUCCESS {
+        KeBugCheck(0x6A);
     }
 
     ZwClose((*ProcessInfo).ThreadHandle);
