@@ -11,6 +11,7 @@ members = [
     "dbgk-rust",
     "wmi-rust",
     "dbgprint-rust",
+    "cc-rust",
     "conutils-rust",
     "dnslib-rust",
     "skiplist-rust",

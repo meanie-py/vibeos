@@ -218,48 +218,7 @@ pub unsafe extern "C" fn _global_write_barrier() {
         core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::amd64::init::MxFreePageCount), core::ptr::read_volatile(core::ptr::addr_of!(crate::amd64::init::MxFreePageCount)));
         core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::amd64::init::MiPfnsInitialized), core::ptr::read_volatile(core::ptr::addr_of!(crate::amd64::init::MiPfnsInitialized)));
     }
-    // cc/cacheman.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::cacheman::CcPfGlobals), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::cacheman::CcPfGlobals)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::cacheman::CcPfEnablePrefetcher), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::cacheman::CcPfEnablePrefetcher)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::cacheman::CcCapturedSystemSize), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::cacheman::CcCapturedSystemSize)));
-    // cc/copy.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::copy::CcRosTraceLevel), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::copy::CcRosTraceLevel)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::copy::CcFastMdlReadWait), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::copy::CcFastMdlReadWait)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::copy::CcFastMdlReadNotPossible), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::copy::CcFastMdlReadNotPossible)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::copy::CcFastReadNotPossible), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::copy::CcFastReadNotPossible)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::copy::CcFastReadWait), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::copy::CcFastReadWait)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::copy::CcFastReadNoWait), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::copy::CcFastReadNoWait)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::copy::CcFastReadResourceMiss), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::copy::CcFastReadResourceMiss)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::copy::CcDataPages), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::copy::CcDataPages)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::copy::CcDataFlushes), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::copy::CcDataFlushes)));
-    // cc/lazywrite.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::CcLazyWritePages), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::CcLazyWritePages)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::CcLazyWriteIos), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::CcLazyWriteIos)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::LazyWriter), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::LazyWriter)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::CcTwilightLookasideList), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::CcTwilightLookasideList)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::CcExpressWorkQueue), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::CcExpressWorkQueue)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::CcRegularWorkQueue), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::CcRegularWorkQueue)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::CcIdleWorkerThreadList), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::CcIdleWorkerThreadList)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::CcPostTickWorkQueue), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::CcPostTickWorkQueue)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::CcQueueThrottle), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::CcQueueThrottle)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::CcNumberActiveWorkerThreads), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::CcNumberActiveWorkerThreads)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::CcFirstDelay), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::CcFirstDelay)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::CcIdleDelay), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::CcIdleDelay)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::CcNoDelay), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::CcNoDelay)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::lazywrite::CcNumberWorkerThreads), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::lazywrite::CcNumberWorkerThreads)));
-    // cc/pin.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::pin::CcMapDataWait), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::pin::CcMapDataWait)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::pin::CcMapDataNoWait), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::pin::CcMapDataNoWait)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::pin::CcPinReadWait), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::pin::CcPinReadWait)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::pin::CcPinReadNoWait), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::pin::CcPinReadNoWait)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::pin::CcPinMappedDataCount), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::pin::CcPinMappedDataCount)));
-    // cc/view.rs
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::view::DirtyVacbListHead), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::view::DirtyVacbListHead)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::view::iBcbLookasideList), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::view::iBcbLookasideList)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::view::CcDirtyPageThreshold), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::view::CcDirtyPageThreshold)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::view::CcTotalDirtyPages), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::view::CcTotalDirtyPages)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::view::CcDeferredWrites), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::view::CcDeferredWrites)));
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::cc::view::CcDeferredWriteSpinLock), core::ptr::read_volatile(core::ptr::addr_of!(crate::cc::view::CcDeferredWriteSpinLock)));
+    // cc statics moved to cc-rust's _cc_global_write_barrier (crate-split Phase 1b).
     // dbgk statics moved to dbgk-rust's _dbgk_global_write_barrier (crate-split).
     // ex/callback.rs
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::ex::callback::SetSystemTimeCallback), core::ptr::read_volatile(core::ptr::addr_of!(crate::ex::callback::SetSystemTimeCallback)));

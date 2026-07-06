@@ -110,9 +110,19 @@ use crate::ke::time::KeTimeAdjustment;
 use crate::ke::dpc::{KiMaximumDpcQueueDepth, KiMinimumDpcRate, KiAdjustDpcThreshold, KiIdealDpcRate};
 use crate::ARM3::sysldr::{PsLoadedModuleList, MmLoadedUserImageList, PsLoadedModuleResource};
 use crate::mm::pagefile::{MiFreeSwapPages, MiUsedSwapPages};
-use crate::cc::pin::{CcMapDataNoWait, CcMapDataWait, CcPinMappedDataCount, CcPinReadNoWait, CcPinReadWait};
-use crate::cc::lazywrite::{CcLazyWriteIos, CcLazyWritePages};
-use crate::cc::copy::{CcDataFlushes, CcDataPages};
+// cc statics now live in cc-rust (crate-split Phase 1b) — reach them by symbol
+// (statics have no calling convention, so any extern block is fine).
+extern "C" {
+    static mut CcMapDataNoWait: ULONG;
+    static mut CcMapDataWait: ULONG;
+    static mut CcPinMappedDataCount: ULONG;
+    static mut CcPinReadNoWait: ULONG;
+    static mut CcPinReadWait: ULONG;
+    static mut CcLazyWriteIos: ULONG;
+    static mut CcLazyWritePages: ULONG;
+    static mut CcDataFlushes: ULONG;
+    static mut CcDataPages: ULONG;
+}
 use crate::ex::init::NtGlobalFlag;
 use crate::ex::lookas::{
     ExPoolLookasideListHead, ExSystemLookasideListHead,

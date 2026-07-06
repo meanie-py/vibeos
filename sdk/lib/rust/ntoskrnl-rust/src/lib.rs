@@ -54,7 +54,7 @@ macro_rules! abi_cast {
 
 pub mod ARM3;
 pub mod arm64_dbg;
-pub mod cc;
+// cc extracted to cc-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 pub mod config;
 // dbgk extracted to dbgk-rust (crate-split); symbols via kernel-rust extern crate.
 // dbgprint hoisted to dbgprint-rust leaf crate; re-exported at the crate root above.

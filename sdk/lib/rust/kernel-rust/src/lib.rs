@@ -18,6 +18,10 @@ extern crate fsrtl_rust;
 // dbgk + wmi subsystems, extracted from ntoskrnl-rust (crate-split).
 extern crate dbgk_rust;
 extern crate wmi_rust;
+// cc (Cache Controller), extracted from ntoskrnl-rust (crate-split Phase 1b).
+// extern crate forces its #[no_mangle] Cc* symbols + _cc_global_write_barrier
+// into the archive — same pattern as lpc_rust/fsrtl_rust.
+extern crate cc_rust;
 // cmboot.c is the shared kernel+bootloader CM boot-init unit, moved out of
 // ntoskrnl-rust into its own crate (cmboot-rust) so the loaders can link the
 // SAME translation. Pull its #[no_mangle] CmpFind*/CmpAddDriverToList symbols
