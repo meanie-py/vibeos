@@ -986,7 +986,10 @@ pub unsafe extern "C" fn DiskCreateFdo(
         status = RtlStringCchPrintfW(
             (&raw mut dirBuffer) as *mut u16,
             (core::mem::size_of::<[u16; 64]>() / core::mem::size_of::<u16>()).wrapping_sub(1),
-            (b"\\Device\\Harddisk%d\0".as_ptr() as *const u16),
+            // L"\Device\Harddisk%d" — interleaved-NUL UTF-16LE bytes; a plain ASCII
+            // byte string cast to *const u16 made WCHAR[0]=0x445C (no leading '\')
+            // -> ZwCreateDirectoryObject STATUS_OBJECT_PATH_SYNTAX_BAD (0xC000003B).
+            (b"\\\0D\0e\0v\0i\0c\0e\0\\\0H\0a\0r\0d\0d\0i\0s\0k\0%\0d\0\0\0".as_ptr() as *const u16),
             *DeviceCount,
         );
         if !(status >= 0) {
