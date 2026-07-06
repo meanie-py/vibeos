@@ -1424,7 +1424,7 @@ pub unsafe extern "system" fn MiQueryMemorySectionName(
 pub unsafe extern "system" fn MiFlushTbAndCapture(
     found_vad: *mut _MMVAD_LONG,
     pointer_pte: PMMPTE,
-    protection_mask: ULONG,
+    mut protection_mask: ULONG,
     pfn1: PMMPFN,
     update_dirty: BOOLEAN,
 ) {
@@ -1444,12 +1444,15 @@ pub unsafe extern "system" fn MiFlushTbAndCapture(
     if (*pfn1).cache_attribute() == MiCached as u16 {
         if (protection_mask & (MM_NOCACHE | MM_NOACCESS)) != 0 {
             rebuild_pte = true;
-            let protection_mask = protection_mask & !(MM_NOCACHE | MM_NOACCESS);
+            // C-exact: REASSIGN (C `ProtectionMask &= ~(...)`) — the
+            // translation shadowed with a block-local `let`, so the rebuilt
+            // PTE below reused the unmodified mask (branch was a no-op).
+            protection_mask &= !(MM_NOCACHE | MM_NOACCESS);
         }
     } else if (*pfn1).cache_attribute() == MiNonCached as u16 {
         if (protection_mask & (MM_NOCACHE | MM_NOACCESS)) != MM_NOCACHE {
             rebuild_pte = true;
-            let protection_mask = (protection_mask & !MM_NOACCESS) | MM_NOCACHE;
+            protection_mask = (protection_mask & !MM_NOACCESS) | MM_NOCACHE; // same: reassign, not shadow
         }
     }
     if rebuild_pte {
