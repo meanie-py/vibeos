@@ -44,6 +44,12 @@ extern crate kdbg_rust;
 // Phase 1b). extern crate forces its #[no_mangle] Cm*/Cmp* symbols + the runtime
 // CmControlVector assembler + _config_global_write_barrier into the archive.
 extern crate config_rust;
+// kd (kernel-debug I/O), kd64 (KD protocol stack), vf (Driver Verifier), rtlk
+// (kernel RTL glue), extracted from ntoskrnl-rust (crate-split Phase 1b).
+extern crate kd_rust;
+extern crate kd64_rust;
+extern crate vf_rust;
+extern crate rtlk_rust;
 // po (Power Manager), inbv (boot video), vdm (16-bit/VDM), extracted from
 // ntoskrnl-rust (crate-split Phase 1b). extern crate pulls their #[no_mangle]
 // symbols + per-crate barriers into the archive. vdm is i386-only (empty rlib

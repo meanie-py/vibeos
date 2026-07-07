@@ -2,8 +2,12 @@
 
 use ntkrnl_sys::ddk::*;
 
-use crate::ke::processor::KeNumberProcessors;
-use crate::ke::krnlinit::KiProcessorBlock;
+// ke globals referenced across the crate boundary as link symbols
+// (all #[no_mangle] in ntoskrnl-rust ke/*). crate-split Phase 1b.
+extern "C" {
+    static mut KeNumberProcessors: core::ffi::c_char;
+    static mut KiProcessorBlock: [ntkrnl_sys::ke::PKPRCB; ntkrnl_sys::constants::MAXIMUM_PROCESSORS as usize];
+}
 
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001_u32 as NTSTATUS;

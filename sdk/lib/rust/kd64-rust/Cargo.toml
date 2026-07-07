@@ -1,0 +1,12 @@
+# kd64-rust — extracted from ntoskrnl-rust (crate-split Phase 1b).
+[package]
+name = "kd64-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+dbgprint-rust = { path = "../dbgprint-rust" }

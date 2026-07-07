@@ -10,9 +10,13 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
-use crate::ke::processor::KeNumberProcessors;
-use crate::ke::krnlinit::KiProcessorBlock;
-use crate::kd64::kdtrap::KdpStub;
+// ke globals referenced across the crate boundary as link symbols
+// (all #[no_mangle] in ntoskrnl-rust ke/*). crate-split Phase 1b.
+extern "C" {
+    static mut KeNumberProcessors: core::ffi::c_char;
+    static mut KiProcessorBlock: [ntkrnl_sys::ke::PKPRCB; ntkrnl_sys::constants::MAXIMUM_PROCESSORS as usize];
+}
+use crate::kdtrap::KdpStub;
 
 use ntkrnl_sys::ddk::{
     CONTEXT,

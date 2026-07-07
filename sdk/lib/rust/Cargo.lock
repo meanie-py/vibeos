@@ -717,6 +717,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "kd-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "kd64-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "kdbg-rust"
 version = "0.1.0"
 dependencies = [
@@ -807,6 +823,8 @@ dependencies = [
  "fstub-rust",
  "inbv-rust",
  "iomgr-rust",
+ "kd-rust",
+ "kd64-rust",
  "kdbg-rust",
  "ke-inlines",
  "ke-macros",
@@ -816,8 +834,10 @@ dependencies = [
  "ntprintf_w",
  "pnpmgr-rust",
  "po-rust",
+ "rtlk-rust",
  "se-rust",
  "vdm-rust",
+ "vf-rust",
  "wmi-rust",
 ]
 
@@ -1583,6 +1603,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtlk-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "rustversion"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2035,6 +2062,13 @@ dependencies = [
 [[package]]
 name = "version-rust"
 version = "0.1.0"
+
+[[package]]
+name = "vf-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
 
 [[package]]
 name = "virtio-drivers"
