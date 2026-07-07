@@ -832,6 +832,7 @@ dependencies = [
  "ntoskrnl-rust",
  "ntprintf",
  "ntprintf_w",
+ "ob-rust",
  "pnpmgr-rust",
  "po-rust",
  "ps-rust",
@@ -1224,6 +1225,14 @@ dependencies = [
 name = "null-rust"
 version = "0.1.0"
 dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "ob-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
  "ntkrnl-sys",
 ]
 

@@ -1,4 +1,10 @@
 use ntkrnl_sys::base::*;
+// ke globals across the crate boundary as link symbols (#[no_mangle] in
+// ntoskrnl-rust ke/*). crate-split Phase 1b.
+extern "C" {
+    static mut KeNumberProcessors: core::ffi::c_char;
+    static mut KiProcessorBlock: [ntkrnl_sys::ke::PKPRCB; ntkrnl_sys::constants::MAXIMUM_PROCESSORS as usize];
+}
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::macros::*;
 use ntkrnl_sys::ke::*;
@@ -36,8 +42,6 @@ const OBJECT_TYPE_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | 0x1;
 const OBJ_OPENLINK: ULONG = 0x00000100;
 
 // Use actual definitions, not extern declarations (lto=false splits them)
-use crate::ke::processor::KeNumberProcessors;
-use crate::ke::krnlinit::KiProcessorBlock;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
