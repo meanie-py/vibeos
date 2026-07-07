@@ -3524,3 +3524,60 @@ reduced rate — under investigation; NULL-write corruption was one component
 but not the whole story. The dib1bpp/sprite-path suspicions from earlier
 rounds were audited faithful-to-C (subagent audit, 2026-07-07) and are NOT
 the cause.
+
+### 9.35 (RESOLVED 2026-07-07) ex crate-split "x86 hang at ksecdd" — a `[T; 0]` extern-array decl: Rust bounds-checks the DECLARED length, so indexing through the C unsized-extern idiom panics at len 0
+
+**Symptom:** after extracting `ex` into its own rlib (crate-split Phase 1b), i386
+AND amd64 wedge deterministically in late boot right after
+`MmGetSystemRoutineAddress: 'RtlQueryModuleInformation' NOT FOUND` +
+`[BLT] IopInitializeBuiltinDriver: ksecdd.sys`; arm64 boots to desktop. On a
+current tree the "hang" is actually loud:
+`RUST PANIC (ntoskrnl) at ex-rust/src/sysinfo.rs:1368: index out of bounds: the len is 0 but the index is 0`.
+
+**Root cause:** `ntkrnl-sys/src/globals.rs` declared
+`pub static mut KiProcessorBlock: [ddk::PKPRCB; 0]` — the C idiom for an
+unsized extern array (`extern PKPRCB KiProcessorBlock[];`). In C that's fine
+(indexing is unchecked pointer math). In Rust the DECLARED type is the truth
+the compiler enforces: `KiProcessorBlock[i]` through a `[T; 0]` decl is a
+guaranteed bounds-check panic on the first index, regardless of the real
+definition's size. Pre-split, `ex/sysinfo.rs` resolved `KiProcessorBlock` to
+the in-crate sized definition (`ke/krnlinit.rs`, `[PKPRCB; MAXIMUM_PROCESSORS]`)
+so indexing was fine; post-split it glob-imports `ntkrnl_sys::globals::*` and
+silently binds the len-0 decl instead. Same symbol, same link, different
+compile-time length → runtime panic.
+
+**Why the exact i386+amd64-hang/arm64-clean split:** the panicking sites are
+the `QSI_*` handlers (7 `KiProcessorBlock[i]` sites in sysinfo.rs). ksecdd's
+init can't resolve `RtlQueryModuleInformation` (ntoskrnl has NEVER exported it,
+any arch — that serial line is normal, not the failure) and falls back to
+`NtQuerySystemInformation`, which lands in the panicking handlers on x86.
+arm64's boot path never issues those QSI classes. The arch split encodes
+*which boot path queries QSI*, nothing architectural.
+
+**Fix:** declare the REAL per-arch size —
+`[ddk::PKPRCB; crate::constants::MAXIMUM_PROCESSORS as usize]` (same constant
+the definition uses; 32 on i386, 64 on amd64/arm64). Sizing UP a previously
+`[T; 0]` decl is always safe for existing users (`.as_ptr()` unchanged;
+indexing was impossible before).
+
+**The class + how to sweep:** any `extern "C" { static mut X: [T; 0]; }` that
+a crate-split suddenly rebinds is a landmine that only fires when the indexer
+and the sized definition end up in DIFFERENT crates. Sweep:
+`grep -rn 'static mut \w*: \[.*; 0\]' sdk/lib/rust --include='*.rs' | grep -v bindgen`
+then check each name for `Name[` indexing anywhere. As of 2026-07-07 the only
+other `[T; 0]` externs (kd64 KdpMessageBuffer/KdpPathBuffer/KdComponentTable/
+TraceDataBuffer, iomgr KiProcessorBlock) are `.as_ptr()`-only in live code —
+kd64's own sized-decl pattern
+(`[PKPRCB; ntkrnl_sys::constants::MAXIMUM_PROCESSORS as usize]`, kdapi.rs) is
+the correct template.
+
+**Bonus finding from the same session (build infra, not kernel):**
+`canon-run.sh`'s per-worktree sccache server port was `cksum(root) % 100` —
+two live worktrees (vibeos-arm64-ex, vibeos-screen-painting) collided on port
+4318, so one lane's rustc compiles were served by a daemon whose mount
+namespace resolved `/tmp/vibeos` to the OTHER worktree (ENOENT on our build
+dir at best; on a cache miss it would compile the sibling's sources —
+phantom-build family). Now `md5 % 20000`. If a build dies with sccache
+"No such file or directory" on paths that plainly exist in YOUR tree, suspect
+a port/namespace collision: `pgrep -a sccache` + recompute the port hash per
+worktree root.
