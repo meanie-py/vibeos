@@ -91,7 +91,6 @@ pub unsafe extern "system" fn PopGetDope(DeviceObject: PDEVICE_OBJECT) -> PDEVIC
     let DeviceObject = opaque_ptr(DeviceObject);
     let device_extension: PEXTENDED_DEVOBJ_EXTENSION;
     let mut dope: PDEVICE_OBJECT_POWER_EXTENSION;
-    let mut old_irql: KIRQL = 0;
 
     device_extension = IoGetDevObjExtension(DeviceObject);
     if !(*device_extension).Dope.is_null() {
@@ -115,17 +114,18 @@ pub unsafe extern "system" fn PopGetDope(DeviceObject: PDEVICE_OBJECT) -> PDEVIC
     (*dope).State = PowerDeviceUnspecified;
     InitializeListHead(core::ptr::addr_of_mut!((*dope).IdleList) as PLIST_ENTRY);
 
-    KeAcquireSpinLock(
-        core::ptr::addr_of_mut!(PopDopeGlobalLock),
-        core::ptr::addr_of_mut!(old_irql),
-    );
-
-    if (*device_extension).Dope.is_null() {
-        (*device_extension).Dope = dope;
-        dope = core::ptr::null_mut();
+    {
+        // RAII: guard drops (releases PopDopeGlobalLock) at the end of THIS
+        // block — deliberately scoped to exclude the ExFreePoolWithTag below,
+        // which must run at the lowered IRQL, NOT while holding the spinlock.
+        let _dope_lock = ntkrnl_sys::guards::SpinLockGuard::acquire(
+            core::ptr::addr_of_mut!(PopDopeGlobalLock) as ntkrnl_sys::ke::PKSPIN_LOCK,
+        );
+        if (*device_extension).Dope.is_null() {
+            (*device_extension).Dope = dope;
+            dope = core::ptr::null_mut();
+        }
     }
-
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(PopDopeGlobalLock), old_irql);
 
     if !dope.is_null() {
         ExFreePoolWithTag(dope as PVOID, TAG_PO_DOPE);
@@ -159,7 +159,6 @@ pub unsafe extern "system" fn PoRemoveVolumeDevice(DeviceObject: PDEVICE_OBJECT)
     let DeviceObject = opaque_ptr(DeviceObject);
     let dope: PDEVICE_OBJECT_POWER_EXTENSION;
     let device_extension: PEXTENDED_DEVOBJ_EXTENSION;
-    let mut old_irql: KIRQL = 0;
 
     device_extension = IoGetDevObjExtension(DeviceObject);
     if (*device_extension).Dope.is_null() {
@@ -176,14 +175,14 @@ pub unsafe extern "system" fn PoRemoveVolumeDevice(DeviceObject: PDEVICE_OBJECT)
 
     KeReleaseGuardedMutex(core::ptr::addr_of_mut!(PopVolumeLock));
 
-    KeAcquireSpinLock(
-        core::ptr::addr_of_mut!(PopDopeGlobalLock),
-        core::ptr::addr_of_mut!(old_irql),
-    );
-
-    (*device_extension).Dope = core::ptr::null_mut();
-
-    KeReleaseSpinLock(core::ptr::addr_of_mut!(PopDopeGlobalLock), old_irql);
+    {
+        // RAII: release before the ExFreePoolWithTag (which must run outside
+        // the spinlock, at the lowered IRQL).
+        let _dope_lock = ntkrnl_sys::guards::SpinLockGuard::acquire(
+            core::ptr::addr_of_mut!(PopDopeGlobalLock) as ntkrnl_sys::ke::PKSPIN_LOCK,
+        );
+        (*device_extension).Dope = core::ptr::null_mut();
+    }
 
     ExFreePoolWithTag(dope as PVOID, TAG_PO_DOPE);
 }
