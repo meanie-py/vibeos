@@ -24,11 +24,14 @@ core client DLLs, and the driver fleet are all ~90–100% translated with the re
 *removed from the compile* (not overridden-in-place). The OS boots to a graphical desktop
 on all three arches with an essentially all-Rust runtime.
 
-The remaining C is five well-bounded categories, **none on the boot-critical path**: (1)
-the desktop **shell `explorer.exe`** (still 100% C++), (2) the bulk userland **CRT**
-(msvcrt/ucrt leaf library), (3) **vendored/by-policy** C (ACPICA, FreeType), (4) **legacy
-dead** C superseded by Rust (videoprt, old NDIS/tcpip), and (5) **irreducible glue**
-(variadic trampolines, arch `.S`, generated RPC/syscall stubs).
+The remaining C is four well-bounded categories, **none on the boot-critical path**: (1) the
+bulk userland **CRT** (msvcrt/ucrt leaf library — the assemble-from-`cnt-rust`+`rtl-rust`
+track), (2) **vendored/by-policy** C (ACPICA, FreeType), (3) **legacy dead** C superseded by
+Rust (videoprt, old NDIS/tcpip), and (4) **irreducible glue** (variadic trampolines, arch
+`.S`, generated RPC/syscall stubs). *(The desktop shell `explorer.exe` is NO LONGER a
+remnant — it's ~99% Rust as of the crate-split era; see the ledger below.)* The broad
+still-C userland frontier is the **~140 ROS-native DLLs (~240K LOC)** + the **Wine-derived
+bucket (~154 DLLs, ~1.05M LOC)** catalogued in the roadmap's Phase 0 Tier 3.
 
 Tree inventory (2026-07-03): **~2,422 `.rs` files · 228 crates** under `sdk/lib/rust/`.
 
@@ -50,7 +53,7 @@ Tree inventory (2026-07-03): **~2,422 `.rs` files · 228 crates** under `sdk/lib
 | **freeldr + boot DLLs** | modules + cmlib/cport/cmboot; 16-bit `.S` floor *(not re-verified this pass)* | **~99%** |
 | **Driver fleet** (storage, FS, input, bus, netstack) | see below — netstack is a from-scratch Rust rewrite; rest cohab-flipped | **~90–100%** |
 | **LSA/SAM server** (lsasrv / samsrv) | active frontier — samsrv ~90%, lsasrv ~50%+ | **partial** |
-| **explorer.exe** (desktop shell) | 100% C++, **no Rust crate** | **0%** |
+| **explorer.exe** (desktop shell) | `explorer-rust` 22 `.rs`/22K LOC; 22 cohab markers; 2 glue `.cpp` left (settings_shim, util_vararg) | **~99%** |
 | **CRT** (msvcrt/ucrt body) | 581 `.c` still compiled; only entry-glue is Rust | **~0–5%** |
 
 ### Driver fleet detail
@@ -68,8 +71,10 @@ the legacy **NDIS/tcpip/tdi** stack (dead, superseded by netstack).
 
 ## Remaining C translation frontiers (the real work)
 
-- **`explorer.exe` — 0%.** The desktop shell, 22 `.cpp`, no crate. The one boot-path
-  component still fully untranslated. A C++→Rust effort (like shell32's COM half).
+- **ROS-native userland DLLs — ~140 components, ~240K LOC.** The real resume-translation
+  queue (Winsock/net, setup/PnP/device, ~15 control panels, services, security/auth, shell
+  exts, audio/ACM). Batched in the roadmap Phase 0 Tier 3. *(`explorer.exe` is DONE — ~99%
+  Rust, `explorer-rust`; only 2 glue `.cpp` remain.)*
 - **CRT floor — ~0–5%.** `sdk/lib/crt/` = 581 `.c` (printf/scanf/string/math/locale/
   mbstring/wine) still compiled; only `crt-startup/dllmain/crt0` entry-glue + the
   `libcntpr` kernel subset (`cnt-rust`) are Rust. Largely irreducible variadic.
