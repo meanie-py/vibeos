@@ -272,6 +272,11 @@ pub unsafe extern "system" fn KiInitializeContextThread(
     (*CtxSwitchFrame).ExceptionList = EXCEPTION_CHAIN_END;
 
     (*Thread).KernelStack = CtxSwitchFrame as PVOID;
+
+    // cswitchdep birth brand: pool-reused KTHREAD addresses must never
+    // inherit a dead thread's shadow (see amd64/thrdini.rs).
+    #[cfg(feature = "cswitchdep")]
+    crate::ke::cswitchdep::cswitch_thread_init(Thread as usize);
 }
 
 #[no_mangle]
@@ -452,6 +457,10 @@ pub unsafe extern "system" fn KiDispatchInterrupt() {
     let mut OldHandler: PVOID;
     let mut NewThread: PKTHREAD;
     let mut OldThread: PKTHREAD;
+
+    // cswitchdep tap 3: deferred dispatch must be entered at DISPATCH_LEVEL.
+    #[cfg(feature = "cswitchdep")]
+    crate::ke::cswitchdep::cswitch_dpc_dispatch();
 
     _disable();
 

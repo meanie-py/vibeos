@@ -386,14 +386,19 @@ pub unsafe extern "system" fn PopAddRemoveSysCapsCallbackInner(
         }
         status = IoCallDriver(device_object, irp);
         if status == STATUS_PENDING {
-            KeWaitForSingleObject(
-                &mut event as *mut KEVENT as PVOID,
-                _KWAIT_REASON_Suspended,
-                0i8,
-                0u8,
-                core::ptr::null_mut(),
-            );
-            status = io_status_block.__bindgen_anon_1.Status;
+            // RunToken pilot: synchronous-IRP wait via the CPS token API; the
+            // IOSB read runs in the continuation, after the re-brand.
+            status = ntkrnl_sys::token::with_token::<ntkrnl_sys::token::Passive, _>(|tok| {
+                ntkrnl_sys::token::wait_for(
+                    tok,
+                    &mut event as *mut KEVENT as PVOID,
+                    _KWAIT_REASON_Suspended as u32,
+                    0i8,
+                    0u8,
+                    core::ptr::null_mut(),
+                    |_tok, _wait_status| io_status_block.__bindgen_anon_1.Status,
+                )
+            });
         }
         if status < 0 {
             ZwClose(file_handle);

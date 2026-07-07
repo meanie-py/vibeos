@@ -28,4 +28,4 @@ lockdep = ["ntkrnl-sys/lockdep"]
 # -DVIBEOS_CSWITCHDEP=ON). IMPLIES lockdep: cswitchdep reads lockdep's tables
 # (return_address0 today, the held-set mirror in Phase 2), and checking against
 # an absent mirror would vacuously pass — the forbidden silent degrade.
-cswitchdep = ["lockdep"]
+cswitchdep = ["lockdep", "ntkrnl-sys/cswitchdep"]

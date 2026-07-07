@@ -270,6 +270,12 @@ pub unsafe extern "fastcall" fn KeTryToAcquireSpinLockAtDpcLevel(
         *SpinLock = (PsGetCurrentThread() as ULONG_PTR) | 1;
     }
 
+    // cswitchdep P2: the UP try-acquire success path never touches Kx, so it
+    // taps the held-counter directly; the matching release DOES route through
+    // KxReleaseSpinLock, keeping the pair balanced.
+    #[cfg(feature = "cswitchdep")]
+    super::cswitchdep::spin_acquired(SpinLock as usize);
+
     1u8
 }
 
@@ -308,6 +314,12 @@ pub unsafe extern "C" fn KeTryToAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK)
     {
         *SpinLock = (PsGetCurrentThread() as ULONG_PTR) | 1;
     }
+
+    // cswitchdep P2: the UP try-acquire success path never touches Kx, so it
+    // taps the held-counter directly; the matching release DOES route through
+    // KxReleaseSpinLock, keeping the pair balanced.
+    #[cfg(feature = "cswitchdep")]
+    super::cswitchdep::spin_acquired(SpinLock as usize);
 
     1u8
 }
