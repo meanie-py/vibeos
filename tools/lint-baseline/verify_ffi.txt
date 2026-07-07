@@ -1,6 +1,6 @@
   C_MACRO: 94
   FLEX_ARRAY: 66
-  TOTAL: 160 issues across 2347 files
+  TOTAL: 160 issues across 2348 files
   [C_MACRO] sdk/lib/rust/cc-rust/src/cacheman.rs:38: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/cachesup.rs:170: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/close.rs:45: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust

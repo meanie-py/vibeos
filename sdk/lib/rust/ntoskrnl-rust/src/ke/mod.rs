@@ -28,6 +28,7 @@ pub mod synctrace;
 pub mod census;
 #[cfg(feature = "lockdep")]
 pub mod lockdep;
+pub mod waitdep;
 pub mod thrdobj;
 pub mod thrdschd;
 pub mod time;
