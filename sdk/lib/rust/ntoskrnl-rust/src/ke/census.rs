@@ -229,6 +229,12 @@ pub unsafe extern "system" fn KiStartSyncCensus() {
     super::lockdep::lockdep_init();
     #[cfg(feature = "cswitchdep")]
     super::cswitchdep::cswitchdep_init();
+    // fw_cfg-armed detector selftest (CSWITCH_SELFTEST=1): runs here at
+    // PASSIVE, after init, so the deliberate violation lands in the census.
+    #[cfg(feature = "cswitchdep")]
+    if crate::tripwire::CSWITCH_SELFTEST_ARMED {
+        super::cswitchdep::cswitch_selftest();
+    }
     crate::debugblock::debug_block_stamp();
 
     let mut handle: HANDLE = core::ptr::null_mut();
