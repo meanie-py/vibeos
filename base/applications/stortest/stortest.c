@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <mountmgr.h>
 
 #define MARKER_SUBSTR   "vibeos usb e2e marker"
 #define WRITE_CONTENT   "vibeos wrote this through fastfat+usbstor\r\n"
@@ -143,6 +144,74 @@ static int test_write_readback(char letter)
     return 1;
 }
 
+/* mountvol-equivalent: ask mountmgr to assign the next free drive letter to
+ * every volume it knows that doesn't have one yet. Late-arriving (hot-plug)
+ * volumes never get a letter automatically — only boot-time
+ * xHalIoAssignDriveLetters and explicit NEXT_DRIVE_LETTER clients (diskpart,
+ * mountvol) assign them. This is the real-client path, not a test shortcut. */
+static void request_drive_letters(void)
+{
+    HANDLE mgr;
+    MOUNTMGR_MOUNT_POINT in;
+    BYTE outbuf[8192];
+    PMOUNTMGR_MOUNT_POINTS points;
+    DWORD bytes = 0;
+    ULONG i;
+
+    mgr = CreateFileW(MOUNTMGR_DOS_DEVICE_NAME, 0,
+                      FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                      OPEN_EXISTING, 0, NULL);
+    if (mgr == INVALID_HANDLE_VALUE)
+    {
+        markf("[STORTEST] open MountPointManager failed (error %lu)\n", GetLastError());
+        return;
+    }
+
+    ZeroMemory(&in, sizeof(in));
+    ZeroMemory(outbuf, sizeof(outbuf));
+    if (!DeviceIoControl(mgr, IOCTL_MOUNTMGR_QUERY_POINTS, &in, sizeof(in),
+                         outbuf, sizeof(outbuf), &bytes, NULL))
+    {
+        markf("[STORTEST] QUERY_POINTS failed (error %lu)\n", GetLastError());
+        CloseHandle(mgr);
+        return;
+    }
+
+    points = (PMOUNTMGR_MOUNT_POINTS)outbuf;
+    markf("[STORTEST] mountmgr knows %lu mount points\n", points->NumberOfMountPoints);
+
+    for (i = 0; i < points->NumberOfMountPoints; i++)
+    {
+        PMOUNTMGR_MOUNT_POINT pt = &points->MountPoints[i];
+        BYTE reqbuf[1024];
+        PMOUNTMGR_DRIVE_LETTER_TARGET target = (PMOUNTMGR_DRIVE_LETTER_TARGET)reqbuf;
+        MOUNTMGR_DRIVE_LETTER_INFORMATION letterInfo;
+        DWORD outBytes = 0;
+
+        if (pt->DeviceNameLength == 0 ||
+            pt->DeviceNameLength > sizeof(reqbuf) - sizeof(USHORT))
+            continue;
+
+        target->DeviceNameLength = pt->DeviceNameLength;
+        memcpy(target->DeviceName, outbuf + pt->DeviceNameOffset, pt->DeviceNameLength);
+
+        ZeroMemory(&letterInfo, sizeof(letterInfo));
+        if (DeviceIoControl(mgr, IOCTL_MOUNTMGR_NEXT_DRIVE_LETTER,
+                            target, sizeof(USHORT) + target->DeviceNameLength,
+                            &letterInfo, sizeof(letterInfo), &outBytes, NULL))
+        {
+            markf("[STORTEST] next-letter: assigned=%u letter=%c\n",
+                  letterInfo.DriveLetterWasAssigned,
+                  letterInfo.CurrentDriveLetter ? letterInfo.CurrentDriveLetter : '?');
+        }
+        else
+        {
+            markf("[STORTEST] next-letter failed (error %lu)\n", GetLastError());
+        }
+    }
+    CloseHandle(mgr);
+}
+
 int main(void)
 {
     char letter = 0;
@@ -152,9 +221,13 @@ int main(void)
     mark("[STORTEST] start\n");
 
     /* The volume may mount + get its letter a little after the shell is up;
-     * poll for it. 60 x 2s = 120s ceiling. */
+     * poll for it. 60 x 2s = 120s ceiling. Every few attempts, act as the
+     * mountvol client and ask mountmgr to hand out letters to letterless
+     * volumes (late arrivals never get one automatically). */
     for (attempt = 0; attempt < 60 && letter == 0; attempt++)
     {
+        if ((attempt % 5) == 0)
+            request_drive_letters();
         letter = find_vibeusb();
         if (letter == 0)
             Sleep(2000);

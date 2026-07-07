@@ -1818,7 +1818,7 @@ extern "system" {
     fn DeleteObject(hObject: *mut core::ffi::c_void) -> i32;
     fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void) -> i32;
     fn list_remove(entry: *mut list);
-    fn IsEqualGUID(rguid1: *const GUID, rguid2: *const GUID) -> BOOL;
+    fn IsEqualGUID(rguid1: *const GUID, rguid2: *const GUID) -> u8;
     fn InterlockedIncrement(Addend: *mut i32) -> i32;
     fn InterlockedDecrement(Addend: *mut i32) -> i32;
     fn __wine_unregister_resources(hInstance: HINSTANCE) -> HRESULT;

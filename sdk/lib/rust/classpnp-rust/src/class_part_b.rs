@@ -223,7 +223,7 @@ unsafe extern "C" {
     fn ScsiGetSenseDescriptorLength(buf: PVOID) -> UCHAR;
     fn ScsiConvertToFixedSenseFormat(sense_buf: PVOID, buf_len: UCHAR, fixed_buf: PVOID, fixed_buf_len: UCHAR) -> BOOLEAN;
     fn SrbGetScsiStatus(srb: PVOID) -> UCHAR;
-    fn SrbGetRequestAttribute(srb: PVOID) -> ULONG;
+    fn SrbGetRequestAttribute(srb: PVOID) -> u8;
     fn SrbGetPathId(srb: PVOID) -> UCHAR;
     fn SrbGetTargetId(srb: PVOID) -> UCHAR;
     fn SrbGetLun(srb: PVOID) -> UCHAR;
@@ -3977,7 +3977,7 @@ pub unsafe extern "system" fn ClassSendIrpSynchronous(
     );
 
     status = IoCallDriver(TargetDeviceObject, Irp);
-    _Analysis_assume_((status != STATUS_PENDING) as u8);
+    // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
     if status == STATUS_PENDING {
         #[cfg(debug_assertions)]
         {
@@ -4060,9 +4060,9 @@ pub unsafe extern "system" fn ClassSendSrbAsynchronous(
     SET_FLAG!(savedFlags, SrbGetSrbFlags((Srb).cast()) & SRB_FLAGS_DONT_START_NEXT_PACKET);
 
     if TEST_FLAG(SrbGetSrbFlags((Srb).cast()), SRB_FLAGS_QUEUE_ACTION_ENABLE) != 0
-        && (SrbGetRequestAttribute((Srb).cast()) == SRB_SIMPLE_TAG_REQUEST
-            || SrbGetRequestAttribute((Srb).cast()) == SRB_HEAD_OF_QUEUE_TAG_REQUEST
-            || SrbGetRequestAttribute((Srb).cast()) == SRB_ORDERED_QUEUE_TAG_REQUEST)
+        && ((SrbGetRequestAttribute((Srb).cast()) as u32) == SRB_SIMPLE_TAG_REQUEST
+            || (SrbGetRequestAttribute((Srb).cast()) as u32) == SRB_HEAD_OF_QUEUE_TAG_REQUEST
+            || (SrbGetRequestAttribute((Srb).cast()) as u32) == SRB_ORDERED_QUEUE_TAG_REQUEST)
     {
         SET_FLAG!(savedFlags, SRB_FLAGS_QUEUE_ACTION_ENABLE);
         if TEST_FLAG(SrbGetSrbFlags((Srb).cast()), SRB_FLAGS_NO_QUEUE_FREEZE) != 0 {

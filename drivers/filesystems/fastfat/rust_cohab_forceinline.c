@@ -199,17 +199,32 @@ typedef struct {
     PVOID  Context;                             /* 0x3c */
 } MY_IO_STACK_LOCATION;                          /* total 0x44 */
 #pragma pack(pop)
-#else
-#define IO_STACK_COMPLETION_ROUTINE_OFFSET 72
-
+#elif defined(_WIN64)
+/* amd64 IO_STACK_LOCATION (verified vs ntoskrnl amd64 disasm, size 0x48):
+ * Major@0 Minor@1 Flags@2 Control@3; Parameters@0x08; DeviceObject@0x28;
+ * FileObject@0x30; CompletionRoutine@0x38 (56); Context@0x40.
+ * The previous branch was FABRICATED (CompletionRoutine at 72 = END of the
+ * struct; Control at 88 = inside the NEXT frame) — never executed before the
+ * first x86 FAT mount (USB-disk e2e, 2026-07-06). */
+#define IO_STACK_COMPLETION_ROUTINE_OFFSET 56
 typedef struct {
-    /* Padding up to CompletionRoutine at offset 72 */
-    UCHAR pre[IO_STACK_COMPLETION_ROUTINE_OFFSET];
-    PIO_COMPLETION_ROUTINE CompletionRoutine;
-    PVOID Context;
-    UCHAR Control;
-    UCHAR pad2[7];
-} MY_IO_STACK_LOCATION;
+    UCHAR  pre0[3];                             /* 0x00 Major,Minor,Flags */
+    UCHAR  Control;                             /* 0x03 */
+    UCHAR  pre1[IO_STACK_COMPLETION_ROUTINE_OFFSET - 4]; /* 0x04..0x37 */
+    PIO_COMPLETION_ROUTINE CompletionRoutine;   /* 0x38 */
+    PVOID  Context;                             /* 0x40 */
+} MY_IO_STACK_LOCATION;                          /* total 0x48 */
+#else
+/* i386 IO_STACK_LOCATION (verified vs ntoskrnl i386 disasm, size 0x24):
+ * Control@3; CompletionRoutine@0x1C (28); Context@0x20. */
+#define IO_STACK_COMPLETION_ROUTINE_OFFSET 28
+typedef struct {
+    UCHAR  pre0[3];                             /* 0x00 Major,Minor,Flags */
+    UCHAR  Control;                             /* 0x03 */
+    UCHAR  pre1[IO_STACK_COMPLETION_ROUTINE_OFFSET - 4]; /* 0x04..0x1B */
+    PIO_COMPLETION_ROUTINE CompletionRoutine;   /* 0x1C */
+    PVOID  Context;                             /* 0x20 */
+} MY_IO_STACK_LOCATION;                          /* total 0x24 */
 #endif
 
 /* IRP layout — only the fields we care about.
@@ -221,10 +236,16 @@ typedef struct {
 #define IRP_CURRENT_LOCATION_OFFSET     67
 #define IRP_CURRENT_STACK_PTR_OFFSET    184
 #elif defined(_WIN64)
+/* amd64 (verified vs ntoskrnl amd64 IofCallDriver disasm):
+ * CurrentLocation@0x43 (67); Tail.Overlay.CurrentStackLocation@0xB8 (184).
+ * Was 176 (0xB0) — fabricated 8 low; every fastfat IRP access read the wrong
+ * slot and the FIRST x86 FAT mount AV'd in FatFsdFileSystemControl. */
 #define IRP_CURRENT_LOCATION_OFFSET     67
-#define IRP_CURRENT_STACK_PTR_OFFSET    176
+#define IRP_CURRENT_STACK_PTR_OFFSET    184
 #else
-#define IRP_CURRENT_LOCATION_OFFSET     30
+/* i386 (verified vs ntoskrnl i386 IofCallDriver disasm):
+ * CurrentLocation@0x23 (35, was fabricated 30); CurrentStackLocation@0x60 (96). */
+#define IRP_CURRENT_LOCATION_OFFSET     35
 #define IRP_CURRENT_STACK_PTR_OFFSET    96
 #endif
 

@@ -1027,6 +1027,63 @@ laid its PrivateCommonData + remove-lock rundown right after the FDE; disk's
   between a class driver and classpnp, diff `DeviceExtensionSize` registration against
   the C macro FIRST — it's one line and this class lives there.
 
+### BOOLEAN return declared `-> i32` in an extern block → garbage-upper-bytes boolean
+
+On x86/x64 a function returning `BOOLEAN`/`u8` only defines **AL**; the upper 3 bytes of
+EAX are whatever garbage the callee left there. A Rust extern decl that widens the return
+(`fn FatDeviceIsFatFsdo(...) -> i32;` for a C/Rust definition returning `BOOLEAN`) makes
+every `!= 0` test read those garbage bytes — the call **randomly returns true** even when
+the function returned FALSE. The reverse direction (definition i32, decl u8) is safe for
+0/non-0 semantics (truncation to AL preserves the boolean).
+
+- **Symptom (2026-07-06, USB-disk mount):** fastfat `FatCreateIrpContext` raised
+  `STATUS_INVALID_DEVICE_REQUEST` (→ BUGCHECK 0x1E under DUMMY_PSEH) on its own healthy
+  volume-file read, because `FatDeviceIsFatFsdo` (declared `-> i32`, defined BOOLEAN)
+  "matched" the volume device object as an FSDO. 55 decls in fastfat-rust alone; the
+  workspace sweep found the same class live in mountmgr (`IsDriveLetter`/`HasDriveLetter`
+  — drive-letter assignment!), win32k (`CLIPOBJ_bEnum`), amd64 kiinit (`KdPollBreakIn`),
+  and driver crates declaring kernel BOOLEAN exports (`CcPurgeCacheSection`,
+  `MmFlushImageSection`, `KeRemoveQueueDpc`) as i32.
+- **Debug tell:** a branch that "can't be taken" fires anyway, non-deterministically, and
+  the guard function is an extern-declared boolean. Print the operands: if the comparison
+  inputs are visibly unequal yet the branch fired, suspect return-width garbage.
+- **Sibling semantics bug the scan also catches:** BOOLEAN definition declared
+  `-> NTSTATUS` and used as `if !NT_SUCCESS(x)` — TRUE(1) and FALSE(0) are both `>= 0`,
+  so the failure path is dead code (`HvSyncHive` in cmlazy.rs; `RtlCreateUnicodeString`
+  in scsiport-rust).
+- **Detector:** `python3 tools/scan_bool_width.py` — cross-references every extern decl
+  returning i32/u32/LONG/ULONG/NTSTATUS against the workspace's u8/BOOLEAN definitions
+  (Rust `#[no_mangle]` + C cohab/header prototypes). Suppress verified FPs with
+  `// nolint: bool-width (reason)`.
+- **Fix pattern:** decl → `-> u8`, then let cargo E0308s name the call sites; append
+  `as i32`/`as u32` where the result feeds a wide variable. For NTSTATUS-confused sites,
+  fix the *semantics* (`if X(...) == 0 { fail }`), not just the type.
+
+### `_Analysis_assume_` translated as live code → NULL deref the annotation "assumed away"
+
+C's SAL annotations (`_Analysis_assume_`, `_Analysis_assume_lock_held_`, …) are compile-time
+no-ops — their argument expression is **never evaluated**. A translation that turns them into
+a Rust no-op *function call* still evaluates the argument at the call site. The argument is
+routinely a pointer-deref guarded the WRONG way for runtime: fastfat's
+`_Analysis_assume_(NonPagedFcb.is_null() && (*NonPagedFcb).OutstandingAsyncWrites != 1)`
+dereferences the FCB **exactly when it is NULL** (the `&&` short-circuit runs the deref on
+the is_null()==true side).
+
+- **Symptom (2026-07-06, USB-disk mount):** BUGCHECK **0xB8 ATTEMPTED_SWITCH_FROM_DPC** —
+  the NULL-page deref happened inside `FatSingleAsyncCompletionRoutine` (DISPATCH_LEVEL DPC),
+  MmAccessFault took the process WS pushlock → `KeWaitForGate` → thread swap inside a DPC.
+  The wait/swap frames are the messenger; the crime is the pageable/NULL touch at DISPATCH.
+- **Recipe that found it:** 0xB8 has no auto-drill — `run-until --break KeBugCheckEx`, then
+  `dump-thread <P1>` for the KernelStack, raw-dump the stack, symbolicate return addresses
+  in ASCENDING address order (lowest = most recent): MmAccessFault sat directly above the
+  completion routine's frame; the routine's line number landed inside the
+  `_Analysis_assume_` block.
+- **Fix/sweep:** delete every `_Analysis_assume_*(...)` *statement* (19 sites removed
+  2026-07-06 across fastfat/cdfs/classpnp/cdrom/win32k — classpnp's
+  `(*(*Irp).MdlAddress).ByteCount` variant was a live landmine for non-MDL IRPs). Grep:
+  `grep -rn "_Analysis_assume_" sdk/lib/rust --include=*.rs | grep -v "^\s*//"`. rustconv
+  should translate SAL annotations to nothing (or a comment), never to a call.
+
 ### Dropped `FIELD_OFFSET(T, Array[N])` array-subscript scaling → heap under-alloc
 
 When a C size/offset uses an **array-subscripted** field — `FIELD_OFFSET(T, Addr.Address[N])`

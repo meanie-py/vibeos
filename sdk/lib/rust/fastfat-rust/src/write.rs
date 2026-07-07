@@ -52,9 +52,9 @@ extern "system" {
     fn FatBytesPerFat(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatAddToWorkque( IrpContext: PIRP_CONTEXT, Irp: PIRP, );
     fn PsUpdateDiskCounters( Process: PEPROCESS, ReadBytes: u64, WriteBytes: u64, ReadOps: u32, WriteOps: u32, FlushOps: u32, );
-    fn FatDeviceIsFatFsdo(dev: *mut core::ffi::c_void) -> i32;
+    fn FatDeviceIsFatFsdo(dev: *mut core::ffi::c_void) -> u8;
     fn FatPagingFileIo(irp: *mut IRP, fcb: *mut FCB);
-    fn FatIsIrpTopLevel(irp: *mut IRP) -> i32;
+    fn FatIsIrpTopLevel(irp: *mut IRP) -> u8;
     fn FatCreateIrpContext(irp: *mut IRP, wait: i32) -> *mut IRP_CONTEXT;
     fn CanFsdWait(irp: *mut IRP) -> i32;
     fn NodeType(p: *mut FCB) -> u16;
@@ -237,7 +237,7 @@ pub unsafe extern "system" fn FatFsdWrite(
     }
 
     unsafe {
-        top_level = FatIsIrpTopLevel(irp);
+        top_level = FatIsIrpTopLevel(irp) as i32;
         irp_context = FatCreateIrpContext(irp, CanFsdWait(irp));
         if IoGetTopLevelIrp() as usize == FSRTL_MOD_WRITE_TOP_LEVEL_IRP as usize {
             mod_writer = 1;

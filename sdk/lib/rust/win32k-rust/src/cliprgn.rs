@@ -789,7 +789,7 @@ pub unsafe extern "stdcall" fn NtGdiPtVisible(hDC: HDC, X: i32, Y: i32) -> BOOL 
     if !prgn.is_null() {
         let mut pt: POINT = POINT { x: X, y: Y };
         IntLPtoDP(dc, core::ptr::addr_of_mut!(pt), 1);
-        ret = REGION_PtInRegion(prgn, pt.x, pt.y);
+        ret = REGION_PtInRegion(prgn, pt.x, pt.y) as i32;
     }
 
     DC_UnlockDc(dc);
@@ -816,7 +816,7 @@ pub unsafe extern "C" fn NtGdiPtVisible(hDC: HDC, X: i32, Y: i32) -> BOOL {
     if !prgn.is_null() {
         let mut pt: POINT = POINT { x: X, y: Y };
         IntLPtoDP(dc, core::ptr::addr_of_mut!(pt), 1);
-        ret = REGION_PtInRegion(prgn, pt.x, pt.y);
+        ret = REGION_PtInRegion(prgn, pt.x, pt.y) as i32;
     }
 
     DC_UnlockDc(dc);
@@ -1681,7 +1681,7 @@ unsafe fn CLIPPING_UpdateGCRegion_impl(pDC: PDC) {
 //     {
 //         POINT pt = {X, Y};
 //         IntLPtoDP(dc, &pt, 1);
-//         ret = REGION_PtInRegion(prgn, pt.x, pt.y);
+//         ret = REGION_PtInRegion(prgn, pt.x, pt.y) as i32;
 //     }
 //
 //     DC_UnlockDc(dc);

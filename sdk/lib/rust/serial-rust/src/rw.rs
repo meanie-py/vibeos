@@ -14,7 +14,7 @@ use core::ffi::c_void;
 
 extern "C" {
     fn DbgPrintEx( ComponentId: ULONG, Level: ULONG, Format: PCSTR, ... ) -> ULONG;
-    fn IsCircularBufferEmpty(CircularBuffer: PVOID) -> i32;
+    fn IsCircularBufferEmpty(CircularBuffer: PVOID) -> u8;
     fn PopCircularBufferEntry(CircularBuffer: PVOID, Byte: *mut UCHAR);
     fn PushCircularBufferEntry(Buffer: PVOID, Entry: UCHAR) -> NTSTATUS;
     fn SerialSendByte(Dpc: PVOID, Context: PVOID, Arg1: PVOID, Arg2: PVOID);

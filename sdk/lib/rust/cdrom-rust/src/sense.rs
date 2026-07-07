@@ -39,7 +39,7 @@ extern "system" {
 extern "C" {
     fn DeviceSendStartUnit(device: *mut DEVICE_OBJECT);
     fn DeviceSetMediaChangeStateEx( device_extension: *mut CDROM_DEVICE_EXTENSION, state: u32, param: *mut core::ffi::c_void, );
-    fn IsVolumeMounted(device_object: *mut DEVICE_OBJECT) -> i32;
+    fn IsVolumeMounted(device_object: *mut DEVICE_OBJECT) -> u8;
     fn DevicePerfIncrementErrorCount(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn IS_SCSIOP_READ(opcode: u8) -> u8;
     fn DeviceReleaseQueue(device: *mut core::ffi::c_void);

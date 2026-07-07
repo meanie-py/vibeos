@@ -33,7 +33,7 @@ extern "system" {
     fn CanFsdWait(Irp: *mut core::ffi::c_void) -> i32;
     fn FatCreateIrpContext(Irp: *mut core::ffi::c_void, CanWait: i32) -> *mut core::ffi::c_void;
     fn FatExceptionFilter(IrpContext: *mut core::ffi::c_void, ExceptionPointers: *mut EXCEPTION_POINTERS) -> i32;
-    fn FatIsIrpTopLevel(Irp: *mut core::ffi::c_void) -> i32;
+    fn FatIsIrpTopLevel(Irp: *mut core::ffi::c_void) -> u8;
     fn FatProcessException(IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void, ExceptionCode: i32) -> i32;
     fn _SEH2_GetExceptionCode() -> i32;
     fn _SEH2_GetExceptionInformation() -> *mut EXCEPTION_POINTERS;
@@ -70,7 +70,7 @@ pub unsafe extern "system" fn FatFsdLockControl(
 
     unsafe { FsRtlEnterFileSystem(); }
 
-    TopLevel = unsafe { FatIsIrpTopLevel(Irp) };
+    TopLevel = unsafe { FatIsIrpTopLevel(Irp) as i32 };
 
     // SEH2_TRY / _SEH2_EXCEPT / _SEH2_END emulation (no real SEH under DUMMY_PSEH)
     {

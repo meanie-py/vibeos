@@ -11,7 +11,7 @@ extern "system" {
     fn DxDdStartupDxGraphics(arg0: u32, arg1: *mut core::ffi::c_void, arg2: u32, arg3: *mut core::ffi::c_void, arg4: *mut core::ffi::c_void, arg5: PEPROCESS) -> i32;
     fn DxStartupDxgkInt();
     fn GDI_MapHandleTable(Process: PEPROCESS) -> *mut core::ffi::c_void;
-    fn GDI_CleanupForProcess(Process: PEPROCESS) -> i32;
+    fn GDI_CleanupForProcess(Process: PEPROCESS) -> u8;
 }
 // InitFontSupport is FASTCALL (i386 @InitFontSupport@0); cdecl elsewhere.
 #[cfg(target_arch = "x86")]

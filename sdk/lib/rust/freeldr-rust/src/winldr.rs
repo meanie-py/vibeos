@@ -98,7 +98,7 @@ extern "C" {
     fn ArcGetDiskInfo(i: u32) -> *mut core::ffi::c_void;
     fn ConvertConfigToVA(ConfigurationRoot: *mut core::ffi::c_void);
     fn FrLdrHeapAlloc(Size: usize, Tag: u32) -> *mut core::ffi::c_void;
-    fn IsAcpiPresent() -> u32;
+    fn IsAcpiPresent() -> u8;
     fn List_PaToVa(ListHead: *mut core::ffi::c_void);
     fn RtlStringCbCopyNA(psz_dest: *mut u8, cb_dest: usize, psz_src: *const u8, cb_to_copy: usize) -> i32;
     fn strstr(haystack: *const u8, needle: *const u8) -> *const u8;

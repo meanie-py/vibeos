@@ -36,7 +36,7 @@ extern "system" {
     fn FatUnpinRepinnedBcbs(IrpContext: *mut IRP_CONTEXT);
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn FatDeleteIrpContext(IrpContext: PIRP_CONTEXT);
-    fn ExAcquireResourceSharedLite(resource: *mut ERESOURCE, wait: i32) -> i32;
+    fn ExAcquireResourceSharedLite(resource: *mut ERESOURCE, wait: i32) -> u8;
     fn ExReleaseResourceLite(resource: *mut ERESOURCE);
     fn BooleanFlagOn(Flags: u32, Mask: u32) -> u8;
 }

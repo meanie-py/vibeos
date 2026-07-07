@@ -56,7 +56,7 @@ extern "system" {
     fn IoAttachDeviceToDeviceStack(SourceDevice: *mut DEVICE_OBJECT, TargetDevice: *mut DEVICE_OBJECT) -> *mut DEVICE_OBJECT;
     fn IoGetConfigurationInformation() -> *mut CONFIGURATION_INFORMATION;
     fn RtlCopyUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *mut _UNICODE_STRING);
-    fn RtlCreateUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const u16) -> NTSTATUS;
+    fn RtlCreateUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const u16) -> u8;
 }
 
 // ---- file-scope preamble ----
@@ -790,7 +790,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                 wformat.as_ptr(),
                 (*SystemConfig).ScsiPortCount as u32,
             );
-            Status = RtlCreateUnicodeString(&mut DeviceName, NameBuffer.as_ptr());
+            Status = if RtlCreateUnicodeString(&mut DeviceName, NameBuffer.as_ptr()) != 0 { 0 } else { STATUS_INSUFFICIENT_RESOURCES };
             if Status < 0 {
                 DbgPrint((b"Failed to allocate memory for device name!\n\0".as_ptr() as *const u8).cast());
                 Status = STATUS_INSUFFICIENT_RESOURCES;

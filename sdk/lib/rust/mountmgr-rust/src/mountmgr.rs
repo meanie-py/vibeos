@@ -91,12 +91,12 @@ const PARTITION_IFS: i32 = 0x07;
 const PARTITION_FAT32: i32 = 0x0B;
 const PARTITION_FAT32_XINT13: i32 = 0x0C;
 
-const IOCTL_VOLUME_GET_GPT_ATTRIBUTES: u32 = 0x560000;
+const IOCTL_VOLUME_GET_GPT_ATTRIBUTES: u32 = 0x560038; // CTL_CODE('V',14,BUFFERED,ANY) — was 0x560000 (= GET_VOLUME_DISK_EXTENTS)
 const IOCTL_DISK_GET_PARTITION_INFO_EX: u32 = 0x00070048;
 const IOCTL_STORAGE_GET_DEVICE_NUMBER: u32 = 0x2D1080;
-const IOCTL_MOUNTDEV_QUERY_DEVICE_NAME: u32 = 0x4D000B;
-const IOCTL_MOUNTDEV_QUERY_UNIQUE_ID: u32 = 0x4D000F;
-const IOCTL_MOUNTDEV_QUERY_STABLE_GUID: u32 = 0x4D001B;
+const IOCTL_MOUNTDEV_QUERY_DEVICE_NAME: u32 = 0x4D0008; // CTL_CODE('M',2,BUFFERED,ANY) — was fabricated 0x4D000B (method bits = NEITHER!)
+const IOCTL_MOUNTDEV_QUERY_UNIQUE_ID: u32 = 0x4D0000; // CTL_CODE('M',0,BUFFERED,ANY) — was fabricated 0x4D000F
+const IOCTL_MOUNTDEV_QUERY_STABLE_GUID: u32 = 0x4D0018; // CTL_CODE('M',6,BUFFERED,ANY) — was fabricated 0x4D001B
 
 // Forward declarations for unknown externs
 
@@ -933,6 +933,11 @@ pub unsafe extern "C" fn MountMgrMountedDeviceArrival(
     let mut TargetDeviceName: _UNICODE_STRING = core::mem::zeroed();
     let mut SuggestedLinkName: _UNICODE_STRING = core::mem::zeroed();
     let mut DeviceName: _UNICODE_STRING = core::mem::zeroed();
+    DbgPrint(
+        c"[MNTMGR] arrival: %wZ (manual=%u)\n".as_ptr(),
+        SymbolicName,
+        ManuallyRegistered as u32,
+    );
     let mut VolumeName: _UNICODE_STRING = core::mem::zeroed();
     let mut DriveLetter: _UNICODE_STRING = core::mem::zeroed();
     let mut LinkTarget: _UNICODE_STRING = core::mem::zeroed();
@@ -996,6 +1001,10 @@ pub unsafe extern "C" fn MountMgrMountedDeviceArrival(
         &raw mut IsFT,
     );
     if Status < 0 {
+        DbgPrint(
+            c"[MNTMGR] arrival: QueryDeviceInformation FAILED 0x%x -> offline list\n".as_ptr(),
+            Status as u32,
+        );
         KeWaitForSingleObject(
             &raw mut (*DeviceExtension).DeviceLock as *mut core::ffi::c_void,
             _KWAIT_REASON_Executive,
@@ -1728,6 +1737,10 @@ pub unsafe extern "system" fn MountMgrMountedDeviceNotification(
     DeviceExtension = Context as PDEVICE_EXTENSION;
     Notification = NotificationStructure as PDEVICE_INTERFACE_CHANGE_NOTIFICATION;
 
+    DbgPrint(
+        c"[MNTMGR] notification: link=%wZ\n".as_ptr(),
+        (*Notification).SymbolicLinkName,
+    );
     /* Dispatch according to the event */
     if memcmp(
         core::ptr::addr_of!((*Notification).Event) as *const core::ffi::c_void,
@@ -3732,7 +3745,7 @@ unsafe extern "C" {
     fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i32;
 }
 unsafe extern "C" {
-    fn IsDriveLetter(name: PUNICODE_STRING) -> i32;
+    fn IsDriveLetter(name: PUNICODE_STRING) -> u8;
     fn GlobalCreateSymbolicLink(SymbolicLinkName: *mut _UNICODE_STRING, DeviceName: *const _UNICODE_STRING) -> NTSTATUS;
     fn CreateNoDriveLetterEntry(UniqueId: *mut MOUNTDEV_UNIQUE_ID);
     fn GlobalDeleteSymbolicLink(Name: *mut _UNICODE_STRING);

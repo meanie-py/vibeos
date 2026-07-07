@@ -9,7 +9,7 @@ use crate::k32_externs::{
 
 extern "system" {
     fn Basep8BitStringToStaticUnicodeString(LpStr: LPCSTR) -> PUNICODE_STRING;
-    fn Basep8BitStringToDynamicUnicodeString(DestinationString: &mut _UNICODE_STRING, LpStr: LPCSTR) -> BOOL;
+    fn Basep8BitStringToDynamicUnicodeString(DestinationString: &mut _UNICODE_STRING, LpStr: LPCSTR) -> u8;
     fn GetProcessHeap() -> HANDLE;
     fn DeviceIoControl(
         hDevice: HANDLE,

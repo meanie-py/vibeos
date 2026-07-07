@@ -304,7 +304,7 @@ pub unsafe extern "C" fn CdCheckForDismount(
         if VcbPresent != 0 {
             CdReleaseVcb(IrpContext, Vcb);
         } else {
-            _Analysis_assume_lock_not_held_(core::ptr::addr_of_mut!((*Vcb).VcbResource) as *mut core::ffi::c_void);
+            // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
         }
 
         VcbPresent

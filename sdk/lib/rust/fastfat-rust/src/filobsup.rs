@@ -22,15 +22,15 @@ extern "system" {
 extern "system" {
     fn NodeType(ptr: *mut core::ffi::c_void) -> u32;
     fn SetFlag(flags: *mut u32, flag: u32);
-    fn ARGUMENT_PRESENT(p: *mut core::ffi::c_void) -> i32;
+    fn ARGUMENT_PRESENT(p: *mut core::ffi::c_void) -> u8;
     fn FatBugCheck(arg1: u32, arg2: u32, arg3: u32) -> !;
-    fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> i32;
+    fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
     fn ClearFlag(State: *mut u32, Bit: u32);
-    fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> i32;
+    fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn CcPurgeCacheSection( Section: *mut SECTION_OBJECT_POINTERS, FileOffset: *mut LARGE_INTEGER, Length: u32, UninitializeCacheMaps: i32, ) -> i32;
-    fn MmFlushImageSection( Section: *mut SECTION_OBJECT_POINTERS, FlushType: u32, ) -> i32;
+    fn CcPurgeCacheSection( Section: *mut SECTION_OBJECT_POINTERS, FileOffset: *mut LARGE_INTEGER, Length: u32, UninitializeCacheMaps: i32, ) -> u8;
+    fn MmFlushImageSection( Section: *mut SECTION_OBJECT_POINTERS, FlushType: u32, ) -> u8;
     fn FatFlushFile( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, FlushType: FAT_FLUSH_TYPE, ) -> i32;
 }
 

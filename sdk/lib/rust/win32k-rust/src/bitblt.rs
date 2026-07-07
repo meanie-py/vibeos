@@ -4,7 +4,7 @@ extern "system" {
     fn SafeProbeForRead(address: *const core::ffi::c_void, length: usize, alignment: u32) -> i32;
     fn EBRUSHOBJ_psoMask(pebo: *mut EBRUSHOBJ) -> *mut SURFOBJ;
     fn EBRUSHOBJ_psoPattern(pebo: *mut EBRUSHOBJ) -> *mut SURFOBJ;
-    fn CLIPOBJ_bEnum(ClipRegion: *mut CLIPOBJ, size: u32, RectEnum: *mut core::ffi::c_void) -> u32;
+    fn CLIPOBJ_bEnum(ClipRegion: *mut CLIPOBJ, size: u32, RectEnum: *mut core::ffi::c_void) -> u8;
     fn CLIPOBJ_cEnumStart(ClipRegion: *mut CLIPOBJ, bAll: u8, iType: u32, iDirection: u32, cLimit: u32);
     fn XLATEOBJ_iXlate(pxlo: *mut XLATEOBJ, iColor: u32) -> u32;
 }
@@ -818,7 +818,7 @@ pub unsafe extern "stdcall" fn EngBitBlt(
                     pco,
                     core::mem::size_of::<RECT_ENUM>() as u32,
                     core::ptr::addr_of_mut!(RectEnum) as *mut core::ffi::c_void,
-                );
+                ) as u32;
 
                 i = 0;
                 while i < RectEnum.c {
@@ -1098,7 +1098,7 @@ pub unsafe extern "C" fn EngBitBlt(
                     pco,
                     core::mem::size_of::<RECT_ENUM>() as u32,
                     core::ptr::addr_of_mut!(RectEnum) as *mut core::ffi::c_void,
-                );
+                ) as u32;
 
                 i = 0;
                 while i < RectEnum.c {
@@ -1659,7 +1659,7 @@ unsafe fn EngMaskBitBlt(
                     ClipRegion,
                     core::mem::size_of::<RECT_ENUM>() as u32,
                     core::ptr::addr_of_mut!(RectEnum) as *mut core::ffi::c_void,
-                );
+                ) as u32;
 
                 i = 0;
                 while i < RectEnum.c {
@@ -2592,7 +2592,7 @@ pub unsafe extern "C" fn IntEngMaskBlt(
 //             do
 //             {
 //                 EnumMore = CLIPOBJ_bEnum(pco, sizeof(RectEnum),
-//                                          (PVOID) &RectEnum);
+//                                          (PVOID) &RectEnum) as u32;
 //
 //                 for (i = 0; i < RectEnum.c; i++)
 //                 {
@@ -3036,7 +3036,7 @@ pub unsafe extern "C" fn IntEngMaskBlt(
 //             CLIPOBJ_cEnumStart(ClipRegion, FALSE, CT_RECTANGLES, Direction, 0);
 //             do
 //             {
-//                 EnumMore = CLIPOBJ_bEnum(ClipRegion,(ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//                 EnumMore = CLIPOBJ_bEnum(ClipRegion,(ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as u32;
 //
 //                 for (i = 0; i < RectEnum.c; i++)
 //                 {

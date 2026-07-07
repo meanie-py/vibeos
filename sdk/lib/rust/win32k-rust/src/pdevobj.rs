@@ -79,7 +79,7 @@ unsafe fn RtlEqualUnicodeString(
 // NOT `@4`-decorated). `extern "C"` matches.
 // gPanDispDrvFn / gPanDispDrvCount live in pandisp.rs as `#[no_mangle] pub static`.
 extern "C" {
-    fn LDEVOBJ_bBuildDevmodeList(pGraphicsDevice: PGRAPHICS_DEVICE) -> BOOL;
+    fn LDEVOBJ_bBuildDevmodeList(pGraphicsDevice: PGRAPHICS_DEVICE) -> u8;
 }
 
 extern "C" {
