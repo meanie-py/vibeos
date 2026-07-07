@@ -40,7 +40,7 @@ extern "system" {
     ) -> PVOID;
     fn RtlDestroyHeap(HeapHandle: PVOID) -> PVOID;
 
-    fn RtlIsTextUnicode(buf: *const c_void, len: i32, flags: *mut i32) -> i32;
+    fn RtlIsTextUnicode(buf: *const c_void, len: i32, flags: *mut i32) -> u8;
 
     fn RtlMultiByteToUnicodeN(
         UnicodeString: *mut u16,

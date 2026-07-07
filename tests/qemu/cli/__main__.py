@@ -64,6 +64,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="sync-instrumentation §4: build ntoskrnl with the self-deadlock detector "
         "(-DVIBEOS_LOCKDEP=ON). Debug/repro only — has a per-pushlock cost; off by default",
     )
+    b.add_argument(
+        "--cswitchdep",
+        action="store_true",
+        help="cswitchdep-design.md: build ntoskrnl with the context-switch hand-off "
+        "verifier (-DVIBEOS_CSWITCHDEP=ON; implies the lockdep cargo feature). "
+        "Debug/repro only; off by default",
+    )
     b.add_argument("--strict", action="store_true")
     b.add_argument(
         "--cache",

@@ -867,23 +867,27 @@ unsafe fn ExpBlockOnLockedHandleEntry(
     HandleTableEntry: PHANDLE_TABLE_ENTRY,
 ) {
     let OldValue: LONG_PTR;
-    let mut WaitBlock: EX_PUSH_LOCK_WAIT_BLOCK = core::mem::zeroed();
+    // 16-aligned wrapper: bindgen dropped C's __ALIGNED(16) and the pushlock
+    // word encodes flag bits in the block pointer's low nibble (see
+    // ex/pushlock.rs AlignedPlWaitBlock).
+    let mut WaitBlock: crate::ex::pushlock::AlignedPlWaitBlock =
+        crate::ex::pushlock::AlignedPlWaitBlock(core::mem::zeroed());
 
     ExBlockPushLock(
         core::ptr::addr_of_mut!((*HandleTable).HandleContentionEvent),
-        core::ptr::addr_of_mut!(WaitBlock) as PVOID,
+        core::ptr::addr_of_mut!(WaitBlock.0) as PVOID,
     );
 
     OldValue = hte_value(HandleTableEntry) as LONG_PTR;
     if OldValue == 0 || (OldValue & EXHANDLE_TABLE_ENTRY_LOCK_BIT) != 0 {
         ExfUnblockPushLock(
             core::ptr::addr_of_mut!((*HandleTable).HandleContentionEvent),
-            core::ptr::addr_of_mut!(WaitBlock) as PVOID,
+            core::ptr::addr_of_mut!(WaitBlock.0) as PVOID,
         );
     } else {
         ExWaitForUnblockPushLock(
             core::ptr::addr_of_mut!((*HandleTable).HandleContentionEvent),
-            core::ptr::addr_of_mut!(WaitBlock) as PVOID,
+            core::ptr::addr_of_mut!(WaitBlock.0) as PVOID,
         );
     }
 }

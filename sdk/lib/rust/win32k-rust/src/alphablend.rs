@@ -3,7 +3,7 @@ use ntkrnl_sys::rtl::RtlCopyMemory;
 
 extern "system" {
     fn CLIPOBJ_cEnumStart(clip: *mut CLIPOBJ, bAll: u32, iType: u32, iDirection: u32, cLimit: u32);
-    fn CLIPOBJ_bEnum(clip: *mut CLIPOBJ, cj: u32, pv: *mut core::ffi::c_void) -> u32;
+    fn CLIPOBJ_bEnum(clip: *mut CLIPOBJ, cj: u32, pv: *mut core::ffi::c_void) -> u8;
     fn SafeProbeForRead(address: *const core::ffi::c_void, length: usize, alignment: u32) -> i32;
 }
 extern "C" {
@@ -202,7 +202,7 @@ pub unsafe extern "stdcall" fn EngAlphaBlend(
                     ClipRegion,
                     core::mem::size_of::<RECT_ENUM>() as u32,
                     core::ptr::addr_of_mut!(RectEnum) as *mut core::ffi::c_void,
-                );
+                ) as u32;
 
                 i = 0;
                 while i < RectEnum.c {
@@ -406,7 +406,7 @@ pub unsafe extern "C" fn EngAlphaBlend(
                     ClipRegion,
                     core::mem::size_of::<RECT_ENUM>() as u32,
                     core::ptr::addr_of_mut!(RectEnum) as *mut core::ffi::c_void,
-                );
+                ) as u32;
 
                 i = 0;
                 while i < RectEnum.c {
@@ -760,7 +760,7 @@ pub unsafe extern "C" fn NtGdiEngAlphaBlend(
 //             do
 //             {
 //                 EnumMore = CLIPOBJ_bEnum(ClipRegion,(ULONG) sizeof(RectEnum),
-//                                          (PVOID) &RectEnum);
+//                                          (PVOID) &RectEnum) as u32;
 //
 //                 for (i = 0; i < RectEnum.c; i++)
 //                 {

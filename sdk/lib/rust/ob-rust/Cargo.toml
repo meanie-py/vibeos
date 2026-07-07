@@ -1,0 +1,12 @@
+# ob-rust — the Object Manager (Ob*/Obp*), extracted from ntoskrnl-rust
+# (crate-split Phase 1b). ~23K LOC. Pure Ob* logic on ntkrnl-sys + dbgprint-rust;
+# its #[no_mangle] Ob*/Obp* symbols link via `extern crate ob_rust`.
+[package]
+name = "ob-rust"
+version = "0.1.0"
+edition = "2021"
+[lib]
+crate-type = ["rlib"]
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+dbgprint-rust = { path = "../dbgprint-rust" }

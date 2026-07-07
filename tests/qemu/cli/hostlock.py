@@ -11,13 +11,16 @@ has to be arbitrated by hand ("taking the host" / "host free").
 Two flock-based locks, both under a shared `/tmp` dir so every worktree sees them and the
 kernel auto-releases them when the holding process dies (no stale-lock cleanup needed):
 
-- **`cpuheavy`** — a counting pool of `VIBEOS_HOST_CPU_LEASES` permits (default 4), used
-  WRITER-TAKES-ALL so we fix starvation *without* over-serializing boots:
-    * a cold **build** / `repro verify` grabs **ALL** permits → exclusive host (a build wants
-      every core via `ninja -j`; sharing with a TCG boot starves the boot into a false
-      `HANG_TIMEOUT`, the documented incident);
+- **`cpuheavy`** — a counting pool of `VIBEOS_HOST_CPU_LEASES` permits (default 4):
+    * a cold **build** / `repro verify` grabs a **ceil(K/max_builds) share** (default 2 of 4,
+      `VIBEOS_MAX_CONCURRENT_BUILDS=2`) → up to two builds coexist instead of fleet-wide
+      build serialization; TWO running builds exhaust the pool, so native-TCG boots are
+      still excluded exactly when the host is build-saturated (the false-`HANG_TIMEOUT`
+      starvation incident). `VIBEOS_MAX_CONCURRENT_BUILDS=1` restores writer-takes-all.
+      Shares are acquired with NO hold-and-wait (collect free slots nonblocking; on a
+      shortfall release all + retry) so partial acquirers cannot deadlock;
     * a **TCG boot** grabs **1** permit → up to K TCG boots run in parallel (a ×3 gate keeps
-      its boot parallelism) but a build still excludes them all.
+      its boot parallelism); one running build leaves K-share permits of boot room.
   A boot takes a permit iff its EFFECTIVE accelerator is `tcg` (CPU-bound emulation). KVM /
   WHPX boots are hardware-accelerated → they take none and stay on the per-arch QEMU cap.
   **Only NATIVE-backend TCG boots use `cpuheavy`** (arm64, or x86-degraded) — those run in
@@ -185,6 +188,63 @@ def acquire_cpu_lease(
     return _acquire_one(_cpu_lease_files(leases), timeout, _self_meta(kind, **extra))
 
 
+def _max_builds() -> int:
+    """Max concurrent builds host-wide (VIBEOS_MAX_CONCURRENT_BUILDS, default 2).
+    Read at CALL time (not import) so tests and per-invocation env overrides work.
+    Set to 1 to restore the original exclusive-host build behavior."""
+    return max(1, int(os.environ.get("VIBEOS_MAX_CONCURRENT_BUILDS", "2")))
+
+
+def build_permits(leases: int = DEFAULT_CPU_LEASES) -> int:
+    """Permits a build takes from the cpuheavy pool: ceil(K / max_builds). With the
+    defaults (K=4, max 2 builds) that's 2 — so two builds coexist, a third queues, and
+    while TWO builds run the pool is exhausted (native-TCG boots excluded, preserving
+    the starvation protection the old writer-takes-all grant existed for)."""
+    return max(1, -(-leases // _max_builds()))
+
+
+def acquire_cpu_share(
+    kind: str,
+    *,
+    n: int,
+    leases: int = DEFAULT_CPU_LEASES,
+    timeout: float = ACQUIRE_TIMEOUT,
+    **extra: object,
+) -> list[int] | None:
+    """Grab `n` of the `leases` CPU permits WITHOUT hold-and-wait: scan all slots
+    nonblocking, and on a shortfall release everything collected and retry. No partial
+    holder ever blocks, so two share-acquirers can't deadlock each other (and an
+    old-protocol exclusive acquirer, which DOES hold-and-wait in slot order, still
+    completes because share holders always finish and release). Returns the held fds,
+    or None on timeout."""
+    meta = _self_meta(kind, share=n, **extra)
+    HOSTLOCK_DIR.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    announced = False
+    while True:
+        held: list[int] = []
+        for p in _cpu_lease_files(leases):
+            fd = os.open(str(p), os.O_RDWR | os.O_CREAT, 0o644)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                os.close(fd)
+                continue
+            _write_meta(fd, meta)
+            held.append(fd)
+            if len(held) == n:
+                return held
+        # Shortfall: release ALL (no hold-and-wait) and retry after a poll.
+        for h in held:
+            release(h)
+        if time.monotonic() >= deadline:
+            return None
+        if not announced:
+            print(f"[hostlock] waiting for {n} host CPU lease(s) ({kind})...")
+            announced = True
+        time.sleep(_POLL)
+
+
 def acquire_cpu_exclusive(
     kind: str,
     *,
@@ -279,14 +339,38 @@ def cpu_exclusive(kind: str, **kw: object) -> Iterator[list[int] | None]:
 
 
 @contextmanager
-def build_lock(build_dir: str | Path, arch: str, **kw: object) -> Iterator[None]:
-    """The build front-door grant: exclusive CPU host (excludes all boots + other builds)
-    AND the per-build-dir lock, acquired cpuheavy→builddir. Use around a cold build /
-    `repro verify`. No-op when the broker is disabled."""
+def cpu_share(kind: str, n: int, **kw: object) -> Iterator[list[int] | None]:
+    """Context manager around an n-permit share of the CPU pool. No-op when the broker
+    is off; warn + proceed UNLOCKED on timeout."""
     if not enabled():
         yield None
         return
-    with cpu_exclusive(f"build:{arch}", **kw), build_dir_lock(build_dir, arch=arch):
+    fds = acquire_cpu_share(kind, n=n, **kw)  # type: ignore[arg-type]
+    if fds is None:
+        print(
+            f"[hostlock] WARNING: CPU share timeout ({kind}, n={n}) — proceeding UNLOCKED "
+            "(a holder looks stuck; check `vibeos-cli host-status`)",
+            file=sys.stderr,
+        )
+    try:
+        yield fds
+    finally:
+        release_all(fds)
+
+
+@contextmanager
+def build_lock(build_dir: str | Path, arch: str, **kw: object) -> Iterator[None]:
+    """The build front-door grant: a ceil(K/max_builds) SHARE of the CPU pool (default
+    2 of 4 → up to VIBEOS_MAX_CONCURRENT_BUILDS=2 builds coexist; two running builds
+    exhaust the pool, so native-TCG boots stay starvation-protected exactly when the
+    host is build-saturated) AND the per-build-dir lock (same-dir corruption guard),
+    acquired cpuheavy→builddir. VIBEOS_MAX_CONCURRENT_BUILDS=1 restores the original
+    exclusive-host grant. No-op when the broker is disabled."""
+    if not enabled():
+        yield None
+        return
+    n = build_permits()
+    with cpu_share(f"build:{arch}", n, **kw), build_dir_lock(build_dir, arch=arch):
         yield None
 
 

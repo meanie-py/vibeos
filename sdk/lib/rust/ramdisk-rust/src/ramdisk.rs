@@ -8,6 +8,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use crate::glue::*;
+use crate::glue::{IRP_MN_EJECT, IRP_MN_QUERY_BUS_INFORMATION, IRP_MN_QUERY_CAPABILITIES, IRP_MN_QUERY_DEVICE_TEXT, IRP_MN_QUERY_ID, IRP_MN_QUERY_RESOURCES, IRP_MN_QUERY_RESOURCE_REQUIREMENTS}; // explicit: disambiguate vs ntkrnl_sys::driver_ddk glob
 use crate::types::*;
 // Explicit import shadows the `globals::*`/`glue::*` globs so bare `KeLoaderBlock`
 // resolves to glue's raw-dylib data import (i386/arm64 cross-DLL data-import thunk).

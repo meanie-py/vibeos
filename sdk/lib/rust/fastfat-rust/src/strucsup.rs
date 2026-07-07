@@ -49,7 +49,7 @@ extern "system" {
     fn PAGED_CODE();
     fn UNREFERENCED_PARAMETER(_: *const core::ffi::c_void);
     fn NT_ASSERT(cond: i32);
-    fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> i32;
+    fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
     fn FlagOn(Flags: u32, Mask: u32) -> i32;
     fn NodeType(Fcb: *mut FCB) -> u32;
     fn FatGetFirstChild(Fcb: *mut FCB) -> *mut FCB;
@@ -59,7 +59,7 @@ extern "system" {
     fn ClearFlag(flags: *mut u32, bits: u32);
     fn SetFlag(flags: *mut u32, bits: u32);
     fn FatGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
-    fn FatIsFat32(Vcb: *mut VCB) -> i32;
+    fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn FatFatTimeToNtTime( IrpContext: *mut IRP_CONTEXT, Time: u32, MSec: u8, ) -> LARGE_INTEGER;
     fn FatFatDateToNtTime( IrpContext: *mut IRP_CONTEXT, Date: u16, ) -> LARGE_INTEGER;
     fn FsRtlSetupAdvancedHeader( Header: *mut FSRTL_ADVANCED_FCB_HEADER, Mutex: *mut FAST_MUTEX, );
@@ -82,13 +82,13 @@ extern "system" {
     fn ExInterlockedPushEntrySList( ListHead: *mut core::ffi::c_void, ListEntry: *mut core::ffi::c_void, Lock: *mut u32, ) -> *mut core::ffi::c_void;
     fn DbgDoit(val: i32);
     fn FatPerformDevIoCtrl( IrpContext: *mut IRP_CONTEXT, IoctlCode: u32, TargetDeviceObject: *mut DEVICE_OBJECT, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, OutputBuffer: *mut core::ffi::c_void, OutputBufferLength: u32, InternalDeviceIoControl: i32, RemapStatus: i32, Iosb: *mut _IO_STATUS_BLOCK, ) -> i32;
-    fn BooleanFlagOn(Flags: u32, Bit: u32) -> i32;
+    fn BooleanFlagOn(Flags: u32, Bit: u32) -> u8;
     fn DebugDump(format: *const u8, arg: i32, fcb: *mut FCB);
     fn FatBugCheck(arg1: u32, arg2: u32, arg3: u32) -> !;
     fn FatRemoveNames(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn DebugDoit(value: u32);
-    fn FatDeviceIsFatFsdo(device_object: *mut DEVICE_OBJECT) -> i32;
-    fn IsFileWriteThrough(file_object: *mut FILE_OBJECT, vcb: *mut VCB) -> i32;
+    fn FatDeviceIsFatFsdo(device_object: *mut DEVICE_OBJECT) -> u8;
+    fn IsFileWriteThrough(file_object: *mut FILE_OBJECT, vcb: *mut VCB) -> u8;
     static mut FatFsdEntryCount: u32;
     fn ExLocalTimeToSystemTime(LocalTime: *const LARGE_INTEGER, SystemTime: *mut LARGE_INTEGER);
     fn FsRtlUninitializeOplock(Oplock: *mut OPLOCK);
@@ -96,7 +96,7 @@ extern "system" {
     fn FatRootDirectorySize(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatRootDirectoryLbo(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatLookupFileAllocationSize( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, );
-    fn FatAcquireExclusiveGlobal(irp_context: *mut IRP_CONTEXT) -> NTSTATUS;
+    fn FatAcquireExclusiveGlobal(irp_context: *mut IRP_CONTEXT) -> u8;
     fn FatDeleteResource(resource: *mut ERESOURCE) -> NTSTATUS;
     fn FatInitializeCacheMap( file_object: *mut FILE_OBJECT, file_sizes: *const CC_FILE_SIZES, read_ahead: i32, callbacks: *const core::ffi::c_void, vcb: *mut VCB, ) -> NTSTATUS;
     fn FatReleaseGlobal(irp_context: *mut IRP_CONTEXT) -> NTSTATUS;
@@ -1531,6 +1531,39 @@ pub unsafe extern "system" fn FatCreateIrpContext(
             && (*irp_sp).MajorFunction != IRP_MJ_CLEANUP
             && (*irp_sp).MajorFunction != IRP_MJ_CLOSE
         {
+            {
+                extern "C" {
+                    fn DbgPrint(fmt: *const i8, ...) -> u32;
+                }
+                DbgPrint(
+                    b"[FASTFAT] FatCreateIrpContext RAISE on FSDO: Mj=%u Mn=%u FileObj=%p Dev=%p Irp=%p IrpSp=%p\n\0"
+                        .as_ptr() as *const i8,
+                    (*irp_sp).MajorFunction as u32,
+                    (*irp_sp).MinorFunction as u32,
+                    (*irp_sp).FileObject,
+                    (*irp_sp).DeviceObject,
+                    irp,
+                    irp_sp,
+                );
+                let fo = (*irp_sp).FileObject;
+                if !fo.is_null() {
+                    let fo_dev = (*fo).DeviceObject;
+                    let fo_vpb = (*fo).Vpb;
+                    let dev_vpb = if !fo_dev.is_null() { (*fo_dev).Vpb } else { core::ptr::null_mut() };
+                    let dev_vpb_dev = if !dev_vpb.is_null() { (*dev_vpb).DeviceObject } else { core::ptr::null_mut() };
+                    DbgPrint(
+                        b"[FASTFAT]   chain: FO->Vpb=%p FO->Dev=%p FO->Dev->Vpb=%p ->Vpb->Dev=%p FO->Flags=%08x FatDiskFsdo=%p FatCdFsdo=%p\n\0"
+                            .as_ptr() as *const i8,
+                        fo_vpb,
+                        fo_dev,
+                        dev_vpb,
+                        dev_vpb_dev,
+                        (*fo).Flags,
+                        FatData.DiskFileSystemDeviceObject,
+                        FatData.CdromFileSystemDeviceObject,
+                    );
+                }
+            }
             ExRaiseStatus(STATUS_INVALID_DEVICE_REQUEST);
         }
 

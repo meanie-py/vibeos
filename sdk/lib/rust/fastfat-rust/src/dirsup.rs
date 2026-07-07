@@ -18,7 +18,7 @@ extern "system" {
     fn FatBugCheck(a: u32, b: u32, c: u32);
     fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
     fn FatPrepareWriteDirectoryFile( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Offset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, LowPriority: i32, ReturnMapped: i32, Status: *mut NTSTATUS, );
-    fn FatIsFat32(Vcb: *mut core::ffi::c_void) -> i32;
+    fn FatIsFat32(Vcb: *mut core::ffi::c_void) -> u8;
     fn NodeType(obj: *mut core::ffi::c_void) -> u32;
     } extern "C" { fn DebugTrace(level: i32, flag: u32, fmt: *const i8, ...); } extern "system" {
     fn FatStringTo8dot3( IrpContext: PIRP_CONTEXT, FileName: OEM_STRING, OutputString: *mut OEM_STRING, );

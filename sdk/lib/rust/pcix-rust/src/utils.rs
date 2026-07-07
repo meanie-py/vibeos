@@ -2,6 +2,7 @@
 #[allow(unused_imports)] use ntkrnl_sys::ke::KeGetCurrentIrql;
 #[allow(unused_imports)] use crate::ddk_shims::*;
 #[allow(unused_imports)] use crate::glue::*;
+use crate::glue::{IRP_MN_QUERY_INTERFACE, IRP_MN_QUERY_CAPABILITIES}; // explicit: disambiguate vs ntkrnl_sys::driver_ddk glob
 #[allow(unused_imports)] use crate::guids::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
@@ -1926,7 +1927,7 @@ pub unsafe extern "system" fn PciQueryPowerCapabilities(
         core::ptr::copy_nonoverlapping(
             AttachedCaps.DeviceState.as_ptr(),
             (*DeviceCapability).DeviceState.as_mut_ptr(),
-            core::mem::size_of::<[DEVICE_POWER_STATE; 7]>(),
+            7, // element count — size_of here copied 4x too much (kernel-stack overrun)
         );
         return STATUS_SUCCESS;
     }

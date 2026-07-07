@@ -25,25 +25,25 @@ of it to reviewers. See docs/engineering/per-arch-cfg-divergence-audit.md for th
 methodology + the classification rubric (DRIFT-BUG / BRINGUP-SHORTCUT /
 UNNECESSARY-DIVERGENCE / ARCH-STUB vs LEGIT).
 """
+
 import argparse
 import re
-import sys
 from pathlib import Path
 
 DEFAULT_ROOT = "sdk/lib/rust"
-CFG_RE = re.compile(r'#\[\s*cfg\s*\(')
-ARCH_RE = re.compile(r'target_arch|target_os')
+CFG_RE = re.compile(r"#\[\s*cfg\s*\(")
+ARCH_RE = re.compile(r"target_arch|target_os")
 # cfg attached to these => legit arch selection, not logic divergence
 LEGIT_NEXT = re.compile(
-    r'^\s*(pub(\(crate\))?\s+)?(unsafe\s+)?'
-    r'(extern\b|use\b|type\b|mod\b|global_asm!|core::arch::asm!|asm!)'
+    r"^\s*(pub(\(crate\))?\s+)?(unsafe\s+)?"
+    r"(extern\b|use\b|type\b|mod\b|global_asm!|core::arch::asm!|asm!)"
 )
-LINK_ATTR = re.compile(r'^\s*#\[\s*link')
-POINTER_WIDTH = re.compile(r'target_pointer_width')
+LINK_ATTR = re.compile(r"^\s*#\[\s*link")
+POINTER_WIDTH = re.compile(r"target_pointer_width")
 
 
 def cfg_predicate(line):
-    m = re.search(r'#\[\s*cfg\s*\((.*)\)\s*\]', line)
+    m = re.search(r"#\[\s*cfg\s*\((.*)\)\s*\]", line)
     return m.group(1).strip() if m else line.strip()
 
 
@@ -73,7 +73,7 @@ def classify_file(path):
             nxt = lines[j]
             break
         pred = cfg_predicate(ln)
-        if POINTER_WIDTH.search(pred) and not re.search(r'target_arch|target_os', pred):
+        if POINTER_WIDTH.search(pred) and not re.search(r"target_arch|target_os", pred):
             bucket = "LEGIT"  # pure layout/width
         elif nxt == "#[link]" or LEGIT_NEXT.match(nxt):
             bucket = "LEGIT"  # ABI / asm / module selection
@@ -106,7 +106,7 @@ def main():
     tot_l = sum(v["LEGIT"] for v in per_crate.values())
     print(f"TOTAL: {tot_c} CANDIDATE (logic-gating) / {tot_l} LEGIT (ABI/asm/layout/module)")
     print(f"\n=== CANDIDATE count by crate (top {args.top}) ===")
-    for crate, v in sorted(per_crate.items(), key=lambda kv: -kv[1]["CANDIDATE"])[:args.top]:
+    for crate, v in sorted(per_crate.items(), key=lambda kv: -kv[1]["CANDIDATE"])[: args.top]:
         if v["CANDIDATE"]:
             print(f"  {v['CANDIDATE']:5d} cand / {v['LEGIT']:5d} legit   {crate}")
     if args.out:

@@ -82,6 +82,12 @@ use crate::types::{_SCSI_REQUEST_BLOCK, _CDB__START_STOP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{min};
 // resolve_imports.py: explicit kernel/private-type imports
+use crate::glue::{IOCTL_MOUNTDEV_QUERY_UNIQUE_ID, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME,
+    IOCTL_MOUNTDEV_QUERY_SUGGESTED_LINK_NAME, IOCTL_STORAGE_GET_DEVICE_NUMBER,
+    IOCTL_STORAGE_FIND_NEW_DEVICES, IOCTL_STORAGE_GET_HOTPLUG_INFO, IOCTL_STORAGE_SET_HOTPLUG_INFO,
+    IOCTL_STORAGE_MCN_CONTROL, IOCTL_STORAGE_READ_CAPACITY, IOCTL_STORAGE_EVENT_NOTIFICATION,
+    IOCTL_STORAGE_CHECK_PRIORITY_HINT_SUPPORT, IOCTL_STORAGE_FIRMWARE_DOWNLOAD,
+    IOCTL_STORAGE_GET_LB_PROVISIONING_MAP_RESOURCES, IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES};
 use crate::glue::{CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE, IOCTL_SCSI_GET_ADDRESS, IO_WRN_FAILURE_PREDICTED, KEY_WRITE, NonPagedPoolNxCacheAligned, RTL_QUERY_REGISTRY_TYPECHECK, RTL_QUERY_REGISTRY_TYPECHECK_SHIFT, SCSI_SENSE_OPTIONS_FIXED_FORMAT_IF_UNKNOWN_FORMAT_INDICATED, SCSI_SENSE_OPTIONS_NONE, SENSE_BUFFER_SIZE_EX, STATUS_IO_DEVICE_ERROR, STATUS_IO_TIMEOUT, STATUS_NONEXISTENT_SECTOR, TRACE_FLAG_GENERAL, TRACE_FLAG_IOCTL, TRACE_FLAG_MCN, TRACE_FLAG_WMI, TRACE_LEVEL_VERBOSE, VPB_MOUNTED, _MEDIA_LOCK_TYPE_SecureMediaLock as SecureMediaLock, max};
 use crate::guid::{GUID_IO_DEVICE_BECOMING_READY};
 use crate::srblib::{SrbGetDataTransferLength, SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength, SrbGetSrbFlags, SrbGetSystemStatus, SrbSetScsiStatus};
@@ -217,7 +223,7 @@ unsafe extern "C" {
     fn ScsiGetSenseDescriptorLength(buf: PVOID) -> UCHAR;
     fn ScsiConvertToFixedSenseFormat(sense_buf: PVOID, buf_len: UCHAR, fixed_buf: PVOID, fixed_buf_len: UCHAR) -> BOOLEAN;
     fn SrbGetScsiStatus(srb: PVOID) -> UCHAR;
-    fn SrbGetRequestAttribute(srb: PVOID) -> ULONG;
+    fn SrbGetRequestAttribute(srb: PVOID) -> u8;
     fn SrbGetPathId(srb: PVOID) -> UCHAR;
     fn SrbGetTargetId(srb: PVOID) -> UCHAR;
     fn SrbGetLun(srb: PVOID) -> UCHAR;
@@ -3971,7 +3977,7 @@ pub unsafe extern "system" fn ClassSendIrpSynchronous(
     );
 
     status = IoCallDriver(TargetDeviceObject, Irp);
-    _Analysis_assume_((status != STATUS_PENDING) as u8);
+    // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
     if status == STATUS_PENDING {
         #[cfg(debug_assertions)]
         {
@@ -4054,9 +4060,9 @@ pub unsafe extern "system" fn ClassSendSrbAsynchronous(
     SET_FLAG!(savedFlags, SrbGetSrbFlags((Srb).cast()) & SRB_FLAGS_DONT_START_NEXT_PACKET);
 
     if TEST_FLAG(SrbGetSrbFlags((Srb).cast()), SRB_FLAGS_QUEUE_ACTION_ENABLE) != 0
-        && (SrbGetRequestAttribute((Srb).cast()) == SRB_SIMPLE_TAG_REQUEST
-            || SrbGetRequestAttribute((Srb).cast()) == SRB_HEAD_OF_QUEUE_TAG_REQUEST
-            || SrbGetRequestAttribute((Srb).cast()) == SRB_ORDERED_QUEUE_TAG_REQUEST)
+        && ((SrbGetRequestAttribute((Srb).cast()) as u32) == SRB_SIMPLE_TAG_REQUEST
+            || (SrbGetRequestAttribute((Srb).cast()) as u32) == SRB_HEAD_OF_QUEUE_TAG_REQUEST
+            || (SrbGetRequestAttribute((Srb).cast()) as u32) == SRB_ORDERED_QUEUE_TAG_REQUEST)
     {
         SET_FLAG!(savedFlags, SRB_FLAGS_QUEUE_ACTION_ENABLE);
         if TEST_FLAG(SrbGetSrbFlags((Srb).cast()), SRB_FLAGS_NO_QUEUE_FREEZE) != 0 {

@@ -48,11 +48,11 @@ extern "system" {
     fn FatCreateFcb( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ParentDcb: *mut DCB, DirentByteOffset: u32, ShortDirentByteOffset: u32, ShortDirent: *mut DIRENT, LongName: *mut _UNICODE_STRING, Lfn: *mut _UNICODE_STRING, IsPagingFile: i32, Temporary: i32, ) -> *mut FCB;
     fn FatAddFileAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, FileObject: *mut FILE_OBJECT, AllocationSize: u32, );
     fn FatCreateEa( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, EaBuffer: *mut u8, EaLength: u32, ShortName: *mut OEM_STRING, EaHandle: *mut u16, );
-    fn FatIsFat32(Vcb: *mut VCB) -> i32;
+    fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn FatSetFileObject( FileObject: *mut FILE_OBJECT, OpenType: i32, Fcb: *mut FCB, Ccb: *mut CCB, );
     fn FatCreateCcb(IrpContext: *mut IRP_CONTEXT) -> *mut CCB;
     fn FatNotifyReportChange( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Fcb: *mut FCB, FilterMatch: u32, Action: u32, );
-    fn FatCheckManageVolumeAccess( IrpContext: *mut IRP_CONTEXT, AccessState: *mut _ACCESS_STATE, RequestorMode: KPROCESSOR_MODE, ) -> i32;
+    fn FatCheckManageVolumeAccess( IrpContext: *mut IRP_CONTEXT, AccessState: *mut _ACCESS_STATE, RequestorMode: KPROCESSOR_MODE, ) -> u8;
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !;
     fn FatTruncateFileAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, NewSize: u32, );
     fn FatDeleteDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, DirectoryFile: *mut FILE_OBJECT, PreserveDcb: i32, );
@@ -61,16 +61,16 @@ extern "system" {
     fn FatUnpinBcb( IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
     fn FatGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
     fn FatDirectoryKey(Dcb: *mut DCB) -> u64;
-    fn FatLfnDirentExists( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Name: *mut _UNICODE_STRING, LfnBuffer: *mut _UNICODE_STRING, ) -> i32;
+    fn FatLfnDirentExists( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Name: *mut _UNICODE_STRING, LfnBuffer: *mut _UNICODE_STRING, ) -> u8;
     fn FsRtlCheckOplockEx( Oplock: *mut OPLOCK, Irp: *mut IRP, Flags: u32, EventArgs: *mut c_void, ReplyArguments: *mut c_void, ReplyStatus: *mut NTSTATUS, ) -> NTSTATUS;
     fn DebugUnwind(name: *const i8);
     fn NT_ASSERT(condition: i32);
     fn SetFlag(Flags: *mut u32, Flag: u32);
-    fn IsFileObjectReadOnly(FileObject: *mut FILE_OBJECT) -> i32;
+    fn IsFileObjectReadOnly(FileObject: *mut FILE_OBJECT) -> u8;
     fn UNREFERENCED_PARAMETER(x: c_void);
-    fn ARGUMENT_PRESENT(x: *mut c_void) -> i32;
+    fn ARGUMENT_PRESENT(x: *mut c_void) -> u8;
     fn ExFreePool(P: *mut c_void);
-    fn RtlAreBitsSet( BitMapHeader: *mut RTL_BITMAP, StartingIndex: u32, Length: u32, ) -> i32;
+    fn RtlAreBitsSet( BitMapHeader: *mut RTL_BITMAP, StartingIndex: u32, Length: u32, ) -> u8;
     fn RtlClearBits( BitMapHeader: *mut RTL_BITMAP, StartingIndex: u32, Length: u32, );
     } extern "C" { fn DebugTrace( Level: i32, Component: i32, Format: *const i8, ... ); } extern "system" {
 }
@@ -87,7 +87,7 @@ extern "system" {
 extern "system" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
     fn KeExpandKernelStackAndCalloutEx( Callout: extern "system" fn(*mut FAT_CALLOUT_PARAMETERS), Context: *mut FAT_CALLOUT_PARAMETERS, StackSize: u32, Wait: i32, Reserved: *mut core::ffi::c_void, ) -> NTSTATUS;
-    fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut DCB) -> NTSTATUS;
+    fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut DCB) -> u8;
     fn FatCheckFileAccess(IrpContext: *mut IRP_CONTEXT, DirentFatFlags: u16, DesiredAccess: *mut ACCESS_MASK) -> BOOLEAN;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut DCB);
     fn _SEH2_AbnormalTermination() -> BOOLEAN;
@@ -114,7 +114,7 @@ extern "system" {
     fn FatSyncUninitializeCacheMap( IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, );
     fn FatUnpinRepinnedBcbs(IrpContext: PIRP_CONTEXT);
     fn ObDereferenceObject(Object: PVOID);
-    fn BooleanFlagOn(value: u8, flag: u8) -> i32;
+    fn BooleanFlagOn(value: u8, flag: u8) -> u8;
     fn FatBugCheck(p1: u32, p2: u32, p3: u32) -> !;
     fn FatGetNeedEaCount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Dirent: *mut DIRENT, NeedEaCount: *mut u32);
     fn FatLookupFileAllocationSize(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
@@ -1220,7 +1220,7 @@ pub unsafe extern "system" fn FatOpenRootDcb(
         (*RootDcb).UncleanCount += 1;
         (*RootDcb).OpenCount += 1;
         (*Vcb).OpenFileCount += 1;
-        if IsFileObjectReadOnly(FileObject) != 0i32 {
+        if IsFileObjectReadOnly(FileObject) != 0u8 {
             (*Vcb).ReadOnlyCount += 1;
         }
         UnwindCounts = (1i32) as u8;
@@ -1240,7 +1240,7 @@ pub unsafe extern "system" fn FatOpenRootDcb(
             (*RootDcb).UncleanCount -= 1;
             (*RootDcb).OpenCount -= 1;
             (*Vcb).OpenFileCount -= 1;
-            if IsFileObjectReadOnly(FileObject) != 0i32 {
+            if IsFileObjectReadOnly(FileObject) != 0u8 {
                 (*Vcb).ReadOnlyCount -= 1;
             }
         }
@@ -2057,8 +2057,8 @@ pub unsafe extern "system" fn FatOpenExistingFile(
                 || CreateDisposition == FILE_OVERWRITE
                 || CreateDisposition == FILE_OVERWRITE_IF
             {
-                let Hidden: i32 = BooleanFlagOn((*Dirent).Attributes, FAT_DIRENT_ATTR_HIDDEN);
-                let System: i32 = BooleanFlagOn((*Dirent).Attributes, FAT_DIRENT_ATTR_SYSTEM);
+                let Hidden: i32 = BooleanFlagOn((*Dirent).Attributes, FAT_DIRENT_ATTR_HIDDEN) as i32;
+                let System: i32 = BooleanFlagOn((*Dirent).Attributes, FAT_DIRENT_ATTR_SYSTEM) as i32;
 
                 if (Hidden != 0 && FlagOn(FileAttributes as u32, FILE_ATTRIBUTE_HIDDEN as u32) == 0)
                     || (System != 0 && FlagOn(FileAttributes as u32, FILE_ATTRIBUTE_SYSTEM as u32) == 0)
@@ -2836,13 +2836,13 @@ pub unsafe extern "system" fn FatCreateNewFile(
         );
         if DirentFromPool != 0 {
             core::ptr::copy_nonoverlapping(
-                FirstPageDirent,
-                Dirent,
+                FirstPageDirent as *const u8,
+                Dirent as *mut u8,
                 BytesInFirstPage as usize,
             );
             core::ptr::copy_nonoverlapping(
-                SecondPageDirent,
-                Dirent.add(DirentsInFirstPage as usize),
+                SecondPageDirent as *const u8,
+                Dirent.add(DirentsInFirstPage as usize) as *mut u8,
                 (DirentsNeeded * core::mem::size_of::<DIRENT>() as u32 - BytesInFirstPage) as usize,
             );
             ShortDirent = SecondPageDirent.add((DirentsNeeded - DirentsInFirstPage) as usize - 1);

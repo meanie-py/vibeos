@@ -43,6 +43,7 @@ pub static mut MmVerifyDriverLevel: ULONG = 0xFFFFFFFF; // -1
 
 // Registry-controlled values owned by ARM3/drvmgmt. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+#[no_mangle]
 pub static DRVMGMT_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
     ntkrnl_sys::SubVector(unsafe { [
         ntkrnl_sys::cv!("Session Manager\\Memory Management", "VerifyDrivers",

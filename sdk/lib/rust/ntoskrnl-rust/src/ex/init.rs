@@ -175,6 +175,7 @@ pub static mut CmNtCSDReleaseType: ULONG = 0;
 
 // Registry-controlled values owned by ex/init. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+#[no_mangle]
 pub static INIT_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
     ntkrnl_sys::SubVector(unsafe { [
         ntkrnl_sys::cv!("Windows", "CSDVersion",
@@ -973,9 +974,20 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     }
 
     KiInitializeBugCheck();
+    // CmControlVector + its runtime assembler now live in the severed config-rust
+    // crate (config crate-split); reference them as link symbols. It's assembled at
+    // runtime (not a compile-time const) so config can source per-subsystem slices
+    // across crate boundaries. Build it immediately before its sole consumer.
+    // CmControlVector is really [_CM_SYSTEM_CONTROL_VECTOR; N]; declaring element 0
+    // gives the base pointer CmGetSystemControlValues walks (until the NULL entry).
+    extern "C" {
+        fn cm_build_control_vector();
+        static mut CmControlVector: _CM_SYSTEM_CONTROL_VECTOR;
+    }
+    cm_build_control_vector();
     CmGetSystemControlValues(
         (*LoaderBlock).RegistryBase,
-        core::ptr::addr_of_mut!(crate::config::cmdata::CmControlVector) as *mut _CM_SYSTEM_CONTROL_VECTOR,
+        core::ptr::addr_of_mut!(CmControlVector),
     );
 
     CmNtSpBuildNumber = 0;

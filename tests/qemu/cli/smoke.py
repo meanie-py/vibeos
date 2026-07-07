@@ -195,9 +195,10 @@ def _one_boot(
                 return {"ok": False, "outcome": "post-marker", **post}
             res = {"ok": True, "outcome": "reached", "classification": ""}
             ev = triage.wedge_evidence(text)
-            if ev["census_stuck"] or ev["lockdep"]:
+            if ev["census_stuck"] or ev["lockdep"] or ev["cswitch"]:
                 res["census_stuck"] = ev["census_stuck"]
                 res["lockdep_hits"] = ev["lockdep"]
+                res["cswitch_hits"] = ev["cswitch"]
                 res["census_lines"] = ev["lines"]
             if shot:
                 res["screenshot"] = shot
@@ -435,7 +436,8 @@ def smoke(args, repo: Path) -> int:
         # is a regression and blocks).
         if not r["ok"] and not run.classification:
             run.classification = r.get("classification", "FAIL")
-            for k in ("hang_kind", "wedge_confirmed", "census_stuck", "lockdep_hits"):
+            carry = ("hang_kind", "wedge_confirmed", "census_stuck", "lockdep_hits", "cswitch_hits")
+            for k in carry:
                 if k in r:
                     run.extra[k] = r[k]
             if r.get("screenshot"):
@@ -465,15 +467,18 @@ def smoke(args, repo: Path) -> int:
     # lands; gating red on it would block all landings on a pre-existing bug.
     stuck = max((r.get("census_stuck", 0) for r in results), default=0)
     lockdep = max((r.get("lockdep_hits", 0) for r in results), default=0)
-    if stuck or lockdep:
+    cswitch = max((r.get("cswitch_hits", 0) for r in results), default=0)
+    if stuck or lockdep or cswitch:
         run.extra["census_stuck"] = stuck
         run.extra["lockdep_hits"] = lockdep
+        run.extra["cswitch_hits"] = cswitch
         lines = next((r["census_lines"] for r in results if r.get("census_lines")), [])
         run.add(
             Stage(
                 "health",
                 status="warn",
-                detail=f"{stuck} [CENSUS] STUCK, {lockdep} [LOCKDEP] on a green boot",
+                detail=f"{stuck} [CENSUS] STUCK, {lockdep} [LOCKDEP], "
+                f"{cswitch} [CSWITCH] on a green boot",
                 salient=lines[:2],
             )
         )

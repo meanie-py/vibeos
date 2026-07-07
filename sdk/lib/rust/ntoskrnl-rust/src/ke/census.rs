@@ -24,6 +24,11 @@
 #![allow(static_mut_refs)] // PREV/PREV_COUNT: single-writer (census thread only)
 
 use core::mem::offset_of;
+// PsActiveProcessHead: ps-rust global read across the crate boundary as a link symbol
+// (#[no_mangle] in ps-rust). crate-split Phase 1b.
+extern "C" {
+    static mut PsActiveProcessHead: ntkrnl_sys::ddk::_LIST_ENTRY;
+}
 use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
 use ntkrnl_sys::base::*;
@@ -79,7 +84,7 @@ fn plausible(p: usize, align: usize) -> bool {
 /// One full process/thread scan. Returns the new sighting set in `next`,
 /// prints a report line for every second-consecutive sighting.
 unsafe fn scan(next: &mut [Sighting; MAX_SIGHTINGS], next_count: &mut usize) {
-    let head = core::ptr::addr_of_mut!(crate::ps::process::PsActiveProcessHead);
+    let head = core::ptr::addr_of_mut!(PsActiveProcessHead);
     let mut plink = (*head).Flink;
     let mut nprocs = 0usize;
     let mut reported = 0u32;
@@ -149,6 +154,11 @@ unsafe fn scan(next: &mut [Sighting; MAX_SIGHTINGS], next_count: &mut usize) {
     // gun and fires at the park, deterministically, before the >10s window.
     #[cfg(feature = "lockdep")]
     super::lockdep::lockdep_report();
+
+    // cswitchdep: switch census + any hand-off violations (same rationale —
+    // the violation fires at the switch, before any downstream wedge/crash).
+    #[cfg(feature = "cswitchdep")]
+    super::cswitchdep::cswitchdep_report();
 }
 
 /// One stuck-thread report line, with the synctrace verdict inputs inline.
@@ -222,6 +232,14 @@ pub unsafe extern "system" fn KiStartSyncCensus() {
     super::flightrec::flightrec_init();
     #[cfg(feature = "lockdep")]
     super::lockdep::lockdep_init();
+    #[cfg(feature = "cswitchdep")]
+    super::cswitchdep::cswitchdep_init();
+    // fw_cfg-armed detector selftest (CSWITCH_SELFTEST=1): runs here at
+    // PASSIVE, after init, so the deliberate violation lands in the census.
+    #[cfg(feature = "cswitchdep")]
+    if crate::tripwire::CSWITCH_SELFTEST_ARMED {
+        super::cswitchdep::cswitch_selftest();
+    }
     crate::debugblock::debug_block_stamp();
 
     let mut handle: HANDLE = core::ptr::null_mut();

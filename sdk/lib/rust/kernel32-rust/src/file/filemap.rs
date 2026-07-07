@@ -58,7 +58,7 @@ pub unsafe extern "system" fn CreateFileMappingA(
 
 #[no_mangle]
 pub unsafe extern "system" fn CreateFileMappingW(
-    hFile: HANDLE,
+    mut hFile: HANDLE,
     lpFileMappingAttributes: LPSECURITY_ATTRIBUTES,
     mut flProtect: DWORD,
     dwMaximumSizeHigh: DWORD,
@@ -132,7 +132,13 @@ pub unsafe extern "system" fn CreateFileMappingW(
     /* Make sure the handle is valid */
     if hFile == INVALID_HANDLE_VALUE {
         /* It's not, we'll only go on if we have a size */
-        let hFile: HANDLE = core::ptr::null_mut();
+        // C-exact: REASSIGN the param (C `hFile = NULL`) so NtCreateSection
+        // creates a pagefile-backed section. The translation had `let hFile`
+        // here — a shadow that died at the block end, so NtCreateSection got
+        // INVALID_HANDLE_VALUE (-1, the current-process pseudo-handle) as a
+        // *file* handle and EVERY anonymous CreateFileMapping in the OS
+        // failed (kbswitch "SetHooks failed", SHAllocShared "Out of memory").
+        hFile = core::ptr::null_mut();
         if SectionSize.is_null() {
             /* No size, so this isn't a valid non-mapped section */
             SetLastError(ERROR_INVALID_PARAMETER);

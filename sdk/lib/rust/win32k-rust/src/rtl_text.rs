@@ -12,6 +12,17 @@ extern "C" {
     fn memmove(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     fn wcschr(s: *const u16, c: i32) -> *mut u16;
+}
+
+// text.rs defines GreGetTextExtentExW FASTCALL on x86 / cdecl elsewhere — the
+// decl MUST match or LLVM UB-folds the calling branch on i386 (the silent
+// U32AccelCacheLock/desktop-icons class; field manual §9.30).
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn GreGetTextExtentExW( hdc: HDC, lpwsz: LPCWSTR, cwc: i32, dxMax: i32, pcCh: *mut u32, pdxOut: *mut i32, psize: *mut SIZE, fl: u32, ) -> i32;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn GreGetTextExtentExW( hdc: HDC, lpwsz: LPCWSTR, cwc: i32, dxMax: i32, pcCh: *mut u32, pdxOut: *mut i32, psize: *mut SIZE, fl: u32, ) -> i32;
 }
 extern "C" {

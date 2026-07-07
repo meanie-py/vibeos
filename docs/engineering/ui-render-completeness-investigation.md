@@ -251,3 +251,36 @@ where it can be debugged with the faster x86 toolkits.
 4. **user32-rust DefWindowProc GoSS arm order** — while auditing, noted RealDefWindowProcW
    is faithful; no action. The five paint-chain diffs cleared painting/nonclient/winpos/
    defwnd/windc/vis (kernel) — reusable clearance record.
+5. **Tray top-edge never painted → desktop-version "ghost" band (2026-07-07 forensics).**
+   The doubled version string in every screenshot is NOT a double-draw: pixel forensics
+   (640×480 smoke shots, all arches) show the tray window's rect starts at row 452 but its
+   painted face starts at 455 — the 3px top band is the tray's NC frame (unthemed
+   Shell_TrayWnd = WS_POPUP|WS_THICKFRAME|WS_BORDER) and it is NEVER painted, so the
+   pre-taskbar full-screen `IntPaintDesktop` version text (drawn with workarea=480 before
+   the tray's SPI_SETWORKAREA) shows through forever. `IntPaintDesktop` + its callers and
+   `NC_DoNCPaint`'s frame path (UserHasWindowEdge → DrawEdge EDGE_RAISED) were audited
+   faithful vs C — so the suspect is NCPAINT *delivery/timing* for the tray window
+   specifically (e.g., its final SetWindowPos/frame-change not queuing a WM_NCPAINT, or
+   the erase happening before the workarea move with no later invalidate of the frame
+   band). Next step is a runtime trace: DbgPrint in explorer's OnNcPaint + win32k
+   NC_DoNCPaint entry filtered to the tray hwnd, and check whether it ever runs post-
+   final-position. Cosmetic but it's the last visible artifact on otherwise-clean
+   desktop screenshots.
+
+   **Runtime trace narrowed it (2026-07-07, i386, diagnostics since stripped):**
+   the kernel DOES deliver WM_NCPAINT to the tray. Traced the full hop:
+   `IntSendNCPaintImpl` sends `WM_NCPAINT` (0x85) to the tray hwnd (style
+   `0x96840000` = the exact `WS_POPUP|WS_VISIBLE|WS_CLIPSIBLINGS|WS_CLIPCHILDREN|
+   WS_THICKFRAME|WS_BORDER` tray creation style), and `User32CallWindowProcFromKernel`
+   fires with `Msg=0x85`, `Proc=0x00402E70` (an explorer.exe .text address). BUT
+   both a `[TRAYNC]` DbgPrint in `CTrayWindow`'s `BEGIN_MSG_MAP` prologue AND one in
+   `OnNcPaint` stayed **completely silent** — the message reaches user32's
+   kernel-callback but never enters CTrayWindow's ATL message map. Also: NO
+   `IntSetWindowProc` ever ran for the tray hwnd, even though the tray clearly
+   processes WM_SIZE/paint (taskbar face + Start + clock render). So the tray's
+   window proc is a static explorer proc (`0x00402E70`), not the expected ATL
+   thunk, and WM_NCPAINT dispatched to it is dropped before the map. **Next step:**
+   identify `0x00402E70` (is it `CWindowImplBaseT::StartWindowProc`/`WindowProc`,
+   or a class-registered default that swallows NCPAINT?) and why the ATL thunk
+   subclass isn't installed/hit for the tray on this build. This is an explorer/
+   ATL-side dispatch bug, not a win32k paint bug (win32k did its job).

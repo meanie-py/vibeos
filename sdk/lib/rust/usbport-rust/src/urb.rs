@@ -15,7 +15,7 @@ extern "system" {
     fn USBPORT_DumpingSetupPacket(SetupPacket: PUSB_DEFAULT_PIPE_SETUP_PACKET);
     fn USBPORT_QueueTransferUrb(Urb: PURB);
     fn USBPORT_USBDStatusToNtStatus(Urb: PURB, USBDStatus: USBD_STATUS) -> NTSTATUS;
-    fn USBPORT_ValidatePipeHandle( DeviceHandle: PUSBPORT_DEVICE_HANDLE, PipeHandle: PUSBPORT_PIPE_HANDLE, ) -> i32;
+    fn USBPORT_ValidatePipeHandle( DeviceHandle: PUSBPORT_DEVICE_HANDLE, PipeHandle: PUSBPORT_PIPE_HANDLE, ) -> u8;
     fn USBPORT_AbortEndpoint( FdoDevice: PDEVICE_OBJECT, Endpoint: PUSBPORT_ENDPOINT, Irp: PIRP, );
     fn USBPORT_DumpingURB(Urb: PURB);
     fn USBPORT_GetEndpointState(Endpoint: PUSBPORT_ENDPOINT) -> ULONG;

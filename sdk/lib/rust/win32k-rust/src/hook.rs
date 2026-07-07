@@ -1073,7 +1073,7 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                         }
 
                         if NT_SUCCESS(Status) && IS_ATOM!((*(*pcbtcww).lpcs).lpszClass) == 0 {
-                            _Analysis_assume_();
+                            // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
                             Status = SafeProbeForRead(
                                 (*(*pcbtcww).lpcs).lpszClass as PVOID,
                                 core::mem::size_of::<CHAR>(),
@@ -1102,7 +1102,7 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                         }
 
                         if NT_SUCCESS(Status) && IS_ATOM!((*(*pcbtcww).lpcs).lpszClass) == 0 {
-                            _Analysis_assume_();
+                            // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
                             Status = SafeProbeForRead(
                                 (*(*pcbtcww).lpcs).lpszClass as PVOID,
                                 core::mem::size_of::<WCHAR>(),

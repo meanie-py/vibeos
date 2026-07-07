@@ -62,6 +62,98 @@ pub fn start() {
     }
 }
 
+
+/// Runtime-selected backend: virtio-net (paravirtual, default) or e1000 (real
+/// emulated NIC, `-device e1000`). Same `phy::Device` surface via delegation,
+/// so the poll loop below stays backend-agnostic.
+#[cfg(not(feature = "ndis"))]
+enum AnyPhy {
+    Virtio(VirtioPhy),
+    E1000(crate::e1000::E1000Phy),
+}
+
+#[cfg(not(feature = "ndis"))]
+impl AnyPhy {
+    fn mac(&self) -> [u8; 6] {
+        match self {
+            AnyPhy::Virtio(v) => v.mac(),
+            AnyPhy::E1000(e) => e.mac(),
+        }
+    }
+}
+
+#[cfg(not(feature = "ndis"))]
+enum AnyRxToken {
+    Virtio(crate::device::VirtioRxToken),
+    E1000(crate::e1000::E1000RxToken),
+}
+
+#[cfg(not(feature = "ndis"))]
+impl smoltcp::phy::RxToken for AnyRxToken {
+    fn consume<R, F>(self, f: F) -> R
+    where
+        F: FnOnce(&[u8]) -> R,
+    {
+        match self {
+            AnyRxToken::Virtio(t) => smoltcp::phy::RxToken::consume(t, f),
+            AnyRxToken::E1000(t) => smoltcp::phy::RxToken::consume(t, f),
+        }
+    }
+}
+
+#[cfg(not(feature = "ndis"))]
+enum AnyTxToken<'a> {
+    Virtio(crate::device::VirtioTxToken<'a>),
+    E1000(crate::e1000::E1000TxToken<'a>),
+}
+
+#[cfg(not(feature = "ndis"))]
+impl<'a> smoltcp::phy::TxToken for AnyTxToken<'a> {
+    fn consume<R, F>(self, len: usize, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        match self {
+            AnyTxToken::Virtio(t) => smoltcp::phy::TxToken::consume(t, len, f),
+            AnyTxToken::E1000(t) => smoltcp::phy::TxToken::consume(t, len, f),
+        }
+    }
+}
+
+#[cfg(not(feature = "ndis"))]
+impl smoltcp::phy::Device for AnyPhy {
+    type RxToken<'a> = AnyRxToken;
+    type TxToken<'a> = AnyTxToken<'a>;
+
+    fn receive(
+        &mut self,
+        ts: smoltcp::time::Instant,
+    ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        match self {
+            AnyPhy::Virtio(v) => v
+                .receive(ts)
+                .map(|(r, t)| (AnyRxToken::Virtio(r), AnyTxToken::Virtio(t))),
+            AnyPhy::E1000(e) => e
+                .receive(ts)
+                .map(|(r, t)| (AnyRxToken::E1000(r), AnyTxToken::E1000(t))),
+        }
+    }
+
+    fn transmit(&mut self, ts: smoltcp::time::Instant) -> Option<Self::TxToken<'_>> {
+        match self {
+            AnyPhy::Virtio(v) => v.transmit(ts).map(AnyTxToken::Virtio),
+            AnyPhy::E1000(e) => e.transmit(ts).map(AnyTxToken::E1000),
+        }
+    }
+
+    fn capabilities(&self) -> smoltcp::phy::DeviceCapabilities {
+        match self {
+            AnyPhy::Virtio(v) => v.capabilities(),
+            AnyPhy::E1000(e) => e.capabilities(),
+        }
+    }
+}
+
 unsafe extern "system" fn worker(_context: PVOID) {
     nsprint!("[NETSTACK] M2/M3 engine: starting smoltcp poll loop\n");
 
@@ -70,11 +162,14 @@ unsafe extern "system" fn worker(_context: PVOID) {
     // surface, so the poll loop below is backend-agnostic.
     #[cfg(not(feature = "ndis"))]
     let mut phy = match device::bringup() {
-        Some(d) => VirtioPhy::new(d),
-        None => {
-            nsprint!("[NETSTACK] FAIL: M2 device bringup\n");
-            return;
-        }
+        Some(d) => AnyPhy::Virtio(VirtioPhy::new(d)),
+        None => match crate::e1000::bringup() {
+            Some(d) => AnyPhy::E1000(crate::e1000::E1000Phy::new(d)),
+            None => {
+                nsprint!("[NETSTACK] FAIL: M2 device bringup\n");
+                return;
+            }
+        },
     };
     #[cfg(feature = "ndis")]
     let mut phy = match crate::ndisphy::bringup() {
@@ -94,12 +189,17 @@ unsafe extern "system" fn worker(_context: PVOID) {
     // NDIS backend (M11) drives RX from ProtocolReceive instead, so this is gated
     // to the virtio path.
     #[cfg(all(any(target_arch = "x86_64", target_arch = "x86"), not(feature = "ndis")))]
-    let rx_event: *mut ntkrnl_sys::ddk::KEVENT = {
-        phy.enable_interrupts();
-        match crate::pci::find_virtio_net().and_then(crate::pci::read_interrupt_line) {
-            Some(line) => unsafe { crate::isr::connect(phy.dev_ptr(), line as u32) },
-            None => null_mut(),
+    let rx_event: *mut ntkrnl_sys::ddk::KEVENT = match &mut phy {
+        AnyPhy::Virtio(v) => {
+            v.enable_interrupts();
+            match crate::pci::find_virtio_net().and_then(crate::pci::read_interrupt_line) {
+                Some(line) => unsafe { crate::isr::connect(v.dev_ptr(), line as u32) },
+                None => null_mut(),
+            }
         }
+        // e1000 v1 is pure-poll: interrupts stay masked (IMC), the poll loop's
+        // delay_ms cadence drives RX. No regression vs the no-IRQ fallback path.
+        AnyPhy::E1000(_) => null_mut(),
     };
 
     let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));

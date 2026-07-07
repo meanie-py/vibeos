@@ -10,7 +10,7 @@ use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS, _RTL_SPLAY_LINKS};
 use crate::glue::{DEBUG_TRACE_SPLAYSUP};
 
 extern "system" {
-    fn KeGetCurrentIrql() -> u32;
+    fn KeGetCurrentIrql() -> u8;
     } extern "C" { fn DbgPrint(format: *const u8, ...); } extern "system" {
     fn RtlAssert(cond: *const core::ffi::c_void, file: *const core::ffi::c_void, line: u32, msg: *const core::ffi::c_void);
     fn CompareNames(name1: PSTRING, name2: PSTRING) -> COMPARISON;
@@ -157,7 +157,7 @@ pub unsafe extern "system" fn FatInsertName(
 pub unsafe extern "system" fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB) {
     let _ = IrpContext;
 
-    if KeGetCurrentIrql() > APC_LEVEL {
+    if (KeGetCurrentIrql() as u32) > APC_LEVEL {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const u8,
             KeGetCurrentIrql() as u32,

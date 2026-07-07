@@ -181,6 +181,65 @@ def scan_source(src: bytes) -> list[tuple[int, str, str]]:
                                 f".{name}() — panics on Err/None in kernel code",
                             )
                         )
+            # write_bytes(ptr, val, size_of::<T>()) where ptr is NOT *mut u8:
+            # `count` is in ELEMENTS of the pointee, so a C-memset translation
+            # `memset(&x, 0, sizeof(x))` zeroes sizeof(T)² BYTES — a stack/heap
+            # smasher (2026-07-06: QueueUserAPC zeroed its caller's return
+            # address → explorer died at rip=0; same shape ×17 across
+            # kernel32/classpnp/ks/mscms/mountmgr). Byte-cast the pointer
+            # (`as *mut u8`) or pass count=1.
+            if fn is not None and not suppressed(node):
+                fname = src[fn.start_byte : fn.end_byte]
+                if (
+                    fname.endswith(b"write_bytes")
+                    or fname.endswith(b"copy_nonoverlapping")
+                    or fname.endswith(b"ptr::copy")
+                ):
+                    args = node.child_by_field_name("arguments")
+                    if args is not None:
+                        argn = [c for c in args.children if c.is_named]
+                        if len(argn) == 3:
+                            # For the copy fns check BOTH pointer args; for
+                            # write_bytes arg1 is the fill byte (never a ptr).
+                            _is_copy = not fname.endswith(b"write_bytes")
+                            ptxt = src[argn[0].start_byte : argn[0].end_byte]
+                            if _is_copy:
+                                ptxt = ptxt + b" " + src[argn[1].start_byte : argn[1].end_byte]
+                            ctxt = src[argn[2].start_byte : argn[2].end_byte]
+                            # Pointee-size-1 casts (u8/i8/CHAR/c_void — c_void is
+                            # size 1 in Rust) make count==bytes; a `/ size_of`
+                            # division means the count is deliberate element math.
+                            _size1 = any(
+                                t in ptxt
+                                for t in (
+                                    b"*mut u8",
+                                    b"*const u8",
+                                    b"*mut i8",
+                                    b"*const i8",
+                                    b"*mut CHAR",
+                                    b"*const CHAR",
+                                    b"*mut UCHAR",
+                                    b"*const UCHAR",
+                                    b"PUCHAR",
+                                    b"PCHAR",
+                                    b"LPBYTE",
+                                    b"PBYTE",
+                                    b"*mut BYTE",
+                                    b"*const BYTE",
+                                    b"c_void",
+                                    b"PVOID",
+                                    b"<u8>",
+                                )
+                            )
+                            if b"size_of" in ctxt and not _size1 and b"/" not in ctxt:
+                                findings.append(
+                                    (
+                                        line_of(node),
+                                        "WRITE_BYTES_SIZEOF",
+                                        "write_bytes(ptr, _, size_of::<T>()) — count is in "
+                                        "ELEMENTS, zeroes sizeof(T)^2 bytes; cast ptr `as *mut u8`",
+                                    )
+                                )
 
         elif node.type == "match_arm":
             pat = node.child_by_field_name("pattern")

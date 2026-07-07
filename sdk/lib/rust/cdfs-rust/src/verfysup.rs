@@ -80,6 +80,13 @@ extern "C" {
 extern "C" {
     fn CdRealDevNeedsVerify(DeviceObject: PDEVICE_OBJECT) -> u8;
 }
+// deviosup.rs defines CdPerformDevIoCtrl FASTCALL on x86 / cdecl elsewhere —
+// decl must match or LLVM UB-folds the caller on i386 (field manual §9.30).
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn CdPerformDevIoCtrl( IrpContext: *mut IRP_CONTEXT, IoControlCode: u32, DeviceObject: PDEVICE_OBJECT, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, b1: i32, b2: i32, Iosb: *mut _IO_STATUS_BLOCK, ) -> i32;
+}
+#[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn CdPerformDevIoCtrl( IrpContext: *mut IRP_CONTEXT, IoControlCode: u32, DeviceObject: PDEVICE_OBJECT, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, b1: i32, b2: i32, Iosb: *mut _IO_STATUS_BLOCK, ) -> i32;
 }
@@ -304,7 +311,7 @@ pub unsafe extern "C" fn CdCheckForDismount(
         if VcbPresent != 0 {
             CdReleaseVcb(IrpContext, Vcb);
         } else {
-            _Analysis_assume_lock_not_held_(core::ptr::addr_of_mut!((*Vcb).VcbResource) as *mut core::ffi::c_void);
+            // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
         }
 
         VcbPresent

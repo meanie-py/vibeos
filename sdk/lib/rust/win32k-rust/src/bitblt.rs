@@ -4,7 +4,7 @@ extern "system" {
     fn SafeProbeForRead(address: *const core::ffi::c_void, length: usize, alignment: u32) -> i32;
     fn EBRUSHOBJ_psoMask(pebo: *mut EBRUSHOBJ) -> *mut SURFOBJ;
     fn EBRUSHOBJ_psoPattern(pebo: *mut EBRUSHOBJ) -> *mut SURFOBJ;
-    fn CLIPOBJ_bEnum(ClipRegion: *mut CLIPOBJ, size: u32, RectEnum: *mut core::ffi::c_void) -> u32;
+    fn CLIPOBJ_bEnum(ClipRegion: *mut CLIPOBJ, size: u32, RectEnum: *mut core::ffi::c_void) -> u8;
     fn CLIPOBJ_cEnumStart(ClipRegion: *mut CLIPOBJ, bAll: u8, iType: u32, iDirection: u32, cLimit: u32);
     fn XLATEOBJ_iXlate(pxlo: *mut XLATEOBJ, iColor: u32) -> u32;
 }
@@ -587,7 +587,7 @@ pub unsafe extern "C" fn NtGdiEngBitBlt(
 pub unsafe extern "stdcall" fn EngBitBlt(
     psoTrg: *mut SURFOBJ,
     psoSrc: *mut SURFOBJ,
-    psoMask: *mut SURFOBJ,
+    mut psoMask: *mut SURFOBJ,
     pco: *mut CLIPOBJ,
     pxlo: *mut XLATEOBJ,
     prclTrg: *mut RECTL,
@@ -595,7 +595,7 @@ pub unsafe extern "stdcall" fn EngBitBlt(
     pptlMask: *mut POINTL,
     pbo: *mut BRUSHOBJ,
     pptlBrush: *mut POINTL,
-    rop4: ROP4,
+    mut rop4: ROP4,
 ) -> i32 {
     let mut clippingType: u8;
     let mut CombinedRect: RECTL = core::mem::zeroed();
@@ -719,10 +719,14 @@ pub unsafe extern "stdcall" fn EngBitBlt(
     }
 
     if UsesMask != 0 && psoMask.is_null() {
-        let psoMaskLocal = BRUSHOBJ_psoMask(pbo);
-        let psoMask = psoMaskLocal;
+        // C-exact: REASSIGN the params (C `psoMask = BRUSHOBJ_psoMask(pbo)` /
+        // `rop4 = ...`). The translation shadowed both with block-local `let`s,
+        // so a brush-provided mask was discarded (mask blits ran with
+        // psoMask=NULL while UsesMask stayed set) and the no-mask rop4
+        // degrade never applied.
+        psoMask = BRUSHOBJ_psoMask(pbo);
         if psoMask.is_null() {
-            let rop4 = (rop4 & 0xFF) | ((rop4 & 0xFF) << 8);
+            rop4 = (rop4 & 0xFF) | ((rop4 & 0xFF) << 8);
             UsesMask = 0;
         }
     }
@@ -818,7 +822,7 @@ pub unsafe extern "stdcall" fn EngBitBlt(
                     pco,
                     core::mem::size_of::<RECT_ENUM>() as u32,
                     core::ptr::addr_of_mut!(RectEnum) as *mut core::ffi::c_void,
-                );
+                ) as u32;
 
                 i = 0;
                 while i < RectEnum.c {
@@ -867,7 +871,7 @@ pub unsafe extern "stdcall" fn EngBitBlt(
 pub unsafe extern "C" fn EngBitBlt(
     psoTrg: *mut SURFOBJ,
     psoSrc: *mut SURFOBJ,
-    psoMask: *mut SURFOBJ,
+    mut psoMask: *mut SURFOBJ,
     pco: *mut CLIPOBJ,
     pxlo: *mut XLATEOBJ,
     prclTrg: *mut RECTL,
@@ -875,7 +879,7 @@ pub unsafe extern "C" fn EngBitBlt(
     pptlMask: *mut POINTL,
     pbo: *mut BRUSHOBJ,
     pptlBrush: *mut POINTL,
-    rop4: ROP4,
+    mut rop4: ROP4,
 ) -> i32 {
     let mut clippingType: u8;
     let mut CombinedRect: RECTL = core::mem::zeroed();
@@ -999,10 +1003,14 @@ pub unsafe extern "C" fn EngBitBlt(
     }
 
     if UsesMask != 0 && psoMask.is_null() {
-        let psoMaskLocal = BRUSHOBJ_psoMask(pbo);
-        let psoMask = psoMaskLocal;
+        // C-exact: REASSIGN the params (C `psoMask = BRUSHOBJ_psoMask(pbo)` /
+        // `rop4 = ...`). The translation shadowed both with block-local `let`s,
+        // so a brush-provided mask was discarded (mask blits ran with
+        // psoMask=NULL while UsesMask stayed set) and the no-mask rop4
+        // degrade never applied.
+        psoMask = BRUSHOBJ_psoMask(pbo);
         if psoMask.is_null() {
-            let rop4 = (rop4 & 0xFF) | ((rop4 & 0xFF) << 8);
+            rop4 = (rop4 & 0xFF) | ((rop4 & 0xFF) << 8);
             UsesMask = 0;
         }
     }
@@ -1098,7 +1106,7 @@ pub unsafe extern "C" fn EngBitBlt(
                     pco,
                     core::mem::size_of::<RECT_ENUM>() as u32,
                     core::ptr::addr_of_mut!(RectEnum) as *mut core::ffi::c_void,
-                );
+                ) as u32;
 
                 i = 0;
                 while i < RectEnum.c {
@@ -1659,7 +1667,7 @@ unsafe fn EngMaskBitBlt(
                     ClipRegion,
                     core::mem::size_of::<RECT_ENUM>() as u32,
                     core::ptr::addr_of_mut!(RectEnum) as *mut core::ffi::c_void,
-                );
+                ) as u32;
 
                 i = 0;
                 while i < RectEnum.c {
@@ -2592,7 +2600,7 @@ pub unsafe extern "C" fn IntEngMaskBlt(
 //             do
 //             {
 //                 EnumMore = CLIPOBJ_bEnum(pco, sizeof(RectEnum),
-//                                          (PVOID) &RectEnum);
+//                                          (PVOID) &RectEnum) as u32;
 //
 //                 for (i = 0; i < RectEnum.c; i++)
 //                 {
@@ -3036,7 +3044,7 @@ pub unsafe extern "C" fn IntEngMaskBlt(
 //             CLIPOBJ_cEnumStart(ClipRegion, FALSE, CT_RECTANGLES, Direction, 0);
 //             do
 //             {
-//                 EnumMore = CLIPOBJ_bEnum(ClipRegion,(ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//                 EnumMore = CLIPOBJ_bEnum(ClipRegion,(ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as u32;
 //
 //                 for (i = 0; i < RectEnum.c; i++)
 //                 {

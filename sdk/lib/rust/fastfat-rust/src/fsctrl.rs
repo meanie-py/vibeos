@@ -35,10 +35,10 @@ extern "system" {
     fn FatPurgeReferencedFileObjects(IrpContext: *mut IRP_CONTEXT, RootDcb: *mut DCB, FlushType: FAT_FLUSH_TYPE) -> i32;
     fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, VolumeState: i32);
     fn FatToggleMediaEjectDisable(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Disable: i32);
-    fn CcPurgeCacheSection(SectionObjectPointers: *mut SECTION_OBJECT_POINTERS, FileOffset: *const LARGE_INTEGER, Length: u32, UninitializeCache: i32) -> u32;
-    fn KeCancelTimer(Timer: *mut KEVENT) -> u32;
-    fn KeRemoveQueueDpc(Dpc: *mut KDPC) -> i32;
-    fn ExIsResourceAcquiredExclusiveLite(Resource: *mut ERESOURCE) -> i32;
+    fn CcPurgeCacheSection(SectionObjectPointers: *mut SECTION_OBJECT_POINTERS, FileOffset: *const LARGE_INTEGER, Length: u32, UninitializeCache: i32) -> u8;
+    fn KeCancelTimer(Timer: *mut KEVENT) -> u8;
+    fn KeRemoveQueueDpc(Dpc: *mut KDPC) -> u8;
+    fn ExIsResourceAcquiredExclusiveLite(Resource: *mut ERESOURCE) -> u8;
     fn PAGED_CODE();
     fn NT_ASSERT(condition: u32);
     fn FlagOn(Flags: u32, Flag: u32) -> BOOLEAN;
@@ -124,7 +124,7 @@ extern "system" {
     fn FatDirtyVolume(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatIsVolumeDirty(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatIsVolumeMounted(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
-    fn FatIsPathnameValid(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
+    fn FatIsPathnameValid(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> u8;
     fn FatQueryRetrievalPointers(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatQueryBpb(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatGetStatistics(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
@@ -941,7 +941,7 @@ pub unsafe extern "system" fn FatUserFsCtrl(IrpContext: PIRP_CONTEXT, Irp: PIRP)
         FSCTL_MARK_VOLUME_DIRTY => FatDirtyVolume(IrpContext, Irp),
         FSCTL_IS_VOLUME_DIRTY => FatIsVolumeDirty(IrpContext, Irp),
         FSCTL_IS_VOLUME_MOUNTED => FatIsVolumeMounted(IrpContext, Irp),
-        FSCTL_IS_PATHNAME_VALID => FatIsPathnameValid(IrpContext, Irp),
+        FSCTL_IS_PATHNAME_VALID => FatIsPathnameValid(IrpContext, Irp) as i32,
         FSCTL_QUERY_RETRIEVAL_POINTERS => FatQueryRetrievalPointers(IrpContext, Irp),
         FSCTL_QUERY_FAT_BPB => FatQueryBpb(IrpContext, Irp),
         FSCTL_FILESYSTEM_GET_STATISTICS => FatGetStatistics(IrpContext, Irp),
@@ -11253,6 +11253,15 @@ pub unsafe extern "system" fn FatMountVolume(
     }
     FatReleaseGlobal(IrpContext);
     DebugTrace(-1, Dbg, b"FatMountVolume -> %08lx\n\0".as_ptr() as _, Status as ULONG);
+    {
+        unsafe extern "C" {
+            fn DbgPrint(Format: *const i8, ...) -> u32;
+        }
+        DbgPrint(
+            c"[FASTFAT] FatMountVolume -> 0x%x\n".as_ptr(),
+            Status as ULONG,
+        );
+    }
 
     if !RootDirectoryFile.is_null() {
         FsRtlNotifyVolumeEvent(RootDirectoryFile, FSRTL_VOLUME_MOUNT);

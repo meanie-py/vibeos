@@ -91,6 +91,9 @@ macro_rules! w {
 extern "C" {
     // ntoskrnl/ntdll cdecl variadic debug print.
     fn DbgPrint(Format: *const i8, ...) -> ULONG;
+    // CRT cdecl (`_wcslen`, no @N) — was wrongly in the "system" block; only
+    // linkable before because its callers were UB-folded (see note below).
+    fn wcslen(s: *const u16) -> usize;
 }
 
 extern "system" {
@@ -98,7 +101,6 @@ extern "system" {
     fn TranslateCharsetInfo(lpSrc: *mut DWORD, lpCs: PVOID, dwFlags: DWORD) -> BOOL;
     fn FreeLibrary(hModule: HMODULE) -> i32;
     fn GetModuleHandleW(lpModuleName: LPCWSTR) -> HMODULE;
-    fn wcslen(s: *const u16) -> usize;
     fn GetObjectW(h: HANDLE, c: core::ffi::c_int, pv: PVOID) -> core::ffi::c_int;
     fn LoadBitmapW(hInstance: HINSTANCE, lpBitmapName: LPCWSTR) -> HBITMAP;
     fn LoadLibraryW(lpLibFileName: LPCWSTR) -> HMODULE;
@@ -137,8 +139,28 @@ extern "system" {
     fn LoadImageW(hInst: HINSTANCE, name: LPCWSTR, type_: UINT, cx: INT, cy: INT, fuLoad: UINT) -> HANDLE;
     fn GetSystemMetrics(nIndex: INT) -> INT;
     fn RegisterClientPFN() -> NTSTATUS;
+}
+
+// The conventions below MUST match the sibling-module definitions exactly.
+// A decl/def calling-convention mismatch on the same symbol name is UB to
+// LLVM: on i386 it silently DELETED the whole MessageInit/MenuInit/
+// InitializeCriticalSection(U32AccelCacheLock) branch of
+// ClientThreadSetupHelper (no ud2 — the branch folds away), leaving
+// U32AccelCacheLock a zeroed CS whose first EnterCriticalSection deadlocks
+// (explorer desktop thread hung in LoadAcceleratorsW → desktop view never
+// shown → no icons). MessageInit/MessageCleanup are FASTCALL on x86
+// (message.rs); MenuInit/MenuCleanup/DeleteFrameBrushes are cdecl.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
     fn MessageInit() -> BOOL;
     fn MessageCleanup();
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn MessageInit() -> BOOL;
+    fn MessageCleanup();
+}
+extern "C" {
     fn MenuInit() -> BOOL;
     fn MenuCleanup();
     fn DeleteFrameBrushes();

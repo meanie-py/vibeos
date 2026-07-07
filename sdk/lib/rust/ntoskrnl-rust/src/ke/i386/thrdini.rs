@@ -272,6 +272,11 @@ pub unsafe extern "system" fn KiInitializeContextThread(
     (*CtxSwitchFrame).ExceptionList = EXCEPTION_CHAIN_END;
 
     (*Thread).KernelStack = CtxSwitchFrame as PVOID;
+
+    // cswitchdep birth brand: pool-reused KTHREAD addresses must never
+    // inherit a dead thread's shadow (see amd64/thrdini.rs).
+    #[cfg(feature = "cswitchdep")]
+    crate::ke::cswitchdep::cswitch_thread_init(Thread as usize);
 }
 
 #[no_mangle]
@@ -365,7 +370,12 @@ pub unsafe extern "fastcall" fn KiSwapContextExit(
 
     let trap_frame = KeGetTrapFrame(NewThread);
     if ((*trap_frame).EFlags & EFLAGS_V86_MASK) == 0 {
-        (*(*Pcr).TSS).Esp0 -= (KTRAP_FRAME_LENGTH - 0x50) as ULONG;
+        // C: Esp0 -= sizeof(KTRAP_FRAME) - FIELD_OFFSET(KTRAP_FRAME, V86Es) (= 0x10).
+        // Was a hand-written `- 0x50` (V86Es is at 0x7c!), leaving Esp0 0x2c too low so
+        // trap frames no longer sat adjacent to the NPX area (TrapFrame+1 != FX base),
+        // shifting every KeContextToTrapFrame/KeTrapFrameToContext FP-state access.
+        (*(*Pcr).TSS).Esp0 -=
+            (KTRAP_FRAME_LENGTH - core::mem::offset_of!(_KTRAP_FRAME, V86Es)) as ULONG;
     }
 
     (*(*Pcr).TSS).Esp0 -= NPX_FRAME_LENGTH as ULONG;
@@ -447,6 +457,10 @@ pub unsafe extern "system" fn KiDispatchInterrupt() {
     let mut OldHandler: PVOID;
     let mut NewThread: PKTHREAD;
     let mut OldThread: PKTHREAD;
+
+    // cswitchdep tap 3: deferred dispatch must be entered at DISPATCH_LEVEL.
+    #[cfg(feature = "cswitchdep")]
+    crate::ke::cswitchdep::cswitch_dpc_dispatch();
 
     _disable();
 

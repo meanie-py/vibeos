@@ -236,7 +236,7 @@ unsafe fn eng_copybits_body(
                     Clip,
                     core::mem::size_of::<RECT_ENUM>() as ULONG,
                     &mut RectEnum as *mut _ as PVOID,
-                );
+                ) as i32;
 
                 if RectEnum.c > 0 {
                     let prclEnd = RectEnum.arcl.as_mut_ptr().add(RectEnum.c as usize);
@@ -493,7 +493,7 @@ pub unsafe extern "C" fn IntEngCopyBits(
 //
 //             do
 //             {
-//                 EnumMore = CLIPOBJ_bEnum(Clip,(ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//                 EnumMore = CLIPOBJ_bEnum(Clip,(ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //
 //                 if (RectEnum.c > 0)
 //                 {
@@ -563,7 +563,7 @@ pub unsafe extern "C" fn IntEngCopyBits(
 // ABI-corrected extern decls — i386 calling-convention must match the
 // definition; a flat extern "C" decl of a stdcall/fastcall fn is UB -> ud2.
 extern "system" {
-    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: PVOID) -> BOOL;
+    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: PVOID) -> u8;
     fn CLIPOBJ_cEnumStart(
     pco: *mut CLIPOBJ,
     bAll: BOOL,

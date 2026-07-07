@@ -7,6 +7,7 @@ never absolute zero — the tree carries known pre-existing findings. Advisory
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -46,8 +47,25 @@ def _baseline(repo: Path, tool: str) -> set[str]:
         return set()
 
 
+# Count-bearing SUMMARY lines are not findings: they drift whenever a count
+# changes (a crate add/remove moves 'TOTAL: … across N files'; a bindgen regen
+# moves 'Bindgen catalog: N functions'), which made every cross-lane merge
+# spuriously LINT_FAIL with "1 new" — 2026-07-06 hit the same TOTAL line twice
+# in one night. Findings are the per-site lines; tallies are presentation.
+# (Stale tally lines already in baselines are harmless — they simply never
+# match anything — and the next --update-baseline drops them.)
+_SUMMARY_LINE = re.compile(
+    r"(^\s*TOTAL:"  # 'TOTAL: 160 issues across 2348 files'
+    r"|^\s*SUMMARY:"  # verify_match_consts tally
+    r"|^\s*[A-Z_]+: \d+$"  # per-category counters ('C_MACRO: 94')
+    r"|catalog: \d+"  # 'Spec/Bindgen catalog: N …'
+    r"|^\s*-> .*: *\d+$"  # verify_tables tallies
+    r"|^\s*matched to a C array\s*: *\d+$)"
+)
+
+
 def _finding_lines(out: str) -> set[str]:
-    return {ln.rstrip() for ln in out.splitlines() if ln.strip()}
+    return {ln.rstrip() for ln in out.splitlines() if ln.strip() and not _SUMMARY_LINE.search(ln)}
 
 
 def _rel(text: str, repo: Path) -> str:
@@ -227,6 +245,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Same-crate extern-decl vs #[no_mangle]-def calling-convention drift: UB
+    # that LLVM resolves by silently DELETING the calling branch on i386 (no
+    # ud2, no link error — the desktop-icons U32AccelCacheLock bug, field
+    # manual §9.30). Stock (~330, mostly driver crates) is the burn-down
+    # queue; baseline gates NEW only.
+    ccm = repo / "tools" / "scan_cc_mismatch.py"
+    specs.append(
+        (
+            "scan_cc_mismatch",
+            [py, str(ccm)] if ccm.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Duplicate #[no_mangle] symbol ratchet: symbols defined in >=2 crates that
     # link into the kernel PE are masked by --allow-multiple-definition (which is
     # load-bearing — the multi-staticlib runtime dups are irreducible). We can't
@@ -256,6 +287,21 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_irql_balance",
             [py, str(sib), "--lint"] if sib.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # Ob-refcount balance — same held-set engine, next lifecycle class: an
+    # early return between ObReferenceObject* and ObDereferenceObject. A ref
+    # leak never crashes a boot (slow pool exhaustion), so no gate boot can
+    # catch it — only this. The 2026-07-07 sweep found 3 UPSTREAM leaks (2
+    # fixed: cmapi deleted-KCB KeyBody, dbgk last-thread; sysldr's is dead
+    # code) and 0 Rust-translation leaks; baseline holds the verified
+    # branch-merge FP residue (field manual §9.28).
+    sob = repo / "tools" / "scan_ob_refcount.py"
+    specs.append(
+        (
+            "scan_ob_refcount",
+            [py, str(sob), "--lint"] if sob.is_file() else ["MISSING"],
             "stdout",
         )
     )

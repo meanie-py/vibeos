@@ -278,7 +278,7 @@ pub unsafe extern "system" fn SepCreateToken(
     }
 
     (*access_token).TokenSource.SourceIdentifier = (*token_source).SourceIdentifier;
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy_nonoverlapping( // nolint: silent-failure (byte-array pointee — count==bytes)
         (*token_source).SourceName.as_ptr(),
         (*access_token).TokenSource.SourceName.as_mut_ptr(),
         core::mem::size_of_val(&(*token_source).SourceName),
@@ -481,7 +481,7 @@ pub unsafe extern "system" fn SepDuplicateToken(
     }
 
     (*access_token).TokenSource.SourceIdentifier = (*token).TokenSource.SourceIdentifier;
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy_nonoverlapping( // nolint: silent-failure (byte-array pointee — count==bytes)
         (*token).TokenSource.SourceName.as_ptr(),
         (*access_token).TokenSource.SourceName.as_mut_ptr(),
         core::mem::size_of_val(&(*token).TokenSource.SourceName),
@@ -760,7 +760,7 @@ unsafe fn SepPerformTokenFiltering(
     (*access_token).ImpersonationLevel = (*token).ImpersonationLevel;
 
     (*access_token).TokenSource.SourceIdentifier = (*token).TokenSource.SourceIdentifier;
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy_nonoverlapping( // nolint: silent-failure (byte-array pointee — count==bytes)
         (*token).TokenSource.SourceName.as_ptr(),
         (*access_token).TokenSource.SourceName.as_mut_ptr(),
         core::mem::size_of_val(&(*token).TokenSource.SourceName),

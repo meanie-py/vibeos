@@ -134,7 +134,7 @@ extern "system" {
     fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> u8;
     fn DeviceSendNotification(deviceExtension: PCDROM_DEVICE_EXTENSION, guid: *const GUID, param1: u32, param2: *mut core::ffi::c_void) -> NTSTATUS;
     fn ValidChar(c: u8) -> i32;
-    fn IsVolumeMounted(DeviceObject: *mut core::ffi::c_void) -> i32;
+    fn IsVolumeMounted(DeviceObject: *mut core::ffi::c_void) -> u8;
     fn IoWriteErrorLogEntry(ElEntry: *mut IO_ERROR_LOG_PACKET);
     fn IoAllocateErrorLogEntry(IoObject: *mut core::ffi::c_void, EntrySize: u32) -> *mut IO_ERROR_LOG_PACKET;
     fn DeviceUnlockExclusive( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObject: WDFFILEOBJECT, NoMediaNotifications: i32, ) -> NTSTATUS;
@@ -157,8 +157,8 @@ extern "system" {
     fn TEST_FLAG(flags: u32, bit: u32) -> bool;
     fn REVERSE_BYTES_SHORT(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void);
     fn RequestSetupMcnRequest( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, supported: i32, ) -> i32;
-    fn RequestSendMcnRequest( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ) -> i32;
-    fn RequestPostWorkMcnRequest( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ) -> i32;
+    fn RequestSendMcnRequest( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ) -> u8;
+    fn RequestPostWorkMcnRequest( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, ) -> u8;
     fn DeviceSendDelayedMediaChangeNotifications( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, );
     fn RequestGetCurrentStackLocationFlags(Request: WDFREQUEST) -> u8;
     fn RequestSenseInfoInterpretForScratchBuffer( device_extension: *mut CDROM_DEVICE_EXTENSION, times_already_retried: u32, status: *mut i32, retry_in_100ns_units: *mut i64, ) -> i32;
@@ -5207,10 +5207,10 @@ pub unsafe extern "C" fn RequestHandleMcnSyncFakeIoctl(
 
         if status >= 0 {
             // NT_SUCCESS
-            requestSent = RequestSendMcnRequest(DeviceExtension);
+            requestSent = RequestSendMcnRequest(DeviceExtension) as i32;
 
             if requestSent != 0 {
-                shouldRetry = RequestPostWorkMcnRequest(DeviceExtension);
+                shouldRetry = RequestPostWorkMcnRequest(DeviceExtension) as i32;
             } else {
                 shouldRetry = 0; // FALSE
             }

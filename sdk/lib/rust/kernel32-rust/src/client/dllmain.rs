@@ -30,7 +30,7 @@ extern "C" {
 }
 
 extern "system" {
-    fn ConDllInitialize(dwReason: DWORD, lpReserved: PVOID) -> BOOL;
+    fn ConDllInitialize(dwReason: DWORD, lpReserved: PVOID) -> u8;
 }
 
 // ---- file-scope preamble (translated) ----

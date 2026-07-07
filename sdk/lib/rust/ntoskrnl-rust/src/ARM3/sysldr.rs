@@ -41,6 +41,7 @@ pub static mut MmEnforceWriteProtection: BOOLEAN = 1u8;
 
 // Registry-controlled values owned by ARM3/sysldr. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+#[no_mangle]
 pub static SYSLDR_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
     ntkrnl_sys::SubVector(unsafe { [
         ntkrnl_sys::cv!("Session Manager\\Memory Management", "EnforceWriteProtection",
@@ -128,7 +129,7 @@ pub unsafe extern "system" fn MiLoadImageSection(
     #[cfg(target_arch = "aarch64")]
     {
         extern "C" {
-    fn MiSimpleRead( file_object: *mut core::ffi::c_void, file_offset: *mut LARGE_INTEGER, buffer: PVOID, length: ULONG, paging: BOOLEAN, read_status: *mut _IO_STATUS_BLOCK, ) -> NTSTATUS;
+    fn MiSimpleRead( file_object: *mut core::ffi::c_void, file_offset: *mut LARGE_INTEGER, buffer: PVOID, length: ULONG, paging: BOOLEAN, read_status: *mut _IO_STATUS_BLOCK, ) -> NTSTATUS; // nolint: cc-mismatch (decl is inside a cfg(aarch64) code block)
 }
 
         let image_section_object = (*section).Segment as *mut _MM_IMAGE_SECTION_OBJECT;

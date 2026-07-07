@@ -1,0 +1,14 @@
+# vdm-rust — extracted from ntoskrnl-rust (crate-split Phase 1b) so it
+# type-checks/codegens/caches independently of the kernel monolith. Pure logic on
+# the ntkrnl-sys FFI substrate; its #[no_mangle] symbols bundle into libkernel_rust.a
+# via `extern crate vdm_rust` in the kernel-rust umbrella.
+[package]
+name = "vdm-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }

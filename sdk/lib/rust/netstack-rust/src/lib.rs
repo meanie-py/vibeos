@@ -18,6 +18,7 @@ pub mod time;
 pub mod hal;
 pub mod pci;
 pub mod device;
+pub mod e1000;
 // M10: interrupt-driven RX (virtio INTx -> ISR -> DPC -> event). x86 (i386 +
 // amd64) — both share the working x86 HAL HalGetInterruptVector + IOAPIC routing.
 // arm64's HalGetInterruptVector is a stub returning 0, so it stays on polling.
@@ -71,9 +72,9 @@ unsafe fn publish_nic_presence() {
     const REG_DWORD: u32 = 4;
     static KEY: [u16; 9] = wide(b"netstack\0");
     static VALUE: [u16; 11] = wide(b"NicPresent\0");
-    let present: u32 = pci::find_virtio_net().is_some() as u32;
+    let present: u32 = (pci::find_virtio_net().is_some() || e1000::find_e1000().is_some()) as u32;
     serial::emit(core::format_args!(
-        "[NETSTACK] NicPresent={} (virtio-net {})\n",
+        "[NETSTACK] NicPresent={} (virtio-net or e1000 {})\n",
         present,
         if present == 1 { "found" } else { "absent" }
     ));
@@ -104,7 +105,11 @@ pub unsafe extern "system" fn DriverEntry(
     // touch the device, so the flag is committed regardless of what follows.
     publish_nic_presence();
     // M1: blocking ARP round-trip self-test (creates + drops its own device).
-    selftest::run();
+    // virtio-only — with an e1000 (or no NIC) it would just print a FAIL that
+    // trips serial grep patterns; the engine below proves e1000 RX/TX instead.
+    if pci::find_virtio_net().is_some() {
+        selftest::run();
+    }
     // M2/M3: spawn the persistent smoltcp poll-loop engine (DHCP/ping/echo/DNS).
     engine::start();
     // M4: create the TDI transport devices + dispatch so AFD (winsock) can drive

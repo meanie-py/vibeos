@@ -56,23 +56,27 @@ const FSCTL_GET_REPARSE_POINT: u32 = 0x000900A8;
 
 const MAXSHORT: u16 = 32767;
 
-const IOCTL_MOUNTMGR_CREATE_POINT: u32 = 0x6DE004;
-const IOCTL_MOUNTMGR_DELETE_POINTS: u32 = 0x6DE008;
-const IOCTL_MOUNTMGR_QUERY_POINTS: u32 = 0x6DE00C;
-const IOCTL_MOUNTMGR_DELETE_POINTS_DBONLY: u32 = 0x6DE010;
-const IOCTL_MOUNTMGR_NEXT_DRIVE_LETTER: u32 = 0x6DE014;
-const IOCTL_MOUNTMGR_AUTO_DL_ASSIGNMENTS: u32 = 0x6DE018;
-const IOCTL_MOUNTMGR_VOLUME_MOUNT_POINT_CREATED: u32 = 0x6DE01C;
-const IOCTL_MOUNTMGR_VOLUME_MOUNT_POINT_DELETED: u32 = 0x6DE020;
-const IOCTL_MOUNTMGR_CHANGE_NOTIFY: u32 = 0x6DE024;
-const IOCTL_MOUNTMGR_KEEP_LINKS_WHEN_OFFLINE: u32 = 0x6DE028;
-const IOCTL_MOUNTMGR_CHECK_UNPROCESSED_VOLUMES: u32 = 0x6DE02C;
-const IOCTL_MOUNTMGR_VOLUME_ARRIVAL_NOTIFICATION: u32 = 0x6DE030;
-const IOCTL_MOUNTMGR_QUERY_DOS_VOLUME_PATH: u32 = 0x6DE034;
-const IOCTL_MOUNTMGR_QUERY_DOS_VOLUME_PATHS: u32 = 0x6DE038;
-const IOCTL_MOUNTMGR_SCRUB_REGISTRY: u32 = 0x6DE03C;
-const IOCTL_MOUNTMGR_QUERY_AUTO_MOUNT: u32 = 0x6DE040;
-const IOCTL_MOUNTMGR_SET_AUTO_MOUNT: u32 = 0x6DE044;
+// CTL_CODE('m'=0x6D, fn, METHOD_BUFFERED, access) — header-exact (ddk/mountmgr.h).
+// The previous block was FABRICATED (0x6DE0xx family, wrong fn+access encoding);
+// no mountmgr ioctl could ever match, so AUTO_DL/NEXT_DRIVE_LETTER were dead and
+// no volume ever received a drive letter (USB-disk e2e, 2026-07-06).
+const IOCTL_MOUNTMGR_CREATE_POINT: u32 = 0x6DC000;
+const IOCTL_MOUNTMGR_DELETE_POINTS: u32 = 0x6DC004;
+const IOCTL_MOUNTMGR_QUERY_POINTS: u32 = 0x6D0008;
+const IOCTL_MOUNTMGR_DELETE_POINTS_DBONLY: u32 = 0x6DC00C;
+const IOCTL_MOUNTMGR_NEXT_DRIVE_LETTER: u32 = 0x6DC010;
+const IOCTL_MOUNTMGR_AUTO_DL_ASSIGNMENTS: u32 = 0x6DC014;
+const IOCTL_MOUNTMGR_VOLUME_MOUNT_POINT_CREATED: u32 = 0x6DC018;
+const IOCTL_MOUNTMGR_VOLUME_MOUNT_POINT_DELETED: u32 = 0x6DC01C;
+const IOCTL_MOUNTMGR_CHANGE_NOTIFY: u32 = 0x6D4020;
+const IOCTL_MOUNTMGR_KEEP_LINKS_WHEN_OFFLINE: u32 = 0x6DC024;
+const IOCTL_MOUNTMGR_CHECK_UNPROCESSED_VOLUMES: u32 = 0x6D4028;
+const IOCTL_MOUNTMGR_VOLUME_ARRIVAL_NOTIFICATION: u32 = 0x6D402C;
+const IOCTL_MOUNTMGR_QUERY_DOS_VOLUME_PATH: u32 = 0x6D0030;
+const IOCTL_MOUNTMGR_QUERY_DOS_VOLUME_PATHS: u32 = 0x6D0034;
+const IOCTL_MOUNTMGR_SCRUB_REGISTRY: u32 = 0x6DC038;
+const IOCTL_MOUNTMGR_QUERY_AUTO_MOUNT: u32 = 0x6D003C;
+const IOCTL_MOUNTMGR_SET_AUTO_MOUNT: u32 = 0x6DC040;
 const FILE_DEVICE_DISK: u32 = 7;
 const FILE_DEVICE_VIRTUAL_DISK: u32 = 36;
 const FILE_REMOTE_DEVICE: u32 = 0x00000010;
@@ -521,6 +525,11 @@ pub unsafe extern "C" fn MountMgrNextDriveLetterWorker(
         core::ptr::null_mut::<u8>(),
     );
     if Status < 0 {
+        DbgPrint(
+            c"[MNTMGR] NextDlWorker: QueryDeviceInformation(%wZ) FAILED 0x%x\n".as_ptr(),
+            DeviceName,
+            Status as u32,
+        );
         return Status;
     }
 
@@ -543,6 +552,10 @@ pub unsafe extern "C" fn MountMgrNextDriveLetterWorker(
     }
 
     if NextEntry == core::ptr::addr_of_mut!((*DeviceExtension).DeviceListHead) {
+        DbgPrint(
+            c"[MNTMGR] NextDlWorker: no DeviceInformation matches %wZ\n".as_ptr(),
+            core::ptr::addr_of_mut!(TargetDeviceName),
+        );
         ExFreePoolWithTag(TargetDeviceName.Buffer as *mut core::ffi::c_void, 1098149453u32);
         return STATUS_OBJECT_NAME_NOT_FOUND;
     }
@@ -571,6 +584,11 @@ pub unsafe extern "C" fn MountMgrNextDriveLetterWorker(
 
     if NextEntry == core::ptr::addr_of_mut!((*DeviceInformation).SymbolicLinksListHead) {
         if GptDriveLetter == 0u8 || HasNoDriveLetterEntry((*DeviceInformation).UniqueId) != 0u8 {
+            DbgPrint(
+                c"[MNTMGR] NextDlWorker: bail GptDl=%u NoDlEntry path for %wZ\n".as_ptr(),
+                GptDriveLetter as u32,
+                core::ptr::addr_of_mut!(TargetDeviceName),
+            );
             (*DriveLetterInfo).DriveLetterWasAssigned = 0;
             (*DriveLetterInfo).CurrentDriveLetter = 0;
             current_block = 10912197556463997057;
@@ -862,6 +880,11 @@ pub unsafe extern "C" fn MountMgrAssignDriveLetters(DeviceExtension: *mut DEVICE
     };
 
     Status = MountMgrQuerySystemVolumeName(core::ptr::addr_of_mut!(SystemVolumeName));
+    DbgPrint(
+        c"[MNTMGR] AssignDriveLetters: sysvol st=0x%x listEmpty=%u\n".as_ptr(),
+        Status as u32,
+        IsListEmpty(core::ptr::addr_of_mut!((*DeviceExtension).DeviceListHead)) as u32,
+    );
 
     if IsListEmpty(core::ptr::addr_of_mut!((*DeviceExtension).DeviceListHead)) {
         if Status >= 0 {
@@ -876,11 +899,23 @@ pub unsafe extern "C" fn MountMgrAssignDriveLetters(DeviceExtension: *mut DEVICE
         let offset = core::mem::offset_of!(DEVICE_INFORMATION, DeviceListEntry);
         DeviceInformation = (NextEntry as *mut u8).wrapping_sub(offset) as *mut DEVICE_INFORMATION;
 
+        DbgPrint(
+            c"[MNTMGR] AssignDriveLetters: visit %wZ LetterAssigned=%u\n".as_ptr(),
+            core::ptr::addr_of_mut!((*DeviceInformation).DeviceName),
+            (*DeviceInformation).LetterAssigned as u32,
+        );
         if (*DeviceInformation).LetterAssigned == 0 {
-            MountMgrNextDriveLetterWorker(
+            let st = MountMgrNextDriveLetterWorker(
                 DeviceExtension,
                 core::ptr::addr_of_mut!((*DeviceInformation).DeviceName),
                 core::ptr::addr_of_mut!(DriveLetterInformation),
+            );
+            DbgPrint(
+                c"[MNTMGR] AUTO_DL sweep: %wZ -> st=0x%x assigned=%u letter=%c\n".as_ptr(),
+                core::ptr::addr_of_mut!((*DeviceInformation).DeviceName),
+                st as u32,
+                DriveLetterInformation.DriveLetterWasAssigned as u32,
+                if DriveLetterInformation.CurrentDriveLetter != 0 { DriveLetterInformation.CurrentDriveLetter as u32 } else { '?' as u32 },
             );
         }
 
@@ -3098,6 +3133,7 @@ pub unsafe extern "system" fn MountMgrDeviceControl(
             current_block = 7226443171521532240;
         }
         IOCTL_MOUNTMGR_AUTO_DL_ASSIGNMENTS => {
+            DbgPrint(c"[MNTMGR] AUTO_DL received; enabling automatic drive letters\n".as_ptr());
             (*DeviceExtension).AutomaticDriveLetter = 1; /* TRUE */
             MountMgrAssignDriveLetters(DeviceExtension);
             ReconcileAllDatabasesWithMaster(DeviceExtension);
@@ -5917,7 +5953,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     fn MountMgrMountedDeviceArrival( DeviceExtension: *mut DEVICE_EXTENSION, SymbolicName: *mut _UNICODE_STRING, ManuallyRegistered: BOOLEAN, ) -> NTSTATUS;
     fn MountMgrFreeDeadDeviceInfo( DeviceInformation: *mut DEVICE_INFORMATION, );
-    fn HasDriveLetter(DeviceInformation: *mut DEVICE_INFORMATION) -> i32;
+    fn HasDriveLetter(DeviceInformation: *mut DEVICE_INFORMATION) -> u8;
     fn FindDeviceInfo( DeviceExtension: PDEVICE_EXTENSION, Name: PUNICODE_STRING, flag: BOOLEAN, Info: *mut PDEVICE_INFORMATION, ) -> NTSTATUS;
     fn ReconcileThisDatabaseWithMaster(DeviceExtension: PDEVICE_EXTENSION, DeviceInformation: PDEVICE_INFORMATION);
     fn QueryVolumeName( hFile: HANDLE, ReparsePoint: *mut core::ffi::c_void, SourceDeviceName: *mut _UNICODE_STRING, LinkTarget: *mut _UNICODE_STRING, VolumeName: *mut _UNICODE_STRING, ) -> NTSTATUS;

@@ -89,6 +89,12 @@ extern "fastcall" {
 extern "C" {
     fn KiReleaseSpinLock(SpinLock: PKSPIN_LOCK);
 }
+// ipi.rs defines KiIpiSend FASTCALL on x86 / cdecl elsewhere (§9.30 cc-match rule)
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KiIpiSend(TargetSet: ULONG_PTR, IpiRequest: ULONG);
+}
+#[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn KiIpiSend(TargetSet: ULONG_PTR, IpiRequest: ULONG);
 }
@@ -659,6 +665,17 @@ pub unsafe extern "system" fn KiDispatchSoftwareIntArm64() {
         return;
     }
 
+    // cswitchdep tap 3: deferred dispatch runs at DISPATCH; DAIF must be
+    // balanced across the body (the §9.19 wake-from-exception-context family
+    // corrupts exactly this hand-off).
+    #[cfg(feature = "cswitchdep")]
+    let cswitch_entry_daif: u64 = {
+        crate::ke::cswitchdep::cswitch_dpc_dispatch();
+        let daif: u64;
+        core::arch::asm!("mrs {0}, daif", out(reg) daif, options(nomem, nostack, preserves_flags));
+        daif
+    };
+
     if (*Prcb).TimerRequest != 0 {
         let TimerHand = (*Prcb).TimerHand as ULONG_PTR;
         (*Prcb).TimerRequest = 0;
@@ -682,6 +699,13 @@ pub unsafe extern "system" fn KiDispatchSoftwareIntArm64() {
         _disable();
         KiRetireDeviceDpcs(Prcb);
         _enable();
+    }
+
+    #[cfg(feature = "cswitchdep")]
+    {
+        let exit_daif: u64;
+        core::arch::asm!("mrs {0}, daif", out(reg) exit_daif, options(nomem, nostack, preserves_flags));
+        crate::ke::cswitchdep::cswitch_intr_state(cswitch_entry_daif, exit_daif);
     }
 }
 

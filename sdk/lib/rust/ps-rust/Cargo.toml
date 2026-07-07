@@ -1,0 +1,19 @@
+# ps-rust — the Process/Thread Manager (Ps*/Psp*), extracted from ntoskrnl-rust
+# (crate-split Phase 1b). ~24K LOC. Pure Ps* logic on the ntkrnl-sys FFI substrate +
+# dbgprint-rust; its #[no_mangle] Ps*/Psp* symbols link via `extern crate ps_rust`.
+[package]
+name = "ps-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+# Mi PFN-trace debug knob (used by process.rs); off by default.
+mi_trace_pfns = []
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+dbgprint-rust = { path = "../dbgprint-rust" }

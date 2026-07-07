@@ -68,9 +68,14 @@ const TAG_GBMI: u32 = u32::from_le_bytes(*b"GBmi");
 #[cfg(target_arch = "x86")] extern "fastcall" { fn BitmapFormat(cBits: ULONG, iCompression: ULONG) -> ULONG; fn SetLastNtError(Status: NTSTATUS); fn RECTL_vMakeWellOrdered(prcl: *mut RECTL); }
 #[cfg(not(target_arch = "x86"))] extern "C" { fn BitmapFormat(cBits: ULONG, iCompression: ULONG) -> ULONG; fn SetLastNtError(Status: NTSTATUS); fn RECTL_vMakeWellOrdered(prcl: *mut RECTL); }
 // Real DIB engine helpers (still-C / sibling Rust) + Mm probe.
+// dib1bpp.rs defines DIB_1BPP_HLine cdecl (`extern "C"`) — decl must match
+// (§9.30 UB-fold class).
+extern "C" {
+    fn DIB_1BPP_HLine(so: *mut SURFOBJ, x1: LONG, x2: LONG, y: LONG, c: ULONG);
+}
+
 extern "system" {
     fn ProbeForWrite(a: *mut core::ffi::c_void, l: usize, al: u32);
-    fn DIB_1BPP_HLine(so: *mut SURFOBJ, x1: LONG, x2: LONG, y: LONG, c: ULONG);
 }
 // EXLATEOBJ_* = ENGAPI/NTAPI; SafeProbe* = NTAPI, SIZE_T length.
 extern "system" {
@@ -542,7 +547,7 @@ pub unsafe extern "stdcall" fn NtGdiSetDIBitsToDeviceInternal(
     let mut Status: i32;
 
 
-    const ROP4_MASK: u32 = 0x00AA0000;
+    const ROP4_MASK: u32 = 0xAACC; // inteng.h: SRCCOPY | (NOOP<<8) — was wrongly 0x00AA0000
     const CBM_INIT_CREATDIB: u32 = 0;
     const TAG_GDITMP: u32 = u32::from_le_bytes(*b"GTmp");
 
@@ -757,7 +762,7 @@ pub unsafe extern "C" fn NtGdiSetDIBitsToDeviceInternal(
     let mut Status: i32;
 
 
-    const ROP4_MASK: u32 = 0x00AA0000;
+    const ROP4_MASK: u32 = 0xAACC; // inteng.h: SRCCOPY | (NOOP<<8) — was wrongly 0x00AA0000
     const CBM_INIT_CREATDIB: u32 = 0;
     const TAG_GDITMP: u32 = u32::from_le_bytes(*b"GTmp");
 

@@ -30,6 +30,10 @@ use ntkrnl_sys::inline::ex::ExInitializeWorkItem;
 // Local MmGetMdlPfnArray via ntkrnl_sys inline
 use ntkrnl_sys::inline::mm::MmGetMdlPfnArray;
 
+extern "C" {
+    // ddk_shims.rs defines MmPrepareMdlForReuse cdecl (§9.30 cc-match rule)
+    fn MmPrepareMdlForReuse(Mdl: PMDL);
+}
 extern "system" {
     static mut FatIoCallDriverCount: u32;
     static mut FatDiskAccountingEnabled: u8;
@@ -44,16 +48,16 @@ extern "system" {
     fn FatLookupFileAllocation( IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB, StartingVbo: u32, NextLbo: *mut i64, NextByteCount: *mut u32, NextIsAllocated: *mut u8, EndOnMax: *mut u8, p: *mut c_void, );
     fn FatPopUpFileCorrupt(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn KeFlushIoBuffers(Mdl: *mut MDL, ReadOperation: i32, DmaOperation: i32);
-    fn _SEH2_AbnormalTermination() -> i32;
+    fn _SEH2_AbnormalTermination() -> u8;
 }
 extern "system" {
     fn FatBugCheck(a: u32, b: u32, c: u32) -> !;
-    fn FatLookupMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, vbo: u32, next_lbo: *mut u64, next_byte_count: *mut u32, first_index: *mut u32) -> u32;
+    fn FatLookupMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, vbo: u32, next_lbo: *mut u64, next_byte_count: *mut u32, first_index: *mut u32) -> u8;
     fn FatGetNextMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, current_index: u32, next_vbo: *mut u32, next_lbo: *mut u64, next_byte_count: *mut u32);
     fn FatUpdateIOCountersPCW(is_write: u32, count: u64);
     fn SetFlag(flags: *mut u32, bit: u32);
     fn PsUpdateDiskCounters(process: *mut core::ffi::c_void, bytes_read: u64, bytes_written: u64, read_ops: u32, write_ops: u32, flags: u32);
-    fn BooleanFlagOn(flags: u32, flag: u32) -> i32;
+    fn BooleanFlagOn(flags: u32, flag: u32) -> u8;
     fn DebugUnwind(function: *const core::ffi::c_void);
     fn FatLowLevelReadWrite( IrpContext: *mut IRP_CONTEXT, DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, Vcb: *mut VCB, ) -> i32; // returns NTSTATUS but (VOID) cast fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
     fn _SEH2_TRY();
@@ -71,7 +75,7 @@ extern "system" {
     } extern "C" { fn DbgPrint(fmt: *const i8, ...); } extern "system" {
     static mut FatBreakOnInterestingIoCompletion: i32;
     fn SafeMmProbeAndLockPages( Mdl: *mut MDL, AccessMode: KPROCESSOR_MODE, Operation: LOCK_OPERATION, ) -> i32;
-    fn MmPrepareMdlForReuse(Mdl: PMDL);
+
     fn CollectDiskIoStats(Vcb: *mut VCB, Function: u32, IsUserIo: u8, Count: u32);
     fn FsRtlAllocatePoolWithTag(PoolType: u32, NumberOfBytes: u32, Tag: u32) -> *mut core::ffi::c_void;
 }
@@ -582,7 +586,7 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
         addr_of_mut!(NextLbo) as *mut u64,
         addr_of_mut!(NextByteCount),
         addr_of_mut!(FirstIndex),
-    );
+    ) as u32;
 
     if MustSucceed == 0 {
         FatBugCheck(Vbo, ByteCount, 0);
@@ -638,7 +642,7 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
         addr_of_mut!(LastLbo) as *mut u64,
         addr_of_mut!(LastByteCount),
         addr_of_mut!(LastIndex),
-    );
+    ) as u32;
 
     if MustSucceed == 0 {
         FatBugCheck(Vbo.wrapping_add(ByteCount).wrapping_sub(1), 1, 0);
@@ -963,7 +967,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
 
     if UserByteCount != ByteCount {
         NT_ASSERT((ByteCount > UserByteCount) as i32);
-        _Analysis_assume_(ByteCount > UserByteCount);
+        // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
 
         let Mdl = IoAllocateMdl(
             ((*Irp).UserBuffer as *mut u8).add(UserByteCount as usize) as *mut c_void,
@@ -1400,7 +1404,7 @@ pub unsafe extern "system" fn FatMultipleAsync(
     }
 
     // Set up things according to whether this is truly async.
-    Wait = BooleanFlagOn(((*(IrpContext as *mut _IRP_CONTEXT)).Flags as u8) as u32, IRP_CONTEXT_FLAG_WAIT);
+    Wait = BooleanFlagOn(((*(IrpContext as *mut _IRP_CONTEXT)).Flags as u8) as u32, IRP_CONTEXT_FLAG_WAIT) as i32;
     Context = (*(IrpContext as *mut _IRP_CONTEXT)).FatIoContext;
 
     // Finish initializing Context, for use in Read/Write Multiple Asynch.
@@ -1818,14 +1822,7 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
     }
 
     // _Analysis_assume_: assert non-null path is analysed statically (no-op at runtime)
-    _Analysis_assume_(
-        (*Context).Wait.Async.as_ref().NonPagedFcb.is_null()
-            && (ExInterlockedAddUlong(
-                addr_of_mut!((*(*Context).Wait.Async.as_ref().NonPagedFcb).OutstandingAsyncWrites),
-                0xffffffff,
-                addr_of_mut!(FatData.GeneralSpinLock),
-            ) != 1),
-    );
+    // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
 
     if !(*Context).Wait.Async.as_ref().NonPagedFcb.is_null()
         && ExInterlockedAddUlong(
