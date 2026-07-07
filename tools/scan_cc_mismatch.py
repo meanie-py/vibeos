@@ -97,11 +97,14 @@ def scan_crate(crate_src: str) -> list[str]:
         defcc = {NORM_I386.get(cc, cc) for cc, excluded in defs[name] if not excluded}
         if not defcc:
             continue
-        for cc, path, line in dd:
+        for cc, path, _line in dd:
             if NORM_I386.get(cc, cc) not in defcc:
                 rel = os.path.relpath(path, REPO)
+                # NOTE: no line number in the finding — the baseline is keyed on
+                # these lines verbatim, and line numbers churn on every edit
+                # (the lint_kernel line-shift disease). file+symbol+cc is stable.
                 out.append(
-                    f'{rel}:{line}: [CC_MISMATCH] {name} declared extern "{cc}" '
+                    f'{rel}: [CC_MISMATCH] {name} declared extern "{cc}" '
                     f"but defined {sorted(defcc)} in-crate (i386 UB-fold risk)"
                 )
     return out
@@ -113,7 +116,7 @@ def main() -> int:
         crate_src = os.path.join(BASE, d, "src")
         if os.path.isdir(crate_src):
             findings.extend(scan_crate(crate_src))
-    for line in sorted(findings):
+    for line in sorted(set(findings)):
         print(line)
     return 1 if findings else 0
 
