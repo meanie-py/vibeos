@@ -1699,12 +1699,17 @@ unsafe fn UserProcessKeyboardInput_impl(pKbdInputData: *mut KEYBOARD_INPUT_DATA)
     if wVk == 0 {
         // vsc->vk mapping failed — silent drop otherwise (2026-07-07 triage).
         static mut KEY_NOVK_TRACE: u32 = 0;
-        if KEY_NOVK_TRACE < 8 {
+        if KEY_NOVK_TRACE < 32 {
             KEY_NOVK_TRACE += 1;
             extern "C" {
                 fn DbgPrint(Format: *const u8, ...) -> u32;
             }
-            DbgPrint(b"[WIN32K] KEYDROP: no VK for sc=0x%x\n\0".as_ptr(), wScanCode as u32);
+            DbgPrint(
+                b"[WIN32K] KEYDROP: no VK for sc=0x%x (make=0x%x flags=0x%x)\n\0".as_ptr(),
+                wScanCode as u32,
+                (*pKbdInputData).MakeCode as u32,
+                (*pKbdInputData).Flags as u32,
+            );
         }
     }
 

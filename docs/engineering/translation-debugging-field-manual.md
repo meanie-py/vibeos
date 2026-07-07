@@ -3480,3 +3480,47 @@ translation-drop site — the `!` inside an XOR is nearly invisible in review.
 When only ONE consumer class of a shared primitive misrenders, enumerate what
 that class does that others don't (here: 1bpp DESTINATION blits) before
 auditing the shared machinery.
+
+### 9.34 (RESOLVED 2026-07-07) arm64 input never reached apps — DO_BUFFERED_IO translated as 0x10 (= DO_DIRECT_IO); every input packet memcpy'd to NULL
+
+**Symptom:** arm64 keys/mouse never reached any application. Driver-side
+delivery looked healthy (`[ARM64INPUT] KBD-DELIVERED sc=0x0001`), but win32k
+dropped every key at `KEYDROP: no VK for sc=0x0` — the RIT's
+`KEYBOARD_INPUT_DATA` read back **all-zero**. Mouse "worked" only apparently:
+zeroed `MOUSE_INPUT_DATA` is a silent no-op packet, so the cursor never left
+screen centre and clicks never happened (test screenshots always show the
+cursor at centre — that WAS the tell).
+
+**Root cause (invented-constant class, same family as §9.27's CmResourceType):**
+the C said `KbdDevice->Flags |= DO_BUFFERED_IO` (0x04); the translation wrote
+`0x00000010` — which is **DO_DIRECT_IO**. `NtReadFile` therefore never
+allocated a SystemBuffer (IRP arrives Flags=0x900, SystemBuffer=NULL,
+UserBuffer=NULL, MDL path), and the driver's completion
+`RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, &Data, 12)` **wrote each
+packet to virtual NULL** in whatever process context the completion ran —
+silent kernel memory corruption on every input event, plus data loss.
+
+**Debug chain that found it:** bounded paired traces — driver `RingPush`
+(sc=0x0001 healthy) vs win32k RIT receive (make=0x0) → completion-site trace
+printed `sysbuf=0000000000000000` + IRP Flags without IRP_BUFFERED_IO → read
+`NtReadFile` in iomgr-rust: SystemBuffer only allocated when
+`DeviceObject.Flags & DO_BUFFERED_IO (0x04)`.
+
+**Fix:** `arm64input.rs` device creation 0x10→0x04 (both KeyboardClass0 and
+PointerClass0) + defensive `IrpOutputBuffer()` helper (SystemBuffer else
+UserBuffer, skip-if-NULL) at all four completion memcpy sites. Result: the
+`--doom` input gate goes green on arm64 — click-to-focus + ESC/ENTER starts a
+new game (PLAYABLE Doom on arm64).
+
+**Lesson:** when a reader sees ALL-ZERO structs that the writer provably
+filled, suspect the *transport* (I/O manager buffering mode), not the data
+path — and check every hand-written `Flags |= 0xNN` against the WDK value.
+`verify_constants` can't see bare numeric flags ORs; grep for
+`Flags |= 0x` in translated drivers is a cheap audit (owed sweep).
+
+**Residual (task #21, still open):** an intermittent arm64 renders-freeze
+(doom window black/whole-screen frame delta 0.0000) survives this fix at a
+reduced rate — under investigation; NULL-write corruption was one component
+but not the whole story. The dib1bpp/sprite-path suspicions from earlier
+rounds were audited faithful-to-C (subagent audit, 2026-07-07) and are NOT
+the cause.
