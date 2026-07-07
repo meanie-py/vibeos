@@ -587,7 +587,7 @@ pub unsafe extern "C" fn NtGdiEngBitBlt(
 pub unsafe extern "stdcall" fn EngBitBlt(
     psoTrg: *mut SURFOBJ,
     psoSrc: *mut SURFOBJ,
-    psoMask: *mut SURFOBJ,
+    mut psoMask: *mut SURFOBJ,
     pco: *mut CLIPOBJ,
     pxlo: *mut XLATEOBJ,
     prclTrg: *mut RECTL,
@@ -595,7 +595,7 @@ pub unsafe extern "stdcall" fn EngBitBlt(
     pptlMask: *mut POINTL,
     pbo: *mut BRUSHOBJ,
     pptlBrush: *mut POINTL,
-    rop4: ROP4,
+    mut rop4: ROP4,
 ) -> i32 {
     let mut clippingType: u8;
     let mut CombinedRect: RECTL = core::mem::zeroed();
@@ -719,10 +719,14 @@ pub unsafe extern "stdcall" fn EngBitBlt(
     }
 
     if UsesMask != 0 && psoMask.is_null() {
-        let psoMaskLocal = BRUSHOBJ_psoMask(pbo);
-        let psoMask = psoMaskLocal;
+        // C-exact: REASSIGN the params (C `psoMask = BRUSHOBJ_psoMask(pbo)` /
+        // `rop4 = ...`). The translation shadowed both with block-local `let`s,
+        // so a brush-provided mask was discarded (mask blits ran with
+        // psoMask=NULL while UsesMask stayed set) and the no-mask rop4
+        // degrade never applied.
+        psoMask = BRUSHOBJ_psoMask(pbo);
         if psoMask.is_null() {
-            let rop4 = (rop4 & 0xFF) | ((rop4 & 0xFF) << 8);
+            rop4 = (rop4 & 0xFF) | ((rop4 & 0xFF) << 8);
             UsesMask = 0;
         }
     }
@@ -867,7 +871,7 @@ pub unsafe extern "stdcall" fn EngBitBlt(
 pub unsafe extern "C" fn EngBitBlt(
     psoTrg: *mut SURFOBJ,
     psoSrc: *mut SURFOBJ,
-    psoMask: *mut SURFOBJ,
+    mut psoMask: *mut SURFOBJ,
     pco: *mut CLIPOBJ,
     pxlo: *mut XLATEOBJ,
     prclTrg: *mut RECTL,
@@ -875,7 +879,7 @@ pub unsafe extern "C" fn EngBitBlt(
     pptlMask: *mut POINTL,
     pbo: *mut BRUSHOBJ,
     pptlBrush: *mut POINTL,
-    rop4: ROP4,
+    mut rop4: ROP4,
 ) -> i32 {
     let mut clippingType: u8;
     let mut CombinedRect: RECTL = core::mem::zeroed();
@@ -999,10 +1003,14 @@ pub unsafe extern "C" fn EngBitBlt(
     }
 
     if UsesMask != 0 && psoMask.is_null() {
-        let psoMaskLocal = BRUSHOBJ_psoMask(pbo);
-        let psoMask = psoMaskLocal;
+        // C-exact: REASSIGN the params (C `psoMask = BRUSHOBJ_psoMask(pbo)` /
+        // `rop4 = ...`). The translation shadowed both with block-local `let`s,
+        // so a brush-provided mask was discarded (mask blits ran with
+        // psoMask=NULL while UsesMask stayed set) and the no-mask rop4
+        // degrade never applied.
+        psoMask = BRUSHOBJ_psoMask(pbo);
         if psoMask.is_null() {
-            let rop4 = (rop4 & 0xFF) | ((rop4 & 0xFF) << 8);
+            rop4 = (rop4 & 0xFF) | ((rop4 & 0xFF) << 8);
             UsesMask = 0;
         }
     }

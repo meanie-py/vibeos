@@ -577,6 +577,26 @@ Two adjacent defect classes, found together and best hunted together:
 **Fix pattern:** define the missing const locally (with the real header value, e.g. `const WM_CTLCOLOR: UINT = 0x0019;`) or fully qualify the path (`ntkrnl_sys::mm::STATUS_WAIT_0 =>`). When translating any C `switch`, every `case` label MUST resolve to a const in scope — if bindgen lacks it, the translator must emit the const, not trust the bare name.
 **Debug methodology that found it:** serial-marker bisection of the message round-trip (kernel send → user32 callback → app wndproc → DefWindowProc → `NtUserMessageCall` → kernel handler) with one `DbgPrint` per hop — the cut was "dispatch arm entered, handler never called", i.e. *inside one function*, which pointed straight at the match. User-mode `DbgPrint` from user32-rust lands on the same serial as kernel prints — instrument both sides.
 
+### C param reassignment translated as a block-local `let` SHADOW — the new value silently dies at the block end (kernel32 CreateFileMappingW, 2026-07-06)
+**Symptom:** a C function that *reassigns a parameter* inside a conditional (`if (hFile == INVALID_HANDLE_VALUE) hFile = NULL;`) behaves as if the branch never ran — downstream code sees the ORIGINAL value. Flagship: `kernel32-rust/src/file/filemap.rs` `CreateFileMappingW` — the translation emitted `let hFile: HANDLE = null_mut();` inside the if-block, so `NtCreateSection` received `INVALID_HANDLE_VALUE` (-1 = current-process pseudo-handle) as a *file* handle → **every anonymous/named pagefile-backed `CreateFileMapping(INVALID_HANDLE_VALUE, …)` in the OS failed** (kbswitch indicdll DllMain → the visible "SetHooks failed." messagebox; `SHAllocShared` → shell32 changenotify "Out of memory"/"Delivery failed" on every boot). Full-workspace sweep found 4 more: `win32k-rust/bitblt.rs` `EngBitBlt` ×2 cfg variants (`psoMask = BRUSHOBJ_psoMask(pbo)` + the no-mask `rop4` degrade both discarded → brush-mask blits ran with NULL mask), `ntoskrnl-rust/ARM3/section.rs` `MiFlushTbAndCapture` ×2 sites (`protection_mask` cache-attribute adjust discarded → the RebuildPte branch produced a byte-identical PTE, whole reconciliation a no-op), `freeldr-rust/tuimenu.rs` `TuiDisplayMenu` (`MenuTimeOut = -1` discarded).
+**Why it ships:** compiles clean; the shadow is only a `unused_variables` warning — and the translation crates **blanket-`#![allow(unused_variables, unused_assignments)]`** in lib.rs, so not even a warning is emitted.
+**Oracle (the sweep, reusable):** force the lint back on over the crate attrs and filter for shadows of *function params*: `RUSTFLAGS='--force-warn unused_variables' cargo check --release --keep-going --workspace --target <T> --target-dir <scratch> --message-format=short` (run under `tools/canon-run.sh` so the `*-stub`/link build.rs find `/tmp/vibeos`; exclude the `*-cargo` link crates + `cnt-difftest`), then keep only warnings whose line is a `let <name>` at indent ≥8 where `<name>` is also a param of the enclosing fn (the filter script lives in the 2026-07-06 session scratchpad; ~6,000 raw warnings → 5 real bugs, zero FPs). Run per-target — x86-only/arm64-only cfg variants each need their own pass.
+**Fix pattern:** make the param binding `mut` in the signature (ABI-neutral) and turn the `let` back into an assignment. Never "fix" by underscoring the shadow — the C semantics *require* the reassignment.
+
+### `write_bytes(ptr, v, size_of::<T>())` — count is in ELEMENTS, zeroes sizeof(T)² bytes (kernel32 QueueUserAPC, 2026-07-06)
+**Symptom:** a process dies with `0xc0000005 at rip=0` and a **virgin-zero stack** at/above the fault rsp (no return address — nothing to symbolicate), OR unexplained pool corruption near a freshly-zeroed allocation. Flagship: explorer's change-notify thread died at the first `ret` after `NtQueueApcThread` — `QueueUserAPC` zeroed 256 bytes over its 16-byte `ACTIVATION_CONTEXT_BASIC_INFORMATION` local, wiping its saved regs, return address, and ~0xc8 of caller stack (`SHChangeNotifyRegister` → `CDirectoryWatcher::CreateAPCThread` → QueueUserAPC → exit 0x80 → no desktop icons on x86; arm64 skips SHChangeNotifyRegister, hence unaffected).
+**Cause:** C `memset(&x, 0, sizeof(x))` / `RtlZeroMemory` translated as `core::ptr::write_bytes(&mut x as *mut T, 0, size_of::<T>())` — but `write_bytes` count is in UNITS OF THE POINTEE, so this writes `sizeof(T)²` bytes. 28 live sites found in one sweep (kernel32, classpnp SRB/fdo-data, disk geometry, fastfat IRP_CONTEXT/EA_RANGE, ks, mscms, mountmgr, pcix) — the kernel-driver ones are silent **pool overruns** (SCSI_REQUEST_BLOCK: 88² = 7.7KB of zeros over nonpaged pool).
+**Debug methodology that found it:** kernel-side first-chance instrumentation in `KiDispatchException` (image/code/rip), then on the NULL-rip fault: dump the user stack from rsp up to the first non-zero qword (measures the zero swath) + PEB module list; `rcx` on amd64 holds the last `syscall` stub's return RIP (CPU clobber) — it named `ZwQueueApcThread` and the swath size matched the function's over-zeroing exactly. Confirmed by disassembling the built DLL: `sub rsp,0x58` prologue vs `movaps` stores out to `[rsp+0x130]`.
+**Oracle (gated):** `scan_silent_failures.py` shape `WRITE_BYTES_SIZEOF` — flags 3-arg `write_bytes` with `size_of` in the count unless the pointee is size-1 (`*mut u8/i8/CHAR`, `c_void`/`PVOID` — c_void is size 1 in Rust) or the count does element math (`/`). Wired into `vibeos-cli check` (0-NEW baseline).
+**Fix pattern:** byte-cast the pointer — `write_bytes(ptr as *mut u8, 0, size_of::<T>())` — never "fix" by dividing the count.
+
+### Kernel Rust emitting x87 (`fild/fistp`) for 64-bit atomics — imprecise 0xc0000092 BSOD blamed on an innocent function (i386 STOP 0x1E, 2026-07-06)
+**Symptom:** flaky i386 `STOP 0x1E (0xc0000092 …)` — STATUS_FLOAT_STACK_CHECK — with P2 pointing at a function with no floats in its source (flagship: `MiLockProcessWorkingSetUnsafe+0x87`). x87 faults are IMPRECISE: they fire at the *next* FP instruction executed, and the kernel doesn't own the FPU — the fault needs a user thread's dirty x87 state (full stack / pending unmasked exception) live at kernel entry, hence the flakiness.
+**Cause:** the i686 kernel target JSONs set `"rustc-abi": "x86-softfloat"` (ABI only) with `cpu=pentium` (no SSE) but never disabled x87 CODEGEN — LLVM lowers `AtomicU64` load/store via `fild/fistp` when x87 is available and SSE2 isn't. 2479 x87 instructions in ntoskrnl, each a probabilistic landmine.
+**Fix:** `"features": "-mmx,-sse,+soft-float"` in every kernel-mode `i686-kernel.json` (atomics lower to cmpxchg8b; f32/f64 become soft libcalls). ntoskrnl now has ZERO `fild/fistp`; residue is kdbg/CRT float paths + deliberate FPU probes (`KiIsNpxErrataPresent`, `KiVerifyCpuFeatures`). **win32k stays hard-float on purpose**: its FP is genuine geometry math under `EngSaveFloatingPointState`/`KeSaveFloatingPointState` guards (verified preserved in translation, zero fild/fistp), and `+soft-float` would break the f32-returns-in-ST0 ABI at its C libm calls (`atan2f` etc.).
+**Toolchain trap (cost a full rebuild cycle):** cargo does NOT fingerprint custom target-JSON contents and sccache does NOT hash them either — editing a `*-kernel.json` silently keeps stale objects. A spec change needs a source edit in the crate or `rm -rf sdk/lib/rust/target/<stem>` to actually take. Verify by counting x87 mnemonics in the linked binary, not by trusting the build.
+**Side effect to expect:** build-std pulls `compiler_builtins int/big` (u256/i256 for f128 soft ops) with 6 ud2s — panic tails (`shl/shr` ≥256 guards) and `unimplemented!()` `widen_hi/widen_mul` bodies; allowlisted in `scan_ud2.py` after disassembly verification.
+
 ### ANSI byte string cast to a WIDE pointer — every lookup silently falls back to defaults (workspace-wide sweep, 2026-07-06)
 **Symptom:** no crash, no error — registry lookups/opens just fail and the code takes its default/fallback path. Found via the 31s-per-service SCM stall (ScConnectControlPipe's `b"\0"` as an "empty PWSTR" — a wide empty string needs TWO zero bytes) and then swept: ~140 sites in 121 files, all fixed 2026-07-06.
 **Cause (4 sub-shapes, all from translating C `L"..."` literals):** (1) plain ANSI cast wide: `b"ScrollWidth\0".as_ptr() as PCWSTR` — a u16 read packs byte PAIRS, so the name never matches (win32k sysparams: all 27 window metrics silently ignored the registry). (2) hand-interleaved UTF-16LE (`b"F\0o\0o\0\0\0"`): content-correct but **align-1** — a `*const u16` into a byte literal is UB and has faulted before (basesrv CSDVersion). (3) phase-broken interleaving: one mis-escaped run (`\\0C` = '\', '0', 'C') desyncs the byte phase and the tail decodes as CJK garbage (msgina's `SYSTEM\CurrentControlSet\Control` — RegOpenKey always failed; cmboot's `System32\Drivers\` broken past "System3"; partmgr copied packed-ANSI `VOLMGR` as u16s). (4) unterminated: odd byte counts / missing final NUL (`b".\0l\0n\0k\0\0"`; SAM's `[u16; 5]` "%08lx" hand-fix with no terminator).
@@ -2743,7 +2763,181 @@ unconditional 500ms "mechanical settle" per ATAPI lun in
 permanent — future regressions in this window are attributable from any
 timestamped smoke log.
 
-### 9.24 Ground-truthing the "3 open corruption bugs" (2026-07-06) — 2 don't reproduce, 1 reframed, 1 live arm64 lead
+### 9.24 (FIXED 2026-07-06) i386 lost-wakeup wedge + "BAD gate" + BSOD roulette — bindgen DROPPED `__ALIGNED(16)` on `EX_PUSH_LOCK_WAIT_BLOCK`
+
+**Symptom family (all one root):** post-`shell ready` i386 boots either (a)
+bugcheck-roulette'd — `0x7F` #GP in `KiFlushNPXState`, `0xA Eip=0x10c`
+(`KiSystemCallReturn` jmp through a corrupt kernel trap-frame Eip), `0x1E
+c0000006` in `ExfWakePushLock`/`KeSignalGateBoostPriority` reading freed-stack
+VAs, `0xF4` — or (b) wedged: `[CENSUS] STUCK winlogon/LSASS ... GateWait ...
+verdict=HOLDER-STUCK(no signal ever)` with an empty desktop (explorer alive,
+no icons/taskbar). Historic `KeSignalGateBoostPriority: BAD gate ... Type=<garbage>`
+prints are the same bug.
+
+**Root cause:** the pushlock word encodes 4 FLAG bits (Locked/Waiting/Waking/
+MultipleShared) in the LOW NIBBLE of the wait-block pointer, so
+`EX_PUSH_LOCK_WAIT_BLOCK` is `__ALIGNED(16)` in C (ndk/extypes.h). **bindgen
+dropped the alignment attribute** (`#[repr(C)]` only, natural align 4 on
+i386), so the Rust stack locals in `ExfAcquirePushLock{Exclusive,Shared}` /
+`ExpBlockOnLockedHandleEntry` landed at `addr % 16 ∈ {4,8,12}`:
+
+- block at `%16==4` → pointer bit2 reads as **Waking** → every releaser skips
+  `ExfWakePushLock` ("already waking") → waiter parks forever = the wedge.
+- chain walks decode the block base with `& ~0xF` → ±4/±8 off → garbage
+  `Next/Last/WakeGate` → BAD-gate prints, wild reads of freed stacks, and the
+  crash roulette above.
+- amd64/arm64 natural align is 8 → `%16==8` → pointer bit3 reads as
+  **MultipleShared** — subtler flake source on those arches too.
+
+**Fix:** `#[repr(C, align(16))] AlignedPlWaitBlock(EX_PUSH_LOCK_WAIT_BLOCK)`
+wrapper at all three stack-allocation sites (ex/pushlock.rs ×2, ex/handle.rs).
+`ExBlockPushLock`'s `debug_assert!((ptr & 0xF) == 0)` was already there — it
+compiles out in release; the C ASSERT does too.
+
+**Class lesson + sweep:** bindgen silently drops `__attribute__((aligned)))`
+on some structs — and the size-assert generator shares bindgen's view (both
+said 52 where C sizeof is 64), so size asserts DON'T catch it. Swept
+`sdk/include/ndk|xdk` for `__ALIGNED|DECLSPEC_ALIGN` struct decls:
+`EX_PUSH_LOCK_WAIT_BLOCK` was the only kernel type affected. If you add such
+a type, verify `align_of` in Rust matches, or wrap at the use site.
+
+**Debug recipe that cracked it** (generic for any lost-wakeup): census/`STUCK`
+lines give the parked GATE (per-wait stack object — useless as a key) — log
+the PUSHLOCK address at park time (`synctrace_pl_park` + temp `[PLPARK]`
+dbg_print), then `qemu/inspect.sh <run> --command raw "x/8wx <lock>"` on the
+wedge: lock word `0` with a parked waiter = lost wakeup; lock word =
+`<block>|flags` with a MISALIGNED block address = this bug. Also:
+`dump-thread` → `WaitReason 0x23/0x1c` distinguishes guarded-mutex vs pushlock
+chains, and `KGUARDED_MUTEX.Owner` (+4) names the holder for the chain walk.
+
+
+### 9.25 (FIXED 2026-07-06) i386 NPX `Cr0NpxState` garbage → 0x7F GP in `KiFlushNPXState` — hand-rolled `FX_SAVE_AREA` local structs modelled the union U as 512 bytes, but the C `FXSAVE_FORMAT` is **520**
+
+Same bindgen-drop *class* as §9.24, different struct. After the §9.24 pushlock fix
+got i386 to `shell ready`, a `BUGCHECK 0x7F (0x0000000d GP)` fired in
+`KiFlushNPXState` at the `mov cr0, <val>` — `val` was a pointer-shaped garbage
+(observed `0x7ffea000`, a user Teb) OR'd into CR0's reserved bits.
+
+**Root:** the C `_FXSAVE_FORMAT` (`sdk/include/ndk/i386/ketypes.h`) carries a trailing
+`Align16Byte[8]` after `Reserved4[224]`, making it **520 bytes (0x208)**, not 512. So in
+`FX_SAVE_AREA`, the union `U` is 520, putting `NpxSavedCpu@0x208` and `Cr0NpxState@0x20C`,
+with `sizeof(FX_SAVE_AREA)=528 (0x210)` — which `KiGetThreadNpxArea` confirms
+(`InitialStack - 0x210`) and bindgen models correctly (size-asserted 528, `Cr0NpxState`
+offset-asserted 524). `traphdlr.rs`/`usercall.rs` correctly use the bindgen `_FX_SAVE_AREA`.
+
+But **four files hand-rolled local `FX_SAVE_AREA`/`FXSAVE_FORMAT` with a short U**, so every
+`Cr0NpxState`/`NpxSavedCpu` access landed 8 bytes low, inside the FXSAVE register/align
+region → pointer garbage:
+- `ke/i386/cpu.rs`   — `U:[u8;512]` → `Cr0NpxState@0x204` (this is the `KiFlushNPXState` reader that GP-faulted)
+- `ke/i386/exp.rs`   — a hand-rolled `FXSAVE_FORMAT` of only **288 bytes** (truncated `Reserved4[128]`, missing `Reserved4[224]`+`Align16Byte[8]`) → `Cr0NpxState@0x124`
+- `ke/i386/kiinit.rs` — `FX_AREA{_padding[24], MXCsrMask}` → read `MXCsrMask@0x18` (that's `MXCsr`), stashed `0x1F80` in `KiMXCsrMask`
+- `ke/i386/v86vdm.rs` — `[u8;512]` → `sizeof` for a `RtlCopyMemory(FX_SAVE_AREA)` short by 16
+
+**Fix (commit `88ee2c3461c`):** all four sized to the true 520/528 C layout. Boot confirms
+the `[NPX] Cr0NpxState GARBAGE` prints are gone (0 hits). **Lesson:** whenever you see a
+hand-rolled `FXSAVE_FORMAT` in a translation, check for the `Align16Byte[8]` tail — it is
+easy to drop and size-asserts on the *local* struct won't catch it (there are none). Prefer
+the bindgen `_FX_SAVE_AREA`/`_FXSAVE_FORMAT` (size-verified) over hand-rolled copies.
+
+### 9.26 (RESOLVED 2026-07-06) i386 `0x0A @ Eip=0x10c` ~2s after `shell ready` — stdcall→fastcall shim tail-`jmp` leaks 4 bytes of stack per call; `KiCheckForApcDelivery`'s esp-relative loop `ret`s to a stale slot
+
+**ROOT CAUSE (found by re-reading the victim frame, not by chasing the writer):** the
+i386 stdcall wrappers `_KfRaiseIrql@4` / `_KfLowerIrql@4` in
+`sdk/lib/rust/ntkrnl-sys/src/inline/ke_i386.rs` were
+
+```asm
+_KfRaiseIrql@4:
+  mov ecx, [esp+4]
+  jmp @KfRaiseIrql@4      ; ← BUG: tail-jump to the FASTCALL impl
+```
+
+A fastcall function whose args all fit in registers ends in plain `ret` (cleans 0
+stack bytes) — but the stdcall shim's caller pushed 4 bytes and expects `ret 4`.
+Tail-jumping hands that `ret` straight back to the caller, so **every call leaves ESP
+4 bytes low**. Nearly all callers are compiler-generated (EBP-framed) and silently
+self-heal at `mov esp, ebp`. The one that can't: `KiCheckForApcDelivery` (hand-asm,
+esp-relative, same file) — its user-APC loop calls `_KfRaiseIrql@4` **and**
+`_KfLowerIrql@4` (−8/iteration), then its exit `pop ebx/pop edi/pop esi; ret 4` pops
+shifted slots and `ret`s to the saved-EDI slot, which held **0x10c** (a stale local —
+NOT a written value; that's why every "find the 0x10c writer" experiment came up
+empty). After the bogus ret, `[esp]` = `KiServiceExit+0x1b` — exactly the observed
+post-crash stack. Fires only when a **user** APC is pending at syscall exit (rare;
+first ~2s after `shell ready` during CDefView startup), hence the delayed, determinis-
+tic crash. The suspend-APC association from the `KiLastApc*` recorder was a red
+herring (it records the last *kernel* APC; the crashing pass is the user-APC loop).
+
+**Fix:** shims now `call @Kf*Irql@4; ret 4` (clean their own frame). Sweep rule: a
+stdcall→fastcall thunk may NEVER tail-jump unless the fastcall target also cleans
+exactly the shim's stack bytes; audited all other `jmp @…@N` sites (`KiExceptionExit`,
+`ctxswitch.S`) — noreturn tail-dispatches, fine.
+
+**Debugging lessons (why this took multiple sessions):**
+1. **A structured "garbage" value (small constant like 0x10c) on the stack is not
+   necessarily *written* — check for an ESP-shifted `ret` popping a stale local
+   FIRST.** ESP imbalance self-heals in every EBP-framed function, so the crash only
+   manifests in esp-relative asm — audit the hand-asm in the return chain before
+   hunting phantom memory writers.
+2. The decisive datum was the `[T0E]` kernel-stack ret-chain scan (dump words above
+   fault-ESP in the #PF handler, filter to kernel-code range, symbolicate offline):
+   `[fault_esp]=KiServiceExit+0x1b` pinned the crashing `ret` to one call-depth below
+   `KiServiceExit` with zero locals in between → `KiCheckForApcDelivery` itself.
+3. For kernel-mode traps the CPU pushes no SS:ESP, so `TF+0x74` overlays the
+   interrupted stack top — the popped slot itself (at `TF+0x70`) is destroyed by the
+   CPU's EFlags push. Scan from `TF+0x74` upward.
+4. Disassemble the *linked binary* (`llvm-objdump` at `ImageBase+RVA`), not the
+   source: the bug was visible only as `jmp` vs `call/ret 4` in the emitted shim.
+
+(Original OPEN triage, kept for the record:) a thread-SUSPEND APC delivered on the syscall-exit path was believed to corrupt `KiDeliverApc`'s return chain across the suspend/resume context switch
+
+The LAST i386 boot blocker after §9.24 + §9.25. i386 reaches the real `shell ready`
+boot marker (desktop renders), then within ~2s (during `shell32!CDefView` /
+`RegisterDragDrop` / OLE marshaling startup) BUGCHECKs `0x0000000A
+(0x0000010c, 0xffffffff, 0x00000000, 0x0000010c)`.
+
+**What it is (fully triaged; the hard part is *why*):**
+- The fault is a **kernel-mode (SegCs=0x8) instruction fetch at `0x10c`** with **IF=0**
+  (`EFlags=0x10046`). `KiTrap0EHandler` bugchecks `0x0A` at line ~796 precisely *because*
+  IF=0 (it treats an IF-clear fault as `IRQL_NOT_LESS_OR_EQUAL`), so `cr2=Eip=0x10c`.
+- IF=0 + kernel = a `cli`-protected region: `KiServiceExit` does `__disable` (cli) then
+  `call KiCheckForApcDelivery` → `KfRaiseIrql(APC)` → `KiDeliverApc` → `KfLowerIrql`.
+- Raw hardware-frame capture at the asm `KiTrap0E` entry (break `*<KiTrap0E>` **if
+  `*(unsigned*)($esp+4)==0x10c`**, then `x/40wx ($esp+16)`) shows the pre-fault stack top =
+  `KiServiceExit+0x1b` (the return addr right after `call KiCheckForApcDelivery`). **No
+  register holds 0x10c** (edx is a trap-frame ptr) → it was a `ret`/`ret N` to a **corrupted
+  stack slot = 0x10c**, NOT a `jmp reg`.
+- A `[T0E]` diagnostic in `KiTrap0EHandler` (fires on `Eip<0x1000`) plus a `KiLastApc*`
+  recorder in `KiDeliverApc` names the culprit APC every boot: **the thread-suspend APC**
+  — `KernelRoutine=KiSuspendNop@20`, `NormalRoutine=KiSuspendThread@12`, `type=0x12`
+  (ApcObject). `KiSuspendThread` blocks on the suspend semaphore (`KeWaitForSingleObject`)
+  → context-switch out, then resume.
+- The `prevTF` (thread->TrapFrame) is a **normal user syscall** (`Eip=0x7e001785`, `cs=0x1b`
+  — an ntdll SYSENTER return), consistent across every boot.
+
+**Ruled OUT (all verified):**
+- Bad routine pointers — `[APC]` bogus-pointer check never fires; both routines are valid.
+- ABI/cleanup mismatch — `KiSuspendNop` compiles to `ret 0x14`, `KiSuspendThread` to
+  `ret 0xc` (correct stdcall); `PKKERNEL_ROUTINE`/`PKNORMAL_ROUTINE` bindgen types are
+  `extern "stdcall"`.
+- `Esp0`/NPX frame math — `KiSwapContextExit` sets `Esp0 = InitialStack - 0x10 - NPX_FRAME_LENGTH`
+  = `InitialStack - 0x220`, which places the trap frame adjacent to the (correct, 528-byte)
+  NPX area. `NPX_FRAME_LENGTH = size_of::<_FX_SAVE_AREA>()` = 528 (bindgen).
+- The `KiServiceExit`/`KiServiceExit2` guards — the `[KTF]`/`[KX2]` `Eip<0x8000_0000` checks
+  are placed correctly but *cannot* be the jumper: the kernel-path `jmp edx` is guarded and
+  edx≠0x10c at fault; the observed transfer is a `ret`, not that `jmp`. The `KiServiceExit`
+  frames on the stack are partly **stale** (reused kernel stack) — do not over-trust them.
+
+**Current best hypothesis:** the suspend/resume **context-switch stack save/restore**
+(`KiSwapContextEntry`/`Exit` Rust + `ctxswitch.S` `KiSwitchThreads` `mov esp,edx`) leaves
+`KiDeliverApc`/`KiCheckForApcDelivery`'s saved return address = `0x10c` after the round-trip,
+so the epilogue `ret`s to `0x10c`. Next steps for whoever picks this up: capture ESP
+immediately across the `KeWaitForSingleObject`/context-switch in `KiSuspendThread` (or
+`KiDeliverApc`'s `NormalRoutine` call) to prove the resume shifts the stack; then audit
+`KiSwapContextEntry` (`OldThread->KernelStack = SwitchFrame`) vs the asm push/pop balance and
+the resumed-thread ESP restore. Diagnostics are staged (uncommitted) in
+`ke/i386/traphdlr.rs` (`[T0E]`, `[KX2]`, `[KTF]`, `[FCH]`), `ke/i386/thrdini.rs` (`[TCTX]`),
+and `ke/apc.rs` (`KiLastApc*` recorder) — strip before landing. amd64/arm64 are unaffected
+(green), so this is i386-specific (asm or i386 Rust translation).
+### 9.27 Ground-truthing the "3 open corruption bugs" (2026-07-06) — 2 don't reproduce, 1 reframed, 1 live arm64 lead
 
 A corruption-bug sweep with the special-pool tripwire (§9.18) + the arm64 IRQL
 self-checks, run against current master, materially changed the picture the
@@ -2757,7 +2951,7 @@ NB the selftest needs a tag armed too (`SPECIALPOOL=*`) — alone,
 which looks like a broken detector but isn't.
 
 1. **i386 "session-pool gate" corruption (`KeSignalGateBoostPriority: BAD gate
-   Type=128`) — REFRAMED, not reproducing.** The fingerprint `Type=128`=0x80 is
+   Type=128`) — REFRAMED, not reproducing.** *(Since root-caused + FIXED: bindgen-dropped `__ALIGNED(16)` — see §9.24.)* The fingerprint `Type=128`=0x80 is
    *not* random garbage: `Type & KOBJECT_TYPE_MASK(0x7F)` on 0x80 = 0, so the
    whole low type byte was zeroed with bit 7 set. Crucially the corrupted gate is
    the `WakeGate` field of **`_EX_PUSH_LOCK_WAIT_BLOCK`** — a **stack-resident**
@@ -2792,17 +2986,35 @@ which looks like a broken detector but isn't.
      ⇒ tsv base `runtime_pc − tsv_rva`), i.e. in a later-loaded module — the
      net/TDI path (netstack.sys / arm64 HAL interrupt path). `build-index.sh`
      only indexes ntoskrnl, so symbolicating the caller needs a netstack index.
-   - **Next diagnostic on a repro:** it's IRQL-leak, not pool overrun, so special
-     pool is the wrong tool. Right tools: (a) make `irql_violation()` capture a
-     backtrace / `KeBugCheckEx` on first violation so the *leaking raise* is
-     caught with a live stack instead of the downstream victim; (b) GDB watch the
-     leaked `HalpCurrentIrql`; (c) audit the arm64 net/TDI ISR path for a
-     `HalBeginSystemInterrupt`/`KfRaiseIrql(HIGH_LEVEL)` without a matching lower.
-     Rare enough that a soak (`farm`, host-quiet only) may be needed to catch it live.
+   - **The IRQL-leak hypothesis above is DISPROVEN (2026-07-06, caught live).**
+     The `last raise-to-HIGH @ <ra>` diagnostic (hal-rust `irql_violation`, added
+     this session) fired on a fresh gate repro and pointed the leaked HIGH at
+     **`KeBugCheckWithTf+0x824`** — i.e. the HIGH_LEVEL is raised BY BUGCHECK
+     PROCESSING, not by pre-crash net/TDI code. So the `raise-DOWN 15→2` /
+     `lower-UP 2→15` spam is an ARTIFACT of already being inside the bugcheck
+     path (KeBugCheck raises to HIGH, then its own spinlock acquires look like
+     raise-DOWN); it is NOT the cause. The instrumentation did its job: it killed
+     a plausible-but-wrong hypothesis cleanly.
+   - **The REAL fault:** the first (root) bugcheck PC symbolicates to
+     **`KiUnwaitThread+0x28`** with `0xC0000005` — an access violation in the
+     SCHEDULER thread-wake path, hit during the netstack TDI self-test's
+     `associate`. (The second, nested 0x1E at `KeGetBugMessageText+0x60` is just
+     a fault while printing the first bugcheck.) This is the documented
+     **KiUnwaitThread BUGCHECK flake** (AGENTS.md kernel-debug recipe) — a
+     scheduler wakeup operating on a corrupted `KWAIT_BLOCK`/thread pointer, NOT
+     an IRQL leak and NOT a pool overrun. Reclassify: this is a dispatcher/wait
+     corruption bug in the thread-wake path, rare (~1/4 arm64 boots), surfaced by
+     the TDI self-test's cross-thread wakeup.
+   - **Next diagnostic on a repro:** break on `KiUnwaitThread` (kernel-debug
+     toolkit `run-until.sh --break KiUnwaitThread`), dump the `KWAIT_BLOCK` /
+     `KTHREAD` it faults on, and `identify-object` the bad pointer — the amd64
+     KiUnwaitThread flake recipe in AGENTS.md returns stop code + trapframe +
+     object identity in one call. Calibrate the symbol base off the bugcheck P2
+     (`ntoskrnl.exe+<off>`): base = runtime_PC − off; tsv_rva = module_rva + 0x400000.
 
-### 9.26 Static analysis for leaked IRQL raises / spinlock acquires — `scan_irql_balance.py`
+### 9.28 Static analysis for leaked IRQL raises / spinlock acquires — `scan_irql_balance.py`
 
-The §9.24 arm64 IRQL-leak hunt raised the right question: we're almost entirely
+The §9.27 arm64 IRQL-leak hunt raised the right question: we're almost entirely
 Rust, so a raise/lower pair is a *lifecycle* we should be able to check
 statically instead of catching at runtime. Two durable answers, both landed:
 
@@ -2841,7 +3053,7 @@ an **upstream ReactOS bug** (usbport.c:2059 `goto Exit` jumps PAST the
 goto-cleanup-mistranslated-as-return shape is the exact thing the lint exists to
 catch. Fixed by releasing before the early return (divergence from stock).
 
-### 9.25 A foreign binary parked in a wait, or spinning on `b .`, is usually one of three shapes (Doom bring-up)
+### 9.29 A foreign binary parked in a wait, or spinning on `b .`, is usually one of three shapes (Doom bring-up)
 
 Running a *foreign* Win32 binary (the Doom-on-vibeos quest — full writeup +
 build recipe in **`doom-on-vibeos.md`**) surfaced a reusable triage ladder for

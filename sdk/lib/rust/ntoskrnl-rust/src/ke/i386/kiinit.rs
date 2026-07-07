@@ -234,7 +234,11 @@ union FX_SAVE_AREA_UNION {
 #[repr(C)]
 #[derive(Copy, Clone)]
 struct FX_AREA {
-    _padding: [u8; 24],
+    // MXCsrMask sits at +0x1C (28) in the C FXSAVE_FORMAT: after the 8-byte
+    // {Control,Status,Tag,ErrorOpcode} words, ErrorOffset(4), ErrorSelector(4),
+    // DataOffset(4), DataSelector(4), MXCsr(4) → 28. A 24-byte pad read MXCsr
+    // (0x1F80) as the mask and stashed it in KiMXCsrMask.
+    _padding: [u8; 28],
     MXCsrMask: ULONG,
 }
 

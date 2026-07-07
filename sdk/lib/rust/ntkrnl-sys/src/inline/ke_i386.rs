@@ -173,17 +173,23 @@ core::arch::global_asm!(
     "  fnclex",
     "  ret",
 
-    // KfRaiseIrql stdcall wrapper → fastcall HAL
+    // KfRaiseIrql stdcall wrapper → fastcall HAL.
+    // MUST call + ret 4, NOT tail-jmp: the fastcall impl's `ret` cleans 0 stack
+    // bytes, so a tail-jmp would return to the caller with the pushed arg still
+    // on the stack (ESP-4). That imbalance crashed KiCheckForApcDelivery's
+    // esp-relative loop → BUGCHECK 0x0A Eip=0x10c (field-manual §9.26).
     ".globl _KfRaiseIrql@4",
     "_KfRaiseIrql@4:",
     "  mov ecx, [esp+4]",
-    "  jmp @KfRaiseIrql@4",
+    "  call @KfRaiseIrql@4",
+    "  ret 4",
 
-    // KfLowerIrql stdcall wrapper → fastcall HAL
+    // KfLowerIrql stdcall wrapper → fastcall HAL (same ret-4 rule as above)
     ".globl _KfLowerIrql@4",
     "_KfLowerIrql@4:",
     "  mov ecx, [esp+4]",
-    "  jmp @KfLowerIrql@4",
+    "  call @KfLowerIrql@4",
+    "  ret 4",
 
     // x87 FPU save (FNSAVE then WAIT) — Ke386FnSave(SaveArea)
     ".globl _Ke386FnSave@4",
