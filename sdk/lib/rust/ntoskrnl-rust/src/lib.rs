@@ -55,7 +55,8 @@ macro_rules! abi_cast {
 pub mod ARM3;
 pub mod arm64_dbg;
 // cc extracted to cc-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
-pub mod config;
+// config (Configuration Manager / registry) extracted to config-rust (crate-split
+// Phase 1b); symbols link in via kernel-rust's `extern crate config_rust`.
 // dbgk extracted to dbgk-rust (crate-split); symbols via kernel-rust extern crate.
 // dbgprint hoisted to dbgprint-rust leaf crate; re-exported at the crate root above.
 pub mod debugblock;
@@ -589,20 +590,10 @@ mod _force_kd64_i386_symbols {
     ];
 }
 
-// Force inclusion of config/i386/cmhardwr.rs symbols on i386 + amd64.
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-mod _force_cmhardwr_symbols {
-    #[repr(transparent)]
-    struct SyncPtr(*const ());
-    unsafe impl Sync for SyncPtr {}
-
-    #[used]
-    static FN_REFS: [SyncPtr; 3] = [
-        SyncPtr(crate::config::i386::cmhardwr::CmpGetBiosDate as *const ()),
-        SyncPtr(crate::config::i386::cmhardwr::CmpGetBiosVersion as *const ()),
-        SyncPtr(crate::config::i386::cmhardwr::CmpInitializeMachineDependentConfiguration as *const ()),
-    ];
-}
+// (config/i386/cmhardwr.rs's CmpGetBiosDate/CmpGetBiosVersion/
+// CmpInitializeMachineDependentConfiguration are now in config-rust, pulled by
+// kernel-rust's `extern crate config_rust` + their genuine callers — the old
+// _force_cmhardwr_symbols CGU hack was redundant, deleted with the config split.)
 
 // Force inclusion of mm/section_pe.rs symbols on all arches.
 mod _force_section_pe_symbols {

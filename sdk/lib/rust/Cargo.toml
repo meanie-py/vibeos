@@ -14,6 +14,7 @@ members = [
     "cc-rust",
     "iomgr-rust",
     "kdbg-rust",
+    "config-rust",
     "fstub-rust",
     "se-rust",
     "pnpmgr-rust",

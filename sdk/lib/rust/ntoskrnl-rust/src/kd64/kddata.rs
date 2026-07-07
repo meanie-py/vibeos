@@ -246,6 +246,7 @@ pub static mut KdpContext: KD_CONTEXT = unsafe { core::mem::zeroed() };
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
 // (KD_FILTER_CONTROL_VECTOR for debug-print masks lives further down with the
 // Kd_*_Mask statics.)
+#[no_mangle]
 pub static KDDATA_TUNABLES_CV: ntkrnl_sys::SubVector<1> =
     ntkrnl_sys::SubVector(unsafe { [
         ntkrnl_sys::cv!("Session Manager", "Debugger Retries",
@@ -878,6 +879,7 @@ macro_rules! kd_filter {
     };
 }
 
+#[no_mangle]
 pub static KD_FILTER_CONTROL_VECTOR: ntkrnl_sys::SubVector<156> =
     ntkrnl_sys::SubVector(unsafe { [
     kd_filter!("WIN2000", Kd_WIN2000_Mask),
