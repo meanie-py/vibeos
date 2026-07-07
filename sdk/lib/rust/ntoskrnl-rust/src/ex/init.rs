@@ -1,21 +1,4 @@
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
-// Cross-crate ke/mm/ARM3 globals+recorders as link symbols (all #[no_mangle]
-// in ntoskrnl-rust). crate-split Phase 1b.
-extern "C" {
-    static mut KeBootTime: ntkrnl_sys::ddk::_LARGE_INTEGER;
-    static mut KeBootTimeBias: u64;
-    static mut KeLoaderBlock: ntkrnl_sys::ddk::PLOADER_PARAMETER_BLOCK;
-    static mut KeMaximumIncrement: ntkrnl_sys::base::ULONG;
-    static mut KeNumberProcessors: core::ffi::c_char;
-    static mut KeServiceDescriptorTable: [ntkrnl_sys::ddk::_KSERVICE_TABLE_DESCRIPTOR; 2];
-    static mut KeServiceDescriptorTableShadow: [ntkrnl_sys::ddk::_KSERVICE_TABLE_DESCRIPTOR; 2];
-    static mut KiServiceLimit: ntkrnl_sys::base::ULONG;
-}
-extern "system" {
-    // KiStartSyncCensus is NTAPI (stdcall on i386, @0); extern "system" so the i386
-    // symbol decoration matches its #[no_mangle] def in ke/census.rs.
-    fn KiStartSyncCensus();
-}
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -28,7 +11,11 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 
 // Use actual definitions, not extern declarations (lto=false splits them)
-use crate::time::{ExpLastTimeZoneBias, ExpAltTimeZoneBias, ExpTimeZoneBias};
+use crate::ke::krnlinit::{KeLoaderBlock, KiServiceLimit};
+use crate::ke::clock::{KeMaximumIncrement, KeBootTime, KeBootTimeBias};
+use crate::ex::time::{ExpLastTimeZoneBias, ExpAltTimeZoneBias, ExpTimeZoneBias};
+use crate::ke::processor::KeNumberProcessors;
+use crate::ke::procobj::{KeServiceDescriptorTable, KeServiceDescriptorTableShadow};
 
 // Types only available in bindgen (not in hand-written modules)
 use ntkrnl_sys::ddk::{
@@ -717,7 +704,7 @@ unsafe fn ExpInitSystemPhase1() -> BOOLEAN {
     // sync-instrumentation §2/§3: stamp the synctrace table header + start the
     // wedge self-census watchdog (silent when healthy; on a wedge it prints
     // the stuck threads + lost-wakeup/holder-stuck verdict to serial).
-    KiStartSyncCensus();
+    crate::ke::census::KiStartSyncCensus();
 
     if ExpInitializeEventImplementation() == 0 {
         return 0;

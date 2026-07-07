@@ -44,8 +44,6 @@ extern crate kdbg_rust;
 // Phase 1b). extern crate forces its #[no_mangle] Cm*/Cmp* symbols + the runtime
 // CmControlVector assembler + _config_global_write_barrier into the archive.
 extern crate config_rust;
-// ex (Executive + pool), the largest subsystem, extracted from ntoskrnl-rust (crate-split Phase 1b).
-extern crate ex_rust;
 // ob (Object Manager), extracted from ntoskrnl-rust (crate-split Phase 1b).
 extern crate ob_rust;
 // ps (Process/Thread Manager), extracted from ntoskrnl-rust (crate-split Phase 1b).

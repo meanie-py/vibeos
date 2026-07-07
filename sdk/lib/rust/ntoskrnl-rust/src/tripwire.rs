@@ -30,11 +30,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 
 // Same-crate globals — no FFI decls needed.
-// MmSpecialPoolTag: ex-rust global read across the crate boundary as a link symbol
-// (#[no_mangle] in ex-rust). crate-split Phase 1b.
-extern "C" {
-    static mut MmSpecialPoolTag: ntkrnl_sys::base::ULONG;
-}
+use crate::ex::pool::globals::MmSpecialPoolTag;
 use crate::ARM3::special::MmSpecialPoolCatchOverruns;
 
 extern "C" {

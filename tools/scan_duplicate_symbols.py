@@ -74,7 +74,6 @@ KERNEL_LINK_CRATES = [
     "iomgr-rust",
     "kdbg-rust",
     "config-rust",
-    "ex-rust",
     "ob-rust",
     "ps-rust",
     "kd-rust",

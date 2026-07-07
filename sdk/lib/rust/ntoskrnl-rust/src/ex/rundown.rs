@@ -1,9 +1,4 @@
 use ntkrnl_sys::base::*;
-// Cross-crate ke/mm/ARM3 globals+recorders as link symbols (all #[no_mangle]
-// in ntoskrnl-rust). crate-split Phase 1b.
-extern "C" {
-    static mut KeNumberProcessors: core::ffi::c_char;
-}
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::interlocked::*;
@@ -18,6 +13,8 @@ use ntkrnl_sys::ddk::{
     KeGetCurrentProcessorNumber, KeGetRecommendedSharedDataAlignment,
     KeInitializeEvent, KeWaitForSingleObject,
 };
+
+use crate::ke::processor::KeNumberProcessors;
 
 const IO_NO_INCREMENT: LONG = 0;
 

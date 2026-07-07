@@ -1,28 +1,4 @@
 use ntkrnl_sys::globals::*;
-// Cross-crate ke/mm/ARM3 globals+recorders as link symbols (all #[no_mangle]
-// in ntoskrnl-rust). crate-split Phase 1b.
-extern "C" {
-    static mut KeNodeBlock: [ntkrnl_sys::ddk::PKNODE; 1];
-    static mut KeNumberNodes: ntkrnl_sys::base::UCHAR;
-    static mut KeProcessorArchitecture: ntkrnl_sys::base::USHORT;
-    static mut KeProcessorLevel: ntkrnl_sys::base::USHORT;
-    static mut KeProcessorRevision: ntkrnl_sys::base::USHORT;
-    static mut KeActiveProcessors: ntkrnl_sys::ddk::KAFFINITY;
-    static mut KeBootTime: ntkrnl_sys::ddk::_LARGE_INTEGER;
-    static mut KeFeatureBits: u64;
-    static mut KeMaximumIncrement: ntkrnl_sys::base::ULONG;
-    static mut KeNumberProcessors: core::ffi::c_char;
-    static mut KeTimeAdjustment: ntkrnl_sys::base::ULONG;
-    static mut KiAdjustDpcThreshold: ntkrnl_sys::base::ULONG;
-    static mut KiIdealDpcRate: ntkrnl_sys::base::ULONG;
-    static mut KiMaximumDpcQueueDepth: ntkrnl_sys::base::ULONG;
-    static mut KiMinimumDpcRate: ntkrnl_sys::base::ULONG;
-    static mut MiFreeSwapPages: ntkrnl_sys::ddk::PFN_COUNT;
-    static mut MiUsedSwapPages: ntkrnl_sys::ddk::PFN_COUNT;
-    static mut MmLoadedUserImageList: ntkrnl_sys::ddk::_LIST_ENTRY;
-    static mut PsLoadedModuleList: ntkrnl_sys::ddk::_LIST_ENTRY;
-    static mut PsLoadedModuleResource: ntkrnl_sys::ddk::_ERESOURCE;
-}
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::macros::*;
@@ -124,6 +100,16 @@ use ntkrnl_sys::ddk::{
 };
 
 // Rust-defined globals — import to avoid extern split under LTO=false
+use crate::ke::processor::{KeActiveProcessors, KeNumberProcessors};
+use crate::ke::krnlinit::{
+    KiProcessorBlock, KeFeatureBits, KeNodeBlock, KeNumberNodes,
+    KeProcessorArchitecture, KeProcessorLevel, KeProcessorRevision,
+};
+use crate::ke::clock::{KeMaximumIncrement, KeBootTime};
+use crate::ke::time::KeTimeAdjustment;
+use crate::ke::dpc::{KiMaximumDpcQueueDepth, KiMinimumDpcRate, KiAdjustDpcThreshold, KiIdealDpcRate};
+use crate::ARM3::sysldr::{PsLoadedModuleList, MmLoadedUserImageList, PsLoadedModuleResource};
+use crate::mm::pagefile::{MiFreeSwapPages, MiUsedSwapPages};
 // cc statics now live in cc-rust (crate-split Phase 1b) — reach them by symbol
 // (statics have no calling convention, so any extern block is fine).
 extern "C" {
@@ -137,8 +123,8 @@ extern "C" {
     static mut CcDataFlushes: ULONG;
     static mut CcDataPages: ULONG;
 }
-use crate::init::NtGlobalFlag;
-use crate::lookas::{
+use crate::ex::init::NtGlobalFlag;
+use crate::ex::lookas::{
     ExPoolLookasideListHead, ExSystemLookasideListHead,
     ExpNonPagedLookasideListHead, ExpNonPagedLookasideListLock,
     ExpPagedLookasideListHead, ExpPagedLookasideListLock,

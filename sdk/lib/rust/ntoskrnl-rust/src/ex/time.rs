@@ -1,12 +1,4 @@
 use ntkrnl_sys::base::*;
-// Cross-crate ke/mm/ARM3 globals+recorders as link symbols (all #[no_mangle]
-// in ntoskrnl-rust). crate-split Phase 1b.
-extern "C" {
-    static mut KeBootTime: ntkrnl_sys::ddk::_LARGE_INTEGER;
-    static mut KeMaximumIncrement: ntkrnl_sys::base::ULONG;
-    static mut KeMinimumIncrement: ntkrnl_sys::base::ULONG;
-    static mut KeTimeIncrement: ntkrnl_sys::base::ULONG;
-}
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::probe::*;
@@ -44,6 +36,7 @@ const TIME_ZONE_ID_DAYLIGHT: ULONG = 2;
 const STATUS_TIMER_RESOLUTION_NOT_SET: NTSTATUS = 0xC0000245u32 as NTSTATUS;
 
 // Use actual definitions, not extern declarations (lto=false splits them)
+use crate::ke::clock::{KeBootTime, KeTimeIncrement, KeMaximumIncrement, KeMinimumIncrement};
 extern "system" {
     pub static mut SharedUserData: *mut KUSER_SHARED_DATA;
     pub static mut SeSystemtimePrivilege: LUID;

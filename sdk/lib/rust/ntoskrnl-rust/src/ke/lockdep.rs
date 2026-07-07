@@ -481,8 +481,7 @@ pub fn lockdep_release(thread: usize, lock: usize) {
 /// gate. If `thread` already holds `lock`, it is about to wait on a lock it
 /// owns → self-deadlock. Records it (print-free).
 #[inline]
-#[no_mangle]
-pub extern "C" fn lockdep_check_park(thread: usize, lock: usize, wanted_mode: u32) {
+pub fn lockdep_check_park(thread: usize, lock: usize, wanted_mode: u32) {
     if thread == 0 || lock == 0 {
         return;
     }

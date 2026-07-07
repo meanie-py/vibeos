@@ -60,7 +60,7 @@ pub mod arm64_dbg;
 // dbgk extracted to dbgk-rust (crate-split); symbols via kernel-rust extern crate.
 // dbgprint hoisted to dbgprint-rust leaf crate; re-exported at the crate root above.
 pub mod debugblock;
-// ex extracted to ex-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
+pub mod ex;
 // fsrtl extracted to its own crate (crate-split) — see fsrtl-rust. Deliberately
 // NOT depended on here (severed): cross-calls into fsrtl resolve at link time via
 // #[no_mangle]; kernel-rust force-includes its symbols via `extern crate fsrtl_rust`.
@@ -197,8 +197,23 @@ mod _force_pnpres_symbols {
 }
 
 // Force inclusion of ex/sysinfo.rs symbols. Same pattern as virtual / pnpres above.
-// _force_sysinfo_symbols deleted with the ex crate-split (Phase 1b): the Nt*/Ex*
-// sysinfo syscalls are pulled by kernel-rust's `extern crate ex_rust` + the SSDT.
+mod _force_sysinfo_symbols {
+    #[repr(transparent)]
+    struct SyncPtr(*const ());
+    unsafe impl Sync for SyncPtr {}
+
+    #[used]
+    static FN_REFS: [SyncPtr; 8] = [
+        SyncPtr(crate::ex::sysinfo::NtQuerySystemInformation as *const ()),
+        SyncPtr(crate::ex::sysinfo::NtSetSystemInformation as *const ()),
+        SyncPtr(crate::ex::sysinfo::NtGetCurrentProcessorNumber as *const ()),
+        SyncPtr(crate::ex::sysinfo::NtQuerySystemEnvironmentValue as *const ()),
+        SyncPtr(crate::ex::sysinfo::NtSetSystemEnvironmentValue as *const ()),
+        SyncPtr(crate::ex::sysinfo::ExGetCurrentProcessorCpuUsage as *const ()),
+        SyncPtr(crate::ex::sysinfo::ExLockUserBuffer as *const ()),
+        SyncPtr(crate::ex::sysinfo::ExUnlockUserBuffer as *const ()),
+    ];
+}
 
 // iomgr's io statics + entry-point fns (IoInitSystem, IoInitializeCrashDump,
 // IopStartRamdisk, IoFileObjectType, …) are now pulled by kernel-rust's

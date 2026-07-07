@@ -455,14 +455,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ex-rust"
-version = "0.1.0"
-dependencies = [
- "dbgprint-rust",
- "ntkrnl-sys",
-]
-
-[[package]]
 name = "explorer-rust"
 version = "0.1.0"
 dependencies = [
@@ -827,7 +819,6 @@ dependencies = [
  "cmboot-rust",
  "config-rust",
  "dbgk-rust",
- "ex-rust",
  "fsrtl-rust",
  "fstub-rust",
  "inbv-rust",

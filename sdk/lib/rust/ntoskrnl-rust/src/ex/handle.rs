@@ -870,8 +870,8 @@ unsafe fn ExpBlockOnLockedHandleEntry(
     // 16-aligned wrapper: bindgen dropped C's __ALIGNED(16) and the pushlock
     // word encodes flag bits in the block pointer's low nibble (see
     // ex/pushlock.rs AlignedPlWaitBlock).
-    let mut WaitBlock: crate::pushlock::AlignedPlWaitBlock =
-        crate::pushlock::AlignedPlWaitBlock(core::mem::zeroed());
+    let mut WaitBlock: crate::ex::pushlock::AlignedPlWaitBlock =
+        crate::ex::pushlock::AlignedPlWaitBlock(core::mem::zeroed());
 
     ExBlockPushLock(
         core::ptr::addr_of_mut!((*HandleTable).HandleContentionEvent),
