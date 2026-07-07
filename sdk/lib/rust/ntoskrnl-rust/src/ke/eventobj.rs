@@ -169,6 +169,19 @@ pub unsafe extern "system" fn KeSetEventBoostPriority(
         return;
     }
 
+    // waitdep: this path consumes WaitBlock->Thread straight off the event's
+    // wait list and hands it to KiUnlinkThread with no other validation — one
+    // of the three unchecked funnels for the arm64 bad-thread-ptr flake (the
+    // event here can be a STACK-resident EX_PUSH_LOCK_WAIT_BLOCK.WakeEvent).
+    // A violation fires with owner = the EVENT address, which identifies the
+    // owning frame — one frame earlier and far more specific than the
+    // check_unwait(-1) it would otherwise become.
+    super::waitdep::check_waittest(
+        Event as usize,
+        core::ptr::addr_of_mut!((*Event).Header.WaitListHead) as *mut _,
+        true,
+    );
+
     let WaitBlock = ((*Event).Header.WaitListHead.Flink as usize
         - core::mem::offset_of!(_KWAIT_BLOCK, WaitListEntry)) as PKWAIT_BLOCK;
 

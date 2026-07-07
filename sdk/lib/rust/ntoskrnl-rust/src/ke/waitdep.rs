@@ -199,11 +199,19 @@ pub unsafe fn check_unwait(Thread: PKTHREAD) {
     }
 }
 
-/// Chokepoint 2 — called at `KiWaitTest` entry with the object address and
-/// its `Header.WaitListHead`: walk the waiter list and prove every wait block
+/// Chokepoint 2 — called at `KiWaitTest` entry (and the three direct-consume
+/// wake paths: KeSetEventBoostPriority / KiActivateWaiterQueue /
+/// KeSignalGateBoostPriority) with the object address and its
+/// `Header.WaitListHead`: walk the waiter list and prove every wait block
 /// on it belongs here (Object back-pointer) and is structurally sound before
 /// the satisfy/unwait loop starts consuming it.
-pub unsafe fn check_waittest(object: usize, wait_list: *mut LIST_ENTRY) {
+///
+/// `require_obj_backptr`: KQUEUE waiters (KeRemoveQueue) insert the embedded
+/// `Thread->WaitBlock[0]` by WaitListEntry ONLY — neither the C original nor
+/// the Rust sets `WaitBlock->Object`, so it legitimately holds whatever the
+/// thread's previous wait left there. Pass `false` for queue wait lists or
+/// every contended queue wake false-positives K_OBJ_BACKPTR.
+pub unsafe fn check_waittest(object: usize, wait_list: *mut LIST_ENTRY, require_obj_backptr: bool) {
     VIBEOS_WAITDEP_CHECKS.fetch_add(1, Relaxed);
 
     let mut entry = (*wait_list).Flink;
@@ -213,7 +221,7 @@ pub unsafe fn check_waittest(object: usize, wait_list: *mut LIST_ENTRY) {
             violation(K_WAITLIST, object, entry as usize, core::ptr::null_mut());
         }
         let wb = ((entry as usize) - core::mem::offset_of!(_KWAIT_BLOCK, WaitListEntry)) as PKWAIT_BLOCK;
-        if (*wb).Object as usize != object {
+        if require_obj_backptr && (*wb).Object as usize != object {
             violation(K_OBJ_BACKPTR, object, wb as usize, wb);
         }
         if !is_kva((*wb).Thread as usize) {
