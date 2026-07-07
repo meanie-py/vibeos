@@ -290,7 +290,6 @@ extern "system" {
     fn FatNonCachedIo(IrpContext: PIRP_CONTEXT, Irp: PIRP, FcbOrDcb: PFCB, StartingVbo: VBO, ByteCount: u32, UserByteCount: u32, StreamFlags: u32) -> NTSTATUS;
     fn FsRtlCheckOplock(Oplock: *mut c_void, Irp: PIRP, Context: *mut c_void, CompletionRoutine: *const c_void, PostIrpRoutine: *const c_void) -> NTSTATUS;
     fn FsRtlCheckLockForWriteAccess(FileLock: *const c_void, Irp: PIRP) -> u8;
-    fn CcGetFileSizePointer(FileObject: PFILE_OBJECT) -> *mut LARGE_INTEGER;
     fn CcIsFileCached(FileObject: PFILE_OBJECT) -> u8;
     fn CcPrepareMdlWrite(FileObject: PFILE_OBJECT, FileOffset: PLARGE_INTEGER, Length: u32, MdlChain: *mut *mut c_void, IoStatus: *mut _IO_STATUS_BLOCK);
 }
@@ -1324,7 +1323,12 @@ pub unsafe extern "system" fn FatCommonWrite(
                 ExAcquireResourceExclusiveLite((*FcbOrDcb).Header.PagingIoResource, 1);
                 (*FcbOrDcb).Header.FileSize.u.LowPart = InitialFileSize;
                 if !(*(*FileObject).SectionObjectPointer).SharedCacheMap.is_null() {
-                    *CcGetFileSizePointer(FileObject) = (*FcbOrDcb).Header.FileSize;
+                    // CcGetFileSizePointer is an NT macro (poke the shared cache
+                    // map's FileSize); resync via CcSetFileSizes instead.
+                    CcSetFileSizes(
+                        FileObject,
+                        core::ptr::addr_of_mut!((*FcbOrDcb).Header.AllocationSize) as PCC_FILE_SIZES,
+                    );
                 }
                 ExReleaseResourceLite((*FcbOrDcb).Header.PagingIoResource);
             }
