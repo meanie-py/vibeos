@@ -3095,9 +3095,74 @@ DISPATCH → first-keypress machine wedge; see `doom-on-vibeos.md` §Bug 1) and 
 loud-panic-handler port for `arm64input-cargo` (bare `loop{}` handlers hide every
 driver panic — ~40 `*-cargo` mains still have them, sweep owed).
 
-### 9.27 waitdep — always-on dispatcher wait-block integrity tripwire (`ke/waitdep.rs`)
+### 9.30 (RESOLVED 2026-07-07) i386 desktop icons missing — decl/def calling-convention mismatch is UB that LLVM resolves by SILENTLY DELETING the calling branch (no ud2, no link error)
 
-**Built 2026-07-06 to attack the §9.24 arm64 `KiUnwaitThread+0x28` 0x1E flake**
+**Symptom:** i386 boots to a fully-working desktop (taskbar, ticking clock,
+wallpaper) but ZERO desktop icons; amd64/arm64 render all four. No error output
+anywhere.
+
+**Root cause (four layers deep — record the chain, each layer was a real
+finding):**
+1. `CDefView::FillList` works: 5 items enumerated AND inserted into the
+   listview. The *view window* stays 0×0/invisible — `CDesktopBrowser::
+   Initialize` never reaches `_Resize()`/`ShowWindow`.
+2. The desktop thread is parked forever in `RtlpWaitForCriticalSection` ←
+   `LoadAcceleratorsW` ← `CDefView::OnCreate`. The CS (`U32AccelCacheLock`)
+   is **zeroed, never initialized** (`LockCount=0→1, DebugInfo=0, Owner=0`) —
+   a zeroed CS deadlocks its very first `EnterCriticalSection` (free is
+   `LockCount=-1`). Systemic: winlogon's copy was zeroed too; only explorer
+   ever calls `LoadAccelerators`.
+3. `InitializeCriticalSection(&U32AccelCacheLock)` lives in user32-rust's
+   `ClientThreadSetupHelper` behind `MessageInit() && MenuInit()`. Disassembly
+   of the BUILT i386 user32.dll showed the entire branch **compiled to
+   `return TlsAlloc() != -1`** — MessageInit/MenuInit/CS-init/LoadAppInitDlls
+   all gone. On amd64 the same function has all the calls.
+4. Why: `MessageInit`/`MessageCleanup` are **defined `extern "fastcall"`** on
+   x86 (message.rs) and `MenuInit`/`MenuCleanup`/`DeleteFrameBrushes`
+   **defined `extern "C"`**, but dllmain.rs **declared them all in one
+   `extern "system"` block**. Same LLVM symbol, mismatched calling convention
+   ⇒ the call is UB ⇒ LLVM deletes the branch containing it. **The fold
+   removes the very ud2 that `scan_ud2` would have caught**, and the linker
+   never sees the (wrong) symbol reference — completely silent.
+   Confirmation: once the decls were fixed, the branch materialized and the
+   link *immediately* broke on `_wcslen@4` — another wrong-convention decl in
+   the same block that had been linkable only because its caller was folded.
+
+**Fixes:** per-arch-correct extern blocks in user32-rust dllmain.rs (fastcall
+x86 / C elsewhere for Message*, plain C for Menu*/DeleteFrameBrushes/wcslen),
+plus the same class in win32k-rust (`DIB_1BPP_HLine`, `GreGetTextExtentExW`,
+`UserExtTextOutW` — paint-path functions!) and user32-rust
+`UserGetWindowBorders`. i386 desktop icons render.
+
+**Permanent detector:** `tools/scan_cc_mismatch.py` — same-crate
+extern-decl vs `#[no_mangle]`-def convention drift under i386 semantics
+("system"→stdcall vs "C"/fastcall), cfg-aware. Wired into `vibeos-cli check`
+(0-NEW baseline gate; stock ~330 findings, mostly driver crates = the
+burn-down queue in `tools/lint-baseline/scan_cc_mismatch.txt`). Suppress a
+verified FP with `// nolint: cc-mismatch (reason)`.
+
+**Debugging lessons:**
+1. **"Code path missing on one arch only, zero errors" → suspect a UB fold
+   before anything else.** Disassemble the built binary and compare arches:
+   a branch present on amd64 but absent on i386 with identical source is
+   LLVM deleting provably-UB code. `scan_ud2` cannot see it when the whole
+   branch (including the trap) folds away.
+2. A **zeroed CRITICAL_SECTION deadlocks its first Enter** and looks like a
+   lock-owner hang; check `LockCount/DebugInfo/OwningThread` before hunting a
+   phantom owner (`LockCount=1,Owner=0,DebugInfo=0` = never initialized, one
+   waiter).
+3. QMP + manual page-table walk (`human-monitor-command xp` + 2-level i386
+   PDE/PTE from the target EPROCESS's `DirectoryTableBase`) reads **any
+   process's user memory** without breakpoints — module lists from PEB→Ldr,
+   user-stack ret-chains, CS fields. Beats conditional breakpoints (which are
+   glacial via the gdbstub) for cross-process user-mode inspection.
+4. The `[T0E]`-style bisect-by-serial-print remains the fastest way to walk a
+   wedge up a call chain (shell32 → LoadAcceleratorsW in 4 boots), but only
+   ONCE the wedge is on a printable path — pair it with thread/wait-object
+   dumps (`dump-thread`, `identify-object`) to find *which* path to print.
+### 9.31 waitdep — always-on dispatcher wait-block integrity tripwire (`ke/waitdep.rs`)
+
+**Built 2026-07-06 to attack the §9.27 arm64 `KiUnwaitThread+0x28` 0x1E flake**
 (a KWAIT_BLOCK / dispatcher-list corruption that surfaces as an innocent-victim
 0xC0000005 in the unwait path). Special pool can't see it (wait blocks live on
 thread stacks, not pool) and a GDB watchpoint needs a repro in hand — so
@@ -3146,9 +3211,19 @@ traffic continues the soak for free. The next occurrence anywhere will
 self-report `[WAITDEP] VIOLATION <kind>` + chain dump + BUGCHECK 0x109
 (P4=kind) instead of a victim 0xC0000005 — do NOT hand-loop boots chasing it.
 
-### 9.28 Static analysis for leaked Ob references — `scan_ob_refcount.py`
+**Correction — live catch hours later (2026-07-07 gate smoke, arm64, post-§9.26 tree): the flake is NOT collapsed.** `[WAITDEP] VIOLATION
+bad-thread-ptr: owner=ffffffffffffffff culprit=ffffffffffffffff` fired during
+the TDI self-test (right after `associate 0x00000000`) → 0x109. The wait-block
+Thread pointer was ALL-ONES (a -1 poison/uninitialized pattern, not a stray
+heap pointer) — consistent with a wait block consumed after its stack frame
+was reused/poisoned. Same boot then cascaded IRQL raise-DOWN spam inside the
+bugcheck path (KeBugCheckWithTf raising to HIGH; harmless secondary) and a
+nested 0x1E in KeGetBugMessageText. This is the §9.27 arm64 TDI flake wearing
+its new detector — one hit in ~20 armed boots today, so rarer than the historic ≈1/4 but alive; the waitdep chain dump above is the datum for the next debugging round.
 
-Sibling of §9.26's IRQL scanner (same tree-sitter held-set engine), pointed at
+### 9.32 Static analysis for leaked Ob references — `scan_ob_refcount.py`
+
+Sibling of §9.28's IRQL scanner (same tree-sitter held-set engine), pointed at
 the next lifecycle class: `ObReferenceObject*` ↔ `ObDereferenceObject`
 balance. A ref leak never crashes a boot — it's pool exhaustion hours in — so
 NO gate boot can ever catch one; static analysis is the only detector.
@@ -3165,7 +3240,7 @@ ones (upstream ReactOS bugs, same class as the §9.26 usbport find):
 The third (`sysldr.rs` session-load) is dead code here (flags!=0 rejected
 earlier) — baselined, not fixed.
 
-**Engine rules beyond §9.26** (each earned by a real FP shape from triage):
+**Engine rules beyond §9.28** (each earned by a real FP shape from triage):
 status-guard exemption (a return under the acquire's own `if
 !NT_SUCCESS(status)` / `if ObRef..(..) != 0` check isn't a leak — the ref is
 conditional there); alias groups (`Process = TargetProcess` — releasing either

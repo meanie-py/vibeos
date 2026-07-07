@@ -220,7 +220,7 @@ pub unsafe extern "C" fn GRAPHICS_BUFFER_Initialize(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn GRAPHICS_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
+pub unsafe extern "C" fn GRAPHICS_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_BUFFER) {
     let Buff = Buffer as PGRAPHICS_SCREEN_BUFFER;
 
     (*Buffer).Header.Type = SCREEN_BUFFER;

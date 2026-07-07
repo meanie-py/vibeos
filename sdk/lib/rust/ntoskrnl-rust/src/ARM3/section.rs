@@ -133,6 +133,11 @@ const VadImageMap: u32 = _MI_VAD_TYPE_VadImageMap;
 // Extern globals not available in ntkrnl-sys
 // ============================================================================
 
+extern "system" {
+    // NTAPI/stdcall per ntoskrnl.spec (verify_ffi); the in-crate cdecl def in
+    // shim_exports.rs is amd64-only (cfg x86_64 mod — scanner is mod-cfg-blind).
+    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG); // nolint: cc-mismatch (amd64-only in-crate def; spec says stdcall)
+}
 extern "C" {
     pub static mut MmSectionObjectType: PVOID;
     pub static mut PsProcessType: PVOID;
@@ -393,7 +398,7 @@ extern "system" {
     );
 }
 extern "system" {
-    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
+
 }
 extern "C" {
     fn MA_GetStartingAddress(marea: PVOID) -> ULONG_PTR;

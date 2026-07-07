@@ -76,6 +76,11 @@ pub static mut KeRosVideoBiosVersion: _UNICODE_STRING = unsafe { core::mem::zero
 
 use super::krnlinit::KeLoaderBlock;
 extern "system" {
+    // NTAPI/stdcall per ntoskrnl.spec (verify_ffi); the in-crate cdecl def in
+    // shim_exports.rs is amd64-only (cfg x86_64 mod — scanner is mod-cfg-blind).
+    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG); // nolint: cc-mismatch (amd64-only in-crate def; spec says stdcall)
+}
+extern "system" {
     static mut PsLoadedModuleList: LIST_ENTRY;
     static mut MmHighestUserAddress: PVOID;
     static KdDebuggerEnabled: BOOLEAN;
@@ -91,7 +96,7 @@ extern "system" {
     fn DbgUnLoadImageSymbols(FileName: PANSI_STRING, BaseOfDll: PVOID, ProcessId: ULONG_PTR);
 }
 extern "system" {
-    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
+
 }
 extern "system" {
     fn RtlImageNtHeader(Base: PVOID) -> PIMAGE_NT_HEADERS;

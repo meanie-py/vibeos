@@ -16,14 +16,29 @@ use winsrv_sys::consts::*;
 // Forward declarations for functions from other modules.
 // Term* macros are provided by super::term::* (imported above);
 // GetType/GetConsoleInputBufferMode are bindgen-resolved.
+extern "C" {
+    // history.rs defines the History* helpers cdecl (§9.30 cc-match rule)
+ fn HistoryFindEntryByPrefix( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Prefix: *const _UNICODE_STRING, EntryFound: *mut _UNICODE_STRING, ) -> u8;
+}
+extern "C" {
+    // history.rs defines the History* helpers cdecl (§9.30 cc-match rule)
+ fn HistoryDisplayCurrentHistory( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, ) -> PPOPUP_WINDOW;
+}
+extern "C" {
+    // history.rs defines the History* helpers cdecl (§9.30 cc-match rule)
+ fn HistoryDeleteCurrentBuffer(Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING);
+}
+extern "C" {
+    // history.rs defines the History* helpers cdecl (§9.30 cc-match rule)
+ fn HistoryGetCurrentEntry( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Entry: *mut _UNICODE_STRING, );
+}
+extern "C" {
+    // history.rs defines the History* helpers cdecl (§9.30 cc-match rule)
+ fn HistoryRecallHistory( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Offset: i32, Entry: *mut _UNICODE_STRING, ) -> u8;
+}
 extern "system" {
-    pub fn HistoryRecallHistory( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Offset: i32, Entry: *mut _UNICODE_STRING, ) -> u8;
-    pub fn HistoryGetCurrentEntry( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Entry: *mut _UNICODE_STRING, );
     pub fn HistoryAddEntry( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Entry: *const _UNICODE_STRING, );
-    pub fn HistoryDeleteCurrentBuffer(Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING);
-    pub fn HistoryDisplayCurrentHistory( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, ) -> PPOPUP_WINDOW;
     pub fn DestroyPopupWindow(Popup: PPOPUP_WINDOW);
-    pub fn HistoryFindEntryByPrefix( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Prefix: *const _UNICODE_STRING, EntryFound: *mut _UNICODE_STRING, ) -> u8;
 }
 
 static mut Popup: PPOPUP_WINDOW = core::ptr::null_mut();
