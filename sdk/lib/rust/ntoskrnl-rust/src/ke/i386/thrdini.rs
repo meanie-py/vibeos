@@ -365,7 +365,12 @@ pub unsafe extern "fastcall" fn KiSwapContextExit(
 
     let trap_frame = KeGetTrapFrame(NewThread);
     if ((*trap_frame).EFlags & EFLAGS_V86_MASK) == 0 {
-        (*(*Pcr).TSS).Esp0 -= (KTRAP_FRAME_LENGTH - 0x50) as ULONG;
+        // C: Esp0 -= sizeof(KTRAP_FRAME) - FIELD_OFFSET(KTRAP_FRAME, V86Es) (= 0x10).
+        // Was a hand-written `- 0x50` (V86Es is at 0x7c!), leaving Esp0 0x2c too low so
+        // trap frames no longer sat adjacent to the NPX area (TrapFrame+1 != FX base),
+        // shifting every KeContextToTrapFrame/KeTrapFrameToContext FP-state access.
+        (*(*Pcr).TSS).Esp0 -=
+            (KTRAP_FRAME_LENGTH - core::mem::offset_of!(_KTRAP_FRAME, V86Es)) as ULONG;
     }
 
     (*(*Pcr).TSS).Esp0 -= NPX_FRAME_LENGTH as ULONG;

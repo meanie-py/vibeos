@@ -72,6 +72,18 @@ EXPECTED_UD2 = {
     # linked image when cnt-rust's CGU partition shifts (a new crate module
     # relocates which CGU carries it); see feedback_workspace_member_cgu_shift.
     "NeverShortCircuit",
+    # compiler_builtins int/big (u256/i256 soft-float bigint machinery, pulled
+    # in by the `+soft-float` i686 kernel targets' f128 builtins via build-std).
+    # Two ud2 shapes, both unreachable-by-construction (verified i386
+    # 2026-07-06 by disassembly):
+    #   * `u256::shr` / `u256::shl` / `i256::shl` — ud2 is the guarded
+    #     `shift >= 256` panic tail (cmp $0x100 / jae → abort); the main body
+    #     is real code.
+    #   * `HInt::widen_hi` / `widen_mul` for the WIDEST int (i256/u256) — the
+    #     body IS ud2: there is no wider type, the impl is `unimplemented!()`
+    #     and nothing can call it (kept because build-std retains the impl).
+    # NOT a captures(none)/ABI miscompile — panic/unimplemented codegen.
+    "17compiler_builtins3int3big",
 }
 
 # Functions with known ud2 from rustc CGU partitioning bug (codegen-units=16).

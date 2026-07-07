@@ -162,7 +162,10 @@ type PKV86_FRAME = *mut KV86_FRAME;
 
 #[repr(C, align(16))]
 struct FX_SAVE_AREA {
-    _data: [u8; 512],
+    // C sizeof(FX_SAVE_AREA) is 528 (520-byte union U + NpxSavedCpu + Cr0NpxState),
+    // not 512 — FXSAVE_FORMAT carries a trailing Align16Byte[8]. A 512-byte model
+    // short-copies sizeof(FX_SAVE_AREA) RtlCopyMemory by 16 bytes.
+    _data: [u8; 528],
 }
 type PFX_SAVE_AREA = *mut FX_SAVE_AREA;
 
