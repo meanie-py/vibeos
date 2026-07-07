@@ -185,17 +185,20 @@ pub fn synctrace_signal(object: *const core::ffi::c_void, thread: *const core::f
 
 /// Pushlock variants — identical accounting, pushlock-flavored recorder ops.
 #[inline]
-pub fn synctrace_pl_park(object: *const core::ffi::c_void, thread: *const core::ffi::c_void) {
+#[no_mangle]
+pub extern "C" fn synctrace_pl_park(object: *const core::ffi::c_void, thread: *const core::ffi::c_void) {
     account_park(OP_PL_PARK, object as usize, thread as usize);
 }
 
 #[inline]
-pub fn synctrace_pl_satisfied(object: *const core::ffi::c_void) {
+#[no_mangle]
+pub extern "C" fn synctrace_pl_satisfied(object: *const core::ffi::c_void) {
     account_satisfied(OP_PL_SATISFIED, object as usize);
 }
 
 #[inline]
-pub fn synctrace_pl_wake(object: *const core::ffi::c_void, thread: *const core::ffi::c_void) {
+#[no_mangle]
+pub extern "C" fn synctrace_pl_wake(object: *const core::ffi::c_void, thread: *const core::ffi::c_void) {
     account_signal(OP_PL_WAKE, object as usize, thread as usize);
 }
 
