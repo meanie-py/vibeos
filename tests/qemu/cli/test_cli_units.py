@@ -528,8 +528,23 @@ def test_triage_wedge_evidence_counts():
         "noise\n"
     )
     ev = triage.wedge_evidence(serial)
-    assert ev["census_stuck"] == 1 and ev["lockdep"] == 2
-    assert triage.wedge_evidence("clean boot\n") == {"census_stuck": 0, "lockdep": 0, "lines": []}
+    assert ev["census_stuck"] == 1 and ev["lockdep"] == 2 and ev["cswitch"] == 0
+    assert triage.wedge_evidence("clean boot\n") == {
+        "census_stuck": 0,
+        "lockdep": 0,
+        "cswitch": 0,
+        "lines": [],
+    }
+    # cswitchdep emission shapes (ke/cswitchdep.rs): a loud line and a census
+    # entry are both violations; the "census:" counters line is context only.
+    cs = (
+        "[CSWITCH] HIGH_IRQL_AT_SWITCH old=0xfff new=0x0 expected=2 actual=15 pc=0x123\n"
+        "[CSWITCH] census: switches=8000 violations=1 first_runs=40 no_record=12"
+        " evictions=30 drops=0\n"
+        "[CSWITCH]   #1 HIGH_IRQL_AT_SWITCH old=0xfff new=0x0 expected=2 actual=15 pc=0x123\n"
+    )
+    ev = triage.wedge_evidence(cs)
+    assert ev["cswitch"] == 2 and ev["lockdep"] == 0
 
 
 def test_triage_post_boot_check():
