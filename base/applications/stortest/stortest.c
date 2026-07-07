@@ -47,7 +47,10 @@ static char find_vibeusb(void)
     char label[MAX_PATH];
     char letter;
 
-    for (letter = 'D'; letter <= 'Z'; letter++)
+    /* Start at C:—on LiveCD boots the USB stick can be the ONLY disk-class
+     * disk (scratch is virtio-blk with no driver), making it Harddisk0 and
+     * giving its partition C: at boot-time assignment. */
+    for (letter = 'C'; letter <= 'Z'; letter++)
     {
         sprintf(root, "%c:\\", letter);
         label[0] = 0;
@@ -185,30 +188,52 @@ static void request_drive_letters(void)
     for (i = 0; i < points->NumberOfMountPoints; i++)
     {
         PMOUNTMGR_MOUNT_POINT pt = &points->MountPoints[i];
-        BYTE reqbuf[1024];
-        PMOUNTMGR_DRIVE_LETTER_TARGET target = (PMOUNTMGR_DRIVE_LETTER_TARGET)reqbuf;
-        MOUNTMGR_DRIVE_LETTER_INFORMATION letterInfo;
-        DWORD outBytes = 0;
+        char devA[128], lnkA[128];
+        int dn = WideCharToMultiByte(CP_ACP, 0,
+                                     (LPCWSTR)(outbuf + pt->DeviceNameOffset),
+                                     pt->DeviceNameLength / 2,
+                                     devA, sizeof(devA) - 1, NULL, NULL);
+        int ln = WideCharToMultiByte(CP_ACP, 0,
+                                     (LPCWSTR)(outbuf + pt->SymbolicLinkNameOffset),
+                                     pt->SymbolicLinkNameLength / 2,
+                                     lnkA, sizeof(lnkA) - 1, NULL, NULL);
+        devA[dn > 0 ? dn : 0] = 0;
+        lnkA[ln > 0 ? ln : 0] = 0;
+        markf("[STORTEST] point %lu: dev='%s' link='%s'\n", i, devA, lnkA);
+    }
 
-        if (pt->DeviceNameLength == 0 ||
-            pt->DeviceNameLength > sizeof(reqbuf) - sizeof(USHORT))
-            continue;
-
-        target->DeviceNameLength = pt->DeviceNameLength;
-        memcpy(target->DeviceName, outbuf + pt->DeviceNameOffset, pt->DeviceNameLength);
-
-        ZeroMemory(&letterInfo, sizeof(letterInfo));
-        if (DeviceIoControl(mgr, IOCTL_MOUNTMGR_NEXT_DRIVE_LETTER,
-                            target, sizeof(USHORT) + target->DeviceNameLength,
-                            &letterInfo, sizeof(letterInfo), &outBytes, NULL))
+    /* A late-arriving letterless volume has no registered point to enumerate,
+     * so also ask directly by NT device name, diskpart-style. Harddisk0 is the
+     * boot disk; the USB disk lands on a later index. */
+    {
+        int d;
+        for (d = 0; d < 4; d++)
         {
-            markf("[STORTEST] next-letter: assigned=%u letter=%c\n",
-                  letterInfo.DriveLetterWasAssigned,
-                  letterInfo.CurrentDriveLetter ? letterInfo.CurrentDriveLetter : '?');
-        }
-        else
-        {
-            markf("[STORTEST] next-letter failed (error %lu)\n", GetLastError());
+            WCHAR name[64] = L"\\Device\\Harddisk0\\Partition1";
+            BYTE reqbuf[256];
+            PMOUNTMGR_DRIVE_LETTER_TARGET target = (PMOUNTMGR_DRIVE_LETTER_TARGET)reqbuf;
+            MOUNTMGR_DRIVE_LETTER_INFORMATION letterInfo;
+            DWORD outBytes = 0;
+            int chars = 28; /* wcslen of the template */
+            name[16] = (WCHAR)(L'0' + d); /* "\\Device\\Harddisk" is 16 wchars */
+
+            target->DeviceNameLength = (USHORT)(chars * sizeof(WCHAR));
+            memcpy(target->DeviceName, name, target->DeviceNameLength);
+
+            ZeroMemory(&letterInfo, sizeof(letterInfo));
+            if (DeviceIoControl(mgr, IOCTL_MOUNTMGR_NEXT_DRIVE_LETTER,
+                                target, sizeof(USHORT) + target->DeviceNameLength,
+                                &letterInfo, sizeof(letterInfo), &outBytes, NULL))
+            {
+                markf("[STORTEST] next-letter Harddisk%d: assigned=%u letter=%c\n",
+                      d, letterInfo.DriveLetterWasAssigned,
+                      letterInfo.CurrentDriveLetter ? letterInfo.CurrentDriveLetter : '?');
+            }
+            else
+            {
+                markf("[STORTEST] next-letter Harddisk%d failed (error %lu)\n",
+                      d, GetLastError());
+            }
         }
     }
     CloseHandle(mgr);

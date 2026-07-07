@@ -1430,6 +1430,16 @@ pub unsafe extern "C" fn MountMgrMountedDeviceArrival(
             }
         }
     }
+    DbgPrint(
+        c"[MNTMGR] arrival gates: IsDrvLetter=%u AutoDl=%u NoAutoMount=%u Removable=%u HasGptDl=%u Suggested=%u NoDlEntry=%u\n".as_ptr(),
+        IsDrvLetter as u32,
+        (*DeviceExtension).AutomaticDriveLetter as u32,
+        (*DeviceExtension).NoAutoMount as u32,
+        (*DeviceInformation).Removable as u32,
+        HasGptDriveLetter as u32,
+        (*DeviceInformation).SuggestedDriveLetter as u32,
+        HasNoDriveLetterEntry(UniqueId) as u32,
+    );
     if IsDrvLetter != 0 {
         (*DeviceInformation).SuggestedDriveLetter = 0;
     } else if ((*DeviceExtension).NoAutoMount == 0
@@ -1480,6 +1490,11 @@ pub unsafe extern "C" fn MountMgrMountedDeviceArrival(
     InsertTailList(
         &raw mut (*DeviceExtension).DeviceListHead,
         &raw mut (*DeviceInformation).DeviceListEntry,
+    );
+    DbgPrint(
+        c"[MNTMGR] arrival: inserted %wZ (canonical %wZ)\n".as_ptr(),
+        SymbolicName,
+        &raw mut (*DeviceInformation).DeviceName,
     );
     NewUniqueId = ExAllocatePoolWithTag(
         PagedPool,
@@ -1556,6 +1571,7 @@ pub unsafe extern "C" fn MountMgrMountedDeviceRemoval(
     let mut DeviceInformation: *mut DEVICE_INFORMATION = core::mem::zeroed();
     let mut CurrentDevice: *mut DEVICE_INFORMATION;
 
+    DbgPrint(c"[MNTMGR] removal: %wZ\n".as_ptr(), DeviceName);
     // Acquire device exclusively
     KeWaitForSingleObject(
         core::ptr::addr_of_mut!((*DeviceExtension).DeviceLock) as *mut ::core::ffi::c_void,

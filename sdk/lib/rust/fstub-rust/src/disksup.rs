@@ -926,6 +926,10 @@ pub unsafe extern "system" fn HalpEnableAutomaticDriveLetterAssignment() {
         core::ptr::addr_of_mut!(DeviceObject),
     );
     if !NT_SUCCESS(Status) {
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            c"[FSTUB] AUTO_DL: open MountPointManager FAILED 0x%x\n".as_ptr(),
+            Status as u32,
+        );
         return;
     }
 
@@ -953,6 +957,10 @@ pub unsafe extern "system" fn HalpEnableAutomaticDriveLetterAssignment() {
         KeWaitForSingleObject(core::ptr::addr_of_mut!(Event) as *mut core::ffi::c_void, 0u32, 0i8, 0u8, core::ptr::null_mut());
         Status = IoStatusBlock.__bindgen_anon_1.Status;
     }
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        c"[FSTUB] AUTO_DL sent to mountmgr -> 0x%x\n".as_ptr(),
+        Status as u32,
+    );
 
     ObDereferenceObject(FileObject as *mut core::ffi::c_void);
 
