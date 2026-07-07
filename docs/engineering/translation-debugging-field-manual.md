@@ -3135,3 +3135,13 @@ cross-linked or double-removed entry, `chain-overrun` at a clobbered
 `NextWaitBlock`. Symbolicate nothing — the culprit address in P1 + the chain
 dump is the whole story; feed the block address to `identify-object` /
 `dump-thread` for the owner.
+
+**§9.27 soak result (2026-07-07):** 16/16 dedicated arm64 `--repeat` boots +
+3 gate arm64 boots all clean with waitdep armed — zero `[WAITDEP]` lines (not
+even soft State anomalies), zero 0x1E. At the documented ≈1/4 rate, P(16
+clean) ≈ 1% — the flake rate has COLLAPSED, most plausibly a side-benefit of
+the §9.13 WS-pushlock family fixes (the last observed hit, 2026-07-06, was on
+a pre-§9.26-era tree). Status: tripwire stays always-on; organic fleet gate
+traffic continues the soak for free. The next occurrence anywhere will
+self-report `[WAITDEP] VIOLATION <kind>` + chain dump + BUGCHECK 0x109
+(P4=kind) instead of a victim 0xC0000005 — do NOT hand-loop boots chasing it.
