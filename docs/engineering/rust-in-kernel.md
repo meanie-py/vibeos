@@ -380,6 +380,21 @@ A crate compiling with 0 errors ×3 arches is **necessary but not sufficient** f
 
 **Takeaway:** the four "invisible on amd64/arm64, fatal on i386" classes (forwarders, cdecl-vs-stdcall, MSVC intrinsics, UNICODE macros) mean **i386 is the canary** — link it first, drive undefined-symbol count to zero, *then* scan explicitly for the intrinsic trap (which i386 hides) before the cross-arch gate.
 
+- **The `-cargo` main.rs panic handler is the LIVE one — a loud handler in the
+  staticlib is dead code.** With `--allow-multiple-definition`, lld resolves
+  `rust_begin_unwind` to the **first** definition on the link line, and the bin
+  crate's object precedes every archive — so the empty-shell `main.rs` handler
+  always wins over `libX_rust.a`'s. Several main.rs comments used to claim the
+  opposite ("the staticlib's handler wins first-match") — that lore was
+  backwards, proven 2026-07-06: freeldr-rust's loud PL011/debugcon panic
+  handler was gc'd dead in `uefildr.efi` on all 3 arches
+  (`strings uefildr.efi | grep FREELDR-RUST-PANIC` → 0 hits) while the bare
+  `loop {}` stub in `uefildr-cargo/src/main.rs` was live. **Rule: put the loud
+  panic handler in the `-cargo` main.rs, not (only) the rlib/staticlib.** The
+  2026-07-06 sweep did this for all 38 cargo mains (32 DbgPrint, uefildr/
+  rosload raw-UART, 4 kd-transports deliberately bare — DbgPrint from inside
+  the KD transport would recurse into the broken transport).
+
 ## HAL ABI contract (hal.spec)
 
 `hal/hal.spec` is **the** contract for anything importing from `hal.dll` (PnP/ACPI/video drivers, ntoskrnl). It must stay stable across the whole translation window — C and Rust both link against the same decorated export set.

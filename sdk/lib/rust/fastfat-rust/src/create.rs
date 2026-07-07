@@ -2836,13 +2836,13 @@ pub unsafe extern "system" fn FatCreateNewFile(
         );
         if DirentFromPool != 0 {
             core::ptr::copy_nonoverlapping(
-                FirstPageDirent,
-                Dirent,
+                FirstPageDirent as *const u8,
+                Dirent as *mut u8,
                 BytesInFirstPage as usize,
             );
             core::ptr::copy_nonoverlapping(
-                SecondPageDirent,
-                Dirent.add(DirentsInFirstPage as usize),
+                SecondPageDirent as *const u8,
+                Dirent.add(DirentsInFirstPage as usize) as *mut u8,
                 (DirentsNeeded * core::mem::size_of::<DIRENT>() as u32 - BytesInFirstPage) as usize,
             );
             ShortDirent = SecondPageDirent.add((DirentsNeeded - DirentsInFirstPage) as usize - 1);

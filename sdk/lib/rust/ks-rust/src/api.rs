@@ -1715,23 +1715,23 @@ pub unsafe extern "C" fn KspCopyPropertySets(
 
     if AutomationTableA.is_null() {
         core::ptr::copy_nonoverlapping(
-            (*AutomationTableB).PropertySets,
-            (*Table).PropertySets as *mut KSPROPERTY_SET,
+            (*AutomationTableB).PropertySets as *const u8,
+            (*Table).PropertySets as *mut KSPROPERTY_SET as *mut u8,
             ((*AutomationTableB).PropertySetsCount as usize) * core::mem::size_of::<KSPROPERTY_SET>(),
         );
         return STATUS_SUCCESS;
     } else if AutomationTableB.is_null() {
         core::ptr::copy_nonoverlapping(
-            (*AutomationTableA).PropertySets,
-            (*Table).PropertySets as *mut KSPROPERTY_SET,
+            (*AutomationTableA).PropertySets as *const u8,
+            (*Table).PropertySets as *mut KSPROPERTY_SET as *mut u8,
             ((*AutomationTableA).PropertySetsCount as usize) * core::mem::size_of::<KSPROPERTY_SET>(),
         );
         return STATUS_SUCCESS;
     }
 
     core::ptr::copy_nonoverlapping(
-        (*AutomationTableA).PropertySets,
-        (*Table).PropertySets as *mut KSPROPERTY_SET,
+        (*AutomationTableA).PropertySets as *const u8,
+        (*Table).PropertySets as *mut KSPROPERTY_SET as *mut u8,
         ((*AutomationTableA).PropertySetsCount as usize) * core::mem::size_of::<KSPROPERTY_SET>(),
     );
     Count = (*AutomationTableA).PropertySetsCount;
@@ -1756,7 +1756,7 @@ pub unsafe extern "C" fn KspCopyPropertySets(
             core::ptr::copy_nonoverlapping(
                 (*AutomationTableB).PropertySets.add(Index as usize),
                 (*Table).PropertySets.add(Count as usize) as *mut KSPROPERTY_SET,
-                core::mem::size_of::<KSPROPERTY_SET>(),
+                1, // one KSPROPERTY_SET — size_of here copied size_of() elements
             );
             Count += 1;
         } else {

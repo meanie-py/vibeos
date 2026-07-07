@@ -1,0 +1,4 @@
+# Doom demo assets — fetched/built on demand by build.sh, never committed.
+doomgeneric/
+doom1.wad
+doom-*.exe

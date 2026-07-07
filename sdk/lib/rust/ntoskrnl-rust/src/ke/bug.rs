@@ -35,7 +35,7 @@ use ntkrnl_sys::ddk::{
     KiInitializeBugCheck as KiInitializeBugCheckExtern, KiPcToFileHeader as KiPcToFileHeaderExtern,
     KiReleaseNmiListLock, KiRosPcToUserFileHeader as KiRosPcToUserFileHeaderExtern,
     KiSaveProcessorControlState, LdrAccessResource, LdrFindResource_U,
-    MmIsSpecialPoolAddress, MmIsSpecialPoolAddressFree, MmMakeKernelResourceSectionWritable,
+    MmIsAddressValid, MmIsSpecialPoolAddress, MmIsSpecialPoolAddressFree, MmMakeKernelResourceSectionWritable,
     PKE_BUGCHECK_UNICODE_TO_ANSI, PANSI_STRING,
 };
 
@@ -768,6 +768,50 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
             BugCheckParameter3 as PVOID,
             BugCheckParameter4 as PVOID,
         );
+        // i386: symbolicate TrapFrame.Eip + walk the EBP chain — a PC=0 bugcheck
+        // is otherwise unattributable (nothing to symbolicate at the fault).
+        #[cfg(target_arch = "x86")]
+        if !TrapFrame.is_null() {
+            let tf = TrapFrame as *const ntkrnl_sys::ddk::_KTRAP_FRAME;
+            let eip = (*tf).Eip as u32;
+            let ebp = (*tf).Ebp as u32;
+            crate::dbg_print!(b"***   TrapFrame Eip=%p Ebp=%p Esp=%p\n\0",
+                eip as ULONG_PTR as PVOID, ebp as ULONG_PTR as PVOID,
+                core::ptr::addr_of!((*tf).HardwareEsp) as PVOID);
+            unsafe fn ksym(pc: u32) {
+                let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                let mut in_kernel: BOOLEAN = 0;
+                let base = KiPcToFileHeader(pc as ULONG_PTR as PVOID, &mut le, 0u8, &mut in_kernel);
+                if !base.is_null() && !le.is_null() {
+                    let mut ansi = [0i8; 64];
+                    KeBugCheckUnicodeToAnsi(
+                        &(*le).BaseDllName as *const _ as PUNICODE_STRING,
+                        ansi.as_mut_ptr(), 64);
+                    crate::dbg_print!(b"***     %p = %s+0x%lX\n\0",
+                        pc as ULONG_PTR as PVOID, ansi.as_ptr(),
+                        (pc as ULONG_PTR - base as ULONG_PTR) as ULONG);
+                } else {
+                    crate::dbg_print!(b"***     %p = <no module>\n\0", pc as ULONG_PTR as PVOID);
+                }
+            }
+            ksym(eip);
+            // EBP-chain backtrace (frame-pointer builds; bail on bad links)
+            let mut bp = ebp;
+            let mut n = 0;
+            while n < 16 && bp > 0x1000 {
+                if MmIsAddressValid(bp as ULONG_PTR as PVOID) == 0
+                    || MmIsAddressValid((bp + 7) as ULONG_PTR as PVOID) == 0 {
+                    break;
+                }
+                let ret = core::ptr::read_volatile((bp + 4) as *const u32);
+                if ret < 0x1000 { break; }
+                ksym(ret);
+                let next = core::ptr::read_volatile(bp as *const u32);
+                if next <= bp { break; }
+                bp = next;
+                n += 1;
+            }
+        }
         #[cfg(target_arch = "x86_64")]
         if !TrapFrame.is_null() {
             let rip = (*(TrapFrame as *const ntkrnl_sys::ddk::_KTRAP_FRAME)).Rip as u64;

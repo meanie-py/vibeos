@@ -345,6 +345,25 @@ for FONT in tahoma.ttf tahomabd.ttf Marlett.ttf arial.ttf arialbd.ttf cour.ttf t
     fi
 done
 
+# --- DOOM (opt-in, VIBEOS_DOOM=1) ------------------------------------------
+# Foreign-binary demo. OFF by default: without VIBEOS_DOOM=1 nothing is staged,
+# and winlogon's GetFileAttributesW check then makes the launch a silent no-op.
+# Assets are built by tools/doom/build.sh (doomgeneric, cross-compiled -O0).
+# Full story: docs/engineering/doom-on-vibeos.md.
+if [ "${VIBEOS_DOOM:-0}" = "1" ]; then
+    DOOM_EXE="${VIBEOS_DOOM_EXE:-$PROJECT_DIR/tools/doom/doom-arm64.exe}"
+    DOOM_WAD="${VIBEOS_DOOM_WAD:-$PROJECT_DIR/tools/doom/doom1.wad}"
+    if [ -f "$DOOM_EXE" ] && [ -f "$DOOM_WAD" ]; then
+        echo "[*] VIBEOS_DOOM=1 — staging doom.exe + doom1.wad into system32"
+        mcopy -o -i "$RAMDISK_IMG" "$DOOM_EXE" ::/reactos/system32/doom.exe
+        mcopy -o -i "$RAMDISK_IMG" "$DOOM_WAD" ::/reactos/system32/doom1.wad
+    else
+        echo "[!] VIBEOS_DOOM=1 but assets missing ($DOOM_EXE / $DOOM_WAD)."
+        echo "[!]   Build them first: tools/doom/build.sh arm64"
+        exit 1
+    fi
+fi
+
 echo "[*] Ramdisk contents:"
 mdir -i "$RAMDISK_IMG" -/ :: 2>&1 | grep -E '(\.exe|\.dll|\.sys|\.nls|system|bytes)'
 

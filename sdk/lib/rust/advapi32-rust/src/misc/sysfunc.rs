@@ -362,7 +362,7 @@ pub unsafe extern "system" fn SystemFunction028(
     ContextHandle: *mut core::ffi::c_void,
     SessionKey: LPBYTE,
 ) -> i32 {
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy_nonoverlapping( // nolint: silent-failure (byte-array pointee — count==bytes)
         DefaultSessionKey.as_ptr(),
         SessionKey,
         core::mem::size_of_val(&DefaultSessionKey),

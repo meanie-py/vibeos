@@ -54,7 +54,7 @@ macro_rules! abi_cast {
 
 pub mod ARM3;
 pub mod arm64_dbg;
-pub mod cc;
+// cc extracted to cc-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 pub mod config;
 // dbgk extracted to dbgk-rust (crate-split); symbols via kernel-rust extern crate.
 // dbgprint hoisted to dbgprint-rust leaf crate; re-exported at the crate root above.
@@ -63,19 +63,18 @@ pub mod ex;
 // fsrtl extracted to its own crate (crate-split) — see fsrtl-rust. Deliberately
 // NOT depended on here (severed): cross-calls into fsrtl resolve at link time via
 // #[no_mangle]; kernel-rust force-includes its symbols via `extern crate fsrtl_rust`.
-pub mod fstub;
+// fstub extracted to fstub-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 pub mod guid;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod i386;
 pub mod inbv;
-pub mod iomgr;
+// iomgr extracted to iomgr-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 pub mod kd;
 // kd64/ — Rust port of the WinDbg KD protocol stack. Active on all 3 arches.
 pub mod kd64;
-// kdbg/ — Rust port of the integrated kernel debugger. Compiled on i386 +
-// amd64 only (KDBG is disabled on ARM64). See docs/engineering/kdbg-port-status.md.
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub mod kdbg;
+// kdbg extracted to kdbg-rust (crate-split Phase 1b). x86-ONLY; its #[no_mangle]
+// Kdb*/Kdp* symbols link in via kernel-rust's cfg-gated `extern crate kdbg_rust`.
+// Deliberately NOT depended on here (severed) — cross-calls resolve at link time.
 pub mod ke;
 // lpc extracted to its own crate (crate-split PoC) — see lpc-rust. Deliberately
 // NOT depended on here: severing the ntoskrnl-rust→lpc-rust edge is what makes
@@ -84,11 +83,11 @@ pub mod ke;
 // symbols via `extern crate lpc_rust`.
 pub mod mm;
 pub mod ob;
-pub mod pnpmgr;  // Phase 1: pnputil + pnpirp only (leaf files)
+// pnpmgr extracted to pnpmgr-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.  // Phase 1: pnputil + pnpirp only (leaf files)
 pub mod po;
 pub mod ps;
 pub mod rtl;
-pub mod se;
+// se extracted to se-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 pub mod shim_exports;
 pub mod tests;
 pub mod tripwire;
@@ -426,18 +425,44 @@ mod _force_virtual_symbols {
 }
 
 // Force inclusion of io/pnpmgr/pnpres.rs symbols. Same pattern as virtual above.
+// pnpres now lives in pnpmgr-rust (crate-split Phase 1b). extern crate pnpmgr_rust
+// already pulls its objects into libkernel_rust.a, but keep the #[used] force-ref
+// (via extern decls of the 5 #[no_mangle] fns, exact ABI preserved) so their
+// retention through --gc-sections is identical to pre-extraction. Behavior-neutral.
 mod _force_pnpres_symbols {
+    use ntkrnl_sys::ddk::*;
+    extern "system" {
+        fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS;
+        fn IopDetectResourceConflict(
+            ResourceList: PCM_RESOURCE_LIST,
+            Silent: BOOLEAN,
+            ConflictingDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
+        ) -> NTSTATUS;
+        fn IopFixupResourceListWithRequirements(
+            RequirementsList: PIO_RESOURCE_REQUIREMENTS_LIST,
+            ResourceList: *mut PCM_RESOURCE_LIST,
+        ) -> NTSTATUS;
+    }
+    extern "C" {
+        fn IopUpdateResourceMap(
+            DeviceNode: PDEVICE_NODE,
+            Level1Key: *mut u16,
+            Level2Key: *mut u16,
+        ) -> NTSTATUS;
+        fn IopUpdateResourceMapForPnPDevice(DeviceNode: PDEVICE_NODE) -> NTSTATUS;
+    }
+
     #[repr(transparent)]
     struct SyncPtr(*const ());
     unsafe impl Sync for SyncPtr {}
 
     #[used]
     static FN_REFS: [SyncPtr; 5] = [
-        SyncPtr(crate::pnpmgr::pnpres::IopAssignDeviceResources as *const ()),
-        SyncPtr(crate::pnpmgr::pnpres::IopDetectResourceConflict as *const ()),
-        SyncPtr(crate::pnpmgr::pnpres::IopFixupResourceListWithRequirements as *const ()),
-        SyncPtr(crate::pnpmgr::pnpres::IopUpdateResourceMap as *const ()),
-        SyncPtr(crate::pnpmgr::pnpres::IopUpdateResourceMapForPnPDevice as *const ()),
+        SyncPtr(IopAssignDeviceResources as *const ()),
+        SyncPtr(IopDetectResourceConflict as *const ()),
+        SyncPtr(IopFixupResourceListWithRequirements as *const ()),
+        SyncPtr(IopUpdateResourceMap as *const ()),
+        SyncPtr(IopUpdateResourceMapForPnPDevice as *const ()),
     ];
 }
 
@@ -460,42 +485,13 @@ mod _force_sysinfo_symbols {
     ];
 }
 
-// Force inclusion of iomgr/iomgr.rs and iomgr/ramdisk.rs symbols on all arches.
-// Without this, the CGUs containing the io statics (PnpSystemInit, IoFileObjectType,
-// IoReadOperationCount, etc.) are not pulled from the staticlib archive on arm64,
-// because the C-side iomgr.c was previously providing them. References below force
-// the linker to pull the CGUs that define both the entry-point functions and the
-// statics they share a CGU with.
-mod _force_iomgr_symbols {
-    #[repr(transparent)]
-    struct SyncPtr(*const ());
-    unsafe impl Sync for SyncPtr {}
-
-    #[used]
-    static FN_REFS: [SyncPtr; 3] = [
-        SyncPtr(crate::iomgr::iomgr::IoInitSystem as *const ()),
-        SyncPtr(crate::iomgr::iomgr::IoInitializeCrashDump as *const ()),
-        SyncPtr(crate::iomgr::ramdisk::IopStartRamdisk as *const ()),
-    ];
-
-    // Statics live in different CGUs than the functions; force them too.
-    #[used]
-    static STATIC_REFS: [SyncPtr; 13] = [
-        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::PnpSystemInit) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoFileObjectType) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoDeviceObjectType) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoCountOperations) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoReadOperationCount) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoReadTransferCount) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoWriteOperationCount) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoWriteTransferCount) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoOtherOperationCount) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IoOtherTransferCount) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IopFileMapping) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IopSecurityResource) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::iomgr::iomgr::IopLoaderBlock) as *const ()),
-    ];
-}
+// iomgr's io statics + entry-point fns (IoInitSystem, IoInitializeCrashDump,
+// IopStartRamdisk, IoFileObjectType, …) are now pulled by kernel-rust's
+// `extern crate iomgr_rust` + their genuine callers (ex/init.rs → IoInitSystem →
+// IopStartRamdisk; mm/pagefile.rs → IoInitializeCrashDump), so the old
+// `_force_iomgr_symbols` CGU-forcing hack is redundant — deleted (crate-split
+// Phase 1b). Its original arm64 rationale (C-side iomgr.c first-match stealing the
+// symbols) is void: ntoskrnl/io/iomgr/*.c is commented out, iomgr is pure Rust.
 
 // Force inclusion of tests/ symbols. The C ntoskrnl/ex/init.c references
 // NtTestKernelDispatchLoop via an `extern` decl gated on REACTOS_TEST_KERNEL.

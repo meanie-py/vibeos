@@ -1677,14 +1677,14 @@ unsafe fn res_write_padding(res_base: *mut u8, size: u32) {
     let mut i: u32 = 0;
     i = 0;
     while i < size / core::mem::size_of_val(&PAD) as u32 {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy_nonoverlapping( // nolint: silent-failure (byte-array pointee — count==bytes)
             PAD.as_ptr(),
             res_base.offset((i * core::mem::size_of_val(&PAD) as u32) as isize),
             core::mem::size_of_val(&PAD),
         );
         i += 1;
     }
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy_nonoverlapping( // nolint: silent-failure (byte-array pointee — count==bytes)
         PAD.as_ptr(),
         res_base.offset((i * core::mem::size_of_val(&PAD) as u32) as isize),
         (size % core::mem::size_of_val(&PAD) as u32) as usize,

@@ -18,6 +18,28 @@ extern crate fsrtl_rust;
 // dbgk + wmi subsystems, extracted from ntoskrnl-rust (crate-split).
 extern crate dbgk_rust;
 extern crate wmi_rust;
+// cc (Cache Controller), extracted from ntoskrnl-rust (crate-split Phase 1b).
+// extern crate forces its #[no_mangle] Cc* symbols + _cc_global_write_barrier
+// into the archive — same pattern as lpc_rust/fsrtl_rust.
+extern crate cc_rust;
+// fstub (I/O disk-stub / partition + HAL dispatch tables) + se (Security Reference
+// Monitor), extracted from ntoskrnl-rust (crate-split Phase 1b). extern crate forces
+// their #[no_mangle] symbols + per-crate write barriers into the archive.
+extern crate fstub_rust;
+extern crate se_rust;
+// pnpmgr (Plug-and-Play manager), extracted from ntoskrnl-rust (crate-split Phase 1b).
+extern crate pnpmgr_rust;
+// iomgr (I/O Manager), the LARGEST subsystem, extracted from ntoskrnl-rust (crate-split
+// Phase 1b). extern crate forces its 344 #[no_mangle] Io*/Iop* symbols + the 7 Io
+// object-type singletons + _iomgr_global_write_barrier into the archive.
+extern crate iomgr_rust;
+// kdbg (integrated kernel debugger KDBG), extracted from ntoskrnl-rust (crate-split
+// Phase 1b). x86-ONLY — the crate is empty on arm64 (crate-level #![cfg]), and this
+// extern crate is cfg-gated out there so arm64 never references it. extern crate
+// forces its #[no_mangle] Kdb*/Kdp* symbols + _kdbg_global_write_barrier into the
+// archive (a Cargo dep alone would drop them).
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+extern crate kdbg_rust;
 // cmboot.c is the shared kernel+bootloader CM boot-init unit, moved out of
 // ntoskrnl-rust into its own crate (cmboot-rust) so the loaders can link the
 // SAME translation. Pull its #[no_mangle] CmpFind*/CmpAddDriverToList symbols

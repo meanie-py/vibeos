@@ -973,6 +973,10 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     }
 
     KiInitializeBugCheck();
+    // CmControlVector is now assembled at runtime (not a compile-time const) so the
+    // config crate-split can source its per-subsystem slices across crate boundaries.
+    // Build it immediately before its sole consumer. See config/cmdata.rs.
+    crate::config::cmdata::cm_build_control_vector();
     CmGetSystemControlValues(
         (*LoaderBlock).RegistryBase,
         core::ptr::addr_of_mut!(crate::config::cmdata::CmControlVector) as *mut _CM_SYSTEM_CONTROL_VECTOR,

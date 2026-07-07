@@ -60,7 +60,13 @@ extern "system" {
 
 #[repr(C)]
 struct FX_SAVE_AREA {
-    U: [UCHAR; 512],       // Union of FNSAVE_FORMAT/FXSAVE_FORMAT
+    // Union of FNSAVE_FORMAT/FXSAVE_FORMAT. The C FXSAVE_FORMAT is 520 bytes,
+    // NOT 512: it carries a trailing `Align16Byte[8]` (ndk/i386/ketypes.h) after
+    // Reserved4[224]. Modelling U as 512 puts NpxSavedCpu/Cr0NpxState 8 bytes too
+    // low (+0x200/+0x204 instead of +0x208/+0x20C) — KiFlushNPXState then reads
+    // Cr0NpxState from inside the FXSAVE register/align region → pointer garbage
+    // and a 0x7F/0x0A. Must match bindgen _FX_SAVE_AREA (size 528, Cr0NpxState@524).
+    U: [UCHAR; 520],
     NpxSavedCpu: ULONG,
     Cr0NpxState: ULONG,
 }

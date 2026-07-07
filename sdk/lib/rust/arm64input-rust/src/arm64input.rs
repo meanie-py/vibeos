@@ -1280,7 +1280,13 @@ unsafe fn VirtioPollDevice(Dev: *mut VIRTIO_INPUT_DEV) -> BOOLEAN {
         (*(*Dev).Desc.offset(DescId as isize)).Len = core::mem::size_of::<VIRTIO_INPUT_EVENT>() as ULONG;
         (*(*Dev).Desc.offset(DescId as isize)).Flags = 2u16;
         virtio_wmb();
-        (*(*Dev).Avail).Ring[((*(*Dev).Avail).Idx % (*Dev).QueueSize as u16) as usize] = DescId as USHORT;
+        // Ring is a C flexible array member ([u16; 0] in Rust) — safe indexing
+        // bounds-panics on len 0 for ANY index (the 2026-07-06 "first keypress
+        // wedges the machine" bug: scancode delivered, then panic_bounds_check
+        // here → silent loop{} at DISPATCH → all DPCs dead). Use the same raw
+        // pointer arithmetic as the init fill (VirtioSetupQueue) above.
+        *(core::ptr::addr_of_mut!((*(*Dev).Avail).Ring) as *mut u16)
+            .add((((*(*Dev).Avail).Idx % (*Dev).QueueSize as u16)) as usize) = DescId as USHORT;
         virtio_wmb();
         (*(*Dev).Avail).Idx = (*(*Dev).Avail).Idx.wrapping_add(1);
 

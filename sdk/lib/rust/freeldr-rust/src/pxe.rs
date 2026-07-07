@@ -320,7 +320,7 @@ unsafe extern "C" fn PxeOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut ULONG
         i += 1;
     }
 
-    core::ptr::write_bytes(
+    core::ptr::write_bytes( // nolint: silent-failure (byte array — count==bytes)
         _OpenFileName.as_mut_ptr().add(PathLen),
         0,
         core::mem::size_of_val(&_OpenFileName) - PathLen,

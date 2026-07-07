@@ -110,9 +110,19 @@ use crate::ke::time::KeTimeAdjustment;
 use crate::ke::dpc::{KiMaximumDpcQueueDepth, KiMinimumDpcRate, KiAdjustDpcThreshold, KiIdealDpcRate};
 use crate::ARM3::sysldr::{PsLoadedModuleList, MmLoadedUserImageList, PsLoadedModuleResource};
 use crate::mm::pagefile::{MiFreeSwapPages, MiUsedSwapPages};
-use crate::cc::pin::{CcMapDataNoWait, CcMapDataWait, CcPinMappedDataCount, CcPinReadNoWait, CcPinReadWait};
-use crate::cc::lazywrite::{CcLazyWriteIos, CcLazyWritePages};
-use crate::cc::copy::{CcDataFlushes, CcDataPages};
+// cc statics now live in cc-rust (crate-split Phase 1b) — reach them by symbol
+// (statics have no calling convention, so any extern block is fine).
+extern "C" {
+    static mut CcMapDataNoWait: ULONG;
+    static mut CcMapDataWait: ULONG;
+    static mut CcPinMappedDataCount: ULONG;
+    static mut CcPinReadNoWait: ULONG;
+    static mut CcPinReadWait: ULONG;
+    static mut CcLazyWriteIos: ULONG;
+    static mut CcLazyWritePages: ULONG;
+    static mut CcDataFlushes: ULONG;
+    static mut CcDataPages: ULONG;
+}
 use crate::ex::init::NtGlobalFlag;
 use crate::ex::lookas::{
     ExPoolLookasideListHead, ExSystemLookasideListHead,
@@ -120,7 +130,15 @@ use crate::ex::lookas::{
     ExpPagedLookasideListHead, ExpPagedLookasideListLock,
 };
 use crate::ob::obinit::ObpObjectSecurityMode;
-use crate::se::priv_::{SeSystemEnvironmentPrivilege, SeLoadDriverPrivilege, SeDebugPrivilege, SeTcbPrivilege, SeSystemtimePrivilege};
+// se privilege LUIDs now live in se-rust (crate-split Phase 1b); reach the
+// #[no_mangle] const statics by symbol (statics carry no calling convention).
+extern "C" {
+    static SeSystemEnvironmentPrivilege: LUID;
+    static SeLoadDriverPrivilege: LUID;
+    static SeDebugPrivilege: LUID;
+    static SeTcbPrivilege: LUID;
+    static SeSystemtimePrivilege: LUID;
+}
 
 extern "system" {
     fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
@@ -1971,16 +1989,18 @@ unsafe extern "C" fn QSI_SystemLookasideInformation(Buffer: PVOID, Size: ULONG, 
         ExpCopyLookasideInformation(&mut Info, &mut Remaining, &mut ExSystemLookasideListHead, 1u8);
     }
     if Remaining > 0 {
-        let mut OldIrql: KIRQL = 0;
-        KeAcquireSpinLock(&mut ExpNonPagedLookasideListLock, &mut OldIrql);
+        // RAII: guard drops (releases) at block end — release was already the
+        // block's last statement, so this is a behavior-identical 1:1 swap.
+        let _lk = ntkrnl_sys::guards::SpinLockGuard::acquire(
+            core::ptr::addr_of_mut!(ExpNonPagedLookasideListLock) as ntkrnl_sys::ke::PKSPIN_LOCK,
+        );
         ExpCopyLookasideInformation(&mut Info, &mut Remaining, &mut ExpNonPagedLookasideListHead, 1u8);
-        KeReleaseSpinLock(&mut ExpNonPagedLookasideListLock, OldIrql);
     }
     if Remaining > 0 {
-        let mut OldIrql: KIRQL = 0;
-        KeAcquireSpinLock(&mut ExpPagedLookasideListLock, &mut OldIrql);
+        let _lk = ntkrnl_sys::guards::SpinLockGuard::acquire(
+            core::ptr::addr_of_mut!(ExpPagedLookasideListLock) as ntkrnl_sys::ke::PKSPIN_LOCK,
+        );
         ExpCopyLookasideInformation(&mut Info, &mut Remaining, &mut ExpPagedLookasideListHead, 1u8);
-        KeReleaseSpinLock(&mut ExpPagedLookasideListLock, OldIrql);
     }
 
     ExUnlockUserBuffer(Mdl);

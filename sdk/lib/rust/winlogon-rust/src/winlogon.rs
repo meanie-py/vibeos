@@ -972,6 +972,56 @@ pub unsafe extern "system" fn WinMain(
             );
         }
 
+        /* DOOM (opt-in demo, VIBEOS_DOOM=1 at image-build time). doomgeneric's
+         * Win32/GDI backend — a genuinely foreign binary — is launched ONLY if
+         * doom.exe was staged into the image (GetFileAttributesW succeeds).
+         * A normal build has no doom.exe, so this is a silent no-op: nothing is
+         * spawned, no serial noise. Spawned LAST among GUI apps for foreground
+         * focus; the WAD is passed by absolute path (doomgeneric's cwd is not
+         * guaranteed to be system32). Build + inject: tools/doom/build.sh +
+         * `VIBEOS_DOOM=1 ./vibeos-cli build --arch arm64`. Recipe + the whole
+         * bring-up story: docs/engineering/doom-on-vibeos.md. NOTE: interactive
+         * control needs the arm64 win32k keyboard/mouse->focus fix (open); until
+         * then Doom runs its self-playing attract demo. */
+        {
+            let DoomPath = wstr!("X:\\reactos\\system32\\doom.exe");
+            // INVALID_FILE_ATTRIBUTES == 0xFFFFFFFF (not in the bindgen glob).
+            if GetFileAttributesW(DoomPath.as_ptr()) != 0xFFFF_FFFF {
+                let mut Si: STARTUPINFOW = zeroed();
+                let mut Pi: PROCESS_INFORMATION = zeroed();
+                let mut DoomLine = wstr_arr!("doom.exe -iwad X:\\reactos\\system32\\doom1.wad");
+                Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+                Si.lpDesktop = wstr!("WinSta0\\Default").as_ptr() as PWSTR;
+                let bDoom = CreateProcessW(
+                    DoomPath.as_ptr(),
+                    DoomLine.as_mut_ptr(),
+                    null_mut(),
+                    null_mut(),
+                    0,
+                    0,
+                    null_mut(),
+                    wstr!("X:\\reactos\\system32").as_ptr(),
+                    &mut Si,
+                    &mut Pi,
+                );
+                if bDoom != 0 {
+                    DbgPrint(
+                        b"[WINLOGON] doom.exe created (PID %lu, TID %lu)\n\0".as_ptr() as *const i8,
+                        Pi.dwProcessId,
+                        Pi.dwThreadId,
+                    );
+                    CloseHandle(Pi.hThread);
+                    CloseHandle(Pi.hProcess);
+                } else {
+                    DbgPrint(
+                        b"[WINLOGON] CreateProcessW(doom.exe) FAILED (error %lu)\n\0".as_ptr()
+                            as *const i8,
+                        GetLastError(),
+                    );
+                }
+            }
+        }
+
         /* Spawn interactive cmd.exe with console (CONSRV available) */
         {
             let mut Si: STARTUPINFOW = zeroed();

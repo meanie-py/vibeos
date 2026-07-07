@@ -1,0 +1,22 @@
+# iomgr-rust — the I/O Manager (Io*/Iop*), extracted from ntoskrnl-rust into its own
+# rlib so it type-checks/codegens/caches independently of the ~450K-LOC kernel monolith
+# (crate-split Phase 1b — see docs/engineering/ntoskrnl-crate-split-plan.md).
+# The LARGEST subsystem: 28 module files, ~43K LOC, 344 #[no_mangle] exports.
+# Pure Io* logic on the ntkrnl-sys FFI substrate + the dbgprint-rust print macros;
+# zero Rust-path deps on the rest of ntoskrnl-rust (all inter-module calls cross
+# extern/#[no_mangle] symbol boundaries resolved at the kernel link — even iomgr's
+# own inter-file references go through link symbols, not Rust paths). Its objects
+# bundle into libkernel_rust.a via `extern crate iomgr_rust` in the kernel-rust
+# umbrella (a Cargo dep alone would compile the rlib but drop its #[no_mangle]
+# symbols — same pattern as cc-rust / lpc-rust / fsrtl-rust).
+[package]
+name = "iomgr-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+dbgprint-rust = { path = "../dbgprint-rust" }

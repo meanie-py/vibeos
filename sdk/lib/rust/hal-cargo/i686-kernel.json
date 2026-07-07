@@ -12,6 +12,7 @@
   "eh-frame-header": false,
   "emit-debug-gdb-scripts": false,
   "env": "gnu",
+  "features": "-mmx,-sse,+soft-float",
   "exe-suffix": ".exe",
   "frame-pointer": "always",
   "function-sections": false,

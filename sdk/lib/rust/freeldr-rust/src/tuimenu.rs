@@ -26,7 +26,7 @@ pub unsafe extern "C" fn TuiDisplayMenu(
     MenuItemList: *mut PCSTR,
     MenuItemCount: ULONG,
     DefaultMenuItem: ULONG,
-    MenuTimeOut: LONG,
+    mut MenuTimeOut: LONG,
     SelectedMenuItem: PULONG,
     CanEscape: BOOLEAN,
     KeyPressFilter: UiMenuKeyPressFilterCallback,
@@ -56,7 +56,11 @@ pub unsafe extern "C" fn TuiDisplayMenu(
         }
 
         if KeyPressFilter.unwrap()(KeyPress, DefaultMenuItem, Context) != 0 {
-            let MenuTimeOut = -1i32 as LONG;
+            // C-exact: REASSIGN (C `MenuTimeOut = -1`) so a filter-accepted
+            // boot key at timeout 0 switches to wait-indefinitely instead of
+            // instantly returning the default item (the `let` shadow
+            // discarded it).
+            MenuTimeOut = -1i32 as LONG;
         }
     }
 
