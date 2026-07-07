@@ -17,6 +17,7 @@ Front door: ./vibeos-cli smoke --arch amd64 --doom
 
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
@@ -106,7 +107,7 @@ def test_doom_launched(vm: QemuVM, arch: str, request: pytest.FixtureRequest) ->
     output = vm._boot_output or ""
     if DOOM_LAUNCHED not in output:
         # Launcher may fire slightly after the boot marker — drain a little more.
-        for _ in range(15):
+        for _ in range(30):  # winlogon spawns doom after explorer; give it time
             output += vm.serial_output(timeout=1.0)
             if DOOM_LAUNCHED in output:
                 break
@@ -160,12 +161,13 @@ def test_doom_input_reaches_game(vm: QemuVM, arch: str, request: pytest.FixtureR
     """
     _require_doom(request)
     pytest.importorskip("PIL")
-    if arch.startswith("arm64"):
-        pytest.xfail(
-            "arm64 kbd/mouse -> foreground-focus routing is an open win32k gap "
-            "(doom-on-vibeos.md bug #4); flip this to a hard assert when fixed"
-        )
-    if arch.startswith("i386"):
+    # Debug knob: force-run on the xfail arches to capture the live serial
+    # evidence ([WIN32K] KEYDROP traces etc.) of *where* the chain breaks.
+    force = os.environ.get("VIBEOS_DOOM_INPUT_FORCE") == "1"
+    # arm64 is a HARD assert since 2026-07-07: the arm64input DO_BUFFERED_IO
+    # constant fix (0x10=DO_DIRECT_IO -> 0x04) made kbd+mouse packets actually
+    # reach win32k, and click-to-focus + ESC/ENTER starts a new game.
+    if not force and arch.startswith("i386"):
         pytest.xfail(
             "i386 can't load a keyboard layout at boot: LoadKeyboardLayoutW -> "
             "NtCreateSection(SEC_IMAGE) deadlocks in the i386 Rust MM, so "

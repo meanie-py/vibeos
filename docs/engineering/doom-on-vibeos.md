@@ -1,6 +1,6 @@
 # Doom on vibeos — the foreign-binary beachhead
 
-**Status: PLAYABLE on amd64 (2026-07-07); attract-demo on arm64 (2026-07-06).**
+**Status: PLAYABLE on amd64 AND arm64 (2026-07-07); i386 keys blocked on the kbd-layout SEC_IMAGE deadlock.**
 id Software's 1993 DOOM (via `doomgeneric`'s Win32/GDI backend, shareware
 `doom1.wad`) runs on vibeos — and on amd64 the smoke gate literally **starts a
 new game with injected mouse + keyboard** (click to focus → ESC/ENTER menu

@@ -525,6 +525,23 @@ unsafe extern "C" fn FontLoadThread(lpParam: LPVOID) -> DWORD {
  * ramdisk, D:\reactos on the x86 livecd); the WAD is passed by absolute path
  * (doomgeneric's cwd is not guaranteed to be system32). Bring-up story +
  * smoke suite: docs/engineering/doom-on-vibeos.md, tests/qemu/test_doom.py. */
+/* True iff doom.exe was staged into this image (VIBEOS_DOOM=1 build). Also
+ * used to suppress the arm64 notepad demo spawn: notepad's window materializes
+ * AFTER doom's (slower startup) and — with no foreground-activation-on-show in
+ * win32k yet — lands on top of it in the z-order, occluding the game and
+ * stealing the input-test click (2026-07-07 screenshot: doom buried under
+ * "Untitled - Notepad"). */
+#[cfg(target_arch = "aarch64")] // only the arm64 notepad gate consults it
+unsafe fn DoomStaged() -> bool {
+    let mut DoomPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(DoomPath.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return false;
+    }
+    wcscat(DoomPath.as_mut_ptr(), wstr!("\\system32\\doom.exe").as_ptr());
+    // INVALID_FILE_ATTRIBUTES == 0xFFFFFFFF (not in the bindgen glob).
+    GetFileAttributesW(DoomPath.as_ptr()) != 0xFFFF_FFFF
+}
+
 unsafe fn TryStartDoom() {
     let mut DoomPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if GetWindowsDirectoryW(DoomPath.as_mut_ptr(), MAX_PATH - 32) == 0 {
@@ -1023,38 +1040,44 @@ pub unsafe extern "system" fn WinMain(
      * chrome, so notepad stays arm64-only until that AV is fixed. */
     #[cfg(target_arch = "aarch64")]
     {
-        let mut Si: STARTUPINFOW = zeroed();
-        let mut Pi: PROCESS_INFORMATION = zeroed();
-        let mut NoteLine: [u16; 12] = wstr_arr!("notepad.exe");
-        Si.cb = size_of::<STARTUPINFOW>() as DWORD;
-        Si.lpDesktop = wstr!("WinSta0\\Default").as_ptr() as PWSTR;
-        let bResult = CreateProcessW(
-            wstr!("notepad.exe").as_ptr(),
-            NoteLine.as_mut_ptr(),
-            null_mut(),
-            null_mut(),
-            0,
-            0,
-            null_mut(),
-            null(),
-            &mut Si,
-            &mut Pi,
-        );
-        if bResult != 0 {
-            DbgPrint(
-                b"[WINLOGON] notepad.exe created (PID %lu, TID %lu)\n\0".as_ptr()
-                    as *const i8,
-                Pi.dwProcessId,
-                Pi.dwThreadId,
+        // When doom.exe is staged (VIBEOS_DOOM=1) it IS the demo GUI app —
+        // notepad would materialize on top of it and steal focus (see
+        // DoomStaged doc comment). Only the notepad spawn is gated; doom and
+        // cmd.exe below always run.
+        if !DoomStaged() {
+            let mut Si: STARTUPINFOW = zeroed();
+            let mut Pi: PROCESS_INFORMATION = zeroed();
+            let mut NoteLine: [u16; 12] = wstr_arr!("notepad.exe");
+            Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+            Si.lpDesktop = wstr!("WinSta0\\Default").as_ptr() as PWSTR;
+            let bResult = CreateProcessW(
+                wstr!("notepad.exe").as_ptr(),
+                NoteLine.as_mut_ptr(),
+                null_mut(),
+                null_mut(),
+                0,
+                0,
+                null_mut(),
+                null(),
+                &mut Si,
+                &mut Pi,
             );
-            CloseHandle(Pi.hThread);
-            CloseHandle(Pi.hProcess);
-        } else {
-            DbgPrint(
-                b"[WINLOGON] CreateProcessW(notepad.exe) FAILED (error %lu)\n\0".as_ptr()
-                    as *const i8,
-                GetLastError(),
-            );
+            if bResult != 0 {
+                DbgPrint(
+                    b"[WINLOGON] notepad.exe created (PID %lu, TID %lu)\n\0".as_ptr()
+                        as *const i8,
+                    Pi.dwProcessId,
+                    Pi.dwThreadId,
+                );
+                CloseHandle(Pi.hThread);
+                CloseHandle(Pi.hProcess);
+            } else {
+                DbgPrint(
+                    b"[WINLOGON] CreateProcessW(notepad.exe) FAILED (error %lu)\n\0".as_ptr()
+                        as *const i8,
+                    GetLastError(),
+                );
+            }
         }
 
         /* DOOM (opt-in, VIBEOS_DOOM=1): spawned LAST among GUI apps for
