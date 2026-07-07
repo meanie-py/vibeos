@@ -1,7 +1,3 @@
-  -> MISMATCH             : 0
-  -> clean (identical)    : 19
-  -> unverifiable         : 6
-  matched to a C array    : 25
   no C counterpart        : 45
 (6 unverifiable tables not shown; use --verbose)
 ==============================================================================

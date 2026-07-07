@@ -2268,3 +2268,27 @@ def test_ninja_jobs_caps_and_reserves(monkeypatch):
     monkeypatch.setenv("VIBEOS_BUILD_CORE_RESERVE", "8")
     monkeypatch.setattr(build_mod.os, "cpu_count", lambda: 4)
     assert build_mod._ninja_jobs() == []  # tiny host: don't cap below the reserve
+
+
+# --- lints: summary/tally lines are not findings (merge-magnet fix) ---------
+
+
+def test_finding_lines_excludes_count_summaries():
+    out = "\n".join(
+        [
+            "Spec catalog: 1571 exports",
+            "Bindgen catalog: 2921 functions",
+            "  C_MACRO: 94",
+            "  FLEX_ARRAY: 66",
+            "  TOTAL: 160 issues across 2348 files",
+            "SUMMARY: HIGH=0  MEDIUM=0  LOW(likely-FP)=10  shown=0",
+            "  -> MISMATCH             : 0",
+            "  matched to a C array    : 25",
+            "  [C_MACRO] sdk/lib/rust/cc-rust/src/cacheman.rs:38: real finding",
+            "      - ARITY: rust 0 params vs C 5",  # detail line: KEPT (real content)
+        ]
+    )
+    got = lints._finding_lines(out)
+    assert "  [C_MACRO] sdk/lib/rust/cc-rust/src/cacheman.rs:38: real finding" in got
+    assert "      - ARITY: rust 0 params vs C 5" in got
+    assert len(got) == 2  # every count-bearing tally line dropped

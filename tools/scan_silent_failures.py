@@ -212,18 +212,26 @@ def scan_source(src: bytes) -> list[tuple[int, str, str]]:
                             _size1 = any(
                                 t in ptxt
                                 for t in (
-                                    b"*mut u8", b"*const u8", b"*mut i8", b"*const i8",
-                                    b"*mut CHAR", b"*const CHAR", b"*mut UCHAR", b"*const UCHAR",
-                                    b"PUCHAR", b"PCHAR", b"LPBYTE", b"PBYTE",
-                                    b"*mut BYTE", b"*const BYTE",
-                                    b"c_void", b"PVOID", b"<u8>",
+                                    b"*mut u8",
+                                    b"*const u8",
+                                    b"*mut i8",
+                                    b"*const i8",
+                                    b"*mut CHAR",
+                                    b"*const CHAR",
+                                    b"*mut UCHAR",
+                                    b"*const UCHAR",
+                                    b"PUCHAR",
+                                    b"PCHAR",
+                                    b"LPBYTE",
+                                    b"PBYTE",
+                                    b"*mut BYTE",
+                                    b"*const BYTE",
+                                    b"c_void",
+                                    b"PVOID",
+                                    b"<u8>",
                                 )
                             )
-                            if (
-                                b"size_of" in ctxt
-                                and not _size1
-                                and b"/" not in ctxt
-                            ):
+                            if b"size_of" in ctxt and not _size1 and b"/" not in ctxt:
                                 findings.append(
                                     (
                                         line_of(node),
