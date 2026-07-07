@@ -162,6 +162,53 @@ impl Drop for TokenSpinLockGuard<'_> {
     fn drop(&mut self) {}
 }
 
+/// CPS wait — the RunToken-consuming form of `KeWaitForSingleObject`
+/// (Layer 1, `execution-context-ownership-model.md`). Lives HERE (not in
+/// ntoskrnl-rust) so every extracted kernel crate (po-rust, ex-rust, …) can
+/// use it; the primitive-width signature matches the export's ABI exactly
+/// (`KWAIT_REASON` = u32 enum, `KPROCESSOR_MODE` = i8, `BOOLEAN` = u8,
+/// `PLARGE_INTEGER` = *mut i64, `NTSTATUS` = i32).
+///
+/// Takes the region's token **by value** (a live guard borrowing it makes
+/// this call a borrow error — no sleeping with a lock held) and hands the
+/// continuation a **freshly-branded** token: the higher-ranked `for<'new>`
+/// bound means the caller cannot unify `'new` with the old brand, so
+/// anything minted from the old token is a lifetime error after the wait.
+/// `L: Waitable` restricts callers to Passive/Apc context.
+///
+/// # Safety
+/// Same contract as `KeWaitForSingleObject` (valid dispatcher object, valid
+/// or null timeout), plus the token must honestly describe the calling
+/// context (see [`with_token`]).
+#[inline]
+pub unsafe fn wait_for<L: Waitable, R>(
+    tok: RunToken<'_, L>,
+    object: crate::base::PVOID,
+    wait_reason: u32,
+    wait_mode: i8,
+    alertable: u8,
+    timeout: *mut i64,
+    k: impl for<'new> FnOnce(RunToken<'new, L>, i32) -> R,
+) -> R {
+    extern "system" {
+        fn KeWaitForSingleObject(
+            Object: crate::base::PVOID,
+            WaitReason: u32,
+            WaitMode: i8,
+            Alertable: u8,
+            Timeout: *mut i64,
+        ) -> i32;
+    }
+    // Consume the caller's token: the CPU is being given back to the
+    // scheduler; everything branded by `tok` dies here.
+    drop(tok);
+    let status = KeWaitForSingleObject(object, wait_reason, wait_mode, alertable, timeout);
+    // SAFETY: back in the same thread context at the same typestate level
+    // (KeWaitForSingleObject restores the entry IRQL); the fresh brand is
+    // callee-bound via the for<'new> closure bound.
+    with_token::<L, R>(|fresh| k(fresh, status))
+}
+
 /// Run `f` with a freshly-minted, callee-bound-brand token. The higher-ranked
 /// closure bound means the caller cannot name `'new`, so the brand cannot be
 /// unified with any other token's brand — this is the sound generativity shape

@@ -226,7 +226,7 @@ unsafe fn ExfWaitForRundownProtectionRelease_impl(RunRef: PEX_RUNDOWN_REF) {
     // RunToken pilot (execution-context-ownership-model.md Layer 1): the CPS
     // wait consumes the region's token — a guard borrowing it would not compile.
     ntkrnl_sys::token::with_token::<ntkrnl_sys::token::Passive, _>(|tok| {
-        crate::ke::wait::wait_for(
+        ntkrnl_sys::token::wait_for(
             tok,
             Event as PVOID,
             0,

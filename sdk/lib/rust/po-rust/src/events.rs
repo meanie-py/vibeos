@@ -389,10 +389,10 @@ pub unsafe extern "system" fn PopAddRemoveSysCapsCallbackInner(
             // RunToken pilot: synchronous-IRP wait via the CPS token API; the
             // IOSB read runs in the continuation, after the re-brand.
             status = ntkrnl_sys::token::with_token::<ntkrnl_sys::token::Passive, _>(|tok| {
-                crate::ke::wait::wait_for(
+                ntkrnl_sys::token::wait_for(
                     tok,
                     &mut event as *mut KEVENT as PVOID,
-                    _KWAIT_REASON_Suspended,
+                    _KWAIT_REASON_Suspended as u32,
                     0i8,
                     0u8,
                     core::ptr::null_mut(),

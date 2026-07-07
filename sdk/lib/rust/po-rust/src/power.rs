@@ -410,10 +410,10 @@ pub unsafe extern "C" fn PopSendQuerySystemPowerState(
         // RunToken pilot: synchronous-IRP wait via the CPS token API; the
         // IOSB read runs in the continuation, after the re-brand.
         Status = ntkrnl_sys::token::with_token::<ntkrnl_sys::token::Passive, _>(|tok| {
-            crate::ke::wait::wait_for(
+            ntkrnl_sys::token::wait_for(
                 tok,
                 core::ptr::addr_of_mut!(Event) as PVOID,
-                _KWAIT_REASON_Executive,
+                _KWAIT_REASON_Executive as u32,
                 KernelMode as i8,
                 0,
                 core::ptr::null_mut(),
@@ -470,10 +470,10 @@ pub unsafe extern "C" fn PopSendSetSystemPowerState(
         // RunToken pilot: synchronous-IRP wait via the CPS token API; the
         // IOSB read runs in the continuation, after the re-brand.
         Status = ntkrnl_sys::token::with_token::<ntkrnl_sys::token::Passive, _>(|tok| {
-            crate::ke::wait::wait_for(
+            ntkrnl_sys::token::wait_for(
                 tok,
                 core::ptr::addr_of_mut!(Event) as PVOID,
-                _KWAIT_REASON_Executive,
+                _KWAIT_REASON_Executive as u32,
                 KernelMode as i8,
                 0,
                 core::ptr::null_mut(),
