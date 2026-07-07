@@ -21,11 +21,15 @@ use crate::Object::{FltObjectReference, FltObjectDereference};
 // crate-internal Fltp* helpers: defined `extern "C"` in their modules; the decl
 // and def agree on cdecl, so they resolve in-crate on all arches. DbgPrint is the
 // variadic cdecl ntoskrnl export (left extern "C").
+extern "system" {
+    // Object.rs defines FltpObjectRundownWait extern "system" (§9.30)
+    fn FltpObjectRundownWait(RundownRef: *mut core::ffi::c_void);
+}
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> u32;
     fn FltpOpenFilterServicesKey( Filter: PFLT_FILTER, DesiredAccess: ACCESS_MASK, KeyName: PUNICODE_STRING, RootHandle: *mut HANDLE, ) -> NTSTATUS;
     fn FltpReadRegistryValue( KeyHandle: HANDLE, ValueName: PUNICODE_STRING, Type: ULONG, Data: PVOID, DataSize: ULONG, BytesRequired: *mut ULONG, ) -> NTSTATUS;
-    fn FltpObjectRundownWait(RundownRef: *mut core::ffi::c_void);
+
     fn FltpExRundownCompleted(RundownRef: *mut core::ffi::c_void);
     fn FltpExInitializeRundownProtection(RunRef: PVOID);
     fn FltpRegisterContexts( Filter: PFLT_FILTER, Contexts: *const FLT_CONTEXT_REGISTRATION, ) -> NTSTATUS;

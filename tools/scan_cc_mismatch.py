@@ -64,7 +64,8 @@ def scan_crate(crate_src: str) -> list[str]:
     defs: dict[str, list[tuple[str, bool]]] = defaultdict(list)
     decls: dict[str, list[tuple[str, str, int]]] = defaultdict(list)
     for root, dirs, files in os.walk(crate_src):
-        dirs[:] = [d for d in dirs if d != "target"]
+        # skip build dirs AND per-arch non-i386 source dirs (ke/arm64/, amd64/, …)
+        dirs[:] = [d for d in dirs if d != "target" and not ARCH_FILE_RE.fullmatch(d)]
         for fn in files:
             # per-arch non-i386 source files never compile on i386
             if not fn.endswith(".rs") or ARCH_FILE_RE.search(fn):

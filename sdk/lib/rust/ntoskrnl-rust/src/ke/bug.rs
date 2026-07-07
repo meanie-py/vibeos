@@ -75,6 +75,10 @@ pub static mut KeRosVideoBiosDate: _UNICODE_STRING = unsafe { core::mem::zeroed(
 pub static mut KeRosVideoBiosVersion: _UNICODE_STRING = unsafe { core::mem::zeroed() };
 
 use super::krnlinit::KeLoaderBlock;
+extern "C" {
+    // shim_exports.rs defines RtlFillMemoryUlong cdecl (§9.30 cc-match rule)
+    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
+}
 extern "system" {
     static mut PsLoadedModuleList: LIST_ENTRY;
     static mut MmHighestUserAddress: PVOID;
@@ -91,7 +95,7 @@ extern "system" {
     fn DbgUnLoadImageSymbols(FileName: PANSI_STRING, BaseOfDll: PVOID, ProcessId: ULONG_PTR);
 }
 extern "system" {
-    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
+
 }
 extern "system" {
     fn RtlImageNtHeader(Base: PVOID) -> PIMAGE_NT_HEADERS;

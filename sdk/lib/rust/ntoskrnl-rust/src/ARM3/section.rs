@@ -134,6 +134,10 @@ const VadImageMap: u32 = _MI_VAD_TYPE_VadImageMap;
 // ============================================================================
 
 extern "C" {
+    // shim_exports.rs defines RtlFillMemoryUlong cdecl (§9.30 cc-match rule)
+    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
+}
+extern "C" {
     pub static mut MmSectionObjectType: PVOID;
     pub static mut PsProcessType: PVOID;
     pub static mut IoFileObjectType: PVOID;
@@ -393,7 +397,7 @@ extern "system" {
     );
 }
 extern "system" {
-    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
+
 }
 extern "C" {
     fn MA_GetStartingAddress(marea: PVOID) -> ULONG_PTR;

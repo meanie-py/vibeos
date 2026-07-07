@@ -89,6 +89,12 @@ extern "fastcall" {
 extern "C" {
     fn KiReleaseSpinLock(SpinLock: PKSPIN_LOCK);
 }
+// ipi.rs defines KiIpiSend FASTCALL on x86 / cdecl elsewhere (§9.30 cc-match rule)
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn KiIpiSend(TargetSet: ULONG_PTR, IpiRequest: ULONG);
+}
+#[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn KiIpiSend(TargetSet: ULONG_PTR, IpiRequest: ULONG);
 }
