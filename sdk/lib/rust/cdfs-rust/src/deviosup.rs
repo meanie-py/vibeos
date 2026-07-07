@@ -2028,7 +2028,7 @@ pub unsafe extern "system" fn CdSingleAsyncCompletionRoutine(
 
     let _ = &DeviceObject; // UNREFERENCED_PARAMETER
 
-    _Analysis_assume_(!io_context.is_null());
+    // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
 
     AssertVerifyDeviceIrp(Irp);
 
@@ -2040,7 +2040,7 @@ pub unsafe extern "system" fn CdSingleAsyncCompletionRoutine(
 
     IoMarkIrpPending(Irp);
 
-    _Analysis_assume_lock_held_((*io_context).__bindgen_anon_1.__bindgen_anon_1.as_ref().Resource as *mut core::ffi::c_void);
+    // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
     ExReleaseResourceForThreadLite((*io_context).__bindgen_anon_1.__bindgen_anon_1.as_ref().Resource, (*io_context).__bindgen_anon_1.__bindgen_anon_1.as_ref().ResourceThreadId);
 
     CdFreeIoContext(io_context);

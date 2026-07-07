@@ -35,7 +35,7 @@ fn resume_unwind(_payload: core::convert::Infallible) -> ! {
 extern "system" {
     fn PAGED_CODE();
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
-    fn BooleanFlagOn(Flags: u32, Flag: u32) -> i32;
+    fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn FatNormalizeAndRaiseStatus(IrpContext: *const IRP_CONTEXT, Status: i32);
 }
 extern "system" {
@@ -47,13 +47,13 @@ extern "system" {
     fn FatReservedBytes(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatSetFatEntry(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Index: u32, Value: u32);
     fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
-    fn FatIsBootSectorFat(Sector: *mut PACKED_BOOT_SECTOR) -> i32;
-    fn FatIsFat12(Vcb: *mut VCB) -> i32;
-    fn FatIsFat32(Vcb: *mut VCB) -> i32;
+    fn FatIsBootSectorFat(Sector: *mut PACKED_BOOT_SECTOR) -> u8;
+    fn FatIsFat12(Vcb: *mut VCB) -> u8;
+    fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn NT_ASSERT(condition: i32);
     fn IoSetCompletionRoutine( Irp: *mut IRP, Routine: extern "system" fn(*mut DEVICE_OBJECT, *mut IRP, *mut c_void) -> NTSTATUS, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8, );
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
-    fn CcPinRead( FileObject: *mut FILE_OBJECT, FileOffset: *const LARGE_INTEGER, Length: u32, Wait: u8, Bcb: *mut *mut c_void, Buffer: *mut *mut c_void, ) -> i32;
+    fn CcPinRead( FileObject: *mut FILE_OBJECT, FileOffset: *const LARGE_INTEGER, Length: u32, Wait: u8, Bcb: *mut *mut c_void, Buffer: *mut *mut c_void, ) -> u8;
     fn IoBuildAsynchronousFsdRequest( MajorFunction: u32, DeviceObject: *mut DEVICE_OBJECT, Buffer: *mut c_void, Length: u32, StartingOffset: *const LARGE_INTEGER, IoStatusBlock: *mut _IO_STATUS_BLOCK, ) -> *mut IRP;
     fn IoCallDriver(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP) -> NTSTATUS;
     fn KeWaitForSingleObject( Object: *mut c_void, WaitReason: u32, WaitMode: u32, Alertable: u8, Timeout: *const LARGE_INTEGER, ) -> NTSTATUS;
@@ -62,7 +62,7 @@ extern "system" {
     fn IoFreeIrp(Irp: *mut IRP);
     fn IoGetNextIrpStackLocation(Irp: *mut IRP) -> *mut IO_STACK_LOCATION;
     fn FatReadVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ByteOffset: i64, Length: u32, Bcb: *mut *mut BCB, Buffer: *mut *mut core::ffi::c_void, );
-    fn IsBpbFat32(packed_bpb: *const PACKED_BIOS_PARAMETER_BLOCK) -> i32;
+    fn IsBpbFat32(packed_bpb: *const PACKED_BIOS_PARAMETER_BLOCK) -> u8;
     } extern "C" { fn KdPrintEx(ComponentId: u32, Level: u32, Format: *const u8, ...); } extern "system" {
     fn paged_code();
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
@@ -89,8 +89,8 @@ extern "system" {
     static FatData: FAT_DATA;
     fn KeSetEvent(event: PKEVENT, increment: i32, wait: i32);
     fn IoCompleteRequest(irp: PIRP, priority_boost: i32);
-    fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> i32;
-    fn FatIsFastIoPossible(Fcb: *mut FCB) -> i32;
+    fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
+    fn FatIsFastIoPossible(Fcb: *mut FCB) -> u8;
     fn FatGetNextFcbTopDown( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, OriginalFcb: *mut FCB, ) -> *mut FCB;
     fn FatGetDirentFromFcbOrDcb( irpctx: *mut IRP_CONTEXT, fcb: *mut FCB, arg2: u8, dirent: *mut *mut DIRENT, direntBcb: *mut *mut BCB, );
     fn Fat8dot3ToString( irpctx: *mut IRP_CONTEXT, dirent: *mut DIRENT, arg3: u8, name: *mut OEM_STRING, );
@@ -463,7 +463,7 @@ pub unsafe extern "system" fn FatVerifyVcb(
     DevMarkedForVerify = BooleanFlagOn(
         (*(*(*Vcb).Vpb).RealDevice).Flags,
         DO_VERIFY_VOLUME,
-    );
+    ) as i32;
 
     if DevMarkedForVerify == 0
         && (*IrpContext).MajorFunction == IRP_MJ_CREATE
@@ -1016,7 +1016,7 @@ pub unsafe extern "system" fn FatMarkFcbCondition(
     NT_ASSERT(if FcbCondition != FcbNeedsToBeVerified {
         1
     } else {
-        FatVcbAcquiredExclusive(IrpContext, (*Fcb).Vcb)
+        FatVcbAcquiredExclusive(IrpContext, (*Fcb).Vcb) as i32
     });
 
     // Paging file special case

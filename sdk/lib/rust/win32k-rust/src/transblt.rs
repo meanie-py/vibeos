@@ -13,7 +13,7 @@ extern "C" {
 }
 extern "system" {
     fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: BOOL, iType: ULONG, iDirection: ULONG, cLimit: ULONG) -> ULONG;
-    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> BOOL;
+    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> u8;
 }
 extern "C" {
     static DibFunctionsForBitmapFormat: [DIB_FUNCTIONS; 11];
@@ -234,7 +234,7 @@ unsafe fn eng_transparent_blt_body(
                     Clip,
                     core::mem::size_of::<RECT_ENUM>() as ULONG,
                     core::ptr::addr_of_mut!(RectEnum) as *mut ULONG,
-                );
+                ) as i32;
                 i = 0;
                 while i < RectEnum.c {
                     let mut ClipRect: RECTL = core::mem::zeroed();
@@ -607,7 +607,7 @@ unsafe fn int_eng_transparent_blt_body(
 //             CLIPOBJ_cEnumStart(Clip, FALSE, CT_RECTANGLES, Direction, 0);
 //             do
 //             {
-//                 EnumMore = CLIPOBJ_bEnum(Clip, sizeof(RectEnum), (PVOID)&RectEnum);
+//                 EnumMore = CLIPOBJ_bEnum(Clip, sizeof(RectEnum), (PVOID)&RectEnum) as i32;
 //                 for (i = 0; i < RectEnum.c; i++)
 //                 {
 //                     RECTL ClipRect, CombinedRect;

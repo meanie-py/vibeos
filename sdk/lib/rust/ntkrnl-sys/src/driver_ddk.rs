@@ -95,7 +95,26 @@ pub const IRP_MN_STOP_DEVICE: u8 = 0x04;
 pub const IRP_MN_QUERY_STOP_DEVICE: u8 = 0x05;
 pub const IRP_MN_CANCEL_STOP_DEVICE: u8 = 0x06;
 pub const IRP_MN_QUERY_DEVICE_RELATIONS: u8 = 0x07;
+// Full PnP minor set 0x08..0x16 (xdk/iotypes.h). The gap here was a bind-all factory:
+// any crate matching `IRP_MN_QUERY_ID`/`QUERY_CAPABILITIES`/etc. under this glob got a
+// catch-all binding instead (partmgr partition PDO dispatch, classpnp ClassDispatchPnp --
+// the USB-disk START 0xC000000D, 2026-07-06).
+pub const IRP_MN_QUERY_INTERFACE: u8 = 0x08;
+pub const IRP_MN_QUERY_CAPABILITIES: u8 = 0x09;
+pub const IRP_MN_QUERY_RESOURCES: u8 = 0x0A;
+pub const IRP_MN_QUERY_RESOURCE_REQUIREMENTS: u8 = 0x0B;
+pub const IRP_MN_QUERY_DEVICE_TEXT: u8 = 0x0C;
+pub const IRP_MN_FILTER_RESOURCE_REQUIREMENTS: u8 = 0x0D;
+pub const IRP_MN_READ_CONFIG: u8 = 0x0F;
+pub const IRP_MN_WRITE_CONFIG: u8 = 0x10;
+pub const IRP_MN_EJECT: u8 = 0x11;
+pub const IRP_MN_SET_LOCK: u8 = 0x12;
+pub const IRP_MN_QUERY_ID: u8 = 0x13;
+pub const IRP_MN_QUERY_PNP_DEVICE_STATE: u8 = 0x14;
+pub const IRP_MN_QUERY_BUS_INFORMATION: u8 = 0x15;
+pub const IRP_MN_DEVICE_USAGE_NOTIFICATION: u8 = 0x16;
 pub const IRP_MN_SURPRISE_REMOVAL: u8 = 0x17;
+pub const IRP_MN_DEVICE_ENUMERATED: u8 = 0x19;
 // Power IRP minor codes (numerically overlap the PnP set above — power
 // dispatch keys off MajorFunction == IRP_MJ_POWER).
 pub const IRP_MN_WAIT_WAKE: u8 = 0x00;

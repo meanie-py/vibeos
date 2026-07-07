@@ -253,7 +253,7 @@ pub unsafe extern "C" fn ClasspAllocatePowerProcessIrp(
 
 // class.c:12634  ClasspScanForClassHacks — CLEAR_FLAG(Data,INVALID); SET_FLAG(HackFlags,Data).
 #[no_mangle]
-pub unsafe extern "C" fn ClasspScanForClassHacks(
+pub unsafe extern "system" fn ClasspScanForClassHacks(
     FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
     Data: usize,
 ) {

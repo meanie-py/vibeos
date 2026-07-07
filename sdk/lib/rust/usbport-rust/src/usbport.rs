@@ -2643,9 +2643,9 @@ pub unsafe extern "system" fn USBPORT_MapTransfer(
                     .as_ptr() as *const i8,
             );
 
-            (*sgList).SgElement[ix as usize].SgPhysicalAddress = PhAddress;
-            (*sgList).SgElement[ix as usize].SgTransferLength = ElementLength as ULONG;
-            (*sgList).SgElement[ix as usize].SgOffset = CurrentLength
+            (*(core::ptr::addr_of_mut!((*sgList).SgElement) as *mut USBPORT_SCATTER_GATHER_ELEMENT).add(ix as usize)).SgPhysicalAddress = PhAddress;
+            (*(core::ptr::addr_of_mut!((*sgList).SgElement) as *mut USBPORT_SCATTER_GATHER_ELEMENT).add(ix as usize)).SgTransferLength = ElementLength as ULONG;
+            (*(core::ptr::addr_of_mut!((*sgList).SgElement) as *mut USBPORT_SCATTER_GATHER_ELEMENT).add(ix as usize)).SgOffset = CurrentLength
                 .wrapping_add((TransferLength as SIZE_T).wrapping_sub(SgCurrentLength))
                 as ULONG;
 

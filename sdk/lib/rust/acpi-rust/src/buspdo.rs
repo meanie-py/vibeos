@@ -415,18 +415,27 @@ pub const ACPI_BUS_NUMBER_RANGE: u8 = 0;
 pub const ACPI_IO_RANGE: u8 = 1;
 pub const ACPI_MEMORY_RANGE: ULONG = 2;
 
-pub const CmResourceTypeInterrupt: ULONG = 0;
-pub const CmResourceTypeMemory: ULONG = 1;
-pub const CmResourceTypePort: ULONG = 2;
-pub const CmResourceTypeDma: ULONG = 3;
-pub const CmResourceTypeDevicePrivate: ULONG = 4;
-pub const CmResourceTypeBusNumber: ULONG = 5;
-pub const CmResourceTypeMemoryLarge: ULONG = 6;
-pub const CmResourceTypeNonArbitrated: ULONG = 7;
-pub const CmResourceTypeConfigData: ULONG = 8;
-pub const CmResourceTypeDeviceSpecific: ULONG = 9;
-pub const CmResourceTypePcCardConfig: ULONG = 10;
-pub const CmResourceTypeMfCardConfig: ULONG = 11;
+// FIXED 2026-07-06: the whole table was a rustconv-invented 0..11 sequence
+// (Interrupt=0, Port=2, ...). Real values per sdk/include/xdk/cmtypes.h:224.
+// Consequence of the drift: every ACPI-built CM_PARTIAL_RESOURCE_DESCRIPTOR
+// was mistyped — IRQ descriptors were CmResourceTypeNull(0), so pnpres
+// translation and i8042prt's resource parsing never saw an interrupt →
+// IoConnectInterrupt never called → PS/2 keyboard+mouse silently dead on
+// i386/amd64 since Rust buspdo.rs integrated (polled detection kept working,
+// which masked it). Found by the Doom playable-gate (tests/qemu/test_doom.py).
+pub const CmResourceTypeNull: ULONG = 0;
+pub const CmResourceTypePort: ULONG = 1;
+pub const CmResourceTypeInterrupt: ULONG = 2;
+pub const CmResourceTypeMemory: ULONG = 3;
+pub const CmResourceTypeDma: ULONG = 4;
+pub const CmResourceTypeDeviceSpecific: ULONG = 5;
+pub const CmResourceTypeBusNumber: ULONG = 6;
+pub const CmResourceTypeMemoryLarge: ULONG = 7;
+pub const CmResourceTypeNonArbitrated: ULONG = 128;
+pub const CmResourceTypeConfigData: ULONG = 128;
+pub const CmResourceTypeDevicePrivate: ULONG = 129;
+pub const CmResourceTypePcCardConfig: ULONG = 130;
+pub const CmResourceTypeMfCardConfig: ULONG = 131;
 
 pub const CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE: ULONG = 0x00;
 pub const CM_RESOURCE_INTERRUPT_LATCHED: ULONG = 0x01;

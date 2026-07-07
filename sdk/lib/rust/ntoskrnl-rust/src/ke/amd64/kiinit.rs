@@ -36,8 +36,8 @@ use super::stubs::KeXStateLength;
 extern "system" {
     fn KiInitializeXStateConfiguration(Cpu: u8);
     fn KiSwitchToBootStack(InitialStack: u64) -> !;
-    fn KdInitSystem(Phase: u32, LoaderBlock: PLOADER_PARAMETER_BLOCK) -> u32;
-    fn KdPollBreakIn() -> u32;
+    fn KdInitSystem(Phase: u32, LoaderBlock: PLOADER_PARAMETER_BLOCK) -> u8;
+    fn KdPollBreakIn() -> u8;
     fn DbgBreakPointWithStatus(Status: u32);
     fn KiReportCpuFeatures(Prcb: PKPRCB);
     fn KiInitializeSegments();

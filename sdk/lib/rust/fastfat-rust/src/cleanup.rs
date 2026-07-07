@@ -45,7 +45,7 @@ extern "system" {
     fn SetFlag(flags: *mut u32, mask: u32);
     fn NT_ASSERT(condition: BOOLEAN);
     fn NodeType(node: *const c_void) -> u32;
-    fn FatAcquireExclusiveFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> NTSTATUS;
+    fn FatAcquireExclusiveFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> u8;
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> NTSTATUS;
     fn FatReleaseFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
@@ -66,10 +66,10 @@ extern "system" {
     fn FatNotifyReportChange(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Fcb: PFCB, Filter: u32, Action: u32);
     fn FatRemoveNames(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn FatSetFileSizeInDirent(IrpContext: PIRP_CONTEXT, Fcb: PFCB, NewSize: *const LARGE_INTEGER);
-    fn FatZeroData(IrpContext: PIRP_CONTEXT, Vcb: PVCB, FileObject: PFILE_OBJECT, Offset: i32, Length: i32) -> NTSTATUS;
+    fn FatZeroData(IrpContext: PIRP_CONTEXT, Vcb: PVCB, FileObject: PFILE_OBJECT, Offset: i32, Length: i32) -> u8;
     fn FatUnpinRepinnedBcbs(IrpContext: PIRP_CONTEXT);
     fn CcFlushCache(SectionObjectPointers: *mut c_void, FileOffset: *const LARGE_INTEGER, Length: u32, IoStatus: *mut c_void);
-    fn CcPurgeCacheSection(SectionObjectPointers: *mut c_void, FileOffset: *const LARGE_INTEGER, Length: u32, UninitializeCacheMaps: BOOLEAN) -> u32;
+    fn CcPurgeCacheSection(SectionObjectPointers: *mut c_void, FileOffset: *const LARGE_INTEGER, Length: u32, UninitializeCacheMaps: BOOLEAN) -> u8;
     fn CcSetFileSizes(FileObject: PFILE_OBJECT, FileSizes: *const c_void);
     fn FsRtlFastUnlockAll(Locks: *mut c_void, FileObject: PFILE_OBJECT, ProcessId: *mut c_void, Context: *mut c_void) -> BOOLEAN;
     fn IoGetRequestorProcess(Irp: PIRP) -> *mut c_void;

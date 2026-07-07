@@ -62,7 +62,7 @@ extern "system" {
     fn FatFsdPostRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn FatVerifyFcb(IrpContext: PIRP_CONTEXT, Fcb: PDCB);
-    fn _SEH2_AbnormalTermination() -> i32;
+    fn _SEH2_AbnormalTermination() -> u8;
     fn FatAcquireSharedVcb(IrpContext: *mut PIRP_CONTEXT, Vcb: *mut VCB) -> i32;
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
@@ -653,7 +653,7 @@ pub unsafe extern "system" fn FatQueryFsSectorSizeInfo(
     UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
 
     ASSERT((*Length as usize >= core::mem::size_of::<FatFileFsSectorSizeInformation>()) as i32);
-    _Analysis_assume_((*Length as usize >= core::mem::size_of::<FatFileFsSectorSizeInformation>()) as i32);
+    // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
 
     Status = FsRtlGetSectorSizeInformation(
         (*(*Vcb).Vpb).RealDevice as *mut core::ffi::c_void,
@@ -748,7 +748,7 @@ pub unsafe extern "system" fn FatCommonQueryVolumeInfo(IrpContext: PIRP_CONTEXT,
     FatDecodeFileObject((*IrpSp).FileObject, core::ptr::addr_of_mut!(Vcb), core::ptr::addr_of_mut!(Fcb), core::ptr::addr_of_mut!(Ccb));
 
     NT_ASSERT(((Vcb as *mut core::ffi::c_void != core::ptr::null_mut()) as i32) as u8);
-    _Analysis_assume_((Vcb as *mut core::ffi::c_void != core::ptr::null_mut()) as i32);
+    // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
 
     // _SEH2_TRY block starts here
     FatVerifyFcb(IrpContext, (*Vcb).RootDcb);

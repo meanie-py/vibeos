@@ -24,6 +24,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import re
 import struct
 import subprocess
 import sys
@@ -201,6 +203,34 @@ def main() -> int:
         out_lines.append(f"{graft}={twin}")
 
     manifest_path.write_text(json.dumps(manifest))
+
+    # --- DOOM (opt-in, VIBEOS_DOOM=1) — x86 twin of the mkramdisk.sh hook ---
+    # Foreign-binary demo (docs/engineering/doom-on-vibeos.md). OFF by default:
+    # without VIBEOS_DOOM=1 nothing is grafted and the ISO is byte-identical.
+    # Runs here (not cmake) because this script already executes on every
+    # `livecd` build and inherits the build env. Fail-loud per the house rule:
+    # the flag being set with assets missing aborts the build.
+    if os.environ.get("VIBEOS_DOOM", "0") == "1":
+        repo = Path(__file__).resolve().parent.parent
+        # arch from the build dir in the output path (build-amd64/... etc.)
+        m = re.search(r"build-(amd64|i386|arm64)", str(args.out))
+        arch = m.group(1) if m else None
+        doom_exe = Path(
+            os.environ.get("VIBEOS_DOOM_EXE", repo / "tools" / "doom" / f"doom-{arch}.exe")
+        )
+        doom_wad = Path(os.environ.get("VIBEOS_DOOM_WAD", repo / "tools" / "doom" / "doom1.wad"))
+        if arch is None or not (doom_exe.is_file() and doom_wad.is_file()):
+            print(
+                f"strip_cd_media: VIBEOS_DOOM=1 but assets missing "
+                f"(arch={arch}, exe={doom_exe}, wad={doom_wad}). "
+                f"Build them: tools/doom/build.sh {arch or '<arch>'}",
+                file=sys.stderr,
+            )
+            return 1
+        out_lines.append(f"reactos/system32/doom.exe={doom_exe}")
+        out_lines.append(f"reactos/system32/doom1.wad={doom_wad}")
+        print(f"strip_cd_media: VIBEOS_DOOM=1 — grafting doom.exe + doom1.wad ({arch})")
+
     args.out.write_text("\n".join(out_lines) + "\n")
     print(
         f"strip_cd_media: {n_stripped} stripped, {n_cached} cached: "

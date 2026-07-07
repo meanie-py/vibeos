@@ -41,7 +41,7 @@ pub unsafe extern "system" fn USBPORT_MakeSplitTransfer(
     Element0 = (core::ptr::addr_of_mut!((*SplitSgList).SgElement) as *mut USBPORT_SCATTER_GATHER_ELEMENT)
         .offset(0);
 
-    SgLength = ((*Transfer).SgList.SgElement[*SgIdx as usize].SgTransferLength as u32)
+    SgLength = ((*(core::ptr::addr_of!((*Transfer).SgList.SgElement) as *const USBPORT_SCATTER_GATHER_ELEMENT).add(*SgIdx as usize)).SgTransferLength as u32)
         .wrapping_sub(*SgOffset) as SIZE_T;
 
     if SgLength > MaxTransferSize as SIZE_T {
@@ -50,7 +50,7 @@ pub unsafe extern "system" fn USBPORT_MakeSplitTransfer(
         (*Element0).SgOffset = 0 as ULONG;
         (*Element0).SgTransferLength = MaxTransferSize;
         (*Element0).SgPhysicalAddress.__bindgen_anon_1.LowPart =
-            ((*Transfer).SgList.SgElement[*SgIdx as usize].SgPhysicalAddress.__bindgen_anon_1.LowPart as u32)
+            ((*(core::ptr::addr_of!((*Transfer).SgList.SgElement) as *const USBPORT_SCATTER_GATHER_ELEMENT).add(*SgIdx as usize)).SgPhysicalAddress.__bindgen_anon_1.LowPart as u32)
                 .wrapping_add(*SgOffset) as ULONG;
 
         (*SplitTransfer).TransferParameters.IsTransferSplited = 1 as BOOL;
@@ -74,7 +74,7 @@ pub unsafe extern "system" fn USBPORT_MakeSplitTransfer(
     (*Element0).SgOffset = 0 as ULONG;
     (*Element0).SgTransferLength = SgLength as ULONG;
     (*Element0).SgPhysicalAddress.__bindgen_anon_1.LowPart =
-        ((*Transfer).SgList.SgElement[*SgIdx as usize].SgPhysicalAddress.__bindgen_anon_1.LowPart as u32)
+        ((*(core::ptr::addr_of!((*Transfer).SgList.SgElement) as *const USBPORT_SCATTER_GATHER_ELEMENT).add(*SgIdx as usize)).SgPhysicalAddress.__bindgen_anon_1.LowPart as u32)
             .wrapping_add(*SgOffset) as ULONG;
 
     (*SplitTransfer).TransferParameters.TransferBufferLength = SgLength as ULONG;
@@ -112,7 +112,7 @@ pub unsafe extern "system" fn USBPORT_MakeSplitTransfer(
     (*Element1).SgOffset = SgRemainLen as ULONG;
     (*Element1).SgTransferLength = (*Element0).SgTransferLength;
     (*Element1).SgPhysicalAddress.__bindgen_anon_1.LowPart =
-        ((*Transfer).SgList.SgElement[*SgIdx as usize].SgPhysicalAddress.__bindgen_anon_1.LowPart as u32)
+        ((*(core::ptr::addr_of!((*Transfer).SgList.SgElement) as *const USBPORT_SCATTER_GATHER_ELEMENT).add(*SgIdx as usize)).SgPhysicalAddress.__bindgen_anon_1.LowPart as u32)
             .wrapping_add(*SgOffset) as ULONG;
 
     (*SplitTransfer).TransferParameters.TransferBufferLength =

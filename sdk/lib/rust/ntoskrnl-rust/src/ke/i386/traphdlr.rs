@@ -94,11 +94,11 @@ extern "system" {
 }
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn Ki386HandleOpcodeV86(TrapFrame: PKTRAP_FRAME) -> ULONG;
+    fn Ki386HandleOpcodeV86(TrapFrame: PKTRAP_FRAME) -> u8;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn Ki386HandleOpcodeV86(TrapFrame: PKTRAP_FRAME) -> ULONG;
+    fn Ki386HandleOpcodeV86(TrapFrame: PKTRAP_FRAME) -> u8;
 }
 extern "system" {
     fn KiDispatchExceptionFromTrapFrame( ExceptionCode: NTSTATUS, ExceptionFlags: ULONG, ExceptionAddress: ULONG, NumParams: ULONG, Param1: ULONG, Param2: ULONG, Param3: ULONG, TrapFrame: PKTRAP_FRAME, ) -> !;

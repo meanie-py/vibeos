@@ -2119,10 +2119,10 @@ pub unsafe extern "system" fn EHCI_MapAsyncTransferToTd(
     SgRemain = (*SgList).SgElementCount - SgIdx;
 
     if SgRemain > EHCI_MAX_QTD_BUFFER_PAGES {
-        (*TD).HwTD.Buffer[0] = (*SgList).SgElement[SgIdx as usize]
+        (*TD).HwTD.Buffer[0] = (*(core::ptr::addr_of!((*SgList).SgElement) as *const USBPORT_SCATTER_GATHER_ELEMENT).add(SgIdx as usize))
             .SgPhysicalAddress
             .u.LowPart
-            .wrapping_sub((*SgList).SgElement[SgIdx as usize].SgOffset)
+            .wrapping_sub((*(core::ptr::addr_of!((*SgList).SgElement) as *const USBPORT_SCATTER_GATHER_ELEMENT).add(SgIdx as usize)).SgOffset)
             .wrapping_add(TransferedLen);
 
         LengthThisTD = (EHCI_MAX_QTD_BUFFER_PAGES * PAGE_SIZE as ULONG)
@@ -2131,7 +2131,7 @@ pub unsafe extern "system" fn EHCI_MapAsyncTransferToTd(
         ix = 1;
         while ix < EHCI_MAX_QTD_BUFFER_PAGES {
             (*TD).HwTD.Buffer[ix as usize] =
-                (*SgList).SgElement[(SgIdx + ix) as usize].SgPhysicalAddress.__bindgen_anon_1.LowPart;
+                (*(core::ptr::addr_of!((*SgList).SgElement) as *const USBPORT_SCATTER_GATHER_ELEMENT).add((SgIdx + ix) as usize)).SgPhysicalAddress.__bindgen_anon_1.LowPart;
             ix = ix.wrapping_add(1);
         }
 
@@ -2149,8 +2149,8 @@ pub unsafe extern "system" fn EHCI_MapAsyncTransferToTd(
         LengthThisTD = (*TransferParameters).TransferBufferLength - TransferedLen;
 
         (*TD).HwTD.Buffer[0] = TransferedLen
-            .wrapping_add((*SgList).SgElement[SgIdx as usize].SgPhysicalAddress.__bindgen_anon_1.LowPart)
-            .wrapping_sub((*SgList).SgElement[SgIdx as usize].SgOffset);
+            .wrapping_add((*(core::ptr::addr_of!((*SgList).SgElement) as *const USBPORT_SCATTER_GATHER_ELEMENT).add(SgIdx as usize)).SgPhysicalAddress.__bindgen_anon_1.LowPart)
+            .wrapping_sub((*(core::ptr::addr_of!((*SgList).SgElement) as *const USBPORT_SCATTER_GATHER_ELEMENT).add(SgIdx as usize)).SgOffset);
 
         ix = 1;
         while ix < EHCI_MAX_QTD_BUFFER_PAGES {
@@ -2159,7 +2159,7 @@ pub unsafe extern "system" fn EHCI_MapAsyncTransferToTd(
             }
 
             (*TD).HwTD.Buffer[ix as usize] =
-                (*SgList).SgElement[(SgIdx + ix) as usize].SgPhysicalAddress.__bindgen_anon_1.LowPart;
+                (*(core::ptr::addr_of!((*SgList).SgElement) as *const USBPORT_SCATTER_GATHER_ELEMENT).add((SgIdx + ix) as usize)).SgPhysicalAddress.__bindgen_anon_1.LowPart;
             ix = ix.wrapping_add(1);
         }
     }

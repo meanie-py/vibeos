@@ -76,13 +76,29 @@ pub(crate) unsafe fn i8042IsrWritePort(
     Value: UCHAR,
     SelectCmd: UCHAR,
 ) -> BOOLEAN {
+    // Fail-loud on dropped controller writes (2026-07-06 PS/2 triage kept):
+    // i8042Write drops writes SILENTLY on IBF timeout and every ISR-side
+    // caller ignores the return — a dropped byte permanently stalls the mouse
+    // reset state machine, so make it visible.
     if SelectCmd != 0 {
         if i8042Write(DeviceExtension, (*DeviceExtension).ControlPort, SelectCmd) == 0 {
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"[I8042PRT] IsrWritePort sel=0x%x DROPPED (IBF stuck)\n\0".as_ptr()
+                    as *const i8,
+                SelectCmd as u32,
+            );
             return 0u8;
         }
     }
 
-    i8042Write(DeviceExtension, (*DeviceExtension).DataPort, Value)
+    let ok = i8042Write(DeviceExtension, (*DeviceExtension).DataPort, Value);
+    if ok == 0 {
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[I8042PRT] IsrWritePort val=0x%x DROPPED (IBF stuck)\n\0".as_ptr() as *const i8,
+            Value as u32,
+        );
+    }
+    ok
 }
 
 pub(crate) unsafe fn i8042ReadData(

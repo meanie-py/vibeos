@@ -263,6 +263,18 @@ pub unsafe extern "C" fn DbgCheckReturnedPkt(Pkt: *mut TRANSFER_PACKET) {
                 (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status,
             );
         }
+        {
+            // Loud numeric twin of the (arg-less) TracePrint below: the stub only
+            // prints the format string, which localizes but doesn't identify the op.
+            unsafe extern "C" { fn DbgPrint(Format: *const i8, ...) -> u32; }
+            let cdb = crate::ddk_shims::SrbGetCdb(((*Pkt).Srb).cast());
+            DbgPrint(
+                c"[CLASSPNP] pkt FAIL op=0x%02x srbstat=0x%02x irpstat=0x%x\n".as_ptr(),
+                if cdb.is_null() { 0xFFu32 } else { (*(cdb as *const u8)) as u32 },
+                (*(*Pkt).Srb).SrbStatus as ULONG,
+                (*(*Pkt).Irp).IoStatus.__bindgen_anon_1.Status,
+            );
+        }
         TracePrint(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_RW,

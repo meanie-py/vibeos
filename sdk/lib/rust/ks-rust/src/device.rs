@@ -1,5 +1,6 @@
 use crate::types::*;
 use crate::glue::*;
+use crate::glue::{IRP_MN_QUERY_BUS_INFORMATION, IRP_MN_QUERY_CAPABILITIES, IRP_MN_QUERY_ID, IRP_MN_QUERY_INTERFACE, IRP_MN_QUERY_PNP_DEVICE_STATE, IRP_MN_QUERY_RESOURCES, IRP_MN_QUERY_RESOURCE_REQUIREMENTS, IRP_MN_READ_CONFIG, IRP_MN_WRITE_CONFIG}; // explicit: disambiguate vs ntkrnl_sys::driver_ddk glob
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;

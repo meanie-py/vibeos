@@ -24,7 +24,7 @@ extern "system" {
     fn NT_ASSERT(cond: i32);
     fn PAGED_CODE();
     fn UNREFERENCED_PARAMETER(p: *mut IRP_CONTEXT);
-    fn FsRtlIsLeadDbcsCharacter(character: u8) -> i32;
+    fn FsRtlIsLeadDbcsCharacter(character: u8) -> u8;
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn FatIsNameShortOemValid( irp: *mut core::ffi::c_void, oem: ntkrnl_sys::ddk::OEM_STRING, arg1: u8, arg2: u8, arg3: u8, ) -> u8;
     fn FatLocateSimpleOemDirent( irp: *mut core::ffi::c_void, parent: *mut core::ffi::c_void, name: *mut ntkrnl_sys::ddk::OEM_STRING, dirent: *mut *mut core::ffi::c_void, bcb: *mut *mut core::ffi::c_void, byte_offset: *mut core::ffi::c_void, );

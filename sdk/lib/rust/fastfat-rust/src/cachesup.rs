@@ -17,7 +17,7 @@ use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
 extern "system" {
     static mut FatDisableParentCheck: i32;
     } extern "C" { fn DebugTrace(level: i32, flag: u32, msg: *const i8, ...); } extern "system" {
-    fn BooleanFlagOn(flags: u32, flag: u32) -> i32;
+    fn BooleanFlagOn(flags: u32, flag: u32) -> u8;
     fn PAGED_CODE();
     fn FatRaiseStatus(IrpContext: PIRP_CONTEXT, Status: NTSTATUS) -> !;
     static mut FatData: FAT_DATA;
@@ -55,9 +55,9 @@ extern "system" {
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn IoInitializePriorityInfo(PriorityInfo: *mut _IO_PRIORITY_INFO);
     fn IoRetrievePriorityInfo( Irp: *mut IRP, FileObject: *mut FILE_OBJECT, Thread: *mut core::ffi::c_void, PriorityInfo: *mut _IO_PRIORITY_INFO, ) -> NTSTATUS;
-    fn _SEH2_AbnormalTermination() -> i32;
+    fn _SEH2_AbnormalTermination() -> u8;
     fn FatRemoveMcbEntry(vcb: *mut VCB, mcb: *mut core::ffi::c_void, start: u32, end: u32);
-    fn FatVcbAcquiredExclusive(irp: *mut IRP_CONTEXT, vcb: *mut VCB) -> i32;
+    fn FatVcbAcquiredExclusive(irp: *mut IRP_CONTEXT, vcb: *mut VCB) -> u8;
     fn DebugUnwind(name: *const i8);
     fn FatAddFileAllocation( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, FileObject: PFILE_OBJECT, NewAllocation: u32, );
     fn FatTruncateFileAllocation(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, InitialAllocation: u32);
@@ -809,7 +809,7 @@ pub unsafe extern "system" fn FatCloseEaFile(
     );
 
     // NT_ASSERT( FatVcbAcquiredExclusive(IrpContext, Vcb) );
-    let cond: i32 = FatVcbAcquiredExclusive(IrpContext, Vcb);
+    let cond: i32 = FatVcbAcquiredExclusive(IrpContext, Vcb) as i32;
     NT_ASSERT(cond);
 
     // PFILE_OBJECT EaFileObject = Vcb->VirtualEaFile;

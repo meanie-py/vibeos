@@ -127,7 +127,7 @@ extern "system" {
     static FAT_NTC_ROOT_DCB: NODE_TYPE_CODE;
     static UserVolumeOpen: TYPE_OF_OPEN;
     fn CanFsdWait(Irp: *mut core::ffi::c_void) -> i32;
-    fn FatIsIrpTopLevel(Irp: *mut core::ffi::c_void) -> i32;
+    fn FatIsIrpTopLevel(Irp: *mut core::ffi::c_void) -> u8;
     fn FatCreateIrpContext(Irp: *mut core::ffi::c_void, CanWait: i32) -> *mut core::ffi::c_void;
     fn _SEH2_GetExceptionCode() -> u32;
     fn _SEH2_GetExceptionInformation() -> *mut core::ffi::c_void;
@@ -147,21 +147,21 @@ extern "system" {
     fn FatAddMcbEntry( Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbn: i32, Lbn: i32, SectorCount: u32, );
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
-    fn FatIsDirectoryEmpty(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> i32;
-    fn CcPinMappedData( FileObject: PVOID, FileOffset: *const LARGE_INTEGER, Length: u32, Wait: i32, Bcb: *mut PBCB, ) -> i32;
+    fn FatIsDirectoryEmpty(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
+    fn CcPinMappedData( FileObject: PVOID, FileOffset: *const LARGE_INTEGER, Length: u32, Wait: i32, Bcb: *mut PBCB, ) -> u8;
     fn CcRepinBcb(Bcb: PBCB);
     fn CcSetDirtyPinnedData(Bcb: PBCB, Lsn: *const LARGE_INTEGER);
     fn CcUnpinData(Bcb: PBCB);
     fn CcUnpinRepinnedBcb(Bcb: PBCB, WriteThrough: i32, Iosb: *mut _IO_STATUS_BLOCK);
-    fn MmFlushImageSection( SectionObjectPointers: *const SECTION_OBJECT_POINTERS, FlushOperation: u32, ) -> i32;
+    fn MmFlushImageSection( SectionObjectPointers: *const SECTION_OBJECT_POINTERS, FlushOperation: u32, ) -> u8;
     // NT_SUCCESS is provided by ntkrnl_sys::base::*
-    fn FatIsIoRangeValid(vcb: *mut VCB, size: LARGE_INTEGER, zero: i32) -> i32;
+    fn FatIsIoRangeValid(vcb: *mut VCB, size: LARGE_INTEGER, zero: i32) -> u8;
     fn FatInitializeCacheMap( FileObject: *mut FILE_OBJECT, sizes: *const CC_FILE_SIZES, flag: i32, callbacks: *const CACHE_MANAGER_CALLBACKS, fcb: *mut FCB, );
     fn FatAddFileAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, FileObject: *mut FILE_OBJECT, size: u32, );
     fn FatTruncateFileAllocation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, size: u32);
     fn FatSetFileSizeInDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, null: *const c_void, );
     fn CcGetFileSizePointer(FileObject: *mut FILE_OBJECT) -> *mut LARGE_INTEGER;
-    fn _SEH2_AbnormalTermination() -> i32;
+    fn _SEH2_AbnormalTermination() -> u8;
     fn FatBugCheck(a: u32, b: u32, c: u32);
     fn FatCreateFcb( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, TargetDcb: *mut DCB, LfnOffset: u32, DirentOffset: u32, Dirent: *mut DIRENT, Lfn: *mut _UNICODE_STRING, other: *mut _UNICODE_STRING, flag1: u8, flag2: u8, ) -> *mut FCB;
     fn FatDeleteFcb( IrpContext: *mut IRP_CONTEXT, Fcb: *mut *mut FCB, );
@@ -1419,7 +1419,7 @@ pub unsafe extern "system" fn FatSetValidDataLengthInfo(
 
     // Forward declarations for unknown external symbols
     extern "system" {
-        fn FatIsIoRangeValid(Vcb: *mut VCB, length: LARGE_INTEGER, is_set: i32) -> i32;
+        fn FatIsIoRangeValid(Vcb: *mut VCB, length: LARGE_INTEGER, is_set: i32) -> u8;
     }
 
     let mut status: NTSTATUS = STATUS_SUCCESS;
@@ -2476,7 +2476,7 @@ pub unsafe extern "system" fn FatFsdSetInformation(
 
     FsRtlEnterFileSystem();
 
-    TopLevel = FatIsIrpTopLevel(Irp);
+    TopLevel = FatIsIrpTopLevel(Irp) as i32;
 
     // SEH try/except (no Rust unwind in kernel — run inline)
     IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
@@ -8258,7 +8258,7 @@ pub unsafe extern "system" fn FatFsdQueryInformation(
     let mut IrpContext: *mut core::ffi::c_void = core::ptr::null_mut();
     let TopLevel: i32;
     FsRtlEnterFileSystem();
-    TopLevel = FatIsIrpTopLevel(Irp);
+    TopLevel = FatIsIrpTopLevel(Irp) as i32;
     {
         IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp));
         Status = FatCommonQueryInformation(IrpContext as PIRP_CONTEXT, Irp as PIRP);

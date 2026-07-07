@@ -247,7 +247,7 @@ pub unsafe extern "system" fn FstubConvertExtendedToLayout(
             + (*LayoutEx).PartitionCount as usize * core::mem::size_of::<PARTITION_INFORMATION>(),
         TAG_FSTUB,
     ) as PDRIVE_LAYOUT_INFORMATION;
-    
+
     if DriveLayout.is_null() {
         return core::ptr::null_mut();
     }
@@ -257,22 +257,22 @@ pub unsafe extern "system" fn FstubConvertExtendedToLayout(
 
     i = 0;
     while i < (*LayoutEx).PartitionCount {
-        (*DriveLayout).PartitionEntry[i as usize].StartingOffset = 
-            (*LayoutEx).PartitionEntry[i as usize].StartingOffset;
-        (*DriveLayout).PartitionEntry[i as usize].PartitionLength = 
-            (*LayoutEx).PartitionEntry[i as usize].PartitionLength;
-        (*DriveLayout).PartitionEntry[i as usize].HiddenSectors = 
-            (*LayoutEx).PartitionEntry[i as usize].__bindgen_anon_1.Mbr.HiddenSectors;
-        (*DriveLayout).PartitionEntry[i as usize].PartitionNumber = 
-            (*LayoutEx).PartitionEntry[i as usize].PartitionNumber;
-        (*DriveLayout).PartitionEntry[i as usize].PartitionType = 
-            (*LayoutEx).PartitionEntry[i as usize].__bindgen_anon_1.Mbr.PartitionType;
-        (*DriveLayout).PartitionEntry[i as usize].BootIndicator = 
-            (*LayoutEx).PartitionEntry[i as usize].__bindgen_anon_1.Mbr.BootIndicator;
-        (*DriveLayout).PartitionEntry[i as usize].RecognizedPartition = 
-            (*LayoutEx).PartitionEntry[i as usize].__bindgen_anon_1.Mbr.RecognizedPartition;
-        (*DriveLayout).PartitionEntry[i as usize].RewritePartition = 
-            (*LayoutEx).PartitionEntry[i as usize].RewritePartition;
+        (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).StartingOffset =
+            (*(*LayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).StartingOffset;
+        (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).PartitionLength =
+            (*(*LayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).PartitionLength;
+        (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).HiddenSectors =
+            (*(*LayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).__bindgen_anon_1.Mbr.HiddenSectors;
+        (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).PartitionNumber =
+            (*(*LayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).PartitionNumber;
+        (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).PartitionType =
+            (*(*LayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).__bindgen_anon_1.Mbr.PartitionType;
+        (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).BootIndicator =
+            (*(*LayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).__bindgen_anon_1.Mbr.BootIndicator;
+        (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).RecognizedPartition =
+            (*(*LayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).__bindgen_anon_1.Mbr.RecognizedPartition;
+        (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).RewritePartition =
+            (*(*LayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).RewritePartition;
         i += 1;
     }
 
@@ -587,7 +587,7 @@ pub unsafe fn FstubDbgPrintSetPartitionEx(
 
     // DPRINT removed
     // DPRINT removed
-    
+
     match (*PartitionEntry).PartitionStyle {
         PARTITION_STYLE_MBR => {
             // DPRINT removed
@@ -900,9 +900,9 @@ pub unsafe extern "system" fn FstubReadPartitionTableEFI(
     }
 
     (*DriveLayoutEx).PartitionStyle = PARTITION_STYLE_GPT;
-    (*DriveLayoutEx).__bindgen_anon_1.Gpt.StartingUsableOffset.QuadPart = 
+    (*DriveLayoutEx).__bindgen_anon_1.Gpt.StartingUsableOffset.QuadPart =
         ((*EfiHeader).FirstUsableLBA.wrapping_mul((*Disk).SectorSize as ULONGLONG)) as LONGLONG;
-    (*DriveLayoutEx).__bindgen_anon_1.Gpt.UsableLength.QuadPart = 
+    (*DriveLayoutEx).__bindgen_anon_1.Gpt.UsableLength.QuadPart =
         (((*EfiHeader).LastUsableLBA.wrapping_sub((*EfiHeader).FirstUsableLBA)).wrapping_mul((*Disk).SectorSize as ULONGLONG)) as LONGLONG;
     (*DriveLayoutEx).__bindgen_anon_1.Gpt.MaxPartitionCount = (*EfiHeader).NumberOfEntries;
     (*DriveLayoutEx).__bindgen_anon_1.Gpt.DiskId = (*EfiHeader).DiskGUID;
@@ -940,19 +940,19 @@ pub unsafe extern "system" fn FstubReadPartitionTableEFI(
             continue;
         }
 
-        (*DriveLayoutEx).PartitionEntry[PartitionCount as usize].StartingOffset.QuadPart = 
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(PartitionCount as usize)).StartingOffset.QuadPart =
             (PartitionEntry.StartingLBA.wrapping_mul((*Disk).SectorSize as ULONGLONG)) as LONGLONG;
-        (*DriveLayoutEx).PartitionEntry[PartitionCount as usize].PartitionLength.QuadPart = 
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(PartitionCount as usize)).PartitionLength.QuadPart =
             ((PartitionEntry.EndingLBA.wrapping_sub(PartitionEntry.StartingLBA).wrapping_add(1))
              .wrapping_mul((*Disk).SectorSize as ULONGLONG)) as LONGLONG;
-        (*DriveLayoutEx).PartitionEntry[PartitionCount as usize].PartitionNumber = PartitionCount.wrapping_add(1);
-        (*DriveLayoutEx).PartitionEntry[PartitionCount as usize].RewritePartition = 0u8;
-        (*DriveLayoutEx).PartitionEntry[PartitionCount as usize].PartitionStyle = PARTITION_STYLE_GPT;
-        (*DriveLayoutEx).PartitionEntry[PartitionCount as usize].__bindgen_anon_1.Gpt.PartitionType = PartitionEntry.PartitionType;
-        (*DriveLayoutEx).PartitionEntry[PartitionCount as usize].__bindgen_anon_1.Gpt.PartitionId = PartitionEntry.UniquePartition;
-        (*DriveLayoutEx).PartitionEntry[PartitionCount as usize].__bindgen_anon_1.Gpt.Attributes = PartitionEntry.Attributes;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(PartitionCount as usize)).PartitionNumber = PartitionCount.wrapping_add(1);
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(PartitionCount as usize)).RewritePartition = 0u8;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(PartitionCount as usize)).PartitionStyle = PARTITION_STYLE_GPT;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(PartitionCount as usize)).__bindgen_anon_1.Gpt.PartitionType = PartitionEntry.PartitionType;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(PartitionCount as usize)).__bindgen_anon_1.Gpt.PartitionId = PartitionEntry.UniquePartition;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(PartitionCount as usize)).__bindgen_anon_1.Gpt.Attributes = PartitionEntry.Attributes;
         RtlCopyMemory(
-            (*DriveLayoutEx).PartitionEntry[PartitionCount as usize].__bindgen_anon_1.Gpt.Name.as_mut_ptr() as PVOID,
+            (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(PartitionCount as usize)).__bindgen_anon_1.Gpt.Name.as_mut_ptr() as PVOID,
             PartitionEntry.Name.as_ptr() as *const core::ffi::c_void,
             core::mem::size_of_val(&PartitionEntry.Name)
         );
@@ -1007,15 +1007,15 @@ pub unsafe extern "system" fn FstubReadPartitionTableMBR(
 
     i = 0;
     while i < (*DriveLayout).PartitionCount {
-        (*DriveLayoutEx).PartitionEntry[i as usize].PartitionStyle = PARTITION_STYLE_MBR;
-        (*DriveLayoutEx).PartitionEntry[i as usize].StartingOffset = (*DriveLayout).PartitionEntry[i as usize].StartingOffset;
-        (*DriveLayoutEx).PartitionEntry[i as usize].PartitionLength = (*DriveLayout).PartitionEntry[i as usize].PartitionLength;
-        (*DriveLayoutEx).PartitionEntry[i as usize].PartitionNumber = (*DriveLayout).PartitionEntry[i as usize].PartitionNumber;
-        (*DriveLayoutEx).PartitionEntry[i as usize].RewritePartition = (*DriveLayout).PartitionEntry[i as usize].RewritePartition;
-        (*DriveLayoutEx).PartitionEntry[i as usize].__bindgen_anon_1.Mbr.PartitionType = (*DriveLayout).PartitionEntry[i as usize].PartitionType;
-        (*DriveLayoutEx).PartitionEntry[i as usize].__bindgen_anon_1.Mbr.BootIndicator = (*DriveLayout).PartitionEntry[i as usize].BootIndicator;
-        (*DriveLayoutEx).PartitionEntry[i as usize].__bindgen_anon_1.Mbr.RecognizedPartition = (*DriveLayout).PartitionEntry[i as usize].RecognizedPartition;
-        (*DriveLayoutEx).PartitionEntry[i as usize].__bindgen_anon_1.Mbr.HiddenSectors = (*DriveLayout).PartitionEntry[i as usize].HiddenSectors;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).PartitionStyle = PARTITION_STYLE_MBR;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).StartingOffset = (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).StartingOffset;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).PartitionLength = (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).PartitionLength;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).PartitionNumber = (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).PartitionNumber;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).RewritePartition = (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).RewritePartition;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).__bindgen_anon_1.Mbr.PartitionType = (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).PartitionType;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).__bindgen_anon_1.Mbr.BootIndicator = (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).BootIndicator;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).__bindgen_anon_1.Mbr.RecognizedPartition = (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).RecognizedPartition;
+        (*(*DriveLayoutEx).PartitionEntry.as_mut_ptr().add(i as usize)).__bindgen_anon_1.Mbr.HiddenSectors = (*(*DriveLayout).PartitionEntry.as_mut_ptr().add(i as usize)).HiddenSectors;
         i += 1;
     }
 
@@ -1101,11 +1101,11 @@ pub unsafe extern "system" fn FstubSetPartitionInformationEFI(
         return STATUS_INVALID_PARAMETER;
     }
 
-    (*Layout).PartitionEntry[PartitionNumber as usize].__bindgen_anon_1.Gpt.PartitionType = (*PartitionInfo).PartitionType;
-    (*Layout).PartitionEntry[PartitionNumber as usize].__bindgen_anon_1.Gpt.PartitionId = (*PartitionInfo).PartitionId;
-    (*Layout).PartitionEntry[PartitionNumber as usize].__bindgen_anon_1.Gpt.Attributes = (*PartitionInfo).Attributes;
+    (*(*Layout).PartitionEntry.as_mut_ptr().add(PartitionNumber as usize)).__bindgen_anon_1.Gpt.PartitionType = (*PartitionInfo).PartitionType;
+    (*(*Layout).PartitionEntry.as_mut_ptr().add(PartitionNumber as usize)).__bindgen_anon_1.Gpt.PartitionId = (*PartitionInfo).PartitionId;
+    (*(*Layout).PartitionEntry.as_mut_ptr().add(PartitionNumber as usize)).__bindgen_anon_1.Gpt.Attributes = (*PartitionInfo).Attributes;
     RtlCopyMemory(
-        (*Layout).PartitionEntry[PartitionNumber as usize].__bindgen_anon_1.Gpt.Name.as_mut_ptr() as *mut core::ffi::c_void,
+        (*(*Layout).PartitionEntry.as_mut_ptr().add(PartitionNumber as usize)).__bindgen_anon_1.Gpt.Name.as_mut_ptr() as *mut core::ffi::c_void,
         (*PartitionInfo).Name.as_ptr() as *const core::ffi::c_void,
         core::mem::size_of_val(&(*PartitionInfo).Name),
     );
@@ -1622,7 +1622,7 @@ pub unsafe extern "system" fn IoGetBootDiskInformation(
     }
 
     ArcDiskInformation = (*IopLoaderBlock).ArcDiskInformation;
-    SingleDisk = if (*(*ArcDiskInformation).DiskSignatureListHead.Flink).Flink == 
+    SingleDisk = if (*(*ArcDiskInformation).DiskSignatureListHead.Flink).Flink ==
         core::ptr::addr_of_mut!((*ArcDiskInformation).DiskSignatureListHead) { 1u8 } else { 0u8 };
 
     IsBootDiskInfoEx = if Size >= core::mem::size_of::<BOOTDISK_INFORMATION_EX>() as ULONG { 1u8 } else { 0u8 };
@@ -1711,11 +1711,11 @@ pub unsafe extern "system" fn IoGetBootDiskInformation(
         NextEntry = (*ArcDiskInformation).DiskSignatureListHead.Flink;
         while NextEntry != core::ptr::addr_of_mut!((*ArcDiskInformation).DiskSignatureListHead) {
             ArcDiskSignature = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(_ARC_DISK_SIGNATURE, ListEntry) as isize)) as PARC_DISK_SIGNATURE;
-            
+
             if ((SingleDisk != 0 && DiskCount == 1) ||
                 (IopVerifyDiskSignature(DriveLayout, ArcDiskSignature, core::ptr::addr_of_mut!(Signature)) != 0)) &&
                 ((*DriveLayout).PartitionStyle == 0) {
-                
+
                 sprintf(
                     ArcBuffer.as_mut_ptr(),
                     b"\\ArcName\\%s\0".as_ptr() as *const i8,
@@ -1886,7 +1886,7 @@ pub unsafe extern "system" fn IoGetBootDiskInformation(
                     PartitionNumber += 1;
                 }
             }
-            
+
             NextEntry = (*NextEntry).Flink;
         }
 
@@ -1936,7 +1936,7 @@ pub unsafe extern "system" fn IoReadDiskSignature(
         (*PartitionDescriptor.add(1)).PartitionType == 0 &&
         (*PartitionDescriptor.add(2)).PartitionType == 0 &&
         (*PartitionDescriptor.add(3)).PartitionType == 0 {
-        
+
         Status = FstubReadSector(
             DeviceObject,
             BytesPerSector,
@@ -1947,7 +1947,7 @@ pub unsafe extern "system" fn IoReadDiskSignature(
             ExFreePoolWithTag(Buffer as PVOID, TAG_FSTUB);
             return Status;
         }
-        
+
         EFIHeader = Buffer as PEFI_PARTITION_HEADER;
 
         if (*EFIHeader).Signature != EFI_HEADER_SIGNATURE ||

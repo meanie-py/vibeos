@@ -300,6 +300,36 @@ pub enum MOUSE_RESET_SUBSTATE {
     CustomHookStateMinimum = 100,
     CustomHookStateMaximum = 999,
     I8042ReservedMinimum = 1000,
+    // The C driver stores I8042ReservedMinimum+N scratch states (wheel/
+    // 5-button detection knock sequences, mouse.c i8042MouResetIsr) in this
+    // SAME field via plain int assignment. The Rust port originally
+    // `transmute`d bare 1001/1021/1040 into the enum — an INVALID
+    // DISCRIMINANT, which is UB, and LLVM (knowing the legal value set)
+    // DELETED the 1001..1040 match arms in i8042MouResetIsr as unreachable:
+    // the mouse reset state machine silently stalled at the first reserved
+    // state (1001, wheel-detect) on every boot → PS/2 mouse dead
+    // (2026-07-06, found via the Doom playable-gate byte trace). Making every
+    // reachable reserved state a REAL variant fixes the UB and pins the match
+    // arms. next_reset() (+1 stepping) walks the dense ranges — keep them
+    // complete, including the +1 successors of terminal states.
+    I8042Reserved1001 = 1001,
+    I8042Reserved1002 = 1002,
+    I8042Reserved1003 = 1003,
+    I8042Reserved1004 = 1004,
+    I8042Reserved1005 = 1005,
+    I8042Reserved1006 = 1006,
+    I8042Reserved1007 = 1007,
+    I8042Reserved1008 = 1008,
+    I8042Reserved1021 = 1021,
+    I8042Reserved1022 = 1022,
+    I8042Reserved1023 = 1023,
+    I8042Reserved1024 = 1024,
+    I8042Reserved1025 = 1025,
+    I8042Reserved1026 = 1026,
+    I8042Reserved1027 = 1027,
+    I8042Reserved1028 = 1028,
+    I8042Reserved1040 = 1040,
+    I8042Reserved1041 = 1041,
 }
 pub use MOUSE_RESET_SUBSTATE::*;
 pub type PMOUSE_RESET_SUBSTATE = *mut MOUSE_RESET_SUBSTATE;

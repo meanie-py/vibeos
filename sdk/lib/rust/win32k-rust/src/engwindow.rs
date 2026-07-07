@@ -50,7 +50,7 @@ extern "C" {
 // `stdcall`). `extern "system"` resolves to stdcall on i386, cdecl on
 // amd64/arm64 — matches the spec ABI.
 extern "system" {
-    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pul: *mut ULONG) -> BOOL;
+    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pul: *mut ULONG) -> u8;
     fn CLIPOBJ_cEnumStart(
         pco: *mut CLIPOBJ,
         bAll: BOOL,
@@ -383,7 +383,7 @@ pub unsafe extern "stdcall" fn WNDOBJ_bEnum(
         core::ptr::addr_of_mut!((*pwo).coClient),
         cj,
         pul,
-    )
+    ) as i32
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -398,7 +398,7 @@ pub unsafe extern "C" fn WNDOBJ_bEnum(
         core::ptr::addr_of_mut!((*pwo).coClient),
         cj,
         pul,
-    )
+    ) as BOOL
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]

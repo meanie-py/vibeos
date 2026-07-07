@@ -318,6 +318,27 @@ unsafe fn NetTestBootEnabled() -> bool {
     lError == ERROR_SUCCESS as LONG && dwType == REG_DWORD && dwValue == 1
 }
 
+/// True when a USB mass-storage device was enumerated this boot: PnP creates
+/// `HKLM\SYSTEM\CurrentControlSet\Enum\USBSTOR` the moment usbstor reports a
+/// child PDO, which happens long before winlogon runs. Plain smokes (no USB
+/// disk attached) never have the key, so stortest.exe is never spawned there —
+/// same explorer-race rationale as NetTestBootEnabled above.
+unsafe fn StorTestBootEnabled() -> bool {
+    let mut hKey: HKEY = null_mut();
+    if RegOpenKeyExW(
+        HKEY_LOCAL_MACHINE,
+        wstr!("SYSTEM\\CurrentControlSet\\Enum\\USBSTOR").as_ptr(),
+        0,
+        KEY_QUERY_VALUE,
+        &mut hKey,
+    ) != ERROR_SUCCESS as LONG
+    {
+        return false;
+    }
+    RegCloseKey(hKey);
+    true
+}
+
 // Loads the user's preloaded keyboard layouts. Called on ARM64 (and disabled
 // behind `#if 0` on x86 in the C, hence #[allow(dead_code)] off the ARM64 path).
 #[allow(dead_code)]
@@ -495,6 +516,68 @@ unsafe extern "C" fn FontLoadThread(lpParam: LPVOID) -> DWORD {
     FontLoadThreadImpl(lpParam)
 }
 
+/* DOOM (opt-in demo, VIBEOS_DOOM=1 at image-build time). doomgeneric's
+ * Win32/GDI backend — a genuinely foreign binary — is launched ONLY if
+ * doom.exe was staged into the image (GetFileAttributesW succeeds): arm64
+ * ramdisk via mkramdisk.sh, x86 livecd via strip_cd_media.py. A normal build
+ * has no doom.exe, so this is a silent no-op: nothing is spawned, no serial
+ * noise. Drive-letter agnostic (GetWindowsDirectoryW: X:\reactos on the arm64
+ * ramdisk, D:\reactos on the x86 livecd); the WAD is passed by absolute path
+ * (doomgeneric's cwd is not guaranteed to be system32). Bring-up story +
+ * smoke suite: docs/engineering/doom-on-vibeos.md, tests/qemu/test_doom.py. */
+unsafe fn TryStartDoom() {
+    let mut DoomPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(DoomPath.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(DoomPath.as_mut_ptr(), wstr!("\\system32\\doom.exe").as_ptr());
+    // INVALID_FILE_ATTRIBUTES == 0xFFFFFFFF (not in the bindgen glob).
+    if GetFileAttributesW(DoomPath.as_ptr()) == 0xFFFF_FFFF {
+        return;
+    }
+
+    /* Command line: "<windir>\system32\doom.exe" -iwad <windir>\system32\doom1.wad */
+    let mut DoomLine: [u16; 2 * MAX_PATH as usize] = [0; 2 * MAX_PATH as usize];
+    DoomLine[0] = b'"' as u16;
+    wcscat(DoomLine.as_mut_ptr(), DoomPath.as_ptr());
+    wcscat(DoomLine.as_mut_ptr(), wstr!("\" -iwad ").as_ptr());
+    let mut WadPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    GetWindowsDirectoryW(WadPath.as_mut_ptr(), MAX_PATH - 32);
+    wcscat(WadPath.as_mut_ptr(), wstr!("\\system32\\doom1.wad").as_ptr());
+    wcscat(DoomLine.as_mut_ptr(), WadPath.as_ptr());
+
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    Si.lpDesktop = wstr!("WinSta0\\Default").as_ptr() as PWSTR;
+    let bDoom = CreateProcessW(
+        DoomPath.as_ptr(),
+        DoomLine.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if bDoom != 0 {
+        DbgPrint(
+            b"[WINLOGON] doom.exe created (PID %lu, TID %lu)\n\0".as_ptr() as *const i8,
+            Pi.dwProcessId,
+            Pi.dwThreadId,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(doom.exe) FAILED (error %lu)\n\0".as_ptr() as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn WinMain(
     hInstance: HINSTANCE,
@@ -582,17 +665,36 @@ pub unsafe extern "system" fn WinMain(
 
     /* LockWorkstation(WLSession) — empty macro */
 
-    #[cfg(target_arch = "aarch64")]
+    /* arm64 + amd64: load a keyboard layout. Without one, win32k's key dispatch
+     * drops EVERY key at "NO keyboard layout" (UserProcessKeyboardInput:
+     * pti->KeyboardLayout NULL and gspklBaseLayout NULL) — keys reach kbdclass
+     * and the RIT and then silently vanish, so no app ever sees WM_KEYDOWN. A
+     * normal logon loads layouts via profile loading/userinit, which this
+     * customized boot path skips. Was #[cfg(aarch64)]-only ("required for
+     * RIT→WM_KEYDOWN delivery") — amd64 needed it for the same reason (found
+     * 2026-07-07 by the Doom playable gate: keys traced to [WIN32K] KEYDROP:
+     * NO keyboard layout; amd64 now green + playable).
+     *
+     * i386 EXCLUDED: LoadKeyboardLayoutW -> UserLoadKbdDll ->
+     * NtCreateSection(SEC_IMAGE) for kbdus.dll DEADLOCKS in the i386 Rust MM
+     * (the "#if 0" the old code cited) — it wedges winlogon before explorer
+     * spawns, so i386 never reaches the desktop. Until that MM deadlock is
+     * fixed, i386 keeps the pre-existing behavior (no layout -> app keys dead,
+     * tracked); the boot-to-desktop North Star wins over interactive input. */
+    #[cfg(not(target_arch = "x86"))]
     {
-        /* Load keyboard layout on ARM64 (required for RIT→WM_KEYDOWN delivery) */
         if InitKeyboardLayouts() == 0 {
             DbgPrint(
-                b"[WINLOGON] ARM64: InitKeyboardLayouts failed (non-fatal)\n\0".as_ptr()
+                b"[WINLOGON] InitKeyboardLayouts failed (non-fatal)\n\0".as_ptr()
                     as *const i8,
             );
         } else {
-            DbgPrint(b"[WINLOGON] ARM64: Keyboard layout loaded\n\0".as_ptr() as *const i8);
+            DbgPrint(b"[WINLOGON] Keyboard layout loaded\n\0".as_ptr() as *const i8);
         }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
         DbgPrint(
             b"[WINLOGON] ARM64: Skipping RPC, services, lsass, notifications, GINA\n\0".as_ptr()
                 as *const i8,
@@ -760,27 +862,31 @@ pub unsafe extern "system" fn WinMain(
         }
     }
 
-    /* ARM64: make the shell's desktop (WinSta0\Default, where explorer's tray/
-     * taskbar windows live) the ACTIVE INPUT DESKTOP. A normal logon reaches
-     * this via userinit -> WlxSwitchDesktopToUser, but the arm64 shortcut path
-     * skips GINA/logon entirely and RunSetup's async thread can leave the input
-     * desktop stranded on "Winlogon". When gpdeskInputDesktop != the shell's
-     * desktop, win32k's IntGetPaintMessage walks the wrong desktop tree and
-     * never finds explorer's dirty windows -> the tray clock (and every window)
-     * never repaints, and the "cPaintsReady but no dirty window" leak fires
-     * forever (field manual §9.21; root-caused 2026-07-06 via a live
-     * gpdeskInputDesktop=Default poke that made the clock tick). SwitchDesktop
-     * also drives co_IntShowDesktop so the desktop is mapped to the display. */
-    #[cfg(target_arch = "aarch64")]
+    /* ALL ARCHES: make the shell's desktop (WinSta0\Default, where explorer's
+     * tray/taskbar windows live) the ACTIVE INPUT DESKTOP. A normal logon
+     * reaches this via userinit -> WlxSwitchDesktopToUser, but the customized
+     * boot path (every arch under USE_DUMMY_PSEH) skips GINA/logon entirely
+     * and RunSetup's async thread can leave the input desktop stranded on
+     * "Winlogon". When gpdeskInputDesktop != the shell's desktop:
+     *  - win32k's IntGetPaintMessage walks the wrong desktop tree and never
+     *    finds explorer's dirty windows -> nothing repaints (the arm64 §9.21
+     *    freeze, root-caused 2026-07-06 via a live gpdeskInputDesktop poke);
+     *  - keyboard/mouse routing dead-ends: keys reach kbdclass and win32k but
+     *    the foreground lookup happens on the stranded desktop, so no app
+     *    ever sees them (found on amd64 2026-07-06 by the Doom playable gate:
+     *    fresh boots beat RunSetup's async switch and worked, snapshot-restore
+     *    runs captured the post-steal state and F1 never reached the game).
+     * Was #[cfg(aarch64)] on the §9.22 fix; x86 needs it for the same reason.
+     * SwitchDesktop also drives co_IntShowDesktop (desktop mapped to display). */
     if !(*WLSession).ApplicationDesktop.is_null() {
         if SwitchDesktop((*WLSession).ApplicationDesktop) != 0 {
             DbgPrint(
-                b"[WINLOGON] ARM64: switched active input desktop to Default (shell)\n\0".as_ptr()
+                b"[WINLOGON] switched active input desktop to Default (shell)\n\0".as_ptr()
                     as *const i8,
             );
         } else {
             DbgPrint(
-                b"[WINLOGON] ARM64: SwitchDesktop(Default) FAILED (error %lu)\n\0".as_ptr()
+                b"[WINLOGON] SwitchDesktop(Default) FAILED (error %lu)\n\0".as_ptr()
                     as *const i8,
                 GetLastError(),
             );
@@ -855,6 +961,55 @@ pub unsafe extern "system" fn WinMain(
         );
     }
 
+    /* USB mass-storage usermode proof: spawn stortest.exe (same pattern and
+     * rationale as nettest above). Gated on the PnP Enum key that only exists
+     * when a USBSTOR device was enumerated this boot, so plain smokes never
+     * pay the process-creation race against explorer's handoff. stortest finds
+     * the VIBEUSB FAT volume by label, reads MARKER.TXT, writes + reads back a
+     * file, and emits [STORTEST] markers to the debug serial. */
+    if StorTestBootEnabled() {
+        let mut Si: STARTUPINFOW = zeroed();
+        let mut Pi: PROCESS_INFORMATION = zeroed();
+        let mut StorTestPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+        let mut StorTestLine: [u16; 13] = wstr_arr!("stortest.exe");
+
+        GetWindowsDirectoryW(StorTestPath.as_mut_ptr(), MAX_PATH);
+        wcscat(StorTestPath.as_mut_ptr(), wstr!("\\system32\\stortest.exe").as_ptr());
+
+        Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+        Si.lpDesktop = wstr!("WinSta0\\Default").as_ptr() as PWSTR;
+
+        // DETACHED_PROCESS: same console-less-parent reasoning as nettest above.
+        const DETACHED_PROCESS: DWORD = 0x0000_0008;
+        let bResult = CreateProcessW(
+            StorTestPath.as_ptr(),
+            StorTestLine.as_mut_ptr(),
+            null_mut(),
+            null_mut(),
+            0,
+            DETACHED_PROCESS,
+            null_mut(),
+            null(),
+            &mut Si,
+            &mut Pi,
+        );
+
+        if bResult != 0 {
+            DbgPrint(
+                b"[WINLOGON] stortest.exe created (PID %lu)\n\0".as_ptr() as *const i8,
+                Pi.dwProcessId,
+            );
+            CloseHandle(Pi.hThread);
+            CloseHandle(Pi.hProcess);
+        } else {
+            DbgPrint(
+                b"[WINLOGON] CreateProcessW(stortest.exe) FAILED (error %lu)\n\0".as_ptr()
+                    as *const i8,
+                GetLastError(),
+            );
+        }
+    }
+
     /* Fonts are now loaded synchronously BEFORE explorer.exe (see above), so the
      * shell's first paint already has g_FontListHead populated. The old async
      * CreateThread(FontLoadThread) here raced the shell and lost on i386. */
@@ -902,55 +1057,9 @@ pub unsafe extern "system" fn WinMain(
             );
         }
 
-        /* DOOM (opt-in demo, VIBEOS_DOOM=1 at image-build time). doomgeneric's
-         * Win32/GDI backend — a genuinely foreign binary — is launched ONLY if
-         * doom.exe was staged into the image (GetFileAttributesW succeeds).
-         * A normal build has no doom.exe, so this is a silent no-op: nothing is
-         * spawned, no serial noise. Spawned LAST among GUI apps for foreground
-         * focus; the WAD is passed by absolute path (doomgeneric's cwd is not
-         * guaranteed to be system32). Build + inject: tools/doom/build.sh +
-         * `VIBEOS_DOOM=1 ./vibeos-cli build --arch arm64`. Recipe + the whole
-         * bring-up story: docs/engineering/doom-on-vibeos.md. NOTE: interactive
-         * control needs the arm64 win32k keyboard/mouse->focus fix (open); until
-         * then Doom runs its self-playing attract demo. */
-        {
-            let DoomPath = wstr!("X:\\reactos\\system32\\doom.exe");
-            // INVALID_FILE_ATTRIBUTES == 0xFFFFFFFF (not in the bindgen glob).
-            if GetFileAttributesW(DoomPath.as_ptr()) != 0xFFFF_FFFF {
-                let mut Si: STARTUPINFOW = zeroed();
-                let mut Pi: PROCESS_INFORMATION = zeroed();
-                let mut DoomLine = wstr_arr!("doom.exe -iwad X:\\reactos\\system32\\doom1.wad");
-                Si.cb = size_of::<STARTUPINFOW>() as DWORD;
-                Si.lpDesktop = wstr!("WinSta0\\Default").as_ptr() as PWSTR;
-                let bDoom = CreateProcessW(
-                    DoomPath.as_ptr(),
-                    DoomLine.as_mut_ptr(),
-                    null_mut(),
-                    null_mut(),
-                    0,
-                    0,
-                    null_mut(),
-                    wstr!("X:\\reactos\\system32").as_ptr(),
-                    &mut Si,
-                    &mut Pi,
-                );
-                if bDoom != 0 {
-                    DbgPrint(
-                        b"[WINLOGON] doom.exe created (PID %lu, TID %lu)\n\0".as_ptr() as *const i8,
-                        Pi.dwProcessId,
-                        Pi.dwThreadId,
-                    );
-                    CloseHandle(Pi.hThread);
-                    CloseHandle(Pi.hProcess);
-                } else {
-                    DbgPrint(
-                        b"[WINLOGON] CreateProcessW(doom.exe) FAILED (error %lu)\n\0".as_ptr()
-                            as *const i8,
-                        GetLastError(),
-                    );
-                }
-            }
-        }
+        /* DOOM (opt-in, VIBEOS_DOOM=1): spawned LAST among GUI apps for
+         * foreground focus, and BEFORE the cmd.exe INFINITE wait below. */
+        TryStartDoom();
 
         /* Spawn interactive cmd.exe with console (CONSRV available) */
         {
@@ -997,6 +1106,13 @@ pub unsafe extern "system" fn WinMain(
 
         DbgPrint(b"[WINLOGON] ARM64: cmd.exe exited. Sleeping.\n\0".as_ptr() as *const i8);
     }
+
+    /* DOOM (opt-in, VIBEOS_DOOM=1) — x86 call site. On arm64 doom is spawned
+     * inside the block above (before the cmd.exe INFINITE wait, which never
+     * returns); this common-path point is only reached on i386/amd64. cfg'd so
+     * an arm64 cmd.exe exit can't double-launch. */
+    #[cfg(not(target_arch = "aarch64"))]
+    TryStartDoom();
 
     /* No SAS window, no GINA — just sleep forever. Block on a never-signaled
      * event to properly enter WAIT state and leave the CPU for other threads. */

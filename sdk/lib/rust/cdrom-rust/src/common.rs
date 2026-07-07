@@ -109,7 +109,7 @@ extern "system" {
     fn UNREFERENCED_PARAMETER(x: usize);
     fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
     fn NT_ASSERT(expr: i32);
-    fn PoQueryWatchdogTime(DeviceObject: *mut core::ffi::c_void, SecondsRemaining: *mut ULONG) -> NTSTATUS;
+    fn PoQueryWatchdogTime(DeviceObject: *mut core::ffi::c_void, SecondsRemaining: *mut ULONG) -> u8;
     fn KeQueryTickCount(CurrentCount: *mut LARGE_INTEGER);
     fn ScratchBuffer_ExecuteCdb( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, TransferSize: u32, Retry: u8, Cdb: *mut CDB, CdbLength: u8, ) -> NTSTATUS;
 }
@@ -137,9 +137,9 @@ extern "system" {
     fn RtlInitUnicodeString(DestinationString: *mut UNICODE_STRING, SourceString: *const u16);
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn EXCLUSIVE_MODE(cdData: *mut CDROM_DATA) -> i32;
-    fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> i32;
+    fn EXCLUSIVE_OWNER(cdData: *mut CDROM_DATA, FileObject: *mut core::ffi::c_void) -> u8;
     fn DeviceSetMediaChangeStateEx(DeviceExtension: *mut CDROM_DEVICE_EXTENSION, newState: i32, previousState: *mut i32);
-    fn IsVolumeMounted(DeviceObject: *mut DEVICE_OBJECT) -> i32;
+    fn IsVolumeMounted(DeviceObject: *mut DEVICE_OBJECT) -> u8;
     fn InterlockedCompareExchange(Destination: *mut i32, Exchange: i32, Comperand: i32) -> i32;
     fn RequestSetupMcnSyncIrp(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     static GUID_IO_CDROM_EXCLUSIVE_UNLOCK: GUID;

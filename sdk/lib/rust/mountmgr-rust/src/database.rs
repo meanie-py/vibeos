@@ -4392,7 +4392,7 @@ pub unsafe extern "C" fn DeleteNoDriveLetterEntry(
 // ddk_shims-provided fns — extern "system" (match the shim def).
 unsafe extern "system" {
     fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
-    fn MOUNTMGR_IS_VOLUME_NAME(name: *const _UNICODE_STRING) -> i32; // BOOLEAN
+    fn MOUNTMGR_IS_VOLUME_NAME(name: *const _UNICODE_STRING) -> u8; // BOOLEAN
     fn AllocatePool(NumberOfBytes: u32) -> *mut core::ffi::c_void;
     fn FreePool(P: *mut core::ffi::c_void);
 }

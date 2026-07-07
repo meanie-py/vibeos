@@ -311,10 +311,10 @@ extern "C" {
     fn FrLdrHeapAlloc(size: usize, tag: u32) -> *mut core::ffi::c_void;
     fn FldrCreateComponentKey( parent: PCONFIGURATION_COMPONENT_DATA, class: u32, type_: u32, flags: u32, key: u32, affinity: u32, identifier: *const i8, resource_list: PCM_PARTIAL_RESOURCE_LIST, size: u32, component_key: *mut PCONFIGURATION_COMPONENT_DATA, );
     fn BiosIsVesaSupported() -> u16;
-    fn BiosIsVesaDdcSupported() -> i32;
-    fn BiosVesaReadEdid() -> i32;
+    fn BiosIsVesaDdcSupported() -> u8;
+    fn BiosVesaReadEdid() -> u8;
     fn Int386(interrupt: i32, in_regs: *mut REGS, out_regs: *mut REGS);
-    fn INT386_SUCCESS(regs: REGS) -> i32;
+    fn INT386_SUCCESS(regs: REGS) -> u8;
     fn Relocator16Boot( Regs: *mut REGS, StackSegment: u16, StackPointer: u16, CodeSegment: u16, CodePointer: u16, );
     fn PcVideoPrepareForReactOS();
     fn DiskStopFloppyMotor();

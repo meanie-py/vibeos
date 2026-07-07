@@ -326,7 +326,7 @@ pub unsafe extern "stdcall" fn NtGdiSetBrushOrg(
     pptOut: LPPOINT,
 ) -> i32 {
     let mut ptOut: POINT = core::mem::zeroed();
-    let Ret = GreSetBrushOrg(hdc, x, y, core::ptr::addr_of_mut!(ptOut) as *mut _POINTL);
+    let Ret = GreSetBrushOrg(hdc, x, y, core::ptr::addr_of_mut!(ptOut) as *mut _POINTL) as i32;
     if Ret != 0 {
         if !pptOut.is_null() {
             let __SehStatus = SafeProbeForWrite(
@@ -352,7 +352,7 @@ pub unsafe extern "C" fn NtGdiSetBrushOrg(
     pptOut: LPPOINT,
 ) -> i32 {
     let mut ptOut: POINT = core::mem::zeroed();
-    let Ret = GreSetBrushOrg(hdc, x, y, core::ptr::addr_of_mut!(ptOut) as *mut _POINTL);
+    let Ret = GreSetBrushOrg(hdc, x, y, core::ptr::addr_of_mut!(ptOut) as *mut _POINTL) as i32;
     if Ret != 0 {
         if !pptOut.is_null() {
             let __SehStatus = SafeProbeForWrite(
@@ -1246,7 +1246,7 @@ pub unsafe extern "stdcall" fn NtGdiGetRandomRgn(
                 1
             };
             if (ret == 1) && (iCode as u32 == SYSRGN) {
-                ret = REGION_bOffsetRgn(prgnDest, (*pdc).ptlDCOrig.x, (*pdc).ptlDCOrig.y);
+                ret = REGION_bOffsetRgn(prgnDest, (*pdc).ptlDCOrig.x, (*pdc).ptlDCOrig.y) as i32;
             }
             REGION_UnlockRgn(prgnDest);
         } else {
@@ -1314,7 +1314,7 @@ pub unsafe extern "C" fn NtGdiGetRandomRgn(
                 1
             };
             if (ret == 1) && (iCode as u32 == SYSRGN) {
-                ret = REGION_bOffsetRgn(prgnDest, (*pdc).ptlDCOrig.x, (*pdc).ptlDCOrig.y);
+                ret = REGION_bOffsetRgn(prgnDest, (*pdc).ptlDCOrig.x, (*pdc).ptlDCOrig.y) as i32;
             }
             REGION_UnlockRgn(prgnDest);
         } else {

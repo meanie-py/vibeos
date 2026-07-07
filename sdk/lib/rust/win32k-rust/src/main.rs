@@ -54,7 +54,7 @@ fn MAKELPARAM(low: u32, high: u32) -> LPARAM { MAKELONG(low, high) as LPARAM }
 
 // win32k-internal (cdecl `_Name`) exports referenced by main.
 extern "C" {
-    fn UserDestroyObjectsForOwner(HandleTable: *mut core::ffi::c_void, Owner: *mut core::ffi::c_void) -> BOOL;
+    fn UserDestroyObjectsForOwner(HandleTable: *mut core::ffi::c_void, Owner: *mut core::ffi::c_void) -> u8;
     fn GdiProcessDestroy(Process: PEPROCESS) -> NTSTATUS;
     fn W32kGetDefaultKeyLayout() -> PKL;
     fn IntSetThreadDesktop(hDesktop: HDESK, FreeOnFailure: BOOLEAN) -> BOOL;

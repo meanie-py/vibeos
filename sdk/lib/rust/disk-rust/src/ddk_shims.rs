@@ -168,8 +168,16 @@ pub unsafe extern "C" fn DiskGetDetectInfo(_fdo_ext: *mut c_void, _detect_info: 
 #[no_mangle]
 pub unsafe extern "C" fn DiskDriverReinitialization(_drv: *mut c_void, _nothing: PVOID, _count: u32) {}
 
-// ---------- tracing / WPP (no-ops; callers are variadic cdecl — caller cleans up) ----------
-#[no_mangle] pub unsafe extern "C" fn TracePrint(_lvl: i32, _flags: u32, _fmt: *const i8) {}
+// ---------- tracing / WPP (callers are variadic cdecl — caller cleans up) ----------
+// Error/warning levels forward the raw format string to debug serial so disk.sys
+// failure paths aren't silent; %-specifiers print literally (identifies the site).
+#[no_mangle] pub unsafe extern "C" fn TracePrint(lvl: i32, _flags: u32, fmt: *const i8) {
+    const TRACE_LEVEL_WARNING: i32 = 3;
+    if lvl <= TRACE_LEVEL_WARNING && !fmt.is_null() {
+        unsafe extern "C" { fn DbgPrint(Format: *const i8, ...) -> u32; }
+        DbgPrint(c"[DISK] %s".as_ptr(), fmt);
+    }
+}
 #[no_mangle] pub unsafe extern "C" fn WPP_INIT_TRACING(_drv: PDRIVER_OBJECT, _reg: PUNICODE_STRING) {}
 
 // ---------- SRB_EX accessors (srbhelper.h inlines; logic mirrors classpnp srblib) ----------

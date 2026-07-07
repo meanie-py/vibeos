@@ -21,6 +21,9 @@ use crate::glue::{FILE_DEVICE_CD_ROM, RTL_QUERY_REGISTRY_TYPECHECK_SHIFT, SCSI_S
 use crate::glue::{CLASS_TAG_AUTORUN_DISABLE, CLASS_TAG_FAILURE_PREDICT, CLASS_TAG_MEDIA_CHANGE_DETECTION};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{TRACE_FLAG_MCN, TRACE_FLAG_WMI};
+use crate::glue::{NOTIFICATION_OPERATIONAL_CHANGE_CLASS_EVENTS, NOTIFICATION_EXTERNAL_REQUEST_CLASS_EVENTS,
+    NOTIFICATION_MEDIA_STATUS_CLASS_EVENTS, NOTIFICATION_DEVICE_BUSY_CLASS_EVENTS};
+
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{NonPagedPoolNx, NonPagedPoolNxCacheAligned, SP_UNTAGGED};
 // resolve_imports.py: explicit kernel/private-type imports
@@ -184,7 +187,9 @@ pub static mut StoragePredictFailureEventGuid: GUID = _GUID {
     ],
 };
 
-pub static mut ClasspScreenOff: BOOLEAN = FALSE as BOOLEAN;
+// ClasspScreenOff: single no_mangle definition lives in globals.rs — a local twin
+// here split-brained against power.rs's writes (screen-off never seen). Import it.
+use crate::types::ClasspScreenOff;
 
 pub static mut BreakOnMcnDisable: ULONG = FALSE as ULONG;
 

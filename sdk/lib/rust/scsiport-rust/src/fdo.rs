@@ -1,5 +1,6 @@
 #[allow(unused_imports)] use crate::ddk_shims::*;
 #[allow(unused_imports)] use crate::glue::*;
+use crate::glue::{IRP_MN_QUERY_ID}; // explicit: disambiguate vs ntkrnl_sys::driver_ddk glob
 #[allow(unused_imports)] use crate::inlines::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
