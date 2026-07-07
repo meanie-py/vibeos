@@ -2839,7 +2839,55 @@ hand-rolled `FXSAVE_FORMAT` in a translation, check for the `Align16Byte[8]` tai
 easy to drop and size-asserts on the *local* struct won't catch it (there are none). Prefer
 the bindgen `_FX_SAVE_AREA`/`_FXSAVE_FORMAT` (size-verified) over hand-rolled copies.
 
-### 9.26 (OPEN as of 2026-07-06) i386 `0x0A @ Eip=0x10c` ~2s after `shell ready` — a thread-SUSPEND APC delivered on the syscall-exit path corrupts `KiDeliverApc`'s return chain across the suspend/resume context switch
+### 9.26 (RESOLVED 2026-07-06) i386 `0x0A @ Eip=0x10c` ~2s after `shell ready` — stdcall→fastcall shim tail-`jmp` leaks 4 bytes of stack per call; `KiCheckForApcDelivery`'s esp-relative loop `ret`s to a stale slot
+
+**ROOT CAUSE (found by re-reading the victim frame, not by chasing the writer):** the
+i386 stdcall wrappers `_KfRaiseIrql@4` / `_KfLowerIrql@4` in
+`sdk/lib/rust/ntkrnl-sys/src/inline/ke_i386.rs` were
+
+```asm
+_KfRaiseIrql@4:
+  mov ecx, [esp+4]
+  jmp @KfRaiseIrql@4      ; ← BUG: tail-jump to the FASTCALL impl
+```
+
+A fastcall function whose args all fit in registers ends in plain `ret` (cleans 0
+stack bytes) — but the stdcall shim's caller pushed 4 bytes and expects `ret 4`.
+Tail-jumping hands that `ret` straight back to the caller, so **every call leaves ESP
+4 bytes low**. Nearly all callers are compiler-generated (EBP-framed) and silently
+self-heal at `mov esp, ebp`. The one that can't: `KiCheckForApcDelivery` (hand-asm,
+esp-relative, same file) — its user-APC loop calls `_KfRaiseIrql@4` **and**
+`_KfLowerIrql@4` (−8/iteration), then its exit `pop ebx/pop edi/pop esi; ret 4` pops
+shifted slots and `ret`s to the saved-EDI slot, which held **0x10c** (a stale local —
+NOT a written value; that's why every "find the 0x10c writer" experiment came up
+empty). After the bogus ret, `[esp]` = `KiServiceExit+0x1b` — exactly the observed
+post-crash stack. Fires only when a **user** APC is pending at syscall exit (rare;
+first ~2s after `shell ready` during CDefView startup), hence the delayed, determinis-
+tic crash. The suspend-APC association from the `KiLastApc*` recorder was a red
+herring (it records the last *kernel* APC; the crashing pass is the user-APC loop).
+
+**Fix:** shims now `call @Kf*Irql@4; ret 4` (clean their own frame). Sweep rule: a
+stdcall→fastcall thunk may NEVER tail-jump unless the fastcall target also cleans
+exactly the shim's stack bytes; audited all other `jmp @…@N` sites (`KiExceptionExit`,
+`ctxswitch.S`) — noreturn tail-dispatches, fine.
+
+**Debugging lessons (why this took multiple sessions):**
+1. **A structured "garbage" value (small constant like 0x10c) on the stack is not
+   necessarily *written* — check for an ESP-shifted `ret` popping a stale local
+   FIRST.** ESP imbalance self-heals in every EBP-framed function, so the crash only
+   manifests in esp-relative asm — audit the hand-asm in the return chain before
+   hunting phantom memory writers.
+2. The decisive datum was the `[T0E]` kernel-stack ret-chain scan (dump words above
+   fault-ESP in the #PF handler, filter to kernel-code range, symbolicate offline):
+   `[fault_esp]=KiServiceExit+0x1b` pinned the crashing `ret` to one call-depth below
+   `KiServiceExit` with zero locals in between → `KiCheckForApcDelivery` itself.
+3. For kernel-mode traps the CPU pushes no SS:ESP, so `TF+0x74` overlays the
+   interrupted stack top — the popped slot itself (at `TF+0x70`) is destroyed by the
+   CPU's EFlags push. Scan from `TF+0x74` upward.
+4. Disassemble the *linked binary* (`llvm-objdump` at `ImageBase+RVA`), not the
+   source: the bug was visible only as `jmp` vs `call/ret 4` in the emitted shim.
+
+(Original OPEN triage, kept for the record:) a thread-SUSPEND APC delivered on the syscall-exit path was believed to corrupt `KiDeliverApc`'s return chain across the suspend/resume context switch
 
 The LAST i386 boot blocker after §9.24 + §9.25. i386 reaches the real `shell ready`
 boot marker (desktop renders), then within ~2s (during `shell32!CDefView` /
