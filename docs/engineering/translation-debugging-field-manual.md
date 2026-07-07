@@ -2792,13 +2792,31 @@ which looks like a broken detector but isn't.
      ⇒ tsv base `runtime_pc − tsv_rva`), i.e. in a later-loaded module — the
      net/TDI path (netstack.sys / arm64 HAL interrupt path). `build-index.sh`
      only indexes ntoskrnl, so symbolicating the caller needs a netstack index.
-   - **Next diagnostic on a repro:** it's IRQL-leak, not pool overrun, so special
-     pool is the wrong tool. Right tools: (a) make `irql_violation()` capture a
-     backtrace / `KeBugCheckEx` on first violation so the *leaking raise* is
-     caught with a live stack instead of the downstream victim; (b) GDB watch the
-     leaked `HalpCurrentIrql`; (c) audit the arm64 net/TDI ISR path for a
-     `HalBeginSystemInterrupt`/`KfRaiseIrql(HIGH_LEVEL)` without a matching lower.
-     Rare enough that a soak (`farm`, host-quiet only) may be needed to catch it live.
+   - **The IRQL-leak hypothesis above is DISPROVEN (2026-07-06, caught live).**
+     The `last raise-to-HIGH @ <ra>` diagnostic (hal-rust `irql_violation`, added
+     this session) fired on a fresh gate repro and pointed the leaked HIGH at
+     **`KeBugCheckWithTf+0x824`** — i.e. the HIGH_LEVEL is raised BY BUGCHECK
+     PROCESSING, not by pre-crash net/TDI code. So the `raise-DOWN 15→2` /
+     `lower-UP 2→15` spam is an ARTIFACT of already being inside the bugcheck
+     path (KeBugCheck raises to HIGH, then its own spinlock acquires look like
+     raise-DOWN); it is NOT the cause. The instrumentation did its job: it killed
+     a plausible-but-wrong hypothesis cleanly.
+   - **The REAL fault:** the first (root) bugcheck PC symbolicates to
+     **`KiUnwaitThread+0x28`** with `0xC0000005` — an access violation in the
+     SCHEDULER thread-wake path, hit during the netstack TDI self-test's
+     `associate`. (The second, nested 0x1E at `KeGetBugMessageText+0x60` is just
+     a fault while printing the first bugcheck.) This is the documented
+     **KiUnwaitThread BUGCHECK flake** (AGENTS.md kernel-debug recipe) — a
+     scheduler wakeup operating on a corrupted `KWAIT_BLOCK`/thread pointer, NOT
+     an IRQL leak and NOT a pool overrun. Reclassify: this is a dispatcher/wait
+     corruption bug in the thread-wake path, rare (~1/4 arm64 boots), surfaced by
+     the TDI self-test's cross-thread wakeup.
+   - **Next diagnostic on a repro:** break on `KiUnwaitThread` (kernel-debug
+     toolkit `run-until.sh --break KiUnwaitThread`), dump the `KWAIT_BLOCK` /
+     `KTHREAD` it faults on, and `identify-object` the bad pointer — the amd64
+     KiUnwaitThread flake recipe in AGENTS.md returns stop code + trapframe +
+     object identity in one call. Calibrate the symbol base off the bugcheck P2
+     (`ntoskrnl.exe+<off>`): base = runtime_PC − off; tsv_rva = module_rva + 0x400000.
 
 ### 9.26 Static analysis for leaked IRQL raises / spinlock acquires — `scan_irql_balance.py`
 
