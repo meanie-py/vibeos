@@ -43,7 +43,8 @@ extern "system" {
 // NlsMbCodePageTag is an ntoskrnl data export (cross-DLL data import → raw-dylib).
 #[link(name = "ntoskrnl", kind = "raw-dylib")]
 extern "C" {
-    static mut NlsMbCodePageTag: i32;
+    // BOOLEAN (u8) in sdk/lib/rtl/nls.c — an i32 decl over-reads 3 neighbor bytes
+    static mut NlsMbCodePageTag: u8;
 }
 #[no_mangle]
 pub unsafe extern "system" fn PciGetDescriptionMessage(
