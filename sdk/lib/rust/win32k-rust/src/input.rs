@@ -512,7 +512,19 @@ pub unsafe extern "system" fn RawInputThreadMain() {
             UserProcessKeyboardInput(&mut KeyInput);
             UserLeave();
         } else if KbdStatus != STATUS_PENDING {
-            // ERR
+            // Read failed — without a print this drops keys silently forever
+            // (the read is only re-issued next loop; a persistent error spins).
+            static mut RIT_KBDERR_TRACE: u32 = 0;
+            if RIT_KBDERR_TRACE < 8 {
+                RIT_KBDERR_TRACE += 1;
+                extern "C" {
+                    fn DbgPrint(Format: *const u8, ...) -> u32;
+                }
+                DbgPrint(
+                    b"[WIN32K] RIT kbd read FAILED status=0x%x\n\0".as_ptr(),
+                    KbdStatus as u32,
+                );
+            }
         }
     }
 

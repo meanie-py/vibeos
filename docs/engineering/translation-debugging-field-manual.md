@@ -3200,6 +3200,87 @@ DISPATCH → first-keypress machine wedge; see `doom-on-vibeos.md` §Bug 1) and 
 loud-panic-handler port for `arm64input-cargo` (bare `loop{}` handlers hide every
 driver panic — ~40 `*-cargo` mains still have them, sweep owed).
 
+### 9.27 (FIXED 2026-07-07) x86 PS/2 input was COMPLETELY dead — four stacked root causes, found by the Doom playable-gate
+
+**Symptom:** amd64/i386 QMP-injected keys/mouse never reached any application.
+Undetected for a long time: the cli gate's smoke never injects input, and the
+pytest input test (`test_post_shell_ready_input`) only asserts the *class
+driver* marker — which was ALSO dead, but nobody ran it. Surfaced the first
+time an adversarial gate demanded a real app respond (`tests/qemu/test_doom.py`,
+the "start a new game of Doom with injected keys" probe).
+
+Four independent root causes, each masking the next (fix order = discovery
+order; every one is arch-generic even though found on amd64):
+
+1. **acpi-rust invented `CmResourceType*` table** (`buspdo.rs:418`): rustconv
+   emitted a sequential 0..11 guess (Interrupt=0, Port=2, …) instead of the
+   WDK values (Port=1, Interrupt=2, … cmtypes.h:224). Every ACPI-built
+   CM_PARTIAL_RESOURCE_DESCRIPTOR was mistyped; IRQ descriptors were
+   `CmResourceTypeNull` so pnpres translation and i8042prt's resource parse
+   never saw an interrupt → `IoConnectInterrupt` never called → both PS/2 ISRs
+   dead. Polled detection kept working, which hid it (devices enumerate fine).
+   *Oracle:* GDB `hbreak` on `IoConnectInterrupt` + log callers → i8042prt
+   absent. *Lint blind spot:* `verify_constants`/`--enums` missed it — local
+   uncited `pub const` tables aren't verified (owed follow-up).
+
+2. **i8042prt-rust mouse reset state machine stored INVALID ENUM DISCRIMINANTS**
+   (`mouse.rs`, `MOUSE_RESET_SUBSTATE`): the C stores `I8042ReservedMinimum+N`
+   scratch states (1001..1040) in the enum-typed field via plain int
+   assignment; the translation kept the Rust enum and `transmute`d bare
+   1001/1021/1040 into it. Transmuting a value that is not a declared
+   discriminant is **UB, and LLVM used it**: knowing the legal value set, it
+   *deleted the 1001..1040 match arms as unreachable*. The wheel-detect knock
+   (F3 C8 …) stalled at state 1001 on every boot; the timeout DPC just clears
+   MOUSE_PRESENT (no retry) → mouse dead. **New translation-bug class:**
+   `transmute::<u32, CEnum>(out_of_range)` compiles clean and silently deletes
+   the very code that uses the value. Fix = declare every reachable reserved
+   value as a real variant (`I8042Reserved1001 = 1001`, …). *Oracle:* bounded
+   ISR byte/state serial trace — conversation healthy to state 1001, then the
+   response write never appears.
+
+3. **winlogon only loaded keyboard layouts on arm64**: `InitKeyboardLayouts()`
+   was `#[cfg(target_arch = "aarch64")]` ("required for RIT→WM_KEYDOWN
+   delivery") — but the customized boot path skips the normal profile-based
+   layout load on EVERY arch. With `gspklBaseLayout == NULL`, win32k's
+   `UserProcessKeyboardInput` drops **every key** at "NO keyboard layout" —
+   after kbdclass and the RIT already saw it. All the failure paths were
+   no-op `ERR!` macros; §fix made kbdlayout.rs's ERR! real (DbgPrint) and
+   added bounded `[WIN32K] KEYDROP:` prints at each silent drop site.
+
+4. **The input desktop can be stranded on "Winlogon" on x86 too** (§9.23's
+   second half): `SwitchDesktop(ApplicationDesktop)` post-explorer was also
+   aarch64-only; RunSetup's async thread can leave `gpdeskInputDesktop` on the
+   Winlogon desktop → keys route to the stranded desktop's foreground. De-cfg'd.
+
+Also fixed en route: the shared i8042 packet state machine (`i8042PacketIsr`)
+is consulted by BOTH ISRs but never checks which port the in-flight packet
+targets — a keyboard packet in flight eats mouse bytes (and vice versa). This
+is a latent race in the upstream C too; the Rust now gates on `PacketPort`.
+
+**Test-oracle lesson:** the first playable-gate probe used F1 (Doom's help
+screen = static frame). doomgeneric's `convertToDoomKey` doesn't map VK_F1 —
+the game legitimately ignored the key and the gate kept failing AFTER the OS
+was fixed. When probing a foreign binary, drive inputs it demonstrably maps
+(ESC/ENTER/arrows) toward a state change it can't fake (new game started,
+idle first-person view ≈ static vs attract demo ≈ 50% frame delta).
+
+**i386 rare Mm-gate flake (open, REFRAMED 2026-07-07 — NOT a landing blocker):**
+the acpi CmResourceType fix (#1 above) is correct and load-bearing for amd64,
+and it connects the i8042 IRQ on i386 *for the first time* (previously
+Null-typed → never connected). This can timing-expose a latent i386 Mm gate
+deadlock: winlogon parks in `NtFreeVirtualMemory` → (Mm internals) →
+`KeWaitForGate` (WaitReason 0x23 WrPushLock, HOLDER-STUCK "no signal ever"),
+boot never reaches the desktop. **Empirically it is rare:** on a clean build,
+i386 smoked 5/5 green + a full 3-arch gate ×3 green (~13 consecutive clean
+boots) with no recurrence — the one live capture was under the
+timing-perturbing `--lockdep` instrumented build. So it is a **pre-existing Mm
+guarded-mutex race** (§9.13 WS-pushlock family), NOT introduced by the input
+work and NOT a hard regression; the acpi fix is correct and stays. All 5 fixes
++ the amd64 playable win LANDED on master via ×3-green gate 2026-07-07. Left
+open as a tracked rare flake; if it recurs, NEXT TOOL: `vibeos-cli build --arch
+i386 --lockdep` names the holder + ordering inversion on serial (it's a stack
+`_EX_PUSH_LOCK_WAIT_BLOCK` WakeGate class — special pool can't catch it; use a
+GDB watchpoint on the wait-block WakeGate.Type byte, cf. §9.24).
 ### 9.30 (RESOLVED 2026-07-07) i386 desktop icons missing — decl/def calling-convention mismatch is UB that LLVM resolves by SILENTLY DELETING the calling branch (no ud2, no link error)
 
 **Symptom:** i386 boots to a fully-working desktop (taskbar, ticking clock,
@@ -3400,7 +3481,51 @@ When only ONE consumer class of a shared primitive misrenders, enumerate what
 that class does that others don't (here: 1bpp DESTINATION blits) before
 auditing the shared machinery.
 
-### 9.34 (RESOLVED 2026-07-07) WriteFile hangs forever on USB volume — extern-`static` WIDTH DRIFT (`MmThrottleTop` declared u64, defined u32) permanently tripped the Cc write throttle
+### 9.34 (RESOLVED 2026-07-07) arm64 input never reached apps — DO_BUFFERED_IO translated as 0x10 (= DO_DIRECT_IO); every input packet memcpy'd to NULL
+
+**Symptom:** arm64 keys/mouse never reached any application. Driver-side
+delivery looked healthy (`[ARM64INPUT] KBD-DELIVERED sc=0x0001`), but win32k
+dropped every key at `KEYDROP: no VK for sc=0x0` — the RIT's
+`KEYBOARD_INPUT_DATA` read back **all-zero**. Mouse "worked" only apparently:
+zeroed `MOUSE_INPUT_DATA` is a silent no-op packet, so the cursor never left
+screen centre and clicks never happened (test screenshots always show the
+cursor at centre — that WAS the tell).
+
+**Root cause (invented-constant class, same family as §9.27's CmResourceType):**
+the C said `KbdDevice->Flags |= DO_BUFFERED_IO` (0x04); the translation wrote
+`0x00000010` — which is **DO_DIRECT_IO**. `NtReadFile` therefore never
+allocated a SystemBuffer (IRP arrives Flags=0x900, SystemBuffer=NULL,
+UserBuffer=NULL, MDL path), and the driver's completion
+`RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, &Data, 12)` **wrote each
+packet to virtual NULL** in whatever process context the completion ran —
+silent kernel memory corruption on every input event, plus data loss.
+
+**Debug chain that found it:** bounded paired traces — driver `RingPush`
+(sc=0x0001 healthy) vs win32k RIT receive (make=0x0) → completion-site trace
+printed `sysbuf=0000000000000000` + IRP Flags without IRP_BUFFERED_IO → read
+`NtReadFile` in iomgr-rust: SystemBuffer only allocated when
+`DeviceObject.Flags & DO_BUFFERED_IO (0x04)`.
+
+**Fix:** `arm64input.rs` device creation 0x10→0x04 (both KeyboardClass0 and
+PointerClass0) + defensive `IrpOutputBuffer()` helper (SystemBuffer else
+UserBuffer, skip-if-NULL) at all four completion memcpy sites. Result: the
+`--doom` input gate goes green on arm64 — click-to-focus + ESC/ENTER starts a
+new game (PLAYABLE Doom on arm64).
+
+**Lesson:** when a reader sees ALL-ZERO structs that the writer provably
+filled, suspect the *transport* (I/O manager buffering mode), not the data
+path — and check every hand-written `Flags |= 0xNN` against the WDK value.
+`verify_constants` can't see bare numeric flags ORs; grep for
+`Flags |= 0x` in translated drivers is a cheap audit (owed sweep).
+
+**Residual (task #21, still open):** an intermittent arm64 renders-freeze
+(doom window black/whole-screen frame delta 0.0000) survives this fix at a
+reduced rate — under investigation; NULL-write corruption was one component
+but not the whole story. The dib1bpp/sprite-path suspicions from earlier
+rounds were audited faithful-to-C (subagent audit, 2026-07-07) and are NOT
+the cause.
+
+### 9.35 (RESOLVED 2026-07-07) WriteFile hangs forever on USB volume — extern-`static` WIDTH DRIFT (`MmThrottleTop` declared u64, defined u32) permanently tripped the Cc write throttle
 
 **Symptom:** first cached user write to a FAT volume never returns. No BUGCHECK,
 no error, no FS activity — the writing process just parks. Everything read-path

@@ -409,6 +409,23 @@ unsafe fn MouRingPop(DevExt: PINPUT_DEVICE_EXT) -> MOUSE_INPUT_DATA {
     data
 }
 
+/// Resolve the output buffer of a read IRP. Our (Rust) I/O manager does NOT do
+/// buffered-I/O setup for kernel-mode ZwReadFile callers: the IRP arrives with
+/// AssociatedIrp.SystemBuffer == NULL, no IRP_BUFFERED_IO in Flags, and the
+/// caller's buffer in Irp->UserBuffer (neither-I/O style). This driver used to
+/// write SystemBuffer unconditionally — every completion memcpy'd the input
+/// packet to virtual NULL, so win32k's RIT read back its own zeroed buffer:
+/// keys dropped at "no VK for sc=0x0" and mouse packets were silent no-ops
+/// (dx=dy=buttons=0). Root-caused 2026-07-07 (doom input gate).
+unsafe fn IrpOutputBuffer(Irp: PIRP) -> *mut core::ffi::c_void {
+    let sys = (*Irp).AssociatedIrp.SystemBuffer;
+    if !sys.is_null() {
+        sys
+    } else {
+        (*Irp).UserBuffer
+    }
+}
+
 unsafe fn MouTryCompleteIrp(DevExt: PINPUT_DEVICE_EXT) {
     let mut OldIrql: KIRQL = 0;
     let mut Irp: PIRP;
@@ -431,11 +448,14 @@ unsafe fn MouTryCompleteIrp(DevExt: PINPUT_DEVICE_EXT) {
 
         Data = MouRingPop(DevExt);
 
-        core::ptr::copy_nonoverlapping(
-            core::ptr::addr_of!(Data) as *const u8,
-            (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
-            core::mem::size_of::<MOUSE_INPUT_DATA>()
-        );
+        let OutBuf = IrpOutputBuffer(Irp);
+        if !OutBuf.is_null() {
+            core::ptr::copy_nonoverlapping(
+                core::ptr::addr_of!(Data) as *const u8,
+                OutBuf as *mut u8,
+                core::mem::size_of::<MOUSE_INPUT_DATA>()
+            );
+        }
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
         (*Irp).IoStatus.Information = core::mem::size_of::<MOUSE_INPUT_DATA>() as u64;
         IoCompleteRequest(Irp, IO_MOUSE_INCREMENT);
@@ -464,11 +484,14 @@ unsafe fn TryCompleteIrp(DevExt: PINPUT_DEVICE_EXT) {
 
         Data = RingPop(DevExt);
 
-        RtlCopyMemory(
-            (*Irp).AssociatedIrp.SystemBuffer,
-            core::ptr::addr_of_mut!(Data) as *mut core::ffi::c_void,
-            core::mem::size_of::<KEYBOARD_INPUT_DATA>()
-        );
+        let OutBuf = IrpOutputBuffer(Irp);
+        if !OutBuf.is_null() {
+            RtlCopyMemory(
+                OutBuf,
+                core::ptr::addr_of_mut!(Data) as *mut core::ffi::c_void,
+                core::mem::size_of::<KEYBOARD_INPUT_DATA>()
+            );
+        }
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
         (*Irp).IoStatus.Information = core::mem::size_of::<KEYBOARD_INPUT_DATA>() as u64;
         IoCompleteRequest(Irp, IO_KEYBOARD_INCREMENT as i8);
@@ -604,11 +627,14 @@ unsafe extern "C" fn InputRead(
 
     if (*DevExt).IsKeyboard != 0 && RingHasData(DevExt) != 0 {
         let Data = RingPop(DevExt);
-        RtlCopyMemory(
-            (*Irp).AssociatedIrp.SystemBuffer,
-            core::ptr::addr_of!(Data) as *const core::ffi::c_void,
-            core::mem::size_of::<KEYBOARD_INPUT_DATA>()
-        );
+        let OutBuf = IrpOutputBuffer(Irp);
+        if !OutBuf.is_null() {
+            RtlCopyMemory(
+                OutBuf,
+                core::ptr::addr_of!(Data) as *const core::ffi::c_void,
+                core::mem::size_of::<KEYBOARD_INPUT_DATA>()
+            );
+        }
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
         (*Irp).IoStatus.Information = core::mem::size_of::<KEYBOARD_INPUT_DATA>() as u64;
         IoCompleteRequest(Irp, IO_KEYBOARD_INCREMENT);
@@ -617,11 +643,14 @@ unsafe extern "C" fn InputRead(
 
     if (*DevExt).IsKeyboard == 0 && MouRingHasData(DevExt) != 0 {
         let Data = MouRingPop(DevExt);
-        RtlCopyMemory(
-            (*Irp).AssociatedIrp.SystemBuffer,
-            core::ptr::addr_of!(Data) as *const core::ffi::c_void,
-            core::mem::size_of::<MOUSE_INPUT_DATA>()
-        );
+        let OutBuf = IrpOutputBuffer(Irp);
+        if !OutBuf.is_null() {
+            RtlCopyMemory(
+                OutBuf,
+                core::ptr::addr_of!(Data) as *const core::ffi::c_void,
+                core::mem::size_of::<MOUSE_INPUT_DATA>()
+            );
+        }
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
         (*Irp).IoStatus.Information = core::mem::size_of::<MOUSE_INPUT_DATA>() as u64;
         IoCompleteRequest(Irp, IO_MOUSE_INCREMENT);
@@ -1529,8 +1558,13 @@ pub unsafe extern "system" fn DriverEntry(
     (*DevExt).RingTail = 0;
     (*DevExt).SelfDevice = KbdDevice;
 
-    (*KbdDevice).Flags |= 0x00000010;
-    (*KbdDevice).Flags &= !0x00000080;
+    // C: KbdDevice->Flags |= DO_BUFFERED_IO (0x04). The translation had
+    // guessed 0x10 — which is DO_DIRECT_IO — so NtReadFile never allocated a
+    // SystemBuffer and every input packet was copied to NULL (win32k's RIT
+    // read back zeros: keys dropped at "no VK for sc=0x0", mouse packets were
+    // no-ops). Same invented-constant class as the acpi CmResourceType bug.
+    (*KbdDevice).Flags |= 0x00000004; // DO_BUFFERED_IO
+    (*KbdDevice).Flags &= !0x00000080; // ~DO_DEVICE_INITIALIZING
     g_KbdDevice = KbdDevice;
 
     DbgPrint(b"[ARM64INPUT] \\Device\\KeyboardClass0 created\n\0".as_ptr() as _);
@@ -1563,8 +1597,8 @@ pub unsafe extern "system" fn DriverEntry(
     (*DevExt).MouRingHead = 0;
     (*DevExt).MouRingTail = 0;
     (*DevExt).SelfDevice = MouDevice;
-    (*MouDevice).Flags |= 0x00000010;
-    (*MouDevice).Flags &= !0x00000080;
+    (*MouDevice).Flags |= 0x00000004; // DO_BUFFERED_IO (see kbd note above)
+    (*MouDevice).Flags &= !0x00000080; // ~DO_DEVICE_INITIALIZING
 
     let n_ptr_sym = wsz!(b"\\DosDevices\\PointerClass0");
     RtlInitUnicodeString(&mut SymlinkName, n_ptr_sym.as_ptr());

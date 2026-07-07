@@ -28,7 +28,14 @@ macro_rules! w {
 
 
 // ERR/TRACE/WARN/FIXME — DbgPrint-style no-ops (release).
-macro_rules! ERR { ($($t:tt)*) => {{}}; }
+// ERR! made REAL in this file (2026-07-07 doom-playable triage): every
+// keyboard-layout load failure was a silent no-op, so gspklBaseLayout==NULL
+// (=> win32k drops EVERY key: "NO keyboard layout") had no serial signature.
+// Args at each site are already DbgPrint-style (fmt, ...).
+extern "C" {
+    fn DbgPrint(Format: *const i8, ...) -> u32;
+}
+macro_rules! ERR { ($($t:tt)*) => {{ DbgPrint($($t)*); }}; }
 macro_rules! TRACE { ($($t:tt)*) => {{}}; }
 macro_rules! WARN { ($($t:tt)*) => {{}}; }
 macro_rules! FIXME { ($($t:tt)*) => {{}}; }

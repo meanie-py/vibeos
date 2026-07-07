@@ -1424,6 +1424,19 @@ unsafe fn ProcessKeyEvent_impl(wVk: WORD, wScanCode: WORD, dwFlags: DWORD, bInje
     /* If we have a focus queue, post a keyboard message */
     pFocusQueue = IntGetFocusMessageQueue();
 
+    // Bounded drop trace (2026-07-07 doom-playable triage): a key with no
+    // focus queue vanishes silently — make the drop visible.
+    if pFocusQueue.is_null() {
+        static mut KEY_NOQ_TRACE: u32 = 0;
+        if KEY_NOQ_TRACE < 8 {
+            KEY_NOQ_TRACE += 1;
+            extern "C" {
+                fn DbgPrint(Format: *const u8, ...) -> u32;
+            }
+            DbgPrint(b"[WIN32K] KEYDROP: no focus queue (vk=0x%x)\n\0".as_ptr(), wVk as u32);
+        }
+    }
+
     /* If it is F10 or ALT is down and CTRL is up, it's a system key */
     if wVk == VK_F10 as WORD
         || (wSimpleVk == VK_MENU as WORD && bMenuDownRecently != 0)
@@ -1671,13 +1684,34 @@ unsafe fn UserProcessKeyboardInput_impl(pKbdInputData: *mut KEYBOARD_INPUT_DATA)
         pKl = W32kGetDefaultKeyLayout();
     }
     if pKl.is_null() {
-        ERR!("UserProcessKeyboardInput: NO keyboard layout!\n");
+        // Silent key drop — make it loud (2026-07-07 doom-playable triage).
+        extern "C" {
+            fn DbgPrint(Format: *const u8, ...) -> u32;
+        }
+        DbgPrint(b"[WIN32K] KEYDROP: NO keyboard layout (sc=0x%x)\n\0".as_ptr(), wScanCode as u32);
         return;
     }
 
     pKbdTbl = (*(*pKl).spkf).pKbdTbl;
 
     wVk = IntVscToVk(wScanCode, pKbdTbl);
+
+    if wVk == 0 {
+        // vsc->vk mapping failed — silent drop otherwise (2026-07-07 triage).
+        static mut KEY_NOVK_TRACE: u32 = 0;
+        if KEY_NOVK_TRACE < 32 {
+            KEY_NOVK_TRACE += 1;
+            extern "C" {
+                fn DbgPrint(Format: *const u8, ...) -> u32;
+            }
+            DbgPrint(
+                b"[WIN32K] KEYDROP: no VK for sc=0x%x (make=0x%x flags=0x%x)\n\0".as_ptr(),
+                wScanCode as u32,
+                (*pKbdInputData).MakeCode as u32,
+                (*pKbdInputData).Flags as u32,
+            );
+        }
+    }
 
     if wVk != 0 {
         let mut KbdInput: KEYBDINPUT = core::mem::zeroed();

@@ -1122,6 +1122,16 @@ unsafe fn co_MsqInsertMouseMessage_impl(
 
     pwndDesktop = UserGetDesktopWindow();
     if pwndDesktop.is_null() {
+        // Bounded drop trace (2026-07-07 doom-playable triage): every mouse
+        // event is discarded while there is no desktop window.
+        static mut MOU_NODESK_TRACE: u32 = 0;
+        if MOU_NODESK_TRACE < 4 {
+            MOU_NODESK_TRACE += 1;
+            extern "C" {
+                fn DbgPrint(Format: *const u8, ...) -> u32;
+            }
+            DbgPrint(b"[WIN32K] MOUDROP: no desktop window (msg=0x%x)\n\0".as_ptr(), (*Msg).message);
+        }
         return;
     }
 
@@ -1143,7 +1153,15 @@ unsafe fn co_MsqInsertMouseMessage_impl(
         MessageQueue = (*pti).MessageQueue;
 
         if (*MessageQueue).QF_flags & QF_INDESTROY != 0 {
-            ERR!(b"Mouse is over a Window with a Dead Message Queue!\n\0".as_ptr() as *const i8);
+            // Bounded drop trace (ERR! is a no-op macro — make this visible).
+            static mut MOU_DEADQ_TRACE: u32 = 0;
+            if MOU_DEADQ_TRACE < 4 {
+                MOU_DEADQ_TRACE += 1;
+                extern "C" {
+                    fn DbgPrint(Format: *const u8, ...) -> u32;
+                }
+                DbgPrint(b"[WIN32K] MOUDROP: dead message queue (msg=0x%x)\n\0".as_ptr(), (*Msg).message);
+            }
             return;
         }
 
@@ -1210,6 +1228,25 @@ unsafe fn co_MsqInsertMouseMessage_impl(
             MsqPostMessage(pti, Msg, 1, QS_MOUSEBUTTON, 0, dwExtraInfo as LONG_PTR);
         }
     } else if !hdcScreen.is_null() {
+        // Bounded drop trace (2026-07-07 doom-playable triage, mouse parity
+        // with keyboard.rs KEYDROP): a BUTTON event with no window at the
+        // cursor point vanishes silently here (moves are normal desktop
+        // traffic — don't trace those).
+        if (*Msg).message != WM_MOUSEMOVE {
+            static mut MOU_NOWND_TRACE: u32 = 0;
+            if MOU_NOWND_TRACE < 8 {
+                MOU_NOWND_TRACE += 1;
+                extern "C" {
+                    fn DbgPrint(Format: *const u8, ...) -> u32;
+                }
+                DbgPrint(
+                    b"[WIN32K] MOUDROP: no window at point (%d,%d) msg=0x%x\n\0".as_ptr(),
+                    (*Msg).pt.x,
+                    (*Msg).pt.y,
+                    (*Msg).message,
+                );
+            }
+        }
         GreMovePointer(hdcScreen, (*Msg).pt.x, (*Msg).pt.y);
         (*CurInfo).ShowingCursor = 0;
     }

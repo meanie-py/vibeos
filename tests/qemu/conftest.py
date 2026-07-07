@@ -23,7 +23,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default="arm64",
         # BIOS boot is gone: x86 is UEFI-only (i386-uefi / amd64-uefi). The
         # legacy "i386"/"amd64" BIOS arches were dropped with the BIOS prune.
-        choices=["arm64", "arm64-test", "arm64-net", "i386-uefi", "i386-uefi-net", "amd64-uefi", "amd64-uefi-net"],
+        choices=[
+            "arm64",
+            "arm64-test",
+            "arm64-net",
+            "i386-uefi",
+            "i386-uefi-net",
+            "amd64-uefi",
+            "amd64-uefi-net",
+        ],
         help="Target architecture (default: arm64)",
     )
     parser.addoption(
@@ -37,6 +45,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store_true",
         default=False,
         help="Skip nuclear Rust rebuild (faster iteration, may mask bugs)",
+    )
+    parser.addoption(
+        "--doom",
+        action="store_true",
+        default=False,
+        help="Enable the opt-in Doom foreign-binary suite (tests/qemu/test_doom.py; "
+        "media must be built with VIBEOS_DOOM=1)",
     )
 
 
@@ -80,7 +95,10 @@ def _ensure_clean_rust_build(arch: str) -> None:
     build_target = "livecd" if _base_arch(arch) in ("i386", "amd64") else "ntoskrnl"
     ninja = subprocess.run(
         _wrap(["ninja", build_target]),
-        cwd=build_dir, capture_output=True, text=True, timeout=600,
+        cwd=build_dir,
+        capture_output=True,
+        text=True,
+        timeout=600,
     )
     if ninja.returncode != 0:
         pytest.fail(f"Rust rebuild failed:\n{ninja.stderr[-2000:]}")
@@ -96,16 +114,22 @@ def _ensure_clean_rust_build(arch: str) -> None:
     if arch in ("arm64", "arm64-test"):
         subprocess.run(  # best-effort: targets absent on some branches
             _wrap(["ninja", "arm64input", "arm64vid"]),
-            cwd=build_dir, capture_output=True, text=True, timeout=600,
+            cwd=build_dir,
+            capture_output=True,
+            text=True,
+            timeout=600,
         )
         refresh = subprocess.run(
             ["bash", str(PROJECT_DIR / "qemu" / "mkramdisk.sh"), "--refresh"],
-            capture_output=True, text=True, timeout=600,
+            capture_output=True,
+            text=True,
+            timeout=600,
         )
         if refresh.returncode != 0:
             pytest.fail(
                 "arm64 ramdisk --refresh failed (smoke would boot stale "
-                f"media):\n{refresh.stdout[-1500:]}\n{refresh.stderr[-1500:]}")
+                f"media):\n{refresh.stdout[-1500:]}\n{refresh.stderr[-1500:]}"
+            )
         print("[pytest] arm64 ramdisk refreshed (boot.img re-staged)")
 
 
@@ -120,13 +144,14 @@ def _run_post_build_checks(arch: str) -> list[str]:
     # ud2 scan
     try:
         from scan_ud2 import scan_ud2, find_objdump
+
         objdump = find_objdump(arch)
         if objdump:
             findings = scan_ud2(ntoskrnl, objdump)
             unexpected = [f for f in findings if not f["expected"]]
             if unexpected:
                 funcs = ", ".join(f["function"] for f in unexpected[:5])
-                more = f" (+{len(unexpected)-5} more)" if len(unexpected) > 5 else ""
+                more = f" (+{len(unexpected) - 5} more)" if len(unexpected) > 5 else ""
                 warnings.append(
                     f"ud2 scanner: {len(unexpected)} LLVM miscompilations detected: {funcs}{more}"
                 )
@@ -138,7 +163,9 @@ def _run_post_build_checks(arch: str) -> list[str]:
 
 
 @pytest.fixture(scope="session")
-def vm(arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest) -> Iterator[QemuVM]:
+def vm(
+    arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest
+) -> Iterator[QemuVM]:
     """Boot QEMU once per test session, save 'ready' snapshot."""
     # Reap ONLY orphan QEMUs whose launcher process is dead (crashed/timed-out
     # prior runs). A QEMU with a live launcher — possibly another agent's —
@@ -150,9 +177,7 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.Fixt
     # harness's /tmp/vibeos-qemu-locks/ lockfiles; reap.sh covers both halves.
     reap_sh = PROJECT_DIR / "qemu" / "reap.sh"
     if reap_sh.is_file():
-        result = subprocess.run(
-            [str(reap_sh)], capture_output=True, text=True, check=False
-        )
+        result = subprocess.run([str(reap_sh)], capture_output=True, text=True, check=False)
         for line in result.stderr.splitlines():
             if line.startswith("[reap] killed") or line.startswith("[reap] FAILED"):
                 print(f"[pytest] {line}")
@@ -162,8 +187,10 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.Fixt
     try:
         import PIL  # noqa: F401
     except ImportError:
-        print("[pytest] WARNING: Pillow not installed — screenshots will save "
-              "as raw .ppm. Fix: pip install -e '.[qemu]'")
+        print(
+            "[pytest] WARNING: Pillow not installed — screenshots will save "
+            "as raw .ppm. Fix: pip install -e '.[qemu]'"
+        )
 
     if not request.config.getoption("--skip-clean-build"):
         _ensure_clean_rust_build(arch)
@@ -202,9 +229,11 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.Fixt
             # test_smoke.py::test_screenshot.
             try:
                 from PIL import Image
+
                 Image.open(ppm).save(png, "PNG")
             except ImportError:
                 import shutil as _sh
+
                 png = PROJECT_DIR / "qemu" / f"{arch}_smoke.ppm"
                 _sh.copy2(ppm, png)
             screenshot_msg = f"Screenshot: {png}"
@@ -215,10 +244,7 @@ def vm(arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.Fixt
         serial_len = len(vm._boot_output)
         vm.stop()
         pytest.fail(
-            f"Boot failed: {e}\n"
-            f"Serial output: {serial_len} bytes\n"
-            f"{screenshot_msg}\n"
-            f"\n{debugcon}"
+            f"Boot failed: {e}\nSerial output: {serial_len} bytes\n{screenshot_msg}\n\n{debugcon}"
         )
     print(f"\n[pytest] Boot complete ({len(boot_output)} bytes of serial output)")
 

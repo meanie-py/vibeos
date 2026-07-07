@@ -798,7 +798,16 @@ pub unsafe extern "system" fn i8042KbdInterruptService(
         return ToReturn;
     }
 
-    if i8042PacketIsr(PortDeviceExtension, Output) != 0 {
+    /* Only consult the shared packet machine when the in-flight packet
+     * targets the KEYBOARD (PacketPort == 0). Mirror of the mouse-ISR gate —
+     * see mouse.rs i8042MouInterruptService for the full story (the C calls
+     * i8042PacketIsr unconditionally from both ISRs, so a keyboard packet in
+     * flight ate the mouse's reset ACKs; that stall killed the PS/2 mouse on
+     * every 2026-07-06 boot). */
+    if (*PortDeviceExtension).Packet.State != Idle
+        && (*PortDeviceExtension).PacketPort == 0
+        && i8042PacketIsr(PortDeviceExtension, Output) != 0
+    {
         if (*PortDeviceExtension).PacketComplete != 0 {
             KeInsertQueueDpc(
                 core::ptr::addr_of_mut!((*DeviceExtension).DpcKeyboard),
