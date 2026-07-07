@@ -678,7 +678,7 @@ unsafe fn i8042MouResetIsr(
 		}
 		x if x == EnableWheel as ULONG => {
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xF3);
-			(*DeviceExtension).MouseResetState = core::mem::transmute(1001u32);
+			(*DeviceExtension).MouseResetState = I8042Reserved1001;
 			1u8
 		}
 		1001 => {
@@ -725,7 +725,7 @@ unsafe fn i8042MouResetIsr(
 		}
 		x if x == Enable5Buttons as ULONG => {
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xF3);
-			(*DeviceExtension).MouseResetState = core::mem::transmute(1021u32);
+			(*DeviceExtension).MouseResetState = I8042Reserved1021;
 			1u8
 		}
 		1022 | 1024 => {
@@ -770,7 +770,7 @@ unsafe fn i8042MouResetIsr(
 			if MOUSE_NACK == Value as _ {
 				(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0x3C);
 				(*DeviceExtension).MouseAttributes.SampleRate = (*PortDeviceExtension).Settings.SampleRate as USHORT;
-				(*DeviceExtension).MouseResetState = core::mem::transmute(1040u32);
+				(*DeviceExtension).MouseResetState = I8042Reserved1040;
 				return 1u8;
 			}
 			(*DeviceExtension).MouseHook.IsrWritePort.unwrap()((*DeviceExtension).MouseHook.CallContext, 0xE8);
@@ -840,7 +840,20 @@ pub unsafe extern "system" fn i8042MouInterruptService(
         return 0u8;
     }
 
-    if i8042PacketIsr(PortDeviceExtension, Output) != 0 {
+    /* Only consult the shared packet machine when the in-flight packet
+     * actually TARGETS THE MOUSE (PacketPort == CTRL_WRITE_MOUSE). The C
+     * original calls i8042PacketIsr unconditionally from both ISRs, so a
+     * keyboard packet in flight (kbdclass SET_LEDS/typematic init) STEALS the
+     * mouse's byte: the aux 0xFA that ACKs a mouse reset step gets consumed
+     * as the keyboard packet's ACK, the mouse reset state machine stalls
+     * forever (observed 2026-07-06 stuck at wheel-detect state 1001, byte
+     * trace in serial), and the PS/2 mouse is dead for the whole session —
+     * the timeout DPC just clears MOUSE_PRESENT, there is no retry. This is a
+     * latent upstream ReactOS race that our boot timing hits 100%. */
+    if (*PortDeviceExtension).Packet.State != Idle
+        && (*PortDeviceExtension).PacketPort == CTRL_WRITE_MOUSE as UCHAR
+        && i8042PacketIsr(PortDeviceExtension, Output) != 0
+    {
         if (*PortDeviceExtension).PacketComplete != 0 {
             KeInsertQueueDpc(
                 core::ptr::addr_of_mut!((*DeviceExtension).DpcMouse),

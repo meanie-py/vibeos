@@ -2882,3 +2882,67 @@ DelayExecution) often localizes the block without a full unwind.
 DISPATCH → first-keypress machine wedge; see `doom-on-vibeos.md` §Bug 1) and the
 loud-panic-handler port for `arm64input-cargo` (bare `loop{}` handlers hide every
 driver panic — ~40 `*-cargo` mains still have them, sweep owed).
+
+### 9.27 (FIXED 2026-07-07) x86 PS/2 input was COMPLETELY dead — four stacked root causes, found by the Doom playable-gate
+
+**Symptom:** amd64/i386 QMP-injected keys/mouse never reached any application.
+Undetected for a long time: the cli gate's smoke never injects input, and the
+pytest input test (`test_post_shell_ready_input`) only asserts the *class
+driver* marker — which was ALSO dead, but nobody ran it. Surfaced the first
+time an adversarial gate demanded a real app respond (`tests/qemu/test_doom.py`,
+the "start a new game of Doom with injected keys" probe).
+
+Four independent root causes, each masking the next (fix order = discovery
+order; every one is arch-generic even though found on amd64):
+
+1. **acpi-rust invented `CmResourceType*` table** (`buspdo.rs:418`): rustconv
+   emitted a sequential 0..11 guess (Interrupt=0, Port=2, …) instead of the
+   WDK values (Port=1, Interrupt=2, … cmtypes.h:224). Every ACPI-built
+   CM_PARTIAL_RESOURCE_DESCRIPTOR was mistyped; IRQ descriptors were
+   `CmResourceTypeNull` so pnpres translation and i8042prt's resource parse
+   never saw an interrupt → `IoConnectInterrupt` never called → both PS/2 ISRs
+   dead. Polled detection kept working, which hid it (devices enumerate fine).
+   *Oracle:* GDB `hbreak` on `IoConnectInterrupt` + log callers → i8042prt
+   absent. *Lint blind spot:* `verify_constants`/`--enums` missed it — local
+   uncited `pub const` tables aren't verified (owed follow-up).
+
+2. **i8042prt-rust mouse reset state machine stored INVALID ENUM DISCRIMINANTS**
+   (`mouse.rs`, `MOUSE_RESET_SUBSTATE`): the C stores `I8042ReservedMinimum+N`
+   scratch states (1001..1040) in the enum-typed field via plain int
+   assignment; the translation kept the Rust enum and `transmute`d bare
+   1001/1021/1040 into it. Transmuting a value that is not a declared
+   discriminant is **UB, and LLVM used it**: knowing the legal value set, it
+   *deleted the 1001..1040 match arms as unreachable*. The wheel-detect knock
+   (F3 C8 …) stalled at state 1001 on every boot; the timeout DPC just clears
+   MOUSE_PRESENT (no retry) → mouse dead. **New translation-bug class:**
+   `transmute::<u32, CEnum>(out_of_range)` compiles clean and silently deletes
+   the very code that uses the value. Fix = declare every reachable reserved
+   value as a real variant (`I8042Reserved1001 = 1001`, …). *Oracle:* bounded
+   ISR byte/state serial trace — conversation healthy to state 1001, then the
+   response write never appears.
+
+3. **winlogon only loaded keyboard layouts on arm64**: `InitKeyboardLayouts()`
+   was `#[cfg(target_arch = "aarch64")]` ("required for RIT→WM_KEYDOWN
+   delivery") — but the customized boot path skips the normal profile-based
+   layout load on EVERY arch. With `gspklBaseLayout == NULL`, win32k's
+   `UserProcessKeyboardInput` drops **every key** at "NO keyboard layout" —
+   after kbdclass and the RIT already saw it. All the failure paths were
+   no-op `ERR!` macros; §fix made kbdlayout.rs's ERR! real (DbgPrint) and
+   added bounded `[WIN32K] KEYDROP:` prints at each silent drop site.
+
+4. **The input desktop can be stranded on "Winlogon" on x86 too** (§9.23's
+   second half): `SwitchDesktop(ApplicationDesktop)` post-explorer was also
+   aarch64-only; RunSetup's async thread can leave `gpdeskInputDesktop` on the
+   Winlogon desktop → keys route to the stranded desktop's foreground. De-cfg'd.
+
+Also fixed en route: the shared i8042 packet state machine (`i8042PacketIsr`)
+is consulted by BOTH ISRs but never checks which port the in-flight packet
+targets — a keyboard packet in flight eats mouse bytes (and vice versa). This
+is a latent race in the upstream C too; the Rust now gates on `PacketPort`.
+
+**Test-oracle lesson:** the first playable-gate probe used F1 (Doom's help
+screen = static frame). doomgeneric's `convertToDoomKey` doesn't map VK_F1 —
+the game legitimately ignored the key and the gate kept failing AFTER the OS
+was fixed. When probing a foreign binary, drive inputs it demonstrably maps
+(ESC/ENTER/arrows) toward a state change it can't fake (new game started,
+idle first-person view ≈ static vs attract demo ≈ 50% frame delta).

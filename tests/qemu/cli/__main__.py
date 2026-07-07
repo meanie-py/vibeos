@@ -116,6 +116,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="skip the amd64 netstack net-suite (default-on; escape hatch for fast iteration)",
     )
+    s.add_argument(
+        "--doom",
+        action="store_true",
+        help="opt-in Doom foreign-binary suite (tests/qemu/test_doom.py): launch + "
+        "render + input gates. Media must be built with VIBEOS_DOOM=1 "
+        "(tools/doom/build.sh <arch> first). See docs/engineering/doom-on-vibeos.md",
+    )
     s.set_defaults(fn=smoke_mod.smoke)
 
     g = sub.add_parser(
