@@ -1461,6 +1461,19 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     InbvEnableDisplayString(1);
 
+    // DUMMY_PSEH verdict PoC (dummy-pseh-question lane): prove native clang
+    // SEH dispatches end-to-end in kernel mode. Requires requires-uwtable=true
+    // in the x86_64-kernel target json (without it the image has no .pdata
+    // for Rust frames and the walk double-faults — field manual §9.27). See
+    // ntoskrnl/seh_poc.c + docs/engineering/dummy-pseh-verdict.md.
+    #[cfg(target_arch = "x86_64")]
+    {
+        extern "C" {
+            fn SehPocRun();
+        }
+        SehPocRun();
+    }
+
     #[cfg(target_arch = "aarch64")]
     if IoInitSucceeded == 0 {
         ExpInitializationPhase += 1;

@@ -126,7 +126,14 @@ fn main() {
             "sdk/lib/crt/math/i386/cipow.c",
             "sdk/lib/crt/misc/fltused.c",
         ]),
-        "x86_64" => c_shims.push("sdk/lib/crt/except/amd64/ehandler.c"),
+        // seh_poc.c: DUMMY_PSEH verdict PoC (lane dummy-pseh-question) — native
+        // clang __try/__except, needs -fms-extensions (added in c_shim_flags
+        // below; benign for the other shims). Includes no headers, so the
+        // pseh2.h __try macro layer can't demote it back to DUMMY.
+        "x86_64" => c_shims.extend_from_slice(&[
+            "sdk/lib/crt/except/amd64/ehandler.c",
+            "ntoskrnl/seh_poc.c",
+        ]),
         _ => {}
     }
     // WS1 cmake-off printf batch (2026-06-21): the C-variadic printf shells (Rust
@@ -323,7 +330,7 @@ fn main() {
         .c_shims(&c_shims)
         // -DCRT_PRINTF_HEADERLESS selects the hand-defined FILE/_TCHAR/flags in
         // _sxprintf.c (harmless to the other shims, which don't reference it).
-        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS"])
+        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS", "-fms-extensions"])
         // Self-hosted asm: the engine assembles the SOURCE `.S` directly via its
         // kernel asm -I chain (asm.inc + the generated build-<arch> ks*.inc +
         // ntoskrnl/include) — no offline pre-expansion. The set is per-arch
