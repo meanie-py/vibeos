@@ -83,7 +83,11 @@ use ntkrnl_sys::ddk::{
     _LOADER_PARAMETER_EXTENSION,
 };
 
-use crate::ke::krnlinit::KeLoaderBlock;
+// KeLoaderBlock: ke global read across the crate boundary as a link symbol
+// (#[no_mangle] in ntoskrnl-rust ke/krnlinit.rs). crate-split Phase 1b.
+extern "C" {
+    static mut KeLoaderBlock: ntkrnl_sys::ddk::PLOADER_PARAMETER_BLOCK;
+}
 extern "system" {
     static mut IopRootDeviceNode: PDEVICE_NODE;
     static mut PowerStateCallback: PCALLBACK_OBJECT;

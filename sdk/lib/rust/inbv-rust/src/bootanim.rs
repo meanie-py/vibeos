@@ -50,7 +50,11 @@ extern "C" {
     static mut SharedUserData: *mut u8;
     static mut ExpInTextModeSetup: BOOLEAN;
 }
-use crate::ke::clock::KeBootTime;
+// KeBootTime: ke global read across the crate boundary as a link symbol
+// (#[no_mangle] in ntoskrnl-rust ke/clock.rs). crate-split Phase 1b.
+extern "C" {
+    static mut KeBootTime: LARGE_INTEGER;
+}
 
 const INBV_DISPLAY_STATE_OWNED: u32 = 0;
 
