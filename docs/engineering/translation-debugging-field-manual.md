@@ -3162,7 +3162,7 @@ verified FP with `// nolint: cc-mismatch (reason)`.
    dumps (`dump-thread`, `identify-object`) to find *which* path to print.
 ### 9.31 waitdep — always-on dispatcher wait-block integrity tripwire (`ke/waitdep.rs`)
 
-**Built 2026-07-06 to attack the §9.24 arm64 `KiUnwaitThread+0x28` 0x1E flake**
+**Built 2026-07-06 to attack the §9.27 arm64 `KiUnwaitThread+0x28` 0x1E flake**
 (a KWAIT_BLOCK / dispatcher-list corruption that surfaces as an innocent-victim
 0xC0000005 in the unwait path). Special pool can't see it (wait blocks live on
 thread stacks, not pool) and a GDB watchpoint needs a repro in hand — so
