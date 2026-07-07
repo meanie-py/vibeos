@@ -800,6 +800,11 @@ pub unsafe extern "system" fn KeWaitForSingleObject(
     WaitStatus
 }
 
+// The CPS RunToken wait (`wait_for`) lives in `ntkrnl_sys::token` — NOT here —
+// so extracted kernel crates (po-rust, …) can use it without a dependency on
+// ntoskrnl-rust; it calls the `KeWaitForSingleObject` export above by link
+// name with a primitive-width ABI-identical signature.
+
 #[no_mangle]
 pub unsafe extern "system" fn KeWaitForMultipleObjects(
     Count: ULONG,

@@ -2,8 +2,13 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::globals::KD_BREAKPOINT_TYPE;
 use ntkrnl_sys::ke::*;
-use crate::ke::clock::KeTimeIncrement;
-use crate::ke::krnlinit::{KiProcessorBlock, KeLoaderBlock};
+// ke globals referenced across the crate boundary as link symbols
+// (all #[no_mangle] in ntoskrnl-rust ke/*). crate-split Phase 1b.
+extern "C" {
+    static mut KeTimeIncrement: ntkrnl_sys::base::ULONG;
+    static mut KiProcessorBlock: [ntkrnl_sys::ke::PKPRCB; ntkrnl_sys::constants::MAXIMUM_PROCESSORS as usize];
+    static mut KeLoaderBlock: ntkrnl_sys::ddk::PLOADER_PARAMETER_BLOCK;
+}
 
 use ntkrnl_sys::ddk::{
     _CONTEXT, _EPROCESS, _ETHREAD, _KAPC_STATE, _KPRCB,

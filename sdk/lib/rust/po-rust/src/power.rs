@@ -407,14 +407,19 @@ pub unsafe extern "C" fn PopSendQuerySystemPowerState(
 
     let status = PoCallDriver(DeviceObject, Irp);
     if status == STATUS_PENDING {
-        KeWaitForSingleObject(
-            core::ptr::addr_of_mut!(Event) as PVOID,
-            _KWAIT_REASON_Executive,
-            KernelMode as i8,
-            0,
-            core::ptr::null_mut(),
-        );
-        Status = IoStatusBlock.__bindgen_anon_1.Status;
+        // RunToken pilot: synchronous-IRP wait via the CPS token API; the
+        // IOSB read runs in the continuation, after the re-brand.
+        Status = ntkrnl_sys::token::with_token::<ntkrnl_sys::token::Passive, _>(|tok| {
+            ntkrnl_sys::token::wait_for(
+                tok,
+                core::ptr::addr_of_mut!(Event) as PVOID,
+                _KWAIT_REASON_Executive as u32,
+                KernelMode as i8,
+                0,
+                core::ptr::null_mut(),
+                |_tok, _wait_status| IoStatusBlock.__bindgen_anon_1.Status,
+            )
+        });
     } else {
         Status = status;
     }
@@ -462,14 +467,19 @@ pub unsafe extern "C" fn PopSendSetSystemPowerState(
 
     let status = PoCallDriver(DeviceObject, Irp);
     if status == STATUS_PENDING {
-        KeWaitForSingleObject(
-            core::ptr::addr_of_mut!(Event) as PVOID,
-            _KWAIT_REASON_Executive,
-            KernelMode as i8,
-            0,
-            core::ptr::null_mut(),
-        );
-        Status = IoStatusBlock.__bindgen_anon_1.Status;
+        // RunToken pilot: synchronous-IRP wait via the CPS token API; the
+        // IOSB read runs in the continuation, after the re-brand.
+        Status = ntkrnl_sys::token::with_token::<ntkrnl_sys::token::Passive, _>(|tok| {
+            ntkrnl_sys::token::wait_for(
+                tok,
+                core::ptr::addr_of_mut!(Event) as PVOID,
+                _KWAIT_REASON_Executive as u32,
+                KernelMode as i8,
+                0,
+                core::ptr::null_mut(),
+                |_tok, _wait_status| IoStatusBlock.__bindgen_anon_1.Status,
+            )
+        });
     } else {
         Status = status;
     }

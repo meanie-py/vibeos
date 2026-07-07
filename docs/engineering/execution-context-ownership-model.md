@@ -164,6 +164,17 @@ importantly a voluntary wait — cannot be called while a guard is alive. "No
 sleeping with a spinlock held" becomes a borrow-checker error, not a lockdep
 runtime assert.
 
+**Implementation trap (found by compile-fail probe, 2026-07-07, P2):** a
+token-borrowing guard whose only tie to `'g` is `PhantomData<&'g mut ()>` does
+**not** enforce this — dropck only requires a value's lifetime params to be
+live at its drop when the type itself `impl Drop`, so NLL ends the token loan
+immediately and `wait_for(tok, …)` with a live guard *compiles*. The wrapper
+guards therefore carry a load-bearing **empty `Drop` impl**
+(`ntkrnl-sys/src/token.rs`, `TokenIrqlGuard`/`TokenSpinLockGuard`), which
+extends the loan to the scope end and restores the E0505. Any future
+token-borrowing guard must do the same — and re-verify with the probe (hold a
+guard across `wait_for`, expect E0505).
+
 ### A wait consumes the token — **continuation-passing** (v2)
 
 v1's `fn wait_for<'old>(tok: RunToken<'old>) -> (NTSTATUS, RunToken<'new>)` is

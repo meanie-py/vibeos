@@ -175,18 +175,40 @@ the deferred-switch delivery that closed the arm64 timer-freeze landmine.
   the switch. The field is deleted. (If anything, a later check is "NpxState
   save/restore executed when NpxState ≠ 0" — out of scope for phase 1.)
 
-### Spinlock taps (new — required by the SLEEP_WITH_LOCK check)
+### Spinlock taps (P2 — as built, with the coverage reality)
 
 lockdep instruments pushlocks/guarded mutexes only. The sleep-with-spinlock
-check needs a per-thread **dispatch-lock counter** fed by taps on
-`KfAcquireSpinLock`/`KfReleaseSpinLock`/`KeAcquireSpinLockAtDpcLevel`/queued
-locks. Two constraints: (a) these are **sacred primitives** — their post-opt
-codegen is verified by `tools/verify_sacred_primitives.sh`, so the taps must be
-in the C/Rust wrappers *around* the primitive bodies (or feature-gated variants)
-and the sacred-primitive check re-run with the feature on; (b)
-`KiAcquirePrcbLock` is a UP no-op inline (`ntkrnl-sys/src/inline/ke.rs:969`) —
-the scheduler's own lock is invisible and stays so; that is fine (the scheduler
-holding its own lock across the switch is the design, not a bug).
+check is fed by a per-CPU **dispatch-lock counter** tapped at the one choke
+point every ntoskrnl Rust funnel delegates to: the `KxAcquireSpinLock`/
+`KxReleaseSpinLock` inlines (`ntkrnl-sys/src/inline/ke.rs`, exported via
+`shim_exports.rs`), plus the UP try-funnel success path
+(`KeTryToAcquireSpinLockAtDpcLevel`, which never reaches Kx). Link-name taps
+(`VibeosCswitchdepSpin*`) mirror lockdep's pushlock plumbing exactly.
+
+**Coverage reality, measured on a real armed boot (2026-07-07):**
+- `Kx*SpinLock` also exist as **C FORCEINLINEs**
+  (`ntoskrnl/include/internal/spinlock.h`) — still-C kernel code inlines its
+  own invisible copy. Pure-C pairs are symmetric-invisible; **mixed pairs**
+  (C-inline acquire → Rust-funnel release, the split acquire/release shape)
+  skew the absolute count: ~−10.4K over an amd64 boot, then stable. The
+  counter is therefore a live gauge of the C↔Rust funnel seam, and the
+  `SLEEP_WITH_SPINLOCK` check fires on a **delta above a post-boot baseline**
+  captured at `cswitchdep_init` — never on the absolute count. The check
+  sharpens automatically as translation eliminates mixed pairs.
+- The violation is **amd64-only**; on i386/arm64 several funnels route through
+  the HAL binary (untapped, pair-symmetric) and the counter is census data.
+- **Armed builds are x86-only for now**: the culprit-PC capture needs
+  `feature(link_llvm_intrinsics)` (nightly), and the arm64 kernel builds its
+  builtin target on stable → E0554 (the long-standing arm64-lockdep wall;
+  `vibeos-cli build` fail-fasts with a clear message). Lifts when the arm64
+  kernel moves to nightly.
+- Sacred primitives: the taps sit below the `KeAcquireSpinLock`/
+  `KeReleaseSpinLock` named exports (which `verify_sacred_primitives.sh`
+  checks), so the named symbols stay intact; the check is re-run on armed
+  builds. `KiAcquirePrcbLock` is a UP no-op inline
+  (`ntkrnl-sys/src/inline/ke.rs:969`) — the scheduler's own lock is invisible
+  and stays so (the scheduler holding its own lock across the switch is the
+  design, not a bug).
 
 ## Shadow-state layout
 
