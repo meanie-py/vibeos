@@ -6,6 +6,17 @@ if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_compile_options(-Wunused-result)
 endif()
 
+# cswitchdep taps 4/5 (docs/engineering/cswitchdep-design.md): light the
+# #ifdef VIBEOS_CSWITCHDEP tap sites in cmake-compiled C/asm. NOTE the LIVE
+# syscall paths are NOT here: the trap handlers are Rust (traphandler.rs /
+# traphdlr.rs, feature-gated) and ke/amd64/trap.S is cargo-assembled by
+# ntoskrnl-cargo/build.rs (which plumbs the same env to the assembler). This
+# define only keeps the dead-mirror C copies (traphandler.c/traphdlr.c,
+# commented out of ntos.cmake) compiling faithfully if ever re-enabled.
+if(VIBEOS_CSWITCHDEP)
+    add_definitions(-DVIBEOS_CSWITCHDEP)
+endif()
+
 include(ntos.cmake)
 
 set(NTOSKRNL_SOURCE ${SOURCE})

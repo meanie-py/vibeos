@@ -166,6 +166,16 @@ KiSystemCallHandler(
     /* Enable interrupts */
     _enable();
 
+#ifdef VIBEOS_CSWITCHDEP
+    {
+        /* cswitchdep tap 4 (user→kernel): reachable only with the kernel
+           stack + trap frame in place, so swapgs parity holds by position.
+           Rust: sdk/lib/rust/ntoskrnl-rust/src/ke/cswitchdep.rs */
+        extern VOID VibeosCswitchdepUserEntry(ULONG UserTrap);
+        VibeosCswitchdepUserEntry(1);
+    }
+#endif
+
     /* If the usermode rsp was not a usermode address, prepare an exception */
     if (UserRsp > MmUserProbeAddress
 #ifdef _USE_DUMMY_PSEH
