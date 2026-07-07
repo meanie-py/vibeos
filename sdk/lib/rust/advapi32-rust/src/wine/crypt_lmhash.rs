@@ -209,7 +209,7 @@ pub unsafe extern "system" fn SystemFunction005(
             (*key).Length as usize,
         );
     } else {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy_nonoverlapping( // nolint: silent-failure (byte-array pointee — count==bytes)
             (*key).Buffer,
             deskey.as_mut_ptr(),
             core::mem::size_of_val(&deskey),

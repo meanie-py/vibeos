@@ -178,7 +178,7 @@ pub unsafe extern "C" fn NtLdrAddOptions(
 
         OptionsLength = strlen(LoadOptions) as u32 + 1;
         OptionsLength = core::cmp::min(OptionsLength, BufferSize - NewOptsLength);
-        core::ptr::copy(
+        core::ptr::copy( // nolint: silent-failure (byte-array pointee — count==bytes)
             LoadOptions,
             LoadOptions.offset(NewOptsLength as isize),
             OptionsLength as usize * core::mem::size_of::<i8>(),

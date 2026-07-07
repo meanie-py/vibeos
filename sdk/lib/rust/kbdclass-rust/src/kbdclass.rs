@@ -860,8 +860,8 @@ unsafe fn HandleReadIrp(
                 core::ptr::copy(
                     (*DeviceExtension).PortData.add(NumberOfEntries),
                     (*DeviceExtension).PortData,
-                    ((*DeviceExtension).InputCount - NumberOfEntries)
-                        * core::mem::size_of::<KEYBOARD_INPUT_DATA>(),
+                    // element count — the *size_of factor overran the buffer 12x
+                    ((*DeviceExtension).InputCount - NumberOfEntries) as usize,
                 );
             }
 

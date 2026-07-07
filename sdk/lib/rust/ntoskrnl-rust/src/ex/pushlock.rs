@@ -75,6 +75,16 @@ pub unsafe extern "system" fn ExpInitializePushLocks() {
     }
 }
 
+/// EX_PUSH_LOCK_WAIT_BLOCK with the C `__ALIGNED(16)` restored. The bindgen
+/// type LOST the alignment attribute, so stack-allocated wait blocks landed on
+/// 4-byte boundaries — and the pushlock word ORs 4 FLAG BITS into the block
+/// pointer. A block at addr%16==4 makes bit2 of the pointer read as the WAKING
+/// flag: every releaser then skips ExfWakePushLock ("already waking") and the
+/// waiter parks forever (the i386 "BAD gate"/lost-wakeup session bug). Root
+/// cause of the 2026-07-06 winlogon/LSASS boot wedge; see field manual.
+#[repr(C, align(16))]
+pub(crate) struct AlignedPlWaitBlock(pub(crate) EX_PUSH_LOCK_WAIT_BLOCK);
+
 unsafe fn ExfWakePushLock(PushLock: PEX_PUSH_LOCK, mut OldValue: EX_PUSH_LOCK) {
     let mut NewValue: EX_PUSH_LOCK = core::mem::zeroed();
     let mut PreviousWaitBlock: PEX_PUSH_LOCK_WAIT_BLOCK;
@@ -343,8 +353,8 @@ fastcall_export! {
     let mut NewValue: EX_PUSH_LOCK = core::mem::zeroed();
     let mut TempValue: EX_PUSH_LOCK = core::mem::zeroed();
     let mut NeedWake: BOOLEAN;
-    let mut Block: EX_PUSH_LOCK_WAIT_BLOCK = core::mem::zeroed();
-    let WaitBlock: PEX_PUSH_LOCK_WAIT_BLOCK = core::ptr::addr_of_mut!(Block);
+    let mut Block: AlignedPlWaitBlock = AlignedPlWaitBlock(core::mem::zeroed());
+    let WaitBlock: PEX_PUSH_LOCK_WAIT_BLOCK = core::ptr::addr_of_mut!(Block.0);
 
     loop {
         if OldValue.__bindgen_anon_1.__bindgen_anon_1.Locked() == 0 {
@@ -486,8 +496,8 @@ fastcall_export! {
     let mut OldValue = *PushLock;
     let mut NewValue: EX_PUSH_LOCK = core::mem::zeroed();
     let mut NeedWake: BOOLEAN;
-    let mut Block: EX_PUSH_LOCK_WAIT_BLOCK = core::mem::zeroed();
-    let WaitBlock: PEX_PUSH_LOCK_WAIT_BLOCK = core::ptr::addr_of_mut!(Block);
+    let mut Block: AlignedPlWaitBlock = AlignedPlWaitBlock(core::mem::zeroed());
+    let WaitBlock: PEX_PUSH_LOCK_WAIT_BLOCK = core::ptr::addr_of_mut!(Block.0);
 
     loop {
         if (OldValue.__bindgen_anon_1.__bindgen_anon_1.Locked() == 0)
