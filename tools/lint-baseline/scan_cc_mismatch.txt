@@ -206,7 +206,6 @@ sdk/lib/rust/classpnp-rust/src/classwmi.rs: [CC_MISMATCH] IoWMIDeviceObjectToPro
 sdk/lib/rust/classpnp-rust/src/ddk_shims.rs: [CC_MISMATCH] KeLowerIrql declared extern "system" but defined ['C'] in-crate (i386 UB-fold risk)
 sdk/lib/rust/classpnp-rust/src/ddk_shims.rs: [CC_MISMATCH] KeRaiseIrql declared extern "system" but defined ['C'] in-crate (i386 UB-fold risk)
 sdk/lib/rust/classpnp-rust/src/types_i386.rs: [CC_MISMATCH] ClassRemoveChild declared extern "C" but defined ['stdcall'] in-crate (i386 UB-fold risk)
-sdk/lib/rust/classpnp-rust/src/types_i386.rs: [CC_MISMATCH] ClasspScanForClassHacks declared extern "stdcall" but defined ['C'] in-crate (i386 UB-fold risk)
 sdk/lib/rust/classpnp-rust/src/types_i386.rs: [CC_MISMATCH] ClasspSendSynchronousCompletion declared extern "stdcall" but defined ['C'] in-crate (i386 UB-fold risk)
 sdk/lib/rust/conutils-rust/src/conutils/outstream.rs: [CC_MISMATCH] ConStreamGetOSHandle declared extern "system" but defined ['C'] in-crate (i386 UB-fold risk)
 sdk/lib/rust/conutils-rust/src/conutils/outstream.rs: [CC_MISMATCH] IsConsoleHandle declared extern "system" but defined ['C'] in-crate (i386 UB-fold risk)

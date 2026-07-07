@@ -460,6 +460,7 @@ CSWITCH_KINDS = {
     1: "HIGH_IRQL_AT_SWITCH", 2: "IRQL_UNBALANCED_SWITCH", 3: "SWAP_IRQL",
     4: "SWITCH_FROM_DPC", 5: "CURTHREAD_INCOHERENT", 6: "STACK_OOB",
     7: "SLEEP_WITH_SPINLOCK", 8: "DPC_DISPATCH_IRQL", 9: "INTR_STATE_UNBALANCED",
+    10: "USER_ENTRY_IRQL", 11: "USER_EXIT_IRQL",
 }
 
 
@@ -493,20 +494,26 @@ class VibeosCswitchCmd(gdb.Command):
             raise gdb.GdbError(f"cswitchdep magic mismatch: {magic:#x}")
         if thread_slots == 0:
             thread_slots = 1024  # pre-init default (CSWITCH_THREADS)
-        # CpuShadow @24 (48 bytes): switch_irql u32, held i32, baseline i32,
-        # (4 pad), switches u64, spin_acquires u64, resume_no_record u32,
-        # first_runs u32, evictions u32, _pad u32.
-        (sw_irql, held, floor, switches, spin_acq, no_rec, first_runs,
-         evictions, _p2) = struct.unpack("<Iii4xQQIIII", _read(base + 24, 48))
+        # CpuShadow @24 (72 bytes): switch_irql u32, held i32, baseline i32,
+        # (4 pad), switches u64, spin_acquires u64, user_entries u64,
+        # user_exits u64, resume_no_record u32, first_runs u32, evictions u32,
+        # exit_no_entry u32, held_delta_pos u32, _pad u32.
+        (sw_irql, held, floor, switches, spin_acq, uentries, uexits, no_rec,
+         first_runs, evictions, exit_no_entry, held_delta_pos,
+         _p2) = struct.unpack("<Iii4xQQQQIIIIII", _read(base + 24, 72))
         print(
             f"cswitchdep: switches={switches} violations={vcount} "
             f"spin_acq={spin_acq} held_now={held} floor={floor} "
             f"(first_runs={first_runs} no_record={no_rec} evictions={evictions} "
             f"drops={dropped} last_switch_irql={sw_irql})"
         )
+        print(
+            f"  syscall parity: user_entries={uentries} user_exits={uexits} "
+            f"exit_no_entry={exit_no_entry} held_delta_pos={held_delta_pos}"
+        )
 
-        HDR = 72  # offset_of!(CswitchTable, threads)
-        th_sz = psz + 8
+        HDR = 96  # offset_of!(CswitchTable, threads)
+        th_sz = psz + 16
         viol_off = HDR + thread_slots * th_sz
         # Violation: seq,expected,actual (3×u64) + kind,_pad (2×u32) +
         # pc,old,new (3×ptr), tail-padded to 8 (AtomicU64 align).
@@ -531,10 +538,14 @@ class VibeosCswitchCmd(gdb.Command):
             print("live ThreadShadow slots:")
             for s in range(thread_slots):
                 tb = base + HDR + s * th_sz
-                kthread, gen, susp_irql = struct.unpack(f"<{ptr}II", _read(tb, th_sz))
+                kthread, gen, susp_irql, sdepth, hentry = struct.unpack(
+                    f"<{ptr}IIIi", _read(tb, th_sz)
+                )
                 if kthread == 0:
                     continue
                 tag = "first-run" if gen == 0 else f"gen={gen} suspend_irql={susp_irql}"
+                if sdepth:
+                    tag += f" syscall_depth={sdepth} held_at_entry={hentry}"
                 print(f"  kthread={kthread:#x} {tag}")
 
 

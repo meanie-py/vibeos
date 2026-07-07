@@ -420,6 +420,28 @@ Rust-translated paths. cswitchdep:
 3. **Taps 4/5 (user↔kernel) + per-frame parity** — all three arches; includes
    the nested-trap shadow save/restore and the NMI exemption; gated on a
    measured boot-overhead delta.
+   **BUILT (2026-07-07), scoped to the SYSCALL paths on x86** (armed builds
+   are x86-only; interrupt/exception frames deliberately untapped — the taps
+   mutate only per-thread slots + monotone counters, so the reentrancy
+   save/restore rule and the NMI exemption are *vacuously* satisfied instead
+   of implemented). As-built notes:
+   - **The live syscall paths are Rust + cargo-assembled asm, not the cmake
+     C/asm.** Tap 4 sits in `traphandler.rs::KiSystemCallHandler` (amd64) and
+     `traphdlr.rs::KiSystemServiceHandler` (i386, kernel-origin INT-2E frames
+     skipped — Zw at APC_LEVEL is legal); tap 5 in amd64 `trap.S`
+     `KiSystemServiceExit` (`#ifdef VIBEOS_CSWITCHDEP`, plumbed through
+     `ntoskrnl-cargo/build.rs asm_extra_defines` — cmake's define never
+     reaches the live trap.S, which the first armed boot proved with
+     `user_entries=0`) and i386 `KiServiceExit`/`KiServiceExit2` user
+     branches. The commented-out C copies carry mirror taps for parity.
+   - **Violations:** `USER_ENTRY_IRQL` / `USER_EXIT_IRQL` (IRQL != PASSIVE at
+     a user-mode syscall edge — the §9.24 leak caught one frame earlier).
+   - **Per-frame parity is census-only** (P2 playbook: measure, then
+     promote): `ThreadShadow.syscall_depth`/`held_at_entry` +
+     `CpuShadow.user_entries/user_exits/exit_no_entry/held_delta_pos`.
+     Untapped exits (`KiServiceExit3` first-returns, APC-edited frames,
+     termination) make depth diagnostic-only; `exit_no_entry` counts the
+     benign orphans.
 4. **`debug_block.py` decoder + fw_cfg arming + farm integration** — armed
    overnight soaks cluster context-switch violations the way `farm-report`
    clusters BUGCHECKs.
