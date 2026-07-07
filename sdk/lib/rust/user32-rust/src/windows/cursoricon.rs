@@ -1280,7 +1280,10 @@ unsafe fn CURSORICON_GetCursorDataFromBMI(
         (*pdata).cy = if height < 0 { (-height / 2) as u32 } else { (height / 2) as u32 };
     }
 
-    if (*pdata).rt == (2u32 as USHORT) {
+    // C: `pdata->rt == (USHORT)RT_CURSOR` — RT_CURSOR is 1 (winuser.h), NOT 2.
+    // The translation wrote 2, so the real-cursor hotspot-scaling branch was
+    // unreachable and every scaled cursor silently got a center hotspot.
+    if (*pdata).rt == (1u32 as USHORT) {
         if (*pdata).cx != width as u32 {
             (*pdata).xHotspot = (((*pdata).xHotspot as i32 * (*pdata).cx as i32) / width) as i16;
         }

@@ -3261,3 +3261,36 @@ verdicts REAL_RUST_BUG / UPSTREAM_BUG / FP with line evidence. 7 agents
 resolved 12 findings in ~1 min wall-clock; 2 engine bugs (wrong out-param
 index for `ObReferenceFileObjectForWrite`, missing `ObReferenceObjectSafe`
 statusfulness) were found BY the triage, not by inspection.
+
+### 9.33 (RESOLVED 2026-07-07) black desktop shortcut icons — dropped `!` in `DIB_1BPP_BitBltSrcCopy_From1BPP` inverted `IgnoreSrc`; every identity 1bpp→1bpp SRCCOPY zero-filled its destination
+
+**Symptom:** only the two .lnk desktop icons (Command Prompt, Read Me) rendered
+as black squares with a white block in the corner; non-shortcut icons fine.
+All arches.
+
+**Diagnosis chain (three chained subagent audits, each exonerating a layer):**
+exticon.rs (PE icon extraction) — faithful; user32 cursoricon.rs
+(CreateIconFromResourceEx reconstruction + all BMP/mask helpers) — faithful;
+the discriminator was the SHORTCUT-OVERLAY composite (`SIC_OverlayShortcutImage`,
+C++ shell32) whose `ImageList_GetIcon(ILD_TRANSPARENT)` builds the overlay's
+1bpp mask via a **1bpp→1bpp SRCCOPY BitBlt** — the only consumer of that DIB
+path on the desktop. In `win32k-rust/src/dib1bpp.rs` the translation wrote
+`IgnoreSrc = XorBit ^ (xlate(1) != 0)` where C is `XorBit ^ !xlate(1)` — one
+dropped `!` inverting all four cases: the identity xlate took the
+fill-with-XorBit(=0) branch, so the blit "succeeded" returning an all-zero
+mask → SRCAND made the icon fully opaque → MaskBlt degenerated to SRCCOPY of
+the overlay glyph → black square + white block. Also latently broke drag
+images and ImageList_Merge.
+
+**Fixes in the same change:** the `IgnoreSrc` inversion; `ROP4_MASK` in
+dibobj.rs was `0x00AA0000` (C inteng.h: `0xAACC`) — RLE `SetDIBitsToDevice`
+masked path; ten `copy_nonoverlapping` in dib32bpp.rs where C used
+`RtlMoveMemory` (same-surface scroll blits overlap → UB) → `core::ptr::copy`;
+user32 cursoricon.rs hotspot branch compared `rt == 2` where `RT_CURSOR == 1`
+(scaled cursors silently got center hotspots).
+
+**Lesson:** a boolean built from TWO C idioms (`!!x` and `x ^ !y`) is a prime
+translation-drop site — the `!` inside an XOR is nearly invisible in review.
+When only ONE consumer class of a shared primitive misrenders, enumerate what
+that class does that others don't (here: 1bpp DESTINATION blits) before
+auditing the shared machinery.

@@ -547,7 +547,7 @@ pub unsafe extern "stdcall" fn NtGdiSetDIBitsToDeviceInternal(
     let mut Status: i32;
 
 
-    const ROP4_MASK: u32 = 0x00AA0000;
+    const ROP4_MASK: u32 = 0xAACC; // inteng.h: SRCCOPY | (NOOP<<8) — was wrongly 0x00AA0000
     const CBM_INIT_CREATDIB: u32 = 0;
     const TAG_GDITMP: u32 = u32::from_le_bytes(*b"GTmp");
 
@@ -762,7 +762,7 @@ pub unsafe extern "C" fn NtGdiSetDIBitsToDeviceInternal(
     let mut Status: i32;
 
 
-    const ROP4_MASK: u32 = 0x00AA0000;
+    const ROP4_MASK: u32 = 0xAACC; // inteng.h: SRCCOPY | (NOOP<<8) — was wrongly 0x00AA0000
     const CBM_INIT_CREATDIB: u32 = 0;
     const TAG_GDITMP: u32 = u32::from_le_bytes(*b"GTmp");
 
