@@ -416,17 +416,53 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
                 tops.append(d)
         return tops
 
-    def _probe(root: Path, links: str, prune: list[Path]) -> str | None:
+    def _probe(root: Path, links: str, prune: list[Path], *, all_hits: bool = False):
         cmd: list[str] = ["find", str(root)]
         for p in prune:
             cmd += ["-path", str(p), "-prune", "-o"]
-        cmd += ["-type", "f", "-links", links, "-print", "-quit"]
+        cmd += ["-type", "f", "-links", links, "-print"]
+        if not all_hits:
+            cmd += ["-quit"]
         try:
             cp = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         except (OSError, subprocess.SubprocessError):
             run.add(Stage("isolation", status="warn", detail=f"probe failed for {root} — skipped"))
-            return None
+            return [] if all_hits else None
+        if all_hits:
+            return [ln for ln in cp.stdout.splitlines() if ln.strip()][:200]
         return cp.stdout.strip() or None
+
+    def _foreign_links(cands: list[str]) -> list[str]:
+        """Filter multi-link cargo files down to the ones whose links are NOT
+        all inside this worktree. Cargo's incremental sessions legitimately
+        hardlink metadata.rmeta into deps/ (nlink = 1 + N session dirs, all
+        in-tree), so nlink>2 alone is NOT the dedup signature — a link path
+        OUTSIDE the worktree is. One find walk accounts every candidate inode."""
+        infos: dict[int, list] = {}
+        for h in cands:
+            try:
+                st = os.stat(h)
+            except OSError:
+                continue
+            infos.setdefault(st.st_ino, [st.st_nlink, h])
+        if not infos:
+            return []
+        cond: list[str] = []
+        for ino in infos:
+            cond += ["-inum", str(ino), "-o"]
+        cmd = ["find", str(repo), "-type", "f", "(", *cond[:-1], ")", "-printf", "%i\n"]
+        try:
+            cp = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        except (OSError, subprocess.SubprocessError):
+            # Accounting failed — fail SAFE (treat as foreign; a spurious
+            # refusal is recoverable, a corrupted sibling build is not).
+            return [h for _, h in infos.values()]
+        seen: dict[int, int] = {}
+        for ln in cp.stdout.splitlines():
+            if ln.strip().isdigit():
+                ino = int(ln)
+                seen[ino] = seen.get(ino, 0) + 1
+        return [h for ino, (nlink, h) in infos.items() if seen.get(ino, 0) < nlink]
 
     hits: list[str] = []
     if build_dir.is_dir():
@@ -435,14 +471,12 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
         if hit:
             hits.append(f"{hit} (links 2+ in a cmake tree)")
         for c in nested_cargo:
-            hit = _probe(c, "+2", [])
-            if hit:
-                hits.append(f"{hit} (links 3+ in a cargo dir)")
+            for f in _foreign_links(_probe(c, "+2", [], all_hits=True)):
+                hits.append(f"{f} (links 3+ in a cargo dir, link escapes this worktree)")
     ws = repo / "sdk" / "lib" / "rust" / "target"
     if ws.is_dir():
-        hit = _probe(ws, "+2", [])
-        if hit:
-            hits.append(f"{hit} (links 3+ in a cargo dir)")
+        for f in _foreign_links(_probe(ws, "+2", [], all_hits=True)):
+            hits.append(f"{f} (links 3+ in a cargo dir, link escapes this worktree)")
     if not hits:
         return True
     run.classification = "ISOLATION_FAIL"

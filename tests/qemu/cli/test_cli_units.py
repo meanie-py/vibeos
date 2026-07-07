@@ -2292,3 +2292,45 @@ def test_finding_lines_excludes_count_summaries():
     assert "  [C_MACRO] sdk/lib/rust/cc-rust/src/cacheman.rs:38: real finding" in got
     assert "      - ARITY: rust 0 params vs C 5" in got
     assert len(got) == 2  # every count-bearing tally line dropped
+
+
+# --- build: isolation preflight — in-tree cargo hardlinks are benign ---------
+
+
+def _mk_cargo_tree(repo, nlinks_extra, escape_dir=None):
+    """A fake worktree with a cargo target dir whose deps file has extra
+    hardlinks (cargo-incremental style). Optionally add one link OUTSIDE."""
+    ws = repo / "sdk" / "lib" / "rust" / "target"
+    deps = ws / "x86_64-pc-windows-gnu" / "debug" / "deps"
+    deps.mkdir(parents=True)
+    (ws / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55")
+    f = deps / "libfoo.rmeta"
+    f.write_text("meta")
+    for i in range(nlinks_extra):
+        d = ws / "x86_64-pc-windows-gnu" / "debug" / "incremental" / f"s-{i}"
+        d.mkdir(parents=True)
+        os.link(f, d / "metadata.rmeta")
+    if escape_dir is not None:
+        escape_dir.mkdir(parents=True, exist_ok=True)
+        os.link(f, escape_dir / "libfoo.rmeta")
+    return f
+
+
+def test_isolation_preflight_allows_in_tree_incremental_links(tmp_path):
+    # cargo incremental: deps + 2 session dirs = 3 links, ALL in-tree → benign
+    # (the 2026-07-07 gate FP: nlink>2 alone is not the dedup signature).
+    repo = tmp_path / "wt"
+    repo.mkdir()
+    _mk_cargo_tree(repo, nlinks_extra=2)
+    run = build_mod.Run("build", "amd64", ts=1700000000)
+    assert build_mod._isolation_preflight(run, repo, repo / "build-amd64") is True
+
+
+def test_isolation_preflight_blocks_cross_worktree_links(tmp_path):
+    # one link escaping the worktree = the dedup-incident signature → refuse.
+    repo = tmp_path / "wt"
+    repo.mkdir()
+    _mk_cargo_tree(repo, nlinks_extra=1, escape_dir=tmp_path / "other-wt")
+    run = build_mod.Run("build", "amd64", ts=1700000000)
+    assert build_mod._isolation_preflight(run, repo, repo / "build-amd64") is False
+    assert run.classification == "ISOLATION_FAIL"
