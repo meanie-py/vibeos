@@ -155,6 +155,10 @@ pub unsafe extern "system" fn CmpIsHiveAlreadyLoaded(
     }
 
     if (*(*KeyBody).KeyControlBlock).__bindgen_anon_1.Delete() != 0 {
+        // Upstream ReactOS leaks the KeyBody reference on this deleted-KCB
+        // path (cmapi.c: bare `return Loaded;` while every other exit derefs)
+        // — found by scan_ob_refcount.py; release it like the other exits do.
+        ObDereferenceObject(KeyBody as PVOID);
         return Loaded;
     }
 
