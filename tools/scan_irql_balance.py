@@ -26,6 +26,24 @@ Model (intraprocedural, per function body):
     only ever raises is the cross-function API pattern (KeAcquireSpinLock-style),
     not a leak, and flagging it floods false positives.
 
+Cross-function summaries (ownership-model Layer 3, phase 4a): before the
+per-function walk, a workspace pass computes per-function summaries and
+propagates them through the (syntactic, direct-call) call graph to a fixpoint:
+  * RAISE-WRAPPER — the body nets a raise whose OldIrql is handed back to the
+    caller (returned): call sites treat it like `KfRaiseIrql`.
+  * LOWER-WRAPPER(i) — the body lowers/releases using its own parameter #i:
+    call sites treat argument i like the `KeLowerIrql` argument.
+  * MAY-SLEEP — the body (transitively) reaches a wait
+    (`KeWaitForSingleObject` / `KeDelayExecutionThread` / CPS `wait_for` ...).
+The summaries feed two things: wrapper-aware held-set tracking, and the new
+IRQL_SLEEP_WHILE_HELD finding — a call into a may-sleep function while the
+held set is non-empty (the static mirror of cswitchdep's SLEEP_WITH_SPINLOCK;
+NT's real rule is waits ≤ APC_LEVEL, and a live raise/spinlock breaks it).
+Summaries are keyed by bare name (collisions merge conservatively) and only
+cover the Rust workspace — calls into C externs have no summary and propagate
+nothing, which bounds the noise and is the honest syntactic limit (function
+pointers / DPC routines are phase 4b, MIR).
+
 This is a linear held-set approximation, not full CFG dominance: a raise nested
 in one `if` arm with a `return` in a sibling arm can misattribute. That residue
 is what the BASELINE-diff gate is for — existing findings are baselined; the lint
@@ -37,7 +55,12 @@ Usage:
     python3 tools/scan_irql_balance.py                 # sweep the workspace
     python3 tools/scan_irql_balance.py path/to/file.rs # specific files
     python3 tools/scan_irql_balance.py --lint          # terse (baseline gate)
+    python3 tools/scan_irql_balance.py --summaries     # dump call-graph facts
 Exit 1 if any finding.
+
+NOTE on scoped runs: pointing the scanner at specific files still builds the
+summary database from the whole workspace (call-graph facts are global); only
+the FINDINGS are limited to the named files.
 """
 
 import re
@@ -73,6 +96,18 @@ RAISE_RETURN = {
 }
 LOWER_ARG = {"KeLowerIrql", "KfLowerIrql"}  # first arg is the OldIrql var
 RELEASE_ARG2 = {"KeReleaseSpinLock"}  # second arg is the OldIrql var
+
+# Seed may-sleep set: functions that park the thread (voluntary switch). The
+# fixpoint propagates this through Rust callers; C externs stay opaque.
+# `wait_for` is the ntkrnl_sys::token CPS wait (matched by bare name).
+SLEEP_SEEDS = {
+    "KeWaitForSingleObject",
+    "KeWaitForMultipleObjects",
+    "KeDelayExecutionThread",
+    "KeWaitForGate",
+    "wait_for",
+    "wait_for_armed",
+}
 
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 # Path/macro/keyword tokens that wrap an out-param lvalue but are NOT the
@@ -121,14 +156,17 @@ def _arg_idents(args_node, src: bytes, idx: int):
     return {i for i in _IDENT.findall(text) if i not in _LVALUE_NOISE}
 
 
-def _find_functions(root):
+def _find_functions(root, src: bytes):
+    """Yield (name, params, body) for every function_item under root."""
     out = []
 
     def rec(n):
         if n.type == "function_item":
             body = n.child_by_field_name("body")
-            if body is not None:
-                out.append(body)
+            name_node = n.child_by_field_name("name")
+            if body is not None and name_node is not None:
+                name = src[name_node.start_byte : name_node.end_byte].decode(errors="replace")
+                out.append((name, _param_names(n, src), body))
         for c in n.children:
             rec(c)
 
@@ -136,10 +174,180 @@ def _find_functions(root):
     return out
 
 
-def _scan_function(body, src: bytes, lines):
-    """Linear held-set walk over one function body. Returns findings."""
-    findings = []
+def _param_names(fn_node, src: bytes):
+    """Ordered parameter identifier names of a function_item ('' if opaque)."""
+    params = fn_node.child_by_field_name("parameters")
+    names = []
+    if params is None:
+        return names
+    for c in params.children:
+        if c.type not in ("parameter", "self_parameter"):
+            continue
+        pat = c.child_by_field_name("pattern")
+        txt = src[pat.start_byte : pat.end_byte].decode(errors="replace") if pat else ""
+        m = _IDENT.search(txt)
+        names.append(m.group(0) if m else "")
+    return names
+
+
+# ---------------------------------------------------------------------------
+# Cross-function summaries (Layer 3 phase 4a). One extra walk per function
+# collects direct facts + the callee list; the fixpoints then run purely on
+# the name-keyed graph (no repeated AST work). Wrapper facts (ret-raise /
+# lower-param) are DIRECT-only — a wrapper of a wrapper is not propagated
+# (rare in the C-shaped translation; phase 4b territory).
+# ---------------------------------------------------------------------------
+
+
+class FnSummary:
+    __slots__ = ("calls", "lower_params", "ret_raise")
+
+    def __init__(self):
+        self.calls = set()  # callee bare names
+        self.ret_raise = False  # nets a raise handed back via return/tail
+        self.lower_params = set()  # own-param indexes used as the OldIrql of a lower
+
+
+def _summarize_function(name, params, body, src: bytes):
+    s = FnSummary()
     held: set[str] = set()
+    lowered: set[str] = set()
+    returned_idents: set[str] = set()
+
+    def visit(node):
+        if node.type == "return_expression":
+            returned_idents.update(
+                _IDENT.findall(src[node.start_byte : node.end_byte].decode(errors="replace"))
+            )
+        call = _call_name(node, src)
+        if call is not None:
+            cname, args = call
+            s.calls.add(cname)
+            if cname in RAISE_OUTPARAM:
+                real = [c for c in (args.children if args else []) if c.type not in ("(", ")", ",")]
+                acquire = True
+                if cname in RAISE_LEVELED and real:
+                    lvl = src[real[0].start_byte : real[0].end_byte].decode(errors="replace")
+                    acquire = bool(_CONST_LEVEL.search(lvl))
+                if acquire and real:
+                    held.update(_arg_idents(args, src, len(real) - 1))
+            elif cname in RAISE_RETURN:
+                var = _bound_var(node, src)
+                if var:
+                    held.add(var)
+            elif cname in LOWER_ARG:
+                ids = _arg_idents(args, src, 0)
+                held.difference_update(ids)
+                lowered.update(ids)
+            elif cname in RELEASE_ARG2:
+                ids = _arg_idents(args, src, 1)
+                held.difference_update(ids)
+                lowered.update(ids)
+        for c in node.children:
+            visit(c)
+
+    visit(body)
+
+    # Tail expression of the body counts as a return.
+    real_tail = [c for c in body.children if c.type not in ("{", "}")]
+    if real_tail and real_tail[-1].type not in ("expression_statement", "let_declaration"):
+        t = real_tail[-1]
+        returned_idents.update(
+            _IDENT.findall(src[t.start_byte : t.end_byte].decode(errors="replace"))
+        )
+
+    # RAISE-WRAPPER: a net-held var handed back to the caller.
+    s.ret_raise = bool(held & returned_idents)
+    # LOWER-WRAPPER: own params consumed as an OldIrql.
+    for i, p in enumerate(params):
+        if p and p in lowered:
+            s.lower_params.add(i)
+    return s
+
+
+# Propagation depth for may-sleep: 1 = only direct calls to the seed wait
+# APIs; 2 (default) = plus calls through one Rust wrapper layer. UNCAPPED
+# propagation is useless here — everything that touches the dispatcher
+# (KeSetEvent → KiExitDispatcher → the swap) becomes "may-sleep" even though
+# it never parks the CALLER, and the finding count explodes (measured: 13.6K
+# may-sleep functions, 762 findings at fixpoint vs a reviewable set at 2).
+SLEEP_DEPTH = 2
+
+_RAISE_LOWER_TOKEN = re.compile(
+    ("|".join(re.escape(n) for n in (RAISE_OUTPARAM | RAISE_RETURN | LOWER_ARG | RELEASE_ARG2)))
+    .join((r"\b(?:", r")\s*\("))
+    .encode()
+)
+
+
+def _name_call_re(names):
+    return re.compile(
+        ("|".join(re.escape(n) for n in sorted(names))).join((r"\b(?:", r")\s*\(")).encode()
+    )
+
+
+def build_summaries(files, tree_cache, sleep_depth=None):
+    """files: [Path]. Returns (may_sleep, ret_raise, lower_params), name-keyed;
+    collisions merge conservatively (union). Textual prefilters keep the AST
+    work to the files that can matter; parsed trees land in tree_cache
+    (path -> (src, tree)) for reuse by the findings pass."""
+    if sleep_depth is None:
+        sleep_depth = SLEEP_DEPTH
+    srcs = {f: f.read_bytes() for f in files}
+
+    def tree_of(f):
+        if f not in tree_cache:
+            tree_cache[f] = (srcs[f], _PARSER.parse(srcs[f]))
+        return tree_cache[f][1]
+
+    # Wrapper facts: only files that textually touch a raise/lower builtin.
+    ret_raise: set[str] = set()
+    lower_params: dict[str, set[int]] = {}
+    for f, src in srcs.items():
+        if not _RAISE_LOWER_TOKEN.search(src):
+            continue
+        for name, params, body in _find_functions(tree_of(f).root_node, src):
+            s = _summarize_function(name, params, body, src)
+            if s.ret_raise:
+                ret_raise.add(name)
+            if s.lower_params:
+                lower_params.setdefault(name, set()).update(s.lower_params)
+    ret_raise -= RAISE_RETURN
+    for n in LOWER_ARG | RELEASE_ARG2:
+        lower_params.pop(n, None)
+
+    # may-sleep: breadth-first over TEXTUAL caller edges, depth-capped. Each
+    # ring only parses the files that mention a frontier name as a call.
+    may_sleep = set(SLEEP_SEEDS)
+    frontier = set(SLEEP_SEEDS)
+    for _depth in range(sleep_depth):
+        if not frontier:
+            break
+        pat = _name_call_re(frontier)
+        frontier = set()
+        for f, src in srcs.items():
+            if not pat.search(src):
+                continue
+            for name, _params, body in _find_functions(tree_of(f).root_node, src):
+                if name in may_sleep:
+                    continue
+                if pat.search(src[body.start_byte : body.end_byte]):
+                    may_sleep.add(name)
+                    frontier.add(name)
+
+    return may_sleep, ret_raise, lower_params
+
+
+def _scan_function(body, src: bytes, lines, summaries=None):
+    """Linear held-set walk over one function body. Returns findings.
+    `summaries` = (may_sleep, ret_raise, lower_params) from build_summaries;
+    None disables the cross-function checks (unit-test convenience)."""
+    may_sleep, ret_raise, lower_params = summaries or (frozenset(), frozenset(), {})
+    findings = []
+    # var -> True if the raise makes a wait ILLEGAL (spinlock / raise above
+    # APC_LEVEL). A KeRaiseIrql(APC_LEVEL, ..) hold is leak-checked but NOT
+    # sleep-checked — NT's real rule is waits ≤ APC_LEVEL are legal.
+    held: dict[str, bool] = {}
     lowers_internally = [False]
 
     def line_of(node):
@@ -156,7 +364,7 @@ def _scan_function(body, src: bytes, lines):
                 # Ownership transfer? `return old;` / `old?` hands the var back.
                 ret_txt = src[node.start_byte : node.end_byte].decode(errors="replace")
                 ret_ids = set(_IDENT.findall(ret_txt))
-                leaked = held - ret_ids
+                leaked = held.keys() - ret_ids
                 if leaked:
                     is_ret = node.type == "return_expression"
                     kind = "IRQL_LEAK_RETURN" if is_ret else "IRQL_LEAK_TRY"
@@ -186,19 +394,48 @@ def _scan_function(body, src: bytes, lines):
                     # Restore-to-saved (level is a variable, not a *_LEVEL const).
                     acquire = bool(_CONST_LEVEL.search(lvl))
                 if acquire and real:
-                    ids = _arg_idents(args, src, len(real) - 1)
-                    held.update(ids)
-            elif name in RAISE_RETURN:
+                    # KeRaiseIrql(APC_LEVEL, ..) holds are wait-LEGAL; a
+                    # spinlock acquire or a raise above APC is not.
+                    wait_illegal = name in RAISE_LOCK or (
+                        name in RAISE_LEVELED
+                        and "APC_LEVEL"
+                        not in src[real[0].start_byte : real[0].end_byte].decode(errors="replace")
+                    )
+                    for i in _arg_idents(args, src, len(real) - 1):
+                        held[i] = wait_illegal
+            elif name in RAISE_RETURN or name in ret_raise:
                 # value bound by an enclosing let/assignment — resolve upward.
                 var = _bound_var(node, src)
                 if var:
-                    held.add(var)
+                    held[var] = True  # DPC/SYNCH-level raises and lock wrappers
             elif name in LOWER_ARG:
-                held.difference_update(_arg_idents(args, src, 0))
+                for i in _arg_idents(args, src, 0):
+                    held.pop(i, None)
                 lowers_internally[0] = True
             elif name in RELEASE_ARG2:
-                held.difference_update(_arg_idents(args, src, 1))
+                for i in _arg_idents(args, src, 1):
+                    held.pop(i, None)
                 lowers_internally[0] = True
+            elif name in lower_params:
+                # LOWER-WRAPPER: the callee lowers with these argument slots.
+                for idx in lower_params[name]:
+                    for i in _arg_idents(args, src, idx):
+                        held.pop(i, None)
+                lowers_internally[0] = True
+
+            # SLEEP-WHILE-HELD: a (transitively) parking call under a live
+            # spinlock / above-APC raise — the static SLEEP_WITH_SPINLOCK.
+            blocking = sorted(v for v, illegal in held.items() if illegal)
+            if name in may_sleep and blocking and not suppressed(node):
+                findings.append(
+                    (
+                        line_of(node),
+                        "IRQL_SLEEP_WHILE_HELD",
+                        f"call to may-sleep `{name}` while holding "
+                        f"{', '.join(blocking)} — a wait above APC_LEVEL "
+                        f"(park with a live raise/spinlock)",
+                    )
+                )
 
         for c in node.children:
             visit(c)
@@ -235,12 +472,12 @@ def _bound_var(call_node, src: bytes):
     return None
 
 
-def scan_source(src: bytes):
+def scan_source(src: bytes, summaries=None):
     tree = _PARSER.parse(src)
     lines = src.decode(errors="replace").splitlines()
     findings = []
-    for body in _find_functions(tree.root_node):
-        findings.extend(_scan_function(body, src, lines))
+    for _name, _params, body in _find_functions(tree.root_node, src):
+        findings.extend(_scan_function(body, src, lines, summaries))
     findings.sort()
     return findings
 
@@ -261,12 +498,50 @@ def _iter_files(paths):
 def main(argv):
     args = [a for a in argv if not a.startswith("--")]
     lint = "--lint" in argv
+    dump_summaries = "--summaries" in argv
     roots = [Path(a) for a in args] if args else [RUST_WS]
+
+    # Summary database: ALWAYS the whole workspace (call-graph facts are
+    # global), even when findings are limited to the named files.
+    tree_cache: dict = {}
+    ws_files = sorted(set(_iter_files([RUST_WS])))
+    summaries = build_summaries(ws_files, tree_cache)
+
+    if dump_summaries:
+        may_sleep, ret_raise, lower_params = summaries
+        print(f"may-sleep ({len(may_sleep)}):")
+        for n in sorted(may_sleep):
+            print(f"  {n}")
+        print(f"raise-wrappers ({len(ret_raise)}):")
+        for n in sorted(ret_raise):
+            print(f"  {n}")
+        print(f"lower-wrappers ({len(lower_params)}):")
+        for n in sorted(lower_params):
+            print(f"  {n} (args {sorted(lower_params[n])})")
+        return 0
+
+    # Findings need a non-empty held set, which needs a raise: skip files
+    # that neither touch a raise/lower builtin nor call a raise-wrapper.
+    _, ret_raise, _ = summaries
+    wrapper_pat = _name_call_re(ret_raise) if ret_raise else None
 
     total = 0
     for f in sorted(set(_iter_files(roots))):
         try:
-            findings = scan_source(f.read_bytes())
+            if f in tree_cache:
+                src, tree = tree_cache[f]
+            else:
+                src = f.read_bytes()
+                if not (
+                    _RAISE_LOWER_TOKEN.search(src) or (wrapper_pat and wrapper_pat.search(src))
+                ):
+                    continue
+                tree = _PARSER.parse(src)
+            lines = src.decode(errors="replace").splitlines()
+            findings = []
+            for _name, _params, body in _find_functions(tree.root_node, src):
+                findings.extend(_scan_function(body, src, lines, summaries))
+            findings.sort()
         except Exception as e:
             print(f"{f}: parse error: {e}", file=sys.stderr)
             continue

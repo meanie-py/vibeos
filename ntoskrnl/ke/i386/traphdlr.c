@@ -165,6 +165,14 @@ KiServiceExit(IN PKTRAP_FRAME TrapFrame,
     /* Check for user mode exit */
     if (KiUserTrap(TrapFrame))
     {
+#ifdef VIBEOS_CSWITCHDEP
+        {
+            /* cswitchdep tap 5 (return→user).
+               Rust: sdk/lib/rust/ntoskrnl-rust/src/ke/cswitchdep.rs */
+            extern VOID __cdecl VibeosCswitchdepUserExit(VOID);
+            VibeosCswitchdepUserExit();
+        }
+#endif
         /* Check if we were single stepping */
         if (TrapFrame->EFlags & EFLAGS_TF)
         {
@@ -198,7 +206,18 @@ KiServiceExit2(IN PKTRAP_FRAME TrapFrame)
     if (TrapFrame->EFlags & EFLAGS_V86_MASK) KiTrapReturnNoSegments(TrapFrame);
 
     /* Check for user mode exit */
-    if (KiUserTrap(TrapFrame)) KiTrapReturn(TrapFrame);
+    if (KiUserTrap(TrapFrame))
+    {
+#ifdef VIBEOS_CSWITCHDEP
+        {
+            /* cswitchdep tap 5 (return→user), NtContinue/NtRaiseException
+               closes. Rust: sdk/lib/rust/ntoskrnl-rust/src/ke/cswitchdep.rs */
+            extern VOID __cdecl VibeosCswitchdepUserExit(VOID);
+            VibeosCswitchdepUserExit();
+        }
+#endif
+        KiTrapReturn(TrapFrame);
+    }
 
     /* Check for edited frame */
     if (KiIsFrameEdited(TrapFrame)) KiEditedTrapReturn(TrapFrame);
@@ -1777,6 +1796,16 @@ KiSystemServiceHandler(IN PKTRAP_FRAME TrapFrame,
 
     /* Enable interrupts */
     _enable();
+
+#ifdef VIBEOS_CSWITCHDEP
+    {
+        /* cswitchdep tap 4 (user→kernel): kernel-origin frames (Zw via
+           INT 2E) pass 0 and are skipped — legal at APC_LEVEL.
+           Rust: sdk/lib/rust/ntoskrnl-rust/src/ke/cswitchdep.rs */
+        extern VOID __cdecl VibeosCswitchdepUserEntry(ULONG UserTrap);
+        VibeosCswitchdepUserEntry(KiUserTrap(TrapFrame));
+    }
+#endif
 
     /* Decode the system call number */
     Offset = (SystemCallNumber >> SERVICE_TABLE_SHIFT) & SERVICE_TABLE_MASK;

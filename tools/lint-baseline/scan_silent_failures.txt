@@ -1176,7 +1176,7 @@ sdk/lib/rust/ntoskrnl-rust/src/ARM3/sysldr.rs:497: [UNWRAP] .unwrap() — panics
 sdk/lib/rust/ntoskrnl-rust/src/arm/kdserial.rs:71: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/interrupt.rs:221: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/stubs.rs:103: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/traphandler.rs:189: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/traphandler.rs:195: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/usercall.rs:314: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/apc.rs:292: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/apc.rs:319: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1202,7 +1202,7 @@ sdk/lib/rust/ntoskrnl-rust/src/ke/i386/irqobj.rs:265: [UNWRAP] .unwrap() — pan
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/irqobj.rs:331: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/irqobj.rs:598: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/thrdini.rs:321: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/i386/traphdlr.rs:226: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/i386/traphdlr.rs:229: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/usercall.rs:261: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/ipi.rs:225: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/mm/balance.rs:173: [UNWRAP] .unwrap() — panics on Err/None in kernel code

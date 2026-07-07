@@ -220,6 +220,9 @@ pub unsafe extern "fastcall" fn KiServiceExit(TrapFrame: PKTRAP_FRAME, Status: N
     let thread = KeGetCurrentThread() as PKTHREAD;
     (*(thread as *mut _ETHREAD)).Tcb.__bindgen_anon_7.__bindgen_anon_2.PreviousMode = (*TrapFrame).PreviousPreviousMode as i8;
     if KiUserTrap(TrapFrame) != 0 {
+        // cswitchdep tap 5 (return→user), syscall close.
+        #[cfg(feature = "cswitchdep")]
+        crate::ke::cswitchdep::VibeosCswitchdepUserExit();
         if ((*TrapFrame).EFlags & EFLAGS_TF) != 0 {
             KiSystemCallTrapReturn(TrapFrame);
         } else {
@@ -238,6 +241,9 @@ pub unsafe extern "fastcall" fn KiServiceExit2(TrapFrame: PKTRAP_FRAME) -> ! {
         KiTrapReturnNoSegments(TrapFrame);
     }
     if KiUserTrap(TrapFrame) != 0 {
+        // cswitchdep tap 5 (return→user), NtContinue/NtRaiseException close.
+        #[cfg(feature = "cswitchdep")]
+        crate::ke::cswitchdep::VibeosCswitchdepUserExit();
         KiTrapReturn(TrapFrame);
     }
     if KiIsFrameEdited(TrapFrame) != 0 {
@@ -957,6 +963,10 @@ pub unsafe extern "fastcall" fn KiSystemServiceHandler(
     (*(thread as *mut _ETHREAD)).Tcb.TrapFrame = TrapFrame;
     (*(thread as *mut _ETHREAD)).Tcb.__bindgen_anon_7.__bindgen_anon_2.PreviousMode = KiUserTrap(TrapFrame) as i8;
     _enable();
+    // cswitchdep tap 4 (user→kernel): kernel-origin frames (Zw via INT 2E)
+    // pass 0 and are skipped — legal at APC_LEVEL.
+    #[cfg(feature = "cswitchdep")]
+    crate::ke::cswitchdep::VibeosCswitchdepUserEntry(KiUserTrap(TrapFrame) as u32);
     let system_call_number = (*TrapFrame).Eax;
     let offset = (system_call_number >> SERVICE_TABLE_SHIFT) & SERVICE_TABLE_MASK;
     let id = system_call_number & SERVICE_NUMBER_MASK;
