@@ -75,9 +75,10 @@ pub static mut KeRosVideoBiosDate: _UNICODE_STRING = unsafe { core::mem::zeroed(
 pub static mut KeRosVideoBiosVersion: _UNICODE_STRING = unsafe { core::mem::zeroed() };
 
 use super::krnlinit::KeLoaderBlock;
-extern "C" {
-    // shim_exports.rs defines RtlFillMemoryUlong cdecl (§9.30 cc-match rule)
-    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG);
+extern "system" {
+    // NTAPI/stdcall per ntoskrnl.spec (verify_ffi); the in-crate cdecl def in
+    // shim_exports.rs is amd64-only (cfg x86_64 mod — scanner is mod-cfg-blind).
+    fn RtlFillMemoryUlong(Destination: PVOID, Length: SIZE_T, Pattern: ULONG); // nolint: cc-mismatch (amd64-only in-crate def; spec says stdcall)
 }
 extern "system" {
     static mut PsLoadedModuleList: LIST_ENTRY;

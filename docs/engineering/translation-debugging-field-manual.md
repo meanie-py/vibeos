@@ -3200,3 +3200,13 @@ cross-linked or double-removed entry, `chain-overrun` at a clobbered
 `NextWaitBlock`. Symbolicate nothing — the culprit address in P1 + the chain
 dump is the whole story; feed the block address to `identify-object` /
 `dump-thread` for the owner.
+
+**Live catch 2026-07-07 (gate smoke, arm64):** `[WAITDEP] VIOLATION
+bad-thread-ptr: owner=ffffffffffffffff culprit=ffffffffffffffff` fired during
+the TDI self-test (right after `associate 0x00000000`) → 0x109. The wait-block
+Thread pointer was ALL-ONES (a -1 poison/uninitialized pattern, not a stray
+heap pointer) — consistent with a wait block consumed after its stack frame
+was reused/poisoned. Same boot then cascaded IRQL raise-DOWN spam inside the
+bugcheck path (KeBugCheckWithTf raising to HIGH; harmless secondary) and a
+nested 0x1E in KeGetBugMessageText. This is the §9.27 arm64 TDI flake wearing
+its new detector; frequency still ≈1/4.
