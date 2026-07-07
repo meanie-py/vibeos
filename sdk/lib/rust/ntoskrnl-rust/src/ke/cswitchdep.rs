@@ -35,7 +35,9 @@
 
 #![allow(non_snake_case)]
 
-use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed, Ordering::Release};
+use core::sync::atomic::{
+    AtomicI32, AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed, Ordering::Release,
+};
 
 /// Concurrent threads tracked (power of two). Slots are evicted at thread
 /// termination, so the live set tracks the real thread population.
@@ -54,6 +56,18 @@ pub const KIND_SWAP_IRQL: u32 = 3;
 pub const KIND_SWITCH_FROM_DPC: u32 = 4;
 pub const KIND_CURTHREAD_INCOHERENT: u32 = 5;
 pub const KIND_STACK_OOB: u32 = 6;
+/// P2: a voluntary switch with dispatch-level locks still held (per-CPU
+/// held-counter fed by the Kx choke-point taps). Violation is amd64-only —
+/// the only arch where the kernel Kx choke sees every funnel pair; on
+/// i386/arm64 several funnels route through the HAL binary (untapped but
+/// pair-symmetric), so the counter there is informational census data.
+pub const KIND_SLEEP_WITH_SPINLOCK: u32 = 7;
+/// P2: deferred-dispatch delivery (`KiDispatchInterrupt` /
+/// `KiDispatchSoftwareIntArm64`) entered at the wrong IRQL.
+pub const KIND_DPC_DISPATCH_IRQL: u32 = 8;
+/// P2 (arm64): DAIF interrupt-mask state not balanced across the software-
+/// interrupt dispatch (the §9.19 wake-from-exception-context family).
+pub const KIND_INTR_STATE_UNBALANCED: u32 = 9;
 
 const DISPATCH_LEVEL: u8 = 2;
 /// _KTHREAD_STATE_Terminated (bindgen `_KTHREAD_STATE_Terminated == 4`).
@@ -63,8 +77,23 @@ pub const STATE_TERMINATED: u8 = 4;
 pub struct CpuShadow {
     /// IRQL observed at the last tap-1 suspend (the switching level).
     pub switch_irql: AtomicU32,
+    /// P2: dispatch-level locks currently held on this CPU (Kx choke taps,
+    /// +try-funnel). Signed and BASELINE-relative: `KxAcquire/ReleaseSpinLock`
+    /// also exist as C FORCEINLINEs (`ntoskrnl/include/internal/spinlock.h`),
+    /// so pure-C lock pairs are symmetric-invisible but MIXED pairs (C inline
+    /// acquire → Rust-funnel release, the split acquire/release shape) skew
+    /// the absolute count — measured ~-10.4K during an amd64 boot, stable
+    /// once drivers settle. The census reports the raw value (a live gauge of
+    /// the C↔Rust seam); the violation check compares against the post-boot
+    /// `held_baseline` captured at `cswitchdep_init`.
+    pub held_spinlocks: AtomicI32,
+    /// Snapshot of `held_spinlocks` at `cswitchdep_init` (KiStartSyncCensus,
+    /// dispatcher up) — the zero point for SLEEP_WITH_SPINLOCK.
+    pub held_baseline: AtomicI32,
     /// Voluntary switches seen at tap 1 (census).
     pub switches: AtomicU64,
+    /// P2: total spinlock acquires seen by the taps (census / coverage gauge).
+    pub spin_acquires: AtomicU64,
     /// Resumes whose OLD thread had no suspend record (idle loop / unbranded
     /// arch) — normal, counted so the census shows coverage.
     pub resume_no_record: AtomicU32,
@@ -123,14 +152,14 @@ unsafe impl Sync for CswitchTable {}
 // The GDB decoder (qemu/gdb-helpers/debug_block.py, CSW1) hand-computes these
 // offsets — pin the layout so drift breaks the BUILD, not the decoder.
 const PSZ: usize = core::mem::size_of::<usize>();
-const _: () = assert!(core::mem::size_of::<CpuShadow>() == 32);
+const _: () = assert!(core::mem::size_of::<CpuShadow>() == 48);
 const _: () = assert!(core::mem::size_of::<ThreadShadow>() == PSZ + 8);
 // AtomicU64 is align-8 on all three arches, so the struct tail-pads to 8:
 // amd64/arm64: 32 + 24 = 56; i386: 32 + 12 = 44 → 48.
 const _: () = assert!(core::mem::size_of::<Violation>() == (32 + 3 * PSZ + 7) & !7);
 const _: () = assert!(core::mem::offset_of!(CswitchTable, violation_count) == 16);
 const _: () = assert!(core::mem::offset_of!(CswitchTable, cpu) == 24);
-const _: () = assert!(core::mem::offset_of!(CswitchTable, threads) == 56);
+const _: () = assert!(core::mem::offset_of!(CswitchTable, threads) == 72);
 
 #[allow(clippy::declare_interior_mutable_const)]
 const EMPTY_THREAD: ThreadShadow = ThreadShadow {
@@ -162,7 +191,10 @@ pub static VIBEOS_CSWITCHDEP: CswitchTable = CswitchTable {
     violation_count: AtomicU64::new(0),
     cpu: CpuShadow {
         switch_irql: AtomicU32::new(0),
+        held_spinlocks: AtomicI32::new(0),
+        held_baseline: AtomicI32::new(0),
         switches: AtomicU64::new(0),
+        spin_acquires: AtomicU64::new(0),
         resume_no_record: AtomicU32::new(0),
         first_runs: AtomicU32::new(0),
         evictions: AtomicU32::new(0),
@@ -178,7 +210,7 @@ static PRINTS: AtomicU32 = AtomicU32::new(0);
 /// works before this (the table needs no init).
 pub fn cswitchdep_init() {
     VIBEOS_CSWITCHDEP.thread_slots.store(CSWITCH_THREADS as u32, Relaxed);
-    VIBEOS_CSWITCHDEP.magic.store(0x4353_5731, Relaxed); // 'CSW1'
+    VIBEOS_CSWITCHDEP.magic.store(0x4353_5731, Release); // 'CSW1'
 }
 
 const FIB: usize = 0x9E37_79B9_7F4A_7C15_u64 as usize;
@@ -260,6 +292,9 @@ fn kind_name(k: u32) -> *const u8 {
         KIND_SWITCH_FROM_DPC => b"SWITCH_FROM_DPC\0".as_ptr(),
         KIND_CURTHREAD_INCOHERENT => b"CURTHREAD_INCOHERENT\0".as_ptr(),
         KIND_STACK_OOB => b"STACK_OOB\0".as_ptr(),
+        KIND_SLEEP_WITH_SPINLOCK => b"SLEEP_WITH_SPINLOCK\0".as_ptr(),
+        KIND_DPC_DISPATCH_IRQL => b"DPC_DISPATCH_IRQL\0".as_ptr(),
+        KIND_INTR_STATE_UNBALANCED => b"INTR_STATE_UNBALANCED\0".as_ptr(),
         _ => b"?\0".as_ptr(),
     }
 }
@@ -313,6 +348,28 @@ pub unsafe fn cswitch_suspend(old: usize, wait_irql: u8, terminating: bool) {
     // HIGH_LEVEL never lowered); <DISPATCH is a broken caller.
     if irql != DISPATCH_LEVEL {
         loud(KIND_HIGH_IRQL_AT_SWITCH, pc, old, 0, DISPATCH_LEVEL as u64, irql as u64);
+    }
+
+    // P2: no dispatch-level lock may be held across a voluntary wait,
+    // measured as a DELTA above a SELF-CALIBRATING floor (mixed C-inline/
+    // Rust-funnel pairs make the absolute count unusable — see CpuShadow).
+    // Every clean voluntary switch proves the true floor: ratchet the
+    // baseline down to the minimum ever observed here; a count above that
+    // floor at a wait means a Rust-funnel-acquired lock is still held. The
+    // measured drift is purely negative (C-inline acquire → Rust release), so
+    // the floor converges and stays; if a positive mixed pair ever appears
+    // (Rust acquire → C-inline release) this will fire persistently — which
+    // is itself the signal to go find that pair. amd64-only (fullest funnel
+    // coverage); on i386/arm64 the counter is census data, never a violation.
+    #[cfg(target_arch = "x86_64")]
+    {
+        let held = VIBEOS_CSWITCHDEP.cpu.held_spinlocks.load(Relaxed);
+        let base = VIBEOS_CSWITCHDEP.cpu.held_baseline.load(Relaxed);
+        if held < base {
+            VIBEOS_CSWITCHDEP.cpu.held_baseline.store(held, Relaxed);
+        } else if held > base {
+            loud(KIND_SLEEP_WITH_SPINLOCK, pc, old, 0, base as u64, held as u64);
+        }
     }
 
     if terminating {
@@ -403,17 +460,67 @@ pub unsafe fn cswitch_swap_resume(
     }
 }
 
+// ============================================================================
+// P2 spinlock taps. The acquire/release pair rides the kernel Kx choke point
+// (ntkrnl-sys inline/ke.rs KxAcquireSpinLock/KxReleaseSpinLock — every
+// ntoskrnl spinlock funnel delegates there; link-name externs mirror the
+// lockdep pushlock taps). The try funnel (KeTryToAcquireSpinLockAtDpcLevel)
+// succeeds without touching Kx on UP, so it calls spin_acquired() directly;
+// its release DOES route through Kx, keeping the pair balanced.
+// ============================================================================
+
+#[no_mangle]
+pub extern "C" fn VibeosCswitchdepSpinAcquire(_lock: usize) {
+    VIBEOS_CSWITCHDEP.cpu.held_spinlocks.fetch_add(1, Relaxed);
+    VIBEOS_CSWITCHDEP.cpu.spin_acquires.fetch_add(1, Relaxed);
+}
+
+#[no_mangle]
+pub extern "C" fn VibeosCswitchdepSpinRelease(_lock: usize) {
+    VIBEOS_CSWITCHDEP.cpu.held_spinlocks.fetch_sub(1, Relaxed);
+}
+
+/// Direct-tap form for the try-acquire funnel (no Kx on the UP success path).
+#[inline]
+pub fn spin_acquired(lock: usize) {
+    VibeosCswitchdepSpinAcquire(lock);
+}
+
+/// P2 tap: deferred-dispatch delivery (`KiDispatchInterrupt` /
+/// `KiDispatchSoftwareIntArm64`) must run at exactly DISPATCH_LEVEL.
+#[inline(never)]
+pub unsafe fn cswitch_dpc_dispatch() {
+    let irql = current_irql();
+    if irql != DISPATCH_LEVEL {
+        let pc = super::lockdep::return_address0();
+        loud(KIND_DPC_DISPATCH_IRQL, pc, 0, 0, DISPATCH_LEVEL as u64, irql as u64);
+    }
+}
+
+/// P2 tap (arm64): interrupt-mask state must be balanced across the software
+/// interrupt dispatch — `entry`/`exit` are the DAIF values around the body.
+#[inline(never)]
+pub unsafe fn cswitch_intr_state(entry: u64, exit: u64) {
+    if entry != exit {
+        let pc = super::lockdep::return_address0();
+        loud(KIND_INTR_STATE_UNBALANCED, pc, 0, 0, entry, exit);
+    }
+}
+
 /// Census helper (PASSIVE): print the switch census + any recorded violations.
 pub fn cswitchdep_report() {
     let total = VIBEOS_CSWITCHDEP.violation_count.load(Relaxed);
     crate::dbg_print!(
-        b"[CSWITCH] census: switches=%u violations=%u first_runs=%u no_record=%u evictions=%u drops=%u\n\0",
+        b"[CSWITCH] census: switches=%u violations=%u first_runs=%u no_record=%u evictions=%u drops=%u spin_acq=%u held_now=%d base=%d\n\0",
         VIBEOS_CSWITCHDEP.cpu.switches.load(Relaxed) as u32,
         total as u32,
         VIBEOS_CSWITCHDEP.cpu.first_runs.load(Relaxed),
         VIBEOS_CSWITCHDEP.cpu.resume_no_record.load(Relaxed),
         VIBEOS_CSWITCHDEP.cpu.evictions.load(Relaxed),
         VIBEOS_CSWITCHDEP.dropped.load(Relaxed),
+        VIBEOS_CSWITCHDEP.cpu.spin_acquires.load(Relaxed) as u32,
+        VIBEOS_CSWITCHDEP.cpu.held_spinlocks.load(Relaxed),
+        VIBEOS_CSWITCHDEP.cpu.held_baseline.load(Relaxed),
     );
     if total == 0 {
         return;

@@ -246,6 +246,26 @@ def build(args, repo: Path) -> int:
     run = Run("build", arch)
     cold = bool(args.clean)
 
+    # lockdep/cswitchdep need `feature(link_llvm_intrinsics)` (llvm.returnaddress
+    # culprit capture), which is nightly-only. The arm64 kernel builds its
+    # BUILTIN target on the STABLE channel (reactos-link; the x86 kernels use
+    # the custom JSON target on nightly), so an armed arm64 build dies mid-ninja
+    # with E0554. Fail fast and clearly instead (same wall as the long-standing
+    # "arm64 lockdep probe BLOCKED" note; lifts when arm64 moves to nightly).
+    if arch == "arm64" and (getattr(args, "lockdep", False) or getattr(args, "cswitchdep", False)):
+        run.classification = "INSTR_UNSUPPORTED_ARCH"
+        run.add(
+            Stage(
+                "preflight",
+                status="fail",
+                detail="--lockdep/--cswitchdep are x86-only: the arm64 kernel builds on "
+                "stable, and the instrumentation needs nightly-only link_llvm_intrinsics "
+                "(E0554)",
+                salient=["lift by moving the arm64 kernel build to the nightly channel"],
+            )
+        )
+        return run.finalize(repo)
+
     if not build_dir.is_dir() and not canon.available():
         # With userns available a missing build dir is auto-provisioned by the
         # canonize stage below (fresh canonical configure, fast on cache hits).
@@ -502,7 +522,13 @@ def _verify_flag_artifacts(run, repo: Path, build_dir: Path, args) -> bool:
             cp = subprocess.run(
                 [str(nm), str(artifact)], capture_output=True, text=True, timeout=120
             )
-            present = any(ln.endswith(f" {symbol}") for ln in cp.stdout.splitlines())
+            # i386 decorates C-ABI statics with a leading underscore
+            # (_VIBEOS_LOCKDEP) — match both forms or every i386 armed build
+            # false-fails (found arming i386 for the first time, 2026-07-07).
+            present = any(
+                ln.endswith(f" {symbol}") or ln.endswith(f" _{symbol}")
+                for ln in cp.stdout.splitlines()
+            )
         except (OSError, subprocess.SubprocessError):
             run.add(Stage("flag-verify", status="warn", detail=f"llvm-nm failed for {rel}"))
             continue

@@ -425,11 +425,41 @@ pub unsafe fn KeGetContextSwitches(prcb: ddk::PKPRCB) -> ULONG {
 const SPIN_LOCK_ALREADY_OWNED: ULONG = 0xF;
 const SPIN_LOCK_NOT_OWNED: ULONG = 0x10;
 
+// cswitchdep P2 spinlock taps (cswitchdep-design.md): Kx is the choke point
+// every ntoskrnl spinlock funnel delegates to, so a per-CPU held-counter tap
+// here covers the whole kernel link in one place. Link-name externs into
+// ntoskrnl-rust's cswitchdep module — identical plumbing to the lockdep
+// pushlock taps in inline/ex.rs. Zero cost when the feature is off.
+#[cfg(feature = "cswitchdep")]
+extern "C" {
+    fn VibeosCswitchdepSpinAcquire(lock: usize);
+    fn VibeosCswitchdepSpinRelease(lock: usize);
+}
+
+#[cfg(feature = "cswitchdep")]
+#[inline]
+pub(crate) unsafe fn cswdep_spin_acquire(lock: *mut ULONG_PTR) {
+    VibeosCswitchdepSpinAcquire(lock as usize);
+}
+#[cfg(not(feature = "cswitchdep"))]
+#[inline(always)]
+pub(crate) unsafe fn cswdep_spin_acquire(_lock: *mut ULONG_PTR) {}
+
+#[cfg(feature = "cswitchdep")]
+#[inline]
+pub(crate) unsafe fn cswdep_spin_release(lock: *mut ULONG_PTR) {
+    VibeosCswitchdepSpinRelease(lock as usize);
+}
+#[cfg(not(feature = "cswitchdep"))]
+#[inline(always)]
+pub(crate) unsafe fn cswdep_spin_release(_lock: *mut ULONG_PTR) {}
+
 /// KxAcquireSpinLock — UP kernel: compiler barrier only.
 /// DBG owner tracking disabled: inconsistent paths between C shims and Rust inline
 /// cause false SPIN_LOCK_NOT_OWNED on i386. To be investigated separately.
 #[inline]
 pub unsafe fn KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
+    cswdep_spin_acquire(spin_lock);
     // UP kernel: compiler barrier (no SMP spin needed)
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }
@@ -438,6 +468,7 @@ pub unsafe fn KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
 /// DBG owner tracking disabled (see KxAcquireSpinLock comment).
 #[inline]
 pub unsafe fn KxReleaseSpinLock(spin_lock: *mut ULONG_PTR) {
+    cswdep_spin_release(spin_lock);
     // UP kernel: compiler barrier
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }

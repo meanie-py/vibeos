@@ -120,6 +120,11 @@ pub unsafe extern "system" fn KiInitializeContextThread(
         (*StartFrame).P3Home = SystemRoutine.map(|f| f as u64).unwrap_or(0);
         (*StartFrame).Return = KiInvalidSystemThreadStartupExit as u64;
     }
+
+    // cswitchdep birth brand: pool-reused KTHREAD addresses must never
+    // inherit a dead thread's shadow (see amd64/thrdini.rs).
+    #[cfg(feature = "cswitchdep")]
+    crate::ke::cswitchdep::cswitch_thread_init(Thread as usize);
 }
 
 #[no_mangle]
@@ -168,6 +173,23 @@ pub unsafe extern "system" fn KiSwapContextResume(
 
     (*Pcr).Prcb.KeContextSwitches += 1;
     (*NewThread).__bindgen_anon_5.__bindgen_anon_5.ContextSwitches += 1;
+
+    // cswitchdep tap 2 (post-swap, on the NEW thread's stack) — arm64 parity
+    // with amd64/thrdini.rs; runs BEFORE the ATTEMPTED_SWITCH_FROM_DPC
+    // BugCheck below so the record reaches the table + serial either way.
+    #[cfg(feature = "cswitchdep")]
+    {
+        let sp_probe = 0u8;
+        crate::ke::cswitchdep::cswitch_swap_resume(
+            OldThread as usize,
+            NewThread as usize,
+            (*Pcr).Prcb.CurrentThread as usize,
+            core::ptr::addr_of!(sp_probe) as usize,
+            (*NewThread).StackLimit as usize,
+            (*NewThread).InitialStack as usize,
+            (*Pcr).Prcb.DpcRoutineActive != 0,
+        );
+    }
 
     if (*Pcr).Prcb.DpcRoutineActive != 0 {
         KeBugCheckEx(
