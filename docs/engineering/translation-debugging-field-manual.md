@@ -3206,7 +3206,7 @@ driver panic — ~40 `*-cargo` mains still have them, sweep owed).
 Undetected for a long time: the cli gate's smoke never injects input, and the
 pytest input test (`test_post_shell_ready_input`) only asserts the *class
 driver* marker — which was ALSO dead, but nobody ran it. Surfaced the first
-time an adversarial gate demanded a real app respond (`tests/qemu/test_doom.py`,
+time an adversarial gate demanded a real app respond (`tests/qemu/test_payload.py`, née test_doom.py,
 the "start a new game of Doom with injected keys" probe).
 
 Four independent root causes, each masking the next (fix order = discovery
