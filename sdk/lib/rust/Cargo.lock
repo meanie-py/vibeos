@@ -294,6 +294,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "config-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "conutils-rust"
 version = "0.1.0"
 dependencies = [
@@ -786,6 +794,7 @@ version = "0.1.0"
 dependencies = [
  "cc-rust",
  "cmboot-rust",
+ "config-rust",
  "dbgk-rust",
  "fsrtl-rust",
  "fstub-rust",

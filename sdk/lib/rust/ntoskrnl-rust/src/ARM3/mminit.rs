@@ -296,7 +296,10 @@ pub static mut MmThrottleBottom: ULONG = 0;
 
 // Registry-controlled values owned by ARM3/mminit. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
-pub static MMINIT_CONTROL_VECTOR: ntkrnl_sys::SubVector<12> =
+// Renamed from MMINIT_CONTROL_VECTOR (collided with mm::mminit's) so it can be a
+// unique #[no_mangle] link symbol for config-rust's runtime CmControlVector assembler.
+#[no_mangle]
+pub static ARM3_MMINIT_CONTROL_VECTOR: ntkrnl_sys::SubVector<12> =
     ntkrnl_sys::SubVector(unsafe { [
         ntkrnl_sys::cv!("Session Manager\\Memory Management", "MapAllocationFragment",
             core::ptr::addr_of_mut!(MmAllocationFragment)),

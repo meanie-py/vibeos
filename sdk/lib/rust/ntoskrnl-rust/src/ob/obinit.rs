@@ -119,6 +119,7 @@ pub static mut ObpProtectionMode: ULONG = 0;
 
 // Registry-controlled values owned by ob/obinit. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+#[no_mangle]
 pub static OBINIT_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
     ntkrnl_sys::SubVector(unsafe { [
         ntkrnl_sys::cv!("Session Manager", "ProtectionMode",

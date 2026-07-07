@@ -1,10 +1,13 @@
-use crate::config::cmconfig::CmpInitializeRegistryNode;
-#[cfg(target_arch = "x86_64")]
-use crate::ke::amd64::cpu::KeI386NpxPresent;
-#[cfg(target_arch = "x86")]
-use crate::ke::i386::cpu::KeI386NpxPresent;
-use crate::ke::krnlinit::KiProcessorBlock;
-use crate::ke::processor::KeNumberProcessors;
+use crate::cmconfig::CmpInitializeRegistryNode;
+// ke globals referenced across the config crate boundary as link symbols (all
+// #[no_mangle] in ntoskrnl-rust). KeI386NpxPresent has the same symbol on both x86
+// arches (the old cfg was only for the Rust path). KiProcessorBlock is externed as
+// its element 0 — the code only takes its address to index the PKPRCB array.
+extern "C" {
+    static mut KeI386NpxPresent: ULONG;
+    static mut KiProcessorBlock: PKPRCB;
+    static mut KeNumberProcessors: core::ffi::c_char; // CCHAR
+}
 
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;

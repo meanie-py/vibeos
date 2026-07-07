@@ -66,7 +66,10 @@ pub static mut MmDisablePagingExecutive: u8 = 1; // Forced to off
 
 // Registry-controlled values owned by mm/mminit. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
-pub static MMINIT_CONTROL_VECTOR: ntkrnl_sys::SubVector<1> =
+// Renamed from MMINIT_CONTROL_VECTOR (collided with ARM3::mminit's) so it can be a
+// unique #[no_mangle] link symbol for config-rust's runtime CmControlVector assembler.
+#[no_mangle]
+pub static MM_MMINIT_CONTROL_VECTOR: ntkrnl_sys::SubVector<1> =
     ntkrnl_sys::SubVector(unsafe { [
         ntkrnl_sys::cv!("Session Manager\\Memory Management", "DisablePagingExecutive",
             core::ptr::addr_of_mut!(MmDisablePagingExecutive)),
