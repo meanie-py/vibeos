@@ -30,6 +30,7 @@ pub mod census;
 pub mod lockdep;
 #[cfg(feature = "cswitchdep")]
 pub mod cswitchdep;
+pub mod waitdep;
 pub mod thrdobj;
 pub mod thrdschd;
 pub mod time;

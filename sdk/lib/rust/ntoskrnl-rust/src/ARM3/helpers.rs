@@ -475,6 +475,7 @@ extern "C" {
 }
 
 // Registry-controlled values owned by ARM3/helpers.
+#[no_mangle]
 pub static HELPERS_CONTROL_VECTOR: ntkrnl_sys::SubVector<5> =
     ntkrnl_sys::SubVector(unsafe { [
         ntkrnl_sys::cv!("Session Manager\\Memory Management", "LargeStackSize",

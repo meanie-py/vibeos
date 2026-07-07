@@ -243,6 +243,7 @@ def main():
         # Scan all kernel-crate source (ntoskrnl-rust + extracted subsystems —
         # single source of truth so the crate-split doesn't drop coverage).
         from kernel_crate_roots import kernel_rs_files
+
         files = kernel_rs_files(Path("."))
         if not files:
             print("ERROR: no kernel-crate sources found. Run from vibeos/ root.")

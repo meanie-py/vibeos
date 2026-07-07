@@ -40,6 +40,10 @@ extern crate iomgr_rust;
 // archive (a Cargo dep alone would drop them).
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 extern crate kdbg_rust;
+// config (Configuration Manager / registry), extracted from ntoskrnl-rust (crate-split
+// Phase 1b). extern crate forces its #[no_mangle] Cm*/Cmp* symbols + the runtime
+// CmControlVector assembler + _config_global_write_barrier into the archive.
+extern crate config_rust;
 // cmboot.c is the shared kernel+bootloader CM boot-init unit, moved out of
 // ntoskrnl-rust into its own crate (cmboot-rust) so the loaders can link the
 // SAME translation. Pull its #[no_mangle] CmpFind*/CmpAddDriverToList symbols

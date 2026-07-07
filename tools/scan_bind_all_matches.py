@@ -56,9 +56,12 @@ RE_UNUSED = re.compile(r"unused variable: `([^`]+)`")
 RE_SNAKE = re.compile(r"variable `([^`]+)` should have a snake case name")
 
 FORCE_WARN = [
-    "--force-warn", "unreachable_patterns",
-    "--force-warn", "unused_variables",
-    "--force-warn", "non_snake_case",
+    "--force-warn",
+    "unreachable_patterns",
+    "--force-warn",
+    "unused_variables",
+    "--force-warn",
+    "non_snake_case",
 ]
 
 
@@ -89,9 +92,14 @@ def scan(target: str, packages: list[str], quiet: bool) -> list[str]:
         # --release matches the production cfg (kernel/freeldr builds are
         # release; some crates have debug_assertions-only code that no longer
         # compiles and would abort a dev-profile check).
-        "cargo", "check", "--release", "--message-format=json",
-        "--target", target,
-        "--manifest-path", str(WORKSPACE / "Cargo.toml"),
+        "cargo",
+        "check",
+        "--release",
+        "--message-format=json",
+        "--target",
+        target,
+        "--manifest-path",
+        str(WORKSPACE / "Cargo.toml"),
     ]
     if packages:
         for p in packages:
@@ -104,7 +112,10 @@ def scan(target: str, packages: list[str], quiet: bool) -> list[str]:
             # on PATH, absent in the plain scan env (they're host-test crates;
             # their arm64 coverage is marginal).
             "aarch64-pc-windows-gnullvm": [
-                "kdvm-cargo", "hal-rust", "rtl-difftest", "cnt-difftest",
+                "kdvm-cargo",
+                "hal-rust",
+                "rtl-difftest",
+                "cnt-difftest",
             ],
         }
         for p in excludes.get(target, []):
@@ -146,13 +157,17 @@ def scan(target: str, packages: list[str], quiet: bool) -> list[str]:
         elif code == "unused_variables":
             m = RE_UNUSED.search(text)
             if m and CONST_LIKE.match(m.group(1)) and is_match_arm(loc):
-                finding = (f"{loc}: [BIND-ALL?] pattern binds `{m.group(1)}` "
-                           f"(const-like name, unused) — likely unresolved constant")
+                finding = (
+                    f"{loc}: [BIND-ALL?] pattern binds `{m.group(1)}` "
+                    f"(const-like name, unused) — likely unresolved constant"
+                )
         elif code == "non_snake_case":
             m = RE_SNAKE.search(text)
             if m and CONST_LIKE.match(m.group(1)) and is_match_arm(loc):
-                finding = (f"{loc}: [CONST-BINDING] variable `{m.group(1)}` is "
-                           f"SCREAMING_CASE — check for unresolved constant in pattern")
+                finding = (
+                    f"{loc}: [CONST-BINDING] variable `{m.group(1)}` is "
+                    f"SCREAMING_CASE — check for unresolved constant in pattern"
+                )
 
         if finding and finding not in seen:
             seen.add(finding)
@@ -165,7 +180,10 @@ def scan(target: str, packages: list[str], quiet: bool) -> list[str]:
         # stderr-only failure would read as "clean". Fail loud, never degrade.
         tail = "\n".join(proc.stderr.splitlines()[-15:])
         print(f"ERROR: cargo check failed (target {target}):\n{tail}", file=sys.stderr)
-        print(f"scan_bind_all_matches: [SCAN-ERROR] cargo check failed (target {target}) — scan did not run")
+        print(
+            f"scan_bind_all_matches: [SCAN-ERROR] cargo check failed (target {target})"
+            " — scan did not run"
+        )
         sys.exit(2)
 
     if not quiet:
@@ -176,8 +194,13 @@ def scan(target: str, packages: list[str], quiet: bool) -> list[str]:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("-p", "--package", action="append", default=[],
-                    help="limit to package(s); default whole workspace")
+    ap.add_argument(
+        "-p",
+        "--package",
+        action="append",
+        default=[],
+        help="limit to package(s); default whole workspace",
+    )
     ap.add_argument("--target", default="x86_64-pc-windows-gnu")
     ap.add_argument("-q", "--quiet", action="store_true")
     args = ap.parse_args()

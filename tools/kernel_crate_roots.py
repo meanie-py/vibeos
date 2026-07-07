@@ -17,6 +17,7 @@ codegen tools that still hardcode ntoskrnl-rust (gen_global_barrier.py,
 apply_opaque_ptr.py, fix_abi_mismatch.py, …) are one-shot and out of gate scope;
 migrate them to this list if/when they're re-run against a split kernel.
 """
+
 from pathlib import Path
 
 # Each entry is a crate `src` dir, relative to the repo root. ntoskrnl-rust is
@@ -31,6 +32,7 @@ KERNEL_CRATE_SRC_ROOTS = [
     "sdk/lib/rust/cc-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
     "sdk/lib/rust/iomgr-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
     "sdk/lib/rust/kdbg-rust/src",  # extracted 2026-07 (crate-split Phase 1b, x86-only)
+    "sdk/lib/rust/config-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
     "sdk/lib/rust/fstub-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
     "sdk/lib/rust/se-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
     "sdk/lib/rust/pnpmgr-rust/src",  # extracted 2026-07 (crate-split Phase 1b)

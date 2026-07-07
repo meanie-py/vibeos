@@ -260,10 +260,11 @@ def build(args, repo: Path) -> int:
         )
         return run.finalize(repo)
 
-    # Host CPU broker: a build is the writer in the writer-takes-all CPU pool — it grabs
-    # ALL leases (exclusive host, so no concurrent TCG boot starves into a false
-    # HANG_TIMEOUT) AND the per-build-dir lock (so two builds never corrupt the same dir,
-    # the determinism-verify-vs-gate incident). Held around the whole build; on a stuck
+    # Host CPU broker: a build grabs a ceil(K/max_builds) SHARE of the cpuheavy pool
+    # (default 2 of 4 → two builds may run concurrently host-wide; two running builds
+    # exhaust the pool so native-TCG boots keep their starvation protection) AND the
+    # per-build-dir lock (so two builds never corrupt the same dir, the
+    # determinism-verify-vs-gate incident). Held around the whole build; on a stuck
     # holder it warns + proceeds unlocked, and it's a no-op when the broker is disabled.
     with hostlock.build_lock(build_dir, arch):
         return _build_locked(args, repo, run, arch, cfg, build_dir, cold)

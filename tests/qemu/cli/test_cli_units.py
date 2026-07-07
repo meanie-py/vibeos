@@ -1643,8 +1643,11 @@ def test_hostlock_boots_parallelize_but_block_a_build(tmp_path, monkeypatch):
 
 
 def test_hostlock_build_lock_cm_excludes_boot(tmp_path, monkeypatch):
+    # With VIBEOS_MAX_CONCURRENT_BUILDS=1 the original writer-takes-all grant is
+    # restored: one build → exclusive host → boots excluded.
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    monkeypatch.setenv("VIBEOS_MAX_CONCURRENT_BUILDS", "1")
     bd = tmp_path / "build-i386"
     bd.mkdir()
     k = hl_mod.DEFAULT_CPU_LEASES
@@ -1654,6 +1657,59 @@ def test_hostlock_build_lock_cm_excludes_boot(tmp_path, monkeypatch):
     b = hl_mod.acquire_cpu_lease("boot:arm64", leases=k, timeout=0.2)
     assert b is not None  # released when the cm exited
     hl_mod.release(b)
+
+
+def test_hostlock_two_builds_coexist_third_queues(tmp_path, monkeypatch):
+    # Default policy (max 2 builds): each build takes ceil(4/2)=2 permits, so two
+    # builds run concurrently and a third can't get a share.
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    monkeypatch.delenv("VIBEOS_MAX_CONCURRENT_BUILDS", raising=False)
+    assert hl_mod.build_permits(4) == 2
+    a = hl_mod.acquire_cpu_share("build:i386", n=2, leases=4, timeout=0.0)
+    b = hl_mod.acquire_cpu_share("build:amd64", n=2, leases=4, timeout=0.0)
+    assert a is not None and b is not None  # two builds coexist
+    # pool exhausted: a third build AND a native-TCG boot are both excluded
+    assert hl_mod.acquire_cpu_share("build:arm64", n=2, leases=4, timeout=0.3) is None
+    assert hl_mod.acquire_cpu_lease("boot:arm64", leases=4, timeout=0.2) is None
+    hl_mod.release_all(a)
+    hl_mod.release_all(b)
+
+
+def test_hostlock_one_build_leaves_boot_room(tmp_path, monkeypatch):
+    # One build (2 of 4 permits) leaves 2 permits: native-TCG boots run alongside.
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    a = hl_mod.acquire_cpu_share("build:i386", n=2, leases=4, timeout=0.0)
+    assert a is not None
+    b1 = hl_mod.acquire_cpu_lease("boot:arm64", leases=4, timeout=0.2)
+    b2 = hl_mod.acquire_cpu_lease("boot:arm64", leases=4, timeout=0.2)
+    assert b1 is not None and b2 is not None
+    assert hl_mod.acquire_cpu_lease("boot:arm64", leases=4, timeout=0.2) is None
+    hl_mod.release(b1)
+    hl_mod.release(b2)
+    hl_mod.release_all(a)
+
+
+def test_hostlock_share_shortfall_releases_all(tmp_path, monkeypatch):
+    # No hold-and-wait: a share acquirer that can't get its full n holds NOTHING
+    # while waiting (deadlock-freedom invariant).
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
+    held = [
+        hl_mod.acquire_cpu_lease("boot:a", leases=4, timeout=0.0),
+        hl_mod.acquire_cpu_lease("boot:b", leases=4, timeout=0.0),
+        hl_mod.acquire_cpu_lease("boot:c", leases=4, timeout=0.0),
+    ]
+    assert all(f is not None for f in held)
+    # only 1 free permit → a 2-share times out...
+    assert hl_mod.acquire_cpu_share("build:i386", n=2, leases=4, timeout=0.3) is None
+    # ...and held nothing while failing: the free permit is still immediately grabbable
+    b = hl_mod.acquire_cpu_lease("boot:d", leases=4, timeout=0.0)
+    assert b is not None
+    hl_mod.release(b)
+    for f in held:
+        hl_mod.release(f)
 
 
 def test_hostlock_cpu_lease_cm_acquires_and_releases(tmp_path, monkeypatch):
@@ -2227,3 +2283,27 @@ def test_ninja_jobs_caps_and_reserves(monkeypatch):
     monkeypatch.setenv("VIBEOS_BUILD_CORE_RESERVE", "8")
     monkeypatch.setattr(build_mod.os, "cpu_count", lambda: 4)
     assert build_mod._ninja_jobs() == []  # tiny host: don't cap below the reserve
+
+
+# --- lints: summary/tally lines are not findings (merge-magnet fix) ---------
+
+
+def test_finding_lines_excludes_count_summaries():
+    out = "\n".join(
+        [
+            "Spec catalog: 1571 exports",
+            "Bindgen catalog: 2921 functions",
+            "  C_MACRO: 94",
+            "  FLEX_ARRAY: 66",
+            "  TOTAL: 160 issues across 2348 files",
+            "SUMMARY: HIGH=0  MEDIUM=0  LOW(likely-FP)=10  shown=0",
+            "  -> MISMATCH             : 0",
+            "  matched to a C array    : 25",
+            "  [C_MACRO] sdk/lib/rust/cc-rust/src/cacheman.rs:38: real finding",
+            "      - ARITY: rust 0 params vs C 5",  # detail line: KEPT (real content)
+        ]
+    )
+    got = lints._finding_lines(out)
+    assert "  [C_MACRO] sdk/lib/rust/cc-rust/src/cacheman.rs:38: real finding" in got
+    assert "      - ARITY: rust 0 params vs C 5" in got
+    assert len(got) == 2  # every count-bearing tally line dropped

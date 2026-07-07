@@ -453,7 +453,9 @@ def smoke(args, repo: Path) -> int:
         if live.is_file() and tool.is_file():
             cp = subprocess.run(
                 [sys.executable, str(tool), str(live), "--sizes", str(repo / f"build-{arch}")],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             report = (cp.stdout or "").strip()
             if report:

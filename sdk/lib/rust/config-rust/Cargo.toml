@@ -1,0 +1,24 @@
+# config-rust — the Configuration Manager (registry / CM: Cm*/Cmp* hive, key, value,
+# parse, notify, security, lazy-flush) extracted from ntoskrnl-rust into its own rlib
+# so the registry — historically bug-central and touched by nearly every agent —
+# type-checks/codegens/caches independently of the ~280K-LOC kernel monolith
+# (crate-split Phase 1b). Pure CM logic on the ntkrnl-sys FFI substrate + the
+# dbgprint-rust print macros; its #[no_mangle] Cm*/Cmp* symbols bundle into
+# libkernel_rust.a via `extern crate config_rust` in the kernel-rust umbrella.
+#
+# The one non-trivial severance was CmControlVector: a table aggregating registry
+# control-vector slices owned by BOTH config and ob/mm/ARM3/ex/ps/kd64. It used to be
+# a compile-time const, which can't cross a crate boundary (const-eval can't address
+# an extern static). It's now assembled at boot from runtime reads (see cmdata.rs);
+# this crate reads the ntoskrnl-rust-side slices as link symbols.
+[package]
+name = "config-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+dbgprint-rust = { path = "../dbgprint-rust" }

@@ -7,6 +7,7 @@ never absolute zero — the tree carries known pre-existing findings. Advisory
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -46,8 +47,25 @@ def _baseline(repo: Path, tool: str) -> set[str]:
         return set()
 
 
+# Count-bearing SUMMARY lines are not findings: they drift whenever a count
+# changes (a crate add/remove moves 'TOTAL: … across N files'; a bindgen regen
+# moves 'Bindgen catalog: N functions'), which made every cross-lane merge
+# spuriously LINT_FAIL with "1 new" — 2026-07-06 hit the same TOTAL line twice
+# in one night. Findings are the per-site lines; tallies are presentation.
+# (Stale tally lines already in baselines are harmless — they simply never
+# match anything — and the next --update-baseline drops them.)
+_SUMMARY_LINE = re.compile(
+    r"(^\s*TOTAL:"  # 'TOTAL: 160 issues across 2348 files'
+    r"|^\s*SUMMARY:"  # verify_match_consts tally
+    r"|^\s*[A-Z_]+: \d+$"  # per-category counters ('C_MACRO: 94')
+    r"|catalog: \d+"  # 'Spec/Bindgen catalog: N …'
+    r"|^\s*-> .*: *\d+$"  # verify_tables tallies
+    r"|^\s*matched to a C array\s*: *\d+$)"
+)
+
+
 def _finding_lines(out: str) -> set[str]:
-    return {ln.rstrip() for ln in out.splitlines() if ln.strip()}
+    return {ln.rstrip() for ln in out.splitlines() if ln.strip() and not _SUMMARY_LINE.search(ln)}
 
 
 def _rel(text: str, repo: Path) -> str:
