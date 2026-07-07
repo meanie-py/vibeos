@@ -68,7 +68,7 @@ pub mod ex;
 pub mod guid;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod i386;
-pub mod inbv;
+// inbv extracted to inbv-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 // iomgr extracted to iomgr-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 pub mod kd;
 // kd64/ — Rust port of the WinDbg KD protocol stack. Active on all 3 arches.
@@ -85,14 +85,14 @@ pub mod ke;
 pub mod mm;
 pub mod ob;
 // pnpmgr extracted to pnpmgr-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.  // Phase 1: pnputil + pnpirp only (leaf files)
-pub mod po;
+// po extracted to po-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 pub mod ps;
 pub mod rtl;
 // se extracted to se-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 pub mod shim_exports;
 pub mod tests;
 pub mod tripwire;
-pub mod vdm;
+// vdm extracted to vdm-rust (crate-split Phase 1b, i386-only); symbols via kernel-rust extern crate.
 pub mod vf;
 // wmi extracted to wmi-rust (crate-split); symbols via kernel-rust extern crate.
 

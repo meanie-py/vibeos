@@ -149,6 +149,11 @@ unsafe fn scan(next: &mut [Sighting; MAX_SIGHTINGS], next_count: &mut usize) {
     // gun and fires at the park, deterministically, before the >10s window.
     #[cfg(feature = "lockdep")]
     super::lockdep::lockdep_report();
+
+    // cswitchdep: switch census + any hand-off violations (same rationale —
+    // the violation fires at the switch, before any downstream wedge/crash).
+    #[cfg(feature = "cswitchdep")]
+    super::cswitchdep::cswitchdep_report();
 }
 
 /// One stuck-thread report line, with the synctrace verdict inputs inline.
@@ -222,6 +227,8 @@ pub unsafe extern "system" fn KiStartSyncCensus() {
     super::flightrec::flightrec_init();
     #[cfg(feature = "lockdep")]
     super::lockdep::lockdep_init();
+    #[cfg(feature = "cswitchdep")]
+    super::cswitchdep::cswitchdep_init();
     crate::debugblock::debug_block_stamp();
 
     let mut handle: HANDLE = core::ptr::null_mut();

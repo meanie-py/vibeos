@@ -7,9 +7,24 @@
 //! - Guards use `Drop` to restore state — LLVM cannot eliminate a used value's destructor
 //! - Internal primitives use asm barriers to prevent optimization of hardware state transitions
 //! - C-facing exports (KeRaiseIrql, KeAcquireSpinLock) remain unchanged for driver compatibility
+//!
+//! # Execution-context ownership (Layer 1, phase 1)
+//! Guards are `!Send + !Sync` (`_ctx: PhantomData<*const ()>`): a raised-IRQL
+//! token or a held spinlock certifies "*this* CPU, *this* thread, *now*" —
+//! moving one to another thread (or holding it across a context switch on a
+//! future work-stealing abstraction) is meaningless and unsound. This is the
+//! first step of the RunToken model; the brand lifetime and the CPS wait API
+//! arrive with `RunToken` in phase 2. See
+//! `docs/engineering/execution-context-ownership-model.md`.
+
+use core::marker::PhantomData;
 
 use crate::base::*;
 use crate::ke::{KSPIN_LOCK, PKSPIN_LOCK};
+
+/// `!Send + !Sync` marker: execution-context capabilities must not leave the
+/// context that minted them (raw-pointer PhantomData opts out of both).
+type NotSend = PhantomData<*const ()>;
 
 // ── Sacred IRQL Primitives ──────────────────────────────────────────
 // These use asm barriers to prevent LLVM from eliminating IRQL transitions.
@@ -102,6 +117,7 @@ pub unsafe fn irql_current() -> KIRQL {
 /// ```
 pub struct IrqlGuard {
     previous: KIRQL,
+    _ctx: NotSend,
 }
 
 impl IrqlGuard {
@@ -109,7 +125,7 @@ impl IrqlGuard {
     #[inline]
     pub unsafe fn raise(new_irql: KIRQL) -> Self {
         let previous = irql_raise(new_irql);
-        Self { previous }
+        Self { previous, _ctx: PhantomData }
     }
 
     /// Raise to DISPATCH_LEVEL.
@@ -152,6 +168,7 @@ impl Drop for IrqlGuard {
 pub struct SpinLockGuard {
     lock: PKSPIN_LOCK,
     previous_irql: KIRQL,
+    _ctx: NotSend,
 }
 
 impl SpinLockGuard {
@@ -162,7 +179,7 @@ impl SpinLockGuard {
     pub unsafe fn acquire(lock: PKSPIN_LOCK) -> Self {
         let mut previous_irql: KIRQL = 0;
         crate::ke::KeAcquireSpinLock(lock, &mut previous_irql);
-        Self { lock, previous_irql }
+        Self { lock, previous_irql, _ctx: PhantomData }
     }
 
     /// Get the IRQL that was active before lock acquisition.
@@ -187,6 +204,7 @@ impl Drop for SpinLockGuard {
 /// Does not change IRQL.
 pub struct SpinLockAtDpcGuard {
     lock: PKSPIN_LOCK,
+    _ctx: NotSend,
 }
 
 impl SpinLockAtDpcGuard {
@@ -194,7 +212,7 @@ impl SpinLockAtDpcGuard {
     #[inline]
     pub unsafe fn acquire(lock: PKSPIN_LOCK) -> Self {
         crate::ke::KeAcquireSpinLockAtDpcLevel(lock);
-        Self { lock }
+        Self { lock, _ctx: PhantomData }
     }
 }
 
