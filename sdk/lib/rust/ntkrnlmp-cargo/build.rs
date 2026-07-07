@@ -291,6 +291,11 @@ fn main() {
     if env::var("VIBEOS_LOCKDEP").is_ok() {
         linker = linker.rust_features(&["lockdep"]);
     }
+    // cswitchdep-design.md: context-switch verifier (-DVIBEOS_CSWITCHDEP=ON).
+    println!("cargo:rerun-if-env-changed=VIBEOS_CSWITCHDEP");
+    if env::var("VIBEOS_CSWITCHDEP").is_ok() {
+        linker = linker.rust_features(&["cswitchdep"]);
+    }
     linker = linker
         .rust_staticlib("kernel-rust")
         // Tier-B sibling Rust crates: cargo-compiled directly by the engine (was

@@ -10,6 +10,8 @@ crate-type = ["staticlib"]
 # sync-instrumentation §4: pushlock self-deadlock detector (Tier-2 opt-in via
 # -DVIBEOS_LOCKDEP=ON → ntoskrnl-cargo/ntkrnlmp-cargo build.rs → rust_features).
 lockdep = ["ntoskrnl-rust/lockdep"]
+# cswitchdep-design.md: context-switch verifier (-DVIBEOS_CSWITCHDEP=ON).
+cswitchdep = ["ntoskrnl-rust/cswitchdep"]
 
 [dependencies]
 ntoskrnl-rust = { path = "../ntoskrnl-rust" }

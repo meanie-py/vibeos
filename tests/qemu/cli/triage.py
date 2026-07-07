@@ -36,6 +36,13 @@ _KERNEL_PANIC = re.compile(r"PANIC:([^\s:]+):(\d+)")
 # not counted. Lockdep is feature-gated (build --lockdep), default OFF.
 _CENSUS_STUCK = re.compile(r"\[CENSUS\] STUCK\b")
 _LOCKDEP_HIT = re.compile(r"\[LOCKDEP\][^\n]*(?:SELF-DEADLOCK|ABBA)")
+# cswitchdep (ke/cswitchdep.rs, build --cswitchdep): context-switch hand-off
+# violations, loud (`[CSWITCH] KIND …`) or census (`[CSWITCH]   #n KIND …`).
+# The plain `[CSWITCH] census:` counters line is context, not counted.
+_CSWITCH_HIT = re.compile(
+    r"\[CSWITCH\][^\n]*(?:HIGH_IRQL_AT_SWITCH|IRQL_UNBALANCED_SWITCH|SWAP_IRQL"
+    r"|SWITCH_FROM_DPC|CURTHREAD_INCOHERENT|STACK_OOB)"
+)
 _PC = re.compile(r"\bPC[:=]\s*(0x[0-9A-Fa-f]+)|\b(?:RIP|EIP)[:=]\s*(0x[0-9A-Fa-f]+)")
 
 # Documented intermittent flakes single-run gates have masked (see
@@ -105,11 +112,12 @@ def wedge_evidence(serial: str) -> dict:
     lines = [
         ln.strip()
         for ln in serial.splitlines()
-        if _CENSUS_STUCK.search(ln) or _LOCKDEP_HIT.search(ln)
+        if _CENSUS_STUCK.search(ln) or _LOCKDEP_HIT.search(ln) or _CSWITCH_HIT.search(ln)
     ]
     return {
         "census_stuck": sum(1 for ln in lines if _CENSUS_STUCK.search(ln)),
         "lockdep": sum(1 for ln in lines if _LOCKDEP_HIT.search(ln)),
+        "cswitch": sum(1 for ln in lines if _CSWITCH_HIT.search(ln)),
         "lines": lines[:3],
     }
 
@@ -213,14 +221,16 @@ def classify(
         # Census/lockdep self-reports turn "timed out" into "wedge, self-confirmed
         # by the kernel" — a real regression signature, never a contention retry.
         ev = wedge_evidence(serial)
-        if ev["census_stuck"] or ev["lockdep"]:
+        if ev["census_stuck"] or ev["lockdep"] or ev["cswitch"]:
             fields["wedge_confirmed"] = True
             fields["census_stuck"] = ev["census_stuck"]
             fields["lockdep_hits"] = ev["lockdep"]
+            fields["cswitch_hits"] = ev["cswitch"]
             salient.insert(
                 0,
                 f"kernel self-report: {ev['census_stuck']} [CENSUS] STUCK, "
-                f"{ev['lockdep']} [LOCKDEP] — wedge CONFIRMED, not contention",
+                f"{ev['lockdep']} [LOCKDEP], {ev['cswitch']} [CSWITCH] — "
+                f"wedge CONFIRMED, not contention",
             )
             salient += ev["lines"][:2]
         # A hang whose serial matches a documented flake signature is labeled

@@ -764,6 +764,7 @@ def main():
     if args.crate == "sdk/lib/rust/ntoskrnl-rust/src":
         sys.path.insert(0, str(SCRIPT_DIR))
         from kernel_crate_roots import KERNEL_CRATE_SRC_ROOTS
+
         crate_dirs = [REPO / r for r in KERNEL_CRATE_SRC_ROOTS]
     else:
         c = Path(args.crate)

@@ -24,3 +24,8 @@ default = []
 # for a debug/repro build via cmake -DVIBEOS_LOCKDEP=ON. Forwards to the
 # ntkrnl-sys pushlock-inline taps so both crates light up together.
 lockdep = ["ntkrnl-sys/lockdep"]
+# cswitchdep-design.md: context-switch hand-off verifier (Tier-2 opt-in via
+# -DVIBEOS_CSWITCHDEP=ON). IMPLIES lockdep: cswitchdep reads lockdep's tables
+# (return_address0 today, the held-set mirror in Phase 2), and checking against
+# an absent mirror would vacuously pass — the forbidden silent degrade.
+cswitchdep = ["lockdep"]

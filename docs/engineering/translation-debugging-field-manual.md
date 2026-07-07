@@ -3094,3 +3094,54 @@ DelayExecution) often localizes the block without a full unwind.
 DISPATCH → first-keypress machine wedge; see `doom-on-vibeos.md` §Bug 1) and the
 loud-panic-handler port for `arm64input-cargo` (bare `loop{}` handlers hide every
 driver panic — ~40 `*-cargo` mains still have them, sweep owed).
+
+### 9.27 waitdep — always-on dispatcher wait-block integrity tripwire (`ke/waitdep.rs`)
+
+**Built 2026-07-06 to attack the §9.24 arm64 `KiUnwaitThread+0x28` 0x1E flake**
+(a KWAIT_BLOCK / dispatcher-list corruption that surfaces as an innocent-victim
+0xC0000005 in the unwait path). Special pool can't see it (wait blocks live on
+thread stacks, not pool) and a GDB watchpoint needs a repro in hand — so
+instead the two chokepoints the crash funnels through validate the structures
+BEFORE mutating them:
+
+- **`KiUnlinkThread` entry** (every unwait goes through it): walks the thread's
+  `WaitBlockList` chain and proves, per block — kernel-VA + aligned, `Thread`
+  back-pointer matches, `WaitListEntry` doubly-linked invariants hold
+  (`Flink->Blink == entry && Blink->Flink == entry` — exactly what the
+  imminent `RemoveEntryList` relies on), `NextWaitBlock` cycle closes within
+  68 blocks. Plus the thread's own `WaitListEntry` when linked.
+- **`KiWaitTest` entry**: walks the object's `Header.WaitListHead` proving each
+  waiter entry's list invariants, `Object` back-pointer, and `Thread` KVA.
+
+**On violation:** `[WAITDEP] VIOLATION <kind>` on serial + a bounded dump of
+the whole block chain (every block's Thread/Object/Next/Flink/Blink/WaitKey/
+WaitType), then `KeBugCheckEx(0x109 CRITICAL_STRUCTURE_CORRUPTION,
+P1=culprit, P2=owner, P3=check-count, P4=kind)`. So the flake now faults **at
+detection with the corrupt structure on serial** instead of minutes of victim
+distance later. Soft anomaly (State != Waiting at unwait) is print-only,
+rate-limited ×8.
+
+**Why always-on (unlike lockdep):** the flake fires ~1/4 arm64 gate boots in
+the TDI self-test — gating the tripwire behind a build flag would mean it's
+never armed when the crime happens. Checks are pure loads over memory the
+caller dereferences on the next line anyway; no false-positive surface (every
+hard check is an invariant the existing code's correctness already requires).
+`VIBEOS_WAITDEP_CHECKS` (exported, atomic) is the liveness signal for GDB.
+
+**When it fires:** the serial dump identifies WHICH invariant broke and on
+which block — `thread-backptr`/`object-backptr` point at a stale/overwritten
+block (stack reuse after an abandoned wait?), `list-integrity` at a
+cross-linked or double-removed entry, `chain-overrun` at a clobbered
+`NextWaitBlock`. Symbolicate nothing — the culprit address in P1 + the chain
+dump is the whole story; feed the block address to `identify-object` /
+`dump-thread` for the owner.
+
+**§9.27 soak result (2026-07-07):** 16/16 dedicated arm64 `--repeat` boots +
+3 gate arm64 boots all clean with waitdep armed — zero `[WAITDEP]` lines (not
+even soft State anomalies), zero 0x1E. At the documented ≈1/4 rate, P(16
+clean) ≈ 1% — the flake rate has COLLAPSED, most plausibly a side-benefit of
+the §9.13 WS-pushlock family fixes (the last observed hit, 2026-07-06, was on
+a pre-§9.26-era tree). Status: tripwire stays always-on; organic fleet gate
+traffic continues the soak for free. The next occurrence anywhere will
+self-report `[WAITDEP] VIOLATION <kind>` + chain dump + BUGCHECK 0x109
+(P4=kind) instead of a victim 0xC0000005 — do NOT hand-loop boots chasing it.

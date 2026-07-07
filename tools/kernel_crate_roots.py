@@ -17,6 +17,7 @@ codegen tools that still hardcode ntoskrnl-rust (gen_global_barrier.py,
 apply_opaque_ptr.py, fix_abi_mismatch.py, …) are one-shot and out of gate scope;
 migrate them to this list if/when they're re-run against a split kernel.
 """
+
 from pathlib import Path
 
 # Each entry is a crate `src` dir, relative to the repo root. ntoskrnl-rust is
