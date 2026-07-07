@@ -3524,3 +3524,50 @@ reduced rate — under investigation; NULL-write corruption was one component
 but not the whole story. The dib1bpp/sprite-path suspicions from earlier
 rounds were audited faithful-to-C (subagent audit, 2026-07-07) and are NOT
 the cause.
+### 9.35 (FIXED 2026-07-06) Kernel image shipped ZERO unwind info for Rust code — `requires-uwtable: false` in the custom target jsons; any exception walk died at the first Rust frame
+
+**Symptom:** BUGCHECK **0x7F P1=8 (double fault)** with `TrapFrame.Rip =
+RtlVirtualUnwind+0x165` (amd64), immediately after a `[RAISE]
+RtlRaiseStatus(...)` line, followed by a cascade of secondary bugchecks
+(0x50, 0x1E) as the bugcheck path itself walks the corrupted state.
+
+**Found by:** the DUMMY_PSEH-verdict PoC (`ntoskrnl/seh_poc.c`, lane
+`dummy-pseh-question`) — the first-ever kernel-mode raise with a REAL
+`.pdata`/`.xdata` handler present. The compile side (native clang
+`__try/__except`, `-fms-extensions`) is fine; the raise dispatches into
+`RtlDispatchException → RtlpUnwindInternal → RtlVirtualUnwind`
+(rtl-except/src/amd64/unwind.rs) and dies there.
+
+**Mechanism:** `+0x165` is the `call memcpy` copying a 0x4D0-byte CONTEXT
+per unwind step. A double fault AT a `call` = the push hit the stack guard
+= **kernel stack overflow** — i.e. the unwinder faulted on some frame, that
+fault raised a new exception, dispatch recursed into the unwinder again,
+each level burning >1.2KB of CONTEXT copies until the stack died.
+
+**Why it matters beyond the PoC:** today's *unhandled* raises (every
+`ExRaiseStatus` under DUMMY_PSEH — §9.24's C00000D8 hunt) traverse this
+same walk, so a raise that should end in a clean 0x1E can instead surface
+as this 0x7F cascade ("RtlVirtualUnwind fault amplification"). If you see
+0x7F/8 at RtlVirtualUnwind right after a `[RAISE]`, the raise is the
+trigger, not the bug — root-cause the raiser AND note the unwinder defect.
+
+**Root cause (CONFIRMED):** the custom rustc kernel targets
+(`sdk/lib/rust/{ntkrnlmp,ntoskrnl}-cargo/*-kernel.json`) set
+`"requires-uwtable": false` — so with `panic="abort"` rustc emitted NO
+Win64 unwind info for ANY Rust function. The whole image `.pdata` was 380
+entries, all from the cc-rs C shims. Every walk hit the leaf-fallback
+(`Rip = [Rsp]`) on the first (non-leaf) Rust frame → garbage ControlPc →
+the epilogue-scan's instruction read faulted → recursive dispatch → stack
+exhaustion → 0x7F at the CONTEXT memcpy. The translated unwinder itself was
+CORRECT.
+
+**Fix:** `"requires-uwtable": true` (the value every real Windows rustc
+target uses — Win64 ABI mandates `.pdata` for non-leaf functions). amd64 +
+arm64 kernel targets flipped; `.pdata` 380 → ~7,900 entries (~1–3% image).
+Validated end-to-end by the seh_poc.c boot self-test: `[SEH-POC] ...
+(PASS)` — a native `__try/__except` catches `ExRaiseStatus` in kernel mode
+and the system boots green. ALSO fixes: unhandled-raise diagnostics (clean
+0x1E instead of this 0x7F cascade) and every stack-walk consumer on Rust
+frames. **Sweep owed:** the other per-module `*-kernel.json` targets
+(ntdll-cargo, driver cargos) carry the same latent `false`. Verdict
+context + evidence: `docs/engineering/dummy-pseh-verdict.md`.
