@@ -269,18 +269,20 @@ def build(args, repo: Path) -> int:
         return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
 
 
-def _lockdep_in_cache(build_dir: Path) -> bool:
+def _flag_in_cache(build_dir: Path, flag: str) -> bool:
     cache = build_dir / "CMakeCache.txt"
     try:
         for line in cache.read_text(errors="ignore").splitlines():
-            if line.startswith("VIBEOS_LOCKDEP:"):
+            if line.startswith(f"{flag}:"):
                 return line.split("=", 1)[-1].strip() in ("ON", "1", "TRUE")
     except OSError:
         pass
     return False
 
 
-def _maybe_canonize(run, repo: Path, build_dir: Path, arch: str, lockdep: bool) -> bool | None:
+def _maybe_canonize(
+    run, repo: Path, build_dir: Path, arch: str, instr_flags: dict[str, bool]
+) -> bool | None:
     """Ensure the build dir is configured at the CANONICAL path (see canon.py) so
     caches share across worktrees. Returns True → wrap build cmds in canon-run,
     False → legacy real-path passthrough (userns unavailable), None → hard fail.
@@ -289,26 +291,29 @@ def _maybe_canonize(run, repo: Path, build_dir: Path, arch: str, lockdep: bool) 
     LOUD one-time full rebuild that repopulates the shared cache; every later
     build (any worktree) hits it."""
     if canon.is_canonical(build_dir):
-        # sync-instrumentation §4 lockdep (Tier-2): the flag is per-BUILD state,
+        # Instrumentation flags (lockdep §4 / cswitchdep) are per-BUILD state,
         # not sticky cache state — reconcile every build so a plain (no-flag)
         # build deterministically flips a stale ON back OFF and the gate never
         # inherits an instrumented kernel.
-        if lockdep != _lockdep_in_cache(build_dir):
-            val = "ON" if lockdep else "OFF"
+        stale = {
+            flag: on for flag, on in instr_flags.items() if on != _flag_in_cache(build_dir, flag)
+        }
+        if stale:
+            defs = [f"-D{flag}={'ON' if on else 'OFF'}" for flag, on in stale.items()]
             cp = run.run(
-                canon.wrap(repo, ["cmake", f"-DVIBEOS_LOCKDEP={val}", "."]),
+                canon.wrap(repo, ["cmake", *defs, "."]),
                 cwd=build_dir,
-                stage="lockdep-config",
+                stage="instr-config",
                 timeout=600,
             )
             if cp.returncode != 0:
                 run.classification = "CMAKE_CONFIGURE_FAIL"
                 run.add(
                     Stage(
-                        "lockdep-config",
+                        "instr-config",
                         exit=cp.returncode,
                         status="fail",
-                        detail=f"cmake -DVIBEOS_LOCKDEP={val} reconfigure failed",
+                        detail=f"cmake {' '.join(defs)} reconfigure failed",
                         salient=[
                             ln.strip()
                             for ln in (cp.stdout + cp.stderr).splitlines()
@@ -317,7 +322,7 @@ def _maybe_canonize(run, repo: Path, build_dir: Path, arch: str, lockdep: bool) 
                     )
                 )
                 return None
-            run.add(Stage("lockdep-config", status="ok", detail=f"VIBEOS_LOCKDEP={val}"))
+            run.add(Stage("instr-config", status="ok", detail=" ".join(defs)))
         return True
     if not canon.available():
         run.add(
@@ -340,8 +345,7 @@ def _maybe_canonize(run, repo: Path, build_dir: Path, arch: str, lockdep: bool) 
         )
         return None
     carried = canon.carried_options(build_dir)
-    if lockdep:
-        carried = [*carried, "-DVIBEOS_LOCKDEP=ON"]
+    carried = [*carried, *(f"-D{flag}=ON" for flag, on in instr_flags.items() if on)]
     fresh = not (build_dir / "CMakeCache.txt").is_file()
     if build_dir.exists():
         shutil.rmtree(build_dir)  # legacy caches bake real paths into every generated file
@@ -469,9 +473,18 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
 _FLAG_SIGNATURES = [
     (
         "VIBEOS_LOCKDEP",
-        lambda args: bool(getattr(args, "lockdep", False)),
+        # cswitchdep IMPLIES the lockdep cargo feature (held-set mirror), so its
+        # symbol is legitimately present in a --cswitchdep build too.
+        lambda args: bool(getattr(args, "lockdep", False))
+        or bool(getattr(args, "cswitchdep", False)),
         Path("ntoskrnl") / "ntoskrnl.exe",
         "VIBEOS_LOCKDEP",
+    ),
+    (
+        "VIBEOS_CSWITCHDEP",
+        lambda args: bool(getattr(args, "cswitchdep", False)),
+        Path("ntoskrnl") / "ntoskrnl.exe",
+        "VIBEOS_CSWITCHDEP",
     ),
 ]
 
@@ -524,7 +537,16 @@ def _verify_flag_artifacts(run, repo: Path, build_dir: Path, args) -> bool:
 def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: bool) -> int:
     if not _isolation_preflight(run, repo, build_dir):
         return run.finalize(repo)
-    wrapped = _maybe_canonize(run, repo, build_dir, arch, getattr(args, "lockdep", False))
+    wrapped = _maybe_canonize(
+        run,
+        repo,
+        build_dir,
+        arch,
+        {
+            "VIBEOS_LOCKDEP": bool(getattr(args, "lockdep", False)),
+            "VIBEOS_CSWITCHDEP": bool(getattr(args, "cswitchdep", False)),
+        },
+    )
     if wrapped is None:
         return run.finalize(repo)
 

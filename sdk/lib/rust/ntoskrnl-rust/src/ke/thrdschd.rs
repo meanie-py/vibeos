@@ -510,6 +510,17 @@ unsafe fn KiSwapThreadImpl(
 
     WaitIrql = *kt_WaitIrql(CurrentThread);
 
+    // cswitchdep tap-1 entry (cswitchdep-design.md): a voluntary switch must
+    // begin at exactly DISPATCH (leaked-HIGH raise = §9.24 class); snapshot
+    // the old thread's WaitIrql; evict its shadow on the final switch away
+    // from a Terminated thread (KTHREAD pool reuse must not inherit it).
+    #[cfg(feature = "cswitchdep")]
+    super::cswitchdep::cswitch_suspend(
+        CurrentThread as usize,
+        WaitIrql,
+        *kt_State(CurrentThread) == super::cswitchdep::STATE_TERMINATED,
+    );
+
     ApcState = KiSwapContext(WaitIrql, CurrentThread);
 
     WaitStatus = (*CurrentThread).WaitStatus as isize;
@@ -520,6 +531,12 @@ unsafe fn KiSwapThreadImpl(
     }
 
     KeLowerIrql(WaitIrql);
+
+    // cswitchdep tap-1 exit: after the lower, live IRQL must equal the saved
+    // WaitIrql — anything else is a broken raise/lower pairing across the wait.
+    #[cfg(feature = "cswitchdep")]
+    super::cswitchdep::cswitch_after_switch(CurrentThread as usize, WaitIrql);
+
     WaitStatus
 }
 

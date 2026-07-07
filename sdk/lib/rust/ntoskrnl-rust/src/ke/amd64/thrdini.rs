@@ -189,6 +189,12 @@ pub unsafe extern "system" fn KiInitializeContextThread(
     (*StartFrame).P3Home = 0;
     (*StartFrame).P4Home = SystemRoutine.map(|f| f as u64).unwrap_or(0);
     (*StartFrame).Reserved = 0;
+
+    // cswitchdep birth brand: claim the shadow slot so a pool-reused KTHREAD
+    // address never inherits a dead thread's record, and so the resume tap can
+    // tell a first-run from a lost suspend record.
+    #[cfg(feature = "cswitchdep")]
+    crate::ke::cswitchdep::cswitch_thread_init(Thread as usize);
 }
 
 #[no_mangle]
@@ -228,6 +234,24 @@ pub unsafe extern "system" fn KiSwapContextResume(
 
     (*Pcr).ContextSwitches += 1;
     (*NewThread).__bindgen_anon_5.__bindgen_anon_5.ContextSwitches += 1;
+
+    // cswitchdep tap 2 (post-swap, on the NEW thread's stack): IRQL still at
+    // the switching level, CurrentThread coherence, SP within the new stack.
+    // Runs BEFORE the ATTEMPTED_SWITCH_FROM_DPC BugCheck below so the record
+    // reaches the table + serial even when the BugCheck then fires.
+    #[cfg(feature = "cswitchdep")]
+    {
+        let sp_probe = 0u8;
+        crate::ke::cswitchdep::cswitch_swap_resume(
+            OldThread as usize,
+            NewThread as usize,
+            (*Pcr).Prcb.CurrentThread as usize,
+            core::ptr::addr_of!(sp_probe) as usize,
+            (*NewThread).StackLimit as usize,
+            (*NewThread).InitialStack as usize,
+            (*Pcr).Prcb.DpcRoutineActive != 0,
+        );
+    }
 
     if (*Pcr).Prcb.DpcRoutineActive != 0 {
         KeBugCheckEx(
