@@ -641,6 +641,8 @@ sdk/lib/rust/i8042prt-rust/src/mouse.rs:776: [UNWRAP] .unwrap() — panics on Er
 sdk/lib/rust/i8042prt-rust/src/mouse.rs:781: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/i8042prt-rust/src/mouse.rs:786: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/i8042prt-rust/src/mouse.rs:794: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/inbv-rust/src/inbv.rs:400: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/inbv-rust/src/inbv.rs:437: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/controller.rs:125: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/controller.rs:38: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/device.rs:1608: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1170,8 +1172,6 @@ sdk/lib/rust/ntoskrnl-rust/src/ex/work.rs:187: [UNWRAP] .unwrap() — panics on 
 sdk/lib/rust/ntoskrnl-rust/src/ex/work.rs:197: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ex/work.rs:546: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ex/work.rs:551: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/inbv/inbv.rs:400: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/inbv/inbv.rs:437: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/kd/kdmain.rs:292: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/kd/kdmain.rs:396: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/kd/kdmain.rs:432: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1227,8 +1227,6 @@ sdk/lib/rust/ntoskrnl-rust/src/ob/obsecure.rs:533: [UNWRAP] .unwrap() — panics
 sdk/lib/rust/ntoskrnl-rust/src/ob/obsecure.rs:556: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ob/obsecure.rs:604: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ob/obsecure.rs:659: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/po/poshtdwn.rs:275: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/po/power.rs:345: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ps/kill.rs:814: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ps/thread.rs:268: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ps/win32.rs:102: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1277,6 +1275,8 @@ sdk/lib/rust/pnpmgr-rust/src/pnpdma.rs:75: [UNWRAP] .unwrap() — panics on Err/
 sdk/lib/rust/pnpmgr-rust/src/pnpdma.rs:81: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/pnpmgr-rust/src/pnpdma.rs:89: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/pnpmgr-rust/src/pnpnotify.rs:147: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/po-rust/src/poshtdwn.rs:275: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/po-rust/src/power.rs:349: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/processr-rust/src/lib.rs:20: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/pseh-rust/src/lib.rs:34: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/ramdisk-rust/src/lib.rs:32: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first

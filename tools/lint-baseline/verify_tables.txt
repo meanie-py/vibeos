@@ -1,5 +1,5 @@
-  no C counterpart        : 45
+  no C counterpart        : 39
 (6 unverifiable tables not shown; use --verbose)
 ==============================================================================
 DATA-TABLE DIFFER REPORT
-Rust integer tables found : 70
+Rust integer tables found : 64
