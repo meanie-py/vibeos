@@ -158,7 +158,9 @@ static void request_drive_letters(void)
     DWORD bytes = 0;
     ULONG i;
 
-    mgr = CreateFileW(MOUNTMGR_DOS_DEVICE_NAME, 0,
+    /* NEXT_DRIVE_LETTER is CTL_CODE(..., FILE_READ_ACCESS|FILE_WRITE_ACCESS):
+     * the handle must carry read+write or the ioctl fails ERROR_ACCESS_DENIED. */
+    mgr = CreateFileW(MOUNTMGR_DOS_DEVICE_NAME, GENERIC_READ | GENERIC_WRITE,
                       FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
                       OPEN_EXISTING, 0, NULL);
     if (mgr == INVALID_HANDLE_VALUE)
