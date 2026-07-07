@@ -800,6 +800,41 @@ pub unsafe extern "system" fn KeWaitForSingleObject(
     WaitStatus
 }
 
+/// CPS wait — the RunToken-consuming form of `KeWaitForSingleObject`
+/// (execution-context ownership Layer 1, `execution-context-ownership-model.md`).
+///
+/// Takes the region's [`RunToken`](ntkrnl_sys::token::RunToken) **by value**
+/// (a live guard borrowing it makes this call a borrow error — no sleeping
+/// with a spinlock held) and hands the continuation a **freshly-branded**
+/// token: the higher-ranked `for<'new>` bound means the caller cannot unify
+/// `'new` with the old brand, so anything minted from the old token is a
+/// lifetime error after the wait. `L: Waitable` restricts callers to
+/// Passive/Apc context — "wait from ISR/DPC" does not typecheck.
+///
+/// # Safety
+/// Same contract as `KeWaitForSingleObject` (valid dispatcher object, valid
+/// or null Timeout), plus the token must honestly describe the calling
+/// context (see `with_token`).
+#[inline]
+pub unsafe fn wait_for<L: ntkrnl_sys::token::Waitable, R>(
+    tok: ntkrnl_sys::token::RunToken<'_, L>,
+    object: PVOID,
+    wait_reason: KWAIT_REASON,
+    wait_mode: KPROCESSOR_MODE,
+    alertable: BOOLEAN,
+    timeout: PLARGE_INTEGER,
+    k: impl for<'new> FnOnce(ntkrnl_sys::token::RunToken<'new, L>, NTSTATUS) -> R,
+) -> R {
+    // Consume the caller's token: the CPU is being given back to the
+    // scheduler; everything branded by `tok` dies here.
+    drop(tok);
+    let status = KeWaitForSingleObject(object, wait_reason, wait_mode, alertable, timeout);
+    // SAFETY: we are back in the same thread context at the same typestate
+    // level (KeWaitForSingleObject restores the entry IRQL); the fresh brand
+    // is callee-bound via the for<'new> closure bound.
+    ntkrnl_sys::token::with_token::<L, R>(|fresh| k(fresh, status))
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn KeWaitForMultipleObjects(
     Count: ULONG,
