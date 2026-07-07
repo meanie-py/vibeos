@@ -290,6 +290,21 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Ob-refcount balance — same held-set engine, next lifecycle class: an
+    # early return between ObReferenceObject* and ObDereferenceObject. A ref
+    # leak never crashes a boot (slow pool exhaustion), so no gate boot can
+    # catch it — only this. The 2026-07-07 sweep found 3 UPSTREAM leaks (2
+    # fixed: cmapi deleted-KCB KeyBody, dbgk last-thread; sysldr's is dead
+    # code) and 0 Rust-translation leaks; baseline holds the verified
+    # branch-merge FP residue (field manual §9.28).
+    sob = repo / "tools" / "scan_ob_refcount.py"
+    specs.append(
+        (
+            "scan_ob_refcount",
+            [py, str(sob), "--lint"] if sob.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # NOTE: scan_bind_all_matches (bind-all match-arm detector) is intentionally
     # NOT wired here yet. It runs `cargo check` in a SEPARATE cold target dir
     # (to avoid force-warn polluting the shared cache), which cold-triggers

@@ -3220,3 +3220,44 @@ was reused/poisoned. Same boot then cascaded IRQL raise-DOWN spam inside the
 bugcheck path (KeBugCheckWithTf raising to HIGH; harmless secondary) and a
 nested 0x1E in KeGetBugMessageText. This is the §9.27 arm64 TDI flake wearing
 its new detector — one hit in ~20 armed boots today, so rarer than the historic ≈1/4 but alive; the waitdep chain dump above is the datum for the next debugging round.
+
+### 9.32 Static analysis for leaked Ob references — `scan_ob_refcount.py`
+
+Sibling of §9.28's IRQL scanner (same tree-sitter held-set engine), pointed at
+the next lifecycle class: `ObReferenceObject*` ↔ `ObDereferenceObject`
+balance. A ref leak never crashes a boot — it's pool exhaustion hours in — so
+NO gate boot can ever catch one; static analysis is the only detector.
+
+**First sweep (2026-07-07): 46 raw → 12 after engine iteration → 3 real
+upstream leaks, 0 Rust-translation leaks** (adversarially verified per-finding
+against the ReactOS C oracle by parallel subagents). Fixed the 2 reachable
+ones (upstream ReactOS bugs, same class as the §9.26 usbport find):
+- `config-rust/src/cmapi.rs` deleted-KCB path leaked the `KeyBody` ref
+  (C `cmapi.c` bare `return Loaded;` while every other exit derefs);
+- `dbgk-rust/src/dbgkobj.rs` `DbgkpPostFakeThreadMessages` leaked the
+  last-thread ref on `STATUS_UNSUCCESSFUL` (C returns without releasing
+  `pLastThread`, which only transfers to the caller on success).
+The third (`sysldr.rs` session-load) is dead code here (flags!=0 rejected
+earlier) — baselined, not fixed.
+
+**Engine rules beyond §9.28** (each earned by a real FP shape from triage):
+status-guard exemption (a return under the acquire's own `if
+!NT_SUCCESS(status)` / `if ObRef..(..) != 0` check isn't a leak — the ref is
+conditional there); alias groups (`Process = TargetProcess` — releasing either
+name releases the ref; a name can be root AND alias across sibling branches);
+overwrite-kills-hold (`x = (*p).Field` after an acquire under `x` — the var no
+longer names the object); escape-on-any-use (passed to a call / stored through
+a field = possible transfer → drop, precision over recall); single-ident
+out-params only (field-expression out-args escape at birth). Known residue:
+branch-merge FPs (acquire in one arm, return in the sibling — linear walk
+merges them); those are verified + baselined
+(`tools/lint-baseline/scan_ob_refcount.txt`), and the gate blocks NEW findings
+only. Suppress a verified FP with `// nolint: ob-refcount (reason)`.
+
+**Verify-fanout recipe (reusable):** one subagent per finding-file with the
+finding, the trace rules (returned/stored/passed/failure-path = not leaked),
+and the C-oracle question "does upstream deref on the corresponding path?" —
+verdicts REAL_RUST_BUG / UPSTREAM_BUG / FP with line evidence. 7 agents
+resolved 12 findings in ~1 min wall-clock; 2 engine bugs (wrong out-param
+index for `ObReferenceFileObjectForWrite`, missing `ObReferenceObjectSafe`
+statusfulness) were found BY the triage, not by inspection.
