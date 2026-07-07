@@ -22,12 +22,51 @@ extern "system" {
 #[used]
 static _ANCHOR_ENTRY: unsafe extern "system" fn(u32, *mut u8) -> u8 = HalInitSystem;
 
-// The HAL has no runtime panic path; cargo's rustc still requires a
-// `#[panic_handler]` visible in main.rs's crate graph (it can't see the
-// staticlib at compile time). A halt loop is sufficient — it's discarded
-// by `--gc-sections` unless actually reached, and libhal_rust.a's own
-// symbol wins via `--allow-multiple-definition` if both are linked.
+// Loud panic handler (2026-07-06 sweep) — a bare `loop {}` here turns any
+// Rust panic into a silent wedge (the arm64input avail-ring bug cost a live
+// forensics session to even locate). DbgPrint resolves via the ntoskrnl import lib. The
+// serial shape below is what smoke triage classifies as RUST_PANIC.
+extern "C" {
+    fn DbgPrint(fmt: *const core::ffi::c_char, ...) -> u32;
+}
+
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    // Location.file is a non-NUL-terminated &str — copy into a NUL'd buffer.
+    let mut buf = [0u8; 128];
+    let mut n = 0usize;
+    if let Some(loc) = info.location() {
+        for &b in loc.file().as_bytes().iter().take(100) {
+            buf[n] = b;
+            n += 1;
+        }
+        buf[n] = b':';
+        n += 1;
+        let mut tmp = [0u8; 10];
+        let mut t = 0usize;
+        let mut v = loc.line();
+        if v == 0 {
+            tmp[t] = b'0';
+            t += 1;
+        }
+        while v > 0 {
+            tmp[t] = b'0' + (v % 10) as u8;
+            v /= 10;
+            t += 1;
+        }
+        while t > 0 {
+            t -= 1;
+            buf[n] = tmp[t];
+            n += 1;
+        }
+    }
+    buf[n] = 0;
+    unsafe {
+        DbgPrint(b"!!! [HAL] RUST PANIC HIT !!!\n\0".as_ptr() as *const core::ffi::c_char);
+        DbgPrint(
+            b"PANIC LOC: %s\n\0".as_ptr() as *const core::ffi::c_char,
+            buf.as_ptr(),
+        );
+    }
+    loop {} // nolint: silent-failure (post-panic halt — RUST PANIC self-report already printed above)
 }

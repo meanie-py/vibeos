@@ -243,6 +243,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Leaked IRQL raise / spinlock acquire on an early-exit path — an early
+    # `return`/`?` between a `KeRaiseIrql`/`KeAcquireSpinLock` and its matching
+    # lower/release. We translate C's manual balance verbatim, so a goto-cleanup
+    # mistranslated as a bare return silently leaks the raise (found the usbport
+    # empty-list spinlock leak, upstream ReactOS bug — 2026-07-06). A leaked
+    # raise strands soft-IRQL high → the next acquire raises DOWN → preemption
+    # mid-critical-section → corruption (field manual §9.24). Tree is CLEAN
+    # today, so the baseline is empty = a hard 0-gate; any new leak blocks.
+    sib = repo / "tools" / "scan_irql_balance.py"
+    specs.append(
+        (
+            "scan_irql_balance",
+            [py, str(sib), "--lint"] if sib.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # NOTE: scan_bind_all_matches (bind-all match-arm detector) is intentionally
     # NOT wired here yet. It runs `cargo check` in a SEPARATE cold target dir
     # (to avoid force-warn polluting the shared cache), which cold-triggers

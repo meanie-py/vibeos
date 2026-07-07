@@ -103,14 +103,17 @@ per-driver `rust-*-target` dirs also each recompile the ntkrnl-sys world
 (~90MB each, ~4.5GB/arch) — consolidation into the shared workspace target
 (as the cargo modules already do) would cut cold time and disk.
 
-### F5. Gate is a 3-barrier pipeline; per-arch pipelining would cut ~40%
-Gate = builds (serial, ~130s warm) → lint (parallel barrier, ~60s) → smokes
-(parallel, wall = amd64 ~200s). Nothing starts smoking until ALL arches built
-and linted. A green gate's ~390s has a per-arch critical path of only ~250s
-(amd64: build 43s + boot 85s + net 115s).
-→ Opportunity: launch each arch's smoke the moment its build finishes
-(amd64 first), run lint concurrently (it gates the stamp, not the smoke).
-Modeled gate wall: ~390s → ~230s warm.
+### F5. [FIXED 2026-07-06] Gate was a 3-barrier pipeline; per-arch pipelining landed
+Was: builds (serial, ~130s warm) → lint (parallel barrier) → smokes
+(parallel); nothing smoked until ALL arches built and linted, ~390s wall.
+Now (`gate.py`): each arch's smoke + strict lint + the amd64 net lane launch
+the moment ITS build lands (amd64 builds first — it feeds two lanes); builds
+stay serial among themselves (exclusive cpuheavy lease). Safe because
+windows-host boots throttle on the separate `bootcpu` pool (Windows
+scheduling domain) — build ∥ boot is the hostlock contract.
+Measured 2026-07-06 (with F4b's no-op-ninja fix compounding): full gate
+green ×3+net+stamp in **73s** on an unchanged tree; a real-edit warm gate
+lands in the 2–4 min class (vs 8–13 min at the start of the day).
 
 ### F6. Fresh-worktree provisioning is a near-cold build per arch
 Object files/rlibs are per-worktree; only ccache/sccache are shared. First

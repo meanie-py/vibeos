@@ -186,6 +186,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "cdfs-rust"
 version = "0.1.0"
 dependencies = [
@@ -512,6 +520,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fstub-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "gdi32-rust"
 version = "0.1.0"
 dependencies = [
@@ -656,6 +672,14 @@ name = "interlck"
 version = "0.1.0"
 
 [[package]]
+name = "iomgr-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "kbdclass-cargo"
 version = "0.1.0"
 dependencies = [
@@ -674,6 +698,15 @@ name = "kbdhid-rust"
 version = "0.1.0"
 dependencies = [
  "hid-sys",
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "kdbg-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
+ "iced-x86",
  "ntkrnl-sys",
 ]
 
@@ -751,15 +784,21 @@ dependencies = [
 name = "kernel-rust"
 version = "0.1.0"
 dependencies = [
+ "cc-rust",
  "cmboot-rust",
  "dbgk-rust",
  "fsrtl-rust",
+ "fstub-rust",
+ "iomgr-rust",
+ "kdbg-rust",
  "ke-inlines",
  "ke-macros",
  "lpc-rust",
  "ntoskrnl-rust",
  "ntprintf",
  "ntprintf_w",
+ "pnpmgr-rust",
+ "se-rust",
  "wmi-rust",
 ]
 
@@ -1099,7 +1138,6 @@ name = "ntoskrnl-rust"
 version = "0.1.0"
 dependencies = [
  "dbgprint-rust",
- "iced-x86",
  "ntkrnl-sys",
  "ntprintf",
  "ntprintf_w",
@@ -1214,6 +1252,14 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 name = "pl011-rust"
 version = "0.1.0"
 dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "pnpmgr-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
  "ntkrnl-sys",
 ]
 
@@ -1556,6 +1602,14 @@ checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
 name = "scsiport-rust"
 version = "0.1.0"
 dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "se-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
  "ntkrnl-sys",
 ]
 
