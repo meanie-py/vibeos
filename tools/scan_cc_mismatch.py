@@ -20,6 +20,7 @@ Output: one line per finding (stable, repo-relative) — baselined by
 tools/lint-baseline/scan_cc_mismatch.txt via `vibeos-cli check` (0-NEW gate).
 Suppress a verified FP with: // nolint: cc-mismatch (reason)
 """
+
 from __future__ import annotations
 
 import os
@@ -30,18 +31,26 @@ from collections import defaultdict
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = os.path.join(REPO, "sdk", "lib", "rust")
 
-NORM_I386 = {"system": "stdcall", "C": "C", "cdecl": "C",
-             "fastcall": "fastcall", "stdcall": "stdcall", "thiscall": "thiscall"}
+NORM_I386 = {
+    "system": "stdcall",
+    "C": "C",
+    "cdecl": "C",
+    "fastcall": "fastcall",
+    "stdcall": "stdcall",
+    "thiscall": "thiscall",
+}
 
 # cfg prefix (0+ attributes), optionally followed by `unsafe`, then extern block
 DECL_BLOCK_RE = re.compile(
-    r'((?:#\[cfg[^\]]*\]\s*)*)(?:unsafe\s+)?extern\s+"(\w+)"\s*\{([^}]*)\}', re.S)
-DECL_FN_RE = re.compile(r'\bfn\s+(\w+)\s*\(')
+    r'((?:#\[cfg[^\]]*\]\s*)*)(?:unsafe\s+)?extern\s+"(\w+)"\s*\{([^}]*)\}', re.S
+)
+DECL_FN_RE = re.compile(r"\bfn\s+(\w+)\s*\(")
 DEF_RE = re.compile(
-    r'((?:#\[cfg[^\]]*\]\s*)*)#\[no_mangle\]\s*pub\s+unsafe\s+extern\s+"(\w+)"\s+fn\s+(\w+)')
-NOLINT_RE = re.compile(r'nolint:\s*cc-mismatch')
+    r'((?:#\[cfg[^\]]*\]\s*)*)#\[no_mangle\]\s*pub\s+unsafe\s+extern\s+"(\w+)"\s+fn\s+(\w+)'
+)
+NOLINT_RE = re.compile(r"nolint:\s*cc-mismatch")
 
-ARCH_FILE_RE = re.compile(r'(arm64|amd64|aarch64|x86_64)')
+ARCH_FILE_RE = re.compile(r"(arm64|amd64|aarch64|x86_64)")
 
 
 def cfg_excludes_i386(cfg: str) -> bool:
@@ -57,13 +66,13 @@ def scan_crate(crate_src: str) -> list[str]:
     for root, dirs, files in os.walk(crate_src):
         dirs[:] = [d for d in dirs if d != "target"]
         for fn in files:
-            if not fn.endswith(".rs") or ARCH_FILE_RE.search(fn) and "i386" not in fn and "x86" not in fn:
-                # per-arch non-i386 source files never compile on i386
-                if not fn.endswith(".rs") or ARCH_FILE_RE.search(fn):
-                    continue
+            # per-arch non-i386 source files never compile on i386
+            if not fn.endswith(".rs") or ARCH_FILE_RE.search(fn):
+                continue
             path = os.path.join(root, fn)
             try:
-                src = open(path, encoding="utf-8", errors="replace").read()
+                with open(path, encoding="utf-8", errors="replace") as fh:
+                    src = fh.read()
             except OSError:
                 continue
             for m in DEF_RE.finditer(src):
@@ -93,7 +102,8 @@ def scan_crate(crate_src: str) -> list[str]:
                 rel = os.path.relpath(path, REPO)
                 out.append(
                     f'{rel}:{line}: [CC_MISMATCH] {name} declared extern "{cc}" '
-                    f'but defined {sorted(defcc)} in-crate (i386 UB-fold risk)')
+                    f"but defined {sorted(defcc)} in-crate (i386 UB-fold risk)"
+                )
     return out
 
 
