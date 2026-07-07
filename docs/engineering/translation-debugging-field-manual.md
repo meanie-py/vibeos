@@ -2946,3 +2946,18 @@ the game legitimately ignored the key and the gate kept failing AFTER the OS
 was fixed. When probing a foreign binary, drive inputs it demonstrably maps
 (ESC/ENTER/arrows) toward a state change it can't fake (new game started,
 idle first-person view ≈ static vs attract demo ≈ 50% frame delta).
+
+**i386 LANDING BLOCKER (open, 2026-07-07):** the acpi CmResourceType fix (#1
+above) is correct and load-bearing for amd64, but it connects the i8042 IRQ on
+i386 *for the first time* (previously Null-typed → never connected), which
+timing-exposes a latent i386 Mm gate deadlock: winlogon parks in
+`NtFreeVirtualMemory` → (Mm internals) → `KeWaitForGate` (WaitReason 0x23
+WrPushLock, HOLDER-STUCK "no signal ever"), boot never reaches the desktop.
+Bisect: reverting ONLY `acpi-rust/src/buspdo.rs` → i386 smoke green ×2 (all
+other input fixes kept). The acpi fix is NOT reverted (hiding a correct fix is
+forbidden); the deadlock is a pre-existing Mm guarded-mutex class (§9.13
+WS-pushlock family), timing-triggered. NEXT TOOL: `vibeos-cli build --arch
+i386 --lockdep` names the holder + ordering inversion on serial. The amd64
+playable win + all 5 fixes are committed on branch `arm64-interrupts`
+(@068ea66dea7, NOT pushed — all-3-must-pass North Star holds); i386 doom-input
+xfails until the Mm deadlock is fixed.
