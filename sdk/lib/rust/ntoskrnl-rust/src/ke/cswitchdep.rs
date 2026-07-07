@@ -549,3 +549,38 @@ pub fn cswitchdep_report() {
 pub fn cswitchdep_violation_count() -> u64 {
     VIBEOS_CSWITCHDEP.violation_count.load(Relaxed)
 }
+
+/// `CSWITCH_SELFTEST=1` (fw_cfg tripwire channel): prove the detector barks.
+/// Acquires a private spinlock through the REAL funnel (so the Kx tap counts
+/// it), simulates a voluntary switch via the tap-1 entry, and expects a
+/// SLEEP_WITH_SPINLOCK record. Non-destructive: the lock is released and the
+/// counter re-balances; the deliberate violation stays in the ring/census
+/// (that is the point — the boot log must show the detector fired).
+/// Runs once at PASSIVE from `KiStartSyncCensus`, AFTER `cswitchdep_init`.
+pub unsafe fn cswitch_selftest() {
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        crate::dbg_print!(
+            b"[CSWITCH] SELFTEST skipped: SLEEP_WITH_SPINLOCK verdict is amd64-only\n\0"
+        );
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        let before = cswitchdep_violation_count();
+        let mut lock: ntkrnl_sys::ke::KSPIN_LOCK = 0;
+        let mut old_irql: u8 = 0;
+        ntkrnl_sys::ke::KeAcquireSpinLock(&mut lock, &mut old_irql);
+        // Simulated tap-1 entry: we hold one Rust-funnel lock, so held must
+        // now sit one above the floor → SLEEP_WITH_SPINLOCK.
+        cswitch_suspend(ntkrnl_sys::mm::KeGetCurrentThread() as usize, old_irql, false);
+        ntkrnl_sys::ke::KeReleaseSpinLock(&mut lock, old_irql);
+        let fired = cswitchdep_violation_count() > before;
+        if fired {
+            crate::dbg_print!(b"[CSWITCH] SELFTEST PASS: detector fired on a held spinlock\n\0");
+        } else {
+            crate::dbg_print!(
+                b"[CSWITCH] SELFTEST FAIL: no violation recorded for a held spinlock\n\0"
+            );
+        }
+    }
+}
