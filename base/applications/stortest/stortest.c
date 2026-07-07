@@ -102,7 +102,8 @@ static int test_write_readback(char letter)
     DWORD n = 0;
 
     sprintf(path, "%c:\\WRITETST.TXT", letter);
-    h = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    h = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                    CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE)
     {
         markf("[STORTEST] FAIL: create %s (error %lu)\n", path, GetLastError());
@@ -123,7 +124,19 @@ static int test_write_readback(char letter)
     }
     CloseHandle(h);
 
-    h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    /* The deferred-flush worker may hold a transient reference for ~1s after
+     * the first cached write on a removable volume; retry briefly. */
+    {
+        int tries;
+        h = INVALID_HANDLE_VALUE;
+        for (tries = 0; tries < 10 && h == INVALID_HANDLE_VALUE; tries++)
+        {
+            h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                            OPEN_EXISTING, 0, NULL);
+            if (h == INVALID_HANDLE_VALUE)
+                Sleep(500);
+        }
+    }
     if (h == INVALID_HANDLE_VALUE)
     {
         markf("[STORTEST] FAIL: reopen %s (error %lu)\n", path, GetLastError());
