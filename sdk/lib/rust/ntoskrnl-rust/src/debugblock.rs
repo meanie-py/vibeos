@@ -17,6 +17,11 @@
 #![allow(non_snake_case)]
 
 use core::mem::{offset_of, size_of};
+// PsActiveProcessHead: ps-rust global read across the crate boundary as a link symbol
+// (#[no_mangle] in ps-rust). crate-split Phase 1b.
+extern "C" {
+    static mut PsActiveProcessHead: ntkrnl_sys::ddk::_LIST_ENTRY;
+}
 use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
 use ntkrnl_sys::ddk::{_EPROCESS, _ETHREAD, _KPRCB, _KTHREAD};
@@ -154,7 +159,7 @@ extern "C" {
 /// Stamp the runtime addresses. Called from `KiStartSyncCensus` (Phase-1).
 pub unsafe fn debug_block_stamp() {
     VIBEOS_DEBUG_BLOCK.ps_active_process_head.store(
-        core::ptr::addr_of!(crate::ps::process::PsActiveProcessHead) as usize,
+        core::ptr::addr_of!(PsActiveProcessHead) as usize,
         Relaxed,
     );
     VIBEOS_DEBUG_BLOCK.ps_initial_system_process.store(

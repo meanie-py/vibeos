@@ -1,4 +1,10 @@
 use ntkrnl_sys::ddk::*;
+// ke globals across the crate boundary as link symbols (#[no_mangle] in
+// ntoskrnl-rust ke/*). crate-split Phase 1b.
+extern "C" {
+    static mut KeMaximumIncrement: ntkrnl_sys::base::ULONG;
+    static mut KeActiveProcessors: ntkrnl_sys::ddk::KAFFINITY;
+}
 use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_NOT_IMPLEMENTED, TRUE, FALSE, PAGE_SHIFT, APC_LEVEL};
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::interlocked::*;
@@ -8,8 +14,6 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::probe::*;
 use ntkrnl_sys::macros::NtCurrentProcess;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
-use crate::ke::clock::KeMaximumIncrement;
-use crate::ke::processor::KeActiveProcessors;
 
 // PROCESSINFOCLASS / THREADINFOCLASS type aliases
 type PROCESSINFOCLASS = _PROCESSINFOCLASS;

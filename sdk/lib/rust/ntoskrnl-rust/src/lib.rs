@@ -86,7 +86,7 @@ pub mod mm;
 pub mod ob;
 // pnpmgr extracted to pnpmgr-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.  // Phase 1: pnputil + pnpirp only (leaf files)
 // po extracted to po-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
-pub mod ps;
+// ps extracted to ps-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 // rtl (kernel RTL glue) extracted to rtlk-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 // se extracted to se-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 pub mod shim_exports;
@@ -268,33 +268,11 @@ mod _force_test_symbols {
 }
 
 // Force inclusion of ps/{i386,amd64}/* symbols on the right arch.
-#[cfg(target_arch = "x86")]
-mod _force_ps_i386_symbols {
-    #[repr(transparent)]
-    struct SyncPtr(*const ());
-    unsafe impl Sync for SyncPtr {}
+// _force_ps_i386_symbols deleted with the ps crate-split (Phase 1b): the arch psctx/psldt
+// fns have genuine callers in ps that pull them (kd64 precedent).
 
-    #[used]
-    static FN_REFS: [SyncPtr; 5] = [
-        SyncPtr(crate::ps::i386::psctx::PspGetContext as *const ()),
-        SyncPtr(crate::ps::i386::psctx::PspSetContext as *const ()),
-        SyncPtr(crate::ps::i386::psctx::PspGetOrSetContextKernelRoutine as *const ()),
-        SyncPtr(crate::ps::i386::psldt::PspDeleteLdt as *const ()),
-        SyncPtr(crate::ps::i386::psldt::PspQueryDescriptorThread as *const ()),
-    ];
-}
-
-#[cfg(target_arch = "x86_64")]
-mod _force_ps_amd64_symbols {
-    #[repr(transparent)]
-    struct SyncPtr(*const ());
-    unsafe impl Sync for SyncPtr {}
-
-    #[used]
-    static FN_REFS: [SyncPtr; 1] = [
-        SyncPtr(crate::ps::amd64::psctx::PspGetOrSetContextKernelRoutine as *const ()),
-    ];
-}
+// _force_ps_amd64_symbols deleted with the ps crate-split (Phase 1b): the arch psctx/psldt
+// fns have genuine callers in ps that pull them (kd64 precedent).
 
 // _force_kd64_i386_symbols deleted with the kd64 crate-split (Phase 1b): the arch KD
 // dispatch fns have genuine callers in kd64 (kdapi) that pull them.

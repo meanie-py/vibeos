@@ -1,4 +1,9 @@
 use crate::ke::ke_defs::*;
+// KeGdiFlushUserBatch: ps-rust global read across the crate boundary as a link symbol
+// (#[no_mangle] in ps-rust). crate-split Phase 1b.
+extern "C" {
+    static mut KeGdiFlushUserBatch: ntkrnl_sys::ddk::PGDI_BATCHFLUSH_ROUTINE;
+}
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -36,7 +41,6 @@ extern "system" {
     fn HalpEnterInterruptIrql(NewIrql: KIRQL) -> KIRQL;
     fn HalpExitInterruptIrql(RestoreIrql: KIRQL);
 }
-use crate::ps::win32::KeGdiFlushUserBatch;
 use crate::ke::procobj::KeServiceDescriptorTable;
 use crate::ke::dpc::KiRetireDeviceDpcs;
 

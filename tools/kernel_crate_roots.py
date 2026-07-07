@@ -33,6 +33,7 @@ KERNEL_CRATE_SRC_ROOTS = [
     "sdk/lib/rust/iomgr-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
     "sdk/lib/rust/kdbg-rust/src",  # extracted 2026-07 (crate-split Phase 1b, x86-only)
     "sdk/lib/rust/config-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
+    "sdk/lib/rust/ps-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
     "sdk/lib/rust/kd-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
     "sdk/lib/rust/kd64-rust/src",  # extracted 2026-07 (crate-split Phase 1b)
     "sdk/lib/rust/vf-rust/src",  # extracted 2026-07 (crate-split Phase 1b)

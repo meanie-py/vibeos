@@ -1,4 +1,9 @@
 use ntkrnl_sys::ddk::*;
+// ke globals across the crate boundary as link symbols (#[no_mangle] in
+// ntoskrnl-rust ke/*). crate-split Phase 1b.
+extern "C" {
+    static mut KeFeatureBits: u64;
+}
 use ntkrnl_sys::base::{STATUS_SUCCESS, PAGE_READWRITE, PAGE_SHIFT};
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
@@ -6,7 +11,6 @@ use ntkrnl_sys::ob::*;
 use ntkrnl_sys::mm::{NonPagedPool, PagedPool};
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
-use crate::ke::krnlinit::KeFeatureBits;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -31,7 +35,7 @@ macro_rules! w {
 // PS-subsystem storage moved to ps/ps_globals.rs (was in
 // kernel_c_helpers.c). Pull the new defs into scope so this file's
 // callers don't need to qualify them.
-pub use crate::ps::ps_globals::{
+pub use crate::ps_globals::{
     KeUserPopEntrySListEnd, KeUserPopEntrySListFault, KeUserPopEntrySListResume,
     PsInitialSystemProcess, PsIdleProcess, PsMaximumWorkingSet, PsMinimumWorkingSet,
     PsNtDllPathName, PspBootAccessToken, PspCidTable, PspDefaultNonPagedLimit,

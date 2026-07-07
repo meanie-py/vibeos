@@ -1,10 +1,14 @@
 use ntkrnl_sys::ddk::*;
+// ke globals across the crate boundary as link symbols (#[no_mangle] in
+// ntoskrnl-rust ke/*). crate-split Phase 1b.
+extern "C" {
+    static mut KeActiveProcessors: ntkrnl_sys::ddk::KAFFINITY;
+}
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::mm::PsInitialSystemProcess;
 use ntkrnl_sys::probe::{probe_write_user, probe_user_buffer};
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
-use crate::ke::processor::KeActiveProcessors;
 
 // Status codes not in ddk
 const STATUS_SUCCESS: NTSTATUS = 0;

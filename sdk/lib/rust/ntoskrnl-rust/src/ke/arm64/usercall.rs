@@ -1,4 +1,9 @@
 use crate::ke::ke_defs::*;
+// KeGdiFlushUserBatch: ps-rust global read across the crate boundary as a link symbol
+// (#[no_mangle] in ps-rust). crate-split Phase 1b.
+extern "C" {
+    static mut KeGdiFlushUserBatch: ntkrnl_sys::ddk::PGDI_BATCHFLUSH_ROUTINE;
+}
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -156,7 +161,7 @@ pub unsafe extern "system" fn KeUserModeCallback(
 
     if GdiBatchCount != 0 {
         *UserStackPointer -= 256;
-        if let Some(flush) = crate::ps::win32::KeGdiFlushUserBatch {
+        if let Some(flush) = KeGdiFlushUserBatch {
             flush();
         }
     }

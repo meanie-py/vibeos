@@ -1,4 +1,10 @@
 use core::ptr::addr_of;
+// ke globals across the crate boundary as link symbols (#[no_mangle] in
+// ntoskrnl-rust ke/*). crate-split Phase 1b.
+extern "C" {
+    static mut KeServiceDescriptorTable: ntkrnl_sys::ddk::_KSERVICE_TABLE_DESCRIPTOR;
+    static mut KeServiceDescriptorTableShadow: ntkrnl_sys::ddk::_KSERVICE_TABLE_DESCRIPTOR;
+}
 use core::ptr::addr_of_mut;
 use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_NO_MEMORY, STATUS_ALREADY_COMMITTED};
@@ -11,7 +17,6 @@ extern "system" {
     fn PsGetCurrentThread() -> PETHREAD;
 }
 
-use crate::ke::procobj::{KeServiceDescriptorTable, KeServiceDescriptorTableShadow};
 
 const ERROR_NOT_ENOUGH_MEMORY: ULONG = 8;
 // Matches the xdk KERNEL_STACK_SIZE macro per arch: amd64/arm64 0xC000 (48KB),
