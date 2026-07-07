@@ -251,3 +251,18 @@ where it can be debugged with the faster x86 toolkits.
 4. **user32-rust DefWindowProc GoSS arm order** — while auditing, noted RealDefWindowProcW
    is faithful; no action. The five paint-chain diffs cleared painting/nonclient/winpos/
    defwnd/windc/vis (kernel) — reusable clearance record.
+5. **Tray top-edge never painted → desktop-version "ghost" band (2026-07-07 forensics).**
+   The doubled version string in every screenshot is NOT a double-draw: pixel forensics
+   (640×480 smoke shots, all arches) show the tray window's rect starts at row 452 but its
+   painted face starts at 455 — the 3px top band is the tray's NC frame (unthemed
+   Shell_TrayWnd = WS_POPUP|WS_THICKFRAME|WS_BORDER) and it is NEVER painted, so the
+   pre-taskbar full-screen `IntPaintDesktop` version text (drawn with workarea=480 before
+   the tray's SPI_SETWORKAREA) shows through forever. `IntPaintDesktop` + its callers and
+   `NC_DoNCPaint`'s frame path (UserHasWindowEdge → DrawEdge EDGE_RAISED) were audited
+   faithful vs C — so the suspect is NCPAINT *delivery/timing* for the tray window
+   specifically (e.g., its final SetWindowPos/frame-change not queuing a WM_NCPAINT, or
+   the erase happening before the workarea move with no later invalidate of the frame
+   band). Next step is a runtime trace: DbgPrint in explorer's OnNcPaint + win32k
+   NC_DoNCPaint entry filtered to the tray hwnd, and check whether it ever runs post-
+   final-position. Cosmetic but it's the last visible artifact on otherwise-clean
+   desktop screenshots.
