@@ -234,5 +234,9 @@ the win32k lane is quiet** — not ground out overnight alongside other work. Se
 
 - **ABI unchanged** — `#[no_mangle]` symbols don't care about crate boundaries; the linked
   `ntoskrnl.exe`/`win32k.sys` is functionally identical (symbol check + boot ×3).
-- **The `lto=false` + `cgu=256` captures(none) firewall is strengthened**, not weakened —
-  more crate boundaries = more codegen separation.
+- **The `lto=false` + `cgu=256` codegen firewall is strengthened**, not weakened — more
+  crate boundaries = more codegen separation. (Its *original* captures(none) rationale is
+  toolchain-fixed on LLVM ≥ 21 — rustc 1.92 / LLVM 21.1.3 respects volatile stores in
+  attribute deduction; the firewall now mainly isolates the toolchain-independent
+  ABI-mismatch `noreturn`/ud2 cascade — the same class the crate boundary itself flushes out
+  per rule 5.)

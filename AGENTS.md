@@ -390,9 +390,17 @@ The Cargo workspace at `sdk/lib/rust/` holds Rust components that compile to PE-
 ```
 sdk/lib/rust/
 ├── Cargo.toml              # Workspace (resolver v2). lto=false + codegen-units=256 firewall.
-├── ntoskrnl-rust/          # The kernel translation. ~405 .rs files, ~447K LOC across all subsystems
-│                           #   (ke, mm, ex, ps, ob, se, io, fsrtl, kd, kdbg, kd64, lpc, dbgk, po,
-│                           #   wmi, vdm, rtl, cc, fstub, inbv, config, pnpmgr, etc.).
+├── ntoskrnl-rust/          # The (shrinking) kernel-monolith crate — ~170K LOC. Being split
+│                           #   per-subsystem (crate-split, ~63% done): what REMAINS here is the
+│                           #   dense center — ke, mm/ARM3 — plus ex (extracted-but-parked). The
+│                           #   ~21 EXTRACTED crates below (iomgr, se, config, pnpmgr, ps, ob,
+│                           #   fsrtl, kdbg, fstub, kd/kd64, rtlk, cc, po, dbgk, lpc, wmi, inbv,
+│                           #   vdm, vf) talk to it over the FFI symbol boundary, NOT crate:: paths.
+│                           #   See docs/engineering/ntoskrnl-crate-split-plan.md.
+├── {iomgr,se,config,pnpmgr,ps,ob,fsrtl,kdbg,fstub,kd,kd64,rtlk,cc,po,dbgk,lpc,wmi,inbv,vdm,vf}-rust/
+│                           # Subsystems peeled out of the ntoskrnl-rust monolith (crate-split).
+│                           #   Each deps ONLY ntkrnl-sys + dbgprint-rust; forced into the link by
+│                           #   kernel-rust's `extern crate`. Extract another via the plan's recipe.
 ├── ntoskrnl-cargo/         # Cargo-driven ntoskrnl.exe link PoC (replaces cmake-driven link)
 ├── kernel-rust/            # staticlib umbrella that pulls in all sibling rlibs via extern crate
 ├── ntkrnl-sys/             # Two-layer FFI crate: hand-written + bindgen (see below)
@@ -409,7 +417,7 @@ sdk/lib/rust/
 └── ir-output/              # rustc IR dumping helper
 ```
 
-The structure isn't an exhaustive list — the workspace has 30+ members today. The principle is: anything that's pure-algorithm with a clean FFI surface gets factored into its own rlib so the workspace `lto=false` + `cgu=256` firewall keeps callers and callees in separate codegen units (which neutralizes LLVM's captures(none) optimization across the boundary).
+The structure isn't an exhaustive list — the workspace has ~250 members today. The principle is: anything that's pure-algorithm with a clean FFI surface gets factored into its own rlib so the workspace `lto=false` + `cgu=256` firewall keeps callers and callees in separate codegen units. (That firewall's *original* job — blocking LLVM's captures(none) volatile-blind miscompile across CGU boundaries — is **toolchain-fixed on LLVM ≥ 21**: we ship rustc 1.92 / LLVM 21.1.3, which respects volatile stores in attribute deduction (see rust-kernel-patterns.md "RESOLVED AT THE TOOLCHAIN"). The firewall *stays* as belt-and-suspenders and because it still firewalls the **toolchain-independent** ABI-mismatch `noreturn`/ud2 cascade; `tools/scan_captures.py` is the tripwire to rerun after each toolchain bump in case a future LLVM regresses it.) The **crate-split** effort (docs/engineering/ntoskrnl-crate-split-plan.md) applies that same principle to the kernel itself for a second reason — cutting the edit→rebuild loop, since rustc's frontend is whole-crate.
 
 ### Rust Targets (GNU/LLVM, not MSVC)
 - **ARM64:** `aarch64-pc-windows-gnullvm`
