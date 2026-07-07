@@ -525,19 +525,34 @@ const CV_TOTAL: usize = {
     t
 };
 
+// CmControlVector is RUNTIME-assembled (was a compile-time const concatenation).
+// WHY: the crate-split severs config into config-rust, and const-eval cannot
+// reference an extern (other-crate) static's address. The SLICES above aggregate
+// control vectors owned by ob/mm/ARM3/ex/ps/kd64 (staying in ntoskrnl-rust) AND by
+// config (moving out), so no single crate can const-build this table. Assembling at
+// boot from runtime reads sidesteps that entirely (runtime extern access is legal).
+// Consumed once, at ex/init.rs's CmGetSystemControlValues call, which runs
+// cm_build_control_vector() immediately before. Zero-init = NULL_ENTRY, so the
+// tail (incl. the terminator slot) is already null before the fill; the copy loop
+// reproduces the old const result byte-for-byte (TERMINATOR is the last SLICE).
 #[no_mangle]
-pub static mut CmControlVector: [_CM_SYSTEM_CONTROL_VECTOR; CV_TOTAL] = {
-    let mut out = [NULL_ENTRY; CV_TOTAL];
-    let mut dst = 0;
+pub static mut CmControlVector: [_CM_SYSTEM_CONTROL_VECTOR; CV_TOTAL] = [NULL_ENTRY; CV_TOTAL];
+
+/// Populate `CmControlVector` from the per-subsystem `SLICES` at boot. MUST run
+/// before the single consumer (ex/init.rs → CmGetSystemControlValues). Idempotent
+/// (a re-run rewrites the same bytes). Runtime reads of the SLICES let the source
+/// vectors live in a severed crate (config-rust) — the crux of the config split.
+pub unsafe fn cm_build_control_vector() {
+    let cv = core::ptr::addr_of_mut!(CmControlVector) as *mut _CM_SYSTEM_CONTROL_VECTOR;
+    let mut dst = 0usize;
     let mut s = 0;
     while s < SLICES.len() {
         let mut i = 0;
         while i < SLICES[s].len() {
-            out[dst] = SLICES[s][i];
+            *cv.add(dst) = SLICES[s][i];
             i += 1;
             dst += 1;
         }
         s += 1;
     }
-    out
-};
+}
