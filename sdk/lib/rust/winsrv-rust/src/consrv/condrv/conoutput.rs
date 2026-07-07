@@ -4,11 +4,8 @@ use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
 use crate::consrv::{ConsoleAllocHeap, ConsoleFreeHeap};
 
-extern "system" {
-}
-
-// These condrv buffer fns are defined plain-cdecl (no NTAPI) in the still-C
-// condrv (conoutput.c / text.c / graphics.c) → extern "C".
+// These condrv buffer fns are plain-cdecl (their Rust defs in text.rs /
+// graphics.rs are `extern "C"`, matching the retired C originals) → extern "C".
 extern "C" {
     pub fn TEXTMODE_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, ProcessHandle: HANDLE, TextModeInfo: PTEXTMODE_BUFFER_INFO, ) -> NTSTATUS;
     pub fn GRAPHICS_BUFFER_Initialize( Buffer: *mut PCONSOLE_SCREEN_BUFFER, Console: PCONSOLE, ProcessHandle: HANDLE, GraphicsInfo: PGRAPHICS_BUFFER_INFO, ) -> NTSTATUS;

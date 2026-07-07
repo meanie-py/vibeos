@@ -147,11 +147,16 @@ extern "fastcall" {
     ) -> BOOL;
 }
 
+// nonclient.rs defines UserGetWindowBorders as plain cdecl (`extern "C"`, no
+// @N) — the decl MUST match or LLVM UB-folds the calling branch on i386 (the
+// silent MessageInit/U32AccelCacheLock class; field manual §9.30).
+extern "C" {
+    fn UserGetWindowBorders(Style: DWORD, ExStyle: DWORD, Size: *mut SIZE, WithClient: BOOL);
+}
+
 extern "system" {
     // user32p.h: VOID WINAPI UserSetLastError(IN DWORD dwErrCode)
     fn UserSetLastError(dwErrCode: DWORD);
-    // user32p.h: VOID UserGetWindowBorders(DWORD, DWORD, SIZE *, BOOL)
-    fn UserGetWindowBorders(Style: DWORD, ExStyle: DWORD, Size: *mut SIZE, WithClient: BOOL);
     // regcontrol.h: BOOL WINAPI RegisterSystemControls(VOID)
     fn RegisterSystemControls() -> BOOL;
     // regcontrol.h: extern DWORD RegisterDefaultClasses;

@@ -2,9 +2,13 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
-use crate::ke::krnlinit::KeLoaderBlock;
-use crate::ke::processor::KeNumberProcessors;
-use crate::kd64::kdtrap::{KdpStub, KdpTrap};
+// ke globals referenced across the crate boundary as link symbols
+// (all #[no_mangle] in ntoskrnl-rust ke/*). crate-split Phase 1b.
+extern "C" {
+    static mut KeLoaderBlock: ntkrnl_sys::ddk::PLOADER_PARAMETER_BLOCK;
+    static mut KeNumberProcessors: core::ffi::c_char;
+}
+use crate::kdtrap::{KdpStub, KdpTrap};
 
 use ntkrnl_sys::ddk::{
     _DBGKD_DEBUG_DATA_HEADER64,

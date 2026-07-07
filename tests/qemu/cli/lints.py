@@ -245,6 +245,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Same-crate extern-decl vs #[no_mangle]-def calling-convention drift: UB
+    # that LLVM resolves by silently DELETING the calling branch on i386 (no
+    # ud2, no link error — the desktop-icons U32AccelCacheLock bug, field
+    # manual §9.30). Stock (~330, mostly driver crates) is the burn-down
+    # queue; baseline gates NEW only.
+    ccm = repo / "tools" / "scan_cc_mismatch.py"
+    specs.append(
+        (
+            "scan_cc_mismatch",
+            [py, str(ccm)] if ccm.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Duplicate #[no_mangle] symbol ratchet: symbols defined in >=2 crates that
     # link into the kernel PE are masked by --allow-multiple-definition (which is
     # load-bearing — the multi-staticlib runtime dups are irreducible). We can't
