@@ -82,7 +82,7 @@ extern "system" {
     
 }
 #[allow(unused_imports)]
-use crate::ke::krnlinit::KiProcessorBlock;
+// (KiProcessorBlock import removed — unused; Prcb is reached via the PCR here.)
 extern "C" {
     fn KeGetPcr() -> *mut _KPCR;
 }

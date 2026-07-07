@@ -669,6 +669,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "inbv-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "inflib-rust"
 version = "0.1.0"
 dependencies = [
@@ -798,6 +805,7 @@ dependencies = [
  "dbgk-rust",
  "fsrtl-rust",
  "fstub-rust",
+ "inbv-rust",
  "iomgr-rust",
  "kdbg-rust",
  "ke-inlines",
@@ -807,7 +815,9 @@ dependencies = [
  "ntprintf",
  "ntprintf_w",
  "pnpmgr-rust",
+ "po-rust",
  "se-rust",
+ "vdm-rust",
  "wmi-rust",
 ]
 
@@ -1269,6 +1279,13 @@ name = "pnpmgr-rust"
 version = "0.1.0"
 dependencies = [
  "dbgprint-rust",
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "po-rust"
+version = "0.1.0"
+dependencies = [
  "ntkrnl-sys",
 ]
 
@@ -2007,6 +2024,13 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+
+[[package]]
+name = "vdm-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
 
 [[package]]
 name = "version-rust"
