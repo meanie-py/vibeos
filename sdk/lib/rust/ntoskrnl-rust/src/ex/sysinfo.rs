@@ -129,7 +129,11 @@ use crate::ex::lookas::{
     ExpNonPagedLookasideListHead, ExpNonPagedLookasideListLock,
     ExpPagedLookasideListHead, ExpPagedLookasideListLock,
 };
-use crate::ob::obinit::ObpObjectSecurityMode;
+// ObpObjectSecurityMode: ob-rust global read across the crate boundary as a link
+// symbol (#[no_mangle] in ob-rust). crate-split Phase 1b.
+extern "C" {
+    static mut ObpObjectSecurityMode: ntkrnl_sys::base::ULONG;
+}
 // se privilege LUIDs now live in se-rust (crate-split Phase 1b); reach the
 // #[no_mangle] const statics by symbol (statics carry no calling convention).
 extern "C" {
