@@ -1,4 +1,9 @@
 use ntkrnl_sys::ddk::*;
+// ke globals across the crate boundary as link symbols (#[no_mangle] in
+// ntoskrnl-rust ke/*). crate-split Phase 1b.
+extern "C" {
+    static mut KeMaximumIncrement: ntkrnl_sys::base::ULONG;
+}
 use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, STATUS_NO_MEMORY,
     MEM_RELEASE, PASSIVE_LEVEL, APC_LEVEL, NT_SUCCESS, TRUE, FALSE};
 use ntkrnl_sys::constants::*;
@@ -8,7 +13,6 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::macros::*;
 use ntkrnl_sys::mm::PsInitialSystemProcess;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
-use crate::ke::clock::KeMaximumIncrement;
 
 // Bugcheck codes
 const CRITICAL_PROCESS_DIED: ULONG = 0xEF;

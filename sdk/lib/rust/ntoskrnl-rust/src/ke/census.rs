@@ -24,6 +24,11 @@
 #![allow(static_mut_refs)] // PREV/PREV_COUNT: single-writer (census thread only)
 
 use core::mem::offset_of;
+// PsActiveProcessHead: ps-rust global read across the crate boundary as a link symbol
+// (#[no_mangle] in ps-rust). crate-split Phase 1b.
+extern "C" {
+    static mut PsActiveProcessHead: ntkrnl_sys::ddk::_LIST_ENTRY;
+}
 use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
 use ntkrnl_sys::base::*;
@@ -79,7 +84,7 @@ fn plausible(p: usize, align: usize) -> bool {
 /// One full process/thread scan. Returns the new sighting set in `next`,
 /// prints a report line for every second-consecutive sighting.
 unsafe fn scan(next: &mut [Sighting; MAX_SIGHTINGS], next_count: &mut usize) {
-    let head = core::ptr::addr_of_mut!(crate::ps::process::PsActiveProcessHead);
+    let head = core::ptr::addr_of_mut!(PsActiveProcessHead);
     let mut plink = (*head).Flink;
     let mut nprocs = 0usize;
     let mut reported = 0u32;

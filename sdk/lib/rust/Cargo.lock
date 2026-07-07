@@ -834,6 +834,7 @@ dependencies = [
  "ntprintf_w",
  "pnpmgr-rust",
  "po-rust",
+ "ps-rust",
  "rtlk-rust",
  "se-rust",
  "vdm-rust",
@@ -1355,6 +1356,14 @@ dependencies = [
 name = "processr-rust"
 version = "0.1.0"
 dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "ps-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
  "ntkrnl-sys",
 ]
 

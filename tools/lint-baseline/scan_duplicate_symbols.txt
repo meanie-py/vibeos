@@ -25,3 +25,4 @@ KdpSysWriteMsr	kd64-rust,ntoskrnl-rust
 KeGetCurrentIrql	arbiter-rust,ntoskrnl-rust
 KeGetPcr	ntoskrnl-rust,rtlk-rust
 NtVdmControl	ntoskrnl-rust,vdm-rust
+PspGetOrSetContextKernelRoutine	ntoskrnl-rust,ps-rust

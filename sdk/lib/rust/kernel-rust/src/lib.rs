@@ -44,6 +44,8 @@ extern crate kdbg_rust;
 // Phase 1b). extern crate forces its #[no_mangle] Cm*/Cmp* symbols + the runtime
 // CmControlVector assembler + _config_global_write_barrier into the archive.
 extern crate config_rust;
+// ps (Process/Thread Manager), extracted from ntoskrnl-rust (crate-split Phase 1b).
+extern crate ps_rust;
 // kd (kernel-debug I/O), kd64 (KD protocol stack), vf (Driver Verifier), rtlk
 // (kernel RTL glue), extracted from ntoskrnl-rust (crate-split Phase 1b).
 extern crate kd_rust;
