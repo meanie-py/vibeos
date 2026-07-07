@@ -41,6 +41,7 @@ pub static mut MmEnforceWriteProtection: BOOLEAN = 1u8;
 
 // Registry-controlled values owned by ARM3/sysldr. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+#[no_mangle]
 pub static SYSLDR_CONTROL_VECTOR: ntkrnl_sys::SubVector<2> =
     ntkrnl_sys::SubVector(unsafe { [
         ntkrnl_sys::cv!("Session Manager\\Memory Management", "EnforceWriteProtection",

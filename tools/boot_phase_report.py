@@ -11,6 +11,7 @@ Usage:
   python3 tools/boot_phase_report.py qemu/amd64-uefi_smoke_live.log
   python3 tools/boot_phase_report.py --gaps 30 <log> [<log> ...]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -85,8 +86,9 @@ def fldr_report(path: str, build_dir: str | None) -> None:
     import os
 
     lines = parse(path)
-    loads = [(t, txt.split("[FLDR] load ", 1)[1].strip())
-             for t, txt in lines if "[FLDR] load " in txt]
+    loads = [
+        (t, txt.split("[FLDR] load ", 1)[1].strip()) for t, txt in lines if "[FLDR] load " in txt
+    ]
     if not loads:
         return
     sizes: dict[str, int] = {}
@@ -98,8 +100,11 @@ def fldr_report(path: str, build_dir: str | None) -> None:
     prev_t = loads[0][0]
     for i, (t, name) in enumerate(loads):
         # duration of THIS load = next stamp (load or phase) minus this one
-        nxt = loads[i + 1][0] if i + 1 < len(loads) else next(
-            (tt for tt, txt in lines if tt > t and "[FLDR] phase" in txt), t)
+        nxt = (
+            loads[i + 1][0]
+            if i + 1 < len(loads)
+            else next((tt for tt, txt in lines if tt > t and "[FLDR] phase" in txt), t)
+        )
         dur = max(0.0, nxt - t)
         base = name.rsplit("\\", 1)[-1].lower()
         sz = sizes.get(base)
@@ -114,8 +119,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("logs", nargs="+")
     ap.add_argument("--gaps", type=int, default=15, help="how many gaps to show")
-    ap.add_argument("--sizes", default=None, metavar="BUILD_DIR",
-                    help="join [FLDR] load stamps with file sizes from this build dir")
+    ap.add_argument(
+        "--sizes",
+        default=None,
+        metavar="BUILD_DIR",
+        help="join [FLDR] load stamps with file sizes from this build dir",
+    )
     args = ap.parse_args()
     for p in args.logs:
         report(p, args.gaps)

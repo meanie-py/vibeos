@@ -116,6 +116,7 @@ pub static mut ExpResourceTimeoutCount: ULONG = 90 * 3600 / 2;
 
 // Registry-controlled values owned by ex/resource. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+#[no_mangle]
 pub static RESOURCE_CONTROL_VECTOR: ntkrnl_sys::SubVector<1> =
     ntkrnl_sys::SubVector(unsafe { [
         ntkrnl_sys::cv!("Session Manager", "ResourceTimeoutCount",

@@ -490,66 +490,100 @@ const NULL_ENTRY: _CM_SYSTEM_CONTROL_VECTOR = _CM_SYSTEM_CONTROL_VECTOR {
 
 const TERMINATOR: [_CM_SYSTEM_CONTROL_VECTOR; 1] = [NULL_ENTRY];
 
-const SLICES: &[&[_CM_SYSTEM_CONTROL_VECTOR]] = &[
-    &crate::ob::obinit::OBINIT_CONTROL_VECTOR.0,
-    &crate::ob::devicemap::DEVICEMAP_CONTROL_VECTOR.0,
-    &crate::ob::obname::OBNAME_CONTROL_VECTOR.0,
-    &crate::kd64::kddata::KD_FILTER_CONTROL_VECTOR.0,
-    &crate::kd64::kddata::KDDATA_TUNABLES_CV.0,
-    &crate::ARM3::pfnlist::PFNLIST_CONTROL_VECTOR.0,
-    &crate::ARM3::mminit::MMINIT_CONTROL_VECTOR.0,
-    &crate::ARM3::helpers::HELPERS_CONTROL_VECTOR.0,
-    &crate::ARM3::mdlsup::MDLSUP_CONTROL_VECTOR.0,
-    &crate::ARM3::drvmgmt::DRVMGMT_CONTROL_VECTOR.0,
-    &crate::ARM3::sysldr::SYSLDR_CONTROL_VECTOR.0,
-    &crate::mm::mminit::MMINIT_CONTROL_VECTOR.0,
-    &crate::mm::pagefile::PAGEFILE_CONTROL_VECTOR.0,
-    &crate::ex::init::INIT_CONTROL_VECTOR.0,
-    &crate::ex::resource::RESOURCE_CONTROL_VECTOR.0,
-    &crate::ps::process::PROCESS_CONTROL_VECTOR.0,
-    &IOMGR_CONTROL_VECTOR.0,
-    &crate::config::cmlazy::CMLAZY_CONTROL_VECTOR.0,
-    &crate::config::cmdelay::CMDELAY_CONTROL_VECTOR.0,
-    &crate::ex::pool::globals::POOL_CONTROL_VECTOR.0,
-    &CMDATA_LOCAL_CV,
-    &TERMINATOR,
-];
+// The per-subsystem control vectors that live in OTHER crates (ob/mm/ARM3/ex/ps/kd64,
+// which stay in ntoskrnl-rust once config is severed) — referenced as LINK SYMBOLS,
+// read at runtime by cm_build_control_vector() below. Each is `#[no_mangle] pub static
+// FOO_CONTROL_VECTOR: SubVector<N>` in its owner. The two Mm-init vectors were renamed
+// (ARM3_/MM_) at their defs to disambiguate the old MMINIT_CONTROL_VECTOR name clash.
+//
+// IMPORTANT: the `SubVector<N>` sizes here MUST match each owner's def — an extern
+// static carries no length, so a stale N would over-/under-read at assembly. They're
+// stable registry-table definitions; the boot-time bound check below catches an
+// undersize. (Const-eval can't take the address of these, which is exactly why
+// CmControlVector is assembled at runtime, not compile time — the config crate-split.)
+extern "C" {
+    static OBINIT_CONTROL_VECTOR: SubVector<2>;
+    static DEVICEMAP_CONTROL_VECTOR: SubVector<1>;
+    static OBNAME_CONTROL_VECTOR: SubVector<2>;
+    static KD_FILTER_CONTROL_VECTOR: SubVector<156>;
+    static KDDATA_TUNABLES_CV: SubVector<1>;
+    static PFNLIST_CONTROL_VECTOR: SubVector<2>;
+    static ARM3_MMINIT_CONTROL_VECTOR: SubVector<12>;
+    static HELPERS_CONTROL_VECTOR: SubVector<5>;
+    static MDLSUP_CONTROL_VECTOR: SubVector<2>;
+    static DRVMGMT_CONTROL_VECTOR: SubVector<2>;
+    static SYSLDR_CONTROL_VECTOR: SubVector<2>;
+    static MM_MMINIT_CONTROL_VECTOR: SubVector<1>;
+    static PAGEFILE_CONTROL_VECTOR: SubVector<1>;
+    static INIT_CONTROL_VECTOR: SubVector<2>;
+    static RESOURCE_CONTROL_VECTOR: SubVector<1>;
+    static PROCESS_CONTROL_VECTOR: SubVector<1>;
+    static POOL_CONTROL_VECTOR: SubVector<1>;
+}
 
-const CV_TOTAL: usize = {
-    let mut t = 0;
-    let mut i = 0;
-    while i < SLICES.len() {
-        t += SLICES[i].len();
-        i += 1;
-    }
-    t
-};
+// Total entry count: 194 (the 17 cross-crate CVs: 2+1+2+156+1+2+12+5+2+2+2+1+1+2+1+1+1)
+// + 1 IOMGR + 2 CMLAZY + 1 CMDELAY + 50 CMDATA_LOCAL + 1 NULL terminator = 249.
+const CV_TOTAL: usize = 249;
 
 // CmControlVector is RUNTIME-assembled (was a compile-time const concatenation).
 // WHY: the crate-split severs config into config-rust, and const-eval cannot
-// reference an extern (other-crate) static's address. The SLICES above aggregate
+// reference an extern (other-crate) static's address. The slices below aggregate
 // control vectors owned by ob/mm/ARM3/ex/ps/kd64 (staying in ntoskrnl-rust) AND by
 // config (moving out), so no single crate can const-build this table. Assembling at
 // boot from runtime reads sidesteps that entirely (runtime extern access is legal).
 // Consumed once, at ex/init.rs's CmGetSystemControlValues call, which runs
-// cm_build_control_vector() immediately before. Zero-init = NULL_ENTRY, so the
-// tail (incl. the terminator slot) is already null before the fill; the copy loop
-// reproduces the old const result byte-for-byte (TERMINATOR is the last SLICE).
+// cm_build_control_vector() immediately before. Zero-init = NULL_ENTRY, so the tail
+// (incl. the terminator slot) is already null; the fill copies the same entries the
+// old const did, in the same order, leaving the last slot NULL as terminator.
 #[no_mangle]
 pub static mut CmControlVector: [_CM_SYSTEM_CONTROL_VECTOR; CV_TOTAL] = [NULL_ENTRY; CV_TOTAL];
 
-/// Populate `CmControlVector` from the per-subsystem `SLICES` at boot. MUST run
+/// Populate `CmControlVector` at boot from the per-subsystem control vectors. MUST run
 /// before the single consumer (ex/init.rs → CmGetSystemControlValues). Idempotent
-/// (a re-run rewrites the same bytes). Runtime reads of the SLICES let the source
-/// vectors live in a severed crate (config-rust) — the crux of the config split.
-pub unsafe fn cm_build_control_vector() {
+/// (a re-run rewrites the same bytes). Runtime reads of the sources let them live in
+/// a severed crate (config-rust) — the crux of the config split.
+///
+/// `#[no_mangle] extern "C"` so ex/init.rs (ntoskrnl-rust) calls it across the crate
+/// boundary as a link symbol.
+#[no_mangle]
+pub unsafe extern "C" fn cm_build_control_vector() {
+    // Cross-crate CVs (link symbols) first, then config-local ones, in the exact order
+    // the old const SLICES used. CMDATA_LOCAL_CV last; the NULL terminator is implicit
+    // (zero-init tail). Keep this order stable — it's the registry apply order.
+    let slices: [&[_CM_SYSTEM_CONTROL_VECTOR]; 21] = [
+        &OBINIT_CONTROL_VECTOR.0,
+        &DEVICEMAP_CONTROL_VECTOR.0,
+        &OBNAME_CONTROL_VECTOR.0,
+        &KD_FILTER_CONTROL_VECTOR.0,
+        &KDDATA_TUNABLES_CV.0,
+        &PFNLIST_CONTROL_VECTOR.0,
+        &ARM3_MMINIT_CONTROL_VECTOR.0,
+        &HELPERS_CONTROL_VECTOR.0,
+        &MDLSUP_CONTROL_VECTOR.0,
+        &DRVMGMT_CONTROL_VECTOR.0,
+        &SYSLDR_CONTROL_VECTOR.0,
+        &MM_MMINIT_CONTROL_VECTOR.0,
+        &PAGEFILE_CONTROL_VECTOR.0,
+        &INIT_CONTROL_VECTOR.0,
+        &RESOURCE_CONTROL_VECTOR.0,
+        &PROCESS_CONTROL_VECTOR.0,
+        &POOL_CONTROL_VECTOR.0,
+        &IOMGR_CONTROL_VECTOR.0,
+        &crate::cmlazy::CMLAZY_CONTROL_VECTOR.0,
+        &crate::cmdelay::CMDELAY_CONTROL_VECTOR.0,
+        &CMDATA_LOCAL_CV,
+    ];
     let cv = core::ptr::addr_of_mut!(CmControlVector) as *mut _CM_SYSTEM_CONTROL_VECTOR;
     let mut dst = 0usize;
     let mut s = 0;
-    while s < SLICES.len() {
+    while s < slices.len() {
+        let sl = slices[s];
         let mut i = 0;
-        while i < SLICES[s].len() {
-            *cv.add(dst) = SLICES[s][i];
+        while i < sl.len() {
+            // Fail loud if a stale extern SubVector<N> pushed us past the table
+            // (leaves one slot for the NULL terminator).
+            assert!(dst + 1 < CV_TOTAL);
+            *cv.add(dst) = sl[i];
             i += 1;
             dst += 1;
         }

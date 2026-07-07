@@ -122,6 +122,7 @@ pub static mut MmZeroPageFile: BOOLEAN = 0;
 
 // Registry-controlled values owned by mm/pagefile. Concatenated into
 // CmControlVector by config::cmdata. See docs/engineering/cmdata-chopping-plan.md.
+#[no_mangle]
 pub static PAGEFILE_CONTROL_VECTOR: ntkrnl_sys::SubVector<1> =
     ntkrnl_sys::SubVector(unsafe { [
         ntkrnl_sys::cv!("Session Manager\\Memory Management", "ClearPageFileAtShutdown",

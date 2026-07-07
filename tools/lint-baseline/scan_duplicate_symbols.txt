@@ -1,3 +1,4 @@
+CmpInitializeMachineDependentConfiguration	config-rust,ntoskrnl-rust
 KdbGetHistoryEntry	kdbg-rust,ntoskrnl-rust
 KdbInitialize	kdbg-rust,ntoskrnl-rust
 KdbRegisterCliCallback	kdbg-rust,ntoskrnl-rust

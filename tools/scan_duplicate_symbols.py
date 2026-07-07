@@ -73,6 +73,7 @@ KERNEL_LINK_CRATES = [
     "cc-rust",
     "iomgr-rust",
     "kdbg-rust",
+    "config-rust",
     "fstub-rust",
     "se-rust",
     "pnpmgr-rust",
