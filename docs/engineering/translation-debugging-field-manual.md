@@ -3094,3 +3094,69 @@ DelayExecution) often localizes the block without a full unwind.
 DISPATCH → first-keypress machine wedge; see `doom-on-vibeos.md` §Bug 1) and the
 loud-panic-handler port for `arm64input-cargo` (bare `loop{}` handlers hide every
 driver panic — ~40 `*-cargo` mains still have them, sweep owed).
+
+### 9.30 (RESOLVED 2026-07-07) i386 desktop icons missing — decl/def calling-convention mismatch is UB that LLVM resolves by SILENTLY DELETING the calling branch (no ud2, no link error)
+
+**Symptom:** i386 boots to a fully-working desktop (taskbar, ticking clock,
+wallpaper) but ZERO desktop icons; amd64/arm64 render all four. No error output
+anywhere.
+
+**Root cause (four layers deep — record the chain, each layer was a real
+finding):**
+1. `CDefView::FillList` works: 5 items enumerated AND inserted into the
+   listview. The *view window* stays 0×0/invisible — `CDesktopBrowser::
+   Initialize` never reaches `_Resize()`/`ShowWindow`.
+2. The desktop thread is parked forever in `RtlpWaitForCriticalSection` ←
+   `LoadAcceleratorsW` ← `CDefView::OnCreate`. The CS (`U32AccelCacheLock`)
+   is **zeroed, never initialized** (`LockCount=0→1, DebugInfo=0, Owner=0`) —
+   a zeroed CS deadlocks its very first `EnterCriticalSection` (free is
+   `LockCount=-1`). Systemic: winlogon's copy was zeroed too; only explorer
+   ever calls `LoadAccelerators`.
+3. `InitializeCriticalSection(&U32AccelCacheLock)` lives in user32-rust's
+   `ClientThreadSetupHelper` behind `MessageInit() && MenuInit()`. Disassembly
+   of the BUILT i386 user32.dll showed the entire branch **compiled to
+   `return TlsAlloc() != -1`** — MessageInit/MenuInit/CS-init/LoadAppInitDlls
+   all gone. On amd64 the same function has all the calls.
+4. Why: `MessageInit`/`MessageCleanup` are **defined `extern "fastcall"`** on
+   x86 (message.rs) and `MenuInit`/`MenuCleanup`/`DeleteFrameBrushes`
+   **defined `extern "C"`**, but dllmain.rs **declared them all in one
+   `extern "system"` block**. Same LLVM symbol, mismatched calling convention
+   ⇒ the call is UB ⇒ LLVM deletes the branch containing it. **The fold
+   removes the very ud2 that `scan_ud2` would have caught**, and the linker
+   never sees the (wrong) symbol reference — completely silent.
+   Confirmation: once the decls were fixed, the branch materialized and the
+   link *immediately* broke on `_wcslen@4` — another wrong-convention decl in
+   the same block that had been linkable only because its caller was folded.
+
+**Fixes:** per-arch-correct extern blocks in user32-rust dllmain.rs (fastcall
+x86 / C elsewhere for Message*, plain C for Menu*/DeleteFrameBrushes/wcslen),
+plus the same class in win32k-rust (`DIB_1BPP_HLine`, `GreGetTextExtentExW`,
+`UserExtTextOutW` — paint-path functions!) and user32-rust
+`UserGetWindowBorders`. i386 desktop icons render.
+
+**Permanent detector:** `tools/scan_cc_mismatch.py` — same-crate
+extern-decl vs `#[no_mangle]`-def convention drift under i386 semantics
+("system"→stdcall vs "C"/fastcall), cfg-aware. Wired into `vibeos-cli check`
+(0-NEW baseline gate; stock ~330 findings, mostly driver crates = the
+burn-down queue in `tools/lint-baseline/scan_cc_mismatch.txt`). Suppress a
+verified FP with `// nolint: cc-mismatch (reason)`.
+
+**Debugging lessons:**
+1. **"Code path missing on one arch only, zero errors" → suspect a UB fold
+   before anything else.** Disassemble the built binary and compare arches:
+   a branch present on amd64 but absent on i386 with identical source is
+   LLVM deleting provably-UB code. `scan_ud2` cannot see it when the whole
+   branch (including the trap) folds away.
+2. A **zeroed CRITICAL_SECTION deadlocks its first Enter** and looks like a
+   lock-owner hang; check `LockCount/DebugInfo/OwningThread` before hunting a
+   phantom owner (`LockCount=1,Owner=0,DebugInfo=0` = never initialized, one
+   waiter).
+3. QMP + manual page-table walk (`human-monitor-command xp` + 2-level i386
+   PDE/PTE from the target EPROCESS's `DirectoryTableBase`) reads **any
+   process's user memory** without breakpoints — module lists from PEB→Ldr,
+   user-stack ret-chains, CS fields. Beats conditional breakpoints (which are
+   glacial via the gdbstub) for cross-process user-mode inspection.
+4. The `[T0E]`-style bisect-by-serial-print remains the fastest way to walk a
+   wedge up a call chain (shell32 → LoadAcceleratorsW in 4 boots), but only
+   ONCE the wedge is on a printable path — pair it with thread/wait-object
+   dumps (`dump-thread`, `identify-object`) to find *which* path to print.
