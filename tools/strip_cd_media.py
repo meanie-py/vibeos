@@ -42,9 +42,7 @@ def parse_pe(data: bytes):
     coff = e_lfanew + 4
     # COFF: Machine(2) NumberOfSections(2) TimeDateStamp(4)
     #       PointerToSymbolTable(4) NumberOfSymbols(4) SizeOfOptionalHeader(2) Characteristics(2)
-    nsects, symtab_ptr, nsyms, opt_size = struct.unpack_from(
-        "<xxH4xIIH2x", data, coff
-    )
+    nsects, symtab_ptr, nsyms, opt_size = struct.unpack_from("<xxH4xIIH2x", data, coff)
     opt = coff + 20
     # CheckSum is at offset 64 in both PE32 and PE32+ optional headers
     csum_off = opt + 64
