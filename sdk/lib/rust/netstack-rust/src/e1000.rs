@@ -353,6 +353,12 @@ pub fn bringup() -> Option<E1000> {
         };
         let tx_desc = tx_va as *mut TxDesc;
         let tx_buf = tx_va.add(N_TX * core::mem::size_of::<TxDesc>());
+        let tx_buf_pa = tx_pa + (N_TX * core::mem::size_of::<TxDesc>()) as u64;
+        for i in 0..N_TX {
+            // Each descriptor permanently owns its bounce buffer; send() only
+            // copies the frame in and flips cmd/length.
+            (*tx_desc.add(i)).addr = tx_buf_pa + (i * BUF_SIZE) as u64;
+        }
         wr(TDBAL, tx_pa as u32);
         wr(TDBAH, (tx_pa >> 32) as u32);
         wr(TDLEN, (N_TX * core::mem::size_of::<TxDesc>()) as u32);
