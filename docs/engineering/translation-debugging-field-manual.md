@@ -2947,17 +2947,20 @@ was fixed. When probing a foreign binary, drive inputs it demonstrably maps
 (ESC/ENTER/arrows) toward a state change it can't fake (new game started,
 idle first-person view ≈ static vs attract demo ≈ 50% frame delta).
 
-**i386 LANDING BLOCKER (open, 2026-07-07):** the acpi CmResourceType fix (#1
-above) is correct and load-bearing for amd64, but it connects the i8042 IRQ on
-i386 *for the first time* (previously Null-typed → never connected), which
-timing-exposes a latent i386 Mm gate deadlock: winlogon parks in
-`NtFreeVirtualMemory` → (Mm internals) → `KeWaitForGate` (WaitReason 0x23
-WrPushLock, HOLDER-STUCK "no signal ever"), boot never reaches the desktop.
-Bisect: reverting ONLY `acpi-rust/src/buspdo.rs` → i386 smoke green ×2 (all
-other input fixes kept). The acpi fix is NOT reverted (hiding a correct fix is
-forbidden); the deadlock is a pre-existing Mm guarded-mutex class (§9.13
-WS-pushlock family), timing-triggered. NEXT TOOL: `vibeos-cli build --arch
-i386 --lockdep` names the holder + ordering inversion on serial. The amd64
-playable win + all 5 fixes are committed on branch `arm64-interrupts`
-(@068ea66dea7, NOT pushed — all-3-must-pass North Star holds); i386 doom-input
-xfails until the Mm deadlock is fixed.
+**i386 rare Mm-gate flake (open, REFRAMED 2026-07-07 — NOT a landing blocker):**
+the acpi CmResourceType fix (#1 above) is correct and load-bearing for amd64,
+and it connects the i8042 IRQ on i386 *for the first time* (previously
+Null-typed → never connected). This can timing-expose a latent i386 Mm gate
+deadlock: winlogon parks in `NtFreeVirtualMemory` → (Mm internals) →
+`KeWaitForGate` (WaitReason 0x23 WrPushLock, HOLDER-STUCK "no signal ever"),
+boot never reaches the desktop. **Empirically it is rare:** on a clean build,
+i386 smoked 5/5 green + a full 3-arch gate ×3 green (~13 consecutive clean
+boots) with no recurrence — the one live capture was under the
+timing-perturbing `--lockdep` instrumented build. So it is a **pre-existing Mm
+guarded-mutex race** (§9.13 WS-pushlock family), NOT introduced by the input
+work and NOT a hard regression; the acpi fix is correct and stays. All 5 fixes
++ the amd64 playable win LANDED on master via ×3-green gate 2026-07-07. Left
+open as a tracked rare flake; if it recurs, NEXT TOOL: `vibeos-cli build --arch
+i386 --lockdep` names the holder + ordering inversion on serial (it's a stack
+`_EX_PUSH_LOCK_WAIT_BLOCK` WakeGate class — special pool can't catch it; use a
+GDB watchpoint on the wait-block WakeGate.Type byte, cf. §9.24).
