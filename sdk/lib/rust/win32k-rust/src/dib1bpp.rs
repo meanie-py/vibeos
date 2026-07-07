@@ -67,10 +67,14 @@ unsafe fn DIB_1BPP_BitBltSrcCopy_From1BPP(
     let Height = RECTL_lGetHeight(DestRect);
     let Width = RECTL_lGetWidth(DestRect);
     let XorBit = if XLATEOBJ_iXlate(pxlo, 0) != 0 { 1u8 } else { 0u8 };
-    let IgnoreSrc = if XorBit != 0 { 
-        XLATEOBJ_iXlate(pxlo, 1) == 0 
-    } else { 
-        XLATEOBJ_iXlate(pxlo, 1) != 0 
+    // C: `IgnoreSrc = XorBit ^ !XLATEOBJ_iXlate(pxlo, 1)` — the translation had
+    // dropped the `!`, inverting all four cases: every identity 1bpp->1bpp
+    // SRCCOPY zero-filled its destination (all-opaque masks -> the black
+    // shortcut-icon class; also broke drag images / ImageList_Merge).
+    let IgnoreSrc = if XorBit != 0 {
+        XLATEOBJ_iXlate(pxlo, 1) != 0
+    } else {
+        XLATEOBJ_iXlate(pxlo, 1) == 0
     };
     let mut Overlap: u8 = 0u8;
     let mut DstStart: *mut u8;

@@ -793,6 +793,13 @@ pub unsafe extern "system" fn DbgkpPostFakeThreadMessages(
     }
 
     if p_first_thread.is_null() {
+        // Upstream ReactOS leaks the last-thread reference here (dbgkobj.c:
+        // `if (!pFirstThread) return STATUS_UNSUCCESSFUL;` without releasing
+        // the loop's pLastThread ref, which is only handed to the caller on
+        // the success path below) — found by scan_ob_refcount.py.
+        if !p_last_thread.is_null() {
+            ObDereferenceObject(p_last_thread as PVOID);
+        }
         return STATUS_UNSUCCESSFUL;
     }
 

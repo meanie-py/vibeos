@@ -199,8 +199,9 @@ extern "system" {
     fn FillRect(hDC: HDC, lprc: *const RECT, hbr: HBRUSH) -> i32;
     fn DrawTextW(hDC: HDC, lpchText: LPCWSTR, cchText: INT, lprc: LPRECT, format: UINT) -> INT;
 }
-// UserExtTextOutW (painting/text.c) — cdecl `_UserExtTextOutW`.
-extern "C" {
+// UserExtTextOutW (rtl_text.rs) — extern "system" (`_UserExtTextOutW@28` on
+// i386). Decl must match the def or LLVM UB-folds the caller (§9.30).
+extern "system" {
     fn UserExtTextOutW(hdc: HDC, x: INT, y: INT, flOpts: UINT, prcl: *const RECTL, lpString: LPCWSTR, Count: INT) -> BOOL;
 }
 

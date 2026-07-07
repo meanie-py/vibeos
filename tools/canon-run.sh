@@ -74,9 +74,20 @@ if find "$CANON" -mindepth 1 \( -type f -o -type l \) -print -quit 2>/dev/null |
     exit 2
 fi
 
-# Kill any sccache server so the first rustc spawns one inside OUR namespace.
-if command -v sccache >/dev/null 2>&1; then
-    sccache --stop-server >/dev/null 2>&1 || true
+# sccache is client/server and the server resolves /tmp/vibeos paths in the
+# mount namespace it was STARTED in. The old "stop any server so ours respawns
+# in our namespace" approach is a fleet hazard: raw canon-run invocations don't
+# hold the hostlock, so two worktrees building concurrently would stop each
+# other's servers mid-build — cache-miss compiles then execute inside the OTHER
+# worktree's namespace and silently read ITS sources (2026-07-07 phantom-build
+# incident: three gate builds compiled another lane's in-progress lib.rs).
+# Fix: pin a PER-WORKTREE server port (stable hash of the worktree root). Each
+# worktree gets its own daemon, first spawned inside its own namespace, so
+# /tmp/vibeos always resolves to the right tree; the on-disk cache stays shared
+# and content-addressed (safe by design).
+if command -v sccache >/dev/null 2>&1 && [ -z "${SCCACHE_SERVER_PORT:-}" ]; then
+    _hash=$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)
+    export SCCACHE_SERVER_PORT=$((4300 + _hash % 100))
 fi
 
 exec unshare --map-root-user --mount /bin/sh -c '

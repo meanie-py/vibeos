@@ -55,7 +55,8 @@ macro_rules! abi_cast {
 pub mod ARM3;
 pub mod arm64_dbg;
 // cc extracted to cc-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
-pub mod config;
+// config (Configuration Manager / registry) extracted to config-rust (crate-split
+// Phase 1b); symbols link in via kernel-rust's `extern crate config_rust`.
 // dbgk extracted to dbgk-rust (crate-split); symbols via kernel-rust extern crate.
 // dbgprint hoisted to dbgprint-rust leaf crate; re-exported at the crate root above.
 pub mod debugblock;
@@ -67,11 +68,11 @@ pub mod ex;
 pub mod guid;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod i386;
-pub mod inbv;
+// inbv extracted to inbv-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 // iomgr extracted to iomgr-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
-pub mod kd;
+// kd extracted to kd-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 // kd64/ — Rust port of the WinDbg KD protocol stack. Active on all 3 arches.
-pub mod kd64;
+// kd64 extracted to kd64-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 // kdbg extracted to kdbg-rust (crate-split Phase 1b). x86-ONLY; its #[no_mangle]
 // Kdb*/Kdp* symbols link in via kernel-rust's cfg-gated `extern crate kdbg_rust`.
 // Deliberately NOT depended on here (severed) — cross-calls resolve at link time.
@@ -82,17 +83,17 @@ pub mod ke;
 // into lpc resolve at link time via #[no_mangle]; kernel-rust force-includes its
 // symbols via `extern crate lpc_rust`.
 pub mod mm;
-pub mod ob;
+// ob extracted to ob-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 // pnpmgr extracted to pnpmgr-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.  // Phase 1: pnputil + pnpirp only (leaf files)
-pub mod po;
-pub mod ps;
-pub mod rtl;
+// po extracted to po-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
+// ps extracted to ps-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
+// rtl (kernel RTL glue) extracted to rtlk-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 // se extracted to se-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 pub mod shim_exports;
 pub mod tests;
 pub mod tripwire;
-pub mod vdm;
-pub mod vf;
+// vdm extracted to vdm-rust (crate-split Phase 1b, i386-only); symbols via kernel-rust extern crate.
+// vf extracted to vf-rust (crate-split Phase 1b); symbols via kernel-rust extern crate.
 // wmi extracted to wmi-rust (crate-split); symbols via kernel-rust extern crate.
 
 // Arch-specific MM modules
@@ -102,280 +103,9 @@ pub mod amd64;
 pub mod arm64;
 #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 pub mod arm;
-// Force inclusion of KD64 subsystem symbols (called from C ntoskrnl, not from Rust).
-// Without this, rustc dead-code elimination strips them from the staticlib output.
-// Auto-generated; references items by Rust path so the within-crate DCE keeps them.
-mod _force_kd64_symbols {
-    #[repr(transparent)]
-    struct SyncPtr(*const ());
-    unsafe impl Sync for SyncPtr {}
-
-    #[used]
-    static FN_REFS: [SyncPtr; 50] = [
-        SyncPtr(crate::kd64::kdapi::KdChangeOption as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdDisableDebugger as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdDisableDebuggerWithLock as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdEnableDebugger as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdEnableDebuggerWithLock as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdEnterDebugger as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdExitDebugger as *const ()),
-        SyncPtr(crate::kd64::kdinit::KdInitSystem as *const ()),
-        SyncPtr(crate::kd64::kdtrap::KdIsThisAKdTrap as *const ()),
-        SyncPtr(crate::kd64::kdprint::KdLogDbgPrint as *const ()),
-        SyncPtr(crate::kd64::kdlock::KdPollBreakIn as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdPowerTransition as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdRefreshDebuggerNotPresent as *const ()),
-        SyncPtr(crate::kd64::kdinit::KdRegisterDebuggerDataBlock as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdReportProcessorChange as *const ()),
-        SyncPtr(crate::kd64::kdbreak::KdSetOwedBreakpoints as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdSystemDebugControl as *const ()),
-        SyncPtr(crate::kd64::kdinit::KdUpdateDataBlock as *const ()),
-        SyncPtr(crate::kd64::kdprint::KdpAcquireLock as *const ()),
-        SyncPtr(crate::kd64::kdbreak::KdpAddBreakpoint as *const ()),
-        SyncPtr(crate::kd64::kdprint::KdpCommandString as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdpCopyMemoryChunks as *const ()),
-        SyncPtr(crate::kd64::kdbreak::KdpDeleteBreakpoint as *const ()),
-        SyncPtr(crate::kd64::kdbreak::KdpDeleteBreakpointRange as *const ()),
-        SyncPtr(crate::kd64::kddata::KdpInitDebuggerDataBlock as *const ()),
-        SyncPtr(crate::kd64::kdbreak::KdpLowRestoreBreakpoint as *const ()),
-        SyncPtr(crate::kd64::kdbreak::KdpLowWriteContent as *const ()),
-        SyncPtr(crate::kd64::kdprint::KdpMoveMemory as *const ()),
-        SyncPtr(crate::kd64::kdlock::KdpPollBreakInWithPortLock as *const ()),
-        SyncPtr(crate::kd64::kdlock::KdpPortLock as *const ()),
-        SyncPtr(crate::kd64::kdlock::KdpPortUnlock as *const ()),
-        SyncPtr(crate::kd64::kdprint::KdpPrint as *const ()),
-        SyncPtr(crate::kd64::kdprint::KdpPrintString as *const ()),
-        SyncPtr(crate::kd64::kdprint::KdpPrompt as *const ()),
-        SyncPtr(crate::kd64::kdprint::KdpPromptString as *const ()),
-        SyncPtr(crate::kd64::kdprint::KdpReleaseLock as *const ()),
-        SyncPtr(crate::kd64::kdtrap::KdpReport as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdpReportCommandStringStateChange as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdpReportExceptionStateChange as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdpReportLoadSymbolsStateChange as *const ()),
-        SyncPtr(crate::kd64::kdbreak::KdpRestoreAllBreakpoints as *const ()),
-        SyncPtr(crate::kd64::kdtrap::KdpStub as *const ()),
-        SyncPtr(crate::kd64::kdbreak::KdpSuspendAllBreakPoints as *const ()),
-        SyncPtr(crate::kd64::kdbreak::KdpSuspendBreakPoint as *const ()),
-        SyncPtr(crate::kd64::kdprint::KdpSymbol as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdpTimeSlipDpcRoutine as *const ()),
-        SyncPtr(crate::kd64::kdapi::KdpTimeSlipWork as *const ()),
-        SyncPtr(crate::kd64::kdtrap::KdpTrap as *const ()),
-        SyncPtr(crate::kd64::kdapi::NtQueryDebugFilterState as *const ()),
-        SyncPtr(crate::kd64::kdapi::NtSetDebugFilterState as *const ()),
-    ];
-
-    #[used]
-    static STATIC_REFS: [SyncPtr; 208] = [
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::BreakpointsSuspended) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdAutoEnableOnEvent) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdBlockEnable) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdBreakAfterSymbolLoad) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdComponentTable) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdComponentTableSize) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdDebuggerDataBlock) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdDebuggerEnabled) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdDebuggerNotPresent) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdDisableCount) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdEnteredDebugger) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdIgnoreUmExceptions) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdPerformanceCounterRate) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdPitchDebugger) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdPreviouslyEnabled) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdPrintBufferChanges) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdPrintBufferSize) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdPrintCircularBuffer) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdPrintDefaultCircularBuffer) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdPrintRolloverCount) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdPrintWritePointer) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdTimerDifference) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdTimerStart) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdTimerStop) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdVersionBlock) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_ACPI_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_ALPC_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_AMLI_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_APPCOMPAT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_AUTOCHK_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_BURNENG_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_CACHEMGR_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_CAPIMG_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_CDAUDIO_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_CDROM_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_CFR_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_CLASSPNP_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_CNG_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_CONFIG_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_COVERAGE_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_CRASHDUMPXHCI_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_CRASHDUMP_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_DCOMSS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_DEFAULT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_DFRGIFC_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_DFSC_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_DISK_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_DMADMIN_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_DMCONFIG_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_DMIO_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_DMSERVER_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_DMSYNTH_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_DRIVEEXTENDER_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_EMS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_ENDOFTABLE_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_ENVIRON_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_EXFAT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_FASTFAT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_FCPORT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_FDC_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_FILETRACE_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_FLOPPY_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_FLTMGR_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_FLTREGRESS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_FSLIB_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_FSTUB_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_FUSION_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_FVEVOL_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_GPIO_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_HALIA64_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_HEAP_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_HPS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_I8042PRT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_IDEP_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_IDLETASK_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_IHVAUDIO_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_IHVBUS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_IHVDRIVER_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_IHVNETWORK_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_IHVSTREAMING_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_IHVVIDEO_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_IMAPI_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_INFINIBAND_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_IOSTRESS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_ISAPNP_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_KBDCLASS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_KBDHID_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_KSECDD_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_KTM_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_LDR_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_LSASS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_LSERMOUS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_LUAFV_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_MCHGR_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_MMCSS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_MM_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_MOUCLASS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_MOUHID_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_MOUNTMGR_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_MPIO_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_MSDSM_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_NDIS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_NETAPI_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_NTFS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_NTOSPNP_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_NVCTRACE_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_PCIIDE_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_PCI_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_PERFLIB_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_PNPMEM_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_PNPMGR_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_POWER_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_PREFETCHER_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_PRINTSPOOLER_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_PROCESSOR_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_PSHED_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_REDBOOK_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_REFS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_RPCPROXY_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_RSFILTER_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_RTLTHREADPOOL_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SAMSS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SBP2PORT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SCCLIENT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SCSERVER_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SCSIMINIPORT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SCSIPORT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SERENUM_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SERIAL_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SERMOUSE_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SETUP_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SE_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SHPC_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SIS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SMSS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SOFTPCI_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SR_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SSPICLI_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_STORAGECLASSMEMORY_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_STORMINIPORT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_STORPORT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_STORPROP_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_STORVSP_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SVCHOST_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SXS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_SYSTEM_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_TAPE_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_TCPIP6_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_TCPIP_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_TERMSRV_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_THREADORDER_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_TPM_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_TWOTRACK_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_TXF_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_UDFS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_UHCD_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_UNIMODEM_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_USBSTOR_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_USERGDI_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_VDSBAS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_VDSDYNDR_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_VDSDYN_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_VDSLDR_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_VDSUTIL_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_VDS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_VERIFIER_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_VIDEOPRT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_VIDEO_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_VPCI_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_VSSDYNDISK_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_VSS_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_W32TIME_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_WDI_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_WDT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_WER_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_WHEA_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_WIN2000_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_WMICORE_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_WMILIB_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_WOW64_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_WSOCKTRANSPORT_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::Kd_XSAVE_Mask) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpBreakpointInstruction) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpBreakpointTable) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpContext) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpContextSent) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpControlCPressed) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpCurrentSymbolEnd) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpCurrentSymbolStart) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpDataSpinLock) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpDebuggerDataListHead) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpDebuggerLock) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpDebuggerStructuresInitialized) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpMessageBuffer) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpNumInternalBreakpoints) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpOweBreakpoint) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpPathBuffer) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpPortLocked) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpPrintSpinLock) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpTimeSlipDpc) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpTimeSlipEvent) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpTimeSlipEventLock) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpTimeSlipPending) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpTimeSlipTimer) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KdpTimeSlipWorkItem) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::KiDebugRoutine) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::TraceDataBuffer) as *const ()),
-        SyncPtr(core::ptr::addr_of!(crate::kd64::kddata::TraceDataBufferPosition) as *const ()),
-    ];
-}
+// _force_kd64_symbols deleted with the kd64 crate-split (Phase 1b): its symbols
+// are pulled by kernel-rust's `extern crate kd64_rust` + their genuine C/Rust
+// callers (KdInitSystem etc.) — the CGU-forcing hack was redundant.
 
 // Force inclusion of mm/ARM3/virtual.rs symbols. Same pattern as kd64 above —
 // these are called from C ntoskrnl (SSDT entries, sdk/lib/rtl/env.c, etc.) but
@@ -538,71 +268,19 @@ mod _force_test_symbols {
 }
 
 // Force inclusion of ps/{i386,amd64}/* symbols on the right arch.
-#[cfg(target_arch = "x86")]
-mod _force_ps_i386_symbols {
-    #[repr(transparent)]
-    struct SyncPtr(*const ());
-    unsafe impl Sync for SyncPtr {}
+// _force_ps_i386_symbols deleted with the ps crate-split (Phase 1b): the arch psctx/psldt
+// fns have genuine callers in ps that pull them (kd64 precedent).
 
-    #[used]
-    static FN_REFS: [SyncPtr; 5] = [
-        SyncPtr(crate::ps::i386::psctx::PspGetContext as *const ()),
-        SyncPtr(crate::ps::i386::psctx::PspSetContext as *const ()),
-        SyncPtr(crate::ps::i386::psctx::PspGetOrSetContextKernelRoutine as *const ()),
-        SyncPtr(crate::ps::i386::psldt::PspDeleteLdt as *const ()),
-        SyncPtr(crate::ps::i386::psldt::PspQueryDescriptorThread as *const ()),
-    ];
-}
+// _force_ps_amd64_symbols deleted with the ps crate-split (Phase 1b): the arch psctx/psldt
+// fns have genuine callers in ps that pull them (kd64 precedent).
 
-#[cfg(target_arch = "x86_64")]
-mod _force_ps_amd64_symbols {
-    #[repr(transparent)]
-    struct SyncPtr(*const ());
-    unsafe impl Sync for SyncPtr {}
+// _force_kd64_i386_symbols deleted with the kd64 crate-split (Phase 1b): the arch KD
+// dispatch fns have genuine callers in kd64 (kdapi) that pull them.
 
-    #[used]
-    static FN_REFS: [SyncPtr; 1] = [
-        SyncPtr(crate::ps::amd64::psctx::PspGetOrSetContextKernelRoutine as *const ()),
-    ];
-}
-
-#[cfg(target_arch = "x86")]
-mod _force_kd64_i386_symbols {
-    #[repr(transparent)]
-    struct SyncPtr(*const ());
-    unsafe impl Sync for SyncPtr {}
-
-    #[used]
-    static FN_REFS: [SyncPtr; 12] = [
-        SyncPtr(crate::kd64::i386::kdx86::KdpGetStateChange as *const ()),
-        SyncPtr(crate::kd64::i386::kdx86::KdpSetContextState as *const ()),
-        SyncPtr(crate::kd64::i386::kdx86::KdpSysReadMsr as *const ()),
-        SyncPtr(crate::kd64::i386::kdx86::KdpSysWriteMsr as *const ()),
-        SyncPtr(crate::kd64::i386::kdx86::KdpSysReadBusData as *const ()),
-        SyncPtr(crate::kd64::i386::kdx86::KdpSysWriteBusData as *const ()),
-        SyncPtr(crate::kd64::i386::kdx86::KdpSysReadControlSpace as *const ()),
-        SyncPtr(crate::kd64::i386::kdx86::KdpSysWriteControlSpace as *const ()),
-        SyncPtr(crate::kd64::i386::kdx86::KdpSysReadIoSpace as *const ()),
-        SyncPtr(crate::kd64::i386::kdx86::KdpSysWriteIoSpace as *const ()),
-        SyncPtr(crate::kd64::i386::kdx86::KdpSysCheckLowMemory as *const ()),
-        SyncPtr(crate::kd64::i386::kdx86::KdpAllowDisable as *const ()),
-    ];
-}
-
-// Force inclusion of config/i386/cmhardwr.rs symbols on i386 + amd64.
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-mod _force_cmhardwr_symbols {
-    #[repr(transparent)]
-    struct SyncPtr(*const ());
-    unsafe impl Sync for SyncPtr {}
-
-    #[used]
-    static FN_REFS: [SyncPtr; 3] = [
-        SyncPtr(crate::config::i386::cmhardwr::CmpGetBiosDate as *const ()),
-        SyncPtr(crate::config::i386::cmhardwr::CmpGetBiosVersion as *const ()),
-        SyncPtr(crate::config::i386::cmhardwr::CmpInitializeMachineDependentConfiguration as *const ()),
-    ];
-}
+// (config/i386/cmhardwr.rs's CmpGetBiosDate/CmpGetBiosVersion/
+// CmpInitializeMachineDependentConfiguration are now in config-rust, pulled by
+// kernel-rust's `extern crate config_rust` + their genuine callers — the old
+// _force_cmhardwr_symbols CGU hack was redundant, deleted with the config split.)
 
 // Force inclusion of mm/section_pe.rs symbols on all arches.
 mod _force_section_pe_symbols {
@@ -616,28 +294,8 @@ mod _force_section_pe_symbols {
     ];
 }
 
-#[cfg(target_arch = "x86_64")]
-mod _force_kd64_amd64_symbols {
-    #[repr(transparent)]
-    struct SyncPtr(*const ());
-    unsafe impl Sync for SyncPtr {}
-
-    #[used]
-    static FN_REFS: [SyncPtr; 12] = [
-        SyncPtr(crate::kd64::amd64::kdx64::KdpGetStateChange as *const ()),
-        SyncPtr(crate::kd64::amd64::kdx64::KdpSetContextState as *const ()),
-        SyncPtr(crate::kd64::amd64::kdx64::KdpSysReadMsr as *const ()),
-        SyncPtr(crate::kd64::amd64::kdx64::KdpSysWriteMsr as *const ()),
-        SyncPtr(crate::kd64::amd64::kdx64::KdpSysReadBusData as *const ()),
-        SyncPtr(crate::kd64::amd64::kdx64::KdpSysWriteBusData as *const ()),
-        SyncPtr(crate::kd64::amd64::kdx64::KdpSysReadControlSpace as *const ()),
-        SyncPtr(crate::kd64::amd64::kdx64::KdpSysWriteControlSpace as *const ()),
-        SyncPtr(crate::kd64::amd64::kdx64::KdpSysReadIoSpace as *const ()),
-        SyncPtr(crate::kd64::amd64::kdx64::KdpSysWriteIoSpace as *const ()),
-        SyncPtr(crate::kd64::amd64::kdx64::KdpSysCheckLowMemory as *const ()),
-        SyncPtr(crate::kd64::amd64::kdx64::KdpAllowDisable as *const ()),
-    ];
-}
+// _force_kd64_amd64_symbols deleted with the kd64 crate-split (Phase 1b): the arch KD
+// dispatch fns have genuine callers in kd64 (kdapi) that pull them.
 
 // Folded back 2026-05-09 from per-subsystem rlibs (pilot validated
 // the captures(none) firewall is sufficient).

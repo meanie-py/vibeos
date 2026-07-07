@@ -327,9 +327,8 @@ pub unsafe extern "C" fn _global_write_barrier() {
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::inbv::inbv::InbvTerminalTextColor), core::ptr::read_volatile(core::ptr::addr_of!(crate::inbv::inbv::InbvTerminalTextColor)));
     core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::inbv::inbv::InbvTerminalBkgdColor), core::ptr::read_volatile(core::ptr::addr_of!(crate::inbv::inbv::InbvTerminalBkgdColor)));
     // iomgr statics moved to iomgr-rust's own _iomgr_global_write_barrier (crate-split
-    // Phase 1b). 55 entries there; IopAutoReboot stayed here (const CmControlVector
-    // needs its in-crate address) so it's barriered here:
-    core::ptr::write_volatile(core::ptr::addr_of_mut!(crate::config::cmdata::IopAutoReboot), core::ptr::read_volatile(core::ptr::addr_of!(crate::config::cmdata::IopAutoReboot)));
+    // Phase 1b). IopAutoReboot moved to config-rust (cmdata.rs) with the config
+    // crate-split — barriered there now (_config_global_write_barrier).
     // ke/amd64/cpu.rs
     #[cfg(target_arch = "x86_64")]
     {

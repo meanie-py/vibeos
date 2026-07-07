@@ -115,6 +115,8 @@ unsafe fn KiWaitTestImpl(ObjectPointer: PVOID, Increment: KPRIORITY) {
     let mut WaitStatus: NTSTATUS;
 
     WaitList = core::ptr::addr_of_mut!((*FirstObject).Header.WaitListHead) as PLIST_ENTRY;
+    // waitdep tripwire: prove the waiter list is intact BEFORE consuming it.
+    super::waitdep::check_waittest(FirstObject as usize, WaitList as *mut _);
     WaitEntry = (*WaitList).Flink;
 
     while ((*FirstObject).Header.SignalState > 0) && (WaitEntry != WaitList) {
@@ -149,6 +151,10 @@ pub unsafe extern "C" fn KiUnlinkThread(Thread: PKTHREAD, WaitStatus: isize) {
 unsafe fn KiUnlinkThreadImpl(Thread: PKTHREAD, WaitStatus: isize) {
     let mut WaitBlock: PKWAIT_BLOCK;
     let Timer: PKTIMER;
+
+    // waitdep tripwire: prove the wait-block chain is intact BEFORE the
+    // RemoveEntryList walk below mutates it (field-manual §9.24 0x1E flake).
+    super::waitdep::check_unwait(Thread);
 
     (*Thread).WaitStatus |= WaitStatus as ntkrnl_sys::ddk::LONG_PTR;
 
@@ -793,6 +799,11 @@ pub unsafe extern "system" fn KeWaitForSingleObject(
     KiReleaseDispatcherLock(*kt_WaitIrql(Thread));
     WaitStatus
 }
+
+// The CPS RunToken wait (`wait_for`) lives in `ntkrnl_sys::token` — NOT here —
+// so extracted kernel crates (po-rust, …) can use it without a dependency on
+// ntoskrnl-rust; it calls the `KeWaitForSingleObject` export above by link
+// name with a primitive-width ABI-identical signature.
 
 #[no_mangle]
 pub unsafe extern "system" fn KeWaitForMultipleObjects(

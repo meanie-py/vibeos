@@ -266,6 +266,9 @@ sdk/lib/rust/cmlib-rust/src/hivewrt.rs:344: [UNWRAP] .unwrap() — panics on Err
 sdk/lib/rust/cmlib-rust/src/hivewrt.rs:358: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/cmlib-rust/src/hivewrt.rs:369: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/condrv-rust/src/lib.rs:18: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
+sdk/lib/rust/config-rust/src/cmhook.rs:81: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/config-rust/src/cmsysini.rs:1926: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/config-rust/src/ntapi.rs:1512: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/crt-startup-rust/src/rand_s.rs:63: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/csq-rust/src/csq.rs:118: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/csq-rust/src/csq.rs:134: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -638,6 +641,8 @@ sdk/lib/rust/i8042prt-rust/src/mouse.rs:776: [UNWRAP] .unwrap() — panics on Er
 sdk/lib/rust/i8042prt-rust/src/mouse.rs:781: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/i8042prt-rust/src/mouse.rs:786: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/i8042prt-rust/src/mouse.rs:794: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/inbv-rust/src/inbv.rs:400: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/inbv-rust/src/inbv.rs:437: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/controller.rs:125: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/controller.rs:38: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/device.rs:1608: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -674,6 +679,9 @@ sdk/lib/rust/iomgr-rust/src/volume.rs:400: [UNWRAP] .unwrap() — panics on Err/
 sdk/lib/rust/iomgr-rust/src/volume.rs:773: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/kbdclass-rust/src/lib.rs:18: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/kbdhid-rust/src/lib.rs:28: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
+sdk/lib/rust/kd-rust/src/kdmain.rs:292: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/kd-rust/src/kdmain.rs:396: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/kd-rust/src/kdmain.rs:432: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/kdbg-rust/src/kdb_cli.rs:3353: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/kdbg-rust/src/kdb_expr.rs:968: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/kdgdb-rust/src/kdpacket.rs:143: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
@@ -1150,12 +1158,9 @@ sdk/lib/rust/ntdll-rust/src/ldr/ldrutils.rs:236: [UNWRAP] .unwrap() — panics o
 sdk/lib/rust/ntkrnlmp-cargo/src/main.rs:41: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/ntoskrnl-cargo/src/main.rs:41: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/session.rs:280: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ARM3/sysldr.rs:465: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ARM3/sysldr.rs:496: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ARM3/sysldr.rs:466: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ARM3/sysldr.rs:497: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/arm/kdserial.rs:71: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
-sdk/lib/rust/ntoskrnl-rust/src/config/cmhook.rs:81: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/config/cmsysini.rs:1926: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/config/ntapi.rs:1512: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ex/callback.rs:510: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ex/handle.rs:1101: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ex/handle.rs:1174: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1170,11 +1175,6 @@ sdk/lib/rust/ntoskrnl-rust/src/ex/work.rs:187: [UNWRAP] .unwrap() — panics on 
 sdk/lib/rust/ntoskrnl-rust/src/ex/work.rs:197: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ex/work.rs:546: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ex/work.rs:551: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/inbv/inbv.rs:400: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/inbv/inbv.rs:437: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/kd/kdmain.rs:292: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/kd/kdmain.rs:396: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/kd/kdmain.rs:432: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/interrupt.rs:221: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/stubs.rs:103: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/traphandler.rs:189: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1184,25 +1184,25 @@ sdk/lib/rust/ntoskrnl-rust/src/ke/apc.rs:319: [UNWRAP] .unwrap() — panics on E
 sdk/lib/rust/ntoskrnl-rust/src/ke/apc.rs:341: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/apc.rs:372: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/stubs.rs:370: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/thrdini.rs:254: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
-sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/trap.rs:227: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:1205: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
-sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:1218: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
-sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:1228: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:504: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:511: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:593: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/dpc.rs:271: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/dpc.rs:301: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/dpc.rs:336: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/dpc.rs:425: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/dpc.rs:571: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/thrdini.rs:276: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
+sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/trap.rs:231: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:1210: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
+sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:1223: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
+sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:1233: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:509: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:516: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs:598: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/dpc.rs:277: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/dpc.rs:307: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/dpc.rs:342: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/dpc.rs:431: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/dpc.rs:577: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/irqobj.rs:202: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/irqobj.rs:226: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/irqobj.rs:265: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/irqobj.rs:331: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/irqobj.rs:598: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/i386/thrdini.rs:316: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/i386/thrdini.rs:321: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/traphdlr.rs:226: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/i386/usercall.rs:261: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/ipi.rs:225: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1211,30 +1211,23 @@ sdk/lib/rust/ntoskrnl-rust/src/mm/marea.rs:288: [UNWRAP] .unwrap() — panics on
 sdk/lib/rust/ntoskrnl-rust/src/mm/region.rs:165: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/mm/region.rs:188: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/mm/region.rs:66: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/obhandle.rs:538: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/obhandle.rs:573: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/obhandle.rs:754: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/obhandle.rs:900: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/oblife.rs:1187: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/oblife.rs:193: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/oblife.rs:213: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/obname.rs:1091: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/obname.rs:484: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/obname.rs:846: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/obname.rs:904: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/obsecure.rs:486: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/obsecure.rs:533: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/obsecure.rs:556: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/obsecure.rs:604: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ob/obsecure.rs:659: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/po/poshtdwn.rs:275: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/po/power.rs:345: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ps/kill.rs:814: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ps/thread.rs:268: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ps/win32.rs:102: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ps/win32.rs:109: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/rtl/path.rs:485: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-vista-rust/src/lib.rs:155: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
+sdk/lib/rust/ob-rust/src/obhandle.rs:538: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/obhandle.rs:573: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/obhandle.rs:754: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/obhandle.rs:900: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/oblife.rs:1187: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/oblife.rs:193: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/oblife.rs:213: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/obname.rs:1092: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/obname.rs:485: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/obname.rs:847: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/obname.rs:905: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/obsecure.rs:486: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/obsecure.rs:533: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/obsecure.rs:556: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/obsecure.rs:604: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ob-rust/src/obsecure.rs:659: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/partmgr-rust/src/lib.rs:23: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/pci-rust/src/lib.rs:21: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/pci-rust/src/pdo.rs:1574: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1277,7 +1270,13 @@ sdk/lib/rust/pnpmgr-rust/src/pnpdma.rs:75: [UNWRAP] .unwrap() — panics on Err/
 sdk/lib/rust/pnpmgr-rust/src/pnpdma.rs:81: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/pnpmgr-rust/src/pnpdma.rs:89: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/pnpmgr-rust/src/pnpnotify.rs:147: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/po-rust/src/poshtdwn.rs:275: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/po-rust/src/power.rs:349: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/processr-rust/src/lib.rs:20: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
+sdk/lib/rust/ps-rust/src/kill.rs:818: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ps-rust/src/thread.rs:268: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ps-rust/src/win32.rs:107: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ps-rust/src/win32.rs:114: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/pseh-rust/src/lib.rs:34: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/ramdisk-rust/src/lib.rs:32: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/rossym-rust/src/delete.rs:38: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1311,6 +1310,7 @@ sdk/lib/rust/rtl-threadpool/src/workitem.rs:559: [UNWRAP] .unwrap() — panics o
 sdk/lib/rust/rtl-threadpool/src/workitem.rs:573: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/rtl-threadpool/src/workitem.rs:591: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/rtl-threadpool/src/workitem.rs:657: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/rtlk-rust/src/path.rs:485: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/scsiport-rust/src/inlines.rs:144: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/scsiport-rust/src/lib.rs:29: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/scsiport-rust/src/scsi.rs:821: [UNWRAP] .expect() — panics on Err/None in kernel code
@@ -1957,21 +1957,21 @@ sdk/lib/rust/win32k-rust/src/object.rs:866: [UNWRAP] .unwrap() — panics on Err
 sdk/lib/rust/win32k-rust/src/object.rs:892: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/win32k-rust/src/object.rs:906: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/win32k-rust/src/object.rs:988: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:2602: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:2606: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:2603: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/win32k-rust/src/painting.rs:2607: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:2707: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:2709: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:2713: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:2715: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:2745: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:2747: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:2749: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:2764: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:2909: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:2915: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:3112: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/win32k-rust/src/painting.rs:3148: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:2608: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:2708: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:2710: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:2714: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:2716: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:2746: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:2748: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:2750: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:2765: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:2910: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:2916: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:3113: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/win32k-rust/src/painting.rs:3149: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/win32k-rust/src/palette.rs:1609: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/win32k-rust/src/palette.rs:1610: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/win32k-rust/src/palette.rs:1611: [UNWRAP] .unwrap() — panics on Err/None in kernel code

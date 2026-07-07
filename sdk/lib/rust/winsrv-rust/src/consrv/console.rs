@@ -95,7 +95,8 @@ extern {
 // alias.c-internal helper (file-static in C). The cohabitation flip
 // would promote it to `#[no_mangle] pub fn IntDeleteAllAliases`; for
 // now declare extern so console.rs links.
-extern "system" {
+extern "C" {
+    // alias.rs defines IntDeleteAllAliases cdecl (§9.30 cc-match rule)
     pub fn IntDeleteAllAliases(Console: PCONSRV_CONSOLE);
 }
 

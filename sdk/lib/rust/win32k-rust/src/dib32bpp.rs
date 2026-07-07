@@ -303,7 +303,7 @@ pub unsafe extern "C" fn DIB_32BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                         .offset((4 * (*BltInfo).SourcePoint.x) as isize);
                     j = (*BltInfo).DestRect.top;
                     while j < (*BltInfo).DestRect.bottom {
-                        core::ptr::copy_nonoverlapping(SourceBits, DestBits, (4 * DestWidth) as usize);
+                        core::ptr::copy(SourceBits, DestBits, (4 * DestWidth) as usize); // C: RtlMoveMemory — same-surface blits may overlap
                         SourceBits = SourceBits.offset((*(*BltInfo).SourceSurface).lDelta as isize);
                         DestBits = DestBits.offset((*(*BltInfo).DestSurface).lDelta as isize);
                         j += 1;
@@ -317,7 +317,7 @@ pub unsafe extern "C" fn DIB_32BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                         .offset((4 * (*BltInfo).DestRect.left) as isize);
                     j = (*BltInfo).DestRect.bottom - 1;
                     while (*BltInfo).DestRect.top <= j {
-                        core::ptr::copy_nonoverlapping(SourceBits, DestBits, (4 * DestWidth) as usize);
+                        core::ptr::copy(SourceBits, DestBits, (4 * DestWidth) as usize); // C: RtlMoveMemory — same-surface blits may overlap
                         SourceBits = SourceBits.offset(-((*(*BltInfo).SourceSurface).lDelta as isize));
                         DestBits = DestBits.offset(-((*(*BltInfo).DestSurface).lDelta as isize));
                         j -= 1;
@@ -335,7 +335,7 @@ pub unsafe extern "C" fn DIB_32BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                         .offset((4 * (*BltInfo).SourcePoint.x) as isize);
                     j = (*BltInfo).DestRect.top;
                     while j < (*BltInfo).DestRect.bottom {
-                        core::ptr::copy_nonoverlapping(SourceBits, DestBits, (4 * DestWidth) as usize);
+                        core::ptr::copy(SourceBits, DestBits, (4 * DestWidth) as usize); // C: RtlMoveMemory — same-surface blits may overlap
                         SourceBits = SourceBits.offset((*(*BltInfo).SourceSurface).lDelta as isize);
                         DestBits = DestBits.offset((*(*BltInfo).DestSurface).lDelta as isize);
                         j += 1;
@@ -349,7 +349,7 @@ pub unsafe extern "C" fn DIB_32BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                         .offset((4 * (*BltInfo).DestRect.left) as isize);
                     j = (*BltInfo).DestRect.bottom - 1;
                     while (*BltInfo).DestRect.top <= j {
-                        core::ptr::copy_nonoverlapping(SourceBits, DestBits, (4 * DestWidth) as usize);
+                        core::ptr::copy(SourceBits, DestBits, (4 * DestWidth) as usize); // C: RtlMoveMemory — same-surface blits may overlap
                         SourceBits = SourceBits.offset(-((*(*BltInfo).SourceSurface).lDelta as isize));
                         DestBits = DestBits.offset(-((*(*BltInfo).DestSurface).lDelta as isize));
                         j -= 1;
@@ -508,7 +508,7 @@ pub unsafe extern "C" fn DIB_32BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                                     .offset((4 * (*BltInfo).SourcePoint.x) as isize);
                                 j = (*BltInfo).DestRect.top;
                                 while j < (*BltInfo).DestRect.bottom {
-                                    core::ptr::copy_nonoverlapping(SourceBits, DestBits, (4 * DestWidth) as usize);
+                                    core::ptr::copy(SourceBits, DestBits, (4 * DestWidth) as usize); // C: RtlMoveMemory — same-surface blits may overlap
                                     SourceBits = SourceBits.offset((*(*BltInfo).SourceSurface).lDelta as isize);
                                     DestBits = DestBits.offset((*(*BltInfo).DestSurface).lDelta as isize);
                                     j += 1;
@@ -522,7 +522,7 @@ pub unsafe extern "C" fn DIB_32BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                                     .offset((4 * (*BltInfo).DestRect.left) as isize);
                                 j = (*BltInfo).DestRect.bottom - 1;
                                 while (*BltInfo).DestRect.top <= j {
-                                    core::ptr::copy_nonoverlapping(SourceBits, DestBits, (4 * DestWidth) as usize);
+                                    core::ptr::copy(SourceBits, DestBits, (4 * DestWidth) as usize); // C: RtlMoveMemory — same-surface blits may overlap
                                     SourceBits = SourceBits.offset(-((*(*BltInfo).SourceSurface).lDelta as isize));
                                     DestBits = DestBits.offset(-((*(*BltInfo).DestSurface).lDelta as isize));
                                     j -= 1;
@@ -535,9 +535,9 @@ pub unsafe extern "C" fn DIB_32BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
 
                         j = 0;
                         while j < DestHeight / 2 {
-                            core::ptr::copy_nonoverlapping(SourceBitsB, store as PBYTE, (4 * DestWidth) as usize);
-                            core::ptr::copy_nonoverlapping(SourceBitsT, DestBitsB, (4 * DestWidth) as usize);
-                            core::ptr::copy_nonoverlapping(store as PBYTE, DestBitsT, (4 * DestWidth) as usize);
+                            core::ptr::copy(SourceBitsB, store as PBYTE, (4 * DestWidth) as usize); // C: RtlMoveMemory
+                            core::ptr::copy(SourceBitsT, DestBitsB, (4 * DestWidth) as usize); // C: RtlMoveMemory
+                            core::ptr::copy(store as PBYTE, DestBitsT, (4 * DestWidth) as usize); // C: RtlMoveMemory
 
                             SourceBitsT = SourceBitsT.offset((*(*BltInfo).SourceSurface).lDelta as isize);
                             SourceBitsB = SourceBitsB.offset(-((*(*BltInfo).SourceSurface).lDelta as isize));
@@ -547,7 +547,7 @@ pub unsafe extern "C" fn DIB_32BPP_BitBltSrcCopy(BltInfo: PBLTINFO) -> u8 {
                             j += 1;
                         }
                         if DestHeight % 2 != 0 {
-                            core::ptr::copy_nonoverlapping(SourceBitsT, DestBitsB, (4 * DestWidth) as usize);
+                            core::ptr::copy(SourceBitsT, DestBitsB, (4 * DestWidth) as usize); // C: RtlMoveMemory
                         }
                         ExFreePoolWithTag(store, TAG_DIB);
                     }

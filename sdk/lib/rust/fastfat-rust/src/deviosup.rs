@@ -30,6 +30,10 @@ use ntkrnl_sys::inline::ex::ExInitializeWorkItem;
 // Local MmGetMdlPfnArray via ntkrnl_sys inline
 use ntkrnl_sys::inline::mm::MmGetMdlPfnArray;
 
+extern "C" {
+    // ddk_shims.rs defines MmPrepareMdlForReuse cdecl (§9.30 cc-match rule)
+    fn MmPrepareMdlForReuse(Mdl: PMDL);
+}
 extern "system" {
     static mut FatIoCallDriverCount: u32;
     static mut FatDiskAccountingEnabled: u8;
@@ -71,7 +75,7 @@ extern "system" {
     } extern "C" { fn DbgPrint(fmt: *const i8, ...); } extern "system" {
     static mut FatBreakOnInterestingIoCompletion: i32;
     fn SafeMmProbeAndLockPages( Mdl: *mut MDL, AccessMode: KPROCESSOR_MODE, Operation: LOCK_OPERATION, ) -> i32;
-    fn MmPrepareMdlForReuse(Mdl: PMDL);
+
     fn CollectDiskIoStats(Vcb: *mut VCB, Function: u32, IsUserIo: u8, Count: u32);
     fn FsRtlAllocatePoolWithTag(PoolType: u32, NumberOfBytes: u32, Tag: u32) -> *mut core::ffi::c_void;
 }

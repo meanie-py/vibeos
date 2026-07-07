@@ -23,3 +23,8 @@ inline_exports = []
 # acquire/release taps (they call ntoskrnl-rust's VibeosLockdep* by link name).
 # Off by default = zero cost; enabled transitively by ntoskrnl-rust/lockdep.
 lockdep = []
+# cswitchdep P2 (cswitchdep-design.md): light up the spinlock held-counter
+# taps at the Kx choke point (inline/ke.rs) — they call ntoskrnl-rust's
+# VibeosCswitchdepSpin* by link name, same shape as the lockdep taps.
+# Enabled transitively by ntoskrnl-rust/cswitchdep.
+cswitchdep = []

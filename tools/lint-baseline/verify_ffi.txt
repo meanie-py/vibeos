@@ -1,18 +1,17 @@
-  C_MACRO: 94
-  FLEX_ARRAY: 66
-  TOTAL: 160 issues across 2347 files
   [C_MACRO] sdk/lib/rust/cc-rust/src/cacheman.rs:38: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/cachesup.rs:170: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/close.rs:45: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/fileinfo.rs:49: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/fsctrl.rs:27: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdfs-rust/src/strucsup.rs:84: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/cdfs-rust/src/verfysup.rs:144: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/cdfs-rust/src/verfysup.rs:151: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/cdrom-rust/src/cdrom.rs:229: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/classpnp-rust/src/class.rs:102: IoMarkIrpPending: IoMarkIrpPending is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/classpnp-rust/src/class.rs:89: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/classpnp-rust/src/shims.rs:21: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/classpnp-rust/src/shims.rs:23: IoMarkIrpPending: IoMarkIrpPending is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/config-rust/src/cmdelay.rs:54: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/config-rust/src/cmlazy.rs:32: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/dbgk-rust/src/dbgkobj.rs:127: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/dbgk-rust/src/dbgkutil.rs:21: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/disk-rust/src/disk.rs:541: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
@@ -64,11 +63,9 @@
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ARM3/mminit.rs:19: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ARM3/virtual.rs:112: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/amd64/init.rs:68: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/config/cmdelay.rs:54: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/config/cmlazy.rs:32: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/callback.rs:49: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/callback.rs:50: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/init.rs:259: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/init.rs:260: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ex/timer.rs:85: InsertTailList: InsertTailList is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ke/procobj.rs:127: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ke/thrdschd.rs:45: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
@@ -78,15 +75,15 @@
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/mm/section.rs:140: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/mm/section.rs:155: ObReferenceObject: ObReferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/mm/section_io.rs:31: ObReferenceObject: ObReferenceObject is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/po/events.rs:25: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/po/poshtdwn.rs:30: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/po/poshtdwn.rs:31: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/po/povolume.rs:37: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/po/povolume.rs:38: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ps/quota.rs:22: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/rtl/misc.rs:47: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/pnpmgr-rust/src/devaction.rs:300: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/pnpmgr-rust/src/pnpreport.rs:42: ExInitializeWorkItem: ExInitializeWorkItem is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/po-rust/src/events.rs:25: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/po-rust/src/poshtdwn.rs:30: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/po-rust/src/poshtdwn.rs:31: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/po-rust/src/povolume.rs:37: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/po-rust/src/povolume.rs:38: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/ps-rust/src/quota.rs:22: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/rtlk-rust/src/misc.rs:47: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/se-rust/src/semgr.rs:89: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/se-rust/src/srm.rs:35: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/usbhub-rust/src/usbhub.rs:41: IoSizeOfIrp: IoSizeOfIrp is a C macro, not a real function — should be inlined in Rust
@@ -161,6 +158,4 @@
   [FLEX_ARRAY] sdk/lib/rust/storahci-rust/src/storahci.rs:1270: List: Direct indexing of flexible array CM_RESOURCE_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/storahci-rust/src/storahci.rs:1270: List: Direct indexing of flexible array _CM_RESOURCE_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/storahci-rust/src/storahci.rs:1270: List: Direct indexing of flexible array _IO_RESOURCE_REQUIREMENTS_LIST.List — use pointer arithmetic instead (bindgen declares as [T; 1])
-Bindgen catalog: 2921 functions
-Spec catalog: 1571 exports
 Summary:

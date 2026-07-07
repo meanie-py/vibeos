@@ -294,6 +294,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "config-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "conutils-rust"
 version = "0.1.0"
 dependencies = [
@@ -661,6 +669,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "inbv-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "inflib-rust"
 version = "0.1.0"
 dependencies = [
@@ -698,6 +713,22 @@ name = "kbdhid-rust"
 version = "0.1.0"
 dependencies = [
  "hid-sys",
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "kd-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "kd64-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
  "ntkrnl-sys",
 ]
 
@@ -786,10 +817,14 @@ version = "0.1.0"
 dependencies = [
  "cc-rust",
  "cmboot-rust",
+ "config-rust",
  "dbgk-rust",
  "fsrtl-rust",
  "fstub-rust",
+ "inbv-rust",
  "iomgr-rust",
+ "kd-rust",
+ "kd64-rust",
  "kdbg-rust",
  "ke-inlines",
  "ke-macros",
@@ -797,8 +832,14 @@ dependencies = [
  "ntoskrnl-rust",
  "ntprintf",
  "ntprintf_w",
+ "ob-rust",
  "pnpmgr-rust",
+ "po-rust",
+ "ps-rust",
+ "rtlk-rust",
  "se-rust",
+ "vdm-rust",
+ "vf-rust",
  "wmi-rust",
 ]
 
@@ -1188,6 +1229,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ob-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1264,6 +1313,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "po-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "prefix"
 version = "0.1.0"
 
@@ -1309,6 +1365,14 @@ dependencies = [
 name = "processr-rust"
 version = "0.1.0"
 dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
+name = "ps-rust"
+version = "0.1.0"
+dependencies = [
+ "dbgprint-rust",
  "ntkrnl-sys",
 ]
 
@@ -1554,6 +1618,13 @@ name = "rtl-vista-rust"
 version = "0.1.0"
 dependencies = [
  "rtl-sync",
+]
+
+[[package]]
+name = "rtlk-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]
@@ -2000,8 +2071,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
+name = "vdm-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
+
+[[package]]
 name = "version-rust"
 version = "0.1.0"
+
+[[package]]
+name = "vf-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
 
 [[package]]
 name = "virtio-drivers"

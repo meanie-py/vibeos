@@ -246,6 +246,26 @@ def build(args, repo: Path) -> int:
     run = Run("build", arch)
     cold = bool(args.clean)
 
+    # lockdep/cswitchdep need `feature(link_llvm_intrinsics)` (llvm.returnaddress
+    # culprit capture), which is nightly-only. The arm64 kernel builds its
+    # BUILTIN target on the STABLE channel (reactos-link; the x86 kernels use
+    # the custom JSON target on nightly), so an armed arm64 build dies mid-ninja
+    # with E0554. Fail fast and clearly instead (same wall as the long-standing
+    # "arm64 lockdep probe BLOCKED" note; lifts when arm64 moves to nightly).
+    if arch == "arm64" and (getattr(args, "lockdep", False) or getattr(args, "cswitchdep", False)):
+        run.classification = "INSTR_UNSUPPORTED_ARCH"
+        run.add(
+            Stage(
+                "preflight",
+                status="fail",
+                detail="--lockdep/--cswitchdep are x86-only: the arm64 kernel builds on "
+                "stable, and the instrumentation needs nightly-only link_llvm_intrinsics "
+                "(E0554)",
+                salient=["lift by moving the arm64 kernel build to the nightly channel"],
+            )
+        )
+        return run.finalize(repo)
+
     if not build_dir.is_dir() and not canon.available():
         # With userns available a missing build dir is auto-provisioned by the
         # canonize stage below (fresh canonical configure, fast on cache hits).
@@ -260,27 +280,30 @@ def build(args, repo: Path) -> int:
         )
         return run.finalize(repo)
 
-    # Host CPU broker: a build is the writer in the writer-takes-all CPU pool — it grabs
-    # ALL leases (exclusive host, so no concurrent TCG boot starves into a false
-    # HANG_TIMEOUT) AND the per-build-dir lock (so two builds never corrupt the same dir,
-    # the determinism-verify-vs-gate incident). Held around the whole build; on a stuck
+    # Host CPU broker: a build grabs a ceil(K/max_builds) SHARE of the cpuheavy pool
+    # (default 2 of 4 → two builds may run concurrently host-wide; two running builds
+    # exhaust the pool so native-TCG boots keep their starvation protection) AND the
+    # per-build-dir lock (so two builds never corrupt the same dir, the
+    # determinism-verify-vs-gate incident). Held around the whole build; on a stuck
     # holder it warns + proceeds unlocked, and it's a no-op when the broker is disabled.
     with hostlock.build_lock(build_dir, arch):
         return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
 
 
-def _lockdep_in_cache(build_dir: Path) -> bool:
+def _flag_in_cache(build_dir: Path, flag: str) -> bool:
     cache = build_dir / "CMakeCache.txt"
     try:
         for line in cache.read_text(errors="ignore").splitlines():
-            if line.startswith("VIBEOS_LOCKDEP:"):
+            if line.startswith(f"{flag}:"):
                 return line.split("=", 1)[-1].strip() in ("ON", "1", "TRUE")
     except OSError:
         pass
     return False
 
 
-def _maybe_canonize(run, repo: Path, build_dir: Path, arch: str, lockdep: bool) -> bool | None:
+def _maybe_canonize(
+    run, repo: Path, build_dir: Path, arch: str, instr_flags: dict[str, bool]
+) -> bool | None:
     """Ensure the build dir is configured at the CANONICAL path (see canon.py) so
     caches share across worktrees. Returns True → wrap build cmds in canon-run,
     False → legacy real-path passthrough (userns unavailable), None → hard fail.
@@ -289,26 +312,29 @@ def _maybe_canonize(run, repo: Path, build_dir: Path, arch: str, lockdep: bool) 
     LOUD one-time full rebuild that repopulates the shared cache; every later
     build (any worktree) hits it."""
     if canon.is_canonical(build_dir):
-        # sync-instrumentation §4 lockdep (Tier-2): the flag is per-BUILD state,
+        # Instrumentation flags (lockdep §4 / cswitchdep) are per-BUILD state,
         # not sticky cache state — reconcile every build so a plain (no-flag)
         # build deterministically flips a stale ON back OFF and the gate never
         # inherits an instrumented kernel.
-        if lockdep != _lockdep_in_cache(build_dir):
-            val = "ON" if lockdep else "OFF"
+        stale = {
+            flag: on for flag, on in instr_flags.items() if on != _flag_in_cache(build_dir, flag)
+        }
+        if stale:
+            defs = [f"-D{flag}={'ON' if on else 'OFF'}" for flag, on in stale.items()]
             cp = run.run(
-                canon.wrap(repo, ["cmake", f"-DVIBEOS_LOCKDEP={val}", "."]),
+                canon.wrap(repo, ["cmake", *defs, "."]),
                 cwd=build_dir,
-                stage="lockdep-config",
+                stage="instr-config",
                 timeout=600,
             )
             if cp.returncode != 0:
                 run.classification = "CMAKE_CONFIGURE_FAIL"
                 run.add(
                     Stage(
-                        "lockdep-config",
+                        "instr-config",
                         exit=cp.returncode,
                         status="fail",
-                        detail=f"cmake -DVIBEOS_LOCKDEP={val} reconfigure failed",
+                        detail=f"cmake {' '.join(defs)} reconfigure failed",
                         salient=[
                             ln.strip()
                             for ln in (cp.stdout + cp.stderr).splitlines()
@@ -317,7 +343,7 @@ def _maybe_canonize(run, repo: Path, build_dir: Path, arch: str, lockdep: bool) 
                     )
                 )
                 return None
-            run.add(Stage("lockdep-config", status="ok", detail=f"VIBEOS_LOCKDEP={val}"))
+            run.add(Stage("instr-config", status="ok", detail=" ".join(defs)))
         return True
     if not canon.available():
         run.add(
@@ -340,8 +366,7 @@ def _maybe_canonize(run, repo: Path, build_dir: Path, arch: str, lockdep: bool) 
         )
         return None
     carried = canon.carried_options(build_dir)
-    if lockdep:
-        carried = [*carried, "-DVIBEOS_LOCKDEP=ON"]
+    carried = [*carried, *(f"-D{flag}=ON" for flag, on in instr_flags.items() if on)]
     fresh = not (build_dir / "CMakeCache.txt").is_file()
     if build_dir.exists():
         shutil.rmtree(build_dir)  # legacy caches bake real paths into every generated file
@@ -415,17 +440,53 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
                 tops.append(d)
         return tops
 
-    def _probe(root: Path, links: str, prune: list[Path]) -> str | None:
+    def _probe(root: Path, links: str, prune: list[Path], *, all_hits: bool = False):
         cmd: list[str] = ["find", str(root)]
         for p in prune:
             cmd += ["-path", str(p), "-prune", "-o"]
-        cmd += ["-type", "f", "-links", links, "-print", "-quit"]
+        cmd += ["-type", "f", "-links", links, "-print"]
+        if not all_hits:
+            cmd += ["-quit"]
         try:
             cp = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         except (OSError, subprocess.SubprocessError):
             run.add(Stage("isolation", status="warn", detail=f"probe failed for {root} — skipped"))
-            return None
+            return [] if all_hits else None
+        if all_hits:
+            return [ln for ln in cp.stdout.splitlines() if ln.strip()][:200]
         return cp.stdout.strip() or None
+
+    def _foreign_links(cands: list[str]) -> list[str]:
+        """Filter multi-link cargo files down to the ones whose links are NOT
+        all inside this worktree. Cargo's incremental sessions legitimately
+        hardlink metadata.rmeta into deps/ (nlink = 1 + N session dirs, all
+        in-tree), so nlink>2 alone is NOT the dedup signature — a link path
+        OUTSIDE the worktree is. One find walk accounts every candidate inode."""
+        infos: dict[int, list] = {}
+        for h in cands:
+            try:
+                st = os.stat(h)
+            except OSError:
+                continue
+            infos.setdefault(st.st_ino, [st.st_nlink, h])
+        if not infos:
+            return []
+        cond: list[str] = []
+        for ino in infos:
+            cond += ["-inum", str(ino), "-o"]
+        cmd = ["find", str(repo), "-type", "f", "(", *cond[:-1], ")", "-printf", "%i\n"]
+        try:
+            cp = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        except (OSError, subprocess.SubprocessError):
+            # Accounting failed — fail SAFE (treat as foreign; a spurious
+            # refusal is recoverable, a corrupted sibling build is not).
+            return [h for _, h in infos.values()]
+        seen: dict[int, int] = {}
+        for ln in cp.stdout.splitlines():
+            if ln.strip().isdigit():
+                ino = int(ln)
+                seen[ino] = seen.get(ino, 0) + 1
+        return [h for ino, (nlink, h) in infos.items() if seen.get(ino, 0) < nlink]
 
     hits: list[str] = []
     if build_dir.is_dir():
@@ -434,14 +495,12 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
         if hit:
             hits.append(f"{hit} (links 2+ in a cmake tree)")
         for c in nested_cargo:
-            hit = _probe(c, "+2", [])
-            if hit:
-                hits.append(f"{hit} (links 3+ in a cargo dir)")
+            for f in _foreign_links(_probe(c, "+2", [], all_hits=True)):
+                hits.append(f"{f} (links 3+ in a cargo dir, link escapes this worktree)")
     ws = repo / "sdk" / "lib" / "rust" / "target"
     if ws.is_dir():
-        hit = _probe(ws, "+2", [])
-        if hit:
-            hits.append(f"{hit} (links 3+ in a cargo dir)")
+        for f in _foreign_links(_probe(ws, "+2", [], all_hits=True)):
+            hits.append(f"{f} (links 3+ in a cargo dir, link escapes this worktree)")
     if not hits:
         return True
     run.classification = "ISOLATION_FAIL"
@@ -469,9 +528,18 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
 _FLAG_SIGNATURES = [
     (
         "VIBEOS_LOCKDEP",
-        lambda args: bool(getattr(args, "lockdep", False)),
+        # cswitchdep IMPLIES the lockdep cargo feature (held-set mirror), so its
+        # symbol is legitimately present in a --cswitchdep build too.
+        lambda args: bool(getattr(args, "lockdep", False))
+        or bool(getattr(args, "cswitchdep", False)),
         Path("ntoskrnl") / "ntoskrnl.exe",
         "VIBEOS_LOCKDEP",
+    ),
+    (
+        "VIBEOS_CSWITCHDEP",
+        lambda args: bool(getattr(args, "cswitchdep", False)),
+        Path("ntoskrnl") / "ntoskrnl.exe",
+        "VIBEOS_CSWITCHDEP",
     ),
 ]
 
@@ -488,7 +556,13 @@ def _verify_flag_artifacts(run, repo: Path, build_dir: Path, args) -> bool:
             cp = subprocess.run(
                 [str(nm), str(artifact)], capture_output=True, text=True, timeout=120
             )
-            present = any(ln.endswith(f" {symbol}") for ln in cp.stdout.splitlines())
+            # i386 decorates C-ABI statics with a leading underscore
+            # (_VIBEOS_LOCKDEP) — match both forms or every i386 armed build
+            # false-fails (found arming i386 for the first time, 2026-07-07).
+            present = any(
+                ln.endswith(f" {symbol}") or ln.endswith(f" _{symbol}")
+                for ln in cp.stdout.splitlines()
+            )
         except (OSError, subprocess.SubprocessError):
             run.add(Stage("flag-verify", status="warn", detail=f"llvm-nm failed for {rel}"))
             continue
@@ -524,7 +598,16 @@ def _verify_flag_artifacts(run, repo: Path, build_dir: Path, args) -> bool:
 def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: bool) -> int:
     if not _isolation_preflight(run, repo, build_dir):
         return run.finalize(repo)
-    wrapped = _maybe_canonize(run, repo, build_dir, arch, getattr(args, "lockdep", False))
+    wrapped = _maybe_canonize(
+        run,
+        repo,
+        build_dir,
+        arch,
+        {
+            "VIBEOS_LOCKDEP": bool(getattr(args, "lockdep", False)),
+            "VIBEOS_CSWITCHDEP": bool(getattr(args, "cswitchdep", False)),
+        },
+    )
     if wrapped is None:
         return run.finalize(repo)
 

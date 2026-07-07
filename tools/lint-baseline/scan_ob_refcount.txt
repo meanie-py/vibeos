@@ -1,0 +1,8 @@
+sdk/lib/rust/dbgk-rust/src/dbgkobj.rs:1433: OBREF_LEAK_RETURN
+sdk/lib/rust/dbgk-rust/src/dbgkobj.rs:792: OBREF_LEAK_RETURN
+sdk/lib/rust/dbgk-rust/src/dbgkobj.rs:803: OBREF_LEAK_RETURN
+sdk/lib/rust/ntoskrnl-rust/src/ARM3/sysldr.rs:1336: OBREF_LEAK_RETURN
+sdk/lib/rust/ntoskrnl-rust/src/ex/profile.rs:225: OBREF_LEAK_RETURN
+sdk/lib/rust/ntoskrnl-rust/src/mm/section.rs:3111: OBREF_LEAK_RETURN
+sdk/lib/rust/ps-rust/src/process.rs:559: OBREF_LEAK_RETURN
+sdk/lib/rust/ps-rust/src/thread.rs:331: OBREF_LEAK_RETURN

@@ -223,7 +223,19 @@ unsafe fn ExfWaitForRundownProtectionRelease_impl(RunRef: PEX_RUNDOWN_REF) {
         return;
     }
 
-    KeWaitForSingleObject(Event as PVOID, 0, 0i8, 0u8, core::ptr::null_mut());
+    // RunToken pilot (execution-context-ownership-model.md Layer 1): the CPS
+    // wait consumes the region's token — a guard borrowing it would not compile.
+    ntkrnl_sys::token::with_token::<ntkrnl_sys::token::Passive, _>(|tok| {
+        ntkrnl_sys::token::wait_for(
+            tok,
+            Event as PVOID,
+            0,
+            0i8,
+            0u8,
+            core::ptr::null_mut(),
+            |_tok, _status| (),
+        )
+    });
 }
 
 #[inline(always)]

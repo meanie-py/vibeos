@@ -648,7 +648,13 @@ function(add_cargo_module _target _crate _output)
     # env. Default off = zero cost.
     set(_cargo_env "")
     if(VIBEOS_LOCKDEP AND _crate MATCHES "^(ntoskrnl-cargo|ntkrnlmp-cargo)$")
-        set(_cargo_env VIBEOS_LOCKDEP=1)
+        list(APPEND _cargo_env VIBEOS_LOCKDEP=1)
+    endif()
+    # cswitchdep (cswitchdep-design.md): -DVIBEOS_CSWITCHDEP=ON arms the
+    # context-switch hand-off verifier (same env→build.rs→--features plumbing;
+    # the cargo feature implies lockdep so the held-set mirror is present).
+    if(VIBEOS_CSWITCHDEP AND _crate MATCHES "^(ntoskrnl-cargo|ntkrnlmp-cargo)$")
+        list(APPEND _cargo_env VIBEOS_CSWITCHDEP=1)
     endif()
 
     # Rebuild triggers: glob the bin crate (build.rs + target jsons + Cargo.toml

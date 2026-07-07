@@ -39,6 +39,8 @@ extern "C" {
 
 /// Selftest mode parsed from the tripwire blob: 0 none, 1 pattern, 2 guard.
 static mut VIBE_SELFTEST: u8 = 0;
+/// CSWITCH_SELFTEST=1 armed via fw_cfg (consumed by `KiStartSyncCensus`).
+pub static mut CSWITCH_SELFTEST_ARMED: bool = false;
 
 const TRIPWIRE_FILE: &[u8] = b"opt/org.vibeos.tripwire";
 const CFG_MAX: usize = 256;
@@ -194,6 +196,22 @@ unsafe fn apply_token(tok: &[u8]) {
                 0
             }
         };
+    } else if let Some(val) = token_val(tok, b"CSWITCH_SELFTEST") {
+        // cswitchdep-design.md: prove the detector barks — deliberately hold a
+        // spinlock across a (simulated) voluntary switch at census start and
+        // expect SLEEP_WITH_SPINLOCK. Non-destructive; runs once at PASSIVE.
+        if val == b"1" {
+            CSWITCH_SELFTEST_ARMED = true;
+            #[cfg(feature = "cswitchdep")]
+            DbgPrint(b"[TRIPWIRE] cswitchdep selftest armed\n\0".as_ptr());
+            // Fail loud, never silently degrade: armed without the detector
+            // in the build is a config error, not a no-op.
+            #[cfg(not(feature = "cswitchdep"))]
+            DbgPrint(
+                b"[TRIPWIRE] ERROR: CSWITCH_SELFTEST armed but cswitchdep NOT built in (need --cswitchdep)\n\0"
+                    .as_ptr(),
+            );
+        }
     } else if !tok.is_empty() {
         DbgPrint(b"[TRIPWIRE] ERROR: unknown tripwire token (ignored)\n\0".as_ptr());
     }
