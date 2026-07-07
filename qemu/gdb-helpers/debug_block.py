@@ -454,8 +454,93 @@ class VibeosLockdepCmd(gdb.Command):
                 )
 
 
+# cswitchdep (feature = "cswitchdep"): context-switch hand-off verifier.
+CSWITCH_MAGIC = 0x43535731  # 'CSW1'
+CSWITCH_KINDS = {
+    1: "HIGH_IRQL_AT_SWITCH", 2: "IRQL_UNBALANCED_SWITCH", 3: "SWAP_IRQL",
+    4: "SWITCH_FROM_DPC", 5: "CURTHREAD_INCOHERENT", 6: "STACK_OOB",
+    7: "SLEEP_WITH_SPINLOCK", 8: "DPC_DISPATCH_IRQL", 9: "INTR_STATE_UNBALANCED",
+}
+
+
+class VibeosCswitchCmd(gdb.Command):
+    """vibeos-cswitch [threads]: cswitchdep context-switch verifier tables.
+
+    Prints the per-CPU shadow (switch census, spinlock held-counter + its
+    self-calibrating floor) and the violation ring (kinds above — symbolize
+    pc with qemu/addr2sym.sh). `threads` also dumps the live ThreadShadow
+    slots (gen=0 = birth-branded, never suspended). Requires a --cswitchdep
+    build; on a normal build the VIBEOS_CSWITCHDEP symbol is absent.
+    Layout is pinned by compile-time asserts in ke/cswitchdep.rs — keep the
+    offsets here in sync with them."""
+
+    def __init__(self):
+        super().__init__("vibeos-cswitch", gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        try:
+            base = int(gdb.parse_and_eval("&VIBEOS_CSWITCHDEP"))
+        except gdb.error:
+            raise gdb.GdbError(
+                "VIBEOS_CSWITCHDEP symbol absent — build with `vibeos-cli build --cswitchdep`"
+            )
+        psz = DebugBlock.load().ptr_size
+        ptr = "Q" if psz == 8 else "I"
+        # header: magic, thread_slots, dropped, _pad (4×u32) + violation_count u64
+        magic, thread_slots, dropped, _pad = struct.unpack("<IIII", _read(base, 16))
+        (vcount,) = struct.unpack("<Q", _read(base + 16, 8))
+        if magic not in (CSWITCH_MAGIC, 0):
+            raise gdb.GdbError(f"cswitchdep magic mismatch: {magic:#x}")
+        if thread_slots == 0:
+            thread_slots = 1024  # pre-init default (CSWITCH_THREADS)
+        # CpuShadow @24 (48 bytes): switch_irql u32, held i32, baseline i32,
+        # (4 pad), switches u64, spin_acquires u64, resume_no_record u32,
+        # first_runs u32, evictions u32, _pad u32.
+        (sw_irql, held, floor, switches, spin_acq, no_rec, first_runs,
+         evictions, _p2) = struct.unpack("<Iii4xQQIIII", _read(base + 24, 48))
+        print(
+            f"cswitchdep: switches={switches} violations={vcount} "
+            f"spin_acq={spin_acq} held_now={held} floor={floor} "
+            f"(first_runs={first_runs} no_record={no_rec} evictions={evictions} "
+            f"drops={dropped} last_switch_irql={sw_irql})"
+        )
+
+        HDR = 72  # offset_of!(CswitchTable, threads)
+        th_sz = psz + 8
+        viol_off = HDR + thread_slots * th_sz
+        # Violation: seq,expected,actual (3×u64) + kind,_pad (2×u32) +
+        # pc,old,new (3×ptr), tail-padded to 8 (AtomicU64 align).
+        viol_fmt = f"<QQQII{ptr * 3}"
+        viol_sz = (struct.calcsize(viol_fmt) + 7) & ~7
+        NVIOL = 16  # CSWITCH_VIOLATIONS
+        shown = 0
+        for i in range(NVIOL):
+            raw = _read(base + viol_off + i * viol_sz, struct.calcsize(viol_fmt))
+            seq, expected, actual, kind, _p, pc, old, new = struct.unpack(viol_fmt, raw)
+            if seq == 0:
+                continue
+            print(
+                f"  *** #{seq} {CSWITCH_KINDS.get(kind, kind)} old={old:#x} "
+                f"new={new:#x} expected={expected} actual={actual} pc={pc:#x}"
+            )
+            shown += 1
+        if shown == 0:
+            print("  no violations recorded")
+
+        if arg.strip() == "threads":
+            print("live ThreadShadow slots:")
+            for s in range(thread_slots):
+                tb = base + HDR + s * th_sz
+                kthread, gen, susp_irql = struct.unpack(f"<{ptr}II", _read(tb, th_sz))
+                if kthread == 0:
+                    continue
+                tag = "first-run" if gen == 0 else f"gen={gen} suspend_irql={susp_irql}"
+                print(f"  kthread={kthread:#x} {tag}")
+
+
 VibeosDebugBlockCmd()
 VibeosSynctraceCmd()
 VibeosThreadsCmd()
 VibeosFlightrecCmd()
 VibeosLockdepCmd()
+VibeosCswitchCmd()
