@@ -1363,7 +1363,7 @@ pub unsafe extern "system" fn ExFreePoolWithTag(p: PVOID, tag_to_free: ULONG) {
     // (a bad IO_WORKITEM pointer is the historical culprit). Fault HERE, at the
     // corrupting call site, so the 0x1E banner prints the true stack instead of
     // an innocent-victim crash minutes later.
-    if p as usize == crate::ke::ke_defs::KeGetCurrentThread() as usize {
+    if p as usize == ntkrnl_sys::mm::KeGetCurrentThread() as usize {
         extern "C" {
             static IOP_LAST_WORKITEM_ROUTINE: core::sync::atomic::AtomicUsize;
         }
