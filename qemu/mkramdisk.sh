@@ -360,6 +360,17 @@ PAYLOAD_MANIFEST=$(python3 "$PROJECT_DIR/tools/payloads/compile.py" manifest \
 if [ -n "$PAYLOAD_MANIFEST" ]; then
     echo "[*] staging payloads (VIBEOS_PAYLOAD=${VIBEOS_PAYLOAD:-<stamp>}${VIBEOS_DOOM:+ VIBEOS_DOOM=$VIBEOS_DOOM})"
     printf '%s\n' "$PAYLOAD_MANIFEST" | while IFS='=' read -r DEST SRC; do
+        # mcopy can't create parent dirs — mmd each path component first
+        # (probe-then-create, same non-interactive pattern as the Fonts dir).
+        DIR="$(dirname "$DEST")"
+        if [ "$DIR" != "." ]; then
+            PARTIAL=""
+            printf '%s\n' "$DIR" | tr '/' '\n' | while read -r COMP; do
+                PARTIAL="${PARTIAL:+$PARTIAL/}$COMP"
+                mdir -i "$RAMDISK_IMG" "::/$PARTIAL" >/dev/null 2>&1 \
+                    || mmd -i "$RAMDISK_IMG" "::/$PARTIAL"
+            done
+        fi
         echo "[*]   $(basename "$SRC") -> ::/$DEST"
         mcopy -o -i "$RAMDISK_IMG" "$SRC" "::/$DEST"
     done

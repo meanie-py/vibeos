@@ -324,6 +324,20 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
     docs/engineering/payload-harness-design.md."""
     test_file = repo / "tests" / "qemu" / "test_payload.py"
     pytest_arch = {"i386": "i386-uefi", "amd64": "amd64-uefi"}.get(arch, arch)
+    # Payloads that declare `net: true` (e.g. httpd) need the -net arch variant
+    # (NIC + payload hostfwd). Sniff the specs; one net payload upgrades the boot.
+    try:
+        import yaml as _yaml
+
+        for _name in payloads.split(","):
+            _spec_path = repo / "tools" / "payloads" / _name.strip() / "payload.yaml"
+            if _spec_path.is_file():
+                _spec = _yaml.safe_load(_spec_path.read_text()) or {}
+                if _spec.get("test", {}).get("net") and not pytest_arch.endswith("-net"):
+                    pytest_arch += "-net"
+                    break
+    except ImportError:
+        pass  # no pyyaml -> test_payload itself will fail loud on the guard
     cmd = [
         sys.executable,
         "-m",
