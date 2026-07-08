@@ -3407,6 +3407,35 @@ bugcheck path (KeBugCheckWithTf raising to HIGH; harmless secondary) and a
 nested 0x1E in KeGetBugMessageText. This is the §9.27 arm64 TDI flake wearing
 its new detector — one hit in ~20 armed boots today, so rarer than the historic ≈1/4 but alive; the waitdep chain dump above is the datum for the next debugging round.
 
+**Coverage extension (2026-07-07, landed with the ex crate-split):** the live
+catch was `bad-thread-ptr` fired from `check_unwait` at `KiUnlinkThread` —
+which proves the -1 Thread arrived via a path that BYPASSES `check_waittest`
+(KiWaitTest validates its object list at entry, so a corrupt block there
+fires object-side first). Three wake paths consume `WaitBlock->Thread`
+straight off a dispatcher wait list with no validation, and all three now run
+`check_waittest` before consuming:
+- `KeSetEventBoostPriority` (eventobj.rs — the pushlock event path; the event
+  can be a STACK-resident `EX_PUSH_LOCK_WAIT_BLOCK.WakeEvent`) → `KiUnlinkThread`.
+- `KiActivateWaiterQueue` (queue.rs — KQUEUE wake; worker queues). NB queue
+  waiters (KeRemoveQueue) never set `WaitBlock->Object` (C nor Rust — only
+  WaitListEntry is inserted), so this site passes `require_obj_backptr=false`
+  or every contended queue wake false-positives K_OBJ_BACKPTR.
+- `KeSignalGateBoostPriority` (gate.rs — no KiUnlinkThread in its path at
+  ALL, so a garbage thread there previously crashed with no waitdep report).
+
+The next hit therefore fires with **owner = the EVENT/QUEUE/GATE address**,
+which names the funnel and (for a stack-resident event) the owning frame —
+instead of the anonymous `check_unwait(-1)`.
+
+**Hypotheses killed on paper (2026-07-07, don't re-derive):** (a) the
+`ExfUnblockPushLock` WAIT-flag handshake is airtight for untimed waits — the
+walker signals only blocks whose fetch_and saw WAIT already CLEAR (committed
+sleeper), the canceller cases all synchronize correctly; (b) the timeout-path
+hole (no handshake left after sleep-commit → canceller can return while a
+walker is mid-signal on its stack event) is REAL in principle but unreachable:
+no caller in the tree passes a non-NULL Timeout to
+`ExTimedWaitForUnblockPushLock` (only `ExWaitForUnblockPushLock(NULL)`).
+
 ### 9.32 Static analysis for leaked Ob references — `scan_ob_refcount.py`
 
 Sibling of §9.28's IRQL scanner (same tree-sitter held-set engine), pointed at
