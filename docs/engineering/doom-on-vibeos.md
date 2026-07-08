@@ -18,13 +18,19 @@ adversarial integration test we don't otherwise have: every crash it hits is a r
 compat bug our own binaries mask. Getting Doom to render surfaced **three real bugs**
 (two in our kernel, one a toolchain miscompile) plus one open win32k gap — see below.
 
-## Quick start (the `VIBEOS_DOOM=1` opt-in — ALL 3 ARCHES)
+## Quick start (the `VIBEOS_PAYLOAD=doom` opt-in — ALL 3 ARCHES)
+
+> 2026-07-07: doom is now a **payload** under the generic payload harness
+> (`tools/payloads/doom/payload.yaml`, design:
+> `docs/engineering/payload-harness-design.md`). `VIBEOS_DOOM=1` and `--doom`
+> remain as aliases; `tests/qemu/test_doom.py` became the generic
+> `tests/qemu/test_payload.py` interpreter.
 
 Doom is wired as an **off-by-default** image flag on every arch. Two commands:
 
 ```bash
 tools/doom/build.sh all                            # fetch + cross-compile doomgeneric (-O0), 3 arches
-VIBEOS_DOOM=1 ./vibeos-cli build --arch <arch>     # stage doom.exe + doom1.wad into the boot media
+VIBEOS_PAYLOAD=doom ./vibeos-cli build --arch <arch>  # stage doom.exe + doom1.wad (alias: VIBEOS_DOOM=1)
 ./vibeos-cli smoke --arch <arch> --doom            # opt-in smoke: launch + render + input gates
 ```
 
@@ -45,16 +51,16 @@ How the flag stays off by default and safe to ship:
 
 ## The opt-in smoke suite (`--doom`)
 
-`tests/qemu/test_doom.py` (front door: `./vibeos-cli smoke --arch <a> --doom`,
+`tests/qemu/test_payload.py --payload doom` (front door: `./vibeos-cli smoke --arch <a> --payload doom`, alias `--doom`,
 which runs it as a separate boot after a green North-Star boot, net-suite
 style). Three gates, all against VIBEOS_DOOM-staged media:
 
-1. **`test_doom_launched`** — the `doom.exe created` serial marker (winlogon
+1. **`test_payload_launched`** — the `doom.exe created` serial marker (winlogon
    arm64 / userinit x86). Fails with the build recipe if media wasn't staged.
-2. **`test_doom_renders`** — two screendumps 2s apart must differ in ≥2% of
+2. **`test_payload_renders`** — two screendumps 2s apart must differ in ≥2% of
    pixels (the attract demo animates most of its viewport; a bare desktop only
    ticks the tray clock at <<0.1%). Catches GDI-blit/game-loop wedges.
-3. **`test_doom_input_reaches_game`** — the PLAYABLE gate: click into the
+3. **`test_payload_input_reaches_app`** — the PLAYABLE gate: click into the
    window (mouse chain: activation), then drive the menu with injected
    ESC→ENTER→ENTER→ENTER and **start a new game**. An idle first-person view
    is near-static (<1.2% frame delta, just the status-bar face) while the
@@ -219,6 +225,6 @@ separately (related to the desktop-input-desktop work in field-manual §9.23).
 ## Next
 
 - **Playable Doom on arm64** = fix bug #4 (arm64 kbd/mouse → focus), then flip
-  `test_doom_input_reaches_game`'s arm64 `xfail` to a hard assert.
+  `test_payload_input_reaches_app`'s arm64 `xfail` to a hard assert.
 - **PuTTY** (the truly-unmodified official binary, incl. an ARM64 build) + our smoltcp
   netstack = SSH from inside vibeos — the natural follow-on foreign-binary quest.
