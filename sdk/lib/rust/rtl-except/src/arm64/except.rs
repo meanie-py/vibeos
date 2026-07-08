@@ -12,6 +12,7 @@
 //! named fields; X[] indexing is used consistently throughout).
 
 use crate::types::*;
+use crate::arm64::unwind_decode;
 use ntkrnl_sys::ddk::*;
 
 /* Both the bindgen layer and types.rs declare RtlRaiseException; pin the
@@ -20,6 +21,18 @@ use ntkrnl_sys::ddk::*;
 use crate::types::RtlRaiseException;
 
 use core::ptr::{null_mut, write_volatile};
+
+/* Vectored exception handling lives in rtl-diag (`vectoreh.rs`), linked into the
+ * same librtl aggregate. These are the user-mode first-chance / continue hooks
+ * FEX-style JITs and IsBad*Ptr rely on; the arm64 dispatcher historically never
+ * called them (unlike i386). Declared extern; resolved at link time. */
+extern "system" {
+    fn RtlCallVectoredExceptionHandlers(
+        ExceptionRecord: PEXCEPTION_RECORD,
+        Context: PCONTEXT,
+    ) -> BOOLEAN;
+    fn RtlCallVectoredContinueHandlers(ExceptionRecord: PEXCEPTION_RECORD, Context: PCONTEXT);
+}
 
 /* ARM64 exception filter/handler types (file-local typedefs in the C) */
 type PARM64_EXCEPTION_FILTER = unsafe extern "C" fn(
@@ -76,7 +89,10 @@ unsafe fn RtlpLookupFunctionTable(
  * RtlpGetFunctionEndAddress - compute function end address from RUNTIME_FUNCTION.
  * ARM64 RUNTIME_FUNCTION has no EndAddress field; it must be derived.
  */
-unsafe fn RtlpGetFunctionEndAddress(FunctionEntry: PRUNTIME_FUNCTION, ImageBase: ULONG64) -> ULONG {
+pub(crate) unsafe fn RtlpGetFunctionEndAddress(
+    FunctionEntry: PRUNTIME_FUNCTION,
+    ImageBase: ULONG64,
+) -> ULONG {
     let Packed = &(*FunctionEntry).__bindgen_anon_1.__bindgen_anon_1;
     if Packed.Flag() != 0 {
         /* Packed format: FunctionLength is in 4-byte units */
@@ -122,8 +138,17 @@ pub unsafe extern "system" fn RtlLookupFunctionEntry(
 
     let FunctionTable = RtlpLookupFunctionTable(ControlPc, ImageBase, &mut TableLength);
     if FunctionTable.is_null() {
-        write_volatile(ImageBase, 0);
-        return null_mut();
+        /* No static .pdata for this PC — consult the dynamic function tables
+         * (JIT-registered unwind info: FEX guest frames, runtime codegen). */
+        let Dynamic = super::dynfntbl::RtlpLookupDynamicFunctionEntry(
+            ControlPc,
+            ImageBase,
+            _HistoryTable as *mut UNWIND_HISTORY_TABLE,
+        );
+        if Dynamic.is_null() {
+            write_volatile(ImageBase, 0);
+        }
+        return Dynamic;
     }
 
     let ControlRva = (ControlPc - *ImageBase) as ULONG;
@@ -163,11 +188,10 @@ pub unsafe extern "system" fn RtlLookupFunctionEntry(
  * For CR==0/1 (no frame pointer): saves at top of allocation.
  */
 #[no_mangle]
-#[allow(unused_assignments)] /* the C's IntSaveSize compute-then-overwrite is kept faithfully */
 pub unsafe extern "system" fn RtlVirtualUnwind(
     HandlerType: ULONG,
     ImageBase: ULONG64,
-    _ControlPc: ULONG64,
+    ControlPc: ULONG64,
     FunctionEntry: PRUNTIME_FUNCTION,
     Context: PCONTEXT,
     HandlerData: *mut PVOID,
@@ -175,143 +199,103 @@ pub unsafe extern "system" fn RtlVirtualUnwind(
     ContextPointers: PVOID,
 ) -> PEXCEPTION_ROUTINE {
     let NvContext = ContextPointers as PKNONVOLATILE_CONTEXT_POINTERS;
-    let SaveBase: ULONG64;
-    let mut Offset: ULONG;
-    let mut IntSaveSize: ULONG;
-    let mut HandlerRoutine: PEXCEPTION_ROUTINE = None;
 
     write_volatile(HandlerData, null_mut());
 
     let Packed = (*FunctionEntry).__bindgen_anon_1.__bindgen_anon_1;
     if Packed.Flag() != 0 {
-        /* ===== Packed unwind format ===== */
-        let Flag = Packed.Flag();
-        let RegI = Packed.RegI();
-        let RegF = Packed.RegF();
-        let H = Packed.H();
+        /* ===== Packed unwind format — canonical prolog per the ARM64 spec =====
+         * Reconstructs the exact save-area layout (spec "Packed unwind data",
+         * Steps 0–6) and reverses it, restoring x19..x(18+RegI), d8..d(8+RegF),
+         * fp/lr, and SP. Replaces the earlier hand-rolled approximation, which
+         * mislaid the FP area and the two-stage (savsz + locsz) allocation. */
+        let RegI = Packed.RegI() as ULONG64;
+        let RegF = Packed.RegF() as ULONG64;
+        let H = Packed.H() as ULONG64;
         let CR = Packed.CR();
-        let FrameSize = Packed.FrameSize();
+        let FrameSize = Packed.FrameSize() as ULONG64;
 
-        /* Compute save area sizes */
-        let CrSaveSize: ULONG = if CR == 3 { 16 } else if CR == 1 { 8 } else { 0 };
-        /* Integer regs saved: RegI registers, stored in pairs (last may be unpaired) */
-        IntSaveSize = ((RegI + 1) / 2) * 16;
-        if RegI % 2 != 0 && CR != 3 {
-            IntSaveSize -= 8; /* unpaired without CR=3 rounding */
-        }
-        /* For simplicity, use RegI * 8 and round up to 16 for pairing */
-        IntSaveSize = ((RegI + 1) / 2) * 16;
-        /* FP regs: if RegF > 0, RegF pairs of d-registers */
-        let FpSaveSize: ULONG = if RegF > 0 { RegF * 16 } else { 0 };
-        /* Parameter homes */
-        let SaveAreaSize: ULONG =
-            CrSaveSize + IntSaveSize + FpSaveSize + if H != 0 { 64 } else { 0 };
+        let framesz = FrameSize * 16;
+        let intsz = RegI * 8 + if CR == 1 { 8 } else { 0 }; /* +lr for CR==01 */
+        let fpsz = if RegF > 0 { (RegF + 1) * 8 } else { 0 };
+        let savsz = (intsz + fpsz + 64 * H + 15) & !15u64;
+        let locsz = framesz.saturating_sub(savsz);
 
-        /* Establisher frame is the function's SP */
-        if CR == 3 {
-            /* Frame pointer available: FP points to the FP/LR save area */
-            write_volatile(EstablisherFrame, (*Context).__bindgen_anon_1.X[29]); /* FP register */
-            SaveBase = (*Context).__bindgen_anon_1.X[29]; /* saves start at FP */
+        let chained = CR >= 2; /* 10 = pacibsp chained, 11 = stp chained */
+
+        /* Establisher frame = SP at the fault point (the function's frame base). */
+        let sp = (*Context).Sp;
+        write_volatile(EstablisherFrame, sp);
+
+        /* Save areas are addressed from the post-prolog SP:
+         *   int regs at [sp + locsz ..], fp regs right after, chained fp/lr at [sp]. */
+        let intbase = sp + locsz;
+        let fpbase = intbase + intsz;
+
+        let Xp = (*Context).__bindgen_anon_1.X.as_mut_ptr();
+
+        /* Integer callee-saved x19..x(18+RegI). */
+        let NvRegs: *mut PULONG64 = if !NvContext.is_null() {
+            &raw mut (*NvContext).X19
         } else {
-            /* No frame pointer: saves at top of frame */
-            write_volatile(EstablisherFrame, (*Context).Sp);
-            SaveBase = (*Context).Sp + (FrameSize as ULONG64) * 16 - SaveAreaSize as ULONG64;
-        }
-
-        /* Restore registers from save area */
-        Offset = 0;
-
-        /* CR==3: restore FP and LR from [SaveBase+0] and [SaveBase+8] */
-        if CR == 3 {
-            let SavedFp = *((SaveBase + 0) as PULONG64);
-            let SavedLr = *((SaveBase + 8) as PULONG64);
-            (*Context).__bindgen_anon_1.X[29] = SavedFp;
-            (*Context).__bindgen_anon_1.X[30] = SavedLr;
-            if !NvContext.is_null() {
-                (*NvContext).Fp = (SaveBase + 0) as PULONG64;
-                (*NvContext).Lr = (SaveBase + 8) as PULONG64;
+            null_mut()
+        };
+        for i in 0..RegI as usize {
+            let slot = intbase + (i as ULONG64) * 8;
+            if 19 + i < 31 {
+                *Xp.add(19 + i) = core::ptr::read_unaligned(slot as *const ULONG64);
             }
-            Offset = 16;
+            if !NvRegs.is_null() {
+                *NvRegs.add(i) = slot as PULONG64;
+            }
         }
 
-        /* Restore integer registers x19-x(18+RegI) */
-        {
-            let NvRegs: *mut PULONG64 = if !NvContext.is_null() {
-                &raw mut (*NvContext).X19
-            } else {
-                null_mut()
-            };
-            for i in 0..RegI {
-                let Slot = (SaveBase + Offset as ULONG64 + i as ULONG64 * 8) as PULONG64;
-                /* raw-pointer write — C's Context->X[19 + i] is unchecked; avoid
-                   a bounds-check panic path on malformed RegI (12..15) */
-                *(*Context).__bindgen_anon_1.X.as_mut_ptr().add(19 + i as usize) = *Slot;
-                if !NvRegs.is_null() {
-                    *NvRegs.add(i as usize) = Slot;
+        /* FP callee-saved d8..d(8+RegF) (RegF>0 => RegF+1 registers). */
+        if RegF > 0 {
+            for i in 0..=RegF as usize {
+                let slot = fpbase + (i as ULONG64) * 8;
+                if 8 + i < 32 {
+                    (*Context).V[8 + i].__bindgen_anon_1.Low =
+                        core::ptr::read_unaligned(slot as *const ULONG64);
                 }
             }
-            Offset += IntSaveSize;
         }
 
-        /* Skip FP registers for now (RegF handling) */
-        Offset += FpSaveSize;
-        let _ = Offset; /* (final value unused, as in the C) */
-
-        /* Restore SP: caller's SP = current SP + FrameSize*16 */
-        (*Context).Sp += (FrameSize as ULONG64) * 16;
-
-        /* Restore PC from LR */
-        if CR == 3 {
-            /* LR was saved and restored above */
-            (*Context).Pc = (*Context).__bindgen_anon_1.X[30];
-        } else {
-            /* LR register holds return address (leaf or LR not saved) */
-            (*Context).Pc = (*Context).__bindgen_anon_1.X[30]; /* Context->Lr */
-        }
-
-        /* Check for exception/unwind handler */
-        if Flag == 1 {
-            /* Packed short: no handler */
-            HandlerRoutine = None;
-        } else if Flag == 2 {
-            /* Packed with .xdata containing handler info */
-            /* The handler data follows the RUNTIME_FUNCTION in .xdata */
-            /* For now, no handler */
-            HandlerRoutine = None;
-        }
-    } else {
-        /* ===== .xdata unwind format ===== */
-        let XData = RVA(ImageBase, (*FunctionEntry).__bindgen_anon_1.UnwindData) as *mut ULONG;
-        let XDataHeader = *XData;
-        let _FuncLen = XDataHeader & 0x3FFFF; /* (void)FuncLen */
-        let HasHandler = (XDataHeader >> 20) & 1; /* X bit */
-        let SingleEpilog = (XDataHeader >> 21) & 1; /* E bit */
-        let EpilogCount = (XDataHeader >> 22) & 0x1F;
-        let CodeWords = (XDataHeader >> 27) & 0x1F;
-
-        /* Establisher frame = current SP */
-        write_volatile(EstablisherFrame, (*Context).Sp);
-
-        /* For .xdata, we can't easily decode the unwind codes in this initial
-         * implementation. Do a simple leaf-function unwind: PC = LR */
-        (*Context).Pc = (*Context).__bindgen_anon_1.X[30]; /* Context->Lr */
-
-        /* If handler exists, find it after epilog scopes and unwind codes */
-        if HasHandler != 0 {
-            let EpilogScopeCount = if SingleEpilog != 0 { 0 } else { EpilogCount };
-            let HandlerRva = XData.add(1 + EpilogScopeCount as usize + CodeWords as usize);
-
-            if HandlerType & (UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER) != 0 {
-                HandlerRoutine = core::mem::transmute::<PVOID, PEXCEPTION_ROUTINE>(RVA(
-                    ImageBase,
-                    *HandlerRva,
-                ));
-                write_volatile(HandlerData, HandlerRva.add(1) as PVOID);
+        /* Return address + frame pointer. */
+        if chained {
+            *Xp.add(29) = core::ptr::read_unaligned(sp as *const ULONG64); /* fp */
+            *Xp.add(30) = core::ptr::read_unaligned((sp + 8) as *const ULONG64); /* lr */
+            if !NvContext.is_null() {
+                (*NvContext).Fp = sp as PULONG64;
+                (*NvContext).Lr = (sp + 8) as PULONG64;
             }
+        } else if CR == 1 {
+            *Xp.add(30) = core::ptr::read_unaligned((intbase + RegI * 8) as *const ULONG64);
         }
-    }
+        /* CR==00: lr already live in X[30] (frameless/leaf-ish). */
 
-    HandlerRoutine
+        /* Caller SP and resume PC. */
+        (*Context).Sp = sp + framesz;
+        (*Context).Pc = *Xp.add(30);
+
+        /* Packed Flag==2 carries no handler in the .pdata word itself; a packed
+         * entry that needs a language handler would have used .xdata (Flag==0).
+         * So there is no handler to return here. */
+        let _ = HandlerType;
+        None
+    } else {
+        /* ===== .xdata unwind format — full unwind-code interpreter ===== */
+        unwind_decode::virtual_unwind_xdata(
+            HandlerType,
+            ImageBase,
+            ControlPc,
+            FunctionEntry,
+            Context,
+            HandlerData,
+            EstablisherFrame,
+            NvContext,
+        )
+    }
 }
 
 /*
@@ -328,6 +312,18 @@ pub unsafe extern "system" fn RtlDispatchException(
     let mut EstablisherFrame: ULONG64 = 0;
     let mut Iterations: ULONG = 0;
 
+    /* First-chance vectored exception handlers (user mode only — the lists are
+     * only initialized by ntdll's RtlpInitializeVectoredExceptionHandling, and
+     * a kernel-mode dispatch of a kernel fault must not touch them). This is the
+     * path FEX-style JITs and IsBad*Ptr depend on; the historical arm64
+     * dispatcher never called it. */
+    if RtlpGetMode() == UserMode
+        && RtlCallVectoredExceptionHandlers(ExceptionRecord, Context) != 0
+    {
+        /* A handler returned EXCEPTION_CONTINUE_EXECUTION — resume. */
+        return 1;
+    }
+
     RtlpGetStackLimits(&mut StackLow, &mut StackHigh);
 
     /* Copy context for unwinding */
@@ -343,6 +339,14 @@ pub unsafe extern "system" fn RtlDispatchException(
         Iterations += 1;
         i < 200
     } {
+        /* Capture the control PC of THIS frame before RtlVirtualUnwind mutates
+         * UnwindContext.Pc to the caller — __C_specific_handler needs the PC of
+         * the function whose scope table it's searching, not the original fault
+         * PC. (The old code used (*Context).Pc here, so every frame above the
+         * faulting one looked up scopes with the wrong RVA and no __except ever
+         * matched — the bug that made user-mode SEH silently fall through.) */
+        let FrameControlPc = UnwindContext.Pc;
+
         /* Look up the function entry for current PC */
         let FunctionEntry = RtlLookupFunctionEntry(UnwindContext.Pc, &mut ImageBase, null_mut());
         if FunctionEntry.is_null() {
@@ -378,7 +382,7 @@ pub unsafe extern "system" fn RtlDispatchException(
 
         /* If there's a handler, call it */
         if let Some(Routine) = ExceptionRoutine {
-            DispatcherContext.ControlPc = (*Context).Pc as ULONG_PTR;
+            DispatcherContext.ControlPc = FrameControlPc as ULONG_PTR;
             DispatcherContext.ImageBase = ImageBase as ULONG_PTR;
             DispatcherContext.FunctionEntry = FunctionEntry;
             DispatcherContext.EstablisherFrame = EstablisherFrame as ULONG_PTR;
@@ -401,6 +405,11 @@ pub unsafe extern "system" fn RtlDispatchException(
                         NestedRecord.ExceptionRecord = ExceptionRecord;
                         NestedRecord.NumberParameters = 0;
                         RtlRaiseException(&mut NestedRecord);
+                    }
+                    /* User-mode: give registered vectored continue handlers a
+                     * shot before resuming (matches i386's continue path). */
+                    if RtlpGetMode() == UserMode {
+                        RtlCallVectoredContinueHandlers(ExceptionRecord, Context);
                     }
                     return 1; /* TRUE */
                 }
@@ -718,34 +727,8 @@ pub unsafe extern "system" fn RtlRestoreContext(
     NtContinue(ContextRecord, 0 /* FALSE */);
 }
 
-/* Dynamic function table stubs (not needed for initial boot) */
-
-#[no_mangle]
-pub unsafe extern "system" fn RtlAddFunctionTable(
-    _FunctionTable: PRUNTIME_FUNCTION,
-    _EntryCount: ULONG,
-    _BaseAddress: ULONG64,
-) -> BOOLEAN {
-    1 /* TRUE */
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn RtlDeleteFunctionTable(
-    _FunctionTable: PRUNTIME_FUNCTION,
-) -> BOOLEAN {
-    1 /* TRUE */
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn RtlInstallFunctionTableCallback(
-    _TableIdentifier: ULONG64,
-    _BaseAddress: ULONG64,
-    _Length: ULONG,
-    _Callback: PVOID,
-    _Context: PVOID,
-    _OutOfProcessCallbackDll: PCWSTR,
-) -> BOOLEAN {
-    1 /* TRUE */
-}
+/* Dynamic function table support lives in `super::dynfntbl` (real impl,
+ * replacing the former no-op stubs). RtlLookupFunctionEntry above consults it
+ * on a static-table miss. */
 
 /* EOF */

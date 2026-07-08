@@ -191,6 +191,30 @@ unsafe fn RtlGetProcessHeap() -> PVOID {
     (*NtCurrentPeb()).ProcessHeap
 }
 
+/// True if the UTF-16 image path (len in chars) ends with "smss.exe"
+/// (ASCII, case-insensitive). Used only to gate the arm64 FEX rung-0e
+/// self-test to the first user process.
+#[cfg(target_arch = "aarch64")]
+unsafe fn unicode_tail_is_smss(buf: *const u16, len: usize) -> bool {
+    const NEEDLE: &[u8] = b"smss.exe";
+    if buf.is_null() || len < NEEDLE.len() {
+        return false;
+    }
+    let start = len - NEEDLE.len();
+    for (i, &nc) in NEEDLE.iter().enumerate() {
+        let c = *buf.add(start + i);
+        let lc = if (b'A' as u16..=b'Z' as u16).contains(&c) {
+            c + 32
+        } else {
+            c
+        };
+        if lc != nc as u16 {
+            return false;
+        }
+    }
+    true
+}
+
 /// `RtlInitEmptyUnicodeString` — FORCEINLINE in rtlfuncs.h (no exported symbol).
 /// Shadows the bindgen extern decl (which has no backing symbol) so callers
 /// inline instead of emitting an unresolved reference.
@@ -2575,6 +2599,31 @@ pub unsafe extern "system" fn LdrpInit(
 
         if NT_SUCCESS(LoaderStatus) {
             _InterlockedIncrement(core::ptr::addr_of_mut!(LdrpProcessInitialized));
+
+            /* FEX bring-up rung 0e: user-mode fault-delivery self-test. Gated to
+             * smss.exe and OFF by default — probe 1 (table-based SEH) PASSES, but
+             * running the raise/unwind this early in smss's LdrpInit destabilizes
+             * smss's subsequent boot (hangs after the __except returns), so it is
+             * not armed on normal boots. Flip SEH_POC_U_ARMED to re-run the proof
+             * on demand. Full results: docs/engineering/fex-bringup-plan.md rung 0e.
+             * arm64 only (the shim is arch-gated in ntdll-cargo/build.rs). */
+            #[cfg(target_arch = "aarch64")]
+            {
+                const SEH_POC_U_ARMED: bool = false;
+                let pp = (*Peb).ProcessParameters;
+                if SEH_POC_U_ARMED
+                    && !pp.is_null()
+                    && unicode_tail_is_smss(
+                        (*pp).ImagePathName.Buffer,
+                        ((*pp).ImagePathName.Length / 2) as usize,
+                    )
+                {
+                    extern "C" {
+                        fn SehPocUserRun();
+                    }
+                    SehPocUserRun();
+                }
+            }
         }
     } else {
         if (*Peb).InheritedAddressSpace != 0 {
