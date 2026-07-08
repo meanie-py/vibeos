@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # tools/doom/build.sh — fetch + cross-compile doomgeneric for vibeos (the
-# foreign-binary demo). Off the critical path; only needed for the VIBEOS_DOOM=1
+# foreign-binary demo). Off the critical path; only needed for the doom payload
 # opt-in image. Full bring-up story + why each flag is load-bearing:
 # docs/engineering/doom-on-vibeos.md.
 #
 # Usage:
 #   tools/doom/build.sh [arm64|amd64|i386|all]   # default: arm64
 #
-# Outputs (consumed by mkramdisk.sh / the livecd staging when VIBEOS_DOOM=1):
+# Outputs (consumed via tools/payloads/doom/payload.yaml when VIBEOS_PAYLOAD=doom):
 #   tools/doom/doom-<arch>.exe
 #   tools/doom/doom1.wad          (shareware IWAD)
 set -euo pipefail
@@ -84,4 +84,4 @@ for arch in $ARCHES; do
     fi
 done
 
-echo "[doom] done. Enable in an image with: VIBEOS_DOOM=1 ./vibeos-cli build --arch <arch>"
+echo "[doom] done. Enable in an image with: VIBEOS_PAYLOAD=doom ./vibeos-cli build --arch <arch>"

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.qemu.vm import QemuVM, process_cpu_pct, PROJECT_DIR
+from tests.qemu.vm import PROJECT_DIR, QemuVM, process_cpu_pct
 
 # Add tools/ to path for scan_ud2
 sys.path.insert(0, str(PROJECT_DIR / "tools"))
@@ -540,7 +540,7 @@ def test_no_unexpected_ud2(arch: str) -> None:
         pytest.skip(f"ntoskrnl.exe not found at {ntoskrnl}")
 
     try:
-        from scan_ud2 import scan_ud2, find_objdump
+        from scan_ud2 import find_objdump, scan_ud2
     except ImportError:
         pytest.skip("scan_ud2.py not found in tools/")
 
