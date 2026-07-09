@@ -316,6 +316,38 @@ arm64-vs-amd64 difference is likely in device/port SPEED detection** (usbport/us
 speed from the PORTSC read through usbport's port-status reporting. NOT a DMA bug — the
 coherent-DMA adapter is exonerated.
 
+*Update 3 (2026-07-09, amd64-vs-arm64 trace diff + qTD-buffer QMP read + MapTransfer
+instrumentation — the deepest characterization):* ran amd64 with the same EHCI trace: the
+`eps` field is `2` (high-speed) on **both** arches and the packet-stage pattern
+(`setup -> complete`) is **identical** — so Update 2's speed hypothesis is disproven too. The
+real difference: **amd64 progresses to `dev 1`/`dev 2` (enumeration succeeds) while arm64
+stays at `dev 0`.** QMP-reading the arm64 control qTD buffers at the halt is decisive:
+- **SETUP qTD** `buffer0` is a valid address (`0x54d93368` = `FirstTD.PhysicalAddress +
+  offset_of!(EHCI_HCD_TD, SetupPacket)`, per `EHCI_ControlTransfer` in usbehci.rs:2585) but
+  its **contents are all ZERO** — the 8-byte SETUP packet (`80 06 …`) that `RtlCopyMemory`
+  should have written to `(*FirstTD).SetupPacket` is not at that physical address.
+- **IN (data) qTD** `buffer0` is **NULL (`0x0`)** — the descriptor sink has no address.
+
+The IN buffer is filled by `EHCI_MapAsyncTransferToTd` from `SgList[].SgPhysicalAddress`,
+which is populated ONLY by `USBPORT_MapTransfer` → `(*DmaOperations).MapTransfer`. **Temp
+instrumentation on `Arm64DmaMapTransfer` proved it is NEVER CALLED for this transfer**
+(empty trace) — so the coherent-DMA adapter is **exonerated a third time**, and the SG list
+is never populated → IN buffer = 0. `USBPORT_MapTransfer` is the execution routine of
+`AllocateAdapterChannel`, called from `USBPORT_FlushMapTransfers` (usbport.rs:2799) which
+only maps transfers already on `FdoExtension.MapTransferList`. **So the arm64 control
+transfer is never added to the MapTransferList (or its "needs map" decision differs), and
+separately the inline SETUP-packet copy lands at a physical address the qTD doesn't point
+to.** Both symptoms are guest-side in **usbport/usbehci control-transfer setup**, NOT the
+DMA adapter and NOT device speed. **Two precise next-instrumentation targets:** (1) print
+in `USBPORT_QueueActiveUrbToEndpoint`/the map-transfer-list add path whether the control
+transfer is enqueued for mapping on arm64 (vs amd64); (2) print `FirstTD.PhysicalAddress`,
+the SetupPacket source `(*TransferParameters).SetupPacket` bytes, and the VA written, to see
+why the SETUP copy and the buffer pointer disagree — a likely `EHCI_HCD_TD` `types_arm64.rs`
+layout skew (the SetupPacket field offset or `PhysicalAddress` field) in the same family as
+the fastfat/IO_STACK_LOCATION packing bugs. This is a NON-BLOCKING follow-up; the headline
+arm64 work (PCI bring-up, IO_STACK_LOCATION ABI fix, fastfat boot-restore) is landed and
+×3-gate-green on master.
+
 **Disposition:** the branch is NOT landable (arm64 not desktop-green). The
 `IO_STACK_LOCATION` pack-guard fix is a *real* ABI bug fix (the packed layout aliased
 `IoControlCode` onto `Argument2`), so the right resolution is to finish the old-stride
