@@ -669,7 +669,7 @@ sdk/lib/rust/iomgr-rust/src/driver.rs:1510: [UNWRAP] .unwrap() — panics on Err
 sdk/lib/rust/iomgr-rust/src/driver.rs:1654: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/driver.rs:2259: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/file.rs:2047: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/iomgr-rust/src/inlines.rs:433: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/iomgr-rust/src/inlines.rs:417: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/iocomp.rs:116: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/iofunc.rs:1834: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/iofunc.rs:2363: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -685,10 +685,10 @@ sdk/lib/rust/iomgr-rust/src/iorsrce.rs:760: [UNWRAP] .unwrap() — panics on Err
 sdk/lib/rust/iomgr-rust/src/iotimer.rs:82: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/iowork.rs:36: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/iowork.rs:48: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/iomgr-rust/src/irp.rs:1157: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/iomgr-rust/src/irp.rs:1164: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/iomgr-rust/src/irp.rs:1268: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/iomgr-rust/src/irp.rs:1336: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/iomgr-rust/src/irp.rs:1137: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/iomgr-rust/src/irp.rs:1144: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/iomgr-rust/src/irp.rs:1248: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/iomgr-rust/src/irp.rs:1316: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/volume.rs:400: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/iomgr-rust/src/volume.rs:773: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/kbdclass-rust/src/lib.rs:18: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
