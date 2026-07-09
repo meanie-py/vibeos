@@ -318,9 +318,9 @@ unsafe fn NetTestBootEnabled() -> bool {
     lError == ERROR_SUCCESS as LONG && dwType == REG_DWORD && dwValue == 1
 }
 
-// Loads the user's preloaded keyboard layouts. Called on ARM64 (and disabled
-// behind `#if 0` on x86 in the C, hence #[allow(dead_code)] off the ARM64 path).
-#[allow(dead_code)]
+// Loads the user's preloaded keyboard layouts. Called on all arches now —
+// the x86 `#if 0` (Rust-MM SEC_IMAGE deadlock) was obsoleted by the 2026-07-05
+// Mm fixes (field manual §9.13).
 unsafe fn InitKeyboardLayouts() -> BOOL {
     let mut wszKeyName: [u16; 12] = [0; 12];
     let mut wszKLID: [u16; 10] = [0; 10];
@@ -601,8 +601,15 @@ pub unsafe extern "system" fn WinMain(
 
     #[cfg(not(target_arch = "aarch64"))]
     {
-        // _USE_DUMMY_PSEH path (x86/amd64). InitKeyboardLayouts stays `#if 0`
-        // (NtCreateSection deadlock in Rust MM for SEC_IMAGE) — skipped.
+        // _USE_DUMMY_PSEH path (x86/amd64). InitKeyboardLayouts was `#if 0`
+        // in the C for a NtCreateSection SEC_IMAGE deadlock in Rust MM; that Mm
+        // family was fixed 2026-07-05 (field manual §9.13), and without a layout
+        // win32k drops every keystroke (gspklBaseLayout null). Re-enabled.
+        if InitKeyboardLayouts() == 0 {
+            DbgPrint(b"[WINLOGON] InitKeyboardLayouts failed (non-fatal)\n\0".as_ptr() as *const i8);
+        } else {
+            DbgPrint(b"[WINLOGON] InitKeyboardLayouts OK\n\0".as_ptr() as *const i8);
+        }
 
         /* Load system fonts SYNCHRONOUSLY now — right after the window station and
          * desktops exist (CreateWindowStationAndDesktops above) and BEFORE any text

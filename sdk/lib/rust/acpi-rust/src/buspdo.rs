@@ -375,23 +375,27 @@ pub const ACPI_STATE_D1: ULONG = 1;
 pub const ACPI_STATE_D2: ULONG = 2;
 pub const ACPI_STATE_D3: ULONG = 3;
 
+// Values match acpica/include/acrestyp.h (LEVEL_SENSITIVE/POS_DECODE/
+// READ_ONLY_MEMORY are the 0-valued members of their pairs; TYPE_A/B/F are
+// 1/2/3 after ACPI_COMPATIBILITY=0; TRANSFER_8_16 is 1, TRANSFER_16 is 2).
 pub const ACPI_PRODUCER: u8 = 0;
 pub const ACPI_CONSUMER: ULONG = 1;
 pub const ACPI_SHARED: u8 = 1;
-pub const ACPI_LEVEL_SENSITIVE: u8 = 1;
+pub const ACPI_LEVEL_SENSITIVE: u8 = 0;
+pub const ACPI_EDGE_SENSITIVE: u8 = 1;
 pub const ACPI_BUS_MASTER: u8 = 1;
 pub const ACPI_DECODE_16: u8 = 1;
-pub const ACPI_POS_DECODE: u8 = 1;
-pub const ACPI_READ_ONLY_MEMORY: u8 = 1;
+pub const ACPI_POS_DECODE: u8 = 0;
+pub const ACPI_READ_ONLY_MEMORY: u8 = 0;
 pub const ACPI_CACHABLE_MEMORY: ULONG = 1;
 pub const ACPI_WRITE_COMBINING_MEMORY: ULONG = 2;
 pub const ACPI_PREFETCHABLE_MEMORY: ULONG = 3;
-pub const ACPI_TYPE_A: ULONG = 0;
-pub const ACPI_TYPE_B: ULONG = 1;
-pub const ACPI_TYPE_F: ULONG = 2;
+pub const ACPI_TYPE_A: ULONG = 1;
+pub const ACPI_TYPE_B: ULONG = 2;
+pub const ACPI_TYPE_F: ULONG = 3;
 pub const ACPI_TRANSFER_8: ULONG = 0;
-pub const ACPI_TRANSFER_16: ULONG = 1;
-pub const ACPI_TRANSFER_8_16: ULONG = 2;
+pub const ACPI_TRANSFER_8_16: ULONG = 1;
+pub const ACPI_TRANSFER_16: ULONG = 2;
 
 pub const ACPI_RESOURCE_TYPE_IRQ: ULONG = 0;
 pub const ACPI_RESOURCE_TYPE_DMA: ULONG = 1;
@@ -411,22 +415,28 @@ pub const ACPI_RESOURCE_TYPE_EXTENDED_ADDRESS64: ULONG = 14;
 pub const ACPI_RESOURCE_TYPE_EXTENDED_IRQ: ULONG = 15;
 pub const ACPI_RESOURCE_TYPE_GENERIC_REGISTER: ULONG = 16;
 
-pub const ACPI_BUS_NUMBER_RANGE: u8 = 0;
+// acrestyp.h: MEMORY_RANGE=0, IO_RANGE=1, BUS_NUMBER_RANGE=2 (were swapped).
+pub const ACPI_MEMORY_RANGE: u8 = 0;
 pub const ACPI_IO_RANGE: u8 = 1;
-pub const ACPI_MEMORY_RANGE: ULONG = 2;
+pub const ACPI_BUS_NUMBER_RANGE: u8 = 2;
 
-pub const CmResourceTypeInterrupt: ULONG = 0;
-pub const CmResourceTypeMemory: ULONG = 1;
-pub const CmResourceTypePort: ULONG = 2;
-pub const CmResourceTypeDma: ULONG = 3;
-pub const CmResourceTypeDevicePrivate: ULONG = 4;
-pub const CmResourceTypeBusNumber: ULONG = 5;
-pub const CmResourceTypeMemoryLarge: ULONG = 6;
-pub const CmResourceTypeNonArbitrated: ULONG = 7;
-pub const CmResourceTypeConfigData: ULONG = 8;
-pub const CmResourceTypeDeviceSpecific: ULONG = 9;
-pub const CmResourceTypePcCardConfig: ULONG = 10;
-pub const CmResourceTypeMfCardConfig: ULONG = 11;
+// Values match sdk/include/xdk/cmtypes.h. These were hallucinated (Interrupt=0,
+// Port=2, ...) until 2026-07-07: every PS/2 boot resource got a garbage Type, so
+// IopTranslateDeviceResources failed and i8042prt never got IRP_MN_START_DEVICE —
+// keyboard+mouse dead on i386/amd64 while boot stayed green (field manual §9.34).
+pub const CmResourceTypeNull: ULONG = 0;
+pub const CmResourceTypePort: ULONG = 1;
+pub const CmResourceTypeInterrupt: ULONG = 2;
+pub const CmResourceTypeMemory: ULONG = 3;
+pub const CmResourceTypeDma: ULONG = 4;
+pub const CmResourceTypeDeviceSpecific: ULONG = 5;
+pub const CmResourceTypeBusNumber: ULONG = 6;
+pub const CmResourceTypeMemoryLarge: ULONG = 7;
+pub const CmResourceTypeNonArbitrated: ULONG = 128;
+pub const CmResourceTypeConfigData: ULONG = 128;
+pub const CmResourceTypeDevicePrivate: ULONG = 129;
+pub const CmResourceTypePcCardConfig: ULONG = 130;
+pub const CmResourceTypeMfCardConfig: ULONG = 131;
 
 pub const CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE: ULONG = 0x00;
 pub const CM_RESOURCE_INTERRUPT_LATCHED: ULONG = 0x01;
