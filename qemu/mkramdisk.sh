@@ -364,6 +364,25 @@ if [ "${VIBEOS_DOOM:-0}" = "1" ]; then
     fi
 fi
 
+# --- FEX hello-compute probe (opt-in, VIBEOS_FEX=1) ------------------------
+# Rung-2 bring-up (docs/engineering/fex-bringup-plan.md): stage the native-arm64
+# FEXCore harness fexprobe.exe + its UCRT runtime. OFF by default (winlogon's
+# GetFileAttributesW check makes the launch a silent no-op without it).
+# Build fexprobe first: tools/fex/build-fex.sh && tools/fex/build-hello-compute.sh
+if [ "${VIBEOS_FEX:-0}" = "1" ]; then
+    FEXPROBE="${VIBEOS_FEX_EXE:-$PROJECT_DIR/build-fex-hello/fexprobe.exe}"
+    UCRTBASE="$BUILD_DIR/dll/win32/ucrtbase/ucrtbase.dll"
+    if [ -f "$FEXPROBE" ] && [ -f "$UCRTBASE" ]; then
+        echo "[*] VIBEOS_FEX=1 — staging fexprobe.exe + ucrtbase.dll into system32"
+        mcopy -o -i "$RAMDISK_IMG" "$FEXPROBE" ::/reactos/system32/fexprobe.exe
+        mcopy -o -i "$RAMDISK_IMG" "$UCRTBASE" ::/reactos/system32/ucrtbase.dll
+    else
+        echo "[!] VIBEOS_FEX=1 but artifacts missing ($FEXPROBE / $UCRTBASE)."
+        echo "[!]   Build: tools/fex/build-fex.sh && tools/fex/build-hello-compute.sh; ninja ucrtbase"
+        exit 1
+    fi
+fi
+
 echo "[*] Ramdisk contents:"
 mdir -i "$RAMDISK_IMG" -/ :: 2>&1 | grep -E '(\.exe|\.dll|\.sys|\.nls|system|bytes)'
 

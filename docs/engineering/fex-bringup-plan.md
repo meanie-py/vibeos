@@ -220,6 +220,36 @@ Then **run FEXOfflineCompiler on vibeos arm64** — first proof that a freestand
 libc++ PE with FEX's mini-CRT runs against *our* ntdll, and that the JIT compiles
 x86 blocks on-box.
 
+### Rung 2 progress (2026-07-08) — harness built + launches on-box; wedges pre-main
+
+- **Harness authored + links:** `tools/fex/hello-compute/Main.cpp` (+ standalone
+  `CMakeLists.txt`, `tools/fex/build-hello-compute.sh`) — a native-arm64 PE
+  `fexprobe.exe` (4.5M) that drives the FEXCore Context API directly
+  (`Config::Initialize` → `CreateNewContext` → dummy signal/syscall handlers →
+  `InitCore` → `EnableExitOnHLT` → RWX blob → `CreateThread(RIP,SP)` +
+  64-bit-long-mode GDT → `ExecuteThread` → read back guest RAX). Blob is
+  `mov rax,0x2A; add rax,7; hlt`; PASS = RAX reads 0x31. Output via ntdll
+  `DbgPrint` → PL011 serial (`[FEX-HELLO]`). Links clean against the prebuilt
+  vendored FEXCore archives with our llvm-mingw — first proof the full FEXCore
+  link surface resolves into a *standalone* arm64 exe (not just the wow64 dll).
+- **Run vehicle wired (doom-pattern):** `winlogon-rust` `TryStartFexProbe()`
+  spawns `fexprobe.exe` if staged (gated on `GetFileAttributesW`, silent no-op
+  otherwise), `WaitForSingleObject(30s)`. `mkramdisk.sh` stages
+  `fexprobe.exe` + `ucrtbase.dll` under `VIBEOS_FEX=1` (off by default).
+  `ucrtbase.dll` builds clean on arm64.
+- **On-box status: LAUNCHES, wedges pre-`main`.** With `VIBEOS_FEX=1` the boot
+  reaches desktop green and `fexprobe.exe` starts as PID 204 —
+  `PspUserThreadStartup Image=fexprobe.exe` + `kernel32 DllMain PROCESS_ATTACH
+  PID=204` — but never prints `kernel32 ... done OK PID=204`, never reaches the
+  first `[FEX-HELLO]` line (the first thing `main` does), and never exits. So it
+  wedges during **DLL/CRT init, before `main`** — prime suspects: `ucrtbase.dll`
+  DllMain/CRT init, or FEX's static global constructors (rpmalloc/jemalloc
+  allocator init, libc++ statics) running against our loader. Imports beyond
+  ntdll: KERNEL32/ADVAPI32 + the UCRT api-sets (`ApiSetResolveToHost` resolves
+  these by default). Next: attach the kernel-debug toolkit / add trace to narrow
+  the pre-main hang (which DllMain, or the first global ctor), same class as any
+  new user exe's first bring-up.
+
 **Rung 2 — "hello compute": execute a static x86 blob.** Minimal native arm64
 harness exe driving the FEXCore Context API directly (`CreateNewContext` →
 `CreateThread(RIP, SP)` → `ExecuteThread`): RWX buffer, load blob, run to a clean
