@@ -348,6 +348,24 @@ the fastfat/IO_STACK_LOCATION packing bugs. This is a NON-BLOCKING follow-up; th
 arm64 work (PCI bring-up, IO_STACK_LOCATION ABI fix, fastfat boot-restore) is landed and
 ×3-gate-green on master.
 
+*Update 4 (validated the "MapTransfer not called" finding + traced the map decision):*
+confirmed the instrumentation was real — `strings build-arm64/hal/halarm64/hal.dll | grep
+DMA-MT` shows the print IS in the running binary (editing `dma.rs` directly recompiles
+hal-rust, unlike the task-#17 ntkrnl-sys-dependency staleness), so "MapTransfer genuinely not
+called for the control transfer" holds and the DMA adapter stays exonerated. Traced the
+decision: `USBPORT_QueueActiveUrbToEndpoint` (usbport-rust/queue.rs:1167) routes a transfer
+to the plain `TransferList` (NO DMA map) instead of `MapTransferList` when
+`TransferParameters.TransferBufferLength == 0 || (Endpoint.Flags & ENDPOINT_FLAG_DMA_TYPE)
+== 0`. `ENDPOINT_FLAG_DMA_TYPE` (=1, all arches) is set unconditionally once the endpoint
+opens (endpoint.rs:1160), and the endpoint DID open (QH exists), so that half should be set.
+`USBPORT_TRANSFER` and `USBPORT_TRANSFER_PARAMETERS` layouts are **byte-identical** arm64 vs
+amd64 (checked) — so no struct skew there. **So the immediate next step is a `--clean` build
+(NOT warm) instrumenting `USBPORT_QueueActiveUrbToEndpoint` to print
+`TransferBufferLength` + `Endpoint.Flags` for the arm64 control transfer**: whichever half of
+the condition is unexpectedly true (length read as 0, or the DMA-TYPE flag clear) is the
+root, and both point at a subtle field read / endpoint-open ordering that differs on arm64
+despite identical struct layouts. This remains a well-characterized, NON-BLOCKING follow-up.
+
 **Disposition:** the branch is NOT landable (arm64 not desktop-green). The
 `IO_STACK_LOCATION` pack-guard fix is a *real* ABI bug fix (the packed layout aliased
 `IoControlCode` onto `Argument2`), so the right resolution is to finish the old-stride
