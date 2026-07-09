@@ -122,6 +122,21 @@ REQUIRED_FILES=(
     "$BUILD_DIR/drivers/network/netstack/netstack.sys"
     "$BUILD_DIR/drivers/input/arm64input/arm64input.sys"
     "$BUILD_DIR/drivers/video/arm64vid/arm64vid.sys"
+    # PCI + USB + HID input stack (input-unification: EHCI-on-PCIe -> usbport ->
+    # usbhub -> hidusb -> hidclass -> kbdhid/mouhid -> kbdclass/mouclass). The
+    # PCI root devnode is seeded by hivesys_arm64.inf (Root\*PNP0A03).
+    "$BUILD_DIR/drivers/bus/pci/pci.sys"
+    "$BUILD_DIR/drivers/usb/usbd/usbd.sys"
+    "$BUILD_DIR/drivers/usb/usbport/usbport.sys"
+    "$BUILD_DIR/drivers/usb/usbehci/usbehci.sys"
+    "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"
+    "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"
+    "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"
+    "$BUILD_DIR/drivers/hid/hidusb/hidusb.sys"
+    "$BUILD_DIR/drivers/hid/kbdhid/kbdhid.sys"
+    "$BUILD_DIR/drivers/hid/mouhid/mouhid.sys"
+    "$BUILD_DIR/drivers/input/kbdclass/kbdclass.sys"
+    "$BUILD_DIR/drivers/input/mouclass/mouclass.sys"
     "$BUILD_DIR/win32ss/drivers/displays/framebuf/framebuf.dll"
     # Explorer.exe + shell DLLs
     "$BUILD_DIR/base/shell/explorer/explorer.exe"
@@ -273,6 +288,19 @@ RMC "$BUILD_DIR/win32ss/user/winsrv/winsrv.dll"              ::/reactos/system32
 RMC "$BUILD_DIR/drivers/serial/pl011/pl011.sys"              ::/reactos/system32/drivers/pl011.sys
 RMC "$BUILD_DIR/drivers/input/arm64input/arm64input.sys" ::/reactos/system32/drivers/arm64input.sys
 RMC "$BUILD_DIR/drivers/video/arm64vid/arm64vid.sys"       ::/reactos/system32/drivers/arm64vid.sys
+# PCI + USB + HID input stack (input-unification quest)
+RMC "$BUILD_DIR/drivers/bus/pci/pci.sys"                   ::/reactos/system32/drivers/pci.sys
+RMC "$BUILD_DIR/drivers/usb/usbd/usbd.sys"                 ::/reactos/system32/drivers/usbd.sys
+RMC "$BUILD_DIR/drivers/usb/usbport/usbport.sys"           ::/reactos/system32/drivers/usbport.sys
+RMC "$BUILD_DIR/drivers/usb/usbehci/usbehci.sys"           ::/reactos/system32/drivers/usbehci.sys
+RMC "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"             ::/reactos/system32/drivers/usbhub.sys
+RMC "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"         ::/reactos/system32/drivers/hidparse.sys
+RMC "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"         ::/reactos/system32/drivers/hidclass.sys
+RMC "$BUILD_DIR/drivers/hid/hidusb/hidusb.sys"             ::/reactos/system32/drivers/hidusb.sys
+RMC "$BUILD_DIR/drivers/hid/kbdhid/kbdhid.sys"             ::/reactos/system32/drivers/kbdhid.sys
+RMC "$BUILD_DIR/drivers/hid/mouhid/mouhid.sys"             ::/reactos/system32/drivers/mouhid.sys
+RMC "$BUILD_DIR/drivers/input/kbdclass/kbdclass.sys"       ::/reactos/system32/drivers/kbdclass.sys
+RMC "$BUILD_DIR/drivers/input/mouclass/mouclass.sys"       ::/reactos/system32/drivers/mouclass.sys
 RMC "$BUILD_DIR/win32ss/drivers/displays/framebuf/framebuf.dll"  ::/reactos/system32/framebuf.dll
 
 # Explorer.exe + shell DLLs
