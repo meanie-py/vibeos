@@ -116,7 +116,7 @@ unsafe fn violation(kind: u32, owner: usize, culprit: usize, chain: PKWAIT_BLOCK
     // the [UEXC-BT] user backtrace in ke/arm64/stubs.rs).
     #[cfg(target_arch = "aarch64")]
     {
-        extern "C" {
+        extern "system" {
             fn MmIsAddressValid(p: *const core::ffi::c_void) -> u8;
         }
         let mut fp: u64;
