@@ -37,6 +37,14 @@
 #include <winternl.h> // NTSTATUS WINAPIV DbgPrint(LPCSTR, ...) — vibeos routes to PL011 serial
 
 namespace {
+// Global-ctor tripwire: runs during CRT init, BEFORE main. If [FEX-HELLO-CTOR]
+// prints but [FEX-HELLO] (main) does not, the wedge is in FEX's static init
+// (global ctors) between here and main. If NEITHER prints, the wedge is earlier
+// still — a dependency DllMain, or CRT __scrt bringup before global ctors.
+struct StartupTripwire {
+  StartupTripwire() { DbgPrint("[FEX-HELLO-CTOR] a global ctor ran (pre-main)\n"); }
+} g_StartupTripwire;
+
 constexpr uint64_t GuestExpected = 0x31; // 42 + 7
 
 // Hand-assembled x86-64: mov rax,0x2A ; add rax,7 ; hlt

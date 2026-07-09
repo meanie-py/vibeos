@@ -246,9 +246,19 @@ x86 blocks on-box.
   DllMain/CRT init, or FEX's static global constructors (rpmalloc/jemalloc
   allocator init, libc++ statics) running against our loader. Imports beyond
   ntdll: KERNEL32/ADVAPI32 + the UCRT api-sets (`ApiSetResolveToHost` resolves
-  these by default). Next: attach the kernel-debug toolkit / add trace to narrow
-  the pre-main hang (which DllMain, or the first global ctor), same class as any
-  new user exe's first bring-up.
+  these by default).
+- **Localized (2026-07-08) with a global-ctor tripwire** (`[FEX-HELLO-CTOR]`,
+  prints from a static ctor before `main`): it does **not** fire, so the wedge
+  is *before* our global ctors. Serial shows fexprobe's kernel32 DllMain
+  PROCESS_ATTACH **connects to CSR successfully** (`[CSRSRV] CliCon ServerId=1/2`
+  for PID 204) but never reaches `[kernel32] DllMain PROCESS_ATTACH done OK
+  PID=204` — so the hang is inside kernel32 DllMain *after*
+  `CsrClientConnectToServer` (CsrNewThread / BaseDllInitializeMemoryManager /
+  NLS / `ConDllInitialize` console setup), in code shared by every process, yet
+  only fexprobe hangs (cmd, nettest pass the same path). Prime remaining
+  suspects: `ConDllInitialize` console attach for this import/TLS shape, or a
+  CsrNewThread thread-startup interaction. Next: GDB-toolkit backtrace of the
+  wedged PID-204 thread (`qemu/start.sh arm64 --gdb`, `VIBEOS_FEX=1` media).
 
 **Rung 2 — "hello compute": execute a static x86 blob.** Minimal native arm64
 harness exe driving the FEXCore Context API directly (`CreateNewContext` →
