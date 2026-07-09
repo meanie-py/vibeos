@@ -3460,6 +3460,52 @@ page scribbled by its other owner). Discriminators live on master:
 Do NOT hand-loop boots; organic gate traffic is the soak — the next hit
 self-reports enough to pick the branch.
 
+### 9.36 (ROOT-CAUSED + FIXED 2026-07-08) the arm64 TDI-window flake family — netstack self-tests abandoned pending IRPs holding STACK event+IOSB; late completion scribbled reused frames
+
+**Both long-standing faces, one bug.** The netstack self-tests (`tditest.rs
+run_tdi_to`, `settest.rs`, `icmptest.rs`) all did:
+stack `KEVENT` + stack `IO_STATUS_BLOCK` → `IoBuildDeviceIoControlRequest`
+(IRP holds them as `UserEvent`/`UserIosb`) → `IofCallDriver` →
+`KeWaitForSingleObject` **with a timeout** → on timeout, just return.
+The frame dies with the IRP pending. Whenever the op later completes,
+`IopCompleteRequest` (a) writes the IOSB through the stale stack VA and
+(b) `KeSetEvent`s the dead event — whose wake path both READS whatever now
+lives there (a reused frame) and WRITES self-referential wait-list pointers,
+i.e. **addresses inside the dead frame** (deterministic kernel-stack VAs).
+
+- **0x1E face (§9.27/§9.31, historic ~1/4):** `KeSetEvent → KxUnwaitThread`
+  walks the dead event's "wait list" → `Thread=-1` (reused-local content) →
+  `KiUnwaitThread` AV / waitdep 0x109. Caught live by the `[WAITDEP-BT]`
+  kernel FP-chain backtrace: `IopCompleteRequest → KeSetEvent →
+  KxUnwaitThread → KiUnwaitThread`.
+- **0x4C face (winlogon death):** the dead-frame writes land in whichever
+  thread reuses the stack — e.g. basesrv mid-build of its `UNICODE_STRING`
+  locals; a written-in kernel-stack VA lands in a `Buffer` field, gets
+  heap-copied into the CSR shared section, and winlogon's kernel32 DllMain
+  `_snwprintf("%wZ")` later faults reading it (user AV in ntdll so_wstring →
+  0xC000021A → 0x4C). Caught live by `[UEXC-BT]` naming
+  `kernel32!DllMain → _snwprintf` and the fault address landing in the
+  kernel-stack region, page-shifting between builds.
+
+**Fix (netstack):** shared `tditest::alloc_wait_block`/`tdi_wait_finish` —
+event+IOSB live in NonPagedPool; timely completion frees; timeout
+`IoCancelIrp`s (hint only — netstack pends have no cancel routine, the
+NT-textbook cancel+infinite-wait would hang the worker) and **loudly leaks**
+the block (bounded, self-test-only) so the late completion writes owned pool.
+`icmptest` additionally leaks `out_buf` on timeout (buffered-I/O completion
+copies SystemBuffer back into `Irp->UserBuffer`).
+
+**Validation:** pre-fix 3 waitdep hits/10 boots; post-`run_tdi_to`-fix 20
+boots = ZERO waitdep (0x1E face dead) but 2×0x4C (settest/icmptest still
+carried the bug); post-sweep validation soak below.
+
+**The reusable rule (grep for it after any driver/self-test translation):**
+any `KeWaitForSingleObject(&stack_event, .., timeout)` on an IRP you built
+with stack `UserEvent`/`UserIosb` MUST NOT return on timeout while the IRP
+is pending — cancel+wait-forever (if cancellable) or pool-allocate + leak.
+Sweep: `grep -rn "KeWaitForSingleObject" --include='*.rs' | grep -i timeout`
+cross-checked against `IoBuildDeviceIoControlRequest(&mut event` stack args.
+
 ### 9.32 Static analysis for leaked Ob references — `scan_ob_refcount.py`
 
 Sibling of §9.28's IRQL scanner (same tree-sitter held-set engine), pointed at
