@@ -3742,3 +3742,165 @@ output, binary-search the syscall boundary FIRST (markf around each API call
 costs one rebuild of a test app) before instrumenting ever-deeper kernel paths.
 And any `extern static` whose type was guessed from the name (`Mm*` "looks like
 a PFN count") is a width-drift candidate — the C definition is the only truth.
+### 9.37 (RESOLVED 2026-07-07) i386+amd64 PS/2 keyboard/mouse fully dead since ACPI went Rust — hallucinated `CmResourceType*`/`ACPI_*` constants in acpi-rust broke PnP resource translation
+
+**Symptom:** keyboard and mouse produced zero effect on the x86 desktop
+(no `[I8042] StartDevice`, no kbd IRQ ever fired). Boot stayed green — input
+is not on the boot-marker path — so it went unnoticed from 2026-06-09 until
+the start-menu smoke work poked a key.
+
+**Chain:** acpi-rust `buspdo.rs` `Bus_PDO_QueryResources` builds the
+`CM_RESOURCE_LIST` the PnP manager feeds to `IopTranslateDeviceResources`.
+The translated file had invented values for the `CmResourceType*` enum
+(`Interrupt=0, Memory=1, Port=2` — real values: `Port=1, Interrupt=2,
+Memory=3, Dma=4`) and for `ACPI_LEVEL_SENSITIVE` / `ACPI_*_RANGE` /
+`ACPI_TRANSFER_*`. Descriptor `Type` bytes were therefore garbage →
+`HalGetInterruptVector`/translation failed 0xC0000001 → `IRP_MN_START_DEVICE`
+never reached i8042prt → no `IoConnectInterrupt` → dead input, silently.
+
+**Fix:** correct the three constant blocks against `acrestyp.h` +
+`sdk/include/xdk/cmtypes.h`. `verify_constants.py` only checks constants that
+exist in C headers under the same name — locally-invented consts in a driver
+crate dodge it; extending coverage to driver crates is the durable ask.
+
+**Lesson:** when a device is dead but boot is green, walk the PnP resource
+pipeline FIRST (`StartDevice` marker → translate status → descriptor types),
+and treat every LLM-translated `pub const` block as guilty until diffed
+against the C header. Permanent delivery-chain markers now exist:
+`[I8042] StartDevice type=… -> status (irq vec=…)`, `[I8042] first kbd IRQ
+fired`, `[KBDCLASS] first key delivered` — a smoke log shows exactly where
+the input chain breaks.
+
+### 9.38 (RESOLVED 2026-07-07) first keystroke BUGCHECK 0x1E on i386 — i8042prt DPC called kbdclass `ClassService` as `extern "C"` (caller-clean) instead of NTAPI stdcall
+
+After §9.37's fix the first injected key crashed 0x1E. `i8042KbdDpcRoutine`
+transmuted `KeyboardData.ClassService` to `unsafe extern "C" fn(...)`; the
+target (kbdclass `ClassCallback`) is NTAPI = stdcall on i386, so callee `ret
+0x10` + caller `add esp,16` double-cleaned the stack → ESP skew → the DPC's
+epilogue returned into garbage. mouse.rs already used `extern "system"` —
+keyboard.rs was the one-off. Same class as §9.30: on amd64/arm64 both
+spellings coincide, so it links and runs everywhere except i386.
+`extern "system"` is ALWAYS the right spelling for NTAPI function pointers.
+
+### 9.39 (RESOLVED 2026-07-07) winlogon 0xF4 on first FAILING user-mode callback — i386 `KeUserModeCallback` conflated the SEH status with the callback's return status and skipped the user-ESP restore
+
+**Symptom:** re-enabling `InitKeyboardLayouts` on x86 (see below) killed
+winlogon with BUGCHECK 0xF4 the moment the keyboard-layout load completed —
+kernel side of `NtUserLoadKeyboardLayoutEx` finished clean, then the process
+died before executing a single further user-mode instruction. Fault state:
+user EIP = a stack address, ESP = the spent callback-dispatch frame base.
+
+**Root cause:** in `ntoskrnl-rust/src/ke/i386/usercall.rs`
+`KeUserModeCallback`, the Rust translation modeled C's `_SEH2_TRY` block as a
+labeled block whose value was BOTH the probe/copy error status AND
+`KiCallUserMode`'s return, then did `if seh_status < 0 { return }`. C only
+early-returns on a real SEH exception; the callback status — which may
+legitimately be a failure NTSTATUS — must flow through to the epilogue
+`*UserEsp = OldStack` that pops the callback dispatch frame off the USER
+stack. The conflation meant any callback returning a failure status left the
+thread's trap-frame ESP pointing at the consumed `KiUserCallbackDispatcher`
+frame; on syscall exit the user `ret` popped garbage → unhandled AV →
+critical-process death. First-ever failing callback on i386 was
+GETCHARSETINFO (`TranslateCharsetInfo` → STATUS_UNSUCCESSFUL) during layout
+load. Every prior callback (WNDPROC etc.) returned success, which is why the
+desktop worked for weeks with this landmine armed. amd64's translation kept
+the two statuses separate and was correct.
+
+**Fix:** the 'seh block yields `Result<NTSTATUS, NTSTATUS>` — `Err` = SEH
+path (early return, user mode never entered), `Ok` = callback status (falls
+through to the ESP restore).
+
+**Debug recipe that found it (all serial, no GDB):** bracket the layers —
+kernel syscall wrapper entry/exit, each `co_` callout, user-mode handler
+entry/exit, `KeUserModeCallback` enter/exit with old/new stack values, plus a
+one-line user-exception trace in `KiDispatchException` (code/addr/EIP/ESP for
+PreviousMode==User) and a `[CRIT-TERM] ImageName` print in
+`PspCatchCriticalBreak`. The kill shot was noticing the KUMC *exit* print
+fired for a SUCCESS callback but not for the FAILING one.
+
+**Unblocked by this fix:** winlogon's `InitKeyboardLayouts` is re-enabled on
+x86 (winlogon-rust; the C's `#if 0` cited a Rust-MM SEC_IMAGE deadlock fixed
+2026-07-05 in §9.13). Without it `gspklBaseLayout` stays null on x86 and
+win32k drops every keystroke at `UserProcessKeyboardInput` ("NO keyboard
+layout"). With §9.37+§9.38+§9.39 fixed, i386 opens the Start menu via
+Ctrl+Esc — now a smoke gate (`test_start_menu_opens`, saves
+`qemu/<arch>_startmenu.png`).
+
+### 9.40 (RESOLVED 2026-07-07) amd64 BUGCHECK 0x1E on first start-menu open — win32k `DesktopHeapReAlloc` passed the PDESKTOP as the HEAP pointer (and never freed the old block)
+
+**Symptom:** the first Ctrl+Esc on the amd64 desktop BUGCHECKed 0x1E
+(C0000005) at `RtlAllocateHeap+0x18d`; stack showed `NtUserDeleteMenu` →
+`IntRemoveMenuItem`. Masked for a month because the keyboard was dead
+(§9.37) — nobody could open the menu. In the smoke harness it painted as a
+solid-navy screen (the BSOD backdrop) after the keypress.
+
+**Root cause:** win32k-rust `menu.rs` reimplements the `desktop.h` inline
+helpers. `DesktopHeapAlloc/Free` correctly use `(*Desktop).pheapDesktop`, but
+`DesktopHeapReAlloc` took `Desktop: *mut c_void` and passed it STRAIGHT to
+`RtlAllocateHeap`/`RtlSizeHeap` as the heap handle — so the allocator walked
+the DESKTOP object as HEAP metadata (`heap->FreeLists` at +0x368 = garbage) →
+AV. It also dropped the C helper's `RtlFreeHeap(old)` (its comment claimed
+"caller frees old"; no caller does) and the `PrevSize == Bytes` early return.
+The faulting site (`cmpw %bx, -0x8(%rax)` on `FreeLists.Blink`) looked like
+classic heap-metadata corruption; it was actually "wrong object as heap".
+
+**Lesson:** when a Rust file reimplements C header inlines, diff EVERY helper
+against the header — a family of three near-identical helpers with one
+diverging (wrong level of indirection, dropped free) is a signature
+translation failure mode. A struct-as-heap mixup produces the same crash
+signature as real heap corruption; check the heap pointer's provenance
+before hunting for a corruptor.
+
+### 9.41 (NOT REPRODUCING 2026-07-08; residual cosmetic issue open) amd64 first Ctrl+Esc corrupts explorer's CLIENTINFO → shell AV in user32!ValidateHandle
+
+**Symptom:** on amd64, the first Ctrl+Esc after the desktop settles kills
+explorer: `[KI-EXC] EXPLORER.EXE code=0xc0000005 rip=user32!ValidateHandle+0x142`,
+then 4× `[EXIT-THR] EXPLORER.EXE exit_status=0x80`. In the smoke harness it
+paints as a solid-navy frame (BSOD-less shell death). i386 opens the menu
+cleanly; this is amd64-only.
+
+**What's proven:**
+- Keyboard DELIVERY works (`[KBDCLASS] first key delivered`,
+  `test_post_shell_ready_input` passes on amd64) — not an input-chain bug.
+- The AV is at `user32!ValidateHandle+0x142`, the instruction
+  `cmpq (%rdx),%rax` where `rdx = pci->pDeskInfo` (from `DesktopPtrToUser`).
+  `pci` = TEB+0x800; `pDeskInfo` at +0x20, `ulClientDelta` at +0x28.
+- Instrumenting `IntSetThreadDesktop` (win32k desktop.rs) shows it writes the
+  CORRECT user value: `uDeskInfo=0x4f0dd0, ulClientDelta=0xfffff97f...` — a
+  valid low-canonical user pointer.
+- By crash time those same two fields read back as GARBAGE:
+  `pci.pDeskInfo=0x02d0000000510008, pci.ulClientDelta=0x0010000000003a04` —
+  i.e. a 16-byte blob was stomped over CLIENTINFO+0x20..0x30 AFTER the correct
+  set. No win32k code writes `pci->pDeskInfo` except `IntSetThreadDesktop`, so
+  this is a STRAY/overrun write (or a wrong-delta client-cache write) landing
+  on CLIENTINFO+0x20, not an intentional bad assignment.
+
+**Was masked by:** §9.40 (DesktopHeapReAlloc) — that 0x1E fired earlier in the
+same Ctrl+Esc sequence (during menu-item build), so explorer never reached the
+point of USING the corrupted CLIENTINFO. Fixing §9.40 unmasked this.
+
+**Next tool (if it recurs):** a GDB hardware watchpoint on `&pci->pDeskInfo`
+(TEB+0x820) in explorer's context, armed right after the `IntSetThreadDesktop`
+correct-set, to catch the corrupting store. Suspect the client key-state cache
+update (dwKeyCache/afKeyState written through ulClientDelta) or a callback
+writing back through a stale/miscomputed client address during hotkey→menu
+dispatch.
+
+**Status 2026-07-08:** after the §9.40 fix + the §9.39 i386 usercall fix and a
+CLEAN rebuild of both x86 arches, the crash NO LONGER REPRODUCES — 4/4
+consecutive `test_start_menu_opens` runs on amd64 open the start menu with
+explorer alive (screenshots verified). The temp CLIENTINFO diagnostics were
+also removed in the same rebuild, so the diag itself perturbing timing can't
+be excluded; treat as "likely a downstream echo of §9.40 debris on the warm
+build" but re-open on any recurrence (the `test_start_menu_opens` gate now
+runs FOR REAL on amd64 — a recurrence shows up as a hard failure with serial
+tail + symbolicated BUGCHECK; re-add the xfail with `arch.startswith("amd64")`,
+NOT `arch == "amd64"` — the fixture arch is `"amd64-uefi"`).
+
+**RESIDUAL (open, cosmetic):** the amd64 start menu renders DEGRADED vs i386:
+Programs/Documents/Settings items show their icons but NO label text, and the
+Run…/Shut Down… items are absent entirely (i386 renders the full menu). 100%
+deterministic across 4 boots, so it's a real content/paint bug in the amd64
+shell path (string-resource load or menu-item measurement), not capture
+jitter. The panel-lit smoke gate passes (frame + Search/Help labels render);
+label-level verification is future work.
