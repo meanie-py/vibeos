@@ -3436,6 +3436,30 @@ walker is mid-signal on its stack event) is REAL in principle but unreachable:
 no caller in the tree passes a non-NULL Timeout to
 `ExTimedWaitForUnblockPushLock` (only `ExWaitForUnblockPushLock(NULL)`).
 
+**Unifying lead for the TDI-window flake family (2026-07-08).** A second face
+surfaced: winlogon dies user-mode (BUGCHECK 0x4C/C000021A cascade) with a
+KERNEL VA (`0xFFFF8000050D4CB0`, identical across hits, kernel-stack region)
+as `BASE_STATIC_SERVER_DATA.WindowsDirectory.Buffer` — caught by the
+`[UEXC-BT]` user FP-chain backtrace (ke/arm64/stubs.rs, second-chance kill):
+`LdrpRunInitializeRoutines → kernel32!DllMain → _snwprintf("%wZ;...")`.
+basesrv heap-copies those strings into the CSR shared section correctly, and
+the section maps at the SAME VA in server and clients — so the leading
+hypothesis is a **wrong physical page behind the client's section view**: an
+arm64 Mm page-identity race (direct successor of the fixed §9.14–§9.16
+PFN/section family) briefly hands a client view a page still owned by (or
+recycled from) a kernel thread stack. The same double-owned-page mechanism
+would ALSO produce the §9.31 dispatcher face (KWAIT_BLOCK `Thread=-1` — stack
+page scribbled by its other owner). Discriminators live on master:
+- kernel32 DllMain (arm64) validates the shared-section strings and dumps
+  `[kernel32] BASE_STATIC_SERVER_DATA CORRUPT ...` (+ falls back, so the boot
+  survives diagnosed): whole-struct garbage ⇒ wrong page; only Buffer fields
+  poisoned with sane Lengths ⇒ targeted overwrite.
+- waitdep chain dump + `check_waittest` at the three direct-consume funnels
+  (KeSetEventBoostPriority / KiActivateWaiterQueue / KeSignalGateBoostPriority)
+  names the object and block on the dispatcher face.
+Do NOT hand-loop boots; organic gate traffic is the soak — the next hit
+self-reports enough to pick the branch.
+
 ### 9.32 Static analysis for leaked Ob references — `scan_ob_refcount.py`
 
 Sibling of §9.28's IRQL scanner (same tree-sitter held-set engine), pointed at
