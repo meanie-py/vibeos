@@ -85,7 +85,7 @@ def main() -> None:
                   f"device (likely whatever the guest left actively polling).")
 
     # KVM exit-reason stats if debugfs is readable (often needs privilege).
-    kdir = Path(f"/sys/kernel/debug/kvm")
+    kdir = Path("/sys/kernel/debug/kvm")
     if kdir.exists() and os.access(kdir, os.R_OK):
         try:
             stats = {}

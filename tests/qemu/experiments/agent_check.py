@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from tests.qemu.vm import QemuVM, get_arch_config, PROJECT_DIR
+from tests.qemu.vm import PROJECT_DIR, QemuVM, get_arch_config
 
 
 def main() -> None:

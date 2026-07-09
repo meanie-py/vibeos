@@ -134,15 +134,8 @@ pub unsafe extern "system" fn HalAllocateAdapterChannel(
     STATUS_NOT_IMPLEMENTED
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "system" fn HalAllocateCommonBuffer(
-    AdapterObject: ddk::PADAPTER_OBJECT,
-    Length: ddk::ULONG,
-    LogicalAddress: ddk::PPHYSICAL_ADDRESS,
-    CacheEnabled: ddk::BOOLEAN,
-) -> ddk::PVOID {
-    core::ptr::null_mut()
-}
+// HalAllocateCommonBuffer / HalFreeCommonBuffer / HalFlushCommonBuffer /
+// HalGetAdapter live in dma.rs now (real coherent-DMA implementations).
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalAllocateCrashDumpRegisters(
@@ -201,35 +194,6 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
     }
     super::clock::enable_gic_interrupt(Vector as u32, Irql);
     TRUE
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "system" fn HalFlushCommonBuffer(
-    Unknown1: ddk::ULONG,
-    Unknown2: ddk::ULONG,
-    Unknown3: ddk::ULONG,
-    Unknown4: ddk::ULONG,
-    Unknown5: ddk::ULONG,
-) -> ddk::BOOLEAN {
-    TRUE
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "system" fn HalFreeCommonBuffer(
-    AdapterObject: ddk::PADAPTER_OBJECT,
-    Length: ddk::ULONG,
-    LogicalAddress: ddk::PHYSICAL_ADDRESS,
-    VirtualAddress: ddk::PVOID,
-    CacheEnabled: ddk::BOOLEAN,
-) {
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "system" fn HalGetAdapter(
-    DeviceDescription: ddk::PDEVICE_DESCRIPTION,
-    NumberOfMapRegisters: ddk::PULONG,
-) -> ddk::PADAPTER_OBJECT {
-    core::ptr::null_mut()
 }
 
 // ============================================================================

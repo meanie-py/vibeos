@@ -109,6 +109,35 @@ unsafe fn violation(kind: u32, owner: usize, culprit: usize, chain: PKWAIT_BLOCK
         owner as *const (),
         culprit as *const (),
     );
+    // Kernel FP-chain backtrace (arm64): the 2026-07-08 soak proved the -1
+    // Thread reaches KiUnlinkThread WITHOUT tripping the wait-list funnel
+    // checks — so the decisive datum is WHO called into the unwait. arm64
+    // keeps frame pointers; walk x29 with validity guards (same technique as
+    // the [UEXC-BT] user backtrace in ke/arm64/stubs.rs).
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "system" {
+            fn MmIsAddressValid(p: *const core::ffi::c_void) -> u8;
+        }
+        let mut fp: u64;
+        core::arch::asm!("mov {}, x29", out(reg) fp, options(nomem, nostack));
+        for i in 0..14u32 {
+            if fp == 0
+                || (fp & 0x7) != 0
+                || MmIsAddressValid(fp as *const _) == 0
+                || MmIsAddressValid((fp + 8) as *const _) == 0
+            {
+                break;
+            }
+            let next_fp = *(fp as *const u64);
+            let lr = *((fp + 8) as *const u64);
+            crate::dbg_print!(b"[WAITDEP-BT] lr%u=%p\n\0", i, lr as *const ());
+            if next_fp <= fp {
+                break;
+            }
+            fp = next_fp;
+        }
+    }
     // Best-effort chain dump for forensics (bounded; tolerate the corruption).
     if !chain.is_null() {
         let mut wb = chain;
@@ -199,11 +228,19 @@ pub unsafe fn check_unwait(Thread: PKTHREAD) {
     }
 }
 
-/// Chokepoint 2 — called at `KiWaitTest` entry with the object address and
-/// its `Header.WaitListHead`: walk the waiter list and prove every wait block
+/// Chokepoint 2 — called at `KiWaitTest` entry (and the three direct-consume
+/// wake paths: KeSetEventBoostPriority / KiActivateWaiterQueue /
+/// KeSignalGateBoostPriority) with the object address and its
+/// `Header.WaitListHead`: walk the waiter list and prove every wait block
 /// on it belongs here (Object back-pointer) and is structurally sound before
 /// the satisfy/unwait loop starts consuming it.
-pub unsafe fn check_waittest(object: usize, wait_list: *mut LIST_ENTRY) {
+///
+/// `require_obj_backptr`: KQUEUE waiters (KeRemoveQueue) insert the embedded
+/// `Thread->WaitBlock[0]` by WaitListEntry ONLY — neither the C original nor
+/// the Rust sets `WaitBlock->Object`, so it legitimately holds whatever the
+/// thread's previous wait left there. Pass `false` for queue wait lists or
+/// every contended queue wake false-positives K_OBJ_BACKPTR.
+pub unsafe fn check_waittest(object: usize, wait_list: *mut LIST_ENTRY, require_obj_backptr: bool) {
     VIBEOS_WAITDEP_CHECKS.fetch_add(1, Relaxed);
 
     let mut entry = (*wait_list).Flink;
@@ -213,7 +250,7 @@ pub unsafe fn check_waittest(object: usize, wait_list: *mut LIST_ENTRY) {
             violation(K_WAITLIST, object, entry as usize, core::ptr::null_mut());
         }
         let wb = ((entry as usize) - core::mem::offset_of!(_KWAIT_BLOCK, WaitListEntry)) as PKWAIT_BLOCK;
-        if (*wb).Object as usize != object {
+        if require_obj_backptr && (*wb).Object as usize != object {
             violation(K_OBJ_BACKPTR, object, wb as usize, wb);
         }
         if !is_kva((*wb).Thread as usize) {

@@ -429,6 +429,26 @@ contract model is klint's, ported from preempt_count to IRQL:
     on master + wired into `vibeos-cli check` since 2026-07-06) with
     per-function adjust/expect summaries and a cross-function fixpoint, keeping
     the existing 0-NEW baseline gate.
+    **BUILT (2026-07-07), with two lessons the naive form missed:**
+    (a) **an uncapped may-sleep fixpoint is useless** — everything touching
+    the dispatcher (`KeSetEvent` → `KiExitDispatcher` → the swap) becomes
+    "may-sleep" even though it never parks the *caller*; measured 13.6K
+    may-sleep functions / 762 findings at fixpoint vs a reviewable 9 at the
+    shipped depth cap of 2 (direct wait calls + one Rust wrapper hop,
+    `SLEEP_DEPTH`). (b) **wait legality is per-level** — `KeRaiseIrql(
+    APC_LEVEL, ..)` holds are leak-checked but NOT sleep-checked (NT's rule is
+    waits ≤ APC_LEVEL; the first run flagged `PspUserThreadStartup`'s legal
+    APC-level termination path). Shipped summaries: RAISE-WRAPPER (returns the
+    OldIrql — e.g. `MiAcquirePfnLock`), LOWER-WRAPPER(arg-i) (38 found, e.g.
+    `MiReleasePfnLock`, the USBPORT family), MAY-SLEEP (depth-capped).
+    New finding kind `IRQL_SLEEP_WHILE_HELD` = the static mirror of
+    cswitchdep's `SLEEP_WITH_SPINLOCK`. The 9 baselined findings are all the
+    Mm PFN-lock **callee-releases contract** (`MiDispatchFault` hands
+    `LockIrql` to resolvers that drop the lock; the post-call
+    `ASSERT(OldIrql == KeGetCurrentIrql())` proves the C contract) — exactly
+    the cross-call residue this syntactic phase cannot see through; a 4b MIR
+    pass or `#[irqlck]` annotations would clear them. `--summaries` dumps the
+    call-graph facts for inspection.
   - **Phase 4b — the klint-style MIR port only if 4a's misses prove material**
     (what MIR sees that syntax doesn't: function pointers — DPC/APC routines,
     IRP completion —, const-prop'd branches, drop-elaboration order). Requires

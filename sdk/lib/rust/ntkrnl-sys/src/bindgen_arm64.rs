@@ -10051,7 +10051,7 @@ pub struct _ACPI_INTERFACE_STANDARD2 {
 }
 pub type ACPI_INTERFACE_STANDARD2 = _ACPI_INTERFACE_STANDARD2;
 pub type PACPI_INTERFACE_STANDARD2 = *mut _ACPI_INTERFACE_STANDARD2;
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _IO_STACK_LOCATION {
     pub MajorFunction: UCHAR,
@@ -10107,83 +10107,98 @@ pub union _IO_STACK_LOCATION__bindgen_ty_1 {
     pub WMI: _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_38,
     pub Others: _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_39,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_1 {
     pub SecurityContext: PIO_SECURITY_CONTEXT,
     pub Options: ULONG,
+    pub __bindgen_padding_0: [u16; 2usize],
     pub FileAttributes: USHORT,
     pub ShareAccess: USHORT,
+    pub __bindgen_padding_1: u32,
     pub EaLength: ULONG,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_2 {
     pub SecurityContext: *mut _IO_SECURITY_CONTEXT,
     pub Options: ULONG,
+    pub __bindgen_padding_0: [u16; 2usize],
     pub Reserved: USHORT,
     pub ShareAccess: USHORT,
     pub Parameters: *mut _NAMED_PIPE_CREATE_PARAMETERS,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_3 {
     pub SecurityContext: PIO_SECURITY_CONTEXT,
     pub Options: ULONG,
+    pub __bindgen_padding_0: [u16; 2usize],
     pub Reserved: USHORT,
     pub ShareAccess: USHORT,
     pub Parameters: *mut _MAILSLOT_CREATE_PARAMETERS,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_4 {
     pub Length: ULONG,
+    pub __bindgen_padding_0: u32,
     pub Key: ULONG,
     pub ByteOffset: LARGE_INTEGER,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_5 {
     pub Length: ULONG,
+    pub __bindgen_padding_0: u32,
     pub Key: ULONG,
     pub ByteOffset: LARGE_INTEGER,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_6 {
     pub Length: ULONG,
     pub FileName: PUNICODE_STRING,
     pub FileInformationClass: FILE_INFORMATION_CLASS,
+    pub __bindgen_padding_0: u32,
     pub FileIndex: ULONG,
 }
 #[repr(C)]
+#[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_7 {
     pub Length: ULONG,
+    pub __bindgen_padding_0: u32,
     pub CompletionFilter: ULONG,
 }
 #[repr(C)]
+#[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_8 {
     pub Length: ULONG,
+    pub __bindgen_padding_0: u32,
     pub CompletionFilter: ULONG,
+    pub __bindgen_padding_1: u32,
     pub DirectoryNotifyInformationClass: DIRECTORY_NOTIFY_INFORMATION_CLASS,
 }
 #[repr(C)]
+#[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_9 {
     pub Length: ULONG,
+    pub __bindgen_padding_0: u32,
     pub FileInformationClass: FILE_INFORMATION_CLASS,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_10 {
     pub Length: ULONG,
+    pub __bindgen_padding_0: u32,
     pub FileInformationClass: FILE_INFORMATION_CLASS,
     pub FileObject: PFILE_OBJECT,
     pub __bindgen_anon_1: _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_10__bindgen_ty_1,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Copy, Clone)]
 pub union _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_10__bindgen_ty_1 {
     pub __bindgen_anon_1:
@@ -10197,12 +10212,13 @@ pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_10__bindgen_ty_1__bindge
     pub ReplaceIfExists: BOOLEAN,
     pub AdvanceOnly: BOOLEAN,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_11 {
     pub Length: ULONG,
     pub EaList: PVOID,
     pub EaListLength: ULONG,
+    pub __bindgen_padding_0: u32,
     pub EaIndex: ULONG,
 }
 #[repr(C)]
@@ -10211,70 +10227,80 @@ pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_12 {
     pub Length: ULONG,
 }
 #[repr(C)]
+#[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_13 {
     pub Length: ULONG,
+    pub __bindgen_padding_0: u32,
+    pub FsInformationClass: FS_INFORMATION_CLASS,
+}
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_14 {
+    pub Length: ULONG,
+    pub __bindgen_padding_0: u32,
     pub FsInformationClass: FS_INFORMATION_CLASS,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_14 {
-    pub Length: ULONG,
-    pub FsInformationClass: FS_INFORMATION_CLASS,
-}
-#[repr(C, packed(4))]
-#[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_15 {
     pub OutputBufferLength: ULONG,
+    pub __bindgen_padding_0: u32,
     pub InputBufferLength: ULONG,
+    pub __bindgen_padding_1: u32,
     pub FsControlCode: ULONG,
     pub Type3InputBuffer: PVOID,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_16 {
     pub Length: PLARGE_INTEGER,
     pub Key: ULONG,
     pub ByteOffset: LARGE_INTEGER,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_17 {
     pub OutputBufferLength: ULONG,
+    pub __bindgen_padding_0: u32,
     pub InputBufferLength: ULONG,
+    pub __bindgen_padding_1: u32,
     pub IoControlCode: ULONG,
     pub Type3InputBuffer: PVOID,
 }
 #[repr(C)]
+#[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_18 {
     pub SecurityInformation: SECURITY_INFORMATION,
+    pub __bindgen_padding_0: u32,
     pub Length: ULONG,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_19 {
     pub SecurityInformation: SECURITY_INFORMATION,
     pub SecurityDescriptor: PSECURITY_DESCRIPTOR,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_20 {
     pub Vpb: PVPB,
     pub DeviceObject: PDEVICE_OBJECT,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_21 {
     pub Vpb: PVPB,
     pub DeviceObject: PDEVICE_OBJECT,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_22 {
     pub Srb: *mut _SCSI_REQUEST_BLOCK,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_23 {
     pub Length: ULONG,
@@ -10292,7 +10318,7 @@ pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_24 {
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_25 {
     pub Type: DEVICE_RELATION_TYPE,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_26 {
     pub InterfaceType: *const GUID,
@@ -10301,22 +10327,23 @@ pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_26 {
     pub Interface: PINTERFACE,
     pub InterfaceSpecificData: PVOID,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_27 {
     pub Capabilities: PDEVICE_CAPABILITIES,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_28 {
     pub IoResourceRequirementList: PIO_RESOURCE_REQUIREMENTS_LIST,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_29 {
     pub WhichSpace: ULONG,
     pub Buffer: PVOID,
     pub Offset: ULONG,
+    pub __bindgen_padding_0: u32,
     pub Length: ULONG,
 }
 #[repr(C)]
@@ -10330,16 +10357,20 @@ pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_31 {
     pub IdType: BUS_QUERY_ID_TYPE,
 }
 #[repr(C)]
+#[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_32 {
     pub DeviceTextType: DEVICE_TEXT_TYPE,
+    pub __bindgen_padding_0: u32,
     pub LocaleId: LCID,
 }
 #[repr(C)]
+#[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_33 {
     pub InPath: BOOLEAN,
     pub Reserved: [BOOLEAN; 3usize],
+    pub __bindgen_padding_0: u32,
     pub Type: DEVICE_USAGE_NOTIFICATION_TYPE,
 }
 #[repr(C)]
@@ -10347,17 +10378,21 @@ pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_33 {
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_34 {
     pub PowerState: SYSTEM_POWER_STATE,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_35 {
     pub PowerSequence: PPOWER_SEQUENCE,
 }
 #[repr(C)]
+#[repr(align(8))]
 #[derive(Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_36 {
     pub __bindgen_anon_1: _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_36__bindgen_ty_1,
+    pub __bindgen_padding_0: u32,
     pub Type: POWER_STATE_TYPE,
+    pub __bindgen_padding_1: u32,
     pub State: POWER_STATE,
+    pub __bindgen_padding_2: u32,
     pub ShutdownType: POWER_ACTION,
 }
 #[repr(C)]
@@ -10365,13 +10400,13 @@ pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_36 {
 pub union _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_36__bindgen_ty_1 {
     pub SystemContext: ULONG,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_37 {
     pub AllocatedResources: PCM_RESOURCE_LIST,
     pub AllocatedResourcesTranslated: PCM_RESOURCE_LIST,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_38 {
     pub ProviderId: ULONG_PTR,
@@ -10379,7 +10414,7 @@ pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_38 {
     pub BufferSize: ULONG,
     pub Buffer: PVOID,
 }
-#[repr(C, packed(4))]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_39 {
     pub Argument1: PVOID,

@@ -160,6 +160,12 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
 
     _enable();
 
+    // cswitchdep tap 4 (user→kernel): the syscall path is user-origin by
+    // construction (kernel Zw goes via KiZwSystemService), and reaching here
+    // means the kernel stack + trap frame are in place post-swapgs.
+    #[cfg(feature = "cswitchdep")]
+    crate::ke::cswitchdep::VibeosCswitchdepUserEntry(1);
+
     if UserRsp > MmUserProbeAddress || UserRsp < 0x10000 {
         (*TrapFrame).Rax = STATUS_ACCESS_VIOLATION as u64;
         return NtSyscallFailure as PVOID;

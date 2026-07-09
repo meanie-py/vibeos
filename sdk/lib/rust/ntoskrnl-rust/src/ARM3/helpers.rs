@@ -452,7 +452,7 @@ extern "C" {
     pub static mut MmHeapDeCommitTotalFreeThreshold: SIZE_T;
     pub static mut MmHeapDeCommitFreeBlockThreshold: SIZE_T;
     pub static mut MmCriticalSectionTimeout: i64;
-    pub static mut MmLargeStackSize: SIZE_T;
+    pub static mut MmLargeStackSize: ULONG; // ULONG in mminit — a SIZE_T decl over-reads on 64-bit
     pub static mut MmMinimumStackCommitInBytes: SIZE_T;
     pub static mut MmMaximumDeadKernelStacks: ULONG;
     pub static mut MmDeadStackSListHead: [u8; 16];

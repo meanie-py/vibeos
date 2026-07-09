@@ -307,12 +307,9 @@ VOID FatDeleteResource(PERESOURCE Resource)
     ExDeleteResourceLite(Resource);
 }
 
-VOID FatSetVcbCondition(PVCB Vcb, VCB_CONDITION Condition)
-{
-    /* VcbCondition is a ULONG at a known offset within VCB.
-     * From fatstruc.h analysis: VcbCondition is at offset ~344 */
-    *((PULONG)((PUCHAR)Vcb + 344)) = (ULONG)Condition;
-}
+/* FatSetVcbCondition: now implemented in Rust (verfysup.rs) with the typed
+ * bindgen struct. The old stub here wrote at a GUESSED offset (+344) and
+ * left the real VcbCondition untouched. */
 
 VOID FatNormalizeAndRaiseStatus(PIRP_CONTEXT IrpContext, NTSTATUS Status)
 {
@@ -494,23 +491,11 @@ BOOLEAN IsFileWriteThrough(PFILE_OBJECT f, PDEVICE_OBJECT d)
     return !!(f->Flags & FO_WRITE_THROUGH);
 }
 
-/* IsFileDeleted accesses FCB_STATE_DELETE_ON_CLOSE.
- * FCB state is at a known offset; use value 0x00000004 from fatstruc.h */
-BOOLEAN IsFileDeleted(PIRP_CONTEXT IrpContext, PFCB Fcb)
-{
-    /* (IrpContext, Fcb) per fatprocs.h macro. Conservative stub: FALSE. */
-    (void)IrpContext; (void)Fcb;
-    return FALSE;
-}
+/* IsFileDeleted: now implemented in Rust (verfysup.rs) with the typed struct.
+ * The old stub here always returned FALSE. */
 
-/* IsBpbFat32: check BigRootDirEnt == 0 in packed BPB */
-BOOLEAN IsBpbFat32(PPACKED_BOOT_SECTOR Bpb)
-{
-    /* PackedBpb is at offset 11 in BPB; BigRootDirEnt at offset 17 within
-     * PACKED_BPB = BPB[+17]. 2 bytes LE. If == 0 it's FAT32. */
-    PUCHAR p = (PUCHAR)Bpb + 11 + 17; /* approx, safe to touch */
-    return (p[0] == 0 && p[1] == 0) ? TRUE : FALSE;
-}
+/* IsBpbFat32: now implemented in Rust (verfysup.rs). The old stub here read
+ * a GUESSED offset (+28 = HiddenSectors) instead of RootEntries (+6). */
 
 VOID CanFsdWait(PIRP_CONTEXT IrpContext)
 {

@@ -1558,6 +1558,7 @@ pub unsafe extern "system" fn FatUpdateDirentFromFcb(
         UpdateLastAccessTime = 0;
     }
 
+
     if SetArchiveBit != 0
         || UpdateFileSize != 0
         || UpdateLastWriteTime != 0

@@ -315,13 +315,14 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
         )
 
 
-def _doom_stage(run: Run, repo: Path, arch: str) -> None:
-    """Opt-in Doom foreign-binary suite (--doom): run tests/qemu/test_doom.py
-    (launch marker + frame-delta render gate + F1 playable gate) and fold the
-    verdict in. Requires media built with VIBEOS_DOOM=1 — the suite itself
-    fails loud with the build recipe if doom.exe never launches. See
-    docs/engineering/doom-on-vibeos.md."""
-    test_file = repo / "tests" / "qemu" / "test_doom.py"
+def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
+    """Opt-in payload gate (--payload <names> / legacy --doom): run
+    tests/qemu/test_payload.py (launch marker + frame-delta render gate +
+    input-drive playable gate, per payload YAML) and fold the verdict in.
+    Requires media built with VIBEOS_PAYLOAD=<names> — the suite itself fails
+    loud with the build recipe if the app never launches. Design doc:
+    docs/engineering/payload-harness-design.md."""
+    test_file = repo / "tests" / "qemu" / "test_payload.py"
     pytest_arch = {"i386": "i386-uefi", "amd64": "amd64-uefi"}.get(arch, arch)
     cmd = [
         sys.executable,
@@ -330,7 +331,8 @@ def _doom_stage(run: Run, repo: Path, arch: str) -> None:
         str(test_file),
         "--arch",
         pytest_arch,
-        "--doom",
+        "--payload",
+        payloads,
         "--skip-clean-build",  # smoke already gated staleness; don't rebuild
         "--timeout",
         "600",
@@ -343,10 +345,10 @@ def _doom_stage(run: Run, repo: Path, arch: str) -> None:
     except subprocess.TimeoutExpired:
         run.add(
             Stage(
-                "doom",
+                "payload",
                 status="fail",
-                detail="doom suite timed out",
-                salient=["tests/qemu/test_doom.py hung > 1200s"],
+                detail=f"payload suite ({payloads}) timed out",
+                salient=["tests/qemu/test_payload.py hung > 1200s"],
             )
         )
         return
@@ -356,16 +358,17 @@ def _doom_stage(run: Run, repo: Path, arch: str) -> None:
         tail[-1] if tail else "",
     )
     if proc.returncode == 0:
-        run.add(Stage("doom", status="ok", detail=summary.strip("= ")))
+        run.add(Stage("payload", status="ok", detail=summary.strip("= ")))
     else:
         run.add(
             Stage(
-                "doom",
+                "payload",
                 status="fail",
-                detail="doom suite FAILED",
+                detail=f"payload suite ({payloads}) FAILED",
                 salient=[
                     summary.strip("= "),
-                    f"repro: pytest tests/qemu/test_doom.py --arch {pytest_arch} --doom",
+                    f"repro: pytest tests/qemu/test_payload.py --arch {pytest_arch} "
+                    f"--payload {payloads}",
                 ],
             )
         )
@@ -494,11 +497,15 @@ def smoke(args, repo: Path) -> int:
     if arch == "amd64" and npass == total and not getattr(args, "no_net", False):
         _net_stage(run, repo, arch)
 
-    # Opt-in Doom foreign-binary suite (--doom): its own boot via pytest
-    # (tests/qemu/test_doom.py) against VIBEOS_DOOM-staged media. Only when the
-    # plain boot is green — a red North Star makes the doom verdict meaningless.
-    if getattr(args, "doom", False) and npass == total:
-        _doom_stage(run, repo, arch)
+    # Opt-in payload gate (--payload / legacy --doom alias): its own boot via
+    # pytest (tests/qemu/test_payload.py) against VIBEOS_PAYLOAD-staged media.
+    # Only when the plain boot is green — a red North Star makes the payload
+    # verdict meaningless.
+    payloads = getattr(args, "payload", "") or ""
+    if getattr(args, "doom", False) and "doom" not in payloads.split(","):
+        payloads = f"{payloads},doom".strip(",")
+    if payloads and npass == total:
+        _payload_stage(run, repo, arch, payloads)
 
     if total > 1:
         run.extra["flake_rate"] = f"{npass}/{total}"

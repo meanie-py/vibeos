@@ -195,7 +195,15 @@ pub unsafe extern "system" fn KeUserModeCallback(
     UserEsp = KiGetUserModeStackAddress();
     OldStack = *UserEsp as ULONG_PTR;
 
-    let seh_status = 'seh: {
+    // NB: the 'seh block must distinguish a probe/copy SEH failure (early return,
+    // like C's _SEH2_YIELD) from the CALLBACK's own return status — a callback is
+    // allowed to return a failure NTSTATUS, and that must still flow through the
+    // `*UserEsp = OldStack` restore below. Conflating the two skipped the user-ESP
+    // restore whenever a callback failed, returning the thread to user mode with
+    // ESP inside the spent dispatch frame (winlogon death on the first failing
+    // GETCHARSETINFO callback, field manual §9.39). Err(e) = SEH path, Ok(s) =
+    // callback status.
+    let seh_status: Result<NTSTATUS, NTSTATUS> = 'seh: {
         NewStack = (OldStack - ArgumentLength as ULONG_PTR) & !3;
 
         if let Err(e) = probe_user_buffer(
@@ -204,7 +212,7 @@ pub unsafe extern "system" fn KeUserModeCallback(
             core::mem::size_of::<i8>(),
             1i8,
         ) {
-            break 'seh e;
+            break 'seh Err(e);
         }
 
         if let Err(e) = safe_copy_to_user(
@@ -214,24 +222,24 @@ pub unsafe extern "system" fn KeUserModeCallback(
             1,
             1i8,
         ) {
-            break 'seh e;
+            break 'seh Err(e);
         }
 
         let stack_base = NewStack - 24;
         if let Err(e) = write_user((stack_base) as *mut ULONG, 0u32, 1i8) {
-            break 'seh e;
+            break 'seh Err(e);
         }
         if let Err(e) = write_user((stack_base + 4) as *mut ULONG, RoutineIndex, 1i8) {
-            break 'seh e;
+            break 'seh Err(e);
         }
         /* Argument pointer: stack_base + 24 == NewStack (original, un-decremented).
          * C code: NewStack -= 24; then *(NewStack+8) = (NewStack+24).
          * Here stack_base = NewStack-24, so the argument area is at stack_base+24 = NewStack. */
         if let Err(e) = write_user((stack_base + 8) as *mut ULONG, NewStack as ULONG, 1i8) {
-            break 'seh e;
+            break 'seh Err(e);
         }
         if let Err(e) = write_user((stack_base + 12) as *mut ULONG, ArgumentLength, 1i8) {
-            break 'seh e;
+            break 'seh Err(e);
         }
 
         Teb = (*(KeGetCurrentThread() as *mut _KTHREAD)).Teb;
@@ -247,18 +255,23 @@ pub unsafe extern "system" fn KeUserModeCallback(
 
         GdiBatchCount = (*Teb).GdiBatchCount;
 
-        cb_status
+        Ok(cb_status)
     };
 
-    if seh_status < 0 {
-        return seh_status;
-    }
-
-    let CallbackStatus = seh_status;
+    let CallbackStatus = match seh_status {
+        // Probe/copy raised: bail like C's _SEH2_YIELD(return GetExceptionCode()) —
+        // user mode was never entered, so there is nothing to restore.
+        Err(e) => return e,
+        // Callback status (may legitimately be a failure NTSTATUS) — fall through
+        // to the user-ESP restore.
+        Ok(s) => s,
+    };
 
     if GdiBatchCount != 0 {
         *UserEsp = (*UserEsp).wrapping_sub(256);
-        (KeGdiFlushUserBatch.unwrap())();
+        if let Some(flush) = KeGdiFlushUserBatch {
+            flush();
+        }
     }
 
     *UserEsp = OldStack as ULONG;

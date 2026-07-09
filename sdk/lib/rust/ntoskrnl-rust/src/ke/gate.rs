@@ -223,7 +223,16 @@ unsafe fn KeSignalGateBoostPriorityImpl(Gate: PKGATE) {
             (*Gate).Header.SignalState = 1;
             break;
         } else {
-            WaitBlock = (((*Gate).Header.WaitListHead.Flink as usize) - 
+            // waitdep: WaitBlock->Thread is consumed off the gate's wait list
+            // and fed to KiTryThreadLock/KiReadyThread with NO KiUnlinkThread
+            // in the path — a garbage thread here would crash with no waitdep
+            // report at all (unchecked funnel; see eventobj.rs for the family).
+            super::waitdep::check_waittest(
+                Gate as usize,
+                core::ptr::addr_of_mut!((*Gate).Header.WaitListHead) as *mut _,
+                true,
+            );
+            WaitBlock = (((*Gate).Header.WaitListHead.Flink as usize) -
                         core::mem::offset_of!(KWAIT_BLOCK, WaitListEntry)) as PKWAIT_BLOCK;
 
             WaitThread = (*WaitBlock).Thread;

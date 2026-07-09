@@ -20,7 +20,8 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent
 SRC_DIR = SCRIPT_DIR / "src"
 REACTOS = (SCRIPT_DIR / "../../../..").resolve()
-TOOLCHAIN = REACTOS.parent / "llvm-mingw-20250114-ucrt-macos-universal"
+# In-repo toolchain (was a stale macOS-era sibling path).
+TOOLCHAIN = REACTOS / ".build-tools/llvm-mingw"
 
 ARCHS = [
     {
@@ -156,7 +157,8 @@ def generate_c_source(types: list[tuple[str, str]]) -> str:
 
 def get_include_flags(arch_name: str) -> list[str]:
     """Return clang include flags matching generate_bindings.sh."""
-    build_dir = REACTOS.parent / f"build-{arch_name}"
+    # Build dirs live INSIDE the repo root (same fix as generate_bindings.sh).
+    build_dir = REACTOS / f"build-{arch_name}"
     return [
         '-I', str(build_dir / "ntoskrnl"),
         '-I', str(REACTOS / "ntoskrnl"),

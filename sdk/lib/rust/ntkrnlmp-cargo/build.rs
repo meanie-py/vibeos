@@ -345,7 +345,15 @@ fn main() {
         // (the #ifdef CONFIG_SMP spinlock/fast-path blocks in ks*.inc), mirroring
         // cmake's target_compile_definitions(ntkrnlmp PRIVATE CONFIG_SMP). The
         // Rust body (kernel-rust) is identical UP/MP — only the asm differs.
-        .asm_extra_defines(&[("CONFIG_SMP", None)])
+        .asm_extra_defines(&{
+            // CONFIG_SMP always; VIBEOS_CSWITCHDEP mirrors ntoskrnl-cargo (the
+            // amd64 trap.S tap-5 call site is #ifdef-gated on it).
+            let mut defs: Vec<(&str, Option<&str>)> = vec![("CONFIG_SMP", None)];
+            if env::var("VIBEOS_CSWITCHDEP").is_ok() {
+                defs.push(("VIBEOS_CSWITCHDEP", None));
+            }
+            defs
+        })
         .resource(&format!("data/{res}"))
         .spec2def("ntoskrnl/ntoskrnl.spec", "ntkrnlmp.exe");
     // cnt-rust integration: compile the cntpr C floor in-cargo (C-first, before

@@ -182,7 +182,7 @@ def main() -> None:
                 try:
                     vm.restore_snapshot(tag)
                     e = None
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     e = str(exc)
                 alt_times.append((tag, round((time.monotonic() - t) * 1000, 1), e))
         results["exp4_tree"] = {
@@ -201,7 +201,7 @@ def main() -> None:
         for i in range(50):
             try:
                 vm.restore_snapshot("ready")
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 torture_err = f"loadvm #{i} failed: {exc}"
                 break
         status = vm.qmp.execute("query-status").get("return", {})

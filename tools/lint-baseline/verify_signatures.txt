@@ -12,11 +12,11 @@
     rust: fn NtSetLdtEntries(ULONG, u64, ULONG, u64) -> NTSTATUS
     rust: fn ObpSetHandleAttributes(*mut _HANDLE_TABLE_ENTRY, u32) -> BOOLEAN
   C prototypes: 5034 FunctionDecls, 4536 typedefs
-  exported Rust fns: 3347 (deduped twins)
-  exported fns checked : 3347
+  exported Rust fns: 3354 (deduped twins)
+  exported fns checked : 3354
   matched to a C proto : 2241
   mismatches           : 10  (4 shown, 6 LOW-suppressed)
-  no C proto (internal): 1106
+  no C proto (internal): 1113
   signature OK         : 2231
 === verify_signatures — arch=amd64 ===
 Dumping C AST (clang)...
@@ -26,6 +26,6 @@ Scanning exported Rust fns...
 [MEDIUM] NtSetLdtEntries  (sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/stubs.rs:137)
 [MEDIUM] ObpSetHandleAttributes  (sdk/lib/rust/ob-rust/src/obhandle.rs:227)
 clang:  .build-tools/llvm-mingw/bin/clang
-crates: sdk/lib/rust/ntoskrnl-rust/src, sdk/lib/rust/lpc-rust/src, sdk/lib/rust/fsrtl-rust/src, sdk/lib/rust/dbgk-rust/src, sdk/lib/rust/wmi-rust/src, sdk/lib/rust/dbgprint-rust/src, sdk/lib/rust/cc-rust/src, sdk/lib/rust/iomgr-rust/src, sdk/lib/rust/kdbg-rust/src, sdk/lib/rust/config-rust/src, sdk/lib/rust/ob-rust/src, sdk/lib/rust/ps-rust/src, sdk/lib/rust/kd-rust/src, sdk/lib/rust/kd64-rust/src, sdk/lib/rust/vf-rust/src, sdk/lib/rust/rtlk-rust/src, sdk/lib/rust/po-rust/src, sdk/lib/rust/inbv-rust/src, sdk/lib/rust/vdm-rust/src, sdk/lib/rust/fstub-rust/src, sdk/lib/rust/se-rust/src, sdk/lib/rust/pnpmgr-rust/src
+crates: sdk/lib/rust/ntoskrnl-rust/src, sdk/lib/rust/lpc-rust/src, sdk/lib/rust/fsrtl-rust/src, sdk/lib/rust/dbgk-rust/src, sdk/lib/rust/wmi-rust/src, sdk/lib/rust/dbgprint-rust/src, sdk/lib/rust/cc-rust/src, sdk/lib/rust/iomgr-rust/src, sdk/lib/rust/kdbg-rust/src, sdk/lib/rust/config-rust/src, sdk/lib/rust/ex-rust/src, sdk/lib/rust/ob-rust/src, sdk/lib/rust/ps-rust/src, sdk/lib/rust/kd-rust/src, sdk/lib/rust/kd64-rust/src, sdk/lib/rust/vf-rust/src, sdk/lib/rust/rtlk-rust/src, sdk/lib/rust/po-rust/src, sdk/lib/rust/inbv-rust/src, sdk/lib/rust/vdm-rust/src, sdk/lib/rust/fstub-rust/src, sdk/lib/rust/se-rust/src, sdk/lib/rust/pnpmgr-rust/src
 headers: build-amd64
 ── coverage ──

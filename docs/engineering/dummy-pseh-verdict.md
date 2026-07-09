@@ -146,7 +146,7 @@ Empirically re-tested on our exact llvm-mingw clang 19.1.7 (2026-07-06):
   the cc-rs C shims; the first Rust frame in any walk hit the bogus
   leaf-fallback (`Rip = [Rsp]`) and the walk went wild. Flipping
   `requires-uwtable: true` (amd64 + arm64 kernel targets) grows `.pdata` to
-  ~7,900 entries (~1–3% image size) and the PoC passes. Field manual §9.35.
+  ~7,900 entries (~1–3% image size) and the PoC passes. Field manual §9.42.
   **Independent payoff:** this also fixes today's *unhandled*-raise
   diagnostics (clean 0x1E instead of the 0x7F "RtlVirtualUnwind fault
   amplification" cascade the `C00000D8` hunt hit) and makes every
