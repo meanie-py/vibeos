@@ -212,10 +212,46 @@ lines appearing after ramdisk are the concurrent PnP worker, **not** proof the b
 ramdisk — the main thread had already panic-looped. Also: driver `.sys` files do NOT
 relink on a warm `vibeos-cli build` after an `ntkrnl-sys` edit (the ninja-dep hazard,
 tracked task), so ALWAYS `--clean` when validating a layout change or a stale 68-stride
-`.sys` will mislead you. **Next step:** GDB a clean build at the panic, read the wedging
-IRP + its stack, and find which crate's `IoSetCompletionRoutine` wrote the routine — that
-crate has a surviving old-stride shim or a packed `types_arm64.rs`
-`IO_STACK_LOCATION`/`IRP`.
+`.sys` will mislead you.
+
+*Update (deeper GDB pass):* the panic completes the `\Device\Ramdisk` CREATE IRP that
+`IopStartRamdisk`'s `ZwOpenFile` builds (frame-7 `RamdiskOpenClose+0x20` →
+`IofCompleteRequest`). The IRP is allocated by the kernel object-manager create path
+(`IoCreateFile`→`IopParseDevice`→`IoAllocateIrp`), all of which use the *fixed* 72-stride
+helpers — so `IoInitializeIrp`/`IoAllocateIrp`/`IoSizeOfIrp`/the completion walker are all
+verified correct. `x19` in the panic frame is NOT reliably the wedging IRP (it points at a
+non-invoking IRP), so identifying the exact culprit needs **frame-5 local resolution**:
+the wedging `StackPtr` is a local in `IofCompleteRequestInner` (irp.rs:1316) — read it via
+`frame 5; info locals` or from the callee-saved reg holding it (disassemble
+`IofCompleteRequestInner` around the `.CompletionRoutine.unwrap()` call). Then read that
+`StackPtr`'s `Control@3` + `CompletionRoutine@56` and trace who wrote them. **Live-IRP GDB
+recipe** (offsets: IO_STACK_LOCATION size 72, `MajorFunction@0 Control@3 DeviceObject@40
+CompletionRoutine@56 Context@64`; IRP `StackCount@66 CurrentLocation@67
+Tail.CurrentStackLocation@0xb8`, `first_stack_location = IRP+208`):
+`scratchpad/gdb_livedump.sh` boots + dumps but must be pointed at the *live* StackPtr, not
+a hardcoded IRP.
+
+**Remaining 68-strider sweep candidates** (crates with their OWN stack-location helpers,
+not the shared `ntkrnl-sys inline/tier1` that's already fixed): local `IoSizeOfIrp` in
+`usbhub-rust/glue.rs:80` and `usbaudio-rust/pin.rs:19`; `ddk_shims`/`glue` stack helpers in
+`disk-/cdrom-/classpnp-/mountmgr-/ks-/usbport-/usbstor-/usbccgp-rust` (most use bindgen
+`.offset(-1)` which auto-corrects to 72 now — verify each). NONE of these load at the
+ramdisk stage, so the ramdisk culprit is elsewhere — likely a `ntoskrnl-rust` create/parse
+path detail. `ntoskrnl-rust/src/arm64_dbg.rs:59` already has a `[LAYOUT]
+IRP.CurrentStackLocation off=` tripwire — wire it to fire on the ramdisk IRP to confirm the
+running kernel's offset.
+
+**DISPOSITION FORK (user decision):**
+- **(A) Complete the sweep** — keep the layout fix (it's the *correct* NT ABI), finish
+  finding the remaining 68-strider(s) via frame-5 GDB. Correct end-state; unknown remaining
+  effort (the pre-fix system was consistently-68 and booted; the fix made walker+helpers 72
+  but ≥1 issuer still writes 68 → mixed strides → the ramdisk panic).
+- **(B) Revert the layout fix** (`74c39ef5b4b`) — restores the consistently-68 state that
+  boots arm64 to desktop green (as master does). USB then re-loses the `GET_ROOTHUB_PDO`
+  IOCTL (the layout fix is what unclobbered it), so USB HID stays an open quest needing a
+  narrower targeted fix. Fastest path to a green arm64 desktop.
+- **(C) Cherry-land only amd64** — the `hidparser` fix (a5d5c14d939) is independent + green
+  ×3; it can land alone regardless of the arm64 fork.
 
 **Wall 2 — EHCI control pipe halts (reached only via the concurrent PnP worker).** When USB
 devices are attached, the PnP worker enumerates EHCI and **the control pipe HALTS on the
