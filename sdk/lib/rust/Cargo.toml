@@ -15,6 +15,7 @@ members = [
     "iomgr-rust",
     "kdbg-rust",
     "config-rust",
+    "ex-rust",
     "ob-rust",
     "ps-rust",
     "kd-rust",
