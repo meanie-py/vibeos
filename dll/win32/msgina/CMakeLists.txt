@@ -6,8 +6,8 @@ spec2def(msgina.dll msgina.spec)
 # symbols in the crate are the sole providers of those functions+exports now that
 # the C TUs are commented out (conutils-style cohab; no --allow-multiple-definition
 # needed since every symbol was removed from the C side). All 7 .c kept on disk
-# (never-delete rule). dimmedwindow.cpp (C++ dimmed logon backdrop) stays C and is
-# the C anchor TU together with the generated msgina_stubs.c.
+# (never-delete rule). dimmedwindow.cpp is now Rust too (dimmedwindow.rs); the
+# generated msgina_stubs.c is the sole remaining C anchor TU.
 list(APPEND SOURCE
     # gui.c      — replaced by Rust (sdk/lib/rust/msgina-rust/src/gui.rs)
     # lsa.c      — replaced by Rust (sdk/lib/rust/msgina-rust/src/lsa.rs)
@@ -19,7 +19,7 @@ list(APPEND SOURCE
     )
 
 list(APPEND PCH_SKIP_SOURCE
-    dimmedwindow.cpp
+    # dimmedwindow.cpp — replaced by Rust (sdk/lib/rust/msgina-rust/src/dimmedwindow.rs)
     ${CMAKE_CURRENT_BINARY_DIR}/msgina_stubs.c)
 
 # Builds libmsgina_rust.a from the workspace crate (STANDARD user-mode per-arch

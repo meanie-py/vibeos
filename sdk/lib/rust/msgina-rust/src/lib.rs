@@ -121,6 +121,7 @@ pub mod resources;
 pub mod strsafe;
 
 // ---- translated body modules (added per-file as each .c is flipped) ----
+pub mod dimmedwindow;
 pub mod gui;
 pub mod lsa;
 pub mod msgina;
@@ -130,8 +131,20 @@ pub mod tui;
 pub mod utils;
 
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    unsafe {
+        if let Some(loc) = info.location() {
+            crate::prelude::DbgPrint(
+                b"[MSGINA] RUST PANIC at %.*s:%u\n\0".as_ptr() as *const i8,
+                loc.file().len() as u32,
+                loc.file().as_ptr(),
+                loc.line(),
+            );
+        } else {
+            crate::prelude::DbgPrint(b"[MSGINA] RUST PANIC (no location)\n\0".as_ptr() as *const i8);
+        }
+    }
+    loop {} // nolint: silent-failure (self-reported above; nothing to unwind to)
 }
 
 #[no_mangle]

@@ -109,6 +109,35 @@ unsafe fn violation(kind: u32, owner: usize, culprit: usize, chain: PKWAIT_BLOCK
         owner as *const (),
         culprit as *const (),
     );
+    // Kernel FP-chain backtrace (arm64): the 2026-07-08 soak proved the -1
+    // Thread reaches KiUnlinkThread WITHOUT tripping the wait-list funnel
+    // checks — so the decisive datum is WHO called into the unwait. arm64
+    // keeps frame pointers; walk x29 with validity guards (same technique as
+    // the [UEXC-BT] user backtrace in ke/arm64/stubs.rs).
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "system" {
+            fn MmIsAddressValid(p: *const core::ffi::c_void) -> u8;
+        }
+        let mut fp: u64;
+        core::arch::asm!("mov {}, x29", out(reg) fp, options(nomem, nostack));
+        for i in 0..14u32 {
+            if fp == 0
+                || (fp & 0x7) != 0
+                || MmIsAddressValid(fp as *const _) == 0
+                || MmIsAddressValid((fp + 8) as *const _) == 0
+            {
+                break;
+            }
+            let next_fp = *(fp as *const u64);
+            let lr = *((fp + 8) as *const u64);
+            crate::dbg_print!(b"[WAITDEP-BT] lr%u=%p\n\0", i, lr as *const ());
+            if next_fp <= fp {
+                break;
+            }
+            fp = next_fp;
+        }
+    }
     // Best-effort chain dump for forensics (bounded; tolerate the corruption).
     if !chain.is_null() {
         let mut wb = chain;

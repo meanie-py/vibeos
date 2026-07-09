@@ -329,6 +329,7 @@ unsafe fn DesktopHeapGetUserDelta() -> ULONG_PTR {
     if (*pti).rpdesk.is_null() { return 0; }
     let pheap_desktop = (*(*pti).rpdesk).pheapDesktop;
     let w32 = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
+    // Skip the first mapping (the global user heap); search from .Next.
     let mut mapping = (*w32).HeapMappings.Next;
     let mut delta: ULONG_PTR = 0;
     while !mapping.is_null() {

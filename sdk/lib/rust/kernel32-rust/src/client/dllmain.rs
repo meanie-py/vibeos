@@ -252,6 +252,37 @@ pub unsafe extern "system" fn DllMain(
                         .offset(BASESRV_SERVERDLL_INDEX as isize)
                         as PBASE_STATIC_SERVER_DATA;
                 }
+                // Corruption tripwire (arm64 flake, ~1/10 boots): the CSR shared
+                // section's WindowsDirectory.Buffer reads as a KERNEL VA
+                // (observed 0xFFFF8000050D4CB0, identical across hits) at
+                // winlogon-init time; the %wZ in the BaseDefaultPath _snwprintf
+                // below then AVs in ntdll -> winlogon dies -> BUGCHECK 0x4C.
+                // kernel32 is user-mode-only, so ANY high-half Buffer here is
+                // corruption, never legit. Report LOUDLY with the raw fields
+                // (this print is the capture — basesrv wrote shared-heap copies,
+                // so a kernel VA means the section content was overwritten), then
+                // reroute to the fallback so the boot survives diagnosed instead
+                // of dying undiagnosed. Root-cause hunt: task/field-manual.
+                if !BaseStaticServerData.is_null() {
+                    let wd = core::ptr::addr_of!((*BaseStaticServerData).WindowsDirectory);
+                    let wsd = core::ptr::addr_of!((*BaseStaticServerData).WindowsSystemDirectory);
+                    let bad = |u: *const _UNICODE_STRING| {
+                        let b = (*u).Buffer as usize;
+                        ((*u).Length != 0 && b == 0) || (b >> 63) != 0
+                    };
+                    if bad(wd) || bad(wsd) {
+                        DbgPrint(
+                            b"[kernel32] BASE_STATIC_SERVER_DATA CORRUPT: WindowsDirectory.Buffer=%p Len=%u WindowsSystemDirectory.Buffer=%p Len=%u data=%p - using fallback (arm64 flake tripwire)\n\0"
+                                .as_ptr() as *const i8,
+                            (*wd).Buffer,
+                            (*wd).Length as u32,
+                            (*wsd).Buffer,
+                            (*wsd).Length as u32,
+                            BaseStaticServerData,
+                        );
+                        BaseStaticServerData = core::ptr::null_mut();
+                    }
+                }
                 if BaseStaticServerData.is_null() {
                     DbgPrint(
                         b"ARM64: ReadOnlyStaticServerData not available, using fallback\n\0".as_ptr()
@@ -289,6 +320,41 @@ pub unsafe extern "system" fn DllMain(
 
             BaseWindowsDirectory = (*BaseStaticServerData).WindowsDirectory;
             BaseWindowsSystemDirectory = (*BaseStaticServerData).WindowsSystemDirectory;
+
+            // arm64 flake tripwire, take 2 (TOCTOU-free): the earlier check at
+            // BaseStaticServerData-fetch time kept passing while the %wZ below
+            // still faulted — the section content MUTATES between there and
+            // here (winlogon races basesrv's population; observed transient
+            // Buffers: a kernel-stack VA, and 0x73 = string DATA read as a
+            // pointer half). So validate the SNAPSHOT the print actually uses:
+            // a bad snapshot is reported loudly and retargeted to the fallback
+            // literals; a good snapshot can no longer change under us.
+            #[cfg(target_arch = "aarch64")]
+            {
+                let bad = |u: &_UNICODE_STRING| {
+                    let b = u.Buffer as usize;
+                    (u.Length != 0 && b == 0)
+                        || (b >> 63) != 0
+                        || (b != 0 && b < 0x10000)
+                        || (b & 1) != 0
+                };
+                if bad(&BaseWindowsDirectory) || bad(&BaseWindowsSystemDirectory) {
+                    DbgPrint(
+                        b"[kernel32] BASE_STATIC_SERVER_DATA snapshot CORRUPT (raced basesrv?): WinDir.Buffer=%p Len=%u SysDir.Buffer=%p Len=%u data=%p - using fallback strings\n\0"
+                            .as_ptr() as *const i8,
+                        BaseWindowsDirectory.Buffer,
+                        BaseWindowsDirectory.Length as u32,
+                        BaseWindowsSystemDirectory.Buffer,
+                        BaseWindowsSystemDirectory.Length as u32,
+                        BaseStaticServerData,
+                    );
+                    RtlInitUnicodeString(&mut BaseWindowsDirectory, w!("\\reactos").as_ptr());
+                    RtlInitUnicodeString(
+                        &mut BaseWindowsSystemDirectory,
+                        w!("\\reactos\\system32").as_ptr(),
+                    );
+                }
+            }
 
             let cb_dest = core::mem::size_of::<[WCHAR; 6140]>();
             let written = _snwprintf(
