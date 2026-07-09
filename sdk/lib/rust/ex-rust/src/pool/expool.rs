@@ -206,6 +206,18 @@ unsafe fn exp_check_pool_header(entry: PPOOL_HEADER) {
     }
 }
 
+// DIAG (task #13): ring of recent frees — dumped by the pool-corruption
+// bugcheck path so the fatal free has context on serial.
+#[allow(clippy::declare_interior_mutable_const)]
+const ATOMIC_PAIR: (core::sync::atomic::AtomicUsize, core::sync::atomic::AtomicUsize) = (
+    core::sync::atomic::AtomicUsize::new(0),
+    core::sync::atomic::AtomicUsize::new(0),
+);
+pub static EXP_FREE_RING: [(core::sync::atomic::AtomicUsize, core::sync::atomic::AtomicUsize); 16] =
+    [ATOMIC_PAIR; 16];
+pub static EXP_FREE_RING_IDX: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
 unsafe fn exp_check_pool_blocks(block: PVOID) {
     let mut found = false;
     let mut size: usize = 0;
@@ -227,6 +239,31 @@ unsafe fn exp_check_pool_blocks(block: PVOID) {
     }
 
     if PAGE_ALIGN(entry as usize) != entry as usize || !found {
+        // Dump the page's block walk + recent-free ring before dying.
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            c"[POOL] corrupt-free block=%p — page walk:\n".as_ptr(), block);
+        let mut e = PAGE_ALIGN(block as usize) as PPOOL_HEADER;
+        let mut guard = 0;
+        while guard < 64 {
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                c"[POOL]   hdr=%p prev=%x bs=%x type=%x tag=%08lx\n".as_ptr(),
+                e, (*e).PreviousSize() as u32, (*e).BlockSize() as u32,
+                (*e).PoolType() as u32, (*e).PoolTag);
+            if (*e).BlockSize() == 0 { break; }
+            e = pool_next_block(e);
+            if PAGE_ALIGN(e as usize) == e as usize { break; }
+            guard += 1;
+        }
+        let idx = EXP_FREE_RING_IDX.load(core::sync::atomic::Ordering::Relaxed);
+        for k in 0..16usize {
+            let i = (idx.wrapping_sub(1).wrapping_sub(k)) & 15;
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                c"[POOL]   free[-%u] ptr=%p tag=%08lx\n".as_ptr(),
+                k as u32,
+                EXP_FREE_RING[i].0.load(core::sync::atomic::Ordering::Relaxed),
+                EXP_FREE_RING[i].1.load(core::sync::atomic::Ordering::Relaxed),
+            );
+        }
         KeBugCheckEx(
             BAD_POOL_HEADER,
             POOL_ENTRY_NOT_FOUND as ULONG_PTR,
@@ -1312,6 +1349,29 @@ pub unsafe extern "system" fn ExFreePoolWithTag(p: PVOID, tag_to_free: ULONG) {
     // NULL check — some kernel/driver code calls ExFreePool(NULL)
     if p.is_null() {
         return;
+    }
+    // Always-on diagnostics (kept after the 2026-07-07 classpnp IoQueueWorkItemEx
+    // ABI bug, which freed the running thread's ETHREAD): ring of the last 16
+    // frees (ptr, tag) so the corrupt-free bugcheck path can dump recent-free
+    // context — KeBugCheckEx params don't include the free site.
+    {
+        let i = EXP_FREE_RING_IDX.fetch_add(1, core::sync::atomic::Ordering::Relaxed) & 15;
+        EXP_FREE_RING[i].0.store(p as usize, core::sync::atomic::Ordering::Relaxed);
+        EXP_FREE_RING[i].1.store(tag_to_free as usize, core::sync::atomic::Ordering::Relaxed);
+    }
+    // TRIPWIRE: ExFreePool(<current thread's ETHREAD>) is always catastrophic
+    // (a bad IO_WORKITEM pointer is the historical culprit). Fault HERE, at the
+    // corrupting call site, so the 0x1E banner prints the true stack instead of
+    // an innocent-victim crash minutes later.
+    if p as usize == ntkrnl_sys::mm::KeGetCurrentThread() as usize {
+        extern "C" {
+            static IOP_LAST_WORKITEM_ROUTINE: core::sync::atomic::AtomicUsize;
+        }
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            c"[POOL] TRIPWIRE: ExFreePool(current ETHREAD %p) tag=%08lx last-io-workitem-routine=%p — faulting for stack\n".as_ptr(),
+            p, tag_to_free,
+            IOP_LAST_WORKITEM_ROUTINE.load(core::sync::atomic::Ordering::Relaxed));
+        core::ptr::null_mut::<u8>().write_volatile(0);
     }
     // Check for special pool
     if ExpPoolFlags

@@ -3436,6 +3436,30 @@ walker is mid-signal on its stack event) is REAL in principle but unreachable:
 no caller in the tree passes a non-NULL Timeout to
 `ExTimedWaitForUnblockPushLock` (only `ExWaitForUnblockPushLock(NULL)`).
 
+**Unifying lead for the TDI-window flake family (2026-07-08).** A second face
+surfaced: winlogon dies user-mode (BUGCHECK 0x4C/C000021A cascade) with a
+KERNEL VA (`0xFFFF8000050D4CB0`, identical across hits, kernel-stack region)
+as `BASE_STATIC_SERVER_DATA.WindowsDirectory.Buffer` — caught by the
+`[UEXC-BT]` user FP-chain backtrace (ke/arm64/stubs.rs, second-chance kill):
+`LdrpRunInitializeRoutines → kernel32!DllMain → _snwprintf("%wZ;...")`.
+basesrv heap-copies those strings into the CSR shared section correctly, and
+the section maps at the SAME VA in server and clients — so the leading
+hypothesis is a **wrong physical page behind the client's section view**: an
+arm64 Mm page-identity race (direct successor of the fixed §9.14–§9.16
+PFN/section family) briefly hands a client view a page still owned by (or
+recycled from) a kernel thread stack. The same double-owned-page mechanism
+would ALSO produce the §9.31 dispatcher face (KWAIT_BLOCK `Thread=-1` — stack
+page scribbled by its other owner). Discriminators live on master:
+- kernel32 DllMain (arm64) validates the shared-section strings and dumps
+  `[kernel32] BASE_STATIC_SERVER_DATA CORRUPT ...` (+ falls back, so the boot
+  survives diagnosed): whole-struct garbage ⇒ wrong page; only Buffer fields
+  poisoned with sane Lengths ⇒ targeted overwrite.
+- waitdep chain dump + `check_waittest` at the three direct-consume funnels
+  (KeSetEventBoostPriority / KiActivateWaiterQueue / KeSignalGateBoostPriority)
+  names the object and block on the dispatcher face.
+Do NOT hand-loop boots; organic gate traffic is the soak — the next hit
+self-reports enough to pick the branch.
+
 ### 9.32 Static analysis for leaked Ob references — `scan_ob_refcount.py`
 
 Sibling of §9.28's IRQL scanner (same tree-sitter held-set engine), pointed at
@@ -3610,3 +3634,56 @@ phantom-build family). Now `md5 % 20000`. If a build dies with sccache
 "No such file or directory" on paths that plainly exist in YOUR tree, suspect
 a port/namespace collision: `pgrep -a sccache` + recompute the port hash per
 worktree root.
+
+### 9.36 (RESOLVED 2026-07-07) WriteFile hangs forever on USB volume — extern-`static` WIDTH DRIFT (`MmThrottleTop` declared u64, defined u32) permanently tripped the Cc write throttle
+
+**Symptom:** first cached user write to a FAT volume never returns. No BUGCHECK,
+no error, no FS activity — the writing process just parks. Everything read-path
+works. (Surfaced as "FlushFileBuffers doesn't persist" / 0-byte files on the
+medium; the real hang was *WriteFile*, one call earlier — the flush and close
+never ran.)
+
+**Root cause:** `cc-rust/src/copy.rs` declared
+
+```rust
+extern "system" { static mut MmThrottleTop: PFN_NUMBER; }   // u64 on amd64/arm64
+```
+
+but the definition (C `mminit.c:407` and Rust `ARM3/mminit.rs`) is `ULONG` (u32).
+The 8-byte read pulls 4 bytes of the *neighboring* variable into the high half,
+so the throttle limit is garbage-huge; `MmAvailablePages > MmThrottleTop` is
+permanently false, so `CcCanIWrite` always says "throttled" and (Wait=TRUE path)
+blocks in its deferred-write loop forever. LiveCD boots never do a cached write,
+so this was latent until the first real FS write test.
+
+**Why it was hard:** every probe in the FS write path showed *nothing wrong* —
+the write IRP never reached fastfat at all. The unblocking insight came from
+splitting the user-mode test into per-syscall markers (`created` printed,
+`wrote` didn't → the hang is INSIDE WriteFile, upstream of the FS).
+
+**The class — extern-`static` width drift:** same family as the VBO/LBO function
+-arg width bugs, but on DATA symbols, and `verify_ffi.py` explicitly skips
+extern statics. The linker gives no protection: a PE-COFF data import has no
+type or size. Over-wide reads produce garbage; over-wide *writes* corrupt the
+neighbor. A workspace sweep (2026-07-07) found and fixed the live cases:
+
+- `MmThrottleTop`/`MmThrottleBottom` u64-vs-u32 (this bug),
+- `MmLargeStackSize` declared `SIZE_T` in `ARM3/helpers.rs` + read as usize in
+  `procsup.rs` GUI-stack paths (u32 in mminit — garbage large-stack size),
+- `NlsMbCodePageTag` declared `i32` in pcix (C: `BOOLEAN`, 1 byte — over-read),
+- `InitSafeBootMode` declared `BOOLEAN` in pcix (C: `ULONG` — under-read,
+  LE-benign but wrong).
+
+**Detection:** a first-pass scanner (group all extern-block `static NAME: TYPE`
+decls by symbol, flag width conflicts after alias normalization) surfaced ~171
+naming conflicts of which the above were real width bugs. Owed: wire an
+extern-static width checker into `verify_ffi.py` (task: extend const/ABI
+verification — most conflicts are alias noise like `LUID` vs `_LUID`, so the
+checker must normalize through bindgen type aliases and compare *widths*, not
+names).
+
+**Lesson:** when a *user-mode* operation hangs with zero kernel-side probe
+output, binary-search the syscall boundary FIRST (markf around each API call
+costs one rebuild of a test app) before instrumenting ever-deeper kernel paths.
+And any `extern static` whose type was guessed from the name (`Mm*` "looks like
+a PFN count") is a width-drift candidate — the C definition is the only truth.

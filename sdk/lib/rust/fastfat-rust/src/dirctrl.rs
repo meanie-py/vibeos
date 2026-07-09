@@ -74,7 +74,7 @@ pub const BugCheckFileId: u32 = FAT_BUG_CHECK_DIRCTRL;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // placeholder
 const FCB_STATE_DELETE_ON_CLOSE: u32 = 0x01; // placeholder
 const SL_WATCH_TREE: u32 = 0x01; // placeholder
-const UserDirectoryOpen: u32 = 1; // placeholder
+const UserDirectoryOpen: u32 = crate::types::_TYPE_OF_OPEN_UserDirectoryOpen; // 3 — bindgen ground truth (was 1)
 
 // External declarations for unknown functions
 

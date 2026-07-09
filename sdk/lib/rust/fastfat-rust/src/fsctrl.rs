@@ -55,7 +55,7 @@ extern "system" {
     fn FatOpenDirectoryFile(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn FatAllocateDiskSpace( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, HintCluster: u32, ByteCount: *mut u32, AllocationHint: i32, /* BOOLEAN */ Mcb: *mut LARGE_MCB, );
     fn FatGetIndexFromLbo(Vcb: *mut VCB, Lbo: LBO) -> u32;
-    fn FatGetLboFromIndex(Vcb: *mut VCB, Index: u32) -> u64;
+    fn FatGetLboFromIndex(Vcb: *mut VCB, Index: u32) -> i64; // LBO = LONGLONG (fat.h:34)
     fn FatFlushFatEntries(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Cluster: u32, Count: u32);
     fn FatSetFatEntry( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, SourceCluster: u32, TargetCluster: FAT_ENTRY, );
     fn FatDeallocateDiskSpace( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Wait: i32, /* BOOLEAN */ );
@@ -267,7 +267,10 @@ pub unsafe extern "system" fn FatAddMcbEntry(
     Vcb: *mut VCB,
     Mcb: *mut LARGE_MCB,
     mut Vbo: u32,
-    mut Lbo: u32,
+    // C signature: `LBO Lbo` where LBO = LONGLONG (fat.h:34, "for Fat32, LBO
+    // is >32 bits"). Was u32 — truncated every LBO above 4GB and mismatched
+    // the (also-wrong) u64 extern decl in allocsup.rs.
+    mut Lbo: i64,
     mut SectorCount: u32,
 ) -> i32 {
     // PAGED_CODE(); –  ignored
@@ -279,7 +282,7 @@ pub unsafe extern "system" fn FatAddMcbEntry(
     }
 
     Vbo >>= (*Vcb).AllocationSupport.LogOfBytesPerSector as u32;
-    Lbo >>= (*Vcb).AllocationSupport.LogOfBytesPerSector as u32;
+    Lbo >>= (*Vcb).AllocationSupport.LogOfBytesPerSector as i64;
 
     debug_assert!(SectorCount != 0);
 
@@ -304,7 +307,7 @@ pub unsafe extern "system" fn FatAddMcbEntry(
     let result = FsRtlAddLargeMcbEntry(
         Mcb,
         Vbo as i64,
-        Lbo as i64,
+        Lbo,
         SectorCount as i64,
     );
 
@@ -668,7 +671,9 @@ pub unsafe extern "system" fn FatVerifyVolume(
         if Bpb.Sectors != 0 { Bpb.LargeSectors = 0; }
 
         {
-            let size = if IsBpbFat32(&Bpb as *const _ as *const PACKED_BIOS_PARAMETER_BLOCK) {
+            // C macro IsBpbFat32 works on the UNPACKED Bpb here — check the field
+            // directly instead of casting unpacked→packed (layouts differ).
+            let size = if Bpb.RootEntries == 0 {
                 core::mem::size_of::<BIOS_PARAMETER_BLOCK>()
             } else {
                 core::mem::offset_of!(BIOS_PARAMETER_BLOCK, LargeSectorsPerFat)
@@ -1194,7 +1199,7 @@ pub unsafe extern "system" fn FatMoveFile(
     let mut ClusterShift: u32;
     let mut MaxClusters: u32;
     let mut FileOffset: u32 = 0;
-    let mut TargetLbo: u64 = 0;
+    let mut TargetLbo: i64 = 0;
     let mut TargetCluster: u32 = 0;
     let mut LargeSourceLbo: LARGE_INTEGER = core::mem::zeroed();
     let mut LargeTargetLbo: LARGE_INTEGER = core::mem::zeroed();
@@ -1637,7 +1642,7 @@ pub unsafe extern "system" fn FatMoveFile(
                     Vcb,
                     &mut (*FcbOrDcb).Mcb,
                     FileOffset,
-                    TargetLbo as u32,
+                    TargetLbo,
                     BytesToReallocate,
                 );
 
@@ -1655,7 +1660,7 @@ pub unsafe extern "system" fn FatMoveFile(
                 // Advance variables
                 TargetCluster += BytesToReallocate >> ClusterShift;
                 FileOffset += BytesToReallocate;
-                TargetLbo += BytesToReallocate as u64;
+                TargetLbo += BytesToReallocate as i64;
                 ByteCount -= BytesToReallocate;
                 LargeTargetLbo.QuadPart += BytesToReallocate as i64;
 
@@ -1942,7 +1947,7 @@ pub unsafe extern "system" fn FatComputeMoveFileSplicePoints(
             Vcb,
             SourceMcb,
             SourceMcbVbo,
-            (SourceLbo) as u32,
+            SourceLbo as i64,
             SourceMcbBytesInRun,
         );
 
@@ -2142,7 +2147,7 @@ pub unsafe extern "system" fn FatFlushAndCleanVolume(
 ) {
     // macros/constants
     const NoFlush: FAT_FLUSH_TYPE = 0;
-    const FlushWithoutPurge: FAT_FLUSH_TYPE = 1;
+    const FlushWithoutPurge: FAT_FLUSH_TYPE = 3; // FAT_FLUSH_TYPE (fatprocs.h) — was 1 = Flush
     const VCB_STATE_FLAG_VOLUME_DIRTY: u32 = 0x04;
     const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x10;
     const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x02;

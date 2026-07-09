@@ -170,7 +170,7 @@ pub unsafe extern "system" fn MmDeleteKernelStack(StackBase: PVOID, GuiStack: BO
         }
     }
 
-    StackPages = (BYTES_TO_PAGES(if GuiStack != 0 { MmLargeStackSize } else { KERNEL_STACK_SIZE })) as u32;
+    StackPages = (BYTES_TO_PAGES(if GuiStack != 0 { MmLargeStackSize as usize } else { KERNEL_STACK_SIZE })) as u32;
 
     let OldIrql = MiAcquirePfnLock();
 
@@ -236,12 +236,12 @@ pub unsafe extern "system" fn MmCreateKernelStack(GuiStack: BOOLEAN, Node: UCHAR
     let (StackPtes, StackPages) = if GuiStack != 0 {
         #[cfg(target_arch = "aarch64")]
         {
-            let ptes = BYTES_TO_PAGES(MmLargeStackSize);
+            let ptes = BYTES_TO_PAGES(MmLargeStackSize as usize);
             (ptes, ptes)
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            (BYTES_TO_PAGES(MmLargeStackSize), BYTES_TO_PAGES(KERNEL_LARGE_STACK_COMMIT))
+            (BYTES_TO_PAGES(MmLargeStackSize as usize), BYTES_TO_PAGES(KERNEL_LARGE_STACK_COMMIT))
         }
     } else {
         if ExQueryDepthSList(core::ptr::addr_of_mut!(MmDeadStackSListHead)) > 0 {
@@ -267,7 +267,7 @@ pub unsafe extern "system" fn MmCreateKernelStack(GuiStack: BOOLEAN, Node: UCHAR
     #[cfg(not(target_arch = "aarch64"))]
     {
         if GuiStack != 0 {
-            PointerPte = PointerPte.add(BYTES_TO_PAGES(MmLargeStackSize - KERNEL_LARGE_STACK_COMMIT));
+            PointerPte = PointerPte.add(BYTES_TO_PAGES(MmLargeStackSize as usize - KERNEL_LARGE_STACK_COMMIT));
         }
     }
 
@@ -316,7 +316,7 @@ unsafe fn MmGrowKernelStackEx(StackPointer: PVOID, GrowSize: ULONG) -> NTSTATUS 
         return STATUS_SUCCESS;
     }
 
-    let LastPte = MiAddressToPte(((*(Thread as *mut _KTHREAD)).StackBase as ULONG_PTR - MmLargeStackSize) as PVOID);
+    let LastPte = MiAddressToPte(((*(Thread as *mut _KTHREAD)).StackBase as ULONG_PTR - MmLargeStackSize as usize) as PVOID);
     if (NewLimitPte as ULONG_PTR) < (LastPte as ULONG_PTR) {
         return STATUS_STACK_OVERFLOW;
     }

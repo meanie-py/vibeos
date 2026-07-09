@@ -147,14 +147,21 @@ unsafe fn CcpGetAppropriateBcb(
         );
 
         if to_pin != 0 {
+            // Pin the DUP's lock — NOT the about-to-be-discarded temp iBcb's.
+            // (Upstream ReactOS pin.c acquires iBcb->Lock here and then
+            // ExDeleteResourceLite's it WHILE HELD, and CcUnpinData later
+            // releases DupBcb->Lock which was never acquired — an over-release
+            // that corrupts the ERESOURCE owner table. That upstream bug is what
+            // produced our "ExFreePool of an ETHREAD-interior pointer" crashes
+            // once overlapping FAT-page pins started exercising the dup path.)
             if BooleanFlagOn(pin_flags, PIN_EXCLUSIVE) != 0 {
                 result = ExAcquireResourceExclusiveLite(
-                    core::ptr::addr_of_mut!((*i_bcb).Lock),
+                    core::ptr::addr_of_mut!((*dup_bcb).Lock),
                     BooleanFlagOn(pin_flags, PIN_WAIT),
                 );
             } else {
                 result = ExAcquireSharedStarveExclusive(
-                    core::ptr::addr_of_mut!((*i_bcb).Lock),
+                    core::ptr::addr_of_mut!((*dup_bcb).Lock),
                     BooleanFlagOn(pin_flags, PIN_WAIT),
                 );
             }
