@@ -21,7 +21,8 @@ use ntkrnl_sys::ddk::INTERFACE_TYPE;
 // data import so the `__imp_` thunk is generated.
 #[link(name = "ntoskrnl", kind = "raw-dylib")]
 extern "C" {
-    static InitSafeBootMode: BOOLEAN;
+    // ULONG in ntoskrnl/ex/init.c — BOOLEAN under-read was LE-benign but wrong
+    static InitSafeBootMode: ULONG;
 }
 const PCIBus: INTERFACE_TYPE = 5;
 const PowerDeviceUnspecified: ntkrnl_sys::ddk::DEVICE_POWER_STATE = 0;
@@ -809,7 +810,7 @@ pub unsafe extern "system" fn PciApplyHacks(
                 (*(PdoExtension)).BIOSAllowsIDESwitchToNativeMode = 0u8;
 
                 if PciEnableNativeModeATA == 1u8
-                    && InitSafeBootMode == 0u8
+                    && InitSafeBootMode == 0u32
                     && PciIsSlotPresentInParentMethod(PdoExtension, u32::from_be_bytes([b'A', b'T', b'A', b'N'])) != 0
                 {
                     (*(PdoExtension)).BIOSAllowsIDESwitchToNativeMode = 1u8;

@@ -1,0 +1,277 @@
+"""Generic payload gate — interprets tools/payloads/<name>/payload.yaml (`test:`).
+
+Design doc: docs/engineering/payload-harness-design.md. A payload declares its
+binaries (staged onto the media at build time by tools/payloads/compile.py) and
+its test contract: a launch marker, a renders probe, and an input-drive script
+with an oracle. This module is the TEST-TIME consumer: it reads the same YAML
+and runs the three gates against one booted VM per session.
+
+Doom was the hand-written original (test_doom.py, retired 2026-07-07 — its
+click/keys/frame-delta logic became the interpreter verbs here); it is now just
+tools/payloads/doom/payload.yaml. Adding an app = adding a YAML file.
+
+OFF by default: requires `--payload <name>` (or the legacy `--doom` alias) AND
+media built with the payload staged:
+    VIBEOS_PAYLOAD=doom ./vibeos-cli build --arch <arch>
+    pytest tests/qemu/test_payload.py --arch arm64 --payload doom
+Front door: ./vibeos-cli smoke --arch arm64 --payload doom  (alias: --doom)
+
+Verb vocabulary (grown on demand — see design doc; keep it small):
+    drive steps:  {keys: [qcodes], gap: s} | {wait: s} | {focus: click-center}
+    oracles:      frame_delta_min / frame_delta_static_max (+ gap), survives
+                  (QMP query-status running). launch_marker covers serial.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any
+
+import pytest
+import yaml
+
+from .vm import PROJECT_DIR, QemuVM
+
+PAYLOADS_DIR = PROJECT_DIR / "tools" / "payloads"
+
+# Default thresholds (a payload's `test:` section can override per-gate).
+RENDER_DELTA_MIN = 0.02
+STATIC_DELTA_MAX = 0.012
+
+
+def _selected_payloads(config: pytest.Config) -> list[str]:
+    names = [n.strip() for n in (config.getoption("--payload") or "").split(",") if n.strip()]
+    if config.getoption("--doom") and "doom" not in names:
+        names.append("doom")
+    return names
+
+
+def load_spec(name: str) -> dict[str, Any]:
+    path = PAYLOADS_DIR / name / "payload.yaml"
+    if not path.is_file():
+        pytest.fail(f"unknown payload {name!r}: no {path}")
+    spec = yaml.safe_load(path.read_text())
+    assert spec.get("name") == name, f"{path}: name != directory"
+    return spec
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    if "payload" in metafunc.fixturenames:
+        names = _selected_payloads(metafunc.config)
+        # No selection -> parametrize empty; the fixtureless skip in
+        # test_* below never triggers, pytest just collects zero cases.
+        metafunc.parametrize("payload", names, ids=names)
+
+
+@pytest.fixture(scope="session")
+def specs() -> dict[str, dict[str, Any]]:
+    return {}
+
+
+@pytest.fixture
+def spec(payload: str, specs: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    if payload not in specs:
+        specs[payload] = load_spec(payload)
+    return specs[payload]
+
+
+# ---------------------------------------------------------------------------
+# Host-side probe/drive primitives (ported verbatim from test_doom.py — the
+# QMP input model + frame-delta oracle validated by the Doom bring-up).
+# ---------------------------------------------------------------------------
+
+
+def _frame_delta(vm: QemuVM, gap: float) -> float:
+    """Fraction of pixels differing between two screendumps `gap` seconds apart."""
+    from PIL import Image, ImageChops
+
+    a_p = vm.work_dir / "payload_a.ppm"
+    b_p = vm.work_dir / "payload_b.ppm"
+    vm.screendump(a_p)
+    time.sleep(gap)
+    vm.screendump(b_p)
+    a = Image.open(a_p).convert("RGB")
+    b = Image.open(b_p).convert("RGB")
+    diff = ImageChops.difference(a, b).convert("L").point(lambda v: 255 if v > 8 else 0)
+    hist = diff.histogram()
+    changed = sum(hist[1:])
+    return changed / float(a.size[0] * a.size[1])
+
+
+def _send(vm: QemuVM, events: list) -> None:
+    r = vm.qmp.execute("input-send-event", events=events)
+    if "error" in r:
+        pytest.fail(f"QMP input-send-event failed: {r['error']}")
+
+
+def _click_center(vm: QemuVM) -> None:
+    """Focus-click the app window: sweep the relative mouse to the top-left
+    corner (saturate), recenter into the client area, left-click. Exercises
+    the full mouse chain (class driver -> win32k hit-test -> activation)."""
+    for _ in range(25):  # pin to top-left corner (rel mouse: saturate)
+        _send(vm, [
+            {"type": "rel", "data": {"axis": "x", "value": -50}},
+            {"type": "rel", "data": {"axis": "y", "value": -40}},
+        ])
+    for _ in range(10):  # move to ~screen centre — inside a maximized client area
+        _send(vm, [
+            {"type": "rel", "data": {"axis": "x", "value": 40}},
+            {"type": "rel", "data": {"axis": "y", "value": 28}},
+        ])
+    _send(vm, [{"type": "btn", "data": {"button": "left", "down": True}}])
+    _send(vm, [{"type": "btn", "data": {"button": "left", "down": False}}])
+    time.sleep(1.5)  # let activation settle
+
+
+def _send_key(vm: QemuVM, qcode: str) -> None:
+    for down in (True, False):
+        _send(vm, [
+            {"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": qcode}}}
+        ])
+
+
+def _run_drive(vm: QemuVM, steps: list[dict[str, Any]]) -> None:
+    """Interpret a drive script. Unknown verbs fail loud (house rule) — grow
+    the vocabulary in ONE place here + document it in the module docstring."""
+    for step in steps:
+        if "keys" in step:
+            gap = float(step.get("gap", 0.5))
+            for key in step["keys"]:
+                _send_key(vm, str(key))
+                time.sleep(gap)
+        elif "wait" in step:
+            time.sleep(float(step["wait"]))
+        elif "focus" in step:
+            if step["focus"] != "click-center":
+                pytest.fail(f"unknown focus mode {step['focus']!r}")
+            _click_center(vm)
+        else:
+            pytest.fail(f"unknown drive step {step!r} — add the verb to test_payload.py")
+
+
+def _apply_xfail(spec: dict[str, Any], arch: str, request: pytest.FixtureRequest) -> None:
+    import os
+
+    # Debug knob: force-run on xfail arches to capture live serial evidence
+    # ([WIN32K] KEYDROP traces etc.) of *where* the chain breaks.
+    if os.environ.get("VIBEOS_PAYLOAD_FORCE") == "1":
+        return
+    for prefix, reason in (spec.get("test", {}).get("xfail") or {}).items():
+        if arch.startswith(prefix):
+            pytest.xfail(reason)
+
+
+# ---------------------------------------------------------------------------
+# The three gates (one boot per session; gates run in declaration order).
+# ---------------------------------------------------------------------------
+
+
+def test_payload_launched(
+    vm: QemuVM, arch: str, payload: str, spec: dict[str, Any]
+) -> None:
+    """The payload's exe was spawned (media staged + launcher ran)."""
+    t = spec.get("test", {})
+    marker = t.get("launch_marker")
+    if not marker:
+        pytest.skip(f"payload {payload!r} declares no launch_marker")
+    output = vm._boot_output or ""
+    if marker not in output:
+        # Launcher may fire slightly after the boot marker — drain a little more.
+        for _ in range(int(t.get("launch_drain_secs", 30))):
+            output += vm.serial_output(timeout=1.0)
+            if marker in output:
+                break
+    assert marker in output, (
+        f"--payload {payload} was passed but {marker!r} never appeared. Either "
+        f"the media was not built with VIBEOS_PAYLOAD={payload} (fix: "
+        f"VIBEOS_PAYLOAD={payload} ./vibeos-cli build --arch <arch>) or the "
+        f"launcher regressed (grep serial for CreateProcessW errors).\n"
+        f"serial tail: {output[-800:]!r}"
+    )
+
+
+def test_payload_renders(
+    vm: QemuVM, arch: str, payload: str, spec: dict[str, Any], request: pytest.FixtureRequest
+) -> None:
+    """The app is actually drawing frames."""
+    r = spec.get("test", {}).get("renders")
+    if not r:
+        pytest.skip(f"payload {payload!r} declares no renders gate")
+    pytest.importorskip("PIL")
+    time.sleep(float(r.get("settle", 3)))
+    threshold = float(r.get("frame_delta_min", RENDER_DELTA_MIN))
+    delta = _frame_delta(vm, gap=float(r.get("gap", 2.0)))
+    assert delta >= threshold, (
+        f"screen delta {delta:.4f} < {threshold} — {payload} launched but "
+        "nothing is animating (GDI blit path / app loop wedged?). Check "
+        f"qemu/{arch}_smoke.png and the serial log."
+    )
+    print(f"\n[{payload}] rendering confirmed — frame delta {delta:.1%}")
+
+
+def test_payload_input_reaches_app(
+    vm: QemuVM, arch: str, payload: str, spec: dict[str, Any], request: pytest.FixtureRequest
+) -> None:
+    """PLAYABLE gate: injected input demonstrably changes app behavior.
+
+    The spec's `input.drive` script runs against a focused window, then
+    `input.oracle` judges the result (for Doom: menu-driving a new game turns
+    the ~50%-delta attract demo into a <1.2%-delta idle first-person view — a
+    clean binary signal). Retries with `on_retry` absorb post-boot focus
+    settling.
+
+    Real catches so far (all found by this gate's Doom incarnation,
+    2026-07-06/07): acpi-rust's invented CmResourceType table (PS/2 ISRs never
+    connected), i8042prt's UB enum transmute (mouse stalled at wheel-detect),
+    winlogon's arm64-only layout load (x86 keys dropped at 'NO keyboard
+    layout'), arm64input's DO_BUFFERED_IO=0x10 invented constant (every input
+    packet memcpy'd to NULL).
+    """
+    t = spec.get("test", {})
+    inp = t.get("input")
+    if not inp:
+        pytest.skip(f"payload {payload!r} declares no input gate")
+    pytest.importorskip("PIL")
+    _apply_xfail(spec, arch, request)
+
+    oracle = inp.get("oracle") or {}
+    static_max = float(oracle.get("frame_delta_static_max", STATIC_DELTA_MAX))
+    oracle_gap = float(oracle.get("gap", 1.5))
+    render_min = float(
+        (t.get("renders") or {}).get("frame_delta_min", RENDER_DELTA_MIN)
+    )
+
+    time.sleep(float(inp.get("settle", 3)))
+    if inp.get("focus", "click-center") == "click-center":
+        _click_center(vm)
+    pre = _frame_delta(vm, gap=oracle_gap)
+    assert pre >= render_min, (
+        f"pre-input frame delta {pre:.4f} too low — app not animating, "
+        "input test would be meaningless"
+    )
+
+    post = 1.0
+    for attempt in range(int(inp.get("retries", 1))):
+        _run_drive(vm, inp.get("drive") or [])
+        post = _frame_delta(vm, gap=oracle_gap)
+        if post <= static_max:
+            break
+        print(f"[{payload}] input attempt {attempt + 1}: delta {post:.4f} — retry")
+        _run_drive(vm, inp.get("on_retry") or [])
+
+    if post > static_max:
+        # Persist a screenshot for postmortem (who actually has foreground?).
+        shot = PROJECT_DIR / "qemu" / f"{arch}_{payload}_input_fail.ppm"
+        vm.screendump(shot)
+        pytest.fail(
+            f"post-drive frame delta {post:.4f} > {static_max} — the screen kept "
+            f"animating, so the drive keys never reached {payload} "
+            f"({inp.get('retries', 1)} attempts). Input chain is broken between "
+            f"the class driver and the foreground window (win32k routing/focus). "
+            f"Screenshot: {shot}"
+        )
+
+    if oracle.get("survives", True):
+        status = vm.qmp.execute("query-status")
+        assert status["return"]["running"] is True
+    print(f"\n[{payload}] PLAYABLE — drive script confirmed (delta {pre:.1%} -> {post:.1%})")

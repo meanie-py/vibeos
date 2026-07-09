@@ -132,7 +132,7 @@ extern "system" {
     fn DeviceSendIoctlAsynchronously( DeviceExtension: PCDROM_DEVICE_EXTENSION, IoctlCode: u32, DeviceObject: PDEVICE_OBJECT, );
     fn DeviceDisableMainTimer(extension: *mut CDROM_DEVICE_EXTENSION);
     fn DeviceSendPowerDownProcessRequest(extension: *mut CDROM_DEVICE_EXTENSION, param2: *mut core::ffi::c_void, param3: *mut core::ffi::c_void) -> i32;
-    fn PoQueryWatchdogTime(LowerPdo: *mut core::ffi::c_void, secondsRemaining: *mut u32) -> i32;
+    fn PoQueryWatchdogTime(LowerPdo: *mut core::ffi::c_void, secondsRemaining: *mut u32) -> u8;
     fn PowerContextBeginUse(extension: *mut CDROM_DEVICE_EXTENSION) -> i32;
     fn PowerContextEndUse(extension: *mut CDROM_DEVICE_EXTENSION);
     fn SET_FLAG(p: *mut u32, flag: u32);
@@ -187,7 +187,7 @@ extern "system" {
     fn KeGetCurrentIrql() -> u8;
     fn DeviceUnlockExclusive(deviceExtension: *mut CDROM_DEVICE_EXTENSION, FileObject: WDFFILEOBJECT, Flag: BOOL) -> NTSTATUS;
     fn EXCLUSIVE_MODE(cdData: *const CDROM_DATA) -> BOOL;
-    fn EXCLUSIVE_OWNER(cdData: *const CDROM_DATA, FileObject: WDFFILEOBJECT) -> BOOL;
+    fn EXCLUSIVE_OWNER(cdData: *const CDROM_DATA, FileObject: WDFFILEOBJECT) -> u8;
     fn RequestHandleReadTOC( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn RequestHandleReadTocEx( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
     fn RequestHandleGetDriveGeometry( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
@@ -1242,7 +1242,7 @@ pub unsafe extern "system" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WD
         // DBG block with WINVER >= 0x0601 (ignored condition)
         let mut secondsRemaining: u32 = 0;
         let mut watchdogTimeSupported: i32 = 0; // BOOL
-        watchdogTimeSupported = PoQueryWatchdogTime((*deviceExtension).LowerPdo as *mut core::ffi::c_void, &mut secondsRemaining as *mut u32);
+        watchdogTimeSupported = PoQueryWatchdogTime((*deviceExtension).LowerPdo as *mut core::ffi::c_void, &mut secondsRemaining as *mut u32) as i32;
         UNREFERENCED_PARAMETER(0);
     }
 

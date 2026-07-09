@@ -51,13 +51,13 @@ pub unsafe extern "C" fn RetryRequest(
     if (*currentIrpStack).MajorFunction == IRP_MJ_READ as u8 ||
        (*currentIrpStack).MajorFunction == IRP_MJ_WRITE as u8 {
 
-        _Analysis_assume_((*currentIrpStack).Parameters.Read.Length <= dataTransferLength);
+        // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
         transferByteCount = (*currentIrpStack).Parameters.Read.Length;
 
     } else if (*Irp).MdlAddress != core::ptr::null_mut() {
 
         NT_ASSERT(SrbGetDataBuffer(srbHeader) == MmGetMdlVirtualAddress((*Irp).MdlAddress));
-        _Analysis_assume_((*(*Irp).MdlAddress).ByteCount <= dataTransferLength);
+        // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
         transferByteCount = (*(*Irp).MdlAddress).ByteCount;
 
     } else {
@@ -334,7 +334,7 @@ pub unsafe extern "C" fn ClassRetrieveDeviceRelations(
             if (*nextChild).IsMissing == 0u8 { 1u8 } else { 0u8 }
         );
 
-        _Analysis_assume_(if i >= 1 { 1u8 } else { 0u8 });
+        // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
         i -= 1;
         *core::ptr::addr_of_mut!((*deviceRelations).Objects).cast::<PDEVICE_OBJECT>().add(i as usize) = (*nextChild).DeviceObject;
 

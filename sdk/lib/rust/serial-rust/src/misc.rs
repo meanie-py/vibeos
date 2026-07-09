@@ -15,7 +15,7 @@ use core::ffi::c_void;
 extern "C" {
     fn PushCircularBufferEntry(Buffer: PVOID, Entry: UCHAR) -> NTSTATUS;
     fn DbgPrintEx( ComponentId: ULONG, Level: ULONG, Format: PCSTR, ... ) -> ULONG;
-    fn IsCircularBufferEmpty(Buffer: PVOID) -> i32;
+    fn IsCircularBufferEmpty(Buffer: PVOID) -> u8;
     fn PopCircularBufferEntry(Buffer: PVOID, Byte: PUCHAR) -> NTSTATUS;
     fn GetNumberOfElementsInCircularBuffer(CircularBuffer: PVOID) -> ULONG;
 }

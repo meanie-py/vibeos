@@ -398,7 +398,14 @@ pub unsafe extern "system" fn HalpQueryPartitionType(
     }
 
     for i in 0..4u16 {
-        if (*LayoutInfo).PartitionEntry[i as usize].StartingOffset.QuadPart == PartitionInfo.StartingOffset.QuadPart {
+        // NB: PartitionEntry is a bindgen flexible array ([T;1]) — indexing [i>=1]
+        // bounds-panics even on a large-enough heap buffer; use raw ptr arithmetic.
+        let entry_i = unsafe {
+            &*core::ptr::addr_of!((*LayoutInfo).PartitionEntry)
+                .cast::<PARTITION_INFORMATION>()
+                .add(i as usize)
+        };
+        if entry_i.StartingOffset.QuadPart == PartitionInfo.StartingOffset.QuadPart {
             if PartitionInfo.__bindgen_anon_1.Mbr.BootIndicator != 0 {
                 *PartitionType = BootablePartition;
             } else {
@@ -919,12 +926,19 @@ pub unsafe extern "system" fn HalpEnableAutomaticDriveLetterAssignment() {
         core::ptr::addr_of_mut!(DeviceObject),
     );
     if !NT_SUCCESS(Status) {
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            c"[FSTUB] AUTO_DL: open MountPointManager FAILED 0x%x\n".as_ptr(),
+            Status as u32,
+        );
         return;
     }
 
     KeInitializeEvent(core::ptr::addr_of_mut!(Event), 0u32, 0u8);
     Irp = IoBuildDeviceIoControlRequest(
-        0x4d0010u32,
+        // IOCTL_MOUNTMGR_AUTO_DL_ASSIGNMENTS = CTL_CODE('m',5,BUFFERED,RW) — the
+        // previous literal 0x4d0010 was a MOUNTDEV ('M') code; mountmgr ignored it
+        // and AutomaticDriveLetter stayed FALSE forever (no drive letters, ever).
+        0x6DC014u32,
         DeviceObject,
         core::ptr::null_mut(),
         0,
@@ -943,6 +957,10 @@ pub unsafe extern "system" fn HalpEnableAutomaticDriveLetterAssignment() {
         KeWaitForSingleObject(core::ptr::addr_of_mut!(Event) as *mut core::ffi::c_void, 0u32, 0i8, 0u8, core::ptr::null_mut());
         Status = IoStatusBlock.__bindgen_anon_1.Status;
     }
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        c"[FSTUB] AUTO_DL sent to mountmgr -> 0x%x\n".as_ptr(),
+        Status as u32,
+    );
 
     ObDereferenceObject(FileObject as *mut core::ffi::c_void);
 
@@ -1771,7 +1789,7 @@ pub unsafe extern "system" fn FstubFixupEfiPartition(
 
     let PartitionMaxOffset: u32 = (GET_STARTING_SECTOR(PartitionDescriptor) as u64)
         .wrapping_add(GET_PARTITION_LENGTH(PartitionDescriptor)) as u32;
-    
+
     if (PartitionMaxOffset as u64) > MaxOffset {
         let PartitionLength: u32 = (PartitionMaxOffset as u64)
             .wrapping_sub(GET_STARTING_SECTOR(PartitionDescriptor) as u64) as u32;
@@ -2003,7 +2021,10 @@ pub unsafe extern "fastcall" fn xHalIoReadPartitionTable(
                 BufferSize <<= 1;
             }
 
-            PartitionInfo = &mut (**PartitionBuffer).PartitionEntry[i as usize];
+            // NB: bindgen flexible array ([T;1]) — [i>=1] bounds-panics; raw ptr add.
+            PartitionInfo = core::ptr::addr_of_mut!((**PartitionBuffer).PartitionEntry)
+                .cast::<PARTITION_INFORMATION>()
+                .add(i as usize);
             (*PartitionInfo).PartitionType = PartitionType;
             (*PartitionInfo).RewritePartition = 0u8;
 
@@ -2364,7 +2385,10 @@ pub unsafe extern "C" fn xHalIoReadPartitionTable(
                 BufferSize <<= 1;
             }
 
-            PartitionInfo = &mut (**PartitionBuffer).PartitionEntry[i as usize];
+            // NB: bindgen flexible array ([T;1]) — [i>=1] bounds-panics; raw ptr add.
+            PartitionInfo = core::ptr::addr_of_mut!((**PartitionBuffer).PartitionEntry)
+                .cast::<PARTITION_INFORMATION>()
+                .add(i as usize);
             (*PartitionInfo).PartitionType = PartitionType;
             (*PartitionInfo).RewritePartition = 0u8;
 
@@ -2569,7 +2593,7 @@ unsafe fn xHalIoSetPartitionInformation_impl(
     }
 
     KeInitializeEvent(&mut Event, 0, 0u8);
-    
+
     loop {
         KeClearEvent(core::ptr::addr_of_mut!(Event) as *mut core::ffi::c_void);
 

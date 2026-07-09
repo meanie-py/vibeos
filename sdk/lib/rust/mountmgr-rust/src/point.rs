@@ -15,8 +15,8 @@ unsafe extern "C" {
     fn QueryDeviceInformation( _: *mut _UNICODE_STRING, _: *mut _UNICODE_STRING, _: *mut *mut MOUNTDEV_UNIQUE_ID, _: *mut u8, _: *mut u8, _: *mut u8, _: *mut GUID, _: *mut u8, ) -> i32;
     fn GlobalCreateSymbolicLink(_: *mut _UNICODE_STRING, _: *mut _UNICODE_STRING) -> i32;
     fn GlobalDeleteSymbolicLink(_: *mut _UNICODE_STRING) -> i32;
-    fn IsDriveLetter(_: *mut _UNICODE_STRING) -> i32;
-    fn HasDriveLetter(_: *mut DEVICE_INFORMATION) -> i32;
+    fn IsDriveLetter(_: *mut _UNICODE_STRING) -> u8;
+    fn HasDriveLetter(_: *mut DEVICE_INFORMATION) -> u8;
     fn DeleteRegistryDriveLetter(_: *mut MOUNTDEV_UNIQUE_ID);
     fn DeleteNoDriveLetterEntry(_: *mut MOUNTDEV_UNIQUE_ID);
     fn SendLinkCreated(_: *mut _UNICODE_STRING);

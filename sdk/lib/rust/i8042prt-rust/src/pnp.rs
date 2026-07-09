@@ -237,14 +237,12 @@ unsafe fn i8042ConnectKeyboardInterrupt(
         0u8,
     );
 
-    // Delivery-chain boot marker: the kbd IRQ is (or is not) live from here.
-    DbgPrint(
-        b"[I8042] kbd IoConnectInterrupt vec=%lu dirql=%u -> 0x%08x\n\0".as_ptr() as *const i8,
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[I8042PRT] kbd IoConnectInterrupt=0x%x vec=0x%x dirql=%u\n\0".as_ptr() as *const i8,
+        Status,
         (*PortDeviceExtension).KeyboardInterrupt.Vector,
         (*PortDeviceExtension).KeyboardInterrupt.Dirql as u32,
-        Status as u32,
     );
-
     if !NT_SUCCESS(Status) {
         return Status;
     }
@@ -289,6 +287,12 @@ unsafe fn i8042ConnectMouseInterrupt(
         0u8,
     );
 
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[I8042PRT] mou IoConnectInterrupt=0x%x vec=0x%x dirql=%u\n\0".as_ptr() as *const i8,
+        Status,
+        (*PortDeviceExtension).MouseInterrupt.Vector,
+        (*PortDeviceExtension).MouseInterrupt.Dirql as u32,
+    );
     'cleanup: {
         if !NT_SUCCESS(Status) {
             break 'cleanup;

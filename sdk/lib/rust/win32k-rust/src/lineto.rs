@@ -8,7 +8,7 @@ extern "system" {
         iDirection: ULONG,
         cLimit: ULONG,
     );
-    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut core::ffi::c_void) -> BOOL;
+    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut core::ffi::c_void) -> u8;
 }
 
 // Local shadow of `DibFunctionsForBitmapFormat` — the bindgen view
@@ -212,7 +212,7 @@ unsafe fn nwtose_body(
         Clip,
         core::mem::size_of::<RECT_ENUM>() as ULONG,
         &mut RectEnum as *mut _ as *mut core::ffi::c_void,
-    );
+    ) as i32;
     TranslateRects(&mut RectEnum, Translate);
     let mut ClipRect: *mut RECTL = RectEnum.arcl.as_mut_ptr();
     let delta: LONG = long_max(deltax, deltay);
@@ -232,7 +232,7 @@ unsafe fn nwtose_body(
                     Clip,
                     core::mem::size_of::<RECT_ENUM>() as ULONG,
                     &mut RectEnum as *mut _ as *mut core::ffi::c_void,
-                );
+                ) as i32;
                 TranslateRects(&mut RectEnum, Translate);
                 ClipRect = RectEnum.arcl.as_mut_ptr();
             } else {
@@ -326,7 +326,7 @@ unsafe fn swtone_body(
         Clip,
         core::mem::size_of::<RECT_ENUM>() as ULONG,
         &mut RectEnum as *mut _ as *mut core::ffi::c_void,
-    );
+    ) as i32;
     TranslateRects(&mut RectEnum, Translate);
     let mut ClipRect: *mut RECTL = RectEnum.arcl.as_mut_ptr();
     let delta: LONG = long_max(deltax, deltay);
@@ -346,7 +346,7 @@ unsafe fn swtone_body(
                     Clip,
                     core::mem::size_of::<RECT_ENUM>() as ULONG,
                     &mut RectEnum as *mut _ as *mut core::ffi::c_void,
-                );
+                ) as i32;
                 TranslateRects(&mut RectEnum, Translate);
                 ClipRect = RectEnum.arcl.as_mut_ptr();
             } else {
@@ -440,7 +440,7 @@ unsafe fn netosw_body(
         Clip,
         core::mem::size_of::<RECT_ENUM>() as ULONG,
         &mut RectEnum as *mut _ as *mut core::ffi::c_void,
-    );
+    ) as i32;
     TranslateRects(&mut RectEnum, Translate);
     let mut ClipRect: *mut RECTL = RectEnum.arcl.as_mut_ptr();
     let delta: LONG = long_max(deltax, deltay);
@@ -460,7 +460,7 @@ unsafe fn netosw_body(
                     Clip,
                     core::mem::size_of::<RECT_ENUM>() as ULONG,
                     &mut RectEnum as *mut _ as *mut core::ffi::c_void,
-                );
+                ) as i32;
                 TranslateRects(&mut RectEnum, Translate);
                 ClipRect = RectEnum.arcl.as_mut_ptr();
             } else {
@@ -554,7 +554,7 @@ unsafe fn setonw_body(
         Clip,
         core::mem::size_of::<RECT_ENUM>() as ULONG,
         &mut RectEnum as *mut _ as *mut core::ffi::c_void,
-    );
+    ) as i32;
     TranslateRects(&mut RectEnum, Translate);
     let mut ClipRect: *mut RECTL = RectEnum.arcl.as_mut_ptr();
     let delta: LONG = long_max(deltax, deltay);
@@ -574,7 +574,7 @@ unsafe fn setonw_body(
                     Clip,
                     core::mem::size_of::<RECT_ENUM>() as ULONG,
                     &mut RectEnum as *mut _ as *mut core::ffi::c_void,
-                );
+                ) as i32;
                 TranslateRects(&mut RectEnum, Translate);
                 ClipRect = RectEnum.arcl.as_mut_ptr();
             } else {
@@ -741,7 +741,7 @@ unsafe fn eng_lineto_body(
                 Clip,
                 core::mem::size_of::<RECT_ENUM>() as ULONG,
                 &mut RectEnum as *mut _ as *mut core::ffi::c_void,
-            );
+            ) as i32;
             let mut i: ULONG = 0;
             while i < RectEnum.c && RectEnum.arcl[i as usize].top + Translate.y <= y1 {
                 if y1 < RectEnum.arcl[i as usize].bottom + Translate.y
@@ -772,7 +772,7 @@ unsafe fn eng_lineto_body(
                 Clip,
                 core::mem::size_of::<RECT_ENUM>() as ULONG,
                 &mut RectEnum as *mut _ as *mut core::ffi::c_void,
-            );
+            ) as i32;
             let mut i: ULONG = 0;
             while i < RectEnum.c {
                 if RectEnum.arcl[i as usize].left + Translate.x <= x1
@@ -1138,7 +1138,7 @@ pub unsafe extern "C" fn IntEngPolyline(
 //     lStyleMax = HandleStyles(pbo, Translate, x, y, deltax, deltay, 1, 1, &iStyle);
 //
 //     CLIPOBJ_cEnumStart(Clip, FALSE, CT_RECTANGLES, CD_RIGHTDOWN, 0);
-//     EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//     EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //     TranslateRects(&RectEnum, Translate);
 //     ClipRect = RectEnum.arcl;
 //     delta = max(deltax, deltay);
@@ -1154,7 +1154,7 @@ pub unsafe extern "C" fn IntEngPolyline(
 //             /* Skip to the next clip rect */
 //             if (RectEnum.arcl + RectEnum.c <= ClipRect)
 //             {
-//                 EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//                 EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //                 TranslateRects(&RectEnum, Translate);
 //                 ClipRect = RectEnum.arcl;
 //             }
@@ -1227,7 +1227,7 @@ pub unsafe extern "C" fn IntEngPolyline(
 //     lStyleMax = HandleStyles(pbo, Translate, x, y, deltax, deltay, 1, -1, &iStyle);
 //
 //     CLIPOBJ_cEnumStart(Clip, FALSE, CT_RECTANGLES, CD_RIGHTUP, 0);
-//     EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//     EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //     TranslateRects(&RectEnum, Translate);
 //     ClipRect = RectEnum.arcl;
 //     delta = max(deltax, deltay);
@@ -1242,7 +1242,7 @@ pub unsafe extern "C" fn IntEngPolyline(
 //         {
 //             if (RectEnum.arcl + RectEnum.c <= ClipRect)
 //             {
-//                 EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//                 EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //                 TranslateRects(&RectEnum, Translate);
 //                 ClipRect = RectEnum.arcl;
 //             }
@@ -1315,7 +1315,7 @@ pub unsafe extern "C" fn IntEngPolyline(
 //     lStyleMax = HandleStyles(pbo, Translate, x, y, deltax, deltay, -1, 1, &iStyle);
 //
 //     CLIPOBJ_cEnumStart(Clip, FALSE, CT_RECTANGLES, CD_LEFTDOWN, 0);
-//     EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//     EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //     TranslateRects(&RectEnum, Translate);
 //     ClipRect = RectEnum.arcl;
 //     delta = max(deltax, deltay);
@@ -1330,7 +1330,7 @@ pub unsafe extern "C" fn IntEngPolyline(
 //         {
 //             if (RectEnum.arcl + RectEnum.c <= ClipRect)
 //             {
-//                 EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//                 EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //                 TranslateRects(&RectEnum, Translate);
 //                 ClipRect = RectEnum.arcl;
 //             }
@@ -1403,7 +1403,7 @@ pub unsafe extern "C" fn IntEngPolyline(
 //     lStyleMax = HandleStyles(pbo, Translate, x, y, deltax, deltay, -1, -1, &iStyle);
 //
 //     CLIPOBJ_cEnumStart(Clip, FALSE, CT_RECTANGLES, CD_LEFTUP, 0);
-//     EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//     EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //     TranslateRects(&RectEnum, Translate);
 //     ClipRect = RectEnum.arcl;
 //     delta = max(deltax, deltay);
@@ -1418,7 +1418,7 @@ pub unsafe extern "C" fn IntEngPolyline(
 //         {
 //             if (RectEnum.arcl + RectEnum.c <= ClipRect)
 //             {
-//                 EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//                 EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //                 TranslateRects(&RectEnum, Translate);
 //                 ClipRect = RectEnum.arcl;
 //             }
@@ -1579,7 +1579,7 @@ pub unsafe extern "C" fn IntEngPolyline(
 //         CLIPOBJ_cEnumStart(Clip, FALSE, CT_RECTANGLES, CD_RIGHTDOWN, 0);
 //         do
 //         {
-//             EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//             EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //             for (i = 0; i < RectEnum.c && RectEnum.arcl[i].top + Translate.y <= y1; i++)
 //             {
 //                 if (y1 < RectEnum.arcl[i].bottom + Translate.y &&
@@ -1603,7 +1603,7 @@ pub unsafe extern "C" fn IntEngPolyline(
 //         CLIPOBJ_cEnumStart(Clip, FALSE, CT_RECTANGLES, CD_RIGHTDOWN, 0);
 //         do
 //         {
-//             EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//             EnumMore = CLIPOBJ_bEnum(Clip, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //             for (i = 0; i < RectEnum.c; i++)
 //             {
 //                 if (RectEnum.arcl[i].left + Translate.x <= x1 &&

@@ -201,7 +201,7 @@ pub unsafe extern "system" fn KeUserModeCallback(
     // `*UserEsp = OldStack` restore below. Conflating the two skipped the user-ESP
     // restore whenever a callback failed, returning the thread to user mode with
     // ESP inside the spent dispatch frame (winlogon death on the first failing
-    // GETCHARSETINFO callback, field manual §9.36). Err(e) = SEH path, Ok(s) =
+    // GETCHARSETINFO callback, field manual §9.39). Err(e) = SEH path, Ok(s) =
     // callback status.
     let seh_status: Result<NTSTATUS, NTSTATUS> = 'seh: {
         NewStack = (OldStack - ArgumentLength as ULONG_PTR) & !3;

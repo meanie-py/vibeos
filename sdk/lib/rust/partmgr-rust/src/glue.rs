@@ -39,3 +39,23 @@ pub use ntkrnl_sys::ddk::{
     _BUS_QUERY_ID_TYPE_BusQueryHardwareIDs as BusQueryHardwareIDs,
     _BUS_QUERY_ID_TYPE_BusQueryInstanceID as BusQueryInstanceID,
 };
+
+// --- IOCTLs used as match arms in the partition PDO dispatch (partition.rs) that had
+//     NO definition -> bind-all catch-alls (IOCTL_DISK_GET_PARTITION_INFO swallowed all
+//     later arms; sibling of the classpnp nest, 2026-07-06). CTL_CODE-resolved.
+pub const IOCTL_DISK_GET_PARTITION_INFO: u32 = 0x00074004;     // CTL_CODE(7,0x01,BUFFERED,READ) [psdk/ntdddisk.h]
+pub const IOCTL_DISK_GET_PARTITION_INFO_EX: u32 = 0x00070048;  // CTL_CODE(7,0x12,BUFFERED,ANY)
+pub const IOCTL_DISK_SET_PARTITION_INFO: u32 = 0x0007C008;     // CTL_CODE(7,0x02,BUFFERED,RW)
+pub const IOCTL_DISK_SET_PARTITION_INFO_EX: u32 = 0x0007C04C;  // CTL_CODE(7,0x13,BUFFERED,RW)
+pub const IOCTL_DISK_GET_LENGTH_INFO: u32 = 0x0007405C;        // CTL_CODE(7,0x17,BUFFERED,READ)
+pub const IOCTL_DISK_VERIFY: u32 = 0x00070014;                 // CTL_CODE(7,0x05,BUFFERED,ANY)
+pub const IOCTL_DISK_UPDATE_PROPERTIES: u32 = 0x00070140;      // CTL_CODE(7,0x50,BUFFERED,ANY)
+pub const IOCTL_STORAGE_GET_DEVICE_NUMBER: u32 = 0x002D1080;   // CTL_CODE(0x2D,0x420,BUFFERED,ANY)
+pub const IOCTL_STORAGE_MEDIA_REMOVAL: u32 = 0x002D4804;       // CTL_CODE(0x2D,0x201,BUFFERED,READ)
+pub const IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS: u32 = 0x00560000; // CTL_CODE('V',0,BUFFERED,ANY) [psdk/ntddvol.h]
+pub const IOCTL_VOLUME_ONLINE: u32 = 0x0056C008;               // CTL_CODE('V',2,BUFFERED,RW)
+pub const IOCTL_VOLUME_QUERY_VOLUME_NUMBER: u32 = 0x0056001C;  // CTL_CODE('V',7,BUFFERED,ANY)
+pub const IOCTL_VOLUME_IS_PARTITION: u32 = 0x00560028;         // CTL_CODE('V',10,BUFFERED,ANY)
+pub const IOCTL_VOLUME_GET_GPT_ATTRIBUTES: u32 = 0x00560038;   // CTL_CODE('V',14,BUFFERED,ANY)
+pub const IOCTL_MOUNTDEV_QUERY_UNIQUE_ID: u32 = 0x004D0000;    // CTL_CODE('M',0,BUFFERED,ANY) [ddk/mountdev.h]
+pub const IOCTL_MOUNTDEV_QUERY_DEVICE_NAME: u32 = 0x004D0008;  // CTL_CODE('M',2,BUFFERED,ANY)

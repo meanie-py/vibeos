@@ -36,7 +36,7 @@ extern "system" {
     fn FatUnpinRepinnedBcbs(IrpContext: *mut IRP_CONTEXT);
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn FatDeleteIrpContext(IrpContext: PIRP_CONTEXT);
-    fn ExAcquireResourceSharedLite(resource: *mut ERESOURCE, wait: i32) -> i32;
+    fn ExAcquireResourceSharedLite(resource: *mut ERESOURCE, wait: i32) -> u8;
     fn ExReleaseResourceLite(resource: *mut ERESOURCE);
     fn BooleanFlagOn(Flags: u32, Mask: u32) -> u8;
 }
@@ -146,7 +146,7 @@ Return Value:
 
 --*/
 
-const UserFileOpen: i32 = 0;
+const UserFileOpen: i32 = crate::types::_TYPE_OF_OPEN_UserFileOpen as i32; // 2 — bindgen ground truth (was 0)
 const VCB_STATE_FLAG_WRITE_PROTECTED: u32 = 0x4000; // placeholder value
 
 // Constants (typical values, caller may override)
@@ -155,7 +155,7 @@ const FCB_STATE_PAGING_FILE: u32 = 0x00000004;
 const FCB_STATE_TEMPORARY: u32 = 0x20;
 const FcbGood: u32 = 1;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x0002;
-const UserDirectoryOpen: u32 = 1;
+const UserDirectoryOpen: u32 = crate::types::_TYPE_OF_OPEN_UserDirectoryOpen; // 3 — bindgen ground truth (was 1)
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 const FILE_ATTRIBUTE_TEMPORARY: u32 = 0x100;
 const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;

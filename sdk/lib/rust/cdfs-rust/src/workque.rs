@@ -174,7 +174,7 @@ pub unsafe extern "system" fn CdPrePostIrp(
                 if RemovedFcb == 0 {
                     let fcb: PFCB = *(*IrpContext).__bindgen_anon_1.TeardownFcb;
                     let lock = core::ptr::addr_of_mut!((*(*fcb).FcbNonpaged).FcbResource);
-                    _Analysis_assume_lock_held_(lock as *mut core::ffi::c_void);
+                    // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
                     CdReleaseFcb(
                         IrpContext,
                         fcb as *mut core::ffi::c_void,
@@ -247,7 +247,7 @@ pub unsafe extern "system" fn CdOplockComplete(
                         let fcb = *((*IrpContext).__bindgen_anon_1.TeardownFcb);
                         let fcb_nonpaged = (*fcb).FcbNonpaged;
                         let resource = core::ptr::addr_of_mut!((*fcb_nonpaged).FcbResource);
-                        _Analysis_assume_lock_held_(resource as *mut core::ffi::c_void);
+                        // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
                         CdReleaseFcb(IrpContext, fcb as *mut core::ffi::c_void);
                     }
                     *((*IrpContext).__bindgen_anon_1.TeardownFcb) = core::ptr::null_mut();

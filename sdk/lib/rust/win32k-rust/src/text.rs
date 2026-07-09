@@ -8,7 +8,7 @@ extern "fastcall" {
     fn RealizeFontInit(hf: HFONT) -> PTEXTOBJ;
     fn TextIntGetTextExtentPoint(pdc: PDC, TextObj: PTEXTOBJ, lpwsz: PCWCH, cwc: INT, MaxExtent: ULONG, Fit: *mut INT, Dx: *mut INT, psize: PSIZE, fl: FLONG) -> BOOL;
     fn ftGdiGetTextCharsetInfo(Dc: PDC, lpSig: PFONTSIGNATURE, dwFlags: DWORD) -> DWORD;
-    fn ftGdiGetRasterizerCaps(praststat: LPRASTERIZER_STATUS) -> BOOL;
+    fn ftGdiGetRasterizerCaps(praststat: LPRASTERIZER_STATUS) -> u8;
     fn ftGdiGetTextMetricsW(hdc: HDC, ptmwi: PTMW_INTERNAL) -> BOOL;
     fn SetLastNtError(Status: NTSTATUS);
 }
@@ -17,7 +17,7 @@ extern "C" {
     fn RealizeFontInit(hf: HFONT) -> PTEXTOBJ;
     fn TextIntGetTextExtentPoint(pdc: PDC, TextObj: PTEXTOBJ, lpwsz: PCWCH, cwc: INT, MaxExtent: ULONG, Fit: *mut INT, Dx: *mut INT, psize: PSIZE, fl: FLONG) -> BOOL;
     fn ftGdiGetTextCharsetInfo(Dc: PDC, lpSig: PFONTSIGNATURE, dwFlags: DWORD) -> DWORD;
-    fn ftGdiGetRasterizerCaps(praststat: LPRASTERIZER_STATUS) -> BOOL;
+    fn ftGdiGetRasterizerCaps(praststat: LPRASTERIZER_STATUS) -> u8;
     fn ftGdiGetTextMetricsW(hdc: HDC, ptmwi: PTMW_INTERNAL) -> BOOL;
     fn SetLastNtError(Status: NTSTATUS);
 }

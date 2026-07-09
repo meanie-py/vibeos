@@ -63,6 +63,14 @@ unsafe fn KiActivateWaiterQueueImpl(Queue: PKQUEUE) {
 
         if (WaitEntry != core::ptr::addr_of_mut!((*Queue).Header.WaitListHead) as PLIST_ENTRY) &&
            (QueueEntry != core::ptr::addr_of_mut!((*Queue).EntryListHead) as PLIST_ENTRY) {
+            // waitdep: WaitBlock->Thread is consumed off the queue's wait list
+            // below with no validation (unchecked KiUnwaitThread funnel; see
+            // eventobj.rs KeSetEventBoostPriority for the family).
+            super::waitdep::check_waittest(
+                Queue as usize,
+                core::ptr::addr_of_mut!((*Queue).Header.WaitListHead) as *mut _,
+                false,
+            );
             RemoveEntryList(QueueEntry);
             (*QueueEntry).Flink = core::ptr::null_mut();
 

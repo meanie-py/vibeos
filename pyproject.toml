@@ -14,7 +14,7 @@ dependencies = []
 # optional in practice — every screenshot test and the failure-diagnosis path
 # uses it. (Do not substitute ImageMagick `convert`: it mangles uniform-color
 # PPMs to 1-bit colormap PNGs that render solid black.)
-qemu = ["pytest>=8.0", "pytest-timeout>=2.2", "pillow>=10.0"]
+qemu = ["pytest>=8.0", "pytest-timeout>=2.2", "pillow>=10.0", "pyyaml>=6.0"]
 
 [tool.setuptools.packages.find]
 include = ["tests*"]

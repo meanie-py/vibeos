@@ -29,9 +29,9 @@ extern "system" {
     fn DebugUnwind(name: *const i8) -> ();
     fn FlagOn(Flags: u32, Flag: u32) -> i32;
     fn SetFlag(Flags: *mut u32, Flag: u32) -> ();
-    fn BooleanFlagOn(Flags: u32, Flag: u32) -> i32;
+    fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn FatDecodeFileObject(FileObject: PFILE_OBJECT, Vcb: *mut *mut VCB, Dcb: *mut *mut DCB, Ccb: *mut *mut CCB) -> u32;
-    fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> i32;
+    fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> u8;
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> ();
@@ -57,7 +57,7 @@ extern "system" {
     fn QuadAlign(x: u32) -> u32;
     fn try_return(status: NTSTATUS);
     fn CanFsdWait(Irp: PIRP) -> i32;
-    fn FatIsIrpTopLevel(Irp: PIRP) -> i32;
+    fn FatIsIrpTopLevel(Irp: PIRP) -> u8;
     fn FatCreateIrpContext(Irp: PIRP, CanWait: i32) -> PIRP_CONTEXT;
     fn FatExceptionFilter(IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut core::ffi::c_void) -> i32;
     fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: u32) -> NTSTATUS;
@@ -74,7 +74,7 @@ pub const BugCheckFileId: u32 = FAT_BUG_CHECK_DIRCTRL;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // placeholder
 const FCB_STATE_DELETE_ON_CLOSE: u32 = 0x01; // placeholder
 const SL_WATCH_TREE: u32 = 0x01; // placeholder
-const UserDirectoryOpen: u32 = 1; // placeholder
+const UserDirectoryOpen: u32 = crate::types::_TYPE_OF_OPEN_UserDirectoryOpen; // 3 — bindgen ground truth (was 1)
 
 // External declarations for unknown functions
 

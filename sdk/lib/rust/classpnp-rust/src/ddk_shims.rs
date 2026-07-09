@@ -186,12 +186,25 @@ use core::ffi::c_void;
 #[no_mangle] pub unsafe extern "system" fn GET_FDO_EXTENSON_SENSE_DATA_LENGTH(fdo: PVOID) -> u8 { 18 }
 
 // ============================ tracing / WPP / ETW (no-ops) ============================
-#[no_mangle] pub unsafe extern "C" fn TracePrint(_lvl: u32, _flags: u32, _fmt: *const i8) {}
+// TracePrint: error/warning levels forward the (raw) format string to the debug
+// serial so classpnp failure paths are not silent. Callsites are C-variadic; we
+// declare non-variadic and ignore the args (safe: extra args are caller-cleaned
+// on all our ABIs), so %-specifiers print literally — enough to identify the site.
+#[no_mangle] pub unsafe extern "C" fn TracePrint(lvl: u32, _flags: u32, fmt: *const i8) {
+    const TRACE_LEVEL_WARNING: u32 = 3; // ETW: 1=critical 2=error 3=warning
+    if lvl <= TRACE_LEVEL_WARNING && !fmt.is_null() {
+        unsafe extern "C" { fn DbgPrint(Format: *const i8, ...) -> u32; }
+        DbgPrint(c"[CLASSPNP] %s".as_ptr(), fmt);
+    }
+}
 #[no_mangle] pub unsafe extern "C" fn StorDebugPrint(_lvl: u32, _fmt: *const i8) {}
 #[no_mangle] pub unsafe extern "C" fn WPP_INIT_TRACING(_drv: PVOID, _reg: PVOID) {}
 #[no_mangle] pub unsafe extern "C" fn WPP_CLEANUP(_drv: PVOID) {}
 const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 #[no_mangle] pub unsafe extern "C" fn DbgGetScsiOpStr(_s: PVOID) -> *const i8 { EMPTY }
+// C debug.h: #define DBGGETIOCTLSTR(_ioctl) DbgGetIoctlStr(_ioctl) — string-table
+// lookup for trace text only; empty string is faithful to the other Dbg* stubs here.
+#[no_mangle] pub unsafe extern "C" fn DBGGETIOCTLSTR(_code: u32) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DbgGetSenseCodeStr(_a: u8, _b: u8) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DbgGetAdditionalSenseCodeStr(_a: u8, _b: u8) -> *const i8 { EMPTY }
 #[no_mangle] pub unsafe extern "C" fn DbgGetSrbStatusStr(_s: u8) -> *const i8 { EMPTY }
@@ -398,18 +411,59 @@ use core::sync::atomic::{AtomicI32, Ordering};
     #[cfg(target_arch = "x86")] { let _ = Dev; 0 }
     #[cfg(not(target_arch = "x86"))] { ntkrnl_sys::ddk::IoWMIDeviceObjectToProviderId(Dev) }
 }
-// IoQueueWorkItemEx is NOT exported by ReactOS ntoskrnl (only IoQueueWorkItem exists). Forward
-// to IoQueueWorkItem (distinct name => no CC self-collision). NOTE: the Ex worker-routine ABI
-// differs (IO_WORKITEM_ROUTINE_EX takes IoObject+Context+IoWorkItem vs 2 args); the sole caller
-// (CleanupTransferPacketToWorkingSetSizeWorker, working-set trim) is off the boot path, so the
-// forwarding shim is link/boot-safe. A faithful IoQueueWorkItemEx is owed (see translation audit).
+// IoQueueWorkItemEx is NOT exported by ReactOS ntoskrnl (only IoQueueWorkItem exists).
+// FAITHFUL trampoline (2026-07-07): the old shim forwarded straight to IoQueueWorkItem,
+// silently calling the 3-arg IO_WORKITEM_ROUTINE_EX with the 2-arg ABI — the routine's
+// IoWorkItem parameter was garbage R8 (in practice the CURRENT ETHREAD), and
+// CleanupTransferPacketToWorkingSetSizeWorker then IoFreeWorkItem'd it →
+// ExFreePool(current thread) → pool corruption BUGCHECKs on every USB mass-storage
+// write burst. The "off the boot path" assumption died the day writes worked.
+struct IoQueueWorkItemExCtx {
+    routine: unsafe extern "system" fn(PVOID, PVOID, ntkrnl_sys::ddk::PIO_WORKITEM),
+    context: PVOID,
+    work_item: ntkrnl_sys::ddk::PIO_WORKITEM,
+}
+
+unsafe extern "system" fn IoQueueWorkItemExTrampoline(
+    DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT,
+    Context: PVOID,
+) {
+    let ctx = Context as *mut IoQueueWorkItemExCtx;
+    let IoQueueWorkItemExCtx { routine, context, work_item } = core::ptr::read(ctx);
+    ntkrnl_sys::ddk::ExFreePool(ctx as PVOID);
+    routine(DeviceObject as PVOID, context, work_item);
+}
+
 #[no_mangle] pub unsafe extern "C" fn IoQueueWorkItemEx(
     IoWorkItem: ntkrnl_sys::ddk::PIO_WORKITEM,
     WorkerRoutine: *const core::ffi::c_void,
     QueueType: u32,
     Context: PVOID,
 ) {
-    ntkrnl_sys::ddk::IoQueueWorkItem(IoWorkItem, core::mem::transmute(WorkerRoutine), QueueType as _, Context);
+    let ctx = ntkrnl_sys::ddk::ExAllocatePoolWithTag(
+        ntkrnl_sys::ddk::_POOL_TYPE_NonPagedPool,
+        core::mem::size_of::<IoQueueWorkItemExCtx>() as _,
+        u32::from_ne_bytes(*b"IWEx"),
+    ) as *mut IoQueueWorkItemExCtx;
+    if ctx.is_null() {
+        // Allocation failure: drop the trim request. The routine also releases the
+        // remove lock + frees the work item, so leak-on-failure is the lesser evil;
+        // fail LOUD so it's visible.
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[CLASSPNP] IoQueueWorkItemEx: ctx alloc FAILED - dropping work item\n\0".as_ptr() as _);
+        return;
+    }
+    core::ptr::write(ctx, IoQueueWorkItemExCtx {
+        routine: core::mem::transmute(WorkerRoutine),
+        context: Context,
+        work_item: IoWorkItem,
+    });
+    ntkrnl_sys::ddk::IoQueueWorkItem(
+        IoWorkItem,
+        core::mem::transmute(IoQueueWorkItemExTrampoline as unsafe extern "system" fn(_, _)),
+        QueueType as _,
+        ctx as PVOID,
+    );
 }
 
 // SET_FLAG(Flags, Flag) macro: *Flags |= Flag. Genuinely undefined (a C macro) — the i386 fold
@@ -458,3 +512,38 @@ use core::sync::atomic::{AtomicI32, Ordering};
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle] pub static mut SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA =
     0xFFFFF78000000000usize as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
+
+/// utils.c ClasspDeviceCopyOffloadProperty — StorageDeviceCopyOffloadProperty
+/// query handler. Minimal-faithful: PropertyExistsQuery succeeds (consistency
+/// with the other property handlers); PropertyStandardQuery reports
+/// STATUS_NOT_SUPPORTED (no ODX/copy-offload support in this stack — same
+/// answer the full C gives for a device without the ODX VPD pages). Exit
+/// semantics mirror the C label: set IoStatus, release remove lock, complete.
+/// (Definition was missing entirely; linked only while the query-property arm
+/// was bind-all-dead.)
+#[no_mangle]
+pub unsafe extern "C" fn ClasspDeviceCopyOffloadProperty(
+    DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    _Srb: *mut crate::types::_SCSI_REQUEST_BLOCK,
+) -> NTSTATUS {
+    unsafe extern "system" {
+        fn ClassReleaseRemoveLock(DeviceObject: PDEVICE_OBJECT, Tag: PIRP);
+        fn ClassCompleteRequest(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Boost: i8);
+    }
+    const STATUS_SUCCESS: NTSTATUS = 0;
+    const STATUS_NOT_SUPPORTED: NTSTATUS = 0xC00000BBu32 as NTSTATUS;
+
+    let query = (*Irp).AssociatedIrp.SystemBuffer as *mut _STORAGE_PROPERTY_QUERY;
+    let status = if (*query).QueryType == _STORAGE_QUERY_TYPE_PropertyExistsQuery {
+        STATUS_SUCCESS
+    } else {
+        STATUS_NOT_SUPPORTED
+    };
+
+    (*Irp).IoStatus.Information = 0;
+    (*Irp).IoStatus.__bindgen_anon_1.Status = status;
+    ClassReleaseRemoveLock(DeviceObject, Irp);
+    ClassCompleteRequest(DeviceObject, Irp, 0 /* IO_NO_INCREMENT */);
+    status
+}

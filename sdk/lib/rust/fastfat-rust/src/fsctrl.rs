@@ -35,10 +35,10 @@ extern "system" {
     fn FatPurgeReferencedFileObjects(IrpContext: *mut IRP_CONTEXT, RootDcb: *mut DCB, FlushType: FAT_FLUSH_TYPE) -> i32;
     fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, VolumeState: i32);
     fn FatToggleMediaEjectDisable(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Disable: i32);
-    fn CcPurgeCacheSection(SectionObjectPointers: *mut SECTION_OBJECT_POINTERS, FileOffset: *const LARGE_INTEGER, Length: u32, UninitializeCache: i32) -> u32;
-    fn KeCancelTimer(Timer: *mut KEVENT) -> u32;
-    fn KeRemoveQueueDpc(Dpc: *mut KDPC) -> i32;
-    fn ExIsResourceAcquiredExclusiveLite(Resource: *mut ERESOURCE) -> i32;
+    fn CcPurgeCacheSection(SectionObjectPointers: *mut SECTION_OBJECT_POINTERS, FileOffset: *const LARGE_INTEGER, Length: u32, UninitializeCache: i32) -> u8;
+    fn KeCancelTimer(Timer: *mut KEVENT) -> u8;
+    fn KeRemoveQueueDpc(Dpc: *mut KDPC) -> u8;
+    fn ExIsResourceAcquiredExclusiveLite(Resource: *mut ERESOURCE) -> u8;
     fn PAGED_CODE();
     fn NT_ASSERT(condition: u32);
     fn FlagOn(Flags: u32, Flag: u32) -> BOOLEAN;
@@ -55,7 +55,7 @@ extern "system" {
     fn FatOpenDirectoryFile(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn FatAllocateDiskSpace( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, HintCluster: u32, ByteCount: *mut u32, AllocationHint: i32, /* BOOLEAN */ Mcb: *mut LARGE_MCB, );
     fn FatGetIndexFromLbo(Vcb: *mut VCB, Lbo: LBO) -> u32;
-    fn FatGetLboFromIndex(Vcb: *mut VCB, Index: u32) -> u64;
+    fn FatGetLboFromIndex(Vcb: *mut VCB, Index: u32) -> i64; // LBO = LONGLONG (fat.h:34)
     fn FatFlushFatEntries(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Cluster: u32, Count: u32);
     fn FatSetFatEntry( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, SourceCluster: u32, TargetCluster: FAT_ENTRY, );
     fn FatDeallocateDiskSpace( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Wait: i32, /* BOOLEAN */ );
@@ -124,7 +124,7 @@ extern "system" {
     fn FatDirtyVolume(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatIsVolumeDirty(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatIsVolumeMounted(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
-    fn FatIsPathnameValid(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
+    fn FatIsPathnameValid(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> u8;
     fn FatQueryRetrievalPointers(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatQueryBpb(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatGetStatistics(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
@@ -267,7 +267,10 @@ pub unsafe extern "system" fn FatAddMcbEntry(
     Vcb: *mut VCB,
     Mcb: *mut LARGE_MCB,
     mut Vbo: u32,
-    mut Lbo: u32,
+    // C signature: `LBO Lbo` where LBO = LONGLONG (fat.h:34, "for Fat32, LBO
+    // is >32 bits"). Was u32 — truncated every LBO above 4GB and mismatched
+    // the (also-wrong) u64 extern decl in allocsup.rs.
+    mut Lbo: i64,
     mut SectorCount: u32,
 ) -> i32 {
     // PAGED_CODE(); –  ignored
@@ -279,7 +282,7 @@ pub unsafe extern "system" fn FatAddMcbEntry(
     }
 
     Vbo >>= (*Vcb).AllocationSupport.LogOfBytesPerSector as u32;
-    Lbo >>= (*Vcb).AllocationSupport.LogOfBytesPerSector as u32;
+    Lbo >>= (*Vcb).AllocationSupport.LogOfBytesPerSector as i64;
 
     debug_assert!(SectorCount != 0);
 
@@ -304,7 +307,7 @@ pub unsafe extern "system" fn FatAddMcbEntry(
     let result = FsRtlAddLargeMcbEntry(
         Mcb,
         Vbo as i64,
-        Lbo as i64,
+        Lbo,
         SectorCount as i64,
     );
 
@@ -668,7 +671,9 @@ pub unsafe extern "system" fn FatVerifyVolume(
         if Bpb.Sectors != 0 { Bpb.LargeSectors = 0; }
 
         {
-            let size = if IsBpbFat32(&Bpb as *const _ as *const PACKED_BIOS_PARAMETER_BLOCK) {
+            // C macro IsBpbFat32 works on the UNPACKED Bpb here — check the field
+            // directly instead of casting unpacked→packed (layouts differ).
+            let size = if Bpb.RootEntries == 0 {
                 core::mem::size_of::<BIOS_PARAMETER_BLOCK>()
             } else {
                 core::mem::offset_of!(BIOS_PARAMETER_BLOCK, LargeSectorsPerFat)
@@ -941,7 +946,7 @@ pub unsafe extern "system" fn FatUserFsCtrl(IrpContext: PIRP_CONTEXT, Irp: PIRP)
         FSCTL_MARK_VOLUME_DIRTY => FatDirtyVolume(IrpContext, Irp),
         FSCTL_IS_VOLUME_DIRTY => FatIsVolumeDirty(IrpContext, Irp),
         FSCTL_IS_VOLUME_MOUNTED => FatIsVolumeMounted(IrpContext, Irp),
-        FSCTL_IS_PATHNAME_VALID => FatIsPathnameValid(IrpContext, Irp),
+        FSCTL_IS_PATHNAME_VALID => FatIsPathnameValid(IrpContext, Irp) as i32,
         FSCTL_QUERY_RETRIEVAL_POINTERS => FatQueryRetrievalPointers(IrpContext, Irp),
         FSCTL_QUERY_FAT_BPB => FatQueryBpb(IrpContext, Irp),
         FSCTL_FILESYSTEM_GET_STATISTICS => FatGetStatistics(IrpContext, Irp),
@@ -1194,7 +1199,7 @@ pub unsafe extern "system" fn FatMoveFile(
     let mut ClusterShift: u32;
     let mut MaxClusters: u32;
     let mut FileOffset: u32 = 0;
-    let mut TargetLbo: u64 = 0;
+    let mut TargetLbo: i64 = 0;
     let mut TargetCluster: u32 = 0;
     let mut LargeSourceLbo: LARGE_INTEGER = core::mem::zeroed();
     let mut LargeTargetLbo: LARGE_INTEGER = core::mem::zeroed();
@@ -1637,7 +1642,7 @@ pub unsafe extern "system" fn FatMoveFile(
                     Vcb,
                     &mut (*FcbOrDcb).Mcb,
                     FileOffset,
-                    TargetLbo as u32,
+                    TargetLbo,
                     BytesToReallocate,
                 );
 
@@ -1655,7 +1660,7 @@ pub unsafe extern "system" fn FatMoveFile(
                 // Advance variables
                 TargetCluster += BytesToReallocate >> ClusterShift;
                 FileOffset += BytesToReallocate;
-                TargetLbo += BytesToReallocate as u64;
+                TargetLbo += BytesToReallocate as i64;
                 ByteCount -= BytesToReallocate;
                 LargeTargetLbo.QuadPart += BytesToReallocate as i64;
 
@@ -1942,7 +1947,7 @@ pub unsafe extern "system" fn FatComputeMoveFileSplicePoints(
             Vcb,
             SourceMcb,
             SourceMcbVbo,
-            (SourceLbo) as u32,
+            SourceLbo as i64,
             SourceMcbBytesInRun,
         );
 
@@ -2142,7 +2147,7 @@ pub unsafe extern "system" fn FatFlushAndCleanVolume(
 ) {
     // macros/constants
     const NoFlush: FAT_FLUSH_TYPE = 0;
-    const FlushWithoutPurge: FAT_FLUSH_TYPE = 1;
+    const FlushWithoutPurge: FAT_FLUSH_TYPE = 3; // FAT_FLUSH_TYPE (fatprocs.h) — was 1 = Flush
     const VCB_STATE_FLAG_VOLUME_DIRTY: u32 = 0x04;
     const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x10;
     const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x02;
@@ -11253,6 +11258,15 @@ pub unsafe extern "system" fn FatMountVolume(
     }
     FatReleaseGlobal(IrpContext);
     DebugTrace(-1, Dbg, b"FatMountVolume -> %08lx\n\0".as_ptr() as _, Status as ULONG);
+    {
+        unsafe extern "C" {
+            fn DbgPrint(Format: *const i8, ...) -> u32;
+        }
+        DbgPrint(
+            c"[FASTFAT] FatMountVolume -> 0x%x\n".as_ptr(),
+            Status as ULONG,
+        );
+    }
 
     if !RootDirectoryFile.is_null() {
         FsRtlNotifyVolumeEvent(RootDirectoryFile, FSRTL_VOLUME_MOUNT);

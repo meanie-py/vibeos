@@ -1,6 +1,7 @@
 #[allow(unused_imports)] use crate::types::*;
 #[allow(unused_imports)] use crate::ddk_shims::*;
 #[allow(unused_imports)] use crate::glue::*;
+use crate::glue::IRP_MN_QUERY_INTERFACE; // explicit: disambiguate vs ntkrnl_sys::driver_ddk glob
 #[allow(unused_imports)] use crate::guids::*;
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;

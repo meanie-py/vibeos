@@ -336,7 +336,7 @@ unsafe extern "system" fn i8042KbdDpcRoutine(
     // NTAPI — stdcall on i386, so this MUST be extern "system", not extern "C".
     // A cdecl transmute here double-cleans 16 bytes of stack (callee ret 16 +
     // caller add esp,16), skewing ESP so the DPC epilogue rets to 0 → BUGCHECK
-    // 0x1E on the first keystroke/packet (field manual §9.35). mouse.rs::
+    // 0x1E on the first keystroke/packet (field manual §9.38). mouse.rs::
     // i8042MouDpcRoutine is the correct sibling.
     let ClassService: unsafe extern "system" fn(PVOID, PVOID, PVOID, PULONG) =
         core::mem::transmute((*DeviceExtension).KeyboardData.ClassService);
@@ -812,7 +812,16 @@ pub unsafe extern "system" fn i8042KbdInterruptService(
         return ToReturn;
     }
 
-    if i8042PacketIsr(PortDeviceExtension, Output) != 0 {
+    /* Only consult the shared packet machine when the in-flight packet
+     * targets the KEYBOARD (PacketPort == 0). Mirror of the mouse-ISR gate —
+     * see mouse.rs i8042MouInterruptService for the full story (the C calls
+     * i8042PacketIsr unconditionally from both ISRs, so a keyboard packet in
+     * flight ate the mouse's reset ACKs; that stall killed the PS/2 mouse on
+     * every 2026-07-06 boot). */
+    if (*PortDeviceExtension).Packet.State != Idle
+        && (*PortDeviceExtension).PacketPort == 0
+        && i8042PacketIsr(PortDeviceExtension, Output) != 0
+    {
         if (*PortDeviceExtension).PacketComplete != 0 {
             KeInsertQueueDpc(
                 core::ptr::addr_of_mut!((*DeviceExtension).DpcKeyboard),

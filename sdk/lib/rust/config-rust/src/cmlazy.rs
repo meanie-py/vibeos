@@ -26,7 +26,7 @@ fn Int32x32To64(a: i32, b: i32) -> i64 {
 // HvSyncHive returns BOOLEAN in C; treat as NTSTATUS-compatible i32 for the
 // existing NT_SUCCESS check (mirrors original C: implicit BOOLEAN→NTSTATUS).
 extern "system" {
-    fn HvSyncHive(Hive: ntkrnl_sys::ddk::PHHIVE) -> i32;
+    fn HvSyncHive(Hive: ntkrnl_sys::ddk::PHHIVE) -> u8;
 }
 extern "C" {
     fn ExInitializeWorkItem(
@@ -111,8 +111,8 @@ pub unsafe extern "system" fn CmpDoFlushNextHive(
             {
                 (*CmHive).FlushCount = CmpLazyFlushCount;
             } else {
-                Status = HvSyncHive(core::ptr::addr_of_mut!((*CmHive).Hive));
-                if !NT_SUCCESS(Status) {
+                // HvSyncHive returns BOOLEAN (TRUE on success), not NTSTATUS
+                if HvSyncHive(core::ptr::addr_of_mut!((*CmHive).Hive)) == 0 {
                     *Error = 1u8;
                     Result = 0u8;
                     break;

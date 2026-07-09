@@ -35,7 +35,7 @@ fn resume_unwind(_payload: core::convert::Infallible) -> ! {
 extern "system" {
     fn PAGED_CODE();
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
-    fn BooleanFlagOn(Flags: u32, Flag: u32) -> i32;
+    fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn FatNormalizeAndRaiseStatus(IrpContext: *const IRP_CONTEXT, Status: i32);
 }
 extern "system" {
@@ -47,13 +47,13 @@ extern "system" {
     fn FatReservedBytes(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatSetFatEntry(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Index: u32, Value: u32);
     fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
-    fn FatIsBootSectorFat(Sector: *mut PACKED_BOOT_SECTOR) -> i32;
-    fn FatIsFat12(Vcb: *mut VCB) -> i32;
-    fn FatIsFat32(Vcb: *mut VCB) -> i32;
+    fn FatIsBootSectorFat(Sector: *mut PACKED_BOOT_SECTOR) -> u8;
+    fn FatIsFat12(Vcb: *mut VCB) -> u8;
+    fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn NT_ASSERT(condition: i32);
     fn IoSetCompletionRoutine( Irp: *mut IRP, Routine: extern "system" fn(*mut DEVICE_OBJECT, *mut IRP, *mut c_void) -> NTSTATUS, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8, );
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
-    fn CcPinRead( FileObject: *mut FILE_OBJECT, FileOffset: *const LARGE_INTEGER, Length: u32, Wait: u8, Bcb: *mut *mut c_void, Buffer: *mut *mut c_void, ) -> i32;
+    fn CcPinRead( FileObject: *mut FILE_OBJECT, FileOffset: *const LARGE_INTEGER, Length: u32, Wait: u8, Bcb: *mut *mut c_void, Buffer: *mut *mut c_void, ) -> u8;
     fn IoBuildAsynchronousFsdRequest( MajorFunction: u32, DeviceObject: *mut DEVICE_OBJECT, Buffer: *mut c_void, Length: u32, StartingOffset: *const LARGE_INTEGER, IoStatusBlock: *mut _IO_STATUS_BLOCK, ) -> *mut IRP;
     fn IoCallDriver(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP) -> NTSTATUS;
     fn KeWaitForSingleObject( Object: *mut c_void, WaitReason: u32, WaitMode: u32, Alertable: u8, Timeout: *const LARGE_INTEGER, ) -> NTSTATUS;
@@ -61,8 +61,8 @@ extern "system" {
     fn IoFreeMdl(Mdl: *mut MDL);
     fn IoFreeIrp(Irp: *mut IRP);
     fn IoGetNextIrpStackLocation(Irp: *mut IRP) -> *mut IO_STACK_LOCATION;
-    fn FatReadVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ByteOffset: i64, Length: u32, Bcb: *mut *mut BCB, Buffer: *mut *mut core::ffi::c_void, );
-    fn IsBpbFat32(packed_bpb: *const PACKED_BIOS_PARAMETER_BLOCK) -> i32;
+    fn FatReadVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, Buffer: *mut *mut core::ffi::c_void, ); // VBO = u32 (was i64: i386 stdcall stack imbalance)
+    // IsBpbFat32 defined below in Rust (was a C stub reading the WRONG offset)
     } extern "C" { fn KdPrintEx(ComponentId: u32, Level: u32, Format: *const u8, ...); } extern "system" {
     fn paged_code();
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
@@ -89,12 +89,12 @@ extern "system" {
     static FatData: FAT_DATA;
     fn KeSetEvent(event: PKEVENT, increment: i32, wait: i32);
     fn IoCompleteRequest(irp: PIRP, priority_boost: i32);
-    fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> i32;
-    fn FatIsFastIoPossible(Fcb: *mut FCB) -> i32;
+    fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
+    fn FatIsFastIoPossible(Fcb: *mut FCB) -> u8;
     fn FatGetNextFcbTopDown( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, OriginalFcb: *mut FCB, ) -> *mut FCB;
     fn FatGetDirentFromFcbOrDcb( irpctx: *mut IRP_CONTEXT, fcb: *mut FCB, arg2: u8, dirent: *mut *mut DIRENT, direntBcb: *mut *mut BCB, );
     fn Fat8dot3ToString( irpctx: *mut IRP_CONTEXT, dirent: *mut DIRENT, arg3: u8, name: *mut OEM_STRING, );
-    fn IsFileDeleted(IrpContext: *mut c_void, Fcb: *mut FCB) -> bool;
+    // IsFileDeleted defined below in Rust (was an always-FALSE C stub)
     fn KeGetCurrentThread() -> *mut c_void;
 }
 
@@ -282,7 +282,9 @@ extern "system" {
 
 const FSRTL_FSP_TOP_LEVEL_IRP: *mut core::ffi::c_void = usize::MAX as *mut core::ffi::c_void;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;
-const VcbGood: u32 = 0;
+// VCB_CONDITION is 1-based (bindgen ground truth: VcbGood=1, VcbNotMounted=2, VcbBad=3).
+// The old 0-based guesses made FatVerifyVcb treat a GOOD vcb as NOT-MOUNTED.
+const VcbGood: u32 = crate::types::_VCB_CONDITION_VcbGood;
 const VolumeClean: u32 = 0;
 const VolumeDirty: u32 = 1;
 const VCB_STATE_FLAG_SHUTDOWN: u32 = 0x40;
@@ -407,8 +409,8 @@ const IRP_MJ_SET_VOLUME_INFORMATION: u32 = 11;
 const IRP_MN_USER_FS_REQUEST: u8 = 0x00;
 const FSCTL_MARK_VOLUME_DIRTY: u32 = 0x00090030;
 const VCB_STATE_FLAG_VOLUME_DISMOUNTED: u32 = 0x00010000;
-const VcbNotMounted: i32 = 1;
-const VcbBad: i32 = 2;
+const VcbNotMounted: i32 = crate::types::_VCB_CONDITION_VcbNotMounted as i32;
+const VcbBad: i32 = crate::types::_VCB_CONDITION_VcbBad as i32;
 const STATUS_VERIFY_REQUIRED: i32 = 0x80000016_u32 as i32;
 const STATUS_WRONG_VOLUME: i32 = 0xC0000012_u32 as i32;
 const STATUS_FILE_INVALID: i32 = 0xC0000098_u32 as i32;
@@ -449,6 +451,31 @@ pub unsafe extern "system" fn FatMarkDevForVerifyIfVcbMounted(Vcb: *mut VCB) -> 
 }
 
 
+// Typed replacements for two rust_cohab_stub.c helpers that used GUESSED byte
+// offsets (magic-offset class): FatSetVcbCondition wrote at Vcb+344 (wrong →
+// VcbCondition stayed 0 → "Invalid VcbCondition" FatBugCheck once the
+// VCB_CONDITION consts were corrected), and IsBpbFat32 read PackedBpb+28
+// (HiddenSectors!) instead of RootEntries at +6.
+#[no_mangle]
+pub unsafe extern "system" fn FatSetVcbCondition(Vcb: *mut VCB, Condition: crate::types::VCB_CONDITION) {
+    (*Vcb).VcbCondition = Condition;
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IsFileDeleted(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8 {
+    // fatprocs.h macro; the C stub conservatively returned FALSE always.
+    let _ = IrpContext;
+    (((*Fcb).FcbState & crate::types::FCB_STATE_DELETE_ON_CLOSE) != 0
+        && (*Fcb).UncleanCount == 0) as u8
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IsBpbFat32(Bpb: *const PACKED_BIOS_PARAMETER_BLOCK) -> u8 {
+    // C macro: (*(PUSHORT)&(bpb)->RootEntries == 0) — packed layout, unaligned-safe
+    let root_entries = (*Bpb).RootEntries;
+    ((root_entries[0] == 0) && (root_entries[1] == 0)) as u8
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn FatVerifyVcb(
     IrpContext: *mut IRP_CONTEXT,
@@ -463,7 +490,7 @@ pub unsafe extern "system" fn FatVerifyVcb(
     DevMarkedForVerify = BooleanFlagOn(
         (*(*(*Vcb).Vpb).RealDevice).Flags,
         DO_VERIFY_VOLUME,
-    );
+    ) as i32;
 
     if DevMarkedForVerify == 0
         && (*IrpContext).MajorFunction == IRP_MJ_CREATE
@@ -510,9 +537,9 @@ pub unsafe extern "system" fn FatVerifyFcb(
     }
 
     // If this is the Fcb of a deleted dirent or our parent is deleted...
-    if IsFileDeleted(IrpContext, Fcb) ||
+    if IsFileDeleted(IrpContext.cast(), Fcb) != 0 ||
         (NodeType(Fcb) != FAT_NTC_ROOT_DCB) &&
-        IsFileDeleted(IrpContext, (*Fcb).ParentDcb) {
+        IsFileDeleted(IrpContext.cast(), (*Fcb).ParentDcb) != 0 {
         return;
     }
 
@@ -1016,7 +1043,7 @@ pub unsafe extern "system" fn FatMarkFcbCondition(
     NT_ASSERT(if FcbCondition != FcbNeedsToBeVerified {
         1
     } else {
-        FatVcbAcquiredExclusive(IrpContext, (*Fcb).Vcb)
+        FatVcbAcquiredExclusive(IrpContext, (*Fcb).Vcb) as i32
     });
 
     // Paging file special case

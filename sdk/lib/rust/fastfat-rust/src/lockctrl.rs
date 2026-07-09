@@ -33,7 +33,7 @@ extern "system" {
     fn CanFsdWait(Irp: *mut core::ffi::c_void) -> i32;
     fn FatCreateIrpContext(Irp: *mut core::ffi::c_void, CanWait: i32) -> *mut core::ffi::c_void;
     fn FatExceptionFilter(IrpContext: *mut core::ffi::c_void, ExceptionPointers: *mut EXCEPTION_POINTERS) -> i32;
-    fn FatIsIrpTopLevel(Irp: *mut core::ffi::c_void) -> i32;
+    fn FatIsIrpTopLevel(Irp: *mut core::ffi::c_void) -> u8;
     fn FatProcessException(IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void, ExceptionCode: i32) -> i32;
     fn _SEH2_GetExceptionCode() -> i32;
     fn _SEH2_GetExceptionInformation() -> *mut EXCEPTION_POINTERS;
@@ -44,7 +44,7 @@ extern "system" {
 // ---- file-scope preamble (translated) ----
 pub const Dbg: u32 = (DEBUG_TRACE_LOCKCTRL) as u32;
 
-const UserFileOpen: i32 = 0; // unknown enum value
+const UserFileOpen: i32 = crate::types::_TYPE_OF_OPEN_UserFileOpen as i32; // 2 — bindgen ground truth
 
 // Forward declarations for unknown externals
 
@@ -70,7 +70,7 @@ pub unsafe extern "system" fn FatFsdLockControl(
 
     unsafe { FsRtlEnterFileSystem(); }
 
-    TopLevel = unsafe { FatIsIrpTopLevel(Irp) };
+    TopLevel = unsafe { FatIsIrpTopLevel(Irp) as i32 };
 
     // SEH2_TRY / _SEH2_EXCEPT / _SEH2_END emulation (no real SEH under DUMMY_PSEH)
     {
@@ -178,7 +178,7 @@ pub unsafe extern "system" fn FatFastUnlockSingle(
 ) -> i32 {
 
     const Dbg: u32 = 0; // DEBUG_TRACE_LOCKCTRL
-    const UserFileOpen: i32 = 0; // placeholder
+    const UserFileOpen: i32 = crate::types::_TYPE_OF_OPEN_UserFileOpen as i32; // 2 — bindgen ground truth
 
     let mut Results: i32 = 0;
     let _ = DeviceObject;
@@ -350,7 +350,7 @@ pub unsafe extern "system" fn FatCommonLockControl(
 ) -> NTSTATUS {
     const IRP_MN_LOCK: u32 = 0x01;
     type TYPE_OF_OPEN = u32;
-    const UserFileOpen: TYPE_OF_OPEN = 1;
+    const UserFileOpen: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_UserFileOpen as TYPE_OF_OPEN; // 2 — bindgen ground truth
     const Dbg: u32 = 0; // DEBUG_TRACE_LOCKCTRL placeholder
 
     let mut Status: NTSTATUS = STATUS_SUCCESS;

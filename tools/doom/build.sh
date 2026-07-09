@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # tools/doom/build.sh — fetch + cross-compile doomgeneric for vibeos (the
-# foreign-binary demo). Off the critical path; only needed for the VIBEOS_DOOM=1
+# foreign-binary demo). Off the critical path; only needed for the doom payload
 # opt-in image. Full bring-up story + why each flag is load-bearing:
 # docs/engineering/doom-on-vibeos.md.
 #
 # Usage:
 #   tools/doom/build.sh [arm64|amd64|i386|all]   # default: arm64
 #
-# Outputs (consumed by mkramdisk.sh / the livecd staging when VIBEOS_DOOM=1):
+# Outputs (consumed via tools/payloads/doom/payload.yaml when VIBEOS_PAYLOAD=doom):
 #   tools/doom/doom-<arch>.exe
 #   tools/doom/doom1.wad          (shareware IWAD)
 set -euo pipefail
@@ -67,14 +67,21 @@ for arch in $ARCHES; do
     # classic msvcrt.dll (not UCRT api-sets), must have NO `b .` self-branch
     # (the clang aarch64 -Os/-O2 pointer-chase miscompile; -O0 avoids it).
     objd="$TC/${cc%-gcc}-objdump"
-    ss=$("$objd" -p "$out" | awk '$1=="Subsystem"{print $2; exit}')
+    # NB: no early `exit` in awk — under `set -o pipefail` an early awk exit
+    # SIGPIPEs objdump (141) and set -e kills the whole script (bit us
+    # 2026-07-06: `build.sh all` silently truncated to just arm64).
+    ss=$("$objd" -p "$out" | awk '$1=="Subsystem" && !p {print $2; p=1}')
     [ "$ss" = "00000002" ] || echo "[doom] WARN($arch): subsystem=$ss (want 00000002/GUI)"
+    # NB: `|| true` — under `set -e` a no-match grep (the GOOD case) would
+    # otherwise kill the script here, silently truncating an `all` run to
+    # just the first arch (bit us 2026-07-06).
     "$objd" -p "$out" | grep -qi "api-ms-win-crt" \
-        && echo "[doom] WARN($arch): links UCRT api-sets (want classic msvcrt.dll)"
+        && echo "[doom] WARN($arch): links UCRT api-sets (want classic msvcrt.dll)" \
+        || true
     if [ "$arch" = "arm64" ]; then
         n=$("$objd" -d "$out" | grep -cE '^\s+[0-9a-f]+:\s+14000000' || true)
         [ "$n" = "0" ] || echo "[doom] WARN($arch): $n 'b .' self-branch(es) — optimizer miscompile, rebuild -O0"
     fi
 done
 
-echo "[doom] done. Enable in an image with: VIBEOS_DOOM=1 ./vibeos-cli build --arch <arch>"
+echo "[doom] done. Enable in an image with: VIBEOS_PAYLOAD=doom ./vibeos-cli build --arch <arch>"

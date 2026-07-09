@@ -185,6 +185,12 @@ pub unsafe extern "C" fn PiNotifyDeviceInterfaceChange(
     (*notifyStruct).InterfaceClassGuid = *InterfaceClassGuid;
     (*notifyStruct).SymbolicLinkName = SymbolicLinkName;
 
+    crate::dbg_print!(
+        b"[PNPN] IfaceChange class=%08x link=%wZ\r\n\0",
+        (*InterfaceClassGuid).Data1,
+        SymbolicLinkName
+    );
+
     KeAcquireGuardedMutex(core::ptr::addr_of_mut!(PiNotifyDeviceInterfaceLock));
 
     let mut entry = PiNotifyDeviceInterfaceListHead.Flink;

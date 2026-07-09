@@ -27,7 +27,7 @@ extern "system" {
     fn MOUNTMGR_IS_DOS_VOLUME_NAME_WB(VolumeName: PUNICODE_STRING) -> BOOLEAN;
     fn SetLastError(dwErrCode: DWORD);
     fn Basep8BitStringToStaticUnicodeString(lpString: LPCSTR) -> PUNICODE_STRING;
-    fn Basep8BitStringToDynamicUnicodeString( DestinationString: PUNICODE_STRING, lpString: LPCSTR, ) -> BOOL;
+    fn Basep8BitStringToDynamicUnicodeString( DestinationString: PUNICODE_STRING, lpString: LPCSTR, ) -> u8;
     fn GetVolumeNameForVolumeMountPointW(lpszVolumeMountPoint: LPCWSTR, lpszVolumeName: LPWSTR, cchBufferLength: DWORD) -> BOOL;
     fn WideCharToMultiByte(CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: c_int, lpMultiByteStr: LPSTR, cbMultiByte: c_int, lpDefaultChar: LPCSTR, lpUsedDefaultChar: *mut BOOL) -> c_int;
     fn GetDriveTypeA(lpRootPathName: LPCSTR) -> UINT;

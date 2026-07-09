@@ -28,7 +28,7 @@ extern "system" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn FsRtlEnterFileSystem();
-    fn FatIsIrpTopLevel(Irp: PIRP) -> i32;
+    fn FatIsIrpTopLevel(Irp: PIRP) -> u8;
     fn CanFsdWait(Irp: PIRP) -> i32;
     fn FatCreateIrpContext(Irp: PIRP, Wait: i32) -> PIRP_CONTEXT;
 }
@@ -58,7 +58,7 @@ pub unsafe extern "system" fn FatFsdPnp(
 
     FsRtlEnterFileSystem();
 
-    TopLevel = FatIsIrpTopLevel(Irp);
+    TopLevel = FatIsIrpTopLevel(Irp) as i32;
 
     // _SEH2_TRY begins here
     {

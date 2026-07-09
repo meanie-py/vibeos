@@ -5,7 +5,7 @@ use win32k_sys::win32k::*;
 // to match the C signatures from sdk/include/psdk/winddi.h + win32ss/gdi/ntgdi/rect.h.
 extern "system" {
     fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: BOOL, iType: ULONG, iDirection: ULONG, cLimit: ULONG) -> ULONG;
-    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pul: *mut ULONG) -> BOOL;
+    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pul: *mut ULONG) -> u8;
 }
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
@@ -193,7 +193,7 @@ unsafe extern "fastcall" fn IntEngGradientFillRect(
             let mut Color: u32;
 
             if Horizontal != 0 {
-                EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, &mut RectEnum as *mut _ as *mut ULONG);
+                EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, &mut RectEnum as *mut _ as *mut ULONG) as i32;
                 i = 0;
                 while i < RectEnum.c && RectEnum.arcl[i as usize].top <= rcSG.bottom {
                     if RECTL_bIntersectRect(&mut FillRect, &RectEnum.arcl[i as usize], &rcSG) != 0 {
@@ -247,7 +247,7 @@ unsafe extern "fastcall" fn IntEngGradientFillRect(
                 continue;
             }
 
-            EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, &mut RectEnum as *mut _ as *mut ULONG);
+            EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, &mut RectEnum as *mut _ as *mut ULONG) as i32;
             i = 0;
             while i < RectEnum.c && RectEnum.arcl[i as usize].top <= rcSG.bottom {
                 if RECTL_bIntersectRect(&mut FillRect, &RectEnum.arcl[i as usize], &rcSG) != 0 {
@@ -309,7 +309,7 @@ unsafe extern "fastcall" fn IntEngGradientFillRect(
         let mut FillRect: RECTL = core::mem::zeroed();
         let Color: ULONG = XLATEOBJ_iXlate(pxlo, rgb_pack(((*v1).Red >> 8) as i32, ((*v1).Green >> 8) as i32, ((*v1).Blue >> 8) as i32));
 
-        EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, &mut RectEnum as *mut _ as *mut ULONG);
+        EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, &mut RectEnum as *mut _ as *mut ULONG) as i32;
         i = 0;
         while i < RectEnum.c && RectEnum.arcl[i as usize].top <= rcSG.bottom {
             if RECTL_bIntersectRect(&mut FillRect, &RectEnum.arcl[i as usize], &rcSG) != 0 {
@@ -385,7 +385,7 @@ unsafe extern "C" fn IntEngGradientFillRect(
             let mut Color: u32;
 
             if Horizontal != 0 {
-                EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, &mut RectEnum as *mut _ as *mut ULONG);
+                EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, &mut RectEnum as *mut _ as *mut ULONG) as i32;
                 i = 0;
                 while i < RectEnum.c && RectEnum.arcl[i as usize].top <= rcSG.bottom {
                     if RECTL_bIntersectRect(&mut FillRect, &RectEnum.arcl[i as usize], &rcSG) != 0 {
@@ -439,7 +439,7 @@ unsafe extern "C" fn IntEngGradientFillRect(
                 continue;
             }
 
-            EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, &mut RectEnum as *mut _ as *mut ULONG);
+            EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, &mut RectEnum as *mut _ as *mut ULONG) as i32;
             i = 0;
             while i < RectEnum.c && RectEnum.arcl[i as usize].top <= rcSG.bottom {
                 if RECTL_bIntersectRect(&mut FillRect, &RectEnum.arcl[i as usize], &rcSG) != 0 {
@@ -501,7 +501,7 @@ unsafe extern "C" fn IntEngGradientFillRect(
         let mut FillRect: RECTL = core::mem::zeroed();
         let Color: ULONG = XLATEOBJ_iXlate(pxlo, rgb_pack(((*v1).Red >> 8) as i32, ((*v1).Green >> 8) as i32, ((*v1).Blue >> 8) as i32));
 
-        EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, &mut RectEnum as *mut _ as *mut ULONG);
+        EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, &mut RectEnum as *mut _ as *mut ULONG) as i32;
         i = 0;
         while i < RectEnum.c && RectEnum.arcl[i as usize].top <= rcSG.bottom {
             if RECTL_bIntersectRect(&mut FillRect, &RectEnum.arcl[i as usize], &rcSG) != 0 {
@@ -752,7 +752,7 @@ unsafe extern "fastcall" fn IntEngGradientFillTriangle(
     if VCMPCLRS!(v1, v2, v3) {
         CLIPOBJ_cEnumStart(pco, 0 as BOOL, CT_RECTANGLES, CD_RIGHTDOWN, 0);
         loop {
-            EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, core::ptr::addr_of_mut!(RectEnum) as *mut ULONG);
+            EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, core::ptr::addr_of_mut!(RectEnum) as *mut ULONG) as i32;
             i = 0;
             while i < RectEnum.c && (*RectEnum.arcl.as_ptr().offset(i as isize)).top <= (*prclExtents).bottom {
                 if RECTL_bIntersectRect(core::ptr::addr_of_mut!(FillRect), RectEnum.arcl.as_ptr().offset(i as isize) as *mut RECTL, prclExtents) != 0 {
@@ -800,7 +800,7 @@ unsafe extern "fastcall" fn IntEngGradientFillTriangle(
     Color = XLATEOBJ_iXlate(pxlo, rgb_pack(((*v1).Red >> 8) as i32, ((*v1).Green >> 8) as i32, ((*v1).Blue >> 8) as i32));
     CLIPOBJ_cEnumStart(pco, 0 as BOOL, CT_RECTANGLES, CD_RIGHTDOWN, 0);
     loop {
-        EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, core::ptr::addr_of_mut!(RectEnum) as *mut ULONG);
+        EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, core::ptr::addr_of_mut!(RectEnum) as *mut ULONG) as i32;
         i = 0;
         while i < RectEnum.c && (*RectEnum.arcl.as_ptr().offset(i as isize)).top <= (*prclExtents).bottom {
             if RECTL_bIntersectRect(core::ptr::addr_of_mut!(FillRect), RectEnum.arcl.as_ptr().offset(i as isize) as *mut RECTL, prclExtents) != 0 {
@@ -1067,7 +1067,7 @@ unsafe extern "C" fn IntEngGradientFillTriangle(
     if VCMPCLRS!(v1, v2, v3) {
         CLIPOBJ_cEnumStart(pco, 0 as BOOL, CT_RECTANGLES, CD_RIGHTDOWN, 0);
         loop {
-            EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, core::ptr::addr_of_mut!(RectEnum) as *mut ULONG);
+            EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, core::ptr::addr_of_mut!(RectEnum) as *mut ULONG) as i32;
             i = 0;
             while i < RectEnum.c && (*RectEnum.arcl.as_ptr().offset(i as isize)).top <= (*prclExtents).bottom {
                 if RECTL_bIntersectRect(core::ptr::addr_of_mut!(FillRect), RectEnum.arcl.as_ptr().offset(i as isize) as *mut RECTL, prclExtents) != 0 {
@@ -1115,7 +1115,7 @@ unsafe extern "C" fn IntEngGradientFillTriangle(
     Color = XLATEOBJ_iXlate(pxlo, rgb_pack(((*v1).Red >> 8) as i32, ((*v1).Green >> 8) as i32, ((*v1).Blue >> 8) as i32));
     CLIPOBJ_cEnumStart(pco, 0 as BOOL, CT_RECTANGLES, CD_RIGHTDOWN, 0);
     loop {
-        EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, core::ptr::addr_of_mut!(RectEnum) as *mut ULONG);
+        EnumMore = CLIPOBJ_bEnum(pco, core::mem::size_of::<RECT_ENUM>() as ULONG, core::ptr::addr_of_mut!(RectEnum) as *mut ULONG) as i32;
         i = 0;
         while i < RectEnum.c && (*RectEnum.arcl.as_ptr().offset(i as isize)).top <= (*prclExtents).bottom {
             if RECTL_bIntersectRect(core::ptr::addr_of_mut!(FillRect), RectEnum.arcl.as_ptr().offset(i as isize) as *mut RECTL, prclExtents) != 0 {
@@ -1586,7 +1586,7 @@ pub unsafe extern "C" fn IntEngGradientFill(
 //
 //             if (Horizontal)
 //             {
-//                 EnumMore = CLIPOBJ_bEnum(pco, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//                 EnumMore = CLIPOBJ_bEnum(pco, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //                 for (i = 0; i < RectEnum.c && RectEnum.arcl[i].top <= rcSG.bottom; i++)
 //                 {
 //                     if (RECTL_bIntersectRect(&FillRect, &RectEnum.arcl[i], &rcSG))
@@ -1614,7 +1614,7 @@ pub unsafe extern "C" fn IntEngGradientFill(
 //             }
 //
 //             /* vertical */
-//             EnumMore = CLIPOBJ_bEnum(pco, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//             EnumMore = CLIPOBJ_bEnum(pco, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //             for (i = 0; i < RectEnum.c && RectEnum.arcl[i].top <= rcSG.bottom; i++)
 //             {
 //                 if (RECTL_bIntersectRect(&FillRect, &RectEnum.arcl[i], &rcSG))
@@ -1654,7 +1654,7 @@ pub unsafe extern "C" fn IntEngGradientFill(
 //         RECTL FillRect;
 //         ULONG Color = XLATEOBJ_iXlate(pxlo, RGB(v1->Red >> 8, v1->Green >> 8, v1->Blue >> 8));
 //
-//         EnumMore = CLIPOBJ_bEnum(pco, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//         EnumMore = CLIPOBJ_bEnum(pco, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //         for (i = 0; i < RectEnum.c && RectEnum.arcl[i].top <= rcSG.bottom; i++)
 //         {
 //             if (RECTL_bIntersectRect(&FillRect, &RectEnum.arcl[i], &rcSG))
@@ -1860,7 +1860,7 @@ pub unsafe extern "C" fn IntEngGradientFill(
 //       CLIPOBJ_cEnumStart(pco, FALSE, CT_RECTANGLES, CD_RIGHTDOWN, 0);
 //       do
 //       {
-//         EnumMore = CLIPOBJ_bEnum(pco, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//         EnumMore = CLIPOBJ_bEnum(pco, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //         for (i = 0; i < RectEnum.c && RectEnum.arcl[i].top <= prclExtents->bottom; i++)
 //         {
 //           if (RECTL_bIntersectRect(&FillRect, &RectEnum.arcl[i], prclExtents))
@@ -1909,7 +1909,7 @@ pub unsafe extern "C" fn IntEngGradientFill(
 //     CLIPOBJ_cEnumStart(pco, FALSE, CT_RECTANGLES, CD_RIGHTDOWN, 0);
 //     do
 //     {
-//       EnumMore = CLIPOBJ_bEnum(pco, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum);
+//       EnumMore = CLIPOBJ_bEnum(pco, (ULONG) sizeof(RectEnum), (PVOID) &RectEnum) as i32;
 //       for (i = 0; i < RectEnum.c && RectEnum.arcl[i].top <= prclExtents->bottom; i++)
 //       {
 //         if (RECTL_bIntersectRect(&FillRect, &RectEnum.arcl[i], prclExtents))

@@ -42,7 +42,7 @@ extern "system" {
         capture_if_kernel: BOOLEAN,
     );
     fn SeTokenIsRestricted(token: PTOKEN) -> BOOLEAN;
-    fn SeTokenIsInert(token: PTOKEN) -> ULONG;
+    fn SeTokenIsInert(token: PTOKEN) -> u8;
     fn SeSinglePrivilegeCheck(privilege_value: LUID, previous_mode: KPROCESSOR_MODE) -> BOOLEAN;
     fn SepRmRemoveLogonSessionFromToken(token: PTOKEN);
     
@@ -954,7 +954,7 @@ pub unsafe extern "system" fn NtQueryInformationToken(
 
             15 => {
                 required_length = core::mem::size_of::<ULONG>() as ULONG;
-                let is_token_sandbox_inert = SeTokenIsInert(token);
+                let is_token_sandbox_inert = SeTokenIsInert(token) as ULONG;
                 if let Err(s) = probe_write_user(TokenInformation as PULONG, is_token_sandbox_inert, previous_mode) {
                     status = s;
                 }

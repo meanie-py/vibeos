@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.qemu.vm import QemuVM, process_cpu_pct, PROJECT_DIR
+from tests.qemu.vm import PROJECT_DIR, QemuVM, process_cpu_pct
 
 # Add tools/ to path for scan_ud2
 sys.path.insert(0, str(PROJECT_DIR / "tools"))
@@ -329,14 +329,14 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
         pytest.skip("start-menu gate is i386/amd64 (QMP input-send-event; "
                     "arm64 virtio-input path not wired into this gate yet)")
 
-    # amd64 history (field manual §9.38): during bring-up, the first Ctrl+Esc
+    # amd64 history (field manual §9.41): during bring-up, the first Ctrl+Esc
     # corrupted the faulting thread's CLIENTINFO (pci->pDeskInfo/ulClientDelta
     # in the TEB) and explorer AV'd in user32!ValidateHandle before the menu
-    # rendered. After the DesktopHeapReAlloc fix (§9.37) + a clean rebuild it
+    # rendered. After the DesktopHeapReAlloc fix (§9.40) + a clean rebuild it
     # no longer reproduces (4/4 menu opens, 2026-07-08); if it recurs, re-add
     # an `if arch.startswith("amd64"): pytest.xfail(...)` here (fixture arch
     # is "amd64-uefi", NOT "amd64") rather than deleting the gate. Residual
-    # amd64 cosmetic issue (tracked in §9.38): Programs/Documents/Settings
+    # amd64 cosmetic issue (tracked in §9.41): Programs/Documents/Settings
     # render icons without label text and Run/Shut Down are absent — the
     # panel-lit gate below still passes.
 
@@ -666,7 +666,7 @@ def test_no_unexpected_ud2(arch: str) -> None:
         pytest.skip(f"ntoskrnl.exe not found at {ntoskrnl}")
 
     try:
-        from scan_ud2 import scan_ud2, find_objdump
+        from scan_ud2 import find_objdump, scan_ud2
     except ImportError:
         pytest.skip("scan_ud2.py not found in tools/")
 

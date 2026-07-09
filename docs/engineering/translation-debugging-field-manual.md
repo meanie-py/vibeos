@@ -999,6 +999,111 @@ neighboring fields; for big ones it's a wild multi-GB memset.
   A `size_of::<T>() / size_of::<T>()` (=1) count with typed dst is the other
   correct spelling — don't "fix" it.
 
+### `size_of_val` on a `__BindgenUnionField` marker → size 0
+
+C `sizeof(x->UnionMember)` naively becomes `size_of_val(&(*x).UnionMember)` — but in
+bindgen's **old-style** union layout (`#[repr(C)] struct` with `__BindgenUnionField<T>`
+markers + one real `bindgen_union_field` storage array), each member field is a **ZST
+marker**, so `size_of_val` returns **0**. The 0 then flows somewhere size-sensitive and
+fails far away with a *parameter*-flavored status, not a crash.
+
+- **Symptom (found 2026-07-06):** USB disk PnP START failed 0xC000000D; classpnp's
+  `InitializeStorageRequestBlock` rejected `ByteSize=0` from
+  `size_of_val(&PrivateFdoData.ReleaseQueueSrb.ReleaseQueueSrbBuffer)` (a
+  `__BindgenUnionField<[UCHAR;144]>`). Sweep found 2 more live sites:
+  classpnp `class.rs` SrbExBuffer (same call, power path) and partmgr
+  `partition.rs` `sizeof(basicVolId->Mbr/Gpt)` → `UniqueIdLength=0` (breaks
+  MOUNTDEV_QUERY_UNIQUE_ID / mountmgr bookkeeping). The partmgr site's comment even
+  said "union field size, NOT a type" — knowing the C intent doesn't save you.
+- **Fix:** size the **target type** (`size_of::<_BASIC_VOLUME_UNIQUE_ID__bindgen_ty_1>()`)
+  or the **whole union struct** when the C took the largest member's size. Never
+  `size_of_val` a bindgen union member.
+- **Sweep recipe:** collect `pub X: __BindgenUnionField` field names per crate, then flag
+  `size_of_val` callsites whose last `.Field)` token matches one (nested-paren tolerant).
+  Note only *some* crates use old-style unions — verify the hit against the same crate's
+  `types_*.rs` before "fixing" (new-style real `union` members are fine).
+- **Related latent hazard:** `write_bytes(ptr_to_union_field, 0, size_of_val(...))` and
+  friends — any `size_of_val` in a bindgen-heavy crate deserves a second look.
+
+### Dropped term in a hand-derived `sizeof` `#define` → extension-layout overlap
+
+C `#define FUNCTIONAL_EXTENSION_SIZE sizeof(FUNCTIONAL_DEVICE_EXTENSION) + sizeof(DISK_DATA)`
+was hand-translated to `size_of::<FUNCTIONAL_DEVICE_EXTENSION>()` — the **second sizeof
+dropped**. disk.sys registered a device extension with no room for DISK_DATA; classpnp
+laid its PrivateCommonData + remove-lock rundown right after the FDE; disk's
+`DISK_DATA.Mbr.{Signature,CheckSum}` write then corrupted the rundown's `RunRefs`.
+
+- **Symptom (2026-07-06, USB-disk START):** AV in `ExfAcquireRundownProtectionCacheAware`
+  minutes of call-chain away from the corrupting store. The kill shot: the faulting
+  register held `0x<CheckSum><Signature>` — **the disk's literal MBR identifier**
+  (`sfdisk` had printed `Disk identifier: 0x0a2da154`). When a "pointer" faults with
+  recognizable DATA in it, ask *whose data is that* — it names the overwriter.
+- **Recipe that found it:** serial 0x1E banner → `dump-trapframe <P3>` on the parked
+  GDB run → recognize Rax as the disk signature → grep who writes `Mbr.Signature` →
+  compare the C `#define` against the Rust const.
+- **Rule:** any `glue.rs` "sizeof-based #define" must quote the FULL C macro text in a
+  comment next to the Rust expression (this file's convention) — the reviewable unit is
+  the C-to-Rust pair, not the Rust alone. When debugging extension-layout corruption
+  between a class driver and classpnp, diff `DeviceExtensionSize` registration against
+  the C macro FIRST — it's one line and this class lives there.
+
+### BOOLEAN return declared `-> i32` in an extern block → garbage-upper-bytes boolean
+
+On x86/x64 a function returning `BOOLEAN`/`u8` only defines **AL**; the upper 3 bytes of
+EAX are whatever garbage the callee left there. A Rust extern decl that widens the return
+(`fn FatDeviceIsFatFsdo(...) -> i32;` for a C/Rust definition returning `BOOLEAN`) makes
+every `!= 0` test read those garbage bytes — the call **randomly returns true** even when
+the function returned FALSE. The reverse direction (definition i32, decl u8) is safe for
+0/non-0 semantics (truncation to AL preserves the boolean).
+
+- **Symptom (2026-07-06, USB-disk mount):** fastfat `FatCreateIrpContext` raised
+  `STATUS_INVALID_DEVICE_REQUEST` (→ BUGCHECK 0x1E under DUMMY_PSEH) on its own healthy
+  volume-file read, because `FatDeviceIsFatFsdo` (declared `-> i32`, defined BOOLEAN)
+  "matched" the volume device object as an FSDO. 55 decls in fastfat-rust alone; the
+  workspace sweep found the same class live in mountmgr (`IsDriveLetter`/`HasDriveLetter`
+  — drive-letter assignment!), win32k (`CLIPOBJ_bEnum`), amd64 kiinit (`KdPollBreakIn`),
+  and driver crates declaring kernel BOOLEAN exports (`CcPurgeCacheSection`,
+  `MmFlushImageSection`, `KeRemoveQueueDpc`) as i32.
+- **Debug tell:** a branch that "can't be taken" fires anyway, non-deterministically, and
+  the guard function is an extern-declared boolean. Print the operands: if the comparison
+  inputs are visibly unequal yet the branch fired, suspect return-width garbage.
+- **Sibling semantics bug the scan also catches:** BOOLEAN definition declared
+  `-> NTSTATUS` and used as `if !NT_SUCCESS(x)` — TRUE(1) and FALSE(0) are both `>= 0`,
+  so the failure path is dead code (`HvSyncHive` in cmlazy.rs; `RtlCreateUnicodeString`
+  in scsiport-rust).
+- **Detector:** `python3 tools/scan_bool_width.py` — cross-references every extern decl
+  returning i32/u32/LONG/ULONG/NTSTATUS against the workspace's u8/BOOLEAN definitions
+  (Rust `#[no_mangle]` + C cohab/header prototypes). Suppress verified FPs with
+  `// nolint: bool-width (reason)`.
+- **Fix pattern:** decl → `-> u8`, then let cargo E0308s name the call sites; append
+  `as i32`/`as u32` where the result feeds a wide variable. For NTSTATUS-confused sites,
+  fix the *semantics* (`if X(...) == 0 { fail }`), not just the type.
+
+### `_Analysis_assume_` translated as live code → NULL deref the annotation "assumed away"
+
+C's SAL annotations (`_Analysis_assume_`, `_Analysis_assume_lock_held_`, …) are compile-time
+no-ops — their argument expression is **never evaluated**. A translation that turns them into
+a Rust no-op *function call* still evaluates the argument at the call site. The argument is
+routinely a pointer-deref guarded the WRONG way for runtime: fastfat's
+`_Analysis_assume_(NonPagedFcb.is_null() && (*NonPagedFcb).OutstandingAsyncWrites != 1)`
+dereferences the FCB **exactly when it is NULL** (the `&&` short-circuit runs the deref on
+the is_null()==true side).
+
+- **Symptom (2026-07-06, USB-disk mount):** BUGCHECK **0xB8 ATTEMPTED_SWITCH_FROM_DPC** —
+  the NULL-page deref happened inside `FatSingleAsyncCompletionRoutine` (DISPATCH_LEVEL DPC),
+  MmAccessFault took the process WS pushlock → `KeWaitForGate` → thread swap inside a DPC.
+  The wait/swap frames are the messenger; the crime is the pageable/NULL touch at DISPATCH.
+- **Recipe that found it:** 0xB8 has no auto-drill — `run-until --break KeBugCheckEx`, then
+  `dump-thread <P1>` for the KernelStack, raw-dump the stack, symbolicate return addresses
+  in ASCENDING address order (lowest = most recent): MmAccessFault sat directly above the
+  completion routine's frame; the routine's line number landed inside the
+  `_Analysis_assume_` block.
+- **Fix/sweep:** delete every `_Analysis_assume_*(...)` *statement* (19 sites removed
+  2026-07-06 across fastfat/cdfs/classpnp/cdrom/win32k — classpnp's
+  `(*(*Irp).MdlAddress).ByteCount` variant was a live landmine for non-MDL IRPs). Grep:
+  `grep -rn "_Analysis_assume_" sdk/lib/rust --include=*.rs | grep -v "^\s*//"`. rustconv
+  should translate SAL annotations to nothing (or a comment), never to a call.
+
 ### Dropped `FIELD_OFFSET(T, Array[N])` array-subscript scaling → heap under-alloc
 
 When a C size/offset uses an **array-subscripted** field — `FIELD_OFFSET(T, Addr.Address[N])`
@@ -3095,6 +3200,87 @@ DISPATCH → first-keypress machine wedge; see `doom-on-vibeos.md` §Bug 1) and 
 loud-panic-handler port for `arm64input-cargo` (bare `loop{}` handlers hide every
 driver panic — ~40 `*-cargo` mains still have them, sweep owed).
 
+### 9.27 (FIXED 2026-07-07) x86 PS/2 input was COMPLETELY dead — four stacked root causes, found by the Doom playable-gate
+
+**Symptom:** amd64/i386 QMP-injected keys/mouse never reached any application.
+Undetected for a long time: the cli gate's smoke never injects input, and the
+pytest input test (`test_post_shell_ready_input`) only asserts the *class
+driver* marker — which was ALSO dead, but nobody ran it. Surfaced the first
+time an adversarial gate demanded a real app respond (`tests/qemu/test_payload.py`, née test_doom.py,
+the "start a new game of Doom with injected keys" probe).
+
+Four independent root causes, each masking the next (fix order = discovery
+order; every one is arch-generic even though found on amd64):
+
+1. **acpi-rust invented `CmResourceType*` table** (`buspdo.rs:418`): rustconv
+   emitted a sequential 0..11 guess (Interrupt=0, Port=2, …) instead of the
+   WDK values (Port=1, Interrupt=2, … cmtypes.h:224). Every ACPI-built
+   CM_PARTIAL_RESOURCE_DESCRIPTOR was mistyped; IRQ descriptors were
+   `CmResourceTypeNull` so pnpres translation and i8042prt's resource parse
+   never saw an interrupt → `IoConnectInterrupt` never called → both PS/2 ISRs
+   dead. Polled detection kept working, which hid it (devices enumerate fine).
+   *Oracle:* GDB `hbreak` on `IoConnectInterrupt` + log callers → i8042prt
+   absent. *Lint blind spot:* `verify_constants`/`--enums` missed it — local
+   uncited `pub const` tables aren't verified (owed follow-up).
+
+2. **i8042prt-rust mouse reset state machine stored INVALID ENUM DISCRIMINANTS**
+   (`mouse.rs`, `MOUSE_RESET_SUBSTATE`): the C stores `I8042ReservedMinimum+N`
+   scratch states (1001..1040) in the enum-typed field via plain int
+   assignment; the translation kept the Rust enum and `transmute`d bare
+   1001/1021/1040 into it. Transmuting a value that is not a declared
+   discriminant is **UB, and LLVM used it**: knowing the legal value set, it
+   *deleted the 1001..1040 match arms as unreachable*. The wheel-detect knock
+   (F3 C8 …) stalled at state 1001 on every boot; the timeout DPC just clears
+   MOUSE_PRESENT (no retry) → mouse dead. **New translation-bug class:**
+   `transmute::<u32, CEnum>(out_of_range)` compiles clean and silently deletes
+   the very code that uses the value. Fix = declare every reachable reserved
+   value as a real variant (`I8042Reserved1001 = 1001`, …). *Oracle:* bounded
+   ISR byte/state serial trace — conversation healthy to state 1001, then the
+   response write never appears.
+
+3. **winlogon only loaded keyboard layouts on arm64**: `InitKeyboardLayouts()`
+   was `#[cfg(target_arch = "aarch64")]` ("required for RIT→WM_KEYDOWN
+   delivery") — but the customized boot path skips the normal profile-based
+   layout load on EVERY arch. With `gspklBaseLayout == NULL`, win32k's
+   `UserProcessKeyboardInput` drops **every key** at "NO keyboard layout" —
+   after kbdclass and the RIT already saw it. All the failure paths were
+   no-op `ERR!` macros; §fix made kbdlayout.rs's ERR! real (DbgPrint) and
+   added bounded `[WIN32K] KEYDROP:` prints at each silent drop site.
+
+4. **The input desktop can be stranded on "Winlogon" on x86 too** (§9.23's
+   second half): `SwitchDesktop(ApplicationDesktop)` post-explorer was also
+   aarch64-only; RunSetup's async thread can leave `gpdeskInputDesktop` on the
+   Winlogon desktop → keys route to the stranded desktop's foreground. De-cfg'd.
+
+Also fixed en route: the shared i8042 packet state machine (`i8042PacketIsr`)
+is consulted by BOTH ISRs but never checks which port the in-flight packet
+targets — a keyboard packet in flight eats mouse bytes (and vice versa). This
+is a latent race in the upstream C too; the Rust now gates on `PacketPort`.
+
+**Test-oracle lesson:** the first playable-gate probe used F1 (Doom's help
+screen = static frame). doomgeneric's `convertToDoomKey` doesn't map VK_F1 —
+the game legitimately ignored the key and the gate kept failing AFTER the OS
+was fixed. When probing a foreign binary, drive inputs it demonstrably maps
+(ESC/ENTER/arrows) toward a state change it can't fake (new game started,
+idle first-person view ≈ static vs attract demo ≈ 50% frame delta).
+
+**i386 rare Mm-gate flake (open, REFRAMED 2026-07-07 — NOT a landing blocker):**
+the acpi CmResourceType fix (#1 above) is correct and load-bearing for amd64,
+and it connects the i8042 IRQ on i386 *for the first time* (previously
+Null-typed → never connected). This can timing-expose a latent i386 Mm gate
+deadlock: winlogon parks in `NtFreeVirtualMemory` → (Mm internals) →
+`KeWaitForGate` (WaitReason 0x23 WrPushLock, HOLDER-STUCK "no signal ever"),
+boot never reaches the desktop. **Empirically it is rare:** on a clean build,
+i386 smoked 5/5 green + a full 3-arch gate ×3 green (~13 consecutive clean
+boots) with no recurrence — the one live capture was under the
+timing-perturbing `--lockdep` instrumented build. So it is a **pre-existing Mm
+guarded-mutex race** (§9.13 WS-pushlock family), NOT introduced by the input
+work and NOT a hard regression; the acpi fix is correct and stays. All 5 fixes
++ the amd64 playable win LANDED on master via ×3-green gate 2026-07-07. Left
+open as a tracked rare flake; if it recurs, NEXT TOOL: `vibeos-cli build --arch
+i386 --lockdep` names the holder + ordering inversion on serial (it's a stack
+`_EX_PUSH_LOCK_WAIT_BLOCK` WakeGate class — special pool can't catch it; use a
+GDB watchpoint on the wait-block WakeGate.Type byte, cf. §9.24).
 ### 9.30 (RESOLVED 2026-07-07) i386 desktop icons missing — decl/def calling-convention mismatch is UB that LLVM resolves by SILENTLY DELETING the calling branch (no ud2, no link error)
 
 **Symptom:** i386 boots to a fully-working desktop (taskbar, ticking clock,
@@ -3221,6 +3407,59 @@ bugcheck path (KeBugCheckWithTf raising to HIGH; harmless secondary) and a
 nested 0x1E in KeGetBugMessageText. This is the §9.27 arm64 TDI flake wearing
 its new detector — one hit in ~20 armed boots today, so rarer than the historic ≈1/4 but alive; the waitdep chain dump above is the datum for the next debugging round.
 
+**Coverage extension (2026-07-07, landed with the ex crate-split):** the live
+catch was `bad-thread-ptr` fired from `check_unwait` at `KiUnlinkThread` —
+which proves the -1 Thread arrived via a path that BYPASSES `check_waittest`
+(KiWaitTest validates its object list at entry, so a corrupt block there
+fires object-side first). Three wake paths consume `WaitBlock->Thread`
+straight off a dispatcher wait list with no validation, and all three now run
+`check_waittest` before consuming:
+- `KeSetEventBoostPriority` (eventobj.rs — the pushlock event path; the event
+  can be a STACK-resident `EX_PUSH_LOCK_WAIT_BLOCK.WakeEvent`) → `KiUnlinkThread`.
+- `KiActivateWaiterQueue` (queue.rs — KQUEUE wake; worker queues). NB queue
+  waiters (KeRemoveQueue) never set `WaitBlock->Object` (C nor Rust — only
+  WaitListEntry is inserted), so this site passes `require_obj_backptr=false`
+  or every contended queue wake false-positives K_OBJ_BACKPTR.
+- `KeSignalGateBoostPriority` (gate.rs — no KiUnlinkThread in its path at
+  ALL, so a garbage thread there previously crashed with no waitdep report).
+
+The next hit therefore fires with **owner = the EVENT/QUEUE/GATE address**,
+which names the funnel and (for a stack-resident event) the owning frame —
+instead of the anonymous `check_unwait(-1)`.
+
+**Hypotheses killed on paper (2026-07-07, don't re-derive):** (a) the
+`ExfUnblockPushLock` WAIT-flag handshake is airtight for untimed waits — the
+walker signals only blocks whose fetch_and saw WAIT already CLEAR (committed
+sleeper), the canceller cases all synchronize correctly; (b) the timeout-path
+hole (no handshake left after sleep-commit → canceller can return while a
+walker is mid-signal on its stack event) is REAL in principle but unreachable:
+no caller in the tree passes a non-NULL Timeout to
+`ExTimedWaitForUnblockPushLock` (only `ExWaitForUnblockPushLock(NULL)`).
+
+**Unifying lead for the TDI-window flake family (2026-07-08).** A second face
+surfaced: winlogon dies user-mode (BUGCHECK 0x4C/C000021A cascade) with a
+KERNEL VA (`0xFFFF8000050D4CB0`, identical across hits, kernel-stack region)
+as `BASE_STATIC_SERVER_DATA.WindowsDirectory.Buffer` — caught by the
+`[UEXC-BT]` user FP-chain backtrace (ke/arm64/stubs.rs, second-chance kill):
+`LdrpRunInitializeRoutines → kernel32!DllMain → _snwprintf("%wZ;...")`.
+basesrv heap-copies those strings into the CSR shared section correctly, and
+the section maps at the SAME VA in server and clients — so the leading
+hypothesis is a **wrong physical page behind the client's section view**: an
+arm64 Mm page-identity race (direct successor of the fixed §9.14–§9.16
+PFN/section family) briefly hands a client view a page still owned by (or
+recycled from) a kernel thread stack. The same double-owned-page mechanism
+would ALSO produce the §9.31 dispatcher face (KWAIT_BLOCK `Thread=-1` — stack
+page scribbled by its other owner). Discriminators live on master:
+- kernel32 DllMain (arm64) validates the shared-section strings and dumps
+  `[kernel32] BASE_STATIC_SERVER_DATA CORRUPT ...` (+ falls back, so the boot
+  survives diagnosed): whole-struct garbage ⇒ wrong page; only Buffer fields
+  poisoned with sane Lengths ⇒ targeted overwrite.
+- waitdep chain dump + `check_waittest` at the three direct-consume funnels
+  (KeSetEventBoostPriority / KiActivateWaiterQueue / KeSignalGateBoostPriority)
+  names the object and block on the dispatcher face.
+Do NOT hand-loop boots; organic gate traffic is the soak — the next hit
+self-reports enough to pick the branch.
+
 ### 9.32 Static analysis for leaked Ob references — `scan_ob_refcount.py`
 
 Sibling of §9.28's IRQL scanner (same tree-sitter held-set engine), pointed at
@@ -3295,7 +3534,160 @@ When only ONE consumer class of a shared primitive misrenders, enumerate what
 that class does that others don't (here: 1bpp DESTINATION blits) before
 auditing the shared machinery.
 
-### 9.34 (RESOLVED 2026-07-07) i386+amd64 PS/2 keyboard/mouse fully dead since ACPI went Rust — hallucinated `CmResourceType*`/`ACPI_*` constants in acpi-rust broke PnP resource translation
+### 9.34 (RESOLVED 2026-07-07) arm64 input never reached apps — DO_BUFFERED_IO translated as 0x10 (= DO_DIRECT_IO); every input packet memcpy'd to NULL
+
+**Symptom:** arm64 keys/mouse never reached any application. Driver-side
+delivery looked healthy (`[ARM64INPUT] KBD-DELIVERED sc=0x0001`), but win32k
+dropped every key at `KEYDROP: no VK for sc=0x0` — the RIT's
+`KEYBOARD_INPUT_DATA` read back **all-zero**. Mouse "worked" only apparently:
+zeroed `MOUSE_INPUT_DATA` is a silent no-op packet, so the cursor never left
+screen centre and clicks never happened (test screenshots always show the
+cursor at centre — that WAS the tell).
+
+**Root cause (invented-constant class, same family as §9.27's CmResourceType):**
+the C said `KbdDevice->Flags |= DO_BUFFERED_IO` (0x04); the translation wrote
+`0x00000010` — which is **DO_DIRECT_IO**. `NtReadFile` therefore never
+allocated a SystemBuffer (IRP arrives Flags=0x900, SystemBuffer=NULL,
+UserBuffer=NULL, MDL path), and the driver's completion
+`RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, &Data, 12)` **wrote each
+packet to virtual NULL** in whatever process context the completion ran —
+silent kernel memory corruption on every input event, plus data loss.
+
+**Debug chain that found it:** bounded paired traces — driver `RingPush`
+(sc=0x0001 healthy) vs win32k RIT receive (make=0x0) → completion-site trace
+printed `sysbuf=0000000000000000` + IRP Flags without IRP_BUFFERED_IO → read
+`NtReadFile` in iomgr-rust: SystemBuffer only allocated when
+`DeviceObject.Flags & DO_BUFFERED_IO (0x04)`.
+
+**Fix:** `arm64input.rs` device creation 0x10→0x04 (both KeyboardClass0 and
+PointerClass0) + defensive `IrpOutputBuffer()` helper (SystemBuffer else
+UserBuffer, skip-if-NULL) at all four completion memcpy sites. Result: the
+`--doom` input gate goes green on arm64 — click-to-focus + ESC/ENTER starts a
+new game (PLAYABLE Doom on arm64).
+
+**Lesson:** when a reader sees ALL-ZERO structs that the writer provably
+filled, suspect the *transport* (I/O manager buffering mode), not the data
+path — and check every hand-written `Flags |= 0xNN` against the WDK value.
+`verify_constants` can't see bare numeric flags ORs; grep for
+`Flags |= 0x` in translated drivers is a cheap audit (owed sweep).
+
+**Residual (task #21, still open):** an intermittent arm64 renders-freeze
+(doom window black/whole-screen frame delta 0.0000) survives this fix at a
+reduced rate — under investigation; NULL-write corruption was one component
+but not the whole story. The dib1bpp/sprite-path suspicions from earlier
+rounds were audited faithful-to-C (subagent audit, 2026-07-07) and are NOT
+the cause.
+
+### 9.35 (RESOLVED 2026-07-07) ex crate-split "x86 hang at ksecdd" — a `[T; 0]` extern-array decl: Rust bounds-checks the DECLARED length, so indexing through the C unsized-extern idiom panics at len 0
+
+**Symptom:** after extracting `ex` into its own rlib (crate-split Phase 1b), i386
+AND amd64 wedge deterministically in late boot right after
+`MmGetSystemRoutineAddress: 'RtlQueryModuleInformation' NOT FOUND` +
+`[BLT] IopInitializeBuiltinDriver: ksecdd.sys`; arm64 boots to desktop. On a
+current tree the "hang" is actually loud:
+`RUST PANIC (ntoskrnl) at ex-rust/src/sysinfo.rs:1368: index out of bounds: the len is 0 but the index is 0`.
+
+**Root cause:** `ntkrnl-sys/src/globals.rs` declared
+`pub static mut KiProcessorBlock: [ddk::PKPRCB; 0]` — the C idiom for an
+unsized extern array (`extern PKPRCB KiProcessorBlock[];`). In C that's fine
+(indexing is unchecked pointer math). In Rust the DECLARED type is the truth
+the compiler enforces: `KiProcessorBlock[i]` through a `[T; 0]` decl is a
+guaranteed bounds-check panic on the first index, regardless of the real
+definition's size. Pre-split, `ex/sysinfo.rs` resolved `KiProcessorBlock` to
+the in-crate sized definition (`ke/krnlinit.rs`, `[PKPRCB; MAXIMUM_PROCESSORS]`)
+so indexing was fine; post-split it glob-imports `ntkrnl_sys::globals::*` and
+silently binds the len-0 decl instead. Same symbol, same link, different
+compile-time length → runtime panic.
+
+**Why the exact i386+amd64-hang/arm64-clean split:** the panicking sites are
+the `QSI_*` handlers (7 `KiProcessorBlock[i]` sites in sysinfo.rs). ksecdd's
+init can't resolve `RtlQueryModuleInformation` (ntoskrnl has NEVER exported it,
+any arch — that serial line is normal, not the failure) and falls back to
+`NtQuerySystemInformation`, which lands in the panicking handlers on x86.
+arm64's boot path never issues those QSI classes. The arch split encodes
+*which boot path queries QSI*, nothing architectural.
+
+**Fix:** declare the REAL per-arch size —
+`[ddk::PKPRCB; crate::constants::MAXIMUM_PROCESSORS as usize]` (same constant
+the definition uses; 32 on i386, 64 on amd64/arm64). Sizing UP a previously
+`[T; 0]` decl is always safe for existing users (`.as_ptr()` unchanged;
+indexing was impossible before).
+
+**The class + how to sweep:** any `extern "C" { static mut X: [T; 0]; }` that
+a crate-split suddenly rebinds is a landmine that only fires when the indexer
+and the sized definition end up in DIFFERENT crates. Sweep:
+`grep -rn 'static mut \w*: \[.*; 0\]' sdk/lib/rust --include='*.rs' | grep -v bindgen`
+then check each name for `Name[` indexing anywhere. As of 2026-07-07 the only
+other `[T; 0]` externs (kd64 KdpMessageBuffer/KdpPathBuffer/KdComponentTable/
+TraceDataBuffer, iomgr KiProcessorBlock) are `.as_ptr()`-only in live code —
+kd64's own sized-decl pattern
+(`[PKPRCB; ntkrnl_sys::constants::MAXIMUM_PROCESSORS as usize]`, kdapi.rs) is
+the correct template.
+
+**Bonus finding from the same session (build infra, not kernel):**
+`canon-run.sh`'s per-worktree sccache server port was `cksum(root) % 100` —
+two live worktrees (vibeos-arm64-ex, vibeos-screen-painting) collided on port
+4318, so one lane's rustc compiles were served by a daemon whose mount
+namespace resolved `/tmp/vibeos` to the OTHER worktree (ENOENT on our build
+dir at best; on a cache miss it would compile the sibling's sources —
+phantom-build family). Now `md5 % 20000`. If a build dies with sccache
+"No such file or directory" on paths that plainly exist in YOUR tree, suspect
+a port/namespace collision: `pgrep -a sccache` + recompute the port hash per
+worktree root.
+
+### 9.36 (RESOLVED 2026-07-07) WriteFile hangs forever on USB volume — extern-`static` WIDTH DRIFT (`MmThrottleTop` declared u64, defined u32) permanently tripped the Cc write throttle
+
+**Symptom:** first cached user write to a FAT volume never returns. No BUGCHECK,
+no error, no FS activity — the writing process just parks. Everything read-path
+works. (Surfaced as "FlushFileBuffers doesn't persist" / 0-byte files on the
+medium; the real hang was *WriteFile*, one call earlier — the flush and close
+never ran.)
+
+**Root cause:** `cc-rust/src/copy.rs` declared
+
+```rust
+extern "system" { static mut MmThrottleTop: PFN_NUMBER; }   // u64 on amd64/arm64
+```
+
+but the definition (C `mminit.c:407` and Rust `ARM3/mminit.rs`) is `ULONG` (u32).
+The 8-byte read pulls 4 bytes of the *neighboring* variable into the high half,
+so the throttle limit is garbage-huge; `MmAvailablePages > MmThrottleTop` is
+permanently false, so `CcCanIWrite` always says "throttled" and (Wait=TRUE path)
+blocks in its deferred-write loop forever. LiveCD boots never do a cached write,
+so this was latent until the first real FS write test.
+
+**Why it was hard:** every probe in the FS write path showed *nothing wrong* —
+the write IRP never reached fastfat at all. The unblocking insight came from
+splitting the user-mode test into per-syscall markers (`created` printed,
+`wrote` didn't → the hang is INSIDE WriteFile, upstream of the FS).
+
+**The class — extern-`static` width drift:** same family as the VBO/LBO function
+-arg width bugs, but on DATA symbols, and `verify_ffi.py` explicitly skips
+extern statics. The linker gives no protection: a PE-COFF data import has no
+type or size. Over-wide reads produce garbage; over-wide *writes* corrupt the
+neighbor. A workspace sweep (2026-07-07) found and fixed the live cases:
+
+- `MmThrottleTop`/`MmThrottleBottom` u64-vs-u32 (this bug),
+- `MmLargeStackSize` declared `SIZE_T` in `ARM3/helpers.rs` + read as usize in
+  `procsup.rs` GUI-stack paths (u32 in mminit — garbage large-stack size),
+- `NlsMbCodePageTag` declared `i32` in pcix (C: `BOOLEAN`, 1 byte — over-read),
+- `InitSafeBootMode` declared `BOOLEAN` in pcix (C: `ULONG` — under-read,
+  LE-benign but wrong).
+
+**Detection:** a first-pass scanner (group all extern-block `static NAME: TYPE`
+decls by symbol, flag width conflicts after alias normalization) surfaced ~171
+naming conflicts of which the above were real width bugs. Owed: wire an
+extern-static width checker into `verify_ffi.py` (task: extend const/ABI
+verification — most conflicts are alias noise like `LUID` vs `_LUID`, so the
+checker must normalize through bindgen type aliases and compare *widths*, not
+names).
+
+**Lesson:** when a *user-mode* operation hangs with zero kernel-side probe
+output, binary-search the syscall boundary FIRST (markf around each API call
+costs one rebuild of a test app) before instrumenting ever-deeper kernel paths.
+And any `extern static` whose type was guessed from the name (`Mm*` "looks like
+a PFN count") is a width-drift candidate — the C definition is the only truth.
+### 9.37 (RESOLVED 2026-07-07) i386+amd64 PS/2 keyboard/mouse fully dead since ACPI went Rust — hallucinated `CmResourceType*`/`ACPI_*` constants in acpi-rust broke PnP resource translation
 
 **Symptom:** keyboard and mouse produced zero effect on the x86 desktop
 (no `[I8042] StartDevice`, no kbd IRQ ever fired). Boot stayed green — input
@@ -3324,9 +3716,9 @@ against the C header. Permanent delivery-chain markers now exist:
 fired`, `[KBDCLASS] first key delivered` — a smoke log shows exactly where
 the input chain breaks.
 
-### 9.35 (RESOLVED 2026-07-07) first keystroke BUGCHECK 0x1E on i386 — i8042prt DPC called kbdclass `ClassService` as `extern "C"` (caller-clean) instead of NTAPI stdcall
+### 9.38 (RESOLVED 2026-07-07) first keystroke BUGCHECK 0x1E on i386 — i8042prt DPC called kbdclass `ClassService` as `extern "C"` (caller-clean) instead of NTAPI stdcall
 
-After §9.34's fix the first injected key crashed 0x1E. `i8042KbdDpcRoutine`
+After §9.37's fix the first injected key crashed 0x1E. `i8042KbdDpcRoutine`
 transmuted `KeyboardData.ClassService` to `unsafe extern "C" fn(...)`; the
 target (kbdclass `ClassCallback`) is NTAPI = stdcall on i386, so callee `ret
 0x10` + caller `add esp,16` double-cleaned the stack → ESP skew → the DPC's
@@ -3335,7 +3727,7 @@ keyboard.rs was the one-off. Same class as §9.30: on amd64/arm64 both
 spellings coincide, so it links and runs everywhere except i386.
 `extern "system"` is ALWAYS the right spelling for NTAPI function pointers.
 
-### 9.36 (RESOLVED 2026-07-07) winlogon 0xF4 on first FAILING user-mode callback — i386 `KeUserModeCallback` conflated the SEH status with the callback's return status and skipped the user-ESP restore
+### 9.39 (RESOLVED 2026-07-07) winlogon 0xF4 on first FAILING user-mode callback — i386 `KeUserModeCallback` conflated the SEH status with the callback's return status and skipped the user-ESP restore
 
 **Symptom:** re-enabling `InitKeyboardLayouts` on x86 (see below) killed
 winlogon with BUGCHECK 0xF4 the moment the keyboard-layout load completed —
@@ -3375,16 +3767,16 @@ fired for a SUCCESS callback but not for the FAILING one.
 x86 (winlogon-rust; the C's `#if 0` cited a Rust-MM SEC_IMAGE deadlock fixed
 2026-07-05 in §9.13). Without it `gspklBaseLayout` stays null on x86 and
 win32k drops every keystroke at `UserProcessKeyboardInput` ("NO keyboard
-layout"). With §9.34+§9.35+§9.36 fixed, i386 opens the Start menu via
+layout"). With §9.37+§9.38+§9.39 fixed, i386 opens the Start menu via
 Ctrl+Esc — now a smoke gate (`test_start_menu_opens`, saves
 `qemu/<arch>_startmenu.png`).
 
-### 9.37 (RESOLVED 2026-07-07) amd64 BUGCHECK 0x1E on first start-menu open — win32k `DesktopHeapReAlloc` passed the PDESKTOP as the HEAP pointer (and never freed the old block)
+### 9.40 (RESOLVED 2026-07-07) amd64 BUGCHECK 0x1E on first start-menu open — win32k `DesktopHeapReAlloc` passed the PDESKTOP as the HEAP pointer (and never freed the old block)
 
 **Symptom:** the first Ctrl+Esc on the amd64 desktop BUGCHECKed 0x1E
 (C0000005) at `RtlAllocateHeap+0x18d`; stack showed `NtUserDeleteMenu` →
 `IntRemoveMenuItem`. Masked for a month because the keyboard was dead
-(§9.34) — nobody could open the menu. In the smoke harness it painted as a
+(§9.37) — nobody could open the menu. In the smoke harness it painted as a
 solid-navy screen (the BSOD backdrop) after the keypress.
 
 **Root cause:** win32k-rust `menu.rs` reimplements the `desktop.h` inline
@@ -3404,7 +3796,7 @@ translation failure mode. A struct-as-heap mixup produces the same crash
 signature as real heap corruption; check the heap pointer's provenance
 before hunting for a corruptor.
 
-### 9.38 (NOT REPRODUCING 2026-07-08; residual cosmetic issue open) amd64 first Ctrl+Esc corrupts explorer's CLIENTINFO → shell AV in user32!ValidateHandle
+### 9.41 (NOT REPRODUCING 2026-07-08; residual cosmetic issue open) amd64 first Ctrl+Esc corrupts explorer's CLIENTINFO → shell AV in user32!ValidateHandle
 
 **Symptom:** on amd64, the first Ctrl+Esc after the desktop settles kills
 explorer: `[KI-EXC] EXPLORER.EXE code=0xc0000005 rip=user32!ValidateHandle+0x142`,
@@ -3428,9 +3820,9 @@ cleanly; this is amd64-only.
   this is a STRAY/overrun write (or a wrong-delta client-cache write) landing
   on CLIENTINFO+0x20, not an intentional bad assignment.
 
-**Was masked by:** §9.37 (DesktopHeapReAlloc) — that 0x1E fired earlier in the
+**Was masked by:** §9.40 (DesktopHeapReAlloc) — that 0x1E fired earlier in the
 same Ctrl+Esc sequence (during menu-item build), so explorer never reached the
-point of USING the corrupted CLIENTINFO. Fixing §9.37 unmasked this.
+point of USING the corrupted CLIENTINFO. Fixing §9.40 unmasked this.
 
 **Next tool (if it recurs):** a GDB hardware watchpoint on `&pci->pDeskInfo`
 (TEB+0x820) in explorer's context, armed right after the `IntSetThreadDesktop`
@@ -3439,12 +3831,12 @@ update (dwKeyCache/afKeyState written through ulClientDelta) or a callback
 writing back through a stale/miscomputed client address during hotkey→menu
 dispatch.
 
-**Status 2026-07-08:** after the §9.37 fix + the §9.36 i386 usercall fix and a
+**Status 2026-07-08:** after the §9.40 fix + the §9.39 i386 usercall fix and a
 CLEAN rebuild of both x86 arches, the crash NO LONGER REPRODUCES — 4/4
 consecutive `test_start_menu_opens` runs on amd64 open the start menu with
 explorer alive (screenshots verified). The temp CLIENTINFO diagnostics were
 also removed in the same rebuild, so the diag itself perturbing timing can't
-be excluded; treat as "likely a downstream echo of §9.37 debris on the warm
+be excluded; treat as "likely a downstream echo of §9.40 debris on the warm
 build" but re-open on any recurrence (the `test_start_menu_opens` gate now
 runs FOR REAL on amd64 — a recurrence shows up as a hard failure with serial
 tail + symbolicated BUGCHECK; re-add the xfail with `arch.startswith("amd64")`,

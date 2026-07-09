@@ -35,7 +35,7 @@ extern "C" {
     fn VideoSavePaletteState(palette: PPALETTE_ENTRY, count: ULONG);
     fn VideoSetAllColorsToBlack(count: ULONG);
     fn MachConsGetCh() -> i8;
-    fn MachConsKbHit() -> i32;
+    fn MachConsKbHit() -> u8;
     fn MachHwIdle();
     fn UiDrawStatusText(Text: PCSTR);
     fn MachBeep();

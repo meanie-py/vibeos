@@ -179,6 +179,32 @@ pub unsafe extern "system" fn ClassAcquireRemoveLockEx(
     removeLockRundown = (((*commonExtension).PrivateCommonData as PCHAR)
         .offset(core::mem::size_of::<CLASS_PRIVATE_COMMON_DATA>() as isize))
         as PEX_RUNDOWN_REF_CACHE_AWARE;
+    {
+        // Debug tripwire: a bogus rundown area means we're about to AV inside
+        // ExAcquireRundownProtectionCacheAware with no context — identify the
+        // device object and pointers first.
+        unsafe extern "C" { fn DbgPrint(Format: *const i8, ...) -> u32; }
+        let pcd = (*commonExtension).PrivateCommonData;
+        if pcd.is_null() {
+            DbgPrint(
+                c"[CLASSPNP] AcquireRemoveLock BAD: dev=%p NULL PrivateCommonData\n".as_ptr(),
+                DeviceObject,
+            );
+        } else if (*removeLockRundown).Number == 0
+            || (*removeLockRundown).RunRefSize == 0
+            || (*removeLockRundown).RunRefs.is_null()
+        {
+            DbgPrint(
+                c"[CLASSPNP] AcquireRemoveLock BAD rundown: dev=%p pcd=%p rr=%p RunRefs=%p size=%u num=%u\n".as_ptr(),
+                DeviceObject,
+                pcd,
+                removeLockRundown,
+                (*removeLockRundown).RunRefs,
+                (*removeLockRundown).RunRefSize,
+                (*removeLockRundown).Number,
+            );
+        }
+    }
     rundownAcquired = ExAcquireRundownProtectionCacheAware(removeLockRundown);
     if rundownAcquired == 0 {
         InterlockedIncrement(&mut (*(*commonExtension).PrivateCommonData).RemoveLockFailAcquire as *mut LONG as *mut i32);

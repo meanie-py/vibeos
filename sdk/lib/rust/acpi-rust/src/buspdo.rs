@@ -420,10 +420,15 @@ pub const ACPI_MEMORY_RANGE: u8 = 0;
 pub const ACPI_IO_RANGE: u8 = 1;
 pub const ACPI_BUS_NUMBER_RANGE: u8 = 2;
 
-// Values match sdk/include/xdk/cmtypes.h. These were hallucinated (Interrupt=0,
-// Port=2, ...) until 2026-07-07: every PS/2 boot resource got a garbage Type, so
-// IopTranslateDeviceResources failed and i8042prt never got IRP_MN_START_DEVICE —
-// keyboard+mouse dead on i386/amd64 while boot stayed green (field manual §9.34).
+// FIXED 2026-07-06: the whole table was a rustconv-invented 0..11 sequence
+// (Interrupt=0, Port=2, ...). Real values per sdk/include/xdk/cmtypes.h:224.
+// Consequence of the drift: every ACPI-built CM_PARTIAL_RESOURCE_DESCRIPTOR
+// was mistyped — IRQ descriptors were CmResourceTypeNull(0), so pnpres
+// translation and i8042prt's resource parsing never saw an interrupt →
+// IoConnectInterrupt never called → PS/2 keyboard+mouse silently dead on
+// i386/amd64 since Rust buspdo.rs integrated (polled detection kept working,
+// which masked it). Found by the Doom playable-gate (tests/qemu/test_doom.py);
+// independently root-caused in the start-menu lane (field manual §9.37).
 pub const CmResourceTypeNull: ULONG = 0;
 pub const CmResourceTypePort: ULONG = 1;
 pub const CmResourceTypeInterrupt: ULONG = 2;

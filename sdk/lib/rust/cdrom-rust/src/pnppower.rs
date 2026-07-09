@@ -293,7 +293,7 @@ pub unsafe extern "system" fn RequestProcessPowerIrpCompletion(
         if (*currentStack).Parameters.Power.State.DeviceState != PowerDeviceD0 { 1 } else { 0 },
     );
 
-    _Analysis_assume_(if !deviceExtension.is_null() { 1 } else { 0 });
+    // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
 
     (*deviceExtension).PowerContext.PowerChangeState.PowerDown += 1;
 

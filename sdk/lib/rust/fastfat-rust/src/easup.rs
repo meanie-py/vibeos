@@ -28,12 +28,12 @@ extern "system" {
     fn SizeOfFullEa(ea: *mut FILE_FULL_EA_INFORMATION) -> u32;
     fn FatUpcaseEaName( IrpContext: *mut IRP_CONTEXT, Source: *mut OEM_STRING, Destination: *mut OEM_STRING, ) -> ();
     fn FlagOn(flags: u8, bit: u32) -> i32;
-    fn FsRtlIsAnsiCharacterLegalFat(Character: u8, WildCardsPermissible: i32) -> i32;
-    fn FsRtlIsLeadDbcsCharacter(Character: u8) -> i32;
+    fn FsRtlIsAnsiCharacterLegalFat(Character: u8, WildCardsPermissible: i32) -> u8;
+    fn FsRtlIsLeadDbcsCharacter(Character: u8) -> u8;
     fn NT_ASSERT(Expression: i32);
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, ErrorStatus: NTSTATUS);
     fn Add2Ptr(Ptr: *mut core::ffi::c_void, Bytes: u32) -> *mut core::ffi::c_void;
-    fn BooleanFlagOn(Flags: u32, Flag: u32) -> i32;
+    fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn DebugUnwind(fn_name: usize);
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
     fn FatAcquireSharedFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
@@ -51,12 +51,12 @@ extern "system" {
     fn FatPinMappedData( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, );
     fn FatPrepareWriteDirectoryFile( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, UpdateSize: u8, Initialize: u8, Status: *mut i32, );
     fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn _SEH2_AbnormalTermination() -> i32;
-    fn GetcbList(ea_set: *mut EA_SET_HEADER) -> u32;
+    fn _SEH2_AbnormalTermination() -> u8;
+    fn GetcbList(ea_set: *mut EA_SET_HEADER) -> u8;
     fn FatSetDirtyBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut VCB, Dirty: i32);
     fn FatSplitAllocation(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbo: u32, NewMcb: *mut LARGE_MCB);
     fn FatMergeAllocation(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, TargetMcb: *mut LARGE_MCB, SourceMcb: *mut LARGE_MCB);
-    fn FatIsFat32(Vcb: *mut VCB) -> i32;
+    fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn CopyUchar4(dest: *mut u32, src: u32);
     fn CcFlushCache( SectionObjectPointer: *mut core::ffi::c_void, Iosb: *mut _IO_STATUS_BLOCK, ByteCount: u32, UserBuffer: *mut core::ffi::c_void, );
     fn CopyU4char(dest: *mut u32, src: *const u32);
@@ -1133,7 +1133,7 @@ pub unsafe extern "system" fn FatReadEaSet(
             FatRaiseStatus(IrpContext, 0xC000003D_u32 as i32);
         }
 
-        cb_list = GetcbList(ea_set);
+        cb_list = GetcbList(ea_set) as u32;
 
         if ReturnEntireSet != 0 && cb_list > bytes_per_cluster {
             cb_list = ((cb_list + 0x1a /* EA_CBLIST_OFFSET */ + bytes_per_cluster - 1) & !(bytes_per_cluster - 1));
@@ -1284,7 +1284,7 @@ pub unsafe extern "system" fn FatDeleteEaSet(
             break 'try_loop;
         }
 
-        CbList = GetcbList(EaSet);
+        CbList = GetcbList(EaSet) as u32;
 
         EaSetClusterCount = ((CbList + EA_CBLIST_OFFSET + BytesPerCluster - 1)
             >> (*Vcb).AllocationSupport.LogOfBytesPerCluster) as u16;

@@ -1,8 +1,10 @@
 # Doom on vibeos — the foreign-binary beachhead
 
-**Status: DONE (2026-07-06, arm64).** id Software's 1993 DOOM (via `doomgeneric`'s
-Win32/GDI backend, shareware `doom1.wad`) renders and plays its attract-mode demo on
-vibeos **arm64**, under QEMU TCG. This is the first time vibeos has run a genuinely
+**Status: PLAYABLE on amd64 AND arm64 (2026-07-07); i386 keys blocked on the kbd-layout SEC_IMAGE deadlock.**
+id Software's 1993 DOOM (via `doomgeneric`'s Win32/GDI backend, shareware
+`doom1.wad`) runs on vibeos — and on amd64 the smoke gate literally **starts a
+new game with injected mouse + keyboard** (click to focus → ESC/ENTER menu
+navigation → E1M1). This is the first time vibeos has run a genuinely
 *foreign* binary — code with zero knowledge of our quirks, exercising the PE loader, the
 Win32 API surface (user32/gdi32/kernel32), `msvcrt.dll`, GDI blitting (`StretchDIBits`),
 the message loop, and the filesystem end-to-end.
@@ -16,25 +18,58 @@ adversarial integration test we don't otherwise have: every crash it hits is a r
 compat bug our own binaries mask. Getting Doom to render surfaced **three real bugs**
 (two in our kernel, one a toolchain miscompile) plus one open win32k gap — see below.
 
-## Quick start (the `VIBEOS_DOOM=1` opt-in)
+## Quick start (the `VIBEOS_PAYLOAD=doom` opt-in — ALL 3 ARCHES)
 
-Doom is wired as an **off-by-default** image flag. Two commands:
+> 2026-07-07: doom is now a **payload** under the generic payload harness
+> (`tools/payloads/doom/payload.yaml`, design:
+> `docs/engineering/payload-harness-design.md`). `VIBEOS_DOOM=1` and `--doom`
+> remain as aliases; `tests/qemu/test_doom.py` became the generic
+> `tests/qemu/test_payload.py` interpreter.
+
+Doom is wired as an **off-by-default** image flag on every arch. Two commands:
 
 ```bash
-tools/doom/build.sh arm64                          # fetch + cross-compile doomgeneric (-O0)
-VIBEOS_DOOM=1 ./vibeos-cli build --arch arm64      # stage doom.exe + doom1.wad into the ramdisk
-bash qemu/start.sh arm64                            # boot — winlogon autostarts Doom
+tools/doom/build.sh all                            # fetch + cross-compile doomgeneric (-O0), 3 arches
+VIBEOS_PAYLOAD=doom ./vibeos-cli build --arch <arch>  # stage doom.exe + doom1.wad (alias: VIBEOS_DOOM=1)
+./vibeos-cli smoke --arch <arch> --doom            # opt-in smoke: launch + render + input gates
 ```
 
 How the flag stays off by default and safe to ship:
-- `mkramdisk.sh` only stages `doom.exe`/`doom1.wad` when `VIBEOS_DOOM=1` (env
-  inherited straight through `vibeos-cli build` → mkramdisk). A normal build
-  stages nothing.
-- `winlogon` (arm64) launches Doom **only if `GetFileAttributesW` finds
-  `X:\reactos\system32\doom.exe`**. No file (every normal build) → silent no-op,
-  zero serial noise. So the winlogon hunk is landable on mainline.
+- **arm64:** `mkramdisk.sh` only stages `doom.exe`/`doom1.wad` when
+  `VIBEOS_DOOM=1` (env inherited straight through `vibeos-cli build` →
+  mkramdisk). A normal build stages nothing.
+- **i386/amd64:** `tools/strip_cd_media.py` (already run by every `livecd`
+  build) appends the two graft-point lines to the mkisofs list only when
+  `VIBEOS_DOOM=1`; flag set + assets missing = hard build abort (fail-loud).
+- **One launcher, file-gated:** winlogon's `TryStartDoom()` (all arches —
+  called before the arm64 cmd.exe wait, and on the common x86 path) launches
+  Doom **only if `GetFileAttributesW` finds `doom.exe` in system32**
+  (drive-letter agnostic via `GetWindowsDirectoryW`). No file (every normal
+  build) → silent no-op, zero serial noise. Landed on mainline.
 - Assets (`tools/doom/doomgeneric/`, `doom1.wad`, `doom-*.exe`) are gitignored —
   fetched/built on demand, never committed.
+
+## The opt-in smoke suite (`--doom`)
+
+`tests/qemu/test_payload.py --payload doom` (front door: `./vibeos-cli smoke --arch <a> --payload doom`, alias `--doom`,
+which runs it as a separate boot after a green North-Star boot, net-suite
+style). Three gates, all against VIBEOS_DOOM-staged media:
+
+1. **`test_payload_launched`** — the `doom.exe created` serial marker (winlogon
+   arm64 / userinit x86). Fails with the build recipe if media wasn't staged.
+2. **`test_payload_renders`** — two screendumps 2s apart must differ in ≥2% of
+   pixels (the attract demo animates most of its viewport; a bare desktop only
+   ticks the tray clock at <<0.1%). Catches GDI-blit/game-loop wedges.
+3. **`test_payload_input_reaches_app`** — the PLAYABLE gate: click into the
+   window (mouse chain: activation), then drive the menu with injected
+   ESC→ENTER→ENTER→ENTER and **start a new game**. An idle first-person view
+   is near-static (<1.2% frame delta, just the status-bar face) while the
+   attract demo animates ~50% — a binary signal with no pixel heuristics.
+   (Don't probe with F1: doomgeneric's `convertToDoomKey` doesn't map it —
+   only ESC/ENTER/arrows/ctrl/space/shift are mapped.) `xfail` on arm64 until
+   the win32k focus-routing gap (bug #4) is fixed; hard assert on i386/amd64.
+
+Suite is skipped entirely without `--doom` — zero cost to normal smoke/gate.
 
 The rest of this doc is the *why* behind each build flag and the bugs the bring-up
 exposed — read it before touching `tools/doom/build.sh`.
@@ -94,27 +129,8 @@ VIBEOS_QEMU_EXTRA="-device virtio-keyboard-device -device virtio-tablet-device" 
 rebuilds `ramdisk.img` from the build tree — your `mcopy`'d doom files vanish. Re-inject
 *after* every build.
 
-Because arm64 keyboard/mouse don't yet reach foreground apps (open bug — see below),
-Doom currently can't be launched interactively. The demo uses a **winlogon autostart
-scaffold** (kept out of mainline). To reproduce, apply this hunk to
-`sdk/lib/rust/winlogon-rust/src/winlogon.rs` inside the arm64 boot path (right after the
-notepad.exe spawn), rebuild arm64, re-inject, boot:
-
-```rust
-/* DOOM autostart (demo scaffold — do not land on mainline). */
-{
-    let mut Si: STARTUPINFOW = zeroed();
-    let mut Pi: PROCESS_INFORMATION = zeroed();
-    let mut DoomLine = wstr_arr!("doom.exe -iwad X:\\reactos\\system32\\doom1.wad");
-    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
-    Si.lpDesktop = wstr!("WinSta0\\Default").as_ptr() as PWSTR;
-    let bDoom = CreateProcessW(
-        wstr!("X:\\reactos\\system32\\doom.exe").as_ptr(),
-        DoomLine.as_mut_ptr(), null_mut(), null_mut(), 0, 0, null_mut(),
-        wstr!("X:\\reactos\\system32").as_ptr(), &mut Si, &mut Pi);
-    if bDoom != 0 { CloseHandle(Pi.hThread); CloseHandle(Pi.hProcess); }
-}
-```
+The launcher is landed in winlogon (`TryStartDoom()`, file-gated) — no scaffold
+hunk needed anymore; `VIBEOS_DOOM=1` at build time is the only switch.
 
 Serial confirms launch: `[WINLOGON] doom.exe created (PID …, TID …)`. Screenshot via QMP
 `screendump` on `qemu/runs/<run>/qmp.sock`.
@@ -177,6 +193,26 @@ terminates.** Detector: `objdump -d doom.exe | grep -E '^\s+[0-9a-f]+:\s+1400000
 Takeaway for anyone cross-compiling apps for vibeos: **build foreign apps `-O0` until we
 understand which optimizer pass is at fault**, and scan the output for `b .`.
 
+### 5. x86 PS/2 input was COMPLETELY dead (FIXED 2026-07-07 — four stacked bugs)
+
+The playable gate's first real catch, and it was a big one: keys and mouse
+never reached ANY x86 app. Four independent root causes, each masking the
+next — full forensics + oracles in field-manual **§9.27**:
+
+1. acpi-rust's invented `CmResourceType` table typed IRQ descriptors as Null →
+   i8042prt never connected its ISRs (kbd + mouse dead at the interrupt level).
+2. i8042prt's mouse reset state machine `transmute`d invalid enum
+   discriminants (1001..) → UB → **LLVM deleted the match arms** → mouse
+   stalled at wheel-detect forever (new translation-bug class).
+3. winlogon loaded keyboard layouts only on arm64 → win32k dropped every key
+   at "NO keyboard layout" on x86.
+4. The active input desktop could be stranded on "Winlogon" on x86 (the §9.23
+   arm64 fix was cfg'd arm64-only; de-cfg'd).
+
+Plus a latent upstream race fixed en route: the shared i8042 packet machine
+now checks which port the in-flight packet targets, so keyboard packets can't
+eat mouse bytes.
+
 ### 4. arm64 keyboard/mouse don't reach foreground apps (OPEN)
 
 Post-driver-fix, keystrokes reach `KeyboardClass0` (serial: `[ARM64INPUT] KBD-DELIVERED`)
@@ -188,9 +224,7 @@ separately (related to the desktop-input-desktop work in field-manual §9.23).
 
 ## Next
 
-- **Playable Doom** = fix bug #4 (arm64 kbd/mouse → focus).
-- **Doom on x86** — `doomgeneric-amd64.exe` is already `-O0`-built and staged on the
-  amd64 livecd ISO; amd64 had a `SetHooks failed` modal stealing focus at the desktop
-  that needs the same autostart trick or its own triage.
+- **Playable Doom on arm64** = fix bug #4 (arm64 kbd/mouse → focus), then flip
+  `test_payload_input_reaches_app`'s arm64 `xfail` to a hard assert.
 - **PuTTY** (the truly-unmodified official binary, incl. an ARM64 build) + our smoltcp
   netstack = SSH from inside vibeos — the natural follow-on foreign-binary quest.

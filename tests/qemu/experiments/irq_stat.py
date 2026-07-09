@@ -13,7 +13,6 @@ from __future__ import annotations
 import re
 import sys
 import time
-from pathlib import Path
 
 from tests.qemu.qmp_client import QmpClient
 from tests.qemu.vm import PROJECT_DIR

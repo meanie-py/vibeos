@@ -107,8 +107,8 @@ pub static mut ReparseIndex: _UNICODE_STRING = _UNICODE_STRING {
     Buffer: &REPARSEINDEX_WSTR as *const [u16; 39] as *const u16 as *mut u16,
 };
 
-pub const IOCTL_MOUNTDEV_LINK_CREATED_UNSECURE_DEPRECATED: u32 = 0x006D0010;
-pub const IOCTL_MOUNTDEV_LINK_DELETED_UNSECURE_DEPRECATED: u32 = 0x006D0014;
+pub const IOCTL_MOUNTDEV_LINK_CREATED_UNSECURE_DEPRECATED: u32 = 0x004D0010; // CTL_CODE('M',4,BUFFERED,ANY) pre-WS03 — was 'm' (mountmgr) type
+pub const IOCTL_MOUNTDEV_LINK_DELETED_UNSECURE_DEPRECATED: u32 = 0x004D0014; // CTL_CODE('M',5,BUFFERED,ANY) pre-WS03 — was 'm' type
 
 // Wide string data for \\Device\\MountPointManager
 static WIDE_MOUNTMGR_DEVICE_NAME: &[u16] = &[
@@ -181,8 +181,8 @@ static WIDE_REPARSE_INDEX: &[u16] = &[
 
 const PagedPool: u32 = 1;
 const UNICODE_NULL: u16 = 0;
-const IOCTL_MOUNTDEV_LINK_CREATED: u32 = 0x006D0010;
-const IOCTL_MOUNTDEV_LINK_DELETED: u32 = 0x004D000C;
+const IOCTL_MOUNTDEV_LINK_CREATED: u32 = 0x004DC010; // CTL_CODE('M',4,BUFFERED,RW) — was 'm' type
+const IOCTL_MOUNTDEV_LINK_DELETED: u32 = 0x004DC014; // CTL_CODE('M',5,BUFFERED,RW) — was 0x4D000C (= QUERY_SUGGESTED_LINK_NAME!)
 
 unsafe extern "system" {
     fn RtlCompareMemory(

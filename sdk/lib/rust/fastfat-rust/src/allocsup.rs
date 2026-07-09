@@ -45,28 +45,28 @@ extern "system" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
     fn DbgDoit(value: *mut c_void);
     fn DebugUnwind(FunctionName: *const i8);
-    fn FatAddMcbEntry(Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbo: u64, Lbo: u64, SectorCount: u32);
+    fn FatAddMcbEntry( Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbo: u32, Lbo: i64, SectorCount: u32, ) -> i32;
     fn FatLockFreeClusterBitMap(Vcb: *mut VCB);
     fn FatPrepareWriteVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Offset: u32, Length: u32, Bcb: *mut *mut BCB, PinnedFat: *mut *mut c_void, RegularOperation: i32, WriteThrough: i32, );
     fn FatSet12BitEntry(PinnedFat: *mut c_void, FatIndex: u32, FatEntry: u32);
     fn FatUnlockFreeClusterBitMap(Vcb: *mut VCB);
     fn FlagOn(Flags: u32, Mask: u32) -> i32;
     fn SetFlag(Flags: *mut u32, Flag: u32);
-    fn _SEH2_AbnormalTermination() -> i32;
+    fn _SEH2_AbnormalTermination() -> u8;
     fn CcRepinBcb(Bcb: *mut BCB);
     fn CcUnpinData(Bcb: *mut BCB);
     fn CcUnpinRepinnedBcb(Bcb: *mut BCB, WriteThrough: i32, IoStatus: *mut _IO_STATUS_BLOCK);
-    fn FatGetLboFromIndex(Vcb: *mut VCB, Index: u32) -> u32;
+    fn FatGetLboFromIndex(Vcb: *mut VCB, Index: u32) -> i64; // LBO = LONGLONG (fat.h:34); was u32
     fn FatPrefetchPages( IrpContext: *mut IRP_CONTEXT, VirtualVolumeFile: *mut FILE_OBJECT, Page: u32, PrefetchPages: u32, );
     fn FatLookupMcbEntry( Vcb: PVCB, Mcb: *mut LARGE_MCB, Vbo: u32, Lbo: PLBO, ByteCount: *mut u32, Index: *mut u32, ) -> BOOLEAN;
     fn FatLookupLastMcbEntry( Vcb: PVCB, Mcb: *mut LARGE_MCB, CurrentVbo: *mut u32, CurrentLbo: *mut i64, Runs: *mut u32, ) -> BOOLEAN;
     fn FatGetIndexFromLbo(Vcb: PVCB, Lbo: i64) -> u32;
     fn UInt32x32To64(a: u32, b: u32) -> u64;
-    fn FatIsFat32(Vcb: *mut VCB) -> u32;
+    fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn FatGetNextMcbEntry(Vcb: *mut VCB, Mcb: *mut LARGE_MCB, McbIndex: u32, Vbo: *mut u64, Lbo: *mut u64, ByteCount: *mut u32);
     fn FatBuildZeroMdl(IrpContext: *mut IRP_CONTEXT, ByteCount: u32) -> *mut MDL;
     fn KeClearEvent(Event: *mut KEVENT);
-    fn RtlCheckBit(BitMap: *const RTL_BITMAP, Bit: u32) -> u32;
+    fn RtlCheckBit(BitMap: *const RTL_BITMAP, Bit: u32) -> u8;
     fn ExAcquireFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
     fn ExReleaseFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
     fn FatFreeClusters(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FatIndex: u32, ClusterCount: u32);
@@ -88,7 +88,7 @@ fn FatGetDirentFromFcbOrDcb(
     dirent: *mut *mut DIRENT,
     direntBcb: *mut *mut BCB,
 );
-    fn CcIsFileCached(FileObject: *mut FILE_OBJECT) -> i32;
+    fn CcIsFileCached(FileObject: *mut FILE_OBJECT) -> u8;
     fn CcSetFileSizes(FileObject: *mut FILE_OBJECT, Sizes: *mut CC_FILE_SIZES);
 }
 
@@ -691,8 +691,8 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
                             core::ptr::addr_of_mut!(
                                 (*(FcbOrDcb as *mut FCB)).Mcb
                             ),
-                            FirstVboOfCurrentRun as u64,
-                            FirstLboOfCurrentRun as u64,
+                            FirstVboOfCurrentRun,
+                            FirstLboOfCurrentRun,
                             CurrentVbo.wrapping_sub(FirstVboOfCurrentRun),
                         );
 
@@ -791,8 +791,8 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
                                 core::ptr::addr_of_mut!(
                                     (*(FcbOrDcb as *mut FCB)).Mcb
                                 ),
-                                FirstVboOfCurrentRun as u64,
-                                FirstLboOfCurrentRun as u64,
+                                FirstVboOfCurrentRun,
+                                FirstLboOfCurrentRun,
                                 CurrentVbo.wrapping_sub(FirstVboOfCurrentRun),
                             );
 
@@ -814,13 +814,12 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
                 }
 
                 _ => {
-                    DebugTrace(
-                        0,
-                        Dbg,
-                        b"Illegal Cluster Type.\n\0".as_ptr() as *const i8,
-                        (FatEntry) as usize,
-                    );
-
+                    {
+                        extern "C" { fn DbgPrint(fmt: *const i8, ...) -> u32; }
+                        DbgPrint(b"[FASTFAT] LookupAlloc ILLEGAL entry=%08lx fcb=%p vbo=%08lx curvbo=%08lx bits=%u\n\0".as_ptr() as *const i8,
+                                 FatEntry, FcbOrDcb, Vbo, CurrentVbo,
+                                 (*(*FcbOrDcb).Vcb).AllocationSupport.FatIndexBitSize as u32);
+                    }
                     FatBugCheck(0, 0, 0);
                 }
             } // match
@@ -1466,8 +1465,8 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
         FatAddMcbEntry(
             Vcb,
             Mcb,
-            0u64,
-            FatGetLboFromIndex(Vcb, StartingCluster) as u64,
+            0u32,
+            FatGetLboFromIndex(Vcb, StartingCluster),
             *ByteCount,
         );
 
@@ -1686,8 +1685,8 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
                     FatAddMcbEntry(
                         Vcb,
                         Mcb,
-                        CurrentVbo as u64,
-                        FatGetLboFromIndex(Vcb, Cluster) as u64,
+                        CurrentVbo,
+                        FatGetLboFromIndex(Vcb, Cluster),
                         BytesFound,
                     );
 
@@ -2173,7 +2172,7 @@ pub unsafe extern "system" fn FatSplitAllocation(
             if found == 0 {
                 break;
             }
-            FatAddMcbEntry(Vcb, RemainingMcb, TargetVbo as u64, Lbo as u64, ByteCount);
+            FatAddMcbEntry(Vcb, RemainingMcb, TargetVbo, Lbo, ByteCount);
             FatRemoveMcbEntry((Vcb).cast(), Mcb, SourceVbo, ByteCount);
             TargetVbo += ByteCount;
             SourceVbo += ByteCount;
@@ -2219,7 +2218,7 @@ pub unsafe extern "system" fn FatSplitAllocation(
                 if found == 0 {
                     break;
                 }
-                FatAddMcbEntry(Vcb, Mcb, TargetVbo as u64, Lbo as u64, ByteCount);
+                FatAddMcbEntry(Vcb, Mcb, TargetVbo, Lbo, ByteCount);
                 FatRemoveMcbEntry((Vcb).cast(), RemainingMcb, SourceVbo, ByteCount);
                 TargetVbo += ByteCount;
                 SourceVbo += ByteCount;
@@ -2272,7 +2271,7 @@ pub unsafe extern "system" fn FatMergeAllocation(
             core::ptr::null_mut(),
         ) != 0
         {
-            FatAddMcbEntry(Vcb, Mcb, TargetVbo as u64, Lbo as u64, ByteCount);
+            FatAddMcbEntry(Vcb, Mcb, TargetVbo, Lbo, ByteCount);
             SourceVbo += ByteCount;
             TargetVbo += ByteCount;
         }
@@ -2540,11 +2539,11 @@ pub unsafe extern "system" fn FatSetFatEntry(
             );
 
             Lbo = (OffsetIntoVolumeFile & !(SectorSize - 1)) as u64;
-            FatAddMcbEntry(Vcb, &mut (*Vcb).DirtyFatMcb, Lbo, Lbo, SectorSize);
+            FatAddMcbEntry(Vcb, &mut (*Vcb).DirtyFatMcb, Lbo as u32, Lbo as i64, SectorSize);
 
             if (OffsetIntoVolumeFile & (SectorSize - 1)) == (SectorSize - 1) {
                 Lbo += SectorSize as u64;
-                FatAddMcbEntry(Vcb, &mut (*Vcb).DirtyFatMcb, Lbo, Lbo, SectorSize);
+                FatAddMcbEntry(Vcb, &mut (*Vcb).DirtyFatMcb, Lbo as u32, Lbo as i64, SectorSize);
             }
 
             FatLockFreeClusterBitMap(Vcb);
@@ -2573,7 +2572,7 @@ pub unsafe extern "system" fn FatSetFatEntry(
             );
 
             Lbo = (OffsetIntoVolumeFile & !(SectorSize - 1)) as u64;
-            FatAddMcbEntry(Vcb, &mut (*Vcb).DirtyFatMcb, Lbo, Lbo, SectorSize);
+            FatAddMcbEntry(Vcb, &mut (*Vcb).DirtyFatMcb, Lbo as u32, Lbo as i64, SectorSize);
 
             // Mutex for Alpha (platform-dependent, but we mimic)
             // if cfg!(target_arch = "alpha") { ... }
@@ -2614,7 +2613,7 @@ pub unsafe extern "system" fn FatSetFatEntry(
             );
 
             Lbo = (OffsetIntoVolumeFile & !(SectorSize - 1)) as u64;
-            FatAddMcbEntry(Vcb, &mut (*Vcb).DirtyFatMcb, Lbo, Lbo, SectorSize);
+            FatAddMcbEntry(Vcb, &mut (*Vcb).DirtyFatMcb, Lbo as u32, Lbo as i64, SectorSize);
 
             #[cfg(target_arch = "alpha")]
             {
@@ -2732,8 +2731,8 @@ pub unsafe extern "system" fn FatSetFatRun(
                 FatAddMcbEntry(
                     Vcb,
                     core::ptr::addr_of_mut!((*Vcb).DirtyFatMcb),
-                    Lbo as u64,
-                    Lbo as u64,
+                    Lbo as u32,
+                    Lbo as i64,
                     SectorSize,
                 );
                 Lbo += SectorSize;
@@ -2815,8 +2814,8 @@ pub unsafe extern "system" fn FatSetFatRun(
                     FatAddMcbEntry(
                         Vcb,
                         core::ptr::addr_of_mut!((*Vcb).DirtyFatMcb),
-                        Lbo as u64,
-                        Lbo as u64,
+                        Lbo as u32,
+                        Lbo as i64,
                         SectorSize,
                     );
                     Lbo += SectorSize;
@@ -2902,8 +2901,8 @@ pub unsafe extern "system" fn FatSetFatRun(
                 FatAddMcbEntry(
                     Vcb,
                     core::ptr::addr_of_mut!((*Vcb).DirtyFatMcb),
-                    Lbo as u64,
-                    Lbo as u64,
+                    Lbo as u32,
+                    Lbo as i64,
                     SectorSize,
                 );
                 Lbo += SectorSize;
@@ -3060,7 +3059,7 @@ pub unsafe extern "system" fn FatExamineFatEntries(
     let mut fat_pages: u32 = 0;
 
     let mut bad_cluster_vbo: u32 = 0;
-    let mut lbo: u32 = 0;
+    let mut lbo: i64 = 0;
 
     #[repr(u32)]
     #[derive(PartialEq, Clone, Copy)]
@@ -3298,8 +3297,8 @@ pub unsafe extern "system" fn FatExamineFatEntries(
                 FatAddMcbEntry(
                     vcb,
                     &mut (*vcb).BadBlockMcb as *mut LARGE_MCB,
-                    bad_cluster_vbo as u64,
-                    lbo as u64,
+                    bad_cluster_vbo,
+                    lbo,
                     cluster_size,
                 );
                 bad_cluster_vbo += cluster_size;

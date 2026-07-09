@@ -7,12 +7,10 @@ use ntkrnl_sys::ddk::{CHAR, GUID, LIST_ENTRY, PCHAR, ULONG_PTR, _LIST_ENTRY};
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{_GUID};
 
-pub static mut AllFdosList: LIST_ENTRY = unsafe {
-    _LIST_ENTRY {
-        Flink: &raw const AllFdosList as *mut _LIST_ENTRY,
-        Blink: &raw const AllFdosList as *mut _LIST_ENTRY,
-    }
-};
+// AllFdosList: THE no_mangle definition (same self-referential initializer) lives in
+// globals.rs — this file's non-no_mangle twin was an orphan while the linker bound
+// every extern to globals.rs's then-zeroed copy (AV in ClassPnpStartDevice's
+// InsertTailList on first disk start). Do not redefine here.
 
 #[no_mangle]
 pub static mut ClassBadItems: [CLASSPNP_SCAN_FOR_SPECIAL_INFO; 142] = [
