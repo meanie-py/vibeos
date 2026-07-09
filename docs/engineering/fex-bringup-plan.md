@@ -260,6 +260,36 @@ x86 blocks on-box.
   CsrNewThread thread-startup interaction. Next: GDB-toolkit backtrace of the
   wedged PID-204 thread (`qemu/start.sh arm64 --gdb`, `VIBEOS_FEX=1` media).
 
+### Rung 2 — remaining blocker (2026-07-08): kernel32 synch export surface + WaitOnAddress
+
+After the three fixes above, fexprobe loads, runs CRT + libc++ static init, and
+faults calling `AcquireSRWLockExclusive` — IAT poison `0xffbadd11` (ntdll
+LdrpSnapThunk's arm64 tolerant "entrypoint not found"). Root cause is an OS
+export-surface gap, NOT a fexprobe bug:
+
+- fexprobe imports the `api-ms-win-core-synch-l1-2-0` set → (apiset) → kernel32.
+  It needs `Sleep, WaitForSingleObject` (base kernel32) **plus** SRW locks,
+  condition variables, `InitOnceExecuteOnce`, `SleepConditionVariableSRW`
+  (Vista) **plus** `WaitOnAddress, WakeByAddressAll/Single` (Win8).
+- vibeos splits kernel32: **base `kernel32.dll` (0x502)** has Sleep/Wait* but
+  gates out the Vista synch (`-version=0x600+`); **`kernel32_vista.dll`** has the
+  SRW/condvar/initonce but NOT Sleep/Wait*. Neither is a superset, so pointing
+  the apiset at either leaves poison for the other half.
+- `WaitOnAddress`/`WakeByAddressAll`/`WakeByAddressSingle` are **missing
+  entirely** — not in either spec, and our ntdll has no `RtlWaitOnAddress`/
+  `RtlWakeAddress*`. This is unimplemented synchronization primitive surface.
+
+This blocks ALL FEX exes (rungs 2/3/4 and rung-1 checkpoint 2) since FEX's libc++
+uses these threading primitives. It is real feature work, deferred:
+  1. Implement the WaitOnAddress family (`RtlWaitOnAddress`/`RtlWakeAddress*` in
+     ntdll, or `WaitOnAddress`/`WakeByAddress*` in kernel32 — the rtl-sync crate
+     is the likely home; `NtWaitForAlertByThreadId`/`RtlWaitOnAddress` were
+     already flagged MISSING in the readiness matrix).
+  2. Unify the synch apiset export surface — options: a real `kernelbase.dll`
+     that re-exports both halves; make base kernel32 export the Vista+ synch
+     forwarders unconditionally; or teach the apiset loader to chain-search
+     (kernel32 → kernel32_vista). Needs a design decision.
+
 ### Rung 2 wedge — RESOLVED (2026-07-08): three stacked bugs, all fixed
 
 Getting fexprobe to `main()` on-box uncovered three independent bugs, fixed in order:
