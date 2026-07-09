@@ -111,9 +111,16 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
     );
 
     // --- Issue IOCTL_ICMP_ECHO_REQUEST (METHOD_BUFFERED, regular device-control). ---
-    let mut event: KEVENT = zeroed();
-    KeInitializeEvent(&mut event, 0 /* NotificationEvent */, 0);
-    let mut iosb: IO_STATUS_BLOCK = zeroed();
+    // Event+IOSB in pool via the shared TdiWaitBlock — the old stack locals +
+    // return-on-timeout were the §9.36 dead-frame-completion corruption class.
+    let wb = crate::tditest::alloc_wait_block();
+    if wb.is_null() {
+        ExFreePool(in_buf as PVOID);
+        ExFreePool(out_buf as PVOID);
+        ObfDereferenceObject(ip_obj);
+        ZwClose(ip_h);
+        return;
+    }
     let irp = IoBuildDeviceIoControlRequest(
         tdi::IOCTL_ICMP_ECHO_REQUEST,
         dev,
@@ -122,23 +129,29 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
         out_buf as PVOID,
         out_len as u32,
         0, // not internal device control -> IRP_MJ_DEVICE_CONTROL
-        &mut event,
-        &mut iosb,
+        core::ptr::addr_of_mut!((*wb).event) as *mut _,
+        core::ptr::addr_of_mut!((*wb).iosb) as *mut _,
     );
     if irp.is_null() {
         nsprint!("[NETSTACK] ICMP self-test: IoBuildDeviceIoControlRequest failed\n");
+        ExFreePool(wb as PVOID);
         ExFreePool(in_buf as PVOID);
         ExFreePool(out_buf as PVOID);
         ObfDereferenceObject(ip_obj);
         ZwClose(ip_h);
         return;
     }
-    let mut st = IofCallDriver(dev, irp);
-    if st == STATUS_PENDING {
-        let mut timeout: LARGE_INTEGER = zeroed();
-        timeout.QuadPart = -60_000_000i64; // 6s relative wait (> the 4s ping timeout)
-        KeWaitForSingleObject(&mut event as *mut _ as PVOID, 0, 0, 0, &mut timeout);
-        st = iosb.__bindgen_anon_1.Status;
+    let st = IofCallDriver(dev, irp);
+    let (st, leaked) = crate::tditest::tdi_wait_finish(st, irp, wb, -60_000_000i64 /* 6s, > the 4s ping timeout */);
+    if leaked {
+        // The pending IRP is buffered I/O: IopCompleteRequest will copy
+        // SystemBuffer back into out_buf (Irp->UserBuffer) whenever it finally
+        // completes — out_buf must outlive that, so leak it with the block.
+        nsprint!("[NETSTACK] ICMP self-test: timed out; leaking out_buf {:p} with the wait block\n", out_buf);
+        ExFreePool(in_buf as PVOID);
+        ObfDereferenceObject(ip_obj);
+        ZwClose(ip_h);
+        return;
     }
 
     // --- Validate the reply. ---
