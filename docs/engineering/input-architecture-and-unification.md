@@ -281,6 +281,41 @@ QMP stop at the halt) to read the actual failing transfer + its buffer pointer; 
 `Arm64DmaMapTransfer` in `hal-rust/arm64/dma.rs` fills all needed qTD page pointers. Tracked
 as its own task; does NOT gate (default arm64 smoke has no USB).
 
+*Update (2026-07-09, EHCI trace `-trace usb_ehci_* usb_packet_*` — native qemu 9.0.2):* the
+control transfers **reach QEMU and complete the SETUP stage** — `usb_packet_state_change bus
+0, port 1, ep 0, state undef -> setup -> complete`, repeated 4× (the CreateDevice retries),
+each followed by a port reset/re-attach. The control qTD chain at phys `0x54d93xxx` is
+**properly built**: SETUP (`pid 2`, tbytes 8) → IN (`pid 1`) → STATUS (`pid 0`, next=T), and
+the qTD `active` bits toggle (they ARE processed). So the halt framing was wrong — the pipe
+*does* transfer; **enumeration fails because usbport reads a bad device descriptor and
+rejects the device** (→ `CreateDevice 0x503` → port reset → retry). This strongly implies
+the **IN data-stage descriptor lands at a physical address the guest doesn't read back** —
+i.e. the IN qTD's *buffer pointer* (qTD dword 3 = `+0x0C`, the descriptor sink) is wrong,
+even though the QH/qTD structures themselves and the SETUP buffer are correct (common-buffer
+DMA proven working). Anomaly to check: the trace also shows empty QHs for `dev 0, ep 1` and
+`dev 0, ep 2` (should be `ep 0` only during enumeration) at `0x7efa0xxx` — possibly a
+stale/mis-programmed endpoint-number, or just the kbd/mouse interrupt-EP QHs. **Concrete next
+step:** QMP-read the IN qTD (e.g. `0x54d93400`) buffer pointer at `qtd+0x0C`, then read that
+physical page — if it does NOT contain the 18-byte device descriptor (`12 01 ...`) after a
+completed transfer, the qTD buffer pointer / `Arm64DmaMapTransfer` result is the bug (the IN
+descriptor data buffer is likely `MapTransfer`'d, not a common buffer — so `MapTransfer`, not
+`AllocateCommonBuffer`, is the remaining suspect). Compare the same qTD buffer read on amd64
+(which delivers).
+
+*Update 2 (same trace, stronger lead — DMA adapter exonerated):* re-read
+`Arm64DmaMapTransfer` — it is **correct** (proper `StartVa`/`ByteOffset`/PFN-array walk with a
+contiguous-run clamp), which points away from the DMA adapter. The trace's real smoking gun:
+`usb_ehci_qh_fields` shows **`eps 2` = HIGH-SPEED** for the usb-kbd QH — but **usb-kbd is a
+FULL-SPEED device** (`eps` should be 0/1). A high-speed-programmed QH for a full-speed device
+explains every symptom: SETUP "completes" (QEMU lenient) but the data/status stages never
+truly transact → usbport reads a bad descriptor → `0x503` → reset/retry. usbport is
+arch-agnostic, so the SPEED it programs comes from the port status it reads — **the
+arm64-vs-amd64 difference is likely in device/port SPEED detection** (usbport/usbehci roothub
+`USB_PORT_STATUS` / PORTSC line-status → speed bits on arm64). **Next step:** diff the QH
+`eps` field arm64 vs amd64 for the same usb-kbd (amd64 should show `eps 0/1`), then trace the
+speed from the PORTSC read through usbport's port-status reporting. NOT a DMA bug — the
+coherent-DMA adapter is exonerated.
+
 **Disposition:** the branch is NOT landable (arm64 not desktop-green). The
 `IO_STACK_LOCATION` pack-guard fix is a *real* ABI bug fix (the packed layout aliased
 `IoControlCode` onto `Argument2`), so the right resolution is to finish the old-stride
