@@ -25,6 +25,7 @@ crate-type = ["staticlib"]
 wine_debug = []
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
 # Nt*/Rtl* + base Win32 types (HANDLE/UNICODE_STRING/NTSTATUS, the NDK surface).
 ntdll-sys = { path = "../ntdll-sys" }
 # The winlogon↔GINA Wlx* dispatch ABI (WLX_DISPATCH_VERSION_1_*, WLX_PROFILE_*, etc.).

@@ -41,6 +41,8 @@ pub unsafe extern "C" fn WARN_(_component: u32, _fmt: *const core::ffi::c_char) 
 pub unsafe extern "C" fn ERR_(_component: u32, _fmt: *const core::ffi::c_char) {}
 
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! { loop {} }
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
+}
 #[no_mangle]
 pub extern "C" fn rust_eh_personality() {}

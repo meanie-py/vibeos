@@ -3571,3 +3571,39 @@ and the system boots green. ALSO fixes: unhandled-raise diagnostics (clean
 frames. **Sweep owed:** the other per-module `*-kernel.json` targets
 (ntdll-cargo, driver cargos) carry the same latent `false`. Verdict
 context + evidence: `docs/engineering/dummy-pseh-verdict.md`.
+
+### 9.36 (OPEN 2026-07-08) arm64 user-mode SEH never delivers first-chance — `RtlRaiseException` unimplemented for arm64
+
+**Symptom:** a user process that raises a software exception (or would want a
+user `__except` to catch a hardware fault) on arm64 is killed instead of
+caught. Serial (from `ke/arm64/stubs.rs` instrumentation): a single
+`[UEXC] Code=… 1st=0` immediately followed by `[UEXC-KILL] … Proc=<app>` and
+`PspExitThread ExitStatus=<code>` — the exception enters `KiDispatchException`
+already **second-chance** (`FirstChance=0`); there is no preceding `1st=1` /
+`[UEXC-DISPATCH]`, so first-chance user delivery never happened.
+
+**Found by:** `base/system/sehtest` (crash-value lane) — the user-mode SEH
+boot self-test, spawned by winlogon. amd64 catches all three cases
+(sw-raise / `__finally` / hw-AV) `[SEH-USER] … PASS`; arm64 kills the process.
+This is the FIRST time arm64 user SEH was exercised (the arm64 `rtl-except`
+unwinder was "complete translation, never runtime-referenced").
+
+**Root cause:** `RtlRaiseException` (`@ stdcall -register RtlRaiseException`,
+ntdll.spec) has an amd64/i386 asm capture-and-call stub (captures CONTEXT,
+calls `NtRaiseException(rec, ctx, FirstChance=TRUE)`), but **no arm64
+implementation** — `rtl-except`'s arm64 module only *references* it
+(`arm64/except.rs:403,420` for nested-exception re-raise). So a user raise on
+arm64 never enters the first-chance path with `TRUE`; whatever reaches the
+kernel arrives second-chance and the process is terminated.
+
+**Fix (owed):** an arm64 asm/`#[naked]` capture stub mirroring
+`rtl-except/src/amd64/except_asm.S` — snapshot the integer+control registers
+into a CONTEXT, set `ContextFlags`, call `NtRaiseException(rec, ctx, TRUE)`;
+also verify the arm64 `RtlpExecuteHandlerForException/Unwind` trampolines
+exist. The kernel-side arm64 delivery is already in place:
+`KiDispatchExceptionToUser` builds `KUSER_EXCEPTION_STACK_ARM64` and redirects
+to `KeUserExceptionDispatcher` (`ke/arm64/stubs.rs:1079+`), and
+`dll/ntdll/dispatch/arm64/dispatch.S` now has the DUMMY_PSEH swallow branch
+(added this lane, amd64/i386 parity). Only the ntdll-side raise entry is
+missing. Non-fatal to boot (sehtest is fire-and-forget; arm64 desktop still
+reaches shell ready). Design: `docs/engineering/crash-value-design.md`.

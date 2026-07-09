@@ -93,33 +93,12 @@ mod apisets_table {
 
 // Standalone `#![no_std]` staticlib → needs its own panic handler +
 // eh_personality (same role as smss-csrss-rust/kdcom-rust/hal-rust).
-// USER-MODE: must NOT use privileged `hlt`/`wfe` (ntdll runs in ring 3).
-// Report over DbgPrint then spin (the kernel observer / debugger sees
-// the banner; a real abort would need the Native API but spin keeps the
-// failure visible without privileged faults).
+// USER-MODE (feature "user"): panic-common prints crate + file:line +
+// message + raw-PC backtrace over DbgPrint, then NtTerminateProcess
+// (ntdll's own export — resolves within this image).
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    unsafe {
-        let banner = b"\n!!! [NTDLL] RUST PANIC HIT !!!\n\0";
-        ntdll_sys::nt::DbgPrint(banner.as_ptr() as *const i8);
-        if let Some(loc) = info.location() {
-            let mut buf = [0u8; 256];
-            let s = loc.file().as_bytes();
-            let n = s.len().min(buf.len() - 1);
-            buf[..n].copy_from_slice(&s[..n]);
-            buf[n] = 0;
-            let fmt = b"PANIC LOC: %s:%u:%u\n\0";
-            ntdll_sys::nt::DbgPrint(
-                fmt.as_ptr() as *const i8,
-                buf.as_ptr() as *const i8,
-                loc.line(),
-                loc.column(),
-            );
-        }
-    }
-    loop {
-        core::hint::spin_loop();
-    }
+    panic_common::panic_common("ntdll", info)
 }
 
 // `core`/`compiler_builtins` emit `.eh_frame` refs to

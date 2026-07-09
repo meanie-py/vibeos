@@ -17,6 +17,11 @@
 //!   SPECIALPOOL_SELFTEST=pattern|guard   deliberately corrupt one allocation
 //!                       after pool init and expect BUGCHECK 0xC1 (pattern) or
 //!                       0x50 (guard page) — end-to-end detection proof.
+//!   CSWITCH_SELFTEST=1  prove cswitchdep barks (needs --cswitchdep build).
+//!   RUSTPANIC_SELFTEST=1  deliberate Rust panic!() at arm time — proves the
+//!                       shared panic handler (panic-common): expect the
+//!                       "*** RUST PANIC in ntoskrnl …" report + backtrace,
+//!                       then BUGCHECK 0xE0525354 (RUST_PANIC).
 //!
 //! Transports: x86 (i386/amd64) = port I/O 0x510/0x511; arm64 = MMIO at
 //! 0x09020000 on the QEMU virt machine, reached through the early-boot identity
@@ -212,6 +217,19 @@ unsafe fn apply_token(tok: &[u8]) {
                     .as_ptr(),
             );
         }
+    } else if let Some(val) = token_val(tok, b"RUSTPANIC_SELFTEST") {
+        // crash-value lane: prove the shared panic handler barks — deliberate
+        // panic!() with a formatted message. Expect on serial: the full
+        // "*** RUST PANIC in ntoskrnl at …tripwire.rs:…" report (message +
+        // location + raw-PC backtrace) followed by BUGCHECK 0xE0525354
+        // (panic_common::RUST_PANIC). Destructive by design — the boot dies.
+        if val == b"1" {
+            DbgPrint(
+                b"[TRIPWIRE] rust-panic selftest: panicking NOW (expect *** RUST PANIC + BUGCHECK 0xE0525354)\n\0"
+                    .as_ptr(),
+            );
+            panic!("rust-panic selftest: deliberate panic via tripwire (answer={})", 42);
+        }
     } else if !tok.is_empty() {
         DbgPrint(b"[TRIPWIRE] ERROR: unknown tripwire token (ignored)\n\0".as_ptr());
     }
@@ -236,6 +254,29 @@ pub unsafe fn vibe_tripwire_init() {
             apply_token(tok);
         }
     }
+}
+
+/// FFI lookup for OTHER kernel crates (crash-value: kd64-rust's `KD=COM2`
+/// opt-in runs at KdInitSystem time, long BEFORE `vibe_tripwire_init`).
+/// Re-reads the fw_cfg tripwire blob (cheap port/MMIO I/O, side-effect-free)
+/// and reports whether an exact space/semicolon-separated token is present.
+/// Returns 0 on non-QEMU / no tripwire file.
+#[no_mangle]
+pub unsafe extern "system" fn VibeTripwireHasToken(needle: *const u8, len: usize) -> u8 {
+    if needle.is_null() || len == 0 {
+        return 0;
+    }
+    let mut cfg = [0u8; CFG_MAX];
+    let Some(n) = fwcfg::read_file(TRIPWIRE_FILE, &mut cfg) else {
+        return 0;
+    };
+    let needle = core::slice::from_raw_parts(needle, len);
+    for tok in cfg[..n].split(|&c| c == b' ' || c == b';' || c == b'\n' || c == b'\0') {
+        if tok == needle {
+            return 1;
+        }
+    }
+    0
 }
 
 /// Called right after MiInitializeSpecialPool. Reports arming outcome loudly and

@@ -108,6 +108,7 @@ REQUIRED_FILES=(
     "$BUILD_DIR/win32ss/win32k.sys"
     "$BUILD_DIR/win32ss/drivers/font/ftfd/ftfd.dll"
     "$BUILD_DIR/base/applications/testchild/testchild.exe"
+    "$BUILD_DIR/base/system/sehtest/sehtest.exe"
     "$BUILD_DIR/base/applications/testgui/testgui.exe"
     "$BUILD_DIR/base/applications/notepad/notepad.exe"
     "$BUILD_DIR/dll/keyboard/kbdus.dll"
@@ -259,6 +260,8 @@ RMC "$BUILD_DIR/base/system/winlogon/winlogon.exe"            ::/reactos/system3
 RMC "$BUILD_DIR/win32ss/win32k.sys"                           ::/reactos/system32/win32k.sys
 RMC "$BUILD_DIR/win32ss/drivers/font/ftfd/ftfd.dll"           ::/reactos/system32/ftfd.dll
 RMC "$BUILD_DIR/base/applications/testchild/testchild.exe"   ::/reactos/system32/testchild.exe
+# crash-value: user-mode SEH boot self-test (spawned by winlogon; [SEH-USER] on serial)
+RMC "$BUILD_DIR/base/system/sehtest/sehtest.exe"              ::/reactos/system32/sehtest.exe
 RMC "$BUILD_DIR/base/applications/testgui/testgui.exe"     ::/reactos/system32/testgui.exe
 RMC "$BUILD_DIR/base/applications/notepad/notepad.exe"    ::/reactos/system32/notepad.exe
 RMC "$BUILD_DIR/dll/keyboard/kbdus.dll"                  ::/reactos/system32/kbdus.dll

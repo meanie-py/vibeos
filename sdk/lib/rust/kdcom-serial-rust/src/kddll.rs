@@ -24,7 +24,7 @@ extern "C" {
 // ---- file-scope preamble (translated) ----
 pub static mut CurrentPacketId: ULONG = INITIAL_PACKET_ID | SYNC_PACKET_ID;
 pub static mut RemotePacketId: ULONG = INITIAL_PACKET_ID;
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdpCalculateChecksum(
     Buffer: PVOID,
     mut Length: ULONG,
@@ -40,7 +40,7 @@ pub unsafe extern "system" fn KdpCalculateChecksum(
     Checksum
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdpSendControlPacket(
     PacketType: u16,
     PacketId: u32,
@@ -56,7 +56,7 @@ pub unsafe extern "system" fn KdpSendControlPacket(
     KdpSendBuffer(&mut Packet as *mut _ as PVOID, core::mem::size_of::<KD_PACKET>() as u32);
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdReceivePacket(
     PacketType: ULONG,
     MessageHeader: PSTRING,
@@ -237,7 +237,7 @@ pub unsafe extern "system" fn KdReceivePacket(
     }
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdSendPacket(
     PacketType: ULONG,
     MessageHeader: PSTRING,

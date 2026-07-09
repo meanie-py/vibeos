@@ -38,15 +38,7 @@ pub mod arm64input;
 // crate; the aarch64 `wfe` branch is the live one.
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    let _ = info;
-    loop {
-        #[cfg(target_arch = "aarch64")]
-        unsafe {
-            core::arch::asm!("wfe", options(nomem, nostack));
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        core::hint::spin_loop();
-    }
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 // `core` / `compiler_builtins` emit `.eh_frame` refs to

@@ -1417,53 +1417,12 @@ mod _force_shim_symbols {
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    // Output panic location via debugcon port 0xe9 for QEMU diagnostics
-    // (x86-only — ARM64 has no port I/O)
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    unsafe {
-        // Output "PANIC:" marker
-        for &b in b"PANIC:" {
-            core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b);
-        }
-
-        // Output file:line from PanicInfo if available
-        if let Some(loc) = info.location() {
-            let file = loc.file().as_bytes();
-            let mut i = 0usize;
-            while i < file.len() {
-                let b = *file.as_ptr().add(i);
-                core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b);
-                i += 1;
-            }
-            core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b':');
-
-            // Output line number as decimal digits
-            let line = loc.line();
-            if line == 0 {
-                core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'0');
-            } else {
-                // Convert to decimal in a fixed buffer using raw pointer ops
-                let mut buf = [0u8; 10];
-                let mut n = line;
-                let mut len = 0u32;
-                while n > 0 {
-                    *buf.as_mut_ptr().add(len as usize) = b'0' + (n % 10) as u8;
-                    n /= 10;
-                    len += 1;
-                }
-                // Output in reverse (most significant digit first)
-                let mut j = len;
-                while j > 0 {
-                    j -= 1;
-                    let b = *buf.as_ptr().add(j as usize);
-                    core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b);
-                }
-            }
-        }
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'\n');
-    }
-    let _ = info;
-    loop {}
+    // Shared body: message + file:line + raw-PC backtrace to debugcon +
+    // DbgPrint, then KeBugCheckEx(RUST_PANIC 0xE0525354). NB in the
+    // cargo-linked kernel the *-cargo main.rs forwarder is the one that
+    // actually runs (--allow-multiple-definition first-match) — both route
+    // through the same panic-common body.
+    panic_common::panic_common("ntoskrnl", info)
 }
 
 // At opt-level=0, the compiler emits .eh_frame data that references this symbol.

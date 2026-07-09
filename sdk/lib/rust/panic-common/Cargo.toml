@@ -1,0 +1,42 @@
+# panic-common — the ONE shared panic body for every vibeos Rust artifact
+# (crash-value lane). Replaces the ~168 per-crate `loop {}` stubs with a real
+# reporter: panic message + crate + file:line + raw-PC backtrace to DbgPrint
+# (and debugcon 0xe9 in kernel mode), then a controlled halt.
+#
+# Deliberately a ZERO-DEPENDENCY leaf: it declares its own externs (DbgPrint,
+# RtlWalkFrameChain, KeBugCheckEx / NtTerminateProcess) which resolve
+# per-final-artifact at link time — ntoskrnl exports them for kernel/driver
+# images, ntdll for user images. That keeps it adoptable by ALL crates,
+# including usermode ones that must not pull ntkrnl-sys.
+#
+# Each adopting crate keeps its own two-line `#[panic_handler]` forwarder
+# (the lang item is per-crate-graph; only the BODY is shared):
+#
+#   #[cfg(not(test))]
+#   #[panic_handler]
+#   fn panic(info: &core::panic::PanicInfo) -> ! {
+#       panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
+#   }
+#
+# Feature = halt policy for the final artifact this crate links into:
+#   kernel → KeBugCheckEx(RUST_PANIC 0xE0525354) + debugcon 0xe9 raw sink
+#   user   → NtTerminateProcess(current, 0xE0525354)
+#   raw    → ZERO externs: debugcon 0xe9 (x86 ring 0) + spin. For artifacts
+#            with a constrained import surface (e.g. SCSIPORT miniports like
+#            atapi.sys link ONLY the static scsiport lib — no ntoskrnl import
+#            lib, so even DbgPrint is undefined there).
+#   (none) → DbgPrint + backtrace report, then halt loop (PEs that link
+#            either world's DbgPrint/RtlWalkFrameChain but no halt export)
+[package]
+name = "panic-common"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+kernel = []
+user = []
+raw = []

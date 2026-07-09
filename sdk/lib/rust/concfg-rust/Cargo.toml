@@ -20,5 +20,6 @@ ntddi_ws03 = []
 standalone = []
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 winsrv-sys = { path = "../winsrv-sys" }

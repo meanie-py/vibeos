@@ -8,6 +8,7 @@ description = "Generated Rust RPC server stub for the winreg interface — repla
 crate-type = ["staticlib"]
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
 midl-rt = { path = "../midl-rt" }
 
 [build-dependencies]

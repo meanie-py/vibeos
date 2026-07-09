@@ -145,8 +145,17 @@ const DBG_STATUS_FATAL: ULONG = 0x05;
 
 const SCREEN_WIDTH: ULONG = 640;
 const SCREEN_HEIGHT: ULONG = 480;
+const BV_COLOR_RED: ULONG = 0x1;
 const BV_COLOR_BLUE: ULONG = 0x4;
 const BV_COLOR_WHITE: ULONG = 15;
+
+/// panic_common::RUST_PANIC — a Rust panic routed into KeBugCheckEx.
+/// P1 = &NUL-terminated report (message + file:line + raw-PC backtrace,
+/// formatted by panic-common into its static buffer), P2 = buffer cap,
+/// P4 = source line. Crash-value lane: Rust panics render a RED screen
+/// (logic/translation bug) vs the classic blue stop — the color is the
+/// category at a glance.
+const RUST_PANIC_BUGCODE: ULONG = 0xE052_5354;
 
 const HeadlessCmdStartBugCheck: ULONG = 0;
 const HeadlessCmdEnableTerminal: ULONG = 1;
@@ -425,6 +434,28 @@ pub unsafe extern "system" fn KiInitializeBugCheck() {
     }
 }
 
+/// TRUE iff every page of [p, p+len) is mapped — the crash path must never
+/// itself fault (field manual §9.35 class; an early-boot bugcheck used to
+/// take STATUS_IN_PAGE_ERROR right here in the message-table walk and cascade
+/// into a second 0x1E, burying the real report).
+unsafe fn KiBugMsgRangeValid(p: *const u8, len: usize) -> bool {
+    if p.is_null() {
+        return false;
+    }
+    let start = p as usize & !0xFFF;
+    let end = (p as usize).saturating_add(len.max(1) - 1) & !0xFFF;
+    let mut page = start;
+    loop {
+        if MmIsAddressValid(page as PVOID) == 0 {
+            return false;
+        }
+        if page >= end {
+            return true;
+        }
+        page += 0x1000;
+    }
+}
+
 unsafe fn KeGetBugMessageText(BugCheckCode: ULONG, OutputString: PANSI_STRING) -> BOOLEAN {
     let mut i: ULONG;
     let mut IdOffset: ULONG;
@@ -434,6 +465,25 @@ unsafe fn KeGetBugMessageText(BugCheckCode: ULONG, OutputString: PANSI_STRING) -
     let mut Result: BOOLEAN = 0u8;
 
     if KiBugCodeMessages.is_null() {
+        return Result;
+    }
+
+    // Early boot (KeLoaderBlock still live = pre-Phase1-complete): the
+    // resource-section access path is not fault-safe yet — a Phase-0 bugcheck
+    // took STATUS_IN_PAGE_ERROR in this walk even with page-validity checks
+    // (the write-enable path itself faults), cascading into a secondary 0x1E
+    // that buried the real report. Degrade to no message text — stop code,
+    // parameters, and the Rust panic report (P1) still print.
+    if !(KeLoaderBlock as PVOID).is_null() {
+        return Result;
+    }
+
+    // Guard every hop through the resource section anyway (corrupted-image
+    // case): a fault HERE means the crash reporter crashes.
+    if !KiBugMsgRangeValid(
+        KiBugCodeMessages as *const u8,
+        core::mem::size_of::<_MESSAGE_RESOURCE_DATA>(),
+    ) {
         return Result;
     }
 
@@ -660,7 +710,13 @@ unsafe fn KiDisplayBlueScreen(
         InbvAcquireDisplayOwnership();
         InbvResetDisplay();
 
-        InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_BLUE);
+        // Rust panic → RED screen; C/classic stop → blue. See RUST_PANIC_BUGCODE.
+        let fill = if BugCheckCode == RUST_PANIC_BUGCODE {
+            BV_COLOR_RED
+        } else {
+            BV_COLOR_BLUE
+        };
+        InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, fill);
         InbvSetTextColor(BV_COLOR_WHITE);
         InbvInstallDisplayStringFilter(None);
         InbvEnableDisplayString(1u8);
@@ -714,6 +770,15 @@ unsafe fn KiDisplayBlueScreen(
         KiBugCheckData[4] as PVOID,
     );
     InbvDisplayString(AnsiName.as_ptr());
+
+    // Rust panic: P1 points at panic-common's static report buffer — the
+    // panic message, source file:line, and raw-PC backtrace. Surface it all
+    // on screen (the Rust wins Windows structurally cannot show).
+    if BugCheckCode == RUST_PANIC_BUGCODE && KiBugCheckData[1] != 0 {
+        InbvDisplayString(b"\r\n\0".as_ptr() as *const i8);
+        InbvDisplayString(KiBugCheckData[1] as *const i8);
+        InbvDisplayString(b"\r\n\0".as_ptr() as *const i8);
+    }
 
     if !KiBugCheckDriver.is_null() {
         InbvDisplayString(Message);

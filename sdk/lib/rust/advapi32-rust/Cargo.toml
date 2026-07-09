@@ -19,5 +19,6 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 advapi32-sys = { path = "../advapi32-sys" }

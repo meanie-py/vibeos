@@ -17,6 +17,7 @@ default = ["ntddi_ws03"]
 ntddi_ws03 = []
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
 # winsrv-sys is the user-mode FFI substrate (superset of ntdll-sys via
 # `pub use ntdll_sys::nt;`). It already covers the bulk of userinit's Win32
 # surface (user32 dialogs, gdi32 bitmaps, advapi32 registry, kernel32 process

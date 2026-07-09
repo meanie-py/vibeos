@@ -8,6 +8,7 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 # Pure-Rust C-ABI zlib (Trifecta zlib-rs). no_std (default-features=false drops
 # std + rust-allocator); `export-symbols` emits the unprefixed C names

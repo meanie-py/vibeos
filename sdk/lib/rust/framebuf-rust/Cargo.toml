@@ -20,6 +20,7 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["raw"] }
 # win32k-sys is a superset FFI surface (base ntdef types + DDI types + Eng*
 # exports), so it alone covers everything the framebuf modules need via a
 # single `use win32k_sys::*` glob. We deliberately do NOT also depend on

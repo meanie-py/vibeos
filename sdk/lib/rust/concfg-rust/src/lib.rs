@@ -20,10 +20,8 @@ pub mod settings;
 // feature to avoid a duplicate-lang-item (panic_impl) / duplicate-symbol.
 #[cfg(feature = "standalone")]
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {
-        core::hint::spin_loop();
-    }
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 #[cfg(feature = "standalone")]

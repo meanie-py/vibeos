@@ -54,10 +54,8 @@ mod lsasrv;
 // USER-MODE no_std staticlib → own panic handler + eh_personality (same role as
 // lsa-stub; deduped at link by --allow-multiple-definition).
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {
-        core::hint::spin_loop();
-    }
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 #[no_mangle]

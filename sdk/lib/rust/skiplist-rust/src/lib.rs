@@ -11,7 +11,9 @@ pub mod skiplist;
 // mirrors lsalib-rust). Gated on not(test) so host unit tests stay std.
 #[cfg(not(test))]
 #[panic_handler]
-fn rust_cohab_panic(_info: &core::panic::PanicInfo) -> ! { loop {} }
+fn rust_cohab_panic(info: &core::panic::PanicInfo) -> ! {
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
+}
 
 #[cfg(not(test))]
 #[no_mangle]

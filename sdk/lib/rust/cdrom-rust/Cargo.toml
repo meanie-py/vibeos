@@ -18,5 +18,6 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys", default-features = false }
 kmdf-sys = { path = "../kmdf-sys" }
