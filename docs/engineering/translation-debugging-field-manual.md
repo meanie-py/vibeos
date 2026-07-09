@@ -3610,3 +3610,48 @@ phantom-build family). Now `md5 % 20000`. If a build dies with sccache
 "No such file or directory" on paths that plainly exist in YOUR tree, suspect
 a port/namespace collision: `pgrep -a sccache` + recompute the port hash per
 worktree root.
+
+### 9.36 (RESOLVED 2026-07-08) usermode winsock servers: SYNs refused / responses truncated at 8KiB multiples — no TDI listen backlog + sends completed short under backpressure
+
+**Symptom.** A usermode server (httpd payload) listens fine (`[NETSTACK] TDI
+LISTEN conn N on :8080`) and serves *serial* requests, but under concurrent
+load (tcp_hammer, 16 threads): (a) most connects get RST ("connection
+refused"/"reset by peer" host-side), and (b) large responses arrive truncated
+at **exact multiples of 8192 bytes** with a byte-correct prefix.
+
+**Root causes (two, independent, both invisible to single-connection tests):**
+1. **No listen backlog.** smoltcp has no SYN queue — one listening socket
+   absorbs exactly one connection — and AFD keeps a single `TDI_LISTEN` in
+   flight, re-posting only after the *usermode* `accept()` round-trip. Every
+   SYN landing in that window was RST'd. Real Windows hides this behind the
+   transport's kernel SYN backlog, so faithful-to-C AFD was still wrong here.
+2. **Send truncation under backpressure.** netstack's `Cmd::Send` completed
+   IRPs immediately: short count when the 8KiB tx buffer filled, refused when
+   `can_send()` was false. AFD/msafd treated the completion as "all sent";
+   the app's remaining bytes died silently. 8192-multiple truncation = N full
+   buffer drains before the lie.
+
+**Fixes (netstack tditrans.rs):** per-port shadow-listener backlog
+(`LISTEN_BACKLOG=16` sockets armed per listened port; established handshakes
+parked in a ready queue; `TDI_LISTEN` IRPs satisfied from the queue instantly;
+torn down with the last address object on the port) + pended sends (per-conn
+`send_q`; the bridge drains as tx space frees and completes each IRP only when
+its whole buffer is queued — TDI semantics; dead socket fails the queue with
+`STATUS_CONNECTION_RESET`, fail-loud).
+
+**Debug recipe that cracked it (reusable):** paired breadcrumbs
+`[AFD] ListenSocket/ListenComplete` (afd-rust listen.rs, permanent) +
+`[NETSTACK] TDI LISTEN …` localize a listen break to msafd/AFD/netstack in one
+boot. Host-side, the tcp_hammer control probe (dial the *known-good* netstack
+echo port before blaming the payload's listener) discriminates harness/hostfwd
+plumbing from guest bugs — it caught that the hammer was dialing `127.0.0.1`
+where the windows-host backend needs `vm.net_host` (all-refused red herring).
+
+**Bring-up landmines the httpd payload also documented (build.sh guards
+enforce both):** console-subsystem apps spawned from explorer's startup walk
+hang in kernel32 PROCESS_ATTACH allocating a CSRSS console (open bug — GUI
+subsystem sidesteps); UCRT llvm-mingw's default `api-ms-win-crt-*` imports
+aren't shipped by reactos, killing the child in the loader with ZERO serial
+evidence — link classic msvcrt via `-lmsvcrt-os -Wl,-e,mainCRTStartup
+-Wl,--subsystem,windows` (the doom recipe; bisect with a `-nostartfiles`
+raw-entry probe exe when in doubt).

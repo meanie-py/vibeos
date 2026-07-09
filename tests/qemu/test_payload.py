@@ -314,6 +314,20 @@ def test_payload_tcp_hammer(
     host_port = getattr(vm.config, "payload_hostfwd_port", 0)
     assert host_port, "vm config has no payload_hostfwd_port (net config too old?)"
 
+    # Control probe: the netstack self-test's echo listener (guest :7777) is
+    # proven-good on this boot (test_net passes against it). If IT refuses,
+    # the failure is host-side hostfwd plumbing, not the payload's listener.
+    echo_port = getattr(vm.config, "echo_hostfwd_port", 0)
+    print(f"[tcp_hammer] payload host_port={host_port} echo control port={echo_port}")
+    if echo_port:
+        try:
+            with socket.create_connection((vm.net_host, echo_port), timeout=10) as cs:
+                cs.sendall(b"hammer-control\n")
+                got = cs.recv(64)
+            print(f"[tcp_hammer] echo control OK ({got!r})")
+        except OSError as e:
+            print(f"[tcp_hammer] echo control FAILED: {e} — hostfwd plumbing suspect")
+
     n_threads = int(hammer.get("threads", 16))
     n_requests = int(hammer.get("requests", 20))
     sizes = [int(x) for x in hammer.get("data_sizes", [1, 512, 4096])]
@@ -322,7 +336,7 @@ def test_payload_tcp_hammer(
         return bytes((i * 7 + 13) & 0xFF for i in range(n))
 
     def http_get(path: str, timeout: float = 20.0) -> tuple[int, bytes]:
-        with socket.create_connection(("127.0.0.1", host_port), timeout=timeout) as s:
+        with socket.create_connection((vm.net_host, host_port), timeout=timeout) as s:
             s.sendall(f"GET {path} HTTP/1.0\r\nHost: guest\r\n\r\n".encode())
             buf = b""
             while True:
