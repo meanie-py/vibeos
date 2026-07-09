@@ -258,11 +258,28 @@ devices are attached, the PnP worker enumerates EHCI and **the control pipe HALT
 default address-0 device** — QH overlay token `0x40` (Halted), every SET_ADDRESS control
 transfer fails, `[USBHUB] CreateDevice port=1 status=0x503` retries forever. GIC/INTx/async
 schedule all verified healthy via QMP register dump (**not** an interrupt bug). The same
-`usb-ehci + usb-kbd` delivered on amd64, so the arch-specific suspect is the new
-coherent-DMA adapter handing the EHCI a wrong qTD buffer physical address (from
-`HalAllocateCommonBuffer`/`MapTransfer`). **Next step (after Wall 1):** GDB-watch the qTD
-buffer pointers the EHCI miniport programs vs `MmGetPhysicalAddress` of the setup/data
-buffers, arm64 vs amd64.
+`usb-ehci + usb-kbd` delivered on amd64.
+
+*Update (2026-07-09, post-landing QMP dump — Wall 1 fixed, this now reproduces cleanly on a
+booted desktop):* refined the picture. The **virtual root hub enumerates fully** (usbport
+synthesizes its descriptors — `USBH_GetDeviceDescriptor`/`ConfigurationDescriptor`/
+`SyncGetHubDescriptor`/`SyncPowerOnPorts` all `0x0`); the halt is specifically on
+`CreateDevice port=1` = the **real usb-kbd**, which needs actual over-the-wire EHCI control
+transfers. QMP dump at the halt: the async QH is at phys `0x54d96000`, device address 0,
+control EP, and **the controller FOUND it** (H-bit set, walked the async list) → so
+`HalAllocateCommonBuffer` + `MmGetPhysicalAddress` on arm64 return **correct** physical
+addresses (the controller read the QH the guest placed). The QH overlay shows token `0x40`
+(Halted) with `NextqTD=T` (retired), so the first control transfer to addr-0 halted and the
+qTD was already reclaimed. **This makes the coherent-DMA common-buffer path UNLIKELY the
+culprit** (common-buffer DMA is proven working). Remaining suspects: (a) `MapTransfer` for a
+data-stage buffer (the qTD's 5 page-pointers — a buffer crossing a 4 KB page needs pages
+1..4 filled; check `Arm64DmaMapTransfer`'s clamp), or (b) a full-speed-device-behind-EHCI /
+split-transaction handling difference between the arm64 GPEX-PCIe EHCI and the amd64 PCI
+EHCI (both QEMU `usb-ehci`, so the device model is identical — but verify the port routing).
+**Next step:** boot with `-trace usb_ehci_*` (or catch the qTD *before* it retires via a
+QMP stop at the halt) to read the actual failing transfer + its buffer pointer; and check
+`Arm64DmaMapTransfer` in `hal-rust/arm64/dma.rs` fills all needed qTD page pointers. Tracked
+as its own task; does NOT gate (default arm64 smoke has no USB).
 
 **Disposition:** the branch is NOT landable (arm64 not desktop-green). The
 `IO_STACK_LOCATION` pack-guard fix is a *real* ABI bug fix (the packed layout aliased
