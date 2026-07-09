@@ -532,6 +532,19 @@ unsafe fn i8042PnpStartDevice(
         (*DeviceExtension).PnpState = dsStarted;
     }
 
+    // Delivery-chain boot marker (one line per device): pairs with
+    // [KBDCLASS] first key delivered / [I8042] first kbd IRQ so a smoke log
+    // shows exactly where the input chain breaks.
+    DbgPrint(
+        b"[I8042] StartDevice type=%d -> 0x%08x (irq vec=%lu dirql=%u portflags=0x%lx)\n\0"
+            .as_ptr() as *const i8,
+        (*DeviceExtension).Type as u32,
+        Status as u32,
+        InterruptData.Vector,
+        InterruptData.Dirql as u32,
+        (*PortDeviceExtension).Flags,
+    );
+
     Status
 }
 

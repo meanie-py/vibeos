@@ -332,9 +332,13 @@ unsafe extern "system" fn i8042KbdDpcRoutine(
         return;
     }
 
-    // ClassService is a PVOID holding a SERVICE_CALLBACK_ROUTINE (cdecl). Cast
-    // to a bare fn pointer and call (matches the C `(*(PSERVICE_CALLBACK_ROUTINE)..)(..)`).
-    let ClassService: unsafe extern "C" fn(PVOID, PVOID, PVOID, PULONG) =
+    // ClassService is a PVOID holding a PSERVICE_CALLBACK_ROUTINE, which is
+    // NTAPI — stdcall on i386, so this MUST be extern "system", not extern "C".
+    // A cdecl transmute here double-cleans 16 bytes of stack (callee ret 16 +
+    // caller add esp,16), skewing ESP so the DPC epilogue rets to 0 → BUGCHECK
+    // 0x1E on the first keystroke/packet (field manual §9.38). mouse.rs::
+    // i8042MouDpcRoutine is the correct sibling.
+    let ClassService: unsafe extern "system" fn(PVOID, PVOID, PVOID, PULONG) =
         core::mem::transmute((*DeviceExtension).KeyboardData.ClassService);
     ClassService(
         (*DeviceExtension).KeyboardData.ClassDeviceObject as PVOID,
@@ -728,6 +732,16 @@ pub unsafe extern "system" fn i8042KbdInterruptService(
     let mut Status: NTSTATUS;
 
     let _ = Interrupt;
+
+    // Delivery-chain boot marker (one-shot): the kbd ISR actually fired.
+    {
+        static mut g_FirstKbdIsrLogged: LONG = 0;
+        let dest = core::ptr::addr_of_mut!(g_FirstKbdIsrLogged);
+        if *dest == 0 {
+            *dest = 1;
+            DbgPrint(b"[I8042] first kbd IRQ fired\n\0".as_ptr() as *const i8);
+        }
+    }
 
     DeviceExtension = Context as PI8042_KEYBOARD_EXTENSION;
 

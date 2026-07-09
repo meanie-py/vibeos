@@ -375,23 +375,27 @@ pub const ACPI_STATE_D1: ULONG = 1;
 pub const ACPI_STATE_D2: ULONG = 2;
 pub const ACPI_STATE_D3: ULONG = 3;
 
+// Values match acpica/include/acrestyp.h (LEVEL_SENSITIVE/POS_DECODE/
+// READ_ONLY_MEMORY are the 0-valued members of their pairs; TYPE_A/B/F are
+// 1/2/3 after ACPI_COMPATIBILITY=0; TRANSFER_8_16 is 1, TRANSFER_16 is 2).
 pub const ACPI_PRODUCER: u8 = 0;
 pub const ACPI_CONSUMER: ULONG = 1;
 pub const ACPI_SHARED: u8 = 1;
-pub const ACPI_LEVEL_SENSITIVE: u8 = 1;
+pub const ACPI_LEVEL_SENSITIVE: u8 = 0;
+pub const ACPI_EDGE_SENSITIVE: u8 = 1;
 pub const ACPI_BUS_MASTER: u8 = 1;
 pub const ACPI_DECODE_16: u8 = 1;
-pub const ACPI_POS_DECODE: u8 = 1;
-pub const ACPI_READ_ONLY_MEMORY: u8 = 1;
+pub const ACPI_POS_DECODE: u8 = 0;
+pub const ACPI_READ_ONLY_MEMORY: u8 = 0;
 pub const ACPI_CACHABLE_MEMORY: ULONG = 1;
 pub const ACPI_WRITE_COMBINING_MEMORY: ULONG = 2;
 pub const ACPI_PREFETCHABLE_MEMORY: ULONG = 3;
-pub const ACPI_TYPE_A: ULONG = 0;
-pub const ACPI_TYPE_B: ULONG = 1;
-pub const ACPI_TYPE_F: ULONG = 2;
+pub const ACPI_TYPE_A: ULONG = 1;
+pub const ACPI_TYPE_B: ULONG = 2;
+pub const ACPI_TYPE_F: ULONG = 3;
 pub const ACPI_TRANSFER_8: ULONG = 0;
-pub const ACPI_TRANSFER_16: ULONG = 1;
-pub const ACPI_TRANSFER_8_16: ULONG = 2;
+pub const ACPI_TRANSFER_8_16: ULONG = 1;
+pub const ACPI_TRANSFER_16: ULONG = 2;
 
 pub const ACPI_RESOURCE_TYPE_IRQ: ULONG = 0;
 pub const ACPI_RESOURCE_TYPE_DMA: ULONG = 1;
@@ -411,9 +415,10 @@ pub const ACPI_RESOURCE_TYPE_EXTENDED_ADDRESS64: ULONG = 14;
 pub const ACPI_RESOURCE_TYPE_EXTENDED_IRQ: ULONG = 15;
 pub const ACPI_RESOURCE_TYPE_GENERIC_REGISTER: ULONG = 16;
 
-pub const ACPI_BUS_NUMBER_RANGE: u8 = 0;
+// acrestyp.h: MEMORY_RANGE=0, IO_RANGE=1, BUS_NUMBER_RANGE=2 (were swapped).
+pub const ACPI_MEMORY_RANGE: u8 = 0;
 pub const ACPI_IO_RANGE: u8 = 1;
-pub const ACPI_MEMORY_RANGE: ULONG = 2;
+pub const ACPI_BUS_NUMBER_RANGE: u8 = 2;
 
 // FIXED 2026-07-06: the whole table was a rustconv-invented 0..11 sequence
 // (Interrupt=0, Port=2, ...). Real values per sdk/include/xdk/cmtypes.h:224.
@@ -422,7 +427,8 @@ pub const ACPI_MEMORY_RANGE: ULONG = 2;
 // translation and i8042prt's resource parsing never saw an interrupt →
 // IoConnectInterrupt never called → PS/2 keyboard+mouse silently dead on
 // i386/amd64 since Rust buspdo.rs integrated (polled detection kept working,
-// which masked it). Found by the Doom playable-gate (tests/qemu/test_doom.py).
+// which masked it). Found by the Doom playable-gate (tests/qemu/test_doom.py);
+// independently root-caused in the start-menu lane (field manual §9.37).
 pub const CmResourceTypeNull: ULONG = 0;
 pub const CmResourceTypePort: ULONG = 1;
 pub const CmResourceTypeInterrupt: ULONG = 2;
