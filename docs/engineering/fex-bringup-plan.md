@@ -260,6 +260,41 @@ x86 blocks on-box.
   CsrNewThread thread-startup interaction. Next: GDB-toolkit backtrace of the
   wedged PID-204 thread (`qemu/start.sh arm64 --gdb`, `VIBEOS_FEX=1` media).
 
+### Rung 2 wedge — RESOLVED (2026-07-08): three stacked bugs, all fixed
+
+Getting fexprobe to `main()` on-box uncovered three independent bugs, fixed in order:
+
+1. **Console-subsystem hang.** A console-subsystem PE makes kernel32 DllMain run
+   `ConDllInitialize` (console attach), which wedged for fexprobe. The harness has
+   no console I/O (serial via DbgPrint), so it should be GUI-subsystem. Fix:
+   `-Wl,--subsystem,windows -Wl,-e,mainCRTStartup` in the harness link. → DllMain
+   reaches `done OK`.
+
+2. **api-set redirection built a bad absolute path** (ntdll loader bug, affects
+   ALL binaries importing api-sets). `LdrpApplyFileNameRedirection` resolved
+   `api-ms-win-crt-*.dll → ucrtbase.dll` correctly, but then prefixed
+   `<NtSystemRoot>\System32\` to force an absolute load — which fails to map with
+   `STATUS_OBJECT_NAME_INVALID` on this port. **fexprobe was the first binary in
+   the whole OS to import the `api-ms-win-crt-*` api-sets**, so this path had
+   never run. Fix: emit the bare target name (`ucrtbase.dll`) and let the normal
+   DLL search path resolve it from System32 — how every other import already
+   loads (`ntdll-rust rtl/libsupp.rs`). Also unblocks rung-1 checkpoint 2. →
+   UCRT imports resolve, no more `Skipping missing import`.
+
+3. **ARMv8.3 LDAPR/RCpc illegal-instruction** (the reusable gotcha). fexprobe
+   faulted `C000001D` at an `ldaprb` in a libc++ C++ static-init guard. vibeos
+   QEMU runs **`-cpu cortex-a72` (ARMv8.0-A, no FEAT_LRCPC)**, and the kernel
+   builds `-march=armv8-a` to match (`sdk/cmake/config.cmake` OARCH). FEX's
+   default `TUNE_CPU=native` on the x86→aarch64 cross-compile picks a
+   high-baseline `-mcpu` that emits RCpc ops → illegal on cortex-a72. Fix:
+   `-DTUNE_ARCH=armv8-a -DTUNE_CPU=none` for the FEX vendor build +
+   `-march=armv8-a` for the harness. **Any native-arm64 binary run on vibeos
+   must target armv8-a**, not the toolchain default.
+
+Debug instrumentation for all three is preserved gated-off in-tree:
+`K32_DLLMAIN_TRACE` (kernel32 dllmain.rs), `APISET_TRACE` (ntdll libsupp.rs),
+`[FEX-HELLO-CTOR]` ctor tripwire (harness).
+
 **Rung 2 — "hello compute": execute a static x86 blob.** Minimal native arm64
 harness exe driving the FEXCore Context API directly (`CreateNewContext` →
 `CreateThread(RIP, SP)` → `ExecuteThread`): RWX buffer, load blob, run to a clean

@@ -129,6 +129,14 @@ pub unsafe extern "system" fn BaseExitThreadPoolThread(ExitStatus: NTSTATUS) -> 
     return 0i32;
 }
 
+/// Toggle for the [K32DBG] PROCESS_ATTACH step markers below. Off by default;
+/// flip to `true` to bisect where a specific process wedges inside kernel32
+/// DllMain (the tool that localized the FEX fexprobe ConDllInitialize hang — a
+/// console-subsystem app deadlocking in console attach; see
+/// docs/engineering/fex-bringup-plan.md rung 2). Kept in-tree so the diagnostic
+/// is one edit away, not a re-derivation.
+const K32_DLLMAIN_TRACE: bool = false;
+
 #[no_mangle]
 pub unsafe extern "system" fn DllMain(
     hDll: HANDLE,
@@ -278,11 +286,14 @@ pub unsafe extern "system" fn DllMain(
                 }
             }
 
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-CSR-connect (pre-CsrNewThread)\n\0".as_ptr() as *const i8); }
             if BaseRunningInServerProcess == 0 {
                 CsrNewThread();
             }
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-CsrNewThread\n\0".as_ptr() as *const i8); }
 
             BaseDllInitializeMemoryManager();
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-BaseDllInitializeMemoryManager\n\0".as_ptr() as *const i8); }
 
             hCurrentModule = hDll as HMODULE;
             kernel32_handle = hCurrentModule;
@@ -329,9 +340,11 @@ pub unsafe extern "system" fn DllMain(
                 as USHORT;
 
             InitCommandLines();
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-InitCommandLines\n\0".as_ptr() as *const i8); }
 
             RtlInitializeCriticalSection(&mut BaseDllDirectoryLock);
 
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] pre-NlsInit\n\0".as_ptr() as *const i8); }
             if NlsInit() == 0 {
                 DbgPrint(
                     b"(%s:%d) NLS Init failed\n\0".as_ptr() as *const i8,
@@ -341,6 +354,7 @@ pub unsafe extern "system" fn DllMain(
                 return FALSE;
             }
 
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-NlsInit (pre-ConDllInitialize)\n\0".as_ptr() as *const i8); }
             if ConDllInitialize(dwReason, SessionDir.as_mut_ptr() as PVOID) == 0 {
                 DbgPrint(
                     b"(%s:%d) Failed to set up console\n\0".as_ptr() as *const i8,
@@ -349,6 +363,7 @@ pub unsafe extern "system" fn DllMain(
                 );
                 return FALSE;
             }
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-ConDllInitialize\n\0".as_ptr() as *const i8); }
 
             InitializeListHead(&mut BasepAppCertDllsList);
             RtlInitializeCriticalSection(&mut gcsAppCert);

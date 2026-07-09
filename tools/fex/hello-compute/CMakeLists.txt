@@ -17,6 +17,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(fexprobe Main.cpp)
 
+# armv8-a floor — vibeos QEMU runs -cpu cortex-a72 (ARMv8.0, no FEAT_LRCPC), so
+# ARMv8.3 LDAPR/RCpc ops (which clang otherwise emits for C++ static-init guards)
+# fault as illegal-instruction. Matches the kernel + the FEX vendor build.
+target_compile_options(fexprobe PRIVATE -march=armv8-a)
+
 # Include roots — the source trees plus the generated headers under FEX_BUILD
 # (git-version / config headers configure-generated). Mirrors the compile db of
 # FEX's own FEXOfflineCompiler.
@@ -63,6 +68,12 @@ target_link_libraries(fexprobe PRIVATE
   -lntdll)
 
 # Match FEX's PE flags (page-aligned sections, loop-align workaround).
+# GUI subsystem (windows) + explicit mainCRTStartup entry: the harness has NO
+# console I/O (it logs to serial via ntdll DbgPrint), so it must not be a console
+# app — a console-subsystem PE makes kernel32 DllMain run ConDllInitialize, which
+# wedges attaching a console (fex-bringup-plan.md rung 2). GUI apps skip console
+# allocation entirely.
 target_link_options(fexprobe PRIVATE
   -static -static-libgcc -static-libstdc++
-  -Wl,--file-alignment=4096,/mllvm:-align-loops=1)
+  -Wl,--file-alignment=4096,/mllvm:-align-loops=1
+  -Wl,--subsystem,windows -Wl,-e,mainCRTStartup)

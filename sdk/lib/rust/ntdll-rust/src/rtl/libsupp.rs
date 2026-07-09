@@ -1150,6 +1150,10 @@ unsafe fn LdrpApisetVersion() -> DWORD {
 
     CachedApisetVersion
 }
+/// Off-by-default toggle for the [APISETDBG] api-set redirection trace in
+/// LdrpApplyFileNameRedirection. See fex-bringup-plan.md rung 2.
+const APISET_TRACE: bool = false;
+
 #[no_mangle]
 pub unsafe extern "system" fn LdrpApplyFileNameRedirection(
     OriginalName: PUNICODE_STRING,
@@ -1185,30 +1189,42 @@ pub unsafe extern "system" fn LdrpApplyFileNameRedirection(
     let ApisetVersion = LdrpApisetVersion();
     if ApisetVersion != 0 {
         Status = ApiSetResolveToHost(ApisetVersion, OriginalName, RedirectedDll, &mut ApisetName);
+        // [APISETDBG] api-set redirection trace, off by default. Flip
+        // APISET_TRACE to debug api-ms-win-* resolution (the tool that found the
+        // fexprobe UCRT-import failure — resolution worked but the built path
+        // was wrong; fex-bringup-plan.md rung 2). Gated to api-* names only.
+        if APISET_TRACE
+            && (*OriginalName).Length >= 8
+            && (*(*OriginalName).Buffer.add(0) | 0x20) == b'a' as u16
+            && (*(*OriginalName).Buffer.add(1) | 0x20) == b'p' as u16
+            && (*(*OriginalName).Buffer.add(2) | 0x20) == b'i' as u16
+        {
+            DbgPrint(
+                b"[APISETDBG] name=%wZ ver=0x%x status=0x%x redir=%d target=%wZ\n\0".as_ptr()
+                    as *const i8,
+                OriginalName,
+                ApisetVersion,
+                Status,
+                *RedirectedDll as u32,
+                &mut ApisetName,
+            );
+        }
         if !NT_SUCCESS(Status) {
             return Status;
         }
     }
 
     if *RedirectedDll != 0 {
-        let mut NtSystemRoot: _UNICODE_STRING = core::mem::zeroed();
-        let System32Buffer = [
-            0x5C, 0x00, 0x53, 0x00, 0x79, 0x00, 0x73, 0x00, 0x74, 0x00, 0x65, 0x00, 0x6D, 0x00,
-            0x33, 0x00, 0x32, 0x00, 0x5C, 0x00,
-        ];
-        let System32 = _UNICODE_STRING {
-            Length: 20,
-            MaximumLength: 20,
-            Buffer: System32Buffer.as_ptr() as *mut u16,
-        };
-        let mut ResultPath: PUNICODE_STRING = core::ptr::null_mut();
-
-        RtlInitUnicodeString(&mut NtSystemRoot, (*shared_user_data()).NtSystemRoot.as_ptr());
-
-        let Needed = System32.Length as usize
-            + ApisetName.Length as usize
-            + NtSystemRoot.Length as usize
-            + 2;
+        // Emit the BARE host-DLL name (e.g. "ucrtbase.dll") and let the normal
+        // DLL search path resolve it out of System32 — the same path every other
+        // system import takes. (The stock ReactOS code prefixed
+        // NtSystemRoot\System32\ to force an absolute load; on this arm64 port
+        // that absolute path fails to map with STATUS_OBJECT_NAME_INVALID —
+        // fexprobe was the first binary to import api-ms-win-crt-* api-sets and
+        // surfaced it. The bare name + search path is robust and matches how the
+        // initial kernel32/ntdll imports already resolve.)
+        let Needed = ApisetName.Length as usize + 2;
+        let ResultPath: PUNICODE_STRING;
 
         if !StaticString.is_null() && (*StaticString).MaximumLength >= Needed as u16 {
             (*StaticString).Length = 0;
@@ -1226,10 +1242,14 @@ pub unsafe extern "system" fn LdrpApplyFileNameRedirection(
             return STATUS_INVALID_PARAMETER;
         }
 
-        RtlAppendUnicodeStringToString(ResultPath, &NtSystemRoot);
-        RtlAppendUnicodeStringToString(ResultPath, &System32);
         RtlAppendUnicodeStringToString(ResultPath, &ApisetName);
         *NewName = ResultPath;
+        if APISET_TRACE {
+            DbgPrint(
+                b"[APISETDBG] redirect -> %wZ (search-path)\n\0".as_ptr() as *const i8,
+                ResultPath,
+            );
+        }
     } else {
         Status = RtlDosApplyFileIsolationRedirection_Ustr(
             RTL_DOS_APPLY_FILE_REDIRECTION_USTR_FLAG_RESPECT_DOT_LOCAL,

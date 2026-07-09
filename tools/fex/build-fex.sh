@@ -27,7 +27,14 @@ cmake -S "$FEX_SRC" -B "$BUILD_DIR" -G Ninja \
     -DENABLE_LTO=False \
     -DBUILD_TESTING=False \
     -DBUILD_FEXCONFIG=False \
-    -DENABLE_ASSERTIONS=False
+    -DENABLE_ASSERTIONS=False \
+    -DTUNE_ARCH=armv8-a \
+    -DTUNE_CPU=none
+    # armv8-a floor (NOT the default TUNE_CPU=native, which on this x86->aarch64
+    # cross-compile picks a high-baseline -mcpu that emits ARMv8.3 LDAPR/RCpc
+    # instructions). vibeos QEMU runs -cpu cortex-a72 (ARMv8.0, no FEAT_LRCPC),
+    # so RCpc ops fault as illegal-instruction — matches the kernel's
+    # -march=armv8-a (sdk/cmake/config.cmake OARCH). fex-bringup-plan.md rung 2.
 
 ninja -C "$BUILD_DIR" wow64fex FEXOfflineCompiler
 
