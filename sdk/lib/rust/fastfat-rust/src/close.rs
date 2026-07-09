@@ -69,11 +69,12 @@ const IO_DISK_INCREMENT: u32 = 1; // from available imports, but override if nee
 const CCB_FLAG_READ_ONLY: u32 = 0x80;
 const FO_CLEANUP_COMPLETE: u32 = 0x4000;
 const FCB_STATE_DELAY_CLOSE: u32 = 0x0800;
-const VirtualVolumeFile: i32 = 2;
-const DirectoryFile: i32 = 3;
-const EaFile: i32 = 4;
-const UserFileOpen: i32 = 1;
-const UserDirectoryOpen: i32 = 7;
+// TYPE_OF_OPEN — bindgen ground truth (the old hand-rolled values were fully scrambled)
+const VirtualVolumeFile: i32 = crate::types::_TYPE_OF_OPEN_VirtualVolumeFile as i32; // 5
+const DirectoryFile: i32 = crate::types::_TYPE_OF_OPEN_DirectoryFile as i32; // 6
+const EaFile: i32 = crate::types::_TYPE_OF_OPEN_EaFile as i32; // 7
+const UserFileOpen: i32 = crate::types::_TYPE_OF_OPEN_UserFileOpen as i32; // 2
+const UserDirectoryOpen: i32 = crate::types::_TYPE_OF_OPEN_UserDirectoryOpen as i32; // 3
 
 // Forward declare unknown functions
 
@@ -167,22 +168,33 @@ pub unsafe extern "system" fn FatFsdClose(
             0
         };
 
-        let common_result = FatCommonClose(
-            Vcb,
-            Fcb,
-            Ccb,
-            TypeOfOpen as u32,
-            Wait as u8,
-            TopLevel as u8,
-            &mut VcbDeleted,
-        );
+        // C short-circuit: `if (must_delay || FatCommonClose(...) == STATUS_PENDING)`.
+        // A delayed close must NOT run FatCommonClose inline — the translation
+        // called it unconditionally, closing the file immediately AND queueing a
+        // second close whose worker then used a freed/recycled CCB (garbage
+        // CloseContext.Free → ExFreePool of an interior pointer of whatever
+        // recycled the memory — the "free of ETHREAD+0x118" pool corruption).
+        let common_result = if must_delay != 0 {
+            STATUS_PENDING // not called — the queued worker performs the close
+        } else {
+            FatCommonClose(
+                Vcb,
+                Fcb,
+                Ccb,
+                TypeOfOpen as u32,
+                Wait as u8,
+                TopLevel as u8,
+                &mut VcbDeleted,
+            )
+        };
 
         if must_delay != 0 || common_result == STATUS_PENDING {
             if CloseContext.is_null() {
                 FatDeallocateCcbStrings(Ccb);
                 CloseContext = (*Ccb).__bindgen_anon_1.CloseContext.as_mut() as *mut CLOSE_CONTEXT;
                 (*CloseContext).Free = 0;
-                SetFlag(&mut (*Ccb).Flags, CCB_FLAG_READ_ONLY);
+                // C: CCB_FLAG_CLOSE_CONTEXT (0x8000) — was CCB_FLAG_READ_ONLY (0x80)
+                SetFlag(&mut (*Ccb).Flags, crate::types::CCB_FLAG_CLOSE_CONTEXT);
             }
             (*CloseContext).Vcb = Vcb;
             (*CloseContext).Fcb = Fcb;

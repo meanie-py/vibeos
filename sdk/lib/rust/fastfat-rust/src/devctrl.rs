@@ -125,8 +125,8 @@ const IOCTL_SCSI_PASS_THROUGH: u32 = 0x0004D004;
 const IOCTL_SCSI_PASS_THROUGH_DIRECT: u32 = 0x0004D014;
 const IOCTL_SCSI_PASS_THROUGH_EX: u32 = 0x0004D044;
 const IOCTL_SCSI_PASS_THROUGH_DIRECT_EX: u32 = 0x0004D048;
-const UserVolumeOpen: u32 = 0;
-const FlushWithoutPurge: u32 = 0;
+const UserVolumeOpen: u32 = crate::types::_TYPE_OF_OPEN_UserVolumeOpen; // 4 — bindgen ground truth (was 0: every DASD ioctl mis-classified)
+const FlushWithoutPurge: u32 = 3; // FAT_FLUSH_TYPE (fatprocs.h) — was 0 = NoFlush, silently skipping the flush
 const STATUS_PENDING: i32 = 0x103;
 const STATUS_INVALID_PARAMETER: i32 = 0xC000000D_u32 as i32;
 const STATUS_ACCESS_DENIED: i32 = 0xC0000022_u32 as i32;

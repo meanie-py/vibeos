@@ -109,6 +109,7 @@ static int test_write_readback(char letter)
         markf("[STORTEST] FAIL: create %s (error %lu)\n", path, GetLastError());
         return 0;
     }
+    markf("[STORTEST] created %s\n", path);
     if (!WriteFile(h, WRITE_CONTENT, (DWORD)strlen(WRITE_CONTENT), &n, NULL) ||
         n != strlen(WRITE_CONTENT))
     {
@@ -116,13 +117,16 @@ static int test_write_readback(char letter)
         CloseHandle(h);
         return 0;
     }
+    markf("[STORTEST] wrote %lu bytes\n", n);
     if (!FlushFileBuffers(h))
     {
         markf("[STORTEST] FAIL: flush %s (error %lu)\n", path, GetLastError());
         CloseHandle(h);
         return 0;
     }
+    markf("[STORTEST] flushed\n");
     CloseHandle(h);
+    markf("[STORTEST] closed\n");
 
     /* The deferred-flush worker may hold a transient reference for ~1s after
      * the first cached write on a removable volume; retry briefly. */

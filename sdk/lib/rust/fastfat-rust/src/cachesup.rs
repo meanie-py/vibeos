@@ -196,7 +196,11 @@ pub unsafe extern "system" fn FatReadVolumeFile(
 pub unsafe extern "system" fn FatPrepareWriteVolumeFile(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
-    StartingVbo: i64,
+    // C signature is `VBO StartingVbo` (32-bit!). This was translated as i64,
+    // while every caller declares+passes u32 — on amd64 the callee then read
+    // 32 bits of register GARBAGE in the upper half of the VBO, pinning the
+    // virtual-volume file at a wild offset (FAT-corrupting write class).
+    StartingVbo: u32,
     ByteCount: u32,
     Bcb: *mut *mut BCB,
     Buffer: *mut *mut core::ffi::c_void,
@@ -204,7 +208,7 @@ pub unsafe extern "system" fn FatPrepareWriteVolumeFile(
     Zero: i32,
 ) {
     let mut Vbo: LARGE_INTEGER = core::mem::zeroed();
-    Vbo.QuadPart = StartingVbo;
+    Vbo.QuadPart = StartingVbo as i64;
 
     NT_ASSERT(
         (((StartingVbo as u64) + (ByteCount as u64)) <= FatRootDirectoryLbo(&raw const (*Vcb).Bpb) as u64) as i32,
