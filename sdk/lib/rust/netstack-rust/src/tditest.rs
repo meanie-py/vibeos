@@ -208,9 +208,37 @@ pub(crate) unsafe fn run_tdi_to(
     timeout_100ns: i64,
     setup_params: impl FnOnce(*mut u8),
 ) -> i32 {
-    let mut event: KEVENT = zeroed();
-    KeInitializeEvent(&mut event, 0 /* NotificationEvent */, 0);
-    let mut iosb: IO_STATUS_BLOCK = zeroed();
+    // ROOT CAUSE FIX for the arm64 0x1E/0x109 TDI-window flake (field manual
+    // §9.31/§9.36): the event + IOSB the IRP holds as UserEvent/UserIosb used to
+    // be STACK locals, and the timeout path returned with the IRP still pending —
+    // the frame died, and the late IopCompleteRequest wrote the IOSB through the
+    // stale stack VA and KeSetEvent'd the dead event; KxUnwaitThread then walked
+    // reused-stack garbage (Thread=-1) into KiUnwaitThread. Caught live by the
+    // [WAITDEP-BT] backtrace: IopCompleteRequest → KeSetEvent → KxUnwaitThread.
+    //
+    // netstack pends IRPs without a cancel routine, so the NT-textbook
+    // "IoCancelIrp + infinite wait" would hang the worker on an uncancellable
+    // pend. Instead the event+IOSB live in NonPagedPool: on completion-in-time
+    // we free the block; on timeout we IoCancelIrp (a hint; harmless without a
+    // cancel routine) and LEAK the block LOUDLY — the late completion then
+    // writes into valid, owned pool instead of somebody's reused stack. The
+    // leak is bounded (self-test only, one small block per timed-out op).
+    #[repr(C)]
+    struct TdiWaitBlock {
+        event: KEVENT,
+        iosb: IO_STATUS_BLOCK,
+    }
+    const TAG_TDI_WAIT: u32 = u32::from_le_bytes(*b"tdiW");
+    let wb = ExAllocatePoolWithTag(
+        0, /* NonPagedPool */
+        core::mem::size_of::<TdiWaitBlock>() as _,
+        TAG_TDI_WAIT,
+    ) as *mut TdiWaitBlock;
+    if wb.is_null() {
+        return -1;
+    }
+    core::ptr::write_bytes(wb as *mut u8, 0, core::mem::size_of::<TdiWaitBlock>());
+    KeInitializeEvent(core::ptr::addr_of_mut!((*wb).event), 0 /* NotificationEvent */, 0);
     let irp = IoBuildDeviceIoControlRequest(
         METHOD_OUT_DIRECT,
         dev,
@@ -219,10 +247,11 @@ pub(crate) unsafe fn run_tdi_to(
         out_buf,
         out_len,
         1, // InternalDeviceIoControl
-        &mut event,
-        &mut iosb,
+        core::ptr::addr_of_mut!((*wb).event) as *mut _,
+        core::ptr::addr_of_mut!((*wb).iosb) as *mut _,
     );
     if irp.is_null() {
+        ExFreePool(wb as PVOID);
         return -1;
     }
     let sp = IoGetNextIrpStackLocation(irp);
@@ -235,11 +264,25 @@ pub(crate) unsafe fn run_tdi_to(
     if st == STATUS_PENDING {
         let mut timeout: LARGE_INTEGER = zeroed();
         timeout.QuadPart = timeout_100ns; // relative (negative)
-        let wait = KeWaitForSingleObject(&mut event as *mut _ as PVOID, 0, 0, 0, &mut timeout);
-        // Honesty: on timeout the IRP never completed, so iosb is untouched
-        // (reads as 0 = STATUS_SUCCESS) — report the timeout instead of a false OK.
-        st = if wait == STATUS_TIMEOUT { STATUS_IO_TIMEOUT } else { iosb.__bindgen_anon_1.Status };
+        let wait = KeWaitForSingleObject(
+            core::ptr::addr_of_mut!((*wb).event) as PVOID,
+            0,
+            0,
+            0,
+            &mut timeout,
+        );
+        if wait == STATUS_TIMEOUT {
+            ntkrnl_sys::ddk::IoCancelIrp(irp);
+            nsprint!(
+                "[NETSTACK] TDI op minor={} timed out - IRP still pending; leaking wait block {:p} (bounded; prevents dead-frame completion, field manual 9.36)\n",
+                minor,
+                wb
+            );
+            return STATUS_IO_TIMEOUT;
+        }
+        st = (*wb).iosb.__bindgen_anon_1.Status;
     }
+    ExFreePool(wb as PVOID);
     st
 }
 
