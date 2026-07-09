@@ -152,6 +152,89 @@ Either branch is real progress; the probe just says which.
 
 ---
 
+## Progress log
+
+### 2026-07-06 — amd64 beachhead GREEN (commit c7cee13e593)
+The translated Rust USB HID stack enumerates a QEMU `usb-kbd`/`usb-mouse` on EHCI and
+delivers end-to-end: `EHCI → usbport → usbhub → hidusb → hidclass → {kbdhid,mouhid} →
+{kbdclass,mouclass}`. Proven with **PS/2 removed from existence** (`-machine i8042=off`):
+injected Esc arrives as `[KBDCLASS] first key delivered sc=0x1`. **Decision: USB HID is
+the unification target** (decision-tree "enumerates" branch). Root causes fixed were all
+const/logic translation bugs (76 usbport flag/state constants, usbhub HubFlags,
+ntstrsafe wide formatters, `IOCTL_INTERNAL_USB_GET_ROOTHUB_PDO`, hidparser
+`BuildCollectionContext` return code). One more surfaced later (2026-07-08): hidparser's
+`HID_USAGE_PAGE_KEYBOARD` was invented as `1` vs C `0x07`, so every keyboard usage fell
+into the "unknown page" branch and *no key ever dispatched* — the beachhead had only
+actually proven **mouse** delivery. Fixed in `hidparser-rust` (commit a5d5c14d939).
+
+### 2026-07-09 — arm64 USB bring-up: PCI + EHCI + hub up, HALTED at the control pipe
+arm64 has **no PnP bus enumeration** natively (netstack/arm64input are explicit-load
+monoliths poking ECAM/MMIO). Stood up the real chain (commits `4bf38cb1ac2`,
+`74c39ef5b4b`):
+- **Root-seeded PCI**: `hivesys_arm64.inf` seeds `Enum\Root\*PNP0A03` (no acpi.sys on
+  arm64); the shared-hive CDDB `*PNP0A03→pci` binds pci.sys. pci-rust FDO tolerates the
+  missing bus-number `_CRS` resource (defaults bus 0). ✓ 4 PCI children enumerate via ECAM.
+- **GPEX INTx synthesis**: ArmVirt EDK2 never writes PCI Interrupt Line; pci-rust
+  synthesizes it from the board-fixed virt swizzle (INTA..D → GIC INTID 35..38) and writes
+  it back to config space (PdoQueryResources re-reads live config). ✓ EHCI IRQ translates
+  (INTID 38, DIRQL 8) and matches QEMU's real routing.
+- **Coherent DMA adapter** (`hal-rust/arm64/dma.rs`): virt GPEX is `dma-coherent`, no
+  IOMMU — common buffers = contiguous cached <4GB allocs; MapTransfer walks the MDL PFN
+  array. ✓ `USBPORT_StartDevice → 0x0`, root hub PDO created, usbhub binds, hub FDO starts
+  (`GetDeviceDescriptor`/`ConfigurationDescriptor`/`SyncPowerOnPorts` all `0x0`).
+- **THE arm64 landmine, fixed** (`74c39ef5b4b`): the `iotypes.h` pshpack4 guard around
+  `IO_STACK_LOCATION` was `#if !defined(_AMD64_) && !defined(_ARM_)` — **missing `_ARM64_`**,
+  so arm64 compiled the i386-packed layout (`IoControlCode` at +8 aliasing
+  `Others.Argument2`; NT intends Argument3↔IoControlCode at +0x10). clang
+  aarch64-w64-mingw32 ignores per-field `aligned` attrs under `#pragma pack`, so
+  POINTER_ALIGNMENT couldn't rescue it (x86_64 honors them → only arm64 broke). This is
+  how usbhub's `GET_ROOTHUB_PDO` IOCTL was clobbered. Historically bindgen produced the
+  *intended* layout so C≠Rust, and someone papered over it with "C-truth" stride shims
+  (0x44 / IRP+0xb8) in `ntkrnl-sys inline/tier1` + `iomgr irp.rs`/`inlines.rs` instead of
+  fixing the header. Header fixed + bindings/assertions regenerated + all shims deleted →
+  one NT layout on every arch.
+
+**Current walls (both OPEN, 2026-07-09 late):**
+
+**Wall 1 — the layout fix regresses arm64 desktop boot (BLOCKS LANDING).** A clean-built
+arm64 kernel now **panics in `IofCompleteRequest` on a None CompletionRoutine at the
+ramdisk-mount stage** (`IopStartRamdisk` → volume PnP), so the main boot thread never
+reaches `_tWinMain`. GDB backtrace: `iomgr_rust::irp::IofCompleteRequestInner` →
+`Option::unwrap::<fn(...)->i32>` panic, frame-7 caller `ramdisk.sys+0x22dc`. Cause: **at
+least one more crate still WRITES the completion routine at the pre-fix 68-byte stride**
+(via a stale `IoGetNextIrpStackLocation`/`IoSetCompletionRoutine`), so the now-correct
+72-stride kernel walker reads the slot as None. I removed the three shim sites I found
+(`ntkrnl-sys inline/tier1`, `iomgr irp.rs`/`inlines.rs`) but the ramdisk-mount IRP's
+completion is set by a *different* writer I have not yet identified. IMPORTANT diagnostic
+trap that cost three debug rounds: **PnP root-enumeration is async** (`PiQueueDeviceAction`
+queues a worker thread and runs *before* `IopStartRamdisk`), so USB-enumeration serial
+lines appearing after ramdisk are the concurrent PnP worker, **not** proof the boot passed
+ramdisk — the main thread had already panic-looped. Also: driver `.sys` files do NOT
+relink on a warm `vibeos-cli build` after an `ntkrnl-sys` edit (the ninja-dep hazard,
+tracked task), so ALWAYS `--clean` when validating a layout change or a stale 68-stride
+`.sys` will mislead you. **Next step:** GDB a clean build at the panic, read the wedging
+IRP + its stack, and find which crate's `IoSetCompletionRoutine` wrote the routine — that
+crate has a surviving old-stride shim or a packed `types_arm64.rs`
+`IO_STACK_LOCATION`/`IRP`.
+
+**Wall 2 — EHCI control pipe halts (reached only via the concurrent PnP worker).** When USB
+devices are attached, the PnP worker enumerates EHCI and **the control pipe HALTS on the
+default address-0 device** — QH overlay token `0x40` (Halted), every SET_ADDRESS control
+transfer fails, `[USBHUB] CreateDevice port=1 status=0x503` retries forever. GIC/INTx/async
+schedule all verified healthy via QMP register dump (**not** an interrupt bug). The same
+`usb-ehci + usb-kbd` delivered on amd64, so the arch-specific suspect is the new
+coherent-DMA adapter handing the EHCI a wrong qTD buffer physical address (from
+`HalAllocateCommonBuffer`/`MapTransfer`). **Next step (after Wall 1):** GDB-watch the qTD
+buffer pointers the EHCI miniport programs vs `MmGetPhysicalAddress` of the setup/data
+buffers, arm64 vs amd64.
+
+**Disposition:** the branch is NOT landable (arm64 not desktop-green). The
+`IO_STACK_LOCATION` pack-guard fix is a *real* ABI bug fix (the packed layout aliased
+`IoControlCode` onto `Argument2`), so the right resolution is to finish the old-stride
+sweep (Wall 1) rather than revert it. The amd64 `hidparser` keyboard fix (a5d5c14d939) is
+independent, verified green ×3, and could be cherry-landed on its own if the arm64 walls
+stay open.
+
 ## References
 - Miniports: `sdk/lib/rust/{i8042prt-rust,arm64input-rust}/`.
 - Class + RIT spine: `sdk/lib/rust/{kbdclass-rust,mouclass-rust}/`,
