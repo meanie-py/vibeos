@@ -3495,9 +3495,18 @@ the block (bounded, self-test-only) so the late completion writes owned pool.
 `icmptest` additionally leaks `out_buf` on timeout (buffered-I/O completion
 copies SystemBuffer back into `Irp->UserBuffer`).
 
-**Validation:** pre-fix 3 waitdep hits/10 boots; post-`run_tdi_to`-fix 20
-boots = ZERO waitdep (0x1E face dead) but 2×0x4C (settest/icmptest still
-carried the bug); post-sweep validation soak below.
+**Validation (final, 2026-07-08):** pre-fix 3 waitdep hits/10 boots;
+post-fix ZERO waitdep hits across 40 cumulative boots — the 0x1E dispatcher
+face is DEAD (P(clean|unfixed) < 1e-4). The winlogon 0x4C face persisted
+3/20 and was REFRAMED by the survivors' forensics: one hit's bad Buffer was
+0x73 (string DATA read as a pointer half) and check-at-fetch-time validation
+kept passing while the print faulted — so that face is winlogon's kernel32
+DllMain RACING basesrv's population of BASE_STATIC_SERVER_DATA (csrss
+accepts the connect before the shared section is fully populated), not the
+dead-frame writer. Mitigation landed: kernel32 validates the SNAPSHOT the
+%wZ actually uses and retargets to fallback strings on corruption (loud
+'snapshot CORRUPT (raced basesrv?)' print = the confirmation signal from
+organic traffic). The init-ordering race itself remains open.
 
 **The reusable rule (grep for it after any driver/self-test translation):**
 any `KeWaitForSingleObject(&stack_event, .., timeout)` on an IRP you built
