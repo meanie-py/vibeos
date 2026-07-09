@@ -332,6 +332,14 @@ pub unsafe extern "system" fn USBPORT_PdoInternalDeviceControl(
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     IoCtl = (*IoStack).Parameters.DeviceIoControl.IoControlCode;
 
+    if IoCtl != IOCTL_INTERNAL_USB_SUBMIT_URB {
+        DbgPrint(
+            b"[USBPORT] PdoInternalDeviceControl ioctl=0x%x\n\0".as_ptr()
+                as *const ::core::ffi::c_char,
+            IoCtl,
+        );
+    }
+
     if IoCtl == IOCTL_INTERNAL_USB_SUBMIT_URB {
         return USBPORT_HandleSubmitURB(PdoDevice, Irp, URB_FROM_IRP(Irp));
     }
