@@ -189,6 +189,28 @@ fix + kernel SEH PoC — field manual §9.27):
   software raise, handler must run and continue; also a VEH variant. Run at boot or
   as a test app; this is the go/no-go the brief demands, and it exercises 0a–0d.
 
+### Rung 1 progress (2026-07-08)
+
+- Upstream **FEX-2607** (`1cc4b93e7a71`) vendored PRUNED at `external/fex/`
+  (~58MB vs 1.4GB full — test corpora + gated-off externals dropped; prune list
+  + provenance: `external/README-fex-vendor.md`). Tree is byte-identical to
+  upstream — no vibeos patches. NB upstream's own `CLAUDE.md` forbids
+  AI-generated code in *contributions to FEX* — the vendor tree therefore stays
+  strictly unmodified, and any future fix goes upstream by a human or lives
+  outside the tree.
+- **Checkpoint 1 HIT, zero patches:** `libwow64fex.dll` (4.6M) +
+  `FEXOfflineCompiler.exe` (3.2M) build with our llvm-mingw (clang 19.1.7,
+  `aarch64-w64-mingw32`) via `tools/fex/build-fex.sh` (out-of-band cmake+ninja,
+  ~2 min). Proven from the pruned vendor tree.
+- `libwow64fex.dll` imports **ntdll.dll + wow64.dll only** (the brief's minimal
+  surface, confirmed). `FEXOfflineCompiler.exe` imports KERNEL32/ADVAPI32 + UCRT
+  api-sets — for the on-box run (checkpoint 2) vibeos needs `ucrtbase.dll` +
+  apiset resolution: our ntdll's `ApiSetResolveToHost` resolves by default
+  (version mask ~0), `ucrtbase.dll` builds clean on arm64 (`ninja ucrtbase`) but
+  isn't shipped in the arm64 ramdisk yet. Remaining for checkpoint 2: ship
+  ucrtbase (+ transitive deps) on the arm64 media, pick an exec vehicle with
+  serial-visible output, give FEXOfflineCompiler an input to JIT.
+
 **Rung 1 — vendor FEXCore, build the PE out-of-band.** Vendored snapshot (MIT) with
 required externals at a clearly-unmodified home (proposal: `external/fex/`,
 top-level, since it's neither sdk lib nor a dll of ours yet). Build via its own
