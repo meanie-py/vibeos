@@ -113,60 +113,62 @@ work landed clean and the fault-delivery proof ran on a real boot:
   table with the wrong RVA and no `__except` ever matched. Now captures per-frame
   `FrameControlPc`. This was the load-bearing fix that made user-mode SEH work.
 
-**Probe 1 — table-based SEH dispatch (software raise → `__try/__except`): dispatch
-chain PROVEN; post-unwind state hardening OWED.**
+**Probe 1 — table-based SEH dispatch (software raise → `__try/__except`): PASS,
+boot green, ARMED.**
 `[SEH-POC-U] table dispatch (RtlRaiseException): caught=1 code=0xe0dead02 (PASS)` on
-the arm64 boot serial. This exercises the full user-mode chain through the new
-decoder: `RtlLookupFunctionEntry` (.pdata) → `RtlVirtualUnwind` (packed + xdata) →
+the arm64 boot serial. Full user-mode chain through the new decoder:
+`RtlLookupFunctionEntry` (.pdata) → `RtlVirtualUnwind` (packed + xdata) →
 `__C_specific_handler` scope match → filter → `RtlUnwindEx` → `NtContinue` to the
-`__except` handler, which runs and returns normally (the "VEH-disabled" and "end"
-lines print after it). **This is the FEX-critical path** (guest SEH, C++ EH via
-libc++, exception tables) and the dispatch/lookup/filter/land sequence is proven.
+`__except` handler. **This is the FEX-critical path** (guest SEH, C++ EH via libc++,
+exception tables).
 
-**Caveat (owed):** with the probe armed in smss, boot then *hangs* right after the
-handler returns — smss can't continue. So the unwind reaches and executes the
-handler correctly but leaves residual state wrong (a callee-saved register or the
-restored SP slightly off in `RtlVirtualUnwind`/`RtlUnwindEx`), **or** raising this
-early in `LdrpInit` is inherently unsafe. These are not yet disambiguated. Next step
-is a dedicated arm64 test *process* (not an in-`LdrpInit` hook) to isolate the
-decoder from smss's fragile early init; if the hang persists there, harden the
-packed/xdata register+SP restoration. Until then the probe is disarmed
-(`SEH_POC_U_ARMED = false` in `ntdll-rust` LdrpInit) so arm64 smoke stays green.
+**Second real dispatch bug found & fixed (the earlier "smss hangs after the handler"
+wedge):** arm64 `RtlUnwindEx` restored **`ContextRecord`** — the *raise-point*
+context — instead of syncing it to the virtually-unwound state, so the `__except`
+landing pad resumed with the deep callees' nonvolatile `x19..x28/fp` (smss later
+`ret`'d into `&LdrpProcessInitialized` — an ntdll `.data` address a caller had held
+in a callee-saved register — and died, 0x6A). The amd64 reference (`unwind.rs:916`)
+does `*ContextRecord = UnwindContext` after every successfully-unwound frame; the
+arm64 port had dropped exactly that line. Restored (with the correct
+one-frame-behind semantics at the target break). Diagnosed with a callee-saved
+snapshot harness around the probe (`SehPocCaptureCalleeSaved` in `seh_poc_user.c`,
+kept as a tripwire — any post-unwind register delta prints `[SEH-POC-U] CORRUPT`).
 
-**Probe 2 — VEH on a hardware AV: delivery + VEH fire WORK; resume WEDGES. Root-caused.**
-The kernel delivers the hardware access-violation first-chance to user mode
-(`[UEXC-DISPATCH]`), the registered VEH fires and returns `CONTINUE_EXECUTION`
-(advancing PC past the store) — but on resume the process faults again with
-`x19 == 0` and is second-chance killed. **Root cause (precise wedge):** the arm64
-fault path (`ntoskrnl-rust/src/ke/arm64/trap.rs`, all four `KiDispatchException`
-call sites, e.g. :440) passes a **NULL `KEXCEPTION_FRAME`**, so
-`KeTrapFrameToContext` (`ke/arm64/stubs.rs:943`) has no source for the callee-saved
-registers and leaves `Context.X19..X28 == 0`; `NtContinue` then resumes with them
-zeroed. Probe 1 is immune because its context is captured in *user* mode
-(`RtlCaptureContext`, full X0–X30) and dispatched in-process — it never rides the
-null-ExceptionFrame kernel round-trip.
+**Probe 2 — VEH on a hardware AV: PASS, boot green, ARMED.**
+`[SEH-POC-U] VEH on hardware AV: fired=1 resumed=1 (PASS)`. The kernel delivers the
+hardware access-violation first-chance to user mode, the VEH fires, advances PC past
+the faulting store, and `NtContinue` resumes with **full integer state**. The
+formerly-blocking NULL-`KEXCEPTION_FRAME` wedge is fixed at the vector level:
+`ntoskrnl/ke/arm64/trap.S` now has `EXFRAME_SAVE`/`EXFRAME_RESTORE` macros around
+`KiSynchronousExceptionHandler` (both EL1 and EL0 sync entries) — callee-saved
+x19..x28 are captured into a real `KEXCEPTION_FRAME` below the trap frame, passed as
+the handler's second argument, threaded through all four `KiDispatchException` call
+sites in `trap.rs`, and re-loaded after the handler returns (which also makes the
+in-kernel handled-continue and the Rd>=19 faulting-load fixups actually take
+effect). `KeTrapFrameToContext`/`KeContextToTrapFrame`/`KiExceptionExit` already
+supported the frame — capture was the only gap.
 
-**Fix owed (next rung-0 increment):** the arm64 exception vector / `trap.rs` must
-build a real `KEXCEPTION_FRAME` (save X19–X28 on entry, pass it to
-`KiDispatchException`, restore in `KiExceptionExit`). Until then, the PoC's probe 2
-is compiled out (`SEH_POC_U_ENABLE_VEH_PROBE 0` in `dll/ntdll/seh_poc_user.c`) so it
-can't kill smss; probe 1 stays armed as a permanent arm64 user-mode SEH tripwire
-(gated to smss.exe, like the kernel's `seh_poc.c`).
+**Also fixed while validating (build-system):** cargo-module cmake DEPENDS didn't
+track the cc-rs `c_shims` C sources (only kernel `.S`/`.inc`), so a
+`seh_poc_user.c` edit shipped a **stale ntdll.dll** with zero signal — the same
+masking class as the 2026-07-04 kernel-asm incident, one file-type over. The glob in
+`sdk/cmake/gcc.cmake` (`_REACTOS_CARGO_KERN_SRCS`) now includes `dll/ntdll/*.c` +
+`sdk/lib/{pseh,rtl,crt}/*.c`.
 
-**Net:** the arm64 exception-dispatch machinery FEX leans on is proven to lookup,
-match, and land handlers; hardware-fault delivery reaches user mode and VEHs fire.
-Two localized, well-understood gaps remain before the fault path is FEX-grade: the
-kernel callee-saved-register capture (null `KEXCEPTION_FRAME`, blocks probe 2) and
-post-unwind state correctness / early-init isolation (blocks leaving probe 1 armed).
+**Net: rung 0 is DONE.** Both probes pass on a green-to-desktop arm64 boot and stay
+armed as permanent smss-gated tripwires (a regression prints FAIL/CORRUPT on serial
+or kills smss — the arm64 smoke catches either). The fault-delivery "day-one risk"
+from the brief is killed: vibeos can deliver a synthesized *and* a hardware fault
+into a controlled user context, run VEH + table-based handlers through Rust ntdll
+frames, and resume/land with correct full register state.
 
 ### Owed follow-ups (rung 0, tracked)
 
-1. **Kernel arm64 `KEXCEPTION_FRAME`** — build+pass+restore X19–X28 on the fault
-   path (`ke/arm64/trap.rs` + vectors + `KiExceptionExit`). Unblocks probe 2 and any
-   real user-mode hardware-fault recovery (the FEX SMC/guest-fault path).
-2. **Decoder post-unwind correctness** — dedicated arm64 test process for probe 1;
-   if the smss hang reproduces in isolation, audit `RtlVirtualUnwind` packed/xdata
-   register+SP restoration for a residual error.
+1. ~~Kernel arm64 `KEXCEPTION_FRAME`~~ — **DONE 2026-07-08** (trap.S
+   EXFRAME_SAVE/RESTORE; probe 2 green).
+2. ~~Decoder post-unwind correctness~~ — **DONE 2026-07-08** (RtlUnwindEx
+   ContextRecord sync; probe 1 armed + boot green; the "early-init unsafe"
+   hypothesis was wrong — it was the missing sync all along).
 3. **verify_signatures / scan_silent_failures baselines** — refresh for the new
    arm64 files + line shifts (both are non-blocking WARNs today).
 

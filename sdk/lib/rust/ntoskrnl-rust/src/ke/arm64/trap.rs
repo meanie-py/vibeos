@@ -292,7 +292,13 @@ unsafe fn KiSvcDispatch(TrapFrame: PKTRAP_FRAME) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) {
+pub unsafe extern "C" fn KiSynchronousExceptionHandler(
+    TrapFrame: PKTRAP_FRAME,
+    /* Callee-saved x19..x28 captured by EXFRAME_SAVE in trap.S; passed through
+     * to KiDispatchException so KeTrapFrameToContext/KeContextToTrapFrame can
+     * round-trip the full integer state (NtContinue resume, Rd>=19 fixups). */
+    ExceptionFrame: ntkrnl_sys::ddk::PKEXCEPTION_FRAME,
+) {
     let EC = ((*TrapFrame).Esr >> 26) & 0x3F;
     let ISS = (*TrapFrame).Esr & 0x1FFFFFF;
 
@@ -338,7 +344,7 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
             ExRec.ExceptionInformation[1] = (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress;
             KiDispatchException(
                 &mut ExRec as *mut EXCEPTION_RECORD,
-                core::ptr::null_mut(),
+                ExceptionFrame,
                 TrapFrame,
                 FaultMode,
                 1u8
@@ -382,7 +388,7 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
             ExRec.ExceptionInformation[1] = (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress;
             KiDispatchException(
                 &mut ExRec as *mut EXCEPTION_RECORD,
-                core::ptr::null_mut(),
+                ExceptionFrame,
                 TrapFrame,
                 FaultMode2,
                 1u8
@@ -437,7 +443,7 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
             ExRec.NumberParameters = 0;
             KiDispatchException(
                 &mut ExRec as *mut EXCEPTION_RECORD,
-                core::ptr::null_mut(),
+                ExceptionFrame,
                 TrapFrame,
                 FaultMode4,
                 1u8
@@ -457,7 +463,7 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
             ExRec.NumberParameters = 0;
             KiDispatchException(
                 &mut ExRec as *mut EXCEPTION_RECORD,
-                core::ptr::null_mut(),
+                ExceptionFrame,
                 TrapFrame,
                 FaultMode3,
                 1u8

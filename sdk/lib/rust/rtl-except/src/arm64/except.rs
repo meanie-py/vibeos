@@ -670,6 +670,16 @@ pub unsafe extern "system" fn RtlUnwindEx(
         if EstablisherFrame == TargetFrame as ULONG64 {
             break;
         }
+
+        /* Successfully unwound past this frame: sync the caller-visible
+         * context to the unwound state (mirrors amd64 unwind.rs — without
+         * this, the final RtlRestoreContext resumes the landing pad with the
+         * RAISE-point nonvolatile x19..x28/fp/sp instead of the target
+         * frame's, silently corrupting every callee-saved register the
+         * frames in between had saved). At the target-frame break above,
+         * ContextRecord correctly holds the state with the target frame
+         * still live — one virtual-unwind step BEHIND UnwindContext. */
+        *ContextRecord = UnwindContext;
     }
 
     /* Set return value and target IP */

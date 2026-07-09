@@ -2600,16 +2600,17 @@ pub unsafe extern "system" fn LdrpInit(
         if NT_SUCCESS(LoaderStatus) {
             _InterlockedIncrement(core::ptr::addr_of_mut!(LdrpProcessInitialized));
 
-            /* FEX bring-up rung 0e: user-mode fault-delivery self-test. Gated to
-             * smss.exe and OFF by default — probe 1 (table-based SEH) PASSES, but
-             * running the raise/unwind this early in smss's LdrpInit destabilizes
-             * smss's subsequent boot (hangs after the __except returns), so it is
-             * not armed on normal boots. Flip SEH_POC_U_ARMED to re-run the proof
-             * on demand. Full results: docs/engineering/fex-bringup-plan.md rung 0e.
-             * arm64 only (the shim is arch-gated in ntdll-cargo/build.rs). */
+            /* FEX bring-up rung 0e: user-mode fault-delivery self-test, ARMED
+             * as a permanent arm64 regression tripwire (both probes PASS + boot
+             * green, 2026-07-08 — the earlier "destabilizes smss" wedge was the
+             * RtlUnwindEx missing ContextRecord sync, fixed in rtl-except).
+             * Gated to smss.exe; a regression prints [SEH-POC-U] FAIL/CORRUPT
+             * on serial or kills smss, which the arm64 smoke catches. Results:
+             * docs/engineering/fex-bringup-plan.md rung 0e. arm64 only (the
+             * shim is arch-gated in ntdll-cargo/build.rs). */
             #[cfg(target_arch = "aarch64")]
             {
-                const SEH_POC_U_ARMED: bool = false;
+                const SEH_POC_U_ARMED: bool = true;
                 let pp = (*Peb).ProcessParameters;
                 if SEH_POC_U_ARMED
                     && !pp.is_null()

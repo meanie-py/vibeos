@@ -102,6 +102,46 @@ static void SehPocUserRaiseTest(void)
              (caught == 1 && code == SEH_POC_U_STATUS) ? "PASS" : "FAIL");
 }
 
+/* Diagnostic: snapshot callee-saved x19..x28 + fp + sp around probe 1. Any
+ * before/after diff is an ABI violation by the unwind path (RtlUnwindEx +
+ * RtlVirtualUnwind decoder) — the AAPCS guarantees a call preserves these. */
+static void SehPocCaptureCalleeSaved(ULONG64 *out /* [12] */)
+{
+    /* Pin the pointer to a VOLATILE register: with everything inlined, the
+     * allocator once picked x22 for %0, so the capture read its own operand
+     * (a false "CORRUPT x22" — the buffer address, not unwind damage). */
+    register ULONG64 *p __asm__("x10") = out;
+    __asm__ volatile(
+        "stp x19, x20, [%0, #0]\n\t"
+        "stp x21, x22, [%0, #16]\n\t"
+        "stp x23, x24, [%0, #32]\n\t"
+        "stp x25, x26, [%0, #48]\n\t"
+        "stp x27, x28, [%0, #64]\n\t"
+        "str x29,      [%0, #80]\n\t"
+        "mov x9, sp\n\t"
+        "str x9,       [%0, #88]\n\t"
+        : : "r"(p) : "x9", "memory");
+}
+
+static void SehPocUserRaiseTestWrapped(void)
+{
+    ULONG64 before[12], after[12];
+    int i;
+
+    SehPocCaptureCalleeSaved(before);
+    SehPocUserRaiseTest();
+    SehPocCaptureCalleeSaved(after);
+
+    for (i = 0; i < 12; i++) {
+        if (before[i] != after[i]) {
+            DbgPrint("[SEH-POC-U] CORRUPT %s%d: %p -> %p\n",
+                     i == 10 ? "fp x" : (i == 11 ? "sp x" : "x"),
+                     i == 10 ? 29 : (i == 11 ? 0 : 19 + i),
+                     (PVOID)before[i], (PVOID)after[i]);
+        }
+    }
+}
+
 /* ---- probe 2: VEH on a hardware access violation (FEX analog) ---- */
 static volatile int g_veh_fired = 0;
 
@@ -149,15 +189,17 @@ static void SehPocUserVehTest(void)
 }
 
 /*
- * Probe 2 (VEH-on-hardware-AV) is DISABLED pending the kernel fix. It proved
- * that arm64 kernel->user hardware-fault delivery works AND the VEH fires and
- * resumes — but the resume corrupts callee-saved x19..x28, because the arm64
- * fault path (ke/arm64/trap.rs) calls KiDispatchException with a NULL
- * KEXCEPTION_FRAME, so KeTrapFrameToContext can't capture x19..x28 and
- * NtContinue resumes them as 0. Re-enable once trap.rs builds a real exception
- * frame. Full analysis: docs/engineering/fex-bringup-plan.md (rung 0e).
+ * Both probes are ARMED as permanent arm64 boot tripwires (2026-07-08, both
+ * PASS + boot green to desktop). History of the two wedges they caught:
+ *   - probe 2 resume used to zero x19..x28 (trap.rs passed a NULL
+ *     KEXCEPTION_FRAME) — fixed by EXFRAME_SAVE/RESTORE in ke/arm64/trap.S;
+ *   - probe 1's unwind used to resume the landing pad with the RAISE-point
+ *     nonvolatile registers (RtlUnwindEx never synced ContextRecord to the
+ *     unwound state) — fixed in rtl-except arm64 except.rs.
+ * Full analysis: docs/engineering/fex-bringup-plan.md (rung 0e).
  */
-#define SEH_POC_U_ENABLE_VEH_PROBE 0
+#define SEH_POC_U_ENABLE_RAISE_PROBE 1
+#define SEH_POC_U_ENABLE_VEH_PROBE 1
 
 /* Called once, early, from user-mode process init (see wiring in ntdll-rust
  * LdrpInit, guarded to smss.exe). Probe 1 (table-based SEH dispatch) is kept
@@ -167,7 +209,11 @@ static void SehPocUserVehTest(void)
 void SehPocUserRun(void)
 {
     DbgPrint("[SEH-POC-U] begin user-mode fault-delivery self-test\n");
-    SehPocUserRaiseTest();
+#if SEH_POC_U_ENABLE_RAISE_PROBE
+    SehPocUserRaiseTestWrapped();
+#else
+    (void)SehPocUserRaiseTestWrapped;
+#endif
 #if SEH_POC_U_ENABLE_VEH_PROBE
     SehPocUserVehTest();
 #else
