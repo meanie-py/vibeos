@@ -21,12 +21,21 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 // TAG_IOWI = 'IWOI'
 const TAG_IOWI: ULONG = 0x49574F49;
 
+// Always-on diagnostic: last IO-workitem routine invoked — printed by the
+// expool ETHREAD-free tripwire so a bad free inside a work routine still has
+// an owner named on serial (this caught the classpnp IoQueueWorkItemEx ABI bug).
+#[no_mangle]
+pub static IOP_LAST_WORKITEM_ROUTINE: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
 #[cfg(not(target_arch = "x86"))]
 unsafe extern "C" fn IopWorkItemCallback(Parameter: PVOID) {
     let IoWorkItem = Parameter as PIO_WORKITEM;
     let DeviceObject = (*IoWorkItem).DeviceObject;
 
-    (*IoWorkItem).WorkerRoutine.unwrap()(DeviceObject, (*IoWorkItem).Context);
+    let routine = (*IoWorkItem).WorkerRoutine.unwrap();
+    IOP_LAST_WORKITEM_ROUTINE.store(routine as usize, core::sync::atomic::Ordering::Relaxed);
+    routine(DeviceObject, (*IoWorkItem).Context);
 
     ObDereferenceObject(DeviceObject as PVOID);
 }
