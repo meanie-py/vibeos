@@ -45,6 +45,54 @@ struct StartupTripwire {
   StartupTripwire() { DbgPrint("[FEX-HELLO-CTOR] a global ctor ran (pre-main)\n"); }
 } g_StartupTripwire;
 
+// FEXCore's LookupCache allocates its block-lookup tables (~264MB of VA in
+// 64-bit mode: VirtualMemSize>>12*8 + 128MB CODE + L1) as MEM_RESERVE-only and
+// then calls SyscallHandler->MarkOvercommitRange(), expecting the host layer to
+// commit pages on first-touch AV (WOW64/ARM64EC modules install a fault handler
+// wired to FEX::Windows::OvercommitTracker). DummyHandlers' MarkOvercommitRange
+// is a no-op and no fault handler exists here, so the first FindBlock read into
+// the reserved region was a clean C0000005 (the rung-2 data abort: ldr [x22,#8],
+// x22 = the reserved cache base). Fix: eagerly MEM_COMMIT the marked range —
+// commit is demand-paged charge, not physical backing, and this is byte-for-byte
+// what FEX's own Wine path does (OvercommitTracker.h commits the whole region
+// PAGE_READWRITE up front). Fault-driven overcommit is rung-3 territory.
+class ProbeSyscallHandler final : public FEX::DummyHandlers::DummySyscallHandler {
+public:
+  void MarkOvercommitRange(uint64_t Start, uint64_t Length) override {
+    void* Ret = VirtualAlloc(reinterpret_cast<void*>(Start), Length, MEM_COMMIT, PAGE_READWRITE);
+    DbgPrint("[FEX-HELLO] overcommit range %p +0x%llx -> commit %s\n", (void*)Start, (unsigned long long)Length, Ret ? "OK" : "FAILED");
+  }
+  void UnmarkOvercommitRange(uint64_t Start, uint64_t Length) override {}
+};
+
+// First-chance VEH crash dumper. The rung-2 faults land inside FEXCore's
+// runtime-emitted dispatcher/JIT code (no symbols possible), so on AV dump the
+// faulting instruction words + full register file to serial, then continue the
+// search so the normal kill path still runs. Kernel user-exception dispatch is
+// proven working on vibeos arm64 ([UEXC-DISPATCH] reaches ntdll).
+LONG WINAPI ProbeVeh(EXCEPTION_POINTERS* Info) {
+  const auto* Rec = Info->ExceptionRecord;
+  const auto* Ctx = Info->ContextRecord;
+  DbgPrint("[FEX-VEH] code=%08lx addr=%p info0=%p info1=%p\n", Rec->ExceptionCode, Rec->ExceptionAddress,
+           (void*)(Rec->NumberParameters > 0 ? Rec->ExceptionInformation[0] : ~0ULL),
+           (void*)(Rec->NumberParameters > 1 ? Rec->ExceptionInformation[1] : ~0ULL));
+  DbgPrint("[FEX-VEH] PC=%p SP=%p LR=%p FP=%p\n", (void*)Ctx->Pc, (void*)Ctx->Sp, (void*)Ctx->Lr, (void*)Ctx->Fp);
+  for (int i = 0; i < 29; i += 4) {
+    DbgPrint("[FEX-VEH] x%-2d=%016llx x%-2d=%016llx x%-2d=%016llx x%-2d=%016llx\n", i, (unsigned long long)Ctx->X[i], i + 1,
+             (unsigned long long)(i + 1 < 29 ? Ctx->X[i + 1] : 0), i + 2, (unsigned long long)(i + 2 < 29 ? Ctx->X[i + 2] : 0), i + 3,
+             (unsigned long long)(i + 3 < 29 ? Ctx->X[i + 3] : 0));
+  }
+  // 8 instruction words before + 8 after the PC (the PC page is executing, so
+  // reading around it is safe modulo page edges — clamp to the PC's page).
+  const uint64_t Page = Ctx->Pc & ~0xFFFULL;
+  const uint64_t Lo = Ctx->Pc >= Page + 32 ? Ctx->Pc - 32 : Page;
+  const auto* Insn = reinterpret_cast<const uint32_t*>(Lo);
+  for (int i = 0; i < 16; i += 4) {
+    DbgPrint("[FEX-VEH] %p: %08lx %08lx %08lx %08lx\n", (const void*)&Insn[i], Insn[i], Insn[i + 1], Insn[i + 2], Insn[i + 3]);
+  }
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
 constexpr uint64_t GuestExpected = 0x31; // 42 + 7
 
 // Hand-assembled x86-64: mov rax,0x2A ; add rax,7 ; hlt
@@ -61,6 +109,7 @@ FEXCore::Core::CPUState::gdt_segment gdt[32] {};
 
 extern "C" int main(int /*argc*/, char** /*argv*/) {
   DbgPrint("[FEX-HELLO] rung-2 hello-compute harness start\n");
+  AddVectoredExceptionHandler(1, ProbeVeh);
 
   // 64-bit guest.
   FEXCore::Config::Initialize();
@@ -73,17 +122,23 @@ extern "C" int main(int /*argc*/, char** /*argv*/) {
   auto CTX = FEXCore::Context::Context::CreateNewContext(HostFeatures);
 
   auto SignalDelegation = FEX::DummyHandlers::CreateSignalDelegator();
-  auto SyscallHandler = FEX::DummyHandlers::CreateSyscallHandler();
+  auto SyscallHandler = fextl::make_unique<ProbeSyscallHandler>();
   CTX->SetSignalDelegator(SignalDelegation.get());
   CTX->SetSyscallHandler(SyscallHandler.get());
+
+  // Exit ExecuteThread when the guest hits HLT. MUST precede InitCore(): the
+  // dispatcher is emitted inside InitCore and reads ExitOnHLTEnabled() at
+  // emission time — enabling it after bakes the disabled path, where HLT is
+  // lowered to a DELIBERATE null-load segfault ("Force a SIGSEGV by loading
+  // zero", Dispatcher.cpp GuestSignal_SIGSEGV) for a signal delegator we don't
+  // have. That was the rung-2 "dispatcher data abort": mov w1,#0; ldr x1,[x1]
+  // with guest RAX already = 0x31 in x4.
+  CTX->EnableExitOnHLT();
 
   if (!CTX->InitCore()) {
     DbgPrint("[FEX-HELLO] FAIL: InitCore returned false\n");
     return 1;
   }
-
-  // Exit ExecuteThread when the guest hits HLT (instead of trapping).
-  CTX->EnableExitOnHLT();
 
   // Map an RWX buffer for the guest code (guest VA == host VA in-process).
   void* CodeMem = VirtualAlloc(nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);

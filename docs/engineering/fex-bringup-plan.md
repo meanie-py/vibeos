@@ -338,14 +338,39 @@ so EL0 can read the generic-timer counters. vibeos's own user-mode never reads
 them directly, so it was never enabled; FEX's `SpinWaitLock` ctor does
 `mrs CNTFRQ_EL0` (was trapping `C000001D` illegal-instruction).
 
-### Rung 2 — remaining blocker (2026-07-09): FEXCore execution-engine data abort
+### Rung 2 — COMPLETE (2026-07-09): guest RAX = 0x31 PASS
 
-Past all OS-integration gaps, fexprobe now faults INSIDE FEXCore at guest-blob
-execution: `C0000005` data abort, PC=`0x140013714` (FEXCore code, symbols
-stripped), `ldr x8,[x22,#8]` with x22=`0x7FFFBDBF0000`. This is FEXCore
-dispatcher/JIT territory (thread state / signal-delegator / guest-memory setup),
-a genuinely different problem class from the export surface — the next thing to
-debug for rung 2 completion.
+`[FEX-HELLO] guest RAX = 0x31 (expected 0x31) (PASS)` — FEXCore JIT-compiled
+and executed the x86-64 blob on vibeos arm64, clean HLT exit, clean process
+exit. The "execution-engine data abort" was TWO stacked harness-side bugs, both
+found by symbolication + a first-chance VEH register/insn dumper in the harness
+(kernel user-exception dispatch works on arm64 — a VEH gets full CONTEXT):
+
+1. **Reserve-only LookupCache, no overcommit handler.** The first fault
+   (`llvm-addr2line` → `FEXCore::LookupCache::FindBlock`) was a read into the
+   cache's ~272MB VA region: LookupCache allocates it `MEM_RESERVE`-only and
+   calls `SyscallHandler->MarkOvercommitRange()`, expecting the host layer to
+   commit pages on first-touch AV (the WOW64/ARM64EC modules wire a fault
+   handler to `FEX::Windows::OvercommitTracker`). `DummyHandlers`' version is a
+   no-op. Fix (harness): `ProbeSyscallHandler::MarkOvercommitRange` eagerly
+   `MEM_COMMIT`s the range — byte-for-byte what FEX's own Wine path does.
+   Fault-driven overcommit becomes mandatory at rung 4 (wow64fex uses the real
+   OvercommitTracker + exception handler).
+
+2. **`EnableExitOnHLT()` called AFTER `InitCore()`.** The dispatcher is emitted
+   inside `InitCore` and reads `ExitOnHLTEnabled()` at emission time; enabling
+   it after bakes the disabled path, where guest HLT is lowered to a DELIBERATE
+   null-load segfault (`mov w1,#0; ldr x1,[x1]` — "Force a SIGSEGV by loading
+   zero", `Dispatcher.cpp` `GuestSignal_SIGSEGV`) for a signal delegator we
+   don't have. The VEH dump made this unmissable: guest RAX was ALREADY 0x31 in
+   x4 (SRA) and x20 held the HLT's RIP — the guest had fully executed and died
+   in the exit path. Fix: set the flag before `InitCore()`.
+
+Reusable lessons: (a) any FEXCore embedding on vibeos MUST provide overcommit
+handling for `MarkOvercommitRange` regions; (b) Context config flags that the
+dispatcher reads are emission-time — set them all before `InitCore()`; (c) a
+first-chance `AddVectoredExceptionHandler` + DbgPrint dumper is the go-to tool
+for faults inside FEX's runtime-emitted (unsymbolizable) code.
 
 ### Rung 2 wedge — RESOLVED (2026-07-08): three stacked bugs, all fixed
 
