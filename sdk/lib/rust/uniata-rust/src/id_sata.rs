@@ -1720,6 +1720,8 @@ pub unsafe extern "system" fn UniataAhciReset(HwDeviceExtension: PVOID, lChannel
     UniataAhciWriteChannelPort4(chan, IDX_AHCI_P_IE as ULONG, 0);
 
     if UniataAhciHardReset(HwDeviceExtension, lChannel, &mut signature) != 0 {
+        DbgPrint(b"[UNIATA] AhciReset ch=%u: HardReset FAILED sig=%08x\n\0".as_ptr().cast(),
+            lChannel, signature); // ahci marker
         i = 0;
         while i < (*deviceExtension).NumberLuns {
             UniataForgetDevice((*chan).lun[i as usize]);
@@ -1754,6 +1756,8 @@ pub unsafe extern "system" fn UniataAhciReset(HwDeviceExtension: PVOID, lChannel
         signature = UniataAhciSoftReset(HwDeviceExtension, lChannel, 0);
     }
 
+    DbgPrint(b"[UNIATA] AhciReset ch=%u: sig=%08x\n\0".as_ptr().cast(),
+        lChannel, signature); // ahci marker
     (*(*chan).lun[0]).DeviceFlags &=
         !(DFLAGS_ATAPI_DEVICE | DFLAGS_DEVICE_PRESENT | CTRFLAGS_AHCI_PM);
     match signature >> 16 {

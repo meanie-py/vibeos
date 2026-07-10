@@ -1315,12 +1315,12 @@ pub unsafe extern "system" fn HalpAdjustPCIResourceList(
     Status
 }
 
-// C common region — required in minihal (HalpFakePciBusHandler dispatch).
-// feedback_freeldr_clean_build_regression
-#[no_mangle]
 // PCI_COMMON_HDR_LENGTH = FIELD_OFFSET(PCI_COMMON_CONFIG, DeviceSpecific) = 64.
 const PCI_COMMON_HDR_LENGTH: u32 = 64;
 
+// C common region — required in minihal (HalpFakePciBusHandler dispatch).
+// feedback_freeldr_clean_build_regression
+#[no_mangle]
 pub unsafe extern "system" fn HalpAssignPCISlotResources(
     BusHandler: PBUS_HANDLER,
     RootHandler: PBUS_HANDLER,
