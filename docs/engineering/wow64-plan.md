@@ -215,9 +215,24 @@ The whole M2 path is behind VIBEOS_FEX staging, so mainline boot is unaffected
   filesystem redirection late in the phase.
 
 **Phase D — thunk generation at scale.** The hand table in B/C covers hello
-world; real apps need hundreds of Nt* thunks + wow64win.dll for win32k. Use
-the rustconv/bindgen machinery to GENERATE marshalers from our own syscall
-table (in-repo single source of truth) — this is where the Rust story pays.
+world; real apps need hundreds of Nt* thunks + wow64win.dll for win32k.
+
+*Tooling built (2026-07-10): `tools/wow64gen/`.* A re-runnable, deterministic
+generator (spec2def-class, NOT bindgen/rustconv — it reads a `.spec` *table*
+and emits C marshallers; no LLM). It parses `dll/ntdll/def/ntdll.spec` and emits
+one 32→64 thunk per `Nt*`: read the guest 32-bit arg dwords, widen to the host
+64-bit ABI (a 32-bit guest pointer IS a valid 64-bit pointer — VA < 4GB — so
+`ptr` widens by zero-extension), call the real 64-bit `Nt*`, return NTSTATUS.
+Current arm64 surface: 299 syscalls, 271 auto / 28 manual. Deep-marshalling
+cases (structs whose 32/64 layout differs — OBJECT_ATTRIBUTES, IO_STATUS_BLOCK
+Information, ...) can't be inferred from the `.spec`, so a curated
+`tools/wow64gen/manual.txt` forces them to loud `WOW64_NEEDS_MANUAL` stubs
+(never a silently-wrong auto thunk). Tests + docs: `test_wow64gen.py` (gated by
+`vibeos-cli check-tooling`), `README.md`. *Owed:* wire generation into the
+wow64.dll build + dispatch `Wow64ThunkTable[serviceNumber]` (blocked behind M2 —
+guest code must execute first), verify service-number alignment with the built
+i386 ntdll, then hand-write the 28 deep marshallers. This is where the Rust
+story pays for wow64win.dll (win32k) too.
 
 **Phase E — amd64 classic wow64cpu.** Same phases A–D infrastructure, CPU
 layer swapped: `wow64cpu.dll` doing the far-jmp 0x33 CS switch + 32↔64 stack
