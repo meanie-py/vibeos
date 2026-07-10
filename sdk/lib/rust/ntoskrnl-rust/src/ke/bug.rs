@@ -796,6 +796,10 @@ unsafe fn KiDisplayBlueScreen(
 // double banner on the Ex->WithTf path.
 static mut KiBannerDone: BOOLEAN = 0;
 
+// Flight-recorder sidecar prints exactly once per crash, independent of the
+// banner guard (which the KeBugCheckEx path pre-sets before reaching WithTf).
+static mut KiFlightrecDumped: BOOLEAN = 0;
+
 #[no_mangle]
 pub unsafe extern "system" fn KeBugCheckWithTf(
     BugCheckCode: ULONG,
@@ -1055,6 +1059,18 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
                 }
             }
         }
+    }
+
+    // Flight-recorder sidecar (Layer 3): dump the tail of the sync-event ring —
+    // the last gate/pushlock/WS-lock/lockdep operations before the crash, with
+    // their threads. For lost-wakeup / self-deadlock / ABBA bugchecks this is
+    // the smoking gun that a post-mortem backtrace alone can't show. OUTSIDE the
+    // KiBannerDone guard: the KeBugCheckEx path sets KiBannerDone before calling
+    // here, so anything gated on it never runs on a Rust-panic/Ex bugcheck. Own
+    // once-guard (KiFlightrecDumped) so it prints exactly once per crash.
+    if KiFlightrecDumped == 0 {
+        KiFlightrecDumped = 1;
+        super::flightrec::flightrec_dump_recent(32);
     }
 
     if BugCheckCode == POWER_FAILURE_SIMULATE {

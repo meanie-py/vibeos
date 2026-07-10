@@ -228,6 +228,16 @@ unsafe fn apply_token(tok: &[u8]) {
         // location + raw-PC backtrace) followed by BUGCHECK 0xE0525354
         // (panic_common::RUST_PANIC). Destructive by design — the boot dies.
         if val == b"1" {
+            // Seed a few recognizable flight-recorder events so the Layer-3
+            // crash sidecar (KeBugCheckWithTf -> flightrec_dump_recent) has
+            // content to format. The selftest fires at Mm Phase 0, before any
+            // real gate/pushlock traffic, so the ring is otherwise empty here.
+            // Sentinel obj/thr values (0xABCD.../0x1111...) make the seeded
+            // rows unmistakable in the [FLIGHTREC] tail. Destructive path only.
+            use crate::ke::flightrec;
+            flightrec::flightrec_log(flightrec::OP_GATE_PARK, 0xABCD_0001, 0x1111_0001, 0);
+            flightrec::flightrec_log(flightrec::OP_GATE_SIGNAL, 0xABCD_0001, 0x2222_0002, 0);
+            flightrec::flightrec_log(flightrec::OP_PL_WAKE, 0xABCD_0002, 0x3333_0003, 2);
             DbgPrint(
                 b"[TRIPWIRE] rust-panic selftest: panicking NOW (expect *** RUST PANIC + BUGCHECK 0xE0525354)\n\0"
                     .as_ptr(),

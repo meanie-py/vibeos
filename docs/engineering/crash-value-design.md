@@ -85,6 +85,41 @@ Changes here:
   dispatch→unwind roundtrip. Spawned fire-and-forget by userinit
   (`userinit.rs` wWinMain, cfg amd64/arm64). Serial: `[SEH-USER] … PASS`.
 
+## Layer 3 — flight-recorder sidecar (crash-time dump)
+
+The full Windows minidump-to-disk path stays stubbed (`KeInitializeCrashDumpHeader`
+returns STATUS_UNSUCCESSFUL; no dump device). What IS tractable and high-value is
+the **rich native sidecar** the brief asks for — dumped to serial/debugcon at
+bugcheck time, alongside the backtrace we already emit.
+
+Foundation already in tree: `ke/flightrec.rs` — a lock-free 16K-entry ring
+(`VIBEOS_FLIGHTREC`, 512KB .bss) of the last sync events (`gate-park/-signal`,
+`pushlock-park/-wake`, `ws-lock-excl`, `lockdep-selfdeadlock`, `lockdep-abba`),
+each `{seq, thread, object, op, data}`. Recorded serial-I/O-free (~10ns, relaxed
+atomics) so it doesn't perturb the races it captures. It had only a *per-object*
+census dump (`flightrec_dump_object`, for GDB/wedge triage) — nothing read it at
+crash time.
+
+Added here:
+- **`flightrec_dump_recent(limit)`** — dumps the tail of the ring (last N events
+  across ALL objects, oldest-first, so the final line is the last event before
+  the crash). Torn slots (racing a live writer) are skipped. Runs from the
+  bugcheck path — the record-path serial-I/O ban doesn't apply once we're halting.
+- **Wired into `KeBugCheckWithTf`** (`ke/bug.rs`), inside the once-only
+  `KiBannerDone` banner block, right after the stack backtrace. Every BUGCHECK and
+  RUST_PANIC now emits `[FLIGHTREC] --- last 32 of N sync events ---` with the
+  thread on each op. For the lost-wakeup / self-deadlock / ABBA bugcheck classes
+  (§9.13 WS-pushlock family, §9.24 gate corruption) this is the smoking gun a
+  post-mortem backtrace alone can't show: *who* signalled/parked on the object
+  last, in what order.
+- **`flightrec_op_name`** — the op→name table, now shared by both dumpers (the
+  census dump was missing the WS-lock/lockdep names).
+
+Validation: `smoke --arch amd64 --tripwire "RUSTPANIC_SELFTEST=1"` → the RUST
+PANIC report is now followed by the `[FLIGHTREC]` tail. (Sidecar content is
+boot-path sync traffic; by Mm Phase-0 selftest time the ring holds thousands of
+events, so the last-32 window is always populated.)
+
 ## WinDbg KD (design, in progress)
 
 Ground truth: `kd64-rust` (~12k LOC, full WinDbg state-manipulate protocol)

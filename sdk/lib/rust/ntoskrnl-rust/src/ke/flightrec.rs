@@ -103,6 +103,64 @@ pub fn flightrec_log(op: u32, object: usize, thread: usize, data: u32) {
     e.seq.store(seq + 1, Release); // last: readers treat mismatched seq as torn
 }
 
+/// Human name for an op code — shared by every dumper. Kept in sync with the
+/// OP_* constants above and debug_block.py OP_NAMES.
+pub fn flightrec_op_name(op: u32) -> *const u8 {
+    match op {
+        OP_GATE_PARK => b"gate-park\0".as_ptr(),
+        OP_GATE_SATISFIED => b"gate-satisfied\0".as_ptr(),
+        OP_GATE_SIGNAL => b"gate-signal\0".as_ptr(),
+        OP_PL_PARK => b"pushlock-park\0".as_ptr(),
+        OP_PL_SATISFIED => b"pushlock-satisfied\0".as_ptr(),
+        OP_PL_WAKE => b"pushlock-wake\0".as_ptr(),
+        OP_WS_LOCK_EXCL => b"ws-lock-excl\0".as_ptr(),
+        OP_WS_UNLOCK_EXCL => b"ws-unlock-excl\0".as_ptr(),
+        OP_LOCKDEP_SELFDEADLOCK => b"lockdep-selfdeadlock\0".as_ptr(),
+        OP_LOCKDEP_ABBA => b"lockdep-abba\0".as_ptr(),
+        _ => b"?\0".as_ptr(),
+    }
+}
+
+/// Flight-recorder tail dump for the crash sidecar: print the most recent
+/// `limit` sync events across ALL objects, oldest-first (so the last line is
+/// the final event before the crash). Intended to run from the bugcheck path —
+/// we are already halting, so the serial I/O ban on the record path does not
+/// apply. Best-effort: torn slots (racing a writer) are skipped, not trusted.
+pub fn flightrec_dump_recent(limit: usize) {
+    let cursor = VIBEOS_FLIGHTREC.cursor.load(Relaxed);
+    if cursor == 0 {
+        crate::dbg_print!(b"[FLIGHTREC] (empty -- no sync events recorded)\n\0");
+        return;
+    }
+    let span = core::cmp::min(cursor, FLIGHTREC_ENTRIES as u64);
+    let want = core::cmp::min(limit as u64, span);
+    crate::dbg_print!(
+        b"[FLIGHTREC] --- last %lu of %lu sync events (oldest first) ---\n\0",
+        want as u32,
+        cursor as u32,
+    );
+    // Stored seq is 1-based; the newest is `cursor`, so the window is
+    // (cursor-want, cursor]. Walk it oldest-first.
+    let mut seq = cursor - want + 1;
+    while seq <= cursor {
+        let e = &VIBEOS_FLIGHTREC.entries[((seq - 1) as usize) & (FLIGHTREC_ENTRIES - 1)];
+        // Skip a slot the writer already recycled (its seq moved past ours).
+        if e.seq.load(Relaxed) == seq {
+            let opdata = e.opdata.load(Relaxed);
+            let op = (opdata & 0xFF) as u32;
+            crate::dbg_print!(
+                b"[FLIGHTREC]   seq=%lu %s obj=%p thr=%p data=%lu\n\0",
+                seq as u32,
+                flightrec_op_name(op),
+                e.object.load(Relaxed) as *const (),
+                e.thread.load(Relaxed) as *const (),
+                (opdata >> 8) as u32,
+            );
+        }
+        seq += 1;
+    }
+}
+
 /// Census helper: print (via dbg_print) the most recent `limit` events for
 /// `object`, newest last. PASSIVE-level only (it prints).
 pub fn flightrec_dump_object(object: usize, limit: usize) {
@@ -127,19 +185,10 @@ pub fn flightrec_dump_object(object: usize, limit: usize) {
         let e = &VIBEOS_FLIGHTREC.entries[((seq - 1) as usize) & (FLIGHTREC_ENTRIES - 1)];
         let opdata = e.opdata.load(Relaxed);
         let op = (opdata & 0xFF) as u32;
-        let name: *const u8 = match op {
-            OP_GATE_PARK => b"gate-park\0".as_ptr(),
-            OP_GATE_SATISFIED => b"gate-satisfied\0".as_ptr(),
-            OP_GATE_SIGNAL => b"gate-signal\0".as_ptr(),
-            OP_PL_PARK => b"pushlock-park\0".as_ptr(),
-            OP_PL_SATISFIED => b"pushlock-satisfied\0".as_ptr(),
-            OP_PL_WAKE => b"pushlock-wake\0".as_ptr(),
-            _ => b"?\0".as_ptr(),
-        };
         crate::dbg_print!(
             b"[FLIGHTREC]   seq=%u %s obj=%p thr=%p data=%u\n\0",
             seq as u32,
-            name,
+            flightrec_op_name(op),
             e.object.load(Relaxed) as *const (),
             e.thread.load(Relaxed) as *const (),
             (opdata >> 8) as u32,
