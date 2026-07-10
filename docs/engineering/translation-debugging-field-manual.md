@@ -4191,6 +4191,25 @@ client PEB), amplified by the CSR API loop lacking a DUMMY_PSEH-safe guard.
 Whole path is behind VIBEOS_FEX staging → mainline boot unaffected (verified: a
 clean arm64 smoke with the FEX artifacts stripped from the ramdisk is green).
 
+**(4) STALE-RAMDISK TRAP — a non-FEX gate can hit (3) as a false-red.**
+`mkramdisk --refresh` (what `vibeos-cli build`/`gate` use) re-stages freshly-built
+artifacts into the *existing* `ramdisk.img` — it ADDS, it does NOT prune. So once a
+`VIBEOS_FEX=1` run has staged `system32\{fexprobe,wow64probe}.exe` +
+`syswow64\{hello32.exe,ntdll.dll}`, those binaries persist across every subsequent
+plain `gate`/`smoke`. Winlogon's probes (`TryStartFexProbe`/`TryStartWow64Probe`/
+`TryStartWow64Hello`) are gated on *file existence*, so they now fire on a normal
+boot, launch the WoW64 chain, and death-spiral into the (3) csrss `0xF4` — making
+arm64 look regressed when the code is fine. Tells: `[WINLOGON] fexprobe.exe
+created` / `hello32.exe (i386 guest) created` on a boot you didn't build with
+`VIBEOS_FEX=1`; the `0xF4` P2 EPROCESS resolves to csrss. **Fix:** rebuild the
+ramdisk FRESH — `env -u VIBEOS_FEX bash qemu/mkramdisk.sh` (no `--refresh` ⇒
+`rm -f ramdisk.img` + repopulate). Confirm clean with
+`mdir -i qemu/ramdisk.img ::/reactos/system32 | grep -iE 'fexprobe|wow64probe'`
+(want no hits). Then arm64 smokes 3/3 green. Cost this ~1 gate cycle on 2026-07-10
+chasing a bogus `ntoskrnl+0x1CE20` (the smoke tool's PC annotation used the wrong
+module base — real file addr = `PC - reloc`; gdb `find-kbase` gives `reloc`, then
+symbolicate against `symbols-<arch>.tsv` which is ImageBase-relative).
+
 ### 9.46 (RESOLVED 2026-07-10) WHPX x86 bring-up: AHCI boot CD dead end-to-end — SIX stacked never-executed-translation bugs + UEFI firmware gaps
 
 **Symptom.** WHPX (`VIBEOS_QEMU_WINDOWS_ACCEL=whpx`) was shelved: i386 spent
