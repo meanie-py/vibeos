@@ -706,9 +706,27 @@ function(add_cargo_module _target _crate _output)
     if(_acm_KIND MATCHES "^(kernelexe|kerneldll|kernelmodedriver|win32dll)$")
         get_property(_kern_srcs GLOBAL PROPERTY _REACTOS_CARGO_KERN_SRCS)
         if(NOT _kern_srcs)
+            # *.c globs: the cc-rs `c_shims` sources (reactos-link) also live
+            # outside the rust workspace — pseh/rtl/crt shims and per-module C
+            # like dll/ntdll/seh_poc_user.c. Same masking class as the .S files:
+            # cargo rerun-if-changed's them, but without a ninja DEPENDS the
+            # cargo link is never re-invoked (a seh_poc_user.c edit shipped a
+            # stale ntdll.dll 2026-07-08).
+            # *.spec: reactos-link's spec2def() input — the module's export
+            # table. Same masking class as the .S/.c files: cargo
+            # rerun-if-changed's the spec, but without a ninja DEPENDS the
+            # cargo link is never re-invoked (an ntdll.spec forwarder edit
+            # shipped a stale ntdll.dll 2026-07-09, wow64 Phase B).
             file(GLOB_RECURSE _kern_srcs CONFIGURE_DEPENDS
                 ${REACTOS_SOURCE_DIR}/ntoskrnl/*.S ${REACTOS_SOURCE_DIR}/ntoskrnl/*.inc
-                ${REACTOS_SOURCE_DIR}/hal/*.S ${REACTOS_SOURCE_DIR}/hal/*.inc)
+                ${REACTOS_SOURCE_DIR}/hal/*.S ${REACTOS_SOURCE_DIR}/hal/*.inc
+                ${REACTOS_SOURCE_DIR}/dll/ntdll/*.c
+                ${REACTOS_SOURCE_DIR}/dll/ntdll/def/*.spec
+                ${REACTOS_SOURCE_DIR}/ntoskrnl/*.spec
+                ${REACTOS_SOURCE_DIR}/win32ss/*.spec
+                ${REACTOS_SOURCE_DIR}/sdk/lib/pseh/*.c
+                ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/*.c
+                ${REACTOS_SOURCE_DIR}/sdk/lib/crt/*.c)
             set_property(GLOBAL PROPERTY _REACTOS_CARGO_KERN_SRCS "${_kern_srcs}")
         endif()
         list(APPEND _srcs ${_kern_srcs})

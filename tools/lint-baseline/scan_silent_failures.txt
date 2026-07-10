@@ -1131,8 +1131,8 @@ sdk/lib/rust/network/src/lib.rs:892: [UNWRAP] .unwrap() — panics on Err/None i
 sdk/lib/rust/network/src/tests.rs:203: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntdll-rust/src/ldr/ldrapi.rs:802: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntdll-rust/src/ldr/ldrapi.rs:983: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:1248: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:2487: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:1274: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:2582: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntdll-rust/src/ldr/ldrutils.rs:2109: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntdll-rust/src/ldr/ldrutils.rs:236: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/session.rs:280: [UNWRAP] .unwrap() — panics on Err/None in kernel code
@@ -1238,7 +1238,7 @@ sdk/lib/rust/rossym-rust/src/fromfile.rs:68: [UNWRAP] .unwrap() — panics on Er
 sdk/lib/rust/rossym-rust/src/fromfile.rs:72: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/rossym-rust/src/fromfile.rs:76: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/rossym-rust/src/fromraw.rs:40: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/rtl-diag/src/vectoreh.rs:66: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/rtl-diag/src/vectoreh.rs:76: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/rtl-misc/src/memstream.rs:299: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/rtl-misc/src/registry.rs:1152: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/rtl-misc/src/registry.rs:310: [UNWRAP] .unwrap() — panics on Err/None in kernel code

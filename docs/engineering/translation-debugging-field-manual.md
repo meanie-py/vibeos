@@ -4034,6 +4034,79 @@ to `KeUserExceptionDispatcher` (`ke/arm64/stubs.rs:1079+`), and
 missing. Non-fatal to boot (sehtest is fire-and-forget; arm64 desktop still
 reaches shell ready). Design: `docs/engineering/crash-value-design.md`.
 
+### 9.43 (2026-07-09) Un-gating a `-version=0x600+` export in a `.spec` shifts ALL later ORDINALS → breaks by-ordinal importers (BUGCHECK 0x4C `0xc0000139`)
+
+**Symptom.** After making base `kernel32.dll` export a few previously
+version-gated Vista symbols (dropped `-version=0x600+` from ~7 lines to unblock a
+foreign binary's imports), **i386 AND amd64 deterministically BUGCHECK
+`0x0000004C (0xc0000139, …)`** — `STATUS_ENTRYPOINT_NOT_FOUND` raised as a fatal
+hard error — early, at csrss `LoadServerDll 'winsrv'`. arm64 was unaffected. The
+build is green; only boot breaks; a re-smoke reproduces 3/3 (not a flake).
+
+**Why.** `spec2def` assigns export ordinals **sequentially over the entries it
+actually EMITS** — `Name=Name@N @<ordinal>` in the generated `.def`, packed with
+no gaps. Version-excluded lines (those filtered out by `DLL_EXPORT_VERSION`,
+default **`0x502`**) reserve **no** ordinal slot. So un-gating a line *inserts* it
+at its alphabetical position and **shifts every later export's ordinal by +1**
+(cumulatively +N). Any module that binds that DLL **by ordinal** (no name) now
+calls the wrong function → wrong-signature call / entrypoint past the table →
+`0xc0000139`. arm64 survived only because nothing binds kernel32 by ordinal
+there; some x86 boot DLL does.
+
+**Confirm.** `git stash push -m … <the.spec>` → rebuild that one arch → smoke. If
+green with the spec reverted, it's the ordinal shift, not your logic. The `.def`
+proves it: `grep '@[0-9]' build-<arch>/…/<dll>.def` shows the packed sequential
+ordinals; diff the ordinal of any post-insertion symbol vs master.
+
+**Fix menu (pick by intent).**
+- **Only one arch needs the new exports** (the FEX case: fexprobe is arm64-only) →
+  gate the added lines `-arch=arm64` so the *other* arches' ordinal tables stay
+  byte-identical to master. Cheapest, zero-risk for the untouched arches.
+- **All arches need them** → pin **explicit ordinals** on the new lines
+  (`<N> stdcall Name(...)` with N above the current max) so nothing after them
+  shifts; or add them at the very end of the spec; or rebuild the by-ordinal
+  importer against the new implib. Never plain-ungate a mid-file line on an arch
+  that has by-ordinal importers.
+
+**Rule of thumb.** Adding a *named* export is NOT free — in an auto-ordinal
+(`@ …`) spec it renumbers everything downstream. Treat any ungate/insert in a
+widely-imported core DLL's spec (`kernel32`, `ntdll`, `user32`, `gdi32`) as an
+ABI change and gate/pin it. Additive-by-name ≠ additive-by-ordinal.
+
+### 9.44 (2026-07-09) A DLL "loads fine" but crashes at PC=0xFFBADD11 — our loader POISON-SNAPS missing imports instead of failing the load
+
+**Symptom.** `LoadLibrary` + `GetProcAddress` on a foreign DLL (here:
+`libwow64fex.dll`, wow64 Phase B) succeed, so the import surface looks
+complete — then the first *call* to an unresolved import dies with
+`STATUS_ILLEGAL_INSTRUCTION`/PC-alignment fault at **PC=0x00000000FFBADD11**,
+X16 also `0xffbadd11` (arm64: the crash is a `br x16` through the import
+veneer; on x86 you'd see a call to the same poison).
+
+**Root.** Our ntdll loader intentionally snaps by-name import failures
+NON-FATALLY: the IAT slot gets `0xffbadd11` and the load proceeds
+(`sdk/lib/rust/ntdll-rust/src/ldr/ldrpe.rs:849`, inherited from ReactOS
+`dll/ntdll/ldr/ldrpe.c:1150`). Great for booting a system with stub gaps,
+terrible for diagnosing a new vendor DLL: "loads + resolves" proves nothing
+about individual imports.
+
+**Diagnose (one command).** Diff the DLL's imports against the exporter:
+`llvm-objdump -p <dll> | <extract ntdll-imported names>` vs
+`llvm-objdump -p build-<arch>/dll/ntdll/ntdll.dll` export list, `comm -23`.
+Phase B's gap was `_errno`, `atan2`, `tan` — CRT helpers Wine/Win10 ntdll
+exports that our 0x502 baseline never had.
+
+**Fix pattern.** Arch-gated spec **forwarders to msvcrt** cost zero code:
+`@ cdecl -arch=arm64 _errno() msvcrt._errno` (etc.). §9.43 ordinal discipline
+applies — arch-gating keeps other arches' ordinal tables byte-identical.
+
+**Trap within the trap.** ntdll ships via the CARGO link (`add_cargo_module`),
+and its ninja DEPENDS didn't include `*.spec` — the spec edit regenerated the
+cmake-side implib def but ninja never re-invoked cargo, silently shipping a
+stale ntdll.dll ("forwarders added, still crashes"). Fixed by adding the spec
+globs to `_REACTOS_CARGO_KERN_SRCS` (sdk/cmake/gcc.cmake); verify with
+`llvm-readobj --coff-exports build-arm64/dll/ntdll/ntdll.dll | grep ForwardedTo`
+before booting.
+
 ### 9.45 (RESOLVED 2026-07-09) arm64 BUGCHECK 0x23 during first-logon profile creation — untranslated fastfat `FatOpenExistingDirectory` stub
 
 **Symptom.** arm64 boots to `shell ready`, then bugchecks *after the marker*:
@@ -4073,6 +4146,69 @@ real C body is still on disk (`create.c` et al, kept per the never-delete rule)
 and a sibling in `fastfat-rust` shows the translation idiom. These are latent
 landmines on arm64 (the only fastfat-backed boot volume); a timing change
 elsewhere can expose one that was dormant for months.
+
+### 9.47 (2026-07-10) WoW64 process bring-up: two loader-ordering traps + a csrss-death-on-connect blocker
+
+Context: launching a real i386 PE as a WoW64 process on arm64 (wow64-plan.md
+Phase C M2). Three findings, in the order they bite as you push a wow64 process
+through process init:
+
+**(1) hello32 hangs in kernel32 `ConDllInitialize`; exit code 0x103.** A CUI
+(console-subsystem) i386 image makes kernel32's DllMain call `ConDllInitialize`
+which allocates a console via csrss. For a winlogon-spawned process with no
+console to inherit, that connect blocks forever. The tell: winlogon's
+`WaitForSingleObject(hProc, 30000)` times out, then `GetExitCodeProcess` returns
+**0x103 = STILL_ACTIVE** (not a crash code — the process is still alive, hung).
+Locate with the built-in `K32_DLLMAIN_TRACE` (kernel32-rust dllmain.rs): it
+prints `pre-ConDllInitialize` but never `post-`. **Fix:** build the guest GUI,
+not CUI (`-Wl,--subsystem,windows`). The FEX GUI probes work precisely because
+GUI skips console init. General rule: a `0x103` "exit code" from a spawned
+process means it never exited — look for a hang, not a fault.
+
+**(2) A dependency that imports kernel32 must not be `LdrLoadDll`'d from early
+process init.** The vendored CPU dll (libwow64fex.dll) imports kernel32.
+Loading it from a divert placed BEFORE `LdrpRunInitializeRoutines` runs
+kernel32's DllMain re-entrantly, under the loader lock, before the process is
+registered — and hangs. **Fix:** do the wow64 handoff AFTER
+`LdrpRunInitializeRoutines` (ldrinit.rs), where kernel32 has already initialized
+at the normal time. Detect the wow64 process early (ProcessWow64Information
+query → flag) but defer the actual `LdrLoadDll(wow64.dll)` + `Wow64LdrpInitialize`
+call to the late point. Mirrors Win10's LdrpLoadWow64 timing.
+
+**(3) [OPEN] csrss dies (BUGCHECK 0xF4) when a wow64 process connects to
+basesrv.** After kernel32 DllMain completes, the wow64 process's
+`CsrClientConnectToServer` to basesrv (serial: `[CSRSRV] CliCon: ServerId=2
+InfoSize=1664`) makes **csrss raise exception 0x6BA via `RtlRaiseException`
+(ntdll+0x6cf8) inside a CSR API handler**. With DUMMY_PSEH the handler's
+`_SEH2_TRY` is dead code, so the exception is unhandled and csrss — a critical
+process — dies → `BUGCHECK 0xF4 (0x3, <csrss EPROCESS>, ...)`. Serial signature:
+`[UEXC] Code=0x6BA ... Proc=csrss.exe` immediately before the 0xF4. Note the
+0xF4 is often FOLLOWED by a secondary `0x1E (0xc0000005, KeGetBugMessageText)` —
+a fault while *printing* the first bugcheck; always find the FIRST bugcheck.
+This is a csrss/basesrv wow64-connect bug (likely basesrv reading a wow64 field
+— `PebAddressWow64` is hard-0, kernel32-rust proc_create.rs:2120 TODO — or the
+client PEB), amplified by the CSR API loop lacking a DUMMY_PSEH-safe guard.
+Whole path is behind VIBEOS_FEX staging → mainline boot unaffected (verified: a
+clean arm64 smoke with the FEX artifacts stripped from the ramdisk is green).
+
+**(4) STALE-RAMDISK TRAP — a non-FEX gate can hit (3) as a false-red.**
+`mkramdisk --refresh` (what `vibeos-cli build`/`gate` use) re-stages freshly-built
+artifacts into the *existing* `ramdisk.img` — it ADDS, it does NOT prune. So once a
+`VIBEOS_FEX=1` run has staged `system32\{fexprobe,wow64probe}.exe` +
+`syswow64\{hello32.exe,ntdll.dll}`, those binaries persist across every subsequent
+plain `gate`/`smoke`. Winlogon's probes (`TryStartFexProbe`/`TryStartWow64Probe`/
+`TryStartWow64Hello`) are gated on *file existence*, so they now fire on a normal
+boot, launch the WoW64 chain, and death-spiral into the (3) csrss `0xF4` — making
+arm64 look regressed when the code is fine. Tells: `[WINLOGON] fexprobe.exe
+created` / `hello32.exe (i386 guest) created` on a boot you didn't build with
+`VIBEOS_FEX=1`; the `0xF4` P2 EPROCESS resolves to csrss. **Fix:** rebuild the
+ramdisk FRESH — `env -u VIBEOS_FEX bash qemu/mkramdisk.sh` (no `--refresh` ⇒
+`rm -f ramdisk.img` + repopulate). Confirm clean with
+`mdir -i qemu/ramdisk.img ::/reactos/system32 | grep -iE 'fexprobe|wow64probe'`
+(want no hits). Then arm64 smokes 3/3 green. Cost this ~1 gate cycle on 2026-07-10
+chasing a bogus `ntoskrnl+0x1CE20` (the smoke tool's PC annotation used the wrong
+module base — real file addr = `PC - reloc`; gdb `find-kbase` gives `reloc`, then
+symbolicate against `symbols-<arch>.tsv` which is ImageBase-relative).
 
 ### 9.46 (RESOLVED 2026-07-10) WHPX x86 bring-up: AHCI boot CD dead end-to-end — SIX stacked never-executed-translation bugs + UEFI firmware gaps
 
@@ -4155,3 +4291,65 @@ refire), and `kvm-i8259: 11: 2` (⇒ exactly two edges ever delivered). GDB
   issue time, printed in-path) → controller asserting (QMP `info pic`: IRR) →
   router/trigger config (ELCR for PIC, RTE for IOAPIC) → delivered-but-stuck
   (ISR in-service bit; livelock vs deadlock via a moving PC in repeated `bt`).
+
+### 9.48 (2026-07-10) arm64 cross-module table-SEH silently drops every `__except` reached through a callee whose call site sits at its epilog boundary
+
+**Symptom.** A standalone user exe (`base/system/sehtest/sehtest.exe`) died at its
+FIRST test — `RaiseException(0xE0DEAD02)` inside a `__try` went **second-chance →
+`[UEXC-KILL] Proc=sehtest.exe`, `exit=0xe0dead02`** — while the in-ntdll SEH tripwire
+(`seh_poc_user`, both probes) passed. Same status code, same dispatch path; the only
+difference was *whose frames the unwinder walked*.
+
+**Oracle.** A per-frame probe in `RtlDispatchException` (arm64) gated to the raise code
+showed the frame walk **stuck**: frame#1 = `kernel32!RaiseException`, and
+`RtlVirtualUnwind` returned the *same* PC and *same* EstablisherFrame every iteration —
+200 identical spins → "unhandled" → second chance. `interpret_codes` was a complete
+no-op for that one function (never touched SP or X30), so `Pc = X[30]` fell back to the
+stale return-into-RaiseException address.
+
+**Root cause.** `kernel32!RaiseException`'s `.xdata`: `FuncLen=0xd0, E=1,
+EpilogStartIndex=2`, codes `e2 15 | 55 | d0 14 | 0c | e4` (add_fp, save_fplr, save_reg
+x19, alloc, end). The fault-return PC was at offset **0xc0 = exactly the epilog's first
+instruction** (a `bl RtlRaiseException` immediately followed by the frame teardown —
+common when the call is the last real work in the function). The E==1 single-epilog
+branch in `unwind_decode::virtual_unwind_xdata` computed how many epilog codes had
+"already executed" as `into = (func_len - pc)/4` — counting from the **wrong end**. At
+the epilog's first instruction that gave `into=4` (skip the whole epilog to land on the
+trailing `nop`/`end`) instead of `into=0` (apply the full epilog). The correct delta is
+`(pc - epi_start_off)/4`, which the E==0 scope branch a few lines below **already used**.
+
+**Fix.** One line in `sdk/lib/rust/rtl-except/src/arm64/unwind_decode.rs`:
+`into = (pc_off_from_start - epi_start_off) / 4` where `epi_start_off = func_len_bytes -
+epi_bytes`. Verified: `sehtest` sw-raise KILL→**PASS**, hw-fault **PASS** (closes the
+§9.44-family callee-saved residual too — the multi-frame `__except` now resumes with the
+right nonvolatiles).
+
+**Why it hid so long.** `seh_poc_user` only ever unwinds *ntdll* frames whose call sites
+are followed by post-return work, so their fault PC never lands on an epilog boundary —
+the exact case the buggy formula got wrong. It takes a cross-module chain through a thin
+`bl`-then-teardown shim (like `RaiseException`) to trip it. **Lesson:** any "the unwind
+loops on one frame / `RtlVirtualUnwind` returns the same PC" symptom is an epilog-index
+miscalc — dump that function's `.xdata` (`E`, `EpilogStartIndex`, codes) and check the
+`into` delta against `pc - epi_start`, not `func_end - pc`.
+
+**Follow-on (RESOLVED same day) — the `__finally` half: EstablisherFrame must be x29,
+not SP, for frame-pointer functions.** After the epilog fix, `sehtest` was 2/3:
+`finally: ran=0 caught=1`. A gated probe in `__C_specific_handler` proved the finally
+funclet *was* called (`-> calling FINALLY scope[0] handler=0x…1248 frame=0x12FE90`) —
+it just wrote `ran_finally` into a dead stack word. The funclet (`?dtor$9`) does
+`mov x29, x1; … str w9, [x29-4]`, and `TestFinally` stores `ran_finally` at `x29-4`
+where its `x29 = post-prologue-SP + 0x10` (`add x29, sp, #0x10`). But
+`virtual_unwind_xdata` set `*EstablisherFrame = (*Context).Sp` unconditionally, so we
+passed SP (`0x12FE90`) where the funclet needed x29 (`0x12FEA0`) — a 0x10 miss, wrong
+slot. `__except` was immune because it resumes via `RtlUnwindEx` → `RtlRestoreContext`
+(full target context, real x29), not via the establisher argument — which is why only
+`__finally`/filters-that-read-parent-locals broke. **Fix:** if the prolog establishes a
+frame pointer (scan unwind codes for `set_fp` 0xE1 / `add_fp` 0xE2), report
+`EstablisherFrame = x29` (captured before `interpret_codes` restores the caller's x29),
+else SP — mirrors Wine's amd64 `RtlVirtualUnwind` (`frame_reg ? frame_reg_value : Rsp`).
+Packed frames need no equivalent: a packed entry (Flag==2) carries no language handler,
+so its establisher is never handed to a funclet. Result: `sehtest` **RESULT: PASS**
+(sw-raise + finally + hw-fault all green, `exit=0x0`). **Lesson:** "the funclet ran but
+the local didn't change" ⇒ EstablisherFrame/frame-base mismatch, not a missing call —
+disassemble the funclet, see what base+offset it writes, and check it against the
+function's own frame-pointer offset.

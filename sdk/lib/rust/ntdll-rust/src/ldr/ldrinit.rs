@@ -191,6 +191,30 @@ unsafe fn RtlGetProcessHeap() -> PVOID {
     (*NtCurrentPeb()).ProcessHeap
 }
 
+/// True if the UTF-16 image path (len in chars) ends with "smss.exe"
+/// (ASCII, case-insensitive). Used only to gate the arm64 FEX rung-0e
+/// self-test to the first user process.
+#[cfg(target_arch = "aarch64")]
+unsafe fn unicode_tail_is_smss(buf: *const u16, len: usize) -> bool {
+    const NEEDLE: &[u8] = b"smss.exe";
+    if buf.is_null() || len < NEEDLE.len() {
+        return false;
+    }
+    let start = len - NEEDLE.len();
+    for (i, &nc) in NEEDLE.iter().enumerate() {
+        let c = *buf.add(start + i);
+        let lc = if (b'A' as u16..=b'Z' as u16).contains(&c) {
+            c + 32
+        } else {
+            c
+        };
+        if lc != nc as u16 {
+            return false;
+        }
+    }
+    true
+}
+
 /// `RtlInitEmptyUnicodeString` — FORCEINLINE in rtlfuncs.h (no exported symbol).
 /// Shadows the bindgen extern decl (which has no backing symbol) so callers
 /// inline instead of emitting an unresolved reference.
@@ -285,6 +309,8 @@ rtl_constant_string!(
 );
 rtl_constant_string!(Wow64OptionsString, WOW64_OPTIONS_STRING_BUF, "");
 rtl_constant_string!(NtDllString, NTDLL_STRING_BUF, "ntdll.dll");
+#[cfg(target_arch = "aarch64")]
+rtl_constant_string!(Wow64DllString, WOW64_DLL_STRING_BUF, "wow64.dll");
 rtl_constant_string!(Kernel32String, KERNEL32_STRING_BUF, "kernel32.dll");
 // C declares LdrpDotLocal `const` but it's only ever read; keep it as the
 // same mutable-static shape as the rest for uniformity.
@@ -2290,6 +2316,37 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
         // FIXME
     }
 
+    /* WoW64 (Phase C): detect a WoW64 process early (i386 image on an arm64
+     * host — EPROCESS.Wow64Process/PEB32 set by MmCreatePeb) but DEFER the
+     * actual divert. The vendored CPU dll (libwow64fex) imports kernel32, so
+     * the wow64.dll load below must happen AFTER LdrpRunInitializeRoutines has
+     * initialized kernel32 at the normal time (registering the process with
+     * csrss) — loading it earlier runs kernel32's DllMain re-entrantly under
+     * the loader lock and hangs. So we only set a flag here; the handoff is
+     * right after the init routines run. Mirrors Win10's LdrpLoadWow64 timing. */
+    #[cfg(target_arch = "aarch64")]
+    let IsWow64Process = {
+        extern "system" {
+            fn NtQueryInformationProcess(
+                ProcessHandle: HANDLE,
+                ProcessInformationClass: u32,
+                ProcessInformation: PVOID,
+                ProcessInformationLength: ULONG,
+                ReturnLength: PULONG,
+            ) -> NTSTATUS;
+        }
+        const PROCESS_WOW64_INFORMATION: u32 = 26;
+        let mut Peb32Ptr: ULONG_PTR = 0;
+        let QueryStatus = NtQueryInformationProcess(
+            -1isize as HANDLE,
+            PROCESS_WOW64_INFORMATION,
+            core::ptr::addr_of_mut!(Peb32Ptr) as PVOID,
+            core::mem::size_of::<ULONG_PTR>() as ULONG,
+            core::ptr::null_mut(),
+        );
+        NT_SUCCESS(QueryStatus) && Peb32Ptr != 0
+    };
+
     if (*NtHeader).OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI as USHORT
         || (*NtHeader).OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI as USHORT
     {
@@ -2332,8 +2389,21 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
         Kernel32BaseQueryModuleData = core::mem::transmute(FunctionAddress);
     }
 
-    /* Walk the IAT and load all the DLLs */
-    ImportStatus = LdrpWalkImportDescriptor(LdrpDefaultPath.Buffer, LdrpImageEntry);
+    /* Walk the IAT and load all the DLLs. For a WoW64 process the image is
+     * i386 — its imports are 32-bit and must be resolved by the 32-bit loader
+     * running under emulation, NOT here against 64-bit modules. Skip. */
+    #[cfg(target_arch = "aarch64")]
+    {
+        if IsWow64Process {
+            ImportStatus = STATUS_SUCCESS;
+        } else {
+            ImportStatus = LdrpWalkImportDescriptor(LdrpDefaultPath.Buffer, LdrpImageEntry);
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        ImportStatus = LdrpWalkImportDescriptor(LdrpDefaultPath.Buffer, LdrpImageEntry);
+    }
 
     /* Check if relocation is needed */
     if (*Peb).ImageBaseAddress != (*NtHeader).OptionalHeader.ImageBase as PVOID {
@@ -2473,6 +2543,42 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
         return Status;
     }
 
+    /* WoW64 (Phase C) handoff — AFTER init routines so kernel32 (pulled in by
+     * the CPU dll libwow64fex) is already initialized at the normal time.
+     * Loads wow64.dll and calls Wow64LdrpInitialize, which never returns (it
+     * drives the i386 side under emulation). Everything below here in normal
+     * process init — the i386 exe's entry, etc. — is the 32-bit loader's job
+     * inside emulation, not ours. Mirrors Win10's LdrpLoadWow64. */
+    #[cfg(target_arch = "aarch64")]
+    if IsWow64Process {
+        const STATUS_ENTRYPOINT_NOT_FOUND: NTSTATUS = 0xC000_0139u32 as NTSTATUS;
+        DbgPrint(b"[LDR] WoW64 process: init routines done, loading wow64.dll\n\0".as_ptr() as *const i8);
+        let mut Wow64Base: PVOID = core::ptr::null_mut();
+        Status = LdrLoadDll(
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            &mut Wow64DllString,
+            &mut Wow64Base,
+        );
+        if !NT_SUCCESS(Status) {
+            DbgPrint(b"[LDR] WoW64: wow64.dll load FAILED 0x%08lx\n\0".as_ptr() as *const i8, Status);
+            return Status;
+        }
+        let mut Wow64InitName: ANSI_STRING = core::mem::zeroed();
+        RtlInitAnsiString(&mut Wow64InitName, b"Wow64LdrpInitialize\0".as_ptr() as PCSZ);
+        let mut Wow64InitAddr: PVOID = core::ptr::null_mut();
+        Status = LdrGetProcedureAddress(Wow64Base, &mut Wow64InitName, 0, &mut Wow64InitAddr);
+        if !NT_SUCCESS(Status) || Wow64InitAddr.is_null() {
+            DbgPrint(b"[LDR] WoW64: Wow64LdrpInitialize not found (0x%08lx)\n\0".as_ptr() as *const i8, Status);
+            return STATUS_ENTRYPOINT_NOT_FOUND;
+        }
+        let Wow64LdrpInitialize: unsafe extern "system" fn(PCONTEXT) =
+            core::mem::transmute(Wow64InitAddr);
+        Wow64LdrpInitialize(Context);
+        DbgPrint(b"[LDR] WoW64: Wow64LdrpInitialize RETURNED\n\0".as_ptr() as *const i8);
+        return STATUS_INVALID_IMAGE_FORMAT;
+    }
+
     /* Notify Shim Engine */
     if g_ShimsEnabled != 0 {
         type SeInstallAfterInitFn =
@@ -2483,8 +2589,10 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     }
 
     /* Check if we have a user-defined Post Process Routine */
-    if NT_SUCCESS(Status) && (*Peb).PostProcessInitRoutine.is_some() {
-        ((*Peb).PostProcessInitRoutine.unwrap())();
+    if NT_SUCCESS(Status) {
+        if let Some(PostProcessInit) = (*Peb).PostProcessInitRoutine {
+            PostProcessInit();
+        }
     }
 
     /* Close the key if we have one opened */
@@ -2575,6 +2683,32 @@ pub unsafe extern "system" fn LdrpInit(
 
         if NT_SUCCESS(LoaderStatus) {
             _InterlockedIncrement(core::ptr::addr_of_mut!(LdrpProcessInitialized));
+
+            /* FEX bring-up rung 0e: user-mode fault-delivery self-test, ARMED
+             * as a permanent arm64 regression tripwire (both probes PASS + boot
+             * green, 2026-07-08 — the earlier "destabilizes smss" wedge was the
+             * RtlUnwindEx missing ContextRecord sync, fixed in rtl-except).
+             * Gated to smss.exe; a regression prints [SEH-POC-U] FAIL/CORRUPT
+             * on serial or kills smss, which the arm64 smoke catches. Results:
+             * docs/engineering/fex-bringup-plan.md rung 0e. arm64 only (the
+             * shim is arch-gated in ntdll-cargo/build.rs). */
+            #[cfg(target_arch = "aarch64")]
+            {
+                const SEH_POC_U_ARMED: bool = true;
+                let pp = (*Peb).ProcessParameters;
+                if SEH_POC_U_ARMED
+                    && !pp.is_null()
+                    && unicode_tail_is_smss(
+                        (*pp).ImagePathName.Buffer,
+                        ((*pp).ImagePathName.Length / 2) as usize,
+                    )
+                {
+                    extern "C" {
+                        fn SehPocUserRun();
+                    }
+                    SehPocUserRun();
+                }
+            }
         }
     } else {
         if (*Peb).InheritedAddressSpace != 0 {

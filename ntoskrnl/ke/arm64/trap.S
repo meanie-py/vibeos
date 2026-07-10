@@ -39,6 +39,48 @@
 .equ TfPc,                 0x158
 .equ KTRAP_FRAME_LENGTH,   0x160
 
+/* KEXCEPTION_FRAME (ndk/arm64/ketypes.h): X19..X28, Fp, Return — 0x60 bytes */
+.equ ExX19,                0x00
+.equ ExX21,                0x10
+.equ ExX23,                0x20
+.equ ExX25,                0x30
+.equ ExX27,                0x40
+.equ ExFp,                 0x50
+.equ KEXCEPTION_FRAME_LENGTH, 0x60
+
+/*
+ * EXFRAME_SAVE / EXFRAME_RESTORE — capture/restore callee-saved x19..x28
+ * around the synchronous exception handler, so KiDispatchException gets a
+ * real KEXCEPTION_FRAME (x1) instead of NULL. Without it, KeTrapFrameToContext
+ * can't populate Context.X19-X28, and a user-mode NtContinue resume (VEH/SEH
+ * "fix up and continue" — the FEX guest-fault path) restores them as zero.
+ * The restore after the handler picks up any values KiDispatchException wrote
+ * back (handled kernel exception via KeContextToTrapFrame, or the Rd>=19
+ * faulting-load zero fixup); for a plain syscall return it reloads the entry
+ * values AAPCS already preserved — a no-op.
+ * Must be paired: SAVE allocates below the trap frame, RESTORE deallocates
+ * so KiTrapReturn sees sp == trap frame.
+ */
+.macro EXFRAME_SAVE
+    sub sp, sp, #KEXCEPTION_FRAME_LENGTH
+    stp x19, x20, [sp, #ExX19]
+    stp x21, x22, [sp, #ExX21]
+    stp x23, x24, [sp, #ExX23]
+    stp x25, x26, [sp, #ExX25]
+    stp x27, x28, [sp, #ExX27]
+    stp x29, x30, [sp, #ExFp]
+    mov x1, sp
+.endm
+
+.macro EXFRAME_RESTORE
+    ldp x19, x20, [sp, #ExX19]
+    ldp x21, x22, [sp, #ExX21]
+    ldp x23, x24, [sp, #ExX23]
+    ldp x25, x26, [sp, #ExX25]
+    ldp x27, x28, [sp, #ExX27]
+    add sp, sp, #KEXCEPTION_FRAME_LENGTH
+.endm
+
 /*
  * TRAP_PROLOG - Save register state into a KTRAP_FRAME on the stack.
  *
@@ -327,7 +369,9 @@ KiArm64VectorTable:
 
 KiSynchronousExceptionEntry:
     TRAP_PROLOG
+    EXFRAME_SAVE
     bl KiSynchronousExceptionHandler
+    EXFRAME_RESTORE
     b KiTrapReturn
 
 KiIrqEntry:
@@ -344,7 +388,9 @@ KiSErrorEntry:
 
 KiEL0SynchronousEntry:
     TRAP_PROLOG_EL0
+    EXFRAME_SAVE
     bl KiSynchronousExceptionHandler
+    EXFRAME_RESTORE
     b KiTrapReturn
 
 KiEL0IrqEntry:

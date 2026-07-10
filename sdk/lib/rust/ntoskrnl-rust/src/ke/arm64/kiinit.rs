@@ -197,6 +197,23 @@ pub unsafe extern "system" fn KiSystemStartup(
     // Write PCR pointer to TPIDR_EL1 for KeGetPcr()
     core::arch::asm!("msr tpidr_el1, {}", in(reg) Pcr as u64);
 
+    // Grant EL0 read access to the generic-timer counters (CNTKCTL_EL1).
+    // Reset value traps every EL0 counter read to EL1 as an illegal
+    // instruction (ESR EC=0x18). vibeos's own user-mode never reads the
+    // timers directly, but real ARM64 user binaries do — e.g. FEX-Emu's
+    // SpinWaitLock ctor does `mrs CNTFRQ_EL0` to calibrate its spin, and
+    // libc++/ucrt read CNTVCT_EL0 for high-res time. Set EL0PCTEN (bit0) +
+    // EL0VCTEN (bit1) so CNTFRQ_EL0/CNTPCT_EL0/CNTVCT_EL0 are readable at EL0;
+    // leave the EL0*TEN timer-programming bits clear (reads only). See
+    // docs/engineering/fex-bringup-plan.md rung 2.
+    core::arch::asm!(
+        "mrs {tmp}, cntkctl_el1",
+        "orr {tmp}, {tmp}, #0x3",
+        "msr cntkctl_el1, {tmp}",
+        "isb",
+        tmp = out(reg) _,
+    );
+
     // Install ARM64 exception vector table (VBAR_EL1)
     {
         let vbar = KiArm64VectorTable.as_ptr() as u64;

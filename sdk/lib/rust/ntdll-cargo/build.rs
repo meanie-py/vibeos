@@ -201,6 +201,12 @@ fn main() {
             "sdk/lib/crt/except/amd64/ehandler.c",
             "sdk/lib/crt/misc/fltused.c",
         ]),
+        // arm64: user-mode SEH / fault-delivery self-test (FEX bring-up rung 0e,
+        // docs/engineering/fex-bringup-plan.md). Native clang __try/__except +
+        // a VEH-on-hardware-AV probe; needs -fms-extensions (added to
+        // c_shim_flags below). Headerless so no pseh2.h macro layer interferes.
+        // Called once from LdrpInit, gated to smss.exe.
+        "aarch64" => ndll_shims.push("dll/ntdll/seh_poc_user.c"),
         _ => {}
     }
     // WS1 cmake-off printf+scanf batch (2026-06-21), all arches: the C-variadic
@@ -240,7 +246,9 @@ fn main() {
         .c_shims(&ndll_shims)
         // -DCRT_PRINTF_HEADERLESS selects the hand-defined FILE/_TCHAR/flags in
         // _sxprintf.c / _vscwprintf.c (harmless to the other shims).
-        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS"])
+        // -fms-extensions: real clang __try/__except in seh_poc_user.c (arm64);
+        // benign for the printf shells and dummy.c.
+        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS", "-fms-extensions"])
         .asm(&asm_refs, AsmDefineSet::Kernel)
         // ntdllsys (Nt*/Zw* syscall stubs) as an in-group archive, replacing
         // the cmake libntdllsys.a — preserves the cmake archive link layout.

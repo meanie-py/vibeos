@@ -6,6 +6,8 @@
 //! extern decl.
 
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::{PACKET_TYPE_KD_ACKNOWLEDGE, PACKET_TYPE_KD_RESET};
+use ntkrnl_sys::globals::KdpContext;
 use ntkrnl_sys::ddk::{
     self,
     HANDLE,
@@ -1184,7 +1186,25 @@ pub unsafe extern "system" fn KdpWireTransportArm(_LoaderBlock: PVOID) -> NTSTAT
     let status = kdcom_serial_rust::kdcom::KdpPortInitialize(2, 115200);
     if NT_SUCCESS(status) {
         KD_WIRE_ACTIVE = true;
-        kdio_printf!(b"KD: kdcom-serial wire transport ARMED (COM2)\n\0".as_ptr() as PCSTR);
+        // Probe before any INT 2Dh trap frame exists. WinDbg answers a target
+        // RESET with a RESET control packet; a dead wire simply times out.
+        kdcom_serial_rust::kddll::KdpSendControlPacket(PACKET_TYPE_KD_RESET as u16, 0);
+        let probe = kdcom_serial_rust::kddll::KdReceivePacket(
+            PACKET_TYPE_KD_ACKNOWLEDGE,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::addr_of_mut!(KdpContext),
+        );
+        let debugger_waiting = probe != KdPacketTimedOut;
+        KdDebuggerNotPresent = if debugger_waiting { 0u8 } else { 1u8 };
+        if debugger_waiting {
+            (*SharedUserData).KdDebuggerEnabled |= 0x00000002;
+            kdio_printf!(b"KD: kdcom-serial wire transport ARMED (COM2, debugger reset)\n\0".as_ptr() as PCSTR);
+        } else {
+            (*SharedUserData).KdDebuggerEnabled &= !0x00000002;
+            kdio_printf!(b"KD: kdcom-serial wire transport ARMED (COM2, awaiting debugger)\n\0".as_ptr() as PCSTR);
+        }
     } else {
         kdio_printf!(
             b"KD: kdcom-serial wire transport init FAILED (0x%08lx)\n\0".as_ptr() as PCSTR,
@@ -1205,6 +1225,21 @@ pub unsafe extern "system" fn KdSendPacket(
     Context: PKD_CONTEXT,
 ) {
     if KD_WIRE_ACTIVE {
+        // Tee DbgPrint traffic to COM1 before it becomes a DEBUG_IO packet on
+        // the COM2 wire: the console/smoke-marker channel must stay alive on a
+        // KD-armed boot (WinDbg additionally shows the same text via the wire).
+        if PacketType == PACKET_TYPE_KD_DEBUG_IO
+            && !MessageHeader.is_null()
+            && !MessageData.is_null()
+        {
+            let DebugIo = (*MessageHeader).Buffer as PDBGKD_DEBUG_IO;
+            if !DebugIo.is_null()
+                && (*DebugIo).ApiNumber == DbgKdPrintStringApi
+                && !(*MessageData).Buffer.is_null()
+            {
+                KdIoPrintString((*MessageData).Buffer, (*MessageData).Length as ULONG);
+            }
+        }
         return kdcom_serial_rust::kddll::KdSendPacket(
             PacketType,
             MessageHeader as *mut _,
