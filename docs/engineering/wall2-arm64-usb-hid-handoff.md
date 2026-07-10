@@ -1,6 +1,17 @@
 # Wall-2 handoff: arm64 USB HID — ReopenPipe REMOVE spin (task #18)
 
-**Status 2026-07-09:** root cause localized to a **polling loop that never exits inside
+> **RESOLVED 2026-07-10 (landed `b22168c8acc`, gate ×3 green).** Root cause was one
+> level below the localized spin: the EHCI completion **DPC could never drain** —
+> the arm64 IRQ-exit device-DPC retire path skipped the idle thread (pinned at
+> DISPATCH), and DPC bodies ran with PSTATE.I open, letting the level-triggered
+> EHCI line re-enter its ISR and starve the DPC quiescing it. Fix (codex lane):
+> allow idle-at-DISPATCH to retire device DPCs; keep IRQs masked during IRQ-exit
+> DPC bodies; EHCI ISR accumulates status bits + returns FALSE for rollover-only
+> interrupts; bounded 2ms stall in ReopenPipe post-remove. arm64 now delivers
+> `[KBDCLASS] first key delivered`. The evidence chain below is kept as a worked
+> example of the localization method.
+
+**Status 2026-07-09 (superseded):** root cause localized to a **polling loop that never exits inside
 the EHCI miniport's `SetEndpointState(REMOVE)` path on arm64**. One more probe should
 name the exact loop; the fix is likely restoring a dropped timeout-vs-C comparison.
 amd64 delivers end-to-end (`USB-HID-KBD-OK`) with the identical driver code.
