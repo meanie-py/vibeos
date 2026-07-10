@@ -165,12 +165,45 @@ exit 0x600D.*
   via i686 clang), staged to syswow64 under VIBEOS_FEX=1; winlogon
   `TryStartWow64Hello` launches it through the normal CreateProcessW path.
 
-*Milestone 2 — guest code executes (next):* fold wow64probe's proven CPU-layer
-bring-up INTO `Wow64LdrpInitialize` (map syswow64 ntdll32 or the exe directly,
-populate `LdrSystemDllInitBlock.ntdll_handle`, WOW64INFO TLS slot, CPU area,
-BTCpuProcessInit/ThreadInit, build guest CONTEXT from the image entry +
-initial stack, BTCpuSimulate). hello32's entry then really executes and exits
-via a thunked NtTerminateProcess.
+*Milestone 2 — guest code executes (IN PROGRESS, blocked).* The full CPU-layer
+bring-up is now folded INTO `Wow64LdrpInitialize` (wow64.c): maps syswow64
+ntdll32 (SEC_IMAGE via NtOpenFile+NtCreateSection), populates
+`LdrSystemDllInitBlock.ntdll_handle`, sets the WOW64INFO TLS slot + LOCALAPPDATA
+env, loads libwow64fex, resolves + calls BTCpuProcessInit/ThreadInit, builds an
+exit stub + guest CONTEXT at the i386 image entry, and enters BTCpuSimulate.
+The guest exit stub calls a new `WOW64C_SVC_EXIT` service → M2 PASS.
+
+Two bugs found + fixed along the way:
+- **[FIXED] hello32 hung in kernel32 `ConDllInitialize`.** A CUI (console) i386
+  image makes kernel32's DllMain allocate a console via csrss, which hangs for
+  a winlogon-spawned WoW64 process (no console to inherit; winlogon's 30s wait
+  → GetExitCodeProcess returns 0x103/STILL_ACTIVE). Fix: build hello32 as GUI
+  subsystem (`--subsystem,windows:5.1`) — the working GUI probes skip console
+  init. (K32_DLLMAIN_TRACE pinpointed it: reaches `pre-ConDllInitialize`, never
+  `post-`.)
+- **[FIXED] The wow64.dll load must happen AFTER `LdrpRunInitializeRoutines`,
+  not before.** libwow64fex imports kernel32; loading it from the early
+  divert point ran kernel32's DllMain re-entrantly under the loader lock and
+  hung. Moved the divert in ldrinit.rs to right after the init routines
+  complete (kernel32 already initialized at the normal time). Early detection
+  (ProcessWow64Information query) stays; only a flag is set early.
+
+**[OPEN — M2 blocker] csrss dies (BUGCHECK 0xF4) when hello32 connects to
+basesrv.** Once kernel32 DllMain completes, hello32's `CsrClientConnectToServer`
+to basesrv (`CliCon ServerId=2 InfoSize=1664`) makes **csrss raise exception
+0x6BA (`RtlRaiseException`, ntdll+0x6cf8) inside a CSR API handler**, and with
+DUMMY_PSEH the handler's `_SEH2_TRY` is dead code → the exception is unhandled →
+csrss (a critical process) dies → BUGCHECK 0xF4 (0x3, csrss EPROCESS, ...).
+Serial signature: `[UEXC] Code=0x6BA ... Proc=csrss.exe` then
+`0xF4 (0x3, <csrss>, ...)`. This is a csrss/basesrv wow64-connect-handling bug,
+amplified by DUMMY_PSEH swallowing being absent in the CSR API loop. Next-step
+debug: symbolize the 0x6BA raise site's caller in basesrv/winsrv (the connect
+routine handling the wow64 client), and/or check whether the CSR API loop needs
+an explicit DUMMY_PSEH-safe guard around handler dispatch. hello32 is GUI+no-CRT
+so csrss shouldn't need much from it — likely basesrv reads a wow64 field
+(PebAddressWow64 is 0, `proc_create.rs:2120` TODO) or the client PEB and faults.
+The whole M2 path is behind VIBEOS_FEX staging, so mainline boot is unaffected
+(clean arm64 smoke confirmed with the FEX artifacts absent).
 
 *Still owed in Phase C:*
 - 32-bit ntdll auto-map + `Wow64Transition` publishing (32-bit ntdll's syscall

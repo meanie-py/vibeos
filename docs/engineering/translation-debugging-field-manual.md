@@ -4146,3 +4146,47 @@ real C body is still on disk (`create.c` et al, kept per the never-delete rule)
 and a sibling in `fastfat-rust` shows the translation idiom. These are latent
 landmines on arm64 (the only fastfat-backed boot volume); a timing change
 elsewhere can expose one that was dormant for months.
+
+### 9.46 (2026-07-10) WoW64 process bring-up: two loader-ordering traps + a csrss-death-on-connect blocker
+
+Context: launching a real i386 PE as a WoW64 process on arm64 (wow64-plan.md
+Phase C M2). Three findings, in the order they bite as you push a wow64 process
+through process init:
+
+**(1) hello32 hangs in kernel32 `ConDllInitialize`; exit code 0x103.** A CUI
+(console-subsystem) i386 image makes kernel32's DllMain call `ConDllInitialize`
+which allocates a console via csrss. For a winlogon-spawned process with no
+console to inherit, that connect blocks forever. The tell: winlogon's
+`WaitForSingleObject(hProc, 30000)` times out, then `GetExitCodeProcess` returns
+**0x103 = STILL_ACTIVE** (not a crash code — the process is still alive, hung).
+Locate with the built-in `K32_DLLMAIN_TRACE` (kernel32-rust dllmain.rs): it
+prints `pre-ConDllInitialize` but never `post-`. **Fix:** build the guest GUI,
+not CUI (`-Wl,--subsystem,windows`). The FEX GUI probes work precisely because
+GUI skips console init. General rule: a `0x103` "exit code" from a spawned
+process means it never exited — look for a hang, not a fault.
+
+**(2) A dependency that imports kernel32 must not be `LdrLoadDll`'d from early
+process init.** The vendored CPU dll (libwow64fex.dll) imports kernel32.
+Loading it from a divert placed BEFORE `LdrpRunInitializeRoutines` runs
+kernel32's DllMain re-entrantly, under the loader lock, before the process is
+registered — and hangs. **Fix:** do the wow64 handoff AFTER
+`LdrpRunInitializeRoutines` (ldrinit.rs), where kernel32 has already initialized
+at the normal time. Detect the wow64 process early (ProcessWow64Information
+query → flag) but defer the actual `LdrLoadDll(wow64.dll)` + `Wow64LdrpInitialize`
+call to the late point. Mirrors Win10's LdrpLoadWow64 timing.
+
+**(3) [OPEN] csrss dies (BUGCHECK 0xF4) when a wow64 process connects to
+basesrv.** After kernel32 DllMain completes, the wow64 process's
+`CsrClientConnectToServer` to basesrv (serial: `[CSRSRV] CliCon: ServerId=2
+InfoSize=1664`) makes **csrss raise exception 0x6BA via `RtlRaiseException`
+(ntdll+0x6cf8) inside a CSR API handler**. With DUMMY_PSEH the handler's
+`_SEH2_TRY` is dead code, so the exception is unhandled and csrss — a critical
+process — dies → `BUGCHECK 0xF4 (0x3, <csrss EPROCESS>, ...)`. Serial signature:
+`[UEXC] Code=0x6BA ... Proc=csrss.exe` immediately before the 0xF4. Note the
+0xF4 is often FOLLOWED by a secondary `0x1E (0xc0000005, KeGetBugMessageText)` —
+a fault while *printing* the first bugcheck; always find the FIRST bugcheck.
+This is a csrss/basesrv wow64-connect bug (likely basesrv reading a wow64 field
+— `PebAddressWow64` is hard-0, kernel32-rust proc_create.rs:2120 TODO — or the
+client PEB), amplified by the CSR API loop lacking a DUMMY_PSEH-safe guard.
+Whole path is behind VIBEOS_FEX staging → mainline boot unaffected (verified: a
+clean arm64 smoke with the FEX artifacts stripped from the ramdisk is green).
