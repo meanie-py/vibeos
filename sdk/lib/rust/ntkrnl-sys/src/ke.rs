@@ -108,11 +108,14 @@ pub struct GENERAL_LOOKASIDE {
     pub Tag: ULONG,
     pub Size: ULONG,
     // Remaining fields (function pointers, list entry, etc.) are not accessed
-    // by the pool allocator. Pad to cache line size.
+    // by the pool allocator. Pad to the REAL C sizeof (verified by
+    // size_check_<arch>.rs): 128 on 64-bit (LOOKASIDE_ALIGN cache line),
+    // 72 on i386. (Was over-padded to 192/128 — harmless only because
+    // nothing shares arrays of this type with C.)
     #[cfg(target_pointer_width = "64")]
-    pub _pad: [u8; 136], // total ~192 bytes (3 cache lines)
+    pub _pad: [u8; 80], // total 128 bytes
     #[cfg(target_pointer_width = "32")]
-    pub _pad: [u8; 88], // total ~128 bytes (2 cache lines)
+    pub _pad: [u8; 32], // total 72 bytes
 }
 
 pub type PGENERAL_LOOKASIDE = *mut GENERAL_LOOKASIDE;

@@ -789,6 +789,9 @@ FUNC KiInterruptDispatch
 ENDFUNC
 
 EXTERN KiSystemCallHandler:PROC
+#ifdef VIBEOS_CSWITCHDEP
+EXTERN VibeosCswitchdepUserExit:PROC
+#endif
 
 /*! \name KiSystemCallEntry64
  *
@@ -893,6 +896,17 @@ GLOBAL_LABEL KiSystemCall64Again
 GLOBAL_LABEL KiSystemServiceExit
 
     ASSERT_TRAP_FRAME_INTS_ENABLED rsp + MAX_SYSCALL_PARAM_SIZE
+
+#ifdef VIBEOS_CSWITCHDEP
+    /* cswitchdep tap 5 (return→user): rax (the syscall status) is the only
+       live volatile here — park it in the trap frame's Rax slot across the
+       call (the APC branch below overwrites that slot anyway; the no-APC
+       path never reads it). rsp is call-aligned (same as the service call
+       above). Rust: sdk/lib/rust/ntoskrnl-rust/src/ke/cswitchdep.rs */
+    mov [rsp + MAX_SYSCALL_PARAM_SIZE + KTRAP_FRAME_Rax], rax
+    call VibeosCswitchdepUserExit
+    mov rax, [rsp + MAX_SYSCALL_PARAM_SIZE + KTRAP_FRAME_Rax]
+#endif
 
     /* Check for pending user APCs */
     mov rcx, gs:[PcCurrentThread]

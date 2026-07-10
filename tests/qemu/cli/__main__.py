@@ -124,11 +124,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip the amd64 netstack net-suite (default-on; escape hatch for fast iteration)",
     )
     s.add_argument(
+        "--payload",
+        default="",
+        help="opt-in payload gate (tests/qemu/test_payload.py): comma-separated "
+        "payload names; launch + render + input gates from each payload's YAML. "
+        "Media must be built with VIBEOS_PAYLOAD=<names>. "
+        "See docs/engineering/payload-harness-design.md",
+    )
+    s.add_argument(
         "--doom",
         action="store_true",
-        help="opt-in Doom foreign-binary suite (tests/qemu/test_doom.py): launch + "
-        "render + input gates. Media must be built with VIBEOS_DOOM=1 "
-        "(tools/doom/build.sh <arch> first). See docs/engineering/doom-on-vibeos.md",
+        help="legacy alias for --payload doom",
     )
     s.set_defaults(fn=smoke_mod.smoke)
 

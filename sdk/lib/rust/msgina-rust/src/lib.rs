@@ -121,6 +121,7 @@ pub mod resources;
 pub mod strsafe;
 
 // ---- translated body modules (added per-file as each .c is flipped) ----
+pub mod dimmedwindow;
 pub mod gui;
 pub mod lsa;
 pub mod msgina;

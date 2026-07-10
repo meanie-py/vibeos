@@ -24,7 +24,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import re
 import struct
 import subprocess
@@ -204,32 +203,39 @@ def main() -> int:
 
     manifest_path.write_text(json.dumps(manifest))
 
-    # --- DOOM (opt-in, VIBEOS_DOOM=1) — x86 twin of the mkramdisk.sh hook ---
-    # Foreign-binary demo (docs/engineering/doom-on-vibeos.md). OFF by default:
-    # without VIBEOS_DOOM=1 nothing is grafted and the ISO is byte-identical.
+    # --- Payloads (opt-in, VIBEOS_PAYLOAD=name[,...]) — x86 twin of the
+    # mkramdisk.sh hook. Declarative test/demo app staging; design doc:
+    # docs/engineering/payload-harness-design.md. OFF by default: with no
+    # payloads selected nothing is grafted and the ISO is byte-identical.
     # Runs here (not cmake) because this script already executes on every
-    # `livecd` build and inherits the build env. Fail-loud per the house rule:
-    # the flag being set with assets missing aborts the build.
-    if os.environ.get("VIBEOS_DOOM", "0") == "1":
-        repo = Path(__file__).resolve().parent.parent
-        # arch from the build dir in the output path (build-amd64/... etc.)
-        m = re.search(r"build-(amd64|i386|arm64)", str(args.out))
-        arch = m.group(1) if m else None
-        doom_exe = Path(
-            os.environ.get("VIBEOS_DOOM_EXE", repo / "tools" / "doom" / f"doom-{arch}.exe")
-        )
-        doom_wad = Path(os.environ.get("VIBEOS_DOOM_WAD", repo / "tools" / "doom" / "doom1.wad"))
-        if arch is None or not (doom_exe.is_file() and doom_wad.is_file()):
+    # `livecd` build and inherits the build env. compile.py owns spec
+    # resolution + fail-loud checks (missing assets / dest collisions), and
+    # aliases the legacy VIBEOS_DOOM=1 flag to the `doom` payload so the
+    # mapping lives in ONE place.
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "payloads"))
+    import compile as payload_compile  # tools/payloads/compile.py
+
+    # arch + build dir from the output path (…/build-amd64/boot/livecd.stripped.lst).
+    # resolve_payloads: env wins when set; else the build-dir stamp — so env-less
+    # rebuilds (conftest's clean-build `ninja livecd`, raw ninja) reproduce the
+    # same media instead of silently reverting the payload set (2026-07-07
+    # doom-clobber incident: smoke's net stage rebuilt the iso doom-less between
+    # two payload-gated boots).
+    m = re.search(r"^(.*build-(amd64|i386|arm64))", str(args.out.resolve()))
+    build_dir = Path(m.group(1)) if m else None
+    names = payload_compile.resolve_payloads(build_dir)
+    if names:
+        if m is None:
             print(
-                f"strip_cd_media: VIBEOS_DOOM=1 but assets missing "
-                f"(arch={arch}, exe={doom_exe}, wad={doom_wad}). "
-                f"Build them: tools/doom/build.sh {arch or '<arch>'}",
+                f"strip_cd_media: payloads selected but can't infer arch from {args.out}",
                 file=sys.stderr,
             )
             return 1
-        out_lines.append(f"reactos/system32/doom.exe={doom_exe}")
-        out_lines.append(f"reactos/system32/doom1.wad={doom_wad}")
-        print(f"strip_cd_media: VIBEOS_DOOM=1 — grafting doom.exe + doom1.wad ({arch})")
+        arch = m.group(2)
+        # SystemExit(1) on any spec/asset problem propagates and fails the build.
+        for graft, src in payload_compile.manifest(names, arch).items():
+            out_lines.append(f"{graft}={src}")
+        print(f"strip_cd_media: grafting payloads {','.join(names)} ({arch})")
 
     args.out.write_text("\n".join(out_lines) + "\n")
     print(

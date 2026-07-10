@@ -187,18 +187,23 @@ typedef NTSTATUS (*PIO_COMPLETION_ROUTINE)(PVOID DevObj, PVOID Irp, PVOID Contex
  * IO_STACK_LOCATION union.
  * For IoCopyCurrentIrpStackLocationToNext we copy up to that offset. */
 #if defined(_M_ARM64) || defined(__aarch64__)
-/* arm64 IO_STACK_LOCATION is PACKED (verified vs bindgen offset_of):
- * size 0x44; Control@0x03; CompletionRoutine@0x34; Context@0x3c. */
-#define IO_STACK_COMPLETION_ROUTINE_OFFSET 0x34
-#pragma pack(push, 1)
+/* arm64 IO_STACK_LOCATION — NATURAL (unpacked) NT layout, size 0x48, IDENTICAL
+ * to amd64. (2026-07-09: was PACKED size 0x44 / CompletionRoutine@0x34 — that
+ * matched the OLD arm64 header bug where iotypes.h's pshpack4 guard was missing
+ * _ARM64_, so arm64 C compiled the i386-packed IO_STACK_LOCATION. That guard is
+ * now fixed [_ARM64_ added], so arm64 has the same 72-byte layout as amd64 and
+ * this stale packed shim made IoGetNextIrpStackLocation subtract 0x44 instead of
+ * 0x48 → completion routines written 4 bytes high → IofCompleteRequest unwrap on
+ * a None routine → ramdisk-mount boot panic. Verified vs bindgen offset_of:
+ * Control@0x03; CompletionRoutine@0x38 (56); Context@0x40; size 0x48.) */
+#define IO_STACK_COMPLETION_ROUTINE_OFFSET 56
 typedef struct {
     UCHAR  pre0[3];                             /* 0x00 Major,Minor,Flags */
     UCHAR  Control;                             /* 0x03 */
-    UCHAR  pre1[IO_STACK_COMPLETION_ROUTINE_OFFSET - 4]; /* 0x04..0x33 */
-    PIO_COMPLETION_ROUTINE CompletionRoutine;   /* 0x34 */
-    PVOID  Context;                             /* 0x3c */
-} MY_IO_STACK_LOCATION;                          /* total 0x44 */
-#pragma pack(pop)
+    UCHAR  pre1[IO_STACK_COMPLETION_ROUTINE_OFFSET - 4]; /* 0x04..0x37 */
+    PIO_COMPLETION_ROUTINE CompletionRoutine;   /* 0x38 */
+    PVOID  Context;                             /* 0x40 */
+} MY_IO_STACK_LOCATION;                          /* total 0x48 */
 #elif defined(_WIN64)
 /* amd64 IO_STACK_LOCATION (verified vs ntoskrnl amd64 disasm, size 0x48):
  * Major@0 Minor@1 Flags@2 Control@3; Parameters@0x08; DeviceObject@0x28;

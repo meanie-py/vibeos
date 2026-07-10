@@ -5,11 +5,12 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
-from tests.qemu.vm import QemuVM, process_cpu_pct, PROJECT_DIR
+from tests.qemu.vm import PROJECT_DIR, QemuVM, process_cpu_pct
 
 # Add tools/ to path for scan_ud2
 sys.path.insert(0, str(PROJECT_DIR / "tools"))
@@ -204,6 +205,7 @@ _FATAL_MARKERS = (
     "*** Fatal System Error",
     "KeBugCheckEx",
     "BugCheck 0x",
+    "*** BUGCHECK",
     "Unhandled exception",
     "KMODE_EXCEPTION_NOT_HANDLED",
     "UNEXPECTED_KERNEL_MODE_TRAP",
@@ -308,6 +310,130 @@ def test_post_shell_ready_input(vm: QemuVM, arch: str) -> None:
         shutil.copy2(after_ppm, after_png)
     print(f"\n[post-input] survived input dispatch; screen={delta}; "
           f"saved {after_png}")
+
+
+def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
+    """Start-menu gate: press Ctrl+Esc on the settled desktop and assert the
+    start menu actually renders.
+
+    This is an end-to-end *effect* assertion, one level above
+    test_post_shell_ready_input's delivery gate: the keystroke must traverse
+    i8042prt -> kbdclass -> win32k RIT -> VkToVsc (keyboard layout!) ->
+    hotkey dispatch -> explorer's tray wndproc -> menu window creation ->
+    paint. A dead keyboard layout (gspklBaseLayout null) or a broken hotkey
+    path passes the delivery gate but fails here.
+
+    Saves qemu/<arch>_startmenu.png for visual inspection.
+    """
+    if arch == "arm64":
+        pytest.skip("start-menu gate is i386/amd64 (QMP input-send-event; "
+                    "arm64 virtio-input path not wired into this gate yet)")
+
+    # amd64 history (field manual §9.41): during bring-up, the first Ctrl+Esc
+    # corrupted the faulting thread's CLIENTINFO (pci->pDeskInfo/ulClientDelta
+    # in the TEB) and explorer AV'd in user32!ValidateHandle before the menu
+    # rendered. After the DesktopHeapReAlloc fix (§9.40) + a clean rebuild it
+    # no longer reproduces (4/4 menu opens, 2026-07-08); if it recurs, re-add
+    # an `if arch.startswith("amd64"): pytest.xfail(...)` here (fixture arch
+    # is "amd64-uefi", NOT "amd64") rather than deleting the gate. Residual
+    # amd64 cosmetic issue (tracked in §9.41): Programs/Documents/Settings
+    # render icons without label text and Run/Shut Down are absent — the
+    # panel-lit gate below still passes.
+
+    try:
+        from PIL import Image, ImageChops
+    except ImportError:
+        pytest.skip("PIL not available for pixel-delta assertion")
+
+    vm.serial_output(timeout=1.0)  # clear backlog
+    before_ppm = vm.work_dir / "pre_startmenu.ppm"
+    vm.screendump(before_ppm)
+
+    def _send(events: list) -> None:
+        r = vm.qmp.execute("input-send-event", events=events)
+        if "error" in r:
+            pytest.fail(f"QMP input-send-event failed: {r['error']}")
+
+    key = lambda k, d: {"type": "key",
+                        "data": {"down": d, "key": {"type": "qcode", "data": k}}}
+
+    def _ctrl_esc() -> None:
+        _send([key("ctrl", True)])
+        _send([key("esc", True)])
+        _send([key("esc", False)])
+        _send([key("ctrl", False)])
+
+    # Prime the input path: the first keystroke after a snapshot restore is
+    # sometimes swallowed (PS/2 device state right after loadvm). A bare Esc
+    # tap is a no-op on the desktop and also closes any stray menu.
+    _send([key("esc", True)])
+    _send([key("esc", False)])
+    time.sleep(1.0)
+
+    # Poll for the menu to actually RENDER. Don't gate on a raw pixel-delta
+    # bbox: a post-snapshot-restore full-screen repaint produces a huge delta
+    # with no menu in it (observed on amd64 — solid-background transient).
+    # Instead test content: the classic start menu is a light-gray panel
+    # (~RGB 212,208,200) anchored above the Start button; sample the panel
+    # area to the right of the vertical "ReactOS" sidebar. On the blue
+    # wallpaper this region is dark; menu open flips it predominantly light.
+    # Give explorer up to 20s — first-open loads shell links under TCG.
+    def _menu_panel_lit(img) -> float:
+        """Fraction of light-gray pixels in the start-menu panel region."""
+        w, h = img.size
+        # Region scaled off the 640x480 classic layout (menu ≈ x 5..170,
+        # y 181..453; sidebar occupies the left ~35px of it).
+        x0, x1 = int(w * 0.075), int(w * 0.25)
+        y0, y1 = int(h * 0.42), int(h * 0.90)
+        px = img.crop((x0, y0, x1, y1)).getdata()
+        lit = sum(1 for (r, g, b) in px if min(r, g, b) > 150)
+        return lit / max(1, len(px))
+
+    before = Image.open(before_ppm).convert("RGB")
+    lit_before = _menu_panel_lit(before)
+    lit = lit_before
+    bbox = None
+    serial = ""
+    after_ppm = vm.work_dir / "post_startmenu.ppm"
+    after = before
+    # Up to 3 Ctrl+Esc attempts, each with an ~8s render window — first-open
+    # loads shell links from disk under TCG, and an occasional swallowed
+    # chord (see priming note above) should not fail the gate.
+    for _attempt in range(3):
+        _ctrl_esc()
+        deadline = time.time() + 8.0
+        while time.time() < deadline:
+            serial += vm.serial_output(timeout=1.0)
+            vm.screendump(after_ppm)
+            after = Image.open(after_ppm).convert("RGB")
+            bbox = ImageChops.difference(before, after).getbbox()
+            lit = _menu_panel_lit(after)
+            if lit >= 0.60:
+                break
+        if lit >= 0.60:
+            break
+
+    # Save the after-shot regardless of verdict — it's the artifact to eyeball.
+    png_path = PROJECT_DIR / "qemu" / f"{arch}_startmenu.png"
+    after.save(png_path, "PNG")
+    print(f"\n[startmenu] Ctrl+Esc: panel-lit {lit_before:.2f} -> {lit:.2f}; "
+          f"delta bbox={bbox}; saved {png_path}")
+
+    # HARD: the input must not have killed anything.
+    hit = [m for m in _FATAL_MARKERS if m in serial]
+    if hit:
+        sym = _symbolicate_bugcheck(serial, arch)
+        pytest.fail(f"OS died opening the start menu — markers {hit}\n"
+                    f"{sym}\nserial tail: {serial[-800:]!r}")
+
+    # HARD: the menu panel must be rendered. Never weaken this to a raw
+    # pixel-delta — clock repaints and post-restore full-screen invalidations
+    # both produce deltas with no menu.
+    assert lit >= 0.60, (
+        f"start menu never rendered after Ctrl+Esc on {arch} — menu panel "
+        f"region only {lit:.0%} light (needs ≥60%; was {lit_before:.0%} "
+        f"before). Keyboard layout dead? Hotkey path broken? Explorer menu "
+        f"paint broken? Screenshot: {png_path}")
 
 
 def test_post_shell_ready_mouse(vm: QemuVM, arch: str) -> None:
@@ -540,7 +666,7 @@ def test_no_unexpected_ud2(arch: str) -> None:
         pytest.skip(f"ntoskrnl.exe not found at {ntoskrnl}")
 
     try:
-        from scan_ud2 import scan_ud2, find_objdump
+        from scan_ud2 import find_objdump, scan_ud2
     except ImportError:
         pytest.skip("scan_ud2.py not found in tools/")
 

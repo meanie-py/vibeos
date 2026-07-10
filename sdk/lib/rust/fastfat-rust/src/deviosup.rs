@@ -1039,6 +1039,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
 
         DebugTrace(0, (Dbg) as i32, b"Passing 1 Irp on to Disk Driver\n\0".as_ptr() as *const i8, 0);
 
+
         // try-finally block (inlined)
         FatSingleAsync(IrpContext, (*FcbOrDcb).Vcb, NextLbo as i64, ByteCount, Irp);
         // The finally block does nothing because io_runs_ptr is not heap-allocated here.

@@ -24,6 +24,7 @@ cc-rust = { path = "../cc-rust" }
 iomgr-rust = { path = "../iomgr-rust" }
 kdbg-rust = { path = "../kdbg-rust" }
 config-rust = { path = "../config-rust" }
+ex-rust = { path = "../ex-rust" }
 ob-rust = { path = "../ob-rust" }
 ps-rust = { path = "../ps-rust" }
 kd-rust = { path = "../kd-rust" }

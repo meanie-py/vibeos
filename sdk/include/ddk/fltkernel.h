@@ -92,7 +92,9 @@ typedef PVOID PFLT_CONTEXT;
 typedef struct _KTRANSACTION *PKTRANSACTION;
 #endif
 
-#if !defined(_AMD64_) && !defined(_IA64_) && !defined(_ARM_)
+/* _ARM64_ added 2026-07-09 — same class as the iotypes.h IO_STACK_LOCATION
+ * guard: arm64 must use the 64-bit (unpacked) FLT_PARAMETERS layout. */
+#if !defined(_AMD64_) && !defined(_IA64_) && !defined(_ARM_) && !defined(_ARM64_)
 #include "pshpack4.h"
 #endif
 
@@ -396,7 +398,9 @@ typedef union _FLT_PARAMETERS {
   } Others;
 } FLT_PARAMETERS, *PFLT_PARAMETERS;
 
-#if !defined(_AMD64_) && !defined(_IA64_) && !defined(_ARM_)
+/* _ARM64_ added 2026-07-09 — same class as the iotypes.h IO_STACK_LOCATION
+ * guard: arm64 must use the 64-bit (unpacked) FLT_PARAMETERS layout. */
+#if !defined(_AMD64_) && !defined(_IA64_) && !defined(_ARM_) && !defined(_ARM64_)
 #include "poppack.h"
 #endif
 

@@ -151,9 +151,15 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
     nsprint!("[NETSTACK] SET_INFO self-test: program default route via 10.0.2.2\n");
 
     // --- Issue IOCTL_TCP_SET_INFORMATION_EX (METHOD_BUFFERED, output empty). ---
-    let mut event: KEVENT = zeroed();
-    KeInitializeEvent(&mut event, 0 /* NotificationEvent */, 0);
-    let mut iosb: IO_STATUS_BLOCK = zeroed();
+    // Event+IOSB in pool via the shared TdiWaitBlock — the old stack locals +
+    // return-on-timeout were the §9.36 dead-frame-completion corruption class.
+    let wb = crate::tditest::alloc_wait_block();
+    if wb.is_null() {
+        ExFreePool(in_buf as PVOID);
+        ObfDereferenceObject(tcp_obj);
+        ZwClose(tcp_h);
+        return;
+    }
     let irp = IoBuildDeviceIoControlRequest(
         tdi::IOCTL_TCP_SET_INFORMATION_EX,
         dev,
@@ -162,23 +168,19 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
         null_mut(),
         0,
         0, // InternalDeviceIoControl = FALSE (IRP_MJ_DEVICE_CONTROL)
-        &mut event,
-        &mut iosb,
+        core::ptr::addr_of_mut!((*wb).event) as *mut _,
+        core::ptr::addr_of_mut!((*wb).iosb) as *mut _,
     );
     if irp.is_null() {
         nsprint!("[NETSTACK] SET_INFO self-test: IoBuildDeviceIoControlRequest failed\n");
+        ExFreePool(wb as PVOID);
         ExFreePool(in_buf as PVOID);
         ObfDereferenceObject(tcp_obj);
         ZwClose(tcp_h);
         return;
     }
-    let mut st = IofCallDriver(dev, irp);
-    if st == STATUS_PENDING {
-        let mut timeout: LARGE_INTEGER = zeroed();
-        timeout.QuadPart = -50_000_000i64; // 5s relative
-        KeWaitForSingleObject(&mut event as *mut _ as PVOID, 0, 0, 0, &mut timeout);
-        st = iosb.__bindgen_anon_1.Status;
-    }
+    let st = IofCallDriver(dev, irp);
+    let (st, _leaked) = crate::tditest::tdi_wait_finish(st, irp, wb, -50_000_000i64 /* 5s */);
 
     if st == 0 {
         nsprint!(

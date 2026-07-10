@@ -297,12 +297,20 @@ fn main() {
     // trap.S is cargo-assembled here, not by cmake, so the define is plumbed
     // through reactos-link's asm_extra_defines. OFF by default.
     println!("cargo:rerun-if-env-changed=VIBEOS_ARM64_TRAP_DEBUG");
-    let asm_extra: Vec<(&str, Option<&str>)> =
+    let mut asm_extra: Vec<(&str, Option<&str>)> =
         if arch == "aarch64" && env::var("VIBEOS_ARM64_TRAP_DEBUG").is_ok() {
             vec![("ARM64_TRAP_DEBUG", None)]
         } else {
             vec![]
         };
+    // cswitchdep tap 5 (return→user): the amd64 syscall-exit tap call in
+    // ke/amd64/trap.S is `#ifdef VIBEOS_CSWITCHDEP` — trap.S is cargo-assembled
+    // HERE (not by cmake), so the same env that lights the cargo feature must
+    // also reach the assembler or the tap silently never exists (caught live:
+    // user_entries=0 on the first armed boot).
+    if env::var("VIBEOS_CSWITCHDEP").is_ok() {
+        asm_extra.push(("VIBEOS_CSWITCHDEP", None));
+    }
 
     let mut linker = Linker::new(rust_target);
     // sync-instrumentation §4 lockdep (Tier-2 opt-in): -DVIBEOS_LOCKDEP=ON

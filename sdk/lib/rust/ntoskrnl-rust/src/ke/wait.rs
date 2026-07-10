@@ -116,7 +116,7 @@ unsafe fn KiWaitTestImpl(ObjectPointer: PVOID, Increment: KPRIORITY) {
 
     WaitList = core::ptr::addr_of_mut!((*FirstObject).Header.WaitListHead) as PLIST_ENTRY;
     // waitdep tripwire: prove the waiter list is intact BEFORE consuming it.
-    super::waitdep::check_waittest(FirstObject as usize, WaitList as *mut _);
+    super::waitdep::check_waittest(FirstObject as usize, WaitList as *mut _, true);
     WaitEntry = (*WaitList).Flink;
 
     while ((*FirstObject).Header.SignalState > 0) && (WaitEntry != WaitList) {

@@ -44,7 +44,8 @@ list(APPEND SOURCE
     # wine/crypt.c — replaced by Rust (advapi32-rust)
     # wine/crypt_des.c — replaced by Rust (advapi32-rust)
     # wine/crypt_lmhash.c — replaced by Rust (advapi32-rust)
-    wine/security.c)
+    # wine/security.c — replaced by Rust (advapi32-rust/src/wine/security.rs)
+)
 
 list(APPEND PCH_SKIP_SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/advapi32_stubs.c

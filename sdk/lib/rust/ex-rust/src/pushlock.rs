@@ -1,4 +1,12 @@
 use ntkrnl_sys::globals::*;
+// Cross-crate ke/mm/ARM3 globals+recorders as link symbols (all #[no_mangle]
+// in ntoskrnl-rust). crate-split Phase 1b.
+extern "C" {
+    fn lockdep_check_park(thread: usize, lock: usize, wanted_mode: u32);
+    fn synctrace_pl_park(object: *const core::ffi::c_void, thread: *const core::ffi::c_void);
+    fn synctrace_pl_satisfied(object: *const core::ffi::c_void);
+    fn synctrace_pl_wake(object: *const core::ffi::c_void, thread: *const core::ffi::c_void);
+}
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
@@ -183,7 +191,7 @@ unsafe fn ExfWakePushLock(PushLock: PEX_PUSH_LOCK, mut OldValue: EX_PUSH_LOCK) {
             == 0
         {
             // synctrace §3: one waiter woken on this pushlock.
-            crate::ke::synctrace::synctrace_pl_wake(
+            synctrace_pl_wake(
                 PushLock as _, ntkrnl_sys::mm::KeGetCurrentThread() as _);
             KeSignalGateBoostPriority(core::ptr::addr_of_mut!((*WaitBlock).__bindgen_anon_1.WakeGate) as PKGATE);
         }
@@ -291,7 +299,7 @@ unsafe fn ExTimedWaitForUnblockPushLock(
         != 0
     {
         // synctrace §3: event-path block/wake, keyed on the PUSHLOCK address.
-        crate::ke::synctrace::synctrace_pl_park(
+        synctrace_pl_park(
             PushLock as _, ntkrnl_sys::mm::KeGetCurrentThread() as _);
         Status = KeWaitForSingleObject(
             core::ptr::addr_of_mut!((*(WaitBlock as PEX_PUSH_LOCK_WAIT_BLOCK)).__bindgen_anon_1.WakeEvent)
@@ -301,7 +309,7 @@ unsafe fn ExTimedWaitForUnblockPushLock(
             0u8,
             Timeout,
         );
-        crate::ke::synctrace::synctrace_pl_satisfied(PushLock as _);
+        synctrace_pl_satisfied(PushLock as _);
         if Status != STATUS_SUCCESS {
             ExfUnblockPushLock(PushLock, WaitBlock);
         }
@@ -468,18 +476,18 @@ fastcall_export! {
                 // lockdep §4: about to block EXCLUSIVE — if we already hold
                 // this pushlock, that's a self-deadlock (records, print-free).
                 #[cfg(feature = "lockdep")]
-                crate::ke::lockdep::lockdep_check_park(
+                lockdep_check_park(
                     ntkrnl_sys::mm::KeGetCurrentThread() as usize, PushLock as usize, 2);
                 // synctrace §3: account the block/wake on the PUSHLOCK address
                 // (the wake gate is a per-wait stack object — useless as a key).
-                crate::ke::synctrace::synctrace_pl_park(
+                synctrace_pl_park(
                     PushLock as _, ntkrnl_sys::mm::KeGetCurrentThread() as _);
                 KeWaitForGate(
                     core::ptr::addr_of_mut!((*WaitBlock).__bindgen_anon_1.WakeGate),
                     _KWAIT_REASON_WrPushLock,
                     0i8,
                 );
-                crate::ke::synctrace::synctrace_pl_satisfied(PushLock as _);
+                synctrace_pl_satisfied(PushLock as _);
                 debug_assert!((*WaitBlock).Signaled != 0);
             }
 
@@ -613,17 +621,17 @@ fastcall_export! {
                 // pushlock, that's a self-deadlock (records, print-free). This
                 // is the Mm WS-pushlock wedge: excl teardown -> fault -> shared.
                 #[cfg(feature = "lockdep")]
-                crate::ke::lockdep::lockdep_check_park(
+                lockdep_check_park(
                     ntkrnl_sys::mm::KeGetCurrentThread() as usize, PushLock as usize, 1);
                 // synctrace §3: account the block/wake on the PUSHLOCK address.
-                crate::ke::synctrace::synctrace_pl_park(
+                synctrace_pl_park(
                     PushLock as _, ntkrnl_sys::mm::KeGetCurrentThread() as _);
                 KeWaitForGate(
                     core::ptr::addr_of_mut!((*WaitBlock).__bindgen_anon_1.WakeGate),
                     _KWAIT_REASON_WrPushLock,
                     0i8,
                 );
-                crate::ke::synctrace::synctrace_pl_satisfied(PushLock as _);
+                synctrace_pl_satisfied(PushLock as _);
                 debug_assert!((*WaitBlock).Signaled != 0);
             }
 
@@ -946,7 +954,7 @@ fastcall_export! {
                 == 0
             {
                 // synctrace §3: one event-path waiter woken on this pushlock.
-                crate::ke::synctrace::synctrace_pl_wake(
+                synctrace_pl_wake(
                     PushLock as _, ntkrnl_sys::mm::KeGetCurrentThread() as _);
                 KeSetEventBoostPriority(
                     core::ptr::addr_of_mut!((*WaitBlock).__bindgen_anon_1.WakeEvent),

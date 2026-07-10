@@ -85,9 +85,15 @@ fi
 # worktree gets its own daemon, first spawned inside its own namespace, so
 # /tmp/vibeos always resolves to the right tree; the on-disk cache stays shared
 # and content-addressed (safe by design).
+# Port space must be wide enough that distinct roots don't collide: the original
+# `cksum % 100` collided for real (2026-07-07: vibeos-arm64-ex and
+# vibeos-screen-painting both hashed to 4318 — arm64-ex's compiles ran in
+# screen-painting's namespace and died ENOENT on its own build dir; a cache-miss
+# would have silently compiled the OTHER lane's sources). md5 % 20000 makes a
+# 12-worktree fleet collision ~0.3%.
 if command -v sccache >/dev/null 2>&1 && [ -z "${SCCACHE_SERVER_PORT:-}" ]; then
-    _hash=$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)
-    export SCCACHE_SERVER_PORT=$((4300 + _hash % 100))
+    _hash=$(printf '%s' "$ROOT" | md5sum | cut -c1-8)
+    export SCCACHE_SERVER_PORT=$((4300 + 0x$_hash % 20000))
 fi
 
 exec unshare --map-root-user --mount /bin/sh -c '

@@ -53,28 +53,27 @@ const WR_EXECUTIVE: ddk::KWAIT_REASON = ddk::_KWAIT_REASON_WrExecutive;
 // IO stack location flag
 const SL_PENDING_RETURNED: u8 = 0x01;
 
-#[cfg(target_arch = "aarch64")]
-const IRP_CURRENT_STACK_LOCATION_OFFSET: usize = 0xb8;
-#[cfg(target_arch = "aarch64")]
-const IO_STACK_LOCATION_ABI_SIZE: usize = 0x44;
+// NOTE (2026-07-09): the aarch64 "C-truth" shims that used to live here
+// (CurrentStackLocation slot at IRP+0xb8, IO_STACK_LOCATION stride 0x44) are
+// GONE. They compensated for the iotypes.h pack(4) guard missing _ARM64_
+// (clang aarch64-w64-mingw32 ignores per-field aligned attrs under
+// #pragma pack, so the arm64 C layout was i386-packed while bindgen produced
+// what NT intends). The guard is fixed and bindings regenerated: C == bindgen
+// on every arch, so plain bindgen field access / pointer arithmetic is right.
+// Mixed-stride survivors of this shim family wedge boot at the first
+// synchronous PnP IRP — if you see IofCompleteRequest panic on a None
+// CompletionRoutine, hunt for a reintroduced copy of these.
 
 #[inline]
 unsafe fn irp_current_stack_location_slot(irp: ddk::PIRP) -> *mut ddk::PIO_STACK_LOCATION {
-    #[cfg(target_arch = "aarch64")]
-    {
-        (irp as *mut u8).add(IRP_CURRENT_STACK_LOCATION_OFFSET) as *mut ddk::PIO_STACK_LOCATION // nolint: magic-offset (arm64 C-truth: bindgen _IRP layout diverges from the C ABI)
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        core::ptr::addr_of_mut!(
-            (*irp)
-                .Tail
-                .Overlay
-                .__bindgen_anon_2
-                .__bindgen_anon_1
-                .CurrentStackLocation
-        )
-    }
+    core::ptr::addr_of_mut!(
+        (*irp)
+            .Tail
+            .Overlay
+            .__bindgen_anon_2
+            .__bindgen_anon_1
+            .CurrentStackLocation
+    )
 }
 
 #[inline]
@@ -82,15 +81,7 @@ unsafe fn irp_stack_location_add(
     stack: ddk::PIO_STACK_LOCATION,
     count: isize,
 ) -> ddk::PIO_STACK_LOCATION {
-    #[cfg(target_arch = "aarch64")]
-    {
-        (stack as *mut u8).offset(count * IO_STACK_LOCATION_ABI_SIZE as isize)
-            as ddk::PIO_STACK_LOCATION
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        stack.offset(count)
-    }
+    stack.offset(count)
 }
 
 // ============================================================================

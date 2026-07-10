@@ -120,7 +120,7 @@ const CCB_FLAG_FREE_UNICODE: u32 = 0x08;
 const CCB_FLAG_FREE_OEM_BEST_FIT: u32 = 0x04;
 
 const VCB_STATE_FLAG_VPB_MUST_BE_FREED: u32 = 0x00040000;
-const VcbBad: u32 = 2;
+const VcbBad: u32 = crate::types::_VCB_CONDITION_VcbBad; // 3 — bindgen ground truth (was 2, off by one)
 const VPB_REMOVE_PENDING: u32 = 0x08;
 const IO_TYPE_VPB: u16 = 0x0A;
 const IRP_MJ_FILE_SYSTEM_CONTROL: u32 = 13;
@@ -169,7 +169,7 @@ const VCB_STATE_FLAG_DEFERRED_FLUSH: u32 = 0x1000;
 const FILESYSTEM_STATISTICS_TYPE_FAT: u16 = 0x02;
 const PACKED_BOOT_SECTOR_SIZE: usize = core::mem::size_of::<PACKED_BOOT_SECTOR>();
 const FAT_MAX_LARGE_QUADPART: u64 = 0x7FFFFFFF_FFFFFFFF; // placeholder for FatMaxLarge
-const VCB_GOOD: VCB_CONDITION = 0; // placeholder for VcbGood
+const VCB_GOOD: VCB_CONDITION = crate::types::_VCB_CONDITION_VcbGood; // 1 — bindgen ground truth (was 0)
 const VIRTUAL_VOLUME_FILE: FILE_TYPE = 1; // placeholder
 const NON_PAGED_POOL_NX: POOL_TYPE = 0x200; // placeholder NonPagedPoolNx
 const TAG_VCB_STATS: u32 = 0x56746146; // placeholder
@@ -211,7 +211,7 @@ const TAG_DYNAMIC_NAME_BUFFER: u32 = 0x63746146; // TAG('D','n','y','B')
 // Local C functions not yet translated
 
 // Constants (guessed values)
-const VcbGood: u32 = 0;
+const VcbGood: u32 = crate::types::_VCB_CONDITION_VcbGood; // 1 — bindgen ground truth (was 0)
 const VPB_MOUNTED: u32 = 0x01;
 const VPB_LOCKED: u32 = 0x02;
 const VPB_DIRECT_WRITES_ALLOWED: u32 = 0x0020;
@@ -624,7 +624,7 @@ pub unsafe extern "system" fn FatTearDownVcb(
         }
     }
 
-    FatSetVcbCondition(Vcb, 4 /* VcbBad */);
+    FatSetVcbCondition(Vcb, VcbBad);
 }
 
 #[no_mangle]

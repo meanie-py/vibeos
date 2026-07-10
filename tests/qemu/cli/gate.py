@@ -255,6 +255,18 @@ def _resolve_arches(raw: str | None) -> list[str]:
 FULL_ARCH_SET = {"i386", "amd64", "arm64"}
 
 
+def _prune_stale_stamps(stamps_dir: Path, max_age_s: int = 24 * 3600) -> None:
+    """Drop per-tree gate stamps older than max_age_s so the store self-cleans.
+    (The pre-push hook already ignores stale stamps; this just keeps the dir tidy.)"""
+    now = time.time()
+    for f in stamps_dir.glob("*.json"):
+        try:
+            if now - f.stat().st_mtime > max_age_s:
+                f.unlink()
+        except OSError:
+            pass
+
+
 def _write_gate_stamp(run: Run, repo: Path, arches: list[str]) -> None:
     """T1.3 (mechanized North Star): a green FULL gate mints the push
     credential — the pre-push hook (tools/git-hooks/pre-push) refuses updates
@@ -292,7 +304,18 @@ def _write_gate_stamp(run: Run, repo: Path, arches: list[str]) -> None:
             "arches": sorted(arches),
             "worktree": str(repo),
         }
-        (common / "vibeos-gate-stamp.json").write_text(json.dumps(stamp, indent=1))
+        # Content-addressed stamp store: one file per gated TREE hash, so
+        # concurrent lanes gating DIFFERENT trees never clobber each other. The
+        # old single shared vibeos-gate-stamp.json was last-writer-wins across
+        # all worktrees → a guaranteed race whenever two lanes gated at once
+        # (2026-07-07). Keyed by tree (the content identity the hook validates),
+        # atomic write (temp + rename), self-pruning past 24h.
+        stamps_dir = common / "vibeos-gate-stamps"
+        stamps_dir.mkdir(parents=True, exist_ok=True)
+        _prune_stale_stamps(stamps_dir)
+        tmp = stamps_dir / f".{tree}.{os.getpid()}.tmp"
+        tmp.write_text(json.dumps(stamp, indent=1))
+        tmp.replace(stamps_dir / f"{tree}.json")  # atomic on the same fs
         run.add(Stage("stamp", status="ok", detail=f"push stamp minted for tree {tree[:12]}"))
     except (OSError, subprocess.SubprocessError) as e:
         run.add(Stage("stamp", status="warn", detail=f"stamp write failed: {e}"))

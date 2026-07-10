@@ -32,26 +32,18 @@ use ntkrnl_sys::ddk::{
 /// `IO_TYPE_OPEN_PACKET` from `sdk/include/xdk/iotypes.h`.
 const IO_TYPE_OPEN_PACKET: i16 = 8;
 
-#[cfg(target_arch = "aarch64")]
-const IO_STACK_LOCATION_ABI_SIZE: usize = 0x44;
-#[cfg(target_arch = "aarch64")]
-const IRP_CURRENT_STACK_LOCATION_OFFSET: usize = 0xb8;
+// NOTE (2026-07-09): the aarch64 stride/offset shims that used to live here
+// are gone — the iotypes.h pack(4) guard now covers _ARM64_, so C and bindgen
+// agree on IO_STACK_LOCATION/IRP layout on every arch (see irp.rs note).
 
 #[inline(always)]
 unsafe fn irp_current_stack_location(irp: PIRP) -> PIO_STACK_LOCATION {
-    #[cfg(target_arch = "aarch64")]
-    {
-        *((irp as *mut u8).add(IRP_CURRENT_STACK_LOCATION_OFFSET) as *mut PIO_STACK_LOCATION) // nolint: magic-offset (arm64 C-truth: bindgen _IRP layout diverges from the C ABI)
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        (*irp)
-            .Tail
-            .Overlay
-            .__bindgen_anon_2
-            .__bindgen_anon_1
-            .CurrentStackLocation
-    }
+    (*irp)
+        .Tail
+        .Overlay
+        .__bindgen_anon_2
+        .__bindgen_anon_1
+        .CurrentStackLocation
 }
 
 #[inline(always)]
@@ -59,15 +51,7 @@ unsafe fn irp_stack_location_add(
     stack: PIO_STACK_LOCATION,
     count: isize,
 ) -> PIO_STACK_LOCATION {
-    #[cfg(target_arch = "aarch64")]
-    {
-        (stack as *mut u8).offset(count * IO_STACK_LOCATION_ABI_SIZE as isize)
-            as PIO_STACK_LOCATION
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        stack.offset(count)
-    }
+    stack.offset(count)
 }
 
 /// IopValidateOpenPacket — `static __inline` from `io_x.h`.
