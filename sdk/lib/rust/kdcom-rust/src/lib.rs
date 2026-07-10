@@ -37,25 +37,7 @@ pub mod kdrosdbg;
 // loop with a debugcon (0xe9) marker, mirroring hal-rust / kernel-rust.
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    unsafe {
-        for &b in b"KDCOM-PANIC\n" {
-            core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b);
-        }
-    }
-    let _ = info;
-    loop {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        unsafe {
-            core::arch::asm!("hlt");
-        }
-        #[cfg(target_arch = "aarch64")]
-        unsafe {
-            core::arch::asm!("wfe", options(nomem, nostack));
-        }
-        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-        core::hint::spin_loop();
-    }
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 // `core` / `compiler_builtins` emit `.eh_frame` refs to

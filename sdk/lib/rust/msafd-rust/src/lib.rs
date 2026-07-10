@@ -25,11 +25,8 @@ pub mod misc; // the 5 translated translation units
 // gated off for `cargo test` where std provides them. Mirrors afd-rust/cdfs-rust.
 #[cfg(not(test))]
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    unsafe {
-        crate::glue::OutputDebugStringA(b"[MSAFD] RUST PANIC\n\0".as_ptr() as *const i8);
-    }
-    loop {}
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 #[cfg(not(test))]

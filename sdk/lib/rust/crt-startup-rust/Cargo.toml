@@ -48,3 +48,6 @@ default = []
 crtexe = []   # ANSI exe: [w]?mainCRTStartup + __getmainargs + main
 wcrtexe = []  # wide exe: w[main|WinMain]CRTStartup + __wgetmainargs + wmain
 crtdll = []   # dll: DllMainCRTStartup + _CRT_INIT
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }

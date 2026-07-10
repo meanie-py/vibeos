@@ -13,6 +13,6 @@
 // duplicate per-arch serial bring-up for a module that owns the serial port
 // anyway. Accepted: a panic in the KD transport is a silent halt.
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {} // nolint: silent-failure (KD transport — DbgPrint here would recurse into the broken transport)
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }

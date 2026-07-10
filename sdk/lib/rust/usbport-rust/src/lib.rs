@@ -64,24 +64,7 @@ pub mod usbport;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    // LOUD self-report before halting (fail-loud rule; the old bare `loop {}` cost a
-    // GDB session just to notice the driver had panicked — the boot merely "hangs").
-    extern "C" {
-        fn DbgPrint(Format: *const core::ffi::c_char, ...) -> u32;
-    }
-    unsafe {
-        if let Some(loc) = info.location() {
-            DbgPrint(
-                c"[USBPORT] RUST PANIC at %.*s:%u\n".as_ptr(),
-                loc.file().len() as u32,
-                loc.file().as_ptr(),
-                loc.line(),
-            );
-        } else {
-            DbgPrint(c"[USBPORT] RUST PANIC (no location)\n".as_ptr());
-        }
-    }
-    loop {} // nolint: silent-failure (self-reported above; nothing to unwind to)
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 #[no_mangle]
 pub extern "C" fn rust_eh_personality() {}

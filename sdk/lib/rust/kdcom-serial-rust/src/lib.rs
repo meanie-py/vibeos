@@ -35,24 +35,15 @@ pub const SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA =
 pub const SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA =
     0xFFFF_F780_0000_0000usize as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
 
+// Under `embedded` this crate is an rlib inside the kernel graph, which
+// already owns the lang item + personality — only the standalone kdcom.dll
+// staticlib build defines them here.
+#[cfg(not(feature = "embedded"))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    unsafe {
-        for &b in b"KDCOM-SERIAL-PANIC\n" {
-            core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b);
-        }
-    }
-    let _ = info;
-    loop {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        unsafe {
-            core::arch::asm!("hlt");
-        }
-        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-        core::hint::spin_loop();
-    }
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
+#[cfg(not(feature = "embedded"))]
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_eh_personality() {}

@@ -10,13 +10,20 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["rlib"]  # rlib-only since the crash-value embed: the standalone
+# kdcom.dll staticlib spike is dormant (_WINKD_=FALSE on llvm-mingw); if it
+# revives, kdcom-serial-cargo must add its own panic handler + staticlib type.
 
 # KDDEBUG mirrors the C `#ifdef KDDEBUG` debug-only path (KdpDbgPrint over a
 # second COM port). Off by default, matching kddll.h's `#ifndef KDDEBUG`.
 [features]
 default = []
 KDDEBUG = []
+# embedded: rlib inside the kernel image (crash-value KD-over-COM2) — the
+# no_mangle exports and panic handler/personality are suppressed; the kernel
+# calls the transport via rust paths (kd-rust kdio.rs delegation).
+embedded = []
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }

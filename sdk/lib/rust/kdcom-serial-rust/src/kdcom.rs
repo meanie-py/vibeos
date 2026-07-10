@@ -34,7 +34,7 @@ unsafe fn UlongToPtr(Value: ULONG) -> PVOID {
 // KdComPortInUse is a shared KD global not in the (non-_WINKD_) ntoskrnl.spec;
 // define it locally. The kernel's definition wins under
 // --allow-multiple-definition at final link.
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub static mut KdComPortInUse: PUCHAR = core::ptr::null_mut();
 
 // ---- file-scope preamble (translated) ----
@@ -55,6 +55,13 @@ pub static BaseArray: [ULONG; 3] = [0, 0x80006000, 0x80007000];
 
 #[cfg(target_arch = "arm")]
 pub static BaseArray: [ULONG; 2] = [0, 0xF1012000];
+
+// aarch64: no port-I/O COM ports; the QEMU virt machine has a single PL011
+// (owned by the console). No wire-KD channel yet — an empty table makes
+// KdDebuggerInitialize0 fail cleanly, so the embedded transport never arms
+// on arm64 (kd-rust falls back to the text path).
+#[cfg(target_arch = "aarch64")]
+pub static BaseArray: [ULONG; 1] = [0];
 
 pub static mut KdComPort: CPPORT = CPPORT {
     Address: core::ptr::null_mut(),
@@ -85,7 +92,7 @@ extern "C" {
 }
 
 #[cfg(feature = "KDDEBUG")]
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "C" fn KdpDbgPrint(Format: *const i8, mut args: ...) -> ULONG {
     let mut ap = args.as_va_list();
     let mut Length: i32;
@@ -112,27 +119,27 @@ pub unsafe extern "C" fn KdpDbgPrint(Format: *const i8, mut args: ...) -> ULONG 
     0
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdD0Transition() -> NTSTATUS {
     STATUS_SUCCESS
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdD3Transition() -> NTSTATUS {
     STATUS_SUCCESS
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdSave(SleepTransition: BOOLEAN) -> NTSTATUS {
     STATUS_SUCCESS
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdRestore(SleepTransition: u8) -> i32 {
     STATUS_SUCCESS
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdDebuggerInitialize0(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) -> NTSTATUS {
@@ -228,7 +235,7 @@ pub unsafe extern "system" fn KdDebuggerInitialize0(
 
 // KdpPortInitialize is defined in kdcom.c (NTAPI). The C body was preserved in
 // the ORIGINAL C SOURCE block below; faithfully translated here.
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdpPortInitialize(
     ComPortNumber: ULONG,
     ComPortBaudRate: ULONG,
@@ -248,18 +255,18 @@ pub unsafe extern "system" fn KdpPortInitialize(
     }
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdDebuggerInitialize1(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) -> NTSTATUS {
     STATUS_SUCCESS
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdpSendByte(Byte: UCHAR) {
     CpPutByte(core::ptr::addr_of_mut!(KdComPort), Byte);
 }
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdpPollByte(OutByte: PUCHAR) -> KDP_STATUS {
     let mut Status: USHORT;
 
@@ -270,7 +277,7 @@ pub unsafe extern "system" fn KdpPollByte(OutByte: PUCHAR) -> KDP_STATUS {
         CP_GET_ERROR | _ => KDP_PACKET_RESEND,
     }
 }
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdpReceiveByte(OutByte: PUCHAR) -> KDP_STATUS {
     let mut Status: USHORT;
 
@@ -282,7 +289,7 @@ pub unsafe extern "system" fn KdpReceiveByte(OutByte: PUCHAR) -> KDP_STATUS {
         _ => KDP_PACKET_RESEND,
     }
 }
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdpPollBreakIn() -> KDP_STATUS {
     let mut Byte: UCHAR = 0;
     let KdStatus: KDP_STATUS;
