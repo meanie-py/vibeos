@@ -1209,6 +1209,14 @@ unsafe fn KdpSendWaitContinue(
 
     KdpContextSent = 0u8;
 
+    // C control flow (kdapi.c `SendPacket:` label): the state-change packet is
+    // sent ONCE, then an inner infinite loop receives + dispatches manipulate
+    // requests; ONLY KdPacketNeedsResend jumps back to re-send the original
+    // packet. (An earlier translation put the dispatch inside the send loop, so
+    // every serviced API re-sent the state change with a fresh packet id —
+    // WinDbg saw a new state change per request, desynced, and its memory reads
+    // timed out ["Unable to read head of debugger data list, error 0n56"]; once
+    // it stopped acking, exception-typed sends retried forever = boot wedge.)
     'send_packet: loop {
         KdSendPacket(packet_type, send_header, send_data, &mut KdpContext);
 
@@ -1216,12 +1224,9 @@ unsafe fn KdpSendWaitContinue(
             return ContinueSuccess;
         }
 
-        // DIAGNOSTIC: Check if KdDebuggerNotPresent was cleared by KdSendPacket
-        // If so, the KDBG stub in kdio.c claimed a debugger is present but
-        // KdReceivePacket will return NOT_HANDLED, causing an infinite loop.
-        // Workaround: treat as "debugger not present" and return success.
-        // This matches the pre-Rust behavior where the C KD code didn't flood.
-
+        // Main processing loop: receive one manipulate request, dispatch it
+        // (each handler sends its own response), receive the next.
+        loop {
         let mut recv_code;
         loop {
             recv_code = KdReceivePacket(
@@ -1381,8 +1386,10 @@ unsafe fn KdpSendWaitContinue(
                 KdSendPacket(PACKET_TYPE_KD_STATE_MANIPULATE, &mut header, &mut data, &mut KdpContext);
             }
         }
+        } // main processing loop
     }
 }
+
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpReportLoadSymbolsStateChange(
@@ -1589,6 +1596,18 @@ pub unsafe extern "system" fn KdpReportExceptionStateChange(
         if status != ContinueProcessorReselected {
             break;
         }
+    }
+
+    // vibeos robustness: if the send BAILED because no debugger is listening
+    // (KdDebuggerNotPresent latched by KdSendPacket; a live exchange clears it
+    // on the first received leader), we must NOT claim this exception handled —
+    // "handled" resumes at the faulting instruction, which re-faults and
+    // re-reports forever (observed: an endless DbgKdExceptionStateChange
+    // stream at one PC). Returning FALSE lets normal dispatch proceed: kernel
+    // SEH gets its shot, else KMODE_EXCEPTION_NOT_HANDLED — exactly what the
+    // same exception does on an unarmed boot.
+    if KdDebuggerNotPresent != 0 {
+        return 0;
     }
 
     // C returns BOOLEAN: ContinueSuccess(1)→TRUE, ContinueError(0)→FALSE
@@ -2171,7 +2190,7 @@ pub unsafe extern "system" fn KdSystemDebugControl(
     }
 
     if !return_length.is_null() {
-        *return_length = length;
+        return_length.write_volatile(length);
     }
 
     status
@@ -2195,7 +2214,7 @@ pub unsafe extern "system" fn KdChangeOption(
 
     if option != KD_OPTION_SET_BLOCK_ENABLE {
         if !out_buffer_needed.is_null() {
-            *out_buffer_needed = 0;
+            out_buffer_needed.write_volatile(0);
         }
         return STATUS_INVALID_INFO_CLASS;
     }
@@ -2211,7 +2230,7 @@ pub unsafe extern "system" fn KdChangeOption(
     KdBlockEnable = *(in_buffer as *mut u8);
 
     if !out_buffer_needed.is_null() {
-        *out_buffer_needed = 0;
+        out_buffer_needed.write_volatile(0);
     }
 
     STATUS_SUCCESS
