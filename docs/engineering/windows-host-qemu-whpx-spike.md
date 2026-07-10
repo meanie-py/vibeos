@@ -5,11 +5,19 @@ hardware virt on the Windows host) instead of TCG, for seconds-not-minutes x86
 boot/smoke/gdb cycles. This is the doc that `tests/qemu/backend.py` and
 `tests/qemu/cli/config.py` reference. arm64 is out of scope (WHPX is x86-only).
 
-Status: **2026-07-03 — BOTH arches boot to desktop under WHPX** (i386 to
-`[EXPLORER] _tWinMain` + full service startup, amd64 to `[WIN32K] shell ready`)
-after two fixes: the freeldr Rust varargs bug (i386) and `kernel-irqchip=on`
-(amd64 — see below). Default accel stays `tcg` until whpx smokes prove reliable
-across repeats; flip via `VIBEOS_QEMU_WINDOWS_ACCEL=whpx`.
+Status: **2026-07-10 — BOTH arches boot to desktop under WHPX in ~1 min**
+(i386 52s, amd64 ~1min to `shell ready` + net suite at the pre-existing 13/15).
+2026-07-03 got both arches booting (freeldr Rust varargs; `kernel-irqchip` per
+arch) but the boot took 5+ minutes: OVMF read the livecd over IDE PIO and every
+2-byte port read is a WHPX VM exit. 2026-07-10 attached the boot CD via
+**ich9-ahci** under whpx (`rewrite_accel` in backend.py) so OVMF DMAs it — and
+then fixed the SIX stacked guest-side blockers the never-before-exercised AHCI
+path exposed (2 uniata-rust mistranslations, hal-rust 32-vs-64-byte config
+read, hal-rust `KiI8259MaskTable` USHORT-vs-ULONG extern → level-interrupt
+livelock, freeldr UEFI PCI description node + InterruptLine/ELCR firmware
+completion). Full war story: field manual **§9.46**. Default accel stays `tcg`
+until whpx smokes prove reliable across repeats; flip via
+`VIBEOS_QEMU_WINDOWS_ACCEL=whpx`.
 
 ## How to run it
 

@@ -126,8 +126,14 @@ const IRQL_NOT_GREATER_OR_EQUAL: ULONG = 0x0000_0009;
 const IRQL_NOT_LESS_OR_EQUAL:    ULONG = 0x0000_000A;
 
 // Tables defined in irql.rs (HAL component) — read-only at runtime.
+// KiI8259MaskTable is ULONG[32] (C irql.c / irql.rs). A USHORT[32] extern here
+// indexed at HALF the real stride: KiI8259MaskTable[16] read the low word of
+// entry 8, so the level-dismiss pend path never masked IRQ11 at its own IRQL —
+// a held PCI INTx line then EOI'd+refired forever (livelock in
+// _HalpDismissIrqLevel; first level-triggered PIC interrupt ever exercised,
+// 2026-07-10 AHCI CD bring-up).
 unsafe extern "C" {
-    static KiI8259MaskTable: [USHORT; 32];
+    static KiI8259MaskTable: [ULONG; 32];
     static FindHigherIrqlMask: [ULONG; 32];
 }
 
@@ -736,7 +742,7 @@ unsafe fn _HalpDismissIrqGeneric(
     (*Pcr).IRR |= 1 << (Irq + 4);
 
     let mut Mask: PIC_MASK = core::mem::zeroed();
-    Mask.Both = ((KiI8259MaskTable[CurrentIrql as usize] | (*Pcr).IDR as u16) & 0xFFFF);
+    Mask.Both = ((KiI8259MaskTable[CurrentIrql as usize] | (*Pcr).IDR) & 0xFFFF) as USHORT;
     __outbyte(PIC1_DATA_PORT as u16, Mask.__bindgen_anon_1.Master);
     __outbyte(PIC2_DATA_PORT as u16, Mask.__bindgen_anon_1.Slave);
 
