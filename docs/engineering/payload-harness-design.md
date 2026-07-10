@@ -1,6 +1,6 @@
 # Payload Harness — Declarative App Staging, Autostart & Test Driving
 
-**Status: DESIGN (2026-07-07); step 1 (harness+doom) LANDED 2026-07-07, step 2 (httpd+tcp_hammer, netstack backlog+pended-send fixes) landed 2026-07-08 — see field manual §9.37. Rewrite as as-built once workstreams A/B land.**
+**Status: DESIGN (2026-07-07); step 1 (harness+doom) LANDED 2026-07-07, step 2 (httpd+tcp_hammer, netstack backlog+pended-send fixes) landed 2026-07-08 — see field manual §9.43. Rewrite as as-built once workstreams A/B land.**
 Lane: grew out of the Doom foreign-binary quest (`doom-on-vibeos.md`); first
 consumers are the httpd stress gate and the PuTTY compat gate.
 

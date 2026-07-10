@@ -6,7 +6,9 @@
 # landed arm64 with i386-only validation and master sat at ~1/5 arm64 green for
 # a day. This hook makes it mechanism: a push that updates `master` must carry
 # a TREE that a green FULL `vibeos-cli gate` has stamped (the gate writes
-# $GIT_COMMON_DIR/vibeos-gate-stamp.json on all-arches-green over a clean tree).
+# $GIT_COMMON_DIR/vibeos-gate-stamps/<tree>.json on all-arches-green over a
+# clean tree — one file per gated tree, so concurrent lanes never clobber each
+# other's stamp; the legacy single-file vibeos-gate-stamp.json is still honored).
 #
 # Allowed without a matching stamp:
 #   * pushes not touching master (lane branches)
@@ -74,19 +76,38 @@ if not updates:
 common = Path(git("rev-parse", "--git-common-dir"))
 if not common.is_absolute():
     common = Path(git("rev-parse", "--show-toplevel")) / common
-stamp_path = common / "vibeos-gate-stamp.json"
-if not stamp_path.is_file():
-    fail("no gate stamp found — no green full gate has run in this clone yet")
-try:
-    stamp = json.loads(stamp_path.read_text())
-except (OSError, ValueError) as e:
-    fail(f"gate stamp unreadable ({e})")
 
-age = time.time() - stamp.get("time", 0)
-if age > MAX_AGE_S:
-    fail(f"gate stamp is {age / 3600:.1f}h old (max 24h) — re-gate")
-if not FULL.issubset(set(stamp.get("arches", []))):
-    fail(f"stamp covers {stamp.get('arches')} — a FULL gate (all 3 arches) is required")
+# Content-addressed stamp store: a green full gate writes one file per gated
+# TREE hash under vibeos-gate-stamps/, so concurrent lanes gating different
+# trees no longer clobber a single shared slot (the 2026-07-07 race, where one
+# lane's gate overwrote another's stamp between gate and push). The legacy
+# single-file vibeos-gate-stamp.json is still honored during the cutover window.
+# Collect every FRESH (<24h), FULL-arch stamp's tree into the validated set.
+stamp_files = []
+stamps_dir = common / "vibeos-gate-stamps"
+if stamps_dir.is_dir():
+    stamp_files.extend(sorted(stamps_dir.glob("*.json")))
+legacy = common / "vibeos-gate-stamp.json"
+if legacy.is_file():
+    stamp_files.append(legacy)
+
+now = time.time()
+valid_trees = set()
+for p in stamp_files:
+    try:
+        s = json.loads(p.read_text())
+    except (OSError, ValueError):
+        continue
+    if now - s.get("time", 0) > MAX_AGE_S:
+        continue
+    if not FULL.issubset(set(s.get("arches", []))):
+        continue
+    if s.get("tree"):
+        valid_trees.add(s["tree"])
+
+if not valid_trees:
+    fail("no fresh green full-gate stamp found — run ./vibeos-cli gate")
+
 
 def nondocs_delta(base_tree, tree):
     """Non-docs paths that differ between base_tree and tree ([] = docs-only).
@@ -103,28 +124,24 @@ for sha, remote_sha in updates:
     tree = git("rev-parse", f"{sha}^{{tree}}")
     if not tree:
         fail(f"cannot resolve tree of {sha[:12]}")
-    if tree == stamp["tree"]:
-        continue  # exactly the gated content
+    if tree in valid_trees:
+        continue  # exactly a gated tree — the common case, now race-free
     # docs-only exemption: the push's non-docs content is acceptable if it is
-    # already VALIDATED — i.e. docs-only vs EITHER baseline:
+    # already VALIDATED — docs-only vs EITHER baseline:
     #   * remote master (remote_sha): every non-docs path there was gated when it
-    #     landed. This is the primary baseline and fixes the 2026-07-05 false-block
-    #     where a concurrent lane's gate overwrote the SHARED stamp (common git dir)
-    #     with a divergent tree, making a genuinely docs-only push look non-docs.
-    #   * the stamp tree: preserves the "gate a tree, stack a docs commit, push
-    #     both at once" flow (non-docs == the freshly-gated stamp content).
-    # Master is always fast-forward (the reference-transaction guard forbids
-    # rewinds), so remote_sha == current origin/master.
+    #     landed. Master is always fast-forward (the reference-transaction guard
+    #     forbids rewinds), so remote_sha == current origin/master.
+    #   * ANY fresh gated tree: preserves the "gate a tree, stack a docs commit,
+    #     push both at once" flow.
     remote_tree = git("rev-parse", f"{remote_sha}^{{tree}}") if remote_sha and remote_sha != ZERO else ""
-    vs_remote = nondocs_delta(remote_tree, tree)
-    vs_stamp = nondocs_delta(stamp["tree"], tree)
-    if vs_remote == [] or vs_stamp == []:
-        continue  # docs-only vs a validated baseline
-    nondocs = vs_remote if vs_remote else vs_stamp
-    base = remote_tree or stamp["tree"]
+    if nondocs_delta(remote_tree, tree) == []:
+        continue
+    if any(nondocs_delta(t, tree) == [] for t in valid_trees):
+        continue
+    base = remote_tree or next(iter(valid_trees))
     fail(
-        f"push tree {tree[:12]} adds non-docs changes vs master {base[:12]} "
-        f"without a matching gate stamp (first: {nondocs[0]}, {len(nondocs)} paths)"
+        f"push tree {tree[:12]} adds non-docs changes vs {base[:12]} without a "
+        f"matching gate stamp — gate this tree (./vibeos-cli gate)"
     )
 
 sys.exit(0)

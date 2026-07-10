@@ -321,6 +321,41 @@ pub unsafe extern "system" fn DllMain(
             BaseWindowsDirectory = (*BaseStaticServerData).WindowsDirectory;
             BaseWindowsSystemDirectory = (*BaseStaticServerData).WindowsSystemDirectory;
 
+            // arm64 flake tripwire, take 2 (TOCTOU-free): the earlier check at
+            // BaseStaticServerData-fetch time kept passing while the %wZ below
+            // still faulted — the section content MUTATES between there and
+            // here (winlogon races basesrv's population; observed transient
+            // Buffers: a kernel-stack VA, and 0x73 = string DATA read as a
+            // pointer half). So validate the SNAPSHOT the print actually uses:
+            // a bad snapshot is reported loudly and retargeted to the fallback
+            // literals; a good snapshot can no longer change under us.
+            #[cfg(target_arch = "aarch64")]
+            {
+                let bad = |u: &_UNICODE_STRING| {
+                    let b = u.Buffer as usize;
+                    (u.Length != 0 && b == 0)
+                        || (b >> 63) != 0
+                        || (b != 0 && b < 0x10000)
+                        || (b & 1) != 0
+                };
+                if bad(&BaseWindowsDirectory) || bad(&BaseWindowsSystemDirectory) {
+                    DbgPrint(
+                        b"[kernel32] BASE_STATIC_SERVER_DATA snapshot CORRUPT (raced basesrv?): WinDir.Buffer=%p Len=%u SysDir.Buffer=%p Len=%u data=%p - using fallback strings\n\0"
+                            .as_ptr() as *const i8,
+                        BaseWindowsDirectory.Buffer,
+                        BaseWindowsDirectory.Length as u32,
+                        BaseWindowsSystemDirectory.Buffer,
+                        BaseWindowsSystemDirectory.Length as u32,
+                        BaseStaticServerData,
+                    );
+                    RtlInitUnicodeString(&mut BaseWindowsDirectory, w!("\\reactos").as_ptr());
+                    RtlInitUnicodeString(
+                        &mut BaseWindowsSystemDirectory,
+                        w!("\\reactos\\system32").as_ptr(),
+                    );
+                }
+            }
+
             let cb_dest = core::mem::size_of::<[WCHAR; 6140]>();
             let written = _snwprintf(
                 BaseDefaultPathBuffer.as_mut_ptr(),

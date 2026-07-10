@@ -48,7 +48,10 @@ const HID_REPORT_TYPE_OUTPUT: u8 = 0x02;
 const HID_REPORT_TYPE_FEATURE: u8 = 0x04;
 const HID_USAGE_PAGE_UNDEFINED: u16 = 0;
 const HIDP_LINK_COLLECTION_UNSPECIFIED: u16 = 0;
-const HID_USAGE_PAGE_KEYBOARD: u16 = 1;
+// hidusage.h: HID_USAGE_PAGE_KEYBOARD = 0x07. Was invented as 1, which sent every
+// keyboard-page usage down the "unknown page" branch of
+// HidParser_TranslateUsageAndPagesToI8042ScanCodes — zero USB keys ever dispatched.
+const HID_USAGE_PAGE_KEYBOARD: u16 = 0x07;
 const HID_USAGE_PAGE_CONSUMER: u16 = 0x0C;
 const TRUE: u8 = 1;
 const FALSE: u8 = 0;

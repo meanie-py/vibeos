@@ -11,7 +11,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # ntkrnl-sys is at sdk/lib/rust/ntkrnl-sys, so reactos root is 4 levels up
 SRC="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-TOOLCHAIN="${SRC}/../llvm-mingw-20250114-ucrt-macos-universal"
+# In-repo toolchain (was a stale macOS-era sibling path).
+TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
 OUT_DIR="${SCRIPT_DIR}/src"
 
 # Wrapper header — includes full ntoskrnl internals + ARM3 MM

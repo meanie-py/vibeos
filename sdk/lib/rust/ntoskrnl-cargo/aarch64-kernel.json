@@ -33,7 +33,7 @@
       "-fno-use-linker-plugin"
     ]
   },
-  "requires-uwtable": false,
+  "requires-uwtable": true,
   "target-family": [
     "windows"
   ],

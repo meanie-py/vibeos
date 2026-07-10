@@ -3105,7 +3105,12 @@ typedef struct _ACPI_INTERFACE_STANDARD2 {
   PUNREGISTER_FOR_DEVICE_NOTIFICATIONS2 UnregisterForDeviceNotifications;
 } ACPI_INTERFACE_STANDARD2, *PACPI_INTERFACE_STANDARD2;
 
-#if !defined(_AMD64_) && !defined(_ARM_)
+/* _ARM64_ added 2026-07-09: without it arm64 got the i386 pack(4) layout for
+ * IO_STACK_LOCATION, where Parameters.DeviceIoControl.IoControlCode (offset 8)
+ * aliases Parameters.Others.Argument2 — so any driver setting Argument1/2 on an
+ * internal-ioctl IRP (usbhub's GET_ROOTHUB_PDO, etc.) destroyed the IOCTL code.
+ * NT's intended union contract is Argument3 <-> IoControlCode (offset 0x10). */
+#if !defined(_AMD64_) && !defined(_ARM_) && !defined(_ARM64_)
 #include <pshpack4.h>
 #endif
 
@@ -3317,7 +3322,12 @@ typedef struct _IO_STACK_LOCATION {
   PVOID Context;
 } IO_STACK_LOCATION, *PIO_STACK_LOCATION;
 
-#if !defined(_AMD64_) && !defined(_ARM_)
+/* _ARM64_ added 2026-07-09: without it arm64 got the i386 pack(4) layout for
+ * IO_STACK_LOCATION, where Parameters.DeviceIoControl.IoControlCode (offset 8)
+ * aliases Parameters.Others.Argument2 — so any driver setting Argument1/2 on an
+ * internal-ioctl IRP (usbhub's GET_ROOTHUB_PDO, etc.) destroyed the IOCTL code.
+ * NT's intended union contract is Argument3 <-> IoControlCode (offset 0x10). */
+#if !defined(_AMD64_) && !defined(_ARM_) && !defined(_ARM64_)
 #include "poppack.h"
 #endif
 

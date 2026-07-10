@@ -21,3 +21,13 @@ HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Group",0x00000000,"Boot Bus E
 HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ImagePath",0x00020000,"system32\drivers\arm64vid.sys"
 HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Type",0x00010001,0x00000001
+
+; Root-enumerated PCI host bridge (QEMU virt GPEX). There is no acpi.sys on the
+; arm64 boot path (x86 gets ACPI\PNP0A03 from the synthetic-RSDP ACPI stack), so
+; seed the root devnode statically: pnproot creates a PDO from this key, the
+; shared-hive CriticalDeviceDatabase entry *PNP0A03 -> pci binds pci.sys, and
+; pci.sys enumerates the bus via HalGetBusData (ECAM, hal arm64 halstubs.rs).
+; This is what makes the USB (EHCI-on-PCIe) input/storage stack reachable on arm64.
+HKLM,"SYSTEM\CurrentControlSet\Enum\Root\*PNP0A03\0000","HardwareID",0x00010000,"*PNP0A03"
+HKLM,"SYSTEM\CurrentControlSet\Enum\Root\*PNP0A03\0000","DeviceDesc",0x00000000,"PCI Bus (root-enumerated)"
+HKLM,"SYSTEM\CurrentControlSet\Enum\Root\*PNP0A03\0000","ConfigFlags",0x00010001,0x00000000

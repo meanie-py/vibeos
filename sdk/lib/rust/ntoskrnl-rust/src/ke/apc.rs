@@ -97,6 +97,24 @@ pub unsafe extern "C" fn KiInsertQueueApc(Apc: PKAPC, PriorityBoost: i32) {
 
 unsafe fn KiInsertQueueApcImpl(Apc: PKAPC, PriorityBoost: i32) {
     let Thread = (*Apc).Thread;
+    // waitdep forensic (arm64 TDI-window flake): a stale/freed KAPC with
+    // Thread=-1 reaching the unwait below is the remaining uncovered funnel
+    // (the wait-list consume paths are all check_waittest'd and stayed silent
+    // across 3 live hits). Dump the APC identity BEFORE the deref cascade —
+    // KernelRoutine/RundownRoutine symbolicate straight to whoever built the
+    // APC, and the APC address feeds pool-tag/identify-object.
+    if (Thread as usize as isize) >= 0 || (Thread as usize) & (core::mem::align_of::<usize>() - 1) != 0 {
+        crate::dbg_print!(
+            b"[WAITDEP] bad APC.Thread: apc=%p thread=%p kroutine=%p nroutine=%p rroutine=%p mode=%u inserted=%u\n\0",
+            Apc as *const (),
+            Thread as *const (),
+            core::mem::transmute::<_, *const ()>((*Apc).KernelRoutine),
+            core::mem::transmute::<_, *const ()>((*Apc).NormalRoutine),
+            core::mem::transmute::<_, *const ()>((*Apc).RundownRoutine),
+            (*Apc).ApcMode as u32,
+            (*Apc).Inserted as u32,
+        );
+    }
     let ApcState: PKAPC_STATE;
     let ApcMode: i8;
     let mut ListHead: PLIST_ENTRY;

@@ -32,7 +32,8 @@ use ntkrnl_sys::inline::tier1::{
 // i386 export — take the inline version (ddk would emit an undefined extern ref).
 use ntkrnl_sys::inline::ke::KeInitializeSpinLock;
 use ntkrnl_sys::ddk::{
-    ExAllocatePoolWithTag, ExFreePoolWithTag, HalGetBusData, IoCreateDevice,
+    ExAllocatePoolWithTag, ExFreePoolWithTag, HalGetBusData, HalSetBusDataByOffset,
+    IoCreateDevice,
     IoDeleteDevice, IoDetachDevice, IoForwardIrpSynchronously,
     RtlFreeUnicodeString,
     DEVICE_RELATIONS, PCI_COMMON_HEADER, PCM_RESOURCE_LIST,
@@ -219,6 +220,39 @@ unsafe fn FdoEnumerateDevices(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
                     break;
                 } else {
                     continue;
+                }
+            }
+
+            // arm64/QEMU-virt: ArmVirt EDK2 never writes the PCI Interrupt Line
+            // register (it stays 0), but the virt board's GPEX INTx routing is
+            // fixed: INTA..INTD -> GIC INTIDs 35..38, standard bridge swizzle
+            // by device number ((slot + pin) % 4, pin 0-based). Synthesize the
+            // line here so the PDO's boot config carries a real, translatable
+            // vector (HalGetInterruptVector on arm64 is INTID passthrough).
+            // Without this the interrupt requirement is unconstrained (0..0xFF),
+            // the arbiter picks 0, and resource translation fails 0xC0000001.
+            #[cfg(target_arch = "aarch64")]
+            {
+                let hdr_type = pci_config.Header.HeaderType;
+                if (hdr_type & 0x7F) == 0 {
+                    let pin = pci_config.Header.u.type0.InterruptPin; // 1-based, INTA=1
+                    let line = pci_config.Header.u.type0.InterruptLine;
+                    if pin >= 1 && pin <= 4 && (line == 0 || line == 0xFF) {
+                        let mut synthesized: u8 =
+                            35 + ((device_number as u8 + (pin - 1)) % 4);
+                        pci_config.Header.u.type0.InterruptLine = synthesized;
+                        // Persist to config space (offset 0x3C is a scratch
+                        // register) — PdoQueryResources RE-READS live config,
+                        // so patching only our cached copy is not enough.
+                        HalSetBusDataByOffset(
+                            PCI_CONFIGURATION,
+                            (*device_extension).BusNumber,
+                            slot_number.u.AsULONG,
+                            &mut synthesized as *mut u8 as *mut core::ffi::c_void,
+                            0x3C, // FIELD_OFFSET(PCI_COMMON_HEADER, u.type0.InterruptLine)
+                            1,
+                        );
+                    }
                 }
             }
 
@@ -459,49 +493,56 @@ unsafe fn FdoStartDevice(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
         .Parameters
         .StartDevice
         .AllocatedResources;
-    if allocated_resources.is_null() {
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
+    if allocated_resources.is_null() || (*allocated_resources).Count < 1 {
+        // A statically root-enumerated host bridge (arm64: hivesys_arm64.inf
+        // seeds Enum\Root\*PNP0A03 — no ACPI, so no _CRS bus-number resource)
+        // arrives with no resource list at all. Default to bus 0 instead of
+        // failing: config access goes through HalGetBusData (ECAM on arm64),
+        // which needs only the bus number. x86 always gets resources from
+        // acpi.sys, so this branch never runs there.
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[PCI] FdoStartDevice: no bus-number resource (root-seeded bridge?) - defaulting to bus 0\n\0"
+                .as_ptr() as *const i8,
+        );
+        debug_assert!((*device_extension).State == dsStopped);
+        (*device_extension).BusNumber = 0;
+    } else {
+        // AllocatedResources->List[0] — List is CM_FULL_RESOURCE_DESCRIPTOR[1].
+        let list0 = core::ptr::addr_of_mut!((*allocated_resources).List)
+            as *mut ntkrnl_sys::ddk::CM_FULL_RESOURCE_DESCRIPTOR;
+        let partial_list = core::ptr::addr_of_mut!((*list0).PartialResourceList);
 
-    if (*allocated_resources).Count < 1 {
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
+        if (*partial_list).Version != 1 || (*partial_list).Revision != 1 {
+            return STATUS_REVISION_MISMATCH;
+        }
 
-    // AllocatedResources->List[0] — List is CM_FULL_RESOURCE_DESCRIPTOR[1].
-    let list0 = core::ptr::addr_of_mut!((*allocated_resources).List)
-        as *mut ntkrnl_sys::ddk::CM_FULL_RESOURCE_DESCRIPTOR;
-    let partial_list = core::ptr::addr_of_mut!((*list0).PartialResourceList);
+        debug_assert!((*device_extension).State == dsStopped);
 
-    if (*partial_list).Version != 1 || (*partial_list).Revision != 1 {
-        return STATUS_REVISION_MISMATCH;
-    }
+        // By default, use the bus number in the resource list header.
+        (*device_extension).BusNumber = (*list0).BusNumber;
 
-    debug_assert!((*device_extension).State == dsStopped);
+        let mut found_bus_number = false;
+        for i in 0..(*partial_list).Count {
+            // ResourceDescriptor = &...PartialDescriptors[i]  ([T; 1] — pointer arith)
+            let descriptors = core::ptr::addr_of_mut!((*partial_list).PartialDescriptors)
+                as *mut ntkrnl_sys::ddk::CM_PARTIAL_RESOURCE_DESCRIPTOR;
+            let resource_descriptor = descriptors.add(i as usize);
 
-    // By default, use the bus number in the resource list header.
-    (*device_extension).BusNumber = (*list0).BusNumber;
+            match (*resource_descriptor).Type {
+                x if x == CmResourceTypeBusNumber => {
+                    let bus = (*resource_descriptor).u.BusNumber;
+                    if found_bus_number || bus.Length < 1 {
+                        return STATUS_INVALID_PARAMETER;
+                    }
 
-    let mut found_bus_number = false;
-    for i in 0..(*partial_list).Count {
-        // ResourceDescriptor = &...PartialDescriptors[i]  ([T; 1] — pointer arith)
-        let descriptors = core::ptr::addr_of_mut!((*partial_list).PartialDescriptors)
-            as *mut ntkrnl_sys::ddk::CM_PARTIAL_RESOURCE_DESCRIPTOR;
-        let resource_descriptor = descriptors.add(i as usize);
-
-        match (*resource_descriptor).Type {
-            x if x == CmResourceTypeBusNumber => {
-                let bus = (*resource_descriptor).u.BusNumber;
-                if found_bus_number || bus.Length < 1 {
-                    return STATUS_INVALID_PARAMETER;
+                    // Use this one instead.
+                    debug_assert!((*list0).BusNumber == bus.Start);
+                    (*device_extension).BusNumber = bus.Start;
+                    found_bus_number = true;
                 }
-
-                // Use this one instead.
-                debug_assert!((*list0).BusNumber == bus.Start);
-                (*device_extension).BusNumber = bus.Start;
-                found_bus_number = true;
-            }
-            _ => {
-                // DPRINT("Unknown resource descriptor type 0x%x\n", ...);
+                _ => {
+                    // DPRINT("Unknown resource descriptor type 0x%x\n", ...);
+                }
             }
         }
     }

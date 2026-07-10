@@ -6,76 +6,65 @@ Items below are drawn from ChatGPT planning sessions and ongoing work. Scoped wi
 
 ---
 
-## Phase 0 — Active Translation Work (before this roadmap)
+## Phase 0 — The near-term (recalibrated 2026-07-07)
 
-Everything below in this document is longer-term. The immediate translation campaign is tracked in these documents and should be substantially complete first.
+The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~90–100% translated and boot to desktop on all three arches** (single source of truth: [`../engineering/rust-port-status.md`](../engineering/rust-port-status.md); completed history: [`vibeos-roadmap-complete.md`](vibeos-roadmap-complete.md)). So the near-term is **not** "finish the translation before this roadmap" — it's a deliberate interleave of *finishing the systemic unlocks* with *resuming translation*.
 
-Completed items: see [`vibeos-roadmap-complete.md`](vibeos-roadmap-complete.md)
+### Why priorities look "pulled forward" — the Fable window
 
-### 0a. IO Subsystem Activation — [`status-update.md`](status-update.md)
+**Claude Fable** (a higher-frontier model) was bundled in the subscription **through 2026-07-07**, so we used that window to have it tackle the hard systemic/enhancement work, **set the reusable patterns**, and prove concepts — pulling that work *ahead* of translation because a stronger model was briefly available and excelled. From today we are **Opus-only**: the job now is to **follow Fable's patterns** to land the burndowns/unlocks, then **resume translation as the through-line**. Priority *un*-shifts back to translation — *except* where a Fable-unlocked thread is high-value enough to see through.
 
-IO subsystem C→Rust activation is **substantially complete**. All iomgr/ and pnpmgr/ modules now active on all 3 arches. Remaining: ARM64 desktop rendering (SMSS not starting), amd64 taskbar regression (explorer shell UI not rendering). See status-update.md and engineering docs.
+**Fable-window ledger (state of each pulled-forward thread):**
 
-### 0b. Finish ntoskrnl Translation — [`../engineering/rust-port-status.md`](../engineering/rust-port-status.md) (per-file history: [`archive/ntoskrnl-translation-audit.md`](../engineering/archive/ntoskrnl-translation-audit.md))
+| Thread | State | Disposition |
+|---|---|---|
+| ntoskrnl **crate-split** (build velocity) | ~63% (21 crates, monolith 456K→170K); ex parked on x86 hang; ke/mm remain | **continue** (Opus-doable) — [`../engineering/ntoskrnl-crate-split-plan.md`](../engineering/ntoskrnl-crate-split-plan.md) |
+| **`--allow-multiple-definition`** elimination | spike + docs proven | **see through** (high value) — [`../engineering/allow-multiple-definition-ratchet.md`](../engineering/allow-multiple-definition-ratchet.md) |
+| **DUMMY_PSEH** resolution | spike + docs, direction open | **see through** (high value) |
+| **Doom on vibeos** / screen-painting / perf | showcase landed | done — winding down |
+| **IRQL/spinlock RAII** audit | 0 leaks; 130 candidates catalogued | **park** — adopt incrementally ([`../engineering/irql-raii-conversion-queue.md`](../engineering/irql-raii-conversion-queue.md)) |
+| **sync-instrumentation** (lockdep/waitdep/cswitchdep) | landed / phase-1 active | keep as always-on tripwires |
+| the **linter suite** (ghost-tax Tier 1) | landed + 0-NEW gated | burn stock opportunistically |
 
-**~52K lines of C remaining** across 70 files in 6 subsystems. Current kernel is ~344K lines Rust (~80%). After this phase: ~98% Rust.
+### Tier 1 — Finish the high-value unlocks
 
-| Subsystem | Files | Lines | Priority | Notes |
-|-----------|-------|-------|----------|-------|
-| **config/** (Registry CM) | 24 | 18.8K | HIGH | Last major untranslated subsystem. Complex hive B-tree + cell allocator. Depends on cmlib (8.8K shared lib). Would bring kernel to ~95% Rust. |
-| **fstub/** (Disk partitioning) | 4 | 5.8K | MEDIUM | MBR/GPT partition support, HAL stubs. Straightforward. |
-| **kd64/** (WinDbg protocol) | 11 | 6.8K | DEFERRED | Already translated to Rust but **disabled** — recursive exception flood on amd64 (INT3 → KdpTrap → infinite nesting). Needs debugging, not retranslation. |
-| **kdbg/** (Interactive debugger) | 9 | 12.3K | LOW | ReactOS-specific debugger. Dev tool only, not boot-critical. |
-| **kd/** (Low-level debug I/O) | 9 | 2.2K | LOW | Serial/keyboard/terminal for debugger. |
-| **cache/** (NewCC) | 13 | 6K | SKIP | NEWCC-only code path, not active. |
+- **`--allow-multiple-definition` elimination** — kill the load-bearing link flag categorically (spike proven; see the ratchet doc + `tools/scan_duplicate_symbols.py`).
+- **DUMMY_PSEH resolution** — decide + execute the path off the SEH-is-dead-code hack across all arches (spike + open-question doc landed).
 
-**Approach:** rustconv batch pipeline for config/ and fstub/ (~$0.65 API cost). KD64 needs the recursive exception bug diagnosed (possibly another Codex debugging session). KDBG/KD are low priority — debugger code that doesn't affect boot or runtime.
+### Tier 2 — Systemic Rust-native fixes (above Wine-DLL translation)
 
-**Size: M-L** — config/ is the hard one (complex data structures, locking). fstub/ is a quick win. Total ~2-3 weeks.
+- **⭐ Exported-symbol trampoline refactor** *(new; Size: M, mechanical)* — split every exported symbol into a snake_case **native `nt_foo()`** (plain Rust ABI, holds the logic) + a generated **`NtFoo` trampoline** that is the *only* place `extern "system"/"fastcall"/stdcall` lives. Done mechanically in Python across all ~1,700+ monolith exports (thousands fleet-wide). **This is the capstone of the ghost-tax "two copies of the truth" program**: internal callers hit the native fn, so there is no hand-written `extern` decl left to drift — it kills the ABI-mismatch bug class the crate-split flushes cross-crate, `scan_cc_mismatch` catches same-crate (316 baseline), and `verify_ffi` guards (161). Also the natural substrate for idiomation (§3) and for **generating** crate-split's cross-crate decls instead of hand-writing them — so do it *aware of* the crate-split.
+- **msvcrt / ucrtbase from pieces** *(new; Size: M-L)* — the CRT floor is still ~581 `.c`. Rather than translate it from scratch, **assemble** the Rust CRT from what already exists — `cnt-rust` (libcntpr kernel CRT subset) + the 39-crate `rtl-rust` umbrella — and NT-ify the gaps. Displaces the last big userland C floor.
+- **ntoskrnl crate-split continuation** *(Size: M)* — debug + land **ex** (x86 hang, branch `ex-crate-split-x86-hang`), then split **ke** and **mm/ARM3**; then **win32k** (flat 257K single crate, textbook USER/GDI seam, `freetype` a free leaf — one coordinated pass in a quiet window). Detail + recipe: the crate-split plan.
 
-### 0c. Beyond ntoskrnl — [`../engineering/beyond-ntoskrnl-targets.md`](../engineering/beyond-ntoskrnl-targets.md)
+### Tier 3 — Resume translation (the through-line)
 
-After ntoskrnl is fully Rust, translate the rest of the kernel-adjacent stack. **~500K+ lines across multiple components**, spanning months of work.
+Genuine remnants only — the boot path is already Rust. Measured 2026-07-07 from `media/doc/WINESYNC.txt` provenance + `wine/`-subdir + the live `*-rust` crate set.
 
-**Phase 1 — Kernel-mode (reuses existing rustconv infra):**
+**ROS-native userland — ~140 components, ~240K native LOC (the priority queue).** Batched by shape for rustconv (a name-collision caveat: a few like `smss`→`smss-csrss` are already done; the count is a mild over-estimate):
 
-| Target | Lines | Notes |
-|--------|-------|-------|
-| HAL/halarm (ARM64) | 2K | Immediate — same build system, tiny |
-| ksecdd.sys | 1.4K | Tiny boot driver, perfect starter |
-| HAL/halx86 | 23K | Core HAL, heavy inline asm (port I/O, APIC) |
+| Batch | Top targets (native LOC) |
+|---|---|
+| **Winsock / net client** | ws2_32 (14K), dhcpcsvc (6.4K), dnsapi (3.2K), mswsock, ws2help, wshtcpip |
+| **Setup / PnP / device** | devmgr (10K), netcfgx (9K), syssetup (9K), umpnpmgr (7K), newdev, msports |
+| **Control panels (`dll/cpl`)** | desk (11.5K), sysdm (7.9K), intl (5.2K), mmsys (3.8K), timedate, access, main, usrmgr, powercfg, input — ~15 CPLs, uniform shape, very batchable |
+| **Services (`base/services`)** | eventlog (3.5K), netshell (4.5K), svchost, wkssvc, dnsrslvr, audiosrv, wlansvc |
+| **Security / auth** | msv1_0 (3.3K), samlib (2.4K), ntmarta (1.8K), aclui (5.7K), authz — completes the LSA/SAM chain already in flight |
+| **Shell exts / apps / audio** | zipfldr, shimgvw, fontext, ntobjshex, stobject; console (3K), diskpart (9.3K); wdmaud.drv, mmdrv, the `*.acm` codecs |
+| **misc system DLLs** | userenv (6.5K), psapi (1.7K), framedyn, hhctrl.ocx (5.2K), fmifs |
 
-**Phase 2 — win32k (same kernel-mode infra, ~134K lines):**
+**Wine-derived userland — ~154 DLLs, ~1.05M LOC (lower priority than Tier 2).** kernelbase (41K, `kernelbase/wine/`), comctl32, comdlg32, ole32, oleaut32, gdiplus, riched20, urlmon, wininet, mshtml, jscript/vbscript, msxml*, windowscodecs, crypt32, wldap32, rpcrt4, the whole `dll/directx/wine/` stack. Re-implementing these from *current* Wine via an LLM pipeline (§7b) beats translating the frozen fork — that's why they sit below the native queue.
 
-| Target | Lines | Notes |
-|--------|-------|-------|
-| gdi/eng/ | 19K | Graphics primitives, pure computation — good entry point |
-| ntgdi/ selective | ~10K | Bitmap/brush/pen ops |
-| ntuser/ selective | ~15K | Input, cursor, hooks |
-| Full win32k | 114K | Long campaign. Window manager is one giant mutable state machine. FreeType (7.9K) probably stays in C. |
+**Already translated (frontier boundary):** kernel/win32k, kernel32, ntdll, user32, gdi32, advapi32, secur32, shell32, msafd, mlang, mscms, version, cabinet + the boot/server spine (winsrv, smss-csrss, lsasrv, samsrv, msgina, services, winlogon, userinit, explorer) + the driver fleet.
 
-win32k is **comparable in size to ntoskrnl** (~134K lines kernel core, ~338K total win32ss). Easier than ke/ (less asm) but harder than io/ (286 global mutable statics in ntuser alone, deep re-entrancy in message loop/hooks). Best entry: gdi/eng/ primitives.
+### Tier 4 — Debt burndown (gated at the door; burn opportunistically)
 
-**Phase 3 — User-mode foundation (needs new Rust target + `#![no_std]`):**
+Every class below is already **0-NEW-gated** by `vibeos-cli check`; the *stock* is owed, none of it is urgent. Framework: [`../engineering/ghost-tax-diagnosis-and-program.md`](../engineering/ghost-tax-diagnosis-and-program.md).
 
-| Target | Lines | Notes |
-|--------|-------|-------|
-| SMSS | 6.5K | First user-mode Rust process. Pure Nt* API, no Win32 deps. |
-| NTDLL ldr/ | 9.2K | PE loader. Runs before heap init. High security value. |
-| CSRSRV | 7K | CSRSS infrastructure. |
-
-User-mode Rust requires new infrastructure — can't use Rust std, need `#![no_std]` with manual allocation. The syscall dispatchers are arch-specific ASM (stay in ASM).
-
-**Phase 4 — Security stack + drivers:**
-
-| Target | Lines | Notes |
-|--------|-------|-------|
-| lsasrv + samsrv + msv1_0 | 34.7K | Full auth chain. ReactOS-native (not Wine). |
-| advapi32 | 32.1K | ReactOS-native advanced API. |
-| fastfat.sys | 68.8K | Primary filesystem driver. |
-| sdk/lib/rtl | 57.1K | Shared runtime — benefits ALL components. |
-
-**Size: XL-XXL total** — Months of work across multiple phases. Each phase is independently valuable (HAL in Rust = safer interrupts, win32k in Rust = safer graphics, etc.).
+- **`scan_silent_failures` (2086)** — bare `loop{}` spins, `unwrap`/`expect`, swallowed `Err` in kernel/driver code.
+- **`scan_cc_mismatch` (316)** + **`verify_ffi` (161)** — ABI-decl drift; **largely retired for free by the Tier-2 trampoline refactor.**
+- **`lint_kernel` (1473 `write_volatile`)** — **likely mostly obsolete**: the captures(none) miscompile it defends against is toolchain-fixed on LLVM ≥ 21 (rustc 1.92 / LLVM 21.1.3). Decision owed: retire-and-revert the defensive laundering vs keep as belt-and-suspenders (`tools/scan_captures.py` is the post-toolchain-bump tripwire).
+- **IRQL/spinlock RAII (130 candidates)** — 0 leaks today; adopt hand-verified as files are touched (block-scope discipline — the "trivial" labels are ~50% wrong).
 
 ---
 
@@ -391,11 +380,13 @@ arches) and the PL011 UART (a real ARM peripheral).
 
 ## Priority Order (suggested)
 
+**Near-term is the Phase 0 tiers above** (Opus-only, post-Fable): T1 finish unlocks (allow-multiple-def, DUMMY_PSEH) → T2 systemic Rust-native (trampoline refactor, msvcrt-from-pieces, crate-split ke/mm/win32k) → T3 resume translation (ROS-native DLL batches, then Wine) → T4 debt burndown (opportunistic). The table below orders the **longer-horizon architecture & future** items (§1–§9), which sit *after* the Phase 0 tiers:
+
 | # | Item | Size | Blocked By | Impact |
 |---|------|------|-----------|--------|
 | 1 | Testing infrastructure (4a-c) | M | Nothing | Enables everything else safely |
-| 2 | SEH idiomation Stage 3 (3) | L | Nothing | Correctness + code quality |
-| 3 | Pipeline auto-repair (2b) | M | Nothing | Translation velocity |
+| 2 | SEH idiomation Stage 3 (3) | L | Trampoline refactor (§0 T2) helps | Correctness + code quality |
+| 3 | Pipeline auto-repair (2b) | M | Nothing | Translation velocity (feeds §0 T3) |
 | 4 | Boot trace expansion (5c) | S | Nothing | Debug velocity |
 | 5 | Semantic plateau mitigation (5a) | M | Testing infra | Runtime correctness |
 | 6 | SQLite registry (1) | L | Nothing | Architecture simplification |
@@ -407,5 +398,5 @@ arches) and the PL011 UART (a real ARM peripheral).
 | 12 | WoW64/WoWARM64 + FEX (8) | XL | Stable kernel | App compatibility |
 | 13 | x86 deprecation (9) | L | WoWARM64 working | Simplification |
 | 14 | Futex primitives (6c) | XL | Lock-free work | Architecture |
-| 15 | Wine DLL re-implementation (7b) | XXL | Pipeline + Rosetta | Full Rust userland |
+| 15 | Wine DLL re-implementation (7b) | XXL | Pipeline + Rosetta | Full Rust userland (the §0 T3 Wine bucket) |
 | 16 | Linux-origin subsystem refresh (7c) | XL | Pipeline maturity | Remove stale ports |
