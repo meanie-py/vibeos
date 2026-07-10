@@ -1561,6 +1561,7 @@ pub unsafe extern "system" fn AtapiHwInitialize(HwDeviceExtension: PVOID) -> BOO
         AtapiHwInitialize__(deviceExtension, c);
         c += 1;
     }
+    DbgPrint(b"[UNIATA] HwInitialize done\n\0".as_ptr().cast()); // perf phase marker
     TRUE
 }
 

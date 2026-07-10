@@ -36,7 +36,14 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_MAXSIZE = "50G"
+# ccache (C/C++) self-limits to its working set (~1G) — 50G is a generous ceiling
+# it never approaches. sccache (Rust) is the pressured one: the whole fleet's
+# rustc working set (N divergent worktrees × 3 arches × ~250 crates) shares ONE
+# content-addressed pool, and at 50G it ran full (49/50G) and LRU-thrashed —
+# entries evicted before reuse → cold cross-worktree rebuilds. 150G holds the
+# fleet's unique set with headroom; bump further if `sccache -s` shows it full again.
+CCACHE_MAXSIZE = "50G"
+SCCACHE_MAXSIZE = "150G"
 _FALSEY = ("0", "false", "no", "off")
 
 
@@ -86,11 +93,11 @@ class CacheEnv:
             e["CCACHE_BASEDIR"] = str(self.root)  # abs paths under here hashed relative
             e["CCACHE_NOHASHDIR"] = "true"  # cwd not in hash → worktree-independent
             e["CCACHE_SLOPPINESS"] = "time_macros"  # tolerate __DATE__/__TIME__ for hits
-            e["CCACHE_MAXSIZE"] = DEFAULT_MAXSIZE
+            e["CCACHE_MAXSIZE"] = CCACHE_MAXSIZE
         if self.use_sccache:
             e["RUSTC_WRAPPER"] = self.sccache_bin or "sccache"
             e["SCCACHE_DIR"] = str(self.sccache_dir)
-            e["SCCACHE_CACHE_SIZE"] = DEFAULT_MAXSIZE
+            e["SCCACHE_CACHE_SIZE"] = SCCACHE_MAXSIZE
             e["CARGO_INCREMENTAL"] = "0"  # incremental + sccache don't mix
         return e
 

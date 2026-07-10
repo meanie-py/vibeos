@@ -1979,7 +1979,7 @@ pub unsafe extern "system" fn EHCI_InterruptService(ehciExtension: PVOID) -> BOO
         return 0 as BOOLEAN;
     }
 
-    (*EhciExtension).InterruptStatus = iStatus;
+    (*EhciExtension).InterruptStatus.AsULONG |= iStatus.AsULONG;
 
     WRITE_REGISTER_ULONG(
         core::ptr::addr_of_mut!((*OperationalRegs).HcStatus.AsULONG),
@@ -2016,7 +2016,15 @@ pub unsafe extern "system" fn EHCI_InterruptService(ehciExtension: PVOID) -> BOO
 
     (*EhciExtension).FrameIndex = FrameIndex;
 
-    return 1 as BOOLEAN;
+    if iStatus.Interrupt() != 0
+        || iStatus.ErrorInterrupt() != 0
+        || iStatus.PortChangeInterrupt() != 0
+        || iStatus.InterruptOnAsyncAdvance() != 0
+    {
+        return 1 as BOOLEAN;
+    }
+
+    return 0 as BOOLEAN;
 }
 
 #[no_mangle]

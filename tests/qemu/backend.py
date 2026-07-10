@@ -92,6 +92,28 @@ def rewrite_accel(args: list[str], accel: str, arch: str = "amd64") -> list[str]
         if a == "-cpu" and i + 1 < len(args):
             i += 2  # drop `-cpu host` (KVM-only passthrough; faults OVMF under whpx)
             continue
+        if (
+            a == "-device"
+            and i + 1 < len(args)
+            and args[i + 1].startswith("ide-cd,")
+            and (accel == "whpx" or os.environ.get("VIBEOS_AHCI_CD") == "1")
+        ):
+            # (VIBEOS_AHCI_CD=1 forces the AHCI attach under TCG too — debug
+            # discriminator: exercises the guest AHCI driver path with WHPX's
+            # interrupt-delivery quirks out of the picture.)
+            # WHPX firmware CD I/O is glacial: OVMF's AtaAtapi driver reads the livecd
+            # via IDE PIO (port 0x170/0x177), and every 2-byte read is a VM exit → the
+            # uefildr file-load phase takes MINUTES (vs seconds under TCG's fast port
+            # I/O). Put the CD on an AHCI controller instead: OVMF's AtaAtapi in AHCI
+            # mode DMAs it (no per-word exit). The guest still reads it post-firmware —
+            # uniata claims ich9-ahci (8086:2922, UNIATA_AHCI; bm_devs.h) and the
+            # CC_0106 CriticalDeviceDatabase entry (hivesys.inf) binds uniata to the
+            # AHCI controller during boot. TCG keeps plain IDE — its PIO is a cheap
+            # host memcpy, no exit, so AHCI would only add enumeration cost there.
+            out += ["-device", "ich9-ahci,id=ahci0"]
+            out += ["-device", args[i + 1].replace("ide-cd,", "ide-cd,bus=ahci0.0,", 1)]
+            i += 2
+            continue
         out.append(a)
         i += 1
     return out

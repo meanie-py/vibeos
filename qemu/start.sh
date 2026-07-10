@@ -172,12 +172,19 @@ case "$ARCH" in
             KVM_FLAGS=(-accel tcg -cpu max)
             log_info "VIBEOS_NO_KVM set — using TCG (breakpoints work, slower boot)"
         elif [ -r /dev/kvm ]; then KVM_FLAGS=(-accel kvm -cpu host); else KVM_FLAGS=(-cpu Westmere); fi
+        # VIBEOS_AHCI_CD=1: attach the CD via AHCI instead of IDE (mirrors
+        # tests/qemu/backend.py's whpx rewrite — debug knob for the AHCI
+        # guest-driver path).
+        CD_FLAGS=(-device "ide-cd,drive=cd0,bootindex=0")
+        if [ "${VIBEOS_AHCI_CD:-}" = "1" ]; then
+            CD_FLAGS=(-device "ich9-ahci,id=ahci0" -device "ide-cd,bus=ahci0.0,drive=cd0,bootindex=0")
+        fi
         QEMU_CMD=(
             qemu-system-i386 -M pc "${KVM_FLAGS[@]}" -m 512M
             -drive "if=pflash,format=raw,file=$OVMF_CODE,readonly=on"
             -drive "if=pflash,format=raw,file=$OVMF_VARS"
             -drive "id=cd0,if=none,format=raw,file=$ISO,readonly=on"
-            -device ide-cd,drive=cd0,bootindex=0
+            "${CD_FLAGS[@]}"
             -vga std -no-reboot
             "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}" "${EXTRA_FLAGS[@]}"
         )

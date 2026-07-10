@@ -157,6 +157,30 @@ Plan (amd64 first) — **no `_WINKD_` flip, no PE import surgery**:
 5. Validate: attach, break-in, `k` (stack walk over Rust frames — needs the
    uwtable sweep above), `lm`, memory read, breakpoint.
 
+### First live-attach attempt (2026-07-09) — wire is ALIVE, handshake incomplete
+
+Fully automatable from WSL: `kdX64.exe` (10.0.29617, WindowsApps PATH) runs
+via interop. Recipe used:
+1. `kdX64.exe -logo C:\temp\vibeos_kd.log -k com:pipe,port=\\.\pipe\vibeos_kd,resets=0,reconnect -c "..."`
+   (launch FIRST; `reconnect` waits for the pipe).
+2. `VIBEOS_QEMU_EXTRA_ARGS="-serial pipe:vibeos_kd" ./vibeos-cli smoke --arch amd64 --tripwire "KD=COM2"`
+   (windows-host qemu creates `\\.\pipe\vibeos_kd` as pipe server).
+
+Result: **first-ever bidirectional WinDbg↔vibeos packet exchange.** kd
+connected, exchanged packets far enough to attempt reading the debugger data
+list (`Unable to read head of debugger data list, Win32 error 0n56`, then
+`Unable to get target version info, re-init transport and retry`). Two gaps:
+- **Boot wedges** right after the tripwire is consumed — KdInitSystem on COM2
+  blocks in the packet loop waiting for a handshake our KdReceivePacket side
+  doesn't complete. Needs timeout/retry semantics (KdpStub fallback after N
+  failed resyncs) so an armed boot without a fully-working debugger still
+  reaches desktop.
+- **DbgKdGetVersionApi / KdVersionBlock / KdDebuggerDataBlock** responses are
+  what kd needs next (error 56 = it never got a valid data-list address).
+Cosmetic: tripwire.rs prints `unknown tripwire token (ignored)` for KD=COM2 —
+harmless (kd64 reads it via `VibeTripwireHasToken` substring match), but the
+parser should learn the token to stop the scary print.
+
 ## Validation results (2026-07-08)
 
 - **amd64 — FULLY VALIDATED end-to-end.**
@@ -192,23 +216,88 @@ Plan (amd64 first) — **no `_WINKD_` flip, no PE import surgery**:
    + `KiBugMsgRangeValid` page-walk guard → degrade to code-only display.
    This is exactly the "crash reporter that can crash" failure mode.
 
-## OPEN: arm64 user-mode SEH first-chance delivery
+## arm64 user SEH: unwinder rewrite + the latent layout-race it exposed (2026-07-10)
 
-`sehtest` on arm64: the software raise arrives at `KiDispatchException` with
-`FirstChance=0` (second-chance) directly — no first-chance user dispatch ever
-happens (`[UEXC] 1st=0` then `[UEXC-KILL]`, process dies `exit=0xe0dead02`).
-Root: **`RtlRaiseException` is not implemented for arm64** — `rtl-except`'s
-arm64 module only *references* it (`arm64/except.rs:403,420`); the
-`@ stdcall -register RtlRaiseException` ntdll export has an amd64/i386 asm
-capture-and-`NtRaiseException(…,TRUE)` stub with no arm64 equivalent, so the
-user raise never enters first-chance. This is the FIRST time arm64 user SEH
-has been exercised (the 2026-07-07 map noted the arm64 unwinder as
-"complete translation, never runtime-exercised"). The kernel-side arm64
-delivery (`KiDispatchExceptionToUser`, the dispatch.S swallow added this
-lane) is in place; the missing piece is the ntdll-side arm64
-`RtlRaiseException` (+ likely `RtlpExecuteHandler*` asm trampolines). Fix is
-an arm64 asm/naked capture stub mirroring amd64 `except_asm.S`. Field manual
-§9.36.
+Implemented the real ARM64 `.xdata` unwind-code interpreter in
+`rtl-except/src/arm64/except.rs` (`RtlpUnwindXDataCodes`). The prior code was a
+`Pc = Lr` **leaf stub** for every `.xdata` (non-packed) frame — so `RtlVirtualUnwind`
+could never step past a non-leaf frame, `RtlDispatchException`'s walk stalled at
+frame 0, and no user `__except` scope table was ever reached. That is the true
+reason arm64 first-chance user SEH never delivered (the "RtlRaiseException missing"
+note below was a mis-diagnosis; `RtlRaiseException` IS present via `rtl-diag`).
+Two dispatch-loop fixes rode along: per-frame `ControlPc` in `RtlDispatchException`
+(was reusing the fault PC for every frame → parent scope tables never matched), and
+restoring the target frame's **pre-unwind** context at the `RtlUnwindEx` jump target
+(was resuming the faulting callee's x29/sp). Opcode decoder validated byte-for-byte
+against clang's emitted `.xdata` in `sehtest.exe`.
+
+**The land was blocked by a pre-existing latent bug this change exposed.** Adding the
+unwinder — OR a same-size *dead, never-called* padding function — turned arm64 smoke
+red at `BUGCHECK 0x64` (SESSION5/SMSS create failed). Clean HEAD boots **7/7 green**;
+the perturbed build is **red 4/4** → deterministically **layout-sensitive**, not a
+flake. `rtl-except` compiles into `librtl`, which links into **ntoskrnl.exe**, so any
+text-size delta shifts the in-kernel pnpmgr/iomgr code and changes PnP timing.
+
+Failure chain (proven with a `MAPFILE`/component-ladder/`\Device`-enum probe series in
+`RtlpMapFile` + `RamdiskCreateDiskDevice`): ramdisk **bus-node**
+`QUERY_DEVICE_RELATIONS(BusRelations)` returns `STATUS_INVALID_DEVICE_REQUEST`
+(`0xC0000010`) → boot-disk PDO never enumerated → `\Device\Ramdisk{guid}\…` (and thus
+`\SystemRoot\System32\smss.exe`) opens fail `STATUS_OBJECT_PATH_NOT_FOUND`
+(`0xC000003A`) → `ExpLoadInitialProcess` bugchecks `0x64`.
+
+**Root cause:** `ramdisk-rust/src/ramdisk.rs:2641` (`RamdiskAddDevice`) had
+`(*DeviceObject).Flags &= DO_DEVICE_INITIALIZING;` — a faithful copy of an upstream
+ReactOS `ramdisk.c:2411` typo that **drops the `~`**. Instead of *clearing*
+`DO_DEVICE_INITIALIZING` it masks Flags down to *only* that bit, so the bus FDO stays
+permanently "initializing" **and** loses the `DO_DIRECT_IO`/`DO_POWER_PAGABLE` just
+set. That stuck state is *necessary-but-not-sufficient*: normally the QDR fires late
+enough to tolerate it (clean HEAD green), but a layout shift moves the QDR into the
+window where it's rejected. Fix: `&= !DO_DEVICE_INITIALIZING` (matches every other
+Rust driver + the C *intent*), which both marks the FDO ready and preserves the I/O
+flags — removing the necessary condition for all layouts.
+
+## arm64 user-mode SEH — NOW DELIVERS (2026-07-10)
+
+With the `.xdata` unwinder landed, arm64 `sehtest` first-chance delivery works
+(`[UEXC] 1st=1`, `[UEXC-DISPATCH]` to `KiUserExceptionDispatcher`). Results:
+- `[SEH-USER] sw-raise: caught=1 (PASS)` — software `RaiseException` caught.
+- `[SEH-USER] finally: ran=1 caught=1 (PASS)` — `__finally` unwind runs.
+- `[SEH-USER] hw-fault: caught=1 code=0xc0000005 (PASS)` — the hardware
+  ACCESS_VIOLATION in a noinline callee is **caught** by the user `__except`.
+
+(The earlier "RtlRaiseException not implemented for arm64" diagnosis was WRONG —
+`RtlRaiseException` is present via `rtl-diag`. The real gap was the `.xdata` leaf
+stub in `RtlVirtualUnwind`, now fixed.)
+
+### Fix: kernel hardware-fault context must carry callee-saved x19-x28
+
+`ke/arm64/trap.rs` `KiSynchronousExceptionHandler` called `KiDispatchException`
+with a **NULL** `ExceptionFrame`. On ARM64 the callee-saved integer regs
+(x19-x28) live in the KEXCEPTION_FRAME, not the KTRAP_FRAME, so
+`KeTrapFrameToContext` left them at their zero-init values → the CONTEXT handed
+to `KiUserExceptionDispatcher` carried **zeroed x19-x28**, and a hardware fault
+delivered to a user `__except` resumed with lost callee-saved state (the
+`__except`'s `"PASS"` string pointer — a non-volatile reg — resolved to NULL,
+printing `(null)`). Fix: `KiCaptureCalleeSaved` (a no-prologue `global_asm!`
+shim) snapshots x19-x28 at handler entry — still the faulting code's values,
+since `TRAP_PROLOG` only touches x0/x1 — into a local KEXCEPTION_FRAME passed to
+all four `KiDispatchException` calls. The `__except` now sees correct x19-x28
+(`hw-fault … (PASS)`).
+
+### RESIDUAL (OPEN): hw-fault `__except` leaves `main`'s callee-saved wrong
+
+`sehtest` still prints `RESULT: FAIL`. Instrumented: `after sw-raise r=1 pass=1`,
+`after finally r=1 pass=1`, `after hw-fault r=1 pass=0` — `TestHardwareFault`
+returns 1 correctly, but `main`'s aggregate `pass` (a callee-saved register) is
+corrupted to 0 **across** the hardware-fault `__except`, while the software-raise
+`__except` preserves it. FP-relative access is fine (locals, return value, the
+`(PASS)` string all correct); the corruption is SP-relative — the `__except`
+resume SP is subtly off, so the epilogue's `ldp x19,x20,[sp,#..]` restores
+`main`'s registers from a wrong slot. This is a multi-frame ARM64 unwind
+SP-restoration detail in `RtlUnwindEx`/`RtlVirtualUnwind` (leaf `FaultingWrite`
+→ `main`'s inlined `__except`). Next step: GDB single-step the unwind, compare
+the resume SP against the epilogue's expected frame SP. Boot stays green
+(sehtest is fire-and-forget); this is the last-mile of arm64 hardware-fault SEH.
 
 ## Validation ladder (repeat before landing)
 

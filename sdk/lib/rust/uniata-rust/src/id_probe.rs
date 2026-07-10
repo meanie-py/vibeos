@@ -1132,6 +1132,8 @@ pub unsafe extern "system" fn UniataFindBusMasterController(
     RevID = pciData.RevisionID as ULONG;
     dev_id = VendorID | (DeviceID << 16);
     slotData.u.AsULONG = slotNumber;
+    DbgPrint(b"[UNIATA] FindBM dev=%08x class=%02x/%02x i=%u slot=%08x\n\0".as_ptr().cast(),
+        dev_id, BaseClass as ULONG, SubClass as ULONG, i, slotNumber); // ahci marker
 
     (*deviceExtension).slotNumber = slotNumber;
     (*deviceExtension).SystemIoBusNumber = SystemIoBusNumber;
@@ -1153,6 +1155,8 @@ pub unsafe extern "system" fn UniataFindBusMasterController(
     if VendorID != (*BMList.add(i as usize)).nVendorId
         || DeviceID != (*BMList.add(i as usize)).nDeviceId
     {
+        DbgPrint(b"[UNIATA] FindBM: BMList[%u]=%04x:%04x != dev -> NOT_FOUND\n\0".as_ptr().cast(),
+            i, (*BMList.add(i as usize)).nVendorId, (*BMList.add(i as usize)).nDeviceId); // ahci marker
         UniataFreeLunExt(deviceExtension);
         return SP_RETURN_NOT_FOUND;
     }
@@ -1163,6 +1167,8 @@ pub unsafe extern "system" fn UniataFindBusMasterController(
         SubClass,
     );
     if found == 0 {
+        DbgPrint(b"[UNIATA] FindBM: subclass %02x not supported -> NOT_FOUND\n\0".as_ptr().cast(),
+            SubClass as ULONG); // ahci marker
         UniataFreeLunExt(deviceExtension);
         return SP_RETURN_NOT_FOUND;
     }
@@ -1193,6 +1199,8 @@ pub unsafe extern "system" fn UniataFindBusMasterController(
         ConfigInfo,
         &mut simplexOnly,
     );
+    DbgPrint(b"[UNIATA] FindBM: ChipDetect st=%08x hwflags=%08x master=%u\n\0".as_ptr().cast(),
+        status as ULONG, (*deviceExtension).HwFlags, MasterDev as ULONG); // ahci marker
     match status {
         STATUS_SUCCESS => {
             found = TRUE as BOOLEAN;
@@ -2397,6 +2405,8 @@ pub unsafe extern "system" fn UniataAnybodyHome(
     }
     if UniataIsSATARangeAvailable(deviceExtension, lChannel) != 0 {
         *SStatus.Reg.as_mut() = UniataSataReadPort4(chan, IDX_SATA_SStatus as ULONG, deviceNumber);
+        DbgPrint(b"[UNIATA] AnybodyHome ch=%u dev=%u SStatus=%08x\n\0".as_ptr().cast(),
+            lChannel, deviceNumber, *SStatus.Reg.as_ref()); // ahci marker
         let s = SStatus.__bindgen_anon_1.as_ref();
         if s.DET() <= SStatus_DET_Dev_NoPhy {
             return ATA_AT_HOME_NOBODY;
@@ -2502,6 +2512,8 @@ pub unsafe extern "system" fn CheckDevice(
     }
     if ((*deviceExtension).HwFlags & UNIATA_AHCI) != 0 {
         at_home = UniataAnybodyHome(HwDeviceExtension, lChannel, deviceNumber);
+        DbgPrint(b"[UNIATA] CheckDevice: ahci at_home=%u\n\0".as_ptr().cast(),
+            at_home); // ahci marker
         if at_home == 0 {
             return 0;
         }
@@ -2525,7 +2537,10 @@ pub unsafe extern "system" fn CheckDevice(
     }
 
     if ResetDev != 0 && ((*deviceExtension).HwFlags & UNIATA_AHCI) != 0 {
-        if UniataAhciSoftReset(HwDeviceExtension, (*chan).lChannel, deviceNumber) == !0u32 {
+        let sig = UniataAhciSoftReset(HwDeviceExtension, (*chan).lChannel, deviceNumber);
+        DbgPrint(b"[UNIATA] CheckDevice: AhciSoftReset sig=%08x\n\0".as_ptr().cast(),
+            sig); // ahci marker
+        if sig == !0u32 {
             UniataForgetDevice(LunExt);
             return 0;
         }
@@ -2577,6 +2592,8 @@ pub unsafe extern "system" fn CheckDevice(
 
     if ((*deviceExtension).HwFlags & UNIATA_AHCI) != 0 {
         RetVal = (*LunExt).DeviceFlags;
+        DbgPrint(b"[UNIATA] CheckDevice: ahci DeviceFlags=%08x\n\0".as_ptr().cast(),
+            RetVal); // ahci marker
         signatureLow = 0;
         signatureHigh = 0;
     } else {

@@ -2637,8 +2637,14 @@ pub unsafe extern "system" fn RamdiskAddDevice(
             // ASSERT(!KeLoaderBlock->SetupLdrBlock);
         }
 
-        /* All done */
-        (*DeviceObject).Flags &= DO_DEVICE_INITIALIZING;
+        /* All done — clear DO_DEVICE_INITIALIZING so the bus FDO is marked
+         * ready. Upstream ReactOS ramdisk.c (and the faithful translation)
+         * dropped the `~`, leaving the FDO permanently "initializing"; under a
+         * kernel-text layout shift this raced PnP enumeration so the bus
+         * QUERY_DEVICE_RELATIONS returned STATUS_INVALID_DEVICE_REQUEST and the
+         * boot-disk PDO was never surfaced (arm64 BUGCHECK 0x64 on smss open).
+         * crash-value 2026-07-10. */
+        (*DeviceObject).Flags &= !DO_DEVICE_INITIALIZING;
         Status = STATUS_SUCCESS;
     }
 

@@ -1204,6 +1204,8 @@ pub unsafe extern "system" fn ScsiPortInitialize(
 
                 FdoCallHWInitialize(DeviceExtension);
                 Status = FdoStartAdapter(DeviceExtension);
+                DbgPrint((b"[SCSIPORT] FdoStartAdapter st=%08x\n\0".as_ptr() as *const u8).cast(),
+                    Status as u32); // ahci marker
                 if Status < 0 {
                     DbgPrint(
                         (b"Failed to start the legacy adapter. Status 0x%x\n\0".as_ptr() as *const u8).cast(),
@@ -1212,6 +1214,7 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                     break 'outer;
                 }
                 FdoScanAdapter(DeviceExtension);
+                DbgPrint((b"[SCSIPORT] FdoScanAdapter done\n\0".as_ptr() as *const u8).cast()); // ahci marker
 
                 FirstConfigCall = 0;
 
@@ -1819,6 +1822,11 @@ unsafe fn SpiGetPciConfigData(
                 &mut ResourceList,
             );
 
+            DbgPrint(b"[SCSIPORT] pci scan match %04x:%04x bus=%u slot=%u AssignSlotRes=%08x\n\0"
+                .as_ptr() as *const i8,
+                PciConfig.VendorID as u32, PciConfig.DeviceID as u32,
+                BusNumber, DeviceNumber, Status as u32); // ahci marker
+
             if !NT_SUCCESS(Status) {
                 break;
             }
@@ -1828,6 +1836,12 @@ unsafe fn SpiGetPciConfigData(
                 core::ptr::addr_of_mut!((*ResourceList).List) as *mut CM_FULL_RESOURCE_DESCRIPTOR,
                 PortConfig,
             );
+
+            DbgPrint(b"[SCSIPORT] resources: irql=%u vec=%u ranges0=%08x\n\0"
+                .as_ptr() as *const i8,
+                (*PortConfig).BusInterruptLevel, (*PortConfig).BusInterruptVector,
+                ScsiPortConvertPhysicalAddressToUlong(
+                    (*((*PortConfig).AccessRanges as *mut ACCESS_RANGE)).RangeStart)); // ahci marker
 
             ExFreePool(ResourceList as *mut core::ffi::c_void);
 
@@ -1965,6 +1979,21 @@ pub unsafe extern "system" fn ScsiPortIsr(
 
     if InternalDebugLevel != 0 {
         DbgPrint(b"ScsiPortIsr() called!\n".as_ptr() as *const i8);
+    }
+
+    // Interrupt-storm detector (serial, exponential threshold prints only —
+    // a raw per-entry print would BE the livelock).
+    {
+        static mut ISR_COUNT: u64 = 0;
+        ISR_COUNT += 1;
+        if ISR_COUNT == 1
+            || ISR_COUNT == 1_000
+            || ISR_COUNT == 100_000
+            || ISR_COUNT == 10_000_000
+        {
+            DbgPrint(b"[SCSIPORT] Isr entry count=%I64u\n\0".as_ptr() as *const i8,
+                ISR_COUNT); // storm marker
+        }
     }
 
     WRITE_PORT_UCHAR(0xE9 as *mut u8, b'#');

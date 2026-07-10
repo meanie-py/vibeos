@@ -10,6 +10,7 @@ use crate::types::*;
 use crate::regidx::*;
 use crate::*; // sibling uniata functions + ScsiPortGetBusDataByOffset
 use ntkrnl_sys::ddk::*;
+use ntkrnl_sys::driver_ddk::DbgPrint; // ahci markers
 use crate::io_port::{
     AtapiReadPort1, AtapiReadPort2, AtapiReadPort4, AtapiReadPortEx1, AtapiReadPortEx4,
     AtapiWritePort1, AtapiWritePort2, AtapiWritePort4, AtapiWritePortEx1, AtapiWritePortEx4,
@@ -916,6 +917,9 @@ pub unsafe extern "system" fn UniataAhciDetect(
     BaseMemAddress = AtapiGetIoRange(
         HwDeviceExtension, ConfigInfo, pciData, SystemIoBusNumber, BarId, 0, 0x10,
     );
+    DbgPrint(b"[UNIATA] AhciDetect: bar%u va=%p raw=%08x\n\0".as_ptr().cast(),
+        BarId, BaseMemAddress as PVOID,
+        (*pciData).u.type0.as_ref().BaseAddresses[BarId as usize]); // ahci marker
     if BaseMemAddress == 0 {
         return FALSE as BOOLEAN;
     }
@@ -1061,6 +1065,8 @@ pub unsafe extern "system" fn UniataAhciDetect(
     // exit_detect:
     UniataAhciWriteHostPort4(deviceExtension, IDX_AHCI_GHC as ULONG, GHC0);
     let _ = MemIo;
+    DbgPrint(b"[UNIATA] AhciDetect: exit found=%u GHC=%08x chans=%u\n\0".as_ptr().cast(),
+        found as ULONG, GHC, (*deviceExtension).NumberChannels); // ahci marker
     found
 }
 
@@ -1714,6 +1720,8 @@ pub unsafe extern "system" fn UniataAhciReset(HwDeviceExtension: PVOID, lChannel
     UniataAhciWriteChannelPort4(chan, IDX_AHCI_P_IE as ULONG, 0);
 
     if UniataAhciHardReset(HwDeviceExtension, lChannel, &mut signature) != 0 {
+        DbgPrint(b"[UNIATA] AhciReset ch=%u: HardReset FAILED sig=%08x\n\0".as_ptr().cast(),
+            lChannel, signature); // ahci marker
         i = 0;
         while i < (*deviceExtension).NumberLuns {
             UniataForgetDevice((*chan).lun[i as usize]);
@@ -1748,6 +1756,8 @@ pub unsafe extern "system" fn UniataAhciReset(HwDeviceExtension: PVOID, lChannel
         signature = UniataAhciSoftReset(HwDeviceExtension, lChannel, 0);
     }
 
+    DbgPrint(b"[UNIATA] AhciReset ch=%u: sig=%08x\n\0".as_ptr().cast(),
+        lChannel, signature); // ahci marker
     (*(*chan).lun[0]).DeviceFlags &=
         !(DFLAGS_ATAPI_DEVICE | DFLAGS_DEVICE_PRESENT | CTRFLAGS_AHCI_PM);
     match signature >> 16 {
@@ -1958,6 +1968,15 @@ pub unsafe extern "system" fn UniataAhciBeginTransaction(
             return IDE_STATUS_SUCCESS as UCHAR;
         }
     }
+
+    DbgPrint(b"[UNIATA] AhciBeginTx ch=%u: GHC=%08x hIS=%08x PxIE=%08x PxIS=%08x CI=%08x\n\0"
+        .as_ptr().cast(),
+        lChannel,
+        UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_GHC as ULONG),
+        UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_IS as ULONG),
+        UniataAhciReadChannelPort4(chan, IDX_AHCI_P_IE as ULONG),
+        UniataAhciReadChannelPort4(chan, IDX_AHCI_P_IS as ULONG),
+        UniataAhciReadChannelPort4(chan, IDX_AHCI_P_CI as ULONG)); // ahci marker
 
     IDE_STATUS_IDLE as UCHAR
 }

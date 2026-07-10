@@ -9,7 +9,7 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{KeInitializeSpinLock, KeInsertQueueDpc, LARGE_INTEGER, PDEVICE_OBJECT};
+use ntkrnl_sys::ddk::{KeInitializeSpinLock, KeInsertQueueDpc, KeStallExecutionProcessor, LARGE_INTEGER, PDEVICE_OBJECT};
 use core::ffi::c_void;
 
 extern "system" {
@@ -1313,7 +1313,8 @@ pub unsafe extern "system" fn USBPORT_ReopenPipe(
         (*Endpoint).EndpointOldIrql,
     );
 
-    USBPORT_Wait(FdoDevice as PVOID, 2 as ULONG);
+    KeStallExecutionProcessor(2000);
+    Status = STATUS_SUCCESS;
 
     MiniportCloseEndpoint(FdoDevice, Endpoint);
 

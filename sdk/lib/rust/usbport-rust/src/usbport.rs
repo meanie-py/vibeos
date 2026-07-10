@@ -2476,6 +2476,7 @@ pub unsafe extern "system" fn USBPORT_CompleteTransfer(Urb: PURB, TransferStatus
 
     UrbTransfer = core::ptr::addr_of_mut!((*Urb).__bindgen_anon_1.UrbControlTransfer);
     Transfer = (*UrbTransfer).hca.Reserved8[0] as PUSBPORT_TRANSFER;
+    Endpoint = (*Transfer).Endpoint;
 
     (*Transfer).USBDStatus = TransferStatus;
     Status = USBPORT_USBDStatusToNtStatus(Urb, TransferStatus);
@@ -2483,7 +2484,6 @@ pub unsafe extern "system" fn USBPORT_CompleteTransfer(Urb: PURB, TransferStatus
     (*UrbTransfer).TransferBufferLength = (*Transfer).CompletedTransferLen;
 
     if ((*Transfer).Flags as u32 & TRANSFER_FLAG_DMA_MAPPED as u32) != 0 {
-        Endpoint = (*Transfer).Endpoint;
         FdoDevice = (*Endpoint).FdoDevice;
         FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
         DmaOperations = (*(*FdoExtension).DmaAdapter).DmaOperations as PDMA_OPERATIONS;
