@@ -71,6 +71,14 @@ def build_parser() -> argparse.ArgumentParser:
         "verifier (-DVIBEOS_CSWITCHDEP=ON; implies the lockdep cargo feature). "
         "Debug/repro only; off by default",
     )
+    b.add_argument(
+        "--smp-kernel",
+        action="store_true",
+        help="SMP bring-up (docs/engineering/smp-bringup-quest.md): build livecd "
+        "media whose freeldr default entry boots the MP kernel (ntkrnlmp.exe, "
+        "-DVIBEOS_SMP_DEFAULT_BOOT=ON). Opt-in only; default media stays UP. "
+        "Pair with `smoke --smp N` to boot it with N vCPUs",
+    )
     b.add_argument("--strict", action="store_true")
     b.add_argument(
         "--cache",
@@ -117,6 +125,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="per-boot kernel debug knobs via fw_cfg, e.g. 'SPECIALPOOL=Gla5' or "
         "'SPECIALPOOL=*'; KEY=VAL tokens separated by spaces/semicolons (no commas). "
         "See ntoskrnl-rust src/tripwire.rs",
+    )
+    s.add_argument(
+        "--smp",
+        type=int,
+        default=0,
+        help="boot with N virtual CPUs (-smp N via VIBEOS_QEMU_SMP). Opt-in "
+        "SMP bring-up knob (docs/engineering/smp-bringup-quest.md); default "
+        "stays UP. Requires SMP-capable media (ntkrnlmp kernel) for N>1",
     )
     s.add_argument(
         "--no-net",

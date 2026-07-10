@@ -29,3 +29,7 @@ lockdep = ["ntkrnl-sys/lockdep"]
 # (return_address0 today, the held-set mirror in Phase 2), and checking against
 # an absent mirror would vacuously pass — the forbidden silent degrade.
 cswitchdep = ["lockdep", "ntkrnl-sys/cswitchdep"]
+# CONFIG_SMP equivalent for the Rust body: compiles the multiprocessor paths
+# (spinlock contention bodies, IPI, freeze, dispatcher-lock reality). Enabled
+# by the ntkrnlmp-cargo link only; ntoskrnl-cargo (UP kernel) never sets it.
+smp = ["ntkrnl-sys/smp"]

@@ -6,5 +6,11 @@ edition = "2021"
 [lib]
 crate-type = ["rlib"]
 
+[features]
+# CONFIG_SMP for the ke_x.h inline translations: the dispatcher/thread/PRCB
+# lock helpers here are currently the #ifndef CONFIG_SMP no-op expansions;
+# smp selects the real interlocked bodies.
+smp = ["ntkrnl-sys/smp"]
+
 [dependencies]
 ntkrnl-sys = { path = "../ntkrnl-sys" }

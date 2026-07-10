@@ -656,6 +656,13 @@ function(add_cargo_module _target _crate _output)
     if(VIBEOS_CSWITCHDEP AND _crate MATCHES "^(ntoskrnl-cargo|ntkrnlmp-cargo)$")
         list(APPEND _cargo_env VIBEOS_CSWITCHDEP=1)
     endif()
+    # SMP bring-up media (-DVIBEOS_SMP_DEFAULT_BOOT=ON, `vibeos-cli build
+    # --smp-kernel`): build the HAL with hal-rust's `smp` feature so its
+    # HalpBuildType accepts the MP kernel (MISMATCHED_HAL 0x79 handshake).
+    # Opt-in only — default media keeps the UP HAL.
+    if(VIBEOS_SMP_DEFAULT_BOOT AND _crate STREQUAL "hal-cargo")
+        list(APPEND _cargo_env VIBEOS_SMP_HAL=1)
+    endif()
 
     # Rebuild triggers: glob the bin crate (build.rs + target jsons + Cargo.toml
     # + any src), the shared reactos-link engine, and the rust body crate. A

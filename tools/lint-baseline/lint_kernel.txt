@@ -438,7 +438,6 @@
            *UnsafeNumberOfBytesToProtect = NumberOfBytesToProtect;
            *UnsafeOldAccessProtection = OldAccessProtection;
            *UserTime = *kt_UserTime(Thread);
-           *UserTime = TotalUser;
            *Value = KeyValue;
            *Value = core::ptr::null_mut();
            *ValueIsCached = 0u8;
@@ -1106,7 +1105,6 @@
     L 843 IopFetchConfigurationInformation(): *SymbolicLinkList = ...
     L 844 NtQuerySystemEnvironmentValue(): *ReturnLength = ...
     L 850 DbgkpPostFakeProcessCreateMessages(): *last_thread = ...
-    L 853 KeQueryRuntimeProcess(): *UserTime = ...
     L 857 ExpFindAndRemoveTagBigPages(): *big_pages = ...
     L 859 FstubReadHeaderEFI(): *HeaderBuffer = ...
     L 863 MiDoMappedCopy(): *ReturnSize = ...
@@ -1363,7 +1361,6 @@
   ke/i386/kiinit.rs:
   ke/i386/patpge.rs:
   ke/krnlinit.rs:
-  ke/procobj.rs:
   ke/spinlock.rs:
   ke/thrdobj.rs:
   mm/balance.rs:
@@ -1468,6 +1465,6 @@
   sdk/lib/rust/wmi-rust/src/guidobj.rs:
   sdk/lib/rust/wmi-rust/src/smbios.rs:
   sdk/lib/rust/wmi-rust/src/wmidrv.rs:
-Found 771 unprotected output pointer writes in 125 files:
+Found 770 unprotected output pointer writes in 124 files:
 Run with --fix to see suggested replacements
-Total: 771 violations in 125 files
+Total: 770 violations in 124 files

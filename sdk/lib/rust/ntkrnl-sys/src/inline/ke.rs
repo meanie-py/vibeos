@@ -454,22 +454,37 @@ pub(crate) unsafe fn cswdep_spin_release(lock: *mut ULONG_PTR) {
 #[inline(always)]
 pub(crate) unsafe fn cswdep_spin_release(_lock: *mut ULONG_PTR) {}
 
-/// KxAcquireSpinLock — UP kernel: compiler barrier only.
+/// KxAcquireSpinLock — UP kernel: compiler barrier only. SMP kernel
+/// (feature = "smp"): the spinlock.h CONFIG_SMP body — try-acquire via
+/// InterlockedBitTestAndSet(bit 0), on contention spin-read until free.
 /// DBG owner tracking disabled: inconsistent paths between C shims and Rust inline
 /// cause false SPIN_LOCK_NOT_OWNED on i386. To be investigated separately.
 #[inline]
 pub unsafe fn KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
     cswdep_spin_acquire(spin_lock);
-    // UP kernel: compiler barrier (no SMP spin needed)
+    #[cfg(feature = "smp")]
+    while InterlockedBitTestAndSet(spin_lock as *mut i32, 0) != 0 {
+        // Locked — spin read-only (cache-friendly) until it's released.
+        while core::ptr::read_volatile(spin_lock) & 1 != 0 {
+            core::hint::spin_loop();
+        }
+    }
+    // Compiler barrier (KeMemoryBarrierWithoutFence); under smp the
+    // interlocked op above is the hardware fence.
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }
 
-/// KxReleaseSpinLock — UP kernel: compiler barrier only.
+/// KxReleaseSpinLock — UP kernel: compiler barrier only. SMP kernel:
+/// spinlock.h's `InterlockedAnd(64)(SpinLock, 0)` — full-barrier atomic clear.
 /// DBG owner tracking disabled (see KxAcquireSpinLock comment).
 #[inline]
 pub unsafe fn KxReleaseSpinLock(spin_lock: *mut ULONG_PTR) {
     cswdep_spin_release(spin_lock);
-    // UP kernel: compiler barrier
+    #[cfg(feature = "smp")]
+    {
+        core::sync::atomic::AtomicUsize::from_ptr(spin_lock as *mut usize)
+            .swap(0, core::sync::atomic::Ordering::SeqCst);
+    }
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }
 
@@ -712,8 +727,17 @@ pub const TIMER_TABLE_SIZE: u32 = 512;
 /// TIMER_WAIT_BLOCK — index of timer wait block in thread's WaitBlock array
 pub const TIMER_WAIT_BLOCK: usize = 3;
 
-/// SYNCH_LEVEL — in UP kernel, equals DISPATCH_LEVEL (= 2)
+/// SYNCH_LEVEL — UP kernel: DISPATCH_LEVEL (= 2). SMP kernel: IPI_LEVEL - 2
+/// on x86/amd64 (ndk asm.h/ketypes.h, NTDDI >= WS03); arm64's ndk has no SMP
+/// variant (stays DISPATCH_LEVEL).
+#[cfg(not(feature = "smp"))]
 pub const SYNCH_LEVEL: KIRQL = 2; // DISPATCH_LEVEL
+#[cfg(all(feature = "smp", target_arch = "x86"))]
+pub const SYNCH_LEVEL: KIRQL = 0x1D - 2; // IPI_LEVEL(0x1D) - 2 = 27
+#[cfg(all(feature = "smp", target_arch = "x86_64"))]
+pub const SYNCH_LEVEL: KIRQL = 14 - 2; // IPI_LEVEL(14) - 2 = 12
+#[cfg(all(feature = "smp", target_arch = "aarch64"))]
+pub const SYNCH_LEVEL: KIRQL = 2; // DISPATCH_LEVEL (no SMP variant in ndk)
 
 /// TIMER_OR_EVENT_TYPE — mask for dispatcher header type check
 pub const TIMER_OR_EVENT_TYPE: i32 = 0x7;
@@ -960,99 +984,342 @@ fn memoffset_of_wait_list_entry() -> usize {
 }
 
 // ============================================================================
-// UP no-op lock functions (ke_x.h, #ifndef CONFIG_SMP section)
+// ke_x.h lock functions — UP (#ifndef CONFIG_SMP) no-ops vs SMP (feature =
+// "smp") real bodies, translated from ke_x.h lines 305-603. The SMP simple
+// spinlocks (thread/PRCB/dispatcher-object) mirror the C's 32-bit
+// InterlockedExchange/And on the low DWORD of the (pointer-sized) lock field.
 // ============================================================================
 
+#[cfg(feature = "smp")]
+const KOBJECT_LOCK_BIT: i32 = 0x80; // ndk/ketypes.h
+#[cfg(feature = "smp")]
+const LOCK_QUEUE_TIMER_LOCK_SHIFT: ULONG = 4; // xdk/ketypes.h
+#[cfg(feature = "smp")]
+const LOCK_QUEUE_TIMER_TABLE_LOCKS: ULONG = 1 << (8 - LOCK_QUEUE_TIMER_LOCK_SHIFT);
+#[cfg(feature = "smp")]
+const LOCK_QUEUE_DISPATCHER_LOCK: usize = 0; // LockQueueDispatcherLock
+#[cfg(feature = "smp")]
+const LOCK_QUEUE_TIMER_TABLE_LOCK: usize = 17; // LockQueueTimerTableLock
+#[cfg(feature = "smp")]
+const IPI_APC: ULONG = 1; // ndk/<arch>/ketypes.h
+#[cfg(feature = "smp")]
+const IPI_DPC: ULONG = 2;
+
+/// SMP simple-spinlock acquire on a lock word, using 32-bit interlocked ops on
+/// the low DWORD exactly like the C (`InterlockedExchange((PLONG)&Lock, 1)`).
+#[cfg(feature = "smp")]
+#[inline]
+unsafe fn smp_simple_lock_acquire(lock: *mut i32) {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    let atomic = &*(lock as *const AtomicI32);
+    loop {
+        if atomic.swap(1, Ordering::SeqCst) == 0 {
+            break;
+        }
+        while atomic.load(Ordering::Relaxed) != 0 {
+            core::hint::spin_loop();
+        }
+    }
+}
+
+/// SMP simple-spinlock release (`InterlockedAnd((PLONG)&Lock, 0)`).
+#[cfg(feature = "smp")]
+#[inline]
+unsafe fn smp_simple_lock_release(lock: *mut i32) {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    (&*(lock as *const AtomicI32)).swap(0, Ordering::SeqCst);
+}
+
 /// KiAcquireThreadLock — UP: no-op.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiAcquireThreadLock(_thread: ddk::PKTHREAD) {}
 
+/// KiAcquireThreadLock — SMP: spin on Thread->ThreadLock.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiAcquireThreadLock(thread: ddk::PKTHREAD) {
+    smp_simple_lock_acquire(core::ptr::addr_of_mut!((*thread).ThreadLock) as *mut i32);
+}
+
 /// KiReleaseThreadLock — UP: no-op.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiReleaseThreadLock(_thread: ddk::PKTHREAD) {}
 
+/// KiReleaseThreadLock — SMP: release Thread->ThreadLock.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiReleaseThreadLock(thread: ddk::PKTHREAD) {
+    smp_simple_lock_release(core::ptr::addr_of_mut!((*thread).ThreadLock) as *mut i32);
+}
+
 /// KiAcquireDispatcherObject — UP: no-op.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiAcquireDispatcherObject(_object: *mut ddk::_DISPATCHER_HEADER) {}
 
+/// KiAcquireDispatcherObject — SMP: CAS-set KOBJECT_LOCK_BIT in Header.Lock.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiAcquireDispatcherObject(object: *mut ddk::_DISPATCHER_HEADER) {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    let lock = &*(core::ptr::addr_of_mut!((*object).__bindgen_anon_1.Lock) as *const AtomicI32);
+    loop {
+        let old = loop {
+            let v = lock.load(Ordering::Relaxed);
+            if v & KOBJECT_LOCK_BIT == 0 {
+                break v;
+            }
+            core::hint::spin_loop();
+        };
+        if lock
+            .compare_exchange(old, old | KOBJECT_LOCK_BIT, Ordering::SeqCst, Ordering::Relaxed)
+            .is_ok()
+        {
+            break;
+        }
+    }
+}
+
 /// KiReleaseDispatcherObject — UP: no-op.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiReleaseDispatcherObject(_object: *mut ddk::_DISPATCHER_HEADER) {}
 
+/// KiReleaseDispatcherObject — SMP: InterlockedAnd(&Header.Lock, ~KOBJECT_LOCK_BIT).
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiReleaseDispatcherObject(object: *mut ddk::_DISPATCHER_HEADER) {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    (&*(core::ptr::addr_of_mut!((*object).__bindgen_anon_1.Lock) as *const AtomicI32))
+        .fetch_and(!KOBJECT_LOCK_BIT, Ordering::SeqCst);
+}
+
 /// KiAcquireDispatcherLockAtSynchLevel — UP: no-op.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiAcquireDispatcherLockAtSynchLevel() {}
 
+/// KiAcquireDispatcherLockAtSynchLevel — SMP: queued dispatcher lock at DPC level.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiAcquireDispatcherLockAtSynchLevel() {
+    ddk::KeAcquireQueuedSpinLockAtDpcLevel(core::ptr::addr_of_mut!(
+        (*KeGetCurrentPrcb()).LockQueue[LOCK_QUEUE_DISPATCHER_LOCK]
+    ));
+}
+
 /// KiReleaseDispatcherLockFromSynchLevel — UP: no-op.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiReleaseDispatcherLockFromSynchLevel() {}
 
+/// KiReleaseDispatcherLockFromSynchLevel — SMP: release queued dispatcher lock.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiReleaseDispatcherLockFromSynchLevel() {
+    ddk::KeReleaseQueuedSpinLockFromDpcLevel(core::ptr::addr_of_mut!(
+        (*KeGetCurrentPrcb()).LockQueue[LOCK_QUEUE_DISPATCHER_LOCK]
+    ));
+}
+
 /// KiRescheduleThread — UP: no-op.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiRescheduleThread(_new_thread: BOOLEAN, _cpu: ULONG) {}
 
+/// KiRescheduleThread — SMP: IPI the target CPU if a new thread needs it.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiRescheduleThread(new_thread: BOOLEAN, cpu: ULONG) {
+    if new_thread != 0 && (*KeGetCurrentPrcb()).Number as ULONG != cpu {
+        ddk::KiIpiSend(1 << cpu, IPI_DPC);
+    }
+}
+
 /// KiSetThreadSwapBusy — UP: no-op.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiSetThreadSwapBusy(_thread: ddk::PKTHREAD) {}
 
+/// KiSetThreadSwapBusy — SMP: mark the thread as being swapped.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiSetThreadSwapBusy(thread: ddk::PKTHREAD) {
+    (*thread).SwapBusy = 1;
+}
+
 /// KiAcquirePrcbLock — UP: no-op.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiAcquirePrcbLock(_prcb: ddk::PKPRCB) {}
 
+/// KiAcquirePrcbLock — SMP: spin on Prcb->PrcbLock.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiAcquirePrcbLock(prcb: ddk::PKPRCB) {
+    smp_simple_lock_acquire(core::ptr::addr_of_mut!((*prcb).PrcbLock) as *mut i32);
+}
+
 /// KiReleasePrcbLock — UP: no-op.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiReleasePrcbLock(_prcb: ddk::PKPRCB) {}
 
+/// KiReleasePrcbLock — SMP: release Prcb->PrcbLock.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiReleasePrcbLock(prcb: ddk::PKPRCB) {
+    smp_simple_lock_release(core::ptr::addr_of_mut!((*prcb).PrcbLock) as *mut i32);
+}
+
 /// KiTryThreadLock — UP: always returns FALSE (lock never held).
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiTryThreadLock(_thread: ddk::PKTHREAD) -> BOOLEAN {
     0 // FALSE
 }
 
+/// KiTryThreadLock — SMP (faithful to the C): FALSE if the lock is free,
+/// else exchange-1 and report whether it was still held.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiTryThreadLock(thread: ddk::PKTHREAD) -> BOOLEAN {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    let lock = core::ptr::addr_of_mut!((*thread).ThreadLock) as *mut i32;
+    if core::ptr::read_volatile(lock) == 0 {
+        return 0;
+    }
+    ((&*(lock as *const AtomicI32)).swap(1, Ordering::SeqCst) == 1) as BOOLEAN
+}
+
 /// KiCheckDeferredReadyList — UP: no-op.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiCheckDeferredReadyList(_prcb: ddk::PKPRCB) {}
 
+/// KiCheckDeferredReadyList — SMP: drain the PRCB deferred-ready list.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiCheckDeferredReadyList(prcb: ddk::PKPRCB) {
+    if !(*prcb).DeferredReadyListHead.Next.is_null() {
+        ddk::KiProcessDeferredReadyList(prcb);
+    }
+}
+
 /// KiRequestApcInterrupt — UP: no-op.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiRequestApcInterrupt(_need_apc: BOOLEAN, _processor: UCHAR) {}
 
+/// KiRequestApcInterrupt — SMP: IPI the target CPU (or soft-int self).
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiRequestApcInterrupt(need_apc: BOOLEAN, processor: UCHAR) {
+    if need_apc != 0 {
+        if (*KeGetCurrentPrcb()).Number as UCHAR != processor {
+            ddk::KiIpiSend(1 << processor, IPI_APC);
+        } else {
+            ddk::HalRequestSoftwareInterrupt(APC_LEVEL);
+        }
+    }
+}
+
 /// KiAcquireTimerLock — UP: returns NULL.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiAcquireTimerLock(_hand: ULONG) -> ddk::PKSPIN_LOCK_QUEUE {
     core::ptr::null_mut()
 }
 
+/// KiAcquireTimerLock — SMP: acquire the hashed timer-table queued lock.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiAcquireTimerLock(hand: ULONG) -> ddk::PKSPIN_LOCK_QUEUE {
+    let lock_index =
+        ((hand >> LOCK_QUEUE_TIMER_LOCK_SHIFT) & (LOCK_QUEUE_TIMER_TABLE_LOCKS - 1)) as usize;
+    let lock_queue = core::ptr::addr_of_mut!(
+        (*KeGetCurrentPrcb()).LockQueue[LOCK_QUEUE_TIMER_TABLE_LOCK + lock_index]
+    );
+    ddk::KeAcquireQueuedSpinLockAtDpcLevel(lock_queue);
+    lock_queue
+}
+
 /// KiReleaseTimerLock — UP: no-op.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiReleaseTimerLock(_lock_queue: ddk::PKSPIN_LOCK_QUEUE) {}
 
+/// KiReleaseTimerLock — SMP: release the timer-table queued lock.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiReleaseTimerLock(lock_queue: ddk::PKSPIN_LOCK_QUEUE) {
+    ddk::KeReleaseQueuedSpinLockFromDpcLevel(lock_queue);
+}
+
 // ============================================================================
-// Dispatcher lock — simple wrappers (ke_x.h UP section)
+// Dispatcher lock — simple wrappers (ke_x.h UP vs SMP)
 // ============================================================================
 
 /// KiAcquireDispatcherLock — UP: raise IRQL to SYNCH_LEVEL.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiAcquireDispatcherLock() -> KIRQL {
     KfRaiseIrql(SYNCH_LEVEL)
 }
 
+/// KiAcquireDispatcherLock — SMP: raise to synch + take the queued dispatcher lock.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiAcquireDispatcherLock() -> KIRQL {
+    ddk::KeAcquireQueuedSpinLockRaiseToSynch(
+        LOCK_QUEUE_DISPATCHER_LOCK as ddk::KSPIN_LOCK_QUEUE_NUMBER,
+    )
+}
+
 /// KiReleaseDispatcherLock — UP: call KiExitDispatcher.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiReleaseDispatcherLock(old_irql: KIRQL) {
     KiExitDispatcher(old_irql);
 }
 
+/// KiReleaseDispatcherLock — SMP: drop the queued lock, then exit the dispatcher.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiReleaseDispatcherLock(old_irql: KIRQL) {
+    ddk::KeReleaseQueuedSpinLockFromDpcLevel(core::ptr::addr_of_mut!(
+        (*KeGetCurrentPrcb()).LockQueue[LOCK_QUEUE_DISPATCHER_LOCK]
+    ));
+    KiExitDispatcher(old_irql);
+}
+
 // ============================================================================
-// KiInsertDeferredReadyList (ke_x.h UP section)
+// KiInsertDeferredReadyList (ke_x.h UP vs SMP)
 // ============================================================================
 
 /// KiInsertDeferredReadyList — UP: set DeferredReady state and call KiDeferredReadyThread.
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
     kt_set_state(thread, ddk::_KTHREAD_STATE_DeferredReady as u8);
     kt_set_deferred_processor(thread, 0);
     KiDeferredReadyThread(thread);
+}
+
+/// KiInsertDeferredReadyList — SMP: push onto this CPU's deferred-ready list.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
+    let prcb = KeGetCurrentPrcb();
+    kt_set_state(thread, ddk::_KTHREAD_STATE_DeferredReady as u8);
+    kt_set_deferred_processor(thread, (*prcb).Number as u8);
+    // PushEntryList(&Prcb->DeferredReadyListHead, &Thread->SwapListEntry)
+    // (SwapListEntry shares the __bindgen_anon_3 union with WaitListEntry)
+    (*thread).__bindgen_anon_3.SwapListEntry.Next = (*prcb).DeferredReadyListHead.Next;
+    (*prcb).DeferredReadyListHead.Next =
+        core::ptr::addr_of_mut!((*thread).__bindgen_anon_3.SwapListEntry);
 }
 
 // ============================================================================
@@ -1443,7 +1710,18 @@ pub unsafe fn BitScanReverse(index: *mut ULONG, mask: ULONG) -> BOOLEAN {
 /// KxQueueReadyThread — queue thread to ready list (ke_x.h).
 #[inline]
 pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
-    // UP kernel: always TRUE (no affinity check needed)
+    // UP kernel: the affinity gate is always TRUE. SMP: a thread not affine
+    // to this CPU is deferred instead (ke_x.h:1387).
+    #[cfg(feature = "smp")]
+    {
+        if (*thread).Affinity & (*prcb).SetMember == 0 {
+            kt_set_state(thread, ddk::_KTHREAD_STATE_DeferredReady as u8);
+            kt_set_deferred_processor(thread, (*prcb).Number as u8);
+            KiReleasePrcbLock(prcb);
+            KiDeferredReadyThread(thread);
+            return;
+        }
+    }
     kt_set_state(thread, ddk::_KTHREAD_STATE_Ready as u8);
     let priority = (*thread).Priority as usize;
     let preempted = (*thread).Preempted != 0;

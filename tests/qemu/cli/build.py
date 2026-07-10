@@ -637,6 +637,10 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         {
             "VIBEOS_LOCKDEP": bool(getattr(args, "lockdep", False)),
             "VIBEOS_CSWITCHDEP": bool(getattr(args, "cswitchdep", False)),
+            # SMP bring-up media knob: livecd freeldr.ini defaults to the
+            # LiveCD_SMP (ntkrnlmp.exe) entry. Reconciled every build like the
+            # instrumentation flags so a plain build flips it back OFF.
+            "VIBEOS_SMP_DEFAULT_BOOT": bool(getattr(args, "smp_kernel", False)),
         },
     )
     if wrapped is None:
