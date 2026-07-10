@@ -309,6 +309,8 @@ rtl_constant_string!(
 );
 rtl_constant_string!(Wow64OptionsString, WOW64_OPTIONS_STRING_BUF, "");
 rtl_constant_string!(NtDllString, NTDLL_STRING_BUF, "ntdll.dll");
+#[cfg(target_arch = "aarch64")]
+rtl_constant_string!(Wow64DllString, WOW64_DLL_STRING_BUF, "wow64.dll");
 rtl_constant_string!(Kernel32String, KERNEL32_STRING_BUF, "kernel32.dll");
 // C declares LdrpDotLocal `const` but it's only ever read; keep it as the
 // same mutable-static shape as the rest for uniformity.
@@ -2312,6 +2314,75 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
 
     if IsDotNetImage != 0 {
         // FIXME
+    }
+
+    /* WoW64 (Phase C): if the kernel marked us a WoW64 process (i386 image on
+     * an arm64 host — EPROCESS.Wow64Process/PEB32 set by MmCreatePeb), the
+     * 64-bit loader must NOT touch the i386 image's imports/TLS/entry. Load
+     * wow64.dll instead and hand the thread over to Wow64LdrpInitialize, which
+     * never returns (it drives the 32-bit side via the CPU emulation dll).
+     * Mirrors Win10's LdrpLoadWow64. */
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "system" {
+            fn NtQueryInformationProcess(
+                ProcessHandle: HANDLE,
+                ProcessInformationClass: u32,
+                ProcessInformation: PVOID,
+                ProcessInformationLength: ULONG,
+                ReturnLength: PULONG,
+            ) -> NTSTATUS;
+        }
+        const PROCESS_WOW64_INFORMATION: u32 = 26;
+        const STATUS_ENTRYPOINT_NOT_FOUND: NTSTATUS = 0xC000_0139u32 as NTSTATUS;
+        let mut Peb32Ptr: ULONG_PTR = 0;
+        let QueryStatus = NtQueryInformationProcess(
+            -1isize as HANDLE,
+            PROCESS_WOW64_INFORMATION,
+            core::ptr::addr_of_mut!(Peb32Ptr) as PVOID,
+            core::mem::size_of::<ULONG_PTR>() as ULONG,
+            core::ptr::null_mut(),
+        );
+        if NT_SUCCESS(QueryStatus) && Peb32Ptr != 0 {
+            DbgPrint(
+                b"[LDR] WoW64 process (PEB32=%p): loading wow64.dll\n\0".as_ptr() as *const i8,
+                Peb32Ptr as PVOID,
+            );
+            let mut Wow64Base: PVOID = core::ptr::null_mut();
+            Status = LdrLoadDll(
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                &mut Wow64DllString,
+                &mut Wow64Base,
+            );
+            if !NT_SUCCESS(Status) {
+                DbgPrint(
+                    b"[LDR] WoW64: wow64.dll load FAILED 0x%08lx\n\0".as_ptr() as *const i8,
+                    Status,
+                );
+                return Status;
+            }
+            let mut Wow64InitName: ANSI_STRING = core::mem::zeroed();
+            RtlInitAnsiString(
+                &mut Wow64InitName,
+                b"Wow64LdrpInitialize\0".as_ptr() as PCSZ,
+            );
+            let mut Wow64InitAddr: PVOID = core::ptr::null_mut();
+            Status = LdrGetProcedureAddress(Wow64Base, &mut Wow64InitName, 0, &mut Wow64InitAddr);
+            if !NT_SUCCESS(Status) || Wow64InitAddr.is_null() {
+                DbgPrint(
+                    b"[LDR] WoW64: Wow64LdrpInitialize not found (0x%08lx)\n\0".as_ptr() as *const i8,
+                    Status,
+                );
+                return STATUS_ENTRYPOINT_NOT_FOUND;
+            }
+            let Wow64LdrpInitialize: unsafe extern "system" fn(PCONTEXT) =
+                core::mem::transmute(Wow64InitAddr);
+            Wow64LdrpInitialize(Context);
+            /* Never returns; if it does, the bootstrap is broken — fail loud. */
+            DbgPrint(b"[LDR] WoW64: Wow64LdrpInitialize RETURNED\n\0".as_ptr() as *const i8);
+            return STATUS_INVALID_IMAGE_FORMAT;
+        }
     }
 
     if (*NtHeader).OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI as USHORT

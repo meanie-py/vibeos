@@ -446,6 +446,16 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         else
             echo "[!] VIBEOS_FEX=1: wow64probe not staged ($WOW64PROBE / $NTDLL32 missing) — Phase B probe skipped"
         fi
+        # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
+        # by winlogon's TryStartWow64Hello (silent no-op unless staged here).
+        HELLO32="${VIBEOS_HELLO32_EXE:-$PROJECT_DIR/build-fex-hello/hello32.exe}"
+        if [ -f "$HELLO32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/hello32.exe (Phase C guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$HELLO32" ::/reactos/syswow64/hello32.exe
+        else
+            echo "[!] VIBEOS_FEX=1: hello32.exe missing ($HELLO32) — Phase C probe skipped"
+        fi
     else
         echo "[!] VIBEOS_FEX=1 but artifacts missing ($FEXPROBE / $UCRTBASE)."
         echo "[!]   Build: tools/fex/build-fex.sh && tools/fex/build-hello-compute.sh; ninja ucrtbase"

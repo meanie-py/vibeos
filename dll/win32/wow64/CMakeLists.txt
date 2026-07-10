@@ -12,7 +12,9 @@ add_library(wow64 MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/wow64.def)
 
 set_module_type(wow64 win32dll ENTRYPOINT DllMain 12)
-add_importlibs(wow64 kernel32 ntdll)
+# ntdll ONLY — a WoW64 process must not pull 64-bit kernel32 in through us
+# (the 64-bit loader skips kernel32 for wow64 processes, matching Win10).
+add_importlibs(wow64 ntdll)
 add_dependencies(wow64 psdk)
 add_cd_file(TARGET wow64 DESTINATION reactos/system32 FOR all)
 

@@ -1127,13 +1127,12 @@ sdk/lib/rust/msgina-rust/src/utils.rs:70: [UNWRAP] .unwrap() — panics on Err/N
 sdk/lib/rust/netstack-rust/src/engine.rs:342: [SWALLOWED_ERR] Err(...) arm does nothing — error silently discarded
 sdk/lib/rust/netstack-rust/src/hal.rs:108: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/netstack-rust/src/hal.rs:118: [UNWRAP] .expect() — panics on Err/None in kernel code
-sdk/lib/rust/netstack-rust/src/tditrans.rs:518: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/network/src/lib.rs:892: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/network/src/tests.rs:203: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntdll-rust/src/ldr/ldrapi.rs:802: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntdll-rust/src/ldr/ldrapi.rs:983: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:1272: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:2511: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:1274: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:2582: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntdll-rust/src/ldr/ldrutils.rs:2109: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntdll-rust/src/ldr/ldrutils.rs:236: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/session.rs:280: [UNWRAP] .unwrap() — panics on Err/None in kernel code

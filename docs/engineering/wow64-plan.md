@@ -138,18 +138,48 @@ interface under test); winlogon spawns it after fexprobe when staged
 0x600D.
 
 **Phase C — real WoW64 process bootstrap (the OS work).**
-- Kernel: accept i386 PE on arm64/amd64 host (`PspCreateProcess` machine
-  check), PEB32+TEB32 creation, <4GB default alloc policy for the guest,
-  `ZwQueryInformationProcess(ProcessWow64Information)`.
-- Loader: map 32-bit ntdll into new WoW64 processes, populate
-  `LdrSystemDllInitBlock`, auto-load wow64.dll + CPU dll, `Wow64Transition`
-  publishing (32-bit ntdll's syscall stubs dispatch through it → BOP page).
-- ntdll32: build variant of our i386 ntdll whose syscall stub calls through
-  `Wow64Transition` instead of raw `int 2e` (we own the i386 build — this is
-  a macro swap, not a new DLL).
-- Image: stage a SysWOW64 set from build-i386 output into the arm64/amd64
-  media (mkramdisk/livecd step).
-- Minimal filesystem redirection (system32→SysWOW64) later in the phase.
+
+*Milestone 1 — PASS on-box (2026-07-09): `CreateProcessW("hello32.exe")` (a real
+i386 PE) on arm64 runs the whole bootstrap chain and reports
+`[FEX-WOW64C] M1 PASS: WoW64 process bootstrap chain complete (image base 00400000)`,
+exit 0x600D.*
+- [x] Kernel: admit i386 images — `SharedUserData->ImageNumberLow = I386` on
+  arm64 (ex-rust `init.rs`; kernel32's CreateProcessInternalW range gate).
+  Section/PspCreateProcess needed NO machine gate change (already permissive).
+- [x] Kernel: PEB32 below 2GB, mirrored from PEB64, `EPROCESS.Wow64Process =
+  PEB32` (5.2-style — exactly what our `ProcessWow64Information` handler
+  returns). Detection = image `FileHeader.Machine == 0x14c` in `MmCreatePeb`
+  (ntoskrnl-rust `ARM3/procsup.rs`; `MiCreatePebOrTebCapped` low-address VAD).
+- [x] Kernel: WoW64 threads get a combined region below 2GB — TEB64 at +0,
+  TEB32 at +0x2000 — with the raw Win10 `WowTebOffset` slots (TEB+0x180c /
+  TEB32+0xfdc; past our 5.2 struct ends, committed scratch — wow64fex's
+  GetWowTEB hardcodes them). `MmDeleteTeb` frees by VAD extent now.
+- [x] Loader: `LdrpInitializeProcess` WoW64 branch (ntdll-rust `ldrinit.rs`) —
+  queries ProcessWow64Information, skips the i386 image's import walk/TLS/
+  kernel32 entirely, loads wow64.dll, hands the thread to
+  `Wow64LdrpInitialize` (never returns). Mirrors Win10 LdrpLoadWow64.
+- [x] wow64.dll: `Wow64LdrpInitialize` export (ntdll-only DLL now — kernel32
+  importlib dropped so a WoW64 process never pulls 64-bit kernel32).
+  M1 body verifies PEB32/TEB32 chain and exits 0x600D.
+- [x] Harness: `hello32.exe` (no-CRT i386 PE, built by build-hello-compute.sh
+  via i686 clang), staged to syswow64 under VIBEOS_FEX=1; winlogon
+  `TryStartWow64Hello` launches it through the normal CreateProcessW path.
+
+*Milestone 2 — guest code executes (next):* fold wow64probe's proven CPU-layer
+bring-up INTO `Wow64LdrpInitialize` (map syswow64 ntdll32 or the exe directly,
+populate `LdrSystemDllInitBlock.ntdll_handle`, WOW64INFO TLS slot, CPU area,
+BTCpuProcessInit/ThreadInit, build guest CONTEXT from the image entry +
+initial stack, BTCpuSimulate). hello32's entry then really executes and exits
+via a thunked NtTerminateProcess.
+
+*Still owed in Phase C:*
+- 32-bit ntdll auto-map + `Wow64Transition` publishing (32-bit ntdll's syscall
+  stubs dispatch through it → BOP page); ntdll32 syscall-stub macro swap.
+- PEB32 NLS pointers (need a below-4GB NLS view; left 0 in M1),
+  `RtlWow64Get/SetThreadContext` kernel `ThreadWow64Context` support,
+  `PebAddressWow64` in the csrss create message.
+- Full SysWOW64 set staged from build-i386; minimal system32→SysWOW64
+  filesystem redirection late in the phase.
 
 **Phase D — thunk generation at scale.** The hand table in B/C covers hello
 world; real apps need hundreds of Nt* thunks + wow64win.dll for win32k. Use

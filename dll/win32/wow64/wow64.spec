@@ -4,3 +4,6 @@
 # Phase B+. arm64-only for now (x86-on-arm64); Phase E reuses it on amd64.
 @ stdcall -arch=arm64 Wow64SystemServiceEx(long ptr)
 @ stdcall -arch=arm64 Wow64ProcessPendingCrossProcessItems()
+# Phase C: the 64-bit ntdll loader's thread handoff for WoW64 processes
+# (ldrinit.rs LdrpInitializeProcess resolves this by name; never returns).
+@ stdcall -arch=arm64 Wow64LdrpInitialize(ptr)

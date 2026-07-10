@@ -23,6 +23,18 @@ LONG
 WINAPI
 NtTerminateProcess(_In_ HANDLE ProcessHandle, _In_ LONG ExitStatus);
 
+LONG
+WINAPI
+NtQueryInformationProcess(_In_ HANDLE ProcessHandle,
+                          _In_ ULONG ProcessInformationClass,
+                          _Out_ PVOID ProcessInformation,
+                          _In_ ULONG ProcessInformationLength,
+                          _Out_opt_ PULONG ReturnLength);
+
+/* ntdll-only DLL: no kernel32 import (a WoW64 process must not pull 64-bit
+ * kernel32 through us — Win10 keeps it out of wow64 processes too). */
+#define WOW64_CURRENT_PROCESS ((HANDLE)(LONG_PTR)-1)
+
 /*
  * Phase-B probe services (wow64probe.exe / docs/engineering/wow64-plan.md).
  * Magic service numbers far above any real syscall id: ECHO proves 32-bit
@@ -58,11 +70,11 @@ Wow64SystemServiceEx(ULONG ServiceNumber, PULONG Arguments)
             if (Arguments[0] == WOW64B_ECHO_MAGIC)
             {
                 DbgPrint("[FEX-WOW64B] guest syscall round-trip PASS (echo magic returned by guest)\n");
-                NtTerminateProcess(GetCurrentProcess(), 0x600D);
+                NtTerminateProcess(WOW64_CURRENT_PROCESS, 0x600D);
             }
             DbgPrint("[FEX-WOW64B] guest syscall round-trip FAIL (guest passed %08lx, want %08x)\n",
                      Arguments[0], WOW64B_ECHO_MAGIC);
-            NtTerminateProcess(GetCurrentProcess(), 0xBAD);
+            NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
             return 0; /* unreachable */
 
         default:
@@ -70,6 +82,51 @@ Wow64SystemServiceEx(ULONG ServiceNumber, PULONG Arguments)
                      ServiceNumber, Arguments);
             return (ULONG)0xC000001CL; /* STATUS_INVALID_SYSTEM_SERVICE */
     }
+}
+
+/*
+ * Wow64LdrpInitialize — the thread handoff from the 64-bit ntdll loader.
+ * For a WoW64 process, LdrpInitializeProcess (ntdll-rust ldrinit.rs) skips the
+ * i386 image entirely, loads this DLL, and calls here with the initial thread
+ * CONTEXT. This function owns the thread from here on and never returns: it
+ * will bootstrap the 32-bit side (map syswow64 ntdll, init the CPU dll, build
+ * the guest context, BTCpuSimulate).
+ *
+ * Phase C milestone 1 scope: prove the kernel+loader chain end-to-end —
+ * EPROCESS marked WoW64 (PEB32 via ProcessWow64Information), TEB32 reachable
+ * through the raw WowTebOffset slot (TEB+0x180c, kernel MmCreateTeb wrote it),
+ * then exit 0x600D as the harness verdict. The CPU-layer bring-up (proven
+ * standalone by wow64probe in Phase B) moves in here as milestone 2.
+ */
+VOID
+WINAPI
+Wow64LdrpInitialize(PVOID Context)
+{
+    ULONG_PTR Peb32 = 0;
+    PBYTE Teb = (PBYTE)NtCurrentTeb();
+    LONG WowTebOffset = *(LONG *)(Teb + 0x180c);
+    PBYTE Teb32 = WowTebOffset ? Teb + WowTebOffset : NULL;
+    LONG Status;
+
+    DbgPrint("[FEX-WOW64C] Wow64LdrpInitialize: 64-bit loader handed the thread over (Context=%p)\n",
+             Context);
+
+    Status = NtQueryInformationProcess(WOW64_CURRENT_PROCESS,
+                                       26 /* ProcessWow64Information */,
+                                       &Peb32, sizeof(Peb32), NULL);
+    DbgPrint("[FEX-WOW64C] PEB32=%p (query status %08lx), TEB32=%p (WowTebOffset=%ld)\n",
+             (PVOID)Peb32, Status, Teb32, WowTebOffset);
+
+    if (Status >= 0 && Peb32 && Teb32 &&
+        *(ULONG *)(Teb32 + 0x30 /* TEB32.ProcessEnvironmentBlock */) == (ULONG)Peb32)
+    {
+        DbgPrint("[FEX-WOW64C] M1 PASS: WoW64 process bootstrap chain complete (image base %08lx)\n",
+                 *(ULONG *)((PBYTE)Peb32 + 0x08 /* PEB32.ImageBaseAddress */));
+        NtTerminateProcess(WOW64_CURRENT_PROCESS, 0x600D);
+    }
+
+    DbgPrint("[FEX-WOW64C] M1 FAIL: PEB32/TEB32 chain inconsistent\n");
+    NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
 }
 
 /*
@@ -90,10 +147,13 @@ DllMain(HINSTANCE hDll, DWORD dwReason, LPVOID lpReserved)
 {
     UNREFERENCED_PARAMETER(lpReserved);
 
+    UNREFERENCED_PARAMETER(hDll);
+
     if (dwReason == DLL_PROCESS_ATTACH)
     {
-        DisableThreadLibraryCalls(hDll);
-        DbgPrint("[WOW64] wow64.dll loaded (Phase A skeleton)\n");
+        /* No DisableThreadLibraryCalls: that's kernel32, and this DLL is
+         * deliberately ntdll-only. Thread attach/detach no-op through DllMain. */
+        DbgPrint("[WOW64] wow64.dll loaded\n");
     }
     return TRUE;
 }

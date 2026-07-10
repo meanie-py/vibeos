@@ -29,6 +29,13 @@ cmake -S "$HARNESS_SRC" -B "$HARNESS_BUILD" -G Ninja \
 
 ninja -C "$HARNESS_BUILD" fexprobe wow64probe
 
+# hello32.exe — the i386 WoW64 Phase C guest (no CRT, no imports). Built with
+# a direct clang call because the harness CMake is aarch64-target; this is the
+# only i386 artifact here.
+"$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
+    -Wl,--subsystem,console:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+    -o "$HARNESS_BUILD/hello32.exe" "$HARNESS_SRC/Hello32.c"
+
 echo
 echo "Built:"
-ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe
+ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe "$HARNESS_BUILD"/hello32.exe
