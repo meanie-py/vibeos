@@ -243,6 +243,160 @@ unsafe fn DetectInternal(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *m
     DetectDisplayController(BusKey);
 }
 
+// ---- DetectPciBios for UEFI (x86) ------------------------------------------
+// The BIOS loader discovers PCI via INT 1A/B101 (hwpci::PcFindPciBios) and
+// publishes the "PCI BIOS" + per-bus "PCI" MultifunctionAdapter nodes in the
+// hardware description tree. Under UEFI there is no INT 1A, so upstream left
+// this as `// TODO: DetectPciBios` — and without a "PCI" node,
+// IoQueryDeviceDescription(PCIBus) finds nothing, which kills scsiport's
+// legacy native-PCI adapter init: ScsiPortInitialize(PCIBus, VendorId/DeviceId)
+// -> SpiCreatePortConfig -> STATUS_DEVICE_DOES_NOT_EXIST before HwFindAdapter
+// is ever called. (Hit 2026-07-10 bringing up uniata's AHCI path under WHPX:
+// uniata's DriverEntry native-PCI init for the ich9-ahci CD controller got
+// 0xC00000C0 while the ISA-compat PIIX path worked.) ReactOS scsiport has no
+// PnP start (IRP_MN_START_DEVICE is a stub), so the legacy path is the ONLY
+// path — the description tree MUST carry the PCI node. Probe PCI config
+// mechanism #1 via ports CF8/CFC directly instead of INT 1A.
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn pci_mech1_cfg_read32(bus: u32, dev: u32, func: u32, off: u32) -> u32 {
+    let addr: u32 = 0x8000_0000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC);
+    let val: u32;
+    core::arch::asm!(
+        "out dx, eax",
+        in("dx") 0xCF8u16, in("eax") addr,
+        options(nomem, nostack, preserves_flags)
+    );
+    core::arch::asm!(
+        "in eax, dx",
+        in("dx") 0xCFCu16, out("eax") val,
+        options(nomem, nostack, preserves_flags)
+    );
+    val
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn pci_mech1_cfg_read8(bus: u32, dev: u32, func: u32, off: u32) -> u8 {
+    let v = pci_mech1_cfg_read32(bus, dev, func, off & !3);
+    ((v >> ((off & 3) * 8)) & 0xFF) as u8
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn pci_mech1_cfg_write8(bus: u32, dev: u32, func: u32, off: u32, val: u8) {
+    let addr: u32 = 0x8000_0000 | (bus << 16) | (dev << 11) | (func << 8) | (off & 0xFC);
+    core::arch::asm!(
+        "out dx, eax",
+        in("dx") 0xCF8u16, in("eax") addr,
+        options(nomem, nostack, preserves_flags)
+    );
+    let port: u16 = 0xCFC + (off & 3) as u16;
+    core::arch::asm!(
+        "out dx, al",
+        in("dx") port, in("al") val,
+        options(nomem, nostack, preserves_flags)
+    );
+}
+
+// SeaBIOS-equivalent legacy-IRQ fixup: OVMF programs the PIIX3 PIRQ router
+// (config 0x60..0x63 on 00:01.0) but — unlike SeaBIOS — does not write each
+// device's InterruptLine register. NT's legacy HAL paths (HalAssignSlotResources,
+// used by scsiport's native-PCI adapter init) take InterruptLine at face value:
+// 0/0xFF ⇒ no interrupt resource ⇒ scsiport skips the adapter (BusInterruptLevel
+// == 0). Finish the firmware's job: for every bus-0 function with an interrupt
+// pin and an unprogrammed line, write line = PIRQRC[(pin-1 + slot-1) & 3]
+// (QEMU piix slot_addend = slot-1). Devices behind bridges are left alone.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn pci_fixup_interrupt_lines() {
+    // Only when the PIIX3 ISA bridge sits at 00:01.0 (QEMU "pc" machine).
+    let piix = pci_mech1_cfg_read32(0, 1, 0, 0);
+    if (piix & 0xFFFF) != 0x8086 {
+        return;
+    }
+    let mut dev: u32 = 0;
+    while dev < 32 {
+        let v0 = pci_mech1_cfg_read32(0, dev, 0, 0);
+        if (v0 & 0xFFFF) == 0xFFFF {
+            dev += 1;
+            continue;
+        }
+        // multi-function bit
+        let hdr = pci_mech1_cfg_read8(0, dev, 0, 0x0E);
+        let nfunc: u32 = if (hdr & 0x80) != 0 { 8 } else { 1 };
+        let mut func: u32 = 0;
+        while func < nfunc {
+            let vf = pci_mech1_cfg_read32(0, dev, func, 0);
+            if (vf & 0xFFFF) != 0xFFFF {
+                let pin = pci_mech1_cfg_read8(0, dev, func, 0x3D) as u32;
+                let line = pci_mech1_cfg_read8(0, dev, func, 0x3C);
+                if pin >= 1 && pin <= 4 && (line == 0 || line == 0xFF) {
+                    let pirq = (pin - 1 + dev.wrapping_sub(1)) & 3;
+                    let route = pci_mech1_cfg_read8(0, 1, 0, 0x60 + pirq);
+                    if (route & 0x80) == 0 && route < 16 {
+                        pci_mech1_cfg_write8(0, dev, func, 0x3C, route);
+                        TRACE(b"pci 00:%02x.%u IntLine %u (PIRQ%u)\n\0".as_ptr() as *const i8,
+                            dev as usize, func as usize, route as usize, pirq as usize);
+                    }
+                }
+            }
+            func += 1;
+        }
+        dev += 1;
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "C" fn UefiFindPciBios(BusData: crate::hwpci::PPCI_REGISTRY_INFO) -> BOOLEAN {
+    // Mechanism-#1 presence check: the CF8 address register latches on real
+    // mech-1 chipsets (and on every QEMU machine type we boot).
+    let probe: u32 = 0x8000_0000;
+    let read_back: u32;
+    core::arch::asm!(
+        "out dx, eax",
+        in("dx") 0xCF8u16, in("eax") probe,
+        options(nomem, nostack, preserves_flags)
+    );
+    core::arch::asm!(
+        "in eax, dx",
+        in("dx") 0xCF8u16, out("eax") read_back,
+        options(nomem, nostack, preserves_flags)
+    );
+    if read_back != probe {
+        TRACE(b"No PCI mech#1 config access\n\0".as_ptr() as *const i8);
+        return 0u8;
+    }
+
+    // Count populated buses (any device present marks the bus). Firmware has
+    // already assigned secondary bus numbers, so a flat scan reaches them all.
+    let mut max_bus: u32 = 0;
+    let mut bus: u32 = 0;
+    while bus < 256 {
+        let mut dev: u32 = 0;
+        while dev < 32 {
+            let v = pci_mech1_cfg_read32(bus, dev, 0, 0);
+            if (v & 0xFFFF) != 0xFFFF {
+                if bus > max_bus {
+                    max_bus = bus;
+                }
+                break;
+            }
+            dev += 1;
+        }
+        bus += 1;
+    }
+
+    (*BusData).MajorRevision = 2;      // report as PCI 2.10, like a PCI BIOS would
+    (*BusData).MinorRevision = 0x10;
+    (*BusData).NoBuses = (max_bus + 1) as UCHAR;
+    (*BusData).HardwareMechanism = 1;  // config mechanism #1
+    TRACE(b"UefiFindPciBios: NoBuses %u\n\0".as_ptr() as *const i8, (max_bus + 1) as usize);
+
+    // Finish what the firmware left undone (see comment above the function).
+    pci_fixup_interrupt_lines();
+
+    1u8
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn UefiHwDetect(
     Options: PCSTR,
@@ -265,6 +419,12 @@ pub unsafe extern "C" fn UefiHwDetect(
     );
 
     DetectInternal(SystemKey, core::ptr::addr_of_mut!(BusNumber));
+    // was `// TODO: DetectPciBios` — see UefiFindPciBios above.
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        crate::hwpci::FindPciBios = UefiFindPciBios as *mut core::ffi::c_void;
+        crate::hwpci::DetectPciBios(SystemKey, core::ptr::addr_of_mut!(BusNumber));
+    }
     DetectAcpiBios(SystemKey, core::ptr::addr_of_mut!(BusNumber));
 
     TRACE(b"DetectHardware() Done\n\0".as_ptr() as *const i8);

@@ -21,6 +21,7 @@
 use crate::types::*;
 use crate::regidx::*;
 use crate::*;
+use ntkrnl_sys::driver_ddk::DbgPrint; // ahci markers
 use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::base::{TRUE, FALSE, NT_SUCCESS};
 use ntkrnl_sys::rtl::{RtlZeroMemory, RtlCopyMemory};
@@ -3801,6 +3802,17 @@ pub unsafe extern "system" fn DriverEntry(
     }
 
     // Look for legacy ISA-bridged PCI IDE controller (onboard)
+    {
+        let mut k: ULONG = 0;
+        while k < BMListLen {
+            DbgPrint(b"[UNIATA] BMList[%u]: %04x:%04x master=%u known=%u slot=%08x\n\0".as_ptr().cast(),
+                k, (*BMList.add(k as usize)).nVendorId, (*BMList.add(k as usize)).nDeviceId,
+                (*BMList.add(k as usize)).MasterDev as ULONG,
+                (*BMList.add(k as usize)).Known as ULONG,
+                (*BMList.add(k as usize)).slotNumber); // ahci marker
+            k += 1;
+        }
+    }
     i = 0;
     'isa_pci: while i < BMListLen {
         if (*BMList.add(i as usize)).MasterDev == 0 {
@@ -3943,6 +3955,9 @@ pub unsafe extern "system" fn DriverEntry(
             &mut hwInitializationData.comm,
             i as ULONG_PTR as PVOID,
         );
+        DbgPrint(b"[UNIATA] native init BMList[%u]=%04x:%04x st=%08x altinit=%u\n\0".as_ptr().cast(),
+            i, (*BMList.add(i as usize)).nVendorId, (*BMList.add(i as usize)).nDeviceId,
+            newStatus, (*BMList.add(i as usize)).NeedAltInit as ULONG); // ahci marker
         if newStatus == STATUS_DEVICE_DOES_NOT_EXIST as ULONG && (*BMList.add(i as usize)).NeedAltInit != 0 {
             hwInitializationData.comm.AdapterInterfaceType = _INTERFACE_TYPE_Isa as INTERFACE_TYPE;
             newStatus = ScsiPortInitialize(
@@ -3951,6 +3966,8 @@ pub unsafe extern "system" fn DriverEntry(
                 &mut hwInitializationData.comm,
                 (i | 0x80000000) as ULONG_PTR as PVOID,
             );
+            DbgPrint(b"[UNIATA] native init alt BMList[%u] st=%08x\n\0".as_ptr().cast(),
+                i, newStatus); // ahci marker
         }
         if newStatus < statusToReturn {
             statusToReturn = newStatus;

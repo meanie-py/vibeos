@@ -1132,6 +1132,8 @@ pub unsafe extern "system" fn UniataFindBusMasterController(
     RevID = pciData.RevisionID as ULONG;
     dev_id = VendorID | (DeviceID << 16);
     slotData.u.AsULONG = slotNumber;
+    DbgPrint(b"[UNIATA] FindBM dev=%08x class=%02x/%02x i=%u slot=%08x\n\0".as_ptr().cast(),
+        dev_id, BaseClass as ULONG, SubClass as ULONG, i, slotNumber); // ahci marker
 
     (*deviceExtension).slotNumber = slotNumber;
     (*deviceExtension).SystemIoBusNumber = SystemIoBusNumber;
@@ -1153,6 +1155,8 @@ pub unsafe extern "system" fn UniataFindBusMasterController(
     if VendorID != (*BMList.add(i as usize)).nVendorId
         || DeviceID != (*BMList.add(i as usize)).nDeviceId
     {
+        DbgPrint(b"[UNIATA] FindBM: BMList[%u]=%04x:%04x != dev -> NOT_FOUND\n\0".as_ptr().cast(),
+            i, (*BMList.add(i as usize)).nVendorId, (*BMList.add(i as usize)).nDeviceId); // ahci marker
         UniataFreeLunExt(deviceExtension);
         return SP_RETURN_NOT_FOUND;
     }
@@ -1163,6 +1167,8 @@ pub unsafe extern "system" fn UniataFindBusMasterController(
         SubClass,
     );
     if found == 0 {
+        DbgPrint(b"[UNIATA] FindBM: subclass %02x not supported -> NOT_FOUND\n\0".as_ptr().cast(),
+            SubClass as ULONG); // ahci marker
         UniataFreeLunExt(deviceExtension);
         return SP_RETURN_NOT_FOUND;
     }
@@ -1193,6 +1199,8 @@ pub unsafe extern "system" fn UniataFindBusMasterController(
         ConfigInfo,
         &mut simplexOnly,
     );
+    DbgPrint(b"[UNIATA] FindBM: ChipDetect st=%08x hwflags=%08x master=%u\n\0".as_ptr().cast(),
+        status as ULONG, (*deviceExtension).HwFlags, MasterDev as ULONG); // ahci marker
     match status {
         STATUS_SUCCESS => {
             found = TRUE as BOOLEAN;

@@ -20,6 +20,7 @@ use crate::regidx::*;
 use crate::*; // sibling uniata functions + ScsiPortGetBusDataByOffset + BMList + AtapiRegCheckDevValue + WinVer/MajorVersion
 use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::base::{TRUE, FALSE, PCVOID};
+use ntkrnl_sys::driver_ddk::DbgPrint; // ahci markers
 use ntkrnl_sys::rtl::{RtlZeroMemory, RtlCopyMemory};
 use ntkrnl_sys::mm::NonPagedPool;
 use crate::io_port::{
@@ -1291,8 +1292,22 @@ pub unsafe extern "system" fn UniataChipDetect(
                             if (ChipFlags & UNIATA_AHCI) != 0 {
                                 OrigAHCI = TRUE;
                                 if (tmp8 & 0xc0) != 0 {
-                                    // __REACTOS__: RangeStart assumed 0 -> never take 'break';
-                                    // proceed to try BM.
+                                    // MAP reg says AHCI/RAID mode -> try run AHCI (C: id_init.cpp
+                                    // "try run AHCI"). AccessRanges[5] is NOT "always 0" here:
+                                    // UniataAhciDetect() already ran above and its
+                                    // AtapiGetIoRange(rid=5) self-heals the range from raw PCI
+                                    // config (the CORE-13346 "assumed 0" note applies only
+                                    // BEFORE detect). Non-zero -> keep AHCI, skip compat mode.
+                                    // (Mistranslation here dropped AHCI unconditionally: every
+                                    // Intel AHCI controller fell to legacy probe — dead on
+                                    // AHCI-only parts like QEMU ich9-ahci.)
+                                    if access_range_start(ConfigInfo, 5) != 0 {
+                                        DbgPrint(b"[UNIATA] Intel MAP=%02x: keep AHCI\n\0"
+                                            .as_ptr().cast(), tmp8 as ULONG); // ahci marker
+                                        break 'intel;
+                                    }
+                                    DbgPrint(b"[UNIATA] Intel MAP=%02x: no BAR5 -> drop AHCI\n\0"
+                                        .as_ptr().cast(), tmp8 as ULONG); // ahci marker
                                     (*deviceExtension).HwFlags &= !UNIATA_AHCI;
                                 }
                                 BaseIoAddressBM = AtapiGetIoRange(
@@ -1481,6 +1496,19 @@ unsafe fn access_range_in_memory(
     }
     let ar = (ranges as *const ACCESS_RANGE).add(rid);
     (*ar).RangeInMemory != 0
+}
+
+// C: ScsiPortConvertPhysicalAddressToUlong((*ConfigInfo->AccessRanges)[rid].RangeStart)
+unsafe fn access_range_start(
+    ConfigInfo: PPORT_CONFIGURATION_INFORMATION,
+    rid: usize,
+) -> ULONG {
+    let ranges = (*ConfigInfo).AccessRanges;
+    if ranges.is_null() || ((*ConfigInfo).NumberOfAccessRanges as usize) <= rid {
+        return 0;
+    }
+    let ar = (ranges as *const ACCESS_RANGE).add(rid);
+    ScsiPortConvertPhysicalAddressToUlong((*ar).RangeStart)
 }
 
 // ChangePciConfigN inline helper: read-modify-write one byte at `offs`.

@@ -1819,6 +1819,11 @@ unsafe fn SpiGetPciConfigData(
                 &mut ResourceList,
             );
 
+            DbgPrint(b"[SCSIPORT] pci scan match %04x:%04x bus=%u slot=%u AssignSlotRes=%08x\n\0"
+                .as_ptr() as *const i8,
+                PciConfig.VendorID as u32, PciConfig.DeviceID as u32,
+                BusNumber, DeviceNumber, Status as u32); // ahci marker
+
             if !NT_SUCCESS(Status) {
                 break;
             }
@@ -1828,6 +1833,12 @@ unsafe fn SpiGetPciConfigData(
                 core::ptr::addr_of_mut!((*ResourceList).List) as *mut CM_FULL_RESOURCE_DESCRIPTOR,
                 PortConfig,
             );
+
+            DbgPrint(b"[SCSIPORT] resources: irql=%u vec=%u ranges0=%08x\n\0"
+                .as_ptr() as *const i8,
+                (*PortConfig).BusInterruptLevel, (*PortConfig).BusInterruptVector,
+                ScsiPortConvertPhysicalAddressToUlong(
+                    (*((*PortConfig).AccessRanges as *mut ACCESS_RANGE)).RangeStart)); // ahci marker
 
             ExFreePool(ResourceList as *mut core::ffi::c_void);
 

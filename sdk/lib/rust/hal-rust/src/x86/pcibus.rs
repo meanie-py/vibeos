@@ -1318,6 +1318,9 @@ pub unsafe extern "system" fn HalpAdjustPCIResourceList(
 // C common region — required in minihal (HalpFakePciBusHandler dispatch).
 // feedback_freeldr_clean_build_regression
 #[no_mangle]
+// PCI_COMMON_HDR_LENGTH = FIELD_OFFSET(PCI_COMMON_CONFIG, DeviceSpecific) = 64.
+const PCI_COMMON_HDR_LENGTH: u32 = 64;
+
 pub unsafe extern "system" fn HalpAssignPCISlotResources(
     BusHandler: PBUS_HANDLER,
     RootHandler: PBUS_HANDLER,
@@ -1345,12 +1348,17 @@ pub unsafe extern "system" fn HalpAssignPCISlotResources(
     let _ = DeviceObject;
 
     SlotNumber.u.AsULONG = Slot;
+    // C: HalpReadPCIConfig(..., 0, PCI_COMMON_HDR_LENGTH) — the FULL 64-byte
+    // type-0 header. A mistranslation read only 32 bytes, which stops at BAR3:
+    // BAR4 (0x20), BAR5 (0x24, the AHCI ABAR!) and InterruptPin/Line (0x3D/0x3C)
+    // all read as zero, so a device whose only BAR is BAR5 (QEMU ich9-ahci) got
+    // an EMPTY resource list and scsiport skipped it (BusInterruptLevel==0).
     HalpReadPCIConfig(
         BusHandler,
         SlotNumber,
         &raw mut PciConfig as *mut core::ffi::c_void,
         0,
-        32,
+        PCI_COMMON_HDR_LENGTH,
     );
 
     if PciConfig.VendorID == PCI_INVALID_VENDORID as u16 {
