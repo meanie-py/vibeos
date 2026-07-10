@@ -27,8 +27,8 @@ pub mod surface;
 use core::panic::PanicInfo;
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    loop {}
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 #[no_mangle]

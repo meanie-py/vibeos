@@ -17,19 +17,8 @@
 )]
 
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        unsafe {
-            core::arch::asm!("hlt");
-        }
-        #[cfg(target_arch = "aarch64")]
-        unsafe {
-            core::arch::asm!("wfe", options(nomem, nostack));
-        }
-        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-        core::hint::spin_loop();
-    }
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 #[unsafe(no_mangle)]

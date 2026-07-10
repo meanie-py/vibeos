@@ -7,4 +7,5 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
 winlogon-sys = { path = "../winlogon-sys" }

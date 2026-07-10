@@ -22,7 +22,7 @@ extern "C" {
     static mut KdDebuggerNotPresent: BOOLEAN;
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdpSendBuffer(
     Buffer: PVOID,
     Size: ULONG,
@@ -38,7 +38,7 @@ pub unsafe extern "system" fn KdpSendBuffer(
     }
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdpReceiveBuffer(
     Buffer: PVOID,
     Size: ULONG,
@@ -62,7 +62,7 @@ pub unsafe extern "system" fn KdpReceiveBuffer(
 
     KDP_PACKET_RECEIVED
 }
-#[no_mangle]
+#[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdpReceivePacketLeader(
     PacketLeader: *mut u32
 ) -> KDP_STATUS {

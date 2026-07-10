@@ -14,6 +14,7 @@ lockdep = ["ntoskrnl-rust/lockdep"]
 cswitchdep = ["ntoskrnl-rust/cswitchdep"]
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
 ntoskrnl-rust = { path = "../ntoskrnl-rust" }
 lpc-rust = { path = "../lpc-rust" }
 fsrtl-rust = { path = "../fsrtl-rust" }

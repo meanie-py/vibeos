@@ -15,6 +15,7 @@ default = ["kernel"]
 kernel = ["rtl-strings/kernel", "rtl-heap/kernel", "rtl-threadpool/kernel", "rtl-sync/kernel", "rtl-diag/kernel", "rtl-except/kernel", "rtl-misc/kernel"]
 
 [dependencies]
+panic-common = { path = "../panic-common" }
 access       = { path = "../access" }
 avltable     = { path = "../avltable" }
 bitmap       = { path = "../bitmap" }

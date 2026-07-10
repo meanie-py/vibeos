@@ -82,10 +82,17 @@ extern "C" {
     fn _strupr(s: PSTR) -> PSTR;
     fn strstr(s1: PSTR, s2: PSTR) -> PSTR;
     fn strncmp(s1: PSTR, s2: PSTR, n: usize) -> i32;
+    fn DbgPrint(Format: *const u8, ...) -> u32;
 }
 
 extern "system" {
     fn KdDebuggerInitialize0(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS;
+    /// kd-rust kdio.rs (crash-value): init + arm the embedded kdcom-serial
+    /// wire transport for real WinDbg KD on COM2.
+    fn KdpWireTransportArm(LoaderBlock: PVOID) -> NTSTATUS;
+    /// ntoskrnl-rust tripwire.rs: exact-token lookup in the fw_cfg tripwire
+    /// blob (safe pre-Mm; returns 0 off-QEMU).
+    fn VibeTripwireHasToken(needle: *const u8, len: usize) -> u8;
     fn KdDisableDebuggerWithLock(BlockEnable: BOOLEAN) -> NTSTATUS;
     fn KdPollBreakIn() -> BOOLEAN;
     fn DbgLoadImageSymbols(ImageName: *mut STRING, Base: PVOID, ProcessId: ULONG_PTR);
@@ -337,9 +344,45 @@ pub unsafe extern "system" fn KdInitSystem(
 
     KdDebuggerDataBlock.KernBase = KdVersionBlock.KernBase;
 
+    // Historically a BLANKET enable_kd=0 on x86/amd64: the INT3→KdpTrap path
+    // died in a recursive exception flood — which was the §9.35 class (zero
+    // .pdata for Rust frames, fixed by requires-uwtable=true), so real KD is
+    // viable again. It stays OPT-IN rather than default-on for a different
+    // reason: COM1 is the smoke/console log channel, and a live KD claims its
+    // port for binary packet framing. Opt in per-boot with
+    // /DEBUG /DEBUGPORT=COM2 (WinDbg on a dedicated second UART); every other
+    // /DEBUG spelling keeps today's KdpStub text-to-COM1 behavior.
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        enable_kd = 0u8;
+        let mut kd_on_com2 = false;
+        if !loader_block.is_null() {
+            let command_line = (*loader_block).LoadOptions;
+            if !command_line.is_null()
+                && !strstr(command_line, b"DEBUGPORT=COM2\0".as_ptr() as PSTR).is_null()
+            {
+                kd_on_com2 = true;
+            }
+        }
+        // Per-boot opt-in with no media rebuild: `--tripwire "KD=COM2"`
+        // (fw_cfg — read directly here since KdInitSystem runs long before
+        // the Mm-phase tripwire parse).
+        if !kd_on_com2 && VibeTripwireHasToken(b"KD=COM2".as_ptr(), 7) != 0 {
+            kd_on_com2 = true;
+        }
+        if !kd_on_com2 {
+            enable_kd = 0u8;
+        } else {
+            DbgPrint(
+                b"KD: DEBUGPORT=COM2 -- real KD transport opt-in (KiDebugRoutine=KdpTrap)\n\0"
+                    .as_ptr(),
+            );
+            // Arm the embedded kdcom-serial wire transport (kd-rust kdio.rs
+            // delegation). If the COM2 port init fails, fall back to today's
+            // KdpStub text path rather than wedging boot on a dead wire.
+            if KdpWireTransportArm(loader_block as PVOID) < 0 {
+                enable_kd = 0u8;
+            }
+        }
     }
 
     if enable_kd != 0 && KdDebuggerInitialize0(loader_block) >= 0 {

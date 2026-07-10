@@ -27,8 +27,8 @@ mod defs;
 // kernel link's --allow-multiple-definition absorbs the dup vs kernel-rust.
 // (Unreachable — this crate is pure data, no panicking code.)
 #[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
-    loop {}
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 #[no_mangle]

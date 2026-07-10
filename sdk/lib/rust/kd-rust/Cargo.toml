@@ -10,3 +10,6 @@ crate-type = ["rlib"]
 [dependencies]
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 dbgprint-rust = { path = "../dbgprint-rust" }
+# crash-value: the REAL serial KD transport (WinDbg packet framing) embedded
+# as an rlib; armed at runtime by /DEBUG /DEBUGPORT=COM2 (KdpWireTransportArm).
+kdcom-serial-rust = { path = "../kdcom-serial-rust", features = ["embedded"] }

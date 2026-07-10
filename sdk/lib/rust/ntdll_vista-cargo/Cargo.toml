@@ -17,3 +17,6 @@ path = "src/main.rs"
 
 [build-dependencies]
 reactos-link = { path = "../reactos-link" }
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }

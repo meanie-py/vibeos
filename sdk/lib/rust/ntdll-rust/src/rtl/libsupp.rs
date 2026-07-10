@@ -627,6 +627,9 @@ pub unsafe extern "C" fn RtlpGetAtomEntry(AtomTable: PRTL_ATOM_TABLE, Index: u32
     core::ptr::null_mut()
 }
 
+// vista build: loader-support machinery whose externs (RtlpImageNtHeaderEx,
+// push_language, find_entry_by_*, actctx) resolve only in the full ntdll link.
+#[cfg(not(feature = "vista"))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlImageNtHeaderEx(
     Flags: ULONG,
@@ -644,6 +647,9 @@ pub unsafe extern "system" fn RtlImageNtHeaderEx(
 
     return Status;
 }
+// vista build: loader-support machinery whose externs (RtlpImageNtHeaderEx,
+// push_language, find_entry_by_*, actctx) resolve only in the full ntdll link.
+#[cfg(not(feature = "vista"))]
 #[no_mangle]
 pub unsafe extern "C" fn find_entry(
     BaseAddress: PVOID,
@@ -786,6 +792,9 @@ pub unsafe extern "C" fn find_entry(
     STATUS_RESOURCE_LANG_NOT_FOUND
 }
 
+// vista build: loader-support machinery whose externs (RtlpImageNtHeaderEx,
+// push_language, find_entry_by_*, actctx) resolve only in the full ntdll link.
+#[cfg(not(feature = "vista"))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlPcToFileHeader(
     PcValue: PVOID,
@@ -819,6 +828,9 @@ pub unsafe extern "system" fn RtlPcToFileHeader(
     *BaseOfImage = ImageBase;
     ImageBase
 }
+// vista build: loader-support machinery whose externs (RtlpImageNtHeaderEx,
+// push_language, find_entry_by_*, actctx) resolve only in the full ntdll link.
+#[cfg(not(feature = "vista"))]
 #[no_mangle]
 pub unsafe extern "C" fn get_buffer(
     buffer: *mut LPWSTR,
@@ -849,6 +861,9 @@ pub unsafe extern "C" fn get_buffer(
 
     return STATUS_SUCCESS;
 }
+// vista build: loader-support machinery whose externs (RtlpImageNtHeaderEx,
+// push_language, find_entry_by_*, actctx) resolve only in the full ntdll link.
+#[cfg(not(feature = "vista"))]
 #[no_mangle]
 pub unsafe extern "C" fn find_actctx_dll(
     pnameW: PUNICODE_STRING,
@@ -980,6 +995,10 @@ pub unsafe extern "C" fn find_actctx_dll(
     status
 }
 
+// vista build (ntdll_vista.dll) excludes the apisets/loader machinery these
+// depend on (ApiSetResolveToHost, RtlDoesFileExists_UStr, RtlpImageNtHeaderEx
+// resolve only in the full ntdll link); nothing in the vista PE calls them.
+#[cfg(not(feature = "vista"))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlDosApplyFileIsolationRedirection_Ustr(
     Flags: u32,
@@ -1120,6 +1139,10 @@ pub unsafe extern "system" fn RtlDosApplyFileIsolationRedirection_Ustr(
     Status
 }
 
+// vista build (ntdll_vista.dll) excludes the apisets/loader machinery these
+// depend on (ApiSetResolveToHost, RtlDoesFileExists_UStr, RtlpImageNtHeaderEx
+// resolve only in the full ntdll link); nothing in the vista PE calls them.
+#[cfg(not(feature = "vista"))]
 unsafe fn LdrpApisetVersion() -> DWORD {
     if CachedApisetVersion == !0u32 {
 
@@ -1150,6 +1173,10 @@ unsafe fn LdrpApisetVersion() -> DWORD {
 
     CachedApisetVersion
 }
+// vista build (ntdll_vista.dll) excludes the apisets/loader machinery these
+// depend on (ApiSetResolveToHost, RtlDoesFileExists_UStr, RtlpImageNtHeaderEx
+// resolve only in the full ntdll link); nothing in the vista PE calls them.
+#[cfg(not(feature = "vista"))]
 #[no_mangle]
 pub unsafe extern "system" fn LdrpApplyFileNameRedirection(
     OriginalName: PUNICODE_STRING,

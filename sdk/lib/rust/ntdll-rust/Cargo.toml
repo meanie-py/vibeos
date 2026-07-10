@@ -23,6 +23,7 @@ vista = []
 crate-type = ["staticlib"]
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
 # User-mode Native API + Ldr/Rtl/Dbg FFI surface — the same substrate
 # smss-csrss-rust / winsrv-rust build on. See
 # docs/engineering/ntdll-translation-audit.md §Substrate.

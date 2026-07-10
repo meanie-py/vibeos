@@ -19,6 +19,7 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
 # win32k FFI surface (NtGdi*/Nt* fns, GDI struct layouts, handle-table types) — bindgen,
 # builds clean for the usermode targets, arch-consistent. The bulk-translated objects/
 # bodies marshal into win32k via this; Wave 0 (LineDDA, pure algorithm) does not use it

@@ -25,6 +25,7 @@ name = "hal"
 path = "src/main.rs"
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
 # hal-rust is `crate-type = ["staticlib"]` — cargo can't link a staticlib
 # as a Rust dep, so build.rs invokes `cargo build -p hal-rust` manually
 # and emits the absolute path of the resulting libhal_rust.a as a link arg.
