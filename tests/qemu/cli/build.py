@@ -440,21 +440,40 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
                 tops.append(d)
         return tops
 
-    def _probe(root: Path, links: str, prune: list[Path], *, all_hits: bool = False):
+    def _probe_cmd(root: Path, links: str, prune: list[Path], *, all_hits: bool) -> list[str]:
         cmd: list[str] = ["find", str(root)]
         for p in prune:
             cmd += ["-path", str(p), "-prune", "-o"]
         cmd += ["-type", "f", "-links", links, "-print"]
         if not all_hits:
             cmd += ["-quit"]
+        return cmd
+
+    def _probe(root: Path, links: str, prune: list[Path]) -> str | None:
         try:
-            cp = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            cp = subprocess.run(
+                _probe_cmd(root, links, prune, all_hits=False),
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
         except (OSError, subprocess.SubprocessError):
             run.add(Stage("isolation", status="warn", detail=f"probe failed for {root} — skipped"))
-            return [] if all_hits else None
-        if all_hits:
-            return [ln for ln in cp.stdout.splitlines() if ln.strip()][:200]
+            return None
         return cp.stdout.strip() or None
+
+    def _probe_all(root: Path, links: str, prune: list[Path]) -> list[str]:
+        try:
+            cp = subprocess.run(
+                _probe_cmd(root, links, prune, all_hits=True),
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        except (OSError, subprocess.SubprocessError):
+            run.add(Stage("isolation", status="warn", detail=f"probe failed for {root} — skipped"))
+            return []
+        return [ln for ln in cp.stdout.splitlines() if ln.strip()][:200]
 
     def _foreign_links(cands: list[str]) -> list[str]:
         """Filter multi-link cargo files down to the ones whose links are NOT
@@ -495,11 +514,11 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
         if hit:
             hits.append(f"{hit} (links 2+ in a cmake tree)")
         for c in nested_cargo:
-            for f in _foreign_links(_probe(c, "+2", [], all_hits=True)):
+            for f in _foreign_links(_probe_all(c, "+2", [])):
                 hits.append(f"{f} (links 3+ in a cargo dir, link escapes this worktree)")
     ws = repo / "sdk" / "lib" / "rust" / "target"
     if ws.is_dir():
-        for f in _foreign_links(_probe(ws, "+2", [], all_hits=True)):
+        for f in _foreign_links(_probe_all(ws, "+2", [])):
             hits.append(f"{f} (links 3+ in a cargo dir, link escapes this worktree)")
     if not hits:
         return True
@@ -530,8 +549,9 @@ _FLAG_SIGNATURES = [
         "VIBEOS_LOCKDEP",
         # cswitchdep IMPLIES the lockdep cargo feature (held-set mirror), so its
         # symbol is legitimately present in a --cswitchdep build too.
-        lambda args: bool(getattr(args, "lockdep", False))
-        or bool(getattr(args, "cswitchdep", False)),
+        lambda args: (
+            bool(getattr(args, "lockdep", False)) or bool(getattr(args, "cswitchdep", False))
+        ),
         Path("ntoskrnl") / "ntoskrnl.exe",
         "VIBEOS_LOCKDEP",
     ),
@@ -613,6 +633,26 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
 
     def wrap(cmd: list[str]) -> list[str]:
         return canon.wrap(repo, cmd) if wrapped else cmd
+
+    # --- payload selection stamp (docs/engineering/payload-harness-design.md) ---
+    # Persist the env's VIBEOS_PAYLOAD/VIBEOS_DOOM selection into the build dir
+    # BEFORE ninja runs the media steps, so env-less rebuilds (conftest's
+    # clean-build `ninja livecd`, raw canon-run ninja, smoke's net stage)
+    # reproduce the same media instead of silently reverting the payload set
+    # (the 2026-07-07 doom-clobber incident). Front door sets or CLEARS it:
+    # a build with no selection in env stamps <none>.
+    import importlib.util
+
+    _spec = importlib.util.spec_from_file_location(
+        "payload_compile", repo / "tools" / "payloads" / "compile.py"
+    )
+    assert _spec is not None and _spec.loader is not None
+    _payload_compile = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_payload_compile)
+
+    stamped = _payload_compile.write_stamp(build_dir)
+    if stamped:
+        run.add(Stage("payloads", status="ok", detail=",".join(stamped)))
 
     if cold:
         _clean(run, repo, arch)

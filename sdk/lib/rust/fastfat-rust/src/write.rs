@@ -373,15 +373,6 @@ pub unsafe extern "system" fn FatCommonWrite(
     SynchronousIo = (((*FileObject).Flags & FO_SYNCHRONOUS_IO) != 0) as u8;
 
     ByteCount = (*IrpSp).Parameters.Write.Length;
-    {
-        extern "C" { fn DbgPrint(fmt: *const i8, ...) -> u32; }
-        DbgPrint(
-            b"[FASTFAT] CommonWrite: len=%u off=%u wait=%u paging=%u nocache=%u sync=%u\n\0".as_ptr() as *const i8,
-            ByteCount,
-            (*IrpSp).Parameters.Write.ByteOffset.__bindgen_anon_1.LowPart,
-            Wait as u32, PagingIo as u32, NonCachedIo as u32, SynchronousIo as u32,
-        );
-    }
 
     if ByteCount == 0 {
         (*Irp).IoStatus.Information = 0;
@@ -404,6 +395,7 @@ pub unsafe extern "system" fn FatCommonWrite(
     WriteToEof = ((StartingByte.__bindgen_anon_1.LowPart == (FILE_WRITE_TO_END_OF_FILE) as u32) && (StartingByte.__bindgen_anon_1.HighPart == -1)) as u8;
 
     TypeOfOpen = FatDecodeFileObject(FileObject, &mut Vcb, &mut FcbOrDcb, &mut Ccb);
+
 
     debug_assert!(Vcb.is_null() == false);
 

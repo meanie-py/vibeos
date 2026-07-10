@@ -248,13 +248,21 @@ unsafe fn DesktopHeapFree(Desktop: PDESKTOP, lpMem: *mut core::ffi::c_void) -> u
     RtlFreeHeap((*Desktop).pheapDesktop as PVOID, HEAP_NO_SERIALIZE, lpMem) as u8
 }
 #[inline(always)]
-unsafe fn DesktopHeapReAlloc(Desktop: *mut core::ffi::c_void, ptr: *mut core::ffi::c_void, size: usize) -> *mut core::ffi::c_void {
-    // desktop.h: alloc-new + copy-old (RtlReAllocateHeap isn't exported). Caller frees old.
-    let new = RtlAllocateHeap(Desktop, HEAP_NO_SERIALIZE, size as SIZE_T);
-    if !new.is_null() && !ptr.is_null() {
-        let old_size = RtlSizeHeap(Desktop, HEAP_NO_SERIALIZE, ptr);
-        let copy = core::cmp::min(old_size as usize, size);
-        core::ptr::copy_nonoverlapping(ptr as *const u8, new as *mut u8, copy);
+unsafe fn DesktopHeapReAlloc(Desktop: PDESKTOP, lpMem: *mut core::ffi::c_void, Bytes: usize) -> *mut core::ffi::c_void {
+    // desktop.h inline: alloc-new + copy-old + FREE OLD (RtlReAllocateHeap isn't
+    // exported). NB the heap is (*Desktop).pheapDesktop — passing the PDESKTOP
+    // itself to RtlAllocateHeap walks the DESKTOP struct as HEAP metadata and
+    // BUGCHECKs (0x1E in RtlAllocateHeap on the first start-menu open).
+    let heap = (*Desktop).pheapDesktop as PVOID;
+    let prev_size = RtlSizeHeap(heap, HEAP_NO_SERIALIZE, lpMem) as usize;
+    if prev_size == Bytes {
+        return lpMem;
+    }
+    let new = RtlAllocateHeap(heap, HEAP_NO_SERIALIZE, Bytes as SIZE_T);
+    if !new.is_null() {
+        let copy = core::cmp::min(prev_size, Bytes);
+        core::ptr::copy_nonoverlapping(lpMem as *const u8, new as *mut u8, copy);
+        RtlFreeHeap(heap, HEAP_NO_SERIALIZE, lpMem);
     }
     new
 }
@@ -931,7 +939,7 @@ unsafe fn IntRemoveMenuItem_impl(
             nPos += 1;
         }
         newItems = DesktopHeapReAlloc(
-            ((*pMenu).head.rpdesk as *mut core::ffi::c_void),
+            (*pMenu).head.rpdesk,
             (*pMenu).rgItems as *mut _,
             (*pMenu).cItems as usize * core::mem::size_of::<ITEM>(),
         ) as PITEM;
@@ -3965,7 +3973,7 @@ unsafe extern "fastcall" fn MENU_SelectItem(
     NtGdiSelectFont(hdc, ghMenuFont);
 
     if (*menu).iItem != NO_SELECTED_ITEM as i32 {
-        (*menu).rgItems.offset((*menu).iItem as isize).as_mut().unwrap().fState &= !(MF_HILITE | MF_MOUSESELECT);
+        (*(*menu).rgItems.offset((*menu).iItem as isize)).fState &= !(MF_HILITE | MF_MOUSESELECT);
         MENU_DrawMenuItem(
             pWnd,
             menu,

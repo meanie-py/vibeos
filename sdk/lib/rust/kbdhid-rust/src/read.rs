@@ -150,6 +150,21 @@ pub unsafe extern "system" fn KbdHid_ReadCompletion(
     let mut ButtonLength: ULONG;
 
     let irp_status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+    // First-few-completions tripwire: proves the interrupt-IN read loop is
+    // alive and shows the status it completes with (silent otherwise).
+    {
+        static mut COMPLETION_COUNT: u32 = 0;
+        let n = core::ptr::addr_of_mut!(COMPLETION_COUNT);
+        if *n < 4 {
+            *n += 1;
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"[KBDHID] read completion #%u status=0x%x info=%u\n\0".as_ptr() as *const i8,
+                *n,
+                irp_status,
+                (*Irp).IoStatus.Information as ULONG,
+            );
+        }
+    }
     if irp_status == STATUS_PRIVILEGE_NOT_HELD
         || irp_status == STATUS_DEVICE_NOT_CONNECTED
         || irp_status == STATUS_CANCELLED
@@ -185,7 +200,18 @@ pub unsafe extern "system" fn KbdHid_ReadCompletion(
         (*DeviceExtension).Report,
         (*DeviceExtension).ReportLength,
     );
-    debug_assert!(Status == hid_sys::HIDP_STATUS_SUCCESS);
+    if Status != hid_sys::HIDP_STATUS_SUCCESS {
+        // Loud: parse failures here are otherwise invisible (debug_asserts
+        // compile out) and the read loop keeps spinning with no delivery.
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[KBDHID] HidP_GetUsagesEx FAILED 0x%x (irp=0x%x rlen=%u ulen=%u)\n\0".as_ptr()
+                as *const i8,
+            Status,
+            irp_status,
+            (*DeviceExtension).ReportLength,
+            ButtonLength,
+        );
+    }
 
     /* FIXME check if needs mapping */
 
@@ -215,7 +241,19 @@ pub unsafe extern "system" fn KbdHid_ReadCompletion(
         Some(KbdHid_InsertScanCodes),
         DeviceExtension as PVOID,
     );
-    debug_assert!(_s == hid_sys::HIDP_STATUS_SUCCESS);
+    // NOTE: I8042_TRANS_UNKNOWN is the NORMAL return when the loop hits the
+    // zero-padded tail of the fixed-length usage list ("end of usage list page"
+    // in the C), so it can't be used as a failure tripwire; any OTHER non-success
+    // status is a real parser failure worth being loud about (the C only ASSERTs,
+    // which compiles out — that silence hid the invented-usage-page bug).
+    if _s != hid_sys::HIDP_STATUS_SUCCESS && _s != hid_sys::HIDP_STATUS_I8042_TRANS_UNKNOWN {
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[KBDHID] translate(break) FAILED 0x%x u0=0x%x/0x%x\n\0".as_ptr() as *const i8,
+            _s,
+            (*(*DeviceExtension).BreakUsageList).UsagePage as ULONG,
+            (*(*DeviceExtension).BreakUsageList).Usage as ULONG,
+        );
+    }
 
     /* translate new usage list */
     let _s = HidP_TranslateUsageAndPagesToI8042ScanCodes(
@@ -226,7 +264,14 @@ pub unsafe extern "system" fn KbdHid_ReadCompletion(
         Some(KbdHid_InsertScanCodes),
         DeviceExtension as PVOID,
     );
-    debug_assert!(_s == hid_sys::HIDP_STATUS_SUCCESS);
+    if _s != hid_sys::HIDP_STATUS_SUCCESS && _s != hid_sys::HIDP_STATUS_I8042_TRANS_UNKNOWN {
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[KBDHID] translate(make) FAILED 0x%x u0=0x%x/0x%x\n\0".as_ptr() as *const i8,
+            _s,
+            (*(*DeviceExtension).MakeUsageList).UsagePage as ULONG,
+            (*(*DeviceExtension).MakeUsageList).Usage as ULONG,
+        );
+    }
 
     /* re-init read */
     KbdHid_InitiateRead(DeviceExtension);

@@ -142,41 +142,29 @@ const LockQueueIoCompletionLock: ULONG = 11;
 // Inline function: IoSizeOfIrp
 #[inline]
 unsafe fn IoSizeOfIrp(StackSize: CCHAR) -> USHORT {
-    (size_of::<_IRP>() + (StackSize as usize) * io_stack_location_abi_size()) as USHORT
+    (size_of::<_IRP>() + (StackSize as usize) * size_of::<_IO_STACK_LOCATION>()) as USHORT
 }
 
-#[cfg(target_arch = "aarch64")]
-const IRP_CURRENT_STACK_LOCATION_OFFSET: usize = 0xb8;
-
-#[inline]
-const fn io_stack_location_abi_size() -> usize {
-    #[cfg(target_arch = "aarch64")]
-    {
-        0x44
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        size_of::<_IO_STACK_LOCATION>()
-    }
-}
+// NOTE (2026-07-09): the aarch64 "C-truth" shims that used to live here
+// (IO_STACK_LOCATION stride 0x44, CurrentStackLocation slot at IRP+0xb8) are
+// GONE. They compensated for the arm64 header bug where the iotypes.h pack(4)
+// guard missed _ARM64_ (clang aarch64-w64-mingw32 ignores per-field
+// __attribute__((aligned)) under #pragma pack, so C and bindgen genuinely
+// disagreed). The guard is fixed, bindgen is regenerated, C == bindgen on all
+// arches — plain field access / pointer arithmetic is correct everywhere.
+// Leaving the shims in produced MIXED strides (68 vs 72) inside one kernel and
+// wedged boot at the first synchronous PnP IRP (CompletionRoutine read as None).
 
 #[inline]
 unsafe fn irp_current_stack_location_slot(irp: PIRP) -> *mut PIO_STACK_LOCATION {
-    #[cfg(target_arch = "aarch64")]
-    {
-        (irp as *mut u8).add(IRP_CURRENT_STACK_LOCATION_OFFSET) as *mut PIO_STACK_LOCATION // nolint: magic-offset (arm64 C-truth: bindgen _IRP layout diverges from the C ABI)
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        core::ptr::addr_of_mut!(
-            (*irp)
-                .Tail
-                .Overlay
-                .__bindgen_anon_2
-                .__bindgen_anon_1
-                .CurrentStackLocation
-        )
-    }
+    core::ptr::addr_of_mut!(
+        (*irp)
+            .Tail
+            .Overlay
+            .__bindgen_anon_2
+            .__bindgen_anon_1
+            .CurrentStackLocation
+    )
 }
 
 #[inline]
@@ -191,15 +179,7 @@ unsafe fn set_current_stack_location(irp: PIRP, stack: PIO_STACK_LOCATION) {
 
 #[inline]
 unsafe fn stack_location_add(stack: PIO_STACK_LOCATION, count: isize) -> PIO_STACK_LOCATION {
-    #[cfg(target_arch = "aarch64")]
-    {
-        (stack as *mut u8).offset(count * io_stack_location_abi_size() as isize)
-            as PIO_STACK_LOCATION
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        stack.offset(count)
-    }
+    stack.offset(count)
 }
 
 #[inline]

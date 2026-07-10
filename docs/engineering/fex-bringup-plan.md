@@ -331,7 +331,7 @@ blob @ ...`). arm64 still boots to desktop (`shell ready`).
    `-arch=arm64` leaves the x86 kernel32 ordinal table byte-identical to master
    (fix confirmed: i386 back to green) while arm64 still exports them. (x86 FEX,
    if ever wanted, must instead pin explicit ordinals or find+rebuild the
-   by-ordinal importer — do NOT plain-ungate.) See field manual §9.35.
+   by-ordinal importer — do NOT plain-ungate.) See field manual §9.43.
 
 Plus a **kernel** fix (`ke/arm64/kiinit.rs`): set `CNTKCTL_EL1.EL0PCTEN|EL0VCTEN`
 so EL0 can read the generic-timer counters. vibeos's own user-mode never reads

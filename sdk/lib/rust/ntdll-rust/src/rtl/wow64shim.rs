@@ -5,7 +5,7 @@
 //! interesting ones (a real `NtAllocateVirtualMemoryEx` syscall, cross-thread
 //! `RtlWow64*` context access via `ThreadWow64Context`) with kernel-backed
 //! versions. Exported via `-arch=arm64` lines in `dll/ntdll/def/ntdll.spec`
-//! (§9.35: arch-gating leaves the x86 ordinal tables byte-identical).
+//! (§9.43: arch-gating leaves the x86 ordinal tables byte-identical).
 
 #![allow(non_snake_case)]
 

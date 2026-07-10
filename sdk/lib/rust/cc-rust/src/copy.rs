@@ -25,8 +25,12 @@ extern "system" {
     static mut CcDeferredWriteSpinLock: KSPIN_LOCK;
     static mut CcTotalDirtyPages: ULONG;
     static mut CcDirtyPageThreshold: ULONG;
-    static mut MmThrottleTop: PFN_NUMBER;
-    static mut MmThrottleBottom: PFN_NUMBER;
+    // ULONG in Mm (mminit.c:407 / ARM3/mminit.rs) — declaring these PFN_NUMBER
+    // (u64 on amd64) read 4 bytes of the neighboring variable into the high
+    // half, making the throttle limits garbage-huge and permanently throttling
+    // every cached write (CcCanIWrite blocked forever inside WriteFile).
+    static mut MmThrottleTop: ULONG;
+    static mut MmThrottleBottom: ULONG;
     static mut MmModifiedPageListHead: MMPFNLIST;
     static mut CcIdleDelay: LARGE_INTEGER;
     static mut LazyWriter: LAZY_WRITER;
@@ -314,10 +318,21 @@ pub unsafe extern "system" fn CcCanIWrite(
 
     if (try_context != FirstTry || IsListEmpty(core::ptr::addr_of_mut!(CcDeferredWrites))) &&
        (CcTotalDirtyPages as usize + pages) < CcDirtyPageThreshold as usize &&
-       (MmAvailablePages > MmThrottleTop ||
-        ((*core::ptr::addr_of!(MmModifiedPageListHead)).Total < 1000 && MmAvailablePages > MmThrottleBottom)) &&
+       (MmAvailablePages > MmThrottleTop as PFN_NUMBER ||
+        ((*core::ptr::addr_of!(MmModifiedPageListHead)).Total < 1000 && MmAvailablePages > MmThrottleBottom as PFN_NUMBER)) &&
        per_file_defer == 0 {
         return 1;
+    }
+
+    {
+        extern "C" { fn DbgPrint(fmt: *const i8, ...) -> u32; }
+        DbgPrint(
+            b"[CC] CanIWrite THROTTLED: dirty=%u thresh=%u avail=%u top=%u bot=%u modtot=%u perfile=%u try=%u wait=%u\n\0".as_ptr() as *const i8,
+            CcTotalDirtyPages as u32, CcDirtyPageThreshold as u32,
+            MmAvailablePages as u32, MmThrottleTop as u32, MmThrottleBottom as u32,
+            (*core::ptr::addr_of!(MmModifiedPageListHead)).Total as u32,
+            per_file_defer as u32, try_context as u32, wait as u32,
+        );
     }
 
     if wait == 0 {

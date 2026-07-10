@@ -126,7 +126,14 @@ fn main() {
             "sdk/lib/crt/math/i386/cipow.c",
             "sdk/lib/crt/misc/fltused.c",
         ]),
-        "x86_64" => c_shims.push("sdk/lib/crt/except/amd64/ehandler.c"),
+        // seh_poc.c: DUMMY_PSEH verdict PoC (lane dummy-pseh-question) — native
+        // clang __try/__except, needs -fms-extensions (added in c_shim_flags
+        // below; benign for the other shims). Includes no headers, so the
+        // pseh2.h __try macro layer can't demote it back to DUMMY.
+        "x86_64" => c_shims.extend_from_slice(&[
+            "sdk/lib/crt/except/amd64/ehandler.c",
+            "ntoskrnl/seh_poc.c",
+        ]),
         _ => {}
     }
     // WS1 cmake-off printf batch (2026-06-21): the C-variadic printf shells (Rust
@@ -290,12 +297,20 @@ fn main() {
     // trap.S is cargo-assembled here, not by cmake, so the define is plumbed
     // through reactos-link's asm_extra_defines. OFF by default.
     println!("cargo:rerun-if-env-changed=VIBEOS_ARM64_TRAP_DEBUG");
-    let asm_extra: Vec<(&str, Option<&str>)> =
+    let mut asm_extra: Vec<(&str, Option<&str>)> =
         if arch == "aarch64" && env::var("VIBEOS_ARM64_TRAP_DEBUG").is_ok() {
             vec![("ARM64_TRAP_DEBUG", None)]
         } else {
             vec![]
         };
+    // cswitchdep tap 5 (return→user): the amd64 syscall-exit tap call in
+    // ke/amd64/trap.S is `#ifdef VIBEOS_CSWITCHDEP` — trap.S is cargo-assembled
+    // HERE (not by cmake), so the same env that lights the cargo feature must
+    // also reach the assembler or the tap silently never exists (caught live:
+    // user_entries=0 on the first armed boot).
+    if env::var("VIBEOS_CSWITCHDEP").is_ok() {
+        asm_extra.push(("VIBEOS_CSWITCHDEP", None));
+    }
 
     let mut linker = Linker::new(rust_target);
     // sync-instrumentation §4 lockdep (Tier-2 opt-in): -DVIBEOS_LOCKDEP=ON
@@ -393,7 +408,7 @@ fn main() {
         .c_shims(&c_shims)
         // -DCRT_PRINTF_HEADERLESS selects the hand-defined FILE/_TCHAR/flags in
         // _sxprintf.c (harmless to the other shims, which don't reference it).
-        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS"])
+        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS", "-fms-extensions"])
         // Self-hosted asm: the engine assembles the SOURCE `.S` directly via its
         // kernel asm -I chain (asm.inc + the generated build-<arch> ks*.inc +
         // ntoskrnl/include) — no offline pre-expansion. The set is per-arch

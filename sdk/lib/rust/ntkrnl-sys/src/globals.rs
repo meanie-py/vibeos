@@ -298,8 +298,14 @@ extern "C" {
     // KE globals needed by KD64 (ke.h)
     // ------------------------------------------------------------------
 
-    /// PKPRCB KiProcessorBlock[]
-    pub static mut KiProcessorBlock: [ddk::PKPRCB; 0];
+    /// PKPRCB KiProcessorBlock[MAXIMUM_PROCESSORS] — must be the REAL size, not the
+    /// C-idiom `[; 0]` unsized-extern placeholder: Rust bounds-checks indexing against
+    /// the DECLARED length, so `KiProcessorBlock[i]` through a `[; 0]` decl panics
+    /// ("len is 0") on the first use. This is what hung i386+amd64 boots at ksecdd's
+    /// NtQuerySystemInformation after the ex crate-split (ex-rust/sysinfo.rs indexes
+    /// it 7×; pre-split it resolved to the in-crate sized def and was fine). Matches
+    /// the #[no_mangle] def in ntoskrnl-rust ke/krnlinit.rs (same constant, per-arch).
+    pub static mut KiProcessorBlock: [ddk::PKPRCB; crate::constants::MAXIMUM_PROCESSORS as usize];
 
     /// volatile CCHAR KeNumberProcessors
     pub static mut KeNumberProcessors: i8;

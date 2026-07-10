@@ -44,7 +44,7 @@ extern "system" {
 // ---- file-scope preamble (translated) ----
 pub const Dbg: u32 = (DEBUG_TRACE_LOCKCTRL) as u32;
 
-const UserFileOpen: i32 = 0; // unknown enum value
+const UserFileOpen: i32 = crate::types::_TYPE_OF_OPEN_UserFileOpen as i32; // 2 — bindgen ground truth
 
 // Forward declarations for unknown externals
 
@@ -178,7 +178,7 @@ pub unsafe extern "system" fn FatFastUnlockSingle(
 ) -> i32 {
 
     const Dbg: u32 = 0; // DEBUG_TRACE_LOCKCTRL
-    const UserFileOpen: i32 = 0; // placeholder
+    const UserFileOpen: i32 = crate::types::_TYPE_OF_OPEN_UserFileOpen as i32; // 2 — bindgen ground truth
 
     let mut Results: i32 = 0;
     let _ = DeviceObject;
@@ -350,7 +350,7 @@ pub unsafe extern "system" fn FatCommonLockControl(
 ) -> NTSTATUS {
     const IRP_MN_LOCK: u32 = 0x01;
     type TYPE_OF_OPEN = u32;
-    const UserFileOpen: TYPE_OF_OPEN = 1;
+    const UserFileOpen: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_UserFileOpen as TYPE_OF_OPEN; // 2 — bindgen ground truth
     const Dbg: u32 = 0; // DEBUG_TRACE_LOCKCTRL placeholder
 
     let mut Status: NTSTATUS = STATUS_SUCCESS;

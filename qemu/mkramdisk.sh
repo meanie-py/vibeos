@@ -125,6 +125,21 @@ REQUIRED_FILES=(
     "$BUILD_DIR/drivers/network/netstack/netstack.sys"
     "$BUILD_DIR/drivers/input/arm64input/arm64input.sys"
     "$BUILD_DIR/drivers/video/arm64vid/arm64vid.sys"
+    # PCI + USB + HID input stack (input-unification: EHCI-on-PCIe -> usbport ->
+    # usbhub -> hidusb -> hidclass -> kbdhid/mouhid -> kbdclass/mouclass). The
+    # PCI root devnode is seeded by hivesys_arm64.inf (Root\*PNP0A03).
+    "$BUILD_DIR/drivers/bus/pci/pci.sys"
+    "$BUILD_DIR/drivers/usb/usbd/usbd.sys"
+    "$BUILD_DIR/drivers/usb/usbport/usbport.sys"
+    "$BUILD_DIR/drivers/usb/usbehci/usbehci.sys"
+    "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"
+    "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"
+    "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"
+    "$BUILD_DIR/drivers/hid/hidusb/hidusb.sys"
+    "$BUILD_DIR/drivers/hid/kbdhid/kbdhid.sys"
+    "$BUILD_DIR/drivers/hid/mouhid/mouhid.sys"
+    "$BUILD_DIR/drivers/input/kbdclass/kbdclass.sys"
+    "$BUILD_DIR/drivers/input/mouclass/mouclass.sys"
     "$BUILD_DIR/win32ss/drivers/displays/framebuf/framebuf.dll"
     # Explorer.exe + shell DLLs
     "$BUILD_DIR/base/shell/explorer/explorer.exe"
@@ -280,6 +295,19 @@ RMC "$BUILD_DIR/win32ss/user/winsrv/winsrv.dll"              ::/reactos/system32
 RMC "$BUILD_DIR/drivers/serial/pl011/pl011.sys"              ::/reactos/system32/drivers/pl011.sys
 RMC "$BUILD_DIR/drivers/input/arm64input/arm64input.sys" ::/reactos/system32/drivers/arm64input.sys
 RMC "$BUILD_DIR/drivers/video/arm64vid/arm64vid.sys"       ::/reactos/system32/drivers/arm64vid.sys
+# PCI + USB + HID input stack (input-unification quest)
+RMC "$BUILD_DIR/drivers/bus/pci/pci.sys"                   ::/reactos/system32/drivers/pci.sys
+RMC "$BUILD_DIR/drivers/usb/usbd/usbd.sys"                 ::/reactos/system32/drivers/usbd.sys
+RMC "$BUILD_DIR/drivers/usb/usbport/usbport.sys"           ::/reactos/system32/drivers/usbport.sys
+RMC "$BUILD_DIR/drivers/usb/usbehci/usbehci.sys"           ::/reactos/system32/drivers/usbehci.sys
+RMC "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"             ::/reactos/system32/drivers/usbhub.sys
+RMC "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"         ::/reactos/system32/drivers/hidparse.sys
+RMC "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"         ::/reactos/system32/drivers/hidclass.sys
+RMC "$BUILD_DIR/drivers/hid/hidusb/hidusb.sys"             ::/reactos/system32/drivers/hidusb.sys
+RMC "$BUILD_DIR/drivers/hid/kbdhid/kbdhid.sys"             ::/reactos/system32/drivers/kbdhid.sys
+RMC "$BUILD_DIR/drivers/hid/mouhid/mouhid.sys"             ::/reactos/system32/drivers/mouhid.sys
+RMC "$BUILD_DIR/drivers/input/kbdclass/kbdclass.sys"       ::/reactos/system32/drivers/kbdclass.sys
+RMC "$BUILD_DIR/drivers/input/mouclass/mouclass.sys"       ::/reactos/system32/drivers/mouclass.sys
 RMC "$BUILD_DIR/win32ss/drivers/displays/framebuf/framebuf.dll"  ::/reactos/system32/framebuf.dll
 
 # Explorer.exe + shell DLLs
@@ -352,23 +380,24 @@ for FONT in tahoma.ttf tahomabd.ttf Marlett.ttf arial.ttf arialbd.ttf cour.ttf t
     fi
 done
 
-# --- DOOM (opt-in, VIBEOS_DOOM=1) ------------------------------------------
-# Foreign-binary demo. OFF by default: without VIBEOS_DOOM=1 nothing is staged,
-# and winlogon's GetFileAttributesW check then makes the launch a silent no-op.
-# Assets are built by tools/doom/build.sh (doomgeneric, cross-compiled -O0).
-# Full story: docs/engineering/doom-on-vibeos.md.
-if [ "${VIBEOS_DOOM:-0}" = "1" ]; then
-    DOOM_EXE="${VIBEOS_DOOM_EXE:-$PROJECT_DIR/tools/doom/doom-arm64.exe}"
-    DOOM_WAD="${VIBEOS_DOOM_WAD:-$PROJECT_DIR/tools/doom/doom1.wad}"
-    if [ -f "$DOOM_EXE" ] && [ -f "$DOOM_WAD" ]; then
-        echo "[*] VIBEOS_DOOM=1 — staging doom.exe + doom1.wad into system32"
-        mcopy -o -i "$RAMDISK_IMG" "$DOOM_EXE" ::/reactos/system32/doom.exe
-        mcopy -o -i "$RAMDISK_IMG" "$DOOM_WAD" ::/reactos/system32/doom1.wad
-    else
-        echo "[!] VIBEOS_DOOM=1 but assets missing ($DOOM_EXE / $DOOM_WAD)."
-        echo "[!]   Build them first: tools/doom/build.sh arm64"
-        exit 1
-    fi
+# --- Payloads (opt-in, VIBEOS_PAYLOAD=name[,name...]) -----------------------
+# Declarative test/demo app staging — docs/engineering/payload-harness-design.md.
+# OFF by default: with no payloads selected the compiler prints nothing and the
+# ramdisk is byte-identical. compile.py owns spec resolution + fail-loud checks
+# (missing assets / dest collisions abort the build); the legacy VIBEOS_DOOM=1
+# flag is aliased to the `doom` payload inside compile.py so the mapping lives
+# in ONE place. `set -e` aborts on a compiler failure via the substitution.
+# --payloads-auto: env wins when set; else the build-dir stamp — so env-less
+# rebuilds (conftest, raw ninja) reproduce the same media instead of silently
+# reverting the payload set (the 2026-07-07 doom-clobber incident).
+PAYLOAD_MANIFEST=$(python3 "$PROJECT_DIR/tools/payloads/compile.py" manifest \
+    --arch arm64 --payloads-auto "$BUILD_DIR")
+if [ -n "$PAYLOAD_MANIFEST" ]; then
+    echo "[*] staging payloads (VIBEOS_PAYLOAD=${VIBEOS_PAYLOAD:-<stamp>}${VIBEOS_DOOM:+ VIBEOS_DOOM=$VIBEOS_DOOM})"
+    printf '%s\n' "$PAYLOAD_MANIFEST" | while IFS='=' read -r DEST SRC; do
+        echo "[*]   $(basename "$SRC") -> ::/$DEST"
+        mcopy -o -i "$RAMDISK_IMG" "$SRC" "::/$DEST"
+    done
 fi
 
 # --- FEX hello-compute probe (opt-in, VIBEOS_FEX=1) ------------------------

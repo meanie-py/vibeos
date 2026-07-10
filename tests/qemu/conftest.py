@@ -6,12 +6,11 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
 from .cli import config as cli_config
-from .vm import QemuVM, get_arch_config, reap_orphan_qemus, PROJECT_DIR
+from .vm import PROJECT_DIR, QemuVM, get_arch_config, reap_orphan_qemus
 
 # Add tools/ to path for scan_ud2, lint_kernel
 sys.path.insert(0, str(PROJECT_DIR / "tools"))
@@ -47,11 +46,17 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Skip nuclear Rust rebuild (faster iteration, may mask bugs)",
     )
     parser.addoption(
+        "--payload",
+        default="",
+        help="Comma-separated payload names to gate (tests/qemu/test_payload.py; "
+        "media must be built with VIBEOS_PAYLOAD=<names>). "
+        "Design doc: docs/engineering/payload-harness-design.md",
+    )
+    parser.addoption(
         "--doom",
         action="store_true",
         default=False,
-        help="Enable the opt-in Doom foreign-binary suite (tests/qemu/test_doom.py; "
-        "media must be built with VIBEOS_DOOM=1)",
+        help="Legacy alias for --payload doom",
     )
 
 
@@ -143,7 +148,7 @@ def _run_post_build_checks(arch: str) -> list[str]:
 
     # ud2 scan
     try:
-        from scan_ud2 import scan_ud2, find_objdump
+        from scan_ud2 import find_objdump, scan_ud2
 
         objdump = find_objdump(arch)
         if objdump:

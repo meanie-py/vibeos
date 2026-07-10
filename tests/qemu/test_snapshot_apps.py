@@ -21,7 +21,6 @@ Run (boots once, both cases reuse the snapshot):
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 
 import pytest

@@ -34,7 +34,7 @@ symbols; diffing against our arm64 ntdll exports leaves this gap:
 
 | Gap | Where it lives today | Plan |
 |---|---|---|
-| `RtlAcquire/Release/TryAcquireSRWLock*`, `RtlInitializeSRWLock`, `Rtl*ConditionVariable*`, `RtlRunOnceExecuteOnce`, `RtlWaitOnAddress`, `RtlWakeAddress*` | ntdll_vista.dll (0x600 split) | `-arch=arm64` forwarders in base ntdll.spec → ntdll_vista (§9.35 pattern: arch-gating leaves x86 ordinal tables untouched) |
+| `RtlAcquire/Release/TryAcquireSRWLock*`, `RtlInitializeSRWLock`, `Rtl*ConditionVariable*`, `RtlRunOnceExecuteOnce`, `RtlWaitOnAddress`, `RtlWakeAddress*` | ntdll_vista.dll (0x600 split) | `-arch=arm64` forwarders in base ntdll.spec → ntdll_vista (§9.43 pattern: arch-gating leaves x86 ordinal tables untouched) |
 | `RtlWow64GetCurrentCpuArea/GetThreadContext/SetThreadContext/SuspendThread` | nowhere | implement (ntdll, arm64-gated); CPU area lives at `TEB->TlsSlots[WOW64_TLS_CPURESERVED=1]` (Wine-compatible layout: `WOW64_CPURESERVED { USHORT flags; USHORT machine; ctx; ctx_ex }`) |
 | `NtAllocateVirtualMemoryEx` | nowhere | wrapper over NtAllocateVirtualMemory (extended params only needed for arm64EC EC_CODE, not wow64) |
 | `NtOpenKeyEx` | nowhere | thin syscall (options arg) |
@@ -99,4 +99,4 @@ shuffle. No emulator. (x86-on-x64 "for free" once C+D exist.)
 - wow64.dll/wow64cpu.dll/ntdll changes are vibeos code: Rust-preferred where
   practical (wow64.dll is a clean greenfield candidate).
 - Every phase lands behind the existing gates: arm64 boots must stay green;
-  x86 arches untouched by arch-gated exports (§9.35 ordinal discipline).
+  x86 arches untouched by arch-gated exports (§9.43 ordinal discipline).

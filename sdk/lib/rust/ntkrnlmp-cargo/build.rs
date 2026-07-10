@@ -126,7 +126,14 @@ fn main() {
             "sdk/lib/crt/math/i386/cipow.c",
             "sdk/lib/crt/misc/fltused.c",
         ]),
-        "x86_64" => c_shims.push("sdk/lib/crt/except/amd64/ehandler.c"),
+        // seh_poc.c: DUMMY_PSEH verdict PoC (lane dummy-pseh-question) — native
+        // clang __try/__except, needs -fms-extensions (added in c_shim_flags
+        // below; benign for the other shims). Includes no headers, so the
+        // pseh2.h __try macro layer can't demote it back to DUMMY.
+        "x86_64" => c_shims.extend_from_slice(&[
+            "sdk/lib/crt/except/amd64/ehandler.c",
+            "ntoskrnl/seh_poc.c",
+        ]),
         _ => {}
     }
     // WS1 cmake-off printf batch (2026-06-21): the C-variadic printf shells (Rust
@@ -328,7 +335,7 @@ fn main() {
         .c_shims(&c_shims)
         // -DCRT_PRINTF_HEADERLESS selects the hand-defined FILE/_TCHAR/flags in
         // _sxprintf.c (harmless to the other shims, which don't reference it).
-        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS"])
+        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS", "-fms-extensions"])
         // Self-hosted asm: the engine assembles the SOURCE `.S` directly via its
         // kernel asm -I chain (asm.inc + the generated build-<arch> ks*.inc +
         // ntoskrnl/include) — no offline pre-expansion. The set is per-arch
@@ -338,7 +345,15 @@ fn main() {
         // (the #ifdef CONFIG_SMP spinlock/fast-path blocks in ks*.inc), mirroring
         // cmake's target_compile_definitions(ntkrnlmp PRIVATE CONFIG_SMP). The
         // Rust body (kernel-rust) is identical UP/MP — only the asm differs.
-        .asm_extra_defines(&[("CONFIG_SMP", None)])
+        .asm_extra_defines(&{
+            // CONFIG_SMP always; VIBEOS_CSWITCHDEP mirrors ntoskrnl-cargo (the
+            // amd64 trap.S tap-5 call site is #ifdef-gated on it).
+            let mut defs: Vec<(&str, Option<&str>)> = vec![("CONFIG_SMP", None)];
+            if env::var("VIBEOS_CSWITCHDEP").is_ok() {
+                defs.push(("VIBEOS_CSWITCHDEP", None));
+            }
+            defs
+        })
         .resource(&format!("data/{res}"))
         .spec2def("ntoskrnl/ntoskrnl.spec", "ntkrnlmp.exe");
     // cnt-rust integration: compile the cntpr C floor in-cargo (C-first, before

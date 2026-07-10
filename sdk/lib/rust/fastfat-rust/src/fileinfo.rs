@@ -143,7 +143,7 @@ extern "system" {
     fn FatSetDirtyBcb( irp_ctx: *mut IRP_CONTEXT, bcb: *mut BCB, vcb: *mut VCB, flag: u8, );
     fn FatReservedBytes(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatBytesPerFat(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
-    fn FatReadVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ByteOffset: u64, BytesToRead: u32, BcbPtr: *mut PBCB, Buffer: *mut *mut u8, );
+    fn FatReadVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ByteOffset: u32, BytesToRead: u32, BcbPtr: *mut PBCB, Buffer: *mut *mut u8, ); // VBO = u32 (was u64: i386 stdcall stack imbalance)
     fn FatAddMcbEntry( Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbn: i32, Lbn: i32, SectorCount: u32, );
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);

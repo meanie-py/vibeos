@@ -1,0 +1,66 @@
+# Doom foreign-binary payload — the original one-off this harness generalizes.
+# Design doc: docs/engineering/payload-harness-design.md
+# Bring-up story: docs/engineering/doom-on-vibeos.md
+#
+# Build-time consumer: tools/payloads/compile.py (staging manifest).
+# Test-time consumer: tests/qemu/test_payload.py (interprets `test:` below).
+# Enable in an image:  VIBEOS_PAYLOAD=doom ./vibeos-cli build --arch <arch>
+#                      (legacy alias: VIBEOS_DOOM=1)
+name: doom
+description: doomgeneric (Win32 GDI backend) + shareware WAD — adversarial-compat demo
+
+build_hint: "tools/doom/build.sh {arch}"
+
+binaries:
+  - src: tools/doom/doom-{arch}.exe
+    dest: system32/doom.exe
+  - src: tools/doom/doom1.wad
+    dest: system32/doom1.wad
+
+autostart:
+  - cmd: doom.exe
+    mode: demo
+    # Run-key emission is blocked on the amd64 ProcessStartupItems fix
+    # (task #24 / design doc Workstream A). Until then winlogon's
+    # file-presence check (DoomStaged -> TryStartDoom) launches it; staging
+    # dest system32/doom.exe is what arms that path.
+    via: legacy-winlogon
+
+test:
+  # Serial marker proving the launcher actually spawned the exe
+  # ([WINLOGON] on arm64 / [USERINIT] on x86 both emit it).
+  launch_marker: "doom.exe created"
+  launch_drain_secs: 30    # launcher may fire after the boot marker
+
+  xfail:
+    i386: >-
+      i386 can't load a keyboard layout at boot: LoadKeyboardLayoutW ->
+      NtCreateSection(SEC_IMAGE) deadlocks in the i386 Rust MM, so winlogon
+      skips it; win32k drops every key at 'NO keyboard layout'. Flip to a
+      hard assert once fixed (task #19).
+
+  # Gate 2 — the game is drawing frames (attract demo animates the screen).
+  renders:
+    settle: 3              # window come-up after boot marker
+    gap: 2.0               # seconds between the two compared screendumps
+    frame_delta_min: 0.02  # attract demo animates ~50%; tray clock <<0.1%
+
+  # Gate 3 — PLAYABLE: keys reach the game. Click into the window for focus
+  # (exercises the mouse chain), then menu-drive a new game; an idle E1M1
+  # first-person view is near-static vs the ~50%-delta attract demo.
+  input:
+    settle: 3
+    focus: click-center    # rel-mouse sweep to top-left, recenter, left-click
+    drive:
+      - keys: [esc, ret, ret, ret]   # menu / New Game / episode / skill
+        gap: 0.7
+      - wait: 2.0                    # level load + first frame
+    oracle:
+      frame_delta_static_max: 0.012  # status-bar face + palette dither budget
+      gap: 1.5
+      survives: true                 # QMP query-status still running at end
+    retries: 3             # foreground can lag post-restore; ESC also
+    on_retry:              # closes a stray menu before the re-attempt
+      - keys: [esc]
+        gap: 0.7
+      - focus: click-center

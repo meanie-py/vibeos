@@ -718,6 +718,11 @@ unsafe fn MiWritePage(Segment: PMM_SECTION_SEGMENT, SegOffset: i64, Page: PFN_NU
         MmUnmapLockedPages((*Mdl).MappedSystemVa, Mdl);
     }
 
+    if !NT_SUCCESS(Status) {
+        ntkrnl_sys::driver_ddk::DbgPrint(c"[MM] MiWritePage FAILED st=%08lx off=%I64x fo=%p\n".as_ptr(),
+            Status, FileOffset.QuadPart, FileObject);
+    }
+
     Status
 }
 

@@ -68,6 +68,13 @@ pub const KIND_DPC_DISPATCH_IRQL: u32 = 8;
 /// P2 (arm64): DAIF interrupt-mask state not balanced across the software-
 /// interrupt dispatch (the §9.19 wake-from-exception-context family).
 pub const KIND_INTR_STATE_UNBALANCED: u32 = 9;
+/// P3 (tap 4): a user-mode syscall arrived with IRQL != PASSIVE — the
+/// previous return-to-user leaked a raise (the §9.24 class, caught at the
+/// NEXT entry instead of the innocent-victim crash later).
+pub const KIND_USER_ENTRY_IRQL: u32 = 10;
+/// P3 (tap 5): returning to user mode at IRQL != PASSIVE — the syscall
+/// service that just ran leaked a raise. `kthread_old` = the thread.
+pub const KIND_USER_EXIT_IRQL: u32 = 11;
 
 const DISPATCH_LEVEL: u8 = 2;
 /// _KTHREAD_STATE_Terminated (bindgen `_KTHREAD_STATE_Terminated == 4`).
@@ -94,6 +101,10 @@ pub struct CpuShadow {
     pub switches: AtomicU64,
     /// P2: total spinlock acquires seen by the taps (census / coverage gauge).
     pub spin_acquires: AtomicU64,
+    /// P3 (tap 4): user-mode syscall entries seen.
+    pub user_entries: AtomicU64,
+    /// P3 (tap 5): return-to-user exits seen (syscall path).
+    pub user_exits: AtomicU64,
     /// Resumes whose OLD thread had no suspend record (idle loop / unbranded
     /// arch) — normal, counted so the census shows coverage.
     pub resume_no_record: AtomicU32,
@@ -101,6 +112,15 @@ pub struct CpuShadow {
     pub first_runs: AtomicU32,
     /// ThreadShadow slots evicted at thread termination.
     pub evictions: AtomicU32,
+    /// P3: tap-5 exits whose thread had no recorded tap-4 entry — NORMAL
+    /// (a new thread's first return to user goes via `KiServiceExit3`/the
+    /// init frame, which has no syscall entry), counted for coverage.
+    pub exit_no_entry: AtomicU32,
+    /// P3: outermost syscall frames that closed with MORE Rust-funnel locks
+    /// held than at entry (per-frame parity, measured against the per-thread
+    /// entry snapshot). Census-only until an armed soak proves it clean —
+    /// the P2 playbook: measure first, promote to a violation second.
+    pub held_delta_pos: AtomicU32,
     pub _pad: u32,
 }
 
@@ -114,6 +134,13 @@ pub struct ThreadShadow {
     /// `KTHREAD.WaitIrql` captured at the last suspend (the IRQL the caller
     /// will restore after the switch).
     pub suspend_irql: AtomicU32,
+    /// P3: open syscall frames (tap-4 entries minus tap-5 exits). Diagnostic
+    /// only — untapped exit paths (APC-edited frames, thread termination)
+    /// legally leave it high; the slot eviction clears it.
+    pub syscall_depth: AtomicU32,
+    /// P3: `held_spinlocks` snapshot at the OUTERMOST tap-4 entry — the
+    /// per-frame parity reference for `held_delta_pos`.
+    pub held_at_entry: AtomicI32,
 }
 
 #[repr(C)]
@@ -152,20 +179,22 @@ unsafe impl Sync for CswitchTable {}
 // The GDB decoder (qemu/gdb-helpers/debug_block.py, CSW1) hand-computes these
 // offsets — pin the layout so drift breaks the BUILD, not the decoder.
 const PSZ: usize = core::mem::size_of::<usize>();
-const _: () = assert!(core::mem::size_of::<CpuShadow>() == 48);
-const _: () = assert!(core::mem::size_of::<ThreadShadow>() == PSZ + 8);
+const _: () = assert!(core::mem::size_of::<CpuShadow>() == 72);
+const _: () = assert!(core::mem::size_of::<ThreadShadow>() == PSZ + 16);
 // AtomicU64 is align-8 on all three arches, so the struct tail-pads to 8:
 // amd64/arm64: 32 + 24 = 56; i386: 32 + 12 = 44 → 48.
 const _: () = assert!(core::mem::size_of::<Violation>() == (32 + 3 * PSZ + 7) & !7);
 const _: () = assert!(core::mem::offset_of!(CswitchTable, violation_count) == 16);
 const _: () = assert!(core::mem::offset_of!(CswitchTable, cpu) == 24);
-const _: () = assert!(core::mem::offset_of!(CswitchTable, threads) == 72);
+const _: () = assert!(core::mem::offset_of!(CswitchTable, threads) == 96);
 
 #[allow(clippy::declare_interior_mutable_const)]
 const EMPTY_THREAD: ThreadShadow = ThreadShadow {
     kthread: AtomicUsize::new(0),
     gen: AtomicU32::new(0),
     suspend_irql: AtomicU32::new(0),
+    syscall_depth: AtomicU32::new(0),
+    held_at_entry: AtomicI32::new(0),
 };
 
 #[allow(clippy::declare_interior_mutable_const)]
@@ -195,9 +224,13 @@ pub static VIBEOS_CSWITCHDEP: CswitchTable = CswitchTable {
         held_baseline: AtomicI32::new(0),
         switches: AtomicU64::new(0),
         spin_acquires: AtomicU64::new(0),
+        user_entries: AtomicU64::new(0),
+        user_exits: AtomicU64::new(0),
         resume_no_record: AtomicU32::new(0),
         first_runs: AtomicU32::new(0),
         evictions: AtomicU32::new(0),
+        exit_no_entry: AtomicU32::new(0),
+        held_delta_pos: AtomicU32::new(0),
         _pad: 0,
     },
     threads: [EMPTY_THREAD; CSWITCH_THREADS],
@@ -245,6 +278,8 @@ fn thread_slot(thread: usize, claim: bool) -> Option<&'static ThreadShadow> {
                     // previous occupant (free-then-reclaim of the same slot).
                     e.suspend_irql.store(0, Relaxed);
                     e.gen.store(0, Relaxed);
+                    e.syscall_depth.store(0, Relaxed);
+                    e.held_at_entry.store(0, Relaxed);
                     return Some(e);
                 }
                 Err(actual) if actual == thread => return Some(e),
@@ -295,6 +330,8 @@ fn kind_name(k: u32) -> *const u8 {
         KIND_SLEEP_WITH_SPINLOCK => b"SLEEP_WITH_SPINLOCK\0".as_ptr(),
         KIND_DPC_DISPATCH_IRQL => b"DPC_DISPATCH_IRQL\0".as_ptr(),
         KIND_INTR_STATE_UNBALANCED => b"INTR_STATE_UNBALANCED\0".as_ptr(),
+        KIND_USER_ENTRY_IRQL => b"USER_ENTRY_IRQL\0".as_ptr(),
+        KIND_USER_EXIT_IRQL => b"USER_EXIT_IRQL\0".as_ptr(),
         _ => b"?\0".as_ptr(),
     }
 }
@@ -329,6 +366,8 @@ pub fn cswitch_thread_init(thread: usize) {
     if let Some(e) = thread_slot(thread, true) {
         e.suspend_irql.store(0, Relaxed);
         e.gen.store(0, Relaxed);
+        e.syscall_depth.store(0, Relaxed);
+        e.held_at_entry.store(0, Relaxed);
     }
 }
 
@@ -378,6 +417,8 @@ pub unsafe fn cswitch_suspend(old: usize, wait_irql: u8, terminating: bool) {
         if let Some(e) = thread_slot(old, false) {
             e.suspend_irql.store(0, Relaxed);
             e.gen.store(0, Relaxed);
+            e.syscall_depth.store(0, Relaxed);
+            e.held_at_entry.store(0, Relaxed);
             e.kthread.store(0, Relaxed);
             VIBEOS_CSWITCHDEP.cpu.evictions.fetch_add(1, Relaxed);
         }
@@ -497,6 +538,90 @@ pub unsafe fn cswitch_dpc_dispatch() {
     }
 }
 
+// ============================================================================
+// P3 taps 4/5: user↔kernel syscall parity. Called from the C/asm syscall
+// paths under `#ifdef VIBEOS_CSWITCHDEP` (the cmake var that also lights the
+// cargo feature, so the symbols always exist exactly when referenced):
+//   tap 4 (entry): amd64 `KiSystemCallHandler` (traphandler.c), i386
+//     `KiSystemServiceHandler` (traphdlr.c) — both run on the kernel stack
+//     with the trap frame built, so "reachable ⇒ post-swapgs/stack-switch"
+//     holds by position.
+//   tap 5 (exit):  amd64 `KiSystemServiceExit` (trap.S, before the swapgs/
+//     sysretq tail), i386 `KiServiceExit`/`KiServiceExit2` user branches.
+// Scope note: interrupt/exception frames are NOT tapped — these taps never
+// mutate shared per-CPU state (per-thread slots + monotone counters only),
+// which is what keeps the design doc's reentrancy rule ("nested traps must
+// save/restore the shadow") vacuously satisfied. NMI paths therefore need no
+// exemption: they never reach a tap. Untapped user exits (APC-edited frames,
+// `KiServiceExit3` first-returns, thread termination) make `syscall_depth`
+// diagnostic-only; `exit_no_entry` counts the benign orphans.
+// ============================================================================
+
+/// Tap 4: user→kernel syscall entry. `user_trap` = 0 for a kernel-origin
+/// frame (i386 Zw via INT 2E — legal at APC_LEVEL, skipped entirely).
+#[no_mangle]
+pub unsafe extern "C" fn VibeosCswitchdepUserEntry(user_trap: u32) {
+    if user_trap == 0 {
+        return;
+    }
+    VIBEOS_CSWITCHDEP.cpu.user_entries.fetch_add(1, Relaxed);
+    let thread = ntkrnl_sys::mm::KeGetCurrentThread() as usize;
+
+    // A user-mode syscall must arrive at PASSIVE — anything else means the
+    // PREVIOUS return to user leaked a raise (§9.24 caught one edge earlier).
+    let irql = current_irql();
+    if irql != 0 {
+        let pc = super::lockdep::return_address0();
+        loud(KIND_USER_ENTRY_IRQL, pc, thread, 0, 0, irql as u64);
+    }
+
+    if let Some(e) = thread_slot(thread, true) {
+        let depth = e.syscall_depth.load(Relaxed);
+        if depth == 0 {
+            e.held_at_entry
+                .store(VIBEOS_CSWITCHDEP.cpu.held_spinlocks.load(Relaxed), Relaxed);
+        }
+        e.syscall_depth.store(depth.wrapping_add(1), Relaxed);
+    }
+}
+
+/// Tap 5: return→user on the syscall exit path. Reachable only on a
+/// user-bound frame (asm places it after the user check / user-only label).
+#[no_mangle]
+pub unsafe extern "C" fn VibeosCswitchdepUserExit() {
+    VIBEOS_CSWITCHDEP.cpu.user_exits.fetch_add(1, Relaxed);
+    let thread = ntkrnl_sys::mm::KeGetCurrentThread() as usize;
+
+    let irql = current_irql();
+    if irql != 0 {
+        let pc = super::lockdep::return_address0();
+        loud(KIND_USER_EXIT_IRQL, pc, thread, 0, 0, irql as u64);
+    }
+
+    match thread_slot(thread, false) {
+        Some(e) if e.syscall_depth.load(Relaxed) > 0 => {
+            let depth = e.syscall_depth.load(Relaxed) - 1;
+            e.syscall_depth.store(depth, Relaxed);
+            if depth == 0 {
+                // Outermost frame closed: per-frame lock parity. The per-CPU
+                // counter only drifts DOWN (C-inline acquire → Rust-funnel
+                // release), so a positive delta means a Rust-funnel lock
+                // acquired in this syscall was never released. Census-only
+                // until an armed soak proves the zero rate (P2 playbook).
+                let held = VIBEOS_CSWITCHDEP.cpu.held_spinlocks.load(Relaxed);
+                if held > e.held_at_entry.load(Relaxed) {
+                    VIBEOS_CSWITCHDEP.cpu.held_delta_pos.fetch_add(1, Relaxed);
+                }
+            }
+        }
+        _ => {
+            // No recorded entry: a new thread's first return to user, or an
+            // exit path whose entry predates arming. Normal.
+            VIBEOS_CSWITCHDEP.cpu.exit_no_entry.fetch_add(1, Relaxed);
+        }
+    }
+}
+
 /// P2 tap (arm64): interrupt-mask state must be balanced across the software
 /// interrupt dispatch — `entry`/`exit` are the DAIF values around the body.
 #[inline(never)]
@@ -521,6 +646,13 @@ pub fn cswitchdep_report() {
         VIBEOS_CSWITCHDEP.cpu.spin_acquires.load(Relaxed) as u32,
         VIBEOS_CSWITCHDEP.cpu.held_spinlocks.load(Relaxed),
         VIBEOS_CSWITCHDEP.cpu.held_baseline.load(Relaxed),
+    );
+    crate::dbg_print!(
+        b"[CSWITCH] census: user_entries=%u user_exits=%u exit_no_entry=%u held_delta_pos=%u\n\0",
+        VIBEOS_CSWITCHDEP.cpu.user_entries.load(Relaxed) as u32,
+        VIBEOS_CSWITCHDEP.cpu.user_exits.load(Relaxed) as u32,
+        VIBEOS_CSWITCHDEP.cpu.exit_no_entry.load(Relaxed),
+        VIBEOS_CSWITCHDEP.cpu.held_delta_pos.load(Relaxed),
     );
     if total == 0 {
         return;

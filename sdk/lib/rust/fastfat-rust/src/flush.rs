@@ -3,7 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{CcFlushCache, ExAcquireResourceExclusiveLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
+use ntkrnl_sys::ddk::{CcFlushCache, CcPinRead, CcRepinBcb, CcSetDirtyPinnedData, CcUnpinData, CcUnpinRepinnedBcb, ExAcquireResourceExclusiveLite, ExReleaseResourceLite, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoGetNextIrpStackLocation, IoMarkIrpPending, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PETHREAD, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, DCB, DIRENT, FAT_BUG_CHECK_FLUSH, FCB, FatDiskAccountingEnabled, PDIRENT, VCB, VCB_STATE_FLAG_WRITE_PROTECTED};
@@ -18,7 +18,7 @@ use crate::types::{_IRP_CONTEXT};
 
 extern "system" {
     fn FlagOn(Flags: u32, Mask: u32) -> i32;
-    fn FatVerifyVcb(IrpContext: *mut PIRP_CONTEXT, Vcb: *mut PVCB);
+    fn FatVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn PAGED_CODE();
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn ClearFlag(flags: *mut u32, flag: u32);
@@ -38,6 +38,7 @@ extern "system" {
     fn FatUnpinRepinnedBcbs(IrpContext: *mut IRP_CONTEXT);
     fn _SEH2_GetExceptionCode() -> NTSTATUS;
     fn FatReservedBytes(bpb: *const core::ffi::c_void) -> u32;
+    fn FatBytesPerFat(bpb: *const core::ffi::c_void) -> u32;
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, status: i32);
     fn FatMarkFcbCondition(IrpContext: PIRP_CONTEXT, Fcb: PFCB, condition: u32, recursive: u8);
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN;
@@ -80,7 +81,13 @@ pub const Dbg: u32 = DEBUG_TRACE_FLUSH;
 
 // Placeholder constants (caller must provide correct values)
 const VCB_STATE_FLAG_DELETED_FCB: u32 = 0x0100; // TODO: actual value
-const FlushAndInvalidate: u32 = 1;            // FAT_FLUSH_TYPE value
+// FAT_FLUSH_TYPE (fatprocs.h): NoFlush=0, Flush=1, FlushAndInvalidate=2, FlushWithoutPurge=3
+const FlushAndInvalidate: u32 = 2;
+// Cc pin flags (cache.h)
+const PIN_WAIT: u32 = 1;
+const PIN_IF_BCB: u32 = 8;
+const PAGE_SIZE_U32: u32 = 4096;
+const STATUS_FILE_INVALID: NTSTATUS = 0xC0000098_u32 as i32;
 const FcbBad: u32 = 2;                        // FCB condition value
 
 const STATUS_MORE_PROCESSING_REQUIRED: ntkrnl_sys::base::NTSTATUS = 0xC0000016u32 as i32;
@@ -119,12 +126,16 @@ const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010_u32 as i32;
 const STATUS_PENDING: i32 = 0x00000103;
 const Flush: FAT_FLUSH_TYPE = 1;
 const VolumeClean: VOLUME_CONDITION = 2;
-const VirtualVolumeFile: TYPE_OF_OPEN = 0;
-const EaFile: TYPE_OF_OPEN = 1;
-const DirectoryFile: TYPE_OF_OPEN = 2;
-const UserFileOpen: TYPE_OF_OPEN = 3;
-const UserDirectoryOpen: TYPE_OF_OPEN = 4;
-const UserVolumeOpen: TYPE_OF_OPEN = 5;
+// TYPE_OF_OPEN — values MUST match the C enum (bindgen: types_arch::_TYPE_OF_OPEN_*).
+// The old hand-rolled 0-based values mis-dispatched the flush switch: a real
+// UserFileOpen (2) landed in the DirectoryFile "flush does nothing" arm.
+const UnopenedFileObject: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_UnopenedFileObject as TYPE_OF_OPEN;
+const UserFileOpen: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_UserFileOpen as TYPE_OF_OPEN;
+const UserDirectoryOpen: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_UserDirectoryOpen as TYPE_OF_OPEN;
+const UserVolumeOpen: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_UserVolumeOpen as TYPE_OF_OPEN;
+const VirtualVolumeFile: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_VirtualVolumeFile as TYPE_OF_OPEN;
+const DirectoryFile: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_DirectoryFile as TYPE_OF_OPEN;
+const EaFile: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_EaFile as TYPE_OF_OPEN;
 const IRP_MN_FLUSH_DATA_ONLY: u8 = 0x01;
 const IRP_MN_FLUSH_NO_SYNC: u8 = 0x02;
 const FAT_NTC_ROOT_DCB: u32 = 0x0504; // NodeType for root DCB
@@ -204,6 +215,7 @@ pub unsafe extern "system" fn FatCommonFlushBuffers(
 
     FileObject = (*IrpSp).FileObject;
     TypeOfOpen = FatDecodeFileObject(FileObject, core::ptr::addr_of_mut!(Vcb), core::ptr::addr_of_mut!(Fcb), core::ptr::addr_of_mut!(Ccb));
+
 
     if FlagOn(((*(IrpContext as *mut _IRP_CONTEXT)).Flags as u8) as u32, IRP_CONTEXT_FLAG_WAIT) == 0 {
         Status = FatFsdPostRequest(IrpContext, Irp);
@@ -288,7 +300,7 @@ pub unsafe extern "system" fn FatCommonFlushBuffers(
                     }
 
                     if FatFlushRequired != 0u8 {
-                        Status = FatFlushFat(core::ptr::addr_of_mut!(IrpContext) as *mut PIRP_CONTEXT, core::ptr::addr_of_mut!(Vcb) as *mut PVCB);
+                        Status = FatFlushFat(IrpContext, Vcb);
                         ClearFlag(core::ptr::addr_of_mut!((*Fcb).FcbState), FCB_STATE_FLUSH_FAT);
                     }
 
@@ -582,27 +594,92 @@ pub unsafe extern "system" fn FatFlushDirectory(
 
 #[no_mangle]
 pub unsafe extern "system" fn FatFlushFat(
-    IrpContext: *mut PIRP_CONTEXT,
-    Vcb: *mut PVCB,
+    IrpContext: *mut IRP_CONTEXT,
+    Vcb: *mut VCB,
 ) -> NTSTATUS {
-    let mut Bcb: *mut PBCB = core::ptr::null_mut();
-    let mut DontCare: *mut PVOID = core::ptr::null_mut();
+    // Hand-translated from flush.c FatFlushFat (the pipeline output was a stub
+    // with a double-pointer signature — see field manual). Carefully flushes the
+    // entire FAT by repinning each dirty page of the virtual volume file.
+    let mut Bcb: PVOID = core::ptr::null_mut();
+    let mut DontCare: PVOID = core::ptr::null_mut();
     let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut Offset: LARGE_INTEGER = unsafe { core::mem::zeroed() };
+    let mut Offset: LARGE_INTEGER = core::mem::zeroed();
     let mut ReturnStatus: NTSTATUS = STATUS_SUCCESS;
 
     // PAGED_CODE();
 
-    if FlagOn((**Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) != 0 {
+
+    if ((*Vcb).VcbState & VCB_STATE_FLAG_WRITE_PROTECTED) != 0 {
         return STATUS_SUCCESS;
     }
 
-    // _SEH2_TRY { ... }
+    // _SEH2_TRY { FatVerifyVcb } _SEH2_EXCEPT(expected) { FatResetExceptionState }
+    // DUMMY_PSEH: the handler is dead code; an unexpected raise is fatal upstream.
     {
         FatVerifyVcb(IrpContext, Vcb);
     }
 
-    // The remainder of the function is not present in the provided C source.
+    if (*Vcb).VcbCondition != crate::types::_VCB_CONDITION_VcbGood {
+        return STATUS_FILE_INVALID;
+    }
+
+    // Repin dirty ranges of the FAT and write them through. PIN_IF_BCB means we
+    // only touch ranges the lazy writer hasn't already cleaned.
+    if (*Vcb).AllocationSupport.FatIndexBitSize != 12 {
+        // Walk through the FAT, one page at a time.
+        let bpb = core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void;
+        let number_of_pages: u32 =
+            (FatReservedBytes(bpb) + FatBytesPerFat(bpb as *const _) + (PAGE_SIZE_U32 - 1)) / PAGE_SIZE_U32;
+
+        Offset.QuadPart = 0;
+        let mut page: u32 = 0;
+        while page < number_of_pages {
+            if CcPinRead(
+                (*Vcb).VirtualVolumeFile,
+                core::ptr::addr_of_mut!(Offset),
+                PAGE_SIZE_U32,
+                PIN_WAIT | PIN_IF_BCB,
+                core::ptr::addr_of_mut!(Bcb),
+                core::ptr::addr_of_mut!(DontCare),
+            ) != 0
+            {
+                CcSetDirtyPinnedData(Bcb, core::ptr::null_mut());
+                CcRepinBcb(Bcb);
+                CcUnpinData(Bcb);
+                CcUnpinRepinnedBcb(Bcb, 1u8, core::ptr::addr_of_mut!(Iosb));
+
+                if !NT_SUCCESS(Iosb.__bindgen_anon_1.Status) {
+                    ReturnStatus = Iosb.__bindgen_anon_1.Status;
+                }
+            }
+            page += 1;
+            Offset.__bindgen_anon_1.LowPart += PAGE_SIZE_U32;
+        }
+    } else {
+        // We read in the entire FAT in the 12-bit case.
+        let bpb = core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void;
+        Offset.QuadPart = FatReservedBytes(bpb) as i64;
+
+        if CcPinRead(
+            (*Vcb).VirtualVolumeFile,
+            core::ptr::addr_of_mut!(Offset),
+            FatBytesPerFat(bpb as *const _),
+            PIN_WAIT | PIN_IF_BCB,
+            core::ptr::addr_of_mut!(Bcb),
+            core::ptr::addr_of_mut!(DontCare),
+        ) != 0
+        {
+            CcSetDirtyPinnedData(Bcb, core::ptr::null_mut());
+            CcRepinBcb(Bcb);
+            CcUnpinData(Bcb);
+            CcUnpinRepinnedBcb(Bcb, 1u8, core::ptr::addr_of_mut!(Iosb));
+
+            if !NT_SUCCESS(Iosb.__bindgen_anon_1.Status) {
+                ReturnStatus = Iosb.__bindgen_anon_1.Status;
+            }
+        }
+    }
+
     ReturnStatus
 }
 #[no_mangle]
@@ -623,7 +700,7 @@ pub unsafe extern "system" fn FatFlushVolume(
     if !NT_SUCCESS(Status) {
         ReturnStatus = Status;
     }
-    Status = FatFlushFat(core::ptr::addr_of_mut!(IrpContext) as *mut PIRP_CONTEXT, core::ptr::addr_of_mut!(Vcb) as *mut PVCB);
+    Status = FatFlushFat(IrpContext, Vcb);
     if !NT_SUCCESS(Status) {
         ReturnStatus = Status;
     }

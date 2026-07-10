@@ -5,8 +5,10 @@ answer the only question that matters: does an injected keystroke / mouse event
 reach kbdclass / mouclass. Usage: python verify_input_direct.py <arch>
   arch = i386-uefi | amd64-uefi
 """
-import sys, time
+import sys
+import time
 from pathlib import Path
+
 from tests.qemu.vm import QemuVM, get_arch_config
 
 KBD_MARK = "[KBDCLASS] first key delivered"

@@ -82,11 +82,23 @@ unsafe fn runCmd(cmdline: LPWSTR, dir: LPCWSTR, wait: i32, minimized: i32) -> i3
     ) == 0
     {
         TRACE!(b"Failed to run command (%lu)\n\0".as_ptr() as *const i8, GetLastError());
-
+        /* Boot/test marker — startup-item visibility (task: ProcessStartupItems
+         * reliability; docs/engineering/payload-harness-design.md Workstream A).
+         * TRACE! is DCE'd in release builds, so these are real DbgPrints. */
+        DbgPrint(
+            b"[EXPLORER] startup: runCmd FAILED (%lu): %ws\n\0".as_ptr() as *const i8,
+            GetLastError(),
+            cmdline,
+        );
         return INVALID_RUNCMD_RETURN;
     }
 
     TRACE!(b"Successfully ran command\n\0".as_ptr() as *const i8);
+    DbgPrint(
+        b"[EXPLORER] startup: runCmd OK (PID %lu): %ws\n\0".as_ptr() as *const i8,
+        info.dwProcessId,
+        cmdline,
+    );
 
     if wait != 0 {
         let Handles: [HANDLE; 1] = [info.hProcess];
@@ -459,6 +471,12 @@ unsafe fn AutoStartupApplications(nCSIDL_Folder: i32) -> u8 {
 #[no_mangle]
 pub unsafe extern "C" fn ProcessStartupItems(bRunOnce: i32) -> i32 {
     let bNormalBoot = (GetSystemMetrics(SM_CLEANBOOT as i32) == 0) as i32;
+    DbgPrint(
+        b"[EXPLORER] startup: ProcessStartupItems(runonce=%d) normalboot=%d\n\0".as_ptr()
+            as *const i8,
+        bRunOnce,
+        bNormalBoot,
+    );
     let mut gen_path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut res: u32;
 
@@ -537,6 +555,11 @@ unsafe fn InitializeStartupMutex() -> u8 {
 #[no_mangle]
 pub unsafe extern "C" fn DoStartStartupItems(Tray: *mut core::ffi::c_void) -> BOOL {
     if bExplorerIsShell == 0 || InitializeStartupMutex() == 0 {
+        DbgPrint(
+            b"[EXPLORER] startup: DoStartStartupItems SKIP (is_shell=%d) -- startup items will NOT run\n\0"
+                .as_ptr() as *const i8,
+            bExplorerIsShell,
+        );
         return 0;
     }
 
@@ -547,9 +570,18 @@ pub unsafe extern "C" fn DoStartStartupItems(Tray: *mut core::ffi::c_void) -> BO
     }
 
     if GetShellWindow().is_null() {
+        DbgPrint(
+            b"[EXPLORER] startup: shell window NEVER appeared in %lums -- startup items SKIPPED\n\0"
+                .as_ptr() as *const i8,
+            dwWaitTotal,
+        );
         ReleaseStartupMutex(); // DoFinishStartupItems() is a C++ inline over this
         return 0;
     }
+    DbgPrint(
+        b"[EXPLORER] startup: shell window ready after %lums\n\0".as_ptr() as *const i8,
+        GetTickCount().wrapping_sub(dwTick),
+    );
 
     let mut hSessionKey: HKEY = core::ptr::null_mut();
     let mut hKey: HKEY = core::ptr::null_mut();
@@ -570,6 +602,10 @@ pub unsafe extern "C" fn DoStartStartupItems(Tray: *mut core::ffi::c_void) -> BO
         RegCloseKey(hSessionKey);
         RegCloseKey(hKey);
         if Error == ERROR_SUCCESS as i32 && dwDisp == REG_OPENED_EXISTING_KEY {
+            DbgPrint(
+                b"[EXPLORER] startup: StartupHasBeenRun already set -- SKIP (another explorer ran them)\n\0"
+                    .as_ptr() as *const i8,
+            );
             return 0;
         }
     }
@@ -578,9 +614,15 @@ pub unsafe extern "C" fn DoStartStartupItems(Tray: *mut core::ffi::c_void) -> BO
 }
 #[no_mangle]
 pub unsafe extern "C" fn ProcessRunOnceItems() {
-    
     if bExplorerIsShell != 0 && IsUserAnAdmin() != 0 && InitializeStartupMutex() != 0 {
         ProcessStartupItems(1);
+    } else {
+        DbgPrint(
+            b"[EXPLORER] startup: ProcessRunOnceItems SKIP (is_shell=%d admin=%d)\n\0".as_ptr()
+                as *const i8,
+            bExplorerIsShell,
+            IsUserAnAdmin(),
+        );
     }
 }
 

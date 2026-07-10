@@ -1192,6 +1192,45 @@ pub unsafe extern "system" fn KiDispatchException(
                     instr as ULONG_PTR,
                 );
             }
+            // User-mode FP-chain backtrace (arm64 keeps frame pointers; each
+            // frame is [prev_fp, lr] at x29). We're on the dying thread so its
+            // user VAs are current — walk with validity guards. This names the
+            // CALLER chain of a user AV (e.g. which winlogon call site handed
+            // ntdll printf a kernel-VA string — the 0x4C face of the TDI-window
+            // flake) that PC/LR alone can't.
+            let mut fp = (*TrapFrame).Fp;
+            for i in 0..12u32 {
+                if fp == 0
+                    || (fp & 0x7) != 0
+                    || MmIsAddressValid(fp as PVOID) == 0
+                    || MmIsAddressValid((fp + 8) as PVOID) == 0
+                {
+                    break;
+                }
+                let next_fp = *(fp as *const u64);
+                let lr = *((fp + 8) as *const u64);
+                ARM64_UART_TRACE_HEX(
+                    match i {
+                        0 => b"[UEXC-BT] lr0=\0".as_ptr() as PCSTR,
+                        1 => b"[UEXC-BT] lr1=\0".as_ptr() as PCSTR,
+                        2 => b"[UEXC-BT] lr2=\0".as_ptr() as PCSTR,
+                        3 => b"[UEXC-BT] lr3=\0".as_ptr() as PCSTR,
+                        4 => b"[UEXC-BT] lr4=\0".as_ptr() as PCSTR,
+                        5 => b"[UEXC-BT] lr5=\0".as_ptr() as PCSTR,
+                        6 => b"[UEXC-BT] lr6=\0".as_ptr() as PCSTR,
+                        7 => b"[UEXC-BT] lr7=\0".as_ptr() as PCSTR,
+                        8 => b"[UEXC-BT] lr8=\0".as_ptr() as PCSTR,
+                        9 => b"[UEXC-BT] lr9=\0".as_ptr() as PCSTR,
+                        10 => b"[UEXC-BT] lrA=\0".as_ptr() as PCSTR,
+                        _ => b"[UEXC-BT] lrB=\0".as_ptr() as PCSTR,
+                    },
+                    lr as ULONG_PTR,
+                );
+                if next_fp <= fp {
+                    break; // stacks grow down; a non-increasing FP is a loop/corruption
+                }
+                fp = next_fp;
+            }
         }
 
         ZwTerminateProcess(NtCurrentProcess(), (*ExceptionRecord).ExceptionCode);
