@@ -165,7 +165,8 @@ exit 0x600D.*
   via i686 clang), staged to syswow64 under VIBEOS_FEX=1; winlogon
   `TryStartWow64Hello` launches it through the normal CreateProcessW path.
 
-*Milestone 2 — guest code executes (IN PROGRESS, blocked).* The full CPU-layer
+*Milestone 2 — PASS on-box (2026-07-10): real i386 image code executes under
+FEX and exits through the WoW64 service bridge with `0x600D`.* The full CPU-layer
 bring-up is now folded INTO `Wow64LdrpInitialize` (wow64.c): maps syswow64
 ntdll32 (SEC_IMAGE via NtOpenFile+NtCreateSection), populates
 `LdrSystemDllInitBlock.ntdll_handle`, sets the WOW64INFO TLS slot + LOCALAPPDATA
@@ -188,7 +189,7 @@ Two bugs found + fixed along the way:
   complete (kernel32 already initialized at the normal time). Early detection
   (ProcessWow64Information query) stays; only a flag is set early.
 
-**[OPEN — M2 blocker] csrss dies (BUGCHECK 0xF4) when hello32 connects to
+**[FIXED — M2 PASS on-box, 2026-07-10] csrss died (BUGCHECK 0xF4) when hello32 connected to
 basesrv.** Once kernel32 DllMain completes, hello32's `CsrClientConnectToServer`
 to basesrv (`CliCon ServerId=2 InfoSize=1664`) makes **csrss raise exception
 0x6BA (`RtlRaiseException`, ntdll+0x6cf8) inside a CSR API handler**, and with
@@ -208,9 +209,22 @@ path) once hello32 connects, and read the real stack to find who raises 0x6BA
 and why. Candidate: the CSR API request loop's per-message SEH is dead under
 DUMMY_PSEH, so ANY handler that raises kills csrss — the fix may be a
 DUMMY_PSEH-safe guard around CSR handler dispatch (swallow + reply error)
-rather than fixing the specific raise. Whole M2 path is behind VIBEOS_FEX
-staging, so mainline boot is unaffected (marker reached every boot; clean arm64
-smoke confirmed with the FEX artifacts absent).
+rather than fixing the specific raise. Live tracing found that the raise was
+not the CSR connect handler: usersrv was handling the loader's
+`STATUS_APP_INIT_FAILURE`, and its best-effort `UserpLogHardError` called the
+unavailable EventLog RPC endpoint. The expected RPC exception killed csrss
+under DUMMY_PSEH. Arm64 now skips only that optional event-log copy.
+
+Two later blockers were then exposed and fixed: the native loader interpreted
+the i386 optional header with the native 64-bit layout and falsely entered its
+relocation path (`STATUS_INVALID_IMAGE_FORMAT`), so WoW64 images now leave
+relocation to the guest loader; and wow64.dll allocated its exit stub after
+`BTCpuProcessInit`, too late for FEX's initial address-space discovery. Guest
+pages are now allocated before ProcessInit. Current-thread
+`RtlWow64Get/SetThreadContext` shims copy the CPU-area context (cross-thread
+kernel backing remains owed). Verified serial oracle:
+`[FEX-WOW64C] M2 PASS: real i386 image code executed under FEX in a WoW64 process`
+and hello32 exit `0x600D`. Whole M2 path remains behind VIBEOS_FEX staging.
 
 *Still owed in Phase C:*
 - 32-bit ntdll auto-map + `Wow64Transition` publishing (32-bit ntdll's syscall
