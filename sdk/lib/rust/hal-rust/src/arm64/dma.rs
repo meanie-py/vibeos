@@ -142,8 +142,9 @@ pub unsafe extern "system" fn HalAllocateCommonBuffer(
         return core::ptr::null_mut();
     }
     core::ptr::write_bytes(va as *mut u8, 0, Length as usize);
+    let base_phys = ddk::MmGetPhysicalAddress(va);
     if !LogicalAddress.is_null() {
-        *LogicalAddress = ddk::MmGetPhysicalAddress(va);
+        *LogicalAddress = base_phys;
     }
     va
 }

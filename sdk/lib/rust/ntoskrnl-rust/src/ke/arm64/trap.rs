@@ -478,14 +478,18 @@ pub unsafe extern "C" fn KiIrqHandler(TrapFrame: PKTRAP_FRAME) {
      * would trigger on x86 (KiEndInterrupt). Without this, a DPC queued while
      * a busy thread runs waits for the idle loop, and interrupt-driven I/O
      * completions stall behind compute. Guards:
-     *   - IRQL >= DISPATCH (incl. the idle loop, pinned at DISPATCH): the
-     *     interrupted context retires its own work — retiring here would
-     *     re-enter KiRetireDpcList / KiSwapContext mid-flight;
+     *   - IRQL > DISPATCH, or non-idle DISPATCH code: the interrupted context
+     *     may hold DISPATCH-level spinlocks — retiring here can re-enter a
+     *     lock the interrupted code owns. The idle thread is the safe DISPATCH
+     *     exception: it is pinned at DISPATCH specifically to retire DPCs, and
+     *     an IRQ can arrive while it is in the open-IRQ spin window before its
+     *     next poll observes the queued DPC.
      *   - DpcRoutineActive: a nested IRQ during a DPC must not recurse.
-     * KiRetireDpcList expects entry at DISPATCH with IRQs masked (we're in the
-     * IRQ exception, so PSTATE.I is set) and does its own _enable/_disable
-     * around each DPC body; nested device IRQs during a DPC land back here
-     * and skip (IRQL == DISPATCH).
+     * KiRetireDeviceDpcs expects entry at DISPATCH with IRQs masked (we're in
+     * the IRQ exception, so PSTATE.I is set). On arm64 this IRQ-exit path keeps
+     * IRQs masked while calling each plain device DPC; opening PSTATE.I before
+     * the DPC body lets a level-triggered controller line immediately re-enter
+     * the ISR path and starve the DPC that is supposed to quiesce it.
      *
      * The raise/restore MUST be the interrupt-context pair (HalpEnter/
      * HalpExitInterruptIrql), NOT KeRaise/KeLowerIrql: KfLowerIrql drains
@@ -513,9 +517,14 @@ pub unsafe extern "C" fn KiIrqHandler(TrapFrame: PKTRAP_FRAME) {
      * (2026-07-06: exactly how virtio-input's ISR-queued DPCs never ran at
      * desktop). Device-DPC delivery must not depend on timer bookkeeping. */
     let Prcb = KeGetCurrentPrcb();
-    if KeGetCurrentIrql() < DISPATCH_LEVEL
+    let CurrentIrql = KeGetCurrentIrql();
+    let DpcQueueDepth = (*Prcb).DpcData[0].DpcQueueDepth;
+    let CanRetireDeviceDpcs = CurrentIrql < DISPATCH_LEVEL
+        || (CurrentIrql == DISPATCH_LEVEL && (*Prcb).CurrentThread == (*Prcb).IdleThread);
+
+    if CanRetireDeviceDpcs
         && (*Prcb).DpcRoutineActive == 0
-        && (*Prcb).DpcData[0].DpcQueueDepth != 0
+        && DpcQueueDepth != 0
     {
         let OldIrql = HalpEnterInterruptIrql(DISPATCH_LEVEL);
         KI_IN_IRQ_EXCEPTION_RETIRE.store(true, core::sync::atomic::Ordering::SeqCst);
