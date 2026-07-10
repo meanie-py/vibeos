@@ -629,9 +629,22 @@ pub unsafe extern "C" fn KiRetireDeviceDpcs(Prcb: PKPRCB) {
             drop(dpc_lock_guard);
 
             if let Some(routine) = DeferredRoutine {
-                _enable();
+                // The arm64 IRQ-exit retire path is already running in an IRQ
+                // exception. Keep PSTATE.I masked there so the controller line
+                // cannot re-enter and starve the DPC that is draining it.
+                #[cfg(target_arch = "aarch64")]
+                let KeepIrqsMasked = crate::ke::arm64::trap::KI_IN_IRQ_EXCEPTION_RETIRE
+                    .load(core::sync::atomic::Ordering::SeqCst);
+                #[cfg(not(target_arch = "aarch64"))]
+                let KeepIrqsMasked = false;
+
+                if !KeepIrqsMasked {
+                    _enable();
+                }
                 routine(Dpc, DeferredContext, SystemArgument1, SystemArgument2);
-                _disable();
+                if !KeepIrqsMasked {
+                    _disable();
+                }
             } else {
                 crate::dbg_print!(b"KiRetireDeviceDpcs: NULL DeferredRoutine, KDPC %p\n\0", Dpc as usize);
             }
