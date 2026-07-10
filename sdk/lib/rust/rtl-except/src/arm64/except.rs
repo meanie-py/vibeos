@@ -89,6 +89,238 @@ unsafe fn RtlpGetFunctionEndAddress(FunctionEntry: PRUNTIME_FUNCTION, ImageBase:
     }
 }
 
+/*
+ * RtlpUnwindXDataCodes — execute an ARM64 .xdata unwind-code stream in
+ * reverse-prologue order, restoring callee-saved registers and SP in
+ * `Context` and producing the establisher frame.
+ *
+ * Assumes the interrupted PC is in the function BODY (prologue fully
+ * executed, not mid-epilog) — true for every exception-dispatch caller here;
+ * mid-prologue/epilog async faults would need offset-aware partial replay.
+ *
+ * EstablisherFrame convention (ground truth from clang-emitted funclets,
+ * sehtest.exe `?dtor$9@...`: `mov x29, x1`): when the prologue establishes a
+ * frame pointer (set_fp/add_fp present), the establisher frame is the
+ * function's x29 VALUE; otherwise it is the body SP. Funclets and filter
+ * thunks address parent locals relative to it.
+ *
+ * Returns false on an opcode we don't understand (caller falls back to the
+ * old leaf `Pc = Lr` behavior rather than corrupting the walk).
+ */
+unsafe fn RtlpUnwindXDataCodes(
+    Context: PCONTEXT,
+    Codes: *const u8,
+    CodeLen: usize,
+    EstablisherFrame: *mut ULONG64,
+) -> bool {
+    let X = (*Context).__bindgen_anon_1.X.as_mut_ptr();
+
+    /* Decoded length of the code starting at byte b0 */
+    #[inline]
+    fn code_len(b0: u8) -> usize {
+        match b0 {
+            0x00..=0xBF => 1,           /* alloc_s / save_r19r20_x / save_fplr(_x) */
+            0xC0..=0xDF => 2,           /* alloc_m / save_regp(_x) / save_reg(_x) / save_lrpair / save_freg* */
+            0xE0 => 4,                  /* alloc_l */
+            0xE2 => 2,                  /* add_fp */
+            0xE1 | 0xE3..=0xE7 => 1,    /* set_fp / nop / end / end_c / save_next / reserved */
+            _ => 1,                     /* machine-frame / pac / reserved — rejected below */
+        }
+    }
+
+    /* Pass 1: derive initial virtual SP + establisher frame from set_fp/add_fp. */
+    let mut Sp: ULONG64 = (*Context).Sp;
+    let mut Establisher: ULONG64 = (*Context).Sp;
+    {
+        let mut i = 0usize;
+        while i < CodeLen {
+            let b0 = *Codes.add(i);
+            if b0 == 0xE1 {
+                /* set_fp: mov x29, sp — body SP == x29 */
+                Sp = *X.add(29);
+                Establisher = *X.add(29);
+                break;
+            } else if b0 == 0xE2 {
+                /* add_fp: add x29, sp, #N*8 — body SP == x29 - N*8 */
+                let n = *Codes.add(i + 1) as ULONG64;
+                Sp = *X.add(29) - n * 8;
+                Establisher = *X.add(29);
+                break;
+            } else if b0 == 0xE4 || b0 == 0xE5 {
+                break; /* end / end_c: no fp code in the prologue */
+            }
+            i += code_len(b0);
+        }
+    }
+    write_volatile(EstablisherFrame, Establisher);
+
+    /* Restore x(reg) from a stack slot (reg 31 == xzr: skip) */
+    let restore_x = |reg: usize, addr: ULONG64| {
+        if reg < 31 {
+            *X.add(reg) = *(addr as PULONG64);
+        }
+    };
+
+    /* Pass 2: execute the stream (stream order == reverse prologue order). */
+    let mut i = 0usize;
+    while i < CodeLen {
+        let b0 = *Codes.add(i);
+
+        /* save_next (0xE6): duplicates the next save op in the stream at the
+         * pair slot 16*(m+1) bytes above it, where m = number of consecutive
+         * save_next codes between this one and that op. Register-restore only
+         * (never carries the _x SP adjustment). */
+        if b0 == 0xE6 {
+            let mut j = i + 1;
+            let mut shift: ULONG64 = 1;
+            while j < CodeLen && *Codes.add(j) == 0xE6 {
+                shift += 1;
+                j += 1;
+            }
+            if j >= CodeLen {
+                return false;
+            }
+            let s0 = *Codes.add(j);
+            match s0 {
+                0x20..=0x3F => {
+                    /* save_r19r20_x: base pair x19/x20 at [sp+0] post-adjust */
+                    restore_x(19 + 2 * shift as usize, Sp + shift * 16);
+                    restore_x(20 + 2 * shift as usize, Sp + shift * 16 + 8);
+                }
+                0x40..=0x7F => {
+                    /* save_fplr z: next pairs are x19/x20, ... */
+                    let z = (s0 & 0x3F) as ULONG64;
+                    restore_x(17 + 2 * shift as usize, Sp + z * 8 + shift * 16);
+                    restore_x(18 + 2 * shift as usize, Sp + z * 8 + shift * 16 + 8);
+                }
+                0xC8..=0xCB => {
+                    let s1 = *Codes.add(j + 1);
+                    let r = (((s0 & 3) as usize) << 2) | (s1 >> 6) as usize;
+                    let z = (s1 & 0x3F) as ULONG64;
+                    restore_x(19 + r + 2 * shift as usize, Sp + z * 8 + shift * 16);
+                    restore_x(20 + r + 2 * shift as usize, Sp + z * 8 + shift * 16 + 8);
+                }
+                0xCC..=0xCF => {
+                    let s1 = *Codes.add(j + 1);
+                    let r = (((s0 & 3) as usize) << 2) | (s1 >> 6) as usize;
+                    restore_x(19 + r + 2 * shift as usize, Sp + shift * 16);
+                    restore_x(20 + r + 2 * shift as usize, Sp + shift * 16 + 8);
+                }
+                0xD8..=0xDB => { /* save_fregp(_x): d-regs — SP-neutral here, skip value restore */ }
+                _ => return false,
+            }
+            i += 1;
+            continue;
+        }
+
+        match b0 {
+            0x00..=0x1F => {
+                /* alloc_s: sub sp, sp, #x*16 */
+                Sp += ((b0 & 0x1F) as ULONG64) * 16;
+            }
+            0x20..=0x3F => {
+                /* save_r19r20_x: stp x19, x20, [sp, #-z*8]! */
+                let z = (b0 & 0x1F) as ULONG64;
+                restore_x(19, Sp);
+                restore_x(20, Sp + 8);
+                Sp += z * 8;
+            }
+            0x40..=0x7F => {
+                /* save_fplr: stp x29, x30, [sp, #z*8] */
+                let z = (b0 & 0x3F) as ULONG64;
+                restore_x(29, Sp + z * 8);
+                restore_x(30, Sp + z * 8 + 8);
+            }
+            0x80..=0xBF => {
+                /* save_fplr_x: stp x29, x30, [sp, #-(z+1)*8]! */
+                let z = (b0 & 0x3F) as ULONG64;
+                restore_x(29, Sp);
+                restore_x(30, Sp + 8);
+                Sp += (z + 1) * 8;
+            }
+            0xC0..=0xC7 => {
+                /* alloc_m: 11-bit size in 16-byte units */
+                let b1 = *Codes.add(i + 1) as ULONG64;
+                Sp += ((((b0 & 7) as ULONG64) << 8) | b1) * 16;
+            }
+            0xC8..=0xCB => {
+                /* save_regp: stp x(19+r), x(20+r), [sp, #z*8] */
+                let b1 = *Codes.add(i + 1);
+                let r = (((b0 & 3) as usize) << 2) | (b1 >> 6) as usize;
+                let z = (b1 & 0x3F) as ULONG64;
+                restore_x(19 + r, Sp + z * 8);
+                restore_x(20 + r, Sp + z * 8 + 8);
+            }
+            0xCC..=0xCF => {
+                /* save_regp_x: stp x(19+r), x(20+r), [sp, #-(z+1)*8]! */
+                let b1 = *Codes.add(i + 1);
+                let r = (((b0 & 3) as usize) << 2) | (b1 >> 6) as usize;
+                let z = (b1 & 0x3F) as ULONG64;
+                restore_x(19 + r, Sp);
+                restore_x(20 + r, Sp + 8);
+                Sp += (z + 1) * 8;
+            }
+            0xD0..=0xD3 => {
+                /* save_reg: str x(19+r), [sp, #z*8] */
+                let b1 = *Codes.add(i + 1);
+                let r = (((b0 & 3) as usize) << 2) | (b1 >> 6) as usize;
+                let z = (b1 & 0x3F) as ULONG64;
+                restore_x(19 + r, Sp + z * 8);
+            }
+            0xD4..=0xD5 => {
+                /* save_reg_x: str x(19+r), [sp, #-(z+1)*8]! */
+                let b1 = *Codes.add(i + 1);
+                let r = (((b0 & 1) as usize) << 3) | (b1 >> 5) as usize;
+                let z = (b1 & 0x1F) as ULONG64;
+                restore_x(19 + r, Sp);
+                Sp += (z + 1) * 8;
+            }
+            0xD6..=0xD7 => {
+                /* save_lrpair: stp x(19+2r), lr, [sp, #z*8] */
+                let b1 = *Codes.add(i + 1);
+                let r = (((b0 & 1) as usize) << 2) | (b1 >> 6) as usize;
+                let z = (b1 & 0x3F) as ULONG64;
+                restore_x(19 + 2 * r, Sp + z * 8);
+                restore_x(30, Sp + z * 8 + 8);
+            }
+            0xD8..=0xD9 => {
+                /* save_fregp: d-reg pair at [sp, #z*8] — value restore skipped
+                 * (d8-d15 not consumed by any current unwind consumer); SP-neutral */
+            }
+            0xDA..=0xDB => {
+                /* save_fregp_x: pre-indexed — apply the SP adjustment */
+                let b1 = *Codes.add(i + 1);
+                let z = (b1 & 0x3F) as ULONG64;
+                Sp += (z + 1) * 8;
+            }
+            0xDC..=0xDD => { /* save_freg: SP-neutral, value restore skipped */ }
+            0xDE => {
+                /* save_freg_x: pre-indexed single d-reg */
+                let b1 = *Codes.add(i + 1);
+                let z = (b1 & 0x1F) as ULONG64;
+                Sp += (z + 1) * 8;
+            }
+            0xE0 => {
+                /* alloc_l: 24-bit size in 16-byte units */
+                let x = ((*Codes.add(i + 1) as ULONG64) << 16)
+                    | ((*Codes.add(i + 2) as ULONG64) << 8)
+                    | (*Codes.add(i + 3) as ULONG64);
+                Sp += x * 16;
+            }
+            0xE1 | 0xE2 => { /* set_fp / add_fp: already applied in pass 1 */ }
+            0xE3 => { /* nop */ }
+            0xE4 | 0xE5 => break, /* end / end_c */
+            _ => return false, /* machine-frame / trap-frame / pac / reserved */
+        }
+        i += code_len(b0);
+    }
+
+    /* Commit: caller SP, return into the caller via the restored LR. */
+    (*Context).Sp = Sp;
+    (*Context).Pc = *X.add(30);
+    true
+}
+
 /* PUBLIC FUNCTIONS **********************************************************/
 
 #[no_mangle]
@@ -286,20 +518,32 @@ pub unsafe extern "system" fn RtlVirtualUnwind(
         let _FuncLen = XDataHeader & 0x3FFFF; /* (void)FuncLen */
         let HasHandler = (XDataHeader >> 20) & 1; /* X bit */
         let SingleEpilog = (XDataHeader >> 21) & 1; /* E bit */
-        let EpilogCount = (XDataHeader >> 22) & 0x1F;
-        let CodeWords = (XDataHeader >> 27) & 0x1F;
+        let mut EpilogCount = (XDataHeader >> 22) & 0x1F;
+        let mut CodeWords = (XDataHeader >> 27) & 0x1F;
+        let mut WordIndex: usize = 1;
 
-        /* Establisher frame = current SP */
-        write_volatile(EstablisherFrame, (*Context).Sp);
+        /* Extension word when both counts overflow the header */
+        if EpilogCount == 0 && CodeWords == 0 {
+            let Ext = *XData.add(1);
+            EpilogCount = Ext & 0xFFFF;
+            CodeWords = (Ext >> 16) & 0xFF;
+            WordIndex = 2;
+        }
+        let EpilogScopeCount = if SingleEpilog != 0 { 0 } else { EpilogCount };
 
-        /* For .xdata, we can't easily decode the unwind codes in this initial
-         * implementation. Do a simple leaf-function unwind: PC = LR */
-        (*Context).Pc = (*Context).__bindgen_anon_1.X[30]; /* Context->Lr */
+        /* Execute the unwind codes (2026-07-09; was a leaf `Pc = Lr` stub that
+         * made every non-leaf .xdata frame un-walkable — the root cause of
+         * "arm64 user-mode SEH first-chance delivery" never working). On an
+         * unrecognized opcode fall back to the old leaf behavior. */
+        let Codes = XData.add(WordIndex + EpilogScopeCount as usize) as *const u8;
+        if !RtlpUnwindXDataCodes(Context, Codes, (CodeWords * 4) as usize, EstablisherFrame) {
+            write_volatile(EstablisherFrame, (*Context).Sp);
+            (*Context).Pc = (*Context).__bindgen_anon_1.X[30]; /* Context->Lr */
+        }
 
         /* If handler exists, find it after epilog scopes and unwind codes */
         if HasHandler != 0 {
-            let EpilogScopeCount = if SingleEpilog != 0 { 0 } else { EpilogCount };
-            let HandlerRva = XData.add(1 + EpilogScopeCount as usize + CodeWords as usize);
+            let HandlerRva = XData.add(WordIndex + EpilogScopeCount as usize + CodeWords as usize);
 
             if HandlerType & (UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER) != 0 {
                 HandlerRoutine = core::mem::transmute::<PVOID, PEXCEPTION_ROUTINE>(RVA(
@@ -355,11 +599,14 @@ pub unsafe extern "system" fn RtlDispatchException(
             continue;
         }
 
-        /* Virtual unwind to find handler */
+        /* Virtual unwind to find handler. ControlPc must be THIS frame's PC
+         * (pre-unwind) — using the fault PC for every frame (the old code)
+         * meant a parent frame's scope table could never match. */
+        let ControlPc = UnwindContext.Pc;
         let ExceptionRoutine = RtlVirtualUnwind(
             UNW_FLAG_EHANDLER,
             ImageBase,
-            UnwindContext.Pc,
+            ControlPc,
             FunctionEntry,
             &mut UnwindContext,
             &mut DispatcherContext.HandlerData,
@@ -378,7 +625,7 @@ pub unsafe extern "system" fn RtlDispatchException(
 
         /* If there's a handler, call it */
         if let Some(Routine) = ExceptionRoutine {
-            DispatcherContext.ControlPc = (*Context).Pc as ULONG_PTR;
+            DispatcherContext.ControlPc = ControlPc as ULONG_PTR;
             DispatcherContext.ImageBase = ImageBase as ULONG_PTR;
             DispatcherContext.FunctionEntry = FunctionEntry;
             DispatcherContext.EstablisherFrame = EstablisherFrame as ULONG_PTR;
@@ -606,6 +853,13 @@ pub unsafe extern "system" fn RtlUnwindEx(
 
         DispatcherContext.ControlPc = UnwindContext.Pc as ULONG_PTR;
 
+        /* Keep the pre-unwind state of this frame: if it turns out to be the
+         * TARGET frame, that state (its live x29/sp/callee-saves, restored by
+         * the walk up to here) is what the __except continuation at TargetIp
+         * must resume with. The old code restored the ORIGINAL fault context,
+         * whose x29/sp belong to the faulting callee, not the target frame. */
+        let PreUnwind: CONTEXT = UnwindContext;
+
         let ExceptionRoutine = RtlVirtualUnwind(
             UNW_FLAG_UHANDLER,
             ImageBase,
@@ -659,6 +913,7 @@ pub unsafe extern "system" fn RtlUnwindEx(
 
         /* Check if we reached the target frame */
         if EstablisherFrame == TargetFrame as ULONG64 {
+            *ContextRecord = PreUnwind;
             break;
         }
     }
