@@ -312,6 +312,19 @@ unsafe fn pci_fixup_interrupt_lines() {
     if (piix & 0xFFFF) != 0x8086 {
         return;
     }
+    // Every IRQ the PIRQ router can target carries level-triggered PCI INTx —
+    // mark them ALL in the ELCR up front, independent of whether we also have
+    // to program any per-device InterruptLine below (OVMF programs the lines
+    // itself on some builds but never touches the ELCR).
+    let mut elcr_mask: u16 = 0;
+    let mut pirq: u32 = 0;
+    while pirq < 4 {
+        let route = pci_mech1_cfg_read8(0, 1, 0, 0x60 + pirq);
+        if (route & 0x80) == 0 && route < 16 && route > 2 {
+            elcr_mask |= 1 << route;
+        }
+        pirq += 1;
+    }
     let mut dev: u32 = 0;
     while dev < 32 {
         let v0 = pci_mech1_cfg_read32(0, dev, 0, 0);
@@ -333,6 +346,14 @@ unsafe fn pci_fixup_interrupt_lines() {
                     let route = pci_mech1_cfg_read8(0, 1, 0, 0x60 + pirq);
                     if (route & 0x80) == 0 && route < 16 {
                         pci_mech1_cfg_write8(0, dev, func, 0x3C, route);
+                        // PCI INTx is LEVEL-triggered: the 8259 input carrying a
+                        // PIRQ must be marked level in the ELCR (SeaBIOS does
+                        // this; OVMF doesn't — it expects APIC mode). On an
+                        // edge-configured PIC input a held INTx line delivers
+                        // exactly one edge and then goes silent: the AHCI
+                        // INQUIRY-completion interrupt never arrived and boot
+                        // wedged in scsiport's first device scan (2026-07-10).
+                        elcr_mask |= 1 << route;
                         TRACE(b"pci 00:%02x.%u IntLine %u (PIRQ%u)\n\0".as_ptr() as *const i8,
                             dev as usize, func as usize, route as usize, pirq as usize);
                     }
@@ -341,6 +362,29 @@ unsafe fn pci_fixup_interrupt_lines() {
             func += 1;
         }
         dev += 1;
+    }
+
+    // Merge the PIRQ IRQs into the ELCR (0x4D0 = IRQ0-7, 0x4D1 = IRQ8-15).
+    if elcr_mask != 0 {
+        let lo_add = (elcr_mask & 0xFF) as u8;
+        let hi_add = (elcr_mask >> 8) as u8;
+        let mut cur: u8;
+        if lo_add != 0 {
+            core::arch::asm!("in al, dx", in("dx") 0x4D0u16, out("al") cur,
+                options(nomem, nostack, preserves_flags));
+            cur |= lo_add;
+            core::arch::asm!("out dx, al", in("dx") 0x4D0u16, in("al") cur,
+                options(nomem, nostack, preserves_flags));
+        }
+        if hi_add != 0 {
+            core::arch::asm!("in al, dx", in("dx") 0x4D1u16, out("al") cur,
+                options(nomem, nostack, preserves_flags));
+            cur |= hi_add;
+            core::arch::asm!("out dx, al", in("dx") 0x4D1u16, in("al") cur,
+                options(nomem, nostack, preserves_flags));
+        }
+        TRACE(b"ELCR |= %04x (PIRQ level-trigger)\n\0".as_ptr() as *const i8,
+            elcr_mask as usize);
     }
 }
 
