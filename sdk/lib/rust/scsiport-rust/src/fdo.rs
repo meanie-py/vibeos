@@ -464,6 +464,12 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
                 Affinity[i as usize],
                 (0i32) as u8,
             );
+            DbgPrint(b"[SCSIPORT] connect intr: level=%u vec=%u mapped=%u dirql=%u mode=%u share=%u st=%08x\n\0"
+                .as_ptr(),
+                (*DeviceExtension).InterruptLevel[i as usize],
+                InterruptVector[i as usize], MappedIrq[i as usize],
+                Dirql[i as usize] as u32, InterruptMode[i as usize] as u32,
+                InterruptShareable as u32, Status as u32); // ahci marker
 
             if !(Status >= 0) {
                 if DbgPrint(
@@ -545,7 +551,7 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
     }
 
     KeLowerIrql(OldIrql);
-    DbgPrint(b"[SCSIPORT] FdoCallHWInitialize done\n\0".as_ptr() as *const i8); // ahci marker
+    DbgPrint(b"[SCSIPORT] FdoCallHWInitialize done\n\0".as_ptr()); // ahci marker
     return STATUS_SUCCESS;
 }
 #[no_mangle]
