@@ -126,3 +126,39 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
 
 - 2026-07-10: Lane opened. Survey done (above). amd64 kmtests cmake exclusion removed.
   build-amd64 provisioned.
+- 2026-07-10: **M1 amd64 GREEN.** `ENABLE_ROSTESTS=ON` configures clean; `kmtest_.exe`
+  (PE32+ console) + `kmtest_drv.sys` (PE32+ native, 3.8MB, all 137 test files compiled)
+  link on llvm-mingw with exactly ONE source fix: `ntos_fsrtl/FsRtlLegal.c` hardcoded the
+  GCC pointer-to-pointer import deref `(*FsRtlLegalAnsiCharacterArray)[i]`; switched to
+  the SDK's `LEGAL_ANSI_CHARACTER_ARRAY` portability macro (clang uses direct dllimport —
+  see `sdk/include/xdk/fsrtlfuncs.h`). Assertion semantics unchanged. NOTE: the user-mode
+  exe's target is `kmtest` but its OUTPUT_NAME is `kmtest_` → artifact is `kmtest_.exe`
+  (upstream naming, kept). i386/arm64 next.
+- 2026-07-10: **Native SEH opted in for kmtests on amd64/arm64** (user call: the FEX-lane
+  SEH runtime is real, don't baseline DUMMY_PSEH crashes we can avoid). pseh2.h's
+  `_USE_NATIVE_SEH` branch outranks the global `_USE_DUMMY_PSEH`, so a per-target
+  `target_compile_definitions` gives kmtests real `__try/__except` (clang lowers it on
+  amd64/arm64; `-fms-extensions` already global). Verified `.pdata` + `__C_specific_handler`
+  in kmtest_drv.sys. i386 stays dummy (clang's 32-bit SEH lowering is MSVC-env-only —
+  dummy-pseh-verdict.md §C) → expect a per-arch crash/fail delta there; that's the baseline
+  working as intended. **New toolchain gotcha found + recorded in dummy-pseh-verdict.md §C:**
+  clang won't inline callees inside `__try`, and mingw C `__forceinline` is gnu_inline
+  (no body ever emitted) → FORCEINLINE SDK helpers called inside `__try` = undefined
+  symbols. Shim TU: `kmtests/kmt_native_seh_shims.c` (out-of-line defs, no SDK includes).
+  **Expectation setting (from §C):** native-SEH coverage is calls-only on mingw — raise-based
+  tests should catch correctly; direct-deref-AV tests inside `__try` may still crash
+  (no -fasync-exceptions) → those baseline as CRASH even on amd64/arm64.
+- 2026-07-10: **M1 i386 GREEN** — kmtest_all builds with zero errors (dummy PSEH).
+  arm64 provisioning + build in flight.
+- 2026-07-10: **M1 arm64 GREEN — M1 COMPLETE ×3.** Greenfield arch cost 3 test-file fixes
+  + 1 kernel export: (a) `kmtest_drv/structs.c` — 64-bit IO_STACK_LOCATION layout guard
+  extended to `_ARM64_` (C_ASSERTs self-verify the shared amd64 layout); (b)
+  `ntos_ex/ExSequencedList.c` — upstream's "SLIST_HEADER differs on x64" whole-test skip
+  extended to arm64 (same 16-byte header); (c) `ntos_ke/KeIrql.c` — arm64 mirrors the
+  amd64 branch (CLOCK1/2→CLOCK_LEVEL, KeRaiseIrql-is-a-macro, no stdcall-export block)
+  and CMCI_LEVEL drops from the must-work IRQL array (x86 machine-check concept, no such
+  IRQL on ARM64); (d) `ntoskrnl.spec` — `__C_specific_handler` export arch list was
+  `x86_64,arm`; added `arm64` (the rtl-except arm64 impl was already in the kernel,
+  just unexported — kmtest_drv.sys is its first external consumer). Verified: arm64
+  ntoskrnl.exe exports it at a real address. Kernel-touching change → arm64 smoke owed
+  before landing.
