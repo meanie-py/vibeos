@@ -11,9 +11,9 @@ add_subdirectory(apitests)
 #add_subdirectory(dibtests)
 add_subdirectory(drivers)
 #add_subdirectory(dxtest)
-if(MSVC OR NOT ARCH STREQUAL "amd64") # FIXME build is broken with new x64 PSEH
+# Upstream excluded kmtests on GCC-amd64 ("broken with new x64 PSEH") — moot for us:
+# llvm-mingw uses USE_DUMMY_PSEH on every arch, so build it everywhere.
 add_subdirectory(kmtests)
-endif()
 #add_subdirectory(regtests)
 add_subdirectory(rosautotest)
 add_subdirectory(tests)
