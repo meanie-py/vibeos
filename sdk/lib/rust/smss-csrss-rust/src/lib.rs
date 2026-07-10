@@ -268,29 +268,7 @@ pub mod csrsrv;
 // the process via the Native API instead.
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    unsafe {
-        crate::dbg_print!(b"\n!!! [SMSS-CSRSS] RUST PANIC HIT !!!\n\0");
-        if let Some(loc) = info.location() {
-            // Filenames in core are NUL-terminated UTF-8 string literals;
-            // location().file() returns a &str whose underlying bytes are
-            // typically a static C-string. Use the slice's ptr directly +
-            // print line/column separately.
-            let mut buf = [0u8; 256];
-            let s = loc.file().as_bytes();
-            let n = s.len().min(buf.len() - 1);
-            buf[..n].copy_from_slice(&s[..n]);
-            buf[n] = 0;
-            crate::dbg_print!(
-                b"PANIC LOC: %s:%u:%u\n\0",
-                buf.as_ptr() as *const i8,
-                loc.line(),
-                loc.column(),
-            );
-        }
-    }
-    loop {
-        core::hint::spin_loop();
-    }
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 // `core`/`compiler_builtins` emit `.eh_frame` refs to

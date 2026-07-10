@@ -80,10 +80,8 @@ pub mod explorer {
 // Rust-side panics only ever come from translated-code bugs. Same handler
 // shape as userinit-rust/winsrv-rust (no privileged instructions).
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {
-        core::hint::spin_loop();
-    }
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 #[no_mangle]

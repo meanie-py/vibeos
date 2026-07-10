@@ -12,6 +12,6 @@ name = "processr"
 path = "src/main.rs"
 
 [dependencies]
-
+panic-common = { path = "../panic-common", features = ["kernel"] }
 [build-dependencies]
 reactos-link = { path = "../reactos-link" }

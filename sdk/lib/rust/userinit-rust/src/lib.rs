@@ -31,10 +31,8 @@ pub mod livecd;
 // (same role as smss-csrss-rust / winsrv-rust). Must NOT use privileged
 // instructions; abort via the Native API instead.
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {
-        core::hint::spin_loop();
-    }
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 #[no_mangle]

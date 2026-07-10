@@ -891,6 +891,64 @@ pub unsafe extern "system" fn WinMain(
         crate::setup::RunSetup();
     }
 
+    /* crash-value: fire-and-forget the user-mode SEH boot self-test
+     * (base/system/sehtest, the userland sibling of ntoskrnl/seh_poc.c).
+     * Lives HERE because this boot path skips userinit entirely. Its
+     * [SEH-USER] PASS/FAIL serial lines prove hardware-fault ->
+     * KiUserExceptionDispatcher -> ntdll dispatch -> __except delivery
+     * end-to-end. amd64/arm64 only (native clang SEH does not lower on
+     * i386), matching sehtest's cmake gate. */
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        let mut Si: STARTUPINFOW = zeroed();
+        let mut Pi: PROCESS_INFORMATION = zeroed();
+        let mut SehTestPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+        let mut SehTestLine: [u16; 12] = wstr_arr!("sehtest.exe");
+
+        GetWindowsDirectoryW(SehTestPath.as_mut_ptr(), MAX_PATH);
+        wcscat(SehTestPath.as_mut_ptr(), wstr!("\\system32\\sehtest.exe").as_ptr());
+
+        Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+        Si.lpDesktop = wstr!("WinSta0\\Default").as_ptr() as PWSTR;
+
+        let ok = CreateProcessW(
+            SehTestPath.as_ptr(),
+            SehTestLine.as_mut_ptr(),
+            null_mut(),
+            null_mut(),
+            0,
+            0x00000008, /* DETACHED_PROCESS — no console: a win32cui child
+                         * spawned this early wedges in console allocation
+                         * (observed: WAIT_TIMEOUT + STILL_ACTIVE, no output).
+                         * DbgPrint needs no console. */
+            null_mut(),
+            null(),
+            &mut Si,
+            &mut Pi,
+        );
+        if ok != 0 {
+            DbgPrint(b"[WINLOGON] sehtest.exe spawned\n\0".as_ptr() as *const i8);
+            // Wait + report the exit code: a silent death classifies itself
+            // (0xC0000135 DLL-not-found, 0xC0000139 entrypoint-not-found,
+            // 0xC0000005 unhandled AV, 0/1 = the test's own verdict).
+            let wait = WaitForSingleObject(Pi.hProcess, 10_000);
+            let mut code: DWORD = 0;
+            GetExitCodeProcess(Pi.hProcess, &mut code);
+            DbgPrint(
+                b"[WINLOGON] sehtest.exe wait=%lu exit=0x%lx\n\0".as_ptr() as *const i8,
+                wait,
+                code,
+            );
+            CloseHandle(Pi.hThread);
+            CloseHandle(Pi.hProcess);
+        } else {
+            DbgPrint(
+                b"[WINLOGON] sehtest.exe spawn FAILED (error %lu)\n\0".as_ptr() as *const i8,
+                GetLastError(),
+            );
+        }
+    }
+
     DbgPrint(b"[WINLOGON] Init complete. Spawning explorer.exe...\n\0".as_ptr() as *const i8);
 
     /* Spawn explorer.exe (shell — creates desktop, taskbar) */

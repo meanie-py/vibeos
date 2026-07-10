@@ -77,10 +77,8 @@ pub mod prelude;
 // USER-MODE no_std staticlib → own panic handler + eh_personality (deduped at
 // link by --allow-multiple-definition, same as lsasrv-rust/samsrv-rust).
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {
-        core::hint::spin_loop();
-    }
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 #[no_mangle]

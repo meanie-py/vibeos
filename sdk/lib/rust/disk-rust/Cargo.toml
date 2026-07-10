@@ -10,4 +10,5 @@ name = "disk_rust"
 path = "src/lib.rs"
 crate-type = ["staticlib"]
 [dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }

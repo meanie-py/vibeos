@@ -73,42 +73,5 @@ pub extern "C" fn rust_eh_personality() {}
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    unsafe {
-        for &b in b"PANIC:" {
-            core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b);
-        }
-        if let Some(loc) = info.location() {
-            let file = loc.file().as_bytes();
-            let mut i = 0usize;
-            while i < file.len() {
-                let b = *file.as_ptr().add(i);
-                core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b);
-                i += 1;
-            }
-            core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b':');
-            let line = loc.line();
-            let mut buf = [0u8; 10];
-            let mut n = line;
-            let mut len = 0usize;
-            if n == 0 {
-                buf[0] = b'0';
-                len = 1;
-            } else {
-                while n > 0 {
-                    buf[len] = b'0' + (n % 10) as u8;
-                    n /= 10;
-                    len += 1;
-                }
-            }
-            let mut j = len;
-            while j > 0 {
-                j -= 1;
-                core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") buf[j]);
-            }
-        }
-        core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'\n');
-    }
-    let _ = info;
-    loop {}
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }

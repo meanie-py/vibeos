@@ -146,8 +146,7 @@ pub unsafe extern "system" fn DriverEntry(
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    serial::emit(core::format_args!("[NETSTACK] PANIC: {}\n", info));
-    loop {}
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 #[no_mangle]

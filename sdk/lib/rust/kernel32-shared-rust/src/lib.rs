@@ -46,8 +46,8 @@ fn NT_SUCCESS(Status: NTSTATUS) -> bool {
 // no_std staticlib floor. Duplicates kernel32-rust's handler when both .a's link
 // into one DLL — resolved by the link's --allow-multiple-definition (first wins).
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 #[no_mangle]
 pub extern "C" fn rust_eh_personality() {}

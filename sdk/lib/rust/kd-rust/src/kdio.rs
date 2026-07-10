@@ -1167,6 +1167,33 @@ pub unsafe extern "C" fn KdIoPrintf(Format: PCSTR) {
     KdIoPuts(Format);
 }
 
+// crash-value: when a boot opts into REAL WinDbg KD (/DEBUG /DEBUGPORT=COM2,
+// see kd64 kdinit.rs), the embedded kdcom-serial-rust transport takes over
+// KdSendPacket/KdReceivePacket wholesale — binary KD packet framing on the
+// COM2 UART. Off (the default), behavior below is unchanged: text to COM1.
+pub(crate) static mut KD_WIRE_ACTIVE: bool = false;
+
+/// Called from kd64 `KdInitSystem` when the COM2 opt-in is present
+/// (/DEBUGPORT=COM2 boot option or `--tripwire "KD=COM2"`). Pins the wire to
+/// COM2 @115200 directly — deliberately NOT the transport's LoadOptions parse:
+/// a tripwire-armed boot still carries the default `/DEBUGPORT=COM1` options,
+/// and the wire must never seize COM1 (the console/smoke channel). Arms
+/// delegation only on success.
+#[no_mangle]
+pub unsafe extern "system" fn KdpWireTransportArm(_LoaderBlock: PVOID) -> NTSTATUS {
+    let status = kdcom_serial_rust::kdcom::KdpPortInitialize(2, 115200);
+    if NT_SUCCESS(status) {
+        KD_WIRE_ACTIVE = true;
+        kdio_printf!(b"KD: kdcom-serial wire transport ARMED (COM2)\n\0".as_ptr() as PCSTR);
+    } else {
+        kdio_printf!(
+            b"KD: kdcom-serial wire transport init FAILED (0x%08lx)\n\0".as_ptr() as PCSTR,
+            status,
+        );
+    }
+    status
+}
+
 // `KdSendPacket` is the underlying KD-IO sender. When KDBG is enabled the
 // callers go through `KdbgSendPacket` (kdbg/kdbg.rs), which delegates here
 // for PACKET_TYPE_KD_DEBUG_IO. Same pattern as the C build (see kdbg.c).
@@ -1175,8 +1202,17 @@ pub unsafe extern "system" fn KdSendPacket(
     PacketType: ULONG,
     MessageHeader: PSTRING,
     MessageData: PSTRING,
-    _Context: PKD_CONTEXT,
+    Context: PKD_CONTEXT,
 ) {
+    if KD_WIRE_ACTIVE {
+        return kdcom_serial_rust::kddll::KdSendPacket(
+            PacketType,
+            MessageHeader as *mut _,
+            MessageData as *mut _,
+            Context as *mut _,
+        );
+    }
+    let _Context = Context;
     if PacketType == PACKET_TYPE_KD_STATE_CHANGE32
         || PacketType == PACKET_TYPE_KD_STATE_CHANGE64
     {
@@ -1291,6 +1327,16 @@ pub unsafe extern "system" fn KdReceivePacket(
     _DataLength: PULONG,
     _Context: PKD_CONTEXT,
 ) -> KDSTATUS {
+    if KD_WIRE_ACTIVE {
+        return kdcom_serial_rust::kddll::KdReceivePacket(
+            PacketType,
+            MessageHeader as *mut _,
+            _MessageData as *mut _,
+            _DataLength,
+            _Context as *mut _,
+        ) as KDSTATUS;
+    }
+
     if PacketType == PACKET_TYPE_KD_POLL_BREAKIN {
         return KdPacketTimedOut;
     }

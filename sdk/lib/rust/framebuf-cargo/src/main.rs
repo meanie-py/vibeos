@@ -25,53 +25,5 @@ extern "system" {
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    // Pre-format "PANIC LOC: file:line" into one NUL'd buffer (Location.file
-    // is a non-NUL-terminated &str; EngDebugPrint gets no format args).
-    let mut buf = [0u8; 128];
-    let mut n = 0usize;
-    for &b in b"PANIC LOC: " {
-        buf[n] = b;
-        n += 1;
-    }
-    if let Some(loc) = info.location() {
-        for &b in loc.file().as_bytes().iter().take(100) {
-            buf[n] = b;
-            n += 1;
-        }
-        buf[n] = b':';
-        n += 1;
-        let mut tmp = [0u8; 10];
-        let mut t = 0usize;
-        let mut v = loc.line();
-        if v == 0 {
-            tmp[t] = b'0';
-            t += 1;
-        }
-        while v > 0 {
-            tmp[t] = b'0' + (v % 10) as u8;
-            v /= 10;
-            t += 1;
-        }
-        while t > 0 {
-            t -= 1;
-            buf[n] = tmp[t];
-            n += 1;
-        }
-    }
-    buf[n] = b'\n';
-    n += 1;
-    buf[n] = 0;
-    unsafe {
-        EngDebugPrint(
-            b"\0".as_ptr() as *const core::ffi::c_char,
-            b"!!! [FRAMEBUF] RUST PANIC HIT !!!\n\0".as_ptr() as *const core::ffi::c_char,
-            core::ptr::null_mut(),
-        );
-        EngDebugPrint(
-            b"\0".as_ptr() as *const core::ffi::c_char,
-            buf.as_ptr() as *const core::ffi::c_char,
-            core::ptr::null_mut(),
-        );
-    }
-    loop {} // nolint: silent-failure (post-panic halt — RUST PANIC self-report already printed above)
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }

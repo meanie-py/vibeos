@@ -11,6 +11,7 @@ members = [
     "dbgk-rust",
     "wmi-rust",
     "dbgprint-rust",
+    "panic-common",
     "cc-rust",
     "iomgr-rust",
     "kdbg-rust",
