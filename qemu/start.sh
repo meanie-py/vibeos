@@ -175,9 +175,9 @@ case "$ARCH" in
         # VIBEOS_AHCI_CD=1: attach the CD via AHCI instead of IDE (mirrors
         # tests/qemu/backend.py's whpx rewrite — debug knob for the AHCI
         # guest-driver path).
-        CD_FLAGS=(-device ide-cd,drive=cd0,bootindex=0)
+        CD_FLAGS=(-device "ide-cd,drive=cd0,bootindex=0")
         if [ "${VIBEOS_AHCI_CD:-}" = "1" ]; then
-            CD_FLAGS=(-device ich9-ahci,id=ahci0 -device "ide-cd,bus=ahci0.0,drive=cd0,bootindex=0")
+            CD_FLAGS=(-device "ich9-ahci,id=ahci0" -device "ide-cd,bus=ahci0.0,drive=cd0,bootindex=0")
         fi
         QEMU_CMD=(
             qemu-system-i386 -M pc "${KVM_FLAGS[@]}" -m 512M
