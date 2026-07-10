@@ -2687,8 +2687,8 @@ pub unsafe extern "system" fn WinExec(lpCmdLine: LPCSTR, uCmdShow: UINT) -> UINT
         return if dosErr < 32 { dosErr } else { ERROR_BAD_FORMAT };
     }
 
-    if UserWaitForInputIdleRoutine.is_some() {
-        (UserWaitForInputIdleRoutine.unwrap())(ProcessInformation.hProcess, 10000);
+    if let Some(WaitForInputIdle) = UserWaitForInputIdleRoutine {
+        WaitForInputIdle(ProcessInformation.hProcess, 10000);
     }
 
     NtClose(ProcessInformation.hProcess);

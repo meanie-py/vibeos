@@ -2589,8 +2589,10 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     }
 
     /* Check if we have a user-defined Post Process Routine */
-    if NT_SUCCESS(Status) && (*Peb).PostProcessInitRoutine.is_some() {
-        ((*Peb).PostProcessInitRoutine.unwrap())();
+    if NT_SUCCESS(Status) {
+        if let Some(PostProcessInit) = (*Peb).PostProcessInitRoutine {
+            PostProcessInit();
+        }
     }
 
     /* Close the key if we have one opened */

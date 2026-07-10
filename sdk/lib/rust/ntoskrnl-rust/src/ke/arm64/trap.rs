@@ -233,9 +233,11 @@ unsafe fn KiSvcDispatch(TrapFrame: PKTRAP_FRAME) {
     if TableIndex == 1 && ((*TrapFrame).Spsr & 0xF) == 0 {
         let Teb = (*Thread).Teb;
         if !Teb.is_null() && MmIsAddressValid(core::ptr::addr_of!((*Teb).GdiBatchCount) as PVOID) != 0 &&
-           (*Teb).GdiBatchCount != 0 && KeGdiFlushUserBatch.is_some()
+           (*Teb).GdiBatchCount != 0
         {
-            (KeGdiFlushUserBatch.unwrap())();
+            if let Some(GdiFlush) = KeGdiFlushUserBatch {
+                GdiFlush();
+            }
         }
     }
 
