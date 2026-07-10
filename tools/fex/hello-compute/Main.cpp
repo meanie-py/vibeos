@@ -11,12 +11,17 @@
 // modelled on FEX's own FEXOfflineCompiler (context/thread/GDT setup) and the
 // WOW64 Module (guest-state readback), so the API usage matches upstream.
 //
-// The guest blob (64-bit):
+// The guest blob (64-bit) — rung 2 (compute) + rung 3 (fault round-trip):
 //     48 c7 c0 2a 00 00 00   mov rax, 0x2A     ; 42
-//     48 83 c0 07            add rax, 7        ; -> 49
+//     48 83 c0 07            add rax, 7        ; -> 49 (0x31)
+//     48 89 04 25 00 00 00 00 mov [0], rax     ; rung 3: deliberate AV (write null)
+//     f4                     hlt               ; never reached (VEH redirects)
+//     48 c7 c0 99 00 00 00   mov rax, 0x99     ; +0x14: recovery entry
 //     f4                     hlt               ; EnableExitOnHLT -> ExecuteThread returns
-// Success = guest RAX reads back as 0x31 (49). The arithmetic is deliberately
-// two ops so a wrong result distinguishes "ran the blob" from "returned zero".
+// The VEH catches the host-side AV inside JIT code, reconstructs the guest
+// state (RIP must read back as blob+0xB with RAX already 0x31 — proving exact
+// fault-point recovery), redirects guest RIP to the recovery entry, and resumes
+// via the dispatcher's FillSRA entry. Success = guest RAX reads back as 0x99.
 
 #include <FEXCore/Config/Config.h>
 #include <FEXCore/Core/Context.h>
@@ -65,6 +70,27 @@ public:
   void UnmarkOvercommitRange(uint64_t Start, uint64_t Length) override {}
 };
 
+constexpr uint64_t GuestExpected = 0x99;      // recovery routine's RAX
+constexpr uint64_t GuestFaultPointRAX = 0x31; // 42 + 7, live in RAX at the AV
+constexpr uint64_t GuestFaultOffset = 0xB;    // blob offset of the faulting mov
+constexpr uint64_t GuestRecoveryOffset = 0x14; // blob offset of the recovery entry
+
+const uint8_t GuestBlob[] = {
+  0x48, 0xC7, 0xC0, 0x2A, 0x00, 0x00, 0x00,             // +0x00: mov rax, 0x2A
+  0x48, 0x83, 0xC0, 0x07,                               // +0x07: add rax, 7
+  0x48, 0x89, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00,       // +0x0B: mov [0], rax — AV
+  0xF4,                                                 // +0x13: hlt (skipped)
+  0x48, 0xC7, 0xC0, 0x99, 0x00, 0x00, 0x00,             // +0x14: mov rax, 0x99
+  0xF4,                                                 // +0x1B: hlt
+};
+
+// Shared with the VEH (single-threaded harness; written before ExecuteThread).
+FEXCore::Context::Context* g_CTX;
+FEXCore::Core::InternalThreadState* g_Thread;
+FEXCore::SignalDelegator* g_SignalDelegator;
+uint64_t g_GuestRIPBase;
+int g_GuestFaultsHandled;
+
 // First-chance VEH crash dumper. The rung-2 faults land inside FEXCore's
 // runtime-emitted dispatcher/JIT code (no symbols possible), so on AV dump the
 // faulting instruction words + full register file to serial, then continue the
@@ -72,7 +98,39 @@ public:
 // proven working on vibeos arm64 ([UEXC-DISPATCH] reaches ntdll).
 LONG WINAPI ProbeVeh(EXCEPTION_POINTERS* Info) {
   const auto* Rec = Info->ExceptionRecord;
-  const auto* Ctx = Info->ContextRecord;
+  auto* Ctx = Info->ContextRecord;
+
+  // Rung 3: a guest-code AV surfaces as a host AV with PC inside FEX's JIT code
+  // buffer. Reconstruct the guest state exactly as wow64fex's
+  // BTCpuResetToConsistentState does (WOW64/Module.cpp ReconstructThreadState),
+  // redirect the guest to the recovery routine, and resume at the dispatcher's
+  // FillSRA entry, which reloads SRA + RIP from the thread state.
+  if (Rec->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && g_CTX && g_Thread &&
+      g_CTX->IsAddressInCodeBuffer(g_Thread, Ctx->Pc)) {
+    const auto& Config = g_SignalDelegator->GetConfig();
+    auto& State = g_Thread->CurrentFrame->State;
+
+    State.rip = g_CTX->RestoreRIPFromHostPC(g_Thread, Ctx->Pc);
+    for (size_t i = 0; i < Config.SRAGPRCount; i++) {
+      State.gregs[i] = Ctx->X[Config.SRAGPRMapping[i]];
+    }
+    for (size_t i = 0; i < Config.SRAFPRCount; i++) {
+      memcpy(State.xmm.sse.data[i], &Ctx->V[Config.SRAFPRMapping[i]], 16);
+    }
+    const uint32_t EFlags = g_CTX->ReconstructCompactedEFLAGS(g_Thread, true, Ctx->X, Ctx->Cpsr);
+    g_CTX->SetFlagsFromCompactedEFLAGS(g_Thread, EFlags);
+
+    const uint64_t FaultAddr = Rec->NumberParameters > 1 ? Rec->ExceptionInformation[1] : ~0ULL;
+    DbgPrint("[FEX-FAULT] guest AV: RIP=%p (expect %p) RAX=0x%llx (expect 0x%llx) fault-addr=%p\n", (void*)State.rip,
+             (void*)(g_GuestRIPBase + GuestFaultOffset), (unsigned long long)State.gregs[FEXCore::X86State::REG_RAX],
+             (unsigned long long)GuestFaultPointRAX, (void*)FaultAddr);
+
+    g_GuestFaultsHandled++;
+    State.rip = g_GuestRIPBase + GuestRecoveryOffset;
+    Ctx->Pc = Config.AbsoluteLoopTopAddressFillSRA;
+    Ctx->X1 = 0; // ENTRY_FILL_SRA_SINGLE_INST_REG (TMP2=x1): zero = normal block execution
+    return EXCEPTION_CONTINUE_EXECUTION;
+  }
   DbgPrint("[FEX-VEH] code=%08lx addr=%p info0=%p info1=%p\n", Rec->ExceptionCode, Rec->ExceptionAddress,
            (void*)(Rec->NumberParameters > 0 ? Rec->ExceptionInformation[0] : ~0ULL),
            (void*)(Rec->NumberParameters > 1 ? Rec->ExceptionInformation[1] : ~0ULL));
@@ -92,15 +150,6 @@ LONG WINAPI ProbeVeh(EXCEPTION_POINTERS* Info) {
   }
   return EXCEPTION_CONTINUE_SEARCH;
 }
-
-constexpr uint64_t GuestExpected = 0x31; // 42 + 7
-
-// Hand-assembled x86-64: mov rax,0x2A ; add rax,7 ; hlt
-const uint8_t GuestBlob[] = {
-  0x48, 0xC7, 0xC0, 0x2A, 0x00, 0x00, 0x00, // mov rax, 0x2A
-  0x48, 0x83, 0xC0, 0x07,                   // add rax, 7
-  0xF4,                                     // hlt
-};
 
 // 64-bit long-mode code segment (GDT index 6<<3 == DEFAULT_USER_CS on x86-64).
 constexpr size_t DefaultCS = FEXCore::Core::CPUState::DEFAULT_USER_CS;
@@ -154,6 +203,11 @@ extern "C" int main(int /*argc*/, char** /*argv*/) {
 
   auto Thread = CTX->CreateThread(GuestRIP, GuestRSP);
 
+  g_CTX = CTX.get();
+  g_Thread = Thread;
+  g_SignalDelegator = SignalDelegation.get();
+  g_GuestRIPBase = GuestRIP;
+
   // 64-bit long-mode GDT/segment setup (mirrors FEXOfflineCompiler).
   auto Frame = Thread->CurrentFrame;
   Frame->State.segment_arrays[FEXCore::Core::CPUState::SEGMENT_ARRAY_INDEX_GDT] = &gdt[0];
@@ -173,9 +227,9 @@ extern "C" int main(int /*argc*/, char** /*argv*/) {
   CTX->ExecuteThread(Thread);
 
   const uint64_t GuestRAX = Frame->State.gregs[FEXCore::X86State::REG_RAX];
-  const bool Pass = (GuestRAX == GuestExpected);
-  DbgPrint("[FEX-HELLO] guest RAX = 0x%llx (expected 0x%llx) (%s)\n",
-           (unsigned long long)GuestRAX, (unsigned long long)GuestExpected, Pass ? "PASS" : "FAIL");
+  const bool Pass = (GuestRAX == GuestExpected) && (g_GuestFaultsHandled == 1);
+  DbgPrint("[FEX-HELLO] guest RAX = 0x%llx (expected 0x%llx), guest faults round-tripped = %d (expected 1) (%s)\n",
+           (unsigned long long)GuestRAX, (unsigned long long)GuestExpected, g_GuestFaultsHandled, Pass ? "PASS" : "FAIL");
 
   CTX->DestroyThread(Thread);
   DbgPrint("[FEX-HELLO] done\n");

@@ -413,9 +413,19 @@ harness exe driving the FEXCore Context API directly (`CreateNewContext` →
 exit (BOP/HLT), verify computed result over serial. No syscalls, no wow64.
 Flushes: thread/TEB integration, below-2GB alloc, any missing ntdll imports.
 
-**Rung 3 — guest fault round-trip.** Guest blob AVs; our dispatch hook (rung 0
-machinery) catches, calls into FEX's `BTCpuResetToConsistentState`-equivalent path,
-guest handler runs. Proves SMC/TSO/guest-SEH viability.
+**Rung 3 — guest fault round-trip. COMPLETE (2026-07-09).** Guest blob AVs
+(`mov [0], rax` mid-computation); the harness VEH catches the host AV with PC in
+the JIT code buffer and replays wow64fex's `BTCpuResetToConsistentState` recipe
+(`ReconstructThreadState`: `RestoreRIPFromHostPC` + SRA GPR/FPR spill via
+`SignalDelegator::GetConfig()` mappings + `ReconstructCompactedEFLAGS`), then
+redirects guest RIP to a recovery routine and resumes at
+`Config.AbsoluteLoopTopAddressFillSRA` (with X1/`ENTRY_FILL_SRA_SINGLE_INST_REG`
+zeroed). On-box result: reconstructed guest RIP and RAX byte-exact at the fault
+point (`RIP=blob+0xB, RAX=0x31`), recovery executed, `guest RAX = 0x99 PASS`,
+clean exit. **OS milestone proven en passant:** vibeos arm64 user exception
+dispatch round-trips a *modified* CONTEXT — `KiUserExceptionDispatcher` → VEH →
+`EXCEPTION_CONTINUE_EXECUTION` → `NtContinue` restores Pc/X-regs, so guest-SEH /
+SMC viability holds. All in `tools/fex/hello-compute/Main.cpp`.
 
 **Rung 4 — the BTCpu boundary + ONE thunk ("hello world").** Author minimal
 `wow64.dll`-side host: load libwow64fex.dll by contract, implement
