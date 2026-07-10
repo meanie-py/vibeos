@@ -19,21 +19,57 @@ ULONG
 WINAPI
 DbgPrint(_In_z_ _Printf_format_string_ PCSTR Format, ...);
 
+LONG
+WINAPI
+NtTerminateProcess(_In_ HANDLE ProcessHandle, _In_ LONG ExitStatus);
+
+/*
+ * Phase-B probe services (wow64probe.exe / docs/engineering/wow64-plan.md).
+ * Magic service numbers far above any real syscall id: ECHO proves 32-bit
+ * guest-stack arguments marshal through the CPU layer and a 64-bit result
+ * flows back into guest EAX; VERDICT receives that result back FROM the
+ * guest, proving the full round-trip, then ends the guest process (the only
+ * way out of BTCpuSimulate). Real Nt* thunks are Phase C/D.
+ */
+#define WOW64B_SVC_ECHO      0xF00Du
+#define WOW64B_SVC_VERDICT   0xD00Eu
+#define WOW64B_ECHO_MAGIC    0x5CA11EDu
+
 /*
  * Wow64SystemServiceEx — the syscall thunk dispatcher. The CPU layer traps a
  * guest `syscall`/BOP, stores the guest context, and calls here with the
  * 32-bit service number and a pointer to the 32-bit argument array (guest
- * stack). Phase B populates a thunk table; until then, report and fail loud
- * (STATUS_INVALID_SYSTEM_SERVICE) so a premature guest syscall is visible on
- * serial instead of silently returning success.
+ * stack). Unknown services report and fail loud (STATUS_INVALID_SYSTEM_
+ * SERVICE) so a premature guest syscall is visible on serial instead of
+ * silently returning success.
  */
 ULONG
 WINAPI
 Wow64SystemServiceEx(ULONG ServiceNumber, PULONG Arguments)
 {
-    DbgPrint("[WOW64] Wow64SystemServiceEx: service 0x%lx args %p — no thunk table yet (Phase B)\n",
-             ServiceNumber, Arguments);
-    return (ULONG)0xC000001CL; /* STATUS_INVALID_SYSTEM_SERVICE */
+    switch (ServiceNumber)
+    {
+        case WOW64B_SVC_ECHO:
+            DbgPrint("[FEX-WOW64B] ECHO service: args %p = %08lx %08lx %08lx\n",
+                     Arguments, Arguments[0], Arguments[1], Arguments[2]);
+            return WOW64B_ECHO_MAGIC;
+
+        case WOW64B_SVC_VERDICT:
+            if (Arguments[0] == WOW64B_ECHO_MAGIC)
+            {
+                DbgPrint("[FEX-WOW64B] guest syscall round-trip PASS (echo magic returned by guest)\n");
+                NtTerminateProcess(GetCurrentProcess(), 0x600D);
+            }
+            DbgPrint("[FEX-WOW64B] guest syscall round-trip FAIL (guest passed %08lx, want %08x)\n",
+                     Arguments[0], WOW64B_ECHO_MAGIC);
+            NtTerminateProcess(GetCurrentProcess(), 0xBAD);
+            return 0; /* unreachable */
+
+        default:
+            DbgPrint("[WOW64] Wow64SystemServiceEx: service 0x%lx args %p — no thunk table yet (Phase B)\n",
+                     ServiceNumber, Arguments);
+            return (ULONG)0xC000001CL; /* STATUS_INVALID_SYSTEM_SERVICE */
+    }
 }
 
 /*

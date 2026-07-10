@@ -1,11 +1,14 @@
 # WOW64 on vibeos — running x86 binaries on arm64 (FEX) and x64 (native)
 
-Status: **Phase A COMPLETE on-box** (2026-07-09): `libwow64fex.dll` fully
-resolves (146 ntdll imports + 2 wow64.dll imports) and loads in a vibeos arm64
-process — `[FEX-WOW64A] libwow64fex.dll loaded, BTCpuGetBopCode=... (PASS)`.
-Delivered: arm64-gated ntdll exports (synch family via rtl-sync cabi + the
-new-API shims in `ntdll-rust/src/rtl/wow64shim.rs`) and the `dll/win32/wow64`
-skeleton. Next: Phase B. Owner: fex-arm lane.
+Status: **Phase B COMPLETE on-box** (2026-07-09): wow64probe drives the real
+`libwow64fex.dll` through the whole BTCpu contract on vibeos arm64 — a 32-bit
+x86 guest blob JITs, calls through the BOP bridge, and its syscall marshals
+into OUR wow64.dll's `Wow64SystemServiceEx` and back:
+`[FEX-WOW64B] guest syscall round-trip PASS`, exit 0x600D. The overcommit
+AV was serviced live by `BTCpuResetToConsistentState`+`NtContinue` mid-run.
+(Phase A, 2026-07-09 earlier: dll loads, 146 ntdll imports resolve, synch
+family + `wow64shim.rs` + `dll/win32/wow64` skeleton.) Next: Phase C.
+Owner: fex-arm lane.
 Predecessor: `fex-bringup-plan.md` (rungs 0–3 complete; rung-4 *mechanism*
 proven in-harness — this doc IS the real rung 4+ execution plan).
 
@@ -59,7 +62,7 @@ ordinal tables byte-identical); new APIs in Rust
 `STATUS_INVALID_SYSTEM_SERVICE` until the Phase-B thunk table);
 `libwow64fex.dll` + `wow64.dll` stage via mkramdisk under `VIBEOS_FEX=1`.
 
-**Phase B — wow64.dll skeleton + wow64probe. IN PROGRESS (2026-07-09).**
+**Phase B — wow64.dll skeleton + wow64probe. COMPLETE (2026-07-09).**
 Author minimal `dll/wow64/`
 (ours): `Wow64SystemServiceEx` with a hand thunk table (`NtWriteFile`→serial,
 `NtTerminateProcess`, `NtQueryVirtualMemory`), `Wow64ProcessPendingCrossProcessItems`
@@ -75,21 +78,64 @@ Progress + audited `BTCpuProcessInit` dependency list (from WOW64/Module.cpp):
 - [x] `LdrSystemDllInitBlock` DATA export added to arm64 ntdll (zeroed
   96-byte block in `wow64shim.rs`; FEX reads `ntdll_handle` at offset 72 —
   GetProcAddress would have returned NULL and wow64fex derefs it unchecked).
-  wow64probe must poke `ntdll_handle` = mapped i386 ntdll base BEFORE
+  wow64probe pokes `ntdll_handle` = mapped i386 ntdll base BEFORE
   `BTCpuProcessInit`.
-- [ ] BOP page: `BTCpuProcessInit` allocates the `int 2e` bridge with
-  `NtAllocateVirtualMemory(.., ZeroBits=(1U<<31)-1, ..)` — the "max address"
-  ZeroBits form. Our kernel's arm64 ZeroBits handling is UNVERIFIED
-  (readiness matrix); if the alloc lands ≥2GB or fails, fix the kernel path.
-- [ ] `FEX::Config::LoadConfig` + `Logging::Init` run before context creation —
-  verify tolerance of missing config files/keys on vibeos.
-- [ ] CPU area: probe allocates `WOW64_CPURESERVED{Machine=IMAGE_FILE_MACHINE_
-  I386}` + WOW64_CONTEXT into `TlsSlots[1]` before `BTCpuThreadInit`
-  (consumed via our `RtlWow64GetCurrentCpuArea`).
-- [ ] Exit strategy: `BTCpuSimulate` never returns; the probe's
-  `Wow64SystemServiceEx` prints the verdict and calls `NtTerminateProcess`.
-- [ ] `HandleImageMap` runs over the probe's own (arm64) main image + the i386
-  ntdll — watch for PE-machine assumptions.
+- [x] BOP page ZeroBits: kernel gap CONFIRMED and FIXED (2026-07-09) — our
+  `NtAllocateVirtualMemory` (`ntoskrnl-rust/src/ARM3/virtual.rs`) rejected any
+  ZeroBits > MI_MAX_ZERO_BITS. Added the 64-bit NT mask semantics: ZeroBits
+  > 32 is an address MASK (alloc must land at or below it); FEX passes
+  (1<<31)-1 for the `int 2e` bridge. wow64probe re-verifies at runtime (its
+  own guest code/stack use the same call shape).
+- [x] WOW64INFO: `BTCpuProcessInit` writes `CpuFlags = WOW64_CPUFLAGS_SOFTWARE`
+  through `TEB->TlsSlots[WOW64_TLS_WOW64INFO=10]` — probe installs a
+  `WOW64INFO{NativeSystemPageSize, NativeMachineType=AA64, Emulated=014C}`
+  there before ProcessInit (real bootstrap: lives after the PEB32, Phase C).
+- [x] CPU area: probe allocates `WOW64_CPURESERVED{Machine=I386}` + 16-aligned
+  WOW64_CONTEXT into `TlsSlots[1]` before `BTCpuThreadInit`; first
+  `BTCpuSimulate` flushes it into the JIT via our `RtlWow64GetCurrentCpuArea`
+  (the WOW_CPU_AREA_DIRTY control-word bit ThreadInit sets). Guest entry
+  context: SegCs=0x23 (GDT index 4 == wow64fex `DefaultWow64CS`), SegFs=0x53,
+  EFlags=0x202, XSave FCW=0x27F MXCSR=0x1F80.
+- [x] Exit strategy: wow64.dll's `Wow64SystemServiceEx` grew Phase-B probe
+  services — ECHO (0xF00D: guest-stack args in, magic 0x5CA11ED back in guest
+  EAX) and VERDICT (0xD00E: guest returns the magic, host prints
+  `[FEX-WOW64B] ... PASS` and `NtTerminateProcess(0x600D)`). BTCpuSimulate
+  never returns by design.
+- [x] Guest FS base: `GetWowTEB` reads the LONG at TEB+0x180c (WowTebOffset)
+  and adds it to the TEB — zero on our TEB, so guest FS base = TEB64. Fine
+  while the probe blob avoids FS; real TEB32 is Phase C.
+- [x] `FEX::Config::LoadConfig` + `Logging::Init`: TWO landmines found+fixed.
+  (1) The dll's mini-CRT imports `_errno`/`atan2`/`tan` from ntdll — Wine/Win10
+  ntdll exports them, ours didn't, and OUR LOADER POISON-SNAPS missing imports
+  to `0xffbadd11` instead of failing the load (`ldrpe.rs:849`), so the first
+  errno write in LoadConfig's `access()` became a PC-alignment crash at
+  PC=0xFFBADD11 (X16=poison → it's a `br x16` through the import veneer;
+  diagnose by diffing `llvm-objdump -p` imports vs our exports). Fixed with
+  arch-gated msvcrt forwarders in ntdll.spec. (2) `Logging::Init` formats
+  `getenv("LOCALAPPDATA")` unchecked (NULL in winlogon-spawned processes) —
+  probe defaults the env var; a real session env should provide it (Phase C).
+- [x] i386 ntdll mapping: **`NtCreateSection(SEC_IMAGE)` of an i386 PE WORKS
+  on the arm64 kernel** — mapped at 0x7E000000 size 0x2FF000, no fallback
+  needed. Big Phase-C readiness datum. Staged from build-i386 to
+  `\reactos\syswow64\ntdll.dll` (mkramdisk, VIBEOS_FEX=1).
+- [x] `HandleImageMap` ran over the arm64 main image + the i386 ntdll — no
+  PE-machine assumptions bit.
+- [x] Exception routing: the LookupCache overcommit AV inside BTCpuSimulate is
+  serviced by the dll's `BTCpuResetToConsistentState` (commits the page,
+  `NtContinue`s itself). The probe's VEH routes every exception there first —
+  in Phase C this is wow64.dll/ntdll's `Wow64PrepareForException` job.
+- [x] Build-infra fix en route: `add_cargo_module` DEPENDS now globs `*.spec`
+  (an ntdll.spec edit shipped a stale ntdll.dll — cargo rerun-if-changed
+  tracked it but ninja never re-invoked cargo; sdk/cmake/gcc.cmake).
+- [x] Kernel fix en route: `NtAllocateVirtualMemory` 64-bit ZeroBits-mask
+  semantics (`ARM3/virtual.rs`) — ZeroBits > 32 is a max-address mask.
+
+Harness plumbing (all landed 2026-07-09): `wow64probe.exe` builds via
+`tools/fex/build-hello-compute.sh` (second target in the hello-compute
+CMake, native arm64, NO FEXCore link — the dll's export surface is the
+interface under test); winlogon spawns it after fexprobe when staged
+(`TryStartWow64Probe`); verdict = serial `[FEX-WOW64B]` lines + exit code
+0x600D.
 
 **Phase C — real WoW64 process bootstrap (the OS work).**
 - Kernel: accept i386 PE on arm64/amd64 host (`PspCreateProcess` machine

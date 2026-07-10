@@ -27,8 +27,8 @@ cmake -S "$HARNESS_SRC" -B "$HARNESS_BUILD" -G Ninja \
     -DFEX_SRC="$FEX_SRC" \
     -DFEX_BUILD="$FEX_BUILD"
 
-ninja -C "$HARNESS_BUILD" fexprobe
+ninja -C "$HARNESS_BUILD" fexprobe wow64probe
 
 echo
 echo "Built:"
-ls -la "$HARNESS_BUILD"/fexprobe.exe
+ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe

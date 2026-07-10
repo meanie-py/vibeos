@@ -77,3 +77,14 @@ target_link_options(fexprobe PRIVATE
   -static -static-libgcc -static-libstdc++
   -Wl,--file-alignment=4096,/mllvm:-align-loops=1
   -Wl,--subsystem,windows -Wl,-e,mainCRTStartup)
+
+# wow64probe — WOW64 Phase B harness (docs/engineering/wow64-plan.md). Drives
+# the PREBUILT libwow64fex.dll through its BTCpu* contract; deliberately does
+# NOT link FEXCore (the dll's exports are the interface under test). Same
+# GUI-subsystem/serial-only conventions as fexprobe.
+add_executable(wow64probe Wow64Probe.cpp)
+target_compile_options(wow64probe PRIVATE -march=armv8-a)
+target_link_libraries(wow64probe PRIVATE -lntdll)
+target_link_options(wow64probe PRIVATE
+  -static -static-libgcc -static-libstdc++
+  -Wl,--subsystem,windows -Wl,-e,mainCRTStartup)

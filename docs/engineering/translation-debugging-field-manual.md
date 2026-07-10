@@ -4026,3 +4026,37 @@ ordinals; diff the ordinal of any post-insertion symbol vs master.
 (`@ …`) spec it renumbers everything downstream. Treat any ungate/insert in a
 widely-imported core DLL's spec (`kernel32`, `ntdll`, `user32`, `gdi32`) as an
 ABI change and gate/pin it. Additive-by-name ≠ additive-by-ordinal.
+
+### 9.44 (2026-07-09) A DLL "loads fine" but crashes at PC=0xFFBADD11 — our loader POISON-SNAPS missing imports instead of failing the load
+
+**Symptom.** `LoadLibrary` + `GetProcAddress` on a foreign DLL (here:
+`libwow64fex.dll`, wow64 Phase B) succeed, so the import surface looks
+complete — then the first *call* to an unresolved import dies with
+`STATUS_ILLEGAL_INSTRUCTION`/PC-alignment fault at **PC=0x00000000FFBADD11**,
+X16 also `0xffbadd11` (arm64: the crash is a `br x16` through the import
+veneer; on x86 you'd see a call to the same poison).
+
+**Root.** Our ntdll loader intentionally snaps by-name import failures
+NON-FATALLY: the IAT slot gets `0xffbadd11` and the load proceeds
+(`sdk/lib/rust/ntdll-rust/src/ldr/ldrpe.rs:849`, inherited from ReactOS
+`dll/ntdll/ldr/ldrpe.c:1150`). Great for booting a system with stub gaps,
+terrible for diagnosing a new vendor DLL: "loads + resolves" proves nothing
+about individual imports.
+
+**Diagnose (one command).** Diff the DLL's imports against the exporter:
+`llvm-objdump -p <dll> | <extract ntdll-imported names>` vs
+`llvm-objdump -p build-<arch>/dll/ntdll/ntdll.dll` export list, `comm -23`.
+Phase B's gap was `_errno`, `atan2`, `tan` — CRT helpers Wine/Win10 ntdll
+exports that our 0x502 baseline never had.
+
+**Fix pattern.** Arch-gated spec **forwarders to msvcrt** cost zero code:
+`@ cdecl -arch=arm64 _errno() msvcrt._errno` (etc.). §9.43 ordinal discipline
+applies — arch-gating keeps other arches' ordinal tables byte-identical.
+
+**Trap within the trap.** ntdll ships via the CARGO link (`add_cargo_module`),
+and its ninja DEPENDS didn't include `*.spec` — the spec edit regenerated the
+cmake-side implib def but ninja never re-invoked cargo, silently shipping a
+stale ntdll.dll ("forwarders added, still crashes"). Fixed by adding the spec
+globs to `_REACTOS_CARGO_KERN_SRCS` (sdk/cmake/gcc.cmake); verify with
+`llvm-readobj --coff-exports build-arm64/dll/ntdll/ntdll.dll | grep ForwardedTo`
+before booting.

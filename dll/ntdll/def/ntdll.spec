@@ -1289,6 +1289,13 @@
 @ stdcall -arch=arm64 RtlWow64GetThreadContext(ptr ptr)
 @ stdcall -arch=arm64 RtlWow64SetThreadContext(ptr ptr)
 @ stdcall -arch=arm64 RtlWow64SuspendThread(ptr ptr)
+# Wine/Win10 ntdll exports these CRT helpers; libwow64fex's mini-CRT imports
+# them (wow64-plan Phase B — our loader poison-snaps missing imports to
+# 0xffbadd11, so absence means a PC-alignment crash on first errno write, not
+# a load failure). Forward to msvcrt's real per-thread-errno CRT.
+@ cdecl -arch=arm64 _errno() msvcrt._errno
+@ cdecl -arch=arm64 atan2(double double) msvcrt.atan2
+@ cdecl -arch=arm64 tan(double) msvcrt.tan
 @ stdcall RtlWow64EnableFsRedirection(long)
 @ stdcall RtlWow64EnableFsRedirectionEx(long ptr)
 @ stdcall -stub -version=0x600+ -arch=x86_64 RtlWow64GetThreadContext(ptr ptr)

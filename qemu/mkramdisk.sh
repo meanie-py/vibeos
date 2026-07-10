@@ -422,6 +422,19 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             echo "[*] VIBEOS_FEX=1 — staging libwow64fex.dll into system32"
             mcopy -o -i "$RAMDISK_IMG" "$WOW64FEX" ::/reactos/system32/libwow64fex.dll
         fi
+        # WOW64 Phase B (docs/engineering/wow64-plan.md): wow64probe.exe drives
+        # the BTCpu contract; it maps the i386 ntdll staged into syswow64
+        # (Phase C's SysWOW64 set starts here).
+        WOW64PROBE="${VIBEOS_WOW64PROBE_EXE:-$PROJECT_DIR/build-fex-hello/wow64probe.exe}"
+        NTDLL32="${VIBEOS_NTDLL32:-$PROJECT_DIR/build-i386/dll/ntdll/ntdll.dll}"
+        if [ -f "$WOW64PROBE" ] && [ -f "$NTDLL32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging wow64probe.exe + syswow64/ntdll.dll"
+            mcopy -o -i "$RAMDISK_IMG" "$WOW64PROBE" ::/reactos/system32/wow64probe.exe
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$NTDLL32" ::/reactos/syswow64/ntdll.dll
+        else
+            echo "[!] VIBEOS_FEX=1: wow64probe not staged ($WOW64PROBE / $NTDLL32 missing) — Phase B probe skipped"
+        fi
     else
         echo "[!] VIBEOS_FEX=1 but artifacts missing ($FEXPROBE / $UCRTBASE)."
         echo "[!]   Build: tools/fex/build-fex.sh && tools/fex/build-hello-compute.sh; ninja ucrtbase"

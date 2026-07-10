@@ -650,6 +650,60 @@ unsafe fn TryStartFexProbe() {
     }
 }
 
+/* WOW64 Phase B probe (docs/engineering/wow64-plan.md): spawn wow64probe.exe
+ * if staged — same gate-on-file-existence pattern as fexprobe above. It drives
+ * the real libwow64fex.dll BTCpu contract; verdict lands on serial as
+ * [FEX-WOW64B] lines and exit code 0x600D on PASS. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartWow64Probe() {
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\system32\\wow64probe.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 15] = wstr_arr!("wow64probe.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] wow64probe.exe created (PID %lu) - waiting\n\0".as_ptr() as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 30_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] wow64probe.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(wow64probe.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn WinMain(
     hInstance: HINSTANCE,
@@ -1203,6 +1257,9 @@ pub unsafe extern "system" fn WinMain(
         /* FEX rung-2 hello-compute probe (no-op unless fexprobe.exe staged) —
          * before the cmd.exe INFINITE wait so its [FEX-HELLO] serial lands. */
         TryStartFexProbe();
+
+        /* WOW64 Phase B probe (no-op unless wow64probe.exe staged). */
+        TryStartWow64Probe();
 
         /* DOOM (opt-in, VIBEOS_DOOM=1): spawned LAST among GUI apps for
          * foreground focus, and BEFORE the cmd.exe INFINITE wait below. */
