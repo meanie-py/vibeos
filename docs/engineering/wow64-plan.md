@@ -59,7 +59,8 @@ ordinal tables byte-identical); new APIs in Rust
 `STATUS_INVALID_SYSTEM_SERVICE` until the Phase-B thunk table);
 `libwow64fex.dll` + `wow64.dll` stage via mkramdisk under `VIBEOS_FEX=1`.
 
-**Phase B — wow64.dll skeleton + wow64probe.** Author minimal `dll/wow64/`
+**Phase B — wow64.dll skeleton + wow64probe. IN PROGRESS (2026-07-09).**
+Author minimal `dll/wow64/`
 (ours): `Wow64SystemServiceEx` with a hand thunk table (`NtWriteFile`→serial,
 `NtTerminateProcess`, `NtQueryVirtualMemory`), `Wow64ProcessPendingCrossProcessItems`
 stub. A `wow64probe.exe` harness (native arm64) that: allocates the CPU area +
@@ -69,6 +70,26 @@ calls `BTCpuProcessInit`/`BTCpuThreadInit`, points a <4GB x86 blob at
 `BTCpuGetBopCode`'s bridge for its syscall, `BTCpuSimulate`s it, and verifies
 the thunked syscall round-trips. This is fexprobe's methodology applied one
 layer up — everything stays out-of-band until it works.
+
+Progress + audited `BTCpuProcessInit` dependency list (from WOW64/Module.cpp):
+- [x] `LdrSystemDllInitBlock` DATA export added to arm64 ntdll (zeroed
+  96-byte block in `wow64shim.rs`; FEX reads `ntdll_handle` at offset 72 —
+  GetProcAddress would have returned NULL and wow64fex derefs it unchecked).
+  wow64probe must poke `ntdll_handle` = mapped i386 ntdll base BEFORE
+  `BTCpuProcessInit`.
+- [ ] BOP page: `BTCpuProcessInit` allocates the `int 2e` bridge with
+  `NtAllocateVirtualMemory(.., ZeroBits=(1U<<31)-1, ..)` — the "max address"
+  ZeroBits form. Our kernel's arm64 ZeroBits handling is UNVERIFIED
+  (readiness matrix); if the alloc lands ≥2GB or fails, fix the kernel path.
+- [ ] `FEX::Config::LoadConfig` + `Logging::Init` run before context creation —
+  verify tolerance of missing config files/keys on vibeos.
+- [ ] CPU area: probe allocates `WOW64_CPURESERVED{Machine=IMAGE_FILE_MACHINE_
+  I386}` + WOW64_CONTEXT into `TlsSlots[1]` before `BTCpuThreadInit`
+  (consumed via our `RtlWow64GetCurrentCpuArea`).
+- [ ] Exit strategy: `BTCpuSimulate` never returns; the probe's
+  `Wow64SystemServiceEx` prints the verdict and calls `NtTerminateProcess`.
+- [ ] `HandleImageMap` runs over the probe's own (arm64) main image + the i386
+  ntdll — watch for PE-machine assumptions.
 
 **Phase C — real WoW64 process bootstrap (the OS work).**
 - Kernel: accept i386 PE on arm64/amd64 host (`PspCreateProcess` machine

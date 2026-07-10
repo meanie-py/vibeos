@@ -188,6 +188,43 @@ pub unsafe extern "system" fn RtlWow64GetCurrentCpuArea(
     STATUS_SUCCESS
 }
 
+/// `LdrSystemDllInitBlock` — the Win10 loader's system-DLL info block, a DATA
+/// export wow64fex reads `ntdll_handle` (offset 72: the 32-bit ntdll base)
+/// from during `BTCpuProcessInit`. Layout per FEX's winternl.h: ULONG version
+/// + ULONG[3] + 9×ULONG64 (96 bytes). Zero until the WoW64 process bootstrap
+/// (wow64probe in Phase B, the real 64-bit loader in Phase C) populates it.
+#[repr(C, align(8))]
+pub struct SYSTEM_DLL_INIT_BLOCK {
+    pub version: u32,
+    pub unknown1: [u32; 3],
+    pub unknown2: u64,
+    pub pLdrInitializeThunk: u64,
+    pub pKiUserExceptionDispatcher: u64,
+    pub pKiUserApcDispatcher: u64,
+    pub pKiUserCallbackDispatcher: u64,
+    pub pRtlUserThreadStart: u64,
+    pub pRtlpQueryProcessDebugInformationRemote: u64,
+    pub ntdll_handle: u64,
+    pub pLdrSystemDllInitBlock: u64,
+    pub pRtlpFreezeTimeBias: u64,
+}
+
+#[no_mangle]
+pub static mut LdrSystemDllInitBlock: SYSTEM_DLL_INIT_BLOCK = SYSTEM_DLL_INIT_BLOCK {
+    version: 0,
+    unknown1: [0; 3],
+    unknown2: 0,
+    pLdrInitializeThunk: 0,
+    pKiUserExceptionDispatcher: 0,
+    pKiUserApcDispatcher: 0,
+    pKiUserCallbackDispatcher: 0,
+    pRtlUserThreadStart: 0,
+    pRtlpQueryProcessDebugInformationRemote: 0,
+    ntdll_handle: 0,
+    pLdrSystemDllInitBlock: 0,
+    pRtlpFreezeTimeBias: 0,
+};
+
 /// Cross-thread WOW64 context access needs kernel support (the
 /// `ThreadWow64Context` info class) — Phase C. Loud stubs until then; the
 /// single-threaded bring-up path never hits them.

@@ -153,6 +153,7 @@
 @ stdcall LdrFindResource_U(ptr ptr long ptr)
 @ stdcall LdrFlushAlternateResourceModules()
 @ stdcall -arch=arm64 LdrGetDllFullName(ptr ptr)
+@ extern -arch=arm64 LdrSystemDllInitBlock
 @ stdcall LdrGetDllHandle(wstr ptr ptr ptr)
 @ stdcall LdrGetDllHandleEx(long wstr ptr ptr ptr)
 @ stdcall -stub -version=0x600+ LdrGetFailureData()
