@@ -1044,6 +1044,16 @@ unsafe fn UserpLogHardError(
     TextStringU: PUNICODE_STRING,
     CaptionStringU: PUNICODE_STRING,
 ) {
+    // Event-log RPC reports transport failures by raising an exception.  On
+    // arm64 our DUMMY_PSEH build cannot catch that best-effort logging failure,
+    // so an unavailable EventLog service would kill the critical csrss process
+    // while it is trying to display an unrelated hard error.  Preserve the
+    // actual hard-error handling and omit only the optional log copy.
+    #[cfg(target_arch = "aarch64")]
+    return;
+
+    #[cfg(not(target_arch = "aarch64"))]
+    {
     let mut Status: NTSTATUS;
     let mut hEventLog: HANDLE = core::ptr::null_mut();
     let mut UNCServerNameU = _UNICODE_STRING {
@@ -1079,6 +1089,7 @@ unsafe fn UserpLogHardError(
     );
 
     ElfDeregisterEventSource(hEventLog);
+    }
 }
 
 #[no_mangle]

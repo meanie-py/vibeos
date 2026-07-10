@@ -181,6 +181,67 @@ Cosmetic: tripwire.rs prints `unknown tripwire token (ignored)` for KD=COM2 —
 harmless (kd64 reads it via `VibeTripwireHasToken` substring match), but the
 parser should learn the token to stop the scary print.
 
+### Second pass (2026-07-10) — armed boot made ROBUST; live attach still blocked
+
+Chased the "boot wedges / error 56" pair. Findings + fixes landed:
+
+1. **`KdpSendWaitContinue` re-sent the state-change packet on EVERY serviced
+   manipulate request** (kd64 kdapi.rs). The C (`SendPacket:` label) sends the
+   state change ONCE, then an inner loop receives+dispatches; only
+   `KdPacketNeedsResend` re-sends. The prior Rust put the dispatch INSIDE the
+   send loop → every serviced API minted a fresh packet id and re-sent the
+   state change → WinDbg saw a new state change per request, desynced, and its
+   `DbgKdReadVirtualMemory` for the data-list timed out = **exactly the
+   `error 0n56`**. Fixed: restored the inner processing loop.
+
+2. **No-debugger armed boot no longer wedges/crashes → reaches desktop.**
+   - `KdSendPacket` fast-bails after ONE attempt until a debugger has ever
+     acked (`KdpWireEverAcked`), instead of 20×slow-CpGetByte per packet across
+     ~50 boot modules (minutes of silence → smoke hang-abort). Bounded
+     `KdpWireStallCycles` (240) handles an attached-then-vanished debugger.
+   - **Root cause of the armed-boot BUGCHECK 0x1E: `KdDebuggerNotPresent`
+     defaults to 0 ("present", optimistic), so the very first `DebugService2`
+     load-symbols runs the full `KdpSymbol`/`KdpReport` heavy machinery
+     (`KdEnterDebugger`→`KeFreezeExecution`, `KiSave/RestoreProcessorControlState`,
+     a state-change send) on a wire with nobody listening.** That heavy path
+     corrupts processor/stack state such that the `DebugService2` `ret` faults
+     with `0xC0000005` (symbolicated: fault AT `DebugService2+6`), cascading into
+     a recursive AV↔breakpoint flood ("crash reporter crashes"). Fix:
+     `KdpWireTransportArm` now sets `KdDebuggerNotPresent = 1` on arm, so every
+     heavy KD path self-skips its `KdDebuggerNotPresent` guard until a real
+     debugger clears it (`KdpReceivePacketLeader` zeroes it on the first received
+     byte). This is Windows semantics (not-present until proven present) and is
+     what lets an armed no-debugger boot reach the desktop. **Verified: armed
+     `--tripwire "KD=COM2"` boot with wire backed but no kd → `[WIN32K] shell
+     ready` + `SwitchDesktop OK`, wire armed (W marker), no flood.**
+   - `KdpReportExceptionStateChange` returns FALSE (not-handled) when the send
+     bailed (`KdDebuggerNotPresent` latched) — a bailed exception must not be
+     reported "handled" (would resume at the faulting insn and re-fault forever).
+   - COM1 tee: DEBUG_IO print packets are also emitted to COM1 on the armed path
+     so the smoke marker channel survives. Tripwire parser learns `KD=COM2` (no
+     more scary `unknown token`).
+   - Also fixed a latent PRCB-cast bug in `KiSave/RestoreProcessorState`
+     (amd64 freeze path): used `KeGetCurrentPrcb() as *mut KPROCESSOR_STATE`
+     (scribbling the PRCB header) instead of `&Prcb->ProcessorState`.
+
+**STILL OPEN — live WinDbg attach does not complete.** The heavy `KdpReport`/
+`KdEnterDebugger` path (`KeFreezeExecution` + `KiSaveProcessorControlState`) is
+the SAME machinery a real break-in exercises, and it is what corrupts state (AV
+at `DebugService2+6`). `NotPresent=1` makes the boot safe by keeping that path
+dormant, but a connected WinDbg that triggers a break-in would re-enter it and
+hit the same corruption — so the target currently stays passive and kd shows
+`no_debuggee`. `KiSave/RestoreProcessorControlState` is a faithful match to the
+C (ruled out); the corruption is localized to the `KdEnterDebugger` →
+`KeFreezeExecution` freeze/IRQL path or the int-2Dh trap-frame⇄context round
+trip. Pinning it needs reliable live single-step of the `iret`→`ret` transition;
+`find-kbase` fails on the crashing armed boot and KVM page-fault noise made the
+raw-gdb captures unreliable this pass. **Next step:** break at
+`KeFreezeExecution`/`KdEnterDebugger` on an armed boot (pass the known kbase
+`0xfffff80000400000` to `find-kbase` explicitly so it doesn't rescan), single-
+step the owner-side freeze on UP, and diff CR3/GDTR/rsp across it. Repro recipe:
+`scratchpad/kd-attach.sh <tag>` (windows-host pipe) or
+`VIBEOS_QEMU_EXTRA="-fw_cfg name=opt/org.vibeos.tripwire,string=KD=COM2 -serial file:<com2>" qemu/start.sh amd64 --gdb`.
+
 ## Validation results (2026-07-08)
 
 - **amd64 — FULLY VALIDATED end-to-end.**

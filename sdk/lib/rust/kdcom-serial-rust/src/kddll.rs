@@ -24,6 +24,26 @@ extern "C" {
 // ---- file-scope preamble (translated) ----
 pub static mut CurrentPacketId: ULONG = INITIAL_PACKET_ID | SYNC_PACKET_ID;
 pub static mut RemotePacketId: ULONG = INITIAL_PACKET_ID;
+
+// vibeos robustness: true once a debugger has EVER acknowledged a packet on
+// this wire. Until then, KdSendPacket bails after its retry budget for ALL
+// packet types (including exception state changes, which upstream retries
+// forever for late-attach) — so a KD-armed boot with no debugger listening
+// still reaches the desktop instead of wedging on the first breakpoint. Late
+// attach still works: the next state change / print resyncs the wire.
+pub static mut KdpWireEverAcked: bool = false;
+
+// Bounded patience for the attached-then-vanished debugger: number of
+// consecutive ack-timeouts (each ≈ one CpGetByte wait, ~0.1-0.5s under TCG)
+// tolerated on a single packet once a debugger HAS been seen, before we
+// declare it gone (KdDebuggerNotPresent + drop KdpWireEverAcked so subsequent
+// packets fast-bail). Upstream retries forever here — with a CLI kd that gave
+// up, that wedged the boot permanently. ~240 ≈ 30-120s of real time; a live
+// debugger acks in microseconds, and a broken-in target waits in the RECEIVE
+// loop (not here), so slow human debugging never trips this.
+const KD_WIRE_MAX_STALL: u32 = 240;
+static mut KdpWireStallCycles: u32 = 0;
+
 #[cfg_attr(not(feature = "embedded"), no_mangle)]
 pub unsafe extern "system" fn KdpCalculateChecksum(
     Buffer: PVOID,
@@ -126,6 +146,7 @@ pub unsafe extern "system" fn KdReceivePacket(
                     if PacketType == PACKET_TYPE_KD_ACKNOWLEDGE &&
                         Packet.PacketId == (CurrentPacketId & !SYNC_PACKET_ID)
                     {
+                        KdpWireEverAcked = true;
                         CurrentPacketId ^= 1;
                         return KDP_PACKET_RECEIVED;
                     }
@@ -265,6 +286,16 @@ pub unsafe extern "system" fn KdSendPacket(
     }
 
     Retries = (*KdContext).KdpDefaultRetries;
+    // vibeos robustness: until a debugger has EVER acked on this wire, one
+    // attempt per packet is enough — a connected debugger acks the first send.
+    // The full retry budget (20 × a slow TCG CpGetByte timeout each) makes a
+    // no-debugger armed boot crawl through ExpLoadBootSymbols for minutes of
+    // total serial silence (~50 modules × 20 retries), tripping the smoke
+    // harness's silent-hang abort. Late attach still works: every subsequent
+    // packet is a fresh sync window, and there are many per boot.
+    if !KdpWireEverAcked && Retries > 1 {
+        Retries = 1;
+    }
 
     loop {
         Packet.PacketId = CurrentPacketId;
@@ -297,6 +328,7 @@ pub unsafe extern "system" fn KdSendPacket(
         );
 
         if KdStatus == KDP_PACKET_RECEIVED {
+            KdpWireStallCycles = 0;
             CurrentPacketId &= !SYNC_PACKET_ID;
             Retries = (*KdContext).KdpDefaultRetries;
             break;
@@ -307,25 +339,42 @@ pub unsafe extern "system" fn KdSendPacket(
 
             if Retries == 0 {
                 let MessageId = *((*MessageHeader).Buffer as PULONG);
-                match PacketType {
-                    PACKET_TYPE_KD_DEBUG_IO => {
-                        if MessageId != DbgKdPrintStringApi {
-                            continue;
+                // Upstream retries forever for exception state changes (and
+                // non-print DEBUG_IO / non-create FILE_IO) to support late
+                // attach — but if no debugger has EVER acked on this wire,
+                // that "wait for the debugger" is a boot wedge. Only honor the
+                // (now stall-bounded) retry semantics once a debugger has
+                // been seen.
+                if KdpWireEverAcked {
+                    KdpWireStallCycles = KdpWireStallCycles.wrapping_add(1);
+                    if KdpWireStallCycles < KD_WIRE_MAX_STALL {
+                        match PacketType {
+                            PACKET_TYPE_KD_DEBUG_IO => {
+                                if MessageId != DbgKdPrintStringApi {
+                                    continue;
+                                }
+                            }
+                            PACKET_TYPE_KD_STATE_CHANGE32 | ntkrnl_sys::constants::PACKET_TYPE_KD_STATE_CHANGE64 => {
+                                if MessageId != DbgKdLoadSymbolsStateChange {
+                                    continue;
+                                }
+                            }
+                            PACKET_TYPE_KD_FILE_IO => {
+                                if MessageId != DbgKdCreateFileApi {
+                                    continue;
+                                }
+                            }
+                            _ => {}
                         }
+                    } else {
+                        // Debugger was here but stopped acking for the whole
+                        // stall budget: declare it gone instead of wedging.
+                        KdpWireEverAcked = false;
                     }
-                    PACKET_TYPE_KD_STATE_CHANGE32 | ntkrnl_sys::constants::PACKET_TYPE_KD_STATE_CHANGE64 => {
-                        if MessageId != DbgKdLoadSymbolsStateChange {
-                            continue;
-                        }
-                    }
-                    PACKET_TYPE_KD_FILE_IO => {
-                        if MessageId != DbgKdCreateFileApi {
-                            continue;
-                        }
-                    }
-                    _ => {}
                 }
+                let _ = MessageId;
 
+                KdpWireStallCycles = 0;
                 KdDebuggerNotPresent = 1u8;
                 (*SharedUserData).KdDebuggerEnabled &= !0x00000002;
                 CurrentPacketId = INITIAL_PACKET_ID | SYNC_PACKET_ID;

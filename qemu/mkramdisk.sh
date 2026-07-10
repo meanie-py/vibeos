@@ -103,6 +103,9 @@ REQUIRED_FILES=(
     "$BUILD_DIR/base/applications/network/nettest/nettest.exe"
     "$BUILD_DIR/dll/win32/msvcrt/msvcrt.dll"
     "$BUILD_DIR/dll/win32/kernel32/kernel32_vista/kernel32_vista.dll"
+    # kernelbase.dll — minimal Vista-scoped synch surface; api-ms-win-core-synch
+    # -l1-2-0 redirects here (FEX rung 2). Forwards to kernel32_vista/ntdll.
+    "$BUILD_DIR/dll/win32/kernelbase/kernelbase.dll"
     "$BUILD_DIR/dll/ntdll/nt_0600/ntdll_vista.dll"
     "$BUILD_DIR/base/system/winlogon/winlogon.exe"
     "$BUILD_DIR/win32ss/win32k.sys"
@@ -270,6 +273,10 @@ RMC "$BUILD_DIR/dll/win32/mswsock/mswsock.dll"                ::/reactos/system3
 RMC "$BUILD_DIR/base/applications/network/nettest/nettest.exe" ::/reactos/system32/nettest.exe
 RMC "$BUILD_DIR/dll/win32/msvcrt/msvcrt.dll"                  ::/reactos/system32/msvcrt.dll
 RMC "$BUILD_DIR/dll/win32/kernel32/kernel32_vista/kernel32_vista.dll"  ::/reactos/system32/kernel32_vista.dll
+RMC "$BUILD_DIR/dll/win32/kernelbase/kernelbase.dll"          ::/reactos/system32/kernelbase.dll
+# wow64.dll — WOW64 host-layer skeleton (docs/engineering/wow64-plan.md);
+# libwow64fex.dll imports it, so it must stage wherever the FEX layer does.
+RMC "$BUILD_DIR/dll/win32/wow64/wow64.dll"                    ::/reactos/system32/wow64.dll
 RMC "$BUILD_DIR/dll/ntdll/nt_0600/ntdll_vista.dll"           ::/reactos/system32/ntdll_vista.dll
 RMC "$BUILD_DIR/base/system/winlogon/winlogon.exe"            ::/reactos/system32/winlogon.exe
 RMC "$BUILD_DIR/win32ss/win32k.sys"                           ::/reactos/system32/win32k.sys
@@ -405,6 +412,55 @@ if [ -n "$PAYLOAD_MANIFEST" ]; then
         echo "[*]   $(basename "$SRC") -> ::/$DEST"
         mcopy -o -i "$RAMDISK_IMG" "$SRC" "::/$DEST"
     done
+fi
+
+# --- FEX hello-compute probe (opt-in, VIBEOS_FEX=1) ------------------------
+# Rung-2 bring-up (docs/engineering/fex-bringup-plan.md): stage the native-arm64
+# FEXCore harness fexprobe.exe + its UCRT runtime. OFF by default (winlogon's
+# GetFileAttributesW check makes the launch a silent no-op without it).
+# Build fexprobe first: tools/fex/build-fex.sh && tools/fex/build-hello-compute.sh
+if [ "${VIBEOS_FEX:-0}" = "1" ]; then
+    FEXPROBE="${VIBEOS_FEX_EXE:-$PROJECT_DIR/build-fex-hello/fexprobe.exe}"
+    UCRTBASE="$BUILD_DIR/dll/win32/ucrtbase/ucrtbase.dll"
+    if [ -f "$FEXPROBE" ] && [ -f "$UCRTBASE" ]; then
+        echo "[*] VIBEOS_FEX=1 — staging fexprobe.exe + ucrtbase.dll into system32"
+        mcopy -o -i "$RAMDISK_IMG" "$FEXPROBE" ::/reactos/system32/fexprobe.exe
+        mcopy -o -i "$RAMDISK_IMG" "$UCRTBASE" ::/reactos/system32/ucrtbase.dll
+        # WOW64 Phase A (docs/engineering/wow64-plan.md): stage the FEX CPU
+        # layer so fexprobe's load-test (and later wow64probe) can resolve it.
+        WOW64FEX="${VIBEOS_WOW64FEX_DLL:-$PROJECT_DIR/build-fex-arm64/Bin/libwow64fex.dll}"
+        if [ -f "$WOW64FEX" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging libwow64fex.dll into system32"
+            mcopy -o -i "$RAMDISK_IMG" "$WOW64FEX" ::/reactos/system32/libwow64fex.dll
+        fi
+        # WOW64 Phase B (docs/engineering/wow64-plan.md): wow64probe.exe drives
+        # the BTCpu contract; it maps the i386 ntdll staged into syswow64
+        # (Phase C's SysWOW64 set starts here).
+        WOW64PROBE="${VIBEOS_WOW64PROBE_EXE:-$PROJECT_DIR/build-fex-hello/wow64probe.exe}"
+        NTDLL32="${VIBEOS_NTDLL32:-$PROJECT_DIR/build-i386/dll/ntdll/ntdll.dll}"
+        if [ -f "$WOW64PROBE" ] && [ -f "$NTDLL32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging wow64probe.exe + syswow64/ntdll.dll"
+            mcopy -o -i "$RAMDISK_IMG" "$WOW64PROBE" ::/reactos/system32/wow64probe.exe
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$NTDLL32" ::/reactos/syswow64/ntdll.dll
+        else
+            echo "[!] VIBEOS_FEX=1: wow64probe not staged ($WOW64PROBE / $NTDLL32 missing) — Phase B probe skipped"
+        fi
+        # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
+        # by winlogon's TryStartWow64Hello (silent no-op unless staged here).
+        HELLO32="${VIBEOS_HELLO32_EXE:-$PROJECT_DIR/build-fex-hello/hello32.exe}"
+        if [ -f "$HELLO32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/hello32.exe (Phase C guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$HELLO32" ::/reactos/syswow64/hello32.exe
+        else
+            echo "[!] VIBEOS_FEX=1: hello32.exe missing ($HELLO32) — Phase C probe skipped"
+        fi
+    else
+        echo "[!] VIBEOS_FEX=1 but artifacts missing ($FEXPROBE / $UCRTBASE)."
+        echo "[!]   Build: tools/fex/build-fex.sh && tools/fex/build-hello-compute.sh; ninja ucrtbase"
+        exit 1
+    fi
 fi
 
 echo "[*] Ramdisk contents:"

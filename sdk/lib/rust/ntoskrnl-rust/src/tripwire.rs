@@ -244,6 +244,10 @@ unsafe fn apply_token(tok: &[u8]) {
             );
             panic!("rust-panic selftest: deliberate panic via tripwire (answer={})", 42);
         }
+    } else if token_val(tok, b"KD").is_some() {
+        // KD=COM2 is consumed directly by kd64 KdInitSystem (via
+        // VibeTripwireHasToken, long before this Mm-phase parse). Recognized
+        // here only so it doesn't trip the unknown-token error below.
     } else if !tok.is_empty() {
         DbgPrint(b"[TRIPWIRE] ERROR: unknown tripwire token (ignored)\n\0".as_ptr());
     }

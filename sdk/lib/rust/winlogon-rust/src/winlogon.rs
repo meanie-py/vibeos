@@ -595,6 +595,171 @@ unsafe fn TryStartDoom() {
     }
 }
 
+/* FEX bring-up rung 2 (docs/engineering/fex-bringup-plan.md): spawn the
+ * hello-compute harness fexprobe.exe if it was staged into the image, exactly
+ * like TryStartDoom — a foreign-payload probe gated on file existence, output
+ * via DbgPrint->serial ([FEX-HELLO] lines). A normal build has no fexprobe.exe,
+ * so this is a silent no-op. We WaitForSingleObject so its serial lines land
+ * deterministically before the desktop-idle cmd.exe wait. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartFexProbe() {
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\system32\\fexprobe.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 13] = wstr_arr!("fexprobe.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] fexprobe.exe created (PID %lu) - waiting\n\0".as_ptr() as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 30_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] fexprobe.exe exit = 0x%lx\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(fexprobe.exe) FAILED (error %lu)\n\0".as_ptr() as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
+/* WOW64 Phase B probe (docs/engineering/wow64-plan.md): spawn wow64probe.exe
+ * if staged — same gate-on-file-existence pattern as fexprobe above. It drives
+ * the real libwow64fex.dll BTCpu contract; verdict lands on serial as
+ * [FEX-WOW64B] lines and exit code 0x600D on PASS. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartWow64Probe() {
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\system32\\wow64probe.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 15] = wstr_arr!("wow64probe.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] wow64probe.exe created (PID %lu) - waiting\n\0".as_ptr() as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 30_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] wow64probe.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(wow64probe.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
+/* WOW64 Phase C probe: launch a real i386 PE (hello32.exe) through the normal
+ * CreateProcessW front door. Unlike wow64probe (a native arm64 harness), this
+ * exercises the actual WoW64 process bootstrap: kernel32 machine gate →
+ * PspCreateProcess → PEB32/TEB32 → 64-bit ntdll loader wow64 branch →
+ * wow64!Wow64LdrpInitialize. Verdict = [FEX-WOW64C] serial lines + 0x600D. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartWow64Hello() {
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\hello32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 12] = wstr_arr!("hello32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] hello32.exe (i386 guest) created (PID %lu) - waiting\n\0".as_ptr()
+                as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 30_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] hello32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(hello32.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn WinMain(
     hInstance: HINSTANCE,
@@ -1144,6 +1309,17 @@ pub unsafe extern "system" fn WinMain(
                 );
             }
         }
+
+        /* FEX rung-2 hello-compute probe (no-op unless fexprobe.exe staged) —
+         * before the cmd.exe INFINITE wait so its [FEX-HELLO] serial lands. */
+        TryStartFexProbe();
+
+        /* WOW64 Phase B probe (no-op unless wow64probe.exe staged). */
+        TryStartWow64Probe();
+
+        /* WOW64 Phase C probe: real i386 PE through CreateProcessW
+         * (no-op unless syswow64\hello32.exe staged). */
+        TryStartWow64Hello();
 
         /* DOOM (opt-in, VIBEOS_DOOM=1): spawned LAST among GUI apps for
          * foreground focus, and BEFORE the cmd.exe INFINITE wait below. */
