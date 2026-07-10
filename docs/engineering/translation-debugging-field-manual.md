@@ -4146,4 +4146,3 @@ real C body is still on disk (`create.c` et al, kept per the never-delete rule)
 and a sibling in `fastfat-rust` shows the translation idiom. These are latent
 landmines on arm64 (the only fastfat-backed boot volume); a timing change
 elsewhere can expose one that was dormant for months.
->>>>>>> origin/master
