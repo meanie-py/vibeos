@@ -4332,7 +4332,24 @@ loops on one frame / `RtlVirtualUnwind` returns the same PC" symptom is an epilo
 miscalc — dump that function's `.xdata` (`E`, `EpilogStartIndex`, codes) and check the
 `into` delta against `pc - epi_start`, not `func_end - pc`.
 
-**Still open (narrower):** `sehtest` `finally: ran=0 caught=1` — a nested `__finally`
-termination handler isn't invoked during the target-frame unwind (`RtlUnwindEx` /
-mingw `__C_specific_handler` unwind-mode scope walk); the enclosing `__except` still
-fires. Distinct from the above; sw-raise + hw-fault `__except` both green.
+**Follow-on (RESOLVED same day) — the `__finally` half: EstablisherFrame must be x29,
+not SP, for frame-pointer functions.** After the epilog fix, `sehtest` was 2/3:
+`finally: ran=0 caught=1`. A gated probe in `__C_specific_handler` proved the finally
+funclet *was* called (`-> calling FINALLY scope[0] handler=0x…1248 frame=0x12FE90`) —
+it just wrote `ran_finally` into a dead stack word. The funclet (`?dtor$9`) does
+`mov x29, x1; … str w9, [x29-4]`, and `TestFinally` stores `ran_finally` at `x29-4`
+where its `x29 = post-prologue-SP + 0x10` (`add x29, sp, #0x10`). But
+`virtual_unwind_xdata` set `*EstablisherFrame = (*Context).Sp` unconditionally, so we
+passed SP (`0x12FE90`) where the funclet needed x29 (`0x12FEA0`) — a 0x10 miss, wrong
+slot. `__except` was immune because it resumes via `RtlUnwindEx` → `RtlRestoreContext`
+(full target context, real x29), not via the establisher argument — which is why only
+`__finally`/filters-that-read-parent-locals broke. **Fix:** if the prolog establishes a
+frame pointer (scan unwind codes for `set_fp` 0xE1 / `add_fp` 0xE2), report
+`EstablisherFrame = x29` (captured before `interpret_codes` restores the caller's x29),
+else SP — mirrors Wine's amd64 `RtlVirtualUnwind` (`frame_reg ? frame_reg_value : Rsp`).
+Packed frames need no equivalent: a packed entry (Flag==2) carries no language handler,
+so its establisher is never handed to a funclet. Result: `sehtest` **RESULT: PASS**
+(sw-raise + finally + hw-fault all green, `exit=0x0`). **Lesson:** "the funclet ran but
+the local didn't change" ⇒ EstablisherFrame/frame-base mismatch, not a missing call —
+disassemble the funclet, see what base+offset it writes, and check it against the
+function's own frame-pointer offset.

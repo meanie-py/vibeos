@@ -435,9 +435,20 @@ pub(crate) unsafe fn virtual_unwind_xdata(
     let mut epilog_count = (hdr0 >> 22) & 0x1F;
     let mut code_words = (hdr0 >> 27) & 0x1F;
 
-    // Establisher frame = current SP (the C sets this before any allocation
-    // adjustment; validated against stack limits by the caller).
-    *EstablisherFrame = (*Context).Sp;
+    // Establisher frame: for a function that establishes a frame pointer
+    // (set_fp / add_fp in its prolog), the EstablisherFrame handed to language
+    // handlers and __finally funclets is the FRAME-POINTER value (x29), NOT the
+    // raw SP — clang keys funclet access to the parent's locals off x29 (the
+    // funclet does `mov x29, x1; str .., [x29 + off]`), and TestFinally stores
+    // `ran_finally` at `x29-4`. Passing SP (which is x29 minus the add_fp offset)
+    // made the finally funclet write to the wrong slot — the "__finally never
+    // runs" bug (it DID run, into a dead stack word). Mirrors Wine's amd64
+    // RtlVirtualUnwind (frame_reg ? frame_reg_value : Rsp). Capture x29 BEFORE
+    // interpret_codes restores the caller's x29 via save_fplr; pick below once we
+    // know whether the prolog set up a frame pointer. Frameless functions keep SP.
+    let sp_in = (*Context).Sp;
+    let x29_in = *ctx_x(Context).add(29);
+    *EstablisherFrame = sp_in;
 
     // Optional extension header word when both counts are zero.
     let mut word_cursor = 1usize;
@@ -527,6 +538,28 @@ pub(crate) unsafe fn virtual_unwind_xdata(
                 break;
             }
         }
+    }
+
+    // Does this prolog establish a frame pointer? Scan the body unwind codes
+    // (index 0..) for set_fp (0xE1) or add_fp (0xE2). If so, the EstablisherFrame
+    // is x29 (captured pre-interpret), not SP — see the note at *EstablisherFrame.
+    let mut has_fp = false;
+    {
+        let mut i = 0usize;
+        while i < codes_len {
+            let b0 = *codes.add(i);
+            if b0 == 0xE1 || b0 == 0xE2 {
+                has_fp = true;
+                break;
+            }
+            if b0 == 0xE4 || b0 == 0xE5 {
+                break;
+            }
+            i += unwind_code_len(b0);
+        }
+    }
+    if has_fp {
+        *EstablisherFrame = x29_in;
     }
 
     // Interpret. On failure (malformed) fall back to a leaf unwind so we still
