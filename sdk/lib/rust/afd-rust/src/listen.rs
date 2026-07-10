@@ -125,6 +125,9 @@ unsafe fn listen_complete_impl(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let FCB = Context as PAFD_FCB;
+    // Listen-path breadcrumb (see AfdListenSocket).
+    DbgPrint(b"[AFD] ListenComplete FCB=%p status=0x%x\n\0".as_ptr() as PCHAR,
+             FCB, (*Irp).IoStatus.__bindgen_anon_1.Status);
     let mut Qelt: PAFD_TDI_OBJECT_QELT;
     let mut NextIrpEntry: PLIST_ENTRY;
     let mut NextIrp: PIRP;
@@ -281,6 +284,12 @@ pub unsafe extern "C" fn AfdListenSocket(
     let _ = DeviceObject;
 
     AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
+    // Listen-path breadcrumb (once per listen socket — cheap). Paired with
+    // netstack's [NETSTACK] TDI LISTEN markers it localizes any future
+    // usermode-server break to msafd/AFD/netstack in one boot (the 2026-07-07
+    // httpd bring-up needed exactly this).
+    DbgPrint(b"[AFD] ListenSocket FCB=%p state=%u\n\0".as_ptr() as PCHAR,
+             FCB, (*FCB).SharedData.State);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -304,6 +313,8 @@ pub unsafe extern "C" fn AfdListenSocket(
     Status = WarmSocketForConnection(FCB);
 
     AFD_DbgPrint!(MID_TRACE, b"Status from warmsocket %x\n\0".as_ptr() as PCHAR, Status);
+    DbgPrint(b"[AFD] ListenSocket warm=0x%x connobj=%p\n\0".as_ptr() as PCHAR,
+             Status, (*FCB).Connection.Object);
 
     if !NT_SUCCESS(Status) {
         return UnlockAndMaybeComplete(FCB, Status, Irp, 0);
@@ -344,6 +355,7 @@ pub unsafe extern "C" fn AfdListenSocket(
         FCB as PVOID,
     );
 
+    DbgPrint(b"[AFD] ListenSocket TdiListen=0x%x\n\0".as_ptr() as PCHAR, Status);
     if Status == STATUS_PENDING {
         Status = STATUS_SUCCESS;
     }

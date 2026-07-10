@@ -27,6 +27,7 @@ use crate::time::now;
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_TIMEOUT: NTSTATUS = 0x0000_0102;
 const STATUS_CONNECTION_REFUSED: NTSTATUS = 0xC000_0236u32 as NTSTATUS;
+const STATUS_CONNECTION_RESET: NTSTATUS = 0xC000_020Du32 as NTSTATUS;
 
 /// Identifier the management ICMP socket binds to (distinct from the boot
 /// self-test's 0x022b) — replies are correlated back to pending pings by seq.
@@ -156,7 +157,17 @@ struct Conn {
     /// with the remote address on accept). 0 when not listening.
     listen_irp: usize,
     listen_ret: usize,
+    /// Port this conn's pending TDI_LISTEN waits on (0 = none) — consumed
+    /// from the ListenPort ready queue by the bridge.
+    listen_port: u16,
     recv: Vec<(usize, usize, usize)>, // (irp, buf_va, buf_len)
+    /// Pended TDI_SEND IRPs: (irp, data_va, len, offset-already-queued).
+    /// TDI semantics: a send completes only when the transport has consumed
+    /// the WHOLE buffer. The old early-complete (short count on a full tx
+    /// buffer, REFUSED when can_send()==false) silently truncated large
+    /// responses at 8KiB-multiples — the httpd/tcp_hammer 64KiB find,
+    /// 2026-07-08.
+    send_q: Vec<(usize, usize, usize, usize)>,
     connected: bool,
 }
 
@@ -176,10 +187,43 @@ struct PendingPing {
     deadline_ms: i64,
 }
 
+/// Server-side listen backlog for one local port (the httpd/tcp_hammer find,
+/// 2026-07-08). smoltcp has no SYN queue — one listening socket absorbs ONE
+/// connection — and AFD keeps a single TDI_LISTEN in flight, re-posting only
+/// after usermode accept()s. Under concurrent connect load every SYN landing
+/// in that window got RST (194/320 hammer failures). Real Windows covers this
+/// with a kernel-side backlog; ours: keep BACKLOG shadow sockets listening on
+/// the port, park completed handshakes in `ready`, and satisfy TDI_LISTEN
+/// IRPs from `ready` instantly. Request bytes arriving before the accept sit
+/// in the shadow socket's rx buffer — nothing is dropped.
+struct ListenPort {
+    port: u16,
+    /// Sockets currently in LISTEN / mid-handshake.
+    shadows: Vec<SocketHandle>,
+    /// ESTABLISHED, awaiting a TDI_LISTEN to claim them (FIFO).
+    ready: Vec<SocketHandle>,
+}
+
+/// Upper bound on shadow listeners per port. 16 matches the deliberate stress
+/// gate (tcp_hammer threads=16). This is only a CAP — the live count is armed
+/// to DEMAND (pended accepts + 1 spare), not eagerly filled. Eagerly holding 16
+/// idle sockets on a port nobody is hammering (2×2KiB ×16 ≈ 64KiB nonpaged) put
+/// enough pressure on arm64 Mm to trigger a registry hive shrink that calls the
+/// unimplemented arm64 fastfat `FatOpenExistingDirectory` stub → BUGCHECK 0x23
+/// (field manual §9.43 follow-up). Demand-tied arming keeps an idle listen port
+/// at ~2 sockets, so the kernel TDI-server self-test (one pended LISTEN, no peer)
+/// no longer bloats the pool.
+const LISTEN_BACKLOG: usize = 16;
+/// Per-shadow socket buffer (rx==tx). 2KiB holds a request; larger responses
+/// stream via the pended-send path across pumps. Kept small to bound the
+/// nonpaged footprint a burst of shadows adds (see LISTEN_BACKLOG).
+const SHADOW_BUF: usize = 2048;
+
 pub struct TdiState {
     addrs: Vec<Addr>,
     conns: Vec<Conn>,
     cmds: Vec<Cmd>,
+    listen_ports: Vec<ListenPort>,
     /// Lazily-created management ICMP socket backing the ping IOCTL.
     icmp: Option<SocketHandle>,
     icmp_seq: u16,
@@ -192,6 +236,7 @@ impl TdiState {
             addrs: Vec::new(),
             conns: Vec::new(),
             cmds: Vec::new(),
+            listen_ports: Vec::new(),
             icmp: None,
             icmp_seq: 0,
             pings: Vec::new(),
@@ -240,7 +285,9 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                 connect_irp: 0,
                 listen_irp: 0,
                 listen_ret: 0,
+                listen_port: 0,
                 recv: Vec::new(),
+                send_q: Vec::new(),
                 connected: false,
             });
         }
@@ -294,29 +341,33 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                 .and_then(|aid| state.addrs.iter().find(|a| a.id == aid))
                 .map(|a| a.local_port)
                 .unwrap_or(0);
-            // smoltcp absorbs exactly one connection per listening socket (a backlog
-            // of N is N sockets listening on the same port — AFD re-posts a fresh
-            // TdiListen on a new connection object after each accept).
-            let sock = tcp::Socket::new(
-                tcp::SocketBuffer::new(vec![0u8; 8192]),
-                tcp::SocketBuffer::new(vec![0u8; 8192]),
-            );
-            let handle = sockets.add(sock);
-            let ok = local_port != 0 && sockets.get_mut::<tcp::Socket>(handle).listen(local_port).is_ok();
-            match (state.conn(conn_id), ok) {
-                (Some(c), true) => {
-                    c.handle = Some(handle);
+            if local_port == 0 || state.conn(conn_id).is_none() {
+                unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
+            } else {
+                // Ensure the port's shadow-listener backlog exists (see ListenPort).
+                let lpi = match state.listen_ports.iter().position(|lp| lp.port == local_port) {
+                    Some(i) => i,
+                    None => {
+                        state.listen_ports.push(ListenPort {
+                            port: local_port,
+                            shadows: Vec::new(),
+                            ready: Vec::new(),
+                        });
+                        nsprint!("[NETSTACK] TDI LISTEN backlog armed on :{}\n", local_port);
+                        state.listen_ports.len() - 1
+                    }
+                };
+                // Arm a minimal floor now (this listen + one spare); the bridge
+                // refines the count to demand once the IRP is parked below.
+                top_up_shadows(&mut state.listen_ports[lpi], sockets, 2);
+                // Park the TDI_LISTEN; the bridge satisfies it from `ready`
+                // (possibly this same pump iteration). conn checked non-None above.
+                if let Some(c) = state.conn(conn_id) {
                     c.listen_irp = irp;
                     c.listen_ret = ret_info;
-                    nsprint!("[NETSTACK] TDI LISTEN conn {} on :{}\n", conn_id, local_port);
+                    c.listen_port = local_port;
                 }
-                (maybe_c, _) => {
-                    sockets.remove(handle);
-                    if let Some(c) = maybe_c {
-                        c.handle = None;
-                    }
-                    unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
-                }
+                nsprint!("[NETSTACK] TDI LISTEN conn {} on :{}\n", conn_id, local_port);
             }
         }
         Cmd::QueryAddress { id, irp, out, out_len } => {
@@ -357,20 +408,12 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
             }
         }
         Cmd::Send { conn_id, irp, data, len } => {
-            let handle = state.conn(conn_id).and_then(|c| c.handle);
-            let mut done = STATUS_CONNECTION_REFUSED;
-            let mut sent = 0usize;
-            if let Some(h) = handle {
-                let s = sockets.get_mut::<tcp::Socket>(h);
-                if s.can_send() {
-                    let slice = unsafe { core::slice::from_raw_parts(data as *const u8, len) };
-                    if let Ok(n) = s.send_slice(slice) {
-                        sent = n;
-                        done = STATUS_SUCCESS;
-                    }
-                }
+            // Queue; the bridge drains into the socket as tx space frees and
+            // completes the IRP only once ALL bytes are accepted (see send_q).
+            match state.conn(conn_id) {
+                Some(c) if c.handle.is_some() => c.send_q.push((irp, data, len, 0)),
+                _ => unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) },
             }
-            unsafe { complete(irp, done, sent) };
         }
         Cmd::Receive { conn_id, irp, buf, len } => {
             if let Some(c) = state.conn(conn_id) {
@@ -426,7 +469,21 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                 if let Some(h) = state.addrs[pos].udp {
                     sockets.remove(h);
                 }
+                let port = state.addrs[pos].local_port;
                 state.addrs.swap_remove(pos);
+                // Last address object on a listened port tears down its
+                // shadow-listener backlog (hygiene — server FCBs usually live
+                // until process exit).
+                if port != 0 && !state.addrs.iter().any(|a| a.local_port == port) {
+                    if let Some(lpi) = state.listen_ports.iter().position(|lp| lp.port == port) {
+                        let lp = state.listen_ports.swap_remove(lpi);
+                        for h in lp.shadows.into_iter().chain(lp.ready.into_iter()) {
+                            sockets.get_mut::<tcp::Socket>(h).abort();
+                            sockets.remove(h);
+                        }
+                        nsprint!("[NETSTACK] TDI LISTEN backlog torn down on :{}\n", port);
+                    }
+                }
             }
         }
         Cmd::IcmpEcho { irp, sysbuf, out_len, user_buffer, dst, timeout_ms, data } => {
@@ -515,7 +572,7 @@ fn pump_icmp(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
         return;
     }
     try_send_pings(state, sockets);
-    let h = state.icmp.unwrap();
+    let Some(h) = state.icmp else { return };
 
     // Drain all available replies into owned tuples (so the socket borrow ends
     // before we touch the pending table / SystemBuffers).
@@ -732,10 +789,138 @@ fn deliver_datagrams_irp(s: &mut udp::Socket, recv_dg: &mut Vec<(usize, usize, u
     }
 }
 
+/// Keep a ListenPort's shadow-listener pool at LISTEN_BACKLOG sockets.
+fn top_up_shadows(lp: &mut ListenPort, sockets: &mut SocketSet<'static>, desired: usize) {
+    // At most ONE new socket per call — a full 16-deep top-up in one pump
+    // iteration allocated 256KiB in a burst and faulted the arm64 worker.
+    // The bridge runs every poll, so the pool refills within a few polls.
+    // `desired` is demand-tied (pended accepts + 1), capped at LISTEN_BACKLOG,
+    // so an idle port never bloats past ~2 sockets (see LISTEN_BACKLOG).
+    if lp.shadows.len() < desired {
+        let sock = tcp::Socket::new(
+            tcp::SocketBuffer::new(vec![0u8; SHADOW_BUF]),
+            tcp::SocketBuffer::new(vec![0u8; SHADOW_BUF]),
+        );
+        let h = sockets.add(sock);
+        if sockets.get_mut::<tcp::Socket>(h).listen(lp.port).is_ok() {
+            lp.shadows.push(h);
+        } else {
+            sockets.remove(h);
+        }
+    }
+}
+
+/// Backlog bridge pass: harvest established shadow listeners into `ready`,
+/// re-arm replacements, purge aborted handshakes, then satisfy pended
+/// TDI_LISTEN IRPs FIFO from `ready`.
+fn bridge_listen_backlog(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
+    use tcp::State;
+    // Demand-tied shadow target per port: one listening socket per pended
+    // TDI_LISTEN (accept) plus one spare to absorb a SYN while an accept is
+    // being satisfied, capped at LISTEN_BACKLOG. An idle port (no pended
+    // accept) still keeps 1 spare so the first inbound SYN isn't RST'd.
+    // Computed up front under an immutable borrow (disjoint from the mutable
+    // shadow work below). Keeps arm64 Mm pressure minimal (see LISTEN_BACKLOG).
+    let desired: Vec<(u16, usize)> = state
+        .listen_ports
+        .iter()
+        .map(|lp| {
+            let pended = state
+                .conns
+                .iter()
+                .filter(|c| c.listen_port == lp.port && c.listen_irp != 0)
+                .count();
+            (lp.port, (pended + 1).min(LISTEN_BACKLOG))
+        })
+        .collect();
+    for lp in state.listen_ports.iter_mut() {
+        let mut i = 0;
+        while i < lp.shadows.len() {
+            let h = lp.shadows[i];
+            let sock = sockets.get::<tcp::Socket>(h);
+            match sock.state() {
+                // A real inbound accept has a genuine peer endpoint. Require it:
+                // an Established socket whose remote is absent/unspecified is NOT
+                // a completed handshake we can hand to an accept — completing a
+                // TDI_LISTEN with such a phantom made the kernel TDI-server
+                // self-test (tdisrvtest.rs, raw TDI_LISTEN on :8888 that must
+                // PEND until a real host connects) proceed into its post-accept
+                // path against a peerless "connection" and wedge arm64 boot
+                // (field manual §9.43 follow-up). Leave it a shadow until a real
+                // peer arrives; when none does, the LISTEN pends — the correct
+                // behavior, matching the pre-backlog path.
+                State::Established
+                    if sock
+                        .remote_endpoint()
+                        .is_some_and(|ep| ep.port != 0 && !ep.addr.is_unspecified()) =>
+                {
+                    lp.shadows.swap_remove(i);
+                    lp.ready.push(h);
+                }
+                // Handshake died (RST mid-SYN, peer gave up): recycle.
+                State::Closed => {
+                    lp.shadows.swap_remove(i);
+                    sockets.remove(h);
+                }
+                _ => i += 1,
+            }
+        }
+        // Established-but-unclaimed connections the peer already abandoned are
+        // useless to hand to an accept — drop them.
+        let mut j = 0;
+        while j < lp.ready.len() {
+            let h = lp.ready[j];
+            match sockets.get::<tcp::Socket>(h).state() {
+                State::Closed => {
+                    lp.ready.swap_remove(j);
+                    sockets.remove(h);
+                }
+                _ => j += 1,
+            }
+        }
+        let want = desired
+            .iter()
+            .find(|(p, _)| *p == lp.port)
+            .map(|(_, n)| *n)
+            .unwrap_or(1);
+        top_up_shadows(lp, sockets, want);
+    }
+    // Satisfy pended TDI_LISTENs from ready queues (FIFO by conn order).
+    for ci in 0..state.conns.len() {
+        if state.conns[ci].listen_irp == 0 || state.conns[ci].listen_port == 0 {
+            continue;
+        }
+        let port = state.conns[ci].listen_port;
+        let Some(lp) = state.listen_ports.iter_mut().find(|lp| lp.port == port) else {
+            continue;
+        };
+        if lp.ready.is_empty() {
+            continue;
+        }
+        let h = lp.ready.remove(0);
+        let irp = state.conns[ci].listen_irp;
+        let ret_info = state.conns[ci].listen_ret;
+        state.conns[ci].listen_irp = 0;
+        state.conns[ci].listen_ret = 0;
+        state.conns[ci].listen_port = 0;
+        state.conns[ci].handle = Some(h);
+        state.conns[ci].connected = true;
+        if ret_info != 0 {
+            if let Some(ep) = sockets.get::<tcp::Socket>(h).remote_endpoint() {
+                let (octets, port) = ep_to_v4(ep);
+                unsafe { fill_remote_address(ret_info, octets, port) };
+            }
+        }
+        nsprint!("[NETSTACK] TDI LISTEN accepted (conn {})\n", state.conns[ci].id);
+        unsafe { complete(irp, STATUS_SUCCESS, 0) };
+    }
+}
+
 /// Completion bridge: for each connection, complete a pended connect IRP once
 /// ESTABLISHED, and deliver received data — via the AFD event-indication upcall
 /// when a TDI_EVENT_RECEIVE handler is registered, else to pended receive IRPs.
 fn bridge(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
+    bridge_listen_backlog(sockets, state);
     for ci in 0..state.conns.len() {
         let Some(h) = state.conns[ci].handle else { continue };
         // Snapshot what we need from immutable lookups BEFORE the mutable socket /
@@ -770,33 +955,38 @@ fn bridge(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
             }
         }
 
-        // Listen completion (server-side accept). A listening socket reaches
-        // ESTABLISHED once smoltcp absorbs an inbound SYN + completes the handshake
-        // in place — that IS the accept; we fill the peer into the caller's
-        // ReturnConnectionInformation and complete the pended TDI_LISTEN.
-        if state.conns[ci].listen_irp != 0 {
+        // Listen completion now lives in bridge_listen_backlog (the shadow-
+        // listener backlog): a conn with a pended TDI_LISTEN has NO socket
+        // handle until the backlog assigns one, so this per-handle pass never
+        // sees it. (Kept here as a comment for archaeology: the old model
+        // armed one socket per TDI_LISTEN and completed it on Established.)
+        {
+        }
+
+        // Send drain: push pended TDI_SEND bytes as tx space frees; complete
+        // each IRP only when its WHOLE buffer is queued (TDI semantics — see
+        // Conn.send_q). A dead socket fails the remaining queue loudly.
+        while !state.conns[ci].send_q.is_empty() {
             use tcp::State;
             match s.state() {
-                State::Established => {
-                    let irp = state.conns[ci].listen_irp;
-                    let ret_info = state.conns[ci].listen_ret;
-                    state.conns[ci].listen_irp = 0;
-                    state.conns[ci].connected = true;
-                    if ret_info != 0 {
-                        if let Some(ep) = s.remote_endpoint() {
-                            let (octets, port) = ep_to_v4(ep);
-                            unsafe { fill_remote_address(ret_info, octets, port) };
-                        }
+                State::Established | State::CloseWait => {}
+                _ => {
+                    for (irp, _, _, _) in state.conns[ci].send_q.drain(..) {
+                        unsafe { complete(irp, STATUS_CONNECTION_RESET, 0) };
                     }
-                    nsprint!("[NETSTACK] TDI LISTEN accepted (conn {})\n", state.conns[ci].id);
-                    unsafe { complete(irp, STATUS_SUCCESS, 0) };
+                    break;
                 }
-                State::Closed | State::TimeWait | State::Closing => {
-                    let irp = state.conns[ci].listen_irp;
-                    state.conns[ci].listen_irp = 0;
-                    unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
-                }
-                _ => {}
+            }
+            let (irp, data, len, off) = state.conns[ci].send_q[0];
+            let remainder =
+                unsafe { core::slice::from_raw_parts((data + off) as *const u8, len - off) };
+            let n = if s.can_send() { s.send_slice(remainder).unwrap_or(0) } else { 0 };
+            if off + n == len {
+                state.conns[ci].send_q.remove(0);
+                unsafe { complete(irp, STATUS_SUCCESS, len) };
+            } else {
+                state.conns[ci].send_q[0].3 = off + n;
+                break; // tx buffer full — resume next pump iteration
             }
         }
 
