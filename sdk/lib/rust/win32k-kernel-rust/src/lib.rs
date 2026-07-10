@@ -22,37 +22,5 @@ pub extern "C" fn rust_eh_personality() {}
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    // x86: emit a "W32KPANIC:" marker + file:line on debugcon 0xe9 so
-    // QEMU smoke triage can see win32k Rust panics. ARM64 has no port
-    // I/O — just halt.
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    unsafe {
-        let emit = |bytes: &[u8]| {
-            for &b in bytes {
-                core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b);
-            }
-        };
-        emit(b"W32KPANIC:");
-        if let Some(loc) = info.location() {
-            emit(loc.file().as_bytes());
-            emit(b":");
-            let mut n = loc.line();
-            let mut buf = [0u8; 10];
-            let mut i = buf.len();
-            if n == 0 {
-                i -= 1;
-                buf[i] = b'0';
-            }
-            while n > 0 {
-                i -= 1;
-                buf[i] = b'0' + (n % 10) as u8;
-                n /= 10;
-            }
-            emit(&buf[i..]);
-        }
-        emit(b"\n");
-    }
-    loop {
-        core::hint::spin_loop();
-    }
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }

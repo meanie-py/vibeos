@@ -41,25 +41,7 @@ pub mod framebuf_impl;
 // own panic handler + eh_personality (same as hal-rust / kdcom-rust).
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    unsafe {
-        for &b in b"BOOTVID-PANIC\n" {
-            core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b);
-        }
-    }
-    let _ = info;
-    loop {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        unsafe {
-            core::arch::asm!("hlt");
-        }
-        #[cfg(target_arch = "aarch64")]
-        unsafe {
-            core::arch::asm!("wfe", options(nomem, nostack));
-        }
-        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-        core::hint::spin_loop();
-    }
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 #[unsafe(no_mangle)]

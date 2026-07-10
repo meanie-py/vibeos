@@ -22,5 +22,6 @@ crate-type = ["staticlib"]
 no_panic_handler = []
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
 win32k-sys = { path = "../win32k-sys" }
 ntkrnl-sys = { path = "../ntkrnl-sys" }

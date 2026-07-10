@@ -24,6 +24,7 @@ name = "ntkrnlmp"
 path = "src/main.rs"
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
 # kernel-rust is `crate-type = ["staticlib"]`, which cargo can't use as a
 # Rust dep — listing it here would compile it but rustc wouldn't link the
 # .a archive. Instead, build.rs invokes `cargo build -p kernel-rust`

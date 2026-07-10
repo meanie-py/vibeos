@@ -12,6 +12,7 @@ path = "src/lib.rs"
 crate-type = ["staticlib"]
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
 # (none) — pure-algorithm crate. The C ABI scalar typedefs it needs
 # (PVOID/DWORD/BOOL) are defined locally in src/skiplist.rs, so it carries no
 # Windows-only dependency and is host-testable via `cargo test`.

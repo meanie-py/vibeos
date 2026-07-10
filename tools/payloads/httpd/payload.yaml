@@ -1,0 +1,38 @@
+# httpd stress payload — the netstack load gate (payload-harness quest #2).
+# Design doc: docs/engineering/payload-harness-design.md.
+#
+# vibehttpd (vibehttpd.c, built by build.sh) is a deliberately NON-foreign
+# threaded HTTP server using only the proven winsock surface (blocking
+# sockets, thread-per-connection): the gate measures the KERNEL under load —
+# afd handle churn, IRP cancellation, nonpaged pool, accept backlog — not
+# unimplemented winsock features.
+#
+# Autostart is the REAL Windows mechanism: a copy in the All Users Startup
+# folder, walked by explorer's AutoStartupApplications (instrumented — every
+# launch prints [EXPLORER] startup: runCmd). This doubles as the automated
+# regression gate for the amd64 ProcessStartupItems flake (Workstream A).
+name: httpd
+description: threaded winsock HTTP server + host-side tcp_hammer — netstack stress gate
+
+build_hint: "tools/payloads/httpd/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/httpd/httpd-{arch}.exe
+    dest: system32/httpd.exe
+  # Startup-folder autostart: same exe, grafted at the IMAGE root (not under
+  # reactos/) into the folder AutoStartupApplications walks.
+  - src: tools/payloads/httpd/httpd-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/httpd.exe
+
+test:
+  # Needs a NIC + the payload hostfwd: boot the -net arch variant.
+  net: true
+  launch_marker: "[HTTPD] listening on :8080"
+  launch_drain_secs: 60          # explorer startup-folder walk runs post-shell
+  tcp_hammer:
+    guest_port: 8080             # forwarded from vm.config.payload_hostfwd_port
+    threads: 16                  # concurrent host connections
+    requests: 20                 # per thread, mixed / + /data?n=<size> (checksummed)
+    data_sizes: [1, 512, 4096, 65536]
+    status_check: true           # /status requests= must cover every 200 we got

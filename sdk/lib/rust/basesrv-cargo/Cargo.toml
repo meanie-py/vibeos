@@ -25,6 +25,6 @@ name = "basesrv"
 path = "src/main.rs"
 
 [dependencies]
-
+panic-common = { path = "../panic-common", features = ["user"] }
 [build-dependencies]
 reactos-link = { path = "../reactos-link" }

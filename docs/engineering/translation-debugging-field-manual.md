@@ -3741,6 +3741,7 @@ output, binary-search the syscall boundary FIRST (markf around each API call
 costs one rebuild of a test app) before instrumenting ever-deeper kernel paths.
 And any `extern static` whose type was guessed from the name (`Mm*` "looks like
 a PFN count") is a width-drift candidate — the C definition is the only truth.
+
 ### 9.37 (RESOLVED 2026-07-07) i386+amd64 PS/2 keyboard/mouse fully dead since ACPI went Rust — hallucinated `CmResourceType*`/`ACPI_*` constants in acpi-rust broke PnP resource translation
 
 **Symptom:** keyboard and mouse produced zero effect on the x86 desktop
@@ -3951,3 +3952,124 @@ and the system boots green. ALSO fixes: unhandled-raise diagnostics (clean
 frames. **Sweep owed:** the other per-module `*-kernel.json` targets
 (ntdll-cargo, driver cargos) carry the same latent `false`. Verdict
 context + evidence: `docs/engineering/dummy-pseh-verdict.md`.
+
+### 9.43 (RESOLVED 2026-07-08) usermode winsock servers: SYNs refused / responses truncated at 8KiB multiples — no TDI listen backlog + sends completed short under backpressure
+
+**Symptom.** A usermode server (httpd payload) listens fine (`[NETSTACK] TDI
+LISTEN conn N on :8080`) and serves *serial* requests, but under concurrent
+load (tcp_hammer, 16 threads): (a) most connects get RST ("connection
+refused"/"reset by peer" host-side), and (b) large responses arrive truncated
+at **exact multiples of 8192 bytes** with a byte-correct prefix.
+
+**Root causes (two, independent, both invisible to single-connection tests):**
+1. **No listen backlog.** smoltcp has no SYN queue — one listening socket
+   absorbs exactly one connection — and AFD keeps a single `TDI_LISTEN` in
+   flight, re-posting only after the *usermode* `accept()` round-trip. Every
+   SYN landing in that window was RST'd. Real Windows hides this behind the
+   transport's kernel SYN backlog, so faithful-to-C AFD was still wrong here.
+2. **Send truncation under backpressure.** netstack's `Cmd::Send` completed
+   IRPs immediately: short count when the 8KiB tx buffer filled, refused when
+   `can_send()` was false. AFD/msafd treated the completion as "all sent";
+   the app's remaining bytes died silently. 8192-multiple truncation = N full
+   buffer drains before the lie.
+
+**Fixes (netstack tditrans.rs):** per-port shadow-listener backlog
+(`LISTEN_BACKLOG=16` sockets armed per listened port; established handshakes
+parked in a ready queue; `TDI_LISTEN` IRPs satisfied from the queue instantly;
+torn down with the last address object on the port) + pended sends (per-conn
+`send_q`; the bridge drains as tx space frees and completes each IRP only when
+its whole buffer is queued — TDI semantics; dead socket fails the queue with
+`STATUS_CONNECTION_RESET`, fail-loud).
+
+**Debug recipe that cracked it (reusable):** paired breadcrumbs
+`[AFD] ListenSocket/ListenComplete` (afd-rust listen.rs, permanent) +
+`[NETSTACK] TDI LISTEN …` localize a listen break to msafd/AFD/netstack in one
+boot. Host-side, the tcp_hammer control probe (dial the *known-good* netstack
+echo port before blaming the payload's listener) discriminates harness/hostfwd
+plumbing from guest bugs — it caught that the hammer was dialing `127.0.0.1`
+where the windows-host backend needs `vm.net_host` (all-refused red herring).
+
+**Bring-up landmines the httpd payload also documented (build.sh guards
+enforce both):** console-subsystem apps spawned from explorer's startup walk
+hang in kernel32 PROCESS_ATTACH allocating a CSRSS console (open bug — GUI
+subsystem sidesteps); UCRT llvm-mingw's default `api-ms-win-crt-*` imports
+aren't shipped by reactos, killing the child in the loader with ZERO serial
+evidence — link classic msvcrt via `-lmsvcrt-os -Wl,-e,mainCRTStartup
+-Wl,--subsystem,windows` (the doom recipe; bisect with a `-nostartfiles`
+raw-entry probe exe when in doubt).
+
+### 9.44 (OPEN 2026-07-08) arm64 user-mode SEH never delivers first-chance — `RtlRaiseException` unimplemented for arm64
+
+**Symptom:** a user process that raises a software exception (or would want a
+user `__except` to catch a hardware fault) on arm64 is killed instead of
+caught. Serial (from `ke/arm64/stubs.rs` instrumentation): a single
+`[UEXC] Code=… 1st=0` immediately followed by `[UEXC-KILL] … Proc=<app>` and
+`PspExitThread ExitStatus=<code>` — the exception enters `KiDispatchException`
+already **second-chance** (`FirstChance=0`); there is no preceding `1st=1` /
+`[UEXC-DISPATCH]`, so first-chance user delivery never happened.
+
+**Found by:** `base/system/sehtest` (crash-value lane) — the user-mode SEH
+boot self-test, spawned by winlogon. amd64 catches all three cases
+(sw-raise / `__finally` / hw-AV) `[SEH-USER] … PASS`; arm64 kills the process.
+This is the FIRST time arm64 user SEH was exercised (the arm64 `rtl-except`
+unwinder was "complete translation, never runtime-referenced").
+
+**Root cause:** `RtlRaiseException` (`@ stdcall -register RtlRaiseException`,
+ntdll.spec) has an amd64/i386 asm capture-and-call stub (captures CONTEXT,
+calls `NtRaiseException(rec, ctx, FirstChance=TRUE)`), but **no arm64
+implementation** — `rtl-except`'s arm64 module only *references* it
+(`arm64/except.rs:403,420` for nested-exception re-raise). So a user raise on
+arm64 never enters the first-chance path with `TRUE`; whatever reaches the
+kernel arrives second-chance and the process is terminated.
+
+**Fix (owed):** an arm64 asm/`#[naked]` capture stub mirroring
+`rtl-except/src/amd64/except_asm.S` — snapshot the integer+control registers
+into a CONTEXT, set `ContextFlags`, call `NtRaiseException(rec, ctx, TRUE)`;
+also verify the arm64 `RtlpExecuteHandlerForException/Unwind` trampolines
+exist. The kernel-side arm64 delivery is already in place:
+`KiDispatchExceptionToUser` builds `KUSER_EXCEPTION_STACK_ARM64` and redirects
+to `KeUserExceptionDispatcher` (`ke/arm64/stubs.rs:1079+`), and
+`dll/ntdll/dispatch/arm64/dispatch.S` now has the DUMMY_PSEH swallow branch
+(added this lane, amd64/i386 parity). Only the ntdll-side raise entry is
+missing. Non-fatal to boot (sehtest is fire-and-forget; arm64 desktop still
+reaches shell ready). Design: `docs/engineering/crash-value-design.md`.
+
+### 9.45 (RESOLVED 2026-07-09) arm64 BUGCHECK 0x23 during first-logon profile creation — untranslated fastfat `FatOpenExistingDirectory` stub
+
+**Symptom.** arm64 boots to `shell ready`, then bugchecks *after the marker*:
+```
+(\dll\win32\userenv\profile.c:1841) Error: 2   ← GetUserProfileDirectoryW: no ProfileList\<SID>
+HvHiveWillShrink is unimplemented              ← red herring (benign working stub)
+FatAllocateDiskSpace -> (VOID)                 ← real, working
+FASTFAT_STUB_HIT: FatOpenExistingDirectory
+*** BUGCHECK: 0x00000023 (0xDEAD0000, 0, 0, 0)
+```
+Intermittent on mainline (timing-sensitive) — origin/master booted 9/9 green,
+but a netstack change that made boot-time networking livelier nudged the timing
+and reproduced it **6/6**. The `0xDEAD0000` is the deliberate stub marker, not a
+corruption poison.
+
+**Root cause.** fastfat is fully Rust-cohab (all 34 C bodies replaced), but
+`FatOpenExistingDirectory` was never translated — only FFI-declared, backed by a
+`STUB_BUGCHECK()` in `rust_cohab_stub.c`. It's reached from `IRP_MJ_CREATE` →
+`FatCommonCreate` whenever a path resolves to an **existing directory with no
+cached DCB** (first-time open). First-logon profile creation (userenv → config
+manager creating the user hive → opening the profile's containing directory on
+the FAT32 ramdisk) is one such path. Only bites arm64 because arm64's system
+volume IS fastfat (x86 boots from cdfs), so it was latent + uncovered.
+
+**Fix.** Translated the legacy C body (`create.c:4136`) to Rust in
+`fastfat-rust/src/create.rs` as `#[no_mangle] FatOpenExistingDirectory`,
+mirroring the already-translated sibling `FatOpenExistingDcb` (same
+`'try_body`/`abnormal_termination` DUMMY_PSEH shape, `Iosb.__bindgen_anon_1`
+status field, oplock/share-access/count idioms). All callees were already real
+Rust (`FatCreateDcb`/`FatCreateCcb`/`FatSetFileObject`/`FatCheckFileAccess`/
+`FatGetNeedEaCount`), so no new stubs underneath. C stub removed from
+`rust_cohab_stub.c` so the Rust symbol wins.
+
+**Reusable lesson.** A `FASTFAT_STUB_HIT: <fn>` on serial is an *un-translated
+fastfat function*, not a corruption — grep `rust_cohab_stub.c` for the name; the
+real C body is still on disk (`create.c` et al, kept per the never-delete rule)
+and a sibling in `fastfat-rust` shows the translation idiom. These are latent
+landmines on arm64 (the only fastfat-backed boot volume); a timing change
+elsewhere can expose one that was dormant for months.

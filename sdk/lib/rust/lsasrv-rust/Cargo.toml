@@ -12,6 +12,7 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
 lsasrv-sys = { path = "../lsasrv-sys" }
 samsrv-sys = { path = "../samsrv-sys" }
 ntdll-sys = { path = "../ntdll-sys" }

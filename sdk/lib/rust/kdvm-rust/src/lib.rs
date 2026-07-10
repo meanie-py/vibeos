@@ -59,21 +59,7 @@ pub unsafe extern "C" fn KdVmExchange(
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    unsafe {
-        for &b in b"KDVM-PANIC\n" {
-            core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b);
-        }
-    }
-    let _ = info;
-    loop {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        unsafe {
-            core::arch::asm!("hlt");
-        }
-        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-        core::hint::spin_loop();
-    }
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }
 
 #[unsafe(no_mangle)]

@@ -13,4 +13,5 @@ path = "src/lib.rs"
 crate-type = ["staticlib"]
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
 rtl-sync = { path = "../rtl-sync", default-features = false, features = ["vista"] }

@@ -46,5 +46,6 @@ csrlib_only = []
 smlib_only  = []
 
 [dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 ntprintf = { path = "../ntprintf" }

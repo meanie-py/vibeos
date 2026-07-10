@@ -77,7 +77,9 @@ def load_spec(name: str) -> dict:
             die(f"{spec_path}: each binaries entry needs `src` and `dest`: {b!r}")
         dest = str(b["dest"])
         if dest.startswith(("/", "\\")) or ".." in dest:
-            die(f"{spec_path}: dest must be a relative guest path under reactos/: {dest!r}")
+            die(f"{spec_path}: dest must be a relative guest path: {dest!r}")
+        if b.get("root", "reactos") not in ("reactos", "image"):
+            die(f"{spec_path}: root must be `reactos` (default) or `image`: {b!r}")
     return spec
 
 
@@ -98,7 +100,10 @@ def manifest(names: list[str], arch: str) -> dict[str, Path]:
         hint = spec.get("build_hint", "").format(arch=arch)
         for b in spec["binaries"]:
             src = (REPO / str(b["src"]).format(arch=arch)).resolve()
-            dest = "reactos/" + str(b["dest"]).replace("\\", "/").lstrip("/")
+            # root: reactos (default) grafts under reactos/; root: image grafts
+            # at the media root (e.g. the Profiles/.../StartUp autostart folder).
+            prefix = "reactos/" if b.get("root", "reactos") == "reactos" else ""
+            dest = prefix + str(b["dest"]).replace("\\", "/").lstrip("/")
             if dest in entries:
                 die(
                     f"dest collision on {dest!r}: payloads "

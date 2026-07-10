@@ -132,7 +132,7 @@ extern "system" {
     fn FatIsNameLongUnicodeValid( IrpContext: *mut IRP_CONTEXT, Name: *mut _UNICODE_STRING, a: BOOLEAN, b: BOOLEAN, c: BOOLEAN, ) -> BOOLEAN;
     fn FatIsNameShortOemValid( IrpContext: *mut IRP_CONTEXT, Name: OEM_STRING, a: BOOLEAN, b: BOOLEAN, c: BOOLEAN, ) -> BOOLEAN;
     fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, Ccb: *mut CCB, Flags: u32, MatchFlags: *mut u32, Dirent: *mut *mut DIRENT, Bcb: *mut *mut BCB, DirentByteOffset: *mut u32, FileNameOpenedDos: *mut BOOLEAN, Lfn: *mut _UNICODE_STRING, OrigLfn: *mut _UNICODE_STRING, );
-    fn FatOpenExistingDirectory( IrpContext: *mut IRP_CONTEXT, IrpSp: *mut IO_STACK_LOCATION, FileObject: *mut FILE_OBJECT, Vcb: *mut VCB, Dcb: *mut *mut DCB, ParentDcb: *mut DCB, Dirent: *mut DIRENT, LfnByteOffset: u32, DirentByteOffset: u32, Lfn: *mut _UNICODE_STRING, DesiredAccess: *mut ACCESS_MASK, ShareAccess: u16, CreateDisposition: u32, NoEaKnowledge: BOOLEAN, DeleteOnClose: BOOLEAN, FileNameOpenedDos: BOOLEAN, OpenRequiringOplock: BOOLEAN, ) -> _IO_STATUS_BLOCK;
+    // FatOpenExistingDirectory now DEFINED in Rust below (was a BUGCHECK stub) — §9.45.
     fn FatOpenVolume( IrpContext: *mut IRP_CONTEXT, FileObject: *mut FILE_OBJECT, Vcb: *mut VCB, DesiredAccess: *mut ACCESS_MASK, ShareAccess: u16, CreateDisposition: u32, ) -> _IO_STATUS_BLOCK;
     fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatRemoveNames(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -1464,6 +1464,152 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
     }
 
     DebugTrace(-1, 0 /* Dbg */, b"FatOpenExistingDcb -> Iosb.__bindgen_anon_1.Status = %08lx\n\0".as_ptr() as *const i8, Iosb.__bindgen_anon_1.Status);
+
+    Iosb
+}
+
+/// Open a directory that has NOT previously been opened (no cached DCB yet).
+/// Faithful translation of the legacy C `FatOpenExistingDirectory`
+/// (`drivers/filesystems/fastfat/create.c:4136`) — previously an un-translated
+/// hard stub that `KeBugCheckEx(0x23, 0xDEAD0000)`'d the instant any first-time
+/// directory open reached it (e.g. userenv creating a fresh user profile
+/// directory on the arm64 FAT32 system volume). Field manual §9.45. Under
+/// DUMMY_PSEH the `_SEH2_FINALLY` unwind is dead code (`abnormal_termination`
+/// never becomes true), matching every other create-path translation here.
+#[no_mangle]
+pub unsafe extern "system" fn FatOpenExistingDirectory(
+    IrpContext: *mut IRP_CONTEXT,
+    IrpSp: *mut IO_STACK_LOCATION,
+    FileObject: *mut FILE_OBJECT,
+    Vcb: *mut VCB,
+    Dcb: *mut *mut DCB,
+    ParentDcb: *mut DCB,
+    Dirent: *mut DIRENT,
+    LfnByteOffset: u32,
+    DirentByteOffset: u32,
+    Lfn: *mut _UNICODE_STRING,
+    DesiredAccess: *mut ACCESS_MASK,
+    ShareAccess: u16,
+    CreateDisposition: u32,
+    NoEaKnowledge: BOOLEAN,
+    DeleteOnClose: BOOLEAN,
+    FileNameOpenedDos: BOOLEAN,
+    OpenRequiringOplock: BOOLEAN,
+) -> _IO_STATUS_BLOCK {
+    let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut UnwindDcb: *mut DCB = core::ptr::null_mut();
+    let mut UnwindCcb: *mut CCB = core::ptr::null_mut();
+    let mut CountsIncremented: bool = false;
+
+    // UNREFERENCED_PARAMETER(DeleteOnClose); UNREFERENCED_PARAMETER(IrpSp);
+    let _ = DeleteOnClose;
+    let _ = IrpSp;
+
+    DebugTrace(1, 0 /* Dbg */, b"FatOpenExistingDirectory...\n\0".as_ptr() as *const i8);
+
+    // DUMMY_PSEH: the _SEH2_FINALLY handler is dead; run the try body inline and
+    // let FatRaiseStatus() diverge on the raise paths (mirrors FatOpenExistingDcb).
+    let mut abnormal_termination = false;
+    'try_body: {
+        // If the caller has no Ea knowledge, check for Need Ea's (non-FAT32 only).
+        if NoEaKnowledge != 0 && FatIsFat32(Vcb) == 0 {
+            let mut NeedEaCount: u32 = 0;
+            FatGetNeedEaCount(IrpContext, Vcb, Dirent, &mut NeedEaCount);
+            if NeedEaCount != 0 {
+                Iosb.__bindgen_anon_1.Status = STATUS_ACCESS_DENIED;
+                break 'try_body; // try_return(Iosb)
+            }
+        }
+
+        // Check the create disposition.
+        if CreateDisposition != FILE_OPEN && CreateDisposition != FILE_OPEN_IF {
+            Iosb.__bindgen_anon_1.Status = STATUS_OBJECT_NAME_COLLISION;
+            break 'try_body; // try_return(Iosb)
+        }
+
+        // Check the desired access against the dirent's attributes.
+        if FatCheckFileAccess(IrpContext, (*Dirent).Attributes as u16, DesiredAccess) == 0 {
+            Iosb.__bindgen_anon_1.Status = STATUS_ACCESS_DENIED;
+            break 'try_body; // try_return(Iosb)
+        }
+
+        // Create a new dcb for the directory.
+        UnwindDcb = FatCreateDcb(IrpContext, Vcb, ParentDcb, LfnByteOffset, DirentByteOffset, Dirent, Lfn);
+        *Dcb = UnwindDcb;
+
+        // Win8+: store any caller oplock key and honor atomic create-with-oplock.
+        Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
+            FatGetFcbOplock(*Dcb),
+            (*IrpContext).OriginatingIrp,
+            OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        );
+        if OpenRequiringOplock != 0 && Iosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
+            Iosb.__bindgen_anon_1.Status = FsRtlOplockFsctrl(
+                FatGetFcbOplock(*Dcb),
+                (*IrpContext).OriginatingIrp,
+                (*(*Dcb)).UncleanCount + 1,
+            );
+        }
+        // Raise to trigger cleanup of the new Dcb if either oplock call failed.
+        if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
+            FatRaiseStatus(IrpContext, Iosb.__bindgen_anon_1.Status);
+        }
+
+        // Set up our share access.
+        IoSetShareAccess(*DesiredAccess, ShareAccess as u32, FileObject, &mut (*(*Dcb)).ShareAccess);
+
+        // Set up the context/section pointers and bump reference counts.
+        UnwindCcb = FatCreateCcb(IrpContext);
+        FatSetFileObject(FileObject, UserDirectoryOpen, *Dcb, UnwindCcb);
+        (*(*Dcb)).UncleanCount += 1;
+        (*(*Dcb)).OpenCount += 1;
+        (*Vcb).OpenFileCount += 1;
+        if IsFileObjectReadOnly(FileObject) != 0 {
+            (*Vcb).ReadOnlyCount += 1;
+        }
+        CountsIncremented = true;
+
+        Iosb.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        Iosb.Information = FILE_OPENED as _;
+
+        // Mark the OpenedByShortName bit on the new Ccb if applicable.
+        {
+            let Ccb: *mut CCB = (*FileObject).FsContext2 as *mut CCB;
+            if FileNameOpenedDos != 0 {
+                SetFlag(&mut (*Ccb).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
+            }
+        }
+    } // end 'try_body
+
+    // _SEH2_FINALLY: undo work on abnormal termination (dead under DUMMY_PSEH).
+    if abnormal_termination {
+        if CountsIncremented {
+            (*(*Dcb)).UncleanCount -= 1;
+            (*(*Dcb)).OpenCount -= 1;
+            (*Vcb).OpenFileCount -= 1;
+            if IsFileObjectReadOnly(FileObject) != 0 {
+                (*Vcb).ReadOnlyCount -= 1;
+            }
+        }
+        if !UnwindDcb.is_null() {
+            (*FileObject).SectionObjectPointer = core::ptr::null_mut();
+            FatDeleteFcb(IrpContext, &mut UnwindDcb);
+            *Dcb = core::ptr::null_mut();
+        }
+        if !UnwindCcb.is_null() {
+            FatDeleteCcb(IrpContext, &mut UnwindCcb);
+        }
+    }
+
+    DebugTrace(
+        -1,
+        0, /* Dbg */
+        b"FatOpenExistingDirectory -> Iosb.__bindgen_anon_1.Status = %08lx\n\0".as_ptr() as *const i8,
+        Iosb.__bindgen_anon_1.Status,
+    );
 
     Iosb
 }
