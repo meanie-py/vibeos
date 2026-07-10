@@ -545,6 +545,7 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
     }
 
     KeLowerIrql(OldIrql);
+    DbgPrint(b"[SCSIPORT] FdoCallHWInitialize done\n\0".as_ptr() as *const i8); // ahci marker
     return STATUS_SUCCESS;
 }
 #[no_mangle]
