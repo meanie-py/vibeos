@@ -489,8 +489,18 @@ pub(crate) unsafe fn virtual_unwind_xdata(
             walk += unwind_code_len(b0);
         }
         let epi_bytes = (epi_instr as ULONG64) * 4;
-        if func_len_bytes >= epi_bytes && pc_off_from_start >= func_len_bytes - epi_bytes {
-            let into = ((func_len_bytes - pc_off_from_start) / 4) as usize;
+        let epi_start_off = func_len_bytes - epi_bytes;
+        if func_len_bytes >= epi_bytes && pc_off_from_start >= epi_start_off {
+            // Codes already "executed" = epilog instructions between the epilog's
+            // start and the fault PC, i.e. (pc - epi_start)/4 — NOT (func_end -
+            // pc)/4, which counts from the wrong end and, when PC sits exactly at
+            // the epilog's first instruction (a `bl` immediately followed by the
+            // frame teardown — e.g. kernel32!RaiseException calling ntdll!Rtl-
+            // RaiseException), skipped the entire epilog to land on the trailing
+            // `end`, yielding a no-op unwind that never restored LR. That spun the
+            // dispatcher 200× and dropped every cross-module __except. This mirrors
+            // the E==0 scope branch below, which already uses the correct delta.
+            let into = ((pc_off_from_start - epi_start_off) / 4) as usize;
             // Skip `into` codes forward from epilog_start_index.
             start_index = skip_codes(codes, codes_len, epilog_start_index, into);
         }

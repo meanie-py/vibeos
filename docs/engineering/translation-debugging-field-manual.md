@@ -4291,3 +4291,48 @@ refire), and `kvm-i8259: 11: 2` (⇒ exactly two edges ever delivered). GDB
   issue time, printed in-path) → controller asserting (QMP `info pic`: IRR) →
   router/trigger config (ELCR for PIC, RTE for IOAPIC) → delivered-but-stuck
   (ISR in-service bit; livelock vs deadlock via a moving PC in repeated `bt`).
+
+### 9.48 (2026-07-10) arm64 cross-module table-SEH silently drops every `__except` reached through a callee whose call site sits at its epilog boundary
+
+**Symptom.** A standalone user exe (`base/system/sehtest/sehtest.exe`) died at its
+FIRST test — `RaiseException(0xE0DEAD02)` inside a `__try` went **second-chance →
+`[UEXC-KILL] Proc=sehtest.exe`, `exit=0xe0dead02`** — while the in-ntdll SEH tripwire
+(`seh_poc_user`, both probes) passed. Same status code, same dispatch path; the only
+difference was *whose frames the unwinder walked*.
+
+**Oracle.** A per-frame probe in `RtlDispatchException` (arm64) gated to the raise code
+showed the frame walk **stuck**: frame#1 = `kernel32!RaiseException`, and
+`RtlVirtualUnwind` returned the *same* PC and *same* EstablisherFrame every iteration —
+200 identical spins → "unhandled" → second chance. `interpret_codes` was a complete
+no-op for that one function (never touched SP or X30), so `Pc = X[30]` fell back to the
+stale return-into-RaiseException address.
+
+**Root cause.** `kernel32!RaiseException`'s `.xdata`: `FuncLen=0xd0, E=1,
+EpilogStartIndex=2`, codes `e2 15 | 55 | d0 14 | 0c | e4` (add_fp, save_fplr, save_reg
+x19, alloc, end). The fault-return PC was at offset **0xc0 = exactly the epilog's first
+instruction** (a `bl RtlRaiseException` immediately followed by the frame teardown —
+common when the call is the last real work in the function). The E==1 single-epilog
+branch in `unwind_decode::virtual_unwind_xdata` computed how many epilog codes had
+"already executed" as `into = (func_len - pc)/4` — counting from the **wrong end**. At
+the epilog's first instruction that gave `into=4` (skip the whole epilog to land on the
+trailing `nop`/`end`) instead of `into=0` (apply the full epilog). The correct delta is
+`(pc - epi_start_off)/4`, which the E==0 scope branch a few lines below **already used**.
+
+**Fix.** One line in `sdk/lib/rust/rtl-except/src/arm64/unwind_decode.rs`:
+`into = (pc_off_from_start - epi_start_off) / 4` where `epi_start_off = func_len_bytes -
+epi_bytes`. Verified: `sehtest` sw-raise KILL→**PASS**, hw-fault **PASS** (closes the
+§9.44-family callee-saved residual too — the multi-frame `__except` now resumes with the
+right nonvolatiles).
+
+**Why it hid so long.** `seh_poc_user` only ever unwinds *ntdll* frames whose call sites
+are followed by post-return work, so their fault PC never lands on an epilog boundary —
+the exact case the buggy formula got wrong. It takes a cross-module chain through a thin
+`bl`-then-teardown shim (like `RaiseException`) to trip it. **Lesson:** any "the unwind
+loops on one frame / `RtlVirtualUnwind` returns the same PC" symptom is an epilog-index
+miscalc — dump that function's `.xdata` (`E`, `EpilogStartIndex`, codes) and check the
+`into` delta against `pc - epi_start`, not `func_end - pc`.
+
+**Still open (narrower):** `sehtest` `finally: ran=0 caught=1` — a nested `__finally`
+termination handler isn't invoked during the target-frame unwind (`RtlUnwindEx` /
+mingw `__C_specific_handler` unwind-mode scope walk); the enclosing `__except` still
+fires. Distinct from the above; sw-raise + hw-fault `__except` both green.
