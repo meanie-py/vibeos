@@ -208,13 +208,24 @@ def _collect_cache_stats(run: Run, cache: cachecfg.CacheEnv, env: dict) -> None:
 
 
 def _ninja_jobs() -> list[str]:
-    """`-j N` args that cap ninja parallelism to leave host cores free for a concurrent
-    windows-host QEMU boot. The build runs in WSL and the boot's `qemu.exe` runs on the
-    Windows side, but they share the same physical CPU — and ninja's default is `nproc+2`
-    (34 on a 32-thread box), which oversubscribes AND starves a co-running boot into a
-    false HANG_TIMEOUT. Reserve cores (default 8) so build ∥ boot; VIBEOS_BUILD_CORE_RESERVE
-    tunes it, 0 = uncapped (ninja's own default). Pairs with hostlock's separate boot pool."""
-    reserve = int(os.environ.get("VIBEOS_BUILD_CORE_RESERVE", "8"))
+    """`-j N` cap on ninja parallelism. DEFAULT IS NOW UNCAPPED (reserve 0).
+
+    The old default reserved 8 cores "so a co-running windows-host QEMU boot isn't
+    starved into a false HANG_TIMEOUT" — a KVM-era vestige that doesn't survive scrutiny:
+      * The smoke guest is UNIPROCESSOR: one TCG vCPU thread + an iothread, ~2 host
+        threads total. On a many-core box CFS schedules those among a build's rustc
+        fan-out without starving them; boot timeouts carry ~4× headroom besides.
+      * The false-HANG incident that motivated the reserve (2026-06-19) was the NATIVE
+        KVM-in-WSL backend (nested virt) starving on `/dev/kvm` + shared IDE between two
+        KVM guests — an accelerator/disk fight, NOT CPU-core sharing of a TCG boot.
+      * The DEFAULT windows-host TCG backend already runs guests off-host with no shared
+        accelerator, which is exactly why `vm.py:per_arch_cap` BYPASSES the serialize cap
+        and boots run in parallel. Reserving cores for one such boot contradicts that.
+    So builds oversubscribe freely (compute-bound; the scheduler handles it). The knob
+    survives for the one case it might matter again — build ∥ a WHPX boot, which is real
+    hardware-virt and does contend — but even there the hostlock CPU-lease pool is the
+    right throttle, not a blunt `-j` cap. Set VIBEOS_BUILD_CORE_RESERVE>0 to re-enable."""
+    reserve = int(os.environ.get("VIBEOS_BUILD_CORE_RESERVE", "0"))
     n = os.cpu_count() or 0
     if reserve <= 0 or n <= reserve:
         return []
