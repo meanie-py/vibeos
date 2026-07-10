@@ -4073,3 +4073,85 @@ real C body is still on disk (`create.c` et al, kept per the never-delete rule)
 and a sibling in `fastfat-rust` shows the translation idiom. These are latent
 landmines on arm64 (the only fastfat-backed boot volume); a timing change
 elsewhere can expose one that was dormant for months.
+
+### 9.46 (RESOLVED 2026-07-10) WHPX x86 bring-up: AHCI boot CD dead end-to-end — SIX stacked never-executed-translation bugs + UEFI firmware gaps
+
+**Symptom.** WHPX (`VIBEOS_QEMU_WINDOWS_ACCEL=whpx`) was shelved: i386 spent
+~5min in OVMF loading the livecd over IDE PIO (every 2-byte read = a VM exit),
+then the boot wedged; amd64 BUGCHECKed 0x9 at uniata DMA. The fix direction —
+attach the CD via `ich9-ahci` so OVMF DMAs it (`tests/qemu/backend.py`
+rewrite + `PCI#CC_0106 → uniata` CriticalDeviceDatabase entry in
+`hivesys.inf`) — then died in the guest: `CdRomCount=0` → BUGCHECK 0x6B.
+Every one of the six blockers underneath was in a **never-executed
+code path** (all prior boots used PIIX compat IDE, edge IRQ14/15, polled
+probes): five translation defects + two firmware-completion gaps. Chain, in
+kill order:
+
+1. **uniata-rust `id_init.rs` Intel-AHCI unconditional drop.** The translator
+   folded C's `if (AccessRanges[5].RangeStart) break; /* keep AHCI */` into an
+   unconditional `HwFlags &= ~UNIATA_AHCI`, misapplying the CORE-13346
+   "RangeStart assumed 0" note (true only *before* `UniataAhciDetect`
+   self-heals the range from raw PCI config). Every Intel AHCI controller fell
+   back to legacy IDE probing — dead on AHCI-only parts.
+2. **freeldr UEFI: no `"PCI"` MultifunctionAdapter node** (upstream literal
+   `// TODO: DetectPciBios`). `IoQueryDeviceDescription(PCIBus)` found nothing
+   → scsiport's legacy native-PCI init (the ONLY path: ReactOS scsiport's
+   `IRP_MN_START_DEVICE` is a stub) returned `STATUS_DEVICE_DOES_NOT_EXIST`
+   before ever calling `HwFindAdapter`. Fix: `UefiFindPciBios` — PCI config
+   mechanism #1 port probe (no INT 1A under UEFI) feeding the already-translated
+   `DetectPciBios` (`freeldr-rust/src/uefihw.rs`).
+3. **hal-rust `pcibus.rs` read 32 config bytes, not `PCI_COMMON_HDR_LENGTH`
+   (64).** `HalpAssignPCISlotResources` stopped at BAR3 — BAR4, BAR5 (the AHCI
+   ABAR!) and InterruptPin/Line all read as zero, so the resource list came
+   back EMPTY and scsiport skipped the adapter (`BusInterruptLevel==0`).
+4. **OVMF doesn't write per-device InterruptLine on all builds** — SeaBIOS-
+   equivalent fixup in freeldr: `line = PIRQRC[(pin-1 + slot-1) & 3]` for bus-0
+   functions with unprogrammed lines.
+5. **OVMF never programs the ELCR** — PIRQ-routed IRQs stayed EDGE-triggered on
+   the 8259. A held PCI INTx line delivers exactly one edge, then silence: the
+   INQUIRY-completion interrupt never arrived (`FdoScanAdapter` waits forever).
+   Fix: mark all valid PIRQ router targets level in ELCR (0x4D0/0x4D1),
+   unconditional over PIRQRC.
+6. **THE KILLER — hal-rust `pic_pic.rs` extern-declared `KiI8259MaskTable` as
+   `[USHORT; 32]`; the real table (irql.rs / C irql.c) is `ULONG[32]`.** Every
+   indexed read used half the true stride: `KiI8259MaskTable[16]` returned the
+   low word of entry 8 (= 0), so `_HalpDismissIrqLevel`'s pend path EOI'd the
+   slave PIC but **never masked IRQ11 at its own IRQL** — the held line refired
+   instantly, forever (CPU livelocked in the dismiss; `pic1: isr=08` stuck
+   in-service). Edge interrupts survived for months on garbage-but-lucky
+   half-stride masks; IRQ11 for the AHCI HBA was the first level-triggered PIC
+   interrupt the OS ever took.
+
+**Result:** i386 boots to full desktop in **41s TCG / 52s WHPX** with the AHCI
+CD; amd64 WHPX boots green (old 0x9 blocker gone — AHCI bypasses the IDE BM-DMA
+path). Net suite 13/15 = the pre-existing §9.43-adjacent inbound-TDI issue.
+
+**Debugging recipe that cracked it** (reusable for "interrupt never arrives"):
+serial markers at each decision layer (uniata detect chain → scsiport scan →
+`connect intr: level/vec/mapped/dirql/mode/share/st` → `AhciBeginTx:
+GHC/hIS/PxIE/PxIS/CI` at SRB issue) + an **exponential ISR-entry counter**
+(prints at 1/1k/100k/10M — a raw per-entry print would BE the livelock), then
+`VIBEOS_AHCI_CD=1` (backend.py + qemu/start.sh) to reproduce the exact device
+config under TCG/KVM natively, where **QMP `info pic` / `info irq`** told the
+whole story in two lines: ioapic all-masked (⇒ PIC mode), `elcr=00`
+(⇒ nothing level), later `pic1 irr/isr=08` stuck (⇒ EOI'd but unmasked
+refire), and `kvm-i8259: 11: 2` (⇒ exactly two edges ever delivered). GDB
+`inspect.sh --command bt` + hand symbolication against hal.dll file VAs
+(runtime 0x8020xxxx − base + ImageBase 0x10000) pinned the livelock PC inside
+`_HalpDismissIrqLevel`.
+
+**Reusable rules.**
+- A translated `extern "C" { static TABLE: [T; N] }` is an unchecked ABI
+  boundary — the item TYPE is part of the contract. Wrong element width ⇒
+  silent half/double-stride indexing. Audit candidates:
+  `grep -rn 'static.*\[USHORT\|\[UCHAR' sdk/lib/rust/*/src/ | grep extern` and
+  cross-check each against its C definition. (Same family as the
+  bindgen-vs-hand-offset drift class — §scan_magic_offsets.)
+- UEFI boots get NO BIOS-era side effects: no PCI description-tree node, no
+  per-device InterruptLine (build-dependent), no ELCR. Anything NT's legacy
+  paths "just assume the BIOS did" belongs in freeldr's firmware-completion
+  pass (`UefiFindPciBios` + `pci_fixup_interrupt_lines`).
+- "Interrupt never arrives" triage order: device regs armed (IE/IS/global-IE at
+  issue time, printed in-path) → controller asserting (QMP `info pic`: IRR) →
+  router/trigger config (ELCR for PIC, RTE for IOAPIC) → delivered-but-stuck
+  (ISR in-service bit; livelock vs deadlock via a moving PC in repeated `bt`).
