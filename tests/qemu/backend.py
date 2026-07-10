@@ -92,7 +92,15 @@ def rewrite_accel(args: list[str], accel: str, arch: str = "amd64") -> list[str]
         if a == "-cpu" and i + 1 < len(args):
             i += 2  # drop `-cpu host` (KVM-only passthrough; faults OVMF under whpx)
             continue
-        if a == "-device" and i + 1 < len(args) and args[i + 1].startswith("ide-cd,") and accel == "whpx":
+        if (
+            a == "-device"
+            and i + 1 < len(args)
+            and args[i + 1].startswith("ide-cd,")
+            and (accel == "whpx" or os.environ.get("VIBEOS_AHCI_CD") == "1")
+        ):
+            # (VIBEOS_AHCI_CD=1 forces the AHCI attach under TCG too — debug
+            # discriminator: exercises the guest AHCI driver path with WHPX's
+            # interrupt-delivery quirks out of the picture.)
             # WHPX firmware CD I/O is glacial: OVMF's AtaAtapi driver reads the livecd
             # via IDE PIO (port 0x170/0x177), and every 2-byte read is a VM exit → the
             # uefildr file-load phase takes MINUTES (vs seconds under TCG's fast port
