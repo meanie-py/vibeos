@@ -197,13 +197,20 @@ csrss (a critical process) dies → BUGCHECK 0xF4 (0x3, csrss EPROCESS, ...).
 Serial signature: `[UEXC] Code=0x6BA ... Proc=csrss.exe` then
 `0xF4 (0x3, <csrss>, ...)`. This is a csrss/basesrv wow64-connect-handling bug,
 amplified by DUMMY_PSEH swallowing being absent in the CSR API loop. Next-step
-debug: symbolize the 0x6BA raise site's caller in basesrv/winsrv (the connect
-routine handling the wow64 client), and/or check whether the CSR API loop needs
-an explicit DUMMY_PSEH-safe guard around handler dispatch. hello32 is GUI+no-CRT
-so csrss shouldn't need much from it — likely basesrv reads a wow64 field
-(PebAddressWow64 is 0, `proc_create.rs:2120` TODO) or the client PEB and faults.
-The whole M2 path is behind VIBEOS_FEX staging, so mainline boot is unaffected
-(clean arm64 smoke confirmed with the FEX artifacts absent).
+debug. RULED OUT: the `PebAddressWow64=0` mismatch — kernel32 now supplies the
+real PEB32 in the CSR create message (proc_create.rs, queries
+ProcessWow64Information; the process reports INTEL arch + a valid PEB32), and the
+0x6BA STILL fires identically. So it is NOT the null-PEB32 path. The raw
+[UEXC-BT] LRs are UNRELIABLE (arm64 has no frame pointers here — lr0 symbolized
+to unrelated console code), so the next step genuinely needs a LIVE gdb unwind:
+break on `RtlRaiseException` in csrss (or on the kernel's user-exception KILL
+path) once hello32 connects, and read the real stack to find who raises 0x6BA
+and why. Candidate: the CSR API request loop's per-message SEH is dead under
+DUMMY_PSEH, so ANY handler that raises kills csrss — the fix may be a
+DUMMY_PSEH-safe guard around CSR handler dispatch (swallow + reply error)
+rather than fixing the specific raise. Whole M2 path is behind VIBEOS_FEX
+staging, so mainline boot is unaffected (marker reached every boot; clean arm64
+smoke confirmed with the FEX artifacts absent).
 
 *Still owed in Phase C:*
 - 32-bit ntdll auto-map + `Wow64Transition` publishing (32-bit ntdll's syscall
