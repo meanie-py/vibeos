@@ -5,3 +5,5 @@
 pub mod uilist;
 pub mod version;
 pub mod libsupp;
+#[cfg(target_arch = "aarch64")]
+pub mod wow64shim; // WOW64/FEX host surface (docs/engineering/wow64-plan.md Phase A)

@@ -258,6 +258,9 @@ RMC "$BUILD_DIR/base/applications/network/nettest/nettest.exe" ::/reactos/system
 RMC "$BUILD_DIR/dll/win32/msvcrt/msvcrt.dll"                  ::/reactos/system32/msvcrt.dll
 RMC "$BUILD_DIR/dll/win32/kernel32/kernel32_vista/kernel32_vista.dll"  ::/reactos/system32/kernel32_vista.dll
 RMC "$BUILD_DIR/dll/win32/kernelbase/kernelbase.dll"          ::/reactos/system32/kernelbase.dll
+# wow64.dll — WOW64 host-layer skeleton (docs/engineering/wow64-plan.md);
+# libwow64fex.dll imports it, so it must stage wherever the FEX layer does.
+RMC "$BUILD_DIR/dll/win32/wow64/wow64.dll"                    ::/reactos/system32/wow64.dll
 RMC "$BUILD_DIR/dll/ntdll/nt_0600/ntdll_vista.dll"           ::/reactos/system32/ntdll_vista.dll
 RMC "$BUILD_DIR/base/system/winlogon/winlogon.exe"            ::/reactos/system32/winlogon.exe
 RMC "$BUILD_DIR/win32ss/win32k.sys"                           ::/reactos/system32/win32k.sys
@@ -380,6 +383,13 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         echo "[*] VIBEOS_FEX=1 — staging fexprobe.exe + ucrtbase.dll into system32"
         mcopy -o -i "$RAMDISK_IMG" "$FEXPROBE" ::/reactos/system32/fexprobe.exe
         mcopy -o -i "$RAMDISK_IMG" "$UCRTBASE" ::/reactos/system32/ucrtbase.dll
+        # WOW64 Phase A (docs/engineering/wow64-plan.md): stage the FEX CPU
+        # layer so fexprobe's load-test (and later wow64probe) can resolve it.
+        WOW64FEX="${VIBEOS_WOW64FEX_DLL:-$PROJECT_DIR/build-fex-arm64/Bin/libwow64fex.dll}"
+        if [ -f "$WOW64FEX" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging libwow64fex.dll into system32"
+            mcopy -o -i "$RAMDISK_IMG" "$WOW64FEX" ::/reactos/system32/libwow64fex.dll
+        fi
     else
         echo "[!] VIBEOS_FEX=1 but artifacts missing ($FEXPROBE / $UCRTBASE)."
         echo "[!]   Build: tools/fex/build-fex.sh && tools/fex/build-hello-compute.sh; ninja ucrtbase"

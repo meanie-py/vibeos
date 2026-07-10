@@ -264,6 +264,22 @@ extern "C" int main(int /*argc*/, char** /*argv*/) {
            (unsigned long long)GuestRAX, (unsigned long long)GuestExpected, g_GuestFaultsHandled, g_GuestSyscalls, Pass ? "PASS" : "FAIL");
 
   CTX->DestroyThread(Thread);
+
+  // WOW64 Phase A load-test (docs/engineering/wow64-plan.md): with the ntdll
+  // surface (synch family + RtlWow64* + NtAllocateVirtualMemoryEx/NtOpenKeyEx/
+  // LdrGetDllFullName/RtlQPC) and the wow64.dll skeleton in place, the REAL
+  // FEX CPU layer must fully resolve its imports. LoadLibrary runs its CRT
+  // DllMain but NOT BTCpuProcessInit (called by wow64.dll in Phase B), so a
+  // successful load + BTCpuGetBopCode lookup is exactly the Phase A milestone.
+  HMODULE Wow64Fex = LoadLibraryW(L"libwow64fex.dll");
+  if (Wow64Fex) {
+    void* BopProc = (void*)GetProcAddress(Wow64Fex, "BTCpuGetBopCode");
+    DbgPrint("[FEX-WOW64A] libwow64fex.dll loaded @ %p, BTCpuGetBopCode=%p (%s)\n", (void*)Wow64Fex, BopProc,
+             BopProc ? "PASS" : "FAIL");
+  } else {
+    DbgPrint("[FEX-WOW64A] libwow64fex.dll load FAILED (gle=%lu)\n", GetLastError());
+  }
+
   DbgPrint("[FEX-HELLO] done\n");
   return Pass ? 0 : 1;
 }
