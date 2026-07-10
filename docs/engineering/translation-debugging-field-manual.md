@@ -3524,3 +3524,42 @@ reduced rate — under investigation; NULL-write corruption was one component
 but not the whole story. The dib1bpp/sprite-path suspicions from earlier
 rounds were audited faithful-to-C (subagent audit, 2026-07-07) and are NOT
 the cause.
+
+### 9.35 (2026-07-09) Un-gating a `-version=0x600+` export in a `.spec` shifts ALL later ORDINALS → breaks by-ordinal importers (BUGCHECK 0x4C `0xc0000139`)
+
+**Symptom.** After making base `kernel32.dll` export a few previously
+version-gated Vista symbols (dropped `-version=0x600+` from ~7 lines to unblock a
+foreign binary's imports), **i386 AND amd64 deterministically BUGCHECK
+`0x0000004C (0xc0000139, …)`** — `STATUS_ENTRYPOINT_NOT_FOUND` raised as a fatal
+hard error — early, at csrss `LoadServerDll 'winsrv'`. arm64 was unaffected. The
+build is green; only boot breaks; a re-smoke reproduces 3/3 (not a flake).
+
+**Why.** `spec2def` assigns export ordinals **sequentially over the entries it
+actually EMITS** — `Name=Name@N @<ordinal>` in the generated `.def`, packed with
+no gaps. Version-excluded lines (those filtered out by `DLL_EXPORT_VERSION`,
+default **`0x502`**) reserve **no** ordinal slot. So un-gating a line *inserts* it
+at its alphabetical position and **shifts every later export's ordinal by +1**
+(cumulatively +N). Any module that binds that DLL **by ordinal** (no name) now
+calls the wrong function → wrong-signature call / entrypoint past the table →
+`0xc0000139`. arm64 survived only because nothing binds kernel32 by ordinal
+there; some x86 boot DLL does.
+
+**Confirm.** `git stash push -m … <the.spec>` → rebuild that one arch → smoke. If
+green with the spec reverted, it's the ordinal shift, not your logic. The `.def`
+proves it: `grep '@[0-9]' build-<arch>/…/<dll>.def` shows the packed sequential
+ordinals; diff the ordinal of any post-insertion symbol vs master.
+
+**Fix menu (pick by intent).**
+- **Only one arch needs the new exports** (the FEX case: fexprobe is arm64-only) →
+  gate the added lines `-arch=arm64` so the *other* arches' ordinal tables stay
+  byte-identical to master. Cheapest, zero-risk for the untouched arches.
+- **All arches need them** → pin **explicit ordinals** on the new lines
+  (`<N> stdcall Name(...)` with N above the current max) so nothing after them
+  shifts; or add them at the very end of the spec; or rebuild the by-ordinal
+  importer against the new implib. Never plain-ungate a mid-file line on an arch
+  that has by-ordinal importers.
+
+**Rule of thumb.** Adding a *named* export is NOT free — in an auto-ordinal
+(`@ …`) spec it renumbers everything downstream. Treat any ungate/insert in a
+widely-imported core DLL's spec (`kernel32`, `ntdll`, `user32`, `gdi32`) as an
+ABI change and gate/pin it. Additive-by-name ≠ additive-by-ordinal.

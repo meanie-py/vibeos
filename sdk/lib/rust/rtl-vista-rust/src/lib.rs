@@ -16,6 +16,7 @@ pub use rtl_sync::condvar::*;
 pub use rtl_sync::locale::*;
 pub use rtl_sync::runonce::*;
 pub use rtl_sync::srw::*;
+pub use rtl_sync::waitaddr::*;
 
 // Standalone staticlib (no_std) needs its own panic handler; the final
 // ntdll_vista.dll link already tolerates the sibling utf8/ntdll-rust handlers.

@@ -103,6 +103,9 @@ REQUIRED_FILES=(
     "$BUILD_DIR/base/applications/network/nettest/nettest.exe"
     "$BUILD_DIR/dll/win32/msvcrt/msvcrt.dll"
     "$BUILD_DIR/dll/win32/kernel32/kernel32_vista/kernel32_vista.dll"
+    # kernelbase.dll — minimal Vista-scoped synch surface; api-ms-win-core-synch
+    # -l1-2-0 redirects here (FEX rung 2). Forwards to kernel32_vista/ntdll.
+    "$BUILD_DIR/dll/win32/kernelbase/kernelbase.dll"
     "$BUILD_DIR/dll/ntdll/nt_0600/ntdll_vista.dll"
     "$BUILD_DIR/base/system/winlogon/winlogon.exe"
     "$BUILD_DIR/win32ss/win32k.sys"
@@ -254,6 +257,7 @@ RMC "$BUILD_DIR/dll/win32/mswsock/mswsock.dll"                ::/reactos/system3
 RMC "$BUILD_DIR/base/applications/network/nettest/nettest.exe" ::/reactos/system32/nettest.exe
 RMC "$BUILD_DIR/dll/win32/msvcrt/msvcrt.dll"                  ::/reactos/system32/msvcrt.dll
 RMC "$BUILD_DIR/dll/win32/kernel32/kernel32_vista/kernel32_vista.dll"  ::/reactos/system32/kernel32_vista.dll
+RMC "$BUILD_DIR/dll/win32/kernelbase/kernelbase.dll"          ::/reactos/system32/kernelbase.dll
 RMC "$BUILD_DIR/dll/ntdll/nt_0600/ntdll_vista.dll"           ::/reactos/system32/ntdll_vista.dll
 RMC "$BUILD_DIR/base/system/winlogon/winlogon.exe"            ::/reactos/system32/winlogon.exe
 RMC "$BUILD_DIR/win32ss/win32k.sys"                           ::/reactos/system32/win32k.sys

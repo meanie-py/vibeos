@@ -280,15 +280,72 @@ export-surface gap, NOT a fexprobe bug:
   `RtlWakeAddress*`. This is unimplemented synchronization primitive surface.
 
 This blocks ALL FEX exes (rungs 2/3/4 and rung-1 checkpoint 2) since FEX's libc++
-uses these threading primitives. It is real feature work, deferred:
-  1. Implement the WaitOnAddress family (`RtlWaitOnAddress`/`RtlWakeAddress*` in
-     ntdll, or `WaitOnAddress`/`WakeByAddress*` in kernel32 — the rtl-sync crate
-     is the likely home; `NtWaitForAlertByThreadId`/`RtlWaitOnAddress` were
-     already flagged MISSING in the readiness matrix).
-  2. Unify the synch apiset export surface — options: a real `kernelbase.dll`
-     that re-exports both halves; make base kernel32 export the Vista+ synch
-     forwarders unconditionally; or teach the apiset loader to chain-search
-     (kernel32 → kernel32_vista). Needs a design decision.
+uses these threading primitives.
+
+### Rung 2 — synch export surface RESOLVED (2026-07-09): real (Vista-scoped) kernelbase + kernel32 split-surface + CNTKCTL
+
+The blocker split into three independent OS gaps, all fixed. fexprobe now loads
+fully, runs CRT + libc++ static init + global ctors, enters `main`, drives
+FEXCore setup, and reaches guest-blob execution (`[FEX-HELLO] executing guest
+blob @ ...`). arm64 still boots to desktop (`shell ready`).
+
+1. **The missing primitive — `RtlWaitOnAddress`/`RtlWakeAddress{All,Single}`.**
+   Implemented in the rtl-sync crate (`sdk/lib/rust/rtl-sync/src/waitaddr.rs`):
+   anonymous NT keyed-event + 256-way address-hash bucket table, each waiter
+   parked on a UNIQUE key (its own stack entry) so keyed-event pairing is exact
+   even through the timeout race (waker/waiter serialize on the bucket spin lock
+   + a `Signaled` flag; releases issued OUTSIDE the lock). Corrected for the
+   stricter WaitOnAddress contract — a wake is NEVER lost (unlike condvar, whose
+   callers re-test a predicate). Exported from base `ntdll.spec` (stripped at
+   0x502) AND `ntdll_vista.spec` (the real 0x600 export home; gated
+   `any(cabi, vista)` + re-exported via `rtl-vista-rust`).
+
+2. **The apiset surface — real (minimal) `kernelbase.dll`.** Chose option 1
+   (real kernelbase) scoped to Vista: a deliberately tiny `dll/win32/kernelbase`
+   (NOT the 1746-export wine tree, still stubbed) owning the modern synch
+   surface. Almost pure forwarders (condvar/InitOnce → kernel32_vista;
+   WakeByAddress* → ntdll_vista.RtlWakeAddress*; Sleep → kernel32); only
+   `WaitOnAddress` has local code (DWORD-ms → LARGE_INTEGER shim over
+   ntdll_vista!RtlWaitOnAddress). `api-ms-win-core-synch-l1-2-0` re-pointed at it
+   (`apisets.table.c`; the arm64 Rust resolver regenerates from that same file).
+
+3. **The split kernel32 surface — the direct-by-name imports.** fexprobe imports
+   the SRW `*Exclusive` trio + 4 Vista file APIs (`GetFileInformationByHandleEx`,
+   `GetFinalPathNameByHandleW`, `CreateSymbolicLinkW`, `SetFileInformationByHandle`)
+   *directly by the name* `KERNEL32.dll` — no apiset/kernelbase redirect can touch
+   those, and base kernel32 (0x502) version-gates them out. Exported exactly those
+   7 in `kernel32.spec` **`-arch=arm64`**, forwarding SRW → `ntdll_vista.Rtl*` and
+   the file APIs → `kernel32_vista.*` (SetFileInformationByHandle an `-arch=arm64
+   -stub`).
+
+   **Why `-arch=arm64`, not a plain ungate (a gate-caught regression):** first
+   attempt dropped the `-version=0x600+` gate outright. arm64 booted + fexprobe
+   ran, but **i386 AND amd64 BUGCHECK 0x4C `(0xc0000139` = STATUS_ENTRYPOINT_NOT_
+   FOUND`)` deterministically at csrss's `LoadServerDll winsrv`.** Root cause:
+   spec2def assigns export ordinals **sequentially over the *included* entries
+   only** (`Name=... @N`), and `DLL_EXPORT_VERSION` is `0x502`, so those 7 were
+   version-excluded on x86. Un-gating *inserts* them at their alphabetical
+   positions → **shifts every later export's ordinal by +1..+7** → breaks an
+   x86 boot DLL that binds kernel32 **by ordinal**. arm64 tolerates the shift (no
+   by-ordinal kernel32 importers). Since fexprobe is arm64-only, gating the 7 to
+   `-arch=arm64` leaves the x86 kernel32 ordinal table byte-identical to master
+   (fix confirmed: i386 back to green) while arm64 still exports them. (x86 FEX,
+   if ever wanted, must instead pin explicit ordinals or find+rebuild the
+   by-ordinal importer — do NOT plain-ungate.) See field manual §9.35.
+
+Plus a **kernel** fix (`ke/arm64/kiinit.rs`): set `CNTKCTL_EL1.EL0PCTEN|EL0VCTEN`
+so EL0 can read the generic-timer counters. vibeos's own user-mode never reads
+them directly, so it was never enabled; FEX's `SpinWaitLock` ctor does
+`mrs CNTFRQ_EL0` (was trapping `C000001D` illegal-instruction).
+
+### Rung 2 — remaining blocker (2026-07-09): FEXCore execution-engine data abort
+
+Past all OS-integration gaps, fexprobe now faults INSIDE FEXCore at guest-blob
+execution: `C0000005` data abort, PC=`0x140013714` (FEXCore code, symbols
+stripped), `ldr x8,[x22,#8]` with x22=`0x7FFFBDBF0000`. This is FEXCore
+dispatcher/JIT territory (thread state / signal-delegator / guest-memory setup),
+a genuinely different problem class from the export surface — the next thing to
+debug for rung 2 completion.
 
 ### Rung 2 wedge — RESOLVED (2026-07-08): three stacked bugs, all fixed
 
