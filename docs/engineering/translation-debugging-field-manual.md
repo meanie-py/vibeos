@@ -4033,3 +4033,43 @@ to `KeUserExceptionDispatcher` (`ke/arm64/stubs.rs:1079+`), and
 (added this lane, amd64/i386 parity). Only the ntdll-side raise entry is
 missing. Non-fatal to boot (sehtest is fire-and-forget; arm64 desktop still
 reaches shell ready). Design: `docs/engineering/crash-value-design.md`.
+
+### 9.45 (RESOLVED 2026-07-09) arm64 BUGCHECK 0x23 during first-logon profile creation — untranslated fastfat `FatOpenExistingDirectory` stub
+
+**Symptom.** arm64 boots to `shell ready`, then bugchecks *after the marker*:
+```
+(\dll\win32\userenv\profile.c:1841) Error: 2   ← GetUserProfileDirectoryW: no ProfileList\<SID>
+HvHiveWillShrink is unimplemented              ← red herring (benign working stub)
+FatAllocateDiskSpace -> (VOID)                 ← real, working
+FASTFAT_STUB_HIT: FatOpenExistingDirectory
+*** BUGCHECK: 0x00000023 (0xDEAD0000, 0, 0, 0)
+```
+Intermittent on mainline (timing-sensitive) — origin/master booted 9/9 green,
+but a netstack change that made boot-time networking livelier nudged the timing
+and reproduced it **6/6**. The `0xDEAD0000` is the deliberate stub marker, not a
+corruption poison.
+
+**Root cause.** fastfat is fully Rust-cohab (all 34 C bodies replaced), but
+`FatOpenExistingDirectory` was never translated — only FFI-declared, backed by a
+`STUB_BUGCHECK()` in `rust_cohab_stub.c`. It's reached from `IRP_MJ_CREATE` →
+`FatCommonCreate` whenever a path resolves to an **existing directory with no
+cached DCB** (first-time open). First-logon profile creation (userenv → config
+manager creating the user hive → opening the profile's containing directory on
+the FAT32 ramdisk) is one such path. Only bites arm64 because arm64's system
+volume IS fastfat (x86 boots from cdfs), so it was latent + uncovered.
+
+**Fix.** Translated the legacy C body (`create.c:4136`) to Rust in
+`fastfat-rust/src/create.rs` as `#[no_mangle] FatOpenExistingDirectory`,
+mirroring the already-translated sibling `FatOpenExistingDcb` (same
+`'try_body`/`abnormal_termination` DUMMY_PSEH shape, `Iosb.__bindgen_anon_1`
+status field, oplock/share-access/count idioms). All callees were already real
+Rust (`FatCreateDcb`/`FatCreateCcb`/`FatSetFileObject`/`FatCheckFileAccess`/
+`FatGetNeedEaCount`), so no new stubs underneath. C stub removed from
+`rust_cohab_stub.c` so the Rust symbol wins.
+
+**Reusable lesson.** A `FASTFAT_STUB_HIT: <fn>` on serial is an *un-translated
+fastfat function*, not a corruption — grep `rust_cohab_stub.c` for the name; the
+real C body is still on disk (`create.c` et al, kept per the never-delete rule)
+and a sibling in `fastfat-rust` shows the translation idiom. These are latent
+landmines on arm64 (the only fastfat-backed boot volume); a timing change
+elsewhere can expose one that was dormant for months.
