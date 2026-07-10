@@ -146,43 +146,6 @@ pub unsafe extern "system" fn HalAllocateCommonBuffer(
     if !LogicalAddress.is_null() {
         *LogicalAddress = base_phys;
     }
-
-    // TEMP Wall-2 instrumentation (task #18) — remove before landing.
-    // Verify the allocation is REALLY physically contiguous: every page's true
-    // phys must equal base_phys + page offset, else DMA descriptors carved at
-    // offsets point at the wrong physical memory.
-    {
-        extern "C" {
-            fn DbgPrint(fmt: *const u8, ...) -> u32;
-        }
-        let pages = ((Length as usize) + 0xFFF) >> 12;
-        let mut bad = 0u32;
-        let mut i = 0usize;
-        while i < pages {
-            let pva = (va as usize + (i << 12)) as ddk::PVOID;
-            let p = ddk::MmGetPhysicalAddress(pva);
-            let expect = base_phys.QuadPart as u64 + ((i as u64) << 12);
-            if p.QuadPart as u64 != expect {
-                bad += 1;
-                DbgPrint(
-                    b"[W2-CB] NONCONTIG page %d: va=%p phys=%llx expect=%llx\n\0".as_ptr(),
-                    i as u32,
-                    pva,
-                    p.QuadPart as u64,
-                    expect,
-                );
-            }
-            i += 1;
-        }
-        DbgPrint(
-            b"[W2-CB] alloc va=%p len=%x base_phys=%llx pages=%d noncontig=%d\n\0".as_ptr(),
-            va,
-            Length,
-            base_phys.QuadPart as u64,
-            pages as u32,
-            bad,
-        );
-    }
     va
 }
 

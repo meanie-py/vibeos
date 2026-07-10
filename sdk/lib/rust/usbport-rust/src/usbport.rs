@@ -1105,22 +1105,6 @@ pub unsafe extern "system" fn USBPORT_IsrDpcHandler(
             {
                 EndpointReady = 1 as BOOLEAN;
             }
-
-            // TEMP Wall-2 instrumentation (task #18) — remove before landing
-            {
-                static mut W2_EPSC_COUNT: u32 = 0;
-                if W2_EPSC_COUNT < 200 {
-                    W2_EPSC_COUNT += 1;
-                    DbgPrint(
-                        b"[W2-EPSC] ep=%p hcfn=%x epfn=%x ready=%d next=%x\n\0".as_ptr() as PCSTR,
-                        Endpoint,
-                        FrameNumber,
-                        (*Endpoint).FrameNumber,
-                        EndpointReady as u32,
-                        (*Endpoint).StateNext,
-                    );
-                }
-            }
         }
 
         if EndpointReady != 0 {
@@ -2492,6 +2476,7 @@ pub unsafe extern "system" fn USBPORT_CompleteTransfer(Urb: PURB, TransferStatus
 
     UrbTransfer = core::ptr::addr_of_mut!((*Urb).__bindgen_anon_1.UrbControlTransfer);
     Transfer = (*UrbTransfer).hca.Reserved8[0] as PUSBPORT_TRANSFER;
+    Endpoint = (*Transfer).Endpoint;
 
     (*Transfer).USBDStatus = TransferStatus;
     Status = USBPORT_USBDStatusToNtStatus(Urb, TransferStatus);
@@ -2499,7 +2484,6 @@ pub unsafe extern "system" fn USBPORT_CompleteTransfer(Urb: PURB, TransferStatus
     (*UrbTransfer).TransferBufferLength = (*Transfer).CompletedTransferLen;
 
     if ((*Transfer).Flags as u32 & TRANSFER_FLAG_DMA_MAPPED as u32) != 0 {
-        Endpoint = (*Transfer).Endpoint;
         FdoDevice = (*Endpoint).FdoDevice;
         FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
         DmaOperations = (*(*FdoExtension).DmaAdapter).DmaOperations as PDMA_OPERATIONS;
