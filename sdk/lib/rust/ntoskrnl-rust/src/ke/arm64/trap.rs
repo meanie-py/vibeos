@@ -14,6 +14,7 @@ use ntkrnl_sys::ddk::{
     _KTRAP_FRAME,
     _KTHREAD,
     _KSERVICE_TABLE_DESCRIPTOR,
+    KEXCEPTION_FRAME,
     KPROCESSOR_MODE,
     PKTHREAD,
     PKTRAP_FRAME,
@@ -23,6 +24,29 @@ use ntkrnl_sys::ddk::{
     KiDispatchException,
     NtYieldExecution,
 };
+
+// Capture the callee-saved integer registers (x19-x28) into a KEXCEPTION_FRAME.
+// x0 = &KEXCEPTION_FRAME.X19 (the first field; X19..X28 are 10 contiguous u64).
+// A #[naked]-equivalent (no prologue) so it reads the CALLER's live x19-x28 —
+// callee-saved, so they survive the `bl` into here unchanged. Used by the sync
+// exception handler to snapshot the interrupted context's non-volatile regs
+// BEFORE MmAccessFault (and the handler body) clobber them; without it the
+// CONTEXT handed to KiUserExceptionDispatcher carries zeroed x19-x28 and a
+// hardware fault delivered to a user __except resumes with lost callee-saved
+// state (crash-value: arm64 sehtest hw-fault caught but RESULT FAIL / "(null)").
+core::arch::global_asm!(
+    ".globl KiCaptureCalleeSaved",
+    "KiCaptureCalleeSaved:",
+    "stp x19, x20, [x0, #0x00]",
+    "stp x21, x22, [x0, #0x10]",
+    "stp x23, x24, [x0, #0x20]",
+    "stp x25, x26, [x0, #0x30]",
+    "stp x27, x28, [x0, #0x40]",
+    "ret",
+);
+extern "C" {
+    fn KiCaptureCalleeSaved(out: *mut u64);
+}
 
 extern "C" {
     static mut Arm64UartKernelBase: PVOID;
@@ -293,6 +317,15 @@ unsafe fn KiSvcDispatch(TrapFrame: PKTRAP_FRAME) {
 
 #[no_mangle]
 pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) {
+    // Snapshot the interrupted context's callee-saved x19-x28 FIRST — before
+    // MmAccessFault or anything else clobbers them — so KiDispatchException can
+    // build a CONTEXT with the real non-volatile registers (see
+    // KiCaptureCalleeSaved). TRAP_PROLOG only touches x0/x1, so at this point
+    // x19-x28 still hold the faulting code's values.
+    let mut ExFrame: KEXCEPTION_FRAME = core::mem::zeroed();
+    KiCaptureCalleeSaved(core::ptr::addr_of_mut!(ExFrame.X19));
+    let ExFramePtr = core::ptr::addr_of_mut!(ExFrame);
+
     let EC = ((*TrapFrame).Esr >> 26) & 0x3F;
     let ISS = (*TrapFrame).Esr & 0x1FFFFFF;
 
@@ -338,7 +371,7 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
             ExRec.ExceptionInformation[1] = (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress;
             KiDispatchException(
                 &mut ExRec as *mut EXCEPTION_RECORD,
-                core::ptr::null_mut(),
+                ExFramePtr,
                 TrapFrame,
                 FaultMode,
                 1u8
@@ -382,7 +415,7 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
             ExRec.ExceptionInformation[1] = (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress;
             KiDispatchException(
                 &mut ExRec as *mut EXCEPTION_RECORD,
-                core::ptr::null_mut(),
+                ExFramePtr,
                 TrapFrame,
                 FaultMode2,
                 1u8
@@ -437,7 +470,7 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
             ExRec.NumberParameters = 0;
             KiDispatchException(
                 &mut ExRec as *mut EXCEPTION_RECORD,
-                core::ptr::null_mut(),
+                ExFramePtr,
                 TrapFrame,
                 FaultMode4,
                 1u8
@@ -457,7 +490,7 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
             ExRec.NumberParameters = 0;
             KiDispatchException(
                 &mut ExRec as *mut EXCEPTION_RECORD,
-                core::ptr::null_mut(),
+                ExFramePtr,
                 TrapFrame,
                 FaultMode3,
                 1u8

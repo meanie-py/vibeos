@@ -256,23 +256,48 @@ window where it's rejected. Fix: `&= !DO_DEVICE_INITIALIZING` (matches every oth
 Rust driver + the C *intent*), which both marks the FDO ready and preserves the I/O
 flags — removing the necessary condition for all layouts.
 
-## OPEN: arm64 user-mode SEH first-chance delivery
+## arm64 user-mode SEH — NOW DELIVERS (2026-07-10)
 
-`sehtest` on arm64: the software raise arrives at `KiDispatchException` with
-`FirstChance=0` (second-chance) directly — no first-chance user dispatch ever
-happens (`[UEXC] 1st=0` then `[UEXC-KILL]`, process dies `exit=0xe0dead02`).
-Root: **`RtlRaiseException` is not implemented for arm64** — `rtl-except`'s
-arm64 module only *references* it (`arm64/except.rs:403,420`); the
-`@ stdcall -register RtlRaiseException` ntdll export has an amd64/i386 asm
-capture-and-`NtRaiseException(…,TRUE)` stub with no arm64 equivalent, so the
-user raise never enters first-chance. This is the FIRST time arm64 user SEH
-has been exercised (the 2026-07-07 map noted the arm64 unwinder as
-"complete translation, never runtime-exercised"). The kernel-side arm64
-delivery (`KiDispatchExceptionToUser`, the dispatch.S swallow added this
-lane) is in place; the missing piece is the ntdll-side arm64
-`RtlRaiseException` (+ likely `RtlpExecuteHandler*` asm trampolines). Fix is
-an arm64 asm/naked capture stub mirroring amd64 `except_asm.S`. Field manual
-§9.36.
+With the `.xdata` unwinder landed, arm64 `sehtest` first-chance delivery works
+(`[UEXC] 1st=1`, `[UEXC-DISPATCH]` to `KiUserExceptionDispatcher`). Results:
+- `[SEH-USER] sw-raise: caught=1 (PASS)` — software `RaiseException` caught.
+- `[SEH-USER] finally: ran=1 caught=1 (PASS)` — `__finally` unwind runs.
+- `[SEH-USER] hw-fault: caught=1 code=0xc0000005 (PASS)` — the hardware
+  ACCESS_VIOLATION in a noinline callee is **caught** by the user `__except`.
+
+(The earlier "RtlRaiseException not implemented for arm64" diagnosis was WRONG —
+`RtlRaiseException` is present via `rtl-diag`. The real gap was the `.xdata` leaf
+stub in `RtlVirtualUnwind`, now fixed.)
+
+### Fix: kernel hardware-fault context must carry callee-saved x19-x28
+
+`ke/arm64/trap.rs` `KiSynchronousExceptionHandler` called `KiDispatchException`
+with a **NULL** `ExceptionFrame`. On ARM64 the callee-saved integer regs
+(x19-x28) live in the KEXCEPTION_FRAME, not the KTRAP_FRAME, so
+`KeTrapFrameToContext` left them at their zero-init values → the CONTEXT handed
+to `KiUserExceptionDispatcher` carried **zeroed x19-x28**, and a hardware fault
+delivered to a user `__except` resumed with lost callee-saved state (the
+`__except`'s `"PASS"` string pointer — a non-volatile reg — resolved to NULL,
+printing `(null)`). Fix: `KiCaptureCalleeSaved` (a no-prologue `global_asm!`
+shim) snapshots x19-x28 at handler entry — still the faulting code's values,
+since `TRAP_PROLOG` only touches x0/x1 — into a local KEXCEPTION_FRAME passed to
+all four `KiDispatchException` calls. The `__except` now sees correct x19-x28
+(`hw-fault … (PASS)`).
+
+### RESIDUAL (OPEN): hw-fault `__except` leaves `main`'s callee-saved wrong
+
+`sehtest` still prints `RESULT: FAIL`. Instrumented: `after sw-raise r=1 pass=1`,
+`after finally r=1 pass=1`, `after hw-fault r=1 pass=0` — `TestHardwareFault`
+returns 1 correctly, but `main`'s aggregate `pass` (a callee-saved register) is
+corrupted to 0 **across** the hardware-fault `__except`, while the software-raise
+`__except` preserves it. FP-relative access is fine (locals, return value, the
+`(PASS)` string all correct); the corruption is SP-relative — the `__except`
+resume SP is subtly off, so the epilogue's `ldp x19,x20,[sp,#..]` restores
+`main`'s registers from a wrong slot. This is a multi-frame ARM64 unwind
+SP-restoration detail in `RtlUnwindEx`/`RtlVirtualUnwind` (leaf `FaultingWrite`
+→ `main`'s inlined `__except`). Next step: GDB single-step the unwind, compare
+the resume SP against the epilogue's expected frame SP. Boot stays green
+(sehtest is fire-and-forget); this is the last-mile of arm64 hardware-fault SEH.
 
 ## Validation ladder (repeat before landing)
 
