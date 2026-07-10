@@ -427,6 +427,18 @@ dispatch round-trips a *modified* CONTEXT — `KiUserExceptionDispatcher` → VE
 `EXCEPTION_CONTINUE_EXECUTION` → `NtContinue` restores Pc/X-regs, so guest-SEH /
 SMC viability holds. All in `tools/fex/hello-compute/Main.cpp`.
 
+**Rung 4 — syscall-boundary mechanism: PROVEN in-harness (2026-07-09).** The
+guest blob now ends `mov rax,0x99; mov rdi,0xC0FFEE; syscall; hlt`. The harness
+syscall handler sets `OSABI = OS_GENERIC` (the wow64-style ABI: JIT spills ALL
+guest regs to the CpuStateFrame before `HandleSyscall`, refills after, C return
+value ignored) and services the trap by reading guest RAX/RDI from state,
+writing the result into guest RAX, and advancing `State.rip` past the 2-byte
+`syscall` (the JIT reloads rip on return — same contract Wow64SystemServiceEx
+dispatch relies on). On-box: `num=0x99 arg=0xc0ffee rip=<syscall insn>` exact,
+guest resumes and exits with the handler-written RAX. Full ladder in one guest
+run: compute → AV → reconstruct/redirect/resume → syscall thunk → clean exit.
+Remaining rung-4 scope (the real deliverable) below.
+
 **Rung 4 — the BTCpu boundary + ONE thunk ("hello world").** Author minimal
 `wow64.dll`-side host: load libwow64fex.dll by contract, implement
 `Wow64SystemServiceEx` with a tiny hand-written thunk table (e.g. `NtWriteFile` to

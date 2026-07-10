@@ -50,6 +50,34 @@ struct StartupTripwire {
   StartupTripwire() { DbgPrint("[FEX-HELLO-CTOR] a global ctor ran (pre-main)\n"); }
 } g_StartupTripwire;
 
+constexpr uint64_t GuestExpected = 0x5CA11ED; // written into guest RAX by the host syscall handler
+constexpr uint64_t GuestFaultPointRAX = 0x31; // 42 + 7, live in RAX at the AV
+constexpr uint64_t GuestFaultOffset = 0xB;    // blob offset of the faulting mov
+constexpr uint64_t GuestRecoveryOffset = 0x14; // blob offset of the recovery entry
+constexpr uint64_t GuestSyscallNum = 0x99;    // guest RAX at the syscall
+constexpr uint64_t GuestSyscallArg = 0xC0FFEE; // guest RDI at the syscall
+
+const uint8_t GuestBlob[] = {
+  0x48, 0xC7, 0xC0, 0x2A, 0x00, 0x00, 0x00,             // +0x00: mov rax, 0x2A
+  0x48, 0x83, 0xC0, 0x07,                               // +0x07: add rax, 7
+  0x48, 0x89, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00,       // +0x0B: mov [0], rax — AV (rung 3)
+  0xF4,                                                 // +0x13: hlt (skipped)
+  0x48, 0xC7, 0xC0, 0x99, 0x00, 0x00, 0x00,             // +0x14: mov rax, 0x99 (recovery)
+  0x48, 0xC7, 0xC7, 0xEE, 0xFF, 0xC0, 0x00,             // +0x1B: mov rdi, 0xC0FFEE
+  0x0F, 0x05,                                           // +0x22: syscall (rung 4)
+  0xF4,                                                 // +0x24: hlt
+};
+constexpr uint64_t GuestSyscallOffset = 0x22;
+constexpr size_t GuestSyscallInstSize = 2;
+
+// Shared with the VEH (single-threaded harness; written before ExecuteThread).
+FEXCore::Context::Context* g_CTX;
+FEXCore::Core::InternalThreadState* g_Thread;
+FEXCore::SignalDelegator* g_SignalDelegator;
+uint64_t g_GuestRIPBase;
+int g_GuestFaultsHandled;
+int g_GuestSyscalls;
+
 // FEXCore's LookupCache allocates its block-lookup tables (~264MB of VA in
 // 64-bit mode: VirtualMemSize>>12*8 + 128MB CODE + L1) as MEM_RESERVE-only and
 // then calls SyscallHandler->MarkOvercommitRange(), expecting the host layer to
@@ -63,33 +91,37 @@ struct StartupTripwire {
 // PAGE_READWRITE up front). Fault-driven overcommit is rung-3 territory.
 class ProbeSyscallHandler final : public FEX::DummyHandlers::DummySyscallHandler {
 public:
+  ProbeSyscallHandler() {
+    // Rung 4: OS_GENERIC is the wow64-style syscall ABI — the JIT spills ALL
+    // guest registers to the CpuStateFrame before HandleSyscall and refills
+    // after, so the handler reads/writes guest state directly and the C return
+    // value is ignored (NORETURNEDRESULT). Same contract as WowSyscallHandler.
+    OSABI = FEXCore::HLE::SyscallOSABI::OS_GENERIC;
+  }
+
+  // Rung 4: the guest executes `syscall` with a "number" in RAX and an arg in
+  // RDI. State.rip holds the ADDRESS OF the syscall instruction (the JIT
+  // reloads rip after this returns), so the handler must advance it past the
+  // instruction itself — exactly like Wow64SystemServiceEx's dispatcher sets a
+  // return RIP. Result goes into guest RAX by hand (OS_GENERIC ignores the
+  // return value).
+  uint64_t HandleSyscall(FEXCore::Core::CpuStateFrame* Frame, FEXCore::HLE::SyscallArguments* Args) override {
+    auto& State = Frame->State;
+    DbgPrint("[FEX-SYSCALL] guest syscall: num=0x%llx arg=0x%llx rip=%p\n",
+             (unsigned long long)State.gregs[FEXCore::X86State::REG_RAX],
+             (unsigned long long)State.gregs[FEXCore::X86State::REG_RDI], (void*)State.rip);
+    g_GuestSyscalls++;
+    State.gregs[FEXCore::X86State::REG_RAX] = GuestExpected;
+    State.rip += GuestSyscallInstSize;
+    return 0;
+  }
+
   void MarkOvercommitRange(uint64_t Start, uint64_t Length) override {
     void* Ret = VirtualAlloc(reinterpret_cast<void*>(Start), Length, MEM_COMMIT, PAGE_READWRITE);
     DbgPrint("[FEX-HELLO] overcommit range %p +0x%llx -> commit %s\n", (void*)Start, (unsigned long long)Length, Ret ? "OK" : "FAILED");
   }
   void UnmarkOvercommitRange(uint64_t Start, uint64_t Length) override {}
 };
-
-constexpr uint64_t GuestExpected = 0x99;      // recovery routine's RAX
-constexpr uint64_t GuestFaultPointRAX = 0x31; // 42 + 7, live in RAX at the AV
-constexpr uint64_t GuestFaultOffset = 0xB;    // blob offset of the faulting mov
-constexpr uint64_t GuestRecoveryOffset = 0x14; // blob offset of the recovery entry
-
-const uint8_t GuestBlob[] = {
-  0x48, 0xC7, 0xC0, 0x2A, 0x00, 0x00, 0x00,             // +0x00: mov rax, 0x2A
-  0x48, 0x83, 0xC0, 0x07,                               // +0x07: add rax, 7
-  0x48, 0x89, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00,       // +0x0B: mov [0], rax — AV
-  0xF4,                                                 // +0x13: hlt (skipped)
-  0x48, 0xC7, 0xC0, 0x99, 0x00, 0x00, 0x00,             // +0x14: mov rax, 0x99
-  0xF4,                                                 // +0x1B: hlt
-};
-
-// Shared with the VEH (single-threaded harness; written before ExecuteThread).
-FEXCore::Context::Context* g_CTX;
-FEXCore::Core::InternalThreadState* g_Thread;
-FEXCore::SignalDelegator* g_SignalDelegator;
-uint64_t g_GuestRIPBase;
-int g_GuestFaultsHandled;
 
 // First-chance VEH crash dumper. The rung-2 faults land inside FEXCore's
 // runtime-emitted dispatcher/JIT code (no symbols possible), so on AV dump the
@@ -227,9 +259,9 @@ extern "C" int main(int /*argc*/, char** /*argv*/) {
   CTX->ExecuteThread(Thread);
 
   const uint64_t GuestRAX = Frame->State.gregs[FEXCore::X86State::REG_RAX];
-  const bool Pass = (GuestRAX == GuestExpected) && (g_GuestFaultsHandled == 1);
-  DbgPrint("[FEX-HELLO] guest RAX = 0x%llx (expected 0x%llx), guest faults round-tripped = %d (expected 1) (%s)\n",
-           (unsigned long long)GuestRAX, (unsigned long long)GuestExpected, g_GuestFaultsHandled, Pass ? "PASS" : "FAIL");
+  const bool Pass = (GuestRAX == GuestExpected) && (g_GuestFaultsHandled == 1) && (g_GuestSyscalls == 1);
+  DbgPrint("[FEX-HELLO] guest RAX = 0x%llx (expected 0x%llx), faults round-tripped = %d/1, syscalls thunked = %d/1 (%s)\n",
+           (unsigned long long)GuestRAX, (unsigned long long)GuestExpected, g_GuestFaultsHandled, g_GuestSyscalls, Pass ? "PASS" : "FAIL");
 
   CTX->DestroyThread(Thread);
   DbgPrint("[FEX-HELLO] done\n");
