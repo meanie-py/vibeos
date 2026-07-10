@@ -1164,6 +1164,14 @@ pub unsafe extern "system" fn USBPORT_QueueActiveUrbToEndpoint(
         return 0;
     }
 
+    // TEMP Wall-2 instrumentation (task #18) — remove before landing
+    DbgPrint(
+        b"[W2-QA] Transfer=%p len=%x epflags=%x\n\0".as_ptr() as *const i8,
+        Transfer,
+        (*Transfer).TransferParameters.TransferBufferLength,
+        (*Endpoint).Flags,
+    );
+
     if (*Transfer).TransferParameters.TransferBufferLength == 0
         || ((*Endpoint).Flags as u32 & ENDPOINT_FLAG_DMA_TYPE as u32) == 0
     {
@@ -1277,6 +1285,20 @@ pub unsafe extern "system" fn USBPORT_QueueTransferUrb(mut Urb: PURB) {
             core::ptr::addr_of_mut!((*Parameters).SetupPacket) as *mut core::ffi::c_void,
             core::ptr::addr_of_mut!((*Urb).__bindgen_anon_1.UrbControlTransfer.SetupPacket) as *const core::ffi::c_void,
             core::mem::size_of::<USB_DEFAULT_PIPE_SETUP_PACKET>(),
+        );
+    }
+
+    // TEMP Wall-2 instrumentation (task #18) — remove before landing
+    {
+        let sp = core::ptr::addr_of!((*Parameters).SetupPacket) as *const u8;
+        DbgPrint(
+            b"[W2-QT] Transfer=%p Params=%p len=%x ttype=%x setup=%02x %02x %02x %02x %02x %02x %02x %02x\n\0".as_ptr() as *const i8,
+            Transfer,
+            Parameters,
+            (*Parameters).TransferBufferLength,
+            (*Endpoint).EndpointProperties.TransferType,
+            *sp as u32, *sp.offset(1) as u32, *sp.offset(2) as u32, *sp.offset(3) as u32,
+            *sp.offset(4) as u32, *sp.offset(5) as u32, *sp.offset(6) as u32, *sp.offset(7) as u32,
         );
     }
 

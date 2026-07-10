@@ -781,6 +781,25 @@ pub unsafe extern "system" fn USBPORT_ClosePipe(
         }
         InterlockedDecrement(core::ptr::addr_of_mut!((*Endpoint).LockCounter));
 
+        // TEMP Wall-2 instrumentation (task #18) — remove before landing
+        {
+            static mut W2_CP_COUNT: u32 = 0;
+            if W2_CP_COUNT < 60 {
+                W2_CP_COUNT += 1;
+                DbgPrint(
+                    b"[W2-CP] ep=%p ready=%d pend=%d xfer=%d cancel=%d abort=%d last=%x next=%x\n\0".as_ptr() as PCSTR,
+                    Endpoint,
+                    IsReady as u32,
+                    (IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).PendingTransferList)) == 0) as u32,
+                    (IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).TransferList)) == 0) as u32,
+                    (IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).CancelList)) == 0) as u32,
+                    (IsListEmpty(core::ptr::addr_of_mut!((*Endpoint).AbortList)) == 0) as u32,
+                    (*Endpoint).StateLast,
+                    (*Endpoint).StateNext,
+                );
+            }
+        }
+
         if IsReady as i32 == 1 {
             break;
         }
@@ -1313,9 +1332,13 @@ pub unsafe extern "system" fn USBPORT_ReopenPipe(
         (*Endpoint).EndpointOldIrql,
     );
 
+    // TEMP Wall-2 instrumentation (task #18) — remove before landing
+    DbgPrint(b"[W2-RP] pre-wait\n\0".as_ptr() as PCSTR);
     USBPORT_Wait(FdoDevice as PVOID, 2 as ULONG);
+    DbgPrint(b"[W2-RP] post-wait\n\0".as_ptr() as PCSTR);
 
     MiniportCloseEndpoint(FdoDevice, Endpoint);
+    DbgPrint(b"[W2-RP] closed\n\0".as_ptr() as PCSTR);
 
     RtlZeroMemory(
         Endpoint.offset(1) as *mut core::ffi::c_void,
@@ -1326,6 +1349,7 @@ pub unsafe extern "system" fn USBPORT_ReopenPipe(
         USBPORT_FreeCommonBuffer(FdoDevice, ((*Endpoint).HeaderBuffer as *mut c_void));
         (*Endpoint).HeaderBuffer = core::ptr::null_mut();
     }
+    DbgPrint(b"[W2-RP] freed\n\0".as_ptr() as PCSTR);
 
     KeAcquireSpinLock(
         (core::ptr::addr_of_mut!((*FdoExtension).MiniportSpinLock) as *mut usize),
@@ -1752,6 +1776,18 @@ pub unsafe extern "system" fn USBPORT_DmaEndpointActive(
                     core::ptr::null_mut(),
                 );
             } else {
+                // TEMP Wall-2 instrumentation (task #18) — remove before landing
+                {
+                    let sp = core::ptr::addr_of!((*Transfer).TransferParameters.SetupPacket) as *const u8;
+                    DbgPrint(
+                        b"[W2-SUB] Transfer=%p Params=%p len=%x setup=%02x %02x %02x %02x %02x %02x %02x %02x\n\0".as_ptr() as PCSTR,
+                        Transfer,
+                        core::ptr::addr_of_mut!((*Transfer).TransferParameters),
+                        (*Transfer).TransferParameters.TransferBufferLength,
+                        *sp as u32, *sp.offset(1) as u32, *sp.offset(2) as u32, *sp.offset(3) as u32,
+                        *sp.offset(4) as u32, *sp.offset(5) as u32, *sp.offset(6) as u32, *sp.offset(7) as u32,
+                    );
+                }
                 MpStatus = ((*Packet).SubmitTransfer).expect("non-null function pointer")(
                     (*FdoExtension).MiniPortExt,
                     Endpoint.offset(1) as PVOID,
@@ -1814,6 +1850,22 @@ pub unsafe extern "system" fn USBPORT_DmaEndpointWorker(Endpoint: PUSBPORT_ENDPO
         EndpointState = USBPORT_DmaEndpointActive(FdoDevice, Endpoint);
     } else {
         EndpointState = USBPORT_ENDPOINT_UNKNOWN as ULONG;
+    }
+
+    // TEMP Wall-2 instrumentation (task #18) — remove before landing.
+    // Rate-limited: first 300 iterations only (livelock floods otherwise).
+    {
+        static mut W2_DEW_COUNT: u32 = 0;
+        if W2_DEW_COUNT < 300 {
+            W2_DEW_COUNT += 1;
+            DbgPrint(
+                b"[W2-DEW] ep=%p prev=%x new=%x flags=%x\n\0".as_ptr() as PCSTR,
+                Endpoint,
+                PrevState,
+                EndpointState,
+                (*Endpoint).Flags,
+            );
+        }
     }
 
     KeReleaseSpinLock(

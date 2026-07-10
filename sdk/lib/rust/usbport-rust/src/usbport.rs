@@ -1105,6 +1105,22 @@ pub unsafe extern "system" fn USBPORT_IsrDpcHandler(
             {
                 EndpointReady = 1 as BOOLEAN;
             }
+
+            // TEMP Wall-2 instrumentation (task #18) — remove before landing
+            {
+                static mut W2_EPSC_COUNT: u32 = 0;
+                if W2_EPSC_COUNT < 200 {
+                    W2_EPSC_COUNT += 1;
+                    DbgPrint(
+                        b"[W2-EPSC] ep=%p hcfn=%x epfn=%x ready=%d next=%x\n\0".as_ptr() as PCSTR,
+                        Endpoint,
+                        FrameNumber,
+                        (*Endpoint).FrameNumber,
+                        EndpointReady as u32,
+                        (*Endpoint).StateNext,
+                    );
+                }
+            }
         }
 
         if EndpointReady != 0 {

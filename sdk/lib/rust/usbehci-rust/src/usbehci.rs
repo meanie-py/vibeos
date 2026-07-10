@@ -1981,6 +1981,12 @@ pub unsafe extern "system" fn EHCI_InterruptService(ehciExtension: PVOID) -> BOO
 
     (*EhciExtension).InterruptStatus = iStatus;
 
+    // TEMP Wall-2 instrumentation (task #18) — remove before landing
+    DbgPrint(
+        b"[W2-ISR] sts=%x\n\0".as_ptr() as PCSTR,
+        iStatus.AsULONG,
+    );
+
     WRITE_REGISTER_ULONG(
         core::ptr::addr_of_mut!((*OperationalRegs).HcStatus.AsULONG),
         iStatus.AsULONG,
@@ -3034,6 +3040,19 @@ pub unsafe extern "system" fn EHCI_SubmitTransfer(
     (*EhciTransfer).USBDStatus = USBD_STATUS_SUCCESS as ULONG;
     (*EhciTransfer).EhciEndpoint = EhciEndpoint;
 
+    // TEMP Wall-2 instrumentation (task #18) — remove before landing
+    {
+        let sp = core::ptr::addr_of!((*TransferParameters).SetupPacket) as *const u8;
+        DbgPrint(
+            b"[W2-EHCI] Params=%p len=%x ttype=%x setup=%02x %02x %02x %02x %02x %02x %02x %02x\n\0".as_ptr() as PCSTR,
+            TransferParameters,
+            (*TransferParameters).TransferBufferLength,
+            (*EhciEndpoint).EndpointProperties.TransferType,
+            *sp as u32, *sp.offset(1) as u32, *sp.offset(2) as u32, *sp.offset(3) as u32,
+            *sp.offset(4) as u32, *sp.offset(5) as u32, *sp.offset(6) as u32, *sp.offset(7) as u32,
+        );
+    }
+
     match (*EhciEndpoint).EndpointProperties.TransferType {
         USBPORT_TRANSFER_TYPE_CONTROL => {
             MPStatus = EHCI_ControlTransfer(
@@ -3552,6 +3571,14 @@ pub unsafe extern "system" fn EHCI_SetEndpointState(
 
     EhciEndpoint = ehciEndpoint as PEHCI_ENDPOINT;
     TransferType = (*EhciEndpoint).EndpointProperties.TransferType;
+
+    // TEMP Wall-2 instrumentation (task #18) — remove before landing
+    DbgPrint(
+        b"[W2-SES] ep=%p ttype=%x state=%x\n\0".as_ptr() as PCSTR,
+        EhciEndpoint,
+        TransferType,
+        EndpointState,
+    );
 
     if TransferType == USBPORT_TRANSFER_TYPE_CONTROL as ULONG
         || TransferType == USBPORT_TRANSFER_TYPE_BULK as ULONG
