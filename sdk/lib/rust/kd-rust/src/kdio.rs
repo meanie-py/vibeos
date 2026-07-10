@@ -1184,7 +1184,21 @@ pub unsafe extern "system" fn KdpWireTransportArm(_LoaderBlock: PVOID) -> NTSTAT
     let status = kdcom_serial_rust::kdcom::KdpPortInitialize(2, 115200);
     if NT_SUCCESS(status) {
         KD_WIRE_ACTIVE = true;
-        kdio_printf!(b"KD: kdcom-serial wire transport ARMED (COM2)\n\0".as_ptr() as PCSTR);
+        // Robustness: arm the wire but declare the debugger ABSENT until it
+        // actually speaks. KdDebuggerNotPresent defaults to 0 ("present",
+        // optimistic) — with that, the very first DebugService2 load-symbols
+        // runs the full KdpSymbol/KdpReport machinery (KiSave/RestoreProcessor-
+        // ControlState + a state-change send) against a wire with nobody
+        // listening, on an armed-but-unattached boot. Setting it TRUE here
+        // makes every heavy KD path (KdpSymbol, KdpReport, KdpPrint) self-skip
+        // its guard until a real debugger clears the flag — KdpReceivePacket-
+        // Leader zeroes it on the first received byte (breakin/reset/packet),
+        // so a live or late WinDbg attach engages KD fully. This is the
+        // Windows semantics (not-present until proven present) and is what
+        // lets an armed no-debugger boot reach the desktop.
+        KdDebuggerNotPresent = 1u8;
+        (*SharedUserData).KdDebuggerEnabled &= !0x00000002;
+        kdio_printf!(b"KD: kdcom-serial wire transport ARMED (COM2, awaiting debugger)\n\0".as_ptr() as PCSTR);
     } else {
         kdio_printf!(
             b"KD: kdcom-serial wire transport init FAILED (0x%08lx)\n\0".as_ptr() as PCSTR,
@@ -1205,6 +1219,21 @@ pub unsafe extern "system" fn KdSendPacket(
     Context: PKD_CONTEXT,
 ) {
     if KD_WIRE_ACTIVE {
+        // Tee DbgPrint traffic to COM1 before it becomes a DEBUG_IO packet on
+        // the COM2 wire: the console/smoke-marker channel must stay alive on a
+        // KD-armed boot (WinDbg additionally shows the same text via the wire).
+        if PacketType == PACKET_TYPE_KD_DEBUG_IO
+            && !MessageHeader.is_null()
+            && !MessageData.is_null()
+        {
+            let DebugIo = (*MessageHeader).Buffer as PDBGKD_DEBUG_IO;
+            if !DebugIo.is_null()
+                && (*DebugIo).ApiNumber == DbgKdPrintStringApi
+                && !(*MessageData).Buffer.is_null()
+            {
+                KdIoPrintString((*MessageData).Buffer, (*MessageData).Length as ULONG);
+            }
+        }
         return kdcom_serial_rust::kddll::KdSendPacket(
             PacketType,
             MessageHeader as *mut _,

@@ -524,7 +524,6 @@
            *nr_freed = 0;
            *old_access_token = core::ptr::null_mut();
            *old_access_token = old_token as PACCESS_TOKEN;
-           *out_buffer_needed = 0;
            *out_privilege_set = core::ptr::null_mut();
            *out_privilege_set = privilege_set;
            *pIrp = Irp;
@@ -554,7 +553,6 @@
            *ret = find_first_entry(resdirptr, root, want_dir) as PVOID;
            *ret = resdirptr as PVOID;
            *return_length = core::mem::size_of::<DEBUG_OBJECT_KILL_PROCESS_ON_EXIT_INFORMATION>() as ULONG;
-           *return_length = length;
            *return_length = module_file_name.Length as SIZE_T + core::mem::size_of::<_MEMORY_SECTION_NAME>();
            *return_length = required;
            *section_handle = handle;
@@ -1282,10 +1280,7 @@
     L2061 ObInsertObject(): *handle = ...
     L2158 xHalIoReadPartitionTable(): *PartitionBuffer = ...
     L2160 NtCreateSection(): *section_handle = ...
-    L2174 KdSystemDebugControl(): *return_length = ...
     L2187 NtOpenSection(): *section_handle = ...
-    L2198 KdChangeOption(): *out_buffer_needed = ...
-    L2214 KdChangeOption(): *out_buffer_needed = ...
     L2221 RtlGetFullPathName_UstrEx(): *StringUsed = ...
     L2224 IopAcquireFileObjectLock(): *LockFailed = ...
     L2224 RtlGetFullPathName_UstrEx(): *LengthNeeded = ...
@@ -1468,6 +1463,6 @@
   sdk/lib/rust/wmi-rust/src/guidobj.rs:
   sdk/lib/rust/wmi-rust/src/smbios.rs:
   sdk/lib/rust/wmi-rust/src/wmidrv.rs:
-Found 771 unprotected output pointer writes in 125 files:
+Found 768 unprotected output pointer writes in 125 files:
 Run with --fix to see suggested replacements
-Total: 771 violations in 125 files
+Total: 768 violations in 125 files
