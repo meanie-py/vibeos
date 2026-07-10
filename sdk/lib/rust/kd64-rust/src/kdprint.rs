@@ -45,6 +45,7 @@ extern "system" {
     fn KdpReportLoadSymbolsStateChange( DllPath: PSTRING, SymbolInfo: PKD_SYMBOLS_INFO, Unload: BOOLEAN, ContextRecord: PCONTEXT, );
     fn NtQueryDebugFilterState(ComponentId: ULONG, Level: ULONG) -> NTSTATUS;
 }
+
 extern "C" {
     fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL);
     fn KeLowerIrql(NewIrql: KIRQL);
@@ -328,12 +329,19 @@ pub unsafe extern "system" fn KdpSymbol(
         core::ptr::addr_of_mut!((*prcb).ProcessorState.ContextFrame),
     );
 
-    KdpMoveMemory(
-        ContextRecord as PVOID,
-        core::ptr::addr_of_mut!((*prcb).ProcessorState.ContextFrame) as PVOID,
-        core::mem::size_of::<CONTEXT>(),
-    );
-    KiRestoreProcessorControlState(core::ptr::addr_of_mut!((*prcb).ProcessorState));
+    // A pre-ACK send can declare the debugger absent and return without any
+    // remote state mutation.  In that case there is nothing to copy/restore;
+    // restoring the snapshot is both unnecessary and unsafe on this
+    // same-ring INT 2Dh path (the interrupted kernel stack is live beneath
+    // the trap frame).  An attached debugger still gets the full restore.
+    if KdDebuggerNotPresent == 0 {
+        KdpMoveMemory(
+            ContextRecord as PVOID,
+            core::ptr::addr_of_mut!((*prcb).ProcessorState.ContextFrame) as PVOID,
+            core::mem::size_of::<CONTEXT>(),
+        );
+        KiRestoreProcessorControlState(core::ptr::addr_of_mut!((*prcb).ProcessorState));
+    }
 
     KdExitDebugger(enable);
 }

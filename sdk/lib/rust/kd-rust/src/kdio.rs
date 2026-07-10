@@ -6,6 +6,8 @@
 //! extern decl.
 
 use ntkrnl_sys::base::*;
+use ntkrnl_sys::constants::{PACKET_TYPE_KD_ACKNOWLEDGE, PACKET_TYPE_KD_RESET};
+use ntkrnl_sys::globals::KdpContext;
 use ntkrnl_sys::ddk::{
     self,
     HANDLE,
@@ -1184,21 +1186,25 @@ pub unsafe extern "system" fn KdpWireTransportArm(_LoaderBlock: PVOID) -> NTSTAT
     let status = kdcom_serial_rust::kdcom::KdpPortInitialize(2, 115200);
     if NT_SUCCESS(status) {
         KD_WIRE_ACTIVE = true;
-        // Robustness: arm the wire but declare the debugger ABSENT until it
-        // actually speaks. KdDebuggerNotPresent defaults to 0 ("present",
-        // optimistic) — with that, the very first DebugService2 load-symbols
-        // runs the full KdpSymbol/KdpReport machinery (KiSave/RestoreProcessor-
-        // ControlState + a state-change send) against a wire with nobody
-        // listening, on an armed-but-unattached boot. Setting it TRUE here
-        // makes every heavy KD path (KdpSymbol, KdpReport, KdpPrint) self-skip
-        // its guard until a real debugger clears the flag — KdpReceivePacket-
-        // Leader zeroes it on the first received byte (breakin/reset/packet),
-        // so a live or late WinDbg attach engages KD fully. This is the
-        // Windows semantics (not-present until proven present) and is what
-        // lets an armed no-debugger boot reach the desktop.
-        KdDebuggerNotPresent = 1u8;
-        (*SharedUserData).KdDebuggerEnabled &= !0x00000002;
-        kdio_printf!(b"KD: kdcom-serial wire transport ARMED (COM2, awaiting debugger)\n\0".as_ptr() as PCSTR);
+        // Probe before any INT 2Dh trap frame exists. WinDbg answers a target
+        // RESET with a RESET control packet; a dead wire simply times out.
+        kdcom_serial_rust::kddll::KdpSendControlPacket(PACKET_TYPE_KD_RESET as u16, 0);
+        let probe = kdcom_serial_rust::kddll::KdReceivePacket(
+            PACKET_TYPE_KD_ACKNOWLEDGE,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::addr_of_mut!(KdpContext),
+        );
+        let debugger_waiting = probe != KdPacketTimedOut;
+        KdDebuggerNotPresent = if debugger_waiting { 0u8 } else { 1u8 };
+        if debugger_waiting {
+            (*SharedUserData).KdDebuggerEnabled |= 0x00000002;
+            kdio_printf!(b"KD: kdcom-serial wire transport ARMED (COM2, debugger reset)\n\0".as_ptr() as PCSTR);
+        } else {
+            (*SharedUserData).KdDebuggerEnabled &= !0x00000002;
+            kdio_printf!(b"KD: kdcom-serial wire transport ARMED (COM2, awaiting debugger)\n\0".as_ptr() as PCSTR);
+        }
     } else {
         kdio_printf!(
             b"KD: kdcom-serial wire transport init FAILED (0x%08lx)\n\0".as_ptr() as PCSTR,

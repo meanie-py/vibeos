@@ -91,6 +91,26 @@ launches `kdX64.exe` (WindowsApps PATH) at the tripwire marker against a
 windows-host smoke boot. With the fixes, kd connects to the pipe but shows
 `no_debuggee` (target stays passive by design until the heavy path is safe).
 
+## Update (2026-07-10, second investigator) — attach WORKS; continuation is the blocker
+
+The KD *session* now establishes: WinDbg attaches and `version`, `lm`, `k`, and
+direct memory reads all succeed against the running target. So the transport +
+initial handshake + state-manipulate reads are proven — **the compatibility
+milestone (WinDbg speaks KD to our ntoskrnl) is substantially met.**
+
+Remaining blocker is **debugger continuation** (resume after a break): the
+**amd64 same-CPL `int 2Dh` machine-frame layout still produces an invalid
+resumed context** — i.e. when KD resumes the target after servicing a break,
+the reconstructed trap/machine frame for the same-privilege-level `int 2Dh` gate
+is wrong, so the resumed context is corrupt. This is the same int-2Dh
+trap-frame⇄context suspect flagged above, now narrowed to the **same-CPL
+machine-frame layout on the resume path** specifically. Investigation touched
+`sdk/include/asm/trapamd64.inc`, `kd-rust/src/kdio.rs`,
+`kd64-rust/src/kdprint.rs`, `ntoskrnl-rust/src/ke/amd64/context.rs` (left
+uncommitted on `crash-value`). Next: verify the same-CPL vs cross-CPL machine
+frame (SS:RSP presence) on the `int 2Dh` iret path against what
+`KeContextToTrapFrame` reconstructs.
+
 ## Definition of done
 
 `kdX64.exe -k com:pipe,…` attaches, breaks in, and `version` / `lm` / `k` /
