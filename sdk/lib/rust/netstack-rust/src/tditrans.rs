@@ -204,13 +204,20 @@ struct ListenPort {
     ready: Vec<SocketHandle>,
 }
 
-/// Shadow listeners per port. 16 matches the deliberate stress gate
-/// (tcp_hammer threads=16); 2×8KiB buffers ×16 ≈ 256KiB nonpaged per
-/// listened port — fine for the handful of server ports a boot sees.
+/// Upper bound on shadow listeners per port. 16 matches the deliberate stress
+/// gate (tcp_hammer threads=16). This is only a CAP — the live count is armed
+/// to DEMAND (pended accepts + 1 spare), not eagerly filled. Eagerly holding 16
+/// idle sockets on a port nobody is hammering (2×2KiB ×16 ≈ 64KiB nonpaged) put
+/// enough pressure on arm64 Mm to trigger a registry hive shrink that calls the
+/// unimplemented arm64 fastfat `FatOpenExistingDirectory` stub → BUGCHECK 0x23
+/// (field manual §9.43 follow-up). Demand-tied arming keeps an idle listen port
+/// at ~2 sockets, so the kernel TDI-server self-test (one pended LISTEN, no peer)
+/// no longer bloats the pool.
 const LISTEN_BACKLOG: usize = 16;
-/// Per-shadow socket buffer (rx==tx). 4KiB holds a request; larger responses
-/// stream via the pended-send path across pumps.
-const SHADOW_BUF: usize = 4096;
+/// Per-shadow socket buffer (rx==tx). 2KiB holds a request; larger responses
+/// stream via the pended-send path across pumps. Kept small to bound the
+/// nonpaged footprint a burst of shadows adds (see LISTEN_BACKLOG).
+const SHADOW_BUF: usize = 2048;
 
 pub struct TdiState {
     addrs: Vec<Addr>,
@@ -350,7 +357,9 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                         state.listen_ports.len() - 1
                     }
                 };
-                top_up_shadows(&mut state.listen_ports[lpi], sockets);
+                // Arm a minimal floor now (this listen + one spare); the bridge
+                // refines the count to demand once the IRP is parked below.
+                top_up_shadows(&mut state.listen_ports[lpi], sockets, 2);
                 // Park the TDI_LISTEN; the bridge satisfies it from `ready`
                 // (possibly this same pump iteration). conn checked non-None above.
                 if let Some(c) = state.conn(conn_id) {
@@ -781,11 +790,13 @@ fn deliver_datagrams_irp(s: &mut udp::Socket, recv_dg: &mut Vec<(usize, usize, u
 }
 
 /// Keep a ListenPort's shadow-listener pool at LISTEN_BACKLOG sockets.
-fn top_up_shadows(lp: &mut ListenPort, sockets: &mut SocketSet<'static>) {
+fn top_up_shadows(lp: &mut ListenPort, sockets: &mut SocketSet<'static>, desired: usize) {
     // At most ONE new socket per call — a full 16-deep top-up in one pump
     // iteration allocated 256KiB in a burst and faulted the arm64 worker.
     // The bridge runs every poll, so the pool refills within a few polls.
-    if lp.shadows.len() < LISTEN_BACKLOG {
+    // `desired` is demand-tied (pended accepts + 1), capped at LISTEN_BACKLOG,
+    // so an idle port never bloats past ~2 sockets (see LISTEN_BACKLOG).
+    if lp.shadows.len() < desired {
         let sock = tcp::Socket::new(
             tcp::SocketBuffer::new(vec![0u8; SHADOW_BUF]),
             tcp::SocketBuffer::new(vec![0u8; SHADOW_BUF]),
@@ -804,12 +815,45 @@ fn top_up_shadows(lp: &mut ListenPort, sockets: &mut SocketSet<'static>) {
 /// TDI_LISTEN IRPs FIFO from `ready`.
 fn bridge_listen_backlog(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
     use tcp::State;
+    // Demand-tied shadow target per port: one listening socket per pended
+    // TDI_LISTEN (accept) plus one spare to absorb a SYN while an accept is
+    // being satisfied, capped at LISTEN_BACKLOG. An idle port (no pended
+    // accept) still keeps 1 spare so the first inbound SYN isn't RST'd.
+    // Computed up front under an immutable borrow (disjoint from the mutable
+    // shadow work below). Keeps arm64 Mm pressure minimal (see LISTEN_BACKLOG).
+    let desired: Vec<(u16, usize)> = state
+        .listen_ports
+        .iter()
+        .map(|lp| {
+            let pended = state
+                .conns
+                .iter()
+                .filter(|c| c.listen_port == lp.port && c.listen_irp != 0)
+                .count();
+            (lp.port, (pended + 1).min(LISTEN_BACKLOG))
+        })
+        .collect();
     for lp in state.listen_ports.iter_mut() {
         let mut i = 0;
         while i < lp.shadows.len() {
             let h = lp.shadows[i];
-            match sockets.get::<tcp::Socket>(h).state() {
-                State::Established => {
+            let sock = sockets.get::<tcp::Socket>(h);
+            match sock.state() {
+                // A real inbound accept has a genuine peer endpoint. Require it:
+                // an Established socket whose remote is absent/unspecified is NOT
+                // a completed handshake we can hand to an accept — completing a
+                // TDI_LISTEN with such a phantom made the kernel TDI-server
+                // self-test (tdisrvtest.rs, raw TDI_LISTEN on :8888 that must
+                // PEND until a real host connects) proceed into its post-accept
+                // path against a peerless "connection" and wedge arm64 boot
+                // (field manual §9.43 follow-up). Leave it a shadow until a real
+                // peer arrives; when none does, the LISTEN pends — the correct
+                // behavior, matching the pre-backlog path.
+                State::Established
+                    if sock
+                        .remote_endpoint()
+                        .is_some_and(|ep| ep.port != 0 && !ep.addr.is_unspecified()) =>
+                {
                     lp.shadows.swap_remove(i);
                     lp.ready.push(h);
                 }
@@ -834,7 +878,12 @@ fn bridge_listen_backlog(sockets: &mut SocketSet<'static>, state: &mut TdiState)
                 _ => j += 1,
             }
         }
-        top_up_shadows(lp, sockets);
+        let want = desired
+            .iter()
+            .find(|(p, _)| *p == lp.port)
+            .map(|(_, n)| *n)
+            .unwrap_or(1);
+        top_up_shadows(lp, sockets, want);
     }
     // Satisfy pended TDI_LISTENs from ready queues (FIFO by conn order).
     for ci in 0..state.conns.len() {
