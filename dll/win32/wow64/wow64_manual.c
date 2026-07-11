@@ -52,6 +52,28 @@ NTSTATUS WINAPI NtFreeVirtualMemory(HANDLE Process, PVOID *BaseAddress,
 NTSTATUS WINAPI NtProtectVirtualMemory(HANDLE Process, PVOID *BaseAddress,
                                        PSIZE_T RegionSize, ULONG NewProtect,
                                        PULONG OldProtect);
+NTSTATUS WINAPI NtMapViewOfSection(HANDLE Section, HANDLE Process,
+                                   PVOID *BaseAddress, ULONG_PTR ZeroBits,
+                                   SIZE_T CommitSize, PLARGE_INTEGER SectionOffset,
+                                   PSIZE_T ViewSize, ULONG InheritDisposition,
+                                   ULONG AllocationType, ULONG Win32Protect);
+NTSTATUS WINAPI NtUnmapViewOfSection(HANDLE Process, PVOID BaseAddress);
+NTSTATUS WINAPI NtOpenFile(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
+                           PVOID Iosb, ULONG ShareAccess, ULONG OpenOptions);
+NTSTATUS WINAPI NtCreateFile(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
+                             PVOID Iosb, PLARGE_INTEGER AllocationSize,
+                             ULONG FileAttributes, ULONG ShareAccess,
+                             ULONG CreateDisposition, ULONG CreateOptions,
+                             PVOID EaBuffer, ULONG EaLength);
+NTSTATUS WINAPI NtCreateSection(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
+                                PLARGE_INTEGER MaximumSize, ULONG PageProtection,
+                                ULONG AllocationAttributes, HANDLE FileHandle);
+NTSTATUS WINAPI NtQueryAttributesFile(PVOID Oa, PVOID FileInformation);
+NTSTATUS WINAPI NtQuerySection(HANDLE Section, ULONG InfoClass, PVOID Info,
+                               SIZE_T Length, PSIZE_T ReturnLength);
+NTSTATUS WINAPI NtCreateKeyedEvent(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
+                                   ULONG Flags);
+NTSTATUS WINAPI NtQueryFullAttributesFile(PVOID Oa, PVOID FileInformation);
 
 /* ---- shared 32->64 struct marshalling ----------------------------------- *
  * The guest passes 32-bit structs whose pointer/ULONG_PTR members are half the
@@ -382,6 +404,163 @@ static NTSTATUS Wow64pOpenByOa(WOW64_OPEN_FN Fn, ULONG *a)
     return St;
 }
 
+/* ---- file syscalls (OBJECT_ATTRIBUTES + IO_STATUS_BLOCK) ----------------- *
+ * IO_STATUS_BLOCK32 is 8 bytes ({ULONG Status; ULONG Information}); the host
+ * writes 16 ({union; ULONG_PTR}). Use a host-side IOSB and copy the two fields
+ * back down. FILE_BASIC/NETWORK_OPEN_INFORMATION are width-identical (all
+ * LARGE_INTEGER/ULONG) so those pass through. */
+typedef struct _WOW64_IO_STATUS_BLOCK32_M {
+    ULONG Status;
+    ULONG Information;
+} WOW64_IO_STATUS_BLOCK32_M;
+
+typedef struct _WOW64_IO_STATUS_BLOCK64_M {
+    ULONGLONG Status;       /* union {NTSTATUS; PVOID} — low 4 bytes hold status */
+    ULONGLONG Information;
+} WOW64_IO_STATUS_BLOCK64_M;
+
+/* WOW64 filesystem redirection: rewrite "\system32\" -> "\syswow64\" (same
+ * length) so guest file opens land on the 32-bit DLL set. Real wow64.dll does
+ * exactly this in its file-syscall thunks. The rewrite goes into caller
+ * scratch — guest memory is never modified. */
+#define WOW64_REDIR_MAX 260
+
+static void Wow64pRedirectPath(WOW64_UNICODE_STRING64_M *Name64, WCHAR *Scratch)
+{
+    static const WCHAR Sys32[] = {'\\','s','y','s','t','e','m','3','2','\\',0};
+    static const WCHAR Wow64[] = {'\\','s','y','s','w','o','w','6','4','\\',0};
+    const WCHAR *Src = (const WCHAR *)(ULONG_PTR)Name64->Buffer;
+    ULONG Chars = Name64->Length / sizeof(WCHAR);
+    ULONG i, j;
+    LONG Hit = -1;
+
+    if (!Src || Chars == 0 || Chars > WOW64_REDIR_MAX)
+        return;
+
+    for (i = 0; i + 10 <= Chars; i++)
+    {
+        for (j = 0; j < 10; j++)
+        {
+            WCHAR c = Src[i + j];
+            if (c >= 'A' && c <= 'Z') c += 32;
+            if (c != Sys32[j]) break;
+        }
+        if (j == 10) { Hit = (LONG)i; break; }
+    }
+    if (Hit < 0)
+        return;
+
+    for (i = 0; i < Chars; i++)
+        Scratch[i] = Src[i];
+    for (j = 0; j < 10; j++)
+        Scratch[Hit + j] = Wow64[j];
+    Name64->Buffer = (ULONG_PTR)Scratch;
+}
+
+static void Wow64pCopyIosbDown(WOW64_IO_STATUS_BLOCK64_M *I64, ULONG Iosb32Ptr)
+{
+    WOW64_IO_STATUS_BLOCK32_M *I32 = (WOW64_IO_STATUS_BLOCK32_M *)(ULONG_PTR)Iosb32Ptr;
+    if (!I32) return;
+    I32->Status = (ULONG)I64->Status;
+    I32->Information = (ULONG)I64->Information;
+}
+
+static NTSTATUS Wow64Manual_NtOpenFile(ULONG *a)
+{
+    ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[0];
+    ACCESS_MASK Access = a[1];
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    WCHAR RedirScratch[WOW64_REDIR_MAX];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    HANDLE Handle = NULL;
+    NTSTATUS St;
+
+    Wow64pMarshalOa(&Oa64, &Uname64, a[2]);
+    Wow64pRedirectPath(&Uname64, RedirScratch);
+    St = NtOpenFile(&Handle, Access, &Oa64, &Iosb64, a[4], a[5]);
+    if (St < 0 && Oa64.ObjectName)
+        DbgPrint("[WOW64]   NtOpenFile '%.*S' => %08lx\n",
+                 (int)(Uname64.Length / sizeof(WCHAR)),
+                 (PCWSTR)(ULONG_PTR)Uname64.Buffer, St);
+    Wow64pCopyIosbDown(&Iosb64, a[3]);
+    if (St >= 0 && Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Handle;
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtCreateFile(ULONG *a)
+{
+    ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[0];
+    ACCESS_MASK Access = a[1];
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    WCHAR RedirScratch[WOW64_REDIR_MAX];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    PLARGE_INTEGER AllocSize = (PLARGE_INTEGER)(ULONG_PTR)a[4]; /* layout-identical */
+    HANDLE Handle = NULL;
+    NTSTATUS St;
+
+    Wow64pMarshalOa(&Oa64, &Uname64, a[2]);
+    Wow64pRedirectPath(&Uname64, RedirScratch);
+    St = NtCreateFile(&Handle, Access, &Oa64, &Iosb64, AllocSize,
+                      a[5] /*FileAttributes*/, a[6] /*ShareAccess*/,
+                      a[7] /*CreateDisposition*/, a[8] /*CreateOptions*/,
+                      (PVOID)(ULONG_PTR)a[9] /*EaBuffer*/, a[10] /*EaLength*/);
+    Wow64pCopyIosbDown(&Iosb64, a[3]);
+    if (St >= 0 && Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Handle;
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtCreateSection(ULONG *a)
+{
+    ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[0];
+    ACCESS_MASK Access = a[1];
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    PVOID Oa64Ptr = NULL;
+    PLARGE_INTEGER MaxSize = (PLARGE_INTEGER)(ULONG_PTR)a[3]; /* layout-identical */
+    HANDLE Handle = NULL;
+    NTSTATUS St;
+
+    if (a[2]) /* OBJECT_ATTRIBUTES is optional for anonymous sections */
+    {
+        Wow64pMarshalOa(&Oa64, &Uname64, a[2]);
+        Oa64Ptr = &Oa64;
+    }
+    St = NtCreateSection(&Handle, Access, Oa64Ptr, MaxSize,
+                         a[4] /*SectionPageProtection*/, a[5] /*AllocationAttributes*/,
+                         (HANDLE)(LONG_PTR)(LONG)a[6] /*FileHandle*/);
+    if (St >= 0 && Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Handle;
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtQueryAttributesFile(ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    WCHAR RedirScratch[WOW64_REDIR_MAX];
+
+    Wow64pMarshalOa(&Oa64, &Uname64, a[0]);
+    Wow64pRedirectPath(&Uname64, RedirScratch);
+    /* FILE_BASIC_INFORMATION: 4x LARGE_INTEGER + ULONG — width-identical */
+    return NtQueryAttributesFile(&Oa64, (PVOID)(ULONG_PTR)a[1]);
+}
+
+static NTSTATUS Wow64Manual_NtQueryFullAttributesFile(ULONG *a)
+{
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    WCHAR RedirScratch[WOW64_REDIR_MAX];
+
+    Wow64pMarshalOa(&Oa64, &Uname64, a[0]);
+    Wow64pRedirectPath(&Uname64, RedirScratch);
+    /* FILE_NETWORK_OPEN_INFORMATION: LARGE_INTEGERs + ULONGs — width-identical */
+    return NtQueryFullAttributesFile(&Oa64, (PVOID)(ULONG_PTR)a[1]);
+}
+
 /* ---- virtual-memory syscalls with in/out 32-bit cells ------------------- *
  * BaseAddress and RegionSize are POINTERS to guest 32-bit cells; the host Nt*
  * reads/writes 64-bit cells. The auto thunk would hand the host a 4-byte guest
@@ -452,6 +631,190 @@ static NTSTATUS Wow64Manual_NtProtectVirtualMemory(ULONG *a)
     return St;
 }
 
+/* ---- NtMapViewOfSection -------------------------------------------------- *
+ * BaseAddress and ViewSize are guest 32-bit in/out cells; SectionOffset is a
+ * guest pointer to an 8-byte LARGE_INTEGER (same layout both widths — pass the
+ * zero-extended pointer straight through). Same below-2GB ZeroBits forcing as
+ * NtAllocateVirtualMemory so system-chosen views stay guest-addressable. */
+static NTSTATUS Wow64Manual_NtMapViewOfSection(ULONG *a)
+{
+    HANDLE Section = (HANDLE)(LONG_PTR)(LONG)a[0];
+    HANDLE Process = (HANDLE)(LONG_PTR)(LONG)a[1];
+    ULONG *Base32 = (ULONG *)(ULONG_PTR)a[2];
+    ULONG_PTR ZeroBits = a[3];
+    SIZE_T CommitSize = a[4];
+    PLARGE_INTEGER SectionOffset = (PLARGE_INTEGER)(ULONG_PTR)a[5];
+    ULONG *Size32 = (ULONG *)(ULONG_PTR)a[6];
+    ULONG Inherit = a[7], Type = a[8], Protect = a[9];
+    PVOID Base = Base32 ? (PVOID)(ULONG_PTR)*Base32 : NULL;
+    SIZE_T Size = Size32 ? *Size32 : 0;
+    NTSTATUS St;
+
+    if (!Base && ZeroBits == 0)
+        ZeroBits = WOW64_ZEROBITS_BELOW_2G;
+
+    St = NtMapViewOfSection(Section, Process, &Base, ZeroBits, CommitSize,
+                            SectionOffset, &Size, Inherit, Type, Protect);
+    if (St >= 0)
+    {
+        if (Base32) *Base32 = (ULONG)(ULONG_PTR)Base;
+        if (Size32) *Size32 = (ULONG)Size;
+        DbgPrint("[WOW64]   NtMapViewOfSection => %08lx base=%p size=%p\n",
+                 St, Base, (PVOID)Size);
+        /* Tell the CPU layer about the new mapping (real wow64 notifies on
+         * every map) — without this FEX won't translate code from the range. */
+        {
+            extern LONG (WINAPI *Wow64pBTCpuNotifyMap)(PVOID, PVOID, PVOID,
+                                                       SIZE_T, ULONG, ULONG);
+            if (Wow64pBTCpuNotifyMap)
+                Wow64pBTCpuNotifyMap(NULL, Base, NULL, Size, Type, Protect);
+        }
+    }
+    else
+    {
+        DbgPrint("[WOW64] NtMapViewOfSection FAIL %08lx: sec=%p proc=%p base=%p "
+                 "zero=%p commit=%p offp=%p off=%I64x size=%p inherit=%lu type=%08lx prot=%08lx\n",
+                 St, Section, Process, Base, (PVOID)ZeroBits, (PVOID)CommitSize,
+                 SectionOffset, SectionOffset ? SectionOffset->QuadPart : 0,
+                 (PVOID)Size, Inherit, Type, Protect);
+    }
+    return St;
+}
+
+/* ---- NtCreateKeyedEvent --------------------------------------------------- *
+ * PHANDLE out-cell (4 bytes guest vs 8 host — the kernel's 8-byte-aligned
+ * probe rejects the guest cell) + optional OBJECT_ATTRIBUTES. ntdll_vista's
+ * DllMain creates the process keyed event through this. */
+static NTSTATUS Wow64Manual_NtCreateKeyedEvent(ULONG *a)
+{
+    ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[0];
+    ACCESS_MASK Access = a[1];
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    PVOID Oa64Ptr = NULL;
+    HANDLE Handle = NULL;
+    NTSTATUS St;
+
+    if (a[2])
+    {
+        Wow64pMarshalOa(&Oa64, &Uname64, a[2]);
+        Oa64Ptr = &Oa64;
+    }
+    St = NtCreateKeyedEvent(&Handle, Access, Oa64Ptr, a[3]);
+    if (St >= 0 && Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Handle;
+    return St;
+}
+
+/* ---- NtQuerySection ------------------------------------------------------ *
+ * SectionBasicInformation: 16 bytes guest vs 24 host (PVOID + alignment).
+ * SectionImageInformation: 48 bytes guest vs 64 host (4 pointer/SIZE_T fields
+ * widen). The loader queries image info for every mapped DLL. */
+typedef struct _WOW64_SECTION_BASIC_INFORMATION64 {
+    ULONGLONG BaseAddress;
+    ULONG Attributes;
+    ULONG __pad;
+    ULONGLONG MaximumSize;
+} WOW64_SECTION_BASIC_INFORMATION64;
+
+typedef struct _WOW64_SECTION_IMAGE_INFORMATION64 {
+    ULONGLONG TransferAddress;
+    ULONG ZeroBits;
+    ULONG __pad0;
+    ULONGLONG MaximumStackSize;
+    ULONGLONG CommittedStackSize;
+    ULONG SubSystemType;
+    USHORT SubSystemMinorVersion;
+    USHORT SubSystemMajorVersion;
+    ULONG GpValue;
+    USHORT ImageCharacteristics;
+    USHORT DllCharacteristics;
+    USHORT Machine;
+    BOOLEAN ImageContainsCode;
+    UCHAR ImageFlags;
+    ULONG LoaderFlags;
+    ULONG ImageFileSize;
+    ULONG CheckSum;
+} WOW64_SECTION_IMAGE_INFORMATION64;
+
+typedef struct _WOW64_SECTION_IMAGE_INFORMATION32 {
+    ULONG TransferAddress;
+    ULONG ZeroBits;
+    ULONG MaximumStackSize;
+    ULONG CommittedStackSize;
+    ULONG SubSystemType;
+    USHORT SubSystemMinorVersion;
+    USHORT SubSystemMajorVersion;
+    ULONG GpValue;
+    USHORT ImageCharacteristics;
+    USHORT DllCharacteristics;
+    USHORT Machine;
+    BOOLEAN ImageContainsCode;
+    UCHAR ImageFlags;
+    ULONG LoaderFlags;
+    ULONG ImageFileSize;
+    ULONG CheckSum;
+} WOW64_SECTION_IMAGE_INFORMATION32;
+
+static NTSTATUS Wow64Manual_NtQuerySection(ULONG *a)
+{
+    HANDLE Section = (HANDLE)(LONG_PTR)(LONG)a[0];
+    ULONG Class = a[1];
+    PVOID Buf32 = (PVOID)(ULONG_PTR)a[2];
+    ULONG Len32 = a[3];
+    ULONG *RetLen32 = (ULONG *)(ULONG_PTR)a[4];
+    SIZE_T Ret = 0;
+    NTSTATUS St;
+
+    if (Class == 1) /* SectionImageInformation */
+    {
+        WOW64_SECTION_IMAGE_INFORMATION64 Sii64;
+        WOW64_SECTION_IMAGE_INFORMATION32 *Sii32 = Buf32;
+        if (Len32 < sizeof(*Sii32))
+            return (NTSTATUS)0xC0000004L; /* STATUS_INFO_LENGTH_MISMATCH */
+        St = NtQuerySection(Section, Class, &Sii64, sizeof(Sii64), &Ret);
+        if (St >= 0)
+        {
+            Sii32->TransferAddress = (ULONG)Sii64.TransferAddress;
+            Sii32->ZeroBits = Sii64.ZeroBits;
+            Sii32->MaximumStackSize = (ULONG)Sii64.MaximumStackSize;
+            Sii32->CommittedStackSize = (ULONG)Sii64.CommittedStackSize;
+            Sii32->SubSystemType = Sii64.SubSystemType;
+            Sii32->SubSystemMinorVersion = Sii64.SubSystemMinorVersion;
+            Sii32->SubSystemMajorVersion = Sii64.SubSystemMajorVersion;
+            Sii32->GpValue = Sii64.GpValue;
+            Sii32->ImageCharacteristics = Sii64.ImageCharacteristics;
+            Sii32->DllCharacteristics = Sii64.DllCharacteristics;
+            Sii32->Machine = Sii64.Machine;
+            Sii32->ImageContainsCode = Sii64.ImageContainsCode;
+            Sii32->ImageFlags = Sii64.ImageFlags;
+            Sii32->LoaderFlags = Sii64.LoaderFlags;
+            Sii32->ImageFileSize = Sii64.ImageFileSize;
+            Sii32->CheckSum = Sii64.CheckSum;
+            if (RetLen32) *RetLen32 = sizeof(*Sii32);
+        }
+        return St;
+    }
+    if (Class == 0) /* SectionBasicInformation */
+    {
+        WOW64_SECTION_BASIC_INFORMATION64 Sbi64;
+        struct { ULONG Base; ULONG Attr; LARGE_INTEGER Size; } *Sbi32 = Buf32;
+        if (Len32 < sizeof(*Sbi32))
+            return (NTSTATUS)0xC0000004L;
+        St = NtQuerySection(Section, Class, &Sbi64, sizeof(Sbi64), &Ret);
+        if (St >= 0)
+        {
+            Sbi32->Base = (ULONG)Sbi64.BaseAddress;
+            Sbi32->Attr = Sbi64.Attributes;
+            Sbi32->Size.QuadPart = (LONGLONG)Sbi64.MaximumSize;
+            if (RetLen32) *RetLen32 = sizeof(*Sbi32);
+        }
+        return St;
+    }
+    DbgPrint("[WOW64]   NtQuerySection class=%lu unhandled\n", Class);
+    return (NTSTATUS)0xC0000003L; /* STATUS_INVALID_INFO_CLASS */
+}
+
 /* ---- NtQuerySymbolicLinkObject ------------------------------------------ *
  * In/out UNICODE_STRING: the guest struct is 8 bytes (32-bit Buffer), the host
  * writes 16. Build a UNICODE_STRING64 pointing at the SAME guest buffer (the
@@ -505,6 +868,22 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtFreeVirtualMemory(Arguments);
     if (WOW64_IS("NtProtectVirtualMemory"))
         return Wow64Manual_NtProtectVirtualMemory(Arguments);
+    if (WOW64_IS("NtMapViewOfSection"))
+        return Wow64Manual_NtMapViewOfSection(Arguments);
+    if (WOW64_IS("NtOpenFile"))
+        return Wow64Manual_NtOpenFile(Arguments);
+    if (WOW64_IS("NtCreateFile"))
+        return Wow64Manual_NtCreateFile(Arguments);
+    if (WOW64_IS("NtCreateSection"))
+        return Wow64Manual_NtCreateSection(Arguments);
+    if (WOW64_IS("NtQueryAttributesFile"))
+        return Wow64Manual_NtQueryAttributesFile(Arguments);
+    if (WOW64_IS("NtQueryFullAttributesFile"))
+        return Wow64Manual_NtQueryFullAttributesFile(Arguments);
+    if (WOW64_IS("NtQuerySection"))
+        return Wow64Manual_NtQuerySection(Arguments);
+    if (WOW64_IS("NtCreateKeyedEvent"))
+        return Wow64Manual_NtCreateKeyedEvent(Arguments);
 #undef WOW64_IS
     return WOW64_MANUAL_UNIMPL;
 }

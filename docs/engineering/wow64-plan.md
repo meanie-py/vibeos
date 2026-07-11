@@ -264,33 +264,66 @@ builds the image + ntdll `LDR_DATA_TABLE_ENTRY`s and reaches
   x86 register file + PEB32 fields + heap state at any unhandled guest fault
   (FEX shares the host AS, so wow64.dll reads 32-bit guest memory directly). This
   is how both bugs were pinned without a guest-ntdll rebuild or GDB.
-- **CURRENT BLOCKER — GLOBAL arm64 unaligned-access fault (DFSC 0x21) for the
-  FEX guest (foundational, not WoW64-specific).** In `memcpy`'s unaligned path
-  (`mov ecx,[edx]`, ntdll32+0x2d0a0, from `RtlCreateActivationContext`) a 4-byte
-  load from a 2-aligned address faults. A decisive guest probe (unaligned read of
-  a **VirtualAlloc'd** page vs a **section-mapped** page) proved it is **global,
-  not section-specific**: the VirtualAlloc'd read (`[GuestStack+2]`) faults FIRST
-  with the same alignment fault. Everything up to now worked only because every
-  prior guest access was naturally aligned; the loader's `memcpy` is the first
-  unaligned one. `SCTLR_EL1.A=0` (`0x30D0198D`) so unaligned *Normal*-memory
-  access is allowed OS-wide — therefore **arm64 user pages are reaching the FEX
-  guest as Device (AttrIndx 1)** (Device faults on unaligned even with A=0, while
-  aligned reads + code fetch still work, matching all prior success). This is
-  **foundational for FEX** — x86 does unaligned accesses constantly — so fixing
-  it unblocks FEX broadly, not just M3b. NOTE: a static audit of the arm64
-  AttrIndx path (`ke/arm64/stubs.rs:99-145` MmProtectToPteMask, `helpers.rs:513`
-  MI_MAKE_HARDWARE_PTE, `pagfault.rs:511/636`) concluded standard user
-  protections *should* resolve to Normal-WB (`_C=0`) — so the runtime Device
-  result CONTRADICTS the static path. The discrepancy must be nailed with
-  `Arm64DumpPte(faultVA)` (declared `ke/arm64/stubs.rs:56`) in the arm64 data-
-  abort handler for a VirtualAlloc'd guest page: dump the actual AttrIndx +
-  MAIR_EL1 to see whether (a) the AttrIndx really is 1, (b) the duplicate
-  ungated `#[no_mangle] MmProtectToPteMask` in `i386/page.rs:49` is winning the
-  link on arm64, or (c) MAIR_EL1's AttrIndx-0 slot isn't actually Normal-WB.
-  Candidate levers once confirmed: the `_NC`/`_C` values in `ke/arm64/stubs.rs`,
-  the duplicate-symbol link order, or the freeldr MAIR programming.
-  Landed as `wip(wow64): M3b` + the SystemArgument1 fix; behind VIBEOS_FEX,
-  normal boots unaffected.
+- **[SOLVED 2026-07-10] The "GLOBAL unaligned fault" was NOT Device memory —
+  it was FEX's x86-TSO atomics.** The `[ALIGN]` trap-handler diagnostic
+  (trap.rs data-abort arm: dump raw self-map PTE + MAIR_EL1 + faulting opcode
+  on DFSC 0x21) settled the contradiction in one boot: `PTE=0x0040000045C8A4C3`
+  (AttrIndx[3:2]=0 → **Normal-WB**; memory attributes were fine all along) and
+  `OPC=0x88DFFCA7` = **`LDAR w7,[x5]`**. FEX emits LDAR/STLR (acquire/release)
+  for x86-TSO emulation, and those REQUIRE alignment even on Normal memory.
+  FEX's own solution is a fault-handler backpatcher
+  (`FEXCore::ArchHelpers::Arm64::HandleUnalignedAccess`, reached through
+  `BTCpuResetToConsistentState`) keyed on `EXCEPTION_DATATYPE_MISALIGNMENT`.
+  Fix: the arm64 kernel now delivers DFSC 0x21 as
+  `STATUS_DATATYPE_MISALIGNMENT` (0x80000002, correct Windows semantics)
+  instead of ACCESS_VIOLATION (trap.rs). With that one change the already-wired
+  VEH → BTCpuResetToConsistentState path backpatches every unaligned LDAR/STLR
+  and execution resumes. The `[ALIGN]` print stays as a permanent per-fault
+  diagnostic (rare, one line).
+- **M3b progress after the TSO fix (one boot-debug ladder, all landed):**
+  1. `NtMapViewOfSection` deep marshaller (in/out 32-bit cells) + **ZeroBits
+     mask semantics** in the kernel (`ARM3/section.rs`: NtMapViewOfSection
+     validation + MiMapViewOfDataSection ceiling accept the 64-bit
+     ZeroBits>32-is-a-mask form, same as NtAllocateVirtualMemory already did).
+  2. **KnownDlls32**: ldrinit.rs (x86-gated) queries `ProcessWow64Information`
+     and opens `\KnownDlls32` under WOW64 — `\KnownDlls` holds HOST-arch
+     sections (the guest was mapping an *arm64* kernel32 → not-at-base →
+     ILLEGAL_DLL_RELOCATION hard error). KnownDlls32 absent on arm64 → clean
+     file-path fallback.
+  3. **Filesystem redirection** in the wow64.dll file marshallers:
+     `\system32\` → `\syswow64\` (same length, rewritten into host scratch,
+     exactly where real wow64 does it). Marshallers added this pass:
+     NtOpenFile, NtCreateFile, NtCreateSection, NtQueryAttributesFile,
+     NtQueryFullAttributesFile, NtQuerySection (SECTION_IMAGE_INFORMATION
+     48↔64), NtCreateKeyedEvent (PHANDLE out-cell).
+  4. **DllPath** down-copy (+ synthesized `syswow64;system32` default) in
+     `Wow64pBuildProcessParams32` — an empty DllPath NULL-crashed
+     `RtlDosSearchPath_U` during the loader's mandatory kernel32 load.
+  5. **`BTCpuNotifyMapViewOfSection` on every guest map** (called from the map
+     marshaller) — without it FEX's dispatcher NULL-faults instead of
+     translating code from newly mapped images. This was the difference
+     between "DLLs map" and "DLLs execute".
+  6. mkramdisk stages i386 `kernel32.dll` + `ntdll_vista.dll` into syswow64.
+  7. **Guest DbgPrint forwarding**: ntdll32's `DebugService` (`int 2d`, eax=1)
+     surfaces as a breakpoint exception; the VEH prints the guest's message as
+     `[GUEST32] ...`. First forwarded line: `[GUEST32] [kernel32] DllMain
+     PROCESS_ATTACH PID=236` — **the i386 kernel32 executes under FEX on
+     arm64.**
+- **CURRENT BLOCKER — CSR connect: misaligned PHANDLE bugchecks the kernel.**
+  kernel32's `CsrClientConnectToServer` → `NtSecureConnectPort(&CsrApiPort,…)`
+  passes the guest's 4-aligned `_CsrApiPort` cell (ntdll32+0x103924);
+  `ProbeForWriteHandle` (align 8) raises DATATYPE_MISALIGNMENT, and under
+  DUMMY_PSEH the raise is unhandled → **BUGCHECK 0x1E**. Diagnostic landed:
+  `[PROBE-MISALIGN-R/W]` one-liner (ex-rust exintrin.rs) prints
+  addr/len/align + caller LR before the raise. Two work items: (a)
+  NtConnectPort / NtSecureConnectPort deep marshallers (PHANDLE +
+  PORT_VIEW/SECURITY_QOS — start of the CSR/LPC-32 layer; port message
+  layouts differ 32/64), and (b) a kernel-robustness landmine bigger than
+  wow64: ANY user process passing a misaligned pointer to a PHANDLE-probing
+  syscall bugchecks the kernel (probe-raise + DUMMY_PSEH = no catch);
+  long-term fix is the Stage-2 `Result<T>` probe migration for these paths.
+  All landed behind VIBEOS_FEX; normal boots unaffected (i386+amd64+arm64
+  smoke green with these kernel changes).
 
 *Still owed in Phase C:*
 - 32-bit ntdll auto-map + `Wow64Transition` publishing (32-bit ntdll's syscall

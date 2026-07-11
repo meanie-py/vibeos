@@ -1139,11 +1139,20 @@ unsafe fn MiMapViewOfDataSection(
         KeReleaseGuardedMutex(&mut MmSectionCommitMutex as *mut _ as PKGUARDED_MUTEX);
         return status;
     }
+    // ZeroBits mask form (64-bit, value > 32): the value IS the address
+    // ceiling; shift form: classic high-zero-bits count. Matches the
+    // NtMapViewOfSection/NtAllocateVirtualMemory mask semantics.
+    let highest_addr: ULONG_PTR =
+        if core::mem::size_of::<ULONG_PTR>() == 8 && zero_bits > 32 {
+            zero_bits
+        } else {
+            MAXULONG_PTR >> zero_bits
+        };
     status = MiInsertVadEx(
         vad as *mut _ as ntkrnl_sys::ddk::PMMVAD,
         &mut start_address as *mut usize as *mut _,
         (view_size_in_pages * PAGE_SIZE) as _,
-        (MAXULONG_PTR >> zero_bits) as _,
+        highest_addr as _,
         granularity as _,
         allocation_type,
     );
@@ -2281,20 +2290,31 @@ pub unsafe extern "system" fn NtMapViewOfSection(
         return STATUS_INVALID_PARAMETER_3;
     }
 
-    // Check for invalid zero bits
+    // Check for invalid zero bits. 64-bit NT semantics (same as
+    // NtAllocateVirtualMemory in virtual.rs): a ZeroBits above 32 is not a
+    // shift count but an address MASK — the view must land at or below it
+    // (WOW64 passes (1<<31)-1 to keep views guest-addressable).
+    let zero_bits_is_mask =
+        core::mem::size_of::<ULONG_PTR>() == 8 && zero_bits > 32;
     if zero_bits != 0 {
-        if zero_bits > MI_MAX_ZERO_BITS() {
-            return STATUS_INVALID_PARAMETER_4;
-        }
+        if zero_bits_is_mask {
+            if (safe_base_address as ULONG_PTR).wrapping_add(safe_view_size) > zero_bits {
+                return STATUS_INVALID_PARAMETER_4;
+            }
+        } else {
+            if zero_bits > MI_MAX_ZERO_BITS() {
+                return STATUS_INVALID_PARAMETER_4;
+            }
 
-        if ((safe_base_address as ULONG_PTR) << zero_bits) >> zero_bits != safe_base_address as ULONG_PTR {
-            return STATUS_INVALID_PARAMETER_4;
-        }
+            if ((safe_base_address as ULONG_PTR) << zero_bits) >> zero_bits != safe_base_address as ULONG_PTR {
+                return STATUS_INVALID_PARAMETER_4;
+            }
 
-        if (((safe_base_address as ULONG_PTR).wrapping_add(safe_view_size)) << zero_bits) >> zero_bits
-            != (safe_base_address as ULONG_PTR).wrapping_add(safe_view_size)
-        {
-            return STATUS_INVALID_PARAMETER_4;
+            if (((safe_base_address as ULONG_PTR).wrapping_add(safe_view_size)) << zero_bits) >> zero_bits
+                != (safe_base_address as ULONG_PTR).wrapping_add(safe_view_size)
+            {
+                return STATUS_INVALID_PARAMETER_4;
+            }
         }
     }
 

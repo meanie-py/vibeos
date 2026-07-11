@@ -135,6 +135,10 @@ static PVOID *Wow64pTlsSlots(VOID)
  * SMC / suspends, NtContinue-ing itself when handled. Every exception routes
  * here first (real wow64 wires this through Wow64PrepareForException). */
 static LONG (WINAPI *Wow64pBTCpuResetToConsistentState)(EXCEPTION_POINTERS *);
+/* Map notification for GUEST-initiated NtMapViewOfSection (called from the
+ * wow64_manual.c marshaller): FEX must learn about every mapped image or its
+ * dispatcher won't translate code from the new range. Non-static on purpose. */
+LONG (WINAPI *Wow64pBTCpuNotifyMap)(PVOID, PVOID, PVOID, SIZE_T, ULONG, ULONG);
 static ULONG_PTR Wow64pPeb32;  /* set in Wow64LdrpInitialize, for VEH diagnostics */
 
 /* M3b heap diagnostic: dump the guest process heap state at an unhandled fault.
@@ -182,6 +186,19 @@ static LONG WINAPI Wow64pVeh(EXCEPTION_POINTERS *Info)
 {
     if (Wow64pBTCpuResetToConsistentState)
         Wow64pBTCpuResetToConsistentState(Info); /* NtContinues if handled */
+
+    /* Guest DbgPrint forwarding: ntdll32's DebugService does `int 2d` with
+     * eax=1 (BREAKPOINT_PRINT), ecx=buffer, edx=length; FEX surfaces it as a
+     * breakpoint exception. Print the guest's message to serial — this is the
+     * guest loader's own debug channel (LDR: snaps, failure text). */
+    if (Info->ExceptionRecord->ExceptionCode == (LONG)0x80000003L)
+    {
+        PBYTE CpuArea = (PBYTE)Wow64pTlsSlots()[WOW64_TLS_CPURESERVED];
+        WOW64_CONTEXT *C = (WOW64_CONTEXT *)(CpuArea + 16);
+        if (C->Eax == 1 && C->Ecx && C->Ecx < 0x80000000u && C->Edx < 512)
+            DbgPrint("[GUEST32] %.*s", (int)C->Edx, (const char *)(ULONG_PTR)C->Ecx);
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
 
     DbgPrint("[FEX-WOW64C] VEH: unhandled code=%08lx addr=%p pc=%p\n",
              Info->ExceptionRecord->ExceptionCode,
@@ -341,6 +358,7 @@ typedef struct _WOW64_RTL_USER_PROCESS_PARAMETERS32 {
 #define PEB64_PROCESS_PARAMETERS_OFF  0x20
 #define PEB32_PROCESS_PARAMETERS_OFF  0x10
 /* 64-bit RTL_USER_PROCESS_PARAMETERS UNICODE_STRING member offsets. */
+#define UPP64_DLLPATH_OFF        0x50
 #define UPP64_IMAGEPATHNAME_OFF  0x60
 #define UPP64_COMMANDLINE_OFF    0x70
 #define UPP64_WINDOWTITLE_OFF    0xB0
@@ -394,10 +412,27 @@ static VOID Wow64pBuildProcessParams32(ULONG_PTR Peb32)
     Upp32->MaximumLength = (ULONG)Size;
     Upp32->Length = (ULONG)Size;
     Upp32->Flags = 0x6001; /* RTL_USER_PROC_PARAMS_NORMALIZED | ProfileUser */
+    Wow64pCopyUstr32(&Upp32->DllPath, Upp64 + UPP64_DLLPATH_OFF, &Arena);
     Wow64pCopyUstr32(&Upp32->ImagePathName, Upp64 + UPP64_IMAGEPATHNAME_OFF, &Arena);
     Wow64pCopyUstr32(&Upp32->CommandLine, Upp64 + UPP64_COMMANDLINE_OFF, &Arena);
     Wow64pCopyUstr32(&Upp32->WindowTitle, Upp64 + UPP64_WINDOWTITLE_OFF, &Arena);
     Wow64pCopyUstr32(&Upp32->DesktopInfo, Upp64 + UPP64_DESKTOPINFO_OFF, &Arena);
+
+    /* The guest loader treats an empty DllPath as fatal (LdrpInitFailure) and a
+     * NULL LdrpDefaultPath crashes RtlDosSearchPath_U — synthesize the syswow64
+     * search path when the 64-bit params carry none. system32 entries are fine
+     * here too: the wow64 file marshallers redirect them to syswow64. */
+    if (Upp32->DllPath.Length == 0)
+    {
+        static const WCHAR DefPath[] = L"X:\\reactos\\syswow64;X:\\reactos\\system32";
+        USHORT Len = sizeof(DefPath) - sizeof(WCHAR);
+        Upp32->DllPath.Length = Len;
+        Upp32->DllPath.MaximumLength = (USHORT)(Len + sizeof(WCHAR));
+        Upp32->DllPath.Buffer = (ULONG)(ULONG_PTR)Arena;
+        for (USHORT i = 0; i < sizeof(DefPath); i++)
+            Arena[i] = ((const BYTE *)DefPath)[i];
+        Arena += (sizeof(DefPath) + 3) & ~3u;
+    }
 
     *(ULONG *)((PBYTE)Peb32 + PEB32_PROCESS_PARAMETERS_OFF) = (ULONG)(ULONG_PTR)Upp32;
     DbgPrint("[FEX-WOW64C] PEB32->ProcessParameters built at %p (image='%.*S')\n",
@@ -617,6 +652,7 @@ Wow64LdrpInitialize(PVOID Context)
     WOW64_RESOLVE(BTCpuGetBopCode);
     WOW64_RESOLVE(BTCpuSimulate);
     WOW64_RESOLVE(BTCpuNotifyMapViewOfSection);
+    Wow64pBTCpuNotifyMap = BTCpuNotifyMapViewOfSection;
     {
         PVOID Addr = NULL;
         RtlInitAnsiString(&ProcName, "BTCpuResetToConsistentState");

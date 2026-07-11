@@ -120,6 +120,7 @@ pub unsafe extern "system" fn ProbeForRead(
     Length: SIZE_T,
     Alignment: ULONG,
 ) {
+    let entry_lr = probe_entry_lr();
     let Current = Address as ULONG_PTR;
 
     if Length != 0 {
@@ -156,6 +157,7 @@ pub unsafe extern "system" fn ProbeForRead(
         }
 
         if (Current & (EffectiveAlignment as ULONG_PTR - 1)) != 0 {
+            probe_misalign_trace(b"R\0", Current, Length, EffectiveAlignment, entry_lr);
             ExRaiseDatatypeMisalignment();
         }
 
@@ -166,12 +168,41 @@ pub unsafe extern "system" fn ProbeForRead(
     }
 }
 
+/// One-line trace before a probe raises DATATYPE_MISALIGNMENT: with
+/// DUMMY_PSEH the raise is fatal (unhandled kernel exception → 0x1E), so the
+/// caller's LR is the only breadcrumb identifying WHICH syscall probed a
+/// misaligned user pointer (WOW64 guests pass 4-aligned cells everywhere).
+#[inline(always)]
+unsafe fn probe_entry_lr() -> usize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let lr: usize;
+        core::arch::asm!("mov {}, x30", out(reg) lr, options(nomem, nostack));
+        lr
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    { 0 }
+}
+
+#[inline(never)]
+unsafe fn probe_misalign_trace(tag: &[u8], addr: ULONG_PTR, len: SIZE_T, align: ULONG, lr: usize) {
+    crate::dbg_print!(
+        b"[PROBE-MISALIGN-%s] Addr=%p Len=%Iu Align=%lu caller=%p\n\0",
+        tag.as_ptr(),
+        addr as PVOID,
+        len,
+        align,
+        lr as PVOID,
+    );
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn ProbeForWrite(
     Address: PVOID,
     Length: SIZE_T,
     Alignment: ULONG,
 ) {
+    let entry_lr = probe_entry_lr();
     let Address = opaque_ptr(Address);
     let mut Current = Address as ULONG_PTR;
 
@@ -185,6 +216,7 @@ pub unsafe extern "system" fn ProbeForWrite(
         );
 
         if (Current & (Alignment as ULONG_PTR - 1)) != 0 {
+            probe_misalign_trace(b"W\0", Current, Length, Alignment, entry_lr);
             ExRaiseDatatypeMisalignment();
         }
 

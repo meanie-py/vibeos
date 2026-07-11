@@ -4353,3 +4353,45 @@ so its establisher is never handed to a funclet. Result: `sehtest` **RESULT: PAS
 the local didn't change" ⇒ EstablisherFrame/frame-base mismatch, not a missing call —
 disassemble the funclet, see what base+offset it writes, and check it against the
 function's own frame-pointer offset.
+
+### 9.50 (RESOLVED 2026-07-10) arm64 "unaligned access faults = Device memory" is only HALF a diagnosis — dump the OPCODE before blaming Mm
+
+**Symptom (FEX/WoW64 lane, but general):** guest/user code takes DFSC 0x21
+alignment faults on unaligned accesses even though `SCTLR_EL1.A=0`, and a
+static audit of the AttrIndx path (MmProtectToPteMask, MAIR) says the pages
+should be Normal-WB. The tempting conclusion — "user pages are secretly
+Device-mapped" — sent a whole debug arc into Mm (link-order duplicate-symbol
+theories, MAIR slot audits) when the Mm was innocent.
+
+**The 3-in-1 discriminator (now permanent in `ke/arm64/trap.rs`):** on DFSC
+0x21 the data-abort handler prints one line —
+`[ALIGN] FAR=… PC=… PTE=<raw self-map PTE> MAIR=… OPC=<u32 at PC>`.
+That single line separates ALL the hypotheses at once: PTE AttrIndx bits[3:2]
+answer "is it Device?", MAIR answers "is the slot programmed right?", and the
+opcode answers "does this INSTRUCTION require alignment regardless?"
+Verdict in one boot: PTE AttrIndx=0 (Normal-WB, Mm fine), `OPC=0x88DFFCA7` =
+`LDAR` — an acquire load, which alignment-faults **even on Normal memory**.
+
+**Root cause + fix:** FEX emits LDAR/STLR/LDAPR for x86-TSO emulation and
+ships its own unaligned-atomic backpatcher
+(`ArchHelpers::Arm64::HandleUnalignedAccess` via
+`BTCpuResetToConsistentState`), but it keys on
+`EXCEPTION_DATATYPE_MISALIGNMENT`. Our kernel delivered alignment faults as
+ACCESS_VIOLATION, so FEX dispatched them into the guest as real AVs (which is
+also what the earlier "guest heap corruption" faces were). Fix = deliver DFSC
+0x21 as `STATUS_DATATYPE_MISALIGNMENT` (0x80000002) in
+`KiSynchronousExceptionHandler` — correct Windows semantics independently of
+FEX. After the fix, every LDAR/STLR backpatch round-trips (fault → VEH →
+backpatch → NtContinue) and execution resumes.
+
+**Reusable rules:** (1) On arm64, alignment faults have TWO instruction-class
+causes that no memory-attribute audit can see: acquire/release
+(LDAR/STLR/LDAPR) and exclusive (LDXR/STXR) ops require alignment on ANY
+memory type. Read the opcode first. (2) An emulator/JIT lane "impossible"
+fault face is often the EXCEPTION CODE CONTRACT, not the fault itself — the
+handler stack downstream (FEX here) switches behavior on the precise NTSTATUS.
+(3) Related kernel landmine (OPEN, wow64-lane blocker §9.47 successor): a
+user-supplied misaligned pointer to a PHANDLE-probing syscall reaches
+`ProbeForWrite`'s RAISE path, and under DUMMY_PSEH that bugchecks (0x1E)
+instead of returning 0x80000002 — `[PROBE-MISALIGN-R/W]` in ex-rust
+`exintrin.rs` now prints addr/len/align + caller LR just before the raise.
