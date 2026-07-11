@@ -262,8 +262,12 @@ After modifying a `CMakeLists.txt` or `.cmake` file, re-run cmake before buildin
 
 ## Key Technical Patterns
 
-### DUMMY_PSEH (All Architectures with llvm-mingw)
-PSEH3 (structured exception handling) doesn't work with Clang — ARM64 lacks x86 SEH, and Clang's ESP-relative locals break i386 PSEH filter invocation. All architectures use `USE_DUMMY_PSEH`, which makes `_SEH2_EXCEPT` handlers dead code. Key consequence: must validate pointers before dereferencing in SEH-protected paths, and software exceptions need to be swallowed in user-mode dispatch.
+### SEH / DUMMY_PSEH (status 2026-07-10 — the ruling doc is `docs/engineering/dummy-pseh-verdict.md`)
+`USE_DUMMY_PSEH` is still the default compile mode for **C** on all arches (PSEH3 is incompatible with Clang — ARM64 lacks x86 SEH; Clang's ESP-relative locals break i386 PSEH filters), so `_SEH2_TRY`-protected C must still validate pointers before dereferencing. **But the old "SEH is dead code everywhere, swallow software exceptions" era is OVER** (2026-07):
+- **Rust frames have real unwind tables** (`requires-uwtable`): the kernel ships `.pdata`/`.xdata` for every Rust function and the unwinder works (`rtl-except`; field manual §9.35).
+- **The exception dispatcher is live infrastructure**: hardware faults and software raises dispatch to user-mode SEH on all three arches (arm64 unwinder fixed 2026-07-10; user-SEH self-test in the gate). Do NOT re-add "swallow it" hacks.
+- **Kernel-mode catch is possible** (validated PoC `ntoskrnl/seh_poc.c`); native SEH is a sanctioned per-module tool for the ~22 remaining C files with `_SEH2_TRY`.
+- **Rust replaces PSEH semantics idiomatically**, not mechanically: validate-first probes returning `Result` (rustconv Stage 2), `try_*` contract conversions at raise sites, RAII `Drop` guards for `__finally`. See the verdict doc before writing any new SEH-shaped code.
 
 ### ARM64 PE-COFF Relocations
 Use `adrp + add :lo12: + ldr` (not `adrp + ldr :lo12:`) in assembly. The latter generates `LDST64_ABS_LO12_NC` relocations requiring 8-byte alignment which PE-COFF sections may not provide.
@@ -385,27 +389,32 @@ Smoke/CLI harness internals (`vm.py`/`conftest.py`/`serial_client.py`/`qmp_clien
 
 ## Rust in the Kernel
 
-The Cargo workspace at `sdk/lib/rust/` holds Rust components that compile to PE-COFF static libraries (rlibs/staticlibs) and link into the cmake build. **All crates build for all 3 architectures unless explicitly noted (e.g., hal-rust is x86-only).**
+The Cargo workspace at `sdk/lib/rust/` holds Rust components that compile to PE-COFF static libraries (rlibs/staticlibs) and link into the cmake build. **All crates build for all 3 architectures unless explicitly noted.** The workspace long ago outgrew "kernel algorithms": it spans the bootloader (`freeldr-rust`), the HAL (`hal-rust`, all three arches), win32k (`win32k-rust`), user-mode components (`winlogon-rust`, `explorer`-side crates, server DLLs), and a growing driver fleet (`uniata`, the `usbport`/`usbhub`/HID stack, netstack, `disk`/`classpnp`, …).
 
 ```
 sdk/lib/rust/
 ├── Cargo.toml              # Workspace (resolver v2). lto=false + codegen-units=256 firewall.
-├── ntoskrnl-rust/          # The (shrinking) kernel-monolith crate — ~170K LOC. Being split
-│                           #   per-subsystem (crate-split, ~63% done): what REMAINS here is the
-│                           #   dense center — ke, mm/ARM3 — plus ex (extracted-but-parked). The
-│                           #   ~21 EXTRACTED crates below (iomgr, se, config, pnpmgr, ps, ob,
-│                           #   fsrtl, kdbg, fstub, kd/kd64, rtlk, cc, po, dbgk, lpc, wmi, inbv,
-│                           #   vdm, vf) talk to it over the FFI symbol boundary, NOT crate:: paths.
+├── ntoskrnl-rust/          # The (shrinking) kernel-monolith crate — ~130K LOC (was ~456K).
+│                           #   Being split per-subsystem (crate-split, ~70% done): what REMAINS
+│                           #   here is the dense center — ke, mm/ARM3. The EXTRACTED crates
+│                           #   (iomgr, ex, se, config, pnpmgr, ps, ob, fsrtl, kdbg, fstub,
+│                           #   kd/kd64, rtlk, cc, po, dbgk, lpc, wmi, inbv, vdm, vf, …) talk to
+│                           #   it over the FFI symbol boundary, NOT crate:: paths.
 │                           #   See docs/engineering/ntoskrnl-crate-split-plan.md.
-├── {iomgr,se,config,pnpmgr,ps,ob,fsrtl,kdbg,fstub,kd,kd64,rtlk,cc,po,dbgk,lpc,wmi,inbv,vdm,vf}-rust/
+├── {iomgr,ex,se,config,pnpmgr,ps,ob,fsrtl,kdbg,fstub,kd,kd64,rtlk,cc,po,dbgk,lpc,wmi,inbv,vdm,vf}-rust/
 │                           # Subsystems peeled out of the ntoskrnl-rust monolith (crate-split).
 │                           #   Each deps ONLY ntkrnl-sys + dbgprint-rust; forced into the link by
-│                           #   kernel-rust's `extern crate`. Extract another via the plan's recipe.
-├── ntoskrnl-cargo/         # Cargo-driven ntoskrnl.exe link PoC (replaces cmake-driven link)
+│                           #   kernel-rust's `extern crate` (37 rlibs today). Extract another via
+│                           #   the plan's recipe.
+├── ntoskrnl-cargo/         # PRODUCTION cargo-driven ntoskrnl.exe link (graduated from cmake
+│                           #   add_executable — reactos-link engine; ntoskrnl/CMakeLists.txt:118)
+├── ntkrnlmp-cargo/         # SMP-kernel sibling link (ntkrnlmp.exe): kernel asm assembled with
+│                           #   CONFIG_SMP. Bring-up lane: docs/engineering/smp-bringup-quest.md
 ├── kernel-rust/            # staticlib umbrella that pulls in all sibling rlibs via extern crate
 ├── ntkrnl-sys/             # Two-layer FFI crate: hand-written + bindgen (see below)
-├── hal-rust/               # x86 HAL Rust translation (i386 + amd64). minihal feature for FreeLDR
-├── rtl-rust/               # Umbrella over 18 algorithm rlibs from sdk/lib/rtl/*
+├── hal-rust/               # HAL Rust translation — x86 flavors (i386 + amd64, minihal feature
+│                           #   for FreeLDR) AND arm64 (GIC/timer/DMA-adapter/PL031 modules)
+├── rtl-rust/               # Umbrella over the algorithm rlibs from sdk/lib/rtl/* (~39 crates)
 ├── slist/                   # Lock-free SList (LDXP/CMPXCHG16B/CMPXCHG8B inline asm)
 ├── slist-loom/              # Loom concurrency tests for SList (std, not linked into kernel)
 ├── bitmap/                  # RtlBitmap operations
@@ -441,7 +450,7 @@ Principles:
 5. **One crate, three targets** — same Cargo.toml for all
 
 ### Key Rust/FFI Gotchas
-- **LLVM reserves rbx (amd64) and ebx (i386)** — use `xchg` workaround for CMPXCHG16B/CMPXCHG8B inline asm. **On amd64, the xchg MUST be 64-bit** (`xchg rbx, rbx_save`), not 32-bit (`xchg ebx, ebx_save:e`) — a 32-bit register write zero-extends into rbx, silently destroying the upper 32 bits of any caller-held pointer there. Cost a multi-hour BUGCHECK 0x50 debug session in 2026-05; see memory `feedback_cpuid_xchg_32bit_zext.md`.
+- **LLVM reserves rbx (amd64) and ebx (i386)** — use `xchg` workaround for CMPXCHG16B/CMPXCHG8B inline asm. **On amd64, the xchg MUST be 64-bit** (`xchg rbx, rbx_save`), not 32-bit (`xchg ebx, ebx_save:e`) — a 32-bit register write zero-extends into rbx, silently destroying the upper 32 bits of any caller-held pointer there. Cost a multi-hour BUGCHECK 0x50 debug session in 2026-05.
 - **`#[no_mangle] extern "stdcall"`** on i686-gnu correctly produces `_Name@N` decoration
 - **`#[export_name]` gets double-decorated** on i686-gnu with stdcall — use `#[no_mangle]` instead
 - **i386 SList Pop must be `global_asm!`** — `KiCheckForSListFault` checks exact instruction bytes (0x8B 0x18)
@@ -458,11 +467,11 @@ Full reference (directory tree + line counts, size-verification `verify_sizes.py
 
 ### Cohabitation pattern (HAL)
 
-For HAL Rust translation, each .c → .rs swap is independently revertible: the C file gets commented out in the per-flavor cmake (`hal/halx86/{generic,legacy,pic,acpi,apic}.cmake`) with a `# replaced by Rust (path)` line, and the Rust file's `#[no_mangle]` symbol takes over. `--allow-multiple-definition` allows side-by-side C+Rust during the swap-in phase; lld first-match wins. See `docs/engineering/rust-in-kernel.md` → "HAL ABI contract" for the durable ABI reference, and `docs/engineering/archive/hal-translation-audit.md` for the (closed) per-file mapping.
+For HAL Rust translation, each .c → .rs swap is independently revertible: the C file gets commented out in the per-flavor cmake (`hal/halx86/{generic,legacy,pic,acpi,apic}.cmake`) with a `# replaced by Rust (path)` line, and the Rust file's `#[no_mangle]` symbol takes over. `--allow-multiple-definition` allows side-by-side C+Rust during the swap-in phase; lld first-match wins. (Killing that flag outright is a parked lane — branch `kill-allow-multiple-def`, resume state in-branch.) See `docs/engineering/rust-in-kernel.md` → "HAL ABI contract" for the durable ABI reference, and `docs/engineering/archive/hal-translation-audit.md` for the (closed) per-file mapping.
 
 ## rustconv — C-to-Rust Translation Pipeline
 
-API-driven pipeline that translates ntoskrnl and HAL C files to Rust using LLM (Sonnet batch API by default; also supports Haiku, Opus, Gemini Pro/Flash). Located at `tools/rustconv/`.
+API-driven pipeline that translates ntoskrnl and HAL C files to Rust using LLM (Sonnet batch API by default; also supports Haiku, Opus, Gemini Pro/Flash, DeepSeek). Located at `tools/rustconv/`.
 
 Full pipeline internals, post-processor rules, probe/Stage-3 design, and the Codex cross-model path: `docs/engineering/rustconv-pipeline.md`.
 
@@ -490,9 +499,9 @@ python -m rustconv check                                # cargo check ×3 target
 > - **Cost estimates are a FLOOR, not a quote.** `estimate` shows the single-prompt cost; `translate` re-sends context per function, so the real bill is routinely **2–5×** higher, and `-m opus` is **full sync price ($5/$25 per 1M), not the batch Sonnet price** in the table below. Watch the live `[running $X.XX]` counter the command prints — that's the truth. Budget with the "sync @5x" column from `estimate`.
 > - **Don't re-translate a file that already has output** (in `.responses/` or already integrated) without explicit user approval — you're re-paying for work that exists.
 
-Model shortcuts: `sonnet`, `haiku`, `opus`, `gemini-pro`, `gemini-flash`, or full model ID.
+Model shortcuts: `sonnet`, `haiku`, `opus`, `gemini-pro`, `gemini-flash`, `deepseek`, or full model ID.
 
-`rustconv translate` accepts HAL paths and is HAL-aware (separate `system_prompt_hal.md`, hal_ddk imports, auto-CMake edit). Output quality is ~70% useful for HAL — review before integrating (memory `feedback_rustconv_hal_target.md`).
+`rustconv translate` accepts HAL paths and is HAL-aware (separate `system_prompt_hal.md`, hal_ddk imports, auto-CMake edit). Output quality is ~70% useful for HAL — review before integrating.
 
 The pipeline has multiple stages: Stage 1 (C → Rust, `submit`/`batch`), Stage 2 (probe migration, `probe-migrate` — `ProbeForRead`/`Write` → `Result<T>`; SE+OB done), Stage 3 (Result+Drop-RAII idiomation, planned). See `docs/engineering/rustconv-pipeline.md` for the per-stage design.
 
