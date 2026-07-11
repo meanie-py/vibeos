@@ -758,7 +758,9 @@ pub unsafe extern "system" fn ExtSelectClipRgn(hdc: HDC, hrgn: HRGN, iMode: INT)
         /* Get the DC attribute */
         pdcattr = GdiGetDcAttr(hdc);
         if !pdcattr.is_null() {
-            let pEntry: PGDI_TABLE_ENTRY = GdiHandleTable.add(GDI_HANDLE_GET_INDEX(hdc as HGDIOBJ));
+            /* Entry Flags = byte 3 of the Type dword (wow64-aware read). */
+            let (EntryTy, _, _) =
+                crate::misc::misc::GdiReadSharedEntry(GDI_HANDLE_GET_INDEX(hdc as HGDIOBJ));
 
             /* hrgn can be NULL unless the RGN_COPY mode is specified. */
             if !hrgn.is_null() {
@@ -766,7 +768,7 @@ pub unsafe extern "system" fn ExtSelectClipRgn(hdc: HDC, hrgn: HRGN, iMode: INT)
             }
 
             if ((*pdcattr).ulDirty_ & DC_DIBSECTION) == 0
-                && ((*pEntry).__bindgen_anon_1.__bindgen_anon_1.Flags as DWORD
+                && (((EntryTy >> 24) & 0xFF) as DWORD
                     & GDI_ENTRY_VALIDATE_VIS)
                     == 0
             {

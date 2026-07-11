@@ -31,6 +31,9 @@
 #include <debug.h>
 
 PGDI_TABLE_ENTRY GdiHandleTable = NULL;
+#ifdef _M_IX86
+BOOL g_GdiWow64 = FALSE; /* set in GdiProcessSetup; see gdi32p.h */
+#endif
 PGDI_SHARED_HANDLE_TABLE GdiSharedHandleTable = NULL;
 HANDLE CurrentProcessId = NULL;
 DWORD GDI_BatchLimit = 1;
@@ -711,7 +714,8 @@ BOOL
 WINAPI
 GdiValidateHandle(HGDIOBJ hobj)
 {
-    PGDI_TABLE_ENTRY Entry = GdiHandleTable + GDI_HANDLE_GET_INDEX(hobj);
+    GDI_TABLE_ENTRY EntryBuf, *Entry = &EntryBuf;
+    GdiReadSharedEntry(GDI_HANDLE_GET_INDEX(hobj), &EntryBuf);
     if ( (Entry->Type & GDI_ENTRY_BASETYPE_MASK) != 0 &&
             ( (Entry->Type << GDI_ENTRY_UPPER_SHIFT) & GDI_HANDLE_TYPE_MASK ) ==
             GDI_HANDLE_GET_TYPE(hobj) )
@@ -733,6 +737,7 @@ HGDIOBJ
 WINAPI
 GdiFixUpHandle(HGDIOBJ hGdiObj)
 {
+    GDI_TABLE_ENTRY EntryBuf;
     PGDI_TABLE_ENTRY Entry;
 
     if (GDI_HANDLE_GET_UPPER(hGdiObj))
@@ -742,7 +747,8 @@ GdiFixUpHandle(HGDIOBJ hGdiObj)
 
     /* FIXME is this right ?? */
 
-    Entry = GdiHandleTable + GDI_HANDLE_GET_INDEX(hGdiObj);
+    GdiReadSharedEntry(GDI_HANDLE_GET_INDEX(hGdiObj), &EntryBuf);
+    Entry = &EntryBuf;
 
     /* Rebuild handle for Object */
     return (HGDIOBJ)(((ULONG_PTR)(hGdiObj)) | (Entry->Type << GDI_ENTRY_UPPER_SHIFT));
@@ -760,14 +766,14 @@ GdiQueryTable(VOID)
 
 BOOL GdiGetHandleUserData(HGDIOBJ hGdiObj, DWORD ObjectType, PVOID *UserData)
 {
-    PGDI_TABLE_ENTRY Entry;
+    GDI_TABLE_ENTRY EntryBuf, *Entry = &EntryBuf;
 
     /* GdiHandleTable is set by GdiProcessSetup (called from user32 init).
      * If user32 isn't loaded yet, the table is NULL. */
     if (!GdiHandleTable)
         return FALSE;
 
-    Entry = GdiHandleTable + GDI_HANDLE_GET_INDEX(hGdiObj);
+    GdiReadSharedEntry(GDI_HANDLE_GET_INDEX(hGdiObj), &EntryBuf);
 
     /* Check if twe have the correct type */
     if (GDI_HANDLE_GET_TYPE(hGdiObj) != ObjectType ||
