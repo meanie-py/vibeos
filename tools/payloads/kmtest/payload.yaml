@@ -27,4 +27,4 @@ test:
   # The sweep gates on SC_AutoStartComplete, then runs one kmtest_.exe per
   # listed test (180s per-test cap). Budget generously: gate + N tests.
   launch_marker: "[KMTEST-SWEEP] done"
-  launch_drain_secs: 900
+  launch_drain_secs: 5400

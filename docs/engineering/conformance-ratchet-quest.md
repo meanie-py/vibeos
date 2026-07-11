@@ -216,3 +216,19 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   just unexported — kmtest_drv.sys is its first external consumer). Verified: arm64
   ntoskrnl.exe exports it at a real address. Kernel-touching change → arm64 smoke owed
   before landing.
+- 2026-07-10: **M3 amd64 sweep 1 (97-test list): 20/97 complete, then IoCreateFile
+  (test 21) BUGCHECKed the guest** — 0x1E, exception 0xC0000005 at a kmtest_drv.sys PC
+  (`[RAISE] RtlRaiseStatus(0xC0000005) from fffff880049664c0`, unhandled → double 0x1E
+  with a follow-on 0xC0000006 IN_PAGE on teardown). No handler found despite native SEH:
+  consistent with a *deref*-AV inside `__try` (calls-only .pdata coverage, §native-SEH
+  gotcha in dummy-pseh-verdict.md) OR the test dereferencing a bogus pointer our
+  iomgr-rust IoCreateFile path returned (test has NO SEH at that spot — plain
+  ObReferenceObjectByHandle + FileObject derefs). Triage owed (GDB repro:
+  `run-until.sh --break KeBugCheckEx --then triage-bugcheck` with only IoCreateFile in
+  the list). QUARANTINED in kmtest-tests.txt (commented, reason inline); sweep 2
+  relaunched from the top. 20 completed results (pass/fail/skip) captured — headline:
+  every one of the 20 ran to completion with exit 0, per-suite failures range 0
+  (ExFastMutex, FsRtlMcb 36213-assert clean) to 1000 (ExUuid) — exactly the per-test
+  fail-stock the ratchet baseline will pin. CmSecurity 300/89/2, ExInterlocked 662/40,
+  FsRtlLegal 2496/32, ExUuid 2000/1000, ExSequencedList 0/0/0 (arch-skip), full table
+  in sweep log + baseline-to-be.
