@@ -254,10 +254,16 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   **OPEN (M2 tail / M3 boundary): `-smp 2` now BUGCHECKs 0x6B
   PROCESS1_INITIALIZATION_FAILED (0xc000003a STATUS_OBJECT_PATH_NOT_FOUND, 2)
   at PsLocateSystemDll** — 2-CPU-specific (`-smp 1` of the same build boots
-  clean to desktop). Boot runs far into Phase 1 before failing; likely a
-  per-CPU init the parked AP left half-done (KeNumberProcessors==2 now, but
-  CPU1's PRCB parked before full init) surfacing in ntdll section mapping.
-  Next debug target.
+  clean to desktop). Param2=2 localizes it to the FIRST guard in
+  `PsLocateSystemDll` (ps-rust/psmgr.rs:328): the `ZwOpenFile` of
+  `\SystemRoot\system32\ntdll.dll` returns STATUS_OBJECT_PATH_NOT_FOUND —
+  the *directory* path won't resolve. `\SystemRoot` is an ObMgr symlink set
+  up during I/O init; a parked CPU1 (which ran KiInitializeCpu / bumped
+  KeNumberProcessors to 2 / registered KiProcessorBlock[1] before parking)
+  somehow perturbs its resolution. Since CPU1 is parked (no live concurrency),
+  suspect a KeNumberProcessors==2-sized allocation or an ObMgr/IO per-CPU
+  structure left half-init, NOT a race. Next debug target: GDB watch on the
+  ntdll ZwOpenFile path + compare ObMgr `\SystemRoot` link state at -smp 1 vs 2.
 - **Subagent wave 2 (4 Sonnet agents, all delivered):** A = amd64 IPI 0xE1
   receive body (staged; corrected premise — amd64 freeze already works via
   NMI, 0xE1 dead both ways, needs an amd64 mailbox send-side design = M3);
