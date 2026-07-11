@@ -73,6 +73,22 @@ NTSTATUS WINAPI NtQuerySection(HANDLE Section, ULONG InfoClass, PVOID Info,
                                SIZE_T Length, PSIZE_T ReturnLength);
 NTSTATUS WINAPI NtCreateKeyedEvent(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
                                    ULONG Flags);
+NTSTATUS WINAPI NtCreateDirectoryObject(PHANDLE Handle, ACCESS_MASK Access,
+                                        PVOID Oa);
+NTSTATUS WINAPI NtCreateEvent(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
+                              ULONG EventType, BOOLEAN InitialState);
+NTSTATUS WINAPI NtOpenEvent(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa);
+NTSTATUS WINAPI NtSecureConnectPort(PHANDLE PortHandle, PVOID PortName,
+                                    PVOID SecurityQos, PVOID ClientView,
+                                    PVOID ServerSid, PVOID ServerView,
+                                    PULONG MaxMessageLength,
+                                    PVOID ConnectionInformation,
+                                    PULONG ConnectionInformationLength);
+NTSTATUS WINAPI NtConnectPort(PHANDLE PortHandle, PVOID PortName,
+                              PVOID SecurityQos, PVOID ClientView,
+                              PVOID ServerView, PULONG MaxMessageLength,
+                              PVOID ConnectionInformation,
+                              PULONG ConnectionInformationLength);
 NTSTATUS WINAPI NtQueryFullAttributesFile(PVOID Oa, PVOID FileInformation);
 
 /* ---- shared 32->64 struct marshalling ----------------------------------- *
@@ -681,10 +697,161 @@ static NTSTATUS Wow64Manual_NtMapViewOfSection(ULONG *a)
     return St;
 }
 
+/* ---- NtConnectPort / NtSecureConnectPort --------------------------------- *
+ * The CSR connect (kernel32 -> csrss). PHANDLE + PORT_VIEW/REMOTE_PORT_VIEW
+ * widen; SECURITY_QUALITY_OF_SERVICE is pointer-free (12 bytes both widths)
+ * and passes through. The port views are in/out: the kernel returns the
+ * mapped view bases/sizes, copied back down to the guest cells. */
+typedef struct _WOW64_PORT_VIEW32_M {
+    ULONG Length;
+    ULONG SectionHandle;
+    ULONG SectionOffset;
+    ULONG ViewSize;
+    ULONG ViewBase;
+    ULONG ViewRemoteBase;
+} WOW64_PORT_VIEW32_M;
+
+typedef struct _WOW64_PORT_VIEW64_M {
+    ULONG Length;
+    ULONG __pad0;
+    ULONGLONG SectionHandle;
+    ULONG SectionOffset;
+    ULONG __pad1;
+    ULONGLONG ViewSize;
+    ULONGLONG ViewBase;
+    ULONGLONG ViewRemoteBase;
+} WOW64_PORT_VIEW64_M;
+
+typedef struct _WOW64_REMOTE_PORT_VIEW32_M {
+    ULONG Length;
+    ULONG ViewSize;
+    ULONG ViewBase;
+} WOW64_REMOTE_PORT_VIEW32_M;
+
+typedef struct _WOW64_REMOTE_PORT_VIEW64_M {
+    ULONG Length;
+    ULONG __pad0;
+    ULONGLONG ViewSize;
+    ULONGLONG ViewBase;
+} WOW64_REMOTE_PORT_VIEW64_M;
+
+static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
+{
+    ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[0];
+    WOW64_UNICODE_STRING32_M *Name32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[1];
+    WOW64_UNICODE_STRING64_M Name64;
+    PVOID Qos = (PVOID)(ULONG_PTR)a[2]; /* pointer-free struct: passthrough */
+    WOW64_PORT_VIEW32_M *Cv32 = (WOW64_PORT_VIEW32_M *)(ULONG_PTR)a[3];
+    PVOID ServerSid = Secure ? (PVOID)(ULONG_PTR)a[4] : NULL;
+    WOW64_REMOTE_PORT_VIEW32_M *Sv32 =
+        (WOW64_REMOTE_PORT_VIEW32_M *)(ULONG_PTR)a[Secure ? 5 : 4];
+    ULONG *MaxLen32 = (ULONG *)(ULONG_PTR)a[Secure ? 6 : 5];
+    PVOID ConnInfo = (PVOID)(ULONG_PTR)a[Secure ? 7 : 6];
+    ULONG *ConnLen32 = (ULONG *)(ULONG_PTR)a[Secure ? 8 : 7];
+    WOW64_PORT_VIEW64_M Cv64, *Cv64Ptr = NULL;
+    WOW64_REMOTE_PORT_VIEW64_M Sv64, *Sv64Ptr = NULL;
+    ULONG MaxLen = 0, ConnLen = 0;
+    HANDLE Handle = NULL;
+    NTSTATUS St;
+
+    if (!Name32)
+        return (NTSTATUS)0xC000000DL;
+    Name64.Length = Name32->Length;
+    Name64.MaximumLength = Name32->MaximumLength;
+    Name64.__pad = 0;
+    Name64.Buffer = (ULONG_PTR)Name32->Buffer;
+
+    if (Cv32)
+    {
+        Cv64.Length = sizeof(Cv64);
+        Cv64.__pad0 = Cv64.__pad1 = 0;
+        Cv64.SectionHandle = (LONG_PTR)(LONG)Cv32->SectionHandle;
+        Cv64.SectionOffset = Cv32->SectionOffset;
+        Cv64.ViewSize = Cv32->ViewSize;
+        Cv64.ViewBase = Cv32->ViewBase;
+        Cv64.ViewRemoteBase = Cv32->ViewRemoteBase;
+        Cv64Ptr = &Cv64;
+    }
+    if (Sv32)
+    {
+        Sv64.Length = sizeof(Sv64);
+        Sv64.__pad0 = 0;
+        Sv64.ViewSize = Sv32->ViewSize;
+        Sv64.ViewBase = Sv32->ViewBase;
+        Sv64Ptr = &Sv64;
+    }
+    if (ConnLen32)
+        ConnLen = *ConnLen32;
+
+    if (Secure)
+        St = NtSecureConnectPort(&Handle, &Name64, Qos, Cv64Ptr, ServerSid,
+                                 Sv64Ptr, MaxLen32 ? &MaxLen : NULL, ConnInfo,
+                                 ConnLen32 ? &ConnLen : NULL);
+    else
+        St = NtConnectPort(&Handle, &Name64, Qos, Cv64Ptr, Sv64Ptr,
+                           MaxLen32 ? &MaxLen : NULL, ConnInfo,
+                           ConnLen32 ? &ConnLen : NULL);
+
+    DbgPrint("[WOW64]   Nt%sConnectPort '%.*S' => %08lx (handle=%p maxlen=%lu)\n",
+             Secure ? "Secure" : "", (int)(Name64.Length / sizeof(WCHAR)),
+             (PCWSTR)(ULONG_PTR)Name64.Buffer, St, Handle, MaxLen);
+
+    if (St >= 0)
+    {
+        if (Handle32) *Handle32 = (ULONG)(ULONG_PTR)Handle;
+        if (Cv32)
+        {
+            Cv32->ViewSize = (ULONG)Cv64.ViewSize;
+            Cv32->ViewBase = (ULONG)Cv64.ViewBase;
+            Cv32->ViewRemoteBase = (ULONG)Cv64.ViewRemoteBase;
+        }
+        if (Sv32)
+        {
+            Sv32->ViewSize = (ULONG)Sv64.ViewSize;
+            Sv32->ViewBase = (ULONG)Sv64.ViewBase;
+        }
+        if (MaxLen32) *MaxLen32 = MaxLen;
+        if (ConnLen32) *ConnLen32 = ConnLen;
+    }
+    return St;
+}
+
+static NTSTATUS Wow64Manual_NtSecureConnectPort(ULONG *a)
+{
+    return Wow64pConnectPort(a, 1);
+}
+
+static NTSTATUS Wow64Manual_NtConnectPort(ULONG *a)
+{
+    return Wow64pConnectPort(a, 0);
+}
+
 /* ---- NtCreateKeyedEvent --------------------------------------------------- *
  * PHANDLE out-cell (4 bytes guest vs 8 host — the kernel's 8-byte-aligned
  * probe rejects the guest cell) + optional OBJECT_ATTRIBUTES. ntdll_vista's
  * DllMain creates the process keyed event through this. */
+/* NtCreateEvent: PHANDLE out-cell + optional OA + two trailing scalars. */
+static NTSTATUS Wow64Manual_NtCreateEvent(ULONG *a)
+{
+    ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[0];
+    ACCESS_MASK Access = a[1];
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    PVOID Oa64Ptr = NULL;
+    HANDLE Handle = NULL;
+    NTSTATUS St;
+
+    if (a[2])
+    {
+        Wow64pMarshalOa(&Oa64, &Uname64, a[2]);
+        Oa64Ptr = &Oa64;
+    }
+    St = NtCreateEvent(&Handle, Access, Oa64Ptr, a[3], (BOOLEAN)a[4]);
+    if (St >= 0 && Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Handle;
+    return St;
+}
+
 static NTSTATUS Wow64Manual_NtCreateKeyedEvent(ULONG *a)
 {
     ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[0];
@@ -841,6 +1008,22 @@ static NTSTATUS Wow64Manual_NtQuerySymbolicLinkObject(ULONG *a)
     return St;
 }
 
+/* NtContinue: load the guest's 32-bit CONTEXT into the CPU layer instead of
+ * letting the host kernel reinterpret it as an arm64 CONTEXT. FEX marks the
+ * CPU area dirty and reloads guest state when BTCpuSimulate reenters, so
+ * returning "success" here resumes the guest at the new Eip. */
+static NTSTATUS Wow64Manual_NtContinue(ULONG *a)
+{
+    extern LONG (WINAPI *Wow64pBTCpuSetContext)(HANDLE, HANDLE, PVOID, PVOID);
+    PVOID Ctx32 = (PVOID)(ULONG_PTR)a[0];
+
+    if (!Ctx32 || !Wow64pBTCpuSetContext)
+        return (NTSTATUS)0xC000000DL;
+    return Wow64pBTCpuSetContext((HANDLE)(LONG_PTR)-2 /* thread */,
+                                 (HANDLE)(LONG_PTR)-1 /* process */,
+                                 NULL, Ctx32);
+}
+
 /* Name-dispatched entry point. Returns WOW64_MANUAL_UNIMPL if unhandled. */
 NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
 {
@@ -884,6 +1067,18 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtQuerySection(Arguments);
     if (WOW64_IS("NtCreateKeyedEvent"))
         return Wow64Manual_NtCreateKeyedEvent(Arguments);
+    if (WOW64_IS("NtSecureConnectPort"))
+        return Wow64Manual_NtSecureConnectPort(Arguments);
+    if (WOW64_IS("NtConnectPort"))
+        return Wow64Manual_NtConnectPort(Arguments);
+    if (WOW64_IS("NtContinue"))
+        return Wow64Manual_NtContinue(Arguments);
+    if (WOW64_IS("NtCreateDirectoryObject"))
+        return Wow64pOpenByOa(NtCreateDirectoryObject, Arguments);
+    if (WOW64_IS("NtCreateEvent"))
+        return Wow64Manual_NtCreateEvent(Arguments);
+    if (WOW64_IS("NtOpenEvent"))
+        return Wow64pOpenByOa(NtOpenEvent, Arguments);
 #undef WOW64_IS
     return WOW64_MANUAL_UNIMPL;
 }

@@ -55,3 +55,6 @@ NtSetSystemInformation
 NtQuerySection
 NtCreateKeyedEvent
 NtOpenKeyedEvent
+NtConnectPort
+NtSecureConnectPort
+NtContinue

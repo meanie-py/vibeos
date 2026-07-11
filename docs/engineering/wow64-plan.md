@@ -309,19 +309,45 @@ builds the image + ntdll `LDR_DATA_TABLE_ENTRY`s and reaches
      `[GUEST32] ...`. First forwarded line: `[GUEST32] [kernel32] DllMain
      PROCESS_ATTACH PID=236` — **the i386 kernel32 executes under FEX on
      arm64.**
-- **CURRENT BLOCKER — CSR connect: misaligned PHANDLE bugchecks the kernel.**
-  kernel32's `CsrClientConnectToServer` → `NtSecureConnectPort(&CsrApiPort,…)`
-  passes the guest's 4-aligned `_CsrApiPort` cell (ntdll32+0x103924);
-  `ProbeForWriteHandle` (align 8) raises DATATYPE_MISALIGNMENT, and under
-  DUMMY_PSEH the raise is unhandled → **BUGCHECK 0x1E**. Diagnostic landed:
-  `[PROBE-MISALIGN-R/W]` one-liner (ex-rust exintrin.rs) prints
-  addr/len/align + caller LR before the raise. Two work items: (a)
-  NtConnectPort / NtSecureConnectPort deep marshallers (PHANDLE +
-  PORT_VIEW/SECURITY_QOS — start of the CSR/LPC-32 layer; port message
-  layouts differ 32/64), and (b) a kernel-robustness landmine bigger than
-  wow64: ANY user process passing a misaligned pointer to a PHANDLE-probing
-  syscall bugchecks the kernel (probe-raise + DUMMY_PSEH = no catch);
-  long-term fix is the Stage-2 `Result<T>` probe migration for these paths.
+- **M3b PASS (2026-07-11): `hello32.exe exit = 0x600D` — a real i386 PE runs
+  end-to-end under FEX on arm64 through the genuine Windows loader.** Final
+  ladder after the DLL-execution rung:
+  1. **NtSecureConnectPort/NtConnectPort marshallers** (PHANDLE +
+     PORT_VIEW/REMOTE_PORT_VIEW widen; SECURITY_QOS is pointer-free and passes
+     through). This removed the BUGCHECK 0x1E (the guest's 4-aligned
+     `_CsrApiPort` cell hit `ProbeForWriteHandle`'s align-8 RAISE, fatal under
+     DUMMY_PSEH — `[PROBE-MISALIGN-R/W]` in ex-rust exintrin.rs is the
+     permanent breadcrumb printer for this class). csrss still REFUSES the
+     connect (c0000041: 32-bit CSR_API_CONNECTINFO vs 64-bit csrss) — that's
+     the deferred CSR/LPC-32 layer, below.
+  2. **kernel32 no-CSRSS leniency under WOW64** (kernel32-rust dllmain.rs,
+     x86 + runtime `ProcessWow64Information` gate): same fallback the arm64
+     native bring-up uses (continue + synthesized BASE_STATIC_SERVER_DATA).
+     Native i386 keeps strict terminate-on-failure.
+  3. **PEB32 NLS pointers** (the "left 0 in M1" debt): MmCreatePeb's PEB32
+     branch maps a SECOND below-2GB view of the NLS section (ZeroBits mask
+     form) and points PEB32's Ansi/Oem/CaseTable fields at it —
+     `RtlInitCodePageTable(NULL)` AV'd in kernel32's NlsInit otherwise.
+  4. **NtContinue → BTCpuSetContext** (the loader's final jump-to-entry):
+     the host kernel must never see a guest CONTEXT32 (it rebuilt a garbage
+     arm64 context and resumed at a wild PC). WOW64_CONTEXT == i386 CONTEXT,
+     so the marshaller passes the guest pointer straight to the CPU layer;
+     FEX reloads guest state on simulate reentry. NtRaiseException needs the
+     same treatment (still auto-thunked — returns c000000d harmlessly today).
+  5. Convenience marshallers: NtCreateDirectoryObject/NtCreateEvent/
+     NtOpenEvent (open-by-OA shape).
+
+*Deferred out of M3b (the M4 surface):*
+- **CSR/LPC-32 layer** — 64-bit csrss refuses 32-bit connects
+  (CSR_API_CONNECTINFO + CSR_API_MESSAGE/PORT_MESSAGE layouts differ). Needed
+  for console I/O, real CreateProcess from guests, anything csrss-brokered.
+  Design choice pending: thunk CSR messages in wow64.dll (real-NT shape) vs
+  teach basesrv/winsrv to accept 32-bit-shaped connects.
+- **Kernel robustness:** misaligned user pointer at any PHANDLE-probing
+  syscall = probe RAISE + DUMMY_PSEH = BUGCHECK 0x1E from user input.
+  Long-term: Stage-2 `Result<T>` probe migration for syscall entry paths.
+- NtRaiseException marshaller (32-bit EXCEPTION_RECORD + CONTEXT), guest
+  exception dispatch parity.
   All landed behind VIBEOS_FEX; normal boots unaffected (i386+amd64+arm64
   smoke green with these kernel changes).
 

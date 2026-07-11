@@ -139,6 +139,11 @@ static LONG (WINAPI *Wow64pBTCpuResetToConsistentState)(EXCEPTION_POINTERS *);
  * wow64_manual.c marshaller): FEX must learn about every mapped image or its
  * dispatcher won't translate code from the new range. Non-static on purpose. */
 LONG (WINAPI *Wow64pBTCpuNotifyMap)(PVOID, PVOID, PVOID, SIZE_T, ULONG, ULONG);
+/* NtContinue interception (wow64_manual.c): a guest NtContinue must load the
+ * 32-bit CONTEXT into the CPU layer (FEX reloads it on simulate reentry) —
+ * passing it to the host kernel's NtContinue rebuilds a garbage arm64 context
+ * and resumes the host thread at a wild PC. WOW64_CONTEXT == i386 CONTEXT. */
+LONG (WINAPI *Wow64pBTCpuSetContext)(HANDLE, HANDLE, PVOID, PVOID);
 static ULONG_PTR Wow64pPeb32;  /* set in Wow64LdrpInitialize, for VEH diagnostics */
 
 /* M3b heap diagnostic: dump the guest process heap state at an unhandled fault.
@@ -653,6 +658,12 @@ Wow64LdrpInitialize(PVOID Context)
     WOW64_RESOLVE(BTCpuSimulate);
     WOW64_RESOLVE(BTCpuNotifyMapViewOfSection);
     Wow64pBTCpuNotifyMap = BTCpuNotifyMapViewOfSection;
+    {
+        PVOID Addr = NULL;
+        RtlInitAnsiString(&ProcName, "BTCpuSetContext");
+        LdrGetProcedureAddress(Fex, &ProcName, 0, &Addr);
+        Wow64pBTCpuSetContext = (LONG (WINAPI *)(HANDLE, HANDLE, PVOID, PVOID))Addr;
+    }
     {
         PVOID Addr = NULL;
         RtlInitAnsiString(&ProcName, "BTCpuResetToConsistentState");
