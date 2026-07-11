@@ -4644,3 +4644,68 @@ ntkrnl-sys inline/mm.rs (broadcast hooks), ex-rust init.rs (Phase-1 order),
 ntoskrnl/ke/amd64/trap.S (0xE1 dispatch). Owed next (M3b+): scheduled-on-
 CPU1 visibility counter, targeted single-VA remote flushes, the packet
 mailbox (staged wave-2 A), i386/arm64 parity, net-suite flake at -smp 2.
+
+### 9.53 (ROOT-CAUSED + FIXED 2026-07-11) M3b: the -smp 2 "TDI dgram upcall TIMED OUT" NET_FLAKE — an "IRQL raise = mutual exclusion" UP assumption in a driver
+
+**Symptom.** After M3a (AP scheduling live), `-smp 2` boots to desktop ~2/3
+of the time; ~1/3 the netstack self-test prints
+`[NETSTACK] TDI dgram self-test: datagram upcall TIMED OUT` and the smoke run
+classifies NET_FLAKE. Never reproduced on the default UP gates (they run the
+identical self-test). The `-smp N` knob is the only variable → a real
+concurrency bug that a single vCPU masked.
+
+**The trap: "on QEMU's single vCPU, DISPATCH_LEVEL is full mutual exclusion."**
+This premise is written verbatim in several netstack comments, and it is *true
+on UP*: raising IRQL to DISPATCH masks thread preemption, so a producer thread
+and a consumer thread on the one CPU can never overlap. **On SMP it means
+nothing** — raising IRQL (CR8 on amd64) is a *per-CPU* register write; it does
+not stop a thread running on another CPU at any IRQL. Any driver shared
+structure guarded only by an IRQL raise is unsynchronized under `-smp ≥2`.
+
+**Root cause (the datagram flake).** `netstack-rust`'s TDI transport uses an
+`INBOX`: an MPSC command queue (many TDI-dispatch threads push `Cmd`s; the one
+poll worker drains via `mem::swap`) that was guarded by only
+`IrqlGuard::raise_to_dpc()` over a bare `Vec`. Under `-smp 2` a `Vec::push`
+that reallocates (moves the backing buffer) races the consumer's `mem::swap`
+reading the `Vec`'s (ptr,len,cap) — and two producer threads race each other —
+a torn read / lost element. The lost `Cmd` is a `SEND_DATAGRAM` (query never
+goes out) or a `SET_EVENT(receive-datagram)` (handler never registered) → the
+DNS reply's upcall never fires → the 10 s wait times out. (The comment even
+named the hazard — "an unsynchronized Vec race between two threads = UB/heap
+corruption" — but trusted the single-vCPU premise to prevent it.)
+
+**Fix.** Guard the queue with a **real `KSPIN_LOCK`** via `SpinLockGuard`
+(`ntkrnl_sys::guards`) → `KeAcquireSpinLock`, which raises to DISPATCH *and*
+spins on the lock word. Because `KeAcquireSpinLock` is the exported kernel
+symbol, a driver imports it and it resolves **per boot**: the SMP kernel's
+`KxAcquireSpinLock` really spins (`feature=smp`, an `InterlockedBitTestAndSet`
+loop); the UP kernel's is a no-op compiler fence — byte-identical behavior to
+the old raise-only path there, so no UP regression and no driver-side feature
+flag needed. **Do NOT use `KeAcquireSpinLockForDpc`** here — it is a *different*
+function still stubbed to a no-op in this tree (returns IRQL without
+raising/acquiring); reaching for it gives zero synchronization.
+
+**Second instance, same class, same commit.** The smoke NIC is `virtio-net-pci`
+(vm.py), so `hal.rs`'s `virtio_drivers::Hal` bounce path is live. Its
+`static mut BOUNCES` table (used for buffers crossing a page boundary) was
+scanned/mutated lock-free on the same "single vCPU → map/unmap never overlap"
+premise: two concurrent `share`s could claim the same empty slot (one bounce
+leaked + a descriptor pointing at the wrong physaddr → DMA to stale memory), or
+a `share`/`unshare` pair could tear an entry. Guarded with the same
+`SpinLockGuard` (share/unshare run on the poll worker, never the ISR, so a
+DISPATCH-level lock is correct). NOT proven to be a *second* cause of the
+timeout, but a genuine data race on a live path — fixed as defense-in-depth.
+
+**Reusable rule.** In any driver/component that a `-smp N` boot exercises, a
+comment of the form "QEMU runs a single vCPU, so DISPATCH_LEVEL is mutual
+exclusion" marks a **UP-only** guard that is unsound under SMP. Grep the crate
+for `single vCPU` / `raise_to_dpc` / `static mut` / `UnsafeCell` + `unsafe impl
+Sync` and audit each: an SPSC ring with real acquire/release head/tail fences
+(netstack `ndisphy::RxRing`) or a single disjoint volatile MMIO read
+(`device::ack_interrupt`) is genuinely SMP-safe and stays; anything guarding a
+`Vec`/shared table with only an IRQL raise needs a real `KSPIN_LOCK`.
+
+Files: netstack-rust/src/tditrans.rs (INBOX lock), netstack-rust/src/hal.rs
+(BOUNCE_LOCK), netstack-rust/src/lib.rs (comment). Owed next (M3+): scheduled-
+on-CPU1 visibility counter, targeted single-VA remote flushes, packet mailbox,
+i386/arm64 parity.

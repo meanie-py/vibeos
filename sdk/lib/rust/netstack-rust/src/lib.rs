@@ -118,9 +118,9 @@ pub unsafe extern "system" fn DriverEntry(
     // M4 verification: a kernel TDI client (tditest::spawn) that drives our own
     // \Device\Tcp via real IRPs (the exact path AFD uses) — open address +
     // connection objects (EA buffers), associate, connect to the slirp echo,
-    // send, receive. Re-enabled after fixing the inbox synchronization (the
-    // prior KeAcquireSpinLockForDpc is a no-op in this tree → unsynchronized
-    // Vec race; now uses IrqlGuard/DISPATCH_LEVEL = real UP mutual exclusion).
+    // send, receive. The inbox is guarded by a real KSPIN_LOCK (KeAcquireSpinLock)
+    // — cross-CPU mutual exclusion that holds under -smp 2, not the old
+    // IrqlGuard/DISPATCH raise that only worked on a single vCPU (§9.53).
     tditest::spawn();
     // M5 verification: the UDP/datagram analogue — a kernel TDI client that drives
     // our own \Device\Udp via real IRPs (the path AFD uses for sendto/recvfrom and

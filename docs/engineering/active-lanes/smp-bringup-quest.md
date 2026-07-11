@@ -330,3 +330,25 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   DPC targeting / event signal racing the timeout). CPU1-scheduling
   evidence for the record: the pre-fix ObCreateObject AV occurred ON CPU1's
   syscall path (LPC from services), proving user threads execute there.
+- 2026-07-11: **M3b — TDI dgram NET_FLAKE ROOT-CAUSED + FIXED** (field manual
+  §9.53). Not the §9.36 stack-IRP family — a plain "IRQL raise = mutual
+  exclusion" **UP assumption in netstack-rust**. The TDI transport `INBOX`
+  (MPSC command queue, many dispatch threads push / one poll worker drains via
+  `mem::swap`) was guarded by only `IrqlGuard::raise_to_dpc()` over a bare
+  `Vec`. On UP that IS mutual exclusion (DISPATCH masks preemption on the one
+  CPU); under `-smp 2` a raise on CPU0 does nothing to a thread on CPU1 → a
+  `Vec::push` reallocating races the consumer's `mem::swap` → lost `Cmd`
+  (SEND_DATAGRAM / SET_EVENT) → the DNS upcall never fires → TIMED OUT. Fix:
+  guard with a **real KSPIN_LOCK** via `SpinLockGuard`→`KeAcquireSpinLock`
+  (raises to DISPATCH *and* spins; resolves per-boot — real MP spin on the SMP
+  kernel, no-op fence on UP, so no UP regression + no driver feature flag).
+  Two more of the same class fixed in the same pass (virtio-net is the smoke
+  NIC, so both are live): `hal.rs` `static mut BOUNCES` DMA-bounce table
+  (concurrent `share`s claiming the same slot → wrong physaddr/DMA to stale
+  mem) and `serial.rs` marker emit (cross-CPU interleave splitting a
+  `[NETSTACK]` marker the net suite greps). Workspace-wide audit for the
+  "single vCPU" idiom found no other real instances (the rest: dead C
+  comments, an ASCII-art string, and the correctly-gated M1a UP lock no-ops).
+  **Verified: `-smp 2` ×6 all green incl. `✓ net`** (warm INBOX-only build;
+  pre-fix ~1/3 failed). Clean 3-fix build + UP gate ×3 + `-smp 2` re-confirm
+  landing next.
