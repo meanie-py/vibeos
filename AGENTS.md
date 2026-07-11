@@ -224,7 +224,7 @@ vibeos/                          # Git repo root (renamed from reactos/)
 ## Build Commands
 
 **Builds run at the CANONICAL PATH** (`/tmp/vibeos` — a per-build bind mount, see
-`tools/canon-run.sh` and `docs/engineering/build-cache-and-determinism-plan.md`): build
+`tools/canon-run.sh` and `docs/engineering/build-system.md`): build
 dirs bake `/tmp/vibeos/...` paths so caches share across worktrees. `./vibeos-cli build`
 handles this automatically (+ mandatory ccache/sccache, provisioning, lints). For raw
 ninja iteration, prefix with the wrapper — **plain `ninja` in a build dir fails loudly**
@@ -409,7 +409,7 @@ sdk/lib/rust/
 ├── ntoskrnl-cargo/         # PRODUCTION cargo-driven ntoskrnl.exe link (graduated from cmake
 │                           #   add_executable — reactos-link engine; ntoskrnl/CMakeLists.txt:118)
 ├── ntkrnlmp-cargo/         # SMP-kernel sibling link (ntkrnlmp.exe): kernel asm assembled with
-│                           #   CONFIG_SMP. Bring-up lane: docs/engineering/smp-bringup-quest.md
+│                           #   CONFIG_SMP. Bring-up lane: docs/engineering/active-lanes/smp-bringup-quest.md (on the smp-bringup branch until it lands)
 ├── kernel-rust/            # staticlib umbrella that pulls in all sibling rlibs via extern crate
 ├── ntkrnl-sys/             # Two-layer FFI crate: hand-written + bindgen (see below)
 ├── hal-rust/               # HAL Rust translation — x86 flavors (i386 + amd64, minihal feature
