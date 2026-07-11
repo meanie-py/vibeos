@@ -232,3 +232,104 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   fail-stock the ratchet baseline will pin. CmSecurity 300/89/2, ExInterlocked 662/40,
   FsRtlLegal 2496/32, ExUuid 2000/1000, ExSequencedList 0/0/0 (arch-skip), full table
   in sweep log + baseline-to-be.
+- 2026-07-10: **M3 sweeps 2-3 (amd64): two more kernel-killer catches, both quarantined
+  + triage owed.** Sweep 2: IoDeviceInterface + IoEvent green (22 OK cumulative), then
+  **IoFilesystem** BUGCHECKs 0x1E — AV at `MiFindEmptyAddressRangeInTree+0x173`, which is
+  the RUST translation (`ntoskrnl-rust/src/ARM3/vadnode.rs:370`); boot never walks that
+  path hot enough to catch it. Explore subagent diffing Rust-vs-C launched. Sweep 3:
+  IoInterrupt/IoIrp/IoMdl/IoVolume green (26 OK cumulative), then **KdSystemDebugControl**
+  hits `RUST PANIC ke/dpc.rs:577` — `KiRetireDpcList` `DeferredRoutine.unwrap()` on None,
+  i.e. a NULL-routine KDPC reached the DPC queue (candidate: an uninitialized Kd DPC on
+  the debugger-disabled path; C would have jumped through NULL, the Rust unwrap made it
+  loud + attributable — the panic print IS the conformance signal working). Also
+  symbolicated sweep-1's secondary frames: `+0x7A7E0` = KeGetBugMessageText (bugcheck
+  path itself, noise), `+0xCF5EB` = RtlRaiseStatus (dispatch). Iteration cadence:
+  quarantine → `VIBEOS_PAYLOAD=kmtest build` (~3 min) → re-sweep; serial Monitor fires
+  on BUGCHECK/TIMEOUT/done so a mid-sweep crash never burns the 90-min drain.
+- 2026-07-10: **IoFilesystem crash static-triage (2 subagent passes) — AVL machinery
+  exonerated, needs live repro.** `MiFindEmptyAddressRangeInTree` + all its Rtl*Avl
+  callees + `mm/avl.rs` insert/delete/rebalance/splice verified faithful to C
+  (parent-pointer balance-bit masking, MM_AVL_TABLE bitfield layout, two-child-splice
+  self-referential case, root deletion, BalancedRoot sentinel — all match). One flagged
+  divergence, Rust-favorable: `avl.rs:490` uses masked `is_right_child` where
+  `avlsupp.c:372` uses the raw un-masked `RtlIsRightChild` macro in the delete
+  rebalance walk. Fault is most plausibly the `(*node).StartingVpn` load at
+  `vadnode.rs:410` on a stale/garbage node — i.e. the tree (likely `MiRosKernelVadRoot`
+  via the CcMapData/MmCreateMemoryArea path the test hammers) is corrupted BEFORE this
+  function walks it; suspects are locking/concurrency around the kernel cache-view tree,
+  not per-line arithmetic. Next tool: live GDB repro (IoFilesystem alone in the list,
+  `run-until.sh --break KeBugCheckEx --then triage-bugcheck`, then walk the tree at
+  the fault). Owed as M3 triage item.
+- 2026-07-10: **M3 sweep 4 (amd64): catch #4 — MmReservedMapping BUGCHECKs 0xDA
+  SYSTEM_PTE_MISUSE** (subcode 0x101, P3 = the test's own pool tag 'KmRM') — the
+  `MmAllocateMappingAddress`/`MmFreeMappingAddress` reserved-mapping path (Rust
+  `mdlsup.rs`). Quarantined; triage owed. Progress before the crash: 38/97 cumulative
+  OK — IoInterrupt through KeTimer all green (the entire Ke* family: Apc, DeviceQueue,
+  Dpc, Event, FloatPointState, GuardedMutex, Irql, Mutex, SpinLock, Timer), MmMdl
+  575/0 clean, MmSection 71/13/4.
+- 2026-07-10: **M3 sweep 5 (amd64): catch #5 — NpfsFileInfo BUGCHECKs 0x19
+  BAD_POOL_HEADER subcode 5** (corrupt pool header on free, immediately at test start).
+  Quarantined; triage owed — repro recipe: NpfsFileInfo alone in the list +
+  `--tripwire "SPECIALPOOL=*"` to fault at the corrupting store (field manual §9.18).
+  NpfsConnect (679/0) and NpfsCreate (351/0) both green before it — 40/97 cumulative OK.
+- 2026-07-10: **M3 sweep 6 (amd64): catch #6 — ObSymbolicLink BUGCHECKs 0x1E, AV in
+  memcpy+0x40** (bad src/dst from the symlink path; ob-rust
+  NtCreateSymbolicLinkObject/lookup-reparse copy is the candidate). Quarantined; triage
+  owed. NpfsReadWrite/NpfsVolumeInfo/ObHandle/ObQuery/ObReference (2205/0!) /ObSecurity
+  all green before it — 46/97 cumulative OK.
+- 2026-07-10: **M3 sweep 7 (amd64): RtlExceptionKM BUGCHECKs — first PSEH-STRUCTURAL
+  quarantine** (deliberate hardware fault inside __try; mingw native SEH is calls-only,
+  so the in-body AV escapes → 0x1E at a kmtest_drv PC — the exact gotcha documented in
+  dummy-pseh-verdict.md §C). Expected-fail class, NOT an OS bug; stays quarantined until
+  an -fasync-exceptions-equivalent story exists. ObType/ObTypes/PsNotify/PsQuota/
+  RtlAvlTreeKM green before it — 51/97 cumulative OK. (Watch: the UM twin RtlException
+  later in the list should crash only the process, not the kernel — a good
+  harness-robustness data point.)
+- 2026-07-10: **M3 sweep 8 (amd64): catch #7 — RtlStackKM BUGCHECKs 0x1E, AV in
+  `RtlWalkFrameChain+0x2b0`.** DUMMY_PSEH-structural candidate with a real kernel-side
+  fix available: the C walk relies on __try to stop at a bad frame (dead under
+  USE_DUMMY_PSEH in-kernel) — needs explicit frame-pointer bounds validation instead.
+  Quarantined; triage owed. RtlIntSafeKM/RtlIsValidOemCharacter/RtlMemoryKM/RtlRangeList/
+  RtlRegistryKM/RtlSplayTreeKM green before it — 57/97 cumulative OK.
+- 2026-07-11: **M3 sweep 9 (amd64): FIRST FULL COMPLETION — `done total=89 launched=89
+  failstart=0 timeouts=1`.** 62 OK with real pass/fail stock (highlights: KeEvent 42733/0,
+  SeInheritance 704433/14, NpfsReadWrite 7154/0, IoInterrupt 939/156, KeGuardedMutex
+  1566/87). One new catch (#8): **SeTokenFiltering wedges in-kernel at 180s** — and the
+  timeout kill can't reap a kernel-stuck process, so kmtest_drv keeps the result buffer
+  registered and ALL 26 subsequent tests cascade-fail SET_RESULTBUFFER 0x5 (kmtest.c:334;
+  same face as the fixed ob-rust cleanup bug, different mechanism — the process never
+  dies, so IRP_MJ_CLEANUP legitimately never fires). Sweep-design lesson recorded: a
+  single in-kernel wedge poisons the boot's remaining tests; the per-test timeout can
+  only skip, not recover. SeTokenFiltering quarantined; sweep 10 relaunched to get true
+  results for the cascade-masked tail (Zw* + the 18 UM tests + TcpIp*).
+- 2026-07-11: **M3 sweeps 10-11: catches #9-10, and a CLUSTER signal.** Sweep 10 got
+  real results for the Zw* tail (ZwAllocateVirtualMemory 26/17/9, ZwCreateSection 4/3/2,
+  ZwMapViewOfSection 104/23/2 — all previously cascade-masked), then ZwWaitForMultipleObjects
+  0x1E in `memcpy+0x40`. Sweep 11 verified HidPDescription/IoDeviceObject (+ FileAttributes/
+  FindFile/etc.), then IoReadWrite 0x1E — **same `memcpy+0x40` PC**. That's now THREE
+  crashers at the identical instruction (ObSymbolicLink, ZwWaitForMultipleObjects,
+  IoReadWrite) → almost certainly ONE root: an unprobed/hostile-length user-buffer copy
+  where the C relied on SEH probing (dead under DUMMY_PSEH). Fixing that single path likely
+  clears all three quarantines. High-value first triage target. 70/97 cumulative OK.
+- 2026-07-11: **memcpy+0x40 cluster ROOT-CAUSED (subagent) — a reusable DUMMY_PSEH class.**
+  ObSymbolicLink / ZwWaitForMultipleObjects / IoReadWrite (and almost certainly
+  NtCreateSection, sweep 13's 0x50) all reduce to: a kernel API captures a caller-supplied
+  buffer/handle-array with a copy that in C sat inside `_SEH2_TRY`; under USE_DUMMY_PSEH
+  that handler is DEAD, so a hostile pointer (NULL / 0x42424242, both below
+  MmUserProbeAddress so a range-only probe passes them) faults the capture memcpy → 0x1E.
+  Two compounding gaps in the Rust translations: (1) the `probe_user_buffer` guard is gated
+  on `PreviousMode != KernelMode`, but these tests call from kernel mode → guard skipped,
+  unconditional copy; (2) `probe_user_buffer` is a *range+alignment* check only (never
+  touches memory), so it can't catch a mapped-range-but-invalid pointer anyway — the safety
+  was always the SEH around the copy. Capture sites: `ob-rust/src/oblink.rs:657` (symlink
+  target copy), `ob-rust/src/obwait.rs:119` (handle-array copy, unconditional), and worst
+  `iomgr-rust/src/iofunc.rs:3369-3373` NtWriteFile still calls the raw C SEH probes
+  (`ProbeForWrite*`/`ProbeForRead*`) + a bare `*Key` deref (NtReadFile at :2600 was already
+  converted to the checked-Result probe pattern; NtWriteFile was not). **Fix (single shared
+  primitive):** make `ntkrnl-sys/src/probe.rs` `safe_copy_from_user`/`safe_copy_to_user`
+  genuinely fault-tolerant (real PSEH via pseh-rust, OR per-page MmIsAddressValid returning
+  Err(STATUS_ACCESS_VIOLATION)), run it UNCONDITIONALLY (not PreviousMode-gated), and route
+  all three capture sites through it. Working reference for the checked pattern:
+  `ex-rust/src/dbgctrl.rs` NtSystemDebugControl. This fix likely clears 4 quarantines
+  (ObSymbolicLink, ZwWaitForMultipleObjects, IoReadWrite, NtCreateSection). Owed as the
+  top M3 fix task; gate ×3 before landing (touches ob/io/ntkrnl-sys core copy path).
