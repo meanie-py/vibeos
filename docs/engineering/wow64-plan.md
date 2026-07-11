@@ -226,9 +226,49 @@ kernel backing remains owed). Verified serial oracle:
 `[FEX-WOW64C] M2 PASS: real i386 image code executed under FEX in a WoW64 process`
 and hello32 exit `0x600D`. Whole M2 path remains behind VIBEOS_FEX staging.
 
+*Milestone 3 — the real 32-bit loader runs under FEX.*
+
+*M3a — PASS on-box (2026-07-10): a real ntdll32 syscall stub round-trips.* The
+i386 syscall stubs (`syscalls.inc` STUBCODE_U) now dispatch through a
+`Wow64Transition` data slot (Win10 parity): statically it jumps
+`SharedUserData->SystemCall` (native boots unchanged), and wow64.dll patches the
+guest ntdll32's slot to FEX's BOP bridge. The guest exit stub calls the *real*
+ntdll32 `NtClose(NULL)` stub and gets `STATUS_INVALID_HANDLE` back through
+`Wow64Transition → BOP → Wow64SystemServiceEx → generated thunk table → host
+NtClose`. wow64gen is now indexed by `ntoskrnl/include/sysfuncs.h` order (the
+real service numbers, not `.spec` order) and its output is built + dispatched by
+wow64.dll (`wow64_thunks.c`); manual-list slots route to hand marshallers in
+`wow64_manual.c` (`Wow64ManualDispatch`).
+
+*M3b — IN PROGRESS (2026-07-10): the 32-bit loader runs, blocked in the guest
+heap.* Instead of jumping straight to the image entry, the guest now enters at
+`ntdll32!KiUserApcDispatcher → LdrInitializeThunk` (the real loader) with a
+down-converted 32-bit `RTL_USER_PROCESS_PARAMETERS` (the kernel leaves PEB32's
+NULL). The loader runs its whole early sequence correctly —
+`NtQueryVirtualMemory`, `NtQueryInformationProcess(ProcessBasicInformation)`,
+IFEO `NtOpenKey`, heap `NtAllocateVirtualMemory ×N`, locale, `\KnownDlls`
+dir+symlink+query — every syscall returning `STATUS_SUCCESS` through 11 hand
+marshallers (VM in/out-cell trio, the OA-open family, PBI/SBI down-convert,
+symlink in/out UNICODE_STRING). **Blocker:** the loader then near-null-writes
+building the main image's `LDR_DATA_TABLE_ENTRY` because
+`RtlAllocateHeap(ProcessHeap, 8, 0x50)` returns **NULL** (ntdll32 RVA 0x5153
+`test eax,eax; je 0x5172` with `edi=0`). RULED OUT via a guest probe stub: FEX
+memory is coherent — the guest reads hello32's DOS header at 0x400000 correctly
+(`e_magic=0x5A4D`, `e_lfanew=0x78`), matching the file byte-for-byte; and the
+FEX-source investigation confirms FEX shares the host address space flat (base 0,
+no translation; `BTCpuProcessInit` self-registers the main image from
+`Peb->ImageBaseAddress` at Module.cpp:545 — no missing BTCpu call). So the bug is
+in the **guest heap** (RtlCreateHeap/RtlAllocateHeap free-list or a
+TEB32/PEB32-dependent field the heap reads) running under emulation, *not* the
+CPU or memory layer. Next: trace the guest process-heap creation
+(PEB32->ProcessHeap / the cached heap-handle global at ntdll32+0x9bb00) — likely
+needs guest-side ntdll32 DbgPrint instrumentation or a FEX-context GDB stop.
+Landed as `wip(wow64): M3b`; behind VIBEOS_FEX, normal boots unaffected.
+
 *Still owed in Phase C:*
 - 32-bit ntdll auto-map + `Wow64Transition` publishing (32-bit ntdll's syscall
-  stubs dispatch through it → BOP page); ntdll32 syscall-stub macro swap.
+  stubs dispatch through it → BOP page); ntdll32 syscall-stub macro swap. **DONE
+  in M3a** (`Wow64Transition` slot + wow64.dll patch).
 - PEB32 NLS pointers (need a below-4GB NLS view; left 0 in M1),
   `RtlWow64Get/SetThreadContext` kernel `ThreadWow64Context` support,
   `PebAddressWow64` in the csrss create message.
@@ -244,16 +284,21 @@ and emits C marshallers; no LLM). It parses `dll/ntdll/def/ntdll.spec` and emits
 one 32→64 thunk per `Nt*`: read the guest 32-bit arg dwords, widen to the host
 64-bit ABI (a 32-bit guest pointer IS a valid 64-bit pointer — VA < 4GB — so
 `ptr` widens by zero-extension), call the real 64-bit `Nt*`, return NTSTATUS.
-Current arm64 surface: 299 syscalls, 271 auto / 28 manual. Deep-marshalling
-cases (structs whose 32/64 layout differs — OBJECT_ATTRIBUTES, IO_STATUS_BLOCK
-Information, ...) can't be inferred from the `.spec`, so a curated
-`tools/wow64gen/manual.txt` forces them to loud `WOW64_NEEDS_MANUAL` stubs
-(never a silently-wrong auto thunk). Tests + docs: `test_wow64gen.py` (gated by
-`vibeos-cli check-tooling`), `README.md`. *Owed:* wire generation into the
-wow64.dll build + dispatch `Wow64ThunkTable[serviceNumber]` (blocked behind M2 —
-guest code must execute first), verify service-number alignment with the built
-i386 ntdll, then hand-write the 28 deep marshallers. This is where the Rust
-story pays for wow64win.dll (win32k) too.
+Current arm64 surface: 296 syscalls, 260 auto / 36 manual (indexed by
+`sysfuncs.h` service order). Deep-marshalling cases (structs whose 32/64 layout
+differs — OBJECT_ATTRIBUTES, IO_STATUS_BLOCK Information, ...) can't be inferred
+from the `.spec`, so a curated `tools/wow64gen/manual.txt` forces them to loud
+`WOW64_NEEDS_MANUAL` stubs (never a silently-wrong auto thunk). Tests + docs:
+`test_wow64gen.py` (gated by `vibeos-cli check-tooling`), `README.md`. **DONE
+(2026-07-10):** generation is wired into the wow64.dll build (CMake custom
+command) and dispatched via `Wow64DispatchSystemService` (`wow64_thunks.c`);
+service-number alignment solved by keying on `sysfuncs.h` (not `.spec`) order;
+11 of the 36 deep marshallers hand-written in `wow64_manual.c` (the loader path).
+*Owed:* the remaining ~25 marshallers (file/section/object-create family —
+`NtCreateFile`/`NtOpenFile`/`NtCreateSection`/`NtMapViewOfSection`/`NtQueryDirectoryFile`/
+the `NtCreate*`/`NtOpen*` object family) for a real app with DLL imports — these
+are independent + mechanical and are the ideal **subagent fan-out** target. This
+is where the Rust story pays for wow64win.dll (win32k) too.
 
 **Phase E — amd64 classic wow64cpu.** Same phases A–D infrastructure, CPU
 layer swapped: `wow64cpu.dll` doing the far-jmp 0x33 CS switch + 32↔64 stack
