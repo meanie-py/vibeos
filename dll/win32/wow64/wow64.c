@@ -135,6 +135,48 @@ static PVOID *Wow64pTlsSlots(VOID)
  * SMC / suspends, NtContinue-ing itself when handled. Every exception routes
  * here first (real wow64 wires this through Wow64PrepareForException). */
 static LONG (WINAPI *Wow64pBTCpuResetToConsistentState)(EXCEPTION_POINTERS *);
+static ULONG_PTR Wow64pPeb32;  /* set in Wow64LdrpInitialize, for VEH diagnostics */
+
+/* M3b heap diagnostic: dump the guest process heap state at an unhandled fault.
+ * FEX shares the host address space, so we read the 32-bit heap directly. The
+ * loader near-null-writes when RtlAllocateHeap returns NULL, so this fires with
+ * the heap in its failed state. Offsets are the ReactOS/i386 HEAP layout the
+ * guest RtlAllocateHeap disasm uses (Flags +0x44, VMThreshold +0x60,
+ * FreeListsHead +0x1cc). */
+static void Wow64pDumpGuestHeap(void)
+{
+    ULONG Heap;
+    PULONG H;
+    if (!Wow64pPeb32)
+        return;
+    Heap = *(ULONG *)(Wow64pPeb32 + 0x18); /* PEB32->ProcessHeap */
+    DbgPrint("[FEX-WOW64C] PEB32=%p ImageBase[+0x08]=%08lx Ldr[+0x0c]=%08lx ProcParams[+0x10]=%08lx ProcessHeap[+0x18]=%08lx NumHeaps[+0x88]=%08lx\n",
+             (PVOID)Wow64pPeb32,
+             *(ULONG *)(Wow64pPeb32 + 0x08), *(ULONG *)(Wow64pPeb32 + 0x0c),
+             *(ULONG *)(Wow64pPeb32 + 0x10), Heap,
+             *(ULONG *)(Wow64pPeb32 + 0x88));
+    if (!Heap || Heap >= 0x80000000u)
+        return;
+    H = (PULONG)(ULONG_PTR)Heap;
+    DbgPrint("[FEX-WOW64C] HEAP hdr[0..7]: %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
+             H[0], H[1], H[2], H[3], H[4], H[5], H[6], H[7]);
+    DbgPrint("[FEX-WOW64C] HEAP Flags[0x44]=%08lx VMThresh[0x60]=%08lx TotalFreeSize[0x54]=%08lx Committed[0x58]=%08lx\n",
+             H[0x44/4], H[0x60/4], H[0x54/4], H[0x58/4]);
+    DbgPrint("[FEX-WOW64C] HEAP FreeListHead[0x1cc]: Flink=%08lx Blink=%08lx (self=%08lx -> EMPTY if Flink==self)\n",
+             H[0x1cc/4], H[0x1d0/4], Heap + 0x1cc);
+
+    /* Guest x86 registers at the fault, from the CPU-area WOW64_CONTEXT (FEX
+     * flushes it on the trap). Reveals which near-null store faulted and why. */
+    {
+        PBYTE CpuArea = (PBYTE)Wow64pTlsSlots()[WOW64_TLS_CPURESERVED];
+        WOW64_CONTEXT *C = (WOW64_CONTEXT *)(CpuArea + 16);
+        DbgPrint("[FEX-WOW64C] guest regs: eip=%08lx eax=%08lx ebx=%08lx ecx=%08lx edx=%08lx esi=%08lx edi=%08lx ebp=%08lx esp=%08lx\n",
+                 C->Eip, C->Eax, C->Ebx, C->Ecx, C->Edx, C->Esi, C->Edi, C->Ebp, C->Esp);
+        if (C->Ebp && C->Ebp < 0x80000000u)
+            DbgPrint("[FEX-WOW64C] guest [ebp+0x0c]=%08lx (RtlImageNtHeader arg / image base?)\n",
+                     *(ULONG *)(ULONG_PTR)(C->Ebp + 0x0c));
+    }
+}
 
 static LONG WINAPI Wow64pVeh(EXCEPTION_POINTERS *Info)
 {
@@ -145,6 +187,7 @@ static LONG WINAPI Wow64pVeh(EXCEPTION_POINTERS *Info)
              Info->ExceptionRecord->ExceptionCode,
              Info->ExceptionRecord->ExceptionAddress,
              (PVOID)Info->ContextRecord->Pc);
+    Wow64pDumpGuestHeap();
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
@@ -500,6 +543,7 @@ Wow64LdrpInitialize(PVOID Context)
         NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
     }
 
+    Wow64pPeb32 = Peb32; /* for the VEH heap diagnostic */
     ImageBase32 = *(ULONG *)((PBYTE)Peb32 + 0x08 /* PEB32.ImageBaseAddress */);
     ImageBase = (PBYTE)(ULONG_PTR)ImageBase32;
     Nt32 = (PIMAGE_NT_HEADERS32)(ImageBase + ((PIMAGE_DOS_HEADER)ImageBase)->e_lfanew);
@@ -722,7 +766,11 @@ Wow64LdrpInitialize(PVOID Context)
             E &= ~15u;
             *(ULONG *)(ULONG_PTR)(E + 0)  = (ULONG)(ULONG_PTR)LdrInitThunk32;
             *(ULONG *)(ULONG_PTR)(E + 4)  = E + 16; /* NormalContext = &CONTEXT */
-            *(ULONG *)(ULONG_PTR)(E + 8)  = 0;
+            /* SystemArgument1 = ntdll32 base: the initial-thread APC contract —
+             * LdrpInitializeProcess builds ntdll's LDR_DATA_TABLE_ENTRY from it
+             * (LdrpAllocateDataTableEntry(SystemArgument1)). 0 here made the
+             * loader call RtlImageNtHeader(NULL) and near-null-write. */
+            *(ULONG *)(ULONG_PTR)(E + 8)  = (ULONG)(ULONG_PTR)Ntdll32;
             *(ULONG *)(ULONG_PTR)(E + 12) = 0;
             for (ULONG i = 0; i < sizeof(WOW64_CONTEXT); i++)
                 *(PBYTE)(ULONG_PTR)(E + 16 + i) = ((PBYTE)&RunCtx)[i];
