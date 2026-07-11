@@ -4695,3 +4695,38 @@ don't trust a SUCCESS return, trust a probe *inside* the work function.
 
 (Separately fixed in the same lane: the `FatQueryDirectory` renumbered-enum bug from step 1 —
 real and now correct, though it only matters *after* this stub fix lets the query run at all.)
+
+**Follow-on (same lane, same bug class): `try_return` was ALSO a no-op stub.**
+Once SEH_TRY_EXCEPT let `FatQueryDirectory` actually run, its inner enumeration loop
+never terminated: explorer crashed in the taskbar `OnCreate`/`CreateStartMenu` and
+restarted forever. Root cause: `try_return(X)` (rust_cohab_stub.c) was a second empty
+stub, but in the C source it is the control-flow macro `{ Status = X; goto try_exit; }`.
+Every early exit in `FatQueryDirectory` — the `ReturnSingleEntry` loop terminator, the
+"next entry won't fit" buffer-full guard, the no-more-files exit — did nothing, so
+`CurrentVbo` oscillated between two dirents while `NextEntry` grew past the 16 KB user
+buffer (out-of-bounds writes → crash). A bounded `[FFQD]` loop tracer (log `CurrentVbo`
+/`NextEntry` per iteration, capped at 400) showed the runaway instantly: `NextEntry`
+climbing 42920→46280 with `CurrentVbo` cycling 32↔128. Fix: a C `goto try_exit` can't be
+a Rust function call — inline each site. Outer-closure sites `return;` straight to the
+SEH_FINALLY cleanup; the per-entry **inner**-closure sites can only `return` from that
+nested closure, so they set a `do_return` flag checked right after the inner
+`catch_unwind` to break the enclosing loop (one faithful `try_exit`). `NOTHING` sites
+preserve Status; `Status = X` sites set it. Post-fix: enumeration terminates (~32 bounded
+queries to build the shell namespace vs 400+ runaway), explorer stops crashing, and the
+arm64 desktop paints fully (notepad chrome, no torn strips).
+
+**The general rule this lane hammered home:** a cohab `rust_cohab_stub.c` that stubs a
+helper "because SEH/PSEH is dead" must distinguish a **dead exception macro**
+(`_SEH2_TRY`, `_SEH2_EXCEPT`) from a **live control-flow wrapper** (`SEH_TRY_EXCEPT`
+runs the try body; `try_return` is a `goto`). The dead ones are safe no-ops; the live
+ones are NOT. Grep the stub file for any empty function that takes a function pointer or
+whose C original expands to control flow — those are latent no-op landmines.
+
+**Still-open next layer (as of 2026-07-11):** with FAT enumeration fixed, the arm64
+taskbar still does not appear — `CreateStartMenu` now blocks inside shell32
+`RSHELL_CStartMenu_CreateInstance` (the CMenuBand/CMenuDeskBar population that binds the
+now-enumerable Start Menu folder). Localized via a `[CSM]` step marker to the
+`_CStartMenu_CreateInstance` call; only ~32 `FatQueryDirectory` calls happen (NOT a
+fastfat loop), explorer does not crash (benign thread block, not a restart-loop), and the
+desktop + notepad paint fully. This is a separate, deeper shell/COM-layer bug the fastfat
+fixes merely *unblocked*; it is the remaining work to get the taskbar + start menu on arm64.
