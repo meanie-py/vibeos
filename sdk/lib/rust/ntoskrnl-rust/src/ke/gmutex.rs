@@ -8,12 +8,13 @@ use ntkrnl_sys::inline::ke as ke_inline;
 // the _KeInitializeGuardedMutex FORCEINLINE from ke_x.h.
 
 /// lockdep §4: these #[no_mangle] wrappers are the ddk-route funnel for gmutex
-/// acquires — capture the return address here so lockdep names the true
-/// caller (see shim_exports.rs pushlock shims for the same pattern).
+/// acquires — site = the wrapper's own PC (shim-identity; no stable frame
+/// chain on Windows-x64 — see lockdep.rs code_addr! history). Rust callers
+/// get exact sites via the *Sited inline routes.
 #[cfg(feature = "lockdep")]
 macro_rules! lockdep_site {
     () => {
-        crate::ke::lockdep::return_address0()
+        crate::code_addr!()
     };
 }
 #[cfg(not(feature = "lockdep"))]

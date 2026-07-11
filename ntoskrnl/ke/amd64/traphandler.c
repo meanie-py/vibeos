@@ -171,8 +171,8 @@ KiSystemCallHandler(
         /* cswitchdep tap 4 (user→kernel): reachable only with the kernel
            stack + trap frame in place, so swapgs parity holds by position.
            Rust: sdk/lib/rust/ntoskrnl-rust/src/ke/cswitchdep.rs */
-        extern VOID VibeosCswitchdepUserEntry(ULONG UserTrap);
-        VibeosCswitchdepUserEntry(1);
+        extern VOID VibeosCswitchdepUserEntry(ULONG UserTrap, ULONG_PTR Pc);
+        VibeosCswitchdepUserEntry(1, 0);
     }
 #endif
 

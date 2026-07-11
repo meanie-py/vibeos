@@ -164,7 +164,7 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
     // construction (kernel Zw goes via KiZwSystemService), and reaching here
     // means the kernel stack + trap frame are in place post-swapgs.
     #[cfg(feature = "cswitchdep")]
-    crate::ke::cswitchdep::VibeosCswitchdepUserEntry(1);
+    crate::ke::cswitchdep::VibeosCswitchdepUserEntry(1, crate::code_addr!());
 
     if UserRsp > MmUserProbeAddress || UserRsp < 0x10000 {
         (*TrapFrame).Rax = STATUS_ACCESS_VIOLATION as u64;

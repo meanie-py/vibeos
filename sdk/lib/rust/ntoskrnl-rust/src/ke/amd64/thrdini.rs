@@ -250,6 +250,8 @@ pub unsafe extern "system" fn KiSwapContextResume(
             (*NewThread).StackLimit as usize,
             (*NewThread).InitialStack as usize,
             (*Pcr).Prcb.DpcRoutineActive != 0,
+            NewThread as usize == (*Pcr).Prcb.IdleThread as usize,
+            crate::code_addr!(),
         );
     }
 

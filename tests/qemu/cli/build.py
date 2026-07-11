@@ -257,25 +257,11 @@ def build(args, repo: Path) -> int:
     run = Run("build", arch)
     cold = bool(args.clean)
 
-    # lockdep/cswitchdep need `feature(link_llvm_intrinsics)` (llvm.returnaddress
-    # culprit capture), which is nightly-only. The arm64 kernel builds its
-    # BUILTIN target on the STABLE channel (reactos-link; the x86 kernels use
-    # the custom JSON target on nightly), so an armed arm64 build dies mid-ninja
-    # with E0554. Fail fast and clearly instead (same wall as the long-standing
-    # "arm64 lockdep probe BLOCKED" note; lifts when arm64 moves to nightly).
-    if arch == "arm64" and (getattr(args, "lockdep", False) or getattr(args, "cswitchdep", False)):
-        run.classification = "INSTR_UNSUPPORTED_ARCH"
-        run.add(
-            Stage(
-                "preflight",
-                status="fail",
-                detail="--lockdep/--cswitchdep are x86-only: the arm64 kernel builds on "
-                "stable, and the instrumentation needs nightly-only link_llvm_intrinsics "
-                "(E0554)",
-                salient=["lift by moving the arm64 kernel build to the nightly channel"],
-            )
-        )
-        return run.finalize(repo)
+    # (Historical: --lockdep/--cswitchdep used to fail-fast on arm64 — the
+    # instrumentation needed nightly-only link_llvm_intrinsics and the arm64
+    # kernel builds on stable (E0554). The culprit capture is now the stable
+    # code_addr!() inline-asm macro (ke/lockdep.rs), so all three arches arm
+    # on their native channels.)
 
     if not build_dir.is_dir() and not canon.available():
         # With userns available a missing build dir is auto-provisioned by the
