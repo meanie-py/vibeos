@@ -4411,3 +4411,57 @@ so its establisher is never handed to a funclet. Result: `sehtest` **RESULT: PAS
 the local didn't change" ⇒ EstablisherFrame/frame-base mismatch, not a missing call —
 disassemble the funclet, see what base+offset it writes, and check it against the
 function's own frame-pointer offset.
+
+### 9.49 (ROOT-CAUSED + FIXED 2026-07-10) arm64 BLACK desktop — desktops only ever paint via the hidden→visible show transition; arm64's early input-desktop switch broke the assumption for the whole window tree
+
+**Symptom:** arm64 boots green on serial markers but the screen is BLACK except
+stray window fragments (a notepad scrollbar + status bar); frozen thereafter.
+Regressed on master ~Jul 5-6 (good `fc794e7c29e`, bad `b643a8ffbf9`+). The
+boot-marker smoke stayed green for days of black desktops — the marker is
+blind to paint.
+
+**Root cause:** ReactOS only ever paints a desktop through the
+`SWP_SHOWWINDOW` hidden→visible transition inside `co_IntShowDesktop` (that
+path queues `WM_ERASEBKGND` → `IntPaintDesktop` fill). The explicit
+`bRedraw=1` redraw passes `RDW_UPDATENOW|RDW_ALLCHILDREN|RDW_INVALIDATE` —
+NO `RDW_ERASE` — and `RDW_INVALIDATE` alone never sets
+`WNDS_SENDERASEBACKGROUND`, so `IntBeginPaint` runs with `erase=0` and fills
+nothing. On x86 the Default desktop's FIRST show happens at the real
+winlogon→shell `SwitchDesktop` (hidden→visible → erase → blue). On arm64 the
+customized winlogon boot path makes Default the input desktop EARLY, while
+the old input desktop's window is still invisible → `bRedrawDesktop=0` show
+(visible, unpainted); every later `bRedraw=1` show (display-init
+`winsta.rs:769`, the §9.22 switch) finds it ALREADY visible → no transition,
+no erase, black — and via `RDW_ALLCHILDREN` the whole child tree (explorer
+tray, notepad frame/client) shared the fate.
+
+**Fix:** `co_IntShowDesktop_impl` (win32k-rust `desktop.rs`) adds `RDW_ERASE`
+to the explicit redraw — an explicit "redraw the desktop" must erase to mean
+anything. One flag restored wallpaper, taskbar+clock, notepad, version text
+on arm64; x86 unaffected (its erase came from the transition anyway).
+
+**Diagnostic recipe (kept as permanent bounded boot forensics):** serial
+probes `[DESKSHOW]` (co_IntShowDesktop args), `[DESKPAINT]`
+(IntPaintDesktop fill inputs: clip box, brush, wallpaper), `[DESKBP]`
+(IntBeginPaint erase-decision: erase flag + clip type), `[DESKTHREAD]` /
+`[DESKWNDPROC]` (desktop thread pump + wndproc liveness). The hunt pattern:
+healthy-arch trace (amd64) vs broken-arch trace (arm64), diff the
+DESKSHOW/DESKBP sequences — the divergence (second desktop's show missing /
+erase=0 with a perfect clip box) named the bug. A commit bisect was
+deliberately ABANDONED: warm-build masking makes per-commit verdicts
+unreliable and the ~40-commit window would have cost hours; two instrumented
+boots found it instead.
+
+**Exonerated en route (do not re-chase):** the §9.33 dib1bpp/dib32bpp GDI
+fixes (reverted-file boot still black); the arm64 GDI-batch flush sites
+(predate the good commit, C-parity verified); wrong `gpdeskInputDesktop`
+(§9.22's fix is present and fires — serial shows the switch succeeding).
+
+**Still open on arm64 (next layer, honest-red in the smoke suite):**
+`test_start_menu_opens` on arm64 fails because Ctrl+Esc never opens the menu
+— winlogon's arm64 path logs `InitKeyboardLayouts failed (non-fatal)`, so
+VK translation / hotkey dispatch has no layout. Also `runCmd FAILED (2)` for
+`kbswitch.exe` + `rundll32 iernonce.dll` — files missing from the arm64
+ramdisk (staging gap, `4fadba3d760` era). The gate's dual condition
+(panel-lit AND region-delta) exists because the arm64 notepad demo pre-lights
+the sample region — lit alone false-passed once.

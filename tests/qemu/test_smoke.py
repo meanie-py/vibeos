@@ -398,6 +398,19 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
     # Up to 3 Ctrl+Esc attempts, each with an ~8s render window — first-open
     # loads shell links from disk under TCG, and an occasional swallowed
     # chord (see priming note above) should not fail the gate.
+    def _region(img):
+        w, h = img.size
+        return img.crop((int(w * 0.075), int(h * 0.42), int(w * 0.25), int(h * 0.90)))
+
+    def _region_changed(a, b) -> bool:
+        return ImageChops.difference(_region(a), _region(b)).getbbox() is not None
+
+    # The lit-fraction alone can't prove a menu when the sample region is
+    # ALREADY light before the chord (arm64: the winlogon notepad demo's white
+    # client covers it — the gate passed once with NO menu on screen). Require
+    # the region to also CHANGE relative to the pre-chord frame: an opening
+    # menu always repaints its pixels, whatever was underneath.
+    region_delta = False
     for _attempt in range(3):
         _ctrl_esc()
         deadline = time.time() + 8.0
@@ -407,9 +420,10 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
             after = Image.open(after_ppm).convert("RGB")
             bbox = ImageChops.difference(before, after).getbbox()
             lit = _menu_panel_lit(after)
-            if lit >= 0.60:
+            region_delta = _region_changed(before, after)
+            if lit >= 0.60 and region_delta:
                 break
-        if lit >= 0.60:
+        if lit >= 0.60 and region_delta:
             break
 
     # The lit-threshold can trip mid-paint (panel background up, labels not
@@ -417,7 +431,7 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
     # give the menu a settle window and re-capture so the saved artifact is
     # the FINISHED render, not the first frame past the threshold. The
     # assertion below still uses the settled frame (it can only get lighter).
-    if lit >= 0.60:
+    if lit >= 0.60 and region_delta:
         settle_deadline = time.time() + 6.0
         stable = 0
         prev = after
@@ -434,7 +448,7 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
     png_path = PROJECT_DIR / "qemu" / f"{arch}_startmenu.png"
     after.save(png_path, "PNG")
     print(f"\n[startmenu] Ctrl+Esc: panel-lit {lit_before:.2f} -> {lit:.2f}; "
-          f"delta bbox={bbox}; saved {png_path}")
+          f"region-delta={region_delta}; delta bbox={bbox}; saved {png_path}")
 
     # HARD: the input must not have killed anything.
     hit = [m for m in _FATAL_MARKERS if m in serial]
@@ -443,14 +457,16 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
         pytest.fail(f"OS died opening the start menu — markers {hit}\n"
                     f"{sym}\nserial tail: {serial[-800:]!r}")
 
-    # HARD: the menu panel must be rendered. Never weaken this to a raw
-    # pixel-delta — clock repaints and post-restore full-screen invalidations
-    # both produce deltas with no menu.
-    assert lit >= 0.60, (
-        f"start menu never rendered after Ctrl+Esc on {arch} — menu panel "
-        f"region only {lit:.0%} light (needs ≥60%; was {lit_before:.0%} "
-        f"before). Keyboard layout dead? Hotkey path broken? Explorer menu "
-        f"paint broken? Screenshot: {png_path}")
+    # HARD: the menu panel must be rendered. Both halves are required — the
+    # lit fraction alone is fooled by a pre-existing light window under the
+    # sample region (arm64 notepad demo), and a raw pixel-delta alone is
+    # fooled by clock repaints / post-restore full-screen invalidations.
+    assert lit >= 0.60 and region_delta, (
+        f"start menu never rendered after Ctrl+Esc on {arch} — panel region "
+        f"lit {lit:.0%} (needs ≥60%; was {lit_before:.0%} before), "
+        f"region-changed={region_delta} (needs True). Keyboard layout dead? "
+        f"Hotkey path broken? Explorer menu paint broken? "
+        f"Screenshot: {png_path}")
 
 
 def test_post_shell_ready_mouse(vm: QemuVM, arch: str) -> None:
