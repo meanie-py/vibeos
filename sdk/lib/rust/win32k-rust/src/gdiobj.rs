@@ -2369,7 +2369,7 @@ pub unsafe extern "system" fn GDI_MapHandleTable(pProcess: PEPROCESS) -> PVOID {
         gpvGdiHdlTblSection,
         pProcess,
         &mut pvMappedView,
-        0,
+        crate::init::W32Wow64ZeroBits(pProcess) as _,
         0,
         &mut liOffset,
         &mut cjViewSize,

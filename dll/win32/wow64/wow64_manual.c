@@ -1159,6 +1159,117 @@ static NTSTATUS Wow64Manual_NtGdiOpenDCW(ULONG *a)
     return (NTSTATUS)(ULONG)(ULONG_PTR)Hdc;
 }
 
+/* ---- NtQueryValueKey ------------------------------------------------------ *
+ * ValueName is a PUNICODE_STRING (widens); the KEY_VALUE_*_INFORMATION output
+ * blobs are pointer-free and layout-identical 32/64, so the guest buffer
+ * passes straight through. First hit: user32 init reading registry config
+ * right after NtOpenKey (a raw auto-thunk fed the kernel a 32-bit
+ * UNICODE_STRING, whose garbage Buffer probe-raised C0000005 -> 0x1E under
+ * DUMMY_PSEH). */
+static NTSTATUS Wow64Manual_NtQueryValueKey(ULONG *a)
+{
+    extern NTSTATUS NTAPI NtQueryValueKey(HANDLE, PVOID, ULONG, PVOID, ULONG, PULONG);
+    HANDLE Key = (HANDLE)(LONG_PTR)(LONG)a[0];
+    WOW64_UNICODE_STRING32_M *Name32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[1];
+    ULONG Class = a[2];
+    PVOID Buf = (PVOID)(ULONG_PTR)a[3];
+    ULONG Len = a[4];
+    ULONG *RetLen = (ULONG *)(ULONG_PTR)a[5];
+    WOW64_UNICODE_STRING64_M Name64;
+    PVOID Name64Ptr = NULL;
+
+    if (Name32)
+    {
+        Name64.Length = Name32->Length;
+        Name64.MaximumLength = Name32->MaximumLength;
+        Name64.__pad = 0;
+        Name64.Buffer = (ULONG_PTR)Name32->Buffer;
+        Name64Ptr = &Name64;
+    }
+    return NtQueryValueKey(Key, Name64Ptr, Class, Buf, Len, RetLen);
+}
+
+/* ---- NtUserProcessConnect (win32k client connect, task #29) -------------- *
+ * user32's per-process win32k handshake. The USERCONNECT blob is
+ * layout-divergent (pointers widen): 32-bit = 0x124 bytes, 64-bit = 0x240.
+ * Build the native struct, call through win32u, then narrow the SHAREDINFO
+ * back. The kernel maps the global user heap below 4GB for WoW64 processes
+ * (win32k W32Wow64ZeroBits), so psi/aheList/pDispInfo user VAs truncate
+ * losslessly; ulSharedDelta is a (kernel - user) difference whose 32-bit
+ * truncation still converts kernel pointers correctly in the guest's modular
+ * 32-bit arithmetic ((k - d) mod 2^32 = user VA when user VA < 4GB).
+ * FNID_NUM = 31 (ntuser.h; C_ASSERT keeps the 32-bit size honest at 0x124). */
+#define WOW64_FNID_NUM 31
+typedef struct { ULONG maxMsgs; ULONG abMsgs; } WOW64_WNDMSG32;
+typedef struct { ULONG maxMsgs; ULONG __pad; ULONGLONG abMsgs; } WOW64_WNDMSG64;
+typedef struct {
+    ULONG psi, aheList, pDispInfo, ulSharedDelta;
+    WOW64_WNDMSG32 awmControl[WOW64_FNID_NUM];
+    WOW64_WNDMSG32 DefWindowMsgs, DefWindowSpecMsgs;
+} WOW64_SHAREDINFO32;
+typedef struct {
+    ULONGLONG psi, aheList, pDispInfo, ulSharedDelta;
+    WOW64_WNDMSG64 awmControl[WOW64_FNID_NUM];
+    WOW64_WNDMSG64 DefWindowMsgs, DefWindowSpecMsgs;
+} WOW64_SHAREDINFO64;
+typedef struct {
+    ULONG ulVersion, ulCurrentVersion, dwDispatchCount;
+    WOW64_SHAREDINFO32 siClient;
+} WOW64_USERCONNECT32;
+typedef struct {
+    ULONG ulVersion, ulCurrentVersion, dwDispatchCount, __pad;
+    WOW64_SHAREDINFO64 siClient;
+} WOW64_USERCONNECT64;
+
+static NTSTATUS Wow64Manual_NtUserProcessConnect(ULONG *a)
+{
+    extern NTSTATUS NtUserProcessConnect(HANDLE, PVOID, ULONG);
+    HANDLE Process = (HANDLE)(LONG_PTR)(LONG)a[0];
+    WOW64_USERCONNECT32 *Uc32 = (WOW64_USERCONNECT32 *)(ULONG_PTR)a[1];
+    ULONG Size32 = a[2];
+    WOW64_USERCONNECT64 Uc64;
+    NTSTATUS Status;
+    ULONG i;
+
+    if (!Uc32 || Size32 != sizeof(WOW64_USERCONNECT32))
+        return (NTSTATUS)0xC000000DL; /* STATUS_INVALID_PARAMETER */
+
+    RtlZeroMemory(&Uc64, sizeof(Uc64));
+    Uc64.ulVersion = Uc32->ulVersion;
+    Uc64.ulCurrentVersion = Uc32->ulCurrentVersion;
+    Uc64.dwDispatchCount = Uc32->dwDispatchCount;
+
+    Status = NtUserProcessConnect(Process, &Uc64, sizeof(Uc64));
+    if (Status >= 0)
+    {
+        Uc32->ulVersion = Uc64.ulVersion;
+        Uc32->ulCurrentVersion = Uc64.ulCurrentVersion;
+        Uc32->dwDispatchCount = Uc64.dwDispatchCount;
+        if (Uc64.siClient.psi > 0xFFFFFFFFULL ||
+            Uc64.siClient.aheList > 0xFFFFFFFFULL)
+            DbgPrint("[WOW64] NtUserProcessConnect: SHARED PTRS ABOVE 4GB "
+                     "(psi=%I64x ahe=%I64x) — kernel low-map missing?!\n",
+                     Uc64.siClient.psi, Uc64.siClient.aheList);
+        Uc32->siClient.psi = (ULONG)Uc64.siClient.psi;
+        Uc32->siClient.aheList = (ULONG)Uc64.siClient.aheList;
+        Uc32->siClient.pDispInfo = (ULONG)Uc64.siClient.pDispInfo;
+        Uc32->siClient.ulSharedDelta = (ULONG)Uc64.siClient.ulSharedDelta;
+        for (i = 0; i < WOW64_FNID_NUM; i++)
+        {
+            Uc32->siClient.awmControl[i].maxMsgs = Uc64.siClient.awmControl[i].maxMsgs;
+            Uc32->siClient.awmControl[i].abMsgs = (ULONG)Uc64.siClient.awmControl[i].abMsgs;
+        }
+        Uc32->siClient.DefWindowMsgs.maxMsgs = Uc64.siClient.DefWindowMsgs.maxMsgs;
+        Uc32->siClient.DefWindowMsgs.abMsgs = (ULONG)Uc64.siClient.DefWindowMsgs.abMsgs;
+        Uc32->siClient.DefWindowSpecMsgs.maxMsgs = Uc64.siClient.DefWindowSpecMsgs.maxMsgs;
+        Uc32->siClient.DefWindowSpecMsgs.abMsgs = (ULONG)Uc64.siClient.DefWindowSpecMsgs.abMsgs;
+        DbgPrint("[WOW64]   NtUserProcessConnect: psi=%08lx ahe=%08lx delta=%08lx\n",
+                 Uc32->siClient.psi, Uc32->siClient.aheList,
+                 Uc32->siClient.ulSharedDelta);
+    }
+    return Status;
+}
+
 /* Name-dispatched entry point. Returns WOW64_MANUAL_UNIMPL if unhandled. */
 NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
 {
@@ -1216,6 +1327,10 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64pOpenByOa(NtOpenEvent, Arguments);
     if (WOW64_IS("NtGdiOpenDCW"))
         return Wow64Manual_NtGdiOpenDCW(Arguments);
+    if (WOW64_IS("NtUserProcessConnect"))
+        return Wow64Manual_NtUserProcessConnect(Arguments);
+    if (WOW64_IS("NtQueryValueKey"))
+        return Wow64Manual_NtQueryValueKey(Arguments);
 #undef WOW64_IS
     return WOW64_MANUAL_UNIMPL;
 }
