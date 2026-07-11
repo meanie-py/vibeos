@@ -137,9 +137,9 @@ def test_emitted_thunk_widens_args_correctly(tmp_path):
     sp = _spec_file(tmp_path, "@ stdcall NtFoo(long ptr int64)\n")
     syscalls = w.parse_spec(sp, "arm64")
     c = w.emit_c(syscalls, sp, "arm64", "-")
-    # long -> slot 0 as ULONG; ptr -> slot 1 zero-extended; int64 -> slots 2,3
-    assert "(ULONG)a[0]" in c
-    assert "(PVOID)(ULONG_PTR)a[1]" in c
+    # 1-dword args sign-extend to 64-bit (pseudo-handle safety — see ARG_KINDS)
+    assert "(ULONG_PTR)(LONG_PTR)(LONG)a[0]" in c
+    assert "(PVOID)(LONG_PTR)(LONG)a[1]" in c
     assert "((ULONGLONG)a[2] | ((ULONGLONG)a[3] << 32))" in c
     assert "wow64_thunk_NtFoo" in c
     assert "Wow64ThunkTable" in c

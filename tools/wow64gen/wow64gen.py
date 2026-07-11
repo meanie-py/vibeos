@@ -56,14 +56,21 @@ class ArgKind:
 
 
 ARG_KINDS: dict[str, ArgKind] = {
-    # 32-bit scalar -> ULONG (host passes zero/sign-extended in a 64-bit reg).
-    "long": ArgKind(1, "ULONG", "(ULONG)a[{s}]"),
-    "s_long": ArgKind(1, "LONG", "(LONG)a[{s}]"),
-    "word": ArgKind(1, "ULONG", "(ULONG)(USHORT)a[{s}]"),
-    # 32-bit pointer -> zero-extend to a 64-bit pointer (guest VA < 4GB).
-    "ptr": ArgKind(1, "PVOID", "(PVOID)(ULONG_PTR)a[{s}]"),
-    "str": ArgKind(1, "PVOID", "(PVOID)(ULONG_PTR)a[{s}]"),
-    "wstr": ArgKind(1, "PVOID", "(PVOID)(ULONG_PTR)a[{s}]"),
+    # Every 1-dword arg is SIGN-extended and passed 64-bit wide. Rationale:
+    #  * a callee reading the 32-bit subregister (ULONG/LONG params) sees the
+    #    exact low 32 bits either way;
+    #  * a callee reading the full 64-bit register is a pointer or HANDLE —
+    #    guest pointers live below 2GB (sign == zero extension), and HANDLE
+    #    pseudo-values (NtCurrentProcess() == -1, -2, ...) are only correct
+    #    sign-extended. Zero-extending (or a 32-bit C param, whose upper reg
+    #    bits are UNSPECIFIED in AAPCS64) breaks every pseudo-handle arg —
+    #    the .spec types handles as plain 'long', so this must hold for all.
+    "long": ArgKind(1, "ULONG_PTR", "(ULONG_PTR)(LONG_PTR)(LONG)a[{s}]"),
+    "s_long": ArgKind(1, "LONG_PTR", "(LONG_PTR)(LONG)a[{s}]"),
+    "word": ArgKind(1, "ULONG_PTR", "(ULONG_PTR)(USHORT)a[{s}]"),
+    "ptr": ArgKind(1, "PVOID", "(PVOID)(LONG_PTR)(LONG)a[{s}]"),
+    "str": ArgKind(1, "PVOID", "(PVOID)(LONG_PTR)(LONG)a[{s}]"),
+    "wstr": ArgKind(1, "PVOID", "(PVOID)(LONG_PTR)(LONG)a[{s}]"),
     # 64-bit scalar -> combine two guest dwords (little-endian: low then high).
     "int64": ArgKind(2, "ULONGLONG", "((ULONGLONG)a[{s}] | ((ULONGLONG)a[{s1}] << 32))"),
     "double": ArgKind(2, "double", "wow64_bits_to_double(a[{s}], a[{s1}])", manual=False),
