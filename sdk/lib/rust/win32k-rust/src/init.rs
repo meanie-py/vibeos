@@ -88,11 +88,15 @@ pub unsafe extern "C" fn GdiProcessCreate(Process: PEPROCESS) -> NTSTATUS {
 
     // WoW64: the guest's 32-bit gdi32 reads PEB32->GdiSharedHandleTable, not
     // PEB64 — mirror the (below-4GB, see W32Wow64ZeroBits) mapping into it.
-    let Peb32 = (*Process).Wow64Process as usize as *mut ntkrnl_sys::ddk::_PEB32;
-    if !Peb32.is_null() {
-        (*Peb32).GdiSharedHandleTable =
-            (*(*Process).Peb).GdiSharedHandleTable as usize as u32;
-        (*Peb32).GdiDCAttributeList = GDI_BATCH_LIMIT as _;
+    // (x86 host: no WoW64 layer, and no _PEB32/Wow64Process in its bindgen.)
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let Peb32 = (*Process).Wow64Process as usize as *mut ntkrnl_sys::ddk::_PEB32;
+        if !Peb32.is_null() {
+            (*Peb32).GdiSharedHandleTable =
+                (*(*Process).Peb).GdiSharedHandleTable as usize as u32;
+            (*Peb32).GdiDCAttributeList = GDI_BATCH_LIMIT as _;
+        }
     }
 
     (*ppiCurrent).pPoolDcAttr = GdiPoolCreate(core::mem::size_of::<DC_ATTR>() as _, u32::from_le_bytes(*b"Gdca"));
