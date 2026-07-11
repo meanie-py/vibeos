@@ -76,12 +76,44 @@ remaining nightly dependencies*, each with its exit path:
 2. **`-Z build-std` + custom JSON targets (x86 kernels)** — the structural
    gap: i386/amd64 build `i686-kernel.json`/`x86_64-kernel.json` on nightly;
    arm64 already builds the builtin `aarch64-pc-windows-gnullvm` on stable.
-   Exit path (unproven, needs a spike): builtin `i686/x86_64-pc-windows-gnu`
-   + per-crate RUSTFLAGS for the kernel constraints (soft-float/no-SSE,
-   kernel code model, no-red-zone is already the Windows x64 ABI) — but
-   mixing `-C target-feature` with a precompiled std is unsound for float
-   ABI, so it likely still wants build-std → the honest blocker is build-std
-   stabilization or a vendored core. Track upstream; spike when idle.
+   **SPIKED 2026-07-11 (this lane) — split verdict:**
+   - **amd64: VIABLE on stable, proven empirically.** `swenum-cargo` links a
+     working PE driver via
+     `RUSTUP_TOOLCHAIN=stable cargo build --target x86_64-pc-windows-gnu`
+     + `RUSTFLAGS="-C panic=abort -C force-frame-pointers=yes
+     -C link-self-contained=no"`. Spec-diff vs the kernel JSON is only
+     link-plumbing + those three flags (no soft-float story on amd64: the
+     kernel JSON keeps SSE, and builtin's `+cmpxchg16b,+sse3,+lahfsahf`
+     matches ntkrnlmp's own JSON variant). Two engineerable gaps found:
+     (a) **mem intrinsics leak to a `msvcrt.dll` import** —
+     memcmp/memcpy/memset came from `-Zbuild-std-features=compiler-builtins-mem`
+     before; precompiled core lacks them and ntoskrnl.spec does NOT export
+     them, so lld fell through to the builtin target's late-link `-lmsvcrt`.
+     Fix: link a static mem lib (cmake string libs / a mem rlib) ahead, or
+     stub `-lmsvcrt` et al. with empty archives.
+     (b) **.text 2.4× (59K→139K on swenum)** — precompiled core vs
+     build-std-slimmed core. Tolerable for drivers; measure on ntoskrnl
+     before committing.
+   - **i386: HARD-BLOCKED, now with the precise reason:** the kernel JSON
+     carries `"rustc-abi": "x86-softfloat"` (+ `cpu: pentium` vs builtin
+     `pentium4`); `rustc-abi` is a target-spec-only property with no `-C`
+     equivalent, and the precompiled builtin core is compiled against the
+     `x86-sse2` ABI. Exit = build-std stabilization or a vendored soft-float
+     core; track upstream. i386 stays nightly.
+   - **arm64 cargo-link modules** still use `aarch64-kernel.json` + nightly
+     (only the *rlib* path is stable-builtin today); the delta vs builtin
+     gnullvm is the same shape as amd64 (+`abi: llvm`, `+neon,+outline-atomics`,
+     `frame-pointer non-leaf`) — migrate together with amd64.
+   - **ABI red flag from the spec diff (audit owed):** builtin sets
+     `abi-return-struct-as-int: true` — which *matches* clang/mingw C — while
+     all kernel JSONs leave it false. If any extern-"C" boundary returns a
+     small struct by value, the CURRENT JSON builds are the divergent ones.
+     Audit before/while migrating.
+   - Migration plumbing: `reactos-link::Linker::new` already accepts builtin
+     triples; the outer drive is pinned in `sdk/cmake/gcc.cmake`
+     (`add_cargo_module`: `RUSTUP_TOOLCHAIN=nightly` + `--target *.json` +
+     `-Z build-std`), and flag-verify/artifact paths key off the
+     `target/<stem>/release` dir — all mechanical.
 3. **`c_variadic`** (~12 x86-only driver crates: scsiport, uniata, usbport,
    storahci, …) — still unstable on 1.92 (checked). Coupled to gap 2: those
    crates only build into the x86 kernels, which are nightly anyway. Becomes
