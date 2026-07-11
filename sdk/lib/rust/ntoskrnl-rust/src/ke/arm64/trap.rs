@@ -469,7 +469,31 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
         }
 
         0x15 => {
+            // cswitchdep taps 4/5 (user↔kernel syscall parity). Position
+            // guarantees kernel stack + built trap frame (same contract as
+            // amd64 KiSystemCallHandler / i386 KiSystemServiceHandler).
+            // Kernel-origin SVC (Zw from EL1, Spsr.M != EL0) passes
+            // user_trap=0 and is skipped — the i386 INT-2E Zw rule.
+            #[cfg(feature = "cswitchdep")]
+            let user_svc = ((*TrapFrame).Spsr & 0xF) == 0;
+            #[cfg(feature = "cswitchdep")]
+            crate::ke::cswitchdep::VibeosCswitchdepUserEntry(
+                user_svc as u32,
+                crate::code_addr!(),
+            );
+
             KiSvcDispatch(TrapFrame);
+
+            // Tap 5 pairs with tap 4 around the dispatch rather than at the
+            // ERET tail: this exception path returns through EXFRAME_RESTORE
+            // for user and kernel frames alike, so the user-bound branch
+            // only exists here in Rust. Untapped user exits (exception
+            // frames, APC-edited resumes) stay exit_no_entry orphans, as on
+            // x86.
+            #[cfg(feature = "cswitchdep")]
+            if user_svc {
+                crate::ke::cswitchdep::VibeosCswitchdepUserExit(crate::code_addr!());
+            }
         }
 
         0x26 => {
