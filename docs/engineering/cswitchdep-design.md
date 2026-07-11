@@ -1,6 +1,10 @@
 # cswitchdep — a dynamic context-switch verifier
 
-**Status:** design v2 (2026-07-06). Sibling of the lockdep detector
+**Status:** LANDED — cswitchdep-phase1 (all 4 phases, ×3-arch validated) merged to
+`master` 2026-07-11; lane closed and this doc graduated from `active-lanes/` to a living
+reference. Follow-ons (subset arming, the stable-everything toolchain program, KeGetPcr
+x18 dedup) live in the roadmap Owed-work ledger, not a lane. Design v2 (2026-07-06)
+below. Sibling of the lockdep detector
 (`sync-instrumentation-design.md` §4) and the planned shadow-IRQL check (§6).
 The static counterpart is `execution-context-ownership-model.md`.
 v2 incorporates an adversarial review pass: v1's two headline invariants
