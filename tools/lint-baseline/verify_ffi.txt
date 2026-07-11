@@ -67,7 +67,6 @@
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ARM3/mminit.rs:19: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ARM3/virtual.rs:112: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/amd64/init.rs:68: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ke/procobj.rs:127: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/ke/thrdschd.rs:45: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/mm/mminit.rs:48: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/ntoskrnl-rust/src/mm/mminit.rs:49: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
