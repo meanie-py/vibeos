@@ -277,3 +277,33 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   flip the gate default to the MP kernel, deprecation-window the UP build, then
   delete the `cfg(not(feature="smp"))` sides entirely (NT precedent: Vista
   dropped the UP kernel). "Defaults stay UP" is a bring-up rule, not forever.
+- 2026-07-11: **M2 COMPLETE — `-smp 2` BOOTS TO DESKTOP** (taskbar + live
+  clock + untruncated `X:\reactos` version stamp; `smoke --smp 2` green
+  ~1m54s, net suite green). The 0x6B and its successor 0x4C were BOTH
+  pre-existing latent bugs the second CPU flushed out — full writeup in
+  field manual **§9.50**:
+  1. **0x6B root cause:** uniata's `CPU_num > 1` flips
+     `g_opt_AtapiSendDisableIntr` → nIEN-gated ATAPI send; QEMU's IDE model
+     never replays an IRQ suppressed under nIEN → boot CD INQUIRY dies → no
+     CdRom0 → no `\SystemRoot`. Fixed: guard on `g_opt_VirtualMachine <=
+     VM_NONE` (uniata-rust id_ata_part3.rs + C reference copy). NOTE: uniata
+     and scsiport are RUST translations — the C copies are dead code with
+     their DPRINT file:line strings baked into the Rust (a first-round fix
+     went into the dead C and no-op'd).
+  2. **0x4C root cause:** hand-rolled `KUSER_SHARED_DATA` shadow struct in
+     `ke/amd64/kiinit.rs` put `NXSupportPolicy` at USD+0x40 (real +0x2D5) —
+     inside `NtSystemRoot`. Harmless on the BSP (runs before the string
+     exists); the AP's `KiInitializeCpu` chopped `C:\reactos`→`C:\reacto` →
+     smss KnownDlls path c000003a → 0xC000021A. Caught with a TCG GDB
+     hardware watchpoint on USD+0x40 (CPU#1 mid-store). Audit swept the
+     whole class: i386/kiinit.rs, xstate.rs, thrdini.rs, rtlk misc.rs,
+     ex time.rs all had fantasy-offset shadows — ALL swapped to bindgen
+     `_KUSER_SHARED_DATA`. Owed: a lint for shadow-struct redeclarations of
+     bindgen types.
+  The old "suspect a KeNumberProcessors-sized allocation / ObMgr per-CPU
+  structure" hypothesis above is DEAD — do not re-open on that lore.
+  Kept diagnosability: smss now prints `SmpInit FAILED st=%x` /
+  `SmConnectToSm FAILED st=%x` on its terminal failure paths.
+  **M3 next:** un-park the AP into KiIdleLoop (set KeActiveProcessors at
+  idle entry), TLB-shootdown/IPI send side (unblocks staged wave-2 A), then
+  scheduler-on-2-CPUs; staged i386 trampoline (B) + arm64 PSCI (C) after.

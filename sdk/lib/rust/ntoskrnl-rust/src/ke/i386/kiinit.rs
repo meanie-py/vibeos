@@ -254,13 +254,12 @@ struct LARGE_IDENTITY_MAP {
     _opaque: [u8; 64],
 }
 
-#[repr(C)]
-struct KUSER_SHARED_DATA {
-    _padding1: [u8; 0x2D4],
-    ProcessorFeatures: [BOOLEAN; 64],
-    _padding2: [u8; 0x1C],
-    NXSupportPolicy: ULONG,
-}
+// KUSER_SHARED_DATA: bindgen layout. The shadow struct here put
+// ProcessorFeatures at +0x2D4 and NXSupportPolicy at +0x330 (real: +0x274 /
+// +0x2D5) — writes landed on ActiveConsoleId..Cookie. Masked by boot ordering
+// on UP; same landmine class as the amd64 -smp 2 NtSystemRoot chop (see
+// ke/amd64/kiinit.rs note, 2026-07-11).
+use ntkrnl_sys::ddk::_KUSER_SHARED_DATA as KUSER_SHARED_DATA;
 
 #[repr(C)]
 struct KNODE {
@@ -608,12 +607,12 @@ pub unsafe extern "system" fn KiInitializeKernel(
             (*Prcb).FeatureBits as u64 | (((*Prcb).FeatureBitsHigh as u64) << 32);
     }
 
-    (*SharedUserData).NXSupportPolicy = NX_SUPPORT_POLICY_OPTIN;
+    (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_OPTIN as u8);
 
     if !strstr((*KeLoaderBlock).LoadOptions, b"NOEXECUTE=ALWAYSON\0".as_ptr() as *const i8)
         .is_null()
     {
-        (*SharedUserData).NXSupportPolicy = NX_SUPPORT_POLICY_ALWAYSON;
+        (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_ALWAYSON as u8);
         KeFeatureBits |= KF_NX_ENABLED as u64;
     } else if !strstr(
         (*KeLoaderBlock).LoadOptions,
@@ -621,7 +620,7 @@ pub unsafe extern "system" fn KiInitializeKernel(
     )
     .is_null()
     {
-        (*SharedUserData).NXSupportPolicy = NX_SUPPORT_POLICY_OPTOUT;
+        (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_OPTOUT as u8);
         KeFeatureBits |= KF_NX_ENABLED as u64;
     } else if !strstr(
         (*KeLoaderBlock).LoadOptions,
@@ -638,7 +637,7 @@ pub unsafe extern "system" fn KiInitializeKernel(
     .is_null()
         || !strstr((*KeLoaderBlock).LoadOptions, b"EXECUTE\0".as_ptr() as *const i8).is_null()
     {
-        (*SharedUserData).NXSupportPolicy = NX_SUPPORT_POLICY_ALWAYSOFF;
+        (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_ALWAYSOFF as u8);
         KeFeatureBits |= KF_NX_DISABLED as u64;
     }
 
