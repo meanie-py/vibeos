@@ -264,19 +264,31 @@ builds the image + ntdll `LDR_DATA_TABLE_ENTRY`s and reaches
   x86 register file + PEB32 fields + heap state at any unhandled guest fault
   (FEX shares the host AS, so wow64.dll reads 32-bit guest memory directly). This
   is how both bugs were pinned without a guest-ntdll rebuild or GDB.
-- **CURRENT BLOCKER — arm64 alignment fault (DFSC 0x21) on an unaligned guest
-  read.** In `memcpy`'s unaligned-source path (`mov ecx,[edx]`, ntdll32+0x2d0a0,
-  called from `RtlCreateActivationContext`), a 4-byte load from a 2-aligned
-  address into section-mapped ntdll32 `.rdata` faults. `SCTLR_EL1.A=0`
-  (`0x30D0198D`), so unaligned Normal-memory access is allowed OS-wide, and the
-  VirtualAlloc'd guest heap took heavy unaligned-free traffic without faulting —
-  so the suspect is that `NtMapViewOfSection(SEC_IMAGE)` view pages get a
-  **Device AttrIndx** (Device faults on *unaligned* even with A=0, while aligned
-  reads + code fetch still work — matching everything up to now). Next: confirm
-  section-specific vs global by forcing an unaligned guest read of VirtualAlloc'd
-  memory; if section-specific, fix the arm64 section-view PTE memory attribute to
-  Normal-WB (AttrIndx 0). Alternatively a FEX-emitted alignment-requiring
-  instruction — rule out by checking the JIT output for that load.
+- **CURRENT BLOCKER — GLOBAL arm64 unaligned-access fault (DFSC 0x21) for the
+  FEX guest (foundational, not WoW64-specific).** In `memcpy`'s unaligned path
+  (`mov ecx,[edx]`, ntdll32+0x2d0a0, from `RtlCreateActivationContext`) a 4-byte
+  load from a 2-aligned address faults. A decisive guest probe (unaligned read of
+  a **VirtualAlloc'd** page vs a **section-mapped** page) proved it is **global,
+  not section-specific**: the VirtualAlloc'd read (`[GuestStack+2]`) faults FIRST
+  with the same alignment fault. Everything up to now worked only because every
+  prior guest access was naturally aligned; the loader's `memcpy` is the first
+  unaligned one. `SCTLR_EL1.A=0` (`0x30D0198D`) so unaligned *Normal*-memory
+  access is allowed OS-wide — therefore **arm64 user pages are reaching the FEX
+  guest as Device (AttrIndx 1)** (Device faults on unaligned even with A=0, while
+  aligned reads + code fetch still work, matching all prior success). This is
+  **foundational for FEX** — x86 does unaligned accesses constantly — so fixing
+  it unblocks FEX broadly, not just M3b. NOTE: a static audit of the arm64
+  AttrIndx path (`ke/arm64/stubs.rs:99-145` MmProtectToPteMask, `helpers.rs:513`
+  MI_MAKE_HARDWARE_PTE, `pagfault.rs:511/636`) concluded standard user
+  protections *should* resolve to Normal-WB (`_C=0`) — so the runtime Device
+  result CONTRADICTS the static path. The discrepancy must be nailed with
+  `Arm64DumpPte(faultVA)` (declared `ke/arm64/stubs.rs:56`) in the arm64 data-
+  abort handler for a VirtualAlloc'd guest page: dump the actual AttrIndx +
+  MAIR_EL1 to see whether (a) the AttrIndx really is 1, (b) the duplicate
+  ungated `#[no_mangle] MmProtectToPteMask` in `i386/page.rs:49` is winning the
+  link on arm64, or (c) MAIR_EL1's AttrIndx-0 slot isn't actually Normal-WB.
+  Candidate levers once confirmed: the `_NC`/`_C` values in `ke/arm64/stubs.rs`,
+  the duplicate-symbol link order, or the freeldr MAIR programming.
   Landed as `wip(wow64): M3b` + the SystemArgument1 fix; behind VIBEOS_FEX,
   normal boots unaffected.
 
