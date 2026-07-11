@@ -4730,3 +4730,64 @@ now-enumerable Start Menu folder). Localized via a `[CSM]` step marker to the
 fastfat loop), explorer does not crash (benign thread block, not a restart-loop), and the
 desktop + notepad paint fully. This is a separate, deeper shell/COM-layer bug the fastfat
 fixes merely *unblocked*; it is the remaining work to get the taskbar + start menu on arm64.
+
+### 9.54 (ROOT-CAUSED + FIXED 2026-07-11) Every arm64 BUGCHECK wore a mask — the crash reporter crashed (KeGetBugMessageText), and underneath sat a callback-ERET IRQ-clobber race from a dropped `cli` in the C→Rust translation
+
+**Triage rule first (the reusable part):** in any arm64 crash log, count the
+`[KEXC]`/`*** BUGCHECK` pairs before symbolicating. If there are TWO, the
+LAST one is a nested crash of the bugcheck display path itself and the
+harness's `top_symbol` points at the MASK, not the bug. The mask's
+signature: `0x1E (0xffffffffc0000005, ...)` with `ESR=0x96000005`
+(EL1 data-abort, translation fault) + kernel `Spsr=0x300003C5`, PC in
+`KeGetBugMessageText`. Both the 2026-07-09 waitdep gate hit
+(`+0x451B0`, real stop = 0x109) and the 2026-07-11 armed-cswitchdep hit
+(`+0x1D638`, real stop = 0x1E/C000001D) wore exactly this mask — the
+recorded arm64 "top symbols" in older evidence are systematically suspect.
+
+**Mask bug:** `KeGetBugMessageText` (ke/bug.rs) validated the
+MESSAGE_RESOURCE_DATA header page, then walked `MessageEntry +=
+entry.Length` hop-by-hop through the resource section with NO per-hop
+validation — on arm64 the walk exits the mapped range and the crash
+reporter takes its own 0x1E. Fix: `KiBugMsgRangeValid` on the blocks
+array, on EVERY hop, on the final entry span; `Length==0` bails; bounded
+strlen capped to the validated entry. A crash reporter must be fault-free
+by construction — degrade to "no message text", never to a nested crash.
+Companion noise fix: the arm64 HAL IRQL tripwire fired 8× raise-DOWN/
+lower-UP lines during bugcheck display (bugcheck parks IRQL at HIGH by
+design, display path acquires DISPATCH locks — expected, but it reads like
+the crash signal and misled this triage). `KeBugCheckWithTf` now calls
+`HalVibeosQuiesceIrqlTripwire()` (hal.spec arm64 export) at entry.
+
+**The real bug under the mask (arm64-only flake, ~1/12 armed boots):**
+original stop was `0x1E/C000001D` at `KiUserCallbackDispatcher`'s FIRST
+instruction with `Spsr=0x102085` — M=EL1h + IL(bit 20) + RES0 bit 13. No
+legitimate SPSR looks like that: it's ERET-from-a-corrupt-frame, and the
+IL bit means the CPU itself flagged the restored state illegal
+(ESR EC=0x0E, Illegal Execution State). Geometry: `KiUserModeCallout`
+(ke/arm64/usercall.rs) carves `CallbackTrapFrame = CalloutFrame - 0x160`
+BELOW its own live SP, then memcpys + field-writes it with IRQs enabled.
+An IRQ in that window pushes ITS 0x160-byte trap frame at `[SP-0x160, SP)`
+— inside the carve-out. With a function frame F ≤ 0xC0, the frame's
+`Spsr` slot (+0xA0) is inside the clobber zone while `Pc` (+0x158)
+survives — which is EXACTLY the observed crash (correct PC, garbage SPSR;
+the 0x102085 is a 32-bit fragment of whatever register the nested IRQ
+frame saved at that address). Smoking gun: the amd64 twin
+(ke/amd64/usercall.rs) does `cli` before the frame copy and the i386 twin
+does too — the arm64 translation DROPPED the interrupt-mask discipline.
+Fix: `msr daifset, #3` before the copy (after the MmGrowKernelStack
+early-return so the failure path isn't left masked); the final `eret`
+reloads PSTATE.DAIF from the frame's Spsr(=0), so the mask never leaks
+into user context — same argument as KiTrapReturn's daifset (§ the
+2026-07-04 fix in trap.S, which protected the sysreg writes but not this
+earlier window).
+
+**Reusable rules:** (1) a trap frame carved below a live SP must be built
+with interrupts masked — interrupts push at the CURRENT stack pointer on
+both x86 and arm64; (2) when porting x86 kernel code, `cli`/`sti` pairs
+are load-bearing — grep the x86 twin for interrupt discipline before
+declaring an arm64 translation complete; (3) any code that runs INSIDE the
+bugcheck path (message lookup, callbacks, display) must validate every
+dereference — a fault there replaces the report with a mask; (4) partial
+SPSR/context corruption where PC survives but low-offset fields die is a
+frame-overlap signature — compute which offsets fall inside `[SP-0x160,
+SP)` of the code that built the frame.

@@ -469,7 +469,12 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   corruption with the same ALL-ONES `bad-thread-ptr` face still recurs (07-09 gate
   `ntoskrnl+0x451B0`, evidence in `~/vibeos-flake-farm/waitdep-evidence/`; 07-10 overnight
   `+0x1CD8C` retried green). `ke/waitdep.rs` always-on captures each hit — a `[WAITDEP]`
-  0x109 in a gate log IS the live capture. §9.36 addendum.
+  0x109 in a gate log IS the live capture. §9.36 addendum. **2026-07-11 §9.54 reframe:
+  all recorded arm64 `+0xNNNN` top-symbols were MASKS (every arm64 bugcheck nested through
+  a KeGetBugMessageText fault; harness logged the reporter's crash PC). Mask fixed + one
+  true face root-caused & fixed (KiUserModeCallout callback-ERET IRQ-clobber, dropped-`cli`
+  translation bug). Re-triage the residual from fresh evidence only — symbolicate the FIRST
+  banner in a log, never the last.**
 - **winlogon 0xC000021A→0x4C init race** (~3/20, all arches) — kernel32 `%wZ` races basesrv's
   CSR shared-section population. MITIGATED (snapshot validation + loud `snapshot CORRUPT`
   print); real fix owed: publish-last ordering in csrsrv/basesrv. §9.36.
