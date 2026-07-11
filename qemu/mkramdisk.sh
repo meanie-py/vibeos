@@ -446,6 +446,20 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         else
             echo "[!] VIBEOS_FEX=1: wow64probe not staged ($WOW64PROBE / $NTDLL32 missing) — Phase B probe skipped"
         fi
+        # M3b: the guest loader always maps kernel32 (BaseThreadInitThunk et al).
+        # \KnownDlls32 doesn't exist on arm64, so the loader falls back to the
+        # file path, which wow64.dll redirects system32 -> syswow64 — stage the
+        # i386 kernel32 + its ntdll_vista dep there.
+        KERNEL32_32="${VIBEOS_KERNEL32_32:-$PROJECT_DIR/build-i386/dll/win32/kernel32/kernel32.dll}"
+        NTDLLVISTA32="${VIBEOS_NTDLLVISTA32:-$PROJECT_DIR/build-i386/dll/ntdll/nt_0600/ntdll_vista.dll}"
+        if [ -f "$KERNEL32_32" ] && [ -f "$NTDLLVISTA32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/kernel32.dll + ntdll_vista.dll (i386)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$KERNEL32_32" ::/reactos/syswow64/kernel32.dll
+            mcopy -o -i "$RAMDISK_IMG" "$NTDLLVISTA32" ::/reactos/syswow64/ntdll_vista.dll
+        else
+            echo "[!] VIBEOS_FEX=1: i386 kernel32/ntdll_vista missing ($KERNEL32_32 / $NTDLLVISTA32) — guest loader will stall at kernel32"
+        fi
         # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
         # by winlogon's TryStartWow64Hello (silent no-op unless staged here).
         HELLO32="${VIBEOS_HELLO32_EXE:-$PROJECT_DIR/build-fex-hello/hello32.exe}"

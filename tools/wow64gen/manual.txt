@@ -1,47 +1,60 @@
 # wow64gen deep-marshal list — Nt* syscalls whose `ptr` args point at a struct
 # whose 32-bit and 64-bit layouts DIFFER, so ABI-level arg widening is not
 # enough. wow64gen emits these as WOW64_NEEDS_MANUAL stubs; implement each by
-# hand in wow64.c (translate the 32-bit struct into a 64-bit one on the stack,
-# call the real Nt*, copy any output back). One name per line; # starts a
-# comment. Re-run wow64gen after editing.
+# hand in wow64_manual.c (translate the 32-bit struct into a 64-bit one on the
+# stack, call the real Nt*, copy any output back). One name per line; # starts
+# a comment. Re-run wow64gen after editing.
 #
 # Seeded with the highest-frequency structural offenders. This is intentionally
 # INCOMPLETE — add names as boot coverage exercises more of the surface. When
 # unsure whether a syscall belongs here, list it: a loud manual stub is always
 # safer than a silently-wrong auto thunk.
-
+#
+# Categories:
 # --- OBJECT_ATTRIBUTES takers (ObjectName is a 32-bit UNICODE_STRING* whose
 #     Buffer is a 32-bit ptr; the 64-bit struct is wider) ---
-NtCreateFile
-NtOpenFile
-NtCreateKey
-NtOpenKey
-NtCreateSection
-NtOpenSection
-NtCreateEvent
-NtOpenEvent
-NtCreateMutant
-NtOpenMutant
-NtCreateSemaphore
-NtOpenSemaphore
-NtCreateDirectoryObject
-NtOpenDirectoryObject
-NtCreateSymbolicLinkObject
-NtOpenSymbolicLinkObject
-NtOpenProcess
-NtOpenThread
-NtCreateNamedPipeFile
-NtCreateMailslotFile
-
 # --- IO_STATUS_BLOCK.Information is ULONG_PTR (4 vs 8 bytes) + these carry
 #     OBJECT_ATTRIBUTES and/or overlapped state ---
-NtDeviceIoControlFile
-NtFsControlFile
-NtQueryDirectoryFile
-NtNotifyChangeDirectoryFile
-
 # --- context / LARGE_INTEGER-by-value / arrays of pointers ---
-NtQuerySystemInformation
-NtSetSystemInformation
+NtAllocateVirtualMemory
+NtCreateDirectoryObject
+NtCreateEvent
+NtCreateFile
+NtCreateKey
+NtCreateMailslotFile
+NtCreateMutant
+NtCreateNamedPipeFile
+NtCreateSection
+NtCreateSemaphore
+NtCreateSymbolicLinkObject
+NtDeviceIoControlFile
+NtFreeVirtualMemory
+NtFsControlFile
+NtMapViewOfSection
+NtNotifyChangeDirectoryFile
+NtOpenDirectoryObject
+NtOpenEvent
+NtOpenFile
+NtOpenKey
+NtOpenMutant
+NtOpenProcess
+NtOpenSection
+NtOpenSemaphore
+NtOpenSymbolicLinkObject
+NtOpenThread
+NtProtectVirtualMemory
+NtQueryAttributesFile
+NtQueryDirectoryFile
+NtQueryFullAttributesFile
 NtQueryInformationProcess
 NtQueryInformationThread
+NtQuerySymbolicLinkObject
+NtQuerySystemInformation
+NtQueryVirtualMemory
+NtSetSystemInformation
+NtQuerySection
+NtCreateKeyedEvent
+NtOpenKeyedEvent
+NtConnectPort
+NtSecureConnectPort
+NtContinue

@@ -2101,11 +2101,41 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
         w!("\\System32\\").as_ptr() as PCWSTR,
     );
 
-    /* Open the Known DLLs directory */
-    RtlInitUnicodeString(
-        &mut KnownDllString,
-        w!("\\KnownDlls").as_ptr() as PCWSTR,
-    );
+    /* Open the Known DLLs directory. A 32-bit process under WOW64 must use
+     * \KnownDlls32 — \KnownDlls holds the HOST-architecture image sections
+     * (mapping one of those hands an arm64 kernel32 to an x86 guest). When
+     * \KnownDlls32 doesn't exist (arm64 hosts don't populate it yet) the open
+     * fails and the loader falls back to file paths, which the wow64 layer
+     * redirects system32 -> syswow64. */
+    #[cfg(target_arch = "x86")]
+    let KnownDllDirName: PCWSTR = {
+        extern "system" {
+            fn NtQueryInformationProcess(
+                ProcessHandle: HANDLE,
+                ProcessInformationClass: u32,
+                ProcessInformation: PVOID,
+                ProcessInformationLength: ULONG,
+                ReturnLength: PULONG,
+            ) -> NTSTATUS;
+        }
+        const PROCESS_WOW64_INFORMATION: u32 = 26;
+        let mut Peb32Ptr: ULONG_PTR = 0;
+        let QueryStatus = NtQueryInformationProcess(
+            -1isize as HANDLE,
+            PROCESS_WOW64_INFORMATION,
+            core::ptr::addr_of_mut!(Peb32Ptr) as PVOID,
+            core::mem::size_of::<ULONG_PTR>() as ULONG,
+            core::ptr::null_mut(),
+        );
+        if NT_SUCCESS(QueryStatus) && Peb32Ptr != 0 {
+            w!("\\KnownDlls32").as_ptr() as PCWSTR
+        } else {
+            w!("\\KnownDlls").as_ptr() as PCWSTR
+        }
+    };
+    #[cfg(not(target_arch = "x86"))]
+    let KnownDllDirName: PCWSTR = w!("\\KnownDlls").as_ptr() as PCWSTR;
+    RtlInitUnicodeString(&mut KnownDllString, KnownDllDirName);
     // InitializeObjectAttributes
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();

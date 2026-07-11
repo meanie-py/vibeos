@@ -558,6 +558,41 @@ pub unsafe extern "system" fn MmCreatePeb(
         (*Peb32).ImageSubsystemMinorVersion = (*Peb).ImageSubsystemMinorVersion;
         (*Peb32).SessionId = (*Peb).SessionId;
 
+        // NLS tables for the 32-bit world: the 64-bit view above (MEM_TOP_DOWN)
+        // lands high, so map a SECOND view of the NLS section constrained below
+        // 2GB (ZeroBits mask form) and point PEB32's NLS fields at it —
+        // RtlInitCodePageTable in the guest ntdll AVs on the NULL/garbage
+        // pointers otherwise. Failure is loud-but-nonfatal: the guest gets
+        // NULL pointers and dies visibly in NlsInit, not silently.
+        let mut Nls32Base: PVOID = core::ptr::null_mut();
+        let mut Nls32Size: SIZE_T = 0;
+        let mut Nls32Offset: LARGE_INTEGER = core::mem::zeroed();
+        let NlsStatus = MmMapViewOfSection(
+            ExpNlsSectionPointer,
+            Process,
+            &mut Nls32Base,
+            0x7FFFFFFFu64, /* ZeroBits mask: at-or-below 2GB */
+            0,
+            core::ptr::addr_of_mut!(Nls32Offset),
+            &mut Nls32Size as *mut SIZE_T as *mut _,
+            ViewShare,
+            0,
+            PAGE_READONLY,
+        );
+        if NlsStatus >= 0 && (Nls32Base as usize) < 0x8000_0000 {
+            (*Peb32).AnsiCodePageData =
+                (Nls32Base as usize + ExpAnsiCodePageDataOffset as usize) as u32;
+            (*Peb32).OemCodePageData =
+                (Nls32Base as usize + ExpOemCodePageDataOffset as usize) as u32;
+            (*Peb32).UnicodeCaseTableData =
+                (Nls32Base as usize + ExpUnicodeCaseTableDataOffset as usize) as u32;
+        } else {
+            ARM64_UART_TRACE_HEX(
+                b"[MM] MmCreatePeb: below-2GB NLS view FAILED status=\0".as_ptr() as *const i8,
+                NlsStatus as usize,
+            );
+        }
+
         (*(Process as *mut _EPROCESS)).Wow64Process = Peb32 as *mut _WOW64_PROCESS;
         ARM64_UART_TRACE_HEX(
             b"[MM] MmCreatePeb: WoW64 i386 image, PEB32 at \0".as_ptr() as *const i8,

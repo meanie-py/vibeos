@@ -331,6 +331,28 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
                 FaultCode |= 0x2;
             }
 
+            // Alignment-fault diagnostic (DFSC 0x21): discriminates "page is
+            // Device memory" (PTE AttrIndx bits [3:2] != 0) from "instruction
+            // demands alignment on Normal memory" (LDAR/STLR/LDAPR — what FEX
+            // emits for x86-TSO). Alignment fault ⇒ translation succeeded, so
+            // the self-map PTE chain for FAR is walkable.
+            if DFSC == 0x21 {
+                let far = (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress;
+                let pc = (*TrapFrame).Pc;
+                TrapPuts(b"[ALIGN] FAR="); TrapPutHex64(far);
+                TrapPuts(b" PC="); TrapPutHex64(pc);
+                let pte_va = 0xFFFFF68000000000u64
+                    .wrapping_add(((far as u64 >> 12) & 0xF_FFFF_FFFFu64) << 3);
+                let pte = core::ptr::read_volatile(pte_va as *const u64);
+                TrapPuts(b" PTE="); TrapPutHex64(pte);
+                let mair: u64;
+                core::arch::asm!("mrs {}, mair_el1", out(reg) mair, options(nomem, nostack));
+                TrapPuts(b" MAIR="); TrapPutHex64(mair);
+                let opc = core::ptr::read_volatile(pc as *const u32);
+                TrapPuts(b" OPC="); TrapPutHex32(opc);
+                TrapPuts(b"\r\n");
+            }
+
             if (DFSC & 0x3C) == 0x04 ||
                (DFSC & 0x3C) == 0x08 ||
                (DFSC & 0x3C) == 0x0C
@@ -347,7 +369,15 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
             }
 
             let mut ExRec: EXCEPTION_RECORD = core::mem::zeroed();
-            ExRec.ExceptionCode = STATUS_ACCESS_VIOLATION;
+            // DFSC 0x21 = alignment fault: Windows semantics deliver this as
+            // EXCEPTION_DATATYPE_MISALIGNMENT, not an access violation. FEX's
+            // BTCpuResetToConsistentState keys on exactly this code to
+            // backpatch unaligned LDAR/STLR (x86-TSO) and resume.
+            ExRec.ExceptionCode = if DFSC == 0x21 {
+                0x80000002u32 as i32 // STATUS_DATATYPE_MISALIGNMENT
+            } else {
+                STATUS_ACCESS_VIOLATION
+            };
             ExRec.ExceptionFlags = 0;
             ExRec.ExceptionRecord = core::ptr::null_mut();
             ExRec.ExceptionAddress = (*TrapFrame).Pc as PVOID;
@@ -439,7 +469,31 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
         }
 
         0x15 => {
+            // cswitchdep taps 4/5 (user↔kernel syscall parity). Position
+            // guarantees kernel stack + built trap frame (same contract as
+            // amd64 KiSystemCallHandler / i386 KiSystemServiceHandler).
+            // Kernel-origin SVC (Zw from EL1, Spsr.M != EL0) passes
+            // user_trap=0 and is skipped — the i386 INT-2E Zw rule.
+            #[cfg(feature = "cswitchdep")]
+            let user_svc = ((*TrapFrame).Spsr & 0xF) == 0;
+            #[cfg(feature = "cswitchdep")]
+            crate::ke::cswitchdep::VibeosCswitchdepUserEntry(
+                user_svc as u32,
+                crate::code_addr!(),
+            );
+
             KiSvcDispatch(TrapFrame);
+
+            // Tap 5 pairs with tap 4 around the dispatch rather than at the
+            // ERET tail: this exception path returns through EXFRAME_RESTORE
+            // for user and kernel frames alike, so the user-bound branch
+            // only exists here in Rust. Untapped user exits (exception
+            // frames, APC-edited resumes) stay exit_no_entry orphans, as on
+            // x86.
+            #[cfg(feature = "cswitchdep")]
+            if user_svc {
+                crate::ke::cswitchdep::VibeosCswitchdepUserExit(crate::code_addr!());
+            }
         }
 
         0x26 => {
