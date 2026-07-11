@@ -494,8 +494,15 @@ Validation state at park time:
   36s; census `switches=1788 violations=0 first_runs=808 no_record=0
   drops=0` — all three first-light fixes confirmed (the pre-recalibration
   boot had shown violations=210, all INTR_STATE_UNBALANCED under the old
-  strict `entry != exit` DAIF check). `user_entries=0` as expected (no
-  arm64 taps 4/5). `held_now` is negative census data (arm64 funnels
+  strict `entry != exit` DAIF check). ~~`user_entries=0` as expected (no
+  arm64 taps 4/5)~~ — **taps 4/5 landed on arm64 2026-07-11** (wrapping
+  `KiSvcDispatch` in `ke/arm64/trap.rs`, EC=0x15; user-origin =
+  `Spsr.M == EL0`, kernel-origin SVC skipped per the i386 INT-2E Zw rule;
+  tap 5 pairs at dispatch return, not the shared ERET tail). First light:
+  `user_entries=15646 user_exits=15109 exit_no_entry=0 held_delta_pos=0`,
+  violations=0 — the entry>exit delta is the documented untapped-exit
+  class. All three arches now run all five taps. `held_now` is negative
+  census data (arm64 funnels
   through untapped HAL paths — pair-asymmetric; the SLEEP_WITH_SPINLOCK
   check is delta-above-baseline, unaffected).
 - **i386: parity validated pre-merge** (58,653/58,653, violations=0); not
