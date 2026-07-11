@@ -150,12 +150,24 @@ pub unsafe fn KeGetPcr() -> ddk::PKPCR {
 }
 
 // ============================================================================
-// KeGetCurrentProcessorNumber (FORCEINLINE — UP kernel always returns 0)
+// KeGetCurrentProcessorNumber (FORCEINLINE). UP kernel: constant 0. SMP:
+// Prcb->Number via the per-arch PCR — a hardcoded 0 here silently poisons
+// the IPI completion protocol / dispatcher remote-IPI branch / freeze CPU
+// identity on every CPU but the BSP (smp-bringup M3 audit, item 3).
 // ============================================================================
 
+#[cfg(not(feature = "smp"))]
 #[inline]
 pub unsafe fn KeGetCurrentProcessorNumber() -> ULONG {
     0
+}
+
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KeGetCurrentProcessorNumber() -> ULONG {
+    // KPRCB.Number is CHAR/UCHAR-sized on x86 and USHORT on amd64/arm64 in
+    // the NT layouts; the bindgen field is typed per arch — widen to ULONG.
+    (*KeGetCurrentPrcb()).Number as ULONG
 }
 
 // ============================================================================

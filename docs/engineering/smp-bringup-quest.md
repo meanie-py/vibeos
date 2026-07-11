@@ -220,6 +220,53 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   SIPI window (self-map PTE write + invlpg, torn down after APs start);
   mini-page-tables-in-stub is the hardening fallback. Full decision tree +
   corrections in the staging NOTES.md.
+- 2026-07-10 (cont.): **M2 — FIRST AP START. amd64 CPU 1 takes the SIPI, runs
+  the real trampoline, executes KiSystemStartup end-to-end, and parks**
+  (`[SMP] AP 1 up, parked pre-scheduler` + `processor 1 online` on serial).
+  First application processor ever started in this codebase. Path to green,
+  each a distinct root cause found by GDB on the AP thread:
+  1. **Trampoline was real bytes but not LINKED** — `aptramp64.bin` is
+     `include_bytes!`'d, not a `.rs`, so cmake's cargo-module DEPENDS glob
+     (`*.rs *.toml`) never saw the regenerated blob and shipped a STALE
+     hal.dll (0xF4 debug-cycle). Fixed the glob to include `*.bin`
+     (gcc.cmake) — permanent infra fix for any include_bytes! asset.
+  2. **#DF at KiSystemStartup's first `movaps`** — the trampoline `lretq`'d
+     onto a 16-aligned stack; the amd64 ABI entry state is rsp≡8 (mod 16)
+     (caller's CALL pushed a return addr), so every aligned xmm spill was
+     off by 8 and #GP'd. Fixed: trampoline pushes a fake NULL return addr
+     before the LoaderBlock frame (aptramp64.S).
+  3. **Low-stub alloc FAILED under UEFI** — mainline reserves 1 low page but
+     I'd bumped it to 4 for the identity-map page tables; UEFI leaves no
+     4-page run <1MB (measured: one 2-page FirmwareTemporary at 0x37000).
+     Split: low stub stays 1 page (only the SIPI target must be <1MB); the
+     3 PDPT/PD/PT scratch pages allocate separately with a 4GB cap
+     (HalpApPtScratch, halacpi.rs).
+  4. **BSP idle-wedged post-park** — the AP set `KeActiveProcessors |= 1<<Cpu`
+     then parked with interrupts off; the dispatcher routed a ready thread /
+     DPC to CPU 1's queue and it never ran, so the BSP went idle forever
+     (hung at PnP). Fixed: a parked AP does NOT advertise in
+     KeActiveProcessors (kiinit.rs, smp+Cpu!=0 gated) — M3 sets it when the
+     AP actually enters the idle loop.
+  Also landed from the M3-audit wave: `KeStartAllProcessors` call site wired
+  into ex-rust Phase 1 (+ HalAllProcessorsStarted check), and
+  `KeGetCurrentProcessorNumber` reads `Prcb->Number` under smp (was hardcoded
+  0 — would have silently poisoned IPI completion / dispatcher / freeze).
+  **OPEN (M2 tail / M3 boundary): `-smp 2` now BUGCHECKs 0x6B
+  PROCESS1_INITIALIZATION_FAILED (0xc000003a STATUS_OBJECT_PATH_NOT_FOUND, 2)
+  at PsLocateSystemDll** — 2-CPU-specific (`-smp 1` of the same build boots
+  clean to desktop). Boot runs far into Phase 1 before failing; likely a
+  per-CPU init the parked AP left half-done (KeNumberProcessors==2 now, but
+  CPU1's PRCB parked before full init) surfacing in ntdll section mapping.
+  Next debug target.
+- **Subagent wave 2 (4 Sonnet agents, all delivered):** A = amd64 IPI 0xE1
+  receive body (staged; corrected premise — amd64 freeze already works via
+  NMI, 0xE1 dead both ways, needs an amd64 mailbox send-side design = M3);
+  B = i386 `aptramp32.S` (real 212B blob, disasm-verified, `lret`-onto-
+  prebuilt-stack contract verified vs C — staged); C = arm64 PSCI CPU_ON
+  survey (`smc #0`, EL1; GIC SGI plumbing absent, Rust IPI layer already
+  arch-generic; freeze snippet splice-ready); D = M3 scheduler-entry audit
+  (4 BROKEN / 4 GAP / 6 READY — 2 spine-critical BROKENs already fixed above).
+  All staged under ~/vibeos-rust-staging/smp/.
 - **UP endgame (decided 2026-07-10, not yet scheduled):** once M4 soaks clean,
   flip the gate default to the MP kernel, deprecation-window the UP build, then
   delete the `cfg(not(feature="smp"))` sides entirely (NT precedent: Vista

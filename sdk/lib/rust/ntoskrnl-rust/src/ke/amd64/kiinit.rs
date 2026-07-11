@@ -749,7 +749,20 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
 
     HalInitializeProcessor(Cpu as u32, KeLoaderBlock);
 
-    KeActiveProcessors |= 1u64 << Cpu;
+    // M2: a parked AP must NOT advertise itself in KeActiveProcessors — the
+    // dispatcher / DPC targeting / IPI-broadcast machinery iterates this mask,
+    // and routing a ready thread or DPC to a CPU that's spinning with
+    // interrupts off wedges the BSP (it goes idle waiting for work that can
+    // never run — observed 2026-07-10, boot hung at PnP with CPU1 parked).
+    // M3 sets this bit when the AP actually enters the idle loop.
+    #[cfg(not(feature = "smp"))]
+    {
+        KeActiveProcessors |= 1u64 << Cpu;
+    }
+    #[cfg(feature = "smp")]
+    if Cpu == 0 {
+        KeActiveProcessors |= 1u64 << Cpu;
+    }
 
     InterlockedAnd64(core::ptr::addr_of_mut!(KiFreezeExecutionLock) as PLONG64, 0);
 
