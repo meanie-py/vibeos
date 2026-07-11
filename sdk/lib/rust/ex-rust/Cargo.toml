@@ -11,7 +11,7 @@ crate-type = ["rlib"]
 [features]
 default = []
 lockdep = ["ntkrnl-sys/lockdep"]
-smp = []
+smp = ["ntkrnl-sys/smp"]
 [dependencies]
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 dbgprint-rust = { path = "../dbgprint-rust" }

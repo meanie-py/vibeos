@@ -549,12 +549,43 @@ pub unsafe extern "system" fn KiDispatchException(
             }
         }
         
+        // Permanent tripwire (field manual §9.41): a user-mode exception
+        // reaching SECOND CHANCE is a process death — csrss's exception port
+        // usually "handles" it by TerminateProcess(client, 0x80), so without
+        // this print the smoke serial shows only 4x [EXIT-THR] 0x80 with no
+        // cause (the port forward below returns nonzero and the terminate
+        // path here is never reached). Print the face + the two CLIENTINFO
+        // fields the §9.41 stray write stomps (TEB+0x800 is CLIENTINFO;
+        // pDeskInfo at +0x20, ulClientDelta at +0x28) so the faulting RIP is
+        // diagnosable from serial alone.
+        {
+            let proc_ = PsGetCurrentProcess() as *mut _EPROCESS;
+            let img = (*proc_).ImageFileName.as_ptr();
+            let teb = (*PsGetCurrentThread()).Teb as *const u8;
+            let mut pdesk: u64 = 0;
+            let mut delta: u64 = 0;
+            if !teb.is_null() && MmIsAddressValid(teb as _) != 0 {
+                pdesk = core::ptr::read_unaligned(teb.add(0x820) as *const u64);
+                delta = core::ptr::read_unaligned(teb.add(0x828) as *const u64);
+            }
+            crate::dbg_print!(
+                b"[KI-EXC] %s teb=%p code=0x%lx addr=%p rip=%p pci.pDeskInfo=%p pci.ulClientDelta=%p\n\0",
+                img as *const i8,
+                teb as usize,
+                (*ExceptionRecord).ExceptionCode as u32,
+                (*ExceptionRecord).ExceptionAddress,
+                (*TrapFrame).Rip as usize,
+                pdesk as usize,
+                delta as usize,
+            );
+        }
+
         if DbgkForwardException(ExceptionRecord, 1u8, 1u8) != 0 {
             return;
         } else if DbgkForwardException(ExceptionRecord, 0u8, 1u8) != 0 {
             return;
         }
-        
+
         ZwTerminateProcess(NtCurrentProcess(), (*ExceptionRecord).ExceptionCode);
         KeBugCheckEx(
             KMODE_EXCEPTION_NOT_HANDLED,

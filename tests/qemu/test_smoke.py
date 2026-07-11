@@ -325,20 +325,19 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
 
     Saves qemu/<arch>_startmenu.png for visual inspection.
     """
-    if arch == "arm64":
-        pytest.skip("start-menu gate is i386/amd64 (QMP input-send-event; "
-                    "arm64 virtio-input path not wired into this gate yet)")
+    # arm64 runs this gate too since 2026-07-10: QMP input-send-event routes
+    # to the bespoke arm64input virtio-mmio keyboard (test_arm64input_delivery
+    # proves the QMP -> virtqueue -> KeyboardClass0 path end-to-end), so the
+    # same Ctrl+Esc chord exercises win32k hotkey dispatch there as well.
 
-    # amd64 history (field manual §9.41): during bring-up, the first Ctrl+Esc
-    # corrupted the faulting thread's CLIENTINFO (pci->pDeskInfo/ulClientDelta
-    # in the TEB) and explorer AV'd in user32!ValidateHandle before the menu
-    # rendered. After the DesktopHeapReAlloc fix (§9.40) + a clean rebuild it
-    # no longer reproduces (4/4 menu opens, 2026-07-08); if it recurs, re-add
-    # an `if arch.startswith("amd64"): pytest.xfail(...)` here (fixture arch
-    # is "amd64-uefi", NOT "amd64") rather than deleting the gate. Residual
-    # amd64 cosmetic issue (tracked in §9.41): Programs/Documents/Settings
-    # render icons without label text and Run/Shut Down are absent — the
-    # panel-lit gate below still passes.
+    # amd64 history (field manual §9.41, ROOT-CAUSED + FIXED 2026-07-10): the
+    # Ctrl+Esc explorer death AND the blank-labels/missing-items menu were one
+    # bug — KiSystemCallHandler read TEB.GdiBatchCount at a hand-rolled wrong
+    # offset (0x74 vs real 0x1740), so the GDI TEB batch never flushed:
+    # batched ExtTextOut label text silently vanished and the batch buffer
+    # overflowed into CLIENTINFO, AV'ing explorer. If a regression here
+    # recurs, xfail with `arch.startswith("amd64")` (fixture arch is
+    # "amd64-uefi", NOT "amd64") rather than deleting the gate.
 
     try:
         from PIL import Image, ImageChops
@@ -412,6 +411,24 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
                 break
         if lit >= 0.60:
             break
+
+    # The lit-threshold can trip mid-paint (panel background up, labels not
+    # yet drawn — seen on amd64 under TCG). Once the gate condition is met,
+    # give the menu a settle window and re-capture so the saved artifact is
+    # the FINISHED render, not the first frame past the threshold. The
+    # assertion below still uses the settled frame (it can only get lighter).
+    if lit >= 0.60:
+        settle_deadline = time.time() + 6.0
+        stable = 0
+        prev = after
+        while time.time() < settle_deadline and stable < 2:
+            time.sleep(1.0)
+            vm.screendump(after_ppm)
+            cur = Image.open(after_ppm).convert("RGB")
+            stable = stable + 1 if ImageChops.difference(prev, cur).getbbox() is None else 0
+            prev = cur
+        after = prev
+        lit = _menu_panel_lit(after)
 
     # Save the after-shot regardless of verdict — it's the artifact to eyeball.
     png_path = PROJECT_DIR / "qemu" / f"{arch}_startmenu.png"

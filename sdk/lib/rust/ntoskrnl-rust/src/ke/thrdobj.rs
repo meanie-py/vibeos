@@ -197,7 +197,7 @@ unsafe fn _KeGetPreviousMode() -> u8 {
     *kt_PreviousMode(thread) as u8
 }
 
-unsafe fn KeFindNextRightSetAffinity(Number: u8, Set: KAFFINITY) -> u8 {
+pub(crate) unsafe fn KeFindNextRightSetAffinity(Number: u8, Set: KAFFINITY) -> u8 {
     let mut Bit: KAFFINITY;
     let mut Result: u32 = 0;
     ASSERT!(Set != 0);

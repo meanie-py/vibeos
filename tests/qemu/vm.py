@@ -966,6 +966,18 @@ class QemuVM:
             )
         return ["-fw_cfg", f"name=opt/org.vibeos.tripwire,string={cfg}"]
 
+    def _smp_args(self) -> list[str]:
+        """VIBEOS_QEMU_SMP=<N> boots the guest with N virtual CPUs (-smp N).
+        Opt-in only (SMP bring-up — docs/engineering/smp-bringup-quest.md);
+        default configs stay UP. All backends exercise real concurrency
+        (TCG multi-vCPU is MTTCG — real host threads)."""
+        n = os.environ.get("VIBEOS_QEMU_SMP", "").strip()
+        if not n:
+            return []
+        if not n.isdigit() or int(n) < 1:
+            raise ValueError(f"VIBEOS_QEMU_SMP must be a positive integer (got {n!r})")
+        return ["-smp", n]
+
     def _extra_qemu_args(self) -> list[str]:
         """VIBEOS_QEMU_EXTRA_ARGS=<raw qemu args> appends arbitrary devices/options to
         the boot (shlex-split). Intended for device-bring-up rigs (usb-kbd, usb-tablet,
@@ -1032,6 +1044,7 @@ class QemuVM:
             *self._scratch_device_args(),
             *self._usb_disk_args(),
             *self._tripwire_args(),
+            *self._smp_args(),
             *self._extra_qemu_args(),
             "-monitor",
             "none",
@@ -1157,6 +1170,7 @@ class QemuVM:
             *be.stage_media_paths(self._scratch_device_args(), staging),
             *be.stage_media_paths(self._usb_disk_args(), staging),
             *self._tripwire_args(),
+            *self._smp_args(),
             *self._extra_qemu_args(),
             "-monitor",
             "none",

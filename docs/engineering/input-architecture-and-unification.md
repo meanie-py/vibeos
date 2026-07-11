@@ -194,9 +194,22 @@ monoliths poking ECAM/MMIO). Stood up the real chain (commits `4bf38cb1ac2`,
   fixing the header. Header fixed + bindings/assertions regenerated + all shims deleted →
   one NT layout on every arch.
 
-**Current walls (both OPEN, 2026-07-09 late):**
+**The two walls (both CLOSED, landed by 2026-07-10 — detail kept below as the war story):**
 
-**Wall 1 — the layout fix regresses arm64 desktop boot (BLOCKS LANDING).** A clean-built
+- **Wall 1 (68-stride ramdisk panic) — FIXED & landed**; the `IO_STACK_LOCATION`
+  pack-guard fix stayed in (it's the correct NT ABI) and arm64 is desktop-green on master.
+- **Wall 2 (EHCI control-pipe "halt") — FIXED & landed** (`b22168c8acc`, fix commit
+  `1a3b457f769`): the root was **DPC starvation**, not USB — IRQ-exit device-DPC retire
+  for idle-at-DISPATCH + masked-IRQ DPC bodies, plus EHCI ISR status accumulation. Full
+  writeup: `docs/engineering/wall2-arm64-usb-hid-handoff.md` (marked RESOLVED).
+
+With both walls down, the quest's beachhead is proven on ALL arches: a real USB
+keyboard/mouse enumerates and delivers keystrokes through
+hidusb→hidclass→kbdhid/mouhid→kbdclass/mouclass — amd64 since `c7cee13e593` (+ the
+hidparser usage-page fix), arm64 as of `b22168c8acc`. **Decision-tree verdict: USB HID is
+the unification target.**
+
+**Wall 1 (historical) — the layout fix regresses arm64 desktop boot.** A clean-built
 arm64 kernel now **panics in `IofCompleteRequest` on a None CompletionRoutine at the
 ramdisk-mount stage** (`IopStartRamdisk` → volume PnP), so the main boot thread never
 reaches `_tWinMain`. GDB backtrace: `iomgr_rust::irp::IofCompleteRequestInner` →
@@ -253,7 +266,7 @@ running kernel's offset.
 - **(C) Cherry-land only amd64** — the `hidparser` fix (a5d5c14d939) is independent + green
   ×3; it can land alone regardless of the arm64 fork.
 
-**Wall 2 — EHCI control pipe halts (reached only via the concurrent PnP worker).** When USB
+**Wall 2 (historical) — EHCI control pipe halts (reached only via the concurrent PnP worker).** When USB
 devices are attached, the PnP worker enumerates EHCI and **the control pipe HALTS on the
 default address-0 device** — QH overlay token `0x40` (Halted), every SET_ADDRESS control
 transfer fails, `[USBHUB] CreateDevice port=1 status=0x503` retries forever. GIC/INTx/async
@@ -366,12 +379,32 @@ the condition is unexpectedly true (length read as 0, or the DMA-TYPE flag clear
 root, and both point at a subtle field read / endpoint-open ordering that differs on arm64
 despite identical struct layouts. This remains a well-characterized, NON-BLOCKING follow-up.
 
-**Disposition:** the branch is NOT landable (arm64 not desktop-green). The
-`IO_STACK_LOCATION` pack-guard fix is a *real* ABI bug fix (the packed layout aliased
-`IoControlCode` onto `Argument2`), so the right resolution is to finish the old-stride
-sweep (Wall 1) rather than revert it. The amd64 `hidparser` keyboard fix (a5d5c14d939) is
-independent, verified green ×3, and could be cherry-landed on its own if the arm64 walls
-stay open.
+## Disposition (2026-07-10 — probe phase CLOSED, migration phase NOT STARTED)
+
+The probe lane hit its stated goal and was closed (worktree removed; everything landed
+on master through `b22168c8acc`/`7afe3850860`). **The probe decided the direction; it did
+not do the migration.** In the default boot path input still flows the old divergent ways:
+x86 = `i8042prt` (PS/2, IRQ+DPC); arm64 = `arm64input` (polled virtio-mmio monolith that
+collapses miniport+class and bypasses kbdclass/mouclass). USB HID works but only when
+devices are hand-added via `VIBEOS_QEMU_EXTRA` — the default smokes don't exercise it.
+
+**The unification migration (the quest's endgame, owed — a multi-day architectural move):**
+1. **Make USB HID the default input transport** — add `-device usb-kbd/usb-mouse` (EHCI)
+   to the standard smoke config so the gate exercises the unified path on every run.
+2. **Retire `arm64input`** (delete its monolith class-device creation + rings) **and
+   `i8042prt`** — or keep them as explicit fallbacks.
+3. **usbxhci gap** — no xHCI driver exists (only EHCI/OHCI/UHCI, USB2-era). Fine for QEMU
+   (EHCI works on q35/pc/virt), but real hardware eventually wants xHCI.
+
+**Smaller open debt from this lane (tracked here so it survives the worktree closure):**
+- **Warm-build driver relink hazard (real infra bug):** a warm `vibeos-cli build` does NOT
+  relink driver `.sys` after an `ntkrnl-sys` dependency edit (same false-fresh family as
+  the reactos-link fix in the whpx spike doc) — cost 3 false debug rounds in this lane.
+  Until fixed: always `--clean` when validating a layout/FFI change against drivers.
+- **Const verification doesn't cover driver-local enum values** (enum-drift class) —
+  extend `verify_constants.py` scope.
+- **cdfs FSCTL / classpnp bind-all nests:** 185 unreachable-pattern warnings, orthogonal
+  cleanup, was in-progress when the lane closed.
 
 ## References
 - Miniports: `sdk/lib/rust/{i8042prt-rust,arm64input-rust}/`.
