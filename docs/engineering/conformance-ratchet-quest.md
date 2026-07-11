@@ -181,6 +181,18 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   arrays vs intent comments; one-shot sweep found no other true hits, but the class is
   invisible to all existing gates). Kept: fail-loud DbgPrint on RCreateServiceW failure
   (upstream FIXME leaves half-created services — separate latent bug, not yet fixed).
+- 2026-07-10: **CONFORMANCE CATCH #2 — root-caused + fixed: IRP_MJ_CLEANUP was never
+  delivered to ANY driver.** Surfaced as kmtest run 2 getting STATUS_ACCESS_DENIED on
+  SET_RESULTBUFFER (run 1's MDL registration never cleaned up on handle close). Subagent
+  diff-audit pinned it: ob-rust `ObpDecrementHandleCount` (obhandle.rs:505-517) translated
+  C's `ProcessHandleCount = HandleCount--` (POST-decrement → pre value) as
+  decrement-then-read → CloseProcedure got 0 instead of 1 on the last handle →
+  `IopCloseFile` early-returned before sending IRP_MJ_CLEANUP. Every
+  MaintainHandleCount-type close in the OS's history skipped driver cleanup; invisible
+  to boot because nothing re-opens such a device twice. Fixed (read-before-decrement,
+  both branches); new rustconv-catalog class in the field manual (post-inc/dec read
+  order). M2 first light: Example END pass=31 fail=15 skip=0 — the 15 are Example's
+  deliberate self-test failures, machinery fully green. Full 97-test M3 sweep in flight.
 - 2026-07-10: **WHPX payload boot currently unusable — cross-lane observation for
   whpx-ahci-cd:** `uniata-rust/src/id_sata.rs:1972` DbgPrints `AhciBeginTx` per AHCI
   transaction (bring-up marker, unconditional); under the whpx ich9-ahci CD path the
