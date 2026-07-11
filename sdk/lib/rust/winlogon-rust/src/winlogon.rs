@@ -760,6 +760,61 @@ unsafe fn TryStartWow64Hello() {
     }
 }
 
+/* wow64win probe (M4): a real i386 GUI guest with kernel32+gdi32 imports that
+ * draws on the host desktop through the win32k thunk table (direct display
+ * DC, no user-mode callbacks). Same contract as hello32: silent no-op unless
+ * staged; verdict = [gui32]/[GUEST32] serial lines + exit 0x600D. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartWow64Gui() {
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\gui32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 10] = wstr_arr!("gui32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] gui32.exe (i386 GUI guest) created (PID %lu) - waiting\n\0".as_ptr()
+                as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 60_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] gui32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(gui32.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn WinMain(
     hInstance: HINSTANCE,
@@ -1320,6 +1375,10 @@ pub unsafe extern "system" fn WinMain(
         /* WOW64 Phase C probe: real i386 PE through CreateProcessW
          * (no-op unless syswow64\hello32.exe staged). */
         TryStartWow64Hello();
+
+        /* wow64win probe (M4): i386 GUI guest drawing through the win32k
+         * thunk table (no-op unless syswow64\gui32.exe staged). */
+        TryStartWow64Gui();
 
         /* DOOM (opt-in, VIBEOS_DOOM=1): spawned LAST among GUI apps for
          * foreground focus, and BEFORE the cmd.exe INFINITE wait below. */

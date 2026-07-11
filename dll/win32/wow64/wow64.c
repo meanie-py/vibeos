@@ -144,6 +144,12 @@ LONG (WINAPI *Wow64pBTCpuNotifyMap)(PVOID, PVOID, PVOID, SIZE_T, ULONG, ULONG);
  * passing it to the host kernel's NtContinue rebuilds a garbage arm64 context
  * and resumes the host thread at a wild PC. WOW64_CONTEXT == i386 CONTEXT. */
 LONG (WINAPI *Wow64pBTCpuSetContext)(HANDLE, HANDLE, PVOID, PVOID);
+/* The BOP bridge address (BTCpuGetBopCode), kept for map-time Wow64Transition
+ * patching of guest DLLs that carry their own slot (gdi32/user32 embed the
+ * win32ksys stubs; ntdll32 is patched at bootstrap). Non-static: the
+ * NtMapViewOfSection marshaller (wow64_manual.c) patches each image as it
+ * maps via Wow64pPatchTransitionSlot. */
+PVOID Wow64pBopCode;
 static ULONG_PTR Wow64pPeb32;  /* set in Wow64LdrpInitialize, for VEH diagnostics */
 
 /* M3b heap diagnostic: dump the guest process heap state at an unhandled fault.
@@ -319,6 +325,36 @@ static PVOID Wow64pFindExport32(PVOID Base, const char *Name)
     return NULL;
 }
 
+/* Patch a freshly-mapped guest image's Wow64Transition slot (if it exports
+ * one) to the BOP bridge. gdi32/user32 embed their own copy of the win32ksys
+ * syscall stubs, each dispatching through a per-module slot that statically
+ * points at SharedUserData->SystemCall — under WoW64 every one of them must
+ * be redirected, exactly like ntdll32's at bootstrap. Safe on any map: header
+ * magics are checked before the export walk. */
+VOID Wow64pPatchTransitionSlot(PVOID Base, SIZE_T Size)
+{
+    PBYTE B = (PBYTE)Base;
+    PIMAGE_NT_HEADERS32 Nt;
+    PULONG Slot;
+
+    if (!Wow64pBopCode || !Base || Size < 0x1000)
+        return;
+    if (((PIMAGE_DOS_HEADER)B)->e_magic != IMAGE_DOS_SIGNATURE)
+        return;
+    Nt = (PIMAGE_NT_HEADERS32)(B + ((PIMAGE_DOS_HEADER)B)->e_lfanew);
+    if ((ULONG_PTR)Nt - (ULONG_PTR)B > Size - sizeof(*Nt) ||
+        Nt->Signature != IMAGE_NT_SIGNATURE)
+        return;
+
+    Slot = (PULONG)Wow64pFindExport32(Base, "Wow64Transition");
+    if (Slot)
+    {
+        *Slot = (ULONG)(ULONG_PTR)Wow64pBopCode;
+        DbgPrint("[FEX-WOW64C] Wow64Transition slot %p (module %p) patched -> BOP %p\n",
+                 Slot, Base, Wow64pBopCode);
+    }
+}
+
 /* ---- 32-bit process-parameters down-conversion (M3b) -------------------- *
  * The kernel builds PEB32 by mirroring scalars only; ProcessParameters stays
  * NULL. The 32-bit loader (LdrpInitializeProcess) derefs it immediately, so
@@ -363,6 +399,8 @@ typedef struct _WOW64_RTL_USER_PROCESS_PARAMETERS32 {
 #define PEB64_PROCESS_PARAMETERS_OFF  0x20
 #define PEB32_PROCESS_PARAMETERS_OFF  0x10
 /* 64-bit RTL_USER_PROCESS_PARAMETERS UNICODE_STRING member offsets. */
+#define UPP64_CURDIR_OFF         0x38 /* CURDIR.DosPath (UNICODE_STRING) */
+#define UPP64_CURDIRHANDLE_OFF   0x48 /* CURDIR.Handle */
 #define UPP64_DLLPATH_OFF        0x50
 #define UPP64_IMAGEPATHNAME_OFF  0x60
 #define UPP64_COMMANDLINE_OFF    0x70
@@ -417,6 +455,13 @@ static VOID Wow64pBuildProcessParams32(ULONG_PTR Peb32)
     Upp32->MaximumLength = (ULONG)Size;
     Upp32->Length = (ULONG)Size;
     Upp32->Flags = 0x6001; /* RTL_USER_PROC_PARAMS_NORMALIZED | ProfileUser */
+    /* CurrentDirectory MUST be down-converted: RtlGetFullPathName_Ustr reads
+     * CurDir.DosPath.Buffer to resolve relative/DLL paths, and a NULL buffer
+     * faults at `cmpw $':',0x2(esi)` (esi=0). hello32 imported nothing so never
+     * resolved a path; gui32's gdi32/user32 search hits it immediately. */
+    Wow64pCopyUstr32(&Upp32->CurrentDirectoryPath, Upp64 + UPP64_CURDIR_OFF, &Arena);
+    Upp32->CurrentDirectoryHandle =
+        (ULONG)*(ULONGLONG *)(Upp64 + UPP64_CURDIRHANDLE_OFF);
     Wow64pCopyUstr32(&Upp32->DllPath, Upp64 + UPP64_DLLPATH_OFF, &Arena);
     Wow64pCopyUstr32(&Upp32->ImagePathName, Upp64 + UPP64_IMAGEPATHNAME_OFF, &Arena);
     Wow64pCopyUstr32(&Upp32->CommandLine, Upp64 + UPP64_COMMANDLINE_OFF, &Arena);
@@ -688,6 +733,7 @@ Wow64LdrpInitialize(PVOID Context)
 
     BTCpuProcessInit();
     Bop = BTCpuGetBopCode();
+    Wow64pBopCode = Bop;
     DbgPrint("[FEX-WOW64C] BTCpuProcessInit OK — BOP=%p CpuFlags=%lx\n",
              Bop, Wow64Info.CpuFlags);
     if ((ULONG_PTR)Bop >= 0x80000000u)

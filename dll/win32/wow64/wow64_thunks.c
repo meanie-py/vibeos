@@ -31,11 +31,18 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments);
  * loader path is stable (each guest syscall costs a DbgPrint line). */
 ULONG Wow64TraceSyscalls = 1;
 
+/* wow64_win32k.c: the win32k (NtGdi/NtUser) table (guest EAX = 0x1000 +
+ * w32ksvc32.h index -- the win32k service-table tag bit). */
+NTSTATUS Wow64DispatchWin32kService(ULONG ServiceNumber, PULONG Arguments);
+
 NTSTATUS
 Wow64DispatchSystemService(ULONG ServiceNumber, PULONG Arguments)
 {
     const WOW64_THUNK_ENTRY *Entry;
     NTSTATUS Status;
+
+    if ((ServiceNumber & 0xF000) == 0x1000)
+        return Wow64DispatchWin32kService(ServiceNumber, Arguments);
 
     if (ServiceNumber >= Wow64ThunkCount)
     {
