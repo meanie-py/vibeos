@@ -867,6 +867,17 @@ unsafe fn irql_violation(kind: &'static [u8], old: ddk::KIRQL, new: ddk::KIRQL) 
     }
 }
 
+/// One-way mute for the IRQL tripwire, called by the kernel at bugcheck entry.
+/// The bugcheck path parks IRQL at HIGH_LEVEL by design while its display path
+/// acquires DISPATCH-level locks, so every acquire would report raise-DOWN /
+/// lower-UP — eight lines of noise wedged between the banner and the
+/// diagnostics that read like the crash signal (they misled a 2026-07-11
+/// triage). Burning the report budget mutes it without touching the hot path.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalVibeosQuiesceIrqlTripwire() {
+    HalpIrqlViolations.store(IRQL_VIOLATION_REPORT_MAX, Ordering::Relaxed);
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn KfLowerIrql(NewIrql: ddk::KIRQL) {
     unsafe {
