@@ -385,9 +385,11 @@ pointer) instead of rotting in an archived doc nobody re-reads. **Remove items a
 land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ### Verify-if-fixed (cheap checks — later work likely already fixed these)
-- [ ] **Delay-load re-test** — `VIBEOS_ENABLE_DELAYLOAD=ON` + i386 gate. Its 0x1E blocker's
-  face (`BAD gate`) is the §9.24 pushlock class, family fixed 07-05. Green ⇒ flip on +
-  delete the arm64 `arm64_*_stubs.c` libpng hacks. *(delay-import-llvm-mingw-roadmap)*
+- [x] **Delay-load 0x1E blocker — CLEARED, VERIFIED** (2026-07-11): i386 built with
+  `VIBEOS_ENABLE_DELAYLOAD=ON` (557 helper refs = delay-load live) boots to `shell ready` +
+  `SwitchDesktop OK` in 33s, **0 `BAD gate` hits** (§9.13/§9.24 fixed the family). **Now-
+  actionable follow-on:** flip `VIBEOS_ENABLE_DELAYLOAD` default ON in `sdk/cmake/gcc.cmake`,
+  ×3-gate, delete the arm64 `arm64_*_stubs.c` optional-DLL hacks. *(archive/delay-import-llvm-mingw-roadmap)*
 - [x] **amd64 whpx net 13/15 — A/B done, inbound failure is GENUINE** (verified 2026-07-11):
   wedge fixed → VM boots fully under whpx, but both guest listeners never announce (echo +
   TDI `:8888`) — a whpx-specific inbound-listen bug (passes on TCG). Moved from "verify" to a

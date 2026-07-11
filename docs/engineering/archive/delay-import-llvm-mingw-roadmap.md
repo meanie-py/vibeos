@@ -9,15 +9,20 @@
 i386 boot regression · 🅿️ **parked opt-in behind `VIBEOS_ENABLE_DELAYLOAD` (default OFF)**.
 **Mechanism/design:** `delay-import-llvm-mingw-design.md`. **This doc:** where it stands + how to finish.
 
-> **🔓 2026-07-10 — the blocker is probably already fixed; re-testing is cheap.** The 0x1E's
-> crash face (`KeSignalGateBoostPriority: BAD gate …`) is the **§9.24 pushlock-class face**: the
-> "gate" is the `WakeGate` field of a *stack-resident* `_EX_PUSH_LOCK_WAIT_BLOCK`, not session
-> pool, and that whole bug family was root-caused and fixed in the §9.13 WS-pushlock work
-> (2026-07-05; field manual §9.13/§9.24 — §9.24 explicitly reframed this exact face and stopped
-> reproducing it). Next step for whoever picks this up: build with `VIBEOS_ENABLE_DELAYLOAD=ON`
-> on today's master and gate i386 — decent odds it just passes now. If it still reproduces,
-> §9.24's tool guidance applies (GDB watchpoint on the wait-block `WakeGate.Type` byte, NOT
-> special pool).
+> **✅ 2026-07-11 — BLOCKER CLEARED, VERIFIED.** Built i386 with
+> `VIBEOS_ENABLE_DELAYLOAD=ON` on current master (557 `_delayed`/`__delayLoadHelper2`
+> refs confirm delay-load took effect) and smoked: **boots to `[WIN32K] shell ready` +
+> `[KERNEL] SwitchDesktop OK` in 33s with ZERO `BAD gate` hits.** The 0x1E was the
+> **§9.24 pushlock-class face** (`WakeGate` of a stack `_EX_PUSH_LOCK_WAIT_BLOCK`, not
+> session pool) and the §9.13 WS-pushlock work (2026-07-05) fixed the whole family. So
+> real delay-load no longer regresses i386 boot.
+>
+> **Now-actionable follow-on (a real change, needs a ×3 gate — NOT just this doc):** flip
+> `VIBEOS_ENABLE_DELAYLOAD` default ON in `sdk/cmake/gcc.cmake`, ×3-gate all arches, and
+> delete the arm64 `arm64_*_stubs.c` libpng/optional-DLL hacks that delay-load makes
+> unnecessary. (This verification was a single clean desktop boot; the deterministic-repro
+> bug not reproducing to `SwitchDesktop OK` is strong, but gate ×3 before landing the flip.)
+> Tracked in the roadmap Check-back ledger.
 
 ---
 
