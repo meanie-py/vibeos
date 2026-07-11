@@ -53,36 +53,58 @@ converges on it from three directions (Theseus's `!Send` `PreemptionGuard`,
 RTIC's compile-time priority ceilings, Rust-for-Linux's klint preempt-count
 analyzer), and the design below is their synthesis mapped onto ntoskrnl.
 
-## Toolchain reality (v2 — checked)
+## Toolchain reality (v3 — 2026-07-07: STABLE-EVERYTHING is the direction)
 
-The kernel link **is nightly**: every `add_cargo_module` builds with
-`RUSTUP_TOOLCHAIN=nightly cargo build … -Z build-std` (`sdk/cmake/gcc.cmake:776`),
-and `ntoskrnl-rust` already carries a feature gate
-(`#![cfg_attr(feature = "lockdep", feature(link_llvm_intrinsics))]`,
-`ntoskrnl-rust/src/lib.rs:10`). So Layer 2's `auto_traits`/`negative_impls` can
-compile in the shipped kernel. Three caveats the plan must absorb:
+**Decision (user, 2026-07-07): perma-unstable features are not a viable
+foundation; the goal is stable-for-everything.** That kills Layer 2 as
+designed (see its section) and reframes this section as the *inventory of
+remaining nightly dependencies*, each with its exit path:
 
-1. **The nightly is unpinned** — no `rust-toolchain.toml` anywhere;
-   `RUSTUP_TOOLCHAIN=nightly` means "whatever is installed."
-   `auto_traits`/`negative_impls` are perma-unstable with breaking churn.
-   **Pin the nightly before landing Layer 2** (rust-toolchain.toml or a version
-   check in gcc.cmake).
-2. **Stable-channel consumers exist.** Host-side `cargo check` paths run stable
-   (the arm64 lockdep probe is blocked on exactly this E0554 wall —
-   `freeldr-rust/src/debug.rs:237`, `pcix-rust/build.rs:7`). An unconditional
-   `auto trait` in ntkrnl-sys breaks them — and unlike `link_llvm_intrinsics`
-   you cannot usefully cfg-gate it: gating the trait off gates every
-   `SwitchSafe` bound off too, silently vanishing the check (fail-loud
-   violation). Layer 2 therefore forces the whole check surface onto nightly
-   (or `RUSTC_BOOTSTRAP=1`, which `pcix-rust/build.rs` already models). Pick
-   one, explicitly, at phase 3.
-3. **There is no stable Layer 2.** Evaluated and rejected: `Send`-as-proxy —
+1. ~~`link_llvm_intrinsics` (lockdep/cswitchdep `llvm.returnaddress` culprit
+   capture — the arm64 E0554 wall)~~ — **KILLED 2026-07-07**: replaced by
+   the stable `code_addr!()` inline-asm macro (`ke/lockdep.rs`,
+   crate-exported — `lea [rip]` / `call;pop` / `adr .` per arch), with `pc`
+   threaded through the tap signatures. (An intermediate naked-fn
+   frame-record shim reading `[rbp+8]` was tried and is DEAD: Windows-x64
+   clang builds no classic frame chain even with `"frame-pointer":"always"`
+   — measured selftest pc=0. Details in cswitchdep-design.md.) Side effect:
+   **arm64 arms lockdep/cswitchdep on its native stable channel** — the
+   build-cli fail-fast is lifted.
+2. **`-Z build-std` + custom JSON targets (x86 kernels)** — the structural
+   gap: i386/amd64 build `i686-kernel.json`/`x86_64-kernel.json` on nightly;
+   arm64 already builds the builtin `aarch64-pc-windows-gnullvm` on stable.
+   Exit path (unproven, needs a spike): builtin `i686/x86_64-pc-windows-gnu`
+   + per-crate RUSTFLAGS for the kernel constraints (soft-float/no-SSE,
+   kernel code model, no-red-zone is already the Windows x64 ABI) — but
+   mixing `-C target-feature` with a precompiled std is unsound for float
+   ABI, so it likely still wants build-std → the honest blocker is build-std
+   stabilization or a vendored core. Track upstream; spike when idle.
+3. **`c_variadic`** (~12 x86-only driver crates: scsiport, uniata, usbport,
+   storahci, …) — still unstable on 1.92 (checked). Coupled to gap 2: those
+   crates only build into the x86 kernels, which are nightly anyway. Becomes
+   actionable the day gap 2 closes; the printf-shape entry points could be
+   rewritten to fixed-arity thunks then.
+4. **`linkage`** (`hal-cargo/src/main.rs:12`) — weak-symbol cohab. Needs its
+   own small design (lld `/alternatename` or explicit strong stubs) — owed.
+
+Historical (v2) analysis of the pin options, kept for the record: an
+unpinned nightly means perma-unstable churn breaks every lane at once with no
+code change; a pin (rust-toolchain.toml) trades that for a bump ritual (rerun
+scan_ud2 / captures audit / sacred-primitives per bump) and drags arm64 off
+stable; `RUSTC_BOOTSTRAP=1` on pinned stable is the smaller pin but
+explicitly unsupported. All moot for Layer 2 now — rejected — and the
+remaining nightly surface (gap 2) carries no perma-unstable *language*
+features, so an unpinned nightly for x86 kernels stays tolerable until the
+spike lands.
+
+3. (v2 note, still true) **There is no stable Layer 2 auto-trait.** Evaluated
+   and rejected: `Send`-as-proxy —
    the translated kernel is wall-to-wall raw pointers (`PKTHREAD`, `PKMUTANT`
    locals in nearly every function), all `!Send`, so a `Send` bound
    false-rejects essentially every real wait site and breeds a `SendPtr`
    wrapper epidemic that makes the check vacuous. Sealed-trait-with-blanket-impl
    — stable has no negative reasoning; nothing can be excluded. The honest
-   stable fallback is **Layers 1 + 3 only.**
+   stable fallback is **Layers 1 + 3 + the wait-site capture lint** (below).
 
 ## Three layers
 
@@ -359,6 +381,23 @@ runtime `cpu_id()` drop-checks as the backstop to add then. Thread-affine
 
 ## Layer 2 — `SwitchSafe`, an auto-trait for "safe across a switch"
 
+> **REJECTED AS DESIGNED (2026-07-07).** `auto_traits`/`negative_impls` are
+> *permanently* unstable — no stabilization path — so this layer would be a
+> forever toolchain tax. The marginal value didn't justify it: Layer 1's
+> `&mut`-borrow already forbids every *borrow* across a wait (guards borrow
+> the token `wait_for` consumes — proven by compile-fail probe), leaving only
+> *owned* context-bound captures, whose realistic inventory is per-CPU
+> handles — a hazard that cannot manifest on today's UP kernel. Replaced by a
+> **stable syntactic lint**: `scan_irql_balance.py` `CTX_CAPTURE_ACROSS_WAIT`
+> flags a `wait_for`/`wait_for_armed` continuation capturing a local whose
+> `let` initializer reads per-CPU state (`KeGetPcr`/`KeGetCurrentPrcb`/
+> `Pcpu<`), with the usual 0-NEW baseline gate. What the lint concedes vs the
+> auto-trait: deep-struct smuggling and non-local flows — the same class 4a
+> already concedes to a future MIR pass; the translated code's wait sites are
+> flat C-shaped locals, so the concession is small. Revisit only alongside MP
+> work, and only if the features' status changes. The section below is kept
+> as the design record.
+
 Rust decides a value is held across `.await` by computing the coroutine's saved
 locals, and the generated `Future` is `Send` iff every saved local is `Send` —
 auto-trait leakage, inferred, never written. We mimic it — **on the CPS
@@ -508,10 +547,10 @@ rather than duplicate.
    — turns "no sleep with spinlock," "no stale per-CPU ref," and "no wait from
    ISR" into compile errors on the migrated paths. Stable-safe. Budget the
    closure-migration churn per-subsystem (~109 + ~128 wait sites total).
-3. **`SwitchSafe` auto-trait + negative impls + the continuation bound** —
-   catches capture-smuggling. **Nightly-only: pin the toolchain first** and
-   move the stable check paths to the pinned nightly (or RUSTC_BOOTSTRAP)
-   explicitly.
+3. ~~**`SwitchSafe` auto-trait + negative impls + the continuation bound**~~ —
+   **REJECTED 2026-07-07** (perma-unstable foundation; see the Layer 2
+   banner). Replaced by the stable `CTX_CAPTURE_ACROSS_WAIT` lint in
+   `scan_irql_balance.py` (landed same day). Revisit only alongside MP.
 4. **`irqlck`:** (a) cross-function `scan_irql_balance.py` (already on master,
    gated in `vibeos-cli check`) with adjust/expect summaries, keeping the 0-NEW
    gate; (b) the MIR port only if (a)'s misses prove material.

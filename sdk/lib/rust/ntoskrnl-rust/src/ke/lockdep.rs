@@ -649,22 +649,49 @@ pub fn lockdep_violation_count() -> u64 {
 }
 
 // ============================================================================
-// Acquire-site capture: llvm.returnaddress(0), inlined into the export shims
-// (which are #[inline(never)] extern "C"/"fastcall" — their return address IS
-// the true caller). The ddk→shim funnel collapses #[track_caller], so this is
-// the only cheap true-caller signal. Symbolize with qemu/addr2sym.sh.
+// Acquire-site capture — STABLE `code_addr!()` (defined here, crate-exported).
+//
+// History of the mechanism (both prior forms are dead — don't resurrect):
+// 1. `llvm.returnaddress(0)` via `link_llvm_intrinsics`: nightly-only, the
+//    arm64 E0554 wall.
+// 2. A naked frame-record shim (`[rbp+8]`/`[ebp+4]`/`[x29,#8]`): WRONG on
+//    amd64 — Windows-x64 clang does NOT build a classic frame chain even
+//    with "frame-pointer":"always"; it emits `push`es then `lea rbp,
+//    [rsp+K]`, so [rbp+8] is a random spill slot (measured: selftest pc=0).
+//    arm64's AAPCS record worked; amd64 sank the design.
+//
+// Current form: capture the PC AT THE POINT OF EXPANSION with plain inline
+// asm — no frame-layout assumptions, works on all three arches, stable.
+// Semantics shift vs (1): the culprit PC is now captured at the tap CALL
+// SITE and passed in as an argument, instead of inside the tap via its
+// return address — same reported address (± a few bytes), strictly fewer
+// assumptions. For the C-called funnel shims (pushlock/gmutex exports) the
+// macro expands INSIDE the shim, so their lockdep `site` degrades to
+// shim-identity — acceptable: the self-deadlock verdict keys on (thread,
+// lock), and Rust callers use the `*Sited` inline routes with exact sites.
+// Symbolize with qemu/addr2sym.sh.
 // ============================================================================
 
-extern "C" {
-    #[link_name = "llvm.returnaddress"]
-    fn llvm_returnaddress(level: i32) -> *const u8;
-}
-
-/// Return address of the CALLING function's frame — must be `inline(always)`
-/// so the intrinsic evaluates in the shim's frame, not a helper's.
-#[inline(always)]
-pub unsafe fn return_address0() -> usize {
-    llvm_returnaddress(0) as usize
+/// PC at the point of expansion. Stable on all three kernel arches.
+#[macro_export]
+macro_rules! code_addr {
+    () => {{
+        let pc: usize;
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            core::arch::asm!("lea {0}, [rip]", out(reg) pc, options(nomem, nostack, preserves_flags));
+        }
+        #[cfg(target_arch = "x86")]
+        unsafe {
+            // No RIP-relative addressing on ia32: classic call/pop.
+            core::arch::asm!("call 2f", "2:", "pop {0}", out(reg) pc, options(nomem, preserves_flags));
+        }
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            core::arch::asm!("adr {0}, .", out(reg) pc, options(nomem, nostack, preserves_flags));
+        }
+        pc
+    }};
 }
 
 // ============================================================================

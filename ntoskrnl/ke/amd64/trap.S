@@ -904,6 +904,7 @@ GLOBAL_LABEL KiSystemServiceExit
        path never reads it). rsp is call-aligned (same as the service call
        above). Rust: sdk/lib/rust/ntoskrnl-rust/src/ke/cswitchdep.rs */
     mov [rsp + MAX_SYSCALL_PARAM_SIZE + KTRAP_FRAME_Rax], rax
+    lea rcx, [rip]                 /* pc argument: this call site */
     call VibeosCswitchdepUserExit
     mov rax, [rsp + MAX_SYSCALL_PARAM_SIZE + KTRAP_FRAME_Rax]
 #endif

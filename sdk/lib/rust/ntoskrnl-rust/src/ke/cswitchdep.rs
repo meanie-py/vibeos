@@ -151,7 +151,7 @@ pub struct Violation {
     pub actual: AtomicU64,
     pub kind: AtomicU32,
     pub _pad: u32,
-    /// Tap call site (`llvm.returnaddress(0)` in the tap shim; symbolize with
+    /// Tap call site (crate::code_addr!() at the call site; symbolize with
     /// qemu/addr2sym.sh).
     pub pc: AtomicUsize,
     pub kthread_old: AtomicUsize,
@@ -355,7 +355,7 @@ fn loud(kind: u32, pc: usize, old: usize, new: usize, expected: u64, actual: u64
 
 // ============================================================================
 // Taps (design doc "Instrumentation points"). All #[inline(never)] so
-// llvm.returnaddress(0) inside them is the tap CALL SITE.
+// their `pc` argument is crate::code_addr!() evaluated at the CALL SITE.
 // ============================================================================
 
 /// Birth brand: `KiInitializeContextThread`. Claims (or re-claims) the slot so
@@ -376,8 +376,7 @@ pub fn cswitch_thread_init(thread: usize) {
 /// `terminating` = the old thread's State is Terminated (final switch away —
 /// evict its shadow).
 #[inline(never)]
-pub unsafe fn cswitch_suspend(old: usize, wait_irql: u8, terminating: bool) {
-    let pc = super::lockdep::return_address0();
+pub unsafe fn cswitch_suspend(old: usize, wait_irql: u8, terminating: bool, pc: usize) {
     VIBEOS_CSWITCHDEP.cpu.switches.fetch_add(1, Relaxed);
 
     let irql = current_irql();
@@ -436,10 +435,9 @@ pub unsafe fn cswitch_suspend(old: usize, wait_irql: u8, terminating: bool) {
 /// The live IRQL must now be exactly the thread's saved WaitIrql — anything
 /// else means the raise/lower pairing across the wait is broken.
 #[inline(never)]
-pub unsafe fn cswitch_after_switch(thread: usize, wait_irql: u8) {
+pub unsafe fn cswitch_after_switch(thread: usize, wait_irql: u8, pc: usize) {
     let irql = current_irql();
     if irql != wait_irql {
-        let pc = super::lockdep::return_address0();
         loud(KIND_IRQL_UNBALANCED_SWITCH, pc, thread, 0, wait_irql as u64, irql as u64);
     }
 }
@@ -461,8 +459,9 @@ pub unsafe fn cswitch_swap_resume(
     stack_limit: usize,
     stack_base: usize,
     dpc_active: bool,
+    idle: bool,
+    pc: usize,
 ) {
-    let pc = super::lockdep::return_address0();
 
     // The swap machinery never changes IRQL: post-swap we must still be at the
     // switching level (DISPATCH). The caller lowers to WaitIrql AFTER.
@@ -482,7 +481,11 @@ pub unsafe fn cswitch_swap_resume(
     }
 
     // We are on the new thread's kernel stack: (StackLimit, InitialStack].
-    if stack_limit != 0 && stack_base != 0 && !(sp > stack_limit && sp <= stack_base) {
+    // The IDLE thread is exempt: it runs on the per-CPU boot stack and its
+    // KTHREAD bounds exclude the resume-frame area (first-light arm64: every
+    // idle resume sat 24-216 bytes above InitialStack — by construction, not
+    // a wild stack).
+    if !idle && stack_limit != 0 && stack_base != 0 && !(sp > stack_limit && sp <= stack_base) {
         loud(KIND_STACK_OOB, pc, old, new, stack_base as u64, sp as u64);
     }
 
@@ -530,10 +533,9 @@ pub fn spin_acquired(lock: usize) {
 /// P2 tap: deferred-dispatch delivery (`KiDispatchInterrupt` /
 /// `KiDispatchSoftwareIntArm64`) must run at exactly DISPATCH_LEVEL.
 #[inline(never)]
-pub unsafe fn cswitch_dpc_dispatch() {
+pub unsafe fn cswitch_dpc_dispatch(pc: usize) {
     let irql = current_irql();
     if irql != DISPATCH_LEVEL {
-        let pc = super::lockdep::return_address0();
         loud(KIND_DPC_DISPATCH_IRQL, pc, 0, 0, DISPATCH_LEVEL as u64, irql as u64);
     }
 }
@@ -560,7 +562,7 @@ pub unsafe fn cswitch_dpc_dispatch() {
 /// Tap 4: user→kernel syscall entry. `user_trap` = 0 for a kernel-origin
 /// frame (i386 Zw via INT 2E — legal at APC_LEVEL, skipped entirely).
 #[no_mangle]
-pub unsafe extern "C" fn VibeosCswitchdepUserEntry(user_trap: u32) {
+pub unsafe extern "C" fn VibeosCswitchdepUserEntry(user_trap: u32, pc: usize) {
     if user_trap == 0 {
         return;
     }
@@ -571,7 +573,6 @@ pub unsafe extern "C" fn VibeosCswitchdepUserEntry(user_trap: u32) {
     // PREVIOUS return to user leaked a raise (§9.24 caught one edge earlier).
     let irql = current_irql();
     if irql != 0 {
-        let pc = super::lockdep::return_address0();
         loud(KIND_USER_ENTRY_IRQL, pc, thread, 0, 0, irql as u64);
     }
 
@@ -588,13 +589,12 @@ pub unsafe extern "C" fn VibeosCswitchdepUserEntry(user_trap: u32) {
 /// Tap 5: return→user on the syscall exit path. Reachable only on a
 /// user-bound frame (asm places it after the user check / user-only label).
 #[no_mangle]
-pub unsafe extern "C" fn VibeosCswitchdepUserExit() {
+pub unsafe extern "C" fn VibeosCswitchdepUserExit(pc: usize) {
     VIBEOS_CSWITCHDEP.cpu.user_exits.fetch_add(1, Relaxed);
     let thread = ntkrnl_sys::mm::KeGetCurrentThread() as usize;
 
     let irql = current_irql();
     if irql != 0 {
-        let pc = super::lockdep::return_address0();
         loud(KIND_USER_EXIT_IRQL, pc, thread, 0, 0, irql as u64);
     }
 
@@ -622,12 +622,16 @@ pub unsafe extern "C" fn VibeosCswitchdepUserExit() {
     }
 }
 
-/// P2 tap (arm64): interrupt-mask state must be balanced across the software
-/// interrupt dispatch — `entry`/`exit` are the DAIF values around the body.
+/// P2 tap (arm64): the software-interrupt dispatch must not LEAVE interrupt
+/// masking it didn't arrive with — `entry`/`exit` are the DAIF values around
+/// the body. First-light recalibration (2026-07-07): strict `entry == exit`
+/// was wrong — the dispatch legitimately EXITS UNMASKED when entered masked
+/// (KfLowerIrql delivers the DISPATCH softint from masked contexts and
+/// enabling is its job, §9.20), so only NEW mask bits at exit violate (the
+/// §9.19 leaked-masking family).
 #[inline(never)]
-pub unsafe fn cswitch_intr_state(entry: u64, exit: u64) {
-    if entry != exit {
-        let pc = super::lockdep::return_address0();
+pub unsafe fn cswitch_intr_state(entry: u64, exit: u64, pc: usize) {
+    if exit & !entry != 0 {
         loud(KIND_INTR_STATE_UNBALANCED, pc, 0, 0, entry, exit);
     }
 }
@@ -704,7 +708,12 @@ pub unsafe fn cswitch_selftest() {
         ntkrnl_sys::ke::KeAcquireSpinLock(&mut lock, &mut old_irql);
         // Simulated tap-1 entry: we hold one Rust-funnel lock, so held must
         // now sit one above the floor → SLEEP_WITH_SPINLOCK.
-        cswitch_suspend(ntkrnl_sys::mm::KeGetCurrentThread() as usize, old_irql, false);
+        cswitch_suspend(
+            ntkrnl_sys::mm::KeGetCurrentThread() as usize,
+            old_irql,
+            false,
+            crate::code_addr!(),
+        );
         ntkrnl_sys::ke::KeReleaseSpinLock(&mut lock, old_irql);
         let fired = cswitchdep_violation_count() > before;
         if fired {

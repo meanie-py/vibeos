@@ -460,7 +460,7 @@ pub unsafe extern "system" fn KiDispatchInterrupt() {
 
     // cswitchdep tap 3: deferred dispatch must be entered at DISPATCH_LEVEL.
     #[cfg(feature = "cswitchdep")]
-    crate::ke::cswitchdep::cswitch_dpc_dispatch();
+    crate::ke::cswitchdep::cswitch_dpc_dispatch(crate::code_addr!());
 
     _disable();
 
