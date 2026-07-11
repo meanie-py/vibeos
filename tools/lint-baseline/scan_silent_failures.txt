@@ -555,7 +555,7 @@ sdk/lib/rust/fstub-rust/src/disksup.rs:3357: [UNWRAP] .unwrap() — panics on Er
 sdk/lib/rust/fstub-rust/src/disksup.rs:3373: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/fstub-rust/src/halstub.rs:181: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/fstub-rust/src/halstub.rs:186: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
-sdk/lib/rust/gdi32-rust/src/misc/misc.rs:954: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/gdi32-rust/src/misc/misc.rs:983: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/gdi32-rust/src/misc/wingl.rs:157: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/gdi32-rust/src/misc/wingl.rs:174: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/gdi32-rust/src/misc/wingl.rs:186: [UNWRAP] .unwrap() — panics on Err/None in kernel code
