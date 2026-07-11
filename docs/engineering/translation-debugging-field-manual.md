@@ -4709,3 +4709,46 @@ Files: netstack-rust/src/tditrans.rs (INBOX lock), netstack-rust/src/hal.rs
 (BOUNCE_LOCK), netstack-rust/src/lib.rs (comment). Owed next (M3+): scheduled-
 on-CPU1 visibility counter, targeted single-VA remote flushes, packet mailbox,
 i386/arm64 parity.
+
+### 9.54 (OPEN 2026-07-11) The -smp 2 residual flake: ~1/4–1/3 of boots creep-wedge or crash with device-I/O/pool faces — pre-existing at M3b, control-verified; NOT the M3-tail TLB/IPI work
+
+**Faces (all from one corpus, 2026-07-11, amd64 `-smp 2`, TCG):**
+- `[NETSTACK] TDI self-test: CONNECT FAILED 0xc00000b5` (STATUS_IO_TIMEOUT) — appears
+  even in boots that go on to reach desktop green. Sometimes preceded by
+  `TDI op timed out - IRP still pending; leaking wait block` (§9.36 bounded-leak path).
+- Creeping service wedge: Themes/SamSs/SVCHOST(DcomLaunch) connects stop completing,
+  serial goes silent (HANG_TIMEOUT, no bugcheck). The §9.53-fixed dgram-upcall
+  timeout face can also appear earlier in the same boot.
+- `BUGCHECK 0x19 BAD_POOL_HEADER (8, 0, <line>, <entry>)` = POOL_HEADER_IS_ZERO —
+  a pool block header found zeroed mid-page.
+- `BUGCHECK 0x1E (c0000006 STATUS_IN_PAGE_ERROR)` with cdfs.sys frames — a page-in
+  from the boot CD failed.
+
+**What it is NOT (bisected + controlled, method worth reusing):**
+1. Receiver-side full-flush vs targeted invlpg in the 0xE1 TLB shootdown: identical
+   failure rate (4/6 both) → the M3-tail invlpg narrowing is exonerated.
+2. **Control experiment:** `git stash` the whole M3-tail delta, rebuild the SMP kernel
+   at M3b-landed HEAD (`7b23f82f467`), smoke ×6 under the same host conditions →
+   1/6 BUGCHECK 0x1E c0000006. The flake pre-exists the M3-tail work entirely.
+   (M3b's 12/12 green was a favorable streak — treat any small-N -smp pass rate
+   as ±30% until the M4 soak characterizes it.)
+3. `--tripwire "SPECIALPOOL=*"` over 6 boots caught nothing at a store (2 hangs, no
+   special-pool fault) — the 0x19 is more likely a *racing free/completion* zeroing a
+   header than a classic overrun.
+4. Pool locking audited: amd64 `KiInitSpinLocks` IS called per-CPU
+   (ke/amd64/krnlinit.rs boot-stack — easy to miss; grep the FILE, the i386/arm64
+   twins live in kiinit.rs), LockQueue points at shared globals, nonpaged pool uses the
+   real queued spinlock, paged pool uses the real interlocked+gate guarded mutex.
+
+**Suspect class:** lost wakeup / device-I/O completion race under real concurrency
+(uniata/scsiport IRP completion, DPC targeting, or a KeSetEvent→schedule hole) —
+the same family as §9.51's uniata `CPU_num>1` find, not the TLB layer. The
+IN_PAGE_ERROR face says a CD read IRP completed with failure (or never completed);
+the TDI c00000b5 face says the same for net IRPs; the creeping wedge is the
+pipe-connect variant. One I/O-completion-shaped hole explains all three.
+
+**Next tools (in order):** M4 farm soak on -smp 2 to build a corpus
+(`farm --tripwire` + `farm-report` clustering); `[WAITDEP]`/cswitchdep taps are
+already always-on; for the wedge face, GDB both vCPUs at hang time
+(`qemu/start.sh amd64 --gdb` + `VIBEOS_QEMU_SMP=2`, `info threads` / bt both).
+Tracked as the gating item between M3 and M4.

@@ -358,3 +358,40 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   parity at -smp 2 is now met. Owed next: scheduled-on-CPU1 visibility counter,
   targeted single-VA remote flushes + packet mailbox (staged wave-2 A), then M4
   soak, then M5 (i386 needs the APIC HAL flavor; arm64 PSCI CPU_ON staged).
+- 2026-07-11 (cont.): **M3 tail LANDED — visibility milestone, targeted single-VA
+  shootdown, amd64 KeIpiGenericCall rendezvous + boot self-test.** All three owed
+  M3-tail items done in one pass over the 0xE1 descriptor transport (ke/amd64/ipi.rs):
+  1. **Scheduled-on-CPU1 visibility:** KiSwapContextResume counts non-idle switches
+     per AP (count-only tap — NEVER DbgPrint mid-swap, see below); idle-exit/DPC-ISR
+     flushes one-shot `[SMP] CPUn scheduling live` markers at the 1st/1000th switch.
+     `test_milestones` now REQUIRES the marker per AP when `VIBEOS_QEMU_SMP > 1`
+     (gate strengthened; UP boots unaffected).
+  2. **Targeted single-VA remote flush:** the shootdown descriptor gained a VA slot
+     (KiTbFlushVa, FULL sentinel); KeInvalidateTlbEntry → KiTbShootdownSingle(va) →
+     awake receivers invlpg exactly that VA instead of a cr3 reload. Full-flush
+     callers (KeFlushProcessTb/KeFlushEntireTb) unchanged; lazy-idle CPUs still get
+     a deferred FULL flush on wake.
+  3. **amd64 KeIpiGenericCall:** real NT rendezvous (targets arrive → sender's go →
+     ALL CPUs run the worker at IPI_LEVEL simultaneously → acks) over the same
+     lock-serialized descriptor protocol — replaces the DbgBreakPoint stub; the UP
+     build now runs the worker at IPI_LEVEL too. A Phase-1 boot self-test (ex-rust
+     init.rs, after KeStartAllProcessors) proves the worker ran on every active CPU
+     (`[SMP] KeIpiGenericCall self-test: worker ran on 0x3 == active set OK` — seen
+     green in-boot) and bugchecks 0x5C/0x4743 loud on mismatch.
+  Design note: the staged wave-2 A NT-mailbox receive body (~/vibeos-rust-staging/
+  smp/ipi-recv/) was NOT integrated — the validated poll-service descriptor protocol
+  was extended instead (inherits the IF=0 deadlock-freedom); staged files remain as
+  reference for a future true per-CPU-mailbox upgrade if generic-call concurrency
+  ever matters.
+  **Lesson (cost: one wedged smoke run):** never DbgPrint from inside
+  KiSwapContextResume (mid-swap, SwapBusy still set) — the first marker cut printed
+  there and was moved to idle-exit before the wedge theory was even tested.
+  **OPEN — the -smp 2 residual flake is PRE-EXISTING and now pinned (field manual
+  §9.54):** ~1/4–1/3 of -smp 2 boots creep-wedge (Themes/SamSs/SVCHOST connects
+  stall → silence) or crash (0x19 POOL_HEADER_IS_ZERO; 0x1E c0000006 IN_PAGE_ERROR
+  w/ cdfs frames). Control experiment: M3b-landed HEAD (stash the whole M3-tail
+  delta) reproduces 1/6 under identical conditions → M3-tail exonerated; the
+  invlpg narrowing separately bisected clean (full-flush receiver = same rate).
+  SPECIALPOOL=* caught nothing at a store. Suspect: device-I/O completion / lost
+  wakeup under real concurrency (§9.51 uniata family, not TLB). This is now THE
+  gating item for M4 — the soak doubles as its corpus builder.
