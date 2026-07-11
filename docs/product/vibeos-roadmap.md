@@ -23,7 +23,7 @@ The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~9
 | **DUMMY_PSEH** resolution | spike + docs, direction open | **see through** (high value) |
 | **Doom on vibeos** / screen-painting / perf | showcase landed | done — winding down |
 | **IRQL/spinlock RAII** audit | 0 leaks; 130 candidates catalogued | **park** — adopt incrementally ([`../engineering/archive/irql-raii-conversion-queue.md`](../engineering/archive/irql-raii-conversion-queue.md)) |
-| **sync-instrumentation** (lockdep/waitdep/cswitchdep) | landed / phase-1 active | keep as always-on tripwires |
+| **sync-instrumentation** (lockdep/waitdep/cswitchdep) | landed — cswitchdep all 4 phases done, lane closed 2026-07-11 (×3 arches, all 5 taps + decoder + farm) | keep as always-on tripwires; follow-ons in the ledger |
 | the **linter suite** (ghost-tax Tier 1) | landed + 0-NEW gated | burn stock opportunistically |
 
 ### Tier 1 — Finish the high-value unlocks
@@ -441,6 +441,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   channel — highest-value); PuTTY payload (pure-YAML generalization exam).
 - [ ] **arm64 harness waits sweep**: boot_timeout right-sized (540→180); net-suite/snapshot/
   per-milestone waits likely still oversized.
+- [ ] **cswitchdep follow-ons** *(cswitchdep lane closed 2026-07-11, `cswitchdep-design.md`)*:
+  (a) per-check subset arming `CSWITCH=irql,parity` — deliberately not built (would add a
+  runtime-mask branch to every hot-path tap for a single-digit-% overhead the cost model
+  already accepts); cheap to add if a measured soak overhead ever justifies it. (b) The
+  overnight cswitch/lockdep farm soak — run `vibeos-cli farm ... ` when the host is quiet and
+  read the new `farm-report` "tripwire hits" section (clusters green-boot violations).
+- [ ] **Stable-everything toolchain program** *(scouted from the cswitchdep branch;
+  `../engineering/archive/execution-context-ownership-model.md` §Toolchain reality v3)*: kill
+  the 4 remaining nightly deps. (1) `link_llvm_intrinsics` — DONE (`code_addr!()`). (2)
+  `-Z build-std` + custom JSON targets — amd64+arm64 proven import-identical on stable
+  (empty-archive CRT stub + static libmemcmp/libcntpr_rust); **abi-return-struct-as-int audit
+  owed before migrating**, and the ~2.4× `.text` residual to measure on ntoskrnl; **i386 hard-
+  blocked upstream** on `rustc-abi=x86-softfloat` (no `-C` equivalent). (3) `c_variadic`
+  (~12 x86-only driver crates) — still unstable on 1.92; coupled to gap 2. (4) `linkage`
+  (`hal-cargo`) — needs a small weak-symbol-cohab design (lld `/alternatename` or strong stubs).
+- [ ] **KeGetPcr x18 cohab dedup** *(cswitchdep arm64 first-light, task #2)*: the x18
+  `ddk::KeGetPcr` copies are unsafe in switch context — dedup to the single TPIDR-backed path.
 
 ## Known bugs & flakes (live registry)
 

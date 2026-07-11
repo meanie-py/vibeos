@@ -1,8 +1,14 @@
 # cswitchdep — a dynamic context-switch verifier
 
-**Status:** design v2 (2026-07-06). Sibling of the lockdep detector
-(`sync-instrumentation-design.md` §4) and the planned shadow-IRQL check (§6).
-The static counterpart is `execution-context-ownership-model.md`.
+**Status:** LANDED / living reference (2026-07-11). All four phases built and
+validated on all three arches; the `cswitchdep-phase1` lane is **closed** and
+this doc graduated out of `active-lanes/`. cswitchdep is now an always-on
+opt-in tripwire (`vibeos-cli build --cswitchdep`) alongside lockdep/waitdep.
+Post-close follow-ons (subset arming; the stable-everything toolchain program
+that was scouted from this branch) are tracked in the roadmap ledger, not here.
+Sibling of the lockdep detector (`sync-instrumentation-design.md` §4) and the
+planned shadow-IRQL check (§6). The static counterpart is
+`execution-context-ownership-model.md`.
 v2 incorporates an adversarial review pass: v1's two headline invariants
 (held-locks==0 at voluntary switch; resume-IRQL==WaitIrql at the resume tap)
 were **false in this kernel as specced** and are corrected below; the mid-swap
@@ -472,6 +478,26 @@ Rust-translated paths. cswitchdep:
 4. **`debug_block.py` decoder + fw_cfg arming + farm integration** — armed
    overnight soaks cluster context-switch violations the way `farm-report`
    clusters BUGCHECKs.
+   **BUILT (2026-07-11).** As-built:
+   - **Decoder:** `vibeos-cswitch [threads]` in `qemu/gdb-helpers/debug_block.py`
+     (magic `'CSW1'`, offsets pinned by the `ke/cswitchdep.rs` layout asserts) —
+     dumps the CpuShadow census, the syscall-parity counters, the violation
+     ring (all 11 kinds), and `threads` walks the live ThreadShadow slots.
+   - **fw_cfg arming:** `CSWITCH_SELFTEST=1` rides the tripwire channel
+     (`tripwire.rs` → `KiStartSyncCensus` → `cswitch_selftest()`); fail-loud if
+     armed on a non-`--cswitchdep` build. (Per-check subset arming
+     `CSWITCH=irql,parity` was **deliberately NOT built** — it would put a
+     runtime-mask branch on every hot-path tap to shave a soak-overhead the cost
+     model already rates single-digit-%; the taps stay always-on-when-built.
+     Cheap to add later if a measured overhead ever justifies it.)
+   - **Farm integration:** `triage.wedge_evidence` counts `[CSWITCH]`/`[LOCKDEP]`
+     serial reports; `smoke.py` surfaces `{n} [CSWITCH] on a green boot`;
+     `farm.py` carries `cswitch_hits`/`census_lines` into the corpus and
+     `farm-report` grew a **"tripwire hits"** section that clusters them by
+     (arch, kind) — because a cswitchdep violation pins its bug on an
+     *otherwise-green* boot, so it never appears in the BUGCHECK failure-family
+     table. The soak now reports context-switch violations even when nothing
+     crashed — the whole point.
 
 ## Resume checklist — "stable-everything phase 1" landing (parked 2026-07-10)
 
