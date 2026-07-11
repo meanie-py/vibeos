@@ -14,7 +14,13 @@ use ntkrnl_sys::hal_ddk::{
     HalpClockInterrupt, HalpEnableInterruptHandler, HalpInitDma, HalpProfileInterrupt,
     PLOADER_PARAMETER_BLOCK, ULONG, _KINTERRUPT_MODE_Latched as LATCHED,
 };
+// UP stub vs smp_processor real body — pick by the same cfg that swaps the
+// definitions (up.rs's copy is cfg'd out on the amd64 smp HAL; this module is
+// amd64-only so no target_arch term needed).
+#[cfg(any(not(feature = "smp"), feature = "minihal"))]
 use crate::x86::up::HalpSetupProcessorsTable;
+#[cfg(all(feature = "smp", not(feature = "minihal")))]
+use crate::x86::smp_processor::HalpSetupProcessorsTable;
 
 // APIC vector + level constants (apic/apicp.h, _M_AMD64 branch).
 const APIC_CLOCK_VECTOR: ULONG = 0xD1;

@@ -690,9 +690,14 @@ function(add_cargo_module _target _crate _output)
     # was the only thing that caught it). Depend on every workspace source: an
     # edit re-runs cargo, a cheap freshness no-op for unaffected modules. Globbed
     # once per configure (cached in a global property — ~40 call sites).
+    # NOTE: *.bin too — include_bytes!'d assets (e.g. the SMP AP trampoline
+    # aptramp64.bin) are real link inputs but not .rs; without this a
+    # regenerated blob ships a STALE binary with zero signal (cost an amd64
+    # SMP debug cycle 2026-07-10: a fixed trampoline never relinked hal.dll,
+    # same masking class as the kernel-asm staleness two comments up).
     get_property(_ws_srcs GLOBAL PROPERTY _REACTOS_CARGO_WS_SRCS)
     if(NOT _ws_srcs)
-        file(GLOB_RECURSE _ws_srcs CONFIGURE_DEPENDS ${_ws}/*.rs ${_ws}/*.toml)
+        file(GLOB_RECURSE _ws_srcs CONFIGURE_DEPENDS ${_ws}/*.rs ${_ws}/*.toml ${_ws}/*.bin)
         list(FILTER _ws_srcs EXCLUDE REGEX "/target/")
         set_property(GLOBAL PROPERTY _REACTOS_CARGO_WS_SRCS "${_ws_srcs}")
     endif()

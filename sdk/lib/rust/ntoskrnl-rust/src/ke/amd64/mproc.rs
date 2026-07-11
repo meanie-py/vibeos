@@ -330,12 +330,26 @@ mod smp_impl {
             }
 
             // Wait for the AP to consume the loader block. The AP path in
-            // KiSystemStartup (Cpu != 0) must zero LoaderBlock->Prcb once it has
-            // latched its PRCB — mirroring i386 kiinit.rs (KiInitializeKernel /
-            // KiSystemStartup). See DESIGN.md "INTEGRATOR ACTION REQUIRED".
-            // TODO: add a timeout so a wedged AP can't hang the BSP forever.
+            // KiSystemStartup (Cpu != 0) zeroes LoaderBlock->Prcb once it has
+            // latched its PRCB. BOUNDED: a wedged AP (trampoline fault, SIPI
+            // lost) must degrade to a loud serial report + continue as fewer
+            // CPUs, not hang the BSP forever. ~10^9 pause iterations is
+            // multiple seconds on any host — generous for QEMU's instant APs.
+            let mut spins: u64 = 0;
+            const AP_START_SPIN_LIMIT: u64 = 1_000_000_000;
             while core::ptr::read_volatile(core::ptr::addr_of!((*KeLoaderBlock).Prcb)) != 0 {
                 core::arch::asm!("pause", options(nomem, nostack));
+                spins += 1;
+                if spins >= AP_START_SPIN_LIMIT {
+                    break;
+                }
+            }
+            if spins >= AP_START_SPIN_LIMIT {
+                crate::dbg_print!(
+                    b"[SMP] AP %lu NEVER SIGNALED (trampoline fault / SIPI lost?) - continuing without it\n\0",
+                    processor_count
+                );
+                break;
             }
 
             crate::dbg_print!(b"[SMP] processor %lu online\n\0", processor_count);

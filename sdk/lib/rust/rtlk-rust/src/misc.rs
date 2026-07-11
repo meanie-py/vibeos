@@ -40,7 +40,7 @@ extern "system" {
     static mut NtOSCSDVersion: ULONG;
     static mut NtBuildNumber: ULONG;
     static mut CmNtCSDVersion: ULONG;
-    static mut SharedUserData: *mut KUSER_SHARED_DATA;
+    static mut SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
 }
 
 extern "C" {
@@ -53,13 +53,10 @@ extern "C" {
     );
 }
 
-#[repr(C)]
-struct KUSER_SHARED_DATA {
-    _padding: [u8; 0x2e0],
-    SuiteMask: USHORT,
-    _padding2: [u8; 0x2],
-    NtProductType: UCHAR,
-}
+// KUSER_SHARED_DATA: bindgen layout. The shadow struct here read SuiteMask at
+// +0x2E0 as USHORT and NtProductType at +0x2E4 as UCHAR (real: +0x2D0 ULONG /
+// +0x264 enum) — RtlGetVersion reported garbage suite/product values. Same
+// landmine class as ke/amd64/kiinit.rs (2026-07-11).
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlGetNtGlobalFlags() -> ULONG {
@@ -82,7 +79,7 @@ pub unsafe extern "system" fn RtlGetVersion(
         (*info_ex).wServicePackMajor = ((CmNtCSDVersion >> 8) & 0xFF) as USHORT;
         (*info_ex).wServicePackMinor = (CmNtCSDVersion & 0xFF) as USHORT;
         (*info_ex).wSuiteMask = ((*SharedUserData).SuiteMask & 0xFFFF) as USHORT;
-        (*info_ex).wProductType = (*SharedUserData).NtProductType;
+        (*info_ex).wProductType = (*SharedUserData).NtProductType as UCHAR;
         (*info_ex).wReserved = 0;
     }
 

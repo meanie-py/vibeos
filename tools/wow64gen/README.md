@@ -2,7 +2,7 @@
 
 Re-runnable, deterministic codegen that turns our `.spec` syscall table into the
 C thunk table `wow64.dll` dispatches through. Part of WoW64 Phase D
-(`docs/engineering/wow64-plan.md`).
+(`docs/engineering/active-lanes/wow64-plan.md`).
 
 ## What it is (and what it is not)
 
@@ -53,6 +53,7 @@ a loud stub is always safer than a wrong thunk.
 python3 tools/wow64gen/wow64gen.py \
     --spec dll/ntdll/def/ntdll.spec \
     --arch arm64 \
+    --sysfuncs ntoskrnl/include/sysfuncs.h \
     --manual-list tools/wow64gen/manual.txt \
     --out-c <dest>/wow64_thunks.gen.c --stats
 ```
@@ -64,14 +65,16 @@ auto syscall, and `Wow64ThunkTable[]` indexed by service ordinal (with
 `Wow64ThunkCount`). `wow64.c` includes it and dispatches
 `Wow64ThunkTable[serviceNumber].Thunk(guestArgs)`.
 
-Current ntdll surface (arm64): **299 syscalls — 271 auto, 28 manual**.
+Current ntdll surface (arm64): **296 syscalls — 268 auto, 28 manual**.
 
 ## Caveats / TODO
 
-- **Service-number alignment.** The table is indexed in `.spec` order; this must
-  match the syscall numbers our **i386 ntdll** assigns its stubs (also `.spec`
-  order). Verify against the built i386 ntdll before trusting dispatch — a
-  mismatch calls the wrong `Nt*`. (Tracked with Phase D wiring.)
+- **Service-number alignment: SOLVED (2026-07-10).** The table is indexed by
+  `ntoskrnl/include/sysfuncs.h` order — the SAME list the i386 ntdll stubs (and
+  every arch's `KiServiceTable`) number themselves from, so guest EAX indexes
+  this table by construction. The `.spec` contributes argument *types* only; a
+  sysfuncs entry missing from the `.spec`, or one disagreeing on dword count,
+  emits a loud manual stub (zero such today).
 - **`out` scalars.** A `ptr` to a plain output scalar (e.g. a `PHANDLE`) is
   layout-identical and auto-thunks correctly. A `ptr` to an output *struct* still
   needs the manual list.

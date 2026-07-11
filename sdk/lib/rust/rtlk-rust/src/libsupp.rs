@@ -42,13 +42,17 @@ pub unsafe extern "C" fn KeGetPcr() -> PKPCR {
     pcr
 }
 
-/// aarch64 KeGetPcr — reads KPCR pointer from x18 (platform register).
+/// aarch64 KeGetPcr — reads KPCR pointer from TPIDR_EL1, same as the C
+/// FORCEINLINE (xdk/arm64/ke.h) and ntkrnl_sys::inline::ke::KeGetPcr.
+/// NEVER read x18 for this: ctxswitch.S loads x18 = NewThread->Teb, so in
+/// switch/early-thread context x18 is a TEB (or NULL), not the PCR —
+/// cswitchdep first light caught exactly this (design doc, arm64 findings).
 #[no_mangle]
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
 pub unsafe fn KeGetPcr() -> *mut ntkrnl_sys::ddk::_KPCR {
     let pcr: *mut ntkrnl_sys::ddk::_KPCR;
-    core::arch::asm!("mov {}, x18", out(reg) pcr, options(nostack, readonly));
+    core::arch::asm!("mrs {}, tpidr_el1", out(reg) pcr, options(nostack, readonly));
     pcr
 }
 

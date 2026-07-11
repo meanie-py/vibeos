@@ -82,11 +82,14 @@ struct KDESCRIPTOR {
     Base: *mut u8,
 }
 
-#[repr(C)]
-struct KUSER_SHARED_DATA {
-    ProcessorFeatures: [BOOLEAN; 64],
-    NXSupportPolicy: u32,
-}
+// KUSER_SHARED_DATA: use the size-verified bindgen layout. A hand-rolled
+// shadow struct here previously put ProcessorFeatures at +0x00 and
+// NXSupportPolicy at +0x40 (real: +0x274 / +0x2D5) — the +0x40 store landed
+// inside NtSystemRoot. Harmless on the BSP (runs before the string exists),
+// but the AP's KiInitializeCpu chopped "C:\reactos" to "C:\react" at -smp 2
+// (2026-07-11, first -smp 2 bring-up: SMSS 0xC000021A via KnownDlls
+// path-not-found).
+use ntkrnl_sys::ddk::_KUSER_SHARED_DATA as KUSER_SHARED_DATA;
 
 #[repr(C)]
 struct _ETHREAD {
@@ -404,7 +407,7 @@ pub unsafe extern "system" fn KiInitializeCpu(Pcr: PKIPCR) {
         KeBugCheck(0);
     }
 
-    (*SharedUserData).NXSupportPolicy = NX_SUPPORT_POLICY_ALWAYSON;
+    (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_ALWAYSON as u8);
     let mut FeatureBits = FeatureBits | KF_NX_ENABLED;
 
     (*Pcr).Prcb.FeatureBits = FeatureBits as u32;
@@ -638,15 +641,15 @@ pub unsafe extern "system" fn KiInitializeKernelMachineDependent(
     (*SharedUserData).ProcessorFeatures[PF_AVX512F_INSTRUCTIONS_AVAILABLE] =
         if FeatureBits & KF_AVX512F != 0 { 1u8 } else { 0u8 };
 
-    (*SharedUserData).NXSupportPolicy = NX_SUPPORT_POLICY_OPTIN;
+    (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_OPTIN as u8);
 
     let load_options = (*KeLoaderBlock).LoadOptions as *const u8;
     if !load_options.is_null() {
         if strstr(load_options, b"NOEXECUTE=ALWAYSON\0".as_ptr()) {
-            (*SharedUserData).NXSupportPolicy = NX_SUPPORT_POLICY_ALWAYSON;
+            (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_ALWAYSON as u8);
             (*Prcb).FeatureBits |= KF_NX_ENABLED as u32;
         } else if strstr(load_options, b"NOEXECUTE=OPTOUT\0".as_ptr()) {
-            (*SharedUserData).NXSupportPolicy = NX_SUPPORT_POLICY_OPTOUT;
+            (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_OPTOUT as u8);
             (*Prcb).FeatureBits |= KF_NX_ENABLED as u32;
         } else if strstr(load_options, b"NOEXECUTE=OPTIN\0".as_ptr())
             || strstr(load_options, b"NOEXECUTE\0".as_ptr())
@@ -655,7 +658,7 @@ pub unsafe extern "system" fn KiInitializeKernelMachineDependent(
         } else if strstr(load_options, b"NOEXECUTE=ALWAYSOFF\0".as_ptr())
             || strstr(load_options, b"EXECUTE\0".as_ptr())
         {
-            (*SharedUserData).NXSupportPolicy = NX_SUPPORT_POLICY_ALWAYSOFF;
+            (*SharedUserData).__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy(NX_SUPPORT_POLICY_ALWAYSOFF as u8);
             (*Prcb).FeatureBits |= KF_NX_DISABLED as u32;
         }
     }
@@ -749,7 +752,20 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
 
     HalInitializeProcessor(Cpu as u32, KeLoaderBlock);
 
-    KeActiveProcessors |= 1u64 << Cpu;
+    // A CPU must not advertise itself in KeActiveProcessors until it can
+    // actually run work — the dispatcher / DPC targeting iterates this mask,
+    // and routing a ready thread to a CPU that never schedules wedges the
+    // BSP (observed 2026-07-10 with the M2 parked AP). The BSP sets its bit
+    // here (it proceeds straight into full kernel init); an AP sets its bit
+    // in KiSystemStartupBootStack right before entering KiIdleLoop.
+    #[cfg(not(feature = "smp"))]
+    {
+        KeActiveProcessors |= 1u64 << Cpu;
+    }
+    #[cfg(feature = "smp")]
+    if Cpu == 0 {
+        KeActiveProcessors |= 1u64 << Cpu;
+    }
 
     InterlockedAnd64(core::ptr::addr_of_mut!(KiFreezeExecutionLock) as PLONG64, 0);
 
@@ -763,20 +779,15 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
 
     InitialStack = ALIGN_DOWN_BY(((*LoaderBlock).KernelStack - KeXStateLength as u64) as usize, 64) as u64;
 
-    // AP handshake (SMP bring-up, mirrors i386 kiinit.rs): all LoaderBlock
-    // fields are consumed by this point — zero LoaderBlock->Prcb to release
-    // KeStartAllProcessors' spin-wait on the BSP, then park. M2 bring-up
-    // state: APs reach here but don't schedule yet (i386 parks identically);
-    // M3 releases them into the idle loop.
+    // M3: the AP falls through into KiSwitchToBootStack →
+    // KiSystemStartupBootStack, whose Number!=0 branch runs the hand-built
+    // idle-thread init and drops into KiIdleLoop. The LoaderBlock->Prcb = 0
+    // release (which un-blocks KeStartAllProcessors on the BSP) happens
+    // there, at the proper NT point — after every per-AP LoaderBlock field
+    // has been consumed. (M2 parked here instead; the park is retired.)
     #[cfg(feature = "smp")]
     if Cpu != 0 {
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-        (*LoaderBlock).Prcb = 0;
-        crate::dbg_print!(b"[SMP] AP %u up, parked pre-scheduler\n\0", Cpu as u32);
-        loop {
-            // nolint: silent-failure (deliberate AP park — M2 bring-up state)
-            core::hint::spin_loop();
-        }
+        crate::dbg_print!(b"[SMP] AP %u through KiSystemStartup, entering boot stack\n\0", Cpu as u32);
     }
 
     KiSwitchToBootStack(InitialStack);

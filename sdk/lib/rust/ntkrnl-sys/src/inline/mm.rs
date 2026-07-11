@@ -271,6 +271,12 @@ pub unsafe fn KeInvalidateTlbEntry(address: PVOID) {
     {
         core::arch::asm!("invlpg [{}]", in(reg) address, options(nostack, preserves_flags));
     }
+    // M3 SMP (amd64): coarse remote shootdown (see KeFlushProcessTb note).
+    #[cfg(all(feature = "smp", target_arch = "x86_64"))]
+    {
+        unsafe extern "C" { fn KiTbShootdownBroadcast(); }
+        KiTbShootdownBroadcast();
+    }
     #[cfg(target_arch = "aarch64")]
     {
         let tlbi_arg = (address as u64) >> 12;
@@ -296,6 +302,15 @@ pub unsafe fn KeFlushProcessTb() {
         let cr3: usize;
         core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nostack, nomem));
         core::arch::asm!("mov cr3, {}", in(reg) cr3, options(nostack));
+    }
+    // M3 SMP (amd64): the Rust callers of this primitive rely on it for
+    // mappings other CPUs may have cached (verified: removing the broadcast
+    // brings back the 0xF4/wild-RIP user corruption at -smp 2). The lazy-idle
+    // protocol in ke/amd64/ipi.rs makes this cheap while the other CPU idles.
+    #[cfg(all(feature = "smp", target_arch = "x86_64"))]
+    {
+        unsafe extern "C" { fn KiTbShootdownBroadcast(); }
+        KiTbShootdownBroadcast();
     }
     #[cfg(target_arch = "aarch64")]
     {

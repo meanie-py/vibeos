@@ -146,7 +146,23 @@ const MACHINE_TYPE_EISA: u32 = 1;
 const MACHINE_TYPE_MCA: u32 = 2;
 
 // HAL-private numeric constants from halp.h.
+// Stays 1 page: UEFI leaves almost nothing allocatable below 1MB (measured
+// low map: one 2-page FirmwareTemporary run at 0x37000) — a >1-page run
+// simply doesn't exist. Only the SIPI target itself must be <1MB; the SMP
+// identity-map page-table scratch (HalpApPtScratch below) allocates
+// separately with a 4GB cap.
 const HALP_LOW_STUB_SIZE_IN_PAGES: PFN_COUNT = 1;
+
+// SMP (smp-bringup M2): 3 pages of PDPT/PD/PT scratch smp_processor.rs uses
+// to identity-map the low stub (VA==PA) around the SIPI window — the boot
+// identity map is long gone by Phase 1. Page-table pages can live anywhere
+// <4GB; allocated at Phase 0 alongside the low stub. Zero-cost when unused.
+#[unsafe(no_mangle)]
+pub static mut HalpApPtScratchPhysicalAddress: PHYSICAL_ADDRESS =
+    PHYSICAL_ADDRESS { QuadPart: 0 };
+#[unsafe(no_mangle)]
+pub static mut HalpApPtScratch: PVOID = core::ptr::null_mut();
+const HALP_AP_PT_SCRATCH_PAGES: PFN_COUNT = 3;
 
 // FADT bit constant — 8042 keyboard controller present.
 const ACPI_FADT_8042: ULONG = 2;
@@ -1057,6 +1073,44 @@ pub unsafe extern "system" fn HalpSetupAcpiPhase0(
             /* Map it */
             HalpLowStub =
                 HalpMapPhysicalMemory64(HalpLowStubPhysicalAddress, HALP_LOW_STUB_SIZE_IN_PAGES);
+
+            /* SMP AP-start page-table scratch — anywhere <4GB (see decl). */
+            (*(&raw mut HalpApPtScratchPhysicalAddress)).QuadPart =
+                HalpAllocPhysicalMemory(
+                    LoaderBlock,
+                    0xFFFF_F000,
+                    HALP_AP_PT_SCRATCH_PAGES as _,
+                    0,
+                ) as i64;
+            if (*(&raw mut HalpApPtScratchPhysicalAddress)).QuadPart != 0 {
+                HalpApPtScratch = HalpMapPhysicalMemory64(
+                    HalpApPtScratchPhysicalAddress,
+                    HALP_AP_PT_SCRATCH_PAGES,
+                );
+            }
+        } else {
+            /* SMP AP start depends on this page (smp_processor.rs). Dump the
+             * <2MB loader descriptor map so the failure is diagnosable from
+             * serial instead of a bare "low stub bad" at Phase 1. */
+            DbgPrint(
+                b"HAL: low-stub alloc FAILED (%u pages <1MB); low descriptors:\n\0".as_ptr()
+                    as PCSTR,
+                HALP_LOW_STUB_SIZE_IN_PAGES,
+            );
+            let head = &raw mut (*LoaderBlock).MemoryDescriptorListHead;
+            let mut e = (*head).Flink;
+            while e != head {
+                let md = crate::x86::memory::list_entry_to_descriptor(e);
+                if (*md).BasePage < 0x200 {
+                    DbgPrint(
+                        b"HAL:   base=%05x pages=%05x type=%u\n\0".as_ptr() as PCSTR,
+                        (*md).BasePage as ULONG,
+                        (*md).PageCount as ULONG,
+                        (*md).MemoryType as ULONG,
+                    );
+                }
+                e = (*e).Flink;
+            }
         }
     }
 

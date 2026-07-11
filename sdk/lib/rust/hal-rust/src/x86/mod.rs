@@ -97,6 +97,13 @@ pub mod sysinfo;
 pub mod timer;
 #[cfg(target_arch = "x86_64")]
 pub mod tsc;
+// SMP AP-start + real-IPI backend (smp-bringup-quest.md M2). amd64-only —
+// i386 runs the PIC HAL (no LAPIC/MADT); its SMP story is M5. The colliding
+// UP stubs in up.rs/processor.rs are cfg'd out under this same condition.
+#[cfg(all(feature = "smp", target_arch = "x86_64", not(feature = "minihal")))]
+pub mod smp_processor;
+#[cfg(all(feature = "smp", target_arch = "x86_64", not(feature = "minihal")))]
+pub(crate) mod trampoline;
 pub mod up;
 pub mod usage;
 // x86bios / bios (INT10 + V86 real-mode BIOS emulation via fast486) removed:

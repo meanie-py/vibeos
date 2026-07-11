@@ -239,7 +239,7 @@ Plus two non-ABI link gotchas from the same drivers: (a) **x86 compiler intrinsi
 **Root cause:** the translator re-declares enum members it needs as local `const NAME: T = <value>;` and *guesses* the value (often the intuitive-but-wrong one, or the value of a *different* enum's member with a similar name) instead of reading `ndk/ketypes.h`. Each file guesses independently, so setter and reader can disagree **while both compile clean and the reader is self-consistent within its own file**.
 **Fix:** align to the header. **Detection is mechanical:** `PYTHONPATH=tools/rustconv python3 tools/rustconv/rustconv/verify_constants.py --enums <files>` — after 2026-07-04 the catalog includes the ndk type headers (ketypes/pstypes/obtypes/mmtypes/extypes/lpctypes/cmtypes: ADJUST_REASON, KTHREAD_STATE, KOBJECTS, KWAIT_REASON, EVENT_TYPE, TIMER_TYPE, KAPC_ENVIRONMENT, LPC_TYPE, PS_* pool/priority, MMVAD types, …). Run it over any kernel crate you're auditing; `--fix` auto-rewrites. **Anything it reports resolved to exactly ONE header value** (the ambiguity rule drops multi-enum names) → a strong real-bug signal, not the usual `--enums` noise. **Two deliberate blind spots you must review by hand:** (a) `TAG_*` pool tags are SKIPPED (Rust `from_le_bytes` vs the checker's big-endian multichar disagree on byte order — the tags need a byte-order-aware check; drift there is cosmetic pool-dump display); (b) untagged inline literals at call sites (`KeInitializeEvent(e, 1, 0)` with no `/* … */` comment) still escape — `scan_inline_flag_literals` only catches the commented ones. Prefer bindgen enums (`ddk::_EVENT_TYPE_*`) over local consts in new translations.
 **Also caught by the same tool the same day** (once `pub const` / path-typed / suffixed-decimal parsing was added — the checker had been blind to ~27K `pub const`s): the **LPC message-type enum** shifted in `lpc/send.rs` (live `if MessageType < LPC_DATAGRAM || > LPC_CLIENT_DIED` validation window, csrss-CreateProcess reply path), `MEMORY_PRIORITY_FOREGROUND` writer(0)/reader(2) disagreement killing the scheduler foreground boost, swapped Ps pool-quota/priority enums, wrong MMVAD types, ~10 wrong hand-written STATUS codes. 41 total in one sweep.
-**Source:** 2026-07-04 dispatcher audit + constant sweep (`docs/engineering/sync-instrumentation-design.md` §8).
+**Source:** 2026-07-04 dispatcher audit + constant sweep (`docs/engineering/archive/sync-instrumentation-design.md` §8).
 
 ### Hardcoded HIGH_LEVEL=31 on amd64 → `mov cr8, 0x1F` #GP at boot
 **Symptom:** BUGCHECK 0x1E with `c0000005` during boot-driver init / process create; reported faulting Rip unreliable (false symbol e.g. `MiAcquireExpansionLock+7`).
@@ -2348,7 +2348,7 @@ owned by the side that outlives the wait.
 **Result:** amd64 boots green (5/5 → gate ×3). The old "PteFrame share-count chain" and "MMPFN accessor layout" hypotheses were red herrings — the real defect was the `OriginalPte`/`RmapListHead` union overlay + the offset/bit-test drift.
 
 **Permanent tools this produced (the durable payoff):**
-- **Lockdep self-deadlock detector** — `vibeos-cli build --arch amd64 --lockdep` builds a `-DVIBEOS_LOCKDEP=ON` kernel; every boot self-reports `[LOCKDEP] SELF-DEADLOCK … WAIT(shared) … already held(excl) site=…` on serial (held-pushlock side table at the `ExAcquire/ReleasePushLock*` funnel, checked at the park). `vibeos-lockdep [held|edges]` decodes the table / dumps the whole lock-order graph (ABBA detection) offline in GDB. (Design: `sync-instrumentation-design.md` §4.)
+- **Lockdep self-deadlock detector** — `vibeos-cli build --arch amd64 --lockdep` builds a `-DVIBEOS_LOCKDEP=ON` kernel; every boot self-reports `[LOCKDEP] SELF-DEADLOCK … WAIT(shared) … already held(excl) site=…` on serial (held-pushlock side table at the `ExAcquire/ReleasePushLock*` funnel, checked at the park). `vibeos-lockdep [held|edges]` decodes the table / dumps the whole lock-order graph (ABBA detection) offline in GDB. (Design: `archive/sync-instrumentation-design.md` §4.)
 - **Self-symbolicating `KeBugCheckEx`** — see §9.17's banner note (line ~537 of the rustconv catalog too): params symbolicated vs `PsLoadedModuleList`, `TrapFrame.Rip` extracted for Mm bugchecks, scan-based mini-backtrace on serial — no GDB, no cross-boot base guessing.
 
 **Reusable debug recipe:** boot under `vibeos-cli gdb`; wait for `[CENSUS] STUCK` (the wedge self-reports, with a lost-wakeup-vs-holder-stuck verdict); `vibeos-cli gdb inspect <run> "raw vibeos-synctrace"` → stuck objects; `"raw vibeos-flightrec obj=0x…"` → who locked/signalled last; `"raw vibeos-threads gatewait"` → all parked threads offset-free. For the deterministic-bugcheck flavor, prefer `run-until KeBugCheckEx --then triage` + trap-frame + **self-reporting diagnostic `KeBugCheckEx(0x0BAD…)` codes** to bisect the fault path (survives VM reaping, unlike post-mortem GDB). ~30 min end-to-end; the identical conclusion previously took days.
@@ -2457,7 +2457,7 @@ paging-level blocks for the same drift (see also §9.14 for the sibling Mm PFN-s
 
 **§9.15 addendum (2026-07-05): this drift is SYSTEMIC, not a one-off.** A workspace-wide
 per-arch `#[cfg]` audit (`tools/scan_arch_cfg.py` +
-[`per-arch-cfg-divergence-audit.md`](per-arch-cfg-divergence-audit.md)) found the same
+[`per-arch-cfg-divergence-audit.md`](archive/per-arch-cfg-divergence-audit.md)) found the same
 "4-level PXE block gated to ONE 4-level arch" pattern in **~8 more Mm functions, in both
 directions** — `MiDeleteVirtualAddresses`/`MmProbeAndLockPages`/`MiCalculatePageCommitment`/
 `MiQueryAddressState`/`MiIsEntireRangeCommitted`/`MiMakePdeExistAndMakeValid` drop the PXE
@@ -3515,6 +3515,25 @@ is pending — cancel+wait-forever (if cancellable) or pool-allocate + leak.
 Sweep: `grep -rn "KeWaitForSingleObject" --include='*.rs' | grep -i timeout`
 cross-checked against `IoBuildDeviceIoControlRequest(&mut event` stack args.
 
+**⚠️ Addendum — the fix REDUCED but did not fully eliminate (organic recurrences
+after the "DEAD" call).** The `[WAITDEP] VIOLATION bad-thread-ptr` face with
+ALL-ONES poison (`owner=0xffffffffffffffff culprit=0xffff…`, the §9.31 signature)
+has recurred on organic arm64 gate traffic *after* the 2026-07-08 fix — at least
+one confirmed hit **2026-07-09** (gate `20260709-001019`, BUGCHECK 0x109,
+P2=`ntoskrnl.exe+0x451B0`; serial chain dump preserved at
+`~/vibeos-flake-farm/waitdep-evidence/20260709-gate-hit/full.log:72`), and an
+overnight-gate arm64 0x1E (`ntoskrnl.exe+0x1CD8C`, silent-wedge face) seen
+2026-07-10 that retried green. So the netstack-TDI source was A source, not the
+ONLY source, of the ALL-ONES waitdep face — a residual arm64 dispatcher/stack
+corruption persists at a low organic rate (~2 hits / 2 days of gate traffic).
+`ke/waitdep.rs` stays ALWAYS-ON precisely to keep capturing these. **Do NOT read
+§9.36 as "0x1E fully closed"** — if a `[WAITDEP]` 0x109 appears in a gate log,
+that IS a live capture: read the chain dump (which invariant, which block/funnel),
+compare the culprit PC against the two known offsets above, and treat it as the
+still-open residual, not a re-derivation from scratch. Tracked in the roadmap
+Known-bugs registry. *(Rescued 2026-07-10 from the performance lane's memory file,
+which recorded the 07-09 recurrence but never routed it here.)*
+
 ### 9.32 Static analysis for leaked Ob references — `scan_ob_refcount.py`
 
 Sibling of §9.28's IRQL scanner (same tree-sitter held-set engine), pointed at
@@ -4090,7 +4109,7 @@ to `KeUserExceptionDispatcher` (`ke/arm64/stubs.rs:1079+`), and
 `dll/ntdll/dispatch/arm64/dispatch.S` now has the DUMMY_PSEH swallow branch
 (added this lane, amd64/i386 parity). Only the ntdll-side raise entry is
 missing. Non-fatal to boot (sehtest is fire-and-forget; arm64 desktop still
-reaches shell ready). Design: `docs/engineering/crash-value-design.md`.
+reaches shell ready). Design: `docs/engineering/archive/crash-value-design.md`.
 
 ### 9.43 (2026-07-09) Un-gating a `-version=0x600+` export in a `.spec` shifts ALL later ORDINALS → breaks by-ordinal importers (BUGCHECK 0x4C `0xc0000139`)
 
@@ -4465,3 +4484,163 @@ VK translation / hotkey dispatch has no layout. Also `runCmd FAILED (2)` for
 ramdisk (staging gap, `4fadba3d760` era). The gate's dual condition
 (panel-lit AND region-delta) exists because the arm64 notepad demo pre-lights
 the sample region — lit alone false-passed once.
+
+### 9.50 (RESOLVED 2026-07-10) arm64 "unaligned access faults = Device memory" is only HALF a diagnosis — dump the OPCODE before blaming Mm
+
+**Symptom (FEX/WoW64 lane, but general):** guest/user code takes DFSC 0x21
+alignment faults on unaligned accesses even though `SCTLR_EL1.A=0`, and a
+static audit of the AttrIndx path (MmProtectToPteMask, MAIR) says the pages
+should be Normal-WB. The tempting conclusion — "user pages are secretly
+Device-mapped" — sent a whole debug arc into Mm (link-order duplicate-symbol
+theories, MAIR slot audits) when the Mm was innocent.
+
+**The 3-in-1 discriminator (now permanent in `ke/arm64/trap.rs`):** on DFSC
+0x21 the data-abort handler prints one line —
+`[ALIGN] FAR=… PC=… PTE=<raw self-map PTE> MAIR=… OPC=<u32 at PC>`.
+That single line separates ALL the hypotheses at once: PTE AttrIndx bits[3:2]
+answer "is it Device?", MAIR answers "is the slot programmed right?", and the
+opcode answers "does this INSTRUCTION require alignment regardless?"
+Verdict in one boot: PTE AttrIndx=0 (Normal-WB, Mm fine), `OPC=0x88DFFCA7` =
+`LDAR` — an acquire load, which alignment-faults **even on Normal memory**.
+
+**Root cause + fix:** FEX emits LDAR/STLR/LDAPR for x86-TSO emulation and
+ships its own unaligned-atomic backpatcher
+(`ArchHelpers::Arm64::HandleUnalignedAccess` via
+`BTCpuResetToConsistentState`), but it keys on
+`EXCEPTION_DATATYPE_MISALIGNMENT`. Our kernel delivered alignment faults as
+ACCESS_VIOLATION, so FEX dispatched them into the guest as real AVs (which is
+also what the earlier "guest heap corruption" faces were). Fix = deliver DFSC
+0x21 as `STATUS_DATATYPE_MISALIGNMENT` (0x80000002) in
+`KiSynchronousExceptionHandler` — correct Windows semantics independently of
+FEX. After the fix, every LDAR/STLR backpatch round-trips (fault → VEH →
+backpatch → NtContinue) and execution resumes.
+
+**Reusable rules:** (1) On arm64, alignment faults have TWO instruction-class
+causes that no memory-attribute audit can see: acquire/release
+(LDAR/STLR/LDAPR) and exclusive (LDXR/STXR) ops require alignment on ANY
+memory type. Read the opcode first. (2) An emulator/JIT lane "impossible"
+fault face is often the EXCEPTION CODE CONTRACT, not the fault itself — the
+handler stack downstream (FEX here) switches behavior on the precise NTSTATUS.
+(3) Related kernel landmine (OPEN, wow64-lane blocker §9.47 successor): a
+user-supplied misaligned pointer to a PHANDLE-probing syscall reaches
+`ProbeForWrite`'s RAISE path, and under DUMMY_PSEH that bugchecks (0x1E)
+instead of returning 0x80000002 — `[PROBE-MISALIGN-R/W]` in ex-rust
+`exintrin.rs` now prints addr/len/align + caller LR just before the raise.
+
+### 9.51 (ROOT-CAUSED + FIXED 2026-07-11) First -smp 2 boot: two latent bugs the second CPU flushed out — uniata's nIEN ATAPI path under QEMU, and hand-rolled KUSER_SHARED_DATA shadow structs with fantasy offsets
+
+**Context:** SMP bring-up M2 (first amd64 AP start). `-smp 1` green; `-smp 2`
+died deterministically at BUGCHECK 0x6B (PROCESS1_INITIALIZATION_FAILED,
+c000003a) and, after the first fix, at 0x4C (0xC000021A from SMSS). Neither
+was an SMP bug per se — both were pre-existing latent bugs that only a second
+CPU could expose. Expect more of this class as M3+ proceeds.
+
+**Bug A — 0x6B: uniata `CPU_num > 1` switches to an nIEN-gated ATAPI send
+that QEMU's IDE model cannot deliver.**
+`uniata-rust/src/id_ata_part3.rs` (DriverEntry): `if CPU_num > 1 {
+g_opt_AtapiSendDisableIntr = TRUE }` — an SMP workaround for real controllers
+whose INTRQ stays pending across a device-side mask (nIEN). QEMU (and the
+Bochs family it derives from) checks nIEN only at raise time and NEVER
+replays a suppressed IRQ. Net effect: the INQUIRY packet command to the boot
+CD loses its completion → scsiport scan reports no CdRom → no
+`\ArcName\...cdrom(0)` → `IopReassignSystemRoot` can't resolve →
+`PsLocateSystemDll`'s ZwOpenFile(ntdll) = STATUS_OBJECT_PATH_NOT_FOUND → 0x6B.
+**Fix:** gate the override on bare metal only (`CPU_num > 1 &&
+g_opt_VirtualMachine <= VM_NONE`), Rust + C reference copy both.
+**Trap for the debugger:** uniata AND scsiport are Rust translations —
+editing `drivers/storage/ide/uniata/id_ata.cpp` or
+`drivers/storage/port/scsiport/*.c` does nothing (the shipped .sys comes from
+`uniata-rust`/`scsiport-rust`; the C DPRINT file:line strings are baked into
+the Rust, so serial output *looks* like the C is running). An entire
+first-round "fix" went into the dead C copy and tested as a no-op.
+
+**Bug B — 0x4C: five+ hand-rolled `struct KUSER_SHARED_DATA` shadow structs
+with wrong field offsets; the AP's KiInitializeCpu chopped NtSystemRoot.**
+`ke/amd64/kiinit.rs` declared a local `KUSER_SHARED_DATA {
+ProcessorFeatures: [u8;64], NXSupportPolicy: u32 }` — placing writes at
+USD+0x00..0x43 (real: ProcessorFeatures +0x274, NXSupportPolicy +0x2D5).
+The `NXSupportPolicy = ALWAYSON` store writes 1 to USD+0x40 — bytes 16..19 of
+`NtSystemRoot`. On the BSP this runs (KiSystemStartup) BEFORE Phase 0 writes
+"C:\reactos" into USD, so UP boots never noticed — for years. The AP runs
+KiInitializeCpu AFTER the string exists → "C:\reactos" became "C:\reacto\0"
+→ smss's `%SystemRoot%` expanded to `X:\react` → KnownDlls dir open
+c000003a → SmpInit fails → 0xC000021A → 0x4C. Found with a GDB hardware
+watchpoint on USD+0x40 (TCG backend, `VIBEOS_NO_KVM=1` — KVM breakpoints
+don't fire on this host); it caught CPU#1 mid-store with the culprit PC.
+The audit then found the same landmine in: `ke/i386/kiinit.rs`
+(ProcessorFeatures at +0x2D4, writes over ActiveConsoleId..Cookie),
+`ke/amd64/xstate.rs` (XSTATE_CONFIGURATION at +0x00, over the tick/time
+fields), `ke/amd64/thrdini.rs` (XState at +0x2E8 — a THIRD inconsistent
+location), `rtlk-rust/misc.rs` (SuiteMask/NtProductType at wrong offsets and
+wrong widths), `ex-rust/time.rs` (TimeZoneId at +0x2C, over
+ImageNumberLow/High). All masked by ordering/self-consistency on UP.
+**Fix:** all swapped to the size-verified bindgen
+`ntkrnl_sys::ddk::_KUSER_SHARED_DATA` (NXSupportPolicy is the
+`__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy()` bitfield).
+`ke/clock.rs`'s shadow was audited correct (padding matches) and kept.
+**Reusable rules:** (1) NEVER hand-roll a shadow struct for a type bindgen
+already has — a partial local mirror with padding is a magic-offset bug in
+struct clothing (`scan_magic_offsets` can't see it; a `struct
+KUSER_SHARED_DATA`-redeclaration grep lint is OWED). (2) "Works on UP" proves
+nothing about USD writes — boot ordering hides wrong offsets; the AP replays
+per-CPU init at a time when the data is live. (3) For any "kernel global
+string/field corrupts between phase X and Y" mystery: TCG + GDB hardware
+watchpoint on the exact byte is a one-boot root-cause (`qemu/start.sh amd64
+--gdb-wait` + `VIBEOS_NO_KVM=1`, `hbreak` a phase marker, `watch` the
+address, `continue`).
+
+### 9.52 (ROOT-CAUSED + FIXED 2026-07-11) M3 SMP bring-up: four lessons from un-parking the AP into the scheduler (-smp 2 now schedules on both CPUs to desktop)
+
+**Context:** after M2 (AP parked pre-scheduler), M3 released the AP into
+KiIdleLoop with KeActiveProcessors set at idle entry. Four distinct walls,
+each generalizable:
+
+**1. Per-processor Phase-1 loops must run AFTER KeStartAllProcessors.**
+First `ObCreateObject` scheduled onto CPU1 AV'd in
+`ObpAllocateObjectCreateInfoBuffer`: `ObInit2()`'s per-CPU
+`PRCB.PPLookasideList` loop iterates KeNumberProcessors — and our Rust
+Phase1 had `KeStartAllProcessors` wired AFTER `ObInitSystem(1)` (M2 put it
+next to the boot-time block; the C reference order is boot-time → SMP start
+→ Ob/Ex/Io phase-1 inits, precisely so every per-CPU loop covers the APs).
+Moved to the C order. Rule: any `for i in 0..KeNumberProcessors` in a
+phase-1 init is an ordering contract with KeStartAllProcessors.
+
+**2. trap.S interrupt stubs: the HANDLER owns the IRQL protocol.**
+Filling the 0xE1 `int 3` placeholder naively (raise cr8 + EOI in asm, plain
+handler) trips ExitTrap's checked-build assert (c0000420 at
+`KiIpiInterrupt+0xef`): ExitTrap requires cr8 restored to its entry value.
+The pattern is KiDpcInterruptHandler's: asm = EnterTrap/call/ExitTrap ONLY;
+the Rust handler does KfRaiseIrql → KiSendEOI → work → KeLowerIrql(old).
+
+**3. TLB-shootdown senders MUST poll-service, never just wait.**
+First shootdown (pure IPI + ack barrier) deadlocked exactly like the
+textbook: a sender that entered with IF=0 spun for the sender lock while
+the holder waited forever for its ack (caught live: GDB on both vCPUs, one
+spinning with eflags.IF=0). NT-shaped fix: the request lives in a shared
+pending mask; the interrupt is only a wake-up; EVERY spin loop in the
+protocol services the CPU's own pending bit (`KiTbFlushServiceSelf`), so
+progress never depends on interrupt delivery.
+
+**4. Lazy-idle TLB — skip the round-trip for hlt'ed CPUs (huge).**
+The correct-but-naive barrier made every MDL/syspte unmap a cross-CPU
+round-trip: -smp 2 boot went 1m54 → 6m53 (and randomly tripped the
+harness's 120s serial-silence abort — which looks like a HANG but is a
+CRAWL; check whether serial resumes before calling it a wedge. Also: "both
+CPUs at hal.dll+0xB766" = `HalProcessorIdle+6` = they're just idle — not a
+deadlock). Fix: `KiTbLazyIdleSet` — idle loop enters lazy state around the
+hlt; senders skip lazy CPUs (mark `PendingLazy`, no IPI, no wait — an idle
+CPU touches only stable kernel mappings); the CPU flushes on idle-exit AND
+at DPC/IPI ISR entry (DPCs run inside the hlt wake, before idle-exit).
+Escape race handled sender-side: after marking PendingLazy, re-read the
+lazy set; reclaim the bit of any escapee and treat it as awake (IPI+ack).
+Result: -smp 2 boots 1m41 — FASTER than the parked-AP M2 baseline.
+Removing the local-primitive hooks entirely was tried and is NOT safe: the
+Rust Mm callers rely on `KeFlushProcessTb`/`KeInvalidateTlbEntry` for
+mappings other CPUs cache (0xF4/wild-RIP user corruption returns).
+
+Files: ke/amd64/ipi.rs (protocol), ke/amd64/stubs.rs KiIdleLoop (lazy
+enter/exit), ke/amd64/traphandler.rs KiDpcInterruptHandler (flush-if-lazy),
+ntkrnl-sys inline/mm.rs (broadcast hooks), ex-rust init.rs (Phase-1 order),
+ntoskrnl/ke/amd64/trap.S (0xE1 dispatch). Owed next (M3b+): scheduled-on-
+CPU1 visibility counter, targeted single-VA remote flushes, the packet
+mailbox (staged wave-2 A), i386/arm64 parity, net-suite flake at -smp 2.

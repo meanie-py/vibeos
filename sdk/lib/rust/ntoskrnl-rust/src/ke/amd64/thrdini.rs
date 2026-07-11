@@ -46,16 +46,9 @@ extern "C" {
     fn __writemsr(msr: ULONG, value: u64);
 }
 
-#[repr(C)]
-struct KUSER_SHARED_DATA {
-    _padding: [u8; 0x2e8],
-    XState: XSTATE_CONFIGURATION,
-}
-
-#[repr(C)]
-struct XSTATE_CONFIGURATION {
-    EnabledFeatures: u64,
-}
+// KUSER_SHARED_DATA: bindgen layout (a shadow struct here guessed XState at
+// +0x2E8 — a third inconsistent location; see amd64/kiinit.rs note).
+use ntkrnl_sys::ddk::_KUSER_SHARED_DATA as KUSER_SHARED_DATA;
 
 #[repr(C)]
 struct KUINIT_FRAME {

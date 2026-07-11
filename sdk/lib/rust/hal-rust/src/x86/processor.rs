@@ -38,6 +38,8 @@ pub unsafe extern "system" fn HaliHaltSystem() {
 // IS all the processors).  hal.spec exports this stdcall.
 // ---------------------------------------------------------------------------
 
+// (smp amd64 build: the MP-aware version in smp_processor.rs takes the symbol)
+#[cfg(any(not(feature = "smp"), target_arch = "x86", feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalAllProcessorsStarted() -> BOOLEAN {
     1 /* TRUE */

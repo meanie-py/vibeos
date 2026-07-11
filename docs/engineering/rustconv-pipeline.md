@@ -6,6 +6,30 @@ Stage-3 design, and the Codex cross-model path. The high-level "what it is",
 the CLI command list, the money-warning, the cost table, and the static-analysis
 commands live in `AGENTS.md` → "rustconv — C-to-Rust Translation Pipeline".
 
+## Cost-efficient translation (read before spending API $)
+
+The paid `translate`/`submit` path is function-by-function with prompt-caching + a
+resume cache. The rules that keep the bill down (validated on the win32k frontier: 18
+files for $18.98, caching saving ~$18 ≈ half the bill):
+
+- **Dry-run first (FREE):** `rustconv --arch <a> translate <file.c> --dry-run` prints the
+  function count + first-prompt size so you can set a `--max-cost` cap before spending.
+- **Function-by-function, not whole-file `batch`:** `translate` chunks per function so a
+  single giant file doesn't blow the context or silently stub lazy functions (a known
+  `batch` failure mode for >1000-LOC files).
+- **Prompt-caching is the big lever:** the ~5K-token system prompt + shared context are
+  cached across the per-function calls in a run — that's the ~50% saving. It's why the
+  synchronous per-function path can beat the Batch API here despite no 50% batch discount:
+  Batch loses the warm cache and can't resume mid-file.
+- **Durability — never lose paid work:** output streams to `tools/rustconv/.responses/<ts>-<file>/`
+  (gitignored, in-repo, survives kills/reboots); each function lands the instant it returns,
+  the in-flight one as `.partial`. That dir is the canonical copy — never `-o /tmp/...`.
+  **NEVER Ctrl-C mid-run** (you re-pay every completed function on retry); let it finish.
+- **Integrate later (the free half):** assembling the `.responses/` output into the crate +
+  `cargo check` fixes cost nothing — do that manually (AGENTS.md § Notes).
+
+Full playbook + the rtl-specific recipe: `archive/rustconv-cost-efficient-translation.md`.
+
 ## Pipeline
 
 ```

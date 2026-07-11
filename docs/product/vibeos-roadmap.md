@@ -19,10 +19,10 @@ The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~9
 | Thread | State | Disposition |
 |---|---|---|
 | ntoskrnl **crate-split** (build velocity) | ~63% (21 crates, monolith 456K→170K); ex parked on x86 hang; ke/mm remain | **continue** (Opus-doable) — [`../engineering/ntoskrnl-crate-split-plan.md`](../engineering/ntoskrnl-crate-split-plan.md) |
-| **`--allow-multiple-definition`** elimination | spike + docs proven | **see through** (high value) — [`../engineering/allow-multiple-definition-ratchet.md`](../engineering/allow-multiple-definition-ratchet.md) |
+| **`--allow-multiple-definition`** elimination | spike + docs proven | **see through** (high value) — [`../engineering/build-system.md`](../engineering/build-system.md) |
 | **DUMMY_PSEH** resolution | spike + docs, direction open | **see through** (high value) |
 | **Doom on vibeos** / screen-painting / perf | showcase landed | done — winding down |
-| **IRQL/spinlock RAII** audit | 0 leaks; 130 candidates catalogued | **park** — adopt incrementally ([`../engineering/irql-raii-conversion-queue.md`](../engineering/irql-raii-conversion-queue.md)) |
+| **IRQL/spinlock RAII** audit | 0 leaks; 130 candidates catalogued | **park** — adopt incrementally ([`../engineering/archive/irql-raii-conversion-queue.md`](../engineering/archive/irql-raii-conversion-queue.md)) |
 | **sync-instrumentation** (lockdep/waitdep/cswitchdep) | landed / phase-1 active | keep as always-on tripwires |
 | the **linter suite** (ghost-tax Tier 1) | landed + 0-NEW gated | burn stock opportunistically |
 
@@ -59,7 +59,7 @@ Genuine remnants only — the boot path is already Rust. Measured 2026-07-07 fro
 
 ### Tier 4 — Debt burndown (gated at the door; burn opportunistically)
 
-Every class below is already **0-NEW-gated** by `vibeos-cli check`; the *stock* is owed, none of it is urgent. Framework: [`../engineering/ghost-tax-diagnosis-and-program.md`](../engineering/ghost-tax-diagnosis-and-program.md).
+Every class below is already **0-NEW-gated** by `vibeos-cli check`; the *stock* is owed, none of it is urgent. Framework: [`../engineering/archive/ghost-tax-diagnosis-and-program.md`](../engineering/archive/ghost-tax-diagnosis-and-program.md).
 
 - **`scan_silent_failures` (2086)** — bare `loop{}` spins, `unwrap`/`expect`, swallowed `Err` in kernel/driver code.
 - **`scan_cc_mismatch` (316)** + **`verify_ffi` (161)** — ABI-decl drift; **largely retired for free by the Tier-2 trampoline refactor.**
@@ -366,17 +366,110 @@ more) on real machines across every arch**, and the entire USB+HID+mass-storage 
 (does the Rust USB host stack enumerate a QEMU device?) that unlocks input **and** storage
 together, plus a foundational arm64-interrupts effort that ends the polling class.
 
-| # | Quest | Doc | Size | Depends on |
+| # | Quest | Doc | Size | Status (2026-07-10) |
 |---|-------|-----|------|-----------|
-| 10a | **USB HID input** (the beachhead; also fixes arm64's monolith miniport) | [`../engineering/input-architecture-and-unification.md`](../engineering/input-architecture-and-unification.md) | M | USB host stack enumerating |
-| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) | [`../engineering/usb-mass-storage-real-storage-quest.md`](../engineering/usb-mass-storage-real-storage-quest.md) | M | same USB host stack as 10a — one probe gates both |
-| 10c | **arm64 GIC interrupts** (real routing + dispatch + hardware-backed IRQL) — foundational; ends polling everywhere | [`../engineering/arm64-interrupts-quest.md`](../engineering/arm64-interrupts-quest.md) | L | timer path in `hal-rust/arm64/clock.rs` is a working template |
-| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack) | [`../engineering/real-nic-networking-quest.md`](../engineering/real-nic-networking-quest.md) | M–L | amd64 e1000 sooner (real PIC/APIC); arm64 downstream of 10c |
+| 10a | **USB HID input** — beachhead ✅ **COMPLETE** (USB kbd/mouse enumerate + deliver keystrokes on ALL arches; both walls closed); the **unification migration is owed**: USB HID as the default smoke input transport, retire `arm64input`+`i8042prt`, xHCI gap | [`../engineering/archive/input-architecture-and-unification.md`](../engineering/archive/input-architecture-and-unification.md) | M (migration) | migration in the Check-back ledger |
+| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — 🔓 **UNBLOCKED**: the shared USB host stack is proven live | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md) | M | ready to start |
+| 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
+| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | parked; 10c landing opened the arm64 path |
 
 Not trash, leave alone: the GOP linear-framebuffer display driver (`arm64vid`, shared all
 arches) and the PL011 UART (a real ARM peripheral).
 
 ---
+
+## Check-back ledger — owed items from closed docs/lanes (opened 2026-07-10)
+
+When a plan/quest/handoff doc closes, its *outstanding* items land here (one line + a
+pointer) instead of rotting in an archived doc nobody re-reads. **Remove items as they
+land; date every addition.** Source docs live in `docs/engineering/archive/`.
+
+### Verify-if-fixed (cheap checks — later work likely already fixed these)
+- [x] **Delay-load 0x1E blocker — CLEARED, VERIFIED** (2026-07-11): i386 built with
+  `VIBEOS_ENABLE_DELAYLOAD=ON` (557 helper refs = delay-load live) boots to `shell ready` +
+  `SwitchDesktop OK` in 33s, **0 `BAD gate` hits** (§9.13/§9.24 fixed the family). **Now-
+  actionable follow-on:** flip `VIBEOS_ENABLE_DELAYLOAD` default ON in `sdk/cmake/gcc.cmake`,
+  ×3-gate, delete the arm64 `arm64_*_stubs.c` optional-DLL hacks. *(archive/delay-import-llvm-mingw-roadmap)*
+- [x] **amd64 whpx net 13/15 — A/B done, inbound failure is GENUINE** (verified 2026-07-11):
+  wedge fixed → VM boots fully under whpx, but both guest listeners never announce (echo +
+  TDI `:8888`) — a whpx-specific inbound-listen bug (passes on TCG). Moved from "verify" to a
+  real open issue in the whpx spike doc §Remaining; not a quick fix, deferred.
+- [x] **arm64 taskbar 0x50 — NOT reproducing** (verified 2026-07-11): arm64 gates green
+  through the taskbar path (gate `20260710-233422` OK) with the tray clock rendering (§9.22).
+  A green gate = shell-ready reached without the child-control fault. Closed.
+- [x] **gdb-engine i386-under-WHPX arch mismatch — FIXED** (verified 2026-07-11):
+  `gdbengine.py` sets `set architecture i386:x86-64` for i386+whpx. Whpx spike doc updated.
+- [ ] **arm64 reboot stub — CONFIRMED still stubbed** (2026-07-11): `HalReturnToFirmware`
+  (`hal-rust/src/arm64/halstubs.rs:551`) just `wfi`-loops, no PSCI `SYSTEM_RESET`. Small owed
+  task — matters for harnesses that reboot the guest (conformance crash-recovery). Not yet done.
+
+### Owed work (moved from closed docs)
+- [ ] **Input unification migration** *(input-architecture, roadmap §10a)*: USB HID as the
+  default smoke input transport ×3 arches; retire `arm64input` + `i8042prt` (or demote to
+  explicit fallback); usbxhci driver gap for real hardware.
+- [ ] **Warm-build driver-relink infra bug** *(input lane)*: warm `vibeos-cli build` doesn't
+  relink driver `.sys` after an `ntkrnl-sys` edit — false-fresh family; cost 3 debug rounds.
+- [ ] **KD continuation** *(windbg handoff)*: amd64 same-CPL `int 2Dh` machine-frame
+  reconstruction corrupts the resumed context. Low priority; repro recipe in the archived doc.
+- [ ] **Ghost-tax Tier-2 residue** *(ghost-tax §3T2)*: panic→serial on arm64 (PL011 silent
+  today); cold-cadence policy (needs user decision); verify_abi internal-symbol coverage
+  (the #1 ABI blind spot, R6/R7 class); boot-duration trending; STALE_MEDIA auto-heal
+  (`smoke --rebuild-if-stale`); net-stage cost fix (`--skip-clean-build` in folded net suite).
+- [ ] **Ghost-tax Tier-3 workstreams** *(ghost-tax §3T3)*: toolchain-UB kill program
+  (split-debuginfo bootable kernel, arm64 trap-unreachable, xchg-width scanner); XLAT lint
+  pack (`lint_xlat.py` from the field-manual §4 greps).
+- [ ] **Deferred lint stock** *(ghost-tax landing)*: 136 SILENT_LOOP driver panic-prints;
+  lint_kernel 1473 write_volatile stock; 6 RtlFill/MoveMemory macro-decls;
+  verify_signatures `#[cfg]` FP; ~150 benign dead-decl deletions.
+- [ ] **Tooling-consolidation residue** *(tooling plan T0/T1/T2/LT)*: `.responses/` GC policy
+  (paid-artifact-safe); gdb-helpers `list-threads.py` archive-and-rewire; verify_constants +
+  scan_inline_flag_literals merge; 4 cache-reassemblers → one `rustconv reassemble`;
+  one-arch-source-of-truth (archcfg feeds scanners + run.sh); committed_drift `.res` check
+  must run inside the canon mount (currently SKIPs); long-term: unify the FFI cluster on
+  verify_signatures.
+- [ ] **Driver-local enum const verification** *(input lane, task #14)*: extend
+  verify_constants to driver-local enums (enum-drift class).
+- [ ] **cdfs FSCTL / classpnp bind-all nests** *(input lane, task #9)*: 185
+  unreachable-pattern warnings, orthogonal cleanup.
+- [ ] **Reproducible builds — final gate wiring** *(deterministic-builds-plan)*: rungs 1–5 are
+  essentially DONE (canonical path, PE-timestamp, SOURCE_DATE_EPOCH, build-id, gauge all ✅);
+  only loose ends remain — rungs 2a/2b are *gate-pending* (implemented, not yet enforced), an
+  optional cross-worktree `diff-dirs`/`diffoscope` proof, and the C `trim-paths` add. Hardlink-
+  dedup is BANNED (fleet-isolation law). Gauge: `vibeos-cli repro`.
+- [ ] **Payload-harness follow-ons** *(payload-harness-design)*: Workstream A (delete the
+  winlogon spawn hack → fixed `ProcessStartupItems`); Workstream B (vibeagent guest-exec
+  channel — highest-value); PuTTY payload (pure-YAML generalization exam).
+- [ ] **arm64 harness waits sweep**: boot_timeout right-sized (540→180); net-suite/snapshot/
+  per-milestone waits likely still oversized.
+
+## Known bugs & flakes (live registry)
+
+The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
+Field-manual § pointers hold the full writeups. **Update on state change.**
+
+- **arm64 0x1E / `[WAITDEP]` ALL-ONES residual** (~2 hits / 2 days organic gate) — the
+  dominant netstack-TDI source is FIXED (§9.36) but a residual arm64 dispatcher/stack
+  corruption with the same ALL-ONES `bad-thread-ptr` face still recurs (07-09 gate
+  `ntoskrnl+0x451B0`, evidence in `~/vibeos-flake-farm/waitdep-evidence/`; 07-10 overnight
+  `+0x1CD8C` retried green). `ke/waitdep.rs` always-on captures each hit — a `[WAITDEP]`
+  0x109 in a gate log IS the live capture. §9.36 addendum.
+- **winlogon 0xC000021A→0x4C init race** (~3/20, all arches) — kernel32 `%wZ` races basesrv's
+  CSR shared-section population. MITIGATED (snapshot validation + loud `snapshot CORRUPT`
+  print); real fix owed: publish-last ordering in csrsrv/basesrv. §9.36.
+- **win32k `DialogBoxParamW` dialog-creation race** (amd64) — WM_INITDIALOG occasionally never
+  dispatched on the winlogon desktop; wedge defensively fixed (§9.12), underlying race open
+  (would bite real SAS/logon dialogs outside autologon).
+- **amd64 start-menu render residue** (§9.41) — Programs/Documents/Settings render without label
+  text + Run/Shut Down dropped (i386 renders full). Root-caused on the `screen-painting` lane
+  (GDI TEB batch never flushed — `GdiBatchCount` read at 0x74 vs real 0x1740, `ee3c81e348c`);
+  strike this when that lane lands on master.
+- **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
+  fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
+- **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack
+  `_EX_PUSH_LOCK_WAIT_BLOCK.WakeGate`, not session pool); not reproducing, likely closed by the
+  §9.13 WS-pushlock fixes. Re-open only on a live recurrence → GDB watchpoint on the WakeGate byte.
+- **KD continuation** (windbg handoff) — amd64 same-CPL `int 2Dh` resumed-context corruption;
+  attach itself works. Low priority; also in the Check-back ledger.
 
 ## Priority Order (suggested)
 
