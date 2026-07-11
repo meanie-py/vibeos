@@ -396,9 +396,19 @@ before landing to master — these touch i386 gdi32/user32 specs + csrss):
 
 *Still deferred out of M4 (owed, the next milestones):*
 - **win32k process/thread connection for a WoW64 guest** (the gui32 0xBAD1
-  blocker). gdi32's `GdiProcessSetup`/`NtGdiInit` returns 0xffffffff, so the
-  guest has no GDI handle table / desktop, and every subsequent NtGdi* (incl.
-  NtGdiOpenDCW) returns NULL. Needs the win32k client-connect path
+  blocker — task #29). gdi32's `GdiProcessSetup`/`NtGdiInit` returns 0xffffffff,
+  so the guest has no GDI handle table / desktop, and every subsequent NtGdi*
+  (incl. NtGdiOpenDCW) returns NULL.
+  *Diagnostic clue pinned 2026-07-11:* the arm64 syscall dispatch's
+  `[SVC] GUI conversion failed` print (trap.rs:220) did NOT fire for the wow64
+  NtGdiInit call, so the `-1` is NOT PsConvertToGuiThread rejecting the thread
+  via that path. Table alignment is proven sound (NtGdiOpenDCW correctly
+  unpacked `'DISPLAY'`, so the guest's w32ksvc32 service numbers match the
+  table). Next debug step: trace inside the TableIndex==1 dispatch in trap.rs
+  (print ServiceIndex + the win32k routine's return for the wow64 thread) to
+  see whether NtGdiInit actually runs (Rust returns 1) or the call diverts —
+  the `0xffffffff` origin is the open question. Then the real work:
+  the win32k client-connect path
   (`NtUserProcessConnect` + the GDI shared handle-table section mapped into the
   guest below 4GB, PEB `GdiSharedHandleTable`) taught about the WoW64 process.
   This is the win32k analogue of the csrss connect layer.
