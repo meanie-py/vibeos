@@ -254,6 +254,114 @@ static PVOID Wow64pFindExport32(PVOID Base, const char *Name)
     return NULL;
 }
 
+/* ---- 32-bit process-parameters down-conversion (M3b) -------------------- *
+ * The kernel builds PEB32 by mirroring scalars only; ProcessParameters stays
+ * NULL. The 32-bit loader (LdrpInitializeProcess) derefs it immediately, so
+ * we down-convert the process's real 64-bit RTL_USER_PROCESS_PARAMETERS
+ * (PEB64->ProcessParameters, already built by the native loader) into a
+ * 32-bit one below 2GB — width conversion of the UNICODE_STRINGs, not content
+ * synthesis. Win10's wow64.dll does the same PEB32 fixup at process init. */
+
+typedef struct _WOW64_UNICODE_STRING32 {
+    USHORT Length;
+    USHORT MaximumLength;
+    ULONG Buffer; /* 32-bit guest pointer */
+} WOW64_UNICODE_STRING32;
+
+/* 32-bit RTL_USER_PROCESS_PARAMETERS (offsets are the canonical ntdll ones;
+ * only the fields the loader reads are converted, the rest stay zero). */
+typedef struct _WOW64_RTL_USER_PROCESS_PARAMETERS32 {
+    ULONG MaximumLength;                  /* +0x00 */
+    ULONG Length;                         /* +0x04 */
+    ULONG Flags;                          /* +0x08 */
+    ULONG DebugFlags;                     /* +0x0c */
+    ULONG ConsoleHandle;                  /* +0x10 */
+    ULONG ConsoleFlags;                   /* +0x14 */
+    ULONG StandardInput;                  /* +0x18 */
+    ULONG StandardOutput;                 /* +0x1c */
+    ULONG StandardError;                  /* +0x20 */
+    WOW64_UNICODE_STRING32 CurrentDirectoryPath; /* +0x24 CURDIR.DosPath */
+    ULONG CurrentDirectoryHandle;         /* +0x2c CURDIR.Handle */
+    WOW64_UNICODE_STRING32 DllPath;       /* +0x30 */
+    WOW64_UNICODE_STRING32 ImagePathName; /* +0x38 */
+    WOW64_UNICODE_STRING32 CommandLine;   /* +0x40 */
+    ULONG Environment;                    /* +0x48 */
+    ULONG StartingX, StartingY, CountX, CountY, CountCharsX, CountCharsY;
+    ULONG FillAttribute, WindowFlags, ShowWindowFlags;
+    WOW64_UNICODE_STRING32 WindowTitle;   /* +0x70 */
+    WOW64_UNICODE_STRING32 DesktopInfo;   /* +0x78 */
+    WOW64_UNICODE_STRING32 ShellInfo;     /* +0x80 */
+    WOW64_UNICODE_STRING32 RuntimeData;   /* +0x88 */
+} WOW64_RTL_USER_PROCESS_PARAMETERS32;
+
+/* PEB64 field offsets (ntdll native layout). */
+#define PEB64_PROCESS_PARAMETERS_OFF  0x20
+#define PEB32_PROCESS_PARAMETERS_OFF  0x10
+/* 64-bit RTL_USER_PROCESS_PARAMETERS UNICODE_STRING member offsets. */
+#define UPP64_IMAGEPATHNAME_OFF  0x60
+#define UPP64_COMMANDLINE_OFF    0x70
+#define UPP64_WINDOWTITLE_OFF    0xB0
+#define UPP64_DESKTOPINFO_OFF    0xC0
+
+/* Copy one UNICODE_STRING64 (at Src) into Dst32, appending its buffer bytes to
+ * *Arena (a below-2GB bump pointer). NULL/empty stays zero. */
+static VOID Wow64pCopyUstr32(WOW64_UNICODE_STRING32 *Dst32, PBYTE Src, PBYTE *Arena)
+{
+    USHORT Length = *(USHORT *)(Src + 0);
+    PWSTR Buffer = *(PWSTR *)(Src + 8); /* +8: after Length/Max/pad in UNICODE_STRING64 */
+    Dst32->Length = Length;
+    if (!Length || !Buffer)
+    {
+        Dst32->MaximumLength = Length ? (USHORT)(Length + sizeof(WCHAR)) : 0;
+        Dst32->Buffer = 0;
+        return;
+    }
+    Dst32->MaximumLength = (USHORT)(Length + sizeof(WCHAR));
+    Dst32->Buffer = (ULONG)(ULONG_PTR)*Arena;
+    for (USHORT i = 0; i < Length; i++)
+        (*Arena)[i] = ((PBYTE)Buffer)[i];
+    (*Arena)[Length] = 0;
+    (*Arena)[Length + 1] = 0;
+    *Arena += (Length + sizeof(WCHAR) + 3) & ~3u;
+}
+
+static VOID Wow64pBuildProcessParams32(ULONG_PTR Peb32)
+{
+    PBYTE Peb64 = (PBYTE)NtCurrentTeb() + 0; /* set below */
+    PBYTE Upp64;
+    WOW64_RTL_USER_PROCESS_PARAMETERS32 *Upp32;
+    PBYTE Arena, Block;
+    SIZE_T Size = 0x2000; /* params + string arena */
+
+    Peb64 = *(PBYTE *)((PBYTE)NtCurrentTeb() + 0x60); /* TEB64->ProcessEnvironmentBlock */
+    Upp64 = *(PBYTE *)(Peb64 + PEB64_PROCESS_PARAMETERS_OFF);
+    if (!Upp64)
+    {
+        DbgPrint("[FEX-WOW64C] WARN: PEB64->ProcessParameters NULL — 32-bit params left empty\n");
+        return;
+    }
+
+    Block = (PBYTE)Wow64pAllocBelow2G(Size, PAGE_READWRITE, "proc params32");
+    if (!Block)
+        NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
+    Upp32 = (WOW64_RTL_USER_PROCESS_PARAMETERS32 *)Block;
+    Arena = Block + sizeof(*Upp32);
+    Arena = (PBYTE)(((ULONG_PTR)Arena + 3) & ~(ULONG_PTR)3);
+
+    Upp32->MaximumLength = (ULONG)Size;
+    Upp32->Length = (ULONG)Size;
+    Upp32->Flags = 0x6001; /* RTL_USER_PROC_PARAMS_NORMALIZED | ProfileUser */
+    Wow64pCopyUstr32(&Upp32->ImagePathName, Upp64 + UPP64_IMAGEPATHNAME_OFF, &Arena);
+    Wow64pCopyUstr32(&Upp32->CommandLine, Upp64 + UPP64_COMMANDLINE_OFF, &Arena);
+    Wow64pCopyUstr32(&Upp32->WindowTitle, Upp64 + UPP64_WINDOWTITLE_OFF, &Arena);
+    Wow64pCopyUstr32(&Upp32->DesktopInfo, Upp64 + UPP64_DESKTOPINFO_OFF, &Arena);
+
+    *(ULONG *)((PBYTE)Peb32 + PEB32_PROCESS_PARAMETERS_OFF) = (ULONG)(ULONG_PTR)Upp32;
+    DbgPrint("[FEX-WOW64C] PEB32->ProcessParameters built at %p (image='%.*S')\n",
+             Upp32, Upp32->ImagePathName.Length / 2,
+             (PWSTR)(ULONG_PTR)Upp32->ImagePathName.Buffer);
+}
+
 /*
  * Phase-B probe services (wow64probe.exe / docs/engineering/wow64-plan.md).
  * Magic service numbers far above any real syscall id: ECHO proves 32-bit
@@ -315,6 +423,7 @@ Wow64SystemServiceEx(ULONG ServiceNumber, PULONG Arguments)
             {
                 DbgPrint("[FEX-WOW64C] M2 PASS: real i386 image code executed under FEX in a WoW64 process\n");
                 DbgPrint("[FEX-WOW64C] M3a PASS: real ntdll32 syscall stub round-tripped Wow64Transition -> BOP -> thunk table\n");
+                DbgPrint("[FEX-WOW64C] M3b PASS: guest ntdll32 LdrInitializeThunk ran the 32-bit loader, then handed off to the image entry\n");
                 NtTerminateProcess(WOW64_CURRENT_PROCESS, 0x600D);
             }
             NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
@@ -354,14 +463,16 @@ Wow64LdrpInitialize(PVOID Context)
     PIMAGE_NT_HEADERS32 Nt32;
     ULONG EntryRva;
     PVOID Ntdll32, InitBlock, Fex, Bop;
-    PBYTE ExitStub, GuestStack;
-    ULONG GuestEsp;
+    PBYTE ExitStub, GuestStack, ApcStack;
+    PVOID KiUserApcDispatcher32, LdrInitThunk32;
+    ULONG GuestEsp, ApcEsp;
     WOW64_UNICODE_STRING DllName;
     WOW64_ANSI_STRING ProcName;
     VOID (WINAPI *BTCpuProcessInit)(VOID);
     VOID (WINAPI *BTCpuThreadInit)(VOID);
     PVOID (WINAPI *BTCpuGetBopCode)(VOID);
     VOID (WINAPI *BTCpuSimulate)(VOID);
+    LONG (WINAPI *BTCpuNotifyMapViewOfSection)(PVOID, PVOID, PVOID, SIZE_T, ULONG, ULONG);
     static WOW64INFO_FEX Wow64Info;
     static UCHAR CpuAreaBuf[16 + sizeof(WOW64_CONTEXT) + 16];
     PBYTE CpuArea;
@@ -461,6 +572,7 @@ Wow64LdrpInitialize(PVOID Context)
     WOW64_RESOLVE(BTCpuThreadInit);
     WOW64_RESOLVE(BTCpuGetBopCode);
     WOW64_RESOLVE(BTCpuSimulate);
+    WOW64_RESOLVE(BTCpuNotifyMapViewOfSection);
     {
         PVOID Addr = NULL;
         RtlInitAnsiString(&ProcName, "BTCpuResetToConsistentState");
@@ -474,9 +586,14 @@ Wow64LdrpInitialize(PVOID Context)
      * Allocate every raw guest page first; pages created afterward are not
      * visible until the full memory-notification contract is wired. */
     ExitStub = Wow64pAllocBelow2G(0x1000, PAGE_EXECUTE_READWRITE, "exit stub");
-    GuestStack = Wow64pAllocBelow2G(0x10000, PAGE_READWRITE, "guest stack");
-    if (!ExitStub || !GuestStack)
+    GuestStack = Wow64pAllocBelow2G(0x10000, PAGE_READWRITE, "guest run stack");
+    ApcStack = Wow64pAllocBelow2G(0x40000, PAGE_READWRITE, "guest loader stack");
+    if (!ExitStub || !GuestStack || !ApcStack)
         NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
+
+    /* Build PEB32->ProcessParameters (down-converted from PEB64) so the 32-bit
+     * loader has valid ImagePathName/CommandLine to run LdrpInitializeProcess. */
+    Wow64pBuildProcessParams32(Peb32);
 
     BTCpuProcessInit();
     Bop = BTCpuGetBopCode();
@@ -507,6 +624,28 @@ Wow64LdrpInitialize(PVOID Context)
                                PAGE_READWRITE, &OldProt); /* COW data — best effort */
         *Slot = (ULONG)(ULONG_PTR)Bop;
         DbgPrint("[FEX-WOW64C] Wow64Transition slot %p patched -> BOP %p\n", Slot, Bop);
+    }
+
+    /* -- Register the guest images with FEX -------------------------------
+     * The kernel mapped hello32 (image base) and we mapped ntdll32 BEFORE
+     * BTCpuProcessInit ran its address-space discovery — so FEX's image
+     * tracker doesn't know they're images and the guest ntdll's
+     * RtlImageNtHeader read of the PE header at the image base returns NULL
+     * (loader then near-null-writes). Notify FEX now (real WoW64 calls this
+     * from the map-view hook). */
+    BTCpuNotifyMapViewOfSection(NULL, (PVOID)(ULONG_PTR)ImageBase32, NULL, 0, 0, PAGE_EXECUTE_READ);
+    BTCpuNotifyMapViewOfSection(NULL, Ntdll32, NULL, 0, 0, PAGE_EXECUTE_READ);
+    DbgPrint("[FEX-WOW64C] BTCpuNotifyMapViewOfSection: image=%08lx ntdll32=%p registered\n",
+             ImageBase32, Ntdll32);
+
+    /* -- Resolve the guest ntdll32 loader entrypoints (M3b) ---------------- */
+    KiUserApcDispatcher32 = Wow64pFindExport32(Ntdll32, "KiUserApcDispatcher");
+    LdrInitThunk32 = Wow64pFindExport32(Ntdll32, "LdrInitializeThunk");
+    if (!KiUserApcDispatcher32 || !LdrInitThunk32)
+    {
+        DbgPrint("[FEX-WOW64C] FAIL: ntdll32 KiUserApcDispatcher=%p LdrInitializeThunk=%p\n",
+                 KiUserApcDispatcher32, LdrInitThunk32);
+        NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
     }
 
     /* -- Guest exit stub + stack ------------------------------------------ */
@@ -557,13 +696,48 @@ Wow64LdrpInitialize(PVOID Context)
     GuestEsp -= 4;
     *(ULONG *)(ULONG_PTR)GuestEsp = (ULONG)(ULONG_PTR)ExitStub; /* ret addr */
 
-    /* -- CPU area (WOW64_CPURESERVED + 16-aligned WOW64_CONTEXT) ----------- */
+    /* -- Inner "run" CONTEXT32: what the guest executes AFTER the loader
+     *    finishes (LdrInitializeThunk ends by NtContinue-ing to this). It is
+     *    the i386 image entry on the run stack, returning to the exit stub. -- */
+    {
+        static WOW64_CONTEXT RunCtx;
+        RunCtx.ContextFlags = WOW64_CONTEXT_FULL | WOW64_CONTEXT_EXTENDED_REGISTERS;
+        RunCtx.Eip = ImageBase32 + EntryRva;
+        RunCtx.Esp = GuestEsp;
+        RunCtx.EFlags = 0x202;
+        RunCtx.SegCs = 0x23; RunCtx.SegSs = 0x2B; RunCtx.SegDs = 0x2B;
+        RunCtx.SegEs = 0x2B; RunCtx.SegFs = 0x53; RunCtx.SegGs = 0x2B;
+        *(USHORT *)((PBYTE)RunCtx.ExtendedRegisters + 0x00) = 0x027F; /* FCW   */
+        *(ULONG *)((PBYTE)RunCtx.ExtendedRegisters + 0x18) = 0x00001F80; /* MXCSR */
+
+        /* -- Loader APC frame on the loader stack (KiUserApcDispatcher ABI):
+         *    [E+0]=LdrInitializeThunk [E+4]=&CONTEXT [E+8,+12]=SysArgs
+         *    [E+16..]=CONTEXT [E+16+CAS..]=SEH scratch. Entry Eip=dispatcher,
+         *    Esp=E; the loader runs on the stack below E, then NtContinues to
+         *    RunCtx (the image entry). ---------------------------------------- */
+        {
+            ULONG CAS = (ULONG)((sizeof(WOW64_CONTEXT) + 3) & ~3u);
+            PBYTE FrameTop = (PBYTE)ApcStack + 0x40000 - 0x100;
+            ULONG E = (ULONG)(ULONG_PTR)(FrameTop - (16 + CAS + 8));
+            E &= ~15u;
+            *(ULONG *)(ULONG_PTR)(E + 0)  = (ULONG)(ULONG_PTR)LdrInitThunk32;
+            *(ULONG *)(ULONG_PTR)(E + 4)  = E + 16; /* NormalContext = &CONTEXT */
+            *(ULONG *)(ULONG_PTR)(E + 8)  = 0;
+            *(ULONG *)(ULONG_PTR)(E + 12) = 0;
+            for (ULONG i = 0; i < sizeof(WOW64_CONTEXT); i++)
+                *(PBYTE)(ULONG_PTR)(E + 16 + i) = ((PBYTE)&RunCtx)[i];
+            ApcEsp = E;
+        }
+    }
+
+    /* -- CPU area (WOW64_CPURESERVED + 16-aligned WOW64_CONTEXT): the CONTEXT
+     *    the JIT enters — the loader dispatcher, NOT the image entry. -------- */
     CpuArea = (PBYTE)(((ULONG_PTR)CpuAreaBuf + 15) & ~(ULONG_PTR)15);
     *(USHORT *)(CpuArea + 2) = WOW64_MACHINE_I386; /* WOW64_CPURESERVED.Machine */
     Wow64Ctx = (WOW64_CONTEXT *)(CpuArea + 16);
     Wow64Ctx->ContextFlags = WOW64_CONTEXT_FULL | WOW64_CONTEXT_EXTENDED_REGISTERS;
-    Wow64Ctx->Eip = ImageBase32 + EntryRva;
-    Wow64Ctx->Esp = GuestEsp;
+    Wow64Ctx->Eip = (ULONG)(ULONG_PTR)KiUserApcDispatcher32;
+    Wow64Ctx->Esp = ApcEsp;
     Wow64Ctx->EFlags = 0x202;
     Wow64Ctx->SegCs = 0x23;
     Wow64Ctx->SegSs = 0x2B;
@@ -578,8 +752,8 @@ Wow64LdrpInitialize(PVOID Context)
 
     BTCpuThreadInit();
 
-    DbgPrint("[FEX-WOW64C] entering BTCpuSimulate (eip=%08lx esp=%08lx stack=%p exit=%p) — verdict via EXIT service\n",
-             Wow64Ctx->Eip, Wow64Ctx->Esp, GuestStack, ExitStub);
+    DbgPrint("[FEX-WOW64C] entering BTCpuSimulate via loader (apcDisp=%08lx esp=%08lx LdrInit=%p runEip=%08lx exit=%p)\n",
+             Wow64Ctx->Eip, Wow64Ctx->Esp, LdrInitThunk32, ImageBase32 + EntryRva, ExitStub);
     BTCpuSimulate();
 
     DbgPrint("[FEX-WOW64C] FAIL: BTCpuSimulate returned\n");

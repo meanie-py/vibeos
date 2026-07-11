@@ -39,9 +39,14 @@ NtDeviceIoControlFile
 NtFsControlFile
 NtQueryDirectoryFile
 NtNotifyChangeDirectoryFile
+NtQueryVirtualMemory
 
 # --- context / LARGE_INTEGER-by-value / arrays of pointers ---
 NtQuerySystemInformation
 NtSetSystemInformation
 NtQueryInformationProcess
 NtQueryInformationThread
+NtAllocateVirtualMemory
+NtFreeVirtualMemory
+NtProtectVirtualMemory
+NtQuerySymbolicLinkObject

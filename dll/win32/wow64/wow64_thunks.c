@@ -20,6 +20,12 @@ DbgPrint(_In_z_ _Printf_format_string_ PCSTR Format, ...);
 #include "wow64_thunks.gen.c"
 
 #define WOW64_STATUS_INVALID_SYSTEM_SERVICE ((NTSTATUS)0xC000001CL)
+#define WOW64_MANUAL_UNIMPL ((NTSTATUS)0x7FFFFFFF)
+
+/* wow64_manual.c: hand-written deep marshallers for the manual-list syscalls
+ * (struct layouts that differ 32<->64). Returns WOW64_MANUAL_UNIMPL if the
+ * name has no marshaller yet. */
+NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments);
 
 /* Serial-noisy per-syscall trace for M3 bring-up; flip to 0 once the guest
  * loader path is stable (each guest syscall costs a DbgPrint line). */
@@ -41,9 +47,16 @@ Wow64DispatchSystemService(ULONG ServiceNumber, PULONG Arguments)
     Entry = &Wow64ThunkTable[ServiceNumber];
     if (!Entry->Thunk)
     {
-        DbgPrint("[WOW64] %s (0x%lx) NEEDS MANUAL MARSHALLER — failing loud\n",
-                 Entry->Name, ServiceNumber);
-        return WOW64_STATUS_INVALID_SYSTEM_SERVICE;
+        Status = Wow64ManualDispatch(Entry->Name, Arguments);
+        if (Status == WOW64_MANUAL_UNIMPL)
+        {
+            DbgPrint("[WOW64] %s (0x%lx) NEEDS MANUAL MARSHALLER — not yet implemented, failing loud\n",
+                     Entry->Name, ServiceNumber);
+            return WOW64_STATUS_INVALID_SYSTEM_SERVICE;
+        }
+        if (Wow64TraceSyscalls)
+            DbgPrint("[WOW64] %s(0x%lx) [manual] => %08lx\n", Entry->Name, ServiceNumber, Status);
+        return Status;
     }
 
     Status = Entry->Thunk(Arguments);
