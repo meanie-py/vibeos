@@ -15,17 +15,17 @@ An AI-vibecoded fork of [ReactOS](https://reactos.org/) that ports the kernel to
 
 ## Screenshots
 
-All three architectures currently boot to a painted taskbar in the QEMU smoke harness.
+All three architectures boot to a graphical desktop in the QEMU smoke harness — **arm64 reaches the same real `shell ready` marker as x86**, not an idle-detection proxy.
 
 | i386 LiveCD desktop | amd64 LiveCD desktop |
 |---|---|
 | ![i386 desktop](docs/screenshots/i386_desktop.png) | ![amd64 desktop](docs/screenshots/amd64_desktop.png) |
 
-| ARM64 desktop *(Feb 16, M31)* | ARM64 Notepad *(Feb 16, M29)* |
+| ARM64 desktop | ARM64 Notepad |
 |---|---|
 | ![ARM64 desktop](docs/screenshots/arm64_desktop.png) | ![ARM64 notepad](docs/screenshots/arm64_notepad.png) |
 
-ARM64 was the original target — bringing up an NT-style kernel on a non-x86 architecture from a codebase that had never built for one before. The Notepad screenshot is from milestone M29 (interactive input over serial); the desktop screenshot is from M31 (real virtio-input devices via `qemu --gui`). The current ARM64 smoke target is `shell ready` parity with i386/amd64 (taskbar paints, idle detection); virtio mouse/keyboard interactivity has not yet been re-validated post-Rust-translation.
+ARM64 was the original target — bringing up an NT-style kernel on a non-x86 architecture from a codebase that had never built for one before. It now boots to the same graphical desktop as x86 in ~40s under QEMU `virt`, with real GIC interrupts (routing + dispatch + hardware-backed IRQL), a PL031 real-time clock, and USB HID keyboard/mouse input through the Rust USB host stack.
 
 ---
 
@@ -34,13 +34,13 @@ ARM64 was the original target — bringing up an NT-style kernel on a non-x86 ar
 A multi-architecture port of ReactOS — an open-source Windows-compatible operating system — with two parallel goals:
 
 1. **ARM64 port.** Cross-compile the entire NT-compatible kernel and userspace to AArch64 PE-COFF using `llvm-mingw`. Boot under QEMU `virt`. Also retains amd64 and i386 builds; all three target zero build failures and pass smoke tests independently.
-2. **Rust in the kernel.** Translate the C source of `ntoskrnl` (and now the HAL) to Rust subsystem-by-subsystem using an automated LLM pipeline (`tools/rustconv/`), then link the result into the kernel as static libraries. The cmake-built `ntoskrnl.exe` currently consumes **only 8 C shim files** — every other subsystem (`ob`, `se`, `ps`, `ex`, `ke`, `mm`, `cc`, `fsrtl`, `iomgr`, `pnpmgr`, `config`, `kd`, `kdbg`, `kd64`, `lpc`, `dbgk`, `po`, `wmi`, `vdm`, `rtl`, etc.) is Rust. The HAL is ~80% Rust on x86 (mini_hal fully Rust). 14+ sibling rlibs under `sdk/lib/rust/` factor out reusable primitives (slist, bitmap, splaytree, generictable, avltable, mm-avl, etc.).
+2. **Rust in the kernel.** Translate the C source of `ntoskrnl` (and the HAL) to Rust subsystem-by-subsystem using an automated LLM pipeline (`tools/rustconv/`), then link the result into the kernel. `ntoskrnl.exe` now **links via cargo with zero cmake-built static libraries** and consumes only a handful of tiny C shim files — every subsystem (`ob`, `se`, `ps`, `ex`, `ke`, `mm`, `cc`, `fsrtl`, `iomgr`, `pnpmgr`, `config`, `kd`, `kdbg`, `kd64`, `lpc`, `dbgk`, `po`, `wmi`, `vdm`, `rtl`, etc.) is Rust. The kernel monolith crate is being split per-subsystem for build velocity (~70% extracted, ~250-member cargo workspace). The HAL is Rust on **all three arches** — x86 (i386 + amd64) and arm64 (GIC/timer/DMA-adapter/PL031). Dozens of sibling rlibs under `sdk/lib/rust/` factor out reusable primitives (slist, bitmap, splaytree, generictable, avltable, mm-avl, etc.).
 
 The translation pipeline produces transliterated Rust that mostly preserves the original C structure, with subsequent passes for probe migration, RAII guards, and idiomatic NTSTATUS handling. It is held together by:
 
 - ~1,500 compile-time struct layout assertions per architecture (bindgen-generated).
-- A custom static-analysis suite (`scan_ud2.py`, `lint_kernel.py`, `verify_constants.py`, `verify_ffi.py`, `verify_abi.py`) for catching LLVM miscompilations and FFI mismatches.
-- QEMU smoke tests (`tests/qemu/test_smoke.py`) that boot each arch end-to-end and require a graphical desktop to count as passing.
+- A custom static-analysis suite (`scan_ud2.py`, `lint_kernel.py`, `verify_constants.py`, `verify_ffi.py`, etc.) for catching LLVM miscompilations and FFI mismatches, plus bespoke runtime tripwires (lockdep, waitdep, cswitchdep, special-pool) for the hard concurrency/corruption bugs.
+- QEMU smoke tests (`tests/qemu/test_smoke.py`, driven by `./vibeos-cli`) that boot each arch end-to-end and require a graphical desktop to count as passing.
 
 ## What this is *not*
 
@@ -54,46 +54,45 @@ The translation pipeline produces transliterated Rust that mostly preserves the 
 > [!NOTE]
 > **Active development is intermittent.** The repo is generally kept in a state where all three architectures build cleanly and pass the smoke harness, but the smoke harness's bar varies a lot by arch (see below). It may go quiet again at any time.
 
-Current per-arch boot state (HEAD as of mid-May 2026):
+Current per-arch boot state (HEAD as of July 2026):
 
-- **i386 — full graphical desktop with start menu and taskbar.** LiveCD ISO boots through the full chain (kernel → SMSS → CSRSS → win32k → winlogon → explorer → desktop with shell). Smoke tests pass 7/7.
-- **amd64 — full graphical desktop.** Same chain, same outcome. Has had two multi-week boot regressions during the Rust-translation push (most recently a HAL `cpuid` 32-bit-xchg bug that zero-extended into `rbx` and truncated kernel pointers — fixed 2026-05-14). Currently 7/7 PASS on KVM-accelerated QEMU.
-- **ARM64 — painted taskbar, no virtio interactivity yet.** Kernel + user-mode loader + win32k all work; smoke 5/5 PASS via idle-detection marker. The historical M29/M30/M31 screenshots (virtio mouse, Notepad with serial keyboard) regressed during the Rust translation push and have not been re-validated.
+- **i386 — full graphical desktop** with start menu and taskbar. LiveCD ISO boots the full chain (kernel → SMSS → CSRSS → win32k → winlogon → explorer → desktop with shell).
+- **amd64 — full graphical desktop.** Same chain, same outcome.
+- **ARM64 — full graphical desktop.** Reaches the *same* real `shell ready` marker as x86 (not idle-detection — that's retired lore), in ~40s under QEMU `virt`, with real GIC interrupts, RTC clock, and USB HID input.
+
+All three are driven by one smoke harness (`./vibeos-cli gate` builds serially, then boots all arches in parallel); the boot marker is `[EXPLORER] _tWinMain entered` + `shell ready` on **every** arch.
 
 Other status:
 
-- **Build:** All three arches build cleanly from Linux/WSL2 with the unified `llvm-mingw` toolchain. Zero build failures.
-- **Rust coverage:** ntoskrnl's cmake-built link ships only 8 C shim files; everything else is Rust. The HAL is ~80% Rust on x86; mini_hal is fully Rust. arm64 HAL stays as C stubs by design (real arm64 hardware support is a future scoped project).
-- **LLVM defenses:** the captures(none) class of bugs (ud2 in named functions, dropped output-pointer writes) is held back by a workspace-level firewall (`lto = false` + `codegen-units = 256`), augmented by `tools/scan_ud2.py` and `tools/lint_kernel.py` static checks integrated into the smoke harness. The older CGU=1 + opaque_ptr discipline is no longer needed.
-- **Smoke harness:** Boot marker is `shell ready` on x86 (proves the full kernel → user-mode → desktop chain). ARM64 uses idle detection. Static analysis (ud2 scan, sacred-primitives check) runs as part of the test suite and gates regressions.
+- **Build:** All three arches build cleanly from Linux/WSL2 with the unified `llvm-mingw` toolchain (Clang 19 / lld 19.1.7, rustc 1.92 / LLVM 21). Zero build failures. Builds run at a canonical bind-mount path with a mandatory shared ccache/sccache; the front door is `./vibeos-cli build`.
+- **Rust coverage:** `ntoskrnl.exe` links via cargo with zero cmake static libs (only a few tiny C shims remain); every subsystem is Rust; the monolith crate is ~70% split into per-subsystem crates. The HAL is Rust on all three arches.
+- **LLVM defenses:** the captures(none) miscompile class (ud2 in named functions, dropped output-pointer writes) is **toolchain-fixed on LLVM ≥ 21** (we ship rustc 1.92 / LLVM 21.1.3); the `lto = false` + `codegen-units = 256` workspace firewall stays as belt-and-suspenders (it still guards the toolchain-independent ABI-mismatch ud2 cascade), backed by `scan_ud2.py`/`lint_kernel.py` in the smoke harness.
+- **Smoke harness:** Boot marker is `shell ready` on **all three arches** (proves kernel → user-mode → desktop). Static analysis (ud2 scan, sacred-primitives, FFI/constant checks) runs as a blocking lint gate before boots and gates regressions.
 
 For a deeper look, see:
 
-- [`docs/product/status-update.md`](docs/product/status-update.md) — current state across arches, Rust coverage, build paths
-- [`docs/product/vibeos-roadmap.md`](docs/product/vibeos-roadmap.md) — what this could become
+- [`docs/engineering/rust-port-status.md`](docs/engineering/rust-port-status.md) — the single source of truth for current Rust-vs-C coverage per subsystem
+- [`docs/product/vibeos-roadmap.md`](docs/product/vibeos-roadmap.md) — what this could become (+ the live Check-back ledger and Known-bugs registry)
 - [`docs/product/vibeos-roadmap-complete.md`](docs/product/vibeos-roadmap-complete.md) — what's already shipped
-- [`docs/engineering/`](docs/engineering/) — translation audits, kernel-Rust patterns, debug infrastructure
+- [`docs/engineering/`](docs/engineering/) — the ~11 living reference docs (field manual, kernel-Rust patterns, build system, debug infrastructure); `docs/engineering/active-lanes/` for in-flight work, `docs/engineering/archive/` for closed lanes
 - [`AGENTS.md`](AGENTS.md) — the long-form context document used by AI agents working on this repo (also the best single-page summary of how everything fits together)
 
 ## Building (for the curious)
 
 Requires `llvm-mingw` (Clang 19+), `windmc` from Homebrew `mingw-w64`, `cargo` with the `aarch64-pc-windows-gnullvm`, `x86_64-pc-windows-gnu`, and `i686-pc-windows-gnu` targets, plus `qemu-system-{aarch64,x86_64,i386}`. See [`AGENTS.md`](AGENTS.md) for the full setup.
 
+The unified front door is **`./vibeos-cli`** (build / smoke / check / gate / debug). It handles the canonical build path, shared cache, and per-arch boot media automatically:
+
 ```bash
-# ARM64 (UEFI ramdisk boot)
-cd build-arm64 && ninja
-bash qemu/run.sh --arch arm64 --gui
+./vibeos-cli build  --arch arm64      # or amd64 / i386  (--clean for a cold link)
+./vibeos-cli smoke  --arch arm64      # the verdict — boots to desktop, refuses stale media
+./vibeos-cli gate                     # build ×3 serial → smoke all arches in parallel
+```
 
-# amd64 (LiveCD ISO)
-cd build-amd64 && ninja livecd
-bash qemu/run.sh --arch amd64
+Raw ninja still works, but a canonical build dir must be entered through the mount wrapper (plain `cd build-<arch> && ninja` fails loudly by design — its baked paths only exist inside the mount):
 
-# i386 (LiveCD ISO)
-cd build-i386 && ninja livecd
-bash qemu/run.sh --arch i386
-
-# Smoke tests (requires Python venv)
-pytest tests/qemu/test_smoke.py -v --arch i386
+```bash
+cd build-amd64 && ../tools/canon-run.sh ninja livecd
 ```
 
 ## License
