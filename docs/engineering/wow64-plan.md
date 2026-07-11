@@ -240,30 +240,45 @@ real service numbers, not `.spec` order) and its output is built + dispatched by
 wow64.dll (`wow64_thunks.c`); manual-list slots route to hand marshallers in
 `wow64_manual.c` (`Wow64ManualDispatch`).
 
-*M3b — IN PROGRESS (2026-07-10): the 32-bit loader runs, blocked in the guest
-heap.* Instead of jumping straight to the image entry, the guest now enters at
+*M3b — IN PROGRESS (2026-07-10): the 32-bit loader runs deep, blocked on an
+arm64 unaligned-access fault.* The guest now enters at
 `ntdll32!KiUserApcDispatcher → LdrInitializeThunk` (the real loader) with a
 down-converted 32-bit `RTL_USER_PROCESS_PARAMETERS` (the kernel leaves PEB32's
-NULL). The loader runs its whole early sequence correctly —
-`NtQueryVirtualMemory`, `NtQueryInformationProcess(ProcessBasicInformation)`,
-IFEO `NtOpenKey`, heap `NtAllocateVirtualMemory ×N`, locale, `\KnownDlls`
-dir+symlink+query — every syscall returning `STATUS_SUCCESS` through 11 hand
-marshallers (VM in/out-cell trio, the OA-open family, PBI/SBI down-convert,
-symlink in/out UNICODE_STRING). **Blocker:** the loader then near-null-writes
-building the main image's `LDR_DATA_TABLE_ENTRY` because
-`RtlAllocateHeap(ProcessHeap, 8, 0x50)` returns **NULL** (ntdll32 RVA 0x5153
-`test eax,eax; je 0x5172` with `edi=0`). RULED OUT via a guest probe stub: FEX
-memory is coherent — the guest reads hello32's DOS header at 0x400000 correctly
-(`e_magic=0x5A4D`, `e_lfanew=0x78`), matching the file byte-for-byte; and the
-FEX-source investigation confirms FEX shares the host address space flat (base 0,
-no translation; `BTCpuProcessInit` self-registers the main image from
-`Peb->ImageBaseAddress` at Module.cpp:545 — no missing BTCpu call). So the bug is
-in the **guest heap** (RtlCreateHeap/RtlAllocateHeap free-list or a
-TEB32/PEB32-dependent field the heap reads) running under emulation, *not* the
-CPU or memory layer. Next: trace the guest process-heap creation
-(PEB32->ProcessHeap / the cached heap-handle global at ntdll32+0x9bb00) — likely
-needs guest-side ntdll32 DbgPrint instrumentation or a FEX-context GDB stop.
-Landed as `wip(wow64): M3b`; behind VIBEOS_FEX, normal boots unaffected.
+NULL) and `SystemArgument1 = ntdll32 base` (the initial-thread APC contract).
+The loader runs its whole early sequence correctly — `NtQueryVirtualMemory`,
+`ProcessBasicInformation`, IFEO `NtOpenKey`, heap `NtAllocateVirtualMemory ×N`,
+locale, `\KnownDlls` dir+symlink+query — through 11 hand marshallers, then
+builds the image + ntdll `LDR_DATA_TABLE_ENTRY`s and reaches
+`RtlCreateActivationContext`.
+
+**Two bugs found + fixed here, plus the current blocker:**
+- **[FIXED] `SystemArgument1 = 0` in the APC frame.** The loader builds ntdll's
+  LDR entry via `LdrpAllocateDataTableEntry(SystemArgument1)` (ldrinit.rs:2257);
+  a NULL base made it call `RtlImageNtHeader(NULL)` → NULL → near-null-write of
+  the entry's Flags → AV at ntdll32+0x5172. Fixed by passing the ntdll32 base.
+  *(The earlier "guest heap" hypothesis was WRONG — a host-side VEH dump of the
+  guest x86 regs proved the heap was healthy (ProcessHeap=0x820000, free list
+  populated) and `ebx=PEB32->Ldr` showed the `RtlImageNtHeader` `je` was taken,
+  not the `RtlAllocateHeap` one. Don't re-chase the heap.)*
+- **Diagnostic infra landed:** `Wow64pDumpGuestHeap` in the VEH dumps the guest
+  x86 register file + PEB32 fields + heap state at any unhandled guest fault
+  (FEX shares the host AS, so wow64.dll reads 32-bit guest memory directly). This
+  is how both bugs were pinned without a guest-ntdll rebuild or GDB.
+- **CURRENT BLOCKER — arm64 alignment fault (DFSC 0x21) on an unaligned guest
+  read.** In `memcpy`'s unaligned-source path (`mov ecx,[edx]`, ntdll32+0x2d0a0,
+  called from `RtlCreateActivationContext`), a 4-byte load from a 2-aligned
+  address into section-mapped ntdll32 `.rdata` faults. `SCTLR_EL1.A=0`
+  (`0x30D0198D`), so unaligned Normal-memory access is allowed OS-wide, and the
+  VirtualAlloc'd guest heap took heavy unaligned-free traffic without faulting —
+  so the suspect is that `NtMapViewOfSection(SEC_IMAGE)` view pages get a
+  **Device AttrIndx** (Device faults on *unaligned* even with A=0, while aligned
+  reads + code fetch still work — matching everything up to now). Next: confirm
+  section-specific vs global by forcing an unaligned guest read of VirtualAlloc'd
+  memory; if section-specific, fix the arm64 section-view PTE memory attribute to
+  Normal-WB (AttrIndx 0). Alternatively a FEX-emitted alignment-requiring
+  instruction — rule out by checking the JIT output for that load.
+  Landed as `wip(wow64): M3b` + the SystemArgument1 fix; behind VIBEOS_FEX,
+  normal boots unaffected.
 
 *Still owed in Phase C:*
 - 32-bit ntdll auto-map + `Wow64Transition` publishing (32-bit ntdll's syscall
