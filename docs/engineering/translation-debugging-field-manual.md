@@ -4526,3 +4526,65 @@ user-supplied misaligned pointer to a PHANDLE-probing syscall reaches
 `ProbeForWrite`'s RAISE path, and under DUMMY_PSEH that bugchecks (0x1E)
 instead of returning 0x80000002 — `[PROBE-MISALIGN-R/W]` in ex-rust
 `exintrin.rs` now prints addr/len/align + caller LR just before the raise.
+
+### 9.51 (ROOT-CAUSED + FIXED 2026-07-11) First -smp 2 boot: two latent bugs the second CPU flushed out — uniata's nIEN ATAPI path under QEMU, and hand-rolled KUSER_SHARED_DATA shadow structs with fantasy offsets
+
+**Context:** SMP bring-up M2 (first amd64 AP start). `-smp 1` green; `-smp 2`
+died deterministically at BUGCHECK 0x6B (PROCESS1_INITIALIZATION_FAILED,
+c000003a) and, after the first fix, at 0x4C (0xC000021A from SMSS). Neither
+was an SMP bug per se — both were pre-existing latent bugs that only a second
+CPU could expose. Expect more of this class as M3+ proceeds.
+
+**Bug A — 0x6B: uniata `CPU_num > 1` switches to an nIEN-gated ATAPI send
+that QEMU's IDE model cannot deliver.**
+`uniata-rust/src/id_ata_part3.rs` (DriverEntry): `if CPU_num > 1 {
+g_opt_AtapiSendDisableIntr = TRUE }` — an SMP workaround for real controllers
+whose INTRQ stays pending across a device-side mask (nIEN). QEMU (and the
+Bochs family it derives from) checks nIEN only at raise time and NEVER
+replays a suppressed IRQ. Net effect: the INQUIRY packet command to the boot
+CD loses its completion → scsiport scan reports no CdRom → no
+`\ArcName\...cdrom(0)` → `IopReassignSystemRoot` can't resolve →
+`PsLocateSystemDll`'s ZwOpenFile(ntdll) = STATUS_OBJECT_PATH_NOT_FOUND → 0x6B.
+**Fix:** gate the override on bare metal only (`CPU_num > 1 &&
+g_opt_VirtualMachine <= VM_NONE`), Rust + C reference copy both.
+**Trap for the debugger:** uniata AND scsiport are Rust translations —
+editing `drivers/storage/ide/uniata/id_ata.cpp` or
+`drivers/storage/port/scsiport/*.c` does nothing (the shipped .sys comes from
+`uniata-rust`/`scsiport-rust`; the C DPRINT file:line strings are baked into
+the Rust, so serial output *looks* like the C is running). An entire
+first-round "fix" went into the dead C copy and tested as a no-op.
+
+**Bug B — 0x4C: five+ hand-rolled `struct KUSER_SHARED_DATA` shadow structs
+with wrong field offsets; the AP's KiInitializeCpu chopped NtSystemRoot.**
+`ke/amd64/kiinit.rs` declared a local `KUSER_SHARED_DATA {
+ProcessorFeatures: [u8;64], NXSupportPolicy: u32 }` — placing writes at
+USD+0x00..0x43 (real: ProcessorFeatures +0x274, NXSupportPolicy +0x2D5).
+The `NXSupportPolicy = ALWAYSON` store writes 1 to USD+0x40 — bytes 16..19 of
+`NtSystemRoot`. On the BSP this runs (KiSystemStartup) BEFORE Phase 0 writes
+"C:\reactos" into USD, so UP boots never noticed — for years. The AP runs
+KiInitializeCpu AFTER the string exists → "C:\reactos" became "C:\reacto\0"
+→ smss's `%SystemRoot%` expanded to `X:\react` → KnownDlls dir open
+c000003a → SmpInit fails → 0xC000021A → 0x4C. Found with a GDB hardware
+watchpoint on USD+0x40 (TCG backend, `VIBEOS_NO_KVM=1` — KVM breakpoints
+don't fire on this host); it caught CPU#1 mid-store with the culprit PC.
+The audit then found the same landmine in: `ke/i386/kiinit.rs`
+(ProcessorFeatures at +0x2D4, writes over ActiveConsoleId..Cookie),
+`ke/amd64/xstate.rs` (XSTATE_CONFIGURATION at +0x00, over the tick/time
+fields), `ke/amd64/thrdini.rs` (XState at +0x2E8 — a THIRD inconsistent
+location), `rtlk-rust/misc.rs` (SuiteMask/NtProductType at wrong offsets and
+wrong widths), `ex-rust/time.rs` (TimeZoneId at +0x2C, over
+ImageNumberLow/High). All masked by ordering/self-consistency on UP.
+**Fix:** all swapped to the size-verified bindgen
+`ntkrnl_sys::ddk::_KUSER_SHARED_DATA` (NXSupportPolicy is the
+`__bindgen_anon_1.__bindgen_anon_1.set_NXSupportPolicy()` bitfield).
+`ke/clock.rs`'s shadow was audited correct (padding matches) and kept.
+**Reusable rules:** (1) NEVER hand-roll a shadow struct for a type bindgen
+already has — a partial local mirror with padding is a magic-offset bug in
+struct clothing (`scan_magic_offsets` can't see it; a `struct
+KUSER_SHARED_DATA`-redeclaration grep lint is OWED). (2) "Works on UP" proves
+nothing about USD writes — boot ordering hides wrong offsets; the AP replays
+per-CPU init at a time when the data is live. (3) For any "kernel global
+string/field corrupts between phase X and Y" mystery: TCG + GDB hardware
+watchpoint on the exact byte is a one-boot root-cause (`qemu/start.sh amd64
+--gdb-wait` + `VIBEOS_NO_KVM=1`, `hbreak` a phase marker, `watch` the
+address, `continue`).

@@ -10895,7 +10895,15 @@ DriverEntry(
         if(g_opt_VirtualMachine > VM_NONE) {
             g_opt_DriveSelectNanoDelay = 0;
         }
-        if(CPU_num > 1) {
+        if(CPU_num > 1 && g_opt_VirtualMachine <= VM_NONE) {
+            // The nIEN-gated ATAPI send is an SMP workaround for real
+            // controllers whose INTRQ stays pending across a device-side
+            // mask. QEMU's (and Bochs-family) IDE model checks nIEN only
+            // at raise time and never replays a suppressed IRQ, so this
+            // path loses the packet-command completion outright — the
+            // boot CD's INQUIRY dies and the device never enumerates
+            // (vibeos smp-bringup, 2026-07-10: -smp 2 BUGCHECK 0x6B via
+            // missing \SystemRoot).
             g_opt_AtapiSendDisableIntr = TRUE;
         }
 

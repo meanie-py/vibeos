@@ -108,10 +108,9 @@ extern "system" {
     static mut SharedUserData: *mut KUSER_SHARED_DATA;
 }
 
-#[repr(C)]
-struct KUSER_SHARED_DATA {
-    xstate: XSTATE_CONFIGURATION,
-}
+// KUSER_SHARED_DATA: bindgen layout (a shadow struct here put XState at +0x00,
+// clobbering the tick/time fields — same landmine class as amd64/kiinit.rs).
+use ntkrnl_sys::ddk::_KUSER_SHARED_DATA as KUSER_SHARED_DATA;
 
 #[cfg(target_arch = "x86")]
 extern "C" {
@@ -259,7 +258,7 @@ unsafe fn KiGetXStateConfiguration(XStateConfig: PXSTATE_CONFIGURATION) {
 
 // CODE_SEG("INIT")
 unsafe fn ValidateXStateConfig(XState: PXSTATE_CONFIGURATION) {
-    let GlobalXState = core::ptr::addr_of_mut!((*SharedUserData).xstate);
+    let GlobalXState = core::ptr::addr_of_mut!((*SharedUserData).XState);
 
     if ((*XState).EnabledFeatures != (*GlobalXState).EnabledFeatures)
         || ((*XState).EnabledSupervisorFeatures != (*GlobalXState).EnabledSupervisorFeatures)
@@ -287,21 +286,21 @@ pub unsafe extern "system" fn KiInitializeXStateConfiguration(ProcessorNumber: U
     }
 
     if ProcessorNumber == 0 {
-        KiGetXStateConfiguration(core::ptr::addr_of_mut!((*SharedUserData).xstate));
+        KiGetXStateConfiguration(core::ptr::addr_of_mut!((*SharedUserData).XState));
 
-        if (*SharedUserData).xstate.AllFeatureSize == 0 {
+        if (*SharedUserData).XState.AllFeatureSize == 0 {
             KeFeatureBits &= !(KF_XSTATE as u64);
             return;
         }
 
-        KeXStateLength = (*SharedUserData).xstate.AllFeatureSize as usize;
+        KeXStateLength = (*SharedUserData).XState.AllFeatureSize as usize;
     } else {
         let mut XState: XSTATE_CONFIGURATION = core::mem::zeroed();
         KiGetXStateConfiguration(&mut XState as PXSTATE_CONFIGURATION);
         ValidateXStateConfig(&mut XState as PXSTATE_CONFIGURATION);
     }
 
-    _xsetbv(0, (*SharedUserData).xstate.EnabledFeatures);
+    _xsetbv(0, (*SharedUserData).XState.EnabledFeatures);
 
     let mut ExtStateMain: CpuidExtendedStateMainLeafRegs = core::mem::zeroed();
     __cpuidex(
@@ -310,13 +309,13 @@ pub unsafe extern "system" fn KiInitializeXStateConfiguration(ProcessorNumber: U
         CPUID_EXTENDED_STATE_MAIN_LEAF,
     );
 
-    if ExtStateMain.ebx > (*SharedUserData).xstate.Size {
+    if ExtStateMain.ebx > (*SharedUserData).XState.Size {
     }
 
-    if (*SharedUserData).xstate.EnabledSupervisorFeatures != 0 {
+    if (*SharedUserData).XState.EnabledSupervisorFeatures != 0 {
         __writemsr(
             MSR_IA32_XSS,
-            (*SharedUserData).xstate.EnabledSupervisorFeatures,
+            (*SharedUserData).XState.EnabledSupervisorFeatures,
         );
 
         let mut ExtStateSubLeaf: CpuidExtendedStateSubLeafRegs = core::mem::zeroed();
@@ -326,8 +325,8 @@ pub unsafe extern "system" fn KiInitializeXStateConfiguration(ProcessorNumber: U
             CPUID_EXTENDED_STATE_SUB_LEAF,
         );
 
-        if ExtStateSubLeaf.ebx.xsave_area_size > (*SharedUserData).xstate.AllFeatureSize {
-            (*SharedUserData).xstate.AllFeatureSize = ExtStateSubLeaf.ebx.xsave_area_size;
+        if ExtStateSubLeaf.ebx.xsave_area_size > (*SharedUserData).XState.AllFeatureSize {
+            (*SharedUserData).XState.AllFeatureSize = ExtStateSubLeaf.ebx.xsave_area_size;
         }
     }
 }
