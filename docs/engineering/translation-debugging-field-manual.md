@@ -4645,6 +4645,92 @@ ntoskrnl/ke/amd64/trap.S (0xE1 dispatch). Owed next (M3b+): scheduled-on-
 CPU1 visibility counter, targeted single-VA remote flushes, the packet
 mailbox (staged wave-2 A), i386/arm64 parity, net-suite flake at -smp 2.
 
+### 9.53 (ROOT-CAUSED + FIXED 2026-07-11) arm64 FindFirstFile returns FILE_NOT_FOUND for every FAT directory — a cohab `SEH_TRY_EXCEPT` glue stub was a no-op, so fastfat directory enumeration silently returned empty with status 0
+
+**Symptom.** arm64 boots to desktop, but Ctrl+Esc opens no start menu. Serial shows
+`CStartMenu.cpp:520/627: Unexpected failure (hr)=80070002` and `CDrivesFolder.cpp:760:
+… 80070002` — `ERROR_FILE_NOT_FOUND`. The Start Menu shell folder can't be resolved
+even though the physical directory (`X:\Profiles\All Users\Start Menu`) exists in the
+FAT ramdisk. x86 (i386/amd64) is immune. **Boot-marker smoke stays green** — this is
+a paint/shell-namespace failure the marker is blind to; `test_start_menu_opens` is the eye.
+
+**The trace that cracked it (each step ruled out the "obvious" culprit).**
+1. `FatQueryDirectory` (fastfat dirctrl.rs) had a *real* renumbered-enum bug (positional
+   case labels 1..6 instead of the ntifs.h `FILE_INFORMATION_CLASS` values — cousin of the
+   §-or-pattern class). Fixed it. **Start menu still red.** A bounded `[FFPROBE]` in
+   `FatQueryDirectory` showed it was *never called* — 0 directory-control IRPs the whole boot.
+2. `[FFPROBE-CR]` in fastfat `create.rs` proved CREATE + LFN both work: `All Users found=1
+   lfnlen=18`, `Start Menu found=1 rem=0`, `advapi32_vista.dll found=1 lfnlen=36`. So the
+   directory *opens*; only enumeration is dead.
+3. `[FFF]` in kernel32-rust `FindFirstFileExW` showed `FilePattern.Length` was non-zero and
+   the code reached `NtQueryDirectoryFile` — which returned `status=0x0` (SUCCESS) — yet 0
+   fastfat dirctl IRPs. A `[NQDF]` in iomgr-rust `NtQueryDirectoryFile` proved the IRP *was*
+   dispatched to `\FileSystem\fastfat` with a non-null `MajorFunction[IRP_MJ_DIRECTORY_CONTROL]`
+   and came back SUCCESS — but `FatCommonDirectoryControl` never ran.
+4. `FatFsdDirectoryControl` runs its `__try` body through the glue wrapper `SEH_TRY_EXCEPT(ctx,
+   dirctrl_try, filter, except)`. It is the **only** `SEH_TRY_EXCEPT` caller in all of
+   fastfat-rust (every other dispatcher — create, cleanup, … — inlines its try body as a
+   `loop`/`catch_unwind`). `drivers/filesystems/fastfat/rust_cohab_stub.c` defined it as
+   `VOID SEH_TRY_EXCEPT(PVOID,PVOID,PVOID,PVOID){}` — a **no-op**, mistakenly grouped with the
+   genuinely-dead `_SEH2_*` macros. So `FatFsdDirectoryControl` built `ctx{Status=STATUS_SUCCESS}`,
+   called the no-op (never invoking `dirctrl_try` → no `IrpContext`, no `FatQueryDirectory`),
+   and returned its *init* SUCCESS. The IRP came back "successful" but empty → `FindFirstFileW`
+   → `ERROR_FILE_NOT_FOUND` → shell namespace parse fails → no start menu.
+
+**Fix.** `SEH_TRY_EXCEPT` now actually calls `try_fn(ctx)`. The filter/except paths stay dead
+under `USE_DUMMY_PSEH` (exceptions don't fire), but the **try body must run**. The callbacks are
+Rust `extern "system"` == `NTAPI` on every arch, so the pointer is typed `VOID (NTAPI *)(PVOID)`.
+
+**Why CREATE worked but enumeration didn't** is the whole tell: single-file opens go through
+`create.rs`'s inline try body; directory *enumeration* is the one path that routes through the
+no-op wrapper. If a cohab glue file stubs a helper "because SEH is dead," check whether the
+helper is a **dead exception macro** or a **live control-flow wrapper** — the latter must keep
+executing its body. Grep the stub file for anything that takes a function pointer and returns
+void; those are almost never safe no-ops.
+
+**Detection.** A `[NQDF]`-style probe (IRP dispatched to the FS, returns SUCCESS, but the FS's
+own common-dispatch probe never fires) localizes "handler returns without doing work" in one boot.
+The class-agnostic lesson: **status 0 + zero downstream IRPs = the dispatcher short-circuited**;
+don't trust a SUCCESS return, trust a probe *inside* the work function.
+
+(Separately fixed in the same lane: the `FatQueryDirectory` renumbered-enum bug from step 1 —
+real and now correct, though it only matters *after* this stub fix lets the query run at all.)
+
+**Follow-on (same lane, same bug class): `try_return` was ALSO a no-op stub.**
+Once SEH_TRY_EXCEPT let `FatQueryDirectory` actually run, its inner enumeration loop
+never terminated: explorer crashed in the taskbar `OnCreate`/`CreateStartMenu` and
+restarted forever. Root cause: `try_return(X)` (rust_cohab_stub.c) was a second empty
+stub, but in the C source it is the control-flow macro `{ Status = X; goto try_exit; }`.
+Every early exit in `FatQueryDirectory` — the `ReturnSingleEntry` loop terminator, the
+"next entry won't fit" buffer-full guard, the no-more-files exit — did nothing, so
+`CurrentVbo` oscillated between two dirents while `NextEntry` grew past the 16 KB user
+buffer (out-of-bounds writes → crash). A bounded `[FFQD]` loop tracer (log `CurrentVbo`
+/`NextEntry` per iteration, capped at 400) showed the runaway instantly: `NextEntry`
+climbing 42920→46280 with `CurrentVbo` cycling 32↔128. Fix: a C `goto try_exit` can't be
+a Rust function call — inline each site. Outer-closure sites `return;` straight to the
+SEH_FINALLY cleanup; the per-entry **inner**-closure sites can only `return` from that
+nested closure, so they set a `do_return` flag checked right after the inner
+`catch_unwind` to break the enclosing loop (one faithful `try_exit`). `NOTHING` sites
+preserve Status; `Status = X` sites set it. Post-fix: enumeration terminates (~32 bounded
+queries to build the shell namespace vs 400+ runaway), explorer stops crashing, and the
+arm64 desktop paints fully (notepad chrome, no torn strips).
+
+**The general rule this lane hammered home:** a cohab `rust_cohab_stub.c` that stubs a
+helper "because SEH/PSEH is dead" must distinguish a **dead exception macro**
+(`_SEH2_TRY`, `_SEH2_EXCEPT`) from a **live control-flow wrapper** (`SEH_TRY_EXCEPT`
+runs the try body; `try_return` is a `goto`). The dead ones are safe no-ops; the live
+ones are NOT. Grep the stub file for any empty function that takes a function pointer or
+whose C original expands to control flow — those are latent no-op landmines.
+
+**Still-open next layer (as of 2026-07-11):** with FAT enumeration fixed, the arm64
+taskbar still does not appear — `CreateStartMenu` now blocks inside shell32
+`RSHELL_CStartMenu_CreateInstance` (the CMenuBand/CMenuDeskBar population that binds the
+now-enumerable Start Menu folder). Localized via a `[CSM]` step marker to the
+`_CStartMenu_CreateInstance` call; only ~32 `FatQueryDirectory` calls happen (NOT a
+fastfat loop), explorer does not crash (benign thread block, not a restart-loop), and the
+desktop + notepad paint fully. This is a separate, deeper shell/COM-layer bug the fastfat
+fixes merely *unblocked*; it is the remaining work to get the taskbar + start menu on arm64.
+
 ### 9.54 (ROOT-CAUSED + FIXED 2026-07-11) Every arm64 BUGCHECK wore a mask — the crash reporter crashed (KeGetBugMessageText), and underneath sat a callback-ERET IRQ-clobber race from a dropped `cli` in the C→Rust translation
 
 **Triage rule first (the reusable part):** in any arm64 crash log, count the

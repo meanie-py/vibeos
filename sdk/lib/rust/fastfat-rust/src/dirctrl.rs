@@ -55,7 +55,9 @@ extern "system" {
     fn RtlEqualMemory(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, length: u32) -> u8;
     fn RtlOemStringToCountedUnicodeSize(OemString: *const OEM_STRING) -> u32;
     fn QuadAlign(x: u32) -> u32;
-    fn try_return(status: NTSTATUS);
+    // try_return was a no-op cohab stub — it is C's `try_return(X)` macro
+    // (Status = X; goto try_exit), now inlined as `return;`/do_return at each
+    // call site (see FatQueryDirectory). Do NOT re-introduce it as an extern fn.
     fn CanFsdWait(Irp: PIRP) -> i32;
     fn FatIsIrpTopLevel(Irp: PIRP) -> u8;
     fn FatCreateIrpContext(Irp: PIRP, CanWait: i32) -> PIRP_CONTEXT;
@@ -101,6 +103,7 @@ const STATUS_BUFFER_OVERFLOW: NTSTATUS = 0x80000005u32 as i32;
 const STATUS_INVALID_INFO_CLASS: NTSTATUS = 0xC0000003u32 as i32;
 const STATUS_UNMAPPABLE_CHARACTER: NTSTATUS = 0xC0000162_u32 as i32;
 const STATUS_SUCCESS: NTSTATUS = 0;
+#[allow(dead_code)] // C `try_return(NOTHING)` sentinel; now inlined as a Status-preserving return
 const NOTHING: NTSTATUS = 0;
 
 type NTSTATUS = i32;
@@ -428,7 +431,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                 if ExtendedName != 0 {
                     Status = RtlUpcaseUnicodeString(&mut (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().UnicodeQueryTemplate, UniArgFileName, 1);
                     if Status < 0 {
-                        try_return(Status);
+                        return; // try_return(Status)
                     }
                     SetFlag(&mut (*Ccb).Flags, CCB_FLAG_FREE_UNICODE);
 
@@ -437,7 +440,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         if Status == STATUS_UNMAPPABLE_CHARACTER {
                             SetFlag(&mut (*Ccb).Flags, CCB_FLAG_SKIP_SHORT_NAME_COMPARE);
                         } else {
-                            try_return(Status);
+                            return; // try_return(Status)
                         }
                     } else {
                         SetFlag(&mut (*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT);
@@ -501,33 +504,45 @@ pub unsafe extern "system" fn FatQueryDirectory(
         LastEntry = 0;
         NextEntry = 0;
 
+        // FILE_INFORMATION_CLASS raw enum values (ntifs.h). The original
+        // translation renumbered these switch labels 1..6 BY POSITION, so the
+        // raw class from the IRP (line: FileInformationClass = ...QueryDirectory
+        // .FileInformationClass, an unmapped enum) only matched for classes 1 &
+        // 2 (accidentally). FindFirstFileW sends FileBothDirectoryInformation
+        // (=3), which hit the positional arm '3' meant for FileIdFull — so the
+        // Both body was never filled: zeroed FileAttributes + FileNameLength ->
+        // empty-name/attr-0 WIN32_FIND_DATA -> malformed shell pidls (arm64
+        // start menu, any FAT directory enumeration). x86 is immune only
+        // because it boots CDFS off the ISO; arm64 is the sole fastfat boot.
+        const FIC_DIRECTORY: u32 = 1;
+        const FIC_FULL_DIRECTORY: u32 = 2;
+        const FIC_BOTH_DIRECTORY: u32 = 3;
+        const FIC_NAMES: u32 = 12;
+        const FIC_ID_BOTH_DIRECTORY: u32 = 37;
+        const FIC_ID_FULL_DIRECTORY: u32 = 38;
+
         match FileInformationClass {
-            1 => {
-                // FileDirectoryInformation
+            FIC_DIRECTORY => {
                 BaseLength = core::mem::offset_of!(FILE_DIRECTORY_INFORMATION, FileName) as u32 + 0;
             }
-            2 => {
-                // FileFullDirectoryInformation
+            FIC_FULL_DIRECTORY => {
                 BaseLength = core::mem::offset_of!(FILE_FULL_DIR_INFORMATION, FileName) as u32 + 0;
             }
-            3 => {
-                // FileIdFullDirectoryInformation
+            FIC_ID_FULL_DIRECTORY => {
                 BaseLength = core::mem::offset_of!(FILE_ID_FULL_DIR_INFORMATION, FileName) as u32 + 0;
             }
-            4 => {
-                // FileNamesInformation
+            FIC_NAMES => {
                 BaseLength = core::mem::offset_of!(FILE_NAMES_INFORMATION, FileName) as u32 + 0;
             }
-            5 => {
-                // FileBothDirectoryInformation
+            FIC_BOTH_DIRECTORY => {
                 BaseLength = core::mem::offset_of!(FILE_BOTH_DIR_INFORMATION, FileName) as u32 + 0;
             }
-            6 => {
-                // FileIdBothDirectoryInformation
+            FIC_ID_BOTH_DIRECTORY => {
                 BaseLength = core::mem::offset_of!(FILE_ID_BOTH_DIR_INFORMATION, FileName) as u32 + 0;
             }
             _ => {
-                try_return(STATUS_INVALID_INFO_CLASS);
+                Status = STATUS_INVALID_INFO_CLASS;
+                return; // try_return(Status = STATUS_INVALID_INFO_CLASS)
             }
         }
 
@@ -540,7 +555,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
             DebugTrace(0, Dbg, b"FatQueryDirectory -> Top of loop\n\0".as_ptr() as *const i8, 0);
 
             if ReturnSingleEntry != 0 && NextEntry != 0 {
-                try_return(Status);
+                return; // try_return(Status)
             }
 
             FatLocateDirent(
@@ -567,10 +582,15 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         Status = STATUS_NO_MORE_FILES;
                     }
                 }
-                try_return(Status);
+                return; // try_return(Status)
             }
 
-            // Inner SEH_TRY block
+            // Inner SEH_TRY block.
+            // try_return inside the inner closure can only `return` from the
+            // closure, not out of the enclosing loop; this flag propagates the
+            // C `goto try_exit` past the loop (checked right after the inner
+            // catch_unwind below).
+            let mut do_return = false;
             let inner_result = catch_unwind(AssertUnwindSafe(|| {
                 // SEH_TRY: start
                 Fat8dot3ToString(IrpContext, Dirent as *mut c_void, 1, &mut Fat8Dot3String);
@@ -585,27 +605,38 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             || (UserBufferLength as u32) < NextEntry)
                     {
                         DebugTrace(0, Dbg, b"Next entry won't fit\n\0".as_ptr() as *const i8, 0);
-                        try_return(STATUS_SUCCESS);
+                        // try_return(Status = STATUS_SUCCESS) — inner closure: flag + break loop
+                        Status = STATUS_SUCCESS;
+                        do_return = true;
+                        return;
                     }
 
                     NT_ASSERT((BytesRemainingInBuffer >= BaseLength) as u8);
                     core::ptr::write_bytes(Buffer.add(NextEntry as usize), 0, BaseLength as usize);
 
+                    // C switch FALLS THROUGH 5|2|6|3 -> 1: every dir-info class
+                    // ALSO fills the FILE_DIRECTORY_INFORMATION body (times,
+                    // sizes, FileAttributes, FileIndex, FileNameLength). The
+                    // original translation lost the fallthrough — class 5
+                    // (FileBothDirectoryInformation, the FindFirstFileW level)
+                    // returned zeroed entries: empty names + attrs=0, which
+                    // upstream turned into malformed shell pidls (arm64 start
+                    // menu / any 2-level shell path on FAT volumes).
                     match FileInformationClass {
-                        5 | 2 | 6 | 3 => {
-                            DebugTrace(0, Dbg, b"FatQueryDirectory -> Getting file full directory information\n\0".as_ptr() as *const i8, 0);
-                            FullDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_FULL_DIR_INFORMATION);
-                            // inner SEH_TRY for GetEaLength
-                            let ea_result = catch_unwind(AssertUnwindSafe(|| {
-                                FatGetEaLength(IrpContext, Vcb as *mut c_void, Dirent as *mut c_void, &mut (*FullDirInfo).EaSize);
-                            }));
-                            if ea_result.is_err() {
-                                FatResetExceptionState(IrpContext);
-                                (*FullDirInfo).EaSize = 0;
+                        FIC_BOTH_DIRECTORY | FIC_FULL_DIRECTORY | FIC_ID_BOTH_DIRECTORY | FIC_ID_FULL_DIRECTORY | FIC_DIRECTORY => {
+                            if FileInformationClass != FIC_DIRECTORY {
+                                DebugTrace(0, Dbg, b"FatQueryDirectory -> Getting file full directory information\n\0".as_ptr() as *const i8, 0);
+                                FullDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_FULL_DIR_INFORMATION);
+                                // inner SEH_TRY for GetEaLength
+                                let ea_result = catch_unwind(AssertUnwindSafe(|| {
+                                    FatGetEaLength(IrpContext, Vcb as *mut c_void, Dirent as *mut c_void, &mut (*FullDirInfo).EaSize);
+                                }));
+                                if ea_result.is_err() {
+                                    FatResetExceptionState(IrpContext);
+                                    (*FullDirInfo).EaSize = 0;
+                                }
                             }
-                            // fall through
-                        }
-                        1 => {
+                            // C fallthrough target: FileDirectoryInformation body
                             DirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_DIRECTORY_INFORMATION);
                             FatGetDirTimes(IrpContext as *mut IRP_CONTEXT, Dirent, DirInfo);
                             (*DirInfo).EndOfFile.QuadPart = (*Dirent).FileSize as i64;
@@ -624,7 +655,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             (*DirInfo).FileNameLength = FileNameLength;
                             DebugTrace(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
                         }
-                        4 => {
+                        FIC_NAMES => {
                             DebugTrace(0, Dbg, b"FatQueryDirectory -> Getting file names information\n\0".as_ptr() as *const i8, 0);
                             NamesInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_NAMES_INFORMATION);
                             (*NamesInfo).FileIndex = (NextVbo) as u32;
@@ -655,7 +686,9 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         .wrapping_add(BaseLength as usize).wrapping_add(BytesConverted as usize) as _;
 
                     if Status < 0 {
-                        try_return(NOTHING);
+                        // try_return(NOTHING) — inner closure: preserve Status (error), break loop
+                        do_return = true;
+                        return;
                     }
                 } else {
                     // Long filename path
@@ -669,44 +702,56 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             || (UserBufferLength as u32) < NextEntry)
                     {
                         DebugTrace(0, Dbg, b"Next entry won't fit\n\0".as_ptr() as *const i8, 0);
-                        try_return(STATUS_SUCCESS);
+                        // try_return(Status = STATUS_SUCCESS) — inner closure: flag + break loop
+                        Status = STATUS_SUCCESS;
+                        do_return = true;
+                        return;
                     }
 
                     NT_ASSERT((BytesRemainingInBuffer >= BaseLength) as u8);
                     core::ptr::write_bytes(Buffer.add(NextEntry as usize), 0, BaseLength as usize);
 
+                    // C switch FALLS THROUGH 5|6 -> 2|3 -> 1 (see the short-name
+                    // block above for the full story): Both classes fill the
+                    // ShortName, all non-1 classes fill EaSize, and EVERY class
+                    // also fills the FILE_DIRECTORY_INFORMATION body. The lost
+                    // fallthrough zeroed FileAttributes/FileNameLength for
+                    // class 5 = FindFirstFileW on FAT.
                     match FileInformationClass {
-                        5 | 6 => {
-                            BothDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_BOTH_DIR_INFORMATION);
-                            Fat8dot3ToString(IrpContext, Dirent as *mut c_void, 0, &mut Fat8Dot3String);
-                            NT_ASSERT((Fat8Dot3String.Length <= 12) as u8);
-                            Status = RtlOemToUnicodeN(
-                                &mut (*BothDirInfo).ShortName[0],
-                                12 * core::mem::size_of::<u16>() as u32,
-                                &mut ShortNameLength,
-                                Fat8Dot3String.Buffer,
-                                (Fat8Dot3String.Length) as u32,
-                            );
-                            NT_ASSERT((Status != STATUS_BUFFER_OVERFLOW) as u8);
-                            NT_ASSERT((ShortNameLength <= 12 * core::mem::size_of::<u16>() as u32) as u8);
-                            (*BothDirInfo).ShortNameLength = (ShortNameLength as u8) as i8;
+                        FIC_BOTH_DIRECTORY | FIC_ID_BOTH_DIRECTORY | FIC_FULL_DIRECTORY | FIC_ID_FULL_DIRECTORY | FIC_DIRECTORY => {
+                            if FileInformationClass == FIC_BOTH_DIRECTORY || FileInformationClass == FIC_ID_BOTH_DIRECTORY {
+                                BothDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_BOTH_DIR_INFORMATION);
+                                Fat8dot3ToString(IrpContext, Dirent as *mut c_void, 0, &mut Fat8Dot3String);
+                                NT_ASSERT((Fat8Dot3String.Length <= 12) as u8);
+                                Status = RtlOemToUnicodeN(
+                                    &mut (*BothDirInfo).ShortName[0],
+                                    12 * core::mem::size_of::<u16>() as u32,
+                                    &mut ShortNameLength,
+                                    Fat8Dot3String.Buffer,
+                                    (Fat8Dot3String.Length) as u32,
+                                );
+                                NT_ASSERT((Status != STATUS_BUFFER_OVERFLOW) as u8);
+                                NT_ASSERT((ShortNameLength <= 12 * core::mem::size_of::<u16>() as u32) as u8);
+                                (*BothDirInfo).ShortNameLength = (ShortNameLength as u8) as i8;
 
-                            if Status < 0 {
-                                try_return(NOTHING);
+                                if Status < 0 {
+                                    // try_return(NOTHING) — inner closure: preserve Status, break loop
+                                    do_return = true;
+                                    return;
+                                }
                             }
-                        }
-                        2 | 3 => {
-                            DebugTrace(0, Dbg, b"FatQueryDirectory -> Getting file full directory information\n\0".as_ptr() as *const i8, 0);
-                            FullDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_FULL_DIR_INFORMATION);
-                            let ea_result = catch_unwind(AssertUnwindSafe(|| {
-                                FatGetEaLength(IrpContext, Vcb as *mut c_void, Dirent as *mut c_void, &mut (*FullDirInfo).EaSize);
-                            }));
-                            if ea_result.is_err() {
-                                FatResetExceptionState(IrpContext);
-                                (*FullDirInfo).EaSize = 0;
+                            if FileInformationClass != FIC_DIRECTORY {
+                                DebugTrace(0, Dbg, b"FatQueryDirectory -> Getting file full directory information\n\0".as_ptr() as *const i8, 0);
+                                FullDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_FULL_DIR_INFORMATION);
+                                let ea_result = catch_unwind(AssertUnwindSafe(|| {
+                                    FatGetEaLength(IrpContext, Vcb as *mut c_void, Dirent as *mut c_void, &mut (*FullDirInfo).EaSize);
+                                }));
+                                if ea_result.is_err() {
+                                    FatResetExceptionState(IrpContext);
+                                    (*FullDirInfo).EaSize = 0;
+                                }
                             }
-                        }
-                        1 => {
+                            // C fallthrough target: FileDirectoryInformation body
                             DirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_DIRECTORY_INFORMATION);
                             FatGetDirTimes(IrpContext as *mut IRP_CONTEXT, Dirent, DirInfo);
                             (*DirInfo).EndOfFile.QuadPart = (*Dirent).FileSize as i64;
@@ -725,7 +770,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             (*DirInfo).FileNameLength = FileNameLength;
                             DebugTrace(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
                         }
-                        4 => {
+                        FIC_NAMES => {
                             DebugTrace(0, Dbg, b"FatQueryDirectory -> Getting file names information\n\0".as_ptr() as *const i8, 0);
                             NamesInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_NAMES_INFORMATION);
                             (*NamesInfo).FileIndex = (NextVbo) as u32;
@@ -754,18 +799,21 @@ pub unsafe extern "system" fn FatQueryDirectory(
 
                     if BytesConverted < FileNameLength {
                         NT_ASSERT((NextEntry == 0) as u8);
-                        try_return(STATUS_BUFFER_OVERFLOW);
+                        // try_return(Status = STATUS_BUFFER_OVERFLOW) — inner closure: flag + break loop
+                        Status = STATUS_BUFFER_OVERFLOW;
+                        do_return = true;
+                        return;
                     }
                 }
 
                 // Fill in FileId
                 match FileInformationClass {
-                    6 => {
+                    FIC_ID_BOTH_DIRECTORY => {
                         IdBothDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_ID_BOTH_DIR_INFORMATION);
                         (*IdBothDirInfo).FileId.QuadPart =
                             FatGenerateFileIdFromDirentAndOffset(Dcb as *mut c_void, Dirent as *mut c_void, NextVbo);
                     }
-                    3 => {
+                    FIC_ID_FULL_DIRECTORY => {
                         IdFullDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_ID_FULL_DIR_INFORMATION);
                         (*IdFullDirInfo).FileId.QuadPart =
                             FatGenerateFileIdFromDirentAndOffset(Dcb as *mut c_void, Dirent as *mut c_void, NextVbo);
@@ -778,7 +826,16 @@ pub unsafe extern "system" fn FatQueryDirectory(
             if inner_result.is_err() {
                 (*Irp).IoStatus.Information = 0;
                 UpdateCcb = 0;
-                try_return((_SEH2_GetExceptionCode()) as i32);
+                // try_return(Status = _SEH2_GetExceptionCode()) — outer closure
+                Status = (_SEH2_GetExceptionCode()) as i32;
+                return;
+            }
+
+            // Propagate a try_return that fired inside the inner (per-entry)
+            // closure: it could only `return` from that closure, so break the
+            // enclosing loop here (C `goto try_exit`).
+            if do_return {
+                return;
             }
 
             LastEntry = NextEntry;
