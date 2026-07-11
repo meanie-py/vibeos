@@ -391,12 +391,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 - [ ] **amd64 whpx net 13/15** — re-run `test_tcp_echo_roundtrip` + `test_tdi_server_listen_accept`
   under whpx; their A/B was blocked by the service-startup wedge, since fixed (§9.13).
   *(windows-host-qemu-whpx-spike §Remaining)*
-- [ ] **arm64 taskbar 0x50** (archived parity audit) — implicitly gone (tray renders, gates
-  green); one explicit confirmation closes it forever.
-- [ ] **arm64 reboot stub** — `HalReturnToFirmware`-path was `UNIMPLEMENTED`; PSCI
-  SYSTEM_RESET is trivial and test harnesses (conformance!) want guest-initiated reboot.
-- [ ] **gdb-engine i386-under-WHPX arch mismatch** — inspect verbs fail on the 'g' packet
-  (stub speaks i386:x86-64). Engine fix owed. *(whpx spike doc)*
+- [x] **arm64 taskbar 0x50 — NOT reproducing** (verified 2026-07-11): arm64 gates green
+  through the taskbar path (gate `20260710-233422` OK) with the tray clock rendering (§9.22).
+  A green gate = shell-ready reached without the child-control fault. Closed.
+- [x] **gdb-engine i386-under-WHPX arch mismatch — FIXED** (verified 2026-07-11):
+  `gdbengine.py` sets `set architecture i386:x86-64` for i386+whpx. Whpx spike doc updated.
+- [ ] **arm64 reboot stub — CONFIRMED still stubbed** (2026-07-11): `HalReturnToFirmware`
+  (`hal-rust/src/arm64/halstubs.rs:551`) just `wfi`-loops, no PSCI `SYSTEM_RESET`. Small owed
+  task — matters for harnesses that reboot the guest (conformance crash-recovery). Not yet done.
 
 ### Owed work (moved from closed docs)
 - [ ] **Input unification migration** *(input-architecture, roadmap §10a)*: USB HID as the

@@ -127,10 +127,11 @@ boots to `shell ready` with this alone — no guest change.
   an edit in a transitive path-dep (ntoskrnl-rust behind the kernel-rust
   umbrella) left `vibeos-cli build` printing success while shipping a STALE
   ntoskrnl.exe. reactos-link now watches every workspace crate's `src/`.
-- The gdb engine assumes the stub arch matches the guest arch; an i386 guest under
-  WHPX runs on `qemu-system-x86_64.exe`, whose gdbstub speaks i386:x86-64 —
-  `vibeos-cli gdb inspect` verbs fail on the 'g' packet. Workaround: raw
-  `gdb-multiarch` + `set architecture i386:x86-64`. (Engine fix TODO.)
+- ✅ **FIXED (verified 2026-07-11):** the gdb engine now sets the stub arch correctly for
+  an i386 guest under WHPX — `gdbengine.py` emits `set architecture i386:x86-64` when
+  `run.arch == "i386" and run.accel == "whpx"` (the guest runs on `qemu-system-x86_64.exe`
+  whose gdbstub speaks i386:x86-64), so `vibeos-cli gdb inspect` verbs no longer fail on the
+  'g' packet. (Was: manual `gdb-multiarch` + `set architecture i386:x86-64` workaround.)
 - gdb attach to the whpx gdbstub works for register/memory reads; each
   attach/resume does a full register writeback from QEMU's (possibly stale) CPU
   state — treat CR8 as suspect after any attach.
