@@ -753,11 +753,12 @@ pub unsafe extern "system" fn ExInitializePushLock(
 pub unsafe extern "C" fn ExAcquirePushLockExclusive(
     push_lock: PEX_PUSH_LOCK,
 ) {
-    // lockdep §4: this #[inline(never)] shim's return address IS the true
-    // acquiring caller (the ddk→shim funnel otherwise collapses every call
-    // site to this one function). Symbolize with qemu/addr2sym.sh.
+    // lockdep §4: site = this #[inline(never)] shim's own PC (code_addr!) —
+    // shim-identity, not the C caller (Windows-x64 has no frame chain to
+    // walk on stable; see lockdep.rs code_addr! history). Rust callers get
+    // exact sites via the *Sited inline routes. Symbolize with addr2sym.sh.
     #[cfg(feature = "lockdep")]
-    let site = crate::ke::lockdep::return_address0();
+    let site = crate::code_addr!();
     #[cfg(not(feature = "lockdep"))]
     let site = 0usize;
     ntkrnl_sys::inline::ex::ExAcquirePushLockExclusiveSited(push_lock, site)
@@ -770,7 +771,7 @@ pub unsafe extern "C" fn ExAcquirePushLockShared(
 ) {
     // lockdep §4: see ExAcquirePushLockExclusive above.
     #[cfg(feature = "lockdep")]
-    let site = crate::ke::lockdep::return_address0();
+    let site = crate::code_addr!();
     #[cfg(not(feature = "lockdep"))]
     let site = 0usize;
     ntkrnl_sys::inline::ex::ExAcquirePushLockSharedSited(push_lock, site)

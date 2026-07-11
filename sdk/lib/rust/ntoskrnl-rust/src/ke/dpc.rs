@@ -683,7 +683,7 @@ pub unsafe extern "system" fn KiDispatchSoftwareIntArm64() {
     // corrupts exactly this hand-off).
     #[cfg(feature = "cswitchdep")]
     let cswitch_entry_daif: u64 = {
-        crate::ke::cswitchdep::cswitch_dpc_dispatch();
+        crate::ke::cswitchdep::cswitch_dpc_dispatch(crate::code_addr!());
         let daif: u64;
         core::arch::asm!("mrs {0}, daif", out(reg) daif, options(nomem, nostack, preserves_flags));
         daif
@@ -718,7 +718,7 @@ pub unsafe extern "system" fn KiDispatchSoftwareIntArm64() {
     {
         let exit_daif: u64;
         core::arch::asm!("mrs {0}, daif", out(reg) exit_daif, options(nomem, nostack, preserves_flags));
-        crate::ke::cswitchdep::cswitch_intr_state(cswitch_entry_daif, exit_daif);
+        crate::ke::cswitchdep::cswitch_intr_state(cswitch_entry_daif, exit_daif, crate::code_addr!());
     }
 }
 

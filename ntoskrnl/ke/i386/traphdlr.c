@@ -169,8 +169,8 @@ KiServiceExit(IN PKTRAP_FRAME TrapFrame,
         {
             /* cswitchdep tap 5 (return→user).
                Rust: sdk/lib/rust/ntoskrnl-rust/src/ke/cswitchdep.rs */
-            extern VOID __cdecl VibeosCswitchdepUserExit(VOID);
-            VibeosCswitchdepUserExit();
+            extern VOID __cdecl VibeosCswitchdepUserExit(ULONG_PTR Pc);
+            VibeosCswitchdepUserExit(0);
         }
 #endif
         /* Check if we were single stepping */
@@ -212,8 +212,8 @@ KiServiceExit2(IN PKTRAP_FRAME TrapFrame)
         {
             /* cswitchdep tap 5 (return→user), NtContinue/NtRaiseException
                closes. Rust: sdk/lib/rust/ntoskrnl-rust/src/ke/cswitchdep.rs */
-            extern VOID __cdecl VibeosCswitchdepUserExit(VOID);
-            VibeosCswitchdepUserExit();
+            extern VOID __cdecl VibeosCswitchdepUserExit(ULONG_PTR Pc);
+            VibeosCswitchdepUserExit(0);
         }
 #endif
         KiTrapReturn(TrapFrame);
@@ -1802,8 +1802,8 @@ KiSystemServiceHandler(IN PKTRAP_FRAME TrapFrame,
         /* cswitchdep tap 4 (user→kernel): kernel-origin frames (Zw via
            INT 2E) pass 0 and are skipped — legal at APC_LEVEL.
            Rust: sdk/lib/rust/ntoskrnl-rust/src/ke/cswitchdep.rs */
-        extern VOID __cdecl VibeosCswitchdepUserEntry(ULONG UserTrap);
-        VibeosCswitchdepUserEntry(KiUserTrap(TrapFrame));
+        extern VOID __cdecl VibeosCswitchdepUserEntry(ULONG UserTrap, ULONG_PTR Pc);
+        VibeosCswitchdepUserEntry(KiUserTrap(TrapFrame), 0);
     }
 #endif
 

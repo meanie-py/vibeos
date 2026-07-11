@@ -509,6 +509,7 @@ unsafe fn KiSwapThreadImpl(
         CurrentThread as usize,
         WaitIrql,
         *kt_State(CurrentThread) == super::cswitchdep::STATE_TERMINATED,
+        crate::code_addr!(),
     );
 
     ApcState = KiSwapContext(WaitIrql, CurrentThread);
@@ -525,7 +526,7 @@ unsafe fn KiSwapThreadImpl(
     // cswitchdep tap-1 exit: after the lower, live IRQL must equal the saved
     // WaitIrql — anything else is a broken raise/lower pairing across the wait.
     #[cfg(feature = "cswitchdep")]
-    super::cswitchdep::cswitch_after_switch(CurrentThread as usize, WaitIrql);
+    super::cswitchdep::cswitch_after_switch(CurrentThread as usize, WaitIrql, crate::code_addr!());
 
     WaitStatus
 }
