@@ -239,7 +239,7 @@ Plus two non-ABI link gotchas from the same drivers: (a) **x86 compiler intrinsi
 **Root cause:** the translator re-declares enum members it needs as local `const NAME: T = <value>;` and *guesses* the value (often the intuitive-but-wrong one, or the value of a *different* enum's member with a similar name) instead of reading `ndk/ketypes.h`. Each file guesses independently, so setter and reader can disagree **while both compile clean and the reader is self-consistent within its own file**.
 **Fix:** align to the header. **Detection is mechanical:** `PYTHONPATH=tools/rustconv python3 tools/rustconv/rustconv/verify_constants.py --enums <files>` — after 2026-07-04 the catalog includes the ndk type headers (ketypes/pstypes/obtypes/mmtypes/extypes/lpctypes/cmtypes: ADJUST_REASON, KTHREAD_STATE, KOBJECTS, KWAIT_REASON, EVENT_TYPE, TIMER_TYPE, KAPC_ENVIRONMENT, LPC_TYPE, PS_* pool/priority, MMVAD types, …). Run it over any kernel crate you're auditing; `--fix` auto-rewrites. **Anything it reports resolved to exactly ONE header value** (the ambiguity rule drops multi-enum names) → a strong real-bug signal, not the usual `--enums` noise. **Two deliberate blind spots you must review by hand:** (a) `TAG_*` pool tags are SKIPPED (Rust `from_le_bytes` vs the checker's big-endian multichar disagree on byte order — the tags need a byte-order-aware check; drift there is cosmetic pool-dump display); (b) untagged inline literals at call sites (`KeInitializeEvent(e, 1, 0)` with no `/* … */` comment) still escape — `scan_inline_flag_literals` only catches the commented ones. Prefer bindgen enums (`ddk::_EVENT_TYPE_*`) over local consts in new translations.
 **Also caught by the same tool the same day** (once `pub const` / path-typed / suffixed-decimal parsing was added — the checker had been blind to ~27K `pub const`s): the **LPC message-type enum** shifted in `lpc/send.rs` (live `if MessageType < LPC_DATAGRAM || > LPC_CLIENT_DIED` validation window, csrss-CreateProcess reply path), `MEMORY_PRIORITY_FOREGROUND` writer(0)/reader(2) disagreement killing the scheduler foreground boost, swapped Ps pool-quota/priority enums, wrong MMVAD types, ~10 wrong hand-written STATUS codes. 41 total in one sweep.
-**Source:** 2026-07-04 dispatcher audit + constant sweep (`docs/engineering/sync-instrumentation-design.md` §8).
+**Source:** 2026-07-04 dispatcher audit + constant sweep (`docs/engineering/archive/sync-instrumentation-design.md` §8).
 
 ### Hardcoded HIGH_LEVEL=31 on amd64 → `mov cr8, 0x1F` #GP at boot
 **Symptom:** BUGCHECK 0x1E with `c0000005` during boot-driver init / process create; reported faulting Rip unreliable (false symbol e.g. `MiAcquireExpansionLock+7`).
@@ -2348,7 +2348,7 @@ owned by the side that outlives the wait.
 **Result:** amd64 boots green (5/5 → gate ×3). The old "PteFrame share-count chain" and "MMPFN accessor layout" hypotheses were red herrings — the real defect was the `OriginalPte`/`RmapListHead` union overlay + the offset/bit-test drift.
 
 **Permanent tools this produced (the durable payoff):**
-- **Lockdep self-deadlock detector** — `vibeos-cli build --arch amd64 --lockdep` builds a `-DVIBEOS_LOCKDEP=ON` kernel; every boot self-reports `[LOCKDEP] SELF-DEADLOCK … WAIT(shared) … already held(excl) site=…` on serial (held-pushlock side table at the `ExAcquire/ReleasePushLock*` funnel, checked at the park). `vibeos-lockdep [held|edges]` decodes the table / dumps the whole lock-order graph (ABBA detection) offline in GDB. (Design: `sync-instrumentation-design.md` §4.)
+- **Lockdep self-deadlock detector** — `vibeos-cli build --arch amd64 --lockdep` builds a `-DVIBEOS_LOCKDEP=ON` kernel; every boot self-reports `[LOCKDEP] SELF-DEADLOCK … WAIT(shared) … already held(excl) site=…` on serial (held-pushlock side table at the `ExAcquire/ReleasePushLock*` funnel, checked at the park). `vibeos-lockdep [held|edges]` decodes the table / dumps the whole lock-order graph (ABBA detection) offline in GDB. (Design: `archive/sync-instrumentation-design.md` §4.)
 - **Self-symbolicating `KeBugCheckEx`** — see §9.17's banner note (line ~537 of the rustconv catalog too): params symbolicated vs `PsLoadedModuleList`, `TrapFrame.Rip` extracted for Mm bugchecks, scan-based mini-backtrace on serial — no GDB, no cross-boot base guessing.
 
 **Reusable debug recipe:** boot under `vibeos-cli gdb`; wait for `[CENSUS] STUCK` (the wedge self-reports, with a lost-wakeup-vs-holder-stuck verdict); `vibeos-cli gdb inspect <run> "raw vibeos-synctrace"` → stuck objects; `"raw vibeos-flightrec obj=0x…"` → who locked/signalled last; `"raw vibeos-threads gatewait"` → all parked threads offset-free. For the deterministic-bugcheck flavor, prefer `run-until KeBugCheckEx --then triage` + trap-frame + **self-reporting diagnostic `KeBugCheckEx(0x0BAD…)` codes** to bisect the fault path (survives VM reaping, unlike post-mortem GDB). ~30 min end-to-end; the identical conclusion previously took days.
@@ -2457,7 +2457,7 @@ paging-level blocks for the same drift (see also §9.14 for the sibling Mm PFN-s
 
 **§9.15 addendum (2026-07-05): this drift is SYSTEMIC, not a one-off.** A workspace-wide
 per-arch `#[cfg]` audit (`tools/scan_arch_cfg.py` +
-[`per-arch-cfg-divergence-audit.md`](per-arch-cfg-divergence-audit.md)) found the same
+[`per-arch-cfg-divergence-audit.md`](archive/per-arch-cfg-divergence-audit.md)) found the same
 "4-level PXE block gated to ONE 4-level arch" pattern in **~8 more Mm functions, in both
 directions** — `MiDeleteVirtualAddresses`/`MmProbeAndLockPages`/`MiCalculatePageCommitment`/
 `MiQueryAddressState`/`MiIsEntireRangeCommitted`/`MiMakePdeExistAndMakeValid` drop the PXE
@@ -3515,6 +3515,25 @@ is pending — cancel+wait-forever (if cancellable) or pool-allocate + leak.
 Sweep: `grep -rn "KeWaitForSingleObject" --include='*.rs' | grep -i timeout`
 cross-checked against `IoBuildDeviceIoControlRequest(&mut event` stack args.
 
+**⚠️ Addendum — the fix REDUCED but did not fully eliminate (organic recurrences
+after the "DEAD" call).** The `[WAITDEP] VIOLATION bad-thread-ptr` face with
+ALL-ONES poison (`owner=0xffffffffffffffff culprit=0xffff…`, the §9.31 signature)
+has recurred on organic arm64 gate traffic *after* the 2026-07-08 fix — at least
+one confirmed hit **2026-07-09** (gate `20260709-001019`, BUGCHECK 0x109,
+P2=`ntoskrnl.exe+0x451B0`; serial chain dump preserved at
+`~/vibeos-flake-farm/waitdep-evidence/20260709-gate-hit/full.log:72`), and an
+overnight-gate arm64 0x1E (`ntoskrnl.exe+0x1CD8C`, silent-wedge face) seen
+2026-07-10 that retried green. So the netstack-TDI source was A source, not the
+ONLY source, of the ALL-ONES waitdep face — a residual arm64 dispatcher/stack
+corruption persists at a low organic rate (~2 hits / 2 days of gate traffic).
+`ke/waitdep.rs` stays ALWAYS-ON precisely to keep capturing these. **Do NOT read
+§9.36 as "0x1E fully closed"** — if a `[WAITDEP]` 0x109 appears in a gate log,
+that IS a live capture: read the chain dump (which invariant, which block/funnel),
+compare the culprit PC against the two known offsets above, and treat it as the
+still-open residual, not a re-derivation from scratch. Tracked in the roadmap
+Known-bugs registry. *(Rescued 2026-07-10 from the performance lane's memory file,
+which recorded the 07-09 recurrence but never routed it here.)*
+
 ### 9.32 Static analysis for leaked Ob references — `scan_ob_refcount.py`
 
 Sibling of §9.28's IRQL scanner (same tree-sitter held-set engine), pointed at
@@ -4032,7 +4051,7 @@ to `KeUserExceptionDispatcher` (`ke/arm64/stubs.rs:1079+`), and
 `dll/ntdll/dispatch/arm64/dispatch.S` now has the DUMMY_PSEH swallow branch
 (added this lane, amd64/i386 parity). Only the ntdll-side raise entry is
 missing. Non-fatal to boot (sehtest is fire-and-forget; arm64 desktop still
-reaches shell ready). Design: `docs/engineering/crash-value-design.md`.
+reaches shell ready). Design: `docs/engineering/archive/crash-value-design.md`.
 
 ### 9.43 (2026-07-09) Un-gating a `-version=0x600+` export in a `.spec` shifts ALL later ORDINALS → breaks by-ordinal importers (BUGCHECK 0x4C `0xc0000139`)
 

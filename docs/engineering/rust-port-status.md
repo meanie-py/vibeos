@@ -8,7 +8,7 @@ fresh 5-surface tree audit (kernel, win32k, userland DLLs, boot-userland exes, s
 libs/RTL, drivers). This is THE single source of truth for Rust-vs-C coverage — the seven
 per-surface `*-translation-audit.md` files were superseded by this pass and moved to
 [`archive/`](archive/) (their per-file counts were ~12 days stale). Historical snapshots +
-project timeline live in the [old-details rollup](rust-port-status-rollup.md). Re-measure
+project timeline live in the [old-details rollup](archive/rust-port-status-rollup.md). Re-measure
 before trusting later.*
 
 > **Cohabitation caveat.** Convention is *never delete a translated C file*: a flipped

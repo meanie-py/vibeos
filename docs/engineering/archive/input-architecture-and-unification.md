@@ -1,0 +1,421 @@
+# Input architecture & the path to a unified, real-hardware input stack
+
+> **ARCHIVED 2026-07-10** — probe quest closed 2026-07-10 — USB HID proven on all arches; the unification MIGRATION is owed (ledger). Outstanding items live in
+> `docs/product/vibeos-roadmap.md` § "Check-back ledger" / § "Known bugs & flakes".
+
+
+**Status:** design / quest brief, opened 2026-07-05.
+
+**One-line quest:** prove the (already-translated) Rust **USB HID** stack can enumerate a
+QEMU `usb-kbd`/`usb-mouse` and deliver a keystroke to `kbdclass` — because USB HID is the
+*single* input path that is simultaneously arch-unified, correctly-layered, and viable on
+real hardware. The enumeration probe is a day's work and decides the whole direction.
+
+---
+
+## Why this exists
+
+Today keyboard/mouse input takes **two structurally different paths** depending on arch,
+and the arm64 path is both VM-only and architecturally malformed. This doc maps the stack,
+shows exactly where the divergence lives, and argues that **USB HID** (not virtio-input,
+not PS/2) is the convergence target — then frames a cheap beachhead probe that tells us
+whether that target is reachable.
+
+**The whole live input path is already Rust.** Every layer below has been cohab-flipped
+C→Rust (C kept on disk as dead residue per the never-delete rule; shipping `.sys` are
+cargo-linked from `*-rust` crates). So this is **not a translation task** — it's a
+Rust-side architecture refactor.
+
+---
+
+## The end-to-end path (with the arch split)
+
+### Layer 0 — HAL / interrupt vectoring  *(Rust; arch-gated, but arm64-input doesn't use it)*
+- Dispatch: `hal/CMakeLists.txt:3-6` — `halx86` (i386/amd64) vs `halarm64`, both pure-Rust
+  from `hal-rust` (`sdk/lib/rust/hal-rust/src/lib.rs:54-63`: shared `x86/`, separate `arm64/`).
+- **x86 real vectoring:** `hal-rust/src/x86/busemul.rs:245 HalGetInterruptVector` (ISA IRQ →
+  vector/IRQL/affinity); PIC `x86/pic_pic.rs`, APIC `x86/apic.rs`. This makes i8042 IRQ1/IRQ12
+  routable.
+- **arm64:** `hal-rust/src/arm64/halstubs.rs:404 HalGetInterruptVector` is a **stub `{ 0 }`**.
+  There is no GIC input routing in the HAL; the GIC is touched only for the timer
+  (`arm64/clock.rs`). **arm64 input never traverses the HAL interrupt path at all** — it polls.
+
+### Layer 1 — Miniport  *(Rust; THIS is where the divergence lives)*
+- **x86 = `i8042prt`** (`sdk/lib/rust/i8042prt-rust`), interrupt-driven PS/2:
+  `pnp.rs:436-462` reads the translated `CmResourceTypeInterrupt`; `pnp.rs:226`/`:270`
+  `IoConnectInterrupt` for kbd IRQ1 / mouse IRQ12 → ISRs `keyboard.rs:717
+  i8042KbdInterruptService` / `mouse.rs:809`; ISR queues a DPC (`keyboard.rs:91
+  KeInsertQueueDpc`) that calls the class callback in `KeyboardData.ClassService`
+  (`keyboard.rs:331-338`, the cdecl `SERVICE_CALLBACK_ROUTINE`).
+- **arm64 = `arm64input`** (`sdk/lib/rust/arm64input-rust`), **polled** virtio-mmio, built
+  arm64-only (`drivers/input/CMakeLists.txt` `if(ARCH STREQUAL "arm64")`): **no interrupt
+  registration at all** — a polling thread `arm64input.rs:1420 PsCreateSystemThread` →
+  `:1288 VirtioPollThread` → `:1196 VirtioPollDevice`, MMIO via `:338 VirtioRead32`, queue
+  `:763 VirtioSetupQueue`, into internal rings (`:261-266 Ring/MouRing`, `:358 RingPush`).
+
+### Layer 2 — Class drivers  *(Rust; arch-agnostic code — but bypassed on arm64)*
+- `kbdclass` (`sdk/lib/rust/kbdclass-rust`) / `mouclass` (`mouclass-rust`) are fully
+  arch-agnostic. Standard handshake: `kbdclass.rs:565-588` builds
+  `CONNECT_DATA{ClassService=ClassCallback}` and sends `IOCTL_INTERNAL_KEYBOARD_CONNECT`
+  (`:574`); the miniport later invokes `ClassCallback` (`:491`) to deliver packets. kbdclass
+  owns `\Device\KeyboardClass0` and services the RIT's `ZwReadFile`.
+- **The malformation:** on arm64 the class drivers are **bypassed**. `arm64input` itself
+  creates `\Device\KeyboardClass0` (`arm64input.rs:1340`) + `\Device\PointerClass0` (`:1377`)
+  + DosDevices symlinks and services read-IRPs from its own rings. It is a **monolith** that
+  collapses miniport+class into one driver. `kbdclass`/`mouclass` are **dead weight on arm64**
+  (no port driver ever issues `IOCTL_INTERNAL_*_CONNECT` there).
+
+### Layer 3 — win32k Raw Input Thread  *(Rust; fully shared, arch-agnostic)*
+- `sdk/lib/rust/win32k-rust/src/input.rs:334 RawInputThreadMain` opens class devices **by
+  name** — `\Device\PointerClass0` (`:390`), `\Device\KeyboardClass0` (`:400`) — then a
+  `ZwReadFile` loop (`:424`/`:446`) gated by `KeWaitForMultipleObjects` (`:466`); packets →
+  `UserProcessMouseInput` (`:502`) / `UserProcessKeyboardInput` (`:512`) → `WM_*` via the
+  message queue. **Identical on all arches**; the only per-arch delta is fastcall-vs-cdecl
+  externs (`:58-95`), pure ABI. Because it binds by device *name*, it does not care what
+  transport produced the packets.
+
+---
+
+## Divergence map
+
+| Layer | i386 | amd64 | arm64 | Divergent? |
+|---|---|---|---|---|
+| HAL interrupt vectoring | PIC/APIC (`x86/*`) | shared `x86/` | **stub** (`arm64/halstubs.rs:404`) | Yes, but arm64 input doesn't use HAL |
+| Miniport | `i8042prt` PS/2, IRQ+DPC | same | `arm64input` virtio, **polling** | **YES — core divergence** |
+| Class (kbdclass/mouclass) | used | used | **bypassed (monolith)** | Structurally divergent |
+| win32k RIT + message synth | shared | shared | shared | No (ABI cfg only) |
+
+**Two axes of divergence, both in/around the miniport:** (1) *transport* — interrupt-driven
+i8042 vs polled virtio; (2) *layering* — x86's proper 3-tier stack vs arm64's monolith. The
+class layer and RIT are already shared Rust.
+
+---
+
+## The transport decision: why not just virtio-input everywhere?
+
+Because **virtio-input is a paravirtualized VM device** — it exists only because a
+hypervisor presents it. A physical machine has **no virtio-input at all**. Switching every
+arch to virtio would unify the *QEMU* path but move *further* from real hardware. Real
+machines have neither PS/2 (rare) nor virtio (never) — they have **USB HID**.
+
+| Candidate "one path" | Unifies QEMU | Fixes the monolith | Real hardware |
+|---|:--:|:--:|:--:|
+| PS/2 (i8042prt) everywhere | ✗ (arm64 has no 8042) | — | x86 only |
+| virtio-input everywhere | ✓ | ✗ (still a monolith) | **✗ VM-only** |
+| **USB HID everywhere** | ✓ | **✓ for free** | **✓** |
+
+**USB HID wins on all three at once.** USB HID *structurally* flows
+`hidusb → hidclass → kbdhid/mouhid → kbdclass/mouclass → RIT`, so it cannot be a monolith —
+it uses the shared class spine by construction. One move gives a single transport, correct
+layering, and real-hardware viability, and QEMU emulates real USB on **every** machine type
+(`-device qemu-xhci -device usb-kbd` works on q35, pc, *and* virt) — so the smoke would
+exercise the identical path a physical machine uses. `i8042prt` and `arm64input` both become
+deletable.
+
+**The whole USB+HID stack is already translated to Rust:** `usbport-rust`, `usbehci-rust`,
+`usbohci-rust`, `usbuhci-rust`, `usbhub-rust`, `usbd-rust`, `hidusb-rust`, `hidclass-rust`,
+`kbdhid-rust`, `mouhid-rust`.
+
+**The catch (the central unknown):** the USB HCs are *registered* in the boot hive
+(`boot/bootdata/hivesys.inf`: usbhub/usbehci/usbohci/usbuhci) but there is **no evidence the
+stack enumerates a device or delivers a HID report today** — nothing in the smokes drives
+USB input, and there is **no `usbxhci`** in the tree (only EHCI/OHCI/UHCI, USB2-era). So the
+stack may be translated-but-never-exercised. That is exactly what the beachhead resolves.
+
+---
+
+## The quest — a probe first, then a direction
+
+### Beachhead (do this first; ~a day)
+Boot QEMU (start with **amd64**, the fastest toolchain) with an emulated USB keyboard and
+prove the Rust USB+HID stack brings it up:
+```
+-device usb-ehci,id=ehci  -device usb-kbd,bus=ehci.0
+# (or -device qemu-xhci + a usbxhci driver if EHCI proves dead)
+```
+Success = a keystroke injected via QMP `input-send-event` reaches `[KBDCLASS] first key
+delivered` **through the USB path** (hidusb → hidclass → kbdhid → kbdclass), not PS/2.
+Instrument enumeration milestones (HC start → port connect → device descriptor → HID report
+descriptor → first input report) so a failure localizes to the exact stage.
+
+### Decision tree
+- **Enumerates → USB HID is the target.** Migrate all arches to USB HID; `i8042prt`,
+  `arm64input`, *and* the monolith problem evaporate together. This is the holistic
+  "eliminate the whole class of divergence" outcome.
+- **Doesn't enumerate (translated-but-dead) → fall back** to the tactical cleanup: convert
+  `arm64input` from a monolith into a *pure port miniport* (delete its class-device creation
+  `arm64input.rs:1340-1415` + rings; honor `IOCTL_INTERNAL_KEYBOARD_CONNECT`/`_MOUSE_CONNECT`
+  and call the class `ServiceCallback` from `VirtioPollDevice`, exactly as `i8042prt` does at
+  `keyboard.rs:331-338`). That makes `kbdclass`/`mouclass` own the class devices on arm64 too
+  and collapses divergence to "transport only" — keeping virtio for now, revisiting USB when
+  the stack is alive. Optional deeper step: implement `arm64/halstubs.rs:404
+  HalGetInterruptVector` + a GIC `IoConnectInterrupt` path so arm64input can switch from
+  polling to ISR+DPC.
+
+Either branch is real progress; the probe just says which.
+
+---
+
+## Progress log
+
+### 2026-07-06 — amd64 beachhead GREEN (commit c7cee13e593)
+The translated Rust USB HID stack enumerates a QEMU `usb-kbd`/`usb-mouse` on EHCI and
+delivers end-to-end: `EHCI → usbport → usbhub → hidusb → hidclass → {kbdhid,mouhid} →
+{kbdclass,mouclass}`. Proven with **PS/2 removed from existence** (`-machine i8042=off`):
+injected Esc arrives as `[KBDCLASS] first key delivered sc=0x1`. **Decision: USB HID is
+the unification target** (decision-tree "enumerates" branch). Root causes fixed were all
+const/logic translation bugs (76 usbport flag/state constants, usbhub HubFlags,
+ntstrsafe wide formatters, `IOCTL_INTERNAL_USB_GET_ROOTHUB_PDO`, hidparser
+`BuildCollectionContext` return code). One more surfaced later (2026-07-08): hidparser's
+`HID_USAGE_PAGE_KEYBOARD` was invented as `1` vs C `0x07`, so every keyboard usage fell
+into the "unknown page" branch and *no key ever dispatched* — the beachhead had only
+actually proven **mouse** delivery. Fixed in `hidparser-rust` (commit a5d5c14d939).
+
+### 2026-07-09 — arm64 USB bring-up: PCI + EHCI + hub up, HALTED at the control pipe
+arm64 has **no PnP bus enumeration** natively (netstack/arm64input are explicit-load
+monoliths poking ECAM/MMIO). Stood up the real chain (commits `4bf38cb1ac2`,
+`74c39ef5b4b`):
+- **Root-seeded PCI**: `hivesys_arm64.inf` seeds `Enum\Root\*PNP0A03` (no acpi.sys on
+  arm64); the shared-hive CDDB `*PNP0A03→pci` binds pci.sys. pci-rust FDO tolerates the
+  missing bus-number `_CRS` resource (defaults bus 0). ✓ 4 PCI children enumerate via ECAM.
+- **GPEX INTx synthesis**: ArmVirt EDK2 never writes PCI Interrupt Line; pci-rust
+  synthesizes it from the board-fixed virt swizzle (INTA..D → GIC INTID 35..38) and writes
+  it back to config space (PdoQueryResources re-reads live config). ✓ EHCI IRQ translates
+  (INTID 38, DIRQL 8) and matches QEMU's real routing.
+- **Coherent DMA adapter** (`hal-rust/arm64/dma.rs`): virt GPEX is `dma-coherent`, no
+  IOMMU — common buffers = contiguous cached <4GB allocs; MapTransfer walks the MDL PFN
+  array. ✓ `USBPORT_StartDevice → 0x0`, root hub PDO created, usbhub binds, hub FDO starts
+  (`GetDeviceDescriptor`/`ConfigurationDescriptor`/`SyncPowerOnPorts` all `0x0`).
+- **THE arm64 landmine, fixed** (`74c39ef5b4b`): the `iotypes.h` pshpack4 guard around
+  `IO_STACK_LOCATION` was `#if !defined(_AMD64_) && !defined(_ARM_)` — **missing `_ARM64_`**,
+  so arm64 compiled the i386-packed layout (`IoControlCode` at +8 aliasing
+  `Others.Argument2`; NT intends Argument3↔IoControlCode at +0x10). clang
+  aarch64-w64-mingw32 ignores per-field `aligned` attrs under `#pragma pack`, so
+  POINTER_ALIGNMENT couldn't rescue it (x86_64 honors them → only arm64 broke). This is
+  how usbhub's `GET_ROOTHUB_PDO` IOCTL was clobbered. Historically bindgen produced the
+  *intended* layout so C≠Rust, and someone papered over it with "C-truth" stride shims
+  (0x44 / IRP+0xb8) in `ntkrnl-sys inline/tier1` + `iomgr irp.rs`/`inlines.rs` instead of
+  fixing the header. Header fixed + bindings/assertions regenerated + all shims deleted →
+  one NT layout on every arch.
+
+**The two walls (both CLOSED, landed by 2026-07-10 — detail kept below as the war story):**
+
+- **Wall 1 (68-stride ramdisk panic) — FIXED & landed**; the `IO_STACK_LOCATION`
+  pack-guard fix stayed in (it's the correct NT ABI) and arm64 is desktop-green on master.
+- **Wall 2 (EHCI control-pipe "halt") — FIXED & landed** (`b22168c8acc`, fix commit
+  `1a3b457f769`): the root was **DPC starvation**, not USB — IRQ-exit device-DPC retire
+  for idle-at-DISPATCH + masked-IRQ DPC bodies, plus EHCI ISR status accumulation. Full
+  writeup: `docs/engineering/archive/wall2-arm64-usb-hid-handoff.md` (marked RESOLVED).
+
+With both walls down, the quest's beachhead is proven on ALL arches: a real USB
+keyboard/mouse enumerates and delivers keystrokes through
+hidusb→hidclass→kbdhid/mouhid→kbdclass/mouclass — amd64 since `c7cee13e593` (+ the
+hidparser usage-page fix), arm64 as of `b22168c8acc`. **Decision-tree verdict: USB HID is
+the unification target.**
+
+**Wall 1 (historical) — the layout fix regresses arm64 desktop boot.** A clean-built
+arm64 kernel now **panics in `IofCompleteRequest` on a None CompletionRoutine at the
+ramdisk-mount stage** (`IopStartRamdisk` → volume PnP), so the main boot thread never
+reaches `_tWinMain`. GDB backtrace: `iomgr_rust::irp::IofCompleteRequestInner` →
+`Option::unwrap::<fn(...)->i32>` panic, frame-7 caller `ramdisk.sys+0x22dc`. Cause: **at
+least one more crate still WRITES the completion routine at the pre-fix 68-byte stride**
+(via a stale `IoGetNextIrpStackLocation`/`IoSetCompletionRoutine`), so the now-correct
+72-stride kernel walker reads the slot as None. I removed the three shim sites I found
+(`ntkrnl-sys inline/tier1`, `iomgr irp.rs`/`inlines.rs`) but the ramdisk-mount IRP's
+completion is set by a *different* writer I have not yet identified. IMPORTANT diagnostic
+trap that cost three debug rounds: **PnP root-enumeration is async** (`PiQueueDeviceAction`
+queues a worker thread and runs *before* `IopStartRamdisk`), so USB-enumeration serial
+lines appearing after ramdisk are the concurrent PnP worker, **not** proof the boot passed
+ramdisk — the main thread had already panic-looped. Also: driver `.sys` files do NOT
+relink on a warm `vibeos-cli build` after an `ntkrnl-sys` edit (the ninja-dep hazard,
+tracked task), so ALWAYS `--clean` when validating a layout change or a stale 68-stride
+`.sys` will mislead you.
+
+*Update (deeper GDB pass):* the panic completes the `\Device\Ramdisk` CREATE IRP that
+`IopStartRamdisk`'s `ZwOpenFile` builds (frame-7 `RamdiskOpenClose+0x20` →
+`IofCompleteRequest`). The IRP is allocated by the kernel object-manager create path
+(`IoCreateFile`→`IopParseDevice`→`IoAllocateIrp`), all of which use the *fixed* 72-stride
+helpers — so `IoInitializeIrp`/`IoAllocateIrp`/`IoSizeOfIrp`/the completion walker are all
+verified correct. `x19` in the panic frame is NOT reliably the wedging IRP (it points at a
+non-invoking IRP), so identifying the exact culprit needs **frame-5 local resolution**:
+the wedging `StackPtr` is a local in `IofCompleteRequestInner` (irp.rs:1316) — read it via
+`frame 5; info locals` or from the callee-saved reg holding it (disassemble
+`IofCompleteRequestInner` around the `.CompletionRoutine.unwrap()` call). Then read that
+`StackPtr`'s `Control@3` + `CompletionRoutine@56` and trace who wrote them. **Live-IRP GDB
+recipe** (offsets: IO_STACK_LOCATION size 72, `MajorFunction@0 Control@3 DeviceObject@40
+CompletionRoutine@56 Context@64`; IRP `StackCount@66 CurrentLocation@67
+Tail.CurrentStackLocation@0xb8`, `first_stack_location = IRP+208`):
+`scratchpad/gdb_livedump.sh` boots + dumps but must be pointed at the *live* StackPtr, not
+a hardcoded IRP.
+
+**Remaining 68-strider sweep candidates** (crates with their OWN stack-location helpers,
+not the shared `ntkrnl-sys inline/tier1` that's already fixed): local `IoSizeOfIrp` in
+`usbhub-rust/glue.rs:80` and `usbaudio-rust/pin.rs:19`; `ddk_shims`/`glue` stack helpers in
+`disk-/cdrom-/classpnp-/mountmgr-/ks-/usbport-/usbstor-/usbccgp-rust` (most use bindgen
+`.offset(-1)` which auto-corrects to 72 now — verify each). NONE of these load at the
+ramdisk stage, so the ramdisk culprit is elsewhere — likely a `ntoskrnl-rust` create/parse
+path detail. `ntoskrnl-rust/src/arm64_dbg.rs:59` already has a `[LAYOUT]
+IRP.CurrentStackLocation off=` tripwire — wire it to fire on the ramdisk IRP to confirm the
+running kernel's offset.
+
+**DISPOSITION FORK (user decision):**
+- **(A) Complete the sweep** — keep the layout fix (it's the *correct* NT ABI), finish
+  finding the remaining 68-strider(s) via frame-5 GDB. Correct end-state; unknown remaining
+  effort (the pre-fix system was consistently-68 and booted; the fix made walker+helpers 72
+  but ≥1 issuer still writes 68 → mixed strides → the ramdisk panic).
+- **(B) Revert the layout fix** (`74c39ef5b4b`) — restores the consistently-68 state that
+  boots arm64 to desktop green (as master does). USB then re-loses the `GET_ROOTHUB_PDO`
+  IOCTL (the layout fix is what unclobbered it), so USB HID stays an open quest needing a
+  narrower targeted fix. Fastest path to a green arm64 desktop.
+- **(C) Cherry-land only amd64** — the `hidparser` fix (a5d5c14d939) is independent + green
+  ×3; it can land alone regardless of the arm64 fork.
+
+**Wall 2 (historical) — EHCI control pipe halts (reached only via the concurrent PnP worker).** When USB
+devices are attached, the PnP worker enumerates EHCI and **the control pipe HALTS on the
+default address-0 device** — QH overlay token `0x40` (Halted), every SET_ADDRESS control
+transfer fails, `[USBHUB] CreateDevice port=1 status=0x503` retries forever. GIC/INTx/async
+schedule all verified healthy via QMP register dump (**not** an interrupt bug). The same
+`usb-ehci + usb-kbd` delivered on amd64.
+
+*Update (2026-07-09, post-landing QMP dump — Wall 1 fixed, this now reproduces cleanly on a
+booted desktop):* refined the picture. The **virtual root hub enumerates fully** (usbport
+synthesizes its descriptors — `USBH_GetDeviceDescriptor`/`ConfigurationDescriptor`/
+`SyncGetHubDescriptor`/`SyncPowerOnPorts` all `0x0`); the halt is specifically on
+`CreateDevice port=1` = the **real usb-kbd**, which needs actual over-the-wire EHCI control
+transfers. QMP dump at the halt: the async QH is at phys `0x54d96000`, device address 0,
+control EP, and **the controller FOUND it** (H-bit set, walked the async list) → so
+`HalAllocateCommonBuffer` + `MmGetPhysicalAddress` on arm64 return **correct** physical
+addresses (the controller read the QH the guest placed). The QH overlay shows token `0x40`
+(Halted) with `NextqTD=T` (retired), so the first control transfer to addr-0 halted and the
+qTD was already reclaimed. **This makes the coherent-DMA common-buffer path UNLIKELY the
+culprit** (common-buffer DMA is proven working). Remaining suspects: (a) `MapTransfer` for a
+data-stage buffer (the qTD's 5 page-pointers — a buffer crossing a 4 KB page needs pages
+1..4 filled; check `Arm64DmaMapTransfer`'s clamp), or (b) a full-speed-device-behind-EHCI /
+split-transaction handling difference between the arm64 GPEX-PCIe EHCI and the amd64 PCI
+EHCI (both QEMU `usb-ehci`, so the device model is identical — but verify the port routing).
+**Next step:** boot with `-trace usb_ehci_*` (or catch the qTD *before* it retires via a
+QMP stop at the halt) to read the actual failing transfer + its buffer pointer; and check
+`Arm64DmaMapTransfer` in `hal-rust/arm64/dma.rs` fills all needed qTD page pointers. Tracked
+as its own task; does NOT gate (default arm64 smoke has no USB).
+
+*Update (2026-07-09, EHCI trace `-trace usb_ehci_* usb_packet_*` — native qemu 9.0.2):* the
+control transfers **reach QEMU and complete the SETUP stage** — `usb_packet_state_change bus
+0, port 1, ep 0, state undef -> setup -> complete`, repeated 4× (the CreateDevice retries),
+each followed by a port reset/re-attach. The control qTD chain at phys `0x54d93xxx` is
+**properly built**: SETUP (`pid 2`, tbytes 8) → IN (`pid 1`) → STATUS (`pid 0`, next=T), and
+the qTD `active` bits toggle (they ARE processed). So the halt framing was wrong — the pipe
+*does* transfer; **enumeration fails because usbport reads a bad device descriptor and
+rejects the device** (→ `CreateDevice 0x503` → port reset → retry). This strongly implies
+the **IN data-stage descriptor lands at a physical address the guest doesn't read back** —
+i.e. the IN qTD's *buffer pointer* (qTD dword 3 = `+0x0C`, the descriptor sink) is wrong,
+even though the QH/qTD structures themselves and the SETUP buffer are correct (common-buffer
+DMA proven working). Anomaly to check: the trace also shows empty QHs for `dev 0, ep 1` and
+`dev 0, ep 2` (should be `ep 0` only during enumeration) at `0x7efa0xxx` — possibly a
+stale/mis-programmed endpoint-number, or just the kbd/mouse interrupt-EP QHs. **Concrete next
+step:** QMP-read the IN qTD (e.g. `0x54d93400`) buffer pointer at `qtd+0x0C`, then read that
+physical page — if it does NOT contain the 18-byte device descriptor (`12 01 ...`) after a
+completed transfer, the qTD buffer pointer / `Arm64DmaMapTransfer` result is the bug (the IN
+descriptor data buffer is likely `MapTransfer`'d, not a common buffer — so `MapTransfer`, not
+`AllocateCommonBuffer`, is the remaining suspect). Compare the same qTD buffer read on amd64
+(which delivers).
+
+*Update 2 (same trace, stronger lead — DMA adapter exonerated):* re-read
+`Arm64DmaMapTransfer` — it is **correct** (proper `StartVa`/`ByteOffset`/PFN-array walk with a
+contiguous-run clamp), which points away from the DMA adapter. The trace's real smoking gun:
+`usb_ehci_qh_fields` shows **`eps 2` = HIGH-SPEED** for the usb-kbd QH — but **usb-kbd is a
+FULL-SPEED device** (`eps` should be 0/1). A high-speed-programmed QH for a full-speed device
+explains every symptom: SETUP "completes" (QEMU lenient) but the data/status stages never
+truly transact → usbport reads a bad descriptor → `0x503` → reset/retry. usbport is
+arch-agnostic, so the SPEED it programs comes from the port status it reads — **the
+arm64-vs-amd64 difference is likely in device/port SPEED detection** (usbport/usbehci roothub
+`USB_PORT_STATUS` / PORTSC line-status → speed bits on arm64). **Next step:** diff the QH
+`eps` field arm64 vs amd64 for the same usb-kbd (amd64 should show `eps 0/1`), then trace the
+speed from the PORTSC read through usbport's port-status reporting. NOT a DMA bug — the
+coherent-DMA adapter is exonerated.
+
+*Update 3 (2026-07-09, amd64-vs-arm64 trace diff + qTD-buffer QMP read + MapTransfer
+instrumentation — the deepest characterization):* ran amd64 with the same EHCI trace: the
+`eps` field is `2` (high-speed) on **both** arches and the packet-stage pattern
+(`setup -> complete`) is **identical** — so Update 2's speed hypothesis is disproven too. The
+real difference: **amd64 progresses to `dev 1`/`dev 2` (enumeration succeeds) while arm64
+stays at `dev 0`.** QMP-reading the arm64 control qTD buffers at the halt is decisive:
+- **SETUP qTD** `buffer0` is a valid address (`0x54d93368` = `FirstTD.PhysicalAddress +
+  offset_of!(EHCI_HCD_TD, SetupPacket)`, per `EHCI_ControlTransfer` in usbehci.rs:2585) but
+  its **contents are all ZERO** — the 8-byte SETUP packet (`80 06 …`) that `RtlCopyMemory`
+  should have written to `(*FirstTD).SetupPacket` is not at that physical address.
+- **IN (data) qTD** `buffer0` is **NULL (`0x0`)** — the descriptor sink has no address.
+
+The IN buffer is filled by `EHCI_MapAsyncTransferToTd` from `SgList[].SgPhysicalAddress`,
+which is populated ONLY by `USBPORT_MapTransfer` → `(*DmaOperations).MapTransfer`. **Temp
+instrumentation on `Arm64DmaMapTransfer` proved it is NEVER CALLED for this transfer**
+(empty trace) — so the coherent-DMA adapter is **exonerated a third time**, and the SG list
+is never populated → IN buffer = 0. `USBPORT_MapTransfer` is the execution routine of
+`AllocateAdapterChannel`, called from `USBPORT_FlushMapTransfers` (usbport.rs:2799) which
+only maps transfers already on `FdoExtension.MapTransferList`. **So the arm64 control
+transfer is never added to the MapTransferList (or its "needs map" decision differs), and
+separately the inline SETUP-packet copy lands at a physical address the qTD doesn't point
+to.** Both symptoms are guest-side in **usbport/usbehci control-transfer setup**, NOT the
+DMA adapter and NOT device speed. **Two precise next-instrumentation targets:** (1) print
+in `USBPORT_QueueActiveUrbToEndpoint`/the map-transfer-list add path whether the control
+transfer is enqueued for mapping on arm64 (vs amd64); (2) print `FirstTD.PhysicalAddress`,
+the SetupPacket source `(*TransferParameters).SetupPacket` bytes, and the VA written, to see
+why the SETUP copy and the buffer pointer disagree — a likely `EHCI_HCD_TD` `types_arm64.rs`
+layout skew (the SetupPacket field offset or `PhysicalAddress` field) in the same family as
+the fastfat/IO_STACK_LOCATION packing bugs. This is a NON-BLOCKING follow-up; the headline
+arm64 work (PCI bring-up, IO_STACK_LOCATION ABI fix, fastfat boot-restore) is landed and
+×3-gate-green on master.
+
+*Update 4 (validated the "MapTransfer not called" finding + traced the map decision):*
+confirmed the instrumentation was real — `strings build-arm64/hal/halarm64/hal.dll | grep
+DMA-MT` shows the print IS in the running binary (editing `dma.rs` directly recompiles
+hal-rust, unlike the task-#17 ntkrnl-sys-dependency staleness), so "MapTransfer genuinely not
+called for the control transfer" holds and the DMA adapter stays exonerated. Traced the
+decision: `USBPORT_QueueActiveUrbToEndpoint` (usbport-rust/queue.rs:1167) routes a transfer
+to the plain `TransferList` (NO DMA map) instead of `MapTransferList` when
+`TransferParameters.TransferBufferLength == 0 || (Endpoint.Flags & ENDPOINT_FLAG_DMA_TYPE)
+== 0`. `ENDPOINT_FLAG_DMA_TYPE` (=1, all arches) is set unconditionally once the endpoint
+opens (endpoint.rs:1160), and the endpoint DID open (QH exists), so that half should be set.
+`USBPORT_TRANSFER` and `USBPORT_TRANSFER_PARAMETERS` layouts are **byte-identical** arm64 vs
+amd64 (checked) — so no struct skew there. **So the immediate next step is a `--clean` build
+(NOT warm) instrumenting `USBPORT_QueueActiveUrbToEndpoint` to print
+`TransferBufferLength` + `Endpoint.Flags` for the arm64 control transfer**: whichever half of
+the condition is unexpectedly true (length read as 0, or the DMA-TYPE flag clear) is the
+root, and both point at a subtle field read / endpoint-open ordering that differs on arm64
+despite identical struct layouts. This remains a well-characterized, NON-BLOCKING follow-up.
+
+## Disposition (2026-07-10 — probe phase CLOSED, migration phase NOT STARTED)
+
+The probe lane hit its stated goal and was closed (worktree removed; everything landed
+on master through `b22168c8acc`/`7afe3850860`). **The probe decided the direction; it did
+not do the migration.** In the default boot path input still flows the old divergent ways:
+x86 = `i8042prt` (PS/2, IRQ+DPC); arm64 = `arm64input` (polled virtio-mmio monolith that
+collapses miniport+class and bypasses kbdclass/mouclass). USB HID works but only when
+devices are hand-added via `VIBEOS_QEMU_EXTRA` — the default smokes don't exercise it.
+
+**The unification migration (the quest's endgame, owed — a multi-day architectural move):**
+1. **Make USB HID the default input transport** — add `-device usb-kbd/usb-mouse` (EHCI)
+   to the standard smoke config so the gate exercises the unified path on every run.
+2. **Retire `arm64input`** (delete its monolith class-device creation + rings) **and
+   `i8042prt`** — or keep them as explicit fallbacks.
+3. **usbxhci gap** — no xHCI driver exists (only EHCI/OHCI/UHCI, USB2-era). Fine for QEMU
+   (EHCI works on q35/pc/virt), but real hardware eventually wants xHCI.
+
+**Smaller open debt from this lane (tracked here so it survives the worktree closure):**
+- **Warm-build driver relink hazard (real infra bug):** a warm `vibeos-cli build` does NOT
+  relink driver `.sys` after an `ntkrnl-sys` dependency edit (same false-fresh family as
+  the reactos-link fix in the whpx spike doc) — cost 3 false debug rounds in this lane.
+  Until fixed: always `--clean` when validating a layout/FFI change against drivers.
+- **Const verification doesn't cover driver-local enum values** (enum-drift class) —
+  extend `verify_constants.py` scope.
+- **cdfs FSCTL / classpnp bind-all nests:** 185 unreachable-pattern warnings, orthogonal
+  cleanup, was in-progress when the lane closed.
+
+## References
+- Miniports: `sdk/lib/rust/{i8042prt-rust,arm64input-rust}/`.
+- Class + RIT spine: `sdk/lib/rust/{kbdclass-rust,mouclass-rust}/`,
+  `sdk/lib/rust/win32k-rust/src/input.rs`.
+- USB/HID stack: `sdk/lib/rust/{usbport,usbehci,usbohci,usbuhci,usbhub,usbd,hidusb,hidclass,kbdhid,mouhid}-rust/`.
+- HAL: `sdk/lib/rust/hal-rust/src/{x86,arm64}/`.
+- Existing input-injection smoke scaffolding (delivery-level, C-era arm64 work):
+  `tests/qemu/test_smoke.py::test_post_shell_ready_input` / `_mouse` / `test_arm64input_delivery`.
+- Boot-hive driver registration: `boot/bootdata/hivesys.inf` (usb*), `hivesys_arm64.inf` (arm64input).
