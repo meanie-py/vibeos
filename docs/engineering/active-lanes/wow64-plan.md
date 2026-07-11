@@ -430,9 +430,33 @@ HDC (18010112), **PatBlt draws through native arm64 win32k**. gui32 exit
 **0x600E** = the designed draw-OK/readback-WARN rung. hello32 0x600D
 unchanged.
 
-*Owed from M5:* GetPixel readback on the ramfb display surface (gui32's last
-rung to 0x600D; magenta is RGB↔BGR-symmetric so the mismatch is likely
-CLR_INVALID from the surface-readback path, not channel order).
+## M6 (2026-07-11): wide GDI handle-table entries — guest GetPixel round-trips
+
+The M5 readback WARN was NOT surface readback: 32-bit gdi32 read the shared
+GDI handle table with 16-byte GDI_TABLE_ENTRY stride, but the 64-bit kernel
+writes 24-byte ENTRYs — so `GdiValidateHandle`/`GdiGetHandleUserData` failed
+client-side and SelectObject/GetPixel never issued syscalls (the boot-log
+tell: no `NtGdiSelectBrush`/`NtGdiGetPixel` traces after `NtGdiPatBlt`).
+Fix in **gdi32-rust** (dllmain.c/misc.c/region.c are cohab-flipped DEAD
+source — a first fix went into the C and did nothing; the parallel C edits
+are kept aligned for reference): `GdiProcessSetup` detects wow64 once
+(ProcessWow64Information != 0 → `g_GdiWow64`), all shared-entry reads route
+through `GdiReadSharedEntry` (wide layout when set; field ORDER matches, only
+KernelData/UserData widen), and `GdiDevCaps` rebases past 0x10000 wide
+entries. On-box: **NtGdiGetPixel fires from the guest and returns the true
+framebuffer pixel** — the full 32-bit-guest GDI readback path works.
+
+*Owed from M6 (= M7, the next layer):* the pixel reads WHITE because
+**DC_ATTR is the next layout-divergent shared struct** — guest
+`GdiSelectBrush` wrote `hbrush`/`ulDirty_` at 32-bit DC_ATTR offsets into the
+kernel's 64-bit DC_ATTR, so PatBlt drew with the default brush. Candidate
+approaches: (a) kernel-side 32-bit attr layout for wow64 processes (real-
+Windows shape; win32k pdcattr accesses need a per-process shim), (b)
+guest-side 64-bit offsets under `g_GdiWow64` (many DC_ATTR consumers), (c)
+make DC_ATTR/BRUSH_ATTR/RGN_ATTR **layout-invariant across 32/64** in
+ntgdihdl.h — vibeos controls both sides, kills the class forever; evaluate
+native-i386 impact first. Same class will recur for user32's HANDLEENTRY /
+SERVERINFO when window creation lands.
 
 *Still deferred (owed, the next milestones):*
 - **advapi32.dll / usp10.dll (i386) staging** — user32 imports them; the loader
