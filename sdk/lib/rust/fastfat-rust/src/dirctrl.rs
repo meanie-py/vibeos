@@ -55,7 +55,9 @@ extern "system" {
     fn RtlEqualMemory(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, length: u32) -> u8;
     fn RtlOemStringToCountedUnicodeSize(OemString: *const OEM_STRING) -> u32;
     fn QuadAlign(x: u32) -> u32;
-    fn try_return(status: NTSTATUS);
+    // try_return was a no-op cohab stub — it is C's `try_return(X)` macro
+    // (Status = X; goto try_exit), now inlined as `return;`/do_return at each
+    // call site (see FatQueryDirectory). Do NOT re-introduce it as an extern fn.
     fn CanFsdWait(Irp: PIRP) -> i32;
     fn FatIsIrpTopLevel(Irp: PIRP) -> u8;
     fn FatCreateIrpContext(Irp: PIRP, CanWait: i32) -> PIRP_CONTEXT;
@@ -101,6 +103,7 @@ const STATUS_BUFFER_OVERFLOW: NTSTATUS = 0x80000005u32 as i32;
 const STATUS_INVALID_INFO_CLASS: NTSTATUS = 0xC0000003u32 as i32;
 const STATUS_UNMAPPABLE_CHARACTER: NTSTATUS = 0xC0000162_u32 as i32;
 const STATUS_SUCCESS: NTSTATUS = 0;
+#[allow(dead_code)] // C `try_return(NOTHING)` sentinel; now inlined as a Status-preserving return
 const NOTHING: NTSTATUS = 0;
 
 type NTSTATUS = i32;
@@ -428,7 +431,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                 if ExtendedName != 0 {
                     Status = RtlUpcaseUnicodeString(&mut (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().UnicodeQueryTemplate, UniArgFileName, 1);
                     if Status < 0 {
-                        try_return(Status);
+                        return; // try_return(Status)
                     }
                     SetFlag(&mut (*Ccb).Flags, CCB_FLAG_FREE_UNICODE);
 
@@ -437,7 +440,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         if Status == STATUS_UNMAPPABLE_CHARACTER {
                             SetFlag(&mut (*Ccb).Flags, CCB_FLAG_SKIP_SHORT_NAME_COMPARE);
                         } else {
-                            try_return(Status);
+                            return; // try_return(Status)
                         }
                     } else {
                         SetFlag(&mut (*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT);
@@ -538,7 +541,8 @@ pub unsafe extern "system" fn FatQueryDirectory(
                 BaseLength = core::mem::offset_of!(FILE_ID_BOTH_DIR_INFORMATION, FileName) as u32 + 0;
             }
             _ => {
-                try_return(STATUS_INVALID_INFO_CLASS);
+                Status = STATUS_INVALID_INFO_CLASS;
+                return; // try_return(Status = STATUS_INVALID_INFO_CLASS)
             }
         }
 
@@ -551,7 +555,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
             DebugTrace(0, Dbg, b"FatQueryDirectory -> Top of loop\n\0".as_ptr() as *const i8, 0);
 
             if ReturnSingleEntry != 0 && NextEntry != 0 {
-                try_return(Status);
+                return; // try_return(Status)
             }
 
             FatLocateDirent(
@@ -578,10 +582,15 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         Status = STATUS_NO_MORE_FILES;
                     }
                 }
-                try_return(Status);
+                return; // try_return(Status)
             }
 
-            // Inner SEH_TRY block
+            // Inner SEH_TRY block.
+            // try_return inside the inner closure can only `return` from the
+            // closure, not out of the enclosing loop; this flag propagates the
+            // C `goto try_exit` past the loop (checked right after the inner
+            // catch_unwind below).
+            let mut do_return = false;
             let inner_result = catch_unwind(AssertUnwindSafe(|| {
                 // SEH_TRY: start
                 Fat8dot3ToString(IrpContext, Dirent as *mut c_void, 1, &mut Fat8Dot3String);
@@ -596,7 +605,10 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             || (UserBufferLength as u32) < NextEntry)
                     {
                         DebugTrace(0, Dbg, b"Next entry won't fit\n\0".as_ptr() as *const i8, 0);
-                        try_return(STATUS_SUCCESS);
+                        // try_return(Status = STATUS_SUCCESS) — inner closure: flag + break loop
+                        Status = STATUS_SUCCESS;
+                        do_return = true;
+                        return;
                     }
 
                     NT_ASSERT((BytesRemainingInBuffer >= BaseLength) as u8);
@@ -674,7 +686,9 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         .wrapping_add(BaseLength as usize).wrapping_add(BytesConverted as usize) as _;
 
                     if Status < 0 {
-                        try_return(NOTHING);
+                        // try_return(NOTHING) — inner closure: preserve Status (error), break loop
+                        do_return = true;
+                        return;
                     }
                 } else {
                     // Long filename path
@@ -688,7 +702,10 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             || (UserBufferLength as u32) < NextEntry)
                     {
                         DebugTrace(0, Dbg, b"Next entry won't fit\n\0".as_ptr() as *const i8, 0);
-                        try_return(STATUS_SUCCESS);
+                        // try_return(Status = STATUS_SUCCESS) — inner closure: flag + break loop
+                        Status = STATUS_SUCCESS;
+                        do_return = true;
+                        return;
                     }
 
                     NT_ASSERT((BytesRemainingInBuffer >= BaseLength) as u8);
@@ -718,7 +735,9 @@ pub unsafe extern "system" fn FatQueryDirectory(
                                 (*BothDirInfo).ShortNameLength = (ShortNameLength as u8) as i8;
 
                                 if Status < 0 {
-                                    try_return(NOTHING);
+                                    // try_return(NOTHING) — inner closure: preserve Status, break loop
+                                    do_return = true;
+                                    return;
                                 }
                             }
                             if FileInformationClass != FIC_DIRECTORY {
@@ -780,7 +799,10 @@ pub unsafe extern "system" fn FatQueryDirectory(
 
                     if BytesConverted < FileNameLength {
                         NT_ASSERT((NextEntry == 0) as u8);
-                        try_return(STATUS_BUFFER_OVERFLOW);
+                        // try_return(Status = STATUS_BUFFER_OVERFLOW) — inner closure: flag + break loop
+                        Status = STATUS_BUFFER_OVERFLOW;
+                        do_return = true;
+                        return;
                     }
                 }
 
@@ -804,7 +826,16 @@ pub unsafe extern "system" fn FatQueryDirectory(
             if inner_result.is_err() {
                 (*Irp).IoStatus.Information = 0;
                 UpdateCcb = 0;
-                try_return((_SEH2_GetExceptionCode()) as i32);
+                // try_return(Status = _SEH2_GetExceptionCode()) — outer closure
+                Status = (_SEH2_GetExceptionCode()) as i32;
+                return;
+            }
+
+            // Propagate a try_return that fired inside the inner (per-entry)
+            // closure: it could only `return` from that closure, so break the
+            // enclosing loop here (C `goto try_exit`).
+            if do_return {
+                return;
             }
 
             LastEntry = NextEntry;
