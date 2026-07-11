@@ -682,8 +682,13 @@ static NTSTATUS Wow64Manual_NtMapViewOfSection(ULONG *a)
         {
             extern LONG (WINAPI *Wow64pBTCpuNotifyMap)(PVOID, PVOID, PVOID,
                                                        SIZE_T, ULONG, ULONG);
+            extern VOID Wow64pPatchTransitionSlot(PVOID MBase, SIZE_T MSize);
             if (Wow64pBTCpuNotifyMap)
                 Wow64pBTCpuNotifyMap(NULL, Base, NULL, Size, Type, Protect);
+            /* Guest DLLs carrying their own win32ksys syscall stubs
+             * (gdi32/user32) export a per-module Wow64Transition slot that
+             * must point at the BOP, same as ntdll32's. */
+            Wow64pPatchTransitionSlot(Base, Size);
         }
     }
     else
@@ -735,6 +740,34 @@ typedef struct _WOW64_REMOTE_PORT_VIEW64_M {
     ULONGLONG ViewBase;
 } WOW64_REMOTE_PORT_VIEW64_M;
 
+/* CSR_API_CONNECTINFO widths (csrmsg.h): the 32-bit client sends 0x24 bytes,
+ * 64-bit csrss reads/writes 0x38. Field-for-field thunk; the three returned
+ * pointers (SharedSectionBase/StaticServerData/Heap) must land below 4GB for
+ * the guest to use them — loud print if csrss's view base is guest-invisible. */
+typedef struct _WOW64_CSR_CONNECTINFO32_M {
+    ULONG ObjectDirectory;
+    ULONG SharedSectionBase;
+    ULONG SharedStaticServerData;
+    ULONG SharedSectionHeap;
+    ULONG DebugFlags;
+    ULONG SizeOfPebData;
+    ULONG SizeOfTebData;
+    ULONG NumberOfServerDllNames;
+    ULONG ServerProcessId;
+} WOW64_CSR_CONNECTINFO32_M; /* 0x24 */
+
+typedef struct _WOW64_CSR_CONNECTINFO64_M {
+    ULONGLONG ObjectDirectory;
+    ULONGLONG SharedSectionBase;
+    ULONGLONG SharedStaticServerData;
+    ULONGLONG SharedSectionHeap;
+    ULONG DebugFlags;
+    ULONG SizeOfPebData;
+    ULONG SizeOfTebData;
+    ULONG NumberOfServerDllNames;
+    ULONGLONG ServerProcessId;
+} WOW64_CSR_CONNECTINFO64_M; /* 0x38 */
+
 static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
 {
     ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[0];
@@ -750,6 +783,8 @@ static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
     ULONG *ConnLen32 = (ULONG *)(ULONG_PTR)a[Secure ? 8 : 7];
     WOW64_PORT_VIEW64_M Cv64, *Cv64Ptr = NULL;
     WOW64_REMOTE_PORT_VIEW64_M Sv64, *Sv64Ptr = NULL;
+    WOW64_CSR_CONNECTINFO64_M Csr64;
+    WOW64_CSR_CONNECTINFO32_M *Csr32 = NULL;
     ULONG MaxLen = 0, ConnLen = 0;
     HANDLE Handle = NULL;
     NTSTATUS St;
@@ -760,6 +795,33 @@ static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
     Name64.MaximumLength = Name32->MaximumLength;
     Name64.__pad = 0;
     Name64.Buffer = (ULONG_PTR)Name32->Buffer;
+
+    /* CSR connect-info thunk: a 0x24-byte blob aimed at an *ApiPort is the
+     * 32-bit CSR_API_CONNECTINFO — widen it so 64-bit csrss reads/writes its
+     * own layout, then narrow the reply below. */
+    if (ConnInfo && ConnLen32 && *ConnLen32 == sizeof(WOW64_CSR_CONNECTINFO32_M) &&
+        Name64.Length >= 7 * sizeof(WCHAR))
+    {
+        PCWSTR N = (PCWSTR)(ULONG_PTR)Name64.Buffer;
+        ULONG NChars = Name64.Length / sizeof(WCHAR);
+        if (N[NChars - 7] == L'A' && N[NChars - 6] == L'p' && N[NChars - 5] == L'i' &&
+            N[NChars - 4] == L'P' && N[NChars - 3] == L'o' && N[NChars - 2] == L'r' &&
+            N[NChars - 1] == L't')
+        {
+            Csr32 = (WOW64_CSR_CONNECTINFO32_M *)ConnInfo;
+            Csr64.ObjectDirectory = Csr32->ObjectDirectory;
+            Csr64.SharedSectionBase = Csr32->SharedSectionBase;
+            Csr64.SharedStaticServerData = Csr32->SharedStaticServerData;
+            Csr64.SharedSectionHeap = Csr32->SharedSectionHeap;
+            Csr64.DebugFlags = Csr32->DebugFlags;
+            Csr64.SizeOfPebData = Csr32->SizeOfPebData;
+            Csr64.SizeOfTebData = Csr32->SizeOfTebData;
+            Csr64.NumberOfServerDllNames = Csr32->NumberOfServerDllNames;
+            Csr64.ServerProcessId = Csr32->ServerProcessId;
+            ConnInfo = &Csr64;
+            ConnLen = sizeof(Csr64);
+        }
+    }
 
     if (Cv32)
     {
@@ -780,7 +842,7 @@ static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
         Sv64.ViewBase = Sv32->ViewBase;
         Sv64Ptr = &Sv64;
     }
-    if (ConnLen32)
+    if (ConnLen32 && !Csr32)
         ConnLen = *ConnLen32;
 
     if (Secure)
@@ -811,7 +873,30 @@ static NTSTATUS Wow64pConnectPort(ULONG *a, int Secure)
             Sv32->ViewBase = (ULONG)Sv64.ViewBase;
         }
         if (MaxLen32) *MaxLen32 = MaxLen;
-        if (ConnLen32) *ConnLen32 = ConnLen;
+        if (Csr32)
+        {
+            /* Narrow the CSR reply. The shared-section pointers must be
+             * guest-addressable; a >4GB base means csrss's view landed
+             * outside the guest's world — report it loudly, the connect
+             * "succeeded" but kernel32 would read garbage. */
+            if ((Csr64.SharedSectionBase | Csr64.SharedStaticServerData |
+                 Csr64.SharedSectionHeap) >> 32)
+                DbgPrint("[WOW64]   CSR connect: shared section ABOVE 4GB "
+                         "(base=%I64x static=%I64x heap=%I64x) — guest-invisible!\n",
+                         Csr64.SharedSectionBase, Csr64.SharedStaticServerData,
+                         Csr64.SharedSectionHeap);
+            Csr32->ObjectDirectory = (ULONG)Csr64.ObjectDirectory;
+            Csr32->SharedSectionBase = (ULONG)Csr64.SharedSectionBase;
+            Csr32->SharedStaticServerData = (ULONG)Csr64.SharedStaticServerData;
+            Csr32->SharedSectionHeap = (ULONG)Csr64.SharedSectionHeap;
+            Csr32->DebugFlags = Csr64.DebugFlags;
+            Csr32->SizeOfPebData = Csr64.SizeOfPebData;
+            Csr32->SizeOfTebData = Csr64.SizeOfTebData;
+            Csr32->NumberOfServerDllNames = Csr64.NumberOfServerDllNames;
+            Csr32->ServerProcessId = (ULONG)Csr64.ServerProcessId;
+            if (ConnLen32) *ConnLen32 = sizeof(*Csr32);
+        }
+        else if (ConnLen32) *ConnLen32 = ConnLen;
     }
     return St;
 }
@@ -1024,6 +1109,56 @@ static NTSTATUS Wow64Manual_NtContinue(ULONG *a)
                                  NULL, Ctx32);
 }
 
+/* ---- NtGdiOpenDCW (M4/wow64win) ----------------------------------------- *
+ * The first win32k marshaller: gdi32's CreateDC path. The two UNICODE_STRING
+ * args (device name, log address) widen 8->16 bytes; DEVMODEW is a flat
+ * pointer-free public struct (identical 32/64 bytes) so its guest pointer
+ * passes through; hspool is a 32-bit HANDLE; pUMdhpdev is an output PVOID*
+ * (kernel writes an 8-byte pointer, narrow to the 4-byte guest cell — for a
+ * display DC it's typically untouched). The HDC return is a 32-bit GDI handle
+ * even on Win64, so it fits straight into guest EAX.
+ *   NtGdiOpenDCW(pustrDevice, pdm, pustrLogAddr, iType, bDisplay, hspool, pUMdhpdev) */
+static NTSTATUS Wow64Manual_NtGdiOpenDCW(ULONG *a)
+{
+    extern HANDLE NtGdiOpenDCW(PVOID, PVOID, PVOID, ULONG, BOOL, HANDLE, PVOID);
+    WOW64_UNICODE_STRING32_M *Dev32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[0];
+    PVOID Pdm = (PVOID)(ULONG_PTR)a[1]; /* DEVMODEW: flat, passthrough */
+    WOW64_UNICODE_STRING32_M *Log32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[2];
+    ULONG IType = a[3];
+    BOOL BDisplay = (BOOL)a[4];
+    HANDLE HSpool = (HANDLE)(ULONG_PTR)a[5];
+    ULONG *UMdh32 = (ULONG *)(ULONG_PTR)a[6];
+    WOW64_UNICODE_STRING64_M Dev64, Log64;
+    PVOID Dev64Ptr = NULL, Log64Ptr = NULL, UMdh64 = NULL;
+    HANDLE Hdc;
+
+    if (Dev32)
+    {
+        Dev64.Length = Dev32->Length;
+        Dev64.MaximumLength = Dev32->MaximumLength;
+        Dev64.__pad = 0;
+        Dev64.Buffer = (ULONG_PTR)Dev32->Buffer;
+        Dev64Ptr = &Dev64;
+    }
+    if (Log32)
+    {
+        Log64.Length = Log32->Length;
+        Log64.MaximumLength = Log32->MaximumLength;
+        Log64.__pad = 0;
+        Log64.Buffer = (ULONG_PTR)Log32->Buffer;
+        Log64Ptr = &Log64;
+    }
+
+    Hdc = NtGdiOpenDCW(Dev64Ptr, Pdm, Log64Ptr, IType, BDisplay, HSpool,
+                       UMdh32 ? &UMdh64 : NULL);
+    if (UMdh32)
+        *UMdh32 = (ULONG)(ULONG_PTR)UMdh64;
+    DbgPrint("[WOW64]   NtGdiOpenDCW(dev='%.*S' type=%lu disp=%d) => hdc=%p\n",
+             Dev64Ptr ? (int)(Dev64.Length / sizeof(WCHAR)) : 0,
+             Dev64Ptr ? (PCWSTR)(ULONG_PTR)Dev64.Buffer : L"", IType, BDisplay, Hdc);
+    return (NTSTATUS)(ULONG)(ULONG_PTR)Hdc;
+}
+
 /* Name-dispatched entry point. Returns WOW64_MANUAL_UNIMPL if unhandled. */
 NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
 {
@@ -1079,6 +1214,8 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtCreateEvent(Arguments);
     if (WOW64_IS("NtOpenEvent"))
         return Wow64pOpenByOa(NtOpenEvent, Arguments);
+    if (WOW64_IS("NtGdiOpenDCW"))
+        return Wow64Manual_NtGdiOpenDCW(Arguments);
 #undef WOW64_IS
     return WOW64_MANUAL_UNIMPL;
 }

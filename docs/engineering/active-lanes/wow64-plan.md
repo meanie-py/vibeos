@@ -337,12 +337,92 @@ builds the image + ntdll `LDR_DATA_TABLE_ENTRY`s and reaches
   5. Convenience marshallers: NtCreateDirectoryObject/NtCreateEvent/
      NtOpenEvent (open-by-OA shape).
 
-*Deferred out of M3b (the M4 surface):*
-- **CSR/LPC-32 layer** — 64-bit csrss refuses 32-bit connects
-  (CSR_API_CONNECTINFO + CSR_API_MESSAGE/PORT_MESSAGE layouts differ). Needed
-  for console I/O, real CreateProcess from guests, anything csrss-brokered.
-  Design choice pending: thunk CSR messages in wow64.dll (real-NT shape) vs
-  teach basesrv/winsrv to accept 32-bit-shaped connects.
+*M4 — win32k thunk table PROVEN ON-BOX (2026-07-11, branch `fex-arm-m4`).* A
+32-bit GDI syscall from a real i386 GUI guest (gui32.exe) routes through the
+new win32k thunk table to native arm64 win32k. The boot oracle:
+```
+[FEX-WOW64C] Wow64Transition slot ...7C0CA000 (module ...7C060000) patched -> BOP   # gdi32
+[FEX-WOW64C] Wow64Transition slot ...77ABB054 (module ...77A20000) patched -> BOP   # user32
+[WOW64] NtGdiInit(0x10db) => ffffffff                                                # auto-thunk fires
+[GUEST32] [gui32] start: CreateDCA(DISPLAY)                                          # guest code runs
+[WOW64]   NtGdiOpenDCW(dev='DISPLAY' type=0 disp=1) => hdc=0                          # manual marshaller fires
+```
+hello32.exe still PASSes 0x600D in the same boot (no regression). gui32 exits
+0xBAD1 (CreateDCA→NULL) only because the guest has no win32k process
+connection yet (NtGdiInit returns 0xffffffff) — the next milestone, below.
+
+Bugs found + fixed here:
+- **CurrentDirectory NULL in the down-converted 32-bit process params.**
+  `Wow64pBuildProcessParams32` copied DllPath/ImagePathName/CommandLine but NOT
+  CurDir.DosPath, so `RtlGetFullPathName_Ustr` faulted at `cmpw $':',0x2(esi)`
+  (esi=CurDir.Buffer=NULL) the moment the loader resolved a DLL path. hello32
+  imported nothing so never hit it; gui32's gdi32/user32 closure did. Fixed by
+  down-converting CURDIR (UPP64 +0x38 DosPath / +0x48 Handle).
+
+Two independent M4 fronts (all landed on `fex-arm-m4`; a fresh gate is owed
+before landing to master — these touch i386 gdi32/user32 specs + csrss):
+
+1. **wow64win — the win32k (NtGdi*/NtUser*) 32→64 thunk table.** The Doom
+   path needs win32k, not just ntdll. Reused wow64gen with a `--symbol-prefix`
+   flag so a SECOND table (`Wow64Win32kThunkTable`, generated from
+   `win32ss/win32u/win32u.spec` ordered by `win32ss/w32ksvc32.h`) coexists in
+   wow64.dll in its own TU (`wow64_win32k.c`). Guest EAX carries `0x1000+index`
+   (the win32k service-table tag bit), so `Wow64DispatchSystemService` routes
+   `(n & 0xF000)==0x1000` to `Wow64DispatchWin32kService` (ntdll max is ~0x127,
+   no overlap). Host side resolves through the native arm64 `win32u.dll`
+   importlib (pure syscall stubs, no csr). 738 win32k syscalls, 654 auto / 84
+   manual (GDI/USER structs are mostly pointer-free RECT/POINT/COLORREF, so
+   auto covers far more than the ntdll table). `manual-win32k.txt` seeds the
+   pointer-bearing ones (NtGdiOpenDCW, the MSG pump family).
+2. **Guest-DLL Wow64Transition patching.** gdi32/user32 embed their own copy
+   of the win32ksys syscall stubs (per-module `Wow64Transition` slot), so the
+   NtMapViewOfSection marshaller now calls `Wow64pPatchTransitionSlot(base)` on
+   every mapped image — walks the PE32 export dir, and if it exports
+   `Wow64Transition`, points it at the BOP. Added the `-arch=i386`
+   `Wow64Transition` export to gdi32.spec + user32.spec (arch-gated, x86-only).
+3. **CSR_API_CONNECTINFO width thunk** (the c0000041 blocker's real fix). The
+   NtConnectPort/NtSecureConnectPort marshaller detects a 0x24-byte connect
+   blob aimed at an `*ApiPort` and widens it to the 64-bit 0x38-byte
+   `CSR_API_CONNECTINFO` csrss expects, narrowing the reply back down. A loud
+   print fires if csrss's returned shared-section base is >4GB (guest-invisible
+   — the next sub-layer: csrss must map the shared section below 4GB for a
+   WoW64 client). csrss-side refusal forensics added (`[CSRSRV] ConnReq:` /
+   `AttachSharedSection FAILED` in csrsrv api.rs/server.rs).
+4. **gui32.exe harness** — an i386 GUI guest (real kernel32+gdi32 imports) that
+   opens a display DC (CreateDCA→NtGdiOpenDCW) + PatBlt + GetPixel, exercising
+   the win32k table without user-mode callbacks. Staged under VIBEOS_FEX beside
+   the gdi32/user32/win32u guest set; winlogon `TryStartWow64Gui` launches it.
+   Verdict = exit 0x600D + a magenta rect on the arm64 desktop.
+
+*Still deferred out of M4 (owed, the next milestones):*
+- **win32k process/thread connection for a WoW64 guest** (the gui32 0xBAD1
+  blocker — task #29). gdi32's `GdiProcessSetup`/`NtGdiInit` returns 0xffffffff,
+  so the guest has no GDI handle table / desktop, and every subsequent NtGdi*
+  (incl. NtGdiOpenDCW) returns NULL.
+  *Diagnostic clue pinned 2026-07-11:* the arm64 syscall dispatch's
+  `[SVC] GUI conversion failed` print (trap.rs:220) did NOT fire for the wow64
+  NtGdiInit call, so the `-1` is NOT PsConvertToGuiThread rejecting the thread
+  via that path. Table alignment is proven sound (NtGdiOpenDCW correctly
+  unpacked `'DISPLAY'`, so the guest's w32ksvc32 service numbers match the
+  table). Next debug step: trace inside the TableIndex==1 dispatch in trap.rs
+  (print ServiceIndex + the win32k routine's return for the wow64 thread) to
+  see whether NtGdiInit actually runs (Rust returns 1) or the call diverts —
+  the `0xffffffff` origin is the open question. Then the real work:
+  the win32k client-connect path
+  (`NtUserProcessConnect` + the GDI shared handle-table section mapped into the
+  guest below 4GB, PEB `GdiSharedHandleTable`) taught about the WoW64 process.
+  This is the win32k analogue of the csrss connect layer.
+- **advapi32.dll / usp10.dll (i386) staging** — user32 imports them; the loader
+  currently skips-missing (`LDR: Skipping missing import ... c0000135`), which
+  works for gui32 but leaves user32 partially unresolved. Stage them for a real
+  windowed app.
+- **CSR shared-section below-4GB mapping** — the connectinfo thunk widens the
+  message, but csrss's `CsrSrvSharedSectionBase` is a 64-bit VA; a WoW64 client
+  needs it mapped below 4GB (the loud >4GB print is the tripwire). Likely a
+  `NtMapViewOfSection` ZeroBits-mask in `CsrSrvAttachSharedSection` when the
+  target process is WoW64.
+- CSR_API_MESSAGE/PORT_MESSAGE body layouts for actual API calls past connect
+  (console I/O, real CreateProcess from guests).
 - **Kernel robustness:** misaligned user pointer at any PHANDLE-probing
   syscall = probe RAISE + DUMMY_PSEH = BUGCHECK 0x1E from user input.
   Long-term: Stage-2 `Result<T>` probe migration for syscall entry paths.

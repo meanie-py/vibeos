@@ -262,7 +262,13 @@ static inline double wow64_bits_to_double(ULONG lo, ULONG hi)
 """
 
 
-def emit_c(syscalls: list[Syscall], spec: str, arch: str, out: str) -> str:
+def emit_c(
+    syscalls: list[Syscall],
+    spec: str,
+    arch: str,
+    out: str,
+    symbol_prefix: str = "Wow64Thunk",
+) -> str:
     n_manual = sum(1 for s in syscalls if s.needs_manual)
     n_auto = len(syscalls) - n_manual
     header = (
@@ -291,7 +297,7 @@ def emit_c(syscalls: list[Syscall], spec: str, arch: str, out: str) -> str:
         buf.append("")
 
     # The dispatch table, indexed by service ordinal.
-    buf.append("static const WOW64_THUNK_ENTRY Wow64ThunkTable[] = {")
+    buf.append(f"static const WOW64_THUNK_ENTRY {symbol_prefix}Table[] = {{")
     for sc in syscalls:
         if sc.needs_manual:
             buf.append(
@@ -305,8 +311,8 @@ def emit_c(syscalls: list[Syscall], spec: str, arch: str, out: str) -> str:
     buf.append("};")
     buf.append("")
     buf.append(
-        "static const unsigned Wow64ThunkCount = "
-        "sizeof(Wow64ThunkTable) / sizeof(Wow64ThunkTable[0]);"
+        f"static const unsigned {symbol_prefix}Count = "
+        f"sizeof({symbol_prefix}Table) / sizeof({symbol_prefix}Table[0]);"
     )
     buf.append("")
     return "\n".join(buf)
@@ -351,6 +357,12 @@ def main(argv: list[str]) -> int:
         "(struct args needing deep marshalling)",
     )
     ap.add_argument("--stats", action="store_true", help="print a coverage summary to stderr")
+    ap.add_argument(
+        "--symbol-prefix",
+        default="Wow64Thunk",
+        help="C symbol prefix for the emitted table/count (default Wow64Thunk; "
+        "the win32k table uses Wow64Win32kThunk so both tables coexist in wow64.dll)",
+    )
     args = ap.parse_args(argv)
 
     manual = load_manual_list(args.manual_list)
@@ -364,7 +376,7 @@ def main(argv: list[str]) -> int:
         return 2
     syscalls = order_by_sysfuncs(sysfuncs, spec_syscalls)
 
-    text = emit_c(syscalls, args.spec, args.arch, args.out_c or "-")
+    text = emit_c(syscalls, args.spec, args.arch, args.out_c or "-", args.symbol_prefix)
     if args.out_c:
         with open(args.out_c, "w", encoding="utf-8") as fh:
             fh.write(text)

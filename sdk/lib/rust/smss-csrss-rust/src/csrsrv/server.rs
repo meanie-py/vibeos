@@ -421,6 +421,11 @@ pub unsafe extern "system" fn CsrSrvAttachSharedSection(
             PAGE_EXECUTE_READ,
         );
         if Status < 0 {
+            crate::dbg_print!(
+                b"[CSRSRV] AttachSharedSection: map at fixed base %p FAILED st=%lx\n\0",
+                CsrSrvSharedSectionBase,
+                Status
+            );
             return Status;
         }
     }
