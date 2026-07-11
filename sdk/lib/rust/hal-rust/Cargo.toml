@@ -22,3 +22,10 @@ ntkrnl-sys = { path = "../ntkrnl-sys" }
 # `#ifndef _MINIHAL_` are `#[cfg(not(feature = "minihal"))]` in Rust.
 default = []
 minihal = []
+# SMP HAL build (smp-bringup-quest.md): drops PRCB_BUILD_UNIPROCESSOR from
+# HalpBuildType (the kernel/HAL MISMATCHED_HAL handshake) and raises
+# HalpIrqlSynchLevel to IPI_LEVEL-2. Enabled via VIBEOS_SMP_HAL=1 env →
+# hal-cargo build.rs (plumbed from cmake -DVIBEOS_SMP_DEFAULT_BOOT=ON, i.e.
+# `vibeos-cli build --smp-kernel`). An smp HAL pairs with ntkrnlmp.exe and
+# REFUSES the UP ntoskrnl.exe (exact-equality BuildType check) — by design.
+smp = []

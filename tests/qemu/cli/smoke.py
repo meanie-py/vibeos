@@ -433,6 +433,13 @@ def smoke(args, repo: Path) -> int:
         os.environ["VIBEOS_TRIPWIRE"] = tripwire
         run.add(Stage("tripwire", status="warn", detail=tripwire))
 
+    # SMP channel: hand the vCPU count to QemuVM via env (read by
+    # vm.py _smp_args -> QEMU -smp N). Opt-in; default boots stay UP.
+    smp = int(getattr(args, "smp", 0) or 0)
+    if smp:
+        os.environ["VIBEOS_QEMU_SMP"] = str(smp)
+        run.add(Stage("smp", status="warn", detail=f"-smp {smp}"))
+
     results = []
     for i in range(total):
         r = _one_boot(run, repo, arch, until=until, fail_on=fail_on, idx=i, total=total)

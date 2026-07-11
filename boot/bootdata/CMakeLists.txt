@@ -58,7 +58,19 @@ endif()
 
 # freeldr.ini
 add_cd_file(FILE ${CMAKE_CURRENT_SOURCE_DIR}/bootcd.ini DESTINATION root NO_CAB NOT_IN_HYBRIDCD NAME_ON_CD freeldr.ini FOR bootcd regtest)
-add_cd_file(FILE ${CMAKE_CURRENT_SOURCE_DIR}/livecd.ini DESTINATION root NOT_IN_HYBRIDCD NAME_ON_CD freeldr.ini FOR livecd)
+if(VIBEOS_SMP_DEFAULT_BOOT)
+    # SMP bring-up media knob (docs/engineering/smp-bringup-quest.md,
+    # `vibeos-cli build --smp-kernel`): ship a livecd freeldr.ini whose
+    # DefaultOS is the LiveCD_SMP entry (ntkrnlmp.exe). Opt-in only — the
+    # default media stays UP; TimeOut=0 means the default entry is the one
+    # automated boots get.
+    file(READ ${CMAKE_CURRENT_SOURCE_DIR}/livecd.ini _livecd_ini)
+    string(REPLACE "DefaultOS=LiveCD_Debug" "DefaultOS=LiveCD_SMP" _livecd_ini "${_livecd_ini}")
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/livecd-smp.ini "${_livecd_ini}")
+    add_cd_file(FILE ${CMAKE_CURRENT_BINARY_DIR}/livecd-smp.ini DESTINATION root NOT_IN_HYBRIDCD NAME_ON_CD freeldr.ini FOR livecd)
+else()
+    add_cd_file(FILE ${CMAKE_CURRENT_SOURCE_DIR}/livecd.ini DESTINATION root NOT_IN_HYBRIDCD NAME_ON_CD freeldr.ini FOR livecd)
+endif()
 add_cd_file(FILE ${CMAKE_CURRENT_SOURCE_DIR}/hybridcd.ini DESTINATION root NAME_ON_CD freeldr.ini FOR hybridcd)
 
 # Unattend

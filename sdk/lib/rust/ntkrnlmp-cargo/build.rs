@@ -292,17 +292,24 @@ fn main() {
     };
 
     let mut linker = Linker::new(rust_target);
+    // rust_features REPLACES the list (reactos-link), so accumulate and set once.
+    // ntkrnlmp = the SMP kernel: the Rust body always gets the `smp` umbrella
+    // feature (kernel-rust → ntoskrnl-rust/ex-rust/ke-inlines/ntkrnl-sys/...
+    // "smp"), the Rust-side twin of the asm's -DCONFIG_SMP below. The UP
+    // ntoskrnl-cargo link never sets it.
+    let mut feats: Vec<&str> = vec!["smp"];
     // sync-instrumentation §4 lockdep (Tier-2 opt-in): mirror ntoskrnl-cargo —
     // same kernel-rust body, so the MP kernel gets the same instrumented build.
     println!("cargo:rerun-if-env-changed=VIBEOS_LOCKDEP");
     if env::var("VIBEOS_LOCKDEP").is_ok() {
-        linker = linker.rust_features(&["lockdep"]);
+        feats.push("lockdep");
     }
     // cswitchdep-design.md: context-switch verifier (-DVIBEOS_CSWITCHDEP=ON).
     println!("cargo:rerun-if-env-changed=VIBEOS_CSWITCHDEP");
     if env::var("VIBEOS_CSWITCHDEP").is_ok() {
-        linker = linker.rust_features(&["cswitchdep"]);
+        feats.push("cswitchdep");
     }
+    linker = linker.rust_features(&feats);
     linker = linker
         .rust_staticlib("kernel-rust")
         // Tier-B sibling Rust crates: cargo-compiled directly by the engine (was
@@ -344,7 +351,7 @@ fn main() {
         // ntkrnlmp = the SMP kernel: assemble the kernel .S with CONFIG_SMP
         // (the #ifdef CONFIG_SMP spinlock/fast-path blocks in ks*.inc), mirroring
         // cmake's target_compile_definitions(ntkrnlmp PRIVATE CONFIG_SMP). The
-        // Rust body (kernel-rust) is identical UP/MP — only the asm differs.
+        // Rust body gets the matching `smp` feature via rust_features above.
         .asm_extra_defines(&{
             // CONFIG_SMP always; VIBEOS_CSWITCHDEP mirrors ntoskrnl-cargo (the
             // amd64 trap.S tap-5 call site is #ifdef-gated on it).

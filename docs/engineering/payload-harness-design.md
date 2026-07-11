@@ -1,6 +1,15 @@
 # Payload Harness — Declarative App Staging, Autostart & Test Driving
 
 **Status: DESIGN (2026-07-07); step 1 (harness+doom) LANDED 2026-07-07, step 2 (httpd+tcp_hammer, netstack backlog+pended-send fixes) landed 2026-07-08 — see field manual §9.43. Rewrite as as-built once workstreams A/B land.**
+
+**Lane closure (2026-07-10):** the `arm64-interrupts` lane that built this shipped its
+core and was closed — payload harness (YAML → media + test interpreter, doom converted),
+httpd stress + tcp_hammer oracle (amd64 320/320), netstack TDI listen backlog + pended
+sends + arm64 hardening, and the fastfat `FatOpenExistingDirectory` translation (the real
+arm64 fix). All ×3-gate-green on master. **Still owed (separate follow-ons, unclaimed):**
+Workstream A (delete the winlogon spawn hack in favor of fixed `ProcessStartupItems()` —
+small, tidy), Workstream B (vibeagent TCP guest-exec channel — the highest-value reusable
+infra), and the PuTTY payload (pure-YAML generalization exam).
 Lane: grew out of the Doom foreign-binary quest (`doom-on-vibeos.md`); first
 consumers are the httpd stress gate and the PuTTY compat gate.
 

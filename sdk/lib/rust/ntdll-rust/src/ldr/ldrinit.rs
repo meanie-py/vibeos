@@ -2405,8 +2405,16 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
         ImportStatus = LdrpWalkImportDescriptor(LdrpDefaultPath.Buffer, LdrpImageEntry);
     }
 
-    /* Check if relocation is needed */
-    if (*Peb).ImageBaseAddress != (*NtHeader).OptionalHeader.ImageBase as PVOID {
+    /* NtHeader has the native optional-header layout here, so its ImageBase
+     * field is not valid for an i386 WoW64 image.  Guest relocation belongs
+     * to the 32-bit loader after the handoff below. */
+    #[cfg(target_arch = "aarch64")]
+    let ImageNeedsRelocation =
+        !IsWow64Process && (*Peb).ImageBaseAddress != (*NtHeader).OptionalHeader.ImageBase as PVOID;
+    #[cfg(not(target_arch = "aarch64"))]
+    let ImageNeedsRelocation =
+        (*Peb).ImageBaseAddress != (*NtHeader).OptionalHeader.ImageBase as PVOID;
+    if ImageNeedsRelocation {
         ViewBase = (*Peb).ImageBaseAddress;
         Status = LdrpSetProtection(ViewBase, 0u8);
         if !NT_SUCCESS(Status) {

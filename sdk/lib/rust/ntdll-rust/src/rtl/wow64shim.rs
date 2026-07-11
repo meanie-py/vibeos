@@ -225,25 +225,49 @@ pub static mut LdrSystemDllInitBlock: SYSTEM_DLL_INIT_BLOCK = SYSTEM_DLL_INIT_BL
     pRtlpFreezeTimeBias: 0,
 };
 
-/// Cross-thread WOW64 context access needs kernel support (the
-/// `ThreadWow64Context` info class) — Phase C. Loud stubs until then; the
-/// single-threaded bring-up path never hits them.
+/// The Phase-C bootstrap is single-threaded, so FEX's current-thread (including
+/// duplicated-current-handle) requests can use the CPU area directly. True
+/// cross-thread access still needs kernel `ThreadWow64Context` support.
 #[no_mangle]
 pub unsafe extern "system" fn RtlWow64GetThreadContext(
     _ThreadHandle: HANDLE,
-    _Context: PVOID,
+    Context: PVOID,
 ) -> NTSTATUS {
-    DbgPrint(b"RtlWow64GetThreadContext: not implemented (wow64-plan Phase C)\n\0".as_ptr() as *const i8);
-    STATUS_NOT_IMPLEMENTED
+    if Context.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let mut CpuContext: PVOID = null_mut();
+    let Status = RtlWow64GetCurrentCpuArea(null_mut(), &mut CpuContext, null_mut());
+    if !nt_success(Status) || CpuContext.is_null() {
+        return Status;
+    }
+    core::ptr::copy(
+        CpuContext as *const WOW64_CONTEXT,
+        Context as *mut WOW64_CONTEXT,
+        1,
+    );
+    STATUS_SUCCESS
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlWow64SetThreadContext(
     _ThreadHandle: HANDLE,
-    _Context: PVOID,
+    Context: PVOID,
 ) -> NTSTATUS {
-    DbgPrint(b"RtlWow64SetThreadContext: not implemented (wow64-plan Phase C)\n\0".as_ptr() as *const i8);
-    STATUS_NOT_IMPLEMENTED
+    if Context.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let mut CpuContext: PVOID = null_mut();
+    let Status = RtlWow64GetCurrentCpuArea(null_mut(), &mut CpuContext, null_mut());
+    if !nt_success(Status) || CpuContext.is_null() {
+        return Status;
+    }
+    core::ptr::copy(
+        Context as *const WOW64_CONTEXT,
+        CpuContext as *mut WOW64_CONTEXT,
+        1,
+    );
+    STATUS_SUCCESS
 }
 
 #[no_mangle]

@@ -57,9 +57,9 @@ const PRIMARY_VECTOR_BASE: ULONG = 0x30;
 const DISPATCH_LENGTH: usize = 106;
 const MAXULONG: ULONG = 0xFFFFFFFF;
 
-#[cfg(not(feature = "CONFIG_SMP"))]
+#[cfg(not(feature = "smp"))]
 const SYNCH_LEVEL: KIRQL = 2; // UP kernel: SYNCH_LEVEL == DISPATCH_LEVEL
-#[cfg(feature = "CONFIG_SMP")]
+#[cfg(feature = "smp")]
 const SYNCH_LEVEL: KIRQL = 28;
 
 unsafe fn KiGetVectorDispatch(Vector: ULONG, Dispatch: PDISPATCH_INFO) {
