@@ -1298,6 +1298,11 @@
 @ cdecl -arch=arm64 tan(double) msvcrt.tan
 @ stdcall RtlWow64EnableFsRedirection(long)
 @ stdcall RtlWow64EnableFsRedirectionEx(long ptr)
+# WoW64 syscall dispatch slot (i386 only): every user Nt* stub calls through
+# this pointer (syscalls.inc STUBCODE_U). Native boots: static fallback to the
+# SharedUserData->SystemCall path. Under WoW64 the host wow64.dll patches the
+# guest ntdll32's slot to the CPU layer's BOP bridge (Win10-parity export).
+@ extern -arch=i386 Wow64Transition
 @ stdcall -stub -version=0x600+ -arch=x86_64 RtlWow64GetThreadContext(ptr ptr)
 @ stdcall -stub -version=0x600+ -arch=x86_64 RtlWow64LogMessageInEventLogger(long long long)
 @ stdcall -stub -version=0x600+ -arch=x86_64 RtlWow64SetThreadContext(long long)

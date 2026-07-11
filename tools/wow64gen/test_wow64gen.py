@@ -42,6 +42,57 @@ def test_ordinals_are_sequential_over_applicable_entries(tmp_path):
     assert [s.name for s in syscalls] == ["NtA", "NtB", "NtC"]
 
 
+def _sysfuncs_file(tmp_path, body):
+    p = tmp_path / "sysfuncs.h"
+    p.write_text(body)
+    return str(p)
+
+
+def test_sysfuncs_order_overrides_spec_order(tmp_path):
+    # Spec lists A then B; sysfuncs numbers B=0, A=1 — the table must follow
+    # sysfuncs (that's what guest EAX carries), not the spec.
+    sp = _spec_file(tmp_path, "@ stdcall NtA(long)\n@ stdcall NtB(ptr ptr)\n")
+    sf = _sysfuncs_file(tmp_path, "    SVC_(B, 2)\n    SVC_(A, 1)\n")
+    ordered = w.order_by_sysfuncs(w.parse_sysfuncs(sf), w.parse_spec(sp, "arm64"))
+    assert [(s.name, s.ordinal) for s in ordered] == [("NtB", 0), ("NtA", 1)]
+    assert not ordered[0].needs_manual and not ordered[1].needs_manual
+
+
+def test_sysfuncs_entry_missing_from_spec_is_loud_manual(tmp_path):
+    sp = _spec_file(tmp_path, "@ stdcall NtA(long)\n")
+    sf = _sysfuncs_file(tmp_path, "SVC_(A, 1)\nSVC_(Mystery, 4)\n")
+    ordered = w.order_by_sysfuncs(w.parse_sysfuncs(sf), w.parse_spec(sp, "arm64"))
+    assert ordered[1].name == "NtMystery"
+    assert ordered[1].needs_manual
+    assert ordered[1].slots == 4  # argcount still recorded for stack accounting
+
+
+def test_sysfuncs_argcount_mismatch_is_loud_manual(tmp_path):
+    sp = _spec_file(tmp_path, "@ stdcall NtA(long)\n")  # spec says 1 dword
+    sf = _sysfuncs_file(tmp_path, "SVC_(A, 3)\n")  # table says 3
+    ordered = w.order_by_sysfuncs(w.parse_sysfuncs(sf), w.parse_spec(sp, "arm64"))
+    assert ordered[0].needs_manual
+    assert "argcount" in ordered[0].manual_reason
+
+
+def test_real_sysfuncs_alignment():
+    """The real sysfuncs.h x real ntdll.spec: parse, align, and stay deterministic."""
+    repo = os.path.abspath(os.path.join(_HERE, "..", ".."))
+    spec = os.path.join(repo, "dll", "ntdll", "def", "ntdll.spec")
+    sf = os.path.join(repo, "ntoskrnl", "include", "sysfuncs.h")
+    if not (os.path.exists(spec) and os.path.exists(sf)):
+        return  # not in a full checkout
+    sysfuncs = w.parse_sysfuncs(sf)
+    assert len(sysfuncs) > 250
+    ordered = w.order_by_sysfuncs(sysfuncs, w.parse_spec(spec, "arm64"))
+    assert len(ordered) == len(sysfuncs)
+    # Known anchors: index 0 is NtAcceptConnectPort in NT 5.2 tables.
+    assert ordered[0].name == "NtAcceptConnectPort"
+    c1 = w.emit_c(ordered, spec, "arm64", "-")
+    c2 = w.emit_c(w.order_by_sysfuncs(sysfuncs, w.parse_spec(spec, "arm64")), spec, "arm64", "-")
+    assert c1 == c2
+
+
 def test_arch_filter_includes_and_excludes(tmp_path):
     sp = _spec_file(
         tmp_path,

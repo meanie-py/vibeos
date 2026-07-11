@@ -95,6 +95,12 @@ LONG WINAPI NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle,
                                ULONG AllocationType, ULONG Win32Protect);
 LONG WINAPI NtClose(HANDLE Handle);
 LONG WINAPI NtQueryInformationProcess(HANDLE, ULONG, PVOID, ULONG, PULONG);
+LONG WINAPI NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID *BaseAddress,
+                                   SIZE_T *RegionSize, ULONG NewProtect,
+                                   PULONG OldProtect);
+
+/* wow64_thunks.c — the wow64gen-generated 32->64 syscall thunk table. */
+LONG Wow64DispatchSystemService(ULONG ServiceNumber, PULONG Arguments);
 
 /* ---- WoW64/FEX contract constants (same as wow64probe / wow64shim.rs) --- */
 
@@ -218,6 +224,36 @@ static PVOID Wow64pMapNtdll32(VOID)
     return Base;
 }
 
+/* Resolve an export from the mapped 32-bit ntdll by hand (PE32 export
+ * directory walk — arch-independent format; we avoid LdrGetProcedureAddress
+ * because the i386 image is a raw section mapping, not a loader entry). */
+static PVOID Wow64pFindExport32(PVOID Base, const char *Name)
+{
+    PBYTE B = (PBYTE)Base;
+    PIMAGE_NT_HEADERS32 Nt = (PIMAGE_NT_HEADERS32)(B + ((PIMAGE_DOS_HEADER)B)->e_lfanew);
+    ULONG ExpRva = Nt->OptionalHeader.DataDirectory[0].VirtualAddress;
+    PIMAGE_EXPORT_DIRECTORY Exp;
+    PULONG NameRvas, FuncRvas;
+    PUSHORT Ordinals;
+    ULONG i;
+
+    if (!ExpRva)
+        return NULL;
+    Exp = (PIMAGE_EXPORT_DIRECTORY)(B + ExpRva);
+    NameRvas = (PULONG)(B + Exp->AddressOfNames);
+    Ordinals = (PUSHORT)(B + Exp->AddressOfNameOrdinals);
+    FuncRvas = (PULONG)(B + Exp->AddressOfFunctions);
+    for (i = 0; i < Exp->NumberOfNames; i++)
+    {
+        const char *N = (const char *)(B + NameRvas[i]);
+        const char *M = Name;
+        while (*N && *N == *M) { N++; M++; }
+        if (*N == *M)
+            return B + FuncRvas[Ordinals[i]];
+    }
+    return NULL;
+}
+
 /*
  * Phase-B probe services (wow64probe.exe / docs/engineering/wow64-plan.md).
  * Magic service numbers far above any real syscall id: ECHO proves 32-bit
@@ -231,10 +267,14 @@ static PVOID Wow64pMapNtdll32(VOID)
 #define WOW64B_ECHO_MAGIC    0x5CA11EDu
 
 /* Phase C guest exit: the exit stub (emitted below the image entry hand-off)
- * lands here when the guest's entry point returns. Arguments[0] = guest EAX.
- * hello32.exe returns the 0x51DE sentinel; that maps to harness PASS. */
+ * lands here when the guest's entry point returns. M3a shape: the stub first
+ * calls the REAL ntdll32 NtClose(NULL) stub (mov eax,N; call
+ * [Wow64Transition]) so Arguments[0] = that call's NTSTATUS (want
+ * STATUS_INVALID_HANDLE from the generated thunk table) and Arguments[1] =
+ * the guest entry's EAX (hello32.exe returns the 0x51DE sentinel). */
 #define WOW64C_SVC_EXIT      0xE0D1u
 #define WOW64C_HELLO32_SENTINEL 0x51DEu
+#define WOW64C_STATUS_INVALID_HANDLE 0xC0000008u
 
 /*
  * Wow64SystemServiceEx — the syscall thunk dispatcher. The CPU layer traps a
@@ -267,20 +307,23 @@ Wow64SystemServiceEx(ULONG ServiceNumber, PULONG Arguments)
             return 0; /* unreachable */
 
         case WOW64C_SVC_EXIT:
-            DbgPrint("[FEX-WOW64C] guest entry returned %08lx (want %08x)\n",
-                     Arguments[0], WOW64C_HELLO32_SENTINEL);
-            if (Arguments[0] == WOW64C_HELLO32_SENTINEL)
+            DbgPrint("[FEX-WOW64C] guest entry returned %08lx (want %08x), NtClose(NULL) via ntdll32 stub => %08lx (want %08x)\n",
+                     Arguments[1], WOW64C_HELLO32_SENTINEL,
+                     Arguments[0], WOW64C_STATUS_INVALID_HANDLE);
+            if (Arguments[1] == WOW64C_HELLO32_SENTINEL &&
+                Arguments[0] == WOW64C_STATUS_INVALID_HANDLE)
             {
                 DbgPrint("[FEX-WOW64C] M2 PASS: real i386 image code executed under FEX in a WoW64 process\n");
+                DbgPrint("[FEX-WOW64C] M3a PASS: real ntdll32 syscall stub round-tripped Wow64Transition -> BOP -> thunk table\n");
                 NtTerminateProcess(WOW64_CURRENT_PROCESS, 0x600D);
             }
             NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
             return 0; /* unreachable */
 
         default:
-            DbgPrint("[WOW64] Wow64SystemServiceEx: service 0x%lx args %p — no thunk table yet (Phase B)\n",
-                     ServiceNumber, Arguments);
-            return (ULONG)0xC000001CL; /* STATUS_INVALID_SYSTEM_SERVICE */
+            /* Phase D: generated thunk table (wow64_thunks.c), indexed by the
+             * real service number the guest's ntdll32 stub put in EAX. */
+            return (ULONG)Wow64DispatchSystemService(ServiceNumber, Arguments);
     }
 }
 
@@ -445,12 +488,40 @@ Wow64LdrpInitialize(PVOID Context)
         NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
     }
 
+    /* -- Publish the BOP into the guest ntdll32's Wow64Transition slot ------
+     * (Win10-parity: every i386 user syscall stub is `mov eax, N; call
+     * [Wow64Transition]`; statically the slot holds the native fallback, we
+     * repoint it at the CPU layer's bridge in OUR process's COW data page). */
+    {
+        PULONG Slot = (PULONG)Wow64pFindExport32(Ntdll32, "Wow64Transition");
+        PVOID Page;
+        SIZE_T Size = sizeof(ULONG);
+        ULONG OldProt = 0;
+        if (!Slot)
+        {
+            DbgPrint("[FEX-WOW64C] FAIL: ntdll32 has no Wow64Transition export (stale syswow64 stage?)\n");
+            NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
+        }
+        Page = Slot;
+        NtProtectVirtualMemory(WOW64_CURRENT_PROCESS, &Page, &Size,
+                               PAGE_READWRITE, &OldProt); /* COW data — best effort */
+        *Slot = (ULONG)(ULONG_PTR)Bop;
+        DbgPrint("[FEX-WOW64C] Wow64Transition slot %p patched -> BOP %p\n", Slot, Bop);
+    }
+
     /* -- Guest exit stub + stack ------------------------------------------ */
     /* When the image entry (cdecl, no args) returns, EIP lands on this stub
-     * with EAX = the return value. Stub shape mirrors a 32-bit ntdll syscall
-     * stub (HandleSyscallImpl pops the ret-to-stub slot, args at ESP+8):
-     *   exit:  50               push eax          ; arg1 = guest exit code
-     *          B8 <EXIT>        mov eax, SVC_EXIT
+     * with EAX = the return value. M3a shape: exercise a REAL ntdll32 syscall
+     * stub first (NtClose(NULL) -> STATUS_INVALID_HANDLE through
+     * Wow64Transition -> BOP -> generated thunk table), then report both
+     * results through the EXIT service (HandleSyscallImpl pops the
+     * ret-to-bopcall slot, args at ESP+8):
+     *   exit:  50               push eax          ; save entry sentinel
+     *          6A 00            push 0            ; NtClose arg: handle=NULL
+     *          BA <NtClose32>   mov edx, ntdll32!NtClose
+     *          FF D2            call edx          ; stub does `ret 4`
+     *          50               push eax          ; NtClose status
+     *          B8 <EXIT>        mov eax, SVC_EXIT ; args: [status, sentinel]
      *          E8 <rel bopcall> call bopcall      ; (never returns)
      *          F4               hlt
      *   bopcall: BA <BOP>       mov edx, BOP
@@ -458,9 +529,19 @@ Wow64LdrpInitialize(PVOID Context)
      *          C3               ret
      */
     {
+        PVOID NtClose32 = Wow64pFindExport32(Ntdll32, "NtClose");
         PBYTE P = ExitStub;
         PBYTE BopCall;
         ULONG Rel;
+        if (!NtClose32)
+        {
+            DbgPrint("[FEX-WOW64C] FAIL: ntdll32 has no NtClose export\n");
+            NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
+        }
+        *P++ = 0x50;                                             /* push eax */
+        *P++ = 0x6A; *P++ = 0x00;                                /* push 0   */
+        *P++ = 0xBA; *(ULONG *)P = (ULONG)(ULONG_PTR)NtClose32; P += 4;
+        *P++ = 0xFF; *P++ = 0xD2;                                /* call edx */
         *P++ = 0x50;                                             /* push eax */
         *P++ = 0xB8; *(ULONG *)P = WOW64C_SVC_EXIT; P += 4;      /* mov eax  */
         *P++ = 0xE8; BopCall = P; P += 4;                        /* call rel */
