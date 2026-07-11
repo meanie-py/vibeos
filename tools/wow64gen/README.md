@@ -2,7 +2,7 @@
 
 Re-runnable, deterministic codegen that turns our `.spec` syscall table into the
 C thunk table `wow64.dll` dispatches through. Part of WoW64 Phase D
-(`docs/engineering/wow64-plan.md`).
+(`docs/engineering/active-lanes/wow64-plan.md`).
 
 ## What it is (and what it is not)
 

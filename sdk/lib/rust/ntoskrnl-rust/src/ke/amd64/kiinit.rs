@@ -749,7 +749,20 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
 
     HalInitializeProcessor(Cpu as u32, KeLoaderBlock);
 
-    KeActiveProcessors |= 1u64 << Cpu;
+    // M2: a parked AP must NOT advertise itself in KeActiveProcessors — the
+    // dispatcher / DPC targeting / IPI-broadcast machinery iterates this mask,
+    // and routing a ready thread or DPC to a CPU that's spinning with
+    // interrupts off wedges the BSP (it goes idle waiting for work that can
+    // never run — observed 2026-07-10, boot hung at PnP with CPU1 parked).
+    // M3 sets this bit when the AP actually enters the idle loop.
+    #[cfg(not(feature = "smp"))]
+    {
+        KeActiveProcessors |= 1u64 << Cpu;
+    }
+    #[cfg(feature = "smp")]
+    if Cpu == 0 {
+        KeActiveProcessors |= 1u64 << Cpu;
+    }
 
     InterlockedAnd64(core::ptr::addr_of_mut!(KiFreezeExecutionLock) as PLONG64, 0);
 
@@ -762,6 +775,22 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
     KiInitializeXStateConfiguration(Cpu as u8);
 
     InitialStack = ALIGN_DOWN_BY(((*LoaderBlock).KernelStack - KeXStateLength as u64) as usize, 64) as u64;
+
+    // AP handshake (SMP bring-up, mirrors i386 kiinit.rs): all LoaderBlock
+    // fields are consumed by this point — zero LoaderBlock->Prcb to release
+    // KeStartAllProcessors' spin-wait on the BSP, then park. M2 bring-up
+    // state: APs reach here but don't schedule yet (i386 parks identically);
+    // M3 releases them into the idle loop.
+    #[cfg(feature = "smp")]
+    if Cpu != 0 {
+        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+        (*LoaderBlock).Prcb = 0;
+        crate::dbg_print!(b"[SMP] AP %u up, parked pre-scheduler\n\0", Cpu as u32);
+        loop {
+            // nolint: silent-failure (deliberate AP park — M2 bring-up state)
+            core::hint::spin_loop();
+        }
+    }
 
     KiSwitchToBootStack(InitialStack);
 }

@@ -12,6 +12,16 @@ crate-type = ["staticlib"]
 lockdep = ["ntoskrnl-rust/lockdep"]
 # cswitchdep-design.md: context-switch verifier (-DVIBEOS_CSWITCHDEP=ON).
 cswitchdep = ["ntoskrnl-rust/cswitchdep"]
+# CONFIG_SMP for the Rust kernel body — the umbrella feature the ntkrnlmp-cargo
+# link enables (rust_features(&["smp"])), mirroring the asm's -DCONFIG_SMP.
+# The UP ntoskrnl-cargo link never sets it; default kernel stays UP.
+smp = [
+    "ntoskrnl-rust/smp",
+    "ke-inlines/smp",
+    "ex-rust/smp",
+    "kd64-rust/smp",
+    "config-rust/smp",
+]
 
 [dependencies]
 panic-common = { path = "../panic-common", features = ["kernel"] }

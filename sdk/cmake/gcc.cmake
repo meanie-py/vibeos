@@ -656,6 +656,13 @@ function(add_cargo_module _target _crate _output)
     if(VIBEOS_CSWITCHDEP AND _crate MATCHES "^(ntoskrnl-cargo|ntkrnlmp-cargo)$")
         list(APPEND _cargo_env VIBEOS_CSWITCHDEP=1)
     endif()
+    # SMP bring-up media (-DVIBEOS_SMP_DEFAULT_BOOT=ON, `vibeos-cli build
+    # --smp-kernel`): build the HAL with hal-rust's `smp` feature so its
+    # HalpBuildType accepts the MP kernel (MISMATCHED_HAL 0x79 handshake).
+    # Opt-in only — default media keeps the UP HAL.
+    if(VIBEOS_SMP_DEFAULT_BOOT AND _crate STREQUAL "hal-cargo")
+        list(APPEND _cargo_env VIBEOS_SMP_HAL=1)
+    endif()
 
     # Rebuild triggers: glob the bin crate (build.rs + target jsons + Cargo.toml
     # + any src), the shared reactos-link engine, and the rust body crate. A
@@ -683,9 +690,14 @@ function(add_cargo_module _target _crate _output)
     # was the only thing that caught it). Depend on every workspace source: an
     # edit re-runs cargo, a cheap freshness no-op for unaffected modules. Globbed
     # once per configure (cached in a global property — ~40 call sites).
+    # NOTE: *.bin too — include_bytes!'d assets (e.g. the SMP AP trampoline
+    # aptramp64.bin) are real link inputs but not .rs; without this a
+    # regenerated blob ships a STALE binary with zero signal (cost an amd64
+    # SMP debug cycle 2026-07-10: a fixed trampoline never relinked hal.dll,
+    # same masking class as the kernel-asm staleness two comments up).
     get_property(_ws_srcs GLOBAL PROPERTY _REACTOS_CARGO_WS_SRCS)
     if(NOT _ws_srcs)
-        file(GLOB_RECURSE _ws_srcs CONFIGURE_DEPENDS ${_ws}/*.rs ${_ws}/*.toml)
+        file(GLOB_RECURSE _ws_srcs CONFIGURE_DEPENDS ${_ws}/*.rs ${_ws}/*.toml ${_ws}/*.bin)
         list(FILTER _ws_srcs EXCLUDE REGEX "/target/")
         set_property(GLOBAL PROPERTY _REACTOS_CARGO_WS_SRCS "${_ws_srcs}")
     endif()

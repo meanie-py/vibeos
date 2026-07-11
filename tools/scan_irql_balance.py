@@ -39,6 +39,13 @@ The summaries feed two things: wrapper-aware held-set tracking, and the new
 IRQL_SLEEP_WHILE_HELD finding — a call into a may-sleep function while the
 held set is non-empty (the static mirror of cswitchdep's SLEEP_WITH_SPINLOCK;
 NT's real rule is waits ≤ APC_LEVEL, and a live raise/spinlock breaks it).
+
+CTX_CAPTURE_ACROSS_WAIT (the stable substitute for the REJECTED SwitchSafe
+auto-trait — ownership-model Layer 2): a `wait_for`/`wait_for_armed` CPS
+continuation capturing a local minted from per-CPU state (KeGetPcr /
+KeGetCurrentPrcb / Pcpu<) — stale after the switch; re-derive it inside the
+continuation. Borrowck already forbids borrow-captures (guards borrow the
+token wait_for consumes); this catches the owned smuggles.
 Summaries are keyed by bare name (collisions merge conservatively) and only
 cover the Rust workspace — calls into C externs have no summary and propagate
 nothing, which bounds the noise and is the honest syntactic limit (function
@@ -113,6 +120,19 @@ _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 # Path/macro/keyword tokens that wrap an out-param lvalue but are NOT the
 # variable — `core::ptr::addr_of_mut!(OldIrql)`, `&mut OldIrql`, `&raw mut x`.
 _LVALUE_NOISE = {"core", "ptr", "addr_of_mut", "addr_of", "mut", "raw", "self", "crate"}
+
+# Context-bound value sources: capturing one of these ACROSS a wait_for
+# continuation smuggles per-CPU state past a context switch (the stale-PCR
+# class). This is the stable substitute for the REJECTED SwitchSafe auto-trait
+# (ownership-model Layer 2): borrowck already forbids borrow-captures (guards
+# borrow the token that wait_for consumes); this catches the OWNED smuggles —
+# a value whose `let` initializer reads per-CPU state. Syntactic, flat-local
+# scope (the translated code's shape); deep-struct smuggling is 4b/MIR.
+_CTX_BOUND_SRC = re.compile(
+    r"\bKeGetPcr\b|\bKeGetCurrentPrcb\b|\bKeGetPcrArm64\b|\bPcpu\s*<|\bget_pcr\b"
+)
+# The CPS waits whose trailing-closure captures we inspect.
+_CPS_WAITS = {"wait_for", "wait_for_armed"}
 
 
 def _nolint(line_text: str) -> bool:
@@ -338,6 +358,32 @@ def build_summaries(files, tree_cache, sleep_depth=None):
     return may_sleep, ret_raise, lower_params
 
 
+def _collect_lets(body, src: bytes):
+    """(name, value_text, start_byte, end_byte) for every let under `body`."""
+    out = []
+
+    def rec(n):
+        if n.type == "let_declaration":
+            pat = n.child_by_field_name("pattern")
+            val = n.child_by_field_name("value")
+            if pat is not None and val is not None:
+                m = _IDENT.search(src[pat.start_byte : pat.end_byte].decode(errors="replace"))
+                if m:
+                    out.append(
+                        (
+                            m.group(0),
+                            src[val.start_byte : val.end_byte].decode(errors="replace"),
+                            n.start_byte,
+                            n.end_byte,
+                        )
+                    )
+        for c in n.children:
+            rec(c)
+
+    rec(body)
+    return out
+
+
 def _scan_function(body, src: bytes, lines, summaries=None):
     """Linear held-set walk over one function body. Returns findings.
     `summaries` = (may_sleep, ret_raise, lower_params) from build_summaries;
@@ -349,6 +395,7 @@ def _scan_function(body, src: bytes, lines, summaries=None):
     # sleep-checked — NT's real rule is waits ≤ APC_LEVEL are legal.
     held: dict[str, bool] = {}
     lowers_internally = [False]
+    fn_lets = [None]  # lazy _collect_lets cache (only wait_for sites need it)
 
     def line_of(node):
         return node.start_point[0] + 1
@@ -437,13 +484,46 @@ def _scan_function(body, src: bytes, lines, summaries=None):
                     )
                 )
 
+            # CTX-CAPTURE-ACROSS-WAIT (stable Layer-2 substitute): the CPS
+            # continuation captures a local minted from per-CPU state — stale
+            # after the switch resumes (elsewhere / after preemption).
+            if name in _CPS_WAITS and args is not None and not suppressed(node):
+                real = [c for c in args.children if c.type not in ("(", ")", ",")]
+                if real and real[-1].type == "closure_expression":
+                    k = real[-1]
+                    k_txt = src[k.start_byte : k.end_byte].decode(errors="replace")
+                    k_ids = set(_IDENT.findall(k_txt))
+                    if fn_lets[0] is None:
+                        fn_lets[0] = _collect_lets(body, src)
+                    for lname, lval, lstart, _lend in fn_lets[0]:
+                        # declared OUTSIDE the closure, used inside, minted
+                        # from per-CPU state.
+                        if (
+                            lname in k_ids
+                            and not (k.start_byte <= lstart < k.end_byte)
+                            and _CTX_BOUND_SRC.search(lval)
+                        ):
+                            findings.append(
+                                (
+                                    line_of(node),
+                                    "CTX_CAPTURE_ACROSS_WAIT",
+                                    f"`{name}` continuation captures `{lname}` "
+                                    f"(minted from per-CPU state) — stale after "
+                                    f"the switch; re-derive it inside the "
+                                    f"continuation",
+                                )
+                            )
+
         for c in node.children:
             visit(c)
 
     visit(body)
-    # Only trust the analysis for functions that balance internally; a
-    # raise-only function is the cross-function API contract, not a leak.
-    return findings if lowers_internally[0] else []
+    # Only trust the HELD-SET analysis for functions that balance internally;
+    # a raise-only function is the cross-function API contract, not a leak.
+    # CTX_CAPTURE findings don't depend on the held set — always keep them.
+    if lowers_internally[0]:
+        return findings
+    return [f for f in findings if f[1] == "CTX_CAPTURE_ACROSS_WAIT"]
 
 
 def _bound_var(call_node, src: bytes):

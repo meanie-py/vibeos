@@ -1,0 +1,333 @@
+# Delay-Import Support for llvm-mingw — Design & Plan
+
+> **ARCHIVED 2026-07-10** — parked 2026-06-21, closed 2026-07-10 — mechanism reference; the re-test unlock is in the ledger. Outstanding items live in
+> `docs/product/vibeos-roadmap.md` § "Check-back ledger" / § "Known bugs & flakes".
+
+
+**Status:** generator built & ×3 build-green; **parked behind an opt-in flag** pending a runtime
+fix (2026-06-21). **Owner:** user32 lane (picked up as an independent toolchain unit; it is *not*
+user32-specific — see §8 Scope/ownership). **Type:** build-system / toolchain.
+
+> **CURRENT STATE (read first): `docs/engineering/delay-import-llvm-mingw-roadmap.md`.**
+> The generator (`sdk/tools/gen-delaylib.py`) works and the cmake wiring is in, but enabling real
+> delay-load triggers an i386 boot regression (BUGCHECK 0x1E, win32k session-pool corruption — see
+> the roadmap §"the i386 0x1E regression"). It is therefore **opt-in** behind the cmake flag
+> **`VIBEOS_ENABLE_DELAYLOAD`** (default OFF). Default-off == the *prior* behaviour exactly: empty
+> `_delayed.a` + regular imports, everything loaded eagerly (delay-load was never functional in
+> vibeos), so default-off is a true status-quo no-op, not a regression. The design narrative below
+> (§4–§6) was written assuming a `VIBEOS_NO_DELAYLOAD` *opt-out*; the shipped control is the
+> inverted `VIBEOS_ENABLE_DELAYLOAD` *opt-in* (both vars are honoured: enable ⇒ on, no-delayload ⇒
+> off).
+
+> This is a **self-contained unit of work** independent of the user32 translation waves.
+> It fixes a toolchain gap that currently forces per-module stub workarounds OS-wide.
+
+---
+
+## 1. Problem
+
+`llvm-dlltool` (our import-lib generator, llvm-mingw) **does not support `--output-delaylib`**
+(GNU binutils `dlltool -y`). Confirmed: `llvm-dlltool --help` has no delay option; the binutils
+`dlltool` we also have is **i386-only** (`-m` machine list: `arm[_interwork], i386, mcore, thumb`
+— no arm64, no x86-64), so it cannot rescue the arches that matter.
+
+Consequence (see `sdk/cmake/gcc.cmake`): `add_delay_importlibs()` gates on
+`if(CMAKE_DLLTOOL_MACHINE)` — which is set for **all three** llvm-mingw arches
+(`toolchain-llvm-mingw.cmake` i386/`i386:x86-64`, `toolchain-arm64.cmake` arm64). On that branch
+it:
+- creates an **empty** `lib<name>_delayed.a` (gcc.cmake:800–808),
+- links the module against the **regular** import lib (`lib<name>`), not `_delayed`,
+- **skips linking `delayimp`** (the runtime helper).
+
+**Net effect: nothing delay-loads on any arch.** Every `add_delay_importlibs(...)` silently
+degrades to a regular (load-time) import. It "works" only because the target DLLs happen to be
+present at boot — at the cost of eager loading + full transitive-dependency closure.
+
+### Why it matters (the damage this causes today)
+Because real delay-load is unavailable, modules that *want* lazy/optional dependencies must
+**stub them out** instead. Four such workarounds exist, all `#ifdef _M_ARM64` stub TUs:
+
+| Module | Stubbed dep | Lost capability |
+|---|---|---|
+| `win32ss/user/user32` | libpng | PNG-compressed icons/cursors (`cursoricon.c`) |
+| `dll/win32/advapi32` | secur32 | LSA logon functions |
+| `dll/win32/rpcrt4` | ole32/oleaut32/wininet | COM/OLE marshalling, HTTP-over-RPC |
+| `win32ss/user/winsrv/consrv` | shell32/ole32 | clipboard/OLE |
+
+The `consrv` case is the tell: its comment says regular-importing shell32 *"causes csrss to load
+shell32 + 30 transitive deps at startup, overflowing the user-mode stack."* That overflow is a
+**direct symptom** of the delay→regular fallback. Real delay-load lets us **delete these stubs**,
+not just one.
+
+---
+
+## 2. What already exists in-tree (the good news)
+
+This is **not** a build-the-whole-stack project. Three of the four pieces are already present:
+
+1. **Runtime helper — DONE.** `sdk/lib/delayimp/` builds a `delayimp` static lib providing the
+   MS-compatible `__delayLoadHelper2(PCImgDelayDescr pidd, PImgThunkData pIATEntry)`
+   (`delayimp.c:58`) + the `pfnDliNotifyHook2`/`pfnDliFailureHook2` hooks. It just isn't linked on
+   our builds (the cmake gate skips it).
+2. **cmake consumption path — DONE.** The `else()` branches of `add_delay_importlibs` /
+   `add_importlib`'s delay section already do the right thing: generate `_delayed.a` via
+   `--output-delaylib`, link `lib<name>_delayed` + `delayimp`. We only need to make the
+   `if(CMAKE_DLLTOOL_MACHINE)` branch produce a **real** `_delayed.a` instead of an empty one
+   (and re-enable the `delayimp` link on that branch).
+3. **Descriptor format — DONE / authoritative in-tree.** `sdk/include/psdk/delayimp.h`:
+   ```c
+   typedef struct ImgDelayDescr {
+       DWORD grAttrs;        // 1 = dlattrRva (all fields are RVAs)
+       RVA   rvaDLLName;     // → "name.dll\0"
+       RVA   rvaHmod;        // → HMODULE slot (one per DLL, init 0)
+       RVA   rvaIAT;         // → delay Import Address Table (PImgThunkData[])
+       RVA   rvaINT;         // → delay Import Name Table (PImgThunkData[])
+       RVA   rvaBoundIAT;    // 0
+       RVA   rvaUnloadIAT;   // 0
+       DWORD dwTimeStamp;    // 0
+   } ImgDelayDescr;
+   ```
+
+**The only missing piece is a `--output-delaylib` replacement** — a generator that emits the
+delay-import library `.a` from a `.def`, for llvm-mingw COFF (i386 / x86-64 / arm64).
+
+---
+
+## 3. The contract (what the generated `.a` must provide)
+
+From `__delayLoadHelper2` (`delayimp.c`): the per-function thunk calls
+`__delayLoadHelper2(pidd, &pIAT[index])` — it passes the descriptor and the **address of this
+function's own IAT slot**; the helper derives `index` by pointer subtraction
+(`IndexFromPImgThunkData(pIATEntry, pIAT)`), reads `pINT[index]` for the name (an
+`IMAGE_IMPORT_BY_NAME` via RVA) or ordinal, `LoadLibraryA(szDll)`, `GetProcAddress`, **patches
+`pIAT[index].u1.Function`** to the resolved address, and returns it.
+
+So for a DLL `D` exporting functions `F0..Fn`, the delay-lib must contribute (all in the *final
+linked module*, via objects the linker pulls from the `.a`):
+
+- **`rvaDLLName`** → the string `"D.dll\0"`.
+- **`rvaHmod`** → one writable pointer slot (init 0) — the cached `HMODULE`.
+- **`rvaIAT`** → array of `n+1` thunk-data slots; slot `i` initialized to **point at thunk `Fi`**
+  (so the first indirect call lands in the thunk), terminated by a 0 slot.
+- **`rvaINT`** → array of `n+1` slots; slot `i` = RVA of `IMAGE_IMPORT_BY_NAME { Hint; "Fi\0" }`
+  (or `IMAGE_ORDINAL_FLAG | ord`), 0-terminated.
+- **The descriptor** `ImgDelayDescr` (one per DLL) with the four RVAs above + zeros.
+- **Per-function public symbol + thunk.** Callers bind to `Fi` (the import stub: `jmp *__imp_Fi`).
+  `__imp_Fi` is the IAT slot. The IAT slot starts pointing at a **tailMerge thunk** that:
+  loads `pidd` and `&__imp_Fi`, calls `__delayLoadHelper2`, then jumps to the returned address.
+  (GNU `dlltool --output-delaylib` emits one shared `__tailMerge_D` + per-fn `__imp_load_Fi`
+  trampolines; we can do the same, or a per-fn thunk. Exact factoring decided in the spike.)
+
+**Decoration (the i386 trap):** the public symbol is `_Fi@N` (stdcall) and the IAT slot is
+`__imp__Fi@N`; x86-64/arm64 are undecorated (`Fi` / `__imp_Fi`). The `.def` already encodes the
+`@N` (it's the same `_implib.def` used for the regular import lib), so we read decoration from
+there — do **not** re-derive it.
+
+---
+
+## 4. Implementation approach — generate source, let clang emit COFF
+
+**Do not hand-emit COFF or post-process the linked PE.** The hard parts (machine-code thunks +
+base relocations for every RVA) are exactly what a compiler does correctly. So:
+
+```
+<name>_implib.def  ──►  gen_delaylib.py  ──►  <name>_delay.c   (descriptor + INT/IAT + names, using delayimp.h types)
+                                          └─►  <name>_delay_<arch>.S   (the tailMerge thunk(s))
+                                                     │
+                                          clang --target=<triple> -c  ──►  *.o (COFF + relocs done by clang)
+                                                     │
+                                          llvm-ar crs  ──►  lib<name>_delayed.a
+```
+
+- **`<name>_delay.c`** — pure data, written against `delayimp.h` structs. The descriptor, the
+  `IMAGE_THUNK_DATA` IAT (each entry `= (DWORD_PTR)&thunk_Fi`), the INT (each `= (DWORD_PTR)RVA`…
+  but RVAs aren't known at compile — use **symbol addresses + relocations**: declare the
+  name/thunk symbols `extern` and let the linker fill the slots; clang emits `IMAGE_REL_*`
+  relocs and lld + the loader's base-reloc pass make them image-relative at runtime). This is the
+  key trick — express RVAs as `&symbol`, never as literals.
+- **`<name>_delay_<arch>.S`** — the tailMerge stub per arch. i386: push descriptor + IAT-entry,
+  `call ___delayLoadHelper2`, `jmp *eax`. x86-64: `rcx`/`rdx` set, `call`, `jmp rax` (shadow
+  space). arm64: `x0`/`x1` set, `bl`, `br x0`. Small and fixed; ~one stub per DLL.
+- **`gen_delaylib.py`** — parse the `.def` (name + `Fi @N` list), emit the two source files, drive
+  clang + llvm-ar. Lives in `sdk/cmake/` or `tools/` and is invoked from the
+  `add_delay_importlibs` custom command (replacing the empty-archive branch).
+
+**cmake wiring (gcc.cmake):** in the `if(CMAKE_DLLTOOL_MACHINE)` branch, replace the empty
+`ar crT` with a call to `gen_delaylib.py --def <implib.def> --arch <CMAKE_DLLTOOL_MACHINE> --out
+<name>_delayed.a`; in `add_delay_importlibs`, on that branch, link `lib<name>_delayed` + `delayimp`
+(i.e. make both branches behave the same once the generator works). Keep a `VIBEOS_NO_DELAYLOAD`
+escape hatch that restores the empty-archive + regular-import fallback (graceful degradation).
+
+---
+
+## 5. Spike (do this first — host-side, ~1 hour, fails cheap)
+
+Smallest end-to-end proof, **i386 only, one DLL, one or two functions**:
+1. Pick a trivial delay target (e.g. a 1-function `.def`). Run `gen_delaylib.py` → `lib_delayed.a`.
+2. `llvm-ar t` / `llvm-nm` the archive: confirm it exports `_Foo@N`, `__imp__Foo@N`, the
+   descriptor symbol, and pulls `___delayLoadHelper2`.
+3. Link a trivial test DLL/EXE that calls `Foo`, against `lib_delayed.a` + `delayimp`.
+4. **`llvm-objdump -p` / a small `pefile` script** on the output: confirm the **delay-import
+   directory** (data dir index 13) is present and well-formed (descriptor RVAs resolve to the
+   name string, IAT, INT; IAT slots point into our thunk; `.reloc` covers them).
+5. Bonus host-side check: load it under wine or a unit harness and confirm first call triggers
+   `LoadLibrary` (or that the structure matches a known-good MSVC-built delay PE byte-for-byte).
+
+If the directory is well-formed and the symbols resolve, the approach is proven → scale to
+x86-64 + arm64 (new `.S` stubs only) and wire the cmake. **Only the final OS-boot proof needs
+KVM** — everything above is host CPU, no smoke slot.
+
+---
+
+## 5b. Spike results — i386 VALIDATED (2026-06-20)
+
+Hand-wrote a delay-lib `.S` for `provider.dll!TestFunc@4` + a minimal faithful
+`__delayLoadHelper2` (clang native headers), linked a consumer against **only** the delay-lib,
+and verified the full structure host-side (artifacts: `~/vibeos-delayimp-spike/`). **Every
+invariant the runtime depends on is proven; the approach works.**
+
+- ✅ **`.S` assembles** with correct symbols/decoration. The i386 scheme (read off the regular
+  implib `llvm-nm libprovider.a`): public stub `_TestFunc@4`, IAT slot `__imp__TestFunc@4`. The
+  `@` in symbol names works via **quoted labels** in clang asm (`"_TestFunc@4":`). Helper symbol
+  is `___delayLoadHelper2@8` (WINAPI/stdcall: leading `_` + the C `__delayLoadHelper2` + `@8`).
+- ✅ **Consumer links against the delay-lib alone** (no regular `libprovider.a`), and
+  `provider.dll` is **absent from the regular import table** (`llvm-objdump -p`) — it is genuinely
+  delay-loaded, not a load-time dep.
+- ✅ **Thunk is byte-perfect** (`llvm-objdump -d`): `push $&__imp` (pIATEntry) ; `push $&descriptor`
+  (pidd) ; `call ___delayLoadHelper2@8` ; `jmp *eax`. stdcall callee-cleans the 8 bytes, then the
+  tail-jump enters the resolved fn with the caller's original args intact. After patching,
+  subsequent `jmp *__imp` calls bypass the thunk → real fn directly.
+- ✅ **All `.rva` relocations resolved** to correct in-image targets (walked the linked
+  descriptor in Python): `grAttrs=1`, `rvaDLLName→"provider.dll"`, `INT[0]→{hint=0,"TestFunc@4"}`,
+  `IAT[0]` initialized to the thunk VA. So GAS-style `.rva` (image-relative DIR32NB) through
+  clang's integrated assembler is the right primitive for every RVA field.
+- ⚠️ **Resolves open Q#2:** lld leaves PE **data-directory[13] (DELAY_IMPORT) empty** — it does
+  *not* auto-populate it from a linked-in descriptor. **That's fine and expected** for the
+  mingw/`__delayLoadHelper2` model: the mechanism is driven entirely by the thunk→descriptor
+  reference, not by the data directory (which is only used by some tools/debuggers and for
+  bound-import/unload optimization). No action needed for correctness. *(If we later want tools to
+  see it, we'd emit a `.idata$delay`-style section lld coalesces into dir[13] — optional.)*
+
+**The proven i386 `.S` template** (one DLL, one fn — the generator just parameterizes this over
+the `.def`'s `Name @N` list):
+```asm
+    .section .rdata,"dr"
+dllname:            .asciz "provider.dll"
+    .p2align 1
+hintname_0:         .short 0
+                    .asciz "TestFunc@4"          # name = the .def export (decoration included)
+    .p2align 2
+delay_int:          .rva hintname_0
+                    .long 0
+    .section .data,"dw"                          # writable: IAT (patched) + hmod cache
+    .p2align 2
+    .globl "__imp__TestFunc@4"
+delay_iat:
+"__imp__TestFunc@4": .long thunk_0               # init → thunk (base-relocated VA)
+                    .long 0
+delay_hmod:         .long 0
+    .section .rdata,"dr"
+    .p2align 2
+___DELAY_DESC_provider:
+    .long 1 ; .rva dllname ; .rva delay_hmod ; .rva delay_iat ; .rva delay_int
+    .long 0 ; .long 0 ; .long 0
+    .section .text,"xr"
+    .globl "_TestFunc@4"
+"_TestFunc@4":      jmp  *"__imp__TestFunc@4"
+thunk_0:            push $"__imp__TestFunc@4" ; push $___DELAY_DESC_provider
+                    call ___delayLoadHelper2@8 ; jmp *%eax
+```
+
+**Remaining to do:** (a) `gen_delaylib.py` (parse `.def` → emit this `.S` → clang `-c` → `llvm-ar`);
+(b) x86-64 + arm64 thunk stubs (RCX/RDX + shadow space; X0/X1 + `br`) and 8-byte thunk-data on x64
+(INT uses `.rva name ; .long 0` padding); (c) wire into `gcc.cmake`'s `CMAKE_DLLTOOL_MACHINE`
+branch + re-enable the `delayimp` link, behind `VIBEOS_NO_DELAYLOAD`; (d) runtime proof at QEMU
+boot (re-enable user32→libpng i386 first).
+
+---
+
+## 6. Validation & rollout
+
+- **Host-side gates (no KVM):** generator unit output (golden `.c`/`.S` per `.def`); `llvm-objdump
+  -p` delay-dir well-formedness on a representative set (user32→libpng, advapi32→secur32,
+  rpcrt4→ole32, consrv→shell32); a regular `cargo`/`ninja` link of each affected module.
+- **Boot proof (KVM, minimal):** re-enable **one** delay-import (start with user32→libpng on
+  i386/amd64), boot, confirm the OS still reaches shell-ready AND that the delayed DLL is *not*
+  loaded until exercised (check module list). Then arm64.
+- **Stub removal (the payoff):** once delay-load works on arm64, delete the four
+  `arm64_*_stubs.c` TUs and restore the real delay-imports; re-gate ×3.
+- **Cross-cutting risk:** `gcc.cmake`'s delay path touches **every** module using
+  `add_delay_importlibs`. The `VIBEOS_NO_DELAYLOAD` fallback + a staged rollout (one module at a
+  time, fallback default-on until proven) keeps a regression from breaking the whole build.
+
+---
+
+## 7. Leverage
+
+- Restores **real delay-load semantics OS-wide** (today *nothing* delay-loads on llvm-mingw).
+- **Removes 4 arm64 stub workarounds** (libpng/secur32/ole32/shell32) → real PNG icons, LSA,
+  COM/OLE, clipboard on arm64.
+- **Fixes the root cause of the consrv stack overflow** (eager 30-dep transitive load).
+- Shrinks every module's load-time dependency closure → faster, more robust early boot.
+- Reusable forever (any future optional dependency).
+
+---
+
+## 7b. The cargo-driven link path (reactos-link) — the second front
+
+There are **two** import-lib generators in the tree, and both independently hit this gap:
+
+| Path | Final link | Import-lib generator | Delay status |
+|---|---|---|---|
+| cmake (`add_library MODULE`) | lld via cmake | `sdk/cmake/gcc.cmake::generate_import_lib` | ✅ fixed here |
+| cargo (`add_cargo_module`) | lld via `reactos-link` build.rs | `sdk/lib/rust/reactos-link/src/lib.rs::generate_import_lib` (~1624) | ❌ still collapses delay→regular |
+
+`reactos-link` (the engine behind every `add_cargo_module`: ntoskrnl, ntkrnlmp, win32k, winsrv,
+basesrv, csrss, framebuf, freeldr) has its **own** Rust import-lib generation and its **own** copy
+of the same llvm-dlltool workaround. The smoking gun: `lib.rs:415-419` has a `stack_reserve`
+field that exists *only because* "llvm-dlltool converts delay-imports to regular ones so every
+dependency loads at once and LdrpLoadDll recursion overflows the default 1MB stack" on **arm64
+csrss.exe**. That band-aid is a direct symptom of the same root cause this fix removes.
+
+**Today there is no gap:** no cargo-driven module is a delay-import consumer (none call
+`add_delay_importlibs`), and every current delay-import consumer (user32/advapi32/shell32/
+comctl32/oleaut32/msvcrt/…) is cmake-linked, where this fix applies. So the cmake fix is complete
+for the current build.
+
+**When a delay-import consumer's link migrates to cargo**, port the fix into `reactos-link`'s
+`generate_import_lib`. The mechanism is link-driver-agnostic — the generated `_delayed.a`
+(descriptor + thunk) and the `delayimp` runtime are static archives any linker pulls in; only the
+emitter + the "add these to the link line" wiring differ. **Architecture: one shared generator.**
+`reactos-link` already shells out to `dlltool` for regular import libs, so it should shell out to
+the same `sdk/tools/gen-delaylib.py` for delay libs (and link `libdelayimp.a`) rather than
+reimplement the `.S` emission in Rust — keeping the two paths from drifting further (they already
+carry two copies of the regular-import gen + two copies of the delay→regular workaround).
+
+**Bonus payoff:** real delay-load in `reactos-link` obsoletes the `stack_reserve` hack — csrss/
+consrv could actually delay-load shell32/ole32 on arm64 instead of eager-loading the whole tree
+(the thing that blows the stack). A concrete arm64 win (gated behind the arm64 flake for now).
+
+---
+
+## 8. Scope / ownership / coordination
+
+- This is a **build/toolchain-lane** change, not user32. It edits shared `sdk/cmake/gcc.cmake`
+  + adds a generator tool + links `delayimp`. Coordinate with **control-plane (meaniepy)** and the
+  **build-cache/determinism lane** before landing; do dev on an isolated worktree.
+- **arm64 gate is currently blocked** (the floor-completion train is parked on
+  `arm64_lpcexitthread_race`, arm64-love's lane). i386/amd64 dev + proof can proceed now; the
+  arm64 stub-removal + full ×3 lands once arm64 is deterministically green. The generator itself
+  is arch-parametric, so arm64 support is ready before the gate is.
+- **Never reverts/deletes** the existing stub TUs until their real delay-import is proven (keep
+  them until §6 stub-removal, then delete in the same commit that re-enables the import).
+
+---
+
+## 9. Open questions (resolve during the spike)
+- Per-function thunk vs one shared `__tailMerge_D` + per-fn `__imp_load_Fi` trampolines (match GNU
+  dlltool, or simplify)? Decide from what links cleanly + matches `__delayLoadHelper2`'s index math.
+- Does lld's GNU driver honor the `IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT` data-dir entry from a
+  linked-in descriptor, or must we set it explicitly? (objdump -p in the spike answers this.)
+- `__imp_` IAT-slot symbol naming + whether lld auto-creates the import stub `Fi` from `__imp_Fi`,
+  or we emit `Fi: jmp *__imp_Fi` ourselves.
+- i386 `@N` decoration round-trip through clang asm symbols (the `@` in symbol names).

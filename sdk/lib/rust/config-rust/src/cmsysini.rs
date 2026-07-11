@@ -2623,8 +2623,8 @@ pub unsafe extern "system" fn CmpSetVersionData() {
 
     RtlInitUnicodeString(&mut ValueName, w!("CurrentType").as_ptr());
     let cpu_kind: *const u16 = {
-        #[cfg(CONFIG_SMP)] { w!("Multiprocessor").as_ptr() }
-        #[cfg(not(CONFIG_SMP))] { w!("Uniprocessor").as_ptr() }
+        #[cfg(feature = "smp")] { w!("Multiprocessor").as_ptr() }
+        #[cfg(not(feature = "smp"))] { w!("Uniprocessor").as_ptr() }
     };
     let build_kind: *const u16 = {
         #[cfg(DBG)] { w!("Checked").as_ptr() }

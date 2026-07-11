@@ -127,10 +127,11 @@ boots to `shell ready` with this alone — no guest change.
   an edit in a transitive path-dep (ntoskrnl-rust behind the kernel-rust
   umbrella) left `vibeos-cli build` printing success while shipping a STALE
   ntoskrnl.exe. reactos-link now watches every workspace crate's `src/`.
-- The gdb engine assumes the stub arch matches the guest arch; an i386 guest under
-  WHPX runs on `qemu-system-x86_64.exe`, whose gdbstub speaks i386:x86-64 —
-  `vibeos-cli gdb inspect` verbs fail on the 'g' packet. Workaround: raw
-  `gdb-multiarch` + `set architecture i386:x86-64`. (Engine fix TODO.)
+- ✅ **FIXED (verified 2026-07-11):** the gdb engine now sets the stub arch correctly for
+  an i386 guest under WHPX — `gdbengine.py` emits `set architecture i386:x86-64` when
+  `run.arch == "i386" and run.accel == "whpx"` (the guest runs on `qemu-system-x86_64.exe`
+  whose gdbstub speaks i386:x86-64), so `vibeos-cli gdb inspect` verbs no longer fail on the
+  'g' packet. (Was: manual `gdb-multiarch` + `set architecture i386:x86-64` workaround.)
 - gdb attach to the whpx gdbstub works for register/memory reads; each
   attach/resume does a full register writeback from QEMU's (possibly stale) CPU
   state — treat CR8 as suspect after any attach.
@@ -149,13 +150,20 @@ Evidence so far:
 - A same-boot serial breadcrumb on a later run: `[NETSTACK] TDI server: LISTEN
   did not complete 0xc00000b5` (STATUS_IO_TIMEOUT) — the guest-side TDI listen
   endpoint itself sometimes fails to come up under whpx.
-- Isolated re-runs of just these two tests were blocked 3/3 by the
-  **pre-existing** amd64 service-startup wedge (`DcomLaunch done: 1053`
-  discriminator — the Mm pushlock lost-wakeup lane, ~50% on amd64 on ANY
-  accel), so a clean A/B against test-ordering hasn't landed yet. Re-run once
-  that lane's fix lands. Note: direct `pytest tests/qemu/test_net.py` needs
-  `--timeout 900` under whpx — the default 300s pytest-timeout kills the
-  session fixture during the slow whpx firmware phase.
+- ~~Isolated re-runs were blocked by the amd64 service-startup wedge~~ →
+  **A/B now CLEAN (verified 2026-07-11), and the answer is: the inbound failure is
+  GENUINE, not a wedge/ordering artifact.** With the wedge fixed (§9.13), an isolated
+  `-k "test_tcp_echo_roundtrip or test_tdi_server_listen_accept"` run boots the VM fully
+  under whpx (388 KB serial, "Boot complete") — but **both guest listeners never announce**:
+  `MARK_ECHO_READY` absent ("guest never announced the echo listener") and the kernel TDI
+  server never announces listening on `:8888` (`MARK_TDI_SRV_LISTEN` timeout). So the
+  guest-side **inbound-listen path itself fails under whpx** (matches the earlier
+  `LISTEN did not complete 0xc00000b5` breadcrumb), while the *same* tests pass on the
+  default TCG backend — i.e. this is a **whpx-specific inbound-listen bug**, still open.
+  Suspect: the netstack listen/accept bridge (TDI_LISTEN pends → smoltcp finishes the
+  handshake → completes the pended IRP) behaves differently under whpx's `kernel-irqchip=on`
+  amd64 APIC timing. Note: direct `pytest tests/qemu/test_net.py` needs `--timeout 900`
+  under whpx (the default 300s kills the session fixture during the slow firmware phase).
 
 ## Perf notes (why we still want this)
 

@@ -12,5 +12,5 @@ field-offset rewrites, cast repairs, etc.) encodes hard-won lessons that may be
 worth grepping when a similar campaign recurs. Nothing in the live pipeline
 depends on them; do not wire them back into `rustconv` without review.
 
-Retired in: `docs/engineering/tooling-consolidation-plan.md` (T0). Restore any
+Retired in: `docs/engineering/archive/tooling-consolidation-plan.md` (T0). Restore any
 one with `git mv tools/rustconv/archive/<name>.py tools/rustconv/<name>.py`.

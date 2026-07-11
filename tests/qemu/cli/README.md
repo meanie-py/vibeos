@@ -83,7 +83,7 @@ provenance stamp.
   100%/100% on a `--clean` replay). Reports a per-build hit-rate stage (also a
   determinism gauge). Also fires a detached ≤1/day hardlink-dedup of the cache
   trees (`tools/dedup-build-cache.sh`). Design + status:
-  `docs/engineering/build-cache-and-determinism-plan.md`.
+  `docs/engineering/build-system.md`.
 - **Strategy:** iterate warm; do a `--clean` build before you believe a green
   result or hand off. The clean build is the only one that proves a cold-link
   state. (The smoke harness's clean-build does the same nuke for the same
@@ -209,9 +209,10 @@ zero — the tree carries known pre-existing findings. Advisory by default;
 accepted (review the diff before committing — you're declaring them OK).
 Baselines are stored repo-relative so they match across worktrees.
 
-Covers: `shellcheck`, `py-syntax`, `verify_abi`, `verify_ffi`,
-`verify_constants`, `lint_kernel` (source); `scan_ud2`, `sacred_primitives`
-(binary, needs a build — `check --strict --arch X`).
+Covers: `shellcheck`, `py-syntax`, `verify_ffi` (the ABI checker — `verify_abi`
+was folded into it, T1, and no longer runs as a separate lint), `verify_constants`,
+`lint_kernel` (source); `scan_ud2`, `sacred_primitives` (binary, needs a build —
+`check --strict --arch X`).
 
 The **binary** lints are judged by their `--check` **exit code**, not baseline-diff:
 their output is arch-specific (so a single baseline can't match across arches) and
@@ -315,7 +316,7 @@ prunable). Only ever removes the build/target dirs, never source or the worktree
 
 ### `repro {report <pe>… | compare <a> <b> | diff-dirs <buildA> <buildB>}`
 The reproducible-builds gauge (determinism lane, rung 0 —
-`docs/engineering/deterministic-builds-plan.md`). A self-contained PE parser (no
+`docs/engineering/archive/deterministic-builds-plan.md`). A self-contained PE parser (no
 `pefile`/`diffoscope` dependency) answers *are two builds byte-identical, and if
 not, where do they diverge?* — `report` dumps each artifact's COFF
 `TimeDateStamp` (flags `← LEAK` when non-zero) + sha256; `compare` localizes a
@@ -331,7 +332,7 @@ The smoke/boot runner picks a QEMU **backend** from layered config — committed
 host — escapes WSL2 nested-virt contention). `native` (local `qemu-system-*` + Unix-socket
 QMP/serial + KVM/TCG) is the right choice on real Linux / CI — override via
 `VIBEOS_QEMU_BACKEND=native` or a `.vibeos-cli.local.json`. **`windows-host`** (WSL2 only) launches the *Windows* QEMU.exe via interop to
-escape WSL2 nested-virt contention (`docs/engineering/windows-host-qemu-spike.md`):
+escape WSL2 nested-virt contention (`docs/engineering/archive/windows-host-qemu-spike.md`):
 media is staged to a Windows-visible dir, QMP+serial run over TCP (we listen on
 `0.0.0.0`, the Windows QEMU dials back `127.0.0.1` via WSL2 localhost forwarding), and
 the process is killed by a uid-scoped `Stop-Process`. To enable, copy

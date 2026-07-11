@@ -1412,6 +1412,22 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         ZwSetSystemTime(core::ptr::null_mut(), core::ptr::null_mut());
     }
 
+    // CONFIG_SMP block from the C original (see the reference block below):
+    // start the application processors, then verify the HAL agrees they all
+    // came up. The NUMPROC/BOOTPROC/MAXPROC command-line caps are not yet
+    // plumbed (smp-bringup M2 — QEMU bring-up starts every MADT CPU).
+    #[cfg(feature = "smp")]
+    {
+        unsafe extern "system" {
+            fn KeStartAllProcessors();
+            fn HalAllProcessorsStarted() -> u8;
+        }
+        KeStartAllProcessors();
+        if HalAllProcessorsStarted() == 0 {
+            KeBugCheck(0x61); // HAL1_INITIALIZATION_FAILED
+        }
+    }
+
     if FsRtlInitSystem() == 0 {
         KeBugCheck(0x45);
     }

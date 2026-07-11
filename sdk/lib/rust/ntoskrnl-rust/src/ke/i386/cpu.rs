@@ -1434,6 +1434,30 @@ pub unsafe extern "system" fn KiSaveProcessorState(
     KiSaveProcessorControlState(&mut (*Prcb).ProcessorState);
 }
 
+/// KiRestoreProcessorState — inverse of KiSaveProcessorState (freeze/thaw
+/// resume path). Upstream i386 never had one (its freeze support was
+/// UNIMPLEMENTED); mirrors the amd64 body (ke/amd64/cpu.c KiRestoreProcessorState)
+/// against the state KiSaveProcessorState above captures.
+#[no_mangle]
+pub unsafe extern "system" fn KiRestoreProcessorState(
+    TrapFrame: PKTRAP_FRAME,
+    _ExceptionFrame: PKEXCEPTION_FRAME,
+) {
+    let Prcb = KeGetCurrentPrcb();
+
+    // KernelMode: the freeze/thaw path only ever restores a kernel-mode
+    // capture (i386 KTRAP_FRAME has no PreviousMode field to consult).
+    ntkrnl_sys::ddk::KeContextToTrapFrame(
+        &mut (*Prcb).ProcessorState.ContextFrame,
+        core::ptr::null_mut(),
+        TrapFrame,
+        (*Prcb).ProcessorState.ContextFrame.ContextFlags,
+        0, // KernelMode
+    );
+
+    KiRestoreProcessorControlState(&mut (*Prcb).ProcessorState);
+}
+
 // CODE_SEG("INIT")
 #[no_mangle]
 pub unsafe extern "system" fn KiIsNpxErrataPresent() -> BOOLEAN {
@@ -1766,7 +1790,11 @@ pub unsafe extern "system" fn KeGetRecommendedSharedDataAlignment() -> ULONG {
     KeLargestCacheLine
 }
 
-unsafe fn KiFlushTargetEntireTb(
+// extern "stdcall" to slot into the PKIPI_WORKER function-pointer type
+// (bindgen spells it "stdcall", which rustc type-distinguishes from "system")
+// when handed to KiIpiSendPacket under smp. i386-only file, so bare stdcall
+// is fine.
+unsafe extern "stdcall" fn KiFlushTargetEntireTb(
     PacketContext: PKIPI_CONTEXT,
     _Ignored1: PVOID,
     _Ignored2: PVOID,
@@ -1789,17 +1817,17 @@ pub unsafe extern "system" fn KeFlushEntireTb(
 
     // DBG: after KeRaiseIrqlToSynchLevel
 
-    #[cfg(feature = "CONFIG_SMP")]
+    #[cfg(feature = "smp")]
     {
         let Prcb = KeGetCurrentPrcb();
         let mut TargetAffinity = KeActiveProcessors;
         TargetAffinity &= !(*Prcb).SetMember;
 
         if TargetAffinity != 0 {
-            KiIpiSendPacket(
+            crate::ke::ipi::KiIpiSendPacket(
                 TargetAffinity,
                 Some(KiFlushTargetEntireTb),
-                core::ptr::null_mut(),
+                None,
                 0,
                 core::ptr::null_mut(),
             );
@@ -1810,7 +1838,7 @@ pub unsafe extern "system" fn KeFlushEntireTb(
 
     // DBG: after KeFlushCurrentTb
 
-    #[cfg(feature = "CONFIG_SMP")]
+    #[cfg(feature = "smp")]
     {
         let Prcb = KeGetCurrentPrcb();
         let TargetAffinity = KeActiveProcessors & !(*Prcb).SetMember;

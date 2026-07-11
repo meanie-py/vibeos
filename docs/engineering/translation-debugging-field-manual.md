@@ -239,7 +239,7 @@ Plus two non-ABI link gotchas from the same drivers: (a) **x86 compiler intrinsi
 **Root cause:** the translator re-declares enum members it needs as local `const NAME: T = <value>;` and *guesses* the value (often the intuitive-but-wrong one, or the value of a *different* enum's member with a similar name) instead of reading `ndk/ketypes.h`. Each file guesses independently, so setter and reader can disagree **while both compile clean and the reader is self-consistent within its own file**.
 **Fix:** align to the header. **Detection is mechanical:** `PYTHONPATH=tools/rustconv python3 tools/rustconv/rustconv/verify_constants.py --enums <files>` — after 2026-07-04 the catalog includes the ndk type headers (ketypes/pstypes/obtypes/mmtypes/extypes/lpctypes/cmtypes: ADJUST_REASON, KTHREAD_STATE, KOBJECTS, KWAIT_REASON, EVENT_TYPE, TIMER_TYPE, KAPC_ENVIRONMENT, LPC_TYPE, PS_* pool/priority, MMVAD types, …). Run it over any kernel crate you're auditing; `--fix` auto-rewrites. **Anything it reports resolved to exactly ONE header value** (the ambiguity rule drops multi-enum names) → a strong real-bug signal, not the usual `--enums` noise. **Two deliberate blind spots you must review by hand:** (a) `TAG_*` pool tags are SKIPPED (Rust `from_le_bytes` vs the checker's big-endian multichar disagree on byte order — the tags need a byte-order-aware check; drift there is cosmetic pool-dump display); (b) untagged inline literals at call sites (`KeInitializeEvent(e, 1, 0)` with no `/* … */` comment) still escape — `scan_inline_flag_literals` only catches the commented ones. Prefer bindgen enums (`ddk::_EVENT_TYPE_*`) over local consts in new translations.
 **Also caught by the same tool the same day** (once `pub const` / path-typed / suffixed-decimal parsing was added — the checker had been blind to ~27K `pub const`s): the **LPC message-type enum** shifted in `lpc/send.rs` (live `if MessageType < LPC_DATAGRAM || > LPC_CLIENT_DIED` validation window, csrss-CreateProcess reply path), `MEMORY_PRIORITY_FOREGROUND` writer(0)/reader(2) disagreement killing the scheduler foreground boost, swapped Ps pool-quota/priority enums, wrong MMVAD types, ~10 wrong hand-written STATUS codes. 41 total in one sweep.
-**Source:** 2026-07-04 dispatcher audit + constant sweep (`docs/engineering/sync-instrumentation-design.md` §8).
+**Source:** 2026-07-04 dispatcher audit + constant sweep (`docs/engineering/archive/sync-instrumentation-design.md` §8).
 
 ### Hardcoded HIGH_LEVEL=31 on amd64 → `mov cr8, 0x1F` #GP at boot
 **Symptom:** BUGCHECK 0x1E with `c0000005` during boot-driver init / process create; reported faulting Rip unreliable (false symbol e.g. `MiAcquireExpansionLock+7`).
@@ -2348,7 +2348,7 @@ owned by the side that outlives the wait.
 **Result:** amd64 boots green (5/5 → gate ×3). The old "PteFrame share-count chain" and "MMPFN accessor layout" hypotheses were red herrings — the real defect was the `OriginalPte`/`RmapListHead` union overlay + the offset/bit-test drift.
 
 **Permanent tools this produced (the durable payoff):**
-- **Lockdep self-deadlock detector** — `vibeos-cli build --arch amd64 --lockdep` builds a `-DVIBEOS_LOCKDEP=ON` kernel; every boot self-reports `[LOCKDEP] SELF-DEADLOCK … WAIT(shared) … already held(excl) site=…` on serial (held-pushlock side table at the `ExAcquire/ReleasePushLock*` funnel, checked at the park). `vibeos-lockdep [held|edges]` decodes the table / dumps the whole lock-order graph (ABBA detection) offline in GDB. (Design: `sync-instrumentation-design.md` §4.)
+- **Lockdep self-deadlock detector** — `vibeos-cli build --arch amd64 --lockdep` builds a `-DVIBEOS_LOCKDEP=ON` kernel; every boot self-reports `[LOCKDEP] SELF-DEADLOCK … WAIT(shared) … already held(excl) site=…` on serial (held-pushlock side table at the `ExAcquire/ReleasePushLock*` funnel, checked at the park). `vibeos-lockdep [held|edges]` decodes the table / dumps the whole lock-order graph (ABBA detection) offline in GDB. (Design: `archive/sync-instrumentation-design.md` §4.)
 - **Self-symbolicating `KeBugCheckEx`** — see §9.17's banner note (line ~537 of the rustconv catalog too): params symbolicated vs `PsLoadedModuleList`, `TrapFrame.Rip` extracted for Mm bugchecks, scan-based mini-backtrace on serial — no GDB, no cross-boot base guessing.
 
 **Reusable debug recipe:** boot under `vibeos-cli gdb`; wait for `[CENSUS] STUCK` (the wedge self-reports, with a lost-wakeup-vs-holder-stuck verdict); `vibeos-cli gdb inspect <run> "raw vibeos-synctrace"` → stuck objects; `"raw vibeos-flightrec obj=0x…"` → who locked/signalled last; `"raw vibeos-threads gatewait"` → all parked threads offset-free. For the deterministic-bugcheck flavor, prefer `run-until KeBugCheckEx --then triage` + trap-frame + **self-reporting diagnostic `KeBugCheckEx(0x0BAD…)` codes** to bisect the fault path (survives VM reaping, unlike post-mortem GDB). ~30 min end-to-end; the identical conclusion previously took days.
@@ -2457,7 +2457,7 @@ paging-level blocks for the same drift (see also §9.14 for the sibling Mm PFN-s
 
 **§9.15 addendum (2026-07-05): this drift is SYSTEMIC, not a one-off.** A workspace-wide
 per-arch `#[cfg]` audit (`tools/scan_arch_cfg.py` +
-[`per-arch-cfg-divergence-audit.md`](per-arch-cfg-divergence-audit.md)) found the same
+[`per-arch-cfg-divergence-audit.md`](archive/per-arch-cfg-divergence-audit.md)) found the same
 "4-level PXE block gated to ONE 4-level arch" pattern in **~8 more Mm functions, in both
 directions** — `MiDeleteVirtualAddresses`/`MmProbeAndLockPages`/`MiCalculatePageCommitment`/
 `MiQueryAddressState`/`MiIsEntireRangeCommitted`/`MiMakePdeExistAndMakeValid` drop the PXE
@@ -3515,6 +3515,25 @@ is pending — cancel+wait-forever (if cancellable) or pool-allocate + leak.
 Sweep: `grep -rn "KeWaitForSingleObject" --include='*.rs' | grep -i timeout`
 cross-checked against `IoBuildDeviceIoControlRequest(&mut event` stack args.
 
+**⚠️ Addendum — the fix REDUCED but did not fully eliminate (organic recurrences
+after the "DEAD" call).** The `[WAITDEP] VIOLATION bad-thread-ptr` face with
+ALL-ONES poison (`owner=0xffffffffffffffff culprit=0xffff…`, the §9.31 signature)
+has recurred on organic arm64 gate traffic *after* the 2026-07-08 fix — at least
+one confirmed hit **2026-07-09** (gate `20260709-001019`, BUGCHECK 0x109,
+P2=`ntoskrnl.exe+0x451B0`; serial chain dump preserved at
+`~/vibeos-flake-farm/waitdep-evidence/20260709-gate-hit/full.log:72`), and an
+overnight-gate arm64 0x1E (`ntoskrnl.exe+0x1CD8C`, silent-wedge face) seen
+2026-07-10 that retried green. So the netstack-TDI source was A source, not the
+ONLY source, of the ALL-ONES waitdep face — a residual arm64 dispatcher/stack
+corruption persists at a low organic rate (~2 hits / 2 days of gate traffic).
+`ke/waitdep.rs` stays ALWAYS-ON precisely to keep capturing these. **Do NOT read
+§9.36 as "0x1E fully closed"** — if a `[WAITDEP]` 0x109 appears in a gate log,
+that IS a live capture: read the chain dump (which invariant, which block/funnel),
+compare the culprit PC against the two known offsets above, and treat it as the
+still-open residual, not a re-derivation from scratch. Tracked in the roadmap
+Known-bugs registry. *(Rescued 2026-07-10 from the performance lane's memory file,
+which recorded the 07-09 recurrence but never routed it here.)*
+
 ### 9.32 Static analysis for leaked Ob references — `scan_ob_refcount.py`
 
 Sibling of §9.28's IRQL scanner (same tree-sitter held-set engine), pointed at
@@ -3851,7 +3870,64 @@ translation failure mode. A struct-as-heap mixup produces the same crash
 signature as real heap corruption; check the heap pointer's provenance
 before hunting for a corruptor.
 
-### 9.41 (NOT REPRODUCING 2026-07-08; residual cosmetic issue open) amd64 first Ctrl+Esc corrupts explorer's CLIENTINFO → shell AV in user32!ValidateHandle
+### 9.41 (ROOT-CAUSED + FIXED 2026-07-10) amd64 Ctrl+Esc kills explorer + blank start-menu labels — GDI TEB batch never flushed (hand-rolled `TEB.GdiBatchCount` offset read 0x74 instead of 0x1740)
+
+**THE ROOT CAUSE (one bug, four symptoms):** amd64 `KiSystemCallHandler`
+(`ntoskrnl-rust ke/amd64/traphandler.rs:181-197`) is supposed to flush the
+gdi32 TEB batch on every win32k syscall entry (C parity:
+`ntoskrnl/ke/amd64/traphandler.c:224` `if (NtCurrentTeb()->GdiBatchCount)
+KeGdiFlushUserBatch()`). The translation read the count with a hand-rolled
+offset — `*(teb as *const ULONG).add(0x77 / 4)` = TEB+0x74 — but amd64
+`TEB.GdiBatchCount` is at **0x1740** (`sdk/include/ndk/peb_teb.h`). The read
+returned 0, the flush NEVER fired, and since ReactOS `NtGdiFlush` is
+`SynchronizeDriver`-only BY DESIGN (the syscall-entry callout is the real
+flush; gdi32's `GdiAllocBatchCommand` depends on it), the TEB batch buffer
+(`GdiTebBatch.Buffer`, 0x300..0x7d8) grew monotonically and overwrote, in
+order:
+1. `RealClientId` / `GdiCachedProcessHandle` / `GdiClientPID/TID` /
+   `GdiThreadLocalInfo` (0x7d8..0x800) → GDI handle-table userdata lookups
+   break → shell32 `FillToolbar` item reads fail → **Run…/Shut Down… and
+   separators dropped from the start menu**;
+2. `Win32ClientInfo` (CLIENTINFO) at 0x800+ → `pci.pDeskInfo` (TEB+0x820) and
+   `ulClientDelta` stomped with batch records (the structured "garbage"
+   `0x??5?000000510008` / `0x001000000000?a04` = GDIBATCHHDR+GDIBSOBJECT) →
+   first user32 `DesktopPtrToUser` deref AVs → **explorer dies** (csrss reaps
+   via `LPC_EXCEPTION → NtTerminateProcess(STATUS_ABANDONED=0x80)`).
+Additionally every batched-and-never-executed op silently vanished:
+`GdiBCTextOut`/`GdiBCExtTextOut` (menu label text + flat separators — toolbar
+paints on a plain window DC, so `DrawTextW→ExtTextOutW` batches), PatBlt,
+SelObj, DelObj/DelRgn → **icons-without-labels menu** (icons survive because
+`ImageList_Draw`'s source-ROP BitBlt goes straight to `NtGdiBitBlt`).
+
+**Fix:** typed read `(*(teb as *const ntkrnl_sys::ddk::_TEB)).GdiBatchCount`
+(traphandler.rs) — the i386 (`ke/i386/traphdlr.rs:998`) and arm64
+(`ke/arm64/trap.rs:235`) translations were already typed and correct, which is
+why this was amd64-only. Verified: `test_start_menu_opens` passes on amd64
+with the COMPLETE menu (labels + arrows + separators + Run/Shut Down) and
+explorer alive.
+
+**Detectors added:** `scan_magic_offsets` shape `TYPED_PTR_HEX_ARITH`
+(hex-literal `.add/.offset/.sub` on ANY typed pointer — would have flagged the
+original line); permanent `[KI-EXC]` second-chance print in amd64
+`KiDispatchException` (BEFORE the exception-port forward — csrss usually
+"handles" a user second-chance by killing the client, so without the print a
+shell death is 4x `[EXIT-THR] 0x80` with no cause). Debug recipe that cracked
+it: conditional GDB break `NtTerminateProcess if $rdx==0x80` → caller was
+csrss (offset-free EPROCESS name scan, walk-procs style) → `[KI-EXC]` teb=
+print → crash TEB ≠ main-thread TEB → hardware watchpoint on the RIGHT TEB's
+`pci.pDeskInfo` (`watch -l` + auto-continue + WHOHIT context print) → caught
+`gdi32!GdiAllocBatchCommand`/`DeleteRegion` writing batch records at
+Buffer+0x520 → C-ground-truth audit found the dead flush gate.
+
+Likely also closed by the same fix (verify before re-opening): the
+"freshly-CreateProcess'd GUI app AV" (notepad exit 0x80,
+`ui-render-completeness-investigation.md` follow-up #1) — same face, and any
+GDI-batching x86 thread without callback traffic was living on borrowed time.
+
+**Historical writeup of the original hunt (2026-07-07/08), kept for the
+watchpoint/diagnostic recipes:**
+
+### 9.41-history (superseded by the root cause above) amd64 first Ctrl+Esc corrupts explorer's CLIENTINFO → shell AV in user32!ValidateHandle
 
 **Symptom:** on amd64, the first Ctrl+Esc after the desktop settles kills
 explorer: `[KI-EXC] EXPLORER.EXE code=0xc0000005 rip=user32!ValidateHandle+0x142`,
@@ -3897,7 +3973,8 @@ runs FOR REAL on amd64 — a recurrence shows up as a hard failure with serial
 tail + symbolicated BUGCHECK; re-add the xfail with `arch.startswith("amd64")`,
 NOT `arch == "amd64"` — the fixture arch is `"amd64-uefi"`).
 
-**RESIDUAL (open, cosmetic):** the amd64 start menu renders DEGRADED vs i386:
+**RESIDUAL (RESOLVED 2026-07-10 — unflushed `GdiBCTextOut`/`GdiBCExtTextOut`
+batches, see the root cause above):** the amd64 start menu renders DEGRADED vs i386:
 Programs/Documents/Settings items show their icons but NO label text, and the
 Run…/Shut Down… items are absent entirely (i386 renders the full menu). 100%
 deterministic across 4 boots, so it's a real content/paint bug in the amd64
@@ -4032,7 +4109,7 @@ to `KeUserExceptionDispatcher` (`ke/arm64/stubs.rs:1079+`), and
 `dll/ntdll/dispatch/arm64/dispatch.S` now has the DUMMY_PSEH swallow branch
 (added this lane, amd64/i386 parity). Only the ntdll-side raise entry is
 missing. Non-fatal to boot (sehtest is fire-and-forget; arm64 desktop still
-reaches shell ready). Design: `docs/engineering/crash-value-design.md`.
+reaches shell ready). Design: `docs/engineering/archive/crash-value-design.md`.
 
 ### 9.43 (2026-07-09) Un-gating a `-version=0x600+` export in a `.spec` shifts ALL later ORDINALS → breaks by-ordinal importers (BUGCHECK 0x4C `0xc0000139`)
 
@@ -4353,6 +4430,60 @@ so its establisher is never handed to a funclet. Result: `sehtest` **RESULT: PAS
 the local didn't change" ⇒ EstablisherFrame/frame-base mismatch, not a missing call —
 disassemble the funclet, see what base+offset it writes, and check it against the
 function's own frame-pointer offset.
+
+### 9.49 (ROOT-CAUSED + FIXED 2026-07-10) arm64 BLACK desktop — desktops only ever paint via the hidden→visible show transition; arm64's early input-desktop switch broke the assumption for the whole window tree
+
+**Symptom:** arm64 boots green on serial markers but the screen is BLACK except
+stray window fragments (a notepad scrollbar + status bar); frozen thereafter.
+Regressed on master ~Jul 5-6 (good `fc794e7c29e`, bad `b643a8ffbf9`+). The
+boot-marker smoke stayed green for days of black desktops — the marker is
+blind to paint.
+
+**Root cause:** ReactOS only ever paints a desktop through the
+`SWP_SHOWWINDOW` hidden→visible transition inside `co_IntShowDesktop` (that
+path queues `WM_ERASEBKGND` → `IntPaintDesktop` fill). The explicit
+`bRedraw=1` redraw passes `RDW_UPDATENOW|RDW_ALLCHILDREN|RDW_INVALIDATE` —
+NO `RDW_ERASE` — and `RDW_INVALIDATE` alone never sets
+`WNDS_SENDERASEBACKGROUND`, so `IntBeginPaint` runs with `erase=0` and fills
+nothing. On x86 the Default desktop's FIRST show happens at the real
+winlogon→shell `SwitchDesktop` (hidden→visible → erase → blue). On arm64 the
+customized winlogon boot path makes Default the input desktop EARLY, while
+the old input desktop's window is still invisible → `bRedrawDesktop=0` show
+(visible, unpainted); every later `bRedraw=1` show (display-init
+`winsta.rs:769`, the §9.22 switch) finds it ALREADY visible → no transition,
+no erase, black — and via `RDW_ALLCHILDREN` the whole child tree (explorer
+tray, notepad frame/client) shared the fate.
+
+**Fix:** `co_IntShowDesktop_impl` (win32k-rust `desktop.rs`) adds `RDW_ERASE`
+to the explicit redraw — an explicit "redraw the desktop" must erase to mean
+anything. One flag restored wallpaper, taskbar+clock, notepad, version text
+on arm64; x86 unaffected (its erase came from the transition anyway).
+
+**Diagnostic recipe (kept as permanent bounded boot forensics):** serial
+probes `[DESKSHOW]` (co_IntShowDesktop args), `[DESKPAINT]`
+(IntPaintDesktop fill inputs: clip box, brush, wallpaper), `[DESKBP]`
+(IntBeginPaint erase-decision: erase flag + clip type), `[DESKTHREAD]` /
+`[DESKWNDPROC]` (desktop thread pump + wndproc liveness). The hunt pattern:
+healthy-arch trace (amd64) vs broken-arch trace (arm64), diff the
+DESKSHOW/DESKBP sequences — the divergence (second desktop's show missing /
+erase=0 with a perfect clip box) named the bug. A commit bisect was
+deliberately ABANDONED: warm-build masking makes per-commit verdicts
+unreliable and the ~40-commit window would have cost hours; two instrumented
+boots found it instead.
+
+**Exonerated en route (do not re-chase):** the §9.33 dib1bpp/dib32bpp GDI
+fixes (reverted-file boot still black); the arm64 GDI-batch flush sites
+(predate the good commit, C-parity verified); wrong `gpdeskInputDesktop`
+(§9.22's fix is present and fires — serial shows the switch succeeding).
+
+**Still open on arm64 (next layer, honest-red in the smoke suite):**
+`test_start_menu_opens` on arm64 fails because Ctrl+Esc never opens the menu
+— winlogon's arm64 path logs `InitKeyboardLayouts failed (non-fatal)`, so
+VK translation / hotkey dispatch has no layout. Also `runCmd FAILED (2)` for
+`kbswitch.exe` + `rundll32 iernonce.dll` — files missing from the arm64
+ramdisk (staging gap, `4fadba3d760` era). The gate's dual condition
+(panel-lit AND region-delta) exists because the arm64 notepad demo pre-lights
+the sample region — lit alone false-passed once.
 
 ### 9.50 (RESOLVED 2026-07-10) arm64 "unaligned access faults = Device memory" is only HALF a diagnosis — dump the OPCODE before blaming Mm
 
