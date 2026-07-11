@@ -394,24 +394,47 @@ before landing to master — these touch i386 gdi32/user32 specs + csrss):
    the gdi32/user32/win32u guest set; winlogon `TryStartWow64Gui` launches it.
    Verdict = exit 0x600D + a magenta rect on the arm64 desktop.
 
-*Still deferred out of M4 (owed, the next milestones):*
-- **win32k process/thread connection for a WoW64 guest** (the gui32 0xBAD1
-  blocker — task #29). gdi32's `GdiProcessSetup`/`NtGdiInit` returns 0xffffffff,
-  so the guest has no GDI handle table / desktop, and every subsequent NtGdi*
-  (incl. NtGdiOpenDCW) returns NULL.
-  *Diagnostic clue pinned 2026-07-11:* the arm64 syscall dispatch's
-  `[SVC] GUI conversion failed` print (trap.rs:220) did NOT fire for the wow64
-  NtGdiInit call, so the `-1` is NOT PsConvertToGuiThread rejecting the thread
-  via that path. Table alignment is proven sound (NtGdiOpenDCW correctly
-  unpacked `'DISPLAY'`, so the guest's w32ksvc32 service numbers match the
-  table). Next debug step: trace inside the TableIndex==1 dispatch in trap.rs
-  (print ServiceIndex + the win32k routine's return for the wow64 thread) to
-  see whether NtGdiInit actually runs (Rust returns 1) or the call diverts —
-  the `0xffffffff` origin is the open question. Then the real work:
-  the win32k client-connect path
-  (`NtUserProcessConnect` + the GDI shared handle-table section mapped into the
-  guest below 4GB, PEB `GdiSharedHandleTable`) taught about the WoW64 process.
-  This is the win32k analogue of the csrss connect layer.
+## M5 (2026-07-11): win32k client connect — gui32 DRAWS through native win32k
+
+**The NtGdiInit=0xffffffff mystery is SOLVED and closed** (task #29). Root
+cause was never in the wow64 table at all: `win32ss/win32u/sys-stubs.S`
+selected its service-number list by `#ifdef _M_AMD64` alone, so **arm64
+win32u.dll numbered its stubs from w32ksvc32.h while the kernel table
+(napi.h, `_WIN64`) uses w32ksvc64.h** — every diverging index called the
+WRONG win32k routine (NtGdiInit@219-in-32 landed on
+NtGdiModifyWorldTransform@219-in-64; real GdiInit is 0x1E0). Native
+gdi32/user32 were immune (win32ss/sys-stubs.S has a correct `_M_ARM64`
+branch) — only win32u callers, i.e. exactly the wow64 host, saw it. Moral:
+*a stub library nothing native exercises is unproven; compare its numbers
+against a consumer that works.*
+
+With routing fixed, the actual client-connect layer (all landed, gate ×3):
+- **win32k `W32Wow64ZeroBits`** (init.rs): every user-visible mapping win32k
+  hands a WoW64 process now lands below 4GB via the ZeroBits mask form —
+  GDI handle table (`GDI_MapHandleTable`), global user heap
+  (`MapGlobalUserHeap`), desktop-heap view (`IntMapDesktopView`), GdiPool
+  DC_ATTR/BRUSH_ATTR slabs (`GdiPoolAllocateSection`).
+- **`GdiProcessCreate` mirrors `GdiSharedHandleTable`/`GdiDCAttributeList`
+  into PEB32** (typed `ntkrnl_sys::ddk::_PEB32`, cfg'd off x86).
+- **`NtUserProcessConnect` manual marshaller** (USERCONNECT 0x124↔0x240;
+  truncated `ulSharedDelta` stays correct in the guest's modular 32-bit
+  pointer arithmetic since the user VAs are <4GB).
+- **`NtQueryValueKey` manual marshaller** (PUNICODE_STRING widen) — its raw
+  auto-thunk fed the kernel a 32-bit UNICODE_STRING whose garbage Buffer
+  probe-raised C0000005 → BUGCHECK 0x1E under DUMMY_PSEH (user32 init reads
+  registry right after NtOpenKey).
+
+On-box result: `NtUserProcessConnect => 0` (psi=001c0dd0 ahe=001da000 —
+below 4GB), user32 DllMain attach completes, `NtGdiOpenDCW` returns a real
+HDC (18010112), **PatBlt draws through native arm64 win32k**. gui32 exit
+**0x600E** = the designed draw-OK/readback-WARN rung. hello32 0x600D
+unchanged.
+
+*Owed from M5:* GetPixel readback on the ramfb display surface (gui32's last
+rung to 0x600D; magenta is RGB↔BGR-symmetric so the mismatch is likely
+CLR_INVALID from the surface-readback path, not channel order).
+
+*Still deferred (owed, the next milestones):*
 - **advapi32.dll / usp10.dll (i386) staging** — user32 imports them; the loader
   currently skips-missing (`LDR: Skipping missing import ... c0000135`), which
   works for gui32 but leaves user32 partially unresolved. Stage them for a real
