@@ -21,9 +21,18 @@ extern "system" {
     pub fn KeEnterCriticalRegion();
     pub fn KeLeaveCriticalRegion();
 }
+// KfRaiseIrql is the raw HAL export: FASTCALL on i386 (@KfRaiseIrql@4 —
+// a plain extern "C" decl links as _KfRaiseIrql and dies at link time the
+// moment a caller is compiled in), cdecl elsewhere.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    pub fn KfRaiseIrql(NewIrql: u8) -> u8;
+}
+#[cfg(not(target_arch = "x86"))]
 extern "C" {
     pub fn KfRaiseIrql(NewIrql: u8) -> u8;
-
+}
+extern "C" {
     // Dispatcher lock functions (provided by ex_rust_shims.c or ke_rust_shims.c)
     pub fn KiAcquireDispatcherLock() -> u8;
     pub fn KiReleaseDispatcherLock(OldIrql: u8);
@@ -222,7 +231,13 @@ pub const MAXIMUM_PRIORITY: u32 = 32;
 pub const DPC_NORMAL: u32 = 0;
 
 // IPI freeze states
+// IPI request values (ndk/<arch>/ketypes.h). NB the ipi.rs translation uses
+// them as BIT POSITIONS in IpiFrozen (`1 << IPI_x`), faithfully mirroring the
+// C's InterlockedBitTestAndReset(&Prcb->IpiFrozen, IPI_x).
+pub const IPI_APC: u32 = 1;
+pub const IPI_DPC: u32 = 2;
 pub const IPI_FREEZE: u32 = 4;
+pub const IPI_SYNCH_REQUEST: u32 = 16;
 pub const IPI_FROZEN_FLAG_ACTIVE: u32 = 0x20;
 pub const IPI_FROZEN_STATE_RUNNING: u32 = 0;
 pub const IPI_FROZEN_STATE_TARGET_FREEZE: u32 = 0x5;
@@ -232,7 +247,16 @@ pub const IPI_FROZEN_STATE_OWNER: u32 = 4;
 
 // IRQ levels
 // HIGH_LEVEL and IPI_LEVEL are in ntkrnl_sys::constants (cfg-gated per arch)
-pub const SYNCH_LEVEL: u8 = 2; // UP kernel: SYNCH_LEVEL == DISPATCH_LEVEL
+// UP kernel: SYNCH_LEVEL == DISPATCH_LEVEL; SMP: IPI_LEVEL - 2 on x86/amd64
+// (ndk asm.h/ketypes.h), unchanged on arm64 (no SMP variant in ndk).
+#[cfg(not(feature = "smp"))]
+pub const SYNCH_LEVEL: u8 = 2;
+#[cfg(all(feature = "smp", target_arch = "x86"))]
+pub const SYNCH_LEVEL: u8 = 0x1D - 2; // 27
+#[cfg(all(feature = "smp", target_arch = "x86_64"))]
+pub const SYNCH_LEVEL: u8 = 14 - 2; // 12
+#[cfg(all(feature = "smp", target_arch = "aarch64"))]
+pub const SYNCH_LEVEL: u8 = 2;
 
 // Bugcheck codes
 pub const IRQL_NOT_GREATER_OR_EQUAL: u32 = 0x0000_0009;

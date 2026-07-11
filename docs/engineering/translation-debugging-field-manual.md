@@ -3870,7 +3870,64 @@ translation failure mode. A struct-as-heap mixup produces the same crash
 signature as real heap corruption; check the heap pointer's provenance
 before hunting for a corruptor.
 
-### 9.41 (NOT REPRODUCING 2026-07-08; residual cosmetic issue open) amd64 first Ctrl+Esc corrupts explorer's CLIENTINFO → shell AV in user32!ValidateHandle
+### 9.41 (ROOT-CAUSED + FIXED 2026-07-10) amd64 Ctrl+Esc kills explorer + blank start-menu labels — GDI TEB batch never flushed (hand-rolled `TEB.GdiBatchCount` offset read 0x74 instead of 0x1740)
+
+**THE ROOT CAUSE (one bug, four symptoms):** amd64 `KiSystemCallHandler`
+(`ntoskrnl-rust ke/amd64/traphandler.rs:181-197`) is supposed to flush the
+gdi32 TEB batch on every win32k syscall entry (C parity:
+`ntoskrnl/ke/amd64/traphandler.c:224` `if (NtCurrentTeb()->GdiBatchCount)
+KeGdiFlushUserBatch()`). The translation read the count with a hand-rolled
+offset — `*(teb as *const ULONG).add(0x77 / 4)` = TEB+0x74 — but amd64
+`TEB.GdiBatchCount` is at **0x1740** (`sdk/include/ndk/peb_teb.h`). The read
+returned 0, the flush NEVER fired, and since ReactOS `NtGdiFlush` is
+`SynchronizeDriver`-only BY DESIGN (the syscall-entry callout is the real
+flush; gdi32's `GdiAllocBatchCommand` depends on it), the TEB batch buffer
+(`GdiTebBatch.Buffer`, 0x300..0x7d8) grew monotonically and overwrote, in
+order:
+1. `RealClientId` / `GdiCachedProcessHandle` / `GdiClientPID/TID` /
+   `GdiThreadLocalInfo` (0x7d8..0x800) → GDI handle-table userdata lookups
+   break → shell32 `FillToolbar` item reads fail → **Run…/Shut Down… and
+   separators dropped from the start menu**;
+2. `Win32ClientInfo` (CLIENTINFO) at 0x800+ → `pci.pDeskInfo` (TEB+0x820) and
+   `ulClientDelta` stomped with batch records (the structured "garbage"
+   `0x??5?000000510008` / `0x001000000000?a04` = GDIBATCHHDR+GDIBSOBJECT) →
+   first user32 `DesktopPtrToUser` deref AVs → **explorer dies** (csrss reaps
+   via `LPC_EXCEPTION → NtTerminateProcess(STATUS_ABANDONED=0x80)`).
+Additionally every batched-and-never-executed op silently vanished:
+`GdiBCTextOut`/`GdiBCExtTextOut` (menu label text + flat separators — toolbar
+paints on a plain window DC, so `DrawTextW→ExtTextOutW` batches), PatBlt,
+SelObj, DelObj/DelRgn → **icons-without-labels menu** (icons survive because
+`ImageList_Draw`'s source-ROP BitBlt goes straight to `NtGdiBitBlt`).
+
+**Fix:** typed read `(*(teb as *const ntkrnl_sys::ddk::_TEB)).GdiBatchCount`
+(traphandler.rs) — the i386 (`ke/i386/traphdlr.rs:998`) and arm64
+(`ke/arm64/trap.rs:235`) translations were already typed and correct, which is
+why this was amd64-only. Verified: `test_start_menu_opens` passes on amd64
+with the COMPLETE menu (labels + arrows + separators + Run/Shut Down) and
+explorer alive.
+
+**Detectors added:** `scan_magic_offsets` shape `TYPED_PTR_HEX_ARITH`
+(hex-literal `.add/.offset/.sub` on ANY typed pointer — would have flagged the
+original line); permanent `[KI-EXC]` second-chance print in amd64
+`KiDispatchException` (BEFORE the exception-port forward — csrss usually
+"handles" a user second-chance by killing the client, so without the print a
+shell death is 4x `[EXIT-THR] 0x80` with no cause). Debug recipe that cracked
+it: conditional GDB break `NtTerminateProcess if $rdx==0x80` → caller was
+csrss (offset-free EPROCESS name scan, walk-procs style) → `[KI-EXC]` teb=
+print → crash TEB ≠ main-thread TEB → hardware watchpoint on the RIGHT TEB's
+`pci.pDeskInfo` (`watch -l` + auto-continue + WHOHIT context print) → caught
+`gdi32!GdiAllocBatchCommand`/`DeleteRegion` writing batch records at
+Buffer+0x520 → C-ground-truth audit found the dead flush gate.
+
+Likely also closed by the same fix (verify before re-opening): the
+"freshly-CreateProcess'd GUI app AV" (notepad exit 0x80,
+`ui-render-completeness-investigation.md` follow-up #1) — same face, and any
+GDI-batching x86 thread without callback traffic was living on borrowed time.
+
+**Historical writeup of the original hunt (2026-07-07/08), kept for the
+watchpoint/diagnostic recipes:**
+
+### 9.41-history (superseded by the root cause above) amd64 first Ctrl+Esc corrupts explorer's CLIENTINFO → shell AV in user32!ValidateHandle
 
 **Symptom:** on amd64, the first Ctrl+Esc after the desktop settles kills
 explorer: `[KI-EXC] EXPLORER.EXE code=0xc0000005 rip=user32!ValidateHandle+0x142`,
@@ -3916,7 +3973,8 @@ runs FOR REAL on amd64 — a recurrence shows up as a hard failure with serial
 tail + symbolicated BUGCHECK; re-add the xfail with `arch.startswith("amd64")`,
 NOT `arch == "amd64"` — the fixture arch is `"amd64-uefi"`).
 
-**RESIDUAL (open, cosmetic):** the amd64 start menu renders DEGRADED vs i386:
+**RESIDUAL (RESOLVED 2026-07-10 — unflushed `GdiBCTextOut`/`GdiBCExtTextOut`
+batches, see the root cause above):** the amd64 start menu renders DEGRADED vs i386:
 Programs/Documents/Settings items show their icons but NO label text, and the
 Run…/Shut Down… items are absent entirely (i386 renders the full menu). 100%
 deterministic across 4 boots, so it's a real content/paint bug in the amd64
@@ -4372,3 +4430,57 @@ so its establisher is never handed to a funclet. Result: `sehtest` **RESULT: PAS
 the local didn't change" ⇒ EstablisherFrame/frame-base mismatch, not a missing call —
 disassemble the funclet, see what base+offset it writes, and check it against the
 function's own frame-pointer offset.
+
+### 9.49 (ROOT-CAUSED + FIXED 2026-07-10) arm64 BLACK desktop — desktops only ever paint via the hidden→visible show transition; arm64's early input-desktop switch broke the assumption for the whole window tree
+
+**Symptom:** arm64 boots green on serial markers but the screen is BLACK except
+stray window fragments (a notepad scrollbar + status bar); frozen thereafter.
+Regressed on master ~Jul 5-6 (good `fc794e7c29e`, bad `b643a8ffbf9`+). The
+boot-marker smoke stayed green for days of black desktops — the marker is
+blind to paint.
+
+**Root cause:** ReactOS only ever paints a desktop through the
+`SWP_SHOWWINDOW` hidden→visible transition inside `co_IntShowDesktop` (that
+path queues `WM_ERASEBKGND` → `IntPaintDesktop` fill). The explicit
+`bRedraw=1` redraw passes `RDW_UPDATENOW|RDW_ALLCHILDREN|RDW_INVALIDATE` —
+NO `RDW_ERASE` — and `RDW_INVALIDATE` alone never sets
+`WNDS_SENDERASEBACKGROUND`, so `IntBeginPaint` runs with `erase=0` and fills
+nothing. On x86 the Default desktop's FIRST show happens at the real
+winlogon→shell `SwitchDesktop` (hidden→visible → erase → blue). On arm64 the
+customized winlogon boot path makes Default the input desktop EARLY, while
+the old input desktop's window is still invisible → `bRedrawDesktop=0` show
+(visible, unpainted); every later `bRedraw=1` show (display-init
+`winsta.rs:769`, the §9.22 switch) finds it ALREADY visible → no transition,
+no erase, black — and via `RDW_ALLCHILDREN` the whole child tree (explorer
+tray, notepad frame/client) shared the fate.
+
+**Fix:** `co_IntShowDesktop_impl` (win32k-rust `desktop.rs`) adds `RDW_ERASE`
+to the explicit redraw — an explicit "redraw the desktop" must erase to mean
+anything. One flag restored wallpaper, taskbar+clock, notepad, version text
+on arm64; x86 unaffected (its erase came from the transition anyway).
+
+**Diagnostic recipe (kept as permanent bounded boot forensics):** serial
+probes `[DESKSHOW]` (co_IntShowDesktop args), `[DESKPAINT]`
+(IntPaintDesktop fill inputs: clip box, brush, wallpaper), `[DESKBP]`
+(IntBeginPaint erase-decision: erase flag + clip type), `[DESKTHREAD]` /
+`[DESKWNDPROC]` (desktop thread pump + wndproc liveness). The hunt pattern:
+healthy-arch trace (amd64) vs broken-arch trace (arm64), diff the
+DESKSHOW/DESKBP sequences — the divergence (second desktop's show missing /
+erase=0 with a perfect clip box) named the bug. A commit bisect was
+deliberately ABANDONED: warm-build masking makes per-commit verdicts
+unreliable and the ~40-commit window would have cost hours; two instrumented
+boots found it instead.
+
+**Exonerated en route (do not re-chase):** the §9.33 dib1bpp/dib32bpp GDI
+fixes (reverted-file boot still black); the arm64 GDI-batch flush sites
+(predate the good commit, C-parity verified); wrong `gpdeskInputDesktop`
+(§9.22's fix is present and fires — serial shows the switch succeeding).
+
+**Still open on arm64 (next layer, honest-red in the smoke suite):**
+`test_start_menu_opens` on arm64 fails because Ctrl+Esc never opens the menu
+— winlogon's arm64 path logs `InitKeyboardLayouts failed (non-fatal)`, so
+VK translation / hotkey dispatch has no layout. Also `runCmd FAILED (2)` for
+`kbswitch.exe` + `rundll32 iernonce.dll` — files missing from the arm64
+ramdisk (staging gap, `4fadba3d760` era). The gate's dual condition
+(panel-lit AND region-delta) exists because the arm64 notepad demo pre-lights
+the sample region — lit alone false-passed once.

@@ -197,11 +197,37 @@ point every ntoskrnl Rust funnel delegates to: the `KxAcquireSpinLock`/
   sharpens automatically as translation eliminates mixed pairs.
 - The violation is **amd64-only**; on i386/arm64 several funnels route through
   the HAL binary (untapped, pair-symmetric) and the counter is census data.
-- **Armed builds are x86-only for now**: the culprit-PC capture needs
-  `feature(link_llvm_intrinsics)` (nightly), and the arm64 kernel builds its
-  builtin target on stable → E0554 (the long-standing arm64-lockdep wall;
-  `vibeos-cli build` fail-fasts with a clear message). Lifts when the arm64
-  kernel moves to nightly.
+- **arm64 first light paid immediately (2026-07-07).** The first armed arm64
+  boot ever tripped CURTHREAD_INCOHERENT on EVERY switch — and it was a REAL
+  latent bug, not tap noise: `KiSwapContextResume` (Rust) resolved
+  `ddk::KeGetPcr` to the x18-convention C copy (`mov x0, x18`), and x18 is
+  not reloaded by the switch frame, so fresh-off-the-switch it read NULL —
+  meaning the `KeContextSwitches` bump, the `DpcRoutineActive` BugCheck
+  probe, and tap 2 had been silently dereferencing `NULL+offset` since the
+  function was translated. Fixed to the TPIDR_EL1 inline (the invariant
+  source ctxswitch.S itself uses). Related first-light calibrations: the
+  IDLE thread is exempt from STACK_OOB (boot stack; bounds exclude the
+  resume frame), and the tap-3 DAIF check is leaked-masking-only
+  (`exit & !entry` — the dispatch legitimately exits unmasked, §9.20).
+  Feeds the KeGetPcr cohab-dedup task: an x18 KeGetPcr is unsafe in switch
+  context, kill it in favor of TPIDR.
+- **All three arches arm on their native channels (2026-07-07).** The
+  culprit-PC capture was the only nightly dependency
+  (`feature(link_llvm_intrinsics)` → E0554 on arm64's stable builtin target);
+  it is now the stable `code_addr!()` inline-asm macro (`ke/lockdep.rs`,
+  crate-exported): PC-at-expansion via `lea reg,[rip]` (amd64) /
+  `call 2f; 2:; pop reg` (i386) / `adr reg,.` (arm64), threaded as a
+  `pc: usize` parameter through every tap signature. **Two prior designs are
+  dead — don't resurrect them:** `llvm.returnaddress` (nightly-only), and a
+  naked-fn frame-record shim reading `[rbp+8]` — the latter *looked* sound
+  but returned 0 on amd64 because Windows-x64 clang does NOT build a classic
+  frame chain even with `"frame-pointer":"always"` (it `push`es then
+  `lea rbp,[rsp+K]`, so `[rbp+8]` is a spill slot, not the return address;
+  the selftest's pc=0 was the tell). `code_addr!()` gives the *call-site* PC
+  rather than the caller's return address — one frame lower, equally
+  symbolizable, zero ABI assumptions. The old `vibeos-cli build` arm64
+  fail-fast is lifted. (Taps 4/5 remain x86-scoped — arm64 has no
+  syscall-path taps yet; taps 1/2/3 + census run everywhere.)
 - Sacred primitives: the taps sit below the `KeAcquireSpinLock`/
   `KeReleaseSpinLock` named exports (which `verify_sacred_primitives.sh`
   checks), so the named symbols stay intact; the check is re-run on armed
@@ -420,8 +446,9 @@ Rust-translated paths. cswitchdep:
 3. **Taps 4/5 (user↔kernel) + per-frame parity** — all three arches; includes
    the nested-trap shadow save/restore and the NMI exemption; gated on a
    measured boot-overhead delta.
-   **BUILT (2026-07-07), scoped to the SYSCALL paths on x86** (armed builds
-   are x86-only; interrupt/exception frames deliberately untapped — the taps
+   **BUILT (2026-07-07), scoped to the SYSCALL paths on x86** (arm64 has no
+   4/5 tap sites yet — its other taps arm fine since the stable shim;
+   interrupt/exception frames deliberately untapped — the taps
    mutate only per-thread slots + monotone counters, so the reentrancy
    save/restore rule and the NMI exemption are *vacuously* satisfied instead
    of implemented). As-built notes:
@@ -445,3 +472,44 @@ Rust-translated paths. cswitchdep:
 4. **`debug_block.py` decoder + fw_cfg arming + farm integration** — armed
    overnight soaks cluster context-switch violations the way `farm-report`
    clusters BUGCHECKs.
+
+## Resume checklist — "stable-everything phase 1" landing (parked 2026-07-10)
+
+The changeset is UNCOMMITTED in the `cswitchdep-phase1` worktree
+(`~/Projects/os-playground/vibeos-cswitchdep`), rebased-by-merge onto
+2026-07-10 master (merge `1c646788398`, clean, no conflicts). Parked only
+because the host was oversubscribed on builds — no known defect. Contents:
+`code_addr!()` + `link_llvm_intrinsics` removal + `pc: usize` threading
+through all taps; arm64 first-light fixes (TPIDR `KeGetPcr`, idle STACK_OOB
+exemption, DAIF leaked-masking-only); SwitchSafe rejection + the
+`CTX_CAPTURE_ACROSS_WAIT` lint (`tools/scan_irql_balance.py`); doc updates
+(this file + execution-context-ownership-model.md v3).
+
+Validation state at park time:
+- **amd64: VALIDATED.** Armed boot green; `CSWITCH_SELFTEST` fires with a
+  non-zero symbolizable pc (landed in the `cswitch_selftest` region);
+  syscall parity clean (~58.5K entries / ~57.7K exits, `held_delta_pos=0`,
+  violations=0).
+- **arm64: VALIDATED (2026-07-10, on the merged tree).** Armed boot green in
+  36s; census `switches=1788 violations=0 first_runs=808 no_record=0
+  drops=0` — all three first-light fixes confirmed (the pre-recalibration
+  boot had shown violations=210, all INTR_STATE_UNBALANCED under the old
+  strict `entry != exit` DAIF check). `user_entries=0` as expected (no
+  arm64 taps 4/5). `held_now` is negative census data (arm64 funnels
+  through untapped HAL paths — pair-asymmetric; the SLEEP_WITH_SPINLOCK
+  check is delta-above-baseline, unaffected).
+- **i386: parity validated pre-merge** (58,653/58,653, violations=0); not
+  re-run since.
+
+Landing sequence (in order):
+1. Armed arm64 build+smoke on the merged tree; read the `[CSWITCH]` census
+   in the serial log — expect violations=0 (or near-0, real findings only).
+2. If clean: update agent MEMORY.md (arm64 lockdep E0554 blocker CLOSED via
+   `code_addr!()`; cswitchdep/lockdep arm on all three arches), then commit
+   (staged-paths-only + conflict-marker check — shared-tree discipline).
+3. Full `./vibeos-cli gate` ×3 → push on green per pre-authorization
+   (report the push).
+4. Follow-ups already tracked: KeGetPcr x18 cohab dedup (task #2, urgency
+   bumped — x18 copies are unsafe in switch context); arm64 taps 4/5;
+   remaining nightly deps (-Z build-std/JSON targets, c_variadic, linkage)
+   per the ownership doc v3 toolchain section.

@@ -5,6 +5,15 @@
 //! HalpSetupProcessorsTable do nothing.
 //!
 //! Translated from `hal/halx86/generic/up.c`.
+//!
+//! SMP: on an amd64 `smp` HAL build these stubs are cfg'd OUT and the real
+//! APIC implementations in smp_processor.rs take the symbols (mirrors the C
+//! model where up.c and apic/apicsmp.c are never linked into the same HAL).
+
+#![cfg_attr(
+    all(feature = "smp", target_arch = "x86_64", not(feature = "minihal")),
+    allow(unused_imports)
+)]
 
 use ntkrnl_sys::hal_ddk::{
     BOOLEAN, KAFFINITY, PKPROCESSOR_STATE, PLOADER_PARAMETER_BLOCK, UCHAR,
@@ -14,6 +23,7 @@ use ntkrnl_sys::hal_ddk::KIRQL;
 
 /// hal.spec: `HalRequestIpi`. Should never be called on a UP system —
 /// no target to send to. Trip the debugger if it happens.
+#[cfg(any(not(feature = "smp"), target_arch = "x86", feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalRequestIpi(_TargetProcessors: KAFFINITY) {
     // __debugbreak() — `int 3`
@@ -22,6 +32,7 @@ pub unsafe extern "system" fn HalRequestIpi(_TargetProcessors: KAFFINITY) {
 
 /// hal.spec: `HalStartNextProcessor`. Always returns FALSE on UP —
 /// there is no next processor to start.
+#[cfg(any(not(feature = "smp"), target_arch = "x86", feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalStartNextProcessor(
     _LoaderBlock: PLOADER_PARAMETER_BLOCK,
@@ -31,12 +42,14 @@ pub unsafe extern "system" fn HalStartNextProcessor(
 }
 
 /// HAL-internal: `HalpSetupProcessorsTable`. UP no-op.
+#[cfg(any(not(feature = "smp"), target_arch = "x86", feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn HalpSetupProcessorsTable(_NTProcessorNumber: u32) {}
 
 /// HAL-internal: `HalpBroadcastClockIpi`. UP no-op (no clock IPIs to
 /// broadcast on a single-processor system). FASTCALL on i386 — caller
 /// (apic/rtctimer.c:190) and definition both use FASTCALL per smp.h.
+#[cfg(any(not(feature = "smp"), target_arch = "x86", feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "fastcall" fn HalpBroadcastClockIpi(_Vector: UCHAR) {}
 
@@ -47,12 +60,14 @@ pub unsafe extern "fastcall" fn HalpBroadcastClockIpi(_Vector: UCHAR) {}
 /// hal.spec: `HalSendNMI`. UP no-op — no remote processor to NMI.
 /// amd64-only per the original C `#ifdef _M_AMD64`.
 #[cfg(target_arch = "x86_64")]
+#[cfg(any(not(feature = "smp"), target_arch = "x86", feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalSendNMI(_TargetSet: KAFFINITY) {}
 
 /// hal.spec: `HalSendSoftwareInterrupt`. UP no-op.
 /// amd64-only per the original C `#ifdef _M_AMD64`.
 #[cfg(target_arch = "x86_64")]
+#[cfg(any(not(feature = "smp"), target_arch = "x86", feature = "minihal"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalSendSoftwareInterrupt(
     _TargetSet: KAFFINITY,

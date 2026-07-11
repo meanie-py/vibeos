@@ -249,7 +249,7 @@ pub unsafe extern "system" fn HalpAllocPhysicalMemory(
 
 /// CONTAINING_RECORD(entry, MEMORY_ALLOCATION_DESCRIPTOR, ListEntry)
 #[inline(always)]
-unsafe fn list_entry_to_descriptor(
+pub(crate) unsafe fn list_entry_to_descriptor(
     entry: PLIST_ENTRY,
 ) -> PMEMORY_ALLOCATION_DESCRIPTOR {
     // ListEntry is the first field of MEMORY_ALLOCATION_DESCRIPTOR — offset 0.

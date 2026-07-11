@@ -427,6 +427,14 @@ Wow64LdrpInitialize(PVOID Context)
 #undef WOW64_RESOLVE
 
     DbgPrint("[FEX-WOW64C] libwow64fex.dll loaded @ %p; calling BTCpuProcessInit...\n", Fex);
+    /* FEX discovers the process address-space layout during ProcessInit.
+     * Allocate every raw guest page first; pages created afterward are not
+     * visible until the full memory-notification contract is wired. */
+    ExitStub = Wow64pAllocBelow2G(0x1000, PAGE_EXECUTE_READWRITE, "exit stub");
+    GuestStack = Wow64pAllocBelow2G(0x10000, PAGE_READWRITE, "guest stack");
+    if (!ExitStub || !GuestStack)
+        NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
+
     BTCpuProcessInit();
     Bop = BTCpuGetBopCode();
     DbgPrint("[FEX-WOW64C] BTCpuProcessInit OK — BOP=%p CpuFlags=%lx\n",
@@ -449,10 +457,6 @@ Wow64LdrpInitialize(PVOID Context)
      *          FF D2            call edx
      *          C3               ret
      */
-    ExitStub = Wow64pAllocBelow2G(0x1000, PAGE_EXECUTE_READWRITE, "exit stub");
-    GuestStack = Wow64pAllocBelow2G(0x10000, PAGE_READWRITE, "guest stack");
-    if (!ExitStub || !GuestStack)
-        NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
     {
         PBYTE P = ExitStub;
         PBYTE BopCall;
@@ -493,8 +497,8 @@ Wow64LdrpInitialize(PVOID Context)
 
     BTCpuThreadInit();
 
-    DbgPrint("[FEX-WOW64C] entering BTCpuSimulate (eip=%08lx esp=%08lx) — verdict via EXIT service\n",
-             Wow64Ctx->Eip, Wow64Ctx->Esp);
+    DbgPrint("[FEX-WOW64C] entering BTCpuSimulate (eip=%08lx esp=%08lx stack=%p exit=%p) — verdict via EXIT service\n",
+             Wow64Ctx->Eip, Wow64Ctx->Esp, GuestStack, ExitStub);
     BTCpuSimulate();
 
     DbgPrint("[FEX-WOW64C] FAIL: BTCpuSimulate returned\n");

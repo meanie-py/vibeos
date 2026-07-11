@@ -1689,6 +1689,29 @@ unsafe extern "fastcall" fn IntBeginPaint(Window: PWND, Ps: PPAINTSTRUCT) -> HDC
 
     IntGetClientRect(Window, core::ptr::addr_of_mut!(Rect) as *mut _);
 
+    // Diagnostic (arm64 black-desktop hunt): the desktop window's erase
+    // decision inputs — Erase flag (was WNDS_SENDERASEBACKGROUND set?) and
+    // the clip-box type (NULLREGION = empty update region kills the erase).
+    if (*Window).fnid == FNID_DESKTOP as u16 as _ {
+        extern "C" {
+            fn DbgPrint(Format: *const u8, ...) -> u32;
+        }
+        static BP_LOGS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+        let n = BP_LOGS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        if n < 16 {
+            DbgPrint(
+                b"[DESKBP] #%u erase=%d cliptype=%d rcPaint=(%d,%d,%d,%d)\n\0".as_ptr(),
+                n,
+                Erase,
+                type_,
+                (*Ps).rcPaint.left,
+                (*Ps).rcPaint.top,
+                (*Ps).rcPaint.right,
+                (*Ps).rcPaint.bottom,
+            );
+        }
+    }
+
     (*Window).state &= !WNDS_INTERNALPAINT;
 
     if Erase != 0

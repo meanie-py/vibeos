@@ -24,17 +24,15 @@ pub unsafe extern "system" fn KiSwapProcess(
     let OldProcess = opaque_ptr(OldProcess);
     let Pcr = KeGetPcr() as PKIPCR;
     
-    #[cfg(feature = "CONFIG_SMP")]
+    #[cfg(feature = "smp")]
     {
+        // C: InterlockedXor(&Process->ActiveProcessors, Pcr->SetMember).
+        use core::sync::atomic::{AtomicI32, Ordering};
         let SetMember = (*Pcr).SetMember as LONG;
-        InterlockedXor(
-            core::ptr::addr_of_mut!((*NewProcess).ActiveProcessors) as *mut LONG,
-            SetMember,
-        );
-        InterlockedXor(
-            core::ptr::addr_of_mut!((*OldProcess).ActiveProcessors) as *mut LONG,
-            SetMember,
-        );
+        AtomicI32::from_ptr(core::ptr::addr_of_mut!((*NewProcess).ActiveProcessors) as *mut LONG)
+            .fetch_xor(SetMember, Ordering::SeqCst);
+        AtomicI32::from_ptr(core::ptr::addr_of_mut!((*OldProcess).ActiveProcessors) as *mut LONG)
+            .fetch_xor(SetMember, Ordering::SeqCst);
     }
 
     if (*NewProcess).LdtDescriptor.LimitLow != (*OldProcess).LdtDescriptor.LimitLow {
