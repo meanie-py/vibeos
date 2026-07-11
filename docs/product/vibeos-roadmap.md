@@ -388,9 +388,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 - [ ] **Delay-load re-test** — `VIBEOS_ENABLE_DELAYLOAD=ON` + i386 gate. Its 0x1E blocker's
   face (`BAD gate`) is the §9.24 pushlock class, family fixed 07-05. Green ⇒ flip on +
   delete the arm64 `arm64_*_stubs.c` libpng hacks. *(delay-import-llvm-mingw-roadmap)*
-- [ ] **amd64 whpx net 13/15** — re-run `test_tcp_echo_roundtrip` + `test_tdi_server_listen_accept`
-  under whpx; their A/B was blocked by the service-startup wedge, since fixed (§9.13).
-  *(windows-host-qemu-whpx-spike §Remaining)*
+- [x] **amd64 whpx net 13/15 — A/B done, inbound failure is GENUINE** (verified 2026-07-11):
+  wedge fixed → VM boots fully under whpx, but both guest listeners never announce (echo +
+  TDI `:8888`) — a whpx-specific inbound-listen bug (passes on TCG). Moved from "verify" to a
+  real open issue in the whpx spike doc §Remaining; not a quick fix, deferred.
 - [x] **arm64 taskbar 0x50 — NOT reproducing** (verified 2026-07-11): arm64 gates green
   through the taskbar path (gate `20260710-233422` OK) with the tray clock rendering (§9.22).
   A green gate = shell-ready reached without the child-control fault. Closed.
