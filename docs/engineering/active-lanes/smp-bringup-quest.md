@@ -307,3 +307,17 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   **M3 next:** un-park the AP into KiIdleLoop (set KeActiveProcessors at
   idle entry), TLB-shootdown/IPI send side (unblocks staged wave-2 A), then
   scheduler-on-2-CPUs; staged i386 trampoline (B) + arm64 PSCI (C) after.
+- 2026-07-11 (cont.): **M3a — AP SCHEDULES; `-smp 2` boots to desktop at
+  1m41s (faster than M2's parked baseline).** Park retired; AP runs
+  KiSystemStartupBootStack → hand-built idle thread → KiIdleLoop, sets
+  KeActiveProcessors at idle entry. Four root causes fixed en route (field
+  manual **§9.52**): Phase-1 ordering (KeStartAllProcessors must precede
+  ObInitSystem — per-CPU lookaside loops), ExitTrap IRQL protocol for the
+  0xE1 stub, IF=0 sender deadlock (poll-service protocol), and the
+  boot-crawl (lazy-idle TLB: senders skip hlt'ed CPUs; flush on wake).
+  TLB shootdown is live: KeFlushEntireTb/KeFlushProcessTb/
+  KeInvalidateTlbEntry broadcast via vector 0xE1 with pending-mask +
+  poll-service + lazy-idle skip. `-smp 2` green 2/2 + `-smp 1` green.
+  REMAINING for M3 proper: net suite at -smp 2 flaked once (NET_FLAKE —
+  needs repeats), scheduled-on-CPU1 visibility counter, targeted
+  single-VA remote flush + packet mailbox (staged A), then M4 soak.

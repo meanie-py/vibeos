@@ -70,6 +70,14 @@ pub unsafe extern "system" fn KiDpcInterruptHandler() {
 
     KiSendEOI();
 
+    // M3 SMP: if this CPU was idle in lazy-TLB state, service any deferred
+    // shootdown BEFORE retiring DPCs (DPC routines touch remappable memory).
+    #[cfg(feature = "smp")]
+    {
+        unsafe extern "C" { fn KiTbLazyIdleExit(); }
+        KiTbLazyIdleExit();
+    }
+
     if ((*Prcb).DpcData[0].DpcQueueDepth != 0) ||
        ((*Prcb).TimerRequest != 0) ||
        (!(*Prcb).DeferredReadyListHead.Next.is_null())

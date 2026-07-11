@@ -4588,3 +4588,59 @@ string/field corrupts between phase X and Y" mystery: TCG + GDB hardware
 watchpoint on the exact byte is a one-boot root-cause (`qemu/start.sh amd64
 --gdb-wait` + `VIBEOS_NO_KVM=1`, `hbreak` a phase marker, `watch` the
 address, `continue`).
+
+### 9.52 (ROOT-CAUSED + FIXED 2026-07-11) M3 SMP bring-up: four lessons from un-parking the AP into the scheduler (-smp 2 now schedules on both CPUs to desktop)
+
+**Context:** after M2 (AP parked pre-scheduler), M3 released the AP into
+KiIdleLoop with KeActiveProcessors set at idle entry. Four distinct walls,
+each generalizable:
+
+**1. Per-processor Phase-1 loops must run AFTER KeStartAllProcessors.**
+First `ObCreateObject` scheduled onto CPU1 AV'd in
+`ObpAllocateObjectCreateInfoBuffer`: `ObInit2()`'s per-CPU
+`PRCB.PPLookasideList` loop iterates KeNumberProcessors — and our Rust
+Phase1 had `KeStartAllProcessors` wired AFTER `ObInitSystem(1)` (M2 put it
+next to the boot-time block; the C reference order is boot-time → SMP start
+→ Ob/Ex/Io phase-1 inits, precisely so every per-CPU loop covers the APs).
+Moved to the C order. Rule: any `for i in 0..KeNumberProcessors` in a
+phase-1 init is an ordering contract with KeStartAllProcessors.
+
+**2. trap.S interrupt stubs: the HANDLER owns the IRQL protocol.**
+Filling the 0xE1 `int 3` placeholder naively (raise cr8 + EOI in asm, plain
+handler) trips ExitTrap's checked-build assert (c0000420 at
+`KiIpiInterrupt+0xef`): ExitTrap requires cr8 restored to its entry value.
+The pattern is KiDpcInterruptHandler's: asm = EnterTrap/call/ExitTrap ONLY;
+the Rust handler does KfRaiseIrql → KiSendEOI → work → KeLowerIrql(old).
+
+**3. TLB-shootdown senders MUST poll-service, never just wait.**
+First shootdown (pure IPI + ack barrier) deadlocked exactly like the
+textbook: a sender that entered with IF=0 spun for the sender lock while
+the holder waited forever for its ack (caught live: GDB on both vCPUs, one
+spinning with eflags.IF=0). NT-shaped fix: the request lives in a shared
+pending mask; the interrupt is only a wake-up; EVERY spin loop in the
+protocol services the CPU's own pending bit (`KiTbFlushServiceSelf`), so
+progress never depends on interrupt delivery.
+
+**4. Lazy-idle TLB — skip the round-trip for hlt'ed CPUs (huge).**
+The correct-but-naive barrier made every MDL/syspte unmap a cross-CPU
+round-trip: -smp 2 boot went 1m54 → 6m53 (and randomly tripped the
+harness's 120s serial-silence abort — which looks like a HANG but is a
+CRAWL; check whether serial resumes before calling it a wedge. Also: "both
+CPUs at hal.dll+0xB766" = `HalProcessorIdle+6` = they're just idle — not a
+deadlock). Fix: `KiTbLazyIdleSet` — idle loop enters lazy state around the
+hlt; senders skip lazy CPUs (mark `PendingLazy`, no IPI, no wait — an idle
+CPU touches only stable kernel mappings); the CPU flushes on idle-exit AND
+at DPC/IPI ISR entry (DPCs run inside the hlt wake, before idle-exit).
+Escape race handled sender-side: after marking PendingLazy, re-read the
+lazy set; reclaim the bit of any escapee and treat it as awake (IPI+ack).
+Result: -smp 2 boots 1m41 — FASTER than the parked-AP M2 baseline.
+Removing the local-primitive hooks entirely was tried and is NOT safe: the
+Rust Mm callers rely on `KeFlushProcessTb`/`KeInvalidateTlbEntry` for
+mappings other CPUs cache (0xF4/wild-RIP user corruption returns).
+
+Files: ke/amd64/ipi.rs (protocol), ke/amd64/stubs.rs KiIdleLoop (lazy
+enter/exit), ke/amd64/traphandler.rs KiDpcInterruptHandler (flush-if-lazy),
+ntkrnl-sys inline/mm.rs (broadcast hooks), ex-rust init.rs (Phase-1 order),
+ntoskrnl/ke/amd64/trap.S (0xE1 dispatch). Owed next (M3b+): scheduled-on-
+CPU1 visibility counter, targeted single-VA remote flushes, the packet
+mailbox (staged wave-2 A), i386/arm64 parity, net-suite flake at -smp 2.

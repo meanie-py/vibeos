@@ -1138,7 +1138,7 @@ sdk/lib/rust/ntoskrnl-rust/src/ARM3/sysldr.rs:466: [UNWRAP] .unwrap() — panics
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/sysldr.rs:497: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/arm/kdserial.rs:71: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/interrupt.rs:221: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/stubs.rs:103: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/stubs.rs:111: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/usercall.rs:314: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/apc.rs:310: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ntoskrnl-rust/src/ke/apc.rs:337: [UNWRAP] .unwrap() — panics on Err/None in kernel code

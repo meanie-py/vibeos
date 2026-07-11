@@ -1245,6 +1245,25 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     InbvUpdateProgressBar(5);
 
+    // CONFIG_SMP (C-reference order): start the application processors
+    // BEFORE the Phase-1 Ob/Ex/Io inits — their per-processor loops iterate
+    // KeNumberProcessors, so every AP must exist first. Wiring this after
+    // ObInitSystem left CPU1's PRCB.PPLookasideList unset; the first
+    // ObCreateObject scheduled onto the AP AV'd in
+    // ObpAllocateObjectCreateInfoBuffer (M3 bring-up, 2026-07-11).
+    // NUMPROC/BOOTPROC/MAXPROC command-line caps still unplumbed.
+    #[cfg(feature = "smp")]
+    {
+        unsafe extern "system" {
+            fn KeStartAllProcessors();
+            fn HalAllProcessorsStarted() -> u8;
+        }
+        KeStartAllProcessors();
+        if HalAllProcessorsStarted() == 0 {
+            KeBugCheck(0x61); // HAL1_INITIALIZATION_FAILED
+        }
+    }
+
     if ObInitSystem() == 0 {
         KeBugCheck(0x5F);
     }
@@ -1412,21 +1431,6 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         ZwSetSystemTime(core::ptr::null_mut(), core::ptr::null_mut());
     }
 
-    // CONFIG_SMP block from the C original (see the reference block below):
-    // start the application processors, then verify the HAL agrees they all
-    // came up. The NUMPROC/BOOTPROC/MAXPROC command-line caps are not yet
-    // plumbed (smp-bringup M2 — QEMU bring-up starts every MADT CPU).
-    #[cfg(feature = "smp")]
-    {
-        unsafe extern "system" {
-            fn KeStartAllProcessors();
-            fn HalAllProcessorsStarted() -> u8;
-        }
-        KeStartAllProcessors();
-        if HalAllProcessorsStarted() == 0 {
-            KeBugCheck(0x61); // HAL1_INITIALIZATION_FAILED
-        }
-    }
 
     if FsRtlInitSystem() == 0 {
         KeBugCheck(0x45);
