@@ -1,0 +1,5 @@
+# vibeos conformance sweep list (M2 first light)
+# One kmtest name per line; run by kmtest-sweep.exe one process per test.
+Example
+RtlAvlTreeKM
+RtlSplayTreeKM

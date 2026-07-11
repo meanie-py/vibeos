@@ -437,6 +437,12 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 **Fix:** declare a real `static X: [u16; N] = [...]` (alignment 2 ⇒ always even) and use `.as_ptr() as *mut u16`. Arch-green elsewhere does NOT exonerate — only amd64 trips when address is odd AND probe enforces.
 **Source:** `feedback_byte_literal_wchar_misalign.md`
 
+### Hand-encoded `[u16; N]` literal one short — silently truncated registry/object path (ERROR_FILE_NOT_FOUND from a "correct" call chain)
+**Symptom:** an API fails with ERROR_FILE_NOT_FOUND / STATUS_OBJECT_NAME_NOT_FOUND on a path that provably exists; every function in the chain reads as a faithful translation; compiles + links clean; boots green (the broken path may simply never be exercised by boot — this one hid in `RCreateServiceW` until the kmtest conformance sweep called it, 2026-07-10).
+**Root cause:** a wide-string constant hand-encoded as `static X: [u16; N] = [b'S' as u16, ...]` was sized one element short, so the LAST character was dropped to make room for the NUL — `SERVICES_KEY [u16; 33]` spelled `System\CurrentControlSet\Service` (no trailing `s`), and services-rust opened a nonexistent parent key. The intent comment above the array says the right string, so review eyes slide right past it; only decoding the bytes shows the truncation.
+**Fix:** count = `chars + 1`; better, avoid hand arrays entirely (`w!()` / `wstr!` macro or a `const fn` UTF-16 builder). To sweep for siblings, decode every `static NAME: [u16; N]` against its `// L"..."` intent comment (one-shot scanner did this 2026-07-10; SERVICES_KEY was the only true hit). A durable lint (`scan_wide_literals`-style, wired into `vibeos-cli check`) is OWED — the class is invisible to every existing gate.
+**Triangulation recipe that found it:** per-stage DbgPrint bisection in the failing RPC (one boot) + a parallel subagent diff-audit of the Rust vs upstream C (found the literal by byte-decode) + a second subagent proving the create call *cannot* return 2 (pinning it on the parent open). Three probes, one statement.
+
 ### STATUS_OBJECT_PATH_SYNTAX_BAD (0xC000003B) / garbage wide path from a bindgen `#define X L"..."`
 **Symptom:** boot reaches CSRSS, `NtUserInitialize failed 0xc000003b`, "Cannot open winsta"; the wide string reads as garbage code units (`\W`,`in`,`do`,`ws`...). Deterministic on amd64.
 **Root cause:** bindgen lowers a C wide-string `#define` to a NARROW `&[u8;N]` (drops the `L`); the translator then casts `X.as_ptr() as *const u16`, reinterpreting ASCII byte-pairs as UTF-16.

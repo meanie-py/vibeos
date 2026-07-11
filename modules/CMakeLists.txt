@@ -1,13 +1,17 @@
 
 option(ENABLE_ROSAPPS "Enable building the ReactOS extra applications" OFF)
 option(ENABLE_ROSTESTS "Enable building the ReactOS test suite" OFF)
+# Conformance-ratchet lane: kmtests build clean on llvm-mingw; the wider
+# rostests corpus (apitests/winetests) is still a build-fix grind. This lets
+# conformance builds ship kmtests without dragging the unfixed remainder in.
+option(ENABLE_ROSTESTS_KMTESTS "Enable building only kmtests from the ReactOS test suite" OFF)
 option(ENABLE_WALLPAPERS "Integrate wallpapers into the built ISOs" OFF)
 
 if(ENABLE_ROSAPPS)
     add_subdirectory(rosapps)
 endif()
 
-if(ENABLE_ROSTESTS)
+if(ENABLE_ROSTESTS OR ENABLE_ROSTESTS_KMTESTS)
     add_subdirectory(rostests)
 endif()
 

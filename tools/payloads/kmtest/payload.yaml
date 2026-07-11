@@ -1,0 +1,30 @@
+# kmtest conformance payload — conformance-ratchet quest M2.
+# Design doc: docs/engineering/conformance-ratchet-quest.md.
+#
+# The kmtest binaries themselves (kmtest_.exe, kmtest_drv.sys + helper
+# drivers) are staged to reactos/bin by add_rostests_file when the build dir
+# has ENABLE_ROSTESTS(_KMTESTS)=ON. This payload grafts:
+#   * kmtest-sweep.exe into the All Users Startup folder (the real Windows
+#     autostart mechanism, walked by explorer's AutoStartupApplications; a
+#     native GUI-subsystem exe — a .cmd there dies silently, ShellExecuteExW
+#     on scripts from the startup walk never spawns cmd.exe)
+#   * kmtest-tests.txt (the sweep list) next to the binaries
+# Booting a rostests-less build with this payload fails loudly on serial
+# ([KMTEST-SWEEP] launch FAILED) — no silent degradation.
+name: kmtest
+description: kernel-mode NT API conformance tests (kmtests) — serial-teed sweep autostart
+
+build_hint: "tools/payloads/kmtest/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/kmtest/kmtest-sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/kmtest-sweep.exe
+  - src: tools/payloads/kmtest/kmtest-tests.txt
+    dest: bin/kmtest-tests.txt
+
+test:
+  # The sweep gates on SC_AutoStartComplete, then runs one kmtest_.exe per
+  # listed test (180s per-test cap). Budget generously: gate + N tests.
+  launch_marker: "[KMTEST-SWEEP] done"
+  launch_drain_secs: 900

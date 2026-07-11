@@ -150,6 +150,48 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   (no -fasync-exceptions) → those baseline as CRASH even on amd64/arm64.
 - 2026-07-10: **M1 i386 GREEN** — kmtest_all builds with zero errors (dummy PSEH).
   arm64 provisioning + build in flight.
+- 2026-07-10: **M2 in progress — first-light findings (amd64, three boots):**
+  (a) A `.cmd` in the All Users Startup folder dies silently — explorer's
+  `AutoStartupApplications` hits the uninstrumented `ShellExecuteExW` branch for
+  non-binaries and no cmd.exe ever spawns. Vehicle switched to a native GUI-subsystem
+  `kmtest-sweep.exe` (doom/httpd link recipe), one `kmtest_.exe` process per test,
+  180s per-test timeout, list from `bin\kmtest-tests.txt`.
+  (b) The sweep must gate on the global `SC_AutoStartComplete` event
+  (services.c:379) — during boot auto-start the SCM database lock blocks
+  `CreateService` indefinitely.
+  (c) **Gate alone insufficient — console attach is the real wedge:** with auto-start
+  provably complete, every `kmtest_.exe` child still hung pre-`main()` (kernel32
+  PROCESS_ATTACH prints, then nothing; no SCM traces at all). kmtest_.exe is
+  win32cui; CSRSS console attach from the startup-walk process context hangs —
+  same family as the doom/httpd "GUI subsystem only" lesson, now seen for
+  *children* of a startup-walk process. Harness fix: `DETACHED_PROCESS` (no
+  console; the serial tee carries results). **The underlying console-attach hang
+  is a real OS bug** — candidate conformance finding #1, not yet root-caused;
+  the .cmd/ShellExecute silence in (a) may be the same bug one layer up.
+- 2026-07-10: **FIRST CONFORMANCE CATCH — root-caused + fixed.** kmtest's
+  `CreateService` failed with ERROR_FILE_NOT_FOUND: services-rust's hand-encoded
+  `SERVICES_KEY` literal (`config.rs:61`) was `[u16; 33]` — one element short, silently
+  dropping the final 's' of `...\Services`, so `ScmCreateServiceKey` opened a nonexistent
+  parent key. Never caught by boot because boot-start services ride a different path;
+  the FIRST runtime `CreateService(driver)` call in the system's life exposed it.
+  Triangulated via stage-print bisection (1 boot) + two parallel subagent audits
+  (services-rust diff-audit found the literal; registry-path audit proved the create
+  call can't return 2, pinning the parent open). Field manual entry added
+  (§string-literal traps). **OWED: `scan_wide_literals` lint** (decode `[u16;N]` hand
+  arrays vs intent comments; one-shot sweep found no other true hits, but the class is
+  invisible to all existing gates). Kept: fail-loud DbgPrint on RCreateServiceW failure
+  (upstream FIXME leaves half-created services — separate latent bug, not yet fixed).
+- 2026-07-10: **WHPX payload boot currently unusable — cross-lane observation for
+  whpx-ahci-cd:** `uniata-rust/src/id_sata.rs:1972` DbgPrints `AhciBeginTx` per AHCI
+  transaction (bring-up marker, unconditional); under the whpx ich9-ahci CD path the
+  serial spam grinds the guest so hard that SCM auto-start never completes in 10 min
+  (sweep gate correctly stayed shut). Needs gating by the owning lane (or a one-line
+  rate-limit) before whpx is usable for long-running in-guest suites. Sweep boots use
+  windows-host TCG (fleet default) until then.
+- 2026-07-10: Harness moved to windows-host WHPX for sweep boots
+  (`VIBEOS_QEMU_WINDOWS_ACCEL=whpx ./vibeos-cli smoke --arch amd64 --payload kmtest`;
+  payload.yaml grew the `test:` section) — the debug-toolkit/native-KVM path was queueing
+  8+ min behind fleet KVM boots and is only needed when GDB is.
 - 2026-07-10: **M1 arm64 GREEN — M1 COMPLETE ×3.** Greenfield arch cost 3 test-file fixes
   + 1 kernel export: (a) `kmtest_drv/structs.c` — 64-bit IO_STACK_LOCATION layout guard
   extended to `_ARM64_` (C_ASSERTs self-verify the shared amd64 layout); (b)
