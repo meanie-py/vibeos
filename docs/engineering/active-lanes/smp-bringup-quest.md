@@ -321,3 +321,12 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   REMAINING for M3 proper: net suite at -smp 2 flaked once (NET_FLAKE —
   needs repeats), scheduled-on-CPU1 visibility counter, targeted
   single-VA remote flush + packet mailbox (staged A), then M4 soak.
+- 2026-07-11 (M3a soak note): `-smp 2` ×3 post-landing: 2/2 fully green
+  (1m43/1m46, boot+net), 1× NET_FLAKE — face: `[NETSTACK] TDI dgram
+  self-test: datagram upcall TIMED OUT` (~1/3 at -smp 2; never seen on the
+  default UP gates). Likely the §9.36 netstack-TDI family meeting real
+  concurrency. OPEN — next -smp session: repro under native TCG + gdb,
+  look at the TDI upcall completion path for a UP assumption (completion
+  DPC targeting / event signal racing the timeout). CPU1-scheduling
+  evidence for the record: the pre-fix ObCreateObject AV occurred ON CPU1's
+  syscall path (LPC from services), proving user threads execute there.
