@@ -349,6 +349,12 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   `[NETSTACK]` marker the net suite greps). Workspace-wide audit for the
   "single vCPU" idiom found no other real instances (the rest: dead C
   comments, an ASCII-art string, and the correctly-gated M1a UP lock no-ops).
-  **Verified: `-smp 2` ×6 all green incl. `✓ net`** (warm INBOX-only build;
-  pre-fix ~1/3 failed). Clean 3-fix build + UP gate ×3 + `-smp 2` re-confirm
-  landing next.
+  **Verified + LANDED** (`89b57370425`, pushed to origin/smp-bringup on a
+  ×3-clean-gate-green stamp): `-smp 2` amd64 12/12 green incl. `✓ net` across a
+  warm INBOX-only and a clean 3-fix build (pre-fix ~1/3 failed); UP gate ×3 OK
+  (i386+amd64+arm64 smoke + net + all builds/lints). One arm64 HANG_TIMEOUT in
+  an interim gate was the pre-existing §9.36 netstack-TDI boot flake (3/3 on
+  re-run; UP netstack behavior is IRQL-neutral under this change). M3 net-suite
+  parity at -smp 2 is now met. Owed next: scheduled-on-CPU1 visibility counter,
+  targeted single-VA remote flushes + packet mailbox (staged wave-2 A), then M4
+  soak, then M5 (i386 needs the APIC HAL flavor; arm64 PSCI CPU_ON staged).
