@@ -23,6 +23,7 @@
 
 use win32k_sys::win32k::*;
 use crate::gdihelp::*;
+use crate::dcattr_f;
 
 // win32k_sys FALSE/TRUE are bindgen u32; BOOL is i32 — BOOL-typed shadows.
 const FALSE: BOOL = 0;
@@ -767,7 +768,7 @@ pub unsafe extern "system" fn ExtSelectClipRgn(hdc: HDC, hrgn: HRGN, iMode: INT)
                 pRgn_Attr = GdiGetRgnAttr(hrgn);
             }
 
-            if ((*pdcattr).ulDirty_ & DC_DIBSECTION) == 0
+            if ((*dcattr_f!(pdcattr, ulDirty_)) & DC_DIBSECTION) == 0
                 && (((EntryTy >> 24) & 0xFF) as DWORD
                     & GDI_ENTRY_VALIDATE_VIS)
                     == 0
@@ -786,10 +787,10 @@ pub unsafe extern "system" fn ExtSelectClipRgn(hdc: HDC, hrgn: HRGN, iMode: INT)
                         if !hrgn.is_null() && !pRgn_Attr.is_null() {
                             Ret = (*pRgn_Attr).iComplexity as INT;
                             // The VisRectRegion field needs to be set to a valid state.
-                            if (*pdcattr).VisRectRegion.Rect.left >= (*pRgn_Attr).Rect.right
-                                || (*pdcattr).VisRectRegion.Rect.top >= (*pRgn_Attr).Rect.bottom
-                                || (*pdcattr).VisRectRegion.Rect.right <= (*pRgn_Attr).Rect.left
-                                || (*pdcattr).VisRectRegion.Rect.bottom <= (*pRgn_Attr).Rect.top
+                            if (*dcattr_f!(pdcattr, VisRectRegion)).Rect.left >= (*pRgn_Attr).Rect.right
+                                || (*dcattr_f!(pdcattr, VisRectRegion)).Rect.top >= (*pRgn_Attr).Rect.bottom
+                                || (*dcattr_f!(pdcattr, VisRectRegion)).Rect.right <= (*pRgn_Attr).Rect.left
+                                || (*dcattr_f!(pdcattr, VisRectRegion)).Rect.bottom <= (*pRgn_Attr).Rect.top
                             {
                                 Ret = NULLREGION as INT;
                             }
@@ -802,7 +803,7 @@ pub unsafe extern "system" fn ExtSelectClipRgn(hdc: HDC, hrgn: HRGN, iMode: INT)
                             }
                             return Ret;
                         } else {
-                            Ret = (*pdcattr).VisRectRegion.iComplexity as INT;
+                            Ret = (*dcattr_f!(pdcattr, VisRectRegion)).iComplexity as INT;
                             (*pgO).fnMode |= GDIBS_NORECT as INT; // Set no hrgn mode.
 
                             if !NewRgn.is_null() {
