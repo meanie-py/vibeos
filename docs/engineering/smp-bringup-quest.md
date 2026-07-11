@@ -201,6 +201,25 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   only) → build.rs (`rerun-if-env-changed`). Second 0x79 "recurrence" was a
   STALE-MEDIA boot racing the rebuild — check artifact mtimes vs smoke start
   before believing a re-fail.
+- 2026-07-10 (cont.): **M0+M1 LANDED on master** (`36e076feaba`, pushed after
+  ×3-green gates on both the branch tree and the post-merge tree — origin
+  master had moved: fex-arm lane; one lint_kernel tally conflict, resolved by
+  regenerating the baseline on the merged tree, 767 = both lanes' fixes).
+  **M2 progress:** amd64 AP trampoline is REAL machine code —
+  `~/vibeos-rust-staging/smp/hal-apic/aptramp64.S` (16→32→64-bit, PIC via
+  runtime GDTR/far-ptr patching, TSS busy-bit clear before ltr, LoaderBlock→
+  rcx), 274-byte flat blob via system GNU as/ld (`regen-trampoline.sh`),
+  disassembly-verified, include_bytes!'d with offset_of! const-asserts pinning
+  the param-block ABI (packed contiguous GDTR/IDTR — the first draft's padded
+  layout would have lgdt'd garbage). Discovery: `HalpLowStub` ALREADY exists
+  (halacpi.rs Phase-0 allocates 1 page <1MB + maps it) — subagent note was
+  wrong; only 1 page though. **GDB probe on the live amd64 kernel: the boot
+  identity map is GONE** (PML4[0] is normal user space), so the trampoline
+  can't flip paging on the kernel CR3 as-is → M2 design locked to (b): a
+  temporary VA==PA PTE for the stub page in the System process around the
+  SIPI window (self-map PTE write + invlpg, torn down after APs start);
+  mini-page-tables-in-stub is the hardening fallback. Full decision tree +
+  corrections in the staging NOTES.md.
 - **UP endgame (decided 2026-07-10, not yet scheduled):** once M4 soaks clean,
   flip the gate default to the MP kernel, deprecation-window the UP build, then
   delete the `cfg(not(feature="smp"))` sides entirely (NT precedent: Vista
