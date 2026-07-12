@@ -1721,6 +1721,36 @@ pub unsafe fn BitScanReverse(index: *mut ULONG, mask: ULONG) -> BOOLEAN {
 
 /// KxQueueReadyThread — queue thread to ready list (ke_x.h).
 #[inline]
+/// §9.56 ready-list integrity post-check. Called by each ready-list WRITER
+/// after its modify, still holding the PRCB lock. If a non-empty list's
+/// back-links are torn, the writer that LEFT it torn bugchecks in the act
+/// (P2 high byte = call-site marker), instead of the corruption surfacing
+/// later in KiSelectReadyThread's reader-side check. feature=smp only.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn ki_rq_integrity(prcb: ddk::PKPRCB, priority: u32, site: u64) {
+    if (*prcb).ReadySummary & (1u32 << priority) == 0 {
+        return; // not flagged occupied — nothing to check
+    }
+    let head =
+        core::ptr::addr_of_mut!((*prcb).DispatcherReadyListHead[priority as usize])
+            as ddk::PLIST_ENTRY;
+    let flink = (*head).Flink;
+    if flink == head {
+        return; // legitimately empty (summary may trail a removal); reader-side owns bit/empty
+    }
+    // first node must back-link to head, and head's back-neighbour must forward to head
+    if (*flink).Blink != head || (*(*head).Blink).Flink != head {
+        ddk::KeBugCheckEx(
+            0x96,
+            prcb as usize as _,
+            ((site << 8) | priority as u64) as _,
+            (*prcb).ReadySummary as _,
+            flink as usize as _,
+        );
+    }
+}
+
 pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
     // UP kernel: the affinity gate is always TRUE. SMP: a thread not affine
     // to this CPU is deferred instead (ke_x.h:1387).
@@ -1748,6 +1778,8 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
         crate::base::InsertTailList(ready_list, kt_wait_list_entry(thread));
     }
     (*prcb).ReadySummary |= 1u32 << priority;
+    #[cfg(feature = "smp")]
+    ki_rq_integrity(prcb, priority as u32, 0x11); // site 0x11 = KxQueueReadyThread
     KiReleasePrcbLock(prcb);
 }
 
@@ -1798,6 +1830,8 @@ pub unsafe fn KiSelectReadyThread(priority: KPRIORITY, prcb: ddk::PKPRCB) -> ddk
     if crate::base::RemoveEntryList(kt_wait_list_entry(thread)) {
         (*prcb).ReadySummary ^= 1u32 << high_priority;
     }
+    #[cfg(feature = "smp")]
+    ki_rq_integrity(prcb, high_priority, 0x33); // site 0x33 = KiSelectReadyThread post-remove
 
     thread
 }

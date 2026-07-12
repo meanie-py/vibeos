@@ -399,6 +399,8 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
 
     (*Prcb).ReadySummary |= 1u32 << OldPriority;
 
+    #[cfg(feature = "smp")]
+    ntkrnl_sys::inline::ke::ki_rq_integrity(Prcb, OldPriority as u32, 0x22); // site 0x22 = KiDeferredReadyThread insert
     KiReleasePrcbLock(Prcb);
 }
 

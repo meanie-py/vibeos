@@ -132,6 +132,15 @@ pub unsafe extern "system" fn KiScanReadyQueues(
         }
     }
 
+    // §9.56: balmgr is the one cross-CPU ready-list writer (it locks and
+    // mutates the SCANNED Prcb, not the current one). Validate every priority
+    // it may have touched before releasing — site 0x44 fires if balmgr left a
+    // torn list. Cheap: 32 checks once per (infrequent) scan.
+    #[cfg(feature = "smp")]
+    for p in 1..32u32 {
+        ntkrnl_sys::inline::ke::ki_rq_integrity(Prcb, p, 0x44);
+    }
+
     KiReleasePrcbLock(Prcb);
     KiReleaseDispatcherLock(OldIrql);
 
