@@ -84,7 +84,7 @@ pub unsafe extern "C" fn dictionary_destroy(d: *mut dictionary) {
             let next = (*p).next;
 
             if (*d).destroy.is_some() {
-                ((*d).destroy.unwrap())((*p).key, (*p).value, (*d).extra);
+                ((*d).destroy.unwrap_unchecked())((*p).key, (*p).value, (*d).extra);
             }
             HeapFree(GetProcessHeap(), 0, p as *mut _);
             p = next;
@@ -108,7 +108,7 @@ pub unsafe extern "C" fn dictionary_insert(d: *mut dictionary, k: *const core::f
     prior = dictionary_find_internal(d, k);
     if !prior.is_null() {
         if ((*d).destroy).is_some() {
-            ((*d).destroy).unwrap()((**prior).key, (**prior).value, (*d).extra);
+            ((*d).destroy).unwrap_unchecked()((**prior).key, (**prior).value, (*d).extra);
         }
         (**prior).key = k as *mut core::ffi::c_void;
         (**prior).value = v as *mut core::ffi::c_void;
@@ -162,7 +162,7 @@ pub unsafe extern "C" fn dictionary_remove(d: *mut dictionary, k: *const c_void)
     if !prior.is_null() {
         temp = *prior;
         if ((*d).destroy).is_some() {
-            ((*d).destroy).unwrap()((**prior).key, (**prior).value, (*d).extra);
+            ((*d).destroy).unwrap_unchecked()((**prior).key, (**prior).value, (*d).extra);
         }
         *prior = (**prior).next;
         HeapFree(GetProcessHeap(), 0, temp as *mut c_void);
@@ -189,7 +189,7 @@ pub unsafe extern "C" fn dictionary_enumerate(
     }
     let mut p = (*d).head;
     while !p.is_null() {
-        if e.unwrap()((*p).key, (*p).value, (*d).extra, closure) == 0 {
+        if e.unwrap_unchecked()((*p).key, (*p).value, (*d).extra, closure) == 0 {
             break;
         }
         p = (*p).next;

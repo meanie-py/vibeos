@@ -103,7 +103,7 @@ pub unsafe extern "system" fn enumx_Next(
         // list node, i.e. the list pointer advanced by one `struct list`.
         let data = (*This).current.offset(1) as *mut c_void;
         if (*This).copy_cb.is_some() {
-            ((*This).copy_cb.unwrap())((*This).parent, data, p as *mut c_void);
+            ((*This).copy_cb.unwrap_unchecked())((*This).parent, data, p as *mut c_void);
         } else {
             core::ptr::copy_nonoverlapping(
                 data as *const u8,

@@ -2432,7 +2432,7 @@ pub unsafe extern "system" fn SNB_UserUnmarshal(
     );
 
     if !(*pSnb).is_null() {
-        ((*(*umcb).pStubMsg).pfnFree.unwrap())(*pSnb as *mut c_void);
+        ((*(*umcb).pStubMsg).pfnFree.unwrap_unchecked())(*pSnb as *mut c_void);
     }
 
     if (*wire).datalen == 0 {
@@ -2442,7 +2442,7 @@ pub unsafe extern "system" fn SNB_UserUnmarshal(
         let mut dest: *mut WCHAR;
         let mut ptrW: *mut *mut WCHAR;
 
-        ptrW = ((*(*umcb).pStubMsg).pfnAllocate.unwrap())(
+        ptrW = ((*(*umcb).pStubMsg).pfnAllocate.unwrap_unchecked())(
             (((*wire).strcnt + 1) as SIZE_T) * core::mem::size_of::<*mut WCHAR>() as SIZE_T
                 + ((*wire).datalen as SIZE_T) * core::mem::size_of::<WCHAR>() as SIZE_T,
         ) as *mut *mut WCHAR;
@@ -2475,7 +2475,7 @@ pub unsafe extern "system" fn SNB_UserFree(pFlags: *mut ULONG, pSnb: *mut SNB) {
     let umcb = pFlags as *mut USER_MARSHAL_CB;
     TRACE!(b"(%p)\n\0".as_ptr() as *const i8, pSnb);
     if !(*pSnb).is_null() {
-        ((*(*umcb).pStubMsg).pfnFree.unwrap())(*pSnb as *mut c_void);
+        ((*(*umcb).pStubMsg).pfnFree.unwrap_unchecked())(*pSnb as *mut c_void);
     }
 }
 

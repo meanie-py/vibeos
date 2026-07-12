@@ -193,19 +193,19 @@ unsafe fn ICatRegister_QueryInterface(
     riid: REFIID,
     ppvObject: *mut LPVOID,
 ) -> HRESULT {
-    ((*(*This).lpVtbl).QueryInterface.unwrap())(This, riid, ppvObject)
+    ((*(*This).lpVtbl).QueryInterface.unwrap_unchecked())(This, riid, ppvObject)
 }
 #[inline]
 unsafe fn ICatRegister_AddRef(This: *mut ICatRegister) -> ULONG {
-    ((*(*This).lpVtbl).AddRef.unwrap())(This)
+    ((*(*This).lpVtbl).AddRef.unwrap_unchecked())(This)
 }
 #[inline]
 unsafe fn ICatRegister_Release(This: *mut ICatRegister) -> ULONG {
-    ((*(*This).lpVtbl).Release.unwrap())(This)
+    ((*(*This).lpVtbl).Release.unwrap_unchecked())(This)
 }
 #[inline]
 unsafe fn IEnumGUID_AddRef(This: *mut IEnumGUID) -> ULONG {
-    ((*(*This).lpVtbl).AddRef.unwrap())(This)
+    ((*(*This).lpVtbl).AddRef.unwrap_unchecked())(This)
 }
 
 // ---------------------------------------------------------------------------
