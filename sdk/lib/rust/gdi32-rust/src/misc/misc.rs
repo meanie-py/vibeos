@@ -15,6 +15,7 @@
 
 use win32k_sys::win32k::*;
 use crate::gdihelp::*;
+use crate::dcattr_f;
 
 // ── Local constants not present in the win32k_sys bindgen surface ──────────────
 // (Locally-defined items shadow any same-named win32k_sys glob import — no ambiguity.)
@@ -953,7 +954,7 @@ pub unsafe extern "fastcall" fn GdiGetLDC(hdc: HDC) -> PLDC {
     }
 
     /* Return the LDC pointer */
-    (*pdcattr).pvLDC as PLDC
+    (*dcattr_f!(pdcattr, pvLDC)) as PLDC
 }
 
 #[no_mangle]
@@ -965,7 +966,7 @@ pub unsafe extern "fastcall" fn GdiSetLDC(hdc: HDC, pvLDC: PVOID) -> BOOL {
     }
 
     /* Set the LDC pointer */
-    (*pdcattr).pvLDC = pvLDC;
+    (*dcattr_f!(pdcattr, pvLDC)) = pvLDC;
     TRUE
 }
 

@@ -21,6 +21,7 @@
 
 use win32k_sys::win32k::*;
 use crate::gdihelp::*;
+use crate::dcattr_f;
 
 // win32k_sys's FALSE/TRUE are bindgen u32 (#define), but BOOL is i32 — shadow with
 // BOOL-typed locals so `== FALSE`/`return TRUE` type-check against the i32 BOOL returns.
@@ -300,11 +301,11 @@ pub unsafe extern "system" fn GdiGetCodePage(hdc: HDC) -> DWORD {
         return 0;
     }
 
-    if (*pdcattr).ulDirty_ & DIRTY_CHARSET != 0 {
+    if (*dcattr_f!(pdcattr, ulDirty_)) & DIRTY_CHARSET != 0 {
         return NtGdiGetCharSet(hdc) & 0xffff;
     }
 
-    (*pdcattr).iCS_CP & 0xffff
+    (*dcattr_f!(pdcattr, iCS_CP)) & 0xffff
 }
 
 /*
@@ -319,7 +320,7 @@ pub unsafe extern "system" fn GetTextCharacterExtra(hdc: HDC) -> INT {
         return 0x8000000;
     }
 
-    (*pdcattr).lTextExtra
+    (*dcattr_f!(pdcattr, lTextExtra))
 }
 
 /*
@@ -700,21 +701,21 @@ pub unsafe extern "system" fn ExtTextOutW(
     /* Get the DC attribute */
     pdcattr = GdiGetDcAttr(hdc);
     if !pdcattr.is_null()
-        && (*pdcattr).ulDirty_ & DC_DIBSECTION == 0
-        && (*pdcattr).lTextAlign & TA_UPDATECP as LONG == 0
+        && (*dcattr_f!(pdcattr, ulDirty_)) & DC_DIBSECTION == 0
+        && (*dcattr_f!(pdcattr, lTextAlign)) & TA_UPDATECP as LONG == 0
     {
         if !lprc.is_null() && cwc == 0 {
             if fuOptions & ETO_OPAQUE != 0 {
                 let pgO: PGDIBSEXTTEXTOUT =
                     GdiAllocBatchCommand(hdc, crate::gdihelp::GdiBCExtTextOut) as PGDIBSEXTTEXTOUT;
                 if !pgO.is_null() {
-                    (*pdcattr).ulDirty_ |= DC_MODE_DIRTY;
+                    (*dcattr_f!(pdcattr, ulDirty_)) |= DC_MODE_DIRTY;
                     (*pgO).Count = cwc;
                     (*pgO).Rect = *(lprc as *const RECTL);
                     (*pgO).Options = fuOptions;
                     /* Snapshot attribute */
-                    (*pgO).ulBackgroundClr = (*pdcattr).ulBackgroundClr;
-                    (*pgO).ptlViewportOrg = (*pdcattr).ptlViewportOrg;
+                    (*pgO).ulBackgroundClr = (*dcattr_f!(pdcattr, ulBackgroundClr));
+                    (*pgO).ptlViewportOrg = (*dcattr_f!(pdcattr, ptlViewportOrg));
                     return TRUE;
                 }
             } else {
@@ -754,7 +755,7 @@ pub unsafe extern "system" fn ExtTextOutW(
                 }
 
                 if ((*pTeb).GdiTebBatch.Offset + cjSize as ULONG) <= GDIBATCHBUFSIZE {
-                    (*pdcattr).ulDirty_ |= DC_MODE_DIRTY | DC_FONTTEXT_DIRTY;
+                    (*dcattr_f!(pdcattr, ulDirty_)) |= DC_MODE_DIRTY | DC_FONTTEXT_DIRTY;
                     (*pgO).cbCount = cwc;
                     (*pgO).x = x;
                     (*pgO).y = y;
@@ -768,18 +769,18 @@ pub unsafe extern "system" fn ExtTextOutW(
                     }
 
                     /* Snapshot attributes */
-                    (*pgO).crForegroundClr = (*pdcattr).crForegroundClr;
-                    (*pgO).crBackgroundClr = (*pdcattr).crBackgroundClr;
-                    (*pgO).ulForegroundClr = (*pdcattr).ulForegroundClr;
-                    (*pgO).ulBackgroundClr = (*pdcattr).ulBackgroundClr;
-                    (*pgO).lBkMode = if (*pdcattr).lBkMode == OPAQUE as LONG {
+                    (*pgO).crForegroundClr = (*dcattr_f!(pdcattr, crForegroundClr));
+                    (*pgO).crBackgroundClr = (*dcattr_f!(pdcattr, crBackgroundClr));
+                    (*pgO).ulForegroundClr = (*dcattr_f!(pdcattr, ulForegroundClr));
+                    (*pgO).ulBackgroundClr = (*dcattr_f!(pdcattr, ulBackgroundClr));
+                    (*pgO).lBkMode = if (*dcattr_f!(pdcattr, lBkMode)) == OPAQUE as LONG {
                         OPAQUE as LONG
                     } else {
                         TRANSPARENT as LONG
                     };
-                    (*pgO).hlfntNew = (*pdcattr).hlfntNew;
-                    (*pgO).flTextAlign = (*pdcattr).flTextAlign;
-                    (*pgO).ptlViewportOrg = (*pdcattr).ptlViewportOrg;
+                    (*pgO).hlfntNew = (*dcattr_f!(pdcattr, hlfntNew));
+                    (*pgO).flTextAlign = (*dcattr_f!(pdcattr, flTextAlign));
+                    (*pgO).ptlViewportOrg = (*dcattr_f!(pdcattr, ptlViewportOrg));
 
                     (*pgO).Size = DxSize; // of lpDx then string after.
                     /* Put the Dx before the String to assure alignment of 4 */
@@ -993,14 +994,14 @@ pub unsafe extern "system" fn SetTextCharacterExtra(hdc: HDC, nCharExtra: INT) -
     }
 
     if (*NtCurrentTeb()).GdiTebBatch.HDC == hdc as HANDLE {
-        if (*pdcattr).ulDirty_ & DC_FONTTEXT_DIRTY != 0 {
+        if (*dcattr_f!(pdcattr, ulDirty_)) & DC_FONTTEXT_DIRTY != 0 {
             NtGdiFlush(); // Sync up pdcattr from Kernel space.
-            (*pdcattr).ulDirty_ &= !(DC_MODE_DIRTY | DC_FONTTEXT_DIRTY);
+            (*dcattr_f!(pdcattr, ulDirty_)) &= !(DC_MODE_DIRTY | DC_FONTTEXT_DIRTY);
         }
     }
 
-    nOldCharExtra = (*pdcattr).lTextExtra;
-    (*pdcattr).lTextExtra = nCharExtra;
+    nOldCharExtra = (*dcattr_f!(pdcattr, lTextExtra));
+    (*dcattr_f!(pdcattr, lTextExtra)) = nCharExtra;
     nOldCharExtra
 }
 
@@ -1016,7 +1017,7 @@ pub unsafe extern "system" fn GetTextAlign(hdc: HDC) -> UINT {
         return GDI_ERROR;
     }
 
-    (*pdcattr).lTextAlign as UINT
+    (*dcattr_f!(pdcattr, lTextAlign)) as UINT
 }
 
 /*
@@ -1031,7 +1032,7 @@ pub unsafe extern "system" fn GetTextColor(hdc: HDC) -> COLORREF {
         return CLR_INVALID;
     }
 
-    (*pdcattr).ulForegroundClr
+    (*dcattr_f!(pdcattr, ulForegroundClr))
 }
 
 /*
@@ -1071,15 +1072,15 @@ pub unsafe extern "system" fn SetTextAlign(hdc: HDC, mut fMode: UINT) -> UINT {
         return GDI_ERROR;
     }
 
-    fOldMode = (*pdcattr).lTextAlign as UINT;
-    (*pdcattr).lTextAlign = fMode as LONG; // Raw
-    if (*pdcattr).dwLayout & LAYOUT_RTL != 0 {
+    fOldMode = (*dcattr_f!(pdcattr, lTextAlign)) as UINT;
+    (*dcattr_f!(pdcattr, lTextAlign)) = fMode as LONG; // Raw
+    if (*dcattr_f!(pdcattr, dwLayout)) & LAYOUT_RTL != 0 {
         if (fMode & TA_CENTER) != TA_CENTER {
             fMode ^= TA_RIGHT;
         }
     }
 
-    (*pdcattr).flTextAlign = fMode & TA_MASK;
+    (*dcattr_f!(pdcattr, flTextAlign)) = fMode & TA_MASK;
     fOldMode
 }
 
@@ -1119,12 +1120,12 @@ pub unsafe extern "system" fn SetTextColor(hdc: HDC, crColor: COLORREF) -> COLOR
         return CLR_INVALID;
     }
 
-    crOldColor = (*pdcattr).ulForegroundClr as COLORREF;
-    (*pdcattr).ulForegroundClr = crColor as ULONG;
+    crOldColor = (*dcattr_f!(pdcattr, ulForegroundClr)) as COLORREF;
+    (*dcattr_f!(pdcattr, ulForegroundClr)) = crColor as ULONG;
 
-    if (*pdcattr).crForegroundClr != crColor {
-        (*pdcattr).ulDirty_ |= DIRTY_TEXT | DIRTY_LINE | DIRTY_FILL;
-        (*pdcattr).crForegroundClr = crColor;
+    if (*dcattr_f!(pdcattr, crForegroundClr)) != crColor {
+        (*dcattr_f!(pdcattr, ulDirty_)) |= DIRTY_TEXT | DIRTY_LINE | DIRTY_FILL;
+        (*dcattr_f!(pdcattr, crForegroundClr)) = crColor;
     }
 
     crOldColor
@@ -1158,14 +1159,14 @@ pub unsafe extern "system" fn SetTextJustification(
     }
 
     if (*NtCurrentTeb()).GdiTebBatch.HDC == hdc as HANDLE {
-        if (*pdcattr).ulDirty_ & DC_FONTTEXT_DIRTY != 0 {
+        if (*dcattr_f!(pdcattr, ulDirty_)) & DC_FONTTEXT_DIRTY != 0 {
             NtGdiFlush(); // Sync up pdcattr from Kernel space.
-            (*pdcattr).ulDirty_ &= !(DC_MODE_DIRTY | DC_FONTTEXT_DIRTY);
+            (*dcattr_f!(pdcattr, ulDirty_)) &= !(DC_MODE_DIRTY | DC_FONTTEXT_DIRTY);
         }
     }
 
-    (*pdcattr).cBreak = nBreakCount;
-    (*pdcattr).lBreakExtra = nBreakExtra;
+    (*dcattr_f!(pdcattr, cBreak)) = nBreakCount;
+    (*dcattr_f!(pdcattr, lBreakExtra)) = nBreakExtra;
     TRUE
 }
 

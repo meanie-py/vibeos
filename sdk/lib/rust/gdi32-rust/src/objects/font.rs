@@ -27,6 +27,7 @@ use win32k_sys::win32k::*;
 use crate::gdihelp::*;
 
 use core::ffi::{c_int, c_void};
+use crate::dcattr_f;
 
 // win32k_sys's FALSE/TRUE are bindgen u32 (#define), but BOOL is i32 — shadow with
 // BOOL-typed locals so `== FALSE`/`return TRUE` type-check against the i32 BOOL returns.
@@ -2853,17 +2854,17 @@ pub unsafe extern "system" fn SetMapperFlags(hDC: HDC, flags: DWORD) -> DWORD {
     }
 
     if (*NtCurrentTeb()).GdiTebBatch.HDC == hDC as HANDLE {
-        if (*Dc_Attr).ulDirty_ & DC_FONTTEXT_DIRTY != 0 {
+        if (*dcattr_f!(Dc_Attr, ulDirty_)) & DC_FONTTEXT_DIRTY != 0 {
             NtGdiFlush();
-            (*Dc_Attr).ulDirty_ &= !(DC_MODE_DIRTY | DC_FONTTEXT_DIRTY);
+            (*dcattr_f!(Dc_Attr, ulDirty_)) &= !(DC_MODE_DIRTY | DC_FONTTEXT_DIRTY);
         }
     }
 
     if flags & !1 != 0 {
         SetLastError(ERROR_INVALID_PARAMETER);
     } else {
-        Ret = (*Dc_Attr).flFontMapper;
-        (*Dc_Attr).flFontMapper = flags;
+        Ret = (*dcattr_f!(Dc_Attr, flFontMapper));
+        (*dcattr_f!(Dc_Attr, flFontMapper)) = flags;
     }
     Ret
 }

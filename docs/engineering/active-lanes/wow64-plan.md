@@ -446,17 +446,34 @@ KernelData/UserData widen), and `GdiDevCaps` rebases past 0x10000 wide
 entries. On-box: **NtGdiGetPixel fires from the guest and returns the true
 framebuffer pixel** — the full 32-bit-guest GDI readback path works.
 
-*Owed from M6 (= M7, the next layer):* the pixel reads WHITE because
-**DC_ATTR is the next layout-divergent shared struct** — guest
-`GdiSelectBrush` wrote `hbrush`/`ulDirty_` at 32-bit DC_ATTR offsets into the
-kernel's 64-bit DC_ATTR, so PatBlt drew with the default brush. Candidate
-approaches: (a) kernel-side 32-bit attr layout for wow64 processes (real-
-Windows shape; win32k pdcattr accesses need a per-process shim), (b)
-guest-side 64-bit offsets under `g_GdiWow64` (many DC_ATTR consumers), (c)
-make DC_ATTR/BRUSH_ATTR/RGN_ATTR **layout-invariant across 32/64** in
-ntgdihdl.h — vibeos controls both sides, kills the class forever; evaluate
-native-i386 impact first. Same class will recur for user32's HANDLEENTRY /
-SERVERINFO when window creation lands.
+## M7 (2026-07-11): gui32 0x600D PASS — WoW64 DC_ATTR shim, guest draws MAGENTA
+
+M6's white pixel was DC_ATTR layout divergence (guest wrote hbrush/ulDirty_
+at 32-bit offsets into the kernel's 64-bit DC_ATTR). Fixed the real-Windows
+way — the wow64 CLIENT knows the 64-bit layout (approach (b); (c)
+layout-invariance is impossible because FLOATOBJ diverges semantically:
+i386 8-byte EFLOAT vs FLOAT elsewhere):
+- **`gdi32-rust/src/dcattr64.rs`**: DC_ATTR64 mirror on the 32-bit compiler.
+  Wide pointer/handle slots split lo(native-typed)+`_hi` pad (kernel zeroes
+  the struct and never stores nonzero upper halves, so lo-half writes
+  compose); explicit `__padN` where repr(C)-on-64 pads; const-asserted
+  offsets + 416-byte size. MATRIX/FLOATOBJ fields are opaque filler —
+  client code never touches them (swept).
+- **`dcattr_f!`** (lib.rs): field-projection macro → correctly-offset,
+  correctly-typed `*mut`; serves reads/writes/compounds/sub-fields; native
+  branch byte-identical, non-x86 passthrough.
+- **All 240 `(*pdcattr).f` sites rewritten by script** (regex → 
+  `(*dcattr_f!(pdcattr, f))`, per the >50-edits automation rule).
+
+On-box: `NtGdiPatBlt => 1`, `NtGdiGetPixel => 00ff00ff`, **gui32 exit
+0x600D PASS** — an x86 GUI binary under FEX completes draw+readback through
+the native arm64 win32k (magenta rect on the desktop). Gate ×3 green.
+
+*Same divergence class still owed elsewhere (next layers toward Doom):*
+- **TEB GdiTebBatch GDIBS\* batch commands** — gui32 didn't batch; the
+  kernel-side `KeGdiFlushUserBatch` reads 64-bit GDIBS from a wow64 TEB.
+- **user32 HANDLEENTRY / SERVERINFO / desktop-heap structs** — needed when
+  window creation lands (CreateWindow → real message pump → Doom's window).
 
 *Still deferred (owed, the next milestones):*
 - **advapi32.dll / usp10.dll (i386) staging** — user32 imports them; the loader
