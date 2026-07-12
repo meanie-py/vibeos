@@ -1,8 +1,48 @@
 # ole32 + oleaut32 → Rust — Audit & Translation Strategy
 
-*Lane doc, opened 2026-07-11 on the `research` branch. Status: **PLANNING — not started,
-pending user review.** Research artifacts referenced below were produced against the
-2026-07-11 tree + the main checkout's `build-amd64` binaries.*
+*Lane doc, opened 2026-07-11 on the `research` branch. Research artifacts referenced
+below were produced against the 2026-07-11 tree + the main checkout's `build-amd64`
+binaries.*
+
+## ⏸ RESUME CHECKPOINT (2026-07-12, paused for token budget — pick up here)
+
+**Milestone reached: ole32's Rust COM runtime boots amd64 to desktop.** `compobj.c` +
+the full marshal cluster (marshal/stubmanager/rpc/ftmarshal/git) are translated,
+assembled into the `ole32-rust` crate, cohab-flipped in `dll/win32/ole32/CMakeLists.txt`,
+and linked into `ole32.dll` — all 295 exports intact, Rust markers confirmed in the
+binary, `✓ boot ✓ net (15/15)` with `[EXPLORER] _tWinMain entered` + `shell ready` on
+amd64. This is the first boot with a Rust COM broker under the shell.
+
+**State of each piece (all files durable in-repo / in `~/vibeos-rust-staging/`):**
+- `com-sys` crate — DONE, committed (ae70bc2 + this commit's oleauto/NDR additions).
+  239 vtbls ×3 arches; regen via `com-sys/generate_bindings.sh`.
+- `ole32-rust` crate — DONE, builds ×3, **amd64 boots**. NOT yet gated on i386/arm64.
+- `dll/win32/ole32/CMakeLists.txt` — flipped (6 TUs → Rust), committed here.
+- `oleaut32-rust` crate — **IN PROGRESS, does NOT compile** (~372 rustc errors on
+  x86_64, from 4,696). All 12 target files translated + wired (hash/oleaut/safearray/
+  variant/vartype/usrmarshal from rustconv; olesys/dispatch/typelib* from fable lanes).
+  `safearray.rs`/`hash.rs` = 0 errors; shared surface (consts/winemacros/prelude/
+  debug_shims/com-sys) clean ×3. NOT cohab-flipped into `dll/win32/oleaut32/CMakeLists.txt`
+  yet — it's an inert workspace member, so it does NOT affect the ole32 build/boot.
+
+**NEXT STEPS when resuming (main thread):**
+1. Finish `oleaut32-rust` burn-down to 0 errors ×3 — **the exact per-file resume plan +
+   triaged semantic bugs are in `sdk/lib/rust/oleaut32-rust/INTEGRATION-NOTES.md`**
+   (dropped `LPSAFEARRAY_UserMarshal`/`elem_*_size` in usrmarshal; `VarI4FromDisp`/
+   `VarUI4FromStr` wrong-VT args; `VARIANT_DI_normalize` missing; variant.rs VarAnd/VarImp
+   goto→loop fidelity; 5 real `write_bytes` sizeof² bugs in vartype ~2636 + 4 more;
+   confirm `VarBstrFromDec`/`VarCyFromUI2` exports). The one-shot mechanical fixup logic
+   is preserved at `sdk/lib/rust/oleaut32-rust/integration_fixup.py`.
+2. Cohab-flip `dll/win32/oleaut32/CMakeLists.txt` (advapi32/ole32 pattern) once it builds.
+3. Gate ole32 (and then oleaut32) ×3: `vibeos-cli gate` — i386 + arm64 still unproven.
+4. Then land per the North Star (×3 green → push is pre-authorized per user-personal note).
+
+**Do NOT** re-run the fable lanes or rustconv streams — all outputs exist in
+`~/vibeos-rust-staging/{ole32-lane-a,ole32-lane-b,oleaut32-rustconv}/` + their MANIFESTs.
+Re-translating re-spends money for work that's done.
+
+---
+*(Original strategy below — retained as the lane's rationale + inventory.)*
 
 ## Why this lane
 

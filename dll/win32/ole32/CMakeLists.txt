@@ -27,7 +27,7 @@ list(APPEND SOURCE
     classmoniker.c
     clipboard.c
     comcat.c
-    compobj.c
+    # compobj.c — replaced by Rust (ole32-rust compobj.rs — COM runtime: CoInitialize/apartments/activation/DllMain)
     compositemoniker.c
     datacache.c
     defaulthandler.c
@@ -36,12 +36,12 @@ list(APPEND SOURCE
     errorinfo.c
     filelockbytes.c
     filemoniker.c
-    ftmarshal.c
-    git.c
+    # ftmarshal.c — replaced by Rust (ole32-rust ftmarshal.rs — free-threaded marshaler)
+    # git.c — replaced by Rust (ole32-rust git.rs — global interface table)
     hglobalstream.c
     ifs.c
     itemmoniker.c
-    marshal.c
+    # marshal.c — replaced by Rust (ole32-rust marshal.rs — proxy manager + CoMarshal* family)
     memlockbytes.c
     moniker.c
     ole2.c
@@ -51,11 +51,11 @@ list(APPEND SOURCE
     oleobj.c
     oleproxy.c
     pointermoniker.c
-    rpc.c
+    # rpc.c — replaced by Rust (ole32-rust rpc.rs — ORPC channel + apartment pumps)
     stg_prop.c
     stg_stream.c
     storage32.c
-    stubmanager.c
+    # stubmanager.c — replaced by Rust (ole32-rust stubmanager.rs — stub/ifstub lifetime)
     usrmarshal.c)
 
 if(MSVC AND (ARCH STREQUAL "i386"))
@@ -70,6 +70,42 @@ list(APPEND PCH_SKIP_SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/ole32_unknwn_p.c
     ${CMAKE_CURRENT_BINARY_DIR}/ole32_stubs.c
     ${CMAKE_CURRENT_BINARY_DIR}/proxy.dlldata.c)
+
+
+# --- Rust cohabitation (ole32-rust) -----------------------------------------
+# Build libole32_rust.a from the workspace crate (STANDARD user-mode per-arch
+# targets; advapi32-rust pattern). The #[no_mangle] bodies replace the
+# commented-out .c TUs above; lld first-match (--allow-multiple-definition)
+# lets the staticlib's panic_handler/eh_personality coexist with the C cohab.
+# Plan: docs/engineering/active-lanes/ole-com-translation-audit.md.
+set(OLE32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(OLE32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ole32-target")
+set(OLE32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libole32_rust.a")
+if(ARCH STREQUAL "i386")
+    set(OLE32_RUST_TARGET "i686-pc-windows-gnu")
+elseif(ARCH STREQUAL "amd64")
+    set(OLE32_RUST_TARGET "x86_64-pc-windows-gnu")
+elseif(ARCH STREQUAL "arm64")
+    set(OLE32_RUST_TARGET "aarch64-pc-windows-gnullvm")
+endif()
+file(GLOB_RECURSE OLE32_RUST_SRCS "${OLE32_RUST_WORKSPACE_DIR}/ole32-rust/src/*.rs")
+add_custom_command(
+    OUTPUT ${OLE32_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${OLE32_RUST_TARGET_DIR}
+        cargo build --release --target ${OLE32_RUST_TARGET}
+            -p ole32-rust
+            --manifest-path ${OLE32_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${OLE32_RUST_TARGET_DIR}/${OLE32_RUST_TARGET}/release/libole32_rust.a
+        ${OLE32_RUST_LIB}
+    DEPENDS ${OLE32_RUST_SRCS}
+            ${OLE32_RUST_WORKSPACE_DIR}/ole32-rust/Cargo.toml
+    WORKING_DIRECTORY ${OLE32_RUST_WORKSPACE_DIR}
+    COMMENT "Building ole32-rust (${OLE32_RUST_TARGET})"
+    VERBATIM)
+add_custom_target(rust_ole32 DEPENDS ${OLE32_RUST_LIB})
+# -----------------------------------------------------------------------------
 
 add_library(ole32 MODULE
     ${SOURCE}
@@ -86,10 +122,12 @@ if(MSVC)
 endif()
 
 set_module_type(ole32 win32dll)
-target_link_libraries(ole32 wine uuid ${PSEH_LIB} oldnames)
+# OLE32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
+target_link_libraries(ole32 ${OLE32_RUST_LIB} wine uuid ${PSEH_LIB} oldnames)
+target_link_options(ole32 PRIVATE LINKER:--allow-multiple-definition)
 add_delay_importlibs(ole32 oleaut32)
 add_importlibs(ole32 advapi32 user32 gdi32 rpcrt4 msvcrt kernel32 kernel32_vista ntdll)
-add_dependencies(ole32 ole32idl)
+add_dependencies(ole32 ole32idl rust_ole32)
 add_pch(ole32 precomp.h "${PCH_SKIP_SOURCE}")
 add_cd_file(TARGET ole32 DESTINATION reactos/system32 FOR all)
 set_wine_module_FIXME(ole32) # CORE-5743: No ARRAY_SIZE and CONST_VTABLE

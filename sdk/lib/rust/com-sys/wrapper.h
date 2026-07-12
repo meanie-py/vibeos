@@ -14,3 +14,4 @@
 #include <oaidl.h>
 #include <ocidl.h>
 #include <propidl.h>
+#include <oleauto.h>

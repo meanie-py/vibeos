@@ -1685,6 +1685,19 @@ pub struct tagSIZE {
 pub type SIZE = tagSIZE;
 pub type SIZEL = SIZE;
 pub type LPSIZEL = *mut SIZE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SYSTEMTIME {
+    pub wYear: WORD,
+    pub wMonth: WORD,
+    pub wDayOfWeek: WORD,
+    pub wDay: WORD,
+    pub wHour: WORD,
+    pub wMinute: WORD,
+    pub wSecond: WORD,
+    pub wMilliseconds: WORD,
+}
+pub type SYSTEMTIME = _SYSTEMTIME;
 pub type INIT_ONCE = RTL_RUN_ONCE;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -2064,6 +2077,7 @@ pub type IMECHARPOSITION = tagIMECHARPOSITION;
 pub type IMCENUMPROC =
     ::core::option::Option<unsafe extern "stdcall" fn(hIMC: HIMC, lParam: LPARAM) -> BOOL>;
 pub type byte = ::core::ffi::c_uchar;
+pub type hyper = INT64;
 pub const _IDL_CS_CONVERT_IDL_CS_NO_CONVERT: _IDL_CS_CONVERT = 0;
 pub const _IDL_CS_CONVERT_IDL_CS_IN_PLACE_CONVERT: _IDL_CS_CONVERT = 1;
 pub const _IDL_CS_CONVERT_IDL_CS_NEW_BUFFER_CONVERT: _IDL_CS_CONVERT = 2;
@@ -2138,6 +2152,42 @@ pub const tagMSHCTX_MSHCTX_INPROC: tagMSHCTX = 3;
 pub const tagMSHCTX_MSHCTX_CROSSCTX: tagMSHCTX = 4;
 pub type tagMSHCTX = ::core::ffi::c_uint;
 pub use self::tagMSHCTX as MSHCTX;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _FLAGGED_WORD_BLOB {
+    pub fFlags: ULONG,
+    pub clSize: ULONG,
+    pub asData: [::core::ffi::c_ushort; 1usize],
+}
+pub type FLAGGED_WORD_BLOB = _FLAGGED_WORD_BLOB;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _BYTE_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut byte,
+}
+pub type BYTE_SIZEDARR = _BYTE_SIZEDARR;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SHORT_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut ::core::ffi::c_ushort,
+}
+pub type WORD_SIZEDARR = _SHORT_SIZEDARR;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _LONG_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut ULONG,
+}
+pub type DWORD_SIZEDARR = _LONG_SIZEDARR;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _HYPER_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut hyper,
+}
+pub type HYPER_SIZEDARR = _HYPER_SIZEDARR;
 pub type CLIPFORMAT = WORD;
 pub type HMETAFILEPICT = *mut ::core::ffi::c_void;
 pub type DATE = f64;
@@ -2187,6 +2237,7 @@ pub struct tagDEC__bindgen_ty_2__bindgen_ty_1 {
     pub Mid32: ULONG,
 }
 pub type DECIMAL = tagDEC;
+pub type wireBSTR = *mut FLAGGED_WORD_BLOB;
 pub type BSTR = *mut OLECHAR;
 pub type LPBSTR = *mut BSTR;
 pub type VARIANT_BOOL = ::core::ffi::c_short;
@@ -7136,6 +7187,96 @@ pub struct tagSAFEARRAYBOUND {
     pub lLbound: LONG,
 }
 pub type SAFEARRAYBOUND = tagSAFEARRAYBOUND;
+pub type wireVARIANT = *mut _wireVARIANT;
+pub type wireBRECORD = *mut _wireBRECORD;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wireSAFEARR_BSTR {
+    pub Size: ULONG,
+    pub aBstr: *mut wireBSTR,
+}
+pub type SAFEARR_BSTR = _wireSAFEARR_BSTR;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wireSAFEARR_UNKNOWN {
+    pub Size: ULONG,
+    pub apUnknown: *mut *mut IUnknown,
+}
+pub type SAFEARR_UNKNOWN = _wireSAFEARR_UNKNOWN;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wireSAFEARR_DISPATCH {
+    pub Size: ULONG,
+    pub apDispatch: *mut *mut IDispatch,
+}
+pub type SAFEARR_DISPATCH = _wireSAFEARR_DISPATCH;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wireSAFEARR_VARIANT {
+    pub Size: ULONG,
+    pub aVariant: *mut wireVARIANT,
+}
+pub type SAFEARR_VARIANT = _wireSAFEARR_VARIANT;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wireSAFEARR_BRECORD {
+    pub Size: ULONG,
+    pub aRecord: *mut wireBRECORD,
+}
+pub type SAFEARR_BRECORD = _wireSAFEARR_BRECORD;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wireSAFEARR_HAVEIID {
+    pub Size: ULONG,
+    pub apUnknown: *mut *mut IUnknown,
+    pub iid: IID,
+}
+pub type SAFEARR_HAVEIID = _wireSAFEARR_HAVEIID;
+pub const tagSF_TYPE_SF_ERROR: tagSF_TYPE = 10;
+pub const tagSF_TYPE_SF_I1: tagSF_TYPE = 16;
+pub const tagSF_TYPE_SF_I2: tagSF_TYPE = 2;
+pub const tagSF_TYPE_SF_I4: tagSF_TYPE = 3;
+pub const tagSF_TYPE_SF_I8: tagSF_TYPE = 20;
+pub const tagSF_TYPE_SF_BSTR: tagSF_TYPE = 8;
+pub const tagSF_TYPE_SF_UNKNOWN: tagSF_TYPE = 13;
+pub const tagSF_TYPE_SF_DISPATCH: tagSF_TYPE = 9;
+pub const tagSF_TYPE_SF_VARIANT: tagSF_TYPE = 12;
+pub const tagSF_TYPE_SF_RECORD: tagSF_TYPE = 36;
+pub const tagSF_TYPE_SF_HAVEIID: tagSF_TYPE = 32781;
+pub type tagSF_TYPE = ::core::ffi::c_uint;
+pub use self::tagSF_TYPE as SF_TYPE;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _wireSAFEARRAY_UNION {
+    pub sfType: ULONG,
+    pub u: _wireSAFEARRAY_UNION___WIDL_oaidl_generated_name_0000000C,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _wireSAFEARRAY_UNION___WIDL_oaidl_generated_name_0000000C {
+    pub BstrStr: SAFEARR_BSTR,
+    pub UnknownStr: SAFEARR_UNKNOWN,
+    pub DispatchStr: SAFEARR_DISPATCH,
+    pub VariantStr: SAFEARR_VARIANT,
+    pub RecordStr: SAFEARR_BRECORD,
+    pub HaveIidStr: SAFEARR_HAVEIID,
+    pub ByteStr: BYTE_SIZEDARR,
+    pub WordStr: WORD_SIZEDARR,
+    pub LongStr: DWORD_SIZEDARR,
+    pub HyperStr: HYPER_SIZEDARR,
+}
+pub type SAFEARRAYUNION = _wireSAFEARRAY_UNION;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _wireSAFEARRAY {
+    pub cDims: USHORT,
+    pub fFeatures: USHORT,
+    pub cbElements: ULONG,
+    pub cLocks: ULONG,
+    pub uArrayStructs: SAFEARRAYUNION,
+    pub rgsabound: [SAFEARRAYBOUND; 1usize],
+}
+pub type wireSAFEARRAY = *mut _wireSAFEARRAY;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct tagSAFEARRAY {
@@ -7224,6 +7365,69 @@ pub struct tagVARIANT__bindgen_ty_1___tagVARIANT__bindgen_ty_1___tagBRECORD {
     pub pRecInfo: *mut IRecordInfo,
 }
 pub type VARIANTARG = VARIANT;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wireBRECORD {
+    pub fFlags: ULONG,
+    pub clSize: ULONG,
+    pub pRecInfo: *mut IRecordInfo,
+    pub pRecord: *mut byte,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _wireVARIANT {
+    pub clSize: DWORD,
+    pub rpcReserved: DWORD,
+    pub vt: USHORT,
+    pub wReserved1: USHORT,
+    pub wReserved2: USHORT,
+    pub wReserved3: USHORT,
+    pub __bindgen_anon_1: _wireVARIANT__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _wireVARIANT__bindgen_ty_1 {
+    pub cVal: ::core::ffi::c_schar,
+    pub uiVal: USHORT,
+    pub ulVal: ULONG,
+    pub intVal: INT,
+    pub uintVal: UINT,
+    pub bVal: BYTE,
+    pub iVal: SHORT,
+    pub lVal: LONG,
+    pub fltVal: FLOAT,
+    pub dblVal: DOUBLE,
+    pub boolVal: VARIANT_BOOL,
+    pub scode: SCODE,
+    pub date: DATE,
+    pub bstrVal: wireBSTR,
+    pub cyVal: CY,
+    pub decVal: DECIMAL,
+    pub punkVal: *mut IUnknown,
+    pub pdispVal: *mut IDispatch,
+    pub parray: wireSAFEARRAY,
+    pub pcVal: *mut ::core::ffi::c_schar,
+    pub puiVal: *mut USHORT,
+    pub pulVal: *mut ULONG,
+    pub pintVal: *mut INT,
+    pub puintVal: *mut UINT,
+    pub pbVal: *mut BYTE,
+    pub piVal: *mut SHORT,
+    pub plVal: *mut LONG,
+    pub pfltVal: *mut FLOAT,
+    pub pdblVal: *mut DOUBLE,
+    pub pboolVal: *mut VARIANT_BOOL,
+    pub pscode: *mut SCODE,
+    pub pdate: *mut DATE,
+    pub pbstrVal: *mut wireBSTR,
+    pub pvarVal: *mut wireVARIANT,
+    pub pcyVal: *mut CY,
+    pub pdecVal: *mut DECIMAL,
+    pub ppunkVal: *mut *mut IUnknown,
+    pub ppdispVal: *mut *mut IDispatch,
+    pub pparray: *mut wireSAFEARRAY,
+    pub brecVal: wireBRECORD,
+}
 pub type DISPID = LONG;
 pub type HREFTYPE = DWORD;
 pub type MEMBERID = DISPID;
@@ -7408,6 +7612,14 @@ pub union tagVARDESC__bindgen_ty_1 {
     pub lpvarValue: *mut VARIANT,
 }
 pub type VARDESC = tagVARDESC;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tagCLEANLOCALSTORAGE {
+    pub pInterface: *mut IUnknown,
+    pub pStorage: PVOID,
+    pub flags: DWORD,
+}
+pub type CLEANLOCALSTORAGE = tagCLEANLOCALSTORAGE;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct tagCUSTDATAITEM {
@@ -17347,6 +17559,22 @@ pub struct IEnumSTATPROPSETSTG {
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct UDATE {
+    pub st: SYSTEMTIME,
+    pub wDayOfYear: USHORT,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct NUMPARSE {
+    pub cDig: INT,
+    pub dwInFlags: ULONG,
+    pub dwOutFlags: ULONG,
+    pub cchUsed: INT,
+    pub nBaseShift: INT,
+    pub nPwr10: INT,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct tagPARAMDATA {
     pub szName: *mut OLECHAR,
     pub vt: VARTYPE,
@@ -17372,6 +17600,11 @@ pub struct tagINTERFACEDATA {
     pub cMembers: UINT,
 }
 pub type INTERFACEDATA = tagINTERFACEDATA;
+pub const tagREGKIND_REGKIND_DEFAULT: tagREGKIND = 0;
+pub const tagREGKIND_REGKIND_REGISTER: tagREGKIND = 1;
+pub const tagREGKIND_REGKIND_NONE: tagREGKIND = 2;
+pub type tagREGKIND = ::core::ffi::c_uint;
+pub use self::tagREGKIND as REGKIND;
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct IPrintDialogCallback {
