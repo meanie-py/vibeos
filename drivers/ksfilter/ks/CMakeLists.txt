@@ -38,7 +38,6 @@ add_custom_command(
     OUTPUT ${KS_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${KS_RUST_TARGET_DIR}
-        RUSTC_BOOTSTRAP=1
         RUSTFLAGS=${KS_RUST_RUSTFLAGS}
         cargo build --release --target ${KS_RUST_TARGET}
             -p ks-rust

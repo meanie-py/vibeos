@@ -715,7 +715,7 @@ pub unsafe extern "system" fn SetShellWindow(hwndShell: HWND) -> i32 {
 pub unsafe extern "system" fn GetShellWindow() -> HWND {
     let pdi: PDESKTOPINFO = GetThreadDesktopInfo();
     if !pdi.is_null() {
-        return (*pdi).hShellWindow;
+        return crate::wow64::desktop_info_shell_window(pdi);
     }
     core::ptr::null_mut()
 }

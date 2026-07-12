@@ -283,6 +283,19 @@ Plus two non-ABI link gotchas from the same drivers: (a) **x86 compiler intrinsi
 **Detection / fix:** translate the table against the **module's real CMake define set** (grep its `CMakeLists.txt` for `add_definitions`/`-D...`; shell32 forces `-D_WIN32_WINNT=0x600 -D_SHELL32_ -D__REACTOS__ -DUNICODE`). Verify the row set against **ground truth**, not a hand re-preprocess: `strings -el <the pre-flip .c.obj>` shows exactly which string literals (e.g. each row's key string) the real build compiled in — diff that against your table. A bare `clang -E` with hand-guessed `-D`s reproduces the bug (that's how the wrong count arose in the first place); the obj is authoritative.
 **Source:** shell32 Wave 1 — `shpolicy.rs` `s_PolicyTable` (`#include "PolicyData.h"`, rows of `DEFINE_POLICY`). First pass preprocessed at WS03 → 169 rows; the real WIN6+`_SHELL32_` build is **159 rows**, confirmed byte-for-byte against `shpolicy.c.obj`'s UTF-16 strings (12 NTDDI-guarded rows dropped, 2 `>= NTDDI_LONGHORN` rows + 1 `_SHELL32_`-guarded row added). Same class to watch for the NLS/CSIDL/locale tables.
 
+### NEVER translate a C debug MACRO into a no-op `fn` — make it a `macro_rules!`. An out-of-line no-op is a ud2 detonator (i386 BUGCHECK 0x1E / 0xC000001D)
+**Symptom:** you take a translated **no-op debug fn** and give it an out-of-line body — e.g. move its variadic entry into a C trampoline so the crate can drop nightly `c_variadic` — touch *nothing* else, and i386 **BUGCHECKs 0x1E with exception `0xC000001D`** (illegal instruction) at a **`ud2` sitting immediately after `calll _TracePrint`**. amd64 and arm64 boot to desktop, clean, the whole time. You may also get a burst of `undefined symbol: _Name@N` link errors for functions unrelated to your change.
+**Root cause — the no-op was a CLOAK, twice over.** The C original is a *macro* that expands to **nothing** in the retail build (`#define TracePrint(x)`, `storswtr.h:124`) — its arguments are never even evaluated. The translation rendered it as a no-op **`fn`**. That fn is trivially inlinable, so LLVM folded it away *along with every argument expression*, and with them any relocation reachable only through those arguments. Two whole bug classes were hiding under that fold:
+  1. **§1 ABI mismatches.** Fns **defined** `extern "C"` (cdecl → `_Name`) but **declared** in an `extern "system"` block (stdcall → `_Name@N`). Clean on amd64/arm64 (the two coincide); on i386 they never even reached a link error because nothing referenced them.
+  2. **C compile-time constants emitted as `extern "C" static`** (`static TRACE_LEVEL_ERROR: u32;` for what is a `#define`) — not linkable symbols at all.
+Make the no-op **opaque** (an extern call LLVM cannot see through) and the arguments must materialise: the latents become `undefined symbol`s, **and** LLVM's inter-procedural reasoning across the now-visible mismatched-ABI callees starts proving continuations unreachable → the **ABI-mismatch `ud2` cascade**. Measured: cdrom.sys carried **100** `ud2` sites before (all on paths boot never hits — which is *why* master was green); the trampoline pushed it to **114**, and one of the new ones was on a live path.
+**The trap:** the errors and the crash PC point at *innocent* code, so the instinct is "my change broke this driver". It didn't — it **uncloaked** what was already broken, and then added the detonator. Do not "fix" it by reverting to nightly.
+**Fix (in this order):**
+  1. **Make it a `macro_rules!`, not a fn** — the faithful shape (C never evaluates the args), zero cost, no dead call per site, and it does not create the opaque barrier. Consume args **by value** (`let _ = $arg;`): `&$arg` is E0793 on a `#[repr(packed)]` field. Do **not** type-bind the parameters — the per-module extern decls this replaces often *disagree* with each other (`u32` vs `i32` levels, `*const i8` vs `*const u8` formats), because nothing ever checked them against one definition.
+  2. **Still fix the ABI mismatches you uncovered** — they are real. Split the mixed `extern "system"` block: kernel/WDF exports stay stdcall; the crate's own cdecl helpers move to `extern "C"`. Ground truth = the **definition** + the **C header** (no `NTAPI` ⇒ cdecl), and the linker itself (`undefined _Name` ⇒ it is stdcall; `undefined _Name@N` ⇒ it is cdecl). `verify_ffi.py` is the workspace-wide checker.
+  3. `extern static` for a C constant ⇒ `const`.
+**Source:** 2026-07-12 stable-toolchain lane, cdrom. `TracePrint` (962 call sites, empty body) given a C-trampoline variadic entry → i386 BUGCHECK `0x1E (0xc000001d)` at `cdrom.sys+0xBE58`, a `ud2` after `calll _TracePrint`; plus `undefined symbol: _DeviceSendRequestSynchronously@12` / `_DevicePowerSettingCallback@12` / `_RequestSenseInfoInterpret@24` (all defined `extern "C"`, all declared in `autorun.rs`'s `extern "system"` block, all declared NTAPI-less in `cdrom.h`) and `undefined symbol: TRACE_FLAG_IOCTL` / `TRACE_LEVEL_ERROR`. Converting `TracePrint` to a macro dropped ud2 114 → 100 and i386 booted. **amd64 and arm64 were green through every one of these states — i386 was the only arch that told the truth.**
+
 ---
 
 ## LLVM captures(none) / ud2 / codegen-unit miscompiles
@@ -5184,6 +5197,154 @@ uses `ValidateHwnd`; the message loop is the *first* client-side validation.
 the USER handle table** (real Windows keeps a parallel 32-bit `gSharedInfo`). The table is
 session-global and can't be per-bitness in place, so win32k must maintain a 32-bit shadow
 (header + entries) for WoW64 processes and hand its low VA back in `USERCONNECT.aheList`,
-kept in sync on every handle alloc/free. Owed as the M9 core (`wow64-plan.md`). Until then
-any WoW64 GUI app that validates an HWND client-side (i.e. nearly all of them) silently
-no-ops the call.
+kept in sync on every handle alloc/free. Until then any WoW64 GUI app that validates an
+HWND client-side (i.e. nearly all of them) silently no-ops the call.
+
+**FIXED (2026-07-12, M9).** The first instinct — have win32k maintain a 32-bit *shadow*
+of the handle table and publish it as `aheList` — is the **wrong layer**, and trying it is
+instructive: with the shadow published, `ValidateHwnd` stops no-oping and **finds** the
+entry, but the guest then dereferences the *validated object* and AVs (`0xfc6daab0`, in
+guest `user32+0x46141`) during CreateWindow's WM_GETMINMAXINFO. Because the handle table is
+only **one** of the things user32 reads straight out of shared memory with no syscall. The
+full set is three:
+
+  1. the shared **USER handle table** (`gSharedInfo.aheList`) — what `ValidateHwnd` indexes,
+  2. the desktop heap's **WND / CLS** objects, reached via `DesktopPtrToUser()`,
+  3. **DESKTOPINFO** (`pvDesktopBase`/`pvDesktopLimit`/`fsHooks`/`spwnd`).
+
+Shadowing only (1) fixes validation and then walks straight into (2). All three are already
+*addressable* by the guest — win32k maps them below 4GB for WoW64 procs (`W32Wow64ZeroBits`)
+— they are simply **unparseable**, laid out by a 64-bit kernel with 8-byte pointers. So this
+is a **layout** problem, not a mapping problem, and the fix belongs **client-side**, exactly
+like the M6/M7 GDI fix (`g_GdiWow64` + `GDI_TABLE_ENTRY64` + a normalizing read helper):
+
+* **`user32-rust/src/wow64.rs`** (new): `g_UserWow64` (detected once at connect via
+  `ProcessWow64Information`, mirroring `GdiProcessSetup`), the `*64` shapes (`Wnd64`,
+  `Cls64`, `DesktopInfo64`, `UserHandleTable64`, `UserHandleEntry64`), and a normalizing
+  view over each. WND/CLS get cached **snapshots** — sound because the client's desktop-heap
+  mapping is `PAGE_READONLY` (`IntMapDesktopView`), so user32 *never writes* through a
+  `PWND` and a copy cannot lose an update. Snapshots are keyed by kernel object so `PWND`
+  identity stays stable (user32 compares them) and refreshed per lookup so reads are current.
+* Typed `desktop_wnd_to_user()` / `desktop_cls_to_user()` replace the ~25 raw
+  `DesktopPtrToUser(x->spwnd*/pcls)` call sites. Pointer fields *inside* a snapshot keep the
+  kernel value truncated to 32 bits (exactly as the native i386 path stores them), so the
+  caller's next translation works unchanged — lossless below 4GB, and the delta arithmetic
+  wraps mod 2^32.
+* **Kernel half (`win32k-rust/src/wow64.rs`, new):** win32k writes CLIENTINFO into the
+  **64-bit** TEB; a WoW64 guest reads it from **TEB32** (`GetWin32ClientInfo()` =
+  `NtCurrentTeb()->Win32ClientInfo`, and under WoW64 `NtCurrentTeb()` *is* the TEB32). It
+  was therefore **all zeros**: `ulClientDelta == 0`, `pDeskInfo == NULL` — which is why the
+  guest computed a raw kernel pointer. `Wow64PublishClientInfo()` projects the 64-bit
+  CLIENTINFO into a `ClientInfo32` in TEB32 (TEB64+0x2000; see `procsup.rs`) at thread init
+  and desktop assignment. `CallbackWnd` is deliberately left **zero** — it caches a 64-bit
+  `WND*` that is useless to the guest; zeroing it makes `ValidateHwnd`'s fast path miss and
+  fall through to the (correct) normalizing lookup.
+
+Result: `win32.exe` `0x600E → 0x600D` — the x86 guest's window receives WM_PAINT and paints
+its client rect through the native arm64 win32k. `gui32` stays `0x600D`.
+
+**Two reusable lessons.**
+
+*(i) The two halves must ship together, and the failure in between is loud.* Landing the
+kernel half alone (CLIENTINFO32 published) against a **stale** guest user32 turned `0x600E`
+into `0xC000001D` — illegal instruction. That is not a mystery, it is the expected shape: a
+non-zero `ulClientDelta` makes the *unmodified* client start actually translating pointers,
+and it then walks 64-bit structs with 32-bit offsets straight into a garbage `lpfnWndProc`.
+If you see a WoW64 guest go from "quietly does nothing" to "wild jump" after a win32k
+change, suspect a client/kernel version skew before suspecting the kernel.
+**Corollary (cost me a boot cycle):** the WoW64 guest's `user32.dll`/`gdi32.dll` are staged
+from **`build-i386/`**, not from `build-arm64/` — an arm64-only rebuild silently ships a
+stale client. Always rebuild **both** arches before booting a WoW64 change.
+
+*(ii) Make the layout assumption a compile-time tripwire, not a comment.* The `*64` shapes
+work because on i686-w64-mingw (MS ABI) a `u64` has 8-byte struct alignment exactly as on
+x86_64 — verified: all 91 `Wnd64` fields land at identical offsets on both targets. But the
+shapes must also *stay* equal to the real structs. `user32-rust` builds for i386 **and**
+natively for amd64/arm64, so the `#[cfg(not(target_arch = "x86"))] mod layout_guard` asserts
+`size_of::<Wnd64>() == size_of::<WND>()` + per-field `offset_of!` equality on every native
+build. It earned its keep immediately: it caught a bogus padding word in `Cls64` on the
+first compile. Any future drift in `ntuser.h` now breaks the amd64/arm64 build instead of
+silently corrupting WoW64 clients.
+
+**Still owed (loud, not silent):** `MENU`/`ITEM`, `HOOK` and `SBINFO` are desktop-heap
+objects with pointers too, and have no `*64` shape yet — nothing on the M9 path reaches
+them. `crate::wow64::wow64_unsupported()` prints a one-shot warning naming the type rather
+than letting a 32-bit client silently walk a 64-bit `MENU`. When a WoW64 app needs menus,
+that print is the work order.
+
+### 9.59 (ROOT-CAUSED + FIXED 2026-07-12) The DUMMY_PSEH **capture-copy** class: every `_SEH2_TRY`-wrapped user-buffer capture became an unprotected `memcpy` — and how to get a *real* fault-tolerant copy out of clang's "calls-only" native SEH
+
+**Symptom.** Several unrelated syscalls BUGCHECK 0x1E (0xC0000005) at the *identical* PC,
+`memcpy+0x40`, whenever a caller passes a hostile buffer pointer (NULL, 0x42424242).
+Observed via kmtest conformance: `ObSymbolicLink`, `ZwWaitForMultipleObjects`, `IoReadWrite`
+(and `NtCreateSection` with a 0x50 face — same root, scalar deref instead of a bulk copy).
+
+**Root (a whole CLASS, not three bugs).** In C, a kernel API captures a caller-supplied
+buffer with a copy sitting inside `_SEH2_TRY`. Under `USE_DUMMY_PSEH` — still the default C
+compile mode on **all** arches — that handler is dead code, and the Rust translations dropped
+the SEH entirely. Two compounding gaps:
+1. The `probe_user_buffer` guard is `PreviousMode`-gated, but the C's `_SEH2_TRY` wrapped the
+   copy **unconditionally**. Kernel-mode callers (kmtest drivers, and any in-kernel client) skip
+   the guard and hit a raw, unprotected copy.
+2. A probe is a **range + alignment check only** — it never touches memory. NULL and 0x42424242
+   are both *below* `MmUserProbeAddress`, so a range probe happily passes them. The safety was
+   ALWAYS the SEH around the copy, never the probe.
+
+Critically, `RtlpSafeCopyMemory` — the one primitive that was supposed to be the safe copy — had
+been translated to a **plain `RtlCopyMemory`**. So the kernel had *no* fault-tolerant copy at all.
+
+**The fix, and the non-obvious insight that makes it work.** `dummy-pseh-verdict.md` §C warns
+that clang's native SEH is *"calls-only (no `-fasync-exceptions`)"* — a **direct deref** written
+inside a `__try` body may not be covered. That reads like a blocker. It is actually the *recipe*:
+
+> **A copy is a CALL.** Put the faulting access in a CALLEE and the `__try`'s scope table covers
+> the call site, because the fault's return address lands back inside the `__try` range.
+
+So `ntoskrnl/kmsafecopy.c` (native `__try`/`__except` via the `-fms-extensions` `c_shims` wiring,
+same as `seh_poc.c`) does:
+
+```c
+__attribute__((noinline))              /* load-bearing: guarantees the CALL exists */
+static void KmCopyRaw(void *D, const void *S, KMSIZE N) { memcpy(D, S, N); }
+
+int KmProtectedCopyMemory(void *D, const void *S, KMSIZE N)
+{ __try { KmCopyRaw(D, S, N); return 1; } __except (1) { return 0; } }
+```
+
+Chain: `KiPageFault` → `KiDispatchException` → `RtlDispatchException` unwinds `KmCopyRaw`'s frame
+→ `__C_specific_handler` matches the scope table → `__except` → return 0 →
+`Err(STATUS_ACCESS_VIOLATION)`. **`seh_poc.c` had only ever proven a *software raise* dispatches;
+this proves the same chain catches a *hardware page fault*.**
+
+Bonus, and the reason this beats the obvious alternative: the fault goes through `MmAccessFault`
+**first**, so a valid-but-nonresident page is simply paged in and the copy proceeds. Only a truly
+invalid address reaches the `__except`.
+
+**Do NOT "fix" this with `MmIsAddressValid`.** It is the tempting portable stand-in and it is
+wrong: it cannot distinguish *invalid* from *valid-but-paged-out*. Drop it on a hot path (e.g.
+`IopCompleteRequest`'s buffered copy-back) and legitimate I/O starts failing with
+STATUS_ACCESS_VIOLATION under memory pressure — a silent, subtly-wrong degradation far worse than
+the crash it papers over. Prefer the crash + an honest gap.
+
+**Two traps this flushed out:**
+- **PERF: verify the copy is a real `memcpy`.** A hand-rolled `while (Len--) *Dst++ = *Src++;`
+  compiled to a genuine byte-at-a-time loop — clang's loop-idiom pass did **not** lower it. On the
+  buffered-I/O completion path that is a throughput regression. *Disassemble the shim* (`callq
+  <memcpy>`) rather than assuming the optimizer saved you.
+- **A fixed crash can UNMASK a second bug at the same test.** After the copy fix, `IoReadWrite`
+  still crashed — but the PC had moved out of ntoskrnl to `IoReadWrite_drv.sys`. **Fast I/O hands
+  the driver the RAW user buffer** (no SystemBuffer), and in C the fast-io dispatch is itself
+  inside `_SEH2_TRY`. That is the same family needing a *different* primitive: a protected
+  **call**, not a protected **copy**. Always re-symbolicate after a fix — "still crashes" is not
+  "not fixed".
+
+**Where it lives.** Primitive: `ntoskrnl/kmsafecopy.c` + `ntkrnl-sys/src/probe.rs`
+(`safe_copy_from_user` / `safe_copy_to_user` / `safe_copy_raw`, all running the protected copy
+UNCONDITIONALLY; only the range probe stays `PreviousMode`-gated). **amd64 only** — i386/arm64
+fall through to a plain copy until clang's frame-based i386 / aarch64 kernel SEH gets the
+`seh_poc.c` treatment, or an extable-style fault-fixup copy exists.
+
+**Detector.** A `#[no_mangle]` syscall that does `copy_nonoverlapping` / `read_volatile` on a
+caller pointer where the C had `_SEH2_TRY`. Grep the inert C for `_SEH2_TRY` around
+`RtlCopyMemory`/`Probe*` and diff against the Rust port — if the Rust has the copy but no
+`safe_copy_*`, it is a latent 0x1E waiting for a hostile caller.

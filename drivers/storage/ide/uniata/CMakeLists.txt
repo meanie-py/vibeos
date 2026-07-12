@@ -14,15 +14,21 @@ include_directories(
 # ATA_REQ/IORES + the IDENTIFY/SRB/CDB layouts) come from the per-driver bindgen
 # substrate (uniata-rust/src/types_*.rs). ros_glue/ros_glue.cpp stays as the C TU
 # defining the mutable MajorVersion/MinorVersion/BuildNumber globals the Rust crate
-# references. _PrintNtConsole is a cdecl varargs helper (c_variadic feature -> the
-# cargo build runs under RUSTC_BOOTSTRAP=1). Standard per-arch RUST_TARGET, i386
-# no-SSE RUSTFLAGS. First C++-tier proof (rustconv tree-sitter-cpp front-end).
+# references. rust_varargs_shim.c holds the ONE thing stable Rust cannot do: DEFINE the
+# C-variadic _PrintNtConsole entry point (`va_start`). It trampolines into uniata-rust's
+# _PrintNtConsole_v (which keeps the 512-byte buffer + the HalDisplayString call) and
+# forwards the va_list into ntoskrnl's _vsnprintf — so the crate builds on PLAIN STABLE
+# rustc: no bootstrap escape hatch, no nightly feature gate. Standard per-arch
+# RUST_TARGET, i386 no-SSE RUSTFLAGS. First C++-tier proof (rustconv tree-sitter-cpp).
 #
 # C bodies replaced by Rust (kept on disk per the never-delete rule):
 #   atacmd_map.cpp bm_devs.cpp id_ata.cpp id_badblock.cpp id_dma.cpp
 #   id_init.cpp id_probe.cpp id_queue.cpp id_sata.cpp
 list(APPEND SOURCE
     ros_glue/ros_glue.cpp
+    # Plain C (no stdafx.h): must live in SOURCE, which is add_pch's SKIP list — the
+    # uniata PCH is the C++ stdafx.h and a C TU cannot inherit it.
+    rust_varargs_shim.c
     stdafx.h)
 
 set(UNIATA_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
@@ -43,7 +49,6 @@ add_custom_command(
     OUTPUT ${UNIATA_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${UNIATA_RUST_TARGET_DIR}
-        RUSTC_BOOTSTRAP=1
         RUSTFLAGS=${UNIATA_RUST_RUSTFLAGS}
         cargo build --release --target ${UNIATA_RUST_TARGET}
             -p uniata-rust

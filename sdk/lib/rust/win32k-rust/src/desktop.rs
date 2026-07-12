@@ -4218,6 +4218,10 @@ pub unsafe extern "C" fn IntSetThreadDesktop(hDesktop: HDESK, FreeOnFailure: BOO
         (*pci).pClientThreadInfo = core::ptr::null_mut();
     }
 
+    /* This is where a thread's ulClientDelta/pDeskInfo are decided — republish
+     * them into TEB32 so a 32-bit guest's DesktopPtrToUser() actually works. */
+    crate::wow64::Wow64PublishClientInfo(pti);
+
     if pdeskOld != core::ptr::null_mut() {
         RemoveEntryList(core::ptr::addr_of_mut!((*pti).PtiLink));
         if !pctiOld.is_null() {

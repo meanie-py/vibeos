@@ -429,3 +429,60 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
     KMTESTS build). Likely further layers behind it (kmtest_drv load + CreateService on arm64).
   The SCM-proceed sweep.c fix lands now (arm64-path-only — x86 takes the event-found branch
   unchanged, so the landed i386/amd64 baselines are unaffected by construction).
+- 2026-07-12: **memcpy+0x40 CLUSTER FIXED — the kernel gets a real fault-tolerant copy
+  (`ntoskrnl/kmsafecopy.c`), and 2 quarantines clear.** The 2026-07-11 root-cause was right:
+  every member was a caller-supplied-buffer capture whose `_SEH2_TRY` is dead under
+  USE_DUMMY_PSEH, so a hostile pointer faulted the capture memcpy. What was missing was the
+  primitive — `RtlpSafeCopyMemory` had been translated to a *plain* `RtlCopyMemory` (the SEH
+  dropped), so NO fault-tolerant copy existed anywhere in the kernel.
+    - **The mechanism (the open question, now settled empirically).** dummy-pseh-verdict §C
+      warns clang native SEH is "calls-only (no -fasync-exceptions)" — a *direct deref* inside
+      `__try` may escape. That is exactly why the primitive works: a **copy is a CALL**, so the
+      fault lands in a CALLEE and the return address sits inside the `__try` scope table.
+      `KmProtectedCopyMemory` therefore delegates to a `noinline` `KmCopyRaw` (which calls the
+      real `memcpy`) — KiPageFault -> KiDispatchException -> RtlDispatchException unwinds
+      KmCopyRaw's frame -> `__C_specific_handler` matches -> `__except` -> return 0 ->
+      `Err(STATUS_ACCESS_VIOLATION)`. seh_poc.c had only ever validated a *software raise*;
+      this proves the chain catches a **hardware page fault** too. Bonus: because the fault
+      goes through `MmAccessFault` first, a valid-but-nonresident page is simply paged in —
+      something a bare `MmIsAddressValid` pre-check could never do.
+    - **Four kernel capture sites routed through it** (`safe_copy_from_user` / new
+      `safe_copy_raw`, run UNCONDITIONALLY — the C's `_SEH2_TRY` wrapped the copy regardless of
+      PreviousMode; only the *range probe* is user-mode-gated): `ob-rust/oblink.rs` (symlink
+      target), `ob-rust/obwait.rs` (handle array), `iomgr-rust/iofunc.rs` NtWriteFile (buffered
+      SystemBuffer capture, with the C's `IopCleanupAfterException` handler restored), and
+      `iomgr-rust/irp.rs` IopCompleteRequest (buffered copy-back to `Irp->UserBuffer`).
+    - **Result: ObSymbolicLink CRASH -> OK (154/0), ZwWaitForMultipleObjects CRASH -> OK (4/0).**
+      `memcpy+0x40` is gone from the kernel entirely.
+    - **PERF (caught by disassembly, not assumed):** a hand-rolled `while (Len--) *Dst++ = *Src++;`
+      compiled to an actual byte-at-a-time loop (clang's loop-idiom did NOT fire). Since this
+      primitive now sits on the buffered-I/O completion hot path, `KmCopyRaw` delegates to the
+      real `memcpy` instead. Verified: `callq <memcpy>`.
+    - **HONEST GAP — amd64 only.** `fault_tolerant_copy` protects x86_64; i386/arm64 fall through
+      to a plain copy (status quo, zero behavior change). `MmIsAddressValid` was deliberately
+      REJECTED as the stand-in: it cannot distinguish "invalid" from "valid but paged out", so on
+      the IRP completion hot path it would spuriously fail legitimate I/O with
+      STATUS_ACCESS_VIOLATION under memory pressure — a silent degradation worse than the crash.
+      Closing it needs clang frame-based i386 / aarch64 kernel-SEH validation (the seh_poc.c
+      treatment) or a Linux-extable-style fault-fixup copy. The i386 equivalents stay quarantined.
+- 2026-07-12: **IoReadWrite RE-QUARANTINED — a SECOND, independent bug behind the memcpy one.**
+  The cluster fix landed here too, and the crash PC moved out of ntoskrnl: now
+  `IoReadWrite_drv.sys+0x23A0` (the TEST DRIVER). Root: **FAST I/O hands the driver the RAW user
+  buffer** (no SystemBuffer), and the test's `TestCommonWrite()` derefs `BufferBytes[i]` with no
+  NULL guard (unlike `TestCommonRead`, which checks `Buffer == NULL`). In C the fast-I/O dispatch
+  sits inside `_SEH2_TRY`, so the FSD's AV converts to STATUS_ACCESS_VIOLATION; dead under
+  DUMMY_PSEH -> BUGCHECK. Same family, DIFFERENT primitive: needs a protected **call** (guard
+  around the FastIoRead/FastIoWrite dispatch), not the protected **copy**. Triage owed.
+- 2026-07-12: **Two ratchet catches that are NOT ours — regressions the origin/master merge
+  brought in.** The amd64 baseline (81/81) was recorded at `5d328937ef9`, BEFORE this lane merged
+  origin/master (`eb3df16529c`, 110 commits). Both reproduce deterministically across two sweeps
+  and have zero code-path overlap with the copy fixes:
+    - **ExUuid: 3000/0 -> 2000/1000** — `Invalid UUID variant: 0xd0`. The test asserts
+      `(Data4[0] & 0xC0) == 0x80` (RFC4122). `ex-rust/uuid.rs:315-317` is a *faithful* port
+      (`(Sequence & 0x3F00) >> 8 | 0x80` can only yield 0x80-0xBF, never 0xd0) and is UNCHANGED
+      since the baseline — so `Data4[0]` is not coming from that path at all: a struct/bitfield
+      layout mistranslation in the cached-values accessors is the candidate.
+    - **IoDeviceObject: 185/4 -> 184/5** — `RegistryPath not page-aligned`.
+  Baseline deliberately NOT updated — leaving it un-refreshed keeps the ratchet flagging these
+  until they are root-caused. (This is the ratchet doing exactly its job: catching a mainline
+  regression that no boot smoke would have noticed.)

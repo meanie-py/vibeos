@@ -2,7 +2,6 @@
 //! (drivers/storage/ide/uniata). Boot-loaded; cohab uniata.sys. See Cargo.toml.
 //! First C++-tier proof (rustconv C++ front-end: tree-sitter-cpp + partial preproc).
 #![no_std]
-#![feature(c_variadic)]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code, unused_imports, unused_parens, unused_mut, unused_variables)]
 

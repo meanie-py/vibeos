@@ -151,8 +151,32 @@ The DLL body is Wine monoliths, so we use a **`--whole-archive` symbol-override 
 >
 > **Wave 1 (int↔string radix family):** `_itoa/_ltoa/_ultoa/_i64toa/_ui64toa` + wide twins. Semantics verified identical to msvcrt's `ltoa_helper` (sign only radix==10, unsigned reinterpret otherwise, lowercase digits, no NULL/radix guards). Structurally confirmed live on i386.
 
-### Phase B — broaden the DLL-body flips, family by family
-With the pipe proven, flip the remaining pure families cnt-rust already owns: `str*`, `wcs*`, int↔str (`_itoa/_ltoa/_i64toa/…`), path (`_makepath/_splitpath`), float↔str (`_ecvt/_fcvt/_gcvt`), and the whole `math.c`/`sincos.c` transcendental set (cnt-rust `cabi/math.rs`). One family per wave, gate ×3 between. **Semantic watch:** cnt-rust "tracks libcntpr, not textbook libc" — for pure ops they coincide, but any function msvcrt makes locale-aware or errno-setting must be verified against `dll/win32/msvcrt/*.c` before flipping (byte-diff where pointer-free, §1605).
+### Phase B — broaden the DLL-body flips, driven by the differential harness  *[wave 2 ✅ 2026-07-12]*
+
+**The harness is the gate, not judgment.** `sdk/lib/rust/msvcrt-difftest` compiles the GENUINE `dll/win32/msvcrt/string.c` for the host (the real file is the TU — 106 symbols renamed `ref_*`) and fuzzes cnt-rust's shims against it, emitting a MATCH / SIGN-ONLY / DIVERGE verdict per function. Run it before flipping anything:
+```
+cargo test -p msvcrt-difftest --test classify     # verdict table
+```
+
+**Verdict on string.c's 33 shared functions: 24 MATCH · 1 SIGN-ONLY · 8 DIVERGE.**
+
+**Wave 2 (landed):** the 23 MATCH functions — `strlen strnlen strchr strrchr strstr strspn strcspn strpbrk atoi atol _atoi64 strtol strtoul strcpy strncpy strcat strncat _strlwr _strupr _strrev _strset memcpy memset`. (msvcrt.dll now serves 33 functions from Rust.)
+
+> ⚠️ **The 8 DIVERGE — NEVER flip these via cnt-rust:** `strcmp strncmp _stricmp _strnicmp _memicmp memchr _memccpy _strnset`.
+> **One root cause:** cnt-rust uses a **deliberate signed-char** convention (faithful to libcntpr's `tcscmp.h`): `core_rs::mem::chr` is `(b as i8 as i32) == c`, `Elem::diff` for `u8` is `(a as i8) - (b as i8)`. msvcrt uses standard **unsigned-char**. They agree on ASCII and **flip sign on any byte ≥ 0x80** — flipping them would silently corrupt comparison/search on non-ASCII data (UTF-8 paths, accented filenames, binary buffers): green smoke, then bizarre field failures. `_strnset` additionally differs in its return pointer.
+> A `msvcrt-crt-rust` build that exports any of these is a **bug** — the crate's export list is asserted against this set.
+
+**Remaining candidates** (need the same harness treatment first): `wcs*` (extend the harness to `wcs.c`), float↔str (`_ecvt/_fcvt/_gcvt`), the `math.c`/`sincos.c` transcendentals, `mbcs.c`.
+
+**Two mechanism gotchas hit in wave 2 (both fixed, both will recur):**
+1. **`-C no-prepopulate-passes` (the §378 guard) breaks cross-crate `#[inline]` core generics.** `_strrev`'s `buf.reverse()` pulls `core::ptr::swap_nonoverlapping`, which the flag leaves un-inlined AND un-emitted → `undefined symbol` at link. **Do not drop the guard** (it's why `memset` wasn't DCE'd into a spin); write the loop explicitly instead.
+2. **`--whole-archive` force-includes the crate's bundled `compiler_builtins`** (`__chkstk`, `__divdi3`, libm shims) into msvcrt.dll. Benign so far (×3 green), but it means Rust's `__chkstk` can win over ReactOS's. *Owed cleanup:* pull only the flipped objects (per-symbol `-u`) instead of the whole archive — note plain link-order alone does NOT work (§1b).
+
+> ⚠️ **Semantic watch is REAL and per-function — verified, not assumed (2026-07-12).** cnt-rust "tracks *libcntpr*, not textbook libc," and libcntpr's NT variants **do** diverge from msvcrt's Wine-derived bodies. Confirmed divergences found while scoping wave 2:
+> - **path (`_splitpath`/`_makepath`) — DO NOT FLIP via cnt-rust.** cnt-rust is the classic **unbounded, non-MBCS** variant ("INT_MAX copy caps unreachable (not modeled)", "_LIBCNT_ strips _ismbblead"); msvcrt's `_splitpath` delegates to the **bounded `_splitpath_s`** (`_MAX_DRIVE`/…) and is MBCS-aware. Coincide for typical paths, but cnt-rust would **overflow** on overlong components where msvcrt truncates (a security regression) and mishandles MBCS. Flipping this needs a *msvcrt-contract* port (bounded + MBCS), not the cnt-rust drop-in.
+> - **`_stricmp`/`_strnicmp` — verify first.** cnt-rust is the "ASCII-only A..Z fold (NT variant — NOT the `toupper()` stricmp.c)"; msvcrt's may be locale-aware.
+>
+> **Process:** for each candidate function, read `dll/win32/msvcrt/*.c` and confirm the contract matches cnt-rust's `core_rs` (byte-diff where pointer-free, §1605) *before* adding it to `msvcrt-crt-rust`. Only genuinely-identical leaves flip via cnt-rust; contract-divergent ones need a msvcrt-specific port (or stay C). Int-conv (wave 1) matched exactly; path did not. A **differential harness** (compile msvcrt's actual `.c` as the reference TU, fuzz cnt-rust against it — the §1605 methodology) would let this scale instead of per-function eyeballing.
 
 ### Phase C — fill the pure-algorithm gaps
 - **G1 public printf entry points** — tiny C variadic trampolines → `streamout` (`_snprintf/sprintf/vsnprintf/_vsnwprintf/swprintf…`). Pattern is the §873 `_vsnprintf` shim, already used for the kernel `Rtl*Printf` families.
@@ -216,3 +240,51 @@ Read these before touching the build; every one has already cost someone a sessi
 - Cohab/link mechanics: `docs/engineering/rust-in-kernel.md` (HAL cohab pattern, cargo-cutover).
 - The proven kernel-CRT wiring to copy: `sdk/lib/crt/libcntpr.cmake`.
 - Field-manual recipes: §378, §384, §873, §1266–1279, §1346–1350, §1589 (see §7 table).
+
+## 2026-07-12 — WAVE 2 REVERTED ON MASTER (net-suite regression). Re-land needs a PERF gate.
+
+`cfdfd3c841a` (wave 2 — the 23 "MATCH" flips) **broke `tests/qemu/test_net.py` on mainline**
+and was reverted (code only; this plan doc kept). Not a correctness bug — a **performance**
+one, which is exactly the class the differential harness is blind to.
+
+**Symptom.** `test_dns_resolve` + `test_usermode_winsock_roundtrip` fail. On serial,
+`nettest.exe` prints `[NETTEST] usermode winsock proof starting` → `[NETTEST] WSAStartup OK`
+→ then nothing (marker `[NETTEST] usermode winsock TCP echo OK` never arrives, 120s timeout).
+The kernel netstack itself is fine — all 13 in-kernel TDI/UDP/ICMP tests still pass, and
+`[NETSTACK] dns OK` does eventually print, just outside the captured boot window.
+
+**Bisect (each a real boot, amd64):**
+| tree | net |
+|---|---|
+| pre-wave-2 | 15/15 green |
+| + wave 2 | 2 failed / 13 passed (208s) |
+| + wave 2, unrelated kernel commit reverted | 2 failed / 13 passed (control — not that lane) |
+| + wave 2 **reverted** | **15/15 green (71s)** |
+
+**Root candidate — semantics-identical but orders of magnitude slower.** The harness grades
+`cnt-rust` vs the C bodies on *behaviour*, so a body that returns the right bytes always scores
+MATCH no matter how slowly it gets there. But these are `msvcrt.dll`'s `memcpy`/`memset` —
+served to **every user-mode caller in the system**:
+- `memset` is a **per-byte `core::ptr::write_volatile` loop**. `write_volatile` is *unvectorizable
+  by construction* — the compiler may not merge, widen, or elide the stores. That is a byte-at-a-
+  time `rep stosb` at best, ~1-2 orders of magnitude off a real `memset`.
+- `memcpy` delegates to `raw_move`; check whether that lowers to a real `memcpy`/`memmove` or an
+  open-coded loop.
+
+The 71s → 208s wall-clock blow-up on the same 15 boots is consistent with a system-wide CRT
+slowdown, and a 120s per-marker timeout is exactly what a big user-mode buffer op would blow.
+
+**Before re-landing:**
+1. **Benchmark, don't just diff.** Add a throughput case to `msvcrt-difftest` (bytes/sec vs the C
+   body, at 16B / 4KB / 1MB). A flip that is >~2x slower than the C it replaces should FAIL the
+   harness, not pass it.
+2. **Drop `write_volatile` from `memset`** — nothing here needs volatile semantics; it exists to
+   defeat a loop-idiom miscompile, but the cure is `black_box` on the *index* (as `cstr_slice`
+   already does), not volatile on every store.
+3. **Prefer delegating to the intrinsic**: `core::ptr::copy_nonoverlapping` / `write_bytes` lower
+   to the real `memcpy`/`memset`.
+4. Re-gate with the net suite (`vibeos-cli gate` runs it; do not `--skip-net` a CRT-wide flip).
+
+*(Cross-lane note: this is the same trap the kernel's `kmsafecopy.c` hit the same day — a
+hand-rolled `while (Len--) *Dst++ = *Src++;` compiled to a genuine byte loop; caught by
+disassembling the shim. Field manual §9.59.)*

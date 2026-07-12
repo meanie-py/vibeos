@@ -3539,11 +3539,23 @@ pub unsafe extern "system" fn NtWriteFile(
         if Length != 0 {
             (*Irp).AssociatedIrp.SystemBuffer =
                 ExAllocatePoolWithQuotaTag(NonPagedPool, Length as _, TAG_IOBUF);
-            core::ptr::copy_nonoverlapping(
-                Buffer as *const u8,
-                (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
+            // Fault-tolerant capture of the caller's write buffer. The C original
+            // wrapped this copy in _SEH2_TRY with an IopCleanupAfterException
+            // handler (iofunc.c:295-310); under DUMMY_PSEH that handler is dead, so
+            // a hostile Buffer (kmtest IoReadWrite) faulted memcpy+0x40. This is the
+            // third member of the memcpy+0x40 cluster — the *write* side only, which
+            // is why reads never crashed: the read path allocates SystemBuffer but
+            // copies data OUT, never from a caller-supplied source.
+            if let Err(s) = safe_copy_from_user(
+                (*Irp).AssociatedIrp.SystemBuffer,
+                Buffer,
                 Length as usize,
-            );
+                1,
+                PreviousMode,
+            ) {
+                IopCleanupAfterException(FileObject, Irp, EventObject, core::ptr::null_mut());
+                return s;
+            }
             (*Irp).Flags = IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER;
         } else {
             (*Irp).Flags = IRP_BUFFERED_IO;

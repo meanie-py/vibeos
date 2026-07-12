@@ -30,7 +30,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${MSFS_RUST_TARGET_DIR}
         RUSTFLAGS=${MSFS_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${MSFS_RUST_TARGET}
             -p msfs-rust
             --manifest-path ${MSFS_RUST_WORKSPACE_DIR}/Cargo.toml

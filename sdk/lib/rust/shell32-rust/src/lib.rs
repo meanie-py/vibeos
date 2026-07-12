@@ -1,7 +1,8 @@
 #![no_std]
 // ShellMessageBoxA (shellord.rs) is a genuine C-variadic export (forwards a va_list to
-// FormatMessageA) — same pattern as scsiport-rust/version-rust/etc.
-#![feature(c_variadic)]
+// FormatMessageA). Stable Rust cannot DEFINE a variadic fn, so its variadic entry point
+// is a trampoline in dll/win32/shell32/rust_varargs_shim.c that calls the fixed-arity
+// `ShellMessageBoxA_v` twin — this crate needs no nightly feature gate.
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut)]
 #![allow(unused_assignments)]

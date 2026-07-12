@@ -27,7 +27,6 @@ add_custom_command(
     OUTPUT ${BUSLOGIC_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${BUSLOGIC_RUST_TARGET_DIR}
-        RUSTC_BOOTSTRAP=1
         RUSTFLAGS=${BUSLOGIC_RUST_RUSTFLAGS}
         cargo build --release --target ${BUSLOGIC_RUST_TARGET}
             -p buslogic-rust

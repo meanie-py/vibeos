@@ -14,12 +14,16 @@ extern "C" {
 // No constant declarations to emit; NDEBUG, NDEBUG_USBPORT_MINIPORT,
 // and NDEBUG_USBPORT_URB are object-like macros with no value (compile-time flags).
 
+/// Fixed-arity twin of the `USBPORT_DbgPrint` C-variadic entry point in
+/// `drivers/usb/usbport/rust_varargs_shim.c`. The C side exists only to do the
+/// `va_start` that stable Rust cannot (`c_variadic`, rust-lang#44930); `ap` is a
+/// pointer to its `va_list` (unused — the C original is a FIXME no-op too).
 #[no_mangle]
-pub unsafe extern "C" fn USBPORT_DbgPrint(
+pub unsafe extern "C" fn USBPORT_DbgPrint_v(
     mut MiniPortExtension: PVOID,
     mut Level: ULONG,
     mut Format: PCH,
-    mut args: ...
+    _ap: *mut core::ffi::c_void,
 ) -> ULONG {
     return 0 as ULONG;
 }

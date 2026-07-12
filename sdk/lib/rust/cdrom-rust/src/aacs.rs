@@ -7,7 +7,6 @@ use ntkrnl_sys::rtl::*;
 use core::ffi::c_void;
 
 extern "C" {
-    fn TracePrint(level: i32, flag: i32, fmt: *const i8, ...);
 }
 extern "system" {
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
@@ -145,7 +144,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
                 let mut otherPacks: u8 = (*header).Reserved[1];
 
                 if otherPacks == 0 {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_WARNING,
                         TRACE_FLAG_INIT,
                         c"AACS: Device is reporting zero total packs (invalid)\n".as_ptr() as *const i8,
@@ -1570,7 +1569,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGenerateBindingNonce(
 //                 // validate and zero-base the otherPacks
 //                 if (otherPacks == 0)
 //                 {
-//                     TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                     TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                                 "AACS: Device is reporting zero total packs (invalid)\n"));
 //                     *DataLength = 0;
 //                     status = STATUS_IO_DEVICE_ERROR;

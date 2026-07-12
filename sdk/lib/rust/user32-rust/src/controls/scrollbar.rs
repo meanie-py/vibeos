@@ -39,12 +39,10 @@ unsafe fn GetWin32ClientInfo() -> PCLIENTINFO {
 /// `DesktopPtrToUser` — user32p.h inline: offsets by `pci->ulClientDelta`.
 #[inline]
 unsafe fn DesktopPtrToUser(p: PVOID) -> PVOID {
-    let pci = GetWin32ClientInfo();
-    let di = (*pci).pDeskInfo;
-    if di.is_null() {
-        return core::ptr::null_mut();
-    }
-    (p as ULONG_PTR).wrapping_sub((*pci).ulClientDelta) as PVOID
+    // WoW64: DESKTOPINFO is 64-bit-laid-out for a 32-bit guest, so the
+    // base/limit range check must be done through the normalizing view.
+    // Single definition lives in crate::wow64.
+    crate::wow64::desktop_ptr_to_user(p)
 }
 
 /// `GetControlBrush` — user32p.h inline over the NtUserGetControlBrush syscall.
@@ -130,6 +128,7 @@ static mut ScrollTrackVertical: BOOL = 0;
 static mut ScrollMovingThumb: BOOL = 0;
 
 unsafe fn IntGetSBData(pwnd: PWND, Bar: INT) -> PSBDATA {
+    crate::wow64::wow64_unsupported("SBINFO");
     let pSBInfo: PSBINFO = DesktopPtrToUser((*pwnd).pSBInfo as *mut _) as PSBINFO;
     match Bar as u32 {
         SB_HORZ => {
@@ -599,6 +598,7 @@ unsafe extern "fastcall" fn IntScrollGetScrollBarRect(
     if pWnd.is_null() {
         return 0;
     }
+    crate::wow64::wow64_unsupported("SBINFO");
     pSBInfo = DesktopPtrToUser((*pWnd).pSBInfo as PVOID) as PSBINFO;
 
     *Rect = core::mem::transmute_copy(&(*pWnd).rcClient);

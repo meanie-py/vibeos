@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "varargs-rust",
     "classpnp-rust",
     "disk-rust",
     "mountmgr-rust",
@@ -49,6 +50,7 @@ members = [
     "crt-dllmain-rust",
     "crt0-rust",
     "msvcrt-crt-rust",
+    "msvcrt-difftest",
     "compress",
     "crc32",
     "encode",

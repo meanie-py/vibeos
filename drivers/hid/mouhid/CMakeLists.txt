@@ -28,7 +28,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${MOUHID_RUST_TARGET_DIR}
         RUSTFLAGS=${MOUHID_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${MOUHID_RUST_TARGET}
             -p mouhid-rust
             --manifest-path ${MOUHID_RUST_WORKSPACE_DIR}/Cargo.toml

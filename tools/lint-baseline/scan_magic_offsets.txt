@@ -22,8 +22,8 @@
 [TYPED_PTR_HEX_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/except.rs:568: pdesk = core::ptr::read_unaligned(teb.add(0x820) as *const u64);
 [TYPED_PTR_HEX_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/except.rs:569: delta = core::ptr::read_unaligned(teb.add(0x828) as *const u64);
 [TYPED_PTR_HEX_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ke/i386/cpu.rs:1302: let IdtEntry = &mut *(*(KeGetPcr() as PKIPCR)).IDT.add(0x13);
-[TYPED_PTR_HEX_ARITH] sdk/lib/rust/version-rust/src/lib.rs:2447: *vffi = buf.offset(0x14) as *mut VS_FIXEDFILEINFO;
-[TYPED_PTR_HEX_ARITH] sdk/lib/rust/version-rust/src/lib.rs:2449: *vffi = buf.offset(0x28) as *mut VS_FIXEDFILEINFO;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/version-rust/src/lib.rs:2449: *vffi = buf.offset(0x14) as *mut VS_FIXEDFILEINFO;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/version-rust/src/lib.rs:2451: *vffi = buf.offset(0x28) as *mut VS_FIXEDFILEINFO;
 [U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1087: let p = (self as *const _ as *const u8).add(pfn_offsets_orig_pte::ORIGINAL_PTE);
 [U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1093: let p = (self as *mut _ as *mut u8).add(pfn_offsets_orig_pte::ORIGINAL_PTE);
 [U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1403: let p = (pfn as *mut u8).add(pfn_offsets::PTE_ADDRESS);
