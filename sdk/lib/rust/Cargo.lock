@@ -1194,6 +1194,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "msvcrt-crt-rust"
+version = "0.1.0"
+dependencies = [
+ "cnt-rust",
+ "panic-common",
+]
+
+[[package]]
 name = "mup-rust"
 version = "0.1.0"
 dependencies = [

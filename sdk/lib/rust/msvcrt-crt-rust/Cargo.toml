@@ -1,0 +1,34 @@
+# msvcrt-crt-rust — the user-mode msvcrt.dll CRT-body cohab staticlib.
+#
+# "assemble the Rust CRT from pieces": this crate is the SCOPED override that
+# feeds msvcrt.dll's body (`msvcrt_static`) one pure-algorithm family at a
+# time. It links into the cmake `msvcrt` MODULE *before* `msvcrt_static`, so
+# lld first-match selects these Rust symbols and the C monolith's copies
+# (`dll/win32/msvcrt/string.c` etc.) go dead — the standard
+# --allow-multiple-definition cohab (like libcntpr.cmake's cnt-rust swap).
+#
+# It depends on `cnt-rust` with `default-features = false` so ONLY `core_rs`
+# (the difftest-pinned single-source-of-truth logic) compiles — no `cabi`,
+# so cnt-rust's 208 #[no_mangle] symbols do NOT leak into this .a. Each wave
+# hand-exports exactly the family being flipped, delegating the actual
+# formatting to `cnt_rust::core_rs::*`. This keeps the flip surgical and the
+# logic un-duplicated.
+#
+# Wave 1 (2026-07-12): the int↔string radix family (_itoa/_ltoa/_ultoa/
+# _i64toa/_ui64toa + wide twins). Semantics verified identical to msvcrt's
+# `ltoa_helper` (sign only radix==10, unsigned reinterpret otherwise,
+# lowercase digits, no NULL/radix guards). See
+# docs/engineering/active-lanes/msvcrt-from-pieces-plan.md Phase A/B.
+
+[package]
+name = "msvcrt-crt-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+cnt-rust = { path = "../cnt-rust", default-features = false }
+panic-common = { path = "../panic-common", features = ["user"] }
