@@ -5021,6 +5021,45 @@ Flink/Blink update (NT's KiInsertDeferredReadyList / KiQueueReadyThread lock
 contract). The first ready-list manipulation under the wrong/no PRCB lock is
 the -smp 2 residual.
 
+**UPDATE 2026-07-12 (c) — static lock audit + a CORRECTION to (b).** (b)
+symbolicated the fault against the UP kernel's table (ntoskrnl.exe) — WRONG
+binary for an SMP boot. Re-symbolicated against ntkrnlmp.exe: the faulting RIP
+(0x462906) is **KiSelectReadyThread+0x46 (the ready-list REMOVER), not
+KxQueueReadyThread** (which sits at a different address in the SMP build and
+DOES carry its lock xchg's — the 'dropped KiReleasePrcbLock' idea from (b) is
+dead; UP KiReleasePrcbLock is a no-op, which is what made the UP disasm look
+release-less). Real fault: RemoveEntryList inlined in KiSelectReadyThread,
+faulting on a stale Entry->Flink. Caller chain (stack re-symbolicated vs
+ntkrnlmp): KeWaitForSingleObject -> KxSingleThreadWait -> KiSwapThread ->
+KiSelectReadyThread — the wait/reschedule path, holding the per-PRCB lock.
+
+Full static lock audit of every DispatcherReadyListHead / ReadySummary reader
+and writer (thrdschd.rs KiDeferredReadyThreadImpl/KiSwapThread/KiSetPriority/
+KiUpdateEffectiveAffinity, ke.rs KxQueueReadyThread/KiSelectReadyThread,
+balmgr.rs KiScanReadyQueues): **all hold the target Prcb->PrcbLock** (balmgr
+holds BOTH the global dispatcher lock and the per-PRCB lock). The lock
+primitive is correct (SeqCst xchg acquire + SeqCst release; x86 TSO). So the
+corruption is NOT an obviously-missing lock — it is a runtime interleaving
+(or a path not yet examined: dpc.rs:477, thrdobj.rs:952/1035 KiSelectNextThread,
+the KiCheckDeferredReadyList drain) that static reading can't localize.
+
+**Fault MECHANISM identified:** the ReadySummary-vs-list consistency invariants
+(balmgr.rs:85/93/97: 'bit set => list non-empty', 'entry->Priority == index')
+are `debug_assert!` — **compiled out of the release kernel**. So a
+ReadySummary bit set while its list is empty (or holding a wrong-priority /
+already-freed entry) is never caught; KiSelectReadyThread then computes
+`thread = ListHead.Flink - offsetof(WaitListEntry)` from the list HEAD itself
+and RemoveEntryList walks a bogus node -> the 0x1E.
+
+**Next (cheapest, idiomatic — arm the invariant in RELEASE):** add a release-mode
+guard at the top of KiSelectReadyThread: if the chosen ReadySummary bit's list
+is empty, or Entry->Flink->Blink != Entry, KeBugCheckEx immediately with
+(Prcb, priority, ReadySummary, ListHead.Flink) — converting the 14 downstream
+IN_PAGE_ERRORs into ONE precise 'ready list inconsistent on entry' report that
+says whether the list was ALREADY corrupt when KiSelectReadyThread ran (someone
+else corrupted it — then GDB-watchpoint that CPU's ReadySummary/list) or is
+being torn concurrently. Same amplifier build (--cswitchdep) makes it fire fast.
+
 ### 9.57 (ROOT-CAUSED + FIXED 2026-07-11) A *correct* fix woke a latent panic: `NT_ASSERT` mistranslated as a hard `assert!`, dormant until IRP_MJ_CLEANUP started being delivered (arm64-only)
 
 **Symptom:** After merging origin/master into the conformance-ratchet lane, the ×3 landing
