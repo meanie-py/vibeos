@@ -407,5 +407,25 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
     polluted the baseline + poisoned the result buffer. Now drains over-long lines. amd64
     was unaffected (its comments max 94 chars); its landed 81/81 baseline stands.
   * Iteration was automated (a throwaway auto-grinder: run→parse-crasher→quarantine→rebuild
-    until clean). **arm64 baseline DEFERRED** — kmtest-sweep.exe dies in msvcrt CRT init
-    (cp-20127 NLS) before main() on arm64; fix = rewrite sweep.c off msvcrt (Win32), tracked.
+    until clean).
+- 2026-07-12: **M3 arm64 DEFERRED (multi-layer first-light) — root-caused 2 layers, 1 fixed.**
+  arm64 boots from a fastfat RAMDISK (not the x86 ISO), so the conformance sweep hits
+  arm64-only plumbing gaps the x86 path never had. Peeled with a MAIN-PROBE (a DbgPrint as
+  main()'s first statement — the definitive tool; it corrected a wrong hypothesis and saved a
+  ~2h dead-end rewrite):
+  * **RED HERRING corrected:** the `msvcrt cp-20127 MultiByteToWideChar` err spam on serial
+    is NON-fatal — MAIN-PROBE proved `main()` runs fine. Do NOT rewrite sweep.c off msvcrt.
+  * **Layer 1 (FIXED):** the sweep's SCM gate `OpenEventA("SC_AutoStartComplete")` never
+    succeeds on arm64 — **services.exe never publishes SC_AutoStartComplete on arm64** (x86
+    signals it within a few tries). The gate FATAL-returned; now it WARNs + PROCEEDs (the
+    sweep runs after the desktop is up, so auto-start is functionally complete). **CONFORMANCE
+    FINDING owed:** services-rust should publish SC_AutoStartComplete on arm64.
+  * **Layer 2 (BLOCKER, next):** with the gate cleared, every test is `launch FAILED err=2`
+    (FILE_NOT_FOUND) — **kmtest_.exe / kmtest_drv.sys (+ helper drivers) are not staged into
+    the arm64 ramdisk's `\reactos\bin\`.** They're built (build-arm64/modules/rostests/kmtests/)
+    and reach the x86 ISO via the CMake add_rostests_file/CD-file mechanism, which does NOT
+    feed the ramdisk (mkramdisk.sh is a hand-curated file list + the payload manifest). Fix =
+    stage the full rostests binary set into the ramdisk (mkramdisk.sh, conditional on a
+    KMTESTS build). Likely further layers behind it (kmtest_drv load + CreateService on arm64).
+  The SCM-proceed sweep.c fix lands now (arm64-path-only — x86 takes the event-found branch
+  unchanged, so the landed i386/amd64 baselines are unaffected by construction).
