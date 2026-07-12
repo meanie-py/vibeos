@@ -28,3 +28,7 @@ lockdep = []
 # VibeosCswitchdepSpin* by link name, same shape as the lockdep taps.
 # Enabled transitively by ntoskrnl-rust/cswitchdep.
 cswitchdep = []
+# CONFIG_SMP for the inline lock helpers (inline/ke.rs "UP no-op lock
+# functions" → real interlocked bodies). Enabled transitively via the
+# per-crate smp features; only the ntkrnlmp-cargo link turns it on.
+smp = []

@@ -530,12 +530,18 @@ pub unsafe extern "C" fn KiSaveProcessorState(
     TrapFrame: PKTRAP_FRAME,
     ExceptionFrame: PKEXCEPTION_FRAME,
 ) {
-    let Prcb = KeGetCurrentPrcb() as *mut _KPROCESSOR_STATE;
+    // C: Prcb->ProcessorState — NOT a cast of the PRCB pointer itself. The
+    // old `KeGetCurrentPrcb() as *mut _KPROCESSOR_STATE` scribbled the saved
+    // CONTEXT + special registers over the PRCB HEADER (MxCsr/CurrentThread/…)
+    // on the SMP freeze path, and Restore then loaded CR0/CR3/CR4 from those
+    // same PRCB header bytes.
+    let Prcb = KeGetCurrentPrcb() as *mut _KPRCB;
+    let State = core::ptr::addr_of_mut!((*Prcb).ProcessorState) as *mut _KPROCESSOR_STATE;
 
-    (*Prcb).ContextFrame.ContextFlags = CONTEXT_ALL;
-    KeTrapFrameToContext(TrapFrame, ExceptionFrame, core::ptr::addr_of_mut!((*Prcb).ContextFrame));
+    (*State).ContextFrame.ContextFlags = CONTEXT_ALL;
+    KeTrapFrameToContext(TrapFrame, ExceptionFrame, core::ptr::addr_of_mut!((*State).ContextFrame));
 
-    KiSaveProcessorControlState(Prcb);
+    KiSaveProcessorControlState(State);
 }
 
 #[no_mangle]
@@ -543,17 +549,19 @@ pub unsafe extern "C" fn KiRestoreProcessorState(
     TrapFrame: PKTRAP_FRAME,
     ExceptionFrame: PKEXCEPTION_FRAME,
 ) {
-    let Prcb = KeGetCurrentPrcb() as *mut _KPROCESSOR_STATE;
+    // See KiSaveProcessorState: use Prcb->ProcessorState, not a PRCB cast.
+    let Prcb = KeGetCurrentPrcb() as *mut _KPRCB;
+    let State = core::ptr::addr_of_mut!((*Prcb).ProcessorState) as *mut _KPROCESSOR_STATE;
 
     KeContextToTrapFrame(
-        core::ptr::addr_of_mut!((*Prcb).ContextFrame),
+        core::ptr::addr_of_mut!((*State).ContextFrame),
         ExceptionFrame,
         TrapFrame,
         CONTEXT_ALL,
         (*TrapFrame).PreviousMode,
     );
 
-    KiRestoreProcessorControlState(Prcb);
+    KiRestoreProcessorControlState(State);
 }
 
 #[no_mangle]
@@ -563,6 +571,14 @@ pub unsafe extern "system" fn KeFlushEntireTb(Invalid: BOOLEAN, AllProcessors: B
     OldIrql = KeRaiseIrqlToSynchLevel();
 
     KeFlushCurrentTb();
+
+    // M3 SMP: propagate to every other active processor (coarse full-flush
+    // broadcast with ack barrier — see ke/amd64/ipi.rs).
+    #[cfg(feature = "smp")]
+    {
+        unsafe extern "C" { fn KiTbShootdownBroadcast(); }
+        KiTbShootdownBroadcast();
+    }
 
     InterlockedExchangeAdd(core::ptr::addr_of_mut!(KiTbFlushTimeStamp) as *mut LONG, 1);
     KeLowerIrql(OldIrql);

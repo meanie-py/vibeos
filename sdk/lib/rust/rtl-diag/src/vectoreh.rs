@@ -43,6 +43,16 @@ pub unsafe extern "system" fn RtlpCallVectoredHandlers(
     HandlerRemoved = 0u8;
     HandlerReturn = EXCEPTION_CONTINUE_SEARCH;
 
+    /* Tolerate an uninitialized list head (zeroed statics before ntdll's
+     * RtlpInitializeVectoredExceptionHandling runs, or in the kernel where these
+     * lists are never initialized). An initialized empty list points its Flink
+     * at itself; only a pre-init list has a NULL Flink. Without this, a fault
+     * dispatched before init would deref NULL. Callers (incl. the arm64
+     * first-chance dispatch) rely on this being safe pre-init. */
+    if (*VectoredHandlerList).Flink.is_null() {
+        return 0u8;
+    }
+
     ExceptionInfo.ExceptionRecord = ExceptionRecord;
     ExceptionInfo.ContextRecord = Context;
 

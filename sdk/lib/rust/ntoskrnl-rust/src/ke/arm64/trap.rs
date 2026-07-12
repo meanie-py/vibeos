@@ -14,7 +14,6 @@ use ntkrnl_sys::ddk::{
     _KTRAP_FRAME,
     _KTHREAD,
     _KSERVICE_TABLE_DESCRIPTOR,
-    KEXCEPTION_FRAME,
     KPROCESSOR_MODE,
     PKTHREAD,
     PKTRAP_FRAME,
@@ -25,29 +24,13 @@ use ntkrnl_sys::ddk::{
     NtYieldExecution,
 };
 
-// Capture the callee-saved integer registers (x19-x28) into a KEXCEPTION_FRAME.
-// x0 = &KEXCEPTION_FRAME.X19 (the first field; X19..X28 are 10 contiguous u64).
-// A #[naked]-equivalent (no prologue) so it reads the CALLER's live x19-x28 —
-// callee-saved, so they survive the `bl` into here unchanged. Used by the sync
-// exception handler to snapshot the interrupted context's non-volatile regs
-// BEFORE MmAccessFault (and the handler body) clobber them; without it the
-// CONTEXT handed to KiUserExceptionDispatcher carries zeroed x19-x28 and a
-// hardware fault delivered to a user __except resumes with lost callee-saved
-// state (crash-value: arm64 sehtest hw-fault caught but RESULT FAIL / "(null)").
-core::arch::global_asm!(
-    ".globl KiCaptureCalleeSaved",
-    "KiCaptureCalleeSaved:",
-    "stp x19, x20, [x0, #0x00]",
-    "stp x21, x22, [x0, #0x10]",
-    "stp x23, x24, [x0, #0x20]",
-    "stp x25, x26, [x0, #0x30]",
-    "stp x27, x28, [x0, #0x40]",
-    "ret",
-);
-extern "C" {
-    fn KiCaptureCalleeSaved(out: *mut u64);
-}
-
+// NOTE: origin/master's KiCaptureCalleeSaved (a bl-preserving asm helper that
+// snapshots x19-x28 from inside the Rust handler) was dropped here in favour of
+// the fex-arm EXFRAME_SAVE/EXFRAME_RESTORE pair in trap.S — see the handler
+// signature below. EXFRAME_SAVE captures in pure asm before ANY Rust prolog can
+// spill a callee-saved reg, and EXFRAME_RESTORE writes back the values
+// KiDispatchException modifies (Rd>=19 fixup, NtContinue resume) so they reach
+// KiTrapReturn — a discarded local (the origin/master approach) could not.
 extern "C" {
     static mut Arm64UartKernelBase: PVOID;
     static mut MmUserProbeAddress: ULONG_PTR;
@@ -250,9 +233,11 @@ unsafe fn KiSvcDispatch(TrapFrame: PKTRAP_FRAME) {
     if TableIndex == 1 && ((*TrapFrame).Spsr & 0xF) == 0 {
         let Teb = (*Thread).Teb;
         if !Teb.is_null() && MmIsAddressValid(core::ptr::addr_of!((*Teb).GdiBatchCount) as PVOID) != 0 &&
-           (*Teb).GdiBatchCount != 0 && KeGdiFlushUserBatch.is_some()
+           (*Teb).GdiBatchCount != 0
         {
-            (KeGdiFlushUserBatch.unwrap())();
+            if let Some(GdiFlush) = KeGdiFlushUserBatch {
+                GdiFlush();
+            }
         }
     }
 
@@ -316,16 +301,16 @@ unsafe fn KiSvcDispatch(TrapFrame: PKTRAP_FRAME) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) {
-    // Snapshot the interrupted context's callee-saved x19-x28 FIRST — before
-    // MmAccessFault or anything else clobbers them — so KiDispatchException can
-    // build a CONTEXT with the real non-volatile registers (see
-    // KiCaptureCalleeSaved). TRAP_PROLOG only touches x0/x1, so at this point
-    // x19-x28 still hold the faulting code's values.
-    let mut ExFrame: KEXCEPTION_FRAME = core::mem::zeroed();
-    KiCaptureCalleeSaved(core::ptr::addr_of_mut!(ExFrame.X19));
-    let ExFramePtr = core::ptr::addr_of_mut!(ExFrame);
-
+pub unsafe extern "C" fn KiSynchronousExceptionHandler(
+    TrapFrame: PKTRAP_FRAME,
+    /* Callee-saved x19..x28 captured by EXFRAME_SAVE in trap.S; passed through
+     * to KiDispatchException so KeTrapFrameToContext/KeContextToTrapFrame can
+     * round-trip the full integer state (NtContinue resume, Rd>=19 fixups).
+     * (This supersedes origin/master's KiCaptureCalleeSaved-in-Rust capture:
+     * EXFRAME_SAVE snapshots in asm before any Rust prolog runs AND EXFRAME_RESTORE
+     * writes modified regs back for the resume path — a discarded local can't.) */
+    ExceptionFrame: ntkrnl_sys::ddk::PKEXCEPTION_FRAME,
+) {
     let EC = ((*TrapFrame).Esr >> 26) & 0x3F;
     let ISS = (*TrapFrame).Esr & 0x1FFFFFF;
 
@@ -346,6 +331,28 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
                 FaultCode |= 0x2;
             }
 
+            // Alignment-fault diagnostic (DFSC 0x21): discriminates "page is
+            // Device memory" (PTE AttrIndx bits [3:2] != 0) from "instruction
+            // demands alignment on Normal memory" (LDAR/STLR/LDAPR — what FEX
+            // emits for x86-TSO). Alignment fault ⇒ translation succeeded, so
+            // the self-map PTE chain for FAR is walkable.
+            if DFSC == 0x21 {
+                let far = (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress;
+                let pc = (*TrapFrame).Pc;
+                TrapPuts(b"[ALIGN] FAR="); TrapPutHex64(far);
+                TrapPuts(b" PC="); TrapPutHex64(pc);
+                let pte_va = 0xFFFFF68000000000u64
+                    .wrapping_add(((far as u64 >> 12) & 0xF_FFFF_FFFFu64) << 3);
+                let pte = core::ptr::read_volatile(pte_va as *const u64);
+                TrapPuts(b" PTE="); TrapPutHex64(pte);
+                let mair: u64;
+                core::arch::asm!("mrs {}, mair_el1", out(reg) mair, options(nomem, nostack));
+                TrapPuts(b" MAIR="); TrapPutHex64(mair);
+                let opc = core::ptr::read_volatile(pc as *const u32);
+                TrapPuts(b" OPC="); TrapPutHex32(opc);
+                TrapPuts(b"\r\n");
+            }
+
             if (DFSC & 0x3C) == 0x04 ||
                (DFSC & 0x3C) == 0x08 ||
                (DFSC & 0x3C) == 0x0C
@@ -362,7 +369,15 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
             }
 
             let mut ExRec: EXCEPTION_RECORD = core::mem::zeroed();
-            ExRec.ExceptionCode = STATUS_ACCESS_VIOLATION;
+            // DFSC 0x21 = alignment fault: Windows semantics deliver this as
+            // EXCEPTION_DATATYPE_MISALIGNMENT, not an access violation. FEX's
+            // BTCpuResetToConsistentState keys on exactly this code to
+            // backpatch unaligned LDAR/STLR (x86-TSO) and resume.
+            ExRec.ExceptionCode = if DFSC == 0x21 {
+                0x80000002u32 as i32 // STATUS_DATATYPE_MISALIGNMENT
+            } else {
+                STATUS_ACCESS_VIOLATION
+            };
             ExRec.ExceptionFlags = 0;
             ExRec.ExceptionRecord = core::ptr::null_mut();
             ExRec.ExceptionAddress = (*TrapFrame).Pc as PVOID;
@@ -371,7 +386,7 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
             ExRec.ExceptionInformation[1] = (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress;
             KiDispatchException(
                 &mut ExRec as *mut EXCEPTION_RECORD,
-                ExFramePtr,
+                ExceptionFrame,
                 TrapFrame,
                 FaultMode,
                 1u8
@@ -415,7 +430,7 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
             ExRec.ExceptionInformation[1] = (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress;
             KiDispatchException(
                 &mut ExRec as *mut EXCEPTION_RECORD,
-                ExFramePtr,
+                ExceptionFrame,
                 TrapFrame,
                 FaultMode2,
                 1u8
@@ -454,7 +469,31 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
         }
 
         0x15 => {
+            // cswitchdep taps 4/5 (user↔kernel syscall parity). Position
+            // guarantees kernel stack + built trap frame (same contract as
+            // amd64 KiSystemCallHandler / i386 KiSystemServiceHandler).
+            // Kernel-origin SVC (Zw from EL1, Spsr.M != EL0) passes
+            // user_trap=0 and is skipped — the i386 INT-2E Zw rule.
+            #[cfg(feature = "cswitchdep")]
+            let user_svc = ((*TrapFrame).Spsr & 0xF) == 0;
+            #[cfg(feature = "cswitchdep")]
+            crate::ke::cswitchdep::VibeosCswitchdepUserEntry(
+                user_svc as u32,
+                crate::code_addr!(),
+            );
+
             KiSvcDispatch(TrapFrame);
+
+            // Tap 5 pairs with tap 4 around the dispatch rather than at the
+            // ERET tail: this exception path returns through EXFRAME_RESTORE
+            // for user and kernel frames alike, so the user-bound branch
+            // only exists here in Rust. Untapped user exits (exception
+            // frames, APC-edited resumes) stay exit_no_entry orphans, as on
+            // x86.
+            #[cfg(feature = "cswitchdep")]
+            if user_svc {
+                crate::ke::cswitchdep::VibeosCswitchdepUserExit(crate::code_addr!());
+            }
         }
 
         0x26 => {
@@ -470,7 +509,7 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
             ExRec.NumberParameters = 0;
             KiDispatchException(
                 &mut ExRec as *mut EXCEPTION_RECORD,
-                ExFramePtr,
+                ExceptionFrame,
                 TrapFrame,
                 FaultMode4,
                 1u8
@@ -490,7 +529,7 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(TrapFrame: PKTRAP_FRAME) 
             ExRec.NumberParameters = 0;
             KiDispatchException(
                 &mut ExRec as *mut EXCEPTION_RECORD,
-                ExFramePtr,
+                ExceptionFrame,
                 TrapFrame,
                 FaultMode3,
                 1u8

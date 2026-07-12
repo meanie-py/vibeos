@@ -486,6 +486,13 @@ unsafe fn KeGetBugMessageText(BugCheckCode: ULONG, OutputString: PANSI_STRING) -
     ) {
         return Result;
     }
+    if !KiBugMsgRangeValid(
+        (*KiBugCodeMessages).Blocks.as_ptr() as *const u8,
+        ((*KiBugCodeMessages).NumberOfBlocks as usize)
+            .saturating_mul(core::mem::size_of::<_MESSAGE_RESOURCE_BLOCK>()),
+    ) {
+        return Result;
+    }
 
     MmMakeKernelResourceSectionWritable();
 
@@ -498,13 +505,47 @@ unsafe fn KeGetBugMessageText(BugCheckCode: ULONG, OutputString: PANSI_STRING) -
             MessageEntry = ((KiBugCodeMessages as ULONG_PTR) + block.OffsetToEntries as ULONG_PTR) as PMESSAGE_RESOURCE_ENTRY;
             IdOffset = BugCheckCode - block.LowId;
 
+            // Every hop trusts an in-section Length field. Validate BEFORE
+            // each dereference: a 2026-07-11 arm64 crash walked this into an
+            // unmapped level-1 region, and the nested 0x1E buried the real
+            // stop code (the harness then reports the mask, not the bug).
             while IdOffset > 0 {
-                MessageEntry = ((MessageEntry as ULONG_PTR) + (*MessageEntry).Length as ULONG_PTR) as PMESSAGE_RESOURCE_ENTRY;
+                if !KiBugMsgRangeValid(
+                    MessageEntry as *const u8,
+                    core::mem::size_of::<_MESSAGE_RESOURCE_ENTRY>(),
+                ) {
+                    return Result;
+                }
+                let Hop = (*MessageEntry).Length as ULONG_PTR;
+                if Hop == 0 {
+                    return Result;
+                }
+                MessageEntry = ((MessageEntry as ULONG_PTR) + Hop) as PMESSAGE_RESOURCE_ENTRY;
                 IdOffset -= 1;
             }
 
+            if !KiBugMsgRangeValid(
+                MessageEntry as *const u8,
+                core::mem::size_of::<_MESSAGE_RESOURCE_ENTRY>(),
+            ) {
+                return Result;
+            }
+            let EntryLen = (*MessageEntry).Length as usize;
+            if EntryLen < core::mem::size_of::<_MESSAGE_RESOURCE_ENTRY>()
+                || !KiBugMsgRangeValid(MessageEntry as *const u8, EntryLen)
+            {
+                return Result;
+            }
+
             BugCode = (*MessageEntry).Text.as_ptr() as *mut i8;
-            Length = strlen(BugCode) as USHORT;
+            // Bounded strlen: garbage text data must not scan past the
+            // validated entry span.
+            let TextCap = EntryLen - core::mem::offset_of!(_MESSAGE_RESOURCE_ENTRY, Text);
+            let mut TextLen: usize = 0;
+            while TextLen < TextCap && *BugCode.add(TextLen) != 0 {
+                TextLen += 1;
+            }
+            Length = TextLen as USHORT;
 
             while (Length > 0) &&
                   ((*BugCode.offset((Length - 1) as isize) == b'\n' as i8) ||
@@ -827,6 +868,17 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
 
     KeBugCheckActive = 1;
     KiBugCheckDriver = core::ptr::null_mut();
+
+    // arm64: park the HAL IRQL tripwire — this path runs at HIGH_LEVEL by
+    // design, so the display path's DISPATCH-level lock acquires would spam
+    // raise-DOWN/lower-UP violations between the banner and the diagnostics.
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "system" {
+            fn HalVibeosQuiesceIrqlTripwire();
+        }
+        HalVibeosQuiesceIrqlTripwire();
+    }
 
     // Direct callers (KiSystemFatalException on double fault, trap handlers)
     // reach WithTf WITHOUT going through KeBugCheckEx — historically NO banner

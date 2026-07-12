@@ -2004,6 +2004,21 @@ unsafe fn DesktopWindowProc_impl(
 
     *lResult = 0;
 
+    // Diagnostic (arm64 black-desktop hunt): first messages the desktop
+    // window proc actually receives.
+    {
+        static WPROC_LOGS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+        let n = WPROC_LOGS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        if n < 32 {
+            DbgPrint(
+                b"[DESKWNDPROC] #%u msg=0x%x wnd=%p\n\0".as_ptr() as *const core::ffi::c_char,
+                n,
+                Msg,
+                Wnd,
+            );
+        }
+    }
+
     match Msg {
         x if x == WM_NCCREATE => {
             if (*Wnd).fnid == 0 {
@@ -2159,9 +2174,25 @@ pub unsafe extern "system" fn DesktopThreadMain() {
 
     KeSetEvent(gpDesktopThreadStartedEvent as _, IO_NO_INCREMENT as i32, 0u8);
 
+    DbgPrint(b"[DESKTHREAD] pump entered\n\0".as_ptr() as *const core::ffi::c_char);
+    let mut _dbg_seen: u32 = 0;
     loop {
         let Ret = co_IntGetPeekMessage(&mut Msg, 0, 0, 0, PM_REMOVE, 1u8);
         if Ret != 0 {
+            // Diagnostic (arm64 black-desktop hunt): first messages the
+            // desktop thread ever dequeues — silence here means the pump is
+            // wedged inside co_IntGetPeekMessage's wait, not that paint
+            // messages aren't generated.
+            if _dbg_seen < 12 || Msg.message == WM_PAINT || Msg.message == WM_ERASEBKGND {
+                if _dbg_seen < 48 {
+                    DbgPrint(
+                        b"[DESKTHREAD] msg=0x%x hwnd=%p\n\0".as_ptr() as *const core::ffi::c_char,
+                        Msg.message,
+                        Msg.hwnd,
+                    );
+                }
+                _dbg_seen += 1;
+            }
             IntDispatchMessage(&mut Msg);
         }
     }
@@ -2284,6 +2315,15 @@ unsafe fn co_IntShowDesktop_impl(
     let pwnd: PWND = (*(*Desktop).pDeskInfo).spwnd;
     let mut flags: UINT = SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW;
 
+    DbgPrint(
+        b"[DESKSHOW] desk=%p pwnd=%p %ux%u bRedraw=%d\n\0".as_ptr() as *const core::ffi::c_char,
+        Desktop,
+        pwnd,
+        Width,
+        Height,
+        bRedraw,
+    );
+
     if bRedraw == 0 {
         flags |= SWP_NOREDRAW;
     }
@@ -2299,11 +2339,21 @@ unsafe fn co_IntShowDesktop_impl(
     );
 
     if bRedraw != 0 {
+        // RDW_ERASE added vs C (which passes only UPDATENOW|ALLCHILDREN|
+        // INVALIDATE): the C only ever paints a desktop via the hidden->
+        // visible SWP_SHOWWINDOW transition above (that path queues the
+        // WM_ERASEBKGND -> IntPaintDesktop fill). On arm64's boot path the
+        // Default desktop becomes the input desktop EARLY (bRedraw=0 show,
+        // visible but unpainted), so the later bRedraw=1 shows find it
+        // already visible: no transition, and INVALIDATE alone never sets
+        // WNDS_SENDERASEBACKGROUND -> IntBeginPaint erase=0 -> the desktop
+        // stays BLACK forever (field manual: arm64 black-desktop regression).
+        // An explicit "redraw the desktop" must erase to mean anything.
         co_UserRedrawWindow(
             pwnd,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-            RDW_UPDATENOW | RDW_ALLCHILDREN | RDW_INVALIDATE,
+            RDW_UPDATENOW | RDW_ALLCHILDREN | RDW_INVALIDATE | RDW_ERASE,
         );
     }
 
@@ -2677,9 +2727,36 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
         DesktopBrush = (*StockObjects.as_ptr().add(BLACK_BRUSH as usize)) as _;
     }
 
+    // Diagnostic (arm64 black-desktop hunt): first few desktop paints, dump
+    // the fill inputs — a black screen is either an empty/failed clip box, a
+    // bogus class background brush, or the PatBlt itself failing.
+    {
+        static PAINT_LOGS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+        let n = PAINT_LOGS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        if n < 16 {
+            DbgPrint(
+                b"[DESKPAINT] #%u hdc=%p clip=(%d,%d,%d,%d) brush=%p wallpaper=%p doPatBlt=%d safemode=%d\n\0"
+                    .as_ptr() as *const core::ffi::c_char,
+                n,
+                hDC,
+                Rect.left,
+                Rect.top,
+                Rect.right,
+                Rect.bottom,
+                DesktopBrush,
+                gspv.hbmWallpaper,
+                doPatBlt,
+                InSafeMode as u32,
+            );
+        }
+    }
+
     if doPatBlt != 0 {
         PreviousBrush = NtGdiSelectBrush(hDC, DesktopBrush);
-        NtGdiPatBlt(hDC, Rect.left, Rect.top, Rect.right, Rect.bottom, PATCOPY as i32 as _);
+        let ok = NtGdiPatBlt(hDC, Rect.left, Rect.top, Rect.right, Rect.bottom, PATCOPY as i32 as _);
+        if ok == 0 {
+            DbgPrint(b"[DESKPAINT] PatBlt FAILED\n\0".as_ptr() as *const core::ffi::c_char);
+        }
         NtGdiSelectBrush(hDC, PreviousBrush);
     }
 
@@ -3972,7 +4049,7 @@ unsafe fn IntMapDesktopView(pdesk: PDESKTOP) -> NTSTATUS {
         (*pdesk).hsectionDesktop,
         PsGetCurrentProcess() as _,
         &mut UserBase,
-        0,
+        crate::init::W32Wow64ZeroBits(PsGetCurrentProcess() as _) as _,
         0,
         core::ptr::addr_of_mut!(Offset) as _,
         core::ptr::addr_of_mut!(ViewSize) as _,

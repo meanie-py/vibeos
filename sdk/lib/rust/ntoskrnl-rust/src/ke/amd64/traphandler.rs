@@ -70,6 +70,14 @@ pub unsafe extern "system" fn KiDpcInterruptHandler() {
 
     KiSendEOI();
 
+    // M3 SMP: if this CPU was idle in lazy-TLB state, service any deferred
+    // shootdown BEFORE retiring DPCs (DPC routines touch remappable memory).
+    #[cfg(feature = "smp")]
+    {
+        unsafe extern "C" { fn KiTbLazyIdleExit(); }
+        KiTbLazyIdleExit();
+    }
+
     if ((*Prcb).DpcData[0].DpcQueueDepth != 0) ||
        ((*Prcb).TimerRequest != 0) ||
        (!(*Prcb).DeferredReadyListHead.Next.is_null())
@@ -164,7 +172,7 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
     // construction (kernel Zw goes via KiZwSystemService), and reaching here
     // means the kernel stack + trap frame are in place post-swapgs.
     #[cfg(feature = "cswitchdep")]
-    crate::ke::cswitchdep::VibeosCswitchdepUserEntry(1);
+    crate::ke::cswitchdep::VibeosCswitchdepUserEntry(1, crate::code_addr!());
 
     if UserRsp > MmUserProbeAddress || UserRsp < 0x10000 {
         (*TrapFrame).Rax = STATUS_ACCESS_VIOLATION as u64;
@@ -179,11 +187,17 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
     ServiceNumber &= SERVICE_NUMBER_MASK;
 
     if TableIndex == WIN32K_SERVICE_INDEX {
+        // C: if (NtCurrentTeb()->GdiBatchCount) KeGdiFlushUserBatch()
+        // (ke/amd64/traphandler.c:224). Typed field read — the previous
+        // hand-rolled `*teb_ptr.add(0x77 / 4)` read TEB+0x74; the real amd64
+        // TEB.GdiBatchCount is at 0x1740 (peb_teb.h), so the flush NEVER
+        // fired and the gdi32 TEB batch overflowed GdiTebBatch.Buffer
+        // (0x300..0x7d8) into the GDI TEB fields and CLIENTINFO at 0x800+
+        // (field manual §9.41: explorer's Ctrl+Esc death + blank menu labels).
         let GdiBatchCount: ULONG = {
-            let teb = NtCurrentTeb();
+            let teb = NtCurrentTeb() as *const ntkrnl_sys::ddk::_TEB;
             if !teb.is_null() {
-                let teb_ptr = teb as *const ULONG;
-                *teb_ptr.add(0x77 / 4)
+                (*teb).GdiBatchCount
             } else {
                 0
             }
@@ -191,8 +205,9 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
 
         if GdiBatchCount != 0 {
             // GdiBatchCount > 0 implies win32k has registered the flush routine.
-            // Matches C: ke/amd64/usercall.c:322 also calls without NULL-check.
-            (KeGdiFlushUserBatch.unwrap())();
+            if let Some(flush) = KeGdiFlushUserBatch {
+                flush();
+            }
         }
     }
 

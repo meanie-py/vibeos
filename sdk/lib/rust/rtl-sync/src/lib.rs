@@ -35,6 +35,14 @@ pub mod critical;
 #[cfg(feature = "cabi")]
 pub mod wait;
 
+// waitaddr — RtlWaitOnAddress / RtlWakeAddress{All,Single}, backing Win32
+// WaitOnAddress / WakeByAddress* (exported by kernelbase.dll, forwarded here).
+// Like srw/condvar/runonce these are -version=0x600+ Rtl exports, so they live
+// in BOTH the main ntdll link (`cabi`, stripped at the 0x502 baseline) and the
+// standalone ntdll_vista.dll forwarder (`vista`, where they actually export).
+#[cfg(any(feature = "cabi", feature = "vista"))]
+pub mod waitaddr;
+
 // NOTE: rtl-sync stays rlib-only. The standalone ntdll_vista.dll staticlib +
 // its panic_handler live in the sibling `rtl-vista-rust` crate, which re-exports
 // these `vista`-gated modules. (A staticlib crate-type here would force cargo to

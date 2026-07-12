@@ -1150,7 +1150,10 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     }
     #[cfg(target_arch = "aarch64")]
     {
-        (*SharedUserData).ImageNumberLow = 0xAA64;
+        // WoW64 (Phase C): admit i386 images — kernel32's CreateProcessInternalW
+        // gates on ImageNumberLow <= Machine <= ImageNumberHigh. Real arm64
+        // Windows uses the same [I386, ARM64] range.
+        (*SharedUserData).ImageNumberLow = 0x014c;
         (*SharedUserData).ImageNumberHigh = 0xAA64;
     }
 
@@ -1241,6 +1244,25 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     NtosEntry = ((*LoaderBlock).LoadOrderListHead.Flink as usize - core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks)) as *mut LDR_DATA_TABLE_ENTRY;
 
     InbvUpdateProgressBar(5);
+
+    // CONFIG_SMP (C-reference order): start the application processors
+    // BEFORE the Phase-1 Ob/Ex/Io inits — their per-processor loops iterate
+    // KeNumberProcessors, so every AP must exist first. Wiring this after
+    // ObInitSystem left CPU1's PRCB.PPLookasideList unset; the first
+    // ObCreateObject scheduled onto the AP AV'd in
+    // ObpAllocateObjectCreateInfoBuffer (M3 bring-up, 2026-07-11).
+    // NUMPROC/BOOTPROC/MAXPROC command-line caps still unplumbed.
+    #[cfg(feature = "smp")]
+    {
+        unsafe extern "system" {
+            fn KeStartAllProcessors();
+            fn HalAllProcessorsStarted() -> u8;
+        }
+        KeStartAllProcessors();
+        if HalAllProcessorsStarted() == 0 {
+            KeBugCheck(0x61); // HAL1_INITIALIZATION_FAILED
+        }
+    }
 
     if ObInitSystem() == 0 {
         KeBugCheck(0x5F);
@@ -1408,6 +1430,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     } else if LastTzBias != ExpLastTimeZoneBias {
         ZwSetSystemTime(core::ptr::null_mut(), core::ptr::null_mut());
     }
+
 
     if FsRtlInitSystem() == 0 {
         KeBugCheck(0x45);

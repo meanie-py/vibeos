@@ -143,6 +143,16 @@ fn main() {
 
     let mut linker = Linker::new(target_json).rust_staticlib("hal-rust");
 
+    // SMP HAL (smp-bringup-quest.md): VIBEOS_SMP_HAL=1 (cmake
+    // -DVIBEOS_SMP_DEFAULT_BOOT=ON via `vibeos-cli build --smp-kernel`) builds
+    // hal-rust with the `smp` feature — HalpBuildType drops the UNIPROCESSOR
+    // bit so the MISMATCHED_HAL handshake accepts ntkrnlmp.exe. Same env→
+    // features plumbing as the kernel's VIBEOS_LOCKDEP.
+    println!("cargo:rerun-if-env-changed=VIBEOS_SMP_HAL");
+    if env::var("VIBEOS_SMP_HAL").is_ok() {
+        linker = linker.rust_features(&["smp"]);
+    }
+
     // x86/amd64 only: cntpr's Rust half as a cargo-native sibling staticlib
     // (was the cmake-copied libcntpr_rust.a) + the DUMMY_PSEH _SEH2_Volatile*
     // symbols compiled in-cargo from dummy.c (was libpseh.a). Both are

@@ -31,6 +31,17 @@ unsafe fn MiCreatePebOrTeb(
     Size: ULONG,
     BaseAddress: PULONG_PTR,
 ) -> NTSTATUS {
+    MiCreatePebOrTebCapped(Process, Size, 0, BaseAddress)
+}
+
+/// `HighestAddressCap` = 0 for the classic behavior; non-zero forces the VAD below
+/// that address (WoW64: PEB32/TEB32 must be reachable by 32-bit guest pointers).
+unsafe fn MiCreatePebOrTebCapped(
+    Process: PEPROCESS,
+    Size: ULONG,
+    HighestAddressCap: ULONG_PTR,
+    BaseAddress: PULONG_PTR,
+) -> NTSTATUS {
     let mut Vad: PMMVAD_LONG;
     let mut Status: NTSTATUS;
     let HighestAddress: ULONG_PTR;
@@ -70,7 +81,7 @@ unsafe fn MiCreatePebOrTeb(
     (*Vad).ControlArea = core::ptr::null_mut();
     (*Vad).FirstPrototypePte = core::ptr::null_mut();
 
-    if Size == core::mem::size_of::<PEB>() as ULONG {
+    if Size == core::mem::size_of::<PEB>() as ULONG && HighestAddressCap == 0 {
         KeQueryTickCount(core::ptr::addr_of_mut!(CurrentTime) as *mut i64);
         CurrentTime.__bindgen_anon_1.LowPart &= ((_64K / PAGE_SIZE) - 1) as u32;
 
@@ -85,6 +96,8 @@ unsafe fn MiCreatePebOrTeb(
         };
 
         HighestAddress = RandomBase + AlignedSize as ULONG_PTR - 1;
+    } else if HighestAddressCap != 0 {
+        HighestAddress = core::cmp::min(HighestAddressCap, MM_HIGHEST_VAD_ADDRESS as ULONG_PTR);
     } else {
         HighestAddress = MM_HIGHEST_VAD_ADDRESS as ULONG_PTR;
     }
@@ -111,12 +124,10 @@ unsafe fn MiCreatePebOrTeb(
 #[no_mangle]
 pub unsafe extern "system" fn MmDeleteTeb(Process: PEPROCESS, Teb: PTEB) {
     let Process = opaque_ptr(Process);
-    let TebEnd: ULONG_PTR;
     let Thread = PsGetCurrentThread() as PETHREAD;
     let Vad: PMMVAD;
     let VadTree = core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).VadRoot);
 
-    TebEnd = Teb as ULONG_PTR + ROUND_TO_PAGES(core::mem::size_of::<TEB>()) - 1;
 
     KeAttachProcess(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Pcb));
 
@@ -127,6 +138,8 @@ pub unsafe extern "system" fn MmDeleteTeb(Process: PEPROCESS, Teb: PTEB) {
         if (*Vad).StartingVpn != ((Teb as ULONG_PTR >> PAGE_SHIFT)) as _ {
             // Bug in AVL code
         } else {
+            // Use the VAD's real extent (WoW64 TEB regions are larger than sizeof(TEB)).
+            let TebEnd = ((((*Vad).EndingVpn as ULONG_PTR) + 1) << PAGE_SHIFT) - 1;
             MiLockProcessWorkingSetUnsafe(Process, Thread);
 
             MiRemoveNode(Vad as *mut _, VadTree);
@@ -496,6 +509,97 @@ pub unsafe extern "system" fn MmCreatePeb(
         }
     }
 
+    // WoW64 (arm64 host): an i386 image gets a PEB32 below 2GB and the EPROCESS
+    // marked as a WoW64 process (Wow64Process = the PEB32, 5.2-style — this is
+    // what NtQueryInformationProcess(ProcessWow64Information) hands back).
+    // The 32-bit ntdll map + LdrSystemDllInitBlock population happen in user
+    // mode (wow64.dll), not here. See docs/engineering/wow64-plan.md Phase C.
+    #[cfg(target_arch = "aarch64")]
+    if (*(NtHeaders as *mut _IMAGE_NT_HEADERS)).FileHeader.Machine == 0x014c /* IMAGE_FILE_MACHINE_I386 */ {
+        use ntkrnl_sys::ddk::{_PEB32, _WOW64_PROCESS};
+        let mut Peb32Base: ULONG_PTR = 0;
+        Status = MiCreatePebOrTebCapped(
+            Process,
+            core::mem::size_of::<_PEB32>() as ULONG,
+            0x7FFE_FFFF,
+            &mut Peb32Base,
+        );
+        if Status < 0 {
+            KeDetachProcess();
+            return Status;
+        }
+        let Peb32 = Peb32Base as *mut _PEB32;
+        RtlZeroMemory(Peb32 as PVOID, core::mem::size_of::<_PEB32>());
+
+        (*Peb32).InheritedAddressSpace = (*Peb).InheritedAddressSpace;
+        (*Peb32).Mutant = (*Peb).Mutant as ULONG_PTR as u32;
+        (*Peb32).ImageBaseAddress = (*Peb).ImageBaseAddress as ULONG_PTR as u32;
+        // NLS pointers: the 64-bit NLS view lives above 4GB, so a truncated copy
+        // would be a wild guest pointer. Left 0 for now; a guest-visible low view
+        // is owed when 32-bit code starts consuming NLS (Phase C, later step).
+        (*Peb32).OSMajorVersion = (*Peb).OSMajorVersion;
+        (*Peb32).OSMinorVersion = (*Peb).OSMinorVersion;
+        (*Peb32).OSBuildNumber = (*Peb).OSBuildNumber;
+        (*Peb32).OSPlatformId = (*Peb).OSPlatformId;
+        (*Peb32).OSCSDVersion = (*Peb).OSCSDVersion;
+        (*Peb32).NumberOfProcessors = (*Peb).NumberOfProcessors;
+        (*Peb32).BeingDebugged = (*Peb).BeingDebugged;
+        (*Peb32).NtGlobalFlag = (*Peb).NtGlobalFlag;
+        (*Peb32).CriticalSectionTimeout = (*Peb).CriticalSectionTimeout;
+        (*Peb32).HeapSegmentReserve = (*Peb).HeapSegmentReserve as u32;
+        (*Peb32).HeapSegmentCommit = (*Peb).HeapSegmentCommit as u32;
+        (*Peb32).HeapDeCommitTotalFreeThreshold = (*Peb).HeapDeCommitTotalFreeThreshold as u32;
+        (*Peb32).HeapDeCommitFreeBlockThreshold = (*Peb).HeapDeCommitFreeBlockThreshold as u32;
+        (*Peb32).MaximumNumberOfHeaps =
+            ((PAGE_SIZE as usize - core::mem::size_of::<_PEB32>()) / core::mem::size_of::<u32>()) as u32;
+        (*Peb32).ProcessHeaps = (Peb32 as usize as u32) + core::mem::size_of::<_PEB32>() as u32;
+        (*Peb32).ImageSubsystem = (*Peb).ImageSubsystem;
+        (*Peb32).ImageSubsystemMajorVersion = (*Peb).ImageSubsystemMajorVersion;
+        (*Peb32).ImageSubsystemMinorVersion = (*Peb).ImageSubsystemMinorVersion;
+        (*Peb32).SessionId = (*Peb).SessionId;
+
+        // NLS tables for the 32-bit world: the 64-bit view above (MEM_TOP_DOWN)
+        // lands high, so map a SECOND view of the NLS section constrained below
+        // 2GB (ZeroBits mask form) and point PEB32's NLS fields at it —
+        // RtlInitCodePageTable in the guest ntdll AVs on the NULL/garbage
+        // pointers otherwise. Failure is loud-but-nonfatal: the guest gets
+        // NULL pointers and dies visibly in NlsInit, not silently.
+        let mut Nls32Base: PVOID = core::ptr::null_mut();
+        let mut Nls32Size: SIZE_T = 0;
+        let mut Nls32Offset: LARGE_INTEGER = core::mem::zeroed();
+        let NlsStatus = MmMapViewOfSection(
+            ExpNlsSectionPointer,
+            Process,
+            &mut Nls32Base,
+            0x7FFFFFFFu64, /* ZeroBits mask: at-or-below 2GB */
+            0,
+            core::ptr::addr_of_mut!(Nls32Offset),
+            &mut Nls32Size as *mut SIZE_T as *mut _,
+            ViewShare,
+            0,
+            PAGE_READONLY,
+        );
+        if NlsStatus >= 0 && (Nls32Base as usize) < 0x8000_0000 {
+            (*Peb32).AnsiCodePageData =
+                (Nls32Base as usize + ExpAnsiCodePageDataOffset as usize) as u32;
+            (*Peb32).OemCodePageData =
+                (Nls32Base as usize + ExpOemCodePageDataOffset as usize) as u32;
+            (*Peb32).UnicodeCaseTableData =
+                (Nls32Base as usize + ExpUnicodeCaseTableDataOffset as usize) as u32;
+        } else {
+            ARM64_UART_TRACE_HEX(
+                b"[MM] MmCreatePeb: below-2GB NLS view FAILED status=\0".as_ptr() as *const i8,
+                NlsStatus as usize,
+            );
+        }
+
+        (*(Process as *mut _EPROCESS)).Wow64Process = Peb32 as *mut _WOW64_PROCESS;
+        ARM64_UART_TRACE_HEX(
+            b"[MM] MmCreatePeb: WoW64 i386 image, PEB32 at \0".as_ptr() as *const i8,
+            Peb32Base,
+        );
+    }
+
     KeDetachProcess();
     *BasePeb = Peb;
     STATUS_SUCCESS
@@ -517,7 +621,28 @@ pub unsafe extern "system" fn MmCreateTeb(
 
     KeAttachProcess(core::ptr::addr_of_mut!((*(Process as *mut _EPROCESS)).Pcb));
 
-    Status = MiCreatePebOrTeb(Process, core::mem::size_of::<TEB>() as ULONG, &mut Teb as *mut PTEB as PULONG_PTR);
+    // WoW64 threads get a combined low region: TEB64 at +0, TEB32 at +0x2000
+    // (sizeof(TEB) = 0x17d8 → TEB64 spans 2 pages), whole thing below 2GB so
+    // 32-bit guest pointers can reach both. WOW64_TEB32_OFFSET below must stay
+    // in sync with wow64.dll's view of the layout.
+    const WOW64_TEB32_OFFSET: usize = 0x2000;
+    #[cfg(target_arch = "aarch64")]
+    let IsWow64 = !(*(Process as *mut _EPROCESS)).Wow64Process.is_null();
+    #[cfg(not(target_arch = "aarch64"))]
+    let IsWow64 = false;
+    if IsWow64 {
+        #[cfg(target_arch = "aarch64")]
+        {
+            Status = MiCreatePebOrTebCapped(
+                Process,
+                (WOW64_TEB32_OFFSET + ROUND_TO_PAGES(core::mem::size_of::<ntkrnl_sys::ddk::_TEB32>())) as ULONG,
+                0x7FFE_FFFF,
+                &mut Teb as *mut PTEB as PULONG_PTR,
+            );
+        }
+    } else {
+        Status = MiCreatePebOrTeb(Process, core::mem::size_of::<TEB>() as ULONG, &mut Teb as *mut PTEB as PULONG_PTR);
+    }
     if Status < 0 {
         KeDetachProcess();
         return Status;
@@ -553,6 +678,44 @@ pub unsafe extern "system" fn MmCreateTeb(
 
     (*Teb).StaticUnicodeString.MaximumLength = core::mem::size_of_val(&(*Teb).StaticUnicodeBuffer) as USHORT;
     (*Teb).StaticUnicodeString.Buffer = (*Teb).StaticUnicodeBuffer.as_mut_ptr();
+
+    #[cfg(target_arch = "aarch64")]
+    if IsWow64 {
+        use ntkrnl_sys::ddk::_TEB32;
+        let Teb32 = (Teb as *mut u8).add(WOW64_TEB32_OFFSET) as *mut _TEB32; // nolint: magic-offset (WoW64 combined-region layout, TEB32 at TEB64+0x2000 by design)
+        RtlZeroMemory(Teb32 as PVOID, core::mem::size_of::<_TEB32>());
+
+        (*Teb32).NtTib.ExceptionList = 0xFFFF_FFFF; // EXCEPTION_CHAIN_END, 32-bit
+        (*Teb32).NtTib.Self_ = Teb32 as usize as u32;
+        (*Teb32).ClientId.UniqueProcess = (*ClientId).UniqueProcess as usize as u32;
+        (*Teb32).ClientId.UniqueThread = (*ClientId).UniqueThread as usize as u32;
+        (*Teb32).RealClientId = (*Teb32).ClientId;
+        (*Teb32).ProcessEnvironmentBlock =
+            (*(Process as *mut _EPROCESS)).Wow64Process as usize as u32; // = the PEB32
+        (*Teb32).CurrentLocale = PsDefaultThreadLocaleId;
+        (*Teb32).StaticUnicodeString.MaximumLength =
+            core::mem::size_of_val(&(*Teb32).StaticUnicodeBuffer) as USHORT;
+        (*Teb32).StaticUnicodeString.Buffer =
+            core::ptr::addr_of_mut!((*Teb32).StaticUnicodeBuffer) as usize as u32;
+        // Guest stack bounds are set by wow64.dll at thread init.
+
+        // WowTebOffset lives at TEB+0x180c / TEB32+0xfdc in the Win10 layout that
+        // wow64fex hardcodes (GetWowTEB). Our 5.2-era structs end before those
+        // offsets (sizeof TEB = 0x17d8, TEB32 = 0xfbc) but the pages are committed,
+        // so the slots are safe scratch — write them raw.
+        core::ptr::write_volatile(
+            (Teb as *mut u8).add(0x180c) as *mut i32, // nolint: magic-offset (Win10 TEB.WowTebOffset slot wow64fex hardcodes; past 5.2 struct end, committed scratch)
+            WOW64_TEB32_OFFSET as i32,
+        );
+        core::ptr::write_volatile(
+            (Teb32 as *mut u8).add(0xfdc) as *mut i32, // nolint: magic-offset (Win10 TEB32.WowTebOffset slot; past 5.2 struct end, committed scratch)
+            -(WOW64_TEB32_OFFSET as i32),
+        );
+        ARM64_UART_TRACE_HEX(
+            b"[MM] MmCreateTeb: WoW64 TEB32 at \0".as_ptr() as *const i8,
+            Teb32 as ULONG_PTR,
+        );
+    }
 
     KeDetachProcess();
     *BaseTeb = Teb;

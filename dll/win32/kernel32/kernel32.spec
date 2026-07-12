@@ -1,4 +1,4 @@
-@ stdcall -version=0x600+ AcquireSRWLockExclusive(ptr) ntdll.RtlAcquireSRWLockExclusive
+@ stdcall -arch=arm64 AcquireSRWLockExclusive(ptr) ntdll_vista.RtlAcquireSRWLockExclusive
 @ stdcall -version=0x600+ AcquireSRWLockShared(ptr) ntdll.RtlAcquireSRWLockShared
 @ stdcall ActivateActCtx(ptr ptr)
 @ stdcall AddAtomA(str)
@@ -166,7 +166,7 @@
 @ stdcall -version=0x600+ CreateSymbolicLinkA(str str long)
 @ stdcall -stub -version=0x600+ CreateSymbolicLinkTransactedA(str str long ptr)
 @ stdcall -stub -version=0x600+ CreateSymbolicLinkTransactedW(wstr wstr long ptr)
-@ stdcall -version=0x600+ CreateSymbolicLinkW(wstr wstr long)
+@ stdcall -arch=arm64 CreateSymbolicLinkW(wstr wstr long) kernel32_vista.CreateSymbolicLinkW
 @ stdcall CreateTapePartition(long long long long)
 @ stdcall CreateThread(ptr long ptr long long ptr)
 @ stdcall -stub -version=0x600+ CreateThreadpool(ptr)
@@ -473,7 +473,7 @@
 @ stdcall GetFileAttributesW(wstr)
 @ stdcall -version=0x600+ GetFileBandwidthReservation(ptr ptr ptr ptr ptr ptr)
 @ stdcall GetFileInformationByHandle(long ptr)
-@ stdcall -version=0x600+ GetFileInformationByHandleEx(ptr long ptr long)
+@ stdcall -arch=arm64 GetFileInformationByHandleEx(ptr long ptr long) kernel32_vista.GetFileInformationByHandleEx
 @ stdcall -version=0x600+ GetFileMUIInfo(long wstr ptr ptr)
 @ stdcall -version=0x600+ GetFileMUIPath(long wstr wstr ptr wstr ptr ptr)
 @ stdcall GetFileSize(long ptr)
@@ -481,7 +481,7 @@
 @ stdcall GetFileTime(long ptr ptr ptr)
 @ stdcall GetFileType(long)
 @ stdcall -version=0x600+ GetFinalPathNameByHandleA(ptr str long long)
-@ stdcall -version=0x600+ GetFinalPathNameByHandleW(ptr wstr long long)
+@ stdcall -arch=arm64 GetFinalPathNameByHandleW(ptr wstr long long) kernel32_vista.GetFinalPathNameByHandleW
 @ stdcall GetFirmwareEnvironmentVariableA(str str ptr long)
 @ stdcall -version=0x602+ GetFirmwareEnvironmentVariableExA(str str ptr long long)
 @ stdcall -version=0x602+ GetFirmwareEnvironmentVariableExW(wstr wstr ptr long long)
@@ -943,7 +943,7 @@
 @ stdcall ReleaseActCtx(ptr)
 @ stdcall ReleaseMutex(long)
 @ stub -version=0x600+ ReleaseMutexWhenCallbackReturns
-@ stdcall -version=0x600+ ReleaseSRWLockExclusive(ptr) ntdll.RtlReleaseSRWLockExclusive
+@ stdcall -arch=arm64 ReleaseSRWLockExclusive(ptr) ntdll_vista.RtlReleaseSRWLockExclusive
 @ stdcall -version=0x600+ ReleaseSRWLockShared(ptr) ntdll.RtlReleaseSRWLockShared
 @ stdcall ReleaseSemaphore(long long ptr)
 @ stub -version=0x600+ ReleaseSemaphoreWhenCallbackReturns
@@ -1058,7 +1058,7 @@
 @ stdcall SetFileAttributesW(wstr long)
 @ stdcall -version=0x600+ SetFileBandwidthReservation(ptr long long long ptr ptr)
 @ stdcall SetFileCompletionNotificationModes(ptr long)
-@ stub -version=0x600+ SetFileInformationByHandle
+@ stub -arch=arm64 SetFileInformationByHandle
 @ stub -version=0x600+ SetFileIoOverlappedRange
 @ stdcall SetFilePointer(long long ptr long)
 @ stdcall SetFilePointerEx(long double ptr long)
@@ -1156,7 +1156,7 @@
 @ stdcall Toolhelp32ReadProcessMemory(long ptr ptr long ptr)
 @ stdcall TransactNamedPipe(long ptr long ptr long ptr ptr)
 @ stdcall TransmitCommChar(long long)
-@ stdcall -version=0x601+ TryAcquireSRWLockExclusive(ptr) ntdll.RtlTryAcquireSRWLockExclusive
+@ stdcall -arch=arm64 TryAcquireSRWLockExclusive(ptr) ntdll_vista.RtlTryAcquireSRWLockExclusive
 @ stdcall -version=0x601+ TryAcquireSRWLockShared(ptr) ntdll.RtlTryAcquireSRWLockShared
 @ stdcall TryEnterCriticalSection(ptr) ntdll.RtlTryEnterCriticalSection
 @ stub -version=0x600+ TrySubmitThreadpoolCallback

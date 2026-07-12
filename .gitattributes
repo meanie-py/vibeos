@@ -84,3 +84,5 @@
 # All other extensions not explicitly mentioned here are left for Git to
 # handle automatically.
 # You must not rely on them having a particular line ending style!
+# Vendored FEX snapshot: preserve upstream bytes exactly (no EOL normalization)
+external/fex/** -text

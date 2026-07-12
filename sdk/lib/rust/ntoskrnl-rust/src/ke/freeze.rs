@@ -16,13 +16,22 @@ static mut KiOldIrql: KIRQL = 0;
 #[no_mangle]
 pub static mut KiFreezeFlag: ULONG = 0;
 
+// Per-arch freeze/thaw workers (#[no_mangle] in ke/{amd64,i386}/freeze.rs and
+// ke/arm64/stubs.rs) — link-level externs, same-crate.
+#[cfg(feature = "smp")]
+extern "system" {
+    fn KxFreezeExecution();
+    fn KxThawExecution();
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn KeFreezeExecution(
     _TrapFrame: PKTRAP_FRAME,
     _ExceptionFrame: PKEXCEPTION_FRAME,
 ) -> BOOLEAN {
     let Enable: BOOLEAN;
-    let OldIrql: KIRQL;
+    #[allow(unused_mut, unused_assignments)]
+    let mut OldIrql: KIRQL = 0;
 
     Enable = KeDisableInterrupts();
     KiFreezeFlag = 4;

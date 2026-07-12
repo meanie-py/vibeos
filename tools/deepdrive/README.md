@@ -95,3 +95,18 @@ per-turn `cost_estimate_usd` is approximate — the DeepSeek dashboard is truth.
 `tools/deepdrive/grind_prompt.md` is a fill-in-the-blanks bounded-grind instruction (incl. the
 **don't-rewrite** discipline for banked translations). Copy it, fill the `<<...>>` slots with your
 crate/target and any subsystem-specific rules, and pass via `--prompt-file`.
+
+## Design rationale & economics
+
+The two-tier division of labor — **frontier driver** (Claude/any frontier agent: decompose,
+design decisions, steer, review, integrate) + **cheap executor** (DeepSeek via DeepCode: the
+high-volume mechanical translation + `cargo check → fix → recheck` grind + boilerplate) — is
+validated economically: DeepSeek cost ~$0.20 for a full `version.c` mechanical translation,
+several smoke/check drives, *and* a 212k-token integration attempt, because DeepSeek's
+server-side prompt caching makes per-turn re-send nearly free (one turn billed 18M prompt
+tokens, 18M cached). **Dollar cost is not the binding constraint on the inner loop** — the
+scarce resources are wall-clock and the *frontier driver's context/attention*, so the
+controller optimizes for those, not for executor tokens. DeepCode = DeepSeek's official
+terminal coding agent (`@vegamo/deepcode-cli`); deepdrive invokes it as a **tool any Claude
+can call**, not a hand-puppeteered operator session. (Full design narrative:
+`docs/engineering/archive/deepdrive-controller-design.md`.)

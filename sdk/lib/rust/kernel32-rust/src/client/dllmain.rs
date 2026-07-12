@@ -71,9 +71,27 @@ static mut DllInitialized: BOOL = FALSE;
 #[no_mangle]
 pub static mut BaseCsrConnectionEstablished: BOOLEAN = FALSE as BOOLEAN;
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86"))]
 static mut BaseStaticServerDataFallback: ::core::mem::MaybeUninit<_BASE_STATIC_SERVER_DATA> =
     ::core::mem::MaybeUninit::uninit();
+
+/// x86 only: true when this 32-bit kernel32 runs in a WOW64 process (guest
+/// under FEX/wow64). CSR-LPC message thunking isn't built yet, so the guest
+/// gets the same no-CSRSS leniency the arm64 native bring-up uses; native
+/// i386 boots keep the strict terminate-on-failure behavior.
+#[cfg(target_arch = "x86")]
+unsafe fn BaseRunningUnderWow64() -> bool {
+    const PROCESS_WOW64_INFORMATION: u32 = 26;
+    let mut Peb32Ptr: ULONG_PTR = 0;
+    let Status = NtQueryInformationProcess(
+        NtCurrentProcess(),
+        PROCESS_WOW64_INFORMATION,
+        core::ptr::addr_of_mut!(Peb32Ptr) as PVOID,
+        core::mem::size_of::<ULONG_PTR>() as ULONG,
+        core::ptr::null_mut(),
+    );
+    NT_SUCCESS(Status) && Peb32Ptr != 0
+}
 
 #[no_mangle]
 pub static mut BaseDllDirectoryLock: RTL_CRITICAL_SECTION = RTL_CRITICAL_SECTION {
@@ -128,6 +146,14 @@ pub unsafe extern "system" fn BaseExitThreadPoolThread(ExitStatus: NTSTATUS) -> 
     ExitThread(ExitStatus as u32);
     return 0i32;
 }
+
+/// Toggle for the [K32DBG] PROCESS_ATTACH step markers below. Off by default;
+/// flip to `true` to bisect where a specific process wedges inside kernel32
+/// DllMain (the tool that localized the FEX fexprobe ConDllInitialize hang — a
+/// console-subsystem app deadlocking in console attach; see
+/// docs/engineering/fex-bringup-plan.md rung 2). Kept in-tree so the diagnostic
+/// is one edit away, not a re-derivation.
+const K32_DLLMAIN_TRACE: bool = false;
 
 #[no_mangle]
 pub unsafe extern "system" fn DllMain(
@@ -204,7 +230,21 @@ pub unsafe extern "system" fn DllMain(
                         b"ARM64: Continuing without CSRSS connection\n\0".as_ptr() as *const i8,
                     );
                 }
-                #[cfg(not(target_arch = "aarch64"))]
+                // x86 under WOW64: same leniency — 64-bit csrss refuses the
+                // 32-bit CSR_API_CONNECTINFO until the CSR-LPC-32 thunk layer
+                // exists. Native i386 keeps the strict terminate.
+                #[cfg(target_arch = "x86")]
+                {
+                    if BaseRunningUnderWow64() {
+                        DbgPrint(
+                            b"WOW64: Continuing without CSRSS connection\n\0".as_ptr() as *const i8,
+                        );
+                    } else {
+                        NtTerminateProcess(NtCurrentProcess(), Status);
+                        return FALSE;
+                    }
+                }
+                #[cfg(not(any(target_arch = "aarch64", target_arch = "x86")))]
                 {
                     NtTerminateProcess(NtCurrentProcess(), Status);
                     return FALSE;
@@ -221,27 +261,64 @@ pub unsafe extern "system" fn DllMain(
             // than asserting. (dllmain.c #ifdef _M_ARM64)
             #[cfg(not(target_arch = "aarch64"))]
             {
-                if (*Peb).ReadOnlyStaticServerData.is_null() {
-                    RtlAssert(
-                        b"Peb->ReadOnlyStaticServerData\0".as_ptr() as *const i8 as PVOID,
-                        b"dllmain.c\0".as_ptr() as *const i8 as PVOID,
-                        186u32,
-                        core::ptr::null_mut(),
-                    );
-                }
+                // x86 under WOW64 (no CSRSS connection yet): synthesize the
+                // same minimal static-server-data fallback the arm64 native
+                // bring-up uses instead of asserting on the NULL PEB field.
+                #[cfg(target_arch = "x86")]
+                let Wow64NoCsr = (*Peb).ReadOnlyStaticServerData.is_null()
+                    && BaseRunningUnderWow64();
+                #[cfg(not(target_arch = "x86"))]
+                let Wow64NoCsr = false;
 
-                BaseStaticServerData = *(*Peb)
-                    .ReadOnlyStaticServerData
-                    .offset(BASESRV_SERVERDLL_INDEX as isize)
-                    as PBASE_STATIC_SERVER_DATA;
+                if Wow64NoCsr {
+                    #[cfg(target_arch = "x86")]
+                    {
+                        DbgPrint(
+                            b"WOW64: ReadOnlyStaticServerData not available, using fallback\n\0"
+                                .as_ptr() as *const i8,
+                        );
+                        BaseStaticServerDataFallback = ::core::mem::MaybeUninit::zeroed();
+                        let fallback = BaseStaticServerDataFallback.as_mut_ptr();
+                        NtQuerySystemInformation(
+                            SystemBasicInformation,
+                            core::ptr::addr_of_mut!((*fallback).SysInfo) as *mut core::ffi::c_void,
+                            core::mem::size_of_val(&(*fallback).SysInfo) as u32,
+                            core::ptr::null_mut(),
+                        );
+                        RtlInitUnicodeString(
+                            core::ptr::addr_of_mut!((*fallback).WindowsDirectory),
+                            w!("\\reactos").as_ptr(),
+                        );
+                        RtlInitUnicodeString(
+                            core::ptr::addr_of_mut!((*fallback).WindowsSystemDirectory),
+                            w!("\\reactos\\syswow64").as_ptr(),
+                        );
+                        (*fallback).TermsrvClientTimeZoneId = TIME_ZONE_ID_INVALID as ULONG;
+                        BaseStaticServerData = fallback;
+                    }
+                } else {
+                    if (*Peb).ReadOnlyStaticServerData.is_null() {
+                        RtlAssert(
+                            b"Peb->ReadOnlyStaticServerData\0".as_ptr() as *const i8 as PVOID,
+                            b"dllmain.c\0".as_ptr() as *const i8 as PVOID,
+                            186u32,
+                            core::ptr::null_mut(),
+                        );
+                    }
 
-                if BaseStaticServerData.is_null() {
-                    RtlAssert(
-                        b"BaseStaticServerData\0".as_ptr() as *const i8 as PVOID,
-                        b"dllmain.c\0".as_ptr() as *const i8 as PVOID,
-                        188u32,
-                        core::ptr::null_mut(),
-                    );
+                    BaseStaticServerData = *(*Peb)
+                        .ReadOnlyStaticServerData
+                        .offset(BASESRV_SERVERDLL_INDEX as isize)
+                        as PBASE_STATIC_SERVER_DATA;
+
+                    if BaseStaticServerData.is_null() {
+                        RtlAssert(
+                            b"BaseStaticServerData\0".as_ptr() as *const i8 as PVOID,
+                            b"dllmain.c\0".as_ptr() as *const i8 as PVOID,
+                            188u32,
+                            core::ptr::null_mut(),
+                        );
+                    }
                 }
             }
             #[cfg(target_arch = "aarch64")]
@@ -309,11 +386,14 @@ pub unsafe extern "system" fn DllMain(
                 }
             }
 
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-CSR-connect (pre-CsrNewThread)\n\0".as_ptr() as *const i8); }
             if BaseRunningInServerProcess == 0 {
                 CsrNewThread();
             }
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-CsrNewThread\n\0".as_ptr() as *const i8); }
 
             BaseDllInitializeMemoryManager();
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-BaseDllInitializeMemoryManager\n\0".as_ptr() as *const i8); }
 
             hCurrentModule = hDll as HMODULE;
             kernel32_handle = hCurrentModule;
@@ -395,9 +475,11 @@ pub unsafe extern "system" fn DllMain(
                 as USHORT;
 
             InitCommandLines();
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-InitCommandLines\n\0".as_ptr() as *const i8); }
 
             RtlInitializeCriticalSection(&mut BaseDllDirectoryLock);
 
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] pre-NlsInit\n\0".as_ptr() as *const i8); }
             if NlsInit() == 0 {
                 DbgPrint(
                     b"(%s:%d) NLS Init failed\n\0".as_ptr() as *const i8,
@@ -407,6 +489,7 @@ pub unsafe extern "system" fn DllMain(
                 return FALSE;
             }
 
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-NlsInit (pre-ConDllInitialize)\n\0".as_ptr() as *const i8); }
             if ConDllInitialize(dwReason, SessionDir.as_mut_ptr() as PVOID) == 0 {
                 DbgPrint(
                     b"(%s:%d) Failed to set up console\n\0".as_ptr() as *const i8,
@@ -415,6 +498,7 @@ pub unsafe extern "system" fn DllMain(
                 );
                 return FALSE;
             }
+            if K32_DLLMAIN_TRACE { DbgPrint(b"[K32DBG] post-ConDllInitialize\n\0".as_ptr() as *const i8); }
 
             InitializeListHead(&mut BasepAppCertDllsList);
             RtlInitializeCriticalSection(&mut gcsAppCert);

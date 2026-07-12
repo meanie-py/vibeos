@@ -31,6 +31,7 @@ _PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
 _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),
     (".", ".", "tests/qemu/cli/test_cli_units.py"),
+    (".", ".", "tools/wow64gen/test_wow64gen.py"),
 ]
 
 

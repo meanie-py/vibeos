@@ -2117,8 +2117,34 @@ pub unsafe extern "system" fn CreateProcessInternalW(
             (*CreateProcessMsg).PebAddressNative = RemotePeb as PVOID;
             #[cfg(target_pointer_width = "64")]
             {
-                /* TODO: WOW64 is not supported yet */
-                (*CreateProcessMsg).PebAddressWow64 = 0;
+                /* WoW64 (Phase C): an i386 image on a 64-bit host is a WoW64
+                 * process. Report its PEB32 (EPROCESS.Wow64Process, via
+                 * ProcessWow64Information) so csrss/basesrv take the wow64 path
+                 * with a VALID PEB32. Leaving this 0 while ProcessorArchitecture
+                 * is set to INTEL (below) makes basesrv walk a wow64 path with a
+                 * null PEB32 and fault (raise 0x6BA → csrss dies → BUGCHECK 0xF4;
+                 * field manual §9.46). */
+                let mut Peb32: ULONG_PTR = 0;
+                if ImageInformation.Machine as u32 == IMAGE_FILE_MACHINE_I386 {
+                    extern "system" {
+                        fn NtQueryInformationProcess(
+                            ProcessHandle: HANDLE,
+                            ProcessInformationClass: u32,
+                            ProcessInformation: PVOID,
+                            ProcessInformationLength: ULONG,
+                            ReturnLength: PULONG,
+                        ) -> NTSTATUS;
+                    }
+                    const PROCESS_WOW64_INFORMATION: u32 = 26;
+                    NtQueryInformationProcess(
+                        ProcessHandle,
+                        PROCESS_WOW64_INFORMATION,
+                        core::ptr::addr_of_mut!(Peb32) as PVOID,
+                        core::mem::size_of::<ULONG_PTR>() as ULONG,
+                        core::ptr::null_mut(),
+                    );
+                }
+                (*CreateProcessMsg).PebAddressWow64 = Peb32 as ULONG;
             }
             #[cfg(target_pointer_width = "32")]
             {
@@ -2661,8 +2687,8 @@ pub unsafe extern "system" fn WinExec(lpCmdLine: LPCSTR, uCmdShow: UINT) -> UINT
         return if dosErr < 32 { dosErr } else { ERROR_BAD_FORMAT };
     }
 
-    if UserWaitForInputIdleRoutine.is_some() {
-        (UserWaitForInputIdleRoutine.unwrap())(ProcessInformation.hProcess, 10000);
+    if let Some(WaitForInputIdle) = UserWaitForInputIdleRoutine {
+        WaitForInputIdle(ProcessInformation.hProcess, 10000);
     }
 
     NtClose(ProcessInformation.hProcess);

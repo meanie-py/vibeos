@@ -88,19 +88,32 @@ pub unsafe extern "system" fn KiIdleLoop() -> ! {
             
             #[cfg(feature = "smp")]
             {
-                use ntkrnl_sys::ke::KfRaiseIrql;
-                KfRaiseIrql(0x2u8);
+                // C: KfRaiseIrql(SYNCH_LEVEL) — do the swap at SYNCH_LEVEL.
+                crate::ke::ke_defs::KfRaiseIrql(crate::ke::ke_defs::SYNCH_LEVEL);
             }
-            
+
             KiSwapContext(APC_LEVEL, OldThread);
-            
+
             #[cfg(feature = "smp")]
             {
-                use ntkrnl_sys::ke::KeLowerIrql;
-                KeLowerIrql(DISPATCH_LEVEL);
+                // C: KeLowerIrql(DISPATCH_LEVEL) — back to DISPATCH_LEVEL.
+                crate::ke::ke_defs::KeLowerIrql(DISPATCH_LEVEL);
             }
         } else {
+            // M3 SMP: deferred ("lazy") TLB coherence while blocked in hlt —
+            // remote shootdowns skip us; we flush on the way out, and the
+            // DPC/IPI ISR entries flush too (DPCs run inside the hlt wake).
+            #[cfg(feature = "smp")]
+            {
+                unsafe extern "C" { fn KiTbLazyIdleEnter(); }
+                KiTbLazyIdleEnter();
+            }
             ((*Prcb).PowerState.IdleFunction.unwrap())(&mut (*Prcb).PowerState as *mut _);
+            #[cfg(feature = "smp")]
+            {
+                unsafe extern "C" { fn KiTbLazyIdleExit(); }
+                KiTbLazyIdleExit();
+            }
         }
     }
 }
@@ -116,16 +129,18 @@ pub unsafe extern "system" fn KiSwapProcess(
     
     #[cfg(feature = "smp")]
     {
-        use ntkrnl_sys::interlocked::*;
-use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
-        InterlockedXor64(
-            core::ptr::addr_of_mut!((*(NewProcess as *mut _KPROCESS)).ActiveProcessors) as PLONG64,
-            (*Pcr).__bindgen_anon_1.__bindgen_anon_1.Prcb.SetMember as i64,
-        );
-        InterlockedXor64(
-            core::ptr::addr_of_mut!((*(OldProcess as *mut _KPROCESS)).ActiveProcessors) as PLONG64,
-            (*Pcr).__bindgen_anon_1.__bindgen_anon_1.Prcb.SetMember as i64,
-        );
+        // C: InterlockedXor64(&Process->ActiveProcessors, Pcr->Prcb.SetMember)
+        // (Prcb is a direct embedded field of amd64 KIPCR).
+        use core::sync::atomic::{AtomicU64, Ordering};
+        let set_member = (*Pcr).Prcb.SetMember as u64;
+        AtomicU64::from_ptr(
+            core::ptr::addr_of_mut!((*(NewProcess as *mut _KPROCESS)).ActiveProcessors) as *mut u64,
+        )
+        .fetch_xor(set_member, Ordering::SeqCst);
+        AtomicU64::from_ptr(
+            core::ptr::addr_of_mut!((*(OldProcess as *mut _KPROCESS)).ActiveProcessors) as *mut u64,
+        )
+        .fetch_xor(set_member, Ordering::SeqCst);
     }
     
     core::arch::x86_64::_mm_mfence();

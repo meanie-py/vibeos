@@ -222,7 +222,7 @@ pub unsafe extern "fastcall" fn KiServiceExit(TrapFrame: PKTRAP_FRAME, Status: N
     if KiUserTrap(TrapFrame) != 0 {
         // cswitchdep tap 5 (return→user), syscall close.
         #[cfg(feature = "cswitchdep")]
-        crate::ke::cswitchdep::VibeosCswitchdepUserExit();
+        crate::ke::cswitchdep::VibeosCswitchdepUserExit(crate::code_addr!());
         if ((*TrapFrame).EFlags & EFLAGS_TF) != 0 {
             KiSystemCallTrapReturn(TrapFrame);
         } else {
@@ -243,7 +243,7 @@ pub unsafe extern "fastcall" fn KiServiceExit2(TrapFrame: PKTRAP_FRAME) -> ! {
     if KiUserTrap(TrapFrame) != 0 {
         // cswitchdep tap 5 (return→user), NtContinue/NtRaiseException close.
         #[cfg(feature = "cswitchdep")]
-        crate::ke::cswitchdep::VibeosCswitchdepUserExit();
+        crate::ke::cswitchdep::VibeosCswitchdepUserExit(crate::code_addr!());
         KiTrapReturn(TrapFrame);
     }
     if KiIsFrameEdited(TrapFrame) != 0 {
@@ -966,7 +966,7 @@ pub unsafe extern "fastcall" fn KiSystemServiceHandler(
     // cswitchdep tap 4 (user→kernel): kernel-origin frames (Zw via INT 2E)
     // pass 0 and are skipped — legal at APC_LEVEL.
     #[cfg(feature = "cswitchdep")]
-    crate::ke::cswitchdep::VibeosCswitchdepUserEntry(KiUserTrap(TrapFrame) as u32);
+    crate::ke::cswitchdep::VibeosCswitchdepUserEntry(KiUserTrap(TrapFrame) as u32, crate::code_addr!());
     let system_call_number = (*TrapFrame).Eax;
     let offset = (system_call_number >> SERVICE_TABLE_SHIFT) & SERVICE_TABLE_MASK;
     let id = system_call_number & SERVICE_NUMBER_MASK;

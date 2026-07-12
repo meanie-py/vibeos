@@ -9,7 +9,7 @@ use ntkrnl_sys::ddk::{
     _KTHREAD, _KPROCESS, _CONTEXT,
     PKTHREAD, PKPROCESS, PCONTEXT, PKTRAP_FRAME, PKSTART_ROUTINE, PKSYSTEM_ROUTINE,
     KTRAP_FRAME, PKIPCR,
-    KeGetPcr, KeInitializeThread, KeContextToTrapFrame,
+    KeInitializeThread, KeContextToTrapFrame,
     KiThreadStartup,
     KiSwapContext, KiSwapProcess, KiRetireDpcList, KiSelectReadyThread,
     KiInitializeContextThread as _KiInitializeContextThread,
@@ -135,7 +135,13 @@ pub unsafe extern "system" fn KiSwapContextResume(
 ) -> BOOLEAN {
     let OldThread = opaque_ptr(OldThread);
     let NewThread = opaque_ptr(NewThread);
-    let Pcr = KeGetPcr() as PKIPCR;
+    // NOT ddk::KeGetPcr: the linked KeGetPcr symbol is the x18-convention C
+    // copy (`mov x0, x18`), and x18 is NOT reloaded by the switch frame — in
+    // this fresh-off-the-switch context it read 0 (first-light CSWDIAG,
+    // 2026-07-07), so the KeContextSwitches bump, the DpcRoutineActive
+    // BugCheck probe, and tap 2 were all dereferencing NULL+offset silently.
+    // TPIDR_EL1 is the invariant PCR source (ctxswitch.S uses it too).
+    let Pcr = ntkrnl_sys::inline::ke::KeGetPcr() as PKIPCR;
     let OldProcess = (*OldThread).__bindgen_anon_1.ApcState.Process;
     let NewProcess = (*NewThread).__bindgen_anon_1.ApcState.Process;
 
@@ -188,6 +194,8 @@ pub unsafe extern "system" fn KiSwapContextResume(
             (*NewThread).StackLimit as usize,
             (*NewThread).InitialStack as usize,
             (*Pcr).Prcb.DpcRoutineActive != 0,
+            NewThread as usize == (*Pcr).Prcb.IdleThread as usize,
+            crate::code_addr!(),
         );
     }
 
@@ -273,7 +281,7 @@ pub unsafe extern "C" fn KiIdleLoop() -> ! {
 #[cfg(not(target_arch = "aarch64"))]
 #[no_mangle]
 pub unsafe extern "C" fn KiIdleLoop() -> ! {
-    loop {}
+    loop {} // nolint: silent-failure (cfg(not(aarch64)) compile-stub — this module only builds on arm64; body never compiled)
 }
 
 #[no_mangle]

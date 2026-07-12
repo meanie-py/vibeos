@@ -159,7 +159,7 @@ pub unsafe extern "C" fn KiQueueReadyThread(Thread: PKTHREAD, Prcb: PKPRCB) {
     KxQueueReadyThread(Thread, Prcb);
 }
 
-#[cfg(feature = "CONFIG_SMP")]
+#[cfg(feature = "smp")]
 #[no_mangle]
 pub unsafe extern "system" fn KiFindIdealProcessor(
     mut ProcessorSet: KAFFINITY,
@@ -169,7 +169,7 @@ pub unsafe extern "system" fn KiFindIdealProcessor(
     let NodeMask: KAFFINITY;
     let mut Processor: ULONG = 0;
 
-    if (ProcessorSet & (1u64 << OriginalIdealProcessor)) != 0 {
+    if (ProcessorSet & ((1 as KAFFINITY) << OriginalIdealProcessor)) != 0 {
         return OriginalIdealProcessor as ULONG;
     }
 
@@ -183,19 +183,14 @@ pub unsafe extern "system" fn KiFindIdealProcessor(
         ProcessorSet = NodeMask;
     }
 
-    #[cfg(target_pointer_width = "64")]
-    {
-        core::arch::x86_64::_BitScanReverse64(&mut Processor as *mut ULONG, ProcessorSet);
-    }
-    #[cfg(not(target_pointer_width = "64"))]
-    {
-        core::arch::x86::_BitScanReverse(&mut Processor as *mut ULONG, ProcessorSet as u32);
-    }
+    // BitScanReverse(64): highest set bit index. ProcessorSet is non-zero
+    // here (caller affinity is non-zero; NodeMask only narrows when set).
+    Processor = (KAFFINITY::BITS - 1).wrapping_sub(ProcessorSet.leading_zeros()) as ULONG;
 
     Processor
 }
 
-#[cfg(feature = "CONFIG_SMP")]
+#[cfg(feature = "smp")]
 unsafe fn KiSelectNextProcessor(Thread: PKTHREAD) -> ULONG {
     let mut PreferredSet: KAFFINITY;
     let IdleSet: KAFFINITY;
@@ -208,23 +203,18 @@ unsafe fn KiSelectNextProcessor(Thread: PKTHREAD) -> ULONG {
         PreferredSet = IdleSet;
     }
 
-    if (PreferredSet & (1u64 << (*Thread).IdealProcessor)) != 0 {
+    if (PreferredSet & ((1 as KAFFINITY) << (*Thread).IdealProcessor)) != 0 {
         return (*Thread).IdealProcessor as ULONG;
     }
 
-    #[cfg(target_pointer_width = "64")]
-    {
-        core::arch::x86_64::_BitScanForward64(&mut Processor as *mut ULONG, PreferredSet);
-    }
-    #[cfg(not(target_pointer_width = "64"))]
-    {
-        core::arch::x86::_BitScanForward(&mut Processor as *mut ULONG, PreferredSet as u32);
-    }
+    // BitScanForward(64): lowest set bit index (PreferredSet non-zero — it
+    // always contains at least the thread's affinity).
+    Processor = PreferredSet.trailing_zeros() as ULONG;
 
     Processor
 }
 
-#[cfg(not(feature = "CONFIG_SMP"))]
+#[cfg(not(feature = "smp"))]
 unsafe fn KiSelectNextProcessor(_Thread: PKTHREAD) -> ULONG {
     0
 }
@@ -336,7 +326,7 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
 
     KiAcquirePrcbLock(Prcb);
 
-    #[cfg(not(feature = "CONFIG_SMP"))]
+    #[cfg(not(feature = "smp"))]
     {
         if KiIdleSummary != 0 {
             KiIdleSummary = 0;
@@ -519,6 +509,7 @@ unsafe fn KiSwapThreadImpl(
         CurrentThread as usize,
         WaitIrql,
         *kt_State(CurrentThread) == super::cswitchdep::STATE_TERMINATED,
+        crate::code_addr!(),
     );
 
     ApcState = KiSwapContext(WaitIrql, CurrentThread);
@@ -535,7 +526,7 @@ unsafe fn KiSwapThreadImpl(
     // cswitchdep tap-1 exit: after the lower, live IRQL must equal the saved
     // WaitIrql — anything else is a broken raise/lower pairing across the wait.
     #[cfg(feature = "cswitchdep")]
-    super::cswitchdep::cswitch_after_switch(CurrentThread as usize, WaitIrql);
+    super::cswitchdep::cswitch_after_switch(CurrentThread as usize, WaitIrql, crate::code_addr!());
 
     WaitStatus
 }
@@ -734,7 +725,7 @@ unsafe fn KiSetPriorityThreadImpl(
     }
 }
 
-#[cfg(feature = "CONFIG_SMP")]
+#[cfg(feature = "smp")]
 unsafe fn KiUpdateEffectiveAffinityThread(Thread: PKTHREAD) {
     let Prcb: PKPRCB;
 
@@ -745,7 +736,7 @@ unsafe fn KiUpdateEffectiveAffinityThread(Thread: PKTHREAD) {
     KiAcquirePrcbLock(Prcb);
 
     (*Thread).Affinity = (*Thread).UserAffinity;
-    (*Thread).IdealProcessor = (*Thread).UserIdealProcessor;
+    (*Thread).IdealProcessor = *kt_UserIdealProcessor(Thread);
 
     if ((*Prcb).SetMember & (*Thread).Affinity) == 0 {
         if *kt_State(Thread) == Running {
@@ -790,10 +781,11 @@ unsafe fn KiSetAffinityThread_impl(
 
     (*Thread).UserAffinity = Affinity;
 
-    #[cfg(feature = "CONFIG_SMP")]
+    #[cfg(feature = "smp")]
     {
-        if (*Thread).SystemAffinityActive == 0 {
-            (*Thread).UserIdealProcessor = KiFindIdealProcessor(Affinity, (*Thread).UserIdealProcessor);
+        if *kt_SystemAffinityActive(Thread) == 0 {
+            *kt_UserIdealProcessor(Thread) =
+                KiFindIdealProcessor(Affinity, *kt_UserIdealProcessor(Thread)) as u8;
             KiUpdateEffectiveAffinityThread(Thread);
         }
     }

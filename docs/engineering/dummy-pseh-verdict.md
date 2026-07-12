@@ -1,8 +1,8 @@
 # DUMMY_PSEH Verdict — Replace the Semantics in Rust, Not the Mechanism in C
 
 Last updated 2026-07-06 (lane `dummy-pseh-question`). Companion to
-[pseh-elimination.md](pseh-elimination.md) (the layer map this supersedes in
-direction) and [kernel-exception-handling.md](kernel-exception-handling.md)
+[pseh-elimination.md](archive/pseh-elimination.md) (the layer map this supersedes in
+direction) and [kernel-exception-handling.md](archive/kernel-exception-handling.md)
 (the deferred trap-to-panic bridge — still deferred, see Tier 2).
 
 ## The verdict
@@ -208,12 +208,14 @@ disposition `debugbreak()`s (`amd64/unwind.rs:689,844`).
 
 Mechanical, incremental, each step independently smoke-gateable:
 
-0. **Land the `requires-uwtable: true` fix + the boot self-test** (this
-   lane): amd64 validated (PoC PASS + green boot), arm64 flipped pending
-   the ×3 gate. This is a correctness fix independent of everything else
-   (ABI-mandated unwind info; fixes raise diagnostics and stack walks).
-   Sweep the other per-module `*-kernel.json` target specs (ntdll-cargo,
-   drivers) as a follow-up — same latent bug everywhere.
+0. ✅ **LANDED (2026-07-08/10, crash-value lane)** — ~~Land the
+   `requires-uwtable: true` fix + the boot self-test~~: shipped with the
+   uwtable sweep + shared panic handler + user-SEH self-test
+   (`466f0096bc3`) and the arm64 unwinder fixes from the fex lane
+   (EstablisherFrame=x29, E==1 epilog-index — `f74ee598fa1`/`c447dbdfcdb`).
+   Rust frames ship real `.pdata`/`.xdata` on all arches and the unwinder
+   works (field manual §9.35). The WinDbg-attach capstone landed too
+   (`windbg-kd-attach-handoff.md`).
 0b. **Flip the five bugcheck-capable kernel C files to native SEH**
    (amd64/arm64): KMDF `probeandlock.c`, `tdihelpers/tdi.c` (afd),
    `sptilib.c`, `copysup.c`, `aux_klib.c` — call-shaped handlers, the

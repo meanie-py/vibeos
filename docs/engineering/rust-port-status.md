@@ -8,7 +8,7 @@ fresh 5-surface tree audit (kernel, win32k, userland DLLs, boot-userland exes, s
 libs/RTL, drivers). This is THE single source of truth for Rust-vs-C coverage — the seven
 per-surface `*-translation-audit.md` files were superseded by this pass and moved to
 [`archive/`](archive/) (their per-file counts were ~12 days stale). Historical snapshots +
-project timeline live in the [old-details rollup](rust-port-status-rollup.md). Re-measure
+project timeline live in the [old-details rollup](archive/rust-port-status-rollup.md). Re-measure
 before trusting later.*
 
 > **Cohabitation caveat.** Convention is *never delete a translated C file*: a flipped
@@ -69,6 +69,51 @@ HC/hub/function stack. **Still pure C (not targets):** `videoprt.sys` (legacy IN
 under UEFI), the vendored **ACPICA** core (155 `.c` inside acpi.sys, kept by policy), and
 the legacy **NDIS/tcpip/tdi** stack (dead, superseded by netstack).
 
+## Beyond a port — Rust-native capabilities & correctness (the differentiators)
+
+*Added 2026-07-10. Coverage above is "how much C became Rust." This section is the part
+that isn't just a port — capabilities and correctness properties that go past upstream
+ReactOS, made tractable because the kernel is now our Rust in one workspace. Landed-vs-in-
+flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
+
+- **x86-on-ARM64 — a homegrown Rosetta (WoW64 + FEX).** 32-bit x86 PE binaries launch as a
+  **WoW64 process on the ARM64 NT kernel** — Phase B complete + Phase C M1 landed (real
+  i386 PE runs through the full WoW64 stack: `wow64.dll`/`wow64cpu`/`wow64win`, generated
+  syscall thunks). M3b (ntdll32 loader → `RtlCreateActivationContext`) is in flight on
+  `fex-arm`, currently blocked on a foundational arm64 unaligned-access fault. The x86→arm64
+  execution engine is **FEX-emu** (vendored FEX-2607, `wow64fex`/`FEXOfflineCompiler` link
+  with zero patches; `fexprobe` executes an x86 guest blob) — the "run real x86 Windows
+  binaries on an ARM64 Rust kernel" thesis. Docs: `active-lanes/wow64-plan.md`,
+  `active-lanes/fex-bringup-plan.md`.
+- **SMP / multi-processor bring-up.** The `CONFIG_SMP` kernel (`ntkrnlmp.exe`) **links on
+  all three arches and boots `-smp 1` to desktop (amd64)** — landed. The **first amd64 AP
+  starts and runs `KiSystemStartup`** (CPU 1 parks) on the `smp-bringup` lane; M2 is pinned
+  on an AP-path `ZwOpenFile(ntdll)` 0x6B. This is the pressure test that makes every Rust
+  spinlock/queued-spinlock/pushlock/interlocked path run under *real* concurrency for the
+  first time (UP made them ≈ IRQL raises). Doc: `active-lanes/smp-bringup-quest.md`.
+- **Compile-time & RAII correctness the C never had.** IRQL/spinlock lifetimes are
+  **RAII-guarded** (`ntkrnl-sys::guards` — `IrqlGuard`/`SpinLockGuard`, released on `Drop`,
+  the idiomatic replacement for `__finally`); a 504-site audit found **0 leaks**. SEH
+  catch-at-a-distance is being replaced by **validate-first `Result<T>` probes** (`probe.rs`;
+  SE + OB migrated) and callee-side `try_*` contract conversion, per `dummy-pseh-verdict.md`
+  — the honest Rust shape of `__try/__except`. arm64 carries **hardware-backed IRQL** via
+  `GICC_PMR` (lazy — no MMIO in the PASSIVE..DISPATCH band, so spinlocks stay register-only).
+  A planned **typestate CPU-ownership model** (`archive/execution-context-ownership-model.md`)
+  would make context-switch-safety a compile-time property.
+- **Runtime correctness tripwires unique to a Rust kernel.** Bespoke always-on / opt-in
+  instrumentation no stock NT has, enabled because we own every symbol: **waitdep**
+  (dispatcher wait-block chain integrity at `KiUnlinkThread`/`KiWaitTest`, BUGCHECKs 0x109
+  with a full chain dump at the corruption point — field manual §9.27/§9.31/§9.36),
+  **lockdep** (pushlock self-deadlock + ABBA lock-order graph, `--lockdep`), **cswitchdep**
+  (context-switch safety), per-boot **special-pool** tripwires (`--tripwire SPECIALPOOL=*`),
+  and a post-opt **captures(none) IR audit** (`scan_captures.py`). See
+  `kernel-debugging-infra.md`.
+- **ABI-drift elimination (in flight).** The **exported-symbol trampoline refactor** (roadmap
+  Phase 0 Tier 2) splits every export into a native snake_case `nt_foo()` (plain Rust ABI,
+  holds the logic) + a generated `NtFoo` calling-convention trampoline — so no hand-written
+  `extern` decl is left to drift, killing the ABI-mismatch `ud2`/`noreturn` cascade class at
+  the source (today caught reactively by `verify_ffi` + `scan_cc_mismatch`).
+
 ## Remaining C translation frontiers (the real work)
 
 - **ROS-native userland DLLs — ~140 components, ~240K LOC.** The real resume-translation
@@ -89,15 +134,15 @@ the legacy **NDIS/tcpip/tdi** stack (dead, superseded by netstack).
 
 ## Open items / flagged regressions
 
-- **arm64 kernel stack-size bump still owed.** `sdk/include/xdk/arm64/ke.h` reads the old
-  `KERNEL_STACK_SIZE 12288` / `KERNEL_LARGE_STACK_SIZE 61440`; the intended bump to
-  `0xC000`/`0x12000` (as amd64 carries) regressed out via a merge and has **not** been
-  re-applied. Re-apply owed.
-- **Documented boot flakes** (catalogued in `tests/qemu/cli/triage.py`, root fixes in
-  flight on `flake-*` branches): `nettest_explorer_race` (winlogon nettest spawn races
-  the explorer handoff — i386 + arm64), `arm64_lpcexitthread_race`, `tWinMain_0xF4_race`,
-  and the amd64 EventLog/storage stall.
+- ✅ **arm64 kernel stack-size bump — FIXED/re-landed** (`7e9d4644e53`, 12KB→48KB;
+  `KERNEL_STACK_SIZE 0xC000` / `KERNEL_LARGE_STACK_SIZE 0x12000`, amd64 parity).
 - ✅ **amd64 taskbar BUGCHECK 0x50 — FIXED** (2026-07-02, `d74739332d9`).
+- **Live open bugs & flakes** are now tracked in one place — the roadmap **Known bugs &
+  flakes registry** (`docs/product/vibeos-roadmap.md`) — with field-manual § pointers:
+  the arm64 0x1E/`[WAITDEP]` ALL-ONES residual (§9.36 addendum), the winlogon 0x4C
+  basesrv-population race, the win32k `DialogBoxParamW` race, and the amd64 start-menu
+  render residue. (The old `triage.py` flake catalog was largely retired as its entries
+  were root-caused — see the field manual.)
 
 ## Scale
 

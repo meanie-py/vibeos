@@ -703,7 +703,8 @@ ExtSelectClipRgn(
         pdcattr = GdiGetDcAttr(hdc);
         if ( pdcattr )
         {
-            PGDI_TABLE_ENTRY pEntry = GdiHandleTable + GDI_HANDLE_GET_INDEX(hdc);
+            GDI_TABLE_ENTRY EntryBuf, *pEntry = &EntryBuf;
+            GdiReadSharedEntry(GDI_HANDLE_GET_INDEX(hdc), &EntryBuf);
 
             /* hrgn can be NULL unless the RGN_COPY mode is specified. */
             if (hrgn) pRgn_Attr = GdiGetRgnAttr(hrgn);

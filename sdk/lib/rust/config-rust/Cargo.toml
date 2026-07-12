@@ -19,6 +19,10 @@ edition = "2021"
 [lib]
 crate-type = ["rlib"]
 
+[features]
+# CONFIG_SMP equivalent (registry "Multiprocessor" CurrentType stamp).
+smp = ["ntkrnl-sys/smp"]
+
 [dependencies]
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 dbgprint-rust = { path = "../dbgprint-rust" }

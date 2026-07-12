@@ -2076,8 +2076,13 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
     let mut PointerPde: PMMPDE;
     let Result: TABLE_SEARCH_RESULT;
 
-    /* Check for valid Zero bits */
-    if ZeroBits > MI_MAX_ZERO_BITS as ULONG_PTR {
+    /* Check for valid Zero bits. 64-bit NT semantics: a ZeroBits above 32 is
+     * not a shift count but an address MASK — the allocation must land at or
+     * below it (WOW64 layers pass (1<<31)-1 to force guest-reachable <2GB
+     * allocations; FEX's BTCpuProcessInit BOP page depends on this). */
+    let ZeroBitsIsMask =
+        core::mem::size_of::<ULONG_PTR>() == 8 && ZeroBits > 32;
+    if !ZeroBitsIsMask && ZeroBits > MI_MAX_ZERO_BITS as ULONG_PTR {
         return STATUS_INVALID_PARAMETER_3;
     }
 
@@ -2230,7 +2235,13 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
             EndingAddress = 0;
             StartingAddress = 0;
 
-            if ZeroBits != 0 {
+            if ZeroBitsIsMask {
+                /* Mask form: constrain the top; a mask above the VAD ceiling
+                 * is simply no constraint. */
+                if ZeroBits < MM_HIGHEST_VAD_ADDRESS {
+                    HighestAddress = ZeroBits;
+                }
+            } else if ZeroBits != 0 {
                 HighestAddress = (ULONG_PTR::MAX) >> ZeroBits;
                 if HighestAddress > MM_HIGHEST_VAD_ADDRESS {
                     Status = STATUS_INVALID_PARAMETER_3;

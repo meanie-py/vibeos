@@ -1,3 +1,29 @@
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/atapi-rust/src/inlines.rs:223: let alt: PIDE_REGISTERS_2 = (base as PUCHAR).add(0x206) as PIDE_REGISTERS_2;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/cabinet-rust/src/cabinet/fdi.rs:1224: if *maintree_len.add(0xE8) != 0 { (*lzx).intel_started = 1; }
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/config-rust/src/i386/cmhardwr.rs:499: HavePae = *SharedUserData.add(0x274 + PF_PAE_ENABLED) as ULONG;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/config-rust/src/i386/cmhardwr.rs:833: VideoRomBase = (*((BaseAddress as PULONG).add(0x10)) >> 12) as ULONG_PTR & 0xFFFF0;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/config-rust/src/i386/cmhardwr.rs:834: VideoRomBase += (*((BaseAddress as PULONG).add(0x10)) & 0xFFF0) as ULONG_PTR;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/freeldr-rust/src/drivemap.rs:207: OldInt13HandlerAddress = *RealModeIVT.offset(0x13);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/freeldr-rust/src/drivemap.rs:231: *RealModeIVT.offset(0x13) = DriveMapHandlerSegOff;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/freeldr-rust/src/drivemap.rs:243: *RealModeIVT.offset(0x13) = OldInt13HandlerAddress;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/fstub-rust/src/disksup.rs:2631: if *(Buffer.add(0x1FE) as PUINT16) != 0xAA55 {
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/fstub-rust/src/disksup.rs:2636: PartitionDescriptor = Buffer.add(0x1BE) as PPARTITION_DESCRIPTOR;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/fstub-rust/src/disksup.rs:2681: PartitionDescriptor = Buffer.add(0x1BE) as PPARTITION_DESCRIPTOR;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/fstub-rust/src/disksup.rs:2802: Entry = Buffer.offset(0x1BE) as PPTE;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/fstub-rust/src/disksup.rs:2845: *(Buffer.offset(0x1FE) as PUINT16) = 0xAA55u16;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/fstub-rust/src/disksup.rs:2850: if *(Buffer.offset(0x1B8) as PUINT32) != (*PartitionBuffer).Signature {
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/fstub-rust/src/disksup.rs:2851: *(Buffer.offset(0x1B8) as PUINT32) = (*PartitionBuffer).Signature;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/fstub-rust/src/disksup.rs:3053: Entry = Buffer.offset(0x1BE) as PPTE;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/fstub-rust/src/disksup.rs:3096: *(Buffer.offset(0x1FE) as PUINT16) = 0xAA55u16;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/fstub-rust/src/disksup.rs:3101: if *(Buffer.offset(0x1B8) as PUINT32) != (*PartitionBuffer).Signature {
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/fstub-rust/src/disksup.rs:3102: *(Buffer.offset(0x1B8) as PUINT32) = (*PartitionBuffer).Signature;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/hal-rust/src/x86/reboot.rs:69: zero_mapping.add(0x239).write(0x1234);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/inbv-rust/src/bootanim.rs:514: let nt_product_type = *(SharedUserData.add(0x264)) as UCHAR;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/except.rs:568: pdesk = core::ptr::read_unaligned(teb.add(0x820) as *const u64);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/except.rs:569: delta = core::ptr::read_unaligned(teb.add(0x828) as *const u64);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ke/i386/cpu.rs:1302: let IdtEntry = &mut *(*(KeGetPcr() as PKIPCR)).IDT.add(0x13);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/version-rust/src/lib.rs:2447: *vffi = buf.offset(0x14) as *mut VS_FIXEDFILEINFO;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/version-rust/src/lib.rs:2449: *vffi = buf.offset(0x28) as *mut VS_FIXEDFILEINFO;
 [U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1087: let p = (self as *const _ as *const u8).add(pfn_offsets_orig_pte::ORIGINAL_PTE);
 [U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1093: let p = (self as *mut _ as *mut u8).add(pfn_offsets_orig_pte::ORIGINAL_PTE);
 [U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1403: let p = (pfn as *mut u8).add(pfn_offsets::PTE_ADDRESS);

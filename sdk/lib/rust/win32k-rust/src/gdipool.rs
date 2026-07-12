@@ -1,5 +1,6 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{KeEnterCriticalRegion, KeLeaveCriticalRegion, RtlNumberOfSetBits, ZwAllocateVirtualMemory, ZwFreeVirtualMemory};
+use ntkrnl_sys::ps::PsGetCurrentProcess;
 // Ex*PushLock* are DDK inlines (not exported symbols) — wrap the ntkrnl_sys inline impls.
 #[inline(always)] unsafe fn ExInitializePushLock(p: PEX_PUSH_LOCK) { ntkrnl_sys::inline::ex::ExInitializePushLock(p as *mut _); }
 #[inline(always)] unsafe fn ExAcquirePushLockExclusive(p: PEX_PUSH_LOCK) { ntkrnl_sys::inline::ex::ExAcquirePushLockExclusive(p as *mut _); }
@@ -80,10 +81,12 @@ unsafe fn GdiPoolAllocateSection(pPool: PGDI_POOL) -> PGDI_POOL_SECTION {
 
     cjSize = (64 * 1024) as SIZE_T;
     pvBaseAddress = core::ptr::null_mut();
+    // DC_ATTR/BRUSH_ATTR slots are user-visible; a WoW64 guest reads them
+    // through 32-bit pointers, so reserve below 4GB for such processes.
     status = ZwAllocateVirtualMemory(
         -1isize as HANDLE,
         &mut pvBaseAddress,
-        0,
+        crate::init::W32Wow64ZeroBits(PsGetCurrentProcess() as _) as _,
         &mut cjSize,
         MEM_RESERVE,
         PAGE_READWRITE,

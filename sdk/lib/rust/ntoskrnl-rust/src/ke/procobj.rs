@@ -1,5 +1,9 @@
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use super::ke_defs::*;
+#[cfg(feature = "smp")]
+use crate::ke::krnlinit::{KeNodeBlock, KeNumberNodes, KeProcessNodeSeed};
+#[cfg(feature = "smp")]
+use super::thrdobj::KeFindNextRightSetAffinity;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::KeGetCurrentThread;
@@ -123,8 +127,12 @@ unsafe fn kthread_get_kernel_apc_disable(t: *const _KTHREAD) -> i16 {
     { (*t).__bindgen_anon_5.__bindgen_anon_8.__bindgen_anon_1.__bindgen_anon_1.KernelApcDisable }
 }
 
-extern "C" {
-    fn CONTAINING_RECORD(ptr: PVOID, type_offset: usize, field_offset: usize) -> PVOID;
+/// C's CONTAINING_RECORD macro, inlined (verify_ffi C_MACRO rule). The
+/// type-size argument is unused — the record base is ptr - field_offset;
+/// kept in the signature so the translated call sites read like the C.
+#[inline(always)]
+unsafe fn CONTAINING_RECORD(ptr: PVOID, _type_size: usize, field_offset: usize) -> PVOID {
+    (ptr as usize - field_offset) as PVOID
 }
 
 #[no_mangle]
@@ -192,7 +200,7 @@ pub unsafe extern "system" fn KeInitializeProcess(
         const IO_ACCESS_MAP_NONE: USHORT = 0;
     }
 
-    #[cfg(feature = "CONFIG_SMP")]
+    #[cfg(feature = "smp")]
     {
         use super::krnlinit::{KeNumberNodes, KeProcessNodeSeed, KeNodeBlock};
         use ntkrnl_sys::ddk::{PKNODE, KeFindNextRightSetAffinity};
@@ -221,7 +229,7 @@ pub unsafe extern "system" fn KeInitializeProcess(
 
     (*Process).State = ProcessInMemory as u8;
 
-    #[cfg(feature = "CONFIG_SMP")]
+    #[cfg(feature = "smp")]
     {
         let mut i: ULONG = 0;
         let mut IdealNode: UCHAR = 0;
@@ -243,7 +251,7 @@ pub unsafe extern "system" fn KeInitializeProcess(
                     IdealNode -= KeNumberNodes as UCHAR;
                 }
 
-                if i >= KeNumberNodes {
+                if i >= KeNumberNodes as ULONG {
                     break;
                 }
             }
@@ -252,8 +260,8 @@ pub unsafe extern "system" fn KeInitializeProcess(
         (*Process).IdealNode = IdealNode;
         let Node = KeNodeBlock[IdealNode as usize];
 
-        let mut affinity_masked = Affinity & (*Node).ProcessorMask;
-        (*Process).ThreadSeed = KeFindNextRightSetAffinity((*Node).Seed, affinity_masked as ULONG);
+        let affinity_masked = Affinity & (*Node).ProcessorMask;
+        (*Process).ThreadSeed = KeFindNextRightSetAffinity((*Node).Seed, affinity_masked);
         (*Node).Seed = (*Process).ThreadSeed;
     }
 }
@@ -850,7 +858,7 @@ pub unsafe extern "system" fn KeQueryRuntimeProcess(
 
     KiReleaseProcessLock(core::ptr::addr_of_mut!(ProcessLock));
 
-    *UserTime = TotalUser;
+    core::ptr::write_volatile(UserTime, TotalUser);
 
     TotalKernel
 }

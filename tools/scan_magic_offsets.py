@@ -63,10 +63,18 @@ D_RE = re.compile(
     r"\s*\(\s*(0x[0-9A-Fa-f]+\b|\d{2,}\b|[A-Za-z_][A-Za-z0-9_]*(?:::)?[A-Z][A-Z0-9_]{2,}\b)"
 )
 
+# E. hex-literal element arithmetic on ANY typed pointer — `.add(0x77 / 4)` on
+#    a *const ULONG is a hand-scaled FIELD offset wearing an index costume
+#    (the TEB.GdiBatchCount-at-0x74 bug, field manual §9.41: real offset
+#    0x1740, flush never fired, GDI batch overflowed into CLIENTINFO). Buffer
+#    indexing essentially never uses hex literals; struct numerology does.
+E_RE = re.compile(r"\.\s*(?:add|offset|sub)\s*\(\s*0x[0-9A-Fa-f]+\b")
+
 SHAPES = (
     ("PTR_RECAST_ARITH", B_RE),
     ("BYTE_ADD", C_RE),
     ("U8_BYTE_ARITH", D_RE),
+    ("TYPED_PTR_HEX_ARITH", E_RE),
 )
 
 
