@@ -405,3 +405,26 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   culprit hand-off. Also landed this session: the whole lane merged to
   master (fast-forward e08f777401a + docs 34d29afda89) — M0–M3 on mainline,
   all opt-in, defaults stay UP.
+- 2026-07-12: **NEW finding — amd64 AP-start caps at ONE AP (2 CPUs total).**
+  Probing `-smp 4` as a guest-concurrency amplifier for the §9.56 residual:
+  3/3 BUGCHECK 0x61 HAL1_INITIALIZATION_FAILED. Deterministic face on serial:
+  `[SMP] starting processor 2 … handing processor 2 to HAL … HalStartNextProcessor
+  returned FALSE for 2; stopping … successful AP startup count is 1`. So CPU1
+  (first AP) starts fine, CPU2 (second AP) fails inside HalStartNextProcessor,
+  count falls short of KeNumberProcessors → the M3 `HalAllProcessorsStarted()`
+  guard correctly bugchecks 0x61. This is a real multi-AP HAL bringup limit
+  (M5-adjacent), NOT the residual flake — but it BLOCKS the "add vCPUs" amplifier
+  strategy, so the §9.56 hunt stays on -smp 2 with cswitchdep + (next) kmtest
+  guest-load until HalStartNextProcessor handles N>1 APs. Likely a single-AP
+  assumption in the amd64 HAL AP-start (SIPI target / AP-startup scratch reused,
+  or a HalpProcessorIdentity/APIC-ID-to-index single-slot). Next: read
+  hal-rust amd64 HalStartNextProcessor + the AP trampoline scratch alloc
+  (HalpApPtScratch / low-1MB SIPI page — is it freed/reused after AP1?).
+- 2026-07-12: **§9.56 hunt strategy pivot (was chasing host timing).** 400
+  quiet-host greens proved ambient contention is a lottery, not a probe. New
+  plan: drive the race from inside the guest, host-independent — (a) more vCPUs
+  [BLOCKED, see above: HAL caps at 2], (b) `--cswitchdep` build so the wedge
+  face pins the illegal hand-off PC at switch time instead of a silent stall,
+  (c) kmtest guest-load (turnkey-ish, needs a rostests build) hammering
+  pool/IRP/sync — the suspect subsystems. Current soak: -smp 2 + cswitchdep +
+  SPECIALPOOL=*, 5h. If it still ghosts, kmtest guest-load is the escalation.
