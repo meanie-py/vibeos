@@ -880,20 +880,7 @@ pub unsafe extern "stdcall" fn NtUserProcessConnect(
         (*pUserConnect).siClient.psi = (gpsi as ULONG_PTR)
             .wrapping_sub((*pUserConnect).siClient.ulSharedDelta)
             as PVOID as _;
-        // M9: a WoW64 (32-bit) client can't read the 64-bit-laid-out real handle
-        // table, so hand it the 32-bit shadow's user VA instead (field manual
-        // §9.58b). Native 64-bit clients get the real table. WoW64 exists only
-        // on 64-bit hosts, hence the cfg guards below compile out on i386.
-        #[allow(unused_mut)]
-        let mut ahe_kernel: ULONG_PTR = gHandleTable as ULONG_PTR;
-        #[cfg(not(target_arch = "x86"))]
-        if crate::object::WOW64_PUBLISH_SHADOW
-            && !(*Process).Wow64Process.is_null()
-            && !crate::object::g32HandleTable.is_null()
-        {
-            ahe_kernel = crate::object::g32HandleTable as ULONG_PTR;
-        }
-        (*pUserConnect).siClient.aheList = ahe_kernel
+        (*pUserConnect).siClient.aheList = (gHandleTable as ULONG_PTR)
             .wrapping_sub((*pUserConnect).siClient.ulSharedDelta)
             as PVOID as _;
         (*pUserConnect).siClient.pDispInfo = core::ptr::null_mut();
@@ -975,20 +962,7 @@ pub unsafe extern "C" fn NtUserProcessConnect(
         (*pUserConnect).siClient.psi = (gpsi as ULONG_PTR)
             .wrapping_sub((*pUserConnect).siClient.ulSharedDelta)
             as PVOID as _;
-        // M9: a WoW64 (32-bit) client can't read the 64-bit-laid-out real handle
-        // table, so hand it the 32-bit shadow's user VA instead (field manual
-        // §9.58b). Native 64-bit clients get the real table. WoW64 exists only
-        // on 64-bit hosts, hence the cfg guards below compile out on i386.
-        #[allow(unused_mut)]
-        let mut ahe_kernel: ULONG_PTR = gHandleTable as ULONG_PTR;
-        #[cfg(not(target_arch = "x86"))]
-        if crate::object::WOW64_PUBLISH_SHADOW
-            && !(*Process).Wow64Process.is_null()
-            && !crate::object::g32HandleTable.is_null()
-        {
-            ahe_kernel = crate::object::g32HandleTable as ULONG_PTR;
-        }
-        (*pUserConnect).siClient.aheList = ahe_kernel
+        (*pUserConnect).siClient.aheList = (gHandleTable as ULONG_PTR)
             .wrapping_sub((*pUserConnect).siClient.ulSharedDelta)
             as PVOID as _;
         (*pUserConnect).siClient.pDispInfo = core::ptr::null_mut();

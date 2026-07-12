@@ -198,16 +198,10 @@ unsafe fn SharedPtrToUser(Ptr: PVOID) -> PVOID {
 // DesktopPtrToUser (user_x.h, static inline).
 #[inline]
 unsafe fn DesktopPtrToUser(Ptr: PVOID) -> PVOID {
-    let pci: PCLIENTINFO = GetWin32ClientInfo();
-    let pdi: PDESKTOPINFO = (*pci).pDeskInfo;
-    if (Ptr as ULONG_PTR) >= ((*pdi).pvDesktopBase as ULONG_PTR)
-        && (Ptr as ULONG_PTR) < ((*pdi).pvDesktopLimit as ULONG_PTR)
-    {
-        (Ptr as ULONG_PTR - (*pci).ulClientDelta) as PVOID
-    } else {
-        // Slow path: round-trips to win32k.
-        NtUserxGetDesktopMapping(Ptr)
-    }
+    // WoW64: DESKTOPINFO is 64-bit-laid-out for a 32-bit guest, so the
+    // base/limit range check must be done through the normalizing view.
+    // Single definition lives in crate::wow64.
+    crate::wow64::desktop_ptr_to_user(Ptr)
 }
 
 // ---------------------------------------------------------------------------
@@ -845,7 +839,7 @@ unsafe fn IntGetWndProc_impl(pWnd: PWND, Ansi: i32) -> WNDPROC {
     let mut i: i32;
     let gcpd: WNDPROC;
     let mut Ret: WNDPROC = None;
-    let Class: PCLS = DesktopPtrToUser((*pWnd).pcls as *mut c_void) as PCLS;
+    let Class: PCLS = crate::wow64::desktop_cls_to_user((*pWnd).pcls as PVOID);
 
     if Class.is_null() {
         return Ret;
@@ -1078,7 +1072,7 @@ pub unsafe extern "system" fn GetClassLongA(hWnd: HWND, nIndex: i32) -> u32 {
     }
 
     // _SEH2_TRY body — except handler (Ret = 0) is DEAD CODE under USE_DUMMY_PSEH.
-    let Class = DesktopPtrToUser((*Wnd).pcls as PVOID) as PCLS;
+    let Class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
     if !Class.is_null() {
         #[cfg(target_arch = "x86_64")]
         {
@@ -1112,7 +1106,7 @@ pub unsafe extern "system" fn GetClassLongW(hWnd: HWND, nIndex: i32) -> u32 {
         return 0;
     }
 
-    Class = DesktopPtrToUser((*Wnd).pcls as PVOID) as PCLS;
+    Class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
     if !Class.is_null() {
         #[cfg(target_arch = "x86_64")]
         {
@@ -1146,7 +1140,7 @@ pub unsafe extern "system" fn GetClassLongPtrA(hWnd: HWND, nIndex: i32) -> ULONG
         return 0;
     }
 
-    let Class: PCLS = DesktopPtrToUser((*Wnd).pcls as PVOID) as PCLS;
+    let Class: PCLS = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
     if !Class.is_null() {
         Ret = IntGetClassLongA(Wnd, Class, nIndex);
     }
@@ -1166,7 +1160,7 @@ pub unsafe extern "system" fn GetClassLongPtrW(hWnd: HWND, nIndex: i32) -> ULONG
         return 0;
     }
 
-    Class = DesktopPtrToUser((*Wnd).pcls as PVOID) as PCLS;
+    Class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
     if !Class.is_null() {
         Ret = IntGetClassLongW(Wnd, Class, nIndex);
     }
@@ -1254,7 +1248,7 @@ pub unsafe extern "system" fn GetClassWord(hwnd: HWND, offset: i32) -> u16 {
         return 0;
     }
 
-    class = DesktopPtrToUser((*Wnd).pcls as PVOID) as PCLS;
+    class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
     if class.is_null() {
         return 0;
     }

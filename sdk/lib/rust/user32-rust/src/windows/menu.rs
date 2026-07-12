@@ -144,16 +144,10 @@ unsafe fn GetW32ThreadInfo() -> PTHREADINFO {
 // subtracts ulClientDelta, slow path calls win32k via NtUserxGetDesktopMapping).
 #[inline]
 unsafe fn DesktopPtrToUser(ptr: PVOID) -> PVOID {
-    GetW32ThreadInfo();
-    let pci: PCLIENTINFO = GetWin32ClientInfo();
-    let pdi: PDESKTOPINFO = (*pci).pDeskInfo;
-    if (ptr as usize) >= ((*pdi).pvDesktopBase as usize)
-        && (ptr as usize) < ((*pdi).pvDesktopLimit as usize)
-    {
-        ((ptr as usize) - ((*pci).ulClientDelta as usize)) as PVOID
-    } else {
-        NtUserxGetDesktopMapping(ptr)
-    }
+    // WoW64: DESKTOPINFO is 64-bit-laid-out for a 32-bit guest, so the
+    // base/limit range check must be done through the normalizing view.
+    // Single definition lives in crate::wow64.
+    crate::wow64::desktop_ptr_to_user(ptr)
 }
 // ntuser.h `UserHMGetHandle(obj) == ((obj)->head.h)`. The handle lives at offset 0
 // of the (PROC|THR)DESKHEAD, which bindgen flattened into `head.__bindgen_padding_0[0]`.
@@ -222,7 +216,10 @@ unsafe fn MENU_FindItem(hmenu: *mut HMENU, nPos: *mut UINT, wFlags: UINT) -> *mu
             return core::ptr::null_mut();
         }
         let mut pItem: PITEM = if !(*menu).rgItems.is_null() {
-            DesktopPtrToUser((*menu).rgItems as _) as PITEM
+            {
+                crate::wow64::wow64_unsupported("MENU/ITEM");
+                DesktopPtrToUser((*menu).rgItems as _) as PITEM
+            }
         } else {
             core::ptr::null_mut()
         };

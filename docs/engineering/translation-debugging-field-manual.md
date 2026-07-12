@@ -5187,25 +5187,74 @@ session-global and can't be per-bitness in place, so win32k must maintain a 32-b
 kept in sync on every handle alloc/free. Until then any WoW64 GUI app that validates an
 HWND client-side (i.e. nearly all of them) silently no-ops the call.
 
-**Attempt 1 (2026-07-12) — the shadow is NECESSARY but NOT SUFFICIENT; it uncovers the
-NEXT layer.** Built a session-global 32-bit shadow (`g32HandleTable` in `object.rs`:
-16-byte header + 12-byte entries, `ptr`/`pi` = low32 of the object's kernel VA), mirrored
-on `UserAllocHandle`/`free_user_entry`, published as `aheList` for WoW64 procs in
-`NtUserProcessConnect`. Result: `ValidateHwnd` now **finds** the entry (guest `edi` points
-into the shadow at `0x001da7ec`), so it stops no-oping — **but the guest then dereferences
-the *validated object*** and AVs: `GetUser32Handle`→`ValidateHandle` returns
-`DesktopPtrToUser(pEntry->ptr)`, and for a `TYPE_WINDOW` the WND lives in the **desktop
-heap** (a *different* mapping than the shared heap `ulSharedDelta` covers). The guest reads
-`pEntry->ptr` and converts with the wrong delta (or reads it raw), gets `0xfc6daab0` — a
-bad user address — and faults in guest user32 (`user32+0x46141`, base 0x77A20000) during
-CreateWindow's WM_GETMINMAXINFO handling. So client-side HWND *validation* + client-side
-object *access* are two layers: the handle-table shadow fixes the first; the second needs
-the **desktop-heap 32-bit view** (a 32-bit `DESKTOPINFO` with `pvDesktopBase/Limit` +
-`ulClientDelta` the guest can read, and per-object `ptr` encoded so `DesktopPtrToUser`
-lands on a readable 32-bit WND) **plus** the WND struct 32/64 layout for any field the
-client reads. They must land **together** — the shadow alone trades `0x600E` (window +
-pump, no paint) for a CreateWindow-time AV, a net regression, so it is NOT landed. The
-shadow code is correct infrastructure, preserved on the lane for when the desktop-heap
-view lands. (For WM_PAINT specifically the *dispatch* is server-side and wouldn't deref,
-but reaching the pump requires CreateWindow to complete, which now derefs the WND — so
-the desktop-heap view is on the critical path regardless.)
+**FIXED (2026-07-12, M9).** The first instinct — have win32k maintain a 32-bit *shadow*
+of the handle table and publish it as `aheList` — is the **wrong layer**, and trying it is
+instructive: with the shadow published, `ValidateHwnd` stops no-oping and **finds** the
+entry, but the guest then dereferences the *validated object* and AVs (`0xfc6daab0`, in
+guest `user32+0x46141`) during CreateWindow's WM_GETMINMAXINFO. Because the handle table is
+only **one** of the things user32 reads straight out of shared memory with no syscall. The
+full set is three:
+
+  1. the shared **USER handle table** (`gSharedInfo.aheList`) — what `ValidateHwnd` indexes,
+  2. the desktop heap's **WND / CLS** objects, reached via `DesktopPtrToUser()`,
+  3. **DESKTOPINFO** (`pvDesktopBase`/`pvDesktopLimit`/`fsHooks`/`spwnd`).
+
+Shadowing only (1) fixes validation and then walks straight into (2). All three are already
+*addressable* by the guest — win32k maps them below 4GB for WoW64 procs (`W32Wow64ZeroBits`)
+— they are simply **unparseable**, laid out by a 64-bit kernel with 8-byte pointers. So this
+is a **layout** problem, not a mapping problem, and the fix belongs **client-side**, exactly
+like the M6/M7 GDI fix (`g_GdiWow64` + `GDI_TABLE_ENTRY64` + a normalizing read helper):
+
+* **`user32-rust/src/wow64.rs`** (new): `g_UserWow64` (detected once at connect via
+  `ProcessWow64Information`, mirroring `GdiProcessSetup`), the `*64` shapes (`Wnd64`,
+  `Cls64`, `DesktopInfo64`, `UserHandleTable64`, `UserHandleEntry64`), and a normalizing
+  view over each. WND/CLS get cached **snapshots** — sound because the client's desktop-heap
+  mapping is `PAGE_READONLY` (`IntMapDesktopView`), so user32 *never writes* through a
+  `PWND` and a copy cannot lose an update. Snapshots are keyed by kernel object so `PWND`
+  identity stays stable (user32 compares them) and refreshed per lookup so reads are current.
+* Typed `desktop_wnd_to_user()` / `desktop_cls_to_user()` replace the ~25 raw
+  `DesktopPtrToUser(x->spwnd*/pcls)` call sites. Pointer fields *inside* a snapshot keep the
+  kernel value truncated to 32 bits (exactly as the native i386 path stores them), so the
+  caller's next translation works unchanged — lossless below 4GB, and the delta arithmetic
+  wraps mod 2^32.
+* **Kernel half (`win32k-rust/src/wow64.rs`, new):** win32k writes CLIENTINFO into the
+  **64-bit** TEB; a WoW64 guest reads it from **TEB32** (`GetWin32ClientInfo()` =
+  `NtCurrentTeb()->Win32ClientInfo`, and under WoW64 `NtCurrentTeb()` *is* the TEB32). It
+  was therefore **all zeros**: `ulClientDelta == 0`, `pDeskInfo == NULL` — which is why the
+  guest computed a raw kernel pointer. `Wow64PublishClientInfo()` projects the 64-bit
+  CLIENTINFO into a `ClientInfo32` in TEB32 (TEB64+0x2000; see `procsup.rs`) at thread init
+  and desktop assignment. `CallbackWnd` is deliberately left **zero** — it caches a 64-bit
+  `WND*` that is useless to the guest; zeroing it makes `ValidateHwnd`'s fast path miss and
+  fall through to the (correct) normalizing lookup.
+
+Result: `win32.exe` `0x600E → 0x600D` — the x86 guest's window receives WM_PAINT and paints
+its client rect through the native arm64 win32k. `gui32` stays `0x600D`.
+
+**Two reusable lessons.**
+
+*(i) The two halves must ship together, and the failure in between is loud.* Landing the
+kernel half alone (CLIENTINFO32 published) against a **stale** guest user32 turned `0x600E`
+into `0xC000001D` — illegal instruction. That is not a mystery, it is the expected shape: a
+non-zero `ulClientDelta` makes the *unmodified* client start actually translating pointers,
+and it then walks 64-bit structs with 32-bit offsets straight into a garbage `lpfnWndProc`.
+If you see a WoW64 guest go from "quietly does nothing" to "wild jump" after a win32k
+change, suspect a client/kernel version skew before suspecting the kernel.
+**Corollary (cost me a boot cycle):** the WoW64 guest's `user32.dll`/`gdi32.dll` are staged
+from **`build-i386/`**, not from `build-arm64/` — an arm64-only rebuild silently ships a
+stale client. Always rebuild **both** arches before booting a WoW64 change.
+
+*(ii) Make the layout assumption a compile-time tripwire, not a comment.* The `*64` shapes
+work because on i686-w64-mingw (MS ABI) a `u64` has 8-byte struct alignment exactly as on
+x86_64 — verified: all 91 `Wnd64` fields land at identical offsets on both targets. But the
+shapes must also *stay* equal to the real structs. `user32-rust` builds for i386 **and**
+natively for amd64/arm64, so the `#[cfg(not(target_arch = "x86"))] mod layout_guard` asserts
+`size_of::<Wnd64>() == size_of::<WND>()` + per-field `offset_of!` equality on every native
+build. It earned its keep immediately: it caught a bogus padding word in `Cls64` on the
+first compile. Any future drift in `ntuser.h` now breaks the amd64/arm64 build instead of
+silently corrupting WoW64 clients.
+
+**Still owed (loud, not silent):** `MENU`/`ITEM`, `HOOK` and `SBINFO` are desktop-heap
+objects with pointers too, and have no `*64` shape yet — nothing on the M9 path reaches
+them. `crate::wow64::wow64_unsupported()` prints a one-shot warning naming the type rather
+than letting a 32-bit client silently walk a 64-bit `MENU`. When a WoW64 app needs menus,
+that print is the work order.

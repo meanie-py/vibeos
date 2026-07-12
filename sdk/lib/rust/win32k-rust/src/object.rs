@@ -215,103 +215,6 @@ macro_rules! TRACE {
 #[no_mangle]
 pub static mut gHandleTable: PUSER_HANDLE_TABLE = core::ptr::null_mut();
 
-// ---- M9: 32-bit shadow of the USER handle table for WoW64 guests -----------
-// The kernel writes gHandleTable in 64-bit layout (USER_HANDLE_TABLE = 24 bytes,
-// nb_handles@16; USER_HANDLE_ENTRY = 24 bytes). A 32-bit guest reading it with
-// 32-bit offsets misreads nb_handles and strides entries by 12 not 24, so
-// client-side ValidateHwnd always fails and user32!DispatchMessageA silently
-// drops WM_PAINT (field manual §9.58b). Keep a parallel 32-bit-laid-out shadow
-// in the shared heap, mirror it on every alloc/free, and hand its user VA back
-// as USERCONNECT.aheList for WoW64 processes (native 64-bit procs keep the real
-// table). The stored `ptr`/`pi` are the low 32 bits of the object's kernel VA:
-// the guest's SharedPtrToUser subtracts a 32-bit ulSharedDelta, and since object
-// user VAs are <4GB the modular 32-bit arithmetic reproduces the user VA. WoW64
-// exists only on 64-bit hosts, so the whole facility is cfg'd out on i386.
-#[cfg(not(target_arch = "x86"))]
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct UserHandleEntry32 {
-    ptr: u32,
-    pi: u32,
-    type_: u8,
-    flags: u8,
-    generation: u16,
-} // 12 bytes — matches Win32 USER_HANDLE_ENTRY
-
-#[cfg(not(target_arch = "x86"))]
-#[repr(C)]
-pub(crate) struct UserHandleTable32 {
-    handles: u32,   // low32 of the kernel VA of the shadow entries array
-    freelist: u32,
-    nb_handles: i32,
-    allocated_handles: i32,
-} // 16 bytes — matches Win32 USER_HANDLE_TABLE
-
-// Header the guest reads (its user VA is published in aheList).
-#[cfg(not(target_arch = "x86"))]
-pub(crate) static mut g32HandleTable: *mut UserHandleTable32 = core::ptr::null_mut();
-
-// M9 gate: publishing the shadow as aheList makes client-side ValidateHwnd
-// SUCCEED, which then makes the guest DEREFERENCE the validated WND — and that
-// needs the desktop-heap 32-bit view (layer 2, owed; field manual §9.58b).
-// Until layer 2 lands, publishing the shadow alone regresses win32.exe
-// (0x600E → CreateWindow AV), so keep it OFF: the shadow is still built +
-// mirrored (harmless, native-inert) and one flip away from live. Flip to `true`
-// together with the desktop-heap view.
-#[cfg(not(target_arch = "x86"))]
-pub(crate) const WOW64_PUBLISH_SHADOW: bool = false;
-// Kernel VA of the shadow entries array (we write through this).
-#[cfg(not(target_arch = "x86"))]
-static mut g32HandleEntries: *mut UserHandleEntry32 = core::ptr::null_mut();
-
-// Allocate + init the 32-bit shadow alongside the real table (shared heap, so it
-// is mapped below 4GB for WoW64 like the real one). Returns false on OOM.
-#[cfg(not(target_arch = "x86"))]
-unsafe fn Wow64InitShadowHandleTable(handle_count: usize) -> bool {
-    let mem = UserHeapAlloc((core::mem::size_of::<UserHandleEntry32>() * handle_count) as SIZE_T);
-    if mem.is_null() {
-        return false;
-    }
-    core::ptr::write_bytes(
-        mem as *mut u8,
-        0,
-        core::mem::size_of::<UserHandleEntry32>() * handle_count,
-    );
-    let tab = UserHeapAlloc(core::mem::size_of::<UserHandleTable32>() as SIZE_T)
-        as *mut UserHandleTable32;
-    if tab.is_null() {
-        UserHeapFree(mem);
-        return false;
-    }
-    g32HandleEntries = mem as *mut UserHandleEntry32;
-    (*tab).handles = mem as usize as u32; // low32 of the kernel VA
-    (*tab).freelist = 0;
-    (*tab).nb_handles = 0;
-    (*tab).allocated_handles = handle_count as i32;
-    g32HandleTable = tab;
-    true
-}
-
-// Mirror one 64-bit entry into the 32-bit shadow at the same index, and keep the
-// shadow's nb_handles in step. Called after every alloc/free mutation.
-#[cfg(not(target_arch = "x86"))]
-unsafe fn Wow64MirrorHandleEntry(ht: PUSER_HANDLE_TABLE, e: PUSER_HANDLE_ENTRY) {
-    if g32HandleTable.is_null() || g32HandleEntries.is_null() {
-        return;
-    }
-    let idx = e.offset_from((*ht).handles);
-    if idx < 0 || idx >= (*g32HandleTable).allocated_handles as isize {
-        return;
-    }
-    let d = g32HandleEntries.offset(idx);
-    (*d).ptr = entry_ptr(e) as usize as u32;
-    (*d).pi = entry_pi(e) as usize as u32;
-    (*d).type_ = entry_type(e);
-    (*d).flags = entry_flags(e);
-    (*d).generation = entry_generation(e);
-    (*g32HandleTable).nb_handles = (*ht).nb_handles;
-}
-
 // The C ObjectCallbacks table uses plain (cdecl) function pointers:
 //   PVOID   (*ObjectAlloc)(PDESKTOP, PTHREADINFO, SIZE_T, PVOID*);
 //   BOOLEAN (*ObjectDestroy)(PVOID);
@@ -805,9 +708,6 @@ unsafe fn free_user_entry(ht: PUSER_HANDLE_TABLE, entry: PUSER_HANDLE_ENTRY) -> 
 
     (*gpsi).cHandleEntries -= 1;
 
-    #[cfg(not(target_arch = "x86"))]
-    Wow64MirrorHandleEntry(ht, entry); // M9: reflect the cleared entry into the 32-bit shadow
-
     ret
 }
 
@@ -834,9 +734,6 @@ unsafe fn UserAllocHandle(
 
     /* We have created a handle, which is a reference! */
     UserReferenceObject(object);
-
-    #[cfg(not(target_arch = "x86"))]
-    Wow64MirrorHandleEntry(ht, entry); // M9: reflect the new entry into the 32-bit shadow
 
     entry_to_handle(ht, entry)
 }
@@ -936,12 +833,6 @@ pub unsafe extern "C" fn UserCreateHandleTable() -> BOOL {
     }
 
     UserInitHandleTable(gHandleTable, mem, (core::mem::size_of::<USER_HANDLE_ENTRY>() * HandleCount as usize) as ULONG);
-
-    // M9: build the 32-bit WoW64 shadow with the same capacity. Non-fatal on
-    // OOM — WoW64 GUI just stays blocked; native processes are unaffected.
-    if !Wow64InitShadowHandleTable(HandleCount as usize) {
-        ERR!(b"Wow64InitShadowHandleTable failed (WoW64 GUI HWND validation stays blocked)\n\0");
-    }
 
     return 1;
 }
