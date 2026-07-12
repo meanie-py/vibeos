@@ -4830,3 +4830,63 @@ dereference — a fault there replaces the report with a mask; (4) partial
 SPSR/context corruption where PC survives but low-offset fields die is a
 frame-overlap signature — compute which offsets fall inside `[SP-0x160,
 SP)` of the code that built the frame.
+
+### 9.55 (ROOT-CAUSED + FIXED 2026-07-11) A *correct* fix woke a latent panic: `NT_ASSERT` mistranslated as a hard `assert!`, dormant until IRP_MJ_CLEANUP started being delivered (arm64-only)
+
+**Symptom:** After merging origin/master into the conformance-ratchet lane, the ×3 landing
+gate was green on i386 + amd64 but **arm64 wedged during boot** — Rust-panic BUGCHECK
+`0xE0525354` (`"RST"`), serial silent, last line a flight-record `ws-lock/unlock-excl`
+livelock (a red herring — post-mortem ring-buffer history, not the cause). Deterministic 3/3.
+
+**Two-layer root cause — this is the instructive part:**
+
+1. **The trigger was one of *my own correct fixes.*** This lane's ob-rust
+   `ObpDecrementHandleCount` fix (field-manual "post-inc/dec read-order" class) makes
+   `IRP_MJ_CLEANUP` *actually get delivered* for the first time (it had been silently
+   dropped by a `!= 1` guard reading the post-decrement count). Correct Windows behavior —
+   but it makes a previously-**dead** code path **live**: `FatCommonCleanup` now runs.
+2. **The latent bug it exposed:** `FatLocateDirent` (fastfat) begins with
+   `NT_ASSERT(ExIsResourceAcquiredShared/Excl(ParentDcb->Header.Resource) || ...Vcb...)`.
+   ReactOS `NT_ASSERT` is **debug-only** (a `DbgRaiseAssertionFailure` in checked builds,
+   **compiled out in free/shipping builds**; the vibeos cohab shim `NT_ASSERT`,
+   `rust_cohab_stub.c:353`, is a literal no-op). The C→Rust translation rendered *this one*
+   as a hard `assert!(...)` — panics unconditionally — while every *other* NT_ASSERT in the
+   same file correctly routes through the no-op `NT_ASSERT()` shim (cf. dirsup.rs:1157/1164).
+   The full live path: `IRP_MJ_CLEANUP → FatFsdCleanup → FatCommonCleanup →
+   FatNotifyReportChange (macro) → FatSetFullFileNameInFcb → FatGetUnicodeNameFromFcb →
+   FatLocateDirent`. On the normal UserFileOpen cleanup path FatCommonCleanup legitimately
+   holds **only the file's Fcb** (not the parent Dcb / Vcb) — exactly as the C does
+   (cleanup.c grabs the Vcb only for delete-on-close / UserVolumeOpen). Free-build ReactOS:
+   NT_ASSERT gone, read proceeds. Rust: `assert!` fires → BUGCHECK.
+
+**Why arm64-only (the arch-specificity was the first real clue, not a distraction):**
+arm64 boots from a **FAT ramdisk** → fastfat is exercised heavily at boot (driver `.sys`
+loads open+close through it). i386/amd64 boot the **LiveCD ISO** → **cdfs**, and never
+touch fastfat cleanup during boot. So an all-arch kernel change (IRP_MJ_CLEANUP delivery)
+surfaces a fastfat bug on exactly one arch. **Lesson:** when a change is all-arch but the
+failure is one-arch, ask *what does that arch exercise that the others don't* — here, the
+boot filesystem, not anything CPU-specific.
+
+**Isolation recipe that nailed "mine vs pre-existing" fast (~15 min):**
+- **A/B against pristine mainline in a throwaway worktree.** `git worktree add -d /tmp/... origin/master`, symlink `.build-tools` in, copy the gitignored arm64 EFI assets, `vibeos-cli build --arch arm64`, smoke. Pristine master booted 2/2; my tree 3/3 red → **my change**, not a merge/pre-existing regression. This flipped my working hypothesis (I'd assumed pre-existing) — *run the A/B, don't reason about it.*
+- **fastfat.sys was byte-identical (modulo build-stamp) across the two trees** → the bug is in how the *kernel drives* fastfat, not fastfat itself → points back at the kernel-side change.
+
+**Getting the caller chain when the panic backtrace is "0 frames":** the Rust panic → bugcheck
+path loses the stack (GDB `bt` at KeBugCheckEx unwinds only into the panic runtime). Instead,
+**instrument the asserting function to walk the arm64 frame-pointer chain itself**: capture the
+caller with `asm!("mov {}, x30")` as the *first* statement (before any `bl` clobbers lr), then
+at the failing branch walk `x29`: `[x29]=saved fp`, `[x29+8]=return addr`, print N frames via
+`DbgPrint`. Symbolize each `ret` with `llvm-symbolizer --obj=fastfat.sys (ImageBase+offset)`,
+where `offset = ret − module_base` and `module_base = (bugcheck P1 absolute) − (P1 "+0xNNNN")`.
+Module bases are stable across boots here (no KASLR), so you can reuse them.
+
+**Fix:** route the assert through `NT_ASSERT((cond) as i32)` like the rest of the file — 13-line
+diff, faithful to ReactOS, keeps the correct ob-rust IRP_MJ_CLEANUP fix. arm64 smoke green ×2.
+
+**Owed sweep (same class):** ~25 sibling hard `assert!(` sites remain in fastfat-rust that
+mirror C `NT_ASSERT`s — each a **dormant** panic that will fire the day its path goes live
+(precisely how this one detonated). Grep `assert!(` in `sdk/lib/rust/fastfat-rust/src/*.rs`,
+cross-check each against the C for `NT_ASSERT`/`ASSERT`, convert the debug-only ones. General
+rule for LLM C→Rust: **`ASSERT`/`NT_ASSERT`/`ASSERTMSG` must translate to the no-op/`debug_assert!`
+shim, never a hard `assert!`** — a debug invariant is not a runtime guarantee, and turning one
+into a panic plants a mine that a *future correctness fix* will step on.
