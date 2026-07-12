@@ -228,6 +228,16 @@ pub unsafe extern "system" fn KiSwapContextResume(
     (*Pcr).ContextSwitches += 1;
     (*NewThread).__bindgen_anon_5.__bindgen_anon_5.ContextSwitches += 1;
 
+    // M3 SMP visibility: one-shot "[SMP] CPUn scheduling live" markers when
+    // an AP switches onto a real (non-idle) thread — consumed by the -smp
+    // smoke milestone check.
+    #[cfg(feature = "smp")]
+    {
+        if (*Pcr).Prcb.Number != 0 && NewThread != (*Pcr).Prcb.IdleThread {
+            super::ipi::KiSmpNoteApSwitch((*Pcr).Prcb.Number as u32);
+        }
+    }
+
     // cswitchdep tap 2 (post-swap, on the NEW thread's stack): IRQL still at
     // the switching level, CurrentThread coherence, SP within the new stack.
     // Runs BEFORE the ATTEMPTED_SWITCH_FROM_DPC BugCheck below so the record

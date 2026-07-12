@@ -271,11 +271,13 @@ pub unsafe fn KeInvalidateTlbEntry(address: PVOID) {
     {
         core::arch::asm!("invlpg [{}]", in(reg) address, options(nostack, preserves_flags));
     }
-    // M3 SMP (amd64): coarse remote shootdown (see KeFlushProcessTb note).
+    // M3 SMP (amd64): targeted remote shootdown — remotes invlpg exactly
+    // this VA instead of a full cr3 reload (see KeFlushProcessTb note for
+    // why the remote round-trip is load-bearing at -smp 2).
     #[cfg(all(feature = "smp", target_arch = "x86_64"))]
     {
-        unsafe extern "C" { fn KiTbShootdownBroadcast(); }
-        KiTbShootdownBroadcast();
+        unsafe extern "C" { fn KiTbShootdownSingle(Address: u64); }
+        KiTbShootdownSingle(address as u64);
     }
     #[cfg(target_arch = "aarch64")]
     {

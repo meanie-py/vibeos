@@ -28,21 +28,29 @@ impl Write for BufWriter {
     }
 }
 
+/// Serializes the DbgPrint below. The buffer is stack-local (no shared-buffer
+/// race), so this lock exists purely to keep one thread's marker line intact:
+/// under -smp 2 an IRQL raise on one CPU does NOT stop a netstack thread on
+/// another CPU from interleaving its own DbgPrint mid-line (which would split a
+/// "[NETSTACK] ..." marker the net suite greps → spurious smoke failure). A real
+/// KSPIN_LOCK gives the cross-CPU exclusion the old raise-only path only had on
+/// a single vCPU (§9.55). Real MP spin under feature=smp; no-op fence on UP.
+static mut SERIAL_LOCK: ntkrnl_sys::ke::KSPIN_LOCK = 0;
+
 pub fn emit(args: fmt::Arguments) {
     let mut w = BufWriter { buf: [0; 256], len: 0 };
     let _ = w.write_fmt(args);
     w.buf[w.len] = 0; // NUL-terminate for %s
     unsafe {
         // netstack runs MULTIPLE worker threads (the engine poll loop + the TDI
-        // self-test), each calling DbgPrint. On the single vCPU, raising to
-        // DISPATCH_LEVEL across the call prevents one netstack thread from
-        // preempting another mid-line (observed corruption:
-        // "outbound TCP co [NETSTACK] TDI self-test: CONNECT OK"). The leading
-        // sacrificial space additionally absorbs the FIRST-byte drop QEMU's UART
-        // does under boot-phase contention (e.g. "[NETSTACK] dhcp lease" ->
-        // "NETSTACK]..."), so the "[NETSTACK] ..." markers the net tests match
-        // arrive intact.
-        let _irql = ntkrnl_sys::guards::IrqlGuard::raise_to_dpc();
+        // self-test), each calling DbgPrint. The lock prevents one netstack
+        // thread from interleaving another mid-line (observed corruption:
+        // "outbound TCP co [NETSTACK] TDI self-test: CONNECT OK") — cross-CPU
+        // under -smp 2, not just same-CPU preemption. The leading sacrificial
+        // space additionally absorbs the FIRST-byte drop QEMU's UART does under
+        // boot-phase contention (e.g. "[NETSTACK] dhcp lease" -> "NETSTACK]..."),
+        // so the "[NETSTACK] ..." markers the net tests match arrive intact.
+        let _lock = ntkrnl_sys::guards::SpinLockGuard::acquire(&raw mut SERIAL_LOCK);
         DbgPrint(b" %s\0".as_ptr(), w.buf.as_ptr());
     }
 }

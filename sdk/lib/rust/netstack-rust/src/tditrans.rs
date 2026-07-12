@@ -19,7 +19,8 @@ use smoltcp::socket::{icmp, tcp, udp};
 use smoltcp::wire::{Icmpv4Packet, Icmpv4Repr, IpAddress, Ipv4Address};
 
 use ntkrnl_sys::ddk::{IofCompleteRequest, NTSTATUS, PIRP};
-use ntkrnl_sys::guards::IrqlGuard;
+use ntkrnl_sys::guards::{IrqlGuard, SpinLockGuard};
+use ntkrnl_sys::ke::KSPIN_LOCK;
 
 use crate::serial::nsprint;
 use crate::time::now;
@@ -88,22 +89,38 @@ pub enum Cmd {
     },
 }
 
-/// The inbox is guarded by raising IRQL to DISPATCH_LEVEL across the brief
-/// push/swap. QEMU runs a SINGLE vCPU, so DISPATCH_LEVEL (which masks thread
-/// preemption) is full mutual exclusion between the producer (TDI dispatch,
-/// any thread, PASSIVE) and the consumer (poll worker, PASSIVE).
+/// The inbox is a real MPSC command queue: many producers (TDI dispatch, any
+/// thread) push; one consumer (the poll worker) drains via `mem::swap`. It is
+/// guarded by a **real `KSPIN_LOCK`** (`KeAcquireSpinLock`), which raises IRQL
+/// to DISPATCH *and* spins on the lock word.
 ///
-/// NOTE: `KeAcquireSpinLockForDpc` is a *no-op* in this tree (ntoskrnl/ke/
-/// spinlock.c returns the current IRQL without raising or acquiring) — it was
-/// stubbed for the early-boot Rust pool allocator. Using it here gave ZERO
-/// synchronization (an unsynchronized Vec race between two threads = UB/heap
-/// corruption). IrqlGuard uses the real KfRaiseIrql, so this is correct.
+/// HISTORY — the `-smp 2` TDI dgram TIMED OUT flake (~1/3, field manual §9.55):
+/// this used to guard the queue with only `IrqlGuard::raise_to_dpc()`, on the
+/// premise that "QEMU runs a SINGLE vCPU, so DISPATCH_LEVEL masks all thread
+/// preemption = full mutual exclusion." That is a **UP-only** assumption. Under
+/// `-smp 2` a raise on CPU0 does nothing to a producer thread on CPU1: two
+/// producers (plus the consumer's `mem::swap`) raced the `Vec`'s (ptr,len,cap)
+/// — a `push` that reallocates while the consumer swaps = torn read / lost
+/// command → the SEND_DATAGRAM or SET_EVENT command vanished → the datagram
+/// upcall never fired → the self-test timed out. The comment itself flagged the
+/// hazard ("an unsynchronized Vec race between two threads = UB/heap
+/// corruption") — it just wrongly trusted the single-vCPU premise.
+///
+/// `KeAcquireSpinLock` is the exported kernel symbol, so it resolves per-boot:
+/// the SMP kernel's `KxAcquireSpinLock` really spins (`feature=smp`); the UP
+/// kernel's is a no-op compiler fence — identical to the old raise-only path
+/// there. NB: `KeAcquireSpinLockForDpc` (a *different* function) IS still a
+/// no-op stub in this tree — do not reach for it.
 struct Inbox {
+    /// Cross-CPU exclusion for the queue below (see the type doc). `0` = the
+    /// KeInitializeSpinLock initial state.
+    lock: UnsafeCell<KSPIN_LOCK>,
     queue: UnsafeCell<Vec<Cmd>>,
 }
 unsafe impl Sync for Inbox {}
 
 static INBOX: Inbox = Inbox {
+    lock: UnsafeCell::new(0),
     queue: UnsafeCell::new(Vec::new()),
 };
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -116,14 +133,14 @@ pub fn alloc_id() -> u64 {
 /// Post a command from the TDI dispatch (any thread).
 pub fn post(cmd: Cmd) {
     unsafe {
-        let _irql = IrqlGuard::raise_to_dpc();
+        let _lock = SpinLockGuard::acquire(INBOX.lock.get());
         (*INBOX.queue.get()).push(cmd);
     }
 }
 
 fn drain_into(out: &mut Vec<Cmd>) {
     unsafe {
-        let _irql = IrqlGuard::raise_to_dpc();
+        let _lock = SpinLockGuard::acquire(INBOX.lock.get());
         core::mem::swap(out, &mut *INBOX.queue.get());
     }
 }

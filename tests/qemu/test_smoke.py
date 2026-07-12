@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -140,6 +141,16 @@ def test_milestones(vm: QemuVM, arch: str) -> None:
     milestones = vm.config.required_milestones
     if not milestones:
         pytest.skip(f"no milestones configured for {arch}")
+
+    # -smp N boots (VIBEOS_QEMU_SMP > 1, SMP bring-up): additionally require
+    # proof that every AP actually scheduled a non-idle thread — the kernel
+    # prints a one-shot "[SMP] CPUn scheduling live" marker per AP
+    # (ke/amd64/ipi.rs KiSmpNoteApSwitch, called from KiSwapContextResume).
+    smp = os.environ.get("VIBEOS_QEMU_SMP", "").strip()
+    if smp.isdigit() and int(smp) > 1:
+        milestones = milestones + [
+            f"CPU{n} scheduling live" for n in range(1, int(smp))
+        ]
 
     output = vm._boot_output or ""
     missing = [m for m in milestones if m not in output]
