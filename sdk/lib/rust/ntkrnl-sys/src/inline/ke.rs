@@ -1762,7 +1762,36 @@ pub unsafe fn KiSelectReadyThread(priority: KPRIORITY, prcb: ddk::PKPRCB) -> ddk
     BitScanReverse(&mut high_priority, priority_set);
     high_priority += priority as ULONG;
 
-    let list_entry = (*prcb).DispatcherReadyListHead[high_priority as usize].Flink;
+    let list_head =
+        core::ptr::addr_of_mut!((*prcb).DispatcherReadyListHead[high_priority as usize]);
+    let list_entry = (*list_head).Flink;
+
+    // §9.56 tripwire (SMP ready-queue race hunt): ReadySummary said this
+    // priority is occupied, so its list MUST be non-empty. If it's empty
+    // (Flink == head) or its first node's back-link is broken
+    // (first->Blink != head), the ReadySummary/list pair is INCONSISTENT —
+    // a concurrent unserialized manipulation corrupted this Prcb's ready
+    // list. Catch it HERE, at the read, with the state that localizes the
+    // corruptor, instead of faulting downstream in RemoveEntryList (the
+    // 0x1E IN_PAGE_ERROR face). Both derefs below are safe: list_head lives
+    // in the PRCB, and the empty check gates the Blink deref so we never
+    // walk a self-referential-head-as-node. Release-mode (debug_asserts at
+    // the writer sites are compiled out).
+    #[cfg(feature = "smp")]
+    {
+        if list_entry == list_head as ddk::PLIST_ENTRY
+            || (*list_entry).Blink != list_head as ddk::PLIST_ENTRY
+        {
+            ddk::KeBugCheckEx(
+                0x96, // marker: SMP ready-list/ReadySummary inconsistency (§9.56)
+                prcb as usize as _,
+                high_priority as _,
+                (*prcb).ReadySummary as _,
+                list_entry as usize as _,
+            );
+        }
+    }
+
     let thread = (list_entry as usize
         - memoffset_of_wait_list_entry()) as ddk::PKTHREAD;
 
