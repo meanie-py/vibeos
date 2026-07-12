@@ -364,3 +364,24 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   Sweep 15 relaunched (with the 3 new quarantines) to confirm a fully-clean all-green pass +
   RtlCaptureContextUM's true numbers, then the amd64 baseline is regenerated against the
   merged kernel and the whole bundle (kernel fixes + harness) lands via gate ×3.
+- 2026-07-11: **BUNDLE LANDED to origin/master** (`38ff68746c1`): conformance harness
+  (payload sweep + `parse_kmtest_serial.py` + ratchet compare) + amd64 81/81 baseline +
+  the 3 conformance-caught OS fixes (services SERVICES_KEY, ob-rust IRP_MJ_CLEANUP,
+  arm64 `__C_specific_handler`) + the fastfat `FatLocateDirent` NT_ASSERT fix (field
+  manual §9.57) that the IRP_MJ_CLEANUP fix woke on arm64 boot. Gate ×3 green.
+- 2026-07-12: **Owed fastfat NT_ASSERT sweep DONE** (`8536c9541cf`) — all 26 hard
+  `assert!(` in fastfat-rust cross-checked against the C; every one mirrored a debug-only
+  `NT_ASSERT`/`ASSERT`. Converted 25 → `debug_assert!` (no-op in our `--release` kernel,
+  faithful to ReactOS free-build semantics); 2 left (already-guarded fileinfo:1071, a
+  comment). Each was a dormant panic of the exact class that detonated FatLocateDirent.
+  Field manual §9.57 owed-sweep closed.
+- 2026-07-12: **M4 STARTED — `vibeos-cli conformance` verb** (`tests/qemu/cli/conformance.py`).
+  One front door: (optional) `VIBEOS_PAYLOAD=kmtest` build → boot → in-guest sweep (drains
+  `test_payload.py::test_payload_launched` up to `launch_drain_secs`) → parse the serial log
+  → compare vs `tools/conformance-baseline/<arch>/kmtest.txt` → `summary.json`
+  (`{launched, ok, bad, regressions, new_passes, sweep_done, bugcheck}`). Report-only by
+  default; `--gate` exits nonzero on ratchet regression; `--write-baseline` seeds/updates the
+  floor; `--smp N` passes `VIBEOS_QEMU_SMP` (+ `--smp-kernel` build) — the hook the UP→SMP/AP
+  lane will use to run guest loads under `-smp`. Fail-loud rostests preflight (no silent
+  degradation). Unit-tested (arch-norm, parser regression detect, rostests preflight);
+  live-validation is the i386 baseline run next (dogfood the verb to produce M3 i386).
