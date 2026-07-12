@@ -1761,6 +1761,7 @@ pub unsafe fn ki_rq_integrity(prcb: ddk::PKPRCB, priority: u32, site: u64) {
     }
 }
 
+#[cfg_attr(feature = "smp", track_caller)]
 pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
     // UP kernel: the affinity gate is always TRUE. SMP: a thread not affine
     // to this CPU is deferred instead (ke_x.h:1387).
@@ -1781,12 +1782,17 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
         // (0x52) DOUBLE-QUEUE: this thread is already Ready — queuing it again
         // re-inserts an entry that's still linked, tearing the list.
         if kt_state_read(thread) == ddk::_KTHREAD_STATE_Ready as u8 {
+            // Encode the caller's source line so ONE amplified burst pins which
+            // of the ~9 KxQueueReadyThread call sites issues the second queue.
+            // param2 = 0x52 tag | caller-line | priority; param4 = caller-line
+            // duplicated raw for easy read. (§9.56 — mechanism hunt.)
+            let caller_line = core::panic::Location::caller().line() as u64;
             ddk::KeBugCheckEx(
                 0x96,
                 thread as usize as _,
-                ((0x52u64 << 8) | priority_c as u64) as _,
+                ((0x52u64 << 40) | (caller_line << 8) | priority_c as u64) as _,
                 kt_state_read(thread) as _,
-                prcb as usize as _,
+                caller_line as _,
             );
         }
         // (0x51) list ALREADY torn on entry — a prior/concurrent corruptor,
