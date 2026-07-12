@@ -53,6 +53,7 @@ add_library(wow64 MODULE
     wow64_thunks.c
     wow64_win32k.c
     wow64_manual.c
+    wow64_callback.c
     wow64.rc
     ${CMAKE_CURRENT_BINARY_DIR}/wow64.def)
 target_include_directories(wow64 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
