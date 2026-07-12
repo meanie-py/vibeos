@@ -1,6 +1,8 @@
-# vibeos conformance sweep list — FULL kmtest corpus (M3 initial sweep)
+# vibeos conformance sweep list — amd64 (M3 baseline).
 # Generated from kmtest_drv/testlist.c + kmtest/testlist.c (visible tests).
 # One name per line; kmtest-sweep.exe runs one kmtest_.exe process per test.
+# amd64 runs kmtest_drv with native SEH. Per-arch list (i386 diverges — it's
+# DUMMY_PSEH, a superset of these quarantines).
 CmSecurity
 ExCallback
 ExDoubleList
