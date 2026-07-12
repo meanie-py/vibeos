@@ -704,6 +704,23 @@ unsafe fn TryStartWow64Probe() {
     }
 }
 
+/* True only when the FEX CPU layer (libwow64fex.dll) is staged in system32 —
+ * i.e. a VIBEOS_FEX build. The WoW64 guest exes (hello32/gui32/win32) can
+ * persist in a shared ramdisk.img across a plain `mkramdisk --refresh` (dev
+ * pollution), but WITHOUT libwow64fex.dll their WoW64 bootstrap runs
+ * half-initialized and faults the kernel. Gate every guest spawn on the real
+ * support layer, not just the guest exe, so a polluted ramdisk in a non-FEX
+ * boot is an inert no-op (kept the standard smoke green — 2026-07-11). */
+#[cfg(target_arch = "aarch64")]
+unsafe fn Wow64SupportStaged() -> bool {
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return false;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\system32\\libwow64fex.dll").as_ptr());
+    GetFileAttributesW(Path.as_ptr()) != 0xFFFF_FFFF
+}
+
 /* WOW64 Phase C probe: launch a real i386 PE (hello32.exe) through the normal
  * CreateProcessW front door. Unlike wow64probe (a native arm64 harness), this
  * exercises the actual WoW64 process bootstrap: kernel32 machine gate →
@@ -711,6 +728,9 @@ unsafe fn TryStartWow64Probe() {
  * wow64!Wow64LdrpInitialize. Verdict = [FEX-WOW64C] serial lines + 0x600D. */
 #[cfg(target_arch = "aarch64")]
 unsafe fn TryStartWow64Hello() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent — don't spawn a guest that can't run
+    }
     let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
         return;
@@ -766,6 +786,9 @@ unsafe fn TryStartWow64Hello() {
  * verdict = [win32] serial lines + exit 0x600D. */
 #[cfg(target_arch = "aarch64")]
 unsafe fn TryStartWow64Win32() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent — don't spawn a guest that can't run
+    }
     let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
         return;
@@ -826,6 +849,9 @@ unsafe fn TryStartWow64Win32() {
  * staged; verdict = [gui32]/[GUEST32] serial lines + exit 0x600D. */
 #[cfg(target_arch = "aarch64")]
 unsafe fn TryStartWow64Gui() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent — don't spawn a guest that can't run
+    }
     let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
         return;
