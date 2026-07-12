@@ -15,6 +15,15 @@
 //! sign only for radix==10 (else the value's unsigned bit pattern at the
 //! declared width). Verified against msvcrt's `ltoa_helper`.
 #![no_std]
+// LOAD-BEARING. This crate defines `#[no_mangle] memset`/`memcpy`/`memcmp`/…
+// — the very symbols LLVM's loop-idiom pass rewrites store/copy/compare loops
+// INTO. Without `no_builtins`, `memset`'s fill loop is recognized and lowered to
+// a call to `memset`: an infinite self-call. (The previous body dodged this with
+// a per-byte `write_volatile`, which is unvectorizable by construction and cost
+// ~8x throughput — it blew the net suite's timeouts and got wave 2 reverted off
+// master. `no_builtins` is the right tool: it stops the *recognition* while
+// leaving the loop free to be widened/vectorized normally.)
+#![no_builtins]
 #![allow(clippy::missing_safety_doc)]
 
 use cnt_rust::core_rs::radix::format_radix;
@@ -399,12 +408,39 @@ mod mmemset {
 
     /// `void* __cdecl memset(void* src, int val, size_t count)`
     /// preserved misfeature: none (textbook; val truncated to u8)
+    ///
+    /// ⚠️ PERF IS PART OF THE CONTRACT HERE. This is msvcrt.dll's `memset`,
+    /// served to every user-mode caller in the system. The original flip was a
+    /// per-byte `core::ptr::write_volatile` loop over a *slice* — semantically
+    /// perfect (20k fuzz cases MATCH) and ~8x slower than the C, because
+    /// `write_volatile` is **unvectorizable by construction**: the compiler may
+    /// not widen, merge or elide the stores. That shipped, blew the net suite's
+    /// 120s marker timeouts (71s -> 208s) and got wave 2 reverted off master.
+    /// Pinned by `msvcrt-difftest --test perf`.
+    ///
+    /// Three constraints, all load-bearing:
+    ///  * **no `write_bytes`/`slice::fill`** — they lower to `llvm.memset`, which
+    ///    becomes a call to `memset`: infinite self-recursion in this very fn.
+    ///  * **`#![no_builtins]` on the crate** — otherwise LLVM's loop-idiom pass
+    ///    recognizes the fill below and turns it back into that same self-call.
+    ///  * **raw pointers, not a slice** — the §378 DCE miscompile (LLVM deducing
+    ///    `captures(none)` on the slice param and deleting the stores, leaving an
+    ///    infinite spin) came in through the *slice* signature. That class is
+    ///    toolchain-fixed on LLVM >= 21, but writing through the raw pointer keeps
+    ///    us off the path entirely — which is why the volatile crutch can go.
     #[no_mangle]
     pub unsafe extern "C" fn memset(src: *mut core::ffi::c_void, val: i32, count: usize) -> *mut core::ffi::c_void {
-        let src_s = raw_mut_slice(src as *mut u8, count);
-        let __b = val as u8;
-        for __x in src_s.iter_mut() {
-            core::ptr::write_volatile(__x as *mut u8, __b);
+        let p = src as *mut u8;
+        let b = val as u8;
+        let w = u64::from_ne_bytes([b; 8]);
+        let mut i = 0usize;
+        while i + 8 <= count {
+            (p.add(i) as *mut u64).write_unaligned(w);
+            i += 8;
+        }
+        while i < count {
+            *p.add(i) = b;
+            i += 1;
         }
         src
     }
@@ -755,19 +791,46 @@ pub unsafe fn strncmp_raw(a: *const u8, b: *const u8, len: usize) -> i32 {
     )
 }
 
-/// msvcrt `memcmp`: already unsigned in cnt-rust (`mem::cmp`), but msvcrt
-/// **clamps** (`memcmp_bytes`: `return *p1 > *p2 ? 1 : -1;`). This was the
-/// lone SIGN-ONLY verdict — same sign, different magnitude.
+/// msvcrt `memcmp`: unsigned compare, **clamped** to -1/0/1
+/// (`memcmp_bytes`: `return *p1 > *p2 ? 1 : -1;`) — the lone SIGN-ONLY verdict.
+///
+/// ⚠️ **Word-wise on purpose — this is a perf contract, not just a value one.**
+/// Delegating to `cnt_rust::core_rs::mem::cmp` is semantically exact but is a
+/// byte-at-a-time `zip` loop: measured **10.3x slower** than the C, which
+/// compares 64-bit blocks (`memcmp_blocks`). `memcmp` is a system-wide CRT
+/// primitive, so that is a regression even though every value matches — the same
+/// class that got wave 2's `memset` reverted off master. Pinned by
+/// `msvcrt-difftest --test perf` (>2x slower than the C = FAIL).
+///
+/// The first differing byte is located from the XOR of the two words:
+/// little-endian, so the LOWEST set bit is the lowest differing byte index.
+/// All three targets are LE; asserted below rather than assumed.
 #[no_mangle]
 pub unsafe extern "C" fn memcmp(
     s1: *const core::ffi::c_void,
     s2: *const core::ffi::c_void,
     n: usize,
 ) -> i32 {
-    clamp(cnt_rust::core_rs::mem::cmp(
-        h::raw_slice(s1 as *const u8, n),
-        h::raw_slice(s2 as *const u8, n),
-    ))
+    const _: () = assert!(cfg!(target_endian = "little"), "byte-index-from-XOR is LE-only");
+    let (a, b) = (s1 as *const u8, s2 as *const u8);
+    let mut i = 0usize;
+    while i + 8 <= n {
+        let x = (a.add(i) as *const u64).read_unaligned();
+        let y = (b.add(i) as *const u64).read_unaligned();
+        if x != y {
+            let j = i + ((x ^ y).trailing_zeros() / 8) as usize;
+            return if *a.add(j) > *b.add(j) { 1 } else { -1 };
+        }
+        i += 8;
+    }
+    while i < n {
+        let (xa, yb) = (*a.add(i), *b.add(i));
+        if xa != yb {
+            return if xa > yb { 1 } else { -1 };
+        }
+        i += 1;
+    }
+    0
 }
 
 /// msvcrt `memchr`: matches `*p == (unsigned char)c`. cnt-rust's `mem::chr`

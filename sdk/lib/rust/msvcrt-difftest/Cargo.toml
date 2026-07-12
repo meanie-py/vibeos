@@ -56,3 +56,12 @@ harness = false
 name = "oob_guard"
 path = "tests/oob_guard.rs"
 harness = false
+
+# Throughput gate. classify.rs grades BEHAVIOUR, so a semantically perfect but
+# orders-of-magnitude slower body scores MATCH — which is how wave 2's per-byte
+# write_volatile memset shipped and blew the net suite's timeouts (71s -> 208s).
+# A flip >2x slower than the C it replaces FAILS here.
+[[test]]
+name = "perf"
+path = "tests/perf.rs"
+harness = false
