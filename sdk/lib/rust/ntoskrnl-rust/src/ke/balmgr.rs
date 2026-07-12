@@ -1,5 +1,6 @@
 use super::ke_defs::*;
 use crate::CONTAINING_RECORD;
+use ntkrnl_sys::inline::ke::KiInsertDeferredReadyList; // §9.56: inline (not the extern-C shim) so #[track_caller] names the true site
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -21,7 +22,6 @@ use ntkrnl_sys::ddk::{
     KeWaitForMultipleObjects,
     KiAcquireDispatcherLock,
     KiAcquirePrcbLock,
-    KiInsertDeferredReadyList,
     KiReleaseDispatcherLock,
     KiReleasePrcbLock,
 };

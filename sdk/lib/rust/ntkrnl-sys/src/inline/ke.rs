@@ -1333,8 +1333,48 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
 /// KiInsertDeferredReadyList — SMP: push onto this CPU's deferred-ready list.
 #[cfg(feature = "smp")]
 #[inline]
+#[track_caller]
 pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
     let prcb = KeGetCurrentPrcb();
+
+    // §9.56 tripwire (0x53) — THE UNION-ALIAS TEAR.
+    // SwapListEntry.Next below shares memory with WaitListEntry.Flink (KTHREAD
+    // __bindgen_anon_3 is a union — same as NT). So deferring a thread that is
+    // STILL LINKED in some Prcb's DispatcherReadyListHead CLOBBERS that thread's
+    // ready-list Flink, tearing a list we do NOT hold the lock for — which is
+    // exactly how site 0x11 fires while its own PRCB lock IS held. NT permits the
+    // aliasing only because a Ready thread is always REMOVED from its ready list
+    // before being re-readied; that invariant is what we test here.
+    //
+    // NOTE: `State == Ready` alone is NOT the invariant — the legitimate
+    // remove-then-defer paths (KiSetPriorityThread / KiUpdateEffectiveAffinity)
+    // call RemoveEntryList first and only *then* defer, so State is still Ready
+    // while the thread is already UNLINKED. (A state-only check false-positived on
+    // every boot — that's how we learned this.) Test ACTUAL LINKAGE instead: a
+    // node still in a doubly-linked list has neighbours that point back at it.
+    // After a correct RemoveEntryList the stale Flink/Blink point at old
+    // neighbours which now point to each other, so the back-check fails => quiet.
+    if kt_state_read(thread) == ddk::_KTHREAD_STATE_Ready as u8 {
+        let entry = kt_wait_list_entry(thread);
+        let flink = (*entry).Flink;
+        let blink = (*entry).Blink;
+        let still_linked = !flink.is_null()
+            && !blink.is_null()
+            && flink != entry // self-loop (InitializeListHead) == not in a list
+            && (*flink).Blink == entry
+            && (*blink).Flink == entry;
+        if still_linked {
+            let caller_line = core::panic::Location::caller().line() as u64;
+            ddk::KeBugCheckEx(
+                0x96,
+                thread as usize as _,
+                ((0x53u64 << 40) | (caller_line << 8) | kt_state_read(thread) as u64) as _,
+                prcb as usize as _,
+                caller_line as _,
+            );
+        }
+    }
+
     kt_set_state(thread, ddk::_KTHREAD_STATE_DeferredReady as u8);
     kt_set_deferred_processor(thread, (*prcb).Number as u8);
     // PushEntryList(&Prcb->DeferredReadyListHead, &Thread->SwapListEntry)
@@ -1781,17 +1821,31 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
         let priority_c = (*thread).Priority as u32;
         // (0x52) DOUBLE-QUEUE: this thread is already Ready — queuing it again
         // re-inserts an entry that's still linked, tearing the list.
-        if kt_state_read(thread) == ddk::_KTHREAD_STATE_Ready as u8 {
-            // Encode the caller's source line so ONE amplified burst pins which
-            // of the ~9 KxQueueReadyThread call sites issues the second queue.
-            // param2 = 0x52 tag | caller-line | priority; param4 = caller-line
-            // duplicated raw for easy read. (§9.56 — mechanism hunt.)
+        // (0x54) ALREADY-LINKED — the precise predicate.
+        // Inserting a node that is STILL LINKED into a ready list corrupts both
+        // that list and this one. The old 0x52 guard tested `State == Ready`, but
+        // STATE IS THE WRONG PREDICATE: a path that changes State without
+        // unlinking sails past it, and a burst proved it (0x52 silent while site
+        // 0x11 still tore the list right after a legit insert, PRCB lock held).
+        // Test LINKAGE directly instead — a node still in a doubly-linked list has
+        // neighbours that point back at it. After a correct RemoveEntryList the
+        // stale Flink/Blink point at old neighbours that now point to each other,
+        // so this is quiet on the legitimate paths.
+        let entry = kt_wait_list_entry(thread);
+        let flink = (*entry).Flink;
+        let blink = (*entry).Blink;
+        let already_linked = !flink.is_null()
+            && !blink.is_null()
+            && flink != entry // self-loop (InitializeListHead) == not in a list
+            && (*flink).Blink == entry
+            && (*blink).Flink == entry;
+        if already_linked {
             let caller_line = core::panic::Location::caller().line() as u64;
             ddk::KeBugCheckEx(
                 0x96,
                 thread as usize as _,
-                ((0x52u64 << 40) | (caller_line << 8) | priority_c as u64) as _,
-                kt_state_read(thread) as _,
+                ((0x54u64 << 40) | (caller_line << 8) | priority_c as u64) as _,
+                kt_state_read(thread) as _, // the state that slipped past 0x52
                 caller_line as _,
             );
         }
