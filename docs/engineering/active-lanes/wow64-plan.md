@@ -394,24 +394,88 @@ before landing to master — these touch i386 gdi32/user32 specs + csrss):
    the gdi32/user32/win32u guest set; winlogon `TryStartWow64Gui` launches it.
    Verdict = exit 0x600D + a magenta rect on the arm64 desktop.
 
-*Still deferred out of M4 (owed, the next milestones):*
-- **win32k process/thread connection for a WoW64 guest** (the gui32 0xBAD1
-  blocker — task #29). gdi32's `GdiProcessSetup`/`NtGdiInit` returns 0xffffffff,
-  so the guest has no GDI handle table / desktop, and every subsequent NtGdi*
-  (incl. NtGdiOpenDCW) returns NULL.
-  *Diagnostic clue pinned 2026-07-11:* the arm64 syscall dispatch's
-  `[SVC] GUI conversion failed` print (trap.rs:220) did NOT fire for the wow64
-  NtGdiInit call, so the `-1` is NOT PsConvertToGuiThread rejecting the thread
-  via that path. Table alignment is proven sound (NtGdiOpenDCW correctly
-  unpacked `'DISPLAY'`, so the guest's w32ksvc32 service numbers match the
-  table). Next debug step: trace inside the TableIndex==1 dispatch in trap.rs
-  (print ServiceIndex + the win32k routine's return for the wow64 thread) to
-  see whether NtGdiInit actually runs (Rust returns 1) or the call diverts —
-  the `0xffffffff` origin is the open question. Then the real work:
-  the win32k client-connect path
-  (`NtUserProcessConnect` + the GDI shared handle-table section mapped into the
-  guest below 4GB, PEB `GdiSharedHandleTable`) taught about the WoW64 process.
-  This is the win32k analogue of the csrss connect layer.
+## M5 (2026-07-11): win32k client connect — gui32 DRAWS through native win32k
+
+**The NtGdiInit=0xffffffff mystery is SOLVED and closed** (task #29). Root
+cause was never in the wow64 table at all: `win32ss/win32u/sys-stubs.S`
+selected its service-number list by `#ifdef _M_AMD64` alone, so **arm64
+win32u.dll numbered its stubs from w32ksvc32.h while the kernel table
+(napi.h, `_WIN64`) uses w32ksvc64.h** — every diverging index called the
+WRONG win32k routine (NtGdiInit@219-in-32 landed on
+NtGdiModifyWorldTransform@219-in-64; real GdiInit is 0x1E0). Native
+gdi32/user32 were immune (win32ss/sys-stubs.S has a correct `_M_ARM64`
+branch) — only win32u callers, i.e. exactly the wow64 host, saw it. Moral:
+*a stub library nothing native exercises is unproven; compare its numbers
+against a consumer that works.*
+
+With routing fixed, the actual client-connect layer (all landed, gate ×3):
+- **win32k `W32Wow64ZeroBits`** (init.rs): every user-visible mapping win32k
+  hands a WoW64 process now lands below 4GB via the ZeroBits mask form —
+  GDI handle table (`GDI_MapHandleTable`), global user heap
+  (`MapGlobalUserHeap`), desktop-heap view (`IntMapDesktopView`), GdiPool
+  DC_ATTR/BRUSH_ATTR slabs (`GdiPoolAllocateSection`).
+- **`GdiProcessCreate` mirrors `GdiSharedHandleTable`/`GdiDCAttributeList`
+  into PEB32** (typed `ntkrnl_sys::ddk::_PEB32`, cfg'd off x86).
+- **`NtUserProcessConnect` manual marshaller** (USERCONNECT 0x124↔0x240;
+  truncated `ulSharedDelta` stays correct in the guest's modular 32-bit
+  pointer arithmetic since the user VAs are <4GB).
+- **`NtQueryValueKey` manual marshaller** (PUNICODE_STRING widen) — its raw
+  auto-thunk fed the kernel a 32-bit UNICODE_STRING whose garbage Buffer
+  probe-raised C0000005 → BUGCHECK 0x1E under DUMMY_PSEH (user32 init reads
+  registry right after NtOpenKey).
+
+On-box result: `NtUserProcessConnect => 0` (psi=001c0dd0 ahe=001da000 —
+below 4GB), user32 DllMain attach completes, `NtGdiOpenDCW` returns a real
+HDC (18010112), **PatBlt draws through native arm64 win32k**. gui32 exit
+**0x600E** = the designed draw-OK/readback-WARN rung. hello32 0x600D
+unchanged.
+
+## M6 (2026-07-11): wide GDI handle-table entries — guest GetPixel round-trips
+
+The M5 readback WARN was NOT surface readback: 32-bit gdi32 read the shared
+GDI handle table with 16-byte GDI_TABLE_ENTRY stride, but the 64-bit kernel
+writes 24-byte ENTRYs — so `GdiValidateHandle`/`GdiGetHandleUserData` failed
+client-side and SelectObject/GetPixel never issued syscalls (the boot-log
+tell: no `NtGdiSelectBrush`/`NtGdiGetPixel` traces after `NtGdiPatBlt`).
+Fix in **gdi32-rust** (dllmain.c/misc.c/region.c are cohab-flipped DEAD
+source — a first fix went into the C and did nothing; the parallel C edits
+are kept aligned for reference): `GdiProcessSetup` detects wow64 once
+(ProcessWow64Information != 0 → `g_GdiWow64`), all shared-entry reads route
+through `GdiReadSharedEntry` (wide layout when set; field ORDER matches, only
+KernelData/UserData widen), and `GdiDevCaps` rebases past 0x10000 wide
+entries. On-box: **NtGdiGetPixel fires from the guest and returns the true
+framebuffer pixel** — the full 32-bit-guest GDI readback path works.
+
+## M7 (2026-07-11): gui32 0x600D PASS — WoW64 DC_ATTR shim, guest draws MAGENTA
+
+M6's white pixel was DC_ATTR layout divergence (guest wrote hbrush/ulDirty_
+at 32-bit offsets into the kernel's 64-bit DC_ATTR). Fixed the real-Windows
+way — the wow64 CLIENT knows the 64-bit layout (approach (b); (c)
+layout-invariance is impossible because FLOATOBJ diverges semantically:
+i386 8-byte EFLOAT vs FLOAT elsewhere):
+- **`gdi32-rust/src/dcattr64.rs`**: DC_ATTR64 mirror on the 32-bit compiler.
+  Wide pointer/handle slots split lo(native-typed)+`_hi` pad (kernel zeroes
+  the struct and never stores nonzero upper halves, so lo-half writes
+  compose); explicit `__padN` where repr(C)-on-64 pads; const-asserted
+  offsets + 416-byte size. MATRIX/FLOATOBJ fields are opaque filler —
+  client code never touches them (swept).
+- **`dcattr_f!`** (lib.rs): field-projection macro → correctly-offset,
+  correctly-typed `*mut`; serves reads/writes/compounds/sub-fields; native
+  branch byte-identical, non-x86 passthrough.
+- **All 240 `(*pdcattr).f` sites rewritten by script** (regex → 
+  `(*dcattr_f!(pdcattr, f))`, per the >50-edits automation rule).
+
+On-box: `NtGdiPatBlt => 1`, `NtGdiGetPixel => 00ff00ff`, **gui32 exit
+0x600D PASS** — an x86 GUI binary under FEX completes draw+readback through
+the native arm64 win32k (magenta rect on the desktop). Gate ×3 green.
+
+*Same divergence class still owed elsewhere (next layers toward Doom):*
+- **TEB GdiTebBatch GDIBS\* batch commands** — gui32 didn't batch; the
+  kernel-side `KeGdiFlushUserBatch` reads 64-bit GDIBS from a wow64 TEB.
+- **user32 HANDLEENTRY / SERVERINFO / desktop-heap structs** — needed when
+  window creation lands (CreateWindow → real message pump → Doom's window).
+
+*Still deferred (owed, the next milestones):*
 - **advapi32.dll / usp10.dll (i386) staging** — user32 imports them; the loader
   currently skips-missing (`LDR: Skipping missing import ... c0000135`), which
   works for gui32 but leaves user32 partially unresolved. Stage them for a real

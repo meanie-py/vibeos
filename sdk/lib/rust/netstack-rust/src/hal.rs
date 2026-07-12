@@ -56,7 +56,7 @@ static mut BOUNCES: [BounceEntry; MAX_BOUNCES] = [EMPTY_BOUNCE; MAX_BOUNCES];
 /// two concurrent `share`s could claim the same empty slot (one bounce leaked +
 /// a descriptor pointed at the wrong physaddr → DMA to stale memory), or a
 /// `share`/`unshare` pair could tear an entry. Real MP spin under feature=smp;
-/// no-op fence on UP (§9.53). `0` = the KeInitializeSpinLock initial state.
+/// no-op fence on UP (§9.55). `0` = the KeInitializeSpinLock initial state.
 static mut BOUNCE_LOCK: KSPIN_LOCK = 0;
 
 #[inline]

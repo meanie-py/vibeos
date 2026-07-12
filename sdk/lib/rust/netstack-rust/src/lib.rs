@@ -120,7 +120,7 @@ pub unsafe extern "system" fn DriverEntry(
     // connection objects (EA buffers), associate, connect to the slirp echo,
     // send, receive. The inbox is guarded by a real KSPIN_LOCK (KeAcquireSpinLock)
     // — cross-CPU mutual exclusion that holds under -smp 2, not the old
-    // IrqlGuard/DISPATCH raise that only worked on a single vCPU (§9.53).
+    // IrqlGuard/DISPATCH raise that only worked on a single vCPU (§9.55).
     tditest::spawn();
     // M5 verification: the UDP/datagram analogue — a kernel TDI client that drives
     // our own \Device\Udp via real IRPs (the path AFD uses for sendto/recvfrom and

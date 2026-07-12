@@ -4049,7 +4049,7 @@ unsafe fn IntMapDesktopView(pdesk: PDESKTOP) -> NTSTATUS {
         (*pdesk).hsectionDesktop,
         PsGetCurrentProcess() as _,
         &mut UserBase,
-        0,
+        crate::init::W32Wow64ZeroBits(PsGetCurrentProcess() as _) as _,
         0,
         core::ptr::addr_of_mut!(Offset) as _,
         core::ptr::addr_of_mut!(ViewSize) as _,

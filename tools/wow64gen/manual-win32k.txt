@@ -23,3 +23,7 @@ NtGdiOpenDCW
 NtUserGetMessage
 NtUserPeekMessage
 NtUserDispatchMessage
+
+# user32 per-process win32k handshake: USERCONNECT is layout-divergent
+# (SHAREDINFO pointers widen; 0x124 -> 0x240). Task #29.
+NtUserProcessConnect

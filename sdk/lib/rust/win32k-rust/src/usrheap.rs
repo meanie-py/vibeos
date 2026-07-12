@@ -277,7 +277,7 @@ pub unsafe extern "C" fn MapGlobalUserHeap(
         GlobalUserHeapSection as _,
         Process as _,
         &mut UserBase as _,
-        0,
+        crate::init::W32Wow64ZeroBits(Process as _) as _,
         0,
         core::ptr::addr_of_mut!(Offset) as _,
         &mut ViewSize as _,

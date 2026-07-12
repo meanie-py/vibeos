@@ -236,6 +236,31 @@ else
     mmd -i "$RAMDISK_IMG" ::/reactos/system32/drivers
 fi
 
+# Profile tree — livecd parity. The x86 LiveCD stages Profiles/ onto the ISO
+# (boot/bootdata/CMakeLists.txt) and the livecd hives point ProfilesDirectory
+# at %SystemDrive%\Profiles; shell32's CSIDL resolution (and therefore
+# explorer's start menu — CStartMenu GetMergedFolder) needs the directories
+# to actually exist. Without these the start menu object silently fails to
+# build (E_FAIL) and Ctrl+Esc opens nothing. Idempotent: mmd errors on
+# existing dirs are expected on --refresh of an existing image.
+echo "[*] Staging profile tree..."
+while IFS= read -r d; do
+    mmd -i "$RAMDISK_IMG" "$d" 2>/dev/null || true
+done <<'PROFILES'
+::/Profiles
+::/Profiles/All Users
+::/Profiles/All Users/Desktop
+::/Profiles/All Users/Start Menu
+::/Profiles/All Users/Start Menu/Programs
+::/Profiles/All Users/Start Menu/Programs/Administrative Tools
+::/Profiles/All Users/Start Menu/Programs/Accessories
+::/Profiles/Default User
+::/Profiles/Default User/Desktop
+::/Profiles/Default User/My Documents
+::/Profiles/Default User/Start Menu
+::/Profiles/Default User/Start Menu/Programs
+PROFILES
+
 # Copy system files
 echo "[*] Populating ramdisk..."
 RMC "$BUILD_DIR/ntoskrnl/ntoskrnl.exe"                        ::/reactos/system32/ntoskrnl.exe

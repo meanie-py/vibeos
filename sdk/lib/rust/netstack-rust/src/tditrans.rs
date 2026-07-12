@@ -94,7 +94,7 @@ pub enum Cmd {
 /// guarded by a **real `KSPIN_LOCK`** (`KeAcquireSpinLock`), which raises IRQL
 /// to DISPATCH *and* spins on the lock word.
 ///
-/// HISTORY — the `-smp 2` TDI dgram TIMED OUT flake (~1/3, field manual §9.53):
+/// HISTORY — the `-smp 2` TDI dgram TIMED OUT flake (~1/3, field manual §9.55):
 /// this used to guard the queue with only `IrqlGuard::raise_to_dpc()`, on the
 /// premise that "QEMU runs a SINGLE vCPU, so DISPATCH_LEVEL masks all thread
 /// preemption = full mutual exclusion." That is a **UP-only** assumption. Under

@@ -223,6 +223,18 @@ pub unsafe extern "system" fn FatPnpQueryRemove(
         }
     }
 
+    // _SEH2_FINALLY (was dropped in translation — same missing-finally class
+    // as the FatQueryDirectory Fcb leak): release the Vcb if it could still
+    // remain, then the global resource, then complete the request.
+    if VcbDeleted == 0 {
+        FatReleaseVcb(IrpContext, Vcb);
+    }
+    if GlobalHeld != 0 {
+        FatReleaseGlobal(IrpContext);
+    }
+
+    FatCompleteRequest(IrpContext, Irp, Status);
+
     return Status;
 }
 

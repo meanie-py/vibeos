@@ -36,6 +36,7 @@ NtOpenDirectoryObject
 NtOpenEvent
 NtOpenFile
 NtOpenKey
+NtQueryValueKey
 NtOpenMutant
 NtOpenProcess
 NtOpenSection

@@ -20,6 +20,38 @@ pub mod types;
 // misc/objects bodies; not exported.
 pub mod gdihelp;
 
+// WoW64 DC_ATTR layout shim (M7): the 64-bit kernel's DC_ATTR mirrored on the
+// 32-bit compiler, plus the dcattr_f! field-projection macro below.
+pub mod dcattr64;
+
+/// Project a field of a shared DC_ATTR as a correctly-typed `*mut` pointer,
+/// honoring the WoW64 wide (64-bit) layout when `g_GdiWow64` is set. Works
+/// for reads, writes, compound assigns, and sub-field access alike:
+/// `(*dcattr_f!(pdcattr, ulDirty_)) |= DC_BRUSH_DIRTY;`
+/// Wide pointer/handle slots project their meaningful low half (see
+/// dcattr64.rs for the zero-upper-half invariant).
+#[cfg(target_arch = "x86")]
+#[macro_export]
+macro_rules! dcattr_f {
+    ($p:expr, $f:ident) => {{
+        let __pdcattr = $p;
+        if $crate::misc::misc::g_GdiWow64 != 0 {
+            core::ptr::addr_of_mut!(
+                (*(__pdcattr as *mut $crate::dcattr64::DC_ATTR64)).$f
+            )
+        } else {
+            core::ptr::addr_of_mut!((*__pdcattr).$f)
+        }
+    }};
+}
+#[cfg(not(target_arch = "x86"))]
+#[macro_export]
+macro_rules! dcattr_f {
+    ($p:expr, $f:ident) => {
+        core::ptr::addr_of_mut!((*$p).$f)
+    };
+}
+
 // main/ — DLL entry. Wave 1a: dllmain (DllMain/GdiProcessSetup, gbLpk global).
 pub mod main;
 

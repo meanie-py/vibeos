@@ -331,7 +331,7 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   evidence for the record: the pre-fix ObCreateObject AV occurred ON CPU1's
   syscall path (LPC from services), proving user threads execute there.
 - 2026-07-11: **M3b — TDI dgram NET_FLAKE ROOT-CAUSED + FIXED** (field manual
-  §9.53). Not the §9.36 stack-IRP family — a plain "IRQL raise = mutual
+  §9.55). Not the §9.36 stack-IRP family — a plain "IRQL raise = mutual
   exclusion" **UP assumption in netstack-rust**. The TDI transport `INBOX`
   (MPSC command queue, many dispatch threads push / one poll worker drains via
   `mem::swap`) was guarded by only `IrqlGuard::raise_to_dpc()` over a bare
@@ -387,7 +387,7 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   KiSwapContextResume (mid-swap, SwapBusy still set) — the first marker cut printed
   there and was moved to idle-exit before the wedge theory was even tested.
   **OPEN — the -smp 2 residual flake is PRE-EXISTING and now pinned (field manual
-  §9.54):** ~1/4–1/3 of -smp 2 boots creep-wedge (Themes/SamSs/SVCHOST connects
+  §9.56):** ~1/4–1/3 of -smp 2 boots creep-wedge (Themes/SamSs/SVCHOST connects
   stall → silence) or crash (0x19 POOL_HEADER_IS_ZERO; 0x1E c0000006 IN_PAGE_ERROR
   w/ cdfs frames). Control experiment: M3b-landed HEAD (stash the whole M3-tail
   delta) reproduces 1/6 under identical conditions → M3-tail exonerated; the

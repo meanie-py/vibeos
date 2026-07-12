@@ -161,6 +161,8 @@ def _farm_arch(
             "hang_kind": r.get("hang_kind"),
             "census_stuck": r.get("census_stuck"),
             "lockdep_hits": r.get("lockdep_hits"),
+            "cswitch_hits": r.get("cswitch_hits"),
+            "census_lines": (r.get("census_lines") or [])[:6],
             "salient": r.get("salient", [])[:8],
             "screenshot": r.get("screenshot"),
             "run_dir": str(run.dir),
@@ -278,6 +280,27 @@ def farm_report(args, repo: Path) -> int:
             print(f"  {len(rs):3d}x  {arch:6s} {cls:14s} stop={stop:12s} {sym}")
             top_syms = latest.get("symbols") or []
             for s in top_syms[:3]:
+                print(f"          {s}")
+            where = latest.get("preserved") or latest.get("run_dir")
+            print(f"          latest: {where}")
+
+    # Tripwire hits (lockdep/cswitchdep) fire on OTHERWISE-GREEN boots — the
+    # detector pins the violation without a BUGCHECK, so they never appear in
+    # the failure families above. Surface them separately or a soak that
+    # exists precisely to catch context-switch violations reports nothing.
+    tfams: dict[tuple, list] = defaultdict(list)
+    for r in recs:
+        for kind in ("lockdep", "cswitch"):
+            if r.get(f"{kind}_hits") or 0:
+                tfams[(r.get("arch", "?"), kind)].append(r)
+    if tfams:
+        print("\ntripwire hits (on green + failed boots — detector fired):")
+        for key, rs in sorted(tfams.items(), key=lambda kv: -len(kv[1])):
+            arch, kind = key
+            hits = sum((r.get(f"{kind}_hits") or 0) for r in rs)
+            latest = rs[-1]
+            print(f"  {len(rs):3d} boots {arch:6s} {kind:8s} {hits} total hits")
+            for s in (latest.get("census_lines") or [])[:3]:
                 print(f"          {s}")
             where = latest.get("preserved") or latest.get("run_dir")
             print(f"          latest: {where}")

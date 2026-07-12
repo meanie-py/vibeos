@@ -34,7 +34,7 @@ impl Write for BufWriter {
 /// another CPU from interleaving its own DbgPrint mid-line (which would split a
 /// "[NETSTACK] ..." marker the net suite greps → spurious smoke failure). A real
 /// KSPIN_LOCK gives the cross-CPU exclusion the old raise-only path only had on
-/// a single vCPU (§9.53). Real MP spin under feature=smp; no-op fence on UP.
+/// a single vCPU (§9.55). Real MP spin under feature=smp; no-op fence on UP.
 static mut SERIAL_LOCK: ntkrnl_sys::ke::KSPIN_LOCK = 0;
 
 pub fn emit(args: fmt::Arguments) {
