@@ -49,6 +49,7 @@ members = [
     "crt-dllmain-rust",
     "crt0-rust",
     "msvcrt-crt-rust",
+    "msvcrt-crt-cargo",
     "msvcrt-difftest",
     "compress",
     "crc32",

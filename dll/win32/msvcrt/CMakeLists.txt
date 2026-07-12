@@ -194,9 +194,10 @@ elseif(ARCH STREQUAL "arm64")
     set(MSVCRT_RUST_ENV "RUSTFLAGS=-C no-prepopulate-passes")
 endif()
 
-set(MSVCRT_CRT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmsvcrt_crt_rust.a")
+set(MSVCRT_CRT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmsvcrt_crt_cargo.a")
 file(GLOB_RECURSE MSVCRT_CRT_RUST_SOURCES CONFIGURE_DEPENDS
     ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-rust/src/*.rs
+    ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-cargo/src/*.rs
     ${MSVCRT_RUST_WORKSPACE_DIR}/cnt-rust/src/core_rs/*.rs
 )
 add_custom_command(
@@ -204,14 +205,15 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${MSVCRT_RUST_TARGET_DIR} ${MSVCRT_RUST_ENV}
         cargo build --release --target ${MSVCRT_RUST_TARGET}
-            -p msvcrt-crt-rust
+            -p msvcrt-crt-cargo
             --manifest-path ${MSVCRT_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMAND ${CMAKE_COMMAND} -E copy
-        ${MSVCRT_RUST_TARGET_DIR}/${MSVCRT_RUST_TARGET}/release/libmsvcrt_crt_rust.a
+        ${MSVCRT_RUST_TARGET_DIR}/${MSVCRT_RUST_TARGET}/release/libmsvcrt_crt_cargo.a
         ${MSVCRT_CRT_RUST_LIB}
     DEPENDS
             ${MSVCRT_CRT_RUST_SOURCES}
             ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-rust/Cargo.toml
+            ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-cargo/Cargo.toml
             ${MSVCRT_RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
             ${MSVCRT_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust msvcrt CRT-body cohab (${MSVCRT_RUST_TARGET})"

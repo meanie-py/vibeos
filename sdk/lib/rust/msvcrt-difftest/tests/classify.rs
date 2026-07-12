@@ -1,26 +1,46 @@
-#![no_builtins] // cnt-rust's #[no_mangle] libc-named shims must be CALLED, not folded to LLVM builtins.
-//! Classify each cnt-rust CRT shim against the GENUINE compiled msvcrt
-//! reference (`dll/win32/msvcrt/string.c`, compiled by build.rs as `ref_*`).
+#![no_builtins] // the #[no_mangle] libc-named shims must be CALLED, not folded to LLVM builtins.
+//! Classify each **shipping** msvcrt Rust shim (`msvcrt-crt-rust`, the crate
+//! that links into msvcrt.dll) against the GENUINE compiled msvcrt reference
+//! (`dll/win32/msvcrt/string.c`, compiled by build.rs as `ref_*`).
 //!
 //! Output is a verdict table, not a pass/fail: the point is to learn WHICH
-//! functions cnt-rust can safely take over in msvcrt.dll and which have a
-//! divergent contract (cnt-rust tracks *libcntpr*; msvcrt is *Wine*-derived).
+//! functions Rust can safely take over in msvcrt.dll and which have a
+//! divergent contract (cnt-rust's cores track *libcntpr*; msvcrt is *Wine*-
+//! derived, and `msvcrt-crt-rust`'s wrappers are where the gap is adapted).
 //!
 //!   MATCH      — identical results across the whole fuzz domain → safe to flip
 //!   SIGN-ONLY  — comparison fns: same sign, different magnitude (see note)
 //!   DIVERGE    — a real contract difference (counterexample printed) → DO NOT FLIP
 //!
-//! Reference caveats (from src/lib.rs) that this driver respects:
-//!   * locale is the default "C" locale (msvcrt pre-setlocale) — the genuine
-//!     ASCII paths of string.c are what we grade against.
-//!   * `ref_strncmp`/`ref_strcmp` return the raw byte difference (32-bit arm);
-//!     that's why SIGN-ONLY is reported separately rather than folded into MATCH.
+//! ⚠ TWO BLIND SPOTS. This harness can only falsify what it VARIES, and it
+//! varies neither of these — both must be settled by READING the C:
+//!
+//!  1. **Locale.** The reference runs in the default "C" locale. msvcrt bodies
+//!     that consult `get_locinfo()->lc_handle[LC_CTYPE]` (`_stricmp`,
+//!     `_strnicmp`, `_memicmp`) coincide with a locale-blind ASCII Rust fold
+//!     ONLY there — so a MATCH from this harness would be a lie the moment an
+//!     app calls `setlocale()`. They are deliberately NOT graded here and NOT
+//!     flipped; see the DEFERRED note printed after the table.
+//!
+//!  2. **`_WIN64`.** The reference TU is compiled for the HOST (x86_64 linux),
+//!     where `_WIN64` is undefined — so every `#if defined(_WIN64)` in the C
+//!     is graded on its 32-bit arm. `strncmp` is the one flipped function that
+//!     has such a branch; it is handled explicitly below (both arms graded),
+//!     but any NEW flip must be grepped for `_WIN64` first.
 
-// Force cnt-rust's objects into the link. WITHOUT this, rustc omits the unused
-// rlib entirely and the shared names (strlen/strcmp/memcpy/…) silently bind to
-// GLIBC — the harness would then grade glibc against msvcrt and report a
-// meaningless "MATCH". `assert_shims_live()` below proves the binding at runtime.
-extern crate cnt_rust;
+// Force the SHIPPING crate's objects into the link. WITHOUT this, rustc omits
+// the unused rlib entirely and the shared names (strlen/strcmp/memcpy/…)
+// silently bind to GLIBC — the harness would then grade glibc against msvcrt
+// and report a meaningless "MATCH". `assert_shims_live()` below proves the
+// binding at runtime.
+//
+// This is `msvcrt-crt-rust`, NOT `cnt-rust`: msvcrt-crt-rust is what actually
+// links into msvcrt.dll. Its wrappers delegate to `cnt_rust::core_rs` but
+// ADAPT it to the msvcrt contract (unsigned-char compare, clamped returns, and
+// two msvcrt-contract ports), so grading cnt-rust's `cabi` shims — as waves 1-2
+// did, when the wrappers were verbatim copies of them — would no longer be
+// grading the artifact.
+extern crate msvcrt_crt_rust;
 
 use core::ffi::c_void;
 
@@ -76,8 +96,6 @@ extern "C" {
     fn strncpy(d: *mut u8, s: *const u8, n: usize) -> *mut u8;
     fn strcat(d: *mut u8, s: *const u8) -> *mut u8;
     fn strncat(d: *mut u8, s: *const u8, n: usize) -> *mut u8;
-    fn _stricmp(a: *const u8, b: *const u8) -> i32;
-    fn _strnicmp(a: *const u8, b: *const u8, n: usize) -> i32;
     fn _strlwr(s: *mut u8) -> *mut u8;
     fn _strupr(s: *mut u8) -> *mut u8;
     fn _strrev(s: *mut u8) -> *mut u8;
@@ -87,7 +105,6 @@ extern "C" {
     fn memcmp(a: *const c_void, b: *const c_void, n: usize) -> i32;
     fn memcpy(d: *mut c_void, s: *const c_void, n: usize) -> *mut c_void;
     fn memset(d: *mut c_void, c: i32, n: usize) -> *mut c_void;
-    fn _memicmp(a: *const c_void, b: *const c_void, n: usize) -> i32;
     fn _memccpy(d: *mut c_void, s: *const c_void, c: i32, n: usize) -> *mut c_void;
     fn atoi(s: *const u8) -> i32;
     fn atol(s: *const u8) -> i32;
@@ -95,6 +112,9 @@ extern "C" {
     fn strtol(s: *const u8, e: *mut *mut u8, b: i32) -> i32;
     fn strtoul(s: *const u8, e: *mut *mut u8, b: i32) -> u32;
 }
+
+/// msvcrt's comparison return clamp (`if (a > b) return 1; if (a < b) return -1; return 0;`).
+fn clamp(d: i32) -> i32 { if d > 0 { 1 } else if d < 0 { -1 } else { 0 } }
 
 // ── deterministic RNG ──
 struct Rng(u64);
@@ -173,18 +193,24 @@ fn check_buf(name: &'static str, mut f: impl FnMut(&mut Rng) -> (Vec<u8>, isize,
     record(name, V::Match, String::new());
 }
 
-/// Prove the shared-name shims resolve to CNT-RUST, not glibc. cnt-rust's
-/// `cstr_slice` NULL-guards (NULL → empty slice), so its `strlen(NULL)` is 0;
-/// glibc's would fault. If this ever silently "passes" against glibc the whole
-/// table is worthless, so it is a hard gate, not a warning.
+/// Prove the shared-name shims resolve to MSVCRT-CRT-RUST, not glibc. The
+/// wrappers' `cstr_slice` NULL-guards (NULL → empty slice), so `strlen(NULL)`
+/// is 0; glibc's would fault. If this ever silently "passes" against glibc the
+/// whole table is worthless, so it is a hard gate, not a warning.
 unsafe fn assert_shims_live() {
     let n = strlen(core::ptr::null());
-    assert_eq!(n, 0, "strlen(NULL)!=0 — shared-name shims are NOT cnt-rust's");
-    // _strrev has no glibc counterpart: linking at all proves cnt-rust is present.
+    assert_eq!(n, 0, "strlen(NULL)!=0 — shared-name shims are NOT msvcrt-crt-rust's");
+    // _strrev has no glibc counterpart: linking at all proves the crate is present.
     let mut b = *b"ab\0";
     let _ = _strrev(b.as_mut_ptr());
-    assert_eq!(&b, b"ba\0", "cnt-rust _strrev misbehaved — bad link");
-    println!("  [self-check] cnt-rust shims are live (strlen(NULL)==0, _strrev ok)");
+    assert_eq!(&b, b"ba\0", "_strrev misbehaved — bad link");
+    // _strnset returns the ADVANCED pointer in msvcrt (cnt-rust returns the
+    // start). This distinguishes the SHIPPING wrapper from cnt-rust's cabi
+    // shim, i.e. it proves we are grading the artifact and not the proxy.
+    let mut t = *b"abcd\0";
+    let p = _strnset(t.as_mut_ptr(), b'z' as i32, 2);
+    assert_eq!(p as usize - t.as_ptr() as usize, 2, "_strnset returned the START — that is cnt-rust's contract, not msvcrt's: the harness is linked against the wrong crate");
+    println!("  [self-check] msvcrt-crt-rust shims are live (strlen(NULL)==0, _strrev ok, _strnset returns str+n)");
 }
 
 fn main() {
@@ -192,7 +218,7 @@ fn main() {
     unsafe { run() }
     let res = unsafe { &*core::ptr::addr_of!(RESULTS) };
     let (mut m, mut s, mut d) = (0, 0, 0);
-    println!("\n=== cnt-rust vs GENUINE msvcrt/string.c — flip safety ===\n");
+    println!("\n=== msvcrt-crt-rust (SHIPPING) vs GENUINE msvcrt/string.c — flip safety ===\n");
     for r in res {
         let tag = match r.v { V::Match => { m += 1; "MATCH     ✓ safe to flip" }
                               V::SignOnly => { s += 1; "SIGN-ONLY ⚠ review" }
@@ -200,21 +226,35 @@ fn main() {
         println!("  {:<12} {}", r.name, tag);
         if !r.note.is_empty() { println!("        {}", r.note); }
     }
-    println!("\n  {m} MATCH   {s} SIGN-ONLY   {d} DIVERGE   (of {} tested)\n", res.len());
+    println!("\n  {m} MATCH   {s} SIGN-ONLY   {d} DIVERGE   (of {} tested)", res.len());
+    println!("\n  DEFERRED (not graded, not flipped — locale-dependent, Phase D):");
+    println!("    _stricmp / _strnicmp / _memicmp");
+    println!("      msvcrt folds via get_locinfo()->lc_handle[LC_CTYPE] + _tolower_l;");
+    println!("      cnt-rust's fold is locale-blind ASCII. They agree ONLY in the \"C\"");
+    println!("      locale — which is exactly what this harness pins, so a MATCH here");
+    println!("      would be a harness artifact, not a license to flip. See lane plan.\n");
 }
 
 unsafe fn run() {
     // ---- pure readers ----
     check_int("strlen", false, |r| { let a = gen_str(r, 40); (strlen(a.as_ptr()) as i64, ref_strlen(a.as_ptr()) as i64, String::new()) });
     check_int("strnlen", false, |r| { let a = gen_str(r, 40); let n = r.below(45); (strnlen(a.as_ptr(), n) as i64, ref_strnlen(a.as_ptr(), n) as i64, format!("n={n}")) });
-    check_int("strcmp", true, |r| { let a = gen_str(r, 20); let b = if r.below(3) == 0 { a.clone() } else { gen_str(r, 20) };
+    check_int("strcmp", false, |r| { let a = gen_str(r, 20); let b = if r.below(3) == 0 { a.clone() } else { gen_str(r, 20) };
         (strcmp(a.as_ptr(), b.as_ptr()) as i64, ref_strcmp(a.as_ptr(), b.as_ptr()) as i64, format!("{a:?} vs {b:?}")) });
-    check_int("strncmp", true, |r| { let a = gen_str(r, 20); let b = if r.below(3) == 0 { a.clone() } else { gen_str(r, 20) }; let n = r.below(22);
-        (strncmp(a.as_ptr(), b.as_ptr(), n) as i64, ref_strncmp(a.as_ptr(), b.as_ptr(), n) as i64, format!("n={n} {a:?} vs {b:?}")) });
-    check_int("_stricmp", true, |r| { let a = gen_str(r, 20); let b = if r.below(3) == 0 { a.clone() } else { gen_str(r, 20) };
-        (_stricmp(a.as_ptr(), b.as_ptr()) as i64, ref__stricmp(a.as_ptr(), b.as_ptr()) as i64, format!("{a:?} vs {b:?}")) });
-    check_int("_strnicmp", true, |r| { let a = gen_str(r, 20); let b = if r.below(3) == 0 { a.clone() } else { gen_str(r, 20) }; let n = r.below(22);
-        (_strnicmp(a.as_ptr(), b.as_ptr(), n) as i64, ref__strnicmp(a.as_ptr(), b.as_ptr(), n) as i64, format!("n={n} {a:?} vs {b:?}")) });
+    // strncmp ships TWO contracts (string.c `#if defined(_WIN64)`, with
+    // _MSVCR_VER=0): i386 returns the raw unsigned diff, amd64/arm64 clamp to
+    // -1/0/1. The host reference compiled the i386 arm (_WIN64 undefined), so:
+    //   * the i386 arm is graded DIRECTLY against it (`strncmp_raw`);
+    //   * the _WIN64 arm is graded against `clamp(ref)` — an EXACT model, not
+    //     an approximation: both C branches run after the identical `while`
+    //     loop and then compare the same two bytes, so _WIN64 == sign(#else).
+    // Together these grade both shipped contracts from one reference compile.
+    check_int("strncmp[i386 raw]", false, |r| { let a = gen_str(r, 20); let b = if r.below(3) == 0 { a.clone() } else { gen_str(r, 20) }; let n = r.below(22);
+        (msvcrt_crt_rust::strncmp_raw(a.as_ptr(), b.as_ptr(), n) as i64, ref_strncmp(a.as_ptr(), b.as_ptr(), n) as i64, format!("n={n} {a:?} vs {b:?}")) });
+    check_int("strncmp[_WIN64]", false, |r| { let a = gen_str(r, 20); let b = if r.below(3) == 0 { a.clone() } else { gen_str(r, 20) }; let n = r.below(22);
+        let want = clamp(ref_strncmp(a.as_ptr(), b.as_ptr(), n));
+        let got = if cfg!(target_pointer_width = "64") { strncmp(a.as_ptr(), b.as_ptr(), n) } else { clamp(strncmp(a.as_ptr(), b.as_ptr(), n)) };
+        (got as i64, want as i64, format!("n={n} {a:?} vs {b:?}")) });
     // pointer-returning searchers: compare the OFFSET into the input (or -1 for NULL)
     macro_rules! off { ($p:expr, $base:expr) => { if $p.is_null() { -1i64 } else { ($p as usize - $base.as_ptr() as usize) as i64 } } }
     check_int("strchr", false, |r| { let a = gen_str(r, 30); let c = (r.below(300) as i32) - 20;
@@ -229,10 +269,8 @@ unsafe fn run() {
         (strcspn(a.as_ptr(), b.as_ptr()) as i64, ref_strcspn(a.as_ptr(), b.as_ptr()) as i64, format!("{a:?} / {b:?}")) });
     check_int("strpbrk", false, |r| { let a = gen_str(r, 25); let b = gen_str(r, 8);
         (off!(strpbrk(a.as_ptr(), b.as_ptr()), a), off!(ref_strpbrk(a.as_ptr(), b.as_ptr()), a), format!("{a:?} / {b:?}")) });
-    check_int("memcmp", true, |r| { let a = gen_str(r, 25); let mut b = a.clone(); if r.below(2) == 0 && !b.is_empty() { let i = r.below(b.len()); b[i] = b[i].wrapping_add(1); } let n = r.below(a.len() + 1);
+    check_int("memcmp", false, |r| { let a = gen_str(r, 25); let mut b = a.clone(); if r.below(2) == 0 && !b.is_empty() { let i = r.below(b.len()); b[i] = b[i].wrapping_add(1); } let n = r.below(a.len() + 1);
         (memcmp(a.as_ptr().cast(), b.as_ptr().cast(), n) as i64, ref_memcmp(a.as_ptr().cast(), b.as_ptr().cast(), n) as i64, format!("n={n}")) });
-    check_int("_memicmp", true, |r| { let a = gen_str(r, 25); let mut b = a.clone(); if r.below(2) == 0 && !b.is_empty() { let i = r.below(b.len()); b[i] = b[i].wrapping_add(32); } let n = r.below(a.len() + 1);
-        (_memicmp(a.as_ptr().cast(), b.as_ptr().cast(), n) as i64, ref__memicmp(a.as_ptr().cast(), b.as_ptr().cast(), n) as i64, format!("n={n}")) });
     check_int("memchr", false, |r| { let a = gen_str(r, 30); let c = (r.below(300) as i32) - 20; let n = r.below(a.len() + 1);
         (if memchr(a.as_ptr().cast(), c, n).is_null() { -1 } else { memchr(a.as_ptr().cast(), c, n) as i64 - a.as_ptr() as i64 },
          if ref_memchr(a.as_ptr().cast(), c, n).is_null() { -1 } else { ref_memchr(a.as_ptr().cast(), c, n) as i64 - a.as_ptr() as i64 }, format!("c={c} n={n}")) });

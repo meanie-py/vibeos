@@ -151,22 +151,51 @@ The DLL body is Wine monoliths, so we use a **`--whole-archive` symbol-override 
 >
 > **Wave 1 (int↔string radix family):** `_itoa/_ltoa/_ultoa/_i64toa/_ui64toa` + wide twins. Semantics verified identical to msvcrt's `ltoa_helper` (sign only radix==10, unsigned reinterpret otherwise, lowercase digits, no NULL/radix guards). Structurally confirmed live on i386.
 
-### Phase B — broaden the DLL-body flips, driven by the differential harness  *[wave 2 ✅ 2026-07-12]*
+### Phase B — broaden the DLL-body flips, driven by the differential harness  *[wave 2 ✅ · wave 3 ✅ 2026-07-12]*
 
-**The harness is the gate, not judgment.** `sdk/lib/rust/msvcrt-difftest` compiles the GENUINE `dll/win32/msvcrt/string.c` for the host (the real file is the TU — 106 symbols renamed `ref_*`) and fuzzes cnt-rust's shims against it, emitting a MATCH / SIGN-ONLY / DIVERGE verdict per function. Run it before flipping anything:
+**The harness is the gate, not judgment.** `sdk/lib/rust/msvcrt-difftest` compiles the GENUINE `dll/win32/msvcrt/string.c` for the host (the real file is the TU — 106 symbols renamed `ref_*`) and fuzzes the **shipping** Rust against it, emitting a MATCH / SIGN-ONLY / DIVERGE verdict per function. Run it before flipping anything:
 ```
 cargo test -p msvcrt-difftest --test classify     # verdict table
+cargo test -p cnt-difftest                        # kernel contract still pinned
 ```
 
-**Verdict on string.c's 33 shared functions: 24 MATCH · 1 SIGN-ONLY · 8 DIVERGE.**
+**Status: all 31 graded functions MATCH the genuine C exactly** (0 SIGN-ONLY, 0 DIVERGE). msvcrt.dll serves **39** functions from Rust: wave 1 (10, int↔string radix) + wave 2 (23, the pure MATCH set) + wave 3 (6, below).
 
-**Wave 2 (landed):** the 23 MATCH functions — `strlen strnlen strchr strrchr strstr strspn strcspn strpbrk atoi atol _atoi64 strtol strtoul strcpy strncpy strcat strncat _strlwr _strupr _strrev _strset memcpy memset`. (msvcrt.dll now serves 33 functions from Rust.)
+#### Wave 3 — the unsigned-char contract family
 
-> ⚠️ **The 8 DIVERGE — NEVER flip these via cnt-rust:** `strcmp strncmp _stricmp _strnicmp _memicmp memchr _memccpy _strnset`.
-> **One root cause:** cnt-rust uses a **deliberate signed-char** convention (faithful to libcntpr's `tcscmp.h`): `core_rs::mem::chr` is `(b as i8 as i32) == c`, `Elem::diff` for `u8` is `(a as i8) - (b as i8)`. msvcrt uses standard **unsigned-char**. They agree on ASCII and **flip sign on any byte ≥ 0x80** — flipping them would silently corrupt comparison/search on non-ASCII data (UTF-8 paths, accented filenames, binary buffers): green smoke, then bizarre field failures. `_strnset` additionally differs in its return pointer.
-> A `msvcrt-crt-rust` build that exports any of these is a **bug** — the crate's export list is asserted against this set.
+Wave 2's 8 DIVERGE + 1 SIGN-ONLY were **not** "unflippable". They were **one root cause** wearing three masks, and the fix is a *contract adapter*, not a reimplementation:
 
-**Remaining candidates** (need the same harness treatment first): `wcs*` (extend the harness to `wcs.c`), float↔str (`_ecvt/_fcvt/_gcvt`), the `math.c`/`sincos.c` transcendentals, `mbcs.c`.
+**Root cause.** cnt-rust's `core_rs` speaks libcntpr's **signed-char** convention (`Elem::diff` for `u8` is `(a as i8) - (b as i8)`; `mem::chr` matches `(b as i8 as i32) == c`). msvcrt speaks **unsigned-char**. They agree on ASCII and **flip sign on any byte ≥ 0x80** — a silent corruption of comparison/search on non-ASCII data (UTF-8 paths, accented filenames, binary buffers).
+
+**The fix, and the rule it establishes:**
+- **Parameterize in cnt-rust** when the algorithm is identical and only a *contract knob* differs. `Elem::udiff` (default = `diff`; only `u8` overrides) + `string::cmp_u`/`ncmp_u` give the same loops the unsigned difference. `u16` needs no override — `wchar_t` is unsigned by definition, so **the wide family never had this bug**. The kernel keeps `Elem::diff`; `cmp`/`ncmp` bodies are **byte-for-byte untouched** (deliberately duplicated loops rather than a knob threaded through them — this crate has been bitten by codegen shifting under a hot primitive before, cf. `mem::set`'s DCE'd fill). Both contracts stay pinned, each by its own harness: `cnt-difftest` (kernel) and `msvcrt-difftest` (msvcrt).
+- **Port into `msvcrt-crt-rust`** when the *algorithm itself* differs — keeps cnt-rust's libcntpr charter clean. `_memccpy` is one: libcntpr's stops at a NUL and compares signed; msvcrt copies straight through NULs and compares unsigned.
+- **Some "divergences" need no code at all.** `memchr` is exactly reconciled by handing cnt's `chr` the sign-extended form of the truncated byte — `(c as u8) as i8 as i32` — which is precisely what msvcrt's `(unsigned char)c` cast means. `_strnset`'s *buffer* effect was already identical (the harness proved it: same bytes, `ret+0` vs `ret+11`); only the **return pointer** differed — msvcrt returns the **advanced** pointer. That is very likely a Wine bug (MS documents "a pointer to the altered string"), but a flip is a *pure refactor of the C it replaces*, so it is reproduced exactly rather than quietly "fixed".
+
+**Flipped:** `strcmp strncmp memcmp memchr _memccpy _strnset`.
+
+> ⚠️ **DEFERRED to Phase D — `_stricmp` / `_strnicmp` / `_memicmp`.** Fixing their signedness makes the harness report MATCH. **Do not believe it.** Their msvcrt bodies consult `get_locinfo()->lc_handle[LC_CTYPE]` and fold via `_tolower_l` — they are **locale-dependent**, while cnt-rust's fold is locale-blind ASCII. They coincide *only* in the "C" locale, which is exactly what the harness pins. Correct under the default locale; wrong the moment an app calls `setlocale()`. They belong with locale (Phase D). The harness prints them as a DEFERRED footer so they are not silently forgotten.
+
+#### ⚠️ The harness's TWO BLIND SPOTS (a harness can only falsify what it VARIES)
+
+Both must be settled by **reading the C**, never by a green table:
+
+1. **Locale** — the reference runs in the default "C" locale. Any msvcrt body that reaches `get_locinfo()` is graded on one arm of a branch it doesn't control. This is what nearly shipped the `_stricmp` trio above.
+2. **`_WIN64`** — the reference TU is compiled for the **host** (x86_64 linux), where `_WIN64` is *undefined*, so every `#if defined(_WIN64)` in the C is graded on its **32-bit** arm. **Grep any new flip candidate for `_WIN64` / `_UCRT` / `_MSVCR_VER` before trusting a MATCH.** (`_MSVCR_VER` is safe — build.rs defines it as `0`, exactly as the real build does.)
+
+`strncmp` is the one flipped function with such a branch, and it ships **two different contracts**: with `_MSVCR_VER=0` the `#if` reduces to plain `_WIN64`, so **i386 returns the raw unsigned diff while amd64/arm64 clamp to -1/0/1.** Both are graded from the single host reference, because the two C branches run after an *identical* loop and then compare the *same two bytes* — so `_WIN64` is provably `sign(#else)`, and `clamp(ref_strncmp(..))` is an **exact** model of the 64-bit branch, not an approximation. (Generalizable: a `#if` arm that is a pure function of the other arm's value can be modeled in the harness instead of compiled twice.)
+
+#### Grade the artifact, not a proxy
+
+Waves 1–2 graded **cnt-rust's** `cabi` shims — sound only while the wrappers were verbatim copies of them. Wave 3's wrappers deliberately *adapt* cnt-rust, so the proxy stopped being the artifact. The harness now links **`msvcrt-crt-rust`** itself.
+
+That forced a crate split, and it is structurally unavoidable: a crate with `staticlib` in its crate-type is a final no_std artifact, so rustc demands a `#[panic_handler]` **in the same invocation that emits the rlib** — and that handler is then a duplicate `panic_impl` lang item inside the harness's std test binary. `crate-type` is not feature-conditional, so the two roles cannot share a crate. Hence the repo-standard split: **`msvcrt-crt-rust`** (rlib — the code, harness-linkable) + **`msvcrt-crt-cargo`** (staticlib umbrella — `extern crate` + the runtime bits; what cmake links). Same shape as `kernel-rust` over its sibling rlibs.
+
+`assert_shims_live()` is the hard gate that keeps this honest: it asserts `strlen(NULL)==0` (proves the shims aren't **glibc**) *and* `_strnset` returns `str+n` (proves we're linked against the **msvcrt wrapper**, not cnt-rust's cabi shim, whose contract returns the start).
+
+**VERIFY THE FLIP TOOK.** Never trust a green build or a dup-symbol warning: resolve each export's RVA in the built DLL and confirm it lands in the Rust `--whole-archive` cluster (and that the *deferred* ones still land in C). On i386 after wave 3: Rust cluster `0x2dc0–0x8820`; all 6 wave-3 exports inside it; `_stricmp`/`_strnicmp`/`_memicmp` at `0x7a320+` — still C. ✓
+
+**Remaining candidates** (need the same harness treatment first): **`wcs*` is the big one — 33 candidates in `wcs.c`, and cnt-rust's wide core is already the correct unsigned contract, so the signed-char class cannot bite there.** Extending the harness needs a second reference TU (`wcs.c`: 176 public symbols; the extra externals are NLS — `CompareStringW`/`LCMapStringW`/`GetStringTypeW`/`WideCharToMultiByte` — plus heap and `MSVCRT__pwctype`; note it calls `fpnum_parse`, which `string.c` already provides). Then float↔str (`_ecvt/_fcvt/_gcvt`), `math.c`/`sincos.c`, `mbcs.c`.
 
 **Two mechanism gotchas hit in wave 2 (both fixed, both will recur):**
 1. **`-C no-prepopulate-passes` (the §378 guard) breaks cross-crate `#[inline]` core generics.** `_strrev`'s `buf.reverse()` pulls `core::ptr::swap_nonoverlapping`, which the flag leaves un-inlined AND un-emitted → `undefined symbol` at link. **Do not drop the guard** (it's why `memset` wasn't DCE'd into a spin); write the loop explicitly instead.
@@ -174,7 +203,7 @@ cargo test -p msvcrt-difftest --test classify     # verdict table
 
 > ⚠️ **Semantic watch is REAL and per-function — verified, not assumed (2026-07-12).** cnt-rust "tracks *libcntpr*, not textbook libc," and libcntpr's NT variants **do** diverge from msvcrt's Wine-derived bodies. Confirmed divergences found while scoping wave 2:
 > - **path (`_splitpath`/`_makepath`) — DO NOT FLIP via cnt-rust.** cnt-rust is the classic **unbounded, non-MBCS** variant ("INT_MAX copy caps unreachable (not modeled)", "_LIBCNT_ strips _ismbblead"); msvcrt's `_splitpath` delegates to the **bounded `_splitpath_s`** (`_MAX_DRIVE`/…) and is MBCS-aware. Coincide for typical paths, but cnt-rust would **overflow** on overlong components where msvcrt truncates (a security regression) and mishandles MBCS. Flipping this needs a *msvcrt-contract* port (bounded + MBCS), not the cnt-rust drop-in.
-> - **`_stricmp`/`_strnicmp` — verify first.** cnt-rust is the "ASCII-only A..Z fold (NT variant — NOT the `toupper()` stricmp.c)"; msvcrt's may be locale-aware.
+> - **`_stricmp`/`_strnicmp`/`_memicmp` — CONFIRMED locale-aware (2026-07-12), deferred to Phase D.** cnt-rust is the "ASCII-only A..Z fold (NT variant — NOT the `toupper()` stricmp.c)"; msvcrt's bodies genuinely *are* locale-aware (`get_locinfo()->lc_handle[LC_CTYPE]` + `_tolower_l`). See the Phase B DEFERRED note — and note the harness reports MATCH for them once signedness is fixed, which is a **blind spot, not a license**.
 >
 > **Process:** for each candidate function, read `dll/win32/msvcrt/*.c` and confirm the contract matches cnt-rust's `core_rs` (byte-diff where pointer-free, §1605) *before* adding it to `msvcrt-crt-rust`. Only genuinely-identical leaves flip via cnt-rust; contract-divergent ones need a msvcrt-specific port (or stay C). Int-conv (wave 1) matched exactly; path did not. A **differential harness** (compile msvcrt's actual `.c` as the reference TU, fuzz cnt-rust against it — the §1605 methodology) would let this scale instead of per-function eyeballing.
 

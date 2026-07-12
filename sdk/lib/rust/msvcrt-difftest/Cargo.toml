@@ -16,7 +16,13 @@ edition = "2021"
 publish = false
 
 [dependencies]
-cnt-rust = { path = "../cnt-rust", features = ["cabi"] }
+# Grade THE SHIPPING ARTIFACT. `msvcrt-crt-rust` is what msvcrt.dll actually
+# links; its wrappers delegate to `cnt_rust::core_rs` but ADAPT it (unsigned-
+# char contract, clamped returns, msvcrt-contract ports). Depending on cnt-rust
+# directly here would be grading a proxy — and worse, cargo feature unification
+# would switch ON cnt-rust's `cabi` feature for msvcrt-crt-rust's copy too,
+# whose 208 #[no_mangle] shims would then collide with the wrappers.
+msvcrt-crt-rust = { path = "../msvcrt-crt-rust" }
 
 [build-dependencies]
 cc = "1"
