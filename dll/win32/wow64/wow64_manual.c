@@ -1516,6 +1516,118 @@ static NTSTATUS Wow64Manual_NtUserEndPaint(ULONG *a)
     return NtUserEndPaint(a[0], &P64);
 }
 
+/* ---- M9: cursor/icon load path (LoadCursor(NULL, IDC_ARROW) during the
+ * first window's class setup) -------------------------------------------- *
+ * win32.exe registers with hCursor=NULL, so win32k loads the default arrow:
+ * user32 decodes the cursor bitmap from its own resources (the StretchDIBits
+ * seen on serial) then hands it to win32k via NtUserSetCursorIconData, with
+ * the module + resource names as UNICODE_STRINGs. Both cursor syscalls probe
+ * those strings with 8-byte alignment (TYPE_ALIGNMENT(UNICODE_STRING) on
+ * Win64); a raw passthrough thunk fed the kernel a guest 32-bit UNICODE_STRING
+ * (8 bytes / 4-aligned) -> ProbeForRead(.,16,8) raised DATATYPE_MISALIGNMENT
+ * -> BUGCHECK 0x1E. Marshal the strings 32->64; CURSORDATA also diverges. */
+
+/* Marshal a guest PUNICODE_STRING32 -> caller's UNICODE_STRING64. Returns the
+ * 64-bit pointer, or NULL if the guest pointer was NULL. The Buffer is
+ * zero-extended: a real guest string pointer widens cleanly, and a
+ * MAKEINTRESOURCE atom (value < 0x10000 packed in Buffer) survives the kernel's
+ * IS_ATOM low-bits check unchanged. */
+static WOW64_UNICODE_STRING64_M *Wow64pUS32to64(ULONG Guest32,
+                                                WOW64_UNICODE_STRING64_M *Out)
+{
+    WOW64_UNICODE_STRING32_M *S32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)Guest32;
+    if (!S32)
+        return NULL;
+    Out->Length = S32->Length;
+    Out->MaximumLength = S32->MaximumLength;
+    Out->__pad = 0;
+    Out->Buffer = (ULONGLONG)(ULONG_PTR)S32->Buffer;
+    return Out;
+}
+
+/* NtUserFindExistingCursorIcon(pustrModule, pustrRsrc, param):
+ * two UNICODE_STRINGs widen; param (FINDEXISTINGCURICONPARAM = 3 LONGs) is flat
+ * and identical 32/64, so its guest pointer passes straight through. */
+static NTSTATUS Wow64Manual_NtUserFindExistingCursorIcon(ULONG *a)
+{
+    extern HANDLE NtUserFindExistingCursorIcon(PVOID, PVOID, PVOID);
+    WOW64_UNICODE_STRING64_M Mod64, Rsrc64;
+    HANDLE Ret;
+    Ret = NtUserFindExistingCursorIcon(Wow64pUS32to64(a[0], &Mod64),
+                                       Wow64pUS32to64(a[1], &Rsrc64),
+                                       (PVOID)(ULONG_PTR)a[2]);
+    return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
+}
+
+/* CURSORDATA 32/64 mirrors (win32ss/include/ntuser.h tagCURSORDATA). The
+ * pointer/HBITMAP fields widen 4->8; the scalar fields are identical. */
+typedef struct _WOW64_CURSORDATA32 {
+    ULONG lpName; ULONG lpModName;
+    USHORT rt; USHORT dummy; ULONG CURSORF_flags;
+    SHORT xHotspot; SHORT yHotspot;
+    ULONG hbmMask; ULONG hbmColor; ULONG hbmAlpha;
+    LONG rcBounds[4];
+    ULONG hbmUserAlpha; ULONG bpp; ULONG cx; ULONG cy;
+    ULONG cpcur; ULONG cicur;
+    ULONG aspcur; ULONG aicur; ULONG ajifRate; ULONG iicur;
+} WOW64_CURSORDATA32; /* 0x58 */
+
+typedef struct _WOW64_CURSORDATA64 {
+    ULONGLONG lpName; ULONGLONG lpModName;
+    USHORT rt; USHORT dummy; ULONG CURSORF_flags;
+    SHORT xHotspot; SHORT yHotspot; /* +4 pad to 8-align hbmMask */
+    ULONGLONG hbmMask; ULONGLONG hbmColor; ULONGLONG hbmAlpha;
+    LONG rcBounds[4];
+    ULONGLONG hbmUserAlpha; ULONG bpp; ULONG cx; ULONG cy;
+    ULONG cpcur; ULONG cicur; /* +4 pad to 8-align aspcur */
+    ULONGLONG aspcur; ULONGLONG aicur; ULONGLONG ajifRate;
+    UINT iicur;
+} WOW64_CURSORDATA64; /* 0x88 */
+
+#define WOW64_CURSORF_ACON 0x0008
+
+/* NtUserSetCursorIconData(hcursor, pustrModule, pustrRsrc, pCursorData):
+ * two UNICODE_STRINGs + a CURSORDATA all cross 32->64. For a static cursor
+ * (the default arrow — CURSORF_ACON clear) the aspcur/aicur/ajifRate frame
+ * pointers are unused; the animated case would need those guest arrays
+ * re-marshalled per element (owed — loud note). */
+static NTSTATUS Wow64Manual_NtUserSetCursorIconData(ULONG *a)
+{
+    extern LONG NtUserSetCursorIconData(HANDLE, PVOID, PVOID, PVOID);
+    WOW64_UNICODE_STRING64_M Mod64, Rsrc64;
+    WOW64_CURSORDATA32 *C32 = (WOW64_CURSORDATA32 *)(ULONG_PTR)a[3];
+    WOW64_CURSORDATA64 C64;
+    int i;
+
+    if (C32)
+    {
+        C64.lpName = (ULONGLONG)(ULONG_PTR)C32->lpName;
+        C64.lpModName = (ULONGLONG)(ULONG_PTR)C32->lpModName;
+        C64.rt = C32->rt; C64.dummy = C32->dummy;
+        C64.CURSORF_flags = C32->CURSORF_flags;
+        C64.xHotspot = C32->xHotspot; C64.yHotspot = C32->yHotspot;
+        C64.hbmMask = (ULONGLONG)(ULONG_PTR)C32->hbmMask;
+        C64.hbmColor = (ULONGLONG)(ULONG_PTR)C32->hbmColor;
+        C64.hbmAlpha = (ULONGLONG)(ULONG_PTR)C32->hbmAlpha;
+        for (i = 0; i < 4; i++) C64.rcBounds[i] = C32->rcBounds[i];
+        C64.hbmUserAlpha = (ULONGLONG)(ULONG_PTR)C32->hbmUserAlpha;
+        C64.bpp = C32->bpp; C64.cx = C32->cx; C64.cy = C32->cy;
+        C64.cpcur = C32->cpcur; C64.cicur = C32->cicur;
+        C64.aspcur = (ULONGLONG)(ULONG_PTR)C32->aspcur;
+        C64.aicur = (ULONGLONG)(ULONG_PTR)C32->aicur;
+        C64.ajifRate = (ULONGLONG)(ULONG_PTR)C32->ajifRate;
+        C64.iicur = C32->iicur;
+        if (C32->CURSORF_flags & WOW64_CURSORF_ACON)
+            DbgPrint("[WOW64] NtUserSetCursorIconData: ANIMATED cursor — "
+                     "frame arrays not re-marshalled (owed)\n");
+    }
+
+    return NtUserSetCursorIconData((HANDLE)(LONG_PTR)(LONG)a[0],
+                                   Wow64pUS32to64(a[1], &Mod64),
+                                   Wow64pUS32to64(a[2], &Rsrc64),
+                                   C32 ? &C64 : NULL);
+}
+
 /* Guest completion of a kernel->user callback (wow64_callback.c). */
 int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status);
 
@@ -1606,6 +1718,10 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtUserBeginPaint(Arguments);
     if (WOW64_IS("NtUserEndPaint"))
         return Wow64Manual_NtUserEndPaint(Arguments);
+    if (WOW64_IS("NtUserFindExistingCursorIcon"))
+        return Wow64Manual_NtUserFindExistingCursorIcon(Arguments);
+    if (WOW64_IS("NtUserSetCursorIconData"))
+        return Wow64Manual_NtUserSetCursorIconData(Arguments);
     if (WOW64_IS("NtCallbackReturn"))
         return Wow64Manual_NtCallbackReturn(Arguments);
 #undef WOW64_IS

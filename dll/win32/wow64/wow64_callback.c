@@ -237,6 +237,10 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
             {
                 const WOW64_WNDPROC_CB64 *A64 = (const WOW64_WNDPROC_CB64 *)Arg;
                 ULONG Extra = (Len > sizeof(*A64)) ? Len - sizeof(*A64) : 0;
+                if (Wow64TraceSyscalls)
+                    DbgPrint("[WOW64CB] WINDOWPROC hwnd=%p msg=%04lx wp=%p lp=%p extra=%lu\n",
+                             (PVOID)(ULONG_PTR)A64->Wnd, A64->Msg,
+                             (PVOID)(ULONG_PTR)A64->wParam, (PVOID)(ULONG_PTR)A64->lParam, Extra);
                 /* Frame.Buf64 doubles as 32-bit marshal scratch: it is copied
                  * onto the guest stack before any nesting, and only reused
                  * for the RESULT after the guest completes. */
