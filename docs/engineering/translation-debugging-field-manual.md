@@ -5184,11 +5184,162 @@ uses `ValidateHwnd`; the message loop is the *first* client-side validation.
 the USER handle table** (real Windows keeps a parallel 32-bit `gSharedInfo`). The table is
 session-global and can't be per-bitness in place, so win32k must maintain a 32-bit shadow
 (header + entries) for WoW64 processes and hand its low VA back in `USERCONNECT.aheList`,
+kept in sync on every handle alloc/free. Until then any WoW64 GUI app that validates an
+HWND client-side (i.e. nearly all of them) silently no-ops the call.
+
+**FIXED (2026-07-12, M9).** The first instinct — have win32k maintain a 32-bit *shadow*
+of the handle table and publish it as `aheList` — is the **wrong layer**, and trying it is
+instructive: with the shadow published, `ValidateHwnd` stops no-oping and **finds** the
+entry, but the guest then dereferences the *validated object* and AVs (`0xfc6daab0`, in
+guest `user32+0x46141`) during CreateWindow's WM_GETMINMAXINFO. Because the handle table is
+only **one** of the things user32 reads straight out of shared memory with no syscall. The
+full set is three:
+
+  1. the shared **USER handle table** (`gSharedInfo.aheList`) — what `ValidateHwnd` indexes,
+  2. the desktop heap's **WND / CLS** objects, reached via `DesktopPtrToUser()`,
+  3. **DESKTOPINFO** (`pvDesktopBase`/`pvDesktopLimit`/`fsHooks`/`spwnd`).
+
+Shadowing only (1) fixes validation and then walks straight into (2). All three are already
+*addressable* by the guest — win32k maps them below 4GB for WoW64 procs (`W32Wow64ZeroBits`)
+— they are simply **unparseable**, laid out by a 64-bit kernel with 8-byte pointers. So this
+is a **layout** problem, not a mapping problem, and the fix belongs **client-side**, exactly
+like the M6/M7 GDI fix (`g_GdiWow64` + `GDI_TABLE_ENTRY64` + a normalizing read helper):
+
+* **`user32-rust/src/wow64.rs`** (new): `g_UserWow64` (detected once at connect via
+  `ProcessWow64Information`, mirroring `GdiProcessSetup`), the `*64` shapes (`Wnd64`,
+  `Cls64`, `DesktopInfo64`, `UserHandleTable64`, `UserHandleEntry64`), and a normalizing
+  view over each. WND/CLS get cached **snapshots** — sound because the client's desktop-heap
+  mapping is `PAGE_READONLY` (`IntMapDesktopView`), so user32 *never writes* through a
+  `PWND` and a copy cannot lose an update. Snapshots are keyed by kernel object so `PWND`
+  identity stays stable (user32 compares them) and refreshed per lookup so reads are current.
+* Typed `desktop_wnd_to_user()` / `desktop_cls_to_user()` replace the ~25 raw
+  `DesktopPtrToUser(x->spwnd*/pcls)` call sites. Pointer fields *inside* a snapshot keep the
+  kernel value truncated to 32 bits (exactly as the native i386 path stores them), so the
+  caller's next translation works unchanged — lossless below 4GB, and the delta arithmetic
+  wraps mod 2^32.
+* **Kernel half (`win32k-rust/src/wow64.rs`, new):** win32k writes CLIENTINFO into the
+  **64-bit** TEB; a WoW64 guest reads it from **TEB32** (`GetWin32ClientInfo()` =
+  `NtCurrentTeb()->Win32ClientInfo`, and under WoW64 `NtCurrentTeb()` *is* the TEB32). It
+  was therefore **all zeros**: `ulClientDelta == 0`, `pDeskInfo == NULL` — which is why the
+  guest computed a raw kernel pointer. `Wow64PublishClientInfo()` projects the 64-bit
+  CLIENTINFO into a `ClientInfo32` in TEB32 (TEB64+0x2000; see `procsup.rs`) at thread init
+  and desktop assignment. `CallbackWnd` is deliberately left **zero** — it caches a 64-bit
+  `WND*` that is useless to the guest; zeroing it makes `ValidateHwnd`'s fast path miss and
+  fall through to the (correct) normalizing lookup.
+
+Result: `win32.exe` `0x600E → 0x600D` — the x86 guest's window receives WM_PAINT and paints
+its client rect through the native arm64 win32k. `gui32` stays `0x600D`.
+
+**Two reusable lessons.**
+
+*(i) The two halves must ship together, and the failure in between is loud.* Landing the
+kernel half alone (CLIENTINFO32 published) against a **stale** guest user32 turned `0x600E`
+into `0xC000001D` — illegal instruction. That is not a mystery, it is the expected shape: a
+non-zero `ulClientDelta` makes the *unmodified* client start actually translating pointers,
+and it then walks 64-bit structs with 32-bit offsets straight into a garbage `lpfnWndProc`.
+If you see a WoW64 guest go from "quietly does nothing" to "wild jump" after a win32k
+change, suspect a client/kernel version skew before suspecting the kernel.
+**Corollary (cost me a boot cycle):** the WoW64 guest's `user32.dll`/`gdi32.dll` are staged
+from **`build-i386/`**, not from `build-arm64/` — an arm64-only rebuild silently ships a
+stale client. Always rebuild **both** arches before booting a WoW64 change.
+
+*(ii) Make the layout assumption a compile-time tripwire, not a comment.* The `*64` shapes
+work because on i686-w64-mingw (MS ABI) a `u64` has 8-byte struct alignment exactly as on
+x86_64 — verified: all 91 `Wnd64` fields land at identical offsets on both targets. But the
+shapes must also *stay* equal to the real structs. `user32-rust` builds for i386 **and**
+natively for amd64/arm64, so the `#[cfg(not(target_arch = "x86"))] mod layout_guard` asserts
+`size_of::<Wnd64>() == size_of::<WND>()` + per-field `offset_of!` equality on every native
+build. It earned its keep immediately: it caught a bogus padding word in `Cls64` on the
+first compile. Any future drift in `ntuser.h` now breaks the amd64/arm64 build instead of
+silently corrupting WoW64 clients.
+
+**Still owed (loud, not silent):** `MENU`/`ITEM`, `HOOK` and `SBINFO` are desktop-heap
+objects with pointers too, and have no `*64` shape yet — nothing on the M9 path reaches
+them. `crate::wow64::wow64_unsupported()` prints a one-shot warning naming the type rather
+than letting a 32-bit client silently walk a 64-bit `MENU`. When a WoW64 app needs menus,
+that print is the work order.
+
+### 9.59 (ROOT-CAUSED + FIXED 2026-07-12) The DUMMY_PSEH **capture-copy** class: every `_SEH2_TRY`-wrapped user-buffer capture became an unprotected `memcpy` — and how to get a *real* fault-tolerant copy out of clang's "calls-only" native SEH
+
+**Symptom.** Several unrelated syscalls BUGCHECK 0x1E (0xC0000005) at the *identical* PC,
+`memcpy+0x40`, whenever a caller passes a hostile buffer pointer (NULL, 0x42424242).
+Observed via kmtest conformance: `ObSymbolicLink`, `ZwWaitForMultipleObjects`, `IoReadWrite`
+(and `NtCreateSection` with a 0x50 face — same root, scalar deref instead of a bulk copy).
+
+**Root (a whole CLASS, not three bugs).** In C, a kernel API captures a caller-supplied
+buffer with a copy sitting inside `_SEH2_TRY`. Under `USE_DUMMY_PSEH` — still the default C
+compile mode on **all** arches — that handler is dead code, and the Rust translations dropped
+the SEH entirely. Two compounding gaps:
+1. The `probe_user_buffer` guard is `PreviousMode`-gated, but the C's `_SEH2_TRY` wrapped the
+   copy **unconditionally**. Kernel-mode callers (kmtest drivers, and any in-kernel client) skip
+   the guard and hit a raw, unprotected copy.
+2. A probe is a **range + alignment check only** — it never touches memory. NULL and 0x42424242
+   are both *below* `MmUserProbeAddress`, so a range probe happily passes them. The safety was
+   ALWAYS the SEH around the copy, never the probe.
+
+Critically, `RtlpSafeCopyMemory` — the one primitive that was supposed to be the safe copy — had
+been translated to a **plain `RtlCopyMemory`**. So the kernel had *no* fault-tolerant copy at all.
+
+**The fix, and the non-obvious insight that makes it work.** `dummy-pseh-verdict.md` §C warns
+that clang's native SEH is *"calls-only (no `-fasync-exceptions`)"* — a **direct deref** written
+inside a `__try` body may not be covered. That reads like a blocker. It is actually the *recipe*:
+
+> **A copy is a CALL.** Put the faulting access in a CALLEE and the `__try`'s scope table covers
+> the call site, because the fault's return address lands back inside the `__try` range.
+
+So `ntoskrnl/kmsafecopy.c` (native `__try`/`__except` via the `-fms-extensions` `c_shims` wiring,
+same as `seh_poc.c`) does:
+
+```c
+__attribute__((noinline))              /* load-bearing: guarantees the CALL exists */
+static void KmCopyRaw(void *D, const void *S, KMSIZE N) { memcpy(D, S, N); }
+
+int KmProtectedCopyMemory(void *D, const void *S, KMSIZE N)
+{ __try { KmCopyRaw(D, S, N); return 1; } __except (1) { return 0; } }
+```
+
+Chain: `KiPageFault` → `KiDispatchException` → `RtlDispatchException` unwinds `KmCopyRaw`'s frame
+→ `__C_specific_handler` matches the scope table → `__except` → return 0 →
+`Err(STATUS_ACCESS_VIOLATION)`. **`seh_poc.c` had only ever proven a *software raise* dispatches;
+this proves the same chain catches a *hardware page fault*.**
+
+Bonus, and the reason this beats the obvious alternative: the fault goes through `MmAccessFault`
+**first**, so a valid-but-nonresident page is simply paged in and the copy proceeds. Only a truly
+invalid address reaches the `__except`.
+
+**Do NOT "fix" this with `MmIsAddressValid`.** It is the tempting portable stand-in and it is
+wrong: it cannot distinguish *invalid* from *valid-but-paged-out*. Drop it on a hot path (e.g.
+`IopCompleteRequest`'s buffered copy-back) and legitimate I/O starts failing with
+STATUS_ACCESS_VIOLATION under memory pressure — a silent, subtly-wrong degradation far worse than
+the crash it papers over. Prefer the crash + an honest gap.
+
+**Two traps this flushed out:**
+- **PERF: verify the copy is a real `memcpy`.** A hand-rolled `while (Len--) *Dst++ = *Src++;`
+  compiled to a genuine byte-at-a-time loop — clang's loop-idiom pass did **not** lower it. On the
+  buffered-I/O completion path that is a throughput regression. *Disassemble the shim* (`callq
+  <memcpy>`) rather than assuming the optimizer saved you.
+- **A fixed crash can UNMASK a second bug at the same test.** After the copy fix, `IoReadWrite`
+  still crashed — but the PC had moved out of ntoskrnl to `IoReadWrite_drv.sys`. **Fast I/O hands
+  the driver the RAW user buffer** (no SystemBuffer), and in C the fast-io dispatch is itself
+  inside `_SEH2_TRY`. That is the same family needing a *different* primitive: a protected
+  **call**, not a protected **copy**. Always re-symbolicate after a fix — "still crashes" is not
+  "not fixed".
+
+**Where it lives.** Primitive: `ntoskrnl/kmsafecopy.c` + `ntkrnl-sys/src/probe.rs`
+(`safe_copy_from_user` / `safe_copy_to_user` / `safe_copy_raw`, all running the protected copy
+UNCONDITIONALLY; only the range probe stays `PreviousMode`-gated). **amd64 only** — i386/arm64
+fall through to a plain copy until clang's frame-based i386 / aarch64 kernel SEH gets the
+`seh_poc.c` treatment, or an extable-style fault-fixup copy exists.
+
+**Detector.** A `#[no_mangle]` syscall that does `copy_nonoverlapping` / `read_volatile` on a
+caller pointer where the C had `_SEH2_TRY`. Grep the inert C for `_SEH2_TRY` around
+`RtlCopyMemory`/`Probe*` and diff against the Rust port — if the Rust has the copy but no
+`safe_copy_*`, it is a latent 0x1E waiting for a hostile caller.
 kept in sync on every handle alloc/free. Owed as the M9 core (`wow64-plan.md`). Until then
 any WoW64 GUI app that validates an HWND client-side (i.e. nearly all of them) silently
 no-ops the call.
 
-### 9.59 (2026-07-12) A differential harness can only falsify what it VARIES — two blind spots that hand you a green MATCH on code that is wrong in production
+### 9.60 (2026-07-12) A differential harness can only falsify what it VARIES — two blind spots that hand you a green MATCH on code that is wrong in production
 
 **Context.** The msvcrt "assemble the CRT from pieces" lane flips C CRT bodies to Rust one family at a time, gated by `msvcrt-difftest`: build.rs hands the **genuine** `dll/win32/msvcrt/string.c` to `cc` as the translation unit (106 symbols renamed `ref_*` via a generated `-include` prelude), and a fuzz driver compares the Rust against it, printing MATCH / SIGN-ONLY / DIVERGE per function. It works — it caught a real signed-vs-unsigned-char corruption before it shipped (below). But twice it would have cheerfully certified a function that is **wrong on the real target**, and both times the only thing that saved it was reading the C.
 
@@ -5213,7 +5364,7 @@ The harness originally linked `cnt-rust` (the kernel CRT crate whose cores the w
 
 **Corollary for cohab flips generally: VERIFY THE FLIP TOOK.** A green build and a "duplicate symbol" warning prove nothing about *which* body won. Parse the PE export table and resolve each export's RVA into the Rust `--whole-archive` cluster vs the C bodies — and assert the *deliberately-not-flipped* ones still land in C. (Plain link-order is NOT enough: the C monolith object still gets pulled in for its un-flipped symbols and drags its own copies of the flipped ones along, winning first-match. `--whole-archive` on the Rust `.a` is what forces the Rust definitions in first.)
 
-### 9.60 (ROOT-CAUSED + FIXED 2026-07-12) The bug a value-comparing fuzz CANNOT see: an unbounded scan inside a bounded (`n`-suffixed) CRT function — right answer, wrong memory
+### 9.61 (ROOT-CAUSED + FIXED 2026-07-12) The bug a value-comparing fuzz CANNOT see: an unbounded scan inside a bounded (`n`-suffixed) CRT function — right answer, wrong memory
 
 **Symptom.** msvcrt wave-3 flipped 6 functions, all reported MATCH by the differential harness across 20,000 fuzz cases each, all 3 arch smokes green to desktop. But the **net suite** regressed hard: `nettest.exe` (the usermode winsock proof) printed `WSAStartup OK` and then went silent — no crash banner, no error, just gone — and the kernel's `[NETSTACK] dns OK` marker slipped past the boot snapshot. 4/4 fail. Control (previous commit, same host): 15/15 pass, twice. So: a real regression, not the documented NET_FLAKE.
 
@@ -5246,4 +5397,4 @@ if (len > 0 && str) while (*str && len--) *str++ = value;  /* reads at most len 
 
 **The detector (new, permanent): `msvcrt-difftest/tests/oob_guard.rs`.** A value-comparing fuzz is *structurally* blind to an over-read that still returns the right answer — no amount of fuzzing finds this class. So probe the access, not the value: `mmap` two pages, `mprotect(PROT_NONE)` the second, and place a deliberately **NUL-free** buffer of `k` bytes flush against the boundary; call each bounded fn with `n <= k`. A correct impl never touches `p[k]`; an unbounded scan takes SIGSEGV. Each call runs in a forked child so the offender is *named* instead of taking the harness down. Validated both ways — it reports `_strnset ✗ OVER-READ` on the buggy version and passes on the fix. **Every new bounded flip gets a row here.**
 
-**Meta-lesson (compounds with §9.59).** §9.59 catalogued the harness's blind spots in *what it varies* (locale, host-vs-target `#if`, proxy-vs-artifact). This is a blind spot in *what it observes*: it compares return values and destination bytes, so it can only ever catch wrong **answers** — never wrong **memory access** that yields a right answer. Two different questions, two different instruments. A green diff table is not a safety proof.
+**Meta-lesson (compounds with §9.60).** §9.60 catalogued the harness's blind spots in *what it varies* (locale, host-vs-target `#if`, proxy-vs-artifact). This is a blind spot in *what it observes*: it compares return values and destination bytes, so it can only ever catch wrong **answers** — never wrong **memory access** that yields a right answer. Two different questions, two different instruments. A green diff table is not a safety proof.

@@ -280,3 +280,80 @@ Read these before touching the build; every one has already cost someone a sessi
 - Cohab/link mechanics: `docs/engineering/rust-in-kernel.md` (HAL cohab pattern, cargo-cutover).
 - The proven kernel-CRT wiring to copy: `sdk/lib/crt/libcntpr.cmake`.
 - Field-manual recipes: §378, §384, §873, §1266–1279, §1346–1350, §1589 (see §7 table).
+
+## 2026-07-12 (later) — RE-LANDED. Every item on the checklist below is done, and the gate that would have caught it now exists.
+
+The revert was **correct** — mainline was red and the diagnosis (a *performance* regression, invisible to a behavioural harness) was right. Both root causes are fixed and each now has a permanent detector:
+
+| | was | now | pinned by |
+|---|---|---|---|
+| `memset` (wave 2) | per-byte `write_volatile`; **8.0x slower** than the C | word-wise raw-pointer fill, vectorized — **0.88x** (faster than the C) | `--test perf` |
+| `memcmp` (wave 3, found by the new gate) | byte-at-a-time `zip` core; **10.3x slower** | word-wise block compare — **1.02x** | `--test perf` |
+| `_strnset` (wave 3) | unbounded NUL scan → OOB read → faulted in `mbcs.c`'s `_mbsnset` | bounded by `n` | `--test oob_guard` |
+
+- `write_volatile` was a crutch against the §378 captures(none) DCE — which came in through the **slice** signature. Storing through a **raw pointer** stays off that path, and the class is toolchain-fixed on LLVM ≥ 21. `#![no_builtins]` is what actually keeps the fill loop from being lowered back into a self-call to `memset`.
+- **`-C no-prepopulate-passes` is GONE from msvcrt's RUSTFLAGS.** It disables rustc's optimization pipeline outright — with it, `memset`/`memcpy`/`memcmp` compile to *a function call per byte*. It was the real multiplier on the regression. (The class-guard it provides is toolchain-fixed; ud2 + sacred-primitive scans + the ×3 smoke gate cover the residual risk. Re-check `tools/scan_captures.py` after any rustc/LLVM bump.)
+- Verified in the **shipped** windows-gnu build, not just the host bench: `memset`/`memcpy` contain **no calls out** (no self-recursion) and are genuinely vectorized (xmm/ymm).
+
+**The lane now runs three orthogonal harnesses, because each is blind to what the others catch:**
+
+| harness | asks | the bug it caught |
+|---|---|---|
+| `classify` | wrong **values**? | the signed-vs-unsigned-char contract (would have corrupted non-ASCII compares) |
+| `oob_guard` | right answer, wrong **memory**? | `_strnset`'s unbounded scan (§9.61) |
+| `perf` | right answer, too **slowly**? | `memset` 8x / `memcmp` 10x (this section) |
+
+A green diff table is not a safety proof, and it never was a performance proof. **Run all three before any flip.**
+
+<details>
+<summary>Original revert note (2026-07-12) — kept for the record</summary>
+
+## 2026-07-12 — WAVE 2 REVERTED ON MASTER (net-suite regression). Re-land needs a PERF gate.
+
+`cfdfd3c841a` (wave 2 — the 23 "MATCH" flips) **broke `tests/qemu/test_net.py` on mainline**
+and was reverted (code only; this plan doc kept). Not a correctness bug — a **performance**
+one, which is exactly the class the differential harness is blind to.
+
+**Symptom.** `test_dns_resolve` + `test_usermode_winsock_roundtrip` fail. On serial,
+`nettest.exe` prints `[NETTEST] usermode winsock proof starting` → `[NETTEST] WSAStartup OK`
+→ then nothing (marker `[NETTEST] usermode winsock TCP echo OK` never arrives, 120s timeout).
+The kernel netstack itself is fine — all 13 in-kernel TDI/UDP/ICMP tests still pass, and
+`[NETSTACK] dns OK` does eventually print, just outside the captured boot window.
+
+**Bisect (each a real boot, amd64):**
+| tree | net |
+|---|---|
+| pre-wave-2 | 15/15 green |
+| + wave 2 | 2 failed / 13 passed (208s) |
+| + wave 2, unrelated kernel commit reverted | 2 failed / 13 passed (control — not that lane) |
+| + wave 2 **reverted** | **15/15 green (71s)** |
+
+**Root candidate — semantics-identical but orders of magnitude slower.** The harness grades
+`cnt-rust` vs the C bodies on *behaviour*, so a body that returns the right bytes always scores
+MATCH no matter how slowly it gets there. But these are `msvcrt.dll`'s `memcpy`/`memset` —
+served to **every user-mode caller in the system**:
+- `memset` is a **per-byte `core::ptr::write_volatile` loop**. `write_volatile` is *unvectorizable
+  by construction* — the compiler may not merge, widen, or elide the stores. That is a byte-at-a-
+  time `rep stosb` at best, ~1-2 orders of magnitude off a real `memset`.
+- `memcpy` delegates to `raw_move`; check whether that lowers to a real `memcpy`/`memmove` or an
+  open-coded loop.
+
+The 71s → 208s wall-clock blow-up on the same 15 boots is consistent with a system-wide CRT
+slowdown, and a 120s per-marker timeout is exactly what a big user-mode buffer op would blow.
+
+**Before re-landing:**
+1. **Benchmark, don't just diff.** Add a throughput case to `msvcrt-difftest` (bytes/sec vs the C
+   body, at 16B / 4KB / 1MB). A flip that is >~2x slower than the C it replaces should FAIL the
+   harness, not pass it.
+2. **Drop `write_volatile` from `memset`** — nothing here needs volatile semantics; it exists to
+   defeat a loop-idiom miscompile, but the cure is `black_box` on the *index* (as `cstr_slice`
+   already does), not volatile on every store.
+3. **Prefer delegating to the intrinsic**: `core::ptr::copy_nonoverlapping` / `write_bytes` lower
+   to the real `memcpy`/`memset`.
+4. Re-gate with the net suite (`vibeos-cli gate` runs it; do not `--skip-net` a CRT-wide flip).
+
+*(Cross-lane note: this is the same trap the kernel's `kmsafecopy.c` hit the same day — a
+hand-rolled `while (Len--) *Dst++ = *Src++;` compiled to a genuine byte loop; caught by
+disassembling the shim. Field manual §9.59.)*
+
+</details>

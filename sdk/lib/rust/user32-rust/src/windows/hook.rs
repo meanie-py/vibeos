@@ -92,18 +92,17 @@ unsafe fn ISITHOOKED(HookId: UINT) -> BOOL {
     if ((*pci).fsHooks & flag) != 0 {
         return 1;
     }
-    (!(*pci).pDeskInfo.is_null() && ((*(*pci).pDeskInfo).fsHooks & flag) != 0) as BOOL
+    (!(*pci).pDeskInfo.is_null()
+        && (crate::wow64::desktop_info_fshooks((*pci).pDeskInfo) & flag) != 0) as BOOL
 }
 
 /// user_x.h `DesktopPtrToUser(p)` — server→client desktop heap remap.
 #[inline]
 unsafe fn DesktopPtrToUser(p: PVOID) -> PVOID {
-    let pci = GetWin32ClientInfo();
-    let di = (*pci).pDeskInfo;
-    if di.is_null() {
-        return core::ptr::null_mut();
-    }
-    (p as ULONG_PTR).wrapping_sub((*pci).ulClientDelta) as PVOID
+    // WoW64: DESKTOPINFO is 64-bit-laid-out for a 32-bit guest, so the
+    // base/limit range check must be done through the normalizing view.
+    // Single definition lives in crate::wow64.
+    crate::wow64::desktop_ptr_to_user(p)
 }
 
 /// `TRACE!(...)` — WINE debug channel; a no-op in the cohab build.
@@ -317,6 +316,7 @@ pub unsafe extern "system" fn CallNextHookEx(
         return 0;
     }
 
+    crate::wow64::wow64_unsupported("HOOK");
     pHook = DesktopPtrToUser((*ClientInfo).phkCurrent as _) as PHOOK;
 
     if (*pHook).phkNext.is_null() {

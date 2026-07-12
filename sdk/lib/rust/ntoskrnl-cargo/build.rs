@@ -133,6 +133,9 @@ fn main() {
         "x86_64" => c_shims.extend_from_slice(&[
             "sdk/lib/crt/except/amd64/ehandler.c",
             "ntoskrnl/seh_poc.c",
+            // Fault-tolerant kernel copy (native SEH, same wiring as seh_poc.c) —
+            // the memcpy+0x40 crasher-cluster fix. See ntoskrnl/kmsafecopy.c.
+            "ntoskrnl/kmsafecopy.c",
         ]),
         _ => {}
     }
