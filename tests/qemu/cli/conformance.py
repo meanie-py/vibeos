@@ -56,14 +56,21 @@ def _run_dir(arch: str) -> Path:
 
 
 def _rostests_enabled(repo: Path, base_arch: str) -> bool | None:
-    """True/False if the build dir's CMakeCache says so; None if no cache yet."""
+    """True if the build dir will compile kmtests. modules/CMakeLists.txt gates
+    them on `ENABLE_ROSTESTS OR ENABLE_ROSTESTS_KMTESTS`, and the fleet default
+    is the KMTESTS-only path (ROSTESTS=OFF, KMTESTS=ON — kmtests without the full
+    suite), so both keys must be OR'd, not first-match. None if no cache yet."""
     cache = repo / f"build-{base_arch}" / "CMakeCache.txt"
     if not cache.is_file():
         return None
+    on, saw = False, False
     for line in cache.read_text(errors="replace").splitlines():
-        if line.startswith("ENABLE_ROSTESTS:") or line.startswith("ENABLE_ROSTESTS_KMTESTS:"):
-            return line.strip().endswith("=ON")
-    return False
+        for key in ("ENABLE_ROSTESTS:", "ENABLE_ROSTESTS_KMTESTS:"):
+            if line.startswith(key):
+                saw = True
+                if line.strip().endswith("=ON"):
+                    on = True
+    return on if saw else False
 
 
 def conformance(args, repo: Path) -> int:

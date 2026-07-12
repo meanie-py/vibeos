@@ -2387,11 +2387,21 @@ def test_conformance_parser_detects_crash_regression(tmp_path):
 
 
 def test_conformance_rostests_preflight(tmp_path):
-    # no build dir -> None (unknown); cache with the option ON -> True; off/absent -> False.
+    # no build dir -> None (unknown); either option ON -> True; both off/absent -> False.
     assert conformance_mod._rostests_enabled(tmp_path, "amd64") is None
     bd = tmp_path / "build-amd64"
     bd.mkdir()
     (bd / "CMakeCache.txt").write_text("FOO:BOOL=ON\nENABLE_ROSTESTS:BOOL=ON\n")
     assert conformance_mod._rostests_enabled(tmp_path, "amd64") is True
+    # the fleet-default config: parent OFF but KMTESTS ON, parent listed FIRST
+    # (the first-match bug this guards against).
+    (bd / "CMakeCache.txt").write_text(
+        "ENABLE_ROSTESTS:BOOL=OFF\nENABLE_ROSTESTS_KMTESTS:BOOL=ON\n"
+    )
+    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is True
+    (bd / "CMakeCache.txt").write_text(
+        "ENABLE_ROSTESTS:BOOL=OFF\nENABLE_ROSTESTS_KMTESTS:BOOL=OFF\n"
+    )
+    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is False
     (bd / "CMakeCache.txt").write_text("FOO:BOOL=ON\n")
     assert conformance_mod._rostests_enabled(tmp_path, "amd64") is False

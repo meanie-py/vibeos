@@ -385,3 +385,27 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   lane will use to run guest loads under `-smp`. Fail-loud rostests preflight (no silent
   degradation). Unit-tested (arch-norm, parser regression detect, rostests preflight);
   live-validation is the i386 baseline run next (dogfood the verb to produce M3 i386).
+- 2026-07-12: **M3 i386 baseline GREEN — 67 OK + 4 NO-END, 10 i386-specific crashers
+  quarantined.** Produced by dogfooding the M4 verb (build→sweep→parse→ratchet), which
+  live-validated M4 end-to-end incl. the new crash-abort (a mid-sweep BUGCHECK returns in
+  ~50s, not the 90-min drain). i386 runs kmtest_drv under **DUMMY_PSEH** (native SEH is
+  amd64/arm64-only) → a strict SUPERSET of amd64's structural crashers, so the test lists
+  were split **per-arch** (`kmtest-tests-{arch}.txt`, payload.yaml `{arch}` templating);
+  i386 inherits amd64's 16 quarantines + 10 i386-only.
+  * **10 i386-only crashers** (all pass on amd64; live-GDB triage owed — offline i386
+    symbolication is unavailable, kernel is release-stripped): ExHardError (+0x675D),
+    ExResource (+0x8A7EB), KeDpc (+0x1F061), KeMutex (+0x944EF, exc 0xC0000191), MmSection
+    (+0xA0F3B), RtlIsValidOemCharacter (+0x66868), **RtlSplayTreeKM (0x19 BAD_POOL_HEADER —
+    REAL-BUG candidate in the `splaytree` crate, not DUMMY_PSEH)**, SeInheritance (+0x8E3BD),
+    ZwAllocateVirtualMemory (+0x14E4), ZwMapViewOfSection (kmtest_drv+0x5ACF2).
+  * **4 baselined NO-END** (isolated own-failures, NOT cascades — each followed by a clean
+    test; kept in the sweep as the floor, quest-preferred over quarantine): RtlSplayTree +
+    RtlUnicodeString (UM self-crash exit=128, i386-only), RtlCaptureContextKM + UM
+    (`support.c:105 error 0x7b` INVALID_NAME — test-harness issue).
+  * **sweep.c bug fixed (harness-wide):** the runner's 128-char `line` buffer split any
+    over-long list comment, launching its tail ("...symbol-poor).") as a bogus test that
+    polluted the baseline + poisoned the result buffer. Now drains over-long lines. amd64
+    was unaffected (its comments max 94 chars); its landed 81/81 baseline stands.
+  * Iteration was automated (a throwaway auto-grinder: run→parse-crasher→quarantine→rebuild
+    until clean). **arm64 baseline DEFERRED** — kmtest-sweep.exe dies in msvcrt CRT init
+    (cp-20127 NLS) before main() on arm64; fix = rewrite sweep.c off msvcrt (Win32), tracked.

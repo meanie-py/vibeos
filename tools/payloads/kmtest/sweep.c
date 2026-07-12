@@ -95,8 +95,20 @@ int main(void)
         DWORD wait;
         char *nl = strpbrk(line, "\r\n");
 
-        if (nl)
-            *nl = 0;
+        if (!nl)
+        {
+            /* Line longer than the buffer (in practice an over-long '#' comment
+             * in the test list): fgets stopped WITHOUT a newline. Drain the rest
+             * of the physical line so its tail is not read as a bogus test name
+             * on the next iteration — a real test name is always short — then
+             * skip it. (Bug 2026-07-12: a 155-char i386 quarantine comment split
+             * here and the tail "...symbol-poor)." got launched as a fake test,
+             * polluting the baseline and poisoning the result buffer.) */
+            int ch;
+            while ((ch = fgetc(f)) != EOF && ch != '\n') { }
+            continue;
+        }
+        *nl = 0;
         if (!line[0] || line[0] == '#')
             continue;
         ++total;
