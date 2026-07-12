@@ -245,6 +245,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Dangling pointers to transmute temporaries: `let p = transmute::<[u8;N],
+    # [u16;M]>(x).as_ptr()` (or the same as a struct field) — a rustconv artifact
+    # where C's stack-backed WCHAR[] became a storageless temporary, so the stored
+    # pointer dangles the instant the statement ends. Confirmed real 2026-07-12
+    # (disk-rust symbolic-link printf fmt; lsasrv RTL_QUERY_REGISTRY_TABLE Name).
+    # Baseline is EMPTY — the class is fully fixed; this gate keeps it at zero.
+    sdt = repo / "tools" / "scan_dangling_transmute.py"
+    specs.append(
+        (
+            "scan_dangling_transmute",
+            [py, str(sdt), "--lint"] if sdt.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Same-crate extern-decl vs #[no_mangle]-def calling-convention drift: UB
     # that LLVM resolves by silently DELETING the calling branch on i386 (no
     # ud2, no link error — the desktop-icons U32AccelCacheLock bug, field
