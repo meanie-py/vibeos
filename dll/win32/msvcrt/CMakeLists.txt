@@ -171,7 +171,63 @@ add_library(msvcrt MODULE
 
 target_compile_definitions(msvcrt PRIVATE _MSVCR_VER=0)
 set_module_type(msvcrt win32dll ENTRYPOINT DllMain 12)
-target_link_libraries(msvcrt msvcrt_static crtmath dbgrpt vcruntime wine chkstk ${PSEH_LIB})
+
+# ── Rust CRT-body cohab: msvcrt-crt-rust → msvcrt.dll ────────────────
+# Scoped user-mode cohab: msvcrt-crt-rust re-exports a growing set of pure
+# CRT-body symbols over cnt-rust's difftest-pinned `core_rs`. Linked BEFORE
+# msvcrt_static so lld first-match selects the Rust symbols; the C monolith
+# copies (string.c etc.) go dead (--allow-multiple-definition, MODULE-link
+# default). Mirrors libcntpr.cmake's cnt-rust swap but with USER-MODE codegen
+# (i386 keeps the ReactOS -sse,-sse2 baseline like the C build; wave 1 is
+# integer-only so SSE is irrelevant). See
+# docs/engineering/active-lanes/msvcrt-from-pieces-plan.md.
+set(MSVCRT_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(MSVCRT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/msvcrt-crt-rust-target")
+if(ARCH STREQUAL "i386")
+    set(MSVCRT_RUST_TARGET "i686-pc-windows-gnu")
+    set(MSVCRT_RUST_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
+elseif(ARCH STREQUAL "amd64")
+    set(MSVCRT_RUST_TARGET "x86_64-pc-windows-gnu")
+    set(MSVCRT_RUST_ENV "RUSTFLAGS=-C no-prepopulate-passes")
+elseif(ARCH STREQUAL "arm64")
+    set(MSVCRT_RUST_TARGET "aarch64-pc-windows-gnullvm")
+    set(MSVCRT_RUST_ENV "RUSTFLAGS=-C no-prepopulate-passes")
+endif()
+
+set(MSVCRT_CRT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmsvcrt_crt_rust.a")
+file(GLOB_RECURSE MSVCRT_CRT_RUST_SOURCES CONFIGURE_DEPENDS
+    ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-rust/src/*.rs
+    ${MSVCRT_RUST_WORKSPACE_DIR}/cnt-rust/src/core_rs/*.rs
+)
+add_custom_command(
+    OUTPUT ${MSVCRT_CRT_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${MSVCRT_RUST_TARGET_DIR} ${MSVCRT_RUST_ENV}
+        cargo build --release --target ${MSVCRT_RUST_TARGET}
+            -p msvcrt-crt-rust
+            --manifest-path ${MSVCRT_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${MSVCRT_RUST_TARGET_DIR}/${MSVCRT_RUST_TARGET}/release/libmsvcrt_crt_rust.a
+        ${MSVCRT_CRT_RUST_LIB}
+    DEPENDS
+            ${MSVCRT_CRT_RUST_SOURCES}
+            ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-rust/Cargo.toml
+            ${MSVCRT_RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
+            ${MSVCRT_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMENT "Building Rust msvcrt CRT-body cohab (${MSVCRT_RUST_TARGET})"
+)
+add_custom_target(rust_msvcrt_crt DEPENDS ${MSVCRT_CRT_RUST_LIB})
+add_dependencies(msvcrt rust_msvcrt_crt)
+
+# msvcrt_crt_rust under --whole-archive so ALL its symbols are DEFINED before
+# the C monolith (string.c.obj) is pulled. Plain link-order is NOT enough: the
+# C monolith still gets pulled for its ~100 un-flipped symbols (strlen, …) and
+# drags in its own copy of the flipped functions, which would otherwise win
+# first-match. --whole-archive forces the Rust defs in first; the C copies then
+# become the ignored duplicates (--allow-multiple-definition). See lane plan §1b.
+target_link_libraries(msvcrt
+    -Wl,--whole-archive ${MSVCRT_CRT_RUST_LIB} -Wl,--no-whole-archive
+    msvcrt_static crtmath dbgrpt vcruntime wine chkstk ${PSEH_LIB})
 if(ARCH STREQUAL "i386")
     target_link_libraries(msvcrt chkesp)
 endif()

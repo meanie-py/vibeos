@@ -47,6 +47,8 @@ Tree inventory (2026-07-03): **~2,422 `.rs` files · 228 crates** under `sdk/lib
 | **kernel32.dll** | body Rust; only NLS `locale.c` + resources left | **~95%** |
 | **advapi32.dll** | only `wine/security.c` + generated RPC stubs left | **~90%** |
 | **msgina.dll** | 7 `.c` flipped; one C++ leaf (`dimmedwindow.cpp`) | **~88%** |
+| **ole32.dll** (COM runtime) | `ole32-rust`: compobj + marshal cluster (marshal/stubmanager/rpc/ftmarshal/git) — 6 TUs flipped; boots ×3 | **partial** |
+| **oleaut32.dll** (OLE automation) | `oleaut32-rust`: **the whole automation surface is Rust** — BSTR (`oleaut`), VARIANT (`variant`), the VarXxxFromYyy coercion matrix (`vartype`), SAFEARRAY (`safearray`), the typelib reader/writer + ITypeInfo/ITypeLib (`typelib` + submodules), IDispatch (`dispatch`), user-marshal (`usrmarshal`), `hash`. 8 TUs flipped; boots ×3. Remaining C is off the import surface (olefont/olepicture/varformat/connpt/recinfo/olepropframe) | **core done** |
 | **hal** (x86 + arm64 stub) | 42+ cohab markers; `.S` NT-ABI + setjmp glue *(not re-verified this pass)* | **~97%** |
 | **rtl** static lib | 80/82 `.c` flipped; `dbgprint_variadic.c` + asm floor | **~100%** |
 | Cohab helper libs (cmlib, rossym, evtlib, inflib, …) | real `.c` flipped for kernel/cross consumers | **~100%** |
