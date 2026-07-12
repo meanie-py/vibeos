@@ -5100,7 +5100,44 @@ one CPU's `DeferredReadyListHead` while ALSO Ready on a PRCB list, or a
 reprioritization path (`KiSetPriorityThread`/`KiReadyThread`) that re-queues
 without first removing under the right lock.
 
-**NEXT DIAGNOSTIC (minimal, high-signal):** the 0x52 bugcheck currently reports
+**2026-07-12 ELIMINATION ROUND — the tear is NOT produced by the ready-list API.**
+Four amplified bursts (`--smp-kernel --cswitchdep`, 16 boots each) with successively
+sharper tripwires. THREE precise, state-independent guards ALL went SILENT:
+- **0x52** (double-queue: `KxQueueReadyThread` on a `State==Ready` thread) — silent.
+  It DID fire once early, but later bursts tore the list with 0x52 quiet =>
+  **`State` is the WRONG PREDICATE** (a path can change State without unlinking).
+- **0x53** (`KiInsertDeferredReadyList` on a still-LINKED thread) — silent =>
+  **the WaitListEntry/SwapListEntry UNION-ALIAS theory is REFUTED.** (Good theory:
+  `SwapListEntry.Next` really does alias `WaitListEntry.Flink`, and a deferred write
+  would tear a list with NO lock on the victim PRCB — it just isn't happening.)
+- **0x54** (`KxQueueReadyThread` entry: node ALREADY LINKED — the precise
+  "do my neighbours point back at me?" test) — silent => **no still-linked node is
+  ever re-inserted.**
+Yet **site 0x11/0x22 keep firing**: `ki_rq_integrity` finds the list broken
+*immediately after a legitimate insert, with the correct PRCB lock held*.
+Lock discipline was audited and is SOUND: `KiAcquirePrcbLock` is a real SeqCst
+test-and-set on `(*prcb).PrcbLock`; every mutator (`KxQueueReadyThread`,
+`KiDeferredReadyThread`, `KiSelectReadyThread`, `KiSetPriorityThread`,
+`KiSetAffinityThread`, balmgr) pairs with the correct PRCB's lock; `KiQuantumEnd`'s
+lock hand-off into `KxQueueReadyThread` (release-inside-callee) is correct NT
+semantics; all `KiSelectNextThread`/`KiSelectReadyThread` callers hold the lock.
+
+**=> REFRAME: the ready-list tear is very likely a VICTIM, not the bug.** A wild
+write / use-after-free scribbling kernel memory would corrupt whatever is nearby and
+produce exactly this: a locked, API-correct list observed broken. **Corroborating: the
+same corpus carries `0x19 BAD_POOL_HEADER` (x2) and `0xF4` (x4)** — independent
+memory-corruption faces. Chasing scheduler *logic* further is likely wasted; the
+scheduler keeps coming up clean under every precise test.
+
+**NEXT TOOL (stop adding tripwires):** catch the corrupting STORE, not its victims.
+A GDB **hardware watchpoint** on the `Prcb->DispatcherReadyListHead[pri]` that gets
+torn (pri 8/9 observed) reports the culprit PC directly — use the kernel-debug
+toolkit (`qemu/start.sh amd64 --gdb` + `run-until.sh`), which needs the native/KVM
+backend. Note `SPECIALPOOL=*` has already come back empty here — expected, since it
+guards POOL and the PRCB is not pool; that null result is consistent with the wild
+writer living outside pool allocations (or writing through a stale/freed pointer).
+
+**PRIOR (superseded) NEXT-DIAGNOSTIC note:** the 0x52 bugcheck currently reports
 `(thread, (0x52<<8)|pri, state, prcb)` but NOT *who called*. Add the caller
 return address (`code_addr!()` at each KxQueueReadyThread site, or capture the
 return address in KxQueueReadyThread itself) into a spare 0x52 param, rebuild
