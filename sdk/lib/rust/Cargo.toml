@@ -232,6 +232,7 @@ members = [
     "winlogon-rust",
     "explorer-sys",
     "explorer-rust",
+    "com-sys",
     "lsass-rust",
     "services-rust",
     "midl-rt",
