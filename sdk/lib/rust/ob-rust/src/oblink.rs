@@ -654,11 +654,21 @@ pub unsafe extern "system" fn NtCreateSymbolicLinkObject(
             return STATUS_NO_MEMORY;
         }
 
-        core::ptr::copy_nonoverlapping(
-            CapturedLinkTarget.Buffer as *const u8,
-            (*SymbolicLink).LinkTarget.Buffer as *mut u8,
+        // Fault-tolerant capture of the caller's link-target string. The C
+        // original wrapped this copy in _SEH2_TRY (dead under DUMMY_PSEH); a
+        // kernel-mode caller with a hostile LinkTarget.Buffer (kmtest
+        // ObSymbolicLink) faulted memcpy+0x40. On fault, ObDereferenceObject
+        // runs the delete procedure which frees the just-allocated buffer.
+        if let Err(s) = safe_copy_from_user(
+            (*SymbolicLink).LinkTarget.Buffer as *mut core::ffi::c_void,
+            CapturedLinkTarget.Buffer as *const core::ffi::c_void,
             CapturedLinkTarget.MaximumLength as usize,
-        );
+            core::mem::size_of::<WCHAR>(),
+            PreviousMode,
+        ) {
+            ObDereferenceObject(SymbolicLink as PVOID);
+            return s;
+        }
 
         (*SymbolicLink).LinkTargetObject = core::ptr::null_mut();
         (*SymbolicLink).DosDeviceDriveIndex = 0;

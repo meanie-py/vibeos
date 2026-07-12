@@ -14,4 +14,5 @@ registry), never left to rot in an archived doc.
 | `fex-arm` | [fex-bringup-plan.md](fex-bringup-plan.md), [wow64-plan.md](wow64-plan.md) |
 | `conformance-ratchet` | conformance-ratchet-quest.md *(lives on the branch until it lands)* |
 | `smp-bringup` | [smp-bringup-quest.md](smp-bringup-quest.md) |
+| `msvcrt-homebrew` | [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
 | `stable-toolchain` | [stable-toolchain-plan.md](stable-toolchain-plan.md) |

@@ -7,19 +7,23 @@ if(MSVC_IDE)
     add_definitions(-DWINETEST_MSVC_IDE_FORMATTING)
 endif()
 
+# Upstream excluded kmtests on GCC-amd64 ("broken with new x64 PSEH") — moot for us:
+# llvm-mingw uses USE_DUMMY_PSEH on every arch, so build it everywhere. kmtests is
+# outside the ENABLE_ROSTESTS guard so ENABLE_ROSTESTS_KMTESTS can build it alone.
+add_subdirectory(kmtests)
+
+if(ENABLE_ROSTESTS)
 add_subdirectory(apitests)
 #add_subdirectory(dibtests)
 add_subdirectory(drivers)
 #add_subdirectory(dxtest)
-if(MSVC OR NOT ARCH STREQUAL "amd64") # FIXME build is broken with new x64 PSEH
-add_subdirectory(kmtests)
-endif()
 #add_subdirectory(regtests)
 add_subdirectory(rosautotest)
 add_subdirectory(tests)
 add_subdirectory(unittests)
 add_subdirectory(win32)
 add_subdirectory(winetests)
+endif()
 
 
 ## Extra files needed for the various tests can be added into the "testdata" subdirectory.

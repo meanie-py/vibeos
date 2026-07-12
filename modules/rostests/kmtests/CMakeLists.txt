@@ -36,6 +36,12 @@ elseif(ARCH STREQUAL "amd64")
     )
 endif()
 
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    # Native-SEH support (see the _USE_NATIVE_SEH opt-ins below): out-of-line
+    # homes for FORCEINLINE SDK helpers clang won't inline into __try regions.
+    list(APPEND COMMON_SOURCE kmt_native_seh_shims.c)
+endif()
+
 #
 # kmtest_drv.sys driver
 #
@@ -130,6 +136,14 @@ endif()
 
 add_library(kmtest_drv MODULE ${KMTEST_DRV_SOURCE})
 set_module_type(kmtest_drv kernelmodedriver)
+# Real clang SEH lowers on amd64/arm64 only (base/system/sehtest, dummy-pseh-verdict.md
+# §C); pseh2.h's _USE_NATIVE_SEH branch outranks the global _USE_DUMMY_PSEH define, so
+# SEH-dependent tests get real __try/__except semantics instead of dead handlers.
+# i386 stays dummy-PSEH (its SEH lowering is MSVC-env-only) — expect a crash/fail
+# bucket there, baselined per-arch.
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    target_compile_definitions(kmtest_drv PRIVATE _USE_NATIVE_SEH)
+endif()
 target_link_libraries(kmtest_drv kmtest_printf chkstk memcmp ntoskrnl_vista ${PSEH_LIB})
 add_importlibs(kmtest_drv ntoskrnl hal)
 add_dependencies(kmtest_drv bugcodes xdk)
@@ -185,9 +199,15 @@ list(APPEND KMTEST_SOURCE
 
 add_executable(kmtest ${KMTEST_SOURCE})
 set_module_type(kmtest win32cui)
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    # Same native-SEH opt-in as kmtest_drv above (user-mode dispatch proven by sehtest)
+    target_compile_definitions(kmtest PRIVATE _USE_NATIVE_SEH)
+endif()
 target_link_libraries(kmtest ${PSEH_LIB})
 add_importlibs(kmtest fltlib advapi32 ws2_32 msvcrt kernel32 ntdll)
 target_compile_definitions(kmtest PRIVATE KMT_USER_MODE NTDDI_VERSION=NTDDI_WS03SP1)
+# vibeos: tee results + BEGIN/END markers to kernel debug serial (host capture)
+target_compile_definitions(kmtest PRIVATE VIBEOS_KMTEST_SERIAL)
 #add_pch(kmtest include/kmt_test.h)
 set_target_properties(kmtest PROPERTIES OUTPUT_NAME "kmtest_")
 add_rostests_file(TARGET kmtest)

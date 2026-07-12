@@ -501,12 +501,26 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         else
             echo "[!] VIBEOS_FEX=1: i386 gdi32/user32 missing — gui32 guest will stall at import"
         fi
+        # M8 NOTE: do NOT stage advapi32/usp10/rpcrt4/secur32/msvcrt here.
+        # Staging them makes the loader LOAD them (gdi32 imports advapi32 →
+        # rpcrt4 → ole32/ws2_32/...), and their own skip-missing imports leave
+        # unbound IAT entries whose first call jumps to garbage (killed gui32
+        # with a guest AV @0x76AA4 on 2026-07-11). skip-missing at the user32
+        # level is the working strategy: unresolved imports are harmless
+        # until actually CALLED, and the M8 paths don't call them.
         # gui32.exe — the win32k-thunk guest (winlogon TryStartWow64Gui).
         GUI32="${VIBEOS_GUI32_EXE:-$PROJECT_DIR/build-fex-hello/gui32.exe}"
         if [ -f "$GUI32" ]; then
             echo "[*] VIBEOS_FEX=1 — staging syswow64/gui32.exe (wow64win guest)"
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$GUI32" ::/reactos/syswow64/gui32.exe
+        fi
+        # win32.exe — the M8 window-creation guest (winlogon TryStartWow64Win32).
+        WIN32APP="${VIBEOS_WIN32_EXE:-$PROJECT_DIR/build-fex-hello/win32.exe}"
+        if [ -f "$WIN32APP" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/win32.exe (M8 window guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$WIN32APP" ::/reactos/syswow64/win32.exe
         fi
         # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
         # by winlogon's TryStartWow64Hello (silent no-op unless staged here).

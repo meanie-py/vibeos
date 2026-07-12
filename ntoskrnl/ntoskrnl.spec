@@ -1545,7 +1545,7 @@
 @ stdcall ZwWaitForSingleObject(ptr long ptr)
 @ stdcall ZwWriteFile(ptr ptr ptr ptr ptr ptr long ptr ptr)
 @ stdcall ZwYieldExecution()
-@ cdecl -arch=x86_64,arm __C_specific_handler(ptr long ptr ptr)
+@ cdecl -arch=x86_64,arm,arm64 __C_specific_handler(ptr long ptr ptr)
 @ cdecl -arch=arm __jump_unwind()
 @ cdecl -arch=x86_64 __chkstk()
 ;@ cdecl -arch=x86_64 __misaligned_access()

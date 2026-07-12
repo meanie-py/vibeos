@@ -503,8 +503,13 @@ unsafe fn ObpDecrementHandleCount(
         handle_info = OBJECT_HEADER_TO_HANDLE_INFO(object_header);
 
         if (*object_header).Flags & OB_FLAG_SINGLE_PROCESS != 0 {
-            (*handle_info).__bindgen_anon_1.SingleEntry.HandleCount -= 1;
+            /* C is `ProcessHandleCount = HandleCount--` (POST-decrement): the
+             * close procedure must receive the PRE-decrement count. Reading
+             * after the decrement passed 0 on the last close, so IopCloseFile
+             * early-returned and IRP_MJ_CLEANUP was never sent to any driver
+             * (conformance catch #2, 2026-07-10). */
             process_handle_count = (*handle_info).__bindgen_anon_1.SingleEntry.HandleCount as LONG;
+            (*handle_info).__bindgen_anon_1.SingleEntry.HandleCount -= 1;
             handle_entry = core::ptr::addr_of_mut!((*handle_info).__bindgen_anon_1.SingleEntry);
         } else {
             handle_database = (*handle_info).__bindgen_anon_1.HandleCountDatabase;
@@ -513,8 +518,9 @@ unsafe fn ObpDecrementHandleCount(
                 handle_entry = core::ptr::addr_of_mut!((*handle_database).HandleCountEntries[0]);
                 while i > 0 {
                     if (*handle_entry).HandleCount > 0 && (*handle_entry).Process == process {
-                        (*handle_entry).HandleCount -= 1;
+                        /* same POST-decrement contract as above */
                         process_handle_count = (*handle_entry).HandleCount as LONG;
+                        (*handle_entry).HandleCount -= 1;
                         break;
                     }
                     handle_entry = handle_entry.offset(1);

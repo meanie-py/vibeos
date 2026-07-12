@@ -469,11 +469,116 @@ On-box: `NtGdiPatBlt => 1`, `NtGdiGetPixel => 00ff00ff`, **gui32 exit
 0x600D PASS** — an x86 GUI binary under FEX completes draw+readback through
 the native arm64 win32k (magenta rect on the desktop). Gate ×3 green.
 
+## M8 (2026-07-11): win32.exe — an x86 WINDOW on arm64 + kernel→user callbacks
+
+gui32 used a *direct display DC* (no window, no callbacks). M8 is the first
+real window: `RegisterClassA` → `CreateWindowExA` → message pump, driven by
+`win32.exe` (i386, user32 imports), landing `WM_NCCREATE`+`WM_CREATE` in the
+guest's own 32-bit wndproc. Two new pieces:
+
+- **`dll/win32/wow64/wow64_callback.c` — the kernel→user callback bridge.**
+  win32k delivers callbacks via the 64-bit ntdll `KiUserCallbackDispatcher` →
+  `PEB64->KernelCallbackTable`. A WoW64 process loads no native user32, so
+  *wow64.dll owns that 20-entry table*. Each entry (a) snapshots the guest
+  CONTEXT (`BTCpuGetContext`), (b) marshals the 64-bit callback arg struct
+  **down to 32-bit** (WINDOWPROC = the CREATESTRUCTW repack: 80→48 bytes, the
+  packed lpszName/lpszClass *offsets* shift by the 32-byte header shrink), (c)
+  pushes an i386 `KiUserCallbackDispatcher` frame on the guest stack and
+  **re-enters `BTCpuSimulate` nested** (FEX supports this — wine's
+  `Wow64KiUserCallbackDispatcher` shape). The guest wndproc runs and exits via
+  `ZwCallbackReturn` → BOP → our manual `NtCallbackReturn` marshaller, which
+  translates the 32-bit result back up and `longjmp`s (hand-rolled aarch64
+  setjmp/longjmp, no CRT) to the table entry, which issues the real 64-bit
+  `NtCallbackReturn`. The kernel resumes the original syscall.
+- **9 new win32k marshallers** in `wow64_manual.c`: `NtUserRegisterClassExWOW`
+  (WNDCLASSEX + CLSMENUNAME + 3× UNICODE_STRING), `NtUserCreateWindowEx`
+  (LARGE_STRING ×3, atom-in-class-slot passthrough), the pump family
+  (`NtUserGetMessage`/`PeekMessage`/`DispatchMessage`/`TranslateMessage` —
+  MSG 28↔48), `NtUserBeginPaint`/`EndPaint` (PAINTSTRUCT).
+
+Also: the guest window must be spawned on the **input desktop**
+(`WinSta0\Default` via STARTUPINFO.lpDesktop) — winlogon's own threads sit on
+the Winlogon desktop, and win32k's paint scan only walks the input desktop
+(§9.22 class). On-box: `WM_NCCREATE`/`WM_CREATE` reach the guest wndproc, the
+window is created, the pump runs — **an x86 program owns a real window on the
+arm64 desktop.** win32.exe exits `0x600E` (window+callbacks OK; WM_PAINT is
+M9). Native i386/amd64/arm64 unaffected (arch-gated / runtime-flagged).
+
+## M8.5 (2026-07-12): default-cursor marshalling — win32.exe gets its FULL message set
+
+Fixed a real BUGCHECK 0x1E on the way to M9 (field manual §9.58a). `win32.exe`
+registers with `hCursor=NULL`, so window creation loads `IDC_ARROW`:
+`NtUserSetCursorIconData` + `NtUserFindExistingCursorIcon` take module/resource
+`UNICODE_STRING`s that were **passthrough** thunks → the guest's 32-bit
+`UNICODE_STRING` (4-aligned) hit win32k's `ProbeForRead(.,16,8)` →
+`STATUS_DATATYPE_MISALIGNMENT` → 0x1E. Fix: manual marshallers widening both
+strings 8→16 + repacking `CURSORDATA` 0x58→0x88 (`wow64_manual.c`), added to
+`manual-win32k.txt`. Post-fix the window creates and the guest wndproc receives
+its **full** message set through the callback bridge (WM_NCCREATE, WM_NCCALCSIZE,
+WM_CREATE, WM_SHOWWINDOW, WM_NCPAINT, WM_ERASEBKGND, WM_ACTIVATE, WM_SIZE,
+WM_MOVE, …). Also added an **on-entry** win32k syscall trace (`[WOW64>]`, gated
+on `Wow64TraceSyscalls`) so a thunk that *faults* the kernel still names itself.
+
+## M9 (DONE — `win32.exe` 0x600D): the 32-bit client view of USER's shared structures
+
+**win32.exe now creates a window, receives WM_PAINT, and paints its client rect
+through the native arm64 win32k.** `0x600E → 0x600D`; `gui32` stays `0x600D`.
+Full writeup + the reusable lessons: field manual **§9.58b**.
+
+The symptom was that `PeekMessageA` returned `WM_PAINT` with the right hwnd 200×
+(win32k's paint path was always correct) but the guest never dispatched it —
+`user32!DispatchMessageA` calls `ValidateHwnd()` first and silently `return 0`s on
+NULL, with no syscall.
+
+**Root cause — a layout problem, not a mapping one.** user32 reads three things
+*straight out of shared memory with no syscall*, and all three are laid out by a
+64-bit kernel:
+1. the shared **USER handle table** (`gSharedInfo.aheList`) — what `ValidateHwnd` indexes,
+2. the desktop heap's **WND / CLS** objects, via `DesktopPtrToUser()`,
+3. **DESKTOPINFO** (`pvDesktopBase`/`pvDesktopLimit`/`fsHooks`/`spwnd`).
+
+They are already *addressable* by the guest (win32k maps them <4GB for WoW64 procs
+via `W32Wow64ZeroBits`) — just not *parseable*. Shadowing only (1) kernel-side (the
+first instinct, and what the earlier attempt did) fixes validation and then walks
+straight into (2): the guest dereferences the now-validated WND and AVs. So the fix
+is **client-side**, mirroring the M6/M7 GDI pattern exactly:
+
+- **`user32-rust/src/wow64.rs`** (new) — `g_UserWow64` (detected at connect via
+  `ProcessWow64Information`, like `GdiProcessSetup`), the `*64` shapes (`Wnd64`,
+  `Cls64`, `DesktopInfo64`, `UserHandleTable64`/`Entry64`), and a normalizing view
+  over each. WND/CLS become cached **snapshots** — sound because the client's
+  desktop-heap mapping is `PAGE_READONLY`, so user32 never writes through a `PWND`.
+  Typed `desktop_wnd_to_user()`/`desktop_cls_to_user()` replace the ~25 raw
+  `DesktopPtrToUser(x->spwnd*/pcls)` sites.
+- **`win32k-rust/src/wow64.rs`** (new) — win32k writes CLIENTINFO into the **64-bit**
+  TEB, but a WoW64 guest reads it from **TEB32**, which was therefore all zeros
+  (`ulClientDelta == 0`, `pDeskInfo == NULL` — the actual reason the guest computed a
+  raw kernel pointer). `Wow64PublishClientInfo()` projects it into a `ClientInfo32`
+  in TEB32 at thread init + desktop assignment.
+- **Layout tripwire** — `user32-rust` also builds natively for amd64/arm64, so a
+  `#[cfg(not(target_arch = "x86"))] mod layout_guard` asserts each `*64` shape still
+  *is* the real struct (size + per-field `offset_of!`). It caught a bogus padding word
+  in `Cls64` on the first compile. `ntuser.h` drift now breaks the 64-bit build instead
+  of silently corrupting WoW64 clients.
+
+**Owed, but LOUD:** `MENU`/`ITEM`, `HOOK`, `SBINFO` are desktop-heap objects with
+pointers and have no `*64` shape yet (nothing on the M9 path reaches them).
+`wow64_unsupported()` prints a one-shot warning naming the type instead of letting a
+32-bit client silently walk a 64-bit `MENU`. First WoW64 app that needs menus turns
+that print into the work order.
+
+**Gotcha worth repeating:** the guest's `user32.dll`/`gdi32.dll` are staged from
+**`build-i386/`**. An arm64-only rebuild ships a *stale* client — and the kernel half
+alone against a stale client is actively harmful (`0x600E` → `0xC000001D`, wild jump),
+because a non-zero `ulClientDelta` makes the unmodified client start translating
+pointers with 32-bit offsets into 64-bit structs. Rebuild **both** arches.
+
 *Same divergence class still owed elsewhere (next layers toward Doom):*
 - **TEB GdiTebBatch GDIBS\* batch commands** — gui32 didn't batch; the
   kernel-side `KeGdiFlushUserBatch` reads 64-bit GDIBS from a wow64 TEB.
-- **user32 HANDLEENTRY / SERVERINFO / desktop-heap structs** — needed when
-  window creation lands (CreateWindow → real message pump → Doom's window).
+- **user32 HANDLEENTRY / SERVERINFO / desktop-heap structs** — the M8 pump path
+  exercises SHAREDINFO reads; deeper window ops (subclassing, prop lists) will
+  surface more 32/64 divergence in the user handle table.
 
 *Still deferred (owed, the next milestones):*
 - **advapi32.dll / usp10.dll (i386) staging** — user32 imports them; the loader

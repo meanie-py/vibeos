@@ -704,6 +704,23 @@ unsafe fn TryStartWow64Probe() {
     }
 }
 
+/* True only when the FEX CPU layer (libwow64fex.dll) is staged in system32 —
+ * i.e. a VIBEOS_FEX build. The WoW64 guest exes (hello32/gui32/win32) can
+ * persist in a shared ramdisk.img across a plain `mkramdisk --refresh` (dev
+ * pollution), but WITHOUT libwow64fex.dll their WoW64 bootstrap runs
+ * half-initialized and faults the kernel. Gate every guest spawn on the real
+ * support layer, not just the guest exe, so a polluted ramdisk in a non-FEX
+ * boot is an inert no-op (kept the standard smoke green — 2026-07-11). */
+#[cfg(target_arch = "aarch64")]
+unsafe fn Wow64SupportStaged() -> bool {
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return false;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\system32\\libwow64fex.dll").as_ptr());
+    GetFileAttributesW(Path.as_ptr()) != 0xFFFF_FFFF
+}
+
 /* WOW64 Phase C probe: launch a real i386 PE (hello32.exe) through the normal
  * CreateProcessW front door. Unlike wow64probe (a native arm64 harness), this
  * exercises the actual WoW64 process bootstrap: kernel32 machine gate →
@@ -711,6 +728,9 @@ unsafe fn TryStartWow64Probe() {
  * wow64!Wow64LdrpInitialize. Verdict = [FEX-WOW64C] serial lines + 0x600D. */
 #[cfg(target_arch = "aarch64")]
 unsafe fn TryStartWow64Hello() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent — don't spawn a guest that can't run
+    }
     let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
         return;
@@ -760,12 +780,78 @@ unsafe fn TryStartWow64Hello() {
     }
 }
 
+/* M8 window-creation probe: an i386 guest with user32 imports that registers
+ * a class, creates a REAL window, and pumps messages (forces user32 client
+ * connect + kernel->user callbacks under wow64). Silent no-op unless staged;
+ * verdict = [win32] serial lines + exit 0x600D. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartWow64Win32() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent — don't spawn a guest that can't run
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\win32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 10] = wstr_arr!("win32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    /* The window must live on the INPUT desktop (Default) or win32k's
+     * IntGetPaintMessage never finds it and the pump starves (§9.22 class);
+     * winlogon's own threads are on the Winlogon desktop. */
+    let mut Desk: [u16; 16] = wstr_arr!("WinSta0\\Default");
+    Si.lpDesktop = Desk.as_mut_ptr();
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] win32.exe (i386 window guest) created (PID %lu) - waiting\n\0".as_ptr()
+                as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 60_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] win32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(win32.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 /* wow64win probe (M4): a real i386 GUI guest with kernel32+gdi32 imports that
  * draws on the host desktop through the win32k thunk table (direct display
  * DC, no user-mode callbacks). Same contract as hello32: silent no-op unless
  * staged; verdict = [gui32]/[GUEST32] serial lines + exit 0x600D. */
 #[cfg(target_arch = "aarch64")]
 unsafe fn TryStartWow64Gui() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent — don't spawn a guest that can't run
+    }
     let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
         return;
@@ -1379,6 +1465,10 @@ pub unsafe extern "system" fn WinMain(
         /* wow64win probe (M4): i386 GUI guest drawing through the win32k
          * thunk table (no-op unless syswow64\gui32.exe staged). */
         TryStartWow64Gui();
+
+        /* M8: window-creation guest AFTER the direct-DC guest (gui32 is the
+         * regression oracle; win32 is the frontier). */
+        TryStartWow64Win32();
 
         /* DOOM (opt-in, VIBEOS_DOOM=1): spawned LAST among GUI apps for
          * foreground focus, and BEFORE the cmd.exe INFINITE wait below. */

@@ -1,0 +1,14 @@
+[package]
+name = "com-sys"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# rlib declaration dependency: bindgen-generated COM interface vtbls + IIDs +
+# automation types (VARIANT/SAFEARRAY/TYPEATTR/...) from the real SDK headers.
+# Consumed by the ole32-rust/oleaut32-rust translations (and eventually every
+# shell-DLL translation) so nobody hand-types a Vtbl declaration again.
+# Regenerate bindings with ./generate_bindings.sh (see header comment there).
+crate-type = ["rlib"]
+
+[dependencies]
