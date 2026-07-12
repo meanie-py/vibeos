@@ -35,6 +35,8 @@ extern "system" {
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> ();
+    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut c_void) -> ();
+    fn FatFreeStringBuffer(String: *mut c_void) -> ();
     fn FatSetFullFileNameInFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> ();
     fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> ();
     fn IoGetCurrentIrpStackLocation(Irp: *mut IRP) -> PIO_STACK_LOCATION;
@@ -844,8 +846,21 @@ pub unsafe extern "system" fn FatQueryDirectory(
         }
     }));
 
-    // SEH_FINALLY (cleanup after try block or exception)
+    // SEH_FINALLY (cleanup after try block or exception). The C finally
+    // releases the Fcb, unpins the Bcb, and frees the LongFileName buffer
+    // UNCONDITIONALLY — the original translation dropped all three, leaking
+    // the directory Fcb's ERESOURCE on every query. Leaked shared holds are
+    // invisible until any thread queues an exclusive acquire on that Fcb;
+    // ERESOURCE fairness then blocks all new shared acquirers too, wedging
+    // every subsequent open that traverses the directory (the arm64
+    // taskbar/CreateStartMenu hang: the second SHGetSpecialFolderLocation
+    // (CSIDL_PROGRAMS) deadlocked opening ...\Start Menu\Programs).
     DebugTrace(0, Dbg, b"FatQueryDirectory -> cleanup\n\0".as_ptr() as *const i8, 0); // example, original uses DebugUnwind
+
+    FatReleaseFcb(IrpContext as *mut IRP_CONTEXT, Dcb);
+    FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, core::ptr::addr_of_mut!(Bcb));
+    FatFreeStringBuffer(core::ptr::addr_of_mut!(LongFileName) as *mut c_void);
+
     if panic_result.is_ok() {
         // No abnormal termination
         if UpdateCcb != 0 {
