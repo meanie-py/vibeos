@@ -384,6 +384,7 @@ pub unsafe extern "system" fn SmpExecuteInitialCommand(
             core::ptr::addr_of_mut!(SmApiPort),
         );
         if Status < 0 {
+            crate::dbg_print!(b"[SMSS] SmConnectToSm FAILED st=%x\n\0", Status as u32); // perf phase marker
             return Status;
         }
     }
@@ -632,6 +633,7 @@ pub unsafe extern "C" fn _main(
             b'n' as u16,
         ];
         RtlInitUnicodeString(&mut DbgString, INIT_MSG.as_ptr());
+        crate::dbg_print!(b"[SMSS] SmpInit FAILED st=%x\n\0", Status as u32); // perf phase marker
         Parameters[1] = Status as ULONG_PTR;
         return SmpTerminate(Parameters.as_mut_ptr(), 1, 4);
     }

@@ -1,10 +1,12 @@
 # cswitchdep — a dynamic context-switch verifier
 
-**Status:** LANDED — cswitchdep-phase1 (all 4 phases, ×3-arch validated) merged to
-`master` 2026-07-11; lane closed and this doc graduated from `active-lanes/` to a living
-reference. Follow-ons (subset arming, the stable-everything toolchain program, KeGetPcr
-x18 dedup) live in the roadmap Owed-work ledger, not a lane. Design v2 (2026-07-06)
-below. Sibling of the lockdep detector
+**Status:** LANDED / living reference (2026-07-11). All four phases built and
+validated on all three arches; the `cswitchdep-phase1` lane is **closed** and
+this doc graduated out of `active-lanes/`. cswitchdep is now an always-on
+opt-in tripwire (`vibeos-cli build --cswitchdep`) alongside lockdep/waitdep.
+Post-close follow-ons (subset arming; the stable-everything toolchain program
+that was scouted from this branch; KeGetPcr x18 dedup) are tracked in the
+roadmap Owed-work ledger, not here. Sibling of the lockdep detector
 (`sync-instrumentation-design.md` §4) and the planned shadow-IRQL check (§6).
 The static counterpart is `execution-context-ownership-model.md`.
 v2 incorporates an adversarial review pass: v1's two headline invariants
@@ -476,6 +478,26 @@ Rust-translated paths. cswitchdep:
 4. **`debug_block.py` decoder + fw_cfg arming + farm integration** — armed
    overnight soaks cluster context-switch violations the way `farm-report`
    clusters BUGCHECKs.
+   **BUILT (2026-07-11).** As-built:
+   - **Decoder:** `vibeos-cswitch [threads]` in `qemu/gdb-helpers/debug_block.py`
+     (magic `'CSW1'`, offsets pinned by the `ke/cswitchdep.rs` layout asserts) —
+     dumps the CpuShadow census, the syscall-parity counters, the violation
+     ring (all 11 kinds), and `threads` walks the live ThreadShadow slots.
+   - **fw_cfg arming:** `CSWITCH_SELFTEST=1` rides the tripwire channel
+     (`tripwire.rs` → `KiStartSyncCensus` → `cswitch_selftest()`); fail-loud if
+     armed on a non-`--cswitchdep` build. (Per-check subset arming
+     `CSWITCH=irql,parity` was **deliberately NOT built** — it would put a
+     runtime-mask branch on every hot-path tap to shave a soak-overhead the cost
+     model already rates single-digit-%; the taps stay always-on-when-built.
+     Cheap to add later if a measured overhead ever justifies it.)
+   - **Farm integration:** `triage.wedge_evidence` counts `[CSWITCH]`/`[LOCKDEP]`
+     serial reports; `smoke.py` surfaces `{n} [CSWITCH] on a green boot`;
+     `farm.py` carries `cswitch_hits`/`census_lines` into the corpus and
+     `farm-report` grew a **"tripwire hits"** section that clusters them by
+     (arch, kind) — because a cswitchdep violation pins its bug on an
+     *otherwise-green* boot, so it never appears in the BUGCHECK failure-family
+     table. The soak now reports context-switch violations even when nothing
+     crashed — the whole point.
 
 ## Resume checklist — "stable-everything phase 1" landing (parked 2026-07-10)
 
@@ -498,8 +520,15 @@ Validation state at park time:
   36s; census `switches=1788 violations=0 first_runs=808 no_record=0
   drops=0` — all three first-light fixes confirmed (the pre-recalibration
   boot had shown violations=210, all INTR_STATE_UNBALANCED under the old
-  strict `entry != exit` DAIF check). `user_entries=0` as expected (no
-  arm64 taps 4/5). `held_now` is negative census data (arm64 funnels
+  strict `entry != exit` DAIF check). ~~`user_entries=0` as expected (no
+  arm64 taps 4/5)~~ — **taps 4/5 landed on arm64 2026-07-11** (wrapping
+  `KiSvcDispatch` in `ke/arm64/trap.rs`, EC=0x15; user-origin =
+  `Spsr.M == EL0`, kernel-origin SVC skipped per the i386 INT-2E Zw rule;
+  tap 5 pairs at dispatch return, not the shared ERET tail). First light:
+  `user_entries=15646 user_exits=15109 exit_no_entry=0 held_delta_pos=0`,
+  violations=0 — the entry>exit delta is the documented untapped-exit
+  class. All three arches now run all five taps. `held_now` is negative
+  census data (arm64 funnels
   through untapped HAL paths — pair-asymmetric; the SLEEP_WITH_SPINLOCK
   check is delta-above-baseline, unaffected).
 - **i386: parity validated pre-merge** (58,653/58,653, violations=0); not

@@ -61,6 +61,25 @@ GdiProcessSetup(VOID)
         GdiHandleTable = NtCurrentTeb()->ProcessEnvironmentBlock->GdiSharedHandleTable;
         GdiSharedHandleTable = NtCurrentTeb()->ProcessEnvironmentBlock->GdiSharedHandleTable;
         GdiDevCaps = &GdiSharedHandleTable->DevCaps;
+#ifdef _M_IX86
+        /* WoW64: the 64-bit kernel writes 24-byte entries; switch the shared
+         * table readers (GdiReadSharedEntry) to the wide layout and find
+         * DevCaps after 0x10000 wide entries. See gdi32p.h. */
+        {
+            ULONG_PTR Wow64Info = 0;
+            NTSTATUS WowSt = NtQueryInformationProcess(NtCurrentProcess(),
+                                 ProcessWow64Information, &Wow64Info,
+                                 sizeof(Wow64Info), NULL);
+            if (NT_SUCCESS(WowSt) && Wow64Info)
+            {
+                g_GdiWow64 = TRUE;
+                GdiDevCaps = (PDEVCAPS)((PUCHAR)GdiHandleTable +
+                                        GDI_HANDLE_COUNT * sizeof(GDI_TABLE_ENTRY64));
+            }
+            DbgPrint("[gdi32] GdiProcessSetup: wow64 query st=%lx info=%p -> g_GdiWow64=%d table=%p\n",
+                     WowSt, (PVOID)Wow64Info, g_GdiWow64, GdiHandleTable);
+        }
+#endif
         CurrentProcessId = NtCurrentTeb()->ClientId.UniqueProcess;
         GDI_BatchLimit = (DWORD) NtCurrentTeb()->ProcessEnvironmentBlock->GdiDCAttributeList;
         GdiHandleCache = (PGDIHANDLECACHE)NtCurrentTeb()->ProcessEnvironmentBlock->GdiHandleBuffer;

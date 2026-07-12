@@ -46,16 +46,9 @@ extern "C" {
     fn __writemsr(msr: ULONG, value: u64);
 }
 
-#[repr(C)]
-struct KUSER_SHARED_DATA {
-    _padding: [u8; 0x2e8],
-    XState: XSTATE_CONFIGURATION,
-}
-
-#[repr(C)]
-struct XSTATE_CONFIGURATION {
-    EnabledFeatures: u64,
-}
+// KUSER_SHARED_DATA: bindgen layout (a shadow struct here guessed XState at
+// +0x2E8 — a third inconsistent location; see amd64/kiinit.rs note).
+use ntkrnl_sys::ddk::_KUSER_SHARED_DATA as KUSER_SHARED_DATA;
 
 #[repr(C)]
 struct KUINIT_FRAME {
@@ -234,6 +227,16 @@ pub unsafe extern "system" fn KiSwapContextResume(
 
     (*Pcr).ContextSwitches += 1;
     (*NewThread).__bindgen_anon_5.__bindgen_anon_5.ContextSwitches += 1;
+
+    // M3 SMP visibility: one-shot "[SMP] CPUn scheduling live" markers when
+    // an AP switches onto a real (non-idle) thread — consumed by the -smp
+    // smoke milestone check.
+    #[cfg(feature = "smp")]
+    {
+        if (*Pcr).Prcb.Number != 0 && NewThread != (*Pcr).Prcb.IdleThread {
+            super::ipi::KiSmpNoteApSwitch((*Pcr).Prcb.Number as u32);
+        }
+    }
 
     // cswitchdep tap 2 (post-swap, on the NEW thread's stack): IRQL still at
     // the switching level, CurrentThread coherence, SP within the new stack.

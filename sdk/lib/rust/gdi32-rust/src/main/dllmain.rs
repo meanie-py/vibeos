@@ -127,6 +127,46 @@ pub unsafe extern "system" fn GdiProcessSetup() {
         GdiHandleTable = (*peb).GdiSharedHandleTable as PGDI_TABLE_ENTRY;
         GdiSharedHandleTable = (*peb).GdiSharedHandleTable as PGDI_SHARED_HANDLE_TABLE;
         GdiDevCaps = core::ptr::addr_of_mut!((*GdiSharedHandleTable).DevCaps) as PDEVCAPS;
+
+        /* WoW64 (i386 under a 64-bit kernel): the kernel writes 24-byte wide
+         * entries — flip the shared-table readers (GdiReadSharedEntry) to the
+         * wide layout and find DevCaps after 0x10000 wide entries. */
+        #[cfg(target_arch = "x86")]
+        {
+            extern "system" {
+                fn NtQueryInformationProcess(
+                    ProcessHandle: HANDLE,
+                    ProcessInformationClass: ULONG,
+                    ProcessInformation: PVOID,
+                    ProcessInformationLength: ULONG,
+                    ReturnLength: *mut ULONG,
+                ) -> NTSTATUS;
+            }
+            extern "C" {
+                fn DbgPrint(Format: *const u8, ...) -> ULONG;
+            }
+            const PROCESS_WOW64_INFORMATION: ULONG = 26;
+            let mut Wow64Info: usize = 0;
+            let WowSt = NtQueryInformationProcess(
+                -1isize as HANDLE,
+                PROCESS_WOW64_INFORMATION,
+                core::ptr::addr_of_mut!(Wow64Info) as PVOID,
+                core::mem::size_of::<usize>() as ULONG,
+                core::ptr::null_mut(),
+            );
+            if WowSt >= 0 && Wow64Info != 0 {
+                crate::misc::misc::g_GdiWow64 = 1;
+                /* 24 = sizeof the 64-bit ENTRY; 0x10000 = GDI_HANDLE_COUNT. */
+                GdiDevCaps = ((GdiHandleTable as usize) + 0x10000 * 24) as PDEVCAPS;
+            }
+            DbgPrint(
+                b"[gdi32] GdiProcessSetup: wow64 st=%lx info=%p -> wide-entries=%d\n\0".as_ptr(),
+                WowSt,
+                Wow64Info as PVOID,
+                crate::misc::misc::g_GdiWow64,
+            );
+        }
+
         CurrentProcessId = (*NtCurrentTeb()).ClientId.UniqueProcess;
         GDI_BatchLimit = (*peb).GdiDCAttributeList as DWORD;
         GdiHandleCache = core::ptr::addr_of_mut!((*peb).GdiHandleBuffer) as PGDIHANDLECACHE;

@@ -76,10 +76,26 @@ pub unsafe extern "system" fn CsrApiHandleConnectionRequest(
             if Status >= 0 {
                 (*ConnectInfo).DebugFlags = CsrDebug;
                 AllowConnection = 1u8;
+            } else {
+                /* Refusal forensics: an attach failure surfaces at the client
+                 * as a bare c0000041 with no server-side trace — name the real
+                 * status (wow64 lane: the fixed shared-section base can collide
+                 * with guest-owned VA in a WoW64 process). */
+                crate::dbg_print!(
+                    b"[CSRSRV] ConnReq: AttachSharedSection FAILED st=%lx pid=%p\n\0",
+                    Status,
+                    (*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess
+                );
             }
 
             CsrLockedDereferenceProcess(CsrProcess);
         }
+    } else {
+        crate::dbg_print!(
+            b"[CSRSRV] ConnReq: unknown ClientId %p.%p - refusing\n\0",
+            (*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueProcess,
+            (*ApiMessage).Header.__bindgen_anon_1.ClientId.UniqueThread
+        );
     }
 
     CsrReleaseProcessLock();

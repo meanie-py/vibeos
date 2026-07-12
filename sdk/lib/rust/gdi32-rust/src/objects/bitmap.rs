@@ -43,6 +43,7 @@
 
 use win32k_sys::win32k::*;
 use crate::gdihelp::*;
+use crate::dcattr_f;
 
 // win32k_sys's FALSE/TRUE are bindgen u32 (#define), but BOOL is i32 — shadow with
 // BOOL-typed locals so `== FALSE`/`return TRUE` type-check against the i32 BOOL returns.
@@ -563,7 +564,7 @@ pub unsafe extern "system" fn CreateCompatibleBitmap(hDC: HDC, Width: INT, Heigh
         return GetStockObject(DEFAULT_BITMAP as INT) as HBITMAP;
     }
 
-    if ((*pDc_Attr).ulDirty_ & DC_DIBSECTION) == 0 {
+    if ((*dcattr_f!(pDc_Attr, ulDirty_)) & DC_DIBSECTION) == 0 {
         NtGdiCreateCompatibleBitmap(hDC, Width, Height)
     } else {
         let hBmp: HBITMAP;

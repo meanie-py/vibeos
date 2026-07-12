@@ -277,3 +277,121 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   flip the gate default to the MP kernel, deprecation-window the UP build, then
   delete the `cfg(not(feature="smp"))` sides entirely (NT precedent: Vista
   dropped the UP kernel). "Defaults stay UP" is a bring-up rule, not forever.
+- 2026-07-11: **M2 COMPLETE — `-smp 2` BOOTS TO DESKTOP** (taskbar + live
+  clock + untruncated `X:\reactos` version stamp; `smoke --smp 2` green
+  ~1m54s, net suite green). The 0x6B and its successor 0x4C were BOTH
+  pre-existing latent bugs the second CPU flushed out — full writeup in
+  field manual **§9.51**:
+  1. **0x6B root cause:** uniata's `CPU_num > 1` flips
+     `g_opt_AtapiSendDisableIntr` → nIEN-gated ATAPI send; QEMU's IDE model
+     never replays an IRQ suppressed under nIEN → boot CD INQUIRY dies → no
+     CdRom0 → no `\SystemRoot`. Fixed: guard on `g_opt_VirtualMachine <=
+     VM_NONE` (uniata-rust id_ata_part3.rs + C reference copy). NOTE: uniata
+     and scsiport are RUST translations — the C copies are dead code with
+     their DPRINT file:line strings baked into the Rust (a first-round fix
+     went into the dead C and no-op'd).
+  2. **0x4C root cause:** hand-rolled `KUSER_SHARED_DATA` shadow struct in
+     `ke/amd64/kiinit.rs` put `NXSupportPolicy` at USD+0x40 (real +0x2D5) —
+     inside `NtSystemRoot`. Harmless on the BSP (runs before the string
+     exists); the AP's `KiInitializeCpu` chopped `C:\reactos`→`C:\reacto` →
+     smss KnownDlls path c000003a → 0xC000021A. Caught with a TCG GDB
+     hardware watchpoint on USD+0x40 (CPU#1 mid-store). Audit swept the
+     whole class: i386/kiinit.rs, xstate.rs, thrdini.rs, rtlk misc.rs,
+     ex time.rs all had fantasy-offset shadows — ALL swapped to bindgen
+     `_KUSER_SHARED_DATA`. Owed: a lint for shadow-struct redeclarations of
+     bindgen types.
+  The old "suspect a KeNumberProcessors-sized allocation / ObMgr per-CPU
+  structure" hypothesis above is DEAD — do not re-open on that lore.
+  Kept diagnosability: smss now prints `SmpInit FAILED st=%x` /
+  `SmConnectToSm FAILED st=%x` on its terminal failure paths.
+  **M3 next:** un-park the AP into KiIdleLoop (set KeActiveProcessors at
+  idle entry), TLB-shootdown/IPI send side (unblocks staged wave-2 A), then
+  scheduler-on-2-CPUs; staged i386 trampoline (B) + arm64 PSCI (C) after.
+- 2026-07-11 (cont.): **M3a — AP SCHEDULES; `-smp 2` boots to desktop at
+  1m41s (faster than M2's parked baseline).** Park retired; AP runs
+  KiSystemStartupBootStack → hand-built idle thread → KiIdleLoop, sets
+  KeActiveProcessors at idle entry. Four root causes fixed en route (field
+  manual **§9.52**): Phase-1 ordering (KeStartAllProcessors must precede
+  ObInitSystem — per-CPU lookaside loops), ExitTrap IRQL protocol for the
+  0xE1 stub, IF=0 sender deadlock (poll-service protocol), and the
+  boot-crawl (lazy-idle TLB: senders skip hlt'ed CPUs; flush on wake).
+  TLB shootdown is live: KeFlushEntireTb/KeFlushProcessTb/
+  KeInvalidateTlbEntry broadcast via vector 0xE1 with pending-mask +
+  poll-service + lazy-idle skip. `-smp 2` green 2/2 + `-smp 1` green.
+  REMAINING for M3 proper: net suite at -smp 2 flaked once (NET_FLAKE —
+  needs repeats), scheduled-on-CPU1 visibility counter, targeted
+  single-VA remote flush + packet mailbox (staged A), then M4 soak.
+- 2026-07-11 (M3a soak note): `-smp 2` ×3 post-landing: 2/2 fully green
+  (1m43/1m46, boot+net), 1× NET_FLAKE — face: `[NETSTACK] TDI dgram
+  self-test: datagram upcall TIMED OUT` (~1/3 at -smp 2; never seen on the
+  default UP gates). Likely the §9.36 netstack-TDI family meeting real
+  concurrency. OPEN — next -smp session: repro under native TCG + gdb,
+  look at the TDI upcall completion path for a UP assumption (completion
+  DPC targeting / event signal racing the timeout). CPU1-scheduling
+  evidence for the record: the pre-fix ObCreateObject AV occurred ON CPU1's
+  syscall path (LPC from services), proving user threads execute there.
+- 2026-07-11: **M3b — TDI dgram NET_FLAKE ROOT-CAUSED + FIXED** (field manual
+  §9.55). Not the §9.36 stack-IRP family — a plain "IRQL raise = mutual
+  exclusion" **UP assumption in netstack-rust**. The TDI transport `INBOX`
+  (MPSC command queue, many dispatch threads push / one poll worker drains via
+  `mem::swap`) was guarded by only `IrqlGuard::raise_to_dpc()` over a bare
+  `Vec`. On UP that IS mutual exclusion (DISPATCH masks preemption on the one
+  CPU); under `-smp 2` a raise on CPU0 does nothing to a thread on CPU1 → a
+  `Vec::push` reallocating races the consumer's `mem::swap` → lost `Cmd`
+  (SEND_DATAGRAM / SET_EVENT) → the DNS upcall never fires → TIMED OUT. Fix:
+  guard with a **real KSPIN_LOCK** via `SpinLockGuard`→`KeAcquireSpinLock`
+  (raises to DISPATCH *and* spins; resolves per-boot — real MP spin on the SMP
+  kernel, no-op fence on UP, so no UP regression + no driver feature flag).
+  Two more of the same class fixed in the same pass (virtio-net is the smoke
+  NIC, so both are live): `hal.rs` `static mut BOUNCES` DMA-bounce table
+  (concurrent `share`s claiming the same slot → wrong physaddr/DMA to stale
+  mem) and `serial.rs` marker emit (cross-CPU interleave splitting a
+  `[NETSTACK]` marker the net suite greps). Workspace-wide audit for the
+  "single vCPU" idiom found no other real instances (the rest: dead C
+  comments, an ASCII-art string, and the correctly-gated M1a UP lock no-ops).
+  **Verified + LANDED** (`89b57370425`, pushed to origin/smp-bringup on a
+  ×3-clean-gate-green stamp): `-smp 2` amd64 12/12 green incl. `✓ net` across a
+  warm INBOX-only and a clean 3-fix build (pre-fix ~1/3 failed); UP gate ×3 OK
+  (i386+amd64+arm64 smoke + net + all builds/lints). One arm64 HANG_TIMEOUT in
+  an interim gate was the pre-existing §9.36 netstack-TDI boot flake (3/3 on
+  re-run; UP netstack behavior is IRQL-neutral under this change). M3 net-suite
+  parity at -smp 2 is now met. Owed next: scheduled-on-CPU1 visibility counter,
+  targeted single-VA remote flushes + packet mailbox (staged wave-2 A), then M4
+  soak, then M5 (i386 needs the APIC HAL flavor; arm64 PSCI CPU_ON staged).
+- 2026-07-11 (cont.): **M3 tail LANDED — visibility milestone, targeted single-VA
+  shootdown, amd64 KeIpiGenericCall rendezvous + boot self-test.** All three owed
+  M3-tail items done in one pass over the 0xE1 descriptor transport (ke/amd64/ipi.rs):
+  1. **Scheduled-on-CPU1 visibility:** KiSwapContextResume counts non-idle switches
+     per AP (count-only tap — NEVER DbgPrint mid-swap, see below); idle-exit/DPC-ISR
+     flushes one-shot `[SMP] CPUn scheduling live` markers at the 1st/1000th switch.
+     `test_milestones` now REQUIRES the marker per AP when `VIBEOS_QEMU_SMP > 1`
+     (gate strengthened; UP boots unaffected).
+  2. **Targeted single-VA remote flush:** the shootdown descriptor gained a VA slot
+     (KiTbFlushVa, FULL sentinel); KeInvalidateTlbEntry → KiTbShootdownSingle(va) →
+     awake receivers invlpg exactly that VA instead of a cr3 reload. Full-flush
+     callers (KeFlushProcessTb/KeFlushEntireTb) unchanged; lazy-idle CPUs still get
+     a deferred FULL flush on wake.
+  3. **amd64 KeIpiGenericCall:** real NT rendezvous (targets arrive → sender's go →
+     ALL CPUs run the worker at IPI_LEVEL simultaneously → acks) over the same
+     lock-serialized descriptor protocol — replaces the DbgBreakPoint stub; the UP
+     build now runs the worker at IPI_LEVEL too. A Phase-1 boot self-test (ex-rust
+     init.rs, after KeStartAllProcessors) proves the worker ran on every active CPU
+     (`[SMP] KeIpiGenericCall self-test: worker ran on 0x3 == active set OK` — seen
+     green in-boot) and bugchecks 0x5C/0x4743 loud on mismatch.
+  Design note: the staged wave-2 A NT-mailbox receive body (~/vibeos-rust-staging/
+  smp/ipi-recv/) was NOT integrated — the validated poll-service descriptor protocol
+  was extended instead (inherits the IF=0 deadlock-freedom); staged files remain as
+  reference for a future true per-CPU-mailbox upgrade if generic-call concurrency
+  ever matters.
+  **Lesson (cost: one wedged smoke run):** never DbgPrint from inside
+  KiSwapContextResume (mid-swap, SwapBusy still set) — the first marker cut printed
+  there and was moved to idle-exit before the wedge theory was even tested.
+  **OPEN — the -smp 2 residual flake is PRE-EXISTING and now pinned (field manual
+  §9.56):** ~1/4–1/3 of -smp 2 boots creep-wedge (Themes/SamSs/SVCHOST connects
+  stall → silence) or crash (0x19 POOL_HEADER_IS_ZERO; 0x1E c0000006 IN_PAGE_ERROR
+  w/ cdfs frames). Control experiment: M3b-landed HEAD (stash the whole M3-tail
+  delta) reproduces 1/6 under identical conditions → M3-tail exonerated; the
+  invlpg narrowing separately bisected clean (full-flush receiver = same rate).
+  SPECIALPOOL=* caught nothing at a store. Suspect: device-I/O completion / lost
+  wakeup under real concurrency (§9.51 uniata family, not TLB). This is now THE
+  gating item for M4 — the soak doubles as its corpus builder.

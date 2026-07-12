@@ -572,6 +572,14 @@ pub unsafe extern "system" fn KeFlushEntireTb(Invalid: BOOLEAN, AllProcessors: B
 
     KeFlushCurrentTb();
 
+    // M3 SMP: propagate to every other active processor (coarse full-flush
+    // broadcast with ack barrier — see ke/amd64/ipi.rs).
+    #[cfg(feature = "smp")]
+    {
+        unsafe extern "C" { fn KiTbShootdownBroadcast(); }
+        KiTbShootdownBroadcast();
+    }
+
     InterlockedExchangeAdd(core::ptr::addr_of_mut!(KiTbFlushTimeStamp) as *mut LONG, 1);
     KeLowerIrql(OldIrql);
 }

@@ -685,14 +685,11 @@ PUBLIC KiIpiInterrupt
    /* No error code */
     EnterTrap (TF_SAVE_ALL OR TF_IRQL)
 
-    /* Raise to IPI_LEVEL */
-    mov rax, IPI_LEVEL
-    mov cr8, rax
-
-    /* End the interrupt */
-    mov dword ptr [APIC_EOI], 0
-
-    int 3
+    /* M3 SMP: dispatch to the Rust 0xE1 body (TB-shootdown ack). Like
+       KiDpcInterruptHandler, the handler raises to IPI_LEVEL, sends the
+       EOI, and lowers back before returning — ExitTrap's checked-build
+       assert requires cr8 to be restored to its entry value. */
+    call KiIpiHandlerAmd64
 
     /* Return */
     ExitTrap (TF_SAVE_ALL OR TF_IRQL)

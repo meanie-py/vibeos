@@ -71,6 +71,19 @@ pub unsafe extern "C" fn KiUserModeCallout(CalloutFrame: PKCALLOUT_FRAME) -> NTS
 
     let CallbackTrapFrame: PKTRAP_FRAME = (InitialStack - TrapFrameSize) as PKTRAP_FRAME;
 
+    // The callback frame is carved BELOW our own live SP (this function's
+    // frame sits at [CalloutFrame - F, CalloutFrame); the carve-out spans
+    // [CalloutFrame - 0x160, CalloutFrame)). An IRQ taken between the copy
+    // below and KiExceptionExit's `mov sp` pushes ITS trap frame at
+    // [SP - 0x160, SP) — inside the carve-out — clobbering the low-offset
+    // fields: Spsr (+0xA0) is exposed while Pc (+0x158) survives. Observed
+    // live 2026-07-11: eret to KiUserCallbackDispatcher with Spsr=0x102085
+    // (IRQ-frame fragment) → Illegal Execution State → 0x1E/C000001D flake.
+    // Mask IRQs for the window; eret reloads PSTATE.DAIF from the frame's
+    // Spsr (=0), so the mask never leaks into the resumed user context
+    // (same argument as KiTrapReturn's daifset).
+    core::arch::asm!("msr daifset, #3", options(nomem, nostack, preserves_flags));
+
     // Snapshot the trap frame into the callback frame. A typed struct
     // assignment (`*dst = *src`) of this union-bearing KTRAP_FRAME was
     // observed to NOT copy the X[18] (x18) slot on arm64 — the callback

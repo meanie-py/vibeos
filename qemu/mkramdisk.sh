@@ -236,6 +236,31 @@ else
     mmd -i "$RAMDISK_IMG" ::/reactos/system32/drivers
 fi
 
+# Profile tree — livecd parity. The x86 LiveCD stages Profiles/ onto the ISO
+# (boot/bootdata/CMakeLists.txt) and the livecd hives point ProfilesDirectory
+# at %SystemDrive%\Profiles; shell32's CSIDL resolution (and therefore
+# explorer's start menu — CStartMenu GetMergedFolder) needs the directories
+# to actually exist. Without these the start menu object silently fails to
+# build (E_FAIL) and Ctrl+Esc opens nothing. Idempotent: mmd errors on
+# existing dirs are expected on --refresh of an existing image.
+echo "[*] Staging profile tree..."
+while IFS= read -r d; do
+    mmd -i "$RAMDISK_IMG" "$d" 2>/dev/null || true
+done <<'PROFILES'
+::/Profiles
+::/Profiles/All Users
+::/Profiles/All Users/Desktop
+::/Profiles/All Users/Start Menu
+::/Profiles/All Users/Start Menu/Programs
+::/Profiles/All Users/Start Menu/Programs/Administrative Tools
+::/Profiles/All Users/Start Menu/Programs/Accessories
+::/Profiles/Default User
+::/Profiles/Default User/Desktop
+::/Profiles/Default User/My Documents
+::/Profiles/Default User/Start Menu
+::/Profiles/Default User/Start Menu/Programs
+PROFILES
+
 # Copy system files
 echo "[*] Populating ramdisk..."
 RMC "$BUILD_DIR/ntoskrnl/ntoskrnl.exe"                        ::/reactos/system32/ntoskrnl.exe
@@ -277,6 +302,9 @@ RMC "$BUILD_DIR/dll/win32/kernelbase/kernelbase.dll"          ::/reactos/system3
 # wow64.dll — WOW64 host-layer skeleton (docs/engineering/wow64-plan.md);
 # libwow64fex.dll imports it, so it must stage wherever the FEX layer does.
 RMC "$BUILD_DIR/dll/win32/wow64/wow64.dll"                    ::/reactos/system32/wow64.dll
+# win32u.dll — native NtGdi*/NtUser* syscall stubs; wow64.dll's win32k thunk
+# table imports it (M4/wow64win).
+RMC "$BUILD_DIR/win32ss/win32u/win32u.dll"                    ::/reactos/system32/win32u.dll
 RMC "$BUILD_DIR/dll/ntdll/nt_0600/ntdll_vista.dll"           ::/reactos/system32/ntdll_vista.dll
 RMC "$BUILD_DIR/base/system/winlogon/winlogon.exe"            ::/reactos/system32/winlogon.exe
 RMC "$BUILD_DIR/win32ss/win32k.sys"                           ::/reactos/system32/win32k.sys
@@ -445,6 +473,40 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             mcopy -o -i "$RAMDISK_IMG" "$NTDLL32" ::/reactos/syswow64/ntdll.dll
         else
             echo "[!] VIBEOS_FEX=1: wow64probe not staged ($WOW64PROBE / $NTDLL32 missing) — Phase B probe skipped"
+        fi
+        # M3b: the guest loader always maps kernel32 (BaseThreadInitThunk et al).
+        # \KnownDlls32 doesn't exist on arm64, so the loader falls back to the
+        # file path, which wow64.dll redirects system32 -> syswow64 — stage the
+        # i386 kernel32 + its ntdll_vista dep there.
+        KERNEL32_32="${VIBEOS_KERNEL32_32:-$PROJECT_DIR/build-i386/dll/win32/kernel32/kernel32.dll}"
+        NTDLLVISTA32="${VIBEOS_NTDLLVISTA32:-$PROJECT_DIR/build-i386/dll/ntdll/nt_0600/ntdll_vista.dll}"
+        if [ -f "$KERNEL32_32" ] && [ -f "$NTDLLVISTA32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/kernel32.dll + ntdll_vista.dll (i386)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$KERNEL32_32" ::/reactos/syswow64/kernel32.dll
+            mcopy -o -i "$RAMDISK_IMG" "$NTDLLVISTA32" ::/reactos/syswow64/ntdll_vista.dll
+        else
+            echo "[!] VIBEOS_FEX=1: i386 kernel32/ntdll_vista missing ($KERNEL32_32 / $NTDLLVISTA32) — guest loader will stall at kernel32"
+        fi
+        # M4/wow64win: the 32-bit GUI-DLL set for gui32.exe (gdi32 + user32 +
+        # their import closure) — the guest loader pulls whatever the image
+        # imports; missing deps show up as loud NtOpenFile c0000034 lines.
+        GDI32_32="${VIBEOS_GDI32_32:-$PROJECT_DIR/build-i386/win32ss/gdi/gdi32/gdi32.dll}"
+        USER32_32="${VIBEOS_USER32_32:-$PROJECT_DIR/build-i386/win32ss/user/user32/user32.dll}"
+        if [ -f "$GDI32_32" ] && [ -f "$USER32_32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/gdi32.dll + user32.dll (i386)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$GDI32_32" ::/reactos/syswow64/gdi32.dll
+            mcopy -o -i "$RAMDISK_IMG" "$USER32_32" ::/reactos/syswow64/user32.dll
+        else
+            echo "[!] VIBEOS_FEX=1: i386 gdi32/user32 missing — gui32 guest will stall at import"
+        fi
+        # gui32.exe — the win32k-thunk guest (winlogon TryStartWow64Gui).
+        GUI32="${VIBEOS_GUI32_EXE:-$PROJECT_DIR/build-fex-hello/gui32.exe}"
+        if [ -f "$GUI32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/gui32.exe (wow64win guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$GUI32" ::/reactos/syswow64/gui32.exe
         fi
         # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
         # by winlogon's TryStartWow64Hello (silent no-op unless staged here).
