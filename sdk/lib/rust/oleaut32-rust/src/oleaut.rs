@@ -33,14 +33,33 @@ extern "C" {
     static IID_IClassFactory: GUID;
     static CLSID_StdFont: GUID;
     static CLSID_StdPicture: GUID;
-    static CLSID_PSDispatch: GUID;
-    static CLSID_PSOAInterface: GUID;
-    static CLSID_PSTypeComp: GUID;
-    static CLSID_PSTypeInfo: GUID;
-    static CLSID_PSTypeLib: GUID;
-    static CLSID_PSEnumVariant: GUID;
-    static CLSID_PSFactoryBuffer: GUID;
 }
+
+// The oleaut32 proxy CLSIDs used to be emitted by oleaut.c's `#include "initguid.h"`
+// (which turned the DEFINE_GUID in oleaut32_oaidl.h + typelib.h into definitions).
+// Now that oleaut.c is flipped out, oleaut.rs is the single C-visible definition
+// site. The generated widl proxy (`PROXY_CLSID=CLSID_PSFactoryBuffer` →
+// `extern CLSID CLSID_PSFactoryBuffer;`) and every consumer bind to these.
+//   - PSFactoryBuffer: oleaut32_oaidl.idl coclass uuid b196b286-bab4-101a-…
+//   - the six PS* (Dispatch/EnumVariant/TypeInfo/TypeLib/OAInterface/TypeComp):
+//     typelib.h DEFINE_OLEGUID base 000204xx-0000-0000-C000-000000000046.
+macro_rules! def_ps_clsid {
+    ($name:ident, $d1:expr, $d2:expr, $d3:expr, $d4:expr) => {
+        #[no_mangle]
+        pub static $name: GUID = GUID { Data1: $d1, Data2: $d2, Data3: $d3, Data4: $d4 };
+    };
+    ($name:ident, $d1:expr) => {
+        def_ps_clsid!($name, $d1, 0, 0, [0xC0, 0, 0, 0, 0, 0, 0, 0x46]);
+    };
+}
+def_ps_clsid!(CLSID_PSFactoryBuffer, 0xb196b286, 0xbab4, 0x101a,
+    [0xb6, 0x9c, 0x00, 0xaa, 0x00, 0x34, 0x1d, 0x07]);
+def_ps_clsid!(CLSID_PSDispatch,    0x00020420);
+def_ps_clsid!(CLSID_PSEnumVariant, 0x00020421);
+def_ps_clsid!(CLSID_PSTypeInfo,    0x00020422);
+def_ps_clsid!(CLSID_PSTypeLib,     0x00020423);
+def_ps_clsid!(CLSID_PSOAInterface, 0x00020424);
+def_ps_clsid!(CLSID_PSTypeComp,    0x00020425);
 
 // winreg.h:10: #define HKEY_CLASSES_ROOT ((HKEY)(LONG_PTR)(LONG)0x80000000)
 // — the LONG→LONG_PTR step SIGN-EXTENDS on 64-bit (0xFFFFFFFF80000000).
