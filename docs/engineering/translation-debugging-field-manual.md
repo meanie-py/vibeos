@@ -5187,3 +5187,80 @@ session-global and can't be per-bitness in place, so win32k must maintain a 32-b
 kept in sync on every handle alloc/free. Owed as the M9 core (`wow64-plan.md`). Until then
 any WoW64 GUI app that validates an HWND client-side (i.e. nearly all of them) silently
 no-ops the call.
+
+### 9.59 (ROOT-CAUSED + FIXED 2026-07-12) The DUMMY_PSEH **capture-copy** class: every `_SEH2_TRY`-wrapped user-buffer capture became an unprotected `memcpy` — and how to get a *real* fault-tolerant copy out of clang's "calls-only" native SEH
+
+**Symptom.** Several unrelated syscalls BUGCHECK 0x1E (0xC0000005) at the *identical* PC,
+`memcpy+0x40`, whenever a caller passes a hostile buffer pointer (NULL, 0x42424242).
+Observed via kmtest conformance: `ObSymbolicLink`, `ZwWaitForMultipleObjects`, `IoReadWrite`
+(and `NtCreateSection` with a 0x50 face — same root, scalar deref instead of a bulk copy).
+
+**Root (a whole CLASS, not three bugs).** In C, a kernel API captures a caller-supplied
+buffer with a copy sitting inside `_SEH2_TRY`. Under `USE_DUMMY_PSEH` — still the default C
+compile mode on **all** arches — that handler is dead code, and the Rust translations dropped
+the SEH entirely. Two compounding gaps:
+1. The `probe_user_buffer` guard is `PreviousMode`-gated, but the C's `_SEH2_TRY` wrapped the
+   copy **unconditionally**. Kernel-mode callers (kmtest drivers, and any in-kernel client) skip
+   the guard and hit a raw, unprotected copy.
+2. A probe is a **range + alignment check only** — it never touches memory. NULL and 0x42424242
+   are both *below* `MmUserProbeAddress`, so a range probe happily passes them. The safety was
+   ALWAYS the SEH around the copy, never the probe.
+
+Critically, `RtlpSafeCopyMemory` — the one primitive that was supposed to be the safe copy — had
+been translated to a **plain `RtlCopyMemory`**. So the kernel had *no* fault-tolerant copy at all.
+
+**The fix, and the non-obvious insight that makes it work.** `dummy-pseh-verdict.md` §C warns
+that clang's native SEH is *"calls-only (no `-fasync-exceptions`)"* — a **direct deref** written
+inside a `__try` body may not be covered. That reads like a blocker. It is actually the *recipe*:
+
+> **A copy is a CALL.** Put the faulting access in a CALLEE and the `__try`'s scope table covers
+> the call site, because the fault's return address lands back inside the `__try` range.
+
+So `ntoskrnl/kmsafecopy.c` (native `__try`/`__except` via the `-fms-extensions` `c_shims` wiring,
+same as `seh_poc.c`) does:
+
+```c
+__attribute__((noinline))              /* load-bearing: guarantees the CALL exists */
+static void KmCopyRaw(void *D, const void *S, KMSIZE N) { memcpy(D, S, N); }
+
+int KmProtectedCopyMemory(void *D, const void *S, KMSIZE N)
+{ __try { KmCopyRaw(D, S, N); return 1; } __except (1) { return 0; } }
+```
+
+Chain: `KiPageFault` → `KiDispatchException` → `RtlDispatchException` unwinds `KmCopyRaw`'s frame
+→ `__C_specific_handler` matches the scope table → `__except` → return 0 →
+`Err(STATUS_ACCESS_VIOLATION)`. **`seh_poc.c` had only ever proven a *software raise* dispatches;
+this proves the same chain catches a *hardware page fault*.**
+
+Bonus, and the reason this beats the obvious alternative: the fault goes through `MmAccessFault`
+**first**, so a valid-but-nonresident page is simply paged in and the copy proceeds. Only a truly
+invalid address reaches the `__except`.
+
+**Do NOT "fix" this with `MmIsAddressValid`.** It is the tempting portable stand-in and it is
+wrong: it cannot distinguish *invalid* from *valid-but-paged-out*. Drop it on a hot path (e.g.
+`IopCompleteRequest`'s buffered copy-back) and legitimate I/O starts failing with
+STATUS_ACCESS_VIOLATION under memory pressure — a silent, subtly-wrong degradation far worse than
+the crash it papers over. Prefer the crash + an honest gap.
+
+**Two traps this flushed out:**
+- **PERF: verify the copy is a real `memcpy`.** A hand-rolled `while (Len--) *Dst++ = *Src++;`
+  compiled to a genuine byte-at-a-time loop — clang's loop-idiom pass did **not** lower it. On the
+  buffered-I/O completion path that is a throughput regression. *Disassemble the shim* (`callq
+  <memcpy>`) rather than assuming the optimizer saved you.
+- **A fixed crash can UNMASK a second bug at the same test.** After the copy fix, `IoReadWrite`
+  still crashed — but the PC had moved out of ntoskrnl to `IoReadWrite_drv.sys`. **Fast I/O hands
+  the driver the RAW user buffer** (no SystemBuffer), and in C the fast-io dispatch is itself
+  inside `_SEH2_TRY`. That is the same family needing a *different* primitive: a protected
+  **call**, not a protected **copy**. Always re-symbolicate after a fix — "still crashes" is not
+  "not fixed".
+
+**Where it lives.** Primitive: `ntoskrnl/kmsafecopy.c` + `ntkrnl-sys/src/probe.rs`
+(`safe_copy_from_user` / `safe_copy_to_user` / `safe_copy_raw`, all running the protected copy
+UNCONDITIONALLY; only the range probe stays `PreviousMode`-gated). **amd64 only** — i386/arm64
+fall through to a plain copy until clang's frame-based i386 / aarch64 kernel SEH gets the
+`seh_poc.c` treatment, or an extable-style fault-fixup copy exists.
+
+**Detector.** A `#[no_mangle]` syscall that does `copy_nonoverlapping` / `read_volatile` on a
+caller pointer where the C had `_SEH2_TRY`. Grep the inert C for `_SEH2_TRY` around
+`RtlCopyMemory`/`Probe*` and diff against the Rust port — if the Rust has the copy but no
+`safe_copy_*`, it is a latent 0x1E waiting for a hostile caller.

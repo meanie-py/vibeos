@@ -68,10 +68,10 @@ ObHandle
 ObQuery
 ObReference
 ObSecurity
-# QUARANTINED 2026-07-10 (amd64 sweep 6): BUGCHECK 0x1E — AV in memcpy+0x40, caller
-# in the symbolic-link path (ob-rust candidate: NtCreateSymbolicLinkObject/reparse
-# buffer copy with bad length/pointer). Triage owed.
-#ObSymbolicLink
+# UNQUARANTINED 2026-07-12: memcpy+0x40 cluster fixed — NtCreateSymbolicLinkObject's
+# link-target capture now goes through the fault-tolerant safe_copy_from_user
+# (ntoskrnl/kmsafecopy.c native-SEH shim). Was: BUGCHECK 0x1E AV in memcpy+0x40.
+ObSymbolicLink
 ObType
 ObTypes
 PsNotify
@@ -105,18 +105,26 @@ SeQueryInfoToken
 ZwAllocateVirtualMemory
 ZwCreateSection
 ZwMapViewOfSection
-# QUARANTINED 2026-07-11 (amd64 sweep 10): BUGCHECK 0x1E — AV in memcpy+0x40 (same PC
-# as ObSymbolicLink's crash): NtWaitForMultipleObjects handle-array capture with hostile
-# params — the C capture relies on SEH probing (dead under DUMMY_PSEH). Triage owed.
-#ZwWaitForMultipleObjects
+# UNQUARANTINED 2026-07-12: memcpy+0x40 cluster fixed — NtWaitForMultipleObjects'
+# handle-array capture now goes through the fault-tolerant safe_copy_from_user
+# (ntoskrnl/kmsafecopy.c native-SEH shim). Was: BUGCHECK 0x1E AV in memcpy+0x40.
+ZwWaitForMultipleObjects
 RtlCaptureContextKM
 FileAttributes
 FindFile
 HidPDescription
 IoDeviceObject
-# QUARANTINED 2026-07-11 (amd64 sweep 11): BUGCHECK 0x1E — AV in memcpy+0x40 (3rd of
-# this face, w/ ObSymbolicLink + ZwWaitForMultipleObjects): unprobed user-buffer copy on
-# the Io read/write path. Common root candidate w/ the other two. Triage owed.
+# RE-QUARANTINED 2026-07-12 — SECOND, INDEPENDENT BUG behind the memcpy one.
+# The memcpy+0x40 cluster fix DID land here (NtWriteFile's SystemBuffer capture +
+# IopCompleteRequest's copy-back are both fault-tolerant now), and the crash PC moved
+# out of ntoskrnl entirely: it is now IoReadWrite_drv.sys+0x23A0, i.e. the TEST DRIVER.
+# Root: FAST I/O hands the driver the RAW user buffer (no SystemBuffer), and the test's
+# TestCommonWrite() derefs BufferBytes[i] with no NULL guard (unlike TestCommonRead,
+# which checks Buffer == NULL). NtReadFile/NtWriteFile in C dispatch fast I/O from
+# inside _SEH2_TRY, so the driver's AV converts to STATUS_ACCESS_VIOLATION; under
+# DUMMY_PSEH that guard is dead -> BUGCHECK 0x1E. Same DUMMY_PSEH family, but a
+# different primitive: needs a protected *call* (guard around the FastIoRead/FastIoWrite
+# dispatch), not the protected *copy* this cluster fix provides. Triage owed.
 #IoReadWrite
 # QUARANTINED 2026-07-11 (amd64 sweep 12): BUGCHECK 0x1000 (PFN_LIST_CORRUPT-class,
 # P1=0x401) — MmMapLockedPagesSpecifyCache PTE/PFN accounting in the Rust MDL-map path.
