@@ -2237,10 +2237,10 @@ pub unsafe extern "system" fn STGMEDIUM_UserFree(flags: *mut ULONG, med: *mut ST
         med,
     );
 
-    // NOTE fully qualified: `ring/clipboard.rs` still carries a stale local
-    // `extern "C" { fn ReleaseStgMedium(..) }`, which makes the bare name ambiguous
-    // under the prelude glob. crate::ole32_exports is the correct (extern "system")
-    // declaration; drop the qualification once clipboard.rs's extern block is stripped.
+    // NOTE fully qualified on purpose. ReleaseStgMedium is DEFINED in ring::ole2 and
+    // also declared in ole32_exports, so the bare name can be glob-ambiguous through the
+    // prelude. Both spell it extern "system" (it is WINAPI; a C-ABI spelling would be an
+    // i386 stdcall break), so the qualification is about name resolution, not ABI.
     match (*med).tymed {
         TYMED_NULL | TYMED_FILE | TYMED_ISTREAM | TYMED_ISTORAGE => {
             crate::ole32_exports::ReleaseStgMedium(med);

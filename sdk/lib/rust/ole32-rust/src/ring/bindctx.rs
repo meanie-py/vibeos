@@ -300,7 +300,7 @@ unsafe extern "system" fn BindCtxImpl_RegisterObjectParam(
         if !(*This).bindCtxTable.offset(index as isize).read().pObj.is_null() {
             IUnknown_Release((*This).bindCtxTable.offset(index as isize).read().pObj);
         }
-        (*This).bindCtxTable.offset(index as isize).as_mut().unwrap().pObj = punk;
+        (*(*This).bindCtxTable.offset(index as isize)).pObj = punk;
         IUnknown_AddRef(punk);
         return S_OK;
     }
@@ -312,13 +312,13 @@ unsafe extern "system" fn BindCtxImpl_RegisterObjectParam(
         }
     }
 
-    (*This).bindCtxTable.offset((*This).bindCtxTableLastIndex as isize).as_mut().unwrap().pObj = punk;
-    (*This).bindCtxTable.offset((*This).bindCtxTableLastIndex as isize).as_mut().unwrap().regType = 1;
+    (*(*This).bindCtxTable.offset((*This).bindCtxTableLastIndex as isize)).pObj = punk;
+    (*(*This).bindCtxTable.offset((*This).bindCtxTableLastIndex as isize)).regType = 1;
 
     if pszkey.is_null() {
-        (*This).bindCtxTable.offset((*This).bindCtxTableLastIndex as isize).as_mut().unwrap().pkeyObj = core::ptr::null_mut();
+        (*(*This).bindCtxTable.offset((*This).bindCtxTableLastIndex as isize)).pkeyObj = core::ptr::null_mut();
     } else {
-        (*This).bindCtxTable.offset((*This).bindCtxTableLastIndex as isize).as_mut().unwrap().pkeyObj =
+        (*(*This).bindCtxTable.offset((*This).bindCtxTableLastIndex as isize)).pkeyObj =
             HeapAlloc(
                 GetProcessHeap(),
                 0,

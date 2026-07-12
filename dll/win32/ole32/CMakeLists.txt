@@ -22,41 +22,42 @@ add_rpcproxy_files(
     ole32_oleidl.idl)
 
 list(APPEND SOURCE
-    antimoniker.c
-    bindctx.c
-    classmoniker.c
-    clipboard.c
-    comcat.c
+    # antimoniker.c — replaced by Rust (ole32-rust ring/antimoniker.rs — IMoniker/IPersistStream/IROTData)
+    # bindctx.c — replaced by Rust (ole32-rust ring/bindctx.rs — IBindCtx + bind options)
+    # classmoniker.c — replaced by Rust (ole32-rust ring/classmoniker.rs — IMoniker over a CLSID)
+    # clipboard.c — replaced by Rust (ole32-rust ring/clipboard.rs — OleSet/Get/FlushClipboard + the IDataObject wrapper)
+    # comcat.c — replaced by Rust (ole32-rust ring/comcat.rs — ICatRegister/ICatInformation)
     # compobj.c — replaced by Rust (ole32-rust compobj.rs — COM runtime: CoInitialize/apartments/activation/DllMain)
-    compositemoniker.c
+    # compositemoniker.c — replaced by Rust (ole32-rust ring/compositemoniker.rs — the generic composite)
     datacache.c
     defaulthandler.c
-    dictionary.c
-    enumx.c
-    errorinfo.c
-    filelockbytes.c
-    filemoniker.c
+    # dictionary.c — replaced by Rust (ole32-rust ring/dictionary.rs — the comcat dictionary helper)
+    # enumx.c — replaced by Rust (ole32-rust ring/enumx.rs — the generic IEnumXXX helper)
+    # errorinfo.c — replaced by Rust (ole32-rust ring/errorinfo.rs — IErrorInfo/ICreateErrorInfo + the TLS slot)
+    # filelockbytes.c — replaced by Rust (ole32-rust ring/filelockbytes.rs — ILockBytes over a file handle)
+    # filemoniker.c — replaced by Rust (ole32-rust ring/filemoniker.rs — IMoniker over a path)
     # ftmarshal.c — replaced by Rust (ole32-rust ftmarshal.rs — free-threaded marshaler)
     # git.c — replaced by Rust (ole32-rust git.rs — global interface table)
-    hglobalstream.c
-    ifs.c
-    itemmoniker.c
+    # hglobalstream.c — replaced by Rust (ole32-rust ring/hglobalstream.rs — CreateStreamOnHGlobal)
+    # ifs.c — replaced by Rust (ole32-rust ring/ifs.rs — CoGetMalloc/CoTaskMemAlloc/Free/Realloc + IMallocSpy)
+    # itemmoniker.c — replaced by Rust (ole32-rust ring/itemmoniker.rs — IMoniker over an item name)
     # marshal.c — replaced by Rust (ole32-rust marshal.rs — proxy manager + CoMarshal* family)
-    memlockbytes.c
-    moniker.c
-    ole2.c
-    ole2impl.c
-    ole2stubs.c
-    ole32_main.c
+    # memlockbytes.c — replaced by Rust (ole32-rust ring/memlockbytes.rs — ILockBytes over an HGLOBAL)
+    # moniker.c — replaced by Rust (ole32-rust ring/moniker.rs — the Running Object Table + MonikerMarshal)
+    # ole2.c — replaced by Rust (ole32-rust ring/ole2.rs — OleInitialize/DoDragDrop/RegisterDragDrop)
+    # ole2impl.c — replaced by Rust (ole32-rust ring/ole2impl.rs — OleCreate/OleCreateFromData)
+    # ole2stubs.c — replaced by Rust (ole32-rust ring/ole2stubs.rs — small OLE stubs)
+    # ole32_main.c — replaced by Rust (ole32-rust ring/ole32_main.rs — DllMain + OleMetafilePictFromIconAndLabel)
     oleobj.c
-    oleproxy.c
-    pointermoniker.c
+    # oleproxy.c — replaced by Rust (ole32-rust ring/oleproxy.rs — the proxy/stub class factories)
+    # pointermoniker.c — replaced by Rust (ole32-rust ring/pointermoniker.rs — IMoniker over an IUnknown*)
     # rpc.c — replaced by Rust (ole32-rust rpc.rs — ORPC channel + apartment pumps)
     stg_prop.c
     stg_stream.c
     storage32.c
     # stubmanager.c — replaced by Rust (ole32-rust stubmanager.rs — stub/ifstub lifetime)
-    usrmarshal.c)
+    # usrmarshal.c — replaced by Rust (ole32-rust ring/usrmarshal.rs — the NDR *_User{Size,Marshal,Unmarshal,Free} helpers)
+    )
 
 if(MSVC AND (ARCH STREQUAL "i386"))
     list(APPEND SOURCE msvc-thiscall.c)
@@ -91,8 +92,13 @@ endif()
 file(GLOB_RECURSE OLE32_RUST_SRCS "${OLE32_RUST_WORKSPACE_DIR}/ole32-rust/src/*.rs")
 add_custom_command(
     OUTPUT ${OLE32_RUST_LIB}
+    # RUSTC_BOOTSTRAP=1: the ring's debug_shims DEFINES the wine debug channel fns
+    # (TRACE/WARN/ERR/FIXME) as C-variadic, which needs #![feature(c_variadic)] on our
+    # pinned stable toolchain. (Declaring a variadic extern is fine on stable; DEFINING
+    # one is not.) Same reason oleaut32-rust sets it — see dll/win32/oleaut32/CMakeLists.txt.
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${OLE32_RUST_TARGET_DIR}
+        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${OLE32_RUST_TARGET}
             -p ole32-rust
             --manifest-path ${OLE32_RUST_WORKSPACE_DIR}/Cargo.toml
