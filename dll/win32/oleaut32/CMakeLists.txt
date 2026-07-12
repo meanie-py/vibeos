@@ -19,21 +19,20 @@ add_rpcproxy_files(oleaut32_oaidl.idl oleaut32_ocidl.idl)
 # takes the FIRST definition — so a C TU's Rust twin only takes effect when that
 # C TU is commented out here (its undefined refs then pull the Rust archive
 # member). Therefore ONLY comment out TUs whose Rust twin is a COMPLETE export
-# match. safearray.rs (missing SafeArrayCreate*) and oleaut.rs (missing the
-# CLSID_PSFactoryBuffer data ref) are still PARTIAL, so their .c stays compiled
-# and wins; completing those two is the next flip. dispatch.rs/typelib.rs are
-# also partial and stay C.
+# match. hash/variant/vartype/usrmarshal flipped first; safearray (now has
+# SafeArrayCreate*), oleaut, dispatch and typelib flipped 2026-07-12 once their
+# Rust twins reached full export coverage.
 list(APPEND SOURCE
     connpt.c
-    dispatch.c
+    # dispatch.c — replaced by Rust (oleaut32-rust dispatch.rs — CreateStdDispatch/DispInvoke/DispGetIDsOfNames/DispGetParam + StdDispatch vtbl; full)
     # hash.c — replaced by Rust (oleaut32-rust hash.rs — LHashValOfNameSys A/W; full)
-    oleaut.c
+    # oleaut.c — replaced by Rust (oleaut32-rust oleaut.rs — BSTR SysAlloc* family + DllGetClassObject/proxy-stub + OleTranslateColor; full)
     olefont.c
     olepicture.c
     olepropframe.c
     recinfo.c
-    safearray.c
-    typelib.c
+    # safearray.c — replaced by Rust (oleaut32-rust safearray.rs — SAFEARRAY incl. Create/CreateEx/CreateVector*/CopyData; full)
+    # typelib.c — replaced by Rust (oleaut32-rust typelib.rs + typelib/ submodules — LoadTypeLib/RegisterTypeLib/CreateTypeLib*/DispCallFunc/ClearCustData + ITypeInfo/ITypeLib/MSFT/SLTG; full)
     # usrmarshal.c — replaced by Rust (oleaut32-rust usrmarshal.rs — VARIANT/BSTR/LPSAFEARRAY user-marshal + proxy/stub; full)
     varformat.c
     # variant.c — replaced by Rust (oleaut32-rust variant.rs — VariantInit/Clear/Copy/Change + arithmetic; full)

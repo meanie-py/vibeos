@@ -1,0 +1,39 @@
+# Differential harness: pins the Rust msvcrt string surface against the
+# *real compiled* msvcrt C reference (`dll/win32/msvcrt/string.c`).
+#
+# Host crate (std, `cargo test`, no QEMU). build.rs cc-compiles the
+# GENUINE string.c for linux-x86_64 with every one of its 106 public
+# symbols renamed to `ref_<name>` (a generated `-include` rename header),
+# so a test binary can hold BOTH the msvcrt C reference (`ref_strlen`,
+# `ref_itoa`, …) and cnt-rust's `#[no_mangle]` shims (`strlen`, `_itoa`,
+# …) at once and fuzz them for parity.
+#
+# Sibling exemplar: ../cnt-difftest (same trick, libcntpr reference).
+[package]
+name = "msvcrt-difftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+cnt-rust = { path = "../cnt-rust", features = ["cabi"] }
+
+[build-dependencies]
+cc = "1"
+
+# `harness = false` for the reason cnt-difftest documents: cnt-rust exports a
+# `#[no_mangle] getenv` that shadows glibc's, libtest reads RUST_TEST_THREADS
+# through it, gets NULL, and misbehaves. A plain single-threaded `fn main()`
+# runner never calls getenv and never spawns threads.
+[[test]]
+name = "link"
+path = "tests/link.rs"
+harness = false
+
+# Classification driver: fuzzes each cnt-rust shim against the genuine msvcrt
+# reference and prints a MATCH / SIGN-ONLY / DIVERGE verdict per function —
+# the input to deciding which families are safe to flip into msvcrt.dll.
+[[test]]
+name = "classify"
+path = "tests/classify.rs"
+harness = false

@@ -1077,3 +1077,110 @@ pub unsafe extern "system" fn BstrFromVector(psa: *mut SAFEARRAY, pbstr: *mut BS
     }
     S_OK
 }
+
+/// SafeArrayCreate (OLEAUT32.15) — create a new SafeArray.
+#[no_mangle]
+pub unsafe extern "system" fn SafeArrayCreate(
+    vt: VARTYPE,
+    cDims: UINT,
+    rgsabound: *mut SAFEARRAYBOUND,
+) -> *mut SAFEARRAY {
+    TRACE!(b"(%d,%u,%p)\n\0".as_ptr(), vt as c_int, cDims, rgsabound);
+
+    if vt == VT_RECORD {
+        return core::ptr::null_mut();
+    }
+
+    SAFEARRAY_Create(vt, cDims, rgsabound, 0)
+}
+
+/// SafeArrayCreateEx (OLEAUT32.42) — create a new SafeArray with extra data.
+#[no_mangle]
+pub unsafe extern "system" fn SafeArrayCreateEx(
+    vt: VARTYPE,
+    cDims: UINT,
+    rgsabound: *mut SAFEARRAYBOUND,
+    pvExtra: LPVOID,
+) -> *mut SAFEARRAY {
+    let mut ulSize: ULONG = 0;
+    let iRecInfo: *mut IRecordInfo = pvExtra as *mut IRecordInfo;
+
+    TRACE!(b"(%d,%u,%p,%p)\n\0".as_ptr(), vt as c_int, cDims, rgsabound, pvExtra);
+
+    if vt == VT_RECORD {
+        if iRecInfo.is_null() {
+            return core::ptr::null_mut();
+        }
+        IRecordInfo_GetSize(iRecInfo, &mut ulSize);
+    }
+    let psa = SAFEARRAY_Create(vt, cDims, rgsabound, ulSize);
+
+    if !pvExtra.is_null() {
+        match vt {
+            VT_RECORD => {
+                SafeArraySetRecordInfo(psa, pvExtra as *mut IRecordInfo);
+            }
+            VT_UNKNOWN | VT_DISPATCH => {
+                SafeArraySetIID(psa, pvExtra as *const GUID);
+            }
+            _ => {}
+        }
+    }
+    psa
+}
+
+/// SafeArrayCreateVector (OLEAUT32.411) — one-dimensional contiguous SafeArray.
+#[no_mangle]
+pub unsafe extern "system" fn SafeArrayCreateVector(
+    vt: VARTYPE,
+    lLbound: LONG,
+    cElements: ULONG,
+) -> *mut SAFEARRAY {
+    TRACE!(b"(%d,%d,%u)\n\0".as_ptr(), vt as c_int, lLbound, cElements);
+
+    if vt == VT_RECORD {
+        return core::ptr::null_mut();
+    }
+
+    SAFEARRAY_CreateVector(vt, lLbound, cElements, SAFEARRAY_GetVTSize(vt))
+}
+
+/// SafeArrayCreateVectorEx (OLEAUT32.43) — vector SafeArray with extra data.
+#[no_mangle]
+pub unsafe extern "system" fn SafeArrayCreateVectorEx(
+    vt: VARTYPE,
+    lLbound: LONG,
+    cElements: ULONG,
+    pvExtra: LPVOID,
+) -> *mut SAFEARRAY {
+    let ulSize: ULONG;
+    let iRecInfo: *mut IRecordInfo = pvExtra as *mut IRecordInfo;
+
+    TRACE!(b"(%d,%d,%u,%p)\n\0".as_ptr(), vt as c_int, lLbound, cElements, pvExtra);
+
+    if vt == VT_RECORD {
+        if iRecInfo.is_null() {
+            return core::ptr::null_mut();
+        }
+        let mut sz: ULONG = 0;
+        IRecordInfo_GetSize(iRecInfo, &mut sz);
+        ulSize = sz;
+    } else {
+        ulSize = SAFEARRAY_GetVTSize(vt);
+    }
+
+    let psa = SAFEARRAY_CreateVector(vt, lLbound, cElements, ulSize);
+
+    if !pvExtra.is_null() {
+        match vt {
+            VT_RECORD => {
+                SafeArraySetRecordInfo(psa, iRecInfo);
+            }
+            VT_UNKNOWN | VT_DISPATCH => {
+                SafeArraySetIID(psa, pvExtra as *const GUID);
+            }
+            _ => {}
+        }
+    }
+    psa
+}

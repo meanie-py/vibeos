@@ -1202,6 +1202,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "msvcrt-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "cnt-rust",
+]
+
+[[package]]
 name = "mup-rust"
 version = "0.1.0"
 dependencies = [
