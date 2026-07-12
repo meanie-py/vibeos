@@ -631,11 +631,21 @@ pub unsafe extern "system" fn FatLocateDirent(
     DebugTrace(0i32, 0u32, b"  Bcb                     = %p\n\0".as_ptr() as *const i8, Bcb as usize);
     DebugTrace(0i32, 0u32, b"  ByteOffset              = %08lx\n\0".as_ptr() as *const i8, (*ByteOffset).QuadPart as u32 as usize);
 
-    assert!(
-        ExIsResourceAcquiredSharedLite((*ParentDirectory).Header.Resource) != 0
+    // C source is NT_ASSERT (dirsup.c:1175) — a DEBUG-only assertion that is a no-op in
+    // the shipping (free) build; the cohab shim `NT_ASSERT` (rust_cohab_stub.c) is a no-op.
+    // The original translation rendered it as a hard `assert!`, which panics unconditionally
+    // and BUGCHECKed arm64 boot once IRP_MJ_CLEANUP started being delivered (ob-rust
+    // ObpDecrementHandleCount fix): FatCommonCleanup -> FatNotifyReportChange ->
+    // FatSetFullFileNameInFcb -> FatGetUnicodeNameFromFcb -> here, on the normal
+    // UserFileOpen cleanup path where FatCommonCleanup legitimately holds only the file's
+    // Fcb (not the parent Dcb / Vcb) — exactly as ReactOS does. Route through NT_ASSERT
+    // like every other NT_ASSERT in this file (cf. dirsup.rs:1157/1164).
+    NT_ASSERT(
+        (ExIsResourceAcquiredSharedLite((*ParentDirectory).Header.Resource) != 0
             || ExIsResourceAcquiredExclusiveLite((*ParentDirectory).Header.Resource) != 0
             || ExIsResourceAcquiredSharedLite(core::ptr::addr_of_mut!((*(*ParentDirectory).Vcb).Resource)) != 0
-            || ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!((*(*ParentDirectory).Vcb).Resource)) != 0
+            || ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!((*(*ParentDirectory).Vcb).Resource)) != 0)
+            as i32,
     );
 
     // UNREFERENCED_PARAMETER( Flags ) -> ignore

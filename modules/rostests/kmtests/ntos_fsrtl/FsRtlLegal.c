@@ -279,8 +279,10 @@ START_TEST(FsRtlLegal)
 
     for (i = 0; i <= 0x7f; ++i)
     {
-        ok(LegalAnsiCharacterArray[i] == (*FsRtlLegalAnsiCharacterArray)[i],
-           "Mismatching value for 0x%x: 0x%x (exp) - 0x%x (got)\n", i, LegalAnsiCharacterArray[i], (*FsRtlLegalAnsiCharacterArray)[i]);
+        /* LEGAL_ANSI_CHARACTER_ARRAY hides the import indirection: GCC imports the
+           array via a pointer-to-pointer alias, Clang via dllimport (no extra deref) */
+        ok(LegalAnsiCharacterArray[i] == LEGAL_ANSI_CHARACTER_ARRAY[i],
+           "Mismatching value for 0x%x: 0x%x (exp) - 0x%x (got)\n", i, LegalAnsiCharacterArray[i], LEGAL_ANSI_CHARACTER_ARRAY[i]);
 
         ok((FsRtlIsAnsiCharacterWild(i) != 0) == BooleanFlagOn(LegalAnsiCharacterArray[i], FSRTL_WILD_CHARACTER),
            "Mismatching value for 0x%x: 0x%x (exp) - 0x%x (got)\n", i, FsRtlIsAnsiCharacterWild(i), BooleanFlagOn(LegalAnsiCharacterArray[i], FSRTL_WILD_CHARACTER));

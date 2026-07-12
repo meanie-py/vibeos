@@ -144,6 +144,12 @@ LONG (WINAPI *Wow64pBTCpuNotifyMap)(PVOID, PVOID, PVOID, SIZE_T, ULONG, ULONG);
  * passing it to the host kernel's NtContinue rebuilds a garbage arm64 context
  * and resumes the host thread at a wild PC. WOW64_CONTEXT == i386 CONTEXT. */
 LONG (WINAPI *Wow64pBTCpuSetContext)(HANDLE, HANDLE, PVOID, PVOID);
+/* M8 callback bridge (wow64_callback.c): guest-context snapshot/restore +
+ * nested Simulate re-entry for kernel->user callbacks. */
+LONG (WINAPI *Wow64pBTCpuGetContext)(HANDLE, HANDLE, PVOID, PVOID);
+VOID (WINAPI *Wow64pBTCpuSimulate)(VOID);
+PVOID Wow64pKiUserCallbackDispatcher32;
+void Wow64pInstallUserCallbackTable(void);
 /* The BOP bridge address (BTCpuGetBopCode), kept for map-time Wow64Transition
  * patching of guest DLLs that carry their own slot (gdi32/user32 embed the
  * win32ksys stubs; ntdll32 is patched at bootstrap). Non-static: the
@@ -711,6 +717,13 @@ Wow64LdrpInitialize(PVOID Context)
     }
     {
         PVOID Addr = NULL;
+        RtlInitAnsiString(&ProcName, "BTCpuGetContext");
+        LdrGetProcedureAddress(Fex, &ProcName, 0, &Addr);
+        Wow64pBTCpuGetContext = (LONG (WINAPI *)(HANDLE, HANDLE, PVOID, PVOID))Addr;
+    }
+    Wow64pBTCpuSimulate = BTCpuSimulate;
+    {
+        PVOID Addr = NULL;
         RtlInitAnsiString(&ProcName, "BTCpuResetToConsistentState");
         LdrGetProcedureAddress(Fex, &ProcName, 0, &Addr);
         Wow64pBTCpuResetToConsistentState = (LONG (WINAPI *)(EXCEPTION_POINTERS *))Addr;
@@ -778,6 +791,11 @@ Wow64LdrpInitialize(PVOID Context)
     /* -- Resolve the guest ntdll32 loader entrypoints (M3b) ---------------- */
     KiUserApcDispatcher32 = Wow64pFindExport32(Ntdll32, "KiUserApcDispatcher");
     LdrInitThunk32 = Wow64pFindExport32(Ntdll32, "LdrInitializeThunk");
+    /* M8: kernel->user callbacks re-enter the guest through its own 32-bit
+     * callback dispatcher; the 64-bit PEB table points at our bridge. */
+    Wow64pKiUserCallbackDispatcher32 =
+        Wow64pFindExport32(Ntdll32, "KiUserCallbackDispatcher");
+    Wow64pInstallUserCallbackTable();
     if (!KiUserApcDispatcher32 || !LdrInitThunk32)
     {
         DbgPrint("[FEX-WOW64C] FAIL: ntdll32 KiUserApcDispatcher=%p LdrInitializeThunk=%p\n",

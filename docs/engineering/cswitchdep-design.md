@@ -5,10 +5,10 @@ validated on all three arches; the `cswitchdep-phase1` lane is **closed** and
 this doc graduated out of `active-lanes/`. cswitchdep is now an always-on
 opt-in tripwire (`vibeos-cli build --cswitchdep`) alongside lockdep/waitdep.
 Post-close follow-ons (subset arming; the stable-everything toolchain program
-that was scouted from this branch) are tracked in the roadmap ledger, not here.
-Sibling of the lockdep detector (`sync-instrumentation-design.md` §4) and the
-planned shadow-IRQL check (§6). The static counterpart is
-`execution-context-ownership-model.md`.
+that was scouted from this branch; KeGetPcr x18 dedup) are tracked in the
+roadmap Owed-work ledger, not here. Sibling of the lockdep detector
+(`sync-instrumentation-design.md` §4) and the planned shadow-IRQL check (§6).
+The static counterpart is `execution-context-ownership-model.md`.
 v2 incorporates an adversarial review pass: v1's two headline invariants
 (held-locks==0 at voluntary switch; resume-IRQL==WaitIrql at the resume tap)
 were **false in this kernel as specced** and are corrected below; the mid-swap

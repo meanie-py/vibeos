@@ -437,6 +437,12 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 **Fix:** declare a real `static X: [u16; N] = [...]` (alignment 2 ⇒ always even) and use `.as_ptr() as *mut u16`. Arch-green elsewhere does NOT exonerate — only amd64 trips when address is odd AND probe enforces.
 **Source:** `feedback_byte_literal_wchar_misalign.md`
 
+### Hand-encoded `[u16; N]` literal one short — silently truncated registry/object path (ERROR_FILE_NOT_FOUND from a "correct" call chain)
+**Symptom:** an API fails with ERROR_FILE_NOT_FOUND / STATUS_OBJECT_NAME_NOT_FOUND on a path that provably exists; every function in the chain reads as a faithful translation; compiles + links clean; boots green (the broken path may simply never be exercised by boot — this one hid in `RCreateServiceW` until the kmtest conformance sweep called it, 2026-07-10).
+**Root cause:** a wide-string constant hand-encoded as `static X: [u16; N] = [b'S' as u16, ...]` was sized one element short, so the LAST character was dropped to make room for the NUL — `SERVICES_KEY [u16; 33]` spelled `System\CurrentControlSet\Service` (no trailing `s`), and services-rust opened a nonexistent parent key. The intent comment above the array says the right string, so review eyes slide right past it; only decoding the bytes shows the truncation.
+**Fix:** count = `chars + 1`; better, avoid hand arrays entirely (`w!()` / `wstr!` macro or a `const fn` UTF-16 builder). To sweep for siblings, decode every `static NAME: [u16; N]` against its `// L"..."` intent comment (one-shot scanner did this 2026-07-10; SERVICES_KEY was the only true hit). A durable lint (`scan_wide_literals`-style, wired into `vibeos-cli check`) is OWED — the class is invisible to every existing gate.
+**Triangulation recipe that found it:** per-stage DbgPrint bisection in the failing RPC (one boot) + a parallel subagent diff-audit of the Rust vs upstream C (found the literal by byte-decode) + a second subagent proving the create call *cannot* return 2 (pinning it on the parent open). Three probes, one statement.
+
 ### STATUS_OBJECT_PATH_SYNTAX_BAD (0xC000003B) / garbage wide path from a bindgen `#define X L"..."`
 **Symptom:** boot reaches CSRSS, `NtUserInitialize failed 0xc000003b`, "Cannot open winsta"; the wide string reads as garbage code units (`\W`,`in`,`do`,`ws`...). Deterministic on amd64.
 **Root cause:** bindgen lowers a C wide-string `#define` to a NARROW `&[u8;N]` (drops the `L`); the translator then casts `X.as_ptr() as *const u16`, reinterpreting ASCII byte-pairs as UTF-16.
@@ -527,6 +533,13 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 ## rustconv translation-output bug catalog
 
 The specific ways the LLM C→Rust output is wrong — each entry is a distinct defect class, how it manifests at compile/link/runtime, and the cheapest oracle to catch it before it ships.
+
+### C post-inc/dec value expression rewritten with wrong read order (`x = y--` reads post value)
+**Symptom:** a count/index handed onward is off by one, and everything downstream of a threshold check silently misbehaves. Flagship instance (conformance catch #2, 2026-07-10): ob-rust `ObpDecrementHandleCount` translated C `ProcessHandleCount = HandleCount--` as decrement-then-read, so the CloseProcedure got the POST-decrement count — 0 instead of 1 on the last handle — and `IopCloseFile`'s `if (HandleCount != 1) return;` bailed, meaning **IRP_MJ_CLEANUP was never delivered to any driver in the system's history** (per-handle driver state leaked; second kmtest process got STATUS_ACCESS_DENIED on a stale MDL registration). Compiles clean, links clean, boots green — nothing in the boot path re-opens a MaintainHandleCount device twice.
+**Root cause class:** C's value-bearing `x++`/`x--`/compound assignments inside larger expressions force the translator to split into statements, and it sometimes puts the read on the wrong side of the mutation. Post-forms yield the OLD value; pre-forms the NEW.
+**Fix:** read first, then mutate (or vice versa for pre-forms) — match the C exactly; cite the C line in a comment when the ordering is load-bearing.
+**Tell / grep:** in any translated function, a `X -= 1; y = X` or `X += 1; y = X` pair whose C original is `y = X--/X++` — cheapest audit is diffing count-bearing assignments against the C when a callee receives a count argument. A future lint could pair `-= 1`/`+= 1` statements adjacent to reads of the same place against the C original.
+**Source:** ob-rust `obhandle.rs:505-517` vs `ntoskrnl/ob/obhandle.c:585/604`; found by kmtest sweep (back-to-back device opens) + subagent diff-audit.
 
 ### Wrong INLINED flag/constant literal (comment names the right flag, literal is a different one)
 **Symptom:** `SetFlag(f, 0x2 /* IRP_CONTEXT_FLAG_TOP_LEVEL */)` (0x2 is MORE_PROCESSING; TOP_LEVEL=0x10); `PALETTE_AllocPalette(0x4 /* PAL_BITFIELDS */ ...)` (PAL_BITFIELDS=0x2, 0x4=PAL_RGB); `RtlRaiseStatus(0xC0000002 /* STATUS_DATATYPE_MISALIGNMENT */)` (0xC0000002=NOT_IMPLEMENTED; MISALIGN=0x80000002). The LLM hardcodes a literal it labels with the intended name but the value is wrong/placeholder. Compiles & links clean; pure runtime/semantic. cdfs alone had 7 (TOP_LEVEL/TOP_LEVEL_CDFS/DISABLE_POPUPS/CDFS_NTC_IRP_CONTEXT/FSP_FLAGS/CCB_FLAG_DISMOUNT/CDFS_RESIDUAL); the codebase sweep found more in scsiport (LUNEX, HIGH), ntoskrnl se/srm (OBJ_OPENIF), win32k dibobj, disk, cabinet, smss.
@@ -4938,3 +4951,63 @@ reopen the window; build `--cswitchdep` so the illegal hand-off pins the
 culprit PC at switch time; for a live wedge, GDB both vCPUs
 (`qemu/start.sh amd64 --gdb` + `VIBEOS_QEMU_SMP=2`, `info threads` / bt both).
 Tracked as the gating item between M3 and M4.
+
+### 9.57 (ROOT-CAUSED + FIXED 2026-07-11) A *correct* fix woke a latent panic: `NT_ASSERT` mistranslated as a hard `assert!`, dormant until IRP_MJ_CLEANUP started being delivered (arm64-only)
+
+**Symptom:** After merging origin/master into the conformance-ratchet lane, the ×3 landing
+gate was green on i386 + amd64 but **arm64 wedged during boot** — Rust-panic BUGCHECK
+`0xE0525354` (`"RST"`), serial silent, last line a flight-record `ws-lock/unlock-excl`
+livelock (a red herring — post-mortem ring-buffer history, not the cause). Deterministic 3/3.
+
+**Two-layer root cause — this is the instructive part:**
+
+1. **The trigger was one of *my own correct fixes.*** This lane's ob-rust
+   `ObpDecrementHandleCount` fix (field-manual "post-inc/dec read-order" class) makes
+   `IRP_MJ_CLEANUP` *actually get delivered* for the first time (it had been silently
+   dropped by a `!= 1` guard reading the post-decrement count). Correct Windows behavior —
+   but it makes a previously-**dead** code path **live**: `FatCommonCleanup` now runs.
+2. **The latent bug it exposed:** `FatLocateDirent` (fastfat) begins with
+   `NT_ASSERT(ExIsResourceAcquiredShared/Excl(ParentDcb->Header.Resource) || ...Vcb...)`.
+   ReactOS `NT_ASSERT` is **debug-only** (a `DbgRaiseAssertionFailure` in checked builds,
+   **compiled out in free/shipping builds**; the vibeos cohab shim `NT_ASSERT`,
+   `rust_cohab_stub.c:353`, is a literal no-op). The C→Rust translation rendered *this one*
+   as a hard `assert!(...)` — panics unconditionally — while every *other* NT_ASSERT in the
+   same file correctly routes through the no-op `NT_ASSERT()` shim (cf. dirsup.rs:1157/1164).
+   The full live path: `IRP_MJ_CLEANUP → FatFsdCleanup → FatCommonCleanup →
+   FatNotifyReportChange (macro) → FatSetFullFileNameInFcb → FatGetUnicodeNameFromFcb →
+   FatLocateDirent`. On the normal UserFileOpen cleanup path FatCommonCleanup legitimately
+   holds **only the file's Fcb** (not the parent Dcb / Vcb) — exactly as the C does
+   (cleanup.c grabs the Vcb only for delete-on-close / UserVolumeOpen). Free-build ReactOS:
+   NT_ASSERT gone, read proceeds. Rust: `assert!` fires → BUGCHECK.
+
+**Why arm64-only (the arch-specificity was the first real clue, not a distraction):**
+arm64 boots from a **FAT ramdisk** → fastfat is exercised heavily at boot (driver `.sys`
+loads open+close through it). i386/amd64 boot the **LiveCD ISO** → **cdfs**, and never
+touch fastfat cleanup during boot. So an all-arch kernel change (IRP_MJ_CLEANUP delivery)
+surfaces a fastfat bug on exactly one arch. **Lesson:** when a change is all-arch but the
+failure is one-arch, ask *what does that arch exercise that the others don't* — here, the
+boot filesystem, not anything CPU-specific.
+
+**Isolation recipe that nailed "mine vs pre-existing" fast (~15 min):**
+- **A/B against pristine mainline in a throwaway worktree.** `git worktree add -d /tmp/... origin/master`, symlink `.build-tools` in, copy the gitignored arm64 EFI assets, `vibeos-cli build --arch arm64`, smoke. Pristine master booted 2/2; my tree 3/3 red → **my change**, not a merge/pre-existing regression. This flipped my working hypothesis (I'd assumed pre-existing) — *run the A/B, don't reason about it.*
+- **fastfat.sys was byte-identical (modulo build-stamp) across the two trees** → the bug is in how the *kernel drives* fastfat, not fastfat itself → points back at the kernel-side change.
+
+**Getting the caller chain when the panic backtrace is "0 frames":** the Rust panic → bugcheck
+path loses the stack (GDB `bt` at KeBugCheckEx unwinds only into the panic runtime). Instead,
+**instrument the asserting function to walk the arm64 frame-pointer chain itself**: capture the
+caller with `asm!("mov {}, x30")` as the *first* statement (before any `bl` clobbers lr), then
+at the failing branch walk `x29`: `[x29]=saved fp`, `[x29+8]=return addr`, print N frames via
+`DbgPrint`. Symbolize each `ret` with `llvm-symbolizer --obj=fastfat.sys (ImageBase+offset)`,
+where `offset = ret − module_base` and `module_base = (bugcheck P1 absolute) − (P1 "+0xNNNN")`.
+Module bases are stable across boots here (no KASLR), so you can reuse them.
+
+**Fix:** route the assert through `NT_ASSERT((cond) as i32)` like the rest of the file — 13-line
+diff, faithful to ReactOS, keeps the correct ob-rust IRP_MJ_CLEANUP fix. arm64 smoke green ×2.
+
+**Owed sweep (same class):** ~25 sibling hard `assert!(` sites remain in fastfat-rust that
+mirror C `NT_ASSERT`s — each a **dormant** panic that will fire the day its path goes live
+(precisely how this one detonated). Grep `assert!(` in `sdk/lib/rust/fastfat-rust/src/*.rs`,
+cross-check each against the C for `NT_ASSERT`/`ASSERT`, convert the debug-only ones. General
+rule for LLM C→Rust: **`ASSERT`/`NT_ASSERT`/`ASSERTMSG` must translate to the no-op/`debug_assert!`
+shim, never a hard `assert!`** — a debug invariant is not a runtime guarantee, and turning one
+into a panic plants a mine that a *future correctness fix* will step on.
