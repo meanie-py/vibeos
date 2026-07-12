@@ -289,6 +289,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "com-sys"
+version = "0.1.0"
+
+[[package]]
 name = "compress"
 version = "0.1.0"
 
@@ -1190,6 +1194,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "msvcrt-crt-rust"
+version = "0.1.0"
+dependencies = [
+ "cnt-rust",
+ "panic-common",
+]
+
+[[package]]
 name = "mup-rust"
 version = "0.1.0"
 dependencies = [
@@ -1354,6 +1366,21 @@ version = "0.1.0"
 dependencies = [
  "dbgprint-rust",
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "ole32-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+]
+
+[[package]]
+name = "oleaut32-rust"
+version = "0.1.0"
+dependencies = [
+ "com-sys",
+ "panic-common",
 ]
 
 [[package]]

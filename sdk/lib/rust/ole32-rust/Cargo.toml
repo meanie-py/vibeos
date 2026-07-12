@@ -1,0 +1,18 @@
+# ole32-rust — Rust translation of dll/win32/ole32's runtime core (compobj +
+# the marshal/stubmanager/rpc/ftmarshal/git cluster). staticlib →
+# libole32_rust.a, cohab-linked into the cmake-built ole32.dll with the
+# translated .c files commented out (advapi32-rust pattern). User-mode DLL:
+# standard per-arch targets. Self-contained FFI decls (the lanes carry their
+# own import surface); com-sys swap for the hand-declared vtbls is a queued
+# mechanical cleanup.
+
+[package]
+name = "ole32-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
