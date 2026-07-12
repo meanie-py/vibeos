@@ -9,7 +9,6 @@
 //! later pass. Lane ledgers: ~/vibeos-rust-staging/ole32-lane-{a,b}/MANIFEST.md;
 //! strategy: docs/engineering/active-lanes/ole-com-translation-audit.md.
 #![no_std]
-#![feature(c_variadic)]  // debug_shims: TRACE/WARN/ERR/FIXME are C-variadic (needs RUSTC_BOOTSTRAP=1, as in oleaut32-rust)
 #![allow(non_camel_case_types, non_snake_case, non_upper_case_globals)]
 
 // USER-MODE no_std staticlib → own panic handler + eh_personality (deduped at

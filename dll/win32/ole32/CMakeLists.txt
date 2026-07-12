@@ -92,13 +92,12 @@ endif()
 file(GLOB_RECURSE OLE32_RUST_SRCS "${OLE32_RUST_WORKSPACE_DIR}/ole32-rust/src/*.rs")
 add_custom_command(
     OUTPUT ${OLE32_RUST_LIB}
-    # RUSTC_BOOTSTRAP=1: the ring's debug_shims DEFINES the wine debug channel fns
-    # (TRACE/WARN/ERR/FIXME) as C-variadic, which needs #![feature(c_variadic)] on our
-    # pinned stable toolchain. (Declaring a variadic extern is fine on stable; DEFINING
-    # one is not.) Same reason oleaut32-rust sets it — see dll/win32/oleaut32/CMakeLists.txt.
+    # No RUSTC_BOOTSTRAP: ole32-rust builds on plain stable. The ring's debug shims are
+    # deliberately NOT C-variadic (see debug_shims.rs) precisely so this stays true —
+    # the stable-toolchain lane removed the nightly-feature surface workspace-wide and
+    # this crate must not re-introduce it.
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${OLE32_RUST_TARGET_DIR}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${OLE32_RUST_TARGET}
             -p ole32-rust
             --manifest-path ${OLE32_RUST_WORKSPACE_DIR}/Cargo.toml
