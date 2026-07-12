@@ -18,6 +18,8 @@ use ntkrnl_sys::ddk::{
     MmGetPhysicalAddress, MmMapIoSpace, PVOID, _MEMORY_CACHING_TYPE_MmCached as MM_CACHED,
     _MEMORY_CACHING_TYPE_MmNonCached as MM_NON_CACHED,
 };
+use ntkrnl_sys::guards::SpinLockGuard;
+use ntkrnl_sys::ke::KSPIN_LOCK;
 
 const PAGE_SIZE: usize = 4096;
 const MAX_BOUNCES: usize = 128;
@@ -47,12 +49,23 @@ const EMPTY_BOUNCE: BounceEntry = BounceEntry {
 
 static mut BOUNCES: [BounceEntry; MAX_BOUNCES] = [EMPTY_BOUNCE; MAX_BOUNCES];
 
+/// Guards the `BOUNCES` table scan/mutate. `share`/`unshare` run on the poll
+/// worker (PASSIVE→DISPATCH via the virtio queue ops), never the ISR, so a
+/// DISPATCH-level KSPIN_LOCK is the right primitive. Was unlocked because "on
+/// QEMU's single vCPU map/unmap never overlap" — a UP assumption: under -smp 2
+/// two concurrent `share`s could claim the same empty slot (one bounce leaked +
+/// a descriptor pointed at the wrong physaddr → DMA to stale memory), or a
+/// `share`/`unshare` pair could tear an entry. Real MP spin under feature=smp;
+/// no-op fence on UP (§9.55). `0` = the KeInitializeSpinLock initial state.
+static mut BOUNCE_LOCK: KSPIN_LOCK = 0;
+
 #[inline]
 fn crosses_page(ptr: usize, len: usize) -> bool {
     (ptr & (PAGE_SIZE - 1)) + len > PAGE_SIZE
 }
 
 unsafe fn remember_bounce(original: usize, paddr: PhysAddr, vaddr: *mut u8, len: usize) -> bool {
+    let _lock = SpinLockGuard::acquire(&raw mut BOUNCE_LOCK);
     let table = (&raw mut BOUNCES).cast::<BounceEntry>();
     for i in 0..MAX_BOUNCES {
         let entry = &mut *table.add(i);
@@ -70,6 +83,7 @@ unsafe fn remember_bounce(original: usize, paddr: PhysAddr, vaddr: *mut u8, len:
 }
 
 unsafe fn take_bounce(original: usize, paddr: PhysAddr) -> Option<BounceEntry> {
+    let _lock = SpinLockGuard::acquire(&raw mut BOUNCE_LOCK);
     let table = (&raw mut BOUNCES).cast::<BounceEntry>();
     for i in 0..MAX_BOUNCES {
         let entry = &mut *table.add(i);

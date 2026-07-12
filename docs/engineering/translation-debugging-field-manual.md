@@ -4830,8 +4830,115 @@ dereference — a fault there replaces the report with a mask; (4) partial
 SPSR/context corruption where PC survives but low-offset fields die is a
 frame-overlap signature — compute which offsets fall inside `[SP-0x160,
 SP)` of the code that built the frame.
+### 9.55 (ROOT-CAUSED + FIXED 2026-07-11) M3b: the -smp 2 "TDI dgram upcall TIMED OUT" NET_FLAKE — an "IRQL raise = mutual exclusion" UP assumption in a driver
 
-### 9.55 (ROOT-CAUSED + FIXED 2026-07-11) A *correct* fix woke a latent panic: `NT_ASSERT` mistranslated as a hard `assert!`, dormant until IRP_MJ_CLEANUP started being delivered (arm64-only)
+**Symptom.** After M3a (AP scheduling live), `-smp 2` boots to desktop ~2/3
+of the time; ~1/3 the netstack self-test prints
+`[NETSTACK] TDI dgram self-test: datagram upcall TIMED OUT` and the smoke run
+classifies NET_FLAKE. Never reproduced on the default UP gates (they run the
+identical self-test). The `-smp N` knob is the only variable → a real
+concurrency bug that a single vCPU masked.
+
+**The trap: "on QEMU's single vCPU, DISPATCH_LEVEL is full mutual exclusion."**
+This premise is written verbatim in several netstack comments, and it is *true
+on UP*: raising IRQL to DISPATCH masks thread preemption, so a producer thread
+and a consumer thread on the one CPU can never overlap. **On SMP it means
+nothing** — raising IRQL (CR8 on amd64) is a *per-CPU* register write; it does
+not stop a thread running on another CPU at any IRQL. Any driver shared
+structure guarded only by an IRQL raise is unsynchronized under `-smp ≥2`.
+
+**Root cause (the datagram flake).** `netstack-rust`'s TDI transport uses an
+`INBOX`: an MPSC command queue (many TDI-dispatch threads push `Cmd`s; the one
+poll worker drains via `mem::swap`) that was guarded by only
+`IrqlGuard::raise_to_dpc()` over a bare `Vec`. Under `-smp 2` a `Vec::push`
+that reallocates (moves the backing buffer) races the consumer's `mem::swap`
+reading the `Vec`'s (ptr,len,cap) — and two producer threads race each other —
+a torn read / lost element. The lost `Cmd` is a `SEND_DATAGRAM` (query never
+goes out) or a `SET_EVENT(receive-datagram)` (handler never registered) → the
+DNS reply's upcall never fires → the 10 s wait times out. (The comment even
+named the hazard — "an unsynchronized Vec race between two threads = UB/heap
+corruption" — but trusted the single-vCPU premise to prevent it.)
+
+**Fix.** Guard the queue with a **real `KSPIN_LOCK`** via `SpinLockGuard`
+(`ntkrnl_sys::guards`) → `KeAcquireSpinLock`, which raises to DISPATCH *and*
+spins on the lock word. Because `KeAcquireSpinLock` is the exported kernel
+symbol, a driver imports it and it resolves **per boot**: the SMP kernel's
+`KxAcquireSpinLock` really spins (`feature=smp`, an `InterlockedBitTestAndSet`
+loop); the UP kernel's is a no-op compiler fence — byte-identical behavior to
+the old raise-only path there, so no UP regression and no driver-side feature
+flag needed. **Do NOT use `KeAcquireSpinLockForDpc`** here — it is a *different*
+function still stubbed to a no-op in this tree (returns IRQL without
+raising/acquiring); reaching for it gives zero synchronization.
+
+**Second instance, same class, same commit.** The smoke NIC is `virtio-net-pci`
+(vm.py), so `hal.rs`'s `virtio_drivers::Hal` bounce path is live. Its
+`static mut BOUNCES` table (used for buffers crossing a page boundary) was
+scanned/mutated lock-free on the same "single vCPU → map/unmap never overlap"
+premise: two concurrent `share`s could claim the same empty slot (one bounce
+leaked + a descriptor pointing at the wrong physaddr → DMA to stale memory), or
+a `share`/`unshare` pair could tear an entry. Guarded with the same
+`SpinLockGuard` (share/unshare run on the poll worker, never the ISR, so a
+DISPATCH-level lock is correct). NOT proven to be a *second* cause of the
+timeout, but a genuine data race on a live path — fixed as defense-in-depth.
+
+**Reusable rule.** In any driver/component that a `-smp N` boot exercises, a
+comment of the form "QEMU runs a single vCPU, so DISPATCH_LEVEL is mutual
+exclusion" marks a **UP-only** guard that is unsound under SMP. Grep the crate
+for `single vCPU` / `raise_to_dpc` / `static mut` / `UnsafeCell` + `unsafe impl
+Sync` and audit each: an SPSC ring with real acquire/release head/tail fences
+(netstack `ndisphy::RxRing`) or a single disjoint volatile MMIO read
+(`device::ack_interrupt`) is genuinely SMP-safe and stays; anything guarding a
+`Vec`/shared table with only an IRQL raise needs a real `KSPIN_LOCK`.
+
+Files: netstack-rust/src/tditrans.rs (INBOX lock), netstack-rust/src/hal.rs
+(BOUNCE_LOCK), netstack-rust/src/lib.rs (comment). Owed next (M3+): scheduled-
+on-CPU1 visibility counter, targeted single-VA remote flushes, packet mailbox,
+i386/arm64 parity.
+
+### 9.56 (OPEN 2026-07-11) The -smp 2 residual flake: ~1/4–1/3 of boots creep-wedge or crash with device-I/O/pool faces — pre-existing at M3b, control-verified; NOT the M3-tail TLB/IPI work
+
+**Faces (all from one corpus, 2026-07-11, amd64 `-smp 2`, TCG):**
+- `[NETSTACK] TDI self-test: CONNECT FAILED 0xc00000b5` (STATUS_IO_TIMEOUT) — appears
+  even in boots that go on to reach desktop green. Sometimes preceded by
+  `TDI op timed out - IRP still pending; leaking wait block` (§9.36 bounded-leak path).
+- Creeping service wedge: Themes/SamSs/SVCHOST(DcomLaunch) connects stop completing,
+  serial goes silent (HANG_TIMEOUT, no bugcheck). The §9.53-fixed dgram-upcall
+  timeout face can also appear earlier in the same boot.
+- `BUGCHECK 0x19 BAD_POOL_HEADER (8, 0, <line>, <entry>)` = POOL_HEADER_IS_ZERO —
+  a pool block header found zeroed mid-page.
+- `BUGCHECK 0x1E (c0000006 STATUS_IN_PAGE_ERROR)` with cdfs.sys frames — a page-in
+  from the boot CD failed.
+
+**What it is NOT (bisected + controlled, method worth reusing):**
+1. Receiver-side full-flush vs targeted invlpg in the 0xE1 TLB shootdown: identical
+   failure rate (4/6 both) → the M3-tail invlpg narrowing is exonerated.
+2. **Control experiment:** `git stash` the whole M3-tail delta, rebuild the SMP kernel
+   at M3b-landed HEAD (`7b23f82f467`), smoke ×6 under the same host conditions →
+   1/6 BUGCHECK 0x1E c0000006. The flake pre-exists the M3-tail work entirely.
+   (M3b's 12/12 green was a favorable streak — treat any small-N -smp pass rate
+   as ±30% until the M4 soak characterizes it.)
+3. `--tripwire "SPECIALPOOL=*"` over 6 boots caught nothing at a store (2 hangs, no
+   special-pool fault) — the 0x19 is more likely a *racing free/completion* zeroing a
+   header than a classic overrun.
+4. Pool locking audited: amd64 `KiInitSpinLocks` IS called per-CPU
+   (ke/amd64/krnlinit.rs boot-stack — easy to miss; grep the FILE, the i386/arm64
+   twins live in kiinit.rs), LockQueue points at shared globals, nonpaged pool uses the
+   real queued spinlock, paged pool uses the real interlocked+gate guarded mutex.
+
+**Suspect class:** lost wakeup / device-I/O completion race under real concurrency
+(uniata/scsiport IRP completion, DPC targeting, or a KeSetEvent→schedule hole) —
+the same family as §9.51's uniata `CPU_num>1` find, not the TLB layer. The
+IN_PAGE_ERROR face says a CD read IRP completed with failure (or never completed);
+the TDI c00000b5 face says the same for net IRPs; the creeping wedge is the
+pipe-connect variant. One I/O-completion-shaped hole explains all three.
+
+**Next tools (in order):** M4 farm soak on -smp 2 to build a corpus
+(`farm --tripwire` + `farm-report` clustering); `[WAITDEP]`/cswitchdep taps are
+already always-on; for the wedge face, GDB both vCPUs at hang time
+(`qemu/start.sh amd64 --gdb` + `VIBEOS_QEMU_SMP=2`, `info threads` / bt both).
+Tracked as the gating item between M3 and M4.
+
+### 9.57 (ROOT-CAUSED + FIXED 2026-07-11) A *correct* fix woke a latent panic: `NT_ASSERT` mistranslated as a hard `assert!`, dormant until IRP_MJ_CLEANUP started being delivered (arm64-only)
 
 **Symptom:** After merging origin/master into the conformance-ratchet lane, the ×3 landing
 gate was green on i386 + amd64 but **arm64 wedged during boot** — Rust-panic BUGCHECK

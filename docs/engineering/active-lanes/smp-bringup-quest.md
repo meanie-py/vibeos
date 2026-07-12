@@ -330,3 +330,68 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   DPC targeting / event signal racing the timeout). CPU1-scheduling
   evidence for the record: the pre-fix ObCreateObject AV occurred ON CPU1's
   syscall path (LPC from services), proving user threads execute there.
+- 2026-07-11: **M3b — TDI dgram NET_FLAKE ROOT-CAUSED + FIXED** (field manual
+  §9.55). Not the §9.36 stack-IRP family — a plain "IRQL raise = mutual
+  exclusion" **UP assumption in netstack-rust**. The TDI transport `INBOX`
+  (MPSC command queue, many dispatch threads push / one poll worker drains via
+  `mem::swap`) was guarded by only `IrqlGuard::raise_to_dpc()` over a bare
+  `Vec`. On UP that IS mutual exclusion (DISPATCH masks preemption on the one
+  CPU); under `-smp 2` a raise on CPU0 does nothing to a thread on CPU1 → a
+  `Vec::push` reallocating races the consumer's `mem::swap` → lost `Cmd`
+  (SEND_DATAGRAM / SET_EVENT) → the DNS upcall never fires → TIMED OUT. Fix:
+  guard with a **real KSPIN_LOCK** via `SpinLockGuard`→`KeAcquireSpinLock`
+  (raises to DISPATCH *and* spins; resolves per-boot — real MP spin on the SMP
+  kernel, no-op fence on UP, so no UP regression + no driver feature flag).
+  Two more of the same class fixed in the same pass (virtio-net is the smoke
+  NIC, so both are live): `hal.rs` `static mut BOUNCES` DMA-bounce table
+  (concurrent `share`s claiming the same slot → wrong physaddr/DMA to stale
+  mem) and `serial.rs` marker emit (cross-CPU interleave splitting a
+  `[NETSTACK]` marker the net suite greps). Workspace-wide audit for the
+  "single vCPU" idiom found no other real instances (the rest: dead C
+  comments, an ASCII-art string, and the correctly-gated M1a UP lock no-ops).
+  **Verified + LANDED** (`89b57370425`, pushed to origin/smp-bringup on a
+  ×3-clean-gate-green stamp): `-smp 2` amd64 12/12 green incl. `✓ net` across a
+  warm INBOX-only and a clean 3-fix build (pre-fix ~1/3 failed); UP gate ×3 OK
+  (i386+amd64+arm64 smoke + net + all builds/lints). One arm64 HANG_TIMEOUT in
+  an interim gate was the pre-existing §9.36 netstack-TDI boot flake (3/3 on
+  re-run; UP netstack behavior is IRQL-neutral under this change). M3 net-suite
+  parity at -smp 2 is now met. Owed next: scheduled-on-CPU1 visibility counter,
+  targeted single-VA remote flushes + packet mailbox (staged wave-2 A), then M4
+  soak, then M5 (i386 needs the APIC HAL flavor; arm64 PSCI CPU_ON staged).
+- 2026-07-11 (cont.): **M3 tail LANDED — visibility milestone, targeted single-VA
+  shootdown, amd64 KeIpiGenericCall rendezvous + boot self-test.** All three owed
+  M3-tail items done in one pass over the 0xE1 descriptor transport (ke/amd64/ipi.rs):
+  1. **Scheduled-on-CPU1 visibility:** KiSwapContextResume counts non-idle switches
+     per AP (count-only tap — NEVER DbgPrint mid-swap, see below); idle-exit/DPC-ISR
+     flushes one-shot `[SMP] CPUn scheduling live` markers at the 1st/1000th switch.
+     `test_milestones` now REQUIRES the marker per AP when `VIBEOS_QEMU_SMP > 1`
+     (gate strengthened; UP boots unaffected).
+  2. **Targeted single-VA remote flush:** the shootdown descriptor gained a VA slot
+     (KiTbFlushVa, FULL sentinel); KeInvalidateTlbEntry → KiTbShootdownSingle(va) →
+     awake receivers invlpg exactly that VA instead of a cr3 reload. Full-flush
+     callers (KeFlushProcessTb/KeFlushEntireTb) unchanged; lazy-idle CPUs still get
+     a deferred FULL flush on wake.
+  3. **amd64 KeIpiGenericCall:** real NT rendezvous (targets arrive → sender's go →
+     ALL CPUs run the worker at IPI_LEVEL simultaneously → acks) over the same
+     lock-serialized descriptor protocol — replaces the DbgBreakPoint stub; the UP
+     build now runs the worker at IPI_LEVEL too. A Phase-1 boot self-test (ex-rust
+     init.rs, after KeStartAllProcessors) proves the worker ran on every active CPU
+     (`[SMP] KeIpiGenericCall self-test: worker ran on 0x3 == active set OK` — seen
+     green in-boot) and bugchecks 0x5C/0x4743 loud on mismatch.
+  Design note: the staged wave-2 A NT-mailbox receive body (~/vibeos-rust-staging/
+  smp/ipi-recv/) was NOT integrated — the validated poll-service descriptor protocol
+  was extended instead (inherits the IF=0 deadlock-freedom); staged files remain as
+  reference for a future true per-CPU-mailbox upgrade if generic-call concurrency
+  ever matters.
+  **Lesson (cost: one wedged smoke run):** never DbgPrint from inside
+  KiSwapContextResume (mid-swap, SwapBusy still set) — the first marker cut printed
+  there and was moved to idle-exit before the wedge theory was even tested.
+  **OPEN — the -smp 2 residual flake is PRE-EXISTING and now pinned (field manual
+  §9.56):** ~1/4–1/3 of -smp 2 boots creep-wedge (Themes/SamSs/SVCHOST connects
+  stall → silence) or crash (0x19 POOL_HEADER_IS_ZERO; 0x1E c0000006 IN_PAGE_ERROR
+  w/ cdfs frames). Control experiment: M3b-landed HEAD (stash the whole M3-tail
+  delta) reproduces 1/6 under identical conditions → M3-tail exonerated; the
+  invlpg narrowing separately bisected clean (full-flush receiver = same rate).
+  SPECIALPOOL=* caught nothing at a store. Suspect: device-I/O completion / lost
+  wakeup under real concurrency (§9.51 uniata family, not TLB). This is now THE
+  gating item for M4 — the soak doubles as its corpus builder.
