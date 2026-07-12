@@ -135,3 +135,45 @@ pub unsafe fn list_entry<T>(ptr: *const list, offset: usize) -> *mut T {
 }
 
 use core::ffi::{c_int, c_uint};
+
+/// wine/list.h `LIST_FOR_EACH_ENTRY(elem, list, type, field)` — iterate a list,
+/// yielding a `*mut type` for each embedded node.
+///
+/// Faithful to the C: it does NOT cache `next` before running the body, so (exactly as
+/// in C) the body must not free or unlink the current element. Use the _SAFE variant
+/// below when it does — that distinction is the whole reason wine ships both, and
+/// silently "improving" the unsafe one into the safe one would paper over a real bug.
+///
+/// The container-of step goes through `offset_of!`, never a hand-written number.
+#[macro_export]
+macro_rules! LIST_FOR_EACH_ENTRY {
+    ($elem:ident, $list:expr, $ty:ty, $field:ident, $body:block) => {{
+        let head: *mut $crate::wine_list::list = $list;
+        let mut cur = (*head).next;
+        while cur != head {
+            #[allow(unused_variables)]
+            let $elem: *mut $ty =
+                $crate::wine_list::list_entry::<$ty>(cur, core::mem::offset_of!($ty, $field));
+            $body
+            cur = (*cur).next;
+        }
+    }};
+}
+
+/// wine/list.h `LIST_FOR_EACH_ENTRY_SAFE(cursor, cursor2, type, field)` — caches the
+/// next link BEFORE the body, so the body may unlink/free the current element.
+#[macro_export]
+macro_rules! LIST_FOR_EACH_ENTRY_SAFE {
+    ($elem:ident, $list:expr, $ty:ty, $field:ident, $body:block) => {{
+        let head: *mut $crate::wine_list::list = $list;
+        let mut cur = (*head).next;
+        while cur != head {
+            let next = (*cur).next;
+            #[allow(unused_variables)]
+            let $elem: *mut $ty =
+                $crate::wine_list::list_entry::<$ty>(cur, core::mem::offset_of!($ty, $field));
+            $body
+            cur = next;
+        }
+    }};
+}

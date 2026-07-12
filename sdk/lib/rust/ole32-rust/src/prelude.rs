@@ -36,18 +36,26 @@ pub use crate::hresults::*;
 pub use crate::iids::*;
 pub use crate::crt::*;
 pub use crate::gdi32::*;
+pub use crate::ole32_exports::*;
+pub use crate::user32::*;
 pub use crate::win32::*;
+pub use crate::win_consts::*;
 pub use crate::wine_list::*;
 pub use crate::winemacros::*;
 
 // wine debug macro forms (TRACE!(..)-style call sites)
 pub use crate::{ERR, FIXME, TRACE, WARN};
+pub use crate::{LIST_FOR_EACH_ENTRY, LIST_FOR_EACH_ENTRY_SAFE, stdmethod, FIELD_OFFSET};
+pub use crate::{CONTAINING_RECORD, ALIGN_LENGTH, ALIGN_POINTER};
 
 // Cross-module unqualified calls: the C TUs saw each other through ole32's private
 // headers; these glob re-exports play that role. NOTE it must glob each submodule —
 // `pub use crate::ring::*` alone re-exports only the module NAMES, so a sibling's
 // function (CoTaskMemAlloc, defined in ring::ifs) would still be unresolved.
 pub use crate::ring::{
-    bindctx::*, dictionary::*, enumx::*, errorinfo::*, hglobalstream::*, ifs::*,
-    ole2stubs::*, ole32_main::*,
+    antimoniker::*, bindctx::*, classmoniker::*, clipboard::*, comcat::*,
+    compositemoniker::*, dictionary::*, enumx::*, errorinfo::*, filelockbytes::*,
+    filemoniker::*, hglobalstream::*, ifs::*, itemmoniker::*, memlockbytes::*,
+    moniker::*, ole2::*, ole2impl::*, ole2stubs::*, ole32_main::*, oleproxy::*,
+    pointermoniker::*, usrmarshal::*,
 };

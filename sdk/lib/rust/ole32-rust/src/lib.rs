@@ -37,8 +37,11 @@ pub mod iids;
 pub mod crt;
 pub mod debug_shims;
 pub mod gdi32;
+pub mod ole32_exports;
 pub mod prelude;
+pub mod user32;
 pub mod win32;
+pub mod win_consts;
 pub mod wine_list;
 pub mod winemacros;
 

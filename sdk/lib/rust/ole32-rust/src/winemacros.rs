@@ -114,3 +114,36 @@ macro_rules! stdmethod {
         unsafe extern "C" fn $name ( $($arg : $ty),* ) $body
     };
 }
+
+/// `CONTAINING_RECORD(address, type, field)` — recover the containing struct from a
+/// pointer to one of its fields. Goes through `offset_of!` so the offset can never
+/// drift from the struct (a hand-written number here is exactly the magic-offset bug
+/// class `tools/scan_magic_offsets.py` exists to catch).
+#[macro_export]
+macro_rules! CONTAINING_RECORD {
+    ($addr:expr, $ty:ty, $field:ident) => {
+        (($addr as *const u8).sub(core::mem::offset_of!($ty, $field))) as *mut $ty
+    };
+}
+
+// ---- NDR alignment macros (usrmarshal.c) ----
+// These are ASSIGNMENT macros in the C (`ALIGN_LENGTH(len, 3)` mutates `len`), so they
+// must be macros here too, not functions — a function taking the value by copy would
+// silently drop the update. (rustconv emitted them as calls to a function; the callers
+// then discarded the result.)
+
+/// usrmarshal.c: `ALIGN_LENGTH(_Len, _Align)` → `_Len = (_Len + _Align) & ~_Align`
+#[macro_export]
+macro_rules! ALIGN_LENGTH {
+    ($len:expr, $align:expr) => {
+        $len = (($len) + ($align)) & !($align)
+    };
+}
+
+/// usrmarshal.c: `ALIGN_POINTER(_Ptr, _Align)` → round the pointer up to _Align+1 bytes
+#[macro_export]
+macro_rules! ALIGN_POINTER {
+    ($ptr:expr, $align:expr) => {
+        $ptr = ((($ptr) as usize + ($align) as usize) & !(($align) as usize)) as _
+    };
+}
