@@ -4722,14 +4722,40 @@ runs the try body; `try_return` is a `goto`). The dead ones are safe no-ops; the
 ones are NOT. Grep the stub file for any empty function that takes a function pointer or
 whose C original expands to control flow — those are latent no-op landmines.
 
-**Still-open next layer (as of 2026-07-11):** with FAT enumeration fixed, the arm64
-taskbar still does not appear — `CreateStartMenu` now blocks inside shell32
-`RSHELL_CStartMenu_CreateInstance` (the CMenuBand/CMenuDeskBar population that binds the
-now-enumerable Start Menu folder). Localized via a `[CSM]` step marker to the
-`_CStartMenu_CreateInstance` call; only ~32 `FatQueryDirectory` calls happen (NOT a
-fastfat loop), explorer does not crash (benign thread block, not a restart-loop), and the
-desktop + notepad paint fully. This is a separate, deeper shell/COM-layer bug the fastfat
-fixes merely *unblocked*; it is the remaining work to get the taskbar + start menu on arm64.
+**Third layer (ROOT-CAUSED + FIXED 2026-07-11, same day): the `CreateStartMenu` "hang"
+was ANOTHER fastfat translation bug — a dropped `_SEH2_FINALLY`, not a shell/COM bug.**
+The initial framing ("deeper shell/COM-layer bug") was wrong. `FatQueryDirectory`'s Rust
+translation ended its finally with only the Ccb update + `FatCompleteRequest`; the C
+finally ALSO does `FatReleaseFcb`, `FatUnpinBcb`, and `FatFreeStringBuffer`
+unconditionally. Every directory query therefore leaked a **shared hold on the directory
+Fcb's ERESOURCE** (plus a pinned Bcb + a pool buffer for grown long names). Leaked shared
+holds are invisible — enumeration keeps working (shared+shared stacks) — until any thread
+queues an **exclusive** acquire on that Fcb; ERESOURCE fairness then blocks all NEW
+shared acquirers too, wedging every subsequent open that traverses the directory.
+Symptom shape: `SHGetSpecialFolderLocation(CSIDL_PROGRAMS)` succeeded the FIRST time,
+then the identical second call (inside `GetProgramsFolder`) deadlocked opening
+`...\Start Menu\Programs` — a *repeat-call-only* hang is a lock/cache-poisoning tell.
+Diagnosis: `[CSM]` step tracer in `RSHELL_CStartMenu_CreateInstance` +
+`GetMergedFolder`/`BindToDesktop` (NB: explorer prefers **rshell.dll**'s copy of
+shellmenu over shell32's — instrument/rebuild `rshell`, not just shell32, or the probes
+never run). Bisected to "user SHGetSpecialFolderLocation" → silence in one boot. Fix:
+restore the three cleanup calls in the Rust finally (dirctrl.rs). Post-fix the arm64
+taskbar appears (Start button, window buttons, live tray clock) and
+`test_start_menu_opens` PASSES on arm64 for the first time — the full classic start menu
+renders (Programs/Documents/Settings/Search/Help/Run/Shut Down).
+
+**The second general rule from this lane: audit translated SEH functions for DROPPED
+FINALLY BLOCKS.** The translation stitcher can emit the try body and lose the
+`_SEH2_FINALLY` entirely (FatPnpQueryRemove: try block → `return`, no finally at all —
+leaked Vcb+global locks AND never completed the IRP; latent, fixed same day), or emit a
+partial finally (FatQueryDirectory: kept the C's `if (!AbnormalTermination())` tail,
+dropped the unconditional resource releases above it). Cheap detector that found both:
+count `FatAcquire*(Fcb|Vcb)` vs `FatRelease*(Fcb|Vcb)` call sites per .rs file and diff
+against the same count in the inert C original — any file where Rust's acquire/release
+delta differs from C's is a candidate. In fastfat only dirctrl.rs and pnp.rs diverged;
+create.rs's finally had already been restored by an earlier fix of this same class (its
+comments document the deliberately-dead DUMMY_PSEH abnormal-termination branches — that's
+the correct pattern to imitate).
 
 ### 9.54 (ROOT-CAUSED + FIXED 2026-07-11) Every arm64 BUGCHECK wore a mask — the crash reporter crashed (KeGetBugMessageText), and underneath sat a callback-ERET IRQ-clobber race from a dropped `cli` in the C→Rust translation
 
