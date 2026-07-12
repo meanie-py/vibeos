@@ -36,10 +36,10 @@ pub static mut critsect_debug: CRITICAL_SECTION_DEBUG = CRITICAL_SECTION_DEBUG {
     Type: 0,
     CreatorBackTraceIndex: 0,
     CriticalSection: unsafe { core::ptr::addr_of_mut!(cache_cs) },
-    ProcessLocksList: [
-        unsafe { core::ptr::addr_of_mut!(critsect_debug.ProcessLocksList) as *mut c_void },
-        unsafe { core::ptr::addr_of_mut!(critsect_debug.ProcessLocksList) as *mut c_void },
-    ],
+    ProcessLocksList: _LIST_ENTRY {
+        Flink: unsafe { core::ptr::addr_of_mut!(critsect_debug.ProcessLocksList) as *mut _LIST_ENTRY },
+        Blink: unsafe { core::ptr::addr_of_mut!(critsect_debug.ProcessLocksList) as *mut _LIST_ENTRY },
+    },
     EntryCount: 0,
     ContentionCount: 0,
     Flags: 0,
@@ -572,10 +572,10 @@ unsafe fn VARIANT_FetchDispatchValue(pvDispatch: LPVARIANT, pValue: LPVARIANT) -
         }
         hres = IDispatch_Invoke(
             (*V_DISPATCH_ref(pvDispatch)),
-            DISPID_VALUE,
+            DISPID_VALUE as DISPID,
             &IID_NULL,
             LOCALE_USER_DEFAULT,
-            DISPATCH_PROPERTYGET,
+            DISPATCH_PROPERTYGET as WORD,
             core::ptr::addr_of_mut!(emptyParams),
             pValue,
             core::ptr::null_mut(),
@@ -716,7 +716,7 @@ unsafe fn VARIANT_CopyIRecordInfo(dest: *mut VARIANT, src: *mut VARIANT) -> HRES
         return hr;
     }
 
-    (*dest_rec).pvRecord = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size as usize);
+    (*dest_rec).pvRecord = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size as SIZE_T);
     if (*dest_rec).pvRecord.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -1209,7 +1209,7 @@ pub unsafe extern "system" fn VariantTimeToSystemTime(
         return 0;
     }
 
-    *lpSt = *(core::ptr::addr_of!(ud.st) as *const SYSTEMTIME);
+    core::ptr::copy_nonoverlapping(core::ptr::addr_of!(ud.st) as *const SYSTEMTIME, lpSt, 1);
     return 1;
 }
 
@@ -1781,8 +1781,8 @@ pub unsafe extern "system" fn VarParseNumFromStr(
         }
     } else if ((*pNumprs).dwInFlags & NUMPRS_HEX_OCT) != 0 {
         memcpy(
-            rgbDig as *mut u8,
-            rgbTmp.as_ptr() as *const u8,
+            rgbDig as *mut c_void,
+            rgbTmp.as_ptr() as *const c_void,
             ((*pNumprs).cDig as usize) * core::mem::size_of::<BYTE>(),
         );
 
@@ -1814,8 +1814,8 @@ pub unsafe extern "system" fn VarParseNumFromStr(
     }
 
     memcpy(
-        rgbDig as *mut u8,
-        rgbTmp.as_ptr() as *const u8,
+        rgbDig as *mut c_void,
+        rgbTmp.as_ptr() as *const c_void,
         ((*pNumprs).cDig as usize) * core::mem::size_of::<BYTE>(),
     );
 
@@ -2688,14 +2688,15 @@ pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: 
 
     TRACE!(b"(%s,%s,%p)\n\0".as_ptr() as *const i8, debugstr_variant(left), debugstr_variant(right), result);
 
+    'VarAnd_Exit: {
     if ((*V_VT_ref(left)) & VT_TYPEMASK) == VT_DISPATCH {
         hres = VARIANT_FetchDispatchValue(left, &mut tempLeft);
-        if FAILED(hres) { 'VarAnd_Exit: loop { break 'VarAnd_Exit; } }
+        if FAILED(hres) { break 'VarAnd_Exit; }
         left_ptr = &mut tempLeft;
     }
     if ((*V_VT_ref(right)) & VT_TYPEMASK) == VT_DISPATCH {
         hres = VARIANT_FetchDispatchValue(right, &mut tempRight);
-        if FAILED(hres) { 'VarAnd_Exit: loop { break 'VarAnd_Exit; } }
+        if FAILED(hres) { break 'VarAnd_Exit; }
         right_ptr = &mut tempRight;
     }
 
@@ -2706,7 +2707,7 @@ pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: 
 
     if leftExtraFlags != rightExtraFlags {
         hres = DISP_E_BADVARTYPE;
-        'VarAnd_Exit: loop { break 'VarAnd_Exit; }
+        break 'VarAnd_Exit;
     }
     ExtraFlags = leftExtraFlags;
 
@@ -2714,7 +2715,7 @@ pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: 
        (leftvt == VT_INT && rightvt == VT_I8) ||
        ExtraFlags != 0 {
         hres = DISP_E_BADVARTYPE;
-        'VarAnd_Exit: loop { break 'VarAnd_Exit; }
+        break 'VarAnd_Exit;
     }
 
     if leftvt == VT_I8 || rightvt == VT_I8 {
@@ -2750,7 +2751,7 @@ pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: 
         resvt = VT_NULL;
     } else {
         hres = DISP_E_BADVARTYPE;
-        'VarAnd_Exit: loop { break 'VarAnd_Exit; }
+        break 'VarAnd_Exit;
     }
 
     if leftvt == VT_NULL || rightvt == VT_NULL {
@@ -2792,20 +2793,20 @@ pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: 
                         (*V_VT_ref(result)) = VT_BOOL;
                         (*V_BOOL_ref(result)) = b;
                     }
-                    'VarAnd_Exit: loop { break 'VarAnd_Exit; }
+                    break 'VarAnd_Exit;
                 }
                 _ => {}
             }
         }
         (*V_VT_ref(result)) = resvt;
-        'VarAnd_Exit: loop { break 'VarAnd_Exit; }
+        break 'VarAnd_Exit;
     }
 
     hres = VariantCopy(&mut varLeft, left_ptr);
-    if FAILED(hres) { 'VarAnd_Exit: loop { break 'VarAnd_Exit; } }
+    if FAILED(hres) { break 'VarAnd_Exit; }
 
     hres = VariantCopy(&mut varRight, right_ptr);
-    if FAILED(hres) { 'VarAnd_Exit: loop { break 'VarAnd_Exit; } }
+    if FAILED(hres) { break 'VarAnd_Exit; }
 
     if resvt == VT_I4 && (*V_VT_ref(&mut varLeft)) == VT_UI4 {
         (*V_VT_ref(&mut varLeft)) = VT_I4;
@@ -2821,7 +2822,7 @@ pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: 
         if SUCCEEDED(hres) && (*V_VT_ref(&mut varLeft)) != resvt {
             hres = VariantChangeType(&mut varLeft, &mut varLeft, 0, resvt);
         }
-        if FAILED(hres) { 'VarAnd_Exit: loop { break 'VarAnd_Exit; } }
+        if FAILED(hres) { break 'VarAnd_Exit; }
     }
 
     if resvt == VT_I4 && (*V_VT_ref(&mut varRight)) == VT_UI4 {
@@ -2838,7 +2839,7 @@ pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: 
         if SUCCEEDED(hres) && (*V_VT_ref(&mut varRight)) != resvt {
             hres = VariantChangeType(&mut varRight, &mut varRight, 0, resvt);
         }
-        if FAILED(hres) { 'VarAnd_Exit: loop { break 'VarAnd_Exit; } }
+        if FAILED(hres) { break 'VarAnd_Exit; }
     }
 
     (*V_VT_ref(result)) = resvt;
@@ -2864,19 +2865,18 @@ pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: 
         }
     }
 
-    'VarAnd_Exit: loop {
-        VariantClear(&mut varLeft);
-        VariantClear(&mut varRight);
-        VariantClear(&mut tempLeft);
-        VariantClear(&mut tempRight);
-        break;
-    }
+    } // 'VarAnd_Exit
+
+    VariantClear(&mut varLeft);
+    VariantClear(&mut varRight);
+    VariantClear(&mut tempLeft);
+    VariantClear(&mut tempRight);
 
     hres
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn VarAdd(left: LPVARIANT, right: LPVARIANT, result: LPVARIANT) -> HRESULT {
+pub unsafe extern "system" fn VarAdd(mut left: LPVARIANT, mut right: LPVARIANT, result: LPVARIANT) -> HRESULT {
     let mut hres: HRESULT;
     let mut lvt: VARTYPE;
     let mut rvt: VARTYPE;
@@ -3358,17 +3358,17 @@ pub unsafe extern "system" fn VarMul(left: LPVARIANT, right: LPVARIANT, result: 
                 break 'end;
             }
             VT_I8 => {
-                let r8res = (*V_I8_ref(&lv)) as f64 * (*V_I8_ref(&rv)) as f64;
+                let r8res = (*V_I8_ref(&mut lv)) as f64 * (*V_I8_ref(&mut rv)) as f64;
                 if r8res > I8_MAX as f64 || r8res < I8_MIN as f64 {
                     (*V_VT_ref(result)) = VT_R8;
                     (*V_R8_ref(result)) = r8res;
                     break 'end;
                 } else {
-                    (*V_I8_ref(&mut tv)) = (*V_I8_ref(&lv)) * (*V_I8_ref(&rv));
+                    (*V_I8_ref(&mut tv)) = (*V_I8_ref(&mut lv)) * (*V_I8_ref(&mut rv));
                 }
             }
             VT_R8 => {
-                (*V_R8_ref(&mut tv)) = (*V_R8_ref(&lv)) * (*V_R8_ref(&rv));
+                (*V_R8_ref(&mut tv)) = (*V_R8_ref(&mut lv)) * (*V_R8_ref(&mut rv));
             }
             _ => {
                 ERR!(b"We shouldn't get here! tvt = %d!\n\0".as_ptr() as *const i8, tvt);
@@ -3754,28 +3754,28 @@ pub unsafe extern "system" fn VarSub(left: LPVARIANT, right: LPVARIANT, result: 
         match resvt {
             VT_NULL => {}
             VT_DATE => {
-                (*V_DATE_ref(result)) = (*V_DATE_ref(&lv)) - (*V_DATE_ref(&rv));
+                (*V_DATE_ref(result)) = (*V_DATE_ref(&mut lv)) - (*V_DATE_ref(&mut rv));
             }
             VT_CY => {
                 hres = VarCySub((*V_CY_ref(&mut lv)), (*V_CY_ref(&mut rv)), V_CY_ref(result));
             }
             VT_R4 => {
-                (*V_R4_ref(result)) = (*V_R4_ref(&lv)) - (*V_R4_ref(&rv));
+                (*V_R4_ref(result)) = (*V_R4_ref(&mut lv)) - (*V_R4_ref(&mut rv));
             }
             VT_I8 => {
-                (*V_I8_ref(result)) = (*V_I8_ref(&lv)) - (*V_I8_ref(&rv));
+                (*V_I8_ref(result)) = (*V_I8_ref(&mut lv)) - (*V_I8_ref(&mut rv));
             }
             VT_I4 => {
-                (*V_I4_ref(result)) = (*V_I4_ref(&lv)) - (*V_I4_ref(&rv));
+                (*V_I4_ref(result)) = (*V_I4_ref(&mut lv)) - (*V_I4_ref(&mut rv));
             }
             VT_I2 => {
-                (*V_I2_ref(result)) = (*V_I2_ref(&lv)) - (*V_I2_ref(&rv));
+                (*V_I2_ref(result)) = (*V_I2_ref(&mut lv)) - (*V_I2_ref(&mut rv));
             }
             VT_UI1 => {
                 (*V_UI1_ref(result)) = ((*V_UI2_ref(&mut lv)) as i32 - (*V_UI1_ref(&mut rv)) as i32) as u8;
             }
             VT_R8 => {
-                (*V_R8_ref(result)) = (*V_R8_ref(&lv)) - (*V_R8_ref(&rv));
+                (*V_R8_ref(result)) = (*V_R8_ref(&mut lv)) - (*V_R8_ref(&mut rv));
             }
             VT_DECIMAL => {
                 hres = VarDecSub(V_DECIMAL_ref(&mut lv), V_DECIMAL_ref(&mut rv), V_DECIMAL_ref(result));
@@ -4413,7 +4413,7 @@ pub unsafe extern "system" fn VarAbs(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
 
     match (*V_VT_ref(pVarIn)) {
         VT_I1 => {
-            if (*V_I1_ref(pVarIn)) == I1_MIN {
+            if (*V_I1_ref(pVarIn)) == I1_MIN as i8 {
                 hRet = DISP_E_OVERFLOW;
             } else if (*V_I1_ref(pVarIn)) < 0 {
                 (*V_I1_ref(pVarOut)) = -(*V_I1_ref(pVarIn));
@@ -4421,21 +4421,21 @@ pub unsafe extern "system" fn VarAbs(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
         }
         VT_BOOL => {
             (*V_VT_ref(pVarOut)) = VT_I2;
-            if (*V_I2_ref(pVarIn)) == I2_MIN {
+            if (*V_I2_ref(pVarIn)) == I2_MIN as i16 {
                 hRet = DISP_E_OVERFLOW;
             } else if (*V_I2_ref(pVarIn)) < 0 {
                 (*V_I2_ref(pVarOut)) = -(*V_I2_ref(pVarIn));
             }
         }
         VT_I2 => {
-            if (*V_I2_ref(pVarIn)) == I2_MIN {
+            if (*V_I2_ref(pVarIn)) == I2_MIN as i16 {
                 hRet = DISP_E_OVERFLOW;
             } else if (*V_I2_ref(pVarIn)) < 0 {
                 (*V_I2_ref(pVarOut)) = -(*V_I2_ref(pVarIn));
             }
         }
         VT_INT | VT_I4 => {
-            if (*V_I4_ref(pVarIn)) == I4_MIN {
+            if (*V_I4_ref(pVarIn)) == I4_MIN as i32 {
                 hRet = DISP_E_OVERFLOW;
             } else if (*V_I4_ref(pVarIn)) < 0 {
                 (*V_I4_ref(pVarOut)) = -(*V_I4_ref(pVarIn));
@@ -4449,14 +4449,14 @@ pub unsafe extern "system" fn VarAbs(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             }
         }
         VT_R4 => {
-            if (*V_R4_ref(pVarIn)) == R4_MIN {
+            if (*V_R4_ref(pVarIn)) == R4_MIN as f32 {
                 hRet = DISP_E_OVERFLOW;
             } else if (*V_R4_ref(pVarIn)) < 0.0 {
                 (*V_R4_ref(pVarOut)) = -(*V_R4_ref(pVarIn));
             }
         }
         VT_BSTR => {
-            hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, 0, core::ptr::addr_of_mut!((*(&mut varIn as *mut _)).n1.n2.n3.dblVal));
+            hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, 0, V_R8_ref(&mut varIn));
             if !FAILED(hRet) {
                 (*V_VT_ref(pVarOut)) = VT_R8;
                 pVarIn = &mut varIn;
@@ -4624,7 +4624,7 @@ pub unsafe extern "system" fn VarInt(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
         }
         8 => {
             (*V_VT_ref(pVarOut)) = 5;
-            hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), 0x0400, 0, (*V_R8_ref(pVarOut)));
+            hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), 0x0400, 0, V_R8_ref(pVarOut));
             pVarIn = pVarOut;
             (*V_R8_ref(pVarOut)) = floor((*V_R8_ref(pVarIn)));
         }
@@ -4632,10 +4632,10 @@ pub unsafe extern "system" fn VarInt(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             (*V_R8_ref(pVarOut)) = floor((*V_R8_ref(pVarIn)));
         }
         6 => {
-            hRet = VarCyInt((*V_CY_ref(pVarIn)), (*V_CY_ref(pVarOut)));
+            hRet = VarCyInt((*V_CY_ref(pVarIn)), V_CY_ref(pVarOut));
         }
         14 => {
-            hRet = VarDecInt((*V_DECIMAL_ref(pVarIn)), (*V_DECIMAL_ref(pVarOut)));
+            hRet = VarDecInt(V_DECIMAL_ref(pVarIn), V_DECIMAL_ref(pVarOut));
         }
         _ => {
             hRet = VarFix(pVarIn, pVarOut);
@@ -4654,7 +4654,7 @@ pub unsafe extern "system" fn VarXor(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, 
     let mut varRight: VARIANT = core::mem::zeroed();
     let mut tempLeft: VARIANT = core::mem::zeroed();
     let mut tempRight: VARIANT = core::mem::zeroed();
-    let mut d: f64;
+    let mut d: f64 = 0.0;
     let mut hRet: HRESULT;
 
     TRACE!(b"(%s,%s,%p)\n\0".as_ptr() as *const i8, debugstr_variant(pVarLeft), debugstr_variant(pVarRight), pVarOut);
@@ -4890,7 +4890,7 @@ pub unsafe extern "system" fn VarNeg(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
         }
         VT_BOOL => {
             (*V_VT_ref(pVarOut)) = VT_I2;
-            if (*V_I2_ref(pVarIn)) == I2_MIN {
+            if (*V_I2_ref(pVarIn)) == I2_MIN as i16 {
                 (*V_VT_ref(pVarOut)) = VT_I4;
                 (*V_I4_ref(pVarOut)) = -((*V_I2_ref(pVarIn)) as i32);
             } else {
@@ -4898,7 +4898,7 @@ pub unsafe extern "system" fn VarNeg(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             }
         }
         VT_I2 => {
-            if (*V_I2_ref(pVarIn)) == I2_MIN {
+            if (*V_I2_ref(pVarIn)) == I2_MIN as i16 {
                 (*V_VT_ref(pVarOut)) = VT_I4;
                 (*V_I4_ref(pVarOut)) = -((*V_I2_ref(pVarIn)) as i32);
             } else {
@@ -4906,7 +4906,7 @@ pub unsafe extern "system" fn VarNeg(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             }
         }
         VT_I4 => {
-            if (*V_I4_ref(pVarIn)) == I4_MIN {
+            if (*V_I4_ref(pVarIn)) == I4_MIN as i32 {
                 (*V_VT_ref(pVarOut)) = VT_R8;
                 (*V_R8_ref(pVarOut)) = -((*V_I4_ref(pVarIn)) as f64);
             } else {
@@ -4991,10 +4991,10 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
 
     if (*V_VT_ref(pVarIn)) == VT_BSTR {
         (*V_VT_ref(&mut varIn)) = VT_R8;
-        hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, 0, (*V_R8_ref(&mut varIn)));
+        hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, 0, V_R8_ref(&mut varIn));
         if FAILED(hRet) {
             (*V_VT_ref(&mut varIn)) = VT_BOOL;
-            hRet = VarBoolFromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, VAR_LOCALBOOL, (*V_BOOL_ref(&mut varIn)));
+            hRet = VarBoolFromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, VAR_LOCALBOOL, V_BOOL_ref(&mut varIn));
         }
         if FAILED(hRet) {
             'VarNot_Exit: {
@@ -5027,7 +5027,7 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             (*V_VT_ref(pVarOut)) = VT_I4;
         }
         VT_DECIMAL => {
-            hRet = VarI4FromDec((*V_DECIMAL_ref(pVarIn)), (*V_I4_ref(&mut varIn)));
+            hRet = VarI4FromDec(V_DECIMAL_ref(pVarIn), V_I4_ref(&mut varIn));
             if FAILED(hRet) {
                 'VarNot_Exit: {
                     break 'VarNot_Exit;
@@ -5061,17 +5061,17 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             (*V_VT_ref(pVarOut)) = VT_I4;
         }
         VT_R4 => {
-            hRet = VarI4FromR4((*V_R4_ref(pVarIn)), (*V_I4_ref(pVarOut)));
+            hRet = VarI4FromR4((*V_R4_ref(pVarIn)), V_I4_ref(pVarOut));
             (*V_I4_ref(pVarOut)) = !(*V_I4_ref(pVarOut));
             (*V_VT_ref(pVarOut)) = VT_I4;
         }
         VT_DATE | VT_R8 => {
-            hRet = VarI4FromR8((*V_R8_ref(pVarIn)), (*V_I4_ref(pVarOut)));
+            hRet = VarI4FromR8((*V_R8_ref(pVarIn)), V_I4_ref(pVarOut));
             (*V_I4_ref(pVarOut)) = !(*V_I4_ref(pVarOut));
             (*V_VT_ref(pVarOut)) = VT_I4;
         }
         VT_CY => {
-            hRet = VarI4FromCy((*V_CY_ref(pVarIn)), (*V_I4_ref(pVarOut)));
+            hRet = VarI4FromCy((*V_CY_ref(pVarIn)), V_I4_ref(pVarOut));
             (*V_I4_ref(pVarOut)) = !(*V_I4_ref(pVarOut));
             (*V_VT_ref(pVarOut)) = VT_I4;
         }
@@ -5151,7 +5151,7 @@ pub unsafe extern "system" fn VarRound(pVarIn: LPVARIANT, deci: i32, pVarOut: LP
             (*V_I2_ref(pVarOut)) = (*V_BOOL_ref(pVarIn));
         }
         VT_BSTR => {
-            hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, 0, (*V_R8_ref(&mut varIn)));
+            hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, 0, V_R8_ref(&mut varIn));
             if FAILED(hRet) {
             } else {
                 (*V_VT_ref(&mut varIn)) = VT_R8;
@@ -5207,7 +5207,7 @@ pub unsafe extern "system" fn VarRound(pVarIn: LPVARIANT, deci: i32, pVarOut: LP
         VT_DECIMAL => {
             let mut dbl: f64 = 0.0;
 
-            hRet = VarR8FromDec((*V_DECIMAL_ref(pVarIn)), &mut dbl);
+            hRet = VarR8FromDec(V_DECIMAL_ref(pVarIn), &mut dbl);
             if FAILED(hRet) {
             } else {
                 if dbl > 0.0 {
@@ -5217,7 +5217,7 @@ pub unsafe extern "system" fn VarRound(pVarIn: LPVARIANT, deci: i32, pVarOut: LP
                 }
 
                 (*V_VT_ref(pVarOut)) = VT_DECIMAL;
-                hRet = VarDecFromR8(dbl, (*V_DECIMAL_ref(pVarOut)));
+                hRet = VarDecFromR8(dbl, V_DECIMAL_ref(pVarOut));
             }
         }
 
@@ -5319,35 +5319,35 @@ pub unsafe extern "system" fn VarIdiv(left: LPVARIANT, right: LPVARIANT, result:
         (*V_VT_ref(result)) = resvt;
         match resvt {
             VT_UI1 => {
-                if (*V_UI1_ref(&rv)) == 0 {
+                if (*V_UI1_ref(&mut rv)) == 0 {
                     hres = DISP_E_DIVBYZERO;
                     (*V_VT_ref(result)) = VT_EMPTY;
                 } else {
-                    (*V_UI1_ref(result)) = (*V_UI1_ref(&lv)) / (*V_UI1_ref(&rv));
+                    (*V_UI1_ref(result)) = (*V_UI1_ref(&mut lv)) / (*V_UI1_ref(&mut rv));
                 }
             }
             VT_I2 => {
-                if (*V_I2_ref(&rv)) == 0 {
+                if (*V_I2_ref(&mut rv)) == 0 {
                     hres = DISP_E_DIVBYZERO;
                     (*V_VT_ref(result)) = VT_EMPTY;
                 } else {
-                    (*V_I2_ref(result)) = (*V_I2_ref(&lv)) / (*V_I2_ref(&rv));
+                    (*V_I2_ref(result)) = (*V_I2_ref(&mut lv)) / (*V_I2_ref(&mut rv));
                 }
             }
             VT_I4 => {
-                if (*V_I4_ref(&rv)) == 0 {
+                if (*V_I4_ref(&mut rv)) == 0 {
                     hres = DISP_E_DIVBYZERO;
                     (*V_VT_ref(result)) = VT_EMPTY;
                 } else {
-                    (*V_I4_ref(result)) = (*V_I4_ref(&lv)) / (*V_I4_ref(&rv));
+                    (*V_I4_ref(result)) = (*V_I4_ref(&mut lv)) / (*V_I4_ref(&mut rv));
                 }
             }
             VT_I8 => {
-                if (*V_I8_ref(&rv)) == 0 {
+                if (*V_I8_ref(&mut rv)) == 0 {
                     hres = DISP_E_DIVBYZERO;
                     (*V_VT_ref(result)) = VT_EMPTY;
                 } else {
-                    (*V_I8_ref(result)) = (*V_I8_ref(&lv)) / (*V_I8_ref(&rv));
+                    (*V_I8_ref(result)) = (*V_I8_ref(&mut lv)) / (*V_I8_ref(&mut rv));
                 }
             }
             _ => {
@@ -5504,27 +5504,27 @@ pub unsafe extern "system" fn VarMod(left: LPVARIANT, right: LPVARIANT, result: 
         }
 
         if ((*V_VT_ref(left_ptr)) == VT_I8) || ((*V_VT_ref(right_ptr)) == VT_I8) {
-            resT = VT_I8;
+            resT = VT_I8 as i32;
         } else if ((*V_VT_ref(left_ptr)) == VT_UI1) && ((*V_VT_ref(right_ptr)) == VT_BOOL) {
-            resT = VT_I2;
+            resT = VT_I2 as i32;
         } else if ((*V_VT_ref(left_ptr)) == VT_UI1) && ((*V_VT_ref(right_ptr)) == VT_UI1) {
-            resT = VT_UI1;
+            resT = VT_UI1 as i32;
         } else if ((*V_VT_ref(left_ptr)) == VT_UI1) && ((*V_VT_ref(right_ptr)) == VT_I2) {
-            resT = VT_I2;
+            resT = VT_I2 as i32;
         } else if ((*V_VT_ref(left_ptr)) == VT_I2) && ((*V_VT_ref(right_ptr)) == VT_BOOL) {
-            resT = VT_I2;
+            resT = VT_I2 as i32;
         } else if ((*V_VT_ref(left_ptr)) == VT_I2) && ((*V_VT_ref(right_ptr)) == VT_UI1) {
-            resT = VT_I2;
+            resT = VT_I2 as i32;
         } else if ((*V_VT_ref(left_ptr)) == VT_I2) && ((*V_VT_ref(right_ptr)) == VT_I2) {
-            resT = VT_I2;
+            resT = VT_I2 as i32;
         } else if ((*V_VT_ref(left_ptr)) == VT_BOOL) && ((*V_VT_ref(right_ptr)) == VT_BOOL) {
-            resT = VT_I2;
+            resT = VT_I2 as i32;
         } else if ((*V_VT_ref(left_ptr)) == VT_BOOL) && ((*V_VT_ref(right_ptr)) == VT_UI1) {
-            resT = VT_I2;
+            resT = VT_I2 as i32;
         } else if ((*V_VT_ref(left_ptr)) == VT_BOOL) && ((*V_VT_ref(right_ptr)) == VT_I2) {
-            resT = VT_I2;
+            resT = VT_I2 as i32;
         } else {
-            resT = VT_I4;
+            resT = VT_I4 as i32;
         }
 
         rc = VariantChangeType(&mut lv, left_ptr, 0, VT_I8);
@@ -5707,7 +5707,7 @@ pub unsafe extern "system" fn VarImp(left: LPVARIANT, right: LPVARIANT, result: 
     let mut ExtraFlags: VARTYPE;
     let mut lv: VARIANT = core::mem::zeroed();
     let mut rv: VARIANT = core::mem::zeroed();
-    let mut d: f64;
+    let mut d: f64 = 0.0;
     let mut tempLeft: VARIANT = core::mem::zeroed();
     let mut tempRight: VARIANT = core::mem::zeroed();
     let mut left_ptr = left;
@@ -5720,14 +5720,15 @@ pub unsafe extern "system" fn VarImp(left: LPVARIANT, right: LPVARIANT, result: 
 
     TRACE!(b"(%s,%s,%p)\n\0".as_ptr() as *const i8, debugstr_variant(left), debugstr_variant(right), result);
 
+    'VarImp_Exit: {
     if ((*V_VT_ref(left_ptr)) & VT_TYPEMASK) == VT_DISPATCH {
         hres = VARIANT_FetchDispatchValue(left_ptr, &mut tempLeft);
-        if FAILED(hres) { 'VarImp_Exit: loop { break 'VarImp_Exit; } }
+        if FAILED(hres) { break 'VarImp_Exit; }
         left_ptr = &mut tempLeft;
     }
     if ((*V_VT_ref(right_ptr)) & VT_TYPEMASK) == VT_DISPATCH {
         hres = VARIANT_FetchDispatchValue(right_ptr, &mut tempRight);
-        if FAILED(hres) { 'VarImp_Exit: loop { break 'VarImp_Exit; } }
+        if FAILED(hres) { break 'VarImp_Exit; }
         right_ptr = &mut tempRight;
     }
 
@@ -5738,17 +5739,17 @@ pub unsafe extern "system" fn VarImp(left: LPVARIANT, right: LPVARIANT, result: 
 
     if leftExtraFlags != rightExtraFlags {
         hres = DISP_E_BADVARTYPE;
-        'VarImp_Exit: loop { break 'VarImp_Exit; }
+        break 'VarImp_Exit;
     }
     ExtraFlags = leftExtraFlags;
 
     if (leftvt == VT_I8 && rightvt == VT_INT) || ExtraFlags != 0 {
         hres = DISP_E_BADVARTYPE;
-        'VarImp_Exit: loop { break 'VarImp_Exit; }
+        break 'VarImp_Exit;
     } else if (leftvt == VT_NULL && rightvt == VT_NULL) || (leftvt == VT_NULL && rightvt == VT_EMPTY) {
         (*V_VT_ref(result)) = VT_NULL;
         hres = S_OK;
-        'VarImp_Exit: loop { break 'VarImp_Exit; }
+        break 'VarImp_Exit;
     } else if leftvt == VT_I8 || rightvt == VT_I8 {
         resvt = VT_I8;
     } else if leftvt == VT_I4 || rightvt == VT_I4 || leftvt == VT_INT || rightvt == VT_INT ||
@@ -5793,23 +5794,23 @@ pub unsafe extern "system" fn VarImp(left: LPVARIANT, right: LPVARIANT, result: 
             }
             VT_BSTR => {
                 hres = VarBoolFromStr((*V_BSTR_ref(right_ptr)), LOCALE_USER_DEFAULT, VAR_LOCALBOOL, &mut b);
-                if FAILED(hres) { 'VarImp_Exit: loop { break 'VarImp_Exit; } }
+                if FAILED(hres) { break 'VarImp_Exit; }
                 else if b == 0 {
                     (*V_VT_ref(result)) = VT_NULL;
                 } else {
                     (*V_VT_ref(result)) = VT_BOOL;
                     (*V_BOOL_ref(result)) = b;
                 }
-                'VarImp_Exit: loop { break 'VarImp_Exit; }
+                break 'VarImp_Exit;
             }
             _ => {}
         }
         if resvt == VT_NULL {
             (*V_VT_ref(result)) = resvt;
-            'VarImp_Exit: loop { break 'VarImp_Exit; }
+            break 'VarImp_Exit;
         } else {
             hres = VariantChangeType(result, right_ptr, 0, resvt);
-            'VarImp_Exit: loop { break 'VarImp_Exit; }
+            break 'VarImp_Exit;
         }
     } else if rightvt == VT_NULL {
         let mut b: VARIANT_BOOL = 0;
@@ -5824,7 +5825,7 @@ pub unsafe extern "system" fn VarImp(left: LPVARIANT, right: LPVARIANT, result: 
             VT_UI4 => { if (*V_UI4_ref(left_ptr)) == !0u32 { resvt = VT_NULL; } }
             VT_I8 => { if (*V_I8_ref(left_ptr)) == -1 { resvt = VT_NULL; } }
             VT_UI8 => { if (*V_UI8_ref(left_ptr)) == !0u64 { resvt = VT_NULL; } }
-            VT_BOOL => { if (*V_BOOL_ref(left_ptr)) == VARIANT_TRUE { resvt = VT_NULL; } }
+            VT_BOOL => { if (*V_BOOL_ref(left_ptr)) == VARIANT_TRUE as i16 { resvt = VT_NULL; } }
             VT_R4 => { if (*V_R4_ref(left_ptr)) == -1.0 { resvt = VT_NULL; } }
             VT_R8 => { if (*V_R8_ref(left_ptr)) == -1.0 { resvt = VT_NULL; } }
             VT_CY => { if (*V_CY_ref(left_ptr)).int64 == -1 { resvt = VT_NULL; } }
@@ -5835,8 +5836,8 @@ pub unsafe extern "system" fn VarImp(left: LPVARIANT, right: LPVARIANT, result: 
             }
             VT_BSTR => {
                 hres = VarBoolFromStr((*V_BSTR_ref(left_ptr)), LOCALE_USER_DEFAULT, VAR_LOCALBOOL, &mut b);
-                if FAILED(hres) { 'VarImp_Exit: loop { break 'VarImp_Exit; } }
-                else if b == VARIANT_TRUE {
+                if FAILED(hres) { break 'VarImp_Exit; }
+                else if b == VARIANT_TRUE as i16 {
                     resvt = VT_NULL;
                 }
             }
@@ -5844,66 +5845,65 @@ pub unsafe extern "system" fn VarImp(left: LPVARIANT, right: LPVARIANT, result: 
         }
         if resvt == VT_NULL {
             (*V_VT_ref(result)) = resvt;
-            'VarImp_Exit: loop { break 'VarImp_Exit; }
+            break 'VarImp_Exit;
         }
     }
 
     hres = VariantCopy(&mut lv, left_ptr);
-    if FAILED(hres) { 'VarImp_Exit: loop { break 'VarImp_Exit; } }
+    if FAILED(hres) { break 'VarImp_Exit; }
 
     if rightvt == VT_NULL {
         memset(&mut rv as *mut _ as LPVOID, 0, core::mem::size_of::<VARIANT>());
         (*V_VT_ref(&mut rv)) = resvt;
     } else {
         hres = VariantCopy(&mut rv, right_ptr);
-        if FAILED(hres) { 'VarImp_Exit: loop { break 'VarImp_Exit; } }
+        if FAILED(hres) { break 'VarImp_Exit; }
     }
 
-    if (*V_VT_ref(&lv)) == VT_BSTR && FAILED(VarR8FromStr((*V_BSTR_ref(&lv)), LOCALE_USER_DEFAULT, 0, &mut d)) {
+    if (*V_VT_ref(&mut lv)) == VT_BSTR && FAILED(VarR8FromStr((*V_BSTR_ref(&mut lv)), LOCALE_USER_DEFAULT, 0, &mut d)) {
         hres = VariantChangeType(&mut lv, &mut lv, VARIANT_LOCALBOOL as USHORT, VT_BOOL);
     }
-    if SUCCEEDED(hres) && (*V_VT_ref(&lv)) != resvt {
+    if SUCCEEDED(hres) && (*V_VT_ref(&mut lv)) != resvt {
         hres = VariantChangeType(&mut lv, &mut lv, 0, resvt);
     }
-    if FAILED(hres) { 'VarImp_Exit: loop { break 'VarImp_Exit; } }
+    if FAILED(hres) { break 'VarImp_Exit; }
 
-    if (*V_VT_ref(&rv)) == VT_BSTR && FAILED(VarR8FromStr((*V_BSTR_ref(&rv)), LOCALE_USER_DEFAULT, 0, &mut d)) {
+    if (*V_VT_ref(&mut rv)) == VT_BSTR && FAILED(VarR8FromStr((*V_BSTR_ref(&mut rv)), LOCALE_USER_DEFAULT, 0, &mut d)) {
         hres = VariantChangeType(&mut rv, &mut rv, VARIANT_LOCALBOOL as USHORT, VT_BOOL);
     }
-    if SUCCEEDED(hres) && (*V_VT_ref(&rv)) != resvt {
+    if SUCCEEDED(hres) && (*V_VT_ref(&mut rv)) != resvt {
         hres = VariantChangeType(&mut rv, &mut rv, 0, resvt);
     }
-    if FAILED(hres) { 'VarImp_Exit: loop { break 'VarImp_Exit; } }
+    if FAILED(hres) { break 'VarImp_Exit; }
 
     (*V_VT_ref(result)) = resvt;
     match resvt {
         VT_I8 => {
-            (*V_I8_ref(result)) = (!(*V_I8_ref(&lv))) | (*V_I8_ref(&rv));
+            (*V_I8_ref(result)) = (!(*V_I8_ref(&mut lv))) | (*V_I8_ref(&mut rv));
         }
         VT_I4 => {
-            (*V_I4_ref(result)) = (!(*V_I4_ref(&lv))) | (*V_I4_ref(&rv));
+            (*V_I4_ref(result)) = (!(*V_I4_ref(&mut lv))) | (*V_I4_ref(&mut rv));
         }
         VT_I2 => {
-            (*V_I2_ref(result)) = (!(*V_I2_ref(&lv))) | (*V_I2_ref(&rv));
+            (*V_I2_ref(result)) = (!(*V_I2_ref(&mut lv))) | (*V_I2_ref(&mut rv));
         }
         VT_UI1 => {
-            (*V_UI1_ref(result)) = (!(*V_UI1_ref(&lv))) | (*V_UI1_ref(&rv));
+            (*V_UI1_ref(result)) = (!(*V_UI1_ref(&mut lv))) | (*V_UI1_ref(&mut rv));
         }
         VT_BOOL => {
-            (*V_BOOL_ref(result)) = (!(*V_BOOL_ref(&lv))) | (*V_BOOL_ref(&rv));
+            (*V_BOOL_ref(result)) = (!(*V_BOOL_ref(&mut lv))) | (*V_BOOL_ref(&mut rv));
         }
         _ => {
             FIXME!(b"Couldn't perform bitwise implication on variant types %d,%d\n\0".as_ptr() as *const i8, leftvt, rightvt);
         }
     }
 
-    'VarImp_Exit: loop {
-        VariantClear(&mut lv);
-        VariantClear(&mut rv);
-        VariantClear(&mut tempLeft);
-        VariantClear(&mut tempRight);
-        break;
-    }
+    } // 'VarImp_Exit
+
+    VariantClear(&mut lv);
+    VariantClear(&mut rv);
+    VariantClear(&mut tempLeft);
+    VariantClear(&mut tempRight);
 
     hres
 }

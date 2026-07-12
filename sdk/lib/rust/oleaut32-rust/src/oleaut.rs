@@ -1,5 +1,20 @@
 use crate::prelude::*;
+use crate::typelib::LoadTypeLib;
 use core::ffi::c_void;
+
+// COM vtbl thunks use STDMETHODCALLTYPE. The com_sys/bindgen `IPSFactoryBufferVtbl`
+// encodes that as the concrete resolution of the Windows "system" ABI — extern
+// "stdcall" on i386 and extern "C" on amd64/arm64 — not the "system" alias, which
+// rustc keeps nominally distinct. Emit each thunk with the matching concrete ABI so
+// its fn item slots into the bindgen vtbl fields.
+macro_rules! stdmethod {
+    ( fn $name:ident ( $($arg:ident : $ty:ty),* $(,)? ) -> $ret:ty $body:block ) => {
+        #[cfg(target_arch = "x86")]
+        unsafe extern "stdcall" fn $name ( $($arg : $ty),* ) -> $ret $body
+        #[cfg(not(target_arch = "x86"))]
+        unsafe extern "C" fn $name ( $($arg : $ty),* ) -> $ret $body
+    };
+}
 
 // CRT printf family (cdecl varargs) — the only function externs kept locally;
 // every other former local decl is provided by the prelude with the correct
@@ -79,6 +94,7 @@ pub const BUCKET_SIZE: usize = 16;
 pub const BUCKET_BUFFER_SIZE: usize = 6;
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct bstr_cache_entry_t {
     pub head: u16,
     pub cnt: u16,
@@ -101,20 +117,16 @@ static _delimiter: [WCHAR; 2] = ['!' as WCHAR, 0];
 static mut pdelimiter: *const WCHAR = unsafe { &_delimiter[0] };
 
 static dispatch_typelib_ps_vtbl: IPSFactoryBufferVtbl = IPSFactoryBufferVtbl {
-    QueryInterface: dispatch_typelib_ps_QueryInterface,
-    AddRef: dispatch_typelib_ps_AddRef,
-    Release: dispatch_typelib_ps_Release,
-    CreateProxy: dispatch_typelib_ps_CreateProxy,
-    CreateStub: dispatch_typelib_ps_CreateStub,
+    QueryInterface: Some(dispatch_typelib_ps_QueryInterface),
+    AddRef: Some(dispatch_typelib_ps_AddRef),
+    Release: Some(dispatch_typelib_ps_Release),
+    CreateProxy: Some(dispatch_typelib_ps_CreateProxy),
+    CreateStub: Some(dispatch_typelib_ps_CreateStub),
 };
 
 static mut dispatch_typelib_ps: IPSFactoryBuffer = IPSFactoryBuffer {
-    lpVtbl: unsafe { &dispatch_typelib_ps_vtbl },
+    lpVtbl: &dispatch_typelib_ps_vtbl as *const _ as *mut _,
 };
-
-#[inline]
-
-#[inline(always)]
 
 #[repr(C)]
 struct ifacepsredirect_data {
@@ -210,7 +222,7 @@ unsafe fn alloc_bstr(size: usize) -> *mut bstr_t {
         }
     }
 
-    ret = CoTaskMemAlloc(bstr_alloc_size(size)) as *mut bstr_t;
+    ret = CoTaskMemAlloc(bstr_alloc_size(size) as SIZE_T) as *mut bstr_t;
     if !ret.is_null() {
         (*ret).size = size as u32;
     }
@@ -267,7 +279,7 @@ pub unsafe extern "system" fn SysFreeString(str: BSTR) {
 
     bstr = bstr_from_str(str);
 
-    alloc_size = IMalloc_GetSize(malloc, bstr as LPVOID);
+    alloc_size = IMalloc_GetSize(malloc, bstr as LPVOID) as usize;
     if alloc_size == !0usize {
         return;
     }
@@ -281,19 +293,19 @@ pub unsafe extern "system" fn SysFreeString(str: BSTR) {
         i = 0;
         while i < (*cache_entry).cnt as u32 {
             if (*cache_entry).buf[(((*cache_entry).head as u32 + i) % BUCKET_BUFFER_SIZE as u32) as usize] == bstr {
-                WARN(b"String already is in cache!\n\0".as_ptr() as LPCSTR);
+                WARN!(b"String already is in cache!\n\0".as_ptr() as LPCSTR);
                 LeaveCriticalSection(core::ptr::addr_of_mut!(cs_bstr_cache));
                 return;
             }
             i += 1;
         }
 
-        if ((*cache_entry).cnt as usize) < ARRAY_SIZE(core::ptr::addr_of!((*cache_entry).buf)) {
+        if ((*cache_entry).cnt as usize) < BUCKET_BUFFER_SIZE {
             (*cache_entry).buf[(((*cache_entry).head as u32 + (*cache_entry).cnt as u32) % BUCKET_BUFFER_SIZE as u32) as usize] = bstr;
             (*cache_entry).cnt += 1;
 
             if 0 != 0 {
-                let n: u32 = ((alloc_size - FIELD_OFFSET(core::mem::size_of::<bstr_t>(), core::mem::offset_of!(bstr_t, u))) / core::mem::size_of::<DWORD>()) as u32;
+                let n: u32 = ((alloc_size - core::mem::offset_of!(bstr_t, u)) / core::mem::size_of::<DWORD>()) as u32;
                 i = 0;
                 while i < n {
                     (*bstr).u.dwptr[i as usize] = ARENA_FREE_FILLER;
@@ -348,7 +360,7 @@ pub unsafe extern "system" fn SysReAllocStringLen(old: *mut BSTR, str: *const OL
     if (*old) != core::ptr::null_mut() {
         let newbytelen = (len * core::mem::size_of::<WCHAR>() as u32) as DWORD;
         let old_bstr = bstr_from_str(*old);
-        let bstr = CoTaskMemRealloc(old_bstr as LPVOID, bstr_alloc_size(newbytelen as usize)) as *mut bstr_t;
+        let bstr = CoTaskMemRealloc(old_bstr as LPVOID, bstr_alloc_size(newbytelen as usize) as SIZE_T) as *mut bstr_t;
 
         if bstr.is_null() {
             return 0;
@@ -406,7 +418,7 @@ pub unsafe extern "system" fn SysReAllocString(old: LPBSTR, str: LPCOLESTR) -> I
 #[no_mangle]
 pub unsafe extern "system" fn SetOaNoCache() {
     TRACE!(b"\n\0".as_ptr() as LPCSTR);
-    bstr_cache_enabled = 0u8;
+    bstr_cache_enabled = 0;
 }
 
 #[no_mangle]
@@ -444,7 +456,7 @@ pub unsafe extern "system" fn RegisterActiveObject(
 #[no_mangle]
 pub unsafe extern "system" fn RevokeActiveObject(xregister: DWORD, reserved: LPVOID) -> HRESULT {
 
-    let mut runobtable: LPVOID = core::ptr::null_mut();
+    let mut runobtable: LPRUNNINGOBJECTTABLE = core::ptr::null_mut();
     let mut ret: HRESULT;
 
     ret = GetRunningObjectTable(0, &mut runobtable);
@@ -468,8 +480,8 @@ pub unsafe extern "system" fn GetActiveObject(
 
     let mut guidbuf: [u16; 80] = [0; 80];
     let mut ret: HRESULT;
-    let mut runobtable: LPVOID = core::ptr::null_mut();
-    let mut moniker: LPVOID = core::ptr::null_mut();
+    let mut runobtable: LPRUNNINGOBJECTTABLE = core::ptr::null_mut();
+    let mut moniker: LPMONIKER = core::ptr::null_mut();
 
     StringFromGUID2(rcid, guidbuf.as_mut_ptr(), 39);
     ret = CreateItemMoniker(pdelimiter, guidbuf.as_ptr(), &mut moniker);
@@ -481,7 +493,7 @@ pub unsafe extern "system" fn GetActiveObject(
         IMoniker_Release(moniker);
         return ret;
     }
-    ret = IRunningObjectTable_GetObject(runobtable, moniker, ppunk);
+    ret = IRunningObjectTable_GetObject(runobtable, moniker, ppunk as *mut *mut IUnknown);
     IRunningObjectTable_Release(runobtable);
     IMoniker_Release(moniker);
     return ret;
@@ -530,7 +542,7 @@ pub unsafe extern "system" fn OleTranslateColor(
         0x01 => {
             if hpal != 0 as HPALETTE {
                 let mut pe: PALETTEENTRY = core::mem::zeroed();
-                if GetPaletteEntries(hpal, LOWORD(clr), 1, &mut pe) == 0 {
+                if GetPaletteEntries(hpal, LOWORD(clr) as UINT, 1, &mut pe) == 0 {
                     return 0x80070057u32 as HRESULT;
                 }
             }
@@ -545,7 +557,7 @@ pub unsafe extern "system" fn OleTranslateColor(
         0x80 => {
             let index: i32 = LOBYTE(LOWORD(clr)) as i32;
 
-            if (index < COLOR_SCROLLBAR) || (index > COLOR_MENUBAR) {
+            if (index < COLOR_SCROLLBAR as i32) || (index > COLOR_MENUBAR as i32) {
                 return 0x80070057u32 as HRESULT;
             }
 
@@ -629,16 +641,16 @@ unsafe fn reg_get_typelib_module(iid: REFIID, module: *mut u16, len: u32) -> i32
         interfacekey.as_mut_ptr(),
         b"Interface\\{%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}\\Typelib\0".as_ptr() as *const i8,
         (*iid).Data1,
-        (*iid).Data2,
-        (*iid).Data3,
-        (*iid).Data4[0],
-        (*iid).Data4[1],
-        (*iid).Data4[2],
-        (*iid).Data4[3],
-        (*iid).Data4[4],
-        (*iid).Data4[5],
-        (*iid).Data4[6],
-        (*iid).Data4[7]
+        (*iid).Data2 as c_uint,
+        (*iid).Data3 as c_uint,
+        (*iid).Data4[0] as c_uint,
+        (*iid).Data4[1] as c_uint,
+        (*iid).Data4[2] as c_uint,
+        (*iid).Data4[3] as c_uint,
+        (*iid).Data4[4] as c_uint,
+        (*iid).Data4[5] as c_uint,
+        (*iid).Data4[6] as c_uint,
+        (*iid).Data4[7] as c_uint
     );
 
     err = RegOpenKeyExA(0x80000000u32 as HKEY, interfacekey.as_ptr(), 0, KEY_READ, &mut ikey);
@@ -711,14 +723,21 @@ unsafe fn get_typeinfo_for_iid(iid: REFIID, typeinfo: *mut *mut ITypeInfo) -> HR
     *typeinfo = core::ptr::null_mut();
 
     module[0] = 0;
-    if actctx_get_typelib_module(iid, module.as_mut_ptr(), ARRAY_SIZE(module)) == 0 {
-        hr = reg_get_typelib_module(iid, module.as_mut_ptr(), ARRAY_SIZE(module) as u32);
+    if actctx_get_typelib_module(iid, module.as_mut_ptr(), module.len() as DWORD) == 0 {
+        hr = reg_get_typelib_module(iid, module.as_mut_ptr(), module.len() as u32);
         if FAILED(hr) {
             return hr;
         }
     }
 
-    hr = LoadTypeLib(module.as_ptr(), &mut typelib);
+    // The crate exposes two ABI-identical `ITypeLib` COM shims (com_sys vs olesys);
+    // LoadTypeLib is typed against olesys' while our `typelib` var and the
+    // ITypeLib_* accessors below use com_sys'. Bridge with a raw-pointer cast — same
+    // underlying COM object, just a translation-surface type split.
+    hr = LoadTypeLib(
+        module.as_ptr(),
+        &mut typelib as *mut *mut ITypeLib as *mut *mut crate::olesys::ITypeLib,
+    );
     if hr != S_OK {
         ERR!(b"Failed to load typelib for %s, but it should be there.\n\0".as_ptr() as PCHAR, debugstr_guid(iid));
         return hr;
@@ -733,7 +752,7 @@ unsafe fn get_typeinfo_for_iid(iid: REFIID, typeinfo: *mut *mut ITypeInfo) -> HR
     hr
 }
 
-unsafe fn dispatch_typelib_ps_QueryInterface(
+stdmethod! { fn dispatch_typelib_ps_QueryInterface(
     iface: *mut IPSFactoryBuffer,
     iid: *const GUID,
     out: *mut *mut core::ffi::c_void,
@@ -741,7 +760,7 @@ unsafe fn dispatch_typelib_ps_QueryInterface(
     const S_OK: HRESULT = 0;
     const E_NOINTERFACE: HRESULT = 0x80004002u32 as HRESULT;
 
-    if IsEqualIID(iid, &IID_IPSFactoryBuffer) != 0 || IsEqualIID(iid, &IID_IUnknown) != 0 {
+    if IsEqualIID(iid, &IID_IPSFactoryBuffer) || IsEqualIID(iid, &IID_IUnknown) {
         *out = iface as *mut core::ffi::c_void;
         return S_OK;
     }
@@ -749,15 +768,15 @@ unsafe fn dispatch_typelib_ps_QueryInterface(
     FIXME!(b"No interface for %s.\n\0".as_ptr() as *const i8, debugstr_guid(iid));
     *out = core::ptr::null_mut();
     return E_NOINTERFACE;
-}
+} }
 
-unsafe fn dispatch_typelib_ps_AddRef(iface: *mut IPSFactoryBuffer) -> ULONG {
+stdmethod! { fn dispatch_typelib_ps_AddRef(iface: *mut IPSFactoryBuffer) -> ULONG {
     2
-}
+} }
 
-unsafe fn dispatch_typelib_ps_Release(iface: *mut IPSFactoryBuffer) -> ULONG {
+stdmethod! { fn dispatch_typelib_ps_Release(iface: *mut IPSFactoryBuffer) -> ULONG {
     return 1;
-}
+} }
 
 unsafe fn dispatch_create_proxy(
     outer: *mut IUnknown,
@@ -779,7 +798,7 @@ unsafe fn dispatch_create_proxy(
     hr
 }
 
-unsafe fn dispatch_typelib_ps_CreateProxy(
+stdmethod! { fn dispatch_typelib_ps_CreateProxy(
     iface: *mut IPSFactoryBuffer,
     outer: *mut IUnknown,
     iid: REFIID,
@@ -790,7 +809,7 @@ unsafe fn dispatch_typelib_ps_CreateProxy(
     let mut attr: *mut TYPEATTR = core::ptr::null_mut();
     let mut hr: HRESULT;
 
-    if IsEqualGUID(iid, &IID_IDispatch) != 0 {
+    if IsEqualGUID(iid, &IID_IDispatch) {
         return dispatch_create_proxy(outer, proxy, out);
     }
 
@@ -805,7 +824,7 @@ unsafe fn dispatch_typelib_ps_CreateProxy(
         return hr;
     }
 
-    if (*attr).typekind == TKIND_INTERFACE || ((*attr).wTypeFlags & TYPEFLAG_FDUAL) != 0 {
+    if (*attr).typekind == TKIND_INTERFACE || ((*attr).wTypeFlags & TYPEFLAG_FDUAL as u16) != 0 {
         hr = CreateProxyFromTypeInfo(typeinfo, outer, iid, proxy, out);
     } else {
         hr = dispatch_create_proxy(outer, proxy, out);
@@ -818,7 +837,7 @@ unsafe fn dispatch_typelib_ps_CreateProxy(
     ITypeInfo_ReleaseTypeAttr(typeinfo, attr);
     ITypeInfo_Release(typeinfo);
     hr
-}
+} }
 
 unsafe fn dispatch_create_stub(server: *mut IUnknown, stub: *mut *mut IRpcStubBuffer) -> HRESULT {
     let mut factory: *mut IPSFactoryBuffer = core::ptr::null_mut();
@@ -838,7 +857,7 @@ unsafe fn dispatch_create_stub(server: *mut IUnknown, stub: *mut *mut IRpcStubBu
     return hr;
 }
 
-unsafe fn dispatch_typelib_ps_CreateStub(
+stdmethod! { fn dispatch_typelib_ps_CreateStub(
     iface: *mut IPSFactoryBuffer,
     iid: REFIID,
     server: *mut IUnknown,
@@ -848,7 +867,7 @@ unsafe fn dispatch_typelib_ps_CreateStub(
     let mut attr: *mut TYPEATTR = core::ptr::null_mut();
     let mut hr: HRESULT;
 
-    if IsEqualGUID(iid, &IID_IDispatch) != 0 {
+    if IsEqualGUID(iid, &IID_IDispatch) {
         return dispatch_create_stub(server, stub);
     }
 
@@ -863,7 +882,7 @@ unsafe fn dispatch_typelib_ps_CreateStub(
         return hr;
     }
 
-    if (*attr).typekind == TKIND_INTERFACE || ((*attr).wTypeFlags & TYPEFLAG_FDUAL) != 0 {
+    if (*attr).typekind == TKIND_INTERFACE || ((*attr).wTypeFlags & TYPEFLAG_FDUAL as u16) != 0 {
         hr = CreateStubFromTypeInfo(typeinfo, iid, server, stub);
     } else {
         hr = dispatch_create_stub(server, stub);
@@ -876,38 +895,38 @@ unsafe fn dispatch_typelib_ps_CreateStub(
     ITypeInfo_ReleaseTypeAttr(typeinfo, attr);
     ITypeInfo_Release(typeinfo);
     hr
-}
+} }
 
 #[no_mangle]
 pub unsafe extern "system" fn DllGetClassObject(rclsid: *const GUID, iid: *const GUID, ppv: *mut LPVOID) -> HRESULT {
 
     *ppv = core::ptr::null_mut();
     
-    if IsEqualGUID(rclsid, &CLSID_StdFont) != 0 {
-        if IsEqualGUID(iid, &IID_IClassFactory) != 0 {
+    if IsEqualGUID(rclsid, &CLSID_StdFont) {
+        if IsEqualGUID(iid, &IID_IClassFactory) {
             _get_STDFONT_CF(ppv);
-            IClassFactory_AddRef(*ppv);
+            IClassFactory_AddRef(*ppv as *mut IClassFactory);
             return 0;
         }
     }
-    
-    if IsEqualGUID(rclsid, &CLSID_StdPicture) != 0 {
-        if IsEqualGUID(iid, &IID_IClassFactory) != 0 {
+
+    if IsEqualGUID(rclsid, &CLSID_StdPicture) {
+        if IsEqualGUID(iid, &IID_IClassFactory) {
             _get_STDPIC_CF(ppv);
-            IClassFactory_AddRef(*ppv);
+            IClassFactory_AddRef(*ppv as *mut IClassFactory);
             return 0;
         }
     }
 
-    if IsEqualGUID(rclsid, &CLSID_PSDispatch) != 0 || IsEqualGUID(rclsid, &CLSID_PSOAInterface) != 0 {
-        return IPSFactoryBuffer_QueryInterface(&dispatch_typelib_ps, iid, ppv);
+    if IsEqualGUID(rclsid, &CLSID_PSDispatch) || IsEqualGUID(rclsid, &CLSID_PSOAInterface) {
+        return IPSFactoryBuffer_QueryInterface(core::ptr::addr_of_mut!(dispatch_typelib_ps), iid, ppv);
     }
 
-    if IsEqualCLSID(rclsid, &CLSID_PSTypeComp) != 0 ||
-        IsEqualCLSID(rclsid, &CLSID_PSTypeInfo) != 0 ||
-        IsEqualCLSID(rclsid, &CLSID_PSTypeLib) != 0 ||
-        IsEqualCLSID(rclsid, &CLSID_PSDispatch) != 0 ||
-        IsEqualCLSID(rclsid, &CLSID_PSEnumVariant) != 0 {
+    if IsEqualCLSID(rclsid, &CLSID_PSTypeComp) ||
+        IsEqualCLSID(rclsid, &CLSID_PSTypeInfo) ||
+        IsEqualCLSID(rclsid, &CLSID_PSTypeLib) ||
+        IsEqualCLSID(rclsid, &CLSID_PSDispatch) ||
+        IsEqualCLSID(rclsid, &CLSID_PSEnumVariant) {
         return OLEAUTPS_DllGetClassObject(&CLSID_PSFactoryBuffer, iid, ppv);
     }
 
@@ -951,17 +970,25 @@ pub unsafe extern "system" fn OleIconToCursor(
         hinstExe,
         hIcon,
     );
-    CopyCursor(hIcon)
+    CopyCursor(hIcon as HCURSOR)
 }
+
+// The C arrays are `static const WCHAR *name[]` — arrays of raw pointers. A Rust
+// `static` requires `Sync`, which raw pointers lack; this transparent newtype
+// carries the same layout and asserts thread-safety (the tables are immutable
+// after program load, matching the C `const`).
+#[repr(transparent)]
+struct AltMonthNames([*const u16; 13]);
+unsafe impl Sync for AltMonthNames {}
 
 #[no_mangle]
 pub unsafe extern "system" fn GetAltMonthNames(lcid: LCID, str: *mut *mut LPOLESTR) -> HRESULT {
     static ar_month1W: [u16; 5] = [0x645,0x62d,0x631,0x645,0];
     static ar_month2W: [u16; 4] = [0x635,0x641,0x631,0];
     static ar_month3W: [u16; 11] = [0x631,0x628,0x64a,0x639,0x20,0x627,0x644,0x627,0x648,0x644,0];
-    static ar_month4W: [u16; 11] = [0x631,0x628,0x64a,0x639,0x20,0x627,0x644,0x62b,0x627,0x646,0x64a,0];
-    static ar_month5W: [u16; 12] = [0x62c,0x645,0x627,0x62f,0x649,0x20,0x627,0x644,0x627,0x648,0x644,0x649,0];
-    static ar_month6W: [u16; 13] = [0x62c,0x645,0x627,0x62f,0x649,0x20,0x627,0x644,0x62b,0x627,0x646,0x64a,0x629,0];
+    static ar_month4W: [u16; 12] = [0x631,0x628,0x64a,0x639,0x20,0x627,0x644,0x62b,0x627,0x646,0x64a,0];
+    static ar_month5W: [u16; 13] = [0x62c,0x645,0x627,0x62f,0x649,0x20,0x627,0x644,0x627,0x648,0x644,0x649,0];
+    static ar_month6W: [u16; 14] = [0x62c,0x645,0x627,0x62f,0x649,0x20,0x627,0x644,0x62b,0x627,0x646,0x64a,0x629,0];
     static ar_month7W: [u16; 4] = [0x631,0x62c,0x628,0];
     static ar_month8W: [u16; 6] = [0x634,0x639,0x628,0x627,0x646,0];
     static ar_month9W: [u16; 6] = [0x631,0x645,0x636,0x627,0x646,0];
@@ -969,7 +996,7 @@ pub unsafe extern "system" fn GetAltMonthNames(lcid: LCID, str: *mut *mut LPOLES
     static ar_month11W: [u16; 10] = [0x630,0x648,0x20,0x627,0x644,0x642,0x639,0x62f,0x629,0];
     static ar_month12W: [u16; 9] = [0x630,0x648,0x20,0x627,0x644,0x62d,0x62c,0x629,0];
 
-    static arabic_hijri: [*const u16; 13] = [
+    static arabic_hijri: AltMonthNames = AltMonthNames([
         ar_month1W.as_ptr(),
         ar_month2W.as_ptr(),
         ar_month3W.as_ptr(),
@@ -983,14 +1010,14 @@ pub unsafe extern "system" fn GetAltMonthNames(lcid: LCID, str: *mut *mut LPOLES
         ar_month11W.as_ptr(),
         ar_month12W.as_ptr(),
         core::ptr::null(),
-    ];
+    ]);
 
     static pl_month1W: [u16; 9] = [0x73,0x74,0x79,0x63,0x7a,0x6e,0x69,0x61,0];
     static pl_month2W: [u16; 7] = [0x6c,0x75,0x74,0x65,0x67,0x6f,0];
     static pl_month3W: [u16; 6] = [0x6d,0x61,0x72,0x63,0x61,0];
     static pl_month4W: [u16; 9] = [0x6b,0x77,0x69,0x65,0x74,0x6e,0x69,0x61,0];
     static pl_month5W: [u16; 5] = [0x6d,0x61,0x6a,0x61,0];
-    static pl_month6W: [u16; 7] = [0x63,0x7a,0x65,0x72,0x77,0x63,0x61,0];
+    static pl_month6W: [u16; 8] = [0x63,0x7a,0x65,0x72,0x77,0x63,0x61,0];
     static pl_month7W: [u16; 6] = [0x6c,0x69,0x70,0x63,0x61,0];
     static pl_month8W: [u16; 9] = [0x73,0x69,0x65,0x72,0x70,0x6e,0x69,0x61,0];
     static pl_month9W: [u16; 9] = [0x77,0x72,0x7a,0x65,0x15b,0x6e,0x69,0x61,0];
@@ -998,7 +1025,7 @@ pub unsafe extern "system" fn GetAltMonthNames(lcid: LCID, str: *mut *mut LPOLES
     static pl_month11W: [u16; 10] = [0x6c,0x69,0x73,0x74,0x6f,0x70,0x61,0x64,0x61,0];
     static pl_month12W: [u16; 8] = [0x67,0x72,0x75,0x64,0x6e,0x69,0x61,0];
 
-    static polish_genitive_names: [*const u16; 13] = [
+    static polish_genitive_names: AltMonthNames = AltMonthNames([
         pl_month1W.as_ptr(),
         pl_month2W.as_ptr(),
         pl_month3W.as_ptr(),
@@ -1012,7 +1039,7 @@ pub unsafe extern "system" fn GetAltMonthNames(lcid: LCID, str: *mut *mut LPOLES
         pl_month11W.as_ptr(),
         pl_month12W.as_ptr(),
         core::ptr::null(),
-    ];
+    ]);
 
     static ru_month1W: [u16; 7] = [0x44f,0x43d,0x432,0x430,0x440,0x44f,0];
     static ru_month2W: [u16; 8] = [0x444,0x435,0x432,0x440,0x430,0x43b,0x44f,0];
@@ -1027,7 +1054,7 @@ pub unsafe extern "system" fn GetAltMonthNames(lcid: LCID, str: *mut *mut LPOLES
     static ru_month11W: [u16; 7] = [0x43d,0x43e,0x44f,0x431,0x440,0x44f,0];
     static ru_month12W: [u16; 8] = [0x434,0x435,0x43a,0x430,0x431,0x440,0x44f,0];
 
-    static russian_genitive_names: [*const u16; 13] = [
+    static russian_genitive_names: AltMonthNames = AltMonthNames([
         ru_month1W.as_ptr(),
         ru_month2W.as_ptr(),
         ru_month3W.as_ptr(),
@@ -1041,7 +1068,7 @@ pub unsafe extern "system" fn GetAltMonthNames(lcid: LCID, str: *mut *mut LPOLES
         ru_month11W.as_ptr(),
         ru_month12W.as_ptr(),
         core::ptr::null(),
-    ];
+    ]);
 
     TRACE!(b"GetAltMonthNames(%#x, %p)\n\0".as_ptr() as LPCSTR, lcid, str);
 
@@ -1049,11 +1076,11 @@ pub unsafe extern "system" fn GetAltMonthNames(lcid: LCID, str: *mut *mut LPOLES
     let primary_lang = PRIMARYLANGID(langid);
 
     if primary_lang == LANG_ARABIC {
-        *str = arabic_hijri.as_ptr() as *mut LPOLESTR;
+        *str = arabic_hijri.0.as_ptr() as *mut LPOLESTR;
     } else if primary_lang == LANG_POLISH {
-        *str = polish_genitive_names.as_ptr() as *mut LPOLESTR;
+        *str = polish_genitive_names.0.as_ptr() as *mut LPOLESTR;
     } else if primary_lang == LANG_RUSSIAN {
-        *str = russian_genitive_names.as_ptr() as *mut LPOLESTR;
+        *str = russian_genitive_names.0.as_ptr() as *mut LPOLESTR;
     } else {
         *str = core::ptr::null_mut();
     }

@@ -52,13 +52,25 @@ pub type HINSTANCE = *mut c_void;
 pub type HCURSOR = *mut c_void;
 pub type __tagBRECORD = tagVARIANT__bindgen_ty_1___tagVARIANT__bindgen_ty_1___tagBRECORD;
 
+// LIST_ENTRY (winnt layout) — the translations spell the bindgen struct tag
+// with a leading underscore (`_LIST_ENTRY`); com-sys doesn't emit it (COM
+// headers don't pull winnt's LIST_ENTRY), so mirror it here by value.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct _LIST_ENTRY {
+    pub Flink: *mut _LIST_ENTRY,
+    pub Blink: *mut _LIST_ENTRY,
+}
+pub type LIST_ENTRY = _LIST_ENTRY;
+unsafe impl Sync for _LIST_ENTRY {}
+
 // RTL_CRITICAL_SECTION mirror (winnt layout; used by value in module statics).
 #[repr(C)]
 pub struct CRITICAL_SECTION_DEBUG {
     pub Type: u16,
     pub CreatorBackTraceIndex: u16,
     pub CriticalSection: *mut CRITICAL_SECTION,
-    pub ProcessLocksList: [*mut c_void; 2],
+    pub ProcessLocksList: _LIST_ENTRY,
     pub EntryCount: u32,
     pub ContentionCount: u32,
     pub Flags: u32,
@@ -105,6 +117,18 @@ pub struct ACTCTX_SECTION_KEYED_DATA {
 // com-sys lacks the const-char string alias (headers only produced LPSTR).
 pub type LPCSTR = *const c_char;
 
+// Integration aliases: the translations spell these bindgen struct-tags /
+// enum-qualified constants with the C tag name; map to the com-sys/consts names.
+pub type _CY = CY;
+pub type _DECIMAL = DECIMAL;
+pub const _VARENUM_VT_I4: u16 = VT_I4;
+
+// C `max(a, b)` (windef.h macro) → generic free fn (usrmarshal wire sizing).
+#[inline]
+pub fn max<T: PartialOrd>(a: T, b: T) -> T {
+    if a >= b { a } else { b }
+}
+
 // msvcrt math the C called directly.
 extern "C" {
     pub fn pow(x: f64, y: f64) -> f64;
@@ -113,6 +137,8 @@ extern "C" {
     pub fn atan2(y: f64, x: f64) -> f64;
     pub fn exp(x: f64) -> f64;
     pub fn log(x: f64) -> f64;
+    pub fn ceil(x: f64) -> f64;
+    pub fn floor(x: f64) -> f64;
 }
 
 // msvcrt mem/string/ctype (cdecl, exact CRT prototypes).

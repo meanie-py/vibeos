@@ -7,7 +7,6 @@ extern "C" {
     fn IClassFactory2_RemoteCreateInstanceLic_Proxy( This: *mut IClassFactory2, riid: REFIID, bstrKey: BSTR, ppvObj: *mut *mut IUnknown, ) -> HRESULT;
 }
 extern "C" {
-    fn SysStringByteLen(bstr: BSTR) -> UINT;
     fn WdtpInterfacePointer_UserMarshal( pFlags: *mut ULONG, flags: ULONG, Buffer: *mut u8, punk: *mut IUnknown, riid: *const GUID, ) -> *mut u8;
     fn IEnumVARIANT_RemoteNext_Proxy( This: *mut IEnumVARIANT, celt: ULONG, rgVar: *mut VARIANT, pCeltFetched: *mut ULONG, ) -> HRESULT;
     fn IEnumVARIANT_Next( This: *mut IEnumVARIANT, celt: ULONG, rgVar: *mut VARIANT, pCeltFetched: *mut ULONG, ) -> HRESULT;
@@ -29,7 +28,7 @@ extern "C" {
     fn ITypeLib_RemoteGetDocumentation_Proxy( This: *mut ITypeLib, index: INT, flags: DWORD, name: *mut BSTR, doc_string: *mut BSTR, help_context: *mut DWORD, help_file: *mut BSTR, ) -> HRESULT;
     fn ITypeLib_GetDocumentation( This: *mut ITypeLib, index: INT, name: *mut BSTR, doc_string: *mut BSTR, help_context: *mut DWORD, help_file: *mut BSTR, ) -> HRESULT;
     fn ITypeLib2_GetDocumentation2( This: *mut ITypeLib2, index: INT, lcid: LCID, help_string: *mut BSTR, help_context: *mut DWORD, help_dll: *mut BSTR, ) -> HRESULT;
-    fn IPropertyBag_RemoteRead_Proxy( This: *mut IPropertyBag, pszPropName: LPCOLESTR, pVar: *mut VARIANT, pErrorLog: *mut IErrorLog, vt: VARTYPE, pUnk: *mut IUnknown, ) -> HRESULT;
+    fn IPropertyBag_RemoteRead_Proxy( This: *mut IPropertyBag, pszPropName: LPCOLESTR, pVar: *mut VARIANT, pErrorLog: *mut IErrorLog, vt: DWORD, pUnk: *mut IUnknown, ) -> HRESULT;
     fn IClassFactory2_CreateInstanceLic( This: *mut IClassFactory2, pUnkOuter: *mut IUnknown, pReserved: *mut core::ffi::c_void, riid: REFIID, bstrKey: BSTR, ppvObj: *mut *mut core::ffi::c_void, ) -> HRESULT;
     fn IEnumConnectionPoints_RemoteNext_Proxy( This: *mut IEnumConnectionPoints, cConnections: ULONG, ppCP: *mut *mut IConnectionPoint, pcFetched: *mut ULONG, ) -> HRESULT;
     fn IEnumConnectionPoints_Next( This: *mut IEnumConnectionPoints, cConnections: ULONG, ppCP: *mut *mut IConnectionPoint, pcFetched: *mut ULONG, ) -> HRESULT;
@@ -40,19 +39,33 @@ extern "C" {
     fn IAdviseSinkEx_OnViewStatusChange(This: *mut IAdviseSinkEx, dwViewStatus: DWORD);
     fn IEnumOleUndoUnits_RemoteNext_Proxy( This: *mut IEnumOleUndoUnits, cElt: ULONG, rgElt: *mut *mut IOleUndoUnit, pcEltFetched: *mut ULONG, ) -> HRESULT;
     fn IEnumOleUndoUnits_Next( This: *mut IEnumOleUndoUnits, cElt: ULONG, rgElt: *mut *mut IOleUndoUnit, pcEltFetched: *mut ULONG ) -> HRESULT;
-    fn SafeArrayDestroy(psa: LPSAFEARRAY) -> HRESULT;
-    fn VariantClear(pvar: *mut VARIANT) -> HRESULT;
     fn IUnknown_Release(punk: *mut IUnknown) -> ULONG;
     fn CoTaskMemFree(pv: LPVOID);
+}
+
+// RPC-generated Remote proxies + still-C-side SafeArrayCreateEx.
+// These are STDMETHODCALLTYPE / WINAPI (stdcall on i386) -> extern "system".
+extern "system" {
+    fn IDispatch_RemoteInvoke_Proxy( This: *mut IDispatch, dispIdMember: DISPID, riid: REFIID, lcid: LCID, dwFlags: DWORD, pDispParams: *mut DISPPARAMS, pVarResult: *mut VARIANT, pExcepInfo: *mut EXCEPINFO, pArgErr: *mut UINT, cVarRef: UINT, rgVarRefIdx: *mut UINT, rgVarRef: *mut VARIANTARG, ) -> HRESULT;
+    fn ITypeInfo_RemoteGetTypeAttr_Proxy( This: *mut ITypeInfo, ppTypeAttr: *mut LPTYPEATTR, pDummy: *mut CLEANLOCALSTORAGE, ) -> HRESULT;
+    fn ITypeInfo_RemoteGetVarDesc_Proxy( This: *mut ITypeInfo, index: UINT, ppVarDesc: *mut LPVARDESC, pDummy: *mut CLEANLOCALSTORAGE, ) -> HRESULT;
+    fn ITypeInfo_RemoteGetNames_Proxy( This: *mut ITypeInfo, memid: MEMBERID, rgBstrNames: *mut BSTR, cMaxNames: UINT, pcNames: *mut UINT, ) -> HRESULT;
+    fn ITypeInfo_RemoteGetDocumentation_Proxy( This: *mut ITypeInfo, memid: MEMBERID, refPtrFlags: DWORD, pBstrName: *mut BSTR, pBstrDocString: *mut BSTR, pdwHelpContext: *mut DWORD, pBstrHelpFile: *mut BSTR, ) -> HRESULT;
+    fn ITypeInfo_RemoteGetContainingTypeLib_Proxy( This: *mut ITypeInfo, ppTLib: *mut *mut ITypeLib, pIndex: *mut UINT, ) -> HRESULT;
+    fn ITypeLib_RemoteGetTypeInfoCount_Proxy( This: *mut ITypeLib, pcTInfo: *mut UINT, ) -> HRESULT;
+    fn ITypeLib2_RemoteGetDocumentation2_Proxy( This: *mut ITypeLib2, index: INT, lcid: LCID, refPtrFlags: DWORD, pbstrHelpString: *mut BSTR, pdwHelpStringContext: *mut DWORD, pbstrHelpStringDll: *mut BSTR, ) -> HRESULT;
+    fn IEnumConnections_RemoteNext_Proxy( This: *mut IEnumConnections, cConnections: ULONG, rgcd: LPCONNECTDATA, pcFetched: *mut ULONG, ) -> HRESULT;
+    fn IAdviseSinkEx_RemoteOnViewStatusChange_Proxy( This: *mut IAdviseSinkEx, dwViewStatus: DWORD, ) -> HRESULT;
+    fn SafeArrayCreateEx( vt: VARTYPE, cDims: UINT, rgsabound: *mut SAFEARRAYBOUND, pvExtra: LPVOID, ) -> *mut SAFEARRAY;
 }
 
 // ---- file-scope preamble (translated) ----
 pub const ALIGNED_LENGTH: fn(usize, usize) -> usize = |len, align| (len + align) & !align;
 
-pub const CLS_FUNCDESC: u8 = b'f';
-pub const CLS_LIBATTR: u8 = b'l';
-pub const CLS_TYPEATTR: u8 = b't';
-pub const CLS_VARDESC: u8 = b'v';
+pub const CLS_FUNCDESC: DWORD = b'f' as DWORD;
+pub const CLS_LIBATTR: DWORD = b'l' as DWORD;
+pub const CLS_TYPEATTR: DWORD = b't' as DWORD;
+pub const CLS_VARDESC: DWORD = b'v' as DWORD;
 
 #[repr(C)]
 pub struct bstr_wire_t {
@@ -77,17 +90,17 @@ pub const FADF_AUTOSETFLAGS: USHORT = (FADF_HAVEIID | FADF_RECORD | FADF_HAVEVAR
                                         FADF_VARIANT | FADF_CREATEVECTOR);
 
 unsafe fn dump_user_flags(pFlags: *const DWORD) {
-    if HIWORD(*pFlags) == NDR_LOCAL_DATA_REPRESENTATION {
+    if HIWORD(*pFlags) as u32 == NDR_LOCAL_DATA_REPRESENTATION {
         TRACE!(b"MAKELONG(NDR_LOCAL_REPRESENTATION, \0".as_ptr() as *const i8);
     } else {
         TRACE!(b"MAKELONG(0x%04x, \0".as_ptr() as *const i8, HIWORD(*pFlags));
     }
     match LOWORD(*pFlags) {
-        MSHCTX_LOCAL => TRACE(b"MSHCTX_LOCAL)\0".as_ptr() as *const i8),
-        MSHCTX_NOSHAREDMEM => TRACE(b"MSHCTX_NOSHAREDMEM)\0".as_ptr() as *const i8),
-        MSHCTX_DIFFERENTMACHINE => TRACE(b"MSHCTX_DIFFERENTMACHINE)\0".as_ptr() as *const i8),
-        MSHCTX_INPROC => TRACE(b"MSHCTX_INPROC)\0".as_ptr() as *const i8),
-        _ => TRACE(b"%d)\0".as_ptr() as *const i8, LOWORD(*pFlags)),
+        MSHCTX_LOCAL => TRACE!(b"MSHCTX_LOCAL)\0".as_ptr() as *const i8),
+        MSHCTX_NOSHAREDMEM => TRACE!(b"MSHCTX_NOSHAREDMEM)\0".as_ptr() as *const i8),
+        MSHCTX_DIFFERENTMACHINE => TRACE!(b"MSHCTX_DIFFERENTMACHINE)\0".as_ptr() as *const i8),
+        MSHCTX_INPROC => TRACE!(b"MSHCTX_INPROC)\0".as_ptr() as *const i8),
+        _ => TRACE!(b"%d)\0".as_ptr() as *const i8, LOWORD(*pFlags)),
     }
 }
 
@@ -104,10 +117,10 @@ pub unsafe extern "system" fn CLEANLOCALSTORAGE_UserSize(
 #[no_mangle]
 pub unsafe extern "system" fn CLEANLOCALSTORAGE_UserMarshal(
     pFlags: *mut ULONG,
-    Buffer: *mut u8,
+    mut Buffer: *mut u8,
     pstg: *mut CLEANLOCALSTORAGE,
 ) -> *mut u8 {
-    ALIGN_POINTER(Buffer, 3);
+    ALIGN_POINTER!(Buffer, 3);
     *(Buffer as *mut DWORD) = (*pstg).flags;
 
     if (*pstg).pInterface.is_null() {
@@ -157,7 +170,7 @@ pub unsafe extern "system" fn CLEANLOCALSTORAGE_UserUnmarshal(
     mut Buffer: *mut u8,
     pstr: *mut CLEANLOCALSTORAGE,
 ) -> *mut u8 {
-    ALIGN_POINTER(Buffer, 3);
+    ALIGN_POINTER!(Buffer, 3);
     (*pstr).flags = *(Buffer as *const DWORD);
     Buffer.offset(core::mem::size_of::<DWORD>() as isize)
 }
@@ -190,14 +203,14 @@ pub unsafe extern "system" fn BSTR_UserSize(
         );
     }
     let mut Start = Start;
-    ALIGN_LENGTH(Start, 3);
+    ALIGN_LENGTH!(Start, 3);
     Start += core::mem::size_of::<bstr_wire_t>() as ULONG
         + ((SysStringByteLen(*pstr) + 1) & !1);
     TRACE!(b"returning %d\n\0".as_ptr() as *const i8, Start);
     Start
 }
 #[no_mangle]
-pub unsafe extern "system" fn BSTR_UserMarshal(pFlags: *mut ULONG, Buffer: *mut u8, pstr: *mut *mut u16) -> *mut u8 {
+pub unsafe extern "system" fn BSTR_UserMarshal(pFlags: *mut ULONG, mut Buffer: *mut u8, pstr: *mut *mut u16) -> *mut u8 {
 
     let len: DWORD = SysStringByteLen(*pstr);
 
@@ -236,8 +249,8 @@ pub unsafe extern "system" fn BSTR_UserUnmarshal(
         *pstr,
     );
     
-    ALIGN_POINTER(core::ptr::addr_of_mut!(buffer_ptr), 3);
-    
+    ALIGN_POINTER!(buffer_ptr, 3);
+
     let header = buffer_ptr as *const bstr_wire_t;
     
     if (*header).len != (*header).len2 {
@@ -326,11 +339,12 @@ unsafe fn get_type_alignment(pFlags: *mut ULONG, vt: VARTYPE) -> u32 {
     return 7;
 }
 
-unsafe fn interface_variant_size(pFlags: *mut ULONG, riid: *const GUID, punk: *mut IUnknown) -> u32 {
+/* WdtpInterfacePointer_UserSize takes care of 2 additional DWORDs to store marshalling buffer size */
+unsafe fn interface_user_size(pFlags: *mut ULONG, Start: ULONG, riid: *const GUID, punk: *mut IUnknown) -> u32 {
     let mut size: ULONG = 0;
 
     if !punk.is_null() {
-        size = WdtpInterfacePointer_UserSize(pFlags, LOWORD(*pFlags), 0, punk, riid);
+        size = WdtpInterfacePointer_UserSize(pFlags, LOWORD(*pFlags) as ULONG, 0, punk, riid);
         if size == 0 {
             ERR!(b"interface variant buffer size calculation failed\n\0".as_ptr() as *const i8);
             return 0;
@@ -338,7 +352,7 @@ unsafe fn interface_variant_size(pFlags: *mut ULONG, riid: *const GUID, punk: *m
     }
     size += core::mem::size_of::<ULONG>() as u32;
     TRACE!(b"wire-size extra of interface variant is %d\n\0".as_ptr() as *const i8, size);
-    return size;
+    return Start + size;
 }
 
 unsafe fn wire_extra_user_size(pFlags: *mut ULONG, Start: ULONG, pvar: *mut VARIANT) -> ULONG {
@@ -488,17 +502,17 @@ pub unsafe extern "system" fn VARIANT_UserSize(
     Start = ((Start + 7) & !7);
     Start += core::mem::size_of::<variant_wire_t>() as ULONG;
     
-    if (*pvar).n1.n2().vt & VT_BYREF as u16 != 0 {
+    if (*pvar).n1.n2.vt & VT_BYREF as u16 != 0 {
         Start += 4;
     }
 
-    align = get_type_alignment(pFlags, (*pvar).n1.n2().vt) as i32;
+    align = get_type_alignment(pFlags, (*pvar).n1.n2.vt) as i32;
     Start = ((Start + align as ULONG) & !(align as ULONG));
-    
-    if (*pvar).n1.n2().vt == (VT_VARIANT | VT_BYREF) as u16 {
+
+    if (*pvar).n1.n2.vt == (VT_VARIANT | VT_BYREF) as u16 {
         Start += 4;
     } else {
-        Start += get_type_size(pFlags, (*pvar).n1.n2().vt);
+        Start += get_type_size(pFlags, (*pvar).n1.n2.vt);
     }
     
     Start = wire_extra_user_size(pFlags, Start, pvar);
@@ -526,7 +540,7 @@ pub unsafe extern "system" fn VARIANT_UserMarshal(
     TRACE!(b"vt=%04x\n\0".as_ptr() as *const i8, (*V_VT_ref(pvar)));
 
     let mut aligned_buffer = Buffer;
-    ALIGN_POINTER(core::ptr::addr_of_mut!(aligned_buffer), 7);
+    ALIGN_POINTER!(aligned_buffer, 7);
     let Buffer = aligned_buffer;
 
     header = Buffer as *mut variant_wire_t;
@@ -545,7 +559,7 @@ pub unsafe extern "system" fn VARIANT_UserMarshal(
     Pos = header.offset(1) as *mut u8;
     type_size = get_type_size(pFlags, (*V_VT_ref(pvar)));
     align = get_type_alignment(pFlags, (*V_VT_ref(pvar))) as i32;
-    ALIGN_POINTER(core::ptr::addr_of_mut!(Pos), align);
+    ALIGN_POINTER!(Pos, align);
 
     if (*header).vt & VT_BYREF as USHORT != 0 {
         *(Pos as *mut DWORD) = max(type_size, 4);
@@ -694,14 +708,14 @@ pub unsafe extern "system" fn VARIANT_UserUnmarshal(
         pvar,
     );
 
-    ALIGN_POINTER(Buffer, 7);
+    ALIGN_POINTER!(Buffer, 7);
 
     header = Buffer as *mut variant_wire_t;
 
     Pos = (header.offset(1)) as *mut u8;
     type_size = get_type_size(pFlags, (*header).vt);
     align = get_type_alignment(pFlags, (*header).vt) as i32;
-    ALIGN_POINTER(Pos, align);
+    ALIGN_POINTER!(Pos, align);
 
     if (*header).vt & VT_BYREF != 0 {
         let mem_size: ULONG;
@@ -718,11 +732,11 @@ pub unsafe extern "system" fn VARIANT_UserUnmarshal(
 
         if (*V_VT_ref(pvar)) != (*header).vt {
             VariantClear(pvar);
-            *(*V_BYREF_ref(pvar)) = CoTaskMemAlloc(mem_size);
-            memset(*(*V_BYREF_ref(pvar)), 0, mem_size);
-        } else if (*(*V_BYREF_ref(pvar))).is_null() {
-            *(*V_BYREF_ref(pvar)) = CoTaskMemAlloc(mem_size);
-            memset(*(*V_BYREF_ref(pvar)), 0, mem_size);
+            *V_BYREF_ref(pvar) = CoTaskMemAlloc(mem_size as SIZE_T);
+            memset(*V_BYREF_ref(pvar), 0, mem_size as usize);
+        } else if (*V_BYREF_ref(pvar)).is_null() {
+            *V_BYREF_ref(pvar) = CoTaskMemAlloc(mem_size as SIZE_T);
+            memset(*V_BYREF_ref(pvar), 0, mem_size as usize);
         }
 
         if ((*header).vt & VT_ARRAY) == 0
@@ -732,7 +746,7 @@ pub unsafe extern "system" fn VARIANT_UserUnmarshal(
             && ((*header).vt & VT_TYPEMASK) != VT_DISPATCH
             && ((*header).vt & VT_TYPEMASK) != VT_RECORD
         {
-            memcpy(*(*V_BYREF_ref(pvar)), Pos as LPVOID, type_size);
+            memcpy(*V_BYREF_ref(pvar), Pos as LPVOID, type_size as usize);
         }
 
         if ((*header).vt & VT_TYPEMASK) != VT_VARIANT {
@@ -751,14 +765,14 @@ pub unsafe extern "system" fn VARIANT_UserUnmarshal(
         } else if ((*header).vt & VT_TYPEMASK) == VT_DISPATCH {
             (*V_DISPATCH_ref(pvar)) = core::ptr::null_mut();
         } else if ((*header).vt & VT_TYPEMASK) == VT_RECORD {
-            *V_RECORD(pvar) = core::ptr::null_mut();
+            *V_RECORD_ref(pvar) = core::ptr::null_mut();
         } else if ((*header).vt & VT_TYPEMASK) == VT_DECIMAL {
-            memcpy(pvar as LPVOID, Pos as LPVOID, type_size);
+            memcpy(pvar as LPVOID, Pos as LPVOID, type_size as usize);
         } else {
             memcpy(
                 core::ptr::addr_of_mut!((*pvar).n1.n2.n3) as LPVOID,
                 Pos as LPVOID,
-                type_size,
+                type_size as usize,
             );
         }
         Pos = Pos.offset(type_size as isize);
@@ -773,31 +787,31 @@ pub unsafe extern "system" fn VARIANT_UserUnmarshal(
         if (*header).vt & VT_BYREF != 0 {
             Pos = LPSAFEARRAY_UserUnmarshal(pFlags, Pos, (*V_ARRAYREF_ref(pvar)));
         } else {
-            Pos = LPSAFEARRAY_UserUnmarshal(pFlags, Pos, (*V_ARRAY_ref(pvar)));
+            Pos = LPSAFEARRAY_UserUnmarshal(pFlags, Pos, V_ARRAY_ref(pvar));
         }
     } else {
         match (*header).vt {
             VT_BSTR => {
-                Pos = BSTR_UserUnmarshal(pFlags, Pos, (*V_BSTR_ref(pvar)));
+                Pos = BSTR_UserUnmarshal(pFlags, Pos, V_BSTR_ref(pvar));
             }
             _ if (*header).vt == (VT_BSTR | VT_BYREF) => {
-                Pos = BSTR_UserUnmarshal(pFlags, Pos, *(*V_BSTRREF_ref(pvar)));
+                Pos = BSTR_UserUnmarshal(pFlags, Pos, *V_BSTRREF_ref(pvar));
             }
             _ if (*header).vt == (VT_VARIANT | VT_BYREF) => {
-                Pos = VARIANT_UserUnmarshal(pFlags, Pos, *(*V_VARIANTREF_ref(pvar)));
+                Pos = VARIANT_UserUnmarshal(pFlags, Pos, *V_VARIANTREF_ref(pvar));
             }
             VT_UNKNOWN => {
-                Pos = interface_user_unmarshal(pFlags, Pos, &IID_IUnknown, (*V_UNKNOWN_ref(pvar)));
+                Pos = interface_user_unmarshal(pFlags, Pos, &IID_IUnknown, V_UNKNOWN_ref(pvar));
             }
             _ if (*header).vt == (VT_UNKNOWN | VT_BYREF) => {
-                Pos = interface_user_unmarshal(pFlags, Pos, &IID_IUnknown, *(*V_UNKNOWNREF_ref(pvar)));
+                Pos = interface_user_unmarshal(pFlags, Pos, &IID_IUnknown, *V_UNKNOWNREF_ref(pvar));
             }
             VT_DISPATCH => {
                 Pos = interface_user_unmarshal(
                     pFlags,
                     Pos,
                     &IID_IDispatch,
-                    (*V_DISPATCH_ref(pvar)) as *mut *mut IUnknown,
+                    V_DISPATCH_ref(pvar) as *mut *mut IUnknown,
                 );
             }
             _ if (*header).vt == (VT_DISPATCH | VT_BYREF) => {
@@ -805,7 +819,7 @@ pub unsafe extern "system" fn VARIANT_UserUnmarshal(
                     pFlags,
                     Pos,
                     &IID_IDispatch,
-                    *(*V_DISPATCHREF_ref(pvar)) as *mut *mut IUnknown,
+                    *V_DISPATCHREF_ref(pvar) as *mut *mut IUnknown,
                 );
             }
             VT_RECORD => {
@@ -842,7 +856,7 @@ pub unsafe extern "system" fn VARIANT_UserFree(pFlags: *mut ULONG, pvar: *mut VA
         if (vt & VT_BYREF) != 0 {
             LPSAFEARRAY_UserFree(pFlags, (*V_ARRAYREF_ref(pvar)));
         } else {
-            LPSAFEARRAY_UserFree(pFlags, (*V_ARRAY_ref(pvar)));
+            LPSAFEARRAY_UserFree(pFlags, V_ARRAY_ref(pvar));
         }
     } else {
         match vt {
@@ -898,7 +912,7 @@ unsafe fn SAFEARRAY_GetUnionType(psa: *mut SAFEARRAY) -> SF_TYPE {
             2 => vt = VT_I2,
             4 => vt = VT_I4,
             8 => vt = VT_I8,
-            _ => RpcRaiseException(hr),
+            _ => RpcRaiseException(hr as u32),
         }
     }
 
@@ -939,7 +953,7 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserSize(
     dump_user_flags(pFlags);
     TRACE!(b", %d, %p\n\0".as_ptr() as *const i8, StartingSize, *ppsa);
 
-    ALIGN_LENGTH(size, 3);
+    ALIGN_LENGTH!(size, 3);
     size += core::mem::size_of::<ULONG>() as ULONG;
     if !(*ppsa).is_null() {
         let psa = *ppsa;
@@ -1005,7 +1019,7 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserSize(
 
                 hr = SafeArrayGetRecordInfo(psa, &mut pRecInfo);
                 if FAILED(hr) {
-                    RpcRaiseException(hr);
+                    RpcRaiseException(hr as u32);
                 }
 
                 if !pRecInfo.is_null() {
@@ -1015,7 +1029,7 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserSize(
                 }
             }
             SF_I8 => {
-                ALIGN_LENGTH(size, 7);
+                ALIGN_LENGTH!(size, 7);
                 size += ulCellCount * (*psa).cbElements;
             }
             SF_I1 | SF_I2 | SF_I4 => {
@@ -1026,6 +1040,176 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserSize(
     }
 
     size
+}
+
+unsafe fn elem_wire_size(lpsa: LPSAFEARRAY, sftype: SF_TYPE) -> DWORD {
+    match sftype {
+        SF_BSTR | SF_HAVEIID | SF_UNKNOWN | SF_DISPATCH => core::mem::size_of::<DWORD>() as DWORD,
+        SF_VARIANT => {
+            (core::mem::size_of::<variant_wire_t>() - core::mem::size_of::<DWORD>()) as DWORD
+        }
+        _ => (*lpsa).cbElements,
+    }
+}
+
+unsafe fn elem_mem_size(wiresa: wireSAFEARRAY, sftype: SF_TYPE) -> DWORD {
+    match sftype {
+        SF_HAVEIID | SF_UNKNOWN | SF_DISPATCH => core::mem::size_of::<*mut c_void>() as DWORD,
+        SF_BSTR => core::mem::size_of::<BSTR>() as DWORD,
+        SF_VARIANT => core::mem::size_of::<VARIANT>() as DWORD,
+        _ => (*wiresa).cbElements,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn LPSAFEARRAY_UserMarshal(
+    pFlags: *mut ULONG,
+    mut Buffer: *mut u8,
+    ppsa: *mut LPSAFEARRAY,
+) -> *mut u8 {
+    let mut hr: HRESULT;
+
+    TRACE!(b"(\0".as_ptr() as *const i8);
+    dump_user_flags(pFlags);
+    TRACE!(b", %p, &%p\n\0".as_ptr() as *const i8, Buffer, *ppsa);
+
+    ALIGN_POINTER!(Buffer, 3);
+    *(Buffer as *mut ULONG) = if !(*ppsa).is_null() { 0x1 } else { 0x0 };
+    Buffer = Buffer.add(core::mem::size_of::<ULONG>());
+    if !(*ppsa).is_null() {
+        let mut vt: VARTYPE = 0;
+        let psa: *mut SAFEARRAY = *ppsa;
+        let mut ulCellCount: ULONG = SAFEARRAY_GetCellCount(psa);
+        let mut bound: *mut SAFEARRAYBOUND;
+        let sftype: SF_TYPE;
+        let mut guid: GUID = core::mem::zeroed();
+        let mut i: INT;
+
+        sftype = SAFEARRAY_GetUnionType(psa);
+
+        *(Buffer as *mut ULONG) = (*psa).cDims as ULONG;
+        Buffer = Buffer.add(core::mem::size_of::<ULONG>());
+        *(Buffer as *mut USHORT) = (*psa).cDims;
+        Buffer = Buffer.add(core::mem::size_of::<USHORT>());
+        *(Buffer as *mut USHORT) = (*psa).fFeatures;
+        Buffer = Buffer.add(core::mem::size_of::<USHORT>());
+        *(Buffer as *mut ULONG) = elem_wire_size(psa, sftype);
+        Buffer = Buffer.add(core::mem::size_of::<ULONG>());
+
+        hr = SafeArrayGetVartype(psa, &mut vt);
+        if ((*psa).fFeatures & FADF_HAVEIID) != 0 || FAILED(hr) {
+            vt = 0;
+        }
+
+        *(Buffer as *mut ULONG) = (*psa).cLocks as USHORT as ULONG | ((vt as ULONG) << 16);
+        Buffer = Buffer.add(core::mem::size_of::<ULONG>());
+
+        *(Buffer as *mut ULONG) = sftype;
+        Buffer = Buffer.add(core::mem::size_of::<ULONG>());
+
+        *(Buffer as *mut ULONG) = ulCellCount;
+        Buffer = Buffer.add(core::mem::size_of::<ULONG>());
+        *(Buffer as *mut ULONG) = if !(*psa).pvData.is_null() { 0x2 } else { 0x0 };
+        Buffer = Buffer.add(core::mem::size_of::<ULONG>());
+        if sftype == SF_HAVEIID {
+            SafeArrayGetIID(psa, &mut guid);
+            memcpy(
+                Buffer as *mut c_void,
+                core::ptr::addr_of!(guid) as *const c_void,
+                core::mem::size_of::<GUID>(),
+            );
+            Buffer = Buffer.add(core::mem::size_of::<GUID>());
+        }
+
+        /* bounds are marshaled in opposite order comparing to storage layout */
+        let rgsabound_ptr = (*psa).rgsabound.as_ptr();
+        bound = Buffer as *mut SAFEARRAYBOUND;
+        i = 0;
+        while i < (*psa).cDims as INT {
+            memcpy(
+                bound as *mut c_void,
+                rgsabound_ptr.add((*psa).cDims as usize - i as usize - 1) as *const c_void,
+                core::mem::size_of::<SAFEARRAYBOUND>(),
+            );
+            bound = bound.add(1);
+            i += 1;
+        }
+        Buffer = Buffer.add(core::mem::size_of::<SAFEARRAYBOUND>() * (*psa).cDims as usize);
+
+        *(Buffer as *mut ULONG) = ulCellCount;
+        Buffer = Buffer.add(core::mem::size_of::<ULONG>());
+
+        if !(*psa).pvData.is_null() {
+            match sftype {
+                SF_BSTR => {
+                    let mut lpBstr = (*psa).pvData as *mut BSTR;
+                    while ulCellCount != 0 {
+                        Buffer = BSTR_UserMarshal(pFlags, Buffer, lpBstr);
+                        ulCellCount -= 1;
+                        lpBstr = lpBstr.add(1);
+                    }
+                }
+                SF_DISPATCH | SF_UNKNOWN | SF_HAVEIID => {
+                    let mut lpUnk = (*psa).pvData as *mut *mut IUnknown;
+                    let iid: *const GUID = if sftype == SF_HAVEIID {
+                        core::ptr::addr_of!(guid)
+                    } else if sftype == SF_UNKNOWN {
+                        &IID_IUnknown
+                    } else {
+                        &IID_IDispatch
+                    };
+
+                    while ulCellCount != 0 {
+                        Buffer = interface_user_marshal(pFlags, Buffer, iid, *lpUnk);
+                        ulCellCount -= 1;
+                        lpUnk = lpUnk.add(1);
+                    }
+                }
+                SF_VARIANT => {
+                    let mut lpVariant = (*psa).pvData as *mut VARIANT;
+                    while ulCellCount != 0 {
+                        Buffer = VARIANT_UserMarshal(pFlags, Buffer, lpVariant);
+                        ulCellCount -= 1;
+                        lpVariant = lpVariant.add(1);
+                    }
+                }
+                SF_RECORD => {
+                    let mut pRecInfo: *mut IRecordInfo = core::ptr::null_mut();
+
+                    hr = SafeArrayGetRecordInfo(psa, &mut pRecInfo);
+                    if FAILED(hr) {
+                        RpcRaiseException(hr as u32);
+                    }
+
+                    if !pRecInfo.is_null() {
+                        FIXME!(b"write record info %p\n\0".as_ptr() as *const i8, pRecInfo);
+
+                        IRecordInfo_Release(pRecInfo);
+                    }
+                }
+                SF_I8 => {
+                    ALIGN_POINTER!(Buffer, 7);
+                    memcpy(
+                        Buffer as *mut c_void,
+                        (*psa).pvData as *const c_void,
+                        (ulCellCount * (*psa).cbElements) as usize,
+                    );
+                    Buffer = Buffer.add((ulCellCount * (*psa).cbElements) as usize);
+                }
+                SF_I1 | SF_I2 | SF_I4 => {
+                    /* Just copy the data over */
+                    memcpy(
+                        Buffer as *mut c_void,
+                        (*psa).pvData as *const c_void,
+                        (ulCellCount * (*psa).cbElements) as usize,
+                    );
+                    Buffer = Buffer.add((ulCellCount * (*psa).cbElements) as usize);
+                }
+                _ => {}
+            }
+        }
+    }
+    Buffer
 }
 
 #[no_mangle]
@@ -1048,7 +1232,7 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
     dump_user_flags(pFlags);
     TRACE!(b", %p, %p\n\0".as_ptr() as _, Buffer, ppsa);
 
-    ALIGN_POINTER(Buffer, 3);
+    ALIGN_POINTER!(Buffer, 3);
     ptr = *(Buffer as *mut ULONG);
     Buffer = Buffer.offset(core::mem::size_of::<ULONG>() as isize);
 
@@ -1067,8 +1251,8 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
     wiresa = Buffer as wireSAFEARRAY;
     Buffer = Buffer.offset((2 * core::mem::size_of::<USHORT>() + 2 * core::mem::size_of::<ULONG>()) as isize);
 
-    if cDims != (*wiresa).cDims {
-        RpcRaiseException(RPC_S_INVALID_BOUND);
+    if cDims != (*wiresa).cDims as ULONG {
+        RpcRaiseException(RPC_S_INVALID_BOUND as u32);
     }
 
     vt = HIWORD((*wiresa).cLocks);
@@ -1080,7 +1264,7 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
     Buffer = Buffer.offset(core::mem::size_of::<ULONG>() as isize);
     ptr = *(Buffer as *mut ULONG);
     Buffer = Buffer.offset(core::mem::size_of::<ULONG>() as isize);
-    if sftype == 0x20 {
+    if sftype == SF_HAVEIID {
         memcpy(
             core::ptr::addr_of_mut!(guid) as *mut _,
             Buffer as *const _,
@@ -1094,19 +1278,21 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
 
     if !(*ppsa).is_null() && (**ppsa).cDims == (*wiresa).cDims {
         if ((**ppsa).fFeatures & !FADF_AUTOSETFLAGS) != ((*wiresa).fFeatures & !FADF_AUTOSETFLAGS) {
-            RpcRaiseException(0x80020009u32 as HRESULT);
+            RpcRaiseException(0x80020009u32);
         }
 
         if SAFEARRAY_GetCellCount(*ppsa) * (**ppsa).cbElements
             != cell_count * elem_mem_size(wiresa, sftype)
         {
-            if ((**ppsa).fFeatures & (0x0001 | 0x0002 | 0x0004 | 0x0010)) != 0 {
-                RpcRaiseException(0x80020009u32 as HRESULT);
+            // FADF_AUTO(0x1) | FADF_STATIC(0x2) | FADF_EMBEDDED(0x4) | FADF_FIXEDSIZE(0x10);
+            // FADF_AUTO and FADF_EMBEDDED are absent from consts.rs (see SHARED-SURFACE REQUESTS).
+            if ((**ppsa).fFeatures & (0x0001u16 | FADF_STATIC | 0x0004u16 | FADF_FIXEDSIZE)) != 0 {
+                RpcRaiseException(0x80020009u32);
             }
 
             hr = SafeArrayDestroyData(*ppsa);
             if FAILED(hr) {
-                RpcRaiseException(hr);
+                RpcRaiseException(hr as u32);
             }
         }
         memcpy(
@@ -1115,19 +1301,19 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
             core::mem::size_of::<SAFEARRAYBOUND>() * (*wiresa).cDims as usize,
         );
 
-        if ((**ppsa).fFeatures & 0x0040) != 0 {
+        if ((**ppsa).fFeatures & FADF_HAVEVARTYPE) != 0 {
             *(((*ppsa) as *mut DWORD).offset(-1)) = vt as DWORD;
         }
     } else if vt != 0 {
         SafeArrayDestroy(*ppsa);
-        *ppsa = SafeArrayCreateEx(vt, (*wiresa).cDims, wiresab, core::ptr::null_mut());
+        *ppsa = SafeArrayCreateEx(vt, (*wiresa).cDims as UINT, wiresab, core::ptr::null_mut());
         if (*ppsa).is_null() {
-            RpcRaiseException(0x8007000Eu32 as HRESULT);
+            RpcRaiseException(0x8007000Eu32);
         }
     } else {
         SafeArrayDestroy(*ppsa);
-        if FAILED(SafeArrayAllocDescriptor((*wiresa).cDims, ppsa)) {
-            RpcRaiseException(0x8007000Eu32 as HRESULT);
+        if FAILED(SafeArrayAllocDescriptor((*wiresa).cDims as UINT, ppsa)) {
+            RpcRaiseException(0x8007000Eu32);
         }
         memcpy(
             (**ppsa).rgsabound.as_mut_ptr() as *mut _,
@@ -1143,18 +1329,18 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
     if (**ppsa).pvData.is_null() {
         hr = SafeArrayAllocData(*ppsa);
         if FAILED(hr) {
-            RpcRaiseException(hr);
+            RpcRaiseException(hr as u32);
         }
     }
 
     if (*(Buffer as *mut ULONG) != cell_count) || (SAFEARRAY_GetCellCount(*ppsa) != cell_count) {
-        RpcRaiseException(RPC_S_INVALID_BOUND);
+        RpcRaiseException(RPC_S_INVALID_BOUND as u32);
     }
     Buffer = Buffer.offset(core::mem::size_of::<ULONG>() as isize);
 
     if ptr != 0 {
         match sftype {
-            0x08 => {
+            SF_BSTR => {
                 let mut lpBstr: *mut BSTR = (**ppsa).pvData as *mut BSTR;
                 let mut count = cell_count;
 
@@ -1164,11 +1350,11 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
                     lpBstr = lpBstr.offset(1);
                 }
             }
-            0x09 | 0x0D | 0x20 => {
+            SF_DISPATCH | SF_UNKNOWN | SF_HAVEIID => {
                 let mut lpUnk: *mut *mut IUnknown = (**ppsa).pvData as *mut *mut IUnknown;
-                let iid: *const GUID = if sftype == 0x20 {
+                let iid: *const GUID = if sftype == SF_HAVEIID {
                     core::ptr::addr_of!(guid)
-                } else if sftype == 0x0D {
+                } else if sftype == SF_UNKNOWN {
                     &IID_IUnknown
                 } else {
                     &IID_IDispatch
@@ -1181,7 +1367,7 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
                     lpUnk = lpUnk.offset(1);
                 }
             }
-            0x0C => {
+            SF_VARIANT => {
                 let mut lpVariant: *mut VARIANT = (**ppsa).pvData as *mut VARIANT;
                 let mut count = cell_count;
 
@@ -1191,11 +1377,11 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
                     lpVariant = lpVariant.offset(1);
                 }
             }
-            0x24 => {
+            SF_RECORD => {
                 FIXME!(b"set record info\n\0".as_ptr() as _);
             }
-            0x14 => {
-                ALIGN_POINTER(Buffer, 7);
+            SF_I8 => {
+                ALIGN_POINTER!(Buffer, 7);
                 memcpy(
                     (**ppsa).pvData,
                     Buffer as *const _,
@@ -1203,7 +1389,7 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
                 );
                 Buffer = Buffer.offset((cell_count * (**ppsa).cbElements) as isize);
             }
-            0x10 | 0x02 | 0x03 => {
+            SF_I1 | SF_I2 | SF_I4 => {
                 memcpy(
                     (**ppsa).pvData,
                     Buffer as *const _,
@@ -1323,8 +1509,8 @@ pub unsafe extern "C" fn IDispatch_Invoke_Proxy(
     }
 
     if cVarRef != 0 {
-        rgVarRefIdx = CoTaskMemAlloc((core::mem::size_of::<UINT>() * cVarRef as usize) as u32) as *mut UINT;
-        rgVarRef = CoTaskMemAlloc((core::mem::size_of::<VARIANTARG>() * cVarRef as usize) as u32) as *mut VARIANTARG;
+        rgVarRefIdx = CoTaskMemAlloc((core::mem::size_of::<UINT>() * cVarRef as usize) as SIZE_T) as *mut UINT;
+        rgVarRef = CoTaskMemAlloc((core::mem::size_of::<VARIANTARG>() * cVarRef as usize) as SIZE_T) as *mut VARIANTARG;
         cVarRef = 0;
         u = 0;
         while u < (*pDispParams).cArgs {
@@ -1350,7 +1536,7 @@ pub unsafe extern "C" fn IDispatch_Invoke_Proxy(
         dispIdMember,
         riid,
         lcid,
-        wFlags,
+        wFlags as DWORD,
         pDispParams,
         pVarResult,
         pExcepInfo,
@@ -1421,7 +1607,7 @@ pub unsafe extern "C" fn IDispatch_Invoke_Stub(
 
     u = 0;
     while u < (*pDispParams).cArgs {
-        hr = VariantCopy(&mut *arg.add(u as usize), &*rgvarg.add(u as usize));
+        hr = VariantCopy(arg.add(u as usize), rgvarg.add(u as usize));
         if FAILED(hr) {
             break;
         }
@@ -1432,7 +1618,7 @@ pub unsafe extern "C" fn IDispatch_Invoke_Stub(
         u = 0;
         while u < cVarRef {
             let i: u32 = *rgVarRefIdx.add(u as usize);
-            VariantCopy(&mut *arg.add(i as usize), &*rgVarRef.add(u as usize));
+            VariantCopy(arg.add(i as usize), rgVarRef.add(u as usize));
             u += 1;
         }
 
@@ -1443,7 +1629,7 @@ pub unsafe extern "C" fn IDispatch_Invoke_Stub(
             dispIdMember,
             riid,
             lcid,
-            dwFlags,
+            dwFlags as WORD,
             pDispParams,
             pVarResult,
             pExcepInfo,
@@ -1453,7 +1639,7 @@ pub unsafe extern "C" fn IDispatch_Invoke_Stub(
         u = 0;
         while u < cVarRef {
             let i: u32 = *rgVarRefIdx.add(u as usize);
-            VariantCopy(&mut *rgVarRef.add(u as usize), &*arg.add(i as usize));
+            VariantCopy(rgVarRef.add(u as usize), arg.add(i as usize));
             u += 1;
         }
     }
@@ -1506,12 +1692,12 @@ pub unsafe extern "C" fn IEnumVARIANT_Next_Stub(
 unsafe fn free_embedded_arraydesc(adesc: *mut ARRAYDESC) {
     match (*adesc).tdescElem.vt {
         VT_PTR | VT_SAFEARRAY => {
-            free_embedded_typedesc((*adesc).tdescElem.u.lptdesc);
-            CoTaskMemFree((*adesc).tdescElem.u.lptdesc as LPVOID);
+            free_embedded_typedesc((*adesc).tdescElem.__bindgen_anon_1.lptdesc);
+            CoTaskMemFree((*adesc).tdescElem.__bindgen_anon_1.lptdesc as LPVOID);
         }
         VT_CARRAY => {
-            free_embedded_arraydesc((*adesc).tdescElem.u.lpadesc);
-            CoTaskMemFree((*adesc).tdescElem.u.lpadesc as LPVOID);
+            free_embedded_arraydesc((*adesc).tdescElem.__bindgen_anon_1.lpadesc);
+            CoTaskMemFree((*adesc).tdescElem.__bindgen_anon_1.lpadesc as LPVOID);
         }
         _ => {}
     }
@@ -1520,12 +1706,12 @@ unsafe fn free_embedded_arraydesc(adesc: *mut ARRAYDESC) {
 unsafe fn free_embedded_typedesc(tdesc: *mut TYPEDESC) {
     match (*tdesc).vt {
         VT_PTR | VT_SAFEARRAY => {
-            free_embedded_typedesc((*tdesc).u.lptdesc);
-            CoTaskMemFree((*tdesc).u.lptdesc as *mut core::ffi::c_void);
+            free_embedded_typedesc((*tdesc).__bindgen_anon_1.lptdesc);
+            CoTaskMemFree((*tdesc).__bindgen_anon_1.lptdesc as *mut core::ffi::c_void);
         }
         VT_CARRAY => {
-            free_embedded_arraydesc((*tdesc).u.lpadesc);
-            CoTaskMemFree((*tdesc).u.lpadesc as *mut core::ffi::c_void);
+            free_embedded_arraydesc((*tdesc).__bindgen_anon_1.lpadesc);
+            CoTaskMemFree((*tdesc).__bindgen_anon_1.lpadesc as *mut core::ffi::c_void);
         }
         _ => {}
     }
@@ -1533,7 +1719,7 @@ unsafe fn free_embedded_typedesc(tdesc: *mut TYPEDESC) {
 
 unsafe fn free_embedded_elemdesc(edesc: *mut ELEMDESC) {
     free_embedded_typedesc(core::ptr::addr_of_mut!((*edesc).tdesc));
-    if (*edesc).__bindgen_anon_1.paramdesc.wParamFlags & PARAMFLAG_FHASDEFAULT != 0 {
+    if (*edesc).__bindgen_anon_1.paramdesc.wParamFlags & PARAMFLAG_FHASDEFAULT as u16 != 0 {
         CoTaskMemFree((*edesc).__bindgen_anon_1.paramdesc.pparamdescex as LPVOID);
     }
 }
@@ -1643,19 +1829,19 @@ pub unsafe extern "C" fn ITypeComp_Bind_Stub(
 
     match *desckind {
         DESCKIND_FUNCDESC => {
-            *funcdesc = (*bindptr.__bindgen_anon_1).lpfuncdesc;
+            *funcdesc = bindptr.lpfuncdesc;
             (*stg).pInterface = *ti as *mut IUnknown;
             (*stg).pStorage = funcdesc as *mut core::ffi::c_void;
-            (*stg).flags = CLS_FUNCDESC as BYTE;
+            (*stg).flags = CLS_FUNCDESC;
         }
         DESCKIND_VARDESC | DESCKIND_IMPLICITAPPOBJ => {
-            *vardesc = (*bindptr.__bindgen_anon_1).lpvardesc;
+            *vardesc = bindptr.lpvardesc;
             (*stg).pInterface = *ti as *mut IUnknown;
             (*stg).pStorage = vardesc as *mut core::ffi::c_void;
-            (*stg).flags = CLS_VARDESC as BYTE;
+            (*stg).flags = CLS_VARDESC;
         }
         DESCKIND_TYPECOMP => {
-            *typecomp = (*bindptr.__bindgen_anon_1).lptcomp;
+            *typecomp = bindptr.lptcomp;
         }
         _ => {}
     }
@@ -1750,7 +1936,7 @@ pub unsafe extern "C" fn ITypeInfo_GetTypeAttr_Stub(
         return hr;
     }
 
-    (*pDummy).flags = CLS_TYPEATTR as i16;
+    (*pDummy).flags = CLS_TYPEATTR;
     ITypeInfo_AddRef(This);
     (*pDummy).pInterface = This as *mut IUnknown;
     (*pDummy).pStorage = ppTypeAttr as *mut core::ffi::c_void;
@@ -1788,7 +1974,7 @@ pub unsafe extern "C" fn ITypeInfo_GetFuncDesc_Stub(
         return hr;
     }
 
-    (*pDummy).flags = CLS_FUNCDESC as i16;
+    (*pDummy).flags = CLS_FUNCDESC;
     ITypeInfo_AddRef(This);
     (*pDummy).pInterface = This as *mut IUnknown;
     (*pDummy).pStorage = ppFuncDesc as LPVOID;
@@ -1824,7 +2010,7 @@ pub unsafe extern "C" fn ITypeInfo_GetVarDesc_Stub(
         return hr;
     }
 
-    (*pDummy).flags = CLS_VARDESC as i16;
+    (*pDummy).flags = CLS_VARDESC;
     ITypeInfo_AddRef(This);
     (*pDummy).pInterface = This as *mut IUnknown;
     (*pDummy).pStorage = ppVarDesc as LPVOID;
@@ -2216,7 +2402,7 @@ pub unsafe extern "C" fn ITypeInfo_ReleaseVarDesc_Proxy(
     CoTaskMemFree((*pVarDesc).lpstrSchema as LPVOID);
 
     if (*pVarDesc).varkind == VAR_CONST {
-        CoTaskMemFree((*pVarDesc).u.lpvarValue as LPVOID);
+        CoTaskMemFree((*pVarDesc).__bindgen_anon_1.lpvarValue as LPVOID);
     }
 
     free_embedded_elemdesc(core::ptr::addr_of_mut!((*pVarDesc).elemdescVar));
@@ -2665,7 +2851,7 @@ pub unsafe extern "C" fn IPropertyBag_Read_Proxy(
         }
     }
 
-    return IPropertyBag_RemoteRead_Proxy(This, pszPropName, pVar, pErrorLog, (*V_VT_ref(pVar)), pUnk);
+    return IPropertyBag_RemoteRead_Proxy(This, pszPropName, pVar, pErrorLog, (*V_VT_ref(pVar)) as DWORD, pUnk);
 }
 #[no_mangle]
 pub unsafe extern "C" fn IPropertyBag_Read_Stub(
@@ -2690,7 +2876,7 @@ pub unsafe extern "C" fn IPropertyBag_Read_Stub(
         pUnkObj,
     );
 
-    if (varType & (VT_BYREF | VT_ARRAY | VT_VECTOR)) != 0 {
+    if (varType & (VT_BYREF | VT_ARRAY | VT_VECTOR) as DWORD) != 0 {
         FIXME!(
             b"Variant type %x is byref, array or vector. Not implemented.\n\0".as_ptr() as *const i8,
             (*V_VT_ref(pVar)),
@@ -2699,9 +2885,9 @@ pub unsafe extern "C" fn IPropertyBag_Read_Stub(
     }
 
     (*V_VT_ref(pVar)) = varType as u16;
-    
+
     match varType {
-        VT_DISPATCH => {
+        _ if varType == VT_DISPATCH as DWORD => {
             hr = IUnknown_QueryInterface(
                 pUnkObj,
                 &IID_IDispatch,
@@ -2713,13 +2899,13 @@ pub unsafe extern "C" fn IPropertyBag_Read_Stub(
             IUnknown_Release(pUnkObj);
             (*V_DISPATCH_ref(pVar)) = disp;
         }
-        VT_UNKNOWN => {
+        _ if varType == VT_UNKNOWN as DWORD => {
             (*V_UNKNOWN_ref(pVar)) = pUnkObj;
         }
-        VT_BSTR => {
+        _ if varType == VT_BSTR as DWORD => {
             (*V_BSTR_ref(pVar)) = SysAllocString(emptyWstr.as_ptr());
         }
-        VT_SAFEARRAY => {
+        _ if varType == VT_SAFEARRAY as DWORD => {
             FIXME!(b"Safearray support not yet implemented.\n\0".as_ptr() as *const i8);
             return E_NOTIMPL;
         }

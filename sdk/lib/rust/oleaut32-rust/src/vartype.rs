@@ -346,7 +346,7 @@ unsafe fn VARIANT_FromDisp(
     VariantInit(&mut srcVar);
     hRet = IDispatch_Invoke(
         pdispIn,
-        DISPID_VALUE,
+        DISPID_VALUE as DISPID,
         &IID_NULL,
         lcid,
         DISPATCH_PROPERTYGET as u16,
@@ -692,7 +692,7 @@ pub unsafe extern "system" fn VarI1FromR8(dblIn: f64, pcOut: *mut i8) -> HRESULT
     if dblIn < -128.5 || dblIn >= 127.5 {
         return DISP_E_OVERFLOW;
     }
-    let whole = if dblIn < 0.0 { dblIn.ceil() } else { dblIn.floor() };
+    let whole = if dblIn < 0.0 { ceil(dblIn) } else { floor(dblIn) };
     let fract = dblIn - whole;
     let result = if fract > 0.5 {
         (whole as i8).wrapping_add(1)
@@ -766,7 +766,7 @@ pub unsafe extern "system" fn VarUI1FromR8(dblIn: f64, pbOut: *mut u8) -> HRESUL
     if dblIn < -0.5 || dblIn >= UI1_MAX + 0.5 {
         return DISP_E_OVERFLOW;
     }
-    let whole = if dblIn < 0.0 { dblIn.ceil() } else { dblIn.floor() };
+    let whole = if dblIn < 0.0 { ceil(dblIn) } else { floor(dblIn) };
     let fract = dblIn - whole;
     let whole_int = whole as i32;
     let is_odd = (whole_int as u8) & 1 != 0;
@@ -840,7 +840,7 @@ pub unsafe extern "system" fn VarI2FromR8(dblIn: f64, psOut: *mut i16) -> HRESUL
         return DISP_E_OVERFLOW;
     }
     let value = dblIn;
-    let whole = if value < 0.0 { value.ceil() } else { value.floor() };
+    let whole = if value < 0.0 { ceil(value) } else { floor(value) };
     let fract = value - whole;
     if fract > 0.5 {
         *psOut = (whole as i16) + 1;
@@ -883,7 +883,7 @@ pub unsafe extern "system" fn VarI2FromDisp(
     psOut: *mut i16,
 ) -> i32 {
     VARIANT_FromDisp(
-        pdispIn as *mut core::ffi::c_void,
+        pdispIn,
         lcid,
         psOut as *mut core::ffi::c_void,
         VT_I2,
@@ -893,7 +893,7 @@ pub unsafe extern "system" fn VarI2FromDisp(
 
 #[no_mangle]
 pub unsafe extern "system" fn VarI2FromDec(pdecIn: *const DECIMAL, psOut: *mut i16) -> i32 {
-    let mut i64: i64;
+    let mut i64: i64 = 0;
     let mut hRet: i32;
 
     hRet = VarI8FromDec(pdecIn, &raw mut i64);
@@ -913,7 +913,7 @@ pub unsafe extern "system" fn VarUI2FromR8(dblIn: f64, pusOut: *mut u16) -> HRES
     if dblIn < -0.5 || dblIn >= (UI2_MAX as f64 + 0.5) {
         return DISP_E_OVERFLOW;
     }
-    let whole = if dblIn < 0.0 { dblIn.ceil() } else { dblIn.floor() };
+    let whole = if dblIn < 0.0 { ceil(dblIn) } else { floor(dblIn) };
     let fract = dblIn - whole;
     let result_f64 = if fract > 0.5 {
         whole + 1.0
@@ -988,7 +988,7 @@ pub unsafe extern "system" fn VarI4FromR8(dblIn: f64, piOut: *mut i32) -> HRESUL
         return DISP_E_OVERFLOW;
     }
     let value = dblIn;
-    let whole = if value < 0.0 { value.ceil() } else { value.floor() };
+    let whole = if value < 0.0 { ceil(value) } else { floor(value) };
     let fract = value - whole;
     let res = if fract > 0.5 {
         (whole as i32).wrapping_add(1)
@@ -1039,7 +1039,7 @@ pub unsafe extern "system" fn VarI4FromDisp(
         pdispIn,
         lcid,
         piOut as *mut core::ffi::c_void,
-        2, /* VT_I4 = 2 */
+        VT_I4, /* VT_I4 = 3 */
         0,
     )
 }
@@ -1064,7 +1064,7 @@ pub unsafe extern "system" fn VarUI4FromR8(dblIn: f64, pulOut: *mut u32) -> i32 
     if dblIn < -0.5 || dblIn >= u32::MAX as f64 + 0.5 {
         return DISP_E_OVERFLOW;
     }
-    let whole = if dblIn < 0.0 { dblIn.ceil() } else { dblIn.floor() };
+    let whole = if dblIn < 0.0 { ceil(dblIn) } else { floor(dblIn) };
     let fract = dblIn - whole;
     let res = if fract > 0.5 {
         (whole as u32) + 1u32
@@ -1105,7 +1105,7 @@ pub unsafe extern "system" fn VarUI4FromStr(
     dwFlags: u32,
     pulOut: *mut u32,
 ) -> HRESULT {
-    VARIANT_NumberFromBstr(strIn, lcid, dwFlags, pulOut as *mut core::ffi::c_void, 18u16)
+    VARIANT_NumberFromBstr(strIn, lcid, dwFlags, pulOut as *mut core::ffi::c_void, VT_UI4)
 }
 
 #[no_mangle]
@@ -1166,7 +1166,7 @@ pub unsafe extern "system" fn VarI8FromCy(cyIn: CY, pi64Out: *mut LONG64) -> HRE
         *pi64Out -= 1;
     } else {
         cy_local.int64 -= *pi64Out * 10000;
-        let lo = cy_local.s.Lo;
+        let lo = cy_local.__bindgen_anon_1.Lo;
         if lo > 5000 || (lo == 5000 && (*pi64Out & 1) != 0) {
             *pi64Out += 1;
         }
@@ -1241,7 +1241,7 @@ pub unsafe extern "system" fn VarUI8FromR8(dblIn: f64, pui64Out: *mut ULONG64) -
     }
 
     let value = dblIn;
-    let whole = if value < 0.0 { value.ceil() } else { value.floor() };
+    let whole = if value < 0.0 { ceil(value) } else { floor(value) };
     let fract = value - whole;
     let res = if fract > 0.5 {
         (whole as ULONG64).wrapping_add(1)
@@ -1264,7 +1264,7 @@ pub unsafe extern "system" fn VarUI8FromR8(dblIn: f64, pui64Out: *mut ULONG64) -
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn VarUI8FromCy(cyIn: CY, pui64Out: *mut ULONG64) -> HRESULT {
+pub unsafe extern "system" fn VarUI8FromCy(mut cyIn: CY, pui64Out: *mut ULONG64) -> HRESULT {
     if cyIn.int64 < 0 {
         if cyIn.int64 < -(CY_HALF as LONGLONG) {
             return DISP_E_OVERFLOW;
@@ -1328,7 +1328,8 @@ pub unsafe extern "system" fn VarUI8FromDec(pdecIn: *mut DECIMAL, pui64Out: *mut
             return DISP_E_OVERFLOW;
         }
 
-        *pui64Out = (*pdecIn).Lo32 as ULONG64 | ((*pdecIn).Mid32 as ULONG64) << 32;
+        *pui64Out = (*pdecIn).__bindgen_anon_2.__bindgen_anon_1.Lo32 as ULONG64
+            | ((*pdecIn).__bindgen_anon_2.__bindgen_anon_1.Mid32 as ULONG64) << 32;
         return S_OK;
     } else {
         let mut dbl: f64 = 0.0;
@@ -1565,7 +1566,7 @@ pub unsafe extern "system" fn VarR8Round(dblIn: f64, nDig: i32, pDblOut: *mut f6
 
 #[no_mangle]
 pub unsafe extern "system" fn VarCyFromUI1(bIn: u8, pCyOut: *mut CY) -> HRESULT {
-    (*pCyOut).int64 = (bIn as u64 * CY_MULTIPLIER) as i64;
+    (*pCyOut).int64 = (bIn as u64 * CY_MULTIPLIER as u64) as i64;
     0
 }
 
@@ -1592,7 +1593,7 @@ pub unsafe extern "system" fn VarCyFromR8(dblIn: f64, pCyOut: *mut CY) -> HRESUL
         return DISP_E_OVERFLOW;
     }
     let value = dblIn * 10000.0_f64;
-    let whole = if value < 0.0_f64 { value.ceil() } else { value.floor() };
+    let whole = if value < 0.0_f64 { ceil(value) } else { floor(value) };
     let fract = value - whole;
     let res: i64;
     if fract > 0.5 {
@@ -1649,14 +1650,20 @@ pub unsafe extern "system" fn VarCyFromBool(
 
 #[no_mangle]
 pub unsafe extern "system" fn VarCyFromI1(cIn: i8, pCyOut: *mut CY) -> HRESULT {
-    (*pCyOut).int64 = (cIn as i64) * CY_MULTIPLIER;
+    (*pCyOut).int64 = (cIn as i64) * CY_MULTIPLIER as i64;
     S_OK
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn VarCyFromUI4(ulIn: ULONG, pCyOut: *mut CY) -> HRESULT {
-    (*pCyOut).int64 = (ulIn as u64) * CY_MULTIPLIER as u64;
+    (*pCyOut).int64 = ((ulIn as u64) * CY_MULTIPLIER as u64) as i64;
     0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn VarCyFromUI2(usIn: USHORT, pCyOut: *mut CY) -> HRESULT {
+    (*pCyOut).int64 = ((usIn as ULONG64) * CY_MULTIPLIER as ULONG64) as i64;
+    S_OK
 }
 
 #[no_mangle]
@@ -1664,13 +1671,13 @@ pub unsafe extern "system" fn VarCyFromDec(pdecIn: *const DECIMAL, pCyOut: *mut 
     let mut rounded: DECIMAL = core::mem::zeroed();
     let hret = VarDecRound(pdecIn, 4, &mut rounded as *mut DECIMAL);
     if hret >= 0 {
-        if (*rounded).Hi32 != 0 {
+        if rounded.Hi32 != 0 {
             return DISP_E_OVERFLOW;
         }
-        let signscale = (*rounded).__bindgen_anon_1.signscale;
+        let signscale = rounded.__bindgen_anon_1.signscale;
         let scale = (signscale & 0x7F) as usize;
         let sign = (signscale & 0x80) != 0;
-        let lo64 = (*rounded).__bindgen_anon_2.Lo64 as f64;
+        let lo64 = rounded.__bindgen_anon_2.Lo64 as f64;
         let divisor = CY_Divisors[scale] as f64;
         let d = if sign { -lo64 / divisor } else { lo64 / divisor };
         return VarCyFromR8(d, pCyOut);
@@ -1691,7 +1698,7 @@ pub unsafe extern "system" fn VarCyFromI8(llIn: i64, pCyOut: *mut CY) -> HRESULT
 #[no_mangle]
 pub unsafe extern "system" fn VarCyFromUI8(ullIn: u64, pCyOut: *mut CY) -> i32 {
     if ullIn > (i64::MAX as u64 / 10000u64) {
-        return 0x8002000Ai32; // DISP_E_OVERFLOW
+        return DISP_E_OVERFLOW; // DISP_E_OVERFLOW
     }
     (*pCyOut).int64 = (ullIn as i64) * 10000i64;
     0i32 // S_OK
@@ -1736,7 +1743,7 @@ pub unsafe extern "system" fn VarCySub(cyLeft: CY, cyRight: CY, pCyOut: *mut CY)
 
 #[no_mangle]
 pub unsafe extern "system" fn VarCyAbs(cyIn: CY, pCyOut: *mut CY) -> HRESULT {
-    if cyIn.s.Hi == 0x80000000i32 && cyIn.s.Lo == 0u32 {
+    if cyIn.__bindgen_anon_1.Hi == 0x80000000u32 as i32 && cyIn.__bindgen_anon_1.Lo == 0u32 {
         return DISP_E_OVERFLOW;
     }
     (*pCyOut).int64 = if cyIn.int64 < 0 { -cyIn.int64 } else { cyIn.int64 };
@@ -1763,7 +1770,7 @@ pub unsafe extern "system" fn VarCyInt(cyIn: CY, pCyOut: *mut CY) -> HRESULT {
 
 #[no_mangle]
 pub unsafe extern "system" fn VarCyNeg(cyIn: CY, pCyOut: *mut CY) -> HRESULT {
-    if (cyIn.s.Hi == 0x80000000i32) && (cyIn.s.Lo == 0) {
+    if (cyIn.__bindgen_anon_1.Hi == 0x80000000u32 as i32) && (cyIn.__bindgen_anon_1.Lo == 0) {
         return -2147352566i32; // DISP_E_OVERFLOW
     }
     (*pCyOut).int64 = -cyIn.int64;
@@ -1781,12 +1788,12 @@ pub unsafe extern "system" fn VarCyRound(cyIn: CY, cDecimals: i32, pCyOut: *mut 
     }
 
     let div = CY_Divisors[cDecimals as usize] as f64;
-    let mut d: f64;
+    let mut d: f64 = 0.0;
     _VarR8FromCy(cyIn, &mut d);
     d = d * div;
 
     // VARIANT_DutchRound(LONGLONG, d, pCyOut->int64) #1
-    let whole1 = if d < 0.0 { d.ceil() } else { d.floor() };
+    let whole1 = if d < 0.0 { ceil(d) } else { floor(d) };
     let fract1 = d - whole1;
     let rounded1: i64;
     if fract1 > 0.5 {
@@ -1809,7 +1816,7 @@ pub unsafe extern "system" fn VarCyRound(cyIn: CY, cDecimals: i32, pCyOut: *mut 
     d = (rounded1 as f64) / div * CY_MULTIPLIER_F;
 
     // VARIANT_DutchRound(LONGLONG, d, pCyOut->int64) #2
-    let whole2 = if d < 0.0 { d.ceil() } else { d.floor() };
+    let whole2 = if d < 0.0 { ceil(d) } else { floor(d) };
     let fract2 = d - whole2;
     let rounded2: i64;
     if fract2 > 0.5 {
@@ -1853,11 +1860,11 @@ pub unsafe extern "system" fn VarCyCmp(cyLeft: CY, cyRight: CY) -> HRESULT {
 #[no_mangle]
 pub unsafe extern "system" fn VarCyCmpR8(cyLeft: CY, dblRight: f64) -> HRESULT {
     let mut hRet: HRESULT = 0;
-    let mut cyRight: CY = Default::default();
+    let mut cyRight: CY = unsafe { core::mem::zeroed() };
 
     hRet = VarCyFromR8(dblRight, &mut cyRight);
 
-    if SUCCEEDED(hRet) != 0 {
+    if SUCCEEDED(hRet) {
         hRet = VarCyCmp(cyLeft, cyRight);
     }
 
@@ -1929,8 +1936,8 @@ pub unsafe extern "system" fn VarDecFromCy(cyIn: CY, pDecOut: *mut DECIMAL) -> H
         (*pDecOut).__bindgen_anon_2.Lo64 = (-int64_val) as u64;
     } else {
         (*pDecOut).__bindgen_anon_1.signscale = ((DECIMAL_POS as u16) << 8) | 4u16;
-        (*pDecOut).__bindgen_anon_2.DUMMYSTRUCTNAME2.Mid32 = cyIn.__bindgen_anon_1.Hi;
-        (*pDecOut).__bindgen_anon_2.DUMMYSTRUCTNAME2.Lo32 = cyIn.__bindgen_anon_1.Lo;
+        (*pDecOut).__bindgen_anon_2.__bindgen_anon_1.Mid32 = cyIn.__bindgen_anon_1.Hi as u32;
+        (*pDecOut).__bindgen_anon_2.__bindgen_anon_1.Lo32 = cyIn.__bindgen_anon_1.Lo;
     }
     0
 }
@@ -1995,12 +2002,12 @@ pub unsafe extern "system" fn VarDecFromI8(llIn: i64, pDecOut: *mut DECIMAL) -> 
     (*pDecOut).Hi32 = 0;
 
     if llIn < 0 {
-        (*pDecOut).DUMMYUNIONNAME.signscale = (0x80u16 << 8) | 0u16;
-        (*pDecOut).DUMMYUNIONNAME2.Lo64 = (-llIn) as u64;
+        (*pDecOut).__bindgen_anon_1.signscale = (0x80u16 << 8) | 0u16;
+        (*pDecOut).__bindgen_anon_2.Lo64 = (-llIn) as u64;
     } else {
-        (*pDecOut).DUMMYUNIONNAME.signscale = (0u16 << 8) | 0u16;
-        (*pDecOut).DUMMYUNIONNAME2.DUMMYSTRUCTNAME2.Mid32 = (llIn >> 32) as u32;
-        (*pDecOut).DUMMYUNIONNAME2.DUMMYSTRUCTNAME2.Lo32 = llIn as u32;
+        (*pDecOut).__bindgen_anon_1.signscale = (0u16 << 8) | 0u16;
+        (*pDecOut).__bindgen_anon_2.__bindgen_anon_1.Mid32 = (llIn >> 32) as u32;
+        (*pDecOut).__bindgen_anon_2.__bindgen_anon_1.Lo32 = llIn as u32;
     }
 
     0i32 // S_OK
@@ -2019,7 +2026,12 @@ unsafe fn VARIANT_DecScale(
     ppDecRight: *mut *const DECIMAL,
     pDecOut: *mut DECIMAL,
 ) -> HRESULT {
-    static mut scaleFactor: DECIMAL = core::mem::zeroed();
+    static mut scaleFactor: DECIMAL = DECIMAL {
+        wReserved: 0,
+        __bindgen_anon_1: tagDEC__bindgen_ty_1 { signscale: 0 },
+        Hi32: 0,
+        __bindgen_anon_2: tagDEC__bindgen_ty_2 { Lo64: 0 },
+    };
     if core::ptr::read_volatile(&scaleFactor.__bindgen_anon_2.__bindgen_anon_1.Lo32) == 0 {
         scaleFactor.__bindgen_anon_2.__bindgen_anon_1.Lo32 = 10u32;
     }
@@ -2161,10 +2173,10 @@ unsafe fn VARIANT_Mul(ulLeft: u32, ulRight: u32, pulHigh: *mut u32) -> u32 {
 }
 
 unsafe fn VARIANT_DecCmp(pDecLeft: *const DECIMAL, pDecRight: *const DECIMAL) -> i32 {
-    let left_hi = (*DEC_HI32_ref(pDecLeft));
-    let right_hi = (*DEC_HI32_ref(pDecRight));
-    let left_lo = (*DEC_LO64_ref(pDecLeft));
-    let right_lo = (*DEC_LO64_ref(pDecRight));
+    let left_hi = (*DEC_HI32_ref(pDecLeft as *mut DECIMAL));
+    let right_hi = (*DEC_HI32_ref(pDecRight as *mut DECIMAL));
+    let left_lo = (*DEC_LO64_ref(pDecLeft as *mut DECIMAL));
+    let right_lo = (*DEC_LO64_ref(pDecRight as *mut DECIMAL));
     if left_hi < right_hi || (left_hi <= right_hi && left_lo < right_lo) {
         -1
     } else if left_hi == right_hi && left_lo == right_lo {
@@ -2243,11 +2255,11 @@ pub unsafe extern "system" fn VarDecAdd(
 }
 
 unsafe fn VARIANT_DIFromDec(from: *const DECIMAL, to: *mut VARIANT_DI) {
-    (*to).scale = DEC_SCALE(from);
-    (*to).sign = if DEC_SIGN(from) != 0 { 1 } else { 0 };
-    (*to).bitsnum[0] = (*DEC_LO32_ref(from));
-    (*to).bitsnum[1] = (*DEC_MID32_ref(from));
-    (*to).bitsnum[2] = (*DEC_HI32_ref(from));
+    (*to).scale = DEC_SCALE(from as *mut DECIMAL);
+    (*to).sign = if DEC_SIGN(from as *mut DECIMAL) != 0 { 1 } else { 0 };
+    (*to).bitsnum[0] = (*DEC_LO32_ref(from as *mut DECIMAL));
+    (*to).bitsnum[1] = (*DEC_MID32_ref(from as *mut DECIMAL));
+    (*to).bitsnum[2] = (*DEC_HI32_ref(from as *mut DECIMAL));
 }
 
 unsafe fn VARIANT_DecFromDI(from: *const VARIANT_DI, to: *mut DECIMAL) {
@@ -2310,7 +2322,7 @@ unsafe fn VARIANT_DI_mul(a: *const VARIANT_DI, b: *const VARIANT_DI, result: *mu
     VARIANT_DI_clear(result);
     (*result).sign = if ((*a).sign ^ (*b).sign) != 0 { 1u32 } else { 0u32 };
     (*result).scale = (*a).scale + (*b).scale;
-    core::ptr::write_bytes(running.as_mut_ptr(), 0, core::mem::size_of::<[u32; 6]>());
+    core::ptr::write_bytes(running.as_mut_ptr() as *mut u8, 0, core::mem::size_of::<[u32; 6]>());
 
     for i in (0..3).rev() {
         if (*a).bitsnum[i as usize] != 0 {
@@ -2516,7 +2528,7 @@ unsafe fn VARIANT_int_div(p: *mut u32, n: u32, divisor: *const u32, dn: u32) {
     }
     *p.add(n as usize) = 1;
     VARIANT_int_add(negdivisor, n, p.add(n as usize), 1);
-    core::ptr::write_bytes(p.add(n as usize), 0, (n as usize) * 4);
+    core::ptr::write_bytes(p.add(n as usize), 0, n as usize);
 
     i = 0;
     while i < n && *p.add((n as usize) - 1) == 0 {
@@ -2710,7 +2722,7 @@ unsafe fn VARIANT_DI_div(
         (*quotient).sign = if ((*dividend).sign ^ (*divisor).sign) != 0 { 1 } else { 0 };
 
         core::ptr::write_bytes(
-            remainderplusquotient.as_mut_ptr(),
+            remainderplusquotient.as_mut_ptr() as *mut u8,
             0,
             core::mem::size_of::<[u32; 8]>(),
         );
@@ -2747,7 +2759,7 @@ unsafe fn VARIANT_DI_div(
                     }
                 }
                 core::ptr::write_bytes(
-                    remainderplusquotient.as_mut_ptr(),
+                    remainderplusquotient.as_mut_ptr() as *mut u8,
                     0,
                     core::mem::size_of::<[u32; 8]>(),
                 );
@@ -2768,7 +2780,7 @@ unsafe fn VARIANT_DI_div(
 
         while r_overflow == 0 && quotientscale < 0 {
             core::ptr::write_bytes(
-                remainderplusquotient.as_mut_ptr(),
+                remainderplusquotient.as_mut_ptr() as *mut u8,
                 0,
                 core::mem::size_of::<[u32; 8]>(),
             );
@@ -2798,6 +2810,139 @@ unsafe fn VARIANT_DI_div(
         }
     }
     r_overflow
+}
+
+/* This procedure receives a VARIANT_DI with a defined mantissa and sign, but
+   with an undefined scale, which will be assigned to (if possible). It also
+   receives an exponent of 2. This procedure will then manipulate the mantissa
+   and calculate a corresponding scale, so that the exponent2 value is assimilated
+   into the VARIANT_DI and is therefore no longer necessary. Returns S_OK if
+   successful, or DISP_E_OVERFLOW if the represented value is too big to fit into
+   a DECIMAL. */
+unsafe fn VARIANT_DI_normalize(val: *mut VARIANT_DI, exponent2: i32, isDouble: u8) -> HRESULT {
+    let mut hres: HRESULT = S_OK;
+
+    /* A factor of 2^exponent2 is equivalent to (10^exponent2)/(5^exponent2), and
+       thus equal to (5^-exponent2)*(10^exponent2). */
+    let mut exponent5: i32 = -exponent2;
+    let mut exponent10: i32 = exponent2;
+
+    /* Handle exponent5 > 0 */
+    while exponent5 > 0 {
+        let bPrevCarryBit: u32;
+        let bCurrCarryBit: u32;
+
+        if ((*val).bitsnum[0] & 1) == 0 {
+            /* The mantissa is divisible by 2. */
+            exponent10 += 1;
+            exponent5 -= 1;
+
+            /* Shift right */
+            bPrevCarryBit = (*val).bitsnum[2] & 1;
+            (*val).bitsnum[2] >>= 1;
+            bCurrCarryBit = (*val).bitsnum[1] & 1;
+            (*val).bitsnum[1] = ((*val).bitsnum[1] >> 1) | (if bPrevCarryBit != 0 { 0x80000000 } else { 0 });
+            (*val).bitsnum[0] = ((*val).bitsnum[0] >> 1) | (if bCurrCarryBit != 0 { 0x80000000 } else { 0 });
+        } else {
+            /* The mantissa is NOT divisible by 2. Multiply by 5 unless it overflows. */
+            let mut temp_bitsnum: [u32; 3] = [0; 3];
+
+            exponent5 -= 1;
+
+            core::ptr::copy_nonoverlapping((*val).bitsnum.as_ptr(), temp_bitsnum.as_mut_ptr(), 3);
+            if 0 == VARIANT_int_mulbychar(temp_bitsnum.as_mut_ptr(), 3, 5) {
+                core::ptr::copy_nonoverlapping(temp_bitsnum.as_ptr(), (*val).bitsnum.as_mut_ptr(), 3);
+            } else {
+                /* Multiplication by 5 overflows. Divide by 2 instead. */
+                exponent10 += 1;
+
+                bPrevCarryBit = (*val).bitsnum[2] & 1;
+                (*val).bitsnum[2] >>= 1;
+                bCurrCarryBit = (*val).bitsnum[1] & 1;
+                (*val).bitsnum[1] = ((*val).bitsnum[1] >> 1) | (if bPrevCarryBit != 0 { 0x80000000 } else { 0 });
+                (*val).bitsnum[0] = ((*val).bitsnum[0] >> 1) | (if bCurrCarryBit != 0 { 0x80000000 } else { 0 });
+            }
+        }
+    }
+
+    /* Handle exponent5 < 0 */
+    while exponent5 < 0 {
+        if ((*val).bitsnum[2] & 0x80000000) == 0 {
+            /* The mantissa can withstand a shift-left without overflowing */
+            exponent10 -= 1;
+            exponent5 += 1;
+            VARIANT_int_shiftleft((*val).bitsnum.as_mut_ptr(), 3, 1);
+        } else {
+            /* Directly divide by 5. */
+            exponent5 += 1;
+            VARIANT_int_divbychar((*val).bitsnum.as_mut_ptr(), 3, 5);
+        }
+    }
+
+    /* The exponent10 must be in the range [-DEC_MAX_SCALE..0]. */
+    while hres == S_OK && exponent10 > 0 {
+        if 0 == VARIANT_int_mulbychar((*val).bitsnum.as_mut_ptr(), 3, 10) {
+            exponent10 -= 1;
+        } else {
+            hres = DISP_E_OVERFLOW;
+        }
+    }
+    while exponent10 < -(DEC_MAX_SCALE as i32) {
+        let rem10 = VARIANT_int_divbychar((*val).bitsnum.as_mut_ptr(), 3, 10);
+        exponent10 += 1;
+        if VARIANT_int_iszero((*val).bitsnum.as_ptr(), 3) != 0 {
+            /* Underflow, unable to keep dividing */
+            exponent10 = 0;
+        } else if rem10 >= 5 {
+            let x: u32 = 1;
+            VARIANT_int_add((*val).bitsnum.as_mut_ptr(), 3, &x as *const u32, 1);
+        }
+    }
+    /* Remove excess bits of precision down to the precision guaranteed by the FP number. */
+    if isDouble != 0 {
+        while exponent10 < 0 && ((*val).bitsnum[2] != 0 || ((*val).bitsnum[1] & 0xFFE00000) != 0) {
+            let rem10 = VARIANT_int_divbychar((*val).bitsnum.as_mut_ptr(), 3, 10);
+            exponent10 += 1;
+            if rem10 >= 5 {
+                let x: u32 = 1;
+                VARIANT_int_add((*val).bitsnum.as_mut_ptr(), 3, &x as *const u32, 1);
+            }
+        }
+    } else {
+        while exponent10 < 0
+            && ((*val).bitsnum[2] != 0
+                || (*val).bitsnum[1] != 0
+                || ((*val).bitsnum[2] == 0
+                    && (*val).bitsnum[1] == 0
+                    && ((*val).bitsnum[0] & 0xFF000000) != 0))
+        {
+            let rem10 = VARIANT_int_divbychar((*val).bitsnum.as_mut_ptr(), 3, 10);
+            exponent10 += 1;
+            if rem10 >= 5 {
+                let x: u32 = 1;
+                VARIANT_int_add((*val).bitsnum.as_mut_ptr(), 3, &x as *const u32, 1);
+            }
+        }
+    }
+    /* Remove multiples of 10 from the representation */
+    while exponent10 < 0 {
+        let mut temp_bitsnum: [u32; 3] = [0; 3];
+
+        core::ptr::copy_nonoverlapping((*val).bitsnum.as_ptr(), temp_bitsnum.as_mut_ptr(), 3);
+        if 0 == VARIANT_int_divbychar(temp_bitsnum.as_mut_ptr(), 3, 10) {
+            exponent10 += 1;
+            core::ptr::copy_nonoverlapping(temp_bitsnum.as_ptr(), (*val).bitsnum.as_mut_ptr(), 3);
+        } else {
+            break;
+        }
+    }
+
+    /* Scale assignment */
+    if hres == S_OK {
+        (*val).scale = (-exponent10) as u8;
+    }
+
+    hres
 }
 
 unsafe fn VARIANT_DI_FromR4(source: f32, dest: *mut VARIANT_DI) -> HRESULT {
@@ -3044,15 +3189,13 @@ pub unsafe extern "system" fn VarDecFix(pDecIn: *const _DECIMAL, pDecOut: *mut _
 
 #[no_mangle]
 pub unsafe extern "system" fn VarDecInt(pDecIn: *const DECIMAL, pDecOut: *mut DECIMAL) -> HRESULT {
-    let signscale = (*pDecIn).u.signscale;
-    let sign = signscale & DECIMAL_NEG;
-    let scale = signscale & !DECIMAL_NEG;
-
-    if sign & !DECIMAL_NEG != 0 {
+    if (DEC_SIGN(pDecIn as *mut DECIMAL) & !DECIMAL_NEG) != 0 {
         return E_INVALIDARG;
     }
 
-    if sign == 0 || scale == 0 {
+    if (DEC_SIGN(pDecIn as *mut DECIMAL) & DECIMAL_NEG) == 0
+        || DEC_SCALE(pDecIn as *mut DECIMAL) == 0
+    {
         return VarDecFix(pDecIn, pDecOut);
     }
 
@@ -3068,7 +3211,7 @@ pub unsafe extern "system" fn VarDecInt(pDecIn: *const DECIMAL, pDecOut: *mut DE
 #[no_mangle]
 pub unsafe extern "system" fn VarDecNeg(pDecIn: *const DECIMAL, pDecOut: *mut DECIMAL) -> HRESULT {
     *pDecOut = *pDecIn;
-    (*pDecOut).u2.sign ^= 0x80;
+    (*pDecOut).__bindgen_anon_1.__bindgen_anon_1.sign ^= DECIMAL_NEG;
     0
 }
 
@@ -3079,23 +3222,23 @@ pub unsafe extern "system" fn VarDecRound(
     pDecOut: *mut DECIMAL,
 ) -> HRESULT {
     if cDecimals < 0
-        || (DEC_SIGN(pDecIn) & !DECIMAL_NEG) != 0
-        || DEC_SCALE(pDecIn) > DEC_MAX_SCALE
+        || (DEC_SIGN(pDecIn as *mut DECIMAL) & !DECIMAL_NEG) != 0
+        || DEC_SCALE(pDecIn as *mut DECIMAL) > DEC_MAX_SCALE
     {
         return E_INVALIDARG;
     }
 
-    if cDecimals >= DEC_SCALE(pDecIn) as i32 {
+    if cDecimals >= DEC_SCALE(pDecIn as *mut DECIMAL) as i32 {
         core::ptr::copy_nonoverlapping(pDecIn, pDecOut, 1);
         return S_OK;
     }
 
     let mut divisor: DECIMAL = core::mem::zeroed();
     let mut tmp: DECIMAL = core::mem::zeroed();
-    *(*DEC_LO64_ref(&mut divisor)) = 1;
-    *(*DEC_LO64_ref(&mut tmp)) = 10;
+    *DEC_LO64_ref(&mut divisor) = 1;
+    *DEC_LO64_ref(&mut tmp) = 10;
 
-    let count = DEC_SCALE(pDecIn) as i32 - cDecimals;
+    let count = DEC_SCALE(pDecIn as *mut DECIMAL) as i32 - cDecimals;
     for _ in 0..count {
         let hr = VarDecMul(&divisor, &tmp, &mut divisor);
         if hr < 0 {
@@ -3108,7 +3251,7 @@ pub unsafe extern "system" fn VarDecRound(
         return hr;
     }
 
-    *DEC_SCALE(pDecOut) = cDecimals as u8;
+    (*pDecOut).__bindgen_anon_1.__bindgen_anon_1.scale = cDecimals as u8;
 
     S_OK
 }
@@ -3122,10 +3265,12 @@ pub unsafe extern "system" fn VarDecCmp(
         return VARCMP_NULL;
     }
 
-    let left_neg = (DEC_SIGN(pDecLeft) & DECIMAL_NEG) != 0;
-    let right_neg = (DEC_SIGN(pDecRight) & DECIMAL_NEG) != 0;
-    let left_nonzero =
-        ((*DEC_HI32_ref(pDecLeft)) | (*DEC_MID32_ref(pDecLeft)) | (*DEC_LO32_ref(pDecLeft))) != 0;
+    let left_neg = (DEC_SIGN(pDecLeft as *mut DECIMAL) & DECIMAL_NEG) != 0;
+    let right_neg = (DEC_SIGN(pDecRight as *mut DECIMAL) & DECIMAL_NEG) != 0;
+    let left_nonzero = ((*DEC_HI32_ref(pDecLeft as *mut DECIMAL))
+        | (*DEC_MID32_ref(pDecLeft as *mut DECIMAL))
+        | (*DEC_LO32_ref(pDecLeft as *mut DECIMAL)))
+        != 0;
 
     if !left_neg && right_neg && left_nonzero {
         return VARCMP_GT;
@@ -3138,9 +3283,11 @@ pub unsafe extern "system" fn VarDecCmp(
     let hRet = VarDecSub(pDecLeft, pDecRight, &mut result);
 
     if hRet >= 0 { /* SUCCEEDED */
-        let non_zero =
-            ((*DEC_HI32_ref(&result)) | (*DEC_MID32_ref(&result)) | (*DEC_LO32_ref(&result))) != 0;
-        if (DEC_SIGN(&result) & DECIMAL_NEG) != 0 && non_zero {
+        let non_zero = ((*DEC_HI32_ref(&mut result))
+            | (*DEC_MID32_ref(&mut result))
+            | (*DEC_LO32_ref(&mut result)))
+            != 0;
+        if (DEC_SIGN(&mut result) & DECIMAL_NEG) != 0 && non_zero {
             VARCMP_LT
         } else if non_zero {
             VARCMP_GT
@@ -3270,12 +3417,12 @@ pub unsafe extern "system" fn VarBoolFromStr(
 
     'check_localised: loop {
         if VARIANT_GetLocalisedText(langId, IDS_TRUE, szBuff.as_mut_ptr()) != 0 {
-            if wcsicmp(strIn, szBuff.as_ptr()) == 0 {
+            if _wcsicmp(strIn, szBuff.as_ptr()) == 0 {
                 *pBoolOut = VARIANT_TRUE;
                 return hRes;
             }
             VARIANT_GetLocalisedText(langId, IDS_FALSE, szBuff.as_mut_ptr());
-            if wcsicmp(strIn, szBuff.as_ptr()) == 0 {
+            if _wcsicmp(strIn, szBuff.as_ptr()) == 0 {
                 *pBoolOut = VARIANT_FALSE;
                 return hRes;
             }
@@ -3295,7 +3442,7 @@ pub unsafe extern "system" fn VarBoolFromStr(
     } else {
         let mut d: f64 = 0.0;
         hRes = VarR8FromStr(strIn, lcid, dwFlags, &mut d);
-        if SUCCEEDED(hRes) != 0 {
+        if SUCCEEDED(hRes) {
             *pBoolOut = if d != 0.0 { VARIANT_TRUE } else { VARIANT_FALSE };
         }
     }
@@ -3388,7 +3535,7 @@ unsafe fn VARIANT_MakeBstr(lcid: u32, dwFlags: u32, mut szOut: *mut u16) -> *mut
             szOut = szConverted.as_mut_ptr();
         }
         let len = (lstrlenW(szOut) as usize) * 2;
-        SysAllocStringByteLen(szOut as *const u8, len as u32)
+        SysAllocStringByteLen(szOut as *const i8, len as u32)
     }
 }
 
@@ -3612,6 +3759,48 @@ pub unsafe extern "system" fn VarBstrFromCy(
     }
 }
 
+#[no_mangle]
+pub unsafe extern "system" fn VarBstrFromDec(
+    pDecIn: *mut DECIMAL,
+    lcid: LCID,
+    dwFlags: ULONG,
+    pbstrOut: *mut BSTR,
+) -> HRESULT {
+    let mut buff: [u16; 256] = [0; 256];
+    let mut temp: VARIANT_DI = core::mem::zeroed();
+
+    if pbstrOut.is_null() {
+        return E_INVALIDARG;
+    }
+
+    VARIANT_DIFromDec(pDecIn, &mut temp);
+    VARIANT_DI_tostringW(&temp as *const VARIANT_DI, buff.as_mut_ptr(), 256);
+
+    if (dwFlags & LOCALE_USE_NLS) != 0 {
+        let mut numbuff: [u16; 256] = [0; 256];
+
+        /* Format the number for the locale */
+        numbuff[0] = 0;
+        GetNumberFormatW(
+            lcid,
+            dwFlags & LOCALE_NOUSEROVERRIDE,
+            buff.as_ptr(),
+            core::ptr::null(),
+            numbuff.as_mut_ptr(),
+            256,
+        );
+        *pbstrOut = SysAllocString(numbuff.as_ptr());
+    } else {
+        *pbstrOut = VARIANT_BstrReplaceDecimal(buff.as_ptr(), lcid, dwFlags);
+    }
+
+    if !(*pbstrOut).is_null() {
+        S_OK
+    } else {
+        E_OUTOFMEMORY
+    }
+}
+
 unsafe fn output_int_len(o: i32, min_len: i32, date: *mut u16, date_len: i32) -> i32 {
     if min_len >= date_len {
         return -1;
@@ -3795,7 +3984,7 @@ pub unsafe extern "system" fn VarBstrFromDate(
     dwFlags: u32,
     pbstrOut: *mut *mut u16,
 ) -> i32 {
-    let mut st: SYSTEMTIME = std::mem::zeroed();
+    let mut st: SYSTEMTIME = core::mem::zeroed();
     let mut date: [u16; 128] = [0u16; 128];
     let mut fmt_buff: [u16; 80] = [0u16; 80];
     let mut dwFlags = dwFlags;
@@ -3812,7 +4001,7 @@ pub unsafe extern "system" fn VarBstrFromDate(
     if pbstrOut.is_null() || VariantTimeToSystemTime(dateIn, &mut st) == 0 {
         return E_INVALIDARG;
     }
-    *pbstrOut = std::ptr::null_mut();
+    *pbstrOut = core::ptr::null_mut();
 
     if (dwFlags & VAR_CALENDAR_THAI) != 0 {
         st.wYear = st.wYear.wrapping_add(553);
@@ -3866,13 +4055,13 @@ pub unsafe extern "system" fn VarBstrFromDate(
         } else {
             time_raw
         };
-        let offset = (time as usize - date.as_ptr() as usize) / std::mem::size_of::<u16>();
+        let offset = (time as usize - date.as_ptr() as usize) / core::mem::size_of::<u16>();
         let remaining = date.len() as isize - offset as isize;
         if GetTimeFormatW(
             lcid,
             dwFormatFlags,
             &st,
-            std::ptr::null(),
+            core::ptr::null(),
             time,
             remaining as i32,
         ) == 0
@@ -4167,7 +4356,7 @@ pub unsafe extern "system" fn VarDateFromR4(fltIn: FLOAT, pdateOut: *mut f64) ->
 
 #[no_mangle]
 pub unsafe extern "system" fn VarDateFromR8(dblIn: f64, pdateOut: *mut f64) -> HRESULT {
-    if dblIn <= (DATE_MIN - 1.0) || dblIn >= (DATE_MAX + 1.0) {
+    if dblIn <= (DATE_MIN as f64 - 1.0) || dblIn >= (DATE_MAX as f64 + 1.0) {
         return DISP_E_OVERFLOW;
     }
     *pdateOut = dblIn;
@@ -4197,7 +4386,7 @@ unsafe fn VARIANT_IsValidMonthDay(day: u32, month: u32, year: u32) -> u8 {
     const DAYS: [u8; 13] = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
     if day != 0 && month != 0 && month < 13 {
-        if day <= DAYS[month as usize] as u32 || (month == 2 && day == 29 && IsLeapYear(year) != 0) {
+        if day <= DAYS[month as usize] as u32 || (month == 2 && day == 29 && IsLeapYear(year as i32)) {
             return 1u8;
         }
     }
@@ -4378,16 +4567,16 @@ unsafe fn VARIANT_MakeDate(
 
 #[no_mangle]
 pub unsafe extern "system" fn VarDateFromStr(
-    strIn: *mut u16,
+    mut strIn: *mut u16,
     lcid: u32,
     dwFlags: u32,
     pdateOut: *mut f64,
 ) -> i32 {
     if (dwFlags & (VAR_TIMEVALUEONLY | VAR_DATEVALUEONLY)) == (VAR_TIMEVALUEONLY | VAR_DATEVALUEONLY) {
-        return 0x80070057; // E_INVALIDARG
+        return E_INVALIDARG; // E_INVALIDARG
     }
     if strIn.is_null() {
-        return 0x80020008; // DISP_E_TYPEMISMATCH
+        return DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
     }
 
     *pdateOut = 0.0;
@@ -4432,7 +4621,7 @@ pub unsafe extern "system" fn VarDateFromStr(
         let ch = *strIn as u32;
         if iswdigit(ch) != 0 {
             if dp.dwCount >= 6 {
-                hRet = 0x80020008; // DISP_E_TYPEMISMATCH
+                hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
                 break;
             }
             dp.dwValues[dp.dwCount as usize] = wcstoul(strIn, &mut strIn as *mut *mut u16, 10);
@@ -4445,7 +4634,7 @@ pub unsafe extern "system" fn VarDateFromStr(
                 if dwLen > 0 && _wcsnicmp(strIn, tokens[i], dwLen) == 0 {
                     if i <= 25 {
                         if dp.dwCount >= 6 {
-                            hRet = 0x80020008; // DISP_E_TYPEMISMATCH
+                            hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
                         } else {
                             dp.dwValues[dp.dwCount as usize] = PARSE_DATE_MONTHS[i] as u32;
                             dp.dwFlags[dp.dwCount as usize] |= DP_MONTH | DP_DATESEP;
@@ -4453,7 +4642,7 @@ pub unsafe extern "system" fn VarDateFromStr(
                         }
                     } else if i > 39 && i < 42 {
                         if dp.dwCount == 0 || (dp.dwParseFlags & (DP_AM | DP_PM)) != 0 {
-                            hRet = 0x80020008; // DISP_E_TYPEMISMATCH
+                            hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
                         } else {
                             let flag = if i == 40 { DP_AM } else { DP_PM };
                             dp.dwFlags[(dp.dwCount - 1) as usize] |= flag;
@@ -4485,19 +4674,19 @@ pub unsafe extern "system" fn VarDateFromStr(
                         b"No matching token for %s\n\0".as_ptr() as *const i8,
                         debugstr_w(strIn),
                     );
-                    hRet = 0x80020008; // DISP_E_TYPEMISMATCH
+                    hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
                     break;
                 }
             }
         } else if *strIn == b':' as u16 || *strIn == b'.' as u16 {
             if dp.dwCount == 0 || *strIn.offset(1) == 0 {
-                hRet = 0x80020008; // DISP_E_TYPEMISMATCH
+                hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
             } else {
                 // tokens[42] is LOCALE_SDATE index
                 if *(tokens[42]) == *strIn {
                     dwDateSeps += 1;
                     if dwDateSeps > 2 {
-                        hRet = 0x80020008; // DISP_E_TYPEMISMATCH
+                        hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
                     } else {
                         dp.dwFlags[(dp.dwCount - 1) as usize] |= DP_DATESEP;
                     }
@@ -4508,16 +4697,16 @@ pub unsafe extern "system" fn VarDateFromStr(
         } else if *strIn == b'-' as u16 || *strIn == b'/' as u16 {
             dwDateSeps += 1;
             if dwDateSeps > 2 || dp.dwCount == 0 || *strIn.offset(1) == 0 {
-                hRet = 0x80020008; // DISP_E_TYPEMISMATCH
+                hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
             } else {
                 dp.dwFlags[(dp.dwCount - 1) as usize] |= DP_DATESEP;
             }
         } else if *strIn == b',' as u16 || iswspace(ch) != 0 {
             if *strIn == b',' as u16 && *strIn.offset(1) == 0 {
-                hRet = 0x80020008; // DISP_E_TYPEMISMATCH
+                hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
             }
         } else {
-            hRet = 0x80020008; // DISP_E_TYPEMISMATCH
+            hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
         }
         strIn = strIn.offset(1);
     }
@@ -4526,7 +4715,7 @@ pub unsafe extern "system" fn VarDateFromStr(
         || dp.dwCount > 6
         || (dp.dwCount == 1 && (dp.dwParseFlags & (DP_AM | DP_PM)) == 0)
     {
-        hRet = 0x80020008; // DISP_E_TYPEMISMATCH
+        hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
     }
 
     if hRet >= 0 {
@@ -4550,9 +4739,9 @@ pub unsafe extern "system" fn VarDateFromStr(
                         || (dp.dwFlags[3] & (DP_AM | DP_PM)) != 0
                         || (dp.dwFlags[4] & (DP_AM | DP_PM)) != 0)
                 {
-                    hRet = 0x80020008;
+                    hRet = DISP_E_TYPEMISMATCH;
                 } else if dp.dwCount != 2 && dp.dwCount != 4 && dp.dwCount != 5 {
-                    hRet = 0x80020008;
+                    hRet = DISP_E_TYPEMISMATCH;
                 } else {
                     st.wHour = dp.dwValues[0] as u16;
                     st.wMinute = dp.dwValues[1] as u16;
@@ -4567,9 +4756,9 @@ pub unsafe extern "system" fn VarDateFromStr(
                         || (dp.dwFlags[4] & (DP_AM | DP_PM)) != 0
                         || (dp.dwFlags[5] & (DP_AM | DP_PM)) != 0)
                 {
-                    hRet = 0x80020008;
+                    hRet = DISP_E_TYPEMISMATCH;
                 } else if dp.dwCount != 3 && dp.dwCount != 5 && dp.dwCount != 6 {
-                    hRet = 0x80020008;
+                    hRet = DISP_E_TYPEMISMATCH;
                 } else {
                     st.wHour = dp.dwValues[0] as u16;
                     st.wMinute = dp.dwValues[1] as u16;
@@ -4584,7 +4773,7 @@ pub unsafe extern "system" fn VarDateFromStr(
                     || (dp.dwFlags[0] & (DP_AM | DP_PM)) != 0
                     || (dp.dwFlags[1] & (DP_AM | DP_PM)) != 0
                 {
-                    hRet = 0x80020008;
+                    hRet = DISP_E_TYPEMISMATCH;
                 } else {
                     st.wHour = dp.dwValues[2] as u16;
                     st.wMinute = dp.dwValues[3] as u16;
@@ -4600,7 +4789,7 @@ pub unsafe extern "system" fn VarDateFromStr(
                     } else if dp.dwCount > 4
                         || (dp.dwCount < 3 && (dp.dwParseFlags & (DP_AM | DP_PM)) != 0)
                     {
-                        hRet = 0x80020008;
+                        hRet = DISP_E_TYPEMISMATCH;
                     } else if dp.dwCount == 3 {
                         if (dp.dwFlags[0] & (DP_AM | DP_PM)) != 0 {
                             // TDD
@@ -4612,7 +4801,7 @@ pub unsafe extern "system" fn VarDateFromStr(
                             dp.dwCount = 2;
                             st.wHour = dp.dwValues[2] as u16;
                         } else if (dp.dwParseFlags & (DP_AM | DP_PM)) != 0 {
-                            hRet = 0x80020008;
+                            hRet = DISP_E_TYPEMISMATCH;
                         }
                     } else if dp.dwCount == 4 {
                         dp.dwCount = 3;
@@ -4624,7 +4813,7 @@ pub unsafe extern "system" fn VarDateFromStr(
                             // DDDT
                             st.wHour = dp.dwValues[3] as u16;
                         } else {
-                            hRet = 0x80020008;
+                            hRet = DISP_E_TYPEMISMATCH;
                         }
                         // fall through to 0x8 handling logic below (but we broke out)
                     }
@@ -4641,7 +4830,7 @@ pub unsafe extern "system" fn VarDateFromStr(
                         || dp.dwCount == 4
                         || dp.dwCount == 6
                     {
-                        hRet = 0x80020008;
+                        hRet = DISP_E_TYPEMISMATCH;
                     } else {
                         st.wHour = dp.dwValues[3] as u16;
                         st.wMinute = dp.dwValues[4] as u16;
@@ -4657,7 +4846,7 @@ pub unsafe extern "system" fn VarDateFromStr(
                     || (dp.dwFlags[0] & (DP_AM | DP_PM)) != 0
                     || (dp.dwFlags[1] & (DP_AM | DP_PM)) != 0
                 {
-                    hRet = 0x80020008;
+                    hRet = DISP_E_TYPEMISMATCH;
                 } else {
                     st.wHour = dp.dwValues[2] as u16;
                     st.wMinute = dp.dwValues[3] as u16;
@@ -4671,7 +4860,7 @@ pub unsafe extern "system" fn VarDateFromStr(
                     || (dp.dwFlags[1] & (DP_AM | DP_PM)) != 0
                     || (dp.dwFlags[2] & (DP_AM | DP_PM)) != 0
                 {
-                    hRet = 0x80020008;
+                    hRet = DISP_E_TYPEMISMATCH;
                 } else {
                     st.wHour = dp.dwValues[3] as u16;
                     st.wMinute = dp.dwValues[4] as u16;
@@ -4680,7 +4869,7 @@ pub unsafe extern "system" fn VarDateFromStr(
                 }
             }
             _ => {
-                hRet = 0x80020008;
+                hRet = DISP_E_TYPEMISMATCH;
             }
         }
 
@@ -4699,10 +4888,10 @@ pub unsafe extern "system" fn VarDateFromStr(
 
             // Finally, convert the value to a VT_DATE
             if hRet >= 0 {
-                hRet = if SystemTimeToVariantTime(&st, pdateOut) != 0 {
+                hRet = if SystemTimeToVariantTime(&mut st, pdateOut) != 0 {
                     0 // S_OK
                 } else {
-                    0x80020008 // DISP_E_TYPEMISMATCH
+                    DISP_E_TYPEMISMATCH // DISP_E_TYPEMISMATCH
                 };
             }
         }
@@ -4738,7 +4927,7 @@ pub unsafe extern "system" fn VarDateFromDec(pdecIn: *mut DECIMAL, pdateOut: *mu
 
 #[no_mangle]
 pub unsafe extern "system" fn VarDateFromI8(llIn: LONG64, pdateOut: *mut DATE) -> HRESULT {
-    if (llIn as f64) < DATE_MIN || (llIn as f64) > DATE_MAX {
+    if llIn < DATE_MIN || llIn > DATE_MAX {
         return DISP_E_OVERFLOW;
     }
     *pdateOut = llIn as DATE;
@@ -4747,7 +4936,7 @@ pub unsafe extern "system" fn VarDateFromI8(llIn: LONG64, pdateOut: *mut DATE) -
 
 #[no_mangle]
 pub unsafe extern "system" fn VarDateFromUI8(ullIn: u64, pdateOut: *mut f64) -> HRESULT {
-    if ullIn > DATE_MAX {
+    if ullIn > DATE_MAX as u64 {
         return DISP_E_OVERFLOW;
     }
     *pdateOut = ullIn as f64;
