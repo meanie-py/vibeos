@@ -12,6 +12,5 @@ registry), never left to rot in an archived doc.
 | Lane (worktree/branch) | Doc |
 |---|---|
 | `fex-arm` | [fex-bringup-plan.md](fex-bringup-plan.md), [wow64-plan.md](wow64-plan.md) |
-| `screen-painting` | [ui-render-completeness-investigation.md](ui-render-completeness-investigation.md) |
 | `conformance-ratchet` | conformance-ratchet-quest.md *(lives on the branch until it lands)* |
 | `smp-bringup` | [smp-bringup-quest.md](smp-bringup-quest.md) |
