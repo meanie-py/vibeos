@@ -23,6 +23,8 @@ publish = false
 # would switch ON cnt-rust's `cabi` feature for msvcrt-crt-rust's copy too,
 # whose 208 #[no_mangle] shims would then collide with the wrappers.
 msvcrt-crt-rust = { path = "../msvcrt-crt-rust" }
+# guard-page probe (tests/oob_guard.rs): mmap/mprotect/fork.
+libc = "0.2"
 
 [build-dependencies]
 cc = "1"
@@ -42,4 +44,15 @@ harness = false
 [[test]]
 name = "classify"
 path = "tests/classify.rs"
+harness = false
+
+# Guard-page probe for the BOUNDED ("n"-suffixed) fns. classify.rs compares
+# VALUES and so is structurally blind to an out-of-bounds READ that still
+# returns the right answer — which is exactly how _strnset's unbounded NUL scan
+# passed 20k fuzz cases and then faulted in the guest. This places the buffer
+# flush against a PROT_NONE page so an over-read segfaults, in a forked child so
+# the offending function is named rather than taking the harness down.
+[[test]]
+name = "oob_guard"
+path = "tests/oob_guard.rs"
 harness = false

@@ -176,7 +176,18 @@ Wave 2's 8 DIVERGE + 1 SIGN-ONLY were **not** "unflippable". They were **one roo
 
 > ⚠️ **DEFERRED to Phase D — `_stricmp` / `_strnicmp` / `_memicmp`.** Fixing their signedness makes the harness report MATCH. **Do not believe it.** Their msvcrt bodies consult `get_locinfo()->lc_handle[LC_CTYPE]` and fold via `_tolower_l` — they are **locale-dependent**, while cnt-rust's fold is locale-blind ASCII. They coincide *only* in the "C" locale, which is exactly what the harness pins. Correct under the default locale; wrong the moment an app calls `setlocale()`. They belong with locale (Phase D). The harness prints them as a DEFERRED footer so they are not silently forgotten.
 
-#### ⚠️ The harness's TWO BLIND SPOTS (a harness can only falsify what it VARIES)
+#### ⚠️ BLIND SPOT ZERO — the harness compares VALUES, so it cannot see a bad ACCESS
+
+**This one actually shipped** (caught by the gate's net suite, one cycle later; field manual §9.60). The Rust `_strnset` scanned for NUL **unbounded** and clamped afterwards (`min(cstr_slice(p).len(), len)`), where the C reads at most `len` bytes (`while (*str && len--)`). The `min` still bounds the *fill*, so **every returned value and every written byte was identical to the C** — 20,000 fuzz cases, all MATCH. The only damage was the **read**, running off the end of a buffer that an `n`-suffixed API is explicitly allowed to leave unterminated (`gen_str` always NUL-terminates, so the fuzz could never construct the input that bites). It faulted in the guest via `mbcs.c`'s `u__strnset()` → `_mbsnset`/`_mbsnbset` and silently killed `nettest.exe`.
+
+> **Rule: an `n`-suffixed CRT function must never contain an unbounded scan.** Bound it by `n` (`cstr_slice_bounded`) — never scan-then-`min`.
+
+**Detector (permanent): `msvcrt-difftest/tests/oob_guard.rs`.** Probes the *access*, not the value: a NUL-free buffer placed flush against a `PROT_NONE` guard page, each bounded fn called with `n <= k`, each call in a forked child so the offender is named rather than taking the harness down. Validated both ways (reports `_strnset ✗ OVER-READ` on the bug, green on the fix). **Every new bounded flip gets a row.**
+```
+cargo test -p msvcrt-difftest --test oob_guard
+```
+
+#### ⚠️ The harness's OTHER blind spots (a harness can only falsify what it VARIES)
 
 Both must be settled by **reading the C**, never by a green table:
 

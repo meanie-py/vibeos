@@ -828,12 +828,26 @@ pub unsafe extern "C" fn _memccpy(
 /// likely a Wine bug (MS documents "a pointer to the altered string"), but this
 /// lane's invariant is that a flip is a *pure refactor of the C it replaces*,
 /// so it is reproduced exactly rather than quietly "fixed" here.
+///
+/// ⚠️ **The scan MUST be bounded by `len`.** The C's `while (*str && len--)`
+/// reads at most `len` bytes; an *unbounded* `strlen`-style scan here reads off
+/// the end of a buffer that an `n`-suffixed API is explicitly allowed to leave
+/// unterminated — and `_strnset` IS reached that way, via `mbcs.c`'s
+/// `u__strnset()` → `_mbsnset`/`_mbsnbset`. The over-read produces the *same*
+/// bytes (the fill stays bounded either way), so it is invisible to a
+/// value-comparing fuzz — it only shows up when the scan walks into an unmapped
+/// page and faults. That is exactly the bug this function shipped with for one
+/// gate cycle: msvcrt-difftest reported MATCH across 20k cases because `gen_str`
+/// always NUL-terminates. Detector: the guard-page test in
+/// `msvcrt-difftest/tests/classify.rs` (`oob_guard`), which places the buffer
+/// flush against a PROT_NONE page so an over-read segfaults.
 #[no_mangle]
 pub unsafe extern "C" fn _strnset(str_: *mut u8, value: i32, len: usize) -> *mut u8 {
     if str_.is_null() || len == 0 {
         return str_;
     }
-    let take = core::cmp::min(h::cstr_slice(str_ as *const u8).len(), len);
+    // bounded: stops at the first NUL *or* at `len`, whichever comes first.
+    let take = h::cstr_slice_bounded(str_ as *const u8, len).len();
     cnt_rust::core_rs::strmut::fill(core::slice::from_raw_parts_mut(str_, take), value as u8);
     str_.add(take)
 }

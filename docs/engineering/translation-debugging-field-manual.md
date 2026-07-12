@@ -5212,3 +5212,38 @@ The harness originally linked `cnt-rust` (the kernel CRT crate whose cores the w
 **The bug the harness DID catch (the reason to keep it).** cnt-rust's `core_rs` is faithful to libcntpr, which uses a **signed-char** convention (`Elem::diff` for `u8` = `(a as i8) - (b as i8)`; `mem::chr` matches `(b as i8 as i32) == c`). msvcrt/Wine uses **unsigned-char**. They agree on all of ASCII and **flip sign on any byte ≥ 0x80** — so `strcmp`/`strncmp`/`memchr`/`_memicmp`/`_memccpy` would have silently corrupted ordering and search on non-ASCII data (UTF-8 paths, accented filenames, binary buffers) while booting perfectly green. **Two CRT bodies in one tree can want genuinely different answers from the same-named function; that is a contract knob, not a bug** — resolved by adding `Elem::udiff` (default = `diff`; only `u8` overrides, since `wchar_t` is unsigned by definition and the wide family never had the bug) with each contract pinned by its own harness (`cnt-difftest` for the kernel, `msvcrt-difftest` for msvcrt).
 
 **Corollary for cohab flips generally: VERIFY THE FLIP TOOK.** A green build and a "duplicate symbol" warning prove nothing about *which* body won. Parse the PE export table and resolve each export's RVA into the Rust `--whole-archive` cluster vs the C bodies — and assert the *deliberately-not-flipped* ones still land in C. (Plain link-order is NOT enough: the C monolith object still gets pulled in for its un-flipped symbols and drags its own copies of the flipped ones along, winning first-match. `--whole-archive` on the Rust `.a` is what forces the Rust definitions in first.)
+
+### 9.60 (ROOT-CAUSED + FIXED 2026-07-12) The bug a value-comparing fuzz CANNOT see: an unbounded scan inside a bounded (`n`-suffixed) CRT function — right answer, wrong memory
+
+**Symptom.** msvcrt wave-3 flipped 6 functions, all reported MATCH by the differential harness across 20,000 fuzz cases each, all 3 arch smokes green to desktop. But the **net suite** regressed hard: `nettest.exe` (the usermode winsock proof) printed `WSAStartup OK` and then went silent — no crash banner, no error, just gone — and the kernel's `[NETSTACK] dns OK` marker slipped past the boot snapshot. 4/4 fail. Control (previous commit, same host): 15/15 pass, twice. So: a real regression, not the documented NET_FLAKE.
+
+**The trap.** Everything about the shape said "not my code": the failing tests were *kernel-side* netstack self-tests, and msvcrt.dll is **user-mode**. The functions were harness-exact against the genuine C. It was tempting to call it host contention (two other agents' QEMUs were live) and re-gate. **The A/B control is what forbade that** — build the previous commit, run the same suite on the same host: 15/15. Never accept "probably a flake" when a two-run control can settle it.
+
+**Bisection** (rebuild + boot per step; the wrappers toggled one family at a time):
+
+| variant | net |
+|---|---|
+| all 6 wrappers off (cnt-rust change + crate split still in) | 15 pass |
+| `+strcmp +strncmp +memcmp` | 15 pass |
+| `+memchr` | 15 pass |
+| `+_memccpy` | 15 pass |
+| `+_strnset` | **13/2 FAIL** |
+
+**Root cause.** The Rust `_strnset` was:
+```rust
+let take = core::cmp::min(h::cstr_slice(p).len(), len);   // UNBOUNDED scan, clamped AFTER
+```
+against the C's
+```c
+if (len > 0 && str) while (*str && len--) *str++ = value;  /* reads at most len bytes */
+```
+`cstr_slice` is a `strlen`-style scan with **no bound**. On a buffer that an `n`-suffixed API is explicitly allowed to leave **unterminated**, it runs off the end. The `min` still bounds the *fill*, so **every byte written and every value returned is identical to the C** — which is precisely why 20k fuzz cases said MATCH: the harness's `gen_str` always NUL-terminates, so the scan always found a terminator inside the buffer. The only damage is the **read**, and it only kills you when it walks into an unmapped page.
+
+**Why it reached the network stack (and why "nobody calls it" was wrong).** A first grep for callers found none — but the grep was truncated by `head`. `_strnset` IS called, from *inside msvcrt itself*: `mbcs.c`'s `u__strnset()` → `_mbsnset` / `_mbsnbset`. A silent fault there took the process down with no banner. **When a bisect says a symbol matters, believe the bisect over your grep — and re-run the grep without `head`.**
+
+**The generalizable rule.**
+> **An `n`-suffixed CRT function must never contain an unbounded scan.** Bound the scan by `n` (`cstr_slice_bounded`) — never scan-then-`min`. The clamp makes the *answer* right while the *access* is already out of bounds.
+
+**The detector (new, permanent): `msvcrt-difftest/tests/oob_guard.rs`.** A value-comparing fuzz is *structurally* blind to an over-read that still returns the right answer — no amount of fuzzing finds this class. So probe the access, not the value: `mmap` two pages, `mprotect(PROT_NONE)` the second, and place a deliberately **NUL-free** buffer of `k` bytes flush against the boundary; call each bounded fn with `n <= k`. A correct impl never touches `p[k]`; an unbounded scan takes SIGSEGV. Each call runs in a forked child so the offender is *named* instead of taking the harness down. Validated both ways — it reports `_strnset ✗ OVER-READ` on the buggy version and passes on the fix. **Every new bounded flip gets a row here.**
+
+**Meta-lesson (compounds with §9.59).** §9.59 catalogued the harness's blind spots in *what it varies* (locale, host-vs-target `#if`, proxy-vs-artifact). This is a blind spot in *what it observes*: it compares return values and destination bytes, so it can only ever catch wrong **answers** — never wrong **memory access** that yields a right answer. Two different questions, two different instruments. A green diff table is not a safety proof.
