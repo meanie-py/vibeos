@@ -4919,8 +4919,22 @@ IN_PAGE_ERROR face says a CD read IRP completed with failure (or never completed
 the TDI c00000b5 face says the same for net IRPs; the creeping wedge is the
 pipe-connect variant. One I/O-completion-shaped hole explains all three.
 
-**Next tools (in order):** M4 farm soak on -smp 2 to build a corpus
-(`farm --tripwire` + `farm-report` clustering); `[WAITDEP]`/cswitchdep taps are
-already always-on; for the wedge face, GDB both vCPUs at hang time
+**M4 soak data (2026-07-12, REFRAMES the rate):** 453-boot scoped farm soak
+(amd64 `-smp 2`, SMP-kernel media, SPECIALPOOL=* armed, one QEMU at a time,
+[SMP] markers verified in the boot logs): **3 failures — ALL inside the first
+hour, while landing-gate builds + x3 smokes were hammering the host; ~400
+consecutive green boots after the host went quiet** (29s median boot, vs the
+same evening's contention-inflated ~110s). All 3 failures wear the identical
+service-connect creep-wedge face. So the residual is **host-timing-skew
+sensitive**: extreme TCG starvation stretches guest timing until a real race
+window lands. The evening's ~25% rates were contention-amplified, quiet-host
+`-smp 2` is ~0/450 — but the 0x19 POOL_HEADER_IS_ZERO and 0x1E c0000006
+crashes remain REAL guest bugs (host slowness cannot zero a pool header; it
+can only widen the window). Don't re-litigate the rate; the bug stands.
+
+**Next tools (in order):** the repro amplifier is now known — run the farm
+WITH deliberate host load (a parallel build loop or a second farm arch) to
+reopen the window; build `--cswitchdep` so the illegal hand-off pins the
+culprit PC at switch time; for a live wedge, GDB both vCPUs
 (`qemu/start.sh amd64 --gdb` + `VIBEOS_QEMU_SMP=2`, `info threads` / bt both).
 Tracked as the gating item between M3 and M4.

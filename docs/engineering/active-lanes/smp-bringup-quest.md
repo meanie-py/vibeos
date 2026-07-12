@@ -395,3 +395,13 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   SPECIALPOOL=* caught nothing at a store. Suspect: device-I/O completion / lost
   wakeup under real concurrency (§9.51 uniata family, not TLB). This is now THE
   gating item for M4 — the soak doubles as its corpus builder.
+- 2026-07-12: **M4 first soak DONE — 453 boots amd64 -smp 2, 3 failures, ALL
+  during the contended first hour; ~400 consecutive greens once the host went
+  quiet** (29s median boot; the evening's ~110s/-25%-flake numbers were
+  host-contention-amplified). §9.56 reframed: the residual race is REAL (the
+  0x19/0x1E crash faces can't be host artifacts) but its window opens under
+  extreme TCG timing skew — which is now the known repro amplifier. Next
+  round: farm under deliberate host load + `--cswitchdep` build to pin the
+  culprit hand-off. Also landed this session: the whole lane merged to
+  master (fast-forward e08f777401a + docs 34d29afda89) — M0–M3 on mainline,
+  all opt-in, defaults stay UP.
