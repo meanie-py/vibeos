@@ -35,3 +35,9 @@ NtUserCreateWindowEx
 NtUserTranslateMessage
 NtUserBeginPaint
 NtUserEndPaint
+
+# M9 default-cursor load (LoadCursor(NULL, IDC_ARROW) during first window's
+# class setup): module/resource UNICODE_STRINGs widen 8->16 (align-8 probe),
+# and SetCursorIconData's CURSORDATA has pointer/HBITMAP fields that widen.
+NtUserFindExistingCursorIcon
+NtUserSetCursorIconData

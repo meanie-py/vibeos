@@ -5129,3 +5129,61 @@ not a runtime guarantee, and turning one into a panic plants a mine that a *futu
 will step on. **Detector idea (owed):** a lint that flags `assert!(` in no-std kernel crates whose
 line traces to a C `ASSERT`/`NT_ASSERT` — the class is invisible to every existing gate until the
 path goes hot.
+
+### 9.58 (WoW64/FEX) Two window-path 32→64 divergences: (a) FIXED — cursor/icon UNICODE_STRING probe → 0x1E; (b) OPEN — the shared USER handle table has no 32-bit view, so client-side `ValidateHwnd` fails and `DispatchMessage` silently drops WM_PAINT
+
+Context: the x86-on-arm64 WoW64 lane (M8 landed a real 32-bit *window* on the arm64
+desktop, callbacks + pump working). M9's goal is WM_PAINT reaching the guest wndproc
+so the app paints its client rect. Two bugs surfaced, both the same *class* (a win32k
+syscall or shared struct laid out for 64-bit, consumed by a 32-bit guest), at two
+different layers.
+
+**(a) FIXED — cursor/icon load path, align-8 UNICODE_STRING probe → BUGCHECK 0x1E.**
+`win32.exe` registers its class with `hCursor=NULL`, so window creation triggers
+`LoadCursor(NULL, IDC_ARROW)`: user32 decodes the arrow bitmap from its own resources
+(a run of `NtGdiStretchDIBitsInternal` on serial), then calls `NtUserSetCursorIconData`
+(and `NtUserFindExistingCursorIcon`) with the module + resource names as `UNICODE_STRING`s.
+Those were **passthrough** win32k thunks, so the guest's 32-bit `UNICODE_STRING`
+(8 bytes, *4-aligned*) reached win32k's `ProbeAndCaptureUnicodeString` →
+`ProbeForRead(ptr, 16, 8)` (a 64-bit `UNICODE_STRING` is 16 bytes / `TYPE_ALIGNMENT`=8).
+The guest pointer being only 4-aligned raised `STATUS_DATATYPE_MISALIGNMENT`, which under
+DUMMY_PSEH bugchecked `0x1E`. **The probe signature — `Len=16 Align=8` on a low (guest)
+address — is the fingerprint of a raw-passthrough 64-bit `UNICODE_STRING` probe of a
+WoW64 buffer.** Fix: manual marshallers (`dll/win32/wow64/wow64_manual.c`) that widen
+both `UNICODE_STRING`s 8→16 and repack `CURSORDATA` 0x58→0x88 (pointer/HBITMAP fields
+widen; the animated `CURSORF_ACON` frame arrays are owed). Added both to
+`tools/wow64gen/manual-win32k.txt`. Post-fix: win32.exe creates the window and receives
+its **full** message set through the callback bridge (WM_NCCREATE/WM_NCCALCSIZE/WM_CREATE/
+WM_SHOWWINDOW/WM_NCPAINT/WM_ERASEBKGND/WM_ACTIVATE/WM_SIZE/WM_MOVE/...).
+
+*Debug recipe that named the faulting syscall:* the win32k dispatch trace only prints
+on syscall *return* (`[WOW64] Name => status`), so a thunk that faults the kernel prints
+nothing. Add an **on-entry** trace (`[WOW64>] Name enter ...` in
+`Wow64DispatchWin32kService`, gated on `Wow64TraceSyscalls`) — the last `[WOW64>]` with
+no matching `=>` is the culprit, and its args point at the offending buffer.
+
+**(b) OPEN — WM_PAINT never reaches the guest wndproc; root = no 32-bit view of the
+shared USER handle table.** After (a), the pump calls `PeekMessageA` which returns
+`WM_PAINT (0x000f)` with the correct hwnd **200×** (win32k's paint path is correct), but
+the guest never dispatches it: no `NtUserDispatchMessage`, no `NtUserBeginPaint`, and the
+window stays dirty so QS_PAINT re-fires forever (exit `0x600E` WARN). Root cause is
+**client-side** `ValidateHwnd`: `user32!DispatchMessageA` calls `ValidateHwnd(hwnd)` first
+and `return 0` silently if it's NULL (no syscall — matching the trace). `ValidateHwnd` →
+`GetUser32Handle` indexes the **shared USER handle table** via `gSharedInfo.aheList`
+(`gHandleTable->handles`, `->nb_handles`, then `gHandleEntries[Index]`). The shared heap
+IS mapped below 4GB for WoW64 (`W32Wow64ZeroBits`; the marshalled USERCONNECT shows
+`ahe=001da000 delta=fc240000`, all <4GB), **but the table itself is written by 64-bit
+win32k in 64-bit layout**: `USER_HANDLE_TABLE` is 24 bytes on Win64 (`nb_handles` at
+offset 16) vs 16 on Win32 (offset 8), and `USER_HANDLE_ENTRY` is 24 vs 12 bytes. The
+32-bit guest reads `->handles` as the low 32 bits of a 64-bit kernel VA, misreads
+`->nb_handles`, and strides the entry array by 12 not 24 — so every handle validation
+fails. It's invisible until now because CreateWindow takes the hwnd straight from the
+syscall return and the kernel→user callbacks pass the wndproc pointer directly — neither
+uses `ValidateHwnd`; the message loop is the *first* client-side validation.
+**This is a subsystem, not a marshaller:** WoW64 GUI needs a per-process **32-bit view of
+the USER handle table** (real Windows keeps a parallel 32-bit `gSharedInfo`). The table is
+session-global and can't be per-bitness in place, so win32k must maintain a 32-bit shadow
+(header + entries) for WoW64 processes and hand its low VA back in `USERCONNECT.aheList`,
+kept in sync on every handle alloc/free. Owed as the M9 core (`wow64-plan.md`). Until then
+any WoW64 GUI app that validates an HWND client-side (i.e. nearly all of them) silently
+no-ops the call.
