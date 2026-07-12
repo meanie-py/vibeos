@@ -1,29 +1,57 @@
+//! FileMoniker implementation — translation of dll/win32/ole32/filemoniker.c
+//!
+//! IMoniker (+ IPersistStream via the IMoniker vtbl, as COM inherits it) and IROTData
+//! over a single file-path string. Refcount-, string- and CoTaskMem-heavy; the C is the
+//! oracle for every alloc/free pairing here.
 use crate::prelude::*;
 use core::ffi::c_void;
 
-extern "C" {
+// ---------------------------------------------------------------------------
+// Local bits the shared surface does not (yet) carry.
+//
+// All three items below belong in the shared surface (IID_IClassActivator in
+// crate::iids — classmoniker.rs needs it too; the file-attribute trio in
+// crate::win32). Declared privately here so they cannot collide with a future
+// shared definition (a local item shadows a glob import).
+// ---------------------------------------------------------------------------
 
-    fn wcschr(s: *const u16, c: u16) -> *const u16;
-    fn WideCharToMultiByte( CodePage: u32, dwFlags: u32, lpWideCharStr: *const u16, cchWideChar: i32, lpMultiByteStr: *mut i8, cbMultiByte: i32, lpDefaultChar: *const i8, lpUsedDefaultChar: *mut i32, ) -> i32;
-    fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
-    fn towupper(c: i32) -> i32;
-}
 extern "C" {
-    fn StgOpenStorage( pwcsName: LPCWSTR, pstgPriority: *mut IStorage, grfMode: LPDWORD, snbExclude: *mut core::ffi::c_void, reserved: LPDWORD, ppstgOpen: *mut *mut IStorage, ) -> HRESULT;
-    fn CoTaskMemFree(pv: *mut core::ffi::c_void);
-    fn CreateAntiMoniker(ppmk: *mut *mut IMoniker) -> HRESULT;
-    fn CoCreateInstance( rclsid: *const CLSID, pUnkOuter: *mut IUnknown, dwClsContext: u32, riid: *const CLSID, ppv: *mut *mut core::ffi::c_void, ) -> HRESULT;
-    fn GetClassFile(szFilename: LPCWSTR, pclsid: *mut CLSID) -> HRESULT;
-    fn CoTaskMemAlloc(cb: usize) -> *mut core::ffi::c_void;
-    fn CreateBindCtx(reserved: u32, ppbc: *mut *mut IBindCtx) -> HRESULT;
-    fn CreateGenericComposite( pmkFirst: *mut IMoniker, pmkRest: *mut IMoniker, ppmkComposite: *mut *mut IMoniker, ) -> HRESULT;
-    fn lstrcatW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
-    fn wcscmp(string1: *const u16, string2: *const u16) -> i32;
-    fn GetFullPathNameW(lpFileName: LPCWSTR, nBufferLength: DWORD, lpBuffer: LPWSTR, lpFilePart: *mut LPWSTR) -> DWORD;
-    fn GetFileAttributesW(lpFileName: LPCWSTR) -> DWORD;
+    /// uuid.lib data symbol (same class as every other IID_* in crate::iids).
+    static IID_IClassActivator: GUID;
 }
 
-// ---- file-scope preamble (translated) ----
+/// fileapi.h: `GET_FILEEX_INFO_LEVELS::GetFileExInfoStandard`
+const GetFileExInfoStandard: c_int = 0;
+
+/// winnls.h: `MB_ERR_INVALID_CHARS`
+const MB_ERR_INVALID_CHARS: DWORD = 0x0000_0008;
+
+/// fileapi.h: WIN32_FILE_ATTRIBUTE_DATA
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct WIN32_FILE_ATTRIBUTE_DATA {
+    dwFileAttributes: DWORD,
+    ftCreationTime: FILETIME,
+    ftLastAccessTime: FILETIME,
+    ftLastWriteTime: FILETIME,
+    nFileSizeHigh: DWORD,
+    nFileSizeLow: DWORD,
+}
+
+extern "system" {
+    // WINAPI → stdcall on i386: `extern "system"`, never `extern "C"`.
+    fn GetFileAttributesExW(
+        lpFileName: LPCWSTR,
+        fInfoLevelId: c_int,
+        lpFileInformation: LPVOID,
+    ) -> BOOL;
+}
+
+// ---------------------------------------------------------------------------
+// struct FileMonikerImpl
+// ---------------------------------------------------------------------------
+
+/// filemoniker.c: `typedef struct FileMonikerImpl` (`ref` → `ref_`, a Rust keyword).
 #[repr(C)]
 pub struct FileMonikerImpl {
     pub IMoniker_iface: IMoniker,
@@ -33,115 +61,100 @@ pub struct FileMonikerImpl {
     pub pMarshal: *mut IUnknown,
 }
 
-pub type PFileMonikerImpl = *mut FileMonikerImpl;
-
-pub static VT_FileMonikerImpl: IMonikerVtbl = IMonikerVtbl {
-    QueryInterface: FileMonikerImpl_QueryInterface,
-    AddRef: FileMonikerImpl_AddRef,
-    Release: FileMonikerImpl_Release,
-    GetClassID: FileMonikerImpl_GetClassID,
-    IsDirty: FileMonikerImpl_IsDirty,
-    Load: FileMonikerImpl_Load,
-    Save: FileMonikerImpl_Save,
-    GetSizeMax: FileMonikerImpl_GetSizeMax,
-    BindToObject: FileMonikerImpl_BindToObject,
-    BindToStorage: FileMonikerImpl_BindToStorage,
-    Reduce: FileMonikerImpl_Reduce,
-    ComposeWith: FileMonikerImpl_ComposeWith,
-    Enum: FileMonikerImpl_Enum,
-    IsEqual: FileMonikerImpl_IsEqual,
-    Hash: FileMonikerImpl_Hash,
-    IsRunning: FileMonikerImpl_IsRunning,
-    GetTimeOfLastChange: FileMonikerImpl_GetTimeOfLastChange,
-    Inverse: FileMonikerImpl_Inverse,
-    CommonPrefixWith: FileMonikerImpl_CommonPrefixWith,
-    RelativePathTo: FileMonikerImpl_RelativePathTo,
-    GetDisplayName: FileMonikerImpl_GetDisplayName,
-    ParseDisplayName: FileMonikerImpl_ParseDisplayName,
-    IsSystemMoniker: FileMonikerImpl_IsSystemMoniker,
-};
-
-pub static VT_ROTDataImpl: IROTDataVtbl = IROTDataVtbl {
-    QueryInterface: FileMonikerROTDataImpl_QueryInterface,
-    AddRef: FileMonikerROTDataImpl_AddRef,
-    Release: FileMonikerROTDataImpl_Release,
-    GetComparisonData: FileMonikerROTDataImpl_GetComparisonData,
-};
-
+#[inline]
 unsafe fn impl_from_IMoniker(iface: *mut IMoniker) -> *mut FileMonikerImpl {
-    (iface as *mut u8).offset(-(core::mem::offset_of!(FileMonikerImpl, IMoniker_iface) as isize)) as *mut FileMonikerImpl
+    CONTAINING_RECORD!(iface, FileMonikerImpl, IMoniker_iface)
 }
 
+#[inline]
 unsafe fn impl_from_IROTData(iface: *mut IROTData) -> *mut FileMonikerImpl {
-    (iface as *mut u8).offset(-(core::mem::offset_of!(FileMonikerImpl, IROTData_iface) as isize)) as *mut FileMonikerImpl
+    CONTAINING_RECORD!(iface, FileMonikerImpl, IROTData_iface)
 }
-unsafe fn FileMonikerImpl_QueryInterface(
+
+// ---------------------------------------------------------------------------
+// IMoniker
+// ---------------------------------------------------------------------------
+
+stdmethod! {
+fn FileMonikerImpl_QueryInterface(
     iface: *mut IMoniker,
-    riid: *const CLSID,
-    ppvObject: *mut *mut core::ffi::c_void,
+    riid: *const IID,
+    ppvObject: *mut *mut c_void,
 ) -> HRESULT {
     let This = impl_from_IMoniker(iface);
 
-    TRACE!(
-        b"(%p,%s,%p)\n\0".as_ptr() as *const i8,
-        This,
-        debugstr_guid(riid),
-        ppvObject,
-    );
+    TRACE!(b"(%p,%s,%p)\n\0".as_ptr() as *const c_char, This, debugstr_guid(riid as *const c_void), ppvObject);
 
+    /* Perform a sanity check on the parameters.*/
     if ppvObject.is_null() {
-        return 0x80070057u32 as HRESULT; // E_INVALIDARG
+        return E_INVALIDARG;
     }
 
+    /* Initialize the return parameter */
     *ppvObject = core::ptr::null_mut();
 
-    if IsEqualIID(core::ptr::addr_of!(IID_IUnknown), riid) != 0
-        || IsEqualIID(core::ptr::addr_of!(IID_IPersist), riid) != 0
-        || IsEqualIID(core::ptr::addr_of!(IID_IPersistStream), riid) != 0
-        || IsEqualIID(core::ptr::addr_of!(IID_IMoniker), riid) != 0
+    /* Compare the riid with the interface IDs implemented by this object.*/
+    if IsEqualIID(core::ptr::addr_of!(IID_IUnknown), riid)
+        || IsEqualIID(core::ptr::addr_of!(IID_IPersist), riid)
+        || IsEqualIID(core::ptr::addr_of!(IID_IPersistStream), riid)
+        || IsEqualIID(core::ptr::addr_of!(IID_IMoniker), riid)
     {
-        *ppvObject = iface as *mut core::ffi::c_void;
-    } else if IsEqualIID(core::ptr::addr_of!(IID_IROTData), riid) != 0 {
-        *ppvObject = core::ptr::addr_of_mut!((*This).IROTData_iface) as *mut core::ffi::c_void;
-    } else if IsEqualIID(core::ptr::addr_of!(IID_IMarshal), riid) != 0 {
-        let mut hr: HRESULT = 0; // S_OK
+        *ppvObject = iface as *mut c_void;
+    } else if IsEqualIID(core::ptr::addr_of!(IID_IROTData), riid) {
+        *ppvObject = core::ptr::addr_of_mut!((*This).IROTData_iface) as *mut c_void;
+    } else if IsEqualIID(core::ptr::addr_of!(IID_IMarshal), riid) {
+        let mut hr: HRESULT = S_OK;
         if (*This).pMarshal.is_null() {
             hr = MonikerMarshal_Create(iface, core::ptr::addr_of_mut!((*This).pMarshal));
         }
-        if hr != 0 {
+        if hr != S_OK {
             return hr;
         }
         return IUnknown_QueryInterface((*This).pMarshal, riid, ppvObject);
     }
 
+    /* Check that we obtained an interface.*/
     if (*ppvObject).is_null() {
-        return 0x80004002u32 as HRESULT; // E_NOINTERFACE
+        return E_NOINTERFACE;
     }
 
+    /* QueryInterface always increases the reference count by one when it is successful */
     IMoniker_AddRef(iface);
 
-    0 // S_OK
+    S_OK
+}
 }
 
-unsafe fn FileMonikerImpl_AddRef(iface: *mut IMoniker) -> u32 {
+stdmethod! {
+fn FileMonikerImpl_AddRef(iface: *mut IMoniker) -> ULONG {
     let This = impl_from_IMoniker(iface);
 
-    InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as u32
+    TRACE!(b"(%p)\n\0".as_ptr() as *const c_char, iface);
+
+    InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG
+}
 }
 
-unsafe fn FileMonikerImpl_Release(iface: *mut IMoniker) -> u32 {
+stdmethod! {
+fn FileMonikerImpl_Release(iface: *mut IMoniker) -> ULONG {
     let This = impl_from_IMoniker(iface);
-    let ref_count = InterlockedDecrement(&mut (*This).ref_ as *mut i32) as u32;
 
-    if ref_count == 0 {
+    TRACE!(b"(%p)\n\0".as_ptr() as *const c_char, iface);
+
+    let ref_ = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG;
+
+    /* destroy the object if there are no more references to it */
+    if ref_ == 0 {
         FileMonikerImpl_Destroy(This);
     }
 
-    ref_count
+    ref_
+}
 }
 
-unsafe fn FileMonikerImpl_GetClassID(iface: *mut IMoniker, pClassID: *mut CLSID) -> HRESULT {
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const i8, iface, pClassID);
+stdmethod! {
+fn FileMonikerImpl_GetClassID(iface: *mut IMoniker, pClassID: *mut CLSID) -> HRESULT {
+    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char, iface, pClassID);
 
     if pClassID.is_null() {
         return E_POINTER;
@@ -151,380 +164,345 @@ unsafe fn FileMonikerImpl_GetClassID(iface: *mut IMoniker, pClassID: *mut CLSID)
 
     S_OK
 }
-
-unsafe fn FileMonikerImpl_IsDirty(iface: *mut IMoniker) -> HRESULT {
-    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, iface);
-    S_FALSE
 }
 
-unsafe fn FileMonikerImpl_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT {
+stdmethod! {
+/// Note that the OLE-provided implementations of IPersistStream::IsDirty always return
+/// S_FALSE because their internal state never changes.
+fn FileMonikerImpl_IsDirty(iface: *mut IMoniker) -> HRESULT {
+    TRACE!(b"(%p)\n\0".as_ptr() as *const c_char, iface);
+
+    S_FALSE
+}
+}
+
+/// filemoniker.c `FileMonikerImpl_Load`'s `fail:` label: free both scratch buffers and
+/// map a non-failure HRESULT to E_FAIL. (HeapFree of NULL is what the C does too — both
+/// pointers are initialised to NULL and only some paths have allocated them.)
+#[inline]
+unsafe fn load_fail(res: HRESULT, filePathA: *mut c_char, filePathW: *mut u16) -> HRESULT {
+    HeapFree(GetProcessHeap(), 0, filePathA as LPVOID);
+    HeapFree(GetProcessHeap(), 0, filePathW as LPVOID);
+
+    if SUCCEEDED(res) {
+        E_FAIL
+    } else {
+        res
+    }
+}
+
+stdmethod! {
+/// locates and reads from the stream the filePath string written by FileMonikerImpl_Save
+fn FileMonikerImpl_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT {
     let This = impl_from_IMoniker(iface);
     let mut res: HRESULT;
-    let mut filePathA: *mut i8 = core::ptr::null_mut();
+    let mut filePathA: *mut c_char = core::ptr::null_mut();
     let mut filePathW: *mut u16 = core::ptr::null_mut();
-    let mut bread: u32;
-    let mut wbuffer: u16;
-    let mut dwbuffer: u32;
-    let mut bytesA: u32;
-    let mut bytesW: u32;
-    let mut len: u32;
-    let mut i: i32;
+    let mut bread: ULONG = 0;
+    let mut wbuffer: u16 = 0;
+    let mut dwbuffer: DWORD = 0;
+    let mut bytesA: DWORD = 0;
+    let bytesW: DWORD;
+    let mut len: DWORD;
 
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const i8, iface, pStm);
+    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char, iface, pStm);
 
-    res = IStream_Read(pStm, &mut wbuffer as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<u16>() as u32, &mut bread);
-    if bread != core::mem::size_of::<u16>() as u32 {
-        WARN!(b"Couldn't read 0 word\n\0".as_ptr() as *const i8);
-        'fail: {
-            HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-            HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-            if SUCCEEDED(res) != 0 {
-                res = 0x80004005u32 as i32;
-            }
-            return res;
-        }
+    /* first WORD */
+    res = IStream_Read(pStm, core::ptr::addr_of_mut!(wbuffer) as *mut c_void,
+                       core::mem::size_of::<u16>() as ULONG, &mut bread);
+    if bread != core::mem::size_of::<u16>() as ULONG {
+        WARN!(b"Couldn't read 0 word\n\0".as_ptr() as *const c_char);
+        return load_fail(res, filePathA, filePathW);
     }
 
-    res = IStream_Read(pStm, &mut bytesA as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<u32>() as u32, &mut bread);
-    if bread != core::mem::size_of::<u32>() as u32 {
-        WARN!(b"Couldn't read file string length\n\0".as_ptr() as *const i8);
-        'fail: {
-            HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-            HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-            if SUCCEEDED(res) != 0 {
-                res = 0x80004005u32 as i32;
-            }
-            return res;
-        }
+    /* read filePath string length (plus one) */
+    res = IStream_Read(pStm, core::ptr::addr_of_mut!(bytesA) as *mut c_void,
+                       core::mem::size_of::<DWORD>() as ULONG, &mut bread);
+    if bread != core::mem::size_of::<DWORD>() as ULONG {
+        WARN!(b"Couldn't read file string length\n\0".as_ptr() as *const c_char);
+        return load_fail(res, filePathA, filePathW);
     }
 
-    filePathA = HeapAlloc(GetProcessHeap(), 0, bytesA as usize) as *mut i8;
+    /* read filePath string */
+    filePathA = HeapAlloc(GetProcessHeap(), 0, bytesA as SIZE_T) as *mut c_char;
     if filePathA.is_null() {
-        res = 0x8007000Eu32 as i32;
-        'fail: {
-            HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-            HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-            if SUCCEEDED(res) != 0 {
-                res = 0x80004005u32 as i32;
-            }
-            return res;
-        }
+        res = E_OUTOFMEMORY;
+        return load_fail(res, filePathA, filePathW);
     }
 
-    res = IStream_Read(pStm, filePathA as *mut core::ffi::c_void, bytesA, &mut bread);
+    res = IStream_Read(pStm, filePathA as *mut c_void, bytesA, &mut bread);
     if bread != bytesA {
-        WARN!(b"Couldn't read file path string\n\0".as_ptr() as *const i8);
-        'fail: {
-            HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-            HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-            if SUCCEEDED(res) != 0 {
-                res = 0x80004005u32 as i32;
-            }
-            return res;
-        }
+        WARN!(b"Couldn't read file path string\n\0".as_ptr() as *const c_char);
+        return load_fail(res, filePathA, filePathW);
     }
 
-    IStream_Read(pStm, &mut wbuffer as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<u16>() as u32, &mut bread);
-    if bread != core::mem::size_of::<u16>() as u32 {
-        WARN!(b"Couldn't read unknown value\n\0".as_ptr() as *const i8);
-        'fail: {
-            HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-            HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-            if SUCCEEDED(res) != 0 {
-                res = 0x80004005u32 as i32;
-            }
-            return res;
-        }
+    /* read the unknown value (the C ignores this read's HRESULT, keeping the previous
+     * `res` for the fail path) */
+    IStream_Read(pStm, core::ptr::addr_of_mut!(wbuffer) as *mut c_void,
+                 core::mem::size_of::<u16>() as ULONG, &mut bread);
+    if bread != core::mem::size_of::<u16>() as ULONG {
+        WARN!(b"Couldn't read unknown value\n\0".as_ptr() as *const c_char);
+        return load_fail(res, filePathA, filePathW);
     }
 
-    IStream_Read(pStm, &mut wbuffer as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<u16>() as u32, &mut bread);
-    if bread != core::mem::size_of::<u16>() as u32 {
-        WARN!(b"Couldn't read DEAD constant\n\0".as_ptr() as *const i8);
-        'fail: {
-            HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-            HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-            if SUCCEEDED(res) != 0 {
-                res = 0x80004005u32 as i32;
-            }
-            return res;
-        }
+    /* read the DEAD constant */
+    IStream_Read(pStm, core::ptr::addr_of_mut!(wbuffer) as *mut c_void,
+                 core::mem::size_of::<u16>() as ULONG, &mut bread);
+    if bread != core::mem::size_of::<u16>() as ULONG {
+        WARN!(b"Couldn't read DEAD constant\n\0".as_ptr() as *const c_char);
+        return load_fail(res, filePathA, filePathW);
     }
 
-    i = 0;
+    let mut i: c_int = 0;
     while i < 5 {
-        res = IStream_Read(pStm, &mut dwbuffer as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<u32>() as u32, &mut bread);
-        if bread != core::mem::size_of::<u32>() as u32 {
-            WARN!(b"Couldn't read 0 padding\n\0".as_ptr() as *const i8);
-            'fail: {
-                HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-                HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-                if SUCCEEDED(res) != 0 {
-                    res = 0x80004005u32 as i32;
-                }
-                return res;
-            }
+        res = IStream_Read(pStm, core::ptr::addr_of_mut!(dwbuffer) as *mut c_void,
+                           core::mem::size_of::<DWORD>() as ULONG, &mut bread);
+        if bread != core::mem::size_of::<DWORD>() as ULONG {
+            WARN!(b"Couldn't read 0 padding\n\0".as_ptr() as *const c_char);
+            return load_fail(res, filePathA, filePathW);
         }
         i += 1;
     }
 
-    res = IStream_Read(pStm, &mut dwbuffer as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<u32>() as u32, &mut bread);
-    if bread != core::mem::size_of::<u32>() as u32 {
-        'fail: {
-            HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-            HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-            if SUCCEEDED(res) != 0 {
-                res = 0x80004005u32 as i32;
-            }
-            return res;
-        }
+    res = IStream_Read(pStm, core::ptr::addr_of_mut!(dwbuffer) as *mut c_void,
+                       core::mem::size_of::<DWORD>() as ULONG, &mut bread);
+    if bread != core::mem::size_of::<DWORD>() as ULONG {
+        return load_fail(res, filePathA, filePathW);
     }
 
     if dwbuffer == 0 {
+        /* No W-string */
         bytesA -= 1;
-        len = MultiByteToWideChar(0, 8, filePathA, bytesA as i32, core::ptr::null_mut(), 0) as u32;
+        len = MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS, filePathA, bytesA as c_int,
+                                  core::ptr::null_mut(), 0) as DWORD;
         if len == 0 {
-            'fail: {
-                HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-                HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-                if SUCCEEDED(res) != 0 {
-                    res = 0x80004005u32 as i32;
-                }
-                return res;
-            }
+            return load_fail(res, filePathA, filePathW);
         }
 
-        filePathW = HeapAlloc(GetProcessHeap(), 0, ((len + 1) * core::mem::size_of::<u16>() as u32) as usize) as *mut u16;
+        filePathW = HeapAlloc(GetProcessHeap(), 0,
+                              ((len as usize + 1) * core::mem::size_of::<u16>()) as SIZE_T) as *mut u16;
         if filePathW.is_null() {
-            res = 0x8007000Eu32 as i32;
-            'fail: {
-                HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-                HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-                if SUCCEEDED(res) != 0 {
-                    res = 0x80004005u32 as i32;
-                }
-                return res;
-            }
+            res = E_OUTOFMEMORY;
+            return load_fail(res, filePathA, filePathW);
         }
-        MultiByteToWideChar(0, 8, filePathA, -1, filePathW, (len + 1) as i32);
-        'succeed: {
-            HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-            HeapFree(GetProcessHeap(), 0, (*This).filePathName as *mut core::ffi::c_void);
-            (*This).filePathName = filePathW;
+        MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS, filePathA, -1, filePathW,
+                            (len + 1) as c_int);
 
-            return 0;
-        }
+        /* succeed: */
+        HeapFree(GetProcessHeap(), 0, filePathA as LPVOID);
+        HeapFree(GetProcessHeap(), 0, (*This).filePathName as LPVOID);
+        (*This).filePathName = filePathW;
+
+        return S_OK;
     }
 
     if dwbuffer < 6 {
-        'fail: {
-            HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-            HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-            if SUCCEEDED(res) != 0 {
-                res = 0x80004005u32 as i32;
-            }
-            return res;
-        }
+        return load_fail(res, filePathA, filePathW);
     }
 
     bytesW = dwbuffer - 6;
 
-    res = IStream_Read(pStm, &mut dwbuffer as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<u32>() as u32, &mut bread);
-    if bread != core::mem::size_of::<u32>() as u32 || dwbuffer != bytesW {
-        'fail: {
-            HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-            HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-            if SUCCEEDED(res) != 0 {
-                res = 0x80004005u32 as i32;
-            }
-            return res;
-        }
+    res = IStream_Read(pStm, core::ptr::addr_of_mut!(dwbuffer) as *mut c_void,
+                       core::mem::size_of::<DWORD>() as ULONG, &mut bread);
+    if bread != core::mem::size_of::<DWORD>() as ULONG || dwbuffer != bytesW {
+        return load_fail(res, filePathA, filePathW);
     }
 
-    res = IStream_Read(pStm, &mut wbuffer as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<u16>() as u32, &mut bread);
-    if bread != core::mem::size_of::<u16>() as u32 || wbuffer != 0x3 {
-        'fail: {
-            HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-            HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-            if SUCCEEDED(res) != 0 {
-                res = 0x80004005u32 as i32;
-            }
-            return res;
-        }
+    res = IStream_Read(pStm, core::ptr::addr_of_mut!(wbuffer) as *mut c_void,
+                       core::mem::size_of::<u16>() as ULONG, &mut bread);
+    if bread != core::mem::size_of::<u16>() as ULONG || wbuffer != 0x3 {
+        return load_fail(res, filePathA, filePathW);
     }
 
-    len = bytesW / core::mem::size_of::<u16>() as u32;
-    filePathW = HeapAlloc(GetProcessHeap(), 0, ((len + 1) * core::mem::size_of::<u16>() as u32) as usize) as *mut u16;
+    len = bytesW / core::mem::size_of::<u16>() as DWORD;
+    filePathW = HeapAlloc(GetProcessHeap(), 0,
+                          ((len as usize + 1) * core::mem::size_of::<u16>()) as SIZE_T) as *mut u16;
     if filePathW.is_null() {
-        res = 0x8007000Eu32 as i32;
-        'fail: {
-            HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-            HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-            if SUCCEEDED(res) != 0 {
-                res = 0x80004005u32 as i32;
-            }
-            return res;
-        }
+        res = E_OUTOFMEMORY;
+        return load_fail(res, filePathA, filePathW);
     }
-    res = IStream_Read(pStm, filePathW as *mut core::ffi::c_void, bytesW, &mut bread);
+    res = IStream_Read(pStm, filePathW as *mut c_void, bytesW, &mut bread);
     if bread != bytesW {
-        'fail: {
-            HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-            HeapFree(GetProcessHeap(), 0, filePathW as *mut core::ffi::c_void);
-
-            if SUCCEEDED(res) != 0 {
-                res = 0x80004005u32 as i32;
-            }
-            return res;
-        }
+        return load_fail(res, filePathA, filePathW);
     }
 
     *filePathW.add(len as usize) = 0;
 
-    HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
-    HeapFree(GetProcessHeap(), 0, (*This).filePathName as *mut core::ffi::c_void);
+    /* succeed: */
+    HeapFree(GetProcessHeap(), 0, filePathA as LPVOID);
+    HeapFree(GetProcessHeap(), 0, (*This).filePathName as LPVOID);
     (*This).filePathName = filePathW;
 
-    return 0;
+    S_OK
+}
 }
 
-unsafe fn FileMonikerImpl_Save(iface: *mut IMoniker, pStm: *mut IStream, fClearDirty: i32) -> HRESULT {
+stdmethod! {
+/// Data which must be written on stream is:
+/// 1) WORD constant: zero
+/// 2) length of the path string ("\0" included)
+/// 3) path string type A
+/// 4) Unknown WORD value: frequently 0xFFFF
+/// 5) WORD constant: 0xDEAD
+/// 6) five DWORD constant: zero
+/// 7) if we're only writing the multibyte version, write a zero DWORD and finish
+/// 8) DWORD: double-length of the path string type W ("\0" not included)
+/// 9) WORD constant: 0x3
+/// 10) filePath unicode string
+fn FileMonikerImpl_Save(iface: *mut IMoniker, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT {
     let This = impl_from_IMoniker(iface);
     let mut res: HRESULT;
-    let filePathW = (*This).filePathName;
-    let mut filePathA: *mut i8;
-    let mut bytesA: u32;
-    let mut bytesW: u32;
-    let len: u32;
+    let filePathW: LPOLESTR = (*This).filePathName;
+    let filePathA: *mut c_char;
+    let bytesA: DWORD;
+    let mut bytesW: DWORD;
+    let len: DWORD;
 
-    static FFFF: u16 = 0xFFFF;
+    static FFFF: u16 = 0xFFFF; /* Constants */
     static DEAD: u16 = 0xDEAD;
-    static ZERO: u32 = 0;
+    static ZERO: DWORD = 0;
     static THREE: u16 = 0x3;
 
-    let mut i: i32;
-    let mut bUsedDefault: i32 = 0;
-    let bWriteWide: i32;
+    let mut bUsedDefault: BOOL = 0;
+    let mut bWriteWide: BOOL;
 
-    TRACE!(b"(%p,%p,%d)\n\0".as_ptr() as *const i8, iface, pStm, fClearDirty);
+    TRACE!(b"(%p,%p,%d)\n\0".as_ptr() as *const c_char, iface, pStm, fClearDirty);
 
     if pStm.is_null() {
-        return 0x80004003u32 as HRESULT;
+        return E_POINTER;
     }
 
-    res = IStream_Write(pStm, &ZERO as *const u32 as *const core::ffi::c_void, core::mem::size_of::<u16>() as u32, core::ptr::null_mut());
+    /* write a 0 WORD */
+    res = IStream_Write(pStm, core::ptr::addr_of!(ZERO) as *const c_void,
+                        core::mem::size_of::<u16>() as ULONG, core::ptr::null_mut());
     if FAILED(res) { return res; }
 
-    bytesA = WideCharToMultiByte(0, 0, filePathW, -1, core::ptr::null_mut(), 0, core::ptr::null(), core::ptr::null_mut()) as u32;
-    res = IStream_Write(pStm, &bytesA as *const u32 as *const core::ffi::c_void, core::mem::size_of::<u32>() as u32, core::ptr::null_mut());
+    /* write length of filePath string ( 0 included )*/
+    bytesA = WideCharToMultiByte(CP_ACP, 0, filePathW, -1, core::ptr::null_mut(), 0,
+                                 core::ptr::null(), core::ptr::null_mut()) as DWORD;
+    res = IStream_Write(pStm, core::ptr::addr_of!(bytesA) as *const c_void,
+                        core::mem::size_of::<DWORD>() as ULONG, core::ptr::null_mut());
     if FAILED(res) { return res; }
 
-    filePathA = HeapAlloc(GetProcessHeap(), 0, bytesA as usize) as *mut i8;
+    /* write A string (with '\0') */
+    filePathA = HeapAlloc(GetProcessHeap(), 0, bytesA as SIZE_T) as *mut c_char;
     if filePathA.is_null() {
-        return 0x8007000Eu32 as HRESULT;
+        return E_OUTOFMEMORY;
     }
-    WideCharToMultiByte(0, 0, filePathW, -1, filePathA, bytesA as i32, core::ptr::null(), &mut bUsedDefault);
-    res = IStream_Write(pStm, filePathA as *const core::ffi::c_void, bytesA, core::ptr::null_mut());
-    HeapFree(GetProcessHeap(), 0, filePathA as *mut core::ffi::c_void);
+    WideCharToMultiByte(CP_ACP, 0, filePathW, -1, filePathA, bytesA as c_int,
+                        core::ptr::null(), &mut bUsedDefault);
+    res = IStream_Write(pStm, filePathA as *const c_void, bytesA, core::ptr::null_mut());
+    HeapFree(GetProcessHeap(), 0, filePathA as LPVOID);
     if FAILED(res) { return res; }
 
-    res = IStream_Write(pStm, &FFFF as *const u16 as *const core::ffi::c_void, core::mem::size_of::<u16>() as u32, core::ptr::null_mut());
+    /* write a WORD 0xFFFF */
+    res = IStream_Write(pStm, core::ptr::addr_of!(FFFF) as *const c_void,
+                        core::mem::size_of::<u16>() as ULONG, core::ptr::null_mut());
     if FAILED(res) { return res; }
 
-    res = IStream_Write(pStm, &DEAD as *const u16 as *const core::ffi::c_void, core::mem::size_of::<u16>() as u32, core::ptr::null_mut());
+    /* write a WORD 0xDEAD */
+    res = IStream_Write(pStm, core::ptr::addr_of!(DEAD) as *const c_void,
+                        core::mem::size_of::<u16>() as ULONG, core::ptr::null_mut());
     if FAILED(res) { return res; }
 
-    i = 0;
+    /* write 5 zero DWORDs */
+    let mut i: c_int = 0;
     while i < 5 {
-        res = IStream_Write(pStm, &ZERO as *const u32 as *const core::ffi::c_void, core::mem::size_of::<u32>() as u32, core::ptr::null_mut());
+        res = IStream_Write(pStm, core::ptr::addr_of!(ZERO) as *const c_void,
+                            core::mem::size_of::<DWORD>() as ULONG, core::ptr::null_mut());
         if FAILED(res) { return res; }
         i += 1;
     }
 
-    len = lstrlenW(filePathW) as u32;
-    bWriteWide = if bUsedDefault != 0 || (len > 0 && *filePathW.offset((len - 1) as isize) == '\\' as u16) {
-        1
-    } else {
-        0
-    };
-
+    /* Write the wide version if:
+     *    + couldn't convert to CP_ACP,
+     * or + it's a directory,
+     * or + there's a character > 0xFF
+     */
+    len = lstrlenW(filePathW) as DWORD;
+    bWriteWide = (bUsedDefault != 0
+        || (len > 0 && *filePathW.add((len - 1) as usize) == '\\' as u16)) as BOOL;
     if bWriteWide == 0 {
-        let mut pch = filePathW;
+        let mut pch: LPOLESTR = filePathW;
         while *pch != 0 {
             if *pch > 0xFF {
-                return IStream_Write(pStm, &ZERO as *const u32 as *const core::ffi::c_void, core::mem::size_of::<u32>() as u32, core::ptr::null_mut());
+                bWriteWide = 1;
+                break;
             }
-            pch = pch.offset(1);
+            pch = pch.add(1);
         }
     }
 
     if bWriteWide == 0 {
-        return IStream_Write(pStm, &ZERO as *const u32 as *const core::ffi::c_void, core::mem::size_of::<u32>() as u32, core::ptr::null_mut());
+        return IStream_Write(pStm, core::ptr::addr_of!(ZERO) as *const c_void,
+                             core::mem::size_of::<DWORD>() as ULONG, core::ptr::null_mut());
     }
 
-    bytesW = len * core::mem::size_of::<u16>() as u32 + 6;
-    res = IStream_Write(pStm, &bytesW as *const u32 as *const core::ffi::c_void, core::mem::size_of::<u32>() as u32, core::ptr::null_mut());
+    /* write bytes needed for the filepathW (without 0) + 6 */
+    bytesW = len * core::mem::size_of::<u16>() as DWORD + 6;
+    res = IStream_Write(pStm, core::ptr::addr_of!(bytesW) as *const c_void,
+                        core::mem::size_of::<DWORD>() as ULONG, core::ptr::null_mut());
     if FAILED(res) { return res; }
 
+    /* try again, without the extra 6 */
     bytesW -= 6;
-    res = IStream_Write(pStm, &bytesW as *const u32 as *const core::ffi::c_void, core::mem::size_of::<u32>() as u32, core::ptr::null_mut());
+    res = IStream_Write(pStm, core::ptr::addr_of!(bytesW) as *const c_void,
+                        core::mem::size_of::<DWORD>() as ULONG, core::ptr::null_mut());
     if FAILED(res) { return res; }
 
-    res = IStream_Write(pStm, &THREE as *const u16 as *const core::ffi::c_void, core::mem::size_of::<u16>() as u32, core::ptr::null_mut());
+    /* write a WORD 3 */
+    res = IStream_Write(pStm, core::ptr::addr_of!(THREE) as *const c_void,
+                        core::mem::size_of::<u16>() as ULONG, core::ptr::null_mut());
     if FAILED(res) { return res; }
 
-    IStream_Write(pStm, filePathW as *const core::ffi::c_void, bytesW, core::ptr::null_mut())
+    /* write W string (no 0) */
+    IStream_Write(pStm, filePathW as *const c_void, bytesW, core::ptr::null_mut())
+}
 }
 
-unsafe fn FileMonikerImpl_GetSizeMax(iface: *mut IMoniker, pcbSize: *mut ULARGE_INTEGER) -> HRESULT {
+stdmethod! {
+fn FileMonikerImpl_GetSizeMax(iface: *mut IMoniker, pcbSize: *mut ULARGE_INTEGER) -> HRESULT {
     let This = impl_from_IMoniker(iface);
 
+    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char, iface, pcbSize);
+
     if pcbSize.is_null() {
-        return 0x80004003u32 as HRESULT;
+        return E_POINTER;
     }
 
-    (*pcbSize).u.__bindgen_anon_1.LowPart = 0x38u32.wrapping_add((4u32).wrapping_mul(lstrlenW((*This).filePathName) as u32));
-    (*pcbSize).u.__bindgen_anon_1.HighPart = 0;
+    /* We could calculate exactly (see ...::Save()) but instead
+     * we'll make a quick over-estimate, like Windows (NT4, XP) does.
+     */
+    (*pcbSize).u.LowPart = 0x38 + 4 * lstrlenW((*This).filePathName) as DWORD;
+    (*pcbSize).u.HighPart = 0;
 
-    0x00000000u32 as HRESULT
+    S_OK
 }
-#[no_mangle]
-pub unsafe extern "C" fn FileMonikerImpl_Destroy(This: *mut FileMonikerImpl) -> HRESULT {
+}
 
-    TRACE!(b"(%p)\n\0".as_ptr(), This);
+/// filemoniker.c: `HRESULT FileMonikerImpl_Destroy(FileMonikerImpl *This)`
+pub unsafe fn FileMonikerImpl_Destroy(This: *mut FileMonikerImpl) -> HRESULT {
+    TRACE!(b"(%p)\n\0".as_ptr() as *const c_char, This);
 
     if !(*This).pMarshal.is_null() {
         IUnknown_Release((*This).pMarshal);
     }
-    HeapFree(GetProcessHeap(), 0, (*This).filePathName as *mut core::ffi::c_void);
-    HeapFree(GetProcessHeap(), 0, This as *mut core::ffi::c_void);
+    HeapFree(GetProcessHeap(), 0, (*This).filePathName as LPVOID);
+    HeapFree(GetProcessHeap(), 0, This as LPVOID);
 
-    0
+    S_OK
 }
 
-unsafe fn FileMonikerImpl_BindToObject(
+stdmethod! {
+fn FileMonikerImpl_BindToObject(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
-    riid: *const CLSID,
-    ppvResult: *mut *mut core::ffi::c_void,
+    riid: *const IID,
+    ppvResult: *mut *mut c_void,
 ) -> HRESULT {
-
     let This = impl_from_IMoniker(iface);
-    let mut res: HRESULT = 0x80004005u32 as HRESULT;
+    let mut res: HRESULT = E_FAIL;
     let mut clsID: CLSID = core::mem::zeroed();
     let mut pObj: *mut IUnknown = core::ptr::null_mut();
     let mut prot: *mut IRunningObjectTable = core::ptr::null_mut();
@@ -534,34 +512,30 @@ unsafe fn FileMonikerImpl_BindToObject(
 
     *ppvResult = core::ptr::null_mut();
 
-    TRACE!(
-        b"(%p,%p,%p,%s,%p)\n\0".as_ptr(),
-        iface,
-        pbc,
-        pmkToLeft,
-        debugstr_guid(riid),
-        ppvResult,
-    );
+    TRACE!(b"(%p,%p,%p,%s,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
+           debugstr_guid(riid as *const c_void), ppvResult);
 
     if pmkToLeft.is_null() {
         res = IBindCtx_GetRunningObjectTable(pbc, &mut prot);
 
-        if SUCCEEDED(res) != 0 {
+        if SUCCEEDED(res) {
+            /* if the requested class was loaded before ! we don't need to reload it */
             res = IRunningObjectTable_GetObject(prot, iface, &mut pObj);
 
-            if res != 0 {
-                res = GetClassFile((*This).filePathName, &mut clsID);
-                if SUCCEEDED(res) != 0 {
+            if res != S_OK {
+                /* first activation of this class */
+                res = crate::ring::moniker::GetClassFile((*This).filePathName, &mut clsID);
+                if SUCCEEDED(res) {
                     res = CoCreateInstance(
                         &clsID,
                         core::ptr::null_mut(),
-                        0x00000015u32,
-                        &IID_IPersistFile,
-                        &mut ppf as *mut *mut IPersistFile as *mut *mut core::ffi::c_void,
+                        CLSCTX_SERVER,
+                        core::ptr::addr_of!(IID_IPersistFile),
+                        &mut ppf as *mut *mut IPersistFile as *mut LPVOID,
                     );
-                    if SUCCEEDED(res) != 0 {
-                        res = IPersistFile_Load(ppf, (*This).filePathName, 0x00000000u32);
-                        if SUCCEEDED(res) != 0 {
+                    if SUCCEEDED(res) {
+                        res = IPersistFile_Load(ppf, (*This).filePathName, STGM_READ);
+                        if SUCCEEDED(res) {
                             pObj = ppf as *mut IUnknown;
                             IUnknown_AddRef(pObj);
                         }
@@ -574,44 +548,71 @@ unsafe fn FileMonikerImpl_BindToObject(
             pmkToLeft,
             pbc,
             core::ptr::null_mut(),
-            &IID_IClassFactory,
-            &mut pcf as *mut *mut IClassFactory as *mut *mut core::ffi::c_void,
+            core::ptr::addr_of!(IID_IClassFactory),
+            &mut pcf as *mut *mut IClassFactory as *mut *mut c_void,
         );
 
-        if res == 0x80004002u32 as HRESULT {
+        if res == E_NOINTERFACE {
             res = IMoniker_BindToObject(
                 pmkToLeft,
                 pbc,
                 core::ptr::null_mut(),
-                &IID_IClassActivator,
-                &mut pca as *mut *mut IClassActivator as *mut *mut core::ffi::c_void,
+                core::ptr::addr_of!(IID_IClassActivator),
+                &mut pca as *mut *mut IClassActivator as *mut *mut c_void,
             );
 
-            if res == 0x80004002u32 as HRESULT {
-                return 0x80004009u32 as HRESULT;
+            if res == E_NOINTERFACE {
+                return MK_E_INTERMEDIATEINTERFACENOTSUPPORTED;
             }
         }
         if !pcf.is_null() {
             IClassFactory_CreateInstance(
                 pcf,
                 core::ptr::null_mut(),
-                &IID_IPersistFile,
-                &mut ppf as *mut *mut IPersistFile as *mut *mut core::ffi::c_void,
+                core::ptr::addr_of!(IID_IPersistFile),
+                &mut ppf as *mut *mut IPersistFile as *mut *mut c_void,
             );
 
-            res = IPersistFile_Load(ppf, (*This).filePathName, 0x00000000u32);
+            res = IPersistFile_Load(ppf, (*This).filePathName, STGM_READ);
 
-            if SUCCEEDED(res) != 0 {
+            if SUCCEEDED(res) {
                 pObj = ppf as *mut IUnknown;
                 IUnknown_AddRef(pObj);
             }
         }
-        if !pca.is_null() {
-            FIXME!(b"()\n\0".as_ptr());
-        }
+    }
+
+    bind_to_object_finish(This, pbc, riid, ppvResult, res, pObj, prot, ppf, pcf, pca)
+}
+}
+
+/// The tail of filemoniker.c's FileMonikerImpl_BindToObject (the shared
+/// `if (pObj) … release everything …` epilogue after both branches).
+#[allow(clippy::too_many_arguments)]
+unsafe fn bind_to_object_finish(
+    _This: *mut FileMonikerImpl,
+    pbc: *mut IBindCtx,
+    riid: *const IID,
+    ppvResult: *mut *mut c_void,
+    mut res: HRESULT,
+    pObj: *mut IUnknown,
+    prot: *mut IRunningObjectTable,
+    ppf: *mut IPersistFile,
+    pcf: *mut IClassFactory,
+    pca: *mut IClassActivator,
+) -> HRESULT {
+    if !pca.is_null() {
+        FIXME!(b"()\n\0".as_ptr() as *const c_char);
+
+        /* res=GetClassFile(This->filePathName,&clsID);
+         * if (SUCCEEDED(res)) {
+         *     res=IClassActivator_GetClassObject(pca,&clsID,CLSCTX_ALL,0,&IID_IPersistFile,(void**)&ppf);
+         *     if (SUCCEEDED(res)) { pObj=(IUnknown*)ppf; IUnknown_AddRef(pObj); }
+         * } */
     }
 
     if !pObj.is_null() {
+        /* get the requested interface from the loaded class */
         res = IUnknown_QueryInterface(pObj, riid, ppvResult);
 
         IBindCtx_RegisterObjectBound(pbc, *ppvResult as *mut IUnknown);
@@ -637,29 +638,25 @@ unsafe fn FileMonikerImpl_BindToObject(
 
     res
 }
-unsafe fn FileMonikerImpl_BindToStorage(
+
+stdmethod! {
+fn FileMonikerImpl_BindToStorage(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
-    riid: *const CLSID,
-    ppvObject: *mut *mut core::ffi::c_void,
+    riid: *const IID,
+    ppvObject: *mut *mut c_void,
 ) -> HRESULT {
-
-    let mut filePath: LPWSTR = core::ptr::null_mut();
+    let mut filePath: LPOLESTR = core::ptr::null_mut();
     let mut pstg: *mut IStorage = core::ptr::null_mut();
-    let mut res: HRESULT = 0;
+    let res: HRESULT;
 
-    TRACE!(
-        b"(%p,%p,%p,%s,%p)\n\0".as_ptr() as *const core::ffi::c_char,
-        iface,
-        pbc,
-        pmkToLeft,
-        debugstr_guid(riid),
-        ppvObject,
-    );
+    TRACE!(b"(%p,%p,%p,%s,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
+           debugstr_guid(riid as *const c_void), ppvObject);
 
     if pmkToLeft.is_null() {
-        if IsEqualIID(&IID_IStorage, riid) != 0 {
+        if IsEqualIID(core::ptr::addr_of!(IID_IStorage), riid) {
+            /* get the file name */
             IMoniker_GetDisplayName(iface, pbc, pmkToLeft, &mut filePath);
 
             res = StgOpenStorage(
@@ -671,48 +668,39 @@ unsafe fn FileMonikerImpl_BindToStorage(
                 &mut pstg,
             );
 
-            if SUCCEEDED(res) != 0 {
-                *ppvObject = pstg as *mut core::ffi::c_void;
+            if SUCCEEDED(res) {
+                *ppvObject = pstg as *mut c_void;
             }
 
-            CoTaskMemFree(filePath as *mut core::ffi::c_void);
+            CoTaskMemFree(filePath as LPVOID);
+        } else if IsEqualIID(core::ptr::addr_of!(IID_IStream), riid)
+            || IsEqualIID(core::ptr::addr_of!(IID_ILockBytes), riid)
+        {
+            return E_FAIL;
         } else {
-            if (IsEqualIID(&IID_IStream, riid) != 0) || (IsEqualIID(&IID_ILockBytes, riid) != 0) {
-                return E_FAIL;
-            } else {
-                return E_NOINTERFACE;
-            }
+            return E_NOINTERFACE;
         }
     } else {
-        FIXME!(
-            b"(%p,%p,%p,%s,%p)\n\0".as_ptr() as *const core::ffi::c_char,
-            iface,
-            pbc,
-            pmkToLeft,
-            debugstr_guid(riid),
-            ppvObject,
-        );
+        FIXME!(b"(%p,%p,%p,%s,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
+               debugstr_guid(riid as *const c_void), ppvObject);
 
         return E_NOTIMPL;
     }
+
     res
 }
+}
 
-unsafe fn FileMonikerImpl_Reduce(
+stdmethod! {
+fn FileMonikerImpl_Reduce(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     dwReduceHowFar: DWORD,
     ppmkToLeft: *mut *mut IMoniker,
     ppmkReduced: *mut *mut IMoniker,
 ) -> HRESULT {
-    TRACE!(
-        b"(%p,%p,%d,%p,%p)\n\0".as_ptr() as *const i8,
-        iface,
-        pbc,
-        dwReduceHowFar,
-        ppmkToLeft,
-        ppmkReduced,
-    );
+    TRACE!(b"(%p,%p,%d,%p,%p)\n\0".as_ptr() as *const c_char, iface, pbc, dwReduceHowFar,
+           ppmkToLeft, ppmkReduced);
 
     if ppmkReduced.is_null() {
         return E_POINTER;
@@ -724,20 +712,23 @@ unsafe fn FileMonikerImpl_Reduce(
 
     MK_S_REDUCED_TO_SELF
 }
+}
 
 unsafe fn free_stringtable(stringTable: *mut LPOLESTR) {
+    let mut i: c_int = 0;
 
-    let mut i: i32 = 0;
     while !(*stringTable.offset(i as isize)).is_null() {
-        CoTaskMemFree(*stringTable.offset(i as isize) as *mut core::ffi::c_void);
+        CoTaskMemFree(*stringTable.offset(i as isize) as LPVOID);
         i += 1;
     }
-    CoTaskMemFree(stringTable as *mut core::ffi::c_void);
+    CoTaskMemFree(stringTable as LPVOID);
 }
-unsafe fn FileMonikerImpl_ComposeWith(
+
+stdmethod! {
+fn FileMonikerImpl_ComposeWith(
     iface: *mut IMoniker,
     pmkRight: *mut IMoniker,
-    fOnlyIfNotGeneric: i32,
+    fOnlyIfNotGeneric: BOOL,
     ppmkComposite: *mut *mut IMoniker,
 ) -> HRESULT {
     let mut res: HRESULT;
@@ -745,72 +736,73 @@ unsafe fn FileMonikerImpl_ComposeWith(
     let mut str2: LPOLESTR = core::ptr::null_mut();
     let mut strDec1: *mut LPOLESTR = core::ptr::null_mut();
     let mut strDec2: *mut LPOLESTR = core::ptr::null_mut();
-    let mut newStr: LPOLESTR = core::ptr::null_mut();
-    let twoPoint: [u16; 3] = [b'.' as u16, b'.' as u16, 0];
-    let bkSlash: [u16; 2] = [b'\\' as u16, 0];
+    let newStr: LPOLESTR;
+    const TWO_POINT: [u16; 3] = ['.' as u16, '.' as u16, 0];
+    const BK_SLASH: [u16; 2] = ['\\' as u16, 0];
     let mut bind: *mut IBindCtx = core::ptr::null_mut();
-    let mut i: i32 = 0;
-    let mut j: i32 = 0;
-    let mut lastIdx1: i32 = 0;
-    let mut lastIdx2: i32 = 0;
-    let mut mkSys: u32 = 0;
+    let mut i: c_int;
+    let mut j: c_int;
+    let mut lastIdx1: c_int;
+    let mut lastIdx2: c_int;
+    let mut mkSys: DWORD = 0;
 
-    TRACE!(
-        b"(%p,%p,%d,%p)\n\0".as_ptr() as *const i8,
-        iface,
-        pmkRight,
-        fOnlyIfNotGeneric,
-        ppmkComposite,
-    );
+    TRACE!(b"(%p,%p,%d,%p)\n\0".as_ptr() as *const c_char, iface, pmkRight, fOnlyIfNotGeneric,
+           ppmkComposite);
 
     if ppmkComposite.is_null() {
-        return 0x80004003u32 as HRESULT;
+        return E_POINTER;
     }
 
     if pmkRight.is_null() {
-        return 0x80070057u32 as HRESULT;
+        return E_INVALIDARG;
     }
 
     *ppmkComposite = core::ptr::null_mut();
 
     IMoniker_IsSystemMoniker(pmkRight, &mut mkSys);
 
-    if mkSys == 1 {
+    /* check if we have two FileMonikers to compose or not */
+    if mkSys == MKSYS_FILEMONIKER {
         CreateBindCtx(0, &mut bind);
 
         IMoniker_GetDisplayName(iface, bind, core::ptr::null_mut(), &mut str1);
         IMoniker_GetDisplayName(pmkRight, bind, core::ptr::null_mut(), &mut str2);
 
+        /* decompose pathnames of the two monikers : (to prepare the path merge operation ) */
         lastIdx1 = FileMonikerImpl_DecomposePath(str1, &mut strDec1) - 1;
         lastIdx2 = FileMonikerImpl_DecomposePath(str2, &mut strDec2) - 1;
 
         if (lastIdx1 == -1 && lastIdx2 > -1)
-            || (lastIdx1 == 1 && wcscmp(*strDec1.offset(0), twoPoint.as_ptr()) == 0)
+            || (lastIdx1 == 1 && wcscmp(*strDec1.offset(0), TWO_POINT.as_ptr()) == 0)
         {
-            res = 0x800401E4u32 as HRESULT;
+            res = MK_E_SYNTAX;
         } else {
-            if wcscmp(*strDec1.offset(lastIdx1 as isize), bkSlash.as_ptr()) == 0 {
+            if wcscmp(*strDec1.offset(lastIdx1 as isize), BK_SLASH.as_ptr()) == 0 {
                 lastIdx1 -= 1;
             }
 
+            /* for each "..\" in the left of str2 remove the right element from str1 */
             i = 0;
             while lastIdx1 >= 0
                 && !(*strDec2.offset(i as isize)).is_null()
-                && wcscmp(*strDec2.offset(i as isize), twoPoint.as_ptr()) == 0
+                && wcscmp(*strDec2.offset(i as isize), TWO_POINT.as_ptr()) == 0
             {
                 lastIdx1 -= 2;
                 i += 2;
             }
 
+            /* the length of the composed path string is increased by the sum of the two
+             * paths' lengths */
             newStr = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                (core::mem::size_of::<u16>() as u32
-                    * (lstrlenW(str1) + lstrlenW(str2) + 1) as u32) as usize,
+                (core::mem::size_of::<u16>()
+                    * (lstrlenW(str1) + lstrlenW(str2) + 1) as usize) as SIZE_T,
             ) as LPOLESTR;
 
             if !newStr.is_null() {
-                *newStr.offset(0) = 0;
+                /* new path is the concatenation of the rest of str1 and str2 */
+                *newStr = 0;
                 j = 0;
                 while j <= lastIdx1 {
                     lstrcatW(newStr, *strDec1.offset(j as isize));
@@ -818,9 +810,9 @@ unsafe fn FileMonikerImpl_ComposeWith(
                 }
 
                 if ((*strDec2.offset(i as isize)).is_null() && lastIdx1 > -1 && lastIdx2 > -1)
-                    || wcscmp(*strDec2.offset(i as isize), bkSlash.as_ptr()) != 0
+                    || wcscmp(*strDec2.offset(i as isize), BK_SLASH.as_ptr()) != 0
                 {
-                    lstrcatW(newStr, bkSlash.as_ptr());
+                    lstrcatW(newStr, BK_SLASH.as_ptr());
                 }
 
                 j = i;
@@ -829,46 +821,42 @@ unsafe fn FileMonikerImpl_ComposeWith(
                     j += 1;
                 }
 
+                /* create a new moniker with the new string */
                 res = CreateFileMoniker(newStr, ppmkComposite);
 
-                HeapFree(GetProcessHeap(), 0, newStr as *mut _);
+                /* free string memory used by this function */
+                HeapFree(GetProcessHeap(), 0, newStr as LPVOID);
             } else {
-                res = 0x8007000Eu32 as HRESULT;
+                res = E_OUTOFMEMORY;
             }
         }
 
         free_stringtable(strDec1);
         free_stringtable(strDec2);
 
-        CoTaskMemFree(str1 as *mut _);
-        CoTaskMemFree(str2 as *mut _);
+        CoTaskMemFree(str1 as LPVOID);
+        CoTaskMemFree(str2 as LPVOID);
 
-        return res;
-    } else if mkSys == 2 {
+        res
+    } else if mkSys == MKSYS_ANTIMONIKER {
         *ppmkComposite = core::ptr::null_mut();
-        return 0;
+        S_OK
     } else if fOnlyIfNotGeneric != 0 {
         *ppmkComposite = core::ptr::null_mut();
-        return 0x800401E2u32 as HRESULT;
+        MK_E_NEEDGENERIC
     } else {
-        return CreateGenericComposite(iface, pmkRight, ppmkComposite);
+        crate::ring::compositemoniker::CreateGenericComposite(iface, pmkRight, ppmkComposite)
     }
 }
+}
 
-type IBindCtx = core::ffi::c_void;
-type LPOLESTR = *mut u16;
-
-unsafe fn FileMonikerImpl_Enum(
+stdmethod! {
+fn FileMonikerImpl_Enum(
     iface: *mut IMoniker,
     fForward: BOOL,
     ppenumMoniker: *mut *mut IEnumMoniker,
 ) -> HRESULT {
-    TRACE!(
-        b"(%p,%d,%p)\n\0".as_ptr() as PCHAR,
-        iface,
-        fForward,
-        ppenumMoniker,
-    );
+    TRACE!(b"(%p,%d,%p)\n\0".as_ptr() as *const c_char, iface, fForward, ppenumMoniker);
 
     if ppenumMoniker.is_null() {
         return E_POINTER;
@@ -876,16 +864,19 @@ unsafe fn FileMonikerImpl_Enum(
 
     *ppenumMoniker = core::ptr::null_mut();
 
-    return S_OK;
+    S_OK
 }
-unsafe fn FileMonikerImpl_IsEqual(iface: *mut IMoniker, pmkOtherMoniker: *mut IMoniker) -> HRESULT {
+}
+
+stdmethod! {
+fn FileMonikerImpl_IsEqual(iface: *mut IMoniker, pmkOtherMoniker: *mut IMoniker) -> HRESULT {
     let This = impl_from_IMoniker(iface);
     let mut clsid: CLSID = core::mem::zeroed();
-    let mut filePath: LPWSTR = core::ptr::null_mut();
+    let mut filePath: LPOLESTR = core::ptr::null_mut();
     let mut bind: *mut IBindCtx = core::ptr::null_mut();
     let mut res: HRESULT;
 
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as LPCWSTR, iface, pmkOtherMoniker);
+    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char, iface, pmkOtherMoniker);
 
     if pmkOtherMoniker.is_null() {
         return S_FALSE;
@@ -893,36 +884,40 @@ unsafe fn FileMonikerImpl_IsEqual(iface: *mut IMoniker, pmkOtherMoniker: *mut IM
 
     IMoniker_GetClassID(pmkOtherMoniker, &mut clsid);
 
-    if IsEqualCLSID(&clsid, &CLSID_FileMoniker) == 0 {
+    if !IsEqualCLSID(&clsid, core::ptr::addr_of!(CLSID_FileMoniker)) {
         return S_FALSE;
     }
 
     res = CreateBindCtx(0, &mut bind);
-    if FAILED(res) != 0 {
+    if FAILED(res) {
         return res;
     }
 
     res = S_FALSE;
-    if SUCCEEDED(IMoniker_GetDisplayName(pmkOtherMoniker, bind, core::ptr::null_mut(), &mut filePath)) != 0 {
+    if SUCCEEDED(IMoniker_GetDisplayName(pmkOtherMoniker, bind, core::ptr::null_mut(),
+                                         &mut filePath))
+    {
         if lstrcmpiW(filePath, (*This).filePathName) == 0 {
             res = S_OK;
         }
-        CoTaskMemFree(filePath as *mut core::ffi::c_void);
+        CoTaskMemFree(filePath as LPVOID);
     }
 
     IBindCtx_Release(bind);
+
     res
 }
+}
 
-unsafe fn FileMonikerImpl_Hash(iface: *mut IMoniker, pdwHash: LPDWORD) -> HRESULT {
-
+stdmethod! {
+fn FileMonikerImpl_Hash(iface: *mut IMoniker, pdwHash: *mut DWORD) -> HRESULT {
     let This = impl_from_IMoniker(iface);
-    let mut h: i32 = 0;
-    let mut i: i32;
-    let skip: i32;
-    let len: i32;
-    let mut off: i32 = 0;
-    let val: LPWSTR;
+    let mut h: c_int = 0;
+    let mut i: c_int;
+    let skip: c_int;
+    let len: c_int;
+    let mut off: c_int = 0;
+    let val: LPOLESTR;
 
     if pdwHash.is_null() {
         return E_POINTER;
@@ -934,26 +929,29 @@ unsafe fn FileMonikerImpl_Hash(iface: *mut IMoniker, pdwHash: LPDWORD) -> HRESUL
     if len < 16 {
         i = len;
         while i > 0 {
-            h = h * 37 + (*val.offset(off as isize)) as i32;
+            h = h.wrapping_mul(37).wrapping_add(*val.offset(off as isize) as c_int);
             off += 1;
             i -= 1;
         }
     } else {
+        /* only sample some characters */
         skip = len / 8;
         i = len;
         while i > 0 {
-            h = h * 39 + (*val.offset(off as isize)) as i32;
+            h = h.wrapping_mul(39).wrapping_add(*val.offset(off as isize) as c_int);
             i -= skip;
             off += skip;
         }
     }
 
-    *pdwHash = h as u32;
+    *pdwHash = h as DWORD;
 
-    return S_OK;
+    S_OK
+}
 }
 
-unsafe fn FileMonikerImpl_IsRunning(
+stdmethod! {
+fn FileMonikerImpl_IsRunning(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
@@ -962,13 +960,8 @@ unsafe fn FileMonikerImpl_IsRunning(
     let mut rot: *mut IRunningObjectTable = core::ptr::null_mut();
     let mut res: HRESULT;
 
-    TRACE!(
-        b"(%p,%p,%p,%p)\n\0".as_ptr() as *const i8,
-        iface,
-        pbc,
-        pmkToLeft,
-        pmkNewlyRunning,
-    );
+    TRACE!(b"(%p,%p,%p,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
+           pmkNewlyRunning);
 
     if !pmkNewlyRunning.is_null() && IMoniker_IsEqual(pmkNewlyRunning, iface) == S_OK {
         return S_OK;
@@ -980,7 +973,7 @@ unsafe fn FileMonikerImpl_IsRunning(
 
     res = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
 
-    if FAILED(res) != 0 {
+    if FAILED(res) {
         return res;
     }
 
@@ -990,7 +983,10 @@ unsafe fn FileMonikerImpl_IsRunning(
 
     res
 }
-unsafe fn FileMonikerImpl_GetTimeOfLastChange(
+}
+
+stdmethod! {
+fn FileMonikerImpl_GetTimeOfLastChange(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
@@ -1001,13 +997,7 @@ unsafe fn FileMonikerImpl_GetTimeOfLastChange(
     let mut res: HRESULT;
     let mut info: WIN32_FILE_ATTRIBUTE_DATA = core::mem::zeroed();
 
-    TRACE!(
-        b"(%p,%p,%p,%p)\n\0".as_ptr() as *const i8,
-        iface,
-        pbc,
-        pmkToLeft,
-        pFileTime,
-    );
+    TRACE!(b"(%p,%p,%p,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft, pFileTime);
 
     if pFileTime.is_null() {
         return E_POINTER;
@@ -1019,17 +1009,18 @@ unsafe fn FileMonikerImpl_GetTimeOfLastChange(
 
     res = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
 
-    if FAILED(res) != 0 {
+    if FAILED(res) {
         return res;
     }
 
     res = IRunningObjectTable_GetTimeOfLastChange(rot, iface, pFileTime);
 
-    if FAILED(res) != 0 {
+    if FAILED(res) {
+        /* the moniker is not registered */
         if GetFileAttributesExW(
             (*This).filePathName,
             GetFileExInfoStandard,
-            &mut info as *mut _ as *mut core::ffi::c_void,
+            core::ptr::addr_of_mut!(info) as LPVOID,
         ) == 0
         {
             return MK_E_NOOBJECT;
@@ -1040,15 +1031,43 @@ unsafe fn FileMonikerImpl_GetTimeOfLastChange(
 
     S_OK
 }
-
-unsafe fn FileMonikerImpl_Inverse(iface: *mut IMoniker, ppmk: *mut *mut IMoniker) -> HRESULT {
-
-    TRACE!(b"(%p,%p)\n\0".as_ptr(), iface, ppmk);
-
-    CreateAntiMoniker(ppmk)
 }
 
-unsafe fn FileMonikerImpl_CommonPrefixWith(
+stdmethod! {
+fn FileMonikerImpl_Inverse(iface: *mut IMoniker, ppmk: *mut *mut IMoniker) -> HRESULT {
+    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char, iface, ppmk);
+
+    crate::ring::antimoniker::CreateAntiMoniker(ppmk)
+}
+}
+
+/// filemoniker.c FileMonikerImpl_CommonPrefixWith's `failed:` label.
+#[allow(clippy::too_many_arguments)]
+unsafe fn common_prefix_cleanup(
+    ret: HRESULT,
+    bindctx: *mut IBindCtx,
+    pathThis: LPOLESTR,
+    pathOther: LPOLESTR,
+    commonPath: LPOLESTR,
+    stringTable1: *mut LPOLESTR,
+    stringTable2: *mut LPOLESTR,
+) -> HRESULT {
+    IBindCtx_Release(bindctx);
+    CoTaskMemFree(pathThis as LPVOID);
+    CoTaskMemFree(pathOther as LPVOID);
+    CoTaskMemFree(commonPath as LPVOID);
+    if !stringTable1.is_null() {
+        free_stringtable(stringTable1);
+    }
+    if !stringTable2.is_null() {
+        free_stringtable(stringTable2);
+    }
+
+    ret
+}
+
+stdmethod! {
+fn FileMonikerImpl_CommonPrefixWith(
     iface: *mut IMoniker,
     pmkOther: *mut IMoniker,
     ppmkPrefix: *mut *mut IMoniker,
@@ -1060,10 +1079,10 @@ unsafe fn FileMonikerImpl_CommonPrefixWith(
     let mut commonPath: LPOLESTR = core::ptr::null_mut();
     let mut bindctx: *mut IBindCtx = core::ptr::null_mut();
     let mut mkSys: DWORD = 0;
-    let mut nb1: ULONG;
-    let mut nb2: ULONG;
-    let mut i: ULONG;
-    let mut sameIdx: ULONG;
+    let nb1: c_int;
+    let nb2: c_int;
+    let mut i: c_int;
+    let mut sameIdx: c_int;
     let mut machineNameCase: BOOL = 0;
     let mut ret: HRESULT;
 
@@ -1077,6 +1096,7 @@ unsafe fn FileMonikerImpl_CommonPrefixWith(
 
     *ppmkPrefix = core::ptr::null_mut();
 
+    /* check if we have the same type of moniker */
     IMoniker_IsSystemMoniker(pmkOther, &mut mkSys);
     if mkSys != MKSYS_FILEMONIKER {
         return MonikerCommonPrefixWith(iface, pmkOther, ppmkPrefix);
@@ -1087,120 +1107,72 @@ unsafe fn FileMonikerImpl_CommonPrefixWith(
         return ret;
     }
 
+    /* create a string based on common part of the two paths */
     ret = IMoniker_GetDisplayName(iface, bindctx, core::ptr::null_mut(), &mut pathThis);
     if FAILED(ret) {
-        IBindCtx_Release(bindctx);
-        CoTaskMemFree(pathThis as *mut _);
-        CoTaskMemFree(pathOther as *mut _);
-        CoTaskMemFree(commonPath as *mut _);
-        if !stringTable1.is_null() {
-            free_stringtable(stringTable1);
-        }
-        if !stringTable2.is_null() {
-            free_stringtable(stringTable2);
-        }
-        return ret;
+        return common_prefix_cleanup(ret, bindctx, pathThis, pathOther, commonPath,
+                                     stringTable1, stringTable2);
     }
 
     ret = IMoniker_GetDisplayName(pmkOther, bindctx, core::ptr::null_mut(), &mut pathOther);
     if FAILED(ret) {
-        IBindCtx_Release(bindctx);
-        CoTaskMemFree(pathThis as *mut _);
-        CoTaskMemFree(pathOther as *mut _);
-        CoTaskMemFree(commonPath as *mut _);
-        if !stringTable1.is_null() {
-            free_stringtable(stringTable1);
-        }
-        if !stringTable2.is_null() {
-            free_stringtable(stringTable2);
-        }
-        return ret;
+        return common_prefix_cleanup(ret, bindctx, pathThis, pathOther, commonPath,
+                                     stringTable1, stringTable2);
     }
 
     nb1 = FileMonikerImpl_DecomposePath(pathThis, &mut stringTable1);
-    if FAILED(nb1 as HRESULT) {
-        ret = nb1 as HRESULT;
-        IBindCtx_Release(bindctx);
-        CoTaskMemFree(pathThis as *mut _);
-        CoTaskMemFree(pathOther as *mut _);
-        CoTaskMemFree(commonPath as *mut _);
-        if !stringTable1.is_null() {
-            free_stringtable(stringTable1);
-        }
-        if !stringTable2.is_null() {
-            free_stringtable(stringTable2);
-        }
-        return ret;
+    if FAILED(nb1) {
+        ret = nb1;
+        return common_prefix_cleanup(ret, bindctx, pathThis, pathOther, commonPath,
+                                     stringTable1, stringTable2);
     }
 
     nb2 = FileMonikerImpl_DecomposePath(pathOther, &mut stringTable2);
-    if FAILED(nb2 as HRESULT) {
-        ret = nb2 as HRESULT;
-        IBindCtx_Release(bindctx);
-        CoTaskMemFree(pathThis as *mut _);
-        CoTaskMemFree(pathOther as *mut _);
-        CoTaskMemFree(commonPath as *mut _);
-        if !stringTable1.is_null() {
-            free_stringtable(stringTable1);
-        }
-        if !stringTable2.is_null() {
-            free_stringtable(stringTable2);
-        }
-        return ret;
+    if FAILED(nb2) {
+        ret = nb2;
+        return common_prefix_cleanup(ret, bindctx, pathThis, pathOther, commonPath,
+                                     stringTable1, stringTable2);
     }
 
     if nb1 == 0 || nb2 == 0 {
         ret = MK_E_NOPREFIX;
-        IBindCtx_Release(bindctx);
-        CoTaskMemFree(pathThis as *mut _);
-        CoTaskMemFree(pathOther as *mut _);
-        CoTaskMemFree(commonPath as *mut _);
-        if !stringTable1.is_null() {
-            free_stringtable(stringTable1);
-        }
-        if !stringTable2.is_null() {
-            free_stringtable(stringTable2);
-        }
-        return ret;
+        return common_prefix_cleanup(ret, bindctx, pathThis, pathOther, commonPath,
+                                     stringTable1, stringTable2);
     }
 
-    let len1 = lstrlenW(pathThis);
-    let len2 = lstrlenW(pathOther);
-    let min_len = min(len1, len2);
-    commonPath = CoTaskMemAlloc((core::mem::size_of::<u16>() * (min_len as usize + 1)) as u32) as LPOLESTR;
+    let len_this = lstrlenW(pathThis);
+    let len_other = lstrlenW(pathOther);
+    let min_len = if len_this < len_other { len_this } else { len_other };
+    commonPath = CoTaskMemAlloc(
+        (core::mem::size_of::<u16>() * (min_len as usize + 1)) as SIZE_T,
+    ) as LPOLESTR;
     if commonPath.is_null() {
         ret = E_OUTOFMEMORY;
-        IBindCtx_Release(bindctx);
-        CoTaskMemFree(pathThis as *mut _);
-        CoTaskMemFree(pathOther as *mut _);
-        CoTaskMemFree(commonPath as *mut _);
-        if !stringTable1.is_null() {
-            free_stringtable(stringTable1);
-        }
-        if !stringTable2.is_null() {
-            free_stringtable(stringTable2);
-        }
-        return ret;
+        return common_prefix_cleanup(ret, bindctx, pathThis, pathOther, commonPath,
+                                     stringTable1, stringTable2);
     }
 
     *commonPath = 0;
-
     sameIdx = 0;
     while !(*stringTable1.offset(sameIdx as isize)).is_null()
         && !(*stringTable2.offset(sameIdx as isize)).is_null()
-        && lstrcmpiW(*stringTable1.offset(sameIdx as isize), *stringTable2.offset(sameIdx as isize)) == 0
+        && lstrcmpiW(*stringTable1.offset(sameIdx as isize),
+                     *stringTable2.offset(sameIdx as isize)) == 0
     {
         sameIdx += 1;
     }
 
-    if sameIdx > 1 && *(*stringTable1.offset(0)) == b'\\' as u16 && *(*stringTable2.offset(1)) == b'\\' as u16 {
+    if sameIdx > 1
+        && **stringTable1.offset(0) == '\\' as u16
+        && **stringTable2.offset(1) == '\\' as u16
+    {
         machineNameCase = 1;
 
         i = 2;
         while i < sameIdx {
-            if *(*stringTable1.offset(i as isize)) == b'\\' as u16
+            if **stringTable1.offset(i as isize) == '\\' as u16
                 && (i + 1 < sameIdx)
-                && *(*stringTable1.offset((i + 1) as isize)) == b'\\' as u16
+                && **stringTable1.offset((i + 1) as isize) == '\\' as u16
             {
                 machineNameCase = 0;
                 break;
@@ -1209,7 +1181,7 @@ unsafe fn FileMonikerImpl_CommonPrefixWith(
         }
     }
 
-    if machineNameCase != 0 && *(*stringTable1.offset((sameIdx - 1) as isize)) == b'\\' as u16 {
+    if machineNameCase != 0 && **stringTable1.offset((sameIdx - 1) as isize) == '\\' as u16 {
         sameIdx -= 1;
     }
 
@@ -1224,83 +1196,65 @@ unsafe fn FileMonikerImpl_CommonPrefixWith(
         ret = CreateFileMoniker(commonPath, ppmkPrefix);
     }
 
-    IBindCtx_Release(bindctx);
-    CoTaskMemFree(pathThis as *mut _);
-    CoTaskMemFree(pathOther as *mut _);
-    CoTaskMemFree(commonPath as *mut _);
-    if !stringTable1.is_null() {
-        free_stringtable(stringTable1);
-    }
-    if !stringTable2.is_null() {
-        free_stringtable(stringTable2);
-    }
-
-    ret
+    common_prefix_cleanup(ret, bindctx, pathThis, pathOther, commonPath, stringTable1,
+                          stringTable2)
 }
+}
+
+/// filemoniker.c: `int FileMonikerImpl_DecomposePath(LPCOLESTR str, LPOLESTR **stringTable)`.
+/// Non-static in the C (moniker.h declares it; moniker.c's MonikerCommonPrefixWith calls it).
 #[no_mangle]
-pub unsafe extern "C" fn FileMonikerImpl_DecomposePath(str: LPCWSTR, stringTable: *mut *mut LPWSTR) -> i32 {
-    static bSlash: [u16; 2] = ['\\' as u16, 0];
-    let mut word: LPWSTR;
-    let mut i: i32 = 0;
-    let mut j: i32;
-    let mut tabIndex: i32 = 0;
-    let mut ret: i32 = 0;
-    let mut strgtable: *mut LPWSTR;
+pub unsafe extern "C" fn FileMonikerImpl_DecomposePath(
+    str: LPCOLESTR,
+    stringTable: *mut *mut LPOLESTR,
+) -> c_int {
+    const B_SLASH: [u16; 2] = ['\\' as u16, 0];
+    let word: LPOLESTR;
+    let mut i: c_int = 0;
+    let mut j: c_int;
+    let mut tabIndex: c_int = 0;
+    let mut ret: c_int = 0;
+    let strgtable: *mut LPOLESTR;
 
-    let len: i32 = lstrlenW(str);
+    let len: c_int = lstrlenW(str);
 
-    TRACE!(b"%s, %p\n\0".as_ptr() as *const i8, debugstr_w(str), *stringTable);
+    TRACE!(b"%s, %p\n\0".as_ptr() as *const c_char, debugstr_w(str as *const c_void),
+           *stringTable);
 
-    strgtable = CoTaskMemAlloc(((len + 1) as usize * core::mem::size_of::<LPWSTR>()) as u32) as *mut LPWSTR;
+    strgtable = CoTaskMemAlloc(
+        ((len as usize + 1) * core::mem::size_of::<LPOLESTR>()) as SIZE_T,
+    ) as *mut LPOLESTR;
 
     if strgtable.is_null() {
-        return 0x8007000E; // E_OUTOFMEMORY
+        return E_OUTOFMEMORY;
     }
 
-    word = CoTaskMemAlloc(((len + 1) as usize * core::mem::size_of::<u16>()) as u32) as LPWSTR;
+    word = CoTaskMemAlloc(
+        ((len as usize + 1) * core::mem::size_of::<u16>()) as SIZE_T,
+    ) as LPOLESTR;
 
     if word.is_null() {
-        ret = 0x8007000E; // E_OUTOFMEMORY
-        'lend: loop {
-            if ret < 0 {
-                i = 0;
-                while i < tabIndex {
-                    CoTaskMemFree(*strgtable.offset(i as isize) as *mut core::ffi::c_void);
-                    i += 1;
-                }
-                CoTaskMemFree(strgtable as *mut core::ffi::c_void);
-            }
-            CoTaskMemFree(word as *mut core::ffi::c_void);
-            return ret;
-        }
+        ret = E_OUTOFMEMORY;
+        return decompose_path_lend(ret, tabIndex, strgtable, word);
     }
 
     while *str.offset(i as isize) != 0 {
-        if *str.offset(i as isize) == bSlash[0] {
-            *strgtable.offset(tabIndex as isize) = CoTaskMemAlloc((2 * core::mem::size_of::<u16>()) as u32) as LPWSTR;
+        if *str.offset(i as isize) == B_SLASH[0] {
+            *strgtable.offset(tabIndex as isize) =
+                CoTaskMemAlloc((2 * core::mem::size_of::<u16>()) as SIZE_T) as LPOLESTR;
 
             if (*strgtable.offset(tabIndex as isize)).is_null() {
-                ret = 0x8007000E; // E_OUTOFMEMORY
-                'lend: loop {
-                    if ret < 0 {
-                        i = 0;
-                        while i < tabIndex {
-                            CoTaskMemFree(*strgtable.offset(i as isize) as *mut core::ffi::c_void);
-                            i += 1;
-                        }
-                        CoTaskMemFree(strgtable as *mut core::ffi::c_void);
-                    }
-                    CoTaskMemFree(word as *mut core::ffi::c_void);
-                    return ret;
-                }
+                ret = E_OUTOFMEMORY;
+                return decompose_path_lend(ret, tabIndex, strgtable, word);
             }
 
-            lstrcpyW(*strgtable.offset(tabIndex as isize), bSlash.as_ptr());
+            lstrcpyW(*strgtable.offset(tabIndex as isize), B_SLASH.as_ptr());
             tabIndex += 1;
+
             i += 1;
         } else {
             j = 0;
-            while *str.offset(i as isize) != 0 && *str.offset(i as isize) != bSlash[0] {
+            while *str.offset(i as isize) != 0 && *str.offset(i as isize) != B_SLASH[0] {
                 *word.offset(j as isize) = *str.offset(i as isize);
                 i += 1;
                 j += 1;
@@ -1308,22 +1262,13 @@ pub unsafe extern "C" fn FileMonikerImpl_DecomposePath(str: LPCWSTR, stringTable
 
             *word.offset(j as isize) = 0;
 
-            *strgtable.offset(tabIndex as isize) = CoTaskMemAlloc((core::mem::size_of::<u16>() * (j + 1) as usize) as u32) as LPWSTR;
+            *strgtable.offset(tabIndex as isize) = CoTaskMemAlloc(
+                (core::mem::size_of::<u16>() * (j + 1) as usize) as SIZE_T,
+            ) as LPOLESTR;
 
             if (*strgtable.offset(tabIndex as isize)).is_null() {
-                ret = 0x8007000E; // E_OUTOFMEMORY
-                'lend: loop {
-                    if ret < 0 {
-                        i = 0;
-                        while i < tabIndex {
-                            CoTaskMemFree(*strgtable.offset(i as isize) as *mut core::ffi::c_void);
-                            i += 1;
-                        }
-                        CoTaskMemFree(strgtable as *mut core::ffi::c_void);
-                    }
-                    CoTaskMemFree(word as *mut core::ffi::c_void);
-                    return ret;
-                }
+                ret = E_OUTOFMEMORY;
+                return decompose_path_lend(ret, tabIndex, strgtable, word);
             }
 
             lstrcpyW(*strgtable.offset(tabIndex as isize), word);
@@ -1336,21 +1281,33 @@ pub unsafe extern "C" fn FileMonikerImpl_DecomposePath(str: LPCWSTR, stringTable
 
     ret = tabIndex;
 
-    'lend: loop {
-        if ret < 0 {
-            i = 0;
-            while i < tabIndex {
-                CoTaskMemFree(*strgtable.offset(i as isize) as *mut core::ffi::c_void);
-                i += 1;
-            }
-            CoTaskMemFree(strgtable as *mut core::ffi::c_void);
-        }
-        CoTaskMemFree(word as *mut core::ffi::c_void);
-        return ret;
-    }
+    decompose_path_lend(ret, tabIndex, strgtable, word)
 }
 
-unsafe fn FileMonikerImpl_RelativePathTo(
+/// FileMonikerImpl_DecomposePath's `lend:` label.
+unsafe fn decompose_path_lend(
+    ret: c_int,
+    tabIndex: c_int,
+    strgtable: *mut LPOLESTR,
+    word: LPOLESTR,
+) -> c_int {
+    if ret < 0 {
+        let mut i: c_int = 0;
+        while i < tabIndex {
+            CoTaskMemFree(*strgtable.offset(i as isize) as LPVOID);
+            i += 1;
+        }
+
+        CoTaskMemFree(strgtable as LPVOID);
+    }
+
+    CoTaskMemFree(word as LPVOID);
+
+    ret
+}
+
+stdmethod! {
+fn FileMonikerImpl_RelativePathTo(
     iface: *mut IMoniker,
     pmOther: *mut IMoniker,
     ppmkRelPath: *mut *mut IMoniker,
@@ -1361,14 +1318,14 @@ unsafe fn FileMonikerImpl_RelativePathTo(
     let mut str2: LPOLESTR = core::ptr::null_mut();
     let mut tabStr1: *mut LPOLESTR = core::ptr::null_mut();
     let mut tabStr2: *mut LPOLESTR = core::ptr::null_mut();
-    let mut relPath: LPOLESTR;
-    let mut len1: DWORD = 0;
-    let mut len2: DWORD = 0;
-    let mut sameIdx: DWORD = 0;
-    let mut j: DWORD;
-    static back: [u16; 4] = [0x002E, 0x002E, 0x005C, 0x0000]; // L"..\\"
+    let relPath: LPOLESTR;
+    let len1: c_int;
+    let len2: c_int;
+    let mut sameIdx: c_int = 0;
+    let mut j: c_int;
+    const BACK: [u16; 4] = ['.' as u16, '.' as u16, '\\' as u16, 0];
 
-    TRACE!(b"(%p,%p,%p)\n\0".as_ptr() as PCHAR, iface, pmOther, ppmkRelPath);
+    TRACE!(b"(%p,%p,%p)\n\0".as_ptr() as *const c_char, iface, pmOther, ppmkRelPath);
 
     if ppmkRelPath.is_null() {
         return E_POINTER;
@@ -1393,44 +1350,50 @@ unsafe fn FileMonikerImpl_RelativePathTo(
     }
 
     len1 = FileMonikerImpl_DecomposePath(str1, &mut tabStr1);
-    if FAILED(len1 as HRESULT) {
+    if FAILED(len1) {
         return E_OUTOFMEMORY;
     }
     len2 = FileMonikerImpl_DecomposePath(str2, &mut tabStr2);
 
-    if FAILED(len2 as HRESULT) {
+    if FAILED(len2) {
         free_stringtable(tabStr1);
         return E_OUTOFMEMORY;
     }
 
-    while !(*tabStr1.add(sameIdx as usize)).is_null()
-        && !(*tabStr2.add(sameIdx as usize)).is_null()
-        && lstrcmpiW(*tabStr1.add(sameIdx as usize), *tabStr2.add(sameIdx as usize)) == 0
+    /* count the number of similar items from the begin of the two paths */
+    while !(*tabStr1.offset(sameIdx as isize)).is_null()
+        && !(*tabStr2.offset(sameIdx as isize)).is_null()
+        && lstrcmpiW(*tabStr1.offset(sameIdx as isize), *tabStr2.offset(sameIdx as isize)) == 0
     {
         sameIdx += 1;
     }
 
+    /* begin the construction of relativePath */
+    /* if the two paths have a consecutive similar item from the begin ! the relativePath
+     * will be composed by "..\\" in the begin */
     relPath = HeapAlloc(
         GetProcessHeap(),
         0,
-        (core::mem::size_of::<u16>() as DWORD * (1 + lstrlenW(str1) as DWORD + lstrlenW(str2) as DWORD)) as usize,
+        (core::mem::size_of::<u16>() * (1 + lstrlenW(str1) + lstrlenW(str2)) as usize) as SIZE_T,
     ) as LPOLESTR;
 
     *relPath = 0;
 
     if len2 > 0 && !(len1 == 1 && len2 == 1 && sameIdx == 0) {
         j = sameIdx;
-        while !(*tabStr1.add(j as usize)).is_null() {
-            if *(*tabStr1.add(j as usize)) != 0x005C {
-                lstrcatW(relPath, back.as_ptr());
+        while !(*tabStr1.offset(j as isize)).is_null() {
+            if **tabStr1.offset(j as isize) != '\\' as u16 {
+                lstrcatW(relPath, BACK.as_ptr());
             }
             j += 1;
         }
     }
 
+    /* add items of the second path (similar items with the first path are not included)
+     * to the relativePath */
     j = sameIdx;
-    while !(*tabStr2.add(j as usize)).is_null() {
-        lstrcatW(relPath, *tabStr2.add(j as usize));
+    while !(*tabStr2.offset(j as isize)).is_null() {
+        lstrcatW(relPath, *tabStr2.offset(j as isize));
         j += 1;
     }
 
@@ -1438,9 +1401,9 @@ unsafe fn FileMonikerImpl_RelativePathTo(
 
     free_stringtable(tabStr1);
     free_stringtable(tabStr2);
-    CoTaskMemFree(str1 as *mut core::ffi::c_void);
-    CoTaskMemFree(str2 as *mut core::ffi::c_void);
-    HeapFree(GetProcessHeap(), 0, relPath as *mut core::ffi::c_void);
+    CoTaskMemFree(str1 as LPVOID);
+    CoTaskMemFree(str2 as LPVOID);
+    HeapFree(GetProcessHeap(), 0, relPath as LPVOID);
 
     if len1 == 0 || len2 == 0 || (len1 == 1 && len2 == 1 && sameIdx == 0) {
         return MK_S_HIM;
@@ -1448,46 +1411,46 @@ unsafe fn FileMonikerImpl_RelativePathTo(
 
     res
 }
+}
 
-unsafe fn FileMonikerImpl_GetDisplayName(
+stdmethod! {
+fn FileMonikerImpl_GetDisplayName(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
     ppszDisplayName: *mut LPOLESTR,
 ) -> HRESULT {
-
     let This = impl_from_IMoniker(iface);
-    let len = lstrlenW((*This).filePathName);
+    let len: c_int = lstrlenW((*This).filePathName);
 
-    TRACE!(
-        b"(%p,%p,%p,%p)\n\0".as_ptr(),
-        iface,
-        pbc,
-        pmkToLeft,
-        ppszDisplayName,
-    );
+    TRACE!(b"(%p,%p,%p,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
+           ppszDisplayName);
 
     if ppszDisplayName.is_null() {
-        return 0x80004003u32 as HRESULT;
+        return E_POINTER;
     }
 
     if !pmkToLeft.is_null() {
-        return 0x80070057u32 as HRESULT;
+        return E_INVALIDARG;
     }
 
-    *ppszDisplayName = CoTaskMemAlloc((core::mem::size_of::<u16>() * (len as usize + 1))) as LPOLESTR;
+    *ppszDisplayName =
+        CoTaskMemAlloc((core::mem::size_of::<u16>() * (len as usize + 1)) as SIZE_T) as LPOLESTR;
     if (*ppszDisplayName).is_null() {
-        return 0x8007000Eu32 as HRESULT;
+        return E_OUTOFMEMORY;
     }
 
     lstrcpyW(*ppszDisplayName, (*This).filePathName);
 
-    TRACE!(b"-- %s\n\0".as_ptr(), debugstr_w(*ppszDisplayName));
+    TRACE!(b"-- %s\n\0".as_ptr() as *const c_char,
+           debugstr_w(*ppszDisplayName as *const c_void));
 
-    0x00000000u32 as HRESULT
+    S_OK
+}
 }
 
-unsafe fn FileMonikerImpl_ParseDisplayName(
+stdmethod! {
+fn FileMonikerImpl_ParseDisplayName(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
@@ -1495,23 +1458,16 @@ unsafe fn FileMonikerImpl_ParseDisplayName(
     pchEaten: *mut ULONG,
     ppmkOut: *mut *mut IMoniker,
 ) -> HRESULT {
-    FIXME!(
-        b"(%p,%p,%p,%p,%p,%p),stub!\n\0".as_ptr() as *const i8,
-        iface,
-        pbc,
-        pmkToLeft,
-        pszDisplayName,
-        pchEaten,
-        ppmkOut,
-    );
+    FIXME!(b"(%p,%p,%p,%p,%p,%p),stub!\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
+           pszDisplayName, pchEaten, ppmkOut);
+
     E_NOTIMPL
 }
+}
 
-unsafe fn FileMonikerImpl_IsSystemMoniker(
-    iface: *mut IMoniker,
-    pwdMksys: LPDWORD,
-) -> HRESULT {
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const i8, iface, pwdMksys);
+stdmethod! {
+fn FileMonikerImpl_IsSystemMoniker(iface: *mut IMoniker, pwdMksys: *mut DWORD) -> HRESULT {
+    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char, iface, pwdMksys);
 
     if pwdMksys.is_null() {
         return E_POINTER;
@@ -1519,97 +1475,161 @@ unsafe fn FileMonikerImpl_IsSystemMoniker(
 
     *pwdMksys = MKSYS_FILEMONIKER;
 
-    return S_OK;
+    S_OK
 }
-unsafe fn FileMonikerROTDataImpl_QueryInterface(
+}
+
+// ---------------------------------------------------------------------------
+// IROTData
+// ---------------------------------------------------------------------------
+
+stdmethod! {
+fn FileMonikerROTDataImpl_QueryInterface(
     iface: *mut IROTData,
-    riid: *const CLSID,
-    ppvObject: *mut *mut core::ffi::c_void,
+    riid: *const IID,
+    ppvObject: *mut *mut c_void,
 ) -> HRESULT {
     let This = impl_from_IROTData(iface);
 
+    TRACE!(b"(%p,%s,%p)\n\0".as_ptr() as *const c_char, This,
+           debugstr_guid(riid as *const c_void), ppvObject);
 
-    TRACE!(
-        b"(%p,%s,%p)\n\0".as_ptr(),
-        This,
-        debugstr_guid(riid),
-        ppvObject,
-    );
-
-    FileMonikerImpl_QueryInterface(
-        core::ptr::addr_of_mut!((*This).IMoniker_iface),
-        riid,
-        ppvObject,
-    )
+    FileMonikerImpl_QueryInterface(core::ptr::addr_of_mut!((*This).IMoniker_iface), riid,
+                                   ppvObject)
+}
 }
 
-unsafe fn FileMonikerROTDataImpl_AddRef(iface: *mut IROTData) -> ULONG {
+stdmethod! {
+fn FileMonikerROTDataImpl_AddRef(iface: *mut IROTData) -> ULONG {
     let This = impl_from_IROTData(iface);
 
-
-    TRACE!(b"(%p)\n\0".as_ptr(), This);
+    TRACE!(b"(%p)\n\0".as_ptr() as *const c_char, This);
 
     IMoniker_AddRef(core::ptr::addr_of_mut!((*This).IMoniker_iface))
 }
+}
 
-unsafe fn FileMonikerROTDataImpl_Release(iface: *mut IROTData) -> u32 {
+stdmethod! {
+fn FileMonikerROTDataImpl_Release(iface: *mut IROTData) -> ULONG {
     let This = impl_from_IROTData(iface);
+
+    TRACE!(b"(%p)\n\0".as_ptr() as *const c_char, This);
 
     FileMonikerImpl_Release(core::ptr::addr_of_mut!((*This).IMoniker_iface))
 }
+}
 
-unsafe fn FileMonikerROTDataImpl_GetComparisonData(
+stdmethod! {
+fn FileMonikerROTDataImpl_GetComparisonData(
     iface: *mut IROTData,
-    pbData: *mut u8,
-    cbMax: u32,
-    pcbData: *mut u32,
+    pbData: *mut byte,
+    cbMax: ULONG,
+    pcbData: *mut ULONG,
 ) -> HRESULT {
-
     let This = impl_from_IROTData(iface);
-    let len = lstrlenW((*This).filePathName) + 1;
-    let mut i: i32;
-    let pszFileName: LPWSTR;
+    let len: c_int = lstrlenW((*This).filePathName) + 1;
+    let mut i: c_int;
+    let pszFileName: LPOLESTR;
 
-    *pcbData = (core::mem::size_of::<CLSID>() as i32 + len * core::mem::size_of::<u16>() as i32) as u32;
+    TRACE!(b"(%p, %u, %p)\n\0".as_ptr() as *const c_char, pbData, cbMax, pcbData);
+
+    *pcbData = (core::mem::size_of::<CLSID>() + len as usize * core::mem::size_of::<u16>())
+        as ULONG;
     if cbMax < *pcbData {
-        return 0x8007000E;
+        return E_OUTOFMEMORY;
     }
 
     memcpy(
-        pbData as *mut core::ffi::c_void,
-        core::ptr::addr_of!(CLSID_FileMoniker) as *const core::ffi::c_void,
+        pbData as *mut c_void,
+        core::ptr::addr_of!(CLSID_FileMoniker) as *const c_void,
         core::mem::size_of::<CLSID>(),
     );
-    pszFileName = pbData.add(core::mem::size_of::<CLSID>()) as LPWSTR;
+    pszFileName = pbData.add(core::mem::size_of::<CLSID>()) as LPOLESTR;
     i = 0;
     while i < len {
-        *pszFileName.offset(i as isize) = towupper(*(*This).filePathName.offset(i as isize) as i32) as u16;
+        *pszFileName.offset(i as isize) =
+            towupper(*(*This).filePathName.offset(i as isize) as c_int) as u16;
         i += 1;
     }
 
-    0
+    S_OK
+}
 }
 
-unsafe fn FileMonikerImpl_Construct(This: *mut FileMonikerImpl, lpszPathName: LPCWSTR) -> HRESULT {
-    let mut nb: i32;
-    let mut i: i32;
-    let mut sizeStr: i32 = lstrlenW(lpszPathName);
+// ---------------------------------------------------------------------------
+// vtbls
+// ---------------------------------------------------------------------------
+
+/// Virtual function table for the FileMonikerImpl class which includes IPersist,
+/// IPersistStream and IMoniker functions.
+pub static VT_FileMonikerImpl: IMonikerVtbl = IMonikerVtbl {
+    QueryInterface: Some(FileMonikerImpl_QueryInterface),
+    AddRef: Some(FileMonikerImpl_AddRef),
+    Release: Some(FileMonikerImpl_Release),
+    GetClassID: Some(FileMonikerImpl_GetClassID),
+    IsDirty: Some(FileMonikerImpl_IsDirty),
+    Load: Some(FileMonikerImpl_Load),
+    Save: Some(FileMonikerImpl_Save),
+    GetSizeMax: Some(FileMonikerImpl_GetSizeMax),
+    BindToObject: Some(FileMonikerImpl_BindToObject),
+    BindToStorage: Some(FileMonikerImpl_BindToStorage),
+    Reduce: Some(FileMonikerImpl_Reduce),
+    ComposeWith: Some(FileMonikerImpl_ComposeWith),
+    Enum: Some(FileMonikerImpl_Enum),
+    IsEqual: Some(FileMonikerImpl_IsEqual),
+    Hash: Some(FileMonikerImpl_Hash),
+    IsRunning: Some(FileMonikerImpl_IsRunning),
+    GetTimeOfLastChange: Some(FileMonikerImpl_GetTimeOfLastChange),
+    Inverse: Some(FileMonikerImpl_Inverse),
+    CommonPrefixWith: Some(FileMonikerImpl_CommonPrefixWith),
+    RelativePathTo: Some(FileMonikerImpl_RelativePathTo),
+    GetDisplayName: Some(FileMonikerImpl_GetDisplayName),
+    ParseDisplayName: Some(FileMonikerImpl_ParseDisplayName),
+    IsSystemMoniker: Some(FileMonikerImpl_IsSystemMoniker),
+};
+
+/// Virtual function table for the IROTData class.
+pub static VT_ROTDataImpl: IROTDataVtbl = IROTDataVtbl {
+    QueryInterface: Some(FileMonikerROTDataImpl_QueryInterface),
+    AddRef: Some(FileMonikerROTDataImpl_AddRef),
+    Release: Some(FileMonikerROTDataImpl_Release),
+    GetComparisonData: Some(FileMonikerROTDataImpl_GetComparisonData),
+};
+
+// ---------------------------------------------------------------------------
+// construction / factory
+// ---------------------------------------------------------------------------
+
+unsafe fn FileMonikerImpl_Construct(
+    This: *mut FileMonikerImpl,
+    lpszPathName: LPCOLESTR,
+) -> HRESULT {
+    let nb: c_int;
+    let mut i: c_int;
+    let mut sizeStr: c_int = lstrlenW(lpszPathName);
     let mut tabStr: *mut LPOLESTR = core::ptr::null_mut();
-    static twoPoint: [u16; 3] = [b'.' as u16, b'.' as u16, 0];
-    static bkSlash: [u16; 2] = [b'\\' as u16, 0];
-    let mut addBkSlash: u8;
+    const TWO_POINT: [u16; 3] = ['.' as u16, '.' as u16, 0];
+    const BK_SLASH: [u16; 2] = ['\\' as u16, 0];
+    let mut addBkSlash: BOOL;
 
-    TRACE!(b"(%p,%s)\n\0".as_ptr() as *const i8, This, debugstr_w(lpszPathName));
+    TRACE!(b"(%p,%s)\n\0".as_ptr() as *const c_char, This,
+           debugstr_w(lpszPathName as *const c_void));
 
-    (*This).IMoniker_iface.lpVtbl = &VT_FileMonikerImpl;
-    (*This).IROTData_iface.lpVtbl = &VT_ROTDataImpl;
+    /* Initialize the virtual function table. */
+    (*This).IMoniker_iface.lpVtbl =
+        core::ptr::addr_of!(VT_FileMonikerImpl) as *mut IMonikerVtbl;
+    (*This).IROTData_iface.lpVtbl = core::ptr::addr_of!(VT_ROTDataImpl) as *mut IROTDataVtbl;
     (*This).ref_ = 0;
     (*This).pMarshal = core::ptr::null_mut();
 
-    (*This).filePathName = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<u16>() * (sizeStr as usize + 1)) as usize) as LPOLESTR;
+    (*This).filePathName = HeapAlloc(
+        GetProcessHeap(),
+        0,
+        (core::mem::size_of::<u16>() * (sizeStr as usize + 1)) as SIZE_T,
+    ) as LPOLESTR;
 
     if (*This).filePathName.is_null() {
-        return 0x8007000E;
+        return E_OUTOFMEMORY;
     }
 
     lstrcpyW((*This).filePathName, lpszPathName);
@@ -1618,31 +1638,39 @@ unsafe fn FileMonikerImpl_Construct(This: *mut FileMonikerImpl, lpszPathName: LP
 
     if nb > 0 {
         addBkSlash = 1;
-        if wcscmp(*tabStr.offset(0), twoPoint.as_ptr()) != 0 {
+        if wcscmp(*tabStr.offset(0), TWO_POINT.as_ptr()) != 0 {
             addBkSlash = 0;
         } else {
             i = 0;
             while i < nb {
-                if wcscmp(*tabStr.offset(i as isize), twoPoint.as_ptr()) != 0 && wcscmp(*tabStr.offset(i as isize), bkSlash.as_ptr()) != 0 {
+                if wcscmp(*tabStr.offset(i as isize), TWO_POINT.as_ptr()) != 0
+                    && wcscmp(*tabStr.offset(i as isize), BK_SLASH.as_ptr()) != 0
+                {
                     addBkSlash = 0;
                     break;
-                } else {
-                    if wcscmp(*tabStr.offset(i as isize), bkSlash.as_ptr()) == 0 && i < nb - 1 && wcscmp(*tabStr.offset((i + 1) as isize), bkSlash.as_ptr()) == 0 {
-                        *(*tabStr.offset(i as isize)) = 0;
-                        sizeStr -= 1;
-                        addBkSlash = 0;
-                        break;
-                    }
+                } else if wcscmp(*tabStr.offset(i as isize), BK_SLASH.as_ptr()) == 0
+                    && i < nb - 1
+                    && wcscmp(*tabStr.offset((i + 1) as isize), BK_SLASH.as_ptr()) == 0
+                {
+                    **tabStr.offset(i as isize) = 0;
+                    sizeStr -= 1;
+                    addBkSlash = 0;
+                    break;
                 }
                 i += 1;
             }
         }
 
-        if wcscmp(*tabStr.offset((nb - 1) as isize), bkSlash.as_ptr()) == 0 {
+        if wcscmp(*tabStr.offset((nb - 1) as isize), BK_SLASH.as_ptr()) == 0 {
             addBkSlash = 0;
         }
 
-        (*This).filePathName = HeapReAlloc(GetProcessHeap(), 0, (*This).filePathName as *mut core::ffi::c_void, (sizeStr as usize + 1) * core::mem::size_of::<u16>()) as LPOLESTR;
+        (*This).filePathName = HeapReAlloc(
+            GetProcessHeap(),
+            0,
+            (*This).filePathName as LPVOID,
+            ((sizeStr as usize + 1) * core::mem::size_of::<u16>()) as SIZE_T,
+        ) as LPOLESTR;
 
         *(*This).filePathName = 0;
 
@@ -1653,142 +1681,174 @@ unsafe fn FileMonikerImpl_Construct(This: *mut FileMonikerImpl, lpszPathName: LP
         }
 
         if addBkSlash != 0 {
-            lstrcatW((*This).filePathName, bkSlash.as_ptr());
+            lstrcatW((*This).filePathName, BK_SLASH.as_ptr());
         }
     }
 
     free_stringtable(tabStr);
 
-    return 0;
+    S_OK
 }
 
+/// CreateFileMoniker (OLE32.@)
 #[no_mangle]
 pub unsafe extern "system" fn CreateFileMoniker(
-    lpszPathName: LPCWSTR,
+    lpszPathName: LPCOLESTR,
     ppmk: *mut *mut IMoniker,
 ) -> HRESULT {
+    let newFileMoniker: *mut FileMonikerImpl;
+    let mut hr: HRESULT;
 
-    TRACE!(b"(%s,%p)\n\0".as_ptr(), debugstr_w(lpszPathName), ppmk);
+    TRACE!(b"(%s,%p)\n\0".as_ptr() as *const c_char,
+           debugstr_w(lpszPathName as *const c_void), ppmk);
 
     if ppmk.is_null() {
-        return 0x80004003u32 as HRESULT;
+        return E_POINTER;
     }
 
     if lpszPathName.is_null() {
-        return 0x800401E4u32 as HRESULT;
+        return MK_E_SYNTAX;
     }
 
     *ppmk = core::ptr::null_mut();
 
-    let newFileMoniker = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<FileMonikerImpl>()) as *mut FileMonikerImpl;
+    newFileMoniker = HeapAlloc(
+        GetProcessHeap(),
+        0,
+        core::mem::size_of::<FileMonikerImpl>() as SIZE_T,
+    ) as *mut FileMonikerImpl;
 
     if newFileMoniker.is_null() {
-        return 0x8007000Eu32 as HRESULT;
+        return E_OUTOFMEMORY;
     }
 
-    let hr = FileMonikerImpl_Construct(newFileMoniker, lpszPathName);
+    hr = FileMonikerImpl_Construct(newFileMoniker, lpszPathName);
 
-    let hr = if SUCCEEDED(hr) != 0 {
-        IMoniker_QueryInterface(
+    if SUCCEEDED(hr) {
+        hr = IMoniker_QueryInterface(
             core::ptr::addr_of_mut!((*newFileMoniker).IMoniker_iface),
-            &IID_IMoniker as *const CLSID,
-            ppmk as *mut *mut core::ffi::c_void,
-        )
+            core::ptr::addr_of!(IID_IMoniker),
+            ppmk as *mut *mut c_void,
+        );
     } else {
-        HeapFree(GetProcessHeap(), 0, newFileMoniker as *mut core::ffi::c_void);
-        hr
-    };
+        HeapFree(GetProcessHeap(), 0, newFileMoniker as LPVOID);
+    }
 
     hr
 }
 
+/// find a character from a set in reverse without the string having to be null-terminated
+#[inline]
 unsafe fn memrpbrkW(ptr: *const u16, n: usize, accept: *const u16) -> *mut u16 {
     let end = ptr.add(n);
     let mut ret: *const u16 = core::ptr::null();
-    let mut current = ptr;
-    while current < end {
-        if !wcschr(accept, *current).is_null() {
-            ret = current;
+    let mut p = ptr;
+    while p < end {
+        if !wcschr(accept, *p).is_null() {
+            ret = p;
         }
-        current = current.add(1);
+        p = p.add(1);
     }
     ret as *mut u16
 }
+
+/// moniker.h: `HRESULT FileMoniker_CreateFromDisplayName(LPBC, LPCOLESTR, LPDWORD, IMoniker**)`
+/// — a plain (cdecl) ole32-internal function, called from moniker.c's MkParseDisplayName.
 #[no_mangle]
 pub unsafe extern "C" fn FileMoniker_CreateFromDisplayName(
     pbc: *mut IBindCtx,
-    szDisplayName: LPCWSTR,
+    szDisplayName: LPCOLESTR,
     pchEaten: LPDWORD,
     ppmk: *mut *mut IMoniker,
 ) -> HRESULT {
-    let wszSeparators: [u16; 5] = [':' as u16, '\\' as u16, '/' as u16, '!' as u16, 0];
+    const SEPARATORS: [u16; 5] = [':' as u16, '\\' as u16, '/' as u16, '!' as u16, 0];
 
-    let mut end = szDisplayName.offset(lstrlenW(szDisplayName) as isize);
+    // The C is a for-loop whose FIRST iteration runs with `end` at the string end and
+    // only then steps back to the previous separator:
+    //   for (end = szDisplayName + lstrlenW(szDisplayName); end && (end != szDisplayName);
+    //        end = memrpbrkW(szDisplayName, end - szDisplayName, wszSeparators))
+    let mut end: *const u16 = szDisplayName.add(lstrlenW(szDisplayName) as usize);
 
     while !end.is_null() && end != szDisplayName {
-        end = memrpbrkW(szDisplayName, end.offset_from(szDisplayName) as usize, wszSeparators.as_ptr());
-        if end.is_null() {
-            break;
-        }
+        let hr: HRESULT;
+        let mut rot: *mut IRunningObjectTable = core::ptr::null_mut();
+        let mut file_moniker: *mut IMoniker = core::ptr::null_mut();
+        let file_display_name: LPOLESTR;
+        let full_path_name: LPOLESTR;
+        let full_path_name_len: DWORD;
+        let len: c_int = end.offset_from(szDisplayName) as c_int;
 
-        let len = end.offset_from(szDisplayName) as usize;
-
-        let file_display_name = HeapAlloc(GetProcessHeap(), 0, (len + 1) * core::mem::size_of::<u16>()) as LPWSTR;
+        file_display_name = HeapAlloc(
+            GetProcessHeap(),
+            0,
+            ((len as usize + 1) * core::mem::size_of::<u16>()) as SIZE_T,
+        ) as LPOLESTR;
         if file_display_name.is_null() {
             return E_OUTOFMEMORY;
         }
-        memcpy(file_display_name as *mut c_void, szDisplayName as *const c_void, len * core::mem::size_of::<u16>());
+        memcpy(
+            file_display_name as *mut c_void,
+            szDisplayName as *const c_void,
+            len as usize * core::mem::size_of::<u16>(),
+        );
         *file_display_name.offset(len as isize) = 0;
 
-        let mut file_moniker: *mut IMoniker = core::ptr::null_mut();
-        let mut hr = CreateFileMoniker(file_display_name, &mut file_moniker);
-        if FAILED(hr) != 0 {
+        let mut hr_create = CreateFileMoniker(file_display_name, &mut file_moniker);
+        if FAILED(hr_create) {
             HeapFree(GetProcessHeap(), 0, file_display_name as LPVOID);
-            return hr;
+            return hr_create;
         }
 
-        let mut rot: *mut IRunningObjectTable = core::ptr::null_mut();
-        hr = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
-        if FAILED(hr) != 0 {
+        hr_create = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
+        if FAILED(hr_create) {
             HeapFree(GetProcessHeap(), 0, file_display_name as LPVOID);
             IMoniker_Release(file_moniker);
-            return hr;
+            return hr_create;
         }
 
         hr = IRunningObjectTable_IsRunning(rot, file_moniker);
         IRunningObjectTable_Release(rot);
-        if FAILED(hr) != 0 {
+        if FAILED(hr) {
             HeapFree(GetProcessHeap(), 0, file_display_name as LPVOID);
             IMoniker_Release(file_moniker);
             return hr;
         }
         if hr == S_OK {
-            TRACE!(b"found running file moniker for %s\n\0".as_ptr() as *const c_char, debugstr_w(file_display_name));
-            *pchEaten = len as u32;
+            TRACE!(b"found running file moniker for %s\n\0".as_ptr() as *const c_char,
+                   debugstr_w(file_display_name as *const c_void));
+            *pchEaten = len as DWORD;
             *ppmk = file_moniker;
             HeapFree(GetProcessHeap(), 0, file_display_name as LPVOID);
             return S_OK;
         }
 
-        let full_path_name_len = GetFullPathNameW(file_display_name, 0, core::ptr::null_mut(), core::ptr::null_mut());
+        full_path_name_len =
+            GetFullPathNameW(file_display_name, 0, core::ptr::null_mut(), core::ptr::null_mut());
         if full_path_name_len == 0 {
             HeapFree(GetProcessHeap(), 0, file_display_name as LPVOID);
             IMoniker_Release(file_moniker);
             return MK_E_SYNTAX;
         }
-        let full_path_name = HeapAlloc(GetProcessHeap(), 0, full_path_name_len as usize * core::mem::size_of::<u16>()) as LPWSTR;
+        full_path_name = HeapAlloc(
+            GetProcessHeap(),
+            0,
+            (full_path_name_len as usize * core::mem::size_of::<u16>()) as SIZE_T,
+        ) as LPOLESTR;
         if full_path_name.is_null() {
             HeapFree(GetProcessHeap(), 0, file_display_name as LPVOID);
             IMoniker_Release(file_moniker);
             return E_OUTOFMEMORY;
         }
-        GetFullPathNameW(file_display_name, full_path_name_len, full_path_name, core::ptr::null_mut());
+        GetFullPathNameW(file_display_name, full_path_name_len, full_path_name,
+                         core::ptr::null_mut());
 
         if GetFileAttributesW(full_path_name) == INVALID_FILE_ATTRIBUTES {
-            TRACE!(b"couldn't open file %s\n\0".as_ptr() as *const c_char, debugstr_w(full_path_name));
+            TRACE!(b"couldn't open file %s\n\0".as_ptr() as *const c_char,
+                   debugstr_w(full_path_name as *const c_void));
         } else {
-            TRACE!(b"got file moniker for %s\n\0".as_ptr() as *const c_char, debugstr_w(szDisplayName));
-            *pchEaten = len as u32;
+            TRACE!(b"got file moniker for %s\n\0".as_ptr() as *const c_char,
+                   debugstr_w(szDisplayName as *const c_void));
+            *pchEaten = len as DWORD;
             *ppmk = file_moniker;
             HeapFree(GetProcessHeap(), 0, file_display_name as LPVOID);
             HeapFree(GetProcessHeap(), 0, full_path_name as LPVOID);
@@ -1797,25 +1857,30 @@ pub unsafe extern "C" fn FileMoniker_CreateFromDisplayName(
         HeapFree(GetProcessHeap(), 0, file_display_name as LPVOID);
         HeapFree(GetProcessHeap(), 0, full_path_name as LPVOID);
         IMoniker_Release(file_moniker);
+
+        /* the for-loop's increment: step back to the previous separator */
+        end = memrpbrkW(szDisplayName, end.offset_from(szDisplayName) as usize,
+                        SEPARATORS.as_ptr());
     }
 
     MK_E_CANTOPENFILE
 }
+
 #[no_mangle]
 pub unsafe extern "system" fn FileMoniker_CreateInstance(
     iface: *mut IClassFactory,
     pUnk: *mut IUnknown,
-    riid: *const GUID,
-    ppv: *mut *mut core::ffi::c_void,
+    riid: *const IID,
+    ppv: *mut *mut c_void,
 ) -> HRESULT {
-    static wszEmpty: [WCHAR; 1] = [0];
+    let newFileMoniker: *mut FileMonikerImpl;
+    let mut hr: HRESULT;
+    const WSZ_EMPTY: [u16; 1] = [0];
 
-    TRACE!(
-        b"(%p, %s, %p)\n\0".as_ptr() as PCHAR,
-        pUnk,
-        debugstr_guid(riid),
-        ppv,
-    );
+    TRACE!(b"(%p, %s, %p)\n\0".as_ptr() as *const c_char, pUnk,
+           debugstr_guid(riid as *const c_void), ppv);
+
+    let _ = iface;
 
     *ppv = core::ptr::null_mut();
 
@@ -1823,17 +1888,16 @@ pub unsafe extern "system" fn FileMoniker_CreateInstance(
         return CLASS_E_NOAGGREGATION;
     }
 
-    let newFileMoniker = HeapAlloc(
+    newFileMoniker = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<FileMonikerImpl>(),
+        core::mem::size_of::<FileMonikerImpl>() as SIZE_T,
     ) as *mut FileMonikerImpl;
-
     if newFileMoniker.is_null() {
         return E_OUTOFMEMORY;
     }
 
-    let mut hr = FileMonikerImpl_Construct(newFileMoniker, wszEmpty.as_ptr());
+    hr = FileMonikerImpl_Construct(newFileMoniker, WSZ_EMPTY.as_ptr());
 
     if SUCCEEDED(hr) {
         hr = IMoniker_QueryInterface(
@@ -1842,9 +1906,8 @@ pub unsafe extern "system" fn FileMoniker_CreateInstance(
             ppv,
         );
     }
-
     if FAILED(hr) {
-        HeapFree(GetProcessHeap(), 0, newFileMoniker as *mut core::ffi::c_void);
+        HeapFree(GetProcessHeap(), 0, newFileMoniker as LPVOID);
     }
 
     hr

@@ -1,19 +1,26 @@
 use crate::prelude::*;
-use core::ffi::c_void;
+
+// These two are DEFINED by sibling ring modules. They are ALSO (wrongly) declared as
+// externs in ole32_exports.rs, so the prelude glob makes the bare name ambiguous —
+// name them explicitly so we bind to the Rust definition.
+use crate::ring::antimoniker::CreateAntiMoniker;
+use crate::ring::compositemoniker::{CreateGenericComposite, MonikerCommonPrefixWith};
+
+extern "system" {
+    // compobj.c (Rust, #[no_mangle]) — an ole32 export, so WINAPI/stdcall.
+    // Belongs in crate::ole32_exports; declared here until it is added there.
+    fn CoGetClassObject(
+        rclsid: REFCLSID,
+        dwClsContext: DWORD,
+        pvReserved: LPVOID,
+        riid: REFIID,
+        ppv: *mut LPVOID,
+    ) -> HRESULT;
+}
 
 extern "C" {
-    fn CreateAntiMoniker(ppmk: *mut *mut IMoniker) -> HRESULT;
-    fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
-    fn wcschr(s: LPCWSTR, c: u16) -> LPCWSTR;
-    fn memset(s: *mut core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void;
-}
-extern "C" {
-    fn CreateGenericComposite(pmkFirst: *mut IMoniker, pmkRest: *mut IMoniker, ppmkComposite: *mut *mut IMoniker) -> HRESULT;
-    fn CoTaskMemFree(pv: *mut core::ffi::c_void);
-    fn CreateBindCtx(reserved: DWORD, ppbc: *mut *mut IBindCtx) -> HRESULT;
-    fn wcscmp(string1: *const WCHAR, string2: *const WCHAR) -> c_int;
-    fn CoTaskMemAlloc(cb: usize) -> *mut core::ffi::c_void;
-    fn StringFromGUID2(rguid: *const CLSID, lpsz: LPWSTR, cchMax: i32) -> i32;
+    // uuid.lib data symbol. Belongs in crate::iids; declared here until added there.
+    static IID_IClassActivator: GUID;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -23,76 +30,82 @@ pub const CHARS_IN_GUID: i32 = 39;
 pub struct ClassMoniker {
     pub IMoniker_iface: IMoniker,
     pub IROTData_iface: IROTData,
-    pub ref_: i32,
+    pub ref_: LONG,
     pub clsid: CLSID,
     pub pMarshal: *mut IUnknown,
 }
 
 pub type PClassMoniker = *mut ClassMoniker;
 
-pub static ClassMonikerVtbl: IMonikerVtbl = IMonikerVtbl {
-    QueryInterface: ClassMoniker_QueryInterface,
-    AddRef: ClassMoniker_AddRef,
-    Release: ClassMoniker_Release,
-    GetClassID: ClassMoniker_GetClassID,
-    IsDirty: ClassMoniker_IsDirty,
-    Load: ClassMoniker_Load,
-    Save: ClassMoniker_Save,
-    GetSizeMax: ClassMoniker_GetSizeMax,
-    BindToObject: ClassMoniker_BindToObject,
-    BindToStorage: ClassMoniker_BindToStorage,
-    Reduce: ClassMoniker_Reduce,
-    ComposeWith: ClassMoniker_ComposeWith,
-    Enum: ClassMoniker_Enum,
-    IsEqual: ClassMoniker_IsEqual,
-    Hash: ClassMoniker_Hash,
-    IsRunning: ClassMoniker_IsRunning,
-    GetTimeOfLastChange: ClassMoniker_GetTimeOfLastChange,
-    Inverse: ClassMoniker_Inverse,
-    CommonPrefixWith: ClassMoniker_CommonPrefixWith,
-    RelativePathTo: ClassMoniker_RelativePathTo,
-    GetDisplayName: ClassMoniker_GetDisplayName,
-    ParseDisplayName: ClassMoniker_ParseDisplayName,
-    IsSystemMoniker: ClassMoniker_IsSystemMoniker,
+static ClassMonikerVtbl: IMonikerVtbl = IMonikerVtbl {
+    QueryInterface: Some(ClassMoniker_QueryInterface),
+    AddRef: Some(ClassMoniker_AddRef),
+    Release: Some(ClassMoniker_Release),
+    GetClassID: Some(ClassMoniker_GetClassID),
+    IsDirty: Some(ClassMoniker_IsDirty),
+    Load: Some(ClassMoniker_Load),
+    Save: Some(ClassMoniker_Save),
+    GetSizeMax: Some(ClassMoniker_GetSizeMax),
+    BindToObject: Some(ClassMoniker_BindToObject),
+    BindToStorage: Some(ClassMoniker_BindToStorage),
+    Reduce: Some(ClassMoniker_Reduce),
+    ComposeWith: Some(ClassMoniker_ComposeWith),
+    Enum: Some(ClassMoniker_Enum),
+    IsEqual: Some(ClassMoniker_IsEqual),
+    Hash: Some(ClassMoniker_Hash),
+    IsRunning: Some(ClassMoniker_IsRunning),
+    GetTimeOfLastChange: Some(ClassMoniker_GetTimeOfLastChange),
+    Inverse: Some(ClassMoniker_Inverse),
+    CommonPrefixWith: Some(ClassMoniker_CommonPrefixWith),
+    RelativePathTo: Some(ClassMoniker_RelativePathTo),
+    GetDisplayName: Some(ClassMoniker_GetDisplayName),
+    ParseDisplayName: Some(ClassMoniker_ParseDisplayName),
+    IsSystemMoniker: Some(ClassMoniker_IsSystemMoniker),
 };
 
-pub static ROTDataVtbl: IROTDataVtbl = IROTDataVtbl {
-    QueryInterface: ClassMonikerROTData_QueryInterface,
-    AddRef: ClassMonikerROTData_AddRef,
-    Release: ClassMonikerROTData_Release,
-    GetComparisonData: ClassMonikerROTData_GetComparisonData,
+static ROTDataVtbl: IROTDataVtbl = IROTDataVtbl {
+    QueryInterface: Some(ClassMonikerROTData_QueryInterface),
+    AddRef: Some(ClassMonikerROTData_AddRef),
+    Release: Some(ClassMonikerROTData_Release),
+    GetComparisonData: Some(ClassMonikerROTData_GetComparisonData),
 };
 
 unsafe fn impl_from_IMoniker(iface: *mut IMoniker) -> *mut ClassMoniker {
-    (iface as *mut u8).offset(-core::mem::offset_of!(ClassMoniker, IMoniker_iface) as isize) as *mut ClassMoniker
+    CONTAINING_RECORD!(iface, ClassMoniker, IMoniker_iface)
 }
 
 unsafe fn impl_from_IROTData(iface: *mut IROTData) -> *mut ClassMoniker {
-    (iface as *mut u8).offset(-((core::mem::offset_of!(ClassMoniker, IROTData_iface)) as isize)) as *mut ClassMoniker
+    CONTAINING_RECORD!(iface, ClassMoniker, IROTData_iface)
 }
 
-unsafe fn ClassMoniker_QueryInterface(iface: *mut IMoniker, riid: *const CLSID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT {
+stdmethod! {
+fn ClassMoniker_QueryInterface(
+    iface: *mut IMoniker,
+    riid: *const IID,
+    ppvObject: *mut LPVOID,
+) -> HRESULT {
     let This = impl_from_IMoniker(iface);
 
-    TRACE!(b"(%p,%s,%p)\n\0".as_ptr() as *const i8, This, debugstr_guid(riid), ppvObject);
+    TRACE!(b"(%p,%s,%p)\n\0".as_ptr(), This, debugstr_guid(riid), ppvObject);
 
+    /* Perform a sanity check on the parameters. */
     if ppvObject.is_null() {
         return E_POINTER;
     }
 
+    /* Initialize the return parameter */
     *ppvObject = core::ptr::null_mut();
 
-    if IsEqualIID(&IID_IUnknown, riid) != 0 ||
-       IsEqualIID(&IID_IPersist, riid) != 0 ||
-       IsEqualIID(&IID_IPersistStream, riid) != 0 ||
-       IsEqualIID(&IID_IMoniker, riid) != 0
+    /* Compare the riid with the interface IDs implemented by this object. */
+    if IsEqualIID(core::ptr::addr_of!(IID_IUnknown), riid)
+        || IsEqualIID(core::ptr::addr_of!(IID_IPersist), riid)
+        || IsEqualIID(core::ptr::addr_of!(IID_IPersistStream), riid)
+        || IsEqualIID(core::ptr::addr_of!(IID_IMoniker), riid)
     {
-        *ppvObject = iface as *mut core::ffi::c_void;
-    }
-    else if IsEqualIID(&IID_IROTData, riid) != 0 {
-        *ppvObject = core::ptr::addr_of_mut!((*This).IROTData_iface) as *mut core::ffi::c_void;
-    }
-    else if IsEqualIID(&IID_IMarshal, riid) != 0 {
+        *ppvObject = iface as LPVOID;
+    } else if IsEqualIID(core::ptr::addr_of!(IID_IROTData), riid) {
+        *ppvObject = core::ptr::addr_of_mut!((*This).IROTData_iface) as LPVOID;
+    } else if IsEqualIID(core::ptr::addr_of!(IID_IMarshal), riid) {
         let mut hr = S_OK;
         if (*This).pMarshal.is_null() {
             hr = MonikerMarshal_Create(iface, core::ptr::addr_of_mut!((*This).pMarshal));
@@ -103,41 +116,51 @@ unsafe fn ClassMoniker_QueryInterface(iface: *mut IMoniker, riid: *const CLSID, 
         return IUnknown_QueryInterface((*This).pMarshal, riid, ppvObject);
     }
 
+    /* Check that we obtained an interface. */
     if (*ppvObject).is_null() {
         return E_NOINTERFACE;
     }
 
+    /* QueryInterface always increases the reference count by one when successful */
     IMoniker_AddRef(iface);
 
-    return S_OK;
+    S_OK
+}
 }
 
-unsafe fn ClassMoniker_AddRef(iface: *mut IMoniker) -> ULONG {
+stdmethod! {
+fn ClassMoniker_AddRef(iface: *mut IMoniker) -> ULONG {
     let This = impl_from_IMoniker(iface);
 
-    InterlockedIncrement(&mut (*This).ref_) as ULONG
+    TRACE!(b"(%p)\n\0".as_ptr(), This);
+
+    InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG
+}
 }
 
-unsafe fn ClassMoniker_Release(iface: *mut IMoniker) -> ULONG {
+stdmethod! {
+fn ClassMoniker_Release(iface: *mut IMoniker) -> ULONG {
     let This = impl_from_IMoniker(iface);
-    let ref_: ULONG;
 
-    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, This);
+    TRACE!(b"(%p)\n\0".as_ptr(), This);
 
-    ref_ = InterlockedDecrement(&mut (*This).ref_) as ULONG;
+    let ref_ = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG;
 
+    /* destroy the object if there are no more references to it */
     if ref_ == 0 {
         if !(*This).pMarshal.is_null() {
             IUnknown_Release((*This).pMarshal);
         }
-        HeapFree(GetProcessHeap(), 0, This as *mut _);
+        HeapFree(GetProcessHeap(), 0, This as LPVOID);
     }
 
     ref_
 }
+}
 
-unsafe fn ClassMoniker_GetClassID(iface: *mut IMoniker, pClassID: *mut CLSID) -> HRESULT {
-    TRACE!(b"(%p,%p),stub!\n\0".as_ptr() as *const i8, iface, pClassID);
+stdmethod! {
+fn ClassMoniker_GetClassID(iface: *mut IMoniker, pClassID: *mut CLSID) -> HRESULT {
+    TRACE!(b"(%p,%p),stub!\n\0".as_ptr(), iface, pClassID);
 
     if pClassID.is_null() {
         return E_POINTER;
@@ -147,24 +170,31 @@ unsafe fn ClassMoniker_GetClassID(iface: *mut IMoniker, pClassID: *mut CLSID) ->
 
     S_OK
 }
+}
 
-unsafe fn ClassMoniker_IsDirty(iface: *mut IMoniker) -> HRESULT {
-    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, iface);
+stdmethod! {
+fn ClassMoniker_IsDirty(iface: *mut IMoniker) -> HRESULT {
+    /* Note that the OLE-provided implementations of the IPersistStream::IsDirty
+       method in the OLE-provided moniker interfaces always return S_FALSE because
+       their internal state never changes. */
+
+    TRACE!(b"(%p)\n\0".as_ptr(), iface);
 
     S_FALSE
 }
+}
 
-unsafe fn ClassMoniker_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT {
+stdmethod! {
+fn ClassMoniker_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT {
     let This = impl_from_IMoniker(iface);
-    let mut hr: HRESULT;
     let mut zero: DWORD = 0;
 
-    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, pStm);
+    TRACE!(b"(%p)\n\0".as_ptr(), pStm);
 
-    hr = IStream_Read(
+    let mut hr = IStream_Read(
         pStm,
-        core::ptr::addr_of_mut!((*This).clsid) as *mut core::ffi::c_void,
-        core::mem::size_of_val(&(*This).clsid) as u32,
+        core::ptr::addr_of_mut!((*This).clsid) as LPVOID,
+        core::mem::size_of::<CLSID>() as ULONG,
         core::ptr::null_mut(),
     );
     if hr != S_OK {
@@ -173,8 +203,8 @@ unsafe fn ClassMoniker_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT
 
     hr = IStream_Read(
         pStm,
-        core::ptr::addr_of_mut!(zero) as *mut core::ffi::c_void,
-        core::mem::size_of::<DWORD>() as u32,
+        core::ptr::addr_of_mut!(zero) as LPVOID,
+        core::mem::size_of::<DWORD>() as ULONG,
         core::ptr::null_mut(),
     );
     if hr != S_OK || zero != 0 {
@@ -183,68 +213,83 @@ unsafe fn ClassMoniker_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT
 
     S_OK
 }
-
-unsafe fn ClassMoniker_Save(iface: *mut IMoniker, pStm: *mut IStream, fClearDirty: i32) -> HRESULT {
-    let This = impl_from_IMoniker(iface);
-    let mut hr: HRESULT;
-    let zero: DWORD = 0;
-
-    TRACE!(b"(%p, %s)\n\0".as_ptr() as *const i8, pStm, if fClearDirty != 0 { b"TRUE\0".as_ptr() } else { b"FALSE\0".as_ptr() });
-
-    hr = IStream_Write(pStm, core::ptr::addr_of!((*This).clsid) as *const core::ffi::c_void, core::mem::size_of_val(&(*This).clsid) as ULONG, core::ptr::null_mut());
-    if FAILED(hr) != 0 { return hr; }
-
-    return IStream_Write(pStm, core::ptr::addr_of!(zero) as *const core::ffi::c_void, core::mem::size_of_val(&zero) as ULONG, core::ptr::null_mut());
 }
 
-unsafe fn ClassMoniker_GetSizeMax(
-    iface: *mut IMoniker,
-    pcbSize: *mut ULARGE_INTEGER,
-) -> HRESULT {
-    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, pcbSize);
+stdmethod! {
+fn ClassMoniker_Save(iface: *mut IMoniker, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT {
+    let This = impl_from_IMoniker(iface);
+    let zero: DWORD = 0;
 
-    (*pcbSize).QuadPart = (core::mem::size_of::<CLSID>() + core::mem::size_of::<DWORD>()) as u64;
+    TRACE!(b"(%p, %d)\n\0".as_ptr(), pStm, fClearDirty);
+
+    let hr = IStream_Write(
+        pStm,
+        core::ptr::addr_of!((*This).clsid) as *const core::ffi::c_void,
+        core::mem::size_of::<CLSID>() as ULONG,
+        core::ptr::null_mut(),
+    );
+    if FAILED(hr) {
+        return hr;
+    }
+
+    IStream_Write(
+        pStm,
+        core::ptr::addr_of!(zero) as *const core::ffi::c_void,
+        core::mem::size_of::<DWORD>() as ULONG,
+        core::ptr::null_mut(),
+    )
+}
+}
+
+stdmethod! {
+fn ClassMoniker_GetSizeMax(iface: *mut IMoniker, pcbSize: *mut ULARGE_INTEGER) -> HRESULT {
+    TRACE!(b"(%p)\n\0".as_ptr(), pcbSize);
+
+    (*pcbSize).QuadPart =
+        (core::mem::size_of::<CLSID>() + core::mem::size_of::<DWORD>()) as ULONGLONG;
 
     S_OK
 }
-unsafe fn ClassMoniker_BindToObject(
+}
+
+stdmethod! {
+fn ClassMoniker_BindToObject(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
-    riid: REFIID,
-    ppvResult: *mut *mut core::ffi::c_void,
+    riid: *const IID,
+    ppvResult: *mut LPVOID,
 ) -> HRESULT {
     let This = impl_from_IMoniker(iface);
     let mut bindopts: BIND_OPTS2 = core::mem::zeroed();
     let mut pActivator: *mut IClassActivator = core::ptr::null_mut();
-    let hr: HRESULT;
 
     TRACE!(
-        b"(%p, %p, %s, %p)\n\0".as_ptr() as *const i8,
+        b"(%p, %p, %s, %p)\n\0".as_ptr(),
         pbc,
         pmkToLeft,
         debugstr_guid(riid),
         ppvResult,
     );
 
-    bindopts.cbStruct = core::mem::size_of::<BIND_OPTS2>() as u32;
-    IBindCtx_GetBindOptions(pbc, &mut bindopts as *mut BIND_OPTS2 as *mut BIND_OPTS);
+    bindopts.cbStruct = core::mem::size_of::<BIND_OPTS2>() as DWORD;
+    IBindCtx_GetBindOptions(pbc, core::ptr::addr_of_mut!(bindopts) as *mut BIND_OPTS);
 
     if pmkToLeft.is_null() {
-        return CoGetClassObject(
-            &(*This).clsid,
+        CoGetClassObject(
+            core::ptr::addr_of!((*This).clsid),
             bindopts.dwClassContext,
             core::ptr::null_mut(),
             riid,
             ppvResult,
-        );
+        )
     } else {
-        hr = IMoniker_BindToObject(
+        let mut hr = IMoniker_BindToObject(
             pmkToLeft,
             pbc,
             core::ptr::null_mut(),
-            &IID_IClassActivator,
-            &mut pActivator as *mut *mut IClassActivator as *mut *mut core::ffi::c_void,
+            core::ptr::addr_of!(IID_IClassActivator),
+            core::ptr::addr_of_mut!(pActivator) as *mut LPVOID,
         );
         if FAILED(hr) {
             return hr;
@@ -252,7 +297,7 @@ unsafe fn ClassMoniker_BindToObject(
 
         hr = IClassActivator_GetClassObject(
             pActivator,
-            &(*This).clsid,
+            core::ptr::addr_of!((*This).clsid),
             bindopts.dwClassContext,
             bindopts.locale,
             riid,
@@ -261,28 +306,33 @@ unsafe fn ClassMoniker_BindToObject(
 
         IClassActivator_Release(pActivator);
 
-        return hr;
+        hr
     }
 }
-unsafe fn ClassMoniker_BindToStorage(
+}
+
+stdmethod! {
+fn ClassMoniker_BindToStorage(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
     riid: *const IID,
-    ppvResult: *mut *mut core::ffi::c_void,
+    ppvResult: *mut LPVOID,
 ) -> HRESULT {
-
     TRACE!(
-        b"(%p, %p, %s, %p)\n\0".as_ptr() as *const i8,
+        b"(%p, %p, %s, %p)\n\0".as_ptr(),
         pbc,
         pmkToLeft,
         debugstr_guid(riid),
         ppvResult,
     );
+
     IMoniker_BindToObject(iface, pbc, pmkToLeft, riid, ppvResult)
 }
+}
 
-unsafe fn ClassMoniker_Reduce(
+stdmethod! {
+fn ClassMoniker_Reduce(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     dwReduceHowFar: DWORD,
@@ -290,7 +340,7 @@ unsafe fn ClassMoniker_Reduce(
     ppmkReduced: *mut *mut IMoniker,
 ) -> HRESULT {
     TRACE!(
-        b"(%p,%p,%d,%p,%p)\n\0".as_ptr() as *const i8,
+        b"(%p,%p,%d,%p,%p)\n\0".as_ptr(),
         iface,
         pbc,
         dwReduceHowFar,
@@ -308,8 +358,10 @@ unsafe fn ClassMoniker_Reduce(
 
     MK_S_REDUCED_TO_SELF
 }
+}
 
-unsafe fn ClassMoniker_ComposeWith(
+stdmethod! {
+fn ClassMoniker_ComposeWith(
     iface: *mut IMoniker,
     pmkRight: *mut IMoniker,
     fOnlyIfNotGeneric: BOOL,
@@ -320,7 +372,7 @@ unsafe fn ClassMoniker_ComposeWith(
     let mut mkSys2: DWORD = 0;
     let mut penumMk: *mut IEnumMoniker = core::ptr::null_mut();
     let mut pmostLeftMk: *mut IMoniker = core::ptr::null_mut();
-    let mut tempMkComposite: *mut IMoniker = core::ptr::null_mut();
+    let mut tempMkComposite: *mut IMoniker;
 
     TRACE!(b"(%p,%d,%p)\n\0".as_ptr(), pmkRight, fOnlyIfNotGeneric, ppmkComposite);
 
@@ -332,12 +384,16 @@ unsafe fn ClassMoniker_ComposeWith(
 
     IMoniker_IsSystemMoniker(pmkRight, &mut mkSys);
 
+    /* If pmkRight is an anti-moniker, the returned moniker is NULL */
     if mkSys == MKSYS_ANTIMONIKER {
-        return res;
-    } else if mkSys == MKSYS_GENERICCOMPOSITE {
-        res = IMoniker_Enum(pmkRight, 1, &mut penumMk);
+        res
+    }
+    /* if pmkRight is a composite whose leftmost component is an anti-moniker,           */
+    /* the returned moniker is the composite after the leftmost anti-moniker is removed. */
+    else if mkSys == MKSYS_GENERICCOMPOSITE {
+        res = IMoniker_Enum(pmkRight, TRUE as BOOL, &mut penumMk);
 
-        if FAILED(res) != 0 {
+        if FAILED(res) {
             return res;
         }
 
@@ -360,28 +416,29 @@ unsafe fn ClassMoniker_ComposeWith(
                 tempMkComposite = *ppmkComposite;
                 IMoniker_AddRef(tempMkComposite);
             }
-            return res;
+            res
         } else {
-            return CreateGenericComposite(iface, pmkRight, ppmkComposite);
+            CreateGenericComposite(iface, pmkRight, ppmkComposite)
         }
-    } else if fOnlyIfNotGeneric == 0 {
-        return CreateGenericComposite(iface, pmkRight, ppmkComposite);
+    }
+    /* If pmkRight is not an anti-moniker, the method combines the two monikers into a generic
+       composite if fOnlyIfNotGeneric is FALSE; if fOnlyIfNotGeneric is TRUE, the method returns
+       a NULL moniker and a return value of MK_E_NEEDGENERIC */
+    else if fOnlyIfNotGeneric == 0 {
+        CreateGenericComposite(iface, pmkRight, ppmkComposite)
     } else {
-        return MK_E_NEEDGENERIC;
+        MK_E_NEEDGENERIC
     }
 }
+}
 
-unsafe fn ClassMoniker_Enum(
+stdmethod! {
+fn ClassMoniker_Enum(
     iface: *mut IMoniker,
     fForward: BOOL,
     ppenumMoniker: *mut *mut IEnumMoniker,
 ) -> HRESULT {
-    TRACE!(
-        b"(%p,%d,%p)\n\0".as_ptr() as *const i8,
-        iface,
-        fForward,
-        ppenumMoniker,
-    );
+    TRACE!(b"(%p,%d,%p)\n\0".as_ptr(), iface, fForward, ppenumMoniker);
 
     if ppenumMoniker.is_null() {
         return E_POINTER;
@@ -389,115 +446,147 @@ unsafe fn ClassMoniker_Enum(
 
     *ppenumMoniker = core::ptr::null_mut();
 
-    return S_OK;
+    S_OK
+}
 }
 
-unsafe fn ClassMoniker_IsEqual(iface: *mut IMoniker, pmkOtherMoniker: *mut IMoniker) -> HRESULT {
+stdmethod! {
+fn ClassMoniker_IsEqual(iface: *mut IMoniker, pmkOtherMoniker: *mut IMoniker) -> HRESULT {
     let mut clsid: CLSID = core::mem::zeroed();
     let mut dispName1: LPOLESTR = core::ptr::null_mut();
     let mut dispName2: LPOLESTR = core::ptr::null_mut();
     let mut bind: *mut IBindCtx = core::ptr::null_mut();
     let mut res: HRESULT = S_FALSE;
 
+    TRACE!(b"(%p,%p)\n\0".as_ptr(), iface, pmkOtherMoniker);
+
     if pmkOtherMoniker.is_null() {
         return S_FALSE;
     }
 
+    /* check if both are ClassMoniker */
     if FAILED(IMoniker_GetClassID(pmkOtherMoniker, &mut clsid)) {
         return S_FALSE;
     }
-    if IsEqualCLSID(&clsid, &CLSID_ClassMoniker) == 0 {
+    if !IsEqualCLSID(&clsid, core::ptr::addr_of!(CLSID_ClassMoniker)) {
         return S_FALSE;
     }
 
+    /* check if both displaynames are the same */
     res = CreateBindCtx(0, &mut bind);
     if SUCCEEDED(res) {
         if SUCCEEDED(IMoniker_GetDisplayName(iface, bind, core::ptr::null_mut(), &mut dispName1)) {
-            if SUCCEEDED(IMoniker_GetDisplayName(pmkOtherMoniker, bind, core::ptr::null_mut(), &mut dispName2)) {
+            if SUCCEEDED(IMoniker_GetDisplayName(
+                pmkOtherMoniker,
+                bind,
+                core::ptr::null_mut(),
+                &mut dispName2,
+            )) {
                 if wcscmp(dispName1, dispName2) == 0 {
                     res = S_OK;
                 }
-                CoTaskMemFree(dispName2 as *mut core::ffi::c_void);
+                CoTaskMemFree(dispName2 as LPVOID);
             }
-            CoTaskMemFree(dispName1 as *mut core::ffi::c_void);
+            CoTaskMemFree(dispName1 as LPVOID);
         }
     }
+
     res
 }
+}
 
-unsafe fn ClassMoniker_Hash(iface: *mut IMoniker, pdwHash: LPDWORD) -> HRESULT {
+stdmethod! {
+fn ClassMoniker_Hash(iface: *mut IMoniker, pdwHash: *mut DWORD) -> HRESULT {
     let This = impl_from_IMoniker(iface);
+
+    TRACE!(b"(%p)\n\0".as_ptr(), pdwHash);
 
     *pdwHash = (*This).clsid.Data1;
 
     S_OK
 }
+}
 
-unsafe fn ClassMoniker_IsRunning(
+stdmethod! {
+fn ClassMoniker_IsRunning(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
     pmkNewlyRunning: *mut IMoniker,
 ) -> HRESULT {
+    TRACE!(b"(%p, %p, %p)\n\0".as_ptr(), pbc, pmkToLeft, pmkNewlyRunning);
+
+    /* as in native */
     E_NOTIMPL
 }
+}
 
-unsafe fn ClassMoniker_GetTimeOfLastChange(
+stdmethod! {
+fn ClassMoniker_GetTimeOfLastChange(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
     pItemTime: *mut FILETIME,
 ) -> HRESULT {
-    TRACE!(b"(%p, %p, %p)\n\0".as_ptr() as *const i8, pbc, pmkToLeft, pItemTime);
+    TRACE!(b"(%p, %p, %p)\n\0".as_ptr(), pbc, pmkToLeft, pItemTime);
 
     MK_E_UNAVAILABLE
 }
+}
 
-unsafe fn ClassMoniker_Inverse(iface: *mut IMoniker, ppmk: *mut *mut IMoniker) -> HRESULT {
-
+stdmethod! {
+fn ClassMoniker_Inverse(iface: *mut IMoniker, ppmk: *mut *mut IMoniker) -> HRESULT {
     TRACE!(b"(%p)\n\0".as_ptr(), ppmk);
 
     if ppmk.is_null() {
-        return 0x80004003u32 as HRESULT;
+        return E_POINTER;
     }
 
     CreateAntiMoniker(ppmk)
 }
+}
 
-unsafe fn ClassMoniker_CommonPrefixWith(
+stdmethod! {
+fn ClassMoniker_CommonPrefixWith(
     iface: *mut IMoniker,
     pmkOther: *mut IMoniker,
     ppmkPrefix: *mut *mut IMoniker,
 ) -> HRESULT {
     let mut mkSys: DWORD = 0;
 
-    TRACE!(b"(%p, %p)\n\0".as_ptr() as *const i8, pmkOther, ppmkPrefix);
+    TRACE!(b"(%p, %p)\n\0".as_ptr(), pmkOther, ppmkPrefix);
 
     *ppmkPrefix = core::ptr::null_mut();
 
     IMoniker_IsSystemMoniker(pmkOther, &mut mkSys);
 
+    /* If the other moniker is a class moniker that is equal to this moniker, this method sets
+       *ppmkPrefix to this moniker and returns MK_S_US */
     if mkSys == MKSYS_CLASSMONIKER {
         if IMoniker_IsEqual(iface, pmkOther) == S_OK {
             *ppmkPrefix = iface;
 
             IMoniker_AddRef(iface);
 
-            return MK_S_US;
+            MK_S_US
         } else {
-            return MK_E_NOPREFIX;
+            MK_E_NOPREFIX
         }
     } else {
-        return MonikerCommonPrefixWith(iface, pmkOther, ppmkPrefix);
+        /* otherwise, the method calls the MonikerCommonPrefixWith function. This function
+           correctly handles the case where the other moniker is a generic composite. */
+        MonikerCommonPrefixWith(iface, pmkOther, ppmkPrefix)
     }
 }
+}
 
-unsafe fn ClassMoniker_RelativePathTo(
+stdmethod! {
+fn ClassMoniker_RelativePathTo(
     iface: *mut IMoniker,
     pmOther: *mut IMoniker,
     ppmkRelPath: *mut *mut IMoniker,
 ) -> HRESULT {
-    TRACE!(b"(%p, %p)\n\0".as_ptr() as *const i8, pmOther, ppmkRelPath);
+    TRACE!(b"(%p, %p)\n\0".as_ptr(), pmOther, ppmkRelPath);
 
     if ppmkRelPath.is_null() {
         return E_POINTER;
@@ -505,18 +594,29 @@ unsafe fn ClassMoniker_RelativePathTo(
 
     *ppmkRelPath = core::ptr::null_mut();
 
-    return MK_E_NOTBINDABLE;
+    MK_E_NOTBINDABLE
+}
 }
 
-unsafe fn ClassMoniker_GetDisplayName(
+stdmethod! {
+fn ClassMoniker_GetDisplayName(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
-    ppszDisplayName: *mut LPWSTR,
+    ppszDisplayName: *mut LPOLESTR,
 ) -> HRESULT {
-
     let This = impl_from_IMoniker(iface);
-    static wszClsidPrefix: [u16; 7] = [b'c' as u16, b'l' as u16, b's' as u16, b'i' as u16, b'd' as u16, b':' as u16, 0];
+    static wszClsidPrefix: [WCHAR; 7] = [
+        b'c' as WCHAR,
+        b'l' as WCHAR,
+        b's' as WCHAR,
+        b'i' as WCHAR,
+        b'd' as WCHAR,
+        b':' as WCHAR,
+        0,
+    ];
+
+    TRACE!(b"(%p, %p, %p)\n\0".as_ptr(), pbc, pmkToLeft, ppszDisplayName);
 
     if ppszDisplayName.is_null() {
         return E_POINTER;
@@ -526,28 +626,39 @@ unsafe fn ClassMoniker_GetDisplayName(
         return E_INVALIDARG;
     }
 
-    let array_size_prefix = wszClsidPrefix.len();
-    let total_size = core::mem::size_of_val(&wszClsidPrefix) + (CHARS_IN_GUID - 2) * core::mem::size_of::<u16>();
-    *ppszDisplayName = CoTaskMemAlloc(total_size) as LPWSTR;
+    /* ARRAY_SIZE(wszClsidPrefix) — element count, NUL included */
+    let array_size_prefix: usize = wszClsidPrefix.len();
+    let chars_in_guid: usize = CHARS_IN_GUID as usize;
+
+    let total_size = core::mem::size_of_val(&wszClsidPrefix)
+        + (chars_in_guid - 2) * core::mem::size_of::<WCHAR>();
+    *ppszDisplayName = CoTaskMemAlloc(total_size as SIZE_T) as LPOLESTR;
 
     StringFromGUID2(
         core::ptr::addr_of!((*This).clsid),
-        (*ppszDisplayName).offset((array_size_prefix - 2) as isize),
-        CHARS_IN_GUID,
+        (*ppszDisplayName).add(array_size_prefix - 2),
+        CHARS_IN_GUID as c_int,
     );
 
+    /* note: this overwrites the opening curly bracket of the CLSID string generated above */
     memcpy(
         *ppszDisplayName as *mut core::ffi::c_void,
         wszClsidPrefix.as_ptr() as *const core::ffi::c_void,
-        core::mem::size_of_val(&wszClsidPrefix) - core::mem::size_of::<u16>(),
+        core::mem::size_of_val(&wszClsidPrefix) - core::mem::size_of::<WCHAR>(),
     );
 
-    *(*ppszDisplayName).offset((array_size_prefix - 2 + CHARS_IN_GUID - 2) as isize) = b':' as u16;
-    *(*ppszDisplayName).offset((array_size_prefix - 2 + CHARS_IN_GUID - 1) as isize) = 0;
+    /* note: this overwrites the closing curly bracket of the CLSID string generated above */
+    *(*ppszDisplayName).add(array_size_prefix - 2 + chars_in_guid - 2) = b':' as WCHAR;
+    *(*ppszDisplayName).add(array_size_prefix - 2 + chars_in_guid - 1) = 0;
+
+    TRACE!(b"string is %s\n\0".as_ptr(), debugstr_w(*ppszDisplayName));
 
     S_OK
 }
-unsafe fn ClassMoniker_ParseDisplayName(
+}
+
+stdmethod! {
+fn ClassMoniker_ParseDisplayName(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
@@ -559,15 +670,18 @@ unsafe fn ClassMoniker_ParseDisplayName(
         b"(%p, %p, %s, %p, %p)\n\0".as_ptr(),
         pbc,
         pmkToLeft,
-        debugstr_w(pszDisplayName as LPCWSTR),
+        debugstr_w(pszDisplayName),
         pchEaten,
         ppmkOut,
     );
+
     E_NOTIMPL
 }
+}
 
-unsafe fn ClassMoniker_IsSystemMoniker(iface: *mut IMoniker, pwdMksys: LPDWORD) -> HRESULT {
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const i8, iface, pwdMksys);
+stdmethod! {
+fn ClassMoniker_IsSystemMoniker(iface: *mut IMoniker, pwdMksys: *mut DWORD) -> HRESULT {
+    TRACE!(b"(%p,%p)\n\0".as_ptr(), iface, pwdMksys);
 
     if pwdMksys.is_null() {
         return E_POINTER;
@@ -577,13 +691,17 @@ unsafe fn ClassMoniker_IsSystemMoniker(iface: *mut IMoniker, pwdMksys: LPDWORD) 
 
     S_OK
 }
+}
 
-unsafe fn ClassMonikerROTData_QueryInterface(
+stdmethod! {
+fn ClassMonikerROTData_QueryInterface(
     iface: *mut IROTData,
-    riid: *const CLSID,
-    ppvObject: *mut *mut core::ffi::c_void,
+    riid: *const IID,
+    ppvObject: *mut LPVOID,
 ) -> HRESULT {
     let This = impl_from_IROTData(iface);
+
+    TRACE!(b"(%p, %s, %p)\n\0".as_ptr(), iface, debugstr_guid(riid), ppvObject);
 
     IMoniker_QueryInterface(
         core::ptr::addr_of_mut!((*This).IMoniker_iface),
@@ -591,56 +709,69 @@ unsafe fn ClassMonikerROTData_QueryInterface(
         ppvObject,
     )
 }
-
-unsafe fn ClassMonikerROTData_AddRef(iface: *mut IROTData) -> ULONG {
-    let this = impl_from_IROTData(iface);
-
-    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, iface);
-
-    IMoniker_AddRef(&mut (*this).IMoniker_iface)
 }
 
-unsafe fn ClassMonikerROTData_Release(iface: *mut IROTData) -> ULONG {
+stdmethod! {
+fn ClassMonikerROTData_AddRef(iface: *mut IROTData) -> ULONG {
     let This = impl_from_IROTData(iface);
 
-    TRACE!(b"(%p)\n\0".as_ptr() as PCHAR, iface);
+    TRACE!(b"(%p)\n\0".as_ptr(), iface);
+
+    IMoniker_AddRef(core::ptr::addr_of_mut!((*This).IMoniker_iface))
+}
+}
+
+stdmethod! {
+fn ClassMonikerROTData_Release(iface: *mut IROTData) -> ULONG {
+    let This = impl_from_IROTData(iface);
+
+    TRACE!(b"(%p)\n\0".as_ptr(), iface);
 
     IMoniker_Release(core::ptr::addr_of_mut!((*This).IMoniker_iface))
 }
+}
 
-unsafe fn ClassMonikerROTData_GetComparisonData(
+stdmethod! {
+fn ClassMonikerROTData_GetComparisonData(
     iface: *mut IROTData,
-    pbData: *mut u8,
-    cbMax: u32,
-    pcbData: *mut u32,
+    pbData: *mut byte,
+    cbMax: ULONG,
+    pcbData: *mut ULONG,
 ) -> HRESULT {
     let This = impl_from_IROTData(iface);
 
-    *pcbData = (2 * core::mem::size_of::<CLSID>()) as u32;
+    TRACE!(b"(%p, %u, %p)\n\0".as_ptr(), pbData, cbMax, pcbData);
+
+    *pcbData = (2 * core::mem::size_of::<CLSID>()) as ULONG;
     if cbMax < *pcbData {
-        return 0x8007000E; // E_OUTOFMEMORY
+        return E_OUTOFMEMORY;
     }
 
-    core::ptr::copy_nonoverlapping(
-        &CLSID_ClassMoniker as *const CLSID as *const u8,
-        pbData,
+    /* write CLSID of the moniker */
+    memcpy(
+        pbData as *mut core::ffi::c_void,
+        core::ptr::addr_of!(CLSID_ClassMoniker) as *const core::ffi::c_void,
         core::mem::size_of::<CLSID>(),
     );
-    core::ptr::copy_nonoverlapping(
-        &(*This).clsid as *const CLSID as *const u8,
-        pbData.add(core::mem::size_of::<CLSID>()),
+    /* write CLSID the moniker represents */
+    memcpy(
+        pbData.add(core::mem::size_of::<CLSID>()) as *mut core::ffi::c_void,
+        core::ptr::addr_of!((*This).clsid) as *const core::ffi::c_void,
         core::mem::size_of::<CLSID>(),
     );
 
-    0 // S_OK
+    S_OK
+}
 }
 
-unsafe fn ClassMoniker_Construct(This: *mut ClassMoniker, rclsid: *const CLSID) -> HRESULT {
-
+unsafe fn ClassMoniker_Construct(This: *mut ClassMoniker, rclsid: REFCLSID) -> HRESULT {
     TRACE!(b"(%p,%s)\n\0".as_ptr(), This, debugstr_guid(rclsid));
 
-    (*This).IMoniker_iface.lpVtbl = &ClassMonikerVtbl;
-    (*This).IROTData_iface.lpVtbl = &ROTDataVtbl;
+    /* Initialize the virtual function table. */
+    (*This).IMoniker_iface.lpVtbl =
+        core::ptr::addr_of!(ClassMonikerVtbl) as *mut IMonikerVtbl;
+    (*This).IROTData_iface.lpVtbl =
+        core::ptr::addr_of!(ROTDataVtbl) as *mut IROTDataVtbl;
     (*This).ref_ = 0;
     (*This).clsid = *rclsid;
     (*This).pMarshal = core::ptr::null_mut();
@@ -648,133 +779,142 @@ unsafe fn ClassMoniker_Construct(This: *mut ClassMoniker, rclsid: *const CLSID) 
     S_OK
 }
 
+/******************************************************************************
+ *        CreateClassMoniker	[OLE32.@]
+ ******************************************************************************/
 #[no_mangle]
 pub unsafe extern "system" fn CreateClassMoniker(
-    rclsid: *const CLSID,
+    rclsid: REFCLSID,
     ppmk: *mut *mut IMoniker,
 ) -> HRESULT {
-
     TRACE!(b"(%s,%p)\n\0".as_ptr(), debugstr_guid(rclsid), ppmk);
 
-    let newClassMoniker = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<ClassMoniker>()) as *mut ClassMoniker;
+    let newClassMoniker = HeapAlloc(
+        GetProcessHeap(),
+        0,
+        core::mem::size_of::<ClassMoniker>() as SIZE_T,
+    ) as *mut ClassMoniker;
 
     if newClassMoniker.is_null() {
-        return 0x80030008u32 as HRESULT;
+        return STG_E_INSUFFICIENTMEMORY;
     }
 
     let hr = ClassMoniker_Construct(newClassMoniker, rclsid);
 
-    if FAILED(hr) != 0 {
-        HeapFree(GetProcessHeap(), 0, newClassMoniker as *mut core::ffi::c_void);
+    if FAILED(hr) {
+        HeapFree(GetProcessHeap(), 0, newClassMoniker as LPVOID);
         return hr;
     }
 
-    return ClassMoniker_QueryInterface(
+    ClassMoniker_QueryInterface(
         core::ptr::addr_of_mut!((*newClassMoniker).IMoniker_iface),
-        &IID_IMoniker,
-        ppmk as *mut *mut core::ffi::c_void,
-    );
+        core::ptr::addr_of!(IID_IMoniker),
+        ppmk as *mut LPVOID,
+    )
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn ClassMoniker_CreateFromDisplayName(
-    pbc: *mut core::ffi::c_void,
-    szDisplayName: LPCWSTR,
+    pbc: *mut IBindCtx,
+    szDisplayName: LPCOLESTR,
     pchEaten: LPDWORD,
     ppmk: *mut *mut IMoniker,
 ) -> HRESULT {
-
-    let mut s: LPCWSTR = wcschr(szDisplayName, ':' as u16);
+    let mut s: LPCWSTR = wcschr(szDisplayName, b':' as WCHAR);
     let mut end: LPCWSTR;
     let mut clsid: CLSID = core::mem::zeroed();
     let mut table: [u8; 256] = [0; 256];
-    let mut i: i32;
+    let mut i: isize;
 
     if s.is_null() {
-        return 0x800401E4u32 as HRESULT; // MK_E_SYNTAX
+        return MK_E_SYNTAX;
     }
 
-    s = s.offset(1);
+    s = s.add(1);
 
     end = s;
-    while *end != 0 && *end != ':' as u16 {
-        end = end.offset(1);
+    while *end != 0 && *end != b':' as WCHAR {
+        end = end.add(1);
     }
 
-    TRACE!(b"parsing %s\n\0".as_ptr() as *const i8, debugstr_wn(s, (end as isize - s as isize) / 2));
+    /* NOTE: C pointer arithmetic on WCHAR* — the difference is in CHARACTERS, not bytes. */
+    let span: isize = end.offset_from(s);
 
-    if *s == '{' as u16 {
-        if (end as isize - s as isize) / 2 != 38 || *s.offset(37) != '}' as u16 {
-            return 0x800401E4u32 as HRESULT; // MK_E_SYNTAX
+    TRACE!(b"parsing %s\n\0".as_ptr(), debugstr_wn(s, span));
+
+    /* validate the CLSID string */
+    if *s == b'{' as WCHAR {
+        if span != 38 || *s.add(37) != b'}' as WCHAR {
+            return MK_E_SYNTAX;
         }
-        s = s.offset(1);
-    } else {
-        if (end as isize - s as isize) / 2 != 36 {
-            return 0x800401E4u32 as HRESULT; // MK_E_SYNTAX
-        }
+        s = s.add(1);
+    } else if span != 36 {
+        return MK_E_SYNTAX;
     }
 
     i = 0;
     while i < 36 {
         if i == 8 || i == 13 || i == 18 || i == 23 {
-            if *s.offset(i as isize) != '-' as u16 {
-                return 0x800401E4u32 as HRESULT; // MK_E_SYNTAX
+            if *s.offset(i) != b'-' as WCHAR {
+                return MK_E_SYNTAX;
             }
             i += 1;
             continue;
         }
-        if !(((*s.offset(i as isize) >= '0' as u16) && (*s.offset(i as isize) <= '9' as u16))
-            || ((*s.offset(i as isize) >= 'a' as u16) && (*s.offset(i as isize) <= 'f' as u16))
-            || ((*s.offset(i as isize) >= 'A' as u16) && (*s.offset(i as isize) <= 'F' as u16)))
+        let c = *s.offset(i);
+        if !((c >= b'0' as WCHAR && c <= b'9' as WCHAR)
+            || (c >= b'a' as WCHAR && c <= b'f' as WCHAR)
+            || (c >= b'A' as WCHAR && c <= b'F' as WCHAR))
         {
-            return 0x800401E4u32 as HRESULT; // MK_E_SYNTAX
+            return MK_E_SYNTAX;
         }
         i += 1;
     }
 
+    /* quick lookup table */
     memset(table.as_mut_ptr() as *mut core::ffi::c_void, 0, 256);
 
     i = 0;
     while i < 10 {
-        table[('0' as u8 + i as u8) as usize] = i as u8;
+        table[(b'0' as isize + i) as usize] = i as u8;
         i += 1;
     }
     i = 0;
     while i < 6 {
-        table[('A' as u8 + i as u8) as usize] = (i + 10) as u8;
-        table[('a' as u8 + i as u8) as usize] = (i + 10) as u8;
+        table[(b'A' as isize + i) as usize] = (i + 10) as u8;
+        table[(b'a' as isize + i) as usize] = (i + 10) as u8;
         i += 1;
     }
 
-    clsid.Data1 = (table[*s.offset(0) as usize] as u32) << 28
-        | (table[*s.offset(1) as usize] as u32) << 24
-        | (table[*s.offset(2) as usize] as u32) << 20
-        | (table[*s.offset(3) as usize] as u32) << 16
-        | (table[*s.offset(4) as usize] as u32) << 12
-        | (table[*s.offset(5) as usize] as u32) << 8
-        | (table[*s.offset(6) as usize] as u32) << 4
-        | (table[*s.offset(7) as usize] as u32);
-    clsid.Data2 = ((table[*s.offset(9) as usize] as u16) << 12
-        | (table[*s.offset(10) as usize] as u16) << 8
-        | (table[*s.offset(11) as usize] as u16) << 4
-        | (table[*s.offset(12) as usize] as u16)) as u16;
-    clsid.Data3 = ((table[*s.offset(14) as usize] as u16) << 12
-        | (table[*s.offset(15) as usize] as u16) << 8
-        | (table[*s.offset(16) as usize] as u16) << 4
-        | (table[*s.offset(17) as usize] as u16)) as u16;
+    /* in form XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX */
+    let nib = |n: isize| -> u32 { table[*s.offset(n) as usize] as u32 };
 
-    clsid.Data4[0] = (table[*s.offset(19) as usize] << 4 | table[*s.offset(20) as usize]) as u8;
-    clsid.Data4[1] = (table[*s.offset(21) as usize] << 4 | table[*s.offset(22) as usize]) as u8;
-    clsid.Data4[2] = (table[*s.offset(24) as usize] << 4 | table[*s.offset(25) as usize]) as u8;
-    clsid.Data4[3] = (table[*s.offset(26) as usize] << 4 | table[*s.offset(27) as usize]) as u8;
-    clsid.Data4[4] = (table[*s.offset(28) as usize] << 4 | table[*s.offset(29) as usize]) as u8;
-    clsid.Data4[5] = (table[*s.offset(30) as usize] << 4 | table[*s.offset(31) as usize]) as u8;
-    clsid.Data4[6] = (table[*s.offset(32) as usize] << 4 | table[*s.offset(33) as usize]) as u8;
-    clsid.Data4[7] = (table[*s.offset(34) as usize] << 4 | table[*s.offset(35) as usize]) as u8;
+    clsid.Data1 = (nib(0) << 28)
+        | (nib(1) << 24)
+        | (nib(2) << 20)
+        | (nib(3) << 16)
+        | (nib(4) << 12)
+        | (nib(5) << 8)
+        | (nib(6) << 4)
+        | nib(7);
+    clsid.Data2 = ((nib(9) << 12) | (nib(10) << 8) | (nib(11) << 4) | nib(12)) as u16;
+    clsid.Data3 = ((nib(14) << 12) | (nib(15) << 8) | (nib(16) << 4) | nib(17)) as u16;
+
+    /* these are just sequential bytes */
+    clsid.Data4[0] = ((nib(19) << 4) | nib(20)) as u8;
+    clsid.Data4[1] = ((nib(21) << 4) | nib(22)) as u8;
+    clsid.Data4[2] = ((nib(24) << 4) | nib(25)) as u8;
+    clsid.Data4[3] = ((nib(26) << 4) | nib(27)) as u8;
+    clsid.Data4[4] = ((nib(28) << 4) | nib(29)) as u8;
+    clsid.Data4[5] = ((nib(30) << 4) | nib(31)) as u8;
+    clsid.Data4[6] = ((nib(32) << 4) | nib(33)) as u8;
+    clsid.Data4[7] = ((nib(34) << 4) | nib(35)) as u8;
 
     let hr = CreateClassMoniker(&clsid, ppmk);
-    if SUCCEEDED(hr) != 0 {
-        *pchEaten = ((if *end == ':' as u16 { end.offset(1) } else { end }) as usize
-            - szDisplayName as usize) as u32;
+    if SUCCEEDED(hr) {
+        /* character count, NOT byte count — C did WCHAR* - WCHAR* */
+        let stop: LPCWSTR = if *end == b':' as WCHAR { end.add(1) } else { end };
+        *pchEaten = stop.offset_from(szDisplayName) as DWORD;
     }
     hr
 }
@@ -783,11 +923,9 @@ pub unsafe extern "C" fn ClassMoniker_CreateFromDisplayName(
 pub unsafe extern "system" fn ClassMoniker_CreateInstance(
     iface: *mut IClassFactory,
     pUnk: *mut IUnknown,
-    riid: *const IID,
-    ppv: *mut *mut core::ffi::c_void,
+    riid: REFIID,
+    ppv: *mut LPVOID,
 ) -> HRESULT {
-
-    let mut hr: HRESULT;
     let mut pmk: *mut IMoniker = core::ptr::null_mut();
 
     TRACE!(b"(%p, %s, %p)\n\0".as_ptr(), pUnk, debugstr_guid(riid), ppv);
@@ -798,13 +936,13 @@ pub unsafe extern "system" fn ClassMoniker_CreateInstance(
         return CLASS_E_NOAGGREGATION;
     }
 
-    hr = CreateClassMoniker(&CLSID_NULL, &mut pmk);
-    if FAILED(hr) != 0 {
+    let hr = CreateClassMoniker(core::ptr::addr_of!(CLSID_NULL), &mut pmk);
+    if FAILED(hr) {
         return hr;
     }
 
-    hr = IMoniker_QueryInterface(pmk, riid, ppv);
+    let hr = IMoniker_QueryInterface(pmk, riid, ppv);
     IMoniker_Release(pmk);
 
-    return hr;
+    hr
 }

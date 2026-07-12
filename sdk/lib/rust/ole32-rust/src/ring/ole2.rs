@@ -1,77 +1,293 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
-extern "C" {
+// ---------------------------------------------------------------------------
+// Local import surface.
+//
+// Everything the shared prelude already carries (win32/user32/gdi32/crt/
+// ole32_exports/commacros/iids/win_consts) is used from there. What remains
+// below is the tail the shared surface does not (yet) provide. It is all
+// PRIVATE (no `pub`) so it does not leak back out through the prelude's
+// `pub use crate::ring::ole2::*` glob and collide with a future hoist.
+//
+// ABI rule (win32.rs): every WINAPI import is `extern "system"` — an
+// `extern "C"` decl links on amd64/arm64 and silently breaks i386 (stdcall
+// decoration `_Foo@N`). The only `extern "C"` blocks here are (a) data
+// statics (IIDs — no calling convention) and (b) ole32's own `#[no_mangle]
+// extern "C"` internals in compobj (COM_OpenKeyForCLSID & friends).
+// ---------------------------------------------------------------------------
 
-    fn fixme_ole(format: *const i8, ...);
-    fn wcstoul( nptr: *const WCHAR, endptr: *mut *mut WCHAR, base: i32, ) -> u32;
+// --- handle/base types the SDK headers define but com-sys does not export ---
+type HCURSOR = *mut c_void; // winuser.h DECLARE_HANDLE(HCURSOR)
+type HBRUSH = *mut c_void; // wingdi.h DECLARE_HANDLE(HBRUSH)
+type ATOM = u16; // minwindef.h
+type WNDPROC = Option<unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT>;
+type TIMERPROC = Option<unsafe extern "system" fn(HWND, UINT, UINT_PTR, DWORD)>;
+
+/// winuser.h:3024 `tagACCEL` — { BYTE fVirt; WORD key; WORD cmd; }. NOT inside the
+/// pshpack2 region (that starts further down the header), so natural alignment:
+/// fVirt@0, key@2, cmd@4, size 6.
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct ACCEL {
+    fVirt: BYTE,
+    key: WORD,
+    cmd: WORD,
 }
+type LPACCEL = *mut ACCEL;
+
+/// winuser.h:3126 `tagCWPSTRUCT`
+#[repr(C)]
+struct CWPSTRUCT {
+    lParam: LPARAM,
+    wParam: WPARAM,
+    message: UINT,
+    hwnd: HWND,
+}
+type LPCWPSTRUCT = *mut CWPSTRUCT;
+
+/// winuser.h:3186 `tagDRAWITEMSTRUCT` (only CtlType is read here)
+#[repr(C)]
+struct DRAWITEMSTRUCT {
+    CtlType: UINT,
+    CtlID: UINT,
+    itemID: UINT,
+    itemAction: UINT,
+    itemState: UINT,
+    hwndItem: HWND,
+    hDC: HDC,
+    rcItem: RECT,
+    itemData: ULONG_PTR,
+}
+type LPDRAWITEMSTRUCT = *mut DRAWITEMSTRUCT;
+
+/// winuser.h:3041 `tagCREATESTRUCTA` (only lpCreateParams is read here)
+#[repr(C)]
+struct CREATESTRUCTA {
+    lpCreateParams: LPVOID,
+    hInstance: HINSTANCE,
+    hMenu: HMENU,
+    hwndParent: HWND,
+    cy: c_int,
+    cx: c_int,
+    y: c_int,
+    x: c_int,
+    style: LONG,
+    lpszName: *const c_char,
+    lpszClass: *const c_char,
+    dwExStyle: DWORD,
+}
+type LPCREATESTRUCTA = *mut CREATESTRUCTA;
+
+/// winuser.h:3277 `_WNDCLASSW`
+#[repr(C)]
+struct WNDCLASSW {
+    style: UINT,
+    lpfnWndProc: WNDPROC,
+    cbClsExtra: c_int,
+    cbWndExtra: c_int,
+    hInstance: HINSTANCE,
+    hIcon: *mut c_void,
+    hCursor: HCURSOR,
+    hbrBackground: HBRUSH,
+    lpszMenuName: LPCWSTR,
+    lpszClassName: LPCWSTR,
+}
+
+/// winnt.h `_MEMORY_BASIC_INFORMATION`
+#[repr(C)]
+struct MEMORY_BASIC_INFORMATION {
+    BaseAddress: PVOID,
+    AllocationBase: PVOID,
+    AllocationProtect: DWORD,
+    RegionSize: SIZE_T,
+    State: DWORD,
+    Protect: DWORD,
+    Type: DWORD,
+}
+
+// --- winuser.h window messages (win_consts.rs carries only a subset; these are
+//     the menu/window ones ole2.c needs). Cited to sdk/include/psdk/winuser.h. ---
+const WM_CREATE: UINT = 0x0001; // winuser.h:1636
+const WM_DESTROY: UINT = 0x0002; // winuser.h:1637
+const WM_DRAWITEM: UINT = 0x002B; // winuser.h:1673 (43)
+const WM_CHAR: UINT = 0x0102; // winuser.h:1745 (258)
+const WM_SYSKEYDOWN: UINT = 0x0104; // winuser.h:1747 (260)
+const WM_SYSCHAR: UINT = 0x0106; // winuser.h:1749 (262)
+const WM_COMMAND: UINT = 0x0111; // winuser.h:1768 (273)
+const WM_INITMENU: UINT = 0x0116; // winuser.h:1773 (278)
+const WM_INITMENUPOPUP: UINT = 0x0117; // winuser.h:1774 (279)
+const WM_MENUSELECT: UINT = 0x011F; // winuser.h:1775 (287)
+
+/// winreg.h:29
+const REG_DWORD: DWORD = 4;
+
+/// ole2ver.h — `#define rmm 23` / `#define rup 824`
+const rmm: DWORD = 23;
+const rup: DWORD = 824;
+
+/// objbase.h — CoInitializeEx apartment model (compobj/com.rs:153)
+const COINIT_APARTMENTTHREADED: DWORD = 0x2;
+
+// --- OLE interface pointer spellings consts.rs does not carry ---
+type LPDROPTARGET = *mut IDropTarget;
+type LPPERSISTSTORAGE = *mut IPersistStorage;
+type LPOLEINPLACEFRAME = *mut IOleInPlaceFrame;
+type LPOLEINPLACEACTIVEOBJECT = *mut IOleInPlaceActiveObject;
+
+// --- IIDs iids.rs does not yet declare. Real link-time data symbols in uuid.lib;
+//     NEVER hand-transcribe a GUID (a wrong byte is a silent QueryInterface miss). ---
 extern "C" {
-    fn COM_OpenKeyForCLSID( clsid: *const CLSID, keyname: LPCWSTR, access: u32, hkey: *mut HKEY, ) -> HRESULT;
-    fn CoTaskMemAlloc(cb: usize) -> LPVOID;
-    fn CoTaskMemFree(pv: LPVOID);
-    fn RegCloseKey(hKey: HKEY) -> i32;
-    fn RegQueryValueExW( hKey: HKEY, lpValueName: LPCWSTR, lpReserved: *mut DWORD, lpType: *mut DWORD, lpData: *mut u8, lpcbData: *mut DWORD, ) -> i32;
-    fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
-    fn GetCurrentThreadId() -> u32;
-    fn SetWindowsHookExW(idHook: i32, lpfn: Option<unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT>, hmod: HINSTANCE, dwThreadId: u32) -> HHOOK;
-    fn UnhookWindowsHookEx(hhk: HHOOK) -> i32;
-    fn GetMenuItemCount(hMenu: HMENU) -> i32;
-    fn GetSubMenu(hMenu: HMENU, nPos: i32) -> HMENU;
-    fn CopyAcceleratorTableW(hAccelSrc: HACCEL, lpAccelDst: LPACCEL, cAccelEntries: i32) -> i32;
-    fn GetKeyState(nVirtKey: i32) -> i16;
-    fn TRACE_(channel: *const i8, fmt: *const i8, ...);
-    fn WARN_(channel: *const i8, fmt: *const i8, ...);
-    fn DeleteEnhMetaFile(hemf: HENHMETAFILE) -> BOOL;
-    fn DeleteFileW(lpFileName: LPCWSTR) -> BOOL;
-    fn DeleteMetaFile(hmf: HMETAFILE) -> BOOL;
-    fn DeleteObject(ho: HGDIOBJ) -> BOOL;
-    fn GetKeyboardState(lpKeyState: *mut BYTE) -> BOOL;
-    fn CLSIDFromString(lpsz: *const u16, pclsid: *mut CLSID) -> HRESULT;
-    fn RegQueryValueW(hKey: HKEY, lpSubKey: *mut u16, lpData: *mut u16, lpcbData: *mut i32) -> i32;
-    fn RegSetValueW(hKey: HKEY, lpSubKey: *const u16, dwType: u32, lpData: *const u16, cbData: u32) -> i32;
-    fn StringFromGUID2(rguid: *const CLSID, lpsz: *mut u16, cchMax: i32) -> i32;
-    fn CoLockObjectExternal(pUnk: LPUNKNOWN, fLock: BOOL, fLastUnlockReleases: BOOL) -> HRESULT;
-    fn IsWindow(hwnd: HWND) -> i32;
-    fn GetPropW(hwnd: HWND, lpString: LPCWSTR) -> HANDLE;
-    fn RemovePropW(hwnd: HWND, lpString: LPCWSTR) -> HANDLE;
-    fn CoReleaseMarshalData(pStm: *mut IStream) -> HRESULT;
-    fn CloseHandle(hObject: HANDLE) -> i32;
-    fn RegEnumKeyW(hKey: HKEY, dwIndex: DWORD, lpName: LPWSTR, cchName: DWORD) -> LONG;
-    fn wcschr(s: *const u16, c: u16) -> *mut u16;
-    fn wcstol(nptr: *const u16, endptr: *mut *mut u16, base: i32) -> i32;
-    fn COM_CurrentInfo() -> *mut core::ffi::c_void;
-    fn CoUninitialize();
-    fn CallNextHookEx(hhk: HHOOK, nCode: c_int, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn SetPropW(hWnd: HWND, lpString: LPCWSTR, hData: HANDLE) -> i32;
-    fn IsWindowUnicode(hwnd: HWND) -> BOOL;
-    fn PostMessageW(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> BOOL;
-    fn PostMessageA(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> BOOL;
-    fn CoInitializeEx(pvReserved: LPVOID, dwCoInit: u32) -> HRESULT;
-    fn actctx_get_miscstatus( clsid: *const CLSID, dwAspect: DWORD, pdwStatus: *mut DWORD, ) -> i32;
-    fn open_classes_key( hkey: HKEY, name: LPCWSTR, access: u32, retkey: *mut HKEY, ) -> LONG;
-    fn ReadFmtUserTypeStg(pstg: LPSTORAGE, pcf: *mut CLIPFORMAT, lplpszUserType: *mut LPOLESTR) -> HRESULT;
-    fn SetConvertStg(pstg: LPSTORAGE, fConvert: BOOL) -> HRESULT;
-    fn WriteFmtUserTypeStg(pstg: LPSTORAGE, cf: CLIPFORMAT, lpszUserType: LPOLESTR) -> HRESULT;
-    fn SafeArrayCopy(psa: *mut SAFEARRAY, ppsaOut: *mut *mut SAFEARRAY) -> HRESULT;
-    fn lstrlenA(lpString: LPCSTR) -> i32;
-    fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
-    fn strlen(s: *const i8) -> usize;
-    fn COM_CurrentApt() -> *mut core::ffi::c_void;
-    fn CreateStreamOnHGlobal(hGlobal: HGLOBAL, fDeleteOnRelease: BOOL, ppstm: *mut *mut IStream) -> HRESULT;
-    fn CoMarshalInterface(pStm: *mut IStream, riid: *const CLSID, pUnk: *mut IUnknown, dwDestContext: DWORD, pvDestContext: LPVOID, mshlflags: DWORD) -> HRESULT;
-    fn GetWindowThreadProcessId(hWnd: HWND, lpdwProcessId: *mut DWORD) -> DWORD;
-    fn GetCurrentProcessId() -> DWORD;
-    fn SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn ReleaseCapture() -> BOOL;
-    fn CreateWindowW( lpClassName: LPCWSTR, lpWindowName: LPCWSTR, dwStyle: DWORD, x: c_int, y: c_int, nWidth: c_int, nHeight: c_int, hWndParent: HWND, hMenu: HMENU, hInstance: HINSTANCE, lpParam: LPVOID, ) -> HWND;
-    fn DestroyWindow(hWnd: HWND) -> BOOL;
-    fn DispatchMessageW(lpMsg: *const MSG) -> LRESULT;
-    fn GetMessageW(lpMsg: *mut MSG, hWnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT) -> BOOL;
-    fn PostQuitMessage(nExitCode: c_int);
-    fn SetCapture(hWnd: HWND) -> HWND;
-    fn SafeArrayDestroy(psa: *mut SAFEARRAY) -> HRESULT;
-    fn memset(s: *mut core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void;
+    static IID_IRunnableObject: GUID;
+    static IID_IOleLink: GUID;
+    static IID_IViewObject: GUID;
+    static IID_IOleCache: GUID;
+    static IID_IEnumOLEVERB: GUID;
+}
+
+// --- compobj.c internals (they ARE #[no_mangle] extern "C" Rust fns in
+//     crate::compobj::compobj, so an extern "C" decl resolves at link) ---
+extern "C" {
+    fn COM_OpenKeyForCLSID(
+        clsid: REFCLSID,
+        keyname: LPCWSTR,
+        access: REGSAM,
+        subkey: *mut HKEY,
+    ) -> HRESULT;
+    fn open_classes_key(hkey: HKEY, name: LPCWSTR, access: REGSAM, retkey: *mut HKEY) -> LONG;
+    fn actctx_get_miscstatus(clsid: *const CLSID, aspect: DWORD, status: *mut DWORD) -> BOOL;
+}
+
+/// compobj's `COM_CurrentInfo` / `COM_CurrentApt` are plain `pub unsafe fn` Rust
+/// items, NOT `#[no_mangle]` link symbols — the extern decl rustconv emitted would
+/// be undefined at link. Reach them by crate path instead (same bridge errorinfo.rs
+/// uses). This ALSO fixes a live bug: the raw translation invented a local
+/// `struct { ole_inits }` and cast COM_CurrentInfo()'s return to it, which reads
+/// `ole_inits` at offset 0 — but in the real `oletls` that slot is `apt`.
+#[inline]
+unsafe fn COM_CurrentInfo() -> *mut crate::compobj::types::oletls {
+    crate::compobj::compobj::COM_CurrentInfo()
+}
+#[inline]
+unsafe fn COM_CurrentApt() -> *mut crate::compobj::types::apartment {
+    crate::compobj::compobj::COM_CurrentApt()
+}
+
+// --- kernel32 / user32 / advapi32 the shared surface does not carry yet ---
+extern "system" {
+    // kernel32
+    fn GetCurrentProcess() -> HANDLE;
+    fn OpenProcess(dwDesiredAccess: DWORD, bInheritHandle: BOOL, dwProcessId: DWORD) -> HANDLE;
+    fn DuplicateHandle(
+        hSourceProcessHandle: HANDLE,
+        hSourceHandle: HANDLE,
+        hTargetProcessHandle: HANDLE,
+        lpTargetHandle: *mut HANDLE,
+        dwDesiredAccess: DWORD,
+        bInheritHandle: BOOL,
+        dwOptions: DWORD,
+    ) -> BOOL;
+    fn CreateFileMappingW(
+        hFile: HANDLE,
+        lpFileMappingAttributes: *mut c_void,
+        flProtect: DWORD,
+        dwMaximumSizeHigh: DWORD,
+        dwMaximumSizeLow: DWORD,
+        lpName: LPCWSTR,
+    ) -> HANDLE;
+    fn MapViewOfFile(
+        hFileMappingObject: HANDLE,
+        dwDesiredAccess: DWORD,
+        dwFileOffsetHigh: DWORD,
+        dwFileOffsetLow: DWORD,
+        dwNumberOfBytesToMap: SIZE_T,
+    ) -> LPVOID;
+    fn UnmapViewOfFile(lpBaseAddress: LPVOID) -> BOOL;
+    fn VirtualQuery(
+        lpAddress: *const c_void,
+        lpBuffer: *mut MEMORY_BASIC_INFORMATION,
+        dwLength: SIZE_T,
+    ) -> SIZE_T;
+
+    // advapi32
+    fn RegQueryInfoKeyW(
+        hKey: HKEY,
+        lpClass: LPWSTR,
+        lpcchClass: *mut DWORD,
+        lpReserved: *mut DWORD,
+        lpcSubKeys: *mut DWORD,
+        lpcbMaxSubKeyLen: *mut DWORD,
+        lpcbMaxClassLen: *mut DWORD,
+        lpcValues: *mut DWORD,
+        lpcbMaxValueNameLen: *mut DWORD,
+        lpcbMaxValueLen: *mut DWORD,
+        lpcbSecurityDescriptor: *mut DWORD,
+        lpftLastWriteTime: *mut FILETIME,
+    ) -> LONG;
+
+    // user32 — windows / timers / cursors
+    fn RegisterClassW(lpWndClass: *const WNDCLASSW) -> ATOM;
+    fn DefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
+    fn GetParent(hWnd: HWND) -> HWND;
+    fn WindowFromPoint(Point: POINT) -> HWND;
+    fn SetTimer(hWnd: HWND, nIDEvent: UINT_PTR, uElapse: UINT, lpTimerFunc: TIMERPROC) -> UINT_PTR;
+    fn KillTimer(hWnd: HWND, uIDEvent: UINT_PTR) -> BOOL;
+    fn LoadCursorW(hInstance: HINSTANCE, lpCursorName: LPCWSTR) -> HCURSOR;
+    fn SetCursor(hCursor: HCURSOR) -> HCURSOR;
+    fn GetWindowLongW(hWnd: HWND, nIndex: c_int) -> LONG;
+
+    // ole32's own still-C exports (defaulthandler.c / storage32.c)
+    fn OleCreateDefaultHandler(
+        clsid: REFCLSID,
+        pUnkOuter: *mut IUnknown,
+        riid: REFIID,
+        lplpObj: *mut LPVOID,
+    ) -> HRESULT;
+    fn WriteClassStg(pStg: *mut IStorage, rclsid: REFCLSID) -> HRESULT;
+}
+
+/// `SetWindowLongPtrW` / `GetWindowLongPtrA` are 64-bit-only exports: on 32-bit
+/// winuser.h `#define`s them onto SetWindowLongW / GetWindowLongA, so asking the
+/// linker for the *Ptr* symbol on i386 fails. Resolve per pointer width.
+#[cfg(target_pointer_width = "64")]
+extern "system" {
+    fn SetWindowLongPtrW(hWnd: HWND, nIndex: c_int, dwNewLong: LONG_PTR) -> LONG_PTR;
+    fn GetWindowLongPtrA(hWnd: HWND, nIndex: c_int) -> LONG_PTR;
+}
+#[cfg(target_pointer_width = "32")]
+extern "system" {
+    fn SetWindowLongW(hWnd: HWND, nIndex: c_int, dwNewLong: LONG) -> LONG;
+    fn GetWindowLongA(hWnd: HWND, nIndex: c_int) -> LONG;
+}
+
+#[inline]
+unsafe fn set_window_longptr_w(hwnd: HWND, index: c_int, value: LONG_PTR) -> LONG_PTR {
+    #[cfg(target_pointer_width = "64")]
+    {
+        SetWindowLongPtrW(hwnd, index, value)
+    }
+    #[cfg(target_pointer_width = "32")]
+    {
+        SetWindowLongW(hwnd, index, value as LONG) as LONG_PTR
+    }
+}
+
+#[inline]
+unsafe fn get_window_longptr_a(hwnd: HWND, index: c_int) -> LONG_PTR {
+    #[cfg(target_pointer_width = "64")]
+    {
+        GetWindowLongPtrA(hwnd, index)
+    }
+    #[cfg(target_pointer_width = "32")]
+    {
+        GetWindowLongA(hwnd, index) as LONG_PTR
+    }
+}
+
+/// winuser.h: `MAKEINTRESOURCEW(i)` — the integer id packed into an LPWSTR.
+#[inline]
+fn MAKEINTRESOURCEW(i: WORD) -> LPCWSTR {
+    i as usize as LPCWSTR
 }
 
 // ---- file-scope preamble (translated) ----
@@ -96,7 +312,7 @@ pub type TrackerWindowInfo = tagTrackerWindowInfo;
 pub struct tagOleMenuDescriptor {
     pub hwndFrame: HWND,
     pub hwndActiveObject: HWND,
-    pub mgw: OLEMENUGROUPWIDTHS,
+    pub mgw: tagOleMenuGroupWidths,
     pub hmenuCombined: HMENU,
     pub bIsServerItem: BOOL,
 }
@@ -128,13 +344,13 @@ pub static prop_olemenuW: [WCHAR; 23] = [
     'r' as u16, 'i' as u16, 'p' as u16, 't' as u16, 'o' as u16, 'r' as u16, 0,
 ];
 
-pub static prop_oledroptarget: [WCHAR; 24] = [
+pub static prop_oledroptarget: [WCHAR; 23] = [
     'O' as u16, 'l' as u16, 'e' as u16, 'D' as u16, 'r' as u16, 'o' as u16, 'p' as u16, 'T' as u16,
     'a' as u16, 'r' as u16, 'g' as u16, 'e' as u16, 't' as u16, 'I' as u16, 'n' as u16, 't' as u16,
     'e' as u16, 'r' as u16, 'f' as u16, 'a' as u16, 'c' as u16, 'e' as u16, 0,
 ];
 
-pub static prop_marshalleddroptarget: [WCHAR; 26] = [
+pub static prop_marshalleddroptarget: [WCHAR; 25] = [
     'W' as u16, 'i' as u16, 'n' as u16, 'e' as u16, 'M' as u16, 'a' as u16, 'r' as u16, 's' as u16,
     'h' as u16, 'a' as u16, 'l' as u16, 'l' as u16, 'e' as u16, 'd' as u16, 'D' as u16, 'r' as u16,
     'o' as u16, 'p' as u16, 'T' as u16, 'a' as u16, 'r' as u16, 'g' as u16, 'e' as u16, 't' as u16,
@@ -151,13 +367,13 @@ pub struct DropTargetWrapper {
 }
 
 pub static DropTargetWrapperVTbl: IDropTargetVtbl = IDropTargetVtbl {
-    QueryInterface: DropTargetWrapper_QueryInterface,
-    AddRef: DropTargetWrapper_AddRef,
-    Release: DropTargetWrapper_Release,
-    DragEnter: DropTargetWrapper_DragEnter,
-    DragOver: DropTargetWrapper_DragOver,
-    DragLeave: DropTargetWrapper_DragLeave,
-    Drop: DropTargetWrapper_Drop,
+    QueryInterface: Some(DropTargetWrapper_QueryInterface),
+    AddRef: Some(DropTargetWrapper_AddRef),
+    Release: Some(DropTargetWrapper_Release),
+    DragEnter: Some(DropTargetWrapper_DragEnter),
+    DragOver: Some(DropTargetWrapper_DragOver),
+    DragLeave: Some(DropTargetWrapper_DragLeave),
+    Drop: Some(DropTargetWrapper_Drop),
 };
 
 #[repr(C)]
@@ -169,54 +385,47 @@ pub struct EnumOLEVERB {
 }
 
 pub static EnumOLEVERB_VTable: IEnumOLEVERBVtbl = IEnumOLEVERBVtbl {
-    QueryInterface: EnumOLEVERB_QueryInterface,
-    AddRef: EnumOLEVERB_AddRef,
-    Release: EnumOLEVERB_Release,
-    Next: EnumOLEVERB_Next,
-    Skip: EnumOLEVERB_Skip,
-    Reset: EnumOLEVERB_Reset,
-    Clone: EnumOLEVERB_Clone,
+    QueryInterface: Some(EnumOLEVERB_QueryInterface),
+    AddRef: Some(EnumOLEVERB_AddRef),
+    Release: Some(EnumOLEVERB_Release),
+    Next: Some(EnumOLEVERB_Next),
+    Skip: Some(EnumOLEVERB_Skip),
+    Reset: Some(EnumOLEVERB_Reset),
+    Clone: Some(EnumOLEVERB_Clone),
 };
 
-pub const DRAG_TIMER_ID: u32 = 1;
+const DRAG_TIMER_ID: UINT_PTR = 1;
 
-#[inline]
-
-#[repr(C)]
-struct COM_CurrentInfoStruct {
-    ole_inits: i32,
-}
-
+/// ole2.c:160 OleBuildVersion [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleBuildVersion() -> DWORD {
-    TRACE!(b"Returning version %d, build %d.\n\0".as_ptr() as PCHAR, rmm, rup);
+    TRACE!(b"Returning version %d, build %d.\n\0".as_ptr(), rmm, rup);
     (rmm << 16) + rup
 }
 
+/// ole2.c:169 OleInitialize [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleInitialize(reserved: LPVOID) -> HRESULT {
-
-    const COINIT_APARTMENTTHREADED: u32 = 2;
-    const S_OK: HRESULT = 0;
-    const S_FALSE: HRESULT = 1;
-
     TRACE!(b"(%p)\n\0".as_ptr(), reserved);
 
-    let hr = CoInitializeEx(core::ptr::null_mut(), COINIT_APARTMENTTHREADED);
+    // The first duty of OleInitialize is to initialize the COM libraries.
+    let hr0 = CoInitializeEx(core::ptr::null_mut(), COINIT_APARTMENTTHREADED);
 
-    if FAILED(hr) != 0 {
-        return hr;
+    // If the CoInitializeEx call failed, the OLE libraries can't be initialized.
+    if FAILED(hr0) {
+        return hr0;
     }
 
-    let com_info = COM_CurrentInfo() as *mut ComCurrentInfo;
-    let hr = if (*com_info).ole_inits == 0 {
-        S_OK
-    } else {
-        S_FALSE
-    };
+    let info = COM_CurrentInfo();
+    let hr: HRESULT = if (*info).ole_inits == 0 { S_OK } else { S_FALSE };
 
-    (*com_info).ole_inits += 1;
-    if (*com_info).ole_inits == 1 && InterlockedIncrement(&mut OLE_moduleLockCount) == 1 {
+    // C: `if (!COM_CurrentInfo()->ole_inits++ && InterlockedIncrement(...) == 1)`
+    // — the post-increment always happens; the interlocked bump only on the first.
+    let was_zero = (*info).ole_inits == 0;
+    (*info).ole_inits += 1;
+    if was_zero
+        && InterlockedIncrement(core::ptr::addr_of_mut!(OLE_moduleLockCount)) == 1
+    {
         TRACE!(b"() - Initializing the OLE libraries\n\0".as_ptr());
 
         OLEClipbrd_Initialize();
@@ -227,53 +436,58 @@ pub unsafe extern "system" fn OleInitialize(reserved: LPVOID) -> HRESULT {
     hr
 }
 
-#[repr(C)]
-struct ComCurrentInfo {
-    ole_inits: u32,
-}
-
+/// ole2.c:230 OleUninitialize [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleUninitialize() {
     TRACE!(b"()\n\0".as_ptr());
 
-    let current_info = COM_CurrentInfo() as *mut COM_CurrentInfoStruct;
+    let info = COM_CurrentInfo();
 
-    if (*current_info).ole_inits == 0 {
+    if (*info).ole_inits == 0 {
         WARN!(b"ole_inits is already 0\n\0".as_ptr());
         return;
     }
 
-    (*current_info).ole_inits -= 1;
-
-    if (*current_info).ole_inits == 0 && InterlockedDecrement(core::ptr::addr_of_mut!(OLE_moduleLockCount)) == 0 {
+    // C: `if (!--COM_CurrentInfo()->ole_inits && !InterlockedDecrement(...))`
+    (*info).ole_inits -= 1;
+    if (*info).ole_inits == 0
+        && InterlockedDecrement(core::ptr::addr_of_mut!(OLE_moduleLockCount)) == 0
+    {
         TRACE!(b"() - Freeing the last reference count\n\0".as_ptr());
 
         OLEClipbrd_UnInitialize();
-
         OLEMenu_UnInitialize();
     }
 
     CoUninitialize();
 }
 
+/// ole2.c:269 OleInitializeWOW [OLE32.@]
 #[no_mangle]
-pub unsafe extern "system" fn OleInitializeWOW(x: u32, y: u32) -> HRESULT {
-    FIXME!(b"(0x%08x, 0x%08x),stub!\n\0".as_ptr() as *const i8, x, y);
-    return 0;
+pub unsafe extern "system" fn OleInitializeWOW(x: DWORD, y: DWORD) -> HRESULT {
+    FIXME!(b"(0x%08x, 0x%08x),stub!\n\0".as_ptr(), x, y);
+    0
 }
 
+/// ole2.c:281 get_droptarget_handle
+#[inline]
 unsafe fn get_droptarget_handle(hwnd: HWND) -> HANDLE {
     GetPropW(hwnd, prop_marshalleddroptarget.as_ptr())
 }
 
+/// ole2.c:291 is_droptarget
+#[inline]
 unsafe fn is_droptarget(hwnd: HWND) -> BOOL {
-    (get_droptarget_handle(hwnd) != 0) as BOOL
+    (!get_droptarget_handle(hwnd).is_null()) as BOOL
 }
 
+/// ole2.c:297 is_acceptfiles (ReactOS)
+#[inline]
 unsafe fn is_acceptfiles(hwnd: HWND) -> BOOL {
-    (if (GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_ACCEPTFILES) != 0 { 1 } else { 0 })
+    ((GetWindowLongW(hwnd, GWL_EXSTYLE) as DWORD & WS_EX_ACCEPTFILES) != 0) as BOOL
 }
 
+/// ole2.c:308 get_droptarget_local_handle
 unsafe fn get_droptarget_local_handle(hwnd: HWND) -> HANDLE {
     let mut local_handle: HANDLE = core::ptr::null_mut();
 
@@ -281,10 +495,9 @@ unsafe fn get_droptarget_local_handle(hwnd: HWND) -> HANDLE {
 
     if !handle.is_null() {
         let mut pid: DWORD = 0;
-        let process: HANDLE;
 
         GetWindowThreadProcessId(hwnd, &mut pid);
-        process = OpenProcess(PROCESS_DUP_HANDLE, 0u8, pid);
+        let process = OpenProcess(PROCESS_DUP_HANDLE, 0, pid);
         if !process.is_null() {
             DuplicateHandle(
                 process,
@@ -292,7 +505,7 @@ unsafe fn get_droptarget_local_handle(hwnd: HWND) -> HANDLE {
                 GetCurrentProcess(),
                 &mut local_handle,
                 0,
-                0u8,
+                0,
                 DUPLICATE_SAME_ACCESS,
             );
             CloseHandle(process);
@@ -301,18 +514,16 @@ unsafe fn get_droptarget_local_handle(hwnd: HWND) -> HANDLE {
     local_handle
 }
 
+/// ole2.c:337 create_map_from_stream
 unsafe fn create_map_from_stream(stream: *mut IStream, map: *mut HANDLE) -> HRESULT {
     let mut hmem: HGLOBAL = core::ptr::null_mut();
-    let size: DWORD;
-    let hr: HRESULT;
-    let data: *mut core::ffi::c_void;
 
-    hr = GetHGlobalFromStream(stream, &mut hmem);
-    if FAILED(hr) != 0 {
+    let hr = GetHGlobalFromStream(stream, &mut hmem);
+    if FAILED(hr) {
         return hr;
     }
 
-    size = GlobalSize(hmem);
+    let size: DWORD = GlobalSize(hmem) as DWORD;
     *map = CreateFileMappingW(
         INVALID_HANDLE_VALUE,
         core::ptr::null_mut(),
@@ -325,34 +536,33 @@ unsafe fn create_map_from_stream(stream: *mut IStream, map: *mut HANDLE) -> HRES
         return E_OUTOFMEMORY;
     }
 
-    data = MapViewOfFile(*map, FILE_MAP_WRITE, 0, 0, size);
+    let data = MapViewOfFile(*map, FILE_MAP_WRITE, 0, 0, size as SIZE_T);
     memcpy(data, GlobalLock(hmem), size as usize);
     GlobalUnlock(hmem);
     UnmapViewOfFile(data);
     S_OK
 }
 
+/// ole2.c:363 create_stream_from_map
 unsafe fn create_stream_from_map(map: HANDLE, stream: *mut *mut IStream) -> HRESULT {
     let mut hr: HRESULT = E_OUTOFMEMORY;
-    let mut hmem: HGLOBAL;
-    let mut data: LPVOID;
     let mut info: MEMORY_BASIC_INFORMATION = core::mem::zeroed();
 
-    data = MapViewOfFile(map, FILE_MAP_READ, 0, 0, 0);
+    let data = MapViewOfFile(map, FILE_MAP_READ, 0, 0, 0);
     if data.is_null() {
         return hr;
     }
 
-    VirtualQuery(data, &mut info, core::mem::size_of::<MEMORY_BASIC_INFORMATION>());
-    TRACE!(b"size %d\n\0".as_ptr() as PCSTR, info.RegionSize as i32);
+    VirtualQuery(
+        data,
+        &mut info,
+        core::mem::size_of::<MEMORY_BASIC_INFORMATION>() as SIZE_T,
+    );
+    TRACE!(b"size %d\n\0".as_ptr(), info.RegionSize as c_int);
 
-    hmem = GlobalAlloc(GMEM_MOVEABLE, info.RegionSize);
+    let hmem: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, info.RegionSize);
     if !hmem.is_null() {
-        core::ptr::copy_nonoverlapping(
-            data as *const u8,
-            GlobalLock(hmem) as *mut u8,
-            info.RegionSize
-        );
+        memcpy(GlobalLock(hmem), data, info.RegionSize as usize);
         GlobalUnlock(hmem);
         hr = CreateStreamOnHGlobal(hmem, 1, stream);
     }
@@ -360,126 +570,158 @@ unsafe fn create_stream_from_map(map: HANDLE, stream: *mut *mut IStream) -> HRES
     hr
 }
 
+/// ole2.c:400 impl_from_IDropTarget
+#[inline]
 unsafe fn impl_from_IDropTarget(iface: *mut IDropTarget) -> *mut DropTargetWrapper {
-    (iface as *mut u8).sub(core::mem::offset_of!(DropTargetWrapper, IDropTarget_iface)) as *mut DropTargetWrapper
+    CONTAINING_RECORD!(iface, DropTargetWrapper, IDropTarget_iface)
 }
-unsafe fn DropTargetWrapper_QueryInterface(
-    iface: *mut IDropTarget,
-    riid: *const IID,
-    ppvObject: *mut *mut core::ffi::c_void,
+
+stdmethod! {
+    /// ole2.c:405
+    fn DropTargetWrapper_QueryInterface(
+        iface: *mut IDropTarget,
+        riid: *const IID,
+        ppvObject: *mut *mut c_void,
+    ) -> HRESULT {
+        let This = impl_from_IDropTarget(iface);
+        if IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IDropTarget) {
+            IDropTarget_AddRef(core::ptr::addr_of_mut!((*This).IDropTarget_iface));
+            *ppvObject = core::ptr::addr_of_mut!((*This).IDropTarget_iface) as *mut c_void;
+            return S_OK;
+        }
+        *ppvObject = core::ptr::null_mut();
+        E_NOINTERFACE
+    }
+}
+
+stdmethod! {
+    /// ole2.c:421
+    fn DropTargetWrapper_AddRef(iface: *mut IDropTarget) -> ULONG {
+        let This = impl_from_IDropTarget(iface);
+        InterlockedIncrement(core::ptr::addr_of_mut!((*This).refs)) as ULONG
+    }
+}
+
+stdmethod! {
+    /// ole2.c:427
+    fn DropTargetWrapper_Release(iface: *mut IDropTarget) -> ULONG {
+        let This = impl_from_IDropTarget(iface);
+        let refs = InterlockedDecrement(core::ptr::addr_of_mut!((*This).refs)) as ULONG;
+        if refs == 0 {
+            HeapFree(GetProcessHeap(), 0, This as LPVOID);
+        }
+        refs
+    }
+}
+
+/// ole2.c:435 get_target_from_wrapper
+#[inline]
+unsafe fn get_target_from_wrapper(
+    wrapper: *mut IDropTarget,
+    target: *mut *mut IDropTarget,
 ) -> HRESULT {
-    let This = impl_from_IDropTarget(iface);
-    if IsEqualIID(riid, &IID_IUnknown) != 0 || IsEqualIID(riid, &IID_IDropTarget) != 0 {
-        IDropTarget_AddRef(core::ptr::addr_of_mut!((*This).IDropTarget_iface));
-        *ppvObject = core::ptr::addr_of_mut!((*This).IDropTarget_iface) as *mut core::ffi::c_void;
-        return S_OK;
-    }
-    *ppvObject = core::ptr::null_mut();
-    E_NOINTERFACE
-}
-
-unsafe fn DropTargetWrapper_AddRef(iface: *mut IDropTarget) -> ULONG {
-    let This = impl_from_IDropTarget(iface);
-    InterlockedIncrement(&mut (*This).refs) as ULONG
-}
-
-unsafe fn DropTargetWrapper_Release(iface: *mut IDropTarget) -> ULONG {
-    let This = impl_from_IDropTarget(iface);
-    let refs = InterlockedDecrement(&mut (*This).refs);
-    if refs == 0 {
-        HeapFree(GetProcessHeap(), 0, This as LPVOID);
-    }
-    refs as ULONG
-}
-
-unsafe fn get_target_from_wrapper(wrapper: *mut IDropTarget, target: *mut *mut IDropTarget) -> HRESULT {
     let This = impl_from_IDropTarget(wrapper);
     *target = GetPropW((*This).hwnd, prop_oledroptarget.as_ptr()) as *mut IDropTarget;
     if (*target).is_null() {
         return DRAGDROP_E_NOTREGISTERED;
     }
     IDropTarget_AddRef(*target);
-    return S_OK;
+    S_OK
 }
 
-unsafe fn DropTargetWrapper_DragEnter(
-    iface: *mut IDropTarget,
-    pDataObj: *mut IDataObject,
-    grfKeyState: DWORD,
-    pt: POINTL,
-    pdwEffect: *mut DWORD,
-) -> HRESULT {
-    let mut target: *mut IDropTarget = core::ptr::null_mut();
-    let r = get_target_from_wrapper(iface, &mut target);
+stdmethod! {
+    /// ole2.c:444
+    fn DropTargetWrapper_DragEnter(
+        iface: *mut IDropTarget,
+        pDataObj: *mut IDataObject,
+        grfKeyState: DWORD,
+        pt: POINTL,
+        pdwEffect: *mut DWORD,
+    ) -> HRESULT {
+        let mut target: *mut IDropTarget = core::ptr::null_mut();
+        let mut r = get_target_from_wrapper(iface, &mut target);
 
-    if SUCCEEDED(r) != 0 {
-        let r2 = IDropTarget_DragEnter(target, pDataObj, grfKeyState, pt, pdwEffect);
-        IDropTarget_Release(target);
-        return r2;
+        if SUCCEEDED(r) {
+            r = IDropTarget_DragEnter(target, pDataObj, grfKeyState, pt, pdwEffect);
+            IDropTarget_Release(target);
+        }
+        r
     }
-    r
 }
-unsafe fn DropTargetWrapper_DragOver(
-    iface: *mut IDropTarget,
-    grfKeyState: DWORD,
-    pt: POINTL,
-    pdwEffect: *mut DWORD,
-) -> HRESULT {
-    let mut target: *mut IDropTarget = core::ptr::null_mut();
-    let r = get_target_from_wrapper(iface, &mut target);
 
-    if SUCCEEDED(r) != 0 {
-        let r = IDropTarget_DragOver(target, grfKeyState, pt, pdwEffect);
-        IDropTarget_Release(target);
-        return r;
+stdmethod! {
+    /// ole2.c:461
+    fn DropTargetWrapper_DragOver(
+        iface: *mut IDropTarget,
+        grfKeyState: DWORD,
+        pt: POINTL,
+        pdwEffect: *mut DWORD,
+    ) -> HRESULT {
+        let mut target: *mut IDropTarget = core::ptr::null_mut();
+        let mut r = get_target_from_wrapper(iface, &mut target);
+
+        if SUCCEEDED(r) {
+            r = IDropTarget_DragOver(target, grfKeyState, pt, pdwEffect);
+            IDropTarget_Release(target);
+        }
+        r
     }
-    r
 }
 
-unsafe fn DropTargetWrapper_DragLeave(iface: *mut IDropTarget) -> HRESULT {
-    let mut target: *mut IDropTarget = core::ptr::null_mut();
-    let r = get_target_from_wrapper(iface, &mut target);
+stdmethod! {
+    /// ole2.c:477
+    fn DropTargetWrapper_DragLeave(iface: *mut IDropTarget) -> HRESULT {
+        let mut target: *mut IDropTarget = core::ptr::null_mut();
+        let mut r = get_target_from_wrapper(iface, &mut target);
 
-    if SUCCEEDED(r) != 0 {
-        let r = IDropTarget_DragLeave(target);
-        IDropTarget_Release(target);
-        return r;
+        if SUCCEEDED(r) {
+            r = IDropTarget_DragLeave(target);
+            IDropTarget_Release(target);
+        }
+        r
     }
-    r
 }
-unsafe fn DropTargetWrapper_Drop(
-    iface: *mut IDropTarget,
-    pDataObj: *mut IDataObject,
-    grfKeyState: DWORD,
-    pt: POINTL,
-    pdwEffect: *mut DWORD,
-) -> HRESULT {
-    let mut target: *mut IDropTarget = core::ptr::null_mut();
-    let mut r = get_target_from_wrapper(iface, &mut target);
 
-    if SUCCEEDED(r) != 0 {
-        r = IDropTarget_Drop(target, pDataObj, grfKeyState, pt, pdwEffect);
-        IDropTarget_Release(target);
+stdmethod! {
+    /// ole2.c:490
+    fn DropTargetWrapper_Drop(
+        iface: *mut IDropTarget,
+        pDataObj: *mut IDataObject,
+        grfKeyState: DWORD,
+        pt: POINTL,
+        pdwEffect: *mut DWORD,
+    ) -> HRESULT {
+        let mut target: *mut IDropTarget = core::ptr::null_mut();
+        let mut r = get_target_from_wrapper(iface, &mut target);
+
+        if SUCCEEDED(r) {
+            r = IDropTarget_Drop(target, pDataObj, grfKeyState, pt, pdwEffect);
+            IDropTarget_Release(target);
+        }
+        r
     }
-    r
 }
 
+/// ole2.c:518 WrapDropTarget
 unsafe fn WrapDropTarget(hwnd: HWND) -> *mut IDropTarget {
-
     let This = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<DropTargetWrapper>(),
+        core::mem::size_of::<DropTargetWrapper>() as SIZE_T,
     ) as *mut DropTargetWrapper;
 
     if !This.is_null() {
-        (*This).IDropTarget_iface.lpVtbl = &DropTargetWrapperVTbl;
+        (*This).IDropTarget_iface.lpVtbl =
+            core::ptr::addr_of!(DropTargetWrapperVTbl) as *mut IDropTargetVtbl;
         (*This).hwnd = hwnd;
         (*This).refs = 1;
     }
+    // As in the C: IDropTarget_iface is at offset 0, so this is NULL when the
+    // allocation failed — which is exactly what RegisterDragDrop tests for.
     core::ptr::addr_of_mut!((*This).IDropTarget_iface)
 }
 
+/// ole2.c:536 get_droptarget_pointer
 unsafe fn get_droptarget_pointer(hwnd: HWND) -> *mut IDropTarget {
     let mut droptarget: *mut IDropTarget = core::ptr::null_mut();
     let mut stream: *mut IStream = core::ptr::null_mut();
@@ -489,42 +731,29 @@ unsafe fn get_droptarget_pointer(hwnd: HWND) -> *mut IDropTarget {
         return core::ptr::null_mut();
     }
 
-    if SUCCEEDED(create_stream_from_map(map, &mut stream)) != 0 {
-        CoUnmarshalInterface(stream, &IID_IDropTarget, &mut droptarget as *mut *mut IDropTarget as *mut LPVOID);
+    if SUCCEEDED(create_stream_from_map(map, &mut stream)) {
+        CoUnmarshalInterface(
+            stream,
+            &IID_IDropTarget,
+            &mut droptarget as *mut *mut IDropTarget as *mut LPVOID,
+        );
         IStream_Release(stream);
     }
     CloseHandle(map);
     droptarget
 }
 
+/// ole2.c:557 RegisterDragDrop [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn RegisterDragDrop(hwnd: HWND, pDropTarget: LPDROPTARGET) -> HRESULT {
-
-    const IID_IDropTarget: CLSID = CLSID {
-        Data1: 0x00000122,
-        Data2: 0x0000,
-        Data3: 0x0000,
-        Data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
-    };
-
-    const MSHCTX_LOCAL: DWORD = 0;
-    const MSHLFLAGS_TABLESTRONG: DWORD = 1;
-    const STREAM_SEEK_SET: DWORD = 0;
-    const E_OUTOFMEMORY: HRESULT = 0x8007000E_u32 as HRESULT;
-    const E_INVALIDARG: HRESULT = 0x80070057_u32 as HRESULT;
-    const DRAGDROP_E_INVALIDHWND: HRESULT = 0x80040010_u32 as HRESULT;
-    const DRAGDROP_E_ALREADYREGISTERED: HRESULT = 0x80040101_u32 as HRESULT;
-
     let mut pid: DWORD = 0;
-    let hr: HRESULT;
     let mut stream: *mut IStream = core::ptr::null_mut();
     let mut map: HANDLE = core::ptr::null_mut();
-    let wrapper: *mut IDropTarget;
 
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const i8, hwnd, pDropTarget);
+    TRACE!(b"(%p,%p)\n\0".as_ptr(), hwnd, pDropTarget);
 
     if COM_CurrentApt().is_null() {
-        ERR!(b"COM not initialized\n\0".as_ptr() as *const i8);
+        ERR!(b"COM not initialized\n\0".as_ptr());
         return E_OUTOFMEMORY;
     }
 
@@ -533,42 +762,52 @@ pub unsafe extern "system" fn RegisterDragDrop(hwnd: HWND, pDropTarget: LPDROPTA
     }
 
     if IsWindow(hwnd) == 0 {
-        ERR!(b"invalid hwnd %p\n\0".as_ptr() as *const i8, hwnd);
+        ERR!(b"invalid hwnd %p\n\0".as_ptr(), hwnd);
         return DRAGDROP_E_INVALIDHWND;
     }
 
+    // block register for other processes windows
     GetWindowThreadProcessId(hwnd, &mut pid);
     if pid != GetCurrentProcessId() {
-        FIXME!(b"register for another process windows is disabled\n\0".as_ptr() as *const i8);
+        FIXME!(b"register for another process windows is disabled\n\0".as_ptr());
         return DRAGDROP_E_INVALIDHWND;
     }
 
+    // check if the window is already registered
     if is_droptarget(hwnd) != 0 {
         return DRAGDROP_E_ALREADYREGISTERED;
     }
 
-    hr = CreateStreamOnHGlobal(core::ptr::null_mut(), 1, &mut stream);
-    if FAILED(hr) != 0 {
+    let mut hr = CreateStreamOnHGlobal(core::ptr::null_mut(), 1, &mut stream);
+    if FAILED(hr) {
         return hr;
     }
 
-    wrapper = WrapDropTarget(hwnd);
+    // IDropTarget::QueryInterface() shouldn't be called, some (broken) apps depend on this.
+    let wrapper = WrapDropTarget(hwnd);
     if wrapper.is_null() {
         IStream_Release(stream);
         return E_OUTOFMEMORY;
     }
-    hr = CoMarshalInterface(stream, &IID_IDropTarget, wrapper as *mut IUnknown, MSHCTX_LOCAL, core::ptr::null_mut(), MSHLFLAGS_TABLESTRONG);
+    hr = CoMarshalInterface(
+        stream,
+        &IID_IDropTarget,
+        wrapper as *mut IUnknown,
+        MSHCTX_LOCAL,
+        core::ptr::null_mut(),
+        MSHLFLAGS_TABLESTRONG,
+    );
     IDropTarget_Release(wrapper);
 
-    if SUCCEEDED(hr) != 0 {
+    if SUCCEEDED(hr) {
         hr = create_map_from_stream(stream, &mut map);
-        if SUCCEEDED(hr) != 0 {
+        if SUCCEEDED(hr) {
             IDropTarget_AddRef(pDropTarget);
             SetPropW(hwnd, prop_oledroptarget.as_ptr(), pDropTarget as HANDLE);
             SetPropW(hwnd, prop_marshalleddroptarget.as_ptr(), map);
         } else {
             let mut zero: LARGE_INTEGER = core::mem::zeroed();
-            (*(&mut zero as *mut LARGE_INTEGER as *mut i64)) = 0;
+            zero.QuadPart = 0;
             IStream_Seek(stream, zero, STREAM_SEEK_SET, core::ptr::null_mut());
             CoReleaseMarshalData(stream);
         }
@@ -578,19 +817,20 @@ pub unsafe extern "system" fn RegisterDragDrop(hwnd: HWND, pDropTarget: LPDROPTA
     hr
 }
 
+/// ole2.c:639 RevokeDragDrop [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn RevokeDragDrop(hwnd: HWND) -> HRESULT {
-
     TRACE!(b"(%p)\n\0".as_ptr(), hwnd);
 
     if IsWindow(hwnd) == 0 {
         ERR!(b"invalid hwnd %p\n\0".as_ptr(), hwnd);
-        return 0x80040010u32 as HRESULT; // DRAGDROP_E_INVALIDHWND
+        return DRAGDROP_E_INVALIDHWND;
     }
 
+    // no registration data
     let map = get_droptarget_handle(hwnd);
     if map.is_null() {
-        return 0x80040011u32 as HRESULT; // DRAGDROP_E_NOTREGISTERED
+        return DRAGDROP_E_NOTREGISTERED;
     }
 
     let drop_target = GetPropW(hwnd, prop_oledroptarget.as_ptr()) as *mut IDropTarget;
@@ -603,7 +843,7 @@ pub unsafe extern "system" fn RevokeDragDrop(hwnd: HWND) -> HRESULT {
 
     let mut stream: *mut IStream = core::ptr::null_mut();
     let hr = create_stream_from_map(map, &mut stream);
-    if SUCCEEDED(hr) != 0 {
+    if SUCCEEDED(hr) {
         CoReleaseMarshalData(stream);
         IStream_Release(stream);
     }
@@ -612,29 +852,26 @@ pub unsafe extern "system" fn RevokeDragDrop(hwnd: HWND) -> HRESULT {
     hr
 }
 
+/// ole2.c:678 OleRegGetUserType [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleRegGetUserType(
-    clsid: *const CLSID,
+    clsid: REFCLSID,
     form: DWORD,
     usertype: *mut LPOLESTR,
 ) -> HRESULT {
-
-    static auxusertypeW: [u16; 15] = [
-        b'A' as u16, b'u' as u16, b'x' as u16, b'U' as u16, b's' as u16, b'e' as u16, b'r' as u16,
-        b'T' as u16, b'y' as u16, b'p' as u16, b'e' as u16, b'\\' as u16, b'%' as u16, b'd' as u16,
-        0,
+    static auxusertypeW: [WCHAR; 15] = [
+        'A' as u16, 'u' as u16, 'x' as u16, 'U' as u16, 's' as u16, 'e' as u16, 'r' as u16,
+        'T' as u16, 'y' as u16, 'p' as u16, 'e' as u16, '\\' as u16, '%' as u16, 'd' as u16, 0,
     ];
 
     let mut valuetype: DWORD = 0;
-    let mut valuelen: DWORD = 0;
-    let mut auxkeynameW: [u16; 16] = [0; 16];
+    let mut valuelen: DWORD;
+    let mut auxkeynameW: [WCHAR; 16] = [0; 16];
     let mut usertypekey: HKEY = core::ptr::null_mut();
-    let mut hres: HRESULT;
-    let ret: i32;
 
     TRACE!(
         b"(%s, %u, %p)\n\0".as_ptr(),
-        debugstr_guid(clsid),
+        debugstr_guid(clsid as *const c_void),
         form,
         usertype,
     );
@@ -645,21 +882,19 @@ pub unsafe extern "system" fn OleRegGetUserType(
 
     *usertype = core::ptr::null_mut();
 
-    hres = COM_OpenKeyForCLSID(clsid, core::ptr::null(), KEY_READ, &mut usertypekey);
-    if FAILED(hres) != 0 {
+    // Return immediately if it's not registered.
+    let hres = COM_OpenKeyForCLSID(clsid, core::ptr::null(), KEY_READ, &mut usertypekey);
+    if FAILED(hres) {
         return hres;
     }
 
     valuelen = 0;
 
+    // Try additional types if requested. If they don't exist fall back to USERCLASSTYPE_FULL.
     if form != USERCLASSTYPE_FULL {
         let mut auxkey: HKEY = core::ptr::null_mut();
 
-        swprintf(
-            auxkeynameW.as_mut_ptr(),
-            auxusertypeW.as_ptr(),
-            form,
-        );
+        wsprintfW(auxkeynameW.as_mut_ptr(), auxusertypeW.as_ptr(), form);
 
         if COM_OpenKeyForCLSID(clsid, auxkeynameW.as_ptr(), KEY_READ, &mut auxkey) == S_OK {
             if RegQueryValueExW(
@@ -694,13 +929,13 @@ pub unsafe extern "system" fn OleRegGetUserType(
         return REGDB_E_READREGDB;
     }
 
-    *usertype = CoTaskMemAlloc(valuelen as usize) as LPOLESTR;
+    *usertype = CoTaskMemAlloc(valuelen as SIZE_T) as LPOLESTR;
     if (*usertype).is_null() {
         RegCloseKey(usertypekey);
         return E_OUTOFMEMORY;
     }
 
-    ret = RegQueryValueExW(
+    let ret = RegQueryValueExW(
         usertypekey,
         emptyW.as_ptr(),
         core::ptr::null_mut(),
@@ -709,7 +944,7 @@ pub unsafe extern "system" fn OleRegGetUserType(
         &mut valuelen,
     );
     RegCloseKey(usertypekey);
-    if ret != ERROR_SUCCESS as i32 {
+    if ret != ERROR_SUCCESS {
         CoTaskMemFree(*usertype as LPVOID);
         *usertype = core::ptr::null_mut();
         return REGDB_E_READREGDB;
@@ -717,21 +952,22 @@ pub unsafe extern "system" fn OleRegGetUserType(
 
     S_OK
 }
+
+/// ole2.c:753 DoDragDrop [OLE32.@]
 #[no_mangle]
-pub unsafe extern "C" fn DoDragDrop(
+pub unsafe extern "system" fn DoDragDrop(
     pDataObject: *mut IDataObject,
     pDropSource: *mut IDropSource,
     dwOKEffect: DWORD,
     pdwEffect: *mut DWORD,
 ) -> HRESULT {
-
-    static trackerW: [u16; 14] = [
+    static trackerW: [WCHAR; 14] = [
         'T' as u16, 'r' as u16, 'a' as u16, 'c' as u16, 'k' as u16, 'e' as u16, 'r' as u16,
         'W' as u16, 'i' as u16, 'n' as u16, 'd' as u16, 'o' as u16, 'w' as u16, 0,
     ];
 
     TRACE!(
-        b"(%p, %p, %08x, %p)\n\0".as_ptr() as LPCSTR,
+        b"(%p, %p, %08x, %p)\n\0".as_ptr(),
         pDataObject,
         pDropSource,
         dwOKEffect,
@@ -742,18 +978,21 @@ pub unsafe extern "C" fn DoDragDrop(
         return E_INVALIDARG;
     }
 
+    // Setup the drag n drop tracking window.
     let mut trackerInfo: TrackerWindowInfo = core::mem::zeroed();
     trackerInfo.dataObject = pDataObject;
     trackerInfo.dropSource = pDropSource;
     trackerInfo.dwOKEffect = dwOKEffect;
     trackerInfo.pdwEffect = pdwEffect;
-    trackerInfo.trackingDone = 0u8;
-    trackerInfo.escPressed = 0u8;
+    trackerInfo.trackingDone = 0;
+    trackerInfo.escPressed = 0;
     trackerInfo.curTargetHWND = core::ptr::null_mut();
     trackerInfo.curDragTarget = core::ptr::null_mut();
     trackerInfo.accepterHWND = core::ptr::null_mut();
 
-    let hwndTrackWindow = CreateWindowW(
+    // CreateWindowW is a winuser.h macro over CreateWindowExW(dwExStyle = 0, ...).
+    let hwndTrackWindow = CreateWindowExW(
+        0,
         OLEDD_DRAGTRACKERCLASS.as_ptr(),
         trackerW.as_ptr(),
         WS_POPUP,
@@ -764,18 +1003,20 @@ pub unsafe extern "C" fn DoDragDrop(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        &mut trackerInfo as *mut _ as LPVOID,
+        &mut trackerInfo as *mut TrackerWindowInfo as LPVOID,
     );
 
     if !hwndTrackWindow.is_null() {
+        // Capture the mouse input
         SetCapture(hwndTrackWindow);
 
         let mut msg: MSG = core::mem::zeroed();
         msg.message = 0;
 
+        // Pump messages. All mouse input should go to the capture window.
         while trackerInfo.trackingDone == 0
             && GetMessageW(
-                &mut msg,
+                &mut msg as *mut MSG as *mut c_void,
                 core::ptr::null_mut(),
                 0,
                 0,
@@ -786,20 +1027,25 @@ pub unsafe extern "C" fn DoDragDrop(
             trackerInfo.dwKeyState = OLEDD_GetButtonState();
 
             if msg.message >= WM_KEYFIRST && msg.message <= WM_KEYLAST {
+                // Keyboard messages: notify the drop source of the state change;
+                // Escape gets a special meaning.
                 if msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE as WPARAM {
-                    trackerInfo.escPressed = 1u8;
+                    trackerInfo.escPressed = 1;
                 }
 
                 OLEDD_TrackStateChange(&mut trackerInfo);
             } else {
-                DispatchMessageW(&msg);
+                // Dispatch the messages only when it's not a keyboard message.
+                DispatchMessageW(&msg as *const MSG as *const c_void);
             }
         }
 
+        // re-post the quit message to outer message loop
         if msg.message == WM_QUIT {
             PostQuitMessage(msg.wParam as c_int);
         }
 
+        // Destroy the temporary window.
         DestroyWindow(hwndTrackWindow);
 
         return trackerInfo.returnValue;
@@ -808,311 +1054,386 @@ pub unsafe extern "C" fn DoDragDrop(
     E_FAIL
 }
 
+/// ole2.c:854 OleQueryLinkFromData [OLE32.@]
 #[no_mangle]
-pub unsafe extern "system" fn OleQueryLinkFromData(
-    pSrcDataObject: *mut IDataObject
-) -> HRESULT {
-    fixme_ole(b"(%p),stub!\n\0".as_ptr() as *const i8, pSrcDataObject);
+pub unsafe extern "system" fn OleQueryLinkFromData(pSrcDataObject: *mut IDataObject) -> HRESULT {
+    FIXME!(b"(%p),stub!\n\0".as_ptr(), pSrcDataObject);
     S_FALSE
 }
 
+/// ole2.c:864 OleRegGetMiscStatus [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleRegGetMiscStatus(
-    clsid: *const CLSID,
+    clsid: REFCLSID,
     dwAspect: DWORD,
     pdwStatus: *mut DWORD,
 ) -> HRESULT {
-
-    static miscstatusW: [u16; 11] = [
-        b'M' as u16, b'i' as u16, b's' as u16, b'c' as u16, b'S' as u16, b't' as u16, b'a' as u16,
-        b't' as u16, b'u' as u16, b's' as u16, 0,
+    static miscstatusW: [WCHAR; 11] = [
+        'M' as u16, 'i' as u16, 's' as u16, 'c' as u16, 'S' as u16, 't' as u16, 'a' as u16,
+        't' as u16, 'u' as u16, 's' as u16, 0,
     ];
-    static dfmtW: [u16; 3] = [b'%' as u16, b'd' as u16, 0];
+    static dfmtW: [WCHAR; 3] = ['%' as u16, 'd' as u16, 0];
 
-    let mut keyName: [u16; 16] = [0; 16];
+    let mut keyName: [WCHAR; 16] = [0; 16];
     let mut miscStatusKey: HKEY = core::ptr::null_mut();
     let mut aspectKey: HKEY = core::ptr::null_mut();
-    let mut result: LONG;
-    let mut hr: HRESULT;
 
     TRACE!(
         b"(%s, %d, %p)\n\0".as_ptr(),
-        debugstr_guid(clsid),
+        debugstr_guid(clsid as *const c_void),
         dwAspect,
         pdwStatus,
     );
 
     if pdwStatus.is_null() {
-        return 0x80070057u32 as i32;
+        return E_INVALIDARG;
     }
 
     *pdwStatus = 0;
 
     if actctx_get_miscstatus(clsid, dwAspect, pdwStatus) != 0 {
-        return 0;
+        return S_OK;
     }
 
-    hr = COM_OpenKeyForCLSID(clsid, miscstatusW.as_ptr(), KEY_READ, &mut miscStatusKey);
-    if FAILED(hr) != 0 {
-        return if hr == 0x80040152u32 as i32 { 0 } else { hr };
+    let hr = COM_OpenKeyForCLSID(clsid, miscstatusW.as_ptr(), KEY_READ, &mut miscStatusKey);
+    if FAILED(hr) {
+        // missing key is not a failure
+        return if hr == REGDB_E_KEYMISSING { S_OK } else { hr };
     }
 
     OLEUTL_ReadRegistryDWORDValue(miscStatusKey, pdwStatus);
 
-    swprintf(keyName.as_mut_ptr(), dfmtW.as_ptr(), dwAspect);
+    // Open the key specific to the requested aspect.
+    wsprintfW(keyName.as_mut_ptr(), dfmtW.as_ptr(), dwAspect);
 
-    result = open_classes_key(miscStatusKey, keyName.as_ptr(), KEY_READ, &mut aspectKey);
-    if result == ERROR_SUCCESS as i32 {
+    let result = open_classes_key(miscStatusKey, keyName.as_ptr(), KEY_READ, &mut aspectKey);
+    if result == ERROR_SUCCESS {
         OLEUTL_ReadRegistryDWORDValue(aspectKey, pdwStatus);
         RegCloseKey(aspectKey);
     }
 
     RegCloseKey(miscStatusKey);
-    0
+    S_OK
 }
 
+/// ole2.c:919 impl_from_IEnumOLEVERB
+#[inline]
 unsafe fn impl_from_IEnumOLEVERB(iface: *mut IEnumOLEVERB) -> *mut EnumOLEVERB {
-    (iface as *mut u8).offset(-(core::mem::offset_of!(EnumOLEVERB, IEnumOLEVERB_iface) as isize)) as *mut EnumOLEVERB
+    CONTAINING_RECORD!(iface, EnumOLEVERB, IEnumOLEVERB_iface)
 }
-unsafe fn EnumOLEVERB_QueryInterface(
-    iface: *mut IEnumOLEVERB,
-    riid: *const GUID,
-    ppv: *mut *mut core::ffi::c_void,
-) -> HRESULT {
 
-    TRACE!(b"(%s, %p)\n\0".as_ptr(), debugstr_guid(riid), ppv);
-    if IsEqualIID(riid, &IID_IUnknown) != 0 ||
-       IsEqualIID(riid, &IID_IEnumOLEVERB) != 0
-    {
-        IEnumOLEVERB_AddRef(iface);
-        *ppv = iface as *mut core::ffi::c_void;
-        return S_OK;
+stdmethod! {
+    /// ole2.c:924
+    fn EnumOLEVERB_QueryInterface(
+        iface: *mut IEnumOLEVERB,
+        riid: *const IID,
+        ppv: *mut *mut c_void,
+    ) -> HRESULT {
+        TRACE!(b"(%s, %p)\n\0".as_ptr(), debugstr_guid(riid as *const c_void), ppv);
+        if IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IEnumOLEVERB) {
+            IEnumOLEVERB_AddRef(iface);
+            *ppv = iface as *mut c_void;
+            return S_OK;
+        }
+        E_NOINTERFACE
     }
-    return E_NOINTERFACE;
 }
 
-unsafe fn EnumOLEVERB_AddRef(iface: *mut IEnumOLEVERB) -> ULONG {
-    let This = impl_from_IEnumOLEVERB(iface);
-    InterlockedIncrement(&mut (*This).ref_) as ULONG
-}
-
-unsafe fn EnumOLEVERB_Release(iface: *mut IEnumOLEVERB) -> ULONG {
-    let This = impl_from_IEnumOLEVERB(iface);
-    let refs = InterlockedDecrement(&mut (*This).ref_);
-    TRACE!(b"()\n\0".as_ptr() as *const i8);
-    if refs == 0 {
-        RegCloseKey((*This).hkeyVerb);
-        HeapFree(GetProcessHeap(), 0, This as *mut _);
+stdmethod! {
+    /// ole2.c:938
+    fn EnumOLEVERB_AddRef(iface: *mut IEnumOLEVERB) -> ULONG {
+        let This = impl_from_IEnumOLEVERB(iface);
+        TRACE!(b"()\n\0".as_ptr());
+        InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG
     }
-    refs as ULONG
 }
 
-unsafe fn EnumOLEVERB_Next(
-    iface: *mut IEnumOLEVERB,
-    celt: ULONG,
-    rgelt: *mut OLEVERB,
-    pceltFetched: *mut ULONG,
-) -> HRESULT {
-
-    let this = impl_from_IEnumOLEVERB(iface);
-    let mut hr: HRESULT = S_OK;
-
-    if !pceltFetched.is_null() {
-        *pceltFetched = 0;
+stdmethod! {
+    /// ole2.c:946
+    fn EnumOLEVERB_Release(iface: *mut IEnumOLEVERB) -> ULONG {
+        let This = impl_from_IEnumOLEVERB(iface);
+        let refs = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG;
+        TRACE!(b"()\n\0".as_ptr());
+        if refs == 0 {
+            RegCloseKey((*This).hkeyVerb);
+            HeapFree(GetProcessHeap(), 0, This as LPVOID);
+        }
+        refs
     }
+}
 
-    let mut celt_remaining = celt;
-    let mut rgelt_ptr = rgelt;
+stdmethod! {
+    /// ole2.c:960
+    fn EnumOLEVERB_Next(
+        iface: *mut IEnumOLEVERB,
+        celt: ULONG,
+        rgelt: LPOLEVERB,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT {
+        let This = impl_from_IEnumOLEVERB(iface);
+        let mut hr: HRESULT = S_OK;
 
-    while celt_remaining > 0 {
-        let mut wszSubKey: [u16; 20] = [0; 20];
-        let mut cbData: LONG = 0;
-
-        let res = RegEnumKeyW(
-            (*this).hkeyVerb,
-            (*this).index,
-            wszSubKey.as_mut_ptr(),
-            20,
-        );
-
-        if res == ERROR_NO_MORE_ITEMS as LONG {
-            hr = S_FALSE;
-            break;
-        } else if res != ERROR_SUCCESS as LONG {
-            hr = REGDB_E_READREGDB;
-            break;
-        }
-
-        let res = RegQueryValueW(
-            (*this).hkeyVerb,
-            wszSubKey.as_ptr(),
-            core::ptr::null_mut(),
-            &mut cbData,
-        );
-        if res != ERROR_SUCCESS as LONG {
-            hr = REGDB_E_READREGDB;
-            break;
-        }
-
-        let pwszOLEVERB = CoTaskMemAlloc(cbData as usize) as LPWSTR;
-        if pwszOLEVERB.is_null() {
-            hr = E_OUTOFMEMORY;
-            break;
-        }
-
-        let res = RegQueryValueW(
-            (*this).hkeyVerb,
-            wszSubKey.as_ptr(),
-            pwszOLEVERB,
-            &mut cbData,
-        );
-        if res != ERROR_SUCCESS as LONG {
-            hr = REGDB_E_READREGDB;
-            CoTaskMemFree(pwszOLEVERB as LPVOID);
-            break;
-        }
-
-        let pwszMenuFlags = wcschr(pwszOLEVERB, ',' as u16);
-        if pwszMenuFlags.is_null() {
-            hr = OLEOBJ_E_INVALIDVERB;
-            CoTaskMemFree(pwszOLEVERB as LPVOID);
-            break;
-        }
-        *pwszMenuFlags = 0;
-        let pwszMenuFlags = pwszMenuFlags.offset(1);
-
-        let pwszAttribs = wcschr(pwszMenuFlags, ',' as u16);
-        if pwszAttribs.is_null() {
-            hr = OLEOBJ_E_INVALIDVERB;
-            CoTaskMemFree(pwszOLEVERB as LPVOID);
-            break;
-        }
-        *pwszAttribs = 0;
-        let pwszAttribs = pwszAttribs.offset(1);
-
-        (*rgelt_ptr).lVerb = wcstol(wszSubKey.as_ptr(), core::ptr::null_mut(), 10);
-        (*rgelt_ptr).lpszVerbName = pwszOLEVERB;
-        (*rgelt_ptr).fuFlags = wcstol(pwszMenuFlags, core::ptr::null_mut(), 10) as u32;
-        (*rgelt_ptr).grfAttribs = wcstol(pwszAttribs, core::ptr::null_mut(), 10) as u32;
+        TRACE!(b"(%d, %p, %p)\n\0".as_ptr(), celt, rgelt, pceltFetched);
 
         if !pceltFetched.is_null() {
-            *pceltFetched += 1;
+            *pceltFetched = 0;
         }
-        (*this).index += 1;
 
-        celt_remaining -= 1;
-        rgelt_ptr = rgelt_ptr.offset(1);
+        let mut celt_remaining = celt;
+        let mut rgelt_ptr = rgelt;
+
+        while celt_remaining != 0 {
+            let mut wszSubKey: [WCHAR; 20] = [0; 20];
+            let mut cbData: LONG = 0;
+
+            let res = RegEnumKeyW(
+                (*This).hkeyVerb,
+                (*This).index,
+                wszSubKey.as_mut_ptr(),
+                wszSubKey.len() as DWORD,
+            );
+            if res == ERROR_NO_MORE_ITEMS as LONG {
+                hr = S_FALSE;
+                break;
+            } else if res != ERROR_SUCCESS {
+                ERR!(b"RegEnumKeyW failed with error %d\n\0".as_ptr(), res);
+                hr = REGDB_E_READREGDB;
+                break;
+            }
+
+            let res = RegQueryValueW(
+                (*This).hkeyVerb,
+                wszSubKey.as_ptr(),
+                core::ptr::null_mut(),
+                &mut cbData,
+            );
+            if res != ERROR_SUCCESS {
+                ERR!(b"RegQueryValueW failed with error %d\n\0".as_ptr(), res);
+                hr = REGDB_E_READREGDB;
+                break;
+            }
+
+            let pwszOLEVERB = CoTaskMemAlloc(cbData as SIZE_T) as LPWSTR;
+            if pwszOLEVERB.is_null() {
+                hr = E_OUTOFMEMORY;
+                break;
+            }
+
+            let res = RegQueryValueW(
+                (*This).hkeyVerb,
+                wszSubKey.as_ptr(),
+                pwszOLEVERB,
+                &mut cbData,
+            );
+            if res != ERROR_SUCCESS {
+                ERR!(b"RegQueryValueW failed with error %d\n\0".as_ptr(), res);
+                hr = REGDB_E_READREGDB;
+                CoTaskMemFree(pwszOLEVERB as LPVOID);
+                break;
+            }
+
+            TRACE!(b"verb string: %s\n\0".as_ptr(), debugstr_w(pwszOLEVERB as *const c_void));
+            let pwszMenuFlags = wcschr(pwszOLEVERB, ',' as u16);
+            if pwszMenuFlags.is_null() {
+                hr = OLEOBJ_E_INVALIDVERB;
+                CoTaskMemFree(pwszOLEVERB as LPVOID);
+                break;
+            }
+            // nul terminate the name string and advance to first character
+            *pwszMenuFlags = 0;
+            let pwszMenuFlags = pwszMenuFlags.add(1);
+
+            let pwszAttribs = wcschr(pwszMenuFlags, ',' as u16);
+            if pwszAttribs.is_null() {
+                hr = OLEOBJ_E_INVALIDVERB;
+                CoTaskMemFree(pwszOLEVERB as LPVOID);
+                break;
+            }
+            // nul terminate the menu string and advance to first character
+            *pwszAttribs = 0;
+            let pwszAttribs = pwszAttribs.add(1);
+
+            // fill out structure for this verb
+            (*rgelt_ptr).lVerb = wcstol(wszSubKey.as_ptr(), core::ptr::null_mut(), 10);
+            (*rgelt_ptr).lpszVerbName = pwszOLEVERB; // user should free
+            (*rgelt_ptr).fuFlags = wcstol(pwszMenuFlags, core::ptr::null_mut(), 10) as DWORD;
+            (*rgelt_ptr).grfAttribs = wcstol(pwszAttribs, core::ptr::null_mut(), 10) as DWORD;
+
+            if !pceltFetched.is_null() {
+                *pceltFetched += 1;
+            }
+            (*This).index += 1;
+
+            celt_remaining -= 1;
+            rgelt_ptr = rgelt_ptr.add(1);
+        }
+
+        hr
     }
-
-    hr
 }
-unsafe fn EnumOLEVERB_Skip(
-    iface: *mut IEnumOLEVERB,
-    celt: ULONG,
-) -> HRESULT {
-    let This = impl_from_IEnumOLEVERB(iface);
 
-    TRACE!(b"(%d)\n\0".as_ptr(), celt);
+stdmethod! {
+    /// ole2.c:1048
+    fn EnumOLEVERB_Skip(iface: *mut IEnumOLEVERB, celt: ULONG) -> HRESULT {
+        let This = impl_from_IEnumOLEVERB(iface);
 
-    (*This).index = (*This).index.wrapping_add(celt);
-    S_OK
-}
-unsafe fn EnumOLEVERB_Reset(
-    iface: *mut IEnumOLEVERB
-) -> HRESULT {
-    let This = impl_from_IEnumOLEVERB(iface);
+        TRACE!(b"(%d)\n\0".as_ptr(), celt);
 
-    TRACE!(b"()\n\0".as_ptr() as LPCSTR);
-
-    (*This).index = 0;
-    S_OK
-}
-unsafe fn EnumOLEVERB_Clone(
-    iface: *mut IEnumOLEVERB,
-    ppenum: *mut *mut IEnumOLEVERB) -> HRESULT {
-    let This = impl_from_IEnumOLEVERB(iface);
-    let mut hkeyVerb: HKEY = core::ptr::null_mut();
-    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, ppenum);
-    if DuplicateHandle(GetCurrentProcess(), (*This).hkeyVerb as HANDLE, GetCurrentProcess(), &mut hkeyVerb as *mut HKEY as *mut HANDLE, 0, 0, DUPLICATE_SAME_ACCESS) == 0
-    {
-        return HRESULT_FROM_WIN32(GetLastError());
+        (*This).index = (*This).index.wrapping_add(celt);
+        S_OK
     }
-    return EnumOLEVERB_Construct(hkeyVerb, (*This).index, ppenum);
 }
 
-unsafe fn EnumOLEVERB_Construct(hkeyVerb: HKEY, index: ULONG, ppenum: *mut *mut IEnumOLEVERB) -> HRESULT {
+stdmethod! {
+    /// ole2.c:1059
+    fn EnumOLEVERB_Reset(iface: *mut IEnumOLEVERB) -> HRESULT {
+        let This = impl_from_IEnumOLEVERB(iface);
 
-    let This = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<EnumOLEVERB>()) as *mut EnumOLEVERB;
+        TRACE!(b"()\n\0".as_ptr());
+
+        (*This).index = 0;
+        S_OK
+    }
+}
+
+stdmethod! {
+    /// ole2.c:1070
+    fn EnumOLEVERB_Clone(
+        iface: *mut IEnumOLEVERB,
+        ppenum: *mut *mut IEnumOLEVERB,
+    ) -> HRESULT {
+        let This = impl_from_IEnumOLEVERB(iface);
+        let mut hkeyVerb: HKEY = core::ptr::null_mut();
+        TRACE!(b"(%p)\n\0".as_ptr(), ppenum);
+        if DuplicateHandle(
+            GetCurrentProcess(),
+            (*This).hkeyVerb as HANDLE,
+            GetCurrentProcess(),
+            &mut hkeyVerb as *mut HKEY as *mut HANDLE,
+            0,
+            0,
+            DUPLICATE_SAME_ACCESS,
+        ) == 0
+        {
+            return HRESULT_FROM_WIN32(GetLastError());
+        }
+        EnumOLEVERB_Construct(hkeyVerb, (*This).index, ppenum)
+    }
+}
+
+/// ole2.c:1093 EnumOLEVERB_Construct
+unsafe fn EnumOLEVERB_Construct(
+    hkeyVerb: HKEY,
+    index: ULONG,
+    ppenum: *mut *mut IEnumOLEVERB,
+) -> HRESULT {
+    let This = HeapAlloc(
+        GetProcessHeap(),
+        0,
+        core::mem::size_of::<EnumOLEVERB>() as SIZE_T,
+    ) as *mut EnumOLEVERB;
     if This.is_null() {
         RegCloseKey(hkeyVerb);
         return E_OUTOFMEMORY;
     }
-    (*This).IEnumOLEVERB_iface.lpVtbl = &EnumOLEVERB_VTable;
+    (*This).IEnumOLEVERB_iface.lpVtbl =
+        core::ptr::addr_of!(EnumOLEVERB_VTable) as *mut IEnumOLEVERBVtbl;
     (*This).ref_ = 1;
     (*This).index = index;
     (*This).hkeyVerb = hkeyVerb;
-    *ppenum = &mut (*This).IEnumOLEVERB_iface;
+    *ppenum = core::ptr::addr_of_mut!((*This).IEnumOLEVERB_iface);
     S_OK
 }
 
+/// ole2.c:1125 OleRegEnumVerbs [OLE32.@]
 #[no_mangle]
-pub unsafe extern "system" fn OleRegEnumVerbs(clsid: *const CLSID, ppenum: *mut *mut IEnumOLEVERB) -> HRESULT {
+pub unsafe extern "system" fn OleRegEnumVerbs(
+    clsid: REFCLSID,
+    ppenum: *mut *mut IEnumOLEVERB,
+) -> HRESULT {
+    static wszVerb: [WCHAR; 5] = ['V' as u16, 'e' as u16, 'r' as u16, 'b' as u16, 0];
 
-    static WSZVERB: [u16; 5] = [b'V' as u16, b'e' as u16, b'r' as u16, b'b' as u16, 0];
-
-    TRACE!(b"(%s, %p)\n\0".as_ptr() as *const i8, debugstr_guid(clsid), ppenum);
+    TRACE!(
+        b"(%s, %p)\n\0".as_ptr(),
+        debugstr_guid(clsid as *const c_void),
+        ppenum
+    );
 
     let mut hkeyVerb: HKEY = core::ptr::null_mut();
-    let res = COM_OpenKeyForCLSID(clsid, WSZVERB.as_ptr(), KEY_READ, core::ptr::addr_of_mut!(hkeyVerb));
-    if FAILED(res) != 0 {
-        if res == 0x80040154u32 as i32 {
-            ERR!(b"CLSID %s not registered\n\0".as_ptr() as *const i8, debugstr_guid(clsid));
-        } else if res == 0x80040152u32 as i32 {
-            ERR!(b"no Verbs key for class %s\n\0".as_ptr() as *const i8, debugstr_guid(clsid));
+    let res = COM_OpenKeyForCLSID(clsid, wszVerb.as_ptr(), KEY_READ, &mut hkeyVerb);
+    if FAILED(res) {
+        if res == REGDB_E_CLASSNOTREG {
+            ERR!(
+                b"CLSID %s not registered\n\0".as_ptr(),
+                debugstr_guid(clsid as *const c_void)
+            );
+        } else if res == REGDB_E_KEYMISSING {
+            ERR!(
+                b"no Verbs key for class %s\n\0".as_ptr(),
+                debugstr_guid(clsid as *const c_void)
+            );
         } else {
-            ERR!(b"failed to open Verbs key for CLSID %s with error %d\n\0".as_ptr() as *const i8,
-                debugstr_guid(clsid), res);
+            ERR!(
+                b"failed to open Verbs key for CLSID %s with error %d\n\0".as_ptr(),
+                debugstr_guid(clsid as *const c_void),
+                res
+            );
         }
         return res;
     }
 
-    let mut dwSubKeys: u32 = 0;
-    let res = RegQueryInfoKeyW(hkeyVerb, core::ptr::null_mut(), core::ptr::null_mut(),
-                               core::ptr::null_mut(), core::ptr::addr_of_mut!(dwSubKeys),
-                               core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(),
-                               core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(),
-                               core::ptr::null_mut());
-    if res != ERROR_SUCCESS as i32 {
-        ERR!(b"failed to get subkey count with error %d\n\0".as_ptr() as *const i8, GetLastError());
-        return 0x80040150u32 as i32;
+    let mut dwSubKeys: DWORD = 0;
+    let res = RegQueryInfoKeyW(
+        hkeyVerb,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        &mut dwSubKeys,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+    if res != ERROR_SUCCESS {
+        ERR!(
+            b"failed to get subkey count with error %d\n\0".as_ptr(),
+            GetLastError()
+        );
+        return REGDB_E_READREGDB;
     }
 
     if dwSubKeys == 0 {
-        WARN!(b"class %s has no verbs\n\0".as_ptr() as *const i8, debugstr_guid(clsid));
+        WARN!(
+            b"class %s has no verbs\n\0".as_ptr(),
+            debugstr_guid(clsid as *const c_void)
+        );
         RegCloseKey(hkeyVerb);
-        return 0x80040180u32 as i32;
+        return OLEOBJ_E_NOVERBS;
     }
 
-    return EnumOLEVERB_Construct(hkeyVerb, 0, ppenum);
+    EnumOLEVERB_Construct(hkeyVerb, 0, ppenum)
 }
 
+/// ole2.c:1168 OleSetContainedObject [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleSetContainedObject(
     pUnknown: LPUNKNOWN,
     fContained: BOOL,
 ) -> HRESULT {
     let mut runnable: *mut IRunnableObject = core::ptr::null_mut();
-    let mut hres: HRESULT;
 
-    TRACE!(b"(%p,%x)\n\0".as_ptr() as PCHAR, pUnknown, fContained);
+    TRACE!(b"(%p,%x)\n\0".as_ptr(), pUnknown, fContained);
 
-    hres = IUnknown_QueryInterface(
+    let mut hres = IUnknown_QueryInterface(
         pUnknown,
         &IID_IRunnableObject,
-        &mut runnable as *mut *mut IRunnableObject as *mut LPVOID,
+        &mut runnable as *mut *mut IRunnableObject as *mut *mut c_void,
     );
 
-    if SUCCEEDED(hres) != 0 {
+    if SUCCEEDED(hres) {
         hres = IRunnableObject_SetContainedObject(runnable, fContained);
 
         IRunnableObject_Release(runnable);
@@ -1120,76 +1441,80 @@ pub unsafe extern "system" fn OleSetContainedObject(
         return hres;
     }
 
-    return S_OK;
+    S_OK
 }
 
+/// ole2.c:1205 OleRun [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleRun(pUnknown: LPUNKNOWN) -> HRESULT {
     let mut runable: *mut IRunnableObject = core::ptr::null_mut();
-    let mut hres: HRESULT;
 
-    TRACE!(b"(%p)\n\0".as_ptr() as PCHAR, pUnknown);
+    TRACE!(b"(%p)\n\0".as_ptr(), pUnknown);
 
-    hres = IUnknown_QueryInterface(
+    let hres = IUnknown_QueryInterface(
         pUnknown,
         &IID_IRunnableObject,
-        &mut runable as *mut *mut IRunnableObject as *mut LPVOID
+        &mut runable as *mut *mut IRunnableObject as *mut *mut c_void,
     );
     if FAILED(hres) {
-        return S_OK;
+        return S_OK; // Appears to return no error.
     }
 
-    hres = IRunnableObject_Run(runable, core::ptr::null_mut());
+    let hres = IRunnableObject_Run(runable, core::ptr::null_mut());
     IRunnableObject_Release(runable);
     hres
 }
 
+/// ole2.c:1224 OleLoad [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleLoad(
-    pStg: *mut IStorage,
-    riid: *const IID,
-    pClientSite: *mut IOleClientSite,
-    ppvObj: *mut *mut core::ffi::c_void,
+    pStg: LPSTORAGE,
+    riid: REFIID,
+    pClientSite: LPOLECLIENTSITE,
+    ppvObj: *mut LPVOID,
 ) -> HRESULT {
     let mut persistStorage: *mut IPersistStorage = core::ptr::null_mut();
-    let mut pUnk: *mut IUnknown;
+    let mut pUnk: *mut IUnknown = core::ptr::null_mut();
     let mut pOleObject: *mut IOleObject = core::ptr::null_mut();
     let mut storageInfo: STATSTG = core::mem::zeroed();
-    let mut hres: HRESULT;
 
     TRACE!(
-        b"(%p, %s, %p, %p)\n\0".as_ptr() as PCSTR,
+        b"(%p, %s, %p, %p)\n\0".as_ptr(),
         pStg,
-        debugstr_guid(riid),
+        debugstr_guid(riid as *const c_void),
         pClientSite,
         ppvObj,
     );
 
     *ppvObj = core::ptr::null_mut();
 
-    hres = IStorage_Stat(pStg, &mut storageInfo, STATFLAG_NONAME);
-    if FAILED(hres) != 0 {
+    // Get the class ID for the object.
+    let mut hres = IStorage_Stat(pStg, &mut storageInfo, STATFLAG_NONAME);
+    if FAILED(hres) {
         return hres;
     }
 
+    // Now, try and create the handler for the object
     hres = CoCreateInstance(
         &storageInfo.clsid,
         core::ptr::null_mut(),
         CLSCTX_INPROC_HANDLER | CLSCTX_INPROC_SERVER,
         riid,
-        &mut pUnk as *mut *mut IUnknown as *mut *mut core::ffi::c_void,
+        &mut pUnk as *mut *mut IUnknown as *mut LPVOID,
     );
 
-    if FAILED(hres) != 0 {
+    // If that fails, as it will most times, load the default OLE handler.
+    if FAILED(hres) {
         hres = OleCreateDefaultHandler(
             &storageInfo.clsid,
             core::ptr::null_mut(),
             riid,
-            &mut pUnk as *mut *mut IUnknown as *mut *mut core::ffi::c_void,
+            &mut pUnk as *mut *mut IUnknown as *mut LPVOID,
         );
     }
 
-    if FAILED(hres) != 0 {
+    // If we couldn't find a handler... this is bad. Abort the whole thing.
+    if FAILED(hres) {
         return hres;
     }
 
@@ -1197,58 +1522,62 @@ pub unsafe extern "system" fn OleLoad(
         hres = IUnknown_QueryInterface(
             pUnk,
             &IID_IOleObject,
-            &mut pOleObject as *mut *mut IOleObject as *mut *mut core::ffi::c_void,
+            &mut pOleObject as *mut *mut IOleObject as *mut *mut c_void,
         );
-        if SUCCEEDED(hres) != 0 {
+        if SUCCEEDED(hres) {
             let mut dwStatus: DWORD = 0;
             hres = IOleObject_GetMiscStatus(pOleObject, DVASPECT_CONTENT, &mut dwStatus);
         }
     }
 
+    // Initialize the object with its IPersistStorage interface.
     hres = IUnknown_QueryInterface(
         pUnk,
         &IID_IPersistStorage,
-        &mut persistStorage as *mut *mut IPersistStorage as *mut *mut core::ffi::c_void,
+        &mut persistStorage as *mut *mut IPersistStorage as *mut *mut c_void,
     );
-    if SUCCEEDED(hres) != 0 {
+    if SUCCEEDED(hres) {
         hres = IPersistStorage_Load(persistStorage, pStg);
 
         IPersistStorage_Release(persistStorage);
         persistStorage = core::ptr::null_mut();
+        let _ = persistStorage;
     }
 
-    if SUCCEEDED(hres) != 0 && !pClientSite.is_null() {
+    if SUCCEEDED(hres) && !pClientSite.is_null() {
+        // Inform the new object of its client site.
         hres = IOleObject_SetClientSite(pOleObject, pClientSite);
     }
 
+    // Cleanup interfaces used internally
     if !pOleObject.is_null() {
         IOleObject_Release(pOleObject);
     }
 
-    if SUCCEEDED(hres) != 0 {
+    if SUCCEEDED(hres) {
         let mut pOleLink: *mut IOleLink = core::ptr::null_mut();
-        let hres1: HRESULT;
-        hres1 = IUnknown_QueryInterface(
+        let hres1 = IUnknown_QueryInterface(
             pUnk,
             &IID_IOleLink,
-            &mut pOleLink as *mut *mut IOleLink as *mut *mut core::ffi::c_void,
+            &mut pOleLink as *mut *mut IOleLink as *mut *mut c_void,
         );
-        if SUCCEEDED(hres1) != 0 {
-            FIXME!(b"handle OLE link\n\0".as_ptr() as PCSTR);
+        if SUCCEEDED(hres1) {
+            FIXME!(b"handle OLE link\n\0".as_ptr());
             IOleLink_Release(pOleLink);
         }
     }
 
-    if FAILED(hres) != 0 {
+    if FAILED(hres) {
         IUnknown_Release(pUnk);
         pUnk = core::ptr::null_mut();
     }
 
-    *ppvObj = pUnk as *mut core::ffi::c_void;
+    *ppvObj = pUnk as LPVOID;
 
-    return hres;
+    hres
 }
 
+/// ole2.c:1338 OleSave [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleSave(
     pPS: LPPERSISTSTORAGE,
@@ -1257,28 +1586,27 @@ pub unsafe extern "system" fn OleSave(
 ) -> HRESULT {
     let mut objectClass: CLSID = core::mem::zeroed();
 
-    TRACE!(
-        b"(%p,%p,%x)\n\0".as_ptr() as *const i8,
-        pPS,
-        pStg,
-        fSameAsLoad,
-    );
+    TRACE!(b"(%p,%p,%x)\n\0".as_ptr(), pPS, pStg, fSameAsLoad);
 
+    // First, we transfer the class ID (if available)
     let mut hres = IPersistStorage_GetClassID(pPS, &mut objectClass);
 
-    if SUCCEEDED(hres) != 0 {
+    if SUCCEEDED(hres) {
         WriteClassStg(pStg, &objectClass);
     }
 
+    // Then, we ask the object to save itself to the storage. If it is
+    // successful, we commit the storage.
     hres = IPersistStorage_Save(pPS, pStg, fSameAsLoad);
 
-    if SUCCEEDED(hres) != 0 {
+    if SUCCEEDED(hres) {
         IStorage_Commit(pStg, STGC_DEFAULT);
     }
 
     hres
 }
 
+/// ole2.c:1377 OleLockRunning [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleLockRunning(
     pUnknown: LPUNKNOWN,
@@ -1286,22 +1614,21 @@ pub unsafe extern "system" fn OleLockRunning(
     fLastUnlockCloses: BOOL,
 ) -> HRESULT {
     let mut runnable: *mut IRunnableObject = core::ptr::null_mut();
-    let mut hres: HRESULT;
 
     TRACE!(
-        b"(%p,%x,%x)\n\0".as_ptr() as PCHAR,
+        b"(%p,%x,%x)\n\0".as_ptr(),
         pUnknown,
         fLock,
         fLastUnlockCloses,
     );
 
-    hres = IUnknown_QueryInterface(
+    let mut hres = IUnknown_QueryInterface(
         pUnknown,
         &IID_IRunnableObject,
-        &mut runnable as *mut *mut IRunnableObject as *mut LPVOID,
+        &mut runnable as *mut *mut IRunnableObject as *mut *mut c_void,
     );
 
-    if SUCCEEDED(hres) != 0 {
+    if SUCCEEDED(hres) {
         hres = IRunnableObject_LockRunning(runnable, fLock, fLastUnlockCloses);
 
         IRunnableObject_Release(runnable);
@@ -1312,16 +1639,20 @@ pub unsafe extern "system" fn OleLockRunning(
     S_OK
 }
 
-unsafe fn OLEMenu_Initialize() {
-}
+/// ole2.c:1411 OLEMenu_Initialize
+unsafe fn OLEMenu_Initialize() {}
 
-unsafe fn OLEMenu_UnInitialize() {
-}
+/// ole2.c:1420 OLEMenu_UnInitialize
+unsafe fn OLEMenu_UnInitialize() {}
 
-unsafe fn OLEMenu_InstallHooks(tid: u32) -> i32 {
-    let pHookItem: *mut OleMenuHookItem;
-
-    pHookItem = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<OleMenuHookItem>()) as *mut OleMenuHookItem;
+/// ole2.c:1431 OLEMenu_InstallHooks
+unsafe fn OLEMenu_InstallHooks(tid: DWORD) -> BOOL {
+    // Create an entry for the hook table
+    let pHookItem = HeapAlloc(
+        GetProcessHeap(),
+        0,
+        core::mem::size_of::<OleMenuHookItem>() as SIZE_T,
+    ) as *mut OleMenuHookItem;
     if pHookItem.is_null() {
         return 0;
     }
@@ -1330,40 +1661,52 @@ unsafe fn OLEMenu_InstallHooks(tid: u32) -> i32 {
     (*pHookItem).hHeap = GetProcessHeap();
     (*pHookItem).CallWndProc_hHook = core::ptr::null_mut();
 
+    // Install a thread scope message hook for WH_GETMESSAGE
     (*pHookItem).GetMsg_hHook = SetWindowsHookExW(
         WH_GETMESSAGE,
         Some(OLEMenu_GetMsgProc),
         core::ptr::null_mut(),
-        GetCurrentThreadId()
+        GetCurrentThreadId(),
     );
     if (*pHookItem).GetMsg_hHook.is_null() {
-        UnhookWindowsHookEx((*pHookItem).GetMsg_hHook);
-        UnhookWindowsHookEx((*pHookItem).CallWndProc_hHook);
-        HeapFree((*pHookItem).hHeap, 0, pHookItem as *mut core::ffi::c_void);
-        return 0;
+        return OLEMenu_InstallHooks_cleanup(pHookItem);
     }
 
+    // Install a thread scope message hook for WH_CALLWNDPROC
     (*pHookItem).CallWndProc_hHook = SetWindowsHookExW(
         WH_CALLWNDPROC,
         Some(OLEMenu_CallWndProc),
         core::ptr::null_mut(),
-        GetCurrentThreadId()
+        GetCurrentThreadId(),
     );
     if (*pHookItem).CallWndProc_hHook.is_null() {
-        UnhookWindowsHookEx((*pHookItem).GetMsg_hHook);
-        UnhookWindowsHookEx((*pHookItem).CallWndProc_hHook);
-        HeapFree((*pHookItem).hHeap, 0, pHookItem as *mut core::ffi::c_void);
-        return 0;
+        return OLEMenu_InstallHooks_cleanup(pHookItem);
     }
 
+    // Insert the hook table entry
     (*pHookItem).next = hook_list;
     hook_list = pHookItem;
 
-    return 1;
+    1
 }
 
-unsafe fn OLEMenu_UnInstallHooks(tid: u32) -> i32 {
+/// ole2.c:1462 the `CLEANUP:` label of OLEMenu_InstallHooks
+unsafe fn OLEMenu_InstallHooks_cleanup(pHookItem: *mut OleMenuHookItem) -> BOOL {
+    // Unhook any hooks
+    if !(*pHookItem).GetMsg_hHook.is_null() {
+        UnhookWindowsHookEx((*pHookItem).GetMsg_hHook);
+    }
+    if !(*pHookItem).CallWndProc_hHook.is_null() {
+        UnhookWindowsHookEx((*pHookItem).CallWndProc_hHook);
+    }
+    // Release the hook table entry
+    HeapFree((*pHookItem).hHeap, 0, pHookItem as LPVOID);
 
+    0
+}
+
+/// ole2.c:1481 OLEMenu_UnInstallHooks
+unsafe fn OLEMenu_UnInstallHooks(tid: DWORD) -> BOOL {
     let mut pHookItem: *mut OleMenuHookItem = core::ptr::null_mut();
     let mut ppHook: *mut *mut OleMenuHookItem = core::ptr::addr_of_mut!(hook_list);
 
@@ -1380,6 +1723,7 @@ unsafe fn OLEMenu_UnInstallHooks(tid: u32) -> i32 {
     }
 
     'CLEANUP: {
+        // Uninstall the hooks installed for this thread
         if UnhookWindowsHookEx((*pHookItem).GetMsg_hHook) == 0 {
             break 'CLEANUP;
         }
@@ -1387,20 +1731,22 @@ unsafe fn OLEMenu_UnInstallHooks(tid: u32) -> i32 {
             break 'CLEANUP;
         }
 
+        // Release the hook table entry
         HeapFree((*pHookItem).hHeap, 0, pHookItem as LPVOID);
 
         return 1;
     }
 
+    // CLEANUP: release the hook table entry
     HeapFree((*pHookItem).hHeap, 0, pHookItem as LPVOID);
 
-    return 0;
+    0
 }
 
+/// ole2.c:1523 OLEMenu_IsHookInstalled
 unsafe fn OLEMenu_IsHookInstalled(tid: DWORD) -> *mut OleMenuHookItem {
-    let mut pHookItem: *mut OleMenuHookItem;
-
-    pHookItem = hook_list;
+    // Do a simple linear search for an entry whose tid matches ours.
+    let mut pHookItem = hook_list;
     while !pHookItem.is_null() {
         if tid == (*pHookItem).tid {
             return pHookItem;
@@ -1411,23 +1757,27 @@ unsafe fn OLEMenu_IsHookInstalled(tid: DWORD) -> *mut OleMenuHookItem {
     core::ptr::null_mut()
 }
 
-unsafe fn OLEMenu_FindMainMenuIndex(hMainMenu: HMENU, hPopupMenu: HMENU, pnPos: *mut u32) -> BOOL {
+/// ole2.c:1546 OLEMenu_FindMainMenuIndex
+unsafe fn OLEMenu_FindMainMenuIndex(hMainMenu: HMENU, hPopupMenu: HMENU, pnPos: *mut UINT) -> BOOL {
+    let nItems: c_int = GetMenuItemCount(hMainMenu);
 
-    let nItems: i32 = GetMenuItemCount(hMainMenu);
-    let mut i: i32 = 0;
-
+    let mut i: c_int = 0;
     while i < nItems {
+        // Is the current item a submenu?
         let hsubmenu: HMENU = GetSubMenu(hMainMenu, i);
 
         if !hsubmenu.is_null() {
+            // If the handle is the same we're done
             if hsubmenu == hPopupMenu {
                 if !pnPos.is_null() {
-                    *pnPos = i as u32;
+                    *pnPos = i as UINT;
                 }
                 return 1;
-            } else if OLEMenu_FindMainMenuIndex(hsubmenu, hPopupMenu, core::ptr::null_mut()) != 0 {
+            }
+            // Recursively search without updating pnPos
+            else if OLEMenu_FindMainMenuIndex(hsubmenu, hPopupMenu, core::ptr::null_mut()) != 0 {
                 if !pnPos.is_null() {
-                    *pnPos = i as u32;
+                    *pnPos = i as UINT;
                 }
                 return 1;
             }
@@ -1439,27 +1789,32 @@ unsafe fn OLEMenu_FindMainMenuIndex(hMainMenu: HMENU, hPopupMenu: HMENU, pnPos: 
     0
 }
 
+/// ole2.c:1589 OLEMenu_SetIsServerMenu
 unsafe fn OLEMenu_SetIsServerMenu(hmenu: HMENU, pOleMenuDescriptor: *mut OleMenuDescriptor) -> BOOL {
-    let mut nPos: u32 = 0;
-    let mut nWidth: u32;
-    let mut i: u32;
+    let mut nPos: UINT = 0;
 
     (*pOleMenuDescriptor).bIsServerItem = 0;
 
+    // Don't bother searching if the popup is the combined menu itself
     if hmenu == (*pOleMenuDescriptor).hmenuCombined {
         return 0;
     }
 
+    // Find the menu item index in the shared OLE menu that this item belongs to
     if OLEMenu_FindMainMenuIndex((*pOleMenuDescriptor).hmenuCombined, hmenu, &mut nPos) == 0 {
         return 0;
     }
 
-    i = 0;
-    nWidth = 0;
+    // The group widths array has counts for the number of elements in the groups
+    // File, Edit, Container, Object, Window, Help. The Edit, Object & Help groups
+    // belong to the server object and the other three belong to the container.
+    let mut nWidth: UINT = 0;
+    let mut i: UINT = 0;
     while i < 6 {
-        nWidth += (*pOleMenuDescriptor).mgw.width[i as usize] as u32;
+        nWidth += (*pOleMenuDescriptor).mgw.width[i as usize] as UINT;
         if nPos < nWidth {
-            (*pOleMenuDescriptor).bIsServerItem = (i % 2) as i32;
+            // Odd elements are server menu widths
+            (*pOleMenuDescriptor).bIsServerItem = (i % 2) as BOOL;
             break;
         }
         i += 1;
@@ -1467,150 +1822,117 @@ unsafe fn OLEMenu_SetIsServerMenu(hmenu: HMENU, pOleMenuDescriptor: *mut OleMenu
 
     (*pOleMenuDescriptor).bIsServerItem
 }
-unsafe fn OLEMenu_CallWndProc(code: INT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
 
-    let mut pMsg: LPCWPSTRUCT;
-    let mut hOleMenu: HOLEMENU = 0 as HOLEMENU;
-    let mut pOleMenuDescriptor: *mut OleMenuDescriptor = core::ptr::null_mut();
-    let mut pHookItem: *mut OleMenuHookItem = core::ptr::null_mut();
-    let fuFlags: WORD;
-
-    TRACE!(b"%i, %04lx, %08lx\n\0".as_ptr() as LPCSTR, code, wParam, lParam);
-
-    if HC_ACTION != code {
-        'NEXTHOOK: loop {
-            if !pOleMenuDescriptor.is_null() {
-                GlobalUnlock(hOleMenu);
-            }
-
-            pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
-            if pHookItem.is_null() {
-                WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as LPCSTR);
-                return 0;
-            }
-
-            return CallNextHookEx((*pHookItem).CallWndProc_hHook, code, wParam, lParam);
-        }
+/// ole2.c:1712 — the shared `NEXTHOOK:` tail of OLEMenu_CallWndProc.
+unsafe fn OLEMenu_CallWndProc_nexthook(
+    hOleMenu: HOLEMENU,
+    pOleMenuDescriptor: *mut OleMenuDescriptor,
+    code: c_int,
+    wParam: WPARAM,
+    lParam: LPARAM,
+) -> LRESULT {
+    if !pOleMenuDescriptor.is_null() {
+        GlobalUnlock(hOleMenu);
     }
 
-    pMsg = lParam as LPCWPSTRUCT;
+    // Lookup the hook item for the current thread
+    let pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
+    if pHookItem.is_null() {
+        // This should never fail!!
+        WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr());
+        return 0;
+    }
 
+    // Pass on the message to the next hooker
+    CallNextHookEx((*pHookItem).CallWndProc_hHook, code, wParam, lParam)
+}
+
+/// ole2.c:1628 OLEMenu_CallWndProc — WH_CALLWNDPROC filter (callback)
+unsafe extern "system" fn OLEMenu_CallWndProc(
+    code: c_int,
+    wParam: WPARAM,
+    lParam: LPARAM,
+) -> LRESULT {
+    let mut hOleMenu: HOLEMENU = core::ptr::null_mut();
+    let mut pOleMenuDescriptor: *mut OleMenuDescriptor = core::ptr::null_mut();
+
+    TRACE!(b"%i, %04lx, %08lx\n\0".as_ptr(), code, wParam, lParam);
+
+    // Check if we're being asked to process the message
+    if code != HC_ACTION as c_int {
+        return OLEMenu_CallWndProc_nexthook(hOleMenu, pOleMenuDescriptor, code, wParam, lParam);
+    }
+
+    // Retrieve the current message being dispatched from lParam
+    let pMsg: LPCWPSTRUCT = lParam as LPCWPSTRUCT;
+
+    // Check if the message is destined for a window we are interested in.
     hOleMenu = GetPropW((*pMsg).hwnd, prop_olemenuW.as_ptr()) as HOLEMENU;
     if hOleMenu.is_null() {
-        'NEXTHOOK: loop {
-            if !pOleMenuDescriptor.is_null() {
-                GlobalUnlock(hOleMenu);
-            }
-
-            pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
-            if pHookItem.is_null() {
-                WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as LPCSTR);
-                return 0;
-            }
-
-            return CallNextHookEx((*pHookItem).CallWndProc_hHook, code, wParam, lParam);
-        }
+        return OLEMenu_CallWndProc_nexthook(hOleMenu, pOleMenuDescriptor, code, wParam, lParam);
     }
 
+    // Get the menu descriptor
     pOleMenuDescriptor = GlobalLock(hOleMenu) as *mut OleMenuDescriptor;
     if pOleMenuDescriptor.is_null() {
-        'NEXTHOOK: loop {
-            if !pOleMenuDescriptor.is_null() {
-                GlobalUnlock(hOleMenu);
-            }
-
-            pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
-            if pHookItem.is_null() {
-                WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as LPCSTR);
-                return 0;
-            }
-
-            return CallNextHookEx((*pHookItem).CallWndProc_hHook, code, wParam, lParam);
-        }
+        // Bad descriptor!
+        return OLEMenu_CallWndProc_nexthook(hOleMenu, pOleMenuDescriptor, code, wParam, lParam);
     }
 
+    // Process menu messages
     match (*pMsg).message {
         WM_INITMENU => {
+            // Reset the menu descriptor state
             (*pOleMenuDescriptor).bIsServerItem = 0;
 
+            // Send this message to the server as well
             SendMessageW(
                 (*pOleMenuDescriptor).hwndActiveObject,
                 (*pMsg).message,
                 (*pMsg).wParam,
                 (*pMsg).lParam,
             );
-            'NEXTHOOK: loop {
-                if !pOleMenuDescriptor.is_null() {
-                    GlobalUnlock(hOleMenu);
-                }
-
-                pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
-                if pHookItem.is_null() {
-                    WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as LPCSTR);
-                    return 0;
-                }
-
-                return CallNextHookEx((*pHookItem).CallWndProc_hHook, code, wParam, lParam);
-            }
+            return OLEMenu_CallWndProc_nexthook(hOleMenu, pOleMenuDescriptor, code, wParam, lParam);
         }
         WM_INITMENUPOPUP => {
+            // Save the state for whether this is a server owned menu
             OLEMenu_SetIsServerMenu((*pMsg).wParam as HMENU, pOleMenuDescriptor);
         }
         WM_MENUSELECT => {
-            fuFlags = HIWORD((*pMsg).wParam as DWORD);
-            if (fuFlags & MF_SYSMENU) != 0 {
-                'NEXTHOOK: loop {
-                    if !pOleMenuDescriptor.is_null() {
-                        GlobalUnlock(hOleMenu);
-                    }
-
-                    pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
-                    if pHookItem.is_null() {
-                        WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as LPCSTR);
-                        return 0;
-                    }
-
-                    return CallNextHookEx((*pHookItem).CallWndProc_hHook, code, wParam, lParam);
-                }
-            } else if (fuFlags & MF_POPUP) != 0 {
+            let fuFlags: WORD = HIWORD((*pMsg).wParam as DWORD); // Get flags
+            if (fuFlags as DWORD & MF_SYSMENU) != 0 {
+                return OLEMenu_CallWndProc_nexthook(
+                    hOleMenu,
+                    pOleMenuDescriptor,
+                    code,
+                    wParam,
+                    lParam,
+                );
+            }
+            // Save the state for whether this is a server owned popup menu
+            else if (fuFlags as DWORD & MF_POPUP) != 0 {
                 OLEMenu_SetIsServerMenu((*pMsg).lParam as HMENU, pOleMenuDescriptor);
             }
         }
         WM_DRAWITEM => {
             let lpdis: LPDRAWITEMSTRUCT = (*pMsg).lParam as LPDRAWITEMSTRUCT;
-            if (*pMsg).wParam != 0 || (*lpdis).CtlType != ODT_MENU {
-                'NEXTHOOK: loop {
-                    if !pOleMenuDescriptor.is_null() {
-                        GlobalUnlock(hOleMenu);
-                    }
-
-                    pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
-                    if pHookItem.is_null() {
-                        WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as LPCSTR);
-                        return 0;
-                    }
-
-                    return CallNextHookEx((*pHookItem).CallWndProc_hHook, code, wParam, lParam);
-                }
+            if (*pMsg).wParam != 0 || (*lpdis).CtlType != ODT_MENU as UINT {
+                // Not a menu message
+                return OLEMenu_CallWndProc_nexthook(
+                    hOleMenu,
+                    pOleMenuDescriptor,
+                    code,
+                    wParam,
+                    lParam,
+                );
             }
         }
         _ => {
-            'NEXTHOOK: loop {
-                if !pOleMenuDescriptor.is_null() {
-                    GlobalUnlock(hOleMenu);
-                }
-
-                pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
-                if pHookItem.is_null() {
-                    WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as LPCSTR);
-                    return 0;
-                }
-
-                return CallNextHookEx((*pHookItem).CallWndProc_hHook, code, wParam, lParam);
-            }
+            return OLEMenu_CallWndProc_nexthook(hOleMenu, pOleMenuDescriptor, code, wParam, lParam);
         }
     }
 
+    // If the message was for the server dispatch it accordingly
     if (*pOleMenuDescriptor).bIsServerItem != 0 {
         SendMessageW(
             (*pOleMenuDescriptor).hwndActiveObject,
@@ -1620,161 +1942,121 @@ unsafe fn OLEMenu_CallWndProc(code: INT, wParam: WPARAM, lParam: LPARAM) -> LRES
         );
     }
 
-    'NEXTHOOK: loop {
-        if !pOleMenuDescriptor.is_null() {
-            GlobalUnlock(hOleMenu);
-        }
-
-        pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
-        if pHookItem.is_null() {
-            WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as LPCSTR);
-            return 0;
-        }
-
-        return CallNextHookEx((*pHookItem).CallWndProc_hHook, code, wParam, lParam);
-    }
+    OLEMenu_CallWndProc_nexthook(hOleMenu, pOleMenuDescriptor, code, wParam, lParam)
 }
 
-unsafe fn OLEMenu_GetMsgProc(code: INT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
-
-    let mut pMsg: LPMSG;
-    let mut hOleMenu: HOLEMENU = 0 as HOLEMENU;
-    let mut pOleMenuDescriptor: *mut OleMenuDescriptor = core::ptr::null_mut();
-    let mut pHookItem: *mut OleMenuHookItem = core::ptr::null_mut();
-    let wCode: WORD;
-
-    TRACE!(b"%i, %04lx, %08lx\n\0".as_ptr() as *const i8, code, wParam, lParam);
-
-    if HC_ACTION != code {
-        'NEXTHOOK: loop {
-            if !pOleMenuDescriptor.is_null() {
-                GlobalUnlock(hOleMenu);
-            }
-
-            pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
-            if pHookItem.is_null() {
-                WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as *const i8);
-                return 0 as LRESULT;
-            }
-
-            return CallNextHookEx((*pHookItem).GetMsg_hHook, code, wParam, lParam);
-        }
-    }
-
-    pMsg = lParam as LPMSG;
-
-    hOleMenu = GetPropW((*pMsg).hwnd, prop_olemenuW.as_ptr()) as HOLEMENU;
-    if hOleMenu.is_null() {
-        'NEXTHOOK: loop {
-            if !pOleMenuDescriptor.is_null() {
-                GlobalUnlock(hOleMenu);
-            }
-
-            pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
-            if pHookItem.is_null() {
-                WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as *const i8);
-                return 0 as LRESULT;
-            }
-
-            return CallNextHookEx((*pHookItem).GetMsg_hHook, code, wParam, lParam);
-        }
-    }
-
-    match (*pMsg).message {
-        WM_COMMAND => {
-            wCode = HIWORD((*pMsg).wParam as DWORD);
-            if wCode != 0 {
-                'NEXTHOOK: loop {
-                    if !pOleMenuDescriptor.is_null() {
-                        GlobalUnlock(hOleMenu);
-                    }
-
-                    pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
-                    if pHookItem.is_null() {
-                        WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as *const i8);
-                        return 0 as LRESULT;
-                    }
-
-                    return CallNextHookEx((*pHookItem).GetMsg_hHook, code, wParam, lParam);
-                }
-            }
-        }
-        _ => {
-            'NEXTHOOK: loop {
-                if !pOleMenuDescriptor.is_null() {
-                    GlobalUnlock(hOleMenu);
-                }
-
-                pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
-                if pHookItem.is_null() {
-                    WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as *const i8);
-                    return 0 as LRESULT;
-                }
-
-                return CallNextHookEx((*pHookItem).GetMsg_hHook, code, wParam, lParam);
-            }
-        }
-    }
-
-    pOleMenuDescriptor = GlobalLock(hOleMenu) as *mut OleMenuDescriptor;
-    if pOleMenuDescriptor.is_null() {
-        'NEXTHOOK: loop {
-            if !pOleMenuDescriptor.is_null() {
-                GlobalUnlock(hOleMenu);
-            }
-
-            pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
-            if pHookItem.is_null() {
-                WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as *const i8);
-                return 0 as LRESULT;
-            }
-
-            return CallNextHookEx((*pHookItem).GetMsg_hHook, code, wParam, lParam);
-        }
-    }
-
-    if (*pOleMenuDescriptor).bIsServerItem != 0 {
-        (*pMsg).hwnd = (*pOleMenuDescriptor).hwndActiveObject;
-    }
-
+/// ole2.c:1786 — the shared `NEXTHOOK:` tail of OLEMenu_GetMsgProc.
+unsafe fn OLEMenu_GetMsgProc_nexthook(
+    hOleMenu: HOLEMENU,
+    pOleMenuDescriptor: *mut OleMenuDescriptor,
+    code: c_int,
+    wParam: WPARAM,
+    lParam: LPARAM,
+) -> LRESULT {
     if !pOleMenuDescriptor.is_null() {
         GlobalUnlock(hOleMenu);
     }
 
-    pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
+    // Lookup the hook item for the current thread
+    let pHookItem = OLEMenu_IsHookInstalled(GetCurrentThreadId());
     if pHookItem.is_null() {
-        WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr() as *const i8);
-        return 0 as LRESULT;
+        // This should never fail!!
+        WARN!(b"could not retrieve hHook for current thread!\n\0".as_ptr());
+        return 0;
     }
 
+    // Pass on the message to the next hooker
     CallNextHookEx((*pHookItem).GetMsg_hHook, code, wParam, lParam)
 }
 
+/// ole2.c:1733 OLEMenu_GetMsgProc — WH_GETMESSAGE filter (callback)
+unsafe extern "system" fn OLEMenu_GetMsgProc(
+    code: c_int,
+    wParam: WPARAM,
+    lParam: LPARAM,
+) -> LRESULT {
+    let mut hOleMenu: HOLEMENU = core::ptr::null_mut();
+    let mut pOleMenuDescriptor: *mut OleMenuDescriptor = core::ptr::null_mut();
+
+    TRACE!(b"%i, %04lx, %08lx\n\0".as_ptr(), code, wParam, lParam);
+
+    // Check if we're being asked to process a messages
+    if code != HC_ACTION as c_int {
+        return OLEMenu_GetMsgProc_nexthook(hOleMenu, pOleMenuDescriptor, code, wParam, lParam);
+    }
+
+    // Retrieve the current message being dispatched from lParam
+    let pMsg: LPMSG = lParam as LPMSG;
+
+    // Check if the message is destined for a window we are interested in.
+    hOleMenu = GetPropW((*pMsg).hwnd, prop_olemenuW.as_ptr()) as HOLEMENU;
+    if hOleMenu.is_null() {
+        return OLEMenu_GetMsgProc_nexthook(hOleMenu, pOleMenuDescriptor, code, wParam, lParam);
+    }
+
+    // Process menu messages
+    match (*pMsg).message {
+        WM_COMMAND => {
+            let wCode: WORD = HIWORD((*pMsg).wParam as DWORD); // Get notification code
+            if wCode != 0 {
+                // Not a menu message
+                return OLEMenu_GetMsgProc_nexthook(
+                    hOleMenu,
+                    pOleMenuDescriptor,
+                    code,
+                    wParam,
+                    lParam,
+                );
+            }
+        }
+        _ => {
+            return OLEMenu_GetMsgProc_nexthook(hOleMenu, pOleMenuDescriptor, code, wParam, lParam);
+        }
+    }
+
+    // Get the menu descriptor
+    pOleMenuDescriptor = GlobalLock(hOleMenu) as *mut OleMenuDescriptor;
+    if pOleMenuDescriptor.is_null() {
+        // Bad descriptor!
+        return OLEMenu_GetMsgProc_nexthook(hOleMenu, pOleMenuDescriptor, code, wParam, lParam);
+    }
+
+    // If the message was for the server dispatch it accordingly
+    if (*pOleMenuDescriptor).bIsServerItem != 0 {
+        // Change the hWnd in the message to the active objects hWnd. The message
+        // loop which reads this message will automatically dispatch it to the
+        // embedded objects window.
+        (*pMsg).hwnd = (*pOleMenuDescriptor).hwndActiveObject;
+    }
+
+    OLEMenu_GetMsgProc_nexthook(hOleMenu, pOleMenuDescriptor, code, wParam, lParam)
+}
+
+/// ole2.c:1812 OleCreateMenuDescriptor [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleCreateMenuDescriptor(
     hmenuCombined: HMENU,
-    lpMenuWidths: *mut OLEMENUGROUPWIDTHS,
+    lpMenuWidths: LPOLEMENUGROUPWIDTHS,
 ) -> HOLEMENU {
-    let hOleMenu: HOLEMENU;
-    let pOleMenuDescriptor: *mut OleMenuDescriptor;
-
     if hmenuCombined.is_null() || lpMenuWidths.is_null() {
         return core::ptr::null_mut();
     }
 
-    hOleMenu = GlobalAlloc(
+    // Create an OLE menu descriptor
+    let hOleMenu: HOLEMENU = GlobalAlloc(
         GMEM_MOVEABLE | GMEM_ZEROINIT,
-        core::mem::size_of::<OleMenuDescriptor>(),
+        core::mem::size_of::<OleMenuDescriptor>() as SIZE_T,
     );
     if hOleMenu.is_null() {
         return core::ptr::null_mut();
     }
 
-    pOleMenuDescriptor = GlobalLock(hOleMenu) as *mut OleMenuDescriptor;
+    let pOleMenuDescriptor = GlobalLock(hOleMenu) as *mut OleMenuDescriptor;
     if pOleMenuDescriptor.is_null() {
         return core::ptr::null_mut();
     }
 
+    // Initialize menu group widths and hmenu
     for i in 0..6 {
         (*pOleMenuDescriptor).mgw.width[i] = (*lpMenuWidths).width[i];
     }
@@ -1786,16 +2068,16 @@ pub unsafe extern "system" fn OleCreateMenuDescriptor(
     hOleMenu
 }
 
+/// ole2.c:1847 OleDestroyMenuDescriptor [OLE32.@]
 #[no_mangle]
-pub unsafe extern "system" fn OleDestroyMenuDescriptor(
-    hmenuDescriptor: HOLEMENU,
-) -> HRESULT {
+pub unsafe extern "system" fn OleDestroyMenuDescriptor(hmenuDescriptor: HOLEMENU) -> HRESULT {
     if !hmenuDescriptor.is_null() {
-        GlobalFree(hmenuDescriptor as HGLOBAL);
+        GlobalFree(hmenuDescriptor);
     }
     S_OK
 }
 
+/// ole2.c:1875 OleSetMenuDescriptor [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleSetMenuDescriptor(
     hOleMenu: HOLEMENU,
@@ -1804,17 +2086,14 @@ pub unsafe extern "system" fn OleSetMenuDescriptor(
     lpFrame: LPOLEINPLACEFRAME,
     lpActiveObject: LPOLEINPLACEACTIVEOBJECT,
 ) -> HRESULT {
-
-    let mut pOleMenuDescriptor: *mut OleMenuDescriptor = core::ptr::null_mut();
-
+    // Check args
     if hwndFrame.is_null() || (!hOleMenu.is_null() && hwndActiveObject.is_null()) {
         return E_INVALIDARG;
     }
 
     if !lpFrame.is_null() || !lpActiveObject.is_null() {
         FIXME!(
-            b"(%p, %p, %p, %p, %p), Context sensitive help filtering not implemented!\n\0"
-                .as_ptr() as PCHAR,
+            b"(%p, %p, %p, %p, %p), Context sensitive help filtering not implemented!\n\0".as_ptr(),
             hOleMenu,
             hwndFrame,
             hwndActiveObject,
@@ -1823,85 +2102,87 @@ pub unsafe extern "system" fn OleSetMenuDescriptor(
         );
     }
 
+    // Set up a message hook to intercept the containers frame window messages.
     if !hOleMenu.is_null() {
+        // Want to install dispatching code.
+        // If OLEMenu hooks are already installed for this thread, fail.
         if !OLEMenu_IsHookInstalled(GetCurrentThreadId()).is_null() {
             return E_FAIL;
         }
 
-        pOleMenuDescriptor = GlobalLock(hOleMenu as HGLOBAL) as *mut OleMenuDescriptor;
+        // Get the menu descriptor
+        let pOleMenuDescriptor = GlobalLock(hOleMenu) as *mut OleMenuDescriptor;
         if pOleMenuDescriptor.is_null() {
             return E_UNEXPECTED;
         }
 
+        // Update the menu descriptor
         (*pOleMenuDescriptor).hwndFrame = hwndFrame;
         (*pOleMenuDescriptor).hwndActiveObject = hwndActiveObject;
 
-        GlobalUnlock(hOleMenu as HGLOBAL);
-        pOleMenuDescriptor = core::ptr::null_mut();
+        GlobalUnlock(hOleMenu);
 
-        SetPropW(hwndFrame, prop_olemenuW.as_ptr(), hOleMenu as HANDLE);
+        // Add a menu descriptor windows property to the frame window
+        SetPropW(hwndFrame, prop_olemenuW.as_ptr(), hOleMenu);
 
+        // Install thread scope message hooks for WH_GETMESSAGE and WH_CALLWNDPROC
         if OLEMenu_InstallHooks(GetCurrentThreadId()) == 0 {
             return E_FAIL;
         }
     } else {
+        // Want to uninstall dispatching code — uninstall the hooks
         if OLEMenu_UnInstallHooks(GetCurrentThreadId()) == 0 {
             return E_FAIL;
         }
 
+        // Remove the menu descriptor property from the frame window
         RemovePropW(hwndFrame, prop_olemenuW.as_ptr());
     }
 
     S_OK
 }
 
+/// ole2.c:1949 IsAccelerator [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn IsAccelerator(
     hAccel: HACCEL,
-    cAccelEntries: i32,
+    cAccelEntries: c_int,
     lpMsg: LPMSG,
-    lpwCmd: *mut u16,
-) -> i32 {
-
+    lpwCmd: *mut WORD,
+) -> BOOL {
     if lpMsg.is_null() {
         return 0;
     }
     if hAccel.is_null() {
-        WARN_(
-            b"accel\0".as_ptr() as *const i8,
-            b"NULL accel handle\n\0".as_ptr() as *const i8,
-        );
+        WARN!(b"NULL accel handle\n\0".as_ptr());
         return 0;
     }
-    if (*lpMsg).message != 0x0100
-        && (*lpMsg).message != 0x0104
-        && (*lpMsg).message != 0x0106
-        && (*lpMsg).message != 0x0102
+    if (*lpMsg).message != WM_KEYDOWN
+        && (*lpMsg).message != WM_SYSKEYDOWN
+        && (*lpMsg).message != WM_SYSCHAR
+        && (*lpMsg).message != WM_CHAR
     {
         return 0;
     }
-
     let lpAccelTbl = HeapAlloc(
         GetProcessHeap(),
         0,
-        (cAccelEntries as usize) * core::mem::size_of::<ACCEL>(),
+        (cAccelEntries as SIZE_T) * core::mem::size_of::<ACCEL>() as SIZE_T,
     ) as LPACCEL;
     if lpAccelTbl.is_null() {
         return 0;
     }
-
-    if CopyAcceleratorTableW(hAccel, lpAccelTbl, cAccelEntries) != cAccelEntries {
-        WARN_(
-            b"accel\0".as_ptr() as *const i8,
-            b"CopyAcceleratorTableW failed\n\0".as_ptr() as *const i8,
-        );
-        HeapFree(GetProcessHeap(), 0, lpAccelTbl as *mut core::ffi::c_void);
+    if CopyAcceleratorTableW(hAccel as HANDLE, lpAccelTbl as *mut c_void, cAccelEntries)
+        != cAccelEntries
+    {
+        WARN!(b"CopyAcceleratorTableW failed\n\0".as_ptr());
+        HeapFree(GetProcessHeap(), 0, lpAccelTbl as LPVOID);
         return 0;
     }
 
-    TRACE_(
-        b"accel\0".as_ptr() as *const i8,
-        b"hAccel=%p, cAccelEntries=%d,msg->hwnd=%p, msg->message=%04x, wParam=%08lx, lParam=%08lx\n\0".as_ptr() as *const i8,
+    TRACE!(
+        b"hAccel=%p, cAccelEntries=%d, msg->hwnd=%p, msg->message=%04x, wParam=%08lx, lParam=%08lx\n\0"
+            .as_ptr(),
         hAccel,
         cAccelEntries,
         (*lpMsg).hwnd,
@@ -1910,126 +2191,110 @@ pub unsafe extern "system" fn IsAccelerator(
         (*lpMsg).lParam,
     );
 
-    let mut i = 0;
+    let mut i: c_int = 0;
     while i < cAccelEntries {
-        if (*lpAccelTbl.offset(i as isize)).key != (*lpMsg).wParam as u16 {
+        let entry = &*lpAccelTbl.offset(i as isize);
+        if entry.key != (*lpMsg).wParam as WORD {
             i += 1;
             continue;
         }
 
-        if (*lpMsg).message == 0x0102 {
-            if ((*lpAccelTbl.offset(i as isize)).fVirt & FALT) == 0
-                && ((*lpAccelTbl.offset(i as isize)).fVirt & FVIRTKEY) == 0
-            {
-                TRACE_(
-                    b"accel\0".as_ptr() as *const i8,
-                    b"found accel for WM_CHAR: ('%c')\n\0".as_ptr() as *const i8,
-                    ((*lpMsg).wParam & 0xff) as u8 as i32,
-                );
+        if (*lpMsg).message == WM_CHAR {
+            if (entry.fVirt as DWORD & FALT) == 0 && (entry.fVirt as DWORD & FVIRTKEY) == 0 {
+                TRACE!(b"found accel for WM_CHAR: ('%c')\n\0".as_ptr(), (*lpMsg).wParam & 0xff);
+                // found:
                 if !lpwCmd.is_null() {
-                    *lpwCmd = (*lpAccelTbl.offset(i as isize)).cmd;
+                    *lpwCmd = entry.cmd;
                 }
-                HeapFree(GetProcessHeap(), 0, lpAccelTbl as *mut core::ffi::c_void);
+                HeapFree(GetProcessHeap(), 0, lpAccelTbl as LPVOID);
                 return 1;
             }
-        } else {
-            if ((*lpAccelTbl.offset(i as isize)).fVirt & FVIRTKEY) != 0 {
-                TRACE_(
-                    b"accel\0".as_ptr() as *const i8,
-                    b"found accel for virt_key %04lx (scan %04x)\n\0".as_ptr() as *const i8,
-                    (*lpMsg).wParam,
-                    (((*lpMsg).lParam >> 16) & 0xff) as u32,
-                );
-                let mut mask = 0u8;
-                if (GetKeyState(VK_SHIFT as i32) as i32 & 0x8000) != 0 {
-                    mask |= FSHIFT;
+        } else if (entry.fVirt as DWORD & FVIRTKEY) != 0 {
+            TRACE!(
+                b"found accel for virt_key %04lx (scan %04x)\n\0".as_ptr(),
+                (*lpMsg).wParam,
+                ((*lpMsg).lParam >> 16) & 0xff,
+            );
+            let mut mask: DWORD = 0;
+            if (GetKeyState(VK_SHIFT as c_int) as c_int & 0x8000) != 0 {
+                mask |= FSHIFT;
+            }
+            if (GetKeyState(VK_CONTROL as c_int) as c_int & 0x8000) != 0 {
+                mask |= FCONTROL;
+            }
+            if (GetKeyState(VK_MENU as c_int) as c_int & 0x8000) != 0 {
+                mask |= FALT;
+            }
+            if mask == (entry.fVirt as DWORD & (FSHIFT | FCONTROL | FALT)) {
+                // found:
+                if !lpwCmd.is_null() {
+                    *lpwCmd = entry.cmd;
                 }
-                if (GetKeyState(VK_CONTROL as i32) as i32 & 0x8000) != 0 {
-                    mask |= FCONTROL;
+                HeapFree(GetProcessHeap(), 0, lpAccelTbl as LPVOID);
+                return 1;
+            }
+            TRACE!(b"incorrect SHIFT/CTRL/ALT-state\n\0".as_ptr());
+        } else if ((*lpMsg).lParam & 0x0100_0000) == 0 {
+            // no special_key
+            if (entry.fVirt as DWORD & FALT) != 0 && ((*lpMsg).lParam & 0x2000_0000) != 0 {
+                // ALT pressed
+                TRACE!(b"found accel for Alt-%c\n\0".as_ptr(), (*lpMsg).wParam & 0xff);
+                // found:
+                if !lpwCmd.is_null() {
+                    *lpwCmd = entry.cmd;
                 }
-                if (GetKeyState(VK_MENU as i32) as i32 & 0x8000) != 0 {
-                    mask |= FALT;
-                }
-                if mask == ((*lpAccelTbl.offset(i as isize)).fVirt & (FSHIFT | FCONTROL | FALT)) {
-                    if !lpwCmd.is_null() {
-                        *lpwCmd = (*lpAccelTbl.offset(i as isize)).cmd;
-                    }
-                    HeapFree(GetProcessHeap(), 0, lpAccelTbl as *mut core::ffi::c_void);
-                    return 1;
-                }
-                TRACE_(
-                    b"accel\0".as_ptr() as *const i8,
-                    b"incorrect SHIFT/CTRL/ALT-state\n\0".as_ptr() as *const i8,
-                );
-            } else {
-                if ((*lpMsg).lParam & 0x01000000) == 0 {
-                    if ((*lpAccelTbl.offset(i as isize)).fVirt & FALT) != 0
-                        && ((*lpMsg).lParam & 0x20000000) != 0
-                    {
-                        TRACE_(
-                            b"accel\0".as_ptr() as *const i8,
-                            b"found accel for Alt-%c\n\0".as_ptr() as *const i8,
-                            ((*lpMsg).wParam & 0xff) as u8 as i32,
-                        );
-                        if !lpwCmd.is_null() {
-                            *lpwCmd = (*lpAccelTbl.offset(i as isize)).cmd;
-                        }
-                        HeapFree(GetProcessHeap(), 0, lpAccelTbl as *mut core::ffi::c_void);
-                        return 1;
-                    }
-                }
+                HeapFree(GetProcessHeap(), 0, lpAccelTbl as LPVOID);
+                return 1;
             }
         }
         i += 1;
     }
 
-    WARN_(
-        b"accel\0".as_ptr() as *const i8,
-        b"couldn't translate accelerator key\n\0".as_ptr() as *const i8,
-    );
-    HeapFree(GetProcessHeap(), 0, lpAccelTbl as *mut core::ffi::c_void);
+    WARN!(b"couldn't translate accelerator key\n\0".as_ptr());
+    HeapFree(GetProcessHeap(), 0, lpAccelTbl as LPVOID);
     0
 }
 
+/// ole2.c:2033 ReleaseStgMedium [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn ReleaseStgMedium(pmedium: *mut STGMEDIUM) {
-
     match (*pmedium).tymed {
         TYMED_HGLOBAL => {
-            if (*pmedium).pUnkForRelease == core::ptr::null_mut()
-                && (*pmedium).__bindgen_anon_1.hGlobal != core::ptr::null_mut()
+            if (*pmedium).pUnkForRelease.is_null()
+                && !(*pmedium).__bindgen_anon_1.hGlobal.is_null()
             {
                 GlobalFree((*pmedium).__bindgen_anon_1.hGlobal);
             }
         }
         TYMED_FILE => {
-            if (*pmedium).__bindgen_anon_1.lpszFileName != core::ptr::null_mut() {
-                if (*pmedium).pUnkForRelease == core::ptr::null_mut() {
+            if !(*pmedium).__bindgen_anon_1.lpszFileName.is_null() {
+                if (*pmedium).pUnkForRelease.is_null() {
                     DeleteFileW((*pmedium).__bindgen_anon_1.lpszFileName);
                 }
+
                 CoTaskMemFree((*pmedium).__bindgen_anon_1.lpszFileName as LPVOID);
             }
         }
         TYMED_ISTREAM => {
-            if (*pmedium).__bindgen_anon_1.pstm != core::ptr::null_mut() {
+            if !(*pmedium).__bindgen_anon_1.pstm.is_null() {
                 IStream_Release((*pmedium).__bindgen_anon_1.pstm);
             }
         }
         TYMED_ISTORAGE => {
-            if (*pmedium).__bindgen_anon_1.pstg != core::ptr::null_mut() {
+            if !(*pmedium).__bindgen_anon_1.pstg.is_null() {
                 IStorage_Release((*pmedium).__bindgen_anon_1.pstg);
             }
         }
         TYMED_GDI => {
-            if (*pmedium).pUnkForRelease == core::ptr::null_mut()
-                && (*pmedium).__bindgen_anon_1.hBitmap != core::ptr::null_mut()
+            if (*pmedium).pUnkForRelease.is_null()
+                && !(*pmedium).__bindgen_anon_1.hBitmap.is_null()
             {
-                DeleteObject((*pmedium).__bindgen_anon_1.hBitmap);
+                DeleteObject((*pmedium).__bindgen_anon_1.hBitmap as HGDIOBJ);
             }
         }
         TYMED_MFPICT => {
-            if (*pmedium).pUnkForRelease == core::ptr::null_mut()
-                && (*pmedium).__bindgen_anon_1.hMetaFilePict != core::ptr::null_mut()
+            if (*pmedium).pUnkForRelease.is_null()
+                && !(*pmedium).__bindgen_anon_1.hMetaFilePict.is_null()
             {
                 let pMP = GlobalLock((*pmedium).__bindgen_anon_1.hMetaFilePict) as LPMETAFILEPICT;
                 DeleteMetaFile((*pMP).hMF);
@@ -2038,37 +2303,41 @@ pub unsafe extern "system" fn ReleaseStgMedium(pmedium: *mut STGMEDIUM) {
             }
         }
         TYMED_ENHMF => {
-            if (*pmedium).pUnkForRelease == core::ptr::null_mut()
-                && (*pmedium).__bindgen_anon_1.hEnhMetaFile != core::ptr::null_mut()
+            if (*pmedium).pUnkForRelease.is_null()
+                && !(*pmedium).__bindgen_anon_1.hEnhMetaFile.is_null()
             {
-                DeleteEnhMetaFile((*pmedium).__bindgen_anon_1.hEnhMetaFile);
+                DeleteEnhMetaFile((*pmedium).__bindgen_anon_1.hEnhMetaFile as *mut c_void);
             }
         }
-        TYMED_NULL | _ => {}
+        // TYMED_NULL and everything else
+        _ => {}
     }
     (*pmedium).tymed = TYMED_NULL;
 
-    if (*pmedium).pUnkForRelease != core::ptr::null_mut() {
+    // After cleaning up, the unknown is released
+    if !(*pmedium).pUnkForRelease.is_null() {
         IUnknown_Release((*pmedium).pUnkForRelease);
         (*pmedium).pUnkForRelease = core::ptr::null_mut();
     }
 }
 
+/// ole2.c:2123 OLEDD_Initialize
 unsafe fn OLEDD_Initialize() {
     let mut wndClass: WNDCLASSW = core::mem::zeroed();
 
     wndClass.style = CS_GLOBALCLASS;
     wndClass.lpfnWndProc = Some(OLEDD_DragTrackerWindowProc);
     wndClass.cbClsExtra = 0;
-    wndClass.cbWndExtra = core::mem::size_of::<*mut TrackerWindowInfo>() as i32;
+    wndClass.cbWndExtra = core::mem::size_of::<*mut TrackerWindowInfo>() as c_int;
     wndClass.hCursor = core::ptr::null_mut();
     wndClass.hbrBackground = core::ptr::null_mut();
     wndClass.lpszClassName = OLEDD_DRAGTRACKERCLASS.as_ptr();
 
-    RegisterClassW(core::ptr::addr_of!(wndClass));
+    RegisterClassW(&wndClass);
 }
 
-unsafe fn OLEDD_DragTrackerWindowProc(
+/// ole2.c:2150 OLEDD_DragTrackerWindowProc
+unsafe extern "system" fn OLEDD_DragTrackerWindowProc(
     hwnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -2077,12 +2346,19 @@ unsafe fn OLEDD_DragTrackerWindowProc(
     match uMsg {
         WM_CREATE => {
             let createStruct = lParam as LPCREATESTRUCTA;
-            SetWindowLongPtrW(hwnd, 0, (*createStruct).lpCreateParams as LONG_PTR);
-            SetTimer(hwnd, DRAG_TIMER_ID, 50, core::ptr::null_mut());
+
+            set_window_longptr_w(hwnd, 0, (*createStruct).lpCreateParams as LONG_PTR);
+            SetTimer(hwnd, DRAG_TIMER_ID, 50, None);
         }
-        WM_TIMER | WM_MOUSEMOVE | WM_LBUTTONUP | WM_MBUTTONUP | WM_RBUTTONUP |
-        WM_LBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDOWN => {
-            let trackerInfo = GetWindowLongPtrA(hwnd, 0) as *mut TrackerWindowInfo;
+        WM_TIMER
+        | WM_MOUSEMOVE
+        | WM_LBUTTONUP
+        | WM_MBUTTONUP
+        | WM_RBUTTONUP
+        | WM_LBUTTONDOWN
+        | WM_MBUTTONDOWN
+        | WM_RBUTTONDOWN => {
+            let trackerInfo = get_window_longptr_a(hwnd, 0) as *mut TrackerWindowInfo;
             if (*trackerInfo).trackingDone == 0 {
                 OLEDD_TrackStateChange(trackerInfo);
             }
@@ -2093,64 +2369,76 @@ unsafe fn OLEDD_DragTrackerWindowProc(
         _ => {}
     }
 
+    // This is a window proc after all. Let's call the default.
     DefWindowProcW(hwnd, uMsg, wParam, lParam)
 }
 
+/// ole2.c:2195 DefaultDragEnter (ReactOS)
 unsafe fn DefaultDragEnter(
-    hwndTarget: HWND,
+    _hwndTarget: HWND,
     pDataObj: *mut IDataObject,
-    grfKeyState: DWORD,
-    pt: POINTL,
+    _grfKeyState: DWORD,
+    _pt: POINTL,
     pdwEffect: *mut DWORD,
 ) -> HRESULT {
-    let mut hr: HRESULT;
     let mut fme: FORMATETC = core::mem::zeroed();
 
-    core::ptr::write_bytes(&mut fme as *mut FORMATETC, 0, 1);
-    fme.cfFormat = CF_HDROP as u16;
+    ZeroMemory(
+        &mut fme as *mut FORMATETC as *mut c_void,
+        core::mem::size_of::<FORMATETC>(),
+    );
+    fme.cfFormat = CF_HDROP as CLIPFORMAT;
     fme.ptd = core::ptr::null_mut();
     fme.dwAspect = DVASPECT_CONTENT;
-    fme.lindex = -1i32;
+    fme.lindex = -1;
     fme.tymed = TYMED_HGLOBAL;
-    hr = ((*(*pDataObj).lpVtbl).QueryGetData)(pDataObj, &mut fme);
+    let hr = IDataObject_QueryGetData(pDataObj, &mut fme);
 
-    *pdwEffect = if hr >= 0 { DROPEFFECT_COPY } else { DROPEFFECT_NONE };
+    *pdwEffect = if SUCCEEDED(hr) {
+        DROPEFFECT_COPY
+    } else {
+        DROPEFFECT_NONE
+    };
 
     if *pdwEffect == DROPEFFECT_NONE {
         return DRAGDROP_S_CANCEL;
     }
 
-    return S_OK;
+    S_OK
 }
 
+/// ole2.c:2220 DefaultDrop (ReactOS)
 unsafe fn DefaultDrop(
     hwndAccepter: HWND,
     pDataObj: *mut IDataObject,
-    grfKeyState: DWORD,
-    pt: POINTL,
-    pdwEffect: *mut DWORD,
+    _grfKeyState: DWORD,
+    _pt: POINTL,
+    _pdwEffect: *mut DWORD,
 ) -> HRESULT {
-
     let mut fme: FORMATETC = core::mem::zeroed();
     let mut stgm: STGMEDIUM = core::mem::zeroed();
-    let mut hr: HRESULT;
-    let mut hGlobal: HGLOBAL = core::ptr::null_mut();
 
-    ZeroMemory(&mut fme as *mut _ as PVOID, core::mem::size_of::<FORMATETC>());
-    fme.cfFormat = CF_HDROP;
+    ZeroMemory(
+        &mut fme as *mut FORMATETC as *mut c_void,
+        core::mem::size_of::<FORMATETC>(),
+    );
+    fme.cfFormat = CF_HDROP as CLIPFORMAT;
     fme.ptd = core::ptr::null_mut();
     fme.dwAspect = DVASPECT_CONTENT;
-    fme.lindex = -1i32;
+    fme.lindex = -1;
     fme.tymed = TYMED_HGLOBAL;
-    hr = ((*(*pDataObj).lpVtbl).QueryGetData)(pDataObj, &mut fme);
-    if FAILED(hr) != 0 {
+    let mut hr = IDataObject_QueryGetData(pDataObj, &mut fme);
+    if FAILED(hr) {
         return hr;
     }
 
-    ZeroMemory(&mut stgm as *mut _ as PVOID, core::mem::size_of::<STGMEDIUM>());
-    hr = ((*(*pDataObj).lpVtbl).GetData)(pDataObj, &mut fme, &mut stgm);
-    if SUCCEEDED(hr) != 0 {
-        hGlobal = stgm.DUMMYUNIONNAME.hGlobal;
+    ZeroMemory(
+        &mut stgm as *mut STGMEDIUM as *mut c_void,
+        core::mem::size_of::<STGMEDIUM>(),
+    );
+    hr = IDataObject_GetData(pDataObj, &mut fme, &mut stgm);
+    if SUCCEEDED(hr) {
+        let hGlobal: HGLOBAL = stgm.__bindgen_anon_1.hGlobal;
         if !hGlobal.is_null() {
             if IsWindowUnicode(hwndAccepter) != 0 {
                 PostMessageW(hwndAccepter, WM_DROPFILES, hGlobal as WPARAM, 0);
@@ -2161,11 +2449,11 @@ unsafe fn DefaultDrop(
         ReleaseStgMedium(&mut stgm);
     }
 
-    return hr;
+    hr
 }
 
+/// ole2.c:2260 drag_enter
 unsafe fn drag_enter(info: *mut TrackerWindowInfo, mut new_target: HWND) {
-    let mut hr: HRESULT;
     let mut dwEffect: DWORD = *(*info).pdwEffect;
 
     (*info).curTargetHWND = new_target;
@@ -2174,7 +2462,7 @@ unsafe fn drag_enter(info: *mut TrackerWindowInfo, mut new_target: HWND) {
     while !new_target.is_null() && is_droptarget(new_target) == 0 {
         if is_acceptfiles(new_target) != 0 {
             dwEffect = (*info).dwOKEffect;
-            hr = DefaultDragEnter(
+            let hr = DefaultDragEnter(
                 new_target,
                 (*info).dataObject,
                 (*info).dwKeyState,
@@ -2197,7 +2485,7 @@ unsafe fn drag_enter(info: *mut TrackerWindowInfo, mut new_target: HWND) {
 
     if !(*info).curDragTarget.is_null() {
         *(*info).pdwEffect = (*info).dwOKEffect;
-        hr = IDropTarget_DragEnter(
+        let hr = IDropTarget_DragEnter(
             (*info).curDragTarget,
             (*info).dataObject,
             (*info).dwKeyState,
@@ -2206,6 +2494,7 @@ unsafe fn drag_enter(info: *mut TrackerWindowInfo, mut new_target: HWND) {
         );
         *(*info).pdwEffect &= (*info).dwOKEffect;
 
+        // failed DragEnter() means invalid target
         if hr != S_OK {
             IDropTarget_Release((*info).curDragTarget);
             (*info).curDragTarget = core::ptr::null_mut();
@@ -2215,17 +2504,15 @@ unsafe fn drag_enter(info: *mut TrackerWindowInfo, mut new_target: HWND) {
     }
 }
 
+/// ole2.c:2319 drag_end
 unsafe fn drag_end(info: *mut TrackerWindowInfo) {
-
-    let mut hr: HRESULT;
-
-    (*info).trackingDone = 1u8;
+    (*info).trackingDone = 1;
     ReleaseCapture();
 
     if !(*info).curDragTarget.is_null() {
         if (*info).returnValue == DRAGDROP_S_DROP && *(*info).pdwEffect != DROPEFFECT_NONE {
             *(*info).pdwEffect = (*info).dwOKEffect;
-            hr = IDropTarget_Drop(
+            let hr = IDropTarget_Drop(
                 (*info).curDragTarget,
                 (*info).dataObject,
                 (*info).dwKeyState,
@@ -2234,7 +2521,7 @@ unsafe fn drag_end(info: *mut TrackerWindowInfo) {
             );
             *(*info).pdwEffect &= (*info).dwOKEffect;
 
-            if FAILED(hr) != 0 {
+            if FAILED(hr) {
                 (*info).returnValue = hr;
             }
         } else {
@@ -2246,7 +2533,7 @@ unsafe fn drag_end(info: *mut TrackerWindowInfo) {
     } else if !(*info).accepterHWND.is_null() {
         if (*info).returnValue == DRAGDROP_S_DROP && *(*info).pdwEffect != DROPEFFECT_NONE {
             *(*info).pdwEffect = (*info).dwOKEffect;
-            hr = DefaultDrop(
+            let hr = DefaultDrop(
                 (*info).accepterHWND,
                 (*info).dataObject,
                 (*info).dwKeyState,
@@ -2255,7 +2542,7 @@ unsafe fn drag_end(info: *mut TrackerWindowInfo) {
             );
             *(*info).pdwEffect &= (*info).dwOKEffect;
 
-            if FAILED(hr) != 0 {
+            if FAILED(hr) {
                 (*info).returnValue = hr;
             }
         } else {
@@ -2267,42 +2554,43 @@ unsafe fn drag_end(info: *mut TrackerWindowInfo) {
     }
 }
 
+/// ole2.c:2372 give_feedback
 unsafe fn give_feedback(info: *mut TrackerWindowInfo) -> HRESULT {
-    let hr: HRESULT;
-    let res: i32;
-    let cur: HCURSOR;
-
     if (*info).curDragTarget.is_null() && (*info).accepterHWND.is_null() {
         *(*info).pdwEffect = DROPEFFECT_NONE;
     }
 
-    hr = ((*(*(*info).dropSource).lpVtbl).GiveFeedback)((*info).dropSource, *(*info).pdwEffect);
+    let hr = IDropSource_GiveFeedback((*info).dropSource, *(*info).pdwEffect);
 
     if hr == DRAGDROP_S_USEDEFAULTCURSORS {
-        if *(*info).pdwEffect & DROPEFFECT_MOVE != 0 {
-            res = CURSOR_MOVE;
+        let res: c_int = if *(*info).pdwEffect & DROPEFFECT_MOVE != 0 {
+            CURSOR_MOVE
         } else if *(*info).pdwEffect & DROPEFFECT_COPY != 0 {
-            res = CURSOR_COPY;
+            CURSOR_COPY
         } else if *(*info).pdwEffect & DROPEFFECT_LINK != 0 {
-            res = CURSOR_LINK;
+            CURSOR_LINK
         } else {
-            res = CURSOR_NODROP;
-        }
+            CURSOR_NODROP
+        };
 
-        cur = LoadCursorW(hProxyDll, MAKEINTRESOURCEW(res as u16));
+        let cur = LoadCursorW(
+            crate::compobj::compobj::hProxyDll as HINSTANCE,
+            MAKEINTRESOURCEW(res as WORD),
+        );
         SetCursor(cur);
     }
 
     hr
 }
 
+/// ole2.c:2416 OLEDD_TrackStateChange
 unsafe fn OLEDD_TrackStateChange(trackerInfo: *mut TrackerWindowInfo) {
-    let mut hwndNewTarget: HWND = core::ptr::null_mut();
     let mut pt: POINT = core::mem::zeroed();
 
+    // Get the handle of the window under the mouse
     pt.x = (*trackerInfo).curMousePos.x;
     pt.y = (*trackerInfo).curMousePos.y;
-    hwndNewTarget = WindowFromPoint(pt);
+    let hwndNewTarget: HWND = WindowFromPoint(pt);
 
     (*trackerInfo).returnValue = IDropSource_QueryContinueDrag(
         (*trackerInfo).dropSource,
@@ -2347,8 +2635,8 @@ unsafe fn OLEDD_TrackStateChange(trackerInfo: *mut TrackerWindowInfo) {
     }
 }
 
+/// ole2.c:2484 OLEDD_GetButtonState
 unsafe fn OLEDD_GetButtonState() -> DWORD {
-
     let mut keyboardState: [BYTE; 256] = [0; 256];
     let mut keyMask: DWORD = 0;
 
@@ -2380,36 +2668,36 @@ unsafe fn OLEDD_GetButtonState() -> DWORD {
 
     keyMask
 }
-unsafe fn OLEUTL_ReadRegistryDWORDValue(
-    regKey: HKEY,
-    pdwValue: *mut DWORD) {
+
+/// ole2.c:2526 OLEUTL_ReadRegistryDWORDValue
+unsafe fn OLEUTL_ReadRegistryDWORDValue(regKey: HKEY, pdwValue: *mut DWORD) {
     let mut buffer: [WCHAR; 20] = [0; 20];
     let mut cbData: DWORD = core::mem::size_of_val(&buffer) as DWORD;
     let mut dwKeyType: DWORD = 0;
-    let lres: LONG;
 
-    lres = RegQueryValueExW(
+    let lres = RegQueryValueExW(
         regKey,
         emptyW.as_ptr(),
         core::ptr::null_mut(),
         &mut dwKeyType,
-        buffer.as_mut_ptr() as LPBYTE,
+        buffer.as_mut_ptr() as *mut u8,
         &mut cbData,
     );
 
-    if lres == ERROR_SUCCESS as LONG {
+    if lres == ERROR_SUCCESS {
         match dwKeyType {
             REG_DWORD => {
-                *pdwValue = *(buffer.as_ptr() as *const DWORD);
+                *pdwValue = core::ptr::read_unaligned(buffer.as_ptr() as *const DWORD);
             }
             REG_EXPAND_SZ | REG_MULTI_SZ | REG_SZ => {
-                *pdwValue = wcstoul(buffer.as_ptr(), core::ptr::null_mut(), 10);
+                *pdwValue = wcstoul(buffer.as_ptr(), core::ptr::null_mut(), 10) as DWORD;
             }
             _ => {}
         }
     }
 }
 
+/// ole2.c:2565 OleDraw [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleDraw(
     pUnk: *mut IUnknown,
@@ -2426,48 +2714,43 @@ pub unsafe extern "system" fn OleDraw(
     let hres = IUnknown_QueryInterface(
         pUnk,
         &IID_IViewObject,
-        &mut viewobject as *mut *mut IViewObject as *mut *mut core::ffi::c_void,
+        &mut viewobject as *mut *mut IViewObject as *mut *mut c_void,
     );
-
-    if SUCCEEDED(hres) != 0 {
+    if SUCCEEDED(hres) {
         let hres = IViewObject_Draw(
             viewobject,
             dwAspect,
-            -1i32,
+            -1,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             hdcDraw,
-            rect as *mut RECTL,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
+            rect as LPCRECTL,
+            core::ptr::null(),
+            None,
             0,
         );
         IViewObject_Release(viewobject);
-        return hres;
+        hres
     } else {
-        return DV_E_NOIVIEWOBJECT;
+        DV_E_NOIVIEWOBJECT
     }
 }
 
+/// ole2.c:2592 OleTranslateAccelerator [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleTranslateAccelerator(
     lpFrame: LPOLEINPLACEFRAME,
     lpFrameInfo: LPOLEINPLACEFRAMEINFO,
     lpmsg: LPMSG,
 ) -> HRESULT {
-    let mut wID: u16 = 0;
+    let mut wID: WORD = 0;
 
-    TRACE!(
-        b"(%p,%p,%p)\n\0".as_ptr() as PCHAR,
-        lpFrame,
-        lpFrameInfo,
-        lpmsg,
-    );
+    TRACE!(b"(%p,%p,%p)\n\0".as_ptr(), lpFrame, lpFrameInfo, lpmsg);
 
     if IsAccelerator(
         (*lpFrameInfo).haccel,
-        (*lpFrameInfo).cAccelEntries,
+        (*lpFrameInfo).cAccelEntries as c_int,
         lpmsg,
         &mut wID,
     ) != 0
@@ -2475,9 +2758,10 @@ pub unsafe extern "system" fn OleTranslateAccelerator(
         return IOleInPlaceFrame_TranslateAccelerator(lpFrame, lpmsg, wID);
     }
 
-    return S_FALSE;
+    S_FALSE
 }
 
+/// ole2.c:2609 OleCreate [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleCreate(
     rclsid: REFCLSID,
@@ -2488,14 +2772,13 @@ pub unsafe extern "system" fn OleCreate(
     pStg: LPSTORAGE,
     ppvObj: *mut LPVOID,
 ) -> HRESULT {
-    let mut hres: HRESULT;
     let mut pUnk: *mut IUnknown = core::ptr::null_mut();
     let mut pOleObject: *mut IOleObject = core::ptr::null_mut();
 
     TRACE!(
-        b"(%s, %s, %d, %p, %p, %p, %p)\n\0".as_ptr() as PCHAR,
-        debugstr_guid(rclsid),
-        debugstr_guid(riid),
+        b"(%s, %s, %d, %p, %p, %p, %p)\n\0".as_ptr(),
+        debugstr_guid(rclsid as *const c_void),
+        debugstr_guid(riid as *const c_void),
         renderopt,
         pFormatEtc,
         pClientSite,
@@ -2503,7 +2786,7 @@ pub unsafe extern "system" fn OleCreate(
         ppvObj,
     );
 
-    hres = CoCreateInstance(
+    let mut hres = CoCreateInstance(
         rclsid,
         core::ptr::null_mut(),
         CLSCTX_INPROC_SERVER | CLSCTX_INPROC_HANDLER,
@@ -2511,61 +2794,57 @@ pub unsafe extern "system" fn OleCreate(
         &mut pUnk as *mut *mut IUnknown as *mut LPVOID,
     );
 
-    if SUCCEEDED(hres) != 0 {
+    if SUCCEEDED(hres) {
         hres = IStorage_SetClass(pStg, rclsid);
     }
 
-    if !pClientSite.is_null() && SUCCEEDED(hres) != 0 {
+    if !pClientSite.is_null() && SUCCEEDED(hres) {
         hres = IUnknown_QueryInterface(
             pUnk,
             &IID_IOleObject,
-            &mut pOleObject as *mut *mut IOleObject as *mut LPVOID,
+            &mut pOleObject as *mut *mut IOleObject as *mut *mut c_void,
         );
-        if SUCCEEDED(hres) != 0 {
+        if SUCCEEDED(hres) {
             let mut dwStatus: DWORD = 0;
             IOleObject_GetMiscStatus(pOleObject, DVASPECT_CONTENT, &mut dwStatus);
         }
     }
 
-    if SUCCEEDED(hres) != 0 {
+    if SUCCEEDED(hres) {
         let mut pPS: *mut IPersistStorage = core::ptr::null_mut();
         hres = IUnknown_QueryInterface(
             pUnk,
             &IID_IPersistStorage,
-            &mut pPS as *mut *mut IPersistStorage as *mut LPVOID,
+            &mut pPS as *mut *mut IPersistStorage as *mut *mut c_void,
         );
-        if SUCCEEDED(hres) != 0 {
-            TRACE!(b"trying to set stg %p\n\0".as_ptr() as PCHAR, pStg);
+        if SUCCEEDED(hres) {
+            TRACE!(b"trying to set stg %p\n\0".as_ptr(), pStg);
             hres = IPersistStorage_InitNew(pPS, pStg);
-            TRACE!(b"-- result 0x%08x\n\0".as_ptr() as PCHAR, hres);
+            TRACE!(b"-- result 0x%08x\n\0".as_ptr(), hres);
             IPersistStorage_Release(pPS);
         }
     }
 
-    if !pClientSite.is_null() && SUCCEEDED(hres) != 0 {
-        TRACE!(
-            b"trying to set clientsite %p\n\0".as_ptr() as PCHAR,
-            pClientSite,
-        );
+    if !pClientSite.is_null() && SUCCEEDED(hres) {
+        TRACE!(b"trying to set clientsite %p\n\0".as_ptr(), pClientSite);
         hres = IOleObject_SetClientSite(pOleObject, pClientSite);
-        TRACE!(b"-- result 0x%08x\n\0".as_ptr() as PCHAR, hres);
+        TRACE!(b"-- result 0x%08x\n\0".as_ptr(), hres);
     }
 
     if !pOleObject.is_null() {
         IOleObject_Release(pOleObject);
     }
 
-    if ((renderopt == OLERENDER_DRAW) || (renderopt == OLERENDER_FORMAT)) && SUCCEEDED(hres) != 0 {
+    if ((renderopt == OLERENDER_DRAW) || (renderopt == OLERENDER_FORMAT)) && SUCCEEDED(hres) {
         hres = OleRun(pUnk);
-        if SUCCEEDED(hres) != 0 {
+        if SUCCEEDED(hres) {
             let mut pOleCache: *mut IOleCache = core::ptr::null_mut();
 
             if SUCCEEDED(IUnknown_QueryInterface(
                 pUnk,
                 &IID_IOleCache,
-                &mut pOleCache as *mut *mut IOleCache as *mut *mut core::ffi::c_void,
-            )) != 0
-            {
+                &mut pOleCache as *mut *mut IOleCache as *mut *mut c_void,
+            )) {
                 let mut dwConnection: DWORD = 0;
                 if renderopt == OLERENDER_DRAW && pFormatEtc.is_null() {
                     let mut pfe: FORMATETC = core::mem::zeroed();
@@ -2576,91 +2855,128 @@ pub unsafe extern "system" fn OleCreate(
                     pfe.tymed = TYMED_NULL;
                     hres = IOleCache_Cache(pOleCache, &mut pfe, ADVF_PRIMEFIRST, &mut dwConnection);
                 } else {
-                    hres = IOleCache_Cache(pOleCache, pFormatEtc, ADVF_PRIMEFIRST, &mut dwConnection);
+                    hres =
+                        IOleCache_Cache(pOleCache, pFormatEtc, ADVF_PRIMEFIRST, &mut dwConnection);
                 }
                 IOleCache_Release(pOleCache);
             }
         }
     }
 
-    if FAILED(hres) != 0 && !pUnk.is_null() {
+    if FAILED(hres) && !pUnk.is_null() {
         IUnknown_Release(pUnk);
         pUnk = core::ptr::null_mut();
     }
 
     *ppvObj = pUnk as LPVOID;
 
-    TRACE!(b"-- %p\n\0".as_ptr() as PCHAR, pUnk);
+    TRACE!(b"-- %p\n\0".as_ptr(), pUnk);
     hres
 }
 
+/// ole2.c:2704 OleGetAutoConvert [OLE32.@]
 #[no_mangle]
-pub unsafe extern "system" fn OleGetAutoConvert(clsidOld: *const CLSID, pClsidNew: *mut CLSID) -> HRESULT {
-    static wszAutoConvertTo: [u16; 14] = [
+pub unsafe extern "system" fn OleGetAutoConvert(
+    clsidOld: REFCLSID,
+    pClsidNew: *mut CLSID,
+) -> HRESULT {
+    static wszAutoConvertTo: [WCHAR; 14] = [
         'A' as u16, 'u' as u16, 't' as u16, 'o' as u16, 'C' as u16, 'o' as u16, 'n' as u16,
-        'v' as u16, 'e' as u16, 'r' as u16, 't' as u16, 'T' as u16, 'o' as u16, 0
+        'v' as u16, 'e' as u16, 'r' as u16, 't' as u16, 'T' as u16, 'o' as u16, 0,
     ];
     let mut hkey: HKEY = core::ptr::null_mut();
-    let mut buf: [u16; 39] = [0; 39];
-    let mut len: i32;
-    let mut res: HRESULT = 0;
+    let mut buf: [WCHAR; CHARS_IN_GUID as usize] = [0; CHARS_IN_GUID as usize];
+    let mut res: HRESULT;
 
     res = COM_OpenKeyForCLSID(clsidOld, wszAutoConvertTo.as_ptr(), KEY_READ, &mut hkey);
-    if FAILED(res) != 0 {
+    if FAILED(res) {
+        // done:
         if !hkey.is_null() {
             RegCloseKey(hkey);
         }
         return res;
     }
 
-    len = (core::mem::size_of_val(&buf)) as i32;
-    if RegQueryValueW(hkey, core::ptr::null_mut(), buf.as_mut_ptr(), &mut len) != 0 {
-        res = 0x80040150u32 as HRESULT;
+    let mut len: LONG = core::mem::size_of_val(&buf) as LONG;
+    if RegQueryValueW(hkey, core::ptr::null(), buf.as_mut_ptr(), &mut len) != 0 {
+        res = REGDB_E_KEYMISSING;
+        // done:
         if !hkey.is_null() {
             RegCloseKey(hkey);
         }
         return res;
     }
     res = CLSIDFromString(buf.as_ptr(), pClsidNew);
+    // done:
     if !hkey.is_null() {
         RegCloseKey(hkey);
     }
-    return res;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn OleSetAutoConvert(clsidOld: *const CLSID, clsidNew: *const CLSID) -> HRESULT {
-
-    static wszAutoConvertTo: [u16; 14] = [65, 117, 116, 111, 67, 111, 110, 118, 101, 114, 116, 84, 111, 0];
-    let mut hkey: HKEY = core::ptr::null_mut();
-    let mut szClsidNew: [u16; 39] = [0; 39];
-    let mut res: HRESULT = 0;
-
-    TRACE!(b"(%s,%s)\n\0".as_ptr(), debugstr_guid(clsidOld), debugstr_guid(clsidNew));
-
-    res = COM_OpenKeyForCLSID(clsidOld, core::ptr::null(), KEY_READ | KEY_WRITE, &mut hkey);
-    if FAILED(res) != 0 {
-        if !hkey.is_null() { RegCloseKey(hkey); }
-        return res;
-    }
-    StringFromGUID2(clsidNew, szClsidNew.as_mut_ptr(), 39);
-    if RegSetValueW(hkey, wszAutoConvertTo.as_ptr(), REG_SZ, szClsidNew.as_ptr(), ((lstrlenW(szClsidNew.as_ptr()) + 1) * 2) as u32) != 0 {
-        res = 0x80040150u32 as i32;
-    }
-
-    if !hkey.is_null() { RegCloseKey(hkey); }
     res
 }
 
+/// ole2.c:2731 OleSetAutoConvert [OLE32.@]
 #[no_mangle]
-pub unsafe extern "system" fn OleDoAutoConvert(pStg: LPSTORAGE, pClsidNew: *mut CLSID) -> HRESULT {
+pub unsafe extern "system" fn OleSetAutoConvert(
+    clsidOld: REFCLSID,
+    clsidNew: REFCLSID,
+) -> HRESULT {
+    static wszAutoConvertTo: [WCHAR; 14] = [
+        'A' as u16, 'u' as u16, 't' as u16, 'o' as u16, 'C' as u16, 'o' as u16, 'n' as u16,
+        'v' as u16, 'e' as u16, 'r' as u16, 't' as u16, 'T' as u16, 'o' as u16, 0,
+    ];
+    let mut hkey: HKEY = core::ptr::null_mut();
+    let mut szClsidNew: [WCHAR; CHARS_IN_GUID as usize] = [0; CHARS_IN_GUID as usize];
+    let mut res: HRESULT;
 
+    TRACE!(
+        b"(%s,%s)\n\0".as_ptr(),
+        debugstr_guid(clsidOld as *const c_void),
+        debugstr_guid(clsidNew as *const c_void)
+    );
+
+    res = COM_OpenKeyForCLSID(
+        clsidOld,
+        core::ptr::null(),
+        KEY_READ | KEY_WRITE,
+        &mut hkey,
+    );
+    if FAILED(res) {
+        // done:
+        if !hkey.is_null() {
+            RegCloseKey(hkey);
+        }
+        return res;
+    }
+    StringFromGUID2(clsidNew, szClsidNew.as_mut_ptr(), CHARS_IN_GUID as c_int);
+    if RegSetValueW(
+        hkey,
+        wszAutoConvertTo.as_ptr(),
+        REG_SZ,
+        szClsidNew.as_ptr(),
+        ((lstrlenW(szClsidNew.as_ptr()) + 1) as DWORD) * core::mem::size_of::<WCHAR>() as DWORD,
+    ) != 0
+    {
+        res = REGDB_E_WRITEREGDB;
+    }
+
+    // done:
+    if !hkey.is_null() {
+        RegCloseKey(hkey);
+    }
+    res
+}
+
+/// ole2.c:2758 OleDoAutoConvert [OLE32.@]
+#[no_mangle]
+pub unsafe extern "system" fn OleDoAutoConvert(
+    pStg: LPSTORAGE,
+    pClsidNew: *mut CLSID,
+) -> HRESULT {
     let mut user_type_old: LPOLESTR = core::ptr::null_mut();
-    let mut user_type_new: LPOLESTR;
-    let mut cf: CLIPFORMAT;
+    let mut user_type_new: LPOLESTR = core::ptr::null_mut();
+    let mut cf: CLIPFORMAT = 0;
     let mut stat: STATSTG = core::mem::zeroed();
     let mut clsid: CLSID = core::mem::zeroed();
-    let mut hr: HRESULT;
 
     TRACE!(b"(%p, %p)\n\0".as_ptr(), pStg, pClsidNew);
 
@@ -2668,45 +2984,44 @@ pub unsafe extern "system" fn OleDoAutoConvert(pStg: LPSTORAGE, pClsidNew: *mut 
     if pStg.is_null() {
         return E_INVALIDARG;
     }
-    hr = IStorage_Stat(pStg, &mut stat, STATFLAG_NONAME);
-    if FAILED(hr) != 0 {
+    let mut hr = IStorage_Stat(pStg, &mut stat, STATFLAG_NONAME);
+    if FAILED(hr) {
         return hr;
     }
 
     *pClsidNew = stat.clsid;
     hr = OleGetAutoConvert(&stat.clsid, &mut clsid);
-    if FAILED(hr) != 0 {
+    if FAILED(hr) {
         return hr;
     }
 
     hr = IStorage_SetClass(pStg, &clsid);
-    if FAILED(hr) != 0 {
+    if FAILED(hr) {
         return hr;
     }
 
     hr = ReadFmtUserTypeStg(pStg, &mut cf, &mut user_type_old);
-    if FAILED(hr) != 0 {
+    if FAILED(hr) {
         cf = 0;
         user_type_new = core::ptr::null_mut();
-    } else {
-        user_type_new = core::ptr::null_mut();
+        let _ = user_type_new;
     }
 
     hr = OleRegGetUserType(&clsid, USERCLASSTYPE_FULL, &mut user_type_new);
-    if FAILED(hr) != 0 {
+    if FAILED(hr) {
         user_type_new = core::ptr::null_mut();
     }
 
     hr = WriteFmtUserTypeStg(pStg, cf, user_type_new);
     CoTaskMemFree(user_type_new as LPVOID);
-    if FAILED(hr) != 0 {
+    if FAILED(hr) {
         CoTaskMemFree(user_type_old as LPVOID);
         IStorage_SetClass(pStg, &stat.clsid);
         return hr;
     }
 
     hr = SetConvertStg(pStg, 1);
-    if FAILED(hr) != 0 {
+    if FAILED(hr) {
         WriteFmtUserTypeStg(pStg, cf, user_type_old);
         IStorage_SetClass(pStg, &stat.clsid);
     } else {
@@ -2716,42 +3031,49 @@ pub unsafe extern "system" fn OleDoAutoConvert(pStg: LPSTORAGE, pClsidNew: *mut 
     hr
 }
 
+/// ole2.c:2818 OleIsRunning [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleIsRunning(object: LPOLEOBJECT) -> BOOL {
     let mut pRunnable: *mut IRunnableObject = core::ptr::null_mut();
-    let hr: HRESULT;
-    let running: BOOL;
 
-    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, object);
+    TRACE!(b"(%p)\n\0".as_ptr(), object);
 
     if object.is_null() {
         return 0;
     }
 
-    hr = IOleObject_QueryInterface(
+    let hr = IOleObject_QueryInterface(
         object,
         &IID_IRunnableObject,
-        &mut pRunnable as *mut *mut IRunnableObject as *mut LPVOID,
+        &mut pRunnable as *mut *mut IRunnableObject as *mut *mut c_void,
     );
     if FAILED(hr) {
         return 1;
     }
-    running = IRunnableObject_IsRunning(pRunnable);
+    let running = IRunnableObject_IsRunning(pRunnable);
     IRunnableObject_Release(pRunnable);
-    return running;
+    running
 }
 
+/// ole2.c:2839 OleNoteObjectVisible [OLE32.@]
 #[no_mangle]
-pub unsafe extern "system" fn OleNoteObjectExternal(pUnknown: LPUNKNOWN, bVisible: BOOL) -> HRESULT {
-
+pub unsafe extern "system" fn OleNoteObjectVisible(
+    pUnknown: LPUNKNOWN,
+    bVisible: BOOL,
+) -> HRESULT {
     TRACE!(
         b"(%p, %s)\n\0".as_ptr(),
         pUnknown,
-        if bVisible != 0 { b"TRUE\0".as_ptr() } else { b"FALSE\0".as_ptr() }
+        if bVisible != 0 {
+            b"TRUE\0".as_ptr()
+        } else {
+            b"FALSE\0".as_ptr()
+        }
     );
     CoLockObjectExternal(pUnknown, bVisible, 1)
 }
 
+/// ole2.c:2852 OLE_FreeClipDataArray [internal]
 unsafe fn OLE_FreeClipDataArray(count: ULONG, pClipDataArray: *mut CLIPDATA) {
     let mut i: ULONG = 0;
     while i < count {
@@ -2760,18 +3082,21 @@ unsafe fn OLE_FreeClipDataArray(count: ULONG, pClipDataArray: *mut CLIPDATA) {
     }
 }
 
+/// ole2.c:2864 PropSysAllocString [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn PropSysAllocString(str: LPCOLESTR) -> BSTR {
     SysAllocString(str)
 }
 
+/// ole2.c:2874 PropSysFreeString [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn PropSysFreeString(str: LPOLESTR) {
     SysFreeString(str);
 }
 
+/// ole2.c:2882 PROPVARIANT_ValidateType
 unsafe fn PROPVARIANT_ValidateType(vt: VARTYPE) -> HRESULT {
-    match vt {
+    match vt as DWORD {
         VT_EMPTY
         | VT_NULL
         | VT_I1
@@ -2805,55 +3130,56 @@ unsafe fn PROPVARIANT_ValidateType(vt: VARTYPE) -> HRESULT {
         | VT_BLOB_OBJECT
         | VT_CF
         | VT_CLSID => S_OK,
-        _ if vt == VT_I1 | VT_VECTOR => S_OK,
-        _ if vt == VT_I2 | VT_VECTOR => S_OK,
-        _ if vt == VT_I4 | VT_VECTOR => S_OK,
-        _ if vt == VT_I8 | VT_VECTOR => S_OK,
-        _ if vt == VT_R4 | VT_VECTOR => S_OK,
-        _ if vt == VT_R8 | VT_VECTOR => S_OK,
-        _ if vt == VT_CY | VT_VECTOR => S_OK,
-        _ if vt == VT_DATE | VT_VECTOR => S_OK,
-        _ if vt == VT_BSTR | VT_VECTOR => S_OK,
-        _ if vt == VT_ERROR | VT_VECTOR => S_OK,
-        _ if vt == VT_BOOL | VT_VECTOR => S_OK,
-        _ if vt == VT_VARIANT | VT_VECTOR => S_OK,
-        _ if vt == VT_UI1 | VT_VECTOR => S_OK,
-        _ if vt == VT_UI2 | VT_VECTOR => S_OK,
-        _ if vt == VT_UI4 | VT_VECTOR => S_OK,
-        _ if vt == VT_UI8 | VT_VECTOR => S_OK,
-        _ if vt == VT_LPSTR | VT_VECTOR => S_OK,
-        _ if vt == VT_LPWSTR | VT_VECTOR => S_OK,
-        _ if vt == VT_FILETIME | VT_VECTOR => S_OK,
-        _ if vt == VT_CF | VT_VECTOR => S_OK,
-        _ if vt == VT_CLSID | VT_VECTOR => S_OK,
-        _ if vt == VT_ARRAY | VT_I1 => S_OK,
-        _ if vt == VT_ARRAY | VT_UI1 => S_OK,
-        _ if vt == VT_ARRAY | VT_I2 => S_OK,
-        _ if vt == VT_ARRAY | VT_UI2 => S_OK,
-        _ if vt == VT_ARRAY | VT_I4 => S_OK,
-        _ if vt == VT_ARRAY | VT_UI4 => S_OK,
-        _ if vt == VT_ARRAY | VT_INT => S_OK,
-        _ if vt == VT_ARRAY | VT_UINT => S_OK,
-        _ if vt == VT_ARRAY | VT_R4 => S_OK,
-        _ if vt == VT_ARRAY | VT_R8 => S_OK,
-        _ if vt == VT_ARRAY | VT_CY => S_OK,
-        _ if vt == VT_ARRAY | VT_DATE => S_OK,
-        _ if vt == VT_ARRAY | VT_BSTR => S_OK,
-        _ if vt == VT_ARRAY | VT_BOOL => S_OK,
-        _ if vt == VT_ARRAY | VT_DECIMAL => S_OK,
-        _ if vt == VT_ARRAY | VT_DISPATCH => S_OK,
-        _ if vt == VT_ARRAY | VT_UNKNOWN => S_OK,
-        _ if vt == VT_ARRAY | VT_ERROR => S_OK,
-        _ if vt == VT_ARRAY | VT_VARIANT => S_OK,
+        v if v == VT_I1 | VT_VECTOR => S_OK,
+        v if v == VT_I2 | VT_VECTOR => S_OK,
+        v if v == VT_I4 | VT_VECTOR => S_OK,
+        v if v == VT_I8 | VT_VECTOR => S_OK,
+        v if v == VT_R4 | VT_VECTOR => S_OK,
+        v if v == VT_R8 | VT_VECTOR => S_OK,
+        v if v == VT_CY | VT_VECTOR => S_OK,
+        v if v == VT_DATE | VT_VECTOR => S_OK,
+        v if v == VT_BSTR | VT_VECTOR => S_OK,
+        v if v == VT_ERROR | VT_VECTOR => S_OK,
+        v if v == VT_BOOL | VT_VECTOR => S_OK,
+        v if v == VT_VARIANT | VT_VECTOR => S_OK,
+        v if v == VT_UI1 | VT_VECTOR => S_OK,
+        v if v == VT_UI2 | VT_VECTOR => S_OK,
+        v if v == VT_UI4 | VT_VECTOR => S_OK,
+        v if v == VT_UI8 | VT_VECTOR => S_OK,
+        v if v == VT_LPSTR | VT_VECTOR => S_OK,
+        v if v == VT_LPWSTR | VT_VECTOR => S_OK,
+        v if v == VT_FILETIME | VT_VECTOR => S_OK,
+        v if v == VT_CF | VT_VECTOR => S_OK,
+        v if v == VT_CLSID | VT_VECTOR => S_OK,
+        v if v == VT_ARRAY | VT_I1 => S_OK,
+        v if v == VT_ARRAY | VT_UI1 => S_OK,
+        v if v == VT_ARRAY | VT_I2 => S_OK,
+        v if v == VT_ARRAY | VT_UI2 => S_OK,
+        v if v == VT_ARRAY | VT_I4 => S_OK,
+        v if v == VT_ARRAY | VT_UI4 => S_OK,
+        v if v == VT_ARRAY | VT_INT => S_OK,
+        v if v == VT_ARRAY | VT_UINT => S_OK,
+        v if v == VT_ARRAY | VT_R4 => S_OK,
+        v if v == VT_ARRAY | VT_R8 => S_OK,
+        v if v == VT_ARRAY | VT_CY => S_OK,
+        v if v == VT_ARRAY | VT_DATE => S_OK,
+        v if v == VT_ARRAY | VT_BSTR => S_OK,
+        v if v == VT_ARRAY | VT_BOOL => S_OK,
+        v if v == VT_ARRAY | VT_DECIMAL => S_OK,
+        v if v == VT_ARRAY | VT_DISPATCH => S_OK,
+        v if v == VT_ARRAY | VT_UNKNOWN => S_OK,
+        v if v == VT_ARRAY | VT_ERROR => S_OK,
+        v if v == VT_ARRAY | VT_VARIANT => S_OK,
         _ => {
-            WARN!(b"Bad type %d\n\0".as_ptr() as *const i8, vt);
+            WARN!(b"Bad type %d\n\0".as_ptr(), vt);
             STG_E_INVALIDPARAMETER
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn PropVariantClear(pvar: *mut PROPVARIANT) -> HRESULT {
 
+/// ole2.c:2968 PropVariantClear [OLE32.@]
+#[no_mangle]
+pub unsafe extern "system" fn PropVariantClear(pvar: *mut PROPVARIANT) -> HRESULT {
     TRACE!(b"(%p)\n\0".as_ptr(), pvar);
 
     if pvar.is_null() {
@@ -2861,66 +3187,84 @@ pub unsafe extern "C" fn PropVariantClear(pvar: *mut PROPVARIANT) -> HRESULT {
     }
 
     let mut hr = PROPVARIANT_ValidateType((*pvar).vt);
-    if FAILED(hr) != 0 {
-        memset(pvar as *mut core::ffi::c_void, 0, core::mem::size_of::<PROPVARIANT>());
+    if FAILED(hr) {
+        memset(pvar as *mut c_void, 0, core::mem::size_of::<PROPVARIANT>());
         return hr;
     }
 
-    match (*pvar).vt {
-        VT_EMPTY | VT_NULL | VT_I1 | VT_I2 | VT_I4 | VT_I8 | VT_R4 | VT_R8 | VT_CY | VT_DATE |
-        VT_ERROR | VT_BOOL | VT_DECIMAL | VT_UI1 | VT_UI2 | VT_UI4 | VT_UI8 | VT_INT | VT_UINT |
-        VT_FILETIME => {}
-        VT_DISPATCH | VT_UNKNOWN | VT_STREAM | VT_STREAMED_OBJECT | VT_STORAGE | VT_STORED_OBJECT => {
-            if !(*pvar).u.pStream.is_null() {
-                IStream_Release((*pvar).u.pStream);
+    let vt = (*pvar).vt as DWORD;
+    match vt {
+        VT_EMPTY | VT_NULL | VT_I1 | VT_I2 | VT_I4 | VT_I8 | VT_R4 | VT_R8 | VT_CY | VT_DATE
+        | VT_ERROR | VT_BOOL | VT_DECIMAL | VT_UI1 | VT_UI2 | VT_UI4 | VT_UI8 | VT_INT
+        | VT_UINT | VT_FILETIME => {}
+        VT_DISPATCH | VT_UNKNOWN | VT_STREAM | VT_STREAMED_OBJECT | VT_STORAGE
+        | VT_STORED_OBJECT => {
+            if !(*pvar).__bindgen_anon_1.pStream.is_null() {
+                IStream_Release((*pvar).__bindgen_anon_1.pStream);
             }
         }
         VT_CLSID | VT_LPSTR | VT_LPWSTR => {
-            CoTaskMemFree((*pvar).u.puuid as LPVOID);
+            // pick an arbitrary typed pointer — we don't care about the type as we
+            // are just freeing it
+            CoTaskMemFree((*pvar).__bindgen_anon_1.puuid as LPVOID);
         }
         VT_BLOB | VT_BLOB_OBJECT => {
-            CoTaskMemFree((*pvar).u.blob.pBlobData as LPVOID);
+            CoTaskMemFree((*pvar).__bindgen_anon_1.blob.pBlobData as LPVOID);
         }
         VT_BSTR => {
-            PropSysFreeString((*pvar).u.bstrVal);
+            PropSysFreeString((*pvar).__bindgen_anon_1.bstrVal);
         }
         VT_CF => {
-            if !(*pvar).u.pclipdata.is_null() {
-                OLE_FreeClipDataArray(1, (*pvar).u.pclipdata);
-                CoTaskMemFree((*pvar).u.pclipdata as LPVOID);
+            if !(*pvar).__bindgen_anon_1.pclipdata.is_null() {
+                OLE_FreeClipDataArray(1, (*pvar).__bindgen_anon_1.pclipdata);
+                CoTaskMemFree((*pvar).__bindgen_anon_1.pclipdata as LPVOID);
             }
         }
         _ => {
-            if ((*pvar).vt & VT_VECTOR) != 0 {
-                match (*pvar).vt & !VT_VECTOR {
+            if (vt & VT_VECTOR) != 0 {
+                match vt & !VT_VECTOR {
                     VT_VARIANT => {
-                        FreePropVariantArray((*pvar).u.capropvar.cElems, (*pvar).u.capropvar.pElems);
+                        FreePropVariantArray(
+                            (*pvar).__bindgen_anon_1.capropvar.cElems,
+                            (*pvar).__bindgen_anon_1.capropvar.pElems,
+                        );
                     }
                     VT_CF => {
-                        OLE_FreeClipDataArray((*pvar).u.caclipdata.cElems, (*pvar).u.caclipdata.pElems);
+                        OLE_FreeClipDataArray(
+                            (*pvar).__bindgen_anon_1.caclipdata.cElems,
+                            (*pvar).__bindgen_anon_1.caclipdata.pElems,
+                        );
                     }
                     VT_BSTR => {
-                        for i in 0..(*pvar).u.cabstr.cElems {
-                            PropSysFreeString(*(*pvar).u.cabstr.pElems.offset(i as isize));
+                        for i in 0..(*pvar).__bindgen_anon_1.cabstr.cElems {
+                            PropSysFreeString(
+                                *(*pvar).__bindgen_anon_1.cabstr.pElems.add(i as usize),
+                            );
                         }
                     }
                     VT_LPSTR => {
-                        for i in 0..(*pvar).u.calpstr.cElems {
-                            CoTaskMemFree(*(*pvar).u.calpstr.pElems.offset(i as isize) as LPVOID);
+                        for i in 0..(*pvar).__bindgen_anon_1.calpstr.cElems {
+                            CoTaskMemFree(
+                                *(*pvar).__bindgen_anon_1.calpstr.pElems.add(i as usize) as LPVOID,
+                            );
                         }
                     }
                     VT_LPWSTR => {
-                        for i in 0..(*pvar).u.calpwstr.cElems {
-                            CoTaskMemFree(*(*pvar).u.calpwstr.pElems.offset(i as isize) as LPVOID);
+                        for i in 0..(*pvar).__bindgen_anon_1.calpwstr.cElems {
+                            CoTaskMemFree(
+                                *(*pvar).__bindgen_anon_1.calpwstr.pElems.add(i as usize) as LPVOID,
+                            );
                         }
                     }
                     _ => {}
                 }
-                if ((*pvar).vt & !VT_VECTOR) != 0 {
-                    CoTaskMemFree((*pvar).u.capropvar.pElems as LPVOID);
+                if (vt & !VT_VECTOR) != 0 {
+                    // pick an arbitrary VT_VECTOR structure — they all have the same
+                    // memory layout
+                    CoTaskMemFree((*pvar).__bindgen_anon_1.capropvar.pElems as LPVOID);
                 }
-            } else if ((*pvar).vt & VT_ARRAY) != 0 {
-                hr = SafeArrayDestroy((*pvar).u.parray);
+            } else if (vt & VT_ARRAY) != 0 {
+                hr = SafeArrayDestroy((*pvar).__bindgen_anon_1.parray);
             } else {
                 WARN!(b"Invalid/unsupported type %d\n\0".as_ptr(), (*pvar).vt);
                 hr = STG_E_INVALIDPARAMETER;
@@ -2928,150 +3272,227 @@ pub unsafe extern "C" fn PropVariantClear(pvar: *mut PROPVARIANT) -> HRESULT {
         }
     }
 
-    memset(pvar as *mut core::ffi::c_void, 0, core::mem::size_of::<PROPVARIANT>());
+    memset(pvar as *mut c_void, 0, core::mem::size_of::<PROPVARIANT>());
     hr
 }
+
+/// ole2.c:3086 PropVariantCopy [OLE32.@]
 #[no_mangle]
-pub unsafe extern "C" fn PropVariantCopy(
+pub unsafe extern "system" fn PropVariantCopy(
     pvarDest: *mut PROPVARIANT,
     pvarSrc: *const PROPVARIANT,
 ) -> HRESULT {
+    let mut len: ULONG;
 
-    let len: ULONG;
-    let hr: HRESULT;
+    TRACE!(
+        b"(%p, %p vt %04x)\n\0".as_ptr(),
+        pvarDest,
+        pvarSrc,
+        (*pvarSrc).vt
+    );
 
-    TRACE!(b"(%p, %p vt %04x)\n\0".as_ptr() as *const i8, pvarDest as *mut core::ffi::c_void, pvarSrc as *const core::ffi::c_void, (*pvarSrc).vt);
-
-    hr = PROPVARIANT_ValidateType((*pvarSrc).vt);
-    if FAILED(hr) != 0 {
+    let hr = PROPVARIANT_ValidateType((*pvarSrc).vt);
+    if FAILED(hr) {
         return DISP_E_BADVARTYPE;
     }
 
+    // this will deal with most cases
     *pvarDest = *pvarSrc;
 
-    match (*pvarSrc).vt as u32 {
-        VT_EMPTY | VT_NULL | VT_I1 | VT_UI1 | VT_I2 | VT_UI2 | VT_BOOL | VT_DECIMAL |
-        VT_I4 | VT_UI4 | VT_R4 | VT_ERROR | VT_I8 | VT_UI8 | VT_INT | VT_UINT |
-        VT_R8 | VT_CY | VT_DATE | VT_FILETIME => {},
-        VT_DISPATCH | VT_UNKNOWN | VT_STREAM | VT_STREAMED_OBJECT | VT_STORAGE | VT_STORED_OBJECT => {
-            if !(*pvarDest).u.pStream.is_null() {
-                IStream_AddRef((*pvarDest).u.pStream);
+    let vt = (*pvarSrc).vt as DWORD;
+    match vt {
+        VT_EMPTY | VT_NULL | VT_I1 | VT_UI1 | VT_I2 | VT_UI2 | VT_BOOL | VT_DECIMAL | VT_I4
+        | VT_UI4 | VT_R4 | VT_ERROR | VT_I8 | VT_UI8 | VT_INT | VT_UINT | VT_R8 | VT_CY
+        | VT_DATE | VT_FILETIME => {}
+        VT_DISPATCH | VT_UNKNOWN | VT_STREAM | VT_STREAMED_OBJECT | VT_STORAGE
+        | VT_STORED_OBJECT => {
+            if !(*pvarDest).__bindgen_anon_1.pStream.is_null() {
+                IStream_AddRef((*pvarDest).__bindgen_anon_1.pStream);
             }
-        },
+        }
         VT_CLSID => {
-            (*pvarDest).u.puuid = CoTaskMemAlloc(core::mem::size_of::<CLSID>()) as *mut CLSID;
-            *(*pvarDest).u.puuid = *(*pvarSrc).u.puuid;
-        },
+            (*pvarDest).__bindgen_anon_1.puuid =
+                CoTaskMemAlloc(core::mem::size_of::<CLSID>() as SIZE_T) as *mut CLSID;
+            *(*pvarDest).__bindgen_anon_1.puuid = *(*pvarSrc).__bindgen_anon_1.puuid;
+        }
         VT_LPSTR => {
-            if !(*pvarSrc).u.pszVal.is_null() {
-                len = strlen((*pvarSrc).u.pszVal as *const i8) as ULONG;
-                (*pvarDest).u.pszVal = CoTaskMemAlloc(((len + 1) * core::mem::size_of::<i8>() as u32) as usize) as *mut i8;
-                core::ptr::copy_nonoverlapping((*pvarSrc).u.pszVal, (*pvarDest).u.pszVal, ((len + 1) * core::mem::size_of::<i8>() as u32) as usize);
+            if !(*pvarSrc).__bindgen_anon_1.pszVal.is_null() {
+                len = strlen((*pvarSrc).__bindgen_anon_1.pszVal) as ULONG;
+                (*pvarDest).__bindgen_anon_1.pszVal =
+                    CoTaskMemAlloc((len as SIZE_T + 1) * core::mem::size_of::<CHAR>() as SIZE_T)
+                        as LPSTR;
+                memcpy(
+                    (*pvarDest).__bindgen_anon_1.pszVal as *mut c_void,
+                    (*pvarSrc).__bindgen_anon_1.pszVal as *const c_void,
+                    (len as usize + 1) * core::mem::size_of::<CHAR>(),
+                );
             }
-        },
+        }
         VT_LPWSTR => {
-            if !(*pvarSrc).u.pwszVal.is_null() {
-                len = lstrlenW((*pvarSrc).u.pwszVal) as ULONG;
-                (*pvarDest).u.pwszVal = CoTaskMemAlloc(((len + 1) * core::mem::size_of::<u16>() as u32) as usize) as *mut u16;
-                core::ptr::copy_nonoverlapping((*pvarSrc).u.pwszVal, (*pvarDest).u.pwszVal, ((len + 1) * core::mem::size_of::<u16>() as u32) as usize);
+            if !(*pvarSrc).__bindgen_anon_1.pwszVal.is_null() {
+                len = lstrlenW((*pvarSrc).__bindgen_anon_1.pwszVal) as ULONG;
+                (*pvarDest).__bindgen_anon_1.pwszVal =
+                    CoTaskMemAlloc((len as SIZE_T + 1) * core::mem::size_of::<WCHAR>() as SIZE_T)
+                        as LPWSTR;
+                memcpy(
+                    (*pvarDest).__bindgen_anon_1.pwszVal as *mut c_void,
+                    (*pvarSrc).__bindgen_anon_1.pwszVal as *const c_void,
+                    (len as usize + 1) * core::mem::size_of::<WCHAR>(),
+                );
             }
-        },
+        }
         VT_BLOB | VT_BLOB_OBJECT => {
-            if !(*pvarSrc).u.blob.pBlobData.is_null() {
-                len = (*pvarSrc).u.blob.cbSize;
-                (*pvarDest).u.blob.pBlobData = CoTaskMemAlloc(len as usize) as *mut u8;
-                core::ptr::copy_nonoverlapping((*pvarSrc).u.blob.pBlobData, (*pvarDest).u.blob.pBlobData, len as usize);
+            if !(*pvarSrc).__bindgen_anon_1.blob.pBlobData.is_null() {
+                len = (*pvarSrc).__bindgen_anon_1.blob.cbSize;
+                (*pvarDest).__bindgen_anon_1.blob.pBlobData =
+                    CoTaskMemAlloc(len as SIZE_T) as *mut BYTE;
+                memcpy(
+                    (*pvarDest).__bindgen_anon_1.blob.pBlobData as *mut c_void,
+                    (*pvarSrc).__bindgen_anon_1.blob.pBlobData as *const c_void,
+                    len as usize,
+                );
             }
-        },
+        }
         VT_BSTR => {
-            (*pvarDest).u.bstrVal = PropSysAllocString((*pvarSrc).u.bstrVal);
-        },
+            (*pvarDest).__bindgen_anon_1.bstrVal =
+                PropSysAllocString((*pvarSrc).__bindgen_anon_1.bstrVal);
+        }
         VT_CF => {
-            if !(*pvarSrc).u.pclipdata.is_null() {
-                len = (*(*pvarSrc).u.pclipdata).cbSize - core::mem::size_of::<ULONG>() as u32;
-                (*pvarDest).u.pclipdata = CoTaskMemAlloc(core::mem::size_of::<CLIPDATA>()) as *mut CLIPDATA;
-                (*(*pvarDest).u.pclipdata).cbSize = (*(*pvarSrc).u.pclipdata).cbSize;
-                (*(*pvarDest).u.pclipdata).ulClipFmt = (*(*pvarSrc).u.pclipdata).ulClipFmt;
-                (*(*pvarDest).u.pclipdata).pClipData = CoTaskMemAlloc(len as usize) as *mut u8;
-                core::ptr::copy_nonoverlapping((*(*pvarSrc).u.pclipdata).pClipData, (*(*pvarDest).u.pclipdata).pClipData, len as usize);
+            if !(*pvarSrc).__bindgen_anon_1.pclipdata.is_null() {
+                len = (*(*pvarSrc).__bindgen_anon_1.pclipdata).cbSize
+                    - core::mem::size_of::<ULONG>() as ULONG;
+                (*pvarDest).__bindgen_anon_1.pclipdata =
+                    CoTaskMemAlloc(core::mem::size_of::<CLIPDATA>() as SIZE_T) as *mut CLIPDATA;
+                (*(*pvarDest).__bindgen_anon_1.pclipdata).cbSize =
+                    (*(*pvarSrc).__bindgen_anon_1.pclipdata).cbSize;
+                (*(*pvarDest).__bindgen_anon_1.pclipdata).ulClipFmt =
+                    (*(*pvarSrc).__bindgen_anon_1.pclipdata).ulClipFmt;
+                (*(*pvarDest).__bindgen_anon_1.pclipdata).pClipData =
+                    CoTaskMemAlloc(len as SIZE_T) as *mut BYTE;
+                memcpy(
+                    (*(*pvarDest).__bindgen_anon_1.pclipdata).pClipData as *mut c_void,
+                    (*(*pvarSrc).__bindgen_anon_1.pclipdata).pClipData as *const c_void,
+                    len as usize,
+                );
             }
-        },
+        }
         _ => {
-            if ((*pvarSrc).vt & VT_VECTOR as u16) != 0 {
-                let elemSize: i32;
+            if (vt & VT_VECTOR) != 0 {
+                let elemSize: c_int;
 
-                match ((*pvarSrc).vt & !(VT_VECTOR as u16)) as u32 {
-                    VT_I1 => elemSize = core::mem::size_of::<i8>() as i32,
-                    VT_UI1 => elemSize = core::mem::size_of::<u8>() as i32,
-                    VT_I2 => elemSize = core::mem::size_of::<i16>() as i32,
-                    VT_UI2 => elemSize = core::mem::size_of::<u16>() as i32,
-                    VT_BOOL => elemSize = core::mem::size_of::<VARIANT_BOOL>() as i32,
-                    VT_I4 => elemSize = core::mem::size_of::<i32>() as i32,
-                    VT_UI4 => elemSize = core::mem::size_of::<u32>() as i32,
-                    VT_R4 => elemSize = core::mem::size_of::<f32>() as i32,
-                    VT_R8 => elemSize = core::mem::size_of::<f64>() as i32,
-                    VT_ERROR => elemSize = core::mem::size_of::<SCODE>() as i32,
-                    VT_I8 => elemSize = core::mem::size_of::<i64>() as i32,
-                    VT_UI8 => elemSize = core::mem::size_of::<u64>() as i32,
-                    VT_CY => elemSize = core::mem::size_of::<CY>() as i32,
-                    VT_DATE => elemSize = core::mem::size_of::<DATE>() as i32,
-                    VT_FILETIME => elemSize = core::mem::size_of::<FILETIME>() as i32,
-                    VT_CLSID => elemSize = core::mem::size_of::<CLSID>() as i32,
-                    VT_CF => elemSize = core::mem::size_of::<CLIPDATA>() as i32,
-                    VT_BSTR => elemSize = core::mem::size_of::<BSTR>() as i32,
-                    VT_LPSTR => elemSize = core::mem::size_of::<LPSTR>() as i32,
-                    VT_LPWSTR => elemSize = core::mem::size_of::<LPWSTR>() as i32,
-                    VT_VARIANT => elemSize = core::mem::size_of::<PROPVARIANT>() as i32,
+                match vt & !VT_VECTOR {
+                    VT_I1 => elemSize = core::mem::size_of::<CHAR>() as c_int,
+                    VT_UI1 => elemSize = core::mem::size_of::<UCHAR>() as c_int,
+                    VT_I2 => elemSize = core::mem::size_of::<i16>() as c_int,
+                    VT_UI2 => elemSize = core::mem::size_of::<USHORT>() as c_int,
+                    VT_BOOL => elemSize = core::mem::size_of::<VARIANT_BOOL>() as c_int,
+                    VT_I4 => elemSize = core::mem::size_of::<LONG>() as c_int,
+                    VT_UI4 => elemSize = core::mem::size_of::<ULONG>() as c_int,
+                    VT_R4 => elemSize = core::mem::size_of::<f32>() as c_int,
+                    VT_R8 => elemSize = core::mem::size_of::<f64>() as c_int,
+                    VT_ERROR => elemSize = core::mem::size_of::<SCODE>() as c_int,
+                    VT_I8 => elemSize = core::mem::size_of::<LARGE_INTEGER>() as c_int,
+                    VT_UI8 => elemSize = core::mem::size_of::<ULARGE_INTEGER>() as c_int,
+                    VT_CY => elemSize = core::mem::size_of::<CY>() as c_int,
+                    VT_DATE => elemSize = core::mem::size_of::<DATE>() as c_int,
+                    VT_FILETIME => elemSize = core::mem::size_of::<FILETIME>() as c_int,
+                    VT_CLSID => elemSize = core::mem::size_of::<CLSID>() as c_int,
+                    VT_CF => elemSize = core::mem::size_of::<CLIPDATA>() as c_int,
+                    VT_BSTR => elemSize = core::mem::size_of::<BSTR>() as c_int,
+                    VT_LPSTR => elemSize = core::mem::size_of::<LPSTR>() as c_int,
+                    VT_LPWSTR => elemSize = core::mem::size_of::<LPWSTR>() as c_int,
+                    VT_VARIANT => elemSize = core::mem::size_of::<PROPVARIANT>() as c_int,
+
                     _ => {
-                        FIXME!(b"Invalid element type: %ul\n\0".as_ptr() as *const i8, (*pvarSrc).vt & !(VT_VECTOR as u16));
+                        FIXME!(b"Invalid element type: %ul\n\0".as_ptr(), vt & !VT_VECTOR);
                         return E_INVALIDARG;
                     }
                 }
-                len = (*pvarSrc).u.capropvar.cElems;
-                (*pvarDest).u.capropvar.pElems = if len != 0 { CoTaskMemAlloc((len * elemSize as u32) as usize) as *mut PROPVARIANT } else { core::ptr::null_mut() };
-                if (*pvarSrc).vt == (VT_VECTOR | VT_VARIANT) as u16 {
+                len = (*pvarSrc).__bindgen_anon_1.capropvar.cElems;
+                (*pvarDest).__bindgen_anon_1.capropvar.pElems = if len != 0 {
+                    CoTaskMemAlloc(len as SIZE_T * elemSize as SIZE_T) as *mut PROPVARIANT
+                } else {
+                    core::ptr::null_mut()
+                };
+                if vt == (VT_VECTOR | VT_VARIANT) {
                     for i in 0..len {
-                        PropVariantCopy(&mut (*(*pvarDest).u.capropvar.pElems.add(i as usize)), &(*(*pvarSrc).u.capropvar.pElems.add(i as usize)));
+                        PropVariantCopy(
+                            (*pvarDest).__bindgen_anon_1.capropvar.pElems.add(i as usize),
+                            (*pvarSrc).__bindgen_anon_1.capropvar.pElems.add(i as usize),
+                        );
                     }
-                } else if (*pvarSrc).vt == (VT_VECTOR | VT_CF) as u16 {
-                    FIXME!(b"Copy clipformats\n\0".as_ptr() as *const i8);
-                } else if (*pvarSrc).vt == (VT_VECTOR | VT_BSTR) as u16 {
+                } else if vt == (VT_VECTOR | VT_CF) {
+                    FIXME!(b"Copy clipformats\n\0".as_ptr());
+                } else if vt == (VT_VECTOR | VT_BSTR) {
                     for i in 0..len {
-                        *(*pvarDest).u.cabstr.pElems.add(i as usize) = PropSysAllocString(*(*pvarSrc).u.cabstr.pElems.add(i as usize));
+                        *(*pvarDest).__bindgen_anon_1.cabstr.pElems.add(i as usize) =
+                            PropSysAllocString(
+                                *(*pvarSrc).__bindgen_anon_1.cabstr.pElems.add(i as usize),
+                            );
                     }
-                } else if (*pvarSrc).vt == (VT_VECTOR | VT_LPSTR) as u16 {
-                    let mut strLen: usize;
+                } else if vt == (VT_VECTOR | VT_LPSTR) {
                     for i in 0..len {
-                        strLen = (lstrlenA(*(*pvarSrc).u.calpstr.pElems.add(i as usize)) + 1) as usize;
-                        *(*pvarDest).u.calpstr.pElems.add(i as usize) = CoTaskMemAlloc(strLen) as LPSTR;
-                        memcpy(*(*pvarDest).u.calpstr.pElems.add(i as usize) as *mut core::ffi::c_void, *(*pvarSrc).u.calpstr.pElems.add(i as usize) as *const core::ffi::c_void, strLen);
+                        let strLen = (lstrlenA(
+                            *(*pvarSrc).__bindgen_anon_1.calpstr.pElems.add(i as usize),
+                        ) + 1) as usize;
+                        *(*pvarDest).__bindgen_anon_1.calpstr.pElems.add(i as usize) =
+                            CoTaskMemAlloc(strLen as SIZE_T) as LPSTR;
+                        memcpy(
+                            *(*pvarDest).__bindgen_anon_1.calpstr.pElems.add(i as usize)
+                                as *mut c_void,
+                            *(*pvarSrc).__bindgen_anon_1.calpstr.pElems.add(i as usize)
+                                as *const c_void,
+                            strLen,
+                        );
                     }
-                } else if (*pvarSrc).vt == (VT_VECTOR | VT_LPWSTR) as u16 {
-                    let mut strLen: usize;
+                } else if vt == (VT_VECTOR | VT_LPWSTR) {
                     for i in 0..len {
-                        strLen = ((lstrlenW(*(*pvarSrc).u.calpwstr.pElems.add(i as usize)) + 1) as usize) * core::mem::size_of::<u16>();
-                        *(*pvarDest).u.calpstr.pElems.add(i as usize) = CoTaskMemAlloc(strLen) as LPSTR;
-                        memcpy(*(*pvarDest).u.calpstr.pElems.add(i as usize) as *mut core::ffi::c_void, *(*pvarSrc).u.calpstr.pElems.add(i as usize) as *const core::ffi::c_void, strLen);
+                        // NOTE (faithful to the C): wine copies through calpstr here,
+                        // not calpwstr. Same union slot, so it works out.
+                        let strLen = ((lstrlenW(
+                            *(*pvarSrc).__bindgen_anon_1.calpwstr.pElems.add(i as usize),
+                        ) + 1) as usize)
+                            * core::mem::size_of::<WCHAR>();
+                        *(*pvarDest).__bindgen_anon_1.calpstr.pElems.add(i as usize) =
+                            CoTaskMemAlloc(strLen as SIZE_T) as LPSTR;
+                        memcpy(
+                            *(*pvarDest).__bindgen_anon_1.calpstr.pElems.add(i as usize)
+                                as *mut c_void,
+                            *(*pvarSrc).__bindgen_anon_1.calpstr.pElems.add(i as usize)
+                                as *const c_void,
+                            strLen,
+                        );
                     }
                 } else {
-                    core::ptr::copy_nonoverlapping((*pvarSrc).u.capropvar.pElems, (*pvarDest).u.capropvar.pElems, (len * elemSize as u32) as usize);
+                    memcpy(
+                        (*pvarDest).__bindgen_anon_1.capropvar.pElems as *mut c_void,
+                        (*pvarSrc).__bindgen_anon_1.capropvar.pElems as *const c_void,
+                        len as usize * elemSize as usize,
+                    );
                 }
-            } else if ((*pvarSrc).vt & VT_ARRAY as u16) != 0 {
-                (*pvarDest).u.uhVal.QuadPart = 0;
-                return SafeArrayCopy((*pvarSrc).u.parray, core::ptr::addr_of_mut!((*pvarDest).u.parray));
+            } else if (vt & VT_ARRAY) != 0 {
+                (*pvarDest).__bindgen_anon_1.uhVal.QuadPart = 0;
+                return SafeArrayCopy(
+                    (*pvarSrc).__bindgen_anon_1.parray,
+                    core::ptr::addr_of_mut!((*pvarDest).__bindgen_anon_1.parray),
+                );
             } else {
-                WARN!(b"Invalid/unsupported type %d\n\0".as_ptr() as *const i8, (*pvarSrc).vt);
+                WARN!(b"Invalid/unsupported type %d\n\0".as_ptr(), (*pvarSrc).vt);
             }
         }
     }
 
     S_OK
 }
+
+/// ole2.c:3267 FreePropVariantArray [OLE32.@]
 #[no_mangle]
-pub unsafe extern "C" fn FreePropVariantArray(
+pub unsafe extern "system" fn FreePropVariantArray(
     cVariants: ULONG,
     rgvars: *mut PROPVARIANT,
 ) -> HRESULT {
+    TRACE!(b"(%u, %p)\n\0".as_ptr(), cVariants, rgvars);
+
     if rgvars.is_null() {
         return E_INVALIDARG;
     }
@@ -3083,8 +3504,9 @@ pub unsafe extern "C" fn FreePropVariantArray(
     S_OK
 }
 
+/// ole2.c:3288 DllDebugObjectRPCHook [OLE32.@]
 #[no_mangle]
-pub unsafe extern "system" fn DllDebugObjectRPCHook(b: BOOL, dummy: *mut core::ffi::c_void) -> BOOL {
-    FIXME!(b"stub\n\0".as_ptr() as *const i8);
+pub unsafe extern "system" fn DllDebugObjectRPCHook(_b: BOOL, _dummy: *mut c_void) -> BOOL {
+    FIXME!(b"stub\n\0".as_ptr());
     1
 }

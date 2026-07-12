@@ -1,138 +1,147 @@
 use crate::prelude::*;
-use core::ffi::c_void;
+
+// Defined by sibling ring modules, but ALSO (wrongly) declared as externs in
+// ole32_exports.rs — the prelude glob makes the bare names ambiguous, so bind explicitly.
+use crate::ring::antimoniker::CreateAntiMoniker;
+use crate::ring::compositemoniker::{CreateGenericComposite, MonikerCommonPrefixWith};
 
 extern "C" {
-    fn MonikerMarshal_Create(iface: *mut IMoniker, ppMarshal: *mut *mut IUnknown) -> HRESULT;
-    static IID_IUnknown: IID;
-    static IID_IPersist: IID;
-    static IID_IPersistStream: IID;
-    static IID_IMoniker: IID;
-    static IID_IROTData: IID;
-    static IID_IMarshal: IID;
+    // uuid.lib data symbol. Belongs in crate::iids; declared here until added there.
     static IID_IOleItemContainer: IID;
-    fn towupper(c: u16) -> u16;
-}
-extern "C" {
-    fn CreateGenericComposite(pmkFirst: *mut IMoniker, pmkRest: *mut IMoniker, ppmkComposite: *mut *mut IMoniker) -> HRESULT;
-    fn CoTaskMemFree(pv: *mut core::ffi::c_void);
-    fn CreateBindCtx(reserved: u32, ppbc: *mut *mut IBindCtx) -> HRESULT;
-    fn wcscmp(string1: *const u16, string2: *const u16) -> i32;
-    fn CreateAntiMoniker(ppmk: *mut *mut IMoniker) -> HRESULT;
-    fn MultiByteToWideChar(CodePage: u32, dwFlags: u32, lpMultiByteStr: *const i8, cbMultiByte: i32, lpWideCharStr: *mut u16, cchWideChar: i32) -> i32;
-    fn WideCharToMultiByte( CodePage: u32, dwFlags: u32, lpWideCharStr: *const u16, cchWideChar: i32, lpMultiByteStr: *mut i8, cbMultiByte: i32, lpDefaultChar: *const i8, lpUsedDefaultChar: *mut i32, ) -> i32;
-    fn CoTaskMemAlloc(cb: usize) -> *mut core::ffi::c_void;
-    fn lstrcatW(lpString1: LPWSTR, lpString2: LPWSTR) -> LPWSTR;
 }
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
 pub struct ItemMonikerImpl {
+    /// VTable relative to the IMoniker interface.
     pub IMoniker_iface: IMoniker,
+    /// VTable relative to the IROTData interface.
     pub IROTData_iface: IROTData,
     pub ref_: LONG,
+    /// item name identified by this ItemMoniker
     pub itemName: LPOLESTR,
+    /// Delimiter string
     pub itemDelimiter: LPOLESTR,
+    /// custom marshaler
     pub pMarshal: *mut IUnknown,
 }
 
 pub type PItemMonikerImpl = *mut ItemMonikerImpl;
 
-pub static VT_ItemMonikerImpl: IMonikerVtbl = IMonikerVtbl {
-    QueryInterface: ItemMonikerImpl_QueryInterface,
-    AddRef: ItemMonikerImpl_AddRef,
-    Release: ItemMonikerImpl_Release,
-    GetClassID: ItemMonikerImpl_GetClassID,
-    IsDirty: ItemMonikerImpl_IsDirty,
-    Load: ItemMonikerImpl_Load,
-    Save: ItemMonikerImpl_Save,
-    GetSizeMax: ItemMonikerImpl_GetSizeMax,
-    BindToObject: ItemMonikerImpl_BindToObject,
-    BindToStorage: ItemMonikerImpl_BindToStorage,
-    Reduce: ItemMonikerImpl_Reduce,
-    ComposeWith: ItemMonikerImpl_ComposeWith,
-    Enum: ItemMonikerImpl_Enum,
-    IsEqual: ItemMonikerImpl_IsEqual,
-    Hash: ItemMonikerImpl_Hash,
-    IsRunning: ItemMonikerImpl_IsRunning,
-    GetTimeOfLastChange: ItemMonikerImpl_GetTimeOfLastChange,
-    Inverse: ItemMonikerImpl_Inverse,
-    CommonPrefixWith: ItemMonikerImpl_CommonPrefixWith,
-    RelativePathTo: ItemMonikerImpl_RelativePathTo,
-    GetDisplayName: ItemMonikerImpl_GetDisplayName,
-    ParseDisplayName: ItemMonikerImpl_ParseDisplayName,
-    IsSystemMoniker: ItemMonikerImpl_IsSystemMoniker,
+static VT_ItemMonikerImpl: IMonikerVtbl = IMonikerVtbl {
+    QueryInterface: Some(ItemMonikerImpl_QueryInterface),
+    AddRef: Some(ItemMonikerImpl_AddRef),
+    Release: Some(ItemMonikerImpl_Release),
+    GetClassID: Some(ItemMonikerImpl_GetClassID),
+    IsDirty: Some(ItemMonikerImpl_IsDirty),
+    Load: Some(ItemMonikerImpl_Load),
+    Save: Some(ItemMonikerImpl_Save),
+    GetSizeMax: Some(ItemMonikerImpl_GetSizeMax),
+    BindToObject: Some(ItemMonikerImpl_BindToObject),
+    BindToStorage: Some(ItemMonikerImpl_BindToStorage),
+    Reduce: Some(ItemMonikerImpl_Reduce),
+    ComposeWith: Some(ItemMonikerImpl_ComposeWith),
+    Enum: Some(ItemMonikerImpl_Enum),
+    IsEqual: Some(ItemMonikerImpl_IsEqual),
+    Hash: Some(ItemMonikerImpl_Hash),
+    IsRunning: Some(ItemMonikerImpl_IsRunning),
+    GetTimeOfLastChange: Some(ItemMonikerImpl_GetTimeOfLastChange),
+    Inverse: Some(ItemMonikerImpl_Inverse),
+    CommonPrefixWith: Some(ItemMonikerImpl_CommonPrefixWith),
+    RelativePathTo: Some(ItemMonikerImpl_RelativePathTo),
+    GetDisplayName: Some(ItemMonikerImpl_GetDisplayName),
+    ParseDisplayName: Some(ItemMonikerImpl_ParseDisplayName),
+    IsSystemMoniker: Some(ItemMonikerImpl_IsSystemMoniker),
 };
 
-pub static VT_ROTDataImpl: IROTDataVtbl = IROTDataVtbl {
-    QueryInterface: ItemMonikerROTDataImpl_QueryInterface,
-    AddRef: ItemMonikerROTDataImpl_AddRef,
-    Release: ItemMonikerROTDataImpl_Release,
-    GetComparisonData: ItemMonikerROTDataImpl_GetComparisonData,
+static VT_ROTDataImpl: IROTDataVtbl = IROTDataVtbl {
+    QueryInterface: Some(ItemMonikerROTDataImpl_QueryInterface),
+    AddRef: Some(ItemMonikerROTDataImpl_AddRef),
+    Release: Some(ItemMonikerROTDataImpl_Release),
+    GetComparisonData: Some(ItemMonikerROTDataImpl_GetComparisonData),
 };
 
 unsafe fn impl_from_IMoniker(iface: *mut IMoniker) -> *mut ItemMonikerImpl {
-    (iface as *mut u8).offset(-(core::mem::offset_of!(ItemMonikerImpl, IMoniker_iface) as isize)) as *mut ItemMonikerImpl
+    CONTAINING_RECORD!(iface, ItemMonikerImpl, IMoniker_iface)
 }
 
 unsafe fn impl_from_IROTData(iface: *mut IROTData) -> *mut ItemMonikerImpl {
-    (iface as *mut u8).offset(-(core::mem::offset_of!(ItemMonikerImpl, IROTData_iface) as isize)) as *mut ItemMonikerImpl
+    CONTAINING_RECORD!(iface, ItemMonikerImpl, IROTData_iface)
 }
 
-unsafe fn ItemMonikerImpl_QueryInterface(iface: *mut IMoniker, riid: *const IID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT {
-
+stdmethod! {
+fn ItemMonikerImpl_QueryInterface(
+    iface: *mut IMoniker,
+    riid: *const IID,
+    ppvObject: *mut LPVOID,
+) -> HRESULT {
     let This = impl_from_IMoniker(iface);
 
-    TRACE!(b"(%p,%s,%p)\n\0".as_ptr() as *const i8, This, debugstr_guid(riid), ppvObject);
+    TRACE!(b"(%p,%s,%p)\n\0".as_ptr(), This, debugstr_guid(riid), ppvObject);
 
     if ppvObject.is_null() {
-        return 0x80070057u32 as HRESULT;
+        return E_INVALIDARG;
     }
 
-    if IsEqualIID(core::ptr::addr_of!(IID_IUnknown), riid) != 0 ||
-       IsEqualIID(core::ptr::addr_of!(IID_IPersist), riid) != 0 ||
-       IsEqualIID(core::ptr::addr_of!(IID_IPersistStream), riid) != 0 ||
-       IsEqualIID(core::ptr::addr_of!(IID_IMoniker), riid) != 0 {
-        *ppvObject = iface as *mut core::ffi::c_void;
-    } else if IsEqualIID(core::ptr::addr_of!(IID_IROTData), riid) != 0 {
-        *ppvObject = core::ptr::addr_of_mut!((*This).IROTData_iface) as *mut core::ffi::c_void;
-    } else if IsEqualIID(core::ptr::addr_of!(IID_IMarshal), riid) != 0 {
-        let mut hr: HRESULT = 0;
+    /* Compare the riid with the interface IDs implemented by this object. */
+    if IsEqualIID(core::ptr::addr_of!(IID_IUnknown), riid)
+        || IsEqualIID(core::ptr::addr_of!(IID_IPersist), riid)
+        || IsEqualIID(core::ptr::addr_of!(IID_IPersistStream), riid)
+        || IsEqualIID(core::ptr::addr_of!(IID_IMoniker), riid)
+    {
+        *ppvObject = iface as LPVOID;
+    } else if IsEqualIID(core::ptr::addr_of!(IID_IROTData), riid) {
+        *ppvObject = core::ptr::addr_of_mut!((*This).IROTData_iface) as LPVOID;
+    } else if IsEqualIID(core::ptr::addr_of!(IID_IMarshal), riid) {
+        let mut hr: HRESULT = S_OK;
         if (*This).pMarshal.is_null() {
             hr = MonikerMarshal_Create(iface, core::ptr::addr_of_mut!((*This).pMarshal));
         }
-        if hr != 0 {
+        if hr != S_OK {
             return hr;
         }
         return IUnknown_QueryInterface((*This).pMarshal, riid, ppvObject);
     } else {
         *ppvObject = core::ptr::null_mut();
-        return 0x80004002u32 as HRESULT;
+        return E_NOINTERFACE;
     }
 
     IMoniker_AddRef(iface);
-    0
+
+    S_OK
+}
 }
 
-unsafe fn ItemMonikerImpl_AddRef(iface: *mut IMoniker) -> u32 {
+stdmethod! {
+fn ItemMonikerImpl_AddRef(iface: *mut IMoniker) -> ULONG {
     let This = impl_from_IMoniker(iface);
 
-    InterlockedIncrement(&mut (*This).ref_) as u32
+    TRACE!(b"(%p)\n\0".as_ptr(), This);
+
+    InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG
+}
 }
 
-unsafe fn ItemMonikerImpl_Release(iface: *mut IMoniker) -> u32 {
+stdmethod! {
+fn ItemMonikerImpl_Release(iface: *mut IMoniker) -> ULONG {
     let This = impl_from_IMoniker(iface);
-    let ref_: u32;
 
-    ref_ = InterlockedDecrement(&mut (*This).ref_) as u32;
+    TRACE!(b"(%p)\n\0".as_ptr(), This);
 
+    let ref_ = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG;
+
+    /* destroy the object if there are no more references to it */
     if ref_ == 0 {
         ItemMonikerImpl_Destroy(This);
     }
 
     ref_
 }
-unsafe fn ItemMonikerImpl_GetClassID(iface: *mut IMoniker, pClassID: *mut CLSID) -> HRESULT {
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const i8, iface, pClassID);
+}
+
+stdmethod! {
+fn ItemMonikerImpl_GetClassID(iface: *mut IMoniker, pClassID: *mut CLSID) -> HRESULT {
+    TRACE!(b"(%p,%p)\n\0".as_ptr(), iface, pClassID);
 
     if pClassID.is_null() {
         return E_POINTER;
@@ -142,133 +151,240 @@ unsafe fn ItemMonikerImpl_GetClassID(iface: *mut IMoniker, pClassID: *mut CLSID)
 
     S_OK
 }
-unsafe fn ItemMonikerImpl_IsDirty(iface: *mut IMoniker) -> HRESULT {
-    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, iface);
+}
+
+stdmethod! {
+fn ItemMonikerImpl_IsDirty(iface: *mut IMoniker) -> HRESULT {
+    /* Note that the OLE-provided implementations of the IPersistStream::IsDirty
+       method in the OLE-provided moniker interfaces always return S_FALSE because
+       their internal state never changes. */
+
+    TRACE!(b"(%p)\n\0".as_ptr(), iface);
 
     S_FALSE
 }
+}
 
-unsafe fn ItemMonikerImpl_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT {
-
-    const CP_ACP: u32 = 0;
-    const E_FAIL: HRESULT = 0x80004005u32 as i32;
-    const E_OUTOFMEMORY: HRESULT = 0x8007000Eu32 as i32;
-
+stdmethod! {
+fn ItemMonikerImpl_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT {
     let This = impl_from_IMoniker(iface);
-    let mut res: HRESULT;
-    let mut delimiterLength: u32 = 0;
-    let mut nameLength: u32 = 0;
-    let mut lenW: i32;
-    let mut itemNameA: *mut i8;
-    let mut itemDelimiterA: *mut i8;
-    let mut bread: u32 = 0;
+    let mut delimiterLength: DWORD = 0;
+    let mut nameLength: DWORD = 0;
+    let mut bread: ULONG = 0;
 
-    TRACE!(b"\n\0".as_ptr() as *const i8);
+    TRACE!(b"\n\0".as_ptr());
 
-    res = IStream_Read(pStm, core::ptr::addr_of_mut!(delimiterLength) as *mut core::ffi::c_void, core::mem::size_of::<u32>() as u32, core::ptr::addr_of_mut!(bread));
-    if bread != core::mem::size_of::<u32>() as u32 {
+    /* for more details about data read by this function see comments of
+       ItemMonikerImpl_Save function */
+
+    /* read item delimiter string length + 1 */
+    let mut res = IStream_Read(
+        pStm,
+        core::ptr::addr_of_mut!(delimiterLength) as LPVOID,
+        core::mem::size_of::<DWORD>() as ULONG,
+        core::ptr::addr_of_mut!(bread),
+    );
+    if bread != core::mem::size_of::<DWORD>() as ULONG {
         return E_FAIL;
     }
 
-    itemDelimiterA = HeapAlloc(GetProcessHeap(), 0, delimiterLength as usize) as *mut i8;
+    /* read item delimiter string */
+    let itemDelimiterA =
+        HeapAlloc(GetProcessHeap(), 0, delimiterLength as SIZE_T) as *mut c_char;
     if itemDelimiterA.is_null() {
         return E_OUTOFMEMORY;
     }
-    res = IStream_Read(pStm, itemDelimiterA as *mut core::ffi::c_void, delimiterLength, core::ptr::addr_of_mut!(bread));
+    res = IStream_Read(
+        pStm,
+        itemDelimiterA as LPVOID,
+        delimiterLength,
+        core::ptr::addr_of_mut!(bread),
+    );
     if bread != delimiterLength {
-        HeapFree(GetProcessHeap(), 0, itemDelimiterA as *mut core::ffi::c_void);
+        HeapFree(GetProcessHeap(), 0, itemDelimiterA as LPVOID);
         return E_FAIL;
     }
 
-    lenW = MultiByteToWideChar(CP_ACP, 0, itemDelimiterA, -1, core::ptr::null_mut(), 0);
-    (*This).itemDelimiter = HeapReAlloc(GetProcessHeap(), 0, (*This).itemDelimiter as *mut core::ffi::c_void, (lenW as usize) * core::mem::size_of::<u16>()) as LPWSTR;
+    let mut lenW = MultiByteToWideChar(CP_ACP, 0, itemDelimiterA, -1, core::ptr::null_mut(), 0);
+    (*This).itemDelimiter = HeapReAlloc(
+        GetProcessHeap(),
+        0,
+        (*This).itemDelimiter as LPVOID,
+        (lenW as usize * core::mem::size_of::<WCHAR>()) as SIZE_T,
+    ) as LPOLESTR;
     if (*This).itemDelimiter.is_null() {
-        HeapFree(GetProcessHeap(), 0, itemDelimiterA as *mut core::ffi::c_void);
+        HeapFree(GetProcessHeap(), 0, itemDelimiterA as LPVOID);
         return E_OUTOFMEMORY;
     }
     MultiByteToWideChar(CP_ACP, 0, itemDelimiterA, -1, (*This).itemDelimiter, lenW);
-    HeapFree(GetProcessHeap(), 0, itemDelimiterA as *mut core::ffi::c_void);
+    HeapFree(GetProcessHeap(), 0, itemDelimiterA as LPVOID);
 
-    res = IStream_Read(pStm, core::ptr::addr_of_mut!(nameLength) as *mut core::ffi::c_void, core::mem::size_of::<u32>() as u32, core::ptr::addr_of_mut!(bread));
-    if bread != core::mem::size_of::<u32>() as u32 {
+    /* read item name string length + 1 */
+    res = IStream_Read(
+        pStm,
+        core::ptr::addr_of_mut!(nameLength) as LPVOID,
+        core::mem::size_of::<DWORD>() as ULONG,
+        core::ptr::addr_of_mut!(bread),
+    );
+    if bread != core::mem::size_of::<DWORD>() as ULONG {
         return E_FAIL;
     }
 
-    itemNameA = HeapAlloc(GetProcessHeap(), 0, nameLength as usize) as *mut i8;
+    /* read item name string */
+    let itemNameA = HeapAlloc(GetProcessHeap(), 0, nameLength as SIZE_T) as *mut c_char;
     if itemNameA.is_null() {
         return E_OUTOFMEMORY;
     }
-    res = IStream_Read(pStm, itemNameA as *mut core::ffi::c_void, nameLength, core::ptr::addr_of_mut!(bread));
+    res = IStream_Read(
+        pStm,
+        itemNameA as LPVOID,
+        nameLength,
+        core::ptr::addr_of_mut!(bread),
+    );
     if bread != nameLength {
-        HeapFree(GetProcessHeap(), 0, itemNameA as *mut core::ffi::c_void);
+        HeapFree(GetProcessHeap(), 0, itemNameA as LPVOID);
         return E_FAIL;
     }
 
     lenW = MultiByteToWideChar(CP_ACP, 0, itemNameA, -1, core::ptr::null_mut(), 0);
-    (*This).itemName = HeapReAlloc(GetProcessHeap(), 0, (*This).itemName as *mut core::ffi::c_void, (lenW as usize) * core::mem::size_of::<u16>()) as LPWSTR;
+    (*This).itemName = HeapReAlloc(
+        GetProcessHeap(),
+        0,
+        (*This).itemName as LPVOID,
+        (lenW as usize * core::mem::size_of::<WCHAR>()) as SIZE_T,
+    ) as LPOLESTR;
     if (*This).itemName.is_null() {
-        HeapFree(GetProcessHeap(), 0, itemNameA as *mut core::ffi::c_void);
+        HeapFree(GetProcessHeap(), 0, itemNameA as LPVOID);
         return E_OUTOFMEMORY;
     }
     MultiByteToWideChar(CP_ACP, 0, itemNameA, -1, (*This).itemName, lenW);
-    HeapFree(GetProcessHeap(), 0, itemNameA as *mut core::ffi::c_void);
+    HeapFree(GetProcessHeap(), 0, itemNameA as LPVOID);
 
     res
 }
+}
 
-unsafe fn ItemMonikerImpl_Save(iface: *mut IMoniker, pStm: *mut IStream, fClearDirty: i32) -> HRESULT {
-
+stdmethod! {
+fn ItemMonikerImpl_Save(iface: *mut IMoniker, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT {
     let This = impl_from_IMoniker(iface);
-    let mut res: HRESULT;
 
-    let nameLength = WideCharToMultiByte(65001, 0, (*This).itemName, -1, core::ptr::null_mut(), 0, core::ptr::null(), core::ptr::null_mut()) as u32;
-    let delimiterLength = WideCharToMultiByte(65001, 0, (*This).itemDelimiter, -1, core::ptr::null_mut(), 0, core::ptr::null(), core::ptr::null_mut()) as u32;
-    let itemNameA = HeapAlloc(GetProcessHeap(), 0, nameLength as usize) as *mut i8;
-    let itemDelimiterA = HeapAlloc(GetProcessHeap(), 0, delimiterLength as usize) as *mut i8;
-    WideCharToMultiByte(65001, 0, (*This).itemName, -1, itemNameA, nameLength as i32, core::ptr::null(), core::ptr::null_mut());
-    WideCharToMultiByte(65001, 0, (*This).itemDelimiter, -1, itemDelimiterA, delimiterLength as i32, core::ptr::null(), core::ptr::null_mut());
+    /* data written by this function are :
+       1) DWORD : size of item delimiter string ('\0' included)
+       2) String (type A): item delimiter string ('\0' included)
+       3) DWORD : size of item name string ('\0' included)
+       4) String (type A): item name string ('\0' included) */
 
-    TRACE!(b"%p, %s\n\0".as_ptr() as *const i8, pStm, if fClearDirty != 0 { b"TRUE\0".as_ptr() } else { b"FALSE\0".as_ptr() });
+    let nameLength = WideCharToMultiByte(
+        CP_ACP,
+        0,
+        (*This).itemName,
+        -1,
+        core::ptr::null_mut(),
+        0,
+        core::ptr::null(),
+        core::ptr::null_mut(),
+    ) as DWORD;
+    let delimiterLength = WideCharToMultiByte(
+        CP_ACP,
+        0,
+        (*This).itemDelimiter,
+        -1,
+        core::ptr::null_mut(),
+        0,
+        core::ptr::null(),
+        core::ptr::null_mut(),
+    ) as DWORD;
+    let itemNameA = HeapAlloc(GetProcessHeap(), 0, nameLength as SIZE_T) as *mut c_char;
+    let itemDelimiterA =
+        HeapAlloc(GetProcessHeap(), 0, delimiterLength as SIZE_T) as *mut c_char;
+    WideCharToMultiByte(
+        CP_ACP,
+        0,
+        (*This).itemName,
+        -1,
+        itemNameA,
+        nameLength as c_int,
+        core::ptr::null(),
+        core::ptr::null_mut(),
+    );
+    WideCharToMultiByte(
+        CP_ACP,
+        0,
+        (*This).itemDelimiter,
+        -1,
+        itemDelimiterA,
+        delimiterLength as c_int,
+        core::ptr::null(),
+        core::ptr::null_mut(),
+    );
 
-    res = IStream_Write(pStm, &delimiterLength as *const u32 as *const core::ffi::c_void, core::mem::size_of::<u32>() as u32, core::ptr::null_mut());
-    res = IStream_Write(pStm, itemDelimiterA as *const core::ffi::c_void, delimiterLength * core::mem::size_of::<i8>() as u32, core::ptr::null_mut());
-    res = IStream_Write(pStm, &nameLength as *const u32 as *const core::ffi::c_void, core::mem::size_of::<u32>() as u32, core::ptr::null_mut());
-    res = IStream_Write(pStm, itemNameA as *const core::ffi::c_void, nameLength * core::mem::size_of::<i8>() as u32, core::ptr::null_mut());
+    TRACE!(b"%p, %d\n\0".as_ptr(), pStm, fClearDirty);
 
-    HeapFree(GetProcessHeap(), 0, itemNameA as *mut core::ffi::c_void);
-    HeapFree(GetProcessHeap(), 0, itemDelimiterA as *mut core::ffi::c_void);
+    let mut res = IStream_Write(
+        pStm,
+        core::ptr::addr_of!(delimiterLength) as *const core::ffi::c_void,
+        core::mem::size_of::<DWORD>() as ULONG,
+        core::ptr::null_mut(),
+    );
+    res = IStream_Write(
+        pStm,
+        itemDelimiterA as *const core::ffi::c_void,
+        delimiterLength * core::mem::size_of::<c_char>() as ULONG,
+        core::ptr::null_mut(),
+    );
+    res = IStream_Write(
+        pStm,
+        core::ptr::addr_of!(nameLength) as *const core::ffi::c_void,
+        core::mem::size_of::<DWORD>() as ULONG,
+        core::ptr::null_mut(),
+    );
+    res = IStream_Write(
+        pStm,
+        itemNameA as *const core::ffi::c_void,
+        nameLength * core::mem::size_of::<c_char>() as ULONG,
+        core::ptr::null_mut(),
+    );
+
+    HeapFree(GetProcessHeap(), 0, itemNameA as LPVOID);
+    HeapFree(GetProcessHeap(), 0, itemDelimiterA as LPVOID);
 
     res
 }
+}
 
-unsafe fn ItemMonikerImpl_GetSizeMax(iface: *mut IMoniker, pcbSize: *mut ULARGE_INTEGER) -> HRESULT {
-
+stdmethod! {
+fn ItemMonikerImpl_GetSizeMax(iface: *mut IMoniker, pcbSize: *mut ULARGE_INTEGER) -> HRESULT {
     let This = impl_from_IMoniker(iface);
-    let delimiterLength = lstrlenW((*This).itemDelimiter) + 1;
-    let nameLength = lstrlenW((*This).itemName) + 1;
+    let delimiterLength = (lstrlenW((*This).itemDelimiter) + 1) as DWORD;
+    let nameLength = (lstrlenW((*This).itemName) + 1) as DWORD;
+
+    TRACE!(b"(%p,%p)\n\0".as_ptr(), iface, pcbSize);
 
     if pcbSize.is_null() {
-        return 0x80004003u32 as HRESULT;
+        return E_POINTER;
     }
 
-    (*pcbSize).u.__bindgen_anon_1.LowPart = core::mem::size_of::<u32>() as u32 +
-                           (delimiterLength as u32) * 4 +
-                           core::mem::size_of::<u32>() as u32 +
-                           (nameLength as u32) * 4 +
-                           18;
-    (*pcbSize).u.__bindgen_anon_1.HighPart = 0;
+    /* for more details see ItemMonikerImpl_Save comments */
+    (*pcbSize).u.LowPart = core::mem::size_of::<DWORD>() as DWORD /* DWORD which contains delimiter length */
+        + delimiterLength * 4                                     /* item delimiter string */
+        + core::mem::size_of::<DWORD>() as DWORD                  /* DWORD which contains item name length */
+        + nameLength * 4                                          /* item name string */
+        + 18;                                                     /* strange, but true */
+    (*pcbSize).u.HighPart = 0;
 
-    0
+    S_OK
 }
-unsafe fn ItemMonikerImpl_BindToObject(
+}
+
+stdmethod! {
+fn ItemMonikerImpl_BindToObject(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
-    riid: REFIID,
-    ppvResult: *mut *mut core::ffi::c_void,
+    riid: *const IID,
+    ppvResult: *mut LPVOID,
 ) -> HRESULT {
     let This = impl_from_IMoniker(iface);
-    let mut res: HRESULT;
     let refid: IID = IID_IOleItemContainer;
     let mut poic: *mut IOleItemContainer = core::ptr::null_mut();
 
@@ -291,15 +407,15 @@ unsafe fn ItemMonikerImpl_BindToObject(
 
     *ppvResult = core::ptr::null_mut();
 
-    res = IMoniker_BindToObject(
+    let mut res = IMoniker_BindToObject(
         pmkToLeft,
         pbc,
         core::ptr::null_mut(),
-        &refid,
-        &mut poic as *mut _ as *mut *mut core::ffi::c_void,
+        core::ptr::addr_of!(refid),
+        core::ptr::addr_of_mut!(poic) as *mut LPVOID,
     );
 
-    if SUCCEEDED(res) != 0 {
+    if SUCCEEDED(res) {
         res = IOleItemContainer_GetObject(
             poic,
             (*This).itemName,
@@ -314,16 +430,17 @@ unsafe fn ItemMonikerImpl_BindToObject(
 
     res
 }
+}
 
-unsafe fn ItemMonikerImpl_BindToStorage(
+stdmethod! {
+fn ItemMonikerImpl_BindToStorage(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
     riid: *const IID,
-    ppvResult: *mut *mut core::ffi::c_void,
+    ppvResult: *mut LPVOID,
 ) -> HRESULT {
     let This = impl_from_IMoniker(iface);
-    let mut res: HRESULT;
     let mut poic: *mut IOleItemContainer = core::ptr::null_mut();
 
     TRACE!(
@@ -338,18 +455,18 @@ unsafe fn ItemMonikerImpl_BindToStorage(
     *ppvResult = core::ptr::null_mut();
 
     if pmkToLeft.is_null() {
-        return 0x80070057u32 as HRESULT;
+        return E_INVALIDARG;
     }
 
-    res = IMoniker_BindToObject(
+    let mut res = IMoniker_BindToObject(
         pmkToLeft,
         pbc,
         core::ptr::null_mut(),
-        &IID_IOleItemContainer,
-        &mut poic as *mut *mut IOleItemContainer as *mut *mut core::ffi::c_void,
+        core::ptr::addr_of!(IID_IOleItemContainer),
+        core::ptr::addr_of_mut!(poic) as *mut LPVOID,
     );
 
-    if SUCCEEDED(res) != 0 {
+    if SUCCEEDED(res) {
         res = IOleItemContainer_GetObjectStorage(poic, (*This).itemName, pbc, riid, ppvResult);
 
         IOleItemContainer_Release(poic);
@@ -357,8 +474,10 @@ unsafe fn ItemMonikerImpl_BindToStorage(
 
     res
 }
+}
 
-unsafe fn ItemMonikerImpl_Reduce(
+stdmethod! {
+fn ItemMonikerImpl_Reduce(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     dwReduceHowFar: DWORD,
@@ -366,7 +485,7 @@ unsafe fn ItemMonikerImpl_Reduce(
     ppmkReduced: *mut *mut IMoniker,
 ) -> HRESULT {
     TRACE!(
-        b"(%p,%p,%d,%p,%p)\n\0".as_ptr() as *const i8,
+        b"(%p,%p,%d,%p,%p)\n\0".as_ptr(),
         iface,
         pbc,
         dwReduceHowFar,
@@ -382,39 +501,50 @@ unsafe fn ItemMonikerImpl_Reduce(
 
     *ppmkReduced = iface;
 
-    return MK_S_REDUCED_TO_SELF;
+    MK_S_REDUCED_TO_SELF
+}
 }
 
-unsafe fn ItemMonikerImpl_ComposeWith(
+stdmethod! {
+fn ItemMonikerImpl_ComposeWith(
     iface: *mut IMoniker,
     pmkRight: *mut IMoniker,
-    fOnlyIfNotGeneric: u8,
+    fOnlyIfNotGeneric: BOOL,
     ppmkComposite: *mut *mut IMoniker,
 ) -> HRESULT {
-
-    let mut res: HRESULT = 0;
-    let mut mkSys: u32 = 0;
-    let mut mkSys2: u32 = 0;
+    let mut res: HRESULT = S_OK;
+    let mut mkSys: DWORD = 0;
+    let mut mkSys2: DWORD = 0;
     let mut penumMk: *mut IEnumMoniker = core::ptr::null_mut();
     let mut pmostLeftMk: *mut IMoniker = core::ptr::null_mut();
-    let mut tempMkComposite: *mut IMoniker = core::ptr::null_mut();
+    let mut tempMkComposite: *mut IMoniker;
 
-    TRACE!(b"(%p,%p,%d,%p)\n\0".as_ptr(), iface, pmkRight, fOnlyIfNotGeneric, ppmkComposite);
+    TRACE!(
+        b"(%p,%p,%d,%p)\n\0".as_ptr(),
+        iface,
+        pmkRight,
+        fOnlyIfNotGeneric,
+        ppmkComposite,
+    );
 
     if ppmkComposite.is_null() || pmkRight.is_null() {
-        return 0x80004003u32 as HRESULT;
+        return E_POINTER;
     }
 
     *ppmkComposite = core::ptr::null_mut();
 
     IMoniker_IsSystemMoniker(pmkRight, &mut mkSys);
 
-    if mkSys == 3 {
-        return res;
-    } else if mkSys == 1 {
-        res = IMoniker_Enum(pmkRight, 1, &mut penumMk);
+    /* If pmkRight is an anti-moniker, the returned moniker is NULL */
+    if mkSys == MKSYS_ANTIMONIKER {
+        res
+    }
+    /* if pmkRight is a composite whose leftmost component is an anti-moniker,           */
+    /* the returned moniker is the composite after the leftmost anti-moniker is removed. */
+    else if mkSys == MKSYS_GENERICCOMPOSITE {
+        res = IMoniker_Enum(pmkRight, TRUE as BOOL, &mut penumMk);
 
-        if FAILED(res) != 0 {
+        if FAILED(res) {
             return res;
         }
 
@@ -422,13 +552,13 @@ unsafe fn ItemMonikerImpl_ComposeWith(
 
         IMoniker_IsSystemMoniker(pmostLeftMk, &mut mkSys2);
 
-        if mkSys2 == 3 {
+        if mkSys2 == MKSYS_ANTIMONIKER {
             IMoniker_Release(pmostLeftMk);
 
             tempMkComposite = iface;
             IMoniker_AddRef(iface);
 
-            while IEnumMoniker_Next(penumMk, 1, &mut pmostLeftMk, core::ptr::null_mut()) == 0 {
+            while IEnumMoniker_Next(penumMk, 1, &mut pmostLeftMk, core::ptr::null_mut()) == S_OK {
                 res = CreateGenericComposite(tempMkComposite, pmostLeftMk, ppmkComposite);
 
                 IMoniker_Release(tempMkComposite);
@@ -437,25 +567,29 @@ unsafe fn ItemMonikerImpl_ComposeWith(
                 tempMkComposite = *ppmkComposite;
                 IMoniker_AddRef(tempMkComposite);
             }
-            return res;
+            res
         } else {
-            return CreateGenericComposite(iface, pmkRight, ppmkComposite);
-        }
-    } else {
-        if fOnlyIfNotGeneric == 0 {
-            return CreateGenericComposite(iface, pmkRight, ppmkComposite);
-        } else {
-            return 0x80040013u32 as HRESULT;
+            CreateGenericComposite(iface, pmkRight, ppmkComposite)
         }
     }
+    /* If pmkRight is not an anti-moniker, the method combines the two monikers into a generic
+       composite if fOnlyIfNotGeneric is FALSE; if fOnlyIfNotGeneric is TRUE, the method returns
+       a NULL moniker and a return value of MK_E_NEEDGENERIC */
+    else if fOnlyIfNotGeneric == 0 {
+        CreateGenericComposite(iface, pmkRight, ppmkComposite)
+    } else {
+        MK_E_NEEDGENERIC
+    }
+}
 }
 
-unsafe fn ItemMonikerImpl_Enum(
+stdmethod! {
+fn ItemMonikerImpl_Enum(
     iface: *mut IMoniker,
-    fForward: i32,
-    ppenumMoniker: *mut *mut IEnumMoniker
+    fForward: BOOL,
+    ppenumMoniker: *mut *mut IEnumMoniker,
 ) -> HRESULT {
-    TRACE!(b"(%p,%d,%p)\n\0".as_ptr() as *const i8, iface, fForward, ppenumMoniker);
+    TRACE!(b"(%p,%d,%p)\n\0".as_ptr(), iface, fForward, ppenumMoniker);
 
     if ppenumMoniker.is_null() {
         return E_POINTER;
@@ -465,51 +599,61 @@ unsafe fn ItemMonikerImpl_Enum(
 
     S_OK
 }
+}
 
-unsafe fn ItemMonikerImpl_IsEqual(iface: *mut IMoniker, pmkOtherMoniker: *mut IMoniker) -> HRESULT {
-
+stdmethod! {
+fn ItemMonikerImpl_IsEqual(iface: *mut IMoniker, pmkOtherMoniker: *mut IMoniker) -> HRESULT {
     let mut clsid: CLSID = core::mem::zeroed();
-    let mut dispName1: LPWSTR = core::ptr::null_mut();
-    let mut dispName2: LPWSTR = core::ptr::null_mut();
+    let mut dispName1: LPOLESTR = core::ptr::null_mut();
+    let mut dispName2: LPOLESTR = core::ptr::null_mut();
     let mut bind: *mut IBindCtx = core::ptr::null_mut();
-    let mut res: HRESULT = 0x00000001; // S_FALSE
+    let mut res: HRESULT = S_FALSE;
 
     TRACE!(b"(%p,%p)\n\0".as_ptr(), iface, pmkOtherMoniker);
 
     if pmkOtherMoniker.is_null() {
-        return 0x00000001; // S_FALSE
+        return S_FALSE;
     }
 
-    if FAILED(IMoniker_GetClassID(pmkOtherMoniker, &mut clsid)) != 0 {
-        return 0x00000001; // S_FALSE
+    /* check if both are ItemMoniker */
+    if FAILED(IMoniker_GetClassID(pmkOtherMoniker, &mut clsid)) {
+        return S_FALSE;
     }
-    if IsEqualCLSID(&clsid, &CLSID_ItemMoniker) == 0 {
-        return 0x00000001; // S_FALSE
+    if !IsEqualCLSID(&clsid, core::ptr::addr_of!(CLSID_ItemMoniker)) {
+        return S_FALSE;
     }
 
+    /* check if both displaynames are the same */
     res = CreateBindCtx(0, &mut bind);
-    if SUCCEEDED(res) != 0 {
-        if SUCCEEDED(IMoniker_GetDisplayName(iface, bind, core::ptr::null_mut(), &mut dispName1)) != 0 {
-            if SUCCEEDED(IMoniker_GetDisplayName(pmkOtherMoniker, bind, core::ptr::null_mut(), &mut dispName2)) != 0 {
+    if SUCCEEDED(res) {
+        if SUCCEEDED(IMoniker_GetDisplayName(iface, bind, core::ptr::null_mut(), &mut dispName1)) {
+            if SUCCEEDED(IMoniker_GetDisplayName(
+                pmkOtherMoniker,
+                bind,
+                core::ptr::null_mut(),
+                &mut dispName2,
+            )) {
                 if wcscmp(dispName1, dispName2) == 0 {
-                    res = 0x00000000; // S_OK
+                    res = S_OK;
                 }
-                CoTaskMemFree(dispName2 as *mut core::ffi::c_void);
+                CoTaskMemFree(dispName2 as LPVOID);
             }
-            CoTaskMemFree(dispName1 as *mut core::ffi::c_void);
+            CoTaskMemFree(dispName1 as LPVOID);
         }
     }
+
     res
 }
+}
 
-unsafe fn ItemMonikerImpl_Hash(iface: *mut IMoniker, pdwHash: *mut u32) -> HRESULT {
-
+stdmethod! {
+fn ItemMonikerImpl_Hash(iface: *mut IMoniker, pdwHash: *mut DWORD) -> HRESULT {
     let This = impl_from_IMoniker(iface);
-    let mut h: u32 = 0;
-    let mut off: i32 = 0;
+    let mut h: DWORD = 0;
+    let mut off: isize = 0;
 
     if pdwHash.is_null() {
-        return 0x80004003u32 as HRESULT;
+        return E_POINTER;
     }
 
     let val = (*This).itemName;
@@ -517,49 +661,52 @@ unsafe fn ItemMonikerImpl_Hash(iface: *mut IMoniker, pdwHash: *mut u32) -> HRESU
 
     let mut i = len;
     while i > 0 {
-        h = h.wrapping_mul(3) ^ (towupper(*val.offset(off as isize)) as u32);
+        h = h.wrapping_mul(3) ^ (towupper(*val.offset(off) as c_int) as DWORD);
         off += 1;
         i -= 1;
     }
 
     *pdwHash = h;
 
-    0x00000000u32 as HRESULT
+    S_OK
+}
 }
 
-unsafe fn ItemMonikerImpl_IsRunning(
+stdmethod! {
+fn ItemMonikerImpl_IsRunning(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
     pmkNewlyRunning: *mut IMoniker,
 ) -> HRESULT {
-    let this = impl_from_IMoniker(iface);
+    let This = impl_from_IMoniker(iface);
     let mut rot: *mut IRunningObjectTable = core::ptr::null_mut();
-    let mut res: HRESULT;
+    let res: HRESULT;
     let mut poic: *mut IOleItemContainer = core::ptr::null_mut();
 
     TRACE!(
-        b"(%p,%p,%p,%p)\n\0".as_ptr() as *const i8,
+        b"(%p,%p,%p,%p)\n\0".as_ptr(),
         iface,
         pbc,
         pmkToLeft,
         pmkNewlyRunning,
     );
 
+    /* If pmkToLeft is NULL, this method returns TRUE if pmkNewlyRunning is non-NULL and is
+       equal to this moniker. Otherwise, the method checks the ROT to see whether this
+       moniker is running. */
     if pmkToLeft.is_null() {
-        if !pmkNewlyRunning.is_null()
-            && IMoniker_IsEqual(pmkNewlyRunning, iface) == S_OK
-        {
+        if !pmkNewlyRunning.is_null() && IMoniker_IsEqual(pmkNewlyRunning, iface) == S_OK {
             return S_OK;
         } else {
             if pbc.is_null() {
                 return E_INVALIDARG;
             }
 
-            res = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
+            let hr = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
 
-            if FAILED(res) {
-                return res;
+            if FAILED(hr) {
+                return hr;
             }
 
             res = IRunningObjectTable_IsRunning(rot, iface);
@@ -567,55 +714,59 @@ unsafe fn ItemMonikerImpl_IsRunning(
             IRunningObjectTable_Release(rot);
         }
     } else {
-        res = IMoniker_BindToObject(
+        /* If pmkToLeft is non-NULL, the method calls IMoniker::BindToObject on the pmkToLeft
+           parameter, requesting an IOleItemContainer interface pointer. The method then calls
+           IOleItemContainer::IsRunning, passing the string contained within this moniker. */
+        let mut hr = IMoniker_BindToObject(
             pmkToLeft,
             pbc,
             core::ptr::null_mut(),
-            &IID_IOleItemContainer,
-            &mut poic as *mut *mut IOleItemContainer as *mut *mut core::ffi::c_void,
+            core::ptr::addr_of!(IID_IOleItemContainer),
+            core::ptr::addr_of_mut!(poic) as *mut LPVOID,
         );
 
-        if SUCCEEDED(res) {
-            res = IOleItemContainer_IsRunning(poic, (*this).itemName);
+        if SUCCEEDED(hr) {
+            hr = IOleItemContainer_IsRunning(poic, (*This).itemName);
 
             IOleItemContainer_Release(poic);
         }
+        res = hr;
     }
 
     res
 }
+}
 
-unsafe fn ItemMonikerImpl_GetTimeOfLastChange(
+stdmethod! {
+fn ItemMonikerImpl_GetTimeOfLastChange(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
     pItemTime: *mut FILETIME,
 ) -> HRESULT {
+    let mut rot: *mut IRunningObjectTable = core::ptr::null_mut();
+    let mut compositeMk: *mut IMoniker = core::ptr::null_mut();
 
-    TRACE!(
-        b"(%p,%p,%p,%p)\n\0".as_ptr(),
-        iface,
-        pbc,
-        pmkToLeft,
-        pItemTime,
-    );
+    TRACE!(b"(%p,%p,%p,%p)\n\0".as_ptr(), iface, pbc, pmkToLeft, pItemTime);
 
     if pItemTime.is_null() {
         return E_INVALIDARG;
     }
 
+    /* If pmkToLeft is NULL, this method returns MK_E_NOTBINDABLE */
     if pmkToLeft.is_null() {
-        return MK_E_NOTBINDABLE;
+        MK_E_NOTBINDABLE
     } else {
-        let mut compositeMk: *mut IMoniker = core::ptr::null_mut();
+        /* Otherwise, the method creates a composite of pmkToLeft and this moniker and uses the
+           ROT to access the time of last change. If the object is not in the ROT, the method
+           calls IMoniker::GetTimeOfLastChange on the pmkToLeft parameter. */
         let mut res = CreateGenericComposite(pmkToLeft, iface, &mut compositeMk);
-        if FAILED(res) != 0 {
+        if FAILED(res) {
             return res;
         }
 
-        let mut rot: *mut IRunningObjectTable = core::ptr::null_mut();
         res = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
-        if FAILED(res) != 0 {
+        if FAILED(res) {
             IMoniker_Release(compositeMk);
             return res;
         }
@@ -626,12 +777,13 @@ unsafe fn ItemMonikerImpl_GetTimeOfLastChange(
 
         IMoniker_Release(compositeMk);
 
-        return res;
+        res
     }
 }
+}
 
-unsafe fn ItemMonikerImpl_Inverse(iface: *mut IMoniker, ppmk: *mut *mut IMoniker) -> HRESULT {
-
+stdmethod! {
+fn ItemMonikerImpl_Inverse(iface: *mut IMoniker, ppmk: *mut *mut IMoniker) -> HRESULT {
     TRACE!(b"(%p,%p)\n\0".as_ptr(), iface, ppmk);
 
     if ppmk.is_null() {
@@ -640,33 +792,43 @@ unsafe fn ItemMonikerImpl_Inverse(iface: *mut IMoniker, ppmk: *mut *mut IMoniker
 
     CreateAntiMoniker(ppmk)
 }
+}
 
-unsafe fn ItemMonikerImpl_CommonPrefixWith(
+stdmethod! {
+fn ItemMonikerImpl_CommonPrefixWith(
     iface: *mut IMoniker,
     pmkOther: *mut IMoniker,
     ppmkPrefix: *mut *mut IMoniker,
 ) -> HRESULT {
-    let mut mkSys: u32 = 0;
+    let mut mkSys: DWORD = 0;
 
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const i8, pmkOther, ppmkPrefix);
+    TRACE!(b"(%p,%p)\n\0".as_ptr(), pmkOther, ppmkPrefix);
 
     IMoniker_IsSystemMoniker(pmkOther, &mut mkSys);
 
-    if mkSys == 1 && IMoniker_IsEqual(iface, pmkOther) == 0 {
+    /* If the other moniker is an item moniker that is equal to this moniker, this method sets
+       *ppmkPrefix to this moniker and returns MK_S_US */
+    if mkSys == MKSYS_ITEMMONIKER && IMoniker_IsEqual(iface, pmkOther) == S_OK {
         *ppmkPrefix = iface;
+
         IMoniker_AddRef(iface);
-        return 0x000401E4;
+
+        MK_S_US
     } else {
-        return MonikerCommonPrefixWith(iface, pmkOther, ppmkPrefix);
+        /* otherwise, the method calls the MonikerCommonPrefixWith function. This function
+           correctly handles the case where the other moniker is a generic composite. */
+        MonikerCommonPrefixWith(iface, pmkOther, ppmkPrefix)
     }
 }
+}
 
-unsafe fn ItemMonikerImpl_RelativePathTo(
+stdmethod! {
+fn ItemMonikerImpl_RelativePathTo(
     iface: *mut IMoniker,
     pmOther: *mut IMoniker,
-    ppmkRelPath: *mut *mut IMoniker
+    ppmkRelPath: *mut *mut IMoniker,
 ) -> HRESULT {
-    TRACE!(b"(%p,%p,%p)\n\0".as_ptr() as _, iface, pmOther, ppmkRelPath);
+    TRACE!(b"(%p,%p,%p)\n\0".as_ptr(), iface, pmOther, ppmkRelPath);
 
     if ppmkRelPath.is_null() {
         return E_POINTER;
@@ -674,41 +836,36 @@ unsafe fn ItemMonikerImpl_RelativePathTo(
 
     *ppmkRelPath = core::ptr::null_mut();
 
-    return MK_E_NOTBINDABLE;
+    MK_E_NOTBINDABLE
+}
 }
 
-unsafe fn ItemMonikerImpl_GetDisplayName(
+stdmethod! {
+fn ItemMonikerImpl_GetDisplayName(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
-    ppszDisplayName: *mut LPWSTR,
+    ppszDisplayName: *mut LPOLESTR,
 ) -> HRESULT {
-
     let This = impl_from_IMoniker(iface);
 
-    TRACE!(
-        b"(%p,%p,%p,%p)\n\0".as_ptr(),
-        iface,
-        pbc,
-        pmkToLeft,
-        ppszDisplayName,
-    );
+    TRACE!(b"(%p,%p,%p,%p)\n\0".as_ptr(), iface, pbc, pmkToLeft, ppszDisplayName);
 
     if ppszDisplayName.is_null() {
-        return 0x80004003u32 as HRESULT;
+        return E_POINTER;
     }
 
     if !pmkToLeft.is_null() {
-        return 0x80070057u32 as HRESULT;
+        return E_INVALIDARG;
     }
 
-    *ppszDisplayName = CoTaskMemAlloc(
-        (core::mem::size_of::<u16>()
-            * (lstrlenW((*This).itemDelimiter) + lstrlenW((*This).itemName) + 1) as usize),
-    ) as LPWSTR;
+    let chars =
+        (lstrlenW((*This).itemDelimiter) + lstrlenW((*This).itemName) + 1) as usize;
+    *ppszDisplayName =
+        CoTaskMemAlloc((core::mem::size_of::<WCHAR>() * chars) as SIZE_T) as LPOLESTR;
 
     if (*ppszDisplayName).is_null() {
-        return 0x8007000Eu32 as HRESULT;
+        return E_OUTOFMEMORY;
     }
 
     lstrcpyW(*ppszDisplayName, (*This).itemDelimiter);
@@ -716,44 +873,49 @@ unsafe fn ItemMonikerImpl_GetDisplayName(
 
     TRACE!(b"-- %s\n\0".as_ptr(), debugstr_w(*ppszDisplayName));
 
-    0
+    S_OK
+}
 }
 
-unsafe fn ItemMonikerImpl_ParseDisplayName(
+stdmethod! {
+fn ItemMonikerImpl_ParseDisplayName(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
-    pszDisplayName: LPWSTR,
+    pszDisplayName: LPOLESTR,
     pchEaten: *mut ULONG,
     ppmkOut: *mut *mut IMoniker,
 ) -> HRESULT {
     let This = impl_from_IMoniker(iface);
     let mut poic: *mut IOleItemContainer = core::ptr::null_mut();
     let mut ppdn: *mut IParseDisplayName = core::ptr::null_mut();
-    let mut displayName: LPWSTR = core::ptr::null_mut();
-    let mut res: HRESULT;
+    let mut displayName: LPOLESTR = core::ptr::null_mut();
 
-    TRACE!(b"%s\n\0".as_ptr() as *const i8, debugstr_w(pszDisplayName));
+    TRACE!(b"%s\n\0".as_ptr(), debugstr_w(pszDisplayName));
 
+    /* If pmkToLeft is NULL, this method returns MK_E_SYNTAX */
     if pmkToLeft.is_null() {
-        return MK_E_SYNTAX;
+        MK_E_SYNTAX
     } else {
-        res = IMoniker_BindToObject(
+        /* Otherwise, the method calls IMoniker::BindToObject on the pmkToLeft parameter,
+           requesting an IParseDisplayName interface pointer to the object identified by the
+           moniker, and passes the display name to IParseDisplayName::ParseDisplayName */
+        let mut res = IMoniker_BindToObject(
             pmkToLeft,
             pbc,
             core::ptr::null_mut(),
-            &IID_IOleItemContainer,
-            &mut poic as *mut *mut IOleItemContainer as *mut *mut core::ffi::c_void,
+            core::ptr::addr_of!(IID_IOleItemContainer),
+            core::ptr::addr_of_mut!(poic) as *mut LPVOID,
         );
 
-        if SUCCEEDED(res) != 0 {
+        if SUCCEEDED(res) {
             res = IOleItemContainer_GetObject(
                 poic,
                 (*This).itemName,
                 BINDSPEED_MODERATE,
                 pbc,
-                &IID_IParseDisplayName,
-                &mut ppdn as *mut *mut IParseDisplayName as *mut *mut core::ffi::c_void,
+                core::ptr::addr_of!(IID_IParseDisplayName),
+                core::ptr::addr_of_mut!(ppdn) as *mut LPVOID,
             );
 
             res = IMoniker_GetDisplayName(iface, pbc, core::ptr::null_mut(), &mut displayName);
@@ -763,12 +925,15 @@ unsafe fn ItemMonikerImpl_ParseDisplayName(
             IOleItemContainer_Release(poic);
             IParseDisplayName_Release(ppdn);
         }
+
+        res
     }
-    res
+}
 }
 
-unsafe fn ItemMonikerImpl_IsSystemMoniker(iface: *mut IMoniker, pwdMksys: *mut DWORD) -> HRESULT {
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as PCHAR, iface, pwdMksys);
+stdmethod! {
+fn ItemMonikerImpl_IsSystemMoniker(iface: *mut IMoniker, pwdMksys: *mut DWORD) -> HRESULT {
+    TRACE!(b"(%p,%p)\n\0".as_ptr(), iface, pwdMksys);
 
     if pwdMksys.is_null() {
         return E_POINTER;
@@ -778,19 +943,17 @@ unsafe fn ItemMonikerImpl_IsSystemMoniker(iface: *mut IMoniker, pwdMksys: *mut D
 
     S_OK
 }
-unsafe fn ItemMonikerROTDataImpl_QueryInterface(
+}
+
+stdmethod! {
+fn ItemMonikerROTDataImpl_QueryInterface(
     iface: *mut IROTData,
     riid: *const IID,
-    ppvObject: *mut *mut core::ffi::c_void,
+    ppvObject: *mut LPVOID,
 ) -> HRESULT {
     let This = impl_from_IROTData(iface);
 
-    TRACE!(
-        b"(%p,%s,%p)\n\0".as_ptr(),
-        iface,
-        debugstr_guid(riid),
-        ppvObject,
-    );
+    TRACE!(b"(%p,%s,%p)\n\0".as_ptr(), iface, debugstr_guid(riid), ppvObject);
 
     ItemMonikerImpl_QueryInterface(
         core::ptr::addr_of_mut!((*This).IMoniker_iface),
@@ -798,53 +961,66 @@ unsafe fn ItemMonikerROTDataImpl_QueryInterface(
         ppvObject,
     )
 }
-
-unsafe fn ItemMonikerROTDataImpl_AddRef(iface: *mut IROTData) -> u32 {
-    let This = impl_from_IROTData(iface);
-    ItemMonikerImpl_AddRef(core::ptr::addr_of_mut!((*This).IMoniker_iface))
 }
 
-unsafe fn ItemMonikerROTDataImpl_Release(iface: *mut IROTData) -> u32 {
+stdmethod! {
+fn ItemMonikerROTDataImpl_AddRef(iface: *mut IROTData) -> ULONG {
     let This = impl_from_IROTData(iface);
+
+    TRACE!(b"(%p)\n\0".as_ptr(), iface);
+
+    ItemMonikerImpl_AddRef(core::ptr::addr_of_mut!((*This).IMoniker_iface))
+}
+}
+
+stdmethod! {
+fn ItemMonikerROTDataImpl_Release(iface: *mut IROTData) -> ULONG {
+    let This = impl_from_IROTData(iface);
+
+    TRACE!(b"(%p)\n\0".as_ptr(), iface);
 
     ItemMonikerImpl_Release(core::ptr::addr_of_mut!((*This).IMoniker_iface))
 }
+}
 
-unsafe fn ItemMonikerROTDataImpl_GetComparisonData(
+stdmethod! {
+fn ItemMonikerROTDataImpl_GetComparisonData(
     iface: *mut IROTData,
-    pbData: *mut u8,
-    cbMax: u32,
-    pcbData: *mut u32,
+    pbData: *mut byte,
+    cbMax: ULONG,
+    pcbData: *mut ULONG,
 ) -> HRESULT {
-
     let This = impl_from_IROTData(iface);
-    let len = (lstrlenW((*This).itemName) + 1) as usize;
-    let mut i: i32;
-    let pszItemName: LPWSTR;
-    let pszItemDelimiter: LPWSTR;
+    let len = (lstrlenW((*This).itemName) + 1) as isize;
 
-    *pcbData = (core::mem::size_of::<CLSID>() + core::mem::size_of::<u16>() + len * core::mem::size_of::<u16>()) as u32;
+    TRACE!(b"(%p, %u, %p)\n\0".as_ptr(), pbData, cbMax, pcbData);
+
+    *pcbData = (core::mem::size_of::<CLSID>()
+        + core::mem::size_of::<WCHAR>()
+        + len as usize * core::mem::size_of::<WCHAR>()) as ULONG;
     if cbMax < *pcbData {
-        return 0x8007000E;
+        return E_OUTOFMEMORY;
     }
 
-    core::ptr::copy_nonoverlapping(
-        &CLSID_ItemMoniker as *const CLSID as *const u8,
-        pbData,
+    /* write CLSID */
+    memcpy(
+        pbData as *mut core::ffi::c_void,
+        core::ptr::addr_of!(CLSID_ItemMoniker) as *const core::ffi::c_void,
         core::mem::size_of::<CLSID>(),
     );
-
-    pszItemDelimiter = pbData.add(core::mem::size_of::<CLSID>()) as LPWSTR;
+    /* write delimiter */
+    let pszItemDelimiter = pbData.add(core::mem::size_of::<CLSID>()) as LPWSTR;
     *pszItemDelimiter = *(*This).itemDelimiter;
-
-    pszItemName = pszItemDelimiter.offset(1);
-    i = 0;
-    while i < len as i32 {
-        *pszItemName.offset(i as isize) = towupper(*(*This).itemName.offset(i as isize));
+    /* write name */
+    let pszItemName = pszItemDelimiter.offset(1);
+    let mut i: isize = 0;
+    while i < len {
+        *pszItemName.offset(i) = towupper(*(*This).itemName.offset(i) as c_int) as WCHAR;
         i += 1;
     }
 
-    0
+    S_OK
+}
 }
 
 unsafe fn ItemMonikerImpl_Construct(
@@ -852,21 +1028,21 @@ unsafe fn ItemMonikerImpl_Construct(
     lpszDelim: LPCOLESTR,
     lpszItem: LPCOLESTR,
 ) -> HRESULT {
-
-    let sizeStr1 = lstrlenW(lpszItem as LPCWSTR);
-    let sizeStr2: i32;
-    static emptystr: [WCHAR; 1] = [0];
-    let delim: LPCOLESTR;
+    let sizeStr1 = lstrlenW(lpszItem);
+    static emptystr: [OLECHAR; 1] = [0];
 
     TRACE!(
-        b"(%p,%s,%s)\n\0".as_ptr() as LPCSTR,
+        b"(%p,%s,%s)\n\0".as_ptr(),
         This,
-        debugstr_w(lpszDelim as LPCWSTR),
-        debugstr_w(lpszItem as LPCWSTR),
+        debugstr_w(lpszDelim),
+        debugstr_w(lpszItem),
     );
 
-    (*This).IMoniker_iface.lpVtbl = &VT_ItemMonikerImpl;
-    (*This).IROTData_iface.lpVtbl = &VT_ROTDataImpl;
+    /* Initialize the virtual function table. */
+    (*This).IMoniker_iface.lpVtbl =
+        core::ptr::addr_of!(VT_ItemMonikerImpl) as *mut IMonikerVtbl;
+    (*This).IROTData_iface.lpVtbl =
+        core::ptr::addr_of!(VT_ROTDataImpl) as *mut IROTDataVtbl;
     (*This).ref_ = 0;
     (*This).pMarshal = core::ptr::null_mut();
 
@@ -878,19 +1054,19 @@ unsafe fn ItemMonikerImpl_Construct(
     if (*This).itemName.is_null() {
         return E_OUTOFMEMORY;
     }
-    lstrcpyW((*This).itemName as LPWSTR, lpszItem as LPCWSTR);
+    lstrcpyW((*This).itemName, lpszItem);
 
     if lpszDelim.is_null() {
-        FIXME!(b"lpszDelim is NULL. Using empty string which is possibly wrong.\n\0".as_ptr() as LPCSTR);
+        FIXME!(b"lpszDelim is NULL. Using empty string which is possibly wrong.\n\0".as_ptr());
     }
 
-    delim = if !lpszDelim.is_null() {
+    let delim: LPCOLESTR = if !lpszDelim.is_null() {
         lpszDelim
     } else {
         emptystr.as_ptr()
     };
 
-    sizeStr2 = lstrlenW(delim as LPCWSTR);
+    let sizeStr2 = lstrlenW(delim);
     (*This).itemDelimiter = HeapAlloc(
         GetProcessHeap(),
         0,
@@ -900,30 +1076,33 @@ unsafe fn ItemMonikerImpl_Construct(
         HeapFree(GetProcessHeap(), 0, (*This).itemName as LPVOID);
         return E_OUTOFMEMORY;
     }
-    lstrcpyW((*This).itemDelimiter as LPWSTR, delim as LPCWSTR);
+    lstrcpyW((*This).itemDelimiter, delim);
+
     S_OK
 }
 
 unsafe fn ItemMonikerImpl_Destroy(This: *mut ItemMonikerImpl) -> HRESULT {
-    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, This);
+    TRACE!(b"(%p)\n\0".as_ptr(), This);
 
     if !(*This).pMarshal.is_null() {
         IUnknown_Release((*This).pMarshal);
     }
-    HeapFree(GetProcessHeap(), 0, (*This).itemName as *mut core::ffi::c_void);
-    HeapFree(GetProcessHeap(), 0, (*This).itemDelimiter as *mut core::ffi::c_void);
-    HeapFree(GetProcessHeap(), 0, This as *mut core::ffi::c_void);
+    HeapFree(GetProcessHeap(), 0, (*This).itemName as LPVOID);
+    HeapFree(GetProcessHeap(), 0, (*This).itemDelimiter as LPVOID);
+    HeapFree(GetProcessHeap(), 0, This as LPVOID);
 
-    0
+    S_OK
 }
 
+/******************************************************************************
+ *        CreateItemMoniker	[OLE32.@]
+ ******************************************************************************/
 #[no_mangle]
 pub unsafe extern "system" fn CreateItemMoniker(
     lpszDelim: LPCOLESTR,
     lpszItem: LPCOLESTR,
     ppmk: *mut *mut IMoniker,
 ) -> HRESULT {
-
     TRACE!(
         b"(%s,%s,%p)\n\0".as_ptr(),
         debugstr_w(lpszDelim),
@@ -934,7 +1113,7 @@ pub unsafe extern "system" fn CreateItemMoniker(
     let newItemMoniker = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<ItemMonikerImpl>(),
+        core::mem::size_of::<ItemMonikerImpl>() as SIZE_T,
     ) as *mut ItemMonikerImpl;
 
     if newItemMoniker.is_null() {
@@ -943,34 +1122,28 @@ pub unsafe extern "system" fn CreateItemMoniker(
 
     let hr = ItemMonikerImpl_Construct(newItemMoniker, lpszDelim, lpszItem);
 
-    if FAILED(hr) != 0 {
-        HeapFree(GetProcessHeap(), 0, newItemMoniker as *mut core::ffi::c_void);
+    if FAILED(hr) {
+        HeapFree(GetProcessHeap(), 0, newItemMoniker as LPVOID);
         return hr;
     }
 
-    return ItemMonikerImpl_QueryInterface(
+    ItemMonikerImpl_QueryInterface(
         core::ptr::addr_of_mut!((*newItemMoniker).IMoniker_iface),
-        &IID_IMoniker,
-        ppmk as *mut *mut core::ffi::c_void,
-    );
+        core::ptr::addr_of!(IID_IMoniker),
+        ppmk as *mut LPVOID,
+    )
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn ItemMoniker_CreateInstance(
     iface: *mut IClassFactory,
     pUnk: *mut IUnknown,
-    riid: *const IID,
-    ppv: *mut *mut core::ffi::c_void,
+    riid: REFIID,
+    ppv: *mut LPVOID,
 ) -> HRESULT {
-
     static wszEmpty: [WCHAR; 1] = [0];
 
-    TRACE!(
-        b"(%p, %s, %p)\n\0".as_ptr(),
-        pUnk,
-        debugstr_guid(riid),
-        ppv,
-    );
+    TRACE!(b"(%p, %s, %p)\n\0".as_ptr(), pUnk, debugstr_guid(riid), ppv);
 
     *ppv = core::ptr::null_mut();
 
@@ -981,26 +1154,23 @@ pub unsafe extern "system" fn ItemMoniker_CreateInstance(
     let newItemMoniker = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<ItemMonikerImpl>(),
+        core::mem::size_of::<ItemMonikerImpl>() as SIZE_T,
     ) as *mut ItemMonikerImpl;
     if newItemMoniker.is_null() {
         return E_OUTOFMEMORY;
     }
 
-    let mut hr = ItemMonikerImpl_Construct(
-        newItemMoniker,
-        wszEmpty.as_ptr(),
-        wszEmpty.as_ptr(),
-    );
+    let mut hr =
+        ItemMonikerImpl_Construct(newItemMoniker, wszEmpty.as_ptr(), wszEmpty.as_ptr());
 
-    if SUCCEEDED(hr) != 0 {
+    if SUCCEEDED(hr) {
         hr = ItemMonikerImpl_QueryInterface(
             core::ptr::addr_of_mut!((*newItemMoniker).IMoniker_iface),
             riid,
             ppv,
         );
     }
-    if FAILED(hr) != 0 {
+    if FAILED(hr) {
         HeapFree(GetProcessHeap(), 0, newItemMoniker as LPVOID);
     }
 

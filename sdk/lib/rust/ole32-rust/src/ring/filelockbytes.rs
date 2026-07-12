@@ -1,18 +1,38 @@
+//! filelockbytes.c — file-backed ILockBytes implementation.
 use crate::prelude::*;
-use core::ffi::c_void;
 
-extern "C" {
-    fn CloseHandle(hObject: HANDLE) -> BOOL;
-    fn SetFilePointerEx( hFile: HANDLE, liDistanceToMove: LARGE_INTEGER, lpNewFilePointer: *mut LARGE_INTEGER, dwMoveMethod: DWORD, ) -> BOOL;
-    fn ReadFile( hFile: HANDLE, lpBuffer: LPVOID, nNumberOfBytesToRead: DWORD, lpNumberOfBytesRead: LPDWORD, lpOverlapped: *mut OVERLAPPED, ) -> BOOL;
-    fn WriteFile( hFile: HANDLE, lpBuffer: *const core::ffi::c_void, nNumberOfBytesToWrite: DWORD, lpNumberOfBytesWritten: *mut DWORD, lpOverlapped: *mut OVERLAPPED, ) -> BOOL;
-    fn SetEndOfFile(hFile: HANDLE) -> BOOL;
-    fn CoTaskMemAlloc(cb: usize) -> *mut core::ffi::c_void;
-    fn GetFileSize(hFile: HANDLE, lpFileSizeHigh: *mut DWORD) -> DWORD;
-    fn GetFullPathNameW( lpFileName: LPCWSTR, nBufferLength: DWORD, lpBuffer: LPWSTR, lpFilePart: *mut LPWSTR, ) -> DWORD;
-    fn lstrcpynW(lpString1: LPWSTR, lpString2: LPCWSTR, iMaxLength: i32) -> LPWSTR;
-    fn LockFileEx( hFile: HANDLE, dwFlags: DWORD, dwReserved: DWORD, nNumberOfBytesToLockLow: DWORD, nNumberOfBytesToLockHigh: DWORD, lpOverlapped: *mut OVERLAPPED, ) -> BOOL;
-    fn UnlockFileEx( hFile: HANDLE, dwReserved: DWORD, nNumberOfBytesToUnlockLow: DWORD, nNumberOfBytesToUnlockHigh: DWORD, lpOverlapped: *mut OVERLAPPED, ) -> BOOL;
+// ---------------------------------------------------------------------------
+// Locally-defined bits the shared surface does not carry yet.
+//
+// These are deliberately PRIVATE (no `pub`) so they are not re-exported through
+// `crate::prelude`'s `pub use crate::ring::filelockbytes::*` glob and cannot
+// collide with a sibling ring module. If/when they are hoisted into
+// crate::win_consts / a shared win32 types module, delete them from here.
+// ---------------------------------------------------------------------------
+
+/// winbase.h OVERLAPPED. The `union { struct { DWORD Offset; DWORD OffsetHigh; };
+/// PVOID Pointer; }` is flattened to its two-DWORD arm — that arm is the only one
+/// LockFileEx/UnlockFileEx use, and the flat form is layout-identical on all three
+/// arches (the union's pointer arm has the same size+alignment as the DWORD pair
+/// under the surrounding ULONG_PTR alignment). Same shape as marshal/types.rs.
+#[repr(C)]
+struct OVERLAPPED {
+    Internal: usize,
+    InternalHigh: usize,
+    Offset: DWORD,
+    OffsetHigh: DWORD,
+    hEvent: HANDLE,
+}
+
+/// winerror.h
+const ERROR_ACCESS_DENIED: DWORD = 5;
+const ERROR_LOCK_VIOLATION: DWORD = 33;
+const ERROR_NOT_SUPPORTED: DWORD = 50;
+
+/// objbase.h: `#define STGM_ACCESS_MODE(stgm) ((stgm) & 0x0000000f)`
+#[inline]
+fn STGM_ACCESS_MODE(stgm: DWORD) -> DWORD {
+    stgm & 0x0000_000f
 }
 
 // ---- file-scope preamble (translated) ----
@@ -28,28 +48,35 @@ pub struct FileLockBytesImpl {
 pub type PFileLockBytesImpl = *mut FileLockBytesImpl;
 
 pub static FileLockBytesImpl_Vtbl: ILockBytesVtbl = ILockBytesVtbl {
-    QueryInterface: FileLockBytesImpl_QueryInterface,
-    AddRef: FileLockBytesImpl_AddRef,
-    Release: FileLockBytesImpl_Release,
-    ReadAt: FileLockBytesImpl_ReadAt,
-    WriteAt: FileLockBytesImpl_WriteAt,
-    Flush: FileLockBytesImpl_Flush,
-    SetSize: FileLockBytesImpl_SetSize,
-    LockRegion: FileLockBytesImpl_LockRegion,
-    UnlockRegion: FileLockBytesImpl_UnlockRegion,
-    Stat: FileLockBytesImpl_Stat,
+    QueryInterface: Some(FileLockBytesImpl_QueryInterface),
+    AddRef: Some(FileLockBytesImpl_AddRef),
+    Release: Some(FileLockBytesImpl_Release),
+    ReadAt: Some(FileLockBytesImpl_ReadAt),
+    WriteAt: Some(FileLockBytesImpl_WriteAt),
+    Flush: Some(FileLockBytesImpl_Flush),
+    SetSize: Some(FileLockBytesImpl_SetSize),
+    LockRegion: Some(FileLockBytesImpl_LockRegion),
+    UnlockRegion: Some(FileLockBytesImpl_UnlockRegion),
+    Stat: Some(FileLockBytesImpl_Stat),
 };
 
 unsafe fn impl_from_ILockBytes(iface: *mut ILockBytes) -> *mut FileLockBytesImpl {
-    (iface as *mut u8).offset(-((core::mem::offset_of!(FileLockBytesImpl, ILockBytes_iface)) as isize)) as *mut FileLockBytesImpl
+    CONTAINING_RECORD!(iface, FileLockBytesImpl, ILockBytes_iface)
 }
 
-unsafe fn GetProtectMode(openFlags: DWORD) -> DWORD {
+/// filelockbytes.c:73 GetProtectMode
+fn GetProtectMode(openFlags: DWORD) -> DWORD {
     match STGM_ACCESS_MODE(openFlags) {
         STGM_WRITE | STGM_READWRITE => PAGE_READWRITE,
         _ => PAGE_READONLY,
     }
 }
+
+/// filelockbytes.c:89 FileLockBytesImpl_Construct
+///
+/// Not WINAPI in the C (a plain internal `HRESULT FileLockBytesImpl_Construct(...)`
+/// called from storage32), so cdecl — `extern "C"` is correct here, unlike the
+/// WINAPI entry points.
 #[no_mangle]
 pub unsafe extern "C" fn FileLockBytesImpl_Construct(
     hFile: HANDLE,
@@ -57,7 +84,6 @@ pub unsafe extern "C" fn FileLockBytesImpl_Construct(
     pwcsName: LPCWSTR,
     pLockBytes: *mut *mut ILockBytes,
 ) -> HRESULT {
-
     let mut fullpath: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
     if hFile == INVALID_HANDLE_VALUE {
@@ -67,15 +93,16 @@ pub unsafe extern "C" fn FileLockBytesImpl_Construct(
     let This = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<FileLockBytesImpl>(),
+        core::mem::size_of::<FileLockBytesImpl>() as SIZE_T,
     ) as *mut FileLockBytesImpl;
 
     if This.is_null() {
         return E_OUTOFMEMORY;
     }
 
-    (*This).ILockBytes_iface.lpVtbl = &FileLockBytesImpl_Vtbl;
-    (*This).ref_0 = 1;
+    (*This).ILockBytes_iface.lpVtbl =
+        &FileLockBytesImpl_Vtbl as *const ILockBytesVtbl as *mut ILockBytesVtbl;
+    (*This).ref_ = 1;
     (*This).hfile = hFile;
     (*This).flProtect = GetProtectMode(openFlags);
 
@@ -87,15 +114,16 @@ pub unsafe extern "C" fn FileLockBytesImpl_Construct(
             core::ptr::null_mut(),
         ) == 0
         {
-            lstrcpynW(fullpath.as_mut_ptr(), pwcsName, MAX_PATH as i32);
+            lstrcpynW(fullpath.as_mut_ptr(), pwcsName, MAX_PATH as c_int);
         }
         (*This).pwcsName = HeapAlloc(
             GetProcessHeap(),
             0,
-            ((lstrlenW(fullpath.as_ptr()) + 1) as usize) * core::mem::size_of::<WCHAR>(),
+            (((lstrlenW(fullpath.as_ptr()) + 1) as usize) * core::mem::size_of::<WCHAR>())
+                as SIZE_T,
         ) as LPWSTR;
         if (*This).pwcsName.is_null() {
-            HeapFree(GetProcessHeap(), 0, This as *mut core::ffi::c_void);
+            HeapFree(GetProcessHeap(), 0, This as LPVOID);
             return E_OUTOFMEMORY;
         }
         lstrcpyW((*This).pwcsName, fullpath.as_ptr());
@@ -103,19 +131,22 @@ pub unsafe extern "C" fn FileLockBytesImpl_Construct(
         (*This).pwcsName = core::ptr::null_mut();
     }
 
-    *pLockBytes = &mut (*This).ILockBytes_iface;
+    *pLockBytes = core::ptr::addr_of_mut!((*This).ILockBytes_iface);
 
     S_OK
 }
 
-unsafe fn FileLockBytesImpl_QueryInterface(
+stdmethod! {
+/// filelockbytes.c:131 FileLockBytesImpl_QueryInterface [VTABLE]
+fn FileLockBytesImpl_QueryInterface(
     iface: *mut ILockBytes,
     riid: REFIID,
-    ppvObject: *mut *mut core::ffi::c_void,
+    ppvObject: *mut *mut c_void,
 ) -> HRESULT {
-
-    if IsEqualIID(riid, &IID_IUnknown) != 0 || IsEqualIID(riid, &IID_ILockBytes) != 0 {
-        *ppvObject = iface as *mut core::ffi::c_void;
+    if IsEqualIID(riid, core::ptr::addr_of!(IID_IUnknown))
+        || IsEqualIID(riid, core::ptr::addr_of!(IID_ILockBytes))
+    {
+        *ppvObject = iface as *mut c_void;
     } else {
         *ppvObject = core::ptr::null_mut();
         return E_NOINTERFACE;
@@ -125,42 +156,59 @@ unsafe fn FileLockBytesImpl_QueryInterface(
 
     S_OK
 }
-
-unsafe fn FileLockBytesImpl_AddRef(iface: *mut ILockBytes) -> u32 {
-    let This = impl_from_ILockBytes(iface);
-    InterlockedIncrement(&mut (*This).ref_) as u32
 }
 
-unsafe fn FileLockBytesImpl_Release(iface: *mut ILockBytes) -> ULONG {
+stdmethod! {
+/// filelockbytes.c:147 FileLockBytesImpl_AddRef [VTABLE]
+fn FileLockBytesImpl_AddRef(iface: *mut ILockBytes) -> ULONG {
     let This = impl_from_ILockBytes(iface);
-    let ref_count: ULONG;
+    InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG
+}
+}
 
-    ref_count = InterlockedDecrement(&mut (*This).ref_) as ULONG;
+stdmethod! {
+/// filelockbytes.c:153 FileLockBytesImpl_Release [VTABLE]
+fn FileLockBytesImpl_Release(iface: *mut ILockBytes) -> ULONG {
+    let This = impl_from_ILockBytes(iface);
+
+    let ref_count = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG;
 
     if ref_count == 0 {
         CloseHandle((*This).hfile);
-        HeapFree(GetProcessHeap(), 0, (*This).pwcsName as *mut _);
-        HeapFree(GetProcessHeap(), 0, This as *mut _);
+        HeapFree(GetProcessHeap(), 0, (*This).pwcsName as LPVOID);
+        HeapFree(GetProcessHeap(), 0, This as LPVOID);
     }
 
-    return ref_count;
+    ref_count
+}
 }
 
-unsafe fn FileLockBytesImpl_ReadAt(
+stdmethod! {
+/// filelockbytes.c:178 FileLockBytesImpl_ReadAt [VTABLE]
+fn FileLockBytesImpl_ReadAt(
     iface: *mut ILockBytes,
     ulOffset: ULARGE_INTEGER,
-    pv: *mut core::ffi::c_void,
+    pv: *mut c_void,
     cb: ULONG,
     pcbRead: *mut ULONG,
 ) -> HRESULT {
-
     let This = impl_from_ILockBytes(iface);
-    let mut bytes_left = cb;
-    let mut readPtr = pv as LPBYTE;
+    let mut bytes_left: ULONG = cb;
+    let mut readPtr = pv as *mut u8;
     let mut ret: BOOL;
     let mut offset: LARGE_INTEGER = core::mem::zeroed();
-    let mut cbRead: ULONG;
+    let mut cbRead: ULONG = 0;
 
+    TRACE!(
+        "(%p)-> %i %p %i %p\n",
+        This,
+        ulOffset.u.LowPart,
+        pv,
+        cb,
+        pcbRead
+    );
+
+    /* verify a sane environment */
     if This.is_null() {
         return E_FAIL;
     }
@@ -169,7 +217,8 @@ unsafe fn FileLockBytesImpl_ReadAt(
         *pcbRead = 0;
     }
 
-    offset.QuadPart = ulOffset.QuadPart;
+    // Full 64-bit offset — NOT just LowPart.
+    offset.QuadPart = ulOffset.QuadPart as LONGLONG;
 
     ret = SetFilePointerEx((*This).hfile, offset, core::ptr::null_mut(), FILE_BEGIN);
 
@@ -178,7 +227,13 @@ unsafe fn FileLockBytesImpl_ReadAt(
     }
 
     while bytes_left != 0 {
-        ret = ReadFile((*This).hfile, readPtr as LPVOID, bytes_left, &mut cbRead, core::ptr::null_mut());
+        ret = ReadFile(
+            (*This).hfile,
+            readPtr as LPVOID,
+            bytes_left,
+            core::ptr::addr_of_mut!(cbRead),
+            core::ptr::null_mut(),
+        );
 
         if ret == 0 || cbRead == 0 {
             return STG_E_READFAULT;
@@ -192,33 +247,37 @@ unsafe fn FileLockBytesImpl_ReadAt(
         readPtr = readPtr.add(cbRead as usize);
     }
 
+    TRACE!("finished\n");
     S_OK
 }
+}
 
-unsafe fn FileLockBytesImpl_WriteAt(
+stdmethod! {
+/// filelockbytes.c:233 FileLockBytesImpl_WriteAt [VTABLE]
+fn FileLockBytesImpl_WriteAt(
     iface: *mut ILockBytes,
     ulOffset: ULARGE_INTEGER,
-    pv: *const core::ffi::c_void,
+    pv: *const c_void,
     cb: ULONG,
     pcbWritten: *mut ULONG,
 ) -> HRESULT {
-
     let This = impl_from_ILockBytes(iface);
-    let mut bytes_left = cb;
-    let mut writePtr = pv as *const BYTE;
+    let mut bytes_left: ULONG = cb;
+    let mut writePtr = pv as *const u8;
     let mut ret: BOOL;
     let mut offset: LARGE_INTEGER = core::mem::zeroed();
-    let mut cbWritten: ULONG;
+    let mut cbWritten: ULONG = 0;
 
     TRACE!(
-        b"(%p)-> %i %p %i %p\n\0".as_ptr(),
+        "(%p)-> %i %p %i %p\n",
         This,
         ulOffset.u.LowPart,
         pv,
         cb,
-        pcbWritten,
+        pcbWritten
     );
 
+    /* verify a sane environment */
     if This.is_null() {
         return E_FAIL;
     }
@@ -231,7 +290,8 @@ unsafe fn FileLockBytesImpl_WriteAt(
         *pcbWritten = 0;
     }
 
-    offset.QuadPart = ulOffset.u.QuadPart;
+    // Full 64-bit offset — NOT just LowPart.
+    offset.QuadPart = ulOffset.QuadPart as LONGLONG;
 
     ret = SetFilePointerEx((*This).hfile, offset, core::ptr::null_mut(), FILE_BEGIN);
 
@@ -242,7 +302,7 @@ unsafe fn FileLockBytesImpl_WriteAt(
     while bytes_left != 0 {
         ret = WriteFile(
             (*This).hfile,
-            writePtr as *const core::ffi::c_void,
+            writePtr as LPCVOID,
             bytes_left,
             core::ptr::addr_of_mut!(cbWritten),
             core::ptr::null_mut(),
@@ -260,58 +320,68 @@ unsafe fn FileLockBytesImpl_WriteAt(
         writePtr = writePtr.add(cbWritten as usize);
     }
 
-    TRACE!(b"finished\n\0".as_ptr());
+    TRACE!("finished\n");
     S_OK
 }
-
-unsafe fn FileLockBytesImpl_Flush(iface: *mut ILockBytes) -> HRESULT {
-    S_OK
 }
 
-unsafe fn FileLockBytesImpl_SetSize(iface: *mut ILockBytes, newSize: ULARGE_INTEGER) -> HRESULT {
+stdmethod! {
+/// filelockbytes.c:283 FileLockBytesImpl_Flush [VTABLE]
+fn FileLockBytesImpl_Flush(iface: *mut ILockBytes) -> HRESULT {
+    let _ = iface;
+    S_OK
+}
+}
 
+stdmethod! {
+/// filelockbytes.c:294 FileLockBytesImpl_SetSize [VTABLE]
+fn FileLockBytesImpl_SetSize(iface: *mut ILockBytes, newSize: ULARGE_INTEGER) -> HRESULT {
     let This = impl_from_ILockBytes(iface);
-    let hr: HRESULT = 0;
+    let hr: HRESULT = S_OK;
     let mut newpos: LARGE_INTEGER = core::mem::zeroed();
 
-    TRACE!(b"new size %u\n\0".as_ptr() as *const i8, (*newSize.u.s()).__bindgen_anon_1.LowPart);
+    TRACE!("new size %u\n", newSize.u.LowPart);
 
-    newpos.QuadPart = *newSize.QuadPart;
+    // Full 64-bit size — NOT just LowPart.
+    newpos.QuadPart = newSize.QuadPart as LONGLONG;
     if SetFilePointerEx((*This).hfile, newpos, core::ptr::null_mut(), FILE_BEGIN) != 0 {
         SetEndOfFile((*This).hfile);
     }
 
     hr
 }
+}
 
+/// filelockbytes.c:311 get_lock_error
 unsafe fn get_lock_error() -> HRESULT {
     match GetLastError() {
-        ERROR_ACCESS_DENIED => STG_E_ACCESSDENIED,
         ERROR_LOCK_VIOLATION => STG_E_LOCKVIOLATION,
+        ERROR_ACCESS_DENIED => STG_E_ACCESSDENIED,
         ERROR_NOT_SUPPORTED => STG_E_INVALIDFUNCTION,
         _ => {
-            FIXME!(b"no mapping for error %d\n\0".as_ptr() as *const i8, GetLastError());
+            FIXME!("no mapping for error %d\n", GetLastError());
             STG_E_INVALIDFUNCTION
         }
     }
 }
 
-unsafe fn FileLockBytesImpl_LockRegion(
+stdmethod! {
+/// filelockbytes.c:324 FileLockBytesImpl_LockRegion [VTABLE]
+fn FileLockBytesImpl_LockRegion(
     iface: *mut ILockBytes,
     libOffset: ULARGE_INTEGER,
     cb: ULARGE_INTEGER,
     dwLockType: DWORD,
 ) -> HRESULT {
-
     let This = impl_from_ILockBytes(iface);
     let mut ol: OVERLAPPED = core::mem::zeroed();
-    let mut lock_flags = LOCKFILE_FAIL_IMMEDIATELY;
+    let mut lock_flags: DWORD = LOCKFILE_FAIL_IMMEDIATELY;
 
     TRACE!(
-        b"ofs %u count %u flags %x\n\0".as_ptr() as LPCSTR,
-        (*libOffset.u.s()).__bindgen_anon_1.LowPart,
-        (*cb.u.s()).__bindgen_anon_1.LowPart,
-        dwLockType,
+        "ofs %u count %u flags %x\n",
+        libOffset.u.LowPart,
+        cb.u.LowPart,
+        dwLockType
     );
 
     if dwLockType & LOCK_WRITE != 0 {
@@ -323,38 +393,40 @@ unsafe fn FileLockBytesImpl_LockRegion(
     }
 
     ol.hEvent = core::ptr::null_mut();
-    (*ol.u.s_mut()).Offset = (*libOffset.u.s()).__bindgen_anon_1.LowPart;
-    (*ol.u.s_mut()).OffsetHigh = (*libOffset.u.s()).__bindgen_anon_1.HighPart;
+    ol.Offset = libOffset.u.LowPart;
+    ol.OffsetHigh = libOffset.u.HighPart;
 
     if LockFileEx(
         (*This).hfile,
         lock_flags,
         0,
-        (*cb.u.s()).__bindgen_anon_1.LowPart,
-        (*cb.u.s()).__bindgen_anon_1.HighPart,
-        &mut ol,
+        cb.u.LowPart,
+        cb.u.HighPart,
+        core::ptr::addr_of_mut!(ol) as *mut c_void,
     ) != 0
     {
         return S_OK;
     }
     get_lock_error()
 }
+}
 
-unsafe fn FileLockBytesImpl_UnlockRegion(
+stdmethod! {
+/// filelockbytes.c:348 FileLockBytesImpl_UnlockRegion [VTABLE]
+fn FileLockBytesImpl_UnlockRegion(
     iface: *mut ILockBytes,
     libOffset: ULARGE_INTEGER,
     cb: ULARGE_INTEGER,
     dwLockType: DWORD,
 ) -> HRESULT {
-
     let This = impl_from_ILockBytes(iface);
     let mut ol: OVERLAPPED = core::mem::zeroed();
 
     TRACE!(
-        b"ofs %u count %u flags %x\n\0".as_ptr() as *const i8,
-        (*libOffset.u.s()).__bindgen_anon_1.LowPart,
-        (*cb.u.s()).__bindgen_anon_1.LowPart,
-        dwLockType,
+        "ofs %u count %u flags %x\n",
+        libOffset.u.LowPart,
+        cb.u.LowPart,
+        dwLockType
     );
 
     if dwLockType & LOCK_WRITE != 0 {
@@ -362,32 +434,36 @@ unsafe fn FileLockBytesImpl_UnlockRegion(
     }
 
     ol.hEvent = core::ptr::null_mut();
-    (*ol.u.s_mut()).Offset = (*libOffset.u.s()).__bindgen_anon_1.LowPart;
-    (*ol.u.s_mut()).OffsetHigh = (*libOffset.u.s()).__bindgen_anon_1.HighPart;
+    ol.Offset = libOffset.u.LowPart;
+    ol.OffsetHigh = libOffset.u.HighPart;
 
     if UnlockFileEx(
         (*This).hfile,
         0,
-        (*cb.u.s()).__bindgen_anon_1.LowPart,
-        (*cb.u.s()).__bindgen_anon_1.HighPart,
-        &mut ol,
+        cb.u.LowPart,
+        cb.u.HighPart,
+        core::ptr::addr_of_mut!(ol) as *mut c_void,
     ) != 0
     {
         return S_OK;
     }
     get_lock_error()
 }
-unsafe fn FileLockBytesImpl_Stat(
+}
+
+stdmethod! {
+/// filelockbytes.c:368 FileLockBytesImpl_Stat [VTABLE]
+fn FileLockBytesImpl_Stat(
     iface: *mut ILockBytes,
     pstatstg: *mut STATSTG,
     grfStatFlag: DWORD,
 ) -> HRESULT {
-
     let This = impl_from_ILockBytes(iface);
 
-    if !(STATFLAG_NONAME & grfStatFlag != 0) && !(*This).pwcsName.is_null() {
+    if (STATFLAG_NONAME & grfStatFlag) == 0 && !(*This).pwcsName.is_null() {
         (*pstatstg).pwcsName = CoTaskMemAlloc(
-            ((lstrlenW((*This).pwcsName) + 1) as usize) * core::mem::size_of::<WCHAR>()
+            (((lstrlenW((*This).pwcsName) + 1) as usize) * core::mem::size_of::<WCHAR>())
+                as SIZE_T,
         ) as LPWSTR;
 
         lstrcpyW((*pstatstg).pwcsName, (*This).pwcsName);
@@ -397,12 +473,18 @@ unsafe fn FileLockBytesImpl_Stat(
 
     (*pstatstg).type_ = STGTY_LOCKBYTES;
 
-    (*pstatstg).cbSize.u.__bindgen_anon_1.LowPart = GetFileSize(
+    // GetFileSize writes the high dword through the out-param — the HighPart of
+    // cbSize must be the destination, otherwise files > 4 GB report a truncated size.
+    (*pstatstg).cbSize.u.LowPart = GetFileSize(
         (*This).hfile,
-        core::ptr::addr_of_mut!((*pstatstg).cbSize.u.__bindgen_anon_1.HighPart)
+        core::ptr::addr_of_mut!((*pstatstg).cbSize.u.HighPart),
     );
 
-    (*pstatstg).grfLocksSupported = LOCK_EXCLUSIVE | LOCK_ONLYONCE | WINE_LOCK_READ;
+    /* FIXME: If the implementation is exported, we'll need to set other fields. */
+
+    (*pstatstg).grfLocksSupported =
+        (LOCK_EXCLUSIVE | LOCK_ONLYONCE | WINE_LOCK_READ) as DWORD;
 
     S_OK
+}
 }

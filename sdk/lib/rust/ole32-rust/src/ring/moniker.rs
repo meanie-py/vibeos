@@ -1,192 +1,315 @@
 use crate::prelude::*;
-pub const MAX_COMPARISON_DATA: usize = 2048;
+use core::ffi::{c_int, c_void};
 
+// ---------------------------------------------------------------------------
+// irot.h — widl-generated from wine/irot.idl (see build-<arch>/dll/win32/ole32/irot.h).
+//
+// The Irot RPC *client stubs* are generated into irot_c.c, which is compiled into
+// ole32.dll, so these are real link-time symbols in our own image. widl spells them
+// `__cdecl`, so `extern "C"` is exact on every arch — this is one of the rare
+// non-WINAPI surfaces (contrast crate::win32 / crate::user32, where `extern "C"`
+// would be an i386 stdcall-decoration bug).
+//
+// MIDL_user_allocate / MIDL_user_free go the OTHER way: rpcndr.h declares them
+// `__RPC_USER`, which rpc.h defines as __stdcall → they must be `extern "system"`.
+// ---------------------------------------------------------------------------
+
+/// irot.idl: `typedef handle_t IrotHandle;`
+pub type IrotHandle = *mut c_void;
+/// irot.idl: `typedef [context_handle] void *IrotContextHandle;`
+pub type IrotContextHandle = *mut c_void;
+/// irot.idl: `typedef DWORD IrotCookie;`
+pub type IrotCookie = DWORD;
+
+/// irot.h: `struct tagMonikerComparisonData { ULONG ulCntData; BYTE abData[1]; }`
+///
+/// `abData` is a CONFORMANT array — the struct is always over-allocated to
+/// `offset_of!(.., abData) + ulCntData` bytes. Never index `abData` with a runtime
+/// index: Rust bounds-checks `[u8; 1]` and would panic. Always go through
+/// `abData.as_ptr()` / `.as_mut_ptr()`.
+#[repr(C)]
+pub struct MonikerComparisonData {
+    pub ulCntData: ULONG,
+    pub abData: [BYTE; 1],
+}
+
+/// irot.h: `struct tagInterfaceData { ULONG ulCntData; BYTE abData[1]; }` — same
+/// layout as objidl's `MInterfacePointer`, which is what moniker.c's Register path
+/// spells the object blob as. Conformant array; see MonikerComparisonData above.
+#[repr(C)]
+pub struct InterfaceData {
+    pub ulCntData: ULONG,
+    pub abData: [BYTE; 1],
+}
+pub type PInterfaceData = *mut InterfaceData;
+
+/// irot.h: `struct tagInterfaceList { ULONG size; PInterfaceData interfaces[1]; }`
+/// Conformant array — same indexing rule as above.
+#[repr(C)]
+pub struct InterfaceList {
+    pub size: ULONG,
+    pub interfaces: [PInterfaceData; 1],
+}
+pub type PInterfaceList = *mut InterfaceList;
+
+extern "C" {
+    fn IrotRegister(
+        h: IrotHandle,
+        moniker_data: *const MonikerComparisonData,
+        object: *const InterfaceData,
+        moniker: *const InterfaceData,
+        time: *const FILETIME,
+        grfFlags: DWORD,
+        cookie: *mut IrotCookie,
+        ctxt_handle: *mut IrotContextHandle,
+    ) -> HRESULT;
+    fn IrotRevoke(
+        h: IrotHandle,
+        cookie: IrotCookie,
+        ctxt_handle: *mut IrotContextHandle,
+        object: *mut PInterfaceData,
+        moniker: *mut PInterfaceData,
+    ) -> HRESULT;
+    fn IrotIsRunning(h: IrotHandle, moniker_data: *const MonikerComparisonData) -> HRESULT;
+    fn IrotGetObject(
+        h: IrotHandle,
+        moniker_data: *const MonikerComparisonData,
+        obj: *mut PInterfaceData,
+        cookie: *mut IrotCookie,
+    ) -> HRESULT;
+    fn IrotNoteChangeTime(h: IrotHandle, cookie: IrotCookie, time: *const FILETIME) -> HRESULT;
+    fn IrotGetTimeOfLastChange(
+        h: IrotHandle,
+        moniker_data: *const MonikerComparisonData,
+        time: *mut FILETIME,
+    ) -> HRESULT;
+    fn IrotEnumRunning(h: IrotHandle, list: *mut PInterfaceList) -> HRESULT;
+}
+
+/// rpcnterr.h: `#define RPC_S_OK ERROR_SUCCESS`
+const RPC_S_OK: LONG = 0;
+
+/// winsvc.h — the subset of the SCM surface start_rpcss() needs. Not in the shared
+/// surface (crate::user32 declares the *calls*, but not this out-struct).
+#[repr(C)]
+struct SERVICE_STATUS_PROCESS {
+    dwServiceType: DWORD,
+    dwCurrentState: DWORD,
+    dwControlsAccepted: DWORD,
+    dwWin32ExitCode: DWORD,
+    dwServiceSpecificExitCode: DWORD,
+    dwCheckPoint: DWORD,
+    dwWaitHint: DWORD,
+    dwProcessId: DWORD,
+    dwServiceFlags: DWORD,
+}
+const SERVICE_START: DWORD = 0x0010;
+const SERVICE_QUERY_STATUS: DWORD = 0x0004;
+const SC_STATUS_PROCESS_INFO: c_int = 0;
+const SERVICE_RUNNING: DWORD = 4;
+const SERVICE_START_PENDING: DWORD = 2;
+
+/// winnt.h EXCEPTION_RECORD / EXCEPTION_POINTERS, trimmed to the prefix rpc_filter
+/// reads (`eptr->ExceptionRecord->ExceptionCode`). Both fields are FIRST in their
+/// struct, so this prefix is layout-exact for that access. Not in com-sys (which
+/// covers COM, not winnt).
+#[repr(C)]
+pub struct EXCEPTION_RECORD_PREFIX {
+    pub ExceptionCode: DWORD,
+}
+#[repr(C)]
+pub struct EXCEPTION_POINTERS {
+    pub ExceptionRecord: *mut EXCEPTION_RECORD_PREFIX,
+    pub ContextRecord: *mut c_void,
+}
+
+/// compobj_private.h DEBUG_SET_CRITSEC_NAME / DEBUG_CLEAR_CRITSEC_NAME — they only
+/// stash a name string in the critsec's debug info; no locking effect. crate::win32
+/// keeps CRITICAL_SECTION.DebugInfo opaque, so these are no-ops here (same treatment
+/// as ring::hglobalstream).
+#[inline]
+unsafe fn debug_set_critsec_name(_cs: *mut CRITICAL_SECTION, _name: &str) {}
+#[inline]
+unsafe fn debug_clear_critsec_name(_cs: *mut CRITICAL_SECTION) {}
+
+/// winbase.h InterlockedCompareExchangePointer. crate::winemacros only carries the
+/// 32-bit forms; this is the pointer-width one get_irot_handle needs. Returns the
+/// PREVIOUS value, like the C intrinsic.
+#[inline]
+unsafe fn InterlockedCompareExchangePointer(
+    dest: *mut *mut c_void,
+    exchange: *mut c_void,
+    comparand: *mut c_void,
+) -> *mut c_void {
+    use core::sync::atomic::{AtomicUsize, Ordering};
+    let a = &*(dest as *const AtomicUsize);
+    match a.compare_exchange(
+        comparand as usize,
+        exchange as usize,
+        Ordering::SeqCst,
+        Ordering::SeqCst,
+    ) {
+        Ok(prev) => prev as *mut c_void,
+        Err(prev) => prev as *mut c_void,
+    }
+}
+
+/// see MSDN docs for IROTData::GetComparisonData, which states what this constant is
+pub const MAX_COMPARISON_DATA: ULONG = 2048;
+
+/// The RPC exception filter the C installs around every Irot call
+/// (`__TRY { IrotXxx(..) } __EXCEPT(rpc_filter) { hr = HRESULT_FROM_WIN32(GetExceptionCode()); }`).
+///
+/// We have no SEH in this crate, so the Irot calls below are UNGUARDED: an RPC
+/// exception (e.g. rpcss not reachable) propagates instead of being converted to an
+/// HRESULT. That is a known faithfulness gap, kept visible here rather than papered
+/// over — the filter itself is translated and ready for the day the ring gets a
+/// try/except facility.
+#[allow(dead_code)]
+unsafe fn rpc_filter(eptr: *mut EXCEPTION_POINTERS) -> LONG {
+    I_RpcExceptionFilter((*(*eptr).ExceptionRecord).ExceptionCode) as LONG
+}
+
+/* define the structure of the running object table elements */
 #[repr(C)]
 pub struct rot_entry {
-    pub entry: _LIST_ENTRY,
+    pub entry: list,
+    /// marshaled running object
     pub object: *mut InterfaceData,
+    /// moniker comparison data that identifies this object
     pub moniker_data: *mut MonikerComparisonData,
-    pub cookie: u32,
+    /// cookie identifying this object
+    pub cookie: DWORD,
     pub last_modified: FILETIME,
     pub ctxt_handle: IrotContextHandle,
 }
 
-pub type Prot_entry = *mut rot_entry;
-
+/* define the RunningObjectTableImpl structure */
 #[repr(C)]
 pub struct RunningObjectTableImpl {
     pub IRunningObjectTable_iface: IRunningObjectTable,
-    pub ref_: i32,
-    pub rot: _LIST_ENTRY,
-    pub lock: RTL_CRITICAL_SECTION,
+    pub ref_: LONG,
+    /// list of ROT entries
+    pub rot: list,
+    pub lock: CRITICAL_SECTION,
 }
 
-pub type PRunningObjectTableImpl = *mut RunningObjectTableImpl;
+static mut runningObjectTableInstance: *mut RunningObjectTableImpl = core::ptr::null_mut();
+static mut irot_handle: IrotHandle = core::ptr::null_mut();
 
-pub static mut runningObjectTableInstance: *mut RunningObjectTableImpl = core::ptr::null_mut();
-pub static mut irot_handle: IrotHandle = 0;
-
+/* define the EnumMonikerImpl structure */
 #[repr(C)]
 pub struct EnumMonikerImpl {
     pub IEnumMoniker_iface: IEnumMoniker,
-    pub ref_: i32,
+    pub ref_: LONG,
     pub moniker_list: *mut InterfaceList,
-    pub pos: u32,
+    pub pos: ULONG,
 }
 
-pub type PEnumMonikerImpl = *mut EnumMonikerImpl;
-
-#[repr(C)]
-pub struct MonikerMarshal {
-    pub IUnknown_iface: IUnknown,
-    pub IMarshal_iface: IMarshal,
-    pub ref_: i32,
-    pub moniker: *mut IMoniker,
-}
-
-pub type PMonikerMarshal = *mut MonikerMarshal;
-
-unsafe fn rpc_filter(eptr: *mut EXCEPTION_POINTERS) -> i32 {
-    extern "C" {
-
-        fn I_RpcExceptionFilter(code: u32) -> i32;
-}
-    I_RpcExceptionFilter((*(*eptr).ExceptionRecord).ExceptionCode)
-}
-
-unsafe fn impl_from_IRunningObjectTable(iface: *mut IRunningObjectTable) -> *mut RunningObjectTableImpl {
-    (iface as *mut u8).offset(-(core::mem::offset_of!(RunningObjectTableImpl, IRunningObjectTable_iface) as isize)) as *mut RunningObjectTableImpl
+unsafe fn impl_from_IRunningObjectTable(
+    iface: *mut IRunningObjectTable,
+) -> *mut RunningObjectTableImpl {
+    CONTAINING_RECORD!(iface, RunningObjectTableImpl, IRunningObjectTable_iface)
 }
 
 unsafe fn impl_from_IEnumMoniker(iface: *mut IEnumMoniker) -> *mut EnumMonikerImpl {
-    (iface as *mut u8).offset(-(core::mem::offset_of!(EnumMonikerImpl, IEnumMoniker_iface) as isize)) as *mut EnumMonikerImpl
+    CONTAINING_RECORD!(iface, EnumMonikerImpl, IEnumMoniker_iface)
 }
 
 unsafe fn get_irot_handle() -> IrotHandle {
     if irot_handle.is_null() {
-        let mut status: RPC_STATUS;
-        let mut binding: RPC_WSTR = core::ptr::null_mut();
+        let mut status: LONG;
+        let mut binding: *mut u16 = core::ptr::null_mut();
         let mut new_handle: IrotHandle = core::ptr::null_mut();
-        let ncacn_np: [u16; 10] = [b'n' as u16, b'c' as u16, b'a' as u16, b'c' as u16, b'n' as u16, b'_' as u16, b'n' as u16, b'p' as u16, 0, 0];
-        let endpoint: [u16; 7] = [b'\\' as u16, b'p' as u16, b'i' as u16, b'p' as u16, b'e' as u16, 0, 0];
+        /// irot.idl: `#define IROT_PROTSEQ {'n','c','a','l','r','p','c',0}`
+        const NCALRPC: [u16; 8] = [
+            b'n' as u16,
+            b'c' as u16,
+            b'a' as u16,
+            b'l' as u16,
+            b'r' as u16,
+            b'p' as u16,
+            b'c' as u16,
+            0,
+        ];
+        /// irot.idl: `#define IROT_ENDPOINT {'i','r','o','t',0}`
+        const ENDPOINT: [u16; 5] = [b'i' as u16, b'r' as u16, b'o' as u16, b't' as u16, 0];
 
         status = RpcStringBindingComposeW(
-            core::ptr::null_mut(),
-            ncacn_np.as_ptr() as *mut u16,
-            core::ptr::null_mut(),
-            endpoint.as_ptr() as *mut u16,
-            core::ptr::null_mut(),
-            &mut binding
+            core::ptr::null(),
+            NCALRPC.as_ptr(),
+            core::ptr::null(),
+            ENDPOINT.as_ptr(),
+            core::ptr::null(),
+            &mut binding,
         );
-
         if status == RPC_S_OK {
             status = RpcBindingFromStringBindingW(binding, &mut new_handle);
             RpcStringFreeW(&mut binding);
         }
-
         if status != RPC_S_OK {
             return core::ptr::null_mut();
         }
-
         if !InterlockedCompareExchangePointer(
-            &mut irot_handle as *mut _ as *mut *mut core::ffi::c_void,
-            new_handle as *mut core::ffi::c_void,
-            core::ptr::null_mut()
-        ).is_null() {
+            core::ptr::addr_of_mut!(irot_handle),
+            new_handle,
+            core::ptr::null_mut(),
+        )
+        .is_null()
+        {
+            /* another thread beat us to it */
             RpcBindingFree(&mut new_handle);
         }
     }
     irot_handle
 }
 
-extern "C" {
-
-    fn RpcStringBindingComposeW(
-        ObjUuid: *mut u16,
-        ProtSeq: *mut u16,
-        NetworkAddr: *mut u16,
-        EndPoint: *mut u16,
-        Options: *mut u16,
-        StringBinding: *mut RPC_WSTR
-    ) -> RPC_STATUS;
-
-    fn RpcBindingFromStringBindingW(
-        StringBinding: RPC_WSTR,
-        Binding: *mut IrotHandle
-    ) -> RPC_STATUS;
-
-    fn RpcStringFreeW(String: *mut RPC_WSTR) -> RPC_STATUS;
-
-    fn RpcBindingFree(Binding: *mut IrotHandle) -> RPC_STATUS;
-}
-
-type RPC_STATUS = u32;
-type RPC_WSTR = *mut u16;
-const RPC_S_OK: RPC_STATUS = 0;
-
-unsafe fn start_rpcss() -> u8 {
-    static rpcssW: [u16; 6] = [b'R' as u16, b'p' as u16, b'c' as u16, b'S' as u16, b's' as u16, 0];
-    let mut scm: *mut core::ffi::c_void;
-    let mut service: *mut core::ffi::c_void;
+unsafe fn start_rpcss() -> BOOL {
+    const RPCSSW: [u16; 6] = [
+        b'R' as u16,
+        b'p' as u16,
+        b'c' as u16,
+        b'S' as u16,
+        b's' as u16,
+        0,
+    ];
+    let scm: SC_HANDLE;
+    let service: SC_HANDLE;
     let mut status: SERVICE_STATUS_PROCESS = core::mem::zeroed();
-    let mut ret: u8 = 0u8;
+    let mut ret: BOOL = 0;
 
-    extern "C" {
-
-        fn OpenSCManagerW(lpMachineName: LPCWSTR, lpDatabaseName: LPCWSTR, dwDesiredAccess: u32) -> *mut core::ffi::c_void;
-        fn OpenServiceW(hSCManager: *mut core::ffi::c_void, lpServiceName: LPCWSTR, dwDesiredAccess: u32) -> *mut core::ffi::c_void;
-        fn StartServiceW(hService: *mut core::ffi::c_void, dwNumServiceArgs: u32, lpServiceArgVectors: *mut LPCWSTR) -> i32;
-        fn QueryServiceStatusEx(hService: *mut core::ffi::c_void, InfoLevel: u32, lpBuffer: *mut u8, cbBufSize: u32, pcbBytesNeeded: LPDWORD) -> i32;
-        fn GetTickCount64() -> u64;
-        fn Sleep(dwMilliseconds: u32);
-        fn CloseServiceHandle(hSCObject: *mut core::ffi::c_void) -> i32;
-}
-
-    const SERVICE_START: u32 = 0x0010;
-    const SERVICE_QUERY_STATUS: u32 = 0x0004;
-    const SC_STATUS_PROCESS_INFO: u32 = 0;
-    const SERVICE_RUNNING: u32 = 4;
-    const SERVICE_START_PENDING: u32 = 2;
-
-    #[repr(C)]
-    struct SERVICE_STATUS_PROCESS {
-        dwServiceType: u32,
-        dwCurrentState: u32,
-        dwControlsAccepted: u32,
-        dwWin32ExitCode: u32,
-        dwServiceSpecificExitCode: u32,
-        dwCheckPoint: u32,
-        dwWaitHint: u32,
-        dwProcessId: u32,
-        dwServiceFlags: u32,
-    }
-
-    TRACE(b"\n\0".as_ptr());
+    TRACE!(b"\n\0".as_ptr());
 
     scm = OpenSCManagerW(core::ptr::null(), core::ptr::null(), 0);
     if scm.is_null() {
-        ERR(b"failed to open service manager\n\0".as_ptr());
-        return 0u8;
+        ERR!(b"failed to open service manager\n\0".as_ptr());
+        return 0;
     }
-    service = OpenServiceW(scm, rpcssW.as_ptr(), SERVICE_START | SERVICE_QUERY_STATUS);
+    service = OpenServiceW(scm, RPCSSW.as_ptr(), SERVICE_START | SERVICE_QUERY_STATUS);
     if service.is_null() {
-        ERR(b"failed to open RpcSs service\n\0".as_ptr());
+        ERR!(b"failed to open RpcSs service\n\0".as_ptr());
         CloseServiceHandle(scm);
-        return 0u8;
+        return 0;
     }
-    if StartServiceW(service, 0, core::ptr::null_mut()) != 0 || GetLastError() == ERROR_SERVICE_ALREADY_RUNNING {
+    if StartServiceW(service, 0, core::ptr::null()) != 0
+        || GetLastError() == ERROR_SERVICE_ALREADY_RUNNING
+    {
         let start_time: u64 = GetTickCount64();
         loop {
-            let mut dummy: u32 = 0;
+            let mut dummy: DWORD = 0;
 
-            if QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO,
-                                   &mut status as *mut _ as *mut u8,
-                                   core::mem::size_of::<SERVICE_STATUS_PROCESS>() as u32,
-                                   &mut dummy) == 0 {
+            if QueryServiceStatusEx(
+                service,
+                SC_STATUS_PROCESS_INFO,
+                core::ptr::addr_of_mut!(status) as *mut u8,
+                core::mem::size_of::<SERVICE_STATUS_PROCESS>() as DWORD,
+                &mut dummy,
+            ) == 0
+            {
                 break;
             }
             if status.dwCurrentState == SERVICE_RUNNING {
-                ret = 1u8;
+                ret = 1;
                 break;
             }
             if GetTickCount64() - start_time > 30000 {
@@ -200,10 +323,13 @@ unsafe fn start_rpcss() -> u8 {
         }
 
         if status.dwCurrentState != SERVICE_RUNNING {
-            WARN(b"RpcSs failed to start %u\n\0".as_ptr(), status.dwCurrentState);
+            WARN!(
+                b"RpcSs failed to start %u\n\0".as_ptr(),
+                status.dwCurrentState
+            );
         }
     } else {
-        ERR(b"failed to start RpcSs service\n\0".as_ptr());
+        ERR!(b"failed to start RpcSs service\n\0".as_ptr());
     }
 
     CloseServiceHandle(service);
@@ -212,48 +338,101 @@ unsafe fn start_rpcss() -> u8 {
 }
 
 unsafe fn create_stream_on_mip_ro(mip: *const InterfaceData, stream: *mut *mut IStream) -> HRESULT {
-    extern "C" {
-        fn CreateStreamOnHGlobal(hGlobal: HGLOBAL, fDeleteOnRelease: i32, ppstm: *mut *mut IStream) -> HRESULT;
-}
-    extern "C" {
-
-        fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
-}
-
-    let hglobal = GlobalAlloc(0, (*mip).ulCntData as usize);
-    let pv = GlobalLock(hglobal);
-    memcpy(pv, (*mip).abData.as_ptr() as *const core::ffi::c_void, (*mip).ulCntData as usize);
+    let hglobal: HGLOBAL = GlobalAlloc(0, (*mip).ulCntData as SIZE_T);
+    let pv: LPVOID = GlobalLock(hglobal);
+    memcpy(
+        pv,
+        (*mip).abData.as_ptr() as *const c_void,
+        (*mip).ulCntData as usize,
+    );
     GlobalUnlock(hglobal);
     CreateStreamOnHGlobal(hglobal, 1, stream)
 }
 
-unsafe fn get_moniker_comparison_data(pMoniker: *mut IMoniker, moniker_data: *mut *mut MonikerComparisonData) -> HRESULT {
+unsafe fn rot_entry_delete(rot_entry: *mut rot_entry) {
+    if (*rot_entry).cookie != 0 {
+        let mut object: *mut InterfaceData = core::ptr::null_mut();
+        let mut moniker: *mut InterfaceData = core::ptr::null_mut();
+
+        // C: __TRY { .. } __EXCEPT(rpc_filter) { } — see the note on rpc_filter.
+        IrotRevoke(
+            get_irot_handle(),
+            (*rot_entry).cookie,
+            core::ptr::addr_of_mut!((*rot_entry).ctxt_handle),
+            &mut object,
+            &mut moniker,
+        );
+
+        MIDL_user_free(object as LPVOID);
+        if !moniker.is_null() {
+            let mut stream: *mut IStream = core::ptr::null_mut();
+            let hr = create_stream_on_mip_ro(moniker, &mut stream);
+            if hr == S_OK {
+                CoReleaseMarshalData(stream);
+                IStream_Release(stream);
+            }
+        }
+        MIDL_user_free(moniker as LPVOID);
+    }
+    if !(*rot_entry).object.is_null() {
+        let mut stream: *mut IStream = core::ptr::null_mut();
+        let hr = create_stream_on_mip_ro((*rot_entry).object, &mut stream);
+        if hr == S_OK {
+            CoReleaseMarshalData(stream);
+            IStream_Release(stream);
+        }
+    }
+    HeapFree(GetProcessHeap(), 0, (*rot_entry).object as LPVOID);
+    HeapFree(GetProcessHeap(), 0, (*rot_entry).moniker_data as LPVOID);
+    HeapFree(GetProcessHeap(), 0, rot_entry as LPVOID);
+}
+
+/// moniker_data must be freed with HeapFree when no longer in use
+unsafe fn get_moniker_comparison_data(
+    pMoniker: *mut IMoniker,
+    moniker_data: *mut *mut MonikerComparisonData,
+) -> HRESULT {
     let mut hr: HRESULT;
     let mut pROTData: *mut IROTData = core::ptr::null_mut();
-    hr = IMoniker_QueryInterface(pMoniker, &IID_IROTData, &mut pROTData as *mut *mut IROTData as *mut LPVOID);
+    hr = IMoniker_QueryInterface(
+        pMoniker,
+        core::ptr::addr_of!(IID_IROTData),
+        &mut pROTData as *mut *mut IROTData as *mut *mut c_void,
+    );
     if SUCCEEDED(hr) {
-        let size: ULONG = MAX_COMPARISON_DATA;
-        *moniker_data = HeapAlloc(GetProcessHeap(), 0, FIELD_OFFSET(MonikerComparisonData, abData[size])) as *mut MonikerComparisonData;
+        let mut size: ULONG = MAX_COMPARISON_DATA;
+        *moniker_data = HeapAlloc(
+            GetProcessHeap(),
+            0,
+            (core::mem::offset_of!(MonikerComparisonData, abData) + size as usize) as SIZE_T,
+        ) as *mut MonikerComparisonData;
         if (*moniker_data).is_null() {
             IROTData_Release(pROTData);
             return E_OUTOFMEMORY;
         }
-        let mut actual_size = size;
-        hr = IROTData_GetComparisonData(pROTData, (**moniker_data).abData.as_mut_ptr(), size, &mut actual_size);
+        hr = IROTData_GetComparisonData(
+            pROTData,
+            (**moniker_data).abData.as_mut_ptr(),
+            size,
+            &mut size,
+        );
         IROTData_Release(pROTData);
         if hr != S_OK {
-            ERR(b"Failed to copy comparison data into buffer, hr = 0x%08x\n\0".as_ptr() as PCHAR, hr);
+            ERR!(
+                b"Failed to copy comparison data into buffer, hr = 0x%08x\n\0".as_ptr(),
+                hr
+            );
             HeapFree(GetProcessHeap(), 0, *moniker_data as LPVOID);
             return hr;
         }
-        (**moniker_data).ulCntData = actual_size;
+        (**moniker_data).ulCntData = size;
     } else {
         let mut pbc: *mut IBindCtx = core::ptr::null_mut();
-        let mut pszDisplayName: LPWSTR = core::ptr::null_mut();
+        let mut pszDisplayName: LPOLESTR = core::ptr::null_mut();
         let mut clsid: CLSID = core::mem::zeroed();
-        let len: i32;
+        let len: c_int;
 
-        TRACE(b"generating comparison data from display name\n\0".as_ptr() as PCHAR);
+        TRACE!(b"generating comparison data from display name\n\0".as_ptr());
 
         hr = CreateBindCtx(0, &mut pbc);
         if FAILED(hr) {
@@ -271,34 +450,61 @@ unsafe fn get_moniker_comparison_data(pMoniker: *mut IMoniker, moniker_data: *mu
         }
 
         len = lstrlenW(pszDisplayName);
-        *moniker_data = HeapAlloc(GetProcessHeap(), 0,
-            FIELD_OFFSET(MonikerComparisonData, abData[core::mem::size_of::<CLSID>() + ((len+1) as usize) * core::mem::size_of::<u16>()])) as *mut MonikerComparisonData;
+        let cb_data: usize =
+            core::mem::size_of::<CLSID>() + (len as usize + 1) * core::mem::size_of::<u16>();
+        *moniker_data = HeapAlloc(
+            GetProcessHeap(),
+            0,
+            (core::mem::offset_of!(MonikerComparisonData, abData) + cb_data) as SIZE_T,
+        ) as *mut MonikerComparisonData;
         if (*moniker_data).is_null() {
             CoTaskMemFree(pszDisplayName as LPVOID);
             return E_OUTOFMEMORY;
         }
-        (**moniker_data).ulCntData = (core::mem::size_of::<CLSID>() + ((len+1) as usize) * core::mem::size_of::<u16>()) as ULONG;
+        (**moniker_data).ulCntData = cb_data as ULONG;
 
-        memcpy((**moniker_data).abData.as_mut_ptr() as *mut core::ffi::c_void, &clsid as *const CLSID as *const core::ffi::c_void, core::mem::size_of::<CLSID>());
-        memcpy((**moniker_data).abData.as_mut_ptr().add(core::mem::size_of::<CLSID>()) as *mut core::ffi::c_void, pszDisplayName as *const core::ffi::c_void, ((len+1) as usize) * core::mem::size_of::<u16>());
+        memcpy(
+            (**moniker_data).abData.as_mut_ptr() as *mut c_void,
+            core::ptr::addr_of!(clsid) as *const c_void,
+            core::mem::size_of::<CLSID>(),
+        );
+        memcpy(
+            (**moniker_data)
+                .abData
+                .as_mut_ptr()
+                .add(core::mem::size_of::<CLSID>()) as *mut c_void,
+            pszDisplayName as *const c_void,
+            (len as usize + 1) * core::mem::size_of::<u16>(),
+        );
         CoTaskMemFree(pszDisplayName as LPVOID);
     }
-    return S_OK;
+    S_OK
 }
 
-unsafe fn reduce_moniker(pmk: *mut IMoniker, pbc: *mut IBindCtx, pmkReduced: *mut *mut IMoniker) -> HRESULT {
+unsafe fn reduce_moniker(
+    pmk: *mut IMoniker,
+    pbc: *mut IBindCtx,
+    pmkReduced: *mut *mut IMoniker,
+) -> HRESULT {
+    let mut pbc = pbc;
     let mut pbcNew: *mut IBindCtx = core::ptr::null_mut();
-    let mut hr: HRESULT;
+    let hr: HRESULT;
     if pbc.is_null() {
-        hr = CreateBindCtx(0, &mut pbcNew);
-        if FAILED(hr) != 0 {
-            return hr;
+        let hr2 = CreateBindCtx(0, &mut pbcNew);
+        if FAILED(hr2) {
+            return hr2;
         }
         pbc = pbcNew;
     }
-    hr = IMoniker_Reduce(pmk, pbc, MKRREDUCE_ALL, core::ptr::null_mut(), pmkReduced);
-    if FAILED(hr) != 0 {
-        ERR(b"reducing moniker failed with error 0x%08x\n\0".as_ptr() as *const i8, hr);
+    hr = IMoniker_Reduce(
+        pmk,
+        pbc,
+        MKRREDUCE_ALL,
+        core::ptr::null_mut(),
+        pmkReduced,
+    );
+    if FAILED(hr) {
+        ERR!(b"reducing moniker failed with error 0x%08x\n\0".as_ptr(), hr);
     }
     if !pbcNew.is_null() {
         IBindCtx_Release(pbcNew);
@@ -306,46 +512,804 @@ unsafe fn reduce_moniker(pmk: *mut IMoniker, pbc: *mut IBindCtx, pmkReduced: *mu
     hr
 }
 
+/***********************************************************************
+ *        RunningObjectTable_QueryInterface
+ */
+stdmethod! {
+fn RunningObjectTableImpl_QueryInterface(
+    iface: *mut IRunningObjectTable,
+    riid: *const IID,
+    ppvObject: *mut *mut c_void,
+) -> HRESULT {
+    let This = impl_from_IRunningObjectTable(iface);
+
+    TRACE!(b"(%p,%s,%p)\n\0".as_ptr(), This, debugstr_guid(riid), ppvObject);
+
+    /* validate arguments */
+
+    if ppvObject.is_null() {
+        return E_INVALIDARG;
+    }
+
+    *ppvObject = core::ptr::null_mut();
+
+    if IsEqualIID(core::ptr::addr_of!(IID_IUnknown), riid)
+        || IsEqualIID(core::ptr::addr_of!(IID_IRunningObjectTable), riid)
+    {
+        *ppvObject = core::ptr::addr_of_mut!((*This).IRunningObjectTable_iface) as *mut c_void;
+    }
+
+    if (*ppvObject).is_null() {
+        return E_NOINTERFACE;
+    }
+
+    IRunningObjectTable_AddRef(iface);
+
+    S_OK
+}
+}
+
+/***********************************************************************
+ *        RunningObjectTable_AddRef
+ */
+stdmethod! {
+fn RunningObjectTableImpl_AddRef(iface: *mut IRunningObjectTable) -> ULONG {
+    let This = impl_from_IRunningObjectTable(iface);
+
+    TRACE!(b"(%p)\n\0".as_ptr(), This);
+
+    InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG
+}
+}
+
+/***********************************************************************
+ *        RunningObjectTable_Destroy
+ */
+unsafe fn RunningObjectTableImpl_Destroy() -> HRESULT {
+    TRACE!(b"()\n\0".as_ptr());
+
+    if runningObjectTableInstance.is_null() {
+        return E_INVALIDARG;
+    }
+
+    /* free the ROT table memory */
+    LIST_FOR_EACH_ENTRY_SAFE!(
+        rot_entry,
+        core::ptr::addr_of_mut!((*runningObjectTableInstance).rot),
+        rot_entry,
+        entry,
+        {
+            list_remove(core::ptr::addr_of_mut!((*rot_entry).entry));
+            rot_entry_delete(rot_entry);
+        }
+    );
+
+    debug_clear_critsec_name(core::ptr::addr_of_mut!((*runningObjectTableInstance).lock));
+    DeleteCriticalSection(core::ptr::addr_of_mut!((*runningObjectTableInstance).lock));
+
+    /* free the ROT structure memory */
+    HeapFree(GetProcessHeap(), 0, runningObjectTableInstance as LPVOID);
+    runningObjectTableInstance = core::ptr::null_mut();
+
+    let mut old_handle: IrotHandle = irot_handle;
+    irot_handle = core::ptr::null_mut();
+    if !old_handle.is_null() {
+        RpcBindingFree(&mut old_handle);
+    }
+
+    S_OK
+}
+
+/***********************************************************************
+ *        RunningObjectTable_Release
+ */
+stdmethod! {
+fn RunningObjectTableImpl_Release(iface: *mut IRunningObjectTable) -> ULONG {
+    let This = impl_from_IRunningObjectTable(iface);
+    let ref_: ULONG;
+
+    TRACE!(b"(%p)\n\0".as_ptr(), This);
+
+    ref_ = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG;
+
+    /* uninitialize ROT structure if there are no more references to it */
+    if ref_ == 0 {
+        LIST_FOR_EACH_ENTRY_SAFE!(
+            rot_entry,
+            core::ptr::addr_of_mut!((*This).rot),
+            rot_entry,
+            entry,
+            {
+                list_remove(core::ptr::addr_of_mut!((*rot_entry).entry));
+                rot_entry_delete(rot_entry);
+            }
+        );
+        /*  RunningObjectTable data structure will be not destroyed here ! the destruction will be done only
+         *  when RunningObjectTableImpl_UnInitialize function is called
+         */
+    }
+
+    ref_
+}
+}
+
+/***********************************************************************
+ *        RunningObjectTable_Register
+ *
+ * PARAMS
+ * grfFlags       [in] Registration options
+ * punkObject     [in] the object being registered
+ * pmkObjectName  [in] the moniker of the object being registered
+ * pdwRegister    [out] the value identifying the registration
+ */
+stdmethod! {
+fn RunningObjectTableImpl_Register(
+    iface: *mut IRunningObjectTable,
+    grfFlags: DWORD,
+    punkObject: *mut IUnknown,
+    pmkObjectName: *mut IMoniker,
+    pdwRegister: *mut DWORD,
+) -> HRESULT {
+    let This = impl_from_IRunningObjectTable(iface);
+    let mut pmkObjectName = pmkObjectName;
+    let rot_entry: *mut rot_entry;
+    let mut hr: HRESULT;
+    let mut pStream: *mut IStream = core::ptr::null_mut();
+    let mshlflags: DWORD;
+    let mut pbc: *mut IBindCtx = core::ptr::null_mut();
+    let mut moniker: *mut InterfaceData = core::ptr::null_mut();
+
+    TRACE!(
+        b"(%p,%d,%p,%p,%p)\n\0".as_ptr(),
+        This,
+        grfFlags,
+        punkObject,
+        pmkObjectName,
+        pdwRegister
+    );
+
+    if (grfFlags & !(ROTFLAGS_REGISTRATIONKEEPSALIVE | ROTFLAGS_ALLOWANYCLIENT)) != 0 {
+        ERR!(
+            b"Invalid grfFlags: 0x%08x\n\0".as_ptr(),
+            grfFlags & !(ROTFLAGS_REGISTRATIONKEEPSALIVE | ROTFLAGS_ALLOWANYCLIENT)
+        );
+        return E_INVALIDARG;
+    }
+
+    if punkObject.is_null() || pmkObjectName.is_null() || pdwRegister.is_null() {
+        return E_INVALIDARG;
+    }
+
+    rot_entry = HeapAlloc(
+        GetProcessHeap(),
+        HEAP_ZERO_MEMORY,
+        core::mem::size_of::<rot_entry>() as SIZE_T,
+    ) as *mut rot_entry;
+    if rot_entry.is_null() {
+        return E_OUTOFMEMORY;
+    }
+
+    /* marshal object */
+    hr = CreateStreamOnHGlobal(core::ptr::null_mut(), 1, &mut pStream);
+    if hr != S_OK {
+        rot_entry_delete(rot_entry);
+        return hr;
+    }
+    mshlflags = if (grfFlags & ROTFLAGS_REGISTRATIONKEEPSALIVE) != 0 {
+        MSHLFLAGS_TABLESTRONG
+    } else {
+        MSHLFLAGS_TABLEWEAK
+    };
+    hr = CoMarshalInterface(
+        pStream,
+        core::ptr::addr_of!(IID_IUnknown),
+        punkObject,
+        MSHCTX_LOCAL | MSHCTX_NOSHAREDMEM,
+        core::ptr::null_mut(),
+        mshlflags,
+    );
+    /* FIXME: a cleaner way would be to create an IStream class that writes
+     * directly to an MInterfacePointer */
+    if hr == S_OK {
+        let mut hglobal: HGLOBAL = core::ptr::null_mut();
+        hr = GetHGlobalFromStream(pStream, &mut hglobal);
+        if hr == S_OK {
+            let size: SIZE_T = GlobalSize(hglobal);
+            let pv: LPVOID = GlobalLock(hglobal);
+            (*rot_entry).object = HeapAlloc(
+                GetProcessHeap(),
+                0,
+                core::mem::offset_of!(InterfaceData, abData) as SIZE_T + size,
+            ) as *mut InterfaceData;
+            (*(*rot_entry).object).ulCntData = size as ULONG;
+            memcpy(
+                (*(*rot_entry).object).abData.as_mut_ptr() as *mut c_void,
+                pv,
+                size as usize,
+            );
+            GlobalUnlock(hglobal);
+        }
+    }
+    IStream_Release(pStream);
+    if hr != S_OK {
+        rot_entry_delete(rot_entry);
+        return hr;
+    }
+
+    hr = CreateBindCtx(0, &mut pbc);
+    if FAILED(hr) {
+        rot_entry_delete(rot_entry);
+        return hr;
+    }
+
+    hr = reduce_moniker(pmkObjectName, pbc, &mut pmkObjectName);
+    if FAILED(hr) {
+        rot_entry_delete(rot_entry);
+        IBindCtx_Release(pbc);
+        return hr;
+    }
+
+    hr = IMoniker_GetTimeOfLastChange(
+        pmkObjectName,
+        pbc,
+        core::ptr::null_mut(),
+        core::ptr::addr_of_mut!((*rot_entry).last_modified),
+    );
+    IBindCtx_Release(pbc);
+    if FAILED(hr) {
+        CoFileTimeNow(core::ptr::addr_of_mut!((*rot_entry).last_modified));
+        hr = S_OK;
+    }
+
+    hr = get_moniker_comparison_data(
+        pmkObjectName,
+        core::ptr::addr_of_mut!((*rot_entry).moniker_data),
+    );
+    if hr != S_OK {
+        rot_entry_delete(rot_entry);
+        IMoniker_Release(pmkObjectName);
+        return hr;
+    }
+
+    hr = CreateStreamOnHGlobal(core::ptr::null_mut(), 1, &mut pStream);
+    if hr != S_OK {
+        rot_entry_delete(rot_entry);
+        IMoniker_Release(pmkObjectName);
+        return hr;
+    }
+    /* marshal moniker */
+    hr = CoMarshalInterface(
+        pStream,
+        core::ptr::addr_of!(IID_IMoniker),
+        pmkObjectName as *mut IUnknown,
+        MSHCTX_LOCAL | MSHCTX_NOSHAREDMEM,
+        core::ptr::null_mut(),
+        MSHLFLAGS_TABLESTRONG,
+    );
+    /* FIXME: a cleaner way would be to create an IStream class that writes
+     * directly to an MInterfacePointer */
+    if hr == S_OK {
+        let mut hglobal: HGLOBAL = core::ptr::null_mut();
+        hr = GetHGlobalFromStream(pStream, &mut hglobal);
+        if hr == S_OK {
+            let size: SIZE_T = GlobalSize(hglobal);
+            let pv: LPVOID = GlobalLock(hglobal);
+            moniker = HeapAlloc(
+                GetProcessHeap(),
+                0,
+                core::mem::offset_of!(InterfaceData, abData) as SIZE_T + size,
+            ) as *mut InterfaceData;
+            (*moniker).ulCntData = size as ULONG;
+            memcpy((*moniker).abData.as_mut_ptr() as *mut c_void, pv, size as usize);
+            GlobalUnlock(hglobal);
+        }
+    }
+    IStream_Release(pStream);
+    IMoniker_Release(pmkObjectName);
+    if hr != S_OK {
+        HeapFree(GetProcessHeap(), 0, moniker as LPVOID);
+        rot_entry_delete(rot_entry);
+        return hr;
+    }
+
+    loop {
+        // C: __TRY { .. } __EXCEPT(rpc_filter) { hr = HRESULT_FROM_WIN32(GetExceptionCode()); }
+        hr = IrotRegister(
+            get_irot_handle(),
+            (*rot_entry).moniker_data,
+            (*rot_entry).object,
+            moniker,
+            core::ptr::addr_of!((*rot_entry).last_modified),
+            grfFlags,
+            core::ptr::addr_of_mut!((*rot_entry).cookie),
+            core::ptr::addr_of_mut!((*rot_entry).ctxt_handle),
+        );
+        if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
+            continue;
+        }
+        break;
+    }
+    HeapFree(GetProcessHeap(), 0, moniker as LPVOID);
+    if FAILED(hr) {
+        rot_entry_delete(rot_entry);
+        return hr;
+    }
+
+    /* gives a registration identifier to the registered object*/
+    *pdwRegister = (*rot_entry).cookie;
+
+    EnterCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+    list_add_tail(
+        core::ptr::addr_of_mut!((*This).rot),
+        core::ptr::addr_of_mut!((*rot_entry).entry),
+    );
+    LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+
+    hr
+}
+}
+
+/***********************************************************************
+ *        RunningObjectTable_Revoke
+ *
+ * PARAMS
+ *  dwRegister [in] Value identifying registration to be revoked
+ */
+stdmethod! {
+fn RunningObjectTableImpl_Revoke(iface: *mut IRunningObjectTable, dwRegister: DWORD) -> HRESULT {
+    let This = impl_from_IRunningObjectTable(iface);
+
+    TRACE!(b"(%p,%d)\n\0".as_ptr(), This, dwRegister);
+
+    EnterCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+    // NOTE: the C uses the PLAIN (non-SAFE) LIST_FOR_EACH_ENTRY here even though the
+    // body frees the element — that is sound only because it RETURNS immediately
+    // after, never touching the freed node's links. Keep it that way.
+    LIST_FOR_EACH_ENTRY!(
+        rot_entry,
+        core::ptr::addr_of_mut!((*This).rot),
+        rot_entry,
+        entry,
+        {
+            if (*rot_entry).cookie == dwRegister {
+                list_remove(core::ptr::addr_of_mut!((*rot_entry).entry));
+                LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+
+                rot_entry_delete(rot_entry);
+                return S_OK;
+            }
+        }
+    );
+    LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+
+    E_INVALIDARG
+}
+}
+
+/***********************************************************************
+ *        RunningObjectTable_IsRunning
+ *
+ * PARAMS
+ *  pmkObjectName [in]  moniker of the object whose status is desired
+ */
+stdmethod! {
+fn RunningObjectTableImpl_IsRunning(
+    iface: *mut IRunningObjectTable,
+    pmkObjectName: *mut IMoniker,
+) -> HRESULT {
+    let This = impl_from_IRunningObjectTable(iface);
+    let mut pmkObjectName = pmkObjectName;
+    let mut moniker_data: *mut MonikerComparisonData = core::ptr::null_mut();
+    let mut hr: HRESULT;
+
+    TRACE!(b"(%p,%p)\n\0".as_ptr(), This, pmkObjectName);
+
+    hr = reduce_moniker(pmkObjectName, core::ptr::null_mut(), &mut pmkObjectName);
+    if FAILED(hr) {
+        return hr;
+    }
+    hr = get_moniker_comparison_data(pmkObjectName, &mut moniker_data);
+    IMoniker_Release(pmkObjectName);
+    if hr != S_OK {
+        return hr;
+    }
+
+    hr = S_FALSE;
+    EnterCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+    LIST_FOR_EACH_ENTRY!(
+        rot_entry,
+        core::ptr::addr_of_mut!((*This).rot),
+        rot_entry,
+        entry,
+        {
+            if (*(*rot_entry).moniker_data).ulCntData == (*moniker_data).ulCntData
+                && memcmp(
+                    (*moniker_data).abData.as_ptr() as *const c_void,
+                    (*(*rot_entry).moniker_data).abData.as_ptr() as *const c_void,
+                    (*moniker_data).ulCntData as usize,
+                ) == 0
+            {
+                hr = S_OK;
+                break;
+            }
+        }
+    );
+    LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+
+    if hr == S_FALSE {
+        loop {
+            // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
+            hr = IrotIsRunning(get_irot_handle(), moniker_data);
+            if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
+                continue;
+            }
+            break;
+        }
+    }
+
+    HeapFree(GetProcessHeap(), 0, moniker_data as LPVOID);
+
+    hr
+}
+}
+
+/***********************************************************************
+ *        RunningObjectTable_GetObject
+ *
+ * PARAMS
+ * pmkObjectName [in] Pointer to the moniker on the object
+ * ppunkObject   [out] variable that receives the IUnknown interface pointer
+ */
+stdmethod! {
+fn RunningObjectTableImpl_GetObject(
+    iface: *mut IRunningObjectTable,
+    pmkObjectName: *mut IMoniker,
+    ppunkObject: *mut *mut IUnknown,
+) -> HRESULT {
+    let This = impl_from_IRunningObjectTable(iface);
+    let mut pmkObjectName = pmkObjectName;
+    let mut moniker_data: *mut MonikerComparisonData = core::ptr::null_mut();
+    let mut object: *mut InterfaceData = core::ptr::null_mut();
+    let mut cookie: IrotCookie = 0;
+    let mut hr: HRESULT;
+
+    TRACE!(b"(%p,%p,%p)\n\0".as_ptr(), This, pmkObjectName, ppunkObject);
+
+    if ppunkObject.is_null() {
+        return E_POINTER;
+    }
+
+    *ppunkObject = core::ptr::null_mut();
+
+    hr = reduce_moniker(pmkObjectName, core::ptr::null_mut(), &mut pmkObjectName);
+    if FAILED(hr) {
+        return hr;
+    }
+    hr = get_moniker_comparison_data(pmkObjectName, &mut moniker_data);
+    IMoniker_Release(pmkObjectName);
+    if hr != S_OK {
+        return hr;
+    }
+
+    EnterCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+    LIST_FOR_EACH_ENTRY!(
+        rot_entry,
+        core::ptr::addr_of_mut!((*This).rot),
+        rot_entry,
+        entry,
+        {
+            if (*(*rot_entry).moniker_data).ulCntData == (*moniker_data).ulCntData
+                && memcmp(
+                    (*moniker_data).abData.as_ptr() as *const c_void,
+                    (*(*rot_entry).moniker_data).abData.as_ptr() as *const c_void,
+                    (*moniker_data).ulCntData as usize,
+                ) == 0
+            {
+                let mut pStream: *mut IStream = core::ptr::null_mut();
+                hr = create_stream_on_mip_ro((*rot_entry).object, &mut pStream);
+                if hr == S_OK {
+                    hr = CoUnmarshalInterface(
+                        pStream,
+                        core::ptr::addr_of!(IID_IUnknown),
+                        ppunkObject as *mut LPVOID,
+                    );
+                    IStream_Release(pStream);
+                }
+
+                LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+                HeapFree(GetProcessHeap(), 0, moniker_data as LPVOID);
+
+                return hr;
+            }
+        }
+    );
+    LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+
+    TRACE!(b"moniker unavailable locally, calling SCM\n\0".as_ptr());
+
+    loop {
+        // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
+        hr = IrotGetObject(get_irot_handle(), moniker_data, &mut object, &mut cookie);
+        if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
+            continue;
+        }
+        break;
+    }
+
+    if SUCCEEDED(hr) {
+        let mut pStream: *mut IStream = core::ptr::null_mut();
+        hr = create_stream_on_mip_ro(object, &mut pStream);
+        if hr == S_OK {
+            hr = CoUnmarshalInterface(
+                pStream,
+                core::ptr::addr_of!(IID_IUnknown),
+                ppunkObject as *mut LPVOID,
+            );
+            IStream_Release(pStream);
+        }
+    } else {
+        WARN!(
+            b"Moniker unavailable, IrotGetObject returned 0x%08x\n\0".as_ptr(),
+            hr
+        );
+    }
+
+    HeapFree(GetProcessHeap(), 0, moniker_data as LPVOID);
+
+    hr
+}
+}
+
+/***********************************************************************
+ *        RunningObjectTable_NoteChangeTime
+ *
+ * PARAMS
+ *  dwRegister [in] Value identifying registration being updated
+ *  pfiletime  [in] Pointer to structure containing object's last change time
+ */
+stdmethod! {
+fn RunningObjectTableImpl_NoteChangeTime(
+    iface: *mut IRunningObjectTable,
+    dwRegister: DWORD,
+    pfiletime: *mut FILETIME,
+) -> HRESULT {
+    let This = impl_from_IRunningObjectTable(iface);
+    let mut hr: HRESULT = E_INVALIDARG;
+
+    TRACE!(b"(%p,%d,%p)\n\0".as_ptr(), This, dwRegister, pfiletime);
+
+    EnterCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+    LIST_FOR_EACH_ENTRY!(
+        rot_entry,
+        core::ptr::addr_of_mut!((*This).rot),
+        rot_entry,
+        entry,
+        {
+            if (*rot_entry).cookie == dwRegister {
+                (*rot_entry).last_modified = *pfiletime;
+                LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+
+                loop {
+                    // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
+                    hr = IrotNoteChangeTime(get_irot_handle(), dwRegister, pfiletime);
+                    if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
+                        continue;
+                    }
+                    break;
+                }
+
+                /* C: goto done — skips the second LeaveCriticalSection (already left) */
+                TRACE!(b"-- 0x08%x\n\0".as_ptr(), hr);
+                return hr;
+            }
+        }
+    );
+    LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+
+    TRACE!(b"-- 0x08%x\n\0".as_ptr(), hr);
+    hr
+}
+}
+
+/***********************************************************************
+ *        RunningObjectTable_GetTimeOfLastChange
+ *
+ * PARAMS
+ *  pmkObjectName  [in]  moniker of the object whose status is desired
+ *  pfiletime      [out] structure that receives object's last change time
+ */
+stdmethod! {
+fn RunningObjectTableImpl_GetTimeOfLastChange(
+    iface: *mut IRunningObjectTable,
+    pmkObjectName: *mut IMoniker,
+    pfiletime: *mut FILETIME,
+) -> HRESULT {
+    let mut hr: HRESULT = MK_E_UNAVAILABLE;
+    let This = impl_from_IRunningObjectTable(iface);
+    let mut pmkObjectName = pmkObjectName;
+    let mut moniker_data: *mut MonikerComparisonData = core::ptr::null_mut();
+
+    TRACE!(b"(%p,%p,%p)\n\0".as_ptr(), This, pmkObjectName, pfiletime);
+
+    if pmkObjectName.is_null() || pfiletime.is_null() {
+        return E_INVALIDARG;
+    }
+
+    hr = reduce_moniker(pmkObjectName, core::ptr::null_mut(), &mut pmkObjectName);
+    if FAILED(hr) {
+        return hr;
+    }
+    hr = get_moniker_comparison_data(pmkObjectName, &mut moniker_data);
+    IMoniker_Release(pmkObjectName);
+    if hr != S_OK {
+        return hr;
+    }
+
+    hr = MK_E_UNAVAILABLE;
+
+    EnterCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+    LIST_FOR_EACH_ENTRY!(
+        rot_entry,
+        core::ptr::addr_of_mut!((*This).rot),
+        rot_entry,
+        entry,
+        {
+            if (*(*rot_entry).moniker_data).ulCntData == (*moniker_data).ulCntData
+                && memcmp(
+                    (*moniker_data).abData.as_ptr() as *const c_void,
+                    (*(*rot_entry).moniker_data).abData.as_ptr() as *const c_void,
+                    (*moniker_data).ulCntData as usize,
+                ) == 0
+            {
+                *pfiletime = (*rot_entry).last_modified;
+                hr = S_OK;
+                break;
+            }
+        }
+    );
+    LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+
+    if hr != S_OK {
+        loop {
+            // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
+            hr = IrotGetTimeOfLastChange(get_irot_handle(), moniker_data, pfiletime);
+            if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
+                continue;
+            }
+            break;
+        }
+    }
+
+    HeapFree(GetProcessHeap(), 0, moniker_data as LPVOID);
+
+    TRACE!(b"-- 0x%08x\n\0".as_ptr(), hr);
+    hr
+}
+}
+
+/***********************************************************************
+ *        RunningObjectTable_EnumRunning
+ *
+ * PARAMS
+ *  ppenumMoniker  [out]  receives the IEnumMoniker interface pointer
+ */
+stdmethod! {
+fn RunningObjectTableImpl_EnumRunning(
+    iface: *mut IRunningObjectTable,
+    ppenumMoniker: *mut *mut IEnumMoniker,
+) -> HRESULT {
+    let This = impl_from_IRunningObjectTable(iface);
+    let mut interface_list: *mut InterfaceList = core::ptr::null_mut();
+    let mut hr: HRESULT;
+
+    TRACE!(b"(%p, %p)\n\0".as_ptr(), This, ppenumMoniker);
+
+    *ppenumMoniker = core::ptr::null_mut();
+
+    loop {
+        // C: __TRY/__EXCEPT(rpc_filter) — see the note on rpc_filter.
+        hr = IrotEnumRunning(get_irot_handle(), &mut interface_list);
+        if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) && start_rpcss() != 0 {
+            continue;
+        }
+        break;
+    }
+
+    if SUCCEEDED(hr) {
+        hr = EnumMonikerImpl_CreateEnumROTMoniker(interface_list, 0, ppenumMoniker);
+    }
+
+    hr
+}
+}
+
+/* Virtual function table for the IRunningObjectTable class. */
+static VT_RunningObjectTableImpl: IRunningObjectTableVtbl = IRunningObjectTableVtbl {
+    QueryInterface: Some(RunningObjectTableImpl_QueryInterface),
+    AddRef: Some(RunningObjectTableImpl_AddRef),
+    Release: Some(RunningObjectTableImpl_Release),
+    Register: Some(RunningObjectTableImpl_Register),
+    Revoke: Some(RunningObjectTableImpl_Revoke),
+    IsRunning: Some(RunningObjectTableImpl_IsRunning),
+    GetObjectA: Some(RunningObjectTableImpl_GetObject),
+    NoteChangeTime: Some(RunningObjectTableImpl_NoteChangeTime),
+    GetTimeOfLastChange: Some(RunningObjectTableImpl_GetTimeOfLastChange),
+    EnumRunning: Some(RunningObjectTableImpl_EnumRunning),
+};
+
+/***********************************************************************
+ *        RunningObjectTable_Initialize
+ */
 #[no_mangle]
 pub unsafe extern "system" fn RunningObjectTableImpl_Initialize() -> HRESULT {
-    TRACE(b"\n\0".as_ptr() as *const i8);
+    TRACE!(b"\n\0".as_ptr());
 
+    /* create the unique instance of the RunningObjectTableImpl structure */
     runningObjectTableInstance = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<RunningObjectTableImpl>() as usize
+        core::mem::size_of::<RunningObjectTableImpl>() as SIZE_T,
     ) as *mut RunningObjectTableImpl;
 
     if runningObjectTableInstance.is_null() {
         return E_OUTOFMEMORY;
     }
 
-    (*runningObjectTableInstance).IRunningObjectTable_iface.lpVtbl =
-        &VT_RunningObjectTableImpl as *const IRunningObjectTableVtbl;
+    /* initialize the virtual table function */
+    (*runningObjectTableInstance)
+        .IRunningObjectTable_iface
+        .lpVtbl = &VT_RunningObjectTableImpl as *const IRunningObjectTableVtbl
+        as *mut IRunningObjectTableVtbl;
 
-    (*runningObjectTableInstance).ref_0 = 1;
+    /* the initial reference is set to "1" so that it isn't destroyed after its
+     * first use until the process is destroyed, as the running object table is
+     * a process-wide cache of a global table */
+    (*runningObjectTableInstance).ref_ = 1;
 
     list_init(core::ptr::addr_of_mut!((*runningObjectTableInstance).rot));
     InitializeCriticalSection(core::ptr::addr_of_mut!((*runningObjectTableInstance).lock));
-    DEBUG_SET_CRITSEC_NAME(
+    debug_set_critsec_name(
         core::ptr::addr_of_mut!((*runningObjectTableInstance).lock),
-        b"RunningObjectTableImpl.lock\0".as_ptr() as *const i8
+        "RunningObjectTableImpl.lock",
     );
 
     S_OK
 }
 
+/***********************************************************************
+ *        RunningObjectTable_UnInitialize
+ */
+#[no_mangle]
+pub unsafe extern "system" fn RunningObjectTableImpl_UnInitialize() -> HRESULT {
+    TRACE!(b"\n\0".as_ptr());
+
+    if runningObjectTableInstance.is_null() {
+        return E_POINTER;
+    }
+
+    RunningObjectTableImpl_Release(core::ptr::addr_of_mut!(
+        (*runningObjectTableInstance).IRunningObjectTable_iface
+    ));
+
+    RunningObjectTableImpl_Destroy();
+
+    S_OK
+}
+
+/***********************************************************************
+ *           GetRunningObjectTable (OLE32.@)
+ *
+ * Retrieves the global running object table.
+ */
 #[no_mangle]
 pub unsafe extern "system" fn GetRunningObjectTable(
     reserved: DWORD,
     pprot: *mut LPRUNNINGOBJECTTABLE,
 ) -> HRESULT {
-
-
     let riid: IID = IID_IRunningObjectTable;
     let res: HRESULT;
 
-    TRACE(b"()\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"()\n\0".as_ptr());
 
     if reserved != 0 {
         return E_UNEXPECTED;
@@ -358,97 +1322,217 @@ pub unsafe extern "system" fn GetRunningObjectTable(
     res = IRunningObjectTable_QueryInterface(
         core::ptr::addr_of_mut!((*runningObjectTableInstance).IRunningObjectTable_iface),
         &riid,
-        pprot as *mut *mut core::ffi::c_void,
+        pprot as *mut *mut c_void,
     );
 
     res
 }
 
 unsafe fn get_moniker_for_progid_display_name(
-    pbc: *mut core::ffi::c_void,
-    szDisplayName: LPCWSTR,
+    pbc: *mut IBindCtx,
+    szDisplayName: LPCOLESTR,
     pchEaten: LPDWORD,
-    ppmk: *mut *mut core::ffi::c_void,
+    ppmk: *mut *mut IMoniker,
 ) -> HRESULT {
     let mut clsid: CLSID = core::mem::zeroed();
     let mut hr: HRESULT;
-    let mut progid: LPWSTR;
+    let progid: LPWSTR;
     let mut start: LPCWSTR = szDisplayName;
     let mut end: LPCWSTR;
-    let len: i32;
-    let mut class_moniker: *mut core::ffi::c_void = core::ptr::null_mut();
+    let len: c_int;
+    let mut class_moniker: *mut IMoniker = core::ptr::null_mut();
 
-    if *start == '@' as u16 {
+    if *start == b'@' as u16 {
         start = start.offset(1);
     }
 
+    /* find end delimiter */
     end = start;
     while *end != 0 {
-        if *end == ':' as u16 {
+        if *end == b':' as u16 {
             break;
         }
         end = end.offset(1);
     }
 
-    len = end.offset_from(start) as i32;
+    len = end.offset_from(start) as c_int;
 
+    /* must start with '@' or have a ':' somewhere and mustn't be one character
+     * long (since that looks like an absolute path) */
     if ((start == szDisplayName) && (*end == 0)) || (len <= 1) {
         return MK_E_SYNTAX;
     }
 
-    progid = HeapAlloc(GetProcessHeap(), 0, ((len + 1) * 2) as usize) as LPWSTR;
+    progid = HeapAlloc(
+        GetProcessHeap(),
+        0,
+        ((len as usize + 1) * core::mem::size_of::<u16>()) as SIZE_T,
+    ) as LPWSTR;
     if !progid.is_null() {
         memcpy(
-            progid as *mut core::ffi::c_void,
-            start as *const core::ffi::c_void,
-            (len * 2) as usize,
+            progid as *mut c_void,
+            start as *const c_void,
+            len as usize * core::mem::size_of::<u16>(),
         );
         *progid.offset(len as isize) = 0;
     }
     hr = CLSIDFromProgID(progid, &mut clsid);
-    HeapFree(GetProcessHeap(), 0, progid as *mut core::ffi::c_void);
-    if FAILED(hr) != 0 {
+    HeapFree(GetProcessHeap(), 0, progid as LPVOID);
+    if FAILED(hr) {
         return MK_E_SYNTAX;
     }
 
     hr = CreateClassMoniker(&clsid, &mut class_moniker);
-    if SUCCEEDED(hr) != 0 {
-        let mut pdn: *mut core::ffi::c_void = core::ptr::null_mut();
+    if SUCCEEDED(hr) {
+        let mut pdn: *mut IParseDisplayName = core::ptr::null_mut();
         hr = IMoniker_BindToObject(
             class_moniker,
             pbc,
             core::ptr::null_mut(),
-            &IID_IParseDisplayName,
-            &mut pdn as *mut *mut core::ffi::c_void as *mut LPVOID,
+            core::ptr::addr_of!(IID_IParseDisplayName),
+            &mut pdn as *mut *mut IParseDisplayName as *mut *mut c_void,
         );
-        if FAILED(hr) != 0 {
-            let mut pcf: *mut core::ffi::c_void = core::ptr::null_mut();
+        /* fallback to using IClassFactory to get IParseDisplayName -
+         * adsldp.dll depends on this */
+        if FAILED(hr) {
+            let mut pcf: *mut IClassFactory = core::ptr::null_mut();
             hr = IMoniker_BindToObject(
                 class_moniker,
                 pbc,
                 core::ptr::null_mut(),
-                &IID_IClassFactory,
-                &mut pcf as *mut *mut core::ffi::c_void as *mut LPVOID,
+                core::ptr::addr_of!(IID_IClassFactory),
+                &mut pcf as *mut *mut IClassFactory as *mut *mut c_void,
             );
-            if SUCCEEDED(hr) != 0 {
+            if SUCCEEDED(hr) {
                 hr = IClassFactory_CreateInstance(
                     pcf,
                     core::ptr::null_mut(),
-                    &IID_IParseDisplayName,
-                    &mut pdn as *mut *mut core::ffi::c_void as *mut LPVOID,
+                    core::ptr::addr_of!(IID_IParseDisplayName),
+                    &mut pdn as *mut *mut IParseDisplayName as *mut *mut c_void,
                 );
                 IClassFactory_Release(pcf);
             }
         }
         IMoniker_Release(class_moniker);
-        if SUCCEEDED(hr) != 0 {
-            hr = IParseDisplayName_ParseDisplayName(pdn, pbc, szDisplayName as LPWSTR, pchEaten, ppmk);
+        if SUCCEEDED(hr) {
+            hr = IParseDisplayName_ParseDisplayName(
+                pdn,
+                pbc,
+                szDisplayName as LPOLESTR,
+                pchEaten,
+                ppmk,
+            );
             IParseDisplayName_Release(pdn);
         }
     }
     hr
 }
 
+/******************************************************************************
+ *              MkParseDisplayName        [OLE32.@]
+ */
+#[no_mangle]
+pub unsafe extern "system" fn MkParseDisplayName(
+    pbc: *mut IBindCtx,
+    szDisplayName: LPCOLESTR,
+    pchEaten: LPDWORD,
+    ppmk: *mut *mut IMoniker,
+) -> HRESULT {
+    let mut szDisplayName = szDisplayName;
+    let mut hr: HRESULT = MK_E_SYNTAX;
+    const WSZ_CLSID_COLON: [u16; 6] = [
+        b'c' as u16,
+        b'l' as u16,
+        b's' as u16,
+        b'i' as u16,
+        b'd' as u16,
+        b':' as u16,
+    ];
+    let mut moniker: *mut IMoniker = core::ptr::null_mut();
+    let mut chEaten: DWORD = 0;
+
+    TRACE!(
+        b"(%p, %s, %p, %p)\n\0".as_ptr(),
+        pbc,
+        debugstr_w(szDisplayName),
+        pchEaten,
+        ppmk
+    );
+
+    if pbc.is_null() || IsValidInterface(pbc as LPUNKNOWN) == 0 {
+        return E_INVALIDARG;
+    }
+
+    if szDisplayName.is_null() || *szDisplayName == 0 {
+        return E_INVALIDARG;
+    }
+
+    if pchEaten.is_null() || ppmk.is_null() {
+        return E_INVALIDARG;
+    }
+
+    *pchEaten = 0;
+    *ppmk = core::ptr::null_mut();
+
+    if _wcsnicmp(szDisplayName, WSZ_CLSID_COLON.as_ptr(), WSZ_CLSID_COLON.len()) == 0 {
+        hr = ClassMoniker_CreateFromDisplayName(
+            pbc,
+            szDisplayName,
+            &mut chEaten,
+            &mut moniker,
+        );
+        if FAILED(hr) && (hr != MK_E_SYNTAX) {
+            return hr;
+        }
+    } else {
+        hr = get_moniker_for_progid_display_name(pbc, szDisplayName, &mut chEaten, &mut moniker);
+        if FAILED(hr) && (hr != MK_E_SYNTAX) {
+            return hr;
+        }
+    }
+
+    if FAILED(hr) {
+        hr = FileMoniker_CreateFromDisplayName(pbc, szDisplayName, &mut chEaten, &mut moniker);
+        if FAILED(hr) && (hr != MK_E_SYNTAX) {
+            return hr;
+        }
+    }
+
+    if SUCCEEDED(hr) {
+        loop {
+            let mut next_moniker: *mut IMoniker = core::ptr::null_mut();
+            *pchEaten += chEaten;
+            szDisplayName = szDisplayName.add(chEaten as usize);
+            if *szDisplayName == 0 {
+                *ppmk = moniker;
+                return S_OK;
+            }
+            chEaten = 0;
+            hr = IMoniker_ParseDisplayName(
+                moniker,
+                pbc,
+                core::ptr::null_mut(),
+                szDisplayName as LPOLESTR,
+                &mut chEaten,
+                &mut next_moniker,
+            );
+            IMoniker_Release(moniker);
+            if FAILED(hr) {
+                *pchEaten = 0;
+                break;
+            }
+            moniker = next_moniker;
+        }
+    }
+
+    hr
+}
+
+/***********************************************************************
+ *        GetClassFile (OLE32.@)
+ *
+ * Retrieves the class ID associated with the given filename.
+ */
 #[no_mangle]
 pub unsafe extern "system" fn GetClassFile(
     filePathName: LPCOLESTR,
@@ -456,56 +1540,21 @@ pub unsafe extern "system" fn GetClassFile(
 ) -> HRESULT {
     let mut pstg: *mut IStorage = core::ptr::null_mut();
     let mut res: HRESULT;
-    let mut nbElm: i32;
-    let mut length: i32;
-    let mut i: i32;
-    let mut sizeProgId: i32 = 0;
-    let mut ret: i32;
-    let mut pathDec: *mut LPOLESTR = core::ptr::null_mut();
-    let mut absFile: LPOLESTR;
-    let mut progId: LPOLESTR = core::ptr::null_mut();
+    let nbElm: c_int;
+    let length: c_int;
+    let mut i: c_int;
+    let mut sizeProgId: LONG = 0;
+    let mut ret: LONG;
+    let mut pathDec: *mut LPWSTR = core::ptr::null_mut();
+    let absFile: LPOLESTR;
+    let progId: LPOLESTR;
     let mut extension: LPWSTR;
-    static bkslashW: [u16; 2] = ['\\' as u16, 0];
-    static dotW: [u16; 2] = ['.' as u16, 0];
+    const BKSLASHW: [u16; 2] = [b'\\' as u16, 0];
+    const DOTW: [u16; 2] = [b'.' as u16, 0];
 
-    extern "C" {
+    TRACE!(b"%s, %p\n\0".as_ptr(), debugstr_w(filePathName), pclsid);
 
-        fn StgIsStorageFile(pwcsName: LPCOLESTR) -> HRESULT;
-        fn StgOpenStorage(
-            pwcsName: LPCOLESTR,
-            pstgPriority: *mut IStorage,
-            grfMode: u32,
-            snbExclude: *mut *mut u16,
-            reserved: u32,
-            ppstgOpen: *mut *mut IStorage,
-        ) -> HRESULT;
-        fn ReadClassStg(pstg: *mut IStorage, pclsid: *mut CLSID) -> HRESULT;
-        fn FileMonikerImpl_DecomposePath(
-            path: LPCOLESTR,
-            pathDec: *mut *mut LPOLESTR,
-        ) -> i32;
-        fn wcscmp(string1: LPCWSTR, string2: LPCWSTR) -> i32;
-        fn RegQueryValueW(
-            hKey: *mut core::ffi::c_void,
-            lpSubKey: LPCWSTR,
-            lpData: LPWSTR,
-            lpcbData: *mut i32,
-        ) -> i32;
-        fn CLSIDFromProgID(lpszProgID: LPCOLESTR, lpclsid: *mut CLSID) -> HRESULT;
-}
-
-    const STGM_READ: u32 = 0x00000000;
-    const STGM_SHARE_DENY_WRITE: u32 = 0x00000020;
-    const S_OK: HRESULT = 0;
-    const MK_E_INVALIDEXTENSION: HRESULT = 0x800401E6u32 as i32;
-    static mut HKEY_CLASSES_ROOT: *mut core::ffi::c_void = 0x80000000 as *mut core::ffi::c_void;
-
-    TRACE(
-        b"%s, %p\n\0".as_ptr() as *const i8,
-        debugstr_w(filePathName),
-        pclsid,
-    );
-
+    /* if the file contain a storage object the return the CLSID written by IStorage_SetClass method*/
     if StgIsStorageFile(filePathName) == S_OK {
         res = StgOpenStorage(
             filePathName,
@@ -524,35 +1573,47 @@ pub unsafe extern "system" fn GetClassFile(
         return res;
     }
 
+    /* if the above strategies fail then search for the extension key in the registry */
+
+    /* get the last element (absolute file) in the path name */
     nbElm = FileMonikerImpl_DecomposePath(filePathName, &mut pathDec);
     absFile = *pathDec.offset((nbElm - 1) as isize);
 
-    if wcscmp(absFile, bkslashW.as_ptr()) == 0 {
+    /* failed if the path represents a directory and not an absolute file name*/
+    if wcscmp(absFile, BKSLASHW.as_ptr()) == 0 {
         CoTaskMemFree(pathDec as LPVOID);
         return MK_E_INVALIDEXTENSION;
     }
 
+    /* get the extension of the file */
     extension = core::ptr::null_mut();
     length = lstrlenW(absFile);
     i = length - 1;
     while i >= 0 {
         extension = absFile.offset(i as isize);
-        if *extension == '.' as u16 {
+        if *extension == b'.' as u16 {
             break;
         }
         i -= 1;
     }
 
-    if extension.is_null() || wcscmp(extension, dotW.as_ptr()) == 0 {
+    if extension.is_null() || wcscmp(extension, DOTW.as_ptr()) == 0 {
         CoTaskMemFree(pathDec as LPVOID);
         return MK_E_INVALIDEXTENSION;
     }
 
-    ret = RegQueryValueW(HKEY_CLASSES_ROOT, extension, core::ptr::null_mut(), &mut sizeProgId);
+    ret = RegQueryValueW(
+        HKEY_CLASSES_ROOT,
+        extension,
+        core::ptr::null_mut(),
+        &mut sizeProgId,
+    );
     if ret == 0 {
-        progId = CoTaskMemAlloc(sizeProgId as usize) as LPOLESTR;
+        /* get the progId associated to the extension */
+        progId = CoTaskMemAlloc(sizeProgId as SIZE_T) as LPOLESTR;
         ret = RegQueryValueW(HKEY_CLASSES_ROOT, extension, progId, &mut sizeProgId);
         if ret == 0 {
+            /* return the clsid associated to the progId */
             res = CLSIDFromProgID(progId, pclsid);
         } else {
             res = HRESULT_FROM_WIN32(ret as u32);
@@ -576,147 +1637,30 @@ pub unsafe extern "system" fn GetClassFile(
     }
 }
 
-unsafe fn EnumMonikerImpl_CreateEnumROTMoniker(
-    moniker_list: *mut InterfaceList,
-    current_pos: ULONG,
-    ppenumMoniker: *mut *mut IEnumMoniker,
-) -> HRESULT {
-    let mut This: *mut EnumMonikerImpl = core::ptr::null_mut();
-
-    if ppenumMoniker.is_null() {
-        return E_INVALIDARG;
-    }
-
-    This = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<EnumMonikerImpl>()) as *mut EnumMonikerImpl;
-    if This.is_null() {
-        return E_OUTOFMEMORY;
-    }
-
-    TRACE(b"(%p)\n\0".as_ptr() as LPCWSTR, This);
-
-    (*This).IEnumMoniker_iface.lpVtbl = &VT_EnumMonikerImpl;
-
-    (*This).ref_ = 1;
-    (*This).pos = current_pos;
-    (*This).moniker_list = moniker_list;
-
-    *ppenumMoniker = &mut (*This).IEnumMoniker_iface;
-
-    S_OK
-}
-
-unsafe fn impl_from_IUnknown(iface: *mut IUnknown) -> *mut MonikerMarshal {
-    (iface as *mut u8).offset(-(core::mem::offset_of!(MonikerMarshal, IUnknown_iface) as isize)) as *mut MonikerMarshal
-}
-
-unsafe fn impl_from_IMarshal(iface: *mut IMarshal) -> *mut MonikerMarshal {
-    (iface as *mut u8).offset(-(core::mem::offset_of!(MonikerMarshal, IMarshal_iface) as isize)) as *mut MonikerMarshal
-}
-
-unsafe fn MonikerMarshal_ReleaseMarshalData(iface: LPMARSHAL, pStm: *mut IStream) -> HRESULT {
-    TRACE(b"()\n\0".as_ptr() as LPCWSTR);
-    S_OK
-}
-
-unsafe fn MonikerMarshal_DisconnectObject(
-    iface: LPMARSHAL,
-    dwReserved: DWORD,
-) -> HRESULT {
-    TRACE(b"()\n\0".as_ptr() as LPCSTR);
-    S_OK
-}
-
-unsafe fn MonikerMarshal_Create(inner: *mut IMoniker, outer: *mut *mut IUnknown) -> HRESULT {
-    let This = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<MonikerMarshal>()) as *mut MonikerMarshal;
-    if This.is_null() {
-        return E_OUTOFMEMORY;
-    }
-
-    (*This).IUnknown_iface.lpVtbl = &VT_MonikerMarshalInner;
-    (*This).IMarshal_iface.lpVtbl = &VT_MonikerMarshal;
-    (*This).ref_ = 1;
-    (*This).moniker = inner;
-
-    *outer = &mut (*This).IUnknown_iface as *mut IUnknown;
-    S_OK
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn MIDL_user_allocate(size: usize) -> *mut core::ffi::c_void {
-
-    HeapAlloc(GetProcessHeap(), 0, size)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn MIDL_user_free(p: LPVOID) {
-    HeapFree(GetProcessHeap(), 0, p);
-}
-
-unsafe fn RunningObjectTableImpl_QueryInterface(
-    iface: *mut IRunningObjectTable,
-    riid: *const IID,
-    ppvObject: *mut *mut core::ffi::c_void,
-) -> HRESULT {
-    let This = impl_from_IRunningObjectTable(iface);
-
-    TRACE(
-        b"(%p,%s,%p)\n\0".as_ptr() as *const i8,
-        This,
-        debugstr_guid(riid),
-        ppvObject,
-    );
-
-    if ppvObject.is_null() {
-        return E_INVALIDARG;
-    }
-
-    *ppvObject = core::ptr::null_mut();
-
-    if IsEqualIID(riid, &IID_IUnknown) != 0 || IsEqualIID(riid, &IID_IRunningObjectTable) != 0 {
-        *ppvObject = core::ptr::addr_of_mut!((*This).IRunningObjectTable_iface) as *mut core::ffi::c_void;
-    }
-
-    if (*ppvObject).is_null() {
-        return E_NOINTERFACE;
-    }
-
-    IRunningObjectTable_AddRef(iface);
-
-    S_OK
-}
-
-unsafe fn RunningObjectTableImpl_AddRef(iface: *mut IRunningObjectTable) -> ULONG {
-    let This = impl_from_IRunningObjectTable(iface);
-
-    TRACE(b"(%p)\n\0".as_ptr() as PCHAR, This);
-
-    InterlockedIncrement(&mut (*This).ref_) as ULONG
-}
-
-unsafe fn EnumMonikerImpl_QueryInterface(
+/***********************************************************************
+ *        EnumMoniker_QueryInterface
+ */
+stdmethod! {
+fn EnumMonikerImpl_QueryInterface(
     iface: *mut IEnumMoniker,
     riid: *const IID,
-    ppvObject: *mut *mut core::ffi::c_void,
+    ppvObject: *mut *mut c_void,
 ) -> HRESULT {
     let This = impl_from_IEnumMoniker(iface);
 
-    TRACE(
-        b"(%p,%s,%p)\n\0".as_ptr() as *const i8,
-        This,
-        debugstr_guid(riid),
-        ppvObject,
-    );
+    TRACE!(b"(%p,%s,%p)\n\0".as_ptr(), This, debugstr_guid(riid), ppvObject);
 
+    /* validate arguments */
     if ppvObject.is_null() {
         return E_INVALIDARG;
     }
 
     *ppvObject = core::ptr::null_mut();
 
-    if IsEqualIID(core::ptr::addr_of!(IID_IUnknown), riid) != 0
-        || IsEqualIID(core::ptr::addr_of!(IID_IEnumMoniker), riid) != 0
+    if IsEqualIID(core::ptr::addr_of!(IID_IUnknown), riid)
+        || IsEqualIID(core::ptr::addr_of!(IID_IEnumMoniker), riid)
     {
-        *ppvObject = core::ptr::addr_of_mut!((*This).IEnumMoniker_iface) as *mut core::ffi::c_void;
+        *ppvObject = core::ptr::addr_of_mut!((*This).IEnumMoniker_iface) as *mut c_void;
     } else {
         return E_NOINTERFACE;
     }
@@ -724,132 +1668,61 @@ unsafe fn EnumMonikerImpl_QueryInterface(
     IEnumMoniker_AddRef(iface);
     S_OK
 }
-
-unsafe fn EnumMonikerImpl_AddRef(iface: *mut IEnumMoniker) -> ULONG {
-    let This = impl_from_IEnumMoniker(iface);
-
-    TRACE(b"(%p)\n\0".as_ptr() as PCHAR, This);
-
-    InterlockedIncrement(&mut (*This).ref_) as ULONG
 }
 
-unsafe fn EnumMonikerImpl_Release(iface: *mut IEnumMoniker) -> u32 {
+/***********************************************************************
+ *        EnumMoniker_AddRef
+ */
+stdmethod! {
+fn EnumMonikerImpl_AddRef(iface: *mut IEnumMoniker) -> ULONG {
     let This = impl_from_IEnumMoniker(iface);
-    let ref_: u32;
 
-    TRACE(b"(%p)\n\0".as_ptr() as PCHAR, This);
+    TRACE!(b"(%p)\n\0".as_ptr(), This);
 
-    ref_ = InterlockedDecrement(&mut (*This).ref_) as u32;
+    InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG
+}
+}
 
+/***********************************************************************
+ *        EnumMoniker_release
+ */
+stdmethod! {
+fn EnumMonikerImpl_Release(iface: *mut IEnumMoniker) -> ULONG {
+    let This = impl_from_IEnumMoniker(iface);
+    let ref_: ULONG;
+
+    TRACE!(b"(%p)\n\0".as_ptr(), This);
+
+    ref_ = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG;
+
+    /* uninitialize ROT structure if there are no more references to it */
     if ref_ == 0 {
-        let mut i: u32;
+        let mut i: ULONG;
 
-        TRACE(b"(%p) Deleting\n\0".as_ptr() as PCHAR, This);
+        TRACE!(b"(%p) Deleting\n\0".as_ptr(), This);
 
         i = 0;
         while i < (*(*This).moniker_list).size {
-            HeapFree(GetProcessHeap(), 0, (*(*This).moniker_list).interfaces[i as usize] as LPVOID);
+            HeapFree(
+                GetProcessHeap(),
+                0,
+                *(*(*This).moniker_list).interfaces.as_ptr().add(i as usize) as LPVOID,
+            );
             i += 1;
         }
         HeapFree(GetProcessHeap(), 0, (*This).moniker_list as LPVOID);
         HeapFree(GetProcessHeap(), 0, This as LPVOID);
     }
 
-    return ref_;
+    ref_
+}
 }
 
-unsafe fn EnumMonikerImpl_Skip(iface: *mut IEnumMoniker, celt: ULONG) -> HRESULT {
-    let This = impl_from_IEnumMoniker(iface);
-
-    TRACE(b"(%p)\n\0".as_ptr() as *const i8, This);
-
-    if (*This).pos + celt >= (*(*This).moniker_list).size {
-        return S_FALSE;
-    }
-
-    (*This).pos += celt;
-
-    S_OK
-}
-
-unsafe fn EnumMonikerImpl_Reset(iface: *mut IEnumMoniker) -> HRESULT {
-    let This = impl_from_IEnumMoniker(iface);
-
-    (*This).pos = 0;
-
-    TRACE(b"(%p)\n\0".as_ptr() as LPCWSTR, This);
-
-    S_OK
-}
-
-unsafe fn RunningObjectTableImpl_NoteChangeTime(
-    iface: *mut IRunningObjectTable,
-    dwRegister: u32,
-    pfiletime: *mut FILETIME,
-) -> HRESULT {
-    let This = impl_from_IRunningObjectTable(iface);
-    let mut hr: HRESULT = 0x80070057u32 as HRESULT;
-
-    EnterCriticalSection(core::ptr::addr_of_mut!((*This).lock));
-
-    let mut current = (*This).rot.Flink;
-    while current != core::ptr::addr_of_mut!((*This).rot) {
-        let rot_entry = (current as *mut u8).offset(-(core::mem::offset_of!(rot_entry, entry) as isize)) as *mut rot_entry;
-
-        if (*rot_entry).cookie == dwRegister {
-            (*rot_entry).last_modified = *pfiletime;
-            LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
-
-            loop {
-                hr = IrotNoteChangeTime(get_irot_handle(), dwRegister, pfiletime);
-
-                if hr == ((0x800706BAu32 as HRESULT) & 0x0000FFFF) | 0x80070000 {
-                    if start_rpcss() != 0 {
-                        continue;
-                    }
-                }
-                break;
-            }
-
-            return hr;
-        }
-
-        current = (*current).Flink;
-    }
-
-    LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
-    hr
-}
-
-unsafe fn RunningObjectTableImpl_EnumRunning(
-    iface: *mut IRunningObjectTable,
-    ppenumMoniker: *mut *mut IEnumMoniker,
-) -> HRESULT {
-    let This = impl_from_IRunningObjectTable(iface);
-    let mut interface_list: *mut InterfaceList = core::ptr::null_mut();
-    let mut hr: HRESULT;
-
-    *ppenumMoniker = core::ptr::null_mut();
-
-    loop {
-        hr = IrotEnumRunning(get_irot_handle(), &mut interface_list);
-
-        if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) {
-            if start_rpcss() != 0 {
-                continue;
-            }
-        }
-        break;
-    }
-
-    if SUCCEEDED(hr) {
-        hr = EnumMonikerImpl_CreateEnumROTMoniker(interface_list, 0, ppenumMoniker);
-    }
-
-    hr
-}
-
-unsafe fn EnumMonikerImpl_Next(
+/***********************************************************************
+ *        EnumMoniker_Next
+ */
+stdmethod! {
+fn EnumMonikerImpl_Next(
     iface: *mut IEnumMoniker,
     celt: ULONG,
     rgelt: *mut *mut IMoniker,
@@ -859,28 +1732,30 @@ unsafe fn EnumMonikerImpl_Next(
     let This = impl_from_IEnumMoniker(iface);
     let mut hr: HRESULT = S_OK;
 
-    TRACE(
-        b"(%p) TabCurrentPos %d Tablastindx %d\n\0".as_ptr() as PCHAR,
+    TRACE!(
+        b"(%p) TabCurrentPos %d Tablastindx %d\n\0".as_ptr(),
         This,
         (*This).pos,
-        (*(*This).moniker_list).size,
+        (*(*This).moniker_list).size
     );
 
+    /* retrieve the requested number of moniker from the current position */
     i = 0;
-    while (*This).pos < (*(*This).moniker_list).size && i < celt {
+    while ((*This).pos < (*(*This).moniker_list).size) && (i < celt) {
         let mut stream: *mut IStream = core::ptr::null_mut();
-        hr = create_stream_on_mip_ro(
-            *(*(*This).moniker_list).interfaces.offset((*This).pos as isize),
-            &mut stream,
-        );
+        let mip = *(*(*This).moniker_list)
+            .interfaces
+            .as_ptr()
+            .add((*This).pos as usize);
         (*This).pos += 1;
+        hr = create_stream_on_mip_ro(mip, &mut stream);
         if hr != S_OK {
             break;
         }
         hr = CoUnmarshalInterface(
             stream,
-            &IID_IMoniker,
-            &mut *rgelt.offset(i as isize) as *mut *mut IMoniker as *mut LPVOID,
+            core::ptr::addr_of!(IID_IMoniker),
+            rgelt.add(i as usize) as *mut LPVOID,
         );
         IStream_Release(stream);
         if hr != S_OK {
@@ -903,324 +1778,62 @@ unsafe fn EnumMonikerImpl_Next(
         S_FALSE
     }
 }
-
-unsafe fn RunningObjectTableImpl_IsRunning(
-    iface: *mut IRunningObjectTable,
-    pmkObjectName: *mut IMoniker,
-) -> HRESULT {
-    let This = impl_from_IRunningObjectTable(iface);
-    let mut moniker_data: *mut MonikerComparisonData = core::ptr::null_mut();
-    let mut hr: HRESULT;
-    let mut pmkObjectName = pmkObjectName;
-
-    hr = reduce_moniker(pmkObjectName, core::ptr::null_mut(), &mut pmkObjectName);
-    if hr < 0 {
-        return hr;
-    }
-    hr = get_moniker_comparison_data(pmkObjectName, &mut moniker_data);
-    IMoniker_Release(pmkObjectName);
-    if hr != 0 {
-        return hr;
-    }
-
-    hr = 1;
-    EnterCriticalSection(&mut (*This).lock);
-    let mut current = (*This).rot.next;
-    while current != &mut (*This).rot as *mut LIST_ENTRY {
-        let rot_entry = (current as *const u8).offset(-(core::mem::offset_of!(rot_entry, entry) as isize)) as *const rot_entry;
-        if (*(*rot_entry).moniker_data).ulCntData == (*moniker_data).ulCntData
-            && memcmp(
-                (*moniker_data).abData.as_ptr() as *const _,
-                (*(*rot_entry).moniker_data).abData.as_ptr() as *const _,
-                (*moniker_data).ulCntData as usize,
-            ) == 0
-        {
-            hr = 0;
-            break;
-        }
-        current = (*current).next;
-    }
-    LeaveCriticalSection(&mut (*This).lock);
-
-    if hr == 1 {
-        loop {
-            hr = IrotIsRunning(get_irot_handle(), moniker_data);
-            if hr == ((0x80070000u32 | RPC_S_SERVER_UNAVAILABLE) as i32) {
-                if start_rpcss() != 0 {
-                    continue;
-                }
-            }
-            break;
-        }
-    }
-
-    HeapFree(GetProcessHeap(), 0, moniker_data as LPVOID);
-    hr
 }
 
-unsafe fn RunningObjectTableImpl_GetObject(
-    iface: *mut IRunningObjectTable,
-    pmkObjectName: *mut IMoniker,
-    ppunkObject: *mut *mut IUnknown,
-) -> HRESULT {
-    let This = impl_from_IRunningObjectTable(iface);
-    let mut moniker_data: *mut MonikerComparisonData = core::ptr::null_mut();
-    let mut object: *mut InterfaceData = core::ptr::null_mut();
-    let mut cookie: IrotCookie = core::mem::zeroed();
-    let mut hr: HRESULT;
-    let mut pmkObjectName = pmkObjectName;
-
-    TRACE(b"(%p,%p,%p)\n\0".as_ptr() as PCHAR, This, pmkObjectName, ppunkObject);
-
-    if ppunkObject.is_null() {
-        return E_POINTER;
-    }
-
-    *ppunkObject = core::ptr::null_mut();
-
-    hr = reduce_moniker(pmkObjectName, core::ptr::null_mut(), &mut pmkObjectName);
-    if FAILED(hr) != 0 {
-        return hr;
-    }
-    hr = get_moniker_comparison_data(pmkObjectName, &mut moniker_data);
-    IMoniker_Release(pmkObjectName);
-    if hr != S_OK {
-        return hr;
-    }
-
-    EnterCriticalSection(&mut (*This).lock);
-    let mut current = (*This).rot.entry.next;
-    while current != &mut (*This).rot.entry as *mut LIST_ENTRY {
-        let rot_entry = (current as usize - core::mem::offset_of!(rot_entry, entry)) as *mut rot_entry;
-
-        if (*(*rot_entry).moniker_data).ulCntData == (*moniker_data).ulCntData
-            && memcmp(
-                (*moniker_data).abData.as_ptr() as *const _,
-                (*(*rot_entry).moniker_data).abData.as_ptr() as *const _,
-                (*moniker_data).ulCntData as usize,
-            ) == 0
-        {
-            let mut pStream: *mut IStream = core::ptr::null_mut();
-            hr = create_stream_on_mip_ro((*rot_entry).object, &mut pStream);
-            if hr == S_OK {
-                hr = CoUnmarshalInterface(pStream, &IID_IUnknown, ppunkObject as *mut LPVOID);
-                IStream_Release(pStream);
-            }
-
-            LeaveCriticalSection(&mut (*This).lock);
-            HeapFree(GetProcessHeap(), 0, moniker_data as LPVOID);
-
-            return hr;
-        }
-        current = (*current).next;
-    }
-    LeaveCriticalSection(&mut (*This).lock);
-
-    TRACE(b"moniker unavailable locally, calling SCM\n\0".as_ptr() as PCHAR);
-
-    loop {
-        hr = IrotGetObject(get_irot_handle(), moniker_data, &mut object, &mut cookie);
-
-        if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) {
-            if start_rpcss() != 0 {
-                continue;
-            }
-        }
-        break;
-    }
-
-    if SUCCEEDED(hr) != 0 {
-        let mut pStream: *mut IStream = core::ptr::null_mut();
-        hr = create_stream_on_mip_ro(object, &mut pStream);
-        if hr == S_OK {
-            hr = CoUnmarshalInterface(pStream, &IID_IUnknown, ppunkObject as *mut LPVOID);
-            IStream_Release(pStream);
-        }
-    } else {
-        WARN(b"Moniker unavailable, IrotGetObject returned 0x%08x\n\0".as_ptr() as PCHAR, hr);
-    }
-
-    HeapFree(GetProcessHeap(), 0, moniker_data as LPVOID);
-    return hr;
-}
-
-unsafe extern "system" fn RunningObjectTableImpl_GetTimeOfLastChange(
-    iface: *mut IRunningObjectTable,
-    pmkObjectName: *mut IMoniker,
-    pfiletime: *mut FILETIME,
-) -> HRESULT {
-    let mut hr: HRESULT = MK_E_UNAVAILABLE;
-    let This = impl_from_IRunningObjectTable(iface);
-    let mut moniker_data: *mut MonikerComparisonData = core::ptr::null_mut();
-    let mut pmkObjectName = pmkObjectName;
-
-    TRACE(b"(%p,%p,%p)\n\0".as_ptr() as LPCWSTR, This, pmkObjectName, pfiletime);
-
-    if pmkObjectName.is_null() || pfiletime.is_null() {
-        return E_INVALIDARG;
-    }
-
-    hr = reduce_moniker(pmkObjectName, core::ptr::null_mut(), &mut pmkObjectName);
-    if FAILED(hr) {
-        return hr;
-    }
-    hr = get_moniker_comparison_data(pmkObjectName, &mut moniker_data);
-    IMoniker_Release(pmkObjectName);
-    if hr != S_OK {
-        return hr;
-    }
-
-    hr = MK_E_UNAVAILABLE;
-
-    EnterCriticalSection(&mut (*This).lock);
-    LIST_FOR_EACH_ENTRY!(
-        rot_entry,
-        core::ptr::addr_of_mut!((*This).rot),
-        rot_entry,
-        entry,
-        {
-            if (*rot_entry).moniker_data.as_ref().unwrap().ulCntData == (*moniker_data).ulCntData
-                && memcmp(
-                    (*moniker_data).abData.as_ptr() as *const core::ffi::c_void,
-                    (*rot_entry).moniker_data.as_ref().unwrap().abData.as_ptr() as *const core::ffi::c_void,
-                    (*moniker_data).ulCntData as usize,
-                ) == 0
-            {
-                *pfiletime = (*rot_entry).last_modified;
-                hr = S_OK;
-                break;
-            }
-        }
-    );
-    LeaveCriticalSection(&mut (*This).lock);
-
-    if hr != S_OK {
-        loop {
-            hr = IrotGetTimeOfLastChange(get_irot_handle(), moniker_data, pfiletime);
-            if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) {
-                if start_rpcss() != 0 {
-                    continue;
-                }
-            }
-            break;
-        }
-    }
-
-    HeapFree(GetProcessHeap(), 0, moniker_data as LPVOID);
-    TRACE(b"-- 0x%08x\n\0".as_ptr() as LPCWSTR, hr);
-    hr
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn MkParseDisplayName(
-    pbc: *mut core::ffi::c_void,
-    szDisplayName: LPCWSTR,
-    pchEaten: LPDWORD,
-    ppmk: *mut *mut core::ffi::c_void,
-) -> HRESULT {
-    extern "C" {
-        fn IsValidInterface(punk: *mut core::ffi::c_void) -> i32;
-        fn _wcsnicmp(s1: LPCWSTR, s2: LPCWSTR, n: usize) -> i32;
-        fn ClassMoniker_CreateFromDisplayName(
-            pbc: *mut core::ffi::c_void,
-            szDisplayName: LPCWSTR,
-            pchEaten: LPDWORD,
-            ppmk: *mut *mut core::ffi::c_void,
-        ) -> HRESULT;
-        fn FileMoniker_CreateFromDisplayName(
-            pbc: *mut core::ffi::c_void,
-            szDisplayName: LPCWSTR,
-            pchEaten: LPDWORD,
-            ppmk: *mut *mut core::ffi::c_void,
-        ) -> HRESULT;
-}
-
-    const MK_E_SYNTAX: HRESULT = 0x800401E4u32 as i32;
-    const S_OK: HRESULT = 0;
-    const E_INVALIDARG: HRESULT = 0x80070057u32 as i32;
-
-    let mut hr: HRESULT = MK_E_SYNTAX;
-    static wszClsidColon: [u16; 6] = [b'c' as u16, b'l' as u16, b's' as u16, b'i' as u16, b'd' as u16, b':' as u16];
-    let mut moniker: *mut core::ffi::c_void;
-    let mut chEaten: u32;
-
-    TRACE(b"(%p, %s, %p, %p)\n\0".as_ptr() as *const i8, pbc, debugstr_w(szDisplayName), pchEaten, ppmk);
-
-    if pbc.is_null() || IsValidInterface(pbc) == 0 {
-        return E_INVALIDARG;
-    }
-
-    if szDisplayName.is_null() || *szDisplayName == 0 {
-        return E_INVALIDARG;
-    }
-
-    if pchEaten.is_null() || ppmk.is_null() {
-        return E_INVALIDARG;
-    }
-
-    *pchEaten = 0;
-    *ppmk = core::ptr::null_mut();
-
-    if _wcsnicmp(szDisplayName, wszClsidColon.as_ptr(), 6) == 0 {
-        hr = ClassMoniker_CreateFromDisplayName(pbc, szDisplayName, &mut chEaten, &mut moniker);
-        if hr < 0 && hr != MK_E_SYNTAX {
-            return hr;
-        }
-    } else {
-        hr = get_moniker_for_progid_display_name(pbc, szDisplayName, &mut chEaten, &mut moniker);
-        if hr < 0 && hr != MK_E_SYNTAX {
-            return hr;
-        }
-    }
-
-    if hr < 0 {
-        hr = FileMoniker_CreateFromDisplayName(pbc, szDisplayName, &mut chEaten, &mut moniker);
-        if hr < 0 && hr != MK_E_SYNTAX {
-            return hr;
-        }
-    }
-
-    if hr >= 0 {
-        let mut szDisplayName = szDisplayName;
-        loop {
-            let mut next_moniker: *mut core::ffi::c_void;
-            *pchEaten += chEaten;
-            szDisplayName = szDisplayName.add(chEaten as usize);
-            if *szDisplayName == 0 {
-                *ppmk = moniker;
-                return S_OK;
-            }
-            chEaten = 0;
-            hr = IMoniker_ParseDisplayName(
-                moniker,
-                pbc,
-                core::ptr::null_mut(),
-                szDisplayName as LPWSTR,
-                &mut chEaten,
-                &mut next_moniker,
-            );
-            IMoniker_Release(moniker);
-            if hr < 0 {
-                *pchEaten = 0;
-                break;
-            }
-            moniker = next_moniker;
-        }
-    }
-
-    hr
-}
-
-unsafe extern "system" fn EnumMonikerImpl_Clone(iface: *mut IEnumMoniker, ppenum: *mut *mut IEnumMoniker) -> HRESULT {
+/***********************************************************************
+ *        EnumMoniker_Skip
+ */
+stdmethod! {
+fn EnumMonikerImpl_Skip(iface: *mut IEnumMoniker, celt: ULONG) -> HRESULT {
     let This = impl_from_IEnumMoniker(iface);
-    let mut moniker_list: *mut InterfaceList;
+
+    TRACE!(b"(%p)\n\0".as_ptr(), This);
+
+    if (*This).pos + celt >= (*(*This).moniker_list).size {
+        return S_FALSE;
+    }
+
+    (*This).pos += celt;
+
+    S_OK
+}
+}
+
+/***********************************************************************
+ *        EnumMoniker_Reset
+ */
+stdmethod! {
+fn EnumMonikerImpl_Reset(iface: *mut IEnumMoniker) -> HRESULT {
+    let This = impl_from_IEnumMoniker(iface);
+
+    (*This).pos = 0; /* set back to start of list */
+
+    TRACE!(b"(%p)\n\0".as_ptr(), This);
+
+    S_OK
+}
+}
+
+/***********************************************************************
+ *        EnumMoniker_Clone
+ */
+stdmethod! {
+fn EnumMonikerImpl_Clone(iface: *mut IEnumMoniker, ppenum: *mut *mut IEnumMoniker) -> HRESULT {
+    let This = impl_from_IEnumMoniker(iface);
+    let moniker_list: *mut InterfaceList;
     let mut i: ULONG;
 
-    TRACE(b"(%p)\n\0".as_ptr() as PCHAR, This);
+    TRACE!(b"(%p)\n\0".as_ptr(), This);
 
     *ppenum = core::ptr::null_mut();
 
-    moniker_list = HeapAlloc(GetProcessHeap(), 0, FIELD_OFFSET(InterfaceList, interfaces[(*(*This).moniker_list).size as usize])) as *mut InterfaceList;
+    moniker_list = HeapAlloc(
+        GetProcessHeap(),
+        0,
+        (core::mem::offset_of!(InterfaceList, interfaces)
+            + (*(*This).moniker_list).size as usize * core::mem::size_of::<PInterfaceData>())
+            as SIZE_T,
+    ) as *mut InterfaceList;
     if moniker_list.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -1228,519 +1841,348 @@ unsafe extern "system" fn EnumMonikerImpl_Clone(iface: *mut IEnumMoniker, ppenum
     (*moniker_list).size = (*(*This).moniker_list).size;
     i = 0;
     while i < (*(*This).moniker_list).size {
-        let size = FIELD_OFFSET(InterfaceData, abData[(*(*(*This).moniker_list).interfaces[i as usize]).ulCntData as usize]);
-        (*moniker_list).interfaces[i as usize] = HeapAlloc(GetProcessHeap(), 0, size) as *mut InterfaceData;
-        if (*moniker_list).interfaces[i as usize].is_null() {
+        let src = *(*(*This).moniker_list).interfaces.as_ptr().add(i as usize);
+        let size: usize =
+            core::mem::offset_of!(InterfaceData, abData) + (*src).ulCntData as usize;
+        let dst = HeapAlloc(GetProcessHeap(), 0, size as SIZE_T) as *mut InterfaceData;
+        *(*moniker_list).interfaces.as_mut_ptr().add(i as usize) = dst;
+        if dst.is_null() {
             let end = i;
             i = 0;
             while i < end {
-                HeapFree(GetProcessHeap(), 0, (*moniker_list).interfaces[i as usize] as LPVOID);
+                HeapFree(
+                    GetProcessHeap(),
+                    0,
+                    *(*moniker_list).interfaces.as_ptr().add(i as usize) as LPVOID,
+                );
                 i += 1;
             }
             HeapFree(GetProcessHeap(), 0, moniker_list as LPVOID);
             return E_OUTOFMEMORY;
         }
-        memcpy((*moniker_list).interfaces[i as usize] as *mut core::ffi::c_void, (*(*(*This).moniker_list).interfaces[i as usize]) as *const core::ffi::c_void, size);
+        memcpy(dst as *mut c_void, src as *const c_void, size);
         i += 1;
     }
 
-    return EnumMonikerImpl_CreateEnumROTMoniker(moniker_list, (*This).pos, ppenum);
+    /* copy the enum structure */
+    EnumMonikerImpl_CreateEnumROTMoniker(moniker_list, (*This).pos, ppenum)
+}
 }
 
-unsafe fn MonikerMarshalInner_QueryInterface(
-    iface: *mut IUnknown,
-    riid: *const IID,
-    ppv: *mut LPVOID,
+/* Virtual function table for the IEnumMoniker class. */
+static VT_EnumMonikerImpl: IEnumMonikerVtbl = IEnumMonikerVtbl {
+    QueryInterface: Some(EnumMonikerImpl_QueryInterface),
+    AddRef: Some(EnumMonikerImpl_AddRef),
+    Release: Some(EnumMonikerImpl_Release),
+    Next: Some(EnumMonikerImpl_Next),
+    Skip: Some(EnumMonikerImpl_Skip),
+    Reset: Some(EnumMonikerImpl_Reset),
+    Clone: Some(EnumMonikerImpl_Clone),
+};
+
+/***********************************************************************
+ *        EnumMonikerImpl_CreateEnumROTMoniker
+ *        Used by EnumRunning to create the structure and EnumClone
+ *        to copy the structure
+ */
+unsafe fn EnumMonikerImpl_CreateEnumROTMoniker(
+    moniker_list: *mut InterfaceList,
+    current_pos: ULONG,
+    ppenumMoniker: *mut *mut IEnumMoniker,
 ) -> HRESULT {
-    let This = impl_from_IUnknown(iface);
-    TRACE(b"(%s, %p)\n\0".as_ptr() as *const i8, debugstr_guid(riid), ppv);
-    *ppv = core::ptr::null_mut();
-    if IsEqualIID(riid, &IID_IUnknown) != 0 || IsEqualIID(riid, &IID_IMarshal) != 0 {
-        *ppv = core::ptr::addr_of_mut!((*This).IMarshal_iface) as LPVOID;
-        IMarshal_AddRef(core::ptr::addr_of_mut!((*This).IMarshal_iface));
-        return S_OK;
-    }
-    FIXME(b"No interface for %s\n\0".as_ptr() as *const i8, debugstr_guid(riid));
-    E_NOINTERFACE
-}
+    let This: *mut EnumMonikerImpl;
 
-unsafe fn MonikerMarshalInner_AddRef(iface: *mut IUnknown) -> ULONG {
-    let This = impl_from_IUnknown(iface);
-    InterlockedIncrement(&mut (*This).ref_) as ULONG
-}
-
-unsafe fn MonikerMarshalInner_Release(iface: *mut IUnknown) -> ULONG {
-    let This = impl_from_IUnknown(iface);
-    let ref_ = InterlockedDecrement(&mut (*This).ref_);
-
-    if ref_ == 0 {
-        HeapFree(GetProcessHeap(), 0, This as LPVOID);
-    }
-    ref_ as ULONG
-}
-
-unsafe fn MonikerMarshal_QueryInterface(iface: *mut IMarshal, riid: *const IID, ppv: *mut LPVOID) -> HRESULT {
-    let This = impl_from_IMarshal(iface);
-    IMoniker_QueryInterface((*This).moniker, riid, ppv)
-}
-
-unsafe fn MonikerMarshal_AddRef(iface: *mut IMarshal) -> ULONG {
-    let This = impl_from_IMarshal(iface);
-    IMoniker_AddRef((*This).moniker)
-}
-
-unsafe fn MonikerMarshal_Release(iface: *mut IMarshal) -> ULONG {
-    let This = impl_from_IMarshal(iface);
-    IMoniker_Release((*This).moniker)
-}
-
-unsafe extern "system" fn MonikerMarshal_GetUnmarshalClass(
-    iface: *mut IMarshal,
-    riid: *const IID,
-    pv: *mut core::ffi::c_void,
-    dwDestContext: u32,
-    pvDestContext: *mut core::ffi::c_void,
-    mshlflags: u32,
-    pCid: *mut CLSID,
-) -> HRESULT {
-
-
-    let This = impl_from_IMarshal(iface);
-
-    TRACE(
-        b"(%s, %p, %x, %p, %x, %p)\n\0".as_ptr(),
-        debugstr_guid(riid),
-        pv,
-        dwDestContext,
-        pvDestContext,
-        mshlflags,
-        pCid,
-    );
-
-    IMoniker_GetClassID((*This).moniker, pCid)
-}
-
-unsafe fn MonikerMarshal_GetMarshalSizeMax(
-    iface: *mut IMarshal,
-    riid: *const IID,
-    pv: *mut core::ffi::c_void,
-    dwDestContext: u32,
-    pvDestContext: *mut core::ffi::c_void,
-    mshlflags: u32,
-    pSize: *mut u32,
-) -> HRESULT {
-    let this = impl_from_IMarshal(iface);
-    let mut size: ULARGE_INTEGER = core::mem::zeroed();
-
-
-
-    TRACE(
-        b"(%s, %p, %x, %p, %x, %p)\n\0".as_ptr(),
-        debugstr_guid(riid),
-        pv,
-        dwDestContext,
-        pvDestContext,
-        mshlflags,
-        pSize,
-    );
-
-    let hr = IMoniker_GetSizeMax((*this).moniker, &mut size);
-    if hr == 0 {
-        *pSize = *size.QuadPart as u32;
-    }
-    hr
-}
-
-unsafe extern "system" fn MonikerMarshal_MarshalInterface(
-    iface: *mut IMarshal,
-    pStm: *mut IStream,
-    riid: *const IID,
-    pv: *mut core::ffi::c_void,
-    dwDestContext: DWORD,
-    pvDestContext: *mut core::ffi::c_void,
-    mshlflags: DWORD,
-) -> HRESULT {
-    let This = impl_from_IMarshal(iface);
-
-    TRACE(
-        b"(%p, %s, %p, %x, %p, %x)\n\0".as_ptr() as *const i8,
-        pStm,
-        debugstr_guid(riid),
-        pv,
-        dwDestContext,
-        pvDestContext,
-        mshlflags,
-    );
-
-    IMoniker_Save((*This).moniker, pStm, 0u8)
-}
-
-unsafe fn MonikerMarshal_UnmarshalInterface(
-    iface: *mut IMarshal,
-    pStm: *mut IStream,
-    riid: *const IID,
-    ppv: *mut *mut core::ffi::c_void,
-) -> HRESULT {
-    let this = impl_from_IMarshal(iface);
-    let mut hr: HRESULT;
-
-    TRACE(
-        b"(%p, %s, %p)\n\0".as_ptr() as *const i8,
-        pStm,
-        debugstr_guid(riid),
-        ppv,
-    );
-
-    hr = IMoniker_Load((*this).moniker, pStm);
-    if hr == 0 {
-        hr = IMoniker_QueryInterface((*this).moniker, riid, ppv);
-    }
-    hr
-}
-
-unsafe fn rot_entry_delete(rot_entry: *mut rot_entry) {
-    if (*rot_entry).cookie != 0 {
-        let mut object: *mut InterfaceData = core::ptr::null_mut();
-        let mut moniker: *mut InterfaceData = core::ptr::null_mut();
-
-        IrotRevoke(
-            get_irot_handle(),
-            (*rot_entry).cookie,
-            core::ptr::addr_of_mut!((*rot_entry).ctxt_handle),
-            core::ptr::addr_of_mut!(object),
-            core::ptr::addr_of_mut!(moniker),
-        );
-
-        MIDL_user_free(object as LPVOID);
-        if !moniker.is_null() {
-            let mut stream: *mut IStream = core::ptr::null_mut();
-            let hr = create_stream_on_mip_ro(moniker, core::ptr::addr_of_mut!(stream));
-            if hr == 0 {
-                CoReleaseMarshalData(stream);
-                IStream_Release(stream);
-            }
-        }
-        MIDL_user_free(moniker as LPVOID);
-    }
-    if !(*rot_entry).object.is_null() {
-        let mut stream: *mut IStream = core::ptr::null_mut();
-        let hr = create_stream_on_mip_ro((*rot_entry).object, core::ptr::addr_of_mut!(stream));
-        if hr == 0 {
-            CoReleaseMarshalData(stream);
-            IStream_Release(stream);
-        }
-    }
-    HeapFree(GetProcessHeap(), 0, (*rot_entry).object as LPVOID);
-    HeapFree(GetProcessHeap(), 0, (*rot_entry).moniker_data as LPVOID);
-    HeapFree(GetProcessHeap(), 0, rot_entry as LPVOID);
-}
-
-unsafe fn RunningObjectTableImpl_Destroy() -> HRESULT {
-    let mut cursor: *mut LIST_ENTRY;
-    let mut cursor2: *mut LIST_ENTRY;
-    let old_handle: IrotHandle;
-
-    TRACE(b"()\n\0".as_ptr() as *const i8);
-
-    if runningObjectTableInstance.is_null() {
+    if ppenumMoniker.is_null() {
         return E_INVALIDARG;
     }
 
-    LIST_FOR_EACH_SAFE(
-        cursor,
-        cursor2,
-        core::ptr::addr_of_mut!((*runningObjectTableInstance).rot)
-    );
-    while !cursor.is_null() {
-        let rot_entry = CONTAINING_RECORD!(cursor, rot_entry, entry);
-        list_remove(core::ptr::addr_of_mut!((*rot_entry).entry));
-        rot_entry_delete(rot_entry);
-        cursor = cursor2;
-        if !cursor2.is_null() {
-            cursor2 = (*cursor2).Flink;
-        }
+    This = HeapAlloc(
+        GetProcessHeap(),
+        0,
+        core::mem::size_of::<EnumMonikerImpl>() as SIZE_T,
+    ) as *mut EnumMonikerImpl;
+    if This.is_null() {
+        return E_OUTOFMEMORY;
     }
 
-    DEBUG_CLEAR_CRITSEC_NAME(core::ptr::addr_of_mut!((*runningObjectTableInstance).lock));
-    DeleteCriticalSection(core::ptr::addr_of_mut!((*runningObjectTableInstance).lock));
+    TRACE!(b"(%p)\n\0".as_ptr(), This);
 
-    HeapFree(GetProcessHeap(), 0, runningObjectTableInstance as LPVOID);
-    runningObjectTableInstance = core::ptr::null_mut();
+    /* initialize the virtual table function */
+    (*This).IEnumMoniker_iface.lpVtbl =
+        &VT_EnumMonikerImpl as *const IEnumMonikerVtbl as *mut IEnumMonikerVtbl;
 
-    old_handle = irot_handle;
-    irot_handle = core::ptr::null_mut();
-    if !old_handle.is_null() {
-        RpcBindingFree(core::ptr::addr_of_mut!(old_handle as IrotHandle) as *mut *mut core::ffi::c_void);
-    }
+    /* the initial reference is set to "1" */
+    (*This).ref_ = 1; /* set the ref count to one         */
+    (*This).pos = current_pos; /* Set the list start posn */
+    (*This).moniker_list = moniker_list;
+
+    *ppenumMoniker = core::ptr::addr_of_mut!((*This).IEnumMoniker_iface);
 
     S_OK
 }
 
-unsafe fn RunningObjectTableImpl_Release(iface: *mut IRunningObjectTable) -> ULONG {
-    let This = impl_from_IRunningObjectTable(iface);
-    let ref_ = InterlockedDecrement(&mut (*This).ref_);
+/* Shared implementation of moniker marshaler based on saving and loading of
+ * monikers */
+
+#[repr(C)]
+pub struct MonikerMarshal {
+    pub IUnknown_iface: IUnknown,
+    pub IMarshal_iface: IMarshal,
+    pub ref_: LONG,
+    pub moniker: *mut IMoniker,
+}
+
+unsafe fn impl_from_IUnknown(iface: *mut IUnknown) -> *mut MonikerMarshal {
+    CONTAINING_RECORD!(iface, MonikerMarshal, IUnknown_iface)
+}
+
+unsafe fn impl_from_IMarshal(iface: *mut IMarshal) -> *mut MonikerMarshal {
+    CONTAINING_RECORD!(iface, MonikerMarshal, IMarshal_iface)
+}
+
+stdmethod! {
+fn MonikerMarshalInner_QueryInterface(
+    iface: *mut IUnknown,
+    riid: *const IID,
+    ppv: *mut *mut c_void,
+) -> HRESULT {
+    let This = impl_from_IUnknown(iface);
+    TRACE!(b"(%s, %p)\n\0".as_ptr(), debugstr_guid(riid), ppv);
+    *ppv = core::ptr::null_mut();
+    if IsEqualIID(core::ptr::addr_of!(IID_IUnknown), riid)
+        || IsEqualIID(core::ptr::addr_of!(IID_IMarshal), riid)
+    {
+        *ppv = core::ptr::addr_of_mut!((*This).IMarshal_iface) as *mut c_void;
+        IMarshal_AddRef(core::ptr::addr_of_mut!((*This).IMarshal_iface));
+        return S_OK;
+    }
+    FIXME!(b"No interface for %s\n\0".as_ptr(), debugstr_guid(riid));
+    E_NOINTERFACE
+}
+}
+
+stdmethod! {
+fn MonikerMarshalInner_AddRef(iface: *mut IUnknown) -> ULONG {
+    let This = impl_from_IUnknown(iface);
+    InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG
+}
+}
+
+stdmethod! {
+fn MonikerMarshalInner_Release(iface: *mut IUnknown) -> ULONG {
+    let This = impl_from_IUnknown(iface);
+    let ref_ = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG;
 
     if ref_ == 0 {
-        let mut cursor = (*This).rot.Flink;
-        while cursor != core::ptr::addr_of_mut!((*This).rot) {
-            let next = (*cursor).Flink;
-            let rot_entry = CONTAINING_RECORD!(cursor, rot_entry, entry);
-            list_remove(&mut (*rot_entry).entry);
-            rot_entry_delete(rot_entry);
-            cursor = next;
-        }
+        HeapFree(GetProcessHeap(), 0, This as LPVOID);
     }
-
-    ref_ as ULONG
+    ref_
+}
 }
 
-unsafe fn RunningObjectTableImpl_Register(
-    iface: *mut IRunningObjectTable,
-    grfFlags: DWORD,
-    punkObject: *mut IUnknown,
-    pmkObjectName: *mut IMoniker,
-    pdwRegister: LPDWORD,
+static VT_MonikerMarshalInner: IUnknownVtbl = IUnknownVtbl {
+    QueryInterface: Some(MonikerMarshalInner_QueryInterface),
+    AddRef: Some(MonikerMarshalInner_AddRef),
+    Release: Some(MonikerMarshalInner_Release),
+};
+
+stdmethod! {
+fn MonikerMarshal_QueryInterface(
+    iface: *mut IMarshal,
+    riid: *const IID,
+    ppv: *mut *mut c_void,
 ) -> HRESULT {
-    let This = impl_from_IRunningObjectTable(iface);
-    let mut rot_entry: *mut rot_entry;
-    let mut hr: HRESULT = S_OK;
-    let mut pStream: *mut IStream = core::ptr::null_mut();
-    let mshlflags: DWORD;
-    let mut pbc: *mut IBindCtx;
-    let mut moniker: *mut InterfaceData = core::ptr::null_mut();
-
-    extern "C" {
-
-        fn CoFileTimeNow(lpFileTime: *mut FILETIME) -> HRESULT;
-        fn CoMarshalInterface(
-            pStm: *mut IStream,
-            riid: *const IID,
-            pUnk: *mut IUnknown,
-            dwDestContext: DWORD,
-            pvDestContext: LPVOID,
-            mshlflags: DWORD,
-        ) -> HRESULT;
-        fn CreateBindCtx(reserved: DWORD, ppbc: *mut *mut IBindCtx) -> HRESULT;
-        fn CreateStreamOnHGlobal(hGlobal: HGLOBAL, fDeleteOnRelease: i32, ppstm: *mut *mut IStream) -> HRESULT;
-        fn FIELD_OFFSET(type_: *const (), field: *const ()) -> usize;
-        fn GetExceptionCode() -> DWORD;
-        fn GetHGlobalFromStream(pstm: *mut IStream, phglobal: *mut HGLOBAL) -> HRESULT;
-        fn IrotRegister(
-            handle: IrotHandle,
-            moniker_data: *const MonikerComparisonData,
-            object: *const InterfaceData,
-            moniker: *const InterfaceData,
-            pfiletime: *const FILETIME,
-            grfFlags: DWORD,
-            cookie: *mut DWORD,
-            ctxt_handle: *mut IrotContextHandle,
-        ) -> HRESULT;
-        fn memcpy(dest: *mut (), src: *const (), n: usize) -> *mut ();
+    let This = impl_from_IMarshal(iface);
+    IMoniker_QueryInterface((*This).moniker, riid, ppv)
+}
 }
 
-    TRACE(
-        b"(%p,%d,%p,%p,%p)\n\0".as_ptr() as *const i8,
-        This,
-        grfFlags,
-        punkObject,
-        pmkObjectName,
-        pdwRegister,
+stdmethod! {
+fn MonikerMarshal_AddRef(iface: *mut IMarshal) -> ULONG {
+    let This = impl_from_IMarshal(iface);
+    IMoniker_AddRef((*This).moniker)
+}
+}
+
+stdmethod! {
+fn MonikerMarshal_Release(iface: *mut IMarshal) -> ULONG {
+    let This = impl_from_IMarshal(iface);
+    IMoniker_Release((*This).moniker)
+}
+}
+
+stdmethod! {
+fn MonikerMarshal_GetUnmarshalClass(
+    iface: *mut IMarshal,
+    riid: *const IID,
+    pv: *mut c_void,
+    dwDestContext: DWORD,
+    pvDestContext: *mut c_void,
+    mshlflags: DWORD,
+    pCid: *mut CLSID,
+) -> HRESULT {
+    let This = impl_from_IMarshal(iface);
+
+    TRACE!(
+        b"(%s, %p, %x, %p, %x, %p)\n\0".as_ptr(),
+        debugstr_guid(riid),
+        pv,
+        dwDestContext,
+        pvDestContext,
+        mshlflags,
+        pCid
     );
 
-    if (grfFlags & !(ROTFLAGS_REGISTRATIONKEEPSALIVE | ROTFLAGS_ALLOWANYCLIENT)) != 0 {
-        ERR(
-            b"Invalid grfFlags: 0x%08x\n\0".as_ptr() as *const i8,
-            grfFlags & !(ROTFLAGS_REGISTRATIONKEEPSALIVE | ROTFLAGS_ALLOWANYCLIENT),
-        );
-        return E_INVALIDARG;
-    }
+    IMoniker_GetClassID((*This).moniker, pCid)
+}
+}
 
-    if punkObject.is_null() || pmkObjectName.is_null() || pdwRegister.is_null() {
-        return E_INVALIDARG;
-    }
+stdmethod! {
+fn MonikerMarshal_GetMarshalSizeMax(
+    iface: *mut IMarshal,
+    riid: *const IID,
+    pv: *mut c_void,
+    dwDestContext: DWORD,
+    pvDestContext: *mut c_void,
+    mshlflags: DWORD,
+    pSize: *mut DWORD,
+) -> HRESULT {
+    let This = impl_from_IMarshal(iface);
+    let hr: HRESULT;
+    let mut size: ULARGE_INTEGER = core::mem::zeroed();
 
-    rot_entry = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<rot_entry>()) as *mut rot_entry;
-    if rot_entry.is_null() {
+    TRACE!(
+        b"(%s, %p, %x, %p, %x, %p)\n\0".as_ptr(),
+        debugstr_guid(riid),
+        pv,
+        dwDestContext,
+        pvDestContext,
+        mshlflags,
+        pSize
+    );
+
+    hr = IMoniker_GetSizeMax((*This).moniker, &mut size);
+    if hr == S_OK {
+        *pSize = size.QuadPart as DWORD;
+    }
+    hr
+}
+}
+
+stdmethod! {
+fn MonikerMarshal_MarshalInterface(
+    iface: *mut IMarshal,
+    pStm: *mut IStream,
+    riid: *const IID,
+    pv: *mut c_void,
+    dwDestContext: DWORD,
+    pvDestContext: *mut c_void,
+    mshlflags: DWORD,
+) -> HRESULT {
+    let This = impl_from_IMarshal(iface);
+
+    TRACE!(
+        b"(%p, %s, %p, %x, %p, %x)\n\0".as_ptr(),
+        pStm,
+        debugstr_guid(riid),
+        pv,
+        dwDestContext,
+        pvDestContext,
+        mshlflags
+    );
+
+    IMoniker_Save((*This).moniker, pStm, 0 /* FALSE */)
+}
+}
+
+stdmethod! {
+fn MonikerMarshal_UnmarshalInterface(
+    iface: *mut IMarshal,
+    pStm: *mut IStream,
+    riid: *const IID,
+    ppv: *mut *mut c_void,
+) -> HRESULT {
+    let This = impl_from_IMarshal(iface);
+    let mut hr: HRESULT;
+
+    TRACE!(b"(%p, %s, %p)\n\0".as_ptr(), pStm, debugstr_guid(riid), ppv);
+
+    hr = IMoniker_Load((*This).moniker, pStm);
+    if hr == S_OK {
+        hr = IMoniker_QueryInterface((*This).moniker, riid, ppv);
+    }
+    hr
+}
+}
+
+stdmethod! {
+fn MonikerMarshal_ReleaseMarshalData(iface: *mut IMarshal, pStm: *mut IStream) -> HRESULT {
+    TRACE!(b"()\n\0".as_ptr());
+    /* can't release a state-based marshal as nothing on server side to
+     * release */
+    S_OK
+}
+}
+
+stdmethod! {
+fn MonikerMarshal_DisconnectObject(iface: *mut IMarshal, dwReserved: DWORD) -> HRESULT {
+    TRACE!(b"()\n\0".as_ptr());
+    /* can't disconnect a state-based marshal as nothing on server side to
+     * disconnect from */
+    S_OK
+}
+}
+
+static VT_MonikerMarshal: IMarshalVtbl = IMarshalVtbl {
+    QueryInterface: Some(MonikerMarshal_QueryInterface),
+    AddRef: Some(MonikerMarshal_AddRef),
+    Release: Some(MonikerMarshal_Release),
+    GetUnmarshalClass: Some(MonikerMarshal_GetUnmarshalClass),
+    GetMarshalSizeMax: Some(MonikerMarshal_GetMarshalSizeMax),
+    MarshalInterface: Some(MonikerMarshal_MarshalInterface),
+    UnmarshalInterface: Some(MonikerMarshal_UnmarshalInterface),
+    ReleaseMarshalData: Some(MonikerMarshal_ReleaseMarshalData),
+    DisconnectObject: Some(MonikerMarshal_DisconnectObject),
+};
+
+/// moniker.c: `HRESULT MonikerMarshal_Create(IMoniker *inner, IUnknown **outer)` — a
+/// plain (cdecl) ole32-internal entry point, called by every moniker flavor's
+/// QueryInterface(IID_IMarshal). NOT WINAPI, so `extern "C"` is correct here.
+#[no_mangle]
+pub unsafe extern "C" fn MonikerMarshal_Create(
+    inner: *mut IMoniker,
+    outer: *mut *mut IUnknown,
+) -> HRESULT {
+    let This = HeapAlloc(
+        GetProcessHeap(),
+        0,
+        core::mem::size_of::<MonikerMarshal>() as SIZE_T,
+    ) as *mut MonikerMarshal;
+    if This.is_null() {
         return E_OUTOFMEMORY;
     }
 
-    hr = CreateStreamOnHGlobal(core::ptr::null_mut(), 1, &mut pStream);
-    if hr != S_OK {
-        rot_entry_delete(rot_entry);
-        return hr;
-    }
-    mshlflags = if (grfFlags & ROTFLAGS_REGISTRATIONKEEPSALIVE) != 0 {
-        MSHLFLAGS_TABLESTRONG
-    } else {
-        MSHLFLAGS_TABLEWEAK
-    };
-    hr = CoMarshalInterface(
-        pStream,
-        &IID_IUnknown,
-        punkObject,
-        MSHCTX_LOCAL | MSHCTX_NOSHAREDMEM,
-        core::ptr::null_mut(),
-        mshlflags,
-    );
-    if hr == S_OK {
-        let mut hglobal: HGLOBAL = core::ptr::null_mut();
-        hr = GetHGlobalFromStream(pStream, &mut hglobal);
-        if hr == S_OK {
-            let size = GlobalSize(hglobal);
-            let pv = GlobalLock(hglobal);
-            (*rot_entry).object = HeapAlloc(
-                GetProcessHeap(),
-                0,
-                core::mem::offset_of!(MInterfacePointer, abData) + size,
-            ) as *mut InterfaceData;
-            (*(*rot_entry).object).ulCntData = size as ULONG;
-            memcpy(
-                (*(*rot_entry).object).abData.as_mut_ptr() as *mut (),
-                pv,
-                size,
-            );
-            GlobalUnlock(hglobal);
-        }
-    }
-    IStream_Release(pStream);
-    if hr != S_OK {
-        rot_entry_delete(rot_entry);
-        return hr;
-    }
+    (*This).IUnknown_iface.lpVtbl =
+        &VT_MonikerMarshalInner as *const IUnknownVtbl as *mut IUnknownVtbl;
+    (*This).IMarshal_iface.lpVtbl = &VT_MonikerMarshal as *const IMarshalVtbl as *mut IMarshalVtbl;
+    (*This).ref_ = 1;
+    (*This).moniker = inner;
 
-    hr = CreateBindCtx(0, &mut pbc);
-    if FAILED(hr) != 0 {
-        rot_entry_delete(rot_entry);
-        return hr;
-    }
-
-    hr = reduce_moniker(pmkObjectName, pbc, &mut pmkObjectName);
-    if FAILED(hr) != 0 {
-        rot_entry_delete(rot_entry);
-        IBindCtx_Release(pbc);
-        return hr;
-    }
-
-    hr = IMoniker_GetTimeOfLastChange(
-        pmkObjectName,
-        pbc,
-        core::ptr::null_mut(),
-        &mut (*rot_entry).last_modified,
-    );
-    IBindCtx_Release(pbc);
-    if FAILED(hr) != 0 {
-        CoFileTimeNow(&mut (*rot_entry).last_modified);
-        hr = S_OK;
-    }
-
-    hr = get_moniker_comparison_data(pmkObjectName, &mut (*rot_entry).moniker_data);
-    if hr != S_OK {
-        rot_entry_delete(rot_entry);
-        IMoniker_Release(pmkObjectName);
-        return hr;
-    }
-
-    hr = CreateStreamOnHGlobal(core::ptr::null_mut(), 1, &mut pStream);
-    if hr != S_OK {
-        rot_entry_delete(rot_entry);
-        IMoniker_Release(pmkObjectName);
-        return hr;
-    }
-    hr = CoMarshalInterface(
-        pStream,
-        &IID_IMoniker,
-        pmkObjectName as *mut IUnknown,
-        MSHCTX_LOCAL | MSHCTX_NOSHAREDMEM,
-        core::ptr::null_mut(),
-        MSHLFLAGS_TABLESTRONG,
-    );
-    if hr == S_OK {
-        let mut hglobal: HGLOBAL = core::ptr::null_mut();
-        hr = GetHGlobalFromStream(pStream, &mut hglobal);
-        if hr == S_OK {
-            let size = GlobalSize(hglobal);
-            let pv = GlobalLock(hglobal);
-            moniker = HeapAlloc(
-                GetProcessHeap(),
-                0,
-                core::mem::offset_of!(InterfaceData, abData) + size,
-            ) as *mut InterfaceData;
-            (*moniker).ulCntData = size as ULONG;
-            memcpy((*moniker).abData.as_mut_ptr() as *mut (), pv, size);
-            GlobalUnlock(hglobal);
-        }
-    }
-    IStream_Release(pStream);
-    IMoniker_Release(pmkObjectName);
-    if hr != S_OK {
-        HeapFree(GetProcessHeap(), 0, moniker as LPVOID);
-        rot_entry_delete(rot_entry);
-        return hr;
-    }
-
-    loop {
-        hr = IrotRegister(
-            get_irot_handle(),
-            (*rot_entry).moniker_data,
-            (*rot_entry).object,
-            moniker,
-            &(*rot_entry).last_modified,
-            grfFlags,
-            &mut (*rot_entry).cookie,
-            &mut (*rot_entry).ctxt_handle,
-        );
-        if hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) {
-            if start_rpcss() != 0 {
-                continue;
-            }
-        }
-        break;
-    }
-
-    hr
+    *outer = core::ptr::addr_of_mut!((*This).IUnknown_iface);
+    S_OK
 }
 
-unsafe fn RunningObjectTableImpl_Revoke(
-    iface: *mut IRunningObjectTable,
-    dwRegister: DWORD,
-) -> HRESULT {
-    let This = impl_from_IRunningObjectTable(iface);
-
-    TRACE(b"(%p,%d)\n\0".as_ptr() as LPCWSTR, This, dwRegister);
-
-    EnterCriticalSection(core::ptr::addr_of_mut!((*This).lock));
-
-    let mut current = (*This).rot.Flink;
-    while current != core::ptr::addr_of_mut!((*This).rot) {
-        let rot_entry = CONTAINING_RECORD!(current, rot_entry, entry) as *mut rot_entry;
-
-        if (*rot_entry).cookie == dwRegister {
-            list_remove(core::ptr::addr_of_mut!((*rot_entry).entry));
-            LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
-
-            rot_entry_delete(rot_entry);
-            return S_OK;
-        }
-
-        current = (*current).Flink;
-    }
-
-    LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
-
-    E_INVALIDARG
-}
-
+/// rpcndr.h: `void * __RPC_USER MIDL_user_allocate(SIZE_T)` — __RPC_USER is __stdcall
+/// (rpc.h), so this MUST be `extern "system"`: the RPC runtime + the widl-generated
+/// irot_c.c stubs call it through that ABI. An `extern "C"` spelling links on
+/// amd64/arm64 and corrupts the stack on i386.
 #[no_mangle]
-pub unsafe extern "system" fn RunningObjectTableImpl_UnInitialize() -> HRESULT {
-    TRACE(b"\n\0".as_ptr() as LPCWSTR);
+pub unsafe extern "system" fn MIDL_user_allocate(size: SIZE_T) -> LPVOID {
+    HeapAlloc(GetProcessHeap(), 0, size)
+}
 
-    if runningObjectTableInstance.is_null() {
-        return E_POINTER;
-    }
-
-    RunningObjectTableImpl_Release(core::ptr::addr_of_mut!((*runningObjectTableInstance).IRunningObjectTable_iface));
-
-    RunningObjectTableImpl_Destroy();
-
-    return S_OK;
+/// rpcndr.h: `void __RPC_USER MIDL_user_free(void *)` — see MIDL_user_allocate.
+#[no_mangle]
+pub unsafe extern "system" fn MIDL_user_free(p: LPVOID) {
+    HeapFree(GetProcessHeap(), 0, p);
 }
