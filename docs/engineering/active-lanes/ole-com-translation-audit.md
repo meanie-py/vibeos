@@ -4,28 +4,43 @@
 below were produced against the 2026-07-11 tree + the main checkout's `build-amd64`
 binaries.*
 
-## ✅ STATUS (2026-07-12) — both ole32 AND oleaut32 Rust cohab boots ×3 arches
+## ✅ STATUS (2026-07-12) — oleaut32 is **fully Rust**; ole32 core is Rust
 
-**Milestone: oleaut32's Rust COM-automation runtime boots i386/amd64/arm64 to desktop**
-(building on the earlier ole32 COM-runtime milestone). `oleaut32-rust` burned down from
-4,696 → 0 rustc errors ×3 targets, cohab-flipped into `dll/win32/oleaut32/CMakeLists.txt`,
-and linked into `oleaut32.dll`. All three arches: `✓ boot` (amd64 also `✓ net`).
+**Milestone: every C TU of `oleaut32.dll` that has a Rust twin is now flipped** —
+the whole automation surface (BSTR, VARIANT, the coercion matrix, SAFEARRAY, the
+typelib reader/writer, IDispatch, user-marshal) runs Rust and boots i386/amd64/arm64
+to desktop. Landed `7dd3a9e0038` (flip commit `a6be654f7b8`), full cold
+`vibeos-cli gate` ×3 green.
 
-**What's Rust now in `oleaut32.dll` (flipped C TUs — Rust wins first-match):**
+**Rust in `oleaut32.dll` (flipped C TUs — Rust wins first-match):**
 - `hash.c` → `hash.rs` (LHashValOfNameSys A/W)
 - `variant.c` → `variant.rs` (VariantInit/Clear/Copy/ChangeType + arithmetic; 36 exports)
 - `vartype.c` → `vartype.rs` (the VarXxxFromYyy coercion matrix; 253 exports)
 - `usrmarshal.c` → `usrmarshal.rs` (VARIANT/BSTR/LPSAFEARRAY user-marshal + proxy/stub; 93)
+- `safearray.c` → `safearray.rs` (SAFEARRAY; the 4 public ctors added 07-12)
+- `oleaut.c` → `oleaut.rs` (SysAllocString family + DllGetClassObject/proxy-stub + OleTranslateColor)
+- `dispatch.c` → `dispatch.rs` (CreateStdDispatch/DispInvoke/DispGetIDsOfNames/DispGetParam)
+- `typelib.c` → `typelib.rs` + `typelib/` (LoadTypeLib/RegisterTypeLib/CreateTypeLib*/
+  DispCallFunc/ClearCustData + the ITypeInfo/ITypeLib/ITypeComp objects and the MSFT+SLTG
+  binary `.tlb` readers and writer)
 
-**Still C (partial Rust twin, next flips — see "Owed" below):**
-- `safearray.c` — kept C; `safearray.rs` missing `SafeArrayCreate/CreateEx/CreateVector*`
-- `oleaut.c` — kept C; `oleaut.rs` missing the `CLSID_PSFactoryBuffer` data ref
-- `dispatch.c`, `typelib.c` — kept C; `dispatch.rs` (4) / `typelib.rs`+submodules (16) partial
+**Still C in oleaut32** (never translated; no twin — not on the boot/import surface):
+`connpt.c`, `olefont.c`, `olepicture.c`, `olepropframe.c`, `recinfo.c`, `varformat.c`.
 
 Link-order rule that shaped this: the C `.obj`s precede `liboleaut32_rust.a` and
 `--allow-multiple-definition` takes first-match, so a Rust twin only wins when its `.c`
 is commented out — and must then FULLY cover that TU's exports. Only comment out a TU
 whose Rust twin is a complete export match.
+
+**The `initguid.h` trap (worth remembering — this class recurs on any wine-style flip):**
+`oleaut.c` carried `#include "initguid.h"`, which is what turned the `DEFINE_GUID`s in the
+headers it subsequently included into *definitions*. Flipping it out silently removed the
+only definition site for 7 proxy CLSIDs (`CLSID_PSFactoryBuffer`, `CLSID_PS{Dispatch,
+EnumVariant,TypeInfo,TypeLib,OAInterface,TypeComp}`) → link-time undefined. The generated
+widl proxy only *declares* them (`PROXY_CLSID=CLSID_PSFactoryBuffer` expands to
+`extern CLSID CLSID_PSFactoryBuffer;`). Fix: `oleaut.rs` is now their `#[no_mangle]`
+definition site. **Before flipping any `.c` that includes `initguid.h`, check what GUID
+data it was silently defining.**
 
 **Bugs the flip surfaced + fixed (all committed):**
 - `VarCyCmp` returned VARCMP_GT/EQ transposed (GT=1/EQ=2; correct GT=2/EQ=1).
@@ -34,22 +49,33 @@ whose Rust twin is a complete export match.
   kernel); flipped 72 `_Stub`/`_Proxy` defs + the WINAPI/RPC extern decls to
   `extern "system"` for correct `_Name@N` stdcall decoration.
 
-**Committed on `research`:** 84179cd (burn-down 0×3), 0086d34 (amd64 flip + boot),
-86b8677 (i386 SSE + stdcall sweep). Full clean `vibeos-cli gate` ×3 in flight to mint
-the push stamp; push is pre-authorized on ×3-clean-green (user-personal note).
-
 ### Owed follow-ups (tracked; none block the current boot)
-1. **Complete `safearray.rs`** — translate `SafeArrayCreate/CreateEx/CreateVector/
-   CreateVectorEx` from safearray.c, then flip `safearray.c` out.
-2. **Complete `oleaut.rs`** — resolve the `CLSID_PSFactoryBuffer` ref (proxy CLSID), flip
-   `oleaut.c` out.
-3. **Complete `dispatch.rs` / `typelib.rs`** (+ the fable submodules) to full export
-   coverage, then flip `dispatch.c`/`typelib.c` out.
+1. ~~Complete `safearray.rs`~~ — **DONE 07-12** (the 4 ctors were the only gap; the
+   internal `SAFEARRAY_Create`/`_CreateVector`/`_GetVTSize` helpers were already translated).
+2. ~~Complete `oleaut.rs`~~ — **DONE 07-12** (the "missing CLSID_PSFactoryBuffer ref" was
+   really the `initguid.h` definition-site problem above).
+3. ~~Complete `dispatch.rs` / `typelib.rs`~~ — **DONE 07-12**; both twins already had full
+   export coverage (dispatch's 4; typelib's 13 spread across `typelib.rs` + `dispcall`/
+   `writer`/`typecomp`). They were only still C because the flip had never been *attempted*.
+   Lesson: re-derive coverage from the symbol tables before assuming a twin is partial.
 4. **Unify the `olesys::ITypeLib`/`ACTCTX`/`GUID` mirror types with `com_sys::*`** — the
    fable lane self-mirrored a few COM types; they're layout-identical (bridged with safe
    casts, one benign redeclaration warning) but should collapse onto com-sys.
+   *Assessed 07-12: the real overlap is ONE bridge cast (`olesys::ITypeLib` at oleaut.rs's
+   `LoadTypeLib` call). Low value, non-trivial COM-vtable-layout risk on a booting system —
+   deliberately deferred, not forgotten.*
 5. `oleaut32-rust` carries ~600 raw-translation warnings (unused mut/parens/unsafe) —
    a `cargo fix` cosmetic pass.
+
+### arm64 netstack-TDI flake — observed again during this flip's gating (NOT caused by it)
+The 07-12 gating hit `HANG_TIMEOUT` on arm64 twice, both wedged at the identical point
+(`[NETSTACK] TDI server: accept 0x00000000`). Isolation run (worktree at the merge-base,
+i.e. same tree WITHOUT the OLE flip): **baseline 8/8 green, flipped tree 7/9** — and the
+last 10 boots (5 on each tree, run concurrently) were all green. `netstack-rust` is a
+**kernel driver**; `oleaut32.dll` is user-mode, so there is no call path — a user-mode flip
+can only shift boot timing and *expose* the race. Read as the known §9.36 arm64
+netstack-TDI/0x1E residual surfacing under host load, not a regression. Re-gate came back
+×3 green. **If you see this in a gate, don't chase it into the OLE lane.**
 
 **Do NOT** re-run the fable lanes or rustconv streams — all outputs exist in
 `~/vibeos-rust-staging/{ole32-lane-a,ole32-lane-b,oleaut32-rustconv}/` + their MANIFESTs.
