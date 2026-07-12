@@ -327,7 +327,7 @@ pub unsafe extern "system" fn FatAcquireFcbForReadAhead(
     //  and complete the request with hard errors or verify.  It will
     //  have to deal with them, somehow....
 
-    assert!(IoGetTopLevelIrp().is_null());
+    debug_assert!(IoGetTopLevelIrp().is_null());
 
     IoSetTopLevelIrp(FSRTL_CACHE_TOP_LEVEL_IRP);
 
@@ -368,7 +368,7 @@ pub unsafe extern "system" fn FatAcquireForCcFlush(
     let _ = DeviceObject;
 
     // NT_ASSERT( IoGetTopLevelIrp() != (PIRP)FSRTL_CACHE_TOP_LEVEL_IRP );
-    core::assert!(!IoGetTopLevelIrp().is_null() && IoGetTopLevelIrp() != FSRTL_CACHE_TOP_LEVEL_IRP);
+    core::debug_assert!(!IoGetTopLevelIrp().is_null() && IoGetTopLevelIrp() != FSRTL_CACHE_TOP_LEVEL_IRP);
 
     if IoGetTopLevelIrp().is_null() {
         IoSetTopLevelIrp(FSRTL_CACHE_TOP_LEVEL_IRP);

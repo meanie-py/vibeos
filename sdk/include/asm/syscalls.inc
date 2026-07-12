@@ -55,13 +55,35 @@ SyscallId = 0
 #ifdef _M_IX86
 #define KUSER_SHARED_SYSCALL HEX(7ffe0300)
 #define KGDT_R0_CODE 8
+/* User stubs dispatch through the Wow64Transition slot (defined in ntdll.S):
+ * statically -> KiIndirectSystemCall (jmp [SharedUserData->SystemCall], the
+ * old direct path) for native i386 boots; under WoW64 the host wow64.dll
+ * patches the slot in the guest ntdll32 mapping (per-process COW page) to the
+ * CPU layer's BOP bridge — Win10-parity, one binary for system32 AND syswow64.
+ * Stack shape at the transition target is unchanged (ret-to-stub at [esp],
+ * ret-to-caller at [esp+4], args at [esp+8]). */
 MACRO(STUBCODE_U, Name, SyscallId, ArgCount)
     StackBytes = 4 * ArgCount
     FPO 0, 0, 0, 0, 0, FRAME_FPO
     mov eax, SyscallId
-    mov edx, KUSER_SHARED_SYSCALL
-    call dword ptr [edx]
+    call dword ptr [_Wow64Transition]
     ret StackBytes
+ENDM
+/* Instantiate ONCE in every i386 TU that expands STUB_U (ntdll.S,
+ * win32ss/sys-stubs.S): the slot the stubs call through plus its native
+ * fallback. Win10 keeps one such slot per syscall-stub module too (ntdll32,
+ * win32u) — the WoW64 host patches each module's slot separately. */
+MACRO(DEFINE_WOW64_TRANSITION)
+PUBLIC _KiIndirectSystemCall
+_KiIndirectSystemCall:
+    mov edx, KUSER_SHARED_SYSCALL
+    jmp dword ptr [edx]
+.data
+.align 4
+PUBLIC _Wow64Transition
+_Wow64Transition:
+    .long _KiIndirectSystemCall
+.code
 ENDM
 MACRO(STUBCODE_K, Name, SyscallId, ArgCount)
     StackBytes = 4 * \ArgCount

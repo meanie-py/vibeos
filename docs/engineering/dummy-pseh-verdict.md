@@ -115,6 +115,22 @@ Empirically re-tested on our exact llvm-mingw clang 19.1.7 (2026-07-06):
 - **i386: genuinely broken** (`L__ehtable$...` assembler-label errors — the
   32-bit SEH lowering is MSVC-env-only). i386 would need PSEH_CLANG
   (written, disabled, "TODO: debug") — a permanent second mechanism.
+- **FORCEINLINE callees inside `__try` become undefined symbols**
+  (found 2026-07-10, conformance lane, kmtests): clang refuses to inline
+  ANY callee lexically inside a `__try` region (funclet EH restriction,
+  every -O level), and our mingw C `__forceinline` is
+  `extern inline __attribute__((always_inline, gnu_inline))`
+  (`sdk/include/vcruntime/_mingw.h:194`) — **GNU inline semantics, which
+  never emit an out-of-line body**. So every header-only FORCEINLINE SDK
+  helper called inside `__try` (`RtlSecureZeroMemory`,
+  `RtlInitEmptyUnicodeString`, `_InterlockedAdd64` on amd64, …) links fine
+  under DUMMY_PSEH and breaks the moment a module flips to
+  `_USE_NATIVE_SEH`. Fix pattern: one shim TU per module providing real
+  out-of-line definitions **without including the SDK headers** (same-TU
+  redefinition of a gnu_inline function is an error) — see
+  `modules/rostests/kmtests/kmt_native_seh_shims.c`. Note the C99
+  extern-declaration trick (6.7.4p7) does NOT work here — gnu_inline
+  inverts it. Budget for this in any future native-SEH migration sweep.
 - **The runtime dispatch chain is fully present and real** — this audit
   traced it end-to-end: amd64 ntoskrnl.exe already *contains*
   `__C_specific_handler` + `RtlDispatchException` + `RtlUnwindEx` +

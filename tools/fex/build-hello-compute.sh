@@ -40,6 +40,34 @@ ninja -C "$HARNESS_BUILD" fexprobe wow64probe
     -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
     -o "$HARNESS_BUILD/hello32.exe" "$HARNESS_SRC/Hello32.c"
 
+# gui32.exe — the wow64win guest (M4): no CRT, but REAL kernel32+gdi32 imports
+# resolved from the build-i386 spec2def importlibs (the guest loader pulls the
+# actual i386 DLLs from syswow64 at run time). Exercises the win32k thunk
+# table via a direct display DC — no user-mode callbacks.
+I386_BUILD="${VIBEOS_I386_BUILD:-$REPO_ROOT/build-i386}"
+if [ -f "$I386_BUILD/win32ss/gdi/gdi32/CMakeFiles/libgdi32.dir/libgdi32.a" ]; then
+    "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
+        -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -o "$HARNESS_BUILD/gui32.exe" "$HARNESS_SRC/Gui32.c" \
+        "$I386_BUILD/win32ss/gdi/gdi32/CMakeFiles/libgdi32.dir/libgdi32.a" \
+        "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+else
+    echo "[!] gui32.exe skipped: build-i386 importlibs missing ($I386_BUILD)"
+fi
+
+# win32.exe — the M8 window-creation guest: user32 RegisterClass/CreateWindow +
+# a real message pump (forces user32 client connect + kernel→user callbacks).
+if [ -f "$I386_BUILD/win32ss/user/user32/CMakeFiles/libuser32.dir/libuser32.a" ]; then
+    "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
+        -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -o "$HARNESS_BUILD/win32.exe" "$HARNESS_SRC/Win32App.c" \
+        "$I386_BUILD/win32ss/user/user32/CMakeFiles/libuser32.dir/libuser32.a" \
+        "$I386_BUILD/win32ss/gdi/gdi32/CMakeFiles/libgdi32.dir/libgdi32.a" \
+        "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+else
+    echo "[!] win32.exe skipped: build-i386 user32 importlib missing ($I386_BUILD)"
+fi
+
 echo
 echo "Built:"
-ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe "$HARNESS_BUILD"/hello32.exe
+ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe "$HARNESS_BUILD"/hello32.exe "$HARNESS_BUILD"/gui32.exe "$HARNESS_BUILD"/win32.exe 2>/dev/null || true

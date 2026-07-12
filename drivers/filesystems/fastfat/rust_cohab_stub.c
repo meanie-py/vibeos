@@ -526,7 +526,28 @@ VOID _SEH2_END(VOID)                   { }
 NTSTATUS _SEH2_GetExceptionCode(VOID)  { return STATUS_SUCCESS; }
 PVOID _SEH2_GetExceptionInformation(VOID) { return NULL; }
 BOOLEAN _SEH2_AbnormalTermination(VOID){ return FALSE; }
-VOID SEH_TRY_EXCEPT(PVOID a0, PVOID a1, PVOID a2, PVOID a3) { (void)a0;(void)a1;(void)a2;(void)a3; }
+/*
+ * SEH_TRY_EXCEPT is NOT a dead SEH2 macro — it is the real control-flow wrapper
+ * fastfat-rust's FatFsdDirectoryControl uses to run its __try body. The exception
+ * path (filter/except) IS dead under USE_DUMMY_PSEH, but the TRY BODY MUST STILL
+ * RUN. The previous no-op stub meant FatFsdDirectoryControl returned its init
+ * STATUS_SUCCESS without ever creating an IrpContext or calling
+ * FatCommonDirectoryControl → every NtQueryDirectoryFile silently returned an
+ * empty result → FindFirstFileW failed → the shell's ParseDisplayName of any
+ * profile path (e.g. the Start Menu folder) got ERROR_FILE_NOT_FOUND → the arm64
+ * start menu never opened. arm64-only in practice because arm64 boots a FAT
+ * ramdisk (fastfat); x86 boots the LiveCD (cdfs). The callbacks are Rust
+ * `extern "system"` == NTAPI on every arch.
+ */
+VOID SEH_TRY_EXCEPT(PVOID ctx,
+                    VOID (NTAPI *try_fn)(PVOID),
+                    PVOID filter_fn,
+                    PVOID except_fn)
+{
+    (void)filter_fn;
+    (void)except_fn;
+    try_fn(ctx);
+}
 VOID try_return(PVOID x)               { (void)x; }
 
 /* ======================================================================

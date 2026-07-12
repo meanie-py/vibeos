@@ -1,5 +1,24 @@
 # UI Render-Completeness — the desktop reaches a *stable but incomplete* render
 
+> **ARCHIVED 2026-07-11 — screen-painting lane closed, all layers fixed, start menu green ×3 arches.**
+> This began as the amd64 "stable but incomplete render" investigation (root-caused +
+> fixed 2026-07-05, below). The lane then chased the arm64 taskbar/start-menu tail through
+> two more layers, all now landed on `master`:
+> - the FAT-enumeration cohab-stub family (`SEH_TRY_EXCEPT` / `try_return` no-op stubs +
+>   the `FatQueryDirectory` renumbered-enum bug) — field manual **§9.53**;
+> - the third fastfat layer: `FatQueryDirectory`'s Rust translation dropped most of the C
+>   `_SEH2_FINALLY` (kept the Ccb update + `FatCompleteRequest`, **lost** `FatReleaseFcb` /
+>   `FatUnpinBcb` / `FatFreeStringBuffer`), leaking a shared Fcb lock every directory query
+>   → the second `SHGetSpecialFolderLocation(CSIDL_PROGRAMS)` deadlocked once an exclusive
+>   acquire queued behind it (ERESOURCE fairness). arm64-only (boots a FAT ramdisk; x86 is
+>   CDFS). Sibling audit (FatAcquire* vs FatRelease* call-site counts) caught one more:
+>   `FatPnpQueryRemove` had no finally at all (latent, device-removal only) — fixed same pass.
+>
+> Fixes: `d083636001b` (FatQueryDirectory finally), `bf6bc3051b2` (FatPnpQueryRemove finally),
+> field manual §9.53 rewrite + dropped-finally audit recipe. Diagnostic CSM step-tracer parked
+> in stash `csm-probes:`. **No outstanding items** — arm64 shows the full taskbar (Start button,
+> window buttons, live tray clock) and `test_start_menu_opens` passes on all three arches.
+
 **Status: ROOT CAUSE FOUND + FIXED 2026-07-05.** One shared root, exactly as predicted:
 `win32k-rust/src/defwnd.rs` `IntDefWindowProc` had a `WM_CTLCOLOR =>` match arm whose
 constant **did not exist** in win32k-sys (windowsx.h macro, 0x19, never bindgen'd) — in

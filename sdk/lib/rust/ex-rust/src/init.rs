@@ -1245,6 +1245,83 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     InbvUpdateProgressBar(5);
 
+    // CONFIG_SMP (C-reference order): start the application processors
+    // BEFORE the Phase-1 Ob/Ex/Io inits — their per-processor loops iterate
+    // KeNumberProcessors, so every AP must exist first. Wiring this after
+    // ObInitSystem left CPU1's PRCB.PPLookasideList unset; the first
+    // ObCreateObject scheduled onto the AP AV'd in
+    // ObpAllocateObjectCreateInfoBuffer (M3 bring-up, 2026-07-11).
+    // NUMPROC/BOOTPROC/MAXPROC command-line caps still unplumbed.
+    #[cfg(feature = "smp")]
+    {
+        unsafe extern "system" {
+            fn KeStartAllProcessors();
+            fn HalAllProcessorsStarted() -> u8;
+        }
+        KeStartAllProcessors();
+        if HalAllProcessorsStarted() == 0 {
+            KeBugCheck(0x61); // HAL1_INITIALIZATION_FAILED
+        }
+
+        // M3 self-test: prove the KeIpiGenericCall rendezvous actually runs
+        // the worker on EVERY active processor (the amd64 implementation is
+        // new — nothing else on the boot path exercises it). Each CPU ORs
+        // its SetMember into the shared mask; a mismatch vs the active set
+        // is a hard protocol failure — bugcheck loud, never limp on.
+        {
+            use core::sync::atomic::{AtomicU64, Ordering};
+            // KeGetCurrentProcessorNumber via bindgen — hand-declaring it here
+            // decorates wrong on i386 (stdcall `_..@0` vs the real export) and
+            // broke the ntkrnlmp i386 link (gate 2026-07-11).
+            use ntkrnl_sys::ddk::KeGetCurrentProcessorNumber;
+            unsafe extern "system" {
+                fn KeIpiGenericCall(
+                    Function: Option<unsafe extern "C" fn(usize) -> usize>,
+                    Argument: usize,
+                ) -> usize;
+                static KeActiveProcessors: usize;
+                static KeNumberProcessors: i8;
+            }
+            unsafe extern "C" fn gc_selftest_worker(arg: usize) -> usize {
+                let mask = &*(arg as *const AtomicU64);
+                mask.fetch_or(1u64 << KeGetCurrentProcessorNumber(), Ordering::SeqCst);
+                0
+            }
+            // The AP publishes its KeActiveProcessors bit at idle-loop entry,
+            // which can trail KeStartAllProcessors returning — bounded wait.
+            let want = KeNumberProcessors as u32;
+            let mut spins: u64 = 0;
+            while (core::ptr::read_volatile(core::ptr::addr_of!(KeActiveProcessors)) as u64)
+                .count_ones() < want
+            {
+                core::hint::spin_loop();
+                spins += 1;
+                if spins > 500_000_000 {
+                    break; // fall through — the mismatch print below reports it
+                }
+            }
+            let active = core::ptr::read_volatile(core::ptr::addr_of!(KeActiveProcessors)) as u64;
+            let mask = AtomicU64::new(0);
+            KeIpiGenericCall(
+                Some(gc_selftest_worker),
+                core::ptr::addr_of!(mask) as usize,
+            );
+            let ran = mask.load(Ordering::SeqCst);
+            if ran == active {
+                crate::dbg_print!(
+                    b"[SMP] KeIpiGenericCall self-test: worker ran on 0x%llx == active set OK\n\0",
+                    ran
+                );
+            } else {
+                crate::dbg_print!(
+                    b"[SMP] KeIpiGenericCall self-test FAILED: ran 0x%llx vs active 0x%llx\n\0",
+                    ran, active
+                );
+                KeBugCheckEx(0x5C, 0x4743, ran as usize, active as usize, 0); // 0x4743 = 'GC'
+            }
+        }
+    }
+
     if ObInitSystem() == 0 {
         KeBugCheck(0x5F);
     }
@@ -1412,21 +1489,6 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         ZwSetSystemTime(core::ptr::null_mut(), core::ptr::null_mut());
     }
 
-    // CONFIG_SMP block from the C original (see the reference block below):
-    // start the application processors, then verify the HAL agrees they all
-    // came up. The NUMPROC/BOOTPROC/MAXPROC command-line caps are not yet
-    // plumbed (smp-bringup M2 — QEMU bring-up starts every MADT CPU).
-    #[cfg(feature = "smp")]
-    {
-        unsafe extern "system" {
-            fn KeStartAllProcessors();
-            fn HalAllProcessorsStarted() -> u8;
-        }
-        KeStartAllProcessors();
-        if HalAllProcessorsStarted() == 0 {
-            KeBugCheck(0x61); // HAL1_INITIALIZATION_FAILED
-        }
-    }
 
     if FsRtlInitSystem() == 0 {
         KeBugCheck(0x45);

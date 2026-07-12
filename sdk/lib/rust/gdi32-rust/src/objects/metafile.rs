@@ -22,6 +22,7 @@
 
 use win32k_sys::win32k::*;
 use crate::gdihelp::*;
+use crate::dcattr_f;
 
 // win32k_sys FALSE/TRUE are bindgen u32; BOOL is i32 — BOOL-typed shadows so
 // `return FALSE`/`return TRUE` type-check against the i32 BOOL returns.
@@ -81,7 +82,7 @@ pub unsafe extern "system" fn GdiIsPlayMetafileDC(hdc: HDC) -> BOOL {
     let pdcattr: PDC_ATTR = GdiGetDcAttr(hdc);
 
     if !pdcattr.is_null() {
-        return (((*pdcattr).ulDirty_ & DC_PLAYMETAFILE) != 0) as BOOL;
+        return (((*dcattr_f!(pdcattr, ulDirty_)) & DC_PLAYMETAFILE) != 0) as BOOL;
     }
     FALSE
 }

@@ -12,8 +12,8 @@ struct _SINGLE_LIST_ENTRY *__fastcall ExInterlockedPopEntrySList(union _SLIST_HE
 
 #include <kmt_test.h>
 
-/* TODO: SLIST_HEADER is a lot different for x64 */
-#ifndef _M_AMD64
+/* TODO: SLIST_HEADER is a lot different for x64 (and ARM64 uses the same 16-byte form) */
+#if !defined(_M_AMD64) && !defined(_M_ARM64)
 #define CheckSListHeader(ListHead, ExpectedPointer, ExpectedDepth) do   \
 {                                                                       \
     ok_eq_pointer((ListHead)->Next.Next, ExpectedPointer);              \
@@ -43,7 +43,7 @@ struct _SINGLE_LIST_ENTRY *__fastcall ExInterlockedPopEntrySList(union _SLIST_HE
 
 START_TEST(ExSequencedList)
 {
-#ifndef _M_AMD64
+#if !defined(_M_AMD64) && !defined(_M_ARM64)
     PSLIST_HEADER ListHead;
     KSPIN_LOCK SpinLock;
     USHORT ExpectedSequence = 0;

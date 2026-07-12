@@ -25,6 +25,7 @@
 
 use win32k_sys::win32k::*;
 use crate::gdihelp::*;
+use crate::dcattr_f;
 
 // win32k_sys's FALSE/TRUE are bindgen u32 (#define), but BOOL is i32 — shadow with
 // BOOL-typed locals so `== FALSE`/`return TRUE` type-check against the i32 BOOL returns.
@@ -516,7 +517,7 @@ pub unsafe extern "system" fn CancelDC(hDC: HDC) -> BOOL {
         &mut pDc_Attr as *mut PDC_ATTR as *mut PVOID,
     ) != 0
     {
-        (*pDc_Attr).ulDirty_ &= !(DC_PLAYMETAFILE as ULONG);
+        (*dcattr_f!(pDc_Attr, ulDirty_)) &= !(DC_PLAYMETAFILE as ULONG);
         return TRUE;
     }
 
@@ -609,9 +610,9 @@ pub unsafe extern "system" fn GetCurrentObject(hdc: HDC, uObjectType: UINT) -> H
 
     /* Check what object was requested */
     match uObjectType {
-        OBJ_EXTPEN | OBJ_PEN => return (*pdcattr).hpen as HGDIOBJ,
-        OBJ_BRUSH => return (*pdcattr).hbrush as HGDIOBJ,
-        OBJ_COLORSPACE => return (*pdcattr).hColorSpace as HGDIOBJ,
+        OBJ_EXTPEN | OBJ_PEN => return (*dcattr_f!(pdcattr, hpen)) as HGDIOBJ,
+        OBJ_BRUSH => return (*dcattr_f!(pdcattr, hbrush)) as HGDIOBJ,
+        OBJ_COLORSPACE => return (*dcattr_f!(pdcattr, hColorSpace)) as HGDIOBJ,
         OBJ_PAL => uObjectType = GDI_OBJECT_TYPE_PALETTE,
         OBJ_FONT => uObjectType = GDI_OBJECT_TYPE_FONT,
         OBJ_BITMAP => uObjectType = GDI_OBJECT_TYPE_BITMAP,
@@ -719,7 +720,7 @@ pub unsafe extern "system" fn GetDeviceCaps(hdc: HDC, nIndex: INT) -> INT {
             return 0;
         }
 
-        if ((*pdcattr).ulDirty_ & DC_PRIMARY_DISPLAY) == 0 {
+        if ((*dcattr_f!(pdcattr, ulDirty_)) & DC_PRIMARY_DISPLAY) == 0 {
             return NtGdiGetDeviceCaps(hdc, nIndex);
         }
     }
@@ -906,7 +907,7 @@ pub unsafe extern "system" fn GetDCBrushColor(hdc: HDC) -> COLORREF {
         return CLR_INVALID;
     }
 
-    (*pdcattr).ulBrushClr
+    (*dcattr_f!(pdcattr, ulBrushClr))
 }
 
 /*
@@ -921,7 +922,7 @@ pub unsafe extern "system" fn GetDCPenColor(hdc: HDC) -> COLORREF {
         return CLR_INVALID;
     }
 
-    (*pdcattr).ulPenClr
+    (*dcattr_f!(pdcattr, ulPenClr))
 }
 
 /*
@@ -956,12 +957,12 @@ pub unsafe extern "system" fn SetDCBrushColor(hdc: HDC, crColor: COLORREF) -> CO
     }
 
     /* Get old color and store the new */
-    crOldColor = (*pdcattr).ulBrushClr;
-    (*pdcattr).ulBrushClr = crColor;
+    crOldColor = (*dcattr_f!(pdcattr, ulBrushClr));
+    (*dcattr_f!(pdcattr, ulBrushClr)) = crColor;
 
-    if (*pdcattr).crBrushClr != crColor {
-        (*pdcattr).ulDirty_ |= DIRTY_FILL;
-        (*pdcattr).crBrushClr = crColor;
+    if (*dcattr_f!(pdcattr, crBrushClr)) != crColor {
+        (*dcattr_f!(pdcattr, ulDirty_)) |= DIRTY_FILL;
+        (*dcattr_f!(pdcattr, crBrushClr)) = crColor;
     }
 
     crOldColor
@@ -999,12 +1000,12 @@ pub unsafe extern "system" fn SetDCPenColor(hdc: HDC, crColor: COLORREF) -> COLO
     }
 
     /* Get old color and store the new */
-    crOldColor = (*pdcattr).ulPenClr;
-    (*pdcattr).ulPenClr = crColor as ULONG;
+    crOldColor = (*dcattr_f!(pdcattr, ulPenClr));
+    (*dcattr_f!(pdcattr, ulPenClr)) = crColor as ULONG;
 
-    if (*pdcattr).crPenClr != crColor {
-        (*pdcattr).ulDirty_ |= DIRTY_LINE;
-        (*pdcattr).crPenClr = crColor;
+    if (*dcattr_f!(pdcattr, crPenClr)) != crColor {
+        (*dcattr_f!(pdcattr, ulDirty_)) |= DIRTY_LINE;
+        (*dcattr_f!(pdcattr, crPenClr)) = crColor;
     }
 
     crOldColor
@@ -1022,7 +1023,7 @@ pub unsafe extern "system" fn GetBkColor(hdc: HDC) -> COLORREF {
         return CLR_INVALID;
     }
 
-    (*pdcattr).ulBackgroundClr
+    (*dcattr_f!(pdcattr, ulBackgroundClr))
 }
 
 /*
@@ -1058,12 +1059,12 @@ pub unsafe extern "system" fn SetBkColor(hdc: HDC, crColor: COLORREF) -> COLORRE
     }
 
     /* Get old color and store the new */
-    crOldColor = (*pdcattr).ulBackgroundClr;
-    (*pdcattr).ulBackgroundClr = crColor;
+    crOldColor = (*dcattr_f!(pdcattr, ulBackgroundClr));
+    (*dcattr_f!(pdcattr, ulBackgroundClr)) = crColor;
 
-    if (*pdcattr).crBackgroundClr != crColor {
-        (*pdcattr).ulDirty_ |= DIRTY_BACKGROUND | DIRTY_LINE | DIRTY_FILL;
-        (*pdcattr).crBackgroundClr = crColor;
+    if (*dcattr_f!(pdcattr, crBackgroundClr)) != crColor {
+        (*dcattr_f!(pdcattr, ulDirty_)) |= DIRTY_BACKGROUND | DIRTY_LINE | DIRTY_FILL;
+        (*dcattr_f!(pdcattr, crBackgroundClr)) = crColor;
     }
 
     crOldColor
@@ -1081,7 +1082,7 @@ pub unsafe extern "system" fn GetBkMode(hdc: HDC) -> INT {
         return 0;
     }
 
-    (*pdcattr).lBkMode
+    (*dcattr_f!(pdcattr, lBkMode))
 }
 
 /*
@@ -1122,9 +1123,9 @@ pub unsafe extern "system" fn SetBkMode(hdc: HDC, iBkMode: INT) -> INT {
         return 0;
     }
 
-    iOldMode = (*pdcattr).lBkMode;
-    (*pdcattr).jBkMode = iBkMode as BYTE; // Processed
-    (*pdcattr).lBkMode = iBkMode; // Raw
+    iOldMode = (*dcattr_f!(pdcattr, lBkMode));
+    (*dcattr_f!(pdcattr, jBkMode)) = iBkMode as BYTE; // Processed
+    (*dcattr_f!(pdcattr, lBkMode)) = iBkMode; // Raw
 
     iOldMode
 }
@@ -1141,7 +1142,7 @@ pub unsafe extern "system" fn GetROP2(hdc: HDC) -> INT {
         return 0;
     }
 
-    (*pdcattr).jROP2 as INT
+    (*dcattr_f!(pdcattr, jROP2)) as INT
 }
 
 /*
@@ -1177,14 +1178,14 @@ pub unsafe extern "system" fn SetROP2(hdc: HDC, rop2: INT) -> INT {
     }
 
     if (*NtCurrentTeb()).GdiTebBatch.HDC == hdc as HANDLE {
-        if ((*pdcattr).ulDirty_ & DC_MODE_DIRTY) != 0 {
+        if ((*dcattr_f!(pdcattr, ulDirty_)) & DC_MODE_DIRTY) != 0 {
             NtGdiFlush();
-            (*pdcattr).ulDirty_ &= !DC_MODE_DIRTY;
+            (*dcattr_f!(pdcattr, ulDirty_)) &= !DC_MODE_DIRTY;
         }
     }
 
-    rop2Old = (*pdcattr).jROP2 as INT;
-    (*pdcattr).jROP2 = rop2 as BYTE;
+    rop2Old = (*dcattr_f!(pdcattr, jROP2)) as INT;
+    (*dcattr_f!(pdcattr, jROP2)) = rop2 as BYTE;
 
     rop2Old
 }
@@ -1202,7 +1203,7 @@ pub unsafe extern "system" fn GetPolyFillMode(hdc: HDC) -> INT {
     }
 
     /* Return current fill mode */
-    (*pdcattr).lFillMode
+    (*dcattr_f!(pdcattr, lFillMode))
 }
 
 /*
@@ -1240,14 +1241,14 @@ pub unsafe extern "system" fn SetPolyFillMode(hdc: HDC, iPolyFillMode: INT) -> I
     }
 
     if (*NtCurrentTeb()).GdiTebBatch.HDC == hdc as HANDLE {
-        if ((*pdcattr).ulDirty_ & DC_MODE_DIRTY) != 0 {
+        if ((*dcattr_f!(pdcattr, ulDirty_)) & DC_MODE_DIRTY) != 0 {
             NtGdiFlush(); // Sync up pdcattr from Kernel space.
-            (*pdcattr).ulDirty_ &= !DC_MODE_DIRTY;
+            (*dcattr_f!(pdcattr, ulDirty_)) &= !DC_MODE_DIRTY;
         }
     }
 
-    iOldPolyFillMode = (*pdcattr).lFillMode;
-    (*pdcattr).lFillMode = iPolyFillMode;
+    iOldPolyFillMode = (*dcattr_f!(pdcattr, lFillMode));
+    (*dcattr_f!(pdcattr, lFillMode)) = iPolyFillMode;
 
     iOldPolyFillMode
 }
@@ -1265,7 +1266,7 @@ pub unsafe extern "system" fn GetGraphicsMode(hdc: HDC) -> INT {
     }
 
     /* Return current graphics mode */
-    (*pdcattr).iGraphicsMode
+    (*dcattr_f!(pdcattr, iGraphicsMode))
 }
 
 /*
@@ -1289,14 +1290,14 @@ pub unsafe extern "system" fn SetGraphicsMode(hdc: HDC, iMode: INT) -> INT {
     }
 
     /* Check for trivial case */
-    if iMode == (*pdcattr).iGraphicsMode {
+    if iMode == (*dcattr_f!(pdcattr, iGraphicsMode)) {
         return iMode;
     }
 
     if (*NtCurrentTeb()).GdiTebBatch.HDC == hdc as HANDLE {
-        if ((*pdcattr).ulDirty_ & DC_MODE_DIRTY) != 0 {
+        if ((*dcattr_f!(pdcattr, ulDirty_)) & DC_MODE_DIRTY) != 0 {
             NtGdiFlush(); // Sync up pdcattr from Kernel space.
-            (*pdcattr).ulDirty_ &= !DC_MODE_DIRTY;
+            (*dcattr_f!(pdcattr, ulDirty_)) &= !DC_MODE_DIRTY;
         }
     }
 
@@ -1305,8 +1306,8 @@ pub unsafe extern "system" fn SetGraphicsMode(hdc: HDC, iMode: INT) -> INT {
      * matrix. However, in Windows, this is not the case. This doesn't
      * make a lot of sense to me, but that's the way it is.
      */
-    iOldMode = (*pdcattr).iGraphicsMode;
-    (*pdcattr).iGraphicsMode = iMode;
+    iOldMode = (*dcattr_f!(pdcattr, iGraphicsMode));
+    (*dcattr_f!(pdcattr, iGraphicsMode)) = iMode;
 
     iOldMode
 }
@@ -1379,7 +1380,7 @@ pub unsafe extern "system" fn GetStretchBltMode(hdc: HDC) -> INT {
         return 0;
     }
 
-    (*pdcattr).lStretchBltMode
+    (*dcattr_f!(pdcattr, lStretchBltMode))
 }
 
 /*
@@ -1416,8 +1417,8 @@ pub unsafe extern "system" fn SetStretchBltMode(hdc: HDC, iStretchMode: INT) -> 
         return 0;
     }
 
-    iOldMode = (*pdcattr).lStretchBltMode;
-    (*pdcattr).lStretchBltMode = iStretchMode;
+    iOldMode = (*dcattr_f!(pdcattr, lStretchBltMode));
+    (*dcattr_f!(pdcattr, lStretchBltMode)) = iStretchMode;
 
     // Wine returns an error here. We set the default.
     let mut iStretchMode = iStretchMode;
@@ -1425,7 +1426,7 @@ pub unsafe extern "system" fn SetStretchBltMode(hdc: HDC, iStretchMode: INT) -> 
         iStretchMode = WHITEONBLACK as INT;
     }
 
-    (*pdcattr).jStretchBltMode = iStretchMode as BYTE;
+    (*dcattr_f!(pdcattr, jStretchBltMode)) = iStretchMode as BYTE;
 
     iOldMode
 }
@@ -1443,7 +1444,7 @@ pub unsafe extern "system" fn GetHFONT(hdc: HDC) -> HFONT {
     }
 
     /* Return the current font */
-    (*pdcattr).hlfntNew as HFONT
+    (*dcattr_f!(pdcattr, hlfntNew)) as HFONT
 }
 
 #[no_mangle]
@@ -1481,14 +1482,14 @@ pub unsafe extern "system" fn GdiSelectBrush(hdc: HDC, hbr: HBRUSH) -> HBRUSH {
     }
 
     /* Get the current brush. If it matches the new brush, we're done */
-    hbrOld = (*pdcattr).hbrush as HBRUSH;
+    hbrOld = (*dcattr_f!(pdcattr, hbrush)) as HBRUSH;
     if hbrOld == hbr {
         return hbrOld;
     }
 
     /* Set the new brush and update dirty flags */
-    (*pdcattr).hbrush = hbr as HANDLE;
-    (*pdcattr).ulDirty_ |= DC_BRUSH_DIRTY;
+    (*dcattr_f!(pdcattr, hbrush)) = hbr as HANDLE;
+    (*dcattr_f!(pdcattr, ulDirty_)) |= DC_BRUSH_DIRTY;
     hbrOld
 }
 
@@ -1522,14 +1523,14 @@ pub unsafe extern "system" fn GdiSelectPen(hdc: HDC, hpen: HPEN) -> HPEN {
     }
 
     /* Get the current pen. If it matches the new pen, we're done */
-    hpenOld = (*pdcattr).hpen as HPEN;
+    hpenOld = (*dcattr_f!(pdcattr, hpen)) as HPEN;
     if hpenOld == hpen {
         return hpenOld;
     }
 
     /* Set the new pen and update dirty flags */
-    (*pdcattr).ulDirty_ |= DC_PEN_DIRTY;
-    (*pdcattr).hpen = hpen as HANDLE;
+    (*dcattr_f!(pdcattr, ulDirty_)) |= DC_PEN_DIRTY;
+    (*dcattr_f!(pdcattr, hpen)) = hpen as HANDLE;
     hpenOld
 }
 
@@ -1564,18 +1565,18 @@ pub unsafe extern "system" fn GdiSelectFont(hdc: HDC, hfont: HFONT) -> HFONT {
     }
 
     /* Get the current font. If it matches the new font, we're done */
-    hfontOld = (*pdcattr).hlfntNew as HFONT;
+    hfontOld = (*dcattr_f!(pdcattr, hlfntNew)) as HFONT;
     if hfontOld == hfont {
         return hfontOld;
     }
 
     /* Set the new font and update dirty flags */
-    (*pdcattr).hlfntNew = hfont as HANDLE;
-    (*pdcattr).ulDirty_ &= !SLOW_WIDTHS;
-    (*pdcattr).ulDirty_ |= DIRTY_CHARSET;
+    (*dcattr_f!(pdcattr, hlfntNew)) = hfont as HANDLE;
+    (*dcattr_f!(pdcattr, ulDirty_)) &= !SLOW_WIDTHS;
+    (*dcattr_f!(pdcattr, ulDirty_)) |= DIRTY_CHARSET;
 
     /* If the DC does not have a DIB section selected, try a batch command */
-    if ((*pdcattr).ulDirty_ & DC_DIBSECTION) == 0 {
+    if ((*dcattr_f!(pdcattr, ulDirty_)) & DC_DIBSECTION) == 0 {
         let pgO: PGDIBSOBJECT = GdiAllocBatchCommand(hdc, crate::gdihelp::GdiBCSelObj) as PGDIBSOBJECT;
         if !pgO.is_null() {
             (*pgO).hgdiobj = hfont as HGDIOBJ;

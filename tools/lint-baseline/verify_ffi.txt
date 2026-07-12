@@ -28,7 +28,7 @@
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/create.rs:116: ObDereferenceObject: ObDereferenceObject is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/create.rs:146: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/devctrl.rs:28: IoSetCompletionRoutine: IoSetCompletionRoutine is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/fastfat-rust/src/dirctrl.rs:40: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/fastfat-rust/src/dirctrl.rs:42: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/fileinfo.rs:175: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/flush.rs:54: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/flush.rs:55: IoCopyCurrentIrpStackLocationToNext: IoCopyCurrentIrpStackLocationToNext is a C macro, not a real function — should be inlined in Rust
@@ -91,10 +91,10 @@
   [C_MACRO] sdk/lib/rust/winsrv-rust/src/consrv/condrv/coninput.rs:8: CONTAINING_RECORD: CONTAINING_RECORD is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/winsrv-rust/src/consrv/condrv/coninput.rs:9: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/wmi-rust/src/guidobj.rs:46: InitializeObjectAttributes: InitializeObjectAttributes is a C macro, not a real function — should be inlined in Rust
-  [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/dirsup.rs:1681: FileName: Direct indexing of flexible array _FILE_BOTH_DIR_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/dirsup.rs:1681: FileName: Direct indexing of flexible array _FILE_DIRECTORY_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/dirsup.rs:1681: FileName: Direct indexing of flexible array _FILE_FULL_DIR_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
-  [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/dirsup.rs:1681: FileName: Direct indexing of flexible array _FILE_NAMES_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
+  [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/dirsup.rs:1691: FileName: Direct indexing of flexible array _FILE_BOTH_DIR_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
+  [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/dirsup.rs:1691: FileName: Direct indexing of flexible array _FILE_DIRECTORY_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
+  [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/dirsup.rs:1691: FileName: Direct indexing of flexible array _FILE_FULL_DIR_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
+  [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/dirsup.rs:1691: FileName: Direct indexing of flexible array _FILE_NAMES_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/namesup.rs:172: FileName: Direct indexing of flexible array _FILE_BOTH_DIR_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/namesup.rs:172: FileName: Direct indexing of flexible array _FILE_DIRECTORY_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])
   [FLEX_ARRAY] sdk/lib/rust/fastfat-rust/src/namesup.rs:172: FileName: Direct indexing of flexible array _FILE_FULL_DIR_INFORMATION.FileName — use pointer arithmetic instead (bindgen declares as [T; 1])

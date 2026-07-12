@@ -410,7 +410,11 @@ sdk/lib/rust/
 ├── ntoskrnl-cargo/         # PRODUCTION cargo-driven ntoskrnl.exe link (graduated from cmake
 │                           #   add_executable — reactos-link engine; ntoskrnl/CMakeLists.txt:118)
 ├── ntkrnlmp-cargo/         # SMP-kernel sibling link (ntkrnlmp.exe): kernel asm assembled with
-│                           #   CONFIG_SMP. Bring-up lane: docs/engineering/active-lanes/smp-bringup-quest.md (on the smp-bringup branch until it lands)
+│                           #   CONFIG_SMP. ON MASTER since 2026-07-11 (M0–M3 complete: -smp 2
+│                           #   boots to desktop, both CPUs schedule, TLB shootdown + generic-call
+│                           #   IPI live; all opt-in via `build --smp-kernel` + `smoke --smp N`,
+│                           #   defaults stay UP). Quest log + remaining M4/M5 work:
+│                           #   docs/engineering/active-lanes/smp-bringup-quest.md
 ├── kernel-rust/            # staticlib umbrella that pulls in all sibling rlibs via extern crate
 ├── ntkrnl-sys/             # Two-layer FFI crate: hand-written + bindgen (see below)
 ├── hal-rust/               # HAL Rust translation — x86 flavors (i386 + amd64, minihal feature

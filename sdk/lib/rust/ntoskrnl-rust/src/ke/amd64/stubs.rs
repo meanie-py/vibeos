@@ -100,7 +100,20 @@ pub unsafe extern "system" fn KiIdleLoop() -> ! {
                 crate::ke::ke_defs::KeLowerIrql(DISPATCH_LEVEL);
             }
         } else {
+            // M3 SMP: deferred ("lazy") TLB coherence while blocked in hlt —
+            // remote shootdowns skip us; we flush on the way out, and the
+            // DPC/IPI ISR entries flush too (DPCs run inside the hlt wake).
+            #[cfg(feature = "smp")]
+            {
+                unsafe extern "C" { fn KiTbLazyIdleEnter(); }
+                KiTbLazyIdleEnter();
+            }
             ((*Prcb).PowerState.IdleFunction.unwrap())(&mut (*Prcb).PowerState as *mut _);
+            #[cfg(feature = "smp")]
+            {
+                unsafe extern "C" { fn KiTbLazyIdleExit(); }
+                KiTbLazyIdleExit();
+            }
         }
     }
 }

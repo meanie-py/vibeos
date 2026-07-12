@@ -23,6 +23,7 @@
 
 use win32k_sys::win32k::*;
 use crate::gdihelp::*;
+use crate::dcattr_f;
 
 // win32k_sys's FALSE/TRUE are bindgen u32 (#define), but BOOL is i32 — shadow with
 // BOOL-typed locals so `return FALSE`/`= TRUE` type-check against the i32 BOOL returns.
@@ -143,7 +144,7 @@ pub unsafe extern "system" fn GetColorSpace(hDC: HDC) -> HCOLORSPACE {
         SetLastError(ERROR_INVALID_HANDLE);
         return core::ptr::null_mut();
     }
-    (*pDc_Attr).hColorSpace
+    (*dcattr_f!(pDc_Attr, hColorSpace))
 }
 
 /*

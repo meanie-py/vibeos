@@ -20,6 +20,7 @@ from tests.qemu import backend as be_mod
 from tests.qemu import qmp_client, serial_client
 
 from . import build as build_mod
+from . import conformance as conformance_mod
 from . import config as config_mod
 from . import gdbengine as ge_mod
 from . import lints, provenance, repro, triage
@@ -2349,3 +2350,58 @@ def test_isolation_preflight_blocks_cross_worktree_links(tmp_path):
     run = build_mod.Run("build", "amd64", ts=1700000000)
     assert build_mod._isolation_preflight(run, repo, repo / "build-amd64") is False
     assert run.classification == "ISOLATION_FAIL"
+
+
+# --- conformance verb (quest M4) -------------------------------------------
+def _conf_repo_root() -> Path:
+    # tests/qemu/cli/test_cli_units.py -> repo root is parents[3]
+    return Path(__file__).resolve().parents[3]
+
+
+def test_conformance_arch_normalization():
+    m = conformance_mod._PYTEST_ARCH
+    assert m.get("amd64", "amd64") == "amd64-uefi"
+    assert m.get("i386", "i386") == "i386-uefi"
+    assert m.get("arm64", "arm64") == "arm64"  # arm64 is itself
+    assert m.get("amd64-uefi", "amd64-uefi") == "amd64-uefi"  # suffixed passes through
+
+
+def test_conformance_parser_detects_crash_regression(tmp_path):
+    parser = conformance_mod._load_parser(_conf_repo_root())
+    log = (
+        "[KMTEST-SWEEP] launch KeEvent\n"
+        "[KMTEST:END KeEvent pass=42733 fail=0 skip=0]\n"
+        "[KMTEST-SWEEP] exit KeEvent code=0\n"
+        "[KMTEST-SWEEP] launch NpfsFileInfo\n"
+        "*** BUGCHECK: 0x19\n"
+    )
+    results, done, bc = parser.parse(log)
+    assert [r["status"] for r in results] == ["OK", "CRASH"]
+    assert bc == "0x19" and done is None
+    bp = tmp_path / "base.txt"
+    bp.write_text(
+        "KeEvent OK pass=42733 fail=0 skip=0\nNpfsFileInfo OK pass=1 fail=0 skip=0\n"
+    )
+    regs = parser.compare(results, parser.load_baseline(bp))
+    assert any("NpfsFileInfo" in r and "CRASH" in r for r in regs)
+
+
+def test_conformance_rostests_preflight(tmp_path):
+    # no build dir -> None (unknown); either option ON -> True; both off/absent -> False.
+    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is None
+    bd = tmp_path / "build-amd64"
+    bd.mkdir()
+    (bd / "CMakeCache.txt").write_text("FOO:BOOL=ON\nENABLE_ROSTESTS:BOOL=ON\n")
+    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is True
+    # the fleet-default config: parent OFF but KMTESTS ON, parent listed FIRST
+    # (the first-match bug this guards against).
+    (bd / "CMakeCache.txt").write_text(
+        "ENABLE_ROSTESTS:BOOL=OFF\nENABLE_ROSTESTS_KMTESTS:BOOL=ON\n"
+    )
+    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is True
+    (bd / "CMakeCache.txt").write_text(
+        "ENABLE_ROSTESTS:BOOL=OFF\nENABLE_ROSTESTS_KMTESTS:BOOL=OFF\n"
+    )
+    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is False
+    (bd / "CMakeCache.txt").write_text("FOO:BOOL=ON\n")
+    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is False

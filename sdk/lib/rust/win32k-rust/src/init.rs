@@ -38,6 +38,28 @@ unsafe fn err_msg(msg: *const u8) {
     DbgPrint(msg);
 }
 
+// WoW64 guests consume win32k's user-visible mappings through 32-bit
+// pointers, so every section view / VM reservation win32k hands such a
+// process must land below 4GB. ZeroBits mask form (value > 32 ⇒ the value IS
+// the address ceiling) — honored by both MmMapViewOfSection and
+// Zw/NtAllocateVirtualMemory (ARM3). 0x7FFF_FFFF keeps us below 2GB, safe
+// for any 32-bit guest regardless of /LARGEADDRESSAWARE.
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub(crate) unsafe fn W32Wow64ZeroBits(Process: PEPROCESS) -> usize {
+    if (*Process).Wow64Process.is_null() {
+        0
+    } else {
+        0x7FFF_FFFF
+    }
+}
+// A 32-bit host has no WoW64 layer (and its EPROCESS has no Wow64Process).
+#[cfg(target_arch = "x86")]
+#[inline]
+pub(crate) unsafe fn W32Wow64ZeroBits(_Process: PEPROCESS) -> usize {
+    0
+}
+
 // ---- file-scope preamble (translated) ----
 // gusLanguageID is read by freetype.c (still C) — must export the symbol.
 #[no_mangle]
@@ -63,6 +85,19 @@ pub unsafe extern "C" fn GdiProcessCreate(Process: PEPROCESS) -> NTSTATUS {
 
     (*(*Process).Peb).GdiSharedHandleTable = GDI_MapHandleTable(Process);
     (*(*Process).Peb).GdiDCAttributeList = GDI_BATCH_LIMIT as _;
+
+    // WoW64: the guest's 32-bit gdi32 reads PEB32->GdiSharedHandleTable, not
+    // PEB64 — mirror the (below-4GB, see W32Wow64ZeroBits) mapping into it.
+    // (x86 host: no WoW64 layer, and no _PEB32/Wow64Process in its bindgen.)
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let Peb32 = (*Process).Wow64Process as usize as *mut ntkrnl_sys::ddk::_PEB32;
+        if !Peb32.is_null() {
+            (*Peb32).GdiSharedHandleTable =
+                (*(*Process).Peb).GdiSharedHandleTable as usize as u32;
+            (*Peb32).GdiDCAttributeList = GDI_BATCH_LIMIT as _;
+        }
+    }
 
     (*ppiCurrent).pPoolDcAttr = GdiPoolCreate(core::mem::size_of::<DC_ATTR>() as _, u32::from_le_bytes(*b"Gdca"));
     (*ppiCurrent).pPoolBrushAttr = GdiPoolCreate(core::mem::size_of::<BRUSH_ATTR>() as _, u32::from_le_bytes(*b"Gbra"));

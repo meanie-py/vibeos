@@ -5,12 +5,13 @@
  * PROGRAMMER:      Thomas Faber <thomas.faber@reactos.org>
  */
 
-#ifndef _M_AMD64
-__declspec(dllimport) void __stdcall KeRaiseIrql(unsigned char, unsigned char *);
-__declspec(dllimport) void __stdcall KeLowerIrql(unsigned char);
-#else
+#if defined(_M_AMD64) || defined(_M_ARM64)
+/* 64-bit has a single CLOCK_LEVEL; KeRaiseIrql/KeLowerIrql are macros */
 #define CLOCK1_LEVEL CLOCK_LEVEL
 #define CLOCK2_LEVEL CLOCK_LEVEL
+#else
+__declspec(dllimport) void __stdcall KeRaiseIrql(unsigned char, unsigned char *);
+__declspec(dllimport) void __stdcall KeLowerIrql(unsigned char);
 #endif
 
 #include <kmt_test.h>
@@ -36,7 +37,10 @@ START_TEST(KeIrql)
     /* some Irqls MUST work */
     {
     const KIRQL Irqls[] = { LOW_LEVEL, PASSIVE_LEVEL, APC_LEVEL, DISPATCH_LEVEL,
-                            CMCI_LEVEL, CLOCK1_LEVEL, CLOCK2_LEVEL, CLOCK_LEVEL,
+#ifndef _M_ARM64 /* CMCI is an x86 machine-check concept; no such IRQL on ARM64 */
+                            CMCI_LEVEL,
+#endif
+                            CLOCK1_LEVEL, CLOCK2_LEVEL, CLOCK_LEVEL,
                             PROFILE_LEVEL, IPI_LEVEL, /*POWER_LEVEL,*/ SynchIrql, HIGH_LEVEL };
     int i;
     for (i = 0; i < sizeof Irqls / sizeof Irqls[0]; ++i)
@@ -123,7 +127,7 @@ START_TEST(KeIrql)
         KeLowerIrql(PASSIVE_LEVEL);
     }
 
-#ifndef _M_AMD64
+#if !defined(_M_AMD64) && !defined(_M_ARM64)
     /* try the actual exports, not only the fastcall versions */
     ok_irql(PASSIVE_LEVEL);
     (KeRaiseIrql)(HIGH_LEVEL, &Irql);

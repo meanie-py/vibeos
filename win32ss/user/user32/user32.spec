@@ -800,3 +800,4 @@
 @ varargs wsprintfW(ptr wstr)
 @ stdcall wvsprintfA(ptr str ptr)
 @ stdcall wvsprintfW(ptr wstr ptr)
+@ extern -arch=i386 Wow64Transition
