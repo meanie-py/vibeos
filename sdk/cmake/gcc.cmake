@@ -804,12 +804,19 @@ function(add_cargo_module _target _crate _output)
         message(FATAL_ERROR "add_cargo_module: unknown KIND ${_acm_KIND}")
     endif()
 
+    # The pinned nightly, single-sourced from `.rust-nightly` at the repo root (bump
+    # it THERE, not here). This cell needs nightly only for `-Z build-std` + the
+    # custom kernel target json; the rest of the Rust fleet is on pinned STABLE via
+    # rust-toolchain.toml. Dropping build-std on amd64+arm64 (and with it this pin)
+    # is docs/engineering/active-lanes/stable-toolchain-plan.md.
+    file(STRINGS "${CMAKE_SOURCE_DIR}/.rust-nightly" _rust_nightly LIMIT_COUNT 1)
+
     add_custom_command(
         OUTPUT ${_out}
         # cargo +nightly build-std drive of the reactos-link manifest: build.rs
         # links the cmake-built leaf libs / reused objects + self-built rust
         # staticlib into the final PE, then the kind post-link runs.
-        COMMAND ${CMAKE_COMMAND} -E env RUSTUP_TOOLCHAIN=nightly ${_cargo_env}
+        COMMAND ${CMAKE_COMMAND} -E env RUSTUP_TOOLCHAIN=${_rust_nightly} ${_cargo_env}
             cargo build --release
                 --target ${_ws}/${_crate}/${_stem}.json
                 -Z build-std=core,alloc,compiler_builtins

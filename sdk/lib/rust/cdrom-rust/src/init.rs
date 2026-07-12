@@ -16,7 +16,6 @@ use core::ffi::c_void;
 
 extern "C" {
     static CDROM_REQUEST_CONTEXT: WDF_OBJECT_CONTEXT_TYPE_INFO;
-    fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
     fn NT_SUCCESS(status: NTSTATUS) -> bool;
     fn CdromDbgPrint0(format: *const i8) -> u32;
     fn CdromDbgPrint1(format: *const i8, arg1: usize) -> u32;
@@ -274,7 +273,7 @@ pub unsafe extern "C" fn DeviceClaimRelease(
             } else {
                 b"DeviceClaimRelease: Failed to Claim device, status: 0x%X\n\x00".as_ptr()
             };
-            TracePrint(
+            TracePrint!(
                 1 /* TRACE_LEVEL_FATAL */,
                 0x01 /* TRACE_FLAG_PNP */,
                 format_str as *const i8,
@@ -283,7 +282,7 @@ pub unsafe extern "C" fn DeviceClaimRelease(
         }
     } else {
         let format_str = b"DeviceClaimRelease: Failed to create request, status: 0x%X\n\x00";
-        TracePrint(
+        TracePrint!(
             1 /* TRACE_LEVEL_FATAL */,
             0x01 /* TRACE_FLAG_PNP */,
             format_str.as_ptr() as *const i8,
@@ -306,7 +305,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
 
     PAGED_CODE();
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_PNP,
         b"DeviceEvtSelfManagedIoInit: WDFDEVICE %p is being started.\n\0" as *const u8 as *const i8,
@@ -389,7 +388,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
         CdromDbgPrint0(b"[SMIO] 4b-pre-inquiry\n\0".as_ptr() as *const i8);
         status = DeviceCacheDeviceInquiryData(deviceExtension);
         if !NT_SUCCESS(status) {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"Failed to cache the device's inquiry data, failing %!STATUS!\n\0" as *const u8 as *const i8,
@@ -552,7 +551,7 @@ pub unsafe extern "C" fn DeviceInitReleaseQueueContext(DeviceExtension: *mut CDR
     );
 
     if !NT_SUCCESS(status) {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_PNP,
             b"Cannot create the release queue request\n\0".as_ptr() as *const i8,
@@ -572,7 +571,7 @@ pub unsafe extern "C" fn DeviceInitReleaseQueueContext(DeviceExtension: *mut CDR
     );
 
     if !NT_SUCCESS(status) {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_PNP,
             b"Failed to allocate ReleaseQueueSrb.\n\0".as_ptr() as *const i8,
@@ -615,7 +614,7 @@ pub unsafe extern "C" fn DeviceInitReleaseQueueContext(DeviceExtension: *mut CDR
     );
 
     if !NT_SUCCESS(status) {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_PNP,
             b"DeviceInitReleaseQueueContext: Cannot create the release queue spinlock\n\0".as_ptr() as *const i8,
@@ -661,7 +660,7 @@ pub unsafe extern "C" fn DeviceInitPowerContext(
     );
 
     if (status) < 0 {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_PNP,
             b"Cannot create the power request object.\n\0".as_ptr() as *const i8,
@@ -702,7 +701,7 @@ pub unsafe extern "C" fn DeviceCreateWellKnownName(
     // PAGED_CODE();
 
     if !(*DeviceExtension).DeviceAdditionalData.WellKnownName.Buffer.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_INIT,
             b"DeviceCreateWellKnownName: link already exists %p\n\0".as_ptr() as *const i8,
@@ -720,7 +719,7 @@ pub unsafe extern "C" fn DeviceCreateWellKnownName(
             cdromNumber,
         );
         if status & 0x80000000u32 as i32 != 0 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_INIT,
                 b"DeviceCreateWellKnownName: Format symbolic link failed with error: 0x%X\n\0".as_ptr() as *const i8,
@@ -744,7 +743,7 @@ pub unsafe extern "C" fn DeviceCreateWellKnownName(
     }
 
     if status & 0x80000000u32 as i32 != 0 {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_INIT,
             b"DeviceCreateWellKnownName: Error %lx linking %wZ to device %wZ\n\0".as_ptr() as *const i8,
@@ -755,7 +754,7 @@ pub unsafe extern "C" fn DeviceCreateWellKnownName(
         return status;
     }
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_INIT,
         b"DeviceCreateWellKnownName: successfully linked %wZ to device %wZ\n\0".as_ptr() as *const i8,
@@ -770,7 +769,7 @@ pub unsafe extern "C" fn DeviceCreateWellKnownName(
     ) as *mut u16;
 
     if savedName.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_INIT,
             b"DeviceCreateWellKnownName: unable to allocate memory.\n\0".as_ptr() as *const i8,
@@ -842,7 +841,7 @@ pub unsafe extern "C" fn DeviceRetrieveDescriptor(
     );
 
     if !ntkrnl_sys::base::NT_SUCCESS(status) {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_INIT,
             b"DeviceRetrieveDescriptor: error %lx trying to \"query properties #1\n\0".as_ptr() as *const i8,
@@ -853,7 +852,7 @@ pub unsafe extern "C" fn DeviceRetrieveDescriptor(
 
     if (*descriptor).Size == 0 {
         // This DebugPrint is to help third-party driver writers
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_INIT,
             b"DeviceRetrieveDescriptor: size returned was zero?! (status %x\n\0".as_ptr() as *const i8,
@@ -879,7 +878,7 @@ pub unsafe extern "C" fn DeviceRetrieveDescriptor(
     ) as *mut STORAGE_DESCRIPTOR_HEADER;
 
     if descriptor.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_INIT,
             b"DeviceRetrieveDescriptor: unable to memory for descriptor (%d bytes)\n\0".as_ptr() as *const i8,
@@ -920,7 +919,7 @@ pub unsafe extern "C" fn DeviceRetrieveDescriptor(
     );
 
     if !ntkrnl_sys::base::NT_SUCCESS(status) {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_INIT,
             b"DeviceRetrieveDescriptor: error %lx trying to \"query properties #1\n\0".as_ptr() as *const i8,
@@ -1051,7 +1050,7 @@ pub unsafe extern "C" fn DeviceScanForSpecial(
             StringsAreMatched((*current_list).ProductId as *const i8, productId as *const i8) != 0 &&
             StringsAreMatched((*current_list).ProductRevision as *const i8, productRevision as *const i8) != 0
         {
-            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
                        b"DeviceScanForSpecial: Found matching controller Ven: %s Prod: %s Rev: %s\n\0".as_ptr() as *const i8,
                        vendorId as *const i8,
                        productId as *const i8,
@@ -1059,7 +1058,7 @@ pub unsafe extern "C" fn DeviceScanForSpecial(
             if let Some(func) = Function {
                 func(DeviceExtension, (*current_list).Data as usize);
             }
-            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
                        b"DeviceScanForSpecial: completed callback\n\0".as_ptr() as *const i8,
                        core::ptr::null::<i8>(),
                        core::ptr::null::<i8>(),
@@ -1069,7 +1068,7 @@ pub unsafe extern "C" fn DeviceScanForSpecial(
         current_list = current_list.add(1);
     }
 
-    TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+    TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
                b"DeviceScanForSpecial: no match found for %p\n\0".as_ptr() as *const i8,
                (*DeviceExtension).DeviceObject as *const i8,
                core::ptr::null::<core::ffi::c_void>(),
@@ -1182,7 +1181,7 @@ pub unsafe extern "C" fn DeviceInitializeHotplugInfo(
         }
 
         if !NT_SUCCESS(status) {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_INIT,
                 b"Could not initialize hotplug information %lx\n\0".as_ptr() as *const i8,
@@ -1463,7 +1462,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
             && u32::from((*cd_read_header).Header.AdditionalLength) >= additional_length
             && (*cd_read_header).C2ErrorData() != 0
         {
-            TracePrint(
+            TracePrint!(
                 4u32, // TRACE_LEVEL_INFORMATION
                 2u32, // TRACE_FLAG_IOCTL
                 b"DeviceSetRawReadInfo: FDO %p GET_CONFIG shows ability to read C2 error bits\n\0".as_ptr()
@@ -1511,7 +1510,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
         buffer = ExAllocatePoolWithTag(NonPagedPoolNx, buffer_length, CDROM_TAG_MODE_DATA) as *mut u8;
 
         if buffer.is_null() {
-            TracePrint(
+            TracePrint!(
                 2u32, // TRACE_LEVEL_ERROR
                 2u32, // TRACE_FLAG_IOCTL
                 b"DeviceSetRawReadInfo: cannot allocate buffer, so not setting raw read info for FDO %p\n\0".as_ptr()
@@ -1561,7 +1560,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
                     as *mut CDVD_CAPABILITIES_PAGE;
             }
 
-            TracePrint(
+            TracePrint!(
                 4u32, // TRACE_LEVEL_INFORMATION
                 2u32, // TRACE_FLAG_IOCTL
                 b"DeviceSetRawReadInfo: FDO %p CDVD Capabilities buffer %p\n\0".as_ptr() as *const i8,
@@ -1571,7 +1570,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
 
             if (*capabilities).PageCode() == MODE_PAGE_CAPABILITIES {
                 if (*capabilities).C2Pointers() != 0 {
-                    TracePrint(
+                    TracePrint!(
                         1u32,
                         2u32,
                         b"DeviceSetRawReadInfo: FDO %p supports C2 error bits in READ_CD command\n\0".as_ptr()
@@ -1581,7 +1580,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
                     (*DeviceExtension).DeviceAdditionalData.Mmc.ReadCdC2Pointers = 1;
                 }
                 if (*capabilities).RWSupported() != 0 {
-                    TracePrint(
+                    TracePrint!(
                         1u32,
                         2u32,
                         b"DeviceSetRawReadInfo: FDO %p supports raw subcode in READ_CD command\n\0".as_ptr()
@@ -1605,7 +1604,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
 
         // After the attempt (regardless of success/fail if we haven't broken),
         // trace warning and free buffer.
-        TracePrint(
+        TracePrint!(
             3u32, // TRACE_LEVEL_WARNING
             2u32, // TRACE_FLAG_IOCTL
             b"DeviceSetRawReadInfo: FDO %p failed %x byte mode sense, status %x\n\0".as_ptr() as *const i8,
@@ -1637,7 +1636,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
     }
 
     if count == 6 {
-        TracePrint(
+        TracePrint!(
             3u32, // TRACE_LEVEL_WARNING
             2u32, // TRACE_FLAG_IOCTL
             b"DeviceSetRawReadInfo: FDO %p couldn't get mode sense data\n\0".as_ptr() as *const i8,
@@ -1690,7 +1689,7 @@ pub unsafe extern "C" fn DeviceInitializeDvd(Device: WDFDEVICE) -> NTSTATUS {
         rpcKey = (*copyProtectKey).KeyData.as_ptr() as *mut DVD_RPC_KEY;
 
         if (*rpcKey).TypeCode() == 0 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_PNP,
                 b"DVD Initialize (%p): must choose DVD region\n\0".as_ptr() as *const i8,
@@ -1911,7 +1910,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
+//             TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
 //                         "DeviceClaimRelease: Failed to %s device, status: 0x%X\n",
 //                         Release ? "Release" : "Claim",
 //                         status));
@@ -1919,7 +1918,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //     }
 //     else
 //     {
-//         TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
+//         TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
 //                     "DeviceClaimRelease: Failed to create request, status: 0x%X\n",
 //                     status));
 //     }
@@ -1963,7 +1962,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //     PAGED_CODE();
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_PNP,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_PNP,
 //                 "DeviceEvtSelfManagedIoInit: WDFDEVICE %p is being started.\n",
 //                 Device));
 //
@@ -2030,7 +2029,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //         status = DeviceCacheDeviceInquiryData(deviceExtension);
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                         "Failed to cache the device's inquiry data, failng %!STATUS!\n",
 //                         status
 //                         ));
@@ -2206,7 +2205,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,  "Cannot create the release queue request\n"));
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,  "Cannot create the release queue request\n"));
 //
 //         return status;
 //     }
@@ -2221,7 +2220,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //                                          &DeviceExtension->ReleaseQueueInputMemory);
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,  "Failed to allocate ReleaseQueueSrb.\n"));
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,  "Failed to allocate ReleaseQueueSrb.\n"));
 //
 //         return status;
 //     }
@@ -2258,7 +2257,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,
 //                     "DeviceInitReleaseQueueContext: Cannot create the release queue spinlock\n"));
 //
 //         return status;
@@ -2310,7 +2309,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,  "Cannot create the power request object.\n"));
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,  "Cannot create the power request object.\n"));
 //
 //         return status;
 //     }
@@ -2364,7 +2363,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //     if (DeviceExtension->DeviceAdditionalData.WellKnownName.Buffer != NULL)
 //     {
 //
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
 //                     "DeviceCreateWellKnownName: link already exists %p\n",
 //                     DeviceExtension->DeviceAdditionalData.WellKnownName.Buffer));
 //
@@ -2383,7 +2382,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //                                      cdromNumber);
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
 //                         "DeviceCreateWellKnownName: Format symbolic link failed with error: 0x%X\n", status));
 //             return status;
 //         }
@@ -2400,7 +2399,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
 //                     "DeviceCreateWellKnownName: Error %lx linking %wZ to "
 //                     "device %wZ\n",
 //                     status,
@@ -2409,7 +2408,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //         return status;
 //     }
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                 "DeviceCreateWellKnownName: successfully linked %wZ "
 //                 "to device %wZ\n",
 //                 &unicodeLinkName,
@@ -2425,7 +2424,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //     {
 //         // Test Note: test path should excise here to see if the symbolic is deleted by framework.
 //         // IoDeleteSymbolicLink(&unicodeLinkName);
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                     "DeviceCreateWellKnownName: unable to allocate memory.\n"));
 //
 //         return STATUS_INSUFFICIENT_RESOURCES;
@@ -2490,13 +2489,13 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                     "DeviceRetrieveScsiAddress: Get Address failed %lx\n",
 //                     status));
 //     }
 //     else
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                     "GetAddress: Port %x, Path %x, Target %x, Lun %x\n",
 //                     ScsiAddress->PortNumber,
 //                     ScsiAddress->PathId,
@@ -2574,7 +2573,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //     if (!ScratchBuffer_Allocate(DeviceExtension))
 //     {
 //         status = STATUS_INSUFFICIENT_RESOURCES;
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                     "Failed to allocate scratch buffer, failing  %!STATUS!\n",
 //                     status
 //                     ));
@@ -2684,7 +2683,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //         maxAlignedTransfer   = max(maxAlignedTransfer,   PAGE_SIZE);
 //         maxUnalignedTransfer = max(maxUnalignedTransfer, PAGE_SIZE);
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                   "Device %p Max aligned/unaligned transfer size is %x/%x\n",
 //                   DeviceExtension->Device,
 //                   maxAlignedTransfer,
@@ -2695,7 +2694,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //     }
 //     else
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,  "DeviceRetrieveDescriptorsAndTransferLength failed %lx\n", status));
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,  "DeviceRetrieveDescriptorsAndTransferLength failed %lx\n", status));
 //     }
 //
 //     return status;
@@ -2768,7 +2767,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //     if(!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "DeviceRetrieveDescriptor: error %lx trying to "
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "DeviceRetrieveDescriptor: error %lx trying to "
 //                        "query properties #1\n", status));
 //         return status;
 //     }
@@ -2776,7 +2775,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //     if (descriptor->Size == 0)
 //     {
 //         // This DebugPrint is to help third-party driver writers
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "DeviceRetrieveDescriptor: size returned was zero?! (status "
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "DeviceRetrieveDescriptor: size returned was zero?! (status "
 //                     "%x\n", status));
 //         return STATUS_UNSUCCESSFUL;
 //     }
@@ -2791,7 +2790,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //     if(descriptor == NULL)
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "DeviceRetrieveDescriptor: unable to memory for descriptor "
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "DeviceRetrieveDescriptor: unable to memory for descriptor "
 //                     "(%d bytes)\n", bufferLength));
 //         return STATUS_INSUFFICIENT_RESOURCES;
 //     }
@@ -2820,7 +2819,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //     if(!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "DeviceRetrieveDescriptor: error %lx trying to "
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "DeviceRetrieveDescriptor: error %lx trying to "
 //                        "query properties #1\n", status));
 //         FREE_POOL(descriptor);
 //
@@ -3007,7 +3006,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //             )
 //         {
 //
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT, "DeviceScanForSpecial: Found matching "
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT, "DeviceScanForSpecial: Found matching "
 //                         "controller Ven: %s Prod: %s Rev: %s\n",
 //                         (LPCSTR)vendorId, (LPCSTR)productId, (LPCSTR)productRevision));
 //
@@ -3017,7 +3016,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //             // for CHK builds, try to prevent wierd stacks by having a debug
 //             // print here. it's a hack, but i know of no other way to prevent
 //             // the stack from being wrong.
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT, "DeviceScanForSpecial: "
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT, "DeviceScanForSpecial: "
 //                         "completed callback\n"));
 //             return;
 //
@@ -3025,7 +3024,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //     } // none of the devices matched.
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT, "DeviceScanForSpecial: no match found for %p\n",
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT, "DeviceScanForSpecial: no match found for %p\n",
 //                 DeviceExtension->DeviceObject));
 //     return;
 //
@@ -3186,7 +3185,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "Could not initialize hotplug information %lx\n", status));
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,  "Could not initialize hotplug information %lx\n", status));
 //     }
 //
 //     return status;
@@ -3239,7 +3238,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //         {
 //             //Currently, only low resource error comes here.
 //             //That is a success case for unsupporting this command.
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                         "DeviceInitMmcContext: Failed to get the support info for GET CONFIGURATION "
 //                         "command, failng %!STATUS!\n", status
 //                         ));
@@ -3264,7 +3263,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //         FEATURE_NUMBER  validationSchema;
 //         ULONG           blockingFactor;
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                   "DeviceInitMmcContext: FDO %p GET CONFIGURATION buffer %p\n",
 //                   DeviceExtension->Device,
 //                   DeviceExtension->DeviceAdditionalData.Mmc.CapabilitiesBuffer
@@ -3282,7 +3281,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //                                        FeatureAACS);
 //         if (header)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                         "DeviceInitMmcContext: Reporting AACS support for device due to "
 //                         "GET CONFIGURATION showing support\n"
 //                         ));
@@ -3337,7 +3336,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //         WdfDeviceSetCharacteristics(DeviceExtension->Device, deviceCharacteristics);
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                    "DeviceInitMmcContext: FDO %p Device is not an MMC compliant device, so setting "
 //                    "to read-only (legacy) mode",
 //                    DeviceExtension->Device
@@ -3347,7 +3346,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //     // Set DEV_SAFE_START_UNIT flag for newer devices.
 //     if (DeviceExtension->DeviceAdditionalData.DriveDeviceType == FILE_DEVICE_DVD)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                     "DeviceInitMmcContext: DVD Devices require START UNIT\n"));
 //         SET_FLAG(DeviceExtension->DeviceFlags, DEV_SAFE_START_UNIT);
 //
@@ -3358,7 +3357,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //              )
 //     {
 //         // devices on the newer busses require START_UNIT
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                   "DeviceInitMmcContext: Devices for newer buses require START UNIT\n"));
 //         SET_FLAG(DeviceExtension->DeviceFlags, DEV_SAFE_START_UNIT);
 //     }
@@ -3466,13 +3465,13 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //     if (TEST_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_TOSHIBA_SD_W1101))
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                     "DeviceScanSpecialDevices: Found Toshiba SD-W1101 DVD-RAM "
 //                     "-- This drive will *NOT* support DVD-ROM playback.\n"));
 //     }
 //     else if (TEST_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_HITACHI_GD_2000))
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                     "DeviceScanSpecialDevices: Found Hitachi GD-2000\n"));
 //
 //         // Setup an error handler to spin up the drive when it idles out
@@ -3500,7 +3499,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //         SCSI_REQUEST_BLOCK         srb = {0};
 //         PCDB                       cdb;
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                     "DeviceScanSpecialDevices:  Found DEC RRD.\n"));
 //
 //         DeviceExtension->DeviceAdditionalData.IsDecRrd = TRUE;
@@ -3552,7 +3551,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                         "DeviceScanSpecialDevices: Setting DEC RRD to 2K block"
 //                         "size failed [%x]\n", status));
 //         }
@@ -3896,7 +3895,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //             status == STATUS_IO_DEVICE_ERROR        ||
 //             status == STATUS_IO_TIMEOUT)
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                        "GetConfiguration Failed (%x), device %p not mmc-compliant\n",
 //                        status, DeviceExtension->DeviceObject
 //                        ));
@@ -3911,7 +3910,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //         }
 //         else if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                        "GetConfiguration Failed, status %x -- defaulting to -ROM\n",
 //                        status));
 //
@@ -3919,7 +3918,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //         }
 //         else if (usable < sizeof(GET_CONFIGURATION_HEADER))
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                        "GetConfiguration Failed, returned only %x bytes!\n", usable));
 //             previouslyFailed = TRUE;
 //             DeviceSetParameter( DeviceExtension,
@@ -3938,7 +3937,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //         if ((size <= 4) || (size + 4 < size))
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                        "GetConfiguration Failed, claims MMC support but doesn't "
 //                        "correctly return config length! (%x)\n",
 //                        size
@@ -3955,7 +3954,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //         {
 //             if ((size % 2) != 0)
 //             {
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                            "GetConfiguration Failed, returned odd number of bytes %x!\n",
 //                            size
 //                            ));
@@ -3975,7 +3974,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //                 }
 //                 else
 //                 {
-//                     TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                     TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                                "GetConfiguration returned a size that is not per spec (%x bytes), this is probably because of a vendor specific data header with a size not divisible by 4.\n",
 //                                size
 //                                ));
@@ -4037,7 +4036,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //         if (!NT_SUCCESS(status) || (usable < featureSize))
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                        "Type One GetConfiguration Failed. Usable buffer size: %d\n", usable));
 //             previouslyFailed = TRUE;
 //         }
@@ -4060,7 +4059,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //                 // Device is returning more than required size. Most likely the device
 //                 // is returning TYPE ALL data. Set the flag to use TYPE ALL for TYPE ONE
 //                 // requets
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                            "Type One GetConfiguration Failed. "
 //                            "Device returned %d bytes instead of %d bytes\n",
 //                            size, featureSize));
@@ -4133,7 +4132,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //             (cdReadHeader->C2ErrorData)
 //             )
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                       "DeviceSetRawReadInfo: FDO %p GET_CONFIG shows ability to read C2 error bits\n",
 //                       DeviceExtension->DeviceObject
 //                       ));
@@ -4185,7 +4184,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //         if (buffer == NULL)
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                       "DeviceSetRawReadInfo: cannot allocate "
 //                       "buffer, so not setting raw read info for FDO %p\n",
 //                       DeviceExtension->DeviceObject
@@ -4226,7 +4225,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //                                                          p->BlockDescriptorLength);
 //             }
 //
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                       "DeviceSetRawReadInfo: FDO %p CDVD Capabilities buffer %p\n",
 //                       DeviceExtension->DeviceObject,
 //                       buffer
@@ -4236,7 +4235,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //             {
 //                 if (capabilities->C2Pointers)
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                               "DeviceSetRawReadInfo: FDO %p supports C2 error bits in READ_CD command\n",
 //                               DeviceExtension->DeviceObject
 //                               ));
@@ -4245,7 +4244,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //                 if (capabilities->RWSupported)
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                               "DeviceSetRawReadInfo: FDO %p supports raw subcode in READ_CD command\n",
 //                               DeviceExtension->DeviceObject
 //                               ));
@@ -4256,7 +4255,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //             }
 //         }
 //
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                   "DeviceSetRawReadInfo: FDO %p failed %x byte mode sense, status %x\n",
 //                   DeviceExtension->DeviceObject,
 //                   (((count/3) == 0) ? 10 : 6),
@@ -4268,7 +4267,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //
 //     if (count == 6)
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                   "DeviceSetRawReadInfo: FDO %p couldn't get mode sense data\n",
 //                   DeviceExtension->DeviceObject
 //                   ));
@@ -4358,7 +4357,7 @@ const DEVPROP_TYPE_EMPTY: u32 = 0;
 //         // TypeCode of zero means that no region has been set.
 //         if (rpcKey->TypeCode == 0)
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_PNP,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_PNP,
 //                         "DVD Initialize (%p): must choose DVD region\n",
 //                         Device));
 //             deviceExtension->DeviceAdditionalData.PickDvdRegion = 1;
@@ -4552,14 +4551,14 @@ pub unsafe extern "system" fn DeviceRetrieveScsiAddress(
         core::ptr::null_mut(),
     );
     if !ntkrnl_sys::base::NT_SUCCESS(status) {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_INIT,
             b"DeviceRetrieveScsiAddress: Get Address failed %lx\n\0".as_ptr() as *const i8,
             status,
         );
     } else {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_INIT,
             b"GetAddress: Port %x, Path %x, Target %x, Lun %x\n\0".as_ptr() as *const i8,
@@ -4611,7 +4610,7 @@ pub unsafe extern "system" fn DeviceRetrieveDescriptorsAndTransferLength(
     if ntkrnl_sys::base::NT_SUCCESS(status) {
         DeviceComputeTransferLengths(DeviceExtension);
     } else {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_PNP,
             b"DeviceRetrieveDescriptorsAndTransferLength failed %lx\n\0".as_ptr() as *const i8,
@@ -4679,11 +4678,11 @@ pub unsafe extern "system" fn DeviceScanSpecialDevices(DeviceExtension: PCDROM_D
 
     // Hack flag checks
     if ((*DeviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_TOSHIBA_SD_W1101 as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
-        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+        TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
             b"DeviceScanSpecialDevices: Found Toshiba SD-W1101 DVD-RAM -- This drive will *NOT* support DVD-ROM playback.\n\0"
                 .as_ptr() as *const i8);
     } else if ((*DeviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_HITACHI_GD_2000 as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
-        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+        TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
             b"DeviceScanSpecialDevices: Found Hitachi GD-2000\n\0"
                 .as_ptr() as *const i8);
 
@@ -4695,7 +4694,7 @@ pub unsafe extern "system" fn DeviceScanSpecialDevices(DeviceExtension: PCDROM_D
     } else if ((*DeviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_FUJITSU_FMCD_10x as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
         (*DeviceExtension).TimeOutValue = 20;
     } else if ((*DeviceExtension).DeviceAdditionalData.HackFlags & CDROM_HACK_DEC_RRD as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
-        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+        TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
             b"DeviceScanSpecialDevices:  Found DEC RRD.\n\0"
                 .as_ptr() as *const i8);
 
@@ -4747,7 +4746,7 @@ pub unsafe extern "system" fn DeviceScanSpecialDevices(DeviceExtension: PCDROM_D
         );
 
         if !ntkrnl_sys::base::NT_SUCCESS(status) {
-            TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+            TracePrint!(TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
                 b"DeviceScanSpecialDevices: Setting DEC RRD to 2K blocksize failed [%x]\n\0"
                     .as_ptr() as *const i8,
                 status as u32);
@@ -4832,7 +4831,7 @@ pub unsafe extern "system" fn DeviceInitMmcContext(
             core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData.Mmc.IsMmc),
         );
         if status < 0 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"DeviceInitMmcContext: Failed to get the support info for GET CONFIGURATION command, failng %!STATUS!\n\0"
@@ -4853,7 +4852,7 @@ pub unsafe extern "system" fn DeviceInitMmcContext(
         let mut validationSchema: u32 = 0;
         let mut blockingFactor: u32 = 0;
 
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_INIT,
             b"DeviceInitMmcContext: FDO %p GET CONFIGURATION buffer %p\n\0".as_ptr() as *const i8,
@@ -4872,7 +4871,7 @@ pub unsafe extern "system" fn DeviceInitMmcContext(
             FeatureAACS,
         );
         if !header.is_null() {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_INIT,
                 b"DeviceInitMmcContext: Reporting AACS support for device due to GET CONFIGURATION showing support\n\0"
@@ -4933,7 +4932,7 @@ pub unsafe extern "system" fn DeviceInitMmcContext(
             WdfDeviceGetCharacteristics((*DeviceExtension).Device);
         deviceCharacteristics |= FILE_READ_ONLY_DEVICE;
         WdfDeviceSetCharacteristics((*DeviceExtension).Device, deviceCharacteristics);
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_INIT,
             b"DeviceInitMmcContext: FDO %p Device is not an MMC compliant device, so setting to read-only (legacy) mode\0"
@@ -4943,7 +4942,7 @@ pub unsafe extern "system" fn DeviceInitMmcContext(
     }
 
     if (*DeviceExtension).DeviceAdditionalData.DriveDeviceType == FILE_DEVICE_DVD {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_INIT,
             b"DeviceInitMmcContext: DVD Devices require START UNIT\n\0".as_ptr() as *const i8,
@@ -4953,7 +4952,7 @@ pub unsafe extern "system" fn DeviceInitMmcContext(
         && ((*(*DeviceExtension).DeviceDescriptor).BusType != BusTypeAtapi)
         && ((*(*DeviceExtension).DeviceDescriptor).BusType != BusTypeUnknown)
     {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_INIT,
             b"DeviceInitMmcContext: Devices for newer buses require START UNIT\n\0".as_ptr() as *const i8,
@@ -5010,7 +5009,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
             || status == -1073741666  // STATUS_IO_DEVICE_ERROR 0xC0000185
             || status == -1073741766  // STATUS_IO_TIMEOUT 0xC00000B6
         {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"GetConfiguration Failed (%x), device %p not mmc-compliant\n\0".as_ptr() as *const i8,
@@ -5028,7 +5027,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
 
             return 0; // STATUS_SUCCESS
         } else if status < 0 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"GetConfiguration Failed, status %x -- defaulting to -ROM\n\0".as_ptr() as *const i8,
@@ -5036,7 +5035,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
             );
             return 0;
         } else if usable < core::mem::size_of::<GET_CONFIGURATION_HEADER>() as u32 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"GetConfiguration Failed, returned only %x bytes!\n\0".as_ptr() as *const i8,
@@ -5059,7 +5058,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
             | ((local_header.DataLength[3] as u32) << 0);
 
         if size <= 4 || size.wrapping_add(4) < size {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"GetConfiguration Failed, claims MMC support but doesn't correctly return config length! (%x)\n\0".as_ptr() as *const i8,
@@ -5075,7 +5074,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
             return 0;
         } else if (size % 4) != 0 {
             if (size % 2) != 0 {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_INIT,
                     b"GetConfiguration Failed, returned odd number of bytes %x!\n\0".as_ptr() as *const i8,
@@ -5094,7 +5093,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
                 if (hack_flags & CDROM_HACK_BAD_VENDOR_PROFILES as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
                     // we've already caught this and ASSERT'd once, so don't do it again
                 } else {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_WARNING,
                         TRACE_FLAG_INIT,
                         b"GetConfiguration returned a size that is not per spec (%x bytes), this is probably because of a vendor specific data header with a size not divisible by 4.\n\0".as_ptr() as *const i8,
@@ -5154,7 +5153,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
         );
 
         if status < 0 || (usable as usize) < feature_size {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"Type One GetConfiguration Failed. Usable buffer size: %d\n\0".as_ptr() as *const i8,
@@ -5185,7 +5184,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
                 // Device is returning more than required size. Most likely the device
                 // is returning TYPE ALL data. Set the flag to use TYPE ALL for TYPE ONE
                 // requests
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_INIT,
                     b"Type One GetConfiguration Failed. Device returned %d bytes instead of %d bytes\n\0".as_ptr() as *const i8,

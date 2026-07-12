@@ -29,7 +29,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${HIDUSB_RUST_TARGET_DIR}
         RUSTFLAGS=${HIDUSB_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${HIDUSB_RUST_TARGET}
             -p hidusb-rust
             --manifest-path ${HIDUSB_RUST_WORKSPACE_DIR}/Cargo.toml

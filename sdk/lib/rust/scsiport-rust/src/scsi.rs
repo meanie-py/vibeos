@@ -116,7 +116,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
     // DPRINT entry
     {
         let file: *const i8 = b"drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
-        if crate::glue::dprint_noop(
+        if crate::glue::dprint_noop!(
             b"ScsiPortDispatchScsi(DeviceObject %p  Irp %p)\n\0".as_ptr() as *const i8,
             DeviceObject,
             Irp,
@@ -161,7 +161,7 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
 
     // DPRINT: "Srb: %p, Srb->Function: %lu"
     let file: *const i8 = b"drivers/storage/port/scsiport/scsi.c\0".as_ptr() as *const i8;
-    if crate::glue::dprint_noop(
+    if crate::glue::dprint_noop!(
         b"Srb: %p, Srb->Function: %lu\n\0".as_ptr() as *const i8,
         Srb,
         (*Srb).Function as u32,

@@ -8,8 +8,6 @@
 
 #![no_std]
 #![no_main]
-#![allow(internal_features)]
-#![feature(linkage)]
 
 // `--gc-sections` drops every section nothing references. main.rs holds
 // no kernel symbols (cargo can't see libhal_rust.a as a Rust dep), so

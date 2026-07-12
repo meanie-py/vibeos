@@ -28,6 +28,9 @@ case "$ARCH" in
 esac
 
 cd "$(dirname "$0")/../../../.."  # → repo root
+
+# Pinned nightly, single-sourced from the repo root (see rust-toolchain.toml).
+VIBEOS_NIGHTLY="$(cat "$PWD/.rust-nightly")"
 REPO="$(pwd)"
 STRIP="$REPO/.build-tools/llvm-mingw/bin/llvm-strip"
 BUILD_DIR="build-$ARCH"
@@ -49,7 +52,7 @@ echo "[1/4] Refreshing cmake-built inputs (ninja uefildr, $ARCH) ..."
 # ---- 2. Cargo-driven EFI link -------------------------------------------
 echo "[2/4] Cargo build (uefildr-cargo, $ARCH) ..."
 cd sdk/lib/rust
-cargo +nightly build --release \
+cargo "+${VIBEOS_NIGHTLY}" build --release \
     --target "$TARGET_JSON" \
     -Z build-std=core,alloc,compiler_builtins \
     -Z build-std-features=compiler-builtins-mem \

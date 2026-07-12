@@ -29,7 +29,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${PARTMGR_RUST_TARGET_DIR}
         RUSTFLAGS=${PARTMGR_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${PARTMGR_RUST_TARGET}
             -p partmgr-rust
             --manifest-path ${PARTMGR_RUST_WORKSPACE_DIR}/Cargo.toml

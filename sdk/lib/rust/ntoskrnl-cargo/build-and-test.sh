@@ -16,6 +16,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../../../.."  # → repo root
 
+# Pinned nightly, single-sourced from the repo root (see rust-toolchain.toml).
+VIBEOS_NIGHTLY="$(cat "$PWD/.rust-nightly")"
+
 # ---- 0. Sanity checks -----------------------------------------------------
 if [ ! -d build-i386 ]; then
   echo "build-i386/ does not exist — run cmake first." >&2
@@ -35,7 +38,7 @@ echo "[1/3] Refreshing cmake-built inputs ..."
 # ---- 2. Cargo-driven link -----------------------------------------------
 echo "[2/3] Cargo build (kernel-rust + ntoskrnl-cargo) ..."
 cd sdk/lib/rust
-cargo +nightly build --release \
+cargo "+${VIBEOS_NIGHTLY}" build --release \
     --target ntoskrnl-cargo/i686-kernel.json \
     -Z build-std=core,alloc,compiler_builtins \
     -Z build-std-features=compiler-builtins-mem \

@@ -19,7 +19,6 @@ extern "C" {
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
 }
 extern "C" {
-    fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
 }
 extern "system" {
     fn PAGED_CODE();
@@ -68,7 +67,7 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
 
     if ZPODDEnabledInRegistry == 0 {
         status = STATUS_NOT_SUPPORTED;
-        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+        TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: ZPODD not enabled due to registry settings.\n\0".as_ptr() as *const i8);
         break 'cleanup;
     }
@@ -92,7 +91,7 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
         || (*(*DeviceExtension).PowerDescriptor).AsynchronousNotificationSupported == 0
     {
         status = STATUS_NOT_SUPPORTED;
-        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+        TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: ZPODD not enabled due to SATA features not present.\n\0".as_ptr() as *const i8);
         break 'cleanup;
     }
@@ -115,7 +114,7 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
         )
     {
         status = STATUS_NOT_SUPPORTED;
-        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+        TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: ZPODD not enabled due to ODD features not present.\n\0".as_ptr() as *const i8);
         break 'cleanup;
     }
@@ -130,7 +129,7 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
     );
 
     if status < 0 {
-        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+        TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: Query D3Cold support interface failed.\n\0".as_ptr() as *const i8);
         break 'cleanup;
     }
@@ -149,25 +148,25 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
         || (*(*DeviceExtension).PowerDescriptor).D3ColdSupported == 0
     {
         status = STATUS_NOT_SUPPORTED;
-        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+        TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: ZPODD not enabled due to ACPI support not present.\n\0".as_ptr() as *const i8);
         break 'cleanup;
     }
 
     status = DeviceSendEnableIdlePowerIoctl(DeviceExtension, 1, 1, DELAY_TIME_TO_ENTER_ZERO_POWER_IN_MS);
     if status < 0 {
-        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+        TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: ZPODD not enabled due to runtime power framework.\n\0".as_ptr() as *const i8);
         break 'cleanup;
     }
 
-    TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+    TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                b"DeviceInitializeZPODD: ZPODD is enabled.\n\0".as_ptr() as *const i8);
     (*DeviceExtension).ZeroPowerODDInfo = zpoddInfo;
 
     inHomePosition = DeviceZPODDIsInHomePosition(DeviceExtension) as i32;
     if inHomePosition == 0 {
-        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+        TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"DeviceInitializeZPODD: not ready to power off, device marked as active\n\0".as_ptr() as *const i8);
         DeviceMarkActive(DeviceExtension, 1, 0);
     } else {
@@ -365,7 +364,7 @@ pub unsafe extern "C" fn DeviceSendEnableIdlePowerIoctl(
         }
     }
 
-    TracePrint(
+    TracePrint!(
         0x00000004, /* TRACE_LEVEL_INFORMATION */
         0x00004000, /* TRACE_FLAG_POWER */
         b"DeviceSendEnableIdlePowerIoctl: Port driver returned status (%x) for FDO (%p)\n\tD3ColdSupported: %u\n\tD3IdleTimeout: %u (ms)\0"
@@ -679,7 +678,7 @@ pub unsafe extern "C" fn DeviceMarkActive(
 //
 //         status = STATUS_NOT_SUPPORTED;
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                     "DeviceInitializeZPODD: ZPODD not enabled due to registry settings.\n"
 //                     ));
 //
@@ -721,7 +720,7 @@ pub unsafe extern "C" fn DeviceMarkActive(
 //     {
 //         status = STATUS_NOT_SUPPORTED;
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                     "DeviceInitializeZPODD: ZPODD not enabled due to SATA features not present.\n"
 //                     ));
 //
@@ -745,7 +744,7 @@ pub unsafe extern "C" fn DeviceMarkActive(
 //     {
 //         status = STATUS_NOT_SUPPORTED;
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                     "DeviceInitializeZPODD: ZPODD not enabled due to ODD features not present.\n"
 //                     ));
 //
@@ -763,7 +762,7 @@ pub unsafe extern "C" fn DeviceMarkActive(
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                     "DeviceInitializeZPODD: Query D3Cold support interface failed.\n"
 //                     ));
 //
@@ -797,7 +796,7 @@ pub unsafe extern "C" fn DeviceMarkActive(
 //     {
 //         status = STATUS_NOT_SUPPORTED;
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                     "DeviceInitializeZPODD: ZPODD not enabled due to ACPI support not present.\n"
 //                     ));
 //
@@ -818,14 +817,14 @@ pub unsafe extern "C" fn DeviceMarkActive(
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                     "DeviceInitializeZPODD: ZPODD not enabled due to runtime power framework.\n"
 //                     ));
 //
 //         goto Cleanup;
 //     }
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                 "DeviceInitializeZPODD: ZPODD is enabled.\n"
 //                 ));
 //
@@ -840,7 +839,7 @@ pub unsafe extern "C" fn DeviceMarkActive(
 //
 //     if (inHomePosition == FALSE)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                    "DeviceInitializeZPODD: not ready to power off, device marked as active\n"));
 //
 //         DeviceMarkActive(DeviceExtension, TRUE, FALSE);
@@ -1118,7 +1117,7 @@ pub unsafe extern "C" fn DeviceMarkActive(
 //         }
 //     }
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION,
+//     TracePrint!((TRACE_LEVEL_INFORMATION,
 //                 TRACE_FLAG_POWER,
 //                 "DeviceSendEnableIdlePowerIoctl: Port driver returned status (%x) for FDO (%p)\n"
 //                 "\tD3ColdSupported: %u\n"

@@ -79,7 +79,6 @@ use core::ffi::c_void;
 use core::mem::offset_of;
 
 extern "C" {
-    fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
     fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
     fn CdromDbgPrint3(format: *const i8, arg1: usize, arg2: usize, arg3: usize) -> u32;
     fn NT_SUCCESS(status: NTSTATUS) -> bool;
@@ -448,19 +447,19 @@ pub unsafe extern "C" fn ReadQChannel(
         {
             match (*inputBuffer).Format as u32 {
                 IOCTL_CDROM_CURRENT_POSITION => {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_VERBOSE,
                         TRACE_FLAG_IOCTL,
                         b"ReadQChannel: Audio Status is %u\n\0".as_ptr() as *const i8,
                         (*subQPtr).CurrentPosition.as_ref().Header.AudioStatus as u32,
                     );
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_VERBOSE,
                         TRACE_FLAG_IOCTL,
                         b"ReadQChannel: Control = 0x%x\n\0".as_ptr() as *const i8,
                         (*subQPtr).CurrentPosition.as_ref().Control() as u32,
                     );
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_VERBOSE,
                         TRACE_FLAG_IOCTL,
                         b"ReadQChannel: Track = %u\n\0".as_ptr() as *const i8,
@@ -468,7 +467,7 @@ pub unsafe extern "C" fn ReadQChannel(
                     );
                 }
                 IOCTL_CDROM_MEDIA_CATALOG => {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_VERBOSE,
                         TRACE_FLAG_IOCTL,
                         b"ReadQChannel: Mcval is %u\n\0".as_ptr() as *const i8,
@@ -476,7 +475,7 @@ pub unsafe extern "C" fn ReadQChannel(
                     );
                 }
                 IOCTL_CDROM_TRACK_ISRC => {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_VERBOSE,
                         TRACE_FLAG_IOCTL,
                         b"ReadQChannel: Tcval is %u\n\0".as_ptr() as *const i8,
@@ -568,7 +567,7 @@ pub unsafe extern "C" fn ReadDvdStructure(
     {
         let fmt = request.as_ref().unwrap().Format as u8;
         if fmt > DvdMaxDescriptor as u8 {
-            TracePrint(
+            TracePrint!(
                 5, // TRACE_LEVEL_VERBOSE
                 0x01, // TRACE_FLAG_IOCTL
                 c"READ_DVD_STRUCTURE format %x = %s (%x bytes)\n".as_ptr() as *const i8,
@@ -577,7 +576,7 @@ pub unsafe extern "C" fn ReadDvdStructure(
                 dataLength as u32,
             );
         } else {
-            TracePrint(
+            TracePrint!(
                 5, // TRACE_LEVEL_VERBOSE
                 0x01, // TRACE_FLAG_IOCTL
                 c"READ_DVD_STRUCTURE format %x = %s (%x bytes)\n".as_ptr() as *const i8,
@@ -598,7 +597,7 @@ pub unsafe extern "C" fn ReadDvdStructure(
     status = ScratchBuffer_ExecuteCdb(DeviceExtension, OriginalRequest, dataLength as u32, 1i32, &raw const cdb as *mut CDB, 12);
 
     if status >= 0 { // NT_SUCCESS(status)
-        TracePrint(
+        TracePrint!(
             4, // TRACE_LEVEL_INFORMATION
             0x01,
             c"DvdDCCompletion - READ_STRUCTURE: descriptor format of %d\n".as_ptr() as *const i8,
@@ -610,7 +609,7 @@ pub unsafe extern "C" fn ReadDvdStructure(
         let len = (*(*DeviceExtension).ScratchContext.ScratchSrb).DataTransferLength;
         core::ptr::copy_nonoverlapping(src as *const u8, header as *mut u8, len as usize);
 
-        TracePrint(
+        TracePrint!(
             0x02,
             0x01,
             c"DvdDCCompletion - READ_STRUCTURE:\n\tHeader at %p\n\tDvdDCCompletion - READ_STRUCTURE: data at %p\n\tDataBuffer was at %p\n\tDataTransferLength was %lx\n".as_ptr() as *const i8,
@@ -620,7 +619,7 @@ pub unsafe extern "C" fn ReadDvdStructure(
             (*(*DeviceExtension).ScratchContext.ScratchSrb).DataTransferLength,
         );
 
-        TracePrint(
+        TracePrint!(
             0x02,
             0x01,
             c"READ_STRUCTURE: header->Length %lx -> ".as_ptr() as *const i8,
@@ -629,7 +628,7 @@ pub unsafe extern "C" fn ReadDvdStructure(
 
         REVERSE_SHORT(&raw mut (*header).Length);
 
-        TracePrint(
+        TracePrint!(
             0x02,
             0x01,
             c"%lx\n".as_ptr() as *const i8,
@@ -648,14 +647,14 @@ pub unsafe extern "C" fn ReadDvdStructure(
             let layer: *mut DVD_LAYER_DESCRIPTOR = (*header).Data.as_mut_ptr() as *mut DVD_LAYER_DESCRIPTOR;
 
             if tempLength >= (core::mem::offset_of!(DVD_LAYER_DESCRIPTOR, StartingDataSector) + core::mem::size_of::<u32>()) as u32 {
-                TracePrint(
+                TracePrint!(
                     0x02,
                     0x01,
                     c"READ_STRUCTURE: StartingDataSector %lx -> ".as_ptr() as *const i8,
                     (*layer).StartingDataSector,
                 );
                 REVERSE_LONG(&raw mut (*layer).StartingDataSector);
-                TracePrint(
+                TracePrint!(
                     0x02,
                     0x01,
                     c"%lx\n".as_ptr() as *const i8,
@@ -663,14 +662,14 @@ pub unsafe extern "C" fn ReadDvdStructure(
                 );
             }
             if tempLength >= (core::mem::offset_of!(DVD_LAYER_DESCRIPTOR, EndDataSector) + core::mem::size_of::<u32>()) as u32 {
-                TracePrint(
+                TracePrint!(
                     0x02,
                     0x01,
                     c"READ_STRUCTURE: EndDataSector %lx -> ".as_ptr() as *const i8,
                     (*layer).EndDataSector,
                 );
                 REVERSE_LONG(&raw mut (*layer).EndDataSector);
-                TracePrint(
+                TracePrint!(
                     0x02,
                     0x01,
                     c"%lx\n".as_ptr() as *const i8,
@@ -678,14 +677,14 @@ pub unsafe extern "C" fn ReadDvdStructure(
                 );
             }
             if tempLength >= (core::mem::offset_of!(DVD_LAYER_DESCRIPTOR, EndLayerZeroSector) + core::mem::size_of::<u32>()) as u32 {
-                TracePrint(
+                TracePrint!(
                     0x02,
                     0x01,
                     c"READ_STRUCTURE: EndLayerZeroSector %lx -> ".as_ptr() as *const i8,
                     (*layer).EndLayerZeroSector,
                 );
                 REVERSE_LONG(&raw mut (*layer).EndLayerZeroSector);
-                TracePrint(
+                TracePrint!(
                     0x02,
                     0x01,
                     c"%lx\n".as_ptr() as *const i8,
@@ -695,13 +694,13 @@ pub unsafe extern "C" fn ReadDvdStructure(
         }
 
         if status < 0 { // never true but kept
-            TracePrint(
+            TracePrint!(
                 0x02,
                 0x01,
                 c"Status is %lx\n".as_ptr() as *const i8,
                 status,
             );
-            TracePrint(
+            TracePrint!(
                 0x02,
                 0x01,
                 c"DvdDeviceControlCompletion - IOCTL_DVD_READ_STRUCTURE: data transfer length of %d\n".as_ptr() as *const i8,
@@ -1044,7 +1043,7 @@ pub unsafe extern "C" fn RequestHandleGetMediaTypeEx(
                 let format_str =
                     b"RequestHandleGetMediaTypeEx: GET_MEDIA_TYPES status of TUR - %lx\n\0"
                         .as_ptr() as *const i8;
-                TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, format_str, status);
+                TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, format_str, status);
             }
         }
 
@@ -1153,7 +1152,7 @@ pub unsafe extern "C" fn RequestHandleGetDvdRegion(
             }
             *data_length = core::mem::size_of::<DVD_REGION>();
         } else {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"RequestHandleGetDvdRegion => rpcKey->RpcScheme != 1\n\0".as_ptr() as *const i8,
@@ -1235,7 +1234,7 @@ pub unsafe extern "C" fn RequestValidateRawRead(
         } else if rawReadInfo.TrackMode == RawWithC2AndSubCode {
             transferBytes = (rawReadInfo.SectorCount as u64) * (CD_RAW_SECTOR_WITH_C2_AND_SUBCODE_SIZE as u64);
         } else {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"RequestValidateRawRead: Invalid TrackMode type %x for XA read\n\0".as_ptr() as *const i8,
@@ -1247,35 +1246,35 @@ pub unsafe extern "C" fn RequestValidateRawRead(
         endOffset += startingOffset.QuadPart as u64;
 
         if rawReadInfo.SectorCount == 0 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"RequestValidateRawRead: Invalid I/O parameters for XA Read (zero sectors requested)\n\0".as_ptr() as *const i8,
             );
             status = STATUS_INVALID_PARAMETER;
         } else if transferBytes < rawReadInfo.SectorCount as u64 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"RequestValidateRawRead: Invalid I/O parameters for XA Read (TransferBytes Overflow)\n\0".as_ptr() as *const i8,
             );
             status = STATUS_INVALID_PARAMETER;
         } else if endOffset < startingOffset.QuadPart as u64 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"RequestValidateRawRead: Invalid I/O parameters for XA Read (EndingOffset Overflow)\n\0".as_ptr() as *const i8,
             );
             status = STATUS_INVALID_PARAMETER;
         } else if RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength < transferBytes as usize {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"RequestValidateRawRead: Invalid I/O parameters for XA Read (Bad buffer size)\n\0".as_ptr() as *const i8,
             );
             status = STATUS_INVALID_PARAMETER;
         } else if endOffset > (*DeviceExtension).PartitionLength.QuadPart as u64 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"RequestValidateRawRead: Invalid I/O parameters for XA Read (Request Out of Bounds)\n\0".as_ptr() as *const i8,
@@ -1287,7 +1286,7 @@ pub unsafe extern "C" fn RequestValidateRawRead(
     if status >= 0 {
         mdlBytes = MmGetMdlByteCount((*irp).MdlAddress) as u64;
         if mdlBytes < transferBytes {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"RequestValidateRawRead: Invalid MDL %s, Irp %p\n\0".as_ptr() as *const i8,
@@ -1300,7 +1299,7 @@ pub unsafe extern "C" fn RequestValidateRawRead(
 
     if status >= 0 {
         if ((MmGetMdlVirtualAddress((*irp).MdlAddress) as usize) & (*(*DeviceExtension).AdapterDescriptor).AlignmentMask as usize) != 0 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"RequestValidateRawRead: Invalid I/O parameters for XA Read (Buffer %p not aligned with mask %x\n\0".as_ptr() as *const i8,
@@ -1326,7 +1325,7 @@ pub unsafe extern "C" fn RequestValidateRawRead(
         }
 
         if transferBytes > maxLength as u64 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"RequestValidateRawRead: The XA Read (type %x) would require %I64x bytes, but the adapter can only handle %x bytes (for a%saligned buffer)\n\0".as_ptr() as *const i8,
@@ -1504,7 +1503,7 @@ pub unsafe extern "C" fn RequestValidateDvdReadStructure(
 
     if status >= 0 {
         if RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength < core::mem::size_of::<DVD_READ_STRUCTURE>() {
-            TracePrint(
+            TracePrint!(
                 2, // TRACE_LEVEL_ERROR
                 0x80, // TRACE_FLAG_IOCTL
                 b"RequestValidateDvdReadStructure - input buffer length too small (was %d should be %d)\n\0".as_ptr() as *const i8,
@@ -1513,7 +1512,7 @@ pub unsafe extern "C" fn RequestValidateDvdReadStructure(
             );
             status = STATUS_INVALID_PARAMETER;
         } else if RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength < core::mem::size_of::<READ_DVD_STRUCTURES_HEADER>() {
-            TracePrint(
+            TracePrint!(
                 2, // TRACE_LEVEL_ERROR
                 0x80, // TRACE_FLAG_IOCTL
                 b"RequestValidateDvdReadStructure - output buffer cannot hold header information\n\0".as_ptr() as *const i8,
@@ -1522,7 +1521,7 @@ pub unsafe extern "C" fn RequestValidateDvdReadStructure(
             *DataLength = core::mem::size_of::<READ_DVD_STRUCTURES_HEADER>();
         } else if RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength > 65535 {
             // MAXUSHORT
-            TracePrint(
+            TracePrint!(
                 2, // TRACE_LEVEL_ERROR
                 0x80, // TRACE_FLAG_IOCTL
                 b"RequestValidateDvdReadStructure - output buffer too large\n\0".as_ptr() as *const i8,
@@ -1550,7 +1549,7 @@ pub unsafe extern "C" fn RequestValidateDvdStartSession(
         if RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength
             < core::mem::size_of::<DVD_SESSION_ID>()
         {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_IOCTL,
                 b"RequestValidateDvdStartSession: DVD_START_SESSION - output buffer too small\n\0"
@@ -1589,7 +1588,7 @@ pub unsafe extern "C" fn RequestValidateDvdSendKey(
             || (RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize
                 != (*key).KeyLength as usize)
         {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_IOCTL,
                 b"RequestValidateDvdSendKey: [%p] IOCTL_DVD_SEND_KEY - key is too small or does not match KeyLength\n\0"
@@ -2210,7 +2209,7 @@ pub unsafe extern "system" fn RequestValidateExclusiveAccess(
     *DataLength = 0;
 
     if KeGetCurrentIrql() != PASSIVE_LEVEL {
-        TracePrint(
+        TracePrint!(
             2, // TRACE_LEVEL_ERROR
             0x20, // TRACE_FLAG_IOCTL
             b"RequestValidateExclusiveAccess: IOCTL must be called at passive level.\n\0"
@@ -2221,7 +2220,7 @@ pub unsafe extern "system" fn RequestValidateExclusiveAccess(
     } else if RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength
         < core::mem::size_of::<CDROM_EXCLUSIVE_ACCESS>()
     {
-        TracePrint(
+        TracePrint!(
             2, // TRACE_LEVEL_ERROR
             0x20, // TRACE_FLAG_IOCTL
             b"RequestValidateExclusiveAccess: Input buffer too small\n\0"
@@ -2247,7 +2246,7 @@ pub unsafe extern "system" fn RequestValidateExclusiveAccess(
                     < core::mem::size_of::<CDROM_EXCLUSIVE_LOCK_STATE>()
                 {
                     // Output buffer too small.
-                    TracePrint(
+                    TracePrint!(
                         2, // TRACE_LEVEL_ERROR
                         0x20, // TRACE_FLAG_IOCTL
                         b"RequestValidateExclusiveAccess: Output buffer too small\n\0"
@@ -2264,7 +2263,7 @@ pub unsafe extern "system" fn RequestValidateExclusiveAccess(
                     < core::mem::size_of::<CDROM_EXCLUSIVE_LOCK>()
                 {
                     // Input buffer too small
-                    TracePrint(
+                    TracePrint!(
                         2, // TRACE_LEVEL_ERROR
                         0x20, // TRACE_FLAG_IOCTL
                         b"RequestValidateExclusiveAccess: Input buffer too small\n\0"
@@ -2281,7 +2280,7 @@ pub unsafe extern "system" fn RequestValidateExclusiveAccess(
 
             _ => {
                 // Unknown request type.
-                TracePrint(
+                TracePrint!(
                     2, // TRACE_LEVEL_ERROR
                     0x20, // TRACE_FLAG_IOCTL
                     b"RequestValidateExclusiveAccess: Invalid request type\n\0"
@@ -2362,7 +2361,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessLockDevice(
 
     if fileObject.is_null() {
         status = STATUS_INVALID_HANDLE;
-        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+        TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
             b"RequestHandleExclusiveAccessLockDevice: FileObject is NULL, cannot grant exclusive access\n".as_ptr() as *const i8);
     }
 
@@ -2380,7 +2379,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessLockDevice(
         while idx < CDROM_EXCLUSIVE_CALLER_LENGTH && (*exclusiveLock).CallerName[idx as usize] != b'\0' {
             let ch: u8 = (*exclusiveLock).CallerName[idx as usize];
             if ValidChar(ch) == 0 {
-                TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+                TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
                     b"RequestHandleExclusiveAccessLockDevice: Invalid characters in caller name\n".as_ptr() as *const i8);
                 status = STATUS_INVALID_PARAMETER;
                 break;
@@ -2391,7 +2390,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessLockDevice(
 
     if NT_SUCCESS(status) {
         if idx == 0 || idx >= CDROM_EXCLUSIVE_CALLER_LENGTH {
-            TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+            TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
                 b"RequestHandleExclusiveAccessLockDevice: Not a valid null terminated string.\n".as_ptr() as *const i8);
             status = STATUS_INVALID_PARAMETER;
         } else {
@@ -2404,7 +2403,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessLockDevice(
         if ((*exclusiveLock).Access.Flags & CDROM_LOCK_IGNORE_VOLUME) == 0 &&
             IsVolumeMounted((*deviceExtension).DeviceObject as *mut core::ffi::c_void) != 0
         {
-            TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+            TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
                 b"RequestHandleExclusiveAccessLockDevice: Unable to lock device, file system mounted\n".as_ptr() as *const i8);
             status = STATUS_INVALID_DEVICE_STATE;
         }
@@ -2417,7 +2416,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessLockDevice(
             core::ptr::null_mut()
         );
         if oldOwner.is_null() {
-            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
                 b"RequestHandleExclusiveAccessLockDevice: Entering exclusive mode! Device locked by file object %p\n".as_ptr() as *const i8,
                 fileObject);
 
@@ -2457,7 +2456,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessLockDevice(
                 IoWriteErrorLogEntry(logEntry);
             }
         } else {
-            TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+            TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
                 b"RequestHandleExclusiveAccessLockDevice: Unable to lock device, device already locked.\n".as_ptr() as *const i8);
             status = STATUS_ACCESS_DENIED;
         }
@@ -2480,7 +2479,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessUnlockDevice(
 
     if fileObject.is_null() {
         status = STATUS_INVALID_HANDLE;
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_IOCTL,
             b"RequestHandleExclusiveAccessUnlockDevice: FileObject is NULL, cannot release exclusive access\n\0".as_ptr() as *const i8,
@@ -2500,7 +2499,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessUnlockDevice(
         let noMediaFlag: i32 =
             if ((*exclusiveAccess).Flags & CDROM_NO_MEDIA_NOTIFICATIONS) != 0 { 1 } else { 0 };
         status = DeviceUnlockExclusive(deviceExtension, fileObject, noMediaFlag);
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_IOCTL,
             b"RequestHandleExclusiveAccessUnlockDevice: Device unlocked\n\0".as_ptr() as *const i8,
@@ -2922,7 +2921,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
             (*writeCache).FlushCacheSupported = 1; // TRUE
         } else {
             // Device does not support sync cache
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestHandleQueryPropertyWriteCache: Synchronize cache failed with status 0x%X\n\0".as_ptr() as *const i8,
@@ -2941,7 +2940,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
         ) as *mut MODE_PARAMETER_HEADER;
 
         if modeData.is_null() {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"RequestHandleQueryPropertyWriteCache: Unable to allocate mode data buffer\n\0".as_ptr() as *const i8,
@@ -2972,7 +2971,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
             );
 
             if length < core::mem::size_of::<MODE_PARAMETER_HEADER>() {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_IOCTL,
                     b"RequestHandleQueryPropertyWriteCache: Mode Sense failed\n\0".as_ptr() as *const i8,
@@ -2995,7 +2994,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
         );
 
         if pageData.is_null() {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestHandleQueryPropertyWriteCache: Unable to find caching mode page.\n\0".as_ptr() as *const i8,
@@ -3045,7 +3044,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
             );
 
             if length < core::mem::size_of::<MODE_PARAMETER_HEADER>() {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_IOCTL,
                     b"RequestHandleQueryPropertyWriteCache: Mode Sense failed\n\0".as_ptr() as *const i8,
@@ -3070,7 +3069,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
         );
 
         if pageData.is_null() {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestHandleQueryPropertyWriteCache: Unable to find caching mode page.\n\0".as_ptr() as *const i8,
@@ -3120,7 +3119,7 @@ pub unsafe extern "C" fn RequestValidateDvdReadKey(
         if (RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength as usize)
             < core::mem::size_of::<DVD_COPY_PROTECT_KEY>()
         {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_IOCTL,
                 b"DvdDeviceControl: EstablishDriveKey - challenge key buffer too small\n\0"
@@ -3159,7 +3158,7 @@ pub unsafe extern "C" fn RequestValidateDvdReadKey(
         if (RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize)
             < (keyLength as usize)
         {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_IOCTL,
                 b"DvdDeviceControl: EstablishDriveKey - output buffer too small\n\0"
@@ -3207,7 +3206,7 @@ pub unsafe extern "C" fn RequestValidateDvdEndSession(
         {
             const TRACE_LEVEL_ERROR: u32 = 2; // TRACE_LEVEL_ERROR
             const TRACE_FLAG_IOCTL: u32 = 0x0001; // TRACE_FLAG_IOCTL
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_IOCTL,
                 b"DvdDeviceControl: EndSession - input buffer too small\n\0".as_ptr() as *const i8,
@@ -3540,7 +3539,7 @@ pub unsafe extern "system" fn RequestHandleScsiPassThrough(
     );
 
     if status < 0 && is_soft_eject != 0 {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_POWER,
             b"RequestHandleScsiPassThrough: soft eject detected, device marked as active\n\0".as_ptr() as *const i8,
@@ -4262,7 +4261,7 @@ pub unsafe extern "C" fn RequestHandleGetConfiguration(
             if is_type_one && hack_flag_set {
                 const TRACE_LEVEL_WARNING: u32 = 3;
                 const TRACE_FLAG_IOCTL: u32 = 4;
-                TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, b"DeviceHandleGetConfiguration: Changing TYPE_ONE Get Config to TYPE_ALL\n\0".as_ptr() as *const i8);
+                TracePrint!(TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, b"DeviceHandleGetConfiguration: Changing TYPE_ONE Get Config to TYPE_ALL\n\0".as_ptr() as *const i8);
                 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL: u8 = 0;
                 cdb.GET_CONFIGURATION.as_mut().set_RequestType(SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL);
             }
@@ -4277,7 +4276,7 @@ pub unsafe extern "C" fn RequestHandleGetConfiguration(
                     if (data_transfer_length as usize) < core::mem::size_of::<GET_CONFIGURATION_HEADER>() {
                         const TRACE_LEVEL_ERROR: u32 = 2;
                         const TRACE_FLAG_IOCTL: u32 = 4;
-                        TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"DeviceHandleGetConfiguration: No get config header!\n\0".as_ptr() as *const i8);
+                        TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, b"DeviceHandleGetConfiguration: No get config header!\n\0".as_ptr() as *const i8);
                         *DataLength = 0;
                         status = STATUS_INVALID_DEVICE_REQUEST;
                     } else {
@@ -4844,7 +4843,7 @@ pub unsafe extern "system" fn RequestHandleEventNotification(
     if ntkrnl_sys::base::NT_SUCCESS(status) {
         if (*info).MediaChangeDetectionDisableCount != 0 {
             let format_str = b"RequestHandleEventNotification: device %p has detection disabled \n\0".as_ptr() as *const i8;
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_VERBOSE,
                 TRACE_FLAG_MCN,
                 format_str,
@@ -4950,7 +4949,7 @@ pub unsafe extern "C" fn RequestHandleEnableStreaming(
             }
             NT_ASSERT((!fileObjectContext.is_null()) as i32);
             if fileObjectContext.is_null() {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_ERROR,
                     TRACE_FLAG_IOCTL,
                     b"RequestHandleEnableStreaming: cannot find file object context\n\0".as_ptr() as *const i8,
@@ -4978,7 +4977,7 @@ pub unsafe extern "C" fn RequestHandleEnableStreaming(
             streamingWriteSupported = if (mmc.StreamingWriteSupported != 0) && !TEST_FLAG((*fdoData).HackFlags as u32, FDO_HACK_NO_STREAMING) { 1 } else { 0 };
             if (enforceStreamingRead != 0 && streamingReadSupported == 0) ||
                 (enforceStreamingWrite != 0 && streamingWriteSupported == 0) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_ERROR,
                     TRACE_FLAG_IOCTL,
                     b"RequestHandleEnableStreaming: requested Streaming mode is not supported\n\0".as_ptr() as *const i8,
@@ -5293,7 +5292,7 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
 
     if NT_SUCCESS(status) {
         if (EXCLUSIVE_MODE(cdData) != 0) && ((*cdData).ExclusiveOwner != WdfRequestGetFileObject(Request)) {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_RW,
                 b"RequestValidateReadWrite: Access Denied! Device in exclusive mode.\n\0".as_ptr() as *const i8,
@@ -5374,7 +5373,7 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
         }
 
         if (requestType == WdfRequestTypeWrite) && ((*cdData).Mmc.WriteAllowed == 0) {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_RW,
                 b"RequestValidateReadWrite: Write request to read-only media\n\0".as_ptr() as *const i8,
@@ -5389,7 +5388,7 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
                         if (startingOffset >= (*DeviceExtension).PartitionLength.QuadPart)
                             || startingOffset < 0
                         {
-                            TracePrint(
+                            TracePrint!(
                                 TRACE_LEVEL_ERROR,
                                 TRACE_FLAG_RW,
                                 b"RequestValidateReadWrite: Request is out of bounds\n\0".as_ptr() as *const i8,
@@ -5398,7 +5397,7 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
                         } else {
                             let bytesRemaining: u64 = (*DeviceExtension).PartitionLength.QuadPart as u64 - startingOffset as u64;
                             if (transferByteCount as u64) > bytesRemaining {
-                                TracePrint(
+                                TracePrint!(
                                     TRACE_LEVEL_ERROR,
                                     TRACE_FLAG_RW,
                                     b"RequestValidateReadWrite: Request is out of bounds\n\0".as_ptr() as *const i8,
@@ -5412,7 +5411,7 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
                 _ => {
                     if schema == FeatureRigidRestrictedOverwrite {
                         if ((transferByteCount >> (*DeviceExtension).SectorShift) as u32 % (*cdData).Mmc.Blocking) != 0 {
-                            TracePrint(
+                            TracePrint!(
                                 TRACE_LEVEL_ERROR,
                                 TRACE_FLAG_RW,
                                 b"RequestValidateReadWrite: Number of blocks is not a multiple of the blocking size (%x)\n\0".as_ptr() as *const i8,
@@ -5424,7 +5423,7 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
                     }
                     if (schema == FeatureRigidRestrictedOverwrite) || (schema == FeatureRestrictedOverwrite) {
                         if (Int64ShrlMod32(startingOffset, (*DeviceExtension).SectorShift as u32) as u32 % (*cdData).Mmc.Blocking) != 0 {
-                            TracePrint(
+                            TracePrint!(
                                 TRACE_LEVEL_ERROR,
                                 TRACE_FLAG_RW,
                                 b"RequestValidateReadWrite: Starting block is not a multiple of the blocking size (%x)\n\0".as_ptr() as *const i8,
@@ -5435,7 +5434,7 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
                     }
                     // unknown schema
                     if (schema != FeatureRigidRestrictedOverwrite) && (schema != FeatureRestrictedOverwrite) {
-                        TracePrint(
+                        TracePrint!(
                             TRACE_LEVEL_ERROR,
                             TRACE_FLAG_RW,
                             b"RequestValidateReadWrite: Unknown validation schema (%x)\n\0".as_ptr() as *const i8,
@@ -5455,7 +5454,7 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
     if NT_SUCCESS(status) {
         if RequestIsRealtimeStreaming(Request, (requestType == WdfRequestTypeRead) as BOOLEAN) != 0 {
             if requestType == WdfRequestTypeRead && ((*cdData).Mmc.StreamingReadSupported == 0) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_ERROR,
                     TRACE_FLAG_RW,
                     b"RequestValidateReadWrite: Streaming reads are not supported.\n\0".as_ptr() as *const i8,
@@ -5463,7 +5462,7 @@ pub unsafe extern "C" fn RequestValidateReadWrite(
                 status = STATUS_INVALID_DEVICE_REQUEST;
             }
             if requestType == WdfRequestTypeWrite && ((*cdData).Mmc.StreamingWriteSupported == 0) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_ERROR,
                     TRACE_FLAG_RW,
                     b"RequestValidateReadWrite: Streaming writes are not supported.\n\0".as_ptr() as *const i8,
@@ -5604,7 +5603,7 @@ pub unsafe extern "C" fn RequestHandleLoadEjectMedia(
         WdfWaitLockAcquire((*DeviceExtension).EjectSynchronizationLock, core::ptr::null_mut());
 
         if (*DeviceExtension).ProtectedLockCount != 0 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"RequestHandleLoadEjectMedia: call to eject protected locked device - failure\n\0"
@@ -6640,7 +6639,7 @@ pub unsafe extern "C" fn DeviceHandleGetSetVolume(
                     ) as *mut AUDIO_OUTPUT;
 
                     if audioInput.is_null() {
-                        TracePrint(
+                        TracePrint!(
                             3, // TRACE_LEVEL_WARNING
                             1, // TRACE_FLAG_IOCTL (assumed value)
                             b"Mode Sense Page %d not found\n\0".as_ptr() as *const i8,
@@ -6896,7 +6895,7 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
             ) as *mut DVD_COPY_PROTECT_KEY;
 
             if keyHeader.is_null() {
-                // TracePrint(...) omitted (varargs unsupported)
+                // TracePrint!(...) omitted (varargs unsupported)
                 status = STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -6944,7 +6943,7 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
                     (*outputKey).KeyLength = DVD_DISK_KEY_LENGTH;
                     *DataLength = DVD_DISK_KEY_LENGTH as usize;
                 }
-                // else TracePrint(...) omitted
+                // else TracePrint!(...) omitted
             }
 
             FREE_POOL(keyHeader as *mut core::ffi::c_void);
@@ -7357,7 +7356,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 
             (*cdData).RestoreDefaults = if (*stream).Persistent != 0 { 0 } else { 1 };
 
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"DeviceHandleSetSpeed: Restore default speed on media change set to %s\n\0"
@@ -7864,7 +7863,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //             }
 //             else
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                            "RequestHandleGetMediaTypeEx: GET_MEDIA_TYPES status of TUR - %lx\n", status));
 //             }
 //         }
@@ -7918,7 +7917,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //     PAGED_CODE ();
 //
-//     TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
+//     TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
 //                 "RequestHandleGetDvdRegion: [%p] IOCTL_DVD_GET_REGION\n", Request));
 //
 //     *DataLength = 0;
@@ -8027,7 +8026,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         }
 //         else
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                         "RequestHandleGetDvdRegion => rpcKey->RpcScheme != 1\n"));
 //             status = STATUS_INVALID_DEVICE_REQUEST;
 //         }
@@ -8144,7 +8143,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         }
 //         else
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                       "RequestValidateRawRead: Invalid TrackMode type %x for XA read\n",
 //                       rawReadInfo.TrackMode
 //                       ));
@@ -8156,35 +8155,35 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         // check for overflows....
 //         if (rawReadInfo.SectorCount == 0)
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                         "RequestValidateRawRead: Invalid I/O parameters for XA "
 //                         "Read (zero sectors requested)\n"));
 //             status = STATUS_INVALID_PARAMETER;
 //         }
 //         else if (transferBytes < (ULONGLONG)(rawReadInfo.SectorCount))
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                         "RequestValidateRawRead: Invalid I/O parameters for XA "
 //                         "Read (TransferBytes Overflow)\n"));
 //             status = STATUS_INVALID_PARAMETER;
 //         }
 //         else if (endOffset < (ULONGLONG)startingOffset.QuadPart)
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                         "RequestValidateRawRead: Invalid I/O parameters for XA "
 //                         "Read (EndingOffset Overflow)\n"));
 //             status = STATUS_INVALID_PARAMETER;
 //         }
 //         else if (RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength < transferBytes)
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                         "RequestValidateRawRead: Invalid I/O parameters for XA "
 //                         "Read (Bad buffer size)\n"));
 //             status = STATUS_INVALID_PARAMETER;
 //         }
 //         else if (endOffset > (ULONGLONG)DeviceExtension->PartitionLength.QuadPart)
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                         "RequestValidateRawRead: Invalid I/O parameters for XA "
 //                         "Read (Request Out of Bounds)\n"));
 //             status = STATUS_INVALID_PARAMETER;
@@ -8201,7 +8200,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         mdlBytes = (ULONGLONG)MmGetMdlByteCount(irp->MdlAddress);
 //         if (mdlBytes < transferBytes)
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                         "RequestValidateRawRead: Invalid MDL %s, Irp %p\n",
 //                         "size (5)", irp));
 //             status = STATUS_INVALID_PARAMETER;
@@ -8216,7 +8215,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         if ( ((ULONG_PTR)MmGetMdlVirtualAddress(irp->MdlAddress)) &
 //              DeviceExtension->AdapterDescriptor->AlignmentMask )
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                       "RequestValidateRawRead: Invalid I/O parameters for "
 //                       "XA Read (Buffer %p not aligned with mask %x\n",
 //                       RequestParameters.Parameters.DeviceIoControl.as_ref().Type3InputBuffer,
@@ -8249,7 +8248,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //         if (transferBytes > maxLength)
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                       "RequestValidateRawRead: The XA Read (type %x) would require %I64x bytes, "
 //                       "but the adapter can only handle %x bytes (for a%saligned buffer)\n",
 //                       rawReadInfo.TrackMode,
@@ -8576,7 +8575,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         if(RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength <
 //            sizeof(DVD_READ_STRUCTURE))
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                         "RequestValidateDvdReadStructure - input buffer "
 //                         "length too small (was %d should be %d)\n",
 //                         (int)RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength,
@@ -8587,7 +8586,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                 sizeof(READ_DVD_STRUCTURES_HEADER))
 //         {
 //
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                         "RequestValidateDvdReadStructure - output buffer "
 //                         "cannot hold header information\n"));
 //             status = STATUS_BUFFER_TOO_SMALL;
@@ -8597,7 +8596,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                 MAXUSHORT)
 //         {
 //             // key length must fit in two bytes
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                         "RequestValidateDvdReadStructure - output buffer "
 //                         "too large\n"));
 //             status = STATUS_INVALID_PARAMETER;
@@ -8650,7 +8649,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         if(RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength <
 //            sizeof(DVD_SESSION_ID))
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                         "RequestValidateDvdStartSession: DVD_START_SESSION - output "
 //                         "buffer too small\n"));
 //             status = STATUS_BUFFER_TOO_SMALL;
@@ -8713,7 +8712,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //             // match the input buffer length.  Key must be invalid
 //             //
 //
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                         "RequestValidateDvdSendKey: [%p] IOCTL_DVD_SEND_KEY - "
 //                         "key is too small or does not match KeyLength\n",
 //                         Request));
@@ -9663,13 +9662,13 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //     if (KeGetCurrentIrql() != PASSIVE_LEVEL)
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, "RequestValidateExclusiveAccess: IOCTL must be called at passive level.\n"));
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, "RequestValidateExclusiveAccess: IOCTL must be called at passive level.\n"));
 //         status = STATUS_INVALID_DEVICE_REQUEST;
 //     }
 //     else if (RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength < sizeof(CDROM_EXCLUSIVE_ACCESS))
 //     {
 //
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, "RequestValidateExclusiveAccess: Input buffer too small\n"));
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, "RequestValidateExclusiveAccess: Input buffer too small\n"));
 //         status = STATUS_INFO_LENGTH_MISMATCH;
 //     }
 //
@@ -9693,7 +9692,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                     //
 //                     // Output buffer too small.
 //                     //
-//                     TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, "RequestValidateExclusiveAccess: Output buffer too small\n"));
+//                     TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, "RequestValidateExclusiveAccess: Output buffer too small\n"));
 //                     *DataLength = sizeof(CDROM_EXCLUSIVE_LOCK_STATE);
 //                     status = STATUS_BUFFER_TOO_SMALL;
 //                 }
@@ -9708,7 +9707,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                     //
 //                     // Input buffer too small
 //                     //
-//                     TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, "RequestValidateExclusiveAccess: Input buffer too small\n"));
+//                     TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, "RequestValidateExclusiveAccess: Input buffer too small\n"));
 //                     status = STATUS_INFO_LENGTH_MISMATCH;
 //                 }
 //                 break;
@@ -9726,7 +9725,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                 //
 //                 // Unknown request type.
 //                 //
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, "RequestValidateExclusiveAccess: Invalid request type\n"));
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, "RequestValidateExclusiveAccess: Invalid request type\n"));
 //                 status = STATUS_INVALID_PARAMETER;
 //             }
 //         }
@@ -9839,7 +9838,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //     {
 //         status = STATUS_INVALID_HANDLE;
 //
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                     "RequestHandleExclusiveAccessLockDevice: FileObject is NULL, cannot grant exclusive access\n"));
 //     }
 //
@@ -9858,7 +9857,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         {
 //             if (!ValidChar(exclusiveLock->CallerName[idx]))
 //             {
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                             "RequestHandleExclusiveAccessLockDevice: Invalid characters in caller name\n"));
 //                 // error out
 //                 status = STATUS_INVALID_PARAMETER;
@@ -9872,7 +9871,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         if ((idx == 0) || (idx >= CDROM_EXCLUSIVE_CALLER_LENGTH))
 //         {
 //
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                         "RequestHandleExclusiveAccessLockDevice: Not a valid null terminated string.\n"));
 //             //error out
 //             status = STATUS_INVALID_PARAMETER;
@@ -9891,7 +9890,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         if ((TEST_FLAG(exclusiveLock->Access.Flags, CDROM_LOCK_IGNORE_VOLUME) == FALSE) &&
 //             IsVolumeMounted(deviceExtension->DeviceObject))
 //         {
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                             "RequestHandleExclusiveAccessLockDevice: Unable to lock device, file system mounted\n"));
 //                 status = STATUS_INVALID_DEVICE_STATE;
 //         }
@@ -9902,7 +9901,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //     {
 //         if (InterlockedCompareExchangePointer((PVOID)&cdData->ExclusiveOwner, (PVOID)fileObject, NULL) == NULL)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                         "RequestHandleExclusiveAccessLockDevice: Entering exclusive mode! Device locked by file object %p\n", fileObject));
 //
 //             // Zero out the CallerName before storing it in the extension
@@ -9946,7 +9945,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         }
 //         else
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                         "RequestHandleExclusiveAccessLockDevice: Unable to lock device, device already locked.\n"));
 //
 //             status = STATUS_ACCESS_DENIED;
@@ -9995,7 +9994,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         // The device can be unlocked from exclusive mode only via the file object which locked it.
 //         status = STATUS_INVALID_HANDLE;
 //
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                     "RequestHandleExclusiveAccessUnlockDevice: FileObject is NULL, cannot release exclusive access\n"));
 //     }
 //
@@ -10012,7 +10011,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         status = DeviceUnlockExclusive(deviceExtension, fileObject,
 //                         TEST_FLAG(exclusiveAccess->Flags, CDROM_NO_MEDIA_NOTIFICATIONS));
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "RequestHandleExclusiveAccessUnlockDevice: Device unlocked\n"));
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "RequestHandleExclusiveAccessUnlockDevice: Device unlocked\n"));
 //     }
 //
 //     RequestCompletion(deviceExtension, Request, status, 0);
@@ -10515,7 +10514,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         else
 //         {
 //             // Device does not support sync cache
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                         "RequestHandleQueryPropertyWriteCache: Synchronize cache failed with status 0x%X\n", status));
 //             writeCache->FlushCacheSupported = FALSE;
 //
@@ -10529,7 +10528,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //         if (modeData == NULL)
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                         "RequestHandleQueryPropertyWriteCache: Unable to allocate mode data buffer\n"));
 //             status = STATUS_INSUFFICIENT_RESOURCES;
 //         }
@@ -10556,7 +10555,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //             if (length < sizeof(MODE_PARAMETER_HEADER))
 //             {
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, "RequestHandleQueryPropertyWriteCache: Mode Sense failed\n"));
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, "RequestHandleQueryPropertyWriteCache: Mode Sense failed\n"));
 //                 status = STATUS_IO_DEVICE_ERROR;
 //             }
 //         }
@@ -10580,7 +10579,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         // Check if valid caching page exists.
 //         if (pageData == NULL)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "RequestHandleQueryPropertyWriteCache: Unable to find caching mode page.\n"));
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "RequestHandleQueryPropertyWriteCache: Unable to find caching mode page.\n"));
 //
 //             // Set write cache value as unknown.
 //             writeCache->WriteCacheEnabled = WriteCacheEnableUnknown;
@@ -10627,7 +10626,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //             if (length < sizeof(MODE_PARAMETER_HEADER))
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "RequestHandleQueryPropertyWriteCache: Mode Sense failed\n"));
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "RequestHandleQueryPropertyWriteCache: Mode Sense failed\n"));
 //
 //                 // If the device fails to return changeable pages, then
 //                 // set the write cache changeable value to unknown.
@@ -10654,7 +10653,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         // Check if valid caching page exists.
 //         if (pageData == NULL)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "RequestHandleQueryPropertyWriteCache: Unable to find caching mode page.\n"));
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "RequestHandleQueryPropertyWriteCache: Unable to find caching mode page.\n"));
 //
 //             // Set write cache changeable value to unknown.
 //             writeCache->WriteCacheChangeable = WriteCacheChangeUnknown;
@@ -10719,7 +10718,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //     {
 //         if(RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength < sizeof(DVD_COPY_PROTECT_KEY))
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                         "DvdDeviceControl: EstablishDriveKey - challenge "
 //                         "key buffer too small\n"));
 //             status = STATUS_INVALID_PARAMETER;
@@ -10778,7 +10777,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         if (RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength < keyLength)
 //         {
 //
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                         "DvdDeviceControl: EstablishDriveKey - output "
 //                         "buffer too small\n"));
 //             status = STATUS_BUFFER_TOO_SMALL;
@@ -10843,7 +10842,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         if(RequestParameters.Parameters.DeviceIoControl.as_ref().InputBufferLength <
 //             sizeof(DVD_SESSION_ID))
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                         "DvdDeviceControl: EndSession - input buffer too "
 //                         "small\n"));
 //             status = STATUS_INVALID_PARAMETER;
@@ -11320,7 +11319,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //     if ((!NT_SUCCESS(status)) &&
 //         (isSoftEject != FALSE))
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                    "RequestHandleScsiPassThrough: soft eject detected, device marked as active\n"));
 //
 //         DeviceMarkActive(deviceExtension, TRUE, FALSE);
@@ -12157,7 +12156,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                 TEST_FLAG(cdData->HackFlags, CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG))
 //             {
 //
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                            "DeviceHandleGetConfiguration: Changing TYPE_ONE Get Config to TYPE_ALL\n"));
 //                 cdb.GET_CONFIGURATION.RequestType = SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL;
 //             }
@@ -12174,7 +12173,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                     {
 //                         // Not enough data to calculate the data length.
 //                         // So assume feature is not present
-//                         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, "DeviceHandleGetConfiguration: No get config header!\n"));
+//                         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL, "DeviceHandleGetConfiguration: No get config header!\n"));
 //                         *DataLength = 0;
 //                         status = STATUS_INVALID_DEVICE_REQUEST;
 //                     }
@@ -12947,7 +12946,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //     {
 //         if (info->MediaChangeDetectionDisableCount != 0)
 //         {
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
 //                        "RequestHandleEventNotification: device %p has detection disabled \n",
 //                        DeviceExtension->DeviceObject));
 //             status = STATUS_UNSUCCESSFUL;
@@ -13105,7 +13104,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //         if (fileObjectContext == NULL)
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                         "RequestHandleEnableStreaming: cannot find file object context\n"));
 //             status = STATUS_INVALID_HANDLE;
 //         }
@@ -13139,7 +13138,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         if ((enforceStreamingRead && !streamingReadSupported) ||
 //             (enforceStreamingWrite && !streamingWriteSupported))
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                         "RequestHandleEnableStreaming: requested Streaming mode is not supported\n"));
 //             status = STATUS_INVALID_DEVICE_REQUEST;
 //         }
@@ -13572,7 +13571,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         if (EXCLUSIVE_MODE(cdData) && !EXCLUSIVE_OWNER(cdData, WdfRequestGetFileObject(Request)))
 //         {
 //             // This request is not from the owner. We can't let the operation go.
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_RW, "RequestValidateReadWrite: Access Denied! Device in exclusive mode.\n"));
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_RW, "RequestValidateReadWrite: Access Denied! Device in exclusive mode.\n"));
 //
 //             status = STATUS_ACCESS_DENIED;
 //         }
@@ -13638,7 +13637,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         if ((RequestParameters.Type == WdfRequestTypeWrite) &&
 //             !(cdData->Mmc.WriteAllowed))
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,  "RequestValidateReadWrite: Write request to read-only media\n"));
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,  "RequestValidateReadWrite: Write request to read-only media\n"));
 //             isValid = FALSE;
 //         }
 //
@@ -13655,7 +13654,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                         if ((startingOffset >= DeviceExtension->PartitionLength.QuadPart) ||
 //                             startingOffset < 0)
 //                         {
-//                             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,  "RequestValidateReadWrite: Request is out of bounds\n"));
+//                             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,  "RequestValidateReadWrite: Request is out of bounds\n"));
 //                             isValid = FALSE;
 //
 //                         }
@@ -13665,7 +13664,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //                             if ((ULONGLONG)transferByteCount > bytesRemaining)
 //                             {
-//                                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,  "RequestValidateReadWrite: Request is out of bounds\n"));
+//                                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,  "RequestValidateReadWrite: Request is out of bounds\n"));
 //                                 isValid = FALSE;
 //                             }
 //                         }
@@ -13676,7 +13675,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                     // Ensure that the number of blocks is a multiple of the blocking size
 //                     if (((transferByteCount >> DeviceExtension->SectorShift) % cdData->Mmc.Blocking) != 0)
 //                     {
-//                         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,
+//                         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,
 //                                    "RequestValidateReadWrite: Number of blocks is not a multiple of the blocking size (%x)\n",
 //                                    cdData->Mmc.Blocking));
 //
@@ -13687,7 +13686,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                     // Ensure that the request begins on a blocking boundary
 //                     if ((Int64ShrlMod32(startingOffset, DeviceExtension->SectorShift) % cdData->Mmc.Blocking) != 0)
 //                     {
-//                         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,
+//                         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,
 //                                    "RequestValidateReadWrite: Starting block is not a multiple of the blocking size (%x)\n",
 //                                    cdData->Mmc.Blocking));
 //
@@ -13701,7 +13700,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //                 default:
 //                     // Unknown schema. Fail the request
-//                     TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,
+//                     TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,
 //                                "RequestValidateReadWrite: Unknown validation schema (%x)\n",
 //                                schema));
 //
@@ -13727,14 +13726,14 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         {
 //             if (RequestParameters.Type == WdfRequestTypeRead && !cdData->Mmc.StreamingReadSupported)
 //             {
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,
 //                            "RequestValidateReadWrite: Streaming reads are not supported.\n"));
 //
 //                 status = STATUS_INVALID_DEVICE_REQUEST;
 //             }
 //             if (RequestParameters.Type == WdfRequestTypeWrite && !cdData->Mmc.StreamingWriteSupported)
 //             {
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_RW,
 //                            "RequestValidateReadWrite: Streaming writes are not supported.\n"));
 //
 //                 status = STATUS_INVALID_DEVICE_REQUEST;
@@ -13927,7 +13926,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //         if(DeviceExtension->ProtectedLockCount != 0)
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,  "RequestHandleLoadEjectMedia: call to eject protected locked "
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,  "RequestHandleLoadEjectMedia: call to eject protected locked "
 //                                                                 "device - failure\n"));
 //             status = STATUS_DEVICE_BUSY;
 //         }
@@ -14609,7 +14608,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         case RawWithC2AndSubCode:
 //             if (!cdData->Mmc.ReadCdC2Pointers || !cdData->Mmc.ReadCdSubCode)
 //             {
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                           "Request to read C2 & Subcode rejected.  "
 //                           "Is C2 supported: %d   Is Subcode supported: %d\n",
 //                           cdData->Mmc.ReadCdC2Pointers,
@@ -14622,7 +14621,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         case RawWithC2:
 //             if (!cdData->Mmc.ReadCdC2Pointers)
 //             {
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                           "Request to read C2 rejected because drive does not "
 //                           "report support for C2 pointers\n"
 //                           ));
@@ -14634,7 +14633,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //             if (!cdData->Mmc.ReadCdSubCode)
 //             {
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                           "Request to read subcode rejected because drive does "
 //                           "not report support for reading the subcode data\n"
 //                           ));
@@ -15023,23 +15022,23 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         switch( inputBuffer->Format )
 //         {
 //         case IOCTL_CDROM_CURRENT_POSITION:
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Audio Status is %u\n", subQPtr->CurrentPosition.Header.AudioStatus ));
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: ADR = 0x%x\n", subQPtr->CurrentPosition.ADR ));
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Control = 0x%x\n", subQPtr->CurrentPosition.Control ));
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Track = %u\n", subQPtr->CurrentPosition.TrackNumber ));
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Index = %u\n", subQPtr->CurrentPosition.IndexNumber ));
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Absolute Address = %x\n", *((PULONG)subQPtr->CurrentPosition.AbsoluteAddress) ));
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Relative Address = %x\n", *((PULONG)subQPtr->CurrentPosition.TrackRelativeAddress) ));
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Audio Status is %u\n", subQPtr->CurrentPosition.Header.AudioStatus ));
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: ADR = 0x%x\n", subQPtr->CurrentPosition.ADR ));
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Control = 0x%x\n", subQPtr->CurrentPosition.Control ));
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Track = %u\n", subQPtr->CurrentPosition.TrackNumber ));
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Index = %u\n", subQPtr->CurrentPosition.IndexNumber ));
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Absolute Address = %x\n", *((PULONG)subQPtr->CurrentPosition.AbsoluteAddress) ));
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Relative Address = %x\n", *((PULONG)subQPtr->CurrentPosition.TrackRelativeAddress) ));
 //             break;
 //
 //         case IOCTL_CDROM_MEDIA_CATALOG:
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Audio Status is %u\n", subQPtr->MediaCatalog.Header.AudioStatus ));
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Mcval is %u\n", subQPtr->MediaCatalog.Mcval ));
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Audio Status is %u\n", subQPtr->MediaCatalog.Header.AudioStatus ));
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Mcval is %u\n", subQPtr->MediaCatalog.Mcval ));
 //             break;
 //
 //         case IOCTL_CDROM_TRACK_ISRC:
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Audio Status is %u\n", subQPtr->TrackIsrc.Header.AudioStatus ));
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Tcval is %u\n", subQPtr->TrackIsrc.Tcval ));
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Audio Status is %u\n", subQPtr->TrackIsrc.Header.AudioStatus ));
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,"ReadQChannel: Tcval is %u\n", subQPtr->TrackIsrc.Tcval ));
 //             break;
 //         }
 // #endif
@@ -15422,7 +15421,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                     // Check to make sure the mode sense data is valid before we go on
 //                     if(audioInput == NULL)
 //                     {
-//                         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//                         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                                     "Mode Sense Page %d not found\n",
 //                                     CDROM_AUDIO_CONTROL_PAGE));
 //
@@ -15609,7 +15608,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //     {
 //         if ((UCHAR)request->Format > DvdMaxDescriptor)
 //         {
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
 //                         "READ_DVD_STRUCTURE format %x = %s (%x bytes)\n",
 //                         (UCHAR)request->Format,
 //                         READ_DVD_STRUCTURE_FORMAT_STRINGS[DvdMaxDescriptor],
@@ -15618,7 +15617,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         }
 //         else
 //         {
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
 //                         "READ_DVD_STRUCTURE format %x = %s (%x bytes)\n",
 //                         (UCHAR)request->Format,
 //                         READ_DVD_STRUCTURE_FORMAT_STRINGS[(UCHAR)request->Format],
@@ -15640,7 +15639,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //     if (NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "DvdDCCompletion - READ_STRUCTURE: descriptor format of %d\n", request->Format));
 //
 //         RtlMoveMemory(header,
@@ -15649,7 +15648,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //         // Cook the data.  There are a number of fields that really
 //         // should be byte-swapped for the caller.
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                   "DvdDCCompletion - READ_STRUCTURE:\n"
 //                   "\tHeader at %p\n"
 //                   "\tDvdDCCompletion - READ_STRUCTURE: data at %p\n"
@@ -15661,12 +15660,12 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                   DeviceExtension->ScratchContext.ScratchSrb->DataTransferLength));
 //
 //         // First the fields in the header
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "READ_STRUCTURE: header->Length %lx -> ",
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "READ_STRUCTURE: header->Length %lx -> ",
 //                    header->Length));
 //
 //         REVERSE_SHORT(&header->Length);
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "%lx\n", header->Length));
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "%lx\n", header->Length));
 //
 //         // Now the fields in the descriptor
 //         if(request->Format == DvdPhysicalDescriptor)
@@ -15680,31 +15679,31 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //             // Make sure the buffer size is good for swapping bytes.
 //             if (tempLength >= RTL_SIZEOF_THROUGH_FIELD(DVD_LAYER_DESCRIPTOR, StartingDataSector))
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "READ_STRUCTURE: StartingDataSector %lx -> ",
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "READ_STRUCTURE: StartingDataSector %lx -> ",
 //                                layer->StartingDataSector));
 //                 REVERSE_LONG(&(layer->StartingDataSector));
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "%lx\n", layer->StartingDataSector));
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "%lx\n", layer->StartingDataSector));
 //             }
 //             if (tempLength >= RTL_SIZEOF_THROUGH_FIELD(DVD_LAYER_DESCRIPTOR, EndDataSector))
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "READ_STRUCTURE: EndDataSector %lx -> ",
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "READ_STRUCTURE: EndDataSector %lx -> ",
 //                                layer->EndDataSector));
 //                 REVERSE_LONG(&(layer->EndDataSector));
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "%lx\n", layer->EndDataSector));
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "%lx\n", layer->EndDataSector));
 //             }
 //             if (tempLength >= RTL_SIZEOF_THROUGH_FIELD(DVD_LAYER_DESCRIPTOR, EndLayerZeroSector))
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "READ_STRUCTURE: EndLayerZeroSector %lx -> ",
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "READ_STRUCTURE: EndLayerZeroSector %lx -> ",
 //                                layer->EndLayerZeroSector));
 //                 REVERSE_LONG(&(layer->EndLayerZeroSector));
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "%lx\n", layer->EndLayerZeroSector));
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "%lx\n", layer->EndLayerZeroSector));
 //             }
 //         }
 //
 //         if ((!NT_SUCCESS(status)))
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "Status is %lx\n", status));
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "DvdDeviceControlCompletion - "
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "Status is %lx\n", status));
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "DvdDeviceControlCompletion - "
 //                         "IOCTL_DVD_READ_STRUCTURE: data transfer length of %d\n",
 //                         DeviceExtension->ScratchContext.ScratchSrb->DataTransferLength));
 //         }
@@ -15942,7 +15941,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //             if(keyHeader == NULL)
 //             {
 //                 // Can't save the context so return an error
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                             "DvdDeviceControl - READ_KEY: unable to allocate context\n"));
 //                 status = STATUS_INSUFFICIENT_RESOURCES;
 //             }
@@ -15989,7 +15988,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                 }
 //                 else
 //                 {
-//                     TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//                     TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                                 "StartSessionReadKey Failed with status %x, %xI64 (%x) bytes\n",
 //                                 status,
 //                                 (unsigned int)*DataLength,
@@ -16064,7 +16063,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //
 //             cdb.REPORT_KEY.as_mut().KeyFormat = (UCHAR)keyParameters->KeyType;
 //             cdb.REPORT_KEY.as_mut().AGID = (UCHAR)keyParameters->SessionId;
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                         "DvdStartSessionReadKey => sending irp %p (%s)\n",
 //                         OriginalRequest, "READ_KEY"));
 //         }
@@ -16072,7 +16071,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //         {
 //             cdb.REPORT_KEY.as_mut().KeyFormat = DVD_REPORT_AGID;
 //             cdb.REPORT_KEY.as_mut().AGID = 0;
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                         "DvdStartSessionReadKey => sending irp %p (%s)\n",
 //                         OriginalRequest, "START_SESSION"));
 //         }
@@ -16108,7 +16107,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //                         transferLength = dataLength;
 //                     }
 //
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                                 "DvdDeviceControlCompletion: [%p] - READ_KEY with "
 //                                 "transfer length of (%d or %d) bytes\n",
 //                                 OriginalRequest,
@@ -16509,7 +16508,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
 //             // set value in extension by user inputs.
 //             cdData->RestoreDefaults = stream->Persistent ? FALSE : TRUE;
 //
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "DeviceHandleSetSpeed: Restore default speed on media change set to %s\n",
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "DeviceHandleSetSpeed: Restore default speed on media change set to %s\n",
 //                        cdData->RestoreDefaults ? "true" : "false"));
 //         }
 //

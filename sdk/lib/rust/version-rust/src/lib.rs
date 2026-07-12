@@ -1,9 +1,18 @@
 #![no_std]
-#![feature(c_variadic)]
 #[allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #[allow(dead_code)]
 #[allow(unused_assignments)]
 #[allow(non_camel_case_types)]
+
+// Wine's TRACE/WARN/FIXME debug macros. In Wine these are C preprocessor macros that
+// compile away in release builds; the translation had made them no-op C-variadic fns,
+// which stable Rust cannot define (`c_variadic`, rust-lang#44930). As macros they keep
+// the original `TRACE!(...)` call syntax, still evaluate their arguments, cost nothing,
+// and need no C trampoline. Defined here (not below) because macro_rules! is visible
+// only AFTER its definition point.
+macro_rules! TRACE { ($($arg:expr),* $(,)?) => {{ $( let _ = &$arg; )* }}; }
+macro_rules! WARN  { ($($arg:expr),* $(,)?) => {{ $( let _ = &$arg; )* }}; }
+macro_rules! FIXME { ($($arg:expr),* $(,)?) => {{ $( let _ = &$arg; )* }}; }
 
 use core::ffi::c_void;
 
@@ -677,17 +686,10 @@ extern "C" {
     pub fn wcslen(s: *const WCHAR) -> usize;
 }
 
-// Wine TRACE/WARN/FIXME are C macros (not linkable symbols); the DeepSeek
-// translation declared them as extern fns, which would leave undefined symbols
-// at link. Mirror kernel32-rust's no-op-debug approach, but keep the original
-// call syntax (`TRACE(...)`) by defining them as in-crate C-variadic no-ops
-// (the project already builds with `#![feature(c_variadic)]` for scsiport et al).
-#[allow(unused_variables)]
-pub unsafe extern "C" fn TRACE(format: *const i8, mut args: ...) {}
-#[allow(unused_variables)]
-pub unsafe extern "C" fn WARN(format: *const i8, mut args: ...) {}
-#[allow(unused_variables)]
-pub unsafe extern "C" fn FIXME(format: *const i8, mut args: ...) {}
+// Wine TRACE/WARN/FIXME are C MACROS (not linkable symbols) — see the macro_rules!
+// definitions near the top of this file. They used to be no-op C-variadic *fns*, which
+// stable Rust cannot define (`c_variadic`, rust-lang#44930); a macro is both the shape
+// Wine actually had and zero-cost, so version-rust needs no C shim at all.
 
 // ============================================================================
 // Helper: MAKEINTRESOURCEW (inline)
@@ -987,7 +989,7 @@ unsafe fn read_xx_header(lzfd: HFILE) -> i32 {
     }
 
     magic[2] = '\0' as i8;
-    WARN("Can't handle %s files.\n\0".as_ptr() as *const i8, magic.as_ptr() as *const i8);
+    WARN!("Can't handle %s files.\n\0".as_ptr() as *const i8, magic.as_ptr() as *const i8);
     return 0;
 }
 unsafe fn find_ne_resource(lzfd: HFILE, resLen: *mut DWORD, resOff: *mut DWORD) -> BOOL {
@@ -1009,7 +1011,7 @@ unsafe fn find_ne_resource(lzfd: HFILE, resLen: *mut DWORD, resOff: *mut DWORD) 
 
     resTabSize = ((nehd.ne_restab as i32) - (nehd.ne_rsrctab as i32)) as DWORD;
     if resTabSize == 0 {
-        TRACE(b"No resources in NE dll\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"No resources in NE dll\n\0".as_ptr() as LPCSTR);
         return 0;
     }
 
@@ -1034,7 +1036,7 @@ unsafe fn find_ne_resource(lzfd: HFILE, resLen: *mut DWORD, resOff: *mut DWORD) 
         typeInfo = (typeInfo.offset(1) as *mut u8).offset((*typeInfo).count as isize * core::mem::size_of::<NE_NAMEINFO>() as isize) as *mut NE_TYPEINFO;
     }
     if (*typeInfo).type_id == 0 {
-        TRACE(b"No typeid entry found\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"No typeid entry found\n\0".as_ptr() as LPCSTR);
         HeapFree(GetProcessHeap(), 0, resTab as *mut core::ffi::c_void);
         return 0;
     }
@@ -1050,7 +1052,7 @@ unsafe fn find_ne_resource(lzfd: HFILE, resLen: *mut DWORD, resOff: *mut DWORD) 
         nameInfo = nameInfo.offset(1);
     }
     if count == 0 {
-        TRACE(b"No resid entry found\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"No resid entry found\n\0".as_ptr() as LPCSTR);
         HeapFree(GetProcessHeap(), 0, resTab as *mut core::ffi::c_void);
         return 0;
     }
@@ -1120,7 +1122,7 @@ unsafe fn find_pe_resource(
     }
 
     if (*resDataDir).Size == 0 {
-        TRACE(b"No resources in PE dll\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"No resources in PE dll\n\0".as_ptr() as LPCSTR);
         return 0;
     }
 
@@ -1162,7 +1164,7 @@ unsafe fn find_pe_resource(
 
     if i == nSections {
         HeapFree(GetProcessHeap(), 0, sections as *mut core::ffi::c_void);
-        TRACE(b"Couldn't find resource section\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"Couldn't find resource section\n\0".as_ptr() as LPCSTR);
         return 0;
     }
 
@@ -1198,17 +1200,17 @@ unsafe fn find_pe_resource(
     resPtr = resDir as *const IMAGE_RESOURCE_DIRECTORY;
     resPtr = find_entry_by_id(resPtr, VS_FILE_INFO, resDir);
     if resPtr.is_null() {
-        TRACE(b"No typeid entry found\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"No typeid entry found\n\0".as_ptr() as LPCSTR);
         break 'done;
     }
     resPtr = find_entry_by_id(resPtr, VS_VERSION_INFO, resDir);
     if resPtr.is_null() {
-        TRACE(b"No resid entry found\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"No resid entry found\n\0".as_ptr() as LPCSTR);
         break 'done;
     }
     resPtr = find_entry_language(resPtr, resDir, flags);
     if resPtr.is_null() {
-        TRACE(b"No default language entry found\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"No default language entry found\n\0".as_ptr() as LPCSTR);
         break 'done;
     }
 
@@ -1226,7 +1228,7 @@ unsafe fn find_pe_resource(
     }
 
     if i == nSections {
-        TRACE(b"Couldn't find resource data section\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"Couldn't find resource data section\n\0".as_ptr() as LPCSTR);
         break 'done;
     }
 
@@ -1283,7 +1285,7 @@ unsafe fn print_vffi_debug(vffi: *const VS_FIXEDFILEINFO) {
         }
     }
 
-    TRACE(
+    TRACE!(
         b"structversion=%u.%u, \0".as_ptr() as *const i8,
         HIWORD((*vffi).dwStrucVersion),
         LOWORD((*vffi).dwStrucVersion),
@@ -1291,7 +1293,7 @@ unsafe fn print_vffi_debug(vffi: *const VS_FIXEDFILEINFO) {
     if versioned_printer != 0 {
         let mode: WORD = LOWORD((*vffi).dwFileVersionMS) as WORD;
         let ver_rev: WORD = HIWORD((*vffi).dwFileVersionLS) as WORD;
-        TRACE(
+        TRACE!(
             b"fileversion=%u.%u.%u.%u (%s.major.minor.release), \0".as_ptr() as *const i8,
             (*vffi).dwFileVersionMS,
             HIBYTE(ver_rev),
@@ -1306,7 +1308,7 @@ unsafe fn print_vffi_debug(vffi: *const VS_FIXEDFILEINFO) {
             },
         );
     } else {
-        TRACE(
+        TRACE!(
             b"fileversion=%u.%u.%u.%u, \0".as_ptr() as *const i8,
             HIWORD((*vffi).dwFileVersionMS),
             LOWORD((*vffi).dwFileVersionMS),
@@ -1314,7 +1316,7 @@ unsafe fn print_vffi_debug(vffi: *const VS_FIXEDFILEINFO) {
             LOWORD((*vffi).dwFileVersionLS),
         );
     }
-    TRACE(
+    TRACE!(
         b"productversion=%u.%u.%u.%u\n\0".as_ptr() as *const i8,
         HIWORD((*vffi).dwProductVersionMS),
         LOWORD((*vffi).dwProductVersionMS),
@@ -1322,7 +1324,7 @@ unsafe fn print_vffi_debug(vffi: *const VS_FIXEDFILEINFO) {
         LOWORD((*vffi).dwProductVersionLS),
     );
 
-    TRACE(
+    TRACE!(
         b"flagmask=0x%x, flags=0x%x %s%s%s%s%s%s\n\0".as_ptr() as *const i8,
         (*vffi).dwFileFlagsMask,
         (*vffi).dwFileFlags,
@@ -1358,9 +1360,9 @@ unsafe fn print_vffi_debug(vffi: *const VS_FIXEDFILEINFO) {
         },
     );
 
-    TRACE(b"(\0".as_ptr() as *const i8);
+    TRACE!(b"(\0".as_ptr() as *const i8);
 
-    TRACE(
+    TRACE!(
         b"OS=0x%x.0x%x \0".as_ptr() as *const i8,
         HIWORD((*vffi).dwFileOS),
         LOWORD((*vffi).dwFileOS),
@@ -1368,19 +1370,19 @@ unsafe fn print_vffi_debug(vffi: *const VS_FIXEDFILEINFO) {
 
     match (*vffi).dwFileOS & 0xFFFF0000 {
         VOS_DOS => {
-            TRACE(b"DOS,\0".as_ptr() as *const i8);
+            TRACE!(b"DOS,\0".as_ptr() as *const i8);
         }
         VOS_OS216 => {
-            TRACE(b"OS/2-16,\0".as_ptr() as *const i8);
+            TRACE!(b"OS/2-16,\0".as_ptr() as *const i8);
         }
         VOS_OS232 => {
-            TRACE(b"OS/2-32,\0".as_ptr() as *const i8);
+            TRACE!(b"OS/2-32,\0".as_ptr() as *const i8);
         }
         VOS_NT => {
-            TRACE(b"NT,\0".as_ptr() as *const i8);
+            TRACE!(b"NT,\0".as_ptr() as *const i8);
         }
         _ => {
-            TRACE(
+            TRACE!(
                 b"UNKNOWN(0x%x),\0".as_ptr() as *const i8,
                 (*vffi).dwFileOS & 0xFFFF0000,
             );
@@ -1389,87 +1391,87 @@ unsafe fn print_vffi_debug(vffi: *const VS_FIXEDFILEINFO) {
 
     match LOWORD((*vffi).dwFileOS) as DWORD {
         VOS__BASE => {
-            TRACE(b"BASE\0".as_ptr() as *const i8);
+            TRACE!(b"BASE\0".as_ptr() as *const i8);
         }
         VOS__WINDOWS16 => {
-            TRACE(b"WIN16\0".as_ptr() as *const i8);
+            TRACE!(b"WIN16\0".as_ptr() as *const i8);
         }
         VOS__WINDOWS32 => {
-            TRACE(b"WIN32\0".as_ptr() as *const i8);
+            TRACE!(b"WIN32\0".as_ptr() as *const i8);
         }
         VOS__PM16 => {
-            TRACE(b"PM16\0".as_ptr() as *const i8);
+            TRACE!(b"PM16\0".as_ptr() as *const i8);
         }
         VOS__PM32 => {
-            TRACE(b"PM32\0".as_ptr() as *const i8);
+            TRACE!(b"PM32\0".as_ptr() as *const i8);
         }
         _ => {
-            TRACE(
+            TRACE!(
                 b"UNKNOWN(0x%x)\0".as_ptr() as *const i8,
                 LOWORD((*vffi).dwFileOS),
             );
         }
     }
 
-    TRACE(b")\n\0".as_ptr() as *const i8);
+    TRACE!(b")\n\0".as_ptr() as *const i8);
 
     match (*vffi).dwFileType {
         VFT_APP => {
-            TRACE(b"filetype=APP\0".as_ptr() as *const i8);
+            TRACE!(b"filetype=APP\0".as_ptr() as *const i8);
         }
         VFT_DLL => {
-            TRACE(b"filetype=DLL\0".as_ptr() as *const i8);
+            TRACE!(b"filetype=DLL\0".as_ptr() as *const i8);
             if (*vffi).dwFileSubtype != 0 {
                 if versioned_printer != 0 {
-                    TRACE(b",PRINTER\0".as_ptr() as *const i8);
+                    TRACE!(b",PRINTER\0".as_ptr() as *const i8);
                 }
-                TRACE(
+                TRACE!(
                     b" (subtype=0x%x)\0".as_ptr() as *const i8,
                     (*vffi).dwFileSubtype,
                 );
             }
         }
         VFT_DRV => {
-            TRACE(b"filetype=DRV,\0".as_ptr() as *const i8);
+            TRACE!(b"filetype=DRV,\0".as_ptr() as *const i8);
             match (*vffi).dwFileSubtype {
                 VFT2_DRV_PRINTER => {
-                    TRACE(b"PRINTER\0".as_ptr() as *const i8);
+                    TRACE!(b"PRINTER\0".as_ptr() as *const i8);
                 }
                 VFT2_DRV_KEYBOARD => {
-                    TRACE(b"KEYBOARD\0".as_ptr() as *const i8);
+                    TRACE!(b"KEYBOARD\0".as_ptr() as *const i8);
                 }
                 VFT2_DRV_LANGUAGE => {
-                    TRACE(b"LANGUAGE\0".as_ptr() as *const i8);
+                    TRACE!(b"LANGUAGE\0".as_ptr() as *const i8);
                 }
                 VFT2_DRV_DISPLAY => {
-                    TRACE(b"DISPLAY\0".as_ptr() as *const i8);
+                    TRACE!(b"DISPLAY\0".as_ptr() as *const i8);
                 }
                 VFT2_DRV_MOUSE => {
-                    TRACE(b"MOUSE\0".as_ptr() as *const i8);
+                    TRACE!(b"MOUSE\0".as_ptr() as *const i8);
                 }
                 VFT2_DRV_NETWORK => {
-                    TRACE(b"NETWORK\0".as_ptr() as *const i8);
+                    TRACE!(b"NETWORK\0".as_ptr() as *const i8);
                 }
                 VFT2_DRV_SYSTEM => {
-                    TRACE(b"SYSTEM\0".as_ptr() as *const i8);
+                    TRACE!(b"SYSTEM\0".as_ptr() as *const i8);
                 }
                 VFT2_DRV_INSTALLABLE => {
-                    TRACE(b"INSTALLABLE\0".as_ptr() as *const i8);
+                    TRACE!(b"INSTALLABLE\0".as_ptr() as *const i8);
                 }
                 VFT2_DRV_SOUND => {
-                    TRACE(b"SOUND\0".as_ptr() as *const i8);
+                    TRACE!(b"SOUND\0".as_ptr() as *const i8);
                 }
                 VFT2_DRV_COMM => {
-                    TRACE(b"COMM\0".as_ptr() as *const i8);
+                    TRACE!(b"COMM\0".as_ptr() as *const i8);
                 }
                 VFT2_DRV_INPUTMETHOD => {
-                    TRACE(b"INPUTMETHOD\0".as_ptr() as *const i8);
+                    TRACE!(b"INPUTMETHOD\0".as_ptr() as *const i8);
                 }
                 VFT2_DRV_VERSIONED_PRINTER => {
-                    TRACE(b"VERSIONED_PRINTER\0".as_ptr() as *const i8);
+                    TRACE!(b"VERSIONED_PRINTER\0".as_ptr() as *const i8);
                 }
                 _ => {
-                    TRACE(
+                    TRACE!(
                         b"UNKNOWN(0x%x)\0".as_ptr() as *const i8,
                         (*vffi).dwFileSubtype,
                     );
@@ -1477,19 +1479,19 @@ unsafe fn print_vffi_debug(vffi: *const VS_FIXEDFILEINFO) {
             }
         }
         VFT_FONT => {
-            TRACE(b"filetype=FONT,\0".as_ptr() as *const i8);
+            TRACE!(b"filetype=FONT,\0".as_ptr() as *const i8);
             match (*vffi).dwFileSubtype {
                 VFT2_FONT_RASTER => {
-                    TRACE(b"RASTER\0".as_ptr() as *const i8);
+                    TRACE!(b"RASTER\0".as_ptr() as *const i8);
                 }
                 VFT2_FONT_VECTOR => {
-                    TRACE(b"VECTOR\0".as_ptr() as *const i8);
+                    TRACE!(b"VECTOR\0".as_ptr() as *const i8);
                 }
                 VFT2_FONT_TRUETYPE => {
-                    TRACE(b"TRUETYPE\0".as_ptr() as *const i8);
+                    TRACE!(b"TRUETYPE\0".as_ptr() as *const i8);
                 }
                 _ => {
-                    TRACE(
+                    TRACE!(
                         b"UNKNOWN(0x%x)\0".as_ptr() as *const i8,
                         (*vffi).dwFileSubtype,
                     );
@@ -1497,21 +1499,21 @@ unsafe fn print_vffi_debug(vffi: *const VS_FIXEDFILEINFO) {
             }
         }
         VFT_VXD => {
-            TRACE(b"filetype=VXD\0".as_ptr() as *const i8);
+            TRACE!(b"filetype=VXD\0".as_ptr() as *const i8);
         }
         VFT_STATIC_LIB => {
-            TRACE(b"filetype=STATIC_LIB\0".as_ptr() as *const i8);
+            TRACE!(b"filetype=STATIC_LIB\0".as_ptr() as *const i8);
         }
         _ => {
-            TRACE(
+            TRACE!(
                 b"filetype=Unknown(0x%x)\0".as_ptr() as *const i8,
                 (*vffi).dwFileType,
             );
         }
     }
 
-    TRACE(b"\n\0".as_ptr() as *const i8);
-    TRACE(
+    TRACE!(b"\n\0".as_ptr() as *const i8);
+    TRACE!(
         b"filedate=0x%x.0x%x\n\0".as_ptr() as *const i8,
         (*vffi).dwFileDateMS,
         (*vffi).dwFileDateLS,
@@ -1547,7 +1549,7 @@ pub unsafe extern "system" fn GetFileVersionInfoSizeExW(
     let mut hModule: HMODULE = core::ptr::null_mut();
     let mut ofs: OFSTRUCT = core::mem::zeroed();
 
-    TRACE(
+    TRACE!(
         b"(0x%x,%s,%p)\n\0".as_ptr() as *const i8,
         flags,
         debugstr_w(filename),
@@ -1567,7 +1569,7 @@ pub unsafe extern "system" fn GetFileVersionInfoSizeExW(
         return 0;
     }
     if flags & !FILE_VER_GET_LOCALISED != 0 {
-        FIXME(
+        FIXME!(
             b"flags 0x%x ignored\n\0".as_ptr() as *const i8,
             flags & !FILE_VER_GET_LOCALISED,
         );
@@ -1638,7 +1640,7 @@ pub unsafe extern "system" fn GetFileVersionInfoSizeExA(
     let mut filenameW: _UNICODE_STRING = core::mem::zeroed();
     let retval: DWORD;
 
-    TRACE(b"(0x%x,%s,%p)\n\0".as_ptr() as *const i8, flags, debugstr_a(filename), handle);
+    TRACE!(b"(0x%x,%s,%p)\n\0".as_ptr() as *const i8, flags, debugstr_a(filename), handle);
 
     if !filename.is_null() {
         RtlCreateUnicodeStringFromAsciiz(&mut filenameW, filename);
@@ -1670,7 +1672,7 @@ pub unsafe extern "system" fn GetFileVersionInfoExW(
     let hModule: HMODULE;
     let vvis: *mut VS_VERSION_INFO_STRUCT32 = data as *mut VS_VERSION_INFO_STRUCT32;
 
-    TRACE(
+    TRACE!(
         b"(0x%x,%s,%d,size=%d,data=%p)\n\0".as_ptr() as *const i8,
         flags,
         debugstr_w(filename),
@@ -1684,7 +1686,7 @@ pub unsafe extern "system" fn GetFileVersionInfoExW(
         return 0;
     }
     if (flags & !FILE_VER_GET_LOCALISED) != 0 {
-        FIXME(
+        FIXME!(
             b"flags 0x%x ignored\n\0".as_ptr() as *const i8,
             flags & !FILE_VER_GET_LOCALISED,
         );
@@ -1781,7 +1783,7 @@ pub unsafe extern "system" fn GetFileVersionInfoExA(
     let mut filenameW: _UNICODE_STRING = core::mem::zeroed();
     let retval: BOOL;
 
-    TRACE(
+    TRACE!(
         "(0x%x,%s,%d,size=%d,data=%p)\n".as_ptr() as *const i8,
         flags,
         debugstr_a(filename),
@@ -1914,7 +1916,7 @@ unsafe fn VersionInfo32_QueryValue(
     puLen: *mut UINT,
     pbText: *mut BOOL,
 ) -> BOOL {
-    TRACE("lpSubBlock : (%s)\n\0".as_ptr() as *const i8, debugstr_w(lpSubBlock));
+    TRACE!("lpSubBlock : (%s)\n\0".as_ptr() as *const i8, debugstr_w(lpSubBlock));
 
     while *lpSubBlock != 0 {
         let mut lpNextSlash: LPCWSTR;
@@ -1969,7 +1971,7 @@ pub unsafe extern "system" fn VerQueryValueA(
     static rootA: [i8; 2] = [b'\\' as i8, 0];
     let info: *const VS_VERSION_INFO_STRUCT16 = pBlock as *const VS_VERSION_INFO_STRUCT16;
 
-    TRACE(
+    TRACE!(
         b"(%p,%s,%p,%p)\n\0".as_ptr() as *const i8,
         pBlock,
         debugstr_a(lpSubBlock),
@@ -2064,7 +2066,7 @@ pub unsafe extern "system" fn VerQueryValueW(
 
     let info: *const VS_VERSION_INFO_STRUCT32 = pBlock as *const VS_VERSION_INFO_STRUCT32;
 
-    TRACE(
+    TRACE!(
         b"(%p,%s,%p,%p)\n\0".as_ptr() as *const i8,
         pBlock,
         debugstr_w(lpSubBlock),
@@ -2203,7 +2205,7 @@ pub unsafe extern "system" fn VerFindFileA(
     let mut winDir: [i8; MAX_PATH as usize] = [0i8; MAX_PATH as usize];
     let mut systemDir: [i8; MAX_PATH as usize] = [0i8; MAX_PATH as usize];
 
-    TRACE(
+    TRACE!(
         b"flags = %x filename=%s windir=%s appdir=%s curdirlen=%p(%u) destdirlen=%p(%u)\n\0"
             .as_ptr() as *const i8,
         flags,
@@ -2278,7 +2280,7 @@ pub unsafe extern "system" fn VerFindFileA(
         *lpuCurDirLen = curDirSizeReq;
     }
 
-    TRACE(
+    TRACE!(
         b"ret = %u (%s%s%s) curdir=%s destdir=%s\n\0".as_ptr() as *const i8,
         retval,
         if retval & VFF_CURNEDEST != 0 {
@@ -2323,7 +2325,7 @@ pub unsafe extern "system" fn VerFindFileW(
     let mut winDir: [WCHAR; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
     let mut systemDir: [WCHAR; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
 
-    TRACE(
+    TRACE!(
         b"flags = %x filename=%s windir=%s appdir=%s curdirlen=%p(%u) destdirlen=%p(%u)\n\0".as_ptr() as LPCSTR,
         flags,
         debugstr_w(lpszFilename),
@@ -2392,7 +2394,7 @@ pub unsafe extern "system" fn VerFindFileW(
         *lpuCurDirLen = curDirSizeReq;
     }
 
-    TRACE(
+    TRACE!(
         b"ret = %u (%s%s%s) curdir=%s destdir=%s\n\0".as_ptr() as LPCSTR,
         retval,
         if (retval & VFF_CURNEDEST) != 0 {
@@ -2426,7 +2428,7 @@ unsafe fn _fetch_versioninfo(
     alloclen = 1000;
     buf = HeapAlloc(GetProcessHeap(), 0, alloclen as usize) as LPBYTE;
     if buf.is_null() {
-        WARN(b"Memory exhausted while fetching version info!\n\0".as_ptr() as LPCSTR);
+        WARN!(b"Memory exhausted while fetching version info!\n\0".as_ptr() as LPCSTR);
         return core::ptr::null_mut();
     }
     loop {
@@ -2440,7 +2442,7 @@ unsafe fn _fetch_versioninfo(
             HeapFree(GetProcessHeap(), 0, buf as LPVOID);
             buf = HeapAlloc(GetProcessHeap(), 0, alloclen as usize) as LPBYTE;
             if buf.is_null() {
-                WARN(b"Memory exhausted while fetching version info!\n\0".as_ptr() as LPCSTR);
+                WARN!(b"Memory exhausted while fetching version info!\n\0".as_ptr() as LPCSTR);
                 return core::ptr::null_mut();
             }
         } else {
@@ -2449,7 +2451,7 @@ unsafe fn _fetch_versioninfo(
                 *vffi = buf.offset(0x28) as *mut VS_FIXEDFILEINFO;
             }
             if (*(*vffi)).dwSignature != VS_FFI_SIGNATURE {
-                WARN(
+                WARN!(
                     b"Bad VS_FIXEDFILEINFO signature 0x%08x\n\0".as_ptr() as LPCSTR,
                     (*(*vffi)).dwSignature,
                 );
@@ -2492,7 +2494,7 @@ pub unsafe extern "system" fn VerInstallFileA(
     let buf2: LPBYTE;
     let mut ofs: OFSTRUCT = core::mem::zeroed();
 
-    TRACE(
+    TRACE!(
         b"(%x,%s,%s,%s,%s,%s,%p,%d)\n\0".as_ptr() as *const i8,
         flags,
         debugstr_a(srcfilename),
@@ -2584,7 +2586,7 @@ pub unsafe extern "system" fn VerInstallFileA(
                     xret = VIF_OUTOFMEMORY;
                 }
                 _ => {
-                    FIXME(
+                    FIXME!(
                         b"Unknown LZCopy error %d, ignoring.\n\0".as_ptr() as *const i8,
                         ret,
                     );

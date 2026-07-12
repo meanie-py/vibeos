@@ -3,6 +3,10 @@
 //! their own extern blocks). Mirrors the usbehci/ohci/uhci miniport glue.
 #![allow(unused_imports)]
 
+// C-variadic entry points live in drivers/usb/usbport/rust_varargs_shim.c (stable Rust
+// cannot DEFINE one — c_variadic, rust-lang#44930). `VaArgs` reads their va_list.
+use varargs_rust::VaArgs;
+
 pub use crate::types::*;
 
 // PnP minor function codes (wdm.h). usbport's PDO/dispatch match arms use these;
@@ -417,7 +421,7 @@ unsafe fn strsafe_vformat_w(
     pszDest: *mut u16,
     cbDest: usize,
     pszFormat: *const u16,
-    args: &mut core::ffi::VaListImpl,
+    args: &mut VaArgs,
 ) -> (usize, NTSTATUS) {
     if pszDest.is_null() || pszFormat.is_null() || cbDest < core::mem::size_of::<u16>() {
         return (0, STATUS_INVALID_PARAMETER_W);
@@ -499,13 +503,19 @@ unsafe fn strsafe_vformat_w(
     }
 }
 
+/// Fixed-arity twin of the `RtlStringCbPrintfW` C-variadic entry point in
+/// `drivers/usb/usbport/rust_varargs_shim.c`. The C side exists only to do the
+/// `va_start` that stable Rust cannot (`c_variadic`, rust-lang#44930); `ap` is a
+/// pointer to its `va_list`. All the logic lives here — see the module header of
+/// `varargs-rust` for the contract.
 #[no_mangle]
-pub unsafe extern "C" fn RtlStringCbPrintfW(
+pub unsafe extern "C" fn RtlStringCbPrintfW_v(
     pszDest: *mut u16,
     cbDest: usize,
     pszFormat: *const u16,
-    mut args: ...
+    ap: *mut core::ffi::c_void,
 ) -> NTSTATUS {
+    let mut args = VaArgs::from_ptr(ap);
     let (_len, status) = strsafe_vformat_w(pszDest, cbDest, pszFormat, &mut args);
     status
 }
@@ -614,16 +624,19 @@ pub unsafe extern "C" fn IoSetCompletionRoutine(
 // RtlStringCbPrintfExW: ntstrsafe FORCEINLINE, no export. Real body — usbport builds the
 // root-hub HardwareIDs multi-sz with it and dereferences the returned DestEnd, so the old
 // no-op stub (which never set the out-params) was a latent NULL-offset crash.
+/// Fixed-arity twin of the `RtlStringCbPrintfExW` C-variadic entry point — see
+/// `RtlStringCbPrintfW_v` above.
 #[no_mangle]
-pub unsafe extern "C" fn RtlStringCbPrintfExW(
+pub unsafe extern "C" fn RtlStringCbPrintfExW_v(
     pszDest: *mut u16,
     cbDest: usize,
     ppszDestEnd: *mut *mut u16,
     pcbRemaining: *mut usize,
     _dwFlags: u32,
     pszFormat: *const u16,
-    mut args: ...
+    ap: *mut core::ffi::c_void,
 ) -> i32 {
+    let mut args = VaArgs::from_ptr(ap);
     let (len, status) = strsafe_vformat_w(pszDest, cbDest, pszFormat, &mut args);
     if status >= 0 {
         if !ppszDestEnd.is_null() {

@@ -100,6 +100,15 @@ list(APPEND PCH_SKIP_SOURCE
     # wine/shlmenu.c — replaced by Rust (shell32-rust/src/wine/shlmenu.rs); cohab via libshell32_rust.a
     # wine/shpolicy.c — replaced by Rust (shell32-rust/src/wine/shpolicy.rs); cohab via libshell32_rust.a
     # vista.c — replaced by Rust (shell32-rust/src/vista.rs); cohab via libshell32_rust.a
+    #
+    # rust_varargs_shim.c — the ONE thing stable Rust cannot do: DEFINE the C-variadic
+    # ShellMessageBoxA entry point (`va_start`; exported ordinal 183, so the symbol name +
+    # cdecl variadic ABI must be preserved). It trampolines straight into shell32-rust's
+    # fixed-arity ShellMessageBoxA_v, which keeps ALL the logic. This is what lets
+    # shell32-rust build on plain stable rustc — no bootstrap escape hatch on the cargo
+    # env line below, no nightly feature gate in the crate root.
+    # Plain C: belongs in PCH_SKIP_SOURCE (precomp.h is the C++ PCH), like shell32_stubs.c.
+    rust_varargs_shim.c
     ${CMAKE_CURRENT_BINARY_DIR}/shell32_stubs.c)
 
 file(GLOB_RECURSE shell32_rc_deps res/*.*)
@@ -130,7 +139,6 @@ add_custom_command(
     OUTPUT ${SHELL32_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${SHELL32_RUST_TARGET_DIR}
-        RUSTC_BOOTSTRAP=1  # shellord.rs ShellMessageBoxA needs #![feature(c_variadic)]
         cargo build --release --target ${SHELL32_RUST_TARGET}
             -p shell32-rust
             --manifest-path ${SHELL32_RUST_WORKSPACE_DIR}/Cargo.toml
