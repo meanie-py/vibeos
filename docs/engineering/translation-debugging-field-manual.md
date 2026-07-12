@@ -4952,6 +4952,42 @@ culprit PC at switch time; for a live wedge, GDB both vCPUs
 (`qemu/start.sh amd64 --gdb` + `VIBEOS_QEMU_SMP=2`, `info threads` / bt both).
 Tracked as the gating item between M3 and M4.
 
+**UPDATE 2026-07-12 — cswitchdep is a repro AMPLIFIER, not a detector, for
+this bug (and the amplifier knob is now host-independent).** Soaked a
+`--smp-kernel --cswitchdep` build at -smp 2 on a QUIET host: **46/202 failures
+(23%)** vs 3/453 (0.9%) for the same config without cswitchdep. Mechanism:
+cswitchdep takes a GLOBAL spinlock on every context switch (census
+`spin_acq=666563`), so under -smp 2 both CPUs serialize through it at every
+switch → a huge, deterministic timing perturbation that widens the real race
+window — the same effect host contention gave us by accident, now generated
+inside the guest and dial-able. This retires "host conditions" as the strategy:
+**cswitchdep-overhead is the reproducible amplifier.**
+
+Two cautions, both load-bearing:
+- **cswitchdep's own violation output is NOISE under -smp 2** — census shows
+  `violations=15821 / switches=19339` (80%) and `held_now=-2650` (a NEGATIVE
+  held-lock count). Its held-count/"expected==actual at switch" invariant uses
+  a single global counter inc/dec'd from both CPUs with no per-CPU separation,
+  so it mis-fires on most switches. cswitchdep needs SMP-correct (per-CPU)
+  accounting before its violation stream means anything at -smp N — a
+  cswitchdep-lane follow-up, NOT this bug. It amplifies; it does not pin.
+- The crashes it amplifies are REAL kernel faults, not cswitchdep-internal
+  (its state is all-atomics — memory-safe). Dominant amplified faces:
+  **0x1E c0000006 STATUS_IN_PAGE_ERROR at `KxQueueReadyThread+118`** (a
+  corrupt/stale KTHREAD pointer walked out of a PRCB ready queue, or a
+  demand-page-in IRP that failed under the -smp 2 I/O race) + the silent
+  service-connect wedge. Both point at the dispatcher-ready-queue / IO-
+  completion boundary — consistent with the §9.51 uniata I/O-completion class,
+  NOT the TLB/IPI layer.
+
+**Next (highest-signal, lowest-token):** with a 23% repro rate the live catch
+is now practical — boot the cswitchdep build under GDB on both vCPUs
+(`qemu/start.sh amd64 --gdb` + `VIBEOS_QEMU_SMP=2`), break on `KeBugCheckEx`,
+and on the 0x1E examine the KTHREAD pointer KxQueueReadyThread was dereferencing
+(is it a freed/zeroed/wild thread block? → dispatcher ready-queue race; is it a
+valid VA whose page-in faulted? → I/O-completion race). The KxQueueReadyThread
+face is the most diagnosable; chase it first.
+
 ### 9.57 (ROOT-CAUSED + FIXED 2026-07-11) A *correct* fix woke a latent panic: `NT_ASSERT` mistranslated as a hard `assert!`, dormant until IRP_MJ_CLEANUP started being delivered (arm64-only)
 
 **Symptom:** After merging origin/master into the conformance-ratchet lane, the ×3 landing
