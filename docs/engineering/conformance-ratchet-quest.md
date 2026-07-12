@@ -333,3 +333,34 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   `ex-rust/src/dbgctrl.rs` NtSystemDebugControl. This fix likely clears 4 quarantines
   (ObSymbolicLink, ZwWaitForMultipleObjects, IoReadWrite, NtCreateSection). Owed as the
   top M3 fix task; gate ×3 before landing (touches ob/io/ntkrnl-sys core copy path).
+- 2026-07-11: **origin/master merged into the lane (110 commits)** — brings the arm64
+  bugcheck-unmask + callback-ERET IRQ fix (§9.54: arm64 bugchecks now self-report
+  truthfully instead of masking through KeGetBugMessageText), the fastfat dropped-finally
+  fixes (§9.53), wow64 M3-M7, and smp M2/M3a. Merge was clean except a pure line-shift in
+  `tools/lint-baseline/lint_kernel.txt` (rebaselined, 0 new findings). The merge did NOT
+  touch the kmtest corpus, so test definitions are stable — any result drift is pure kernel
+  behavior. Baseline regenerated against the merged kernel below.
+- 2026-07-11: **M3 sweep 14 (amd64, post-merge): `done total=84 launched=84 failstart=0
+  timeouts=1`, ZERO BUGCHECKs across all 84 tests — 80 OK.** The SeTokenFiltering-cascade
+  tail from sweep 9 is now REAL data (the 26 old NO-END entries resolved): NtSystemDebugControl
+  22/20, ZwAllocateVirtualMemory 1256/11, ZwMapViewOfSection 105/22, ZwCreateSection 4/3/2,
+  IoDeviceObject 185/4, HidPDescription 28/9/3, FindFile 251/2, FileAttributes 84/0,
+  RtlCaptureContextKM 273/0, SeInheritance 704433/14, TcpIpTdi 31/4, and the full Rtl* UM
+  suite (RtlIntSafe/RtlMemory/RtlRegistry/RtlSplayTree/RtlStrSafe/RtlUnicodeString all green).
+  Three new quarantines this sweep:
+  * **RtlException + RtlStack (UM twins):** NO-END exit=128 — the user-mode versions of the
+    already-quarantined RtlExceptionKM/RtlStackKM. They deliberately fault inside SEH (dead
+    under DUMMY_PSEH / native-SEH-calls-only), but as UM processes they SELF-CRASH (exit 128)
+    with NO kernel BUGCHECK and the sweep continues clean past both — exactly the harness-
+    robustness outcome the quest predicted (kernel isolates the UM fault). Expected-fail,
+    same class as the KM twins; quarantined for a green baseline, not an OS bug.
+  * **TcpIpConnect (in-kernel wedge):** TIMEOUT at 180s on the TDI connect path (TcpIpTdi
+    ran clean immediately before). Kernel-stuck → unreapable by TerminateProcess → kmtest_drv
+    keeps the result buffer registered → the next test RtlCaptureContextUM cascade-fails
+    SET_RESULTBUFFER 0x5 (kmtest.c:334, exit 1) — the same cascade mechanism as SeTokenFiltering.
+    First real observation (earlier sweeps never reached it un-masked). Triage owed: it's a
+    HANG not a crash, so GDB-break the tcpip/afd connect path (no faulting PC to symbolicate).
+    Quarantining it un-masks RtlCaptureContextUM's real result on the re-sweep.
+  Sweep 15 relaunched (with the 3 new quarantines) to confirm a fully-clean all-green pass +
+  RtlCaptureContextUM's true numbers, then the amd64 baseline is regenerated against the
+  merged kernel and the whole bundle (kernel fixes + harness) lands via gate ×3.
