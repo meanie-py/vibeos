@@ -537,14 +537,24 @@ not 24 — every validation fails. Invisible until now: CreateWindow takes the
 hwnd from the syscall return and callbacks pass the wndproc pointer directly;
 the message loop is the first *client-side* validation.
 
-**M9 core work (owed):** a per-WoW64-process **32-bit view of the USER handle
-table**. The table is session-global (can't be per-bitness in place), so win32k
-must maintain a 32-bit shadow (header + entries) for WoW64 processes, hand its
-low VA back in `USERCONNECT.aheList`, and keep it in sync on every handle
-alloc/free (real Windows keeps a parallel 32-bit `gSharedInfo`). Until then any
-WoW64 GUI app that validates an HWND client-side silently no-ops the call. Once
-done, WM_PAINT dispatches, win32.exe paints magenta → `0x600D`, and the door to
-a real windowed app (→ Doom) is open.
+**M9 core work (owed) — TWO layers, must land together:**
+1. **32-bit USER handle-table shadow** (DONE, on the lane, not landed): session-
+   global `g32HandleTable` (`object.rs`) mirrored on alloc/free, published as
+   `aheList` for WoW64 procs. Makes client-side `ValidateHwnd` *find* the entry.
+2. **Desktop-heap 32-bit view** (owed): once validation succeeds the guest
+   *dereferences* the validated object — `ValidateHandle` returns
+   `DesktopPtrToUser(pEntry->ptr)`, and a `TYPE_WINDOW` WND lives in the desktop
+   heap (a different mapping than `ulSharedDelta`). Needs a 32-bit `DESKTOPINFO`
+   (`pvDesktopBase/Limit` + `ulClientDelta` the guest can read) + per-object
+   `ptr` encoded so the conversion lands on a readable 32-bit WND, plus the WND
+   struct 32/64 layout for any client-read field.
+
+Attempt 1 (2026-07-12, field manual §9.58b) proved layer 1 alone is a net
+regression — `ValidateHwnd` stops no-oping, so the guest reaches the WND deref
+and AVs during CreateWindow (`0x600E` → `0xC0000005`). So the shadow is held
+(not landed) until layer 2 exists. Once both land, WM_PAINT dispatches,
+win32.exe paints magenta → `0x600D`, and the door to a real windowed app
+(→ Doom) is open.
 
 *Same divergence class still owed elsewhere (next layers toward Doom):*
 - **TEB GdiTebBatch GDIBS\* batch commands** — gui32 didn't batch; the

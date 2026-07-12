@@ -5184,6 +5184,28 @@ uses `ValidateHwnd`; the message loop is the *first* client-side validation.
 the USER handle table** (real Windows keeps a parallel 32-bit `gSharedInfo`). The table is
 session-global and can't be per-bitness in place, so win32k must maintain a 32-bit shadow
 (header + entries) for WoW64 processes and hand its low VA back in `USERCONNECT.aheList`,
-kept in sync on every handle alloc/free. Owed as the M9 core (`wow64-plan.md`). Until then
-any WoW64 GUI app that validates an HWND client-side (i.e. nearly all of them) silently
-no-ops the call.
+kept in sync on every handle alloc/free. Until then any WoW64 GUI app that validates an
+HWND client-side (i.e. nearly all of them) silently no-ops the call.
+
+**Attempt 1 (2026-07-12) — the shadow is NECESSARY but NOT SUFFICIENT; it uncovers the
+NEXT layer.** Built a session-global 32-bit shadow (`g32HandleTable` in `object.rs`:
+16-byte header + 12-byte entries, `ptr`/`pi` = low32 of the object's kernel VA), mirrored
+on `UserAllocHandle`/`free_user_entry`, published as `aheList` for WoW64 procs in
+`NtUserProcessConnect`. Result: `ValidateHwnd` now **finds** the entry (guest `edi` points
+into the shadow at `0x001da7ec`), so it stops no-oping — **but the guest then dereferences
+the *validated object*** and AVs: `GetUser32Handle`→`ValidateHandle` returns
+`DesktopPtrToUser(pEntry->ptr)`, and for a `TYPE_WINDOW` the WND lives in the **desktop
+heap** (a *different* mapping than the shared heap `ulSharedDelta` covers). The guest reads
+`pEntry->ptr` and converts with the wrong delta (or reads it raw), gets `0xfc6daab0` — a
+bad user address — and faults in guest user32 (`user32+0x46141`, base 0x77A20000) during
+CreateWindow's WM_GETMINMAXINFO handling. So client-side HWND *validation* + client-side
+object *access* are two layers: the handle-table shadow fixes the first; the second needs
+the **desktop-heap 32-bit view** (a 32-bit `DESKTOPINFO` with `pvDesktopBase/Limit` +
+`ulClientDelta` the guest can read, and per-object `ptr` encoded so `DesktopPtrToUser`
+lands on a readable 32-bit WND) **plus** the WND struct 32/64 layout for any field the
+client reads. They must land **together** — the shadow alone trades `0x600E` (window +
+pump, no paint) for a CreateWindow-time AV, a net regression, so it is NOT landed. The
+shadow code is correct infrastructure, preserved on the lane for when the desktop-heap
+view lands. (For WM_PAINT specifically the *dispatch* is server-side and wouldn't deref,
+but reaching the pump requires CreateWindow to complete, which now derefs the WND — so
+the desktop-heap view is on the critical path regardless.)
