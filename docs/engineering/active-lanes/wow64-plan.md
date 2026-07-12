@@ -469,11 +469,59 @@ On-box: `NtGdiPatBlt => 1`, `NtGdiGetPixel => 00ff00ff`, **gui32 exit
 0x600D PASS** — an x86 GUI binary under FEX completes draw+readback through
 the native arm64 win32k (magenta rect on the desktop). Gate ×3 green.
 
+## M8 (2026-07-11): win32.exe — an x86 WINDOW on arm64 + kernel→user callbacks
+
+gui32 used a *direct display DC* (no window, no callbacks). M8 is the first
+real window: `RegisterClassA` → `CreateWindowExA` → message pump, driven by
+`win32.exe` (i386, user32 imports), landing `WM_NCCREATE`+`WM_CREATE` in the
+guest's own 32-bit wndproc. Two new pieces:
+
+- **`dll/win32/wow64/wow64_callback.c` — the kernel→user callback bridge.**
+  win32k delivers callbacks via the 64-bit ntdll `KiUserCallbackDispatcher` →
+  `PEB64->KernelCallbackTable`. A WoW64 process loads no native user32, so
+  *wow64.dll owns that 20-entry table*. Each entry (a) snapshots the guest
+  CONTEXT (`BTCpuGetContext`), (b) marshals the 64-bit callback arg struct
+  **down to 32-bit** (WINDOWPROC = the CREATESTRUCTW repack: 80→48 bytes, the
+  packed lpszName/lpszClass *offsets* shift by the 32-byte header shrink), (c)
+  pushes an i386 `KiUserCallbackDispatcher` frame on the guest stack and
+  **re-enters `BTCpuSimulate` nested** (FEX supports this — wine's
+  `Wow64KiUserCallbackDispatcher` shape). The guest wndproc runs and exits via
+  `ZwCallbackReturn` → BOP → our manual `NtCallbackReturn` marshaller, which
+  translates the 32-bit result back up and `longjmp`s (hand-rolled aarch64
+  setjmp/longjmp, no CRT) to the table entry, which issues the real 64-bit
+  `NtCallbackReturn`. The kernel resumes the original syscall.
+- **9 new win32k marshallers** in `wow64_manual.c`: `NtUserRegisterClassExWOW`
+  (WNDCLASSEX + CLSMENUNAME + 3× UNICODE_STRING), `NtUserCreateWindowEx`
+  (LARGE_STRING ×3, atom-in-class-slot passthrough), the pump family
+  (`NtUserGetMessage`/`PeekMessage`/`DispatchMessage`/`TranslateMessage` —
+  MSG 28↔48), `NtUserBeginPaint`/`EndPaint` (PAINTSTRUCT).
+
+Also: the guest window must be spawned on the **input desktop**
+(`WinSta0\Default` via STARTUPINFO.lpDesktop) — winlogon's own threads sit on
+the Winlogon desktop, and win32k's paint scan only walks the input desktop
+(§9.22 class). On-box: `WM_NCCREATE`/`WM_CREATE` reach the guest wndproc, the
+window is created, the pump runs — **an x86 program owns a real window on the
+arm64 desktop.** win32.exe exits `0x600E` (window+callbacks OK; WM_PAINT is
+M9). Native i386/amd64/arm64 unaffected (arch-gated / runtime-flagged).
+
+## M9 (OWED): WM_PAINT delivery for the WoW64 window
+
+The M8 window is created + shown (all server-side inside the one
+`NtUserCreateWindowEx` syscall) and the pump returns messages, but no WM_PAINT
+reaches the guest. Next: trace win32k's paint-region scan
+(`IntGetPaintMessage`/`co_IntPeekMessage` QS_PAINT path) for the WoW64 window —
+either the window isn't being marked dirty on show, or the pump-delivered MSG
+marshalling drops/duplicates messages so the queue never reaches the
+"empty → synthesize WM_PAINT" state (54 GetMessage=>1 with no dispatch effect
+is the symptom to chase first). Once WM_PAINT paints the client rect, win32.exe
+hits `0x600D` and the door to a real windowed app (→ Doom) is open.
+
 *Same divergence class still owed elsewhere (next layers toward Doom):*
 - **TEB GdiTebBatch GDIBS\* batch commands** — gui32 didn't batch; the
   kernel-side `KeGdiFlushUserBatch` reads 64-bit GDIBS from a wow64 TEB.
-- **user32 HANDLEENTRY / SERVERINFO / desktop-heap structs** — needed when
-  window creation lands (CreateWindow → real message pump → Doom's window).
+- **user32 HANDLEENTRY / SERVERINFO / desktop-heap structs** — the M8 pump path
+  exercises SHAREDINFO reads; deeper window ops (subclassing, prop lists) will
+  surface more 32/64 divergence in the user handle table.
 
 *Still deferred (owed, the next milestones):*
 - **advapi32.dll / usp10.dll (i386) staging** — user32 imports them; the loader
