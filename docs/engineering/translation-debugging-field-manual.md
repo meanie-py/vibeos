@@ -4988,6 +4988,39 @@ and on the 0x1E examine the KTHREAD pointer KxQueueReadyThread was dereferencing
 valid VA whose page-in faulted? → I/O-completion race). The KxQueueReadyThread
 face is the most diagnosable; chase it first.
 
+**UPDATE 2026-07-12 (b) — root-cause AREA found by disassembling the pinned
+instruction (no GDB): the residual is a DISPATCHER READY-QUEUE LIST RACE, not
+device I/O.** 13/14 amplified 0x1E crashes fault at the SAME instruction,
+KxQueueReadyThread+0x76 (file VA 0x462906) — a classic InsertHeadList into
+Prcb->DispatcherReadyListHead[priority]:
+
+    movq (%r10), %r9        ; r9 = ListHead->Flink
+    movq %r8,  0x8(%r9)     ; r9->Blink = Entry     <-- FAULTS (r9 stale/wild)
+    movq %r8,  (%r10)       ; ListHead->Flink = Entry
+
+It faults writing ListHead->Flink->Blink because ListHead->Flink already points
+at freed/garbage — this PRCB's ready list was corrupted by concurrent,
+unserialized manipulation. (IN_PAGE_ERROR not ACCESS_VIOLATION = a wild pointer
+landing in a transition/paged VA; ready lists are nonpaged so a legit entry is
+never pageable. The earlier cdfs IN_PAGE_ERROR was the same wild pointer in
+CD-backed pages, NOT a failing I/O — retires update (a)'s device-I/O theory.)
+
+**It is a LOCKING-DISCIPLINE hole, not a no-op-stub bug.** KiAcquirePrcbLock
+under feature=smp is a real test-and-set spin on Prcb->PrcbLock
+(ke.rs smp_simple_lock_acquire). The bug: some path touches a PRCB's ready list
+without holding THAT PRCB's PrcbLock. Suspects (thrdschd.rs): KiQueueReadyThread
+is a lockless #[no_mangle] export straight into KxQueueReadyThread (does every
+caller hold the lock?); KiProcessDeferredReadyListInner drains
+Prcb->DeferredReadyListHead with NO lock; and any cross-CPU path that locks the
+CURRENT Prcb but inserts into a DIFFERENT target Prcb's list.
+
+**Next (focused audit, subagent-sized):** enumerate every reader/writer of
+DispatcherReadyListHead / DeferredReadyListHead in thrdschd.rs + wait.rs +
+dpc.rs and prove each holds the TARGET Prcb->PrcbLock across the whole
+Flink/Blink update (NT's KiInsertDeferredReadyList / KiQueueReadyThread lock
+contract). The first ready-list manipulation under the wrong/no PRCB lock is
+the -smp 2 residual.
+
 ### 9.57 (ROOT-CAUSED + FIXED 2026-07-11) A *correct* fix woke a latent panic: `NT_ASSERT` mistranslated as a hard `assert!`, dormant until IRP_MJ_CLEANUP started being delivered (arm64-only)
 
 **Symptom:** After merging origin/master into the conformance-ratchet lane, the ×3 landing
