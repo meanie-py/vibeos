@@ -8,9 +8,12 @@ spec2def(pciidex.sys pciidex.spec ADD_IMPORTLIB)
 # the never-delete rule). DriverEntry + the pciidex.spec PciIdeX* exports come from
 # libpciidex_rust.a; the IDE/PnP DDK types come from the per-driver bindgen substrate
 # (pciidex-rust/src/types_*.rs). cmake keeps the MODULE link (set_module_type +
-# spec2def .def + add_importlibs(ntoskrnl hal)). pciidex-rust uses the c_variadic
-# feature (PciIdeXDebugPrint varargs -> vDbgPrintEx), so the cargo build runs under
-# RUSTC_BOOTSTRAP=1. Standard per-arch RUST_TARGET, i386 no-SSE RUSTFLAGS.
+# spec2def .def + add_importlibs(ntoskrnl hal)). pciidex-rust builds on PLAIN STABLE
+# rustc: its three C-variadic entry points (the ntstrsafe wrappers + the exported
+# PciIdeXDebugPrint) cannot be DEFINED in stable Rust (`c_variadic`, rust-lang#44930),
+# so they are 3-line trampolines in rust_varargs_shim.c that call the fixed-arity `*_v`
+# twins in the crate — all logic stays in Rust, and RUSTC_BOOTSTRAP is gone (2026-07-12).
+# Standard per-arch RUST_TARGET, i386 no-SSE RUSTFLAGS.
 set(PCIIDEX_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 set(PCIIDEX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-pciidex-target")
 set(PCIIDEX_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libpciidex_rust.a")
@@ -29,7 +32,6 @@ add_custom_command(
     OUTPUT ${PCIIDEX_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${PCIIDEX_RUST_TARGET_DIR}
-        RUSTC_BOOTSTRAP=1
         RUSTFLAGS=${PCIIDEX_RUST_RUSTFLAGS}
         cargo build --release --target ${PCIIDEX_RUST_TARGET}
             -p pciidex-rust
@@ -47,6 +49,7 @@ add_custom_target(rust_pciidex DEPENDS ${PCIIDEX_RUST_LIB})
 # C bodies replaced by Rust (fdo.c miniport.c pciidex.c pdo.c power.c) — kept on disk.
 add_library(pciidex MODULE
     rust_cohab_stub.c
+    rust_varargs_shim.c
     pciidex.rc
     ${CMAKE_CURRENT_BINARY_DIR}/pciidex.def)
 

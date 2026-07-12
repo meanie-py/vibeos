@@ -93,16 +93,7 @@ pub unsafe extern "system" fn WPP_INIT_TRACING(
     _RegistryPath: PUNICODE_STRING,
 ) {
 }
-// TracePrint is a C-variadic WPP macro; keep the no-op shim variadic too so all Rust
-// declarations and calls have the same LLVM function type.
-#[no_mangle]
-pub unsafe extern "C" fn TracePrint(
-    _level: u32,
-    _flag: u32,
-    _fmt: *const i8,
-    mut _args: ...
-) {
-}
+// TracePrint is a macro now (see lib.rs) — no C trampoline, no _v twin.
 // EXCLUSIVE_MODE(_CdData) := (_CdData->ExclusiveOwner != NULL)
 #[no_mangle]
 pub unsafe extern "C" fn EXCLUSIVE_MODE(CdData: *mut CDROM_DATA) -> i32 {

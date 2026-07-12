@@ -198,4 +198,20 @@ const _: () = assert!(core::mem::size_of::<PCI_COMMON_CONFIG_FIXED>() == 256);
 // dprint_noop — sink for prints the C compiled out (NDEBUG DPRINT). Keeps the call
 // sites (and their argument expressions) intact while matching C's silent behavior;
 // per-IO DbgPrint over the serial port was slowing boot past the smoke timeout.
-pub unsafe extern "C" fn dprint_noop(_format: *const core::ffi::c_char, mut _args: ...) -> i32 { 0 }
+// It is a MACRO, not a fn: stable Rust cannot DEFINE a C-variadic fn (`c_variadic`,
+// rust-lang#44930), and a macro is anyway the honest shape for something the C
+// preprocessor compiled away. Expands to an i32 EXPRESSION (0) because the call sites
+// consume the result — `if dprint_noop(...) != 0 { DbgPrint("DbgPrint() failed!") }` —
+// so it must keep returning 0 for that branch to stay dead, exactly as before.
+// The format arg is bound with its ORIGINAL type. The old fn signature
+// (`_format: *const c_char`) was supplying the inference context that some call sites
+// rely on — e.g. `dprint_noop!((b"..".as_ptr()).cast())`, where a bare `.cast()` has no
+// other way to learn its target type (E0282).
+macro_rules! dprint_noop {
+    ($fmt:expr $(, $arg:expr)* $(,)?) => {{
+        let _: *const core::ffi::c_char = $fmt;
+        $( let _ = &$arg; )*
+        0i32
+    }};
+}
+pub(crate) use dprint_noop;   // lets the existing `crate::glue::dprint_noop!(..)` paths resolve

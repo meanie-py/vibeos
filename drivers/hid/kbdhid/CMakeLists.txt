@@ -28,7 +28,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${KBDHID_RUST_TARGET_DIR}
         RUSTFLAGS=${KBDHID_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${KBDHID_RUST_TARGET}
             -p kbdhid-rust
             --manifest-path ${KBDHID_RUST_WORKSPACE_DIR}/Cargo.toml

@@ -35,7 +35,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${AFD_RUST_TARGET_DIR}
         RUSTFLAGS=${AFD_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${AFD_RUST_TARGET}
             -p afd-rust
             --manifest-path ${AFD_RUST_WORKSPACE_DIR}/Cargo.toml

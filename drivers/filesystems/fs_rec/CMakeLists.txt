@@ -31,7 +31,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${FS_REC_RUST_TARGET_DIR}
         RUSTFLAGS=${FS_REC_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${FS_REC_RUST_TARGET}
             -p fs_rec-rust
             --manifest-path ${FS_REC_RUST_WORKSPACE_DIR}/Cargo.toml

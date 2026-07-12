@@ -17,8 +17,6 @@ remove_definitions(-D_WIN32_WINNT=0x502)
 # stub pulled in by `kmdfdriver` (FxDriverEntry) binds the framework via
 # WdfVersionBind before invoking this crate's #[no_mangle] DriverEntry.
 #
-# RUSTC_BOOTSTRAP=1 + i386 softfloat RUSTFLAGS mirror the pcix/pci-rust cohab so the
-# standard-target staticlib build is self-sufficient (kernel mode = no SSE).
 set(CDROM_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 set(CDROM_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-cdrom-target")
 set(CDROM_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcdrom_rust.a")
@@ -38,7 +36,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${CDROM_RUST_TARGET_DIR}
         RUSTFLAGS=${CDROM_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${CDROM_RUST_TARGET}
             -p cdrom-rust
             --manifest-path ${CDROM_RUST_WORKSPACE_DIR}/Cargo.toml

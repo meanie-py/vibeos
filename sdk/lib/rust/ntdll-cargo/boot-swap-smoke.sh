@@ -18,6 +18,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../../.."  # → repo root
 
+# Pinned nightly, single-sourced from the repo root (see rust-toolchain.toml).
+VIBEOS_NIGHTLY="$(cat "$PWD/.rust-nightly")"
+
 arch="${1:-i386}"
 module="${2:-ntdll}"
 case "$arch" in
@@ -52,7 +55,7 @@ echo "[1/5] cmake baseline ($arch $module → sibling .a + cmake DLL) ..."
 ( cd "$BUILD" && ninja "$module" >/dev/null )
 
 echo "[2/5] Cargo build ($crate, $tgt) ..."
-( cd sdk/lib/rust && cargo +nightly build --release \
+( cd sdk/lib/rust && cargo "+${VIBEOS_NIGHTLY}" build --release \
     --target "$crate/$tgt.json" \
     -Z build-std=core,alloc,compiler_builtins \
     -Z build-std-features=compiler-builtins-mem \

@@ -1,11 +1,10 @@
 #![no_std]
-// pci/id.rs translates id.c's PciIdPrintf/PciIdPrintfAppend, which are true C
-// variadic functions (va_start/vsprintf). Faithful translation needs the nightly
-// `c_variadic` feature. The real build is nightly (build-std; see gcc.cmake
-// RUSTUP_TOOLCHAIN=nightly), so this is enabled only on nightly to avoid breaking
-// stable `cargo check`. On nightly, `feature(c_variadic)` activates via the cfg
-// that rustc's bootstrap/nightly channel sets.
-#![cfg_attr(pcix_nightly, feature(c_variadic))]
+// pci/id.rs translates id.c's PciIdPrintf/PciIdPrintfAppend, which are true C variadic
+// functions (va_start/vsprintf). Stable Rust cannot DEFINE a C-variadic fn (`c_variadic`,
+// rust-lang#44930), so their variadic ENTRY points live in
+// drivers/bus/pcix/rust_varargs_shim.c as 3-line trampolines into the `*_v` twins in
+// pci/id.rs — all logic stays in Rust. This crate builds on PLAIN STABLE rustc: no
+// RUSTC_BOOTSTRAP, no nightly feature gate, no build.rs cfg probe.
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut)]
 #![allow(clippy::all)]

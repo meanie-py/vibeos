@@ -189,6 +189,17 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def pinned_nightly() -> str:
+    """The pinned nightly toolchain name, single-sourced from `.rust-nightly`.
+
+    Nothing pinned the toolchain until 2026-07-12, so a bare `nightly` floated to
+    whatever rustup last installed — and upstream has since removed the c_variadic
+    API our variadic defs use, so a `rustup update` would break the build. Bump the
+    pin in `.rust-nightly` (see rust-toolchain.toml for the stable half).
+    """
+    return (repo_root() / ".rust-nightly").read_text().strip()
+
+
 def log(msg: str) -> None:
     print(f"[ws5] {msg}", flush=True)
 
@@ -299,9 +310,9 @@ def cargo_build_many(
     for c in cells:
         env_cmd += ["-p", c.crate]  # each cell package builds its single [[bin]]
     if dry:
-        log(f"DRY  RUSTUP_TOOLCHAIN=nightly {' '.join(env_cmd)}  (cwd={ws})")
+        log(f"DRY  RUSTUP_TOOLCHAIN={pinned_nightly()} {' '.join(env_cmd)}  (cwd={ws})")
         return
-    env = dict(os.environ, RUSTUP_TOOLCHAIN="nightly")
+    env = dict(os.environ, RUSTUP_TOOLCHAIN=pinned_nightly())
     if trace_dir is not None:
         # Engine appends each in-cargo command to <trace_dir>/<pkg>.trace.
         env["VIBEOS_LINK_TRACE"] = str(trace_dir)
