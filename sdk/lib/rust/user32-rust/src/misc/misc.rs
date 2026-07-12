@@ -68,16 +68,10 @@ unsafe fn NtUserxGetDesktopMapping(ptr: PVOID) -> PVOID {
 // user_x.h: static __inline PVOID DesktopPtrToUser(PVOID Ptr)
 #[inline]
 unsafe fn DesktopPtrToUser(ptr: PVOID) -> PVOID {
-    GetW32ThreadInfo();
-    let pci: PCLIENTINFO = GetWin32ClientInfo();
-    let pdi: PDESKTOPINFO = (*pci).pDeskInfo;
-    if (ptr as usize) >= ((*pdi).pvDesktopBase as usize)
-        && (ptr as usize) < ((*pdi).pvDesktopLimit as usize)
-    {
-        ((ptr as usize) - ((*pci).ulClientDelta as usize)) as PVOID
-    } else {
-        NtUserxGetDesktopMapping(ptr)
-    }
+    // WoW64: DESKTOPINFO is 64-bit-laid-out for a 32-bit guest, so the
+    // base/limit range check must be done through the normalizing view.
+    // Single definition lives in crate::wow64.
+    crate::wow64::desktop_ptr_to_user(ptr)
 }
 #[inline]
 unsafe fn GetThreadDesktopInfo() -> PDESKTOPINFO {
@@ -247,17 +241,39 @@ unsafe extern "C" fn GetUser32Handle(handle: HANDLE) -> PUSER_HANDLE_ENTRY {
 }
 
 unsafe fn GetUser32Handle_impl(handle: HANDLE) -> PUSER_HANDLE_ENTRY {
+    // `scratch` is only ever used on the WoW64 path (see GetUser32HandleInto).
+    // Callers that must survive a nested GetUser32Handle on the same thread pass
+    // their own buffer via GetUser32HandleInto instead.
+    static mut SCRATCH: USER_HANDLE_ENTRY = unsafe { core::mem::zeroed() };
+    GetUser32HandleInto(handle, core::ptr::addr_of_mut!(SCRATCH))
+}
+
+/// `GetUser32Handle`, but the WoW64 path normalizes the 64-bit table entry into
+/// the caller-owned `scratch` (a stack local) and returns that. On a native build
+/// `scratch` is unused and the returned pointer aims straight into the shared
+/// table, exactly as before.
+///
+/// The buffer is caller-owned because the shared USER handle table is
+/// 64-bit-laid-out under WoW64 and so cannot be indexed in place — and a single
+/// shared static would be clobbered by a concurrent GUI thread.
+unsafe fn GetUser32HandleInto(handle: HANDLE, scratch: *mut USER_HANDLE_ENTRY) -> PUSER_HANDLE_ENTRY {
     if handle.is_null() {
         return core::ptr::null_mut();
     }
 
     let Index: i32 = ((((handle as UINT_PTR) & 0xffff) - FIRST_USER_HANDLE as UINT_PTR) >> 1) as i32;
 
-    if Index < 0 || Index >= (*gHandleTable).nb_handles {
-        return core::ptr::null_mut();
-    }
-
-    let entry = gHandleEntries.offset(Index as isize);
+    let entry: PUSER_HANDLE_ENTRY = if crate::wow64::IsWow64() {
+        if !crate::wow64::read_handle_entry(Index, scratch) {
+            return core::ptr::null_mut();
+        }
+        scratch
+    } else {
+        if Index < 0 || Index >= (*gHandleTable).nb_handles {
+            return core::ptr::null_mut();
+        }
+        gHandleEntries.offset(Index as isize)
+    };
 
     if (*entry).type_ == 0 || (*entry).ptr.is_null() {
         return core::ptr::null_mut();
@@ -288,7 +304,8 @@ unsafe fn ValidateHandle_impl(handle: HANDLE, mut uType: UINT) -> PVOID {
     let ret: PVOID;
     let pEntry: PUSER_HANDLE_ENTRY;
 
-    pEntry = GetUser32Handle(handle);
+    let mut scratch: USER_HANDLE_ENTRY = core::mem::zeroed();
+    pEntry = GetUser32HandleInto(handle, core::ptr::addr_of_mut!(scratch));
 
     if !pEntry.is_null() && uType == 0 {
         uType = (*pEntry).type_ as UINT;
@@ -314,6 +331,9 @@ unsafe fn ValidateHandle_impl(handle: HANDLE, mut uType: UINT) -> PVOID {
 
     if g_ObjectHeapTypeShared[uType as usize] != 0 {
         ret = SharedPtrToUser((*pEntry).ptr);
+    } else if uType == TYPE_WINDOW {
+        // The one that matters under WoW64: the caller dereferences this PWND.
+        ret = crate::wow64::desktop_wnd_to_user((*pEntry).ptr) as PVOID;
     } else {
         ret = DesktopPtrToUser((*pEntry).ptr);
     }
@@ -337,7 +357,8 @@ unsafe fn ValidateHandleNoErr_impl(handle: HANDLE, mut uType: UINT) -> PVOID {
     let ret: PVOID;
     let pEntry: PUSER_HANDLE_ENTRY;
 
-    pEntry = GetUser32Handle(handle);
+    let mut scratch: USER_HANDLE_ENTRY = core::mem::zeroed();
+    pEntry = GetUser32HandleInto(handle, core::ptr::addr_of_mut!(scratch));
 
     if !pEntry.is_null() && uType == 0 {
         uType = (*pEntry).type_ as UINT;
@@ -349,6 +370,9 @@ unsafe fn ValidateHandleNoErr_impl(handle: HANDLE, mut uType: UINT) -> PVOID {
 
     if g_ObjectHeapTypeShared[uType as usize] != 0 {
         ret = SharedPtrToUser((*pEntry).ptr);
+    } else if uType == TYPE_WINDOW {
+        // The one that matters under WoW64: the caller dereferences this PWND.
+        ret = crate::wow64::desktop_wnd_to_user((*pEntry).ptr) as PVOID;
     } else {
         ret = DesktopPtrToUser((*pEntry).ptr);
     }
@@ -363,7 +387,8 @@ pub unsafe extern "fastcall" fn ValidateCallProc(hCallProc: HANDLE) -> PCALLPROC
 
     let CallProc = ValidateHandle(hCallProc, TYPE_CALLPROC as UINT) as PCALLPROCDATA;
 
-    pEntry = GetUser32Handle(hCallProc);
+    let mut scratch: USER_HANDLE_ENTRY = core::mem::zeroed();
+    pEntry = GetUser32HandleInto(hCallProc, core::ptr::addr_of_mut!(scratch));
 
     if CallProc != core::ptr::null_mut() && (*pEntry).__bindgen_anon_1.ppi == g_ppi {
         return CallProc;
@@ -379,7 +404,8 @@ pub unsafe extern "C" fn ValidateCallProc(hCallProc: HANDLE) -> PCALLPROCDATA {
 
     let CallProc = ValidateHandle(hCallProc, TYPE_CALLPROC as UINT) as PCALLPROCDATA;
 
-    pEntry = GetUser32Handle(hCallProc);
+    let mut scratch: USER_HANDLE_ENTRY = core::mem::zeroed();
+    pEntry = GetUser32HandleInto(hCallProc, core::ptr::addr_of_mut!(scratch));
 
     if CallProc != core::ptr::null_mut() && (*pEntry).__bindgen_anon_1.ppi == g_ppi {
         return CallProc;
@@ -449,9 +475,9 @@ pub unsafe extern "C" fn ValidateHwndNoErr(hwnd: HWND) -> PWND {
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn GetThreadDesktopWnd() -> PWND {
-    let mut Wnd: PWND = (*GetThreadDesktopInfo()).spwnd;
+    let mut Wnd: PWND = crate::wow64::desktop_info_spwnd(GetThreadDesktopInfo());
     if Wnd != core::ptr::null_mut() {
-        Wnd = DesktopPtrToUser(Wnd as *mut core::ffi::c_void) as PWND;
+        Wnd = crate::wow64::desktop_wnd_to_user(Wnd as *mut core::ffi::c_void);
     }
     Wnd
 }
@@ -459,9 +485,9 @@ pub unsafe extern "fastcall" fn GetThreadDesktopWnd() -> PWND {
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn GetThreadDesktopWnd() -> PWND {
-    let mut Wnd: PWND = (*GetThreadDesktopInfo()).spwnd;
+    let mut Wnd: PWND = crate::wow64::desktop_info_spwnd(GetThreadDesktopInfo());
     if Wnd != core::ptr::null_mut() {
-        Wnd = DesktopPtrToUser(Wnd as *mut core::ffi::c_void) as PWND;
+        Wnd = crate::wow64::desktop_wnd_to_user(Wnd as *mut core::ffi::c_void);
     }
     Wnd
 }

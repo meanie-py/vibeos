@@ -24,6 +24,9 @@ pub mod ntwrapper;
 // ValidateHwnd/UserApiHook cohab externs, and Win32 word macros. Used by the big
 // windows/ bodies (class/window/message/defwnd). Typed against win32k-sys.
 pub mod internal;
+
+// WoW64: 32-bit client view of the 64-bit USER shared/desktop-heap structures.
+pub mod wow64;
 pub mod winbase;
 
 // misc/ — dllmain, timer, object, exit, ... (Wave 0 leaf: timer.rs).
