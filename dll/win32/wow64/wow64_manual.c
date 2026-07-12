@@ -1270,6 +1270,377 @@ static NTSTATUS Wow64Manual_NtUserProcessConnect(ULONG *a)
     return Status;
 }
 
+/* ---- M8: user32 window creation ------------------------------------------ *
+ * The window path's syscalls carry pointer-bearing structs (WNDCLASSEX,
+ * LARGE_STRING, MSG, PAINTSTRUCT, CLSMENUNAME) whose 32/64 layouts differ;
+ * each gets a real 32->64 (and back) conversion here. Kernel->user callbacks
+ * are the other half — wow64_callback.c; NtCallbackReturn below is its
+ * guest-side completion. */
+
+typedef struct _WOW64_MSG32 {
+    ULONG hwnd; ULONG message; ULONG wParam; ULONG lParam;
+    ULONG time; LONG ptx; LONG pty;
+} WOW64_MSG32; /* 28 */
+
+typedef struct _WOW64_MSG64 {
+    ULONGLONG hwnd; ULONG message; ULONG _pad0;
+    ULONGLONG wParam; ULONGLONG lParam;
+    ULONG time; LONG ptx; LONG pty; ULONG _pad1;
+} WOW64_MSG64; /* 48 */
+
+static void Wow64pMsg32To64(const WOW64_MSG32 *M32, WOW64_MSG64 *M64)
+{
+    M64->hwnd = M32->hwnd; M64->message = M32->message; M64->_pad0 = 0;
+    M64->wParam = M32->wParam; M64->lParam = M32->lParam;
+    M64->time = M32->time; M64->ptx = M32->ptx; M64->pty = M32->pty;
+    M64->_pad1 = 0;
+}
+
+static void Wow64pMsg64To32(const WOW64_MSG64 *M64, WOW64_MSG32 *M32)
+{
+    M32->hwnd = (ULONG)M64->hwnd; M32->message = M64->message;
+    M32->wParam = (ULONG)M64->wParam; M32->lParam = (ULONG)M64->lParam;
+    M32->time = M64->time; M32->ptx = M64->ptx; M32->pty = M64->pty;
+}
+
+typedef struct _WOW64_LARGE_STRING32 {
+    ULONG Length; ULONG MaximumLength; ULONG Buffer;
+} WOW64_LARGE_STRING32; /* bAnsi lives in MaximumLength bit 31 */
+
+typedef struct _WOW64_LARGE_STRING64 {
+    ULONG Length; ULONG MaximumLength; ULONGLONG Buffer;
+} WOW64_LARGE_STRING64;
+
+static NTSTATUS Wow64Manual_NtUserRegisterClassExWOW(ULONG *a)
+{
+    extern ULONG NtUserRegisterClassExWOW(PVOID, PVOID, PVOID, PVOID, ULONG, ULONG, PVOID);
+    typedef struct { ULONG cbSize, style, lpfnWndProc; LONG cbClsExtra, cbWndExtra;
+                     ULONG hInstance, hIcon, hCursor, hbrBackground,
+                           lpszMenuName, lpszClassName, hIconSm; } WC32;
+    typedef struct { ULONG cbSize, style; ULONGLONG lpfnWndProc;
+                     LONG cbClsExtra, cbWndExtra;
+                     ULONGLONG hInstance, hIcon, hCursor, hbrBackground,
+                               lpszMenuName, lpszClassName, hIconSm; } WC64;
+    typedef struct { ULONG pszClientAnsiMenuName, pwszClientUnicodeMenuName,
+                     pusMenuName; } CMN32;
+    typedef struct { ULONGLONG pszClientAnsiMenuName, pwszClientUnicodeMenuName,
+                     pusMenuName; } CMN64;
+
+    const WC32 *W32 = (const WC32 *)(ULONG_PTR)a[0];
+    WOW64_UNICODE_STRING32_M *CN32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[1];
+    WOW64_UNICODE_STRING32_M *CV32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[2];
+    const CMN32 *M32 = (const CMN32 *)(ULONG_PTR)a[3];
+    WC64 W64;
+    WOW64_UNICODE_STRING64_M CN64, CV64, MenuUs64;
+    CMN64 M64;
+    PVOID CN64p = NULL, CV64p = NULL, M64p = NULL;
+
+    if (!W32)
+        return 0; /* ATOM 0 = fail */
+    W64.cbSize = sizeof(W64);      /* kernel probes cbSize == sizeof(WNDCLASSEXW) */
+    W64.style = W32->style;
+    W64.lpfnWndProc = W32->lpfnWndProc;
+    W64.cbClsExtra = W32->cbClsExtra;
+    W64.cbWndExtra = W32->cbWndExtra;
+    W64.hInstance = W32->hInstance;
+    W64.hIcon = W32->hIcon;
+    W64.hCursor = W32->hCursor;
+    W64.hbrBackground = W32->hbrBackground;
+    W64.lpszMenuName = W32->lpszMenuName;
+    W64.lpszClassName = W32->lpszClassName;
+    W64.hIconSm = W32->hIconSm;
+
+    if (CN32) { CN64.Length = CN32->Length; CN64.MaximumLength = CN32->MaximumLength;
+                CN64.__pad = 0; CN64.Buffer = CN32->Buffer; CN64p = &CN64; }
+    if (CV32) { CV64.Length = CV32->Length; CV64.MaximumLength = CV32->MaximumLength;
+                CV64.__pad = 0; CV64.Buffer = CV32->Buffer; CV64p = &CV64; }
+    if (M32)
+    {
+        M64.pszClientAnsiMenuName = M32->pszClientAnsiMenuName;
+        M64.pwszClientUnicodeMenuName = M32->pwszClientUnicodeMenuName;
+        M64.pusMenuName = 0;
+        if (M32->pusMenuName)
+        {
+            WOW64_UNICODE_STRING32_M *MU32 =
+                (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)M32->pusMenuName;
+            MenuUs64.Length = MU32->Length;
+            MenuUs64.MaximumLength = MU32->MaximumLength;
+            MenuUs64.__pad = 0;
+            MenuUs64.Buffer = MU32->Buffer;
+            M64.pusMenuName = (ULONGLONG)(ULONG_PTR)&MenuUs64;
+        }
+        M64p = &M64;
+    }
+
+    return (NTSTATUS)NtUserRegisterClassExWOW(&W64, CN64p, CV64p, M64p, a[4], a[5],
+                                              (PVOID)(ULONG_PTR)a[6]);
+}
+
+static NTSTATUS Wow64Manual_NtUserCreateWindowEx(ULONG *a)
+{
+    extern ULONGLONG NtUserCreateWindowEx(ULONG, PVOID, PVOID, PVOID, ULONG,
+                                          LONG, LONG, LONG, LONG, ULONGLONG,
+                                          ULONGLONG, ULONGLONG, ULONGLONG,
+                                          ULONG, PVOID);
+    WOW64_LARGE_STRING64 Cls64, Ver64, Wnd64;
+    PVOID Cls = NULL, Ver = NULL, Wnd = NULL;
+
+    /* Class/version/name arrive as PLARGE_STRING32 — except a raw atom can
+     * ride in the class slot (value < 0x10000): pass those through. */
+#define WOW64_LS32TO64(idx, s64, out)                                          \
+    do {                                                                       \
+        ULONG _v = a[idx];                                                     \
+        if (_v && _v >= 0x10000)                                               \
+        {                                                                      \
+            const WOW64_LARGE_STRING32 *_s32 =                                 \
+                (const WOW64_LARGE_STRING32 *)(ULONG_PTR)_v;                   \
+            (s64).Length = _s32->Length;                                       \
+            (s64).MaximumLength = _s32->MaximumLength;                         \
+            (s64).Buffer = _s32->Buffer;                                       \
+            (out) = &(s64);                                                    \
+        }                                                                      \
+        else if (_v)                                                           \
+            (out) = (PVOID)(ULONG_PTR)_v;                                      \
+    } while (0)
+
+    WOW64_LS32TO64(1, Cls64, Cls);
+    WOW64_LS32TO64(2, Ver64, Ver);
+    WOW64_LS32TO64(3, Wnd64, Wnd);
+#undef WOW64_LS32TO64
+
+    return (NTSTATUS)(ULONG)NtUserCreateWindowEx(
+        a[0], Cls, Ver, Wnd, a[4],
+        (LONG)a[5], (LONG)a[6], (LONG)a[7], (LONG)a[8],
+        a[9], a[10], a[11], a[12], a[13], (PVOID)(ULONG_PTR)a[14]);
+}
+
+static NTSTATUS Wow64Manual_NtUserGetMessage(ULONG *a)
+{
+    extern LONG NtUserGetMessage(PVOID, ULONGLONG, ULONG, ULONG);
+    WOW64_MSG32 *M32 = (WOW64_MSG32 *)(ULONG_PTR)a[0];
+    WOW64_MSG64 M64;
+    LONG Ret;
+
+    if (!M32)
+        return 0;
+    Ret = NtUserGetMessage(&M64, a[1], a[2], a[3]);
+    Wow64pMsg64To32(&M64, M32);
+    return Ret;
+}
+
+static NTSTATUS Wow64Manual_NtUserPeekMessage(ULONG *a)
+{
+    extern LONG NtUserPeekMessage(PVOID, ULONGLONG, ULONG, ULONG, ULONG);
+    WOW64_MSG32 *M32 = (WOW64_MSG32 *)(ULONG_PTR)a[0];
+    WOW64_MSG64 M64;
+    LONG Ret;
+
+    if (!M32)
+        return 0;
+    Ret = NtUserPeekMessage(&M64, a[1], a[2], a[3], a[4]);
+    if (Ret)
+        Wow64pMsg64To32(&M64, M32);
+    return Ret;
+}
+
+static NTSTATUS Wow64Manual_NtUserDispatchMessage(ULONG *a)
+{
+    extern ULONGLONG NtUserDispatchMessage(PVOID);
+    WOW64_MSG32 *M32 = (WOW64_MSG32 *)(ULONG_PTR)a[0];
+    WOW64_MSG64 M64;
+
+    if (!M32)
+        return 0;
+    Wow64pMsg32To64(M32, &M64);
+    return (NTSTATUS)(ULONG)NtUserDispatchMessage(&M64);
+}
+
+static NTSTATUS Wow64Manual_NtUserTranslateMessage(ULONG *a)
+{
+    extern LONG NtUserTranslateMessage(PVOID, ULONG);
+    WOW64_MSG32 *M32 = (WOW64_MSG32 *)(ULONG_PTR)a[0];
+    WOW64_MSG64 M64;
+
+    if (!M32)
+        return 0;
+    Wow64pMsg32To64(M32, &M64);
+    return NtUserTranslateMessage(&M64, a[1]);
+}
+
+typedef struct _WOW64_PAINTSTRUCT32 {
+    ULONG hdc; ULONG fErase; LONG rc[4]; ULONG fRestore; ULONG fIncUpdate;
+    UCHAR rgb[32];
+} WOW64_PAINTSTRUCT32;
+
+typedef struct _WOW64_PAINTSTRUCT64 {
+    ULONGLONG hdc; ULONG fErase; LONG rc[4]; ULONG fRestore; ULONG fIncUpdate;
+    UCHAR rgb[32]; ULONG _pad;
+} WOW64_PAINTSTRUCT64;
+
+static NTSTATUS Wow64Manual_NtUserBeginPaint(ULONG *a)
+{
+    extern ULONGLONG NtUserBeginPaint(ULONGLONG, PVOID);
+    WOW64_PAINTSTRUCT32 *P32 = (WOW64_PAINTSTRUCT32 *)(ULONG_PTR)a[1];
+    WOW64_PAINTSTRUCT64 P64;
+    ULONGLONG Hdc;
+    int i;
+
+    if (!P32)
+        return 0;
+    Hdc = NtUserBeginPaint(a[0], &P64);
+    P32->hdc = (ULONG)P64.hdc;
+    P32->fErase = P64.fErase;
+    for (i = 0; i < 4; i++) P32->rc[i] = P64.rc[i];
+    P32->fRestore = P64.fRestore;
+    P32->fIncUpdate = P64.fIncUpdate;
+    for (i = 0; i < 32; i++) P32->rgb[i] = P64.rgb[i];
+    return (NTSTATUS)(ULONG)Hdc;
+}
+
+static NTSTATUS Wow64Manual_NtUserEndPaint(ULONG *a)
+{
+    extern LONG NtUserEndPaint(ULONGLONG, PVOID);
+    WOW64_PAINTSTRUCT32 *P32 = (WOW64_PAINTSTRUCT32 *)(ULONG_PTR)a[1];
+    WOW64_PAINTSTRUCT64 P64;
+    int i;
+
+    if (!P32)
+        return 0;
+    P64.hdc = P32->hdc;
+    P64.fErase = P32->fErase;
+    for (i = 0; i < 4; i++) P64.rc[i] = P32->rc[i];
+    P64.fRestore = P32->fRestore;
+    P64.fIncUpdate = P32->fIncUpdate;
+    for (i = 0; i < 32; i++) P64.rgb[i] = P32->rgb[i];
+    P64._pad = 0;
+    return NtUserEndPaint(a[0], &P64);
+}
+
+/* ---- M9: cursor/icon load path (LoadCursor(NULL, IDC_ARROW) during the
+ * first window's class setup) -------------------------------------------- *
+ * win32.exe registers with hCursor=NULL, so win32k loads the default arrow:
+ * user32 decodes the cursor bitmap from its own resources (the StretchDIBits
+ * seen on serial) then hands it to win32k via NtUserSetCursorIconData, with
+ * the module + resource names as UNICODE_STRINGs. Both cursor syscalls probe
+ * those strings with 8-byte alignment (TYPE_ALIGNMENT(UNICODE_STRING) on
+ * Win64); a raw passthrough thunk fed the kernel a guest 32-bit UNICODE_STRING
+ * (8 bytes / 4-aligned) -> ProbeForRead(.,16,8) raised DATATYPE_MISALIGNMENT
+ * -> BUGCHECK 0x1E. Marshal the strings 32->64; CURSORDATA also diverges. */
+
+/* Marshal a guest PUNICODE_STRING32 -> caller's UNICODE_STRING64. Returns the
+ * 64-bit pointer, or NULL if the guest pointer was NULL. The Buffer is
+ * zero-extended: a real guest string pointer widens cleanly, and a
+ * MAKEINTRESOURCE atom (value < 0x10000 packed in Buffer) survives the kernel's
+ * IS_ATOM low-bits check unchanged. */
+static WOW64_UNICODE_STRING64_M *Wow64pUS32to64(ULONG Guest32,
+                                                WOW64_UNICODE_STRING64_M *Out)
+{
+    WOW64_UNICODE_STRING32_M *S32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)Guest32;
+    if (!S32)
+        return NULL;
+    Out->Length = S32->Length;
+    Out->MaximumLength = S32->MaximumLength;
+    Out->__pad = 0;
+    Out->Buffer = (ULONGLONG)(ULONG_PTR)S32->Buffer;
+    return Out;
+}
+
+/* NtUserFindExistingCursorIcon(pustrModule, pustrRsrc, param):
+ * two UNICODE_STRINGs widen; param (FINDEXISTINGCURICONPARAM = 3 LONGs) is flat
+ * and identical 32/64, so its guest pointer passes straight through. */
+static NTSTATUS Wow64Manual_NtUserFindExistingCursorIcon(ULONG *a)
+{
+    extern HANDLE NtUserFindExistingCursorIcon(PVOID, PVOID, PVOID);
+    WOW64_UNICODE_STRING64_M Mod64, Rsrc64;
+    HANDLE Ret;
+    Ret = NtUserFindExistingCursorIcon(Wow64pUS32to64(a[0], &Mod64),
+                                       Wow64pUS32to64(a[1], &Rsrc64),
+                                       (PVOID)(ULONG_PTR)a[2]);
+    return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
+}
+
+/* CURSORDATA 32/64 mirrors (win32ss/include/ntuser.h tagCURSORDATA). The
+ * pointer/HBITMAP fields widen 4->8; the scalar fields are identical. */
+typedef struct _WOW64_CURSORDATA32 {
+    ULONG lpName; ULONG lpModName;
+    USHORT rt; USHORT dummy; ULONG CURSORF_flags;
+    SHORT xHotspot; SHORT yHotspot;
+    ULONG hbmMask; ULONG hbmColor; ULONG hbmAlpha;
+    LONG rcBounds[4];
+    ULONG hbmUserAlpha; ULONG bpp; ULONG cx; ULONG cy;
+    ULONG cpcur; ULONG cicur;
+    ULONG aspcur; ULONG aicur; ULONG ajifRate; ULONG iicur;
+} WOW64_CURSORDATA32; /* 0x58 */
+
+typedef struct _WOW64_CURSORDATA64 {
+    ULONGLONG lpName; ULONGLONG lpModName;
+    USHORT rt; USHORT dummy; ULONG CURSORF_flags;
+    SHORT xHotspot; SHORT yHotspot; /* +4 pad to 8-align hbmMask */
+    ULONGLONG hbmMask; ULONGLONG hbmColor; ULONGLONG hbmAlpha;
+    LONG rcBounds[4];
+    ULONGLONG hbmUserAlpha; ULONG bpp; ULONG cx; ULONG cy;
+    ULONG cpcur; ULONG cicur; /* +4 pad to 8-align aspcur */
+    ULONGLONG aspcur; ULONGLONG aicur; ULONGLONG ajifRate;
+    UINT iicur;
+} WOW64_CURSORDATA64; /* 0x88 */
+
+#define WOW64_CURSORF_ACON 0x0008
+
+/* NtUserSetCursorIconData(hcursor, pustrModule, pustrRsrc, pCursorData):
+ * two UNICODE_STRINGs + a CURSORDATA all cross 32->64. For a static cursor
+ * (the default arrow — CURSORF_ACON clear) the aspcur/aicur/ajifRate frame
+ * pointers are unused; the animated case would need those guest arrays
+ * re-marshalled per element (owed — loud note). */
+static NTSTATUS Wow64Manual_NtUserSetCursorIconData(ULONG *a)
+{
+    extern LONG NtUserSetCursorIconData(HANDLE, PVOID, PVOID, PVOID);
+    WOW64_UNICODE_STRING64_M Mod64, Rsrc64;
+    WOW64_CURSORDATA32 *C32 = (WOW64_CURSORDATA32 *)(ULONG_PTR)a[3];
+    WOW64_CURSORDATA64 C64;
+    int i;
+
+    if (C32)
+    {
+        C64.lpName = (ULONGLONG)(ULONG_PTR)C32->lpName;
+        C64.lpModName = (ULONGLONG)(ULONG_PTR)C32->lpModName;
+        C64.rt = C32->rt; C64.dummy = C32->dummy;
+        C64.CURSORF_flags = C32->CURSORF_flags;
+        C64.xHotspot = C32->xHotspot; C64.yHotspot = C32->yHotspot;
+        C64.hbmMask = (ULONGLONG)(ULONG_PTR)C32->hbmMask;
+        C64.hbmColor = (ULONGLONG)(ULONG_PTR)C32->hbmColor;
+        C64.hbmAlpha = (ULONGLONG)(ULONG_PTR)C32->hbmAlpha;
+        for (i = 0; i < 4; i++) C64.rcBounds[i] = C32->rcBounds[i];
+        C64.hbmUserAlpha = (ULONGLONG)(ULONG_PTR)C32->hbmUserAlpha;
+        C64.bpp = C32->bpp; C64.cx = C32->cx; C64.cy = C32->cy;
+        C64.cpcur = C32->cpcur; C64.cicur = C32->cicur;
+        C64.aspcur = (ULONGLONG)(ULONG_PTR)C32->aspcur;
+        C64.aicur = (ULONGLONG)(ULONG_PTR)C32->aicur;
+        C64.ajifRate = (ULONGLONG)(ULONG_PTR)C32->ajifRate;
+        C64.iicur = C32->iicur;
+        if (C32->CURSORF_flags & WOW64_CURSORF_ACON)
+            DbgPrint("[WOW64] NtUserSetCursorIconData: ANIMATED cursor — "
+                     "frame arrays not re-marshalled (owed)\n");
+    }
+
+    return NtUserSetCursorIconData((HANDLE)(LONG_PTR)(LONG)a[0],
+                                   Wow64pUS32to64(a[1], &Mod64),
+                                   Wow64pUS32to64(a[2], &Rsrc64),
+                                   C32 ? &C64 : NULL);
+}
+
+/* Guest completion of a kernel->user callback (wow64_callback.c). */
+int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status);
+
+static NTSTATUS Wow64Manual_NtCallbackReturn(ULONG *a)
+{
+    if (!Wow64pCompleteUserCallback(a[0], a[1], (NTSTATUS)a[2]))
+    {
+        DbgPrint("[WOW64] NtCallbackReturn with NO callback in flight\n");
+        return (NTSTATUS)0xC0000258L; /* STATUS_NO_CALLBACK_ACTIVE */
+    }
+    return 0; /* unreachable: CompleteUserCallback longjmps */
+}
+
 /* Name-dispatched entry point. Returns WOW64_MANUAL_UNIMPL if unhandled. */
 NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
 {
@@ -1331,6 +1702,28 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtUserProcessConnect(Arguments);
     if (WOW64_IS("NtQueryValueKey"))
         return Wow64Manual_NtQueryValueKey(Arguments);
+    if (WOW64_IS("NtUserRegisterClassExWOW"))
+        return Wow64Manual_NtUserRegisterClassExWOW(Arguments);
+    if (WOW64_IS("NtUserCreateWindowEx"))
+        return Wow64Manual_NtUserCreateWindowEx(Arguments);
+    if (WOW64_IS("NtUserGetMessage"))
+        return Wow64Manual_NtUserGetMessage(Arguments);
+    if (WOW64_IS("NtUserPeekMessage"))
+        return Wow64Manual_NtUserPeekMessage(Arguments);
+    if (WOW64_IS("NtUserDispatchMessage"))
+        return Wow64Manual_NtUserDispatchMessage(Arguments);
+    if (WOW64_IS("NtUserTranslateMessage"))
+        return Wow64Manual_NtUserTranslateMessage(Arguments);
+    if (WOW64_IS("NtUserBeginPaint"))
+        return Wow64Manual_NtUserBeginPaint(Arguments);
+    if (WOW64_IS("NtUserEndPaint"))
+        return Wow64Manual_NtUserEndPaint(Arguments);
+    if (WOW64_IS("NtUserFindExistingCursorIcon"))
+        return Wow64Manual_NtUserFindExistingCursorIcon(Arguments);
+    if (WOW64_IS("NtUserSetCursorIconData"))
+        return Wow64Manual_NtUserSetCursorIconData(Arguments);
+    if (WOW64_IS("NtCallbackReturn"))
+        return Wow64Manual_NtCallbackReturn(Arguments);
 #undef WOW64_IS
     return WOW64_MANUAL_UNIMPL;
 }

@@ -58,13 +58,17 @@ fn nt_success(s: NTSTATUS) -> bool {
 }
 
 // L"System\\CurrentControlSet\\Services" — NUL-terminated.
-static SERVICES_KEY: [u16; 33] = [
+// (33 chars + NUL = 34 elements; the original [u16; 33] hand-encoding silently
+// dropped the final 's', so ScmCreateServiceKey/ScmOpenServiceKey hit a
+// nonexistent "...\Service" key -> ERROR_FILE_NOT_FOUND. Found by the kmtest
+// conformance sweep, 2026-07-10.)
+static SERVICES_KEY: [u16; 34] = [
     b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16,
     b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16,
     b'n' as u16, b't' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16,
     b'r' as u16, b'o' as u16, b'l' as u16, b'S' as u16, b'e' as u16, b't' as u16,
     b'\\' as u16, b'S' as u16, b'e' as u16, b'r' as u16, b'v' as u16, b'i' as u16,
-    b'c' as u16, b'e' as u16, 0,
+    b'c' as u16, b'e' as u16, b's' as u16, 0,
 ];
 // L"DependOnService" / L"DependOnGroup"
 static VAL_DEPEND_SERVICE: [u16; 16] = [

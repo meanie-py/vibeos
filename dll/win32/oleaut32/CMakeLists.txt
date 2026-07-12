@@ -14,10 +14,19 @@ add_definitions(
 spec2def(oleaut32.dll oleaut32.spec ADD_IMPORTLIB)
 add_rpcproxy_files(oleaut32_oaidl.idl oleaut32_ocidl.idl)
 
+# NOTE on cohab link order (dll/win32/oleaut32/CMakeLists.txt): the C .obj files
+# are linked BEFORE liboleaut32_rust.a, and with --allow-multiple-definition lld
+# takes the FIRST definition — so a C TU's Rust twin only takes effect when that
+# C TU is commented out here (its undefined refs then pull the Rust archive
+# member). Therefore ONLY comment out TUs whose Rust twin is a COMPLETE export
+# match. safearray.rs (missing SafeArrayCreate*) and oleaut.rs (missing the
+# CLSID_PSFactoryBuffer data ref) are still PARTIAL, so their .c stays compiled
+# and wins; completing those two is the next flip. dispatch.rs/typelib.rs are
+# also partial and stay C.
 list(APPEND SOURCE
     connpt.c
     dispatch.c
-    hash.c
+    # hash.c — replaced by Rust (oleaut32-rust hash.rs — LHashValOfNameSys A/W; full)
     oleaut.c
     olefont.c
     olepicture.c
@@ -25,14 +34,65 @@ list(APPEND SOURCE
     recinfo.c
     safearray.c
     typelib.c
-    usrmarshal.c
+    # usrmarshal.c — replaced by Rust (oleaut32-rust usrmarshal.rs — VARIANT/BSTR/LPSAFEARRAY user-marshal + proxy/stub; full)
     varformat.c
-    variant.c
-    vartype.c)
+    # variant.c — replaced by Rust (oleaut32-rust variant.rs — VariantInit/Clear/Copy/Change + arithmetic; full)
+    # vartype.c — replaced by Rust (oleaut32-rust vartype.rs — VarXxxFromYyy coercion matrix, 253 exports; full)
+    )
 
 if(MSVC)
     add_asm_files(oleaut32_asm msvc.S)
 endif()
+
+# --- Rust cohabitation (oleaut32-rust) --------------------------------------
+# Build liboleaut32_rust.a from the workspace crate (STANDARD user-mode per-arch
+# targets; advapi32-rust/ole32-rust pattern). The #[no_mangle] bodies replace
+# the commented-out .c TUs above; lld first-match (--allow-multiple-definition)
+# lets the staticlib's panic_handler/eh_personality coexist, and lets the
+# partial dispatch.rs/typelib.rs win over their still-compiled C backstops.
+# NOTE: the crate uses #![feature(c_variadic)] (debug_shims), so the cargo
+# invocation needs RUSTC_BOOTSTRAP=1 on the pinned stable toolchain.
+# Plan: docs/engineering/active-lanes/ole-com-translation-audit.md.
+set(OLEAUT32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+set(OLEAUT32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-oleaut32-target")
+set(OLEAUT32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/liboleaut32_rust.a")
+if(ARCH STREQUAL "i386")
+    set(OLEAUT32_RUST_TARGET "i686-pc-windows-gnu")
+elseif(ARCH STREQUAL "amd64")
+    set(OLEAUT32_RUST_TARGET "x86_64-pc-windows-gnu")
+elseif(ARCH STREQUAL "arm64")
+    set(OLEAUT32_RUST_TARGET "aarch64-pc-windows-gnullvm")
+endif()
+file(GLOB_RECURSE OLEAUT32_RUST_SRCS "${OLEAUT32_RUST_WORKSPACE_DIR}/oleaut32-rust/src/*.rs")
+# oleaut32 is user-mode and its VARIANT/date/currency math passes f64 by value.
+# The workspace .cargo/config.toml disables SSE for the whole i686-pc-windows-gnu
+# triple (a KERNEL requirement — CR4.OSFXSR isn't set until Phase 1), which makes
+# rustc reject any by-value f64 ("SIMD vector type f64 requires the sse target
+# feature"). Re-enable SSE for THIS user-mode build only (RUSTFLAGS overrides the
+# per-target config rustflags). The extern "system" FFI return ABI (float in st0)
+# is unaffected — SSE only changes internal codegen. amd64/arm64 already keep
+# SSE/NEON, so no override is needed there.
+set(OLEAUT32_RUST_ENV CARGO_TARGET_DIR=${OLEAUT32_RUST_TARGET_DIR} RUSTC_BOOTSTRAP=1)
+if(ARCH STREQUAL "i386")
+    list(APPEND OLEAUT32_RUST_ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")
+endif()
+add_custom_command(
+    OUTPUT ${OLEAUT32_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        ${OLEAUT32_RUST_ENV}
+        cargo build --release --target ${OLEAUT32_RUST_TARGET}
+            -p oleaut32-rust
+            --manifest-path ${OLEAUT32_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${OLEAUT32_RUST_TARGET_DIR}/${OLEAUT32_RUST_TARGET}/release/liboleaut32_rust.a
+        ${OLEAUT32_RUST_LIB}
+    DEPENDS ${OLEAUT32_RUST_SRCS}
+            ${OLEAUT32_RUST_WORKSPACE_DIR}/oleaut32-rust/Cargo.toml
+    WORKING_DIRECTORY ${OLEAUT32_RUST_WORKSPACE_DIR}
+    COMMENT "Building oleaut32-rust (${OLEAUT32_RUST_TARGET})"
+    VERBATIM)
+add_custom_target(rust_oleaut32 DEPENDS ${OLEAUT32_RUST_LIB})
+# -----------------------------------------------------------------------------
 
 list(APPEND PCH_SKIP_SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/oleaut32_stubs.c
@@ -54,9 +114,11 @@ if(MSVC)
 endif()
 
 add_idl_headers(oleaut32_idlheader oleaut32_oaidl.idl)
-add_dependencies(oleaut32 oleaut32_idlheader)
+add_dependencies(oleaut32 oleaut32_idlheader rust_oleaut32)
 set_module_type(oleaut32 win32dll)
-target_link_libraries(oleaut32 wine wineldr uuid ${PSEH_LIB} oldnames)
+# OLEAUT32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
+target_link_libraries(oleaut32 ${OLEAUT32_RUST_LIB} wine wineldr uuid ${PSEH_LIB} oldnames)
+target_link_options(oleaut32 PRIVATE LINKER:--allow-multiple-definition)
 add_delay_importlibs(oleaut32 comctl32 urlmon windowscodecs)
 add_importlibs(oleaut32 ole32 rpcrt4 user32 gdi32 advapi32 kernel32_vista msvcrt kernel32 ntdll)
 add_pch(oleaut32 precomp.h "${PCH_SKIP_SOURCE}")

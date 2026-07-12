@@ -27,3 +27,17 @@ NtUserDispatchMessage
 # user32 per-process win32k handshake: USERCONNECT is layout-divergent
 # (SHAREDINFO pointers widen; 0x124 -> 0x240). Task #29.
 NtUserProcessConnect
+
+# M8 window-creation path: pointer-bearing structs (WNDCLASSEX/CLSMENUNAME,
+# LARGE_STRING, PAINTSTRUCT) + the message pump family above.
+NtUserRegisterClassExWOW
+NtUserCreateWindowEx
+NtUserTranslateMessage
+NtUserBeginPaint
+NtUserEndPaint
+
+# M9 default-cursor load (LoadCursor(NULL, IDC_ARROW) during first window's
+# class setup): module/resource UNICODE_STRINGs widen 8->16 (align-8 probe),
+# and SetCursorIconData's CURSORDATA has pointer/HBITMAP fields that widen.
+NtUserFindExistingCursorIcon
+NtUserSetCursorIconData

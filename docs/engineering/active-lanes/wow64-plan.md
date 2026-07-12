@@ -469,11 +469,89 @@ On-box: `NtGdiPatBlt => 1`, `NtGdiGetPixel => 00ff00ff`, **gui32 exit
 0x600D PASS** — an x86 GUI binary under FEX completes draw+readback through
 the native arm64 win32k (magenta rect on the desktop). Gate ×3 green.
 
+## M8 (2026-07-11): win32.exe — an x86 WINDOW on arm64 + kernel→user callbacks
+
+gui32 used a *direct display DC* (no window, no callbacks). M8 is the first
+real window: `RegisterClassA` → `CreateWindowExA` → message pump, driven by
+`win32.exe` (i386, user32 imports), landing `WM_NCCREATE`+`WM_CREATE` in the
+guest's own 32-bit wndproc. Two new pieces:
+
+- **`dll/win32/wow64/wow64_callback.c` — the kernel→user callback bridge.**
+  win32k delivers callbacks via the 64-bit ntdll `KiUserCallbackDispatcher` →
+  `PEB64->KernelCallbackTable`. A WoW64 process loads no native user32, so
+  *wow64.dll owns that 20-entry table*. Each entry (a) snapshots the guest
+  CONTEXT (`BTCpuGetContext`), (b) marshals the 64-bit callback arg struct
+  **down to 32-bit** (WINDOWPROC = the CREATESTRUCTW repack: 80→48 bytes, the
+  packed lpszName/lpszClass *offsets* shift by the 32-byte header shrink), (c)
+  pushes an i386 `KiUserCallbackDispatcher` frame on the guest stack and
+  **re-enters `BTCpuSimulate` nested** (FEX supports this — wine's
+  `Wow64KiUserCallbackDispatcher` shape). The guest wndproc runs and exits via
+  `ZwCallbackReturn` → BOP → our manual `NtCallbackReturn` marshaller, which
+  translates the 32-bit result back up and `longjmp`s (hand-rolled aarch64
+  setjmp/longjmp, no CRT) to the table entry, which issues the real 64-bit
+  `NtCallbackReturn`. The kernel resumes the original syscall.
+- **9 new win32k marshallers** in `wow64_manual.c`: `NtUserRegisterClassExWOW`
+  (WNDCLASSEX + CLSMENUNAME + 3× UNICODE_STRING), `NtUserCreateWindowEx`
+  (LARGE_STRING ×3, atom-in-class-slot passthrough), the pump family
+  (`NtUserGetMessage`/`PeekMessage`/`DispatchMessage`/`TranslateMessage` —
+  MSG 28↔48), `NtUserBeginPaint`/`EndPaint` (PAINTSTRUCT).
+
+Also: the guest window must be spawned on the **input desktop**
+(`WinSta0\Default` via STARTUPINFO.lpDesktop) — winlogon's own threads sit on
+the Winlogon desktop, and win32k's paint scan only walks the input desktop
+(§9.22 class). On-box: `WM_NCCREATE`/`WM_CREATE` reach the guest wndproc, the
+window is created, the pump runs — **an x86 program owns a real window on the
+arm64 desktop.** win32.exe exits `0x600E` (window+callbacks OK; WM_PAINT is
+M9). Native i386/amd64/arm64 unaffected (arch-gated / runtime-flagged).
+
+## M8.5 (2026-07-12): default-cursor marshalling — win32.exe gets its FULL message set
+
+Fixed a real BUGCHECK 0x1E on the way to M9 (field manual §9.58a). `win32.exe`
+registers with `hCursor=NULL`, so window creation loads `IDC_ARROW`:
+`NtUserSetCursorIconData` + `NtUserFindExistingCursorIcon` take module/resource
+`UNICODE_STRING`s that were **passthrough** thunks → the guest's 32-bit
+`UNICODE_STRING` (4-aligned) hit win32k's `ProbeForRead(.,16,8)` →
+`STATUS_DATATYPE_MISALIGNMENT` → 0x1E. Fix: manual marshallers widening both
+strings 8→16 + repacking `CURSORDATA` 0x58→0x88 (`wow64_manual.c`), added to
+`manual-win32k.txt`. Post-fix the window creates and the guest wndproc receives
+its **full** message set through the callback bridge (WM_NCCREATE, WM_NCCALCSIZE,
+WM_CREATE, WM_SHOWWINDOW, WM_NCPAINT, WM_ERASEBKGND, WM_ACTIVATE, WM_SIZE,
+WM_MOVE, …). Also added an **on-entry** win32k syscall trace (`[WOW64>]`, gated
+on `Wow64TraceSyscalls`) so a thunk that *faults* the kernel still names itself.
+
+## M9 (OPEN — root-caused): WM_PAINT dropped by client-side ValidateHwnd; needs a 32-bit USER handle-table view
+
+Root-caused (field manual §9.58b). After M8.5 the pump's `PeekMessageA` returns
+`WM_PAINT (0x000f)` with the right hwnd **200×** — win32k's paint path is
+correct — but the guest never dispatches it (no `NtUserDispatchMessage`, no
+`NtUserBeginPaint`; the window stays dirty so QS_PAINT re-fires; exit `0x600E`).
+Cause is **client-side**: `user32!DispatchMessageA` calls `ValidateHwnd(hwnd)`
+first and `return 0` silently if NULL. `ValidateHwnd` → `GetUser32Handle` reads
+the **shared USER handle table** (`gSharedInfo.aheList` → `USER_HANDLE_TABLE`
+header + `USER_HANDLE_ENTRY[]`). The heap is mapped <4GB for WoW64
+(`ahe=001da000`), **but the table is written by 64-bit win32k in 64-bit layout**:
+`USER_HANDLE_TABLE` is 24 bytes (nb_handles@16) vs 16 (@8) on Win32, and
+`USER_HANDLE_ENTRY` is 24 vs 12 bytes. The 32-bit guest misreads `->handles`
+(low 32 bits of a 64-bit kernel VA), `->nb_handles`, and strides entries by 12
+not 24 — every validation fails. Invisible until now: CreateWindow takes the
+hwnd from the syscall return and callbacks pass the wndproc pointer directly;
+the message loop is the first *client-side* validation.
+
+**M9 core work (owed):** a per-WoW64-process **32-bit view of the USER handle
+table**. The table is session-global (can't be per-bitness in place), so win32k
+must maintain a 32-bit shadow (header + entries) for WoW64 processes, hand its
+low VA back in `USERCONNECT.aheList`, and keep it in sync on every handle
+alloc/free (real Windows keeps a parallel 32-bit `gSharedInfo`). Until then any
+WoW64 GUI app that validates an HWND client-side silently no-ops the call. Once
+done, WM_PAINT dispatches, win32.exe paints magenta → `0x600D`, and the door to
+a real windowed app (→ Doom) is open.
+
 *Same divergence class still owed elsewhere (next layers toward Doom):*
 - **TEB GdiTebBatch GDIBS\* batch commands** — gui32 didn't batch; the
   kernel-side `KeGdiFlushUserBatch` reads 64-bit GDIBS from a wow64 TEB.
-- **user32 HANDLEENTRY / SERVERINFO / desktop-heap structs** — needed when
-  window creation lands (CreateWindow → real message pump → Doom's window).
+- **user32 HANDLEENTRY / SERVERINFO / desktop-heap structs** — the M8 pump path
+  exercises SHAREDINFO reads; deeper window ops (subclassing, prop lists) will
+  surface more 32/64 divergence in the user handle table.
 
 *Still deferred (owed, the next milestones):*
 - **advapi32.dll / usp10.dll (i386) staging** — user32 imports them; the loader

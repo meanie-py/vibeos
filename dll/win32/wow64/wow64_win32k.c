@@ -57,6 +57,12 @@ Wow64DispatchWin32kService(ULONG ServiceNumber, PULONG Arguments)
         return Status;
     }
 
+    /* M9: on-entry trace so a thunk that FAULTS the kernel (e.g. a passthrough
+     * that hands a 4-aligned WoW64 buffer to an align-8 ProbeForRead) still
+     * names itself on serial — the "=>" line below never prints in that case. */
+    if (Wow64TraceSyscalls)
+        DbgPrint("[WOW64>] %s(0x%lx) enter arg0=%08lx arg1=%08lx arg2=%08lx\n",
+                 Entry->Name, ServiceNumber, Arguments[0], Arguments[1], Arguments[2]);
     Status = Entry->Thunk(Arguments);
     if (Wow64TraceSyscalls)
         DbgPrint("[WOW64] %s(0x%lx) => %08lx\n", Entry->Name, ServiceNumber, Status);

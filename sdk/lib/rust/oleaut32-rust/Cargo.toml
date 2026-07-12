@@ -1,0 +1,20 @@
+# oleaut32-rust — Rust translation of dll/win32/oleaut32 (OLE Automation:
+# BSTR, VARIANT + the vartype coercion matrix, SAFEARRAY, typelib loader/
+# writer + ITypeInfo/IDispatch, NDR user-marshalers). staticlib →
+# liboleaut32_rust.a, cohab-linked into the cmake-built oleaut32.dll with the
+# translated .c files commented out (advapi32-rust pattern). Sources: fable
+# lanes (dispatch/typelib) + rustconv DeepSeek/Sonnet (the rest); ledgers in
+# ~/vibeos-rust-staging/ole32-lane-a/MANIFEST.md and
+# docs/engineering/active-lanes/ole-com-translation-audit.md.
+
+[package]
+name = "oleaut32-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+com-sys = { path = "../com-sys" }
