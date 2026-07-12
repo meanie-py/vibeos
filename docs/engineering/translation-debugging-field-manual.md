@@ -4895,7 +4895,7 @@ Files: netstack-rust/src/tditrans.rs (INBOX lock), netstack-rust/src/hal.rs
 on-CPU1 visibility counter, targeted single-VA remote flushes, packet mailbox,
 i386/arm64 parity.
 
-### 9.56 (OPEN 2026-07-11) The -smp 2 residual flake: ~1/4–1/3 of boots creep-wedge or crash with device-I/O/pool faces — pre-existing at M3b, control-verified; NOT the M3-tail TLB/IPI work
+### 9.56 (ROOT-CAUSED 2026-07-12) The -smp 2 residual: the SwapBusy context-switch handshake is HALF-IMPLEMENTED (31 writes, 0 spin-waits) — a thread is readied/double-queued while still descheduling on another CPU, tearing a DispatcherReadyListHead
 
 **Faces (all from one corpus, 2026-07-11, amd64 `-smp 2`, TCG):**
 - `[NETSTACK] TDI self-test: CONNECT FAILED 0xc00000b5` (STATUS_IO_TIMEOUT) — appears
@@ -5059,6 +5059,42 @@ IN_PAGE_ERRORs into ONE precise 'ready list inconsistent on entry' report that
 says whether the list was ALREADY corrupt when KiSelectReadyThread ran (someone
 else corrupted it — then GDB-watchpoint that CPU's ReadySummary/list) or is
 being torn concurrently. Same amplifier build (--cswitchdep) makes it fire fast.
+
+**ROOT CAUSE (2026-07-12) — the SwapBusy handshake wait-side is unimplemented.**
+NT's `SwapBusy` stops any CPU from readying/running/requeuing a thread that is
+still saving its context on another CPU: the descheduling thread sets
+`SwapBusy=1` before `KiSwapContext`, `KiSwapContextResume` clears it AFTER the
+swap, and every path that would touch that thread must first spin
+`while (Thread->SwapBusy) YieldProcessor();`. This kernel has **31 SwapBusy
+writes and ZERO spin-waits** (the only "reads" are struct decls / C-reference
+comments). On UP the wait-side is vacuous (one CPU), so it was invisible until
+SMP. Under -smp 2: CPU A blocks T (SwapBusy=1, starts saving context); CPU B
+readies T (`KiReadyThread`->`KiDeferredReadyThread`) and queues it `Ready` while
+A is still mid-swap; a later preemption hands the already-`Ready` T to
+`KxQueueReadyThread` again -> the DOUBLE-QUEUE re-inserts T's still-linked
+`WaitListEntry`, tearing `DispatcherReadyListHead[pri]`; the torn Blink surfaces
+in `KiSelectReadyThread`'s `RemoveEntryList` as the 0x1E IN_PAGE_ERROR (or the
+silent wedge). Matches all: SMP-only, narrow window, **cswitchdep-amplified
+0.9%->~25%** (its global per-switch spinlock widens the SwapBusy window — that's
+WHY the amplifier worked), double-queue caught red-handed (tripwire 0x52:
+State already Ready=1, thread holding WS locks = still running).
+
+**Tripwire chain that found it (reusable):** (1) release-mode ready-list
+invariant at KiSelectReadyThread (0x96) -> torn Blink on a live list; (2)
+per-writer post-checks (sites 0x11/0x22/0x33/0x44) -> tearing writer =
+KxQueueReadyThread (0x11); (3) entry checks split already-torn (0x51) vs
+double-queue (0x52) -> 0x52 -> a Ready thread re-queued; (4) grep SwapBusy
+wait-side -> zero. Each step = 1 build + a ~16-boot cswitchdep burst.
+
+**THE FIX (owed):** implement the SwapBusy wait-side. Primary site: the
+select-to-run path must not commit NextThread to Running until it finishes
+swapping out — in KiSwapThreadImpl / KiExitDispatcher / NtYieldExecution, after
+KiSelectReadyThread and before State=Running:
+`while core::ptr::read_volatile(&(*NextThread).SwapBusy) != 0 { core::hint::spin_loop(); }`
+(NT's KiSwapContext does exactly this on the incoming thread). The 31 write
+sites map where the flag is trusted; cross-check each against NT ke_x.h/ctxswap.
+Validate: re-run the cswitchdep burst with the 0x96 tripwires armed — they must
+go silent. Keep the tripwires (guarded, cheap) until a long clean soak confirms.
 
 ### 9.57 (ROOT-CAUSED + FIXED 2026-07-11) A *correct* fix woke a latent panic: `NT_ASSERT` mistranslated as a hard `assert!`, dormant until IRP_MJ_CLEANUP started being delivered (arm64-only)
 

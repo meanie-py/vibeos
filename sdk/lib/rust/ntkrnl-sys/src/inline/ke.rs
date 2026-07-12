@@ -900,6 +900,16 @@ unsafe fn dh_set_inserted(header: *mut ddk::_DISPATCHER_HEADER, val: u8) {
     (*header).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_3.Inserted = val;
 }
 
+/// KTHREAD.State reader (mirror of kt_set_state).
+#[cfg(feature = "smp")]
+#[inline]
+unsafe fn kt_state_read(thread: ddk::PKTHREAD) -> u8 {
+    #[cfg(target_arch = "x86")]
+    { (*thread).State }
+    #[cfg(not(target_arch = "x86"))]
+    { (*thread).__bindgen_anon_5.__bindgen_anon_6.State }
+}
+
 /// KTHREAD.State — i386: direct field; amd64/arm64: nested.
 #[inline]
 unsafe fn kt_set_state(thread: ddk::PKTHREAD, val: u8) {
@@ -1763,6 +1773,25 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
             KiDeferredReadyThread(thread);
             return;
         }
+    }
+    // §9.56 entry diagnostics (holding the PRCB lock):
+    #[cfg(feature = "smp")]
+    {
+        let priority_c = (*thread).Priority as u32;
+        // (0x52) DOUBLE-QUEUE: this thread is already Ready — queuing it again
+        // re-inserts an entry that's still linked, tearing the list.
+        if kt_state_read(thread) == ddk::_KTHREAD_STATE_Ready as u8 {
+            ddk::KeBugCheckEx(
+                0x96,
+                thread as usize as _,
+                ((0x52u64 << 8) | priority_c as u64) as _,
+                kt_state_read(thread) as _,
+                prcb as usize as _,
+            );
+        }
+        // (0x51) list ALREADY torn on entry — a prior/concurrent corruptor,
+        // not this insert.
+        ki_rq_integrity(prcb, priority_c, 0x51);
     }
     kt_set_state(thread, ddk::_KTHREAD_STATE_Ready as u8);
     let priority = (*thread).Priority as usize;
