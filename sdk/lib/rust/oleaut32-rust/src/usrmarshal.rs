@@ -1,16 +1,17 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
-extern "C" {
-    fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
+// WINAPI / __RPC_USER / STDMETHODCALLTYPE externs — stdcall on i386, so
+// extern "system" (was mis-declared extern "C" → referenced _Name instead of
+// _Name@N and failed the i386 link). CRT memcpy/memset come from the prelude.
+extern "system" {
     fn WdtpInterfacePointer_UserUnmarshal( pFlags: *mut ULONG, Buffer: *mut u8, ppunk: *mut *mut IUnknown, riid: *const IID, ) -> *mut u8;
     fn IClassFactory2_RemoteCreateInstanceLic_Proxy( This: *mut IClassFactory2, riid: REFIID, bstrKey: BSTR, ppvObj: *mut *mut IUnknown, ) -> HRESULT;
 }
-extern "C" {
+extern "system" {
     fn WdtpInterfacePointer_UserMarshal( pFlags: *mut ULONG, flags: ULONG, Buffer: *mut u8, punk: *mut IUnknown, riid: *const GUID, ) -> *mut u8;
     fn IEnumVARIANT_RemoteNext_Proxy( This: *mut IEnumVARIANT, celt: ULONG, rgVar: *mut VARIANT, pCeltFetched: *mut ULONG, ) -> HRESULT;
     fn ITypeComp_RemoteBind_Proxy( This: *mut ITypeComp, name: LPOLESTR, lHashVal: ULONG, flags: WORD, ti: *mut *mut ITypeInfo, desckind: *mut DESCKIND, funcdesc: *mut *mut FUNCDESC, vardesc: *mut *mut VARDESC, typecomp: *mut *mut ITypeComp, stg: *mut CLEANLOCALSTORAGE ) -> HRESULT;
-    fn memset(s: *mut core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void;
     fn ITypeComp_RemoteBindType_Proxy( This: *mut ITypeComp, name: LPOLESTR, lHashVal: ULONG, ti: *mut *mut ITypeInfo, ) -> HRESULT;
     fn ITypeInfo_RemoteGetFuncDesc_Proxy( This: *mut ITypeInfo, index: UINT, ppFuncDesc: *mut *mut FUNCDESC, stg: *mut CLEANLOCALSTORAGE, ) -> HRESULT;
     fn ITypeInfo_RemoteGetDllEntry_Proxy( This: *mut ITypeInfo, memid: MEMBERID, invkind: INVOKEKIND, flags: DWORD, dll_name: *mut BSTR, name: *mut BSTR, ordinal: *mut WORD, ) -> HRESULT;
@@ -1433,7 +1434,7 @@ pub unsafe extern "system" fn HFONT_UserFree(pFlags: *mut ULONG, phfont: *mut HF
     FIXME!(b":stub\n\0".as_ptr() as *const i8);
 }
 #[no_mangle]
-pub unsafe extern "C" fn IDispatch_Invoke_Proxy(
+pub unsafe extern "system" fn IDispatch_Invoke_Proxy(
     This: *mut IDispatch,
     dispIdMember: DISPID,
     riid: REFIID,
@@ -1552,7 +1553,7 @@ pub unsafe extern "C" fn IDispatch_Invoke_Proxy(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn IDispatch_Invoke_Stub(
+pub unsafe extern "system" fn IDispatch_Invoke_Stub(
     This: *mut IDispatch,
     dispIdMember: DISPID,
     riid: REFIID,
@@ -1638,7 +1639,7 @@ pub unsafe extern "C" fn IDispatch_Invoke_Stub(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn IEnumVARIANT_Next_Proxy(
+pub unsafe extern "system" fn IEnumVARIANT_Next_Proxy(
     This: *mut IEnumVARIANT,
     celt: ULONG,
     rgVar: *mut VARIANT,
@@ -1655,7 +1656,7 @@ pub unsafe extern "C" fn IEnumVARIANT_Next_Proxy(
     IEnumVARIANT_RemoteNext_Proxy(This, celt, rgVar, pCeltFetched)
 }
 #[no_mangle]
-pub unsafe extern "C" fn IEnumVARIANT_Next_Stub(
+pub unsafe extern "system" fn IEnumVARIANT_Next_Stub(
     This: *mut IEnumVARIANT,
     celt: ULONG,
     rgVar: *mut VARIANT,
@@ -1706,7 +1707,7 @@ unsafe fn free_embedded_elemdesc(edesc: *mut ELEMDESC) {
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeComp_Bind_Proxy(
+pub unsafe extern "system" fn ITypeComp_Bind_Proxy(
     This: *mut ITypeComp,
     name: LPOLESTR,
     lHashVal: ULONG,
@@ -1766,7 +1767,7 @@ pub unsafe extern "C" fn ITypeComp_Bind_Proxy(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeComp_Bind_Stub(
+pub unsafe extern "system" fn ITypeComp_Bind_Stub(
     This: *mut ITypeComp,
     name: LPOLESTR,
     lHashVal: ULONG,
@@ -1835,7 +1836,7 @@ pub unsafe extern "C" fn ITypeComp_Bind_Stub(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeComp_BindType_Proxy(
+pub unsafe extern "system" fn ITypeComp_BindType_Proxy(
     This: *mut ITypeComp,
     name: LPOLESTR,
     lHashVal: ULONG,
@@ -1864,7 +1865,7 @@ pub unsafe extern "C" fn ITypeComp_BindType_Proxy(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeComp_BindType_Stub(
+pub unsafe extern "system" fn ITypeComp_BindType_Stub(
     This: *mut ITypeComp,
     name: LPOLESTR,
     lHashVal: ULONG,
@@ -1890,7 +1891,7 @@ pub unsafe extern "C" fn ITypeComp_BindType_Stub(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetTypeAttr_Proxy(
+pub unsafe extern "system" fn ITypeInfo_GetTypeAttr_Proxy(
     This: *mut ITypeInfo,
     ppTypeAttr: *mut *mut TYPEATTR,
 ) -> HRESULT {
@@ -1905,7 +1906,7 @@ pub unsafe extern "C" fn ITypeInfo_GetTypeAttr_Proxy(
     ITypeInfo_RemoteGetTypeAttr_Proxy(This, ppTypeAttr, &mut stg)
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetTypeAttr_Stub(
+pub unsafe extern "system" fn ITypeInfo_GetTypeAttr_Stub(
     This: *mut ITypeInfo,
     ppTypeAttr: *mut LPTYPEATTR,
     pDummy: *mut CLEANLOCALSTORAGE,
@@ -1925,7 +1926,7 @@ pub unsafe extern "C" fn ITypeInfo_GetTypeAttr_Stub(
     return hr;
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetFuncDesc_Proxy(
+pub unsafe extern "system" fn ITypeInfo_GetFuncDesc_Proxy(
     This: *mut ITypeInfo,
     index: UINT,
     ppFuncDesc: *mut *mut FUNCDESC,
@@ -1941,7 +1942,7 @@ pub unsafe extern "C" fn ITypeInfo_GetFuncDesc_Proxy(
     ITypeInfo_RemoteGetFuncDesc_Proxy(This, index, ppFuncDesc, &mut stg)
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetFuncDesc_Stub(
+pub unsafe extern "system" fn ITypeInfo_GetFuncDesc_Stub(
     This: *mut ITypeInfo,
     index: UINT,
     ppFuncDesc: *mut LPFUNCDESC,
@@ -1963,7 +1964,7 @@ pub unsafe extern "C" fn ITypeInfo_GetFuncDesc_Stub(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetVarDesc_Proxy(
+pub unsafe extern "system" fn ITypeInfo_GetVarDesc_Proxy(
     This: *mut ITypeInfo,
     index: UINT,
     ppVarDesc: *mut *mut VARDESC,
@@ -1978,7 +1979,7 @@ pub unsafe extern "C" fn ITypeInfo_GetVarDesc_Proxy(
     ITypeInfo_RemoteGetVarDesc_Proxy(This, index, ppVarDesc, core::ptr::addr_of_mut!(stg))
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetVarDesc_Stub(
+pub unsafe extern "system" fn ITypeInfo_GetVarDesc_Stub(
     This: *mut ITypeInfo,
     index: UINT,
     ppVarDesc: *mut LPVARDESC,
@@ -1999,7 +2000,7 @@ pub unsafe extern "C" fn ITypeInfo_GetVarDesc_Stub(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetNames_Proxy(
+pub unsafe extern "system" fn ITypeInfo_GetNames_Proxy(
     This: *mut ITypeInfo,
     memid: MEMBERID,
     rgBstrNames: *mut BSTR,
@@ -2018,7 +2019,7 @@ pub unsafe extern "C" fn ITypeInfo_GetNames_Proxy(
     ITypeInfo_RemoteGetNames_Proxy(This, memid, rgBstrNames, cMaxNames, pcNames)
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetNames_Stub(
+pub unsafe extern "system" fn ITypeInfo_GetNames_Stub(
     This: *mut ITypeInfo,
     memid: MEMBERID,
     rgBstrNames: *mut BSTR,
@@ -2037,7 +2038,7 @@ pub unsafe extern "C" fn ITypeInfo_GetNames_Stub(
     ITypeInfo_GetNames(This, memid, rgBstrNames, cMaxNames, pcNames)
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetIDsOfNames_Proxy(
+pub unsafe extern "system" fn ITypeInfo_GetIDsOfNames_Proxy(
     This: *mut ITypeInfo,
     rgszNames: *mut LPOLESTR,
     cNames: UINT,
@@ -2047,14 +2048,14 @@ pub unsafe extern "C" fn ITypeInfo_GetIDsOfNames_Proxy(
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetIDsOfNames_Stub(
+pub unsafe extern "system" fn ITypeInfo_GetIDsOfNames_Stub(
     This: *mut ITypeInfo
 ) -> HRESULT {
     FIXME!("not implemented\n");
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_Invoke_Proxy(
+pub unsafe extern "system" fn ITypeInfo_Invoke_Proxy(
     This: *mut ITypeInfo,
     pvInstance: PVOID,
     memid: MEMBERID,
@@ -2068,14 +2069,14 @@ pub unsafe extern "C" fn ITypeInfo_Invoke_Proxy(
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_Invoke_Stub(
+pub unsafe extern "system" fn ITypeInfo_Invoke_Stub(
     This: *mut ITypeInfo,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as *const i8);
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetDocumentation_Proxy(
+pub unsafe extern "system" fn ITypeInfo_GetDocumentation_Proxy(
     This: *mut ITypeInfo,
     memid: MEMBERID,
     name: *mut BSTR,
@@ -2141,7 +2142,7 @@ pub unsafe extern "C" fn ITypeInfo_GetDocumentation_Proxy(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetDocumentation_Stub(
+pub unsafe extern "system" fn ITypeInfo_GetDocumentation_Stub(
     This: *mut ITypeInfo,
     memid: MEMBERID,
     flags: DWORD,
@@ -2175,7 +2176,7 @@ pub unsafe extern "C" fn ITypeInfo_GetDocumentation_Stub(
     ITypeInfo_GetDocumentation(This, memid, name_ptr, doc_string_ptr, help_context_ptr, help_file_ptr)
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetDllEntry_Proxy(
+pub unsafe extern "system" fn ITypeInfo_GetDllEntry_Proxy(
     This: *mut ITypeInfo,
     memid: MEMBERID,
     invkind: INVOKEKIND,
@@ -2226,7 +2227,7 @@ pub unsafe extern "C" fn ITypeInfo_GetDllEntry_Proxy(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetDllEntry_Stub(
+pub unsafe extern "system" fn ITypeInfo_GetDllEntry_Stub(
     This: *mut ITypeInfo,
     memid: MEMBERID,
     invkind: INVOKEKIND,
@@ -2256,7 +2257,7 @@ pub unsafe extern "C" fn ITypeInfo_GetDllEntry_Stub(
     ITypeInfo_GetDllEntry(This, memid, invkind, dll_name_ptr, name_ptr, ordinal_ptr)
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_AddressOfMember_Proxy(
+pub unsafe extern "system" fn ITypeInfo_AddressOfMember_Proxy(
     This: *mut ITypeInfo,
     memid: MEMBERID,
     invKind: INVOKEKIND,
@@ -2266,14 +2267,14 @@ pub unsafe extern "C" fn ITypeInfo_AddressOfMember_Proxy(
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_AddressOfMember_Stub(
+pub unsafe extern "system" fn ITypeInfo_AddressOfMember_Stub(
     This: *mut ITypeInfo
 ) -> HRESULT {
     FIXME!("not implemented\n");
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_CreateInstance_Proxy(
+pub unsafe extern "system" fn ITypeInfo_CreateInstance_Proxy(
     This: *mut ITypeInfo,
     pUnkOuter: *mut IUnknown,
     riid: *const IID,
@@ -2283,7 +2284,7 @@ pub unsafe extern "C" fn ITypeInfo_CreateInstance_Proxy(
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_CreateInstance_Stub(
+pub unsafe extern "system" fn ITypeInfo_CreateInstance_Stub(
     This: *mut ITypeInfo,
     riid: *const GUID,
     ppvObj: *mut *mut IUnknown,
@@ -2292,7 +2293,7 @@ pub unsafe extern "C" fn ITypeInfo_CreateInstance_Stub(
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetContainingTypeLib_Proxy(
+pub unsafe extern "system" fn ITypeInfo_GetContainingTypeLib_Proxy(
     This: *mut ITypeInfo,
     ppTLib: *mut *mut ITypeLib,
     pIndex: *mut UINT,
@@ -2318,7 +2319,7 @@ pub unsafe extern "C" fn ITypeInfo_GetContainingTypeLib_Proxy(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_GetContainingTypeLib_Stub(
+pub unsafe extern "system" fn ITypeInfo_GetContainingTypeLib_Stub(
     This: *mut ITypeInfo,
     ppTLib: *mut *mut ITypeLib,
     pIndex: *mut UINT,
@@ -2327,7 +2328,7 @@ pub unsafe extern "C" fn ITypeInfo_GetContainingTypeLib_Stub(
     ITypeInfo_GetContainingTypeLib(This, ppTLib, pIndex)
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_ReleaseTypeAttr_Proxy(
+pub unsafe extern "system" fn ITypeInfo_ReleaseTypeAttr_Proxy(
     This: *mut ITypeInfo,
     pTypeAttr: *mut TYPEATTR,
 ) {
@@ -2337,14 +2338,14 @@ pub unsafe extern "C" fn ITypeInfo_ReleaseTypeAttr_Proxy(
     CoTaskMemFree(pTypeAttr as LPVOID);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_ReleaseTypeAttr_Stub(
+pub unsafe extern "system" fn ITypeInfo_ReleaseTypeAttr_Stub(
     This: *mut ITypeInfo,
 ) -> HRESULT {
     TRACE!(b"nothing to do\n\0".as_ptr() as *const i8);
     0
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_ReleaseFuncDesc_Proxy(
+pub unsafe extern "system" fn ITypeInfo_ReleaseFuncDesc_Proxy(
     This: *mut ITypeInfo,
     pFuncDesc: *mut FUNCDESC) {
     let mut param: SHORT;
@@ -2368,14 +2369,14 @@ pub unsafe extern "C" fn ITypeInfo_ReleaseFuncDesc_Proxy(
     CoTaskMemFree(pFuncDesc as LPVOID);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_ReleaseFuncDesc_Stub(
+pub unsafe extern "system" fn ITypeInfo_ReleaseFuncDesc_Stub(
     This: *mut ITypeInfo
 ) -> HRESULT {
     TRACE!(b"nothing to do\n\0".as_ptr() as PCHAR);
     S_OK
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_ReleaseVarDesc_Proxy(
+pub unsafe extern "system" fn ITypeInfo_ReleaseVarDesc_Proxy(
     This: *mut ITypeInfo,
     pVarDesc: *mut VARDESC,
 ) {
@@ -2391,14 +2392,14 @@ pub unsafe extern "C" fn ITypeInfo_ReleaseVarDesc_Proxy(
     CoTaskMemFree(pVarDesc as LPVOID);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo_ReleaseVarDesc_Stub(
+pub unsafe extern "system" fn ITypeInfo_ReleaseVarDesc_Stub(
     This: *mut core::ffi::c_void,
 ) -> HRESULT {
     TRACE!(b"nothing to do\n\0".as_ptr() as *const i8);
     0
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo2_GetDocumentation2_Proxy(
+pub unsafe extern "system" fn ITypeInfo2_GetDocumentation2_Proxy(
     This: *mut ITypeInfo2,
     memid: MEMBERID,
     lcid: LCID,
@@ -2448,7 +2449,7 @@ pub unsafe extern "C" fn ITypeInfo2_GetDocumentation2_Proxy(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeInfo2_GetDocumentation2_Stub(
+pub unsafe extern "system" fn ITypeInfo2_GetDocumentation2_Stub(
     This: *mut ITypeInfo2,
     memid: MEMBERID,
     lcid: LCID,
@@ -2471,7 +2472,7 @@ pub unsafe extern "C" fn ITypeInfo2_GetDocumentation2_Stub(
     ITypeInfo2_GetDocumentation2(This, memid, lcid, help_string, help_context, help_dll)
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib_GetTypeInfoCount_Proxy(
+pub unsafe extern "system" fn ITypeLib_GetTypeInfoCount_Proxy(
     This: *mut ITypeLib
 ) -> UINT {
     let mut count: UINT = 0;
@@ -2482,7 +2483,7 @@ pub unsafe extern "C" fn ITypeLib_GetTypeInfoCount_Proxy(
     count
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib_GetTypeInfoCount_Stub(
+pub unsafe extern "system" fn ITypeLib_GetTypeInfoCount_Stub(
     This: *mut ITypeLib,
     pcTInfo: *mut UINT
 ) -> HRESULT {
@@ -2492,7 +2493,7 @@ pub unsafe extern "C" fn ITypeLib_GetTypeInfoCount_Stub(
     S_OK
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib_GetLibAttr_Proxy(
+pub unsafe extern "system" fn ITypeLib_GetLibAttr_Proxy(
     This: *mut ITypeLib,
     ppTLibAttr: *mut *mut TLIBATTR,
 ) -> HRESULT {
@@ -2507,7 +2508,7 @@ pub unsafe extern "C" fn ITypeLib_GetLibAttr_Proxy(
     ITypeLib_RemoteGetLibAttr_Proxy(This, ppTLibAttr, &mut stg)
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib_GetLibAttr_Stub(
+pub unsafe extern "system" fn ITypeLib_GetLibAttr_Stub(
     This: *mut ITypeLib,
     ppTLibAttr: *mut LPTLIBATTR,
     pDummy: *mut CLEANLOCALSTORAGE,
@@ -2527,7 +2528,7 @@ pub unsafe extern "C" fn ITypeLib_GetLibAttr_Stub(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib_GetDocumentation_Proxy(
+pub unsafe extern "system" fn ITypeLib_GetDocumentation_Proxy(
     This: *mut ITypeLib,
     index: INT,
     name: *mut BSTR,
@@ -2593,7 +2594,7 @@ pub unsafe extern "C" fn ITypeLib_GetDocumentation_Proxy(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib_GetDocumentation_Stub(
+pub unsafe extern "system" fn ITypeLib_GetDocumentation_Stub(
     This: *mut ITypeLib,
     index: INT,
     flags: DWORD,
@@ -2616,7 +2617,7 @@ pub unsafe extern "C" fn ITypeLib_GetDocumentation_Stub(
     ITypeLib_GetDocumentation(This, index, name_ptr, doc_string_ptr, help_context_ptr, help_file_ptr)
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib_IsName_Proxy(
+pub unsafe extern "system" fn ITypeLib_IsName_Proxy(
     This: *mut ITypeLib,
     szNameBuf: LPOLESTR,
     lHashVal: ULONG,
@@ -2626,7 +2627,7 @@ pub unsafe extern "C" fn ITypeLib_IsName_Proxy(
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib_IsName_Stub(
+pub unsafe extern "system" fn ITypeLib_IsName_Stub(
     This: *mut ITypeLib,
     szNameBuf: LPOLESTR,
     lHashVal: ULONG,
@@ -2637,7 +2638,7 @@ pub unsafe extern "C" fn ITypeLib_IsName_Stub(
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib_FindName_Proxy(
+pub unsafe extern "system" fn ITypeLib_FindName_Proxy(
     This: *mut ITypeLib,
     szNameBuf: LPOLESTR,
     lHashVal: ULONG,
@@ -2649,7 +2650,7 @@ pub unsafe extern "C" fn ITypeLib_FindName_Proxy(
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib_FindName_Stub(
+pub unsafe extern "system" fn ITypeLib_FindName_Stub(
     This: *mut ITypeLib,
     szNameBuf: LPOLESTR,
     lHashVal: ULONG,
@@ -2662,7 +2663,7 @@ pub unsafe extern "C" fn ITypeLib_FindName_Stub(
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib_ReleaseTLibAttr_Proxy(
+pub unsafe extern "system" fn ITypeLib_ReleaseTLibAttr_Proxy(
     This: *mut ITypeLib,
     pTLibAttr: *mut TLIBATTR,
 ) {
@@ -2670,14 +2671,14 @@ pub unsafe extern "C" fn ITypeLib_ReleaseTLibAttr_Proxy(
     CoTaskMemFree(pTLibAttr as LPVOID);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib_ReleaseTLibAttr_Stub(
+pub unsafe extern "system" fn ITypeLib_ReleaseTLibAttr_Stub(
     This: *mut ITypeLib
 ) -> HRESULT {
     TRACE!(b"nothing to do\n\0".as_ptr() as *const i8);
     return 0; // S_OK
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib2_GetLibStatistics_Proxy(
+pub unsafe extern "system" fn ITypeLib2_GetLibStatistics_Proxy(
     This: *mut ITypeLib2,
     pcUniqueNames: *mut ULONG,
     pcchUniqueNames: *mut ULONG,
@@ -2686,7 +2687,7 @@ pub unsafe extern "C" fn ITypeLib2_GetLibStatistics_Proxy(
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib2_GetLibStatistics_Stub(
+pub unsafe extern "system" fn ITypeLib2_GetLibStatistics_Stub(
     This: *mut ITypeLib2,
     pcUniqueNames: *mut ULONG,
     pcchUniqueNames: *mut ULONG,
@@ -2695,7 +2696,7 @@ pub unsafe extern "C" fn ITypeLib2_GetLibStatistics_Stub(
     E_FAIL
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib2_GetDocumentation2_Proxy(
+pub unsafe extern "system" fn ITypeLib2_GetDocumentation2_Proxy(
     This: *mut ITypeLib2,
     index: INT,
     lcid: LCID,
@@ -2753,7 +2754,7 @@ pub unsafe extern "C" fn ITypeLib2_GetDocumentation2_Proxy(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn ITypeLib2_GetDocumentation2_Stub(
+pub unsafe extern "system" fn ITypeLib2_GetDocumentation2_Stub(
     This: *mut ITypeLib2,
     index: INT,
     lcid: LCID,
@@ -2785,7 +2786,7 @@ pub unsafe extern "C" fn ITypeLib2_GetDocumentation2_Stub(
     ITypeLib2_GetDocumentation2(This, index, lcid, help_string_arg, help_context_arg, help_dll_arg)
 }
 #[no_mangle]
-pub unsafe extern "C" fn IPropertyBag_Read_Proxy(
+pub unsafe extern "system" fn IPropertyBag_Read_Proxy(
     This: *mut IPropertyBag,
     pszPropName: LPCOLESTR,
     pVar: *mut VARIANT,
@@ -2836,7 +2837,7 @@ pub unsafe extern "C" fn IPropertyBag_Read_Proxy(
     return IPropertyBag_RemoteRead_Proxy(This, pszPropName, pVar, pErrorLog, (*V_VT_ref(pVar)) as DWORD, pUnk);
 }
 #[no_mangle]
-pub unsafe extern "C" fn IPropertyBag_Read_Stub(
+pub unsafe extern "system" fn IPropertyBag_Read_Stub(
     This: *mut IPropertyBag,
     pszPropName: LPCOLESTR,
     pVar: *mut VARIANT,
@@ -2902,7 +2903,7 @@ pub unsafe extern "C" fn IPropertyBag_Read_Stub(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn IClassFactory2_CreateInstanceLic_Proxy(
+pub unsafe extern "system" fn IClassFactory2_CreateInstanceLic_Proxy(
     This: *mut IClassFactory2,
     pUnkOuter: *mut IUnknown,
     pUnkReserved: *mut IUnknown,
@@ -2928,7 +2929,7 @@ pub unsafe extern "C" fn IClassFactory2_CreateInstanceLic_Proxy(
     IClassFactory2_RemoteCreateInstanceLic_Proxy(This, riid, bstrKey, ppvObj as *mut *mut IUnknown)
 }
 #[no_mangle]
-pub unsafe extern "C" fn IClassFactory2_CreateInstanceLic_Stub(
+pub unsafe extern "system" fn IClassFactory2_CreateInstanceLic_Stub(
     This: *mut IClassFactory2,
     riid: REFIID,
     bstrKey: BSTR,
@@ -2946,7 +2947,7 @@ pub unsafe extern "C" fn IClassFactory2_CreateInstanceLic_Stub(
     )
 }
 #[no_mangle]
-pub unsafe extern "C" fn IEnumConnections_Next_Proxy(
+pub unsafe extern "system" fn IEnumConnections_Next_Proxy(
     This: *mut IEnumConnections,
     cConnections: ULONG,
     rgcd: LPCONNECTDATA,
@@ -2965,7 +2966,7 @@ pub unsafe extern "C" fn IEnumConnections_Next_Proxy(
     IEnumConnections_RemoteNext_Proxy(This, cConnections, rgcd, pcFetched)
 }
 #[no_mangle]
-pub unsafe extern "C" fn IEnumConnections_Next_Stub(
+pub unsafe extern "system" fn IEnumConnections_Next_Stub(
     This: *mut IEnumConnections,
     cConnections: ULONG,
     rgcd: LPCONNECTDATA,
@@ -2984,7 +2985,7 @@ pub unsafe extern "C" fn IEnumConnections_Next_Stub(
     hr
 }
 #[no_mangle]
-pub unsafe extern "C" fn IEnumConnectionPoints_Next_Proxy(
+pub unsafe extern "system" fn IEnumConnectionPoints_Next_Proxy(
     This: *mut IEnumConnectionPoints,
     cConnections: ULONG,
     ppCP: *mut *mut IConnectionPoint,
@@ -3008,7 +3009,7 @@ pub unsafe extern "C" fn IEnumConnectionPoints_Next_Proxy(
     IEnumConnectionPoints_RemoteNext_Proxy(This, cConnections, ppCP, pcFetched)
 }
 #[no_mangle]
-pub unsafe extern "C" fn IEnumConnectionPoints_Next_Stub(
+pub unsafe extern "system" fn IEnumConnectionPoints_Next_Stub(
     This: *mut IEnumConnectionPoints,
     cConnections: ULONG,
     ppCP: *mut *mut IConnectionPoint,
@@ -3033,7 +3034,7 @@ pub unsafe extern "C" fn IEnumConnectionPoints_Next_Stub(
     return hr;
 }
 #[no_mangle]
-pub unsafe extern "C" fn IPersistMemory_Load_Proxy(
+pub unsafe extern "system" fn IPersistMemory_Load_Proxy(
     This: *mut IPersistMemory,
     pMem: LPVOID,
     cbSize: ULONG,
@@ -3048,7 +3049,7 @@ pub unsafe extern "C" fn IPersistMemory_Load_Proxy(
     IPersistMemory_RemoteLoad_Proxy(This, pMem, cbSize)
 }
 #[no_mangle]
-pub unsafe extern "C" fn IPersistMemory_Load_Stub(
+pub unsafe extern "system" fn IPersistMemory_Load_Stub(
     This: *mut IPersistMemory,
     pMem: *mut BYTE,
     cbSize: ULONG,
@@ -3058,7 +3059,7 @@ pub unsafe extern "C" fn IPersistMemory_Load_Stub(
     IPersistMemory_Load(This, pMem as *mut core::ffi::c_void, cbSize)
 }
 #[no_mangle]
-pub unsafe extern "C" fn IPersistMemory_Save_Proxy(
+pub unsafe extern "system" fn IPersistMemory_Save_Proxy(
     This: *mut IPersistMemory,
     pMem: LPVOID,
     fClearDirty: BOOL,
@@ -3074,7 +3075,7 @@ pub unsafe extern "C" fn IPersistMemory_Save_Proxy(
     IPersistMemory_RemoteSave_Proxy(This, pMem, fClearDirty, cbSize)
 }
 #[no_mangle]
-pub unsafe extern "C" fn IPersistMemory_Save_Stub(
+pub unsafe extern "system" fn IPersistMemory_Save_Stub(
     This: *mut IPersistMemory,
     pMem: *mut BYTE,
     fClearDirty: BOOL,
@@ -3085,7 +3086,7 @@ pub unsafe extern "C" fn IPersistMemory_Save_Stub(
     IPersistMemory_Save(This, pMem as LPVOID, fClearDirty, cbSize)
 }
 #[no_mangle]
-pub unsafe extern "C" fn IAdviseSinkEx_OnViewStatusChange_Proxy(
+pub unsafe extern "system" fn IAdviseSinkEx_OnViewStatusChange_Proxy(
     This: *mut IAdviseSinkEx,
     dwViewStatus: DWORD,
 ) {
@@ -3093,7 +3094,7 @@ pub unsafe extern "C" fn IAdviseSinkEx_OnViewStatusChange_Proxy(
     IAdviseSinkEx_RemoteOnViewStatusChange_Proxy(This, dwViewStatus);
 }
 #[no_mangle]
-pub unsafe extern "C" fn IAdviseSinkEx_OnViewStatusChange_Stub(
+pub unsafe extern "system" fn IAdviseSinkEx_OnViewStatusChange_Stub(
     This: *mut IAdviseSinkEx,
     dwViewStatus: DWORD,
 ) -> HRESULT {
@@ -3103,7 +3104,7 @@ pub unsafe extern "C" fn IAdviseSinkEx_OnViewStatusChange_Stub(
     S_OK
 }
 #[no_mangle]
-pub unsafe extern "C" fn IEnumOleUndoUnits_Next_Proxy(
+pub unsafe extern "system" fn IEnumOleUndoUnits_Next_Proxy(
     This: *mut IEnumOleUndoUnits,
     cElt: ULONG,
     rgElt: *mut *mut IOleUndoUnit,
@@ -3128,7 +3129,7 @@ pub unsafe extern "C" fn IEnumOleUndoUnits_Next_Proxy(
     IEnumOleUndoUnits_RemoteNext_Proxy(This, cElt, rgElt, pcEltFetched)
 }
 #[no_mangle]
-pub unsafe extern "C" fn IEnumOleUndoUnits_Next_Stub(
+pub unsafe extern "system" fn IEnumOleUndoUnits_Next_Stub(
     This: *mut IEnumOleUndoUnits,
     cElt: ULONG,
     rgElt: *mut *mut IOleUndoUnit,
@@ -3148,7 +3149,7 @@ pub unsafe extern "C" fn IEnumOleUndoUnits_Next_Stub(
     return hr;
 }
 #[no_mangle]
-pub unsafe extern "C" fn IQuickActivate_QuickActivate_Proxy(
+pub unsafe extern "system" fn IQuickActivate_QuickActivate_Proxy(
     This: *mut IQuickActivate,
     pQaContainer: *mut QACONTAINER,
     pQaControl: *mut QACONTROL,
@@ -3157,7 +3158,7 @@ pub unsafe extern "C" fn IQuickActivate_QuickActivate_Proxy(
     E_NOTIMPL
 }
 #[no_mangle]
-pub unsafe extern "C" fn IQuickActivate_QuickActivate_Stub(
+pub unsafe extern "system" fn IQuickActivate_QuickActivate_Stub(
     This: *mut IQuickActivate,
     pQaContainer: *mut QACONTAINER,
     pQaControl: *mut QACONTROL,

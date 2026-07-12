@@ -64,11 +64,22 @@ elseif(ARCH STREQUAL "arm64")
     set(OLEAUT32_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
 file(GLOB_RECURSE OLEAUT32_RUST_SRCS "${OLEAUT32_RUST_WORKSPACE_DIR}/oleaut32-rust/src/*.rs")
+# oleaut32 is user-mode and its VARIANT/date/currency math passes f64 by value.
+# The workspace .cargo/config.toml disables SSE for the whole i686-pc-windows-gnu
+# triple (a KERNEL requirement — CR4.OSFXSR isn't set until Phase 1), which makes
+# rustc reject any by-value f64 ("SIMD vector type f64 requires the sse target
+# feature"). Re-enable SSE for THIS user-mode build only (RUSTFLAGS overrides the
+# per-target config rustflags). The extern "system" FFI return ABI (float in st0)
+# is unaffected — SSE only changes internal codegen. amd64/arm64 already keep
+# SSE/NEON, so no override is needed there.
+set(OLEAUT32_RUST_ENV CARGO_TARGET_DIR=${OLEAUT32_RUST_TARGET_DIR} RUSTC_BOOTSTRAP=1)
+if(ARCH STREQUAL "i386")
+    list(APPEND OLEAUT32_RUST_ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")
+endif()
 add_custom_command(
     OUTPUT ${OLEAUT32_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${OLEAUT32_RUST_TARGET_DIR}
-        RUSTC_BOOTSTRAP=1
+        ${OLEAUT32_RUST_ENV}
         cargo build --release --target ${OLEAUT32_RUST_TARGET}
             -p oleaut32-rust
             --manifest-path ${OLEAUT32_RUST_WORKSPACE_DIR}/Cargo.toml
