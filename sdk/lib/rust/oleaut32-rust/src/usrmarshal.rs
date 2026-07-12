@@ -9,37 +9,19 @@ extern "C" {
 extern "C" {
     fn WdtpInterfacePointer_UserMarshal( pFlags: *mut ULONG, flags: ULONG, Buffer: *mut u8, punk: *mut IUnknown, riid: *const GUID, ) -> *mut u8;
     fn IEnumVARIANT_RemoteNext_Proxy( This: *mut IEnumVARIANT, celt: ULONG, rgVar: *mut VARIANT, pCeltFetched: *mut ULONG, ) -> HRESULT;
-    fn IEnumVARIANT_Next( This: *mut IEnumVARIANT, celt: ULONG, rgVar: *mut VARIANT, pCeltFetched: *mut ULONG, ) -> HRESULT;
     fn ITypeComp_RemoteBind_Proxy( This: *mut ITypeComp, name: LPOLESTR, lHashVal: ULONG, flags: WORD, ti: *mut *mut ITypeInfo, desckind: *mut DESCKIND, funcdesc: *mut *mut FUNCDESC, vardesc: *mut *mut VARDESC, typecomp: *mut *mut ITypeComp, stg: *mut CLEANLOCALSTORAGE ) -> HRESULT;
     fn memset(s: *mut core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void;
-    fn ITypeComp_Bind( This: *mut ITypeComp, szName: LPOLESTR, lHashVal: ULONG, wFlags: WORD, ppTInfo: *mut *mut ITypeInfo, pDescKind: *mut DESCKIND, pBindPtr: *mut BINDPTR, ) -> HRESULT;
-    fn IUnknown_AddRef(This: *mut IUnknown) -> ULONG;
     fn ITypeComp_RemoteBindType_Proxy( This: *mut ITypeComp, name: LPOLESTR, lHashVal: ULONG, ti: *mut *mut ITypeInfo, ) -> HRESULT;
-    fn ITypeInfo_GetTypeComp( This: *mut ITypeInfo, typecomp: *mut *mut ITypeComp, ) -> HRESULT;
     fn ITypeInfo_RemoteGetFuncDesc_Proxy( This: *mut ITypeInfo, index: UINT, ppFuncDesc: *mut *mut FUNCDESC, stg: *mut CLEANLOCALSTORAGE, ) -> HRESULT;
-    fn ITypeInfo_AddRef(This: *mut ITypeInfo) -> ULONG;
-    fn ITypeInfo_GetFuncDesc(This: *mut ITypeInfo, index: UINT, ppFuncDesc: *mut LPFUNCDESC) -> HRESULT;
-    fn ITypeInfo_GetDocumentation( This: *mut ITypeInfo, memid: MEMBERID, name: *mut BSTR, doc_string: *mut BSTR, help_context: *mut DWORD, help_file: *mut BSTR, ) -> HRESULT;
     fn ITypeInfo_RemoteGetDllEntry_Proxy( This: *mut ITypeInfo, memid: MEMBERID, invkind: INVOKEKIND, flags: DWORD, dll_name: *mut BSTR, name: *mut BSTR, ordinal: *mut WORD, ) -> HRESULT;
     fn ITypeInfo2_RemoteGetDocumentation2_Proxy( This: *mut ITypeInfo2, memid: MEMBERID, lcid: LCID, flags: DWORD, help_string: *mut BSTR, help_context: *mut DWORD, help_dll: *mut BSTR, ) -> HRESULT;
-    fn ITypeInfo2_GetDocumentation2( This: *mut ITypeInfo2, memid: MEMBERID, lcid: LCID, help_string: *mut BSTR, help_context: *mut DWORD, help_dll: *mut BSTR ) -> HRESULT;
-    fn ITypeLib_GetTypeInfoCount(This: *mut ITypeLib) -> UINT;
     fn ITypeLib_RemoteGetLibAttr_Proxy( This: *mut ITypeLib, ppTLibAttr: *mut *mut TLIBATTR, stg: *mut CLEANLOCALSTORAGE, ) -> HRESULT;
     fn ITypeLib_RemoteGetDocumentation_Proxy( This: *mut ITypeLib, index: INT, flags: DWORD, name: *mut BSTR, doc_string: *mut BSTR, help_context: *mut DWORD, help_file: *mut BSTR, ) -> HRESULT;
-    fn ITypeLib_GetDocumentation( This: *mut ITypeLib, index: INT, name: *mut BSTR, doc_string: *mut BSTR, help_context: *mut DWORD, help_file: *mut BSTR, ) -> HRESULT;
-    fn ITypeLib2_GetDocumentation2( This: *mut ITypeLib2, index: INT, lcid: LCID, help_string: *mut BSTR, help_context: *mut DWORD, help_dll: *mut BSTR, ) -> HRESULT;
     fn IPropertyBag_RemoteRead_Proxy( This: *mut IPropertyBag, pszPropName: LPCOLESTR, pVar: *mut VARIANT, pErrorLog: *mut IErrorLog, vt: DWORD, pUnk: *mut IUnknown, ) -> HRESULT;
-    fn IClassFactory2_CreateInstanceLic( This: *mut IClassFactory2, pUnkOuter: *mut IUnknown, pReserved: *mut core::ffi::c_void, riid: REFIID, bstrKey: BSTR, ppvObj: *mut *mut core::ffi::c_void, ) -> HRESULT;
     fn IEnumConnectionPoints_RemoteNext_Proxy( This: *mut IEnumConnectionPoints, cConnections: ULONG, ppCP: *mut *mut IConnectionPoint, pcFetched: *mut ULONG, ) -> HRESULT;
-    fn IEnumConnectionPoints_Next( This: *mut IEnumConnectionPoints, cConnections: ULONG, ppCP: *mut *mut IConnectionPoint, pcFetched: *mut ULONG, ) -> HRESULT;
     fn IPersistMemory_RemoteLoad_Proxy( This: *mut IPersistMemory, pMem: LPVOID, cbSize: ULONG, ) -> HRESULT;
-    fn IPersistMemory_Load( This: *mut IPersistMemory, pMem: *mut core::ffi::c_void, cbSize: ULONG, ) -> HRESULT;
     fn IPersistMemory_RemoteSave_Proxy( This: *mut IPersistMemory, pMem: LPVOID, fClearDirty: BOOL, cbSize: ULONG, ) -> HRESULT;
-    fn IPersistMemory_Save( This: *mut IPersistMemory, pMem: *mut BYTE, fClearDirty: BOOL, cbSize: ULONG, ) -> HRESULT;
-    fn IAdviseSinkEx_OnViewStatusChange(This: *mut IAdviseSinkEx, dwViewStatus: DWORD);
     fn IEnumOleUndoUnits_RemoteNext_Proxy( This: *mut IEnumOleUndoUnits, cElt: ULONG, rgElt: *mut *mut IOleUndoUnit, pcEltFetched: *mut ULONG, ) -> HRESULT;
-    fn IEnumOleUndoUnits_Next( This: *mut IEnumOleUndoUnits, cElt: ULONG, rgElt: *mut *mut IOleUndoUnit, pcEltFetched: *mut ULONG ) -> HRESULT;
-    fn IUnknown_Release(punk: *mut IUnknown) -> ULONG;
     fn CoTaskMemFree(pv: LPVOID);
 }
 
@@ -418,7 +400,7 @@ unsafe fn interface_user_marshal(
     );
 
     if punk.is_null() {
-        core::ptr::write_bytes(Buffer, 0, core::mem::size_of::<ULONG>());
+        core::ptr::write_bytes(Buffer, 0, core::mem::size_of::<ULONG>()); // nolint: silent-failure (Buffer is *mut u8; zeroes sizeof(ULONG)=4 bytes, matches C memset(Buffer,0,sizeof(ULONG)))
         return Buffer.add(core::mem::size_of::<ULONG>());
     } else {
         *(Buffer as *mut DWORD) = punk as DWORD_PTR as DWORD;
@@ -449,7 +431,7 @@ unsafe fn interface_variant_marshal(
     );
 
     if punk.is_null() {
-        core::ptr::write_bytes(Buffer, 0, core::mem::size_of::<ULONG>());
+        core::ptr::write_bytes(Buffer, 0, core::mem::size_of::<ULONG>()); // nolint: silent-failure (Buffer is *mut u8; zeroes sizeof(ULONG)=4 bytes, matches C memset(Buffer,0,sizeof(ULONG)))
         return Buffer.add(core::mem::size_of::<ULONG>());
     } else {
         *(Buffer as *mut DWORD) = punk as DWORD_PTR as DWORD;
@@ -3100,7 +3082,7 @@ pub unsafe extern "C" fn IPersistMemory_Save_Stub(
 ) -> HRESULT {
     
     TRACE!(b"(%p, %d, %u)\n\0".as_ptr() as PCSTR, pMem, fClearDirty, cbSize);
-    IPersistMemory_Save(This, pMem, fClearDirty, cbSize)
+    IPersistMemory_Save(This, pMem as LPVOID, fClearDirty, cbSize)
 }
 #[no_mangle]
 pub unsafe extern "C" fn IAdviseSinkEx_OnViewStatusChange_Proxy(

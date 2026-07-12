@@ -619,7 +619,7 @@ pub unsafe fn SLTG_DoRefs(
 
                 /* sscanf(pNameTable + lib_offs + 40, "}#%hd.%hd#%x#%s", ...) */
                 {
-                    let mut p = pNameTable.add(lib_offs as usize + 40) as *const i8;
+                    let mut p = pNameTable.add(lib_offs as usize + 40) as *const i8; // nolint: magic-offset (SLTG on-disk name-table string offset, per wine typelib.c sscanf)
                     let matched = 'scan: {
                         if !scan_lit(&mut p, b'}') || !scan_lit(&mut p, b'#') {
                             break 'scan 0;
@@ -1445,14 +1445,14 @@ pub unsafe fn ITypeLib2_Constructor_SLTG(pLib: LPVOID, dwTLBLength: DWORD) -> *m
     match read_unaligned(pNameTable as *const WORD) {
         0xffff => {}
         0x0200 => {
-            pNameTable = pNameTable.add(0x20);
+            pNameTable = pNameTable.add(0x20); // nolint: magic-offset (SLTG on-disk name-table jump, per wine typelib.c)
         }
         other => {
             FIXME!("pNameTable jump = {:x}", other);
         }
     }
 
-    pNameTable = pNameTable.add(0x216);
+    pNameTable = pNameTable.add(0x216); // nolint: magic-offset (SLTG on-disk name-table base, per wine typelib.c)
 
     pNameTable = pNameTable.add(2);
 

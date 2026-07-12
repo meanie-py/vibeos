@@ -295,7 +295,7 @@ unsafe fn VARIANT_NumberFromBstr(
     let mut rgb: [u8; 1024] = [0; 1024];
 
     np.cDig = 1024;
-    np.dwInFlags = 0x00000001u32; // NUMPRS_STD
+    np.dwInFlags = 0x01FFFu32; // NUMPRS_STD (oleauto.h:748 — all parse flags)
 
     let mut hRet = VarParseNumFromStr(
         pStrIn,
@@ -1849,9 +1849,9 @@ pub unsafe extern "system" fn VarCyCmp(cyLeft: CY, cyRight: CY) -> HRESULT {
         if result.int64 < 0 {
             hRet = 0; // VARCMP_LT
         } else if result.int64 > 0 {
-            hRet = 1; // VARCMP_GT
+            hRet = 2; // VARCMP_GT
         } else {
-            hRet = 2; // VARCMP_EQ
+            hRet = 1; // VARCMP_EQ
         }
     }
     hRet

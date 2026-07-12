@@ -1480,7 +1480,7 @@ unsafe fn unmarshal_ORPCTHIS(
     );
     (*msg).Buffer = buf_add((*msg).Buffer, WIRE_ORPCTHIS_EXTENSIONS);
 
-    if ((*msg).Buffer as *const u8).add(SIZEOF_DWORD) > end {
+    if ((*msg).Buffer as *const u8).add(SIZEOF_DWORD) > end { // nolint: magic-offset (NDR wire bounds check: advance u8 buffer by sizeof(DWORD)=4 bytes vs end)
         return RPC_E_INVALID_HEADER;
     }
 
@@ -1538,7 +1538,7 @@ unsafe fn unmarshal_ORPCTHAT(
     );
     (*msg).Buffer = buf_add((*msg).Buffer, WIRE_ORPCTHAT_EXTENSIONS);
 
-    if ((*msg).Buffer as *const u8).add(SIZEOF_DWORD) > end {
+    if ((*msg).Buffer as *const u8).add(SIZEOF_DWORD) > end { // nolint: magic-offset (NDR wire bounds check: advance u8 buffer by sizeof(DWORD)=4 bytes vs end)
         return RPC_E_INVALID_HEADER;
     }
 
