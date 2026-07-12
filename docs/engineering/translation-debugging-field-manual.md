@@ -5073,10 +5073,20 @@ Module bases are stable across boots here (no KASLR), so you can reuse them.
 **Fix:** route the assert through `NT_ASSERT((cond) as i32)` like the rest of the file — 13-line
 diff, faithful to ReactOS, keeps the correct ob-rust IRP_MJ_CLEANUP fix. arm64 smoke green ×2.
 
-**Owed sweep (same class):** ~25 sibling hard `assert!(` sites remain in fastfat-rust that
-mirror C `NT_ASSERT`s — each a **dormant** panic that will fire the day its path goes live
-(precisely how this one detonated). Grep `assert!(` in `sdk/lib/rust/fastfat-rust/src/*.rs`,
-cross-check each against the C for `NT_ASSERT`/`ASSERT`, convert the debug-only ones. General
-rule for LLM C→Rust: **`ASSERT`/`NT_ASSERT`/`ASSERTMSG` must translate to the no-op/`debug_assert!`
-shim, never a hard `assert!`** — a debug invariant is not a runtime guarantee, and turning one
-into a panic plants a mine that a *future correctness fix* will step on.
+**Owed sweep (same class) — DONE 2026-07-12.** Swept all 26 sibling hard `assert!(` sites in
+fastfat-rust, cross-checked each against the C: **every one** mirrored a debug-only C
+`NT_ASSERT`/`ASSERT` (allocsup 14, dirsup 6, create 2, resrcsup 2, fsctrl 1 — verified against
+allocsup.c/dirsup.c/create.c/fsctrl.c/resrcsup.c). Converted 25 → `debug_assert!` (no-op in our
+`--release` kernel: `[profile.release]` leaves `debug-assertions` off, so this matches ReactOS
+free-build `ASSERT` semantics *exactly* and still fires in a debug kernel). Two were NOT dormant
+panics and were left alone: `fileinfo.rs:1071` (already inside `if cfg!(debug_assertions)` — the C
+wraps both the assert *and* the `PinCount -= 1` in `DbgDoit`, so the guarded block is faithful) and
+`allocsup.rs:1807` (a `// ...could add assert!()` comment). One latent condition-mistranslation
+noted-and-neutralized in passing: `create.rs` rendered `NT_ASSERT(i != 0)` as
+`if i == 0 { assert!(false, "i != 0") }` — correct *semantics* (fires iff i==0), now `debug_assert!`
+so it's a no-op in release regardless. **General rule for LLM C→Rust:** `ASSERT`/`NT_ASSERT`/`ASSERTMSG`
+must translate to `debug_assert!` (or the no-op shim), never a hard `assert!` — a debug invariant is
+not a runtime guarantee, and turning one into a panic plants a mine that a *future correctness fix*
+will step on. **Detector idea (owed):** a lint that flags `assert!(` in no-std kernel crates whose
+line traces to a C `ASSERT`/`NT_ASSERT` — the class is invisible to every existing gate until the
+path goes hot.
