@@ -243,7 +243,7 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
     // §9.56 hypothesis-B: the other route into a ready list. Catch a running thread
     // being (deferred-)readied. Quiet on legit paths (deferred threads aren't running).
     #[cfg(feature = "smp")]
-    ntkrnl_sys::inline::ke::ki_check_not_running(Thread);
+    ntkrnl_sys::inline::ke::ki_check_not_running(Thread, 8888); // 8888 = via KiDeferredReadyThreadImpl drain
 
     if *kt_AdjustReason(Thread) == AdjustBoost {
         KiAcquireThreadLock(Thread);

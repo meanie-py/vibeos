@@ -1337,6 +1337,13 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
 pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
     let prcb = KeGetCurrentPrcb();
 
+    // §9.56 hypothesis-B ROOT: deferring a thread that is CurrentThread (running)
+    // anywhere is the FIRST illegal readying (it sets State=DeferredReady + pushes to
+    // the deferred list; the drain later links it into the ready list while it still
+    // runs). #[track_caller] propagates (this fn is #[track_caller]) so the reported
+    // line is the READIER that called KiInsertDeferredReadyList on a running thread.
+    ki_check_not_running(thread, core::panic::Location::caller().line() as u64);
+
     // §9.56 tripwire (0x53) — THE UNION-ALIAS TEAR.
     // SwapListEntry.Next below shares memory with WaitListEntry.Flink (KTHREAD
     // __bindgen_anon_3 is a union — same as NT). So deferring a thread that is
@@ -1821,8 +1828,7 @@ pub unsafe fn ki_check_promote_not_linked(thread: ddk::PKTHREAD, site: u64) {
 /// readies a thread that is still running somewhere. `#[track_caller]` names the queuer.
 #[cfg(feature = "smp")]
 #[inline]
-#[track_caller]
-pub unsafe fn ki_check_not_running(thread: ddk::PKTHREAD) {
+pub unsafe fn ki_check_not_running(thread: ddk::PKTHREAD, caller_line: u64) {
     if thread.is_null() { return; }
     let nproc = (crate::globals::KeNumberProcessors as usize).min(64);
     for c in 0..nproc {
@@ -1830,7 +1836,6 @@ pub unsafe fn ki_check_not_running(thread: ddk::PKTHREAD) {
             as *const *mut ddk::_KPRCB).add(c);
         if p.is_null() { continue; }
         if (*p).CurrentThread == thread {
-            let caller_line = core::panic::Location::caller().line() as u64;
             crate::driver_ddk::DbgPrint(
                 b"[RQRUNNING] queuing a RUNNING thread thr=%p state=%u runningOnCPU=%u caller_line=%u\n\0".as_ptr() as *const i8,
                 thread,
@@ -1911,7 +1916,7 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
     // §9.56 hypothesis-B: catch the FIRST, illegal queue — a thread that is still
     // CurrentThread (running) somewhere. Legit callers dethrone first, so quiet.
     #[cfg(feature = "smp")]
-    ki_check_not_running(thread);
+    ki_check_not_running(thread, core::panic::Location::caller().line() as u64);
     // UP kernel: the affinity gate is always TRUE. SMP: a thread not affine
     // to this CPU is deferred instead (ke_x.h:1387).
     #[cfg(feature = "smp")]
