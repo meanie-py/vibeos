@@ -5866,3 +5866,39 @@ Which is the reusable technique: **always run the native build of the same sourc
 **Two harness traps this also flushed out, both of which cost real time:**
 - **An incrementally-`mcopy`'d FAT ramdisk accumulates corruption.** `file32`'s directory-enumeration rung started failing (`FindFirstFileA` returning *empty* `cFileName` for every entry, including `.`, while the *wide* enumeration was perfect). It looked exactly like a wide→ANSI/NLS bug and it was not: rebuilding `ramdisk.img` from scratch made it vanish. If a FAT-backed test starts failing in a way that makes no sense, **`rm ramdisk.img` and rebuild before you debug the OS.**
 - **A "correctness fix" with no oracle behind it is a regression waiting to happen.** While fixing the callback layer I also made `WM_GETMINMAXINFO`/`WM_NCCALCSIZE`/`WM_WINDOWPOSCHANGING` copy the guest's OUT-payload edits back up — which is what those messages are *for*. It regressed `win32.exe` from 0x600D to 0x600E: WM_PAINT/WM_NCPAINT/WM_ERASEBKGND vanished and WM_MOVE/WM_SIZE/WM_GETMINMAXINFO/WM_NCCALCSIZE each went 1× → 3×, i.e. win32k fell into repeated size renegotiation and the window never settled enough to paint. Reverted to dropping the edits (the pre-M11 behaviour) with the evidence recorded in-code; the real fix is owed. **Ship the fix the failing oracle demands; park the one it doesn't.**
+
+---
+
+### 9.68 (ROOT-CAUSED + FIXED 2026-07-13) An SEH *filter expression* translated into a runtime value — `GlobalLock` returned NULL unconditionally, and every edit box in the OS was dead
+
+**Symptom.** user32's EDIT control was completely broken on *every* arch: `EDIT_LockBuffer` left `es->text == NULL`, and the first thing that touched it (`EDIT_EM_ReplaceSel`, setting the initial text) dereferenced NULL. Notepad, every dialog text field, every edit box — all dead. It had been that way silently, because nothing in the boot path types into an edit control.
+
+**The find.** In `kernel32-rust::client::heapmem::GlobalLock`:
+
+```rust
+let __except_val = EXCEPTION_EXECUTE_HANDLER;   // == 1. A CONSTANT.
+let Ptr = if __except_val != 0 {                // ...so ALWAYS true
+    SetLastError(ERROR_INVALID_HANDLE);
+    core::ptr::null_mut()                       // the handler runs EVERY time
+} else {
+    __try_result                                // the real result: DEAD CODE
+};
+```
+
+The C was the ordinary
+
+```c
+_SEH2_TRY { ...compute Ptr... }
+_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_HANDLE); Ptr = NULL; }
+_SEH2_END;
+```
+
+The translation turned the **filter expression** (`EXCEPTION_EXECUTE_HANDLER`, a compile-time constant meaning "if an exception reaches me, run my handler") into a **runtime value**, and then read `filter != 0` as "an exception occurred". So the handler body executed on every call and the try block's result was thrown away. `GlobalLock` returned NULL unconditionally; `LocalLock` forwards straight to it.
+
+**Why it stayed hidden.** The two callers that matter both *look* like they're checking for failure and both quietly absorb it:
+- `EDIT_LockBuffer` assigns `es->text = LocalLock(...)` and never checks it — the contract is "after a Lock, text is valid" — so the NULL surfaced three frames away as an AV at address 0.
+- `EDIT_WM_NCCreate` computes `es->buffer_size = LocalSize(hloc)/sizeof(WCHAR) - 1`. `LocalSize` fails the same way and returns 0, so `buffer_size` became `0/2 - 1` = **0xFFFFFFFF** — a giant bogus size that nothing range-checked. That `4294967295` in a diagnostic print was the thread that unravelled it.
+
+**The shape to grep for.** An SEH filter is a *predicate evaluated at throw time*, not a value. Any translation that materialises `EXCEPTION_EXECUTE_HANDLER` (or `EXCEPTION_CONTINUE_SEARCH`) into a local and then branches on it has inverted the control flow — the handler becomes the fast path. Sweep: `grep -rn "EXCEPTION_EXECUTE_HANDLER" --include=*.rs` and look for any `if <that> != 0`. Under `USE_DUMMY_PSEH` the correct lowering of a try/except whose body cannot actually fault is simply **the body, with no handler at all**.
+
+**Meta-lesson (compounds with §9.67).** This is the third bug in a row that only a *stock* binary could reach — and the one with the widest blast radius, since it broke a control every real app uses. A hand-written test guest doesn't type into edit boxes. Neither does a boot-to-desktop smoke test. The OS booted green to a desktop for months with every text field in it non-functional; the marker `shell ready` cannot see that. **When a subsystem has no oracle, "green" only means the parts with oracles are green.**

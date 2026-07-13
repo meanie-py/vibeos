@@ -752,7 +752,34 @@ boot partitions the entire search space. Keep it.
 - **`NtDeviceIoControlFile`/`NtFsControlFile` pass their IOCTL buffers through
   untranslated.** Most are flat; a minority embed pointers. Fine until a guest sends
   a pointer-bearing IOCTL, at which point the failure lands inside the driver.
-- **user32 EDIT control is broken NATIVELY** (all arches, not WoW64):
-  `EDIT_LockBuffer` gets `LocalLock(es->hloc32W) == NULL`, so `es->text` stays NULL and
-  `EDIT_EM_ReplaceSel` dereferences it. Every edit box in the OS is affected. Belongs
-  to a user32/kernel32 lane, not this one — but it is what currently stops `testgui`.
+- ~~user32 EDIT control is broken NATIVELY~~ **FIXED 2026-07-13 (field manual §9.68).**
+  Root cause was in kernel32, not user32: `GlobalLock` had its SEH *filter expression*
+  translated into a runtime value (`let __except_val = EXCEPTION_EXECUTE_HANDLER;` then
+  `if __except_val != 0`), so the exception HANDLER ran on every call and the real result
+  was dead code — `GlobalLock` (and therefore `LocalLock`) returned NULL unconditionally.
+  Every edit box in the OS, on every arch, had a NULL text buffer. With it fixed, the
+  stock testgui.exe **PASSES under WoW64**: EDIT control created, WM_PAINT, message pump
+  alive, still running — same as native.
+
+### M11 FINAL: PASS (2026-07-13)
+
+`testgui.exe` — a **stock, unmodified, CRT-linked i386 GUI binary** — now runs under
+WoW64/FEX on arm64 to completion:
+
+```
+[TESTGUI] wWinMain entered (hInstance=00400000)
+[TESTGUI] RegisterClassExW succeeded
+[TESTGUI] WM_CREATE received
+[TESTGUI] EDIT control created (hWnd=00020188)
+[TESTGUI] CreateWindowExW succeeded (hWnd=00020186)
+[TESTGUI] WM_PAINT received
+[TESTGUI] Window shown, focus set, entering message loop
+[WINLOGON] testgui.exe still running after 20s = PASS
+```
+
+Both it and the native arm64 build of the same source sit in the taskbar side by side.
+hello32/gui32/win32/file32 all 0x600D; shell ready ×2; zero `NEEDS MANUAL` stubs; no
+BUGCHECK. The A/B control (`TryStartNativeTestGui`) is what made the last bug findable:
+when native and WoW64 failed *identically* the bug was shared (kernel32's GlobalLock);
+the moment native passed and WoW64 didn't, the remaining delta was a stale guest
+kernel32 in the ramdisk. Keep the control.
