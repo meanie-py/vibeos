@@ -5193,6 +5193,19 @@ that saw it; if it stays SILENT while `0x54` keeps firing => hypothesis B (cross
 and the next step is a guard in `KxQueueReadyThread` when it queues to a REMOTE prcb
 whose CurrentThread == the thread being queued.
 
+**2026-07-13 DISCRIMINATOR RESULT = hypothesis B.** `[RQPROMOTE]`/`0x55` stayed
+SILENT across the burst (NextThread is CLEAN at all 4 promotion points) while `0x54`
+kept firing (state=`1`=Ready now). So the thread becomes CurrentThread cleanly and is
+**readied/linked into the ready list WHILE it is the running thread** — a queue of a
+running thread. `0x54` only catches the *second* (already-linked) queue; the *first*
+illegal queue is the culprit. New catcher `ki_check_not_running(thread)` scans
+`KiProcessorBlock`; if the thread being queued is CurrentThread of ANY cpu it prints
+`[RQRUNNING]` + bugchecks `0x56` with the queuer's `#[track_caller]` line. Placed at
+BOTH ready-list entry points: `KxQueueReadyThread` entry and `KiDeferredReadyThreadImpl`
+entry. Legit dispatch/yield/quantum paths dethrone (Prcb->CurrentThread=NewThread)
+BEFORE queuing the outgoing thread, so this is quiet on them and fires only on the
+illegal readier. That `0x56`/`[RQRUNNING]` caller line == THE BUG.
+
 **Integrated from a Codex handoff attempt (its cyber filter tripped on the "wild
 write" language, so it stalled — reword future handoffs):** (a) `expool.rs` removed
 the post-unlock `ExpCheckPoolBlocks` page-walk on the theory it RACES (walks a shared

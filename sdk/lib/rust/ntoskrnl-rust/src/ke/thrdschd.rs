@@ -240,6 +240,11 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
     let mut OldPriority: KPRIORITY;
     let NextThread: PKTHREAD;
 
+    // §9.56 hypothesis-B: the other route into a ready list. Catch a running thread
+    // being (deferred-)readied. Quiet on legit paths (deferred threads aren't running).
+    #[cfg(feature = "smp")]
+    ntkrnl_sys::inline::ke::ki_check_not_running(Thread);
+
     if *kt_AdjustReason(Thread) == AdjustBoost {
         KiAcquireThreadLock(Thread);
 

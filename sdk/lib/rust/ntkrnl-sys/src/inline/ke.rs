@@ -1813,6 +1813,42 @@ pub unsafe fn ki_check_promote_not_linked(thread: ddk::PKTHREAD, site: u64) {
     }
 }
 
+/// §9.56 hypothesis-B catcher. A thread is being queued to a ready list — but if it
+/// is CURRENTLY the CurrentThread of ANY cpu, it is a RUNNING thread and queuing it is
+/// the bug (the first, illegal queue; `0x54` only catches the second). The legitimate
+/// dispatch/yield/quantum paths all dethrone the outgoing thread (Prcb->CurrentThread =
+/// NewThread) BEFORE queuing it, so this is quiet on them and fires only on a path that
+/// readies a thread that is still running somewhere. `#[track_caller]` names the queuer.
+#[cfg(feature = "smp")]
+#[inline]
+#[track_caller]
+pub unsafe fn ki_check_not_running(thread: ddk::PKTHREAD) {
+    if thread.is_null() { return; }
+    let nproc = (crate::globals::KeNumberProcessors as usize).min(64);
+    for c in 0..nproc {
+        let p = *(core::ptr::addr_of!(crate::globals::KiProcessorBlock)
+            as *const *mut ddk::_KPRCB).add(c);
+        if p.is_null() { continue; }
+        if (*p).CurrentThread == thread {
+            let caller_line = core::panic::Location::caller().line() as u64;
+            crate::driver_ddk::DbgPrint(
+                b"[RQRUNNING] queuing a RUNNING thread thr=%p state=%u runningOnCPU=%u caller_line=%u\n\0".as_ptr() as *const i8,
+                thread,
+                kt_state_read(thread) as u32,
+                c as u32,
+                caller_line as u32,
+            );
+            ddk::KeBugCheckEx(
+                0x96,
+                thread as usize as _,
+                ((0x56u64 << 40) | (caller_line << 8) | c as u64) as _,
+                kt_state_read(thread) as _,
+                caller_line as _,
+            );
+        }
+    }
+}
+
 #[cfg(feature = "smp")]
 #[inline]
 pub unsafe fn ki_rq_integrity(prcb: ddk::PKPRCB, priority: u32, site: u64) {
@@ -1872,6 +1908,10 @@ pub unsafe fn ki_rq_integrity(prcb: ddk::PKPRCB, priority: u32, site: u64) {
 
 #[cfg_attr(feature = "smp", track_caller)]
 pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
+    // §9.56 hypothesis-B: catch the FIRST, illegal queue — a thread that is still
+    // CurrentThread (running) somewhere. Legit callers dethrone first, so quiet.
+    #[cfg(feature = "smp")]
+    ki_check_not_running(thread);
     // UP kernel: the affinity gate is always TRUE. SMP: a thread not affine
     // to this CPU is deferred instead (ke_x.h:1387).
     #[cfg(feature = "smp")]
