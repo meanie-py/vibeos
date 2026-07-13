@@ -198,6 +198,13 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         )
     )
     specs.append(("lint_kernel", [py, str(lk)] if lk.is_file() else ["MISSING"], "stdout"))
+    # Stable-toolchain RATCHET: no `#![feature(...)]` in the workspace, no
+    # RUSTC_BOOTSTRAP in the build graph. The i386 `-Z build-std` cell (gcc.cmake,
+    # RUSTUP_TOOLCHAIN from .rust-nightly) is the ONE sanctioned nightly user.
+    # Baseline is EMPTY, so any finding is NEW and fails. Exists because the lane
+    # drove this to zero and a concurrent lane re-introduced it the same day.
+    ns = repo / "tools" / "scan_nightly_surface.py"
+    specs.append(("scan_nightly_surface", [py, str(ns)] if ns.is_file() else ["MISSING"], "stdout"))
     # C↔Rust differential oracles in tools/ (offsets are a compile-time gate, not
     # here). tables + match_consts are clean today (empty baseline = strict);
     # signatures carries known dual-cfg-shim FPs, so the baseline gates NEW only.
