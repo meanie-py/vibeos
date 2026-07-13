@@ -136,7 +136,28 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
     ListEntry = (*Prcb).DeferredReadyListHead.Next;
     (*Prcb).DeferredReadyListHead.Next = core::ptr::null_mut();
 
+    // §9.56 tripwire 0x5B — deferred-chain CYCLE detector. SwapListEntry.Next
+    // is the WaitListEntry.Flink union byte-for-byte: one foreign write to a
+    // parked deferred node cycles the chain, and this walk would then insert
+    // the same thread twice (the self-loop tear) with 0x59 silent (single
+    // push). A 2-CPU boot's deferred chain is short; >64 nodes = a cycle.
+    #[cfg(feature = "smp")]
+    let mut walk_count: u32 = 0;
+
     loop {
+        #[cfg(feature = "smp")]
+        {
+            walk_count += 1;
+            if walk_count > 64 {
+                ntkrnl_sys::ddk::KeBugCheckEx(
+                    0x96,
+                    Prcb as ntkrnl_sys::ddk::ULONG_PTR,
+                    (0x5Bu64 << 40) as ntkrnl_sys::ddk::ULONG_PTR,
+                    ListEntry as ntkrnl_sys::ddk::ULONG_PTR,
+                    walk_count as ntkrnl_sys::ddk::ULONG_PTR,
+                );
+            }
+        }
         Thread = CONTAINING_RECORD(
             ListEntry as PVOID,
             core::ptr::null_mut(),
@@ -393,6 +414,45 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
 
     *kt_State(Thread) = Ready;
     *kt_WaitTime(Thread) = KeTickCount.LowPart as ULONG;
+
+    // §9.56 tripwire 0x5A — the ONE ready-list insert with no already-linked
+    // guard (KxQueueReadyThread has 0x54). The recurring self-loop tear at
+    // site 0x22 is mechanically "InsertTailList of an entry that is ALREADY
+    // the tail/sole element of this list" — catch it pre-mutation, with the
+    // thread state + wait attribution. P2 tag 0x5A | state<<8 | reason.
+    #[cfg(feature = "smp")]
+    {
+        let entry = core::ptr::addr_of_mut!((*Thread).__bindgen_anon_3.WaitListEntry)
+            as PLIST_ENTRY;
+        let f = (*entry).Flink;
+        let b = (*entry).Blink;
+        let still_linked = !f.is_null()
+            && !b.is_null()
+            && f != entry
+            && (*f).Blink == entry
+            && (*b).Flink == entry;
+        if still_linked {
+            crate::dbg_print!(
+                b"[RQ5A] drain-insert of ALREADY-LINKED thr=%p state=%u reason=%u wstat=%p pri=%u F=%p B=%p\n\0",
+                Thread,
+                *kt_State(Thread) as u32,
+                (*Thread).WaitReason as u32,
+                (*Thread).WaitStatus as usize as *const u8,
+                OldPriority as u32,
+                f,
+                b,
+            );
+            ntkrnl_sys::ddk::KeBugCheckEx(
+                0x96,
+                Thread as ntkrnl_sys::ddk::ULONG_PTR,
+                ((0x5Au64 << 40)
+                    | ((*kt_State(Thread)) as u64) << 8
+                    | (*Thread).WaitReason as u64) as ntkrnl_sys::ddk::ULONG_PTR,
+                f as ntkrnl_sys::ddk::ULONG_PTR,
+                b as ntkrnl_sys::ddk::ULONG_PTR,
+            );
+        }
+    }
 
     if Preempted != 0 {
         InsertHeadList(
