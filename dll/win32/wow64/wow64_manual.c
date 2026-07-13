@@ -90,6 +90,25 @@ NTSTATUS WINAPI NtConnectPort(PHANDLE PortHandle, PVOID PortName,
                               PVOID ConnectionInformation,
                               PULONG ConnectionInformationLength);
 NTSTATUS WINAPI NtQueryFullAttributesFile(PVOID Oa, PVOID FileInformation);
+NTSTATUS WINAPI NtReadFile(HANDLE File, HANDLE Event, PVOID ApcRoutine,
+                           PVOID ApcContext, PVOID Iosb, PVOID Buffer,
+                           ULONG Length, PLARGE_INTEGER ByteOffset, PULONG Key);
+NTSTATUS WINAPI NtWriteFile(HANDLE File, HANDLE Event, PVOID ApcRoutine,
+                            PVOID ApcContext, PVOID Iosb, PVOID Buffer,
+                            ULONG Length, PLARGE_INTEGER ByteOffset, PULONG Key);
+NTSTATUS WINAPI NtQueryInformationFile(HANDLE File, PVOID Iosb, PVOID Info,
+                                       ULONG Length, ULONG Class);
+NTSTATUS WINAPI NtSetInformationFile(HANDLE File, PVOID Iosb, PVOID Info,
+                                     ULONG Length, ULONG Class);
+NTSTATUS WINAPI NtQueryVolumeInformationFile(HANDLE File, PVOID Iosb, PVOID Info,
+                                             ULONG Length, ULONG Class);
+NTSTATUS WINAPI NtFlushBuffersFile(HANDLE File, PVOID Iosb);
+NTSTATUS WINAPI NtQueryDirectoryFile(HANDLE File, HANDLE Event, PVOID ApcRoutine,
+                                     PVOID ApcContext, PVOID Iosb, PVOID Info,
+                                     ULONG Length, ULONG Class, BOOLEAN SingleEntry,
+                                     PVOID FileName, BOOLEAN RestartScan);
+NTSTATUS WINAPI NtWaitForSingleObject(HANDLE Object, BOOLEAN Alertable,
+                                      PLARGE_INTEGER Timeout);
 
 /* ---- shared 32->64 struct marshalling ----------------------------------- *
  * The guest passes 32-bit structs whose pointer/ULONG_PTR members are half the
@@ -479,6 +498,187 @@ static void Wow64pCopyIosbDown(WOW64_IO_STATUS_BLOCK64_M *I64, ULONG Iosb32Ptr)
     if (!I32) return;
     I32->Status = (ULONG)I64->Status;
     I32->Information = (ULONG)I64->Information;
+}
+
+/* ---- the IOSB-returning file family ------------------------------------- *
+ * These all take an IO_STATUS_BLOCK and were previously AUTO-thunked, i.e. the
+ * guest's 8-byte IOSB was handed straight to a host kernel that writes 16 —
+ * an 8-byte overflow past the guest struct plus an Information read from the
+ * wrong offset. Every one of them now marshals through a host IOSB.
+ *
+ * Async is the hazard. Our host IOSB lives on THIS stack frame, so returning
+ * STATUS_PENDING would leave the kernel holding a pointer into a frame that is
+ * about to die — the dead-frame-IOSB corruption class (field manual §9.36). We
+ * never do that:
+ *
+ *   - An explicit async request (guest passed an Event or an APC routine) is
+ *     REFUSED loudly before the call is issued. No IRP, no corruption.
+ *   - If the host pends anyway (the handle was opened async and the guest is
+ *     polling its IOSB), we block on the file handle until completion rather
+ *     than return with a live pointer into a dead frame.
+ *
+ * The real fix for async is kernel-side: I/O completion should write an
+ * IO_STATUS_BLOCK32 when the requesting process is WoW64 (what NT's
+ * IoIs32bitProcess() gates). Owed; see wow64-plan.md.
+ */
+#define WOW64_STATUS_PENDING         ((NTSTATUS)0x00000103)
+#define WOW64_STATUS_NOT_IMPLEMENTED ((NTSTATUS)0xC0000002)
+
+/* Guest asked for async (Event or ApcRoutine)? Refuse loudly — see above. */
+static int Wow64pRefuseAsync(ULONG Event, ULONG ApcRoutine, const char *Who)
+{
+    if (!Event && !ApcRoutine)
+        return 0;
+    DbgPrint("[WOW64]   %s: async request (Event=%08lx Apc=%08lx) is not supported "
+             "under WoW64 yet (needs kernel-side IO_STATUS_BLOCK32) — refusing\n",
+             Who, Event, ApcRoutine);
+    return 1;
+}
+
+/* Copy the host IOSB down to the guest, blocking first if the host pended. */
+static NTSTATUS Wow64pFinishIosb(NTSTATUS St, HANDLE File,
+                                 WOW64_IO_STATUS_BLOCK64_M *I64, ULONG Iosb32Ptr,
+                                 const char *Who)
+{
+    if (St == WOW64_STATUS_PENDING)
+    {
+        NTSTATUS Wait;
+        DbgPrint("[WOW64]   %s pended on an async handle — blocking on it "
+                 "(our host IOSB is stack-resident; we must not outlive it)\n", Who);
+        Wait = NtWaitForSingleObject(File, FALSE, NULL);
+        if (Wait < 0)
+        {
+            DbgPrint("[WOW64]   %s: wait failed %08lx — guest IOSB left untouched\n",
+                     Who, Wait);
+            return Wait;
+        }
+        St = (NTSTATUS)(ULONG)I64->Status;
+    }
+    /* A failing Nt* may never touch the IOSB, and ours is zero-initialised —
+     * copying that down would tell the guest "success, 0 bytes". Carry the real
+     * status instead. (A no-op when the kernel did write the block.) */
+    if (St < 0)
+        I64->Status = (ULONG)St;
+    Wow64pCopyIosbDown(I64, Iosb32Ptr);
+    return St;
+}
+
+/* NtReadFile / NtWriteFile share their shape exactly. */
+typedef NTSTATUS (WINAPI *WOW64_RW_FN)(HANDLE, HANDLE, PVOID, PVOID, PVOID,
+                                       PVOID, ULONG, PLARGE_INTEGER, PULONG);
+
+static NTSTATUS Wow64pReadWriteFile(WOW64_RW_FN Fn, ULONG *a, const char *Who)
+{
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    NTSTATUS St;
+
+    if (Wow64pRefuseAsync(a[1], a[2], Who))
+        return WOW64_STATUS_NOT_IMPLEMENTED;
+
+    /* ByteOffset is a LARGE_INTEGER* and Key a ULONG* — both layout-identical. */
+    St = Fn(File, NULL, NULL, NULL, &Iosb64,
+            (PVOID)(ULONG_PTR)a[5], a[6],
+            (PLARGE_INTEGER)(ULONG_PTR)a[7], (PULONG)(ULONG_PTR)a[8]);
+    return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
+}
+
+static NTSTATUS Wow64Manual_NtReadFile(ULONG *a)
+{
+    return Wow64pReadWriteFile(NtReadFile, a, "NtReadFile");
+}
+
+static NTSTATUS Wow64Manual_NtWriteFile(ULONG *a)
+{
+    return Wow64pReadWriteFile(NtWriteFile, a, "NtWriteFile");
+}
+
+/* Every FILE_*_INFORMATION / FS_*_INFORMATION struct is built from
+ * LARGE_INTEGER/ULONG/WCHAR only — no pointers, no ULONG_PTR — so the info
+ * buffers themselves are width-identical and pass through. The exceptions all
+ * carry a HANDLE and are set-only; refuse those loudly rather than marshal a
+ * class no caller needs yet. */
+#define WOW64_FileRenameInformation       10
+#define WOW64_FileLinkInformation         11
+#define WOW64_FileCompletionInformation   30
+#define WOW64_FileMoveClusterInformation  31
+
+static NTSTATUS Wow64Manual_NtQueryInformationFile(ULONG *a)
+{
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    NTSTATUS St = NtQueryInformationFile(File, &Iosb64, (PVOID)(ULONG_PTR)a[2],
+                                         a[3], a[4]);
+    return Wow64pFinishIosb(St, File, &Iosb64, a[1], "NtQueryInformationFile");
+}
+
+static NTSTATUS Wow64Manual_NtSetInformationFile(ULONG *a)
+{
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    ULONG Class = a[4];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    NTSTATUS St;
+
+    if (Class == WOW64_FileRenameInformation || Class == WOW64_FileLinkInformation ||
+        Class == WOW64_FileCompletionInformation ||
+        Class == WOW64_FileMoveClusterInformation)
+    {
+        /* These embed a HANDLE (and FileCompletionInformation a PVOID key), so
+         * the 32-bit struct is narrower. No caller needs them yet — fail loud
+         * rather than pass a mis-parsed struct to the kernel. */
+        DbgPrint("[WOW64]   NtSetInformationFile class=%lu embeds a HANDLE — "
+                 "no 32->64 marshaller yet, refusing\n", Class);
+        return WOW64_STATUS_NOT_IMPLEMENTED;
+    }
+
+    St = NtSetInformationFile(File, &Iosb64, (PVOID)(ULONG_PTR)a[2], a[3], Class);
+    return Wow64pFinishIosb(St, File, &Iosb64, a[1], "NtSetInformationFile");
+}
+
+static NTSTATUS Wow64Manual_NtQueryVolumeInformationFile(ULONG *a)
+{
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    NTSTATUS St = NtQueryVolumeInformationFile(File, &Iosb64, (PVOID)(ULONG_PTR)a[2],
+                                               a[3], a[4]);
+    return Wow64pFinishIosb(St, File, &Iosb64, a[1], "NtQueryVolumeInformationFile");
+}
+
+static NTSTATUS Wow64Manual_NtFlushBuffersFile(ULONG *a)
+{
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    NTSTATUS St = NtFlushBuffersFile(File, &Iosb64);
+    return Wow64pFinishIosb(St, File, &Iosb64, a[1], "NtFlushBuffersFile");
+}
+
+/* The FILE_*_DIRECTORY_INFORMATION output structs are width-identical; only the
+ * IOSB and the optional PUNICODE_STRING search mask need marshalling. */
+static NTSTATUS Wow64Manual_NtQueryDirectoryFile(ULONG *a)
+{
+    HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    WOW64_UNICODE_STRING64_M Mask64;
+    PVOID Mask64Ptr = NULL;
+    NTSTATUS St;
+
+    if (Wow64pRefuseAsync(a[1], a[2], "NtQueryDirectoryFile"))
+        return WOW64_STATUS_NOT_IMPLEMENTED;
+
+    if (a[9])
+    {
+        WOW64_UNICODE_STRING32_M *M32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)a[9];
+        Mask64.Length = M32->Length;
+        Mask64.MaximumLength = M32->MaximumLength;
+        Mask64.__pad = 0;
+        Mask64.Buffer = (ULONG_PTR)M32->Buffer;
+        Mask64Ptr = &Mask64;
+    }
+
+    St = NtQueryDirectoryFile(File, NULL, NULL, NULL, &Iosb64,
+                              (PVOID)(ULONG_PTR)a[5], a[6], a[7],
+                              (BOOLEAN)a[8], Mask64Ptr, (BOOLEAN)a[10]);
+    return Wow64pFinishIosb(St, File, &Iosb64, a[4], "NtQueryDirectoryFile");
 }
 
 static NTSTATUS Wow64Manual_NtOpenFile(ULONG *a)
@@ -1676,6 +1876,20 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtCreateFile(Arguments);
     if (WOW64_IS("NtCreateSection"))
         return Wow64Manual_NtCreateSection(Arguments);
+    if (WOW64_IS("NtReadFile"))
+        return Wow64Manual_NtReadFile(Arguments);
+    if (WOW64_IS("NtWriteFile"))
+        return Wow64Manual_NtWriteFile(Arguments);
+    if (WOW64_IS("NtQueryInformationFile"))
+        return Wow64Manual_NtQueryInformationFile(Arguments);
+    if (WOW64_IS("NtSetInformationFile"))
+        return Wow64Manual_NtSetInformationFile(Arguments);
+    if (WOW64_IS("NtQueryVolumeInformationFile"))
+        return Wow64Manual_NtQueryVolumeInformationFile(Arguments);
+    if (WOW64_IS("NtFlushBuffersFile"))
+        return Wow64Manual_NtFlushBuffersFile(Arguments);
+    if (WOW64_IS("NtQueryDirectoryFile"))
+        return Wow64Manual_NtQueryDirectoryFile(Arguments);
     if (WOW64_IS("NtQueryAttributesFile"))
         return Wow64Manual_NtQueryAttributesFile(Arguments);
     if (WOW64_IS("NtQueryFullAttributesFile"))

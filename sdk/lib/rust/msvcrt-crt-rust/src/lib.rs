@@ -792,7 +792,7 @@ pub use mstrtoul::*;
 /// generates real strings and never passes NULL, so it reported 45/45 MATCH
 /// while `msvcrt.dll` had started faulting on inputs it used to survive. The net
 /// suite went 15/15 -> 13/15 and an A/B control against the previous commit is
-/// what proved it (field manual §9.63).
+/// what proved it (field manual §9.64).
 ///
 /// Redirecting NULL to a static NUL restores the old semantics exactly — an
 /// empty string compares/copies/spans exactly as `&[]` did — for one predictable

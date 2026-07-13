@@ -1,5 +1,6 @@
 compile_commands.json
 build-*/
+build-fex-*
 qemu/runs/
 qemu/symbols-*.tsv
 output-*

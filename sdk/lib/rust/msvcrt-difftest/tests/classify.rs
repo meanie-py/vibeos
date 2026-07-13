@@ -296,7 +296,7 @@ unsafe fn assert_shims_live() {
     assert_null_tolerant();
 }
 
-/// ⚠️ **THE BLIND SPOT THAT SHIPPED A REGRESSION (field manual §9.63).**
+/// ⚠️ **THE BLIND SPOT THAT SHIPPED A REGRESSION (field manual §9.64).**
 ///
 /// The 20k-case fuzz generates real NUL-terminated strings. It NEVER passes NULL.
 /// So when the single-pass perf rewrite replaced `cstr_slice(p)` (which
@@ -359,7 +359,7 @@ unsafe fn assert_null_tolerant() {
     wcscpy(wd.as_mut_ptr(), core::ptr::null());
     assert_eq!(wd[0], 0, "wcscpy(d, NULL) did not write L\"\"");
 
-    println!("  [self-check] NULL is tolerated as \"\" by every flipped reader (narrow + wide) — the §9.63 regression class");
+    println!("  [self-check] NULL is tolerated as \"\" by every flipped reader (narrow + wide) — the §9.64 regression class");
 }
 
 fn main() {

@@ -39,7 +39,7 @@ hide-then-rename.
 2. **`wcsstr(L"", L"")` → `NULL`**, because its outer `while(*str)` never runs — whereas the
    narrow **`strstr("", "")` → `""`** (it special-cases the empty needle *first*). A real
    narrow/wide asymmetry inside msvcrt itself.
-3. **The CRT perf tax (§9.62).** `perf` flagged `wcscmp` at 3.8–4.8×, and the root cause was
+3. **The CRT perf tax (§9.63).** `perf` flagged `wcscmp` at 3.8–4.8×, and the root cause was
    structural: **a slice-based core cannot express a single-pass C string primitive** —
    building a `&[u8]` needs the length, and computing the length is exactly the scan the C
    skips. Which meant **narrow `strcmp` had the identical 3-pass shape and was slow ON MASTER**,
@@ -47,7 +47,7 @@ hide-then-rename.
    *A perf gate only defends what it BENCHES.* Copy/compare/search are now single-pass
    transcriptions (the same call `memcmp` already made). `wcscmp` 3.8×→0.79×, `strchr`
    2.01×→1.00×, `strcmp` now benched at 1.00×. **The 2× bar was not raised.**
-4. **NULL tolerance vanished (§9.63) — and it shipped a boot regression.** The single-pass
+4. **NULL tolerance vanished (§9.64) — and it shipped a boot regression.** The single-pass
    rewrite dropped the NULL guard that `cstr_slice` had always provided (`NULL → &[]`, i.e.
    *NULL behaves as `""`*). `classify` still said 45/45 MATCH — **it never passes NULL**. The
    net suite went 15/15 → 13/15. Found by **A/B control**, not by the harness.
@@ -64,7 +64,7 @@ hide-then-rename.
 Every one of them was validated by **negative control** (inject the bug → it must fail).
 A guard that cannot be shown to fail is worthless.
 
-**The rule that generalizes** (§9.63): when you refactor a wrapper, enumerate the *implicit
+**The rule that generalizes** (§9.64): when you refactor a wrapper, enumerate the *implicit
 guarantees of the helper you are deleting*, not just the contract of the function you are
 rewriting. A NULL guard, a bounds clamp, a zero-length early-out — these live in the helper,
 are invisible at the call site, and vanish silently when you inline it away. And note the
