@@ -5137,6 +5137,44 @@ backend. Note `SPECIALPOOL=*` has already come back empty here — expected, sin
 guards POOL and the PRCB is not pool; that null result is consistent with the wild
 writer living outside pool allocations (or writing through a stale/freed pointer).
 
+**2026-07-12 OVERNIGHT — the invariant that's broken is now NAMED.** A linkage-based
+guard (`0x54`, "is this node genuinely doubly-linked right now?") fired from
+**`traphandler.rs:106` — `KiDpcInterruptHandler`'s preempt branch** — with param3
+(state) showing **`0x2` = Running** (and one `0x1`=Ready). I.e. **`Prcb->CurrentThread`
+is Running yet SIMULTANEOUSLY linked in a ready list**, and the dispatch path queues
+it (`KxQueueReadyThread(OldThread=CurrentThread)`) → tears the list. Crucially this
+path is a **NT-faithful exact copy** (`KiDpcInterruptHandler` == NT
+`KiDispatchInterrupt`, `ntoskrnl/ke/i386/thrdini.c:460` — same structure, NO OldThread
+linkage check), so the tear here is still a VICTIM; the corruption is **UPSTREAM** —
+something leaves a Running/CurrentThread thread linked in a `DispatcherReadyListHead`.
+That is a *specific, traceable* invariant violation (much sharper than "list torn").
+Also this burst: **`0x19` absent** (weak — low base rate; the Codex pool-checker
+hypothesis needs a farm to confirm/deny), **`[WAITDEP]` silent** (§9.36 not implicated
+on amd64 SMP here).
+
+**Now hunting: who leaves CurrentThread linked?** Candidates — a cross-CPU
+reprioritization/affinity path (`KiSetPriorityThread`/`KiSetAffinityThread`/balmgr)
+that manipulates a thread by its `NextProcessor` while it is actually Running on its
+CPU, or a `KiSelectReadyThread` remove that doesn't fully unlink, or the unlocked
+`NextThread` pre-check race at `KiDpcInterruptHandler` (checks `Prcb->NextThread`
+before taking the PRCB lock). Enriched forensics added: `[RQLINKED]` (at the `0x54`
+site) scans `KiProcessorBlock` to report WHICH cpu's `DispatcherReadyListHead[pri]`
+the thread is wrongly linked into + its state + owning PRCB; `[RQTEAR]` (at
+`ki_rq_integrity`) dumps the corrupted link VALUE. One amplified burst with these
+should name the list + the value, from which the upstream writer follows.
+
+**Integrated from a Codex handoff attempt (its cyber filter tripped on the "wild
+write" language, so it stalled — reword future handoffs):** (a) `expool.rs` removed
+the post-unlock `ExpCheckPoolBlocks` page-walk on the theory it RACES (walks a shared
+page after dropping the pool lock → can read a neighbour mid-split → **false** 0x19).
+NT keeps that call (`ex/pool` ~line 2455) but only under `DBG`; our port runs it
+always-on, so it's a plausible always-on-checked-build-assert-as-SMP-bug (cf. §9.57).
+KEPT as a marked experiment; permanent fix if confirmed = gate to checked-builds, not
+delete. (b) `#[cfg(not(smp))]` on the local `KxQueueReadyThread` externs in
+`traphandler/dpc/wait.rs` — CORRECT, removes decls that were still shadowing the
+`ke_defs` inline-repoint on SMP (this is why `0x54` now reports `traphandler.rs:106`
+instead of the shim). (c) `[WAITDEP]` waitlist dump — harmless additive §9.36 signal.
+
 **PRIOR (superseded) NEXT-DIAGNOSTIC note:** the 0x52 bugcheck currently reports
 `(thread, (0x52<<8)|pri, state, prcb)` but NOT *who called*. Add the caller
 return address (`code_addr!()` at each KxQueueReadyThread site, or capture the
