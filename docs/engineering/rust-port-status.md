@@ -56,7 +56,49 @@ Tree inventory (2026-07-03): **~2,422 `.rs` files · 228 crates** under `sdk/lib
 | **Driver fleet** (storage, FS, input, bus, netstack) | see below — netstack is a from-scratch Rust rewrite; rest cohab-flipped | **~90–100%** |
 | **LSA/SAM server** (lsasrv / samsrv) | active frontier — samsrv ~90%, lsasrv ~50%+ | **partial** |
 | **explorer.exe** (desktop shell) | `explorer-rust` 22 `.rs`/22K LOC; 22 cohab markers; 2 glue `.cpp` left (settings_shim, util_vararg) | **~99%** |
-| **CRT** (msvcrt/ucrt body) | 581 `.c` still compiled; only entry-glue is Rust | **~0–5%** |
+| **CRT** (msvcrt/ucrt body) | **93 fns of msvcrt.dll flipped to Rust** (waves 1–8, 2026-07-12) — the whole pure string/mem/wide/radix/`_s`/case-insensitive floor, differentially proved against the genuine `string.c`/`wcs.c`. The 581 `.c` still compile; what remains is gated on **printf** (Phase C) and **locale** (Phase D), not on effort. | **~5–10%** |
+
+### CRT (msvcrt) detail — the assemble-from-`cnt-rust` track
+
+**93 functions of `msvcrt.dll` are Rust** as of 2026-07-12 (waves 1–8). Verified by parsing
+the DLL's export table: every flip lands in the Rust cluster (RVA `0x001e20`–`0x0046e0`),
+every deliberate refusal is still C (`memmove`, `strtok`, `strtod`, `_ecvt` at `0x054000`+).
+
+Flipped: the mem/str floor (`memcpy` `memset` `memchr` `memcmp` `str{len,cmp,cpy,cat,chr,
+rchr,str,spn,cspn,pbrk,nlen,ncmp,ncpy,ncat}` `_str{lwr,upr,rev,set,nset}` `_memccpy` `_swab`
+`__strncnt`), the wide twins (`wcs{len,cmp,ncmp,chr,rchr,str,spn,cspn,pbrk,cpy,cat,ncpy,
+nlen}` `_wcs{rev,set,nset}`), the integer parsers (`atoi` `atol` `_atoi64` `strtol` `strtoul`
+`_strtoi64` `_strtoui64`), the radix family (`_itoa` `_ltoa` `_ultoa` `_i64toa` `_ui64toa` +
+wide + all ten `_s` variants), the `_s` secure family (`strcpy_s` `strcat_s` `strncpy_s`
+`strncat_s` `_strnset_s` + the six wide), the tokenizers (`strtok_s` `wcstok_s`), and the
+case-insensitive family (`_stricmp` `_strnicmp` `_memicmp` `_strlwr_s` `_strupr_s` + the six
+wide).
+
+**The method is the product.** Nothing flips without a differential proof. Four orthogonal
+harnesses (`sdk/lib/rust/msvcrt-difftest/`), each negative-controlled:
+
+| harness | asks | blind to |
+|---|---|---|
+| `classify` | wrong **values**? (20k fuzz cases vs the genuine C, grading bytes + return + **errno** + **invalid-parameter handler**, with per-row coverage requirements) | access, speed |
+| `oob_guard` | right answer, wrong **memory**? (guard-page probes; 36 bounded fns) | values, speed |
+| `perf` | right answer, too **slowly**? (>2× the C fails) | values, access |
+| `ref_integrity` | **is the oracle itself honest?** (see §9.66 — glibc's attributes had been deleting the reference C's guards) | the subject |
+
+**What it has refused to flip, and why** — these are the interesting entries:
+- **`strtod`/`atof`/`_ecvt`/`_fcvt`/`_gcvt`** — cnt-rust's float parser is the ReactOS naive
+  accumulator; msvcrt's is a Wine bignum. Measured **14 ULPs apart**. The probe stays in the
+  tree as an executable DO-NOT-FLIP record. `_ecvt`/`_fcvt`/`_gcvt` are literally `_snprintf`
+  calls, so the whole float family is a **Phase C (printf)** deliverable, not a separate wave.
+- **`memmove`** — no oracle. The refstub routes it into the private anti-circularity
+  namespace, so the compiled reference doesn't define an msvcrt `memmove` to compare against.
+  The body would be three lines. It stays C.
+- **`strtok`/`wcstok`** — reach into msvcrt's `thread_data_t`; getting at that field means
+  hardcoding a struct offset we don't own (the magic-offset class). Wants a real TLS story.
+- **The wide integer parsers** (`wcstol`/`wcstoul`/`_wtoi`/…) — locale-bound via `_iswspace_l`
+  where the *narrow* ones are not. Nearly flipped on a symmetry argument. Phase D.
+
+Lane doc: `docs/engineering/active-lanes/msvcrt-from-pieces-plan.md`. Field manual: §9.60,
+§9.61, §9.63, §9.64, **§9.66**.
 
 ### Driver fleet detail
 Essentially the entire boot/smoke driver fleet is Rust. **`netstack.sys` is the only

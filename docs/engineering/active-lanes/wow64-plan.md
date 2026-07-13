@@ -752,7 +752,7 @@ boot partitions the entire search space. Keep it.
 - **`NtDeviceIoControlFile`/`NtFsControlFile` pass their IOCTL buffers through
   untranslated.** Most are flat; a minority embed pointers. Fine until a guest sends
   a pointer-bearing IOCTL, at which point the failure lands inside the driver.
-- ~~user32 EDIT control is broken NATIVELY~~ **FIXED 2026-07-13 (field manual §9.68).**
+- ~~user32 EDIT control is broken NATIVELY~~ **FIXED 2026-07-13 (field manual §9.70).**
   Root cause was in kernel32, not user32: `GlobalLock` had its SEH *filter expression*
   translated into a runtime value (`let __except_val = EXCEPTION_EXECUTE_HANDLER;` then
   `if __except_val != 0`), so the exception HANDLER ran on every call and the real result

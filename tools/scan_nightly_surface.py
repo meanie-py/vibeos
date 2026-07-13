@@ -38,6 +38,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -45,18 +46,48 @@ from pathlib import Path
 _FEATURE = re.compile(r"^\s*#!\[feature\(")
 _BOOTSTRAP = re.compile(r"RUSTC_BOOTSTRAP")
 
+# Directories that are BUILD OUTPUT, never source. Pruned during the walk.
+_PRUNE = {"target", ".git", ".build-tools"}
+
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
+
+
+def _walk(root: Path, suffixes: tuple[str, ...]):
+    """Yield every file under `root` with one of `suffixes`, PRUNING build output.
+
+    Why not `root.rglob("*.rs")` with a `"/target/" in str(p)` filter (which is what
+    this did, and which crashed a gate)?
+
+    Because the filter runs on the RESULTS — rglob has already descended into
+    `target/` by then. That is (a) needlessly slow, target/ being an enormous tree of
+    build artifacts, and (b) RACY: `vibeos-cli gate` runs the per-arch lints
+    CONCURRENTLY with the other arches' builds, so a `target/<triple>` directory can
+    be created or removed while this walk is inside it. `rglob` then raises
+
+        FileNotFoundError: '.../sdk/lib/rust/target/i686-kernel'
+
+    and the whole lint stage dies — reported as "NEW lint findings", which is exactly
+    the wrong diagnosis. (Observed 2026-07-13; a gate failed on lint:amd64 while
+    lint:i386 and lint:arm64 passed on the identical tree.)
+
+    os.walk lets us prune the directory list IN PLACE before descending, so we never
+    enter build output at all, and it swallows scandir errors by default rather than
+    raising — both properties this scanner needs to be safe under a parallel gate.
+    """
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _PRUNE and not d.startswith("build-")]
+        for fn in sorted(filenames):
+            if fn.endswith(suffixes):
+                yield Path(dirpath) / fn
 
 
 def findings(repo: Path) -> list[str]:
     out: list[str] = []
 
     ws = repo / "sdk" / "lib" / "rust"
-    for rs in sorted(ws.rglob("*.rs")):
-        if "/target/" in str(rs):
-            continue
+    for rs in sorted(_walk(ws, (".rs",))):
         try:
             lines = rs.read_text(errors="replace").splitlines()
         except OSError:
@@ -66,21 +97,18 @@ def findings(repo: Path) -> list[str]:
                 rel = rs.relative_to(repo)
                 out.append(f"{rel}:{n}: [NIGHTLY] {line.strip()} — the tree is on pinned stable")
 
-    for pat in ("**/CMakeLists.txt", "**/*.cmake"):
-        for cm in sorted(repo.glob(pat)):
-            if "/build-" in str(cm) or "/.build-tools/" in str(cm):
+    for cm in sorted(_walk(repo, ("CMakeLists.txt", ".cmake"))):
+        try:
+            lines = cm.read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        for n, line in enumerate(lines, 1):
+            # Skip comments — several CMakeLists mention it only to say it's gone.
+            if line.lstrip().startswith("#"):
                 continue
-            try:
-                lines = cm.read_text(errors="replace").splitlines()
-            except OSError:
-                continue
-            for n, line in enumerate(lines, 1):
-                # Skip comments — several CMakeLists mention it only to say it's gone.
-                if line.lstrip().startswith("#"):
-                    continue
-                if _BOOTSTRAP.search(line):
-                    rel = cm.relative_to(repo)
-                    out.append(f"{rel}:{n}: [NIGHTLY] RUSTC_BOOTSTRAP — stable-rustc escape hatch")
+            if _BOOTSTRAP.search(line):
+                rel = cm.relative_to(repo)
+                out.append(f"{rel}:{n}: [NIGHTLY] RUSTC_BOOTSTRAP — stable-rustc escape hatch")
     return out
 
 
