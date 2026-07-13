@@ -245,6 +245,42 @@ mod h {
             }
         }
     }
+
+    /// `strchr(delim, c) != NULL` for a NON-ZERO `c` — the tokenizers' delimiter
+    /// test. Deliberately NOT strchr: the C's `strchr(delim, c)` also matches
+    /// delim's own terminator when `c == 0`, and every call site guards that with
+    /// a preceding `*str &&`. Spelling the guard into the helper means a future
+    /// caller cannot forget it.
+    #[inline]
+    pub(super) unsafe fn byte_in(delim: *const u8, c: u8) -> bool {
+        if c == 0 {
+            return false;
+        }
+        let mut p = delim;
+        while *p != 0 {
+            if *p == c {
+                return true;
+            }
+            p = p.add(1);
+        }
+        false
+    }
+
+    /// `byte_in`'s wide twin.
+    #[inline]
+    pub(super) unsafe fn wchar_in(delim: *const u16, c: u16) -> bool {
+        if c == 0 {
+            return false;
+        }
+        let mut p = delim;
+        while *p != 0 {
+            if *p == c {
+                return true;
+            }
+            p = p.add(1);
+        }
+        false
+    }
 }
 
 // ── wave 2: the functions msvcrt-difftest graded MATCH vs the GENUINE
@@ -258,13 +294,18 @@ mod m_atoi64 {
     #[allow(unused_imports)]
     use super::h::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
-    /// `__int64 _atoi64(const char *nptr)`
-    /// preserved misfeature: NULL→0; i64 wrapping accumulate, NO overflow error; no (int) trunc (unlike atoi)
+    /// `__int64 _atoi64(const char *nptr)` -> `_strtoi64_l(nptr, NULL, 10, NULL)`
+    ///
+    /// msvcrt's `_atoi64` is NOT libcntpr's. The kernel one wraps on overflow and
+    /// has no error channel; msvcrt's routes straight through `_strtoi64_l`, so it
+    /// **saturates** at _I64_MAX/_I64_MIN, sets errno=ERANGE, and fires the
+    /// invalid-parameter handler on NULL. It was flipped onto the kernel's
+    /// `parse_i64_wrapping` — a VALUE divergence on overflow, not merely an errno
+    /// one, and classify missed it because `gen_str` essentially never emits a
+    /// 19-digit run. `gen_num_str` now does. (§9.66)
     #[no_mangle]
     pub unsafe extern "C" fn _atoi64(nptr: *const u8) -> i64 {
-        let nptr_s = cstr_slice(nptr);
-        let (v, _of) = cnt_rust::core_rs::radix::parse_i64_wrapping(nptr_s);
-        v as i64
+        crate::strtoi64_contract(nptr, core::ptr::null_mut(), 10)
     }
 
 }
@@ -717,16 +758,24 @@ mod mstrtol {
     #[allow(unused_imports)]
     use super::h::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
-    /// `long strtol(const char *nptr, char **endptr, int base)`
-    /// preserved misfeature: BSD signed-long clamp: overflow → LONG_MIN/LONG_MAX (32-bit Win long); neg non-overflow = 0u32.wrapping_sub(acc); cutoff = neg?(ULONG)LONG_MAX+1:LONG_MAX; base 0 ⇒ 0x→16/0→8/else 10; no base validation; _LIBCNT_ no errno
+    /// `long strtol(const char *nptr, char **endptr, int base)` -> `_strtol_l(.., NULL)`
+    ///
+    /// Parses as i64 through msvcrt's engine, then clamps to the 32-bit Windows
+    /// `long` with ERANGE (string.c `_strtol_l`). NOT the BSD strtol: that is a
+    /// different function, and using it here is what shipped this without its
+    /// errno contract, and writing `*endptr` on a rejected base (§9.66).
     #[no_mangle]
     pub unsafe extern "C" fn strtol(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i32 {
-        let nptr_s = cstr_slice(nptr);
-        let r = cnt_rust::core_rs::radix::parse_long_bsd(nptr_s, base);
-        if !endptr.is_null() {
-            *endptr = nptr.add(r.end) as *mut _;
+        let ret = crate::strtoi64_contract(nptr, endptr, base);
+        if ret > i32::MAX as i64 {
+            *crate::_errno() = crate::ERANGE;
+            i32::MAX
+        } else if ret < i32::MIN as i64 {
+            *crate::_errno() = crate::ERANGE;
+            i32::MIN
+        } else {
+            ret as i32
         }
-        r.value as i32
     }
 
 }
@@ -736,21 +785,31 @@ mod mstrtoul {
     #[allow(unused_imports)]
     use super::h::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
-    /// `unsigned long strtoul(const char* nptr, char** end, int base)`
-    /// preserved misfeature: delegates to _strtoul_l — same asymmetric clamp incl. neg>ULONG_MAX→1
+    /// `unsigned long strtoul(const char* nptr, char** end, int base)` -> `_strtoul_l(.., NULL)`
+    ///
+    /// preserved misfeature: `_strtoul_l` parses with the **signed** `_strtoi64_l`
+    /// and then clamps ASYMMETRICALLY — and its underflow arm returns **1**:
+    ///
+    ///     if(ret > ULONG_MAX)              { ret = ULONG_MAX; errno = ERANGE; }
+    ///     else if(ret < -(__int64)ULONG_MAX) { ret = 1;       errno = ERANGE; }
+    ///
+    /// Not 0, not ULONG_MAX — one. Bug-for-bug with Microsoft; no reimplementation
+    /// would ever derive it. Anything in range falls through and is truncated to
+    /// 32 bits, which is how `strtoul("-1")` yields 0xFFFFFFFF.
     #[no_mangle]
     pub unsafe extern "C" fn strtoul(nptr: *const u8, end: *mut *mut u8, base: i32) -> u32 {
-        let nptr_s = cstr_slice(nptr);
-        let r = cnt_rust::core_rs::radix::parse_i64_clamped(nptr_s, base);
-        if r.base_ok && !end.is_null() {
-            *end = nptr.add(r.end) as *mut u8;
-        }
-        let v = if r.value > 4294967295i64 {
-            4294967295i64
-        } else if r.value < -4294967295i64 {
-            1i64
-        } else { r.value };
-        v as u32 as u32
+        const ULONG_MAX: i64 = 4294967295;
+        let ret = crate::strtoi64_contract(nptr, end, base);
+        let v = if ret > ULONG_MAX {
+            *crate::_errno() = crate::ERANGE;
+            ULONG_MAX
+        } else if ret < -ULONG_MAX {
+            *crate::_errno() = crate::ERANGE;
+            1
+        } else {
+            ret
+        };
+        v as u32
     }
 
 }
@@ -1402,3 +1461,1655 @@ pub unsafe extern "C" fn _wcsnset(s: *mut u16, c: u16, n: usize) -> *mut u16 {
 // msvcrt C. A `staticlib` crate-type would force a `#[panic_handler]` into the
 // same rustc invocation that emits the rlib, and that becomes a duplicate
 // `panic_impl` lang item inside the harness's std test binary.
+
+// ─────────────────────────────────────────────────────────────────────────
+// Wave 5 PROBE (not a flip — deliberately NOT `#[no_mangle]`).
+//
+// Exposed so msvcrt-difftest can grade cnt-rust's float parser against the
+// genuine msvcrt `strtod` BEFORE anything overrides the C. If it diverges,
+// nothing has shipped.
+//
+// The suspicion going in (from cnt-rust's own doc comment): these are two
+// DIFFERENT ALGORITHMS from two different lineages —
+//   cnt-rust  = ReactOS libcntpr's DJ Delorie parser: a naive `r = r*10 + d`
+//               accumulator, then `r *= 10^e`. Explicitly "never IEEE
+//               correctly-rounded".
+//   msvcrt    = Wine's `fpnum_parse` + `bnum.h`, a base-10 BIGNUM — correctly
+//               rounded.
+// If that is right they cannot agree on hard-to-round inputs, and the
+// "assemble from cnt-rust" thesis does not reach this family.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Probe: cnt-rust's `strtod` core, marshalled to the C signature.
+///
+/// **HOST-ONLY (`cfg(target_os = "linux")`).** This exists solely so
+/// msvcrt-difftest can grade the float parser; it is never part of msvcrt.dll.
+/// It must not be compiled for the Windows targets, because i386 msvcrt builds
+/// with `-C target-feature=-sse,-sse2` (the ReactOS baseline) and an `f64`
+/// return needs SSE for the ABI:
+///
+///   error: this function definition uses SIMD vector type `f64` which (with
+///   the chosen ABI) requires the `sse` target feature, which is not enabled
+///
+/// # Safety
+/// `s` must be a valid NUL-terminated C string; `end` may be NULL.
+#[cfg(target_os = "linux")]
+pub unsafe fn strtod_probe(s: *const u8, end: *mut *mut u8) -> f64 {
+    let sl = h::cstr_slice(s);
+    let (v, consumed) = cnt_rust::core_rs::strtod::strtod_bytes(sl);
+    if !end.is_null() {
+        *end = (s as *mut u8).add(consumed);
+    }
+    v
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Wave 5a: the plumbing-free leftovers of string.c.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// msvcrt `_swab`: swap adjacent byte pairs. `len` is a BYTE count and an odd
+/// trailing byte is simply not copied (`len >>= 1` after the `len > 1` guard) —
+/// a misfeature, reproduced.
+///
+/// Note `(unsigned)len >> 1`: a NEGATIVE len is guarded out by `len > 1` first,
+/// so the unsigned shift never sees one.
+#[no_mangle]
+pub unsafe extern "C" fn _swab(src: *const u8, dst: *mut u8, len: i32) {
+    if len > 1 {
+        let mut n = (len as u32) >> 1;
+        let (mut s, mut d) = (src, dst);
+        while n > 0 {
+            let s0 = *s;
+            let s1 = *s.add(1);
+            *d = s1;
+            *d.add(1) = s0;
+            d = d.add(2);
+            s = s.add(2);
+            n -= 1;
+        }
+    }
+}
+
+/// msvcrt `__strncnt`: count up to `size` non-NUL bytes.
+///
+/// ⚠️ TWO THINGS. (1) The body is `#if _MSVCR_VER >= 140`-gated and we build with
+/// `_MSVCR_VER=0`, so the shipped branch is `while (size-- && *str++)` — the
+/// bound is tested BEFORE the load, so it reads at most `size` bytes. The >=140
+/// branch (`*str++ && size--`) reads one MORE. Grading the wrong arm would be
+/// the §9.60 `_WIN64` blind spot all over again.
+/// (2) It is `n`-suffixed and bounded, so it gets an `oob_guard` row — the §9.61
+/// class (`_strnset`'s unbounded scan) is exactly this shape.
+#[no_mangle]
+pub unsafe extern "C" fn __strncnt(str_: *const u8, size: usize) -> usize {
+    let p = nz(str_);
+    let mut ret = 0usize;
+    let mut i = 0usize;
+    while i < size && *p.add(i) != 0 {
+        ret += 1;
+        i += 1;
+    }
+    ret
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Wave 5b: the `_s` (secure-CRT) string family.
+//
+// ⚠️ THE CONTRACT IS NOT JUST THE BUFFER. Every `_s` function has FOUR
+// observable effects, and a flip that gets only the first is silently wrong:
+//
+//   1. the destination bytes
+//   2. the RETURN CODE (0 / EINVAL / ERANGE / STRUNCATE)
+//   3. **errno**, set via `MSVCRT_CHECK_PMT` / `MSVCRT_INVALID_PMT`
+//   4. **the invalid-parameter handler firing** (apps install one; it can abort)
+//
+// msvcrt-difftest grades all four (see `subjectimpl.c`, which gives the SUBJECT
+// its own errno storage so it can be asserted independently of the reference's).
+//
+// The `_s` family is Wine-derived and its edge cases are NOT the ISO ones — e.g.
+// `strcat_s` truncates dst to "" on ERANGE, and `strncat_s` returns EINVAL (not
+// ERANGE) when dst has no terminator within `elem`. Reproduced exactly.
+// ─────────────────────────────────────────────────────────────────────────
+
+const EINVAL: i32 = 22;
+const ERANGE: i32 = 34;
+const STRUNCATE: i32 = 80;
+/// `((size_t)-1)` — the caller's "truncate rather than fail" sentinel.
+const TRUNCATE: usize = usize::MAX;
+
+extern "C" {
+    /// msvcrt's own per-thread errno slot. Inside msvcrt.dll this is the real C
+    /// one; in the harness it is `subjectimpl.c`'s (deliberately separate from
+    /// the reference's, so each side's errno can be asserted independently).
+    fn _errno() -> *mut i32;
+    /// msvcrt's invalid-parameter handler. Default behaviour is "no handler
+    /// installed → return", but an app CAN install one that aborts, so the call
+    /// itself is part of the contract and must actually happen.
+    fn _invalid_parameter(
+        expr: *const u16,
+        func: *const u16,
+        file: *const u16,
+        line: u32,
+        arg: usize,
+    );
+}
+
+/// `MSVCRT_INVALID_PMT(x, err)`: set errno, then invoke the handler.
+#[inline]
+unsafe fn invalid_pmt(err: i32) {
+    *_errno() = err;
+    _invalid_parameter(
+        core::ptr::null(),
+        core::ptr::null(),
+        core::ptr::null(),
+        0,
+        0,
+    );
+}
+
+/// `MSVCRT_CHECK_PMT(cond)`: on failure set errno=EINVAL + fire the handler.
+/// Returns the condition so call sites read like the C.
+#[inline]
+unsafe fn check_pmt(cond: bool) -> bool {
+    if !cond {
+        invalid_pmt(EINVAL);
+    }
+    cond
+}
+
+// ── the msvcrt integer-parse CONTRACT (wave 6a, §9.66) ────────────────────
+//
+// cnt-rust's `parse_i64_clamped` already IS msvcrt's `_strtoi64_l` *engine*,
+// faithfully — same base auto-detect, same saturating accumulate, same
+// `got_digit ? nptr : p` endptr rule. What it deliberately does NOT carry is
+// msvcrt's *contract*, because the kernel CRT (`_LIBCNT_`) has neither an errno
+// nor an invalid-parameter handler:
+//
+//   * front door — CHECK_PMT(nptr != NULL), (base == 0 || base >= 2), (base <= 36)
+//       -> return 0, errno = EINVAL, FIRE the handler,
+//          and leave `*endptr` ALONE (the C returns before it writes it)
+//   * overflow  -> clamp AND errno = ERANGE
+//
+// That contract belongs HERE, at the msvcrt boundary, and the engine stays
+// kernel-pure. This split is the thesis of the whole lane: cnt-rust supplies the
+// algorithm, msvcrt-crt-rust supplies msvcrt's semantics. Bolting msvcrt's
+// contract onto a *foreign* engine is the mistake the float probe caught — and
+// it is what `strtol` was doing here, on BSD's `parse_long_bsd`, which has no
+// errno concept at all.
+//
+// LOCALE CAVEAT (known, bounded, tracked): the C skips whitespace with
+// `_isspace_l(c, NULL)` and folds case with `_tolower_l(c, NULL)` — the thread's
+// CURRENT locale. We implement the "C" locale (ASCII), which is what msvcrt.dll
+// starts in and what the overwhelming majority of callers ever see. classify
+// fuzzes the full 0x00-0xFF byte range against the genuine C to prove C-locale
+// equivalence. Under a non-C LC_CTYPE that marks extra bytes as space, this WILL
+// diverge. That is Phase D (locale) and is recorded in the plan — it is not new
+// debt: the already-shipped `strtol`/`strtoul` carry exactly the same caveat.
+
+/// `_strtoi64_l` with the "C" locale: msvcrt's front door + engine + errno.
+/// Shared by `strtol`, `strtoul`, `_atoi64` (and `_strtoi64` once flipped).
+#[inline]
+unsafe fn strtoi64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i64 {
+    if !check_pmt(!nptr.is_null()) {
+        return 0;
+    }
+    if !check_pmt(base == 0 || base >= 2) {
+        return 0;
+    }
+    if !check_pmt(base <= 36) {
+        return 0;
+    }
+    // The C returns above WITHOUT reaching `if(endptr) *endptr = (char*)nptr;`,
+    // so on a rejected front door the caller's endptr keeps whatever it held.
+    // Writing it "helpfully" here is itself a divergence — classify caught the
+    // old `strtol` doing exactly that.
+
+    let r = cnt_rust::core_rs::radix::parse_i64_clamped(h::cstr_slice(nptr), base);
+    if !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut u8;
+    }
+    if r.overflowed {
+        *_errno() = ERANGE;
+    }
+    r.value
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn strcpy_s(dst: *mut u8, elem: usize, src: *const u8) -> i32 {
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem != 0) {
+        return EINVAL;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+    let mut i = 0usize;
+    while i < elem {
+        let c = *src.add(i);
+        *dst.add(i) = c;
+        if c == 0 {
+            return 0;
+        }
+        i += 1;
+    }
+    invalid_pmt(ERANGE);
+    *dst = 0; // dst[0], NOT dst[elem] — see the C's comment
+    ERANGE
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn strcat_s(dst: *mut u8, elem: usize, src: *const u8) -> i32 {
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem != 0) {
+        return EINVAL;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+    let mut i = 0usize;
+    while i < elem {
+        if *dst.add(i) == 0 {
+            let mut j = 0usize;
+            while j + i < elem {
+                let c = *src.add(j);
+                *dst.add(j + i) = c;
+                if c == 0 {
+                    return 0;
+                }
+                j += 1;
+            }
+            break; // fell out of the inner loop -> too small
+        }
+        i += 1;
+    }
+    invalid_pmt(ERANGE);
+    *dst = 0;
+    ERANGE
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn strncpy_s(
+    dst: *mut u8,
+    elem: usize,
+    src: *const u8,
+    count: usize,
+) -> i32 {
+    let truncate = count == TRUNCATE;
+    if count == 0 {
+        if !dst.is_null() && elem != 0 {
+            *dst = 0;
+        }
+        return 0;
+    }
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem != 0) {
+        return EINVAL;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+    let (mut p, mut s) = (dst, src);
+    let (mut e, mut c) = (elem, count);
+    while e != 0 && c != 0 && *s != 0 {
+        *p = *s;
+        p = p.add(1);
+        s = s.add(1);
+        e -= 1;
+        c -= 1;
+    }
+    if e == 0 && truncate {
+        *p.sub(1) = 0;
+        return STRUNCATE;
+    }
+    if e == 0 {
+        *dst = 0;
+        return ERANGE;
+    }
+    *p = 0;
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn strncat_s(
+    dst: *mut u8,
+    elem: usize,
+    src: *const u8,
+    count: usize,
+) -> i32 {
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem != 0) {
+        return EINVAL;
+    }
+    if count == 0 {
+        return 0;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+
+    let mut i = 0usize;
+    while i < elem && *dst.add(i) != 0 {
+        i += 1;
+    }
+    if i == elem {
+        // dst has no terminator inside elem: EINVAL, NOT ERANGE (a Wine quirk).
+        invalid_pmt(EINVAL);
+        *dst = 0;
+        return EINVAL;
+    }
+
+    let mut j = 0usize;
+    while j + i < elem {
+        if count == TRUNCATE && j + i == elem - 1 {
+            *dst.add(j + i) = 0;
+            return STRUNCATE;
+        }
+        if j == count {
+            *dst.add(j + i) = 0;
+            return 0;
+        }
+        let c = *src.add(j);
+        *dst.add(j + i) = c;
+        if c == 0 {
+            *dst.add(j + i) = 0;
+            return 0;
+        }
+        j += 1;
+    }
+
+    invalid_pmt(ERANGE);
+    *dst = 0;
+    ERANGE
+}
+
+/// ⚠️ Note the FINAL failure here sets **EINVAL**, not ERANGE — and unlike its
+/// siblings it calls `_invalid_parameter` BEFORE `*_errno() = EINVAL` (the C
+/// spells the macro out by hand rather than using MSVCRT_INVALID_PMT). The
+/// observable effects are the same set; reproduced in the C's order anyway.
+#[no_mangle]
+pub unsafe extern "C" fn _strnset_s(str_: *mut u8, size: usize, c: i32, count: usize) -> i32 {
+    if str_.is_null() && size == 0 && count == 0 {
+        return 0;
+    }
+    if !check_pmt(!str_.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(size > 0) {
+        return EINVAL;
+    }
+    let mut i = 0usize;
+    while i < size - 1 && i < count {
+        if *str_.add(i) == 0 {
+            return 0;
+        }
+        *str_.add(i) = c as u8;
+        i += 1;
+    }
+    while i < size {
+        if *str_.add(i) == 0 {
+            return 0;
+        }
+        i += 1;
+    }
+    *str_ = 0;
+    _invalid_parameter(
+        core::ptr::null(),
+        core::ptr::null(),
+        core::ptr::null(),
+        0,
+        0,
+    );
+    *_errno() = EINVAL;
+    EINVAL
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WAVE 6b — the radix `_s` family (10 fns), and why it needed FOUR writers
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// These ten look like one function with ten signatures. They are not. msvcrt
+// implements them with FOUR mutually-inconsistent error contracts, and the only
+// way to know that is to read all ten bodies — or to have a differential oracle
+// tell you. Both were done.
+//
+//   group A  _ltoa_s _ltow_s _itoa_s _itow_s      (32-bit signed, via ltoa_helper)
+//   group B  _i64toa_s _i64tow_s                  (64-bit signed)
+//     front door: MSVCRT_CHECK_PMT -> errno=EINVAL + handler FIRES
+//     too small : ERANGE, and the buffer gets the digits written BACKWARDS
+//
+//   group C  _ui64toa_s _ui64tow_s                (64-bit unsigned)
+//     front door: MSVCRT_CHECK_PMT -> errno=EINVAL + handler FIRES
+//     too small : *** EINVAL, not ERANGE *** — and the buffer is left UNTOUCHED
+//
+//   group D  _ultoa_s _ultow_s                    (32-bit unsigned)
+//     front door: HAND-ROLLED `*_errno() = EINVAL` — the handler does NOT FIRE
+//     too small : ERANGE + reversed residue, handler still does NOT fire
+//
+// Group D is the reason wave 6a had to start grading effect 4. `_ultoa_s` and
+// `_ltoa_s` are byte-identical, return-code-identical AND errno-identical on a
+// bad radix. The ONLY thing that distinguishes them is whether the invalid-
+// parameter handler fired — which an app can install and which can abort().
+// A three-effect oracle calls them equal.
+//
+// THE REVERSED RESIDUE. On a too-small buffer, groups A/B/D do not simply fail:
+//
+//     for (pos = buffer + 31, i = 0; i < size; i++)   /* buffer+31 == LAST digit */
+//         *p++ = *pos--;                              /* ...so this walks BACKWARDS */
+//     str[0] = '\0';
+//
+// The caller's buffer is filled with the digits in REVERSE, and only then NUL'd
+// at [0]. A clean reimplementation (`str[0] = 0; return ERANGE;`) passes every
+// string-level test and silently differs in every byte past the first. Nobody
+// would write this on purpose; it is bug-for-bug with Microsoft. Reproduced.
+
+/// Groups A+B — signed, `MSVCRT_CHECK_PMT` front door, ERANGE + reversed residue.
+///
+/// `mag`/`negative` are decided by the CALLER because the width matters: the C
+/// assigns the signed value into an unsigned of ITS OWN width, so for a negative
+/// value with radix != 10, `_ltoa_s` reinterprets as u32 and `_i64toa_s` as u64.
+/// Collapsing that here would silently sign-extend.
+#[inline]
+unsafe fn radix_s_signed(mag: u64, negative: bool, str: *mut u8, size: usize, radix: i32) -> i32 {
+    if !check_pmt(!str.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(size > 0) {
+        return EINVAL;
+    }
+    if !check_pmt((2..=36).contains(&radix)) {
+        *str = 0;
+        return EINVAL;
+    }
+    let f = cnt_rust::core_rs::radix::format_radix(mag, radix as u32, negative);
+    let len = f.ndigits + f.negative as usize + 1; // digits + sign + NUL
+    if len > size {
+        // The C skips the sign slot, shrinks `size` by it, then copies the digit
+        // buffer BACKWARDS from its last digit. `size <= ndigits + neg` holds here
+        // (that is what `len > size` means), so the reads stay inside the digits.
+        let o = f.negative as usize;
+        let n = size - o;
+        let mut i = 0;
+        while i < n && i < f.ndigits {
+            *str.add(o + i) = f.digits[f.ndigits - 1 - i];
+            i += 1;
+        }
+        *str = 0;
+        invalid_pmt(ERANGE); // MSVCRT_INVALID_PMT: errno = ERANGE, handler fires
+        return ERANGE;
+    }
+    let mut o = 0usize;
+    if f.negative {
+        *str = b'-';
+        o = 1;
+    }
+    let mut i = 0;
+    while i < f.ndigits {
+        *str.add(o + i) = f.digits[i];
+        i += 1;
+    }
+    *str.add(o + f.ndigits) = 0;
+    0
+}
+
+/// Groups A+B, wide. Identical contract; the digits are ASCII so they widen 1:1.
+#[inline]
+unsafe fn radix_s_signed_w(mag: u64, negative: bool, str: *mut u16, size: usize, radix: i32) -> i32 {
+    if !check_pmt(!str.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(size > 0) {
+        return EINVAL;
+    }
+    if !check_pmt((2..=36).contains(&radix)) {
+        *str = 0;
+        return EINVAL;
+    }
+    let f = cnt_rust::core_rs::radix::format_radix(mag, radix as u32, negative);
+    let len = f.ndigits + f.negative as usize + 1;
+    if len > size {
+        let o = f.negative as usize;
+        let n = size - o;
+        let mut i = 0;
+        while i < n && i < f.ndigits {
+            *str.add(o + i) = f.digits[f.ndigits - 1 - i] as u16;
+            i += 1;
+        }
+        *str = 0;
+        invalid_pmt(ERANGE);
+        return ERANGE;
+    }
+    let mut o = 0usize;
+    if f.negative {
+        *str = b'-' as u16;
+        o = 1;
+    }
+    let mut i = 0;
+    while i < f.ndigits {
+        *str.add(o + i) = f.digits[i] as u16;
+        i += 1;
+    }
+    *str.add(o + f.ndigits) = 0;
+    0
+}
+
+/// Group C — `_ui64toa_s`/`_ui64tow_s`. The odd one out: a too-small buffer is
+/// **EINVAL, not ERANGE**, and the buffer is left completely alone (no residue,
+/// not even a NUL). Handler still fires.
+#[inline]
+unsafe fn radix_s_u64(value: u64, str: *mut u8, size: usize, radix: i32) -> i32 {
+    if !check_pmt(!str.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(size > 0) {
+        return EINVAL;
+    }
+    if !check_pmt((2..=36).contains(&radix)) {
+        *str = 0;
+        return EINVAL;
+    }
+    let f = cnt_rust::core_rs::radix::format_radix(value, radix as u32, false);
+    if f.ndigits + 1 > size {
+        invalid_pmt(EINVAL); // MSVCRT_INVALID_PMT(..., EINVAL) — NOT ERANGE
+        return EINVAL;
+    }
+    let mut i = 0;
+    while i < f.ndigits {
+        *str.add(i) = f.digits[i];
+        i += 1;
+    }
+    *str.add(f.ndigits) = 0;
+    0
+}
+
+/// Group C, wide.
+#[inline]
+unsafe fn radix_s_u64_w(value: u64, str: *mut u16, size: usize, radix: i32) -> i32 {
+    if !check_pmt(!str.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(size > 0) {
+        return EINVAL;
+    }
+    if !check_pmt((2..=36).contains(&radix)) {
+        *str = 0;
+        return EINVAL;
+    }
+    let f = cnt_rust::core_rs::radix::format_radix(value, radix as u32, false);
+    if f.ndigits + 1 > size {
+        invalid_pmt(EINVAL);
+        return EINVAL;
+    }
+    let mut i = 0;
+    while i < f.ndigits {
+        *str.add(i) = f.digits[i] as u16;
+        i += 1;
+    }
+    *str.add(f.ndigits) = 0;
+    0
+}
+
+/// Group D — `_ultoa_s`/`_ultow_s`. Same *observable buffer and return code* as
+/// group A, but its front door is hand-rolled (`*_errno() = EINVAL`) rather than
+/// MSVCRT_CHECK_PMT, so **the invalid-parameter handler never fires**. That one
+/// bit is the entire difference, and it is why the oracle has to grade it.
+#[inline]
+unsafe fn radix_s_ulong(value: u32, str: *mut u8, size: usize, radix: i32) -> i32 {
+    if str.is_null() || size == 0 || !(2..=36).contains(&radix) {
+        if !str.is_null() && size != 0 {
+            *str = 0;
+        }
+        *_errno() = EINVAL; // errno only — deliberately NOT invalid_pmt()
+        return EINVAL;
+    }
+    let f = cnt_rust::core_rs::radix::format_radix(value as u64, radix as u32, false);
+    let len = f.ndigits + 1;
+    if len > size {
+        let mut i = 0;
+        while i < size && i < f.ndigits {
+            *str.add(i) = f.digits[f.ndigits - 1 - i];
+            i += 1;
+        }
+        *str = 0;
+        *_errno() = ERANGE; // again: errno only, no handler
+        return ERANGE;
+    }
+    let mut i = 0;
+    while i < f.ndigits {
+        *str.add(i) = f.digits[i];
+        i += 1;
+    }
+    *str.add(f.ndigits) = 0;
+    0
+}
+
+/// Group D, wide.
+#[inline]
+unsafe fn radix_s_ulong_w(value: u32, str: *mut u16, size: usize, radix: i32) -> i32 {
+    if str.is_null() || size == 0 || !(2..=36).contains(&radix) {
+        if !str.is_null() && size != 0 {
+            *str = 0;
+        }
+        *_errno() = EINVAL;
+        return EINVAL;
+    }
+    let f = cnt_rust::core_rs::radix::format_radix(value as u64, radix as u32, false);
+    let len = f.ndigits + 1;
+    if len > size {
+        let mut i = 0;
+        while i < size && i < f.ndigits {
+            *str.add(i) = f.digits[f.ndigits - 1 - i] as u16;
+            i += 1;
+        }
+        *str = 0;
+        *_errno() = ERANGE;
+        return ERANGE;
+    }
+    let mut i = 0;
+    while i < f.ndigits {
+        *str.add(i) = f.digits[i] as u16;
+        i += 1;
+    }
+    *str.add(f.ndigits) = 0;
+    0
+}
+
+// ── the ten exports ──────────────────────────────────────────────────────────
+// `negative` is `value < 0 && radix == 10` — for any other radix the C
+// reinterprets the value's bit pattern as unsigned OF ITS OWN WIDTH, which is
+// why _ltoa_s goes through u32 and _i64toa_s through u64.
+
+#[inline]
+fn mag32(value: i32, radix: i32) -> (u64, bool) {
+    if value < 0 && radix == 10 {
+        (value.unsigned_abs() as u64, true)
+    } else {
+        (value as u32 as u64, false)
+    }
+}
+#[inline]
+fn mag64(value: i64, radix: i32) -> (u64, bool) {
+    if value < 0 && radix == 10 {
+        (value.unsigned_abs(), true)
+    } else {
+        (value as u64, false)
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _ltoa_s(value: i32, str: *mut u8, size: usize, radix: i32) -> i32 {
+    let (m, n) = mag32(value, radix);
+    radix_s_signed(m, n, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _itoa_s(value: i32, str: *mut u8, size: usize, radix: i32) -> i32 {
+    _ltoa_s(value, str, size, radix) // the C literally does this
+}
+#[no_mangle]
+pub unsafe extern "C" fn _ltow_s(value: i32, str: *mut u16, size: usize, radix: i32) -> i32 {
+    let (m, n) = mag32(value, radix);
+    radix_s_signed_w(m, n, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _itow_s(value: i32, str: *mut u16, size: usize, radix: i32) -> i32 {
+    _ltow_s(value, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _i64toa_s(value: i64, str: *mut u8, size: usize, radix: i32) -> i32 {
+    let (m, n) = mag64(value, radix);
+    radix_s_signed(m, n, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _i64tow_s(value: i64, str: *mut u16, size: usize, radix: i32) -> i32 {
+    let (m, n) = mag64(value, radix);
+    radix_s_signed_w(m, n, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _ui64toa_s(value: u64, str: *mut u8, size: usize, radix: i32) -> i32 {
+    radix_s_u64(value, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _ui64tow_s(value: u64, str: *mut u16, size: usize, radix: i32) -> i32 {
+    radix_s_u64_w(value, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _ultoa_s(value: u32, str: *mut u8, size: usize, radix: i32) -> i32 {
+    radix_s_ulong(value, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _ultow_s(value: u32, str: *mut u16, size: usize, radix: i32) -> i32 {
+    radix_s_ulong_w(value, str, size, radix)
+}
+
+// ── the msvcrt integer-parse engine, now exported (wave 6b) ──────────────────
+// These ARE `strtoi64_contract` — `_strtoi64` is literally
+// `_strtoi64_l(nptr, endptr, base, NULL)`. Flipping them was blocked until 6a
+// gave the contract layer an errno and a handler to talk to.
+
+#[no_mangle]
+pub unsafe extern "C" fn _strtoi64(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i64 {
+    strtoi64_contract(nptr, endptr, base)
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WAVE 6c — the wide `_s` string family, the tokenizers, memmove, _strtoui64
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// The wide `_s` functions are NOT the narrow ones with a wider char. Their
+// handler behaviour differs from each other and from their narrow twins:
+//
+//   wcscpy_s    handler fires on EVERY error        (CHECK_PMT / CHECK_PMT_ERR)
+//   wcsncpy_s   handler fires on the FRONT DOOR ONLY — its ERANGE and STRUNCATE
+//               arms are plain `return`s, silent
+//   wcscat_s    handler NEVER fires — every check is hand-rolled `if (!dst ...)`
+//   wcsncat_s   handler fires on everything, including a dst with no terminator
+//               inside `elem` (its own EINVAL, distinct from the ERANGE overflow)
+//
+// Assuming wide == narrow is how this lane already got bitten twice (wcscmp
+// CLAMPS where wcsncmp returns a raw diff; wcstol consults the locale where
+// strtol does not). Every one of these was read, not inferred.
+
+/// `wcscpy_s` — CHECK_PMT front door, then a whole-length check: ERANGE (with
+/// dst truncated to "") if the source does not fit, else a straight memmove.
+#[no_mangle]
+pub unsafe extern "C" fn wcscpy_s(dst: *mut u16, elem: usize, src: *const u16) -> i32 {
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem != 0) {
+        return EINVAL;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+    let size = h::wcstr_slice(src).len() + 1; // wcslen(src) + 1
+    if size > elem {
+        *dst = 0;
+        invalid_pmt(ERANGE); // MSVCRT_CHECK_PMT_ERR(.., ERANGE)
+        return ERANGE;
+    }
+    let mut i = 0;
+    while i < size {
+        *dst.add(i) = *src.add(i);
+        i += 1;
+    }
+    0
+}
+
+/// `wcsncpy_s` — note `count == 0` returns 0 *before* the front door (and still
+/// NULs dst), and note the `_TRUNCATE` arm writes `*(p-1) = 0`, i.e. it
+/// OVERWRITES the last character it just copied. Its ERANGE/STRUNCATE arms do
+/// NOT fire the handler.
+#[no_mangle]
+pub unsafe extern "C" fn wcsncpy_s(dst: *mut u16, elem: usize, src: *const u16, count: usize) -> i32 {
+    let truncate = count == TRUNCATE;
+    if count == 0 {
+        if !dst.is_null() && elem != 0 {
+            *dst = 0;
+        }
+        return 0; // no handler, no errno
+    }
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem != 0) {
+        return EINVAL;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+    let (mut e, mut c) = (elem, count);
+    let (mut p, mut s) = (dst, src);
+    while e != 0 && c != 0 && *s != 0 {
+        *p = *s;
+        p = p.add(1);
+        s = s.add(1);
+        e -= 1;
+        c -= 1;
+    }
+    if e == 0 && truncate {
+        *p.sub(1) = 0; // clobbers the last copied char — deliberate, per the C
+        return STRUNCATE; // silent: no handler
+    } else if e == 0 {
+        *dst = 0;
+        return ERANGE; // silent: no handler
+    }
+    *p = 0;
+    0
+}
+
+/// `wcscat_s` — the one that NEVER fires the invalid-parameter handler. Every
+/// check is hand-rolled, so errno is not set either: it just returns the code.
+/// Also note it scans for dst's terminator only WITHIN `elem`, and on overflow
+/// truncates dst to "" and returns ERANGE.
+#[no_mangle]
+pub unsafe extern "C" fn wcscat_s(dst: *mut u16, elem: usize, src: *const u16) -> i32 {
+    if dst.is_null() || elem == 0 {
+        return EINVAL; // no handler, and NOT even errno — bare return
+    }
+    if src.is_null() {
+        *dst = 0;
+        return EINVAL;
+    }
+    let mut i = 0usize;
+    while i < elem && *dst.add(i) != 0 {
+        i += 1;
+    }
+    let mut s = src;
+    while i < elem {
+        let c = *s;
+        s = s.add(1);
+        *dst.add(i) = c;
+        i += 1;
+        if c == 0 {
+            return 0;
+        }
+    }
+    *dst = 0;
+    ERANGE
+}
+
+/// `wcsncat_s` — the fully-instrumented one: handler fires on the front door,
+/// on a dst with no terminator inside `elem` (EINVAL), and on overflow (ERANGE).
+#[no_mangle]
+pub unsafe extern "C" fn wcsncat_s(dst: *mut u16, elem: usize, src: *const u16, count: usize) -> i32 {
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem > 0) {
+        return EINVAL;
+    }
+    if count == 0 {
+        return 0;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+    let mut i = 0usize;
+    while i < elem {
+        if *dst.add(i) == 0 {
+            break;
+        }
+        i += 1;
+    }
+    if i == elem {
+        // dst[elem] is not NUL-terminated — its OWN EINVAL, with the handler.
+        invalid_pmt(EINVAL);
+        *dst = 0;
+        return EINVAL;
+    }
+    let mut j = 0usize;
+    while j + i < elem {
+        if count == TRUNCATE && j + i == elem - 1 {
+            *dst.add(j + i) = 0;
+            return STRUNCATE;
+        }
+        let c = if j == count { 0 } else { *src.add(j) };
+        if j == count {
+            *dst.add(j + i) = 0;
+            return 0;
+        }
+        *dst.add(j + i) = c;
+        if c == 0 {
+            *dst.add(j + i) = 0;
+            return 0;
+        }
+        j += 1;
+    }
+    invalid_pmt(ERANGE);
+    *dst = 0;
+    ERANGE
+}
+
+/// `_wcsnset_s` — the all-NULL early-out (`!str && !size && !count` -> 0) comes
+/// BEFORE the front door, and the failure arm fires the handler and sets errno
+/// by hand rather than through MSVCRT_INVALID_PMT.
+#[no_mangle]
+pub unsafe extern "C" fn _wcsnset_s(str_: *mut u16, size: usize, c: u16, count: usize) -> i32 {
+    if str_.is_null() && size == 0 && count == 0 {
+        return 0;
+    }
+    if !check_pmt(!str_.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(size > 0) {
+        return EINVAL;
+    }
+    let mut i = 0usize;
+    while i < size - 1 && i < count {
+        if *str_.add(i) == 0 {
+            return 0;
+        }
+        *str_.add(i) = c;
+        i += 1;
+    }
+    while i < size {
+        if *str_.add(i) == 0 {
+            return 0;
+        }
+        i += 1;
+    }
+    *str_ = 0;
+    invalid_pmt(EINVAL);
+    EINVAL
+}
+
+/// `_wcsset_s` — fills until the terminator or until `n` runs out; running out
+/// means dst was never terminated inside n -> "" + EINVAL + handler.
+#[no_mangle]
+pub unsafe extern "C" fn _wcsset_s(str_: *mut u16, n: usize, c: u16) -> i32 {
+    if !check_pmt(!str_.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(n != 0) {
+        return EINVAL;
+    }
+    let mut p = str_;
+    let mut left = n;
+    // C: `while(*p && --n) *p++ = c;`  — the decrement happens in the condition,
+    // so it runs at most n-1 times and `left == 0` means "no terminator in n".
+    while *p != 0 {
+        left -= 1;
+        if left == 0 {
+            break;
+        }
+        *p = c;
+        p = p.add(1);
+    }
+    if left == 0 {
+        *str_ = 0;
+        invalid_pmt(EINVAL);
+        return EINVAL;
+    }
+    0
+}
+
+/// `wcsncpy` — copies at most n, then ZERO-PADS the remainder. Does NOT
+/// guarantee a terminator when src is longer than n.
+#[no_mangle]
+pub unsafe extern "C" fn wcsncpy(s1: *mut u16, s2: *const u16, n: usize) -> *mut u16 {
+    let mut i = 0usize;
+    while i < n {
+        let c = *s2.add(i);
+        *s1.add(i) = c;
+        if c == 0 {
+            break;
+        }
+        i += 1;
+    }
+    while i < n {
+        *s1.add(i) = 0;
+        i += 1;
+    }
+    s1
+}
+
+/// `wcsnlen` — bounded length; never reads past `maxlen`.
+#[no_mangle]
+pub unsafe extern "C" fn wcsnlen(s: *const u16, maxlen: usize) -> usize {
+    let mut i = 0usize;
+    while i < maxlen {
+        if *s.add(i) == 0 {
+            break;
+        }
+        i += 1;
+    }
+    i
+}
+
+// `memmove` is NOT flipped, and deliberately so.
+//
+// It has no ORACLE. refstub/msvcrt.h:185 routes `memmove` into the private
+// `msvcrt_ref_*` namespace — that namespace is what guarantees the reference TU
+// can never bind to the code under test — so the compiled reference does not
+// define an msvcrt `memmove` to compare against. Exposing one would mean
+// un-namespacing it, weakening the harness's central guarantee to test a single
+// function.
+//
+// The lane's rule is that nothing flips without a differential proof, and that
+// rule does not get suspended because a flip looks easy. (The body would be
+// three lines — `h::raw_move` is already overlap-correct and already ships under
+// `memcpy`.) Owed: give the refstub a way to expose a namespaced symbol as a
+// ref_* oracle without opening the namespace to the subject.
+
+/// `strtok_s` — the re-entrant tokenizer. Flippable (unlike `strtok`) because the
+/// caller owns the context: `strtok` reaches into msvcrt's `thread_data_t`, and
+/// getting at that field from Rust would mean hardcoding an offset into a struct
+/// we do not own — the magic-offset class (`scan_magic_offsets`). Deferred until
+/// there is a real TLS story.
+#[no_mangle]
+pub unsafe extern "C" fn strtok_s(
+    mut str_: *mut u8,
+    delim: *const u8,
+    ctx: *mut *mut u8,
+) -> *mut u8 {
+    if !check_pmt(!delim.is_null()) {
+        return core::ptr::null_mut();
+    }
+    if !check_pmt(!ctx.is_null()) {
+        return core::ptr::null_mut();
+    }
+    if !check_pmt(!str_.is_null() || !(*ctx).is_null()) {
+        return core::ptr::null_mut();
+    }
+    if str_.is_null() {
+        str_ = *ctx;
+    }
+    // `*str &&` guards each strchr: strchr(delim, 0) would match delim's own NUL.
+    while *str_ != 0 && h::byte_in(delim, *str_) {
+        str_ = str_.add(1);
+    }
+    if *str_ == 0 {
+        *ctx = str_;
+        return core::ptr::null_mut();
+    }
+    *ctx = str_.add(1);
+    while **ctx != 0 && !h::byte_in(delim, **ctx) {
+        *ctx = (*ctx).add(1);
+    }
+    if **ctx != 0 {
+        **ctx = 0;
+        *ctx = (*ctx).add(1);
+    }
+    str_
+}
+
+/// `wcstok_s` — the wide twin. Same contract; structured slightly differently in
+/// the C but observably identical (it assigns `*next_token` unconditionally).
+#[no_mangle]
+pub unsafe extern "C" fn wcstok_s(
+    mut str_: *mut u16,
+    delim: *const u16,
+    next_token: *mut *mut u16,
+) -> *mut u16 {
+    if !check_pmt(!delim.is_null()) {
+        return core::ptr::null_mut();
+    }
+    if !check_pmt(!next_token.is_null()) {
+        return core::ptr::null_mut();
+    }
+    if !check_pmt(!str_.is_null() || !(*next_token).is_null()) {
+        return core::ptr::null_mut();
+    }
+    if str_.is_null() {
+        str_ = *next_token;
+    }
+    while *str_ != 0 && h::wchar_in(delim, *str_) {
+        str_ = str_.add(1);
+    }
+    let ret = if *str_ == 0 {
+        core::ptr::null_mut()
+    } else {
+        let r = str_;
+        str_ = str_.add(1);
+        while *str_ != 0 && !h::wchar_in(delim, *str_) {
+            str_ = str_.add(1);
+        }
+        if *str_ != 0 {
+            *str_ = 0;
+            str_ = str_.add(1);
+        }
+        r
+    };
+    *next_token = str_;
+    ret
+}
+
+/// `_strtoui64` -> `_strtoui64_l(nptr, endptr, base, NULL)`.
+///
+/// A SEPARATE function from `_strtoi64_l`, not a cast of it: it accumulates
+/// unsigned, saturates at _UI64_MAX, and then applies `negative ? -ret : ret` —
+/// so `_strtoui64("-1")` is 0xFFFF_FFFF_FFFF_FFFF, not an error. (cnt-rust's
+/// generic `parse_u64_clamped_w` is close but returns the ADVANCED endptr when no
+/// digit was parsed, where msvcrt rewinds to the original — so this is translated
+/// here rather than borrowed.)
+#[no_mangle]
+pub unsafe extern "C" fn _strtoui64(nptr: *const u8, endptr: *mut *mut u8, mut base: i32) -> u64 {
+    if !check_pmt(!nptr.is_null()) {
+        return 0;
+    }
+    if !check_pmt(base == 0 || base >= 2) {
+        return 0;
+    }
+    if !check_pmt(base <= 36) {
+        return 0;
+    }
+    let p = nptr;
+    let mut q = nptr;
+    let mut negative = false;
+    let mut got_digit = false;
+    let mut ret: u64 = 0;
+
+    while matches!(*q, b' ' | 0x09..=0x0d) {
+        q = q.add(1);
+    }
+    if *q == b'-' {
+        negative = true;
+        q = q.add(1);
+    } else if *q == b'+' {
+        q = q.add(1);
+    }
+    if (base == 0 || base == 16) && *q == b'0' && (*q.add(1)).to_ascii_lowercase() == b'x' {
+        base = 16;
+        q = q.add(2);
+    }
+    if base == 0 {
+        base = if *q == b'0' { 8 } else { 10 };
+    }
+    let bm = base as u64;
+    while *q != 0 {
+        let cur = (*q).to_ascii_lowercase();
+        let v: u64 = if cur.is_ascii_digit() {
+            if cur >= b'0' + base as u8 {
+                break;
+            }
+            (cur - b'0') as u64
+        } else {
+            if cur < b'a' || cur >= b'a' + (base - 10) as u8 {
+                break;
+            }
+            (cur - b'a') as u64 + 10
+        };
+        got_digit = true;
+        q = q.add(1);
+        // Same short-circuit safety as the signed engine: the second disjunct is
+        // only reached once `ret <= u64::MAX / bm`, so `ret * bm` cannot overflow.
+        if ret > u64::MAX / bm || ret * bm > u64::MAX - v {
+            ret = u64::MAX;
+            *_errno() = ERANGE;
+        } else {
+            ret = ret * bm + v;
+        }
+    }
+    if !endptr.is_null() {
+        *endptr = (if got_digit { q } else { p }) as *mut u8;
+    }
+    if negative {
+        0u64.wrapping_sub(ret)
+    } else {
+        ret
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WAVE 7 — the case-insensitive family
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// LOCALE (checked first, per wave 6's lesson — do not assume). Each of these
+// consults `locinfo->lc_handle[LC_CTYPE]` and takes an INLINE ASCII fast path
+// when it is unset. That is the "C" locale, which is what msvcrt.dll starts in.
+// classify fuzzes the full 0x00-0xFF byte range against the genuine C to prove
+// equivalence there. This is the SAME bounded caveat the already-shipped
+// `_strlwr`/`_strupr` carry (they are `_strlwr_s_l(str, -1, NULL)`), so wave 7
+// introduces no new debt. A non-C LC_CTYPE is Phase D.
+//
+// THREE contracts, again all different:
+//
+//   _stricmp/_strnicmp   CHECK_PMT(s1 && s2) -> _NLSCMPERROR + handler.
+//                        `count == 0` returns 0 BEFORE the front door.
+//                        Folds on the SIGNED char, returns the (unsigned char) diff.
+//   _memicmp             hand-rolled NULL check, but STILL fires the handler --
+//                        and only when len != 0 (`len ? _NLSCMPERROR : 0`).
+//                        Folds via _tolower_l, which passes non-ASCII THROUGH,
+//                        so its result is the SIGNED difference. Not the same as
+//                        _strnicmp's. Reproduced separately.
+//   _strlwr_s/_strupr_s  hand-rolled `*_errno() = EINVAL` -- handler NEVER fires
+//                        (the `_ultoa_s` shape). Unterminated-within-len is its
+//                        own EINVAL, and it truncates dst to "".
+
+/// `_NLSCMPERROR` (crt/string.h) — what the icmp family returns on a bad pointer.
+const NLSCMPERROR: i32 = 2147483647;
+
+/// The C locale's `_tolower_l`: fold A-Z, pass EVERYTHING else through unchanged
+/// (including negative `char`s — msvcrt hands this raw signed chars).
+#[inline]
+fn c_lower(c: i32) -> i32 {
+    if c >= b'A' as i32 && c <= b'Z' as i32 {
+        c + 32
+    } else {
+        c
+    }
+}
+
+/// `_strnicmp_l(s1, s2, count, NULL)` — the C-locale path.
+#[inline]
+unsafe fn strnicmp_core(s1: *const u8, s2: *const u8, mut count: usize) -> i32 {
+    if count == 0 {
+        return 0; // before the front door, per the C
+    }
+    // msvcrt.dll builds `_MSVCR_VER == 0`, which takes the NARROW check — no
+    // `count <= INT_MAX` arm (that one is _MSVCR_VER >= 80).
+    if !check_pmt(!s1.is_null() && !s2.is_null()) {
+        return NLSCMPERROR;
+    }
+    // `char` is SIGNED: the C reads into an `int`, folds on the sign-extended
+    // value, and only casts to `unsigned char` in the RETURN. Both halves matter.
+    let (mut p, mut q) = (s1 as *const i8, s2 as *const i8);
+    let (mut c1, mut c2);
+    loop {
+        // The C reads `c1 -= 'A' - 'a';` — and 'A'-'a' is NEGATIVE (-32), so it
+        // ADDS 32, folding uppercase DOWN to lowercase. Transcribing the `-=`
+        // literally as `c1 -= 32` maps 'I' to ')' and classify convicts it
+        // instantly. Spelled out here so nobody "fixes" it back.
+        c1 = *p as i32;
+        p = p.add(1);
+        if c1 >= b'A' as i32 && c1 <= b'Z' as i32 {
+            c1 += 32; // c1 -= ('A' - 'a')
+        }
+        c2 = *q as i32;
+        q = q.add(1);
+        if c2 >= b'A' as i32 && c2 <= b'Z' as i32 {
+            c2 += 32;
+        }
+        count -= 1; // C: `while(--count && c1 && c1==c2)`
+        if count == 0 || c1 == 0 || c1 != c2 {
+            break;
+        }
+    }
+    (c1 as u8) as i32 - (c2 as u8) as i32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _strnicmp(s1: *const u8, s2: *const u8, count: usize) -> i32 {
+    strnicmp_core(s1, s2, count)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _stricmp(s1: *const u8, s2: *const u8) -> i32 {
+    strnicmp_core(s1, s2, i32::MAX as usize) // the C passes INT_MAX
+}
+
+/// `_memicmp_l(s1, s2, len, NULL)`.
+///
+/// Note how this differs from `_strnicmp`: it folds through `_tolower_l`, which
+/// in the C locale passes non-ASCII (including NEGATIVE chars) straight through,
+/// and it returns that difference RAW — no `(unsigned char)` cast. So on high
+/// bytes the two functions return different numbers. They are not the same
+/// comparison with a different bound.
+#[no_mangle]
+pub unsafe extern "C" fn _memicmp(
+    s1: *const core::ffi::c_void,
+    s2: *const core::ffi::c_void,
+    mut len: usize,
+) -> i32 {
+    // `_MSVCR_VER == 0` -> this guard IS compiled in. It is hand-rolled rather
+    // than CHECK_PMT, but it still fires the handler — and only when len != 0.
+    if s1.is_null() || s2.is_null() {
+        if len != 0 {
+            invalid_pmt(EINVAL);
+            return NLSCMPERROR;
+        }
+        return 0;
+    }
+    let (mut p, mut q) = (s1 as *const i8, s2 as *const i8);
+    let mut ret = 0i32;
+    while len != 0 {
+        len -= 1;
+        ret = c_lower(*p as i32) - c_lower(*q as i32);
+        if ret != 0 {
+            break;
+        }
+        p = p.add(1);
+        q = q.add(1);
+    }
+    ret
+}
+
+/// `_strlwr_s_l` / `_strupr_s_l` with the C locale.
+///
+/// The handler NEVER fires (hand-rolled `*_errno() = EINVAL`, the `_ultoa_s`
+/// shape). "No terminator inside len" is its own EINVAL and truncates dst to "".
+#[inline]
+unsafe fn strcase_s_core(str_: *mut u8, len: usize, upper: bool) -> i32 {
+    if str_.is_null() || len == 0 {
+        *_errno() = EINVAL; // errno only — no handler
+        return EINVAL;
+    }
+    let mut n = len;
+    let mut ptr = str_;
+    while n != 0 && *ptr != 0 {
+        n -= 1;
+        ptr = ptr.add(1);
+    }
+    if n == 0 {
+        *str_ = 0;
+        *_errno() = EINVAL; // errno only — no handler
+        return EINVAL;
+    }
+    let mut p = str_;
+    while *p != 0 {
+        let c = *p;
+        if upper {
+            if c.is_ascii_lowercase() {
+                *p = c - 32;
+            }
+        } else if c.is_ascii_uppercase() {
+            *p = c + 32;
+        }
+        p = p.add(1);
+    }
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _strlwr_s(str_: *mut u8, len: usize) -> i32 {
+    strcase_s_core(str_, len, false)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _strupr_s(str_: *mut u8, len: usize) -> i32 {
+    strcase_s_core(str_, len, true)
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WAVE 8 — the WIDE case-insensitive family
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// The wide mirror of wave 7, and it is NOT a mirror. Three differences, each of
+// which a "same thing but u16" transcription would have gotten wrong:
+//
+//  1. NO C-locale fast path in the comparer. `_strnicmp_l` folds INLINE when
+//     `lc_handle[LC_CTYPE]` is unset; `_wcsicmp_l` always calls `_towlower_l`.
+//     That is fine only because `_towlower_l` has the fast path INSIDE it
+//     (`if(c >= 'A' && c <= 'Z') return c + 'a' - 'A';` — checked, not assumed).
+//
+//  2. The comparers return the RAW u16 difference — `return c1 - c2;` with no
+//     clamp. `wcscmp` (wave 4) CLAMPS. Same file, same shape, different contract.
+//
+//  3. The folders MUTATE BEFORE THEY FAIL. `_strlwr_s_l` scans for the terminator
+//     FIRST and errors without touching the buffer; `_wcslwr_s_l` folds as it
+//     scans, so on a string with no terminator inside `n` the caller's buffer
+//     comes back with its first `n` chars ALREADY FOLDED and then `str[0] = 0`.
+//     Its front door also zeroes `*str` where the narrow one does not.
+//     classify compares the full buffer, so this is graded, not hoped for.
+//
+// The C's own comment on the failure arm is worth keeping:
+//     /* MSDN claims that the function should return and set errno to
+//      * ERANGE, which doesn't seem to be true based on the tests. */
+// It returns EINVAL. Bug-for-bug.
+
+/// The C locale's `_towlower_l` (wcs.c) — ASCII fold, everything else through.
+#[inline]
+fn cw_lower(c: u16) -> u16 {
+    if c >= b'A' as u16 && c <= b'Z' as u16 {
+        c + 32 // c + 'a' - 'A'
+    } else {
+        c
+    }
+}
+#[inline]
+fn cw_upper(c: u16) -> u16 {
+    if c >= b'a' as u16 && c <= b'z' as u16 {
+        c - 32
+    } else {
+        c
+    }
+}
+
+/// `_wcsnicmp_l(s1, s2, n, NULL)` — C locale. Returns the RAW diff (no clamp).
+#[inline]
+unsafe fn wcsnicmp_core(s1: *const u16, s2: *const u16, mut n: usize) -> i32 {
+    if n == 0 {
+        return 0; // before the front door
+    }
+    // C: `if(!CHECK_PMT(str1) || !CHECK_PMT(str2))` — the || SHORT-CIRCUITS, so a
+    // NULL str1 fires the handler exactly ONCE and never evaluates the str2 check.
+    if !check_pmt(!s1.is_null()) || !check_pmt(!s2.is_null()) {
+        return NLSCMPERROR;
+    }
+    let (mut p, mut q) = (s1, s2);
+    let (mut c1, mut c2);
+    loop {
+        c1 = cw_lower(*p);
+        p = p.add(1);
+        c2 = cw_lower(*q);
+        q = q.add(1);
+        n -= 1; // C: `while(--n && c1 && (c1 == c2))`
+        if n == 0 || c1 == 0 || c1 != c2 {
+            break;
+        }
+    }
+    c1 as i32 - c2 as i32 // RAW — wcscmp clamps, this does not
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32 {
+    wcsnicmp_core(s1, s2, n)
+}
+
+/// `_wcsicmp_l(s1, s2, NULL)`. Unlike `_wcsnicmp` there is no count, so no
+/// `!n` early-out: the front door is the first thing that runs.
+#[no_mangle]
+pub unsafe extern "C" fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32 {
+    if !check_pmt(!s1.is_null()) || !check_pmt(!s2.is_null()) {
+        return NLSCMPERROR;
+    }
+    let (mut p, mut q) = (s1, s2);
+    let (mut c1, mut c2);
+    loop {
+        c1 = cw_lower(*p);
+        p = p.add(1);
+        c2 = cw_lower(*q);
+        q = q.add(1);
+        if c1 == 0 || c1 != c2 {
+            break;
+        }
+    }
+    c1 as i32 - c2 as i32
+}
+
+/// `_wcslwr_s_l` / `_wcsupr_s_l` with the C locale.
+///
+/// Folds AS it scans — so a string with no terminator inside `n` comes back with
+/// its first `n` chars folded and `str[0] = 0`. The narrow twin does not do this.
+/// Handler never fires (hand-rolled errno).
+#[inline]
+unsafe fn wcscase_s_core(str_: *mut u16, n: usize, upper: bool) -> i32 {
+    if str_.is_null() || n == 0 {
+        if !str_.is_null() {
+            *str_ = 0; // the narrow `_strlwr_s_l` does NOT do this
+        }
+        *_errno() = EINVAL; // errno only — no handler
+        return EINVAL;
+    }
+    let mut left = n;
+    let mut ptr = str_;
+    while left != 0 {
+        left -= 1;
+        if *ptr == 0 {
+            return 0;
+        }
+        *ptr = if upper { cw_upper(*ptr) } else { cw_lower(*ptr) };
+        ptr = ptr.add(1);
+    }
+    // No terminator within n. MSDN says ERANGE; msvcrt returns EINVAL (Wine
+    // verified this against the real DLL — see the comment in wcs.c).
+    *str_ = 0;
+    *_errno() = EINVAL;
+    EINVAL
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _wcslwr_s(str_: *mut u16, n: usize) -> i32 {
+    wcscase_s_core(str_, n, false)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _wcsupr_s(str_: *mut u16, n: usize) -> i32 {
+    wcscase_s_core(str_, n, true)
+}
+
+/// `_wcslwr(str)` == `_wcslwr_s_l(str, -1, NULL)`; `_wcsupr` likewise via
+/// `_wcsupr_l`. `n = (size_t)-1` means the terminator is always found, so the
+/// EINVAL arm is unreachable — but the errno/return path is inherited, and a NULL
+/// str still takes the front door.
+#[no_mangle]
+pub unsafe extern "C" fn _wcslwr(str_: *mut u16) -> *mut u16 {
+    wcscase_s_core(str_, usize::MAX, false);
+    str_
+}
+#[no_mangle]
+pub unsafe extern "C" fn _wcsupr(str_: *mut u16) -> *mut u16 {
+    wcscase_s_core(str_, usize::MAX, true);
+    str_
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WAVE 9 — the wide ctype family (`isw*`), 26 functions
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// These look locale-bound and are NOT. `_iswctype_l` takes a `_locale_t` and
+// then **never uses it**:
+//
+//     INT CDECL _iswctype_l( wchar_t wc, wctype_t type, _locale_t locale )
+//     {
+//         if (wc == WEOF)  return 0;
+//         if (wc < 256)    return MSVCRT__pwctype[wc] & type;
+//         if (!GetStringTypeW(CT_CTYPE1, &wc, 1, &ct)) return 0;
+//         return ct & type;                          /* `locale` unused */
+//     }
+//
+// So there is no `locinfo->...` field to reach into — no magic-offset problem —
+// and the whole family (including every `_l` variant) is flippable.
+//
+// Better still: reading `MSVCRT__pwctype` and calling `GetStringTypeW` means the
+// flip is locale-CORRECT, not merely C-locale-correct. In the DLL that global is
+// msvcrt's own table (repopulated by setlocale) and GetStringTypeW is kernel32's
+// real Unicode classifier. This carries NONE of the caveat the parse and
+// case-folding families carry — it inherits msvcrt's locale state instead of
+// modelling it.
+//
+// `towupper`/`towlower` are NOT here: `_towlower_l` reads
+// `locinfo->lc_handle[LC_CTYPE]` and calls LCMapStringW, and that field IS a
+// struct offset we don't own. They stay C until Phase D.
+
+extern "C" {
+    /// msvcrt's wide ctype table — a POINTER to 256 WORDs of mask bits.
+    /// In msvcrt.dll this is the real table; in the harness, subjectimpl.c's.
+    /// (Data, so no calling convention — `extern "C"` is right here.)
+    static MSVCRT__pwctype: *const u16;
+}
+
+// GetStringTypeW is `WINAPI` — i.e. **stdcall on i386** (`_GetStringTypeW@16`) and
+// cdecl on amd64/arm64. `extern "system"` is the one that resolves per-arch;
+// `extern "C"` hardcodes cdecl and silently links on amd64/arm64 while failing i386
+// with `_GetStringTypeW: i386 cdecl — missing symbol / wrong ABI`. This is the
+// exact trap AGENTS.md calls out, and it cost an i386 gate.
+//
+// Worth noting HOW it was caught: `cargo check --target i686-pc-windows-gnu` passed
+// clean, because `check` does not LINK. Three green cross-checks proved nothing
+// about this. The gate's ABI verifier is what named it.
+extern "system" {
+    /// kernel32's Unicode classifier — the `wc >= 256` path.
+    fn GetStringTypeW(kind: u32, src: *const u16, count: i32, chartype: *mut u16) -> i32;
+}
+
+// ctype.h mask bits.
+const CT_UPPER: u16 = 0x0001;
+const CT_LOWER: u16 = 0x0002;
+const CT_DIGIT: u16 = 0x0004;
+const CT_SPACE: u16 = 0x0008;
+const CT_PUNCT: u16 = 0x0010;
+const CT_CONTROL: u16 = 0x0020;
+const CT_BLANK: u16 = 0x0040;
+const CT_HEX: u16 = 0x0080;
+const CT_ALPHA: u16 = 0x0100 | CT_UPPER | CT_LOWER;
+/// `CT_CTYPE1` — GetStringTypeW's "character type 1" request.
+const CT_CTYPE1: u32 = 1;
+/// `WEOF` — the wide end-of-file sentinel, classified as nothing.
+const WEOF: u32 = 0xFFFF;
+
+/// `_iswctype_l(wc, type, locale)` — `locale` is accepted and ignored, exactly as
+/// in the C. Everything else in this section is a mask applied through here.
+#[no_mangle]
+pub unsafe extern "C" fn _iswctype_l(wc: u32, ty: u16, _locale: *mut core::ffi::c_void) -> i32 {
+    if wc == WEOF {
+        return 0;
+    }
+    if wc < 256 {
+        return ((*MSVCRT__pwctype.add(wc as usize)) & ty) as i32;
+    }
+    let c = wc as u16;
+    let mut ct: u16 = 0;
+    if GetStringTypeW(CT_CTYPE1, &c, 1, &mut ct) == 0 {
+        return 0; // the C ERR()s and returns 0
+    }
+    (ct & ty) as i32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn iswctype(wc: u32, ty: u16) -> i32 {
+    _iswctype_l(wc, ty, core::ptr::null_mut())
+}
+
+/// Each `isw*` is one mask through `_iswctype_l`. The masks are transcribed from
+/// the C, not reasoned about — `iswgraph` and `iswprint` differ only by _BLANK,
+/// and `iswblank` is not a mask at all (see below).
+macro_rules! isw {
+    ($l:ident, $plain:ident, $mask:expr) => {
+        #[no_mangle]
+        pub unsafe extern "C" fn $l(wc: u32, locale: *mut core::ffi::c_void) -> i32 {
+            _iswctype_l(wc, $mask, locale)
+        }
+        #[no_mangle]
+        pub unsafe extern "C" fn $plain(wc: u32) -> i32 {
+            _iswctype_l(wc, $mask, core::ptr::null_mut())
+        }
+    };
+}
+
+isw!(_iswalnum_l,  iswalnum,  CT_ALPHA | CT_DIGIT);
+isw!(_iswalpha_l,  iswalpha,  CT_ALPHA);
+isw!(_iswcntrl_l,  iswcntrl,  CT_CONTROL);
+isw!(_iswdigit_l,  iswdigit,  CT_DIGIT);
+isw!(_iswgraph_l,  iswgraph,  CT_ALPHA | CT_DIGIT | CT_PUNCT);
+isw!(_iswlower_l,  iswlower,  CT_LOWER);
+isw!(_iswprint_l,  iswprint,  CT_ALPHA | CT_BLANK | CT_DIGIT | CT_PUNCT);
+isw!(_iswpunct_l,  iswpunct,  CT_PUNCT);
+isw!(_iswspace_l,  iswspace,  CT_SPACE);
+isw!(_iswupper_l,  iswupper,  CT_UPPER);
+isw!(_iswxdigit_l, iswxdigit, CT_HEX);
+
+/// `_iswblank_l` is the one that is NOT just a mask:
+///
+///     return wc == '\t' || _iswctype_l( wc, _BLANK, locale );
+///
+/// TWO things hide in that line. The explicit TAB is load-bearing — a bare _BLANK
+/// mask would still match TAB in the C-locale table, but not necessarily under a
+/// locale whose table drops it. And C's `||` **NORMALISES to 0/1**, so this is the
+/// only member of the family that returns a BOOLEAN. Every other `isw*` returns
+/// the raw masked bits (`iswspace(' ')` is 8, not 1).
+///
+/// Returning the raw bit here gave `iswblank(' ') == 64` against msvcrt's `1`.
+/// The exhaustive sweep caught it on the first character it could.
+#[no_mangle]
+pub unsafe extern "C" fn _iswblank_l(wc: u32, locale: *mut core::ffi::c_void) -> i32 {
+    if wc == b'\t' as u32 {
+        return 1;
+    }
+    (_iswctype_l(wc, CT_BLANK, locale) != 0) as i32 // the `||` normalises
+}
+#[no_mangle]
+pub unsafe extern "C" fn iswblank(wc: u32) -> i32 {
+    _iswblank_l(wc, core::ptr::null_mut())
+}
+
+/// `iswalpha_l` — msvcrt exports this WITHOUT the leading underscore too (an
+/// alias of `_iswalpha_l`); it is a distinct export ordinal, so it needs its own
+/// symbol.
+#[no_mangle]
+pub unsafe extern "C" fn iswalpha_l(wc: u32, locale: *mut core::ffi::c_void) -> i32 {
+    _iswctype_l(wc, CT_ALPHA, locale)
+}

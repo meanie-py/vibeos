@@ -41,3 +41,12 @@ NtUserEndPaint
 # and SetCursorIconData's CURSORDATA has pointer/HBITMAP fields that widen.
 NtUserFindExistingCursorIcon
 NtUserSetCursorIconData
+
+# The LARGE_STRING family. LARGE_STRING is 12 bytes on i386 and 16 on the host
+# (PVOID Buffer at +8), so auto-thunking one hands win32k a wild 64-bit pointer
+# that it dereferences under the USER lock — a whole-desktop wedge, not a clean
+# fault. NtUserCreateWindowEx (above) was listed in M8; NtUserDefSetText was
+# missed, and every stock window hits it via DefWindowProcW(WM_NCCREATE) setting
+# the title from CREATESTRUCT.lpszName. These two are the entire family — if a
+# new win32k syscall ever takes a PLARGE_STRING, it belongs here.
+NtUserDefSetText

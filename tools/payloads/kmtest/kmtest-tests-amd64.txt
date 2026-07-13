@@ -115,24 +115,36 @@ FindFile
 HidPDescription
 IoDeviceObject
 # RE-QUARANTINED 2026-07-12 — SECOND, INDEPENDENT BUG behind the memcpy one.
-# The memcpy+0x40 cluster fix DID land here (NtWriteFile's SystemBuffer capture +
-# IopCompleteRequest's copy-back are both fault-tolerant now), and the crash PC moved
-# out of ntoskrnl entirely: it is now IoReadWrite_drv.sys+0x23A0, i.e. the TEST DRIVER.
-# Root: FAST I/O hands the driver the RAW user buffer (no SystemBuffer), and the test's
-# TestCommonWrite() derefs BufferBytes[i] with no NULL guard (unlike TestCommonRead,
-# which checks Buffer == NULL). NtReadFile/NtWriteFile in C dispatch fast I/O from
-# inside _SEH2_TRY, so the driver's AV converts to STATUS_ACCESS_VIOLATION; under
-# DUMMY_PSEH that guard is dead -> BUGCHECK 0x1E. Same DUMMY_PSEH family, but a
-# different primitive: needs a protected *call* (guard around the FastIoRead/FastIoWrite
-# dispatch), not the protected *copy* this cluster fix provides. Triage owed.
-#IoReadWrite
-# QUARANTINED 2026-07-11 (amd64 sweep 12): BUGCHECK 0x1000 (PFN_LIST_CORRUPT-class,
-# P1=0x401) — MmMapLockedPagesSpecifyCache PTE/PFN accounting in the Rust MDL-map path.
+# UN-QUARANTINED 2026-07-12. The three tests below were one bug, and it was NOT in the
+# kernel: the 17 STANDALONE kmtest helper drivers never got _USE_NATIVE_SEH (only
+# kmtest_drv/kmtest.exe did), so under the project-wide USE_DUMMY_PSEH their own
+# _SEH2_TRY/_SEH2_EXCEPT compiled to DEAD handlers. Each of these drivers deliberately
+# faults and expects to CATCH it:
+#   IoReadWrite_drv   — fast I/O hands it the raw user buffer; TestCommonWrite() derefs
+#                       it with no NULL guard, expecting its own _SEH2_EXCEPT to turn the
+#                       AV into STATUS_ACCESS_VIOLATION (exactly what the test asserts).
+#   NtCreateSection_drv, MmMapLockedPagesSpecifyCache_drv — same shape (3 and 4 _SEH2_TRY
+#                       sites respectively).
+# With a dead handler the AV escaped to the kernel -> BUGCHECK. Fixed by wiring
+# kmt_enable_native_seh() into every standalone driver (kmtests/CMakeLists.txt).
+# NOTE the earlier IoReadWrite triage note ("needs a protected *call* around the fast-I/O
+# dispatch in the kernel") was WRONG: C does NOT dispatch fast I/O inside _SEH2_TRY —
+# the DRIVER catches its own fault. The kernel was innocent in all three.
+IoReadWrite
+# STILL QUARANTINED (re-checked 2026-07-12): native SEH did NOT save this one, so its
+# original triage stands — a REAL kernel bug, not a dead-handler artifact. Un-quarantined
+# alongside IoReadWrite/NtCreateSection to test the dead-handler theory; it still
+# BUGCHECKs 0x1000 (PFN_LIST_CORRUPT-class, P1=0x401) and took the sweep down at test 74,
+# so the fault is in the Rust MDL-map PTE/PFN accounting (MmMapLockedPagesSpecifyCache),
+# NOT in its driver's SEH. Useful negative result: it cleanly separates the two causes.
 # Triage owed.
 #MmMapLockedPagesSpecifyCache
-# QUARANTINED 2026-07-11 (amd64 sweep 13): BUGCHECK 0x50 PAGE_FAULT_IN_NONPAGED_AREA
-# (read at fffff880045ae040) — NtCreateSection param-capture/validation path
-# (candidate: unprobed SECTION params under DUMMY_PSEH). Triage owed.
+# STILL QUARANTINED (re-checked 2026-07-12): same negative result as
+# MmMapLockedPagesSpecifyCache above — native SEH did NOT save it. Its driver has 3
+# _SEH2_TRY sites (now real handlers, verified: ntcreatesection_drv.sys imports
+# __C_specific_handler), yet it still BUGCHECKs 0x50 PAGE_FAULT_IN_NONPAGED_AREA with the
+# SAME stop code as before the change — so this is a REAL kernel bug in the NtCreateSection
+# param-capture/validation path, not a dead-handler artifact. Triage owed.
 #NtCreateSection
 NtSystemDebugControl
 PoIrp

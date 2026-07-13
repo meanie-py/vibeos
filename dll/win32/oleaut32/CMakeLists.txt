@@ -49,8 +49,11 @@ endif()
 # the commented-out .c TUs above; lld first-match (--allow-multiple-definition)
 # lets the staticlib's panic_handler/eh_personality coexist, and lets the
 # partial dispatch.rs/typelib.rs win over their still-compiled C backstops.
-# NOTE: the crate uses #![feature(c_variadic)] (debug_shims), so the cargo
-# invocation needs RUSTC_BOOTSTRAP=1 on the pinned stable toolchain.
+# No RUSTC_BOOTSTRAP: oleaut32-rust builds on plain stable. Its debug shims are
+# NOT C-variadic — the TRACE!/WARN!/ERR!/FIXME! macros reach them with a single
+# format pointer, so there is nothing to be variadic for (same as ole32-rust).
+# Defining a C-variadic fn is the ONE thing that would need nightly here; don't
+# re-introduce it (stable-toolchain lane; see sdk/lib/rust/varargs-rust).
 # Plan: docs/engineering/active-lanes/ole-com-translation-audit.md.
 set(OLEAUT32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 set(OLEAUT32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-oleaut32-target")
@@ -71,7 +74,7 @@ file(GLOB_RECURSE OLEAUT32_RUST_SRCS "${OLEAUT32_RUST_WORKSPACE_DIR}/oleaut32-ru
 # per-target config rustflags). The extern "system" FFI return ABI (float in st0)
 # is unaffected — SSE only changes internal codegen. amd64/arm64 already keep
 # SSE/NEON, so no override is needed there.
-set(OLEAUT32_RUST_ENV CARGO_TARGET_DIR=${OLEAUT32_RUST_TARGET_DIR} RUSTC_BOOTSTRAP=1)
+set(OLEAUT32_RUST_ENV CARGO_TARGET_DIR=${OLEAUT32_RUST_TARGET_DIR})
 if(ARCH STREQUAL "i386")
     list(APPEND OLEAUT32_RUST_ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")
 endif()

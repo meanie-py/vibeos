@@ -486,3 +486,100 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   Baseline deliberately NOT updated — leaving it un-refreshed keeps the ratchet flagging these
   until they are root-caused. (This is the ratchet doing exactly its job: catching a mainline
   regression that no boot smoke would have noticed.)
+
+- 2026-07-12: **The "3 kernel crashers" were 1 kernel bug + 2 harness artifacts + 1 innocent —
+  and un-quarantining them TOGETHER is what separated the causes.** Root cause of the harness
+  half: the 17 **standalone** kmtest helper drivers never got `_USE_NATIVE_SEH` (only
+  `kmtest_drv`/`kmtest.exe` did), so under project-wide `USE_DUMMY_PSEH` their own
+  `_SEH2_TRY`/`_SEH2_EXCEPT` compiled to **dead handlers**. These drivers *deliberately* fault
+  and expect to catch it — `IoReadWrite_drv`'s fast-I/O path derefs the raw user buffer with no
+  NULL guard, expecting its `_SEH2_EXCEPT` to return `STATUS_ACCESS_VIOLATION` (precisely what
+  the test asserts). Dead handler ⇒ the AV escaped to the kernel ⇒ BUGCHECK. **The kernel was
+  innocent.** Fixed with `kmt_enable_native_seh()` on all 17 drivers (amd64+arm64; i386 SEH
+  lowering is MSVC-env-only). Verified in codegen (`__C_specific_handler` import + `.pdata`)
+  before spending a sweep, and the arm64 build was proven to still link.
+    - `IoReadWrite`: **CRASH → OK (16192 pass / 151 fail)** — un-quarantined.
+    - `NtCreateSection` (0x50) and `MmMapLockedPagesSpecifyCache` (0x1000): **still crash, same
+      stop codes** ⇒ REAL kernel bugs, re-quarantined with the negative result recorded. This is
+      the valuable half: it proves native SEH didn't paper over them.
+  **My own earlier triage note was WRONG** and is corrected in-file: C does *not* dispatch fast
+  I/O inside `_SEH2_TRY` (only the IOSB write-back is protected), and C's `ProbeForRead` is
+  range+alignment-only and never touches memory — so no kernel-side "protected call" was ever
+  the answer. Reading the C oracle's actual control flow beat pattern-matching. Field manual §9.63.
+
+- 2026-07-12: **`ExUuid` was never a merge regression — it was a latent bug that passed 1 boot
+  in 4.** `ex-rust/src/uuid.rs` flattened C's `UUID_CACHED_VALUES_STRUCT` union into a bare
+  `GuidInit: [u8;8]` + hand-written accessors, and **transposed** `ClockSeqHiAndReserved` (C:
+  `GuidInit[0]`, the RFC4122 variant byte, aliased onto `GUID.Data4[0]`) with `ClockSeqLow`.
+  `Data4[0]` therefore got the raw low byte of a `KeQueryPerformanceCounter`-seeded sequence
+  number ⇒ `(Data4[0] & 0xC0) == 0x80` held **exactly 25% of boots**, and the committed baseline
+  had captured one of those lucky runs as `ExUuid OK pass=3000 fail=0`.
+  **The tell:** `git diff baseline..HEAD -- uuid.rs` was **empty** — the code hadn't changed at
+  all, so "a merge broke it" was impossible. Reconciling that contradiction (rather than hunting
+  the merge) is what cracked it. Fixed by swapping the indices + pinning them to the C header.
+  Now deterministic. Field manual → struct-layout section. **Lesson: a green baseline can be
+  hiding a probabilistic pass.**
+    - Sibling still open: `IoDeviceObject` 185/4 flaps to 184/5 between runs (`RegistryPath not
+      page-aligned`) — same "flaky assertion" smell, owed.
+
+- 2026-07-12: **amd64 baseline refreshed: 84/84 OK, 0 crashers, ratchet holds.** The 3 wins are
+  locked into `tools/conformance-baseline/amd64/kmtest.txt` so they can't silently regress:
+  `ObSymbolicLink` (154/0), `ZwWaitForMultipleObjects` (4/0), `IoReadWrite` (16192/151).
+  **Owed, stated plainly:** `IoReadWrite` is baselined with **fail=151** — the CRASH is fixed and
+  the test now runs to completion, but 151 assertions still fail and are now accepted as debt.
+  That is a real conformance backlog item, not a pass. (Baseline for the known-flaky
+  `IoDeviceObject` / `ExResource` was deliberately NOT rewritten from a single lucky run — this
+  sweep happened to match the existing values exactly, so nothing moved.)
+
+- 2026-07-13: **Task #5 (arm64 fault-tolerant copy) — TRIED, REJECTED, root-caused; + a build bug
+  that fabricated evidence.** Attempted to extend the §9.59 fault-tolerant copy to arm64 (the arm64
+  kernel exports `T __C_specific_handler` and clang emits `.pdata` for arm64 `__try`, so it looked
+  ready). Added a per-boot self-test (`KmSafeCopySelfTest`, prints `[KMSAFECOPY] ... PASS`) that
+  asserts BOTH a valid copy succeeds AND an invalid one is caught — this is now PERMANENT on amd64
+  (first end-to-end proof in-tree that a real HARDWARE fault is caught in kernel mode; `seh_poc`
+  only ever proved a software raise). arm64 **FAILED**: a probe at an unmapped VA wedges the boot.
+  Root cause (field manual §9.69): NOT the DUMMY_PSEH silent-skip crutch (that path is never
+  reached — an earlier hypothesis, falsified by instrumentation). `MmAccessFault` correctly
+  declines; `KiDispatchException` is entered with a valid kernel stack; **arm64 kernel-mode
+  `RtlDispatchException` never returns** — it recurses/faults (first inner fault = instruction
+  abort, EC=0x21: it CALLs a bogus handler routine) → kernel stack overflow → infinite re-entry of
+  `KiArm64VectorTable`. The bug is in the arm64 virtual-unwind / `__C_specific_handler` path for
+  kernel frames. arm64 keeps the plain copy + documented gap (task #10). i386 likewise. The
+  arch-neutral close for both = a Linux-extable-style fault-fixup table in the page-fault handler.
+    - **Build bug found + FIXED along the way (field manual "Editing a kernel C SHIM…"):**
+      `reactos-link` emitted no `rerun-if-changed` for the C shims, so editing `kmsafecopy.c`
+      relinked a STALE object and a boot printed the PREVIOUS build's verdict — it fabricated a
+      result for code that wasn't running. Same false-fresh class the engine already documented for
+      Rust path-deps. This cost a wrong arm64 conclusion before it was caught. Now every c_shim path
+      is watched.
+- 2026-07-13: **Owed — the two REAL kernel bugs from the un-quarantine experiment (task #7):**
+  `NtCreateSection` BUGCHECK 0x50 (PAGE_FAULT_IN_NONPAGED_AREA, read at fffff880045ae040 — param
+  capture/validation path) and `MmMapLockedPagesSpecifyCache` BUGCHECK 0x1000 (PFN_LIST_CORRUPT,
+  P1=0x401 — Rust MDL-map PTE/PFN accounting). Both proven real (survived the native-SEH harness fix
+  with identical stop codes). Both amd64, both clear a quarantine when fixed. Need a kmtest-payload
+  build + repro under the kernel debug toolkit for a real triage.
+- 2026-07-13: **Owed — the net-suite retry hole (harness robustness, ranks above most single bugs):**
+  the gate auto-retries `NET_FLAKE` and accepts a pass on retry, so a *probabilistic* regression
+  gets waved through. Direct proof: a tree containing the msvcrt wave-4 regression ran net 3× on one
+  build and went `fail → 15/15 → 15/15`; the gate called it GREEN. Very plausibly how msvcrt wave 2
+  reached mainline. Fix: serialize the net stage under the host lock (it's the one wall-clock-
+  sensitive stage and multiple lanes gate concurrently), or fail the gate on ANY net attempt failing
+  rather than accepting a retry.
+
+- 2026-07-13: **Task #7 real triage captured (MmMapLockedPagesSpecifyCache).** Un-quarantined
+  locally + built the amd64 kmtest payload + reproduced under the kernel debugger:
+  `BUGCHECK code=0x1000 P1=0x401 P2=0xfffff6800000d300 P3=0x1ca0001f P4=0xfffff88000252be9`
+  (ntoskrnl kbase `0xfffff80000000000`). **P2 is a PTE self-map address** (base
+  `0xfffff68000000000` + `0xd300` → maps user VA ~`0x1a60000`); **P3 is a VALID PTE value**
+  (PFN `0x1ca00`, flags `0x1f`); **P4 is a DRIVER address** (`0xfffff880…` = the test driver
+  mmmaplockedpagesspecifycache_drv.sys). The params (a valid PTE where one is unexpected) point at
+  a double-map / stale-PTE / PFN-share-count inconsistency. **Ruled out:** the
+  `MiMapLockedPagesInUserSpace` map loop (`mdlsup.rs:255-321`) is a FAITHFUL translation of the C
+  (`mdlsup.c:176-266`) — `Pfn1`=page-table PFN, share-count++, cache attrs, and
+  `MiIncrementPageTableReferences` all match. So the bug is in a RELATED path (PDE creation, PFN
+  handling, the unmap path, or driver interaction), not the map loop. The `KeBugCheckEx` backtrace
+  broke (spinning in the bugcheck handler), and `code=0x1000` is not a grep-able literal in the
+  Rust Mm path. **Owed next step:** a reliable repro — break `KeBugCheckEx`, read `rcx`(code)/
+  `rdx`/`r8`/`r9` + the symbolicated caller return address for the exact call site, then diff that
+  path vs C. NtCreateSection 0x50 (PAGE_FAULT_IN_NONPAGED_AREA) still un-triaged at this depth.
+  Both stay quarantined. (This is a genuinely deep MM bug; the triage above is the head start.)

@@ -6,7 +6,6 @@
 //! typelib come from the fable lane (self-contained hand-mirrored surface).
 //! Strategy doc: docs/engineering/active-lanes/ole-com-translation-audit.md.
 #![no_std]
-#![feature(c_variadic)]
 #![allow(non_camel_case_types, non_snake_case, non_upper_case_globals)]
 
 // USER-MODE no_std staticlib → own panic handler + eh_personality (deduped at

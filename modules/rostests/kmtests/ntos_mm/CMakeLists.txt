@@ -10,6 +10,7 @@ list(APPEND NTCREATESECTION_DRV_SOURCE
 
 add_library(ntcreatesection_drv MODULE ${NTCREATESECTION_DRV_SOURCE})
 set_module_type(ntcreatesection_drv kernelmodedriver)
+kmt_enable_native_seh(ntcreatesection_drv)
 target_link_libraries(ntcreatesection_drv kmtest_printf ${PSEH_LIB})
 add_importlibs(ntcreatesection_drv ntoskrnl hal)
 target_compile_definitions(ntcreatesection_drv PRIVATE KMT_STANDALONE_DRIVER)
@@ -25,6 +26,7 @@ list(APPEND MMMAPLOCKEDPAGESSPECIFYCACHE_DRV_SOURCE
 
 add_library(mmmaplockedpagesspecifycache_drv MODULE ${MMMAPLOCKEDPAGESSPECIFYCACHE_DRV_SOURCE})
 set_module_type(mmmaplockedpagesspecifycache_drv kernelmodedriver)
+kmt_enable_native_seh(mmmaplockedpagesspecifycache_drv)
 target_link_libraries(mmmaplockedpagesspecifycache_drv kmtest_printf ${PSEH_LIB})
 add_importlibs(mmmaplockedpagesspecifycache_drv ntoskrnl hal)
 target_compile_definitions(mmmaplockedpagesspecifycache_drv PRIVATE KMT_STANDALONE_DRIVER)

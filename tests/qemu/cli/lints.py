@@ -198,6 +198,13 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         )
     )
     specs.append(("lint_kernel", [py, str(lk)] if lk.is_file() else ["MISSING"], "stdout"))
+    # Stable-toolchain RATCHET: no `#![feature(...)]` in the workspace, no
+    # RUSTC_BOOTSTRAP in the build graph. The i386 `-Z build-std` cell (gcc.cmake,
+    # RUSTUP_TOOLCHAIN from .rust-nightly) is the ONE sanctioned nightly user.
+    # Baseline is EMPTY, so any finding is NEW and fails. Exists because the lane
+    # drove this to zero and a concurrent lane re-introduced it the same day.
+    ns = repo / "tools" / "scan_nightly_surface.py"
+    specs.append(("scan_nightly_surface", [py, str(ns)] if ns.is_file() else ["MISSING"], "stdout"))
     # C↔Rust differential oracles in tools/ (offsets are a compile-time gate, not
     # here). tables + match_consts are clean today (empty baseline = strict);
     # signatures carries known dual-cfg-shim FPs, so the baseline gates NEW only.
@@ -243,6 +250,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_magic_offsets",
             [py, str(smo), "--lint"] if smo.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # The WoW64 win32k thunk table must be indexed by the GUEST's (i386) syscall
+    # numbers, not the host's. w32ksvc32.h gates NtUserSetWindowLongPtr on
+    # `#ifdef _WIN64`, so parsing it as flat text on a 64-bit host shifts every
+    # service number after it by one — 195 syscalls silently misrouted onto their
+    # neighbours (no fault: the signatures are plausible, the calls just do the
+    # wrong thing). x86 Doom's ShowWindow became ShowScrollBar. Field manual
+    # §9.71. This compares the generated table against the REAL i386 stubs
+    # disassembled out of the built user32/gdi32 — hard fail on any divergence.
+    vsn = repo / "tools" / "wow64gen" / "verify_svc_numbering.py"
+    specs.append(
+        (
+            "verify_svc_numbering",
+            [py, str(vsn)] if vsn.is_file() else ["MISSING"],
             "stdout",
         )
     )

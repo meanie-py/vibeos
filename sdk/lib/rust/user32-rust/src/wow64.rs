@@ -523,6 +523,41 @@ pub unsafe fn normalize_cls(p64: PVOID) -> PCLS {
 
 // ── the public API used by the translated user32 files ───────────────────────
 
+/// Base of a window's extra bytes — the `cbwndExtra` region, where
+/// `Get/SetWindowLongPtr(hwnd, >= 0)` reads and writes.
+///
+/// Native: the extra bytes sit immediately after the `WND` in the desktop heap,
+/// so `pWnd + sizeof(WND)` is the base.
+///
+/// WoW64: `pWnd` is NOT the window. It is a *normalized 32-bit copy* of the real
+/// 64-bit `WND` (see `normalize_wnd`), living inside a heap-allocated `Snap` —
+/// and nothing follows it. The window's real extra bytes follow the *64-bit* WND
+/// out in the desktop heap. Indexing off the copy reads whatever the heap put
+/// after the Snap: that is how user32's EDIT control read a garbage `EDITSTATE*`
+/// and faulted at address 0x2A (M11). Recover the object we snapped and index
+/// off that instead. `size_of::<Wnd64>()` is the true 64-bit WND size — the
+/// `layout_guard` above proves it against the real `WND` on 64-bit builds.
+#[cfg(target_arch = "x86")]
+pub unsafe fn wnd_extra_base(pWnd: PWND) -> *mut u8 {
+    if IsWow64() {
+        let s = (pWnd as *mut u8).sub(core::mem::offset_of!(snap::Snap, obj)) as *mut snap::Snap;
+        // Prove it really is a Snap before trusting the container_of.
+        if core::ptr::addr_of_mut!((*s).obj.wnd) as PWND == pWnd {
+            return ((*s).key as *mut u8).add(core::mem::size_of::<Wnd64>());
+        }
+        // Not a snapshot — we would be reading a wild address. Say so, loudly.
+        wow64_unsupported("window extra bytes on a non-snapshot WND");
+        return core::ptr::null_mut();
+    }
+    (pWnd as *mut u8).add(core::mem::size_of::<WND>())
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub unsafe fn wnd_extra_base(pWnd: PWND) -> *mut u8 {
+    (pWnd as *mut u8).add(core::mem::size_of::<WND>())
+}
+
 /// `DesktopPtrToUser` — the one true copy. Every per-file duplicate in the
 /// translated user32 sources delegates here, so the WoW64 handling lives in one
 /// place. `Ptr` is a kernel desktop-heap address as stored in the shared

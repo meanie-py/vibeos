@@ -1010,8 +1010,13 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
                 (*LdrEntry).Flags |= LDRP_PROCESS_ATTACH_CALLED;
 
                 if DllStatus == 0 {
+                    /* Name the culprit: this aborts the whole process with
+                     * STATUS_DLL_INIT_FAILED, and "FAILED PID=n" alone tells you
+                     * nothing about WHICH DllMain returned FALSE. */
                     DbgPrint(
-                        b"[LDR] FAILED PID=%lu\n\0".as_ptr() as *const i8,
+                        b"[LDR] DllMain(%wZ) returned FALSE -> STATUS_DLL_INIT_FAILED PID=%lu\n\0"
+                            .as_ptr() as *const i8,
+                        core::ptr::addr_of_mut!((*LdrEntry).BaseDllName),
                         (*NtCurrentTeb()).ClientId.UniqueProcess as ULONG,
                     );
                     Status = STATUS_DLL_INIT_FAILED;
@@ -1309,6 +1314,33 @@ pub unsafe extern "system" fn LdrpInitializeTls() -> NTSTATUS {
     while ListHead != NextEntry {
         LdrEntry = (NextEntry as usize - core::mem::offset_of!(_LDR_DATA_TABLE_ENTRY, InLoadOrderLinks)) as PLDR_DATA_TABLE_ENTRY;
         NextEntry = (*NextEntry).Flink;
+
+        /* A 32-bit module's TLS directory is IMAGE_TLS_DIRECTORY32 — 4-byte
+         * fields, 24 bytes — not the native shape this code is compiled
+         * against (8-byte fields, 40 bytes). Reading one here yields a garbage
+         * AddressOfIndex, and the store through it below is a wild write.
+         *
+         * This is not hypothetical: the process image of a WoW64 process IS a
+         * 32-bit PE and it sits in this (64-bit) module list. Every guest we
+         * ran before M11 was hand-written and no-CRT, so none had a TLS
+         * directory at all and this loop skipped them on the null check. The
+         * first CRT-linked guest (testgui.exe) has one, and it AV'd here.
+         *
+         * 32-bit modules' TLS belongs to the guest's own 32-bit ntdll — the
+         * same source built for i386, where these structs have the right shape.
+         * The native loader must not touch them. (Cf. ImageNeedsRelocation in
+         * LdrpInitializeProcess, which dodges the same 64-bit-header-over-a-
+         * 32-bit-image trap for OptionalHeader.ImageBase.) */
+        #[cfg(target_pointer_width = "64")]
+        {
+            const IMAGE_NT_OPTIONAL_HDR32_MAGIC: u16 = 0x10B;
+            let NtHeader = RtlImageNtHeader((*LdrEntry).DllBase);
+            if !NtHeader.is_null()
+                && (*NtHeader).OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC
+            {
+                continue;
+            }
+        }
 
         TlsDirectory = RtlImageDirectoryEntryToData(
             (*LdrEntry).DllBase,

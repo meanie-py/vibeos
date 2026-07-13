@@ -308,7 +308,7 @@ pub const TRUE: BOOL = 1;
 // the FIRST arm swallowed every dispid and the rest were dead code. IPicture would have
 // returned the wrong property for every request, and it compiles clean.
 // Caught by `tools/verify_match_consts.py`; the identical shape shipped in ole32
-// (StgOpenStorageEx treated every stgfmt as STGFMT_ANY). Field manual §9.66.
+// (StgOpenStorageEx treated every stgfmt as STGFMT_ANY). Field manual §9.72.
 //
 // Typed `DISPID` (= LONG = i32, com-sys bindgen_i386.rs:7431), matching the scrutinee —
 // as DWORD they would not typecheck against `dispIdMember`, and "fixing" that with a cast

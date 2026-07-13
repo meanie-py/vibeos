@@ -680,9 +680,31 @@ pub unsafe extern "system" fn GlobalLock(hMem: HGLOBAL) -> LPVOID {
         return hMem as LPVOID;
     }
 
-    /* Otherwise, lock the heap */
+    /* Otherwise, lock the heap.
+     *
+     * The C wraps the body in _SEH2_TRY/_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+     * purely to survive a wild `hMem`. Do NOT reintroduce that as a runtime
+     * branch: the original translation of this function did
+     *
+     *     let __except_val = EXCEPTION_EXECUTE_HANDLER;   // == 1, a CONSTANT
+     *     let Ptr = if __except_val != 0 { SetLastError(..); null_mut() }
+     *              else { __try_result };                 // <- dead code
+     *
+     * i.e. it turned the SEH *filter expression* into a value and then read
+     * "filter != 0" as "an exception happened", so the HANDLER ran every time
+     * and the real result was discarded. GlobalLock therefore returned NULL
+     * unconditionally — and LocalLock forwards straight to it, so every
+     * moveable Local/Global lock in the OS was broken. user32's EDIT control
+     * gets its text buffer exactly that way (LocalAlloc(LMEM_MOVEABLE) then
+     * LocalLock), so every edit box in the OS came up with a NULL buffer and
+     * the first keystroke/SetText dereferenced it (M11 §9.67).
+     *
+     * No handler is needed: BaseHeapGetEntry is pure pointer arithmetic, and
+     * BaseHeapValidateEntry bounds-checks the entry against the handle table
+     * BEFORE touching its fields (Rust's && short-circuits), so a bogus handle
+     * returns ERROR_INVALID_HANDLE instead of faulting. */
     RtlLockHeap(BaseHeap);
-    let __try_result = {
+    let Ptr = {
         /* Get the handle entry */
         HandleEntry = BaseHeapGetEntry(hMem);
         BASE_TRACE_HANDLE(HandleEntry, hMem);
@@ -710,13 +732,6 @@ pub unsafe extern "system" fn GlobalLock(hMem: HGLOBAL) -> LPVOID {
             }
         }
         Ptr
-    };
-    let __except_val = EXCEPTION_EXECUTE_HANDLER;
-    let Ptr = if __except_val != 0 {
-        SetLastError(ERROR_INVALID_HANDLE);
-        core::ptr::null_mut()
-    } else {
-        __try_result
     };
 
     /* All done. Unlock the heap and return the pointer */

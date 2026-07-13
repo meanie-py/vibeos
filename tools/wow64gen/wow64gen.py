@@ -108,11 +108,70 @@ _SPEC_LINE = re.compile(
 _SYSFUNCS_LINE = re.compile(r"^\s*SVC_\(\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*,\s*(?P<argc>\d+)\s*\)")
 
 
+# The service list is #ifdef'd. We must expand it exactly as the GUEST does.
+_CPP_IF = re.compile(r"^\s*#\s*(ifdef|ifndef|if|else|elif|endif)\b(?P<rest>.*)$")
+_MENTIONS_WIN64 = re.compile(r"\b_WIN64\b")
+
+
 def parse_sysfuncs(path: str) -> list[tuple[str, int]]:
-    """Return [(Nt-prefixed name, stack dword count)] in service-number order."""
+    """Return [(Nt-prefixed name, stack dword count)] in service-number order,
+    expanded **as the 32-bit guest sees it** (i.e. with `_WIN64` UNDEFINED).
+
+    This is load-bearing, not pedantry. The thunk table is indexed by the
+    service number the GUEST puts in EAX, and the guest is always i386 — so the
+    list must be expanded the same way the 32-bit user32/gdi32 syscall stubs
+    were. `win32ss/w32ksvc32.h` really does gate an entry on it:
+
+        SVC_(UserSetWindowLong, 4)
+      #ifdef _WIN64
+        SVC_(UserSetWindowLongPtr, 4)     <- 64-bit ONLY
+      #endif
+        SVC_(UserSetWindowPlacement, 2)
+
+    Parsing the file as flat text (which is what this did until 2026-07-13)
+    silently includes that entry on a 64-bit host and shifts EVERY service
+    number after it by one: 195 of them. The guest's NtUserShowWindow (0x1227)
+    then lands on the host's NtUserShowScrollBar — and the neighbours all have
+    plausible signatures, so nothing faults; the call just does the wrong thing.
+    It went unnoticed through M3-M11 because every guest we ran happened to use
+    only syscalls BELOW the shift. x86 Doom was the first to call one above it:
+    its ShowWindow(SW_SHOW) became ShowScrollBar, so its window never appeared
+    while it happily rendered 4000+ frames into a hidden DC.
+
+    Conditionals that do NOT mention _WIN64 (e.g. `#if DBG`) are taken as-is —
+    both sides of the boundary are built the same way there.
+    """
     out: list[tuple[str, int]] = []
+    # Stack of (is_a_WIN64_conditional, currently_suppressed). Only _WIN64
+    # frames ever suppress: any other conditional keeps BOTH branches, which is
+    # what the old flat parse did and what `#if DBG` (identical on both sides of
+    # the boundary) wants.
+    stack: list[list[bool]] = []
     with open(path, encoding="utf-8") as fh:
         for line in fh:
+            cpp = _CPP_IF.match(line)
+            if cpp:
+                kind, rest = cpp.group(1), cpp.group("rest")
+                if kind in ("ifdef", "ifndef", "if"):
+                    is_w64 = bool(_MENTIONS_WIN64.search(rest))
+                    if not is_w64:
+                        stack.append([False, False])
+                    elif kind == "ifdef":
+                        stack.append([True, True])       # #ifdef _WIN64  -> skip
+                    elif kind == "ifndef":
+                        stack.append([True, False])      # #ifndef _WIN64 -> keep
+                    else:                                # #if [!]defined(_WIN64)
+                        negated = "!" in rest
+                        stack.append([True, not negated])
+                elif kind == "else":
+                    if stack and stack[-1][0]:           # only flip _WIN64 frames
+                        stack[-1][1] = not stack[-1][1]
+                elif kind == "endif":
+                    if stack:
+                        stack.pop()
+                continue
+            if any(frame[1] for frame in stack):
+                continue
             m = _SYSFUNCS_LINE.match(line)
             if m:
                 out.append(("Nt" + m.group("name"), int(m.group("argc"))))

@@ -541,6 +541,22 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 **Fix:** mask before use — `OffsetToDirectory & 0x7FFF_FFFF` (and read the `:31`/USHORT siblings `& 0x7FFF_FFFF` / `& 0xFFFF`). **Tell / grep:** translations that use `.OffsetToDirectory`/`.OffsetToData`/`.NameOffset` (any C `:31`/`:N` bitfield) directly as an offset without masking the high flag bit. When the source field is a C bitfield, never read it as the full storage word.
 **Source:** version-rust `79d7680b685` (2026-06-18), dc/version rescue → mainline.
 
+### Hand-rolled accessors over a union's byte view, with two fields TRANSPOSED → a test that fails only 3 boots in 4
+**Symptom:** kmtest `ExUuid` asserts RFC4122 compliance — `(Uuid.Data4[0] & 0xC0) == 0x80` — and saw `Data4[0] == 0xd0`. Filed as a "ratchet regression introduced by a merge". **It was neither a regression nor merge-related.**
+**Root cause:** C's `UUID_CACHED_VALUES_STRUCT` (`ntoskrnl/include/internal/ex.h`) is a union whose byte view exists *precisely* to alias `GUID.Data4` (the header even says `/* Match GUID.Data4 */`):
+```c
+union { struct { UCHAR ClockSeqHiAndReserved;  /* == GuidInit[0] == Data4[0] */
+                 UCHAR ClockSeqLow;            /* == GuidInit[1] */
+                 UCHAR NodeId[6]; };
+        UCHAR GuidInit[8]; };
+```
+The Rust port (`ex-rust/src/uuid.rs`) replaced the union with a bare `GuidInit: [u8; 8]` plus **hand-written accessors — and transposed the two ClockSeq fields** (`ClockSeqLow` → `[0]`, `ClockSeqHiAndReserved` → `[1]`). `ExpUuidGetValues` was otherwise a statement-for-statement faithful port, so it dutifully stamped the RFC4122 variant bits (`|= 0x80`) into the byte that now landed at `Data4[1]`, while `Data4[0]` received the raw low byte of the sequence number.
+**Why it hid — the lesson.** The sequence number is seeded from `KeQueryPerformanceCounter` XOR a stack address whenever the registry seed is absent (i.e. every LiveCD boot), so `Data4[0]` was effectively **random**. `(random & 0xC0) == 0x80` is true **exactly 1 time in 4** — so the test *passed 25% of boots*, and the committed baseline had recorded one of those lucky runs as `ExUuid OK pass=3000 fail=0`. A latent bug can hide inside a green baseline as a **probabilistic pass**; the "it regressed at commit X" story was pure coincidence.
+**Fix:** swap the two indices (and pin them to the C header in a comment). Post-fix `Data4[0]` is always `0x80 | (seq >> 8 & 0x3F)` → deterministically variant-compliant.
+**Tell / grep:** a Rust struct that flattens a C **union** into a byte array plus hand-written named accessors. The union's whole purpose is a specific byte↔field mapping, and nothing in Rust re-checks it — a transposition compiles, links, and passes review. Prefer the bindgen union type, or `offset_of!`; if you must hand-roll, cite the C field order in a comment. Sibling of the `MMPFN`/`KTHREAD.Teb` numeric-offset drift class (`tools/scan_magic_offsets.py`).
+**Corollary (test hygiene):** when a conformance test "regresses" but `git diff baseline..HEAD -- <file>` is **empty**, do not hunt the merge — ask whether the assertion is *probabilistic*. Reconciling that contradiction is what cracked this one.
+**Source:** conformance-ratchet (2026-07-12).
+
 ---
 
 ## rustconv translation-output bug catalog
@@ -1412,6 +1428,17 @@ CRITICAL link-order rule: this provider TU is linked AFTER the bugcheck-stub TU,
 **Source:** `feedback_win32k_raw_dylib_freeldr_oom.md`
 
 ---
+
+### Editing a kernel C SHIM silently ships the STALE object (no `rerun-if-changed`)
+**Symptom:** you edit `ntoskrnl/kmsafecopy.c` (or `seh_poc.c`, `*_rust_shims.c`, `ehandler.c`, the CRT printf shells), rebuild, boot — and the kernel runs the PREVIOUS build. The build is green. Nothing warns you. Worse than a stale build: **it fabricates evidence** — the boot prints a verdict for code that is not running.
+**Root cause:** `reactos-link` (`sdk/lib/rust/reactos-link/src/lib.rs`) emitted `cargo:rerun-if-changed` for `build.rs`, `rust_watch_dirs`, and every workspace crate's `src/` + `Cargo.toml` — but **not** for `c_shims`. The shims live OUTSIDE `sdk/lib/rust`, and because the engine emits *explicit* rerun-if-changed lines, cargo's default whole-package watching is **disabled**. So a shim edit triggers no build-script rerun, cc-rs never recompiles, and the link reuses the old object while cargo reports the module fresh.
+**The cruel part — intermittency:** it only bites when you edit a `.c` **without** touching `build.rs`. Wire a new shim up (which edits `build.rs`) and it works; iterate on that same `.c` afterwards and you silently test the old binary. Cost a full arm64 boot + a wrong conclusion (an arm64 SEH "FAIL" that was really the previous build's output).
+**This is the SAME class the engine already documents** at `lib.rs:1028` for Rust path-deps ("a false-fresh that cost a debug round-trip on the WHPX spike") — fixed there for Rust crates, missed for C. Adding the Rust watch is precisely what un-watched everything else.
+**Partial fix + the REMAINING layer (corrected 2026-07-13):** `reactos-link` now emits `cargo:rerun-if-changed` for every `c_shims` path (commit e98089d11d0). Verified it emits (`…/build/ntoskrnl-cargo-*/output` contains `rerun-if-changed=/tmp/vibeos/ntoskrnl/kmsafecopy.c`). **But this alone is NOT sufficient**, and the original commit message overclaimed it: there is a SECOND gate one layer out. The kernel link is a cmake `add_cargo_module` → a ninja `CUSTOM_COMMAND` whose only input is the `sdk/lib/rust/ntoskrnl-cargo` **directory** (`build ntoskrnl.exe: CUSTOM_COMMAND ../sdk/lib/rust/ntoskrnl-cargo`, `restat=1`). A directory's mtime does NOT change when a shim's *content* changes (only on create/delete/rename), so **ninja never re-invokes cargo** — and if cargo isn't invoked, its `rerun-if-changed` is never consulted. Empirically proven: `touch ntoskrnl/kmsafecopy.c && ./vibeos-cli build --arch arm64` leaves `ntoskrnl.exe` mtime UNCHANGED. So the cargo-layer fix is necessary but not sufficient; the ninja layer still gates.
+**Reliable workaround until the ninja layer is fixed:** `rm build-<arch>/ntoskrnl/ntoskrnl.exe` before the build (ninja must rebuild a missing output → invokes cargo → cargo's rerun-if-changed recompiles the edited shim). Touching a file *inside* `ntoskrnl-cargo/` does NOT work (file mtime ≠ dir mtime). A `--clean` build also works but is far slower.
+**Proper fix OWED:** make the `add_cargo_module` ninja command depend on the actual c_shim files (they live in build.rs, invisible to cmake — so either surface the list to cmake, or glob the known shim dirs as extra DEPENDS). Until then, treat any hand-edit of a `.c` shim as needing the `rm` workaround.
+**Tell:** any time a boot-visible change to a C shim "has no effect", or a print shows the value you had *before* your edit. Confirm with `stat -c %y build-<arch>/ntoskrnl/ntoskrnl.exe` before/after — if the mtime didn't move, the link was skipped. **General rule: when an experiment's result contradicts the code you just wrote, first prove the code you wrote is the code that RAN.**
+**Source:** conformance-ratchet (2026-07-12, corrected 2026-07-13).
 
 ## CRT/cnt runtime, harness flakes & kernel one-offs
 
@@ -5722,7 +5749,336 @@ catch this: the Rust reads perfectly. Only the emitted code tells the truth.
 4. Scan memory backwards from the PC for the `MZ` header, then read the module name out of its
    PE export directory → `bootvid.dll`. (`find-kbase` only knows about ntoskrnl.)
 
-### 9.66 (ROOT-CAUSED + FIXED 2026-07-13) The rustconv defect chain behind ole32's silent bugs: one regex hang bypassed the entire post-processor, and `abi_enforce` was throwing away the calling convention it had correctly derived
+---
+
+### 9.66 (ROOT-CAUSED + FIXED 2026-07-12) Your differential oracle can be MISCOMPILED by the host's own headers — glibc's `__nonnull`/`__attribute_pure__` deleted the reference C's guards
+
+**Class:** differential-harness integrity. Applies to ANY harness that compiles genuine
+target C for the host and renames its symbols to compare against a reimplementation.
+**Symptom:** the *reference* segfaults, or silently reports the wrong answer, on inputs the
+real target handles fine. **Blast radius:** every verdict the harness has ever issued.
+
+#### The setup that causes it
+
+`msvcrt-difftest` compiles the real `dll/win32/msvcrt/string.c` for the host and renames its
+public symbols `ref_*` via a force-included prelude (`-include ref_prelude.h`), so the
+reference and the Rust under test can be linked into one process and fuzzed against each
+other. The rename deliberately lands **before** the system headers, because that makes glibc
+declare the renamed symbols and the reference inherits correct prototypes for free:
+
+```c
+/* ref_prelude.h, force-included */
+#define atoi ref_atoi
+/* ...then <stdlib.h> is pulled, and glibc says: */
+extern int atoi (const char *__nptr) __THROW __attribute_pure__ __nonnull ((1));
+/*            ^^^^ ...which after the rename declares REF_ATOI, with glibc's attributes. */
+```
+
+That is the bug. **A declaration carries more than a prototype — it carries attributes**, and
+glibc's are promises about *glibc's* implementation, not msvcrt's:
+
+| leaked attribute | glibc promises | msvcrt actually does | consequence |
+|---|---|---|---|
+| `__nonnull((1))` | arg is never NULL | `atoi` has `if(!str) return 0;` (string.c:1720) | optimizer **DELETES the guard** |
+| `__attribute_pure__` | no side effects | `strtol` family **sets errno** | call may be CSE'd or **elided** |
+
+The `__nonnull` one crashes, so you find it. The `pure` one **doesn't crash** — it quietly
+lets the compiler drop an errno-setting call whose result is unused, corrupting exactly the
+side-channel an errno-comparing oracle is built on. That is the dangerous half.
+
+#### How to detect it (the general recipe)
+
+The C source and the machine code disagree. **Trust the machine code.**
+
+```bash
+# the source SAYS there is a NULL guard:
+sed -n '1720p' dll/win32/msvcrt/string.c        # ->  if(!str) return 0;
+# the emitted reference does NOT have one:
+objdump -d --disassemble=ref_atoi <test-bin>    # ->  no `test %rdi,%rdi`; straight to a deref
+```
+
+Scoping rule: **the leak lands only on symbols whose names COLLIDE with the host libc.**
+`ref_atoi`/`ref_strtol`/`ref_strcpy` are at risk; `ref__strtoi64_l` is not, because glibc
+never declares `_strtoi64_l` and so never attaches anything to it. Guards that live inside
+msvcrt-only helpers survive; guards in the ABI-shared names get deleted.
+
+#### The fix
+
+**Not** `-fno-delete-null-pointer-checks` — that patches the NULL symptom and leaves `pure`
+armed. Instead pull glibc's macro header first and **neuter the attribute macros**, so every
+subsequent declaration comes out attribute-free while the prototypes (the thing you actually
+wanted) survive:
+
+```c
+/* prelude, AFTER the renames and BEFORE any libc header — build.rs "stage 1.5" */
+#include <sys/cdefs.h>          /* glibc routes every attribute through these macros */
+#undef  __nonnull            
+#define __nonnull(params)
+#undef  __attribute_pure__   
+#define __attribute_pure__
+#undef  __attribute_const__  
+#define __attribute_const__
+#undef  __attr_access        
+#define __attr_access(x)
+#undef  __wur                
+#define __wur
+```
+
+#### The tripwire (do this, not just the fix)
+
+`sdk/lib/rust/msvcrt-difftest/tests/ref_integrity.rs` — a test whose subject is **the oracle
+itself**. For each reference function whose C source contains a guard, call it in a forked
+child with the input the guard exists for, and assert it returns rather than faults. For
+`pure`, call it **for its side effect only, discarding the result**, and assert the side
+effect still happened — a `pure` call with an unused result is exactly what gets elided.
+
+Negative-control it: back the disarm out and confirm `ref_atoi`/`ref_atol` fault again.
+
+#### The two general lessons
+
+1. **A harness improvement is worth nothing if you only point it at NEW code.** The errno
+   oracle arrived in wave 5 and was used only on wave 5's flips. Re-running the *already
+   shipped* functions through it convicted three of them (`_atoi64` on a wrapping parser where
+   msvcrt saturates; `strtol` with no ERANGE/EINVAL and writing `*endptr` on a rejected base;
+   `strtoul` likewise) — all live on master, all previously "MATCH". **When the oracle gets
+   stronger, re-run everything through it.**
+
+2. **A green from an unexercised branch is not a green.** `classify` had `gen_str`, a general
+   string fuzzer, whose chance of emitting a 19-digit run is ~zero — so in 20,000 cases it
+   never once drove a parse past `_I64_MAX`, and the whole saturate/ERANGE arm was untested.
+   The graders now take a `require: &["ok","EINVAL","ERANGE","handler"]` list and fail the row
+   as **UNEXERCISED CONTRACT** if the reference never produced those outcomes. Coverage is
+   printed on every MATCH, so "did the fuzz reach the branch" is answerable at a glance:
+
+   ```
+   _ultoa_s   MATCH   [ok=4799 EINVAL=11049 ERANGE=4152 handler-fired=0]
+   ```
+
+   (That `handler-fired=0` is itself load-bearing: `_ultoa_s` sets errno by hand and never
+   fires the invalid-parameter handler, while its sibling `_ltoa_s` does. On a bad radix the
+   two are byte-, return- and errno-identical — the handler bit is the ONLY thing telling them
+   apart, and a three-effect oracle calls them the same function.)
+
+#### See also
+
+- §9.60 — a differential harness can only falsify what it VARIES (the same disease, one level up)
+- §9.61 — the bug a value-comparing fuzz cannot see (an unbounded scan inside a bounded fn)
+- §9.64 — a refactor can silently drop a *tolerance* the old code provided
+- `docs/engineering/active-lanes/msvcrt-from-pieces-plan.md` — the lane, and what it has refused to flip
+---
+
+### 9.67 (ROOT-CAUSED + FIXED 2026-07-12) WoW64 M11: what a *stock* binary flushes out that a hand-written test guest never can — five bugs, each invisible to every guest we wrote ourselves
+
+**Setup.** Every WoW64 guest through M10 (`hello32`, `gui32`, `win32`, `file32`) was written *by us*. That is a hidden bias: a guest you author can only exercise what you thought to exercise, and — worse — it silently *avoids* everything the layer doesn't support yet, because you never wrote the call that would have tripped it. M11's forcing function was to stop authoring guests and run a **stock, unmodified binary** instead: `base/applications/testgui`, built for i386 exactly as the LiveCD ships it — real `msvcrt` CRT startup, a real 53-module import closure, a real window with a child EDIT control.
+
+It failed five times in a row, each on a bug **no hand-written guest could have found**. That is the lesson, and it generalises past WoW64: *a test you wrote cannot falsify an assumption you didn't know you were making.*
+
+**Bug 1 — TLS. The 64-bit loader read a 32-bit image's `IMAGE_TLS_DIRECTORY`.**
+`IMAGE_TLS_DIRECTORY32` is 24 bytes with 4-byte fields; the 64-bit shape is 40 bytes with 8-byte fields. The process image of a WoW64 process *is* a 32-bit PE and it sits in the 64-bit loader's `InLoadOrderModuleList`, so `LdrpInitializeTls` walked it with the native struct, pulled a garbage `AddressOfIndex`, and stored the TLS index through it (`str w8, [x9]` → AV). **Invisible before M11 because no hand-written guest was CRT-linked, so none had a TLS directory at all** — the loop skipped them all on the null check. Fix: the native loader skips modules whose `OptionalHeader.Magic` is `PE32`; 32-bit modules' TLS belongs to the guest's own i386 ntdll (same source, right shape).
+
+**Bug 2 — the environment block was never marshalled.** `PEB32->ProcessParameters->Environment` was simply never filled in, so the guest saw `NULL`, and kernel32's `GetEnvironmentStrings` walked from address 0. The block itself is width-agnostic (a double-NUL-terminated WCHAR run); only the *pointer to it* diverges, and we'd never written one. **Invisible before M11 because no no-CRT guest ever reads the environment** — a CRT does, during `msvcrt`'s `DLL_PROCESS_ATTACH`, before `main`.
+
+**Bug 3 — `NtCreateSemaphore` was a loud stub, and that killed EVERY GUI app.** `wininet`'s `DllMain` calls `CreateSemaphoreW` (via `init_urlcache`); `rpcrt4` statically imports `wininet`; `user32` imports `rpcrt4`. So one unimplemented syscall → `wininet` `DllMain` returns FALSE → `STATUS_DLL_INIT_FAILED` → *every* GUI process dies. It had sat on the declared-but-undispatched list for ages, harmless, because nothing we wrote ever created a semaphore. **A single missing leaf in a transitive import graph is a whole-subsystem outage.**
+
+**Bug 4 — `LARGE_STRING` is 12 bytes in the guest and 16 on the host, and `NtUserDefSetText` was auto-thunked.** `{ULONG Length; ULONG MaximumLength:31; ULONG bAnsi:1; PVOID Buffer;}` — `Buffer` is at +8 in both, but the host reads **eight** bytes there, so the high half is whatever follows the guest's 12-byte struct on its stack: a wild pointer. win32k dereferenced it **while holding the USER lock**, so it did not fault cleanly — it **wedged the entire desktop** (every thread that touches win32k blocked behind the lock; even winlogon's `WaitForSingleObject` never returned). `NtUserCreateWindowEx` — the *other* `LARGE_STRING` taker — was marshalled back in M8; this one was missed. Reached only via `DefWindowProcW(WM_NCCREATE)` setting the title from `CREATESTRUCT.lpszName`, which every stock window does and none of ours did.
+
+**Bug 5 — window extra bytes, two bugs stacked.** user32's EDIT control keeps its `EDITSTATE*` in the window's extra bytes (`Get/SetWindowLongPtr(hwnd, 0)`). Both halves were broken:
+- *Write:* win32k's `NtUserSetWindowLongPtr` used `size_of::<LONG_PTR>()` = **8** unconditionally. A WoW64 caller's `LONG_PTR` is **4**, and the guest's class registration sized `cbwndExtra` in 32-bit units, so the bounds check `0 + 8 > cbwndExtra(4)` **rejected the store outright**. Fix: `UserCallerPtrSize()` — gate on `EPROCESS.Wow64Process`.
+- *Read:* user32's `IntGetWindowLong` did `wndPtr.add(1)` — "extra bytes follow the WND". But under WoW64 `wndPtr` is a **normalized 32-bit *copy*** of the real 64-bit WND (the M9 `normalize_wnd` snapshot), living in a heap `Snap`; nothing follows it. It read whatever the allocator put after the Snap. Fix: `wnd_extra_base()` recovers the snapped object and indexes off the *real* 64-bit WND.
+
+**The payoff, and the meta-lesson.** After all five, the stock binary under WoW64 reaches `wWinMain` → `RegisterClassExW` → `CreateWindowExW` → `WM_CREATE` — *and then dies in exactly the same place as the NATIVE arm64 build of the same source* (a pre-existing user32 EDIT bug, `EDIT_LockBuffer`/`LocalLock`). **That identical failure is the actual proof of correctness**: the emulation layer is now faithful, reproducing native behaviour bug-for-bug.
+
+Which is the reusable technique: **always run the native build of the same source as an A/B control.** Without it, every crash inside a shared library looks like an emulation bug, and you will burn hours debugging the emulator for a bug that lives in the library. The control costs one `CreateProcess` call and it partitions the entire search space in a single boot. (`winlogon-rust::TryStartNativeTestGui`.)
+
+**Two harness traps this also flushed out, both of which cost real time:**
+- **An incrementally-`mcopy`'d FAT ramdisk accumulates corruption.** `file32`'s directory-enumeration rung started failing (`FindFirstFileA` returning *empty* `cFileName` for every entry, including `.`, while the *wide* enumeration was perfect). It looked exactly like a wide→ANSI/NLS bug and it was not: rebuilding `ramdisk.img` from scratch made it vanish. If a FAT-backed test starts failing in a way that makes no sense, **`rm ramdisk.img` and rebuild before you debug the OS.**
+- **A "correctness fix" with no oracle behind it is a regression waiting to happen.** While fixing the callback layer I also made `WM_GETMINMAXINFO`/`WM_NCCALCSIZE`/`WM_WINDOWPOSCHANGING` copy the guest's OUT-payload edits back up — which is what those messages are *for*. It regressed `win32.exe` from 0x600D to 0x600E: WM_PAINT/WM_NCPAINT/WM_ERASEBKGND vanished and WM_MOVE/WM_SIZE/WM_GETMINMAXINFO/WM_NCCALCSIZE each went 1× → 3×, i.e. win32k fell into repeated size renegotiation and the window never settled enough to paint. Reverted to dropping the edits (the pre-M11 behaviour) with the evidence recorded in-code; the real fix is owed. **Ship the fix the failing oracle demands; park the one it doesn't.**
+
+
+---
+
+### 9.68 (ROOT-CAUSED + FIXED 2026-07-12) When the BUG IS IN THE TEST HARNESS: the standalone kmtest drivers' own `_SEH2_TRY` was dead code, so three "kernel crashers" were the kernel behaving *correctly*
+
+**Symptom.** Three amd64 kmtest quarantines, all BUGCHECK-class, all filed as kernel bugs:
+`IoReadWrite` (0x1E), `NtCreateSection` (0x50), `MmMapLockedPagesSpecifyCache` (0x1000).
+
+**The trap.** Two of the three were not kernel bugs at all. `USE_DUMMY_PSEH` is the
+project-wide C compile mode, so *every* `_SEH2_TRY`/`_SEH2_EXCEPT` compiles to a **dead
+handler**. `kmtest_drv` and `kmtest.exe` had opted into real clang SEH
+(`_USE_NATIVE_SEH`, which pseh2.h maps straight to `__try`) — but the **17 STANDALONE
+helper drivers never did**. Their handlers were silently dead.
+
+That matters because these drivers *deliberately fault and expect to catch it*.
+`IoReadWrite_drv` is the textbook case: fast I/O hands a driver the **raw user buffer**
+(no SystemBuffer), `TestCommonWrite()` derefs it with no NULL guard, and its own
+`_SEH2_EXCEPT` is supposed to convert the AV into `STATUS_ACCESS_VIOLATION` — which is
+*exactly what the test asserts*. With a dead handler the AV escaped to the kernel and
+bugchecked. **The kernel was innocent; it faithfully delivered a fault the test asked for.**
+
+**The wrong turn worth remembering.** The first triage note read: *"NtReadFile/NtWriteFile in
+C dispatch fast I/O from inside `_SEH2_TRY`, so the kernel needs a protected **call** around
+the FastIoRead/FastIoWrite dispatch."* **That was wrong** — C does **not** wrap the fast-I/O
+dispatch in SEH (`iofunc.c`: only the IOSB write-back is protected). Nor could the probes
+have saved it: C's `ProbeForRead` is range+alignment only and never touches memory, so a
+NULL buffer sails through by design. Reading the *C oracle's actual control flow* — instead
+of pattern-matching "DUMMY_PSEH + fault ⇒ kernel needs a guard" — is what found the driver.
+
+**Fix.** `kmt_enable_native_seh()` in `modules/rostests/kmtests/CMakeLists.txt`, applied to
+**all 17** standalone drivers (not just the faulting ones — the invariant is "kmtest drivers
+get real SEH wherever clang lowers it", so the next SEH-using test can't inherit a dead
+handler). amd64 + arm64 only; i386's SEH lowering is MSVC-env-only (dummy-pseh-verdict §C).
+Result: `IoReadWrite` CRASH → **OK (16192 pass / 151 fail)**.
+
+**Why it works despite "calls-only".** Hardware-fault coverage under clang native SEH needs
+the fault in a **CALLEE** of the `__try` body. That holds here for free: clang **refuses to
+inline any callee into a `__try` region** (funclet-EH restriction — the same rule that forces
+`kmt_native_seh_shims.c` to exist), so `TestCommonWrite` stays a real call. Same mechanism
+`ntoskrnl/kmsafecopy.c` relies on (§9.59).
+
+**The negative result is the valuable half.** `MmMapLockedPagesSpecifyCache` was
+un-quarantined in the *same* experiment and **still** BUGCHECKs 0x1000 — proving native SEH
+did not paper over it and its original triage (real PFN/PTE accounting bug in the Rust
+MDL-map path) stands. Un-quarantining the whole suspected cluster at once is what cleanly
+*separated* the harness artifacts from the genuine kernel bug.
+
+**Detector.** For any kmtest quarantine on a **standalone** driver (`*_drv.sys` built by its
+own `add_library`, not linked into `kmtest_drv`), check whether the driver source contains
+`_SEH2_TRY` *before* blaming the kernel:
+`grep -l _SEH2_TRY modules/rostests/kmtests/*/*_drv.c` — if it's there and the target lacks
+`kmt_enable_native_seh()`, the handler is dead and the "kernel crash" is the harness.
+**Generalization:** a test that deliberately faults is only a valid oracle if its *own*
+exception handling actually compiles. Verify the harness before you debug the subject —
+`objdump -p drv.sys | grep C_specific_handler` proves the handler is real.
+
+---
+
+### 9.69 (ROOT-CAUSED to the mechanism 2026-07-13, FIX OWED) arm64 kernel-mode SEH wedges on a real hardware fault: `RtlVirtualUnwind` decodes a GARBAGE frame size → a garbage SP → the transfer-to-handler faults on the bad SP → infinite exception-vector re-entry. NOT a fault storm, NOT the crutch, NOT a bad handler routine.
+
+This entry was WRONG TWICE before landing on the truth; both wrong versions are kept as
+cautionary notes, because each "explained the symptom" and each was falsified by an instrument.
+
+**Symptom.** Enabling the §9.59 fault-tolerant copy on arm64 wedges the boot (`HANG_TIMEOUT`, no
+desktop) when the self-test probes a genuinely-unmapped VA (`0x0000700000000000`).
+
+**Wrong hypothesis #1 (falsified):** a DUMMY_PSEH "silent-skip crutch" in `KiDispatchException`
+swallows it. → Instrumentation: the crutch is NEVER REACHED.
+**Wrong hypothesis #2 (falsified):** a recursive FAULT STORM overflows the kernel stack. → A
+fault-chain trace at the vector entry (`[FC]`, armed on the probe FAR, prints every kernel fault)
+shows **exactly ONE** fault reaches the Rust handler. It is not a storm.
+
+**What the evidence actually shows** (each datum from an instrument verified to emit — `[FC]` and
+`[SEHCTX]` both printed through the same UART path that `[UEXC]` had already validated):
+1. `[FC] n=1 EC=0x25 FAR=0x700000000000 PC=<in memcpy> SP=0xffff8000055ceb20` — the ONE fault; a
+   clean data abort in `memcpy`, on a valid kernel stack.
+2. `[SEHCTX] ctxPc=<in memcpy> ctxSp=0xffff...ceb20 ctxFp=… ctxLr=<in KmCopyRaw>` — the CONTEXT that
+   `KeTrapFrameToContext` hands `RtlDispatchException` is SANE (so hypothesis "bad context" is also
+   out). `RtlDispatchException` is entered and NEVER RETURNS (`[SEHDBG]`, which prints after it
+   returns, never fires).
+3. GDB at the hang: `PC = KiArm64VectorTable`, `ESR=0x96000045` (data abort, write), and
+   `FAR ≈ SP + 0xb0` — the exception vector faulting while writing its OWN trap frame = the stack
+   pointer is invalid. Crucially **`SP = 0xfffffffe35d96540`**, not the sane `0xffff8000055ceb20`
+   it entered with. `SP_initial + framesz = garbage` ⟹ **`framesz ≈ 0x7ffe30419a20`** — an absurd
+   frame size. So one frame's unwind decoded a garbage `FrameSize`.
+
+**Mechanism.** `RtlDispatchException` finds `KmProtectedCopyMemory`'s `__except` (constant filter
+`HandlerAddress==1`), so `__C_specific_handler` calls `RtlUnwindEx(EstablisherFrame, JumpTarget,…)`
+(`rtl-except/src/arm64/except.rs:528`) to transfer control to the handler. `RtlUnwindEx` unwinds the
+REAL context frame-by-frame via `RtlVirtualUnwind`; for one frame in the
+`memcpy → KmCopyRaw → KmProtectedCopyMemory` chain it computes a garbage `FrameSize`, sets
+`Context.Sp = sp + framesz` to `0xfffffffe35d96540`, and transfers there. The very next exception
+(any) tries to save state at that garbage SP → data abort → the vector re-enters to save state →
+still-garbage SP → data abort → … infinite re-entry in `KiArm64VectorTable`. Only the FIRST fault
+reached Rust because after SP is trashed the vector's own asm prologue faults before it can call the
+Rust handler — which is exactly why the fault-storm hypothesis looked plausible from the GDB "stuck
+in the vector" view but is wrong.
+
+**Why kernel-mode only / why the self-test was worth it.** `seh_poc.c` (a SOFTWARE raise) passes on
+arm64 through the SAME `RtlDispatchException` — because it never traverses the `memcpy`/CRT-shim
+frames whose unwind data trips the decoder. Shipping the `cfg` on the strength of "the symbol
+exists + software raise works" would have turned a hostile-pointer bugcheck into a silent HANG.
+
+**FIX OWED (task #10), now tractable.** Break at `RtlVirtualUnwind` (runtime addr = static +
+reloc), dump `ControlPc` (the frame) and the resulting `Context.Sp` on each call; the call where Sp
+jumps to `0xffff_fffe_…` is the culprit frame. Then decode that function's `.pdata`/`.xdata`
+(`llvm-objdump -s -j .pdata / -j .xdata`) and compare against `unwind_decode::virtual_unwind_xdata`
+/ the packed-format `FrameSize` reconstruction in `except.rs:205-285`. The bug is a `FrameSize`
+(or code-word/word_cursor) mis-decode for a specific unwind-info shape the CRT shims emit. Interim:
+arm64 keeps the plain copy + honest documented gap; i386 likewise. Arch-neutral escape (needs NO
+working SEH, closes both): a Linux-extable-style fault-fixup table consulted in the page-fault
+handler.
+
+**Reusable lessons.** (a) A hypothesis that explains the symptom is not evidence — this one was
+wrong twice. (b) Verify the instrument EMITS before trusting its silence (`[FC]:1` only meant
+something because `[UEXC]` proved the macro). (c) Probe an address that ACTUALLY faults (`0x1` is
+mapped on arm64). (d) "Stuck in the exception vector" can be an SP-corruption artifact, not a fault
+storm — read the SP and compare to entry.
+
+---
+
+### 9.70 (ROOT-CAUSED + FIXED 2026-07-13) An SEH *filter expression* translated into a runtime value — `GlobalLock` returned NULL unconditionally, and every edit box in the OS was dead
+
+**Symptom.** user32's EDIT control was completely broken on *every* arch: `EDIT_LockBuffer` left `es->text == NULL`, and the first thing that touched it (`EDIT_EM_ReplaceSel`, setting the initial text) dereferenced NULL. Notepad, every dialog text field, every edit box — all dead. It had been that way silently, because nothing in the boot path types into an edit control.
+
+**The find.** In `kernel32-rust::client::heapmem::GlobalLock`:
+
+```rust
+let __except_val = EXCEPTION_EXECUTE_HANDLER;   // == 1. A CONSTANT.
+let Ptr = if __except_val != 0 {                // ...so ALWAYS true
+    SetLastError(ERROR_INVALID_HANDLE);
+    core::ptr::null_mut()                       // the handler runs EVERY time
+} else {
+    __try_result                                // the real result: DEAD CODE
+};
+```
+
+The C was the ordinary
+
+```c
+_SEH2_TRY { ...compute Ptr... }
+_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_HANDLE); Ptr = NULL; }
+_SEH2_END;
+```
+
+The translation turned the **filter expression** (`EXCEPTION_EXECUTE_HANDLER`, a compile-time constant meaning "if an exception reaches me, run my handler") into a **runtime value**, and then read `filter != 0` as "an exception occurred". So the handler body executed on every call and the try block's result was thrown away. `GlobalLock` returned NULL unconditionally; `LocalLock` forwards straight to it.
+
+**Why it stayed hidden.** The two callers that matter both *look* like they're checking for failure and both quietly absorb it:
+- `EDIT_LockBuffer` assigns `es->text = LocalLock(...)` and never checks it — the contract is "after a Lock, text is valid" — so the NULL surfaced three frames away as an AV at address 0.
+- `EDIT_WM_NCCreate` computes `es->buffer_size = LocalSize(hloc)/sizeof(WCHAR) - 1`. `LocalSize` fails the same way and returns 0, so `buffer_size` became `0/2 - 1` = **0xFFFFFFFF** — a giant bogus size that nothing range-checked. That `4294967295` in a diagnostic print was the thread that unravelled it.
+
+**The shape to grep for.** An SEH filter is a *predicate evaluated at throw time*, not a value. Any translation that materialises `EXCEPTION_EXECUTE_HANDLER` (or `EXCEPTION_CONTINUE_SEARCH`) into a local and then branches on it has inverted the control flow — the handler becomes the fast path. Sweep: `grep -rn "EXCEPTION_EXECUTE_HANDLER" --include=*.rs` and look for any `if <that> != 0`. Under `USE_DUMMY_PSEH` the correct lowering of a try/except whose body cannot actually fault is simply **the body, with no handler at all**.
+
+**Meta-lesson (compounds with §9.67).** This is the third bug in a row that only a *stock* binary could reach — and the one with the widest blast radius, since it broke a control every real app uses. A hand-written test guest doesn't type into edit boxes. Neither does a boot-to-desktop smoke test. The OS booted green to a desktop for months with every text field in it non-functional; the marker `shell ready` cannot see that. **When a subsystem has no oracle, "green" only means the parts with oracles are green.**
+
+---
+
+### 9.71 (ROOT-CAUSED + FIXED 2026-07-13) A `#ifdef _WIN64` in a syscall list, parsed as flat text — 195 WoW64 syscalls silently misrouted onto their neighbours
+
+**Symptom.** x86 Doom ran beautifully under WoW64 — CRT started, the 4 MB IWAD loaded, the window was created, the game loop pumped, and `NtGdiStretchDIBitsInternal` blitted **4000+ full frames**, each returning 400 scanlines copied. And nothing appeared on screen. The window was in the taskbar. Not one thing had failed.
+
+**Root cause.** The WoW64 thunk table maps *the service number the 32-bit guest puts in EAX* to a host function, so its indices must be the **guest's** numbering. `win32ss/w32ksvc32.h` gates one entry on the host's word size:
+
+```c
+    SVC_(UserSetWindowLong, 4)
+  #ifdef _WIN64
+    SVC_(UserSetWindowLongPtr, 4)     /* 64-bit ONLY: on i386, SetWindowLongPtr IS SetWindowLong */
+  #endif
+    SVC_(UserSetWindowPlacement, 2)
+```
+
+`wow64gen.py` parsed that file with a line regex and **no preprocessor awareness**. On a 64-bit host it therefore included the `_WIN64`-only entry and every service number after it shifted by one. **195 of 736 syscalls dispatched to the wrong function** — off by exactly one slot.
+
+Nothing crashed, because the neighbours are *plausible*: the guest's `NtUserShowWindow` (0x1227) landed on the host's `NtUserShowScrollBar`, which cheerfully accepted the arguments and did nothing useful. Doom's `ShowWindow(SW_SHOW)` became `ShowScrollBar`, so its window never became visible — and it spent the next ninety seconds rendering thousands of frames into a device context nobody could see.
+
+**Why it survived M3–M11.** Every guest before Doom happened to use only syscalls *below* the shift. `NtUserGetDC` is index 400 and correct; the divergence starts at 541. A whole lane of milestones passed through a table that was wrong in its top quarter.
+
+**The lesson, and the general shape.** *A generated table whose indices come from one side of a boundary and whose contents come from the other is only correct where the two agree — and it will not tell you where they stop agreeing.* Two specific traps compounded here:
+
+1. **Parsing a C header with a regex is parsing it wrong.** `#ifdef` is not decoration. If a list is conditionally compiled, the generator has to expand it the same way the *consumer* does — here, with `_WIN64` **undefined**, because the consumer is always a 32-bit guest.
+2. **An off-by-one in a dispatch table is invisible to every failure detector we have.** No fault, no bad status, no `NEEDS MANUAL` line, no ud2. The only oracle is *comparing the table against the thing that actually calls into it*.
+
+**The permanent guard** is exactly that comparison: `tools/wow64gen/verify_svc_numbering.py` disassembles the **real i386 `user32.dll`/`gdi32.dll` syscall stubs** out of the build (the ground truth the guest executes — `movl $0x1227, %eax`), and hard-fails if any of them maps to a different name than the generated table has at that index. It is wired into `vibeos-cli check`. Ground truth beats a second parse of the same header.
+
+### 9.72 (ROOT-CAUSED + FIXED 2026-07-13) The rustconv defect chain behind ole32's silent bugs: one regex hang bypassed the entire post-processor, and `abi_enforce` was throwing away the calling convention it had correctly derived
 
 The ole32 translation shipped ~130 COM vtbl methods with the **Rust ABI** instead of
 `__stdcall`, an export (`StgCreateDocfile`) with no `#[no_mangle]`, all 10 file-scope vtbl

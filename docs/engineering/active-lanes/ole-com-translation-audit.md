@@ -12,7 +12,7 @@ cost: **$3.13**.
 ### The point of this pass was the TOOL, not the translation
 
 We fixed rustconv FIRST, using ole32's shipped defects as evidence, then used oleaut32's
-six files as the proving run. Full causal chain: field manual **§9.66**. Summary:
+six files as the proving run. Full causal chain: field manual **§9.72**. Summary:
 
 | Defect | Consequence | Fix |
 |---|---|---|

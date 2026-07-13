@@ -35,6 +35,19 @@ use std::path::PathBuf;
 /// ```
 /// Hardcoded rather than re-derived at build time so this host crate never
 /// depends on an OS build having been run.
+/// Symbols the refstub deliberately routes into the private `msvcrt_ref_*`
+/// namespace (refstub/msvcrt.h) rather than renaming to `ref_*`.
+///
+/// That namespace is the harness's anti-circularity guarantee: it is what stops
+/// the REFERENCE from ever calling into the CODE UNDER TEST. A symbol in here is
+/// therefore NOT an oracle — the compiled reference does not define an msvcrt
+/// version of it — and anything relying on `ref_<name>` will fail to link.
+///
+/// Consequence: these functions CANNOT be flipped, because they cannot be proved.
+/// Exempt from the drift assertion below (they are intentionally absent from the
+/// rename lists, not missing from them).
+const NAMESPACED_SYMBOLS: &[&str] = &["memmove"];
+
 const PUBLIC_SYMBOLS: &[&str] = &[
     "I10_OUTPUT",
     "__STRINGTOLD",
@@ -117,6 +130,7 @@ const PUBLIC_SYMBOLS: &[&str] = &[
     "memcmp",
     "memcpy",
     "memset",
+    "_mbsdup",
     "strcat",
     "strcat_s",
     "strchr",
@@ -216,6 +230,9 @@ const LP32_LONG_SYMBOLS: &[(&str, &str)] = &[
 /// untranscribed code and are INERT: nothing under test calls them. They are
 /// here so the TU links.
 const WCS_PUBLIC_SYMBOLS: &[&str] = &[
+    "swprintf",
+    "_scwprintf_p",
+    "iswalpha_l",
     "__swprintf_l",
     "_iswalnum_l",
     "_iswalpha_l",
@@ -394,6 +411,67 @@ const WCS_PUBLIC_SYMBOLS: &[&str] = &[
     "wctomb_s",
 ];
 
+/// Every `NAME` in a Wine export banner: ` *  NAME (MSVCRT.@)`.
+fn exported_symbols(src: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in src.lines() {
+        let t = line.trim_start();
+        let Some(rest) = t.strip_prefix('*') else { continue };
+        let rest = rest.trim();
+        let Some(open) = rest.find('(') else { continue };
+        if !rest[open..].starts_with("(MSVCRT.@)") {
+            continue;
+        }
+        let name = rest[..open].trim();
+        if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            out.push(name.to_string());
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Does the TU actually DEFINE `name` (`... name ( ... ) {`), as opposed to only
+/// carrying its banner above an `#if`-disabled body?
+fn defines_symbol(src: &str, name: &str) -> bool {
+    let mut from = 0;
+    while let Some(i) = src[from..].find(name) {
+        let at = from + i;
+        from = at + name.len();
+        // must be a whole identifier
+        let before_ok = at == 0
+            || !src[..at].chars().next_back().map(|c| c.is_alphanumeric() || c == '_').unwrap_or(false);
+        let after = &src[from..];
+        if !before_ok {
+            continue;
+        }
+        let after_trim = after.trim_start();
+        if !after_trim.starts_with('(') {
+            continue;
+        }
+        // scan to the matching ')' then require a '{' (a definition, not a call/decl)
+        let mut depth = 0usize;
+        for (k, c) in after_trim.char_indices() {
+            match c {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        if after_trim[k + 1..].trim_start().starts_with('{') {
+                            return true;
+                        }
+                        break;
+                    }
+                }
+                ';' if depth == 0 => break,
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
 fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     // sdk/lib/rust/msvcrt-difftest → repo root is 4 up.
@@ -463,7 +541,57 @@ fn main() {
         renamed += 1;
     }
     prelude.push_str(
-        "\n/* stage 2: host libc + the Windows type model + the real header's\n\
+        "\n/* ═══ stage 1.5: DISARM glibc's optimization attributes. ═══════════════\n\
+         *\n\
+         * THIS IS LOAD-BEARING. Without it the reference is MISCOMPILED and the\n\
+         * whole harness is lying to you. (§9.66 — it shipped this way through\n\
+         * waves 1-5 and was found in wave 6a.)\n\
+         *\n\
+         * Stage 1 renames `atoi` -> `ref_atoi` BEFORE the host headers, which is\n\
+         * deliberate: glibc then declares `ref_atoi` and we inherit a correct\n\
+         * prototype for free.  But a declaration carries more than a prototype.\n\
+         * glibc's <stdlib.h> says:\n\
+         *\n\
+         *     extern int atoi (const char *) __THROW __attribute_pure__ __nonnull ((1));\n\
+         *\n\
+         * and after stage 1 that is a declaration of *ref_atoi* carrying glibc's\n\
+         * attributes.  Two of them are actively FALSE for msvcrt:\n\
+         *\n\
+         *   __nonnull((1))      glibc promises the arg is never NULL, so the\n\
+         *                       optimizer DELETES msvcrt's `if(!str) return 0;`\n\
+         *                       guard (string.c:1720).  Verified: the guard is\n\
+         *                       absent from the emitted `ref_atoi` — the ONLY\n\
+         *                       reason a NULL fuzz case segfaulted the reference\n\
+         *                       instead of returning 0 like the real DLL does.\n\
+         *\n\
+         *   __attribute_pure__  glibc promises no side effects.  msvcrt's strtol\n\
+         *                       family SETS ERRNO.  A `pure` errno-setting call\n\
+         *                       may legally be CSE'd or elided outright — which\n\
+         *                       would silently corrupt the very errno oracle the\n\
+         *                       `_s`/parse rows are built on.  This one does not\n\
+         *                       crash; it quietly reports the wrong answer.\n\
+         *\n\
+         * The fix is not -fno-delete-null-pointer-checks: that patches the NULL\n\
+         * symptom and leaves `pure` armed.  Instead pull glibc's macro header\n\
+         * FIRST and neuter the macros, so every subsequent declaration comes out\n\
+         * attribute-free.  Prototypes (the thing we actually wanted) survive.\n\
+         *\n\
+         * `tests/ref_integrity.rs` asserts this stays true.\n\
+         */\n\
+         #include <sys/cdefs.h>\n\
+         #undef  __nonnull\n\
+         #define __nonnull(params)\n\
+         #undef  __attribute_pure__\n\
+         #define __attribute_pure__\n\
+         #undef  __attribute_const__\n\
+         #define __attribute_const__\n\
+         #undef  __attr_access\n\
+         #define __attr_access(x)\n\
+         #undef  __attr_access_none\n\
+         #define __attr_access_none(argno)\n\
+         #undef  __wur\n\
+         #define __wur\n\n\
+         /* stage 2: host libc + the Windows type model + the real header's\n\
          * include guard (so the TU's `#include \"msvcrt.h\"` no-ops).  This\n\
          * also pulls glibc's <wchar.h>/<wctype.h> UNDER the 16-bit wchar_t\n\
          * remap, which is what makes ~30 of wcs.c's wide definitions agree\n\
@@ -483,6 +611,54 @@ fn main() {
         renamed,
         all_symbols.len(),
         "rename prelude must cover every public symbol of BOTH reference TUs"
+    );
+
+    // ── the rename list must not DRIFT from the C ────────────────────────────
+    //
+    // The lists above are hand-maintained. The assertion above only proves the
+    // prelude covers THE LIST — it says nothing about whether the list still
+    // covers the SOURCE. It had already drifted: `memmove`, `_mbsdup`,
+    // `swprintf`, `_scwprintf_p` and `iswalpha_l` were exported by the C and
+    // absent from the list, so the reference TU defined them under their PLAIN
+    // names inside the test binary.
+    //
+    // That is not a cosmetic gap — it silently breaks the harness's central
+    // guarantee. The whole point of the ref_* namespace is that the reference can
+    // NEVER bind to the code under test and vice versa. An unrenamed `memmove` is
+    // a plain `memmove` that either side may call, and the moment the subject
+    // flips its own `memmove` it becomes a duplicate-symbol link error (which is
+    // how this was found) — or, worse, silently satisfies the subject's internal
+    // copies with the reference's C.
+    //
+    // So: scrape the C for every `(MSVCRT.@)` export that the file actually
+    // DEFINES, and fail the build if one is missing from the lists. A hand-kept
+    // list that nothing checks is a list that is already wrong.
+    let mut undeclared: Vec<String> = Vec::new();
+    for (path, file) in [("string.c", &string_c), ("wcs.c", &wcs_c)] {
+        let src = fs::read_to_string(file).unwrap();
+        for name in exported_symbols(&src) {
+            // A banner can precede an #if'd-out body; only count real definitions.
+            if !defines_symbol(&src, &name) {
+                continue;
+            }
+            if NAMESPACED_SYMBOLS.contains(&name.as_str()) {
+                continue; // intentionally private, not drifted — see the const's doc
+            }
+            if !all_symbols.iter().any(|s| *s == name) {
+                undeclared.push(format!("{name} ({path})"));
+            }
+        }
+    }
+    assert!(
+        undeclared.is_empty(),
+        "\n\n  RENAME LIST HAS DRIFTED FROM THE C.\n\n  \
+         These symbols are exported AND defined by the reference TUs but are not in\n  \
+         PUBLIC_SYMBOLS / WCS_PUBLIC_SYMBOLS / LP32_LONG_SYMBOLS, so they would be\n  \
+         compiled under their PLAIN names — escaping the ref_* namespace that keeps\n  \
+         the reference and the subject from binding to each other:\n\n    {}\n\n  \
+         Add each to the appropriate list (or to LP32_LONG_SYMBOLS if its glibc\n  \
+         prototype disagrees).\n",
+        undeclared.join("\n    ")
     );
 
     let prelude_h = out.join("ref_prelude.h");
@@ -549,12 +725,28 @@ fn main() {
         .opt_level(2)
         .file(manifest.join("refimpl.c"));
 
+    // The msvcrt internals the CRATE UNDER TEST imports (_errno /
+    // _invalid_parameter). Deliberately its OWN TU with NO refstub include, so
+    // these land un-namespaced — the reference's copies are `msvcrt_ref_*` and
+    // must stay unreachable from the subject (and vice versa: separate errno
+    // storage is what lets classify assert each side independently).
+    let mut subject_build = cc::Build::new();
+    subject_build
+        .warnings(false)
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .opt_level(2)
+        .file(manifest.join("subjectimpl.c"));
+    subject_build.cargo_metadata(false);
+
     // One archive, `libmsvcrt_ref.a` in OUT_DIR, holding all three objects.
     let mut objects: Vec<PathBuf> = Vec::new();
     refimpl_build.cargo_metadata(false);
     objects.extend(ref_tu(&string_c).compile_intermediates());
     objects.extend(ref_tu(&wcs_c).compile_intermediates());
     objects.extend(refimpl_build.compile_intermediates());
+    objects.extend(subject_build.compile_intermediates());
 
     let archive = out.join("libmsvcrt_ref.a");
     let _ = fs::remove_file(&archive);
@@ -584,6 +776,7 @@ fn main() {
     // printf.h is REAL logic (wcs.c instantiates it twice), not a stub.
     println!("cargo:rerun-if-changed={}", msvcrt_dir.join("printf.h").display());
     println!("cargo:rerun-if-changed={}", manifest.join("refimpl.c").display());
+    println!("cargo:rerun-if-changed={}", manifest.join("subjectimpl.c").display());
     println!("cargo:rerun-if-changed={}", refstub.display());
     println!("cargo:rerun-if-changed=build.rs");
 }
