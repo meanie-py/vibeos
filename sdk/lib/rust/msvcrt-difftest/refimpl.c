@@ -91,13 +91,27 @@ void ref_errno_set(int value) { ref_errno_value = value; }
  * to a user handler; the default is "none → return".  A no-op IS the default
  * behaviour, and the errno store — the part that IS a value contract — has
  * already happened inside the macro.
+ *
+ * But "did the handler fire AT ALL?" is itself an observable contract: an app
+ * installs one with _set_invalid_parameter_handler() and it may abort(). So we
+ * COUNT the calls, mirroring subjectimpl.c's counter, and classify compares the
+ * two.  Without this the whole effect is invisible — and it WAS invisible: the
+ * counter existed on the subject side from wave 5 but nothing ever read it, so
+ * `_ultoa_s`-class contracts (which set errno WITHOUT firing the handler) could
+ * not be distinguished from `_ltoa_s`-class ones (which fire it).  See §9.66.
  * ------------------------------------------------------------------ */
+static __thread int ref_invalid_pmt_calls;
+
 void __cdecl _invalid_parameter(const wchar_t *expr, const wchar_t *func,
                                 const wchar_t *file, unsigned int line,
                                 uintptr_t arg)
 {
     (void)expr; (void)func; (void)file; (void)line; (void)arg;
+    ref_invalid_pmt_calls++;
 }
+
+int  ref_invalid_pmt_count(void) { return ref_invalid_pmt_calls; }
+void ref_invalid_pmt_reset(void) { ref_invalid_pmt_calls = 0; }
 
 /* ------------------------------------------------------------------ *
  * Locale — the DEFAULT "C" locale.

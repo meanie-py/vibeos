@@ -134,10 +134,208 @@ extern "C" {
     // the two errno/handler channels — SEPARATE storage per side, on purpose
     fn ref_errno_get() -> i32;          // refimpl.c  (the reference's)
     fn ref_errno_set(v: i32);
+    fn ref_invalid_pmt_count() -> i32;
+    fn ref_invalid_pmt_reset();
     fn subj_errno_get() -> i32;         // subjectimpl.c (the subject's)
     fn subj_errno_set(v: i32);
     fn subj_invalid_pmt_count() -> i32;
     fn subj_invalid_pmt_reset();
+
+    // ── wave 6b: the radix `_s` family (4 contracts, 10 functions) ──
+    fn ref__itoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__ltoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__i64toa_s(v: i64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__ui64toa_s(v: u64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__ultoa_s(v: u32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__itow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__ltow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__i64tow_s(v: i64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__ui64tow_s(v: u64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__ultow_s(v: u32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__strtoi64(s: *const u8, e: *mut *mut u8, b: i32) -> i64;
+
+    fn _itoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _ltoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _i64toa_s(v: i64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _ui64toa_s(v: u64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _ultoa_s(v: u32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _itow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _ltow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _i64tow_s(v: i64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _ui64tow_s(v: u64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _ultow_s(v: u32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _strtoi64(s: *const u8, e: *mut *mut u8, b: i32) -> i64;
+
+    // ── wave 6c: the wide `_s` family, tokenizers, memmove, _strtoui64 ──
+    fn ref_wcscpy_s(d: *mut u16, e: usize, s: *const u16) -> i32;
+    fn ref_wcsncpy_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn ref_wcscat_s(d: *mut u16, e: usize, s: *const u16) -> i32;
+    fn ref_wcsncat_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn ref__wcsnset_s(s: *mut u16, sz: usize, c: u16, n: usize) -> i32;
+    fn ref__wcsset_s(s: *mut u16, n: usize, c: u16) -> i32;
+    fn ref_wcsncpy(d: *mut u16, s: *const u16, n: usize) -> *mut u16;
+    fn ref_wcsnlen(s: *const u16, m: usize) -> usize;
+    fn ref_strtok_s(s: *mut u8, d: *const u8, c: *mut *mut u8) -> *mut u8;
+    fn ref_wcstok_s(s: *mut u16, d: *const u16, c: *mut *mut u16) -> *mut u16;
+    fn ref__strtoui64(s: *const u8, e: *mut *mut u8, b: i32) -> u64;
+
+    fn wcscpy_s(d: *mut u16, e: usize, s: *const u16) -> i32;
+    fn wcsncpy_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn wcscat_s(d: *mut u16, e: usize, s: *const u16) -> i32;
+    fn wcsncat_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn _wcsnset_s(s: *mut u16, sz: usize, c: u16, n: usize) -> i32;
+    fn _wcsset_s(s: *mut u16, n: usize, c: u16) -> i32;
+    fn wcsncpy(d: *mut u16, s: *const u16, n: usize) -> *mut u16;
+    fn wcsnlen(s: *const u16, m: usize) -> usize;
+    fn strtok_s(s: *mut u8, d: *const u8, c: *mut *mut u8) -> *mut u8;
+    fn wcstok_s(s: *mut u16, d: *const u16, c: *mut *mut u16) -> *mut u16;
+    fn _strtoui64(s: *const u8, e: *mut *mut u8, b: i32) -> u64;
+}
+
+/// The four observable effects of a CRT call, as one comparable unit.
+///
+/// WHY THIS TYPE EXISTS. A CRT function's contract is not just "what it wrote"
+/// and "what it returned". For any function that can fail it is also:
+///
+///   3. **errno**  — the value an app tests after the call
+///   4. **did the invalid-parameter handler FIRE** — an app installs one with
+///      `_set_invalid_parameter_handler()`, and it may `abort()`
+///
+/// Effect 4 was the harness's blind spot. `subj_invalid_pmt_count()` existed
+/// from wave 5 and *nothing ever read it* — the wave-5 comment claimed to grade
+/// "all four observable effects" while grading three. That mattered: msvcrt's
+/// radix family has THREE mutually-inconsistent error contracts, and the ONLY
+/// thing separating `_ultoa_s` (sets errno, does NOT fire the handler — it
+/// hand-rolls `*_errno() = EINVAL`) from `_ltoa_s` (fires it, via
+/// MSVCRT_CHECK_PMT) is effect 4. Grading 3-of-4 would have called them equal
+/// and shipped a silently wrong `_ultoa_s`.
+///
+/// Bundling them means a new row cannot *forget* to check one.
+#[derive(PartialEq, Debug)]
+struct Effects { ret: i64, errno: i32, pmt: i32 }
+
+impl Effects {
+    /// Run `f` on the SUBJECT side with both side-channels zeroed first.
+    fn subject(f: impl FnOnce() -> i64) -> Effects {
+        unsafe {
+            subj_errno_set(0);
+            subj_invalid_pmt_reset();
+            let ret = f();
+            Effects { ret, errno: subj_errno_get(), pmt: subj_invalid_pmt_count() }
+        }
+    }
+    /// Run `f` on the REFERENCE side with *its* (separate) side-channels zeroed.
+    fn reference(f: impl FnOnce() -> i64) -> Effects {
+        unsafe {
+            ref_errno_set(0);
+            ref_invalid_pmt_reset();
+            let ret = f();
+            Effects { ret, errno: ref_errno_get(), pmt: ref_invalid_pmt_count() }
+        }
+    }
+}
+
+impl core::fmt::Display for Effects {
+    fn fmt(&self, w: &mut core::fmt::Formatter) -> core::fmt::Result {
+        let e = match self.errno { 0 => "-".into(), 22 => "EINVAL".into(), 34 => "ERANGE".into(),
+                                   80 => "STRUNCATE".into(), n => format!("errno{n}") };
+        write!(w, "ret={} errno={} handler={}", self.ret, e, if self.pmt > 0 { "FIRED" } else { "no" })
+    }
+}
+
+/// Grade a function on ALL FOUR effects at once (no buffer involved).
+fn check_effects(name: &'static str, mut f: impl FnMut(&mut Rng) -> (Effects, Effects, String)) {
+    let mut r = Rng(0x14057B7EF767814F);
+    for _ in 0..20_000 {
+        let (got, want, ctx) = f(&mut r);
+        if got != want {
+            record(name, V::Diverge, format!("[{ctx}]\n        cnt   = {got}\n        msvcrt= {want}"));
+            return;
+        }
+    }
+    record(name, V::Match, String::new());
+}
+
+/// Buffer AND all four effects — for the `_s` family, whose contract is both.
+///
+/// The FULL destination is compared, not just the string up to the NUL. That is
+/// deliberate and load-bearing: on a too-small buffer msvcrt's radix `_s` writes
+/// the digits BACKWARDS into the caller's buffer and only then NULs index 0, so
+/// everything past `[0]` is reversed residue. A "clean" implementation that just
+/// does `str[0] = 0; return ERANGE;` is string-identical and byte-different.
+/// What outcomes did the REFERENCE actually produce across the fuzz?
+///
+/// A row that reports MATCH having only ever exercised the happy path has proved
+/// nothing about the error contracts — and the error contracts are the whole
+/// reason the `_s` family is hard. This is the "a fuzzer only falsifies what it
+/// VARIES" rule (§9.60) turned into a measurement: if `ERANGE` never appears in
+/// the coverage line, the reversed-residue arm was never once executed and its
+/// green is worthless.
+///
+/// Enforced, not just printed: `require` names the outcomes a row MUST hit.
+#[derive(Default)]
+struct Cov { ok: u32, einval: u32, erange: u32, fired: u32 }
+impl Cov {
+    fn see(&mut self, e: &Effects) {
+        match e.ret as i32 { 0 => self.ok += 1, 22 => self.einval += 1, 34 => self.erange += 1, _ => {} }
+        if e.pmt > 0 { self.fired += 1; }
+    }
+    fn line(&self) -> String {
+        format!("ok={} EINVAL={} ERANGE={} handler-fired={}", self.ok, self.einval, self.erange, self.fired)
+    }
+    /// Returns the outcomes that were REQUIRED but never seen.
+    fn missing(&self, require: &[&'static str]) -> Vec<&'static str> {
+        require.iter().copied().filter(|w| match *w {
+            "ok" => self.ok == 0,
+            "EINVAL" => self.einval == 0,
+            "ERANGE" => self.erange == 0,
+            "handler" => self.fired == 0,
+            _ => false,
+        }).collect()
+    }
+}
+
+fn check_buf_fx(name: &'static str, require: &[&'static str],
+                mut f: impl FnMut(&mut Rng) -> (Vec<u8>, Effects, Vec<u8>, Effects, String)) {
+    let mut r = Rng(0x8EBC6AF09C88C6E3);
+    let mut cov = Cov::default();
+    for _ in 0..20_000 {
+        let (gb, ge, wb, we, ctx) = f(&mut r);
+        cov.see(&we);
+        if gb != wb || ge != we {
+            record(name, V::Diverge, format!("[{ctx}]\n        cnt   = {ge}  buf={gb:?}\n        msvcrt= {we}  buf={wb:?}"));
+            return;
+        }
+    }
+    let missing = cov.missing(require);
+    if !missing.is_empty() {
+        record(name, V::Diverge, format!("UNEXERCISED CONTRACT — the fuzz never reached {missing:?}.\n        \
+             This MATCH is worthless: the branch was never run. Widen the generator.\n        coverage: {}", cov.line()));
+        return;
+    }
+    record(name, V::Match, cov.line());
+}
+
+/// `check_buf_fx`'s wide twin.
+fn check_wbuf_fx(name: &'static str, require: &[&'static str],
+                 mut f: impl FnMut(&mut Rng) -> (Vec<u16>, Effects, Vec<u16>, Effects, String)) {
+    let mut r = Rng(0x5851F42D4C957F2D);
+    let mut cov = Cov::default();
+    for _ in 0..20_000 {
+        let (gb, ge, wb, we, ctx) = f(&mut r);
+        cov.see(&we);
+        if gb != wb || ge != we {
+            record(name, V::Diverge, format!("[{ctx}]\n        cnt   = {ge}  buf={gb:?}\n        msvcrt= {we}  buf={wb:?}"));
+            return;
+        }
+    }
+    let missing = cov.missing(require);
+    if !missing.is_empty() {
+        record(name, V::Diverge, format!("UNEXERCISED CONTRACT — the fuzz never reached {missing:?}.\n        \
+             This MATCH is worthless: the branch was never run. Widen the generator.\n        coverage: {}", cov.line()));
+        return;
+    }
+    record(name, V::Match, cov.line());
 }
 
 // ── cnt-rust's #[no_mangle] shims (the code under test) ──
@@ -549,19 +747,117 @@ unsafe fn run() {
          if ref_memchr(a.as_ptr().cast(), c, n).is_null() { -1 } else { ref_memchr(a.as_ptr().cast(), c, n) as i64 - a.as_ptr() as i64 }, format!("c={c} n={n}")) });
 
     // ---- conversions ----
-    check_int("atoi", false, |r| { let a = gen_str(r, 18); (atoi(a.as_ptr()) as i64, ref_atoi(a.as_ptr()) as i64, format!("{a:?}")) });
-    check_int("atol", false, |r| { let a = gen_str(r, 18); (atol(a.as_ptr()) as i64, ref_atol(a.as_ptr()) as i64, format!("{a:?}")) });
-    check_int("_atoi64", false, |r| { let a = gen_str(r, 24); (_atoi64(a.as_ptr()), ref__atoi64(a.as_ptr()), format!("{a:?}")) });
-    check_int("strtol", false, |r| { let a = gen_str(r, 20); let b = [0i32, 2, 8, 10, 16, 36][r.below(6)];
+    //
+    // ═════ WAVE 6a: the integer-parse family, RE-GRADED through all 4 effects ═════
+    //
+    // These were flipped in waves 1-3 and passed — but the grader could only see
+    // VALUE and ENDPTR, because errno/handler observability did not exist until
+    // wave 5 built it. A stronger oracle is worth nothing if you only ever point
+    // it at NEW code, so they are re-entered here through `check_effects`.
+    //
+    // Two blind spots in the OLD rows, both deliberate now:
+    //   * the base set was [0,2,8,10,16,36] — every one of them VALID, so the
+    //     `MSVCRT_CHECK_PMT(base == 0 || base >= 2)` / `(base <= 36)` rejection
+    //     path was never once executed in 20,000 cases.
+    //   * NULL was never passed, so `CHECK_PMT(nptr != NULL)` was never executed.
+    //
+    // Both now are. `gen_str` already emits 0x80-0xFF and control bytes, which is
+    // what exercises the `_isspace_l()` leading-whitespace boundary — the one
+    // place these functions consult the locale. refimpl models the "C" locale, so
+    // a MATCH here proves C-locale equivalence, which is what msvcrt.dll ships
+    // with. (A non-C locale could still diverge; that is Phase D's problem and is
+    // recorded as such in the plan.)
+    const BASES: [i32; 9] = [0, 2, 8, 10, 16, 36, /* now the INVALID ones: */ 1, 37, -1];
+    const BASES2: [i32; 9] = BASES;
+
+    // `gen_str` is a general string fuzzer: random bytes with digits sprinkled in.
+    // The chance it ever emits a 19-DIGIT RUN is ~zero — so in 20,000 cases it
+    // never once drove the parse past _I64_MAX, and the entire saturate/ERANGE
+    // arm of these functions went untested. That is how `_atoi64` shipped on the
+    // kernel's WRAPPING parser while msvcrt's SATURATES: a value divergence that
+    // a value-comparing fuzzer could not see, purely for want of an input.
+    //
+    // A fuzzer only falsifies what it VARIES (§9.60). So generate the boundaries
+    // on purpose: long digit runs, and the exact values the C branches on.
+    fn gen_num_str(r: &mut Rng) -> Vec<u8> {
+        let core: Vec<u8> = match r.below(10) {
+            0 => b"9223372036854775807".to_vec(),   // _I64_MAX exactly       -> no ERANGE
+            1 => b"9223372036854775808".to_vec(),   // _I64_MAX + 1           -> saturate + ERANGE
+            2 => b"-9223372036854775808".to_vec(),  // _I64_MIN exactly       -> no ERANGE
+            3 => b"-9223372036854775809".to_vec(),  // _I64_MIN - 1           -> saturate + ERANGE
+            4 => b"4294967295".to_vec(),            // ULONG_MAX              -> strtoul edge
+            5 => b"4294967296".to_vec(),            // ULONG_MAX + 1          -> strtoul clamps
+            6 => b"-4294967296".to_vec(),           // < -ULONG_MAX           -> strtoul returns *1*
+            7 => b"2147483648".to_vec(),            // LONG_MAX + 1           -> strtol clamps
+            8 => {                                  // a random LONG digit run
+                let n = 15 + r.below(10);
+                let mut v = Vec::new();
+                if r.below(2) == 0 { v.push(b'-'); }
+                for _ in 0..n { v.push(b'0' + r.below(10) as u8); }
+                v
+            }
+            _ => {                                  // hex / octal / 0x-prefix paths
+                let pre: &[u8] = [&b"0x"[..], &b"0X"[..], &b"0"[..], &b""[..]][r.below(4)];
+                let n = 1 + r.below(18);
+                let mut v = pre.to_vec();
+                for _ in 0..n { v.push(b"0123456789abcdefABCDEF"[r.below(22)]); }
+                v
+            }
+        };
+        // wrap with the leading whitespace / sign / trailing-junk the C must skip
+        let mut v = Vec::new();
+        for _ in 0..r.below(3) { v.push(b" \t\n\x0b\x0c\r"[r.below(6)]); }
+        v.extend_from_slice(&core);
+        if r.below(3) == 0 { v.extend_from_slice(b"zz!"); }
+        v.push(0);
+        v
+    }
+    /// Half general-purpose strings, half boundary numerals.
+    fn gen_parse_input(r: &mut Rng) -> Vec<u8> {
+        if r.below(2) == 0 { gen_num_str(r) } else { gen_str(r, 22) }
+    }
+
+    check_effects("atoi", |r| {
+        let a = gen_parse_input(r);
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        (Effects::subject(|| atoi(p) as i64), Effects::reference(|| ref_atoi(p) as i64),
+         if null { "NULL".into() } else { format!("{a:?}") })
+    });
+    check_effects("atol", |r| {
+        let a = gen_parse_input(r);
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        (Effects::subject(|| atol(p) as i64), Effects::reference(|| ref_atol(p) as i64),
+         if null { "NULL".into() } else { format!("{a:?}") })
+    });
+    check_effects("_atoi64", |r| {
+        let a = gen_parse_input(r);
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        (Effects::subject(|| _atoi64(p)), Effects::reference(|| ref__atoi64(p)),
+         if null { "NULL".into() } else { format!("{a:?}") })
+    });
+    check_effects("strtol", |r| {
+        let a = gen_parse_input(r);
+        let b = BASES[r.below(9)];
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
         let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
-        let g = strtol(a.as_ptr(), &mut e1, b); let w = ref_strtol(a.as_ptr(), &mut e2, b);
-        let (o1, o2) = (e1 as i64 - a.as_ptr() as i64, e2 as i64 - a.as_ptr() as i64);
-        (((g as i64) << 8) ^ o1, ((w as i64) << 8) ^ o2, format!("base={b} {a:?} -> {g}/{w} end+{o1}/{o2}")) });
-    check_int("strtoul", false, |r| { let a = gen_str(r, 20); let b = [0i32, 2, 8, 10, 16, 36][r.below(6)];
+        let g = Effects::subject(|| { let v = strtol(p, &mut e1, b); ((v as i64) << 8) ^ (e1 as i64 - p as i64) });
+        let w = Effects::reference(|| { let v = ref_strtol(p, &mut e2, b); ((v as i64) << 8) ^ (e2 as i64 - p as i64) });
+        (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
+    });
+    check_effects("strtoul", |r| {
+        let a = gen_parse_input(r);
+        let b = BASES[r.below(9)];
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
         let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
-        let g = strtoul(a.as_ptr(), &mut e1, b); let w = ref_strtoul(a.as_ptr(), &mut e2, b);
-        let (o1, o2) = (e1 as i64 - a.as_ptr() as i64, e2 as i64 - a.as_ptr() as i64);
-        (((g as i64) << 8) ^ o1, ((w as i64) << 8) ^ o2, format!("base={b} {a:?} -> {g}/{w} end+{o1}/{o2}")) });
+        let g = Effects::subject(|| { let v = strtoul(p, &mut e1, b); ((v as i64) << 8) ^ (e1 as i64 - p as i64) });
+        let w = Effects::reference(|| { let v = ref_strtoul(p, &mut e2, b); ((v as i64) << 8) ^ (e2 as i64 - p as i64) });
+        (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
+    });
 
     // ---- mutators (compare destination bytes + returned pointer offset) ----
     check_buf("strcpy", |r| { let s = gen_str(r, 30);
@@ -814,4 +1110,227 @@ unsafe fn run() {
         let p1 = _wcsnset(d1.as_mut_ptr(), c, n); let p2 = ref__wcsnset(d2.as_mut_ptr(), c, n);
         let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
         (d1, o1, d2, o2, format!("c={c:04x} n={n}")) });
+
+    // ═════ WAVE 6b: the radix `_s` family ═════════════════════════════════════
+    //
+    // Ten functions, FOUR contracts (see msvcrt-crt-rust's wave-6b banner). The
+    // fuzz has to actually REACH each contract branch, so `size` is drawn small
+    // enough to be too small most of the time, `radix` includes out-of-range
+    // values, and NULL is drawn deliberately:
+    //
+    //   size  : 0..12  vs values needing up to 65 digits (base 2) -> ERANGE is COMMON
+    //   radix : 2..36 valid, plus 0/1/37/-1 invalid               -> EINVAL front door
+    //   str   : NULL 1-in-32                                      -> EINVAL front door
+    //
+    // and the FULL buffer is compared, which is what catches the reversed residue.
+    fn radix_of(r: &mut Rng) -> i32 {
+        match r.below(8) {
+            0 => 0, 1 => 1, 2 => 37, 3 => -1,      // the invalid ones
+            _ => 2 + r.below(35) as i32,           // 2..=36
+        }
+    }
+    // Skew hard to the extremes: i32::MIN/i64::MIN are where the
+    // `value < 0 && radix == 10` sign rule and the unsigned reinterpret collide.
+    fn v32(r: &mut Rng) -> i32 { match r.below(6) { 0 => i32::MIN, 1 => i32::MAX, 2 => 0, 3 => -1, _ => r.next() as i32 } }
+    fn v64(r: &mut Rng) -> i64 { match r.below(6) { 0 => i64::MIN, 1 => i64::MAX, 2 => 0, 3 => -1, _ => r.next() as i64 } }
+    fn vu64(r: &mut Rng) -> u64 { match r.below(5) { 0 => 0, 1 => u64::MAX, 2 => u32::MAX as u64, _ => r.next() } }
+    fn vu32(r: &mut Rng) -> u32 { match r.below(5) { 0 => 0, 1 => u32::MAX, 2 => 1, _ => r.next() as u32 } }
+
+    macro_rules! radix_s_n {
+        ($name:literal, $subj:ident, $refr:ident, $gen:ident, $req:expr) => {
+            check_buf_fx($name, $req, |r| {
+                let v = $gen(r);
+                let rx = radix_of(r);
+                let sz = r.below(13);
+                let null = r.below(32) == 0;
+                let (mut d1, mut d2) = (vec![0xAAu8; 72], vec![0xAAu8; 72]);
+                let (p1, p2) = if null { (core::ptr::null_mut(), core::ptr::null_mut()) }
+                               else { (d1.as_mut_ptr(), d2.as_mut_ptr()) };
+                let g = Effects::subject(|| $subj(v, p1, sz, rx) as i64);
+                let w = Effects::reference(|| $refr(v, p2, sz, rx) as i64);
+                (d1, g, d2, w, format!("v={v} radix={rx} size={sz}{}", if null { " str=NULL" } else { "" }))
+            });
+        };
+    }
+    macro_rules! radix_s_w {
+        ($name:literal, $subj:ident, $refr:ident, $gen:ident, $req:expr) => {
+            check_wbuf_fx($name, $req, |r| {
+                let v = $gen(r);
+                let rx = radix_of(r);
+                let sz = r.below(13);
+                let null = r.below(32) == 0;
+                let (mut d1, mut d2) = (vec![0xAAAAu16; 72], vec![0xAAAAu16; 72]);
+                let (p1, p2) = if null { (core::ptr::null_mut(), core::ptr::null_mut()) }
+                               else { (d1.as_mut_ptr(), d2.as_mut_ptr()) };
+                let g = Effects::subject(|| $subj(v, p1, sz, rx) as i64);
+                let w = Effects::reference(|| $refr(v, p2, sz, rx) as i64);
+                (d1, g, d2, w, format!("v={v} radix={rx} size={sz}{}", if null { " str=NULL" } else { "" }))
+            });
+        };
+    }
+
+    radix_s_n!("_itoa_s",    _itoa_s,    ref__itoa_s,    v32, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_n!("_ltoa_s",    _ltoa_s,    ref__ltoa_s,    v32, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_n!("_i64toa_s",  _i64toa_s,  ref__i64toa_s,  v64, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_n!("_ui64toa_s", _ui64toa_s, ref__ui64toa_s, vu64, &["ok", "EINVAL", "handler"]);
+    radix_s_n!("_ultoa_s",   _ultoa_s,   ref__ultoa_s,   vu32, &["ok", "EINVAL", "ERANGE"]);
+    radix_s_w!("_itow_s",    _itow_s,    ref__itow_s,    v32, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_w!("_ltow_s",    _ltow_s,    ref__ltow_s,    v32, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_w!("_i64tow_s",  _i64tow_s,  ref__i64tow_s,  v64, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_w!("_ui64tow_s", _ui64tow_s, ref__ui64tow_s, vu64, &["ok", "EINVAL", "handler"]);
+    radix_s_w!("_ultow_s",   _ultow_s,   ref__ultow_s,   vu32, &["ok", "EINVAL", "ERANGE"]);
+
+    // _strtoi64 — the engine strtol/_atoi64 sit on, now exported directly.
+    check_effects("_strtoi64", |r| {
+        let a = gen_parse_input(r);
+        let b = BASES2[r.below(9)];
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
+        let g = Effects::subject(|| { let v = _strtoi64(p, &mut e1, b); v ^ (e1 as i64 - p as i64) });
+        let w = Effects::reference(|| { let v = ref__strtoi64(p, &mut e2, b); v ^ (e2 as i64 - p as i64) });
+        (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
+    });
+
+
+    // ═════ WAVE 6c: the wide `_s` family, tokenizers, memmove, _strtoui64 ═════
+    //
+    // The four wide `_s` writers each have a DIFFERENT handler contract (see the
+    // msvcrt-crt-rust banner), so each row's `require` list encodes it — and a
+    // wrong list fails loudly as UNEXERCISED rather than passing quietly:
+    //
+    //   wcscpy_s   handler on every error          -> require handler
+    //   wcsncpy_s  handler on the front door only  -> require ERANGE *and* handler
+    //   wcscat_s   handler NEVER                   -> require ok/EINVAL/ERANGE, NOT handler
+    //   wcsncat_s  handler on everything           -> require handler
+    check_wbuf_fx("wcscpy_s", &["ok", "EINVAL", "ERANGE", "handler"], |r| {
+        let src = gen_wstr(r, 20);
+        let elem = r.below(24);
+        let null_src = r.below(32) == 0;
+        let sp = if null_src { core::ptr::null() } else { src.as_ptr() };
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        let g = Effects::subject(|| wcscpy_s(d1.as_mut_ptr(), elem, sp) as i64);
+        let w = Effects::reference(|| ref_wcscpy_s(d2.as_mut_ptr(), elem, sp) as i64);
+        (d1, g, d2, w, format!("elem={elem} srclen={}{}", src.len()-1, if null_src { " src=NULL" } else { "" }))
+    });
+    check_wbuf_fx("wcsncpy_s", &["ok", "EINVAL", "ERANGE"], |r| {
+        let src = gen_wstr(r, 20);
+        let elem = r.below(24);
+        let count = match r.below(5) { 0 => usize::MAX, 1 => 0, _ => r.below(24) };
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        let g = Effects::subject(|| wcsncpy_s(d1.as_mut_ptr(), elem, src.as_ptr(), count) as i64);
+        let w = Effects::reference(|| ref_wcsncpy_s(d2.as_mut_ptr(), elem, src.as_ptr(), count) as i64);
+        let cs = if count == usize::MAX { "_TRUNCATE".into() } else { count.to_string() };
+        (d1, g, d2, w, format!("elem={elem} count={cs} srclen={}", src.len()-1))
+    });
+    check_wbuf_fx("wcscat_s", &["ok", "EINVAL", "ERANGE"], |r| {
+        let src = gen_wstr(r, 14);
+        let pre = gen_wstr(r, 10);
+        let elem = r.below(28);
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        d1[..pre.len()].copy_from_slice(&pre); d2[..pre.len()].copy_from_slice(&pre);
+        let g = Effects::subject(|| wcscat_s(d1.as_mut_ptr(), elem, src.as_ptr()) as i64);
+        let w = Effects::reference(|| ref_wcscat_s(d2.as_mut_ptr(), elem, src.as_ptr()) as i64);
+        (d1, g, d2, w, format!("elem={elem} prelen={} srclen={}", pre.len()-1, src.len()-1))
+    });
+    check_wbuf_fx("wcsncat_s", &["ok", "EINVAL", "ERANGE", "handler"], |r| {
+        let src = gen_wstr(r, 14);
+        let pre = gen_wstr(r, 10);
+        let elem = r.below(28);
+        let count = match r.below(5) { 0 => usize::MAX, 1 => 0, _ => r.below(20) };
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        d1[..pre.len()].copy_from_slice(&pre); d2[..pre.len()].copy_from_slice(&pre);
+        let g = Effects::subject(|| wcsncat_s(d1.as_mut_ptr(), elem, src.as_ptr(), count) as i64);
+        let w = Effects::reference(|| ref_wcsncat_s(d2.as_mut_ptr(), elem, src.as_ptr(), count) as i64);
+        let cs = if count == usize::MAX { "_TRUNCATE".into() } else { count.to_string() };
+        (d1, g, d2, w, format!("elem={elem} count={cs} prelen={} srclen={}", pre.len()-1, src.len()-1))
+    });
+    check_wbuf_fx("_wcsnset_s", &["ok", "EINVAL", "handler"], |r| {
+        let s = gen_wstr(r, 24);
+        let size = r.below(28);
+        let count = r.below(28);
+        let c = 0x41 + r.below(26) as u16;
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAAAA); d2.resize(40, 0xAAAA);
+        let g = Effects::subject(|| _wcsnset_s(d1.as_mut_ptr(), size, c, count) as i64);
+        let w = Effects::reference(|| ref__wcsnset_s(d2.as_mut_ptr(), size, c, count) as i64);
+        (d1, g, d2, w, format!("size={size} count={count} c={c:04x} len={}", s.len()-1))
+    });
+    check_wbuf_fx("_wcsset_s", &["ok", "EINVAL", "handler"], |r| {
+        let s = gen_wstr(r, 24);
+        let n = r.below(28);
+        let c = 0x41 + r.below(26) as u16;
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAAAA); d2.resize(40, 0xAAAA);
+        let g = Effects::subject(|| _wcsset_s(d1.as_mut_ptr(), n, c) as i64);
+        let w = Effects::reference(|| ref__wcsset_s(d2.as_mut_ptr(), n, c) as i64);
+        (d1, g, d2, w, format!("n={n} c={c:04x} len={}", s.len()-1))
+    });
+
+    check_wbuf("wcsncpy", |r| {
+        let s = gen_wstr(r, 24); let n = r.below(30);
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        let p1 = wcsncpy(d1.as_mut_ptr(), s.as_ptr(), n);
+        let p2 = ref_wcsncpy(d2.as_mut_ptr(), s.as_ptr(), n);
+        let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
+        (d1, o1, d2, o2, format!("n={n} srclen={}", s.len()-1))
+    });
+    check_int("wcsnlen", false, |r| {
+        let s = gen_wstr(r, 30); let m = r.below(34);
+        (wcsnlen(s.as_ptr(), m) as i64, ref_wcsnlen(s.as_ptr(), m) as i64, format!("m={m}"))
+    });
+
+    // Tokenizers: drive a FULL tokenisation loop, not one call — the contract is
+    // the sequence of tokens and the final ctx, not any single return.
+    check_buf("strtok_s", |r| {
+        let mut s1 = gen_str(r, 26); let delim = gen_str(r, 4);
+        let mut s2 = s1.clone();
+        let (mut c1, mut c2) = (core::ptr::null_mut::<u8>(), core::ptr::null_mut::<u8>());
+        let (mut out1, mut out2) = (Vec::new(), Vec::new());
+        let mut p1 = strtok_s(s1.as_mut_ptr(), delim.as_ptr(), &mut c1);
+        let mut p2 = ref_strtok_s(s2.as_mut_ptr(), delim.as_ptr(), &mut c2);
+        let mut guard = 0;
+        while (!p1.is_null() || !p2.is_null()) && guard < 40 {
+            out1.push(if p1.is_null() { -1 } else { p1 as isize - s1.as_ptr() as isize } as i64);
+            out2.push(if p2.is_null() { -1 } else { p2 as isize - s2.as_ptr() as isize } as i64);
+            p1 = strtok_s(core::ptr::null_mut(), delim.as_ptr(), &mut c1);
+            p2 = ref_strtok_s(core::ptr::null_mut(), delim.as_ptr(), &mut c2);
+            guard += 1;
+        }
+        // fold the token-offset sequence into the compared buffer
+        let b1: Vec<u8> = s1.iter().copied().chain(out1.iter().map(|v| *v as u8)).collect();
+        let b2: Vec<u8> = s2.iter().copied().chain(out2.iter().map(|v| *v as u8)).collect();
+        (b1, out1.len() as isize, b2, out2.len() as isize, format!("delim={delim:?} tokens={out1:?}/{out2:?}"))
+    });
+    check_wbuf("wcstok_s", |r| {
+        let mut s1 = gen_wstr(r, 26); let delim = gen_wstr(r, 4);
+        let mut s2 = s1.clone();
+        let (mut c1, mut c2) = (core::ptr::null_mut::<u16>(), core::ptr::null_mut::<u16>());
+        let (mut out1, mut out2) = (Vec::new(), Vec::new());
+        let mut p1 = wcstok_s(s1.as_mut_ptr(), delim.as_ptr(), &mut c1);
+        let mut p2 = ref_wcstok_s(s2.as_mut_ptr(), delim.as_ptr(), &mut c2);
+        let mut guard = 0;
+        while (!p1.is_null() || !p2.is_null()) && guard < 40 {
+            out1.push(if p1.is_null() { -1i64 } else { ((p1 as isize - s1.as_ptr() as isize) / 2) as i64 });
+            out2.push(if p2.is_null() { -1i64 } else { ((p2 as isize - s2.as_ptr() as isize) / 2) as i64 });
+            p1 = wcstok_s(core::ptr::null_mut(), delim.as_ptr(), &mut c1);
+            p2 = ref_wcstok_s(core::ptr::null_mut(), delim.as_ptr(), &mut c2);
+            guard += 1;
+        }
+        let b1: Vec<u16> = s1.iter().copied().chain(out1.iter().map(|v| *v as u16)).collect();
+        let b2: Vec<u16> = s2.iter().copied().chain(out2.iter().map(|v| *v as u16)).collect();
+        (b1, out1.len() as isize, b2, out2.len() as isize, format!("tokens={out1:?}/{out2:?}"))
+    });
+
+    check_effects("_strtoui64", |r| {
+        let a = gen_parse_input(r);
+        let b = BASES2[r.below(9)];
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
+        let g = Effects::subject(|| { let v = _strtoui64(p, &mut e1, b); (v as i64) ^ (e1 as i64 - p as i64) });
+        let w = Effects::reference(|| { let v = ref__strtoui64(p, &mut e2, b); (v as i64) ^ (e2 as i64 - p as i64) });
+        (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
+    });
+
 }

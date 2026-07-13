@@ -57,6 +57,16 @@ name = "oob_guard"
 path = "tests/oob_guard.rs"
 harness = false
 
+# The oracle auditing ITSELF. Every other test here treats the compiled
+# string.c/wcs.c as ground truth; this one asks whether the host's headers
+# rewrote that truth on the way in. They did: glibc's __nonnull/__attribute_pure__
+# leaked onto the renamed reference symbols and deleted msvcrt's NULL guards.
+# A harness whose reference is miscompiled reports confident nonsense (§9.66).
+[[test]]
+name = "ref_integrity"
+path = "tests/ref_integrity.rs"
+harness = false
+
 # Throughput gate. classify.rs grades BEHAVIOUR, so a semantically perfect but
 # orders-of-magnitude slower body scores MATCH — which is how wave 2's per-byte
 # write_volatile memset shipped and blew the net suite's timeouts (71s -> 208s).
