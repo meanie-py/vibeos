@@ -253,6 +253,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The WoW64 win32k thunk table must be indexed by the GUEST's (i386) syscall
+    # numbers, not the host's. w32ksvc32.h gates NtUserSetWindowLongPtr on
+    # `#ifdef _WIN64`, so parsing it as flat text on a 64-bit host shifts every
+    # service number after it by one — 195 syscalls silently misrouted onto their
+    # neighbours (no fault: the signatures are plausible, the calls just do the
+    # wrong thing). x86 Doom's ShowWindow became ShowScrollBar. Field manual
+    # §9.71. This compares the generated table against the REAL i386 stubs
+    # disassembled out of the built user32/gdi32 — hard fail on any divergence.
+    vsn = repo / "tools" / "wow64gen" / "verify_svc_numbering.py"
+    specs.append(
+        (
+            "verify_svc_numbering",
+            [py, str(vsn)] if vsn.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Same-crate extern-decl vs #[no_mangle]-def calling-convention drift: UB
     # that LLVM resolves by silently DELETING the calling branch on i386 (no
     # ud2, no link error — the desktop-icons U32AccelCacheLock bug, field

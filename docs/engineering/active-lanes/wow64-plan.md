@@ -783,3 +783,57 @@ BUGCHECK. The A/B control (`TryStartNativeTestGui`) is what made the last bug fi
 when native and WoW64 failed *identically* the bug was shared (kernel32's GlobalLock);
 the moment native passed and WoW64 didn't, the remaining delta was a stale guest
 kernel32 in the ramdisk. Keep the control.
+
+## M12: x86 DOOM under WoW64 on arm64 — the north star
+
+`tools/doom/build.sh i386` → doomgeneric's Win32/GDI backend, a genuinely foreign
+mingw binary that has never heard of ReactOS. Its import closure is **exactly the
+same 53 modules testgui needs**, so M11's closure work covered it with nothing added.
+Staged into `syswow64/` (+ the 4 MB shareware IWAD) and spawned by
+`winlogon-rust::TryStartWow64Doom` (silent no-op unless staged; it also suppresses
+the testgui pair and notepad, which would otherwise sit on top of DOOM's window —
+doomgeneric creates its window at `CW_USEDEFAULT` and never calls
+`SetForegroundWindow`).
+
+**It runs.** Under FEX on arm64, the x86 binary:
+- starts through msvcrt's CRT and binds its whole import graph,
+- opens and reads the 4 MB IWAD (`NtReadFile` ×934),
+- registers its class, creates its window, and **`NtUserShowWindow` shows it**
+  (it appears in the taskbar as "DOOM Shareware"),
+- pumps messages (`NtUserPeekMessage` ×4000+) and paces frames (`NtDelayExecution`),
+- and **renders**: `NtGdiStretchDIBitsInternal` ×4000+, each copying 400 scanlines.
+
+### The bug it found: 195 misrouted syscalls (field manual §9.71)
+
+DOOM was the first guest to call a win32k syscall above index 541 — and there the
+thunk table was **off by one**. `w32ksvc32.h` gates `NtUserSetWindowLongPtr` on
+`#ifdef _WIN64`; `wow64gen.py` parsed the file as flat text, included that entry on
+the 64-bit host, and shifted every service number after it. The guest's
+`NtUserShowWindow` (0x1227) dispatched to the host's `NtUserShowScrollBar`. Nothing
+faulted — the neighbours have plausible signatures — so DOOM's window simply never
+became visible while it happily rendered thousands of frames into a DC nobody could
+see. Fixed by making `parse_sysfuncs` expand the list **as the 32-bit guest does**,
+and permanently guarded by `tools/wow64gen/verify_svc_numbering.py` (wired into
+`vibeos-cli check`), which compares the generated table against the REAL i386 syscall
+stubs disassembled out of the build.
+
+### OWED: DOOM's frames don't reach the screen
+
+DOOM renders, but the pixels don't land in its window. **This is NOT a WoW64 bug** —
+the A/B control proves it: the NATIVE arm64 build of the same doomgeneric
+(`VIBEOS_DOOM_AB=1` stages it into system32) misrenders the same way, painting its
+framebuffer *outside* its own window (over whatever else is on the desktop).
+
+The shape: doomgeneric does
+
+```c
+    s_Hdc = GetDC(hwnd);        /* window not yet visible */
+    ShowWindow(hwnd, SW_SHOW);  /* becomes visible AFTER the DC was cached */
+    ...
+    StretchDIBits(s_Hdc, ...);  /* forever, into that one cached DC */
+```
+
+so the DC's visible region is computed while the window is hidden and must be
+recomputed when it is shown (`DceResetActiveDCEs` / DCE visrgn invalidation). That
+is win32k/GDI territory, not the WoW64 layer — it belongs to a win32k lane. The
+WoW64 side of DOOM is done.

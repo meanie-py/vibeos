@@ -6037,3 +6037,32 @@ The translation turned the **filter expression** (`EXCEPTION_EXECUTE_HANDLER`, a
 **The shape to grep for.** An SEH filter is a *predicate evaluated at throw time*, not a value. Any translation that materialises `EXCEPTION_EXECUTE_HANDLER` (or `EXCEPTION_CONTINUE_SEARCH`) into a local and then branches on it has inverted the control flow — the handler becomes the fast path. Sweep: `grep -rn "EXCEPTION_EXECUTE_HANDLER" --include=*.rs` and look for any `if <that> != 0`. Under `USE_DUMMY_PSEH` the correct lowering of a try/except whose body cannot actually fault is simply **the body, with no handler at all**.
 
 **Meta-lesson (compounds with §9.67).** This is the third bug in a row that only a *stock* binary could reach — and the one with the widest blast radius, since it broke a control every real app uses. A hand-written test guest doesn't type into edit boxes. Neither does a boot-to-desktop smoke test. The OS booted green to a desktop for months with every text field in it non-functional; the marker `shell ready` cannot see that. **When a subsystem has no oracle, "green" only means the parts with oracles are green.**
+
+---
+
+### 9.71 (ROOT-CAUSED + FIXED 2026-07-13) A `#ifdef _WIN64` in a syscall list, parsed as flat text — 195 WoW64 syscalls silently misrouted onto their neighbours
+
+**Symptom.** x86 Doom ran beautifully under WoW64 — CRT started, the 4 MB IWAD loaded, the window was created, the game loop pumped, and `NtGdiStretchDIBitsInternal` blitted **4000+ full frames**, each returning 400 scanlines copied. And nothing appeared on screen. The window was in the taskbar. Not one thing had failed.
+
+**Root cause.** The WoW64 thunk table maps *the service number the 32-bit guest puts in EAX* to a host function, so its indices must be the **guest's** numbering. `win32ss/w32ksvc32.h` gates one entry on the host's word size:
+
+```c
+    SVC_(UserSetWindowLong, 4)
+  #ifdef _WIN64
+    SVC_(UserSetWindowLongPtr, 4)     /* 64-bit ONLY: on i386, SetWindowLongPtr IS SetWindowLong */
+  #endif
+    SVC_(UserSetWindowPlacement, 2)
+```
+
+`wow64gen.py` parsed that file with a line regex and **no preprocessor awareness**. On a 64-bit host it therefore included the `_WIN64`-only entry and every service number after it shifted by one. **195 of 736 syscalls dispatched to the wrong function** — off by exactly one slot.
+
+Nothing crashed, because the neighbours are *plausible*: the guest's `NtUserShowWindow` (0x1227) landed on the host's `NtUserShowScrollBar`, which cheerfully accepted the arguments and did nothing useful. Doom's `ShowWindow(SW_SHOW)` became `ShowScrollBar`, so its window never became visible — and it spent the next ninety seconds rendering thousands of frames into a device context nobody could see.
+
+**Why it survived M3–M11.** Every guest before Doom happened to use only syscalls *below* the shift. `NtUserGetDC` is index 400 and correct; the divergence starts at 541. A whole lane of milestones passed through a table that was wrong in its top quarter.
+
+**The lesson, and the general shape.** *A generated table whose indices come from one side of a boundary and whose contents come from the other is only correct where the two agree — and it will not tell you where they stop agreeing.* Two specific traps compounded here:
+
+1. **Parsing a C header with a regex is parsing it wrong.** `#ifdef` is not decoration. If a list is conditionally compiled, the generator has to expand it the same way the *consumer* does — here, with `_WIN64` **undefined**, because the consumer is always a 32-bit guest.
+2. **An off-by-one in a dispatch table is invisible to every failure detector we have.** No fault, no bad status, no `NEEDS MANUAL` line, no ud2. The only oracle is *comparing the table against the thing that actually calls into it*.
+
+**The permanent guard** is exactly that comparison: `tools/wow64gen/verify_svc_numbering.py` disassembles the **real i386 `user32.dll`/`gdi32.dll` syscall stubs** out of the build (the ground truth the guest executes — `movl $0x1227, %eax`), and hard-fails if any of them maps to a different name than the generated table has at that index. It is wired into `vibeos-cli check`. Ground truth beats a second parse of the same header.

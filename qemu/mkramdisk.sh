@@ -547,6 +547,28 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
                 echo "[*] VIBEOS_FEX=1 — staging system32/testgui.exe (native A/B control)"
                 mcopy -o -i "$RAMDISK_IMG" "$TESTGUI_NATIVE" ::/reactos/system32/testgui.exe
             fi
+
+            # M12 — THE NORTH STAR: x86 Doom under WoW64. doomgeneric's Win32/GDI
+            # backend built for i386 (tools/doom/build.sh i386): a genuinely foreign
+            # mingw binary. Its import closure is the SAME 53 modules staged above,
+            # so nothing extra is needed beyond the exe + the IWAD.
+            DOOM32="${VIBEOS_DOOM32_EXE:-$PROJECT_DIR/tools/doom/doom-i386.exe}"
+            DOOMWAD="${VIBEOS_DOOM_WAD:-$PROJECT_DIR/tools/doom/doom1.wad}"
+            if [ -f "$DOOM32" ] && [ -f "$DOOMWAD" ]; then
+                echo "[*] VIBEOS_FEX=1 — staging syswow64/doom.exe + doom1.wad (M12: x86 DOOM)"
+                mcopy -o -i "$RAMDISK_IMG" "$DOOM32" ::/reactos/syswow64/doom.exe
+                mcopy -o -i "$RAMDISK_IMG" "$DOOMWAD" ::/reactos/syswow64/doom1.wad
+                # A/B control, same idea as the native testgui: the NATIVE arm64
+                # build of the very same doomgeneric. VIBEOS_DOOM_AB=1 stages it
+                # into system32 so both run side by side and a rendering failure
+                # can be attributed to the WoW64 layer or to win32k.
+                DOOM_NATIVE="${VIBEOS_DOOM_NATIVE:-$PROJECT_DIR/tools/doom/doom-arm64.exe}"
+                if [ "${VIBEOS_DOOM_AB:-0}" = "1" ] && [ -f "$DOOM_NATIVE" ]; then
+                    echo "[*] VIBEOS_DOOM_AB=1 — staging system32/doom.exe + doom1.wad (native A/B)"
+                    mcopy -o -i "$RAMDISK_IMG" "$DOOM_NATIVE" ::/reactos/system32/doom.exe
+                    mcopy -o -i "$RAMDISK_IMG" "$DOOMWAD" ::/reactos/system32/doom1.wad
+                fi
+            fi
         fi
         # gui32.exe — the win32k-thunk guest (winlogon TryStartWow64Gui).
         GUI32="${VIBEOS_GUI32_EXE:-$PROJECT_DIR/build-fex-hello/gui32.exe}"
