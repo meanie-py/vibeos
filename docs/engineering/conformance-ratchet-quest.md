@@ -565,3 +565,21 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   reached mainline. Fix: serialize the net stage under the host lock (it's the one wall-clock-
   sensitive stage and multiple lanes gate concurrently), or fail the gate on ANY net attempt failing
   rather than accepting a retry.
+
+- 2026-07-13: **Task #7 real triage captured (MmMapLockedPagesSpecifyCache).** Un-quarantined
+  locally + built the amd64 kmtest payload + reproduced under the kernel debugger:
+  `BUGCHECK code=0x1000 P1=0x401 P2=0xfffff6800000d300 P3=0x1ca0001f P4=0xfffff88000252be9`
+  (ntoskrnl kbase `0xfffff80000000000`). **P2 is a PTE self-map address** (base
+  `0xfffff68000000000` + `0xd300` → maps user VA ~`0x1a60000`); **P3 is a VALID PTE value**
+  (PFN `0x1ca00`, flags `0x1f`); **P4 is a DRIVER address** (`0xfffff880…` = the test driver
+  mmmaplockedpagesspecifycache_drv.sys). The params (a valid PTE where one is unexpected) point at
+  a double-map / stale-PTE / PFN-share-count inconsistency. **Ruled out:** the
+  `MiMapLockedPagesInUserSpace` map loop (`mdlsup.rs:255-321`) is a FAITHFUL translation of the C
+  (`mdlsup.c:176-266`) — `Pfn1`=page-table PFN, share-count++, cache attrs, and
+  `MiIncrementPageTableReferences` all match. So the bug is in a RELATED path (PDE creation, PFN
+  handling, the unmap path, or driver interaction), not the map loop. The `KeBugCheckEx` backtrace
+  broke (spinning in the bugcheck handler), and `code=0x1000` is not a grep-able literal in the
+  Rust Mm path. **Owed next step:** a reliable repro — break `KeBugCheckEx`, read `rcx`(code)/
+  `rdx`/`r8`/`r9` + the symbolicated caller return address for the exact call site, then diff that
+  path vs C. NtCreateSection 0x50 (PAGE_FAULT_IN_NONPAGED_AREA) still un-triaged at this depth.
+  Both stay quarantined. (This is a genuinely deep MM bug; the triage above is the head start.)
