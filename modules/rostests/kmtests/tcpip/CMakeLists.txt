@@ -9,6 +9,7 @@ list(APPEND TCPIP_TEST_DRV_SOURCE
 
 add_library(tcpip_drv MODULE ${TCPIP_TEST_DRV_SOURCE})
 set_module_type(tcpip_drv kernelmodedriver)
+kmt_enable_native_seh(tcpip_drv)
 target_link_libraries(tcpip_drv kmtest_printf ${PSEH_LIB})
 add_importlibs(tcpip_drv ntoskrnl hal)
 target_compile_definitions(tcpip_drv PRIVATE KMT_STANDALONE_DRIVER)

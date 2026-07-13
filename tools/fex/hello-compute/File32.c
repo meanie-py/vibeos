@@ -33,6 +33,7 @@
 #define SELF_PATH  "C:\\ReactOS\\syswow64\\hello32.exe"
 #define TEMP_PATH  "C:\\ReactOS\\syswow64\\file32.tmp"
 #define FIND_GLOB  "C:\\ReactOS\\syswow64\\*"
+#define FIND_GLOB_W L"C:\\ReactOS\\syswow64\\*"
 #define FIND_WANT  "hello32.exe"
 
 static void Report(const char *msg)
@@ -77,7 +78,7 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     BYTE pattern[256];
     WIN32_FIND_DATAA fd;
     HANDLE find;
-    int i, found;
+    int i, found, nfound;
 
     /* ---- rung 1: open + size (NtOpenFile, NtQueryInformationFile) --------- */
     Report("[file32] start: opening " SELF_PATH "\n");
@@ -211,8 +212,10 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
         Report("[file32] FAIL: FindFirstFileA over syswow64 found nothing\n");
         ExitProcess(FILE32_FAIL_FIND);
     }
+    nfound = 0;
     do
     {
+        nfound++;
         if (StrEqI(fd.cFileName, FIND_WANT))
             found = 1;
     } while (!found && FindNextFileA(find, &fd));
@@ -220,6 +223,55 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
 
     if (!found)
     {
+        /* Self-triage: re-run the SAME scan through the WIDE API. It shares the
+         * directory scan and skips only the wide->ANSI down-conversion, so it
+         * says which half is broken — and it prints the names, which is what you
+         * want when the ANSI ones came back blank.
+         *
+         * As of 2026-07-12 this is a LIVE BUG: with a large syswow64 (the M11
+         * 53-module import closure) every ANSI cFileName comes back EMPTY —
+         * even "." — while the wide names are perfect. With the old 9-file
+         * syswow64 the ANSI names were fine, so it is exposed by, not caused by,
+         * the bigger directory. See wow64-plan.md "OWED: FindFirstFileA". */
+        WIN32_FIND_DATAW fdw;
+        HANDLE findw;
+        ReportHex("[file32] entries enumerated before the scan ended =", nfound);
+        Report("[file32] the ANSI scan never yielded " FIND_WANT
+               " — retrying through the WIDE API to localise it\n");
+        findw = FindFirstFileW(FIND_GLOB_W, &fdw);
+        if (findw != INVALID_HANDLE_VALUE)
+        {
+            int wfound = 0;
+            do
+            {
+                char nameA[MAX_PATH];
+                int k = 0;
+                while (k < MAX_PATH - 1 && fdw.cFileName[k])
+                {
+                    nameA[k] = (char)fdw.cFileName[k]; /* ASCII-only, deliberately crude */
+                    k++;
+                }
+                nameA[k] = 0;
+                Report("[file32]   direntW: '");
+                Report(nameA);
+                Report("'\n");
+                if (StrEqI(nameA, FIND_WANT))
+                    wfound = 1;
+            } while (!wfound && FindNextFileW(findw, &fdw));
+            FindClose(findw);
+            if (wfound)
+                Report("[file32] DIAGNOSIS: the WIDE enumeration DID find it. The directory "
+                       "scan (NtQueryDirectoryFile) is fine; FindFirstFileA's wide->ANSI "
+                       "down-conversion is what's broken.\n");
+            else
+                Report("[file32] DIAGNOSIS: the WIDE enumeration missed it too — the "
+                       "directory scan itself is wrong, not the ANSI conversion.\n");
+        }
+    }
+
+    if (!found)
+    {
+        ReportHex("[file32] entries enumerated before the scan ended =", nfound);
         Report("[file32] FAIL: directory enumeration never yielded " FIND_WANT "\n");
         ExitProcess(FILE32_FAIL_FIND);
     }

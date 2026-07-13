@@ -1580,6 +1580,19 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         SehPocRun();
     }
 
+    // Per-boot tripwire for the FAULT-TOLERANT COPY (ntoskrnl/kmsafecopy.c).
+    // SehPocRun above only proves a *software* raise dispatches; safe_copy_* depends
+    // on a real HARDWARE page fault being caught (KiPageFault -> MmAccessFault ->
+    // KiDispatchException -> __except). Nothing was checking that end-to-end. Prints
+    // `[KMSAFECOPY] ... (PASS)`; a FAIL means the copy is silently unprotected.
+    #[cfg(target_arch = "x86_64")]
+    {
+        extern "C" {
+            fn KmSafeCopySelfTest() -> i32;
+        }
+        KmSafeCopySelfTest();
+    }
+
     #[cfg(target_arch = "aarch64")]
     if IoInitSucceeded == 0 {
         ExpInitializationPhase += 1;
