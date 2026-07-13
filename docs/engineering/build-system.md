@@ -97,12 +97,52 @@ fallbacks (drift-guarded by `tools/check_committed_drift.py` / `vibeos-cli check
 ## Cargo target model — builtin triple vs `-Z build-std`
 
 Two ways rustc gets `core`/`alloc`/`compiler_builtins`:
-- **Builtin triple** (`x86_64-pc-windows-gnu`, `aarch64-pc-windows-gnullvm`) — rustc uses
-  *prebuilt* std for the exact triple. Used for **amd64 + arm64**.
+- **Builtin triple** (`x86_64-pc-windows-gnu`, `aarch64-pc-windows-gnullvm`) — rustc links
+  the *prebuilt* std that rustup ships for the exact triple. Used for **amd64 + arm64**,
+  by BOTH the library crates and (since 2026-07-12) the 42 `*-cargo` link cells. **These
+  arches are entirely on pinned STABLE rustc** (`rust-toolchain.toml`).
 - **`-Z build-std` + custom `.json`** — rustc compiles std from source for a bespoke
-  target. Used for **i386** (the `i686-kernel.json` no-SSE **softfloat** kernel target;
-  no prebuilt std exists for it). `compiler_builtins` supplies what LLVM *calls but
-  doesn't define* (softfloat `__addsf3`/`__floatdisf`; arm64 outline atomics).
+  target. The **only** remaining user is **i386** (`i686-kernel.json`, the no-SSE
+  **softfloat** kernel target — `rustc-abi: x86-softfloat` has no builtin triple, so no
+  prebuilt std can exist). That cell alone needs nightly (pinned in `.rust-nightly`), and
+  it is *retired* by the wow64 lane rather than fixed. `compiler_builtins` supplies what
+  LLVM *calls but doesn't define* (softfloat `__addsf3`/`__floatdisf`).
+
+**The policy lives in `gcc.cmake:add_cargo_module`** and is mirrored in three re-runners
+that must stay in sync: `tests/qemu/cli/lints.py`, `tools/cargo_orchestrate.py`, and
+`sdk/lib/rust/cargo-cell-args.sh` (the dev helper scripts source that last one).
+
+Moving the cells onto the builtin triples means the target spec is rustc's, not ours, so
+three things it used to give us are restored/neutralised at build+link time instead:
+- **`-C force-frame-pointers=yes`** — the retired json said `frame-pointer: always`; the
+  builtin triples default to may-omit (x86_64) / non-leaf (aarch64). Load-bearing: the
+  kernel debug toolkit walks the frame chain (`qemu/inspect.sh bt`).
+- **`-C link-self-contained=no`** (amd64 only) — x86_64-pc-windows-gnu declares
+  `crt-objects-fallback: mingw`, which would prepend the user-mode CRT startup objects
+  (crt2.o/dllcrt2.o) to a kernel module. aarch64-pc-windows-gnullvm *rejects* the flag and
+  needs no equivalent.
+- **Empty CRT stub archives** (`reactos-link`) — both triples name the user-mode CRT in
+  `late-link-args` (`-lmsvcrt -lgcc -lkernel32 …`) and rustc offers no way to suppress
+  them, so an empty `libmsvcrt.a` etc. on a preceding `-L` shadows every one. This is a
+  deliberate HARD WALL: a symbol we fail to provide becomes a LOUD undefined-symbol error
+  naming it, instead of being silently satisfied by the user-mode CRT (which would graft
+  an msvcrt.dll import onto a kernel driver).
+- **`libmemcmp.a` fallback** — dropping build-std loses
+  `-Z build-std-features=compiler-builtins-mem`, and the precompiled `core` calls `memcmp`.
+  ntoskrnl.exe exports memcpy/memset/memmove on every arch but `memcmp` only on x86_64, so
+  reactos-link links `sdk/lib/crt/libmemcmp.a` LAST in the link group — a pure fallback, so
+  any cell that already defines memcmp keeps its own.
+  **Never hand-write mem\* in Rust to plug this** — it self-recurses; see field manual §9.60.
+
+Trade-offs measured on the 2026-07-12 cutover (amd64): ntoskrnl `.text` **+0.4%** (flat),
+most modules **−16…−29%**, but small modules that only *touch* `core` grow sharply (bootvid
++115%, hal +77%) because `x86_64-pc-windows-gnu` sets `function-sections: false`, so
+`--gc-sections` cannot strip unused `core` functions and one reference drags in a whole
+codegen unit — build-std used to compile `core` with our `codegen-units=256`, giving
+fine-grained dead-code elimination for free. Net ISO impact **+0.2%**. arm64 has the mirror
+image (`function-sections: true`) and *shrinks*: hal −85%, csrss −80%, ntoskrnl −2.9%.
+`-Z function-sections` is nightly-only, so amd64's coarse granularity is not fixable on
+stable — accepted.
 
 ## The `--allow-multiple-definition` link flag
 

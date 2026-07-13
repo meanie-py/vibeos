@@ -149,67 +149,78 @@ floating channel). Meanwhile upstream had **already removed** the `VaListImpl` /
 
 ---
 
-## Axis B — `-Z build-std` + the 122 target JSONs. **THE REMAINING WORK.**
+## Axis B — `-Z build-std` + the 122 target JSONs. **DONE (2026-07-12).**
 
-The 42 `*-cargo` link cells. This is the real nightly *toolchain* dependency.
+The 42 `*-cargo` link cells now build the **builtin triples on pinned stable**. `-Z build-std`
+and the 80 amd64/arm64 target JSONs are **gone**; only i386 keeps a custom json + nightly.
 
-**Spike (2026-07-11, proven):** a complete **stable** link of `swenum-cargo` on both amd64
-and arm64 whose PE import table is **byte-identical** to the nightly-JSON build. Recipe, all
-mechanical, no source changes:
-1. builtin triple — `x86_64-pc-windows-gnu` / `aarch64-pc-windows-gnullvm` (precompiled std).
-2. `RUSTFLAGS`: `-C panic=abort -C force-frame-pointers=yes -C linker=<llvm-mingw clang>`,
-   **plus amd64-only** `-C link-self-contained=no` (the gnullvm/arm64 target *rejects* it).
-3. **Neutralize the builtin CRT late-link** (`-lgcc_eh -lgcc -lmsvcrt -lmingwex …`, which the
-   kernel JSON has none of): point `-L<stubdir>` at a dir of **empty `llvm-ar` archives**.
-4. **Supply mem intrinsics statically** (precompiled core lacks what
-   `-Zbuild-std-features=compiler-builtins-mem` provided): prepend `libmemcmp.a` +
-   `libcntpr_rust.a`.
+### What shipped
+- `gcc.cmake:add_cargo_module` selects per ARCH: i386 → `i686-kernel.json` + nightly +
+  `-Z build-std`; amd64 → `x86_64-pc-windows-gnu`; arm64 → `aarch64-pc-windows-gnullvm`.
+  The engine hook already existed (`kernel_build_std = kernel && target.is_json()`), so a
+  builtin target auto-drops build-std for the inner body build too.
+- **80 target JSONs deleted** (42 `x86_64-kernel.json` + 38 `aarch64-kernel.json`). The drift
+  they had accumulated (3 amd64 variants, 2 arm64) is gone with them.
+- `reactos-link`: empty CRT **stub archives** on a preceding `-L` (walls off the builtin
+  triples' `late-link-args` — `-lmsvcrt -lgcc -lkernel32 …`), `libmemcmp.a` linked LAST in the
+  group as a pure fallback, and `-C force-frame-pointers=yes` restored on the body crates.
+- Policy is mirrored in `tests/qemu/cli/lints.py`, `tools/cargo_orchestrate.py`, and the new
+  `sdk/lib/rust/cargo-cell-args.sh` (sourced by the six dev helper scripts, so they stop
+  carrying six private copies of it).
 
-**Bonus win — the 122 JSONs have DRIFTED.** amd64 has **3** distinct spec variants, arm64
-**2**, i386 **2**. Cells are silently on different specs (`swenum`'s arm64 spec has no
-`features` at all; `ntoskrnl`'s has `+neon,+outline-atomics`). Migrating collapses 122
-hand-maintained files into **3 builtin triples + explicit `-C` flags** — a correctness win
-independent of "stable".
+### What the plan got WRONG (all four watch-items were mis-predicted)
+- **`.text` does NOT grow ~2.4× on the kernel.** ntoskrnl amd64 is **+0.4%** — flat — and its
+  *file* shrank 7.5%. Most modules **shrank 16–29%**. The growth is real only for small modules
+  that merely *touch* `core` (bootvid +115%, hal +77%): `x86_64-pc-windows-gnu` sets
+  `function-sections: false`, so `--gc-sections` can't strip unused `core` functions and one
+  reference drags a whole codegen unit in. build-std used to compile `core` with our
+  `codegen-units=256`, which gave fine-grained DCE for free. Net ISO: **+0.2%**. Accepted —
+  `-Z function-sections` is nightly-only, so it is not fixable on stable.
+- **arm64 does not "lose `+outline-atomics`" — it GAINS them**, and it *shrinks* rather than
+  grows: `aarch64-pc-windows-gnullvm` has `function-sections: true`, the mirror image of amd64,
+  so gc actually bites. hal −85%, csrss −80%, bootvid −77%, ntoskrnl −2.9%.
+- **`-C linker=` in RUSTFLAGS was the wrong lever.** It's a *config key*, so it belongs in
+  `.cargo/config.toml`, where it COMPOSES with an env `RUSTFLAGS` instead of being clobbered by
+  it (env RUSTFLAGS *replaces* config `rustflags` wholesale).
+- **`-C link-self-contained=no` is amd64-only.** gnullvm rejects it outright at bin-link time
+  ("not supported on this target") — it links no CRT objects to begin with.
 
-**Risks / watch items:**
-- `.text` grows **~2.4×** on swenum (59K→139K) — precompiled unwind-carrying core vs the
-  build-std-slimmed one. Fine for a driver; **measure on ntoskrnl before migrating the
-  kernel.** Drivers/user DLLs can go first regardless.
-- **arm64 loses `+outline-atomics`** (in `ntoskrnl`'s JSON, absent from the builtin). Given
-  the field manual already records an arm64 outline-atomics BUGCHECK, dropping the runtime
-  LSE dispatch is plausibly a *win* in a freestanding kernel — but it is a codegen change to
-  validate, not assume.
-- `abi-return-struct-as-int` — **discharged, blocks nothing** (see the correction above).
+### The bug this uncovered — §9.60, a CLOAK
+Dropping build-std hung **both** arches at boot with an empty serial log. Root cause was NOT the
+migration: `bootvid-rust` had defined its own `memcpy`/`memset` whose bodies were
+`copy_nonoverlapping`/`write_bytes` — which LLVM lowers back into a **call to themselves**. They
+compiled to a literal `jmp .`. It never fired because `compiler-builtins-mem` had been linking a
+correct competing definition that won under `--allow-multiple-definition`. Removing build-std
+removed the competitor and elected the broken twin.
 
-**i386 kernel: DON'T.** It stays on `i686-kernel.json` + nightly, blocked on
-`rustc-abi: x86-softfloat`. Independently re-confirmed 2026-07-12: compiling a **plain
-integer loop** (no floats at all) for the builtin `i686-pc-windows-gnu` emits **19 xmm + 1
-x87** instruction (LLVM auto-vectorizes with SSE2) vs **zero** under `i686-kernel.json`. The
-i386 kernel does not save/restore XMM across traps, so the builtin triple would silently
-scribble user-mode FPU state. Retired by the wow64 lane, not fixed here.
+**The generalisable lesson: removing a redundant definition is not "cleanup" — it elects a new
+winner, and the new winner has never run.** (Same shape as Axis A's cdrom `TracePrint` cloak.)
 
-### Plan of record (Axis B)
-1. **Stable link mode in `reactos-link`.** The engine ALREADY has the hook: it gates
-   build-std on `kernel_build_std = kernel && target.is_json()`, so a **builtin (non-JSON)
-   target auto-drops build-std** and falls through to the precompiled-std path. Add the
-   builtin-triple selection + the stub-`-L` dir + the `libmemcmp.a`/`libcntpr_rust.a`
-   prepend + per-arch RUSTFLAGS. Wire the empty-archive stubdir generation (a tiny
-   `llvm-ar` step) into the build.
-2. **Flip the outer drive per opted-in cell.** `add_cargo_module` (`sdk/cmake/gcc.cmake`)
-   pins the nightly + `--target *.json` + `-Z build-std`. For amd64/arm64 opted-in cells,
-   flip to stable + builtin triple.
-3. **Order:** a driver first (swenum — the proven one), then user DLLs, then **measure
-   `.text` on ntoskrnl** before doing the kernel. Each flip: boot-validate the arch, then
-   ×3-gate before landing.
+Permanent detector: **`tools/scan_self_recursive.py`** (wired into the lint gate beside
+`scan_ud2`) — flags any function whose first instruction jumps to its own entry. It immediately
+found **30 more** pre-existing silent-hang landmines (23× a C `exp2()` folded into self-recursion
+by the same LLVM idiom; classpnp's `KeRaiseIrql`/`KeLowerIrql` stubs; ftfd's `loop {}` panic
+handler). Those are baselined in `tools/lint-baseline/scan_self_recursive.txt` — tracked and
+**owed**, not accepted; the gate fails on anything NEW.
+
+**i386 kernel: UNTOUCHED, by design.** It stays on `i686-kernel.json` + nightly, blocked on
+`rustc-abi: x86-softfloat`. Re-confirmed 2026-07-12: compiling a **plain integer loop** (no
+floats at all) for the builtin `i686-pc-windows-gnu` emits **19 xmm + 1 x87** instructions (LLVM
+auto-vectorizes with SSE2) vs **zero** under `i686-kernel.json`. The i386 kernel does not
+save/restore XMM across traps, so the builtin triple would silently scribble user-mode FPU state.
+Retired by the wow64 lane, not fixed here.
 
 ## Definition of done
 - ✅ Axis A: zero nightly *language* features; `RUSTC_BOOTSTRAP` gone from the tree.
 - ✅ Toolchain pinned + single-sourced.
-- ✅ ABI-return-struct audit discharged.
-- ☐ amd64 + arm64: no `*-cargo` cell uses `-Z build-std`; all on stable.
-- ☐ ntoskrnl `.text` delta measured + recorded (accept/defer the kernel itself).
-- ☐ ×3 gate green.
-- ☐ i386 kernel untouched + labeled as wow64-retirement scope.
+- ✅ ABI-return-struct audit discharged (proven inert on x86_64/aarch64 — only the 32-bit x86
+  callconv reads it; empirically verified byte-identical IR).
+- ✅ amd64 + arm64: no `*-cargo` cell uses `-Z build-std`; all on pinned stable.
+- ✅ 80 amd64/arm64 target JSONs deleted; drift eliminated.
+- ✅ ntoskrnl `.text` delta measured + recorded (amd64 +0.4%, arm64 −2.9% — kernel included, not
+  deferred).
+- ✅ i386 kernel untouched + labeled as wow64-retirement scope.
+- ✅ ×3 gate green.
 
 ## Pointers
 - Shim pattern: `sdk/lib/rust/varargs-rust/` (+ `rust_varargs_shim.c.template`);
@@ -217,7 +228,11 @@ scribble user-mode FPU state. Retired by the wow64 lane, not fixed here.
 - reactos-link engine: `sdk/lib/rust/reactos-link/src/lib.rs` (`rust_user_target`,
   `is_json`/`kernel_build_std` gate, `Linker::new`, `ModuleKind`).
 - Outer drive: `sdk/cmake/gcc.cmake` (`add_cargo_module`).
-- Target specs: `sdk/lib/rust/*-cargo/{i686,x86_64,aarch64}-kernel.json` (122 of them).
+- Target spec: `sdk/lib/rust/*-cargo/i686-kernel.json` (42 — the ONLY ones left; the 80
+  amd64/arm64 jsons were deleted on land).
+- Cargo policy (keep the 4 copies in sync): `sdk/cmake/gcc.cmake:add_cargo_module` (production),
+  `tests/qemu/cli/lints.py`, `tools/cargo_orchestrate.py`, `sdk/lib/rust/cargo-cell-args.sh`.
+- Self-recursion detector: `tools/scan_self_recursive.py` + `tools/lint-baseline/scan_self_recursive.txt`.
 - Full analysis: `../archive/cargo-target-model-builtin-vs-buildstd.md`,
   `../archive/execution-context-ownership-model.md` §"Toolchain reality (v3)".
 - Roadmap ledger entry (retire on land): `docs/product/vibeos-roadmap.md` §Owed-work
@@ -225,7 +240,8 @@ scribble user-mode FPU state. Retired by the wow64 lane, not fixed here.
 
 ## Verify the current matrix
 ```bash
-grep -hoE "--target [^ ]*\.json|--target (i686|x86_64)-pc-windows-gnu|--target aarch64-pc-windows-gnullvm" \
+# amd64/arm64 must show ONLY the builtin triple + no -Z build-std; i386 only the json.
+grep -hoE -- "--target [^ ]*\.json|--target (i686|x86_64)-pc-windows-gnu|--target aarch64-pc-windows-gnullvm|-Z build-std[^ ]*" \
   build-<arch>/build.ninja | sort | uniq -c
 grep -rl RUSTC_BOOTSTRAP --include=CMakeLists.txt .   # must be empty
 grep -rn '#!\[feature(' sdk/lib/rust --include=*.rs   # must be empty

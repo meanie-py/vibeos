@@ -123,17 +123,23 @@ kerneldll|kernelexe|kernelmodedriver|win32dll|win32exe|efi|native]
 [BODY_CRATE <rust-staticlib>] [BODY_CRATES …] [EXTRA_DEPENDS …] [NO_CD]
 [DESTINATION] [NAME_ON_CD])` lives in `sdk/cmake/gcc.cmake`.
 `add_cargo_kernel_dll` is a thin
-`KIND=kerneldll` wrapper. It runs `cargo +nightly build --release --target
-<crate>/<stem>.json -Z build-std=core,alloc,compiler_builtins -Z
-build-std-features=compiler-builtins-mem -p <crate> --bin <bin>` (WORKING_DIRECTORY
-`sdk/lib/rust`, output at `sdk/lib/rust/target/<stem>/release/<bin>.exe`), then
+`KIND=kerneldll` wrapper. It runs `cargo build --release --target <target> -p <crate>
+--bin <bin>` (WORKING_DIRECTORY `sdk/lib/rust`, output at
+`sdk/lib/rust/target/<stem>/release/<bin>.exe`), then
 does KIND-specific post-link: **kerneldll** = `native-pefixup --kerneldll` (+ i386
 `fix_lld_forwarding.py`); **kernelexe** = `native-pefixup --kernel` (+ i386 fwd
 fix) [ntoskrnl/ntkrnlmp]; **kernelmodedriver** = `native-pefixup
 --kernelmodedriver` (+ i386 fwd fix) [win32k.sys]; **efi** = strip `.rossym` +
-`--strip-all`; **native** =
-none. ARCH→json stem is `i686`/`x86_64`/`aarch64-kernel`; `<bin>` = crate name
-minus the `-cargo` suffix.
+`--strip-all`; **native** = none. `<bin>` = crate name minus the `-cargo` suffix.
+
+**ARCH → target** (since 2026-07-12, stable-toolchain Axis B — see `build-system.md`
+§"Cargo target model"): **amd64** → `x86_64-pc-windows-gnu`, **arm64** →
+`aarch64-pc-windows-gnullvm` — the BUILTIN triples on pinned **stable**, precompiled std,
+**no `-Z build-std`**, plus `RUSTFLAGS=-C force-frame-pointers=yes` (and amd64-only
+`-C link-self-contained=no`). **i386** → `<crate>/i686-kernel.json` + pinned nightly +
+`-Z build-std=core,alloc,compiler_builtins -Z build-std-features=compiler-builtins-mem`;
+it is the last build-std cell (needs `rustc-abi: x86-softfloat`) and retires with wow64.
+The `<stem>` (cargo's `target/<stem>/` subdir) is the target triple, or `i686-kernel` on i386.
 
 win32k.sys (the largest module after ntoskrnl) is the kernelmodedriver
 template: `ModuleKind::KernelDll` already equals the kernelmodedriver link-flag

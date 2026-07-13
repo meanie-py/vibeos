@@ -53,7 +53,7 @@ fn main() {
             false,
         ),
         "x86_64" => (
-            "x86_64-kernel.json",
+            "x86_64-pc-windows-gnu",
             "ntoskrnl-amd64.rc.res",
             "KiSystemStartup",
             vec![

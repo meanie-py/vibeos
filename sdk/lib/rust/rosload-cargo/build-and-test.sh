@@ -22,15 +22,18 @@ set -euo pipefail
 
 ARCH="${1:-i386}"
 case "$ARCH" in
-  i386)  TARGET_JSON="rosload-cargo/i686-kernel.json";   SMOKE_ARCH="i386-uefi" ;;
-  amd64) TARGET_JSON="rosload-cargo/x86_64-kernel.json"; SMOKE_ARCH="amd64-uefi" ;;
+  i386)  SMOKE_ARCH="i386-uefi" ;;
+  amd64) SMOKE_ARCH="amd64-uefi" ;;
   *) echo "usage: $0 [i386|amd64]  (arm64 is UEFI-only, no rosload)" >&2; exit 1 ;;
 esac
 
 cd "$(dirname "$0")/../../../.."  # → repo root
 
-# Pinned nightly, single-sourced from the repo root (see rust-toolchain.toml).
-VIBEOS_NIGHTLY="$(cat "$PWD/.rust-nightly")"
+# Shared cargo-invocation policy (builtin triple on amd64, nightly + build-std
+# on i386). Sets CELL_TARGET / CELL_STEM / CELL_STD / CELL_TOOLCHAIN.
+VIBEOS_ROOT="$PWD" . sdk/lib/rust/cargo-cell-args.sh
+cell_args "$ARCH" rosload-cargo || exit 1
+
 REPO="$(pwd)"
 BUILD_DIR="build-$ARCH"
 
@@ -51,14 +54,13 @@ echo "[1/3] Refreshing cmake-built inputs (ninja rosload, $ARCH) ..."
 # ---- 2. Cargo-driven native link ----------------------------------------
 echo "[2/3] Cargo build (rosload-cargo, $ARCH) ..."
 cd sdk/lib/rust
-cargo "+${VIBEOS_NIGHTLY}" build --release \
-    --target "$TARGET_JSON" \
-    -Z build-std=core,alloc,compiler_builtins \
-    -Z build-std-features=compiler-builtins-mem \
+# shellcheck disable=SC2086  # CELL_TOOLCHAIN/CELL_STD are deliberately word-split
+cargo $CELL_TOOLCHAIN build --release \
+    --target "$CELL_TARGET" \
+    $CELL_STD \
     -p rosload-cargo --bin rosload
 
-TGT_TRIPLE="$(basename "$TARGET_JSON" .json)"
-CARGO_EXE="$(pwd)/target/$TGT_TRIPLE/release/rosload.exe"
+CARGO_EXE="$(pwd)/target/$CELL_STEM/release/rosload.exe"
 echo "    produced: $CARGO_EXE ($(stat -c %s "$CARGO_EXE") bytes)"
 
 # ---- 3. Swap into livecd + smoke (opt-in via $RUN_SMOKE=1) ---------------

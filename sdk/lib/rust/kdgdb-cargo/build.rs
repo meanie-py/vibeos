@@ -21,7 +21,7 @@ fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
         "x86" => ("i686-kernel.json", "___ImageBase", 0x0001_0000),
-        "x86_64" => ("x86_64-kernel.json", "__ImageBase", 0x0001_0000),
+        "x86_64" => ("x86_64-pc-windows-gnu", "__ImageBase", 0x0001_0000),
         other => panic!("kdgdb-cargo: unsupported arch {other} (i386/amd64 only; kdgdb has no arm64)"),
     };
 
