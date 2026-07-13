@@ -5442,6 +5442,37 @@ Armed oracle inventory (all on branch, to be de-armed before landing): 0x54
 (KxQueueReadyThread on DeferredReady); prints [RQRUNNING] (benign-window
 breadcrumb) [RQTEAR] [RQDOUBLE] [RQDEFER2] [RQ5A] [RQ5C] [RQ5D].
 
+**2026-07-13 (e) — evening rounds: every WAKER acquitted; the anomaly is now
+"running thread in ready-flight" with all doors guarded.** Round-by-round:
+- ×32 post-16/16: 29/32, **0x5D fired ×2** — threads found DEFERRED-PARKED while
+  being the outgoing CurrentThread at the preempt/exit-dispatcher requeues
+  (traphandler:109, wait.rs:396→now 427/429). So something wakes RUNNING threads.
+- **0x5E** (KiUnwaitThread on non-Waiting = spurious unwait, WaitStatus names the
+  waker class) + **0x5F** (gate pop of non-GateWait): both **SILENT** across ×32 —
+  unwait and gate funnels are CLEAN. (Also: a 0x54 read as "state=GateWait" was a
+  P2 MISREAD — that byte is the PRIORITY; the RQLINKED companion print showed
+  state=Ready. Always cross-check P2 decodes against the companion dumps.)
+- **0x60** (manual queue wake in KeInsertQueue — bypasses KiUnwaitThread, so 0x5E
+  is blind to it; fingerprint WaitReason=0): **SILENT** — queue wake clean.
+- **In-flight oracle lifecycle v2**: mark at defer-push, unmark at
+  PROMOTION-to-Running (7 sites: KiSwapThreadImpl ×3, KiExitDispatcher,
+  KiQuantumEnd, KiDpcInterruptHandler, amd64 idle loop — the idle loop was missed
+  first and leaks marks), requeue variant (no collision check) for the legal
+  repositioners: KiSetPriorityThread ×2, KiUpdateEffectiveAffinity ×2, balmgr
+  boost re-defer (missed first → 0/32 false-0x59s, every boot, caller 114 —
+  LESSON: enumerate ALL repositioners before arming a wake-to-run mark).
+- v2 ×32: 29/32 — **0x59 STILL SILENT** (no double-push even wake→run), hits =
+  0x5D ×2 + **0x5A** (drain-insert already-linked, state=Ready, reason=31
+  =WrDispatchInt → last touched by the DPC-preempt requeue). Breadcrumb: the
+  drain observed a chain node with **state=Running mid-walk**, and one drain ran
+  with dispLockHeld=1. Reading: a wake races the victim's own preempt-requeue
+  (both orderings caught), waker STILL unidentified — all guarded funnels pass.
+- Current instrument: **waker identity stamping** — RQ_WAKER_LINE parallel array
+  records each defer's caller line (Requeue=9000); 0x5A/0x5D dumps now print
+  `deferred_by=<line>`, naming the waker retroactively at the catch point.
+  Remaining unguarded readier if deferred_by comes back useless: KeReadyThread
+  (thrdobj — stack-inswap; would need state==Transition guard).
+
 **2026-07-13 SPLITTER RESULT — MIXED, so it is TWO faces, not one:**
 `[RQRUNNING]` now prints `dispLockHeld`. Across a burst:
 - **`dispLockHeld=1` AND `state=5`=Waiting** (both held cases): the readier HOLDS the
