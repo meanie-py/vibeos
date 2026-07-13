@@ -2965,3 +2965,139 @@ pub unsafe extern "C" fn _wcsupr(str_: *mut u16) -> *mut u16 {
     wcscase_s_core(str_, usize::MAX, true);
     str_
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WAVE 9 — the wide ctype family (`isw*`), 26 functions
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// These look locale-bound and are NOT. `_iswctype_l` takes a `_locale_t` and
+// then **never uses it**:
+//
+//     INT CDECL _iswctype_l( wchar_t wc, wctype_t type, _locale_t locale )
+//     {
+//         if (wc == WEOF)  return 0;
+//         if (wc < 256)    return MSVCRT__pwctype[wc] & type;
+//         if (!GetStringTypeW(CT_CTYPE1, &wc, 1, &ct)) return 0;
+//         return ct & type;                          /* `locale` unused */
+//     }
+//
+// So there is no `locinfo->...` field to reach into — no magic-offset problem —
+// and the whole family (including every `_l` variant) is flippable.
+//
+// Better still: reading `MSVCRT__pwctype` and calling `GetStringTypeW` means the
+// flip is locale-CORRECT, not merely C-locale-correct. In the DLL that global is
+// msvcrt's own table (repopulated by setlocale) and GetStringTypeW is kernel32's
+// real Unicode classifier. This carries NONE of the caveat the parse and
+// case-folding families carry — it inherits msvcrt's locale state instead of
+// modelling it.
+//
+// `towupper`/`towlower` are NOT here: `_towlower_l` reads
+// `locinfo->lc_handle[LC_CTYPE]` and calls LCMapStringW, and that field IS a
+// struct offset we don't own. They stay C until Phase D.
+
+extern "C" {
+    /// msvcrt's wide ctype table — a POINTER to 256 WORDs of mask bits.
+    /// In msvcrt.dll this is the real table; in the harness, subjectimpl.c's.
+    static MSVCRT__pwctype: *const u16;
+
+    /// kernel32's Unicode classifier — the `wc >= 256` path.
+    fn GetStringTypeW(kind: u32, src: *const u16, count: i32, chartype: *mut u16) -> i32;
+}
+
+// ctype.h mask bits.
+const CT_UPPER: u16 = 0x0001;
+const CT_LOWER: u16 = 0x0002;
+const CT_DIGIT: u16 = 0x0004;
+const CT_SPACE: u16 = 0x0008;
+const CT_PUNCT: u16 = 0x0010;
+const CT_CONTROL: u16 = 0x0020;
+const CT_BLANK: u16 = 0x0040;
+const CT_HEX: u16 = 0x0080;
+const CT_ALPHA: u16 = 0x0100 | CT_UPPER | CT_LOWER;
+/// `CT_CTYPE1` — GetStringTypeW's "character type 1" request.
+const CT_CTYPE1: u32 = 1;
+/// `WEOF` — the wide end-of-file sentinel, classified as nothing.
+const WEOF: u32 = 0xFFFF;
+
+/// `_iswctype_l(wc, type, locale)` — `locale` is accepted and ignored, exactly as
+/// in the C. Everything else in this section is a mask applied through here.
+#[no_mangle]
+pub unsafe extern "C" fn _iswctype_l(wc: u32, ty: u16, _locale: *mut core::ffi::c_void) -> i32 {
+    if wc == WEOF {
+        return 0;
+    }
+    if wc < 256 {
+        return ((*MSVCRT__pwctype.add(wc as usize)) & ty) as i32;
+    }
+    let c = wc as u16;
+    let mut ct: u16 = 0;
+    if GetStringTypeW(CT_CTYPE1, &c, 1, &mut ct) == 0 {
+        return 0; // the C ERR()s and returns 0
+    }
+    (ct & ty) as i32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn iswctype(wc: u32, ty: u16) -> i32 {
+    _iswctype_l(wc, ty, core::ptr::null_mut())
+}
+
+/// Each `isw*` is one mask through `_iswctype_l`. The masks are transcribed from
+/// the C, not reasoned about — `iswgraph` and `iswprint` differ only by _BLANK,
+/// and `iswblank` is not a mask at all (see below).
+macro_rules! isw {
+    ($l:ident, $plain:ident, $mask:expr) => {
+        #[no_mangle]
+        pub unsafe extern "C" fn $l(wc: u32, locale: *mut core::ffi::c_void) -> i32 {
+            _iswctype_l(wc, $mask, locale)
+        }
+        #[no_mangle]
+        pub unsafe extern "C" fn $plain(wc: u32) -> i32 {
+            _iswctype_l(wc, $mask, core::ptr::null_mut())
+        }
+    };
+}
+
+isw!(_iswalnum_l,  iswalnum,  CT_ALPHA | CT_DIGIT);
+isw!(_iswalpha_l,  iswalpha,  CT_ALPHA);
+isw!(_iswcntrl_l,  iswcntrl,  CT_CONTROL);
+isw!(_iswdigit_l,  iswdigit,  CT_DIGIT);
+isw!(_iswgraph_l,  iswgraph,  CT_ALPHA | CT_DIGIT | CT_PUNCT);
+isw!(_iswlower_l,  iswlower,  CT_LOWER);
+isw!(_iswprint_l,  iswprint,  CT_ALPHA | CT_BLANK | CT_DIGIT | CT_PUNCT);
+isw!(_iswpunct_l,  iswpunct,  CT_PUNCT);
+isw!(_iswspace_l,  iswspace,  CT_SPACE);
+isw!(_iswupper_l,  iswupper,  CT_UPPER);
+isw!(_iswxdigit_l, iswxdigit, CT_HEX);
+
+/// `_iswblank_l` is the one that is NOT just a mask:
+///
+///     return wc == '\t' || _iswctype_l( wc, _BLANK, locale );
+///
+/// TWO things hide in that line. The explicit TAB is load-bearing — a bare _BLANK
+/// mask would still match TAB in the C-locale table, but not necessarily under a
+/// locale whose table drops it. And C's `||` **NORMALISES to 0/1**, so this is the
+/// only member of the family that returns a BOOLEAN. Every other `isw*` returns
+/// the raw masked bits (`iswspace(' ')` is 8, not 1).
+///
+/// Returning the raw bit here gave `iswblank(' ') == 64` against msvcrt's `1`.
+/// The exhaustive sweep caught it on the first character it could.
+#[no_mangle]
+pub unsafe extern "C" fn _iswblank_l(wc: u32, locale: *mut core::ffi::c_void) -> i32 {
+    if wc == b'\t' as u32 {
+        return 1;
+    }
+    (_iswctype_l(wc, CT_BLANK, locale) != 0) as i32 // the `||` normalises
+}
+#[no_mangle]
+pub unsafe extern "C" fn iswblank(wc: u32) -> i32 {
+    _iswblank_l(wc, core::ptr::null_mut())
+}
+
+/// `iswalpha_l` — msvcrt exports this WITHOUT the leading underscore too (an
+/// alias of `_iswalpha_l`); it is a distinct export ordinal, so it needs its own
+/// symbol.
+#[no_mangle]
+pub unsafe extern "C" fn iswalpha_l(wc: u32, locale: *mut core::ffi::c_void) -> i32 {
+    _iswctype_l(wc, CT_ALPHA, locale)
+}
