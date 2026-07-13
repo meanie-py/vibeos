@@ -47,6 +47,7 @@ extern "C" {
     fn KiComputeNewPriority(Thread: PKTHREAD, Decrement: ULONG) -> LONG;
     fn KiSelectReadyThread(Priority: LONG, Prcb: PKPRCB) -> PKTHREAD;
     fn KiSetThreadSwapBusy(Thread: PKTHREAD);
+    #[cfg(not(feature = "smp"))]
     fn KxQueueReadyThread(Thread: PKTHREAD, Prcb: PKPRCB);
 }
 #[cfg(target_arch = "x86")]

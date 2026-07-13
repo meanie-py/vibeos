@@ -1790,12 +1790,44 @@ pub unsafe fn ki_rq_integrity(prcb: ddk::PKPRCB, priority: u32, site: u64) {
         return; // legitimately empty (summary may trail a removal); reader-side owns bit/empty
     }
     // first node must back-link to head, and head's back-neighbour must forward to head
-    if (*flink).Blink != head || (*(*head).Blink).Flink != head {
+    let blink = (*head).Blink;
+    let flink_bad = (*flink).Blink != head;
+    let blink_bad = (*blink).Flink != head;
+    if flink_bad || blink_bad {
+        // §9.56 FORENSICS: the ready list is torn under a correctly-held PRCB lock,
+        // so the tear is almost certainly a VICTIM of a wild write. The VALUE now
+        // sitting in the corrupted link is the writer's fingerprint — dump it (and
+        // the raw LIST_ENTRY words + a couple of neighbour nodes) so a torn Flink
+        // that turns out to be e.g. a KTHREAD field / pool tag / small int / poison
+        // names the culprit. Print BEFORE the bugcheck (still under the lock; this
+        // is not mid-swap, so DbgPrint is safe here — unlike KiSwapContextResume).
+        let bad_ptr = if flink_bad { (*flink).Blink } else { (*blink).Flink };
+        crate::driver_ddk::DbgPrint(
+            b"[RQTEAR] site=%x pri=%u prcb=%p summary=%x head=%p F=%p B=%p | flink.Blink=%p(bad=%u) blink.Flink=%p(bad=%u) BADPTR=%p | head[F,B]=%p,%p flink[F,B]=%p,%p blink[F,B]=%p,%p\n\0".as_ptr() as *const i8,
+            site as u32,
+            priority,
+            prcb,
+            (*prcb).ReadySummary,
+            head,
+            flink,
+            blink,
+            (*flink).Blink,
+            flink_bad as u32,
+            (*blink).Flink,
+            blink_bad as u32,
+            bad_ptr,
+            (*head).Flink,
+            (*head).Blink,
+            (*flink).Flink,
+            (*flink).Blink,
+            (*blink).Flink,
+            (*blink).Blink,
+        );
         ddk::KeBugCheckEx(
             0x96,
             prcb as usize as _,
             ((site << 8) | priority as u64) as _,
-            (*prcb).ReadySummary as _,
+            bad_ptr as usize as _, // the corrupted link value (the fingerprint)
             flink as usize as _,
         );
     }
@@ -1841,6 +1873,45 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
             && (*blink).Flink == entry;
         if already_linked {
             let caller_line = core::panic::Location::caller().line() as u64;
+            // §9.56 FORENSICS: `thread` is genuinely doubly-linked in SOME ready
+            // list while being (re)queued. NT's dispatch/quantum paths queue
+            // Prcb->CurrentThread WITHOUT a linkage check (verified: our
+            // KiDpcInterruptHandler is an exact copy of NT KiDispatchInterrupt),
+            // so the corruption is UPSTREAM — something left this thread linked.
+            // Identify WHICH cpu's DispatcherReadyListHead[pri] it is linked into
+            // by scanning KiProcessorBlock, and dump its scheduling identity so
+            // the upstream writer can be traced. (Under the PRCB lock; not
+            // mid-swap; DbgPrint is safe here.)
+            let mut owner_cpu: i64 = -1;
+            let mut owner_pri: i64 = -1;
+            let nproc = crate::globals::KeNumberProcessors as usize;
+            for c in 0..nproc.min(64) {
+                let p = *(core::ptr::addr_of!(crate::globals::KiProcessorBlock)
+                    as *const *mut ddk::_KPRCB).add(c);
+                if p.is_null() { continue; }
+                for pr in 0..32usize {
+                    let h = core::ptr::addr_of_mut!((*p).DispatcherReadyListHead[pr]) as usize;
+                    // flink/blink point AT a list node; if this thread's forward
+                    // neighbour IS the list head, that names the owning list.
+                    if flink as usize == h || blink as usize == h {
+                        owner_cpu = c as i64;
+                        owner_pri = pr as i64;
+                    }
+                }
+            }
+            crate::driver_ddk::DbgPrint(
+                b"[RQLINKED] thr=%p site=%u pri=%u state=%u | F=%p B=%p ownerCPU=%d ownerPRI=%d | thisPrcb=%p thisCPU=%u\n\0".as_ptr() as *const i8,
+                thread,
+                caller_line as u32,
+                priority_c,
+                kt_state_read(thread) as u32,
+                flink,
+                blink,
+                owner_cpu as i32,
+                owner_pri as i32,
+                prcb,
+                (*prcb).Number as u32,
+            );
             ddk::KeBugCheckEx(
                 0x96,
                 thread as usize as _,

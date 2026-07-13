@@ -56,6 +56,7 @@ extern "C" {
         Hand: *mut ULONG,
     );
     fn KxInsertTimer(Timer: PKTIMER, Hand: ULONG);
+    #[cfg(not(feature = "smp"))]
     fn KxQueueReadyThread(Thread: PKTHREAD, Prcb: *mut _KPRCB);
     fn KiAddThreadToWaitList(Thread: PKTHREAD, Swappable: BOOLEAN);
     fn KiSatisfyObjectWait(Object: PKMUTANT, Thread: PKTHREAD);

@@ -30,6 +30,7 @@ extern "system" {
 extern "C" {
     fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
     fn KiSendEOI();
+    #[cfg(not(feature = "smp"))]
     fn KxQueueReadyThread(Thread: PKTHREAD, Prcb: PKPRCB);
     fn KiAcquirePrcbLock(Prcb: PKPRCB);
     fn NtCurrentTeb() -> PVOID;

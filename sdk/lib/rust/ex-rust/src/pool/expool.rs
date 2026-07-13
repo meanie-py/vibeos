@@ -1323,7 +1323,10 @@ pub unsafe extern "system" fn ExAllocatePoolWithTag(
         original_type,
     );
 
-    exp_check_pool_blocks(entry as PVOID);
+    // Do not walk the page again here: once the pool lock was released above,
+    // another CPU may be midway through initializing a split fragment
+    // (Ulong1 is cleared before BlockSize is installed).  The page was already
+    // checked while locked at 1313, or is still private in the one-block case.
     (*entry).PoolTag = tag;
     pool_free_block(entry) as PVOID
 }
