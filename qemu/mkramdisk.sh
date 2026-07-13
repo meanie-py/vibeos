@@ -522,6 +522,13 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$WIN32APP" ::/reactos/syswow64/win32.exe
         fi
+        # file32.exe — the M10 file-I/O guest (winlogon TryStartWow64File).
+        FILE32="${VIBEOS_FILE32_EXE:-$PROJECT_DIR/build-fex-hello/file32.exe}"
+        if [ -f "$FILE32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/file32.exe (M10 file-I/O guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$FILE32" ::/reactos/syswow64/file32.exe
+        fi
         # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
         # by winlogon's TryStartWow64Hello (silent no-op unless staged here).
         HELLO32="${VIBEOS_HELLO32_EXE:-$PROJECT_DIR/build-fex-hello/hello32.exe}"

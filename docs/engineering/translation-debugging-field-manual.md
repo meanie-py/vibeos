@@ -5258,3 +5258,55 @@ objects with pointers too, and have no `*64` shape yet — nothing on the M9 pat
 them. `crate::wow64::wow64_unsupported()` prints a one-shot warning naming the type rather
 than letting a 32-bit client silently walk a 64-bit `MENU`. When a WoW64 app needs menus,
 that print is the work order.
+
+### 9.59 (ROOT-CAUSED + FIXED 2026-07-12) WoW64: a code *generator* silently mis-thunked the whole file-I/O family — `IO_STATUS_BLOCK` is 8 bytes in the guest and 16 on the host, and `NtReadFile` was never on the deep-marshal list
+
+**Symptom (latent — nothing was visibly broken).** `hello32`/`gui32`/`win32` all passed;
+the boot was green. But every `ReadFile` a 32-bit guest could ever issue was returning a
+garbage byte count, and overflowing the guest's stack by 8 bytes while doing it. It had
+simply never been *exercised*: no guest did file I/O yet.
+
+**Root cause.** `tools/wow64gen/` generates 32→64 syscall thunks from `ntdll.spec`. A
+`.spec` describes a pointer's *value*, not the shape of what it points at, so the generator
+takes a hand-curated deep-marshal list (`manual.txt`) of syscalls whose pointed-to structs
+differ in width; anything not on that list gets an **auto** thunk that passes the guest
+pointer straight through. `IO_STATUS_BLOCK` ends in `ULONG_PTR Information` — **4 bytes on
+i386, 8 on the host** — so the guest's block is 8 bytes and the host kernel writes 16.
+`NtReadFile`, `NtWriteFile`, `NtQueryInformationFile`, `NtSetInformationFile`,
+`NtQueryVolumeInformationFile` and `NtFlushBuffersFile` were **not on the list**. Two bugs
+per call: an 8-byte overflow past the guest struct, and `Information` read from offset 4
+when the kernel wrote it at offset 8. `wow64gen`'s own README names `IO_STATUS_BLOCK` as a
+deep-marshal case — the *doc* was right and the *list* was incomplete.
+
+**The reusable lesson (this is the point).** A generator that is safe-by-default only where
+a human remembered to list something is **not safe by default**. The failure is invisible:
+the build is green, the tool is "working as designed," and the wrongness only shows up as
+corrupted data in a caller nobody has written yet. When a codegen tool has an escape hatch
+list, the list needs a **periodic audit against the property it encodes** — here: "grep the
+spec for every syscall taking a struct with a `ULONG_PTR`/pointer/HANDLE member, and diff
+that against `manual.txt`." Missing entries are silent; extra entries are loud. **Always
+err toward listing.**
+
+**Fix** (`dll/win32/wow64/wow64_manual.c`, M10): hand-marshal the six + `NtQueryDirectoryFile`
+(which also takes a `PUNICODE_STRING` mask). Every remaining IOSB taker (`NtLockFile`,
+`NtQueryEaFile`, `NtCancelIoFile`, `NtNotifyChangeKey`, `NtDeviceIoControlFile`, …) went on
+the manual list too, so they now fail **loud** instead of corrupting silently.
+
+**Async is the trap, and it's the §9.36 class.** The host IOSB we marshal into is a *stack
+local of the thunk*. Returning `STATUS_PENDING` hands the kernel a pointer into a frame that
+is about to die — exactly the dead-frame-IOSB corruption that cost days in §9.36. So an
+explicit async request (guest passed an `Event` or APC routine) is **refused before the call
+is issued**, and if the host pends anyway we **block on the file handle** rather than return
+over a live pointer into a dead frame. Never "just copy it back later" — there is no later.
+
+**The proper async fix is kernel-side and is owed:** I/O completion should write an
+`IO_STATUS_BLOCK32` when the requesting process is WoW64 (NT gates exactly this on
+`IoIs32bitProcess(Irp)`); our single choke point is `*(*Irp).UserIosb = (*Irp).IoStatus;` in
+`iomgr-rust/src/irp.rs`. Careful: 64-bit code (wow64.dll, the 64-bit ntdll) *also* runs
+inside a WoW64 process and passes genuine 64-bit IOSBs, so the gate must be **per-IRP,
+captured at syscall entry** — never merely "this process is WoW64."
+
+**Regression oracle:** `file32.exe` (`tools/fex/hello-compute/File32.c`, spawned by
+winlogon's `TryStartWow64File`). `ReadFile`'s returned byte count *is* `IOSB.Information`,
+so asserting it catches this class by construction. Verdict 0x600D; `[file32]` lines on
+serial.
