@@ -72,6 +72,14 @@ extern "C" {
     fn _i64tow_s(v: i64, s: *mut u16, sz: usize, rx: i32) -> i32;
     fn _ui64tow_s(v: u64, s: *mut u16, sz: usize, rx: i32) -> i32;
     fn _ultow_s(v: u32, s: *mut u16, sz: usize, rx: i32) -> i32;
+
+    // wave 6c — the wide `_s` writers + the bounded wide readers.
+    fn wcsncpy_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn wcsncat_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn _wcsnset_s(s: *mut u16, sz: usize, c: u16, n: usize) -> i32;
+    fn _wcsset_s(s: *mut u16, n: usize, c: u16) -> i32;
+    fn wcsncpy(d: *mut u16, s: *const u16, n: usize) -> *mut u16;
+    fn wcsnlen(s: *const u16, m: usize) -> usize;
 }
 
 const PAGE: usize = 4096;
@@ -228,6 +236,34 @@ fn main() {
         ("_i64tow_s",  Box::new(move || unsafe { let sz = 8;  core::hint::black_box(_i64tow_s(i64::MIN, wguarded(sz), sz, 2)); })),
         ("_ui64tow_s", Box::new(move || unsafe { let sz = 8;  core::hint::black_box(_ui64tow_s(u64::MAX, wguarded(sz), sz, 2)); })),
         ("_ultow_s",   Box::new(move || unsafe { let sz = 8;  core::hint::black_box(_ultow_s(u32::MAX, wguarded(sz), sz, 2)); })),
+
+        // ── wave 6c: the wide `_s` family ─────────────────────────────────────
+        // Destination is the guarded buffer with `elem` == its FULL extent, and a
+        // source longer than it — i.e. the ERANGE/truncate arms, which are the
+        // ones that walk the destination. wcsncpy_s's _TRUNCATE arm writes
+        // `*(p-1)`, so it is exercised explicitly.
+        ("wcsncpy_s", Box::new(move || unsafe {
+            let src = [0x41u16; 40];
+            core::hint::black_box(wcsncpy_s(wguarded(k), k, src.as_ptr(), usize::MAX));
+        })),
+        ("wcsncat_s", Box::new(move || unsafe {
+            let src = [0x41u16; 40];
+            let d = wguarded(k); *d.add(1) = 0;   // dst terminated inside elem
+            core::hint::black_box(wcsncat_s(d, k, src.as_ptr(), usize::MAX));
+        })),
+        ("_wcsnset_s", Box::new(move || unsafe {
+            core::hint::black_box(_wcsnset_s(wguarded(k), k, 0x7a, k));
+        })),
+        ("_wcsset_s", Box::new(move || unsafe {
+            core::hint::black_box(_wcsset_s(wguarded(k), k, 0x7a));
+        })),
+        ("wcsncpy", Box::new(move || unsafe {
+            let src = [0x41u16; 40];
+            core::hint::black_box(wcsncpy(wguarded(k), src.as_ptr(), k));
+        })),
+        ("wcsnlen", Box::new(move || unsafe {
+            core::hint::black_box(wcsnlen(wguarded(k), k));
+        })),
     ];
 
     println!("\n=== guard-page probe: bounded CRT fns must not read past n ===\n");

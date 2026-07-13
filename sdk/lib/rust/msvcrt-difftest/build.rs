@@ -35,6 +35,19 @@ use std::path::PathBuf;
 /// ```
 /// Hardcoded rather than re-derived at build time so this host crate never
 /// depends on an OS build having been run.
+/// Symbols the refstub deliberately routes into the private `msvcrt_ref_*`
+/// namespace (refstub/msvcrt.h) rather than renaming to `ref_*`.
+///
+/// That namespace is the harness's anti-circularity guarantee: it is what stops
+/// the REFERENCE from ever calling into the CODE UNDER TEST. A symbol in here is
+/// therefore NOT an oracle — the compiled reference does not define an msvcrt
+/// version of it — and anything relying on `ref_<name>` will fail to link.
+///
+/// Consequence: these functions CANNOT be flipped, because they cannot be proved.
+/// Exempt from the drift assertion below (they are intentionally absent from the
+/// rename lists, not missing from them).
+const NAMESPACED_SYMBOLS: &[&str] = &["memmove"];
+
 const PUBLIC_SYMBOLS: &[&str] = &[
     "I10_OUTPUT",
     "__STRINGTOLD",
@@ -117,6 +130,7 @@ const PUBLIC_SYMBOLS: &[&str] = &[
     "memcmp",
     "memcpy",
     "memset",
+    "_mbsdup",
     "strcat",
     "strcat_s",
     "strchr",
@@ -216,6 +230,9 @@ const LP32_LONG_SYMBOLS: &[(&str, &str)] = &[
 /// untranscribed code and are INERT: nothing under test calls them. They are
 /// here so the TU links.
 const WCS_PUBLIC_SYMBOLS: &[&str] = &[
+    "swprintf",
+    "_scwprintf_p",
+    "iswalpha_l",
     "__swprintf_l",
     "_iswalnum_l",
     "_iswalpha_l",
@@ -394,6 +411,67 @@ const WCS_PUBLIC_SYMBOLS: &[&str] = &[
     "wctomb_s",
 ];
 
+/// Every `NAME` in a Wine export banner: ` *  NAME (MSVCRT.@)`.
+fn exported_symbols(src: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in src.lines() {
+        let t = line.trim_start();
+        let Some(rest) = t.strip_prefix('*') else { continue };
+        let rest = rest.trim();
+        let Some(open) = rest.find('(') else { continue };
+        if !rest[open..].starts_with("(MSVCRT.@)") {
+            continue;
+        }
+        let name = rest[..open].trim();
+        if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            out.push(name.to_string());
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Does the TU actually DEFINE `name` (`... name ( ... ) {`), as opposed to only
+/// carrying its banner above an `#if`-disabled body?
+fn defines_symbol(src: &str, name: &str) -> bool {
+    let mut from = 0;
+    while let Some(i) = src[from..].find(name) {
+        let at = from + i;
+        from = at + name.len();
+        // must be a whole identifier
+        let before_ok = at == 0
+            || !src[..at].chars().next_back().map(|c| c.is_alphanumeric() || c == '_').unwrap_or(false);
+        let after = &src[from..];
+        if !before_ok {
+            continue;
+        }
+        let after_trim = after.trim_start();
+        if !after_trim.starts_with('(') {
+            continue;
+        }
+        // scan to the matching ')' then require a '{' (a definition, not a call/decl)
+        let mut depth = 0usize;
+        for (k, c) in after_trim.char_indices() {
+            match c {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        if after_trim[k + 1..].trim_start().starts_with('{') {
+                            return true;
+                        }
+                        break;
+                    }
+                }
+                ';' if depth == 0 => break,
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
 fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     // sdk/lib/rust/msvcrt-difftest → repo root is 4 up.
@@ -533,6 +611,54 @@ fn main() {
         renamed,
         all_symbols.len(),
         "rename prelude must cover every public symbol of BOTH reference TUs"
+    );
+
+    // ── the rename list must not DRIFT from the C ────────────────────────────
+    //
+    // The lists above are hand-maintained. The assertion above only proves the
+    // prelude covers THE LIST — it says nothing about whether the list still
+    // covers the SOURCE. It had already drifted: `memmove`, `_mbsdup`,
+    // `swprintf`, `_scwprintf_p` and `iswalpha_l` were exported by the C and
+    // absent from the list, so the reference TU defined them under their PLAIN
+    // names inside the test binary.
+    //
+    // That is not a cosmetic gap — it silently breaks the harness's central
+    // guarantee. The whole point of the ref_* namespace is that the reference can
+    // NEVER bind to the code under test and vice versa. An unrenamed `memmove` is
+    // a plain `memmove` that either side may call, and the moment the subject
+    // flips its own `memmove` it becomes a duplicate-symbol link error (which is
+    // how this was found) — or, worse, silently satisfies the subject's internal
+    // copies with the reference's C.
+    //
+    // So: scrape the C for every `(MSVCRT.@)` export that the file actually
+    // DEFINES, and fail the build if one is missing from the lists. A hand-kept
+    // list that nothing checks is a list that is already wrong.
+    let mut undeclared: Vec<String> = Vec::new();
+    for (path, file) in [("string.c", &string_c), ("wcs.c", &wcs_c)] {
+        let src = fs::read_to_string(file).unwrap();
+        for name in exported_symbols(&src) {
+            // A banner can precede an #if'd-out body; only count real definitions.
+            if !defines_symbol(&src, &name) {
+                continue;
+            }
+            if NAMESPACED_SYMBOLS.contains(&name.as_str()) {
+                continue; // intentionally private, not drifted — see the const's doc
+            }
+            if !all_symbols.iter().any(|s| *s == name) {
+                undeclared.push(format!("{name} ({path})"));
+            }
+        }
+    }
+    assert!(
+        undeclared.is_empty(),
+        "\n\n  RENAME LIST HAS DRIFTED FROM THE C.\n\n  \
+         These symbols are exported AND defined by the reference TUs but are not in\n  \
+         PUBLIC_SYMBOLS / WCS_PUBLIC_SYMBOLS / LP32_LONG_SYMBOLS, so they would be\n  \
+         compiled under their PLAIN names — escaping the ref_* namespace that keeps\n  \
+         the reference and the subject from binding to each other:\n\n    {}\n\n  \
+         Add each to the appropriate list (or to LP32_LONG_SYMBOLS if its glibc\n  \
+         prototype disagrees).\n",
+        undeclared.join("\n    ")
     );
 
     let prelude_h = out.join("ref_prelude.h");

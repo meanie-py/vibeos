@@ -165,6 +165,31 @@ extern "C" {
     fn _ui64tow_s(v: u64, s: *mut u16, sz: usize, rx: i32) -> i32;
     fn _ultow_s(v: u32, s: *mut u16, sz: usize, rx: i32) -> i32;
     fn _strtoi64(s: *const u8, e: *mut *mut u8, b: i32) -> i64;
+
+    // ── wave 6c: the wide `_s` family, tokenizers, memmove, _strtoui64 ──
+    fn ref_wcscpy_s(d: *mut u16, e: usize, s: *const u16) -> i32;
+    fn ref_wcsncpy_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn ref_wcscat_s(d: *mut u16, e: usize, s: *const u16) -> i32;
+    fn ref_wcsncat_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn ref__wcsnset_s(s: *mut u16, sz: usize, c: u16, n: usize) -> i32;
+    fn ref__wcsset_s(s: *mut u16, n: usize, c: u16) -> i32;
+    fn ref_wcsncpy(d: *mut u16, s: *const u16, n: usize) -> *mut u16;
+    fn ref_wcsnlen(s: *const u16, m: usize) -> usize;
+    fn ref_strtok_s(s: *mut u8, d: *const u8, c: *mut *mut u8) -> *mut u8;
+    fn ref_wcstok_s(s: *mut u16, d: *const u16, c: *mut *mut u16) -> *mut u16;
+    fn ref__strtoui64(s: *const u8, e: *mut *mut u8, b: i32) -> u64;
+
+    fn wcscpy_s(d: *mut u16, e: usize, s: *const u16) -> i32;
+    fn wcsncpy_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn wcscat_s(d: *mut u16, e: usize, s: *const u16) -> i32;
+    fn wcsncat_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn _wcsnset_s(s: *mut u16, sz: usize, c: u16, n: usize) -> i32;
+    fn _wcsset_s(s: *mut u16, n: usize, c: u16) -> i32;
+    fn wcsncpy(d: *mut u16, s: *const u16, n: usize) -> *mut u16;
+    fn wcsnlen(s: *const u16, m: usize) -> usize;
+    fn strtok_s(s: *mut u8, d: *const u8, c: *mut *mut u8) -> *mut u8;
+    fn wcstok_s(s: *mut u16, d: *const u16, c: *mut *mut u16) -> *mut u16;
+    fn _strtoui64(s: *const u8, e: *mut *mut u8, b: i32) -> u64;
 }
 
 /// The four observable effects of a CRT call, as one comparable unit.
@@ -1164,6 +1189,147 @@ unsafe fn run() {
         let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
         let g = Effects::subject(|| { let v = _strtoi64(p, &mut e1, b); v ^ (e1 as i64 - p as i64) });
         let w = Effects::reference(|| { let v = ref__strtoi64(p, &mut e2, b); v ^ (e2 as i64 - p as i64) });
+        (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
+    });
+
+
+    // ═════ WAVE 6c: the wide `_s` family, tokenizers, memmove, _strtoui64 ═════
+    //
+    // The four wide `_s` writers each have a DIFFERENT handler contract (see the
+    // msvcrt-crt-rust banner), so each row's `require` list encodes it — and a
+    // wrong list fails loudly as UNEXERCISED rather than passing quietly:
+    //
+    //   wcscpy_s   handler on every error          -> require handler
+    //   wcsncpy_s  handler on the front door only  -> require ERANGE *and* handler
+    //   wcscat_s   handler NEVER                   -> require ok/EINVAL/ERANGE, NOT handler
+    //   wcsncat_s  handler on everything           -> require handler
+    check_wbuf_fx("wcscpy_s", &["ok", "EINVAL", "ERANGE", "handler"], |r| {
+        let src = gen_wstr(r, 20);
+        let elem = r.below(24);
+        let null_src = r.below(32) == 0;
+        let sp = if null_src { core::ptr::null() } else { src.as_ptr() };
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        let g = Effects::subject(|| wcscpy_s(d1.as_mut_ptr(), elem, sp) as i64);
+        let w = Effects::reference(|| ref_wcscpy_s(d2.as_mut_ptr(), elem, sp) as i64);
+        (d1, g, d2, w, format!("elem={elem} srclen={}{}", src.len()-1, if null_src { " src=NULL" } else { "" }))
+    });
+    check_wbuf_fx("wcsncpy_s", &["ok", "EINVAL", "ERANGE"], |r| {
+        let src = gen_wstr(r, 20);
+        let elem = r.below(24);
+        let count = match r.below(5) { 0 => usize::MAX, 1 => 0, _ => r.below(24) };
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        let g = Effects::subject(|| wcsncpy_s(d1.as_mut_ptr(), elem, src.as_ptr(), count) as i64);
+        let w = Effects::reference(|| ref_wcsncpy_s(d2.as_mut_ptr(), elem, src.as_ptr(), count) as i64);
+        let cs = if count == usize::MAX { "_TRUNCATE".into() } else { count.to_string() };
+        (d1, g, d2, w, format!("elem={elem} count={cs} srclen={}", src.len()-1))
+    });
+    check_wbuf_fx("wcscat_s", &["ok", "EINVAL", "ERANGE"], |r| {
+        let src = gen_wstr(r, 14);
+        let pre = gen_wstr(r, 10);
+        let elem = r.below(28);
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        d1[..pre.len()].copy_from_slice(&pre); d2[..pre.len()].copy_from_slice(&pre);
+        let g = Effects::subject(|| wcscat_s(d1.as_mut_ptr(), elem, src.as_ptr()) as i64);
+        let w = Effects::reference(|| ref_wcscat_s(d2.as_mut_ptr(), elem, src.as_ptr()) as i64);
+        (d1, g, d2, w, format!("elem={elem} prelen={} srclen={}", pre.len()-1, src.len()-1))
+    });
+    check_wbuf_fx("wcsncat_s", &["ok", "EINVAL", "ERANGE", "handler"], |r| {
+        let src = gen_wstr(r, 14);
+        let pre = gen_wstr(r, 10);
+        let elem = r.below(28);
+        let count = match r.below(5) { 0 => usize::MAX, 1 => 0, _ => r.below(20) };
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        d1[..pre.len()].copy_from_slice(&pre); d2[..pre.len()].copy_from_slice(&pre);
+        let g = Effects::subject(|| wcsncat_s(d1.as_mut_ptr(), elem, src.as_ptr(), count) as i64);
+        let w = Effects::reference(|| ref_wcsncat_s(d2.as_mut_ptr(), elem, src.as_ptr(), count) as i64);
+        let cs = if count == usize::MAX { "_TRUNCATE".into() } else { count.to_string() };
+        (d1, g, d2, w, format!("elem={elem} count={cs} prelen={} srclen={}", pre.len()-1, src.len()-1))
+    });
+    check_wbuf_fx("_wcsnset_s", &["ok", "EINVAL", "handler"], |r| {
+        let s = gen_wstr(r, 24);
+        let size = r.below(28);
+        let count = r.below(28);
+        let c = 0x41 + r.below(26) as u16;
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAAAA); d2.resize(40, 0xAAAA);
+        let g = Effects::subject(|| _wcsnset_s(d1.as_mut_ptr(), size, c, count) as i64);
+        let w = Effects::reference(|| ref__wcsnset_s(d2.as_mut_ptr(), size, c, count) as i64);
+        (d1, g, d2, w, format!("size={size} count={count} c={c:04x} len={}", s.len()-1))
+    });
+    check_wbuf_fx("_wcsset_s", &["ok", "EINVAL", "handler"], |r| {
+        let s = gen_wstr(r, 24);
+        let n = r.below(28);
+        let c = 0x41 + r.below(26) as u16;
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAAAA); d2.resize(40, 0xAAAA);
+        let g = Effects::subject(|| _wcsset_s(d1.as_mut_ptr(), n, c) as i64);
+        let w = Effects::reference(|| ref__wcsset_s(d2.as_mut_ptr(), n, c) as i64);
+        (d1, g, d2, w, format!("n={n} c={c:04x} len={}", s.len()-1))
+    });
+
+    check_wbuf("wcsncpy", |r| {
+        let s = gen_wstr(r, 24); let n = r.below(30);
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        let p1 = wcsncpy(d1.as_mut_ptr(), s.as_ptr(), n);
+        let p2 = ref_wcsncpy(d2.as_mut_ptr(), s.as_ptr(), n);
+        let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
+        (d1, o1, d2, o2, format!("n={n} srclen={}", s.len()-1))
+    });
+    check_int("wcsnlen", false, |r| {
+        let s = gen_wstr(r, 30); let m = r.below(34);
+        (wcsnlen(s.as_ptr(), m) as i64, ref_wcsnlen(s.as_ptr(), m) as i64, format!("m={m}"))
+    });
+
+    // Tokenizers: drive a FULL tokenisation loop, not one call — the contract is
+    // the sequence of tokens and the final ctx, not any single return.
+    check_buf("strtok_s", |r| {
+        let mut s1 = gen_str(r, 26); let delim = gen_str(r, 4);
+        let mut s2 = s1.clone();
+        let (mut c1, mut c2) = (core::ptr::null_mut::<u8>(), core::ptr::null_mut::<u8>());
+        let (mut out1, mut out2) = (Vec::new(), Vec::new());
+        let mut p1 = strtok_s(s1.as_mut_ptr(), delim.as_ptr(), &mut c1);
+        let mut p2 = ref_strtok_s(s2.as_mut_ptr(), delim.as_ptr(), &mut c2);
+        let mut guard = 0;
+        while (!p1.is_null() || !p2.is_null()) && guard < 40 {
+            out1.push(if p1.is_null() { -1 } else { p1 as isize - s1.as_ptr() as isize } as i64);
+            out2.push(if p2.is_null() { -1 } else { p2 as isize - s2.as_ptr() as isize } as i64);
+            p1 = strtok_s(core::ptr::null_mut(), delim.as_ptr(), &mut c1);
+            p2 = ref_strtok_s(core::ptr::null_mut(), delim.as_ptr(), &mut c2);
+            guard += 1;
+        }
+        // fold the token-offset sequence into the compared buffer
+        let b1: Vec<u8> = s1.iter().copied().chain(out1.iter().map(|v| *v as u8)).collect();
+        let b2: Vec<u8> = s2.iter().copied().chain(out2.iter().map(|v| *v as u8)).collect();
+        (b1, out1.len() as isize, b2, out2.len() as isize, format!("delim={delim:?} tokens={out1:?}/{out2:?}"))
+    });
+    check_wbuf("wcstok_s", |r| {
+        let mut s1 = gen_wstr(r, 26); let delim = gen_wstr(r, 4);
+        let mut s2 = s1.clone();
+        let (mut c1, mut c2) = (core::ptr::null_mut::<u16>(), core::ptr::null_mut::<u16>());
+        let (mut out1, mut out2) = (Vec::new(), Vec::new());
+        let mut p1 = wcstok_s(s1.as_mut_ptr(), delim.as_ptr(), &mut c1);
+        let mut p2 = ref_wcstok_s(s2.as_mut_ptr(), delim.as_ptr(), &mut c2);
+        let mut guard = 0;
+        while (!p1.is_null() || !p2.is_null()) && guard < 40 {
+            out1.push(if p1.is_null() { -1i64 } else { ((p1 as isize - s1.as_ptr() as isize) / 2) as i64 });
+            out2.push(if p2.is_null() { -1i64 } else { ((p2 as isize - s2.as_ptr() as isize) / 2) as i64 });
+            p1 = wcstok_s(core::ptr::null_mut(), delim.as_ptr(), &mut c1);
+            p2 = ref_wcstok_s(core::ptr::null_mut(), delim.as_ptr(), &mut c2);
+            guard += 1;
+        }
+        let b1: Vec<u16> = s1.iter().copied().chain(out1.iter().map(|v| *v as u16)).collect();
+        let b2: Vec<u16> = s2.iter().copied().chain(out2.iter().map(|v| *v as u16)).collect();
+        (b1, out1.len() as isize, b2, out2.len() as isize, format!("tokens={out1:?}/{out2:?}"))
+    });
+
+    check_effects("_strtoui64", |r| {
+        let a = gen_parse_input(r);
+        let b = BASES2[r.below(9)];
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
+        let g = Effects::subject(|| { let v = _strtoui64(p, &mut e1, b); (v as i64) ^ (e1 as i64 - p as i64) });
+        let w = Effects::reference(|| { let v = ref__strtoui64(p, &mut e2, b); (v as i64) ^ (e2 as i64 - p as i64) });
         (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
     });
 

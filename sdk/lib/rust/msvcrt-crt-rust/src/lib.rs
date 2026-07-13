@@ -245,6 +245,42 @@ mod h {
             }
         }
     }
+
+    /// `strchr(delim, c) != NULL` for a NON-ZERO `c` — the tokenizers' delimiter
+    /// test. Deliberately NOT strchr: the C's `strchr(delim, c)` also matches
+    /// delim's own terminator when `c == 0`, and every call site guards that with
+    /// a preceding `*str &&`. Spelling the guard into the helper means a future
+    /// caller cannot forget it.
+    #[inline]
+    pub(super) unsafe fn byte_in(delim: *const u8, c: u8) -> bool {
+        if c == 0 {
+            return false;
+        }
+        let mut p = delim;
+        while *p != 0 {
+            if *p == c {
+                return true;
+            }
+            p = p.add(1);
+        }
+        false
+    }
+
+    /// `byte_in`'s wide twin.
+    #[inline]
+    pub(super) unsafe fn wchar_in(delim: *const u16, c: u16) -> bool {
+        if c == 0 {
+            return false;
+        }
+        let mut p = delim;
+        while *p != 0 {
+            if *p == c {
+                return true;
+            }
+            p = p.add(1);
+        }
+        false
+    }
 }
 
 // ── wave 2: the functions msvcrt-difftest graded MATCH vs the GENUINE
@@ -2163,4 +2199,447 @@ pub unsafe extern "C" fn _ultow_s(value: u32, str: *mut u16, size: usize, radix:
 #[no_mangle]
 pub unsafe extern "C" fn _strtoi64(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i64 {
     strtoi64_contract(nptr, endptr, base)
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WAVE 6c — the wide `_s` string family, the tokenizers, memmove, _strtoui64
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// The wide `_s` functions are NOT the narrow ones with a wider char. Their
+// handler behaviour differs from each other and from their narrow twins:
+//
+//   wcscpy_s    handler fires on EVERY error        (CHECK_PMT / CHECK_PMT_ERR)
+//   wcsncpy_s   handler fires on the FRONT DOOR ONLY — its ERANGE and STRUNCATE
+//               arms are plain `return`s, silent
+//   wcscat_s    handler NEVER fires — every check is hand-rolled `if (!dst ...)`
+//   wcsncat_s   handler fires on everything, including a dst with no terminator
+//               inside `elem` (its own EINVAL, distinct from the ERANGE overflow)
+//
+// Assuming wide == narrow is how this lane already got bitten twice (wcscmp
+// CLAMPS where wcsncmp returns a raw diff; wcstol consults the locale where
+// strtol does not). Every one of these was read, not inferred.
+
+/// `wcscpy_s` — CHECK_PMT front door, then a whole-length check: ERANGE (with
+/// dst truncated to "") if the source does not fit, else a straight memmove.
+#[no_mangle]
+pub unsafe extern "C" fn wcscpy_s(dst: *mut u16, elem: usize, src: *const u16) -> i32 {
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem != 0) {
+        return EINVAL;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+    let size = h::wcstr_slice(src).len() + 1; // wcslen(src) + 1
+    if size > elem {
+        *dst = 0;
+        invalid_pmt(ERANGE); // MSVCRT_CHECK_PMT_ERR(.., ERANGE)
+        return ERANGE;
+    }
+    let mut i = 0;
+    while i < size {
+        *dst.add(i) = *src.add(i);
+        i += 1;
+    }
+    0
+}
+
+/// `wcsncpy_s` — note `count == 0` returns 0 *before* the front door (and still
+/// NULs dst), and note the `_TRUNCATE` arm writes `*(p-1) = 0`, i.e. it
+/// OVERWRITES the last character it just copied. Its ERANGE/STRUNCATE arms do
+/// NOT fire the handler.
+#[no_mangle]
+pub unsafe extern "C" fn wcsncpy_s(dst: *mut u16, elem: usize, src: *const u16, count: usize) -> i32 {
+    let truncate = count == TRUNCATE;
+    if count == 0 {
+        if !dst.is_null() && elem != 0 {
+            *dst = 0;
+        }
+        return 0; // no handler, no errno
+    }
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem != 0) {
+        return EINVAL;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+    let (mut e, mut c) = (elem, count);
+    let (mut p, mut s) = (dst, src);
+    while e != 0 && c != 0 && *s != 0 {
+        *p = *s;
+        p = p.add(1);
+        s = s.add(1);
+        e -= 1;
+        c -= 1;
+    }
+    if e == 0 && truncate {
+        *p.sub(1) = 0; // clobbers the last copied char — deliberate, per the C
+        return STRUNCATE; // silent: no handler
+    } else if e == 0 {
+        *dst = 0;
+        return ERANGE; // silent: no handler
+    }
+    *p = 0;
+    0
+}
+
+/// `wcscat_s` — the one that NEVER fires the invalid-parameter handler. Every
+/// check is hand-rolled, so errno is not set either: it just returns the code.
+/// Also note it scans for dst's terminator only WITHIN `elem`, and on overflow
+/// truncates dst to "" and returns ERANGE.
+#[no_mangle]
+pub unsafe extern "C" fn wcscat_s(dst: *mut u16, elem: usize, src: *const u16) -> i32 {
+    if dst.is_null() || elem == 0 {
+        return EINVAL; // no handler, and NOT even errno — bare return
+    }
+    if src.is_null() {
+        *dst = 0;
+        return EINVAL;
+    }
+    let mut i = 0usize;
+    while i < elem && *dst.add(i) != 0 {
+        i += 1;
+    }
+    let mut s = src;
+    while i < elem {
+        let c = *s;
+        s = s.add(1);
+        *dst.add(i) = c;
+        i += 1;
+        if c == 0 {
+            return 0;
+        }
+    }
+    *dst = 0;
+    ERANGE
+}
+
+/// `wcsncat_s` — the fully-instrumented one: handler fires on the front door,
+/// on a dst with no terminator inside `elem` (EINVAL), and on overflow (ERANGE).
+#[no_mangle]
+pub unsafe extern "C" fn wcsncat_s(dst: *mut u16, elem: usize, src: *const u16, count: usize) -> i32 {
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem > 0) {
+        return EINVAL;
+    }
+    if count == 0 {
+        return 0;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+    let mut i = 0usize;
+    while i < elem {
+        if *dst.add(i) == 0 {
+            break;
+        }
+        i += 1;
+    }
+    if i == elem {
+        // dst[elem] is not NUL-terminated — its OWN EINVAL, with the handler.
+        invalid_pmt(EINVAL);
+        *dst = 0;
+        return EINVAL;
+    }
+    let mut j = 0usize;
+    while j + i < elem {
+        if count == TRUNCATE && j + i == elem - 1 {
+            *dst.add(j + i) = 0;
+            return STRUNCATE;
+        }
+        let c = if j == count { 0 } else { *src.add(j) };
+        if j == count {
+            *dst.add(j + i) = 0;
+            return 0;
+        }
+        *dst.add(j + i) = c;
+        if c == 0 {
+            *dst.add(j + i) = 0;
+            return 0;
+        }
+        j += 1;
+    }
+    invalid_pmt(ERANGE);
+    *dst = 0;
+    ERANGE
+}
+
+/// `_wcsnset_s` — the all-NULL early-out (`!str && !size && !count` -> 0) comes
+/// BEFORE the front door, and the failure arm fires the handler and sets errno
+/// by hand rather than through MSVCRT_INVALID_PMT.
+#[no_mangle]
+pub unsafe extern "C" fn _wcsnset_s(str_: *mut u16, size: usize, c: u16, count: usize) -> i32 {
+    if str_.is_null() && size == 0 && count == 0 {
+        return 0;
+    }
+    if !check_pmt(!str_.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(size > 0) {
+        return EINVAL;
+    }
+    let mut i = 0usize;
+    while i < size - 1 && i < count {
+        if *str_.add(i) == 0 {
+            return 0;
+        }
+        *str_.add(i) = c;
+        i += 1;
+    }
+    while i < size {
+        if *str_.add(i) == 0 {
+            return 0;
+        }
+        i += 1;
+    }
+    *str_ = 0;
+    invalid_pmt(EINVAL);
+    EINVAL
+}
+
+/// `_wcsset_s` — fills until the terminator or until `n` runs out; running out
+/// means dst was never terminated inside n -> "" + EINVAL + handler.
+#[no_mangle]
+pub unsafe extern "C" fn _wcsset_s(str_: *mut u16, n: usize, c: u16) -> i32 {
+    if !check_pmt(!str_.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(n != 0) {
+        return EINVAL;
+    }
+    let mut p = str_;
+    let mut left = n;
+    // C: `while(*p && --n) *p++ = c;`  — the decrement happens in the condition,
+    // so it runs at most n-1 times and `left == 0` means "no terminator in n".
+    while *p != 0 {
+        left -= 1;
+        if left == 0 {
+            break;
+        }
+        *p = c;
+        p = p.add(1);
+    }
+    if left == 0 {
+        *str_ = 0;
+        invalid_pmt(EINVAL);
+        return EINVAL;
+    }
+    0
+}
+
+/// `wcsncpy` — copies at most n, then ZERO-PADS the remainder. Does NOT
+/// guarantee a terminator when src is longer than n.
+#[no_mangle]
+pub unsafe extern "C" fn wcsncpy(s1: *mut u16, s2: *const u16, n: usize) -> *mut u16 {
+    let mut i = 0usize;
+    while i < n {
+        let c = *s2.add(i);
+        *s1.add(i) = c;
+        if c == 0 {
+            break;
+        }
+        i += 1;
+    }
+    while i < n {
+        *s1.add(i) = 0;
+        i += 1;
+    }
+    s1
+}
+
+/// `wcsnlen` — bounded length; never reads past `maxlen`.
+#[no_mangle]
+pub unsafe extern "C" fn wcsnlen(s: *const u16, maxlen: usize) -> usize {
+    let mut i = 0usize;
+    while i < maxlen {
+        if *s.add(i) == 0 {
+            break;
+        }
+        i += 1;
+    }
+    i
+}
+
+// `memmove` is NOT flipped, and deliberately so.
+//
+// It has no ORACLE. refstub/msvcrt.h:185 routes `memmove` into the private
+// `msvcrt_ref_*` namespace — that namespace is what guarantees the reference TU
+// can never bind to the code under test — so the compiled reference does not
+// define an msvcrt `memmove` to compare against. Exposing one would mean
+// un-namespacing it, weakening the harness's central guarantee to test a single
+// function.
+//
+// The lane's rule is that nothing flips without a differential proof, and that
+// rule does not get suspended because a flip looks easy. (The body would be
+// three lines — `h::raw_move` is already overlap-correct and already ships under
+// `memcpy`.) Owed: give the refstub a way to expose a namespaced symbol as a
+// ref_* oracle without opening the namespace to the subject.
+
+/// `strtok_s` — the re-entrant tokenizer. Flippable (unlike `strtok`) because the
+/// caller owns the context: `strtok` reaches into msvcrt's `thread_data_t`, and
+/// getting at that field from Rust would mean hardcoding an offset into a struct
+/// we do not own — the magic-offset class (`scan_magic_offsets`). Deferred until
+/// there is a real TLS story.
+#[no_mangle]
+pub unsafe extern "C" fn strtok_s(
+    mut str_: *mut u8,
+    delim: *const u8,
+    ctx: *mut *mut u8,
+) -> *mut u8 {
+    if !check_pmt(!delim.is_null()) {
+        return core::ptr::null_mut();
+    }
+    if !check_pmt(!ctx.is_null()) {
+        return core::ptr::null_mut();
+    }
+    if !check_pmt(!str_.is_null() || !(*ctx).is_null()) {
+        return core::ptr::null_mut();
+    }
+    if str_.is_null() {
+        str_ = *ctx;
+    }
+    // `*str &&` guards each strchr: strchr(delim, 0) would match delim's own NUL.
+    while *str_ != 0 && h::byte_in(delim, *str_) {
+        str_ = str_.add(1);
+    }
+    if *str_ == 0 {
+        *ctx = str_;
+        return core::ptr::null_mut();
+    }
+    *ctx = str_.add(1);
+    while **ctx != 0 && !h::byte_in(delim, **ctx) {
+        *ctx = (*ctx).add(1);
+    }
+    if **ctx != 0 {
+        **ctx = 0;
+        *ctx = (*ctx).add(1);
+    }
+    str_
+}
+
+/// `wcstok_s` — the wide twin. Same contract; structured slightly differently in
+/// the C but observably identical (it assigns `*next_token` unconditionally).
+#[no_mangle]
+pub unsafe extern "C" fn wcstok_s(
+    mut str_: *mut u16,
+    delim: *const u16,
+    next_token: *mut *mut u16,
+) -> *mut u16 {
+    if !check_pmt(!delim.is_null()) {
+        return core::ptr::null_mut();
+    }
+    if !check_pmt(!next_token.is_null()) {
+        return core::ptr::null_mut();
+    }
+    if !check_pmt(!str_.is_null() || !(*next_token).is_null()) {
+        return core::ptr::null_mut();
+    }
+    if str_.is_null() {
+        str_ = *next_token;
+    }
+    while *str_ != 0 && h::wchar_in(delim, *str_) {
+        str_ = str_.add(1);
+    }
+    let ret = if *str_ == 0 {
+        core::ptr::null_mut()
+    } else {
+        let r = str_;
+        str_ = str_.add(1);
+        while *str_ != 0 && !h::wchar_in(delim, *str_) {
+            str_ = str_.add(1);
+        }
+        if *str_ != 0 {
+            *str_ = 0;
+            str_ = str_.add(1);
+        }
+        r
+    };
+    *next_token = str_;
+    ret
+}
+
+/// `_strtoui64` -> `_strtoui64_l(nptr, endptr, base, NULL)`.
+///
+/// A SEPARATE function from `_strtoi64_l`, not a cast of it: it accumulates
+/// unsigned, saturates at _UI64_MAX, and then applies `negative ? -ret : ret` —
+/// so `_strtoui64("-1")` is 0xFFFF_FFFF_FFFF_FFFF, not an error. (cnt-rust's
+/// generic `parse_u64_clamped_w` is close but returns the ADVANCED endptr when no
+/// digit was parsed, where msvcrt rewinds to the original — so this is translated
+/// here rather than borrowed.)
+#[no_mangle]
+pub unsafe extern "C" fn _strtoui64(nptr: *const u8, endptr: *mut *mut u8, mut base: i32) -> u64 {
+    if !check_pmt(!nptr.is_null()) {
+        return 0;
+    }
+    if !check_pmt(base == 0 || base >= 2) {
+        return 0;
+    }
+    if !check_pmt(base <= 36) {
+        return 0;
+    }
+    let p = nptr;
+    let mut q = nptr;
+    let mut negative = false;
+    let mut got_digit = false;
+    let mut ret: u64 = 0;
+
+    while matches!(*q, b' ' | 0x09..=0x0d) {
+        q = q.add(1);
+    }
+    if *q == b'-' {
+        negative = true;
+        q = q.add(1);
+    } else if *q == b'+' {
+        q = q.add(1);
+    }
+    if (base == 0 || base == 16) && *q == b'0' && (*q.add(1)).to_ascii_lowercase() == b'x' {
+        base = 16;
+        q = q.add(2);
+    }
+    if base == 0 {
+        base = if *q == b'0' { 8 } else { 10 };
+    }
+    let bm = base as u64;
+    while *q != 0 {
+        let cur = (*q).to_ascii_lowercase();
+        let v: u64 = if cur.is_ascii_digit() {
+            if cur >= b'0' + base as u8 {
+                break;
+            }
+            (cur - b'0') as u64
+        } else {
+            if cur < b'a' || cur >= b'a' + (base - 10) as u8 {
+                break;
+            }
+            (cur - b'a') as u64 + 10
+        };
+        got_digit = true;
+        q = q.add(1);
+        // Same short-circuit safety as the signed engine: the second disjunct is
+        // only reached once `ret <= u64::MAX / bm`, so `ret * bm` cannot overflow.
+        if ret > u64::MAX / bm || ret * bm > u64::MAX - v {
+            ret = u64::MAX;
+            *_errno() = ERANGE;
+        } else {
+            ret = ret * bm + v;
+        }
+    }
+    if !endptr.is_null() {
+        *endptr = (if got_digit { q } else { p }) as *mut u8;
+    }
+    if negative {
+        0u64.wrapping_sub(ret)
+    } else {
+        ret
+    }
 }
