@@ -111,6 +111,11 @@ pub unsafe extern "system" fn KiScanReadyQueues(
 
                         (*Thread).Priority = THREAD_BOOST_PRIORITY as i8;
                         *kt_Quantum(Thread) = (WAIT_QUANTUM_DECREMENT * 4) as i8;
+                        // §9.56 in-flight oracle: legal repositioning (removed
+                        // from the ready queue above) — requeue, not a wake.
+                        #[cfg(feature = "smp")]
+                        ntkrnl_sys::inline::ke::KiInsertDeferredReadyListRequeue(Thread);
+                        #[cfg(not(feature = "smp"))]
                         KiInsertDeferredReadyList(Thread);
                         Count -= 1;
                     }
