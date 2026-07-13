@@ -2813,3 +2813,155 @@ pub unsafe extern "C" fn _strlwr_s(str_: *mut u8, len: usize) -> i32 {
 pub unsafe extern "C" fn _strupr_s(str_: *mut u8, len: usize) -> i32 {
     strcase_s_core(str_, len, true)
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WAVE 8 — the WIDE case-insensitive family
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// The wide mirror of wave 7, and it is NOT a mirror. Three differences, each of
+// which a "same thing but u16" transcription would have gotten wrong:
+//
+//  1. NO C-locale fast path in the comparer. `_strnicmp_l` folds INLINE when
+//     `lc_handle[LC_CTYPE]` is unset; `_wcsicmp_l` always calls `_towlower_l`.
+//     That is fine only because `_towlower_l` has the fast path INSIDE it
+//     (`if(c >= 'A' && c <= 'Z') return c + 'a' - 'A';` — checked, not assumed).
+//
+//  2. The comparers return the RAW u16 difference — `return c1 - c2;` with no
+//     clamp. `wcscmp` (wave 4) CLAMPS. Same file, same shape, different contract.
+//
+//  3. The folders MUTATE BEFORE THEY FAIL. `_strlwr_s_l` scans for the terminator
+//     FIRST and errors without touching the buffer; `_wcslwr_s_l` folds as it
+//     scans, so on a string with no terminator inside `n` the caller's buffer
+//     comes back with its first `n` chars ALREADY FOLDED and then `str[0] = 0`.
+//     Its front door also zeroes `*str` where the narrow one does not.
+//     classify compares the full buffer, so this is graded, not hoped for.
+//
+// The C's own comment on the failure arm is worth keeping:
+//     /* MSDN claims that the function should return and set errno to
+//      * ERANGE, which doesn't seem to be true based on the tests. */
+// It returns EINVAL. Bug-for-bug.
+
+/// The C locale's `_towlower_l` (wcs.c) — ASCII fold, everything else through.
+#[inline]
+fn cw_lower(c: u16) -> u16 {
+    if c >= b'A' as u16 && c <= b'Z' as u16 {
+        c + 32 // c + 'a' - 'A'
+    } else {
+        c
+    }
+}
+#[inline]
+fn cw_upper(c: u16) -> u16 {
+    if c >= b'a' as u16 && c <= b'z' as u16 {
+        c - 32
+    } else {
+        c
+    }
+}
+
+/// `_wcsnicmp_l(s1, s2, n, NULL)` — C locale. Returns the RAW diff (no clamp).
+#[inline]
+unsafe fn wcsnicmp_core(s1: *const u16, s2: *const u16, mut n: usize) -> i32 {
+    if n == 0 {
+        return 0; // before the front door
+    }
+    // C: `if(!CHECK_PMT(str1) || !CHECK_PMT(str2))` — the || SHORT-CIRCUITS, so a
+    // NULL str1 fires the handler exactly ONCE and never evaluates the str2 check.
+    if !check_pmt(!s1.is_null()) || !check_pmt(!s2.is_null()) {
+        return NLSCMPERROR;
+    }
+    let (mut p, mut q) = (s1, s2);
+    let (mut c1, mut c2);
+    loop {
+        c1 = cw_lower(*p);
+        p = p.add(1);
+        c2 = cw_lower(*q);
+        q = q.add(1);
+        n -= 1; // C: `while(--n && c1 && (c1 == c2))`
+        if n == 0 || c1 == 0 || c1 != c2 {
+            break;
+        }
+    }
+    c1 as i32 - c2 as i32 // RAW — wcscmp clamps, this does not
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32 {
+    wcsnicmp_core(s1, s2, n)
+}
+
+/// `_wcsicmp_l(s1, s2, NULL)`. Unlike `_wcsnicmp` there is no count, so no
+/// `!n` early-out: the front door is the first thing that runs.
+#[no_mangle]
+pub unsafe extern "C" fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32 {
+    if !check_pmt(!s1.is_null()) || !check_pmt(!s2.is_null()) {
+        return NLSCMPERROR;
+    }
+    let (mut p, mut q) = (s1, s2);
+    let (mut c1, mut c2);
+    loop {
+        c1 = cw_lower(*p);
+        p = p.add(1);
+        c2 = cw_lower(*q);
+        q = q.add(1);
+        if c1 == 0 || c1 != c2 {
+            break;
+        }
+    }
+    c1 as i32 - c2 as i32
+}
+
+/// `_wcslwr_s_l` / `_wcsupr_s_l` with the C locale.
+///
+/// Folds AS it scans — so a string with no terminator inside `n` comes back with
+/// its first `n` chars folded and `str[0] = 0`. The narrow twin does not do this.
+/// Handler never fires (hand-rolled errno).
+#[inline]
+unsafe fn wcscase_s_core(str_: *mut u16, n: usize, upper: bool) -> i32 {
+    if str_.is_null() || n == 0 {
+        if !str_.is_null() {
+            *str_ = 0; // the narrow `_strlwr_s_l` does NOT do this
+        }
+        *_errno() = EINVAL; // errno only — no handler
+        return EINVAL;
+    }
+    let mut left = n;
+    let mut ptr = str_;
+    while left != 0 {
+        left -= 1;
+        if *ptr == 0 {
+            return 0;
+        }
+        *ptr = if upper { cw_upper(*ptr) } else { cw_lower(*ptr) };
+        ptr = ptr.add(1);
+    }
+    // No terminator within n. MSDN says ERANGE; msvcrt returns EINVAL (Wine
+    // verified this against the real DLL — see the comment in wcs.c).
+    *str_ = 0;
+    *_errno() = EINVAL;
+    EINVAL
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _wcslwr_s(str_: *mut u16, n: usize) -> i32 {
+    wcscase_s_core(str_, n, false)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _wcsupr_s(str_: *mut u16, n: usize) -> i32 {
+    wcscase_s_core(str_, n, true)
+}
+
+/// `_wcslwr(str)` == `_wcslwr_s_l(str, -1, NULL)`; `_wcsupr` likewise via
+/// `_wcsupr_l`. `n = (size_t)-1` means the terminator is always found, so the
+/// EINVAL arm is unreachable — but the errno/return path is inherited, and a NULL
+/// str still takes the front door.
+#[no_mangle]
+pub unsafe extern "C" fn _wcslwr(str_: *mut u16) -> *mut u16 {
+    wcscase_s_core(str_, usize::MAX, false);
+    str_
+}
+#[no_mangle]
+pub unsafe extern "C" fn _wcsupr(str_: *mut u16) -> *mut u16 {
+    wcscase_s_core(str_, usize::MAX, true);
+    str_
+}
