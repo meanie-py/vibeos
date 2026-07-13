@@ -213,6 +213,34 @@ extern "C" {
     fn _wcsupr(s: *mut u16) -> *mut u16;
     fn _wcslwr_s(s: *mut u16, n: usize) -> i32;
     fn _wcsupr_s(s: *mut u16, n: usize) -> i32;
+
+    // ── wave 9: the wide ctype family ──
+    fn ref_iswctype(wc: u32, ty: u16) -> i32;
+    fn ref_iswalnum(wc: u32) -> i32;
+    fn ref_iswalpha(wc: u32) -> i32;
+    fn ref_iswcntrl(wc: u32) -> i32;
+    fn ref_iswdigit(wc: u32) -> i32;
+    fn ref_iswgraph(wc: u32) -> i32;
+    fn ref_iswlower(wc: u32) -> i32;
+    fn ref_iswprint(wc: u32) -> i32;
+    fn ref_iswpunct(wc: u32) -> i32;
+    fn ref_iswspace(wc: u32) -> i32;
+    fn ref_iswupper(wc: u32) -> i32;
+    fn ref_iswxdigit(wc: u32) -> i32;
+    fn ref_iswblank(wc: u32) -> i32;
+    fn iswctype(wc: u32, ty: u16) -> i32;
+    fn iswalnum(wc: u32) -> i32;
+    fn iswalpha(wc: u32) -> i32;
+    fn iswcntrl(wc: u32) -> i32;
+    fn iswdigit(wc: u32) -> i32;
+    fn iswgraph(wc: u32) -> i32;
+    fn iswlower(wc: u32) -> i32;
+    fn iswprint(wc: u32) -> i32;
+    fn iswpunct(wc: u32) -> i32;
+    fn iswspace(wc: u32) -> i32;
+    fn iswupper(wc: u32) -> i32;
+    fn iswxdigit(wc: u32) -> i32;
+    fn iswblank(wc: u32) -> i32;
 }
 
 /// The four observable effects of a CRT call, as one comparable unit.
@@ -1471,5 +1499,70 @@ unsafe fn run() {
         let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
         (d1, o1, d2, o2, format!("len={}", s.len()-1))
     });
+
+
+    // ═════ WAVE 9: the wide ctype family ══════════════════════════════════════
+    //
+    // EXHAUSTIVE over the u16 domain, not fuzzed. The domain is only 65,536 wide
+    // and it has three regimes the C treats differently:
+    //     wc == WEOF (0xFFFF) -> 0, unconditionally
+    //     wc <  256           -> MSVCRT__pwctype[wc] & mask   (table)
+    //     wc >= 256           -> GetStringTypeW(...)  & mask   (NLS)
+    // A random fuzz would hit all three, but exhaustion PROVES all three, and for
+    // 65,536 cases x 13 predicates there is no reason to settle for less.
+    //
+    // Note the subject reads subjectimpl.c's table and the reference reads
+    // refimpl's — separate storage, identical model — so a divergence here is a
+    // divergence in the Rust's MASKING, which is the only part under test (in the
+    // real DLL both sides read one shared msvcrt table).
+    macro_rules! ctype_row {
+        ($name:literal, $subj:ident, $refr:ident) => {
+            {
+                let mut bad = None;
+                for wc in 0u32..=0xFFFF {
+                    let (g, w) = ($subj(wc), $refr(wc));
+                    // msvcrt returns the raw masked bits, not a normalised 0/1 —
+                    // so compare the VALUES, not their truthiness.
+                    if g != w {
+                        bad = Some(format!("wc=0x{wc:04x} cnt={g} msvcrt={w}"));
+                        break;
+                    }
+                }
+                match bad {
+                    Some(b) => record($name, V::Diverge, b),
+                    None => record($name, V::Match, "exhaustive over 0x0000..=0xFFFF".into()),
+                }
+            }
+        };
+    }
+    ctype_row!("iswalnum",  iswalnum,  ref_iswalnum);
+    ctype_row!("iswalpha",  iswalpha,  ref_iswalpha);
+    ctype_row!("iswcntrl",  iswcntrl,  ref_iswcntrl);
+    ctype_row!("iswdigit",  iswdigit,  ref_iswdigit);
+    ctype_row!("iswgraph",  iswgraph,  ref_iswgraph);
+    ctype_row!("iswlower",  iswlower,  ref_iswlower);
+    ctype_row!("iswprint",  iswprint,  ref_iswprint);
+    ctype_row!("iswpunct",  iswpunct,  ref_iswpunct);
+    ctype_row!("iswspace",  iswspace,  ref_iswspace);
+    ctype_row!("iswupper",  iswupper,  ref_iswupper);
+    ctype_row!("iswxdigit", iswxdigit, ref_iswxdigit);
+    ctype_row!("iswblank",  iswblank,  ref_iswblank);
+    // iswctype with EVERY mask bit, over the whole domain.
+    {
+        let mut bad = None;
+        'outer: for ty in [0x1u16, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x100, 0x103, 0x8000, 0xFFFF] {
+            for wc in 0u32..=0xFFFF {
+                let (g, w) = (iswctype(wc, ty), ref_iswctype(wc, ty));
+                if g != w {
+                    bad = Some(format!("wc=0x{wc:04x} mask=0x{ty:04x} cnt={g} msvcrt={w}"));
+                    break 'outer;
+                }
+            }
+        }
+        match bad {
+            Some(b) => record("iswctype", V::Diverge, b),
+            None => record("iswctype", V::Match, "exhaustive: 12 masks x 0x0000..=0xFFFF".into()),
+        }
+    }
 
 }
