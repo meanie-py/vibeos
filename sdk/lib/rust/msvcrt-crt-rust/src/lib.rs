@@ -2998,8 +2998,20 @@ pub unsafe extern "C" fn _wcsupr(str_: *mut u16) -> *mut u16 {
 extern "C" {
     /// msvcrt's wide ctype table — a POINTER to 256 WORDs of mask bits.
     /// In msvcrt.dll this is the real table; in the harness, subjectimpl.c's.
+    /// (Data, so no calling convention — `extern "C"` is right here.)
     static MSVCRT__pwctype: *const u16;
+}
 
+// GetStringTypeW is `WINAPI` — i.e. **stdcall on i386** (`_GetStringTypeW@16`) and
+// cdecl on amd64/arm64. `extern "system"` is the one that resolves per-arch;
+// `extern "C"` hardcodes cdecl and silently links on amd64/arm64 while failing i386
+// with `_GetStringTypeW: i386 cdecl — missing symbol / wrong ABI`. This is the
+// exact trap AGENTS.md calls out, and it cost an i386 gate.
+//
+// Worth noting HOW it was caught: `cargo check --target i686-pc-windows-gnu` passed
+// clean, because `check` does not LINK. Three green cross-checks proved nothing
+// about this. The gate's ABI verifier is what named it.
+extern "system" {
     /// kernel32's Unicode classifier — the `wc >= 256` path.
     fn GetStringTypeW(kind: u32, src: *const u16, count: i32, chartype: *mut u16) -> i32;
 }

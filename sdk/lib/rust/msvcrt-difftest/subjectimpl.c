@@ -139,7 +139,11 @@ static void subj_wctype_ctor(void)
 }
 
 /* The wc >= 256 path. Same model as refimpl's, so the comparison isolates the
- * Rust's masking rather than the NLS data. */
+ * Rust's masking rather than the NLS data.
+ *
+ * The harness is a HOST (linux-x86_64) binary, where WINAPI is a no-op, so plain
+ * cdecl is right here. In msvcrt.dll itself this resolves to kernel32's stdcall
+ * export and the Rust declares it `extern "system"` accordingly — see the flip. */
 int GetStringTypeW(unsigned int type, const unsigned short *src, int count,
                    unsigned short *chartype)
 {
