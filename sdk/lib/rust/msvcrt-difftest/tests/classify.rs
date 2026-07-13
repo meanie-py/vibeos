@@ -110,6 +110,9 @@ extern "C" {
     fn ref__atoi64(s: *const u8) -> i64;
     fn ref_strtol(s: *const u8, e: *mut *mut u8, b: i32) -> i32;
     fn ref_strtoul(s: *const u8, e: *mut *mut u8, b: i32) -> u32;
+    // wave 5 probe: the genuine msvcrt float parser (fpnum_parse + bnum.h bignum)
+    fn ref_strtod(s: *const u8, e: *mut *mut u8) -> f64;
+    fn ref_atof(s: *const u8) -> f64;
 }
 
 // ── cnt-rust's #[no_mangle] shims (the code under test) ──
@@ -198,6 +201,64 @@ fn gen_wstr(r: &mut Rng, maxlen: usize) -> Vec<u16> {
             _ => 1 + (r.below(0xFFFE) as u16),
         };
         v.push(w);
+    }
+    v.push(0);
+    v
+}
+
+/// Float-literal strings, weighted toward the shapes that separate a naive
+/// accumulator from a correctly-rounded bignum: long mantissas, extreme
+/// exponents, and hard-to-round halfway cases.
+fn gen_float_str(r: &mut Rng) -> Vec<u8> {
+    let mut v: Vec<u8> = Vec::new();
+    match r.below(8) {
+        0 => { // simple
+            for _ in 0..1 + r.below(3) { v.push(b'0' + r.below(10) as u8); }
+            v.push(b'.');
+            for _ in 0..1 + r.below(3) { v.push(b'0' + r.below(10) as u8); }
+        }
+        1 => { // LONG mantissa — where naive accumulation loses bits
+            for _ in 0..17 + r.below(6) { v.push(b'0' + r.below(10) as u8); }
+            v.push(b'.');
+            for _ in 0..17 + r.below(6) { v.push(b'0' + r.below(10) as u8); }
+        }
+        2 => { // extreme exponent
+            for _ in 0..1 + r.below(4) { v.push(b'0' + r.below(10) as u8); }
+            v.push(b'.');
+            for _ in 0..1 + r.below(8) { v.push(b'0' + r.below(10) as u8); }
+            v.push(if r.below(2) == 0 { b'e' } else { b'E' });
+            if r.below(2) == 0 { v.push(b'-'); }
+            v.extend_from_slice(format!("{}", r.below(320)).as_bytes());
+        }
+        3 => { // subnormal / near-zero
+            v.extend_from_slice(b"0.");
+            for _ in 0..r.below(20) { v.push(b'0'); }
+            for _ in 0..1 + r.below(17) { v.push(b'0' + r.below(10) as u8); }
+            v.extend_from_slice(b"e-3");
+            v.push(b'0' + r.below(10) as u8);
+        }
+        4 => { // halfway-ish: ...5 at the rounding boundary
+            for _ in 0..15 + r.below(4) { v.push(b'0' + r.below(10) as u8); }
+            v.extend_from_slice(b"5e");
+            if r.below(2) == 0 { v.push(b'-'); }
+            v.extend_from_slice(format!("{}", r.below(40)).as_bytes());
+        }
+        5 => { // signed + leading space (the DJ Delorie *sret quirk)
+            if r.below(2) == 0 { v.push(b' '); }
+            v.push(if r.below(2) == 0 { b'-' } else { b'+' });
+            for _ in 0..1 + r.below(8) { v.push(b'0' + r.below(10) as u8); }
+            v.push(b'.');
+            for _ in 0..1 + r.below(8) { v.push(b'0' + r.below(10) as u8); }
+        }
+        6 => { // trailing junk (tests the end pointer)
+            for _ in 0..1 + r.below(6) { v.push(b'0' + r.below(10) as u8); }
+            v.push(b'.');
+            for _ in 0..1 + r.below(6) { v.push(b'0' + r.below(10) as u8); }
+            v.extend_from_slice(b"xyz");
+        }
+        _ => { // integer-only
+            for _ in 0..1 + r.below(19) { v.push(b'0' + r.below(10) as u8); }
+        }
     }
     v.push(0);
     v
@@ -376,7 +437,42 @@ fn main() {
         if !r.note.is_empty() { println!("        {}", r.note); }
     }
     println!("\n  {m} MATCH   {s} SIGN-ONLY   {d} DIVERGE   (of {} tested)", res.len());
-    println!("\n  DEFERRED (not graded, not flipped — locale-dependent, Phase D):");
+
+    // ── THE GATE ────────────────────────────────────────────────────────────
+    // Until now this table was INFORMATIONAL: it printed `DIVERGE ✗ DO NOT FLIP`
+    // and exited 0. A divergence in a function that is ALREADY FLIPPED is not a
+    // suggestion — it means msvcrt.dll is shipping a wrong answer. Fail.
+    //
+    // `[PROBE]` rows are exempt BY DESIGN. A probe is a non-`#[no_mangle]` fn that
+    // asks "COULD we flip this?" before anything overrides the C — so a DIVERGE
+    // there is the probe WORKING, and a permanent, executable record of why that
+    // family is off-limits. (See `strtod [PROBE]`: cnt-rust's DJ Delorie
+    // accumulator vs msvcrt's correctly-rounded bignum — measured 14 ULPs apart.)
+    let shipped_divergences: Vec<&str> = res
+        .iter()
+        .filter(|r| r.v == V::Diverge && !r.name.contains("[PROBE]"))
+        .map(|r| r.name)
+        .collect();
+    if !shipped_divergences.is_empty() {
+        println!(
+            "\n  ✗ FAIL — these are FLIPPED and DIVERGENT, i.e. msvcrt.dll is shipping\n    \
+             a wrong answer for them: {shipped_divergences:?}\n"
+        );
+        std::process::exit(1);
+    }
+
+    println!("\n  PROBES (graded, deliberately NOT flipped — the C still ships):");
+    println!("    strtod [PROBE] — DIVERGE is the EXPECTED, LOAD-BEARING result.");
+    println!("      cnt-rust's core is ReactOS libcntpr's DJ Delorie parser: a naive");
+    println!("      `r = r*10 + d` accumulator, explicitly never correctly-rounded.");
+    println!("      msvcrt's is Wine's `fpnum_parse` + `bnum.h` — a base-10 BIGNUM,");
+    println!("      correctly rounded. Measured 14 ULPs apart on a hard-to-round input.");
+    println!("      => the \"assemble from cnt-rust\" thesis DOES NOT REACH the float");
+    println!("      family. And note _ecvt/_fcvt/_gcvt are literally `_snprintf(\"%.*le\")`");
+    println!("      calls, so float↔str is not a separate wave at all — it is PART OF");
+    println!("      THE PRINTF ENGINE (Phase C). Do not flip strtod/atof from cnt-rust.\n");
+
+    println!("  DEFERRED (not graded, not flipped — locale-dependent, Phase D):");
     println!("    narrow: _stricmp / _strnicmp / _memicmp");
     println!("    wide:   _wcsicmp / _wcsnicmp / _wcsicoll / _wcsnicoll / wcscoll");
     println!("            _wcslwr / _wcsupr / towlower / towupper / the isw* ctype block");
@@ -568,6 +664,26 @@ unsafe fn run() {
     // NB: `_wcsnset` returns the START (msvcrt: `wchar_t *ret = str;`), unlike its
     // narrow twin `_strnset`, which returns the ADVANCED pointer. check_wbuf
     // compares the returned offset, so this asymmetry is graded, not assumed.
+    // ───────── WAVE 5 PROBE: cnt-rust's float parser vs msvcrt's bignum ─────────
+    // NOT a flip. `strtod_probe` is a plain `pub unsafe fn` (no #[no_mangle]), so
+    // msvcrt.dll still uses its C strtod. This only asks: COULD we flip it?
+    //
+    // Graded on the BIT PATTERN, not `==`: two doubles that differ by one ULP are
+    // a real divergence for a CRT, and `-0.0 == 0.0` would hide a sign bug.
+    check_int("strtod [PROBE]", false, |r| {
+        let s = gen_float_str(r);
+        let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
+        let got = msvcrt_crt_rust::strtod_probe(s.as_ptr(), &mut e1);
+        let want = ref_strtod(s.as_ptr(), &mut e2);
+        let (gb, wb) = (got.to_bits() as i64, want.to_bits() as i64);
+        // also compare the end pointer (the `*sret` contract)
+        let (go, wo) = (e1 as usize - s.as_ptr() as usize, e2 as usize - s.as_ptr() as usize);
+        let ctx = format!("{:?} -> rust={got:?} (0x{:016x}) msvcrt={want:?} (0x{:016x}) end {go} vs {wo}",
+                          String::from_utf8_lossy(&s[..s.len()-1]), got.to_bits(), want.to_bits());
+        if go != wo { return (go as i64, wo as i64, format!("END-PTR differs: {ctx}")); }
+        (gb, wb, ctx)
+    });
+
     check_wbuf("_wcsnset", |r| { let s = gen_wstr(r, 30); let c = r.below(0x10000) as u16; let n = r.below(34);
         let (mut d1, mut d2) = (s.clone(), s.clone());
         let p1 = _wcsnset(d1.as_mut_ptr(), c, n); let p2 = ref__wcsnset(d2.as_mut_ptr(), c, n);

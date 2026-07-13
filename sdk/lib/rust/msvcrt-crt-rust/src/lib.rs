@@ -1402,3 +1402,34 @@ pub unsafe extern "C" fn _wcsnset(s: *mut u16, c: u16, n: usize) -> *mut u16 {
 // msvcrt C. A `staticlib` crate-type would force a `#[panic_handler]` into the
 // same rustc invocation that emits the rlib, and that becomes a duplicate
 // `panic_impl` lang item inside the harness's std test binary.
+
+// ─────────────────────────────────────────────────────────────────────────
+// Wave 5 PROBE (not a flip — deliberately NOT `#[no_mangle]`).
+//
+// Exposed so msvcrt-difftest can grade cnt-rust's float parser against the
+// genuine msvcrt `strtod` BEFORE anything overrides the C. If it diverges,
+// nothing has shipped.
+//
+// The suspicion going in (from cnt-rust's own doc comment): these are two
+// DIFFERENT ALGORITHMS from two different lineages —
+//   cnt-rust  = ReactOS libcntpr's DJ Delorie parser: a naive `r = r*10 + d`
+//               accumulator, then `r *= 10^e`. Explicitly "never IEEE
+//               correctly-rounded".
+//   msvcrt    = Wine's `fpnum_parse` + `bnum.h`, a base-10 BIGNUM — correctly
+//               rounded.
+// If that is right they cannot agree on hard-to-round inputs, and the
+// "assemble from cnt-rust" thesis does not reach this family.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Probe: cnt-rust's `strtod` core, marshalled to the C signature.
+///
+/// # Safety
+/// `s` must be a valid NUL-terminated C string; `end` may be NULL.
+pub unsafe fn strtod_probe(s: *const u8, end: *mut *mut u8) -> f64 {
+    let sl = h::cstr_slice(s);
+    let (v, consumed) = cnt_rust::core_rs::strtod::strtod_bytes(sl);
+    if !end.is_null() {
+        *end = (s as *mut u8).add(consumed);
+    }
+    v
+}

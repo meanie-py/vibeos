@@ -76,7 +76,60 @@ block, the NLS `wcstombs` family). The harness pins the "C" locale, so it *would
 MATCH — that is the documented blind spot (§9.60), not a license to flip. Verified still-C by
 PE export RVA (they resolve at 0x045xxx, far from the Rust cluster at 0x0025a0–0x002c90).
 
-**Next:** wave 5 = float↔str (`_ecvt`/`_fcvt`/`_gcvt`), then `math.c`/`sincos.c`, then `mbcs.c`.
+### ⛔ WAVE 5 (float↔str) IS CANCELLED — the thesis does not reach this family
+
+Probed before writing any integration (`strtod [PROBE]` in classify, a deliberately
+NON-`#[no_mangle]` fn so nothing overrode the C). Result: **DIVERGE, by 14 ULPs.**
+
+```
+"0.0000000000000000087519423665610e-32"
+  cnt-rust (DJ Delorie naive):  0x35c05f590315f1e3
+  msvcrt   (bignum):            0x35c05f590315f1d5
+```
+
+Two different algorithms from two different lineages:
+- **cnt-rust** = ReactOS libcntpr's **DJ Delorie parser** — a naive `r = r*10 + d`
+  accumulator, then `r *= 10^e`. Its own doc says it "was never IEEE correctly-rounded".
+- **msvcrt** = Wine's `fpnum_parse` + `bnum.h` — a base-10 **BIGNUM**, correctly rounded.
+
+They were never the same function. **The kernel and msvcrt have genuinely different float
+contracts.** Flipping `strtod`/`atof` from cnt-rust would silently corrupt every user-mode
+float parse by double-digit ULPs on hard-to-round inputs — invisible in casual use,
+lethal in a conformance suite.
+
+**And the float↔str direction is not a separate wave at all.** msvcrt's converters ARE
+printf calls:
+
+```c
+_ecvt: _snprintf(buf, 80, "%.*le", prec-1, number);
+_fcvt: _snprintf(buf, 80, "%.*f",  ndigits, number);
+_gcvt:  sprintf(buff,     "%.*g",  ndigit,  number);
+```
+
+So the whole float family — both directions — is **part of the printf engine (Phase C)**,
+and the honest path to it is *porting msvcrt's own fpnum/bnum machinery*, i.e. a
+TRANSLATION, not an assembly. Re-sequenced accordingly.
+
+The probe stays in the tree permanently as an executable DO-NOT-FLIP record.
+
+### Wave 5 (revised) — the `_s` secure-CRT family + the pure leftovers
+
+All gradeable against the EXISTING `string.c` reference TU — **zero new harness work**:
+- radix `_s` (10): `_i64toa_s _i64tow_s _itoa_s _itow_s _ltoa_s _ltow_s _ui64toa_s
+  _ui64tow_s _ultoa_s _ultow_s` — wave 1's siblings, plus bounds-check + errno.
+- string `_s` (5): `strcpy_s strcat_s strncpy_s strncat_s _strnset_s` (cnt-rust's cabi
+  already has the wide `wcscpy_s`/`wcsncpy_s`/`wcscat_s`/`wcsncat_s`).
+- pure leftovers: `strtok` `strtok_s` (cnt has `strtok.rs`; the ref TU already models
+  `thread_data->strtok_next`), `_swab`, `__strncnt`.
+
+The `_s` contract is *errno + the invalid-parameter handler*, not just the buffer — so the
+harness must grade `errno` too, which means providing `_errno`/`_invalid_parameter` for the
+crate under test (the reference's own are namespaced `msvcrt_ref_*`).
+
+**Also now a real gate:** `classify` used to print `DIVERGE ✗ DO NOT FLIP` and **exit 0**.
+It now exits 1 if a FLIPPED function diverges (`[PROBE]` rows exempt by design).
+Negative-control validated.
+
 Owed: replace `--whole-archive` with per-symbol `-u` pulling (it currently force-includes the
 crate's bundled `compiler_builtins` into msvcrt.dll).
 
