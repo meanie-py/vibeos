@@ -605,3 +605,120 @@ therefore **Phase D**, not a symmetric freebie. Nearly flipped them on a symmetr
   `_gcvt` are literally `_snprintf` calls, and `strtod` needs msvcrt's own bignum (the wave-5
   probe measured cnt-rust's parser 14 ULPs off — it stays in the tree as an executable
   DO-NOT-FLIP record).
+
+---
+
+## Waves 7–9 (2026-07-13). +37 flips. msvcrt.dll is **119 functions of Rust**.
+
+Three waves, three bugs the harness caught that reading could not. That is the
+headline: by wave 7 I had read a lot of msvcrt C and was getting confident, and
+confidence is precisely when the differential oracle starts earning its keep.
+
+### Wave 7 — the narrow case-insensitive family (5 flips)
+
+`_stricmp _strnicmp _memicmp _strlwr_s _strupr_s`
+
+**Locale checked FIRST**, per wave 6's lesson. Each consults
+`locinfo->lc_handle[LC_CTYPE]` and takes an inline ASCII fast path when unset — the
+"C" locale msvcrt.dll starts in. Same bounded caveat the already-shipped
+`_strlwr`/`_strupr` carry. No new debt.
+
+**The bug:**
+
+```c
+if ((c1 = *s1++) >= 'A' && c1 <= 'Z')
+    c1 -= 'A' - 'a';                    /* 'A'-'a' == -32, so this ADDS 32 */
+```
+
+Transcribed the `-=` literally as `c1 -= 32`. That maps `'I'` (73) to `')'` (41).
+classify convicted it on the first run with the exact arithmetic (`cnt=-131`, which
+is `(u8)41 - (u8)172`). `_memicmp` passed the same fuzz because its helper spells
+the fold as `c + 32` — two transcriptions of one rule, one wrong, and only the
+differential test knew which.
+
+Also: `_strnicmp` and `_memicmp` are NOT the same comparison at different bounds.
+The first folds on the sign-extended `char` and returns the `(unsigned char)`
+difference; the second folds via `_tolower_l` (non-ASCII passes THROUGH) and returns
+that difference raw. On high bytes they return different numbers.
+
+### Wave 8 — the WIDE case-insensitive family (6 flips)
+
+`_wcsicmp _wcsnicmp _wcslwr _wcsupr _wcslwr_s _wcsupr_s`
+
+Deliberately **not** transcribed from wave 7. Three things differ:
+
+1. **No C-locale fast path in the comparer.** `_wcsicmp_l` always calls
+   `_towlower_l` — which is fine only because `_towlower_l` has the fast path
+   *inside* it. Checked, not assumed. Had it gone through `LCMapStringW`, these
+   would be Phase D.
+2. **The comparers return the RAW u16 diff.** `wcscmp` (wave 4) CLAMPS. Same file,
+   same shape, different contract — and wave 4 already got bitten by exactly this
+   pairwise assumption.
+3. **The folders MUTATE BEFORE THEY FAIL.** `_strlwr_s_l` scans for the terminator
+   first and errors without touching the buffer. `_wcslwr_s_l` folds AS it scans, so
+   a string with no terminator inside `n` comes back with its first `n` chars
+   already folded, and only then `str[0] = 0`. Its front door also zeroes `*str`
+   where the narrow one does not.
+
+### Wave 9 — the wide ctype family (26 flips)
+
+`iswctype` + `iswalnum/alpha/cntrl/digit/graph/lower/print/punct/space/upper/xdigit/blank`,
+each with its `_l` variant.
+
+These **look** locale-bound and are not: `_iswctype_l` takes a `_locale_t` and never
+uses it. No `locinfo->` field to reach into, so no magic-offset problem, and the
+whole family — `_l` variants included — is flippable.
+
+Better: it reads msvcrt's own `MSVCRT__pwctype` global and calls the real
+`GetStringTypeW`, so it is **locale-CORRECT, not merely C-locale-correct**. It
+inherits msvcrt's locale state instead of modelling it. This is the first family in
+the lane with no locale caveat at all.
+
+**EXHAUSTIVE, not fuzzed.** The domain is 65,536 wide with three regimes the C
+treats differently (WEOF; the `<256` table; the `>=256` NLS path). Exhaustion proves
+all three. It earned that instantly:
+
+```
+iswblank  DIVERGE   wc=0x0020  cnt=64  msvcrt=1
+```
+
+```c
+return wc == '\t' || _iswctype_l( wc, _BLANK, locale );
+```
+
+C's `||` **normalises to 0/1** — so `iswblank` is the ONLY member of the family that
+returns a boolean. Every other `isw*` returns the raw masked bits (`iswspace(' ')`
+is 8, not 1). A fuzz over "interesting wide characters" might well not have included
+plain space.
+
+`towupper`/`towlower` are NOT flipped: `_towlower_l` reads
+`locinfo->lc_handle[LC_CTYPE]` and calls `LCMapStringW`. That field IS an offset into
+a struct we don't own. Phase D.
+
+### Also fixed: a lint that was breaking everyone's gate
+
+`tools/scan_nightly_surface.py` (landed on master that morning) `rglob`'d
+`sdk/lib/rust/target/` — build output — and only filtered the *results*. The gate
+runs per-arch lints concurrently with the other arches' builds, so a
+`target/<triple>` vanished mid-walk and the tool died with `FileNotFoundError`,
+reported as "NEW lint findings". Pruned during traversal instead. Not our lane, but
+it was in the way, and it was breaking gates for whoever hit it next.
+
+### Where the lane stands
+
+**119 of msvcrt.dll's functions are Rust.** The pure floor of `string.c`/`wcs.c` is
+essentially exhausted. What remains is gated on two things, neither of which is
+effort:
+
+- **Phase C — printf.** The whole float family rides on it (`_ecvt`/`_fcvt`/`_gcvt`
+  are literally `_snprintf` calls; `strtod` needs msvcrt's bignum — the wave-5 probe
+  measured cnt-rust's parser 14 ULPs off and stays in the tree as an executable
+  DO-NOT-FLIP record).
+- **Phase D — locale.** `towupper`/`towlower`, the collation family
+  (`strcoll`/`wcscoll`/`strxfrm`), the multibyte conversions, the wide integer
+  parsers (locale-bound via `_iswspace_l` where the narrow ones are not), and every
+  `_l` variant that actually *reads* its locale argument. All of them want the same
+  thing: a way to reach `locinfo` fields without hardcoding struct offsets.
+
+The next wave that isn't Phase C or D is small: `_strdup`/`_wcsdup`/`_mbsdup` (alloc
++ copy). Everything else of substance is behind those two doors.
