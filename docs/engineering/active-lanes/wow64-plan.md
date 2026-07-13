@@ -824,6 +824,23 @@ the A/B control proves it: the NATIVE arm64 build of the same doomgeneric
 (`VIBEOS_DOOM_AB=1` stages it into system32) misrenders the same way, painting its
 framebuffer *outside* its own window (over whatever else is on the desktop).
 
+
+**Investigation notes (2026-07-13, instrumented then reverted — findings only).**
+Traced with one-shot DbgPrints in `NtUserShowWindow` and `DceResetActiveDCEs`.
+What is RIGHT: the show path reaches `co_WinPosSetWindowPos -> DceResetActiveDCEs`;
+DOOM's cached DCE **is** found and revisited on show; its visible region is
+recomputed correctly to `bbox=(0,0,640,400)` complexity=2 (NOT empty); the window
+is at (0,0), DC origin (0,0), `StretchDIBits` returns 400 scanlines. So the clip
+is not the problem. Two real anomalies remain for the win32k lane to chase:
+  1. DOOM's window has `rcWindow == rcClient == (0,0,640,400)` — **no non-client
+     inset at all**, i.e. `WM_NCCALCSIZE`'s client-rect writeback is being dropped
+     (compare testgui, which also shows rcWindow==rcClient). A window with a
+     caption should have a smaller client rect.
+  2. gui32's magenta (a DIRECT display DC) DOES reach the framebuffer, while
+     DOOM's window-DC blits do not — with a provably-correct visrgn. So the
+     divergence is between a window DC and a direct DC at blit time (surface
+     target / screen offset), not the visible region. Start there, not at DCE.
+
 The shape: doomgeneric does
 
 ```c
