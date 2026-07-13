@@ -505,7 +505,7 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   **My own earlier triage note was WRONG** and is corrected in-file: C does *not* dispatch fast
   I/O inside `_SEH2_TRY` (only the IOSB write-back is protected), and C's `ProbeForRead` is
   range+alignment-only and never touches memory — so no kernel-side "protected call" was ever
-  the answer. Reading the C oracle's actual control flow beat pattern-matching. Field manual §9.62.
+  the answer. Reading the C oracle's actual control flow beat pattern-matching. Field manual §9.63.
 
 - 2026-07-12: **`ExUuid` was never a merge regression — it was a latent bug that passed 1 boot
   in 4.** `ex-rust/src/uuid.rs` flattened C's `UUID_CACHED_VALUES_STRUCT` union into a bare

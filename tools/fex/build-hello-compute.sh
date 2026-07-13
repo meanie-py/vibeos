@@ -68,6 +68,18 @@ else
     echo "[!] win32.exe skipped: build-i386 user32 importlib missing ($I386_BUILD)"
 fi
 
+# file32.exe — the M10 file-I/O guest: ReadFile/WriteFile/GetFileSize/FindFirstFile.
+# The oracle for the IO_STATUS_BLOCK 32<->64 marshalling (Information is 4 bytes
+# in the guest, 8 on the host — ReadFile's byte count IS that field).
+if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
+    "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
+        -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -o "$HARNESS_BUILD/file32.exe" "$HARNESS_SRC/File32.c" \
+        "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+else
+    echo "[!] file32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD)"
+fi
+
 echo
 echo "Built:"
-ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe "$HARNESS_BUILD"/hello32.exe "$HARNESS_BUILD"/gui32.exe "$HARNESS_BUILD"/win32.exe 2>/dev/null || true
+ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe "$HARNESS_BUILD"/hello32.exe "$HARNESS_BUILD"/gui32.exe "$HARNESS_BUILD"/win32.exe "$HARNESS_BUILD"/file32.exe 2>/dev/null || true

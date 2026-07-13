@@ -5427,10 +5427,61 @@ if (len > 0 && str) while (*str && len--) *str++ = value;  /* reads at most len 
 **The detector (new, permanent): `msvcrt-difftest/tests/oob_guard.rs`.** A value-comparing fuzz is *structurally* blind to an over-read that still returns the right answer — no amount of fuzzing finds this class. So probe the access, not the value: `mmap` two pages, `mprotect(PROT_NONE)` the second, and place a deliberately **NUL-free** buffer of `k` bytes flush against the boundary; call each bounded fn with `n <= k`. A correct impl never touches `p[k]`; an unbounded scan takes SIGSEGV. Each call runs in a forked child so the offender is *named* instead of taking the harness down. Validated both ways — it reports `_strnset ✗ OVER-READ` on the buggy version and passes on the fix. **Every new bounded flip gets a row here.**
 
 **Meta-lesson (compounds with §9.60).** §9.60 catalogued the harness's blind spots in *what it varies* (locale, host-vs-target `#if`, proxy-vs-artifact). This is a blind spot in *what it observes*: it compares return values and destination bytes, so it can only ever catch wrong **answers** — never wrong **memory access** that yields a right answer. Two different questions, two different instruments. A green diff table is not a safety proof.
+### 9.62 (ROOT-CAUSED + FIXED 2026-07-12) WoW64: a code *generator* silently mis-thunked the whole file-I/O family — `IO_STATUS_BLOCK` is 8 bytes in the guest and 16 on the host, and `NtReadFile` was never on the deep-marshal list
+
+**Symptom (latent — nothing was visibly broken).** `hello32`/`gui32`/`win32` all passed;
+the boot was green. But every `ReadFile` a 32-bit guest could ever issue was returning a
+garbage byte count, and overflowing the guest's stack by 8 bytes while doing it. It had
+simply never been *exercised*: no guest did file I/O yet.
+
+**Root cause.** `tools/wow64gen/` generates 32→64 syscall thunks from `ntdll.spec`. A
+`.spec` describes a pointer's *value*, not the shape of what it points at, so the generator
+takes a hand-curated deep-marshal list (`manual.txt`) of syscalls whose pointed-to structs
+differ in width; anything not on that list gets an **auto** thunk that passes the guest
+pointer straight through. `IO_STATUS_BLOCK` ends in `ULONG_PTR Information` — **4 bytes on
+i386, 8 on the host** — so the guest's block is 8 bytes and the host kernel writes 16.
+`NtReadFile`, `NtWriteFile`, `NtQueryInformationFile`, `NtSetInformationFile`,
+`NtQueryVolumeInformationFile` and `NtFlushBuffersFile` were **not on the list**. Two bugs
+per call: an 8-byte overflow past the guest struct, and `Information` read from offset 4
+when the kernel wrote it at offset 8. `wow64gen`'s own README names `IO_STATUS_BLOCK` as a
+deep-marshal case — the *doc* was right and the *list* was incomplete.
+
+**The reusable lesson (this is the point).** A generator that is safe-by-default only where
+a human remembered to list something is **not safe by default**. The failure is invisible:
+the build is green, the tool is "working as designed," and the wrongness only shows up as
+corrupted data in a caller nobody has written yet. When a codegen tool has an escape hatch
+list, the list needs a **periodic audit against the property it encodes** — here: "grep the
+spec for every syscall taking a struct with a `ULONG_PTR`/pointer/HANDLE member, and diff
+that against `manual.txt`." Missing entries are silent; extra entries are loud. **Always
+err toward listing.**
+
+**Fix** (`dll/win32/wow64/wow64_manual.c`, M10): hand-marshal the six + `NtQueryDirectoryFile`
+(which also takes a `PUNICODE_STRING` mask). Every remaining IOSB taker (`NtLockFile`,
+`NtQueryEaFile`, `NtCancelIoFile`, `NtNotifyChangeKey`, `NtDeviceIoControlFile`, …) went on
+the manual list too, so they now fail **loud** instead of corrupting silently.
+
+**Async is the trap, and it's the §9.36 class.** The host IOSB we marshal into is a *stack
+local of the thunk*. Returning `STATUS_PENDING` hands the kernel a pointer into a frame that
+is about to die — exactly the dead-frame-IOSB corruption that cost days in §9.36. So an
+explicit async request (guest passed an `Event` or APC routine) is **refused before the call
+is issued**, and if the host pends anyway we **block on the file handle** rather than return
+over a live pointer into a dead frame. Never "just copy it back later" — there is no later.
+
+**The proper async fix is kernel-side and is owed:** I/O completion should write an
+`IO_STATUS_BLOCK32` when the requesting process is WoW64 (NT gates exactly this on
+`IoIs32bitProcess(Irp)`); our single choke point is `*(*Irp).UserIosb = (*Irp).IoStatus;` in
+`iomgr-rust/src/irp.rs`. Careful: 64-bit code (wow64.dll, the 64-bit ntdll) *also* runs
+inside a WoW64 process and passes genuine 64-bit IOSBs, so the gate must be **per-IRP,
+captured at syscall entry** — never merely "this process is WoW64."
+
+**Regression oracle:** `file32.exe` (`tools/fex/hello-compute/File32.c`, spawned by
+winlogon's `TryStartWow64File`). `ReadFile`'s returned byte count *is* `IOSB.Information`,
+so asserting it catches this class by construction. Verdict 0x600D; `[file32]` lines on
+serial.
 
 ---
 
-### 9.62 (ROOT-CAUSED + FIXED 2026-07-12) When the BUG IS IN THE TEST HARNESS: the standalone kmtest drivers' own `_SEH2_TRY` was dead code, so three "kernel crashers" were the kernel behaving *correctly*
+### 9.63 (ROOT-CAUSED + FIXED 2026-07-12) When the BUG IS IN THE TEST HARNESS: the standalone kmtest drivers' own `_SEH2_TRY` was dead code, so three "kernel crashers" were the kernel behaving *correctly*
 
 **Symptom.** Three amd64 kmtest quarantines, all BUGCHECK-class, all filed as kernel bugs:
 `IoReadWrite` (0x1E), `NtCreateSection` (0x50), `MmMapLockedPagesSpecifyCache` (0x1000).
