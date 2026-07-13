@@ -5284,6 +5284,41 @@ goes silent AND the flake rate drops WITHOUT new hangs. Do this careful lock-ord
 work FRESH, not at the tail of a long run — attempt #1 shows how a plausible-but-wrong
 placement makes things strictly worse.
 
+**2026-07-13 — hypothesis (3) [LockQueue not wired] RULED OUT; paradox refined.**
+Verified amd64 wires the dispatcher lock correctly on BOTH CPUs: the real amd64
+`KiSystemStartupBootStack` lives in `sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/
+krnlinit.rs:146` (NOT kiinit.rs; the C `amd64/krnlinit.c` is cohab-commented at
+ntos.cmake:410), and at line 164 it calls `KiInitSpinLocks(Prcb, Prcb->Number)`
+BEFORE the `Number==0` branch — so both the BSP and the AP set
+`LockQueue[DispatcherLock].Lock = &KiDispatcherLock` (one shared global). Both CPUs'
+`KeAcquireQueuedSpinLock*` therefore contend the SAME lock word; the dispatcher lock
+genuinely serializes. So (3) is out. Remaining, for the fresh session:
+- **(2) a `KiReadyThread` caller bypasses the dispatcher lock.** Audit all callers
+  (eventobj:204, gate:268, queue:123, thrdobj:263, wait:204) — one readying without
+  the dispatcher lock held is the race. CHEAPEST to check; do first.
+- **(4) the dispatcher lock is released too early across the swap.** Our wait-commit
+  holds it from wait.rs:461 through `KiSwapThread` with NO release before the swap, so
+  it is handed off across `KiSwapContext` (T swaps out holding it, NextThread swaps in
+  holding it, NextThread releases it later). If our handoff releases it BEFORE the
+  dethrone (`Prcb->CurrentThread = NextThread` in KiSwapThreadImpl) is visible, a
+  cross-CPU unwait slips in. Trace exactly where `&KiDispatcherLock` is released
+  relative to the dethrone in the swap.
+- **(5) `ki_check_not_running` (0x56) may be catching a TOLERATED transient.** Take
+  seriously: "readied while still `CurrentThread`" is arguably the NORMAL handoff
+  window (T is `Prcb->CurrentThread` until dethroned; the run-side spin in ctxswitch.S
+  protects actually RUNNING it). If NT tolerates linking such a thread (its
+  `WaitListEntry` is free, so it's a clean single insert), then 0x56 is a red herring
+  and the REAL bug is the DOUBLE-link (0x54) with a different cause. Before building
+  another fix on 0x56, confirm it is not benign.
+**DECISIVE NEXT INSTRUMENT (splits (2) vs (4)):** in `ki_check_not_running`, also read
+and print whether `&KiDispatcherLock` (bit 0) is HELD when it fires. Held => a readier
+is running under the dispatcher lock yet the race still happened => (4) [early release
+/ handoff bug]. Not held => (2) [a readier bypasses the lock]. One armed burst decides.
+State at this point: fix attempt #1 reverted, clean baseline restored, all diagnostics
+(0x54/0x56/[RQRUNNING]/[RQLINKED]) committed + armed on branch `smp-bringup`. NOT on
+master. The root-cause DIRECTION (readier vs wait-commit race) is solid; the precise
+serialization break + the correct fix are the remaining work.
+
 **Integrated from a Codex handoff attempt (its cyber filter tripped on the "wild
 write" language, so it stalled — reword future handoffs):** (a) `expool.rs` removed
 the post-unlock `ExpCheckPoolBlocks` page-walk on the theory it RACES (walks a shared
