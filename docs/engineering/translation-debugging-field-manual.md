@@ -5721,3 +5721,89 @@ catch this: the Rust reads perfectly. Only the emitted code tells the truth.
 3. `x/16i $pc` → `jmp <self>`, with an empty `ret` fn right after (`rust_eh_personality`).
 4. Scan memory backwards from the PC for the `MZ` header, then read the module name out of its
    PE export directory → `bootvid.dll`. (`find-kbase` only knows about ntoskrnl.)
+
+### 9.66 (ROOT-CAUSED + FIXED 2026-07-13) The rustconv defect chain behind ole32's silent bugs: one regex hang bypassed the entire post-processor, and `abi_enforce` was throwing away the calling convention it had correctly derived
+
+The ole32 translation shipped ~130 COM vtbl methods with the **Rust ABI** instead of
+`__stdcall`, an export (`StgCreateDocfile`) with no `#[no_mangle]`, all 10 file-scope vtbl
+tables missing, and seven wrong constants. Those were read as "LLM sloppiness." They were
+not. They were **four tool bugs**, and they compound — this is the whole causal chain:
+
+**1. A catastrophic-backtracking regex hung `postprocess`, and the hang looked like the
+stitcher.** `drop_pseh_macro_externs` matched an extern block's body with an ambiguous
+`(…fn…;\n)+` whose `[^;{]+` return-type class *also matches newlines*. Fine on its own —
+the killer was that the stitcher's merged extern block legitimately contains `static`
+decls among the fns, so the `+` ran out at the first `static` and **could never reach the
+closing `}`**. The engine then re-partitioned the preceding 46 fn decls every possible
+way: a clean 2^n (18 decls = 13 ms, 26 = 5.1 s, 30 = 37 s, **46 = never returns**). Only
+big files have a long enough decl run, which is why it looked file-specific.
+`drop_gdiobj_macro_externs` (win32k) carried the identical latent bomb.
+- It printed nothing of its own, so the last message on screen was `Stitching N
+  functions…` — and *the stitcher got blamed for years*. `stitch_file` takes **10 ms**.
+- **The damage is the workaround.** The operator kills the wedged run and hand-assembles
+  the `.responses/*.rs` pieces — which **bypasses `postprocess()` entirely**, and with it
+  ABI enforcement *and* the already-paid-for translated preamble. Nearly every "LLM bug"
+  on `storage32.c`/`moniker.c` traces to this one regex.
+- Fix: a linear line-scan (`_filter_extern_block_decls`) — find the opener, brace-depth to
+  the closer, filter per line. 2.3 ms, and *strictly more capable* (it can process the
+  mixed fn/static blocks the old pattern could never match at all).
+- **Lesson: a hang is a correctness bug.** It doesn't just cost time; it trains an operator
+  into a workaround that silently disables your safety passes.
+
+**2. `abi_enforce` derived the right convention and then discarded it.** It correctly
+computed `('system', True)` for every `static … WINAPI` COM method — then
+`_canonical_block()` did `if is_static: return f"unsafe fn {name}…"`, dropping the
+`extern`. It **conflated linkage with calling convention**. In C, `static` controls
+*linkage*; `WINAPI` controls the *convention*, and `static HRESULT WINAPI Foo()` is both.
+Result: Rust-ABI fns in C vtbl slots — links clean on amd64/arm64, corrupts the i386 stack
+at the first call. 130 in ole32; **153** in oleaut32's remaining six files.
+
+**3. `_derive_convention` fell back to cdecl on a comment.** It scanned `)`→`{` for a
+definition skipping *whitespace only*. wine annotates the last parameter:
+```c
+    IEnumSTATSTG**  ppenum)    /* [out] */
+    {
+```
+It stopped on the `/`, concluded "not a definition", returned `None`, and the caller
+**silently fell back to cdecl** — mis-deriving 17 more genuine WINAPI methods. Note this
+survives the fix in (2) untouched: they'd come out `extern "C"`, still wrong on i386.
+
+**4. `CALLBACK`/`PASCAL` were missing from the convention keyword list** (`minwindef.h`:
+`#define CALLBACK __stdcall`). These mark exactly the fns C hands to the OS **as function
+pointers** — an `EnumFontFamiliesEx` callback, a DlgProc. user32/gdi32 call them *through
+the pointer with stdcall*, so a Rust-ABI body corrupts the i386 stack on a call **we never
+make ourselves**: no call site in our code to inspect, nothing to grep for.
+
+#### The three deterministic oracles that came out of this (use them; don't ask an LLM)
+- **`vtbl_gen.py`** — COM vtbl tables generated from the C initializer + the *bindgen*
+  struct's field order. The LLM dropped **all 10** of storage32's (a COM object with no
+  methods at all) because `translate` is function-granular and file-scope data falls to a
+  single preamble call that silently truncated. Arity mismatch **raises** rather than
+  zip a table into the wrong methods. Independently agreed **149/149 slots** with the
+  hand-written tables. *Do not let c2rust emit these either*: it hardcodes each slot as
+  `f as unsafe extern "C" fn(..)`, the amd64 spelling, which is simply wrong on i386.
+- **`table_audit.py`** — compares every file-scope C data table against the Rust,
+  element by element. It caught `fmtLongTime` in `varformat.c`, the one file c2rust
+  **cannot** anchor (upstream panic, `convert_type.rs:518`) and therefore the only file
+  with no other oracle. **Model C's implicit zero-fill**: `BYTE t[256]` with 103 written
+  elements is 256 bytes; Rust has no such rule and must spell all 256.
+- **`export_audit.py`** — every `.spec` export must exist as a `#[no_mangle]` fn with the
+  spec's convention. `make_user_dll_target` had `spec_file=None` for *every* user-mode DLL,
+  so the pipeline never knew which fns were exports — it neither told the model nor
+  enforced `#[no_mangle]`. That is how `_StgCreateDocfile@16` went missing from a DLL.
+
+#### The meta-lesson
+Every one of these produced code that **compiled, linked, and booted**. The smoke tests
+cannot see a COM DLL with a wrong calling convention on a path the boot doesn't take, or a
+date-format table with one wrong byte. When translating a *library* rather than a boot-path
+component, the boot is not the oracle — **the C is**. Build the differential checks
+(convention, exports, tables, vtbl slots) and run them in the pipeline, or you will ship
+silent wrongness and only find it when a user formats a date.
+
+**Corollary — audit the tool with the tool.** Every false positive `table_audit` produced
+against *shipped, working* code was a bug in the auditor, and each one taught something
+real: function-local statics collide by name (wine's `variant.c` defines a *different*
+`prio2vt` in `VarAdd` and `VarMul`); `#ifdef __REACTOS__` means half the file-scope C is
+dead and comparing against it reports 7 bogus diffs; a name can be legitimately defined at
+two Rust scopes. Calibrate a new checker against known-good code **first** — a checker that
+cries wolf is worse than no checker, because it trains you to ignore the one true finding.

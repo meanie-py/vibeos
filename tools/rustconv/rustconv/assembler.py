@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from .batch_runner import TranslationResult
 from .config import OUTPUT_CRATE, TARGETS, Target, hal_cmake_for_c
+from .crate_integrate import integrate
 from .postprocess import postprocess
 
 if TYPE_CHECKING:
@@ -76,6 +77,21 @@ def assemble_file(
         sys_umbrella=target.sys_umbrella,
         c_source_path=c_source_path,
     )
+
+    # Land the file on the target crate's shared prelude (import-surface swap + drop the
+    # extern decls the prelude already provides — see crate_integrate). No-op for a crate
+    # without a src/prelude.rs (ntoskrnl, hal, …), so it's safe on every target.
+    rust_code, report = integrate(rust_code, target.output_crate, module=stem)
+    if report.changed or report.kept_unprovided:
+        print(f"  integrate: {report.summary()}")
+        if report.kept_unprovided:
+            # Each of these is either a real gap in the prelude (add it THERE, with the
+            # right ABI) or a symbol the model invented. Keeping it means an
+            # undefined-at-link surprise, so it must never pass silently.
+            print(
+                "  integrate: UNPROVIDED externs kept as-is (verify each is a real link "
+                f"symbol with the right ABI): {', '.join(sorted(set(report.kept_unprovided)))}"
+            )
 
     # Build the file content with C source as trailing comments
     content_parts = [rust_code.rstrip()]

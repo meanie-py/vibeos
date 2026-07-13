@@ -29,6 +29,7 @@ symbol can't slip through silently as an undefined-at-link surprise.
 
 Usage:  tools/integrate_ole32_ring.py <staging.rs>... --out sdk/lib/rust/ole32-rust/src/ring
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,30 +40,85 @@ from pathlib import Path
 # Provided by the prelude — drop the local decl.
 PRELUDE_FNS = {
     # debug / HRESULT / guid-compare (debug_shims.rs + winemacros.rs)
-    "TRACE", "WARN", "ERR", "FIXME", "FAILED", "SUCCEEDED",
-    "debugstr_a", "debugstr_w", "debugstr_an", "debugstr_wn", "debugstr_guid",
-    "debugstr_user_flags", "debugstr_formatetc", "wine_dbgstr_longlong",
-    "wine_dbgstr_guid", "wine_dbgstr_rect",
-    "IsEqualGUID", "IsEqualIID", "IsEqualCLSID",
+    "TRACE",
+    "WARN",
+    "ERR",
+    "FIXME",
+    "FAILED",
+    "SUCCEEDED",
+    "debugstr_a",
+    "debugstr_w",
+    "debugstr_an",
+    "debugstr_wn",
+    "debugstr_guid",
+    "debugstr_user_flags",
+    "debugstr_formatetc",
+    "wine_dbgstr_longlong",
+    "wine_dbgstr_guid",
+    "wine_dbgstr_rect",
+    "IsEqualGUID",
+    "IsEqualIID",
+    "IsEqualCLSID",
     # winemacros.rs inlines
-    "HIWORD", "LOWORD", "HIBYTE", "LOBYTE", "MAKELONG",
-    "InterlockedIncrement", "InterlockedDecrement", "InterlockedExchange",
-    "ZeroMemory", "HRESULT_FROM_WIN32",
+    "HIWORD",
+    "LOWORD",
+    "HIBYTE",
+    "LOBYTE",
+    "MAKELONG",
+    "InterlockedIncrement",
+    "InterlockedDecrement",
+    "InterlockedExchange",
+    "ZeroMemory",
+    "HRESULT_FROM_WIN32",
     # win32.rs (extern "system")
-    "GetProcessHeap", "HeapAlloc", "HeapReAlloc", "HeapFree", "HeapSize", "HeapValidate",
-    "LocalAlloc", "LocalReAlloc", "LocalFree",
-    "GlobalAlloc", "GlobalReAlloc", "GlobalFree", "GlobalLock", "GlobalUnlock", "GlobalSize",
-    "InitializeCriticalSection", "DeleteCriticalSection",
-    "EnterCriticalSection", "LeaveCriticalSection",
-    "GetThreadLocale", "IsBadReadPtr", "IsBadWritePtr", "IsBadCodePtr",
-    "GetLastError", "SetLastError",
-    "lstrlenW", "lstrcpyW", "lstrcmpW", "lstrcmpiW",
+    "GetProcessHeap",
+    "HeapAlloc",
+    "HeapReAlloc",
+    "HeapFree",
+    "HeapSize",
+    "HeapValidate",
+    "LocalAlloc",
+    "LocalReAlloc",
+    "LocalFree",
+    "GlobalAlloc",
+    "GlobalReAlloc",
+    "GlobalFree",
+    "GlobalLock",
+    "GlobalUnlock",
+    "GlobalSize",
+    "InitializeCriticalSection",
+    "DeleteCriticalSection",
+    "EnterCriticalSection",
+    "LeaveCriticalSection",
+    "GetThreadLocale",
+    "IsBadReadPtr",
+    "IsBadWritePtr",
+    "IsBadCodePtr",
+    "GetLastError",
+    "SetLastError",
+    "lstrlenW",
+    "lstrcpyW",
+    "lstrcmpW",
+    "lstrcmpiW",
     # wine/heap.h inlines (win32.rs)
-    "heap_alloc", "heap_alloc_zero", "heap_realloc", "heap_free",
+    "heap_alloc",
+    "heap_alloc_zero",
+    "heap_realloc",
+    "heap_free",
     # wine/list.h intrusive list (wine_list.rs)
-    "list_init", "list_add_after", "list_add_before", "list_add_head", "list_add_tail",
-    "list_remove", "list_next", "list_prev", "list_head", "list_tail", "list_empty",
-    "list_count", "list_move_tail",
+    "list_init",
+    "list_add_after",
+    "list_add_before",
+    "list_add_head",
+    "list_add_tail",
+    "list_remove",
+    "list_next",
+    "list_prev",
+    "list_head",
+    "list_tail",
+    "list_empty",
+    "list_count",
+    "list_move_tail",
 }
 
 # CRT memory intrinsics: keep as extern "C" (they genuinely ARE cdecl).
@@ -77,7 +133,8 @@ COBJMACRO_RE = re.compile(r"^I[A-Z][A-Za-z0-9]*_[A-Za-z0-9_]+$")
 # before matching so a `//`-quoted signature can't false-match either.
 FN_DECL_RE = re.compile(r"^\s*(?:pub\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", re.M)
 STATIC_DECL_RE = re.compile(
-    r"^\s*(?:pub\s+)?static\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*:", re.M)
+    r"^\s*(?:pub\s+)?static\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*:", re.M
+)
 COMMENT_LINE_RE = re.compile(r"^\s*//.*$", re.M)
 
 
@@ -112,7 +169,9 @@ def split_decls(block: str) -> list[str]:
 # in dictionary.rs.)
 DEFINED_FN_RE = re.compile(
     r"^\s*(?:pub\s+)?(?:unsafe\s+)?(?:extern\s+\"[A-Za-z-]+\"\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)"
-    r"[^;{]*\{", re.M | re.S)
+    r"[^;{]*\{",
+    re.M | re.S,
+)
 
 
 def extern_block_spans(src: str) -> list[tuple[int, int, str]]:
@@ -151,13 +210,26 @@ def defined_names(src: str, pub_only: bool = False) -> set[str]:
     body = "".join(outside)
 
     pub = r"pub\s+" if pub_only else r"(?:pub\s+)?"
-    names = set(re.findall(
-        rf"^\s*{pub}(?:unsafe\s+)?(?:extern\s+\"[A-Za-z-]+\"\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)"
-        r"[^;{]*\{", body, re.M | re.S))
-    names |= set(re.findall(
-        rf"^\s*{pub}(?:static|const)\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*:[^;]*=", body, re.M))
-    names |= set(re.findall(
-        rf"^\s*{pub}(?:struct|enum|union|trait|type)\s+([A-Za-z_][A-Za-z0-9_]*)", body, re.M))
+    names = set(
+        re.findall(
+            rf"^\s*{pub}(?:unsafe\s+)?(?:extern\s+\"[A-Za-z-]+\"\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)"
+            r"[^;{]*\{",
+            body,
+            re.M | re.S,
+        )
+    )
+    names |= set(
+        re.findall(
+            rf"^\s*{pub}(?:static|const)\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*:[^;]*=",
+            body,
+            re.M,
+        )
+    )
+    names |= set(
+        re.findall(
+            rf"^\s*{pub}(?:struct|enum|union|trait|type)\s+([A-Za-z_][A-Za-z0-9_]*)", body, re.M
+        )
+    )
     # #[macro_export] macros are crate-root items and always reachable.
     names |= set(re.findall(r"^\s*macro_rules!\s+([A-Za-z_][A-Za-z0-9_]*)", body, re.M))
     return names
@@ -196,7 +268,9 @@ def promote_pub(src: str, names: set[str]) -> tuple[str, list[str]]:
     for n in sorted(names):
         pat = re.compile(
             rf"^(\s*)((?:unsafe\s+)?(?:extern\s+\"[A-Za-z-]+\"\s+)?fn\s+{re.escape(n)}\s*\("
-            r"[^;{]*\{)", re.M | re.S)
+            r"[^;{]*\{)",
+            re.M | re.S,
+        )
         hits = [m for m in pat.finditer(src) if not in_extern(m.start())]
         if not hits:
             continue
@@ -213,11 +287,15 @@ def process(src: str, provided: set[str]) -> tuple[str, dict]:
     A decl for one of those is not just redundant — it is WRONG: the sibling is a Rust
     `extern "system"` definition, and a local `extern "C"` decl of the same name both
     shadows it ambiguously and asks for the wrong i386 decoration."""
-    stats = {"dropped_cobj": [], "dropped_prelude": [], "dropped_self": [],
-             "kept_static": [], "kept_other": []}
+    stats = {
+        "dropped_cobj": [],
+        "dropped_prelude": [],
+        "dropped_self": [],
+        "kept_static": [],
+        "kept_other": [],
+    }
 
-    src = re.sub(r"^use ntdll_sys::nt::\*;\s*$", "use crate::prelude::*;",
-                 src, count=1, flags=re.M)
+    src = re.sub(r"^use ntdll_sys::nt::\*;\s*$", "use crate::prelude::*;", src, count=1, flags=re.M)
     if "use crate::prelude::*;" not in src:
         src = "use crate::prelude::*;\n" + src
 
@@ -237,7 +315,6 @@ def process(src: str, provided: set[str]) -> tuple[str, dict]:
 
     out, pos = [], 0
     for start, end, body in spans:
-
         keep = []
         for d in split_decls(body):
             code = decl_code(d)
@@ -277,8 +354,11 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("files", nargs="+")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--crate-src", default="sdk/lib/rust/ole32-rust/src",
-                    help="crate src root; every name defined under it is 'provided'")
+    ap.add_argument(
+        "--crate-src",
+        default="sdk/lib/rust/ole32-rust/src",
+        help="crate src root; every name defined under it is 'provided'",
+    )
     args = ap.parse_args()
 
     outdir = Path(args.out)
@@ -311,8 +391,8 @@ def main() -> int:
         if rs.name in batch_names:
             continue  # a previous run's copy of a file we're re-integrating
         text = rs.read_text()
-        provided |= defined_names(text, pub_only=True)                     # (a)
-        for _, _, body in extern_block_spans(text):                        # (b)
+        provided |= defined_names(text, pub_only=True)  # (a)
+        for _, _, body in extern_block_spans(text):  # (b)
             for d in split_decls(body):
                 code = decl_code(d)
                 mm = FN_DECL_RE.search(code) or STATIC_DECL_RE.search(code)
@@ -336,7 +416,7 @@ def main() -> int:
         if promoted:
             print(f"{p.name}: +pub on cross-TU helpers: {', '.join(promoted)}")
 
-    for src in sources.values():                                           # (c)
+    for src in sources.values():  # (c)
         provided |= defined_names(src, pub_only=True)
 
     all_other = set()
@@ -344,15 +424,19 @@ def main() -> int:
         new, st = process(sources[p], provided)
         (outdir / p.name).write_text(new)
         all_other.update(st["kept_other"])
-        print(f"{p.name}: -{len(st['dropped_cobj'])} cobjmacro  "
-              f"-{len(st['dropped_self'])} self-decl  "
-              f"-{len(st['dropped_prelude'])} prelude  "
-              f"={len(st['kept_static'])} guid-static  "
-              f"?{len(st['kept_other'])} unrecognized")
+        print(
+            f"{p.name}: -{len(st['dropped_cobj'])} cobjmacro  "
+            f"-{len(st['dropped_self'])} self-decl  "
+            f"-{len(st['dropped_prelude'])} prelude  "
+            f"={len(st['kept_static'])} guid-static  "
+            f"?{len(st['kept_other'])} unrecognized"
+        )
 
     if all_other:
-        print("\nUNRECOGNIZED externs kept as-is (verify each is a real link symbol "
-              "with the right ABI, or add it to win32.rs/PRELUDE_FNS):")
+        print(
+            "\nUNRECOGNIZED externs kept as-is (verify each is a real link symbol "
+            "with the right ABI, or add it to win32.rs/PRELUDE_FNS):"
+        )
         for n in sorted(all_other):
             print(f"  {n}")
     return 0

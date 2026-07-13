@@ -42,9 +42,9 @@ pub static mut critsect_debug: CRITICAL_SECTION_DEBUG = CRITICAL_SECTION_DEBUG {
     },
     EntryCount: 0,
     ContentionCount: 0,
-    Flags: 0,
-    CreatorBackTraceIndexHigh: 0,
-    SpareWORD: 0,
+    // The trailing member is a union (ndk/rtltypes.h:1432-1442); zero it via the
+    // pointer-sized arm, which covers every alternative.
+    c2rust_unnamed: RTL_CRITICAL_SECTION_DEBUG_u { WineDebugString: 0 },
 };
 
 pub const B_PROCESSING_EXPONENT: u32 = 0x1;

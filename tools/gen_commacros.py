@@ -35,6 +35,7 @@ Usage (per arch):
     # optionally restrict to the interfaces a crate actually uses:
     tools/gen_commacros.py ... --only IMalloc,IMoniker,IBindCtx
 """
+
 from __future__ import annotations
 
 import argparse
@@ -208,7 +209,7 @@ def main() -> int:
                 sibling = base + ("W" if method.endswith("A") else "A")
                 if base not in names and sibling not in names:
                     n_alias += 1
-                    lines.append(f"// alias: C call sites use the unsuffixed COBJMACRO name")
+                    lines.append("// alias: C call sites use the unsuffixed COBJMACRO name")
                     emit(iface, base, method, margs, ret)
         lines.append("")
 
