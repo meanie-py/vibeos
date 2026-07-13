@@ -116,6 +116,7 @@ typedef struct _WOW64_CB_FRAME {
     ULONG Index;
     PVOID OrigArg;           /* the kernel's 64-bit arg buffer (stays mapped) */
     ULONG ArgLen64;          /* original 64-bit arg length (for result sizing) */
+    ULONG Msg;               /* WINDOWPROC message — the payload repack keys off it */
     NTSTATUS Status;         /* filled by the NtCallbackReturn marshaller */
     PVOID RetBuf;            /* 64-bit result to hand to the real NtCallbackReturn */
     ULONG RetLen;
@@ -123,6 +124,34 @@ typedef struct _WOW64_CB_FRAME {
     unsigned long long Jmp[21];
     UCHAR Buf64[1024];       /* translated 64-bit result storage */
 } WOW64_CB_FRAME;
+
+/* WINDOWPOS: two HWNDs then five 32-bit fields. 40 bytes on the host (8-byte
+ * handles + tail padding), 28 in the guest. WM_WINDOWPOSCHANGING/CHANGED pass
+ * one by pointer AND the window proc is allowed to MODIFY it (that is the whole
+ * point of WM_WINDOWPOSCHANGING), so it must be repacked in BOTH directions. */
+typedef struct _WOW64_WINDOWPOS64 {
+    ULONGLONG hwnd;
+    ULONGLONG hwndInsertAfter;
+    LONG x, y, cx, cy;
+    ULONG flags;
+    ULONG _pad;
+} WOW64_WINDOWPOS64; /* 40 */
+
+typedef struct _WOW64_WINDOWPOS32 {
+    ULONG hwnd;
+    ULONG hwndInsertAfter;
+    LONG x, y, cx, cy;
+    ULONG flags;
+} WOW64_WINDOWPOS32; /* 28 */
+
+/* Messages whose lParam payload the window proc writes back into. For these the
+ * RAW copy-down is only half the job: the guest's edits must be copied back up,
+ * or they are silently dropped (the pre-M11 behaviour — the return path restored
+ * the payload from the kernel's original buffer unconditionally). */
+#define WOW64_WM_GETMINMAXINFO    0x0024
+#define WOW64_WM_WINDOWPOSCHANGING 0x0046
+#define WOW64_WM_WINDOWPOSCHANGED  0x0047
+#define WOW64_WM_NCCALCSIZE       0x0083
 
 /* ---- 32/64 mirrors of callback.h structs --------------------------------- */
 /* WINDOWPROC_CALLBACK_ARGUMENTS (index 0) */
@@ -251,6 +280,7 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
                     DbgPrint("[WOW64CB] WINDOWPROC extra %lu too big\n", Extra);
                     break;
                 }
+                Frame.Msg = A64->Msg; /* the return path repacks OUT payloads by msg */
                 A32->Proc = (ULONG)A64->Proc;
                 A32->IsAnsiProc = A64->IsAnsiProc;
                 A32->Wnd = (ULONG)A64->Wnd;
@@ -291,11 +321,37 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
                                              sizeof(*A32) + 48 + Blob);
                     break;
                 }
+                if ((A64->Msg == WOW64_WM_WINDOWPOSCHANGING ||
+                     A64->Msg == WOW64_WM_WINDOWPOSCHANGED) &&
+                    Extra >= sizeof(WOW64_WINDOWPOS64))
+                {
+                    /* WINDOWPOS 40 -> 28. Copied back up after the guest runs. */
+                    const WOW64_WINDOWPOS64 *P64 =
+                        (const WOW64_WINDOWPOS64 *)((const BYTE *)Arg + sizeof(*A64));
+                    WOW64_WINDOWPOS32 *P32 = (WOW64_WINDOWPOS32 *)(Buf + sizeof(*A32));
+                    P32->hwnd = (ULONG)P64->hwnd;
+                    P32->hwndInsertAfter = (ULONG)P64->hwndInsertAfter;
+                    P32->x = P64->x;
+                    P32->y = P64->y;
+                    P32->cx = P64->cx;
+                    P32->cy = P64->cy;
+                    P32->flags = P64->flags;
+                    A32->lParamBufferSize = sizeof(*P32);
+                    Wow64pEnterGuestCallback(&Frame, Index, Buf,
+                                             sizeof(*A32) + sizeof(*P32));
+                    break;
+                }
                 if (Extra)
                 {
+                    /* Everything else copies verbatim. That is CORRECT only for
+                     * width-identical payloads — MINMAXINFO (5 POINTs) and a bare
+                     * RECT are; a payload with a handle or pointer in it is not.
+                     * Keep the trace: it is how the next divergent message will
+                     * announce itself. */
                     ULONG i;
                     if (Wow64TraceSyscalls)
-                        DbgPrint("[WOW64CB] WINDOWPROC msg %lx payload %lu RAW (no 64->32 repack)\n",
+                        DbgPrint("[WOW64CB] WINDOWPROC msg %lx payload %lu verbatim "
+                                 "(width-identical or unclassified)\n",
                                  A64->Msg, Extra);
                     for (i = 0; i < Extra; i++)
                         Buf[sizeof(*A32) + i] = ((const BYTE *)Arg)[sizeof(*A64) + i];
@@ -366,17 +422,54 @@ int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status)
                      * from the ORIGINAL kernel buffer (the guest converts the
                      * packed offsets to 32-bit pointers in place, so its copy
                      * is not translatable back — and for the M8 message set
-                     * (NCCREATE/CREATE) the payload is effectively IN-only). */
+                     * (NCCREATE/CREATE) the payload is effectively IN-only).
+                     *
+                     * But several messages pass the payload as an OUT parameter:
+                     * the window proc WRITES into it and the kernel reads the
+                     * result. For those, restoring the kernel's original bytes
+                     * silently discards everything the guest just did. Repack
+                     * them back up, keyed on the message. */
             {
                 const WOW64_WNDPROC_CB32 *A32 =
                     (const WOW64_WNDPROC_CB32 *)(ULONG_PTR)Result32;
                 WOW64_WNDPROC_CB64 *A64 = (WOW64_WNDPROC_CB64 *)Frame->Buf64;
                 ULONG N = Frame->ArgLen64, i;
+                ULONG Extra = (N > sizeof(*A64)) ? N - sizeof(*A64) : 0;
+                const BYTE *P32 = (const BYTE *)A32 + sizeof(*A32);
+                BYTE *P64 = Frame->Buf64 + sizeof(*A64);
+
                 if (N > sizeof(Frame->Buf64))
                     N = sizeof(Frame->Buf64);
                 for (i = 0; i < N; i++)
                     Frame->Buf64[i] = ((const BYTE *)Frame->OrigArg)[i];
                 A64->Result = A32->Result;
+
+                /* OWED — do NOT re-enable without re-reading this.
+                 *
+                 * WM_GETMINMAXINFO / WM_NCCALCSIZE / WM_WINDOWPOSCHANGING pass
+                 * their payload as an OUT parameter: natively, the window proc
+                 * writes into the very struct win32k then reads back. Restoring
+                 * the kernel's original bytes here therefore DROPS whatever the
+                 * guest's proc wrote, which is wrong in principle.
+                 *
+                 * Copying them back is, however, what the payloads are shaped
+                 * for — and doing it (2026-07-12) REGRESSED a passing oracle:
+                 * win32.exe went 0x600D -> 0x600E, its WM_PAINT / WM_NCPAINT /
+                 * WM_ERASEBKGND vanished entirely and WM_MOVE / WM_SIZE /
+                 * WM_GETMINMAXINFO / WM_NCCALCSIZE each went 1x -> 3x: honouring
+                 * the guest's geometry sent win32k into repeated size
+                 * renegotiation and the window never settled enough to paint.
+                 *
+                 * So the guest's edits stay dropped for now — the SAME behaviour
+                 * we have shipped since M8, not a new bug — and the real fix
+                 * (work out why the guest's DefWindowProc returns geometry
+                 * win32k won't converge on) is owed. The down-repack above is
+                 * kept: the guest at least now SEES a correct WINDOWPOS instead
+                 * of a 40-byte struct read as 28. */
+                (void)P32;
+                (void)P64;
+                (void)Extra;
+
                 Frame->RetBuf = A64;
                 Frame->RetLen = N;
                 break;

@@ -501,13 +501,53 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         else
             echo "[!] VIBEOS_FEX=1: i386 gdi32/user32 missing — gui32 guest will stall at import"
         fi
-        # M8 NOTE: do NOT stage advapi32/usp10/rpcrt4/secur32/msvcrt here.
-        # Staging them makes the loader LOAD them (gdi32 imports advapi32 →
-        # rpcrt4 → ole32/ws2_32/...), and their own skip-missing imports leave
-        # unbound IAT entries whose first call jumps to garbage (killed gui32
-        # with a guest AV @0x76AA4 on 2026-07-11). skip-missing at the user32
-        # level is the working strategy: unresolved imports are harmless
-        # until actually CALLED, and the M8 paths don't call them.
+        # M11: the FULL SysWOW64 DLL set — the transitive import closure of the
+        # stock i386 guest (testgui.exe), computed at stage time.
+        #
+        # This SUPERSEDES the M8 rule ("do NOT stage advapi32/rpcrt4/msvcrt —
+        # they leave unbound IATs"). That rule was right about the hazard and
+        # wrong about the cure: when a DLL is staged but one of ITS imports is
+        # missing, the loader prints "Skipping missing import" and leaves that
+        # module half-bound; the first call through an unbound slot jumps to
+        # garbage (guest AV @0x76AA4, 2026-07-11). Not-staging avoided it only
+        # because nothing on the M8 path called into those DLLs. A CRT-linked
+        # binary DOES call them, so the answer is the COMPLETE closure — no
+        # module is ever left half-bound. A bigger PARTIAL set has the same
+        # landmine, just later. wow64-closure.py hard-fails rather than emit a
+        # partial set, and the loader's "Skipping missing import" line is the
+        # standing oracle that the closure is still complete.
+        TESTGUI32="${VIBEOS_TESTGUI32_EXE:-$PROJECT_DIR/build-i386/base/applications/testgui/testgui.exe}"
+        if [ -f "$TESTGUI32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging the SysWOW64 DLL closure (i386)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            CLOSURE=$(python3 "$PROJECT_DIR/tools/fex/wow64-closure.py" \
+                          --build-dir "$PROJECT_DIR/build-i386" "$TESTGUI32") || {
+                echo "[!] VIBEOS_FEX=1: SysWOW64 import closure is INCOMPLETE (see above)."
+                echo "[!]   Refusing to stage a partial set — a half-bound module crashes"
+                echo "[!]   at first call, far from the missing DLL. Build the module first."
+                exit 1
+            }
+            echo "$CLOSURE" | while IFS=$'\t' read -r name path; do
+                [ -n "$name" ] || continue
+                mcopy -o -i "$RAMDISK_IMG" "$path" "::/reactos/syswow64/$name"
+            done
+            echo "[*]   staged $(echo "$CLOSURE" | wc -l) SysWOW64 modules"
+            # testgui.exe — the M11 guest: a STOCK, unmodified ReactOS i386 GUI
+            # app (real msvcrt CRT startup, real import table, real window +
+            # message loop). Every earlier guest was one we wrote to dodge the
+            # gaps; this one can't dodge anything.
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/testgui.exe (M11 stock-binary guest)"
+            mcopy -o -i "$RAMDISK_IMG" "$TESTGUI32" ::/reactos/syswow64/testgui.exe
+            # The NATIVE arm64 build of the same app, into system32. This is the
+            # A/B control: same source, same user32-rust, one running native and
+            # one under WoW64. Without it there is no way to tell a WoW64 bug
+            # from a plain user32 bug that would crash natively too.
+            TESTGUI_NATIVE="${VIBEOS_TESTGUI_NATIVE:-$PROJECT_DIR/build-arm64/base/applications/testgui/testgui.exe}"
+            if [ -f "$TESTGUI_NATIVE" ]; then
+                echo "[*] VIBEOS_FEX=1 — staging system32/testgui.exe (native A/B control)"
+                mcopy -o -i "$RAMDISK_IMG" "$TESTGUI_NATIVE" ::/reactos/system32/testgui.exe
+            fi
+        fi
         # gui32.exe — the win32k-thunk guest (winlogon TryStartWow64Gui).
         GUI32="${VIBEOS_GUI32_EXE:-$PROJECT_DIR/build-fex-hello/gui32.exe}"
         if [ -f "$GUI32" ]; then

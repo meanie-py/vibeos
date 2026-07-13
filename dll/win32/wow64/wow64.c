@@ -410,8 +410,13 @@ typedef struct _WOW64_RTL_USER_PROCESS_PARAMETERS32 {
 #define UPP64_DLLPATH_OFF        0x50
 #define UPP64_IMAGEPATHNAME_OFF  0x60
 #define UPP64_COMMANDLINE_OFF    0x70
+#define UPP64_ENVIRONMENT_OFF    0x80
 #define UPP64_WINDOWTITLE_OFF    0xB0
 #define UPP64_DESKTOPINFO_OFF    0xC0
+
+/* A corrupt/unterminated Environment would otherwise make the scan below run
+ * off the end of the 64-bit block. Real environments are a few KB. */
+#define WOW64_MAX_ENVIRONMENT_BYTES 0x20000
 
 /* Copy one UNICODE_STRING64 (at Src) into Dst32, appending its buffer bytes to
  * *Arena (a below-2GB bump pointer). NULL/empty stays zero. */
@@ -433,6 +438,76 @@ static VOID Wow64pCopyUstr32(WOW64_UNICODE_STRING32 *Dst32, PBYTE Src, PBYTE *Ar
     (*Arena)[Length] = 0;
     (*Arena)[Length + 1] = 0;
     *Arena += (Length + sizeof(WCHAR) + 3) & ~3u;
+}
+
+/* Marshal the process environment block down for the guest.
+ *
+ * The env block itself is width-agnostic — a double-NUL-terminated run of
+ * WCHARs, "NAME=VALUE\0NAME=VALUE\0\0" — so it copies byte-for-byte. What is
+ * NOT width-agnostic is the POINTER to it in RTL_USER_PROCESS_PARAMETERS, and
+ * we simply never filled the 32-bit one in. The guest therefore saw
+ * Environment == NULL and any scan of it read from address 0 (kernel32's
+ * GetEnvironmentStrings dies at `cmpw $0, 0x2(%esi,%eax,2)` with esi=0 — the
+ * exact shape the CurrentDirectory comment below warns about).
+ *
+ * This stayed latent through M3-M10 because every guest we wrote was no-CRT
+ * and never touched the environment. A stock CRT-linked binary reads it during
+ * msvcrt's DLL_PROCESS_ATTACH, before main.
+ *
+ * The env gets its OWN below-2GB allocation, not a slice of the params arena:
+ * the guest's RtlSetEnvironmentVariable grows the block by allocating a new one
+ * and NtFreeVirtualMemory'ing the old, which requires a real allocation base. */
+static VOID Wow64pCopyEnvironment32(WOW64_RTL_USER_PROCESS_PARAMETERS32 *Upp32,
+                                    PBYTE Upp64)
+{
+    PWSTR Env64 = *(PWSTR *)(Upp64 + UPP64_ENVIRONMENT_OFF);
+    SIZE_T EnvBytes, i;
+    PBYTE Env32;
+
+    if (!Env64)
+    {
+        DbgPrint("[FEX-WOW64C] WARN: PEB64 params carry no Environment — "
+                 "guest gets an empty (but terminated) block\n");
+        EnvBytes = 2 * sizeof(WCHAR);
+    }
+    else
+    {
+        /* Find the double-NUL that ends the block (inclusive). */
+        SIZE_T MaxChars = WOW64_MAX_ENVIRONMENT_BYTES / sizeof(WCHAR);
+        SIZE_T n = 0;
+        while (n + 1 < MaxChars && !(Env64[n] == 0 && Env64[n + 1] == 0))
+            n++;
+        if (n + 1 >= MaxChars)
+        {
+            DbgPrint("[FEX-WOW64C] WARN: Environment not double-NUL terminated within "
+                     "%u bytes — guest gets an empty block\n",
+                     WOW64_MAX_ENVIRONMENT_BYTES);
+            Env64 = NULL;
+            EnvBytes = 2 * sizeof(WCHAR);
+        }
+        else
+        {
+            EnvBytes = (n + 2) * sizeof(WCHAR);
+        }
+    }
+
+    Env32 = (PBYTE)Wow64pAllocBelow2G(EnvBytes, PAGE_READWRITE, "environment32");
+    if (!Env32)
+    {
+        /* Leave Environment NULL rather than pointing at nothing: the guest's
+         * first env read would AV either way, but a loud line beats a mystery. */
+        DbgPrint("[FEX-WOW64C] WARN: environment32 alloc failed — guest env is NULL\n");
+        return;
+    }
+    if (Env64)
+    {
+        for (i = 0; i < EnvBytes; i++)
+            Env32[i] = ((PBYTE)Env64)[i];
+    }
+    /* else: the alloc is already zero-filled — an empty, terminated block. */
+
+    Upp32->Environment = (ULONG)(ULONG_PTR)Env32;
+    DbgPrint("[FEX-WOW64C] environment32 at %p (%u bytes)\n", Env32, (ULONG)EnvBytes);
 }
 
 static VOID Wow64pBuildProcessParams32(ULONG_PTR Peb32)
@@ -473,6 +548,7 @@ static VOID Wow64pBuildProcessParams32(ULONG_PTR Peb32)
     Wow64pCopyUstr32(&Upp32->CommandLine, Upp64 + UPP64_COMMANDLINE_OFF, &Arena);
     Wow64pCopyUstr32(&Upp32->WindowTitle, Upp64 + UPP64_WINDOWTITLE_OFF, &Arena);
     Wow64pCopyUstr32(&Upp32->DesktopInfo, Upp64 + UPP64_DESKTOPINFO_OFF, &Arena);
+    Wow64pCopyEnvironment32(Upp32, Upp64);
 
     /* The guest loader treats an empty DllPath as fatal (LdrpInitFailure) and a
      * NULL LdrpDefaultPath crashes RtlDosSearchPath_U — synthesize the syswow64
