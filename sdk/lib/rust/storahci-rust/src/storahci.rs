@@ -46,7 +46,7 @@ pub unsafe extern "system" fn AhciPortInitialize(DeviceExtension: PVOID) -> BOOL
     let commandListPhysical: STOR_PHYSICAL_ADDRESS;
     let receivedFISPhysical: STOR_PHYSICAL_ADDRESS;
 
-    AhciDebugPrint(b"AhciPortInitialize()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciPortInitialize()\n\0".as_ptr() as *const i8);
 
     PortExtension = DeviceExtension as PAHCI_PORT_EXTENSION;
     adapterExtension = (*PortExtension).AdapterExtension;
@@ -66,7 +66,7 @@ pub unsafe extern "system" fn AhciPortInitialize(DeviceExtension: PVOID) -> BOOL
     );
 
     if (mappedLength == 0) || ((commandListPhysical.__bindgen_anon_1.LowPart % 1024) != 0) {
-        AhciDebugPrint(
+        AhciDebugPrint!(
             b"\tcommandListPhysical mappedLength:%d\n\0".as_ptr() as *const i8,
             mappedLength,
         );
@@ -81,7 +81,7 @@ pub unsafe extern "system" fn AhciPortInitialize(DeviceExtension: PVOID) -> BOOL
     );
 
     if (mappedLength == 0) || ((receivedFISPhysical.__bindgen_anon_1.LowPart % 256) != 0) {
-        AhciDebugPrint(
+        AhciDebugPrint!(
             b"\treceivedFISPhysical mappedLength:%d\n\0".as_ptr() as *const i8,
             mappedLength,
         );
@@ -104,7 +104,7 @@ pub unsafe extern "system" fn AhciPortInitialize(DeviceExtension: PVOID) -> BOOL
                 core::ptr::addr_of_mut!((*(*PortExtension).Port).CMD),
             ));
             if ticks == 0 {
-                AhciDebugPrint(b"\tAttempt to reset port failed: %x\n\0".as_ptr() as *const i8, cmd);
+                AhciDebugPrint!(b"\tAttempt to reset port failed: %x\n\0".as_ptr() as *const i8, cmd);
                 return 0;
             }
             ticks -= 1;
@@ -188,7 +188,7 @@ pub unsafe extern "C" fn AhciAllocateResourceForAdapter(
     let nonCachedExtensionSize: ULONG;
     let mut PortExtension: PAHCI_PORT_EXTENSION;
 
-    AhciDebugPrint(b"AhciAllocateResourceForAdapter()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciAllocateResourceForAdapter()\n\0".as_ptr() as *const i8);
 
     NCS = AHCI_Global_Port_CAP_NCS((*AdapterExtension).CAP);
     AlignedNCS = crate::glue::ROUND_UP(NCS, 8);
@@ -207,7 +207,7 @@ pub unsafe extern "C" fn AhciAllocateResourceForAdapter(
     }
 
     portCount = index + 1;
-    AhciDebugPrint(b"\tPort Count: %d\n\0".as_ptr() as *const i8, portCount);
+    AhciDebugPrint!(b"\tPort Count: %d\n\0".as_ptr() as *const i8, portCount);
 
     (*AdapterExtension).PortCount = portCount;
     nonCachedExtensionSize = (core::mem::size_of::<AHCI_COMMAND_HEADER>() as ULONG) * AlignedNCS + //should be 1K aligned
@@ -224,7 +224,7 @@ pub unsafe extern "C" fn AhciAllocateResourceForAdapter(
     ) as PVOID;
 
     if (*AdapterExtension).NonCachedExtension == core::ptr::null_mut() {
-        AhciDebugPrint(b"\tadapterExtension->NonCachedExtension == NULL\n\0".as_ptr() as *const i8);
+        AhciDebugPrint!(b"\tadapterExtension->NonCachedExtension == NULL\n\0".as_ptr() as *const i8);
         return FALSE;
     }
 
@@ -270,7 +270,7 @@ pub unsafe extern "C" fn AhciStartPort(
     let mut sctl: AHCI_SERIAL_ATA_CONTROL = core::mem::zeroed();
     let AdapterExtension: PAHCI_ADAPTER_EXTENSION;
 
-    AhciDebugPrint(b"AhciStartPort()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciStartPort()\n\0".as_ptr() as *const i8);
 
     AdapterExtension = (*PortExtension).AdapterExtension;
     cmd.set_status(StorPortReadRegisterUlong(
@@ -291,7 +291,7 @@ pub unsafe extern "C" fn AhciStartPort(
     );
 
     if ((cmd.FR() == 1) && (cmd.FRE() == 0)) || ((cmd.CR() == 1) && (cmd.ST() == 0)) {
-        AhciDebugPrint(b"\tCOMRESET\n\0".as_ptr() as *const i8);
+        AhciDebugPrint!(b"\tCOMRESET\n\0".as_ptr() as *const i8);
 
         sctl.set_status(StorPortReadRegisterUlong(
             AdapterExtension as PVOID,
@@ -381,7 +381,7 @@ pub unsafe extern "C" fn AhciStartPort(
             ));
 
             if (tfd.__bindgen_anon_1.as_ref().STS.BSY() != 0) || (tfd.__bindgen_anon_1.as_ref().STS.DRQ() != 0) {
-                AhciDebugPrint(b"\tUnhandled Case BSY-DRQ\n\0".as_ptr() as *const i8);
+                AhciDebugPrint!(b"\tUnhandled Case BSY-DRQ\n\0".as_ptr() as *const i8);
             }
 
             // clear pending interrupts
@@ -450,7 +450,7 @@ pub unsafe extern "C" fn AhciStartPort(
             ));
 
             if cmd.ST() != 1 {
-                AhciDebugPrint(b"\tFailed to start Port\n\0".as_ptr() as *const i8);
+                AhciDebugPrint!(b"\tFailed to start Port\n\0".as_ptr() as *const i8);
                 return 0;
             }
 
@@ -458,7 +458,7 @@ pub unsafe extern "C" fn AhciStartPort(
         }
         _ => {
             // unhandled case
-            AhciDebugPrint(
+            AhciDebugPrint!(
                 b"\tDET == %x Unsupported\n\0".as_ptr() as *const i8,
                 ssts.DET(),
             );
@@ -484,7 +484,7 @@ pub unsafe extern "C" fn AhciCommandCompletionDpcRoutine(
     let _ = Dpc;
     let _ = SystemArgument2;
 
-    AhciDebugPrint(b"AhciCommandCompletionDpcRoutine()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciCommandCompletionDpcRoutine()\n\0".as_ptr() as *const i8);
 
     AdapterExtension = HwDeviceExtension as PAHCI_ADAPTER_EXTENSION;
     PortExtension = SystemArgument1 as PAHCI_PORT_EXTENSION;
@@ -527,7 +527,7 @@ pub unsafe extern "C" fn AhciHwPassiveInitialize(
     let AdapterExtension: PAHCI_ADAPTER_EXTENSION;
     let mut PortExtension: PAHCI_PORT_EXTENSION;
 
-    AhciDebugPrint(b"AhciHwPassiveInitialize()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciHwPassiveInitialize()\n\0".as_ptr() as *const i8);
 
     AdapterExtension = DeviceExtension as PAHCI_ADAPTER_EXTENSION;
 
@@ -556,7 +556,7 @@ pub unsafe extern "system" fn AhciHwInitialize(
     let AdapterExtension: PAHCI_ADAPTER_EXTENSION;
     let mut ghc: AHCI_GHC = core::mem::zeroed();
 
-    AhciDebugPrint(b"AhciHwInitialize()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciHwInitialize()\n\0".as_ptr() as *const i8);
 
     AdapterExtension = DeviceExtension as PAHCI_ADAPTER_EXTENSION;
     (*AdapterExtension).StateFlags.set_MessagePerPort(0);
@@ -573,7 +573,7 @@ pub unsafe extern "system" fn AhciHwInitialize(
     // software has allocated the number of messages requested
     if ghc.MRSM() == 0 {
         (*AdapterExtension).StateFlags.set_MessagePerPort(1);
-        AhciDebugPrint(b"\tMultiple MSI based message not supported\n\0".as_ptr() as *const i8);
+        AhciDebugPrint!(b"\tMultiple MSI based message not supported\n\0".as_ptr() as *const i8);
     }
 
     StorPortEnablePassiveInitialization(
@@ -596,11 +596,11 @@ pub unsafe extern "C" fn AhciCompleteIssuedSrb(
     let mut SrbExtension: PAHCI_SRB_EXTENSION;
     let AdapterExtension: PAHCI_ADAPTER_EXTENSION;
 
-    AhciDebugPrint(b"AhciCompleteIssuedSrb()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciCompleteIssuedSrb()\n\0".as_ptr() as *const i8);
 
     // NT_ASSERT(CommandsToComplete != 0);
 
-    AhciDebugPrint(
+    AhciDebugPrint!(
         b"\tCompleted Commands: %d\n\0".as_ptr() as *const i8,
         CommandsToComplete,
     );
@@ -655,8 +655,8 @@ pub unsafe extern "C" fn AhciInterruptHandler(PortExtension: PAHCI_PORT_EXTENSIO
     let mut PxISMasked: AHCI_INTERRUPT_STATUS = core::mem::zeroed();
     let mut AdapterExtension: PAHCI_ADAPTER_EXTENSION;
 
-    AhciDebugPrint(b"AhciInterruptHandler()\n\0".as_ptr() as *const i8);
-    AhciDebugPrint(
+    AhciDebugPrint!(b"AhciInterruptHandler()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(
         b"\tPort Number: %d\n\0".as_ptr() as *const i8,
         (*PortExtension).PortNumber,
     );
@@ -671,7 +671,7 @@ pub unsafe extern "C" fn AhciInterruptHandler(PortExtension: PAHCI_PORT_EXTENSIO
     ));
 
     if PxIS.HBFS() != 0 || PxIS.HBDS() != 0 || PxIS.IFS() != 0 || PxIS.TFES() != 0 {
-        AhciDebugPrint(
+        AhciDebugPrint!(
             b"\tFatal Error: %x\n\0".as_ptr() as *const i8,
             PxIS.status(),
         );
@@ -775,7 +775,7 @@ pub unsafe extern "system" fn AhciHwInterrupt(DeviceExtension: PVOID) -> BOOLEAN
         return 1;
     }
 
-    AhciDebugPrint(b"\tSomething went wrong\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"\tSomething went wrong\0".as_ptr() as *const i8);
     return 0;
 }
 
@@ -812,7 +812,7 @@ pub unsafe extern "system" fn AhciHwStartIo(
 
     let AdapterExtension: PAHCI_ADAPTER_EXTENSION;
 
-    AhciDebugPrint(b"AhciHwStartIo()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciHwStartIo()\n\0".as_ptr() as *const i8);
 
     AdapterExtension = DeviceExtension as PAHCI_ADAPTER_EXTENSION;
 
@@ -831,11 +831,11 @@ pub unsafe extern "system" fn AhciHwStartIo(
                     StorRemoveDevice | StorSurpriseRemoval => {
                         (*Srb).SrbStatus = SRB_STATUS_SUCCESS;
                         (*AdapterExtension).StateFlags.set_Removed(1);
-                        AhciDebugPrint(b"\tAdapter removed\n\0".as_ptr() as *const i8);
+                        AhciDebugPrint!(b"\tAdapter removed\n\0".as_ptr() as *const i8);
                     }
                     StorStopDevice => {
                         (*Srb).SrbStatus = SRB_STATUS_SUCCESS;
-                        AhciDebugPrint(b"\tRequested to Stop the adapter\n\0".as_ptr() as *const i8);
+                        AhciDebugPrint!(b"\tRequested to Stop the adapter\n\0".as_ptr() as *const i8);
                     }
                     _ => {
                         (*Srb).SrbStatus = SRB_STATUS_INVALID_REQUEST;
@@ -848,7 +848,7 @@ pub unsafe extern "system" fn AhciHwStartIo(
         SRB_FUNCTION_EXECUTE_SCSI => {
             let cdb: PCDB = core::ptr::addr_of_mut!((*Srb).Cdb) as PCDB;
             if (*Srb).CdbLength == 0 {
-                AhciDebugPrint(
+                AhciDebugPrint!(
                     b"\tOperationCode: %d\n\0".as_ptr() as *const i8,
                     (*cdb).CDB10.as_ref().OperationCode as i32,
                 );
@@ -876,7 +876,7 @@ pub unsafe extern "system" fn AhciHwStartIo(
                         (*Srb).SrbStatus = DeviceRequestReadWrite(AdapterExtension, Srb, cdb);
                     }
                     _ => {
-                        AhciDebugPrint(
+                        AhciDebugPrint!(
                             b"\tOperationCode: %d\n\0".as_ptr() as *const i8,
                             (*cdb).CDB10.as_ref().OperationCode as i32,
                         );
@@ -886,7 +886,7 @@ pub unsafe extern "system" fn AhciHwStartIo(
             }
         }
         _ => {
-            AhciDebugPrint(
+            AhciDebugPrint!(
                 b"\tUnknown function code recieved: %x\n\0".as_ptr() as *const i8,
                 (*Srb).Function as i32,
             );
@@ -911,7 +911,7 @@ pub unsafe extern "system" fn AhciHwResetBus(
 
     let mut lockhandle: STOR_LOCK_HANDLE = core::mem::zeroed();
 
-    AhciDebugPrint(b"AhciHwResetBus()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciHwResetBus()\n\0".as_ptr() as *const i8);
 
     if IsPortValid(AdapterExtension as PAHCI_ADAPTER_EXTENSION, PathId) != 0 {
         // Acquire Lock
@@ -951,7 +951,7 @@ pub unsafe extern "system" fn AhciHwFindAdapter(
     let pciConfigData: PPCI_COMMON_CONFIG;
     let adapterExtension: PAHCI_ADAPTER_EXTENSION;
 
-    AhciDebugPrint(b"AhciHwFindAdapter()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciHwFindAdapter()\n\0".as_ptr() as *const i8);
 
     let _ = HwContext;
     let _ = BusInformation;
@@ -973,7 +973,7 @@ pub unsafe extern "system" fn AhciHwFindAdapter(
     );
 
     if pci_cfg_len != core::mem::size_of::<PCI_COMMON_CONFIG>() as ULONG {
-        AhciDebugPrint(
+        AhciDebugPrint!(
             b"\tpci_cfg_len != %d :: %d\0".as_ptr() as *const i8,
             core::mem::size_of::<PCI_COMMON_CONFIG>(),
             pci_cfg_len,
@@ -989,7 +989,7 @@ pub unsafe extern "system" fn AhciHwFindAdapter(
     (*adapterExtension).AhciBaseAddress =
         (*pciConfigData).u.type0.BaseAddresses[5] & 0xFFFFFFF0;
 
-    AhciDebugPrint(
+    AhciDebugPrint!(
         b"\tVendorID: %04x  DeviceID: %04x  RevisionID: %02x\n\0".as_ptr() as *const i8,
         (*adapterExtension).VendorID as u32,
         (*adapterExtension).DeviceID as u32,
@@ -1020,7 +1020,7 @@ pub unsafe extern "system" fn AhciHwFindAdapter(
     }
 
     if abar.is_null() {
-        AhciDebugPrint(b"\tabar == NULL\n\0".as_ptr() as *const i8);
+        AhciDebugPrint!(b"\tabar == NULL\n\0".as_ptr() as *const i8);
         return SP_RETURN_ERROR; // corrupted information supplied
     }
 
@@ -1038,9 +1038,9 @@ pub unsafe extern "system" fn AhciHwFindAdapter(
     // AE := Highest Significant bit of GHC
     if ghc.AE() != 0 {
         // Hmm, controller was already in power state
-        AhciDebugPrint(b"\tAE Already set, Reset()\n\0".as_ptr() as *const i8);
+        AhciDebugPrint!(b"\tAE Already set, Reset()\n\0".as_ptr() as *const i8);
         if AhciAdapterReset(adapterExtension) == 0 {
-            AhciDebugPrint(b"\tReset Failed!\n\0".as_ptr() as *const i8);
+            AhciDebugPrint!(b"\tReset Failed!\n\0".as_ptr() as *const i8);
             return SP_RETURN_ERROR; // reset failed
         }
     }
@@ -1059,7 +1059,7 @@ pub unsafe extern "system" fn AhciHwFindAdapter(
         StorPortReadRegisterUlong(adapterExtension as PVOID, core::ptr::addr_of_mut!((*abar).PI));
 
     if (*adapterExtension).PortImplemented == 0 {
-        AhciDebugPrint(b"\tadapterExtension->PortImplemented == 0\n\0".as_ptr() as *const i8);
+        AhciDebugPrint!(b"\tadapterExtension->PortImplemented == 0\n\0".as_ptr() as *const i8);
         return SP_RETURN_ERROR;
     }
 
@@ -1169,7 +1169,7 @@ pub unsafe extern "C" fn AhciATA_CFIS(
 
     let _ = PortExtension;
 
-    AhciDebugPrint(b"AhciATA_CFIS()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciATA_CFIS()\n\0".as_ptr() as *const i8);
 
     cmdTable = SrbExtension as PAHCI_COMMAND_TABLE;
 
@@ -1205,7 +1205,7 @@ pub unsafe extern "C" fn AhciATAPI_CFIS(
     let cmdTable: PAHCI_COMMAND_TABLE;
     let _ = PortExtension;
 
-    AhciDebugPrint(b"AhciATAPI_CFIS()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciATAPI_CFIS()\n\0".as_ptr() as *const i8);
 
     cmdTable = SrbExtension as PAHCI_COMMAND_TABLE;
 
@@ -1244,7 +1244,7 @@ pub unsafe extern "C" fn AhciBuild_PRDT(
     let sgl: PLOCAL_SCATTER_GATHER_LIST;
     let AdapterExtension: PAHCI_ADAPTER_EXTENSION;
 
-    AhciDebugPrint(b"AhciBuild_PRDT()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciBuild_PRDT()\n\0".as_ptr() as *const i8);
 
     sgl = (*SrbExtension).pSgl;
     cmdTable = SrbExtension as PAHCI_COMMAND_TABLE;
@@ -1290,7 +1290,7 @@ pub unsafe extern "C" fn AhciProcessSrb(
     let AdapterExtension: PAHCI_ADAPTER_EXTENSION;
     let CommandTablePhysicalAddress: STOR_PHYSICAL_ADDRESS;
 
-    AhciDebugPrint(b"AhciProcessSrb()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciProcessSrb()\n\0".as_ptr() as *const i8);
 
     NT_ASSERT(((*Srb).PathId as ULONG == (*PortExtension).PortNumber) as i32);
 
@@ -1310,10 +1310,10 @@ pub unsafe extern "C" fn AhciProcessSrb(
         );
         sig = sig_val;
         if sig == 0x101 {
-            AhciDebugPrint(b"\tATA Device Found!\n\0".as_ptr() as *const i8);
+            AhciDebugPrint!(b"\tATA Device Found!\n\0".as_ptr() as *const i8);
             (*SrbExtension).CommandReg = IDE_COMMAND_IDENTIFY as UCHAR;
         } else {
-            AhciDebugPrint(b"\tATAPI Device Found!\n\0".as_ptr() as *const i8);
+            AhciDebugPrint!(b"\tATAPI Device Found!\n\0".as_ptr() as *const i8);
             (*SrbExtension).CommandReg = IDE_COMMAND_ATAPI_IDENTIFY as UCHAR;
         }
     }
@@ -1406,7 +1406,7 @@ pub unsafe extern "C" fn AhciActivatePort(
     let tmp: ULONG;
     let AdapterExtension: PAHCI_ADAPTER_EXTENSION;
 
-    AhciDebugPrint(b"AhciActivatePort()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciActivatePort()\n\0".as_ptr() as *const i8);
 
     AdapterExtension = (*PortExtension).AdapterExtension;
     QueueSlots = (*PortExtension).QueueSlots;
@@ -1469,8 +1469,8 @@ pub unsafe extern "C" fn AhciProcessIO(
     let mut slotIndex: ULONG;
     let NCS: ULONG;
 
-    AhciDebugPrint(b"AhciProcessIO()\n\0".as_ptr() as *const i8);
-    AhciDebugPrint(b"\tPathId: %d\n\0".as_ptr() as *const i8, PathId as i32);
+    AhciDebugPrint!(b"AhciProcessIO()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"\tPathId: %d\n\0".as_ptr() as *const i8, PathId as i32);
 
     PortExtension = core::ptr::addr_of_mut!((*AdapterExtension).PortExtension[PathId as usize]);
 
@@ -1533,7 +1533,7 @@ pub unsafe extern "C" fn AtapiInquiryCompletion(_Extension: PVOID, _Srb: PVOID) 
     let Srb: PSCSI_REQUEST_BLOCK;
     let status: BOOLEAN;
 
-    AhciDebugPrint(b"AtapiInquiryCompletion()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AtapiInquiryCompletion()\n\0".as_ptr() as *const i8);
 
     PortExtension = _Extension as PAHCI_PORT_EXTENSION;
     Srb = _Srb as PSCSI_REQUEST_BLOCK;
@@ -1585,7 +1585,7 @@ pub unsafe extern "C" fn InquiryCompletion(
     let AdapterExtension: PAHCI_ADAPTER_EXTENSION;
     let IdentifyDeviceData: PIDENTIFY_DEVICE_DATA;
 
-    AhciDebugPrint(b"InquiryCompletion()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"InquiryCompletion()\n\0".as_ptr() as *const i8);
 
     PortExtension = _Extension as PAHCI_PORT_EXTENSION;
     Srb = _Srb as PSCSI_REQUEST_BLOCK;
@@ -1640,7 +1640,7 @@ pub unsafe extern "C" fn InquiryCompletion(
             .LogicalSectorLongerThan256Words()
             != 0
         {
-            AhciDebugPrint(
+            AhciDebugPrint!(
                 b"\tBytesPerLogicalSector != DEVICE_ATA_BLOCK_SIZE\n\0".as_ptr() as *const i8,
             );
             NT_ASSERT(FALSE);
@@ -1654,7 +1654,7 @@ pub unsafe extern "C" fn InquiryCompletion(
             .MultipleLogicalSectorsPerPhysicalSector()
             != 0
         {
-            AhciDebugPrint(
+            AhciDebugPrint!(
                 b"\tBytesPerPhysicalSector != DEVICE_ATA_BLOCK_SIZE\n\0".as_ptr() as *const i8,
             );
             NT_ASSERT(FALSE);
@@ -1687,16 +1687,16 @@ pub unsafe extern "C" fn InquiryCompletion(
         (*PortExtension).DeviceParams.SerialNumber[serlen] = b'\0';
 
         // TODO: Add other device params
-        AhciDebugPrint(b"\tATA Device\n\0".as_ptr() as *const i8);
+        AhciDebugPrint!(b"\tATA Device\n\0".as_ptr() as *const i8);
     } else {
-        AhciDebugPrint(b"\tATAPI Device\n\0".as_ptr() as *const i8);
+        AhciDebugPrint!(b"\tATAPI Device\n\0".as_ptr() as *const i8);
         (*PortExtension).DeviceParams.DeviceType = AHCI_DEVICE_TYPE_ATAPI;
         (*PortExtension).DeviceParams.AccessType = READ_ONLY_DIRECT_ACCESS_DEVICE;
     }
 
     // INQUIRYDATABUFFERSIZE = 36 ; Defined in storport.h
     if (*Srb).DataTransferLength < INQUIRYDATABUFFERSIZE {
-        AhciDebugPrint(
+        AhciDebugPrint!(
             b"\tDataBufferLength < sizeof(INQUIRYDATA), Could crash the driver.\n\0".as_ptr()
                 as *const i8,
         );
@@ -1779,7 +1779,7 @@ pub unsafe extern "C" fn AhciATAPICommand(
     let SrbExtension: PAHCI_SRB_EXTENSION;
     let PortExtension: PAHCI_PORT_EXTENSION;
 
-    AhciDebugPrint(b"AhciATAPICommand()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciATAPICommand()\n\0".as_ptr() as *const i8);
 
     SrbFlags = (*Srb).SrbFlags;
     SrbExtension = GetSrbExtension(Srb);
@@ -1866,7 +1866,7 @@ pub unsafe extern "C" fn DeviceRequestSense(
     let mut ModeHeader: PMODE_PARAMETER_HEADER;
     let PortExtension: PAHCI_PORT_EXTENSION;
 
-    AhciDebugPrint(b"DeviceRequestSense()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"DeviceRequestSense()\n\0".as_ptr() as *const i8);
 
     NT_ASSERT(IsPortValid(AdapterExtension, (*Srb).PathId as ULONG) as i32);
     NT_ASSERT(((*Cdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_MODE_SENSE as u32) as i32);
@@ -1926,7 +1926,7 @@ pub unsafe extern "C" fn DeviceRequestReadWrite(
     let BytesPerSector: ULONG;
     let SectorCount: ULONG;
 
-    AhciDebugPrint(b"DeviceRequestReadWrite()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"DeviceRequestReadWrite()\n\0".as_ptr() as *const i8);
 
     NT_ASSERT(IsPortValid(AdapterExtension, (*Srb).PathId as ULONG));
     NT_ASSERT(
@@ -2018,7 +2018,7 @@ pub unsafe extern "C" fn DeviceRequestCapacity(
     let mut ReadCapacity: PREAD_CAPACITY_DATA;
     let mut PortExtension: PAHCI_PORT_EXTENSION;
 
-    AhciDebugPrint(b"DeviceRequestCapacity()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"DeviceRequestCapacity()\n\0".as_ptr() as *const i8);
 
     // UNREFERENCED_PARAMETER(AdapterExtension);
     let _ = AdapterExtension;
@@ -2060,7 +2060,7 @@ pub unsafe extern "C" fn DeviceRequestCapacity(
             core::ptr::addr_of_mut!(MaxLba),
         );
     } else {
-        AhciDebugPrint(b"\tSCSIOP_READ_CAPACITY16 not supported\n\0".as_ptr() as *const i8);
+        AhciDebugPrint!(b"\tSCSIOP_READ_CAPACITY16 not supported\n\0".as_ptr() as *const i8);
         // NT_ASSERT(FALSE);
     }
 
@@ -2074,7 +2074,7 @@ pub unsafe extern "C" fn DeviceRequestComplete(
     Cdb: PCDB,
 ) -> UCHAR {
 
-    AhciDebugPrint(b"DeviceRequestComplete()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"DeviceRequestComplete()\n\0".as_ptr() as *const i8);
 
     let _ = AdapterExtension;
     let _ = Cdb;
@@ -2093,7 +2093,7 @@ pub unsafe extern "C" fn DeviceReportLuns(
     let LunList: PLUN_LIST;
     let PortExtension: PAHCI_PORT_EXTENSION;
 
-    AhciDebugPrint(b"DeviceReportLuns()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"DeviceReportLuns()\n\0".as_ptr() as *const i8);
 
     UNREFERENCED_PARAMETER(Cdb as usize);
 
@@ -2150,7 +2150,7 @@ pub unsafe extern "C" fn DeviceInquiryRequest(
     let mut DataBufferLength: ULONG;
     let mut RequiredDataBufferLength: ULONG;
 
-    AhciDebugPrint(b"DeviceInquiryRequest()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"DeviceInquiryRequest()\n\0".as_ptr() as *const i8);
 
     NT_ASSERT(((*Cdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_INQUIRY) as BOOLEAN);
     NT_ASSERT(IsPortValid(AdapterExtension, (*Srb).PathId as ULONG));
@@ -2167,7 +2167,7 @@ pub unsafe extern "C" fn DeviceInquiryRequest(
     } else if (*Cdb).CDB6INQUIRY3.as_ref().EnableVitalProductData() == 0 {
         // 3.6.1
         // If the EVPD bit is set to zero, the device server shall return the standard INQUIRY data
-        AhciDebugPrint(b"\tEVPD Inquired\n\0".as_ptr() as *const i8);
+        AhciDebugPrint!(b"\tEVPD Inquired\n\0".as_ptr() as *const i8);
         NT_ASSERT((!SrbExtension.is_null()) as BOOLEAN);
 
         (*SrbExtension).AtaFunction = ATA_FUNCTION_ATA_IDENTIFY;
@@ -2199,7 +2199,7 @@ pub unsafe extern "C" fn DeviceInquiryRequest(
         (*SrbExtension).pSgl = core::ptr::addr_of_mut!((*SrbExtension).Sgl);
         return SRB_STATUS_PENDING;
     } else {
-        AhciDebugPrint(b"\tVPD Inquired\n\0".as_ptr() as *const i8);
+        AhciDebugPrint!(b"\tVPD Inquired\n\0".as_ptr() as *const i8);
 
         DataBuffer = (*Srb).DataBuffer;
         DataBufferLength = (*Srb).DataTransferLength;
@@ -2213,12 +2213,12 @@ pub unsafe extern "C" fn DeviceInquiryRequest(
 
         match (*Cdb).CDB6INQUIRY3.as_ref().PageCode as u32 {
             VPD_SUPPORTED_PAGES => {
-                AhciDebugPrint(b"\tVPD_SUPPORTED_PAGES\n\0".as_ptr() as *const i8);
+                AhciDebugPrint!(b"\tVPD_SUPPORTED_PAGES\n\0".as_ptr() as *const i8);
                 RequiredDataBufferLength =
                     (core::mem::size_of::<VPD_SUPPORTED_PAGES_PAGE>() + 1) as ULONG;
 
                 if DataBufferLength < RequiredDataBufferLength {
-                    AhciDebugPrint(
+                    AhciDebugPrint!(
                         b"\tDataBufferLength: %d Required: %d\n\0".as_ptr() as *const i8,
                         DataBufferLength,
                         RequiredDataBufferLength,
@@ -2239,13 +2239,13 @@ pub unsafe extern "C" fn DeviceInquiryRequest(
                 NT_ASSERT(((*VpdOutputBuffer).DeviceType() as u32 == DIRECT_ACCESS_DEVICE as u32) as BOOLEAN);
             }
             VPD_SERIAL_NUMBER => {
-                AhciDebugPrint(b"\tVPD_SERIAL_NUMBER\n\0".as_ptr() as *const i8);
+                AhciDebugPrint!(b"\tVPD_SERIAL_NUMBER\n\0".as_ptr() as *const i8);
             }
             VPD_DEVICE_IDENTIFIERS => {
-                AhciDebugPrint(b"\tVPD_DEVICE_IDENTIFIERS\n\0".as_ptr() as *const i8);
+                AhciDebugPrint!(b"\tVPD_DEVICE_IDENTIFIERS\n\0".as_ptr() as *const i8);
             }
             _ => {
-                AhciDebugPrint(
+                AhciDebugPrint!(
                     b"\tPageCode: %x\n\0".as_ptr() as *const i8,
                     (*Cdb).CDB6INQUIRY3.as_ref().PageCode as u32,
                 );
@@ -2266,7 +2266,7 @@ pub unsafe extern "C" fn AhciAdapterReset(
     let mut ghc: AHCI_GHC = core::mem::zeroed();
     let mut abar: PAHCI_MEMORY_REGISTERS = core::ptr::null_mut();
 
-    AhciDebugPrint(b"AhciAdapterReset()\n\0".as_ptr() as *const i8);
+    AhciDebugPrint!(b"AhciAdapterReset()\n\0".as_ptr() as *const i8);
 
     abar = (*AdapterExtension).ABAR_Address;
     if abar.is_null()
@@ -2298,7 +2298,7 @@ pub unsafe extern "C" fn AhciAdapterReset(
 
     if ticks == 50
     {
-        AhciDebugPrint(b"\tDevice Timeout\n\0".as_ptr() as *const i8);
+        AhciDebugPrint!(b"\tDevice Timeout\n\0".as_ptr() as *const i8);
         return 0;
     }
 

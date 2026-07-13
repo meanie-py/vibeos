@@ -23,3 +23,6 @@ crate-type = ["staticlib"]
 [dependencies]
 panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
+# C-variadic entry points -> drivers/storage/port/scsiport/rust_varargs_shim.c (stable
+# Rust cannot DEFINE one, nor va_arg); VaArgs reads the va_list it hands over.
+varargs-rust = { path = "../varargs-rust" }

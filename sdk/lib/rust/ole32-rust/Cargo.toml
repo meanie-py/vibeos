@@ -16,3 +16,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 panic-common = { path = "../panic-common", features = ["user"] }
+# com-sys backs the `ring` modules' prelude (bindgen COM vtbls with exact per-arch
+# layouts + calling conventions). compobj/marshal still carry their own hand-rolled
+# FFI surface — collapsing those onto com-sys is the queued mechanical cleanup.
+com-sys = { path = "../com-sys" }

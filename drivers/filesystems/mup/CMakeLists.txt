@@ -30,7 +30,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${MUP_RUST_TARGET_DIR}
         RUSTFLAGS=${MUP_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${MUP_RUST_TARGET}
             -p mup-rust
             --manifest-path ${MUP_RUST_WORKSPACE_DIR}/Cargo.toml

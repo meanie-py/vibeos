@@ -39,6 +39,28 @@ use std::process::{Command, ExitStatus};
 /// ks*.inc as absent. Lets the cmake-off path be exercised + byte-verified against
 /// the cmake artifact without physically moving build-dir files aside (what the
 /// `--verify` gate and manual testing otherwise need). Off → normal behaviour.
+/// The pinned nightly toolchain name, single-sourced from `.rust-nightly` at the
+/// repo root (the stable half is pinned by `rust-toolchain.toml` beside it).
+///
+/// HARD FAIL if it's missing: a silent fallback to a floating `nightly` is exactly
+/// the failure this pin exists to prevent — upstream has already removed the
+/// `VaListImpl`/`as_va_list()` c_variadic API this tree is written against, so an
+/// unpinned toolchain is one `rustup update` away from a confusing build break.
+fn pinned_nightly(repo_root: &Path) -> String {
+    let pin = repo_root.join(".rust-nightly");
+    let name = std::fs::read_to_string(&pin).unwrap_or_else(|e| {
+        panic!(
+            "reactos-link: cannot read the pinned nightly at {}: {e}\n\
+             build-std needs a PINNED nightly; refusing to fall back to a floating one.",
+            pin.display()
+        )
+    });
+    let name = name.trim().to_string();
+    assert!(!name.is_empty(), "reactos-link: {} is empty", pin.display());
+    println!("cargo:rerun-if-changed={}", pin.display());
+    name
+}
+
 fn cmake_off_forced() -> bool {
     env::var_os("VIBEOS_FORCE_CMAKE_OFF").is_some()
 }
@@ -1651,17 +1673,19 @@ impl Linker {
             self.pkg_name,
             crate_name.replace('-', "_")
         ));
-        // Kernel json targets: the env CARGO (nightly, set by the outer
-        // `cargo +nightly`) drives build-std. Builtin kernel targets and
-        // user-mode siblings use `rustup run stable cargo`, matching cmake's
-        // precompiled-std path.
+        // Kernel json targets: the env CARGO (the pinned nightly, set by the outer
+        // cargo) drives build-std. Builtin kernel targets and user-mode siblings run
+        // the plain `cargo` rustup proxy, matching cmake's precompiled-std path — the
+        // env scrub below strips the outer nightly's RUSTUP_TOOLCHAIN/RUSTC, so the
+        // proxy resolves the PINNED STABLE from the repo-root rust-toolchain.toml.
+        // (It used to say `rustup run stable`, which named the FLOATING `stable`
+        // channel and so ignored the pin — a `rustup update` silently swapped the
+        // compiler under the user-mode siblings.)
         let kernel_build_std = kernel && self.target.is_json();
         let mut cmd = if kernel_build_std {
             Command::new(env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
         } else {
-            let mut c = Command::new("rustup");
-            c.arg("run").arg("stable").arg("cargo");
-            c
+            Command::new("cargo")
         };
         cmd.arg("build").arg("--release").arg("--target");
         // out_stem = the subdir cargo writes under.
@@ -1690,8 +1714,11 @@ impl Linker {
             .env("CARGO_TARGET_DIR", &tgt_dir);
         if kernel {
             if kernel_build_std {
-                // build-std needs nightly.
-                cmd.env("RUSTUP_TOOLCHAIN", "nightly");
+                // build-std needs nightly — the PINNED one (`.rust-nightly`), never a
+                // floating `nightly`: upstream has already removed the c_variadic API
+                // this tree is written against, so an unpinned `rustup update` breaks
+                // the build. Bump the pin there, not here.
+                cmd.env("RUSTUP_TOOLCHAIN", pinned_nightly(&self.repo_root));
             } else {
                 // The outer cargo may still be nightly/build-std. Scrub its env
                 // so the stable builtin-target cargo behaves like cmake's fresh

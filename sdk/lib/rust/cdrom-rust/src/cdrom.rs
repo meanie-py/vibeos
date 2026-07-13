@@ -54,7 +54,6 @@ extern "system" {
     fn KeQueryPerformanceCounter(PerformanceFrequency: *mut i64) -> i64;
 }
 extern "C" {
-    fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
     fn CdromDbgPrint0(format: *const i8) -> u32;
     fn CdromGapLog();
     fn CdromDbgPrintForce2(format: *const i8, arg1: usize, arg2: usize) -> u32;
@@ -441,7 +440,7 @@ pub unsafe extern "system" fn DriverEntry(
         let level = TRACE_LEVEL_INFORMATION;
         let flags = TRACE_FLAG_INIT;
         let fmt = b"CDROM.SYS DriverObject %p loading\n\0".as_ptr() as *const i8;
-        TracePrint(level, flags, fmt, DriverObject as usize);
+        TracePrint!(level, flags, fmt, DriverObject as usize);
     }
 
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
@@ -473,7 +472,7 @@ pub unsafe extern "system" fn DriverEntry(
             let level = TRACE_LEVEL_FATAL;
             let flags = TRACE_FLAG_INIT;
             let fmt = b"WdfDriverCreate failed. %x\n\0".as_ptr() as *const i8;
-            TracePrint(level, flags, fmt, status as usize);
+            TracePrint!(level, flags, fmt, status as usize);
             WPP_CLEANUP(DriverObject);
         }
     } else {
@@ -501,7 +500,7 @@ pub unsafe extern "system" fn DriverEvtCleanup(Driver: WDFOBJECT) {
 
     debug_assert_eq!(KeGetCurrentIrql(), PASSIVE_LEVEL);
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_INIT,
         b"CDROM.SYS DriverObject %p cleanup. Will be unloaded soon\n\0".as_ptr() as *const i8,
@@ -597,7 +596,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
                 (core::mem::size_of_val(&minorFunctions) / core::mem::size_of::<u8>()) as u32,
             );
             if !NT_SUCCESS(status) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_FATAL,
                     TRACE_FLAG_PNP,
                     b"DriverEvtDeviceAdd: Assign IrpPreprocessCallback for IRP_MJ_POWER failed, status: 0x%X\n\0".as_ptr() as *const i8,
@@ -614,7 +613,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
                 0,
             );
             if !NT_SUCCESS(status) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_FATAL,
                     TRACE_FLAG_PNP,
                     b"DriverEvtDeviceAdd: Assign IrpPreprocessCallback for IRP_MJ_FLUSH_BUFFERS failed, status: 0x%X\n\0".as_ptr() as *const i8,
@@ -631,7 +630,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
                 0,
             );
             if !NT_SUCCESS(status) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_FATAL,
                     TRACE_FLAG_PNP,
                     b"DriverEvtDeviceAdd: Assign IrpPreprocessCallback for IRP_MJ_SHUTDOWN failed, status: 0x%X\n\0".as_ptr() as *const i8,
@@ -711,7 +710,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
                     deviceNumber as i32,
                 );
                 if !NT_SUCCESS(status) {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_FATAL,
                         TRACE_FLAG_PNP,
                         b"DriverEvtDeviceAdd: Format device name failed with error: 0x%X\n\0".as_ptr() as *const i8,
@@ -722,7 +721,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
                 RtlInitUnicodeString(&mut unicodeDeviceName as *mut _UNICODE_STRING, wideDeviceName);
                 status = WdfDeviceInitAssignName(DeviceInit, &mut unicodeDeviceName);
                 if !NT_SUCCESS(status) {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_FATAL,
                         TRACE_FLAG_PNP,
                         b"DriverEvtDeviceAdd: WdfDeviceInitAssignName() failed with error: 0x%X\n\0".as_ptr() as *const i8,
@@ -743,7 +742,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
             deviceNumber -= 1;
 
             if !NT_SUCCESS(status) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_FATAL,
                     TRACE_FLAG_PNP,
                     b"DriverEvtDeviceAdd: Can not create a new device, status: 0x%X\n\0".as_ptr() as *const i8,
@@ -781,7 +780,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
                 (*(deviceExtension)).IoTarget as usize,
             );
             if !NT_SUCCESS(status) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_FATAL,
                     TRACE_FLAG_PNP,
                     b"DriverEvtDeviceAdd: Can not create a remote I/O target object, status: 0x%X\n\0".as_ptr() as *const i8,
@@ -801,7 +800,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
                 (*(deviceExtension)).IoTarget as usize,
             );
             if !NT_SUCCESS(status) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_FATAL,
                     TRACE_FLAG_PNP,
                     b"DriverEvtDeviceAdd: Can not open a remote I/O target for the next-lower device, status: 0x%X\n\0".as_ptr() as *const i8,
@@ -953,7 +952,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
                 &mut (*(deviceExtension)).ShutdownFlushWaitLock,
             );
             if !NT_SUCCESS(status) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_FATAL,
                     TRACE_FLAG_PNP,
                     b"DriverEvtDeviceAdd: Cannot create shutdown/flush waitlock, status: 0x%X\n\0".as_ptr() as *const i8,
@@ -978,7 +977,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
                 &mut (*(deviceExtension)).ReadWriteWorkItem,
             );
             if !NT_SUCCESS(status) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_FATAL,
                     TRACE_FLAG_INIT,
                     b"DriverEvtDeviceAdd: Cannot create read/write work item, status: 0x%X\n\0".as_ptr() as *const i8,
@@ -1004,7 +1003,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
                 &mut (*(deviceExtension)).IoctlWorkItem,
             );
             if !NT_SUCCESS(status) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_FATAL,
                     TRACE_FLAG_INIT,
                     b"DriverEvtDeviceAdd: Cannot create ioctl work item, status: 0x%X\n\0".as_ptr() as *const i8,
@@ -1046,7 +1045,7 @@ pub unsafe extern "C" fn DeviceEvtCleanup(Device: WDFOBJECT) {
 
     let device = Device as *mut core::ffi::c_void;
     let format = b"WDFDEVICE %p cleanup: The device is about to be destroyed.\n\0".as_ptr() as *const i8;
-    TracePrint(0, 0, format, device); // TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT
+    TracePrint!(0, 0, format, device); // TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT
 
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
     let deviceExtension = DeviceGetExtension(device as WDFDEVICE);
@@ -1082,7 +1081,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoCleanup(Device: *mut core::f
     PAGED_CODE();
 
     // TracePrint with varargs; we pass the format string and pointer
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_PNP,
         b"DeviceEvtSelfManagedIoCleanup: WDFDEVICE %p is being stopped.\n\0".as_ptr() as *const i8,
@@ -1185,7 +1184,7 @@ pub unsafe extern "system" fn DeviceEvtD0Entry(
                 if ntkrnl_sys::base::NT_SUCCESS(status)
                     && (powerupReason.PowerupReason == StoragePowerupDeviceAttention as _)
                 {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_POWER,
                         b"DeviceEvtD0Entry: Device has left zero power state due to eject button pressed\n\0"
@@ -1202,7 +1201,7 @@ pub unsafe extern "system" fn DeviceEvtD0Entry(
                         );
                     }
                 } else {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_POWER,
                         b"DeviceEvtD0Entry: Device has left zero power state due to IO received\n\0"
@@ -1304,7 +1303,7 @@ pub unsafe extern "system" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WD
     if !zpoddInfo.is_null() {
         (*zpoddInfo).InZeroPowerState = 1; // TRUE
 
-        TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+        TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                    b"Device has entered zero power state\n\0".as_ptr() as *const i8);
     }
 
@@ -1326,7 +1325,7 @@ pub unsafe extern "system" fn DeviceEvtSurpriseRemoval(Device: WDFDEVICE) {
     // legacy behavior to set partition length to be 0.
     (*deviceExtension).PartitionLength.QuadPart = 0;
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_INIT,
         b"Surprisely remove a WDFDEVICE %p\n\0".as_ptr() as *const i8,
@@ -1371,7 +1370,7 @@ pub unsafe extern "C" fn DeviceCleanupProtectedLocks(
 ) -> NTSTATUS {
     let mut status: NTSTATUS = 0; // STATUS_SUCCESS
     PAGED_CODE();
-    TracePrint(
+    TracePrint!(
         4, // TRACE_LEVEL_INFORMATION
         0x1, // TRACE_FLAG_INIT
         b"CleanupProtectedLocks called for WDFDEVICE %p, WDFFILEOBJECT %p, locked %d times.\n\0".as_ptr() as *const i8,
@@ -1383,7 +1382,7 @@ pub unsafe extern "C" fn DeviceCleanupProtectedLocks(
     if (*FileObjectContext).LockCount != 0 {
         (*DeviceExtension).ProtectedLockCount -= (*FileObjectContext).LockCount as i32;
         (*FileObjectContext).LockCount = 0;
-        TracePrint(
+        TracePrint!(
             4,
             0x1,
             b"FDO secured lock count = %d lock count = %d\n\0".as_ptr() as *const i8,
@@ -1405,7 +1404,7 @@ pub unsafe extern "C" fn DeviceCleanupProtectedLocks(
                 0,
                 core::ptr::null_mut(),
             );
-            TracePrint(
+            TracePrint!(
                 4,
                 0x1,
                 b"Allow media removal (unlock) request to drive returned %!STATUS!\n\0".as_ptr() as *const i8,
@@ -1436,7 +1435,7 @@ pub unsafe extern "C" fn DeviceCleanupDisableMcn(
     let format = b"CleanupDisableMcn called for WDFDEVICE %p, WDFFILEOBJECT %p, locked %d times.\n\0"
         .as_ptr() as *const i8;
 
-    TracePrint(
+    TracePrint!(
         trace_level_verbose,
         trace_flag_init,
         format,
@@ -1480,7 +1479,7 @@ pub unsafe extern "C" fn NormalizeIoctl(requestParameters: *mut WDF_REQUEST_PARA
         if (functionCode >= 0x200) && (functionCode <= 0x300) {
             ioctlCode = (ioctlCode & 0x0000ffffu32) | (IOCTL_STORAGE_BASE << 16);
 
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_VERBOSE,
                 TRACE_FLAG_IOCTL,
                 b"IOCTL code recalibrate, New ioctl code is %lx\n\0".as_ptr() as *const i8,
@@ -1512,14 +1511,14 @@ pub unsafe extern "system" fn DeviceEvtIoInCallerContext(
         let info: *mut MEDIA_CHANGE_DETECTION_INFO = (*deviceExtension).MediaChangeDetectionInfo;
 
         if (*requestParameters_ptr).Parameters.DeviceIoControl.as_ref().IoControlCode != IOCTL_MCN_SYNC_FAKE_IOCTL {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"Receiving IOCTL: %lx\n\0".as_ptr() as *const i8,
                 (*requestParameters_ptr).Parameters.DeviceIoControl.as_ref().IoControlCode as u32,
             );
         } else {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_VERBOSE,
                 TRACE_FLAG_IOCTL,
                 b"Receiving IOCTL: %lx\n\0".as_ptr() as *const i8,
@@ -1541,7 +1540,7 @@ pub unsafe extern "system" fn DeviceEvtIoInCallerContext(
                     (*info).ANSignalPendingDueToExclusiveLock = 1;
                 }
 
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_ERROR,
                     TRACE_FLAG_IOCTL,
                     b"Access Denied! Device in exclusive mode.Failing Ioctl %lx\n\0".as_ptr() as *const i8,
@@ -1715,7 +1714,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_DISK_GET_DRIVE_GEOMETRY_EX | IOCTL_CDROM_GET_DRIVE_GEOMETRY_EX => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Get drive geometryEx\n\0".as_ptr() as *const i8,
@@ -1733,7 +1732,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_DISK_GET_DRIVE_GEOMETRY | IOCTL_CDROM_GET_DRIVE_GEOMETRY => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Get drive geometry\n\0".as_ptr() as *const i8,
@@ -1778,7 +1777,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_PLAY_AUDIO_MSF => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Play audio MSF\n\0".as_ptr() as *const i8,
@@ -1793,7 +1792,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_SEEK_AUDIO_MSF => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Seek audio MSF\n\0".as_ptr() as *const i8,
@@ -1808,7 +1807,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_PAUSE_AUDIO => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Pause audio\n\0".as_ptr() as *const i8,
@@ -1817,7 +1816,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_RESUME_AUDIO => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Resume audio\n\0".as_ptr() as *const i8,
@@ -1830,7 +1829,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_GET_VOLUME => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Get volume control\n\0".as_ptr() as *const i8,
@@ -1846,7 +1845,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_SET_VOLUME => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Set volume control\n\0".as_ptr() as *const i8,
@@ -1861,7 +1860,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_STOP_AUDIO => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Stop audio\n\0".as_ptr() as *const i8,
@@ -1870,7 +1869,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_STORAGE_CHECK_VERIFY | IOCTL_STORAGE_CHECK_VERIFY2 => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: [%p] Check Verify\n\0".as_ptr() as *const i8,
@@ -1894,7 +1893,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_DVD_READ_STRUCTURE => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: [%p] IOCTL_DVD_READ_STRUCTURE\n\0".as_ptr()
@@ -1909,7 +1908,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_DVD_READ_KEY => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: [%p] IOCTL_DVD_READ_KEY\n\0".as_ptr()
@@ -1925,7 +1924,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_DVD_START_SESSION => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: [%p] IOCTL_DVD_START_SESSION\n\0".as_ptr()
@@ -1940,7 +1939,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_DVD_SEND_KEY | IOCTL_DVD_SEND_KEY2 => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: [%p] IOCTL_DVD_SEND_KEY\n\0".as_ptr()
@@ -1956,7 +1955,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_STORAGE_SET_READ_AHEAD => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: [%p] SetReadAhead\n\0".as_ptr() as *const i8,
@@ -1979,7 +1978,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             let requiredSize: u32 =
                 (core::mem::offset_of!(DRIVE_LAYOUT_INFORMATION, PartitionEntry)
                     + core::mem::size_of::<PARTITION_INFORMATION>()) as u32;
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Get drive layout\n\0".as_ptr() as *const i8,
@@ -1996,7 +1995,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             let requiredSize: u32 =
                 (core::mem::offset_of!(DRIVE_LAYOUT_INFORMATION_EX, PartitionEntry)
                     + core::mem::size_of::<PARTITION_INFORMATION_EX>()) as u32;
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Get drive layoutEx\n\0".as_ptr() as *const i8,
@@ -2010,7 +2009,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_DISK_GET_PARTITION_INFO => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Get Partition Info\n\0".as_ptr() as *const i8,
@@ -2026,7 +2025,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_DISK_GET_PARTITION_INFO_EX => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Get Partition InfoEx\n\0".as_ptr() as *const i8,
@@ -2042,7 +2041,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_DISK_VERIFY => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: IOCTL_DISK_VERIFY to device %p through request %p\n\0"
@@ -2059,7 +2058,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_DISK_GET_LENGTH_INFO => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: Disk Get Length InfoEx\n\0".as_ptr()
@@ -2078,7 +2077,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_GET_CONFIGURATION => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: [%p] IOCTL_CDROM_GET_CONFIGURATION\n\0"
@@ -2094,7 +2093,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_SET_SPEED => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: [%p] IOCTL_CDROM_SET_SPEED\n\0".as_ptr()
@@ -2105,7 +2104,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_DVD_END_SESSION => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: [%p] IOCTL_DVD_END_SESSION\n\0".as_ptr()
@@ -2121,7 +2120,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_AACS_END_SESSION => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: [%p] IOCTL_AACS_END_SESSION\n\0".as_ptr()
@@ -2137,7 +2136,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_AACS_READ_MEDIA_KEY_BLOCK => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"AACS: Querying full MKB with bufferSize of %x bytes\n\0".as_ptr() as *const i8,
@@ -2152,7 +2151,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_AACS_START_SESSION => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"AACS: Requesting AGID\n\0".as_ptr() as *const i8,
@@ -2165,7 +2164,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_AACS_SEND_CERTIFICATE => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"AACS: Sending host certificate to drive\n\0".as_ptr() as *const i8,
@@ -2179,7 +2178,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_AACS_GET_CERTIFICATE => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"AACS: Querying drive certificate\n\0".as_ptr() as *const i8,
@@ -2193,7 +2192,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_AACS_GET_CHALLENGE_KEY => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"AACS: Querying drive challenge key\n\0".as_ptr() as *const i8,
@@ -2207,7 +2206,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_AACS_SEND_CHALLENGE_KEY => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"AACS: Sending drive challenge key\n\0".as_ptr() as *const i8,
@@ -2221,7 +2220,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_AACS_READ_VOLUME_ID => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"AACS: Reading volume ID\n\0".as_ptr() as *const i8,
@@ -2235,7 +2234,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_AACS_READ_SERIAL_NUMBER => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"AACS: Reading Serial Number\n\0".as_ptr() as *const i8,
@@ -2249,7 +2248,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_AACS_READ_MEDIA_ID => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_IOCTL,
                 b"AACS: Reading media ID\n\0".as_ptr() as *const i8,
@@ -2264,13 +2263,13 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
         }
         IOCTL_AACS_READ_BINDING_NONCE | IOCTL_AACS_GENERATE_BINDING_NONCE => {
             if ioctlCode == IOCTL_AACS_GENERATE_BINDING_NONCE {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_IOCTL,
                     b"AACS: Generating new binding nonce\n\0".as_ptr() as *const i8,
                 );
             } else {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_IOCTL,
                     b"AACS: Reading existing binding nonce\n\0".as_ptr() as *const i8,
@@ -2285,7 +2284,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_ENABLE_STREAMING => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: [%p] IOCTL_CDROM_ENABLE_STREAMING\n\0"
@@ -2296,7 +2295,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_SEND_OPC_INFORMATION => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: [%p] IOCTL_CDROM_SEND_OPC_INFORMATION\n\0"
@@ -2307,7 +2306,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
             processed = 1;
         }
         IOCTL_CDROM_GET_PERFORMANCE => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"RequestDispatchToSequentialQueue: [%p] IOCTL_CDROM_GET_PERFORMANCE\n\0"
@@ -2972,7 +2971,7 @@ pub unsafe extern "system" fn SequentialQueueEvtIoDeviceControl(
                 // this function will wait for the request process finishes.
                 ntkrnl_sys::ke::KeSetEvent((*requestContext).SyncEvent as *mut c_void, IO_CD_ROM_INCREMENT, 0);
             } else {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_ERROR,
                     TRACE_FLAG_IOCTL,
                     b"DeviceEvtIoInCallerContext: Access Denied! Device in exclusive mode.Failing Ioctl %lx\n\0".as_ptr() as *const i8,
@@ -3266,7 +3265,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
 
     // KeGetCurrentIrql returns KIRQL (u8); DISPATCH_LEVEL is a constant
     if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-        TracePrint(
+        TracePrint!(
             2 /* TRACE_LEVEL_ERROR */,
             0 /* TRACE_FLAG_IOCTL */,
             b"RequestSynchronousProcessWithSerialQueue called at DISPATCH_LEVEL or above\0".as_ptr() as *const i8,
@@ -3313,7 +3312,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
                 // do nothing
             } else if waitStatus != STATUS_ALERTED {
                 // non-alerted, non-success error
-                TracePrint(
+                TracePrint!(
                     1 /* TRACE_LEVEL_FATAL */,
                     0 /* TRACE_FLAG_IOCTL */,
                     b"Request %p on device object %p had a non-alert, non-success result from wait (%!HRESULT!)\n\0"
@@ -3329,7 +3328,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
             } else if PsIsThreadTerminating(PsGetCurrentThread()) != 0 {
                 // Thread alerted and terminating – cancel IRP
                 if IoCancelIrp(irp) != 0 {
-                    TracePrint(
+                    TracePrint!(
                         3 /* TRACE_LEVEL_WARNING */,
                         0 /* TRACE_FLAG_IOCTL */,
                         b"Sychronize Ioctl: request %p cancelled from device %p\n\0".as_ptr()
@@ -3338,7 +3337,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
                         Device as *const core::ffi::c_void,
                     );
                 } else {
-                    TracePrint(
+                    TracePrint!(
                         3 /* TRACE_LEVEL_WARNING */,
                         0 /* TRACE_FLAG_IOCTL */,
                         b"Sychronize Ioctl: request %p could not be cancelled from device %p\n\0"
@@ -3348,7 +3347,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
                     );
                 }
             } else {
-                TracePrint(
+                TracePrint!(
                     3 /* TRACE_LEVEL_WARNING */,
                     0 /* TRACE_FLAG_IOCTL */,
                     b"SPURIOUS ALERT waiting for Request %p on device %p (%!STATUS!)\n\0".as_ptr()
@@ -3392,7 +3391,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
 
             status = RequestIsIoctlBlockedByExclusiveAccess(Request, &mut isBlocked);
             if isBlocked != 0 {
-                TracePrint(
+                TracePrint!(
                     2 /* TRACE_LEVEL_ERROR */,
                     0 /* TRACE_FLAG_IOCTL */,
                     b"Access Denied! Device in exclusive mode.Failing Ioctl %lx\n\0".as_ptr()
@@ -3403,7 +3402,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
                 FREE_POOL(bufferToFree as *mut core::ffi::c_void);
                 return STATUS_ACCESS_DENIED;
             } else {
-                TracePrint(
+                TracePrint!(
                     4 /* TRACE_LEVEL_INFORMATION */,
                     0 /* TRACE_FLAG_IOCTL */,
                     b"Ioctl %lx not blocked by cdrom being in exclusive mode\n\0".as_ptr()
@@ -3658,7 +3657,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //     // Initialize WPP Tracing
 //     WPP_INIT_TRACING(DriverObject, RegistryPath);
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                 "CDROM.SYS DriverObject %p loading\n",
 //                 DriverObject));
 //
@@ -3677,7 +3676,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_INIT,
 //                     "WdfDriverCreate failed. %x\n",
 //                     status));
 //
@@ -3772,7 +3771,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     PAGED_CODE ();
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                 "CDROM.SYS DriverObject %p cleanup. Will be unloaded soon\n",
 //                 driver));
 //
@@ -3879,7 +3878,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //                                                              RTL_NUMBER_OF(minorFunctions));
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
+//             TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
 //                         "DriverEvtDeviceAdd: Assign IrpPreprocessCallback for IRP_MJ_POWER failed, "
 //                         "status: 0x%X\n", status));
 //
@@ -3893,7 +3892,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //                                                              0);
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
+//             TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
 //                         "DriverEvtDeviceAdd: Assign IrpPreprocessCallback for IRP_MJ_FLUSH_BUFFERS failed, "
 //                         "status: 0x%X\n", status));
 //
@@ -3907,7 +3906,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //                                                              0);
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
+//             TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
 //                         "DriverEvtDeviceAdd: Assign IrpPreprocessCallback for IRP_MJ_SHUTDOWN failed, "
 //                         "status: 0x%X\n", status));
 //
@@ -4011,7 +4010,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //                                          deviceNumber);
 //
 //             if (!NT_SUCCESS(status)) {
-//                 TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
+//                 TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
 //                             "DriverEvtDeviceAdd: Format device name failed with error: 0x%X\n", status));
 //
 //                 goto Exit;
@@ -4022,7 +4021,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //             status = WdfDeviceInitAssignName(DeviceInit, &unicodeDeviceName);
 //             if (!NT_SUCCESS(status))
 //             {
-//                 TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
+//                 TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
 //                             "DriverEvtDeviceAdd: WdfDeviceInitAssignName() failed with error: 0x%X\n", status));
 //
 //                 goto Exit;
@@ -4039,7 +4038,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
+//             TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
 //                         "DriverEvtDeviceAdd: Can not create a new device, status: 0x%X\n",
 //                         status));
 //
@@ -4077,7 +4076,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
+//             TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
 //                         "DriverEvtDeviceAdd: Can not create a remote I/O target object, status: 0x%X\n",
 //                         status));
 //             goto Exit;
@@ -4090,7 +4089,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //                                  &ioTargetOpenParams);
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
+//             TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
 //                         "DriverEvtDeviceAdd: Can not open a remote I/O target for the next-lower device, status: 0x%X\n",
 //                         status));
 //
@@ -4226,7 +4225,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //         deviceExtension->TimeOutValue = SCSI_CDROM_TIMEOUT;
 //     }
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                "DriverEvtDeviceAdd: device timeout is set to %x seconds",
 //                deviceExtension->TimeOutValue
 //                ));
@@ -4320,7 +4319,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //         status = WdfWaitLockCreate(&attributes, &deviceExtension->ShutdownFlushWaitLock);
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
+//             TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_PNP,
 //                         "DriverEvtDeviceAdd: Cannot create shutdown/flush waitlock, status: 0x%X\n",
 //                         status));
 //         }
@@ -4346,7 +4345,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_INIT,
 //                         "DriverEvtDeviceAdd: Cannot create read/write work item, status: 0x%X\n",
 //                         status));
 //         }
@@ -4372,7 +4371,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_INIT,
 //                         "DriverEvtDeviceAdd: Cannot create ioctl work item, status: 0x%X\n",
 //                         status));
 //         }
@@ -4427,7 +4426,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     PAGED_CODE ();
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                 "WDFDEVICE %p cleanup: The device is about to be destroyed.\n",
 //                 device));
 //
@@ -4475,7 +4474,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     PAGED_CODE ();
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_PNP,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_PNP,
 //                 "DeviceEvtSelfManagedIoCleanup: WDFDEVICE %p is being stopped.\n",
 //                 Device));
 //
@@ -4590,7 +4589,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //                 if (NT_SUCCESS(status) &&
 //                     (powerupReason.PowerupReason == StoragePowerupDeviceAttention))
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                                 "DeviceEvtD0Entry: Device has left zero power state due to eject button pressed\n"
 //                                 ));
 //
@@ -4607,7 +4606,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //                 else
 //                 {
 //                     // This wake-up is caused by non-cached CDB received or a 3rd-party driver
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                                 "DeviceEvtD0Entry: Device has left zero power state due to IO received\n"
 //                                 ));
 //
@@ -4758,7 +4757,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //     {
 //         zpoddInfo->InZeroPowerState = TRUE;
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                     "Device has entered zero power state\n"
 //                     ));
 //     }
@@ -4805,7 +4804,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //     // legacy behavior to set partition length to be 0.
 //     deviceExtension->PartitionLength.QuadPart = 0;
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                 "Surprisely remove a WDFDEVICE %p\n", Device));
 //
 //     return;
@@ -4847,7 +4846,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     if (fileObject == NULL) {
 //
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_QUEUE,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_QUEUE,
 //                     "Error: received a file create request with file object set to NULL\n"));
 //
 //         RequestCompletion(deviceExtension, Request, STATUS_INTERNAL_ERROR, 0);
@@ -4910,7 +4909,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //         status = DeviceCleanupProtectedLocks(deviceExtension, fileObjectContext);
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                         "Failed to cleanup protected locks for WDFDEVICE %p, %!STATUS!\n", device, status));
 //         }
 //
@@ -4918,7 +4917,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //         status = DeviceCleanupDisableMcn(deviceExtension, fileObjectContext);
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                         "Failed to disable MCN for WDFDEVICE %p, %!STATUS!\n", device, status));
 //         }
 //
@@ -4928,7 +4927,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //             status = DeviceUnlockExclusive(deviceExtension, FileObject, FALSE);
 //             if (!NT_SUCCESS(status))
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                             "Failed to release exclusive lock for WDFDEVICE %p, %!STATUS!\n", device, status));
 //             }
 //         }
@@ -4965,7 +4964,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     PAGED_CODE();
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                 "CleanupProtectedLocks called for WDFDEVICE %p, WDFFILEOBJECT %p, locked %d times.\n",
 //                 DeviceExtension->Device, FileObjectContext->FileObject, FileObjectContext->LockCount));
 //
@@ -4981,7 +4980,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //         // If the new lock count has been dropped to zero then issue a lock
 //         // command to the device.
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                     "FDO secured lock count = %d "
 //                     "lock count = %d\n",
 //                     DeviceExtension->ProtectedLockCount,
@@ -5009,7 +5008,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //                                                 FALSE,
 //                                                 NULL);
 //
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                         "Allow media removal (unlock) request to drive returned %!STATUS!\n",
 //                         status));
 //         }
@@ -5047,7 +5046,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 // {
 //     PAGED_CODE();
 //
-//     TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//     TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                 "CleanupDisableMcn called for WDFDEVICE %p, WDFFILEOBJECT %p, locked %d times.\n",
 //                 DeviceExtension->Device, FileObjectContext->FileObject, FileObjectContext->McnDisableCount));
 //
@@ -5090,7 +5089,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //         {
 //             ioctlCode = (ioctlCode & 0x0000ffff) | CTL_CODE(IOCTL_STORAGE_BASE, 0, 0, 0);
 //
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
 //                         "IOCTL code recalibrate, New ioctl code is %lx\n",
 //                         ioctlCode));
 //
@@ -5146,13 +5145,13 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //         if (requestParameters.Parameters.DeviceIoControl.IoControlCode != IOCTL_MCN_SYNC_FAKE_IOCTL)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                         "Receiving IOCTL: %lx\n",
 //                         requestParameters.Parameters.DeviceIoControl.IoControlCode));
 //         }
 //         else
 //         {
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
 //                         "Receiving IOCTL: %lx\n",
 //                         requestParameters.Parameters.DeviceIoControl.IoControlCode));
 //         }
@@ -5178,7 +5177,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //                     info->ANSignalPendingDueToExclusiveLock = TRUE;
 //                 }
 //
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                             "Access Denied! Device in exclusive mode.Failing Ioctl %lx\n",
 //                             requestParameters.Parameters.DeviceIoControl.IoControlCode));
 //                 RequestCompletion(deviceExtension, Request, STATUS_ACCESS_DENIED, 0);
@@ -5456,7 +5455,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //     case IOCTL_DISK_GET_DRIVE_GEOMETRY_EX:
 //     case IOCTL_CDROM_GET_DRIVE_GEOMETRY_EX:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Get drive geometryEx\n"));
 //         if ( RequestParameters.Parameters.DeviceIoControl.OutputBufferLength <
 //              (ULONG)FIELD_OFFSET(DISK_GEOMETRY_EX, Data))
@@ -5480,7 +5479,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //     case IOCTL_DISK_GET_DRIVE_GEOMETRY:
 //     case IOCTL_CDROM_GET_DRIVE_GEOMETRY:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Get drive geometry\n"));
 //         if (RequestParameters.Parameters.DeviceIoControl.OutputBufferLength <
 //             sizeof(DISK_GEOMETRY))
@@ -5537,7 +5536,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_CDROM_PLAY_AUDIO_MSF:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Play audio MSF\n"));
 //
 //         if (RequestParameters.Parameters.DeviceIoControl.InputBufferLength <
@@ -5556,7 +5555,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_CDROM_SEEK_AUDIO_MSF:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Seek audio MSF\n"));
 //
 //         if (RequestParameters.Parameters.DeviceIoControl.InputBufferLength <
@@ -5575,7 +5574,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_CDROM_PAUSE_AUDIO:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Pause audio\n"));
 //
 //         status = STATUS_SUCCESS;
@@ -5585,7 +5584,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_CDROM_RESUME_AUDIO:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Resume audio\n"));
 //
 //         status = STATUS_SUCCESS;
@@ -5603,7 +5602,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_CDROM_GET_VOLUME:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Get volume control\n"));
 //
 //         if (RequestParameters.Parameters.DeviceIoControl.OutputBufferLength <
@@ -5623,7 +5622,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_CDROM_SET_VOLUME:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Set volume control\n"));
 //
 //         if (RequestParameters.Parameters.DeviceIoControl.InputBufferLength <
@@ -5642,7 +5641,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_CDROM_STOP_AUDIO:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Stop audio\n"));
 //
 //         status = STATUS_SUCCESS;
@@ -5653,7 +5652,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //     case IOCTL_STORAGE_CHECK_VERIFY:
 //     case IOCTL_STORAGE_CHECK_VERIFY2:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: [%p] Check Verify\n", Request));
 //
 //         // Following check will let the condition "OutputBufferLength == 0" pass.
@@ -5687,7 +5686,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_DVD_READ_STRUCTURE:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: [%p] IOCTL_DVD_READ_STRUCTURE\n", Request));
 //
 //         status = RequestValidateDvdReadStructure(deviceExtension, RequestParameters, &dataLength);
@@ -5698,7 +5697,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_DVD_READ_KEY:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: [%p] IOCTL_DVD_READ_KEY\n", Request));
 //
 //         status = RequestValidateDvdReadKey(deviceExtension, Request, RequestParameters, &dataLength);
@@ -5709,7 +5708,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_DVD_START_SESSION:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: [%p] IOCTL_DVD_START_SESSION\n", Request));
 //
 //         status = RequestValidateDvdStartSession(deviceExtension, RequestParameters, &dataLength);
@@ -5721,7 +5720,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //     case IOCTL_DVD_SEND_KEY:
 //     case IOCTL_DVD_SEND_KEY2:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: [%p] IOCTL_DVD_SEND_KEY\n", Request));
 //
 //         status = RequestValidateDvdSendKey(deviceExtension, Request, RequestParameters, &dataLength);
@@ -5732,7 +5731,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_STORAGE_SET_READ_AHEAD:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: [%p] SetReadAhead\n", Request));
 //
 //         if (RequestParameters.Parameters.DeviceIoControl.InputBufferLength <
@@ -5761,7 +5760,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //     {
 //         ULONG requiredSize = 0;
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Get drive layout\n"));
 //
 //         requiredSize = FIELD_OFFSET(DRIVE_LAYOUT_INFORMATION, PartitionEntry[1]);
@@ -5785,7 +5784,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //     {
 //         ULONG requiredSize = 0;
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Get drive layoutEx\n"));
 //
 //         requiredSize = FIELD_OFFSET(DRIVE_LAYOUT_INFORMATION_EX, PartitionEntry[1]);
@@ -5807,7 +5806,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_DISK_GET_PARTITION_INFO:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Get Partition Info\n"));
 //
 //         if (RequestParameters.Parameters.DeviceIoControl.OutputBufferLength <
@@ -5827,7 +5826,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_DISK_GET_PARTITION_INFO_EX:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Get Partition InfoEx\n"));
 //
 //         if (RequestParameters.Parameters.DeviceIoControl.OutputBufferLength <
@@ -5847,7 +5846,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_DISK_VERIFY:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: IOCTL_DISK_VERIFY to device %p through request %p\n",
 //                     Device,
 //                     Request));
@@ -5868,7 +5867,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_DISK_GET_LENGTH_INFO:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: Disk Get Length InfoEx\n"));
 //
 //         if (RequestParameters.Parameters.DeviceIoControl.OutputBufferLength <
@@ -5892,7 +5891,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_CDROM_GET_CONFIGURATION:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: [%p] IOCTL_CDROM_GET_CONFIGURATION\n", Request));
 //
 //         status = RequestValidateGetConfiguration(deviceExtension, Request, RequestParameters, &dataLength);
@@ -5903,7 +5902,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_CDROM_SET_SPEED:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: [%p] IOCTL_CDROM_SET_SPEED\n", Request));
 //
 //         status = RequestValidateSetSpeed(deviceExtension, Request, RequestParameters, &dataLength);
@@ -5914,7 +5913,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_DVD_END_SESSION:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: [%p] IOCTL_DVD_END_SESSION\n", Request));
 //
 //         status = RequestValidateDvdEndSession(deviceExtension, Request, RequestParameters, &dataLength);
@@ -5925,7 +5924,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_AACS_END_SESSION:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: [%p] IOCTL_AACS_END_SESSION\n", Request));
 //
 //         status = RequestValidateAacsEndSession(deviceExtension, Request, RequestParameters, &dataLength);
@@ -5936,7 +5935,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_AACS_READ_MEDIA_KEY_BLOCK:
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "AACS: Querying full MKB with bufferSize of %x bytes\n",
 //                     (int)RequestParameters.Parameters.DeviceIoControl.OutputBufferLength
 //                     ));
@@ -5949,7 +5948,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_AACS_START_SESSION:
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "AACS: Requesting AGID\n"
 //                     ));
 //
@@ -5961,7 +5960,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_AACS_SEND_CERTIFICATE:
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "AACS: Sending host certificate to drive\n"
 //                     ));
 //
@@ -5973,7 +5972,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_AACS_GET_CERTIFICATE:
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "AACS: Querying drive certificate\n"
 //                     ));
 //
@@ -5985,7 +5984,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_AACS_GET_CHALLENGE_KEY:
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "AACS: Querying drive challenge key\n"
 //                     ));
 //
@@ -5997,7 +5996,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_AACS_SEND_CHALLENGE_KEY:
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "AACS: Sending drive challenge key\n"
 //                     ));
 //
@@ -6009,7 +6008,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_AACS_READ_VOLUME_ID:
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "AACS: Reading volume ID\n"
 //                     ));
 //
@@ -6021,7 +6020,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_AACS_READ_SERIAL_NUMBER:
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "AACS: Reading Serial Number\n"
 //                     ));
 //
@@ -6033,7 +6032,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_AACS_READ_MEDIA_ID:
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "AACS: Reading media ID\n"
 //                     ));
 //
@@ -6048,13 +6047,13 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //     {
 //         if (ioctlCode == IOCTL_AACS_GENERATE_BINDING_NONCE)
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                         "AACS: Generating new binding nonce\n"
 //                         ));
 //         }
 //         else
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                         "AACS: Reading existing binding nonce\n"
 //                         ));
 //         }
@@ -6067,7 +6066,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_CDROM_ENABLE_STREAMING:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: [%p] IOCTL_CDROM_ENABLE_STREAMING\n", Request));
 //
 //         status = RequestValidateEnableStreaming(Request, RequestParameters, &dataLength);
@@ -6078,7 +6077,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_CDROM_SEND_OPC_INFORMATION:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: [%p] IOCTL_CDROM_SEND_OPC_INFORMATION\n", Request));
 //
 //         status = RequestValidateSendOpcInformation(Request, RequestParameters, &dataLength);
@@ -6089,7 +6088,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     case IOCTL_CDROM_GET_PERFORMANCE:
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "RequestDispatchToSequentialQueue: [%p] IOCTL_CDROM_GET_PERFORMANCE\n", Request));
 //
 //         status = RequestValidateGetPerformance(Request, RequestParameters, &dataLength);
@@ -6801,12 +6800,12 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     if (requestParameters.Type ==  WdfRequestTypeRead)
 //     {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL,
 //                     "Receiving READ, Length %Ix\n", (ULONG) Length));
 //     }
 //     else
 //     {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL,
 //                     "Receiving WRITE, Length %Ix\n", (ULONG) Length));
 //     }
 //
@@ -7012,7 +7011,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //             }
 //             else
 //             {
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                             "DeviceEvtIoInCallerContext: Access Denied! Device in exclusive mode.Failing Ioctl %lx\n",
 //                             requestParameters.Parameters.DeviceIoControl.IoControlCode));
 //                 RequestCompletion(deviceExtension, Request, STATUS_ACCESS_DENIED, 0);
@@ -7472,7 +7471,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //
 //     if (KeGetCurrentIrql() >= DISPATCH_LEVEL) {
 //         // cannot block at or above DISPATCH_LEVEL
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //             "RequestSynchronousProcessWithSerialQueue called at DISPATCH_LEVEL or above"));
 //         NT_ASSERT(FALSE);
 //         RequestCompletion(deviceExtension, Request, STATUS_INVALID_LEVEL, 0);
@@ -7519,7 +7518,7 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //             else if (waitStatus != STATUS_ALERTED)
 //             {
 //                 // do nothing
-//                 TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_IOCTL,
 //                             "Request %p on device object %p had a non-alert, non-success result from wait (%!HRESULT!)\n",
 //                             Request, Device, waitStatus));
 //                 NT_ASSERT(FALSE);
@@ -7532,20 +7531,20 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //                 if (IoCancelIrp(irp))
 //                 {
 //                     // cancellation routine was called
-//                     TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//                     TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                                 "Sychronize Ioctl: request %p cancelled from device %p\n",
 //                                 Request, Device));
 //                 }
 //                 else
 //                 {
-//                     TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//                     TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                                 "Sychronize Ioctl: request %p could not be cancelled from device %p\n",
 //                                 Request, Device));
 //                 }
 //             }
 //             else
 //             {
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                             "SPURIOUS ALERT waiting for Request %p on device %p (%!STATUS!)\n",
 //                             Request, Device, status));
 //             }
@@ -7572,14 +7571,14 @@ pub unsafe extern "C" fn RequestEvtCleanup(request: *mut core::ffi::c_void) {
 //             status = RequestIsIoctlBlockedByExclusiveAccess(Request, &isBlocked);
 //             if (isBlocked)
 //             {
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                             "Access Denied! Device in exclusive mode.Failing Ioctl %lx\n",
 //                             requestParameters.Parameters.DeviceIoControl.IoControlCode));
 //                 RequestCompletion(deviceExtension, Request, STATUS_ACCESS_DENIED, 0);
 //             }
 //             else
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                             "Ioctl %lx not blocked by cdrom being in exclusive mode\n",
 //                             requestParameters.Parameters.DeviceIoControl.IoControlCode));
 //                 fCallSyncCallback = TRUE;

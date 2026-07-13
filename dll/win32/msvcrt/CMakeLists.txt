@@ -181,22 +181,36 @@ set_module_type(msvcrt win32dll ENTRYPOINT DllMain 12)
 # (i386 keeps the ReactOS -sse,-sse2 baseline like the C build; wave 1 is
 # integer-only so SSE is irrelevant). See
 # docs/engineering/active-lanes/msvcrt-from-pieces-plan.md.
+# NOTE: `-C no-prepopulate-passes` (the captures(none) class-guard, field manual
+# §1253) is deliberately NOT set here. It disables rustc's optimization pipeline
+# outright — with it, msvcrt's memset/memcpy/memcmp compile to a FUNCTION CALL PER
+# BYTE. That is msvcrt.dll's CRT, served to every user-mode caller in the system:
+# it blew the net suite's 120s marker timeouts (71s -> 208s) and got wave 2
+# reverted off master. The class it guards is toolchain-fixed on LLVM >= 21 (we
+# ship 21.1.3), the crate is `#![no_builtins]` (so the fill/copy loops are not
+# rewritten into self-calls), and memset now stores through a RAW POINTER rather
+# than a slice — which is the signature the captures(none) DCE actually came in on.
+# Throughput is pinned by `cargo test -p msvcrt-difftest --test perf` (>2x slower
+# than the C it replaces = FAIL); ud2/sacred-primitive scans + the x3 smoke gate
+# cover the miscompile class. Re-check with tools/scan_captures.py after any
+# rustc/LLVM bump.
 set(MSVCRT_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 set(MSVCRT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/msvcrt-crt-rust-target")
 if(ARCH STREQUAL "i386")
     set(MSVCRT_RUST_TARGET "i686-pc-windows-gnu")
-    set(MSVCRT_RUST_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2 -C no-prepopulate-passes")
+    set(MSVCRT_RUST_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
 elseif(ARCH STREQUAL "amd64")
     set(MSVCRT_RUST_TARGET "x86_64-pc-windows-gnu")
-    set(MSVCRT_RUST_ENV "RUSTFLAGS=-C no-prepopulate-passes")
+    set(MSVCRT_RUST_ENV "")
 elseif(ARCH STREQUAL "arm64")
     set(MSVCRT_RUST_TARGET "aarch64-pc-windows-gnullvm")
-    set(MSVCRT_RUST_ENV "RUSTFLAGS=-C no-prepopulate-passes")
+    set(MSVCRT_RUST_ENV "")
 endif()
 
-set(MSVCRT_CRT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmsvcrt_crt_rust.a")
+set(MSVCRT_CRT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmsvcrt_crt_cargo.a")
 file(GLOB_RECURSE MSVCRT_CRT_RUST_SOURCES CONFIGURE_DEPENDS
     ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-rust/src/*.rs
+    ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-cargo/src/*.rs
     ${MSVCRT_RUST_WORKSPACE_DIR}/cnt-rust/src/core_rs/*.rs
 )
 add_custom_command(
@@ -204,14 +218,15 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${MSVCRT_RUST_TARGET_DIR} ${MSVCRT_RUST_ENV}
         cargo build --release --target ${MSVCRT_RUST_TARGET}
-            -p msvcrt-crt-rust
+            -p msvcrt-crt-cargo
             --manifest-path ${MSVCRT_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMAND ${CMAKE_COMMAND} -E copy
-        ${MSVCRT_RUST_TARGET_DIR}/${MSVCRT_RUST_TARGET}/release/libmsvcrt_crt_rust.a
+        ${MSVCRT_RUST_TARGET_DIR}/${MSVCRT_RUST_TARGET}/release/libmsvcrt_crt_cargo.a
         ${MSVCRT_CRT_RUST_LIB}
     DEPENDS
             ${MSVCRT_CRT_RUST_SOURCES}
             ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-rust/Cargo.toml
+            ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-cargo/Cargo.toml
             ${MSVCRT_RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
             ${MSVCRT_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust msvcrt CRT-body cohab (${MSVCRT_RUST_TARGET})"

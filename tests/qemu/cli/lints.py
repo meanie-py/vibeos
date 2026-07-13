@@ -403,10 +403,13 @@ def _one_cargo_link(
         run.add(Stage(stage, status="skip", detail="no rustup (need nightly+rust-src)"))
         return
 
+    # Pinned nightly, single-sourced from `.rust-nightly` (see rust-toolchain.toml).
+    nightly = (repo / ".rust-nightly").read_text().strip()
+
     cp = run.run(
         [
             "cargo",
-            "+nightly",
+            f"+{nightly}",
             "build",
             "--release",
             "--target",

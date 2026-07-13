@@ -23,7 +23,7 @@ file(GLOB_RECURSE USBSTOR_RUST_SRCS ${USBSTOR_RUST_WORKSPACE_DIR}/usbstor-rust/s
 add_custom_command(
     OUTPUT ${USBSTOR_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${USBSTOR_RUST_TARGET_DIR} RUSTFLAGS=${USBSTOR_RUST_RUSTFLAGS} RUSTC_BOOTSTRAP=1
+        CARGO_TARGET_DIR=${USBSTOR_RUST_TARGET_DIR} RUSTFLAGS=${USBSTOR_RUST_RUSTFLAGS}
         cargo build --release --target ${USBSTOR_RUST_TARGET} -p usbstor-rust --manifest-path ${USBSTOR_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMAND ${CMAKE_COMMAND} -E copy
         ${USBSTOR_RUST_TARGET_DIR}/${USBSTOR_RUST_TARGET}/release/libusbstor_rust.a ${USBSTOR_RUST_LIB}
@@ -32,7 +32,7 @@ add_custom_command(
     COMMENT "Building usbstor-rust (${USBSTOR_RUST_TARGET})" VERBATIM)
 add_custom_target(rust_usbstor DEPENDS ${USBSTOR_RUST_LIB})
 
-add_library(usbstor MODULE rust_cohab_stub.c usbstor.rc)
+add_library(usbstor MODULE rust_cohab_stub.c rust_varargs_shim.c usbstor.rc)
 set_module_type(usbstor kernelmodedriver)
 add_dependencies(usbstor rust_usbstor)
 # Rust lib FIRST so lld's single-pass static-lib resolution sees its reference to

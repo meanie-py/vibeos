@@ -15,6 +15,15 @@
 //! sign only for radix==10 (else the value's unsigned bit pattern at the
 //! declared width). Verified against msvcrt's `ltoa_helper`.
 #![no_std]
+// LOAD-BEARING. This crate defines `#[no_mangle] memset`/`memcpy`/`memcmp`/…
+// — the very symbols LLVM's loop-idiom pass rewrites store/copy/compare loops
+// INTO. Without `no_builtins`, `memset`'s fill loop is recognized and lowered to
+// a call to `memset`: an infinite self-call. (The previous body dodged this with
+// a per-byte `write_volatile`, which is unvectorizable by construction and cost
+// ~8x throughput — it blew the net suite's timeouts and got wave 2 reverted off
+// master. `no_builtins` is the right tool: it stops the *recognition* while
+// leaving the loop free to be widened/vectorized normally.)
+#![no_builtins]
 #![allow(clippy::missing_safety_doc)]
 
 use cnt_rust::core_rs::radix::format_radix;
@@ -399,12 +408,39 @@ mod mmemset {
 
     /// `void* __cdecl memset(void* src, int val, size_t count)`
     /// preserved misfeature: none (textbook; val truncated to u8)
+    ///
+    /// ⚠️ PERF IS PART OF THE CONTRACT HERE. This is msvcrt.dll's `memset`,
+    /// served to every user-mode caller in the system. The original flip was a
+    /// per-byte `core::ptr::write_volatile` loop over a *slice* — semantically
+    /// perfect (20k fuzz cases MATCH) and ~8x slower than the C, because
+    /// `write_volatile` is **unvectorizable by construction**: the compiler may
+    /// not widen, merge or elide the stores. That shipped, blew the net suite's
+    /// 120s marker timeouts (71s -> 208s) and got wave 2 reverted off master.
+    /// Pinned by `msvcrt-difftest --test perf`.
+    ///
+    /// Three constraints, all load-bearing:
+    ///  * **no `write_bytes`/`slice::fill`** — they lower to `llvm.memset`, which
+    ///    becomes a call to `memset`: infinite self-recursion in this very fn.
+    ///  * **`#![no_builtins]` on the crate** — otherwise LLVM's loop-idiom pass
+    ///    recognizes the fill below and turns it back into that same self-call.
+    ///  * **raw pointers, not a slice** — the §378 DCE miscompile (LLVM deducing
+    ///    `captures(none)` on the slice param and deleting the stores, leaving an
+    ///    infinite spin) came in through the *slice* signature. That class is
+    ///    toolchain-fixed on LLVM >= 21, but writing through the raw pointer keeps
+    ///    us off the path entirely — which is why the volatile crutch can go.
     #[no_mangle]
     pub unsafe extern "C" fn memset(src: *mut core::ffi::c_void, val: i32, count: usize) -> *mut core::ffi::c_void {
-        let src_s = raw_mut_slice(src as *mut u8, count);
-        let __b = val as u8;
-        for __x in src_s.iter_mut() {
-            core::ptr::write_volatile(__x as *mut u8, __b);
+        let p = src as *mut u8;
+        let b = val as u8;
+        let w = u64::from_ne_bytes([b; 8]);
+        let mut i = 0usize;
+        while i + 8 <= count {
+            (p.add(i) as *mut u64).write_unaligned(w);
+            i += 8;
+        }
+        while i < count {
+            *p.add(i) = b;
+            i += 1;
         }
         src
     }
@@ -666,14 +702,223 @@ mod mstrtoul {
 pub use mstrtoul::*;
 
 
-// ── no_std staticlib runtime bits ───────────────────────────────────
-// Required to compile standalone; the dup vs any other Rust staticlib in the
-// module is absorbed by --allow-multiple-definition (mirrors crt-dllmain-rust).
-#[no_mangle]
-pub extern "C" fn rust_eh_personality() {}
+// ── Wave 3: the unsigned-char contract family ───────────────────────
+//
+// These six were the `msvcrt-difftest` DIVERGE/SIGN-ONLY set. All of them
+// were blocked by ONE root cause: cnt-rust's `core_rs` speaks libcntpr's
+// **signed-char** convention, msvcrt speaks **unsigned-char**. They agree on
+// ASCII and flip sign on any byte >= 0x80.
+//
+// The fix is a *contract adapter*, not a reimplementation: `Elem::udiff` +
+// `string::cmp_u`/`ncmp_u` give cnt-rust's identical loops the unsigned
+// element difference, and the marshalling below mirrors cnt-rust's proven
+// `cabi` shims. The kernel keeps `Elem::diff`; both contracts stay pinned by
+// their own harness (`cnt-difftest` / `msvcrt-difftest`).
+//
+// NOT flipped, deliberately: `_stricmp` / `_strnicmp` / `_memicmp`. Fixing
+// their signedness makes the harness report MATCH, but that is a harness
+// BLIND SPOT — msvcrt's bodies consult `get_locinfo()->lc_handle[LC_CTYPE]`
+// and fold through `_tolower_l`, i.e. they are **locale-dependent**, while
+// cnt-rust's fold is locale-blind ASCII. They coincide only in the "C" locale
+// — which is exactly what the harness pins. Correct under the default locale,
+// wrong the moment an app calls `setlocale()`. They belong to Phase D (locale)
+// and must NOT be flipped on a green MATCH alone. See the lane plan.
 
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
-    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
+#[inline]
+fn clamp(d: i32) -> i32 {
+    if d > 0 {
+        1
+    } else if d < 0 {
+        -1
+    } else {
+        0
+    }
 }
+
+/// msvcrt `strcmp`: unsigned-char compare, **clamped** to -1/0/1
+/// (`if ((unsigned char)*str1 > (unsigned char)*str2) return 1; ...`).
+#[no_mangle]
+pub unsafe extern "C" fn strcmp(a: *const u8, b: *const u8) -> i32 {
+    clamp(cnt_rust::core_rs::string::cmp_u(
+        h::cstr_slice(a),
+        h::cstr_slice(b),
+    ))
+}
+
+/// msvcrt `strncmp`: unsigned-char compare — but the return contract is
+/// **arch-dependent**, and this is the one place in the flipped set where it
+/// is. msvcrt.dll builds with `_MSVCR_VER=0`, so string.c's
+/// `#if defined(_WIN64) || defined(_UCRT) || _MSVCR_VER == 70 || ... >= 110`
+/// reduces to plain `_WIN64`:
+///   * amd64 / arm64 (`_WIN64`) → **clamped** -1/0/1;
+///   * i386                     → the **raw** unsigned difference.
+///
+/// The differential harness cannot see this: its reference TU is compiled for
+/// the *host* (x86_64 linux, where `_WIN64` is undefined), so it grades the
+/// i386 arm on every arch. The 64-bit arm below is therefore derived by
+/// reading the C, not by fuzzing it — the harness's `msvcrt=-17` (an
+/// unclamped value) is the proof it took the `#else` branch.
+#[no_mangle]
+pub unsafe extern "C" fn strncmp(a: *const u8, b: *const u8, len: usize) -> i32 {
+    let d = strncmp_raw(a, b, len);
+    #[cfg(target_pointer_width = "64")]
+    {
+        clamp(d)
+    }
+    #[cfg(not(target_pointer_width = "64"))]
+    {
+        d
+    }
+}
+
+/// The i386 arm of [`strncmp`] — the raw unsigned difference — exposed so the
+/// differential harness can grade it directly.
+///
+/// It is also the *basis* of the `_WIN64` arm: both C branches run after the
+/// identical `while` loop and then compare the **same two bytes**, so
+/// `_WIN64` is exactly `sign(#else)`. That identity is what lets one host
+/// reference compile grade both shipped contracts (the harness models the
+/// 64-bit C branch as `clamp(ref_strncmp(..))`).
+#[inline]
+pub unsafe fn strncmp_raw(a: *const u8, b: *const u8, len: usize) -> i32 {
+    if len == 0 {
+        return 0;
+    }
+    cnt_rust::core_rs::string::ncmp_u(
+        h::cstr_slice_bounded(a, len),
+        h::cstr_slice_bounded(b, len),
+        len,
+    )
+}
+
+/// msvcrt `memcmp`: unsigned compare, **clamped** to -1/0/1
+/// (`memcmp_bytes`: `return *p1 > *p2 ? 1 : -1;`) — the lone SIGN-ONLY verdict.
+///
+/// ⚠️ **Word-wise on purpose — this is a perf contract, not just a value one.**
+/// Delegating to `cnt_rust::core_rs::mem::cmp` is semantically exact but is a
+/// byte-at-a-time `zip` loop: measured **10.3x slower** than the C, which
+/// compares 64-bit blocks (`memcmp_blocks`). `memcmp` is a system-wide CRT
+/// primitive, so that is a regression even though every value matches — the same
+/// class that got wave 2's `memset` reverted off master. Pinned by
+/// `msvcrt-difftest --test perf` (>2x slower than the C = FAIL).
+///
+/// The first differing byte is located from the XOR of the two words:
+/// little-endian, so the LOWEST set bit is the lowest differing byte index.
+/// All three targets are LE; asserted below rather than assumed.
+#[no_mangle]
+pub unsafe extern "C" fn memcmp(
+    s1: *const core::ffi::c_void,
+    s2: *const core::ffi::c_void,
+    n: usize,
+) -> i32 {
+    const _: () = assert!(cfg!(target_endian = "little"), "byte-index-from-XOR is LE-only");
+    let (a, b) = (s1 as *const u8, s2 as *const u8);
+    let mut i = 0usize;
+    while i + 8 <= n {
+        let x = (a.add(i) as *const u64).read_unaligned();
+        let y = (b.add(i) as *const u64).read_unaligned();
+        if x != y {
+            let j = i + ((x ^ y).trailing_zeros() / 8) as usize;
+            return if *a.add(j) > *b.add(j) { 1 } else { -1 };
+        }
+        i += 8;
+    }
+    while i < n {
+        let (xa, yb) = (*a.add(i), *b.add(i));
+        if xa != yb {
+            return if xa > yb { 1 } else { -1 };
+        }
+        i += 1;
+    }
+    0
+}
+
+/// msvcrt `memchr`: matches `*p == (unsigned char)c`. cnt-rust's `mem::chr`
+/// matches `(b as i8 as i32) == c` (libcntpr's signed-char `memchr.c`), so a
+/// byte 0x90 matches only `c == -112` there. No core change is needed — the
+/// two are exactly reconciled by handing `chr` the sign-extended form of the
+/// truncated byte, which is what msvcrt's `(unsigned char)c` cast means.
+#[no_mangle]
+pub unsafe extern "C" fn memchr(
+    s: *const core::ffi::c_void,
+    c: i32,
+    n: usize,
+) -> *mut core::ffi::c_void {
+    let hay = h::raw_slice(s as *const u8, n);
+    match cnt_rust::core_rs::mem::chr(hay, (c as u8) as i8 as i32) {
+        Some(i) => (s as *mut u8).add(i) as *mut core::ffi::c_void,
+        None => core::ptr::null_mut(),
+    }
+}
+
+/// msvcrt `_memccpy`:
+/// `while (n--) if ((*d++ = *s++) == (unsigned char)c) return d; return NULL;`
+///
+/// A genuinely *different algorithm* from cnt-rust's `mem::ccpy`, not just a
+/// different element contract, so it is ported here rather than bent into the
+/// kernel core: libcntpr's `memccpy.c` also stops at a NUL byte (returning
+/// NULL) and compares `c` signed, whereas msvcrt copies straight through NULs
+/// and compares unsigned. Copies the byte BEFORE testing it; returns the
+/// pointer just PAST the matched byte.
+#[no_mangle]
+pub unsafe extern "C" fn _memccpy(
+    to: *mut core::ffi::c_void,
+    from: *const core::ffi::c_void,
+    c: i32,
+    count: usize,
+) -> *mut core::ffi::c_void {
+    let d = to as *mut u8;
+    let s = from as *const u8;
+    let needle = c as u8;
+    let mut i = 0usize;
+    while i < count {
+        let t = *s.add(i);
+        *d.add(i) = t;
+        i += 1;
+        if t == needle {
+            return d.add(i) as *mut core::ffi::c_void;
+        }
+    }
+    core::ptr::null_mut()
+}
+
+/// msvcrt `_strnset`:
+/// `if (len > 0 && str) while (*str && len--) *str++ = value; return str;`
+///
+/// The *buffer* effect is identical to cnt-rust's (the harness proved it:
+/// same bytes, `ret+0` vs `ret+11`) — msvcrt returns the **advanced** pointer,
+/// one past the last byte written, not the start of the string. That is very
+/// likely a Wine bug (MS documents "a pointer to the altered string"), but this
+/// lane's invariant is that a flip is a *pure refactor of the C it replaces*,
+/// so it is reproduced exactly rather than quietly "fixed" here.
+///
+/// ⚠️ **The scan MUST be bounded by `len`.** The C's `while (*str && len--)`
+/// reads at most `len` bytes; an *unbounded* `strlen`-style scan here reads off
+/// the end of a buffer that an `n`-suffixed API is explicitly allowed to leave
+/// unterminated — and `_strnset` IS reached that way, via `mbcs.c`'s
+/// `u__strnset()` → `_mbsnset`/`_mbsnbset`. The over-read produces the *same*
+/// bytes (the fill stays bounded either way), so it is invisible to a
+/// value-comparing fuzz — it only shows up when the scan walks into an unmapped
+/// page and faults. That is exactly the bug this function shipped with for one
+/// gate cycle: msvcrt-difftest reported MATCH across 20k cases because `gen_str`
+/// always NUL-terminates. Detector: the guard-page test in
+/// `msvcrt-difftest/tests/classify.rs` (`oob_guard`), which places the buffer
+/// flush against a PROT_NONE page so an over-read segfaults.
+#[no_mangle]
+pub unsafe extern "C" fn _strnset(str_: *mut u8, value: i32, len: usize) -> *mut u8 {
+    if str_.is_null() || len == 0 {
+        return str_;
+    }
+    // bounded: stops at the first NUL *or* at `len`, whichever comes first.
+    let take = h::cstr_slice_bounded(str_ as *const u8, len).len();
+    cnt_rust::core_rs::strmut::fill(core::slice::from_raw_parts_mut(str_, take), value as u8);
+    str_.add(take)
+}
+
+// NOTE: the no_std runtime bits (`#[panic_handler]` + `rust_eh_personality`)
+// deliberately do NOT live here — they are in the `msvcrt-crt-cargo` staticlib
+// umbrella. This crate is a plain rlib so that `msvcrt-difftest` can link it
+// and fuzz THESE wrappers (the code that actually ships) against the genuine
+// msvcrt C. A `staticlib` crate-type would force a `#[panic_handler]` into the
+// same rustc invocation that emits the rlib, and that becomes a duplicate
+// `panic_impl` lang item inside the harness's std test binary.

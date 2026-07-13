@@ -97,7 +97,6 @@ fn SRB_STATUS(status: u8) -> u32 {
 const SRB_STATUS_STATUS_MASK: u32 = 0x3f;
 
 extern "C" {
-    fn TracePrint(Level: ULONG, Flags: ULONG, fmt: *const i8, ...);
     fn PAGED_CODE();
     fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, RetryAttempt: ULONG, Status: *mut NTSTATUS, RetryInterval: *mut LARGE_INTEGER, ) -> BOOLEAN;
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
@@ -621,7 +620,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
                                                 CDROM_TAG_SENSE_INFO) as *mut u8;
         if senseInfoBuffer.is_null() {
             status = STATUS_INSUFFICIENT_RESOURCES;
-            TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+            TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
                        b"DeviceSendSrbSynchronously: Can't allocate MDL\n\0".as_ptr() as *const i8);
             break 'flow;
         }
@@ -639,7 +638,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
                                   (*deviceExtension).IoTarget,
                                   &mut request);
         if status < 0 {
-            TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+            TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
                        b"DeviceSendSrbSynchronously: Can't create request: %lx\n\0".as_ptr() as *const i8,
                        status);
             break 'flow;
@@ -654,7 +653,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
                                        irp);
             if mdlAddress.is_null() {
                 status = STATUS_INSUFFICIENT_RESOURCES;
-                TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+                TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
                            b"DeviceSendSrbSynchronously: Can't allocate MDL\n\0".as_ptr() as *const i8);
                 break 'flow;
             }
@@ -664,7 +663,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
                                               0u32,
                                               if WriteToDevice != 0 { IoReadAccess } else { IoWriteAccess });
             if status != 0 {
-                TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+                TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
                            b"DeviceSendSrbSynchronously: Exception %lx locking buffer\n\0".as_ptr() as *const i8,
                            status);
                 break 'flow;
@@ -702,7 +701,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
                                               STATUS_SUCCESS);
                 status = WdfRequestReuse(request, &mut params);
                 if status < 0 {
-                    TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+                    TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
                                b"DeviceSendSrbSynchronously: WdfRequestReuse failed, %!STATUS!\n\0".as_ptr() as *const i8,
                                status);
                     break; // exit the loop
@@ -716,7 +715,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
                     core::ptr::null_mut(), core::ptr::null_mut(),
                     core::ptr::null_mut(), core::ptr::null_mut());
                 if status < 0 {
-                    TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+                    TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
                                b"DeviceSendSrbSynchronously: WdfIoTargetFormatRequestForInternalIoctlOthers failed, %!STATUS!\n\0".as_ptr() as *const i8,
                                status);
                     break; // exit the loop
@@ -806,7 +805,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
         // zpoddInfo check
         let srb_status = core::ptr::read_volatile(core::ptr::addr_of!((*Srb).SrbStatus));
         if !zpoddInfo.is_null() && ((*zpoddInfo).MonitorStartStopUnit != 0) && ((srb_status & 0x3f) == SRB_STATUS_SUCCESS) {
-            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
                        b"DeviceSendSrbSynchronously: soft eject detected, device marked as active\n\0".as_ptr() as *const i8);
             DeviceMarkActive(deviceExtension, 1, 0);
         }
@@ -863,7 +862,7 @@ pub unsafe extern "C" fn DeviceSendNotification(
     );
 
     if !NT_SUCCESS(status) || requiredSize > 0x0000ffff {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_MCN,
             b"Error sending event: size too large! (%x)\n\0".as_ptr() as *const i8,
@@ -929,7 +928,7 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
             CDROM_TAG_COMPLETION_CONTEXT) as *mut COMPLETION_CONTEXT;
 
         if context.is_null() {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
                 b"DeviceSendStartUnit: Failed to allocate completion context\n\0".as_ptr() as *const i8,
@@ -1208,7 +1207,7 @@ pub unsafe extern "system" fn DeviceReleaseQueueCompletion(
         }
 
         if !NT_SUCCESS(status) {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
                 b"DeviceReleaseQueueCompletion: WdfIoTargetFormatRequestForInternalIoctlOthers failed, %!STATUS!\n\0"
@@ -1252,7 +1251,7 @@ pub unsafe extern "C" fn DevicePerfIncrementErrorCount(
         (*DeviceExtension).SrbFlags &= !SRB_FLAGS_QUEUE_ACTION_ENABLE;
         (*DeviceExtension).SrbFlags |= SRB_FLAGS_DISABLE_SYNCH_TRANSFER;
 
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_GENERAL,
             b"PerfIncrementErrorCount: Too many errors; disabling tagged queuing and \
@@ -1264,7 +1263,7 @@ pub unsafe extern "C" fn DevicePerfIncrementErrorCount(
     if errors >= CLASS_ERROR_LEVEL_2 as i32 {
         // If a second threshold is reached, disable disconnects.
         (*DeviceExtension).SrbFlags |= SRB_FLAGS_DISABLE_DISCONNECT;
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_GENERAL,
             b"PerfIncrementErrorCount: Too many errors; disabling disconnects.\n\0"
@@ -1316,7 +1315,7 @@ pub unsafe extern "C" fn DeviceFindFeaturePage(
             temp = temp.add((*header).AdditionalLength as usize);
 
             if temp > limit {
-                TracePrint(
+                TracePrint!(
                     3, // TRACE_LEVEL_WARNING
                     0x20, // TRACE_FLAG_GENERAL
                     b"Feature %x exists, but not safe to access all its data. returning NULL\n\0".as_ptr() as *const i8,
@@ -1353,7 +1352,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureProfileList);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: CurrentProfile %x with %x bytes of data at %p\n\0"
@@ -1367,7 +1366,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureCore);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1382,7 +1381,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureMorphing);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1397,7 +1396,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureRemovableMedium);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1412,7 +1411,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeaturePowerManagement);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1427,7 +1426,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureEmbeddedChanger);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1442,7 +1441,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureMicrocodeUpgrade);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1457,7 +1456,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureTimeout);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1472,7 +1471,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureLogicalUnitSerialNumber);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1492,7 +1491,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             + (core::mem::offset_of!(FEATURE_HEADER, AdditionalLength)
                + core::mem::size_of::<u8>()) as u32; // AdditionalLength is a UCHAR
 
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1533,7 +1532,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
             //date_string[18] = date->Seconds[0];
             //date_string[19] = date->Seconds[1];
             //date_string[20] = 0;
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_VERBOSE,
                 TRACE_FLAG_INIT,
                 b"CdromGetConfiguration: Firmware Date/Time %s (UTC)\n\0".as_ptr() as *const i8,
@@ -1548,7 +1547,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureWriteProtect);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_GENERAL,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1563,7 +1562,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureRandomReadable);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1578,7 +1577,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureMultiRead);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1593,7 +1592,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureCdRead);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1608,7 +1607,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDvdRead);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1623,7 +1622,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureRandomWritable);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1638,7 +1637,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureIncrementalStreamingWritable);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1653,7 +1652,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureSectorErasable);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1668,7 +1667,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureFormattable);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1683,7 +1682,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDefectManagement);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1698,7 +1697,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureWriteOnce);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1713,7 +1712,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureRestrictedOverwrite);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1728,7 +1727,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureCdrwCAVWrite);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1743,7 +1742,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureMrw);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1758,7 +1757,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureEnhancedDefectReporting);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1773,7 +1772,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDvdPlusRW);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1788,7 +1787,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureRigidRestrictedOverwrite);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1803,7 +1802,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureCdTrackAtOnce);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1818,7 +1817,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureCdMastering);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1833,7 +1832,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDvdRecordableWrite);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1848,7 +1847,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDDCDRead);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1863,7 +1862,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDDCDRWrite);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1878,7 +1877,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDDCDRWWrite);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1893,7 +1892,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureLayerJumpRecording);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1908,7 +1907,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureHDDVDRead);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1923,7 +1922,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureHDDVDWrite);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1938,7 +1937,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureSMART);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1953,7 +1952,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureCDAudioAnalogPlay);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1968,7 +1967,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDvdCSS);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1983,7 +1982,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureRealTimeStreaming);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -1998,7 +1997,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDiscControlBlocks);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -2013,7 +2012,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDvdCPRM);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -2028,7 +2027,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
 
     header = DeviceFindFeaturePage(Buffer, Usable, FeatureAACS);
     if !header.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_INIT,
             b"CdromGetConfiguration: %s %s\n\0".as_ptr() as *const i8,
@@ -2099,7 +2098,7 @@ pub unsafe extern "C" fn MediaReadCapacityDataInterpret(
 
     NT_ASSERT(if !ReadCapacityBuffer.is_null() { 1 } else { 0 });
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_GENERAL,
         b"MediaReadCapacityDataInterpret: Entering\n\0".as_ptr() as *const i8,
@@ -2125,7 +2124,7 @@ pub unsafe extern "C" fn MediaReadCapacityDataInterpret(
 
     (*deviceExtension).DiskGeometry.BytesPerSector = bps;
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_GENERAL,
         b"MediaReadCapacityDataInterpret: Calculated bps %#x\n\0".as_ptr() as *const i8,
@@ -2145,14 +2144,14 @@ pub unsafe extern "C" fn MediaReadCapacityDataInterpret(
 
     WHICH_BIT(bps, &mut (*deviceExtension).SectorShift);
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_GENERAL,
         b"MediaReadCapacityDataInterpret: Sector size is %d\n\0".as_ptr() as *const i8,
         (*deviceExtension).DiskGeometry.BytesPerSector,
     );
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_GENERAL,
         b"MediaReadCapacityDataInterpret: Number of Sectors is %d\n\0".as_ptr() as *const i8,
@@ -2258,7 +2257,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
     ntkrnl_sys::rtl::RtlZeroMemory(dvd_read_structure as *mut core::ffi::c_void, buffer_len);
     (*dvd_read_structure).Format = DvdCopyrightDescriptor as u32;
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_IOCTL,
         b"DevicePickDvdRegion (%p): Getting Copyright Descriptor\n\0".as_ptr() as *const i8,
@@ -2275,7 +2274,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         &mut bytes_returned,
     );
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_IOCTL,
         b"DevicePickDvdRegion (%p): Got Copyright Descriptor %x\n\0".as_ptr() as *const i8,
@@ -2284,7 +2283,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
     let mut media_region: u8 = 0;
     if ntkrnl_sys::base::NT_SUCCESS(status) && (*dvd_copy_right).CopyrightProtectionType == 0x01 {
         if (*dvd_copy_right).RegionManagementInformation == 0xff {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"DevicePickDvdRegion (%p): RegionManagementInformation \
@@ -2297,7 +2296,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         }
         media_region = !(*dvd_copy_right).RegionManagementInformation;
     } else {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_IOCTL,
             b"DevicePickDvdRegion (%p): failed to auto-choose a region due to status %x getting copyright descriptor\n\0"
@@ -2311,7 +2310,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
     (*copy_protect_key).KeyLength = DVD_RPC_KEY_LENGTH as u32;
     (*copy_protect_key).KeyType = DvdGetRpcKey as u32;
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_IOCTL,
         b"DevicePickDvdRegion (%p): Getting RpcKey\n\0".as_ptr() as *const i8,
@@ -2328,14 +2327,14 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         &mut bytes_returned,
     );
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_IOCTL,
         b"DevicePickDvdRegion (%p): Got RpcKey %x\n\0".as_ptr() as *const i8,
     );
 
     if !ntkrnl_sys::base::NT_SUCCESS(status) {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_IOCTL,
             b"DevicePickDvdRegion (%p): failed to get RpcKey from a DVD Device\n\0".as_ptr() as *const i8,
@@ -2349,7 +2348,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         as *mut DVD_RPC_KEY;
 
     if (*rpc_key).RegionMask != 0xff {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_IOCTL,
             b"DevicePickDvdRegion (%p): not picking a region since \
@@ -2359,7 +2358,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
     }
 
     if (*rpc_key).UserResetsAvailable() <= 1 {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_IOCTL,
             b"DevicePickDvdRegion (%p): not picking a region since \
@@ -2389,7 +2388,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
     }
 
     if !ntkrnl_sys::base::NT_SUCCESS(status) {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_IOCTL,
             b"DevicePickDvdRegion (%p): failed to read registry value due to status %x\n\0"
@@ -2400,7 +2399,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
     }
 
     if default_dvd_region > DVD_MAX_REGION {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_IOCTL,
             b"DevicePickDvdRegion (%p): registry has a bogus default \
@@ -2413,7 +2412,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
 
     if default_dvd_region != 0 && (media_region & (1u8 << (default_dvd_region - 1))) != 0 {
         dvd_region = 1u32 << (default_dvd_region - 1);
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_IOCTL,
             b"DevicePickDvdRegion (%p): Choice #1: media matches \
@@ -2426,7 +2425,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
             dvd_region = (media_region & mask) as u32;
             mask <<= 1;
         }
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_IOCTL,
             b"DevicePickDvdRegion (%p): Choice #2: choosing lowest \
@@ -2434,14 +2433,14 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         );
     } else if default_dvd_region != 0 {
         dvd_region = 1u32 << (default_dvd_region - 1);
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_IOCTL,
             b"DevicePickDvdRegion (%p): Choice #3: using default \
               region for this install %x\n\0".as_ptr() as *const i8,
         );
     } else {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_IOCTL,
             b"DevicePickDvdRegion (%p): Choice #4: failed to choose \
@@ -2460,7 +2459,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         as *mut DVD_SET_RPC_KEY;
     (*dvd_rpc_key).PreferredDriveRegionCode = (!dvd_region) as u8;
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_IOCTL,
         b"DevicePickDvdRegion (%p): Sending new Rpc Key to region %x\n\0".as_ptr() as *const i8,
@@ -2474,21 +2473,21 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         &mut bytes_returned,
     );
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_IOCTL,
         b"DevicePickDvdRegion (%p): Sent new Rpc Key %x\n\0".as_ptr() as *const i8,
     );
 
     if !ntkrnl_sys::base::NT_SUCCESS(status) {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_IOCTL,
             b"DevicePickDvdRegion (%p): unable to set dvd initial \
               region code (%x)\n\0".as_ptr() as *const i8,
         );
     } else {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_IOCTL,
             b"DevicePickDvdRegion (%p): Successfully set dvd \
@@ -2552,7 +2551,7 @@ pub unsafe extern "C" fn DeviceRegisterInterface(
         } else {
             b"Mounted Device Interface\0".as_ptr() as *const i8
         };
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_INIT,
             b"DeviceRegisterInterface: Unable to register cdrom DCA for fdo %p type: %s [%lx]\n\0".as_ptr() as *const i8,
@@ -2610,7 +2609,7 @@ pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
         DbgBreakPoint();
     }
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_IOCTL,
         b"DeviceRestoreDefaultSpeed: Restore device speed for %p\n\0".as_ptr() as *const i8,
@@ -2645,7 +2644,7 @@ pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
         1, // TRUE (WriteToDevice)
         core::ptr::null_mut(),
     );
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_IOCTL,
         b"DeviceRestoreDefaultSpeed: Set Streaming command completed with status: 0x%X\n\0".as_ptr() as *const i8,
@@ -2975,7 +2974,7 @@ pub unsafe extern "C" fn PerformEjectionControl(
             NT_ASSERT(0);
         }
 
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_IOCTL,
             b"PerformEjectionControl: Received request for %s lock type\n\0".as_ptr() as *const i8,
@@ -2987,7 +2986,7 @@ pub unsafe extern "C" fn PerformEjectionControl(
                 let fileObject: WDFFILEOBJECT = WdfRequestGetFileObject(Request);
                 if fileObject.is_null() {
                     status = STATUS_INVALID_HANDLE;
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_ERROR,
                         TRACE_FLAG_IOCTL,
                         b"FileObject does not match to the one in IRP_MJ_CREATE, KMDF returns NULL\n\0".as_ptr() as *const i8,
@@ -3079,7 +3078,7 @@ pub unsafe extern "C" fn PerformEjectionControl(
 
         WdfWaitLockRelease((*DeviceExtension).EjectSynchronizationLock);
 
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_IOCTL,
             b"PerformEjectionControl: %!STATUS!, Count Changed: %d, Command Sent: %d, Current Counts: Internal: %x  Secure: %x  Simple: %x\n\0".as_ptr() as *const i8,
@@ -3109,7 +3108,7 @@ pub unsafe extern "C" fn DeviceUnlockExclusive(
     PAGED_CODE();
 
     if EXCLUSIVE_MODE(cdData) == 0 {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_IOCTL,
             b"RequestHandleExclusiveAccessUnlockDevice: Device not locked for exclusive access, can't unlock device.\n\0"
@@ -3117,7 +3116,7 @@ pub unsafe extern "C" fn DeviceUnlockExclusive(
         );
         status = STATUS_INVALID_DEVICE_REQUEST;
     } else if EXCLUSIVE_OWNER(cdData, FileObject) == 0 {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_IOCTL,
             b"RequestHandleExclusiveAccessUnlockDevice: Unable to unlock device, invalid file object\n\0"
@@ -3130,7 +3129,7 @@ pub unsafe extern "C" fn DeviceUnlockExclusive(
         if IgnorePreviousMediaChanges == 0 {
             let mut previousMediaState: i32 = MediaUnknown;
             DeviceSetMediaChangeStateEx(DeviceExtension, MediaUnavailable, &raw mut previousMediaState);
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_IOCTL,
                 b"DeviceUnlockExclusive: Changing the media state to MediaUnavailable\n\0"
@@ -3354,7 +3353,7 @@ pub unsafe extern "C" fn DeviceSendPowerDownProcessRequest(
                     b"STOP UNIT\0".as_ptr() as *const i8
                 };
 
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_ERROR,
                     TRACE_FLAG_POWER,
                     b"%p\tError occured when issuing %s command to device. Srb %p, Status %x\n\0"
@@ -3444,7 +3443,7 @@ pub unsafe extern "C" fn RequestSend(
         if requestSent == 0 || (Flags & WDF_REQUEST_SEND_OPTION_SYNCHRONOUS) != 0 {
             status = WdfRequestGetStatus(Request);
             if requestSent == 0 {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_GENERAL,
                     b"WdfRequestSend failed: %lx\n\0".as_ptr() as *const i8,
@@ -4001,7 +4000,7 @@ pub unsafe extern "C" fn RequestSend(
 //         {
 //             status = STATUS_INSUFFICIENT_RESOURCES;
 //
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                        "DeviceSendSrbSynchronously: Can't allocate MDL\n"));
 //
 //             goto Exit;
@@ -4028,7 +4027,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                        "DeviceSendSrbSynchronously: Can't create request: %lx\n",
 //                        status));
 //
@@ -4050,7 +4049,7 @@ pub unsafe extern "C" fn RequestSend(
 //         {
 //             status = STATUS_INSUFFICIENT_RESOURCES;
 //
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                        "DeviceSendSrbSynchronously: Can't allocate MDL\n"));
 //
 //             goto Exit;
@@ -4066,7 +4065,7 @@ pub unsafe extern "C" fn RequestSend(
 //         {
 //             status = _SEH2_GetExceptionCode();
 //
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                        "DeviceSendSrbSynchronously: Exception %lx locking buffer\n", status));
 //
 //             _SEH2_YIELD(goto Exit);
@@ -4102,7 +4101,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //             if (!NT_SUCCESS(status))
 //             {
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                            "DeviceSendSrbSynchronously: WdfRequestReuse failed, %!STATUS!\n",
 //                            status));
 //                 // exit the loop.
@@ -4119,7 +4118,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //             if (!NT_SUCCESS(status))
 //             {
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                            "DeviceSendSrbSynchronously: WdfIoTargetFormatRequestForInternalIoctlOthers failed, %!STATUS!\n",
 //                            status));
 //                 // exit the loop.
@@ -4219,7 +4218,7 @@ pub unsafe extern "C" fn RequestSend(
 //         (zpoddInfo->MonitorStartStopUnit != FALSE) &&
 //         (SRB_STATUS(Srb->SrbStatus) == SRB_STATUS_SUCCESS))
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                     "DeviceSendSrbSynchronously: soft eject detected, device marked as active\n"));
 //
 //         DeviceMarkActive(deviceExtension, TRUE, FALSE);
@@ -4303,7 +4302,7 @@ pub unsafe extern "C" fn RequestSend(
 //     if (!(NT_SUCCESS(status)) || (requiredSize > 0x0000ffff))
 //     {
 //         // MAX_USHORT, max total size for these events!
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
 //                    "Error sending event: size too large! (%x)\n",
 //                    requiredSize));
 //         return;
@@ -4396,7 +4395,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //         if (context == NULL)
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                        "DeviceSendStartUnit: Failed to allocate completion context\n"));
 //
 //             status = STATUS_INTERNAL_ERROR;
@@ -4798,7 +4797,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                    "DeviceReleaseQueueCompletion: WdfIoTargetFormatRequestForInternalIoctlOthers failed, %!STATUS!\n",
 //                    status));
 //     }
@@ -4871,7 +4870,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //         SET_FLAG(DeviceExtension->SrbFlags, SRB_FLAGS_DISABLE_SYNCH_TRANSFER);
 //
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                    "PerfIncrementErrorCount: Too many errors; disabling tagged queuing and "
 //                    "synchronous data tranfers.\n"));
 //     }
@@ -4880,7 +4879,7 @@ pub unsafe extern "C" fn RequestSend(
 //     {
 //         // If a second threshold is reached, disable disconnects.
 //         SET_FLAG(DeviceExtension->SrbFlags, SRB_FLAGS_DISABLE_DISCONNECT);
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                    "PerfIncrementErrorCount: Too many errors; disabling disconnects.\n"));
 //     }
 //
@@ -4967,7 +4966,7 @@ pub unsafe extern "C" fn RequestSend(
 //                 // it's not safe to view the amount of data (even though
 //                 // the header is safe) in this feature, pretend it wasn't
 //                 // transferred at all...
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                            "Feature %x exists, but not safe to access all its data.  returning NULL\n",
 //                            Feature));
 //                 return NULL;
@@ -5026,7 +5025,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureProfileList);
 //     if (header != NULL) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: CurrentProfile %x "
 //                    "with %x bytes of data at %p\n",
 //                    Buffer->CurrentProfile[0] << 8 |
@@ -5036,7 +5035,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureCore);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5046,7 +5045,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureMorphing);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5056,7 +5055,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureRemovableMedium);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5066,7 +5065,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeaturePowerManagement);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5076,7 +5075,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureEmbeddedChanger);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5086,7 +5085,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureMicrocodeUpgrade);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5096,7 +5095,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureTimeout);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5106,7 +5105,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureLogicalUnitSerialNumber);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5120,7 +5119,7 @@ pub unsafe extern "C" fn RequestSend(
 //         ULONG featureSize = header->AdditionalLength;
 //         featureSize += RTL_SIZEOF_THROUGH_FIELD(FEATURE_HEADER, AdditionalLength);
 //
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                    "Currently supports" : "Is able to support"),
@@ -5155,7 +5154,7 @@ pub unsafe extern "C" fn RequestSend(
 //             //dateString[18] = date->Seconds[0];
 //             //dateString[19] = date->Seconds[1];
 //             //dateString[20] = 0;
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                         "CdromGetConfiguration: Firmware Date/Time %s (UTC)\n",
 //                         (PCSTR)dateString
 //                         ));
@@ -5169,7 +5168,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureWriteProtect);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5179,7 +5178,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureRandomReadable);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5189,7 +5188,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureMultiRead);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5199,7 +5198,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureCdRead);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5209,7 +5208,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDvdRead);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5219,7 +5218,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureRandomWritable);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5229,7 +5228,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureIncrementalStreamingWritable);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5239,7 +5238,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureSectorErasable);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5249,7 +5248,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureFormattable);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5259,7 +5258,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDefectManagement);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5269,7 +5268,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureWriteOnce);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5279,7 +5278,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureRestrictedOverwrite);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5289,7 +5288,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureCdrwCAVWrite);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5299,7 +5298,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureMrw);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5309,7 +5308,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureEnhancedDefectReporting);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5319,7 +5318,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDvdPlusRW);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5329,7 +5328,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureRigidRestrictedOverwrite);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5339,7 +5338,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureCdTrackAtOnce);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5349,7 +5348,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureCdMastering);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5359,7 +5358,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDvdRecordableWrite);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5369,7 +5368,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDDCDRead);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5379,7 +5378,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDDCDRWrite);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5389,7 +5388,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDDCDRWWrite);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5399,7 +5398,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureLayerJumpRecording);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5409,7 +5408,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureHDDVDRead);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5419,7 +5418,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureHDDVDWrite);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5430,7 +5429,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureSMART);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5440,7 +5439,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureCDAudioAnalogPlay);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5450,7 +5449,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDvdCSS);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5460,7 +5459,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureRealTimeStreaming);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5470,7 +5469,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDiscControlBlocks);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5480,7 +5479,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureDvdCPRM);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5490,7 +5489,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     header = DeviceFindFeaturePage(Buffer, Usable, FeatureAACS);
 //     if (header) {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_INIT,
 //                    "CdromGetConfiguration: %s %s\n",
 //                    (header->Current ?
 //                     "Currently supports" : "Is able to support"),
@@ -5601,7 +5600,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     NT_ASSERT(ReadCapacityBuffer);
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                 "MediaReadCapacityDataInterpret: Entering\n"));
 //
 //     // Swizzle bytes from Read Capacity and translate into
@@ -5635,7 +5634,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     deviceExtension->DiskGeometry.BytesPerSector = bps;
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                "MediaReadCapacityDataInterpret: Calculated bps %#x\n",
 //                 deviceExtension->DiskGeometry.BytesPerSector));
 //
@@ -5650,11 +5649,11 @@ pub unsafe extern "C" fn RequestSend(
 //     // Calculate sector to byte shift.
 //     WHICH_BIT(bps, deviceExtension->SectorShift);
 //
-//     TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL,
+//     TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL,
 //                "MediaReadCapacityDataInterpret: Sector size is %d\n",
 //                deviceExtension->DiskGeometry.BytesPerSector));
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                "MediaReadCapacityDataInterpret: Number of Sectors is %d\n",
 //                lastSector + 1));
 //
@@ -5764,7 +5763,7 @@ pub unsafe extern "C" fn RequestSend(
 //     dvdReadStructure->Format = DvdCopyrightDescriptor;
 //
 //     // Build and send a request for READ_KEY
-//     TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
+//     TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
 //                 "DevicePickDvdRegion (%p): Getting Copyright Descriptor\n",
 //                 Device));
 //
@@ -5776,7 +5775,7 @@ pub unsafe extern "C" fn RequestSend(
 //                               sizeof(DVD_DESCRIPTOR_HEADER) + sizeof(DVD_COPYRIGHT_DESCRIPTOR),
 //                               &bytesReturned);
 //
-//     TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
+//     TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
 //                 "DevicePickDvdRegion (%p): Got Copyright Descriptor %x\n",
 //                 Device, status));
 //
@@ -5787,7 +5786,7 @@ pub unsafe extern "C" fn RequestSend(
 //         // a 1 means ok to play
 //         if (dvdCopyRight->RegionManagementInformation == 0xff)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                       "DevicePickDvdRegion (%p): RegionManagementInformation "
 //                       "is set to dis-allow playback for all regions.  This is "
 //                       "most likely a poorly authored disc.  defaulting to all "
@@ -5801,7 +5800,7 @@ pub unsafe extern "C" fn RequestSend(
 //     else
 //     {
 //         // can't automatically pick a default region on a drive without media, so just exit
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "DevicePickDvdRegion (%p): failed to auto-choose a region due to status %x getting copyright descriptor\n",
 //                     Device, status));
 //         goto getout;
@@ -5813,7 +5812,7 @@ pub unsafe extern "C" fn RequestSend(
 //     copyProtectKey->KeyType = DvdGetRpcKey;
 //
 //     // Build and send a request for READ_KEY for RPC key
-//     TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
+//     TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
 //                 "DevicePickDvdRegion (%p): Getting RpcKey\n",
 //                 Device));
 //     status = DvdStartSessionReadKey(deviceExtension,
@@ -5825,13 +5824,13 @@ pub unsafe extern "C" fn RequestSend(
 //                                     DVD_RPC_KEY_LENGTH,
 //                                     &bytesReturned);
 //
-//     TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
+//     TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
 //                 "DevicePickDvdRegion (%p): Got RpcKey %x\n",
 //                 Device, status));
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "DevicePickDvdRegion (%p): failed to get RpcKey from "
 //                     "a DVD Device\n", Device));
 //         goto getout;
@@ -5845,7 +5844,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     if (rpcKey->RegionMask != 0xff)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "DevicePickDvdRegion (%p): not picking a region since "
 //                     "it is already chosen\n", Device));
 //         goto getout;
@@ -5853,7 +5852,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     if (rpcKey->UserResetsAvailable <= 1)
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "DevicePickDvdRegion (%p): not picking a region since "
 //                     "only one change remains\n", Device));
 //         goto getout;
@@ -5876,7 +5875,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "DevicePickDvdRegion (%p): failed to read registry value due to status %x\n",
 //                     Device, status));
 //
@@ -5888,7 +5887,7 @@ pub unsafe extern "C" fn RequestSend(
 //     if (defaultDvdRegion > DVD_MAX_REGION)
 //     {
 //         // the registry has a bogus default
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "DevicePickDvdRegion (%p): registry has a bogus default "
 //                     "region value of %x\n", Device, defaultDvdRegion));
 //
@@ -5907,7 +5906,7 @@ pub unsafe extern "C" fn RequestSend(
 //         // the default dvd region.
 //         dvdRegion = (1 << (defaultDvdRegion - 1));
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "DevicePickDvdRegion (%p): Choice #1: media matches "
 //                     "drive's default, chose region %x\n", Device, dvdRegion));
 //     }
@@ -5925,7 +5924,7 @@ pub unsafe extern "C" fn RequestSend(
 //             mask <<= 1;
 //         }
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "DevicePickDvdRegion (%p): Choice #2: choosing lowest "
 //                     "media region %x\n", Device, dvdRegion));
 //     }
@@ -5934,7 +5933,7 @@ pub unsafe extern "C" fn RequestSend(
 //         // third choice:
 //         // default dvd region from the dvd class installer
 //         dvdRegion = (1 << (defaultDvdRegion - 1));
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                     "DevicePickDvdRegion (%p): Choice #3: using default "
 //                     "region for this install %x\n", Device, dvdRegion));
 //     }
@@ -5943,7 +5942,7 @@ pub unsafe extern "C" fn RequestSend(
 //         // unable to pick one for the user -- this should rarely
 //         // happen, since the proppage dvd class installer sets
 //         // the key based upon the system locale
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL,
 //                     "DevicePickDvdRegion (%p): Choice #4: failed to choose "
 //                     "a media region\n", Device));
 //         goto getout;
@@ -5958,7 +5957,7 @@ pub unsafe extern "C" fn RequestSend(
 //     dvdRpcKey->PreferredDriveRegionCode = (UCHAR)~dvdRegion;
 //
 //     // Build and send request for SEND_KEY
-//     TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
+//     TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
 //                 "DevicePickDvdRegion (%p): Sending new Rpc Key to region %x\n",
 //                 Device, dvdRegion));
 //
@@ -5968,18 +5967,18 @@ pub unsafe extern "C" fn RequestSend(
 //                         DVD_SET_RPC_KEY_LENGTH,
 //                         &bytesReturned);
 //
-//     TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
+//     TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL,
 //                 "DevicePickDvdRegion (%p): Sent new Rpc Key %x\n",
 //                 Device, status));
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, "DevicePickDvdRegion (%p): unable to set dvd initial "
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_IOCTL, "DevicePickDvdRegion (%p): unable to set dvd initial "
 //                      " region code (%x)\n", Device, status));
 //     }
 //     else
 //     {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL, "DevicePickDvdRegion (%p): Successfully set dvd "
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_IOCTL, "DevicePickDvdRegion (%p): Successfully set dvd "
 //                      "initial region\n", Device));
 //
 //         pickDvdRegion = 0;
@@ -6051,7 +6050,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                     "DeviceRegisterInterface: Unable to register cdrom "
 //                     "DCA for fdo %p type: %s [%lx]\n",
 //                     DeviceExtension->Device,
@@ -6129,7 +6128,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     PAGED_CODE();
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "DeviceRestoreDefaultSpeed: Restore device speed for %p\n", device));
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "DeviceRestoreDefaultSpeed: Restore device speed for %p\n", device));
 //
 //     perfDescriptor = ExAllocatePoolWithTag(NonPagedPoolNxCacheAligned,
 //                                            transferLength,
@@ -6155,7 +6154,7 @@ pub unsafe extern "C" fn RequestSend(
 //                                         transferLength,
 //                                         TRUE,
 //                                         NULL);
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                "DeviceRestoreDefaultSpeed: Set Streaming command completed with status: 0x%X\n", status));
 //
 //     FREE_POOL(perfDescriptor);
@@ -6641,7 +6640,7 @@ pub unsafe extern "C" fn RequestSend(
 //         NT_ASSERT(FALSE);
 //     }
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                 "PerformEjectionControl: "
 //                 "Received request for %s lock type\n",
 //                 LockTypeStrings[LockType]
@@ -6659,7 +6658,7 @@ pub unsafe extern "C" fn RequestSend(
 //         {
 //             status = STATUS_INVALID_HANDLE;
 //
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                             "FileObject does not match to the one in IRP_MJ_CREATE, KMDF returns NULL\n"));
 //             goto Exit;
 //         }
@@ -6776,7 +6775,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //     WdfWaitLockRelease(DeviceExtension->EjectSynchronizationLock);
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                 "PerformEjectionControl: %!STATUS!, "
 //                 "Count Changed: %d, Command Sent: %d, "
 //                 "Current Counts: Internal: %x  Secure: %x  Simple: %x\n",
@@ -6829,14 +6828,14 @@ pub unsafe extern "C" fn RequestSend(
 //     {
 //         // Device is not locked for exclusive access.
 //         // Can not process unlock request.
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                     "RequestHandleExclusiveAccessUnlockDevice: Device not locked for exclusive access, can't unlock device.\n"));
 //         status = STATUS_INVALID_DEVICE_REQUEST;
 //     }
 //     else if (!EXCLUSIVE_OWNER(cdData, FileObject))
 //     {
 //         // Request not from the exclusive owner, can't unlock the device.
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                    "RequestHandleExclusiveAccessUnlockDevice: Unable to unlock device, invalid file object\n"));
 //
 //         status = STATUS_INVALID_HANDLE;
@@ -6853,7 +6852,7 @@ pub unsafe extern "C" fn RequestSend(
 //             // Change the media state to "unavailable", which will cause a removal notification if the media
 //             // was previously present. At the same time, store the previous state in previousMediaState.
 //             DeviceSetMediaChangeStateEx(DeviceExtension, MediaUnavailable, &previousMediaState);
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                         "DeviceUnlockExclusive: Changing the media state to MediaUnavailable\n"));
 //
 //             // Restore the previous media state, which will cause a media arrival notification if the media
@@ -6927,7 +6926,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //         if (requestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode != IOCTL_MCN_SYNC_FAKE_IOCTL)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                        "Request complete - IOCTL - code: %X; Status: %X; Information: %X\n",
 //                        ioctlCode,
 //                        Status,
@@ -6935,7 +6934,7 @@ pub unsafe extern "C" fn RequestSend(
 //         }
 //         else
 //         {
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL,
 //                        "Request complete - IOCTL - code: %X; Status: %X; Information: %X\n",
 //                        ioctlCode,
 //                        Status,
@@ -6944,7 +6943,7 @@ pub unsafe extern "C" fn RequestSend(
 //     }
 //     else if (requestParameters.Type == WdfRequestTypeRead)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                    "Request complete - READ - Starting Offset: %X; Length: %X; Transferred Length: %X; Status: %X\n",
 //                    (ULONG)requestParameters.Parameters.Read.as_ref().DeviceOffset,
 //                    (ULONG)requestParameters.Parameters.Read.as_ref().Length,
@@ -6953,7 +6952,7 @@ pub unsafe extern "C" fn RequestSend(
 //     }
 //     else if (requestParameters.Type == WdfRequestTypeWrite)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                    "Request complete - WRITE - Starting Offset: %X; Length: %X; Transferred Length: %X; Status: %X\n",
 //                    (ULONG)requestParameters.Parameters.Write.as_ref().DeviceOffset,
 //                    (ULONG)requestParameters.Parameters.Write.as_ref().Length,
@@ -7201,7 +7200,7 @@ pub unsafe extern "C" fn RequestSend(
 //             if ((CompletionRoutine == NULL) &&
 //                 (SRB_STATUS(DeviceExtension->PowerContext.Srb.SrbStatus) != SRB_STATUS_SUCCESS))
 //             {
-//                 TracePrint((TRACE_LEVEL_ERROR,
+//                 TracePrint!((TRACE_LEVEL_ERROR,
 //                             TRACE_FLAG_POWER,
 //                             "%p\tError occured when issuing %s command to device. Srb %p, Status %x\n",
 //                             DeviceExtension->PowerContext.PowerRequest,
@@ -7326,7 +7325,7 @@ pub unsafe extern "C" fn RequestSend(
 //
 //             if (requestSent == FALSE)
 //             {
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                             "WdfRequestSend failed: %lx\n",
 //                             status
 //                             ));
