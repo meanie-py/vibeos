@@ -5364,10 +5364,73 @@ fall through to a plain copy until clang's frame-based i386 / aarch64 kernel SEH
 caller pointer where the C had `_SEH2_TRY`. Grep the inert C for `_SEH2_TRY` around
 `RtlCopyMemory`/`Probe*` and diff against the Rust port — if the Rust has the copy but no
 `safe_copy_*`, it is a latent 0x1E waiting for a hostile caller.
+kept in sync on every handle alloc/free. Owed as the M9 core (`wow64-plan.md`). Until then
+any WoW64 GUI app that validates an HWND client-side (i.e. nearly all of them) silently
+no-ops the call.
+
+### 9.60 (2026-07-12) A differential harness can only falsify what it VARIES — two blind spots that hand you a green MATCH on code that is wrong in production
+
+**Context.** The msvcrt "assemble the CRT from pieces" lane flips C CRT bodies to Rust one family at a time, gated by `msvcrt-difftest`: build.rs hands the **genuine** `dll/win32/msvcrt/string.c` to `cc` as the translation unit (106 symbols renamed `ref_*` via a generated `-include` prelude), and a fuzz driver compares the Rust against it, printing MATCH / SIGN-ONLY / DIVERGE per function. It works — it caught a real signed-vs-unsigned-char corruption before it shipped (below). But twice it would have cheerfully certified a function that is **wrong on the real target**, and both times the only thing that saved it was reading the C.
+
+**The generalizable rule: a fuzz harness proves parity only across the axes it actually varies. Every axis it holds CONSTANT is a silent assumption baked into every MATCH it prints.** Before believing a verdict, enumerate what the reference TU has *pinned*.
+
+**Blind spot 1 — ambient state the reference holds fixed (here: locale).**
+`_stricmp` / `_strnicmp` / `_memicmp` looked like pure ASCII compares. They are not: msvcrt's bodies consult `get_locinfo()->lc_handle[LC_CTYPE]` and fold through `_tolower_l`. The harness's `refimpl.c` stubs the locale to "C" (`lc_handle[]` zeroed) — precisely the branch where a locale-blind ASCII fold coincides. So once the *unrelated* signedness bug was fixed, all three flipped to MATCH. Flipping them on that evidence would have been correct under the default locale and wrong the moment an app calls `setlocale()`. They were deferred to the locale phase instead, and the harness now prints them as an explicit DEFERRED footer so they can't be quietly forgotten.
+> **Detector:** grep any flip candidate's C body for `get_locinfo` / `_l`-suffixed helpers / any read of process-global state. If it reaches ambient state the harness stubs, the harness cannot grade it.
+
+**Blind spot 2 — the reference TU is compiled for the HOST, so target-conditional `#if`s are graded on the wrong arm.**
+The reference is built for x86_64 **linux**, where `_WIN64` is undefined. So *every* `#if defined(_WIN64)` in the C is silently graded on its 32-bit arm. `strncmp` has exactly such a branch, and with msvcrt's `_MSVCR_VER=0` it reduces to plain `_WIN64` — meaning **the same function ships two different contracts**: i386 returns the raw unsigned difference, amd64/arm64 clamp to -1/0/1. A MATCH from the harness certifies only i386. (The tell was visible in the output and easy to miss: `msvcrt=-17` — an unclamped value.)
+> **Detector:** before trusting a MATCH, `grep -nE '_WIN64|_UCRT|_MSVCR_VER'` the function. `_MSVCR_VER` is safe *if* build.rs defines it exactly as the real build does (here: `0`); host-vs-target macros like `_WIN64` are not.
+> **Fix without a second reference compile:** if one `#if` arm is a pure function of the other's value, model it. Both `strncmp` arms run after an *identical* loop and then compare the *same two bytes*, so `_WIN64 == sign(#else)` — hence `clamp(ref_strncmp(..))` is an **exact** model of the 64-bit branch, and one host TU grades both shipped contracts.
+
+**Blind spot 3 (the one that bites hardest) — grading a PROXY instead of the artifact.**
+The harness originally linked `cnt-rust` (the kernel CRT crate whose cores the wrappers call). That was sound only while the wrappers were *verbatim copies* of cnt-rust's `cabi` shims. The moment a wrapper legitimately **adapts** the core (unsigned contract, clamped return, a msvcrt-specific port), the thing being graded is no longer the thing being shipped. Link **the shipping crate**.
+> Two hard runtime gates keep this honest, and both earned their keep:
+> - `strlen(NULL) == 0` — proves the shared libc names resolved to the Rust shims and not **glibc**. (Without a `extern crate` force-link, rustc drops the unused rlib and `strlen`/`strcmp`/`memcpy` bind to glibc; the harness then grades *glibc against msvcrt* and prints a meaningless MATCH.)
+> - `_strnset(s,c,2) == s+2` — proves it's the **msvcrt wrapper** and not cnt-rust's cabi shim, whose contract returns the *start*. A contract difference between the two crates makes a perfect canary for "am I linked to the right one".
+
+**The bug the harness DID catch (the reason to keep it).** cnt-rust's `core_rs` is faithful to libcntpr, which uses a **signed-char** convention (`Elem::diff` for `u8` = `(a as i8) - (b as i8)`; `mem::chr` matches `(b as i8 as i32) == c`). msvcrt/Wine uses **unsigned-char**. They agree on all of ASCII and **flip sign on any byte ≥ 0x80** — so `strcmp`/`strncmp`/`memchr`/`_memicmp`/`_memccpy` would have silently corrupted ordering and search on non-ASCII data (UTF-8 paths, accented filenames, binary buffers) while booting perfectly green. **Two CRT bodies in one tree can want genuinely different answers from the same-named function; that is a contract knob, not a bug** — resolved by adding `Elem::udiff` (default = `diff`; only `u8` overrides, since `wchar_t` is unsigned by definition and the wide family never had the bug) with each contract pinned by its own harness (`cnt-difftest` for the kernel, `msvcrt-difftest` for msvcrt).
+
+**Corollary for cohab flips generally: VERIFY THE FLIP TOOK.** A green build and a "duplicate symbol" warning prove nothing about *which* body won. Parse the PE export table and resolve each export's RVA into the Rust `--whole-archive` cluster vs the C bodies — and assert the *deliberately-not-flipped* ones still land in C. (Plain link-order is NOT enough: the C monolith object still gets pulled in for its un-flipped symbols and drags its own copies of the flipped ones along, winning first-match. `--whole-archive` on the Rust `.a` is what forces the Rust definitions in first.)
+
+### 9.61 (ROOT-CAUSED + FIXED 2026-07-12) The bug a value-comparing fuzz CANNOT see: an unbounded scan inside a bounded (`n`-suffixed) CRT function — right answer, wrong memory
+
+**Symptom.** msvcrt wave-3 flipped 6 functions, all reported MATCH by the differential harness across 20,000 fuzz cases each, all 3 arch smokes green to desktop. But the **net suite** regressed hard: `nettest.exe` (the usermode winsock proof) printed `WSAStartup OK` and then went silent — no crash banner, no error, just gone — and the kernel's `[NETSTACK] dns OK` marker slipped past the boot snapshot. 4/4 fail. Control (previous commit, same host): 15/15 pass, twice. So: a real regression, not the documented NET_FLAKE.
+
+**The trap.** Everything about the shape said "not my code": the failing tests were *kernel-side* netstack self-tests, and msvcrt.dll is **user-mode**. The functions were harness-exact against the genuine C. It was tempting to call it host contention (two other agents' QEMUs were live) and re-gate. **The A/B control is what forbade that** — build the previous commit, run the same suite on the same host: 15/15. Never accept "probably a flake" when a two-run control can settle it.
+
+**Bisection** (rebuild + boot per step; the wrappers toggled one family at a time):
+
+| variant | net |
+|---|---|
+| all 6 wrappers off (cnt-rust change + crate split still in) | 15 pass |
+| `+strcmp +strncmp +memcmp` | 15 pass |
+| `+memchr` | 15 pass |
+| `+_memccpy` | 15 pass |
+| `+_strnset` | **13/2 FAIL** |
+
+**Root cause.** The Rust `_strnset` was:
+```rust
+let take = core::cmp::min(h::cstr_slice(p).len(), len);   // UNBOUNDED scan, clamped AFTER
+```
+against the C's
+```c
+if (len > 0 && str) while (*str && len--) *str++ = value;  /* reads at most len bytes */
+```
+`cstr_slice` is a `strlen`-style scan with **no bound**. On a buffer that an `n`-suffixed API is explicitly allowed to leave **unterminated**, it runs off the end. The `min` still bounds the *fill*, so **every byte written and every value returned is identical to the C** — which is precisely why 20k fuzz cases said MATCH: the harness's `gen_str` always NUL-terminates, so the scan always found a terminator inside the buffer. The only damage is the **read**, and it only kills you when it walks into an unmapped page.
+
+**Why it reached the network stack (and why "nobody calls it" was wrong).** A first grep for callers found none — but the grep was truncated by `head`. `_strnset` IS called, from *inside msvcrt itself*: `mbcs.c`'s `u__strnset()` → `_mbsnset` / `_mbsnbset`. A silent fault there took the process down with no banner. **When a bisect says a symbol matters, believe the bisect over your grep — and re-run the grep without `head`.**
+
+**The generalizable rule.**
+> **An `n`-suffixed CRT function must never contain an unbounded scan.** Bound the scan by `n` (`cstr_slice_bounded`) — never scan-then-`min`. The clamp makes the *answer* right while the *access* is already out of bounds.
+
+**The detector (new, permanent): `msvcrt-difftest/tests/oob_guard.rs`.** A value-comparing fuzz is *structurally* blind to an over-read that still returns the right answer — no amount of fuzzing finds this class. So probe the access, not the value: `mmap` two pages, `mprotect(PROT_NONE)` the second, and place a deliberately **NUL-free** buffer of `k` bytes flush against the boundary; call each bounded fn with `n <= k`. A correct impl never touches `p[k]`; an unbounded scan takes SIGSEGV. Each call runs in a forked child so the offender is *named* instead of taking the harness down. Validated both ways — it reports `_strnset ✗ OVER-READ` on the buggy version and passes on the fix. **Every new bounded flip gets a row here.**
+
+**Meta-lesson (compounds with §9.60).** §9.60 catalogued the harness's blind spots in *what it varies* (locale, host-vs-target `#if`, proxy-vs-artifact). This is a blind spot in *what it observes*: it compares return values and destination bytes, so it can only ever catch wrong **answers** — never wrong **memory access** that yields a right answer. Two different questions, two different instruments. A green diff table is not a safety proof.
 
 ---
 
-### 9.60 (ROOT-CAUSED + FIXED 2026-07-12) When the BUG IS IN THE TEST HARNESS: the standalone kmtest drivers' own `_SEH2_TRY` was dead code, so three "kernel crashers" were the kernel behaving *correctly*
+### 9.62 (ROOT-CAUSED + FIXED 2026-07-12) When the BUG IS IN THE TEST HARNESS: the standalone kmtest drivers' own `_SEH2_TRY` was dead code, so three "kernel crashers" were the kernel behaving *correctly*
 
 **Symptom.** Three amd64 kmtest quarantines, all BUGCHECK-class, all filed as kernel bugs:
 `IoReadWrite` (0x1E), `NtCreateSection` (0x50), `MmMapLockedPagesSpecifyCache` (0x1000).

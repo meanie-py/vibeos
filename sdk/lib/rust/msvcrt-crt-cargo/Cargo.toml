@@ -1,0 +1,26 @@
+# msvcrt-crt-cargo — the staticlib umbrella over `msvcrt-crt-rust`.
+#
+# Follows the repo's standard `*-rust` (rlib: the code) + `*-cargo` (staticlib:
+# the link artifact) split — same shape as kernel-rust over its sibling rlibs,
+# bootvid-rust/bootvid-cargo, kdcom-rust/kdcom-cargo, ...
+#
+# WHY the split (it is load-bearing, not cosmetic): `msvcrt-difftest` must link
+# the SHIPPING wrappers to fuzz them against the genuine C. A crate with
+# `staticlib` in its crate-type is a final no_std artifact — rustc demands a
+# `#[panic_handler]` in the very same invocation that emits the rlib, and that
+# panic_handler is then a duplicate `panic_impl` lang item the moment the rlib
+# is linked into the harness's std test binary. crate-type is not
+# feature-conditional, so the two roles cannot live in one crate. The code goes
+# in the rlib (harness-linkable); the runtime bits go here.
+[package]
+name = "msvcrt-crt-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+msvcrt-crt-rust = { path = "../msvcrt-crt-rust" }
+panic-common = { path = "../panic-common", features = ["user"] }
