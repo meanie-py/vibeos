@@ -854,3 +854,64 @@ so the DC's visible region is computed while the window is hidden and must be
 recomputed when it is shown (`DceResetActiveDCEs` / DCE visrgn invalidation). That
 is win32k/GDI territory, not the WoW64 layer — it belongs to a win32k lane. The
 WoW64 side of DOOM is done.
+
+## M14: x86 DOOM under WoW64/FEX on arm64 — INPUT done; rendering INTERMITTENT (2026-07-13)
+
+Status: **input is solid and fully proven; rendering works but is intermittent** —
+the M13 window-DC blit bug is real and still open. Reproduce with
+**`tools/doom/play.sh`** (rebuilds the FEX ramdisk, boots arm64, drives keys via QMP,
+saves `/tmp/doom-play-{0..4}.png`).
+
+**Rendering — works on some boots, magenta on others (M13 is NOT closed).** A boot
+with only the WoW64 x86 DOOM (no A/B native build) *sometimes* shows DOOM's
+attract-mode demo animating in its window on the desktop — the E1M1 corridor, "DOOM
+Shareware" in the taskbar, correct compositing around it — and *sometimes* shows only
+the window's magenta background with no game frame at all. Measured 2026-07-13: 3 of 4
+recent boots rendered, 1 (a cold-cache boot) stayed magenta. On the magenta boot DOOM
+still called `StretchDIBits` **2598 times** (same order as the rendering boots'
+3229–6456) — so DOOM is blitting continuously; the pixels just don't reach the screen.
+That is the M13 window-DC-blit / visrgn-on-show bug below, timing-dependent (worse on
+cold-JIT boots), **still owed to the win32k lane**. So M14 rendering is a coin-flip,
+not reliably playable yet.
+
+The earlier "frames don't reach the window" read was ALSO muddied by two red herrings
+(distinct from the real intermittent bug), which is why it took so long to localize:
+  1. **win32k draws the mouse cursor (32×32, a fresh DC each time) in the foreground
+     thread's context.** Instrumenting `NtGdiStretchDIBitsInternal` gated on
+     `PsGetProcessImageFileName == "doom"` caught *those* cursor blits, not DOOM's
+     frame — they saturated any bounded trace before the 640×400 blit was sampled.
+     Gate additionally on `cxDst >= 320` to see the real frame. (A `pSurface`-null
+     early-return theory was also refuted: DOOM's window DC is `DCTYPE_DIRECT` with a
+     valid surface.)
+  2. **`VIBEOS_DOOM_AB=1` stages TWO `doom.exe`** (native arm64 in system32 + WoW64
+     x86 in syswow64). The native one crash-loops on `CsrClientConnectToServer
+     0xc0000041` and both match a `"doom"` image gate — its noise muddied the trace.
+     Drop A/B (plain `VIBEOS_FEX=1`) to diagnose the WoW64 build alone.
+
+**Input works, proven at every layer.** Injected keys travel arm64 virtio-keyboard →
+win32k `ProcessKeyEvent` (not eaten, `bPostMsg=1`) → posted to doom.exe's focus queue
+→ `co_MsqPeekHardwareMessage` returns them (`gate=1`) → the manual WoW64
+`NtUserPeekMessage` thunk down-converts `WOW64_MSG64→32` and delivers correct
+`WM_KEYDOWN/UP` to the guest with the **correct VK + scancode** (verified: ESC=0x1B,
+ENTER=0x0D, CTRL=0x11, UP=0x26, each with matching `lParam` scancode/transition
+bits). `NtUserPeekMessage` returns non-zero to the guest — DOOM's `wndProc` retrieves
+them. So the WoW64 keyboard marshalling is correct; nothing is mangled.
+
+**One playability enabler was the boot config.** `qemu/start.sh` (the agent/manual
+boot tool) did not attach virtio input devices, so a GUI guest rendered but received
+no input. `vm.py`/smoke and `run.sh --gui` already attach them; `start.sh` now does
+too (virtio kbd+mouse + modern virtio-mmio, mirroring vm.py). That fixed *input*
+availability — but rendering reliability is a separate, still-open win32k bug (next).
+
+**OWED — the remaining M14 blocker: the intermittent window-DC render (M13).** DOOM
+blits its 640×400 frame thousands of times per boot into a DC it cached via
+`GetDC(hwnd)` *before* `ShowWindow` (see the doomgeneric shape above). On show, that
+cached DCE's visible region must be recomputed (`DceResetActiveDCEs` / visrgn
+invalidation). It works most boots but not all — on a miss the cached DC keeps a stale
+(hidden→empty) visrgn, every blit clips to nothing, and the window shows only its
+magenta background despite `StretchDIBits` running continuously. This is a
+timing-dependent win32k race (worse cold-JIT), NOT a WoW64 bug. Fixing it is what turns
+M14 from "renders sometimes" into "reliably playable." The separate small-magenta
+patch at the window's top-left on *rendering* boots (a leftover un-painted
+window-background fill) plus the `rcWindow == rcClient` no-non-client-inset anomaly
+(`WM_NCCALCSIZE` client-rect writeback dropped) are lesser win32k follow-ups.

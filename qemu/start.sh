@@ -235,6 +235,14 @@ case "$ARCH" in
             -drive "if=pflash,format=raw,file=$EFIVARS"
             -drive "file=$BOOT_IMG,format=raw,if=virtio"
             -device ramfb
+            # virtio-mmio kbd+mouse — the devices arm64input.sys binds to. Mirror
+            # vm.py/smoke so manual & agent-driven boots are interactive by default
+            # (without these a GUI guest — e.g. x86 Doom under WoW64 — renders but
+            # receives no input). Modern (v2) split-queue is arm64input's exercised
+            # path; force it off legacy like smoke does.
+            -device "virtio-keyboard-device,id=arm64kbd"
+            -device "virtio-mouse-device,id=arm64mouse"
+            -global "virtio-mmio.force-legacy=false"
             "${SERIAL_FLAGS[@]}" "${QMP_FLAGS[@]}" "${GDB_FLAGS[@]}" "${DAEMON_FLAGS[@]}" "${EXTRA_FLAGS[@]}"
         )
         ;;
