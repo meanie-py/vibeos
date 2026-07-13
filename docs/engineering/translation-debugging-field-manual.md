@@ -1434,9 +1434,11 @@ CRITICAL link-order rule: this provider TU is linked AFTER the bugcheck-stub TU,
 **Root cause:** `reactos-link` (`sdk/lib/rust/reactos-link/src/lib.rs`) emitted `cargo:rerun-if-changed` for `build.rs`, `rust_watch_dirs`, and every workspace crate's `src/` + `Cargo.toml` — but **not** for `c_shims`. The shims live OUTSIDE `sdk/lib/rust`, and because the engine emits *explicit* rerun-if-changed lines, cargo's default whole-package watching is **disabled**. So a shim edit triggers no build-script rerun, cc-rs never recompiles, and the link reuses the old object while cargo reports the module fresh.
 **The cruel part — intermittency:** it only bites when you edit a `.c` **without** touching `build.rs`. Wire a new shim up (which edits `build.rs`) and it works; iterate on that same `.c` afterwards and you silently test the old binary. Cost a full arm64 boot + a wrong conclusion (an arm64 SEH "FAIL" that was really the previous build's output).
 **This is the SAME class the engine already documents** at `lib.rs:1028` for Rust path-deps ("a false-fresh that cost a debug round-trip on the WHPX spike") — fixed there for Rust crates, missed for C. Adding the Rust watch is precisely what un-watched everything else.
-**Fix:** emit `cargo:rerun-if-changed` for every `c_shims` path (landed 2026-07-12).
-**Tell:** any time a boot-visible change to a C shim "has no effect", or a print shows the value you had *before* your edit. Confirm with `ls -la --time-style=full-iso` on the object under `sdk/lib/rust/target/*/build/*/out/` vs your source mtime. **General rule: when an experiment's result contradicts the code you just wrote, first prove the code you wrote is the code that RAN.**
-**Source:** conformance-ratchet (2026-07-12).
+**Partial fix + the REMAINING layer (corrected 2026-07-13):** `reactos-link` now emits `cargo:rerun-if-changed` for every `c_shims` path (commit e98089d11d0). Verified it emits (`…/build/ntoskrnl-cargo-*/output` contains `rerun-if-changed=/tmp/vibeos/ntoskrnl/kmsafecopy.c`). **But this alone is NOT sufficient**, and the original commit message overclaimed it: there is a SECOND gate one layer out. The kernel link is a cmake `add_cargo_module` → a ninja `CUSTOM_COMMAND` whose only input is the `sdk/lib/rust/ntoskrnl-cargo` **directory** (`build ntoskrnl.exe: CUSTOM_COMMAND ../sdk/lib/rust/ntoskrnl-cargo`, `restat=1`). A directory's mtime does NOT change when a shim's *content* changes (only on create/delete/rename), so **ninja never re-invokes cargo** — and if cargo isn't invoked, its `rerun-if-changed` is never consulted. Empirically proven: `touch ntoskrnl/kmsafecopy.c && ./vibeos-cli build --arch arm64` leaves `ntoskrnl.exe` mtime UNCHANGED. So the cargo-layer fix is necessary but not sufficient; the ninja layer still gates.
+**Reliable workaround until the ninja layer is fixed:** `rm build-<arch>/ntoskrnl/ntoskrnl.exe` before the build (ninja must rebuild a missing output → invokes cargo → cargo's rerun-if-changed recompiles the edited shim). Touching a file *inside* `ntoskrnl-cargo/` does NOT work (file mtime ≠ dir mtime). A `--clean` build also works but is far slower.
+**Proper fix OWED:** make the `add_cargo_module` ninja command depend on the actual c_shim files (they live in build.rs, invisible to cmake — so either surface the list to cmake, or glob the known shim dirs as extra DEPENDS). Until then, treat any hand-edit of a `.c` shim as needing the `rm` workaround.
+**Tell:** any time a boot-visible change to a C shim "has no effect", or a print shows the value you had *before* your edit. Confirm with `stat -c %y build-<arch>/ntoskrnl/ntoskrnl.exe` before/after — if the mtime didn't move, the link was skipped. **General rule: when an experiment's result contradicts the code you just wrote, first prove the code you wrote is the code that RAN.**
+**Source:** conformance-ratchet (2026-07-12, corrected 2026-07-13).
 
 ## CRT/cnt runtime, harness flakes & kernel one-offs
 
@@ -5950,58 +5952,67 @@ exception handling actually compiles. Verify the harness before you debug the su
 
 ---
 
-### 9.69 (ROOT-CAUSED 2026-07-13) arm64 kernel-mode SEH cannot dispatch a hardware fault: RtlDispatchException wedges in a recursive fault storm → kernel stack overflow. The "silent-skip crutch" is a RED HERRING (never reached).
+### 9.69 (ROOT-CAUSED to the mechanism 2026-07-13, FIX OWED) arm64 kernel-mode SEH wedges on a real hardware fault: `RtlVirtualUnwind` decodes a GARBAGE frame size → a garbage SP → the transfer-to-handler faults on the bad SP → infinite exception-vector re-entry. NOT a fault storm, NOT the crutch, NOT a bad handler routine.
 
-**Correction to an earlier draft of this entry.** The first version blamed a DUMMY_PSEH
-"silent-skip crutch" in `ke/arm64/stubs.rs::KiDispatchException` (fabricate a zero in the faulting
-load's dest reg, `Pc += 4`, return). Instrumentation FALSIFIED that: the crutch is never reached.
-Left as a cautionary example — a hypothesis that explains the symptom is not evidence.
+This entry was WRONG TWICE before landing on the truth; both wrong versions are kept as
+cautionary notes, because each "explained the symptom" and each was falsified by an instrument.
 
-**How it surfaced.** Enabling the fault-tolerant copy (§9.59, `ntoskrnl/kmsafecopy.c`) on arm64
-looked safe on paper: the kernel *defines* the SEH personality (`llvm-nm build-arm64/ntoskrnl.exe`
-→ `T __C_specific_handler`) and dummy-pseh-verdict §C says native `__try`/`__except` "compiles
-today" on arm64. It compiles and catches a *software* raise. A boot-time self-test probing a
-genuinely-unmapped VA (`0x0000700000000000`) **WEDGED** the boot (`HANG_TIMEOUT`, no bugcheck, no
-desktop) instead of returning `STATUS_ACCESS_VIOLATION`.
+**Symptom.** Enabling the §9.59 fault-tolerant copy on arm64 wedges the boot (`HANG_TIMEOUT`, no
+desktop) when the self-test probes a genuinely-unmapped VA (`0x0000700000000000`).
 
-**What the evidence actually shows** (each datum from an instrument verified to emit):
-- `[MMDBG] FAR=0x700000000000  MmAccessFault=0xC0000005` — the fault DOES reach the arm64 data-abort
-  handler and `MmAccessFault` correctly DECLINES it (`ke/arm64/trap.rs`). Mm is innocent.
-- `KiDispatchException` IS entered, calls `RtlDispatchException` with a VALID kernel stack
-  (`SP=0xffff8000055ce090`). `[SEHDBG]` (which prints AFTER the call returns) never fires →
-  **`RtlDispatchException` never returns.**
-- GDB `bt` at the hang: stuck in `KiArm64VectorTable` (trap.S:317), `ESR=0x96000045`
-  (EC=0x25 data abort, DFSC=0x05 translation-fault-L1, WnR=1 write), and **`FAR` ≈ `SP`** — a
-  write fault on its OWN stack frame = **kernel stack overflow**.
-- First inner fault caught in GDB: **`ESR=0x86000007` → EC=0x21 Instruction Abort (same EL),
-  DFSC=0x07 translation-fault-L3.** The CPU tried to EXECUTE an unmapped address.
+**Wrong hypothesis #1 (falsified):** a DUMMY_PSEH "silent-skip crutch" in `KiDispatchException`
+swallows it. → Instrumentation: the crutch is NEVER REACHED.
+**Wrong hypothesis #2 (falsified):** a recursive FAULT STORM overflows the kernel stack. → A
+fault-chain trace at the vector entry (`[FC]`, armed on the probe FAR, prints every kernel fault)
+shows **exactly ONE** fault reaches the Rust handler. It is not a storm.
 
-**Root cause (scoped, not yet fixed).** `RtlDispatchException` (rtl-except arm64) recurses/faults
-without bound while dispatching a real hardware fault, blowing the kernel stack → the vector's own
-register-save then faults past the guard page → infinite re-entry in `KiArm64VectorTable`. The
-FIRST inner fault being an **instruction abort** points at the unwinder computing a BOGUS handler
-routine PC and CALLing it — i.e. `RtlVirtualUnwind`/`__C_specific_handler` on arm64 KERNEL frames
-returns a garbage `ExceptionRoutine` (or the scope-table walk jumps into hyperspace). Confirmed
-NOT: the silent-skip crutch (unreached), `MmAccessFault` (declines correctly), `RtlpGetStackLimits`
-(returns the KTHREAD kernel stack), `RtlPcToFileHeader` (handles kernel PCs via
-`PsLoadedModuleSpinLock`), the `.pdata` directory (populated, size 0x63d0), the arm64
-`RUNTIME_FUNCTION` layout (8 bytes, correct), and clang's arm64 `__try` codegen (emits `.pdata` +
-`__C_specific_handler` ref — verified by standalone compile). The bug is INSIDE the arm64 virtual
-unwind / handler-routine computation for kernel-mode frames.
+**What the evidence actually shows** (each datum from an instrument verified to emit — `[FC]` and
+`[SEHCTX]` both printed through the same UART path that `[UEXC]` had already validated):
+1. `[FC] n=1 EC=0x25 FAR=0x700000000000 PC=<in memcpy> SP=0xffff8000055ceb20` — the ONE fault; a
+   clean data abort in `memcpy`, on a valid kernel stack.
+2. `[SEHCTX] ctxPc=<in memcpy> ctxSp=0xffff...ceb20 ctxFp=… ctxLr=<in KmCopyRaw>` — the CONTEXT that
+   `KeTrapFrameToContext` hands `RtlDispatchException` is SANE (so hypothesis "bad context" is also
+   out). `RtlDispatchException` is entered and NEVER RETURNS (`[SEHDBG]`, which prints after it
+   returns, never fires).
+3. GDB at the hang: `PC = KiArm64VectorTable`, `ESR=0x96000045` (data abort, write), and
+   `FAR ≈ SP + 0xb0` — the exception vector faulting while writing its OWN trap frame = the stack
+   pointer is invalid. Crucially **`SP = 0xfffffffe35d96540`**, not the sane `0xffff8000055ceb20`
+   it entered with. `SP_initial + framesz = garbage` ⟹ **`framesz ≈ 0x7ffe30419a20`** — an absurd
+   frame size. So one frame's unwind decoded a garbage `FrameSize`.
 
-**Owed (task #10).** Debug arm64 kernel-mode `RtlVirtualUnwind` on a `KmProtectedCopyMemory` →
-`KmCopyRaw` → `memcpy` fault: dump the `ExceptionRoutine` it returns and the `FunctionEntry`/unwind
-codes it decodes at each frame; the instruction abort says one of them is garbage. Interim: arm64
-keeps the plain copy and the honest documented gap. The arch-neutral escape hatch (works for i386
-too, needs NO SEH) remains a Linux-extable-style fault-fixup table consulted in the page-fault
+**Mechanism.** `RtlDispatchException` finds `KmProtectedCopyMemory`'s `__except` (constant filter
+`HandlerAddress==1`), so `__C_specific_handler` calls `RtlUnwindEx(EstablisherFrame, JumpTarget,…)`
+(`rtl-except/src/arm64/except.rs:528`) to transfer control to the handler. `RtlUnwindEx` unwinds the
+REAL context frame-by-frame via `RtlVirtualUnwind`; for one frame in the
+`memcpy → KmCopyRaw → KmProtectedCopyMemory` chain it computes a garbage `FrameSize`, sets
+`Context.Sp = sp + framesz` to `0xfffffffe35d96540`, and transfers there. The very next exception
+(any) tries to save state at that garbage SP → data abort → the vector re-enters to save state →
+still-garbage SP → data abort → … infinite re-entry in `KiArm64VectorTable`. Only the FIRST fault
+reached Rust because after SP is trashed the vector's own asm prologue faults before it can call the
+Rust handler — which is exactly why the fault-storm hypothesis looked plausible from the GDB "stuck
+in the vector" view but is wrong.
+
+**Why kernel-mode only / why the self-test was worth it.** `seh_poc.c` (a SOFTWARE raise) passes on
+arm64 through the SAME `RtlDispatchException` — because it never traverses the `memcpy`/CRT-shim
+frames whose unwind data trips the decoder. Shipping the `cfg` on the strength of "the symbol
+exists + software raise works" would have turned a hostile-pointer bugcheck into a silent HANG.
+
+**FIX OWED (task #10), now tractable.** Break at `RtlVirtualUnwind` (runtime addr = static +
+reloc), dump `ControlPc` (the frame) and the resulting `Context.Sp` on each call; the call where Sp
+jumps to `0xffff_fffe_…` is the culprit frame. Then decode that function's `.pdata`/`.xdata`
+(`llvm-objdump -s -j .pdata / -j .xdata`) and compare against `unwind_decode::virtual_unwind_xdata`
+/ the packed-format `FrameSize` reconstruction in `except.rs:205-285`. The bug is a `FrameSize`
+(or code-word/word_cursor) mis-decode for a specific unwind-info shape the CRT shims emit. Interim:
+arm64 keeps the plain copy + honest documented gap; i386 likewise. Arch-neutral escape (needs NO
+working SEH, closes both): a Linux-extable-style fault-fixup table consulted in the page-fault
 handler.
 
-**Reusable lesson.** This entry was WRONG once (blamed the crutch) and its instrument lied once
-(a stale-shim build reported the previous kernel's verdict, §"Editing a kernel C SHIM…"). The
-discipline that eventually cracked it: (1) verify the instrument EMITS before trusting its silence
-— `[SEHDBG]:0` only meant something because `[UEXC]:2` proved the same macro worked; (2) probe an
-address that ACTUALLY faults — `0x1` is mapped on arm64, so it proved nothing; (3) when the result
-contradicts the code you wrote, first prove the code you wrote is the code that RAN.
+**Reusable lessons.** (a) A hypothesis that explains the symptom is not evidence — this one was
+wrong twice. (b) Verify the instrument EMITS before trusting its silence (`[FC]:1` only meant
+something because `[UEXC]` proved the macro). (c) Probe an address that ACTUALLY faults (`0x1` is
+mapped on arm64). (d) "Stuck in the exception vector" can be an SP-corruption artifact, not a fault
+storm — read the SP and compare to entry.
+
 ---
 
 ### 9.70 (ROOT-CAUSED + FIXED 2026-07-13) An SEH *filter expression* translated into a runtime value — `GlobalLock` returned NULL unconditionally, and every edit box in the OS was dead
