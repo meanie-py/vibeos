@@ -2813,3 +2813,303 @@ pub unsafe extern "C" fn _strlwr_s(str_: *mut u8, len: usize) -> i32 {
 pub unsafe extern "C" fn _strupr_s(str_: *mut u8, len: usize) -> i32 {
     strcase_s_core(str_, len, true)
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WAVE 8 — the WIDE case-insensitive family
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// The wide mirror of wave 7, and it is NOT a mirror. Three differences, each of
+// which a "same thing but u16" transcription would have gotten wrong:
+//
+//  1. NO C-locale fast path in the comparer. `_strnicmp_l` folds INLINE when
+//     `lc_handle[LC_CTYPE]` is unset; `_wcsicmp_l` always calls `_towlower_l`.
+//     That is fine only because `_towlower_l` has the fast path INSIDE it
+//     (`if(c >= 'A' && c <= 'Z') return c + 'a' - 'A';` — checked, not assumed).
+//
+//  2. The comparers return the RAW u16 difference — `return c1 - c2;` with no
+//     clamp. `wcscmp` (wave 4) CLAMPS. Same file, same shape, different contract.
+//
+//  3. The folders MUTATE BEFORE THEY FAIL. `_strlwr_s_l` scans for the terminator
+//     FIRST and errors without touching the buffer; `_wcslwr_s_l` folds as it
+//     scans, so on a string with no terminator inside `n` the caller's buffer
+//     comes back with its first `n` chars ALREADY FOLDED and then `str[0] = 0`.
+//     Its front door also zeroes `*str` where the narrow one does not.
+//     classify compares the full buffer, so this is graded, not hoped for.
+//
+// The C's own comment on the failure arm is worth keeping:
+//     /* MSDN claims that the function should return and set errno to
+//      * ERANGE, which doesn't seem to be true based on the tests. */
+// It returns EINVAL. Bug-for-bug.
+
+/// The C locale's `_towlower_l` (wcs.c) — ASCII fold, everything else through.
+#[inline]
+fn cw_lower(c: u16) -> u16 {
+    if c >= b'A' as u16 && c <= b'Z' as u16 {
+        c + 32 // c + 'a' - 'A'
+    } else {
+        c
+    }
+}
+#[inline]
+fn cw_upper(c: u16) -> u16 {
+    if c >= b'a' as u16 && c <= b'z' as u16 {
+        c - 32
+    } else {
+        c
+    }
+}
+
+/// `_wcsnicmp_l(s1, s2, n, NULL)` — C locale. Returns the RAW diff (no clamp).
+#[inline]
+unsafe fn wcsnicmp_core(s1: *const u16, s2: *const u16, mut n: usize) -> i32 {
+    if n == 0 {
+        return 0; // before the front door
+    }
+    // C: `if(!CHECK_PMT(str1) || !CHECK_PMT(str2))` — the || SHORT-CIRCUITS, so a
+    // NULL str1 fires the handler exactly ONCE and never evaluates the str2 check.
+    if !check_pmt(!s1.is_null()) || !check_pmt(!s2.is_null()) {
+        return NLSCMPERROR;
+    }
+    let (mut p, mut q) = (s1, s2);
+    let (mut c1, mut c2);
+    loop {
+        c1 = cw_lower(*p);
+        p = p.add(1);
+        c2 = cw_lower(*q);
+        q = q.add(1);
+        n -= 1; // C: `while(--n && c1 && (c1 == c2))`
+        if n == 0 || c1 == 0 || c1 != c2 {
+            break;
+        }
+    }
+    c1 as i32 - c2 as i32 // RAW — wcscmp clamps, this does not
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32 {
+    wcsnicmp_core(s1, s2, n)
+}
+
+/// `_wcsicmp_l(s1, s2, NULL)`. Unlike `_wcsnicmp` there is no count, so no
+/// `!n` early-out: the front door is the first thing that runs.
+#[no_mangle]
+pub unsafe extern "C" fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32 {
+    if !check_pmt(!s1.is_null()) || !check_pmt(!s2.is_null()) {
+        return NLSCMPERROR;
+    }
+    let (mut p, mut q) = (s1, s2);
+    let (mut c1, mut c2);
+    loop {
+        c1 = cw_lower(*p);
+        p = p.add(1);
+        c2 = cw_lower(*q);
+        q = q.add(1);
+        if c1 == 0 || c1 != c2 {
+            break;
+        }
+    }
+    c1 as i32 - c2 as i32
+}
+
+/// `_wcslwr_s_l` / `_wcsupr_s_l` with the C locale.
+///
+/// Folds AS it scans — so a string with no terminator inside `n` comes back with
+/// its first `n` chars folded and `str[0] = 0`. The narrow twin does not do this.
+/// Handler never fires (hand-rolled errno).
+#[inline]
+unsafe fn wcscase_s_core(str_: *mut u16, n: usize, upper: bool) -> i32 {
+    if str_.is_null() || n == 0 {
+        if !str_.is_null() {
+            *str_ = 0; // the narrow `_strlwr_s_l` does NOT do this
+        }
+        *_errno() = EINVAL; // errno only — no handler
+        return EINVAL;
+    }
+    let mut left = n;
+    let mut ptr = str_;
+    while left != 0 {
+        left -= 1;
+        if *ptr == 0 {
+            return 0;
+        }
+        *ptr = if upper { cw_upper(*ptr) } else { cw_lower(*ptr) };
+        ptr = ptr.add(1);
+    }
+    // No terminator within n. MSDN says ERANGE; msvcrt returns EINVAL (Wine
+    // verified this against the real DLL — see the comment in wcs.c).
+    *str_ = 0;
+    *_errno() = EINVAL;
+    EINVAL
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _wcslwr_s(str_: *mut u16, n: usize) -> i32 {
+    wcscase_s_core(str_, n, false)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _wcsupr_s(str_: *mut u16, n: usize) -> i32 {
+    wcscase_s_core(str_, n, true)
+}
+
+/// `_wcslwr(str)` == `_wcslwr_s_l(str, -1, NULL)`; `_wcsupr` likewise via
+/// `_wcsupr_l`. `n = (size_t)-1` means the terminator is always found, so the
+/// EINVAL arm is unreachable — but the errno/return path is inherited, and a NULL
+/// str still takes the front door.
+#[no_mangle]
+pub unsafe extern "C" fn _wcslwr(str_: *mut u16) -> *mut u16 {
+    wcscase_s_core(str_, usize::MAX, false);
+    str_
+}
+#[no_mangle]
+pub unsafe extern "C" fn _wcsupr(str_: *mut u16) -> *mut u16 {
+    wcscase_s_core(str_, usize::MAX, true);
+    str_
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WAVE 9 — the wide ctype family (`isw*`), 26 functions
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// These look locale-bound and are NOT. `_iswctype_l` takes a `_locale_t` and
+// then **never uses it**:
+//
+//     INT CDECL _iswctype_l( wchar_t wc, wctype_t type, _locale_t locale )
+//     {
+//         if (wc == WEOF)  return 0;
+//         if (wc < 256)    return MSVCRT__pwctype[wc] & type;
+//         if (!GetStringTypeW(CT_CTYPE1, &wc, 1, &ct)) return 0;
+//         return ct & type;                          /* `locale` unused */
+//     }
+//
+// So there is no `locinfo->...` field to reach into — no magic-offset problem —
+// and the whole family (including every `_l` variant) is flippable.
+//
+// Better still: reading `MSVCRT__pwctype` and calling `GetStringTypeW` means the
+// flip is locale-CORRECT, not merely C-locale-correct. In the DLL that global is
+// msvcrt's own table (repopulated by setlocale) and GetStringTypeW is kernel32's
+// real Unicode classifier. This carries NONE of the caveat the parse and
+// case-folding families carry — it inherits msvcrt's locale state instead of
+// modelling it.
+//
+// `towupper`/`towlower` are NOT here: `_towlower_l` reads
+// `locinfo->lc_handle[LC_CTYPE]` and calls LCMapStringW, and that field IS a
+// struct offset we don't own. They stay C until Phase D.
+
+extern "C" {
+    /// msvcrt's wide ctype table — a POINTER to 256 WORDs of mask bits.
+    /// In msvcrt.dll this is the real table; in the harness, subjectimpl.c's.
+    /// (Data, so no calling convention — `extern "C"` is right here.)
+    static MSVCRT__pwctype: *const u16;
+}
+
+// GetStringTypeW is `WINAPI` — i.e. **stdcall on i386** (`_GetStringTypeW@16`) and
+// cdecl on amd64/arm64. `extern "system"` is the one that resolves per-arch;
+// `extern "C"` hardcodes cdecl and silently links on amd64/arm64 while failing i386
+// with `_GetStringTypeW: i386 cdecl — missing symbol / wrong ABI`. This is the
+// exact trap AGENTS.md calls out, and it cost an i386 gate.
+//
+// Worth noting HOW it was caught: `cargo check --target i686-pc-windows-gnu` passed
+// clean, because `check` does not LINK. Three green cross-checks proved nothing
+// about this. The gate's ABI verifier is what named it.
+extern "system" {
+    /// kernel32's Unicode classifier — the `wc >= 256` path.
+    fn GetStringTypeW(kind: u32, src: *const u16, count: i32, chartype: *mut u16) -> i32;
+}
+
+// ctype.h mask bits.
+const CT_UPPER: u16 = 0x0001;
+const CT_LOWER: u16 = 0x0002;
+const CT_DIGIT: u16 = 0x0004;
+const CT_SPACE: u16 = 0x0008;
+const CT_PUNCT: u16 = 0x0010;
+const CT_CONTROL: u16 = 0x0020;
+const CT_BLANK: u16 = 0x0040;
+const CT_HEX: u16 = 0x0080;
+const CT_ALPHA: u16 = 0x0100 | CT_UPPER | CT_LOWER;
+/// `CT_CTYPE1` — GetStringTypeW's "character type 1" request.
+const CT_CTYPE1: u32 = 1;
+/// `WEOF` — the wide end-of-file sentinel, classified as nothing.
+const WEOF: u32 = 0xFFFF;
+
+/// `_iswctype_l(wc, type, locale)` — `locale` is accepted and ignored, exactly as
+/// in the C. Everything else in this section is a mask applied through here.
+#[no_mangle]
+pub unsafe extern "C" fn _iswctype_l(wc: u32, ty: u16, _locale: *mut core::ffi::c_void) -> i32 {
+    if wc == WEOF {
+        return 0;
+    }
+    if wc < 256 {
+        return ((*MSVCRT__pwctype.add(wc as usize)) & ty) as i32;
+    }
+    let c = wc as u16;
+    let mut ct: u16 = 0;
+    if GetStringTypeW(CT_CTYPE1, &c, 1, &mut ct) == 0 {
+        return 0; // the C ERR()s and returns 0
+    }
+    (ct & ty) as i32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn iswctype(wc: u32, ty: u16) -> i32 {
+    _iswctype_l(wc, ty, core::ptr::null_mut())
+}
+
+/// Each `isw*` is one mask through `_iswctype_l`. The masks are transcribed from
+/// the C, not reasoned about — `iswgraph` and `iswprint` differ only by _BLANK,
+/// and `iswblank` is not a mask at all (see below).
+macro_rules! isw {
+    ($l:ident, $plain:ident, $mask:expr) => {
+        #[no_mangle]
+        pub unsafe extern "C" fn $l(wc: u32, locale: *mut core::ffi::c_void) -> i32 {
+            _iswctype_l(wc, $mask, locale)
+        }
+        #[no_mangle]
+        pub unsafe extern "C" fn $plain(wc: u32) -> i32 {
+            _iswctype_l(wc, $mask, core::ptr::null_mut())
+        }
+    };
+}
+
+isw!(_iswalnum_l,  iswalnum,  CT_ALPHA | CT_DIGIT);
+isw!(_iswalpha_l,  iswalpha,  CT_ALPHA);
+isw!(_iswcntrl_l,  iswcntrl,  CT_CONTROL);
+isw!(_iswdigit_l,  iswdigit,  CT_DIGIT);
+isw!(_iswgraph_l,  iswgraph,  CT_ALPHA | CT_DIGIT | CT_PUNCT);
+isw!(_iswlower_l,  iswlower,  CT_LOWER);
+isw!(_iswprint_l,  iswprint,  CT_ALPHA | CT_BLANK | CT_DIGIT | CT_PUNCT);
+isw!(_iswpunct_l,  iswpunct,  CT_PUNCT);
+isw!(_iswspace_l,  iswspace,  CT_SPACE);
+isw!(_iswupper_l,  iswupper,  CT_UPPER);
+isw!(_iswxdigit_l, iswxdigit, CT_HEX);
+
+/// `_iswblank_l` is the one that is NOT just a mask:
+///
+///     return wc == '\t' || _iswctype_l( wc, _BLANK, locale );
+///
+/// TWO things hide in that line. The explicit TAB is load-bearing — a bare _BLANK
+/// mask would still match TAB in the C-locale table, but not necessarily under a
+/// locale whose table drops it. And C's `||` **NORMALISES to 0/1**, so this is the
+/// only member of the family that returns a BOOLEAN. Every other `isw*` returns
+/// the raw masked bits (`iswspace(' ')` is 8, not 1).
+///
+/// Returning the raw bit here gave `iswblank(' ') == 64` against msvcrt's `1`.
+/// The exhaustive sweep caught it on the first character it could.
+#[no_mangle]
+pub unsafe extern "C" fn _iswblank_l(wc: u32, locale: *mut core::ffi::c_void) -> i32 {
+    if wc == b'\t' as u32 {
+        return 1;
+    }
+    (_iswctype_l(wc, CT_BLANK, locale) != 0) as i32 // the `||` normalises
+}
+#[no_mangle]
+pub unsafe extern "C" fn iswblank(wc: u32) -> i32 {
+    _iswblank_l(wc, core::ptr::null_mut())
+}
+
+/// `iswalpha_l` — msvcrt exports this WITHOUT the leading underscore too (an
+/// alias of `_iswalpha_l`); it is a distinct export ordinal, so it needs its own
+/// symbol.
+#[no_mangle]
+pub unsafe extern "C" fn iswalpha_l(wc: u32, locale: *mut core::ffi::c_void) -> i32 {
+    _iswctype_l(wc, CT_ALPHA, locale)
+}

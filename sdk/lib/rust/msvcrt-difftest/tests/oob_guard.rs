@@ -86,6 +86,11 @@ extern "C" {
     fn _memicmp(a: *const c_void, b: *const c_void, n: usize) -> i32;
     fn _strlwr_s(s: *mut u8, len: usize) -> i32;
     fn _strupr_s(s: *mut u8, len: usize) -> i32;
+
+    // wave 8 — bounded WIDE case-folders/comparers.
+    fn _wcsnicmp(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn _wcslwr_s(s: *mut u16, n: usize) -> i32;
+    fn _wcsupr_s(s: *mut u16, n: usize) -> i32;
 }
 
 const PAGE: usize = 4096;
@@ -289,6 +294,18 @@ fn main() {
         })),
         ("_strupr_s", Box::new(move || unsafe {
             core::hint::black_box(_strupr_s(guarded(k), k));
+        })),
+
+        // ── wave 8 ────────────────────────────────────────────────────────────
+        ("_wcsnicmp", Box::new(move || unsafe {
+            let (a, b) = (wguarded(k), wguarded(k));
+            core::hint::black_box(_wcsnicmp(a, b, k));
+        })),
+        ("_wcslwr_s", Box::new(move || unsafe {
+            core::hint::black_box(_wcslwr_s(wguarded(k), k));
+        })),
+        ("_wcsupr_s", Box::new(move || unsafe {
+            core::hint::black_box(_wcsupr_s(wguarded(k), k));
         })),
     ];
 
