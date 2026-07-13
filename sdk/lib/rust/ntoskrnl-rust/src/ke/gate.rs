@@ -244,6 +244,30 @@ unsafe fn KeSignalGateBoostPriorityImpl(Gate: PKGATE) {
                 continue;
             }
 
+            // §9.56 tripwire 0x5F — a popped gate waiter must be in GateWait
+            // (set under the thread lock we now hold). Anything else = a
+            // stale wait block on the gate list → we are about to spuriously
+            // ready a thread that isn't parked here (0x5E's gate twin).
+            #[cfg(feature = "smp")]
+            {
+                if *kt_State(WaitThread) != GateWait as u8 {
+                    crate::dbg_print!(
+                        b"[RQ5F] gate signal popped non-GateWait thr=%p state=%u gate=%p\n\0",
+                        WaitThread,
+                        *kt_State(WaitThread) as u32,
+                        Gate,
+                    );
+                    ntkrnl_sys::ddk::KeBugCheckEx(
+                        0x96,
+                        WaitThread as ntkrnl_sys::ddk::ULONG_PTR,
+                        ((0x5Fu64 << 40) | ((*kt_State(WaitThread)) as u64) << 8)
+                            as ntkrnl_sys::ddk::ULONG_PTR,
+                        Gate as ntkrnl_sys::ddk::ULONG_PTR,
+                        0,
+                    );
+                }
+            }
+
             RemoveEntryList(core::ptr::addr_of_mut!((*WaitBlock).WaitListEntry));
 
             (*WaitThread).WaitStatus = STATUS_SUCCESS as _;

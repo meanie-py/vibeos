@@ -1393,6 +1393,23 @@ pub unsafe fn rq_inflight_unmark(thread: ddk::PKTHREAD) {
     }
 }
 
+/// §9.56 requeue variant — for the LEGAL re-defer sites that reposition a
+/// thread already in ready-flight (KiSetPriorityThread / affinity moves /
+/// standby displacement: remove-or-displace then re-defer). Skips the 0x59
+/// in-flight collision check (the thread is SUPPOSED to still be marked) and
+/// keeps the mark live — it is still in flight until promoted to Running.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiInsertDeferredReadyListRequeue(thread: ddk::PKTHREAD) {
+    let prcb = KeGetCurrentPrcb();
+    let _ = rq_inflight_mark(thread); // ensure marked; collision expected/legal
+    kt_set_state(thread, ddk::_KTHREAD_STATE_DeferredReady as u8);
+    kt_set_deferred_processor(thread, (*prcb).Number as u8);
+    (*thread).__bindgen_anon_3.SwapListEntry.Next = (*prcb).DeferredReadyListHead.Next;
+    (*prcb).DeferredReadyListHead.Next =
+        core::ptr::addr_of_mut!((*thread).__bindgen_anon_3.SwapListEntry);
+}
+
 /// KiInsertDeferredReadyList — SMP: push onto this CPU's deferred-ready list.
 #[cfg(feature = "smp")]
 #[inline]
@@ -1400,7 +1417,12 @@ pub unsafe fn rq_inflight_unmark(thread: ddk::PKTHREAD) {
 pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
     let prcb = KeGetCurrentPrcb();
 
-    // §9.56 double-defer oracle (0x59): see RQ_INFLIGHT above.
+    // §9.56 double-defer oracle (0x59) — LIFECYCLE v2 (2026-07-13): the mark
+    // now lives from WAKE (this push) to PROMOTION-to-Running (unmark at the
+    // 6 promote sites), not to drain-pop. v1 (unmark at pop) was blind to the
+    // observed sequential double: wake→pop→[2nd wake lands here]→insert→…
+    // A collision here = a second wake of a thread already in ready-flight —
+    // the true §9.56 first-illegal event; track_caller names the waker.
     if rq_inflight_mark(thread) {
         let caller_line = core::panic::Location::caller().line() as u64;
         crate::driver_ddk::DbgPrint(

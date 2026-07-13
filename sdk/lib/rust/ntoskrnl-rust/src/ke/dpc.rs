@@ -505,6 +505,8 @@ pub unsafe extern "system" fn KiQuantumEnd() {
     (*Prcb).CurrentThread = NextThread;
 
     *kt_State(NextThread) = Running;
+    #[cfg(feature = "smp")]
+    ntkrnl_sys::inline::ke::rq_inflight_unmark(NextThread);
     (*Thread).WaitReason = _KWAIT_REASON_WrQuantumEnd as u8;
 
     KxQueueReadyThread(Thread, Prcb);

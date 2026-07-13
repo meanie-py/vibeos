@@ -207,10 +207,6 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
         ) as PKTHREAD;
         ListEntry = (*ListEntry).Next;
 
-        // §9.56 double-defer oracle: this thread has left the deferred list.
-        #[cfg(feature = "smp")]
-        ntkrnl_sys::inline::ke::rq_inflight_unmark(Thread);
-
         KiDeferredReadyThread(Thread);
 
         if ListEntry.is_null() {
@@ -603,11 +599,15 @@ unsafe fn KiSwapThreadImpl(
         (*Prcb).NextThread = core::ptr::null_mut();
         (*Prcb).CurrentThread = NextThread;
         *kt_State(NextThread) = Running;
+        #[cfg(feature = "smp")]
+        ntkrnl_sys::inline::ke::rq_inflight_unmark(NextThread);
     } else {
         NextThread = KiSelectReadyThread(0, Prcb);
         if !NextThread.is_null() {
             (*Prcb).CurrentThread = NextThread;
             *kt_State(NextThread) = Running;
+            #[cfg(feature = "smp")]
+            ntkrnl_sys::inline::ke::rq_inflight_unmark(NextThread);
         } else {
             InterlockedOrSetMember!(&mut KiIdleSummary, (*Prcb).SetMember);
             NextThread = (*Prcb).IdleThread;
@@ -780,6 +780,9 @@ unsafe fn KiSetPriorityThreadImpl(
                         }
 
                         (*Thread).Priority = Priority as SCHAR;
+                        #[cfg(feature = "smp")]
+                        ntkrnl_sys::inline::ke::KiInsertDeferredReadyListRequeue(Thread);
+                        #[cfg(not(feature = "smp"))]
                         KiInsertDeferredReadyList(Thread);
                         KiReleasePrcbLock(Prcb);
                     } else {
@@ -804,6 +807,9 @@ unsafe fn KiSetPriorityThreadImpl(
                         if !new_th.is_null() {
                             *kt_State(new_th) = Standby;
                             (*Prcb).NextThread = new_th;
+                            #[cfg(feature = "smp")]
+                            ntkrnl_sys::inline::ke::KiInsertDeferredReadyListRequeue(Thread);
+                            #[cfg(not(feature = "smp"))]
                             KiInsertDeferredReadyList(Thread);
                         }
                     }
@@ -894,13 +900,13 @@ unsafe fn KiUpdateEffectiveAffinityThread(Thread: PKTHREAD) {
         } else if *kt_State(Thread) == Standby {
             (*Prcb).NextThread = KiSelectNextThread(Prcb);
             *kt_State((*Prcb).NextThread) = Standby;
-            KiInsertDeferredReadyList(Thread);
+            ntkrnl_sys::inline::ke::KiInsertDeferredReadyListRequeue(Thread);
         } else if *kt_State(Thread) == Ready {
             if RemoveEntryList(core::ptr::addr_of_mut!((*Thread).__bindgen_anon_3.WaitListEntry) as PLIST_ENTRY)
             {
                 (*Prcb).ReadySummary &= !(1u32 << ((*Thread).Priority as u32));
             }
-            KiInsertDeferredReadyList(Thread);
+            ntkrnl_sys::inline::ke::KiInsertDeferredReadyListRequeue(Thread);
         }
     }
 
@@ -1018,6 +1024,8 @@ pub unsafe extern "system" fn NtYieldExecution() -> NTSTATUS {
             (*Prcb).NextThread = core::ptr::null_mut();
             (*Prcb).CurrentThread = NextThread;
             *kt_State(NextThread) = Running;
+            #[cfg(feature = "smp")]
+            ntkrnl_sys::inline::ke::rq_inflight_unmark(NextThread);
 
             (*Thread).WaitReason = _KWAIT_REASON_WrYieldExecution as UCHAR;
             KxQueueReadyThread(Thread, Prcb);

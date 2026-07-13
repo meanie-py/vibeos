@@ -197,6 +197,37 @@ pub unsafe extern "C" fn KiUnwaitThread(Thread: PKTHREAD, WaitStatus: isize, Inc
 }
 
 unsafe fn KiUnwaitThreadImpl(Thread: PKTHREAD, WaitStatus: isize, Increment: KPRIORITY) {
+    // §9.56 tripwire 0x5E — SPURIOUS UNWAIT. Every legal unwait targets a
+    // thread whose commit already set State=Waiting BEFORE the dispatcher
+    // lock dropped (wait.rs commit order; NT asserts the same). Unwaiting a
+    // Running/Ready/Standby/DeferredReady thread is the §9.56 first-illegal
+    // event: it re-readies a thread that never parked (or parked and already
+    // woke), deferred-parking a RUNNING thread → the preempt requeue then
+    // clobbers the deferred SLIST via the WaitListEntry union (0x5D's catch,
+    // one level downstream). The WaitStatus param names the waker class:
+    // 0x102=timer expiry, 0x100=alert, 0=object satisfy, 0x100(APC)=…
+    #[cfg(feature = "smp")]
+    {
+        if *kt_State(Thread) != Waiting {
+            crate::dbg_print!(
+                b"[RQ5E] UNWAIT of non-Waiting thr=%p state=%u delivering wstat=%p reason=%u\n\0",
+                Thread,
+                *kt_State(Thread) as u32,
+                WaitStatus as usize as *const u8,
+                (*Thread).WaitReason as u32,
+            );
+            ntkrnl_sys::ddk::KeBugCheckEx(
+                0x96,
+                Thread as ntkrnl_sys::ddk::ULONG_PTR,
+                ((0x5Eu64 << 40)
+                    | ((*kt_State(Thread)) as u64) << 8
+                    | ((WaitStatus as u64) & 0xFF)) as ntkrnl_sys::ddk::ULONG_PTR,
+                WaitStatus as ntkrnl_sys::ddk::ULONG_PTR,
+                (*Thread).WaitReason as u64 as ntkrnl_sys::ddk::ULONG_PTR,
+            );
+        }
+    }
+
     KiUnlinkThread(Thread, WaitStatus);
 
     (*Thread).__bindgen_anon_1.__bindgen_anon_1.AdjustIncrement = Increment as i8;
@@ -392,6 +423,8 @@ unsafe fn KiExitDispatcherImpl(OldIrql: KIRQL) {
     (*Prcb).CurrentThread = NextThread;
 
     *kt_State(NextThread) = Running;
+    #[cfg(feature = "smp")]
+    ntkrnl_sys::inline::ke::rq_inflight_unmark(NextThread);
 
     KxQueueReadyThread(Thread, Prcb);
 

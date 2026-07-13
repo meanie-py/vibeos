@@ -104,6 +104,8 @@ pub unsafe extern "system" fn KiDpcInterruptHandler() {
         (*Prcb).CurrentThread = NewThread;
 
         (*NewThread).__bindgen_anon_5.__bindgen_anon_6.State = KTHREAD_STATE::Running as u8;
+        #[cfg(feature = "smp")]
+        ntkrnl_sys::inline::ke::rq_inflight_unmark(NewThread);
         (*OldThread).WaitReason = KWAIT_REASON::_KWAIT_REASON_WrDispatchInt as u8;
 
         KxQueueReadyThread(OldThread, Prcb);
