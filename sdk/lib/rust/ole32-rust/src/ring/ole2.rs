@@ -2306,7 +2306,7 @@ pub unsafe extern "system" fn ReleaseStgMedium(pmedium: *mut STGMEDIUM) {
             if (*pmedium).pUnkForRelease.is_null()
                 && !(*pmedium).__bindgen_anon_1.hEnhMetaFile.is_null()
             {
-                DeleteEnhMetaFile((*pmedium).__bindgen_anon_1.hEnhMetaFile as *mut c_void);
+                DeleteEnhMetaFile((*pmedium).__bindgen_anon_1.hEnhMetaFile);
             }
         }
         // TYMED_NULL and everything else

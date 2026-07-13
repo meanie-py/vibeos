@@ -2243,13 +2243,13 @@ pub unsafe extern "system" fn STGMEDIUM_UserFree(flags: *mut ULONG, med: *mut ST
     // i386 stdcall break), so the qualification is about name resolution, not ABI.
     match (*med).tymed {
         TYMED_NULL | TYMED_FILE | TYMED_ISTREAM | TYMED_ISTORAGE => {
-            crate::ole32_exports::ReleaseStgMedium(med);
+            ReleaseStgMedium(med);
         }
         TYMED_HGLOBAL | TYMED_GDI | TYMED_MFPICT | TYMED_ENHMF => {
             if LOWORD(*flags) as DWORD == MSHCTX_INPROC {
                 (*med).tymed = TYMED_NULL;
             }
-            crate::ole32_exports::ReleaseStgMedium(med);
+            ReleaseStgMedium(med);
         }
         _ => {
             RaiseException(DV_E_TYMED as DWORD, 0, 0, core::ptr::null());

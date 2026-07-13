@@ -274,7 +274,7 @@ pub unsafe extern "system" fn OleCreateFromDataEx(
         return hr;
     }
 
-    hr = crate::ole32_exports::OleLoad(stg, iid, client_site, obj);
+    hr = OleLoad(stg, iid, client_site, obj);
     if FAILED(hr) {
         return hr;
     }
@@ -401,7 +401,7 @@ pub unsafe extern "system" fn OleCreateStaticFromData(
             clsid = CLSID_Picture_Metafile;
         }
         _ => {
-            crate::ole32_exports::ReleaseStgMedium(core::ptr::addr_of_mut!(stgmedium));
+            ReleaseStgMedium(core::ptr::addr_of_mut!(stgmedium));
             return DV_E_CLIPFORMAT;
         }
     }
@@ -502,7 +502,7 @@ pub unsafe extern "system" fn OleCreateStaticFromData(
 
     // end:
     if stgmedium.tymed == TYMED_NULL {
-        crate::ole32_exports::ReleaseStgMedium(core::ptr::addr_of_mut!(stgmedium));
+        ReleaseStgMedium(core::ptr::addr_of_mut!(stgmedium));
     }
     if !persist.is_null() {
         IPersistStorage_Release(persist);
@@ -570,12 +570,12 @@ pub unsafe extern "system" fn OleCreateFromFileEx(
         i += 1;
     }
 
-    hr = crate::ole32_exports::CreateFileMoniker(filename, &mut mon);
+    hr = CreateFileMoniker(filename, &mut mon);
     if FAILED(hr) {
         return hr;
     }
 
-    hr = crate::ole32_exports::BindMoniker(
+    hr = BindMoniker(
         mon,
         0,
         core::ptr::addr_of!(IID_IDataObject),
@@ -593,7 +593,7 @@ pub unsafe extern "system" fn OleCreateFromFileEx(
             break 'end;
         }
 
-        hr = crate::ole32_exports::OleLoad(
+        hr = OleLoad(
             stg,
             core::ptr::addr_of!(IID_IUnknown),
             client_site,
@@ -637,7 +637,7 @@ pub unsafe extern "system" fn OleCreateFromFileEx(
                     hr = IOleCache_SetData(cache, fmts.add(i as usize), &mut med, 1 /* TRUE */);
                 }
                 if FAILED(hr) {
-                    crate::ole32_exports::ReleaseStgMedium(&mut med);
+                    ReleaseStgMedium(&mut med);
                     break 'end;
                 }
                 i += 1;

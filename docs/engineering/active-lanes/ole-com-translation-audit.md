@@ -4,30 +4,48 @@
 below were produced against the 2026-07-11 tree + the main checkout's `build-amd64`
 binaries.*
 
-## ✅ STATUS (2026-07-12, later) — **ole32's mechanical ring is Rust too. 29 TUs flipped, boots ×3.**
+## ✅ STATUS (2026-07-12, final) — **ole32 is 100% Rust. All 29 TUs flipped, boots ×3.**
 
-Landed `58f4446bb03`. `ole32.dll` now runs Rust for the COM core **and** the whole
-mechanical ring; full cold `vibeos-cli gate` ×3 green (build + lint + smoke on i386/amd64/
-arm64 + net).
+Landed `98ac36e4d4d`. `ole32.dll`'s C `SOURCE` list in `dll/win32/ole32/CMakeLists.txt` is
+now **empty** — every TU is Rust. Only `guid.c` and the generated RPC proxies remain C.
+Full `vibeos-cli gate` ×3 green (build + lint + smoke on i386/amd64/arm64 + net), on a tree
+that already carries the stable-toolchain lane's Axis B change.
 
-**Flipped this pass (23 TUs, ~23K LOC):** `ifs` (CoTaskMemAlloc/CoGetMalloc + IMallocSpy),
-`hglobalstream`, `memlockbytes`, `filelockbytes`, `moniker` (the Running Object Table +
-MonikerMarshal), all six monikers (file/item/anti/class/pointer/composite), `bindctx`,
-`errorinfo`, `enumx`, `dictionary`, `ole2` (OleInitialize/DoDragDrop/RegisterDragDrop),
-`ole2impl`, `ole2stubs`, `ole32_main`, `clipboard`, `comcat`, `oleproxy`, `usrmarshal`
-(the NDR layer oleaut32 consumes).
+**Tier-D, flipped this pass (6 TUs, 20K LOC):** `storage32` (10.3K — the compound-file
+implementation: IStorage, the dir-entry tree, block chains, transacted snapshots),
+`stg_stream` (IStream inside a compound file), `stg_prop` (IPropertyStorage /
+IPropertySetStorage — the property-set on-disk format), `datacache` (the OLE presentation
+cache), `defaulthandler` (the default object handler), `oleobj` (the advise holders).
 
-**Still C — Tier-D (translated + staged, NOT integrated):** `storage32` (10.3K LOC),
-`stg_prop`, `stg_stream`, `datacache`, `defaulthandler`, `oleobj`. The Rust is in
-`~/vibeos-rust-staging/ole32-tierd/*.rs` (paid for; the durable per-function copies are in
-`tools/rustconv/.responses/`). **Do NOT re-translate.** To finish: run
-`tools/integrate_ole32_ring.py` over them, wire into `ring/mod.rs` + the prelude glob,
-burn down (expect a similar shape to the ring: a few systemic roots, then per-file agents),
-flip the six `.c`, gate ×3.
+**Earlier passes:** the COM core (compobj + marshal/stubmanager/rpc/ftmarshal/git) and the
+23-TU mechanical ring (`58f4446bb03`).
 
 **`guid.c` must stay C forever** — it is an `#include <initguid.h>` TU whose entire job is
 emitting the moniker CLSIDs as *data*. (Same trap the oleaut32 flip hit: comment out an
-initguid TU and you silently delete every GUID it was defining.)
+initguid TU and you silently delete every GUID it was defining.) None of the six Tier-D
+TUs included initguid.h, so the flip was safe — but **check this before every flip**.
+
+### What Tier-D actually cost, and where the time went
+
+Not the translation — that was already paid for. The cost was that **rustconv translates
+FUNCTIONS, not headers, and not file-scope data**. Three whole categories of the C were
+simply absent from the output and had to be authored:
+
+1. **`storage32.h` itself.** The `StorageBaseImpl` class hierarchy, its virtual-method
+   table, the 16 `static inline` dispatchers through it, `DirEntry`, and every on-disk
+   `OFFSET_*`/`BLOCK_*`/`DIRENTRY_*`/`RANGELOCK_*` constant. `storage32.rs` alone referenced
+   these ~130 times, as `extern` symbols that link to nothing. Now
+   `sdk/lib/rust/ole32-rust/src/storage_defs.rs`.
+2. **Every file-scope `static const ...Vtbl` table** — 23 of them across storage32/stg_prop/
+   datacache. Without these the objects have no methods at all.
+3. **A few functions outright** (`StorageImpl_GetFreeBlockChainCacheEntry`,
+   `StgConvertVariantToProperty`, …) and, worse, **an export's attributes**:
+   `StgCreateDocfile` came back as a module-private Rust-ABI fn, so `_StgCreateDocfile@16`
+   was simply missing from the DLL.
+
+**If you translate another header-heavy C module, budget for this.** Grep the C for
+`^static const .*Vtbl`, `static inline`, and the module's private header BEFORE you start,
+and treat them as a separate authoring task.
 
 ### The tooling this lane produced (reusable — this is the durable asset)
 - **`tools/gen_commacros.py`** — generates the COBJMACRO vtbl-call helpers from com-sys
@@ -38,12 +56,35 @@ initguid TU and you silently delete every GUID it was defining.)
   unsuffixed aliases for the 13 vtbl slots the Win32 A/W macros rename
   (`GetObject`→`GetObjectA` etc.), which C call sites use but bindgen never emits.
   Validated against oleaut32-rust's hand-made file: 55/55 helpers byte-identical.
+- **`tools/harvest_consts.py`** — resolves C constant names to their values from the SDK
+  headers the C actually compiles against (both `#define`s and enum members, resolved
+  TRANSITIVELY), and emits Rust `pub const`s each citing its `file:line`. **Constants are
+  the silent-failure class**: a wrong one produces no compile error and no link error, it
+  just changes behaviour. Tier-D shipped SEVEN baked-in wrong values before this
+  (STG_E_INVALIDHEADER that was really STG_E_INVALIDHANDLE; DISCARDCACHE_SAVEIFDIRTY as 1
+  when the header says 0, inverting save-on-discard; PROPSETFLAG_NONSIMPLE tested as `& 2`,
+  which is ANSI …). Never hand-transcribe a constant, an HRESULT, or a GUID.
+  Watch its own foot-gun too: a C value that is an *expression* (`(DWORD)~X`) must be
+  translated, not passed through — a parse error in a constants module is not local, it
+  deletes every constant in the module and manufactures ~800 phantom errors elsewhere.
 - **`tools/integrate_ole32_ring.py`** — normalizes a raw rustconv translation onto a
   crate prelude: drops the COBJMACRO externs (macros in C — they link to nothing), drops
   the Win32 `extern "C"` decls (WINAPI is stdcall on i386 — this is THE i386 trap), drops
   self-declarations (rustconv emits an extern for a callee that lands in the same file →
   E0428), keeps the IID/CLSID statics (real link symbols — never redefine a GUID), and
   REPORTS anything it doesn't recognize so nothing slips through silently.
+  Since Tier-D it also (a) computes what the prelude actually **provides** — every `pub`
+  item DEFINED by a shared/ring module plus every name DECLARED by the prelude's extern
+  surface — and drops those decls, because a local `extern "C"` decl *shadows* a glob
+  import and would silently link against the wrong i386 decoration; and (b) **promotes
+  DECLSPEC_HIDDEN cross-TU helpers to `pub`** (`StorageUtl_*`, `StorageBaseImpl_AddStream`),
+  which rustconv leaves module-private because it translates one file in isolation.
+  Unrecognized externs across Tier-D: 111 → 0.
+  Two bugs found IN it, both of which had made the "already provided" check near-useless:
+  a non-multiline `^`-anchored regex silently KEPT every comment-preceded decl (and an
+  unclassified decl is kept — the failure direction that hurts), and the ABI class
+  `extern "[a-z]+"` never matched the uppercase `"C"`, so it saw one definition in the
+  whole crate.
 
 ### Cost
 The whole ole32 translation (ring + Tier-D, 43.7K LOC, 29 files) cost **~$10** of Sonnet
@@ -57,7 +98,18 @@ via `rustconv translate` — well under the $25–60 the original estimate impli
 2. It emits `memoffset::core::mem::offset_of!` (no such crate), the OLD bindgen union
    accessors (`x.QuadPart()`, `x.u()` — current bindgen has plain fields), and names the
    C's `ref` field `ref_` in the struct while emitting `.ref` at use sites (a Rust keyword
-   → hard parse error). All three are mechanical; the integrator now fixes them.
+   → hard parse error). It is not even self-consistent about that last one: Tier-D spelled
+   the same field `.ref`, `.ref_` AND `.ref_0` in different functions of the same file.
+   All mechanical; the integrator now fixes them.
+3. **It does not emit file-scope data.** No `static const ...Vtbl` tables (23 missing across
+   Tier-D — the objects had no methods), and no header content at all. See "What Tier-D
+   actually cost" above. This is the single biggest gap and the one to fix first.
+4. **It drops export attributes.** `StgCreateDocfile` — an ole32 export — came back as a
+   private Rust-ABI `unsafe fn`, so `_StgCreateDocfile@16` was absent from the link. The
+   `.spec` file is the ground truth for which functions need `#[no_mangle] extern "system"`.
+5. **It emits COM methods with the Rust ABI.** ~130 vtbl slots across Tier-D were plain
+   `unsafe fn`, not `STDMETHODCALLTYPE`. This links on amd64/arm64 and corrupts the stack on
+   i386 at the first call. Wrap every vtbl method in the crate's `stdmethod!` macro.
 
 ---
 
