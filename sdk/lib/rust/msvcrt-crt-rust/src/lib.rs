@@ -465,11 +465,14 @@ mod mstrcat {
     /// `strcpy(dst + strlen(dst), src)`, whose copy loop finds src's NUL as it
     /// goes (`while ((*p++ = *src++));`). Measured 2.5x before this.
     pub unsafe extern "C" fn strcat(s: *mut u8, append: *const u8) -> *mut u8 {
+        if s.is_null() {
+            return s;
+        }
         let mut d = s;
         while *d != 0 {
             d = d.add(1);
         }
-        crate::cstr_copy(d, append);
+        crate::cstr_copy(d, crate::nz(append));
         s
     }
 
@@ -517,7 +520,7 @@ mod mstrcpy {
     #[no_mangle]
     /// Single-pass — see `strcat`. C: `while ((*p++ = *src++));`
     pub unsafe extern "C" fn strcpy(to: *mut u8, from: *const u8) -> *mut u8 {
-        crate::cstr_copy(to, from);
+        crate::cstr_copy(to, crate::nz(from));
         to
     }
 
@@ -536,7 +539,7 @@ mod mstrcspn {
     /// walks the subject once.
     pub unsafe extern "C" fn strcspn(s: *const u8, reject: *const u8) -> usize {
         let set = crate::ByteSet::of(reject);
-        let mut p = s;
+        let mut p = crate::nz(s);
         let mut n = 0usize;
         while *p != 0 && !set.has(*p) {
             p = p.add(1);
@@ -626,7 +629,7 @@ mod mstrpbrk {
     /// `for (; *str; str++) if (strchr(accept, *str)) return (char*)str; return NULL;`
     pub unsafe extern "C" fn strpbrk(s1: *const u8, s2: *const u8) -> *mut u8 {
         let set = crate::ByteSet::of(s2);
-        let mut p = s1;
+        let mut p = crate::nz(s1);
         while *p != 0 {
             if set.has(*p) {
                 return p as *mut u8;
@@ -679,7 +682,7 @@ mod mstrspn {
     /// `for (ptr = str; *ptr; ptr++) if (!strchr(accept, *ptr)) break; return ptr - str;`
     pub unsafe extern "C" fn strspn(s: *const u8, accept: *const u8) -> usize {
         let set = crate::ByteSet::of(accept);
-        let mut p = s;
+        let mut p = crate::nz(s);
         let mut n = 0usize;
         while *p != 0 && set.has(*p) {
             p = p.add(1);
@@ -775,6 +778,45 @@ pub use mstrtoul::*;
 // — which is exactly what the harness pins. Correct under the default locale,
 // wrong the moment an app calls `setlocale()`. They belong to Phase D (locale)
 // and must NOT be flipped on a green MATCH alone. See the lane plan.
+
+/// ⚠️ **NULL is an EMPTY STRING here, not a fault. This is load-bearing.**
+///
+/// Every wrapper in this crate used to reach its input through `cstr_slice` /
+/// `wcstr_slice`, which NULL-guard (`if p.is_null() { return &[] }`). So the
+/// shipped, gate-green behaviour of `strcmp`/`strcpy`/`strcat`/`strspn`/… has
+/// always been *NULL behaves like ""* — more forgiving than the C, which
+/// dereferences and dies.
+///
+/// The single-pass rewrites (the perf fix — see `strcmp`) walk raw pointers and
+/// so silently DROPPED that tolerance. Nothing caught it: the differential fuzz
+/// generates real strings and never passes NULL, so it reported 45/45 MATCH
+/// while `msvcrt.dll` had started faulting on inputs it used to survive. The net
+/// suite went 15/15 -> 13/15 and an A/B control against the previous commit is
+/// what proved it (field manual §9.63).
+///
+/// Redirecting NULL to a static NUL restores the old semantics exactly — an
+/// empty string compares/copies/spans exactly as `&[]` did — for one predictable
+/// branch. Do NOT "simplify" these away to match the C.
+static EMPTY_A: [u8; 1] = [0];
+static EMPTY_W: [u16; 1] = [0];
+
+#[inline]
+fn nz(p: *const u8) -> *const u8 {
+    if p.is_null() {
+        EMPTY_A.as_ptr()
+    } else {
+        p
+    }
+}
+
+#[inline]
+fn wnz(p: *const u16) -> *const u16 {
+    if p.is_null() {
+        EMPTY_W.as_ptr()
+    } else {
+        p
+    }
+}
 
 /// A 256-bit membership set over the bytes of a C string, built in ONE pass.
 ///
@@ -876,7 +918,7 @@ fn clamp(d: i32) -> i32 {
 /// Measured: the 3-pass form ran 3.8-4.8x slower than the C on the wide twin.
 #[no_mangle]
 pub unsafe extern "C" fn strcmp(a: *const u8, b: *const u8) -> i32 {
-    let (mut p, mut q) = (a, b);
+    let (mut p, mut q) = (crate::nz(a), crate::nz(b));
     while *p != 0 && *p == *q {
         p = p.add(1);
         q = q.add(1);
@@ -934,7 +976,7 @@ pub unsafe fn strncmp_raw(a: *const u8, b: *const u8, len: usize) -> i32 {
     // C: `while (--len && *str1 && *str1 == *str2) { str1++; str2++; }`
     // (pre-decrement: the loop body runs at most len-1 times, and the compare
     // below then reads the len'th pair.)
-    let (mut p, mut q, mut k) = (a, b, len);
+    let (mut p, mut q, mut k) = (crate::nz(a), crate::nz(b), len);
     loop {
         k -= 1;
         if k == 0 || *p == 0 || *p != *q {
@@ -1123,7 +1165,7 @@ pub unsafe extern "C" fn wcslen(s: *const u16) -> usize {
 /// perf gate measured it at 3.8-4.8x the C.
 #[no_mangle]
 pub unsafe extern "C" fn wcscmp(a: *const u16, b: *const u16) -> i32 {
-    let (mut p, mut q) = (a, b);
+    let (mut p, mut q) = (wnz(a), wnz(b));
     while *p != 0 && *p == *q {
         p = p.add(1);
         q = q.add(1);
@@ -1146,7 +1188,7 @@ pub unsafe extern "C" fn wcsncmp(a: *const u16, b: *const u16, n: usize) -> i32 
         return 0;
     }
     // C: `while (--n && *str1 && (*str1 == *str2)) { str1++; str2++; }`
-    let (mut p, mut q, mut k) = (a, b, n);
+    let (mut p, mut q, mut k) = (wnz(a), wnz(b), n);
     loop {
         k -= 1;
         if k == 0 || *p == 0 || *p != *q {
@@ -1206,7 +1248,7 @@ pub unsafe extern "C" fn wcsrchr(s: *const u16, c: u16) -> *mut u16 {
 /// not try.
 #[inline]
 unsafe fn wset_has(set: *const u16, c: u16) -> bool {
-    let mut p = set;
+    let mut p = wnz(set);
     while *p != 0 {
         if *p == c {
             return true;
@@ -1219,18 +1261,21 @@ unsafe fn wset_has(set: *const u16, c: u16) -> bool {
 /// Single-pass — see the narrow `strcat`. C: `while ((*p++ = *src++));`
 #[no_mangle]
 pub unsafe extern "C" fn wcscpy(to: *mut u16, from: *const u16) -> *mut u16 {
-    wcstr_copy(to, from);
+    wcstr_copy(to, wnz(from));
     to
 }
 
 /// Single-pass. C: `wcscpy(dst + wcslen(dst), src); return dst;`
 #[no_mangle]
 pub unsafe extern "C" fn wcscat(dst: *mut u16, src: *const u16) -> *mut u16 {
+    if dst.is_null() {
+        return dst;
+    }
     let mut d = dst;
     while *d != 0 {
         d = d.add(1);
     }
-    wcstr_copy(d, src);
+    wcstr_copy(d, wnz(src));
     dst
 }
 
@@ -1265,7 +1310,7 @@ pub unsafe extern "C" fn wcsstr(hay: *const u16, sub: *const u16) -> *mut u16 {
 /// C: `for (ptr = str; *ptr; ptr++) if (!wcschr(accept, *ptr)) break;`
 #[no_mangle]
 pub unsafe extern "C" fn wcsspn(s: *const u16, accept: *const u16) -> usize {
-    let mut p = s;
+    let mut p = wnz(s);
     let mut n = 0usize;
     while *p != 0 && wset_has(accept, *p) {
         p = p.add(1);
@@ -1277,7 +1322,7 @@ pub unsafe extern "C" fn wcsspn(s: *const u16, accept: *const u16) -> usize {
 /// C: `for (ptr = str; *ptr; ptr++) if (wcschr(reject, *ptr)) break;`
 #[no_mangle]
 pub unsafe extern "C" fn wcscspn(s: *const u16, reject: *const u16) -> usize {
-    let mut p = s;
+    let mut p = wnz(s);
     let mut n = 0usize;
     while *p != 0 && !wset_has(reject, *p) {
         p = p.add(1);
@@ -1289,7 +1334,7 @@ pub unsafe extern "C" fn wcscspn(s: *const u16, reject: *const u16) -> usize {
 /// C: `for (; *str; str++) if (wcschr(accept, *str)) return (wchar_t*)str;`
 #[no_mangle]
 pub unsafe extern "C" fn wcspbrk(s: *const u16, accept: *const u16) -> *mut u16 {
-    let mut p = s;
+    let mut p = wnz(s);
     while *p != 0 {
         if wset_has(accept, *p) {
             return p as *mut u16;

@@ -292,6 +292,74 @@ unsafe fn assert_shims_live() {
     assert_eq!(wb, [b'b' as u16, b'a' as u16, 0], "_wcsrev misbehaved — bad link");
 
     println!("  [self-check] msvcrt-crt-rust shims are live — narrow (strlen(NULL)==0, _strrev ok, _strnset returns str+n) and wide (wcslen(NULL)==0, _wcsrev ok)");
+
+    assert_null_tolerant();
+}
+
+/// ⚠️ **THE BLIND SPOT THAT SHIPPED A REGRESSION (field manual §9.63).**
+///
+/// The 20k-case fuzz generates real NUL-terminated strings. It NEVER passes NULL.
+/// So when the single-pass perf rewrite replaced `cstr_slice(p)` (which
+/// NULL-guards, returning `&[]`) with a raw pointer walk, msvcrt.dll silently
+/// went from *NULL behaves like ""* — its shipped, gate-green behaviour — to
+/// *NULL faults*. `classify` reported 45/45 MATCH. The net suite went 15/15 ->
+/// 13/15, and only an A/B control against the previous commit found it.
+///
+/// A fuzzer can only falsify what it VARIES (§9.60), and it was not varying
+/// nullness. So NULL is now a first-class, asserted input.
+///
+/// NB: this is graded against the CRATE'S OWN contract, not against the C — the
+/// genuine msvcrt dereferences and dies here, so there is no `ref_*` to compare
+/// with. Being *more* forgiving than the C is fine; silently becoming LESS
+/// forgiving than the last shipped build is what broke the boot.
+unsafe fn assert_null_tolerant() {
+    let s = b"abc\0";
+    let e = b"\0";
+    let (sp, ep) = (s.as_ptr(), e.as_ptr());
+
+    // NULL == "" for every reader we flipped.
+    assert!(strcmp(core::ptr::null(), ep) == 0, "strcmp(NULL, \"\") != 0");
+    assert!(strcmp(core::ptr::null(), sp) < 0, "strcmp(NULL, \"abc\") not < 0");
+    assert!(strcmp(sp, core::ptr::null()) > 0, "strcmp(\"abc\", NULL) not > 0");
+    assert_eq!(strncmp(core::ptr::null(), ep, 4), 0, "strncmp(NULL, \"\") != 0");
+    assert_eq!(strspn(core::ptr::null(), sp), 0, "strspn(NULL, ..) != 0");
+    assert_eq!(strcspn(core::ptr::null(), sp), 0, "strcspn(NULL, ..) != 0");
+    assert!(strpbrk(core::ptr::null(), sp).is_null(), "strpbrk(NULL, ..) != NULL");
+    assert!(strchr(core::ptr::null(), b'a' as i32).is_null(), "strchr(NULL, 'a') != NULL");
+    assert!(strrchr(core::ptr::null(), b'a' as i32).is_null(), "strrchr(NULL, 'a') != NULL");
+    // a NULL SET is empty, so nothing is in it / nothing is rejected
+    assert_eq!(strspn(sp, core::ptr::null()), 0, "strspn(.., NULL set) != 0");
+    assert_eq!(strcspn(sp, core::ptr::null()), 3, "strcspn(.., NULL set) != len");
+
+    // NULL source copies as "" (writes just the terminator).
+    let mut d = [0xAAu8; 8];
+    strcpy(d.as_mut_ptr(), core::ptr::null());
+    assert_eq!(d[0], 0, "strcpy(d, NULL) did not write \"\"");
+    let mut d2 = *b"xy\0\0\0\0\0\0";
+    strcat(d2.as_mut_ptr(), core::ptr::null());
+    assert_eq!(&d2[..3], b"xy\0", "strcat(d, NULL) perturbed d");
+
+    // ── the wide half ──
+    let ws = [b'a' as u16, b'b' as u16, b'c' as u16, 0];
+    let we = [0u16];
+    let (wsp, wep) = (ws.as_ptr(), we.as_ptr());
+    assert!(wcscmp(core::ptr::null(), wep) == 0, "wcscmp(NULL, L\"\") != 0");
+    assert!(wcscmp(core::ptr::null(), wsp) < 0, "wcscmp(NULL, L\"abc\") not < 0");
+    assert_eq!(wcsncmp(core::ptr::null(), wep, 4), 0, "wcsncmp(NULL, L\"\") != 0");
+    assert_eq!(wcsspn(core::ptr::null(), wsp), 0, "wcsspn(NULL, ..) != 0");
+    assert_eq!(wcscspn(core::ptr::null(), wsp), 0, "wcscspn(NULL, ..) != 0");
+    assert!(wcspbrk(core::ptr::null(), wsp).is_null(), "wcspbrk(NULL, ..) != NULL");
+    assert!(wcschr(core::ptr::null(), b'a' as u16).is_null(), "wcschr(NULL, 'a') != NULL");
+    assert!(wcsrchr(core::ptr::null(), b'a' as u16).is_null(), "wcsrchr(NULL, 'a') != NULL");
+    assert!(wcsstr(core::ptr::null(), wsp).is_null(), "wcsstr(NULL, ..) != NULL");
+    assert_eq!(wcsspn(wsp, core::ptr::null()), 0, "wcsspn(.., NULL set) != 0");
+    assert_eq!(wcscspn(wsp, core::ptr::null()), 3, "wcscspn(.., NULL set) != len");
+
+    let mut wd = [0xAAAAu16; 8];
+    wcscpy(wd.as_mut_ptr(), core::ptr::null());
+    assert_eq!(wd[0], 0, "wcscpy(d, NULL) did not write L\"\"");
+
+    println!("  [self-check] NULL is tolerated as \"\" by every flipped reader (narrow + wide) — the §9.63 regression class");
 }
 
 fn main() {
