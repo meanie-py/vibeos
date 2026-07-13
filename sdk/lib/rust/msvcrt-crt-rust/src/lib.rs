@@ -1837,3 +1837,330 @@ pub unsafe extern "C" fn _strnset_s(str_: *mut u8, size: usize, c: i32, count: u
     *_errno() = EINVAL;
     EINVAL
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WAVE 6b — the radix `_s` family (10 fns), and why it needed FOUR writers
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// These ten look like one function with ten signatures. They are not. msvcrt
+// implements them with FOUR mutually-inconsistent error contracts, and the only
+// way to know that is to read all ten bodies — or to have a differential oracle
+// tell you. Both were done.
+//
+//   group A  _ltoa_s _ltow_s _itoa_s _itow_s      (32-bit signed, via ltoa_helper)
+//   group B  _i64toa_s _i64tow_s                  (64-bit signed)
+//     front door: MSVCRT_CHECK_PMT -> errno=EINVAL + handler FIRES
+//     too small : ERANGE, and the buffer gets the digits written BACKWARDS
+//
+//   group C  _ui64toa_s _ui64tow_s                (64-bit unsigned)
+//     front door: MSVCRT_CHECK_PMT -> errno=EINVAL + handler FIRES
+//     too small : *** EINVAL, not ERANGE *** — and the buffer is left UNTOUCHED
+//
+//   group D  _ultoa_s _ultow_s                    (32-bit unsigned)
+//     front door: HAND-ROLLED `*_errno() = EINVAL` — the handler does NOT FIRE
+//     too small : ERANGE + reversed residue, handler still does NOT fire
+//
+// Group D is the reason wave 6a had to start grading effect 4. `_ultoa_s` and
+// `_ltoa_s` are byte-identical, return-code-identical AND errno-identical on a
+// bad radix. The ONLY thing that distinguishes them is whether the invalid-
+// parameter handler fired — which an app can install and which can abort().
+// A three-effect oracle calls them equal.
+//
+// THE REVERSED RESIDUE. On a too-small buffer, groups A/B/D do not simply fail:
+//
+//     for (pos = buffer + 31, i = 0; i < size; i++)   /* buffer+31 == LAST digit */
+//         *p++ = *pos--;                              /* ...so this walks BACKWARDS */
+//     str[0] = '\0';
+//
+// The caller's buffer is filled with the digits in REVERSE, and only then NUL'd
+// at [0]. A clean reimplementation (`str[0] = 0; return ERANGE;`) passes every
+// string-level test and silently differs in every byte past the first. Nobody
+// would write this on purpose; it is bug-for-bug with Microsoft. Reproduced.
+
+/// Groups A+B — signed, `MSVCRT_CHECK_PMT` front door, ERANGE + reversed residue.
+///
+/// `mag`/`negative` are decided by the CALLER because the width matters: the C
+/// assigns the signed value into an unsigned of ITS OWN width, so for a negative
+/// value with radix != 10, `_ltoa_s` reinterprets as u32 and `_i64toa_s` as u64.
+/// Collapsing that here would silently sign-extend.
+#[inline]
+unsafe fn radix_s_signed(mag: u64, negative: bool, str: *mut u8, size: usize, radix: i32) -> i32 {
+    if !check_pmt(!str.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(size > 0) {
+        return EINVAL;
+    }
+    if !check_pmt((2..=36).contains(&radix)) {
+        *str = 0;
+        return EINVAL;
+    }
+    let f = cnt_rust::core_rs::radix::format_radix(mag, radix as u32, negative);
+    let len = f.ndigits + f.negative as usize + 1; // digits + sign + NUL
+    if len > size {
+        // The C skips the sign slot, shrinks `size` by it, then copies the digit
+        // buffer BACKWARDS from its last digit. `size <= ndigits + neg` holds here
+        // (that is what `len > size` means), so the reads stay inside the digits.
+        let o = f.negative as usize;
+        let n = size - o;
+        let mut i = 0;
+        while i < n && i < f.ndigits {
+            *str.add(o + i) = f.digits[f.ndigits - 1 - i];
+            i += 1;
+        }
+        *str = 0;
+        invalid_pmt(ERANGE); // MSVCRT_INVALID_PMT: errno = ERANGE, handler fires
+        return ERANGE;
+    }
+    let mut o = 0usize;
+    if f.negative {
+        *str = b'-';
+        o = 1;
+    }
+    let mut i = 0;
+    while i < f.ndigits {
+        *str.add(o + i) = f.digits[i];
+        i += 1;
+    }
+    *str.add(o + f.ndigits) = 0;
+    0
+}
+
+/// Groups A+B, wide. Identical contract; the digits are ASCII so they widen 1:1.
+#[inline]
+unsafe fn radix_s_signed_w(mag: u64, negative: bool, str: *mut u16, size: usize, radix: i32) -> i32 {
+    if !check_pmt(!str.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(size > 0) {
+        return EINVAL;
+    }
+    if !check_pmt((2..=36).contains(&radix)) {
+        *str = 0;
+        return EINVAL;
+    }
+    let f = cnt_rust::core_rs::radix::format_radix(mag, radix as u32, negative);
+    let len = f.ndigits + f.negative as usize + 1;
+    if len > size {
+        let o = f.negative as usize;
+        let n = size - o;
+        let mut i = 0;
+        while i < n && i < f.ndigits {
+            *str.add(o + i) = f.digits[f.ndigits - 1 - i] as u16;
+            i += 1;
+        }
+        *str = 0;
+        invalid_pmt(ERANGE);
+        return ERANGE;
+    }
+    let mut o = 0usize;
+    if f.negative {
+        *str = b'-' as u16;
+        o = 1;
+    }
+    let mut i = 0;
+    while i < f.ndigits {
+        *str.add(o + i) = f.digits[i] as u16;
+        i += 1;
+    }
+    *str.add(o + f.ndigits) = 0;
+    0
+}
+
+/// Group C — `_ui64toa_s`/`_ui64tow_s`. The odd one out: a too-small buffer is
+/// **EINVAL, not ERANGE**, and the buffer is left completely alone (no residue,
+/// not even a NUL). Handler still fires.
+#[inline]
+unsafe fn radix_s_u64(value: u64, str: *mut u8, size: usize, radix: i32) -> i32 {
+    if !check_pmt(!str.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(size > 0) {
+        return EINVAL;
+    }
+    if !check_pmt((2..=36).contains(&radix)) {
+        *str = 0;
+        return EINVAL;
+    }
+    let f = cnt_rust::core_rs::radix::format_radix(value, radix as u32, false);
+    if f.ndigits + 1 > size {
+        invalid_pmt(EINVAL); // MSVCRT_INVALID_PMT(..., EINVAL) — NOT ERANGE
+        return EINVAL;
+    }
+    let mut i = 0;
+    while i < f.ndigits {
+        *str.add(i) = f.digits[i];
+        i += 1;
+    }
+    *str.add(f.ndigits) = 0;
+    0
+}
+
+/// Group C, wide.
+#[inline]
+unsafe fn radix_s_u64_w(value: u64, str: *mut u16, size: usize, radix: i32) -> i32 {
+    if !check_pmt(!str.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(size > 0) {
+        return EINVAL;
+    }
+    if !check_pmt((2..=36).contains(&radix)) {
+        *str = 0;
+        return EINVAL;
+    }
+    let f = cnt_rust::core_rs::radix::format_radix(value, radix as u32, false);
+    if f.ndigits + 1 > size {
+        invalid_pmt(EINVAL);
+        return EINVAL;
+    }
+    let mut i = 0;
+    while i < f.ndigits {
+        *str.add(i) = f.digits[i] as u16;
+        i += 1;
+    }
+    *str.add(f.ndigits) = 0;
+    0
+}
+
+/// Group D — `_ultoa_s`/`_ultow_s`. Same *observable buffer and return code* as
+/// group A, but its front door is hand-rolled (`*_errno() = EINVAL`) rather than
+/// MSVCRT_CHECK_PMT, so **the invalid-parameter handler never fires**. That one
+/// bit is the entire difference, and it is why the oracle has to grade it.
+#[inline]
+unsafe fn radix_s_ulong(value: u32, str: *mut u8, size: usize, radix: i32) -> i32 {
+    if str.is_null() || size == 0 || !(2..=36).contains(&radix) {
+        if !str.is_null() && size != 0 {
+            *str = 0;
+        }
+        *_errno() = EINVAL; // errno only — deliberately NOT invalid_pmt()
+        return EINVAL;
+    }
+    let f = cnt_rust::core_rs::radix::format_radix(value as u64, radix as u32, false);
+    let len = f.ndigits + 1;
+    if len > size {
+        let mut i = 0;
+        while i < size && i < f.ndigits {
+            *str.add(i) = f.digits[f.ndigits - 1 - i];
+            i += 1;
+        }
+        *str = 0;
+        *_errno() = ERANGE; // again: errno only, no handler
+        return ERANGE;
+    }
+    let mut i = 0;
+    while i < f.ndigits {
+        *str.add(i) = f.digits[i];
+        i += 1;
+    }
+    *str.add(f.ndigits) = 0;
+    0
+}
+
+/// Group D, wide.
+#[inline]
+unsafe fn radix_s_ulong_w(value: u32, str: *mut u16, size: usize, radix: i32) -> i32 {
+    if str.is_null() || size == 0 || !(2..=36).contains(&radix) {
+        if !str.is_null() && size != 0 {
+            *str = 0;
+        }
+        *_errno() = EINVAL;
+        return EINVAL;
+    }
+    let f = cnt_rust::core_rs::radix::format_radix(value as u64, radix as u32, false);
+    let len = f.ndigits + 1;
+    if len > size {
+        let mut i = 0;
+        while i < size && i < f.ndigits {
+            *str.add(i) = f.digits[f.ndigits - 1 - i] as u16;
+            i += 1;
+        }
+        *str = 0;
+        *_errno() = ERANGE;
+        return ERANGE;
+    }
+    let mut i = 0;
+    while i < f.ndigits {
+        *str.add(i) = f.digits[i] as u16;
+        i += 1;
+    }
+    *str.add(f.ndigits) = 0;
+    0
+}
+
+// ── the ten exports ──────────────────────────────────────────────────────────
+// `negative` is `value < 0 && radix == 10` — for any other radix the C
+// reinterprets the value's bit pattern as unsigned OF ITS OWN WIDTH, which is
+// why _ltoa_s goes through u32 and _i64toa_s through u64.
+
+#[inline]
+fn mag32(value: i32, radix: i32) -> (u64, bool) {
+    if value < 0 && radix == 10 {
+        (value.unsigned_abs() as u64, true)
+    } else {
+        (value as u32 as u64, false)
+    }
+}
+#[inline]
+fn mag64(value: i64, radix: i32) -> (u64, bool) {
+    if value < 0 && radix == 10 {
+        (value.unsigned_abs(), true)
+    } else {
+        (value as u64, false)
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _ltoa_s(value: i32, str: *mut u8, size: usize, radix: i32) -> i32 {
+    let (m, n) = mag32(value, radix);
+    radix_s_signed(m, n, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _itoa_s(value: i32, str: *mut u8, size: usize, radix: i32) -> i32 {
+    _ltoa_s(value, str, size, radix) // the C literally does this
+}
+#[no_mangle]
+pub unsafe extern "C" fn _ltow_s(value: i32, str: *mut u16, size: usize, radix: i32) -> i32 {
+    let (m, n) = mag32(value, radix);
+    radix_s_signed_w(m, n, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _itow_s(value: i32, str: *mut u16, size: usize, radix: i32) -> i32 {
+    _ltow_s(value, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _i64toa_s(value: i64, str: *mut u8, size: usize, radix: i32) -> i32 {
+    let (m, n) = mag64(value, radix);
+    radix_s_signed(m, n, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _i64tow_s(value: i64, str: *mut u16, size: usize, radix: i32) -> i32 {
+    let (m, n) = mag64(value, radix);
+    radix_s_signed_w(m, n, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _ui64toa_s(value: u64, str: *mut u8, size: usize, radix: i32) -> i32 {
+    radix_s_u64(value, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _ui64tow_s(value: u64, str: *mut u16, size: usize, radix: i32) -> i32 {
+    radix_s_u64_w(value, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _ultoa_s(value: u32, str: *mut u8, size: usize, radix: i32) -> i32 {
+    radix_s_ulong(value, str, size, radix)
+}
+#[no_mangle]
+pub unsafe extern "C" fn _ultow_s(value: u32, str: *mut u16, size: usize, radix: i32) -> i32 {
+    radix_s_ulong_w(value, str, size, radix)
+}
+
+// ── the msvcrt integer-parse engine, now exported (wave 6b) ──────────────────
+// These ARE `strtoi64_contract` — `_strtoi64` is literally
+// `_strtoi64_l(nptr, endptr, base, NULL)`. Flipping them was blocked until 6a
+// gave the contract layer an errno and a handler to talk to.
+
+#[no_mangle]
+pub unsafe extern "C" fn _strtoi64(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i64 {
+    strtoi64_contract(nptr, endptr, base)
+}

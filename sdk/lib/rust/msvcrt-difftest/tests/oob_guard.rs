@@ -56,6 +56,22 @@ extern "C" {
     fn strncpy_s(d: *mut u8, elem: usize, s: *const u8, n: usize) -> i32;
     fn strncat_s(d: *mut u8, elem: usize, s: *const u8, n: usize) -> i32;
     fn _strnset_s(s: *mut u8, size: usize, c: i32, n: usize) -> i32;
+
+    // wave 6b — the radix `_s` family. These are WRITERS: the risk is not an
+    // over-READ but an over-WRITE past `size`. Their too-small-buffer arm is the
+    // dangerous one — it deliberately fills the caller's buffer with reversed
+    // digits, and the loop bound is `size` (minus the sign slot). An off-by-one
+    // there scribbles one byte past the caller's allocation. See below.
+    fn _itoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _ltoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _i64toa_s(v: i64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _ui64toa_s(v: u64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _ultoa_s(v: u32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _itow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _ltow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _i64tow_s(v: i64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _ui64tow_s(v: u64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _ultow_s(v: u32, s: *mut u16, sz: usize, rx: i32) -> i32;
 }
 
 const PAGE: usize = 4096;
@@ -191,6 +207,27 @@ fn main() {
         ("_strnset_s", Box::new(move || unsafe {
             core::hint::black_box(_strnset_s(guarded(k), k, b'z' as i32, k));
         })),
+
+        // ── wave 6b: the radix `_s` family — WRITE bounds ─────────────────────
+        //
+        // Every call below is deliberately in the TOO-SMALL arm: base 2 of a
+        // 64-bit value needs 65 bytes, and we hand it a `size` of 8 flush against
+        // a guard page. That is the arm that fills the caller's buffer with
+        // reversed digits, so its loop bound is the one that must not be off by
+        // one. `sz` is the FULL writable extent — a single byte past it faults.
+        //
+        // (i32::MIN at radix 10 also puts the sign-slot skip under test: the C
+        // does `p++; size--;` and then writes `size` more bytes.)
+        ("_itoa_s",    Box::new(move || unsafe { let sz = 8;  core::hint::black_box(_itoa_s(i32::MIN, guarded(sz), sz, 2)); })),
+        ("_ltoa_s",    Box::new(move || unsafe { let sz = 8;  core::hint::black_box(_ltoa_s(i32::MIN, guarded(sz), sz, 10)); })),
+        ("_i64toa_s",  Box::new(move || unsafe { let sz = 8;  core::hint::black_box(_i64toa_s(i64::MIN, guarded(sz), sz, 2)); })),
+        ("_ui64toa_s", Box::new(move || unsafe { let sz = 8;  core::hint::black_box(_ui64toa_s(u64::MAX, guarded(sz), sz, 2)); })),
+        ("_ultoa_s",   Box::new(move || unsafe { let sz = 8;  core::hint::black_box(_ultoa_s(u32::MAX, guarded(sz), sz, 2)); })),
+        ("_itow_s",    Box::new(move || unsafe { let sz = 8;  core::hint::black_box(_itow_s(i32::MIN, wguarded(sz), sz, 2)); })),
+        ("_ltow_s",    Box::new(move || unsafe { let sz = 8;  core::hint::black_box(_ltow_s(i32::MIN, wguarded(sz), sz, 10)); })),
+        ("_i64tow_s",  Box::new(move || unsafe { let sz = 8;  core::hint::black_box(_i64tow_s(i64::MIN, wguarded(sz), sz, 2)); })),
+        ("_ui64tow_s", Box::new(move || unsafe { let sz = 8;  core::hint::black_box(_ui64tow_s(u64::MAX, wguarded(sz), sz, 2)); })),
+        ("_ultow_s",   Box::new(move || unsafe { let sz = 8;  core::hint::black_box(_ultow_s(u32::MAX, wguarded(sz), sz, 2)); })),
     ];
 
     println!("\n=== guard-page probe: bounded CRT fns must not read past n ===\n");

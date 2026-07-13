@@ -140,6 +140,31 @@ extern "C" {
     fn subj_errno_set(v: i32);
     fn subj_invalid_pmt_count() -> i32;
     fn subj_invalid_pmt_reset();
+
+    // ── wave 6b: the radix `_s` family (4 contracts, 10 functions) ──
+    fn ref__itoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__ltoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__i64toa_s(v: i64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__ui64toa_s(v: u64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__ultoa_s(v: u32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__itow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__ltow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__i64tow_s(v: i64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__ui64tow_s(v: u64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__ultow_s(v: u32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__strtoi64(s: *const u8, e: *mut *mut u8, b: i32) -> i64;
+
+    fn _itoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _ltoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _i64toa_s(v: i64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _ui64toa_s(v: u64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _ultoa_s(v: u32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _itow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _ltow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _i64tow_s(v: i64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _ui64tow_s(v: u64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _ultow_s(v: u32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _strtoi64(s: *const u8, e: *mut *mut u8, b: i32) -> i64;
 }
 
 /// The four observable effects of a CRT call, as one comparable unit.
@@ -204,6 +229,88 @@ fn check_effects(name: &'static str, mut f: impl FnMut(&mut Rng) -> (Effects, Ef
         }
     }
     record(name, V::Match, String::new());
+}
+
+/// Buffer AND all four effects — for the `_s` family, whose contract is both.
+///
+/// The FULL destination is compared, not just the string up to the NUL. That is
+/// deliberate and load-bearing: on a too-small buffer msvcrt's radix `_s` writes
+/// the digits BACKWARDS into the caller's buffer and only then NULs index 0, so
+/// everything past `[0]` is reversed residue. A "clean" implementation that just
+/// does `str[0] = 0; return ERANGE;` is string-identical and byte-different.
+/// What outcomes did the REFERENCE actually produce across the fuzz?
+///
+/// A row that reports MATCH having only ever exercised the happy path has proved
+/// nothing about the error contracts — and the error contracts are the whole
+/// reason the `_s` family is hard. This is the "a fuzzer only falsifies what it
+/// VARIES" rule (§9.60) turned into a measurement: if `ERANGE` never appears in
+/// the coverage line, the reversed-residue arm was never once executed and its
+/// green is worthless.
+///
+/// Enforced, not just printed: `require` names the outcomes a row MUST hit.
+#[derive(Default)]
+struct Cov { ok: u32, einval: u32, erange: u32, fired: u32 }
+impl Cov {
+    fn see(&mut self, e: &Effects) {
+        match e.ret as i32 { 0 => self.ok += 1, 22 => self.einval += 1, 34 => self.erange += 1, _ => {} }
+        if e.pmt > 0 { self.fired += 1; }
+    }
+    fn line(&self) -> String {
+        format!("ok={} EINVAL={} ERANGE={} handler-fired={}", self.ok, self.einval, self.erange, self.fired)
+    }
+    /// Returns the outcomes that were REQUIRED but never seen.
+    fn missing(&self, require: &[&'static str]) -> Vec<&'static str> {
+        require.iter().copied().filter(|w| match *w {
+            "ok" => self.ok == 0,
+            "EINVAL" => self.einval == 0,
+            "ERANGE" => self.erange == 0,
+            "handler" => self.fired == 0,
+            _ => false,
+        }).collect()
+    }
+}
+
+fn check_buf_fx(name: &'static str, require: &[&'static str],
+                mut f: impl FnMut(&mut Rng) -> (Vec<u8>, Effects, Vec<u8>, Effects, String)) {
+    let mut r = Rng(0x8EBC6AF09C88C6E3);
+    let mut cov = Cov::default();
+    for _ in 0..20_000 {
+        let (gb, ge, wb, we, ctx) = f(&mut r);
+        cov.see(&we);
+        if gb != wb || ge != we {
+            record(name, V::Diverge, format!("[{ctx}]\n        cnt   = {ge}  buf={gb:?}\n        msvcrt= {we}  buf={wb:?}"));
+            return;
+        }
+    }
+    let missing = cov.missing(require);
+    if !missing.is_empty() {
+        record(name, V::Diverge, format!("UNEXERCISED CONTRACT — the fuzz never reached {missing:?}.\n        \
+             This MATCH is worthless: the branch was never run. Widen the generator.\n        coverage: {}", cov.line()));
+        return;
+    }
+    record(name, V::Match, cov.line());
+}
+
+/// `check_buf_fx`'s wide twin.
+fn check_wbuf_fx(name: &'static str, require: &[&'static str],
+                 mut f: impl FnMut(&mut Rng) -> (Vec<u16>, Effects, Vec<u16>, Effects, String)) {
+    let mut r = Rng(0x5851F42D4C957F2D);
+    let mut cov = Cov::default();
+    for _ in 0..20_000 {
+        let (gb, ge, wb, we, ctx) = f(&mut r);
+        cov.see(&we);
+        if gb != wb || ge != we {
+            record(name, V::Diverge, format!("[{ctx}]\n        cnt   = {ge}  buf={gb:?}\n        msvcrt= {we}  buf={wb:?}"));
+            return;
+        }
+    }
+    let missing = cov.missing(require);
+    if !missing.is_empty() {
+        record(name, V::Diverge, format!("UNEXERCISED CONTRACT — the fuzz never reached {missing:?}.\n        \
+             This MATCH is worthless: the branch was never run. Widen the generator.\n        coverage: {}", cov.line()));
+        return;
+    }
+    record(name, V::Match, cov.line());
 }
 
 // ── cnt-rust's #[no_mangle] shims (the code under test) ──
@@ -636,6 +743,7 @@ unsafe fn run() {
     // with. (A non-C locale could still diverge; that is Phase D's problem and is
     // recorded as such in the plan.)
     const BASES: [i32; 9] = [0, 2, 8, 10, 16, 36, /* now the INVALID ones: */ 1, 37, -1];
+    const BASES2: [i32; 9] = BASES;
 
     // `gen_str` is a general string fuzzer: random bytes with digits sprinkled in.
     // The chance it ever emits a 19-DIGIT RUN is ~zero — so in 20,000 cases it
@@ -977,4 +1085,86 @@ unsafe fn run() {
         let p1 = _wcsnset(d1.as_mut_ptr(), c, n); let p2 = ref__wcsnset(d2.as_mut_ptr(), c, n);
         let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
         (d1, o1, d2, o2, format!("c={c:04x} n={n}")) });
+
+    // ═════ WAVE 6b: the radix `_s` family ═════════════════════════════════════
+    //
+    // Ten functions, FOUR contracts (see msvcrt-crt-rust's wave-6b banner). The
+    // fuzz has to actually REACH each contract branch, so `size` is drawn small
+    // enough to be too small most of the time, `radix` includes out-of-range
+    // values, and NULL is drawn deliberately:
+    //
+    //   size  : 0..12  vs values needing up to 65 digits (base 2) -> ERANGE is COMMON
+    //   radix : 2..36 valid, plus 0/1/37/-1 invalid               -> EINVAL front door
+    //   str   : NULL 1-in-32                                      -> EINVAL front door
+    //
+    // and the FULL buffer is compared, which is what catches the reversed residue.
+    fn radix_of(r: &mut Rng) -> i32 {
+        match r.below(8) {
+            0 => 0, 1 => 1, 2 => 37, 3 => -1,      // the invalid ones
+            _ => 2 + r.below(35) as i32,           // 2..=36
+        }
+    }
+    // Skew hard to the extremes: i32::MIN/i64::MIN are where the
+    // `value < 0 && radix == 10` sign rule and the unsigned reinterpret collide.
+    fn v32(r: &mut Rng) -> i32 { match r.below(6) { 0 => i32::MIN, 1 => i32::MAX, 2 => 0, 3 => -1, _ => r.next() as i32 } }
+    fn v64(r: &mut Rng) -> i64 { match r.below(6) { 0 => i64::MIN, 1 => i64::MAX, 2 => 0, 3 => -1, _ => r.next() as i64 } }
+    fn vu64(r: &mut Rng) -> u64 { match r.below(5) { 0 => 0, 1 => u64::MAX, 2 => u32::MAX as u64, _ => r.next() } }
+    fn vu32(r: &mut Rng) -> u32 { match r.below(5) { 0 => 0, 1 => u32::MAX, 2 => 1, _ => r.next() as u32 } }
+
+    macro_rules! radix_s_n {
+        ($name:literal, $subj:ident, $refr:ident, $gen:ident, $req:expr) => {
+            check_buf_fx($name, $req, |r| {
+                let v = $gen(r);
+                let rx = radix_of(r);
+                let sz = r.below(13);
+                let null = r.below(32) == 0;
+                let (mut d1, mut d2) = (vec![0xAAu8; 72], vec![0xAAu8; 72]);
+                let (p1, p2) = if null { (core::ptr::null_mut(), core::ptr::null_mut()) }
+                               else { (d1.as_mut_ptr(), d2.as_mut_ptr()) };
+                let g = Effects::subject(|| $subj(v, p1, sz, rx) as i64);
+                let w = Effects::reference(|| $refr(v, p2, sz, rx) as i64);
+                (d1, g, d2, w, format!("v={v} radix={rx} size={sz}{}", if null { " str=NULL" } else { "" }))
+            });
+        };
+    }
+    macro_rules! radix_s_w {
+        ($name:literal, $subj:ident, $refr:ident, $gen:ident, $req:expr) => {
+            check_wbuf_fx($name, $req, |r| {
+                let v = $gen(r);
+                let rx = radix_of(r);
+                let sz = r.below(13);
+                let null = r.below(32) == 0;
+                let (mut d1, mut d2) = (vec![0xAAAAu16; 72], vec![0xAAAAu16; 72]);
+                let (p1, p2) = if null { (core::ptr::null_mut(), core::ptr::null_mut()) }
+                               else { (d1.as_mut_ptr(), d2.as_mut_ptr()) };
+                let g = Effects::subject(|| $subj(v, p1, sz, rx) as i64);
+                let w = Effects::reference(|| $refr(v, p2, sz, rx) as i64);
+                (d1, g, d2, w, format!("v={v} radix={rx} size={sz}{}", if null { " str=NULL" } else { "" }))
+            });
+        };
+    }
+
+    radix_s_n!("_itoa_s",    _itoa_s,    ref__itoa_s,    v32, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_n!("_ltoa_s",    _ltoa_s,    ref__ltoa_s,    v32, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_n!("_i64toa_s",  _i64toa_s,  ref__i64toa_s,  v64, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_n!("_ui64toa_s", _ui64toa_s, ref__ui64toa_s, vu64, &["ok", "EINVAL", "handler"]);
+    radix_s_n!("_ultoa_s",   _ultoa_s,   ref__ultoa_s,   vu32, &["ok", "EINVAL", "ERANGE"]);
+    radix_s_w!("_itow_s",    _itow_s,    ref__itow_s,    v32, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_w!("_ltow_s",    _ltow_s,    ref__ltow_s,    v32, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_w!("_i64tow_s",  _i64tow_s,  ref__i64tow_s,  v64, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_w!("_ui64tow_s", _ui64tow_s, ref__ui64tow_s, vu64, &["ok", "EINVAL", "handler"]);
+    radix_s_w!("_ultow_s",   _ultow_s,   ref__ultow_s,   vu32, &["ok", "EINVAL", "ERANGE"]);
+
+    // _strtoi64 — the engine strtol/_atoi64 sit on, now exported directly.
+    check_effects("_strtoi64", |r| {
+        let a = gen_parse_input(r);
+        let b = BASES2[r.below(9)];
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
+        let g = Effects::subject(|| { let v = _strtoi64(p, &mut e1, b); v ^ (e1 as i64 - p as i64) });
+        let w = Effects::reference(|| { let v = ref__strtoi64(p, &mut e2, b); v ^ (e2 as i64 - p as i64) });
+        (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
+    });
+
 }
