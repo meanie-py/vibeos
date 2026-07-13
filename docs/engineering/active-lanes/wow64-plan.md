@@ -580,6 +580,55 @@ pointers with 32-bit offsets into 64-bit structs. Rebuild **both** arches.
   exercises SHAREDINFO reads; deeper window ops (subclassing, prop lists) will
   surface more 32/64 divergence in the user handle table.
 
+## M10: file I/O — the `IO_STATUS_BLOCK` family
+
+The first thing Doom does is `ReadFile` a WAD, and that path was quietly broken.
+
+`IO_STATUS_BLOCK` ends in `ULONG_PTR Information` — **4 bytes in the guest, 8 on
+the host**. So the guest's struct is 8 bytes and the host kernel writes 16. Yet
+`NtReadFile`, `NtWriteFile`, `NtQueryInformationFile`, `NtSetInformationFile`,
+`NtQueryVolumeInformationFile` and `NtFlushBuffersFile` were never listed in
+`tools/wow64gen/manual.txt`, so wow64gen **auto**-thunked them: it handed the
+guest's 8-byte IOSB straight through. Two bugs at once — an 8-byte overflow past
+the guest struct, and an `Information` read from the wrong offset (i.e. every
+`ReadFile` byte count was garbage). This is exactly the failure wow64gen's manual
+list exists to prevent; the names were simply missing from it. *Lesson: the
+deep-marshal list is only as good as its audit — the generator cannot infer
+struct-ness from a `.spec`, so a syscall taking a divergent struct is silently
+wrong until somebody puts it on the list.*
+
+Fixed in `dll/win32/wow64/wow64_manual.c`: all six, plus `NtQueryDirectoryFile`
+(which additionally takes a `PUNICODE_STRING` search mask). The remaining IOSB
+takers (`NtLockFile`, `NtQueryEaFile`, `NtCancelIoFile`, `NtNotifyChangeKey`,
+`NtDeviceIoControlFile`, …) are now on the manual list too, so they fail **loud**
+instead of silently corrupting — implement on demand.
+
+**Async is the hazard, and we do not take it.** The host IOSB we marshal into
+lives on the thunk's stack frame. Returning `STATUS_PENDING` would leave the
+kernel holding a pointer into a frame that is about to die — the dead-frame-IOSB
+corruption class (field manual §9.36, which cost this project real days). So:
+
+- an explicit async request (guest passed an `Event` or an APC routine) is
+  **refused loudly before the call is issued** — no IRP, no corruption;
+- if the host pends anyway (async handle, guest polling its IOSB), we **block on
+  the file handle** until completion rather than return over a live pointer into
+  a dead frame.
+
+*Owed — the real async fix is kernel-side*, and it is what NT itself does: I/O
+completion should write an `IO_STATUS_BLOCK32` when the requesting process is
+WoW64 (NT gates this on `IoIs32bitProcess(Irp)`). Our single choke point is
+`*(*Irp).UserIosb = (*Irp).IoStatus;` in `iomgr-rust/src/irp.rs`. It needs care:
+64-bit code (wow64.dll, the 64-bit ntdll) *also* runs in a WoW64 process and
+passes genuine 64-bit IOSBs, so the gate must be per-IRP (captured at syscall
+entry), never merely "the process is WoW64". Until that lands, async file I/O
+from a guest is refused rather than mis-served.
+
+Oracle: **`file32.exe`** (`tools/fex/hello-compute/File32.c`, launched by
+winlogon's `TryStartWow64File`) — opens a real file, checks `GetFileSize`, reads
+it and **asserts the returned byte count**, seeks and re-reads, round-trips a
+write, and enumerates a directory. The byte count *is* `IOSB.Information`, so a
+regression in this marshalling cannot pass the test.
+
 *Still deferred (owed, the next milestones):*
 - **advapi32.dll / usp10.dll (i386) staging** — user32 imports them; the loader
   currently skips-missing (`LDR: Skipping missing import ... c0000135`), which

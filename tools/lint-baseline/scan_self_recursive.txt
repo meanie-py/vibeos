@@ -1,0 +1,49 @@
+# scan_self_recursive baseline — PRE-EXISTING infinite self-jump functions.
+#
+# A function whose FIRST instruction jumps to its own entry spins the CPU forever:
+# no bugcheck, no serial output, no panic. Every entry below is a real silent-hang
+# landmine that predates the lint (2026-07-12). They are TRACKED AND OWED, not
+# accepted — `--check` fails on anything NOT listed here, so a NEW self-recursion
+# (like bootvid's memcpy/memset, field manual §9.60) is caught immediately.
+#
+# Fixing the debt (owed, not this lane):
+#   exp2/exp2f/exp2l  — a C `exp2()` whose body LLVM recognised and folded into a
+#                       call to exp2 itself. Same idiom-recursion trap as §9.60,
+#                       in C. Needs -fno-builtin-exp2 on those TUs (or a real impl).
+#   classpnp KeRaiseIrql/KeLowerIrql/IoWMIDeviceObjectToProviderId
+#                     — local stubs shadowing the ntoskrnl imports; hang if called.
+#   ftfd rust_begin_unwind — a `#[panic_handler]` written `loop {}`: a panic that
+#                       hangs SILENTLY. Should adopt panic-common (prints + bugchecks).
+#   cdrom abort       — abort() stub written as a spin.
+#
+# Refresh (after fixing some): re-run the scanner on all 3 arches and union the output.
+beepmidi.dll: exp2
+calc.exe: exp2
+cdrom.sys: abort
+classpnp.sys: IoWMIDeviceObjectToProviderId
+classpnp.sys: KeLowerIrql
+classpnp.sys: KeRaiseIrql
+d3dx9_24.dll: exp2
+d3dx9_25.dll: exp2
+d3dx9_26.dll: exp2
+d3dx9_27.dll: exp2
+d3dx9_28.dll: exp2
+d3dx9_29.dll: exp2
+d3dx9_30.dll: exp2
+d3dx9_31.dll: exp2
+d3dx9_32.dll: exp2
+d3dx9_33.dll: exp2
+d3dx9_34.dll: exp2
+d3dx9_35.dll: exp2
+d3dx9_36.dll: exp2
+d3dx9_37.dll: exp2
+d3dx9_38.dll: exp2
+d3dx9_39.dll: exp2
+d3dx9_40.dll: exp2
+d3dx9_41.dll: exp2
+d3dx9_42.dll: exp2
+d3dx9_43.dll: exp2
+dsound.dll: exp2
+ftfd.dll: _RNvCsiGVaDesi5rv_7___rustc17rust_begin_unwind
+ucrtbase.dll: exp2f
+ucrtbase.dll: exp2l

@@ -47,40 +47,24 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_eh_personality() {}
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn memcpy(
-    dst: *mut core::ffi::c_void,
-    src: *const core::ffi::c_void,
-    n: usize,
-) -> *mut core::ffi::c_void {
-    core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, n);
-    dst
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn memset(
-    dst: *mut core::ffi::c_void,
-    val: i32,
-    n: usize,
-) -> *mut core::ffi::c_void {
-    core::ptr::write_bytes(dst as *mut u8, val as u8, n);
-    dst
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn memcmp(
-    left: *const core::ffi::c_void,
-    right: *const core::ffi::c_void,
-    n: usize,
-) -> i32 {
-    let mut i = 0usize;
-    while i < n {
-        let a = *(left as *const u8).add(i);
-        let b = *(right as *const u8).add(i);
-        if a != b {
-            return a as i32 - b as i32;
-        }
-        i += 1;
-    }
-    0
-}
+// NO local `memcpy`/`memset`/`memcmp` here — bootvid.dll imports ntoskrnl.exe,
+// which EXPORTS memcpy/memset/memmove on every arch (ntoskrnl.spec), and memcmp
+// comes from sdk/lib/crt/libmemcmp.a (reactos-link links it as a link-group
+// fallback). That is exactly how every C driver gets them.
+//
+// This crate used to define its own, and the memcpy/memset were INFINITELY
+// RECURSIVE: their bodies were `core::ptr::copy_nonoverlapping` / `write_bytes`,
+// which LLVM lowers to `llvm.memcpy`/`llvm.memset` — and then back to a CALL to
+// `memcpy`/`memset`, i.e. to themselves. They compiled to a literal `jmp .`.
+//
+// It never fired because `-Z build-std-features=compiler-builtins-mem` linked
+// compiler_builtins' own (correct, `#[no_builtins]`-compiled) mem* alongside them,
+// and under `--allow-multiple-definition` lld took that one. Dropping build-std
+// (stable-toolchain Axis B) removed the competitor, the broken twins became the
+// only definition, and the amd64 kernel hung the instant it drew the boot screen —
+// spinning in `memset` forever, silently, at kernel init.
+//
+// DO NOT re-add a hand-written mem* here. If you ever must, it cannot be written
+// in plain safe Rust: any byte-copy loop is re-recognised by LLVM's loop-idiom
+// pass and folded straight back into a self-call. See the field manual (§ "a Rust
+// mem* stub is a self-recursion trap").

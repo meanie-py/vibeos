@@ -56,7 +56,7 @@ fn main() {
         }
         "x86_64" => {
             // misc.S + linux.S flipped to Rust global_asm! (loader_asm.rs).
-            ("x86_64-kernel.json", "RunLoader", Vec::new())
+            ("x86_64-pc-windows-gnu", "RunLoader", Vec::new())
         }
         other => panic!("rosload-cargo: unsupported arch {other} (i386/amd64 only; arm64 is UEFI-only, no rosload)"),
     };

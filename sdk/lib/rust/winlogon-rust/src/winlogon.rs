@@ -780,6 +780,64 @@ unsafe fn TryStartWow64Hello() {
     }
 }
 
+/* M10 file-I/O probe: an i386 guest that reads, writes and enumerates real
+ * files. It is the oracle for the IO_STATUS_BLOCK 32<->64 marshalling — the
+ * byte count ReadFile hands back IS IoStatusBlock.Information, which is 4 bytes
+ * wide in the guest and 8 on the host. Silent no-op unless staged;
+ * verdict = [file32] serial lines + exit 0x600D. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartWow64File() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent — don't spawn a guest that can't run
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\file32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 11] = wstr_arr!("file32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] file32.exe (i386 file-I/O guest) created (PID %lu) - waiting\n\0".as_ptr()
+                as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 60_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] file32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(file32.exe) FAILED (error %lu)\n\0".as_ptr() as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 /* M8 window-creation probe: an i386 guest with user32 imports that registers
  * a class, creates a REAL window, and pumps messages (forces user32 client
  * connect + kernel->user callbacks under wow64). Silent no-op unless staged;
@@ -1469,6 +1527,9 @@ pub unsafe extern "system" fn WinMain(
         /* M8: window-creation guest AFTER the direct-DC guest (gui32 is the
          * regression oracle; win32 is the frontier). */
         TryStartWow64Win32();
+
+        /* M10: file-I/O guest — the IO_STATUS_BLOCK marshalling oracle. */
+        TryStartWow64File();
 
         /* DOOM (opt-in, VIBEOS_DOOM=1): spawned LAST among GUI apps for
          * foreground focus, and BEFORE the cmd.exe INFINITE wait below. */

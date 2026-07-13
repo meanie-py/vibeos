@@ -26,9 +26,18 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["staticlib"]
+# A plain rlib. The staticlib that msvcrt.dll links is the sibling
+# `msvcrt-crt-cargo` umbrella (the repo's standard `*-rust` + `*-cargo` split).
+#
+# Keeping this an rlib is what lets the host harness `msvcrt-difftest` link
+# THIS crate — the code that actually ships — and fuzz it against the genuine
+# msvcrt C. Waves 1-2 graded cnt-rust's `cabi` shims as a proxy, which was
+# sound only while the wrappers were verbatim copies of them; wave 3's wrappers
+# deliberately ADAPT cnt-rust (unsigned-char contract, clamped returns, two
+# msvcrt-contract ports), so the proxy would no longer be the artifact.
+# Grade the artifact. See msvcrt-crt-cargo/Cargo.toml for why the split is
+# structurally forced (crate-type is not feature-conditional).
 path = "src/lib.rs"
 
 [dependencies]
 cnt-rust = { path = "../cnt-rust", default-features = false }
-panic-common = { path = "../panic-common", features = ["user"] }

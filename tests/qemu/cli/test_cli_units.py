@@ -20,8 +20,8 @@ from tests.qemu import backend as be_mod
 from tests.qemu import qmp_client, serial_client
 
 from . import build as build_mod
-from . import conformance as conformance_mod
 from . import config as config_mod
+from . import conformance as conformance_mod
 from . import gdbengine as ge_mod
 from . import lints, provenance, repro, triage
 from .artifacts import Run, Stage
@@ -385,9 +385,9 @@ def test_workspace_cargo_target_per_arch(tmp_path: Path):
     stem.mkdir(parents=True)
     assert provenance.workspace_cargo_target(repo, "i386") == stem
     # arch alias + per-arch stem resolution
-    (repo / "sdk" / "lib" / "rust" / "target" / "x86_64-kernel").mkdir(parents=True)
+    (repo / "sdk" / "lib" / "rust" / "target" / "x86_64-pc-windows-gnu").mkdir(parents=True)
     amd64_stem = provenance.workspace_cargo_target(repo, "amd64-uefi")
-    assert amd64_stem is not None and amd64_stem.name == "x86_64-kernel"
+    assert amd64_stem is not None and amd64_stem.name == "x86_64-pc-windows-gnu"
 
 
 def test_discover_rust_module_outputs(tmp_path: Path):
@@ -2379,9 +2379,7 @@ def test_conformance_parser_detects_crash_regression(tmp_path):
     assert [r["status"] for r in results] == ["OK", "CRASH"]
     assert bc == "0x19" and done is None
     bp = tmp_path / "base.txt"
-    bp.write_text(
-        "KeEvent OK pass=42733 fail=0 skip=0\nNpfsFileInfo OK pass=1 fail=0 skip=0\n"
-    )
+    bp.write_text("KeEvent OK pass=42733 fail=0 skip=0\nNpfsFileInfo OK pass=1 fail=0 skip=0\n")
     regs = parser.compare(results, parser.load_baseline(bp))
     assert any("NpfsFileInfo" in r and "CRASH" in r for r in regs)
 

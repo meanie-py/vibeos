@@ -6,7 +6,9 @@ for: it replaces the `add_cargo_module()` ninja custom-commands in
 `sdk/cmake/gcc.cmake` with a plain dependency-ordered walk that
 
   1. self-hosts the host tools a cell's post-link needs (`native-pefixup`),
-  2. runs `cargo +nightly build-std` per cell (the exact invocation cmake emits),
+  2. runs cargo per cell (the exact invocation cmake emits — stable + the builtin
+     triple on amd64/arm64; nightly + `-Z build-std` + the softfloat kernel json
+     on i386),
   3. copies the cell's `.exe` out, and
   4. applies the KIND post-link (native-pefixup mode / i386 lld-forwarder fix /
      efi strip) — matching `set_module_type` / the per-KIND POST_BUILD.
@@ -40,7 +42,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # arch → the cargo custom-target json stem (== cargo's target/<stem>/ output dir)
-ARCH_STEM = {"i386": "i686-kernel", "amd64": "x86_64-kernel", "arm64": "aarch64-kernel"}
+ARCH_STEM = {
+    "i386": "i686-kernel",
+    "amd64": "x86_64-pc-windows-gnu",
+    "arm64": "aarch64-pc-windows-gnullvm",
+}
 # arch → whether the produced PE is 64-bit (drives pefixup's -D_TARGET_PE64)
 ARCH_PE64 = {"i386": False, "amd64": True, "arm64": True}
 
@@ -283,8 +289,8 @@ def cargo_build_many(
     trace_dir: Path | None = None,
     force_off: bool = False,
 ) -> None:
-    """ONE cargo +nightly build-std invocation building every cell (per-arch
-    fan-out). All cells share the identical `<stem>.json` target, so a single
+    """ONE cargo invocation building every cell (per-arch fan-out). All cells share
+    the identical target, so a single
     `--target` + many `-p` lets cargo build the shared rlibs once and the
     per-cell links in parallel — far better than N sequential invocations (each
     re-resolves the 190-member workspace and links serially). Concurrent cargo
@@ -292,27 +298,47 @@ def cargo_build_many(
     parallelism of one build is the win."""
     ws = root / "sdk/lib/rust"
     stem = ARCH_STEM[arch]
-    # All cells' <stem>.json are byte-identical; use the first cell's copy.
-    target_json = ws / cells[0].crate / f"{stem}.json"
+    # Mirror gcc.cmake:add_cargo_module. i386 is the only build-std cell left (it
+    # needs the `x86-softfloat` kernel json, which has no builtin triple); amd64 and
+    # arm64 link the BUILTIN triple on pinned stable, with the two `-C` flags that
+    # restore what the retired json carried. Keep in sync with gcc.cmake +
+    # tests/qemu/cli/lints.py.
+    env = dict(os.environ)
+    if arch == "i386":
+        # All cells' i686-kernel.json are byte-identical; use the first cell's copy.
+        target = str(ws / cells[0].crate / f"{stem}.json")
+        std_args = [
+            "-Z",
+            "build-std=core,alloc,compiler_builtins",
+            "-Z",
+            "build-std-features=compiler-builtins-mem",
+        ]
+        env["RUSTUP_TOOLCHAIN"] = pinned_nightly()
+    else:
+        target = stem
+        std_args = []
+        # link-self-contained is amd64-only: gnullvm rejects the flag outright.
+        rustflags = "-C force-frame-pointers=yes"
+        if arch == "amd64":
+            rustflags += " -C link-self-contained=no"
+        env["RUSTFLAGS"] = rustflags
+
     env_cmd = [
         "cargo",
         "build",
         "--release",
         "--target",
-        str(target_json),
-        "-Z",
-        "build-std=core,alloc,compiler_builtins",
-        "-Z",
-        "build-std-features=compiler-builtins-mem",
+        target,
+        *std_args,
         "--manifest-path",
         str(ws / "Cargo.toml"),
     ]
     for c in cells:
         env_cmd += ["-p", c.crate]  # each cell package builds its single [[bin]]
     if dry:
-        log(f"DRY  RUSTUP_TOOLCHAIN={pinned_nightly()} {' '.join(env_cmd)}  (cwd={ws})")
+        pin = env.get("RUSTUP_TOOLCHAIN", "<stable: rust-toolchain.toml>")
+        log(f"DRY  RUSTUP_TOOLCHAIN={pin} {' '.join(env_cmd)}  (cwd={ws})")
         return
-    env = dict(os.environ, RUSTUP_TOOLCHAIN=pinned_nightly())
     if trace_dir is not None:
         # Engine appends each in-cargo command to <trace_dir>/<pkg>.trace.
         env["VIBEOS_LINK_TRACE"] = str(trace_dir)
