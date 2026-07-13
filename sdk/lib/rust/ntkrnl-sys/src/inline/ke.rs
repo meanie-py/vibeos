@@ -1356,6 +1356,40 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
 static RQ_INFLIGHT: [core::sync::atomic::AtomicUsize; 512] =
     [const { core::sync::atomic::AtomicUsize::new(0) }; 512];
 
+/// Waker identity per in-flight slot: the caller line of the defer that
+/// marked it (Requeue sites use 9000+site sentinels). Read back at the
+/// 0x5A/0x5D catch points as `deferred_by` — names the mystery waker.
+#[cfg(feature = "smp")]
+static RQ_WAKER_LINE: [core::sync::atomic::AtomicU32; 512] =
+    [const { core::sync::atomic::AtomicU32::new(0) }; 512];
+
+/// Look up who deferred this thread (0 = not marked / unknown).
+#[cfg(feature = "smp")]
+pub unsafe fn rq_inflight_waker(thread: ddk::PKTHREAD) -> u32 {
+    use core::sync::atomic::Ordering::SeqCst;
+    let t = thread as usize;
+    for i in 0..8 {
+        let idx = rq_inflight_slot(t, i);
+        if RQ_INFLIGHT[idx].load(SeqCst) == t {
+            return RQ_WAKER_LINE[idx].load(SeqCst);
+        }
+    }
+    0
+}
+
+#[cfg(feature = "smp")]
+unsafe fn rq_waker_stamp(thread: ddk::PKTHREAD, line: u32) {
+    use core::sync::atomic::Ordering::SeqCst;
+    let t = thread as usize;
+    for i in 0..8 {
+        let idx = rq_inflight_slot(t, i);
+        if RQ_INFLIGHT[idx].load(SeqCst) == t {
+            RQ_WAKER_LINE[idx].store(line, SeqCst);
+            return;
+        }
+    }
+}
+
 #[cfg(feature = "smp")]
 #[inline]
 fn rq_inflight_slot(t: usize, i: usize) -> usize {
@@ -1403,6 +1437,7 @@ pub unsafe fn rq_inflight_unmark(thread: ddk::PKTHREAD) {
 pub unsafe fn KiInsertDeferredReadyListRequeue(thread: ddk::PKTHREAD) {
     let prcb = KeGetCurrentPrcb();
     let _ = rq_inflight_mark(thread); // ensure marked; collision expected/legal
+    rq_waker_stamp(thread, 9000);
     kt_set_state(thread, ddk::_KTHREAD_STATE_DeferredReady as u8);
     kt_set_deferred_processor(thread, (*prcb).Number as u8);
     (*thread).__bindgen_anon_3.SwapListEntry.Next = (*prcb).DeferredReadyListHead.Next;
@@ -1423,6 +1458,7 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
     // observed sequential double: wake→pop→[2nd wake lands here]→insert→…
     // A collision here = a second wake of a thread already in ready-flight —
     // the true §9.56 first-illegal event; track_caller names the waker.
+    let __waker_line = core::panic::Location::caller().line() as u32;
     if rq_inflight_mark(thread) {
         let caller_line = core::panic::Location::caller().line() as u64;
         crate::driver_ddk::DbgPrint(
@@ -1504,6 +1540,7 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
         }
     }
 
+    rq_waker_stamp(thread, __waker_line);
     kt_set_state(thread, ddk::_KTHREAD_STATE_DeferredReady as u8);
     kt_set_deferred_processor(thread, (*prcb).Number as u8);
     // PushEntryList(&Prcb->DeferredReadyListHead, &Thread->SwapListEntry)
@@ -2074,12 +2111,13 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
         if kt_state_read(thread) == ddk::_KTHREAD_STATE_DeferredReady as u8 {
             let caller_line = core::panic::Location::caller().line() as u64;
             crate::driver_ddk::DbgPrint(
-                b"[RQ5D] KxQueueReadyThread on DEFERRED thr=%p defproc=%u reason=%u wstat=%p caller_line=%u\n\0".as_ptr() as *const i8,
+                b"[RQ5D] KxQueueReadyThread on DEFERRED thr=%p defproc=%u reason=%u wstat=%p caller_line=%u deferred_by=%u\n\0".as_ptr() as *const i8,
                 thread,
                 (*thread).__bindgen_anon_1.__bindgen_anon_1.DeferredProcessor as u32,
                 (*thread).WaitReason as u32,
                 (*thread).WaitStatus as usize as *const u8,
                 caller_line as u32,
+                rq_inflight_waker(thread),
             );
             ddk::KeBugCheckEx(
                 0x96,

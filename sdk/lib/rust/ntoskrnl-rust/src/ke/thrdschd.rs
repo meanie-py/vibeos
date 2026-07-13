@@ -471,7 +471,7 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
             && (*b).Flink == entry;
         if still_linked {
             crate::dbg_print!(
-                b"[RQ5A] drain-insert of ALREADY-LINKED thr=%p state=%u reason=%u wstat=%p pri=%u F=%p B=%p\n\0",
+                b"[RQ5A] drain-insert of ALREADY-LINKED thr=%p state=%u reason=%u wstat=%p pri=%u F=%p B=%p deferred_by=%u\n\0",
                 Thread,
                 *kt_State(Thread) as u32,
                 (*Thread).WaitReason as u32,
@@ -479,6 +479,7 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
                 OldPriority as u32,
                 f,
                 b,
+                ntkrnl_sys::inline::ke::rq_inflight_waker(Thread),
             );
             ntkrnl_sys::ddk::KeBugCheckEx(
                 0x96,
