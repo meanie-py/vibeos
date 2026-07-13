@@ -11,6 +11,77 @@
 
 ---
 
+## 2026-07-12 (wave 4) — the wide family LANDED, and the three-harness set became four
+
+**Flipped (14, all pure):** `wcslen wcscmp wcsncmp wcschr wcsrchr wcsstr wcsspn wcscspn
+wcspbrk wcscpy wcscat _wcsrev _wcsset _wcsnset`. Verdict: **45 MATCH / 0 SIGN-ONLY /
+0 DIVERGE**, all bounded fns in-bounds, every flipped primitive within 2× of its C.
+
+**The premise held.** `wchar_t` is unsigned by definition and `Elem::diff for u16` is
+already `(a as i32) - (b as i32)`, so the signed-char contract that forced `cmp_u`/`ncmp_u`
+into cnt-rust's core in wave 3 **cannot recur** on the wide side. **cnt-rust was not touched
+by this wave** — the kernel's libcntpr contract is unchanged.
+
+**`wcs.c` is now a SECOND reference TU** (176 public symbols, disjoint from `string.c`'s 106
+— asserted). One *union* rename prelude covers both, so cross-TU calls resolve `ref_*`→`ref_*`
+and `wcs.c` reaches `string.c`'s `fpnum_parse`/`memcpy`/`strlen` instead of the host's. The
+refstub now pulls glibc's `<wchar.h>`/`<wctype.h>` **under** the 16-bit `wchar_t` remap — the
+opposite of the rule for the narrow headers, and it is what makes ~30 of wcs.c's wide
+definitions agree with glibc's declarations *for free*. Only five still disagree in **shape**
+(`wcstok`'s arity; `wcstol`/`wcstoul`'s LP64 `long`; `wcstombs`/`wctomb`, which live in
+`<stdlib.h>` and so are typed *before* the remap) and go through the existing stage-0/stage-3
+hide-then-rename.
+
+### What the harnesses caught (all four times, this is the point of the lane)
+
+1. **`wcscmp` CLAMPS to −1/0/1** — unconditionally, no `_WIN64` branch — while its sibling
+   **`wcsncmp` returns the RAW difference**. Same family, same file, opposite contracts.
+2. **`wcsstr(L"", L"")` → `NULL`**, because its outer `while(*str)` never runs — whereas the
+   narrow **`strstr("", "")` → `""`** (it special-cases the empty needle *first*). A real
+   narrow/wide asymmetry inside msvcrt itself.
+3. **The CRT perf tax (§9.62).** `perf` flagged `wcscmp` at 3.8–4.8×, and the root cause was
+   structural: **a slice-based core cannot express a single-pass C string primitive** —
+   building a `&[u8]` needs the length, and computing the length is exactly the scan the C
+   skips. Which meant **narrow `strcmp` had the identical 3-pass shape and was slow ON MASTER**,
+   unmeasured, because the gate benched only `memset/memcpy/memcmp/memchr/strlen`.
+   *A perf gate only defends what it BENCHES.* Copy/compare/search are now single-pass
+   transcriptions (the same call `memcmp` already made). `wcscmp` 3.8×→0.79×, `strchr`
+   2.01×→1.00×, `strcmp` now benched at 1.00×. **The 2× bar was not raised.**
+4. **NULL tolerance vanished (§9.63) — and it shipped a boot regression.** The single-pass
+   rewrite dropped the NULL guard that `cstr_slice` had always provided (`NULL → &[]`, i.e.
+   *NULL behaves as `""`*). `classify` still said 45/45 MATCH — **it never passes NULL**. The
+   net suite went 15/15 → 13/15. Found by **A/B control**, not by the harness.
+
+### The harness set is now FOUR orthogonal instruments
+
+| harness | question | blind to |
+|---|---|---|
+| `classify` | wrong **values**? | access, speed, un-fuzzed inputs |
+| `oob_guard` | right answer, wrong **memory**? | values, speed |
+| `perf` | right answer, too **slowly**? | values, access |
+| `assert_null_tolerant` | did we drop a **tolerance** the last build had? | everything else |
+
+Every one of them was validated by **negative control** (inject the bug → it must fail).
+A guard that cannot be shown to fail is worthless.
+
+**The rule that generalizes** (§9.63): when you refactor a wrapper, enumerate the *implicit
+guarantees of the helper you are deleting*, not just the contract of the function you are
+rewriting. A NULL guard, a bounds clamp, a zero-length early-out — these live in the helper,
+are invisible at the call site, and vanish silently when you inline it away. And note the
+oracle: **the C is no help here** (it faults on NULL too). The oracle is *the previous build*.
+
+**Deferred, unchanged:** the locale-dependent wide set (`_wcsicmp`, `_wcsnicmp`, `_wcsicoll`,
+`_wcsnicoll`, `wcscoll`, `_wcslwr`, `_wcsupr`, `towlower`/`towupper`, the whole `isw*` ctype
+block, the NLS `wcstombs` family). The harness pins the "C" locale, so it *would* report
+MATCH — that is the documented blind spot (§9.60), not a license to flip. Verified still-C by
+PE export RVA (they resolve at 0x045xxx, far from the Rust cluster at 0x0025a0–0x002c90).
+
+**Next:** wave 5 = float↔str (`_ecvt`/`_fcvt`/`_gcvt`), then `math.c`/`sincos.c`, then `mbcs.c`.
+Owed: replace `--whole-archive` with per-symbol `-u` pulling (it currently force-includes the
+crate's bundled `compiler_builtins` into msvcrt.dll).
+
+---
+
 ## 0. TL;DR — the shape of the win
 
 | | |

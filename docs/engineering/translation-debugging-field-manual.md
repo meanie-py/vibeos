@@ -5411,3 +5411,161 @@ if (len > 0 && str) while (*str && len--) *str++ = value;  /* reads at most len 
 **The detector (new, permanent): `msvcrt-difftest/tests/oob_guard.rs`.** A value-comparing fuzz is *structurally* blind to an over-read that still returns the right answer — no amount of fuzzing finds this class. So probe the access, not the value: `mmap` two pages, `mprotect(PROT_NONE)` the second, and place a deliberately **NUL-free** buffer of `k` bytes flush against the boundary; call each bounded fn with `n <= k`. A correct impl never touches `p[k]`; an unbounded scan takes SIGSEGV. Each call runs in a forked child so the offender is *named* instead of taking the harness down. Validated both ways — it reports `_strnset ✗ OVER-READ` on the buggy version and passes on the fix. **Every new bounded flip gets a row here.**
 
 **Meta-lesson (compounds with §9.60).** §9.60 catalogued the harness's blind spots in *what it varies* (locale, host-vs-target `#if`, proxy-vs-artifact). This is a blind spot in *what it observes*: it compares return values and destination bytes, so it can only ever catch wrong **answers** — never wrong **memory access** that yields a right answer. Two different questions, two different instruments. A green diff table is not a safety proof.
+
+
+### 9.62 (ROOT-CAUSED + FIXED 2026-07-12) A slice-based core cannot express a single-pass C string primitive — the CRT perf tax, and the gate that was blind to it
+
+**Symptom.** A Rust CRT flip is byte-for-byte correct (a 20k-case differential fuzz
+says MATCH on every input) and 2–5× slower than the C it replaced. Nothing in the
+build, the lints, or the value-comparing harness says a word.
+
+**Root cause — structural, not a typo.** The idiomatic way to wrap a safe Rust core
+is to hand it slices:
+
+```rust
+pub unsafe extern "C" fn strcmp(a: *const u8, b: *const u8) -> i32 {
+    clamp(cmp_u(cstr_slice(a), cstr_slice(b)))     // 3 passes
+}
+```
+
+`cstr_slice` must find the NUL to build a `&[u8]`. So this scans `a`, scans `b`,
+and only then walks them both to compare. The C is **one** pass and never computes
+a length at all:
+
+```c
+while (*str1 && *str1 == *str2) { str1++; str2++; }
+```
+
+**The rule: a `&[T]` requires a length, and computing the length is exactly the scan
+the C skips.** Any C string primitive whose loop *discovers* the terminator as it
+works — `strcmp`, `strcpy`, `strcat`, `strchr`, `strstr`, `strspn`, and every wide
+twin — pays an extra full pass per input when routed through a slice API. Measured
+on msvcrt (2026-07-12):
+
+| flip | slice form | single-pass form | why |
+|---|---|---|---|
+| `wcscmp` | **3.8–4.8×** | 0.83× | 2 length scans + 1 compare walk vs 1 walk |
+| `strchr` | **2.01×** | 1.00× | scan-to-NUL then search vs one do-while |
+| `strcat` | **2.5×** | within bar | scan dst + scan src + copy vs scan dst + copy |
+| `strcmp` | *(unmeasured — see below)* | 1.00× | same 3-pass shape, shipped on master |
+
+**Fix.** Transcribe the copy/compare/search families directly against their C bodies
+as single-pass raw-pointer loops, in the *wrapper* crate. This is not a retreat from
+the "assemble from cnt-rust" strategy — it is the same call the lane already made for
+`memcmp` (hand-written word-wise, because cnt's byte-zip `mem::cmp` measured 10.3× off)
+and `_memccpy` (msvcrt's algorithm genuinely differs). Where the core's *shape* is
+wrong for the contract, the wrapper carries the body.
+
+Narrow set-based searchers (`strspn`/`strcspn`/`strpbrk`) can go one better with a
+256-bit `ByteSet` — which is precisely what msvcrt's own `strcspn` does (`BOOL
+rejects[256]` + `memset`). The wide twins stay naive nested scans, because their C
+is a naive nested scan (the u16 space is not cheaply tabulated, and msvcrt does not
+try).
+
+**The meta-lesson — a perf gate only defends what it BENCHES.** The msvcrt perf gate
+existed (it was built *because* wave 2 shipped an unvectorizable `memset` and blew the
+net suite's timeouts), and it was green. But it benched only
+`memset/memcpy/memcmp/memchr/strlen`. `strcmp` — the same 3-pass shape, served to
+every caller in the system — was never in the list, so it went slow through two waves
+and was found only because its *wide twin* happened to be benched. When you add a
+throughput gate, enumerate the flips and bench **all** of the hot ones; a gate with a
+coverage hole reads as "fast" exactly like a gate with none.
+
+**Two gate-hygiene corollaries found the same day:**
+- **Bench best-of-3, not the mean.** This host runs other agents' builds and QEMUs. A
+  scheduler steal inflates a sample, and under a mean that lands as a phantom
+  regression at the small sizes where call overhead already dominates. The minimum
+  time is the least-contended sample — the one that reflects the code, not the host.
+- **A gate that cries wolf in the default profile is a gate people learn to ignore.**
+  `opt-level = 3` for the CRT lives in `[profile.release.package.*]`, so a plain
+  `cargo test` compared an *unoptimized* Rust body against `-O2` C and reported ~100×
+  "regressions" that do not exist. Make it skip, loudly, with the reason and the right
+  command — do not let a bogus red become the normal state.
+
+**Related:** §9.60 (a differential harness can only falsify what it VARIES),
+§9.61 (an unbounded scan inside a bounded `n`-suffixed CRT function). Together these
+are the three orthogonal blind spots of a CRT flip: wrong **values** (`classify`),
+right answer / wrong **memory** (`oob_guard`), right answer / too **slowly** (`perf`).
+Each is blind to what the others catch.
+
+
+### 9.63 (ROOT-CAUSED + FIXED 2026-07-12) A refactor can silently drop a *tolerance* the old code provided — NULL stopped behaving as `""`, and no value-comparing test could ever see it
+
+**Symptom.** A pure-refactor of a CRT primitive (same contract, faster body) passes a
+20,000-case differential fuzz at 45/45 MATCH, passes the OOB guard, passes the perf
+gate — and then the OS boots to desktop on all three arches while the **net suite**
+goes 15/15 → 13/15, with a user-mode winsock round-trip that never completes.
+
+**Root cause.** The old wrappers reached their input through a helper that
+**NULL-guards**:
+
+```rust
+unsafe fn cstr_slice<'a>(p: *const u8) -> &'a [u8] {
+    if p.is_null() { return &[]; }      // <-- NULL behaves as ""
+    ...
+}
+```
+
+So the *shipped, gate-green* behaviour of `strcmp`/`strcpy`/`strcat`/`strspn`/… had
+always been **"NULL is an empty string"** — deliberately more forgiving than the C,
+which dereferences and dies. The single-pass perf rewrite (§9.62) walks raw pointers:
+
+```rust
+let (mut p, mut q) = (a, b);            // <-- NULL now faults
+while *p != 0 && *p == *q { ... }
+```
+
+The contract for every *real* string is byte-identical. The only thing that changed is
+an input the harness never generates.
+
+**Why nothing caught it.** `gen_str()` produces real NUL-terminated buffers. It has no
+notion of nullness, so the fuzz explored 20,000 points in a space that does not contain
+the bug. This is §9.60's rule biting again in a new dimension — *a differential harness
+can only falsify what it VARIES* — and the dimension here is not a value, a length, or a
+locale. It is **the validity of the pointer itself**.
+
+Note the asymmetry that makes this class nasty: being *more* forgiving than the C is
+harmless and nobody notices. Silently becoming *less* forgiving than the **last shipped
+build** is what breaks the boot — and the reference C is no help, because the C faults
+too, so there is no `ref_*` to diff against. **The oracle is the previous build, not the
+C.**
+
+**Fix.** Restore the tolerance explicitly, and keep the single-pass body:
+
+```rust
+static EMPTY_A: [u8; 1] = [0];
+#[inline] fn nz(p: *const u8) -> *const u8 {
+    if p.is_null() { EMPTY_A.as_ptr() } else { p }
+}
+// strcmp: let (mut p, mut q) = (nz(a), nz(b));
+```
+
+Redirecting NULL to a static NUL reproduces `&[]` semantics **exactly** (empty compares,
+copies, and spans identically) for one perfectly-predicted branch — measured cost: none
+(`strcmp` 1.01x, `strchr` 1.00x, `strcat` 0.99x after the guards).
+
+**Detector (permanent).** `classify::assert_null_tolerant()` — NULL is now a first-class
+asserted input for every flipped reader, narrow and wide. Validated by NEGATIVE CONTROL:
+delete one `nz()` and the harness dies with SIGSEGV. Because the genuine msvcrt faults
+here, this is graded against **the crate's own contract**, not against a `ref_*`.
+
+**The generalizable rule.**
+> When you refactor a wrapper, enumerate the *implicit guarantees of the helper you are
+> removing*, not just the contract of the function you are rewriting. A NULL guard, a
+> bounds clamp, an alignment fixup, a zero-length early-out — these live in the helper,
+> are invisible at the call site, and vanish silently when you inline the helper away.
+
+Same shape as §9.61 (an unbounded scan inside a bounded function): the *values* were
+right in both cases. What changed was something orthogonal to value — there, which
+memory was touched; here, which inputs are survivable.
+
+**How it was actually found.** Not by the harness. The net suite failed and every surface
+signal said "flake" (NET_FLAKE is an auto-retried class; another agent was gating
+concurrently; the failing test *set* varied run to run). The thing that settled it was
+the **A/B control**: rebuild the previous commit, same host, same suite — 15/15 twice,
+against 2-failed 5/5 for the new one. That is the same move that caught the wave-2 perf
+regression, and it is the only reliable way to separate "my change" from "this host is
+busy."
+
+> **Run the A/B control before you accept a flake label.** It costs one build. The
+> alternative is landing a regression that the retry logic will keep excusing.
