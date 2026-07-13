@@ -85,7 +85,11 @@ pub unsafe extern "system" fn KiIdleLoop() -> ! {
             (*Prcb).CurrentThread = NewThread;
             
             (*(NewThread as *mut _KTHREAD)).__bindgen_anon_5.__bindgen_anon_6.State = 2u8;
-            
+
+            // §9.56 in-flight oracle: promotion-to-Running unmark (idle loop).
+            #[cfg(feature = "smp")]
+            ntkrnl_sys::inline::ke::rq_inflight_unmark(NewThread as *mut _KTHREAD);
+
             #[cfg(feature = "smp")]
             {
                 // C: KfRaiseIrql(SYNCH_LEVEL) — do the swap at SYNCH_LEVEL.
