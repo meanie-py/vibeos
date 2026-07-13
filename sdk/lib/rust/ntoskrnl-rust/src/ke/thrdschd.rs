@@ -133,6 +133,48 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
     let mut ListEntry: *mut ntkrnl_sys::ddk::_SINGLE_LIST_ENTRY;
     let mut Thread: PKTHREAD;
 
+    // §9.56 tripwire 0x5C — validate the deferred chain BEFORE consuming it.
+    // Every node must be a thread with State==DeferredReady parked for THIS
+    // cpu; anything else means a foreign write rerouted the SLIST through the
+    // WaitListEntry union (e.g. a ready-list insert of a parked node) — catch
+    // it here with the offending node's identity, before the walk spreads it.
+    #[cfg(feature = "smp")]
+    {
+        let mut probe = (*Prcb).DeferredReadyListHead.Next;
+        let mut n: u32 = 0;
+        while !probe.is_null() {
+            let t = CONTAINING_RECORD(
+                probe as PVOID,
+                core::ptr::null_mut(),
+                core::mem::offset_of!(_KTHREAD, __bindgen_anon_3),
+            ) as PKTHREAD;
+            n += 1;
+            if *kt_State(t) != DeferredReady
+                || *kt_DeferredProcessor(t) != (*Prcb).Number as u8
+                || n > 64
+            {
+                crate::dbg_print!(
+                    b"[RQ5C] deferred-chain BAD node thr=%p state=%u defproc=%u thiscpu=%u pos=%u reason=%u\n\0",
+                    t,
+                    *kt_State(t) as u32,
+                    *kt_DeferredProcessor(t) as u32,
+                    (*Prcb).Number as u32,
+                    n,
+                    (*t).WaitReason as u32,
+                );
+                ntkrnl_sys::ddk::KeBugCheckEx(
+                    0x96,
+                    t as ntkrnl_sys::ddk::ULONG_PTR,
+                    ((0x5Cu64 << 40) | ((*kt_State(t)) as u64) << 8 | n as u64)
+                        as ntkrnl_sys::ddk::ULONG_PTR,
+                    Prcb as ntkrnl_sys::ddk::ULONG_PTR,
+                    probe as ntkrnl_sys::ddk::ULONG_PTR,
+                );
+            }
+            probe = (*probe).Next;
+        }
+    }
+
     ListEntry = (*Prcb).DeferredReadyListHead.Next;
     (*Prcb).DeferredReadyListHead.Next = core::ptr::null_mut();
 

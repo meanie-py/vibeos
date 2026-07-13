@@ -2040,6 +2040,35 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
             return;
         }
     }
+    // §9.56 tripwire 0x5D — queueing a DEFERRED-PARKED thread. Legit inputs
+    // here are Running (preempt re-queue of the outgoing thread) or Standby
+    // (displaced NextThread). State==DeferredReady means the thread is (or is
+    // about to be) parked on a deferred SLIST: the InsertTail below overwrites
+    // SwapListEntry.Next (union) and reroutes that SLIST into this ready
+    // list's interior — the §9.56 chain-corruption first-write. track_caller
+    // names the queuer.
+    #[cfg(feature = "smp")]
+    {
+        if kt_state_read(thread) == ddk::_KTHREAD_STATE_DeferredReady as u8 {
+            let caller_line = core::panic::Location::caller().line() as u64;
+            crate::driver_ddk::DbgPrint(
+                b"[RQ5D] KxQueueReadyThread on DEFERRED thr=%p defproc=%u reason=%u wstat=%p caller_line=%u\n\0".as_ptr() as *const i8,
+                thread,
+                (*thread).__bindgen_anon_1.__bindgen_anon_1.DeferredProcessor as u32,
+                (*thread).WaitReason as u32,
+                (*thread).WaitStatus as usize as *const u8,
+                caller_line as u32,
+            );
+            ddk::KeBugCheckEx(
+                0x96,
+                thread as usize as _,
+                ((0x5Du64 << 40) | (caller_line << 8)
+                    | (*thread).__bindgen_anon_1.__bindgen_anon_1.DeferredProcessor as u64) as _,
+                prcb as usize as _,
+                caller_line as _,
+            );
+        }
+    }
     // §9.56 entry diagnostics (holding the PRCB lock):
     #[cfg(feature = "smp")]
     {
