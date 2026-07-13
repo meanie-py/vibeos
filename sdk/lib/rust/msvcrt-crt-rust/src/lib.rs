@@ -258,13 +258,18 @@ mod m_atoi64 {
     #[allow(unused_imports)]
     use super::h::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
-    /// `__int64 _atoi64(const char *nptr)`
-    /// preserved misfeature: NULL→0; i64 wrapping accumulate, NO overflow error; no (int) trunc (unlike atoi)
+    /// `__int64 _atoi64(const char *nptr)` -> `_strtoi64_l(nptr, NULL, 10, NULL)`
+    ///
+    /// msvcrt's `_atoi64` is NOT libcntpr's. The kernel one wraps on overflow and
+    /// has no error channel; msvcrt's routes straight through `_strtoi64_l`, so it
+    /// **saturates** at _I64_MAX/_I64_MIN, sets errno=ERANGE, and fires the
+    /// invalid-parameter handler on NULL. It was flipped onto the kernel's
+    /// `parse_i64_wrapping` — a VALUE divergence on overflow, not merely an errno
+    /// one, and classify missed it because `gen_str` essentially never emits a
+    /// 19-digit run. `gen_num_str` now does. (§9.66)
     #[no_mangle]
     pub unsafe extern "C" fn _atoi64(nptr: *const u8) -> i64 {
-        let nptr_s = cstr_slice(nptr);
-        let (v, _of) = cnt_rust::core_rs::radix::parse_i64_wrapping(nptr_s);
-        v as i64
+        crate::strtoi64_contract(nptr, core::ptr::null_mut(), 10)
     }
 
 }
@@ -717,16 +722,24 @@ mod mstrtol {
     #[allow(unused_imports)]
     use super::h::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
-    /// `long strtol(const char *nptr, char **endptr, int base)`
-    /// preserved misfeature: BSD signed-long clamp: overflow → LONG_MIN/LONG_MAX (32-bit Win long); neg non-overflow = 0u32.wrapping_sub(acc); cutoff = neg?(ULONG)LONG_MAX+1:LONG_MAX; base 0 ⇒ 0x→16/0→8/else 10; no base validation; _LIBCNT_ no errno
+    /// `long strtol(const char *nptr, char **endptr, int base)` -> `_strtol_l(.., NULL)`
+    ///
+    /// Parses as i64 through msvcrt's engine, then clamps to the 32-bit Windows
+    /// `long` with ERANGE (string.c `_strtol_l`). NOT the BSD strtol: that is a
+    /// different function, and using it here is what shipped this without its
+    /// errno contract, and writing `*endptr` on a rejected base (§9.66).
     #[no_mangle]
     pub unsafe extern "C" fn strtol(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i32 {
-        let nptr_s = cstr_slice(nptr);
-        let r = cnt_rust::core_rs::radix::parse_long_bsd(nptr_s, base);
-        if !endptr.is_null() {
-            *endptr = nptr.add(r.end) as *mut _;
+        let ret = crate::strtoi64_contract(nptr, endptr, base);
+        if ret > i32::MAX as i64 {
+            *crate::_errno() = crate::ERANGE;
+            i32::MAX
+        } else if ret < i32::MIN as i64 {
+            *crate::_errno() = crate::ERANGE;
+            i32::MIN
+        } else {
+            ret as i32
         }
-        r.value as i32
     }
 
 }
@@ -736,21 +749,31 @@ mod mstrtoul {
     #[allow(unused_imports)]
     use super::h::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
-    /// `unsigned long strtoul(const char* nptr, char** end, int base)`
-    /// preserved misfeature: delegates to _strtoul_l — same asymmetric clamp incl. neg>ULONG_MAX→1
+    /// `unsigned long strtoul(const char* nptr, char** end, int base)` -> `_strtoul_l(.., NULL)`
+    ///
+    /// preserved misfeature: `_strtoul_l` parses with the **signed** `_strtoi64_l`
+    /// and then clamps ASYMMETRICALLY — and its underflow arm returns **1**:
+    ///
+    ///     if(ret > ULONG_MAX)              { ret = ULONG_MAX; errno = ERANGE; }
+    ///     else if(ret < -(__int64)ULONG_MAX) { ret = 1;       errno = ERANGE; }
+    ///
+    /// Not 0, not ULONG_MAX — one. Bug-for-bug with Microsoft; no reimplementation
+    /// would ever derive it. Anything in range falls through and is truncated to
+    /// 32 bits, which is how `strtoul("-1")` yields 0xFFFFFFFF.
     #[no_mangle]
     pub unsafe extern "C" fn strtoul(nptr: *const u8, end: *mut *mut u8, base: i32) -> u32 {
-        let nptr_s = cstr_slice(nptr);
-        let r = cnt_rust::core_rs::radix::parse_i64_clamped(nptr_s, base);
-        if r.base_ok && !end.is_null() {
-            *end = nptr.add(r.end) as *mut u8;
-        }
-        let v = if r.value > 4294967295i64 {
-            4294967295i64
-        } else if r.value < -4294967295i64 {
-            1i64
-        } else { r.value };
-        v as u32 as u32
+        const ULONG_MAX: i64 = 4294967295;
+        let ret = crate::strtoi64_contract(nptr, end, base);
+        let v = if ret > ULONG_MAX {
+            *crate::_errno() = crate::ERANGE;
+            ULONG_MAX
+        } else if ret < -ULONG_MAX {
+            *crate::_errno() = crate::ERANGE;
+            1
+        } else {
+            ret
+        };
+        v as u32
     }
 
 }
@@ -1555,6 +1578,63 @@ unsafe fn check_pmt(cond: bool) -> bool {
         invalid_pmt(EINVAL);
     }
     cond
+}
+
+// ── the msvcrt integer-parse CONTRACT (wave 6a, §9.66) ────────────────────
+//
+// cnt-rust's `parse_i64_clamped` already IS msvcrt's `_strtoi64_l` *engine*,
+// faithfully — same base auto-detect, same saturating accumulate, same
+// `got_digit ? nptr : p` endptr rule. What it deliberately does NOT carry is
+// msvcrt's *contract*, because the kernel CRT (`_LIBCNT_`) has neither an errno
+// nor an invalid-parameter handler:
+//
+//   * front door — CHECK_PMT(nptr != NULL), (base == 0 || base >= 2), (base <= 36)
+//       -> return 0, errno = EINVAL, FIRE the handler,
+//          and leave `*endptr` ALONE (the C returns before it writes it)
+//   * overflow  -> clamp AND errno = ERANGE
+//
+// That contract belongs HERE, at the msvcrt boundary, and the engine stays
+// kernel-pure. This split is the thesis of the whole lane: cnt-rust supplies the
+// algorithm, msvcrt-crt-rust supplies msvcrt's semantics. Bolting msvcrt's
+// contract onto a *foreign* engine is the mistake the float probe caught — and
+// it is what `strtol` was doing here, on BSD's `parse_long_bsd`, which has no
+// errno concept at all.
+//
+// LOCALE CAVEAT (known, bounded, tracked): the C skips whitespace with
+// `_isspace_l(c, NULL)` and folds case with `_tolower_l(c, NULL)` — the thread's
+// CURRENT locale. We implement the "C" locale (ASCII), which is what msvcrt.dll
+// starts in and what the overwhelming majority of callers ever see. classify
+// fuzzes the full 0x00-0xFF byte range against the genuine C to prove C-locale
+// equivalence. Under a non-C LC_CTYPE that marks extra bytes as space, this WILL
+// diverge. That is Phase D (locale) and is recorded in the plan — it is not new
+// debt: the already-shipped `strtol`/`strtoul` carry exactly the same caveat.
+
+/// `_strtoi64_l` with the "C" locale: msvcrt's front door + engine + errno.
+/// Shared by `strtol`, `strtoul`, `_atoi64` (and `_strtoi64` once flipped).
+#[inline]
+unsafe fn strtoi64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) -> i64 {
+    if !check_pmt(!nptr.is_null()) {
+        return 0;
+    }
+    if !check_pmt(base == 0 || base >= 2) {
+        return 0;
+    }
+    if !check_pmt(base <= 36) {
+        return 0;
+    }
+    // The C returns above WITHOUT reaching `if(endptr) *endptr = (char*)nptr;`,
+    // so on a rejected front door the caller's endptr keeps whatever it held.
+    // Writing it "helpfully" here is itself a divergence — classify caught the
+    // old `strtol` doing exactly that.
+
+    let r = cnt_rust::core_rs::radix::parse_i64_clamped(h::cstr_slice(nptr), base);
+    if !endptr.is_null() {
+        *endptr = nptr.add(r.end) as *mut u8;
+    }
+    if r.overflowed {
+        *_errno() = ERANGE;
+    }
+    r.value
 }
 
 #[no_mangle]

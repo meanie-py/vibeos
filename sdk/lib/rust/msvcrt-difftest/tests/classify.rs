@@ -134,10 +134,76 @@ extern "C" {
     // the two errno/handler channels — SEPARATE storage per side, on purpose
     fn ref_errno_get() -> i32;          // refimpl.c  (the reference's)
     fn ref_errno_set(v: i32);
+    fn ref_invalid_pmt_count() -> i32;
+    fn ref_invalid_pmt_reset();
     fn subj_errno_get() -> i32;         // subjectimpl.c (the subject's)
     fn subj_errno_set(v: i32);
     fn subj_invalid_pmt_count() -> i32;
     fn subj_invalid_pmt_reset();
+}
+
+/// The four observable effects of a CRT call, as one comparable unit.
+///
+/// WHY THIS TYPE EXISTS. A CRT function's contract is not just "what it wrote"
+/// and "what it returned". For any function that can fail it is also:
+///
+///   3. **errno**  — the value an app tests after the call
+///   4. **did the invalid-parameter handler FIRE** — an app installs one with
+///      `_set_invalid_parameter_handler()`, and it may `abort()`
+///
+/// Effect 4 was the harness's blind spot. `subj_invalid_pmt_count()` existed
+/// from wave 5 and *nothing ever read it* — the wave-5 comment claimed to grade
+/// "all four observable effects" while grading three. That mattered: msvcrt's
+/// radix family has THREE mutually-inconsistent error contracts, and the ONLY
+/// thing separating `_ultoa_s` (sets errno, does NOT fire the handler — it
+/// hand-rolls `*_errno() = EINVAL`) from `_ltoa_s` (fires it, via
+/// MSVCRT_CHECK_PMT) is effect 4. Grading 3-of-4 would have called them equal
+/// and shipped a silently wrong `_ultoa_s`.
+///
+/// Bundling them means a new row cannot *forget* to check one.
+#[derive(PartialEq, Debug)]
+struct Effects { ret: i64, errno: i32, pmt: i32 }
+
+impl Effects {
+    /// Run `f` on the SUBJECT side with both side-channels zeroed first.
+    fn subject(f: impl FnOnce() -> i64) -> Effects {
+        unsafe {
+            subj_errno_set(0);
+            subj_invalid_pmt_reset();
+            let ret = f();
+            Effects { ret, errno: subj_errno_get(), pmt: subj_invalid_pmt_count() }
+        }
+    }
+    /// Run `f` on the REFERENCE side with *its* (separate) side-channels zeroed.
+    fn reference(f: impl FnOnce() -> i64) -> Effects {
+        unsafe {
+            ref_errno_set(0);
+            ref_invalid_pmt_reset();
+            let ret = f();
+            Effects { ret, errno: ref_errno_get(), pmt: ref_invalid_pmt_count() }
+        }
+    }
+}
+
+impl core::fmt::Display for Effects {
+    fn fmt(&self, w: &mut core::fmt::Formatter) -> core::fmt::Result {
+        let e = match self.errno { 0 => "-".into(), 22 => "EINVAL".into(), 34 => "ERANGE".into(),
+                                   80 => "STRUNCATE".into(), n => format!("errno{n}") };
+        write!(w, "ret={} errno={} handler={}", self.ret, e, if self.pmt > 0 { "FIRED" } else { "no" })
+    }
+}
+
+/// Grade a function on ALL FOUR effects at once (no buffer involved).
+fn check_effects(name: &'static str, mut f: impl FnMut(&mut Rng) -> (Effects, Effects, String)) {
+    let mut r = Rng(0x14057B7EF767814F);
+    for _ in 0..20_000 {
+        let (got, want, ctx) = f(&mut r);
+        if got != want {
+            record(name, V::Diverge, format!("[{ctx}]\n        cnt   = {got}\n        msvcrt= {want}"));
+            return;
+        }
+    }
+    record(name, V::Match, String::new());
 }
 
 // ── cnt-rust's #[no_mangle] shims (the code under test) ──
@@ -549,19 +615,116 @@ unsafe fn run() {
          if ref_memchr(a.as_ptr().cast(), c, n).is_null() { -1 } else { ref_memchr(a.as_ptr().cast(), c, n) as i64 - a.as_ptr() as i64 }, format!("c={c} n={n}")) });
 
     // ---- conversions ----
-    check_int("atoi", false, |r| { let a = gen_str(r, 18); (atoi(a.as_ptr()) as i64, ref_atoi(a.as_ptr()) as i64, format!("{a:?}")) });
-    check_int("atol", false, |r| { let a = gen_str(r, 18); (atol(a.as_ptr()) as i64, ref_atol(a.as_ptr()) as i64, format!("{a:?}")) });
-    check_int("_atoi64", false, |r| { let a = gen_str(r, 24); (_atoi64(a.as_ptr()), ref__atoi64(a.as_ptr()), format!("{a:?}")) });
-    check_int("strtol", false, |r| { let a = gen_str(r, 20); let b = [0i32, 2, 8, 10, 16, 36][r.below(6)];
+    //
+    // ═════ WAVE 6a: the integer-parse family, RE-GRADED through all 4 effects ═════
+    //
+    // These were flipped in waves 1-3 and passed — but the grader could only see
+    // VALUE and ENDPTR, because errno/handler observability did not exist until
+    // wave 5 built it. A stronger oracle is worth nothing if you only ever point
+    // it at NEW code, so they are re-entered here through `check_effects`.
+    //
+    // Two blind spots in the OLD rows, both deliberate now:
+    //   * the base set was [0,2,8,10,16,36] — every one of them VALID, so the
+    //     `MSVCRT_CHECK_PMT(base == 0 || base >= 2)` / `(base <= 36)` rejection
+    //     path was never once executed in 20,000 cases.
+    //   * NULL was never passed, so `CHECK_PMT(nptr != NULL)` was never executed.
+    //
+    // Both now are. `gen_str` already emits 0x80-0xFF and control bytes, which is
+    // what exercises the `_isspace_l()` leading-whitespace boundary — the one
+    // place these functions consult the locale. refimpl models the "C" locale, so
+    // a MATCH here proves C-locale equivalence, which is what msvcrt.dll ships
+    // with. (A non-C locale could still diverge; that is Phase D's problem and is
+    // recorded as such in the plan.)
+    const BASES: [i32; 9] = [0, 2, 8, 10, 16, 36, /* now the INVALID ones: */ 1, 37, -1];
+
+    // `gen_str` is a general string fuzzer: random bytes with digits sprinkled in.
+    // The chance it ever emits a 19-DIGIT RUN is ~zero — so in 20,000 cases it
+    // never once drove the parse past _I64_MAX, and the entire saturate/ERANGE
+    // arm of these functions went untested. That is how `_atoi64` shipped on the
+    // kernel's WRAPPING parser while msvcrt's SATURATES: a value divergence that
+    // a value-comparing fuzzer could not see, purely for want of an input.
+    //
+    // A fuzzer only falsifies what it VARIES (§9.60). So generate the boundaries
+    // on purpose: long digit runs, and the exact values the C branches on.
+    fn gen_num_str(r: &mut Rng) -> Vec<u8> {
+        let core: Vec<u8> = match r.below(10) {
+            0 => b"9223372036854775807".to_vec(),   // _I64_MAX exactly       -> no ERANGE
+            1 => b"9223372036854775808".to_vec(),   // _I64_MAX + 1           -> saturate + ERANGE
+            2 => b"-9223372036854775808".to_vec(),  // _I64_MIN exactly       -> no ERANGE
+            3 => b"-9223372036854775809".to_vec(),  // _I64_MIN - 1           -> saturate + ERANGE
+            4 => b"4294967295".to_vec(),            // ULONG_MAX              -> strtoul edge
+            5 => b"4294967296".to_vec(),            // ULONG_MAX + 1          -> strtoul clamps
+            6 => b"-4294967296".to_vec(),           // < -ULONG_MAX           -> strtoul returns *1*
+            7 => b"2147483648".to_vec(),            // LONG_MAX + 1           -> strtol clamps
+            8 => {                                  // a random LONG digit run
+                let n = 15 + r.below(10);
+                let mut v = Vec::new();
+                if r.below(2) == 0 { v.push(b'-'); }
+                for _ in 0..n { v.push(b'0' + r.below(10) as u8); }
+                v
+            }
+            _ => {                                  // hex / octal / 0x-prefix paths
+                let pre: &[u8] = [&b"0x"[..], &b"0X"[..], &b"0"[..], &b""[..]][r.below(4)];
+                let n = 1 + r.below(18);
+                let mut v = pre.to_vec();
+                for _ in 0..n { v.push(b"0123456789abcdefABCDEF"[r.below(22)]); }
+                v
+            }
+        };
+        // wrap with the leading whitespace / sign / trailing-junk the C must skip
+        let mut v = Vec::new();
+        for _ in 0..r.below(3) { v.push(b" \t\n\x0b\x0c\r"[r.below(6)]); }
+        v.extend_from_slice(&core);
+        if r.below(3) == 0 { v.extend_from_slice(b"zz!"); }
+        v.push(0);
+        v
+    }
+    /// Half general-purpose strings, half boundary numerals.
+    fn gen_parse_input(r: &mut Rng) -> Vec<u8> {
+        if r.below(2) == 0 { gen_num_str(r) } else { gen_str(r, 22) }
+    }
+
+    check_effects("atoi", |r| {
+        let a = gen_parse_input(r);
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        (Effects::subject(|| atoi(p) as i64), Effects::reference(|| ref_atoi(p) as i64),
+         if null { "NULL".into() } else { format!("{a:?}") })
+    });
+    check_effects("atol", |r| {
+        let a = gen_parse_input(r);
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        (Effects::subject(|| atol(p) as i64), Effects::reference(|| ref_atol(p) as i64),
+         if null { "NULL".into() } else { format!("{a:?}") })
+    });
+    check_effects("_atoi64", |r| {
+        let a = gen_parse_input(r);
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        (Effects::subject(|| _atoi64(p)), Effects::reference(|| ref__atoi64(p)),
+         if null { "NULL".into() } else { format!("{a:?}") })
+    });
+    check_effects("strtol", |r| {
+        let a = gen_parse_input(r);
+        let b = BASES[r.below(9)];
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
         let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
-        let g = strtol(a.as_ptr(), &mut e1, b); let w = ref_strtol(a.as_ptr(), &mut e2, b);
-        let (o1, o2) = (e1 as i64 - a.as_ptr() as i64, e2 as i64 - a.as_ptr() as i64);
-        (((g as i64) << 8) ^ o1, ((w as i64) << 8) ^ o2, format!("base={b} {a:?} -> {g}/{w} end+{o1}/{o2}")) });
-    check_int("strtoul", false, |r| { let a = gen_str(r, 20); let b = [0i32, 2, 8, 10, 16, 36][r.below(6)];
+        let g = Effects::subject(|| { let v = strtol(p, &mut e1, b); ((v as i64) << 8) ^ (e1 as i64 - p as i64) });
+        let w = Effects::reference(|| { let v = ref_strtol(p, &mut e2, b); ((v as i64) << 8) ^ (e2 as i64 - p as i64) });
+        (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
+    });
+    check_effects("strtoul", |r| {
+        let a = gen_parse_input(r);
+        let b = BASES[r.below(9)];
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
         let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
-        let g = strtoul(a.as_ptr(), &mut e1, b); let w = ref_strtoul(a.as_ptr(), &mut e2, b);
-        let (o1, o2) = (e1 as i64 - a.as_ptr() as i64, e2 as i64 - a.as_ptr() as i64);
-        (((g as i64) << 8) ^ o1, ((w as i64) << 8) ^ o2, format!("base={b} {a:?} -> {g}/{w} end+{o1}/{o2}")) });
+        let g = Effects::subject(|| { let v = strtoul(p, &mut e1, b); ((v as i64) << 8) ^ (e1 as i64 - p as i64) });
+        let w = Effects::reference(|| { let v = ref_strtoul(p, &mut e2, b); ((v as i64) << 8) ^ (e2 as i64 - p as i64) });
+        (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
+    });
 
     // ---- mutators (compare destination bytes + returned pointer offset) ----
     check_buf("strcpy", |r| { let s = gen_str(r, 30);

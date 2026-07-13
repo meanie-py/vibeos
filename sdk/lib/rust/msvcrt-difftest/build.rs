@@ -463,7 +463,57 @@ fn main() {
         renamed += 1;
     }
     prelude.push_str(
-        "\n/* stage 2: host libc + the Windows type model + the real header's\n\
+        "\n/* ═══ stage 1.5: DISARM glibc's optimization attributes. ═══════════════\n\
+         *\n\
+         * THIS IS LOAD-BEARING. Without it the reference is MISCOMPILED and the\n\
+         * whole harness is lying to you. (§9.66 — it shipped this way through\n\
+         * waves 1-5 and was found in wave 6a.)\n\
+         *\n\
+         * Stage 1 renames `atoi` -> `ref_atoi` BEFORE the host headers, which is\n\
+         * deliberate: glibc then declares `ref_atoi` and we inherit a correct\n\
+         * prototype for free.  But a declaration carries more than a prototype.\n\
+         * glibc's <stdlib.h> says:\n\
+         *\n\
+         *     extern int atoi (const char *) __THROW __attribute_pure__ __nonnull ((1));\n\
+         *\n\
+         * and after stage 1 that is a declaration of *ref_atoi* carrying glibc's\n\
+         * attributes.  Two of them are actively FALSE for msvcrt:\n\
+         *\n\
+         *   __nonnull((1))      glibc promises the arg is never NULL, so the\n\
+         *                       optimizer DELETES msvcrt's `if(!str) return 0;`\n\
+         *                       guard (string.c:1720).  Verified: the guard is\n\
+         *                       absent from the emitted `ref_atoi` — the ONLY\n\
+         *                       reason a NULL fuzz case segfaulted the reference\n\
+         *                       instead of returning 0 like the real DLL does.\n\
+         *\n\
+         *   __attribute_pure__  glibc promises no side effects.  msvcrt's strtol\n\
+         *                       family SETS ERRNO.  A `pure` errno-setting call\n\
+         *                       may legally be CSE'd or elided outright — which\n\
+         *                       would silently corrupt the very errno oracle the\n\
+         *                       `_s`/parse rows are built on.  This one does not\n\
+         *                       crash; it quietly reports the wrong answer.\n\
+         *\n\
+         * The fix is not -fno-delete-null-pointer-checks: that patches the NULL\n\
+         * symptom and leaves `pure` armed.  Instead pull glibc's macro header\n\
+         * FIRST and neuter the macros, so every subsequent declaration comes out\n\
+         * attribute-free.  Prototypes (the thing we actually wanted) survive.\n\
+         *\n\
+         * `tests/ref_integrity.rs` asserts this stays true.\n\
+         */\n\
+         #include <sys/cdefs.h>\n\
+         #undef  __nonnull\n\
+         #define __nonnull(params)\n\
+         #undef  __attribute_pure__\n\
+         #define __attribute_pure__\n\
+         #undef  __attribute_const__\n\
+         #define __attribute_const__\n\
+         #undef  __attr_access\n\
+         #define __attr_access(x)\n\
+         #undef  __attr_access_none\n\
+         #define __attr_access_none(argno)\n\
+         #undef  __wur\n\
+         #define __wur\n\n\
+         /* stage 2: host libc + the Windows type model + the real header's\n\
          * include guard (so the TU's `#include \"msvcrt.h\"` no-ops).  This\n\
          * also pulls glibc's <wchar.h>/<wctype.h> UNDER the 16-bit wchar_t\n\
          * remap, which is what makes ~30 of wcs.c's wide definitions agree\n\
