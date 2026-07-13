@@ -1638,6 +1638,47 @@ For **pointer-free / arch-neutral** translations (string, SID, ACL, SD, security
 
 Rule of thumb: **byte-diffable ⇔ pointer-free pure function.** If the function computes an output buffer from inputs with no VM/handle/PEB side effects, byte-diff it. Otherwise, smoke it. (A ready-made harness for this lives in `rust-in-kernel.md` → "Differential-fuzz parity harness".)
 
+## Translating a COM DLL with a private header (ole32/oleaut32-class)
+
+Bugs that recur whenever you flip a **user-mode COM DLL** — i.e. a surface whose shape is
+"objects with vtables, a module-private header full of types and `static inline`s, and an
+on-disk/wire format". Learned flipping all 29 TUs of ole32 (2026-07-12); every item below
+is a bug that **compiled and linked cleanly** and would have shipped.
+
+### The three things the translator silently omits
+
+`rustconv` translates *functions*. It does not translate headers, and it does not translate
+file-scope data. Before you start, grep the C and treat these as a **separate authoring
+task**, budgeted up front:
+
+| Missing | How to find it | Consequence if you don't notice |
+|---|---|---|
+| The module's private header | `dll/.../<mod>.h` — types, the class hierarchy, `static inline` dispatchers, on-disk offsets | The Rust *references* them (storage32.rs did, ~130×) as `extern` symbols that link to nothing. Looks like an import problem; is a missing-translation problem. |
+| Every `static const ...Vtbl` table | `grep -nE '^static const .*Vtbl' <mod>.c` | The objects have **no methods at all**. 23 tables were missing from ole32's Tier-D. |
+| An export's attributes | the `.spec` file is ground truth | `StgCreateDocfile` came back a module-private *Rust-ABI* fn → `_StgCreateDocfile@16` simply absent from the DLL. Link error, at least — but only because a `.def` forced it. |
+
+### Symptom → cause → fix catalog
+
+| Symptom | Root cause | Fix |
+|---|---|---|
+| **Stack corruption on the first call to any COM method — i386 only** | Every vtbl slot emitted as a plain `unsafe fn` (the **Rust** ABI) instead of `STDMETHODCALLTYPE`. `extern "C"` links on amd64/arm64 and is wrong on i386, where COM methods are `__stdcall`. ~130 slots across ole32's Tier-D. | Wrap every vtbl method in a `stdmethod!` macro emitting `extern "stdcall"` on x86 / `extern "C"` elsewhere. Note `extern "system"` does NOT unify with bindgen's vtbl slot types — bindgen spells the ABI concretely per-arch. |
+| **A `match` arm silently swallows every input** | A **missing constant** turns a `match` arm into an irrefutable **binding**. rustc only whispers `unreachable pattern`. `StgOpenStorageEx` treated every `stgfmt` as `STGFMT_ANY`; datacache matched a `u16 cfFormat` against `DWORD` constants so *every* format took the first arm. | Never hand-transcribe a constant — `tools/harvest_consts.py` resolves it from the header the C compiles against and cites `file:line`. `verify_match_consts` in `vibeos-cli check` is the tripwire. |
+| **Behaviour is exactly inverted / a flag never fires** | A constant transcribed from memory with the **wrong value**. Seven in one pass: `STG_E_INVALIDHEADER` that was really `STG_E_INVALIDHANDLE`; `DISCARDCACHE_SAVEIFDIRTY` as `1` when the header says `0`; `PROPSETFLAG_NONSIMPLE` tested as `& 2` (that is ANSI; NONSIMPLE is 1); `PROPSETFLAG_UNBUFFERED` as `& 0x1000` (real value 4 — auto-commit never fired). **No compile error, no link error.** | Same: harvest, never type. `scan_inline_flag_literals` catches the `0x1000 /* STGM_WRITE */` shape where the comment and the value disagree. |
+| **Heap corruption a long way from the write** | `core::ptr::write_bytes(ptr, v, n)` / `copy_nonoverlapping` count **ELEMENTS, not bytes**, but the C's `memset`/`memcpy` count bytes. A `*mut ULONG` with `n = sizeof(array)` writes 4× the array. Also seen: a 64-*byte* `memcpy` that became 64 `WCHAR`s. | Cast the pointer to `*mut u8` whenever the count came from `sizeof`. `scan_silent_failures`' `WRITE_BYTES_SIZEOF` is the tripwire (suppress a verified FP with `// nolint: silent-failure (...)` **on the finding line**). |
+| **Every record written to disk is corrupt, but the code looks right** | A `#pragma pack(N)` struct translated as plain `#[repr(C)]`. ole32's `meta_placeable` became 28 bytes instead of 22. | Check the C for `#pragma pack` around every struct that touches a stream/file, and use `#[repr(C, packed(N))]`. Wire-format structs deserve a `size_of` assertion. |
+| **A loop never iterates, or skips its first element** | The C's list macros (`LIST_FOR_EACH_ENTRY`, wine's intrusive `struct list`) emitted as *function calls*, or hand-expanded wrong — `(*list.next).next` starts at the second element. `deleteStorageContents`' walk was rewritten into a loop that never iterates; `deleteStreamContents`' body was dropped entirely (→ use-after-free of the parent storage). | Provide the macros as real Rust macros and re-derive every hand-rolled walk from the C. Beware: a macro whose link-advance is *after* the body cannot host a `continue` — the C body may rely on that. |
+| **An `extern "C"` decl that links but calls wrong on i386** | An item in a module **shadows a glob import**. A file that declares `extern "C" { fn Foo(); }` locally will use *that*, not the prelude's correct `extern "system"` one — undecorated on i386, where the real symbol is `_Foo@N`. | Strip local extern blocks at integration and route every call through one shared, correctly-typed surface. `scan_cc_mismatch` is the tripwire. Note the inverse too: `DECLSPEC_HIDDEN` helpers declared **without** `WINAPI` really are cdecl — don't "fix" them to stdcall. |
+| **Two globs, one name → E0659 the day someone calls it** | A symbol declared `extern` in a shared "these still live in C" module AND defined by a flipped module. Both reachable through the prelude's globs. It stays *latent* until some file calls the name unqualified. | When you flip a TU into the crate, **delete its decl from the exports module**. 8 of ole32's were already latent before Tier-D made them fire. |
+| **`extern "thiscall"` is unstable and the C is an asm thunk** | i386 C++ `this`-convention adapters (wine's `DEFINE_STDCALL_WRAPPER`). Calling the slot with the C ABI instead — `this` on the stack where the callee expects `ecx` — corrupts the stack every call. | Write the thunk as a **naked function** (`#[unsafe(naked)]` + `naked_asm!`, stable since 1.88) matching the C's asm instruction for instruction. Do not silently degrade to the wrong ABI. See `ring/stg_prop.rs`'s `Allocate_PMemoryAllocator`. |
+
+**Cross-cutting lesson:** in a *kernel* flip the failure mode is a BUGCHECK — loud, and the
+smoke harness catches it. In a **COM DLL** flip the failure mode is a function that returns
+the wrong HRESULT, writes a subtly wrong byte to disk, or takes the wrong `match` arm. The
+boot smoke will be **green**. The lint gate (`verify_match_consts`, `scan_cc_mismatch`,
+`scan_inline_flag_literals`, `scan_silent_failures`) is doing most of the real work here —
+run `vibeos-cli check` and take its 0-NEW gate seriously; on this flip it caught four real
+bugs *after* the crate compiled clean and the OS booted on all three arches.
+
 ## 9. Kernel crash-hunting techniques (live BUGCHECK / hang / heap hunts)
 
 The *how-to-hunt* layer: techniques for chasing a live kernel crash (BUGCHECK, hang, heap
