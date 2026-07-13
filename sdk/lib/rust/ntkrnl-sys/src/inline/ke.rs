@@ -1836,12 +1836,21 @@ pub unsafe fn ki_check_not_running(thread: ddk::PKTHREAD, caller_line: u64) {
             as *const *mut ddk::_KPRCB).add(c);
         if p.is_null() { continue; }
         if (*p).CurrentThread == thread {
+            // §9.56 paradox splitter: is the global dispatcher lock HELD right now?
+            // The readier SHOULD hold it (serializing vs the wait-commit). Held(1)
+            // yet the race happened => hypothesis (4) early-release/handoff bug.
+            // Not-held(0) => hypothesis (2) this readier bypassed the dispatcher lock.
+            let disp_lock_ptr =
+                (*KeGetCurrentPrcb()).LockQueue[LOCK_QUEUE_DISPATCHER_LOCK].Lock as *const usize;
+            let disp_held = if disp_lock_ptr.is_null() { 0xFFu32 }
+                else { (core::ptr::read_volatile(disp_lock_ptr) & 1) as u32 };
             crate::driver_ddk::DbgPrint(
-                b"[RQRUNNING] queuing a RUNNING thread thr=%p state=%u runningOnCPU=%u caller_line=%u\n\0".as_ptr() as *const i8,
+                b"[RQRUNNING] queuing a RUNNING thread thr=%p state=%u runningOnCPU=%u caller_line=%u dispLockHeld=%u\n\0".as_ptr() as *const i8,
                 thread,
                 kt_state_read(thread) as u32,
                 c as u32,
                 caller_line as u32,
+                disp_held,
             );
             ddk::KeBugCheckEx(
                 0x96,
