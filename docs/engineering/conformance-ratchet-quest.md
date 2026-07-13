@@ -530,3 +530,38 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   That is a real conformance backlog item, not a pass. (Baseline for the known-flaky
   `IoDeviceObject` / `ExResource` was deliberately NOT rewritten from a single lucky run — this
   sweep happened to match the existing values exactly, so nothing moved.)
+
+- 2026-07-13: **Task #5 (arm64 fault-tolerant copy) — TRIED, REJECTED, root-caused; + a build bug
+  that fabricated evidence.** Attempted to extend the §9.59 fault-tolerant copy to arm64 (the arm64
+  kernel exports `T __C_specific_handler` and clang emits `.pdata` for arm64 `__try`, so it looked
+  ready). Added a per-boot self-test (`KmSafeCopySelfTest`, prints `[KMSAFECOPY] ... PASS`) that
+  asserts BOTH a valid copy succeeds AND an invalid one is caught — this is now PERMANENT on amd64
+  (first end-to-end proof in-tree that a real HARDWARE fault is caught in kernel mode; `seh_poc`
+  only ever proved a software raise). arm64 **FAILED**: a probe at an unmapped VA wedges the boot.
+  Root cause (field manual §9.68): NOT the DUMMY_PSEH silent-skip crutch (that path is never
+  reached — an earlier hypothesis, falsified by instrumentation). `MmAccessFault` correctly
+  declines; `KiDispatchException` is entered with a valid kernel stack; **arm64 kernel-mode
+  `RtlDispatchException` never returns** — it recurses/faults (first inner fault = instruction
+  abort, EC=0x21: it CALLs a bogus handler routine) → kernel stack overflow → infinite re-entry of
+  `KiArm64VectorTable`. The bug is in the arm64 virtual-unwind / `__C_specific_handler` path for
+  kernel frames. arm64 keeps the plain copy + documented gap (task #10). i386 likewise. The
+  arch-neutral close for both = a Linux-extable-style fault-fixup table in the page-fault handler.
+    - **Build bug found + FIXED along the way (field manual "Editing a kernel C SHIM…"):**
+      `reactos-link` emitted no `rerun-if-changed` for the C shims, so editing `kmsafecopy.c`
+      relinked a STALE object and a boot printed the PREVIOUS build's verdict — it fabricated a
+      result for code that wasn't running. Same false-fresh class the engine already documented for
+      Rust path-deps. This cost a wrong arm64 conclusion before it was caught. Now every c_shim path
+      is watched.
+- 2026-07-13: **Owed — the two REAL kernel bugs from the un-quarantine experiment (task #7):**
+  `NtCreateSection` BUGCHECK 0x50 (PAGE_FAULT_IN_NONPAGED_AREA, read at fffff880045ae040 — param
+  capture/validation path) and `MmMapLockedPagesSpecifyCache` BUGCHECK 0x1000 (PFN_LIST_CORRUPT,
+  P1=0x401 — Rust MDL-map PTE/PFN accounting). Both proven real (survived the native-SEH harness fix
+  with identical stop codes). Both amd64, both clear a quarantine when fixed. Need a kmtest-payload
+  build + repro under the kernel debug toolkit for a real triage.
+- 2026-07-13: **Owed — the net-suite retry hole (harness robustness, ranks above most single bugs):**
+  the gate auto-retries `NET_FLAKE` and accepts a pass on retry, so a *probabilistic* regression
+  gets waved through. Direct proof: a tree containing the msvcrt wave-4 regression ran net 3× on one
+  build and went `fail → 15/15 → 15/15`; the gate called it GREEN. Very plausibly how msvcrt wave 2
+  reached mainline. Fix: serialize the net stage under the host lock (it's the one wall-clock-
+  sensitive stage and multiple lanes gate concurrently), or fail the gate on ANY net attempt failing
+  rather than accepting a retry.
