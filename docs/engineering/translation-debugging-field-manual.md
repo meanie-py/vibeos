@@ -5355,6 +5355,42 @@ real defect is the SELF-SWAP WEDGE.** Two findings that rewrite the frame:
    `x1 vs x2` twin at ctxswitch.S:159; the rest of the self-swap path is benign —
    verified: stack save/reload is idempotent, resume clears SwapBusy, no CR3 change).
 
+**2026-07-13 (b) — 0x57 burst result: self-swap NOT the (first) culprit; forensics
+instead CONVICTED a lockless gate signal → ROOT CAUSE = `KiTryThreadLock` NEVER
+ACQUIRES (an inherited UPSTREAM ReactOS SMP bug).** The 0x57-armed burst (16 boots,
+12/16 green) produced ZERO 0x57 but 3× the site-0x22 tear with pristine forensics:
+`[RQTEAR]` showed the JUST-INSERTED sole-element entry either self-looped
+(`entry.F=entry.B=entry`, head still →entry) or half-foreign (`entry.F=our ready
+head, entry.B=another thread's WaitListEntry`). Working the interleavings backward,
+both shapes are the exact fingerprints of **two CPUs concurrently InsertTailList-ing
+the SAME KTHREAD WaitListEntry union into two different lists** (the deferred
+drain's ready insert racing the victim's own `KiAddThreadToWaitList` in its next
+wait-commit; the interleave where writer B re-reads `head.Blink` after writer A's
+store yields the self-loop exactly). A ready that early is only possible if a
+signaler bypassed the wait-side serialization — and the only lockless readier is
+`KeSignalGateBoostPriority`, whose sole mutual exclusion against the gate waiter's
+commit is `KiTryThreadLock`. Reading it: **`ntkrnl-sys/inline/ke.rs` returned
+0/"success" when the lock read FREE — WITHOUT ACQUIRING IT** (only the contended
+path did the interlocked swap). Faithfully translated from **ReactOS's own
+`ke_x.h:533`** (`if (!Thread->ThreadLock) return FALSE;`) — dead code upstream
+(ReactOS never shipped SMP; the UP variant is a no-op), a live catastrophic hole at
+`-smp 2`: on the COMMON (uncontended) path the gate signaler popped + readied the
+waiter with NO lock, including the window BEFORE the waiter set `SwapBusy` — so the
+waiter could be picked up and RUN on another CPU while still running its commit on
+its own CPU (**double-run, one stack, two CPUs**), or its deferred ready could land
+mid-next-wait-commit (the observed double-insert tears). Paged pool rides guarded
+mutexes → gates, so the traffic is constant. FIX (both homes): try-ACQUIRE semantics
+— visibly-held → fail(1); else interlocked swap(1), old!=0 → fail — in
+`ntkrnl-sys/inline/ke.rs::KiTryThreadLock` (live) and `ke_x.h:528` (reference
+parity). Lesson (reusable, add to the §1–8 canon): **"faithful to the C" is not
+"correct" for SMP-only C paths — ReactOS's CONFIG_SMP code was NEVER validated
+(it never booted SMP upstream); treat every inherited SMP-branch primitive as
+unreviewed and verify it against NT semantics, not against ReactOS.** 0x57 stays
+armed through validation: with the trylock fixed, a properly-serialized gate signal
+still readies a pre-dethrone waiter (legal NT window), so the self-swap wedge may
+now surface as the NEXT layer — if 0x57 fires, apply the old==new spin-skip in
+ctxswitch.S. Validation burst running: expect 0x22/[RQTEAR] silent, flake → ~0.
+
 **2026-07-13 SPLITTER RESULT — MIXED, so it is TWO faces, not one:**
 `[RQRUNNING]` now prints `dispLockHeld`. Across a burst:
 - **`dispLockHeld=1` AND `state=5`=Waiting** (both held cases): the readier HOLDS the

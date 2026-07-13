@@ -1203,17 +1203,31 @@ pub unsafe fn KiTryThreadLock(_thread: ddk::PKTHREAD) -> BOOLEAN {
     0 // FALSE
 }
 
-/// KiTryThreadLock — SMP (faithful to the C): FALSE if the lock is free,
-/// else exchange-1 and report whether it was still held.
+/// KiTryThreadLock — SMP: try-ACQUIRE Thread->ThreadLock. Returns FALSE(0) on
+/// success (lock now held by us), TRUE(1) on failure (someone else holds it) —
+/// the caller contract is `if KiTryThreadLock(t) { retry }` (gate.rs signal).
+///
+/// §9.56 ROOT-CAUSE FIX (2026-07-13): the previous shape — faithfully copied
+/// from ReactOS ke_x.h:533 — returned FALSE ("success") WITHOUT ACQUIRING when
+/// the lock read free (`if (!Thread->ThreadLock) return FALSE;`), an upstream
+/// ReactOS SMP bug that was dead code there (ReactOS never shipped SMP) and
+/// came alive at -smp 2 here: KeSignalGateBoostPriority proceeded lockless on
+/// the common path, popping + readying a gate waiter mid-commit → early/double
+/// ready → two CPUs InsertTailList the same KTHREAD WaitListEntry union into
+/// two lists concurrently → the DispatcherReadyListHead tears (site 0x11/0x22
+/// forensics: self-looped / cross-linked just-inserted entry). NT's primitive
+/// is KeTryToAcquireSpinLockAtDpcLevel — a real interlocked try-acquire.
 #[cfg(feature = "smp")]
 #[inline]
 pub unsafe fn KiTryThreadLock(thread: ddk::PKTHREAD) -> BOOLEAN {
     use core::sync::atomic::{AtomicI32, Ordering};
     let lock = core::ptr::addr_of_mut!((*thread).ThreadLock) as *mut i32;
-    if core::ptr::read_volatile(lock) == 0 {
-        return 0;
+    // Fast-fail without dirtying the cache line if visibly held.
+    if core::ptr::read_volatile(lock) != 0 {
+        return 1; // TRUE = failed, caller retries
     }
-    ((&*(lock as *const AtomicI32)).swap(1, Ordering::SeqCst) == 1) as BOOLEAN
+    // Actually acquire: old != 0 means we lost the race — failure.
+    ((&*(lock as *const AtomicI32)).swap(1, Ordering::SeqCst) != 0) as BOOLEAN
 }
 
 /// KiCheckDeferredReadyList — UP: no-op.
