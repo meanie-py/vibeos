@@ -5680,3 +5680,120 @@ catch this: the Rust reads perfectly. Only the emitted code tells the truth.
 3. `x/16i $pc` → `jmp <self>`, with an empty `ret` fn right after (`rust_eh_personality`).
 4. Scan memory backwards from the PC for the `MZ` header, then read the module name out of its
    PE export directory → `bootvid.dll`. (`find-kbase` only knows about ntoskrnl.)
+
+---
+
+### 9.66 (ROOT-CAUSED + FIXED 2026-07-12) Your differential oracle can be MISCOMPILED by the host's own headers — glibc's `__nonnull`/`__attribute_pure__` deleted the reference C's guards
+
+**Class:** differential-harness integrity. Applies to ANY harness that compiles genuine
+target C for the host and renames its symbols to compare against a reimplementation.
+**Symptom:** the *reference* segfaults, or silently reports the wrong answer, on inputs the
+real target handles fine. **Blast radius:** every verdict the harness has ever issued.
+
+#### The setup that causes it
+
+`msvcrt-difftest` compiles the real `dll/win32/msvcrt/string.c` for the host and renames its
+public symbols `ref_*` via a force-included prelude (`-include ref_prelude.h`), so the
+reference and the Rust under test can be linked into one process and fuzzed against each
+other. The rename deliberately lands **before** the system headers, because that makes glibc
+declare the renamed symbols and the reference inherits correct prototypes for free:
+
+```c
+/* ref_prelude.h, force-included */
+#define atoi ref_atoi
+/* ...then <stdlib.h> is pulled, and glibc says: */
+extern int atoi (const char *__nptr) __THROW __attribute_pure__ __nonnull ((1));
+/*            ^^^^ ...which after the rename declares REF_ATOI, with glibc's attributes. */
+```
+
+That is the bug. **A declaration carries more than a prototype — it carries attributes**, and
+glibc's are promises about *glibc's* implementation, not msvcrt's:
+
+| leaked attribute | glibc promises | msvcrt actually does | consequence |
+|---|---|---|---|
+| `__nonnull((1))` | arg is never NULL | `atoi` has `if(!str) return 0;` (string.c:1720) | optimizer **DELETES the guard** |
+| `__attribute_pure__` | no side effects | `strtol` family **sets errno** | call may be CSE'd or **elided** |
+
+The `__nonnull` one crashes, so you find it. The `pure` one **doesn't crash** — it quietly
+lets the compiler drop an errno-setting call whose result is unused, corrupting exactly the
+side-channel an errno-comparing oracle is built on. That is the dangerous half.
+
+#### How to detect it (the general recipe)
+
+The C source and the machine code disagree. **Trust the machine code.**
+
+```bash
+# the source SAYS there is a NULL guard:
+sed -n '1720p' dll/win32/msvcrt/string.c        # ->  if(!str) return 0;
+# the emitted reference does NOT have one:
+objdump -d --disassemble=ref_atoi <test-bin>    # ->  no `test %rdi,%rdi`; straight to a deref
+```
+
+Scoping rule: **the leak lands only on symbols whose names COLLIDE with the host libc.**
+`ref_atoi`/`ref_strtol`/`ref_strcpy` are at risk; `ref__strtoi64_l` is not, because glibc
+never declares `_strtoi64_l` and so never attaches anything to it. Guards that live inside
+msvcrt-only helpers survive; guards in the ABI-shared names get deleted.
+
+#### The fix
+
+**Not** `-fno-delete-null-pointer-checks` — that patches the NULL symptom and leaves `pure`
+armed. Instead pull glibc's macro header first and **neuter the attribute macros**, so every
+subsequent declaration comes out attribute-free while the prototypes (the thing you actually
+wanted) survive:
+
+```c
+/* prelude, AFTER the renames and BEFORE any libc header — build.rs "stage 1.5" */
+#include <sys/cdefs.h>          /* glibc routes every attribute through these macros */
+#undef  __nonnull            
+#define __nonnull(params)
+#undef  __attribute_pure__   
+#define __attribute_pure__
+#undef  __attribute_const__  
+#define __attribute_const__
+#undef  __attr_access        
+#define __attr_access(x)
+#undef  __wur                
+#define __wur
+```
+
+#### The tripwire (do this, not just the fix)
+
+`sdk/lib/rust/msvcrt-difftest/tests/ref_integrity.rs` — a test whose subject is **the oracle
+itself**. For each reference function whose C source contains a guard, call it in a forked
+child with the input the guard exists for, and assert it returns rather than faults. For
+`pure`, call it **for its side effect only, discarding the result**, and assert the side
+effect still happened — a `pure` call with an unused result is exactly what gets elided.
+
+Negative-control it: back the disarm out and confirm `ref_atoi`/`ref_atol` fault again.
+
+#### The two general lessons
+
+1. **A harness improvement is worth nothing if you only point it at NEW code.** The errno
+   oracle arrived in wave 5 and was used only on wave 5's flips. Re-running the *already
+   shipped* functions through it convicted three of them (`_atoi64` on a wrapping parser where
+   msvcrt saturates; `strtol` with no ERANGE/EINVAL and writing `*endptr` on a rejected base;
+   `strtoul` likewise) — all live on master, all previously "MATCH". **When the oracle gets
+   stronger, re-run everything through it.**
+
+2. **A green from an unexercised branch is not a green.** `classify` had `gen_str`, a general
+   string fuzzer, whose chance of emitting a 19-digit run is ~zero — so in 20,000 cases it
+   never once drove a parse past `_I64_MAX`, and the whole saturate/ERANGE arm was untested.
+   The graders now take a `require: &["ok","EINVAL","ERANGE","handler"]` list and fail the row
+   as **UNEXERCISED CONTRACT** if the reference never produced those outcomes. Coverage is
+   printed on every MATCH, so "did the fuzz reach the branch" is answerable at a glance:
+
+   ```
+   _ultoa_s   MATCH   [ok=4799 EINVAL=11049 ERANGE=4152 handler-fired=0]
+   ```
+
+   (That `handler-fired=0` is itself load-bearing: `_ultoa_s` sets errno by hand and never
+   fires the invalid-parameter handler, while its sibling `_ltoa_s` does. On a bad radix the
+   two are byte-, return- and errno-identical — the handler bit is the ONLY thing telling them
+   apart, and a three-effect oracle calls them the same function.)
+
+#### See also
+
+- §9.60 — a differential harness can only falsify what it VARIES (the same disease, one level up)
+- §9.61 — the bug a value-comparing fuzz cannot see (an unbounded scan inside a bounded fn)
+- §9.64 — a refactor can silently drop a *tolerance* the old code provided
+- `docs/engineering/active-lanes/msvcrt-from-pieces-plan.md` — the lane, and what it has refused to flip
