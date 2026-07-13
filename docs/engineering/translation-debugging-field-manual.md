@@ -5417,6 +5417,31 @@ drain-insert site has NO already-linked guard of its own. Two findings this roun
    Ported the both-ends init to all 3 Rust setups (KxMultiThreadWait already used
    InitializeListHead+InsertTailList — fine).
 
+**2026-07-13 (d) — oracle-escalation ladder converged; first 16/16 GREEN amplified
+burst.** Burst-by-burst (all `--smp-kernel --cswitchdep` ×16, same host):
+- 0x59 burst (double-DEFER in-flight table): **0x59 SILENT**, 12/16, 4× tear —
+  so no double-push either; the second insert reaches the drain-insert site
+  without passing KiReadyThread/KiInsertDeferredReadyList.
+- 0x5A/0x5B burst (pre-insert linked guard at the drain's own insert + chain-cycle
+  cap): NO tears at all; 14/16 with 2× a NEW deterministic face — 0x1E c0000006 at
+  the SAME PC both times = **KiSelectReadyThread+0xE2** (ntkrnlmp symbolication;
+  the ready-list walk eating a wild entry — downstream victim, not culprit).
+  Precursor print: a thread arriving AT THE DRAIN with **State==Ready** — i.e. it
+  was KxQueueReadyThread'd (state=1 + linked, union Next overwritten) WHILE parked
+  on a deferred SLIST → the drain then walks ready-list interiors as SLIST links.
+- 0x5C/0x5D burst (drain pre-validates every chain node is DeferredReady-for-this-
+  cpu; KxQueueReadyThread bugchecks on a DeferredReady input): **16/16 GREEN,
+  both oracles silent.** Suspicious (green + no hits): either the cumulative fixes
+  (trylock + timer-block init) close it and earlier 0x1E pair was residual timing,
+  or 0x5C's per-drain walk perturbs the window (Heisenberg), or luck (~12% for a
+  16-green at the prior rate). ×32 confirmation burst running.
+Armed oracle inventory (all on branch, to be de-armed before landing): 0x54
+(KxQueueReadyThread linked), 0x55 (promote-linked), 0x57 (self-swap), 0x58
+(defer-linked, all states), 0x59 (double-defer table), 0x5A (drain-insert linked),
+0x5B (chain>64), 0x5C (chain node not DeferredReady-for-cpu), 0x5D
+(KxQueueReadyThread on DeferredReady); prints [RQRUNNING] (benign-window
+breadcrumb) [RQTEAR] [RQDOUBLE] [RQDEFER2] [RQ5A] [RQ5C] [RQ5D].
+
 **2026-07-13 SPLITTER RESULT — MIXED, so it is TWO faces, not one:**
 `[RQRUNNING]` now prints `dispLockHeld`. Across a burst:
 - **`dispLockHeld=1` AND `state=5`=Waiting** (both held cases): the readier HOLDS the
