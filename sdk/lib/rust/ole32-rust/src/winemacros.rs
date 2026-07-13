@@ -147,3 +147,92 @@ macro_rules! ALIGN_POINTER {
         $ptr = ((($ptr) as usize + ($align) as usize) & !(($align) as usize)) as _
     };
 }
+
+// ---- macro spellings of the WORD/BYTE extractors ----
+// rustconv emits both `LOWORD(x)` (function) and `LOWORD!(x)` (macro) call syntax,
+// depending on which C site it was translating. Rust keeps macros and functions in
+// SEPARATE namespaces, so a macro and a fn may share a name — define both spellings
+// and neither call site has to be rewritten.
+
+/// windef.h: `HIWORD(l)`
+#[macro_export]
+macro_rules! HIWORD { ($v:expr) => { (((($v) as u32) >> 16) & 0xffff) as u16 } }
+/// windef.h: `LOWORD(l)`
+#[macro_export]
+macro_rules! LOWORD { ($v:expr) => { ((($v) as u32) & 0xffff) as u16 } }
+/// windef.h: `HIBYTE(w)`
+#[macro_export]
+macro_rules! HIBYTE { ($v:expr) => { (((($v) as u16) >> 8) & 0xff) as u8 } }
+/// windef.h: `LOBYTE(w)`
+#[macro_export]
+macro_rules! LOBYTE { ($v:expr) => { ((($v) as u16) & 0xff) as u8 } }
+/// windef.h: `MAKELONG(a, b)`
+#[macro_export]
+macro_rules! MAKELONG {
+    ($lo:expr, $hi:expr) => { ((($lo) as u32 & 0xffff) | ((($hi) as u32 & 0xffff) << 16)) };
+}
+
+// ---- C `min` / `assert` ----
+
+/// The C `min(a, b)` macro. Generic so it works at every width the translations use;
+/// a call that mixes widths (the C relied on integer promotion) becomes a compile
+/// ERROR here rather than a silent truncation — fix those with an explicit cast.
+#[inline]
+pub fn min<T: PartialOrd>(a: T, b: T) -> T {
+    if a < b { a } else { b }
+}
+
+/// C `assert(cond)`, as a LOUD but non-fatal check.
+///
+/// It cannot `panic!`: this is a `no_std` staticlib inside a DLL, so a panic is a
+/// process-killing abort in code paths (storage transactions) the C would have simply
+/// continued through with NDEBUG. It must not be a silent no-op either — a tripped
+/// assert is a real invariant violation we want to see. So: print to the debugger and
+/// keep going, which is strictly louder than the shipping C.
+///
+/// `CBool` exists because the C macro is applied to ints, pointers-as-ints and BOOLs
+/// alike, and rustconv preserved each site's own type.
+pub trait CBool {
+    fn is_true(self) -> bool;
+}
+impl CBool for bool {
+    #[inline]
+    fn is_true(self) -> bool { self }
+}
+impl CBool for i32 {
+    #[inline]
+    fn is_true(self) -> bool { self != 0 }
+}
+impl CBool for u32 {
+    #[inline]
+    fn is_true(self) -> bool { self != 0 }
+}
+
+#[inline]
+pub fn assert<T: CBool>(cond: T) {
+    if !cond.is_true() {
+        // nolint: silent-failure (loud print + continue is deliberate; see doc comment)
+        unsafe { crate::debug_shims::ERR(b"ole32-rust: ASSERTION FAILED\0".as_ptr() as *const core::ffi::c_char) };
+    }
+}
+
+/// The C `max(a, b)` macro — the sibling of `min` above; same width rules apply.
+#[inline]
+pub fn max<T: PartialOrd>(a: T, b: T) -> T {
+    if a > b { a } else { b }
+}
+
+// ---- LCID packing (ntbasedef.h) ----
+// `const fn`, not macros: the harvested LOCALE_SYSTEM_DEFAULT / LANG_SYSTEM_DEFAULT are
+// defined in terms of these, and a `pub const` initializer can call a const fn but cannot
+// expand a macro that isn't in scope at that point.
+
+/// ntbasedef.h:939 `MAKELANGID(p, s)` → `((((USHORT)(s)) << 10) | (USHORT)(p))`
+pub const fn MAKELANGID(p: u32, s: u32) -> u32 {
+    (((s as u16) as u32) << 10) | ((p as u16) as u32)
+}
+
+/// ntbasedef.h:942 `MAKELCID(lgid, srtid)` → `(ULONG)((((ULONG)(USHORT)srtid) << 16) | (ULONG)(USHORT)lgid)`
+pub const fn MAKELCID(lgid: u32, srtid: u32) -> u32 {
+    (((srtid as u16) as u32) << 16) | ((lgid as u16) as u32)
+}

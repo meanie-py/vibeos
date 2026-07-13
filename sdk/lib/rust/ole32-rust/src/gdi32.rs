@@ -26,6 +26,116 @@ pub struct METAFILEPICT {
 }
 pub type LPMETAFILEPICT = *mut METAFILEPICT;
 
+/// wingdi.h `tagBITMAPINFOHEADER`. WIRE FORMAT (a DIB header is serialized into the
+/// presentation-cache stream), so field order/width are exact.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct BITMAPINFOHEADER {
+    pub biSize: DWORD,
+    pub biWidth: LONG,
+    pub biHeight: LONG,
+    pub biPlanes: WORD,
+    pub biBitCount: WORD,
+    pub biCompression: DWORD,
+    pub biSizeImage: DWORD,
+    pub biXPelsPerMeter: LONG,
+    pub biYPelsPerMeter: LONG,
+    pub biClrUsed: DWORD,
+    pub biClrImportant: DWORD,
+}
+
+/// wingdi.h `tagRGBQUAD`
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct RGBQUAD {
+    pub rgbBlue: BYTE,
+    pub rgbGreen: BYTE,
+    pub rgbRed: BYTE,
+    pub rgbReserved: BYTE,
+}
+
+/// wingdi.h `tagBITMAPINFO` — header followed by a colour table. The `[RGBQUAD; 1]` is
+/// the C's flexible-array idiom: real allocations are larger and are indexed past the end.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct BITMAPINFO {
+    pub bmiHeader: BITMAPINFOHEADER,
+    pub bmiColors: [RGBQUAD; 1],
+}
+
+/// wingdi.h `tagBITMAPCOREHEADER` — the OS/2-style DIB header. WIRE FORMAT.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct BITMAPCOREHEADER {
+    pub bcSize: DWORD,
+    pub bcWidth: WORD,
+    pub bcHeight: WORD,
+    pub bcPlanes: WORD,
+    pub bcBitCount: WORD,
+}
+
+/// wingdi.h `tagRGBTRIPLE` — the core-header colour table entry (3 bytes, NOT 4).
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct RGBTRIPLE {
+    pub rgbtBlue: BYTE,
+    pub rgbtGreen: BYTE,
+    pub rgbtRed: BYTE,
+}
+
+/// wingdi.h `tagBITMAPFILEHEADER`. WIRE FORMAT, and note it is `#pragma pack(2)` in the C
+/// (a 2-byte WORD followed by a DWORD): sizeof is 14, NOT 16. `packed` is load-bearing —
+/// a natural-aligned version would silently write a 16-byte header and corrupt every DIB.
+#[repr(C, packed(2))]
+#[derive(Copy, Clone)]
+pub struct BITMAPFILEHEADER {
+    pub bfType: WORD,
+    pub bfSize: DWORD,
+    pub bfReserved1: WORD,
+    pub bfReserved2: WORD,
+    pub bfOffBits: DWORD,
+}
+
+/// wingdi.h `tagENHMETAHEADER`. datacache.c only ever takes `sizeof(ENHMETAHEADER)` of
+/// this, so the SIZE is what matters — every field must be present. ole32 builds with
+/// _WIN32_WINNT=0x600, so both the `WINVER >= 0x0400` and `>= 0x0500` blocks are IN.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ENHMETAHEADER {
+    pub iType: DWORD,
+    pub nSize: DWORD,
+    pub rclBounds: RECTL,
+    pub rclFrame: RECTL,
+    pub dSignature: DWORD,
+    pub nVersion: DWORD,
+    pub nBytes: DWORD,
+    pub nRecords: DWORD,
+    pub nHandles: WORD,
+    pub sReserved: WORD,
+    pub nDescription: DWORD,
+    pub offDescription: DWORD,
+    pub nPalEntries: DWORD,
+    pub szlDevice: SIZEL,
+    pub szlMillimeters: SIZEL,
+    pub cbPixelFormat: DWORD,
+    pub offPixelFormat: DWORD,
+    pub bOpenGL: DWORD,
+    pub szlMicrometers: SIZEL,
+}
+
+/// wine/wingdi16.h `METAFILEPICT16` — the 16-bit-era metafile picture header that still
+/// prefixes an OlePres stream on disk. storage32.c reads `sizeof(METAFILEPICT16)` (= 10)
+/// off the front of the data, so the 16-bit widths are WIRE FORMAT, not a portability bug.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct METAFILEPICT16 {
+    pub mm: i16,
+    pub xExt: i16,
+    pub yExt: i16,
+    /// HMETAFILE16 — a 16-bit handle.
+    pub hMF: u16,
+}
+
 // wingdi.h — GetDeviceCaps indices
 pub const LOGPIXELSX: c_int = 88;
 pub const LOGPIXELSY: c_int = 90;
@@ -88,4 +198,55 @@ extern "system" {
         lpDefaultChar: *const i8,
         lpUsedDefaultChar: *mut BOOL,
     ) -> c_int;
+
+    // ---- Tier-D (datacache's presentation-cache rendering) additions ----
+    pub fn CreateDIBitmap(
+        hdc: HDC,
+        pbmih: *const BITMAPINFOHEADER,
+        flInit: DWORD,
+        pjBits: *const c_void,
+        pbmi: *const BITMAPINFO,
+        iUsage: UINT,
+    ) -> HBITMAP;
+    pub fn GetDIBits(
+        hdc: HDC,
+        hbm: HBITMAP,
+        start: UINT,
+        cLines: UINT,
+        lpvBits: *mut c_void,
+        lpbmi: *mut BITMAPINFO,
+        usage: UINT,
+    ) -> c_int;
+    pub fn StretchDIBits(
+        hdc: HDC,
+        xDest: c_int,
+        yDest: c_int,
+        DestWidth: c_int,
+        DestHeight: c_int,
+        xSrc: c_int,
+        ySrc: c_int,
+        SrcWidth: c_int,
+        SrcHeight: c_int,
+        lpBits: *const c_void,
+        lpbmi: *const BITMAPINFO,
+        iUsage: UINT,
+        rop: DWORD,
+    ) -> c_int;
+    pub fn PlayMetaFile(hdc: HDC, hmf: HMETAFILE) -> BOOL;
+    pub fn SetMetaFileBitsEx(cbBuffer: UINT, lpData: *const BYTE) -> HMETAFILE;
+    pub fn GetWinMetaFileBits(
+        hemf: HENHMETAFILE,
+        cbData16: UINT,
+        pData16: *mut BYTE,
+        iMapMode: c_int,
+        hdcRef: HDC,
+    ) -> UINT;
+    pub fn SetWinMetaFileBits(
+        nSize: UINT,
+        lpMeta16Data: *const BYTE,
+        hdcRef: HDC,
+        lpMFP: *const METAFILEPICT,
+    ) -> HENHMETAFILE;
+    pub fn SetViewportExtEx(hdc: HDC, x: c_int, y: c_int, lpsz: *mut SIZE) -> BOOL;
+    pub fn SetViewportOrgEx(hdc: HDC, x: c_int, y: c_int, lppt: *mut POINT) -> BOOL;
 }

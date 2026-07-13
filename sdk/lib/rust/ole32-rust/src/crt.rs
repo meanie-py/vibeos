@@ -29,4 +29,9 @@ extern "C" {
     /// VARIADIC: a variadic Win32 function is __cdecl even on i386 (callee-cleans-stack
     /// cannot express a variable arg count), so `extern "C"` is the correct ABI here.
     pub fn wsprintfW(buf: *mut u16, fmt: *const u16, ...) -> c_int;
+
+    /// stdlib.h `int abs(int)` — cdecl.
+    pub fn abs(n: c_int) -> c_int;
+    /// string.h `char *strcpy(char *, const char *)` — cdecl.
+    pub fn strcpy(dst: *mut c_char, src: *const c_char) -> *mut c_char;
 }

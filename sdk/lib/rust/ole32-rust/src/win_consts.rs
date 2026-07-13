@@ -339,3 +339,172 @@ pub const CURSOR_COPY: c_int = 3;
 pub const CURSOR_LINK: c_int = 4;
 /// storage32.h:523 — wine's private read-lock bit
 pub const WINE_LOCK_READ: DWORD = 0x8000_0000;
+
+// ---- STGM_* storage open-mode flags (harvested from sdk/include/psdk/objbase.h) ----
+pub const STGM_DIRECT: DWORD = 0x00000000;
+pub const STGM_TRANSACTED: DWORD = 0x00010000;
+pub const STGM_SIMPLE: DWORD = 0x08000000;
+pub const STGM_SHARE_DENY_READ: DWORD = 0x00000030;
+pub const STGM_PRIORITY: DWORD = 0x00040000;
+pub const STGM_DELETEONRELEASE: DWORD = 0x04000000;
+pub const STGM_CONVERT: DWORD = 0x00020000;
+pub const STGM_FAILIFTHERE: DWORD = 0x00000000;
+pub const STGM_NOSCRATCH: DWORD = 0x00100000;
+pub const STGM_NOSNAPSHOT: DWORD = 0x00200000;
+pub const STGM_DIRECT_SWMR: DWORD = 0x00400000;
+
+// ---- Tier-D constants (storage32 / stg_prop / datacache / defaulthandler / oleobj).
+// HARVESTED by tools/harvest_consts.py from the SDK headers the C compiles against — each
+// cites its file:line. Never hand-transcribe one: a wrong constant produces no compile
+// error, it just silently changes behaviour (a missing CF_ENHMETAFILE once turned a `match`
+// arm into a catch-all BINDING, sending every clipboard format down the EMF path).
+/// build-amd64/sdk/include/psdk/objidl.h:~9800 (enum)
+pub const ADVFCACHE_FORCEBUILTIN: DWORD = 16;
+/// build-amd64/sdk/include/psdk/objidl.h:~9800 (enum)
+pub const ADVFCACHE_NOHANDLER: DWORD = 8;
+/// build-amd64/sdk/include/psdk/objidl.h:~9800 (enum)
+pub const ADVFCACHE_ONSAVE: DWORD = 32;
+/// build-amd64/sdk/include/psdk/objidl.h:~9800 (enum)
+pub const ADVF_DATAONSTOP: DWORD = 64;
+/// build-amd64/sdk/include/psdk/objidl.h:~9800 (enum)
+pub const ADVF_NODATA: DWORD = 1;
+/// build-amd64/sdk/include/psdk/objidl.h:~9800 (enum)
+pub const ADVF_ONLYONCE: DWORD = 4;
+/// sdk/include/psdk/mmreg.h:507
+pub const BI_BITFIELDS: DWORD = 3;
+/// sdk/include/psdk/wingdi.h:365
+pub const CBM_INIT: DWORD = 4;
+/// build-amd64/sdk/include/psdk/propidl.h:998
+pub const CCH_MAX_PROPSTG_NAME: DWORD = 31;
+/// sdk/include/psdk/winuser.h:80
+pub const CF_ENHMETAFILE: DWORD = 14;
+/// sdk/include/psdk/winbase.h:227
+pub const CREATE_ALWAYS: DWORD = 2;
+/// sdk/include/psdk/winbase.h:226
+pub const CREATE_NEW: DWORD = 1;
+/// sdk/include/psdk/wingdi.h:367
+pub const DIB_RGB_COLORS: DWORD = 0;
+/// build-amd64/sdk/include/psdk/wtypes.h:~564 (enum)
+pub const DVASPECT_ICON: DWORD = 4;
+/// sdk/include/psdk/ole2.h:50
+pub const EMBDHLP_DELAYCREATE: DWORD = 0x00010000;
+/// sdk/include/psdk/ole2.h:48
+pub const EMBDHLP_INPROC_SERVER: DWORD = 0x00000001;
+/// sdk/include/psdk/winerror.h:230
+pub const ERROR_ACCESS_DENIED: DWORD = 5;
+/// sdk/include/psdk/winerror.h:287
+pub const ERROR_FILE_EXISTS: DWORD = 80;
+/// sdk/include/psdk/winerror.h:973
+pub const ERROR_NO_UNICODE_TRANSLATION: DWORD = 1113;
+/// sdk/include/psdk/winerror.h:244
+pub const ERROR_WRITE_PROTECT: DWORD = 19;
+/// sdk/include/xdk/iotypes.h:3392
+pub const FILE_ATTRIBUTE_NORMAL: DWORD = 0x00000080;
+/// sdk/include/psdk/winbase.h:242
+pub const FILE_FLAG_DELETE_ON_CLOSE: DWORD = 0x04000000;
+/// sdk/include/psdk/winbase.h:239
+pub const FILE_FLAG_NO_BUFFERING: DWORD = 0x20000000;
+/// sdk/include/psdk/winbase.h:240
+pub const FILE_FLAG_RANDOM_ACCESS: DWORD = 0x10000000;
+/// sdk/include/xdk/iotypes.h:3383
+pub const FILE_SHARE_DELETE: DWORD = 0x00000004;
+/// sdk/include/xdk/iotypes.h:3381
+pub const FILE_SHARE_READ: DWORD = 0x00000001;
+/// sdk/include/xdk/iotypes.h:3382
+pub const FILE_SHARE_WRITE: DWORD = 0x00000002;
+/// sdk/include/xdk/setypes.h:27
+pub const GENERIC_READ: DWORD = 0x80000000;
+/// sdk/include/xdk/setypes.h:28
+pub const GENERIC_WRITE: DWORD = 0x40000000;
+/// sdk/include/host/nls.h:22
+pub const LANG_NEUTRAL: DWORD = 0x00;
+/// sdk/include/xdk/ntbasedef.h:1387
+pub const LANG_SYSTEM_DEFAULT: DWORD = MAKELANGID(LANG_NEUTRAL, SUBLANG_SYS_DEFAULT);
+/// sdk/include/xdk/ntbasedef.h:1390
+pub const LOCALE_SYSTEM_DEFAULT: DWORD = MAKELCID(LANG_SYSTEM_DEFAULT, SORT_DEFAULT);
+/// sdk/include/xdk/setypes.h:26
+pub const MAXIMUM_ALLOWED: DWORD = 0x02000000;
+/// sdk/include/psdk/winbase.h:228
+pub const OPEN_EXISTING: DWORD = 3;
+/// build-amd64/sdk/include/psdk/propidl.h:125
+pub const PID_BEHAVIOR: DWORD = 0x80000003;
+/// sdk/include/psdk/msidefs.h:263
+pub const PID_CODEPAGE: DWORD = 1;
+/// sdk/include/psdk/propkeydef.h:20
+pub const PID_FIRST_USABLE: DWORD = 2;
+/// build-amd64/sdk/include/psdk/propidl.h:127
+pub const PID_ILLEGAL: DWORD = 0xffffffff;
+/// build-amd64/sdk/include/psdk/propidl.h:119
+pub const PID_LOCALE: DWORD = 0x80000000;
+/// build-amd64/sdk/include/psdk/propidl.h:129
+pub const PID_MIN_READONLY: DWORD = 0x80000000;
+/// build-amd64/sdk/include/psdk/propidl.h:103
+pub const PROPSETFLAG_ANSI: DWORD = 2;
+/// build-amd64/sdk/include/psdk/propidl.h:107
+pub const PROPSETFLAG_CASE_SENSITIVE: DWORD = 8;
+/// build-amd64/sdk/include/psdk/propidl.h:101
+pub const PROPSETFLAG_NONSIMPLE: DWORD = 1;
+/// build-amd64/sdk/include/psdk/propidl.h:105
+pub const PROPSETFLAG_UNBUFFERED: DWORD = 4;
+/// build-amd64/sdk/include/psdk/propidl.h:344
+pub const PRSPEC_LPWSTR: DWORD = 0;
+/// sdk/include/xdk/ntbasedef.h:1368
+pub const SORT_DEFAULT: DWORD = 0x0;
+/// sdk/include/psdk/wingdi.h:333
+pub const SRCCOPY: DWORD = 0xCC0020;
+/// build-amd64/sdk/include/psdk/wtypes.h:~582 (enum)
+pub const STATFLAG_DEFAULT: DWORD = 0;
+/// build-amd64/sdk/include/psdk/wtypes.h:~570 (enum)
+pub const STGC_ONLYIFCURRENT: DWORD = 2;
+/// sdk/include/psdk/objbase.h:936
+pub const STGFMT_DOCFILE: DWORD = 5;
+/// sdk/include/psdk/objbase.h:934
+pub const STGFMT_FILE: DWORD = 3;
+/// sdk/include/psdk/objbase.h:933
+pub const STGFMT_STORAGE: DWORD = 0;
+/// sdk/include/host/nls.h:169
+pub const SUBLANG_SYS_DEFAULT: DWORD = 0x02;
+/// sdk/include/psdk/winbase.h:230
+pub const TRUNCATE_EXISTING: DWORD = 5;
+/// build-amd64/sdk/include/psdk/oleidl.h:2038
+pub const UPDFCACHE_ALL: DWORD = !UPDFCACHE_ONLYIFBLANK;
+/// build-amd64/sdk/include/psdk/oleidl.h:2040
+pub const UPDFCACHE_ALLBUTNODATACACHE: DWORD = UPDFCACHE_ALL & !UPDFCACHE_NODATACACHE;
+/// build-amd64/sdk/include/psdk/oleidl.h:2032
+pub const UPDFCACHE_IFBLANK: DWORD = 0x10;
+/// build-amd64/sdk/include/psdk/oleidl.h:2024
+pub const UPDFCACHE_NODATACACHE: DWORD = 0x1;
+/// build-amd64/sdk/include/psdk/oleidl.h:2030
+pub const UPDFCACHE_NORMALCACHE: DWORD = 0x8;
+/// build-amd64/sdk/include/psdk/oleidl.h:2034
+pub const UPDFCACHE_ONLYIFBLANK: DWORD = 0x80000000;
+/// build-amd64/sdk/include/psdk/oleidl.h:2026
+pub const UPDFCACHE_ONSAVECACHE: DWORD = 0x2;
+/// build-amd64/sdk/include/psdk/oleidl.h:2028
+pub const UPDFCACHE_ONSTOPCACHE: DWORD = 0x4;
+
+// ---- second Tier-D wave: constants the burn-down surfaced. Several of these were
+// MISSING before, which is worse than it sounds: an absent constant in a `match` arm is
+// not an error, it is an irrefutable BINDING — so `StgOpenStorageEx` treated every stgfmt
+// as STGFMT_ANY, and StgOpenStorage's GetLastError() mapping always yielded
+// STG_E_FILENOTFOUND. rustc only whispers `unreachable pattern`. Harvested, as always.
+/// build-amd64/sdk/include/psdk/oleidl.h:~2042 (enum)
+pub const DISCARDCACHE_NOSAVE: DWORD = 1;
+/// build-amd64/sdk/include/psdk/oleidl.h:~2042 (enum)
+pub const DISCARDCACHE_SAVEIFDIRTY: DWORD = 0;
+/// sdk/include/psdk/ole2.h:49
+pub const EMBDHLP_CREATENOW: DWORD = 0x00000000;
+/// sdk/include/psdk/ole2.h:47
+pub const EMBDHLP_INPROC_HANDLER: DWORD = 0x00000000;
+/// sdk/include/psdk/winerror.h:227
+pub const ERROR_FILE_NOT_FOUND: DWORD = 2;
+/// sdk/include/psdk/winerror.h:228
+pub const ERROR_PATH_NOT_FOUND: DWORD = 3;
+/// sdk/include/psdk/winerror.h:257
+pub const ERROR_SHARING_VIOLATION: DWORD = 32;
+/// sdk/include/psdk/msidefs.h:262
+pub const PID_DICTIONARY: DWORD = 0;
+/// sdk/include/psdk/objbase.h:935
+pub const STGFMT_ANY: DWORD = 4;
+/// sdk/include/psdk/ks.h:~1286 (enum)
+pub const VT_BYREF: DWORD = 0x4000;

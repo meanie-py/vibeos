@@ -11,7 +11,13 @@ use core::ffi::{c_char, c_int, c_void};
 
 pub type HHOOK = *mut c_void;
 pub type HPALETTE = *mut c_void;
-pub type HENHMETAFILE = *mut c_void;
+// HENHMETAFILE is RE-EXPORTED, not re-aliased: com-sys already defines it
+// (`*mut HENHMETAFILE__`). A second, independent `pub type HENHMETAFILE = *mut c_void`
+// here would be a DIFFERENT item with the same name, reachable through two of the
+// prelude's globs — an E0659 ambiguity the moment anything uses it. Re-exporting the
+// same item collapses both paths onto one definition and keeps `crate::user32::
+// HENHMETAFILE` (which translated call sites spell out) resolving.
+pub use com_sys::HENHMETAFILE;
 pub type HKEY = *mut c_void;
 pub type HINSTANCE = *mut c_void;
 pub type SC_HANDLE = *mut c_void;
@@ -173,4 +179,8 @@ extern "system" {
     pub fn RpcBindingFree(Binding: *mut *mut c_void) -> LONG;
     pub fn RpcRaiseException(exception: LONG) -> !;
     pub fn I_RpcExceptionFilter(ExceptionCode: ULONG) -> c_int;
+
+    // ---- Tier-D additions ----
+    pub fn RegisterClipboardFormatA(lpszFormat: *const c_char) -> UINT;
+    pub fn GetClipboardFormatNameA(format: UINT, lpszFormatName: *mut c_char, cchMaxCount: c_int) -> c_int;
 }
