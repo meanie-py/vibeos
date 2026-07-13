@@ -5622,3 +5622,61 @@ busy."
 
 > **Run the A/B control before you accept a flake label.** It costs one build. The
 > alternative is landing a regression that the retry logic will keep excusing.
+
+### 9.65 (ROOT-CAUSED + FIXED 2026-07-12) A Rust `memcpy`/`memset` stub is a SELF-RECURSION trap — and `-Z build-std` had been cloaking a broken one in bootvid for months
+
+**Symptom.** Dropping `-Z build-std` for the builtin triples (stable-toolchain Axis B) made
+**both** amd64 and arm64 hang at boot with an EMPTY serial log. amd64 died at kernel entry
+(one line past `[FLDR] phase: handoff to kernel`); arm64 got to `[KERNEL] Entering KiIdleLoop`
+and never scheduled the Phase-1 thread. No bugcheck, no panic, no output — just a dead VM.
+i386 (still on build-std) was unaffected.
+
+**Root.** GDB showed the PC parked on a literal `jmp .` — an infinite self-jump. Walking back
+to the module's PE header identified **bootvid.dll**, and the symbol was `memset`. bootvid-rust
+defined its own libc mem*:
+
+```rust
+#[no_mangle] pub unsafe extern "C" fn memcpy(dst: *mut c_void, src: *const c_void, n: usize)
+    -> *mut c_void {
+    core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, n);   // ← lowers to
+    dst                                                                     //   llvm.memcpy
+}                                                                           //   → call memcpy
+```
+
+`copy_nonoverlapping` lowers to `llvm.memcpy`, and the backend lowers *that* back into a **call
+to `memcpy`** — the function itself. Tail-call it and the entire body becomes `jmp .`. Same for
+`write_bytes` → `memset`.
+
+**Why it never fired before.** `-Z build-std-features=compiler-builtins-mem` linked
+`compiler_builtins`' own mem* — compiled `#![no_builtins]`, so *its* loops don't get folded —
+alongside the broken twins. Under `--allow-multiple-definition` lld took the FIRST definition,
+which was compiler_builtins'. The broken code was compiled, shipped inside every bootvid.dll,
+and simply **never selected**. Drop build-std → the competitor disappears → the broken twin is
+the only definition → the kernel spins forever the instant it draws the boot screen.
+
+**This is a CLOAK bug** — a real defect held harmless by a link-order accident, exactly like the
+cdrom `TracePrint` no-op-fn cloak (Axis A). The lesson generalises: *when you remove a redundant
+definition, you are not "cleaning up" — you are electing a new winner, and the new winner has
+never run.*
+
+**Rule: NEVER hand-write `memcpy`/`memset`/`memmove`/`memcmp` in Rust.** It cannot be done in
+plain safe Rust — any byte-copy loop you write instead is re-recognised by LLVM's loop-idiom
+pass and folded straight back into a self-call. The correct answers are:
+- **Don't define them.** `ntoskrnl.exe` EXPORTS `memcpy`/`memset`/`memmove` on every arch
+  (ntoskrnl.spec), so any module with an ntoskrnl import lib just gets them — which is how every
+  C driver already works. `memcmp` is exported **only on x86_64**, which is what
+  `sdk/lib/crt/libmemcmp.a` is for (reactos-link links it as a link-group fallback on the builtin
+  targets; it's emitted LAST so anything that already defines memcmp keeps its own).
+- If you genuinely must, use a crate built with `#![no_builtins]` (i.e. `compiler_builtins`).
+
+**Detector (permanent).** `tools/scan_self_recursive.py` — flags any function whose FIRST
+instruction jumps to its own entry. Nothing legitimate looks like that. Wired into the lint gate
+as `scan_self_recursive` (a binary lint, beside `scan_ud2`), because a source-level lint CANNOT
+catch this: the Rust reads perfectly. Only the emitted code tells the truth.
+
+**Debug recipe that cracked it** (reusable for any silent hang):
+1. `RUN=$(qemu/start.sh amd64 --gdb)`, wait, then `qemu/inspect.sh $RUN --command bt`.
+2. PC symbolicated to nothing and sat *below* the kernel base → it's in another module.
+3. `x/16i $pc` → `jmp <self>`, with an empty `ret` fn right after (`rust_eh_personality`).
+4. Scan memory backwards from the PC for the `MZ` header, then read the module name out of its
+   PE export directory → `bootvid.dll`. (`find-kbase` only knows about ntoskrnl.)

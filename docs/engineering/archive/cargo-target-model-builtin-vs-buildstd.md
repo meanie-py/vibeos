@@ -1,6 +1,17 @@
 # Cargo target model: precompiled `std` (builtin triple) vs `-Z build-std`
 
 > **ARCHIVED 2026-07-10** — consolidated into `build-system.md` (§Cargo target model). The per-(crate-role × arch) matrix + compiler_builtins detail kept here.
+>
+> **SUPERSEDED 2026-07-12 — this doc's recommendation was EXECUTED, for ALL arches, not just
+> arm64.** Every `*-cargo` cell on amd64 + arm64 now builds the builtin triple on pinned stable;
+> `-Z build-std` survives only in the i386 kernel cell, and the 80 amd64/arm64 target JSONs are
+> deleted. So the "Current matrix" and "Fixing arm64" sections below are HISTORY — do not follow
+> their recipe. Live state: `build-system.md` §"Cargo target model"; the migration, its measured
+> `.text` deltas, and the self-recursive-`memcpy` bug it uncovered (field manual §9.65):
+> `../active-lanes/stable-toolchain-plan.md`.
+>
+> The doc's core call was right, and its warning about build-std's arm64 `compiler_builtins`
+> outline-atomics miscompile was the strongest argument for the migration.
 
 
 > **See also:** `cargo-drive-unification-plan.md` — the target architecture this

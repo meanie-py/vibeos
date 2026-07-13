@@ -615,18 +615,48 @@ function(add_cargo_module _target _crate _output)
         set(_acm_KIND kerneldll)
     endif()
 
-    # ARCH → the crate's custom-target json stem (== cargo's output subdir).
+    set(_ws "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+
+    # ARCH → the rust target (== cargo's output subdir stem).
+    #
+    # amd64 + arm64 build the BUILTIN triple on pinned STABLE: precompiled
+    # core/alloc/compiler_builtins from the rustup `rust-std-*` component, NO
+    # `-Z build-std`, NO custom target json (stable-toolchain-plan.md, Axis B).
+    # The old custom `{x86_64,aarch64}-kernel.json` were the builtin spec minus
+    # the user-mode CRT link plumbing; the plumbing is neutralised at LINK time
+    # instead (reactos-link: stub archives + `-C link-self-contained=no`), and
+    # the handful of non-default codegen opts the json carried (frame-pointer,
+    # function-sections, panic) are restored as explicit `-C` flags. Proven
+    # ABI-identical: `abi-return-struct-as-int` — the only spec field that flips
+    # — is read solely by the 32-bit x86 callconv, so it is inert here.
+    #
+    # i386 stays on the custom json + nightly build-std: it needs
+    # `rustc-abi: x86-softfloat`, which has no builtin triple. That cell is
+    # retired by the wow64 lane (i386 kernel goes away), not fixed here.
     if(ARCH STREQUAL "i386")
         set(_stem "i686-kernel")
+        set(_rust_target "${_ws}/${_crate}/${_stem}.json")
+        set(_build_std -Z build-std=core,alloc,compiler_builtins
+                       -Z build-std-features=compiler-builtins-mem)
     elseif(ARCH STREQUAL "amd64")
-        set(_stem "x86_64-kernel")
+        set(_stem "x86_64-pc-windows-gnu")
+        set(_rust_target "${_stem}")
+        set(_build_std "")
     elseif(ARCH STREQUAL "arm64")
-        set(_stem "aarch64-kernel")
+        set(_stem "aarch64-pc-windows-gnullvm")
+        set(_rust_target "${_stem}")
+        set(_build_std "")
     else()
         message(FATAL_ERROR "add_cargo_module: unsupported ARCH ${ARCH}")
     endif()
 
-    set(_ws "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+    if(NOT ARCH STREQUAL "i386")
+        # The precompiled `core` calls memcmp (core::slice::cmp) — `-Z build-std`
+        # used to supply it via `compiler-builtins-mem`. reactos-link links
+        # sdk/lib/crt/libmemcmp.a as a link-group FALLBACK on the builtin targets,
+        # so every cell needs it BUILT first (it panics loudly if it's missing).
+        list(APPEND _acm_EXTRA_DEPENDS memcmp)
+    endif()
 
     # Determinism rung 1 (Rust paths): handled by the CANONICAL BUILD PATH now —
     # every worktree builds bind-mounted at /tmp/vibeos (tools/canon-run.sh), so
@@ -804,23 +834,52 @@ function(add_cargo_module _target _crate _output)
         message(FATAL_ERROR "add_cargo_module: unknown KIND ${_acm_KIND}")
     endif()
 
-    # The pinned nightly, single-sourced from `.rust-nightly` at the repo root (bump
-    # it THERE, not here). This cell needs nightly only for `-Z build-std` + the
-    # custom kernel target json; the rest of the Rust fleet is on pinned STABLE via
-    # rust-toolchain.toml. Dropping build-std on amd64+arm64 (and with it this pin)
-    # is docs/engineering/active-lanes/stable-toolchain-plan.md.
-    file(STRINGS "${CMAKE_SOURCE_DIR}/.rust-nightly" _rust_nightly LIMIT_COUNT 1)
+    # i386 ONLY: the pinned nightly, single-sourced from `.rust-nightly` at the repo
+    # root (bump it THERE, not here). `-Z build-std` + the custom `x86-softfloat`
+    # kernel json need nightly; amd64/arm64 are on pinned STABLE via
+    # rust-toolchain.toml (no RUSTUP_TOOLCHAIN override → the toolchain file wins).
+    # See docs/engineering/active-lanes/stable-toolchain-plan.md.
+    set(_toolchain_env "")
+    if(ARCH STREQUAL "i386")
+        file(STRINGS "${CMAKE_SOURCE_DIR}/.rust-nightly" _rust_nightly LIMIT_COUNT 1)
+        set(_toolchain_env RUSTUP_TOOLCHAIN=${_rust_nightly})
+    else()
+        # Builtin-triple (stable) cells: restore what the custom kernel json used to
+        # carry and neutralise what it used to strip.
+        #   force-frame-pointers=yes : the json said `frame-pointer: always`; the
+        #       builtin triples default to may-omit (x86_64) / non-leaf (aarch64).
+        #       The kernel debug toolkit walks the frame chain (inspect.sh bt).
+        #   link-self-contained=no (amd64 ONLY) : x86_64-pc-windows-gnu declares
+        #       `crt-objects-fallback: mingw`, so without this rustc prepends the
+        #       user-mode CRT startup objects (crt2.o / dllcrt2.o) to a kernel module.
+        #       Objects can't be shadowed by a stub archive, so this is the only lever.
+        #       aarch64-pc-windows-gnullvm does NOT allow the flag ("not supported on
+        #       this target" — its self-contained mode is fixed, and it links no CRT
+        #       objects), and passing it is a hard rustc error at bin-link time.
+        #       (The CRT *libraries* both triples name in late-link-args — -lmsvcrt
+        #       -lgcc -lkernel32 … — are walled off by reactos-link's stub archives.)
+        # (The linker itself is pinned to llvm-mingw's clang in
+        # sdk/lib/rust/.cargo/config.toml — a `linker` key, so it COMPOSES with this
+        # env RUSTFLAGS instead of being clobbered by it. Keep this in sync with
+        # tests/qemu/cli/lints.py, tools/cargo_orchestrate.py and
+        # sdk/lib/rust/cargo-cell-args.sh, which re-run the same cargo links.)
+        set(_rustflags "-C force-frame-pointers=yes")
+        if(ARCH STREQUAL "amd64")
+            set(_rustflags "${_rustflags} -C link-self-contained=no")
+        endif()
+        set(_toolchain_env "RUSTFLAGS=${_rustflags}")
+    endif()
 
     add_custom_command(
         OUTPUT ${_out}
-        # cargo +nightly build-std drive of the reactos-link manifest: build.rs
-        # links the cmake-built leaf libs / reused objects + self-built rust
-        # staticlib into the final PE, then the kind post-link runs.
-        COMMAND ${CMAKE_COMMAND} -E env RUSTUP_TOOLCHAIN=${_rust_nightly} ${_cargo_env}
+        # cargo drive of the reactos-link manifest: build.rs links the cmake-built
+        # leaf libs / reused objects + self-built rust staticlib into the final PE,
+        # then the kind post-link runs. amd64/arm64: stable + builtin triple.
+        # i386: nightly + build-std + the softfloat kernel json.
+        COMMAND ${CMAKE_COMMAND} -E env ${_toolchain_env} ${_cargo_env}
             cargo build --release
-                --target ${_ws}/${_crate}/${_stem}.json
-                -Z build-std=core,alloc,compiler_builtins
-                -Z build-std-features=compiler-builtins-mem
+                --target ${_rust_target}
+                ${_build_std}
                 -p ${_crate} --bin ${_bin}
                 --manifest-path ${_ws}/Cargo.toml
         COMMAND ${CMAKE_COMMAND} -E copy ${_cargo_exe} ${_out}

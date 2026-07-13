@@ -447,15 +447,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   already accepts); cheap to add if a measured soak overhead ever justifies it. (b) The
   overnight cswitch/lockdep farm soak — run `vibeos-cli farm ... ` when the host is quiet and
   read the new `farm-report` "tripwire hits" section (clusters green-boot violations).
-- [ ] **Stable-everything toolchain program** *(scouted from the cswitchdep branch;
-  `../engineering/archive/execution-context-ownership-model.md` §Toolchain reality v3)*: kill
-  the 4 remaining nightly deps. (1) `link_llvm_intrinsics` — DONE (`code_addr!()`). (2)
-  `-Z build-std` + custom JSON targets — amd64+arm64 proven import-identical on stable
-  (empty-archive CRT stub + static libmemcmp/libcntpr_rust); **abi-return-struct-as-int audit
-  owed before migrating**, and the ~2.4× `.text` residual to measure on ntoskrnl; **i386 hard-
-  blocked upstream** on `rustc-abi=x86-softfloat` (no `-C` equivalent). (3) `c_variadic`
-  (~12 x86-only driver crates) — still unstable on 1.92; coupled to gap 2. (4) `linkage`
-  (`hal-cargo`) — needs a small weak-symbol-cohab design (lld `/alternatename` or strong stubs).
+- [x] **Stable-everything toolchain program** — **DONE 2026-07-12** (lane `stable-toolchain`;
+  writeup `../engineering/active-lanes/stable-toolchain-plan.md`). All 4 nightly deps killed:
+  (1) `link_llvm_intrinsics` → `code_addr!()`. (2) `-Z build-std` + the custom JSON targets →
+  amd64/arm64 now build the **builtin triples on pinned stable**; 80 target JSONs deleted;
+  `abi-return-struct-as-int` audit discharged (proven inert off 32-bit x86); ntoskrnl `.text`
+  measured **+0.4% amd64 / −2.9% arm64** (the feared ~2.4× never materialised). (3) `c_variadic`
+  → C `va_start` shims + a `varargs-rust` wrapper; zero of the 184 call sites changed.
+  (4) `linkage` → the `hal-cargo` use was vestigial, just deleted. Toolchain now pinned
+  (`rust-toolchain.toml` + `.rust-nightly`). **i386 kernel is the sole remaining nightly cell**,
+  hard-blocked upstream on `rustc-abi=x86-softfloat` — it RETIRES with the wow64 lane, not fixed.
+- [ ] **30 pre-existing infinite self-jump functions** *(found by the new
+  `tools/scan_self_recursive.py`; baselined in `tools/lint-baseline/scan_self_recursive.txt`,
+  gate fails on NEW ones)*: functions whose first instruction jumps to their own entry — the CPU
+  spins forever with **no bugcheck and no serial output**. 23× a C `exp2()` that LLVM folded into
+  a call to itself (same idiom-recursion trap as field manual §9.65, in C — needs
+  `-fno-builtin-exp2` on those TUs); classpnp's local `KeRaiseIrql`/`KeLowerIrql` stubs (hang if
+  ever called); `ftfd.dll`'s `rust_begin_unwind` written as `loop {}` (a panic that hangs
+  silently — should adopt `panic-common`); `cdrom.sys: abort`. Tracked and owed, not accepted.
 - [ ] **KeGetPcr x18 cohab dedup** *(cswitchdep arm64 first-light, task #2)*: the x18
   `ddk::KeGetPcr` copies are unsafe in switch context — dedup to the single TPIDR-backed path.
 

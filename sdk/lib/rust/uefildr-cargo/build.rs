@@ -74,11 +74,11 @@ fn main() {
             "x86_64" => {
                 // uefiasm.S + misc.S flipped to Rust global_asm!
                 // (freeldr-rust/uefiasm.rs + loader_asm.rs) — no asm left here.
-                ("x86_64-kernel.json", "EfiEntry", Some(0x1_0000), 0x200)
+                ("x86_64-pc-windows-gnu", "EfiEntry", Some(0x1_0000), 0x200)
             }
             "aarch64" => {
                 // uefiasm.S flipped to Rust global_asm! — arm64 has no other asm.
-                ("aarch64-kernel.json", "EfiEntry", None, 0x1000)
+                ("aarch64-pc-windows-gnullvm", "EfiEntry", None, 0x1000)
             }
             other => {
                 panic!("uefildr-cargo: unsupported arch {other} (i386/amd64/arm64 only)")
