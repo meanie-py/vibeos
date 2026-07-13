@@ -107,7 +107,9 @@ struct BITMAP {
 /// compobj_private.h:343 — `static inline HRESULT copy_formatetc(FORMATETC*, const FORMATETC*)`.
 /// A private header inline, so it has no link symbol; it is reproduced here.
 #[inline]
-unsafe fn copy_formatetc(dst: *mut FORMATETC, src: *const FORMATETC) -> HRESULT {
+// `pub` because this is a compobj_private.h `static inline`, not a clipboard.c local:
+// datacache.c and oleobj.c call it too, and reach it through the prelude's ring glob.
+pub unsafe fn copy_formatetc(dst: *mut FORMATETC, src: *const FORMATETC) -> HRESULT {
     *dst = *src;
     if !(*src).ptd.is_null() {
         (*dst).ptd = CoTaskMemAlloc((*(*src).ptd).tdSize as SIZE_T) as *mut DVTARGETDEVICE;

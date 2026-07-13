@@ -67,4 +67,34 @@ extern "C" {
     pub static CLSID_ClassMoniker: GUID;
     pub static CLSID_PointerMoniker: GUID;
     pub static CLSID_DfMarshal: GUID;
+
+    // --- Tier-D: storage / property-set / OLE-embedding interfaces ---
+    // Every one of these is VERIFIED present in build-*/sdk/lib/uuid/libuuid.a (which ole32
+    // already links), so these are declarations of a real link symbol — never a redefinition.
+    // Defining a GUID in Rust instead would be a silent-corruption source: one wrong byte and
+    // QueryInterface simply misses, with no compile error and no link error.
+    pub static IID_IEnumSTATSTG: GUID;
+    pub static IID_IDirectWriterLock: GUID;
+    pub static IID_IPropertySetStorage: GUID;
+    pub static IID_IPropertyStorage: GUID;
+    pub static IID_IEnumSTATPROPSETSTG: GUID;
+    pub static IID_IEnumSTATPROPSTG: GUID;
+    pub static IID_IViewObject: GUID;
+    pub static IID_IViewObject2: GUID;
+    pub static IID_IOleCache: GUID;
+    pub static IID_IOleCache2: GUID;
+    pub static IID_IOleCacheControl: GUID;
+    pub static IID_IOleAdviseHolder: GUID;
+    pub static IID_IDataAdviseHolder: GUID;
+    pub static IID_IRunnableObject: GUID;
+
+    // --- property-set format IDs (objidlbase.idl) ---
+    pub static FMTID_SummaryInformation: GUID;
+    pub static FMTID_DocSummaryInformation: GUID;
+    pub static FMTID_UserDefinedProperties: GUID;
+
+    // --- static-picture CLSIDs the data cache stamps into the presentation stream (cguid.h) ---
+    pub static CLSID_Picture_Dib: GUID;
+    pub static CLSID_Picture_Metafile: GUID;
+    pub static CLSID_Picture_EnhMetafile: GUID;
 }

@@ -55,55 +55,28 @@ extern "system" {
         mshlflags: DWORD,
     ) -> HRESULT;
 
-    // --- storage32.c / stg_stream.c (STILL C — not yet translated) ---
-    pub fn StgOpenStorage(
-        pwcsName: *const u16,
-        pstgPriority: *mut IStorage,
-        grfMode: DWORD,
-        snbExclude: *mut *mut u16,
-        reserved: DWORD,
-        ppstgOpen: *mut *mut IStorage,
-    ) -> HRESULT;
-    pub fn StgOpenStorageOnILockBytes(
-        plkbyt: *mut ILockBytes,
-        pstgPriority: *mut IStorage,
-        grfMode: DWORD,
-        snbExclude: *mut *mut u16,
-        reserved: DWORD,
-        ppstgOpen: *mut *mut IStorage,
-    ) -> HRESULT;
-    pub fn StgIsStorageFile(fileName: *const u16) -> HRESULT;
-    pub fn StgIsStorageILockBytes(plkbyt: *mut ILockBytes) -> HRESULT;
-    pub fn ReadClassStg(pStg: *mut IStorage, pclsid: *mut CLSID) -> HRESULT;
-    pub fn WriteFmtUserTypeStg(pstg: *mut IStorage, cf: CLIPFORMAT, lpszUserType: LPOLESTR) -> HRESULT;
-    pub fn ReadFmtUserTypeStg(pstg: *mut IStorage, pcf: *mut CLIPFORMAT, lplpszUserType: *mut LPOLESTR) -> HRESULT;
-    pub fn SetConvertStg(pStg: *mut IStorage, fConvert: BOOL) -> HRESULT;
-    pub fn CreateILockBytesOnHGlobal(
-        hGlobal: HGLOBAL,
-        fDeleteOnRelease: BOOL,
-        pplkbyt: *mut *mut ILockBytes,
-    ) -> HRESULT;
-
-    // --- ole2.c / datacache / defaulthandler (still C where not yet flipped) ---
-    pub fn ReleaseStgMedium(pmedium: *mut STGMEDIUM);
-    pub fn OleLoad(
-        pStg: *mut IStorage,
-        riid: REFIID,
-        pClientSite: *mut IOleClientSite,
-        ppvObj: *mut LPVOID,
-    ) -> HRESULT;
-    pub fn GetClassFile(filePathName: *const u16, pclsid: *mut CLSID) -> HRESULT;
-
-    // --- moniker.c family (declared for the cross-moniker calls) ---
-    pub fn BindMoniker(pmk: *mut IMoniker, grfOpt: DWORD, riid: REFIID, ppvResult: *mut LPVOID) -> HRESULT;
-    pub fn CreateAntiMoniker(ppmk: *mut *mut IMoniker) -> HRESULT;
-    pub fn CreateFileMoniker(lpszPathName: LPCOLESTR, ppmk: *mut *mut IMoniker) -> HRESULT;
-    pub fn CreateGenericComposite(
-        pmkFirst: *mut IMoniker,
-        pmkRest: *mut IMoniker,
-        ppmkComposite: *mut *mut IMoniker,
-    ) -> HRESULT;
 }
+
+// --- REMOVED, and here is why (do not "restore" them) ---------------------------
+//
+// StgOpenStorage, StgOpenStorageOnILockBytes, StgIsStorageFile, StgIsStorageILockBytes,
+// ReadClassStg, WriteFmtUserTypeStg, ReadFmtUserTypeStg, SetConvertStg (storage32.rs),
+// CreateILockBytesOnHGlobal (memlockbytes.rs), ReleaseStgMedium + OleLoad (ole2.rs),
+// GetClassFile (moniker.rs), BindMoniker (bindctx.rs), CreateAntiMoniker (antimoniker.rs),
+// CreateFileMoniker (filemoniker.rs), CreateGenericComposite (compositemoniker.rs)
+//
+// all used to be declared here, back when their TU was still C. Every one of them is now
+// a real Rust DEFINITION in a `ring` module, and the prelude globs both this module and
+// every ring module — so keeping the decl puts two different items with the same name in
+// scope through two globs, which is an E0659 ambiguity the moment any module calls the
+// name unqualified. (Eight of these were already ring definitions before Tier-D; the
+// ambiguity was simply latent because no ring module happened to call them. Tier-D's
+// datacache/oleobj call ReleaseStgMedium and stg_prop calls the Stg* family, so it fires.)
+//
+// The rule: a symbol belongs in this file ONLY while its definition lives outside the
+// prelude's globs (compobj/, marshal/, or another DLL). Flip a TU into `ring` → delete
+// its decl here.
+// --------------------------------------------------------------------------------
 
 // oleaut32 exports the ring reaches for (SAFEARRAY in the NDR user-marshal path, BSTRs).
 // Cross-DLL, but the same stdcall rule applies.
@@ -140,4 +113,11 @@ pub fn PtrToUlong(p: *const c_void) -> ULONG {
 #[inline]
 pub fn HandleToULong(h: HANDLE) -> ULONG {
     h as usize as ULONG
+}
+
+/// basetsd.h: `UlongToPtr` — widen a 32-bit value back to a pointer. Zero-extends, per
+/// the C macro (`(void *)(ULONG_PTR)(ULONG)ul`); it must NOT sign-extend on amd64/arm64.
+#[inline]
+pub fn UlongToPtr(ul: ULONG) -> *mut c_void {
+    ul as usize as *mut c_void
 }
