@@ -125,6 +125,28 @@ impl Write for Cursor {
     }
 }
 
+/// `_Unwind_Resume` — the Itanium/DWARF unwinder's "keep unwinding" entry point.
+///
+/// stable-toolchain Axis B: on the builtin triples (amd64/arm64) we link the
+/// PRECOMPILED `core`/`alloc` rlibs that rust-lang CI ships, and those are built
+/// `panic = "unwind"`. Their *non-generic* (already-codegen'd) functions — e.g.
+/// `alloc::ffi::c_str::CString::into_string` — therefore carry landing pads that
+/// call `_Unwind_Resume`, so lld demands the symbol from any module that pulls in
+/// `alloc`. `-Z build-std` used to hide this by rebuilding `alloc` itself with
+/// `panic=abort`; with a precompiled `alloc` we must supply it.
+///
+/// It can never actually run: every vibeos crate compiles `panic = "abort"`
+/// (workspace `[profile.release]`), so a Rust panic goes straight to the
+/// `#[panic_handler]` above and bugchecks — no frame ever unwinds.
+///
+/// So this is a REACHABILITY ASSERTION, not an unwinder. Reaching it means a Rust
+/// frame is unwinding inside a kernel that has no Rust unwinder; say so loudly and
+/// halt, rather than returning into a half-unwound stack.
+#[no_mangle]
+pub extern "C" fn _Unwind_Resume(_exception: *mut core::ffi::c_void) -> ! {
+    panic!("_Unwind_Resume reached: a Rust frame is unwinding, but every crate is panic=abort");
+}
+
 /// The shared panic body. `krate` should be `env!("CARGO_PKG_NAME")`.
 pub fn panic_common(krate: &'static str, info: &PanicInfo) -> ! {
     let level = PANIC_LEVEL.fetch_add(1, Ordering::SeqCst);

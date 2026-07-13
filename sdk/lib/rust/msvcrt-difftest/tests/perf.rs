@@ -37,6 +37,31 @@ extern "C" {
     fn strlen(s: *const u8) -> usize;
     fn memcmp(a: *const c_void, b: *const c_void, n: usize) -> i32;
     fn memchr(b: *const c_void, c: i32, n: usize) -> *mut c_void;
+
+    // wave 4 — the wide hot primitives. wcslen/wcscpy/wcscmp are served to every
+    // UNICODE caller in the system (which, in the NT world, is most of them).
+    fn ref_wcslen(s: *const u16) -> usize;
+    fn ref_wcscpy(d: *mut u16, s: *const u16) -> *mut u16;
+    fn ref_wcscmp(a: *const u16, b: *const u16) -> i32;
+    fn wcslen(s: *const u16) -> usize;
+    fn wcscpy(d: *mut u16, s: *const u16) -> *mut u16;
+    fn wcscmp(a: *const u16, b: *const u16) -> i32;
+
+    // The COMPARE family. Added after `wcscmp` shipped 3.8x slow and nothing
+    // caught it: the gate only benched memset/memcpy/memcmp/memchr/strlen, so
+    // `strcmp` — which has the identical 3-pass slice shape and is served to
+    // every caller in the system — went unmeasured through two waves.
+    // A perf gate only defends what it BENCHES.
+    fn ref_strcmp(a: *const u8, b: *const u8) -> i32;
+    fn ref_strncmp(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn ref_strcpy(d: *mut u8, s: *const u8) -> *mut u8;
+    fn ref_strcat(d: *mut u8, s: *const u8) -> *mut u8;
+    fn ref_strchr(s: *const u8, c: i32) -> *mut u8;
+    fn strcmp(a: *const u8, b: *const u8) -> i32;
+    fn strncmp(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn strcpy(d: *mut u8, s: *const u8) -> *mut u8;
+    fn strcat(d: *mut u8, s: *const u8) -> *mut u8;
+    fn strchr(s: *const u8, c: i32) -> *mut u8;
 }
 
 /// A flip slower than this multiple of the C it replaces FAILS the gate.
@@ -52,15 +77,25 @@ fn bench(label: &str, n: usize, mut f: impl FnMut()) -> f64 {
     for _ in 0..core::cmp::min(iters, 64) {
         f();
     }
-    let t = Instant::now();
-    for _ in 0..iters {
-        f();
+    // BEST-of-3, not mean: this runs on a shared host where other agents are
+    // building and booting QEMUs. A scheduler steal inflates a sample, and with
+    // a mean that lands as a phantom "regression" at the small sizes where call
+    // overhead already dominates. The minimum time is the least-contended
+    // sample, which is the one that reflects the code rather than the host.
+    let mut best = 0.0f64;
+    for _ in 0..3 {
+        let t = Instant::now();
+        for _ in 0..iters {
+            f();
+        }
+        let secs = t.elapsed().as_secs_f64();
+        let mbps = (iters * n) as f64 / secs / (1024.0 * 1024.0);
+        if mbps > best {
+            best = mbps;
+        }
     }
-    let secs = t.elapsed().as_secs_f64();
-    let bytes = (iters * n) as f64;
-    let mbps = bytes / secs / (1024.0 * 1024.0);
     let _ = label;
-    mbps
+    best
 }
 
 struct Row {
@@ -70,6 +105,21 @@ struct Row {
 }
 
 fn main() {
+    // This gate is meaningless outside --release, and worse than meaningless:
+    // msvcrt-crt-rust's `opt-level = 3` lives in `[profile.release.package.*]`,
+    // so a debug run compares an UNOPTIMIZED Rust body against an -O2 C one and
+    // reports ~100x "regressions" that do not exist. A gate that cries wolf in
+    // the default profile is a gate people learn to ignore. Say so and stop.
+    if cfg!(debug_assertions) {
+        println!(
+            "\n  perf: SKIPPED — this gate only means anything under --release.\n  \
+             msvcrt-crt-rust's opt-level=3 is a [profile.release.package] setting;\n  \
+             in debug the Rust side is unoptimized and every case reports a bogus\n  \
+             regression. Re-run:  cargo test -p msvcrt-difftest --test perf --release\n"
+        );
+        return;
+    }
+
     let mut rows: Vec<Row> = Vec::new();
 
     for &n in SIZES {
@@ -125,6 +175,91 @@ fn main() {
                 core::hint::black_box(ref_strlen(strp));
             });
             rows.push(Row { name: format!("strlen/{n}"), rust: r, c });
+
+            // ── wave 4: the wide hot primitives ──
+            // `n` here is a byte budget, so the wide buffers hold n/2 chars —
+            // that keeps the MiB/s column comparable across the narrow and wide
+            // rows (same bytes touched per call).
+            let wn = n / 2;
+            let mut ws = vec![b'x' as u16; wn + 1];
+            ws[wn] = 0;
+            let wsp = ws.as_ptr();
+            let mut wd = vec![0u16; wn + 1];
+            let wdp = wd.as_mut_ptr();
+
+            let r = bench("wcslen", n, || {
+                core::hint::black_box(wcslen(wsp));
+            });
+            let c = bench("ref_wcslen", n, || {
+                core::hint::black_box(ref_wcslen(wsp));
+            });
+            rows.push(Row { name: format!("wcslen/{n}"), rust: r, c });
+
+            let r = bench("wcscpy", n, || {
+                wcscpy(wdp, wsp);
+            });
+            let c = bench("ref_wcscpy", n, || {
+                ref_wcscpy(wdp, wsp);
+            });
+            rows.push(Row { name: format!("wcscpy/{n}"), rust: r, c });
+
+            let r = bench("wcscmp", n, || {
+                core::hint::black_box(wcscmp(wsp, wsp));
+            });
+            let c = bench("ref_wcscmp", n, || {
+                core::hint::black_box(ref_wcscmp(wsp, wsp));
+            });
+            rows.push(Row { name: format!("wcscmp/{n}"), rust: r, c });
+
+            // ── the compare/copy family (equal inputs: forces the full walk) ──
+            let r = bench("strcmp", n, || {
+                core::hint::black_box(strcmp(strp, strp));
+            });
+            let c = bench("ref_strcmp", n, || {
+                core::hint::black_box(ref_strcmp(strp, strp));
+            });
+            rows.push(Row { name: format!("strcmp/{n}"), rust: r, c });
+
+            let r = bench("strncmp", n, || {
+                core::hint::black_box(strncmp(strp, strp, n));
+            });
+            let c = bench("ref_strncmp", n, || {
+                core::hint::black_box(ref_strncmp(strp, strp, n));
+            });
+            rows.push(Row { name: format!("strncmp/{n}"), rust: r, c });
+
+            let mut sd = vec![0u8; n + 1];
+            let sdp = sd.as_mut_ptr();
+            let r = bench("strcpy", n, || {
+                strcpy(sdp, strp);
+            });
+            let c = bench("ref_strcpy", n, || {
+                ref_strcpy(sdp, strp);
+            });
+            rows.push(Row { name: format!("strcpy/{n}"), rust: r, c });
+
+            // strcat onto an EMPTY dst: the cost is the dst NUL-scan + the copy,
+            // which is what the C does too.
+            let mut cd = vec![0u8; 2 * n + 2];
+            let cdp = cd.as_mut_ptr();
+            let r = bench("strcat", n, || {
+                *cdp = 0;
+                strcat(cdp, strp);
+            });
+            let c = bench("ref_strcat", n, || {
+                *cdp = 0;
+                ref_strcat(cdp, strp);
+            });
+            rows.push(Row { name: format!("strcat/{n}"), rust: r, c });
+
+            // absent byte -> forces the full scan
+            let r = bench("strchr", n, || {
+                core::hint::black_box(strchr(strp, b'Z' as i32));
+            });
+            let c = bench("ref_strchr", n, || {
+                core::hint::black_box(ref_strchr(strp, b'Z' as i32));
+            });
+            rows.push(Row { name: format!("strchr/{n}"), rust: r, c });
         }
     }
 

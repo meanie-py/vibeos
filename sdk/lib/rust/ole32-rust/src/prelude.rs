@@ -26,12 +26,12 @@ pub use com_sys::*;
 
 // Base aliases com-sys doesn't re-export under the names the translations use.
 pub use core::ffi::{c_char, c_int, c_long, c_uint, c_ulong, c_void};
+// rustconv emits bare `addr_of_mut!(x)` / `addr_of!(x)` for the C's `&x`.
+pub use core::ptr::{addr_of, addr_of_mut};
 
 pub use crate::commacros_gen::*;
 pub use crate::consts::*;
-pub use crate::debug_shims::{
-    debugstr_a, debugstr_guid, debugstr_w, FAILED, SUCCEEDED,
-};
+pub use crate::debug_shims::*;
 pub use crate::hresults::*;
 pub use crate::iids::*;
 pub use crate::crt::*;
@@ -39,6 +39,8 @@ pub use crate::gdi32::*;
 pub use crate::ole32_exports::*;
 pub use crate::user32::*;
 pub use crate::win32::*;
+pub use crate::oletypes::*;
+pub use crate::storage_defs::*;
 pub use crate::win_consts::*;
 pub use crate::wine_list::*;
 pub use crate::winemacros::*;
@@ -47,6 +49,7 @@ pub use crate::winemacros::*;
 pub use crate::{ERR, FIXME, TRACE, WARN};
 pub use crate::{LIST_FOR_EACH_ENTRY, LIST_FOR_EACH_ENTRY_SAFE, stdmethod, FIELD_OFFSET};
 pub use crate::{CONTAINING_RECORD, ALIGN_LENGTH, ALIGN_POINTER};
+pub use crate::{HIWORD, LOWORD, HIBYTE, LOBYTE, MAKELONG};
 
 // Cross-module unqualified calls: the C TUs saw each other through ole32's private
 // headers; these glob re-exports play that role. NOTE it must glob each submodule —
@@ -54,8 +57,9 @@ pub use crate::{CONTAINING_RECORD, ALIGN_LENGTH, ALIGN_POINTER};
 // function (CoTaskMemAlloc, defined in ring::ifs) would still be unresolved.
 pub use crate::ring::{
     antimoniker::*, bindctx::*, classmoniker::*, clipboard::*, comcat::*,
-    compositemoniker::*, dictionary::*, enumx::*, errorinfo::*, filelockbytes::*,
-    filemoniker::*, hglobalstream::*, ifs::*, itemmoniker::*, memlockbytes::*,
-    moniker::*, ole2::*, ole2impl::*, ole2stubs::*, ole32_main::*, oleproxy::*,
-    pointermoniker::*, usrmarshal::*,
+    compositemoniker::*, datacache::*, defaulthandler::*, dictionary::*, enumx::*,
+    errorinfo::*, filelockbytes::*, filemoniker::*, hglobalstream::*, ifs::*,
+    itemmoniker::*, memlockbytes::*, moniker::*, ole2::*, ole2impl::*, ole2stubs::*,
+    ole32_main::*, oleobj::*, oleproxy::*, pointermoniker::*, stg_prop::*,
+    stg_stream::*, storage32::*, usrmarshal::*,
 };

@@ -11,6 +11,130 @@
 
 ---
 
+## 2026-07-12 (wave 4) — the wide family LANDED, and the three-harness set became four
+
+**Flipped (14, all pure):** `wcslen wcscmp wcsncmp wcschr wcsrchr wcsstr wcsspn wcscspn
+wcspbrk wcscpy wcscat _wcsrev _wcsset _wcsnset`. Verdict: **45 MATCH / 0 SIGN-ONLY /
+0 DIVERGE**, all bounded fns in-bounds, every flipped primitive within 2× of its C.
+
+**The premise held.** `wchar_t` is unsigned by definition and `Elem::diff for u16` is
+already `(a as i32) - (b as i32)`, so the signed-char contract that forced `cmp_u`/`ncmp_u`
+into cnt-rust's core in wave 3 **cannot recur** on the wide side. **cnt-rust was not touched
+by this wave** — the kernel's libcntpr contract is unchanged.
+
+**`wcs.c` is now a SECOND reference TU** (176 public symbols, disjoint from `string.c`'s 106
+— asserted). One *union* rename prelude covers both, so cross-TU calls resolve `ref_*`→`ref_*`
+and `wcs.c` reaches `string.c`'s `fpnum_parse`/`memcpy`/`strlen` instead of the host's. The
+refstub now pulls glibc's `<wchar.h>`/`<wctype.h>` **under** the 16-bit `wchar_t` remap — the
+opposite of the rule for the narrow headers, and it is what makes ~30 of wcs.c's wide
+definitions agree with glibc's declarations *for free*. Only five still disagree in **shape**
+(`wcstok`'s arity; `wcstol`/`wcstoul`'s LP64 `long`; `wcstombs`/`wctomb`, which live in
+`<stdlib.h>` and so are typed *before* the remap) and go through the existing stage-0/stage-3
+hide-then-rename.
+
+### What the harnesses caught (all four times, this is the point of the lane)
+
+1. **`wcscmp` CLAMPS to −1/0/1** — unconditionally, no `_WIN64` branch — while its sibling
+   **`wcsncmp` returns the RAW difference**. Same family, same file, opposite contracts.
+2. **`wcsstr(L"", L"")` → `NULL`**, because its outer `while(*str)` never runs — whereas the
+   narrow **`strstr("", "")` → `""`** (it special-cases the empty needle *first*). A real
+   narrow/wide asymmetry inside msvcrt itself.
+3. **The CRT perf tax (§9.63).** `perf` flagged `wcscmp` at 3.8–4.8×, and the root cause was
+   structural: **a slice-based core cannot express a single-pass C string primitive** —
+   building a `&[u8]` needs the length, and computing the length is exactly the scan the C
+   skips. Which meant **narrow `strcmp` had the identical 3-pass shape and was slow ON MASTER**,
+   unmeasured, because the gate benched only `memset/memcpy/memcmp/memchr/strlen`.
+   *A perf gate only defends what it BENCHES.* Copy/compare/search are now single-pass
+   transcriptions (the same call `memcmp` already made). `wcscmp` 3.8×→0.79×, `strchr`
+   2.01×→1.00×, `strcmp` now benched at 1.00×. **The 2× bar was not raised.**
+4. **NULL tolerance vanished (§9.64) — and it shipped a boot regression.** The single-pass
+   rewrite dropped the NULL guard that `cstr_slice` had always provided (`NULL → &[]`, i.e.
+   *NULL behaves as `""`*). `classify` still said 45/45 MATCH — **it never passes NULL**. The
+   net suite went 15/15 → 13/15. Found by **A/B control**, not by the harness.
+
+### The harness set is now FOUR orthogonal instruments
+
+| harness | question | blind to |
+|---|---|---|
+| `classify` | wrong **values**? | access, speed, un-fuzzed inputs |
+| `oob_guard` | right answer, wrong **memory**? | values, speed |
+| `perf` | right answer, too **slowly**? | values, access |
+| `assert_null_tolerant` | did we drop a **tolerance** the last build had? | everything else |
+
+Every one of them was validated by **negative control** (inject the bug → it must fail).
+A guard that cannot be shown to fail is worthless.
+
+**The rule that generalizes** (§9.64): when you refactor a wrapper, enumerate the *implicit
+guarantees of the helper you are deleting*, not just the contract of the function you are
+rewriting. A NULL guard, a bounds clamp, a zero-length early-out — these live in the helper,
+are invisible at the call site, and vanish silently when you inline it away. And note the
+oracle: **the C is no help here** (it faults on NULL too). The oracle is *the previous build*.
+
+**Deferred, unchanged:** the locale-dependent wide set (`_wcsicmp`, `_wcsnicmp`, `_wcsicoll`,
+`_wcsnicoll`, `wcscoll`, `_wcslwr`, `_wcsupr`, `towlower`/`towupper`, the whole `isw*` ctype
+block, the NLS `wcstombs` family). The harness pins the "C" locale, so it *would* report
+MATCH — that is the documented blind spot (§9.60), not a license to flip. Verified still-C by
+PE export RVA (they resolve at 0x045xxx, far from the Rust cluster at 0x0025a0–0x002c90).
+
+### ⛔ WAVE 5 (float↔str) IS CANCELLED — the thesis does not reach this family
+
+Probed before writing any integration (`strtod [PROBE]` in classify, a deliberately
+NON-`#[no_mangle]` fn so nothing overrode the C). Result: **DIVERGE, by 14 ULPs.**
+
+```
+"0.0000000000000000087519423665610e-32"
+  cnt-rust (DJ Delorie naive):  0x35c05f590315f1e3
+  msvcrt   (bignum):            0x35c05f590315f1d5
+```
+
+Two different algorithms from two different lineages:
+- **cnt-rust** = ReactOS libcntpr's **DJ Delorie parser** — a naive `r = r*10 + d`
+  accumulator, then `r *= 10^e`. Its own doc says it "was never IEEE correctly-rounded".
+- **msvcrt** = Wine's `fpnum_parse` + `bnum.h` — a base-10 **BIGNUM**, correctly rounded.
+
+They were never the same function. **The kernel and msvcrt have genuinely different float
+contracts.** Flipping `strtod`/`atof` from cnt-rust would silently corrupt every user-mode
+float parse by double-digit ULPs on hard-to-round inputs — invisible in casual use,
+lethal in a conformance suite.
+
+**And the float↔str direction is not a separate wave at all.** msvcrt's converters ARE
+printf calls:
+
+```c
+_ecvt: _snprintf(buf, 80, "%.*le", prec-1, number);
+_fcvt: _snprintf(buf, 80, "%.*f",  ndigits, number);
+_gcvt:  sprintf(buff,     "%.*g",  ndigit,  number);
+```
+
+So the whole float family — both directions — is **part of the printf engine (Phase C)**,
+and the honest path to it is *porting msvcrt's own fpnum/bnum machinery*, i.e. a
+TRANSLATION, not an assembly. Re-sequenced accordingly.
+
+The probe stays in the tree permanently as an executable DO-NOT-FLIP record.
+
+### Wave 5 (revised) — the `_s` secure-CRT family + the pure leftovers
+
+All gradeable against the EXISTING `string.c` reference TU — **zero new harness work**:
+- radix `_s` (10): `_i64toa_s _i64tow_s _itoa_s _itow_s _ltoa_s _ltow_s _ui64toa_s
+  _ui64tow_s _ultoa_s _ultow_s` — wave 1's siblings, plus bounds-check + errno.
+- string `_s` (5): `strcpy_s strcat_s strncpy_s strncat_s _strnset_s` (cnt-rust's cabi
+  already has the wide `wcscpy_s`/`wcsncpy_s`/`wcscat_s`/`wcsncat_s`).
+- pure leftovers: `strtok` `strtok_s` (cnt has `strtok.rs`; the ref TU already models
+  `thread_data->strtok_next`), `_swab`, `__strncnt`.
+
+The `_s` contract is *errno + the invalid-parameter handler*, not just the buffer — so the
+harness must grade `errno` too, which means providing `_errno`/`_invalid_parameter` for the
+crate under test (the reference's own are namespaced `msvcrt_ref_*`).
+
+**Also now a real gate:** `classify` used to print `DIVERGE ✗ DO NOT FLIP` and **exit 0**.
+It now exits 1 if a FLIPPED function diverges (`[PROBE]` rows exempt by design).
+Negative-control validated.
+
+Owed: replace `--whole-archive` with per-symbol `-u` pulling (it currently force-includes the
+crate's bundled `compiler_builtins` into msvcrt.dll).
+
+---
+
 ## 0. TL;DR — the shape of the win
 
 | | |
@@ -357,3 +481,127 @@ hand-rolled `while (Len--) *Dst++ = *Src++;` compiled to a genuine byte loop; ca
 disassembling the shim. Field manual §9.59.)*
 
 </details>
+
+---
+
+## Wave 6 — COMPLETE (2026-07-12). 24 new flips; msvcrt.dll is **82 functions of Rust**.
+
+Wave 6 split three ways. **6a was worth more than 6b and 6c combined**, and it was not on the
+plan: it started as "retro-grade the old flips through wave 5's new errno oracle" and turned
+into "the oracle itself was miscompiled."
+
+### 6a — the oracle was lying, and it was hiding 3 shipped bugs (field manual §9.66)
+
+The reference C is compiled for the host with its symbols renamed `ref_*` by a force-included
+prelude that lands **before** the system headers — deliberately, so glibc declares the renamed
+symbols and we inherit prototypes for free. But a declaration carries **attributes** too, and
+glibc's `__nonnull` / `__attribute_pure__` are promises about *glibc's* implementation:
+
+- `__nonnull` let the optimizer **delete msvcrt's `if(!str) return 0;`** from `ref_atoi`.
+  Verified in the disassembly. The reference *segfaulted* on an input the real DLL handles.
+- `__attribute_pure__` says "no side effects" about a family that **sets errno** — licensing
+  the compiler to elide the very calls the errno oracle inspects. That one never crashes.
+
+Fixed by neutering glibc's attribute macros before its headers declare anything (build.rs
+"stage 1.5"). `tests/ref_integrity.rs` is the permanent tripwire — a test whose subject is the
+*oracle*, negative-controlled.
+
+Then, with a trustworthy oracle, the **already-shipped** integer-parse family was re-run
+through it. Three bugs, all live on master:
+
+| fn | what shipped | msvcrt actually |
+|---|---|---|
+| `_atoi64` | the KERNEL's **wrapping** parser | **saturates** at `_I64_MAX` + `ERANGE` |
+| `strtol` | BSD `parse_long_bsd` — no errno at all | `ERANGE` on overflow; `EINVAL`+handler on NULL/bad base; leaves `*endptr` ALONE on a bad base |
+| `strtoul` | no errno/handler | same front door |
+
+`_atoi64` was a **value** divergence, not merely an errno one — and `classify` had missed it
+because `gen_str` essentially never emits a 19-digit run. **A fuzzer only falsifies what it
+varies.** `gen_num_str` now generates the boundaries on purpose.
+
+Fix shape (this is the lane's thesis, stated sharply): **cnt-rust supplies the ALGORITHM;
+msvcrt-crt-rust supplies msvcrt's SEMANTICS.** `parse_i64_clamped` already *was* `_strtoi64_l`
+faithfully — it just never reported that it saturated, which the caller cannot re-derive from
+the value. So the engine now says so (`overflowed`), and `strtoi64_contract()` adds the
+`CHECK_PMT` front door + `ERANGE` at the msvcrt boundary. cnt-rust stays kernel-pure.
+
+### 6b — the radix `_s` family: ten functions, FOUR contracts (11 flips)
+
+`_itoa_s _ltoa_s _i64toa_s _ui64toa_s _ultoa_s _itow_s _ltow_s _i64tow_s _ui64tow_s _ultow_s`
++ `_strtoi64`.
+
+They look like one function with ten signatures. They are not:
+
+| group | too-small buffer | handler |
+|---|---|---|
+| A/B (`_ltoa_s`, `_i64toa_s`, …) | `ERANGE` + the digits written **BACKWARDS** into the caller's buffer | fires |
+| C (`_ui64toa_s`, `_ui64tow_s`) | **`EINVAL`**, buffer untouched | fires |
+| D (`_ultoa_s`, `_ultow_s`) | `ERANGE` + residue | **never** — hand-rolled `*_errno()` |
+
+Group D is *why 6a had to start grading effect 4*: on a bad radix `_ultoa_s` and `_ltoa_s` are
+byte-, return-code- AND errno-identical. The handler bit is the only thing separating them.
+
+The **reversed residue** is bug-for-bug with Microsoft — a clean `str[0]=0; return ERANGE;` is
+string-identical and byte-different. `classify` compares the FULL buffer.
+
+### 6c — the wide `_s` family + tokenizers (11 flips)
+
+`wcscpy_s wcsncpy_s wcscat_s wcsncat_s _wcsnset_s _wcsset_s wcsncpy wcsnlen strtok_s wcstok_s
+_strtoui64`. Four writers, four *different* handler contracts — proved by the coverage
+arithmetic, not by reading:
+
+```
+wcscpy_s   EINVAL=1396 ERANGE=7778 handler=9174  (=1396+7778: every error)
+wcsncpy_s  EINVAL=632  ERANGE=3366 handler=632   (EINVALs only: ERANGE arm SILENT)
+wcscat_s   EINVAL=741  ERANGE=7872 handler=0     (NEVER)
+wcsncat_s  EINVAL=3184 ERANGE=2053 handler=5237  (=3184+2053: everything)
+```
+
+### The harness got harder (this is the durable output)
+
+- **`ref_integrity.rs`** — audits the ORACLE. New; negative-controlled.
+- **Coverage requirements** — `check_buf_fx(name, &["ok","EINVAL","ERANGE","handler"], …)` fails
+  a row as **UNEXERCISED CONTRACT** if the reference never produced those outcomes. All 11
+  wave-6b rows passed on the first run, which is exactly when a green is least trustworthy.
+- **Rename-list drift assertion** — build.rs scrapes both reference TUs for every `(MSVCRT.@)`
+  export they define and fails if one is missing from the rename lists. It had already drifted
+  (`memmove`, `_mbsdup`, `swprintf`, `_scwprintf_p`, `iswalpha_l` were compiled under their
+  PLAIN names, escaping the anti-circularity namespace).
+- **`gen_num_str`** — boundary numerals (`_I64_MAX`, `±ULONG_MAX`, 19-digit runs, `0x`/octal).
+
+### What wave 6 REFUSED to flip
+
+- **`memmove`** — *no oracle*. `refstub/msvcrt.h:185` routes it into the private
+  `msvcrt_ref_*` namespace (the thing that stops the reference binding to the subject), so the
+  compiled reference does not define an msvcrt `memmove`. The body would have been three lines
+  (`h::raw_move` already ships under `memcpy`). **Nothing flips without a differential proof,
+  and the rule doesn't get suspended because a flip looks easy.** Recorded as
+  `NAMESPACED_SYMBOLS` in build.rs. *Owed:* let the refstub expose a namespaced symbol as a
+  `ref_*` oracle without opening the namespace to the subject.
+- **`strtok` / `wcstok`** — reach into msvcrt's `thread_data_t`. Getting at that field from
+  Rust means hardcoding an offset into a struct we don't own (the magic-offset class —
+  `scan_magic_offsets`, same shape as the §9.41 CLIENTINFO bug). Wants a real TLS story.
+  `strtok_s`/`wcstok_s` take an explicit context and are flipped.
+
+### Known + bounded: the locale caveat (NOT new debt)
+
+The integer parsers skip whitespace with `_isspace_l(c, NULL)` and fold case with
+`_tolower_l(c, NULL)` — the thread's **current** locale. We implement the "C" locale (ASCII),
+which is what msvcrt.dll starts in; `classify` fuzzes the full 0x00–0xFF byte range against the
+genuine C to prove C-locale equivalence. A non-C `LC_CTYPE` could diverge. That is Phase D, and
+the already-shipped `strtol` carried the identical caveat before wave 6 — this is *documented*
+now, not *introduced*.
+
+Discovered en route: **the WIDE integer parsers are locale-bound where the narrow ones are
+not** (`_wcstoi64_l` calls `_iswspace_l`; `_strtoi64_l` calls `_isspace_l` — which lives in
+ctype.c and is C-locale ASCII in practice). `wcstol`/`wcstoul`/`_wtoi`/`_wtol`/`_wcstoi64` are
+therefore **Phase D**, not a symmetric freebie. Nearly flipped them on a symmetry argument.
+
+### Next
+
+- **Wave 7 candidates:** `_stricmp`/`_strnicmp`/`_memicmp` (case-folding — verify the locale
+  boundary FIRST, the way wave 6 did; do not assume ASCII), `_strlwr_s`/`_strupr_s`.
+- **Phase C (printf)** is the big one and now includes the whole float family: `_ecvt`/`_fcvt`/
+  `_gcvt` are literally `_snprintf` calls, and `strtod` needs msvcrt's own bignum (the wave-5
+  probe measured cnt-rust's parser 14 ULPs off — it stays in the tree as an executable
+  DO-NOT-FLIP record).

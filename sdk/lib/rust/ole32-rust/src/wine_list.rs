@@ -162,8 +162,17 @@ macro_rules! LIST_FOR_EACH_ENTRY {
 
 /// wine/list.h `LIST_FOR_EACH_ENTRY_SAFE(cursor, cursor2, type, field)` — caches the
 /// next link BEFORE the body, so the body may unlink/free the current element.
+///
+/// Two call shapes, because the C macro is `LIST_FOR_EACH_ENTRY_SAFE(cursor, cursor2,
+/// type, field)`: `cursor2` is the caller-supplied scratch variable the C uses to stash
+/// the next link before running the body. We cache `next` inside the macro instead, so
+/// that parameter has nothing to bind to — but translations still pass it, so accept and
+/// ignore it rather than making every call site drop an argument.
 #[macro_export]
 macro_rules! LIST_FOR_EACH_ENTRY_SAFE {
+    ($elem:ident, $cursor2:ident, $list:expr, $ty:ty, $field:ident, $body:block) => {
+        $crate::LIST_FOR_EACH_ENTRY_SAFE!($elem, $list, $ty, $field, $body)
+    };
     ($elem:ident, $list:expr, $ty:ty, $field:ident, $body:block) => {{
         let head: *mut $crate::wine_list::list = $list;
         let mut cur = (*head).next;

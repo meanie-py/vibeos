@@ -20,13 +20,26 @@ rustflags = [
     "-C", "target-feature=-sse,-sse2",
 ]
 
-# amd64 / arm64 cargo-link targets for the ntdll cargo-drive (ntdll-cargo /
-# ntdll_vista-cargo). Same minimal -nostdlib spec as i686-kernel, pinning
-# llvm-mingw's per-arch clang as the linker. NO -sse disable: ntdll is
-# user-mode, so amd64 keeps SSE and arm64 keeps NEON (matches cmake's
-# ntdll-rust build, which only disables SSE on i386).
-[target.x86_64-kernel]
+# amd64 / arm64: the `*-cargo` cells link the BUILTIN triples on pinned STABLE —
+# no custom json, no `-Z build-std` (stable-toolchain-plan.md, Axis B). The
+# builtin spec names a plain `*-w64-mingw32-gcc` linker that isn't on PATH, so
+# point it at llvm-mingw's clang, exactly as the retired `{x86_64,aarch64}-kernel`
+# json entries did.
+#
+# `linker` (not `rustflags`) on purpose:
+#   - It is a distinct config key, so it COMPOSES with the env `RUSTFLAGS` the
+#     cargo-module cells set (`-C link-self-contained=no -C force-frame-pointers=yes`).
+#     An env RUSTFLAGS *replaces* config `rustflags` wholesale — putting the linker
+#     there would mean every caller had to re-state it or silently lose it.
+#   - These triples are ALSO the whole user-mode/library fleet's target, and those
+#     crates compile to rlibs/staticlibs — no link step — so a `linker` key is inert
+#     for them. Codegen flags would NOT be, which is why none live here.
+#
+# Path is ABSOLUTE: cargo expands neither env vars nor relative paths in
+# config.toml. Override with `CARGO_TARGET_<TRIPLE>_LINKER` if llvm-mingw is
+# installed elsewhere.
+[target.x86_64-pc-windows-gnu]
 linker = "/home/curi/Projects/os-playground/vibeos/.build-tools/llvm-mingw/bin/x86_64-w64-mingw32-clang"
 
-[target.aarch64-kernel]
+[target.aarch64-pc-windows-gnullvm]
 linker = "/home/curi/Projects/os-playground/vibeos/.build-tools/llvm-mingw/bin/aarch64-w64-mingw32-clang"

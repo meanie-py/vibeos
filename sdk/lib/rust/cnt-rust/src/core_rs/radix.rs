@@ -58,6 +58,17 @@ pub struct ClampedI64 {
     pub value: i64,
     pub end: usize,
     pub base_ok: bool,
+    /// The parse SATURATED at `_I64_MAX`/`_I64_MIN` rather than representing
+    /// the input exactly.
+    ///
+    /// The kernel (`_LIBCNT_`) has no errno and ignores this. msvcrt does not:
+    /// `_strtoi64_l` sets `errno = ERANGE` on exactly this condition, and its
+    /// callers (`strtol`, `strtoul`, `_atoi64`) inherit it. The caller cannot
+    /// re-derive the flag from `value` alone — a clamped result and a legitimate
+    /// `"9223372036854775807"` are the same i64 — so the engine, which is the
+    /// only party that knows, has to say so. Not reporting it is how msvcrt's
+    /// `strtol` shipped without its ERANGE contract (§9.66).
+    pub overflowed: bool,
 }
 
 #[inline]
@@ -74,7 +85,7 @@ fn lc(b: u8) -> u8 {
 #[inline]
 pub fn parse_i64_clamped(s: &[u8], mut base: i32) -> ClampedI64 {
     if !(base == 0 || (2..=36).contains(&base)) {
-        return ClampedI64 { value: 0, end: 0, base_ok: false };
+        return ClampedI64 { value: 0, end: 0, base_ok: false, overflowed: false };
     }
     let mut i = 0;
     while i < s.len() && is_space(s[i]) {
@@ -99,6 +110,7 @@ pub fn parse_i64_clamped(s: &[u8], mut base: i32) -> ClampedI64 {
     let b64 = base as i64;
     let mut ret: i64 = 0;
     let mut got_digit = false;
+    let mut overflowed = false;
     while i < s.len() {
         let cur = lc(s[i]);
         let v: i64 = if cur.is_ascii_digit() {
@@ -115,10 +127,17 @@ pub fn parse_i64_clamped(s: &[u8], mut base: i32) -> ClampedI64 {
         got_digit = true;
         let v = if negative { -v } else { v };
         i += 1;
+        // The `||` short-circuit is load-bearing, exactly as in the C: the second
+        // disjunct's `ret * b64` is only evaluated once the first has proved
+        // `ret <= i64::MAX / b64`, which is precisely the condition under which
+        // that multiply cannot overflow. (In C the overflow would be UB; in Rust
+        // it would panic in debug. Neither happens, for the same reason.)
         if !negative && (ret > i64::MAX / b64 || ret * b64 > i64::MAX - v) {
             ret = i64::MAX;
+            overflowed = true;
         } else if negative && (ret < i64::MIN / b64 || ret * b64 < i64::MIN - v) {
             ret = i64::MIN;
+            overflowed = true;
         } else {
             ret = ret * b64 + v;
         }
@@ -127,6 +146,7 @@ pub fn parse_i64_clamped(s: &[u8], mut base: i32) -> ClampedI64 {
         value: ret,
         end: if got_digit { i } else { 0 },
         base_ok: true,
+        overflowed,
     }
 }
 

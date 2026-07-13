@@ -1465,6 +1465,36 @@ impl Linker {
                 self.repo_root.join(spec_rel).display()
             );
         }
+        // memcmp FALLBACK, builtin targets only (stable-toolchain Axis B).
+        //
+        // The PRECOMPILED `core` calls `memcmp` (core::slice::cmp, reached from
+        // e.g. `str` pattern search). `-Z build-std` used to supply it via
+        // `-Z build-std-features=compiler-builtins-mem`, and every cell that moved
+        // to build-std DROPPED its libmemcmp.a for exactly that reason. Dropping
+        // build-std brings the need back.
+        //
+        // Most mem* are fine: ntoskrnl.spec exports memcpy/memset/memmove on every
+        // arch — but `memcmp` ONLY on x86_64 (`@ cdecl -arch=x86_64 memcmp()`). So
+        // amd64 kernel cells resolve it from the ntoskrnl import lib while arm64
+        // ones have nothing, which is what `sdk/lib/crt/libmemcmp.a` is for.
+        //
+        // Emitted LAST — after the static libs, the Rust archives and the import
+        // libs — so it is a pure FALLBACK: lld only pulls an archive member for a
+        // still-undefined symbol, so any cell that already defines memcmp (libcntpr
+        // in ntoskrnl, win32k's Rust memcmp, amd64's ntoskrnl import) keeps its own
+        // and this contributes nothing. Only a cell with a genuine gap pulls it.
+        if !self.target.is_json() {
+            let memcmp_a = self.build_dir.join("sdk/lib/crt/libmemcmp.a");
+            if !memcmp_a.exists() {
+                panic!(
+                    "missing {} — run ninja memcmp first (needed by the precompiled \
+                     core on the builtin triples)",
+                    memcmp_a.display()
+                );
+            }
+            println!("cargo:rustc-link-arg={}", memcmp_a.display());
+            println!("cargo:rerun-if-changed={}", memcmp_a.display());
+        }
         println!("cargo:rustc-link-arg=-Wl,--end-group");
 
         let clang_rt = llvm_mingw.join(format!(
@@ -1472,6 +1502,50 @@ impl Linker {
             self.arch.clang_rt
         ));
         println!("cargo:rustc-link-arg={}", clang_rt.display());
+
+        // ---- BUILTIN-TARGET CRT NEUTRALISATION (stable-toolchain Axis B) ----
+        // On a builtin triple the target spec carries the user-mode mingw CRT
+        // plumbing our old custom kernel json existed to strip:
+        //   late-link-args:  -lmsvcrt -lmingwex -lmingw32 -lgcc -luser32 -lkernel32
+        //   late-link-args-static: -lgcc_eh -l:libpthread.a   (+ -lgcc_s dynamic)
+        //   crt-objects-fallback: mingw   (crt2.o / dllcrt2.o, rsbegin.o / rsend.o)
+        // rustc appends the `-l`s AFTER our archives and there is no flag to
+        // suppress them, so we shadow every one with an EMPTY archive on a `-L`
+        // that precedes llvm-mingw's own lib dir. `-nostdlib` (below) is NOT
+        // enough — it only stops clang adding its defaults, not these explicit -l.
+        //
+        // This is deliberately a HARD WALL, not a convenience: an empty libmsvcrt.a
+        // means a symbol we fail to provide (e.g. memcpy, which used to come from
+        // build-std's `compiler-builtins-mem`) is a LOUD undefined-symbol link
+        // error naming it — instead of being silently satisfied by the user-mode
+        // CRT, which would graft an msvcrt.dll IMPORT onto a kernel driver and
+        // fail far away at boot. Kernel modules get mem* from the ntoskrnl import
+        // lib (ntoskrnl.spec exports memcpy/memset/memmove/memcmp).
+        //
+        // crt startup OBJECTS (crt2.o/dllcrt2.o) are a separate problem — an archive
+        // stub cannot shadow an object — killed by `-C link-self-contained=no` in
+        // add_cargo_module's RUSTFLAGS. amd64 only: aarch64-pc-windows-gnullvm
+        // rejects that flag and links no CRT objects to begin with.
+        if !self.target.is_json() {
+            let stub_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR")).join("crt-stubs");
+            std::fs::create_dir_all(&stub_dir).expect("crt-stubs dir");
+            for lib in [
+                "msvcrt", "mingwex", "mingw32", "gcc", "gcc_eh", "gcc_s", "pthread", "user32",
+                "kernel32",
+            ] {
+                let a = stub_dir.join(format!("lib{lib}.a"));
+                // `llvm-ar rcs <a>` with no members → a valid, empty archive.
+                let st = Command::new(&ar)
+                    .arg("rcs")
+                    .arg(&a)
+                    .status()
+                    .unwrap_or_else(|e| panic!("crt-stub: cannot run {}: {e}", ar.display()));
+                assert!(st.success(), "crt-stub: {} rcs {} failed", ar.display(), a.display());
+            }
+            // -L must precede llvm-mingw's sysroot lib dir so OUR empty libmsvcrt.a
+            // wins the search. rustc emits link-search paths before the late args.
+            println!("cargo:rustc-link-search=native={}", stub_dir.display());
+        }
 
         // ---- PE link flags (common to every module kind) -------------
         for f in [
@@ -1838,7 +1912,30 @@ impl Linker {
             } else {
                 ""
             };
-            let rustflags = format!("{sse}{no_prepop}{emit_ir}{allow}");
+            // BUILTIN-TARGET CODEGEN RESTORE (stable-toolchain Axis B). The custom
+            // kernel json set `frame-pointer: always`; the builtin triples do not
+            // (x86_64-pc-windows-gnu defaults to may-omit, aarch64-pc-windows-gnullvm
+            // to non-leaf). Frame pointers are load-bearing here — the kernel debug
+            // toolkit's stack walk (`qemu/inspect.sh bt`, triage-bugcheck) and the
+            // bugcheck stack trace both chase the frame chain — so restore them
+            // explicitly rather than inherit the target default.
+            //
+            // The json's other two non-default opts need no action: `panic-strategy:
+            // abort` is already the workspace `[profile.release] panic = "abort"`, and
+            // `requires-uwtable: true` is set by the builtin triples too (so Rust
+            // frames keep their .pdata/.xdata — field manual §9.35).
+            //
+            // NOT restorable on stable: `function-sections: false` (it is `-Z
+            // function-sections`, nightly-only). x86_64-pc-windows-gnu sets it false
+            // anyway, so only arm64 flips to per-function sections. That is benign
+            // for the KernelDll/Win32Dll kinds (no --gc-sections; Win32Dll forces
+            // --no-gc-sections) and is covered by the ×3 gate for the Exe kinds.
+            let frame_ptr = if self.target.is_json() {
+                "" // the json already says frame-pointer: always
+            } else {
+                "-C force-frame-pointers=yes "
+            };
+            let rustflags = format!("{sse}{frame_ptr}{no_prepop}{emit_ir}{allow}");
             cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
             cmd.env_remove("CARGO_BUILD_RUSTFLAGS");
             if !rustflags.is_empty() {
