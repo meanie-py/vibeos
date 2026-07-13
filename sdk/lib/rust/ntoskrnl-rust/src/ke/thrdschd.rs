@@ -240,24 +240,12 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
     let mut OldPriority: KPRIORITY;
     let NextThread: PKTHREAD;
 
-    // §9.56 FIX — readier-side SwapBusy handshake (the half ReactOS's SMP omitted).
-    // A thread readied by a cross-CPU KiReadyThread/unwait while it is STILL committing
-    // its own wait on another CPU (State=Waiting/DeferredReady but still that CPU's
-    // CurrentThread, SwapBusy=1 mid-KiSwapContext) must NOT be made schedulable here:
-    // linking a still-running thread into a ready list / NextThread double-links it
-    // (tears the list -> 0x1E/0x19/wedge, field-manual §9.56). SwapBusy is set during
-    // the wait-commit and cleared by KiSwapContextResume AFTER the thread is dethroned,
-    // so spinning until it clears guarantees the thread has left its CPU before we
-    // schedule it. Lock-safe: the deferred drain runs with NO PRCB lock held (it is
-    // called from KiCheckDeferredReadyList after the dispatch lock/PRCB lock are
-    // released), and the descheduling CPU clears SwapBusy without needing any lock we
-    // could hold -> no deadlock. Mirrors the RUN-side spin in ctxswitch.S.
-    #[cfg(feature = "smp")]
-    while core::ptr::read_volatile(core::ptr::addr_of!((*Thread).SwapBusy)) != 0 {
-        core::hint::spin_loop();
-    }
-
-    // Validator (kept armed): after the spin the thread must no longer be CurrentThread.
+    // §9.56 diagnostic (armed): catches a thread being deferred-readied while it is
+    // still CurrentThread (running) on some CPU — the confirmed root of the ready-list
+    // tear. NOTE: the "spin on SwapBusy here" fix was WRONG — deferred-ready threads
+    // NORMALLY carry SwapBusy set (it's part of the readying transition), so spinning
+    // deadlocks every boot (0/16, wedge at 1 cswitch). The correct fix is upstream in
+    // the wait-commit / unwait serialization (dethrone-before-readiable), NOT here.
     #[cfg(feature = "smp")]
     ntkrnl_sys::inline::ke::ki_check_not_running(Thread, 8888); // 8888 = via KiDeferredReadyThreadImpl drain
 
