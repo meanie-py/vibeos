@@ -512,6 +512,29 @@ unsafe fn KiSwapThreadImpl(
 
     KiReleasePrcbLock(Prcb);
 
+    // §9.56 tripwire 0x57 — THE SELF-SWAP. During the legal post-lock-release
+    // wait-commit window a cross-CPU readier (deferred drain, often after an
+    // AdjustUnwait boost) can standby/queue the committing thread onto ITS OWN
+    // still-running CPU; this swap then resolves NextThread == CurrentThread and
+    // KiSwapContext(T,T) wedges forever in ctxswitch.S's SwapBusy spin (T's own
+    // SwapBusy only clears in KiSwapContextResume — AFTER the spin). NT tolerates
+    // old==new; ReactOS's never-validated SMP spin does not. This converts the
+    // silent HANG_TIMEOUT into an attributed report proving the mechanism.
+    #[cfg(feature = "smp")]
+    {
+        if NextThread == CurrentThread {
+            ntkrnl_sys::ddk::KeBugCheckEx(
+                0x96,
+                CurrentThread as ntkrnl_sys::ddk::ULONG_PTR,
+                ((0x57u64 << 40)
+                    | ((*kt_State(CurrentThread)) as u64) << 8
+                    | (*Prcb).Number as u64) as ntkrnl_sys::ddk::ULONG_PTR,
+                (*CurrentThread).SwapBusy as ntkrnl_sys::ddk::ULONG_PTR,
+                (*CurrentThread).Priority as u64 as ntkrnl_sys::ddk::ULONG_PTR,
+            );
+        }
+    }
+
     WaitIrql = *kt_WaitIrql(CurrentThread);
 
     // cswitchdep tap-1 entry (cswitchdep-design.md): a voluntary switch must

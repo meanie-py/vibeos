@@ -5319,6 +5319,42 @@ State at this point: fix attempt #1 reverted, clean baseline restored, all diagn
 master. The root-cause DIRECTION (readier vs wait-commit race) is solid; the precise
 serialization break + the correct fix are the remaining work.
 
+**2026-07-13 (fresh session) — THE PARADOX DISSOLVES: 0x56 was a FALSE ORACLE, and the
+real defect is the SELF-SWAP WEDGE.** Two findings that rewrite the frame:
+1. **"Readied while still CurrentThread" is NT's LEGAL, designed-for window — hypothesis
+   (5) was right.** The earlier claim "wait.rs never releases the dispatcher lock before
+   the swap" was WRONG: the C releases it in EVERY commit path *before* `KiSwapThread`
+   (wait.c:567/859 explicitly; the timeout paths via **`KxInsertTimer`, which embeds
+   `KiReleaseDispatcherLockFromSynchLevel()`** — ntkrnl-sys inline/ke.rs:1599 is
+   faithful, and wait.rs mirrors all of it). So by design a cross-CPU readier may
+   acquire the dispatcher lock, unwait T, and link/standby it while T is still
+   `Prcb->CurrentThread` mid-commit; safety is delegated entirely to the per-PRCB locks
+   + the run-side SwapBusy spin. BOTH splitter faces (dispLockHeld=1/Waiting and
+   dispLockHeld=0/gate) are this legal transient. `ki_check_not_running` downgraded to
+   print-only (`[RQRUNNING]` = breadcrumb marking the window, NOT a bug); its bugchecks
+   were killing overnight bursts on legal behavior and masking the real fault downstream.
+2. **The real defect: the legal window enables a SELF-TARGETING READY, and our swap
+   wedges on it.** Sequence: T mid-commit on CPU1 (lock released, still CurrentThread,
+   `SwapBusy=1`); CPU0's deferred drain — typically after the **AdjustUnwait priority
+   boost** (thrdschd.rs:275-324; explains the observed pri-9/10) — targets CPU1 and
+   either (a) preempt-tests `Thread->Priority > Prcb->CurrentThread->Priority` where
+   CurrentThread==T itself, so boosted-T preempts ITSELF → `Prcb->NextThread = T`
+   (self-standby), or (b) equal-pri falls through → T linked into CPU1's own ready list
+   (self-queue, the `[RQLINKED]` sole-element face). CPU1's `KiSwapThread` then resolves
+   **NextThread == CurrentThread == T** and calls `KiSwapContext(T, T)`; ctxswitch.S's
+   run-side spin waits on `[T+ThSwapBusy]` — which only clears in `KiSwapContextResume`
+   AFTER the spin, i.e. **T waits forever on its own flag → CPU dead at SYNCH → the
+   silent HANG_TIMEOUT / service-connect creep-wedge face.** NT tolerates old==new
+   (semantically "signaled before I left — resume in place"); ReactOS's never-validated
+   SMP spin (inherited verbatim by the C at ke/{amd64,arm64}/ctxswitch.S — i386 has no
+   spin at all) does not. Tripwire **0x57** armed at `KiSwapThreadImpl` post-resolution
+   (`NextThread == CurrentThread` → 0x96, P2 tag 0x57|state|cpu, P3=SwapBusy, P4=pri) to
+   convert the silent wedge into an attributed report. PREDICTION for the armed burst:
+   0x57 replaces (most of) the HANG_TIMEOUTs. FIX once proven: old==new short-circuit of
+   the SwapBusy spin in ctxswitch.S (`cmp rdx, r8 / je` past the spin on amd64; arm64
+   `x1 vs x2` twin at ctxswitch.S:159; the rest of the self-swap path is benign —
+   verified: stack save/reload is idempotent, resume clears SwapBusy, no CR3 change).
+
 **2026-07-13 SPLITTER RESULT — MIXED, so it is TWO faces, not one:**
 `[RQRUNNING]` now prints `dispLockHeld`. Across a burst:
 - **`dispLockHeld=1` AND `state=5`=Waiting** (both held cases): the readier HOLDS the

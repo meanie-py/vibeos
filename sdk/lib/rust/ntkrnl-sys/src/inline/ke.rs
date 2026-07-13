@@ -1852,13 +1852,15 @@ pub unsafe fn ki_check_not_running(thread: ddk::PKTHREAD, caller_line: u64) {
                 caller_line as u32,
                 disp_held,
             );
-            ddk::KeBugCheckEx(
-                0x96,
-                thread as usize as _,
-                ((0x56u64 << 40) | (caller_line << 8) | c as u64) as _,
-                kt_state_read(thread) as _,
-                caller_line as _,
-            );
+            // §9.56 (2026-07-13): DOWNGRADED from bugcheck to print-only. This is
+            // NOT the bug — it is NT's LEGAL handoff window: the wait-commit
+            // releases the dispatcher lock BEFORE KiSwapThread dethrones (C
+            // wait.c:567/859, and KxInsertTimer embeds the release — our Rust is
+            // faithful), so a cross-CPU readier may legally link a
+            // still-CurrentThread thread; the run-side SwapBusy spin in
+            // ctxswitch.S is what makes that safe. The print stays as the
+            // breadcrumb for the DOWNSTREAM hazard this window enables: the
+            // self-swap (0x57 tripwire in KiSwapThreadImpl).
         }
     }
 }
