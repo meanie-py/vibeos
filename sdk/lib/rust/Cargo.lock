@@ -1388,6 +1388,7 @@ dependencies = [
 name = "ole32-rust"
 version = "0.1.0"
 dependencies = [
+ "com-sys",
  "panic-common",
 ]
 

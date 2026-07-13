@@ -5293,5 +5293,3 @@ pub unsafe extern "system" fn DllRegisterServer() -> HRESULT {
 pub unsafe extern "system" fn DllUnregisterServer() -> HRESULT {
     OLE32_DllUnregisterServer()
 }
-
-
