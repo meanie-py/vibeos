@@ -1,10 +1,6 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
-extern "C" {
-    fn debugstr_guid(guid: *const GUID) -> PCSTR;
-}
-
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut __wine_dbch_ole: __wine_debug_channel = unsafe {

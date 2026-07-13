@@ -6,7 +6,6 @@ extern "C" {
     fn bsearch( key: *const core::ffi::c_void, base: *const core::ffi::c_void, num: usize, size: usize, compar: unsafe extern "C" fn(*const core::ffi::c_void, *const core::ffi::c_void) -> i32, ) -> *mut core::ffi::c_void;
     fn _wcsnicmp(s1: LPCWSTR, s2: LPCWSTR, n: usize) -> i32;
     fn wcsncmp(s1: LPCWSTR, s2: LPCWSTR, n: usize) -> i32;
-    fn debugstr_variant(v: *const VARIANT) -> *const i8;
 }
 extern "system" {
     fn GetCurrencyFormatW( Locale: LCID, dwFlags: u32, lpValue: LPCWSTR, lpFormat: *const CURRENCYFMTW, lpCurrencyStr: LPWSTR, cchCurrency: i32, ) -> i32;

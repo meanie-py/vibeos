@@ -114,9 +114,16 @@ pub fn SUCCEEDED(hr: i32) -> bool {
 // wine debugstr_* — consumed only as (no-op) TRACE/WARN args.
 static PLACEHOLDER: &[u8] = b"?\0";
 
+// Generic over the pointee, unlike ole32's `*const c_void` twin. ole32 gets away with the
+// concrete type because its call sites sit inside a `TRACE!` macro that DISCARDS its args,
+// so they are never type-checked. The Tier-D modules here were translated with `--c2rust`,
+// which expands the C preprocessor — so these are REAL calls, passing the C's real argument
+// types (`debugstr_w(LPCWSTR)`, `debugstr_guid(const GUID*)`). Casting at every call site
+// would work but is churn on generated code; accepting any `*const T` is exact and lets the
+// C's own types stand.
 macro_rules! debugstr_stub {
     ($($name:ident),+ $(,)?) => {$(
-        pub fn $name(_p: *const core::ffi::c_void) -> *const c_char {
+        pub fn $name<T>(_p: *const T) -> *const c_char {
             PLACEHOLDER.as_ptr() as *const c_char
         }
     )+};

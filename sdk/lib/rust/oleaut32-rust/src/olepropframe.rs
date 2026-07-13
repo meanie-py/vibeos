@@ -1,9 +1,6 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
-extern "C" {
-    fn debugstr_guid(guid: *const _GUID) -> *const i8;
-}
 extern "system" {
     fn CreateFontIndirectW(lplf: *const LOGFONTW) -> HFONT;
     fn CreatePropertySheetPageW(lpPsp: *const PROPSHEETPAGEW) -> HPROPSHEETPAGE;
@@ -16,10 +13,6 @@ extern "system" {
     fn MulDiv(nNumber: i32, nNumerator: i32, nDenominator: i32) -> i32;
     fn PropertySheetW(lppsph: *mut PROPSHEETHEADERW) -> isize;
 }
-extern "C" {
-    fn debugstr_w(s: *const u16) -> *const u8;
-}
-
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut __wine_dbch___default: *mut __wine_debug_channel =

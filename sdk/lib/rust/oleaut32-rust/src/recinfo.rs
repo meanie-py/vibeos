@@ -2,7 +2,6 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "C" {
-    fn debugstr_w(s: *const u16) -> *const i8;
     fn wcscmp(s1: *const u16, s2: *const u16) -> i32;
 }
 // ---- file-scope preamble (translated) ----

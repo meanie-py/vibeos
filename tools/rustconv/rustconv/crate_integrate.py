@@ -258,12 +258,86 @@ def _harvest_file(path: Path, _seen: set[Path] | None = None) -> set[str]:
             if m:
                 names.add(m.group(1))
 
+    # Items produced by a macro_rules! INVOCATION are invisible to a plain source scan,
+    # and missing them is not cosmetic: oleaut32's debug_shims declares its whole
+    # `debugstr_a/_w/_guid/...` family through ONE `debugstr_stub!(...)` call. Without
+    # this the integrator did not know they existed, so it KEPT each module's local
+    # `extern "C" { fn debugstr_w(); }` — and since the shims are plain Rust fns
+    # (deliberately NOT `#[no_mangle]`), those decls resolved to no symbol and the DLL
+    # failed to LINK. A compile-clean crate that doesn't link.
+    names |= _macro_generated_names(text, path)
+
     # Per-arch bindgen bodies are pulled in by `include!` under a #[cfg]. A name provided on
     # ANY arch counts as provided: the union is the safe direction — the prelude will supply
     # it on the arch that has it, and dropping a decl the prelude provides is the whole point.
     for inc in _INCLUDE_RE.findall(text):
         names |= _harvest_file(path.parent / inc, _seen)
 
+    return names
+
+
+# `macro_rules! debugstr_stub { ($($name:ident),+ $(,)?) => {$( pub fn $name … )+}; }`
+_RE_MACRO_RULES = re.compile(r"macro_rules!\s+([A-Za-z_]\w*)\s*\{")
+_RE_FN_META = re.compile(r"\bfn\s+\$([A-Za-z_]\w*)\b")
+
+
+def _macro_generated_names(text: str, path: Path) -> set[str]:
+    """Names a `macro_rules!` emits as items, resolved through its invocations.
+
+    Two shapes, because they resolve differently:
+
+    * POSITIONAL — `impl_handle!(HFOO, size, marshal)`, each metavar mapping to one
+      argument slot. Delegated to export_audit's expander, which already models this.
+    * REPETITION — `debugstr_stub!(a, b, c)`: a single `$($x:ident),+` emitting
+      `pub fn $x` per element, so EVERY argument is a generated name. The positional
+      expander resolves only the first one here, which is worse than useless because it
+      looks like it worked.
+    """
+    names: set[str] = set()
+
+    try:  # positional
+        from .export_audit import scan_macro_generated_fns
+
+        names |= set(scan_macro_generated_fns(text, path))
+    except Exception:  # noqa: BLE001 - a scan miss must never take integration down
+        pass
+
+    for m in _RE_MACRO_RULES.finditer(text):  # repetition
+        mac = m.group(1)
+        brace = text.index("{", m.end() - 1)
+        depth, end = 0, brace
+        for i in range(brace, len(text)):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        body = text[brace : end + 1]
+        metas = set(_RE_FN_META.findall(body))
+        if len(metas) != 1:
+            continue  # not the one-metavar list shape
+        meta = metas.pop()
+        if not re.search(rf"\$\(\s*\$\s*{re.escape(meta)}\s*:\s*ident", body):
+            continue  # metavar isn't inside a repetition — that's the positional case
+        for inv in re.finditer(rf"\b{re.escape(mac)}!\s*[(\[]", text):
+            open_i = inv.end() - 1
+            opc = text[open_i]
+            clc = ")" if opc == "(" else "]"
+            depth, close = 0, open_i
+            for i in range(open_i, len(text)):
+                if text[i] == opc:
+                    depth += 1
+                elif text[i] == clc:
+                    depth -= 1
+                    if depth == 0:
+                        close = i
+                        break
+            for arg in text[open_i + 1 : close].split(","):
+                arg = re.sub(r"//[^\n]*", "", arg).strip()
+                if re.fullmatch(r"[A-Za-z_]\w*", arg):
+                    names.add(arg)
     return names
 
 

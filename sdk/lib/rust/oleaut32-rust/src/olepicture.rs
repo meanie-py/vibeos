@@ -1,10 +1,6 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
-extern "C" {
-    fn debugstr_w(s: *const u16) -> *const i8;
-    fn debugstr_guid(guid: *const CLSID) -> *const u8;
-}
 extern "system" {
     fn MulDiv(nNumber: i32, nNumerator: i32, nDenominator: i32) -> i32;
     fn GetEnhMetaFileHeader( hemf: HENHMETAFILE, nSize: u32, lpEnhMetaHeader: *mut ENHMETAHEADER, ) -> u32;
@@ -27,7 +23,6 @@ extern "system" {
 }
 extern "C" {
     fn printf(format: *const i8, ...) -> i32;
-    fn wine_dbgstr_variant(v: *const VARIANT) -> *const i8;
     fn wcsncmp(s1: *const wchar_t, s2: *const wchar_t, n: usize) -> ::core::ffi::c_int;
 }
 
