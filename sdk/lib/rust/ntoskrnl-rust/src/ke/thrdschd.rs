@@ -144,6 +144,10 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
         ) as PKTHREAD;
         ListEntry = (*ListEntry).Next;
 
+        // §9.56 double-defer oracle: this thread has left the deferred list.
+        #[cfg(feature = "smp")]
+        ntkrnl_sys::inline::ke::rq_inflight_unmark(Thread);
+
         KiDeferredReadyThread(Thread);
 
         if ListEntry.is_null() {

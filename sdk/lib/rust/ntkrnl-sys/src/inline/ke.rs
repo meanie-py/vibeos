@@ -1344,12 +1344,82 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
     KiDeferredReadyThread(thread);
 }
 
+/// §9.56 double-DEFER oracle (0x59). The 0x58 linkage check is blind to a
+/// double-defer: BOTH pushes happen before either drain insert, so the thread
+/// is unlinked at both checks — yet one KTHREAD SwapListEntry.Next on two
+/// deferred SLISTs cross-routes the chains, and the two drain inserts then
+/// tear the ready list (the sequential self-loop face). Catch it AT PUSH TIME
+/// with an in-flight side table: mark on push, unmark at the drain pop.
+/// Lossy under collision pressure (8-probe open addressing) — a tripwire,
+/// not a lock.
+#[cfg(feature = "smp")]
+static RQ_INFLIGHT: [core::sync::atomic::AtomicUsize; 512] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; 512];
+
+#[cfg(feature = "smp")]
+#[inline]
+fn rq_inflight_slot(t: usize, i: usize) -> usize {
+    ((t >> 7).wrapping_add(i)) & 511
+}
+
+/// Returns true if the thread was ALREADY marked in-flight (double-defer).
+#[cfg(feature = "smp")]
+pub unsafe fn rq_inflight_mark(thread: ddk::PKTHREAD) -> bool {
+    use core::sync::atomic::Ordering::SeqCst;
+    let t = thread as usize;
+    for i in 0..8 {
+        let slot = &RQ_INFLIGHT[rq_inflight_slot(t, i)];
+        let cur = slot.load(SeqCst);
+        if cur == t {
+            return true;
+        }
+        if cur == 0 && slot.compare_exchange(0, t, SeqCst, SeqCst).is_ok() {
+            return false;
+        }
+    }
+    false // table pressure — stay lossy rather than false-positive
+}
+
+#[cfg(feature = "smp")]
+pub unsafe fn rq_inflight_unmark(thread: ddk::PKTHREAD) {
+    use core::sync::atomic::Ordering::SeqCst;
+    let t = thread as usize;
+    for i in 0..8 {
+        let slot = &RQ_INFLIGHT[rq_inflight_slot(t, i)];
+        if slot.load(SeqCst) == t {
+            slot.store(0, SeqCst);
+            return;
+        }
+    }
+}
+
 /// KiInsertDeferredReadyList — SMP: push onto this CPU's deferred-ready list.
 #[cfg(feature = "smp")]
 #[inline]
 #[track_caller]
 pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
     let prcb = KeGetCurrentPrcb();
+
+    // §9.56 double-defer oracle (0x59): see RQ_INFLIGHT above.
+    if rq_inflight_mark(thread) {
+        let caller_line = core::panic::Location::caller().line() as u64;
+        crate::driver_ddk::DbgPrint(
+            b"[RQDEFER2] DOUBLE-DEFER thr=%p state=%u waitreason=%u waitstatus=%p defproc=%u caller_line=%u\n\0".as_ptr() as *const i8,
+            thread,
+            kt_state_read(thread) as u32,
+            (*thread).WaitReason as u32,
+            (*thread).WaitStatus as usize as *const u8,
+            (*thread).__bindgen_anon_1.__bindgen_anon_1.DeferredProcessor as u32,
+            caller_line as u32,
+        );
+        ddk::KeBugCheckEx(
+            0x96,
+            thread as usize as _,
+            ((0x59u64 << 40) | (caller_line << 8) | kt_state_read(thread) as u64) as _,
+            (*thread).WaitReason as u64 as _,
+            caller_line as _,
+        );
+    }
 
     // §9.56 hypothesis-B ROOT: deferring a thread that is CurrentThread (running)
     // anywhere is the FIRST illegal readying (it sets State=DeferredReady + pushes to
