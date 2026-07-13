@@ -2643,3 +2643,173 @@ pub unsafe extern "C" fn _strtoui64(nptr: *const u8, endptr: *mut *mut u8, mut b
         ret
     }
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WAVE 7 — the case-insensitive family
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// LOCALE (checked first, per wave 6's lesson — do not assume). Each of these
+// consults `locinfo->lc_handle[LC_CTYPE]` and takes an INLINE ASCII fast path
+// when it is unset. That is the "C" locale, which is what msvcrt.dll starts in.
+// classify fuzzes the full 0x00-0xFF byte range against the genuine C to prove
+// equivalence there. This is the SAME bounded caveat the already-shipped
+// `_strlwr`/`_strupr` carry (they are `_strlwr_s_l(str, -1, NULL)`), so wave 7
+// introduces no new debt. A non-C LC_CTYPE is Phase D.
+//
+// THREE contracts, again all different:
+//
+//   _stricmp/_strnicmp   CHECK_PMT(s1 && s2) -> _NLSCMPERROR + handler.
+//                        `count == 0` returns 0 BEFORE the front door.
+//                        Folds on the SIGNED char, returns the (unsigned char) diff.
+//   _memicmp             hand-rolled NULL check, but STILL fires the handler --
+//                        and only when len != 0 (`len ? _NLSCMPERROR : 0`).
+//                        Folds via _tolower_l, which passes non-ASCII THROUGH,
+//                        so its result is the SIGNED difference. Not the same as
+//                        _strnicmp's. Reproduced separately.
+//   _strlwr_s/_strupr_s  hand-rolled `*_errno() = EINVAL` -- handler NEVER fires
+//                        (the `_ultoa_s` shape). Unterminated-within-len is its
+//                        own EINVAL, and it truncates dst to "".
+
+/// `_NLSCMPERROR` (crt/string.h) — what the icmp family returns on a bad pointer.
+const NLSCMPERROR: i32 = 2147483647;
+
+/// The C locale's `_tolower_l`: fold A-Z, pass EVERYTHING else through unchanged
+/// (including negative `char`s — msvcrt hands this raw signed chars).
+#[inline]
+fn c_lower(c: i32) -> i32 {
+    if c >= b'A' as i32 && c <= b'Z' as i32 {
+        c + 32
+    } else {
+        c
+    }
+}
+
+/// `_strnicmp_l(s1, s2, count, NULL)` — the C-locale path.
+#[inline]
+unsafe fn strnicmp_core(s1: *const u8, s2: *const u8, mut count: usize) -> i32 {
+    if count == 0 {
+        return 0; // before the front door, per the C
+    }
+    // msvcrt.dll builds `_MSVCR_VER == 0`, which takes the NARROW check — no
+    // `count <= INT_MAX` arm (that one is _MSVCR_VER >= 80).
+    if !check_pmt(!s1.is_null() && !s2.is_null()) {
+        return NLSCMPERROR;
+    }
+    // `char` is SIGNED: the C reads into an `int`, folds on the sign-extended
+    // value, and only casts to `unsigned char` in the RETURN. Both halves matter.
+    let (mut p, mut q) = (s1 as *const i8, s2 as *const i8);
+    let (mut c1, mut c2);
+    loop {
+        // The C reads `c1 -= 'A' - 'a';` — and 'A'-'a' is NEGATIVE (-32), so it
+        // ADDS 32, folding uppercase DOWN to lowercase. Transcribing the `-=`
+        // literally as `c1 -= 32` maps 'I' to ')' and classify convicts it
+        // instantly. Spelled out here so nobody "fixes" it back.
+        c1 = *p as i32;
+        p = p.add(1);
+        if c1 >= b'A' as i32 && c1 <= b'Z' as i32 {
+            c1 += 32; // c1 -= ('A' - 'a')
+        }
+        c2 = *q as i32;
+        q = q.add(1);
+        if c2 >= b'A' as i32 && c2 <= b'Z' as i32 {
+            c2 += 32;
+        }
+        count -= 1; // C: `while(--count && c1 && c1==c2)`
+        if count == 0 || c1 == 0 || c1 != c2 {
+            break;
+        }
+    }
+    (c1 as u8) as i32 - (c2 as u8) as i32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _strnicmp(s1: *const u8, s2: *const u8, count: usize) -> i32 {
+    strnicmp_core(s1, s2, count)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _stricmp(s1: *const u8, s2: *const u8) -> i32 {
+    strnicmp_core(s1, s2, i32::MAX as usize) // the C passes INT_MAX
+}
+
+/// `_memicmp_l(s1, s2, len, NULL)`.
+///
+/// Note how this differs from `_strnicmp`: it folds through `_tolower_l`, which
+/// in the C locale passes non-ASCII (including NEGATIVE chars) straight through,
+/// and it returns that difference RAW — no `(unsigned char)` cast. So on high
+/// bytes the two functions return different numbers. They are not the same
+/// comparison with a different bound.
+#[no_mangle]
+pub unsafe extern "C" fn _memicmp(
+    s1: *const core::ffi::c_void,
+    s2: *const core::ffi::c_void,
+    mut len: usize,
+) -> i32 {
+    // `_MSVCR_VER == 0` -> this guard IS compiled in. It is hand-rolled rather
+    // than CHECK_PMT, but it still fires the handler — and only when len != 0.
+    if s1.is_null() || s2.is_null() {
+        if len != 0 {
+            invalid_pmt(EINVAL);
+            return NLSCMPERROR;
+        }
+        return 0;
+    }
+    let (mut p, mut q) = (s1 as *const i8, s2 as *const i8);
+    let mut ret = 0i32;
+    while len != 0 {
+        len -= 1;
+        ret = c_lower(*p as i32) - c_lower(*q as i32);
+        if ret != 0 {
+            break;
+        }
+        p = p.add(1);
+        q = q.add(1);
+    }
+    ret
+}
+
+/// `_strlwr_s_l` / `_strupr_s_l` with the C locale.
+///
+/// The handler NEVER fires (hand-rolled `*_errno() = EINVAL`, the `_ultoa_s`
+/// shape). "No terminator inside len" is its own EINVAL and truncates dst to "".
+#[inline]
+unsafe fn strcase_s_core(str_: *mut u8, len: usize, upper: bool) -> i32 {
+    if str_.is_null() || len == 0 {
+        *_errno() = EINVAL; // errno only — no handler
+        return EINVAL;
+    }
+    let mut n = len;
+    let mut ptr = str_;
+    while n != 0 && *ptr != 0 {
+        n -= 1;
+        ptr = ptr.add(1);
+    }
+    if n == 0 {
+        *str_ = 0;
+        *_errno() = EINVAL; // errno only — no handler
+        return EINVAL;
+    }
+    let mut p = str_;
+    while *p != 0 {
+        let c = *p;
+        if upper {
+            if c.is_ascii_lowercase() {
+                *p = c - 32;
+            }
+        } else if c.is_ascii_uppercase() {
+            *p = c + 32;
+        }
+        p = p.add(1);
+    }
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _strlwr_s(str_: *mut u8, len: usize) -> i32 {
+    strcase_s_core(str_, len, false)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _strupr_s(str_: *mut u8, len: usize) -> i32 {
+    strcase_s_core(str_, len, true)
+}

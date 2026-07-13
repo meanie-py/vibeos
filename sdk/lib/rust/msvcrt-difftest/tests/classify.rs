@@ -190,6 +190,15 @@ extern "C" {
     fn strtok_s(s: *mut u8, d: *const u8, c: *mut *mut u8) -> *mut u8;
     fn wcstok_s(s: *mut u16, d: *const u16, c: *mut *mut u16) -> *mut u16;
     fn _strtoui64(s: *const u8, e: *mut *mut u8, b: i32) -> u64;
+
+    // ── wave 7: the case-insensitive family ──
+    fn ref__strlwr_s(s: *mut u8, len: usize) -> i32;
+    fn ref__strupr_s(s: *mut u8, len: usize) -> i32;
+    fn _stricmp(a: *const u8, b: *const u8) -> i32;
+    fn _strnicmp(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn _memicmp(a: *const c_void, b: *const c_void, n: usize) -> i32;
+    fn _strlwr_s(s: *mut u8, len: usize) -> i32;
+    fn _strupr_s(s: *mut u8, len: usize) -> i32;
 }
 
 /// The four observable effects of a CRT call, as one comparable unit.
@@ -1331,6 +1340,62 @@ unsafe fn run() {
         let g = Effects::subject(|| { let v = _strtoui64(p, &mut e1, b); (v as i64) ^ (e1 as i64 - p as i64) });
         let w = Effects::reference(|| { let v = ref__strtoui64(p, &mut e2, b); (v as i64) ^ (e2 as i64 - p as i64) });
         (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
+    });
+
+
+    // ═════ WAVE 7: the case-insensitive family ════════════════════════════════
+    //
+    // gen_str emits 0x80-0xFF, which is the whole point here: `char` is SIGNED,
+    // and the two comparison functions treat the high half DIFFERENTLY.
+    //   _strnicmp folds on the sign-extended int, returns (unsigned char) c1-c2
+    //   _memicmp  folds via _tolower_l (non-ASCII passes THROUGH), returns c1-c2 RAW
+    // If they were the same comparison with a different bound, one of these rows
+    // would be redundant. They are not, so both are graded, and NULL is fuzzed
+    // (each has a front door, and they disagree about it too).
+    check_effects("_stricmp", |r| {
+        let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+        let na = r.below(32) == 0;
+        let (pa, pb) = (if na { core::ptr::null() } else { a.as_ptr() }, b.as_ptr());
+        (Effects::subject(|| _stricmp(pa, pb) as i64),
+         Effects::reference(|| ref__stricmp(pa, pb) as i64),
+         format!("{}{:?} vs {:?}", if na { "NULL " } else { "" }, a, b))
+    });
+    check_effects("_strnicmp", |r| {
+        let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+        let n = r.below(24);
+        let na = r.below(32) == 0;
+        let (pa, pb) = (if na { core::ptr::null() } else { a.as_ptr() }, b.as_ptr());
+        (Effects::subject(|| _strnicmp(pa, pb, n) as i64),
+         Effects::reference(|| ref__strnicmp(pa, pb, n) as i64),
+         format!("n={n} {}{:?} vs {:?}", if na { "NULL " } else { "" }, a, b))
+    });
+    check_effects("_memicmp", |r| {
+        let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+        let n = r.below(a.len().min(b.len()).max(1));
+        let na = r.below(32) == 0;
+        let pa = if na { core::ptr::null() } else { a.as_ptr() };
+        (Effects::subject(|| _memicmp(pa.cast(), b.as_ptr().cast(), n) as i64),
+         Effects::reference(|| ref__memicmp(pa.cast(), b.as_ptr().cast(), n) as i64),
+         format!("n={n} {}{:?} vs {:?}", if na { "NULL " } else { "" }, a, b))
+    });
+    // _strlwr_s / _strupr_s: hand-rolled errno, handler must NEVER fire.
+    check_buf_fx("_strlwr_s", &["ok", "EINVAL"], |r| {
+        let s = gen_str(r, 24);
+        let len = r.below(28);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAA); d2.resize(40, 0xAA);
+        let g = Effects::subject(|| _strlwr_s(d1.as_mut_ptr(), len) as i64);
+        let w = Effects::reference(|| ref__strlwr_s(d2.as_mut_ptr(), len) as i64);
+        (d1, g, d2, w, format!("len={len} slen={}", s.len()-1))
+    });
+    check_buf_fx("_strupr_s", &["ok", "EINVAL"], |r| {
+        let s = gen_str(r, 24);
+        let len = r.below(28);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAA); d2.resize(40, 0xAA);
+        let g = Effects::subject(|| _strupr_s(d1.as_mut_ptr(), len) as i64);
+        let w = Effects::reference(|| ref__strupr_s(d2.as_mut_ptr(), len) as i64);
+        (d1, g, d2, w, format!("len={len} slen={}", s.len()-1))
     });
 
 }

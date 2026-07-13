@@ -80,6 +80,12 @@ extern "C" {
     fn _wcsset_s(s: *mut u16, n: usize, c: u16) -> i32;
     fn wcsncpy(d: *mut u16, s: *const u16, n: usize) -> *mut u16;
     fn wcsnlen(s: *const u16, m: usize) -> usize;
+
+    // wave 7 — bounded case-folders/comparers.
+    fn _strnicmp(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn _memicmp(a: *const c_void, b: *const c_void, n: usize) -> i32;
+    fn _strlwr_s(s: *mut u8, len: usize) -> i32;
+    fn _strupr_s(s: *mut u8, len: usize) -> i32;
 }
 
 const PAGE: usize = 4096;
@@ -263,6 +269,26 @@ fn main() {
         })),
         ("wcsnlen", Box::new(move || unsafe {
             core::hint::black_box(wcsnlen(wguarded(k), k));
+        })),
+
+        // ── wave 7 ────────────────────────────────────────────────────────────
+        // The guarded buffers are NUL-FREE, so a fold or compare that scans for a
+        // terminator instead of honouring `n`/`len` walks straight into the guard.
+        ("_strnicmp", Box::new(move || unsafe {
+            let (a, b) = (guarded(k), guarded(k));
+            core::hint::black_box(_strnicmp(a, b, k));
+        })),
+        ("_memicmp", Box::new(move || unsafe {
+            let (a, b) = (guarded(k), guarded(k));
+            core::hint::black_box(_memicmp(a.cast(), b.cast(), k));
+        })),
+        // _strlwr_s/_strupr_s SCAN their own buffer for a terminator within `len`
+        // and must stop at len — the whole reason they return EINVAL.
+        ("_strlwr_s", Box::new(move || unsafe {
+            core::hint::black_box(_strlwr_s(guarded(k), k));
+        })),
+        ("_strupr_s", Box::new(move || unsafe {
+            core::hint::black_box(_strupr_s(guarded(k), k));
         })),
     ];
 
