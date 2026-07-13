@@ -5319,6 +5319,34 @@ State at this point: fix attempt #1 reverted, clean baseline restored, all diagn
 master. The root-cause DIRECTION (readier vs wait-commit race) is solid; the precise
 serialization break + the correct fix are the remaining work.
 
+**2026-07-13 SPLITTER RESULT — MIXED, so it is TWO faces, not one:**
+`[RQRUNNING]` now prints `dispLockHeld`. Across a burst:
+- **`dispLockHeld=1` AND `state=5`=Waiting** (both held cases): the readier HOLDS the
+  global dispatcher lock, yet the thread is `Waiting` + still `CurrentThread` on the
+  OTHER cpu. => **hypothesis (4) CONFIRMED as the primary face.** The wait-commit's
+  DETHRONE is not serialized against the dispatcher lock: the descheduling cpu has let
+  a lock-holding readier proceed while its thread is still `CurrentThread`. The
+  wait-commit (wait.rs:461 acquires the dispatcher lock, holds it into `KiSwapThread`
+  at 502) hands the lock off across `KiSwapContext`; the bug is that the handoff frees
+  the lock (or the dethrone becomes visible) at the wrong point relative to
+  `Prcb->CurrentThread = NextThread` in `KiSwapThreadImpl`. FIX = make the dethrone
+  happen-before any other cpu can acquire the dispatcher lock (trace the exact
+  release/handoff point of `&KiDispatcherLock` across the swap; align to NT).
+- **`dispLockHeld=0` AND `state=7`=DeferredReady**: lockless readier / deferred-drain
+  re-processing. => **hypothesis (2) also real.** Concrete instance:
+  `gate.rs:268` (`KeSignalGateBoostPriority`) calls `KiReadyThread(WaitThread)` AFTER
+  releasing the gate object lock (254), the thread lock (256), and the dispatcher lock
+  (265) — a fully lockless ready. If that gate-waiter is still descheduling
+  (`CurrentThread` mid-swap), it readies a running thread. Audit the gate/queue signal
+  paths against NT for the missing serialization.
+Both faces reduce to the same invariant: **a thread must be fully dethroned (no longer
+any cpu's `CurrentThread`) before it can be readied/linked.** The correct fix enforces
+that — most cleanly by fixing the dispatcher-lock/dethrone ordering (face 4) and the
+lockless gate/queue readiers (face 2). `0x56`/`dispLockHeld` is the exact oracle for
+both. This is careful SMP lock-protocol work for a FRESH session — the overnight run
+took it from "wild-write mystery" to two precisely-characterized serialization faces
+with a live oracle, a clean reverted baseline, and every step committed.
+
 **Integrated from a Codex handoff attempt (its cyber filter tripped on the "wild
 write" language, so it stalled — reword future handoffs):** (a) `expool.rs` removed
 the post-unlock `ExpCheckPoolBlocks` page-walk on the theory it RACES (walks a shared
