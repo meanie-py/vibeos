@@ -461,7 +461,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `tools/scan_self_recursive.py`; baselined in `tools/lint-baseline/scan_self_recursive.txt`,
   gate fails on NEW ones)*: functions whose first instruction jumps to their own entry — the CPU
   spins forever with **no bugcheck and no serial output**. 23× a C `exp2()` that LLVM folded into
-  a call to itself (same idiom-recursion trap as field manual §9.60, in C — needs
+  a call to itself (same idiom-recursion trap as field manual §9.65, in C — needs
   `-fno-builtin-exp2` on those TUs); classpnp's local `KeRaiseIrql`/`KeLowerIrql` stubs (hang if
   ever called); `ftfd.dll`'s `rust_begin_unwind` written as `loop {}` (a panic that hangs
   silently — should adopt `panic-common`); `cdrom.sys: abort`. Tracked and owed, not accepted.

@@ -240,3 +240,263 @@ const char * msvcrt_ref_wine_dbgstr_an(const char *s, int n)
     (void)n;
     return s;
 }
+
+const wchar_t * msvcrt_ref_wine_dbgstr_wn(const wchar_t *s, int n)
+{
+    (void)n;
+    return s;
+}
+
+/* ================================================================== *
+ * THE WIDE HALF — the externals of dll/win32/msvcrt/wcs.c, the second
+ * reference TU.
+ *
+ * Same modelling contract as everything above: the DEFAULT "C" locale.  The
+ * 14 pure wide-string functions under test (wcslen/wcscmp/wcschr/wcscpy/…)
+ * touch NONE of what follows — they are pure.  These exist so wcs.c *links*:
+ * its other 162 public symbols (the printf engine, the isw* ctype family, the
+ * NLS collation paths) reference them, and those are all DEFERRED, not graded.
+ *
+ * They are still written faithfully rather than as zero-returning stubs.  A
+ * stub that fabricates a plausible value is exactly how a differential harness
+ * ends up grading Rust against a lie and reporting MATCH — so where a real
+ * answer is cheap (the heap, the ASCII ctype table), give the real answer.
+ * ================================================================== */
+
+/* ------------------------------------------------------------------ *
+ * Heap.  _wcsdup / the printf engine's scratch buffers.  A heap is a heap:
+ * malloc IS the faithful model, so this is not a stub in any meaningful sense.
+ * ------------------------------------------------------------------ */
+static int ref_process_heap;
+
+HANDLE WINAPI GetProcessHeap(void)
+{
+    return &ref_process_heap;
+}
+
+LPVOID WINAPI HeapAlloc(HANDLE heap, DWORD flags, size_t size)
+{
+    void *p;
+
+    (void)heap;
+    p = malloc(size ? size : 1);
+    if (p && (flags & 0x8 /* HEAP_ZERO_MEMORY */))
+    {
+        unsigned char *b = p;
+        size_t i;
+        for (i = 0; i < size; i++) b[i] = 0;   /* not memset: see header comment */
+    }
+    return p;
+}
+
+BOOL WINAPI HeapFree(HANDLE heap, DWORD flags, LPVOID ptr)
+{
+    (void)heap; (void)flags;
+    free(ptr);
+    return TRUE;
+}
+
+static DWORD ref_last_error;
+
+DWORD WINAPI GetLastError(void)
+{
+    return ref_last_error;
+}
+
+/* ------------------------------------------------------------------ *
+ * The wide ctype table.
+ *
+ * msvcrt indexes MSVCRT__pwctype[wc] and masks with _ALPHA/_DIGIT/… .  Under
+ * the C locale only ASCII is classified, so a 256-entry table spelled out from
+ * first principles is the honest model.  (Written out, not taken from the host
+ * <wctype.h>, for the same anti-hijack reason as ref_ascii_* above.)
+ *
+ * Only the DEFERRED isw* family reads this.  wcs.c guards its own indexing.
+ * ------------------------------------------------------------------ */
+static WORD ref_wctype_table[256];
+static WORD *ref_pwctype_ptr;
+
+static void ref_init_wctype(void)
+{
+    int c;
+
+    if (ref_pwctype_ptr) return;
+    for (c = 0; c < 256; c++)
+    {
+        WORD f = 0;
+        if (c >= 'A' && c <= 'Z')                    f |= _UPPER;
+        if (c >= 'a' && c <= 'z')                    f |= _LOWER;
+        if (c >= '0' && c <= '9')                    f |= _DIGIT | _HEX;
+        if ((c >= 'a' && c <= 'f') ||
+            (c >= 'A' && c <= 'F'))                  f |= _HEX;
+        if (c == ' ' || (c >= '\t' && c <= '\r'))    f |= _SPACE;
+        if (c == ' ' || c == '\t')                   f |= _BLANK;
+        if (c < 0x20 || c == 0x7f)                   f |= _CONTROL;
+        if ((c >= '!' && c <= '/') || (c >= ':' && c <= '@') ||
+            (c >= '[' && c <= '`') || (c >= '{' && c <= '~')) f |= _PUNCT;
+        if (f & (_UPPER | _LOWER))                   f |= _ALPHA;
+        ref_wctype_table[c] = f;
+    }
+    ref_pwctype_ptr = ref_wctype_table;
+}
+
+/* msvcrt exports this as a POINTER to the table. */
+WORD *MSVCRT__pwctype;
+
+/* A constructor so the pointer is live before any test runs — wcs.c reads
+ * MSVCRT__pwctype directly, it never calls an initializer. */
+__attribute__((constructor))
+static void ref_wctype_ctor(void)
+{
+    ref_init_wctype();
+    MSVCRT__pwctype = ref_pwctype_ptr;
+}
+
+/* ------------------------------------------------------------------ *
+ * Locale plumbing.  get_current_locale_noalloc() fills a caller-provided
+ * _locale_tstruct (the `_locale_tstruct tmp = {0};` on wcs.c's stack) and
+ * hands it back; free_locale_noalloc() releases it.  Under the C locale there
+ * is nothing to refcount, so "fill in the one locinfo we model" is exact.
+ * ------------------------------------------------------------------ */
+_locale_t CDECL get_current_locale_noalloc(_locale_t locale)
+{
+    locale->locinfo = get_locinfo();
+    locale->mbcinfo = NULL;
+    return locale;
+}
+
+void CDECL free_locale_noalloc(_locale_t locale)
+{
+    (void)locale;
+}
+
+/* printf's %e exponent width.  msvcrt's default is the 3-digit form; the
+ * 2-digit form is opt-in via _set_output_format.  Return the default. */
+unsigned int __cdecl _get_output_format(void)
+{
+    return 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * The _l wide-ctype / conversion externals wcs.c calls but does NOT define.
+ * C locale, ASCII, spelled out (see ref_ascii_* above).
+ * ------------------------------------------------------------------ */
+int __cdecl _mbtowc_l(wchar_t *dst, const char *str, size_t n, _locale_t locale)
+{
+    (void)locale;
+    if (!str || !n) return 0;
+    if (!*str) { if (dst) *dst = 0; return 0; }
+    /* C locale: single-byte, 1:1 onto U+0000..U+00FF. */
+    if (dst) *dst = (wchar_t)(unsigned char)*str;
+    return 1;
+}
+
+/* ------------------------------------------------------------------ *
+ * MSVC intrinsic.  `_BitScanReverse(&i, mask)` → index of the highest set
+ * bit; returns 0 (and leaves *index untouched) when mask == 0.
+ * ------------------------------------------------------------------ */
+unsigned char _BitScanReverse(unsigned int *index, unsigned int mask)
+{
+    unsigned int i;
+
+    if (!mask) return 0;
+    for (i = 31; ; i--)
+    {
+        if (mask & (1u << i)) { *index = i; return 1; }
+        if (!i) break;
+    }
+    return 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * Wide NLS.  Dead under the C locale, exactly like CompareStringA /
+ * LCMapStringA above (wcs.c takes `if(!locinfo->lc_handle[LC_COLLATE])` first).
+ * Byte-wise ASCII so a test that DOES plant an lc_handle gets something sane
+ * rather than a link error.
+ * ------------------------------------------------------------------ */
+static int ref_nls_wlen(const wchar_t *s, int len)
+{
+    int n = 0;
+    if (len >= 0) return len;
+    while (s[n]) n++;
+    return n;
+}
+
+int WINAPI CompareStringW(LCID lcid, DWORD flags, const wchar_t *str1, int len1,
+                          const wchar_t *str2, int len2)
+{
+    int fold = (flags & NORM_IGNORECASE) != 0;
+    int i, n1 = ref_nls_wlen(str1, len1), n2 = ref_nls_wlen(str2, len2);
+    int n = n1 < n2 ? n1 : n2;
+
+    (void)lcid;
+    for (i = 0; i < n; i++)
+    {
+        int c1 = str1[i], c2 = str2[i];
+        if (fold) { c1 = ref_ascii_upper(c1); c2 = ref_ascii_upper(c2); }
+        if (c1 != c2) return c1 < c2 ? CSTR_LESS_THAN : CSTR_GREATER_THAN;
+    }
+    if (n1 == n2) return CSTR_EQUAL;
+    return n1 < n2 ? CSTR_LESS_THAN : CSTR_GREATER_THAN;
+}
+
+int WINAPI LCMapStringW(LCID lcid, DWORD flags, const wchar_t *src, int srclen,
+                        wchar_t *dst, int dstlen)
+{
+    int i, n = ref_nls_wlen(src, srclen);
+
+    (void)lcid;
+    if (flags & LCMAP_SORTKEY)
+    {
+        if (!dstlen) return n + 1;
+        if (dstlen < n + 1) return 0;
+        for (i = 0; i < n; i++) dst[i] = src[i];
+        dst[n] = 0;
+        return n + 1;
+    }
+
+    if (!dstlen) return n;
+    if (dstlen < n) return 0;
+    for (i = 0; i < n; i++)
+    {
+        int c = src[i];
+        if (flags & LCMAP_LOWERCASE)      c = ref_ascii_lower(c);
+        else if (flags & LCMAP_UPPERCASE) c = ref_ascii_upper(c);
+        dst[i] = (wchar_t)c;
+    }
+    return n;
+}
+
+BOOL WINAPI GetStringTypeW(DWORD type, const wchar_t *src, int count, WORD *chartype)
+{
+    int i, n = ref_nls_wlen(src, count);
+
+    (void)type;
+    ref_init_wctype();
+    for (i = 0; i < n; i++)
+        chartype[i] = (WORD)(src[i] < 256 ? ref_wctype_table[src[i]] : 0);
+    return TRUE;
+}
+
+int WINAPI WideCharToMultiByte(UINT page, DWORD flags, const wchar_t *src, int srclen,
+                               char *dst, int dstlen, const char *defchar, BOOL *used)
+{
+    int i, n = ref_nls_wlen(src, srclen);
+
+    (void)page; (void)flags;
+    if (used) *used = FALSE;
+    if (!dstlen) return n;
+    if (dstlen < n) { ref_last_error = ERROR_INSUFFICIENT_BUFFER; return 0; }
+    for (i = 0; i < n; i++)
+    {
+        /* C locale: U+0000..U+00FF map 1:1; anything else is unrepresentable. */
+        if (src[i] < 256)
+            dst[i] = (char)src[i];
+        else
+        {
+            dst[i] = defchar ? *defchar : '?';
+            if (used) *used = TRUE;
+        }
+    }
+    return n;
+}

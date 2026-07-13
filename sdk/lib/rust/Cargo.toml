@@ -50,6 +50,7 @@ members = [
     "crt-dllmain-rust",
     "crt0-rust",
     "msvcrt-crt-rust",
+    "msvcrt-crt-cargo",
     "msvcrt-difftest",
     "compress",
     "crc32",
@@ -278,3 +279,13 @@ opt-level = 1
 lto = false
 codegen-units = 256
 debug = 1
+
+# msvcrt.dll's CRT body is the ONE place in this workspace where throughput is a
+# correctness-adjacent contract: `memset`/`memcpy`/`memcmp`/`strlen` are served to
+# every user-mode caller in the system. The workspace-wide `opt-level = 1` (tuned
+# for the kernel) leaves the fill/compare loops unvectorized — measured 8x/10x off
+# the C bodies they replace, which blew the net suite's 120s marker timeouts and
+# got wave 2 reverted off master. -O3 here (and ONLY here) closes it.
+# Pinned by `cargo test -p msvcrt-difftest --test perf`.
+[profile.release.package.msvcrt-crt-rust]
+opt-level = 3

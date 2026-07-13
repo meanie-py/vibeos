@@ -25,3 +25,23 @@ extern "C" fn rust_eh_personality() {}
 pub mod compobj;
 
 pub mod marshal;
+
+// ---- the mechanical ring (rustconv track) + its shared surface ----
+// These modules speak com-sys through `prelude`, unlike compobj/marshal which carry
+// their own hand-rolled FFI. See prelude.rs.
+pub mod commacros_gen;
+pub mod consts;
+pub mod hresults;
+pub mod iids;
+pub mod crt;
+pub mod debug_shims;
+pub mod gdi32;
+pub mod ole32_exports;
+pub mod prelude;
+pub mod user32;
+pub mod win32;
+pub mod win_consts;
+pub mod wine_list;
+pub mod winemacros;
+
+pub mod ring;

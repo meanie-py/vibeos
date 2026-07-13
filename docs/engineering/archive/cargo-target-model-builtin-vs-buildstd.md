@@ -7,7 +7,7 @@
 > `-Z build-std` survives only in the i386 kernel cell, and the 80 amd64/arm64 target JSONs are
 > deleted. So the "Current matrix" and "Fixing arm64" sections below are HISTORY — do not follow
 > their recipe. Live state: `build-system.md` §"Cargo target model"; the migration, its measured
-> `.text` deltas, and the self-recursive-`memcpy` bug it uncovered (field manual §9.60):
+> `.text` deltas, and the self-recursive-`memcpy` bug it uncovered (field manual §9.65):
 > `../active-lanes/stable-toolchain-plan.md`.
 >
 > The doc's core call was right, and its warning about build-std's arm64 `compiler_builtins`

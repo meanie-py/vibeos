@@ -185,7 +185,7 @@ and the 80 amd64/arm64 target JSONs are **gone**; only i386 keeps a custom json 
 - **`-C link-self-contained=no` is amd64-only.** gnullvm rejects it outright at bin-link time
   ("not supported on this target") — it links no CRT objects to begin with.
 
-### The bug this uncovered — §9.60, a CLOAK
+### The bug this uncovered — §9.65, a CLOAK
 Dropping build-std hung **both** arches at boot with an empty serial log. Root cause was NOT the
 migration: `bootvid-rust` had defined its own `memcpy`/`memset` whose bodies were
 `copy_nonoverlapping`/`write_bytes` — which LLVM lowers back into a **call to themselves**. They

@@ -4,6 +4,63 @@
 below were produced against the 2026-07-11 tree + the main checkout's `build-amd64`
 binaries.*
 
+## ✅ STATUS (2026-07-12, later) — **ole32's mechanical ring is Rust too. 29 TUs flipped, boots ×3.**
+
+Landed `58f4446bb03`. `ole32.dll` now runs Rust for the COM core **and** the whole
+mechanical ring; full cold `vibeos-cli gate` ×3 green (build + lint + smoke on i386/amd64/
+arm64 + net).
+
+**Flipped this pass (23 TUs, ~23K LOC):** `ifs` (CoTaskMemAlloc/CoGetMalloc + IMallocSpy),
+`hglobalstream`, `memlockbytes`, `filelockbytes`, `moniker` (the Running Object Table +
+MonikerMarshal), all six monikers (file/item/anti/class/pointer/composite), `bindctx`,
+`errorinfo`, `enumx`, `dictionary`, `ole2` (OleInitialize/DoDragDrop/RegisterDragDrop),
+`ole2impl`, `ole2stubs`, `ole32_main`, `clipboard`, `comcat`, `oleproxy`, `usrmarshal`
+(the NDR layer oleaut32 consumes).
+
+**Still C — Tier-D (translated + staged, NOT integrated):** `storage32` (10.3K LOC),
+`stg_prop`, `stg_stream`, `datacache`, `defaulthandler`, `oleobj`. The Rust is in
+`~/vibeos-rust-staging/ole32-tierd/*.rs` (paid for; the durable per-function copies are in
+`tools/rustconv/.responses/`). **Do NOT re-translate.** To finish: run
+`tools/integrate_ole32_ring.py` over them, wire into `ring/mod.rs` + the prelude glob,
+burn down (expect a similar shape to the ring: a few systemic roots, then per-file agents),
+flip the six `.c`, gate ×3.
+
+**`guid.c` must stay C forever** — it is an `#include <initguid.h>` TU whose entire job is
+emitting the moniker CLSIDs as *data*. (Same trap the oleaut32 flip hit: comment out an
+initguid TU and you silently delete every GUID it was defining.)
+
+### The tooling this lane produced (reusable — this is the durable asset)
+- **`tools/gen_commacros.py`** — generates the COBJMACRO vtbl-call helpers from com-sys
+  bindgen. Must be run PER-ARCH: a method whose *parameter* is a function pointer
+  (`IViewObject::Draw`'s `pfnContinue`) carries that callback's calling convention in its
+  TYPE, and bindgen spells it per-arch — one shared amd64-generated file compiles on
+  amd64/arm64 and fails i386 with `expected "stdcall" fn, found "C" fn`. It also emits
+  unsuffixed aliases for the 13 vtbl slots the Win32 A/W macros rename
+  (`GetObject`→`GetObjectA` etc.), which C call sites use but bindgen never emits.
+  Validated against oleaut32-rust's hand-made file: 55/55 helpers byte-identical.
+- **`tools/integrate_ole32_ring.py`** — normalizes a raw rustconv translation onto a
+  crate prelude: drops the COBJMACRO externs (macros in C — they link to nothing), drops
+  the Win32 `extern "C"` decls (WINAPI is stdcall on i386 — this is THE i386 trap), drops
+  self-declarations (rustconv emits an extern for a callee that lands in the same file →
+  E0428), keeps the IID/CLSID statics (real link symbols — never redefine a GUID), and
+  REPORTS anything it doesn't recognize so nothing slips through silently.
+
+### Cost
+The whole ole32 translation (ring + Tier-D, 43.7K LOC, 29 files) cost **~$10** of Sonnet
+via `rustconv translate` — well under the $25–60 the original estimate implied.
+
+### Two rustconv issues worth fixing upstream
+1. **The stitcher hangs** on large files (`moniker.c`, `storage32.c`): every per-function
+   API call completes and lands in `.responses/`, then the process spins forever in
+   "Stitching N functions...". The paid work is safe — assemble the run dir's `*.rs`
+   pieces in sorted order and you have the file. But it burns a core until killed.
+2. It emits `memoffset::core::mem::offset_of!` (no such crate), the OLD bindgen union
+   accessors (`x.QuadPart()`, `x.u()` — current bindgen has plain fields), and names the
+   C's `ref` field `ref_` in the struct while emitting `.ref` at use sites (a Rust keyword
+   → hard parse error). All three are mechanical; the integrator now fixes them.
+
+---
+
 ## ✅ STATUS (2026-07-12) — oleaut32 is **fully Rust**; ole32 core is Rust
 
 **Milestone: every C TU of `oleaut32.dll` that has a Rust twin is now flipped** —

@@ -132,7 +132,7 @@ three things it used to give us are restored/neutralised at build+link time inst
   ntoskrnl.exe exports memcpy/memset/memmove on every arch but `memcmp` only on x86_64, so
   reactos-link links `sdk/lib/crt/libmemcmp.a` LAST in the link group — a pure fallback, so
   any cell that already defines memcmp keeps its own.
-  **Never hand-write mem\* in Rust to plug this** — it self-recurses; see field manual §9.60.
+  **Never hand-write mem\* in Rust to plug this** — it self-recurses; see field manual §9.65.
 
 Trade-offs measured on the 2026-07-12 cutover (amd64): ntoskrnl `.text` **+0.4%** (flat),
 most modules **−16…−29%**, but small modules that only *touch* `core` grow sharply (bootvid
