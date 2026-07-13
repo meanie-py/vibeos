@@ -34,8 +34,17 @@
  *
  * amd64 only for now: the amd64 table-based SEH personality is the validated one
  * (seh_poc.c PASS + __C_specific_handler in the link). i386's frame-based model
- * and arm64 are not yet exercised here, so the Rust safe_copy_* primitive falls
- * back to an MmIsAddressValid per-page guard on those arches (see probe.rs).
+ * and arm64 are not yet exercised here, so on those arches the Rust safe_copy_*
+ * primitive still does a PLAIN copy_nonoverlapping and a bad user pointer still
+ * bugchecks (see probe.rs) — an honest, visible gap, tracked as owed work.
+ *
+ * That gap is deliberately NOT papered over with an MmIsAddressValid pre-check:
+ * MmIsAddressValid cannot distinguish "invalid" from "valid but paged out", so on
+ * the I/O completion hot path it would spuriously fail legitimate I/O with
+ * STATUS_ACCESS_VIOLATION under memory pressure. Silently degrading to a wrong
+ * answer is worse than a loud unfixed gap (AGENTS.md: fail loud, never silently
+ * degrade). The real close is native SEH on i386/arm64, or a Linux-extable-style
+ * fault-fixup copy primitive.
  *
  * Returns 1 on success, 0 if the copy faulted (the Rust caller maps 0 ->
  * Err(STATUS_ACCESS_VIOLATION)).

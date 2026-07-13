@@ -10,6 +10,7 @@ list(APPEND CCCOPYREAD_DRV_SOURCE
 
 add_library(cccopyread_drv MODULE ${CCCOPYREAD_DRV_SOURCE})
 set_module_type(cccopyread_drv kernelmodedriver)
+kmt_enable_native_seh(cccopyread_drv)
 target_link_libraries(cccopyread_drv kmtest_printf ${PSEH_LIB})
 add_importlibs(cccopyread_drv ntoskrnl hal)
 target_compile_definitions(cccopyread_drv PRIVATE KMT_STANDALONE_DRIVER)
@@ -25,6 +26,7 @@ list(APPEND CCCOPYWRITE_DRV_SOURCE
 
 add_library(cccopywrite_drv MODULE ${CCCOPYWRITE_DRV_SOURCE})
 set_module_type(cccopywrite_drv kernelmodedriver)
+kmt_enable_native_seh(cccopywrite_drv)
 target_link_libraries(cccopywrite_drv kmtest_printf ${PSEH_LIB})
 add_importlibs(cccopywrite_drv ntoskrnl hal)
 target_compile_definitions(cccopywrite_drv PRIVATE KMT_STANDALONE_DRIVER)
@@ -40,6 +42,7 @@ list(APPEND CCMAPDATA_DRV_SOURCE
 
 add_library(ccmapdata_drv MODULE ${CCMAPDATA_DRV_SOURCE})
 set_module_type(ccmapdata_drv kernelmodedriver)
+kmt_enable_native_seh(ccmapdata_drv)
 target_link_libraries(ccmapdata_drv kmtest_printf ${PSEH_LIB})
 add_importlibs(ccmapdata_drv ntoskrnl hal)
 target_compile_definitions(ccmapdata_drv PRIVATE KMT_STANDALONE_DRIVER)
@@ -55,6 +58,7 @@ list(APPEND CCPINMAPPEDDATA_DRV_SOURCE
 
 add_library(ccpinmappeddata_drv MODULE ${CCPINMAPPEDDATA_DRV_SOURCE})
 set_module_type(ccpinmappeddata_drv kernelmodedriver)
+kmt_enable_native_seh(ccpinmappeddata_drv)
 target_link_libraries(ccpinmappeddata_drv kmtest_printf ${PSEH_LIB})
 add_importlibs(ccpinmappeddata_drv ntoskrnl hal)
 target_compile_definitions(ccpinmappeddata_drv PRIVATE KMT_STANDALONE_DRIVER)
@@ -70,6 +74,7 @@ list(APPEND CCPINREAD_DRV_SOURCE
 
 add_library(ccpinread_drv MODULE ${CCPINREAD_DRV_SOURCE})
 set_module_type(ccpinread_drv kernelmodedriver)
+kmt_enable_native_seh(ccpinread_drv)
 target_link_libraries(ccpinread_drv kmtest_printf ${PSEH_LIB})
 add_importlibs(ccpinread_drv ntoskrnl hal)
 target_compile_definitions(ccpinread_drv PRIVATE KMT_STANDALONE_DRIVER)
@@ -85,6 +90,7 @@ list(APPEND CCSETFILESIZES_DRV_SOURCE
 
 add_library(ccsetfilesizes_drv MODULE ${CCSETFILESIZES_DRV_SOURCE})
 set_module_type(ccsetfilesizes_drv kernelmodedriver)
+kmt_enable_native_seh(ccsetfilesizes_drv)
 target_link_libraries(ccsetfilesizes_drv kmtest_printf ${PSEH_LIB})
 add_importlibs(ccsetfilesizes_drv ntoskrnl hal)
 target_compile_definitions(ccsetfilesizes_drv PRIVATE KMT_STANDALONE_DRIVER)

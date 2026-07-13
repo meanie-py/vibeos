@@ -58,19 +58,25 @@ impl UUID_CACHED_VALUES_STRUCT {
         }
     }
 
-    fn ClockSeqLow(&self) -> u8 {
+    // GuidInit[] is the union's byte view of { ClockSeqHiAndReserved, ClockSeqLow,
+    // NodeId[6] } — see UUID_CACHED_VALUES_STRUCT in ntoskrnl/include/internal/ex.h.
+    // HiAndReserved is the FIRST byte: the union exists so GuidInit[0] lands on
+    // GUID.Data4[0], which RFC4122 defines as the variant-stamped byte. Transposing
+    // these two indices puts the raw sequence low byte in Data4[0] and breaks the
+    // (Data4[0] & 0xC0) == 0x80 variant invariant.
+    fn ClockSeqHiAndReserved(&self) -> u8 {
         self.GuidInit[0]
     }
 
-    fn set_ClockSeqLow(&mut self, value: u8) {
+    fn set_ClockSeqHiAndReserved(&mut self, value: u8) {
         self.GuidInit[0] = value;
     }
 
-    fn ClockSeqHiAndReserved(&self) -> u8 {
+    fn ClockSeqLow(&self) -> u8 {
         self.GuidInit[1]
     }
 
-    fn set_ClockSeqHiAndReserved(&mut self, value: u8) {
+    fn set_ClockSeqLow(&mut self, value: u8) {
         self.GuidInit[1] = value;
     }
 

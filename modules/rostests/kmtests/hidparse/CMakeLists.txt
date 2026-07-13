@@ -11,6 +11,7 @@ list(APPEND HIDP_DRV_SOURCE
 
 add_library(hidp_drv MODULE ${HIDP_DRV_SOURCE})
 set_module_type(hidp_drv kernelmodedriver)
+kmt_enable_native_seh(hidp_drv)
 target_link_libraries(hidp_drv kmtest_printf ${PSEH_LIB})
 add_importlibs(hidp_drv hidparse ntoskrnl hal)
 target_compile_definitions(hidp_drv PRIVATE KMT_STANDALONE_DRIVER)

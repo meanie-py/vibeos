@@ -45,6 +45,7 @@ ObHandle OK pass=351 fail=0 skip=0 exit=0
 ObQuery OK pass=19 fail=0 skip=0 exit=0
 ObReference OK pass=2205 fail=0 skip=0 exit=0
 ObSecurity OK pass=694 fail=15 skip=0 exit=0
+ObSymbolicLink OK pass=154 fail=0 skip=0 exit=0
 ObType OK pass=96 fail=0 skip=0 exit=0
 ObTypes OK pass=765 fail=17 skip=4 exit=0
 PsNotify OK pass=24 fail=0 skip=0 exit=0
@@ -64,11 +65,13 @@ SeQueryInfoToken OK pass=76 fail=0 skip=0 exit=0
 ZwAllocateVirtualMemory OK pass=1256 fail=11 skip=0 exit=0
 ZwCreateSection OK pass=4 fail=3 skip=2 exit=0
 ZwMapViewOfSection OK pass=105 fail=22 skip=2 exit=0
+ZwWaitForMultipleObjects OK pass=4 fail=0 skip=0 exit=0
 RtlCaptureContextKM OK pass=273 fail=0 skip=0 exit=0
 FileAttributes OK pass=84 fail=0 skip=0 exit=0
 FindFile OK pass=251 fail=2 skip=0 exit=0
 HidPDescription OK pass=28 fail=9 skip=3 exit=0
 IoDeviceObject OK pass=185 fail=4 skip=0 exit=0
+IoReadWrite OK pass=16192 fail=151 skip=0 exit=0
 NtSystemDebugControl OK pass=22 fail=20 skip=0 exit=0
 PoIrp OK pass=0 fail=0 skip=1 exit=0
 RtlAvlTree OK pass=139 fail=0 skip=0 exit=0

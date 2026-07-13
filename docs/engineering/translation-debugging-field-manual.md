@@ -541,6 +541,22 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 **Fix:** mask before use — `OffsetToDirectory & 0x7FFF_FFFF` (and read the `:31`/USHORT siblings `& 0x7FFF_FFFF` / `& 0xFFFF`). **Tell / grep:** translations that use `.OffsetToDirectory`/`.OffsetToData`/`.NameOffset` (any C `:31`/`:N` bitfield) directly as an offset without masking the high flag bit. When the source field is a C bitfield, never read it as the full storage word.
 **Source:** version-rust `79d7680b685` (2026-06-18), dc/version rescue → mainline.
 
+### Hand-rolled accessors over a union's byte view, with two fields TRANSPOSED → a test that fails only 3 boots in 4
+**Symptom:** kmtest `ExUuid` asserts RFC4122 compliance — `(Uuid.Data4[0] & 0xC0) == 0x80` — and saw `Data4[0] == 0xd0`. Filed as a "ratchet regression introduced by a merge". **It was neither a regression nor merge-related.**
+**Root cause:** C's `UUID_CACHED_VALUES_STRUCT` (`ntoskrnl/include/internal/ex.h`) is a union whose byte view exists *precisely* to alias `GUID.Data4` (the header even says `/* Match GUID.Data4 */`):
+```c
+union { struct { UCHAR ClockSeqHiAndReserved;  /* == GuidInit[0] == Data4[0] */
+                 UCHAR ClockSeqLow;            /* == GuidInit[1] */
+                 UCHAR NodeId[6]; };
+        UCHAR GuidInit[8]; };
+```
+The Rust port (`ex-rust/src/uuid.rs`) replaced the union with a bare `GuidInit: [u8; 8]` plus **hand-written accessors — and transposed the two ClockSeq fields** (`ClockSeqLow` → `[0]`, `ClockSeqHiAndReserved` → `[1]`). `ExpUuidGetValues` was otherwise a statement-for-statement faithful port, so it dutifully stamped the RFC4122 variant bits (`|= 0x80`) into the byte that now landed at `Data4[1]`, while `Data4[0]` received the raw low byte of the sequence number.
+**Why it hid — the lesson.** The sequence number is seeded from `KeQueryPerformanceCounter` XOR a stack address whenever the registry seed is absent (i.e. every LiveCD boot), so `Data4[0]` was effectively **random**. `(random & 0xC0) == 0x80` is true **exactly 1 time in 4** — so the test *passed 25% of boots*, and the committed baseline had recorded one of those lucky runs as `ExUuid OK pass=3000 fail=0`. A latent bug can hide inside a green baseline as a **probabilistic pass**; the "it regressed at commit X" story was pure coincidence.
+**Fix:** swap the two indices (and pin them to the C header in a comment). Post-fix `Data4[0]` is always `0x80 | (seq >> 8 & 0x3F)` → deterministically variant-compliant.
+**Tell / grep:** a Rust struct that flattens a C **union** into a byte array plus hand-written named accessors. The union's whole purpose is a specific byte↔field mapping, and nothing in Rust re-checks it — a transposition compiles, links, and passes review. Prefer the bindgen union type, or `offset_of!`; if you must hand-roll, cite the C field order in a comment. Sibling of the `MMPFN`/`KTHREAD.Teb` numeric-offset drift class (`tools/scan_magic_offsets.py`).
+**Corollary (test hygiene):** when a conformance test "regresses" but `git diff baseline..HEAD -- <file>` is **empty**, do not hunt the merge — ask whether the assertion is *probabilistic*. Reconciling that contradiction is what cracked this one.
+**Source:** conformance-ratchet (2026-07-12).
+
 ---
 
 ## rustconv translation-output bug catalog
@@ -5348,3 +5364,58 @@ fall through to a plain copy until clang's frame-based i386 / aarch64 kernel SEH
 caller pointer where the C had `_SEH2_TRY`. Grep the inert C for `_SEH2_TRY` around
 `RtlCopyMemory`/`Probe*` and diff against the Rust port — if the Rust has the copy but no
 `safe_copy_*`, it is a latent 0x1E waiting for a hostile caller.
+
+---
+
+### 9.60 (ROOT-CAUSED + FIXED 2026-07-12) When the BUG IS IN THE TEST HARNESS: the standalone kmtest drivers' own `_SEH2_TRY` was dead code, so three "kernel crashers" were the kernel behaving *correctly*
+
+**Symptom.** Three amd64 kmtest quarantines, all BUGCHECK-class, all filed as kernel bugs:
+`IoReadWrite` (0x1E), `NtCreateSection` (0x50), `MmMapLockedPagesSpecifyCache` (0x1000).
+
+**The trap.** Two of the three were not kernel bugs at all. `USE_DUMMY_PSEH` is the
+project-wide C compile mode, so *every* `_SEH2_TRY`/`_SEH2_EXCEPT` compiles to a **dead
+handler**. `kmtest_drv` and `kmtest.exe` had opted into real clang SEH
+(`_USE_NATIVE_SEH`, which pseh2.h maps straight to `__try`) — but the **17 STANDALONE
+helper drivers never did**. Their handlers were silently dead.
+
+That matters because these drivers *deliberately fault and expect to catch it*.
+`IoReadWrite_drv` is the textbook case: fast I/O hands a driver the **raw user buffer**
+(no SystemBuffer), `TestCommonWrite()` derefs it with no NULL guard, and its own
+`_SEH2_EXCEPT` is supposed to convert the AV into `STATUS_ACCESS_VIOLATION` — which is
+*exactly what the test asserts*. With a dead handler the AV escaped to the kernel and
+bugchecked. **The kernel was innocent; it faithfully delivered a fault the test asked for.**
+
+**The wrong turn worth remembering.** The first triage note read: *"NtReadFile/NtWriteFile in
+C dispatch fast I/O from inside `_SEH2_TRY`, so the kernel needs a protected **call** around
+the FastIoRead/FastIoWrite dispatch."* **That was wrong** — C does **not** wrap the fast-I/O
+dispatch in SEH (`iofunc.c`: only the IOSB write-back is protected). Nor could the probes
+have saved it: C's `ProbeForRead` is range+alignment only and never touches memory, so a
+NULL buffer sails through by design. Reading the *C oracle's actual control flow* — instead
+of pattern-matching "DUMMY_PSEH + fault ⇒ kernel needs a guard" — is what found the driver.
+
+**Fix.** `kmt_enable_native_seh()` in `modules/rostests/kmtests/CMakeLists.txt`, applied to
+**all 17** standalone drivers (not just the faulting ones — the invariant is "kmtest drivers
+get real SEH wherever clang lowers it", so the next SEH-using test can't inherit a dead
+handler). amd64 + arm64 only; i386's SEH lowering is MSVC-env-only (dummy-pseh-verdict §C).
+Result: `IoReadWrite` CRASH → **OK (16192 pass / 151 fail)**.
+
+**Why it works despite "calls-only".** Hardware-fault coverage under clang native SEH needs
+the fault in a **CALLEE** of the `__try` body. That holds here for free: clang **refuses to
+inline any callee into a `__try` region** (funclet-EH restriction — the same rule that forces
+`kmt_native_seh_shims.c` to exist), so `TestCommonWrite` stays a real call. Same mechanism
+`ntoskrnl/kmsafecopy.c` relies on (§9.59).
+
+**The negative result is the valuable half.** `MmMapLockedPagesSpecifyCache` was
+un-quarantined in the *same* experiment and **still** BUGCHECKs 0x1000 — proving native SEH
+did not paper over it and its original triage (real PFN/PTE accounting bug in the Rust
+MDL-map path) stands. Un-quarantining the whole suspected cluster at once is what cleanly
+*separated* the harness artifacts from the genuine kernel bug.
+
+**Detector.** For any kmtest quarantine on a **standalone** driver (`*_drv.sys` built by its
+own `add_library`, not linked into `kmtest_drv`), check whether the driver source contains
+`_SEH2_TRY` *before* blaming the kernel:
+`grep -l _SEH2_TRY modules/rostests/kmtests/*/*_drv.c` — if it's there and the target lacks
+`kmt_enable_native_seh()`, the handler is dead and the "kernel crash" is the harness.
+**Generalization:** a test that deliberately faults is only a valid oracle if its *own*
+exception handling actually compiles. Verify the harness before you debug the subject —
+`objdump -p drv.sys | grep C_specific_handler` proves the handler is real.

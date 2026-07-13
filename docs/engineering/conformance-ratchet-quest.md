@@ -486,3 +486,47 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   Baseline deliberately NOT updated — leaving it un-refreshed keeps the ratchet flagging these
   until they are root-caused. (This is the ratchet doing exactly its job: catching a mainline
   regression that no boot smoke would have noticed.)
+
+- 2026-07-12: **The "3 kernel crashers" were 1 kernel bug + 2 harness artifacts + 1 innocent —
+  and un-quarantining them TOGETHER is what separated the causes.** Root cause of the harness
+  half: the 17 **standalone** kmtest helper drivers never got `_USE_NATIVE_SEH` (only
+  `kmtest_drv`/`kmtest.exe` did), so under project-wide `USE_DUMMY_PSEH` their own
+  `_SEH2_TRY`/`_SEH2_EXCEPT` compiled to **dead handlers**. These drivers *deliberately* fault
+  and expect to catch it — `IoReadWrite_drv`'s fast-I/O path derefs the raw user buffer with no
+  NULL guard, expecting its `_SEH2_EXCEPT` to return `STATUS_ACCESS_VIOLATION` (precisely what
+  the test asserts). Dead handler ⇒ the AV escaped to the kernel ⇒ BUGCHECK. **The kernel was
+  innocent.** Fixed with `kmt_enable_native_seh()` on all 17 drivers (amd64+arm64; i386 SEH
+  lowering is MSVC-env-only). Verified in codegen (`__C_specific_handler` import + `.pdata`)
+  before spending a sweep, and the arm64 build was proven to still link.
+    - `IoReadWrite`: **CRASH → OK (16192 pass / 151 fail)** — un-quarantined.
+    - `NtCreateSection` (0x50) and `MmMapLockedPagesSpecifyCache` (0x1000): **still crash, same
+      stop codes** ⇒ REAL kernel bugs, re-quarantined with the negative result recorded. This is
+      the valuable half: it proves native SEH didn't paper over them.
+  **My own earlier triage note was WRONG** and is corrected in-file: C does *not* dispatch fast
+  I/O inside `_SEH2_TRY` (only the IOSB write-back is protected), and C's `ProbeForRead` is
+  range+alignment-only and never touches memory — so no kernel-side "protected call" was ever
+  the answer. Reading the C oracle's actual control flow beat pattern-matching. Field manual §9.60.
+
+- 2026-07-12: **`ExUuid` was never a merge regression — it was a latent bug that passed 1 boot
+  in 4.** `ex-rust/src/uuid.rs` flattened C's `UUID_CACHED_VALUES_STRUCT` union into a bare
+  `GuidInit: [u8;8]` + hand-written accessors, and **transposed** `ClockSeqHiAndReserved` (C:
+  `GuidInit[0]`, the RFC4122 variant byte, aliased onto `GUID.Data4[0]`) with `ClockSeqLow`.
+  `Data4[0]` therefore got the raw low byte of a `KeQueryPerformanceCounter`-seeded sequence
+  number ⇒ `(Data4[0] & 0xC0) == 0x80` held **exactly 25% of boots**, and the committed baseline
+  had captured one of those lucky runs as `ExUuid OK pass=3000 fail=0`.
+  **The tell:** `git diff baseline..HEAD -- uuid.rs` was **empty** — the code hadn't changed at
+  all, so "a merge broke it" was impossible. Reconciling that contradiction (rather than hunting
+  the merge) is what cracked it. Fixed by swapping the indices + pinning them to the C header.
+  Now deterministic. Field manual → struct-layout section. **Lesson: a green baseline can be
+  hiding a probabilistic pass.**
+    - Sibling still open: `IoDeviceObject` 185/4 flaps to 184/5 between runs (`RegistryPath not
+      page-aligned`) — same "flaky assertion" smell, owed.
+
+- 2026-07-12: **amd64 baseline refreshed: 84/84 OK, 0 crashers, ratchet holds.** The 3 wins are
+  locked into `tools/conformance-baseline/amd64/kmtest.txt` so they can't silently regress:
+  `ObSymbolicLink` (154/0), `ZwWaitForMultipleObjects` (4/0), `IoReadWrite` (16192/151).
+  **Owed, stated plainly:** `IoReadWrite` is baselined with **fail=151** — the CRASH is fixed and
+  the test now runs to completion, but 151 assertions still fail and are now accepted as debt.
+  That is a real conformance backlog item, not a pass. (Baseline for the known-flaky
+  `IoDeviceObject` / `ExResource` was deliberately NOT rewritten from a single lucky run — this
+  sweep happened to match the existing values exactly, so nothing moved.)
