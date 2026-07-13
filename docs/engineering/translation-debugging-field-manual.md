@@ -5391,6 +5391,32 @@ still readies a pre-dethrone waiter (legal NT window), so the self-swap wedge ma
 now surface as the NEXT layer — if 0x57 fires, apply the old==new spin-skip in
 ctxswitch.S. Validation burst running: expect 0x22/[RQTEAR] silent, flake → ~0.
 
+**2026-07-13 (c) — trylock-fix validation: 12/16 → 14/16; tear NOT fully gone; two
+more holes found and plugged.** Post-fix burst: 2 fails — 1× the same site-0x22
+self-loop tear (pri 9), 1× 0x1E c0000006 post-marker. So the gate trylock was A
+source (rate improved), not the only one. Re-decode of the self-loop: it does NOT
+require two CPUs — a SINGLE sequential `InsertTailList(H, e)` when `H.Blink == e`
+(thread ALREADY the tail/sole element of that same list) produces `e.F=e.B=e`
+exactly. I.e. a plain SEQUENTIAL DOUBLE-READY of a parked thread — and the 0x22
+drain-insert site has NO already-linked guard of its own. Two findings this round:
+1. **The 0x53 "still-linked defer" oracle had a HOLE that invalidates the earlier
+   elimination-round refutation:** its linkage check was gated on `State==Ready`,
+   but `KeSignalGateBoostPriority` sets `State=DeferredReady` ITSELF before calling
+   `KiReadyThread` — so a still-linked gate-woken victim arrived at
+   `KiInsertDeferredReadyList` with state 7 and was never checked. Replaced with
+   **0x58**: linkage check for ALL states + `[RQDOUBLE]` print (state, WaitReason,
+   WaitStatus, DeferredProcessor — enough to name the waker class without
+   track_caller). Also learned: `[RQRUNNING] state=7` prints are ROUTINE (gate wakes
+   legitimately enter KiReadyThread with state pre-set to 7) — not evidence.
+2. **The Rust `Kx{Single,Delay,Queue}ThreadWait` only carried HALF of the C's
+   defensive timer-block init** (`ke_x.h` writes BOTH ends: `TimerBlock->
+   WaitListEntry.F/B = &Timer->Header.WaitListHead` AND the head's F/B; the Rust
+   inline wrote only the head side). A stale/self-referencing `TimerBlock->
+   WaitListEntry` makes `KiUnlinkThread`'s ring-walk `RemoveEntryList` write through
+   dangling pointers (tear class) or no-op (the documented KiTimerExpiration spin).
+   Ported the both-ends init to all 3 Rust setups (KxMultiThreadWait already used
+   InitializeListHead+InsertTailList — fine).
+
 **2026-07-13 SPLITTER RESULT — MIXED, so it is TWO faces, not one:**
 `[RQRUNNING]` now prints `dispLockHeld`. Across a burst:
 - **`dispLockHeld=1` AND `state=5`=Waiting** (both held cases): the readier HOLDS the
