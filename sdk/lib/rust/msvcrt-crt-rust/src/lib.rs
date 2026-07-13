@@ -299,11 +299,16 @@ mod m_strrev {
         let __buf = raw_mut_slice(s, __n);
         // NOTE: cnt-rust's shim calls `core_rs::strmut::reverse`, which is
         // `buf.reverse()`. That pulls core's cross-crate `#[inline]` generic
-        // `swap_nonoverlapping`, and `-C no-prepopulate-passes` (the §378
-        // miscompile guard we must NOT drop — it's why memset didn't get DCE'd
-        // into a spin) leaves it un-inlined AND un-emitted → undefined symbol at
-        // link. An explicit swap loop is semantically identical to `reverse()`
-        // (both are an in-place byte reversal) and pulls no generic.
+        // `swap_nonoverlapping`, which under the ORIGINAL build flags was left
+        // un-inlined AND un-emitted → undefined symbol at link. An explicit swap
+        // loop is semantically identical (both are an in-place reversal) and
+        // pulls no generic, so it is kept.
+        //
+        // (That original note claimed `-C no-prepopulate-passes` "must NOT be
+        // dropped". It HAS been dropped — deliberately. It disables rustc's
+        // optimization pipeline outright, which compiled memset/memcpy/memcmp to
+        // a function call per byte and got wave 2 reverted off master. See the
+        // long comment in dll/win32/msvcrt/CMakeLists.txt. Do not re-add it.)
         if __n > 1 {
             let (mut i, mut j) = (0usize, __n - 1);
             while i < j {
@@ -455,12 +460,16 @@ mod mstrcat {
     /// `char* strcat(char *s, const char *append)`
     /// preserved misfeature: no bounds check (tcscat.h); appends through+incl. NUL at the existing terminator
     #[no_mangle]
+    /// Single-pass copy — a PERF contract (see `strcmp`). The slice form scanned
+    /// dst, then scanned src, THEN copied: three passes. The C is two —
+    /// `strcpy(dst + strlen(dst), src)`, whose copy loop finds src's NUL as it
+    /// goes (`while ((*p++ = *src++));`). Measured 2.5x before this.
     pub unsafe extern "C" fn strcat(s: *mut u8, append: *const u8) -> *mut u8 {
-        let dl = cstr_slice(s as *const u8).len();
-        let a = cstr_slice(append);
-        let m = a.len();
-        let tail = raw_mut_slice(s.add(dl), m + 1);
-        cnt_rust::core_rs::string::cat(tail, a);
+        let mut d = s;
+        while *d != 0 {
+            d = d.add(1);
+        }
+        crate::cstr_copy(d, append);
         s
     }
 
@@ -473,12 +482,26 @@ mod mstrchr {
 
     /// `char *strchr(const char *s, int c)`
     /// preserved misfeature: the terminating NUL is a valid target: c==0 returns ptr to the NUL (Some(len)), not NULL; c truncated to char
+    ///
+    /// ⚠️ Single-pass — a PERF contract (see the note on `strcmp`). The slice
+    /// form (`find_char(cstr_slice(s), c)`) scans to the NUL to build the slice
+    /// and THEN searches it: two passes where the C's `do { … } while (*str++)`
+    /// does one. The perf gate measured that at 2.01x and failed it.
     #[no_mangle]
     pub unsafe extern "C" fn strchr(s: *const u8, c: i32) -> *mut u8 {
-        let s_s = cstr_slice(s);
-        match cnt_rust::core_rs::string::find_char(s_s, c as i32) {
-            Some(i) => s.add(i) as *mut u8,
-            None => core::ptr::null_mut(),
+        if s.is_null() {
+            return core::ptr::null_mut();
+        }
+        let t = c as u8;
+        let mut p = s;
+        loop {
+            if *p == t {
+                return p as *mut u8; // NUL is a valid target when t == 0
+            }
+            if *p == 0 {
+                return core::ptr::null_mut();
+            }
+            p = p.add(1);
         }
     }
 
@@ -492,11 +515,9 @@ mod mstrcpy {
     /// `char* strcpy(char *to, const char *from)`
     /// preserved misfeature: no bounds check (tcscpy.h trusts the dst buffer); copies through and incl. the terminating NUL
     #[no_mangle]
+    /// Single-pass — see `strcat`. C: `while ((*p++ = *src++));`
     pub unsafe extern "C" fn strcpy(to: *mut u8, from: *const u8) -> *mut u8 {
-        let s = cstr_slice(from);
-        let m = s.len();
-        let d = raw_mut_slice(to, m + 1);
-        cnt_rust::core_rs::string::cpy(d, s);
+        crate::cstr_copy(to, from);
         to
     }
 
@@ -510,10 +531,18 @@ mod mstrcspn {
     /// `size_t strcspn(const char *s, const char *reject)`
     /// preserved misfeature: complement of strspn (_x inverted); empty reject → strlen(s)
     #[no_mangle]
+    /// Single-pass over `s`. This mirrors the C most directly of all of them —
+    /// msvcrt's `strcspn` already builds a `BOOL rejects[256]` table and then
+    /// walks the subject once.
     pub unsafe extern "C" fn strcspn(s: *const u8, reject: *const u8) -> usize {
-        let s_s = cstr_slice(s);
-        let reject_s = cstr_slice(reject);
-        cnt_rust::core_rs::string::span_out(s_s, reject_s) as usize
+        let set = crate::ByteSet::of(reject);
+        let mut p = s;
+        let mut n = 0usize;
+        while *p != 0 && !set.has(*p) {
+            p = p.add(1);
+            n += 1;
+        }
+        n
     }
 
 }
@@ -593,13 +622,18 @@ mod mstrpbrk {
     /// `char* strpbrk(const char *s1, const char *s2)`
     /// preserved misfeature: first s1 char in s2 else NULL; empty s2→NULL. strpbrk.c's 3+-char path bitmap is sized by BIT_SIZE=sizeof(unsigned long)*8 (LP32=32 on target). Core models the correct first-in-set; diff fuzzes set≤2 only (the strchr fast paths — host-correct; 3+ UBs `1<<>=32` on LP64 host, unfuzzable, same caveat class as itoa long-family / strtoul ULONG_MAX). set size doesn't change find_any's code path so ≤2 fully pins it.
     #[no_mangle]
+    /// Single-pass over `s1`. C:
+    /// `for (; *str; str++) if (strchr(accept, *str)) return (char*)str; return NULL;`
     pub unsafe extern "C" fn strpbrk(s1: *const u8, s2: *const u8) -> *mut u8 {
-        let s1_s = cstr_slice(s1);
-        let s2_s = cstr_slice(s2);
-        match cnt_rust::core_rs::string::find_any(s1_s, s2_s) {
-            Some(i) => s1.add(i) as *mut u8,
-            None => core::ptr::null_mut(),
+        let set = crate::ByteSet::of(s2);
+        let mut p = s1;
+        while *p != 0 {
+            if set.has(*p) {
+                return p as *mut u8;
+            }
+            p = p.add(1);
         }
+        core::ptr::null_mut()
     }
 
 }
@@ -612,11 +646,22 @@ mod mstrrchr {
     /// `char *strrchr(const char *s, int c)`
     /// preserved misfeature: last occurrence; c==0 → ptr to terminating NUL (Some(len)); c truncated to char
     #[no_mangle]
+    /// Single-pass — see `strchr`. C: `do { if (*str == c) ret = str; } while (*str++);`
     pub unsafe extern "C" fn strrchr(s: *const u8, c: i32) -> *mut u8 {
-        let s_s = cstr_slice(s);
-        match cnt_rust::core_rs::string::find_last_char(s_s, c as i32) {
-            Some(i) => s.add(i) as *mut u8,
-            None => core::ptr::null_mut(),
+        if s.is_null() {
+            return core::ptr::null_mut();
+        }
+        let t = c as u8;
+        let mut p = s;
+        let mut ret = core::ptr::null_mut();
+        loop {
+            if *p == t {
+                ret = p as *mut u8; // NUL is a valid target when t == 0
+            }
+            if *p == 0 {
+                return ret;
+            }
+            p = p.add(1);
         }
     }
 
@@ -630,10 +675,17 @@ mod mstrspn {
     /// `size_t strspn(const char *s, const char *accept)`
     /// preserved misfeature: bitmap over unsigned-char (0..255); empty accept → 0; NUL terminates both (never in set)
     #[no_mangle]
+    /// Single-pass over `s` (see the `ByteSet` note). C:
+    /// `for (ptr = str; *ptr; ptr++) if (!strchr(accept, *ptr)) break; return ptr - str;`
     pub unsafe extern "C" fn strspn(s: *const u8, accept: *const u8) -> usize {
-        let s_s = cstr_slice(s);
-        let accept_s = cstr_slice(accept);
-        cnt_rust::core_rs::string::span_in(s_s, accept_s) as usize
+        let set = crate::ByteSet::of(accept);
+        let mut p = s;
+        let mut n = 0usize;
+        while *p != 0 && set.has(*p) {
+            p = p.add(1);
+            n += 1;
+        }
+        n
     }
 
 }
@@ -724,6 +776,79 @@ pub use mstrtoul::*;
 // wrong the moment an app calls `setlocale()`. They belong to Phase D (locale)
 // and must NOT be flipped on a green MATCH alone. See the lane plan.
 
+/// A 256-bit membership set over the bytes of a C string, built in ONE pass.
+///
+/// This is what msvcrt's own `strcspn` does (`BOOL rejects[256]` + `memset`), and
+/// it is why the set-based searchers can be single-pass over the *subject*: the
+/// slice-based core forced a `cstr_slice` scan of the subject up front, and the
+/// perf gate showed that whole family paying ~2x for it.
+///
+/// The set's terminating NUL is NOT a member — which is exactly right, because
+/// every caller below only tests bytes it has already proven non-NUL. (The C
+/// gets this for free: it calls `strchr(accept, *ptr)` with `*ptr != 0`.)
+struct ByteSet([u64; 4]);
+
+impl ByteSet {
+    #[inline]
+    unsafe fn of(mut p: *const u8) -> Self {
+        let mut w = [0u64; 4];
+        if !p.is_null() {
+            while *p != 0 {
+                let b = *p as usize;
+                w[b >> 6] |= 1u64 << (b & 63);
+                p = p.add(1);
+            }
+        }
+        ByteSet(w)
+    }
+    #[inline]
+    fn has(&self, b: u8) -> bool {
+        let b = b as usize;
+        self.0[b >> 6] & (1u64 << (b & 63)) != 0
+    }
+}
+
+/// `while ((*dst++ = *src++));` — copy `src`'s bytes AND its terminating NUL, in
+/// ONE pass. The C never computes `strlen(src)` and neither do we.
+///
+/// (The slice-based core cannot express this: `cpy(&mut [u8], &[u8])` needs both
+/// lengths up front, so it costs a scan of `src` before a single byte moves.
+/// That is the whole reason the copy/compare/search families are transcribed
+/// here rather than routed through cnt-rust — see the note on `strcmp`.)
+///
+/// # Safety
+/// `dst` must have room for `strlen(src) + 1` bytes — the same contract the C
+/// `strcpy` places on its caller.
+#[inline]
+unsafe fn cstr_copy(mut dst: *mut u8, mut src: *const u8) {
+    loop {
+        let b = *src;
+        *dst = b;
+        if b == 0 {
+            return;
+        }
+        dst = dst.add(1);
+        src = src.add(1);
+    }
+}
+
+/// `cstr_copy`'s wide twin.
+///
+/// # Safety
+/// `dst` must have room for `wcslen(src) + 1` elements.
+#[inline]
+unsafe fn wcstr_copy(mut dst: *mut u16, mut src: *const u16) {
+    loop {
+        let w = *src;
+        *dst = w;
+        if w == 0 {
+            return;
+        }
+        dst = dst.add(1);
+        src = src.add(1);
+    }
+}
+
 #[inline]
 fn clamp(d: i32) -> i32 {
     if d > 0 {
@@ -737,12 +862,31 @@ fn clamp(d: i32) -> i32 {
 
 /// msvcrt `strcmp`: unsigned-char compare, **clamped** to -1/0/1
 /// (`if ((unsigned char)*str1 > (unsigned char)*str2) return 1; ...`).
+///
+/// ⚠️ **Single-pass, on purpose — this is a PERF contract.** The obvious
+/// spelling, `clamp(cmp_u(cstr_slice(a), cstr_slice(b)))`, is THREE passes:
+/// `cstr_slice` scans `a` to its NUL, then scans `b`, and only then does `cmp_u`
+/// walk them both. The C is ONE pass and never computes a length at all.
+///
+/// A slice-based core *cannot* express that — building a `&[u8]` requires
+/// knowing the length, and knowing the length requires exactly the scan the C
+/// skips. So the compare family is transcribed directly here rather than routed
+/// through cnt-rust. Same call `memcmp` below already makes (hand-written
+/// word-wise, because cnt's byte-zip `mem::cmp` measured 10.3x off the C).
+/// Measured: the 3-pass form ran 3.8-4.8x slower than the C on the wide twin.
 #[no_mangle]
 pub unsafe extern "C" fn strcmp(a: *const u8, b: *const u8) -> i32 {
-    clamp(cnt_rust::core_rs::string::cmp_u(
-        h::cstr_slice(a),
-        h::cstr_slice(b),
-    ))
+    let (mut p, mut q) = (a, b);
+    while *p != 0 && *p == *q {
+        p = p.add(1);
+        q = q.add(1);
+    }
+    // unsigned compare — the msvcrt contract (libcntpr's `char` is signed).
+    match (*p).cmp(&*q) {
+        core::cmp::Ordering::Greater => 1,
+        core::cmp::Ordering::Less => -1,
+        core::cmp::Ordering::Equal => 0,
+    }
 }
 
 /// msvcrt `strncmp`: unsigned-char compare — but the return contract is
@@ -779,16 +923,27 @@ pub unsafe extern "C" fn strncmp(a: *const u8, b: *const u8, len: usize) -> i32 
 /// `_WIN64` is exactly `sign(#else)`. That identity is what lets one host
 /// reference compile grade both shipped contracts (the harness models the
 /// 64-bit C branch as `clamp(ref_strncmp(..))`).
+///
+/// Single-pass for the same PERF reason as [`strcmp`] — the bounded slice form
+/// scanned both inputs before comparing anything.
 #[inline]
 pub unsafe fn strncmp_raw(a: *const u8, b: *const u8, len: usize) -> i32 {
     if len == 0 {
         return 0;
     }
-    cnt_rust::core_rs::string::ncmp_u(
-        h::cstr_slice_bounded(a, len),
-        h::cstr_slice_bounded(b, len),
-        len,
-    )
+    // C: `while (--len && *str1 && *str1 == *str2) { str1++; str2++; }`
+    // (pre-decrement: the loop body runs at most len-1 times, and the compare
+    // below then reads the len'th pair.)
+    let (mut p, mut q, mut k) = (a, b, len);
+    loop {
+        k -= 1;
+        if k == 0 || *p == 0 || *p != *q {
+            break;
+        }
+        p = p.add(1);
+        q = q.add(1);
+    }
+    (*p as i32) - (*q as i32)
 }
 
 /// msvcrt `memcmp`: unsigned compare, **clamped** to -1/0/1
@@ -913,6 +1068,286 @@ pub unsafe extern "C" fn _strnset(str_: *mut u8, value: i32, len: usize) -> *mut
     let take = h::cstr_slice_bounded(str_ as *const u8, len).len();
     cnt_rust::core_rs::strmut::fill(core::slice::from_raw_parts_mut(str_, take), value as u8);
     str_.add(take)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Wave 4: the wide-string family (dll/win32/msvcrt/wcs.c)
+//
+// WHY THIS WAVE IS STRUCTURALLY SAFER THAN WAVE 3. Wave 3's whole hazard was
+// the signed-char contract: libcntpr compares `char` as SIGNED (`Elem::diff for
+// u8` is `(a as i8) - (b as i8)`), msvcrt compares UNSIGNED. They agree on
+// ASCII and flip sign on bytes >= 0x80, which is why `cmp_u`/`ncmp_u` had to be
+// added to the core. `wchar_t` is unsigned BY DEFINITION and `Elem::diff for
+// u16` is already `(a as i32) - (b as i32)` — so that entire class cannot recur
+// here. The plain generic core IS the msvcrt contract for u16, and these
+// wrappers use `cmp`/`ncmp`, not the `_u` variants.
+//
+// TWO TRAPS THAT DO NOT TRANSFER FROM THE NARROW FAMILY:
+//
+//  1. `_strnset` returns the ADVANCED pointer (a Wine quirk, reproduced
+//     exactly). `_wcsnset` returns the START (`wchar_t *ret = str;`). Same name
+//     shape, DIFFERENT contract — do not copy the narrow wrapper.
+//  2. `wcsncmp` has NO `_WIN64` branch, unlike `strncmp`: it returns the raw
+//     `*str1 - *str2` difference on every arch. So there is nothing to clamp,
+//     and only ONE contract to grade.
+//
+// The locale-dependent wide set (`_wcsicmp`, `_wcslwr`, `_wcsupr`, the whole
+// `isw*` ctype block, the NLS `wcstombs` family) is DEFERRED, exactly like wave
+// 3's `_stricmp`/`_strnicmp`/`_memicmp` trio: the harness pins the "C" locale,
+// so it would report MATCH — and that is a blind spot, not a license to flip.
+// See field manual §9.60.
+// ─────────────────────────────────────────────────────────────────────────
+
+#[no_mangle]
+pub unsafe extern "C" fn wcslen(s: *const u16) -> usize {
+    h::wcstr_slice(s).len()
+}
+
+/// u16 is already the unsigned contract, so the *element* compare is plain `cmp`
+/// (never `cmp_u`). But the RESULT is clamped:
+///
+/// ```c
+/// while (*str1 && (*str1 == *str2)) { str1++; str2++; }
+/// if (*str1 < *str2) return -1;
+/// if (*str1 > *str2) return 1;
+/// return 0;
+/// ```
+///
+/// Note the asymmetry with `wcsncmp` directly below, which returns the RAW
+/// difference. Same family, same file, different contract — and unlike
+/// `strncmp`'s, this clamp is unconditional (there is no `#if defined(_WIN64)`
+/// here at all). Caught by msvcrt-difftest: raw gave -63 where msvcrt gives -1.
+///
+/// Single-pass for the same PERF reason as [`strcmp`]: the slice form scanned
+/// BOTH strings for their length before comparing a single element, and the
+/// perf gate measured it at 3.8-4.8x the C.
+#[no_mangle]
+pub unsafe extern "C" fn wcscmp(a: *const u16, b: *const u16) -> i32 {
+    let (mut p, mut q) = (a, b);
+    while *p != 0 && *p == *q {
+        p = p.add(1);
+        q = q.add(1);
+    }
+    match (*p).cmp(&*q) {
+        core::cmp::Ordering::Greater => 1,
+        core::cmp::Ordering::Less => -1,
+        core::cmp::Ordering::Equal => 0,
+    }
+}
+
+/// Unlike `strncmp`, msvcrt's `wcsncmp` has **no `_WIN64` branch** — and unlike
+/// `wcscmp` directly above, it does not clamp either. It returns the raw
+/// `*str1 - *str2` difference on every arch.
+///
+/// Single-pass, like the rest of the compare family — see [`strcmp`].
+#[no_mangle]
+pub unsafe extern "C" fn wcsncmp(a: *const u16, b: *const u16, n: usize) -> i32 {
+    if n == 0 {
+        return 0;
+    }
+    // C: `while (--n && *str1 && (*str1 == *str2)) { str1++; str2++; }`
+    let (mut p, mut q, mut k) = (a, b, n);
+    loop {
+        k -= 1;
+        if k == 0 || *p == 0 || *p != *q {
+            break;
+        }
+        p = p.add(1);
+        q = q.add(1);
+    }
+    (*p as i32) - (*q as i32)
+}
+
+/// The terminating NUL is a VALID target: msvcrt's `do { ... } while (*str++)`
+/// means `wcschr(s, 0)` returns the terminator, NOT null. cnt's `find_char`
+/// already models exactly that (`if target == ZERO { Some(s.len()) }`).
+/// Single-pass, like the narrow `strchr` — see the PERF note there.
+#[no_mangle]
+pub unsafe extern "C" fn wcschr(s: *const u16, c: u16) -> *mut u16 {
+    if s.is_null() {
+        return core::ptr::null_mut();
+    }
+    let mut p = s;
+    loop {
+        if *p == c {
+            return p as *mut u16; // NUL is a valid target when c == 0
+        }
+        if *p == 0 {
+            return core::ptr::null_mut();
+        }
+        p = p.add(1);
+    }
+}
+
+/// Same NUL-is-a-valid-target rule as `wcschr`; same single-pass contract.
+#[no_mangle]
+pub unsafe extern "C" fn wcsrchr(s: *const u16, c: u16) -> *mut u16 {
+    if s.is_null() {
+        return core::ptr::null_mut();
+    }
+    let mut p = s;
+    let mut ret = core::ptr::null_mut();
+    loop {
+        if *p == c {
+            ret = p as *mut u16;
+        }
+        if *p == 0 {
+            return ret;
+        }
+        p = p.add(1);
+    }
+}
+
+/// Is `c` one of the (non-NUL) elements of the wide set `set`?
+///
+/// Naive nested scan — deliberately, because that is exactly what the C does
+/// (`wcschr(accept, *ptr)` per element). The narrow family can afford a 256-bit
+/// `ByteSet`; the u16 space cannot be tabulated that cheaply, and msvcrt does
+/// not try.
+#[inline]
+unsafe fn wset_has(set: *const u16, c: u16) -> bool {
+    let mut p = set;
+    while *p != 0 {
+        if *p == c {
+            return true;
+        }
+        p = p.add(1);
+    }
+    false
+}
+
+/// Single-pass — see the narrow `strcat`. C: `while ((*p++ = *src++));`
+#[no_mangle]
+pub unsafe extern "C" fn wcscpy(to: *mut u16, from: *const u16) -> *mut u16 {
+    wcstr_copy(to, from);
+    to
+}
+
+/// Single-pass. C: `wcscpy(dst + wcslen(dst), src); return dst;`
+#[no_mangle]
+pub unsafe extern "C" fn wcscat(dst: *mut u16, src: *const u16) -> *mut u16 {
+    let mut d = dst;
+    while *d != 0 {
+        d = d.add(1);
+    }
+    wcstr_copy(d, src);
+    dst
+}
+
+/// ⚠️ An EMPTY HAYSTACK yields NULL — **even for an empty needle** — and that is
+/// NOT what the narrow `strstr` does.
+///
+/// msvcrt's two implementations genuinely disagree on this edge:
+///
+/// ```c
+/// char* strstr(h, n)  { needle_len = strlen(n);
+///                       if (!needle_len) return (char*)h;   /* "" -> "" */
+///                       ... }
+/// wchar_t* wcsstr(s, sub) { while (*s) { ... }              /* never entered */
+///                           return NULL; }                  /* L"" -> NULL  */
+/// ```
+///
+/// So `strstr("", "")` is `""` but `wcsstr(L"", L"")` is `NULL`. cnt's `find_sub`
+/// follows the textbook rule (empty needle matches at 0), so the empty-haystack
+/// case has to be reproduced here. Caught by msvcrt-difftest.
+#[no_mangle]
+pub unsafe extern "C" fn wcsstr(hay: *const u16, sub: *const u16) -> *mut u16 {
+    let h_s = h::wcstr_slice(hay);
+    if h_s.is_empty() {
+        return core::ptr::null_mut();
+    }
+    match cnt_rust::core_rs::string::find_sub(h_s, h::wcstr_slice(sub)) {
+        Some(i) => hay.add(i) as *mut u16,
+        None => core::ptr::null_mut(),
+    }
+}
+
+/// C: `for (ptr = str; *ptr; ptr++) if (!wcschr(accept, *ptr)) break;`
+#[no_mangle]
+pub unsafe extern "C" fn wcsspn(s: *const u16, accept: *const u16) -> usize {
+    let mut p = s;
+    let mut n = 0usize;
+    while *p != 0 && wset_has(accept, *p) {
+        p = p.add(1);
+        n += 1;
+    }
+    n
+}
+
+/// C: `for (ptr = str; *ptr; ptr++) if (wcschr(reject, *ptr)) break;`
+#[no_mangle]
+pub unsafe extern "C" fn wcscspn(s: *const u16, reject: *const u16) -> usize {
+    let mut p = s;
+    let mut n = 0usize;
+    while *p != 0 && !wset_has(reject, *p) {
+        p = p.add(1);
+        n += 1;
+    }
+    n
+}
+
+/// C: `for (; *str; str++) if (wcschr(accept, *str)) return (wchar_t*)str;`
+#[no_mangle]
+pub unsafe extern "C" fn wcspbrk(s: *const u16, accept: *const u16) -> *mut u16 {
+    let mut p = s;
+    while *p != 0 {
+        if wset_has(accept, *p) {
+            return p as *mut u16;
+        }
+        p = p.add(1);
+    }
+    core::ptr::null_mut()
+}
+
+/// An explicit swap loop rather than `slice::reverse()` — same reason the
+/// narrow `_strrev` uses one: `reverse()` pulls core's cross-crate `#[inline]`
+/// generic `swap_nonoverlapping`, and this crate is `#![no_builtins]`, so it is
+/// not worth betting the link on which generics get instantiated. The loop is
+/// semantically identical and pulls nothing.
+#[no_mangle]
+pub unsafe extern "C" fn _wcsrev(s: *mut u16) -> *mut u16 {
+    let n = h::wcstr_slice(s as *const u16).len();
+    let buf = h::wraw_mut_slice(s, n);
+    if n > 1 {
+        let (mut i, mut j) = (0usize, n - 1);
+        while i < j {
+            let t = buf[i];
+            buf[i] = buf[j];
+            buf[j] = t;
+            i += 1;
+            j -= 1;
+        }
+    }
+    s
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _wcsset(s: *mut u16, c: u16) -> *mut u16 {
+    let n = h::wcstr_slice(s as *const u16).len();
+    cnt_rust::core_rs::strmut::fill(h::wraw_mut_slice(s, n), c);
+    s
+}
+
+/// msvcrt: `while ((n-- > 0) && *str) *str++ = c; return ret;`
+///
+/// ⚠️ **The scan MUST be bounded by `n`** — the C reads at most `n` chars. This
+/// is the same shape that shipped an out-of-bounds read in the narrow
+/// `_strnset` (field manual §9.61): computing the length with an *unbounded*
+/// `wcstr_slice(..).len()` and then `min(_, n)` yields byte-identical VALUES
+/// (the fill stays bounded either way), so a value-comparing fuzz reports MATCH
+/// while the *read* walks off the end of a buffer an `n`-suffixed API is
+/// explicitly allowed to leave unterminated. `oob_guard` is what catches it.
+///
+/// Returns the **start** pointer — NOT the advanced one. (`_strnset` returns
+/// the advanced pointer; its wide twin does not.)
+#[no_mangle]
+pub unsafe extern "C" fn _wcsnset(s: *mut u16, c: u16, n: usize) -> *mut u16 {
+    if s.is_null() || n == 0 {
+        return s;
+    }
+    let take = h::wcstr_slice_bounded(s as *const u16, n).len();
+    cnt_rust::core_rs::strmut::fill(h::wraw_mut_slice(s, take), c);
+    s
 }
 
 // NOTE: the no_std runtime bits (`#[panic_handler]` + `rust_eh_personality`)

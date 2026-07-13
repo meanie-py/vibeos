@@ -46,6 +46,38 @@ use core::ffi::c_void;
 
 // ── the genuine msvcrt C reference (build.rs, from the real string.c) ──
 extern "C" {
+    // ── wave 4: the wide family, from the wcs.c reference TU ──
+    fn ref_wcslen(s: *const u16) -> usize;
+    fn ref_wcscmp(a: *const u16, b: *const u16) -> i32;
+    fn ref_wcsncmp(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn ref_wcschr(s: *const u16, c: u16) -> *mut u16;
+    fn ref_wcsrchr(s: *const u16, c: u16) -> *mut u16;
+    fn ref_wcsstr(h: *const u16, n: *const u16) -> *mut u16;
+    fn ref_wcsspn(s: *const u16, a: *const u16) -> usize;
+    fn ref_wcscspn(s: *const u16, r: *const u16) -> usize;
+    fn ref_wcspbrk(s: *const u16, a: *const u16) -> *mut u16;
+    fn ref_wcscpy(d: *mut u16, s: *const u16) -> *mut u16;
+    fn ref_wcscat(d: *mut u16, s: *const u16) -> *mut u16;
+    fn ref__wcsrev(s: *mut u16) -> *mut u16;
+    fn ref__wcsset(s: *mut u16, c: u16) -> *mut u16;
+    fn ref__wcsnset(s: *mut u16, c: u16, n: usize) -> *mut u16;
+
+    // the SHIPPING Rust (msvcrt-crt-rust) wide wrappers
+    fn wcslen(s: *const u16) -> usize;
+    fn wcscmp(a: *const u16, b: *const u16) -> i32;
+    fn wcsncmp(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn wcschr(s: *const u16, c: u16) -> *mut u16;
+    fn wcsrchr(s: *const u16, c: u16) -> *mut u16;
+    fn wcsstr(h: *const u16, n: *const u16) -> *mut u16;
+    fn wcsspn(s: *const u16, a: *const u16) -> usize;
+    fn wcscspn(s: *const u16, r: *const u16) -> usize;
+    fn wcspbrk(s: *const u16, a: *const u16) -> *mut u16;
+    fn wcscpy(d: *mut u16, s: *const u16) -> *mut u16;
+    fn wcscat(d: *mut u16, s: *const u16) -> *mut u16;
+    fn _wcsrev(s: *mut u16) -> *mut u16;
+    fn _wcsset(s: *mut u16, c: u16) -> *mut u16;
+    fn _wcsnset(s: *mut u16, c: u16, n: usize) -> *mut u16;
+
     fn ref_strlen(s: *const u8) -> usize;
     fn ref_strnlen(s: *const u8, m: usize) -> usize;
     fn ref_strcmp(a: *const u8, b: *const u8) -> i32;
@@ -146,6 +178,31 @@ fn gen_str(r: &mut Rng, maxlen: usize) -> Vec<u8> {
     v
 }
 
+/// The WIDE alphabet (wave 4). Deliberately weighted toward u16 values with the
+/// TOP BIT SET (0x8000..=0xFFFF): those are exactly where a signed-vs-unsigned
+/// element compare would diverge, which is the bug class that bit the narrow
+/// family in wave 3. If cnt-rust's `Elem for u16` were ever "fixed" to a signed
+/// diff, `wcscmp`/`wcsncmp` would flip sign on these and this fuzz would catch
+/// it. Also includes 0x0080..=0x00FF (the bytes that broke the narrow side) and
+/// lone surrogates, which are legal wchar_t values msvcrt treats as opaque.
+fn gen_wstr(r: &mut Rng, maxlen: usize) -> Vec<u16> {
+    let n = r.below(maxlen);
+    let mut v = Vec::with_capacity(n + 1);
+    for _ in 0..n {
+        let w = match r.below(6) {
+            0 => (b'a' + (r.below(26) as u8)) as u16,
+            1 => (b'A' + (r.below(26) as u8)) as u16,
+            2 => (b'0' + (r.below(10) as u8)) as u16,
+            3 => 0x80u16 + (r.below(0x80) as u16), // the narrow high-byte range
+            4 => 0x8000u16 + (r.below(0x8000) as u16), // TOP BIT SET
+            _ => 1 + (r.below(0xFFFE) as u16),
+        };
+        v.push(w);
+    }
+    v.push(0);
+    v
+}
+
 // ── verdict bookkeeping ──
 #[derive(PartialEq)]
 enum V { Match, SignOnly, Diverge }
@@ -193,6 +250,20 @@ fn check_buf(name: &'static str, mut f: impl FnMut(&mut Rng) -> (Vec<u8>, isize,
     record(name, V::Match, String::new());
 }
 
+/// `check_buf`'s wide twin: both the returned pointer offset (in ELEMENTS) and
+/// the full u16 destination must agree.
+fn check_wbuf(name: &'static str, mut f: impl FnMut(&mut Rng) -> (Vec<u16>, isize, Vec<u16>, isize, String)) {
+    let mut r = Rng(0x2545F4914F6CDD1D);
+    for _ in 0..20_000 {
+        let (gb, go, wb, wo, ctx) = f(&mut r);
+        if gb != wb || go != wo {
+            record(name, V::Diverge, format!("buf/ret differ [{ctx}]\n        cnt   ={gb:04x?} ret+{go}\n        msvcrt={wb:04x?} ret+{wo}"));
+            return;
+        }
+    }
+    record(name, V::Match, String::new());
+}
+
 /// Prove the shared-name shims resolve to MSVCRT-CRT-RUST, not glibc. The
 /// wrappers' `cstr_slice` NULL-guards (NULL → empty slice), so `strlen(NULL)`
 /// is 0; glibc's would fault. If this ever silently "passes" against glibc the
@@ -210,7 +281,17 @@ unsafe fn assert_shims_live() {
     let mut t = *b"abcd\0";
     let p = _strnset(t.as_mut_ptr(), b'z' as i32, 2);
     assert_eq!(p as usize - t.as_ptr() as usize, 2, "_strnset returned the START — that is cnt-rust's contract, not msvcrt's: the harness is linked against the wrong crate");
-    println!("  [self-check] msvcrt-crt-rust shims are live (strlen(NULL)==0, _strrev ok, _strnset returns str+n)");
+
+    // Wave 4: the same gate for the WIDE shims. glibc also exports `wcslen`, so
+    // without this we could be grading glibc's (which would fault on NULL, not
+    // return 0) and never know.
+    let wn = wcslen(core::ptr::null());
+    assert_eq!(wn, 0, "wcslen(NULL)!=0 — the wide shims are NOT msvcrt-crt-rust's");
+    let mut wb = [b'a' as u16, b'b' as u16, 0];
+    let _ = _wcsrev(wb.as_mut_ptr());
+    assert_eq!(wb, [b'b' as u16, b'a' as u16, 0], "_wcsrev misbehaved — bad link");
+
+    println!("  [self-check] msvcrt-crt-rust shims are live — narrow (strlen(NULL)==0, _strrev ok, _strnset returns str+n) and wide (wcslen(NULL)==0, _wcsrev ok)");
 }
 
 fn main() {
@@ -228,11 +309,14 @@ fn main() {
     }
     println!("\n  {m} MATCH   {s} SIGN-ONLY   {d} DIVERGE   (of {} tested)", res.len());
     println!("\n  DEFERRED (not graded, not flipped — locale-dependent, Phase D):");
-    println!("    _stricmp / _strnicmp / _memicmp");
+    println!("    narrow: _stricmp / _strnicmp / _memicmp");
+    println!("    wide:   _wcsicmp / _wcsnicmp / _wcsicoll / _wcsnicoll / wcscoll");
+    println!("            _wcslwr / _wcsupr / towlower / towupper / the isw* ctype block");
     println!("      msvcrt folds via get_locinfo()->lc_handle[LC_CTYPE] + _tolower_l;");
     println!("      cnt-rust's fold is locale-blind ASCII. They agree ONLY in the \"C\"");
     println!("      locale — which is exactly what this harness pins, so a MATCH here");
-    println!("      would be a harness artifact, not a license to flip. See lane plan.\n");
+    println!("      would be a harness artifact, not a license to flip. See lane plan");
+    println!("      and field manual §9.60 (\"a harness can only falsify what it VARIES\").\n");
 }
 
 unsafe fn run() {
@@ -364,4 +448,61 @@ unsafe fn run() {
         let (o1, o2) = (if p1.is_null() { -1 } else { p1 as isize - d1.as_ptr() as isize },
                         if p2.is_null() { -1 } else { p2 as isize - d2.as_ptr() as isize });
         (d1, o1, d2, o2, format!("c={c} n={n}")) });
+
+    // ─────────── WAVE 4: the wide family (vs the wcs.c reference TU) ───────────
+    // Offsets are in ELEMENTS (both sides use the same formula, so the compare is
+    // valid either way; /2 just makes a divergence report readable).
+    macro_rules! woff { ($p:expr, $base:expr) => {
+        if $p.is_null() { -1i64 } else { (($p as usize - $base.as_ptr() as usize) / 2) as i64 }
+    } }
+
+    check_int("wcslen", false, |r| { let a = gen_wstr(r, 40);
+        (wcslen(a.as_ptr()) as i64, ref_wcslen(a.as_ptr()) as i64, format!("{a:04x?}")) });
+    check_int("wcscmp", false, |r| { let a = gen_wstr(r, 20); let b = if r.below(3) == 0 { a.clone() } else { gen_wstr(r, 20) };
+        (wcscmp(a.as_ptr(), b.as_ptr()) as i64, ref_wcscmp(a.as_ptr(), b.as_ptr()) as i64, format!("{a:04x?} vs {b:04x?}")) });
+    check_int("wcsncmp", false, |r| { let a = gen_wstr(r, 20); let b = if r.below(3) == 0 { a.clone() } else { gen_wstr(r, 20) }; let n = r.below(22);
+        (wcsncmp(a.as_ptr(), b.as_ptr(), n) as i64, ref_wcsncmp(a.as_ptr(), b.as_ptr(), n) as i64, format!("n={n} {a:04x?} vs {b:04x?}")) });
+    check_int("wcschr", false, |r| { let a = gen_wstr(r, 30); let c = r.below(0x10000) as u16;
+        (woff!(wcschr(a.as_ptr(), c), a), woff!(ref_wcschr(a.as_ptr(), c), a), format!("c={c:04x} {a:04x?}")) });
+    check_int("wcsrchr", false, |r| { let a = gen_wstr(r, 30); let c = r.below(0x10000) as u16;
+        (woff!(wcsrchr(a.as_ptr(), c), a), woff!(ref_wcsrchr(a.as_ptr(), c), a), format!("c={c:04x} {a:04x?}")) });
+    check_int("wcsstr", false, |r| { let h = gen_wstr(r, 30);
+        let n = if r.below(2) == 0 && h.len() > 2 { let s = r.below(h.len() - 1); let e = s + r.below(h.len() - s); let mut v = h[s..e].to_vec(); v.push(0); v } else { gen_wstr(r, 6) };
+        (woff!(wcsstr(h.as_ptr(), n.as_ptr()), h), woff!(ref_wcsstr(h.as_ptr(), n.as_ptr()), h), format!("{h:04x?} / {n:04x?}")) });
+    check_int("wcsspn", false, |r| { let a = gen_wstr(r, 25); let b = gen_wstr(r, 8);
+        (wcsspn(a.as_ptr(), b.as_ptr()) as i64, ref_wcsspn(a.as_ptr(), b.as_ptr()) as i64, format!("{a:04x?} / {b:04x?}")) });
+    check_int("wcscspn", false, |r| { let a = gen_wstr(r, 25); let b = gen_wstr(r, 8);
+        (wcscspn(a.as_ptr(), b.as_ptr()) as i64, ref_wcscspn(a.as_ptr(), b.as_ptr()) as i64, format!("{a:04x?} / {b:04x?}")) });
+    check_int("wcspbrk", false, |r| { let a = gen_wstr(r, 25); let b = gen_wstr(r, 8);
+        (woff!(wcspbrk(a.as_ptr(), b.as_ptr()), a), woff!(ref_wcspbrk(a.as_ptr(), b.as_ptr()), a), format!("{a:04x?} / {b:04x?}")) });
+
+    check_wbuf("wcscpy", |r| { let s = gen_wstr(r, 30);
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 48], vec![0xAAAAu16; 48]);
+        let p1 = wcscpy(d1.as_mut_ptr(), s.as_ptr()); let p2 = ref_wcscpy(d2.as_mut_ptr(), s.as_ptr());
+        let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
+        (d1, o1, d2, o2, format!("{s:04x?}")) });
+    check_wbuf("wcscat", |r| { let a = gen_wstr(r, 12); let s = gen_wstr(r, 12);
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 48], vec![0xAAAAu16; 48]);
+        d1[..a.len()].copy_from_slice(&a); d2[..a.len()].copy_from_slice(&a);
+        let p1 = wcscat(d1.as_mut_ptr(), s.as_ptr()); let p2 = ref_wcscat(d2.as_mut_ptr(), s.as_ptr());
+        let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
+        (d1, o1, d2, o2, format!("{a:04x?} + {s:04x?}")) });
+    check_wbuf("_wcsrev", |r| { let s = gen_wstr(r, 30);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        let p1 = _wcsrev(d1.as_mut_ptr()); let p2 = ref__wcsrev(d2.as_mut_ptr());
+        let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
+        (d1, o1, d2, o2, format!("{s:04x?}")) });
+    check_wbuf("_wcsset", |r| { let s = gen_wstr(r, 30); let c = r.below(0x10000) as u16;
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        let p1 = _wcsset(d1.as_mut_ptr(), c); let p2 = ref__wcsset(d2.as_mut_ptr(), c);
+        let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
+        (d1, o1, d2, o2, format!("c={c:04x}")) });
+    // NB: `_wcsnset` returns the START (msvcrt: `wchar_t *ret = str;`), unlike its
+    // narrow twin `_strnset`, which returns the ADVANCED pointer. check_wbuf
+    // compares the returned offset, so this asymmetry is graded, not assumed.
+    check_wbuf("_wcsnset", |r| { let s = gen_wstr(r, 30); let c = r.below(0x10000) as u16; let n = r.below(34);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        let p1 = _wcsnset(d1.as_mut_ptr(), c, n); let p2 = ref__wcsnset(d2.as_mut_ptr(), c, n);
+        let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
+        (d1, o1, d2, o2, format!("c={c:04x} n={n}")) });
 }

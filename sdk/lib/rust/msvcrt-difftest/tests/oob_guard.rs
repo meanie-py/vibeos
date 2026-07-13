@@ -41,6 +41,12 @@ extern "C" {
     fn memchr(b: *const c_void, c: i32, n: usize) -> *mut c_void;
     fn _memccpy(d: *mut c_void, s: *const c_void, c: i32, n: usize) -> *mut c_void;
     fn _strnset(s: *mut u8, c: i32, n: usize) -> *mut u8;
+
+    // wave 4 — the WIDE n-suffixed family. `_wcsnset` has the exact shape that
+    // shipped the out-of-bounds read in the narrow `_strnset` (§9.61), so it is
+    // guarded from day one rather than after the fact.
+    fn wcsncmp(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn _wcsnset(s: *mut u16, c: u16, n: usize) -> *mut u16;
 }
 
 const PAGE: usize = 4096;
@@ -67,6 +73,33 @@ unsafe fn guarded(k: usize) -> *mut u8 {
     // NUL-free on purpose: an unbounded scan has nothing to stop it.
     for i in 0..k {
         *p.add(i) = b'A' + (i % 26) as u8;
+    }
+    p
+}
+
+/// `guarded()`'s wide twin: `k` NUL-free u16s ending EXACTLY at the guard page.
+/// Reading `p[k]` faults. Every element has BOTH bytes non-zero, so a scan that
+/// is looking for a u16 NUL has nothing to stop it before the guard.
+unsafe fn wguarded(k: usize) -> *mut u16 {
+    assert!(k * 2 <= PAGE);
+    let base = libc::mmap(
+        core::ptr::null_mut(),
+        2 * PAGE,
+        libc::PROT_READ | libc::PROT_WRITE,
+        libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+        -1,
+        0,
+    ) as *mut u8;
+    assert!(base as isize != -1, "mmap failed");
+    assert_eq!(
+        libc::mprotect(base.add(PAGE) as *mut c_void, PAGE, libc::PROT_NONE),
+        0,
+        "mprotect failed"
+    );
+    let p = base.add(PAGE - k * 2) as *mut u16;
+    for i in 0..k {
+        // 0x4141.. — never zero in EITHER byte.
+        *p.add(i) = 0x4141u16 + (i % 26) as u16;
     }
     p
 }
@@ -119,6 +152,15 @@ fn main() {
         })),
         ("_strnset", Box::new(move || unsafe {
             core::hint::black_box(_strnset(guarded(k), b'z' as i32, k));
+        })),
+
+        // ── wave 4: the wide n-suffixed family ──
+        ("wcsncmp", Box::new(move || unsafe {
+            let (a, b) = (wguarded(k), wguarded(k));
+            core::hint::black_box(wcsncmp(a, b, k));
+        })),
+        ("_wcsnset", Box::new(move || unsafe {
+            core::hint::black_box(_wcsnset(wguarded(k), 0x7A7A, k));
         })),
     ];
 
