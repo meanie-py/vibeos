@@ -102,6 +102,37 @@ extern "system" {
     pub fn IsBadCodePtr(lpfn: FARPROC) -> BOOL;
     pub fn GetLastError() -> DWORD;
     pub fn SetLastError(dwErrCode: DWORD);
+    // ---- Tier-D (storage32 / stg_prop / datacache) additions ----
+    pub fn CreateFileW(
+        lpFileName: *const u16,
+        dwDesiredAccess: DWORD,
+        dwShareMode: DWORD,
+        lpSecurityAttributes: *mut c_void,
+        dwCreationDisposition: DWORD,
+        dwFlagsAndAttributes: DWORD,
+        hTemplateFile: HANDLE,
+    ) -> HANDLE;
+    pub fn GetTempPathW(nBufferLength: DWORD, lpBuffer: *mut u16) -> DWORD;
+    pub fn GetTempFileNameW(
+        lpPathName: *const u16,
+        lpPrefixString: *const u16,
+        uUnique: UINT,
+        lpTempFileName: *mut u16,
+    ) -> UINT;
+    /// Deliberately the ANSI/legacy pair — stg_prop.c compares codepage-tagged names.
+    pub fn lstrcmpA(lpString1: *const c_char, lpString2: *const c_char) -> c_int;
+    pub fn lstrcmpiA(lpString1: *const c_char, lpString2: *const c_char) -> c_int;
+    pub fn GetACP() -> UINT;
+    /// stg_prop.c stamps the property-set header's originator OS with this.
+    pub fn GetVersion() -> DWORD;
+
+    // advapi32
+    pub fn RegQueryValueA(
+        hKey: HKEY,
+        lpSubKey: *const c_char,
+        lpData: *mut c_char,
+        lpcbData: *mut c_long,
+    ) -> c_long;
 }
 
 // ---- wine/heap.h inlines (the C had them as static inline in a header, so
@@ -134,4 +165,5 @@ pub unsafe fn heap_realloc(mem: LPVOID, len: SIZE_T) -> LPVOID {
 #[inline]
 pub unsafe fn heap_free(mem: LPVOID) -> BOOL {
     HeapFree(GetProcessHeap(), 0, mem)
+
 }

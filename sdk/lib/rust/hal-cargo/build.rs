@@ -110,7 +110,7 @@ fn main() {
         // memcmp → compiler-builtins-mem; no chkstk (amd64 takes __chkstk from
         // clang_rt.builtins).
         "x86_64" => (
-            "x86_64-kernel.json",
+            "x86_64-pc-windows-gnu",
             "HalInitSystem",
             0x0001_0000,
             &["hal/halx86/apic/apictrap.S", "hal/halx86/apic/tsccal.S"],
@@ -132,7 +132,7 @@ fn main() {
         // memcmp now comes from compiler-builtins-mem (build-std), so the last
         // cmake .a (libmemcmp.a) is dropped → arm64 hal.dll is ZERO cmake .a.
         "aarch64" => (
-            "aarch64-kernel.json",
+            "aarch64-pc-windows-gnullvm",
             "HalInitSystem",
             0x7FFB_0000_0000,
             &[],

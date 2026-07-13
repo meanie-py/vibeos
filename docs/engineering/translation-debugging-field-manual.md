@@ -1638,6 +1638,47 @@ For **pointer-free / arch-neutral** translations (string, SID, ACL, SD, security
 
 Rule of thumb: **byte-diffable ⇔ pointer-free pure function.** If the function computes an output buffer from inputs with no VM/handle/PEB side effects, byte-diff it. Otherwise, smoke it. (A ready-made harness for this lives in `rust-in-kernel.md` → "Differential-fuzz parity harness".)
 
+## Translating a COM DLL with a private header (ole32/oleaut32-class)
+
+Bugs that recur whenever you flip a **user-mode COM DLL** — i.e. a surface whose shape is
+"objects with vtables, a module-private header full of types and `static inline`s, and an
+on-disk/wire format". Learned flipping all 29 TUs of ole32 (2026-07-12); every item below
+is a bug that **compiled and linked cleanly** and would have shipped.
+
+### The three things the translator silently omits
+
+`rustconv` translates *functions*. It does not translate headers, and it does not translate
+file-scope data. Before you start, grep the C and treat these as a **separate authoring
+task**, budgeted up front:
+
+| Missing | How to find it | Consequence if you don't notice |
+|---|---|---|
+| The module's private header | `dll/.../<mod>.h` — types, the class hierarchy, `static inline` dispatchers, on-disk offsets | The Rust *references* them (storage32.rs did, ~130×) as `extern` symbols that link to nothing. Looks like an import problem; is a missing-translation problem. |
+| Every `static const ...Vtbl` table | `grep -nE '^static const .*Vtbl' <mod>.c` | The objects have **no methods at all**. 23 tables were missing from ole32's Tier-D. |
+| An export's attributes | the `.spec` file is ground truth | `StgCreateDocfile` came back a module-private *Rust-ABI* fn → `_StgCreateDocfile@16` simply absent from the DLL. Link error, at least — but only because a `.def` forced it. |
+
+### Symptom → cause → fix catalog
+
+| Symptom | Root cause | Fix |
+|---|---|---|
+| **Stack corruption on the first call to any COM method — i386 only** | Every vtbl slot emitted as a plain `unsafe fn` (the **Rust** ABI) instead of `STDMETHODCALLTYPE`. `extern "C"` links on amd64/arm64 and is wrong on i386, where COM methods are `__stdcall`. ~130 slots across ole32's Tier-D. | Wrap every vtbl method in a `stdmethod!` macro emitting `extern "stdcall"` on x86 / `extern "C"` elsewhere. Note `extern "system"` does NOT unify with bindgen's vtbl slot types — bindgen spells the ABI concretely per-arch. |
+| **A `match` arm silently swallows every input** | A **missing constant** turns a `match` arm into an irrefutable **binding**. rustc only whispers `unreachable pattern`. `StgOpenStorageEx` treated every `stgfmt` as `STGFMT_ANY`; datacache matched a `u16 cfFormat` against `DWORD` constants so *every* format took the first arm. | Never hand-transcribe a constant — `tools/harvest_consts.py` resolves it from the header the C compiles against and cites `file:line`. `verify_match_consts` in `vibeos-cli check` is the tripwire. |
+| **Behaviour is exactly inverted / a flag never fires** | A constant transcribed from memory with the **wrong value**. Seven in one pass: `STG_E_INVALIDHEADER` that was really `STG_E_INVALIDHANDLE`; `DISCARDCACHE_SAVEIFDIRTY` as `1` when the header says `0`; `PROPSETFLAG_NONSIMPLE` tested as `& 2` (that is ANSI; NONSIMPLE is 1); `PROPSETFLAG_UNBUFFERED` as `& 0x1000` (real value 4 — auto-commit never fired). **No compile error, no link error.** | Same: harvest, never type. `scan_inline_flag_literals` catches the `0x1000 /* STGM_WRITE */` shape where the comment and the value disagree. |
+| **Heap corruption a long way from the write** | `core::ptr::write_bytes(ptr, v, n)` / `copy_nonoverlapping` count **ELEMENTS, not bytes**, but the C's `memset`/`memcpy` count bytes. A `*mut ULONG` with `n = sizeof(array)` writes 4× the array. Also seen: a 64-*byte* `memcpy` that became 64 `WCHAR`s. | Cast the pointer to `*mut u8` whenever the count came from `sizeof`. `scan_silent_failures`' `WRITE_BYTES_SIZEOF` is the tripwire (suppress a verified FP with `// nolint: silent-failure (...)` **on the finding line**). |
+| **Every record written to disk is corrupt, but the code looks right** | A `#pragma pack(N)` struct translated as plain `#[repr(C)]`. ole32's `meta_placeable` became 28 bytes instead of 22. | Check the C for `#pragma pack` around every struct that touches a stream/file, and use `#[repr(C, packed(N))]`. Wire-format structs deserve a `size_of` assertion. |
+| **A loop never iterates, or skips its first element** | The C's list macros (`LIST_FOR_EACH_ENTRY`, wine's intrusive `struct list`) emitted as *function calls*, or hand-expanded wrong — `(*list.next).next` starts at the second element. `deleteStorageContents`' walk was rewritten into a loop that never iterates; `deleteStreamContents`' body was dropped entirely (→ use-after-free of the parent storage). | Provide the macros as real Rust macros and re-derive every hand-rolled walk from the C. Beware: a macro whose link-advance is *after* the body cannot host a `continue` — the C body may rely on that. |
+| **An `extern "C"` decl that links but calls wrong on i386** | An item in a module **shadows a glob import**. A file that declares `extern "C" { fn Foo(); }` locally will use *that*, not the prelude's correct `extern "system"` one — undecorated on i386, where the real symbol is `_Foo@N`. | Strip local extern blocks at integration and route every call through one shared, correctly-typed surface. `scan_cc_mismatch` is the tripwire. Note the inverse too: `DECLSPEC_HIDDEN` helpers declared **without** `WINAPI` really are cdecl — don't "fix" them to stdcall. |
+| **Two globs, one name → E0659 the day someone calls it** | A symbol declared `extern` in a shared "these still live in C" module AND defined by a flipped module. Both reachable through the prelude's globs. It stays *latent* until some file calls the name unqualified. | When you flip a TU into the crate, **delete its decl from the exports module**. 8 of ole32's were already latent before Tier-D made them fire. |
+| **`extern "thiscall"` is unstable and the C is an asm thunk** | i386 C++ `this`-convention adapters (wine's `DEFINE_STDCALL_WRAPPER`). Calling the slot with the C ABI instead — `this` on the stack where the callee expects `ecx` — corrupts the stack every call. | Write the thunk as a **naked function** (`#[unsafe(naked)]` + `naked_asm!`, stable since 1.88) matching the C's asm instruction for instruction. Do not silently degrade to the wrong ABI. See `ring/stg_prop.rs`'s `Allocate_PMemoryAllocator`. |
+
+**Cross-cutting lesson:** in a *kernel* flip the failure mode is a BUGCHECK — loud, and the
+smoke harness catches it. In a **COM DLL** flip the failure mode is a function that returns
+the wrong HRESULT, writes a subtly wrong byte to disk, or takes the wrong `match` arm. The
+boot smoke will be **green**. The lint gate (`verify_match_consts`, `scan_cc_mismatch`,
+`scan_inline_flag_literals`, `scan_silent_failures`) is doing most of the real work here —
+run `vibeos-cli check` and take its 0-NEW gate seriously; on this flip it caught four real
+bugs *after* the crate compiled clean and the OS booted on all three arches.
+
 ## 9. Kernel crash-hunting techniques (live BUGCHECK / hang / heap hunts)
 
 The *how-to-hunt* layer: techniques for chasing a live kernel crash (BUGCHECK, hang, heap
@@ -5463,9 +5504,343 @@ winlogon's `TryStartWow64File`). `ReadFile`'s returned byte count *is* `IOSB.Inf
 so asserting it catches this class by construction. Verdict 0x600D; `[file32]` lines on
 serial.
 
+
+
+
+### 9.63 (ROOT-CAUSED + FIXED 2026-07-12) A slice-based core cannot express a single-pass C string primitive — the CRT perf tax, and the gate that was blind to it
+
+**Symptom.** A Rust CRT flip is byte-for-byte correct (a 20k-case differential fuzz
+says MATCH on every input) and 2–5× slower than the C it replaced. Nothing in the
+build, the lints, or the value-comparing harness says a word.
+
+**Root cause — structural, not a typo.** The idiomatic way to wrap a safe Rust core
+is to hand it slices:
+
+```rust
+pub unsafe extern "C" fn strcmp(a: *const u8, b: *const u8) -> i32 {
+    clamp(cmp_u(cstr_slice(a), cstr_slice(b)))     // 3 passes
+}
+```
+
+`cstr_slice` must find the NUL to build a `&[u8]`. So this scans `a`, scans `b`,
+and only then walks them both to compare. The C is **one** pass and never computes
+a length at all:
+
+```c
+while (*str1 && *str1 == *str2) { str1++; str2++; }
+```
+
+**The rule: a `&[T]` requires a length, and computing the length is exactly the scan
+the C skips.** Any C string primitive whose loop *discovers* the terminator as it
+works — `strcmp`, `strcpy`, `strcat`, `strchr`, `strstr`, `strspn`, and every wide
+twin — pays an extra full pass per input when routed through a slice API. Measured
+on msvcrt (2026-07-12):
+
+| flip | slice form | single-pass form | why |
+|---|---|---|---|
+| `wcscmp` | **3.8–4.8×** | 0.83× | 2 length scans + 1 compare walk vs 1 walk |
+| `strchr` | **2.01×** | 1.00× | scan-to-NUL then search vs one do-while |
+| `strcat` | **2.5×** | within bar | scan dst + scan src + copy vs scan dst + copy |
+| `strcmp` | *(unmeasured — see below)* | 1.00× | same 3-pass shape, shipped on master |
+
+**Fix.** Transcribe the copy/compare/search families directly against their C bodies
+as single-pass raw-pointer loops, in the *wrapper* crate. This is not a retreat from
+the "assemble from cnt-rust" strategy — it is the same call the lane already made for
+`memcmp` (hand-written word-wise, because cnt's byte-zip `mem::cmp` measured 10.3× off)
+and `_memccpy` (msvcrt's algorithm genuinely differs). Where the core's *shape* is
+wrong for the contract, the wrapper carries the body.
+
+Narrow set-based searchers (`strspn`/`strcspn`/`strpbrk`) can go one better with a
+256-bit `ByteSet` — which is precisely what msvcrt's own `strcspn` does (`BOOL
+rejects[256]` + `memset`). The wide twins stay naive nested scans, because their C
+is a naive nested scan (the u16 space is not cheaply tabulated, and msvcrt does not
+try).
+
+**The meta-lesson — a perf gate only defends what it BENCHES.** The msvcrt perf gate
+existed (it was built *because* wave 2 shipped an unvectorizable `memset` and blew the
+net suite's timeouts), and it was green. But it benched only
+`memset/memcpy/memcmp/memchr/strlen`. `strcmp` — the same 3-pass shape, served to
+every caller in the system — was never in the list, so it went slow through two waves
+and was found only because its *wide twin* happened to be benched. When you add a
+throughput gate, enumerate the flips and bench **all** of the hot ones; a gate with a
+coverage hole reads as "fast" exactly like a gate with none.
+
+**Two gate-hygiene corollaries found the same day:**
+- **Bench best-of-3, not the mean.** This host runs other agents' builds and QEMUs. A
+  scheduler steal inflates a sample, and under a mean that lands as a phantom
+  regression at the small sizes where call overhead already dominates. The minimum
+  time is the least-contended sample — the one that reflects the code, not the host.
+- **A gate that cries wolf in the default profile is a gate people learn to ignore.**
+  `opt-level = 3` for the CRT lives in `[profile.release.package.*]`, so a plain
+  `cargo test` compared an *unoptimized* Rust body against `-O2` C and reported ~100×
+  "regressions" that do not exist. Make it skip, loudly, with the reason and the right
+  command — do not let a bogus red become the normal state.
+
+**Related:** §9.60 (a differential harness can only falsify what it VARIES),
+§9.61 (an unbounded scan inside a bounded `n`-suffixed CRT function). Together these
+are the three orthogonal blind spots of a CRT flip: wrong **values** (`classify`),
+right answer / wrong **memory** (`oob_guard`), right answer / too **slowly** (`perf`).
+Each is blind to what the others catch.
+
+
+### 9.64 (ROOT-CAUSED + FIXED 2026-07-12) A refactor can silently drop a *tolerance* the old code provided — NULL stopped behaving as `""`, and no value-comparing test could ever see it
+
+**Symptom.** A pure-refactor of a CRT primitive (same contract, faster body) passes a
+20,000-case differential fuzz at 45/45 MATCH, passes the OOB guard, passes the perf
+gate — and then the OS boots to desktop on all three arches while the **net suite**
+goes 15/15 → 13/15, with a user-mode winsock round-trip that never completes.
+
+**Root cause.** The old wrappers reached their input through a helper that
+**NULL-guards**:
+
+```rust
+unsafe fn cstr_slice<'a>(p: *const u8) -> &'a [u8] {
+    if p.is_null() { return &[]; }      // <-- NULL behaves as ""
+    ...
+}
+```
+
+So the *shipped, gate-green* behaviour of `strcmp`/`strcpy`/`strcat`/`strspn`/… had
+always been **"NULL is an empty string"** — deliberately more forgiving than the C,
+which dereferences and dies. The single-pass perf rewrite (§9.63) walks raw pointers:
+
+```rust
+let (mut p, mut q) = (a, b);            // <-- NULL now faults
+while *p != 0 && *p == *q { ... }
+```
+
+The contract for every *real* string is byte-identical. The only thing that changed is
+an input the harness never generates.
+
+**Why nothing caught it.** `gen_str()` produces real NUL-terminated buffers. It has no
+notion of nullness, so the fuzz explored 20,000 points in a space that does not contain
+the bug. This is §9.60's rule biting again in a new dimension — *a differential harness
+can only falsify what it VARIES* — and the dimension here is not a value, a length, or a
+locale. It is **the validity of the pointer itself**.
+
+Note the asymmetry that makes this class nasty: being *more* forgiving than the C is
+harmless and nobody notices. Silently becoming *less* forgiving than the **last shipped
+build** is what breaks the boot — and the reference C is no help, because the C faults
+too, so there is no `ref_*` to diff against. **The oracle is the previous build, not the
+C.**
+
+**Fix.** Restore the tolerance explicitly, and keep the single-pass body:
+
+```rust
+static EMPTY_A: [u8; 1] = [0];
+#[inline] fn nz(p: *const u8) -> *const u8 {
+    if p.is_null() { EMPTY_A.as_ptr() } else { p }
+}
+// strcmp: let (mut p, mut q) = (nz(a), nz(b));
+```
+
+Redirecting NULL to a static NUL reproduces `&[]` semantics **exactly** (empty compares,
+copies, and spans identically) for one perfectly-predicted branch — measured cost: none
+(`strcmp` 1.01x, `strchr` 1.00x, `strcat` 0.99x after the guards).
+
+**Detector (permanent).** `classify::assert_null_tolerant()` — NULL is now a first-class
+asserted input for every flipped reader, narrow and wide. Validated by NEGATIVE CONTROL:
+delete one `nz()` and the harness dies with SIGSEGV. Because the genuine msvcrt faults
+here, this is graded against **the crate's own contract**, not against a `ref_*`.
+
+**The generalizable rule.**
+> When you refactor a wrapper, enumerate the *implicit guarantees of the helper you are
+> removing*, not just the contract of the function you are rewriting. A NULL guard, a
+> bounds clamp, an alignment fixup, a zero-length early-out — these live in the helper,
+> are invisible at the call site, and vanish silently when you inline the helper away.
+
+Same shape as §9.61 (an unbounded scan inside a bounded function): the *values* were
+right in both cases. What changed was something orthogonal to value — there, which
+memory was touched; here, which inputs are survivable.
+
+**How it was actually found.** Not by the harness. The net suite failed and every surface
+signal said "flake" (NET_FLAKE is an auto-retried class; another agent was gating
+concurrently; the failing test *set* varied run to run). The thing that settled it was
+the **A/B control**: rebuild the previous commit, same host, same suite — 15/15 twice,
+against 2-failed 5/5 for the new one. That is the same move that caught the wave-2 perf
+regression, and it is the only reliable way to separate "my change" from "this host is
+busy."
+
+> **Run the A/B control before you accept a flake label.** It costs one build. The
+> alternative is landing a regression that the retry logic will keep excusing.
+
+### 9.65 (ROOT-CAUSED + FIXED 2026-07-12) A Rust `memcpy`/`memset` stub is a SELF-RECURSION trap — and `-Z build-std` had been cloaking a broken one in bootvid for months
+
+**Symptom.** Dropping `-Z build-std` for the builtin triples (stable-toolchain Axis B) made
+**both** amd64 and arm64 hang at boot with an EMPTY serial log. amd64 died at kernel entry
+(one line past `[FLDR] phase: handoff to kernel`); arm64 got to `[KERNEL] Entering KiIdleLoop`
+and never scheduled the Phase-1 thread. No bugcheck, no panic, no output — just a dead VM.
+i386 (still on build-std) was unaffected.
+
+**Root.** GDB showed the PC parked on a literal `jmp .` — an infinite self-jump. Walking back
+to the module's PE header identified **bootvid.dll**, and the symbol was `memset`. bootvid-rust
+defined its own libc mem*:
+
+```rust
+#[no_mangle] pub unsafe extern "C" fn memcpy(dst: *mut c_void, src: *const c_void, n: usize)
+    -> *mut c_void {
+    core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, n);   // ← lowers to
+    dst                                                                     //   llvm.memcpy
+}                                                                           //   → call memcpy
+```
+
+`copy_nonoverlapping` lowers to `llvm.memcpy`, and the backend lowers *that* back into a **call
+to `memcpy`** — the function itself. Tail-call it and the entire body becomes `jmp .`. Same for
+`write_bytes` → `memset`.
+
+**Why it never fired before.** `-Z build-std-features=compiler-builtins-mem` linked
+`compiler_builtins`' own mem* — compiled `#![no_builtins]`, so *its* loops don't get folded —
+alongside the broken twins. Under `--allow-multiple-definition` lld took the FIRST definition,
+which was compiler_builtins'. The broken code was compiled, shipped inside every bootvid.dll,
+and simply **never selected**. Drop build-std → the competitor disappears → the broken twin is
+the only definition → the kernel spins forever the instant it draws the boot screen.
+
+**This is a CLOAK bug** — a real defect held harmless by a link-order accident, exactly like the
+cdrom `TracePrint` no-op-fn cloak (Axis A). The lesson generalises: *when you remove a redundant
+definition, you are not "cleaning up" — you are electing a new winner, and the new winner has
+never run.*
+
+**Rule: NEVER hand-write `memcpy`/`memset`/`memmove`/`memcmp` in Rust.** It cannot be done in
+plain safe Rust — any byte-copy loop you write instead is re-recognised by LLVM's loop-idiom
+pass and folded straight back into a self-call. The correct answers are:
+- **Don't define them.** `ntoskrnl.exe` EXPORTS `memcpy`/`memset`/`memmove` on every arch
+  (ntoskrnl.spec), so any module with an ntoskrnl import lib just gets them — which is how every
+  C driver already works. `memcmp` is exported **only on x86_64**, which is what
+  `sdk/lib/crt/libmemcmp.a` is for (reactos-link links it as a link-group fallback on the builtin
+  targets; it's emitted LAST so anything that already defines memcmp keeps its own).
+- If you genuinely must, use a crate built with `#![no_builtins]` (i.e. `compiler_builtins`).
+
+**Detector (permanent).** `tools/scan_self_recursive.py` — flags any function whose FIRST
+instruction jumps to its own entry. Nothing legitimate looks like that. Wired into the lint gate
+as `scan_self_recursive` (a binary lint, beside `scan_ud2`), because a source-level lint CANNOT
+catch this: the Rust reads perfectly. Only the emitted code tells the truth.
+
+**Debug recipe that cracked it** (reusable for any silent hang):
+1. `RUN=$(qemu/start.sh amd64 --gdb)`, wait, then `qemu/inspect.sh $RUN --command bt`.
+2. PC symbolicated to nothing and sat *below* the kernel base → it's in another module.
+3. `x/16i $pc` → `jmp <self>`, with an empty `ret` fn right after (`rust_eh_personality`).
+4. Scan memory backwards from the PC for the `MZ` header, then read the module name out of its
+   PE export directory → `bootvid.dll`. (`find-kbase` only knows about ntoskrnl.)
+
 ---
 
-### 9.63 (ROOT-CAUSED + FIXED 2026-07-12) WoW64 M11: what a *stock* binary flushes out that a hand-written test guest never can — five bugs, each invisible to every guest we wrote ourselves
+### 9.66 (ROOT-CAUSED + FIXED 2026-07-12) Your differential oracle can be MISCOMPILED by the host's own headers — glibc's `__nonnull`/`__attribute_pure__` deleted the reference C's guards
+
+**Class:** differential-harness integrity. Applies to ANY harness that compiles genuine
+target C for the host and renames its symbols to compare against a reimplementation.
+**Symptom:** the *reference* segfaults, or silently reports the wrong answer, on inputs the
+real target handles fine. **Blast radius:** every verdict the harness has ever issued.
+
+#### The setup that causes it
+
+`msvcrt-difftest` compiles the real `dll/win32/msvcrt/string.c` for the host and renames its
+public symbols `ref_*` via a force-included prelude (`-include ref_prelude.h`), so the
+reference and the Rust under test can be linked into one process and fuzzed against each
+other. The rename deliberately lands **before** the system headers, because that makes glibc
+declare the renamed symbols and the reference inherits correct prototypes for free:
+
+```c
+/* ref_prelude.h, force-included */
+#define atoi ref_atoi
+/* ...then <stdlib.h> is pulled, and glibc says: */
+extern int atoi (const char *__nptr) __THROW __attribute_pure__ __nonnull ((1));
+/*            ^^^^ ...which after the rename declares REF_ATOI, with glibc's attributes. */
+```
+
+That is the bug. **A declaration carries more than a prototype — it carries attributes**, and
+glibc's are promises about *glibc's* implementation, not msvcrt's:
+
+| leaked attribute | glibc promises | msvcrt actually does | consequence |
+|---|---|---|---|
+| `__nonnull((1))` | arg is never NULL | `atoi` has `if(!str) return 0;` (string.c:1720) | optimizer **DELETES the guard** |
+| `__attribute_pure__` | no side effects | `strtol` family **sets errno** | call may be CSE'd or **elided** |
+
+The `__nonnull` one crashes, so you find it. The `pure` one **doesn't crash** — it quietly
+lets the compiler drop an errno-setting call whose result is unused, corrupting exactly the
+side-channel an errno-comparing oracle is built on. That is the dangerous half.
+
+#### How to detect it (the general recipe)
+
+The C source and the machine code disagree. **Trust the machine code.**
+
+```bash
+# the source SAYS there is a NULL guard:
+sed -n '1720p' dll/win32/msvcrt/string.c        # ->  if(!str) return 0;
+# the emitted reference does NOT have one:
+objdump -d --disassemble=ref_atoi <test-bin>    # ->  no `test %rdi,%rdi`; straight to a deref
+```
+
+Scoping rule: **the leak lands only on symbols whose names COLLIDE with the host libc.**
+`ref_atoi`/`ref_strtol`/`ref_strcpy` are at risk; `ref__strtoi64_l` is not, because glibc
+never declares `_strtoi64_l` and so never attaches anything to it. Guards that live inside
+msvcrt-only helpers survive; guards in the ABI-shared names get deleted.
+
+#### The fix
+
+**Not** `-fno-delete-null-pointer-checks` — that patches the NULL symptom and leaves `pure`
+armed. Instead pull glibc's macro header first and **neuter the attribute macros**, so every
+subsequent declaration comes out attribute-free while the prototypes (the thing you actually
+wanted) survive:
+
+```c
+/* prelude, AFTER the renames and BEFORE any libc header — build.rs "stage 1.5" */
+#include <sys/cdefs.h>          /* glibc routes every attribute through these macros */
+#undef  __nonnull            
+#define __nonnull(params)
+#undef  __attribute_pure__   
+#define __attribute_pure__
+#undef  __attribute_const__  
+#define __attribute_const__
+#undef  __attr_access        
+#define __attr_access(x)
+#undef  __wur                
+#define __wur
+```
+
+#### The tripwire (do this, not just the fix)
+
+`sdk/lib/rust/msvcrt-difftest/tests/ref_integrity.rs` — a test whose subject is **the oracle
+itself**. For each reference function whose C source contains a guard, call it in a forked
+child with the input the guard exists for, and assert it returns rather than faults. For
+`pure`, call it **for its side effect only, discarding the result**, and assert the side
+effect still happened — a `pure` call with an unused result is exactly what gets elided.
+
+Negative-control it: back the disarm out and confirm `ref_atoi`/`ref_atol` fault again.
+
+#### The two general lessons
+
+1. **A harness improvement is worth nothing if you only point it at NEW code.** The errno
+   oracle arrived in wave 5 and was used only on wave 5's flips. Re-running the *already
+   shipped* functions through it convicted three of them (`_atoi64` on a wrapping parser where
+   msvcrt saturates; `strtol` with no ERANGE/EINVAL and writing `*endptr` on a rejected base;
+   `strtoul` likewise) — all live on master, all previously "MATCH". **When the oracle gets
+   stronger, re-run everything through it.**
+
+2. **A green from an unexercised branch is not a green.** `classify` had `gen_str`, a general
+   string fuzzer, whose chance of emitting a 19-digit run is ~zero — so in 20,000 cases it
+   never once drove a parse past `_I64_MAX`, and the whole saturate/ERANGE arm was untested.
+   The graders now take a `require: &["ok","EINVAL","ERANGE","handler"]` list and fail the row
+   as **UNEXERCISED CONTRACT** if the reference never produced those outcomes. Coverage is
+   printed on every MATCH, so "did the fuzz reach the branch" is answerable at a glance:
+
+   ```
+   _ultoa_s   MATCH   [ok=4799 EINVAL=11049 ERANGE=4152 handler-fired=0]
+   ```
+
+   (That `handler-fired=0` is itself load-bearing: `_ultoa_s` sets errno by hand and never
+   fires the invalid-parameter handler, while its sibling `_ltoa_s` does. On a bad radix the
+   two are byte-, return- and errno-identical — the handler bit is the ONLY thing telling them
+   apart, and a three-effect oracle calls them the same function.)
+
+#### See also
+
+- §9.60 — a differential harness can only falsify what it VARIES (the same disease, one level up)
+- §9.61 — the bug a value-comparing fuzz cannot see (an unbounded scan inside a bounded fn)
+- §9.64 — a refactor can silently drop a *tolerance* the old code provided
+- `docs/engineering/active-lanes/msvcrt-from-pieces-plan.md` — the lane, and what it has refused to flip
+---
+
+### 9.67 (ROOT-CAUSED + FIXED 2026-07-12) WoW64 M11: what a *stock* binary flushes out that a hand-written test guest never can — five bugs, each invisible to every guest we wrote ourselves
 
 **Setup.** Every WoW64 guest through M10 (`hello32`, `gui32`, `win32`, `file32`) was written *by us*. That is a hidden bias: a guest you author can only exercise what you thought to exercise, and — worse — it silently *avoids* everything the layer doesn't support yet, because you never wrote the call that would have tripped it. M11's forcing function was to stop authoring guests and run a **stock, unmodified binary** instead: `base/applications/testgui`, built for i386 exactly as the LiveCD ships it — real `msvcrt` CRT startup, a real 53-module import closure, a real window with a child EDIT control.
 

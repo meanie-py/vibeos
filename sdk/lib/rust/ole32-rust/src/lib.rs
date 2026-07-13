@@ -5,8 +5,8 @@
 //! Coverage (2026-07-11): compobj.c (COM runtime: CoInitialize/apartments/
 //! activation/DllMain) + the marshaling cluster (marshal.c, stubmanager.c,
 //! rpc.c, ftmarshal.c, git.c). The mechanical ring (ifs/streams/monikers/
-//! clipboard/...) arrives via the rustconv track; storage32/OLE-embedding are a
-//! later pass. Lane ledgers: ~/vibeos-rust-staging/ole32-lane-{a,b}/MANIFEST.md;
+//! clipboard/...) and Tier-D (storage32/stg_prop/stg_stream + the OLE-embedding
+//! cluster: datacache/defaulthandler/oleobj) both arrive via the rustconv track. Lane ledgers: ~/vibeos-rust-staging/ole32-lane-{a,b}/MANIFEST.md;
 //! strategy: docs/engineering/active-lanes/ole-com-translation-audit.md.
 #![no_std]
 #![allow(non_camel_case_types, non_snake_case, non_upper_case_globals)]
@@ -38,6 +38,8 @@ pub mod debug_shims;
 pub mod gdi32;
 pub mod ole32_exports;
 pub mod prelude;
+pub mod oletypes;
+pub mod storage_defs;
 pub mod user32;
 pub mod win32;
 pub mod win_consts;

@@ -76,4 +76,14 @@ debugstr_stub!(
     debugstr_user_flags,
     debugstr_formatetc,
     wine_dbgstr_longlong,
+    wine_dbgstr_guid,
+    wine_dbgstr_rect,
 );
+
+/// wine/debug.h `wine_dbg_sprintf(fmt, ...)` — formats into a per-thread ring buffer and
+/// returns a borrowed pointer. Its result is only ever consumed as a TRACE/WARN vararg,
+/// which we drop, so the placeholder is sufficient (and, unlike the real one, allocation-
+/// free). Non-variadic for the same reason as the rest of this module.
+pub fn wine_dbg_sprintf(_fmt: *const c_char) -> *const c_char {
+    PLACEHOLDER.as_ptr() as *const c_char
+}

@@ -26,8 +26,8 @@ fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
         "x86" => ("i686-kernel.json", "_NtProcessStartup@4", 0x40_0000),
-        "x86_64" => ("x86_64-kernel.json", "NtProcessStartup", 0x1_4000_0000),
-        "aarch64" => ("aarch64-kernel.json", "NtProcessStartup", 0x1_4000_0000),
+        "x86_64" => ("x86_64-pc-windows-gnu", "NtProcessStartup", 0x1_4000_0000),
+        "aarch64" => ("aarch64-pc-windows-gnullvm", "NtProcessStartup", 0x1_4000_0000),
         o => panic!("csrss-cargo: unsupported arch {o}"),
     };
 

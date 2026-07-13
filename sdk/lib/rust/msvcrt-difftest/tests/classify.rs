@@ -46,6 +46,38 @@ use core::ffi::c_void;
 
 // ── the genuine msvcrt C reference (build.rs, from the real string.c) ──
 extern "C" {
+    // ── wave 4: the wide family, from the wcs.c reference TU ──
+    fn ref_wcslen(s: *const u16) -> usize;
+    fn ref_wcscmp(a: *const u16, b: *const u16) -> i32;
+    fn ref_wcsncmp(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn ref_wcschr(s: *const u16, c: u16) -> *mut u16;
+    fn ref_wcsrchr(s: *const u16, c: u16) -> *mut u16;
+    fn ref_wcsstr(h: *const u16, n: *const u16) -> *mut u16;
+    fn ref_wcsspn(s: *const u16, a: *const u16) -> usize;
+    fn ref_wcscspn(s: *const u16, r: *const u16) -> usize;
+    fn ref_wcspbrk(s: *const u16, a: *const u16) -> *mut u16;
+    fn ref_wcscpy(d: *mut u16, s: *const u16) -> *mut u16;
+    fn ref_wcscat(d: *mut u16, s: *const u16) -> *mut u16;
+    fn ref__wcsrev(s: *mut u16) -> *mut u16;
+    fn ref__wcsset(s: *mut u16, c: u16) -> *mut u16;
+    fn ref__wcsnset(s: *mut u16, c: u16, n: usize) -> *mut u16;
+
+    // the SHIPPING Rust (msvcrt-crt-rust) wide wrappers
+    fn wcslen(s: *const u16) -> usize;
+    fn wcscmp(a: *const u16, b: *const u16) -> i32;
+    fn wcsncmp(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn wcschr(s: *const u16, c: u16) -> *mut u16;
+    fn wcsrchr(s: *const u16, c: u16) -> *mut u16;
+    fn wcsstr(h: *const u16, n: *const u16) -> *mut u16;
+    fn wcsspn(s: *const u16, a: *const u16) -> usize;
+    fn wcscspn(s: *const u16, r: *const u16) -> usize;
+    fn wcspbrk(s: *const u16, a: *const u16) -> *mut u16;
+    fn wcscpy(d: *mut u16, s: *const u16) -> *mut u16;
+    fn wcscat(d: *mut u16, s: *const u16) -> *mut u16;
+    fn _wcsrev(s: *mut u16) -> *mut u16;
+    fn _wcsset(s: *mut u16, c: u16) -> *mut u16;
+    fn _wcsnset(s: *mut u16, c: u16, n: usize) -> *mut u16;
+
     fn ref_strlen(s: *const u8) -> usize;
     fn ref_strnlen(s: *const u8, m: usize) -> usize;
     fn ref_strcmp(a: *const u8, b: *const u8) -> i32;
@@ -78,6 +110,241 @@ extern "C" {
     fn ref__atoi64(s: *const u8) -> i64;
     fn ref_strtol(s: *const u8, e: *mut *mut u8, b: i32) -> i32;
     fn ref_strtoul(s: *const u8, e: *mut *mut u8, b: i32) -> u32;
+    // wave 5 probe: the genuine msvcrt float parser (fpnum_parse + bnum.h bignum)
+    fn ref_strtod(s: *const u8, e: *mut *mut u8) -> f64;
+    fn ref_atof(s: *const u8) -> f64;
+    // wave 5a
+    fn ref__swab(src: *const u8, dst: *mut u8, len: i32);
+    fn ref___strncnt(s: *const u8, size: usize) -> usize;
+    fn _swab(src: *const u8, dst: *mut u8, len: i32);
+    fn __strncnt(s: *const u8, size: usize) -> usize;
+
+    // ── wave 5b: the `_s` secure family ──
+    fn ref_strcpy_s(d: *mut u8, elem: usize, s: *const u8) -> i32;
+    fn ref_strcat_s(d: *mut u8, elem: usize, s: *const u8) -> i32;
+    fn ref_strncpy_s(d: *mut u8, elem: usize, s: *const u8, n: usize) -> i32;
+    fn ref_strncat_s(d: *mut u8, elem: usize, s: *const u8, n: usize) -> i32;
+    fn ref__strnset_s(s: *mut u8, size: usize, c: i32, n: usize) -> i32;
+    fn strcpy_s(d: *mut u8, elem: usize, s: *const u8) -> i32;
+    fn strcat_s(d: *mut u8, elem: usize, s: *const u8) -> i32;
+    fn strncpy_s(d: *mut u8, elem: usize, s: *const u8, n: usize) -> i32;
+    fn strncat_s(d: *mut u8, elem: usize, s: *const u8, n: usize) -> i32;
+    fn _strnset_s(s: *mut u8, size: usize, c: i32, n: usize) -> i32;
+
+    // the two errno/handler channels — SEPARATE storage per side, on purpose
+    fn ref_errno_get() -> i32;          // refimpl.c  (the reference's)
+    fn ref_errno_set(v: i32);
+    fn ref_invalid_pmt_count() -> i32;
+    fn ref_invalid_pmt_reset();
+    fn subj_errno_get() -> i32;         // subjectimpl.c (the subject's)
+    fn subj_errno_set(v: i32);
+    fn subj_invalid_pmt_count() -> i32;
+    fn subj_invalid_pmt_reset();
+
+    // ── wave 6b: the radix `_s` family (4 contracts, 10 functions) ──
+    fn ref__itoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__ltoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__i64toa_s(v: i64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__ui64toa_s(v: u64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__ultoa_s(v: u32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn ref__itow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__ltow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__i64tow_s(v: i64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__ui64tow_s(v: u64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__ultow_s(v: u32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn ref__strtoi64(s: *const u8, e: *mut *mut u8, b: i32) -> i64;
+
+    fn _itoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _ltoa_s(v: i32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _i64toa_s(v: i64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _ui64toa_s(v: u64, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _ultoa_s(v: u32, s: *mut u8, sz: usize, rx: i32) -> i32;
+    fn _itow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _ltow_s(v: i32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _i64tow_s(v: i64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _ui64tow_s(v: u64, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _ultow_s(v: u32, s: *mut u16, sz: usize, rx: i32) -> i32;
+    fn _strtoi64(s: *const u8, e: *mut *mut u8, b: i32) -> i64;
+
+    // ── wave 6c: the wide `_s` family, tokenizers, memmove, _strtoui64 ──
+    fn ref_wcscpy_s(d: *mut u16, e: usize, s: *const u16) -> i32;
+    fn ref_wcsncpy_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn ref_wcscat_s(d: *mut u16, e: usize, s: *const u16) -> i32;
+    fn ref_wcsncat_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn ref__wcsnset_s(s: *mut u16, sz: usize, c: u16, n: usize) -> i32;
+    fn ref__wcsset_s(s: *mut u16, n: usize, c: u16) -> i32;
+    fn ref_wcsncpy(d: *mut u16, s: *const u16, n: usize) -> *mut u16;
+    fn ref_wcsnlen(s: *const u16, m: usize) -> usize;
+    fn ref_strtok_s(s: *mut u8, d: *const u8, c: *mut *mut u8) -> *mut u8;
+    fn ref_wcstok_s(s: *mut u16, d: *const u16, c: *mut *mut u16) -> *mut u16;
+    fn ref__strtoui64(s: *const u8, e: *mut *mut u8, b: i32) -> u64;
+
+    fn wcscpy_s(d: *mut u16, e: usize, s: *const u16) -> i32;
+    fn wcsncpy_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn wcscat_s(d: *mut u16, e: usize, s: *const u16) -> i32;
+    fn wcsncat_s(d: *mut u16, e: usize, s: *const u16, n: usize) -> i32;
+    fn _wcsnset_s(s: *mut u16, sz: usize, c: u16, n: usize) -> i32;
+    fn _wcsset_s(s: *mut u16, n: usize, c: u16) -> i32;
+    fn wcsncpy(d: *mut u16, s: *const u16, n: usize) -> *mut u16;
+    fn wcsnlen(s: *const u16, m: usize) -> usize;
+    fn strtok_s(s: *mut u8, d: *const u8, c: *mut *mut u8) -> *mut u8;
+    fn wcstok_s(s: *mut u16, d: *const u16, c: *mut *mut u16) -> *mut u16;
+    fn _strtoui64(s: *const u8, e: *mut *mut u8, b: i32) -> u64;
+
+    // ── wave 7: the case-insensitive family ──
+    fn ref__strlwr_s(s: *mut u8, len: usize) -> i32;
+    fn ref__strupr_s(s: *mut u8, len: usize) -> i32;
+    fn _stricmp(a: *const u8, b: *const u8) -> i32;
+    fn _strnicmp(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn _memicmp(a: *const c_void, b: *const c_void, n: usize) -> i32;
+    fn _strlwr_s(s: *mut u8, len: usize) -> i32;
+    fn _strupr_s(s: *mut u8, len: usize) -> i32;
+}
+
+/// The four observable effects of a CRT call, as one comparable unit.
+///
+/// WHY THIS TYPE EXISTS. A CRT function's contract is not just "what it wrote"
+/// and "what it returned". For any function that can fail it is also:
+///
+///   3. **errno**  — the value an app tests after the call
+///   4. **did the invalid-parameter handler FIRE** — an app installs one with
+///      `_set_invalid_parameter_handler()`, and it may `abort()`
+///
+/// Effect 4 was the harness's blind spot. `subj_invalid_pmt_count()` existed
+/// from wave 5 and *nothing ever read it* — the wave-5 comment claimed to grade
+/// "all four observable effects" while grading three. That mattered: msvcrt's
+/// radix family has THREE mutually-inconsistent error contracts, and the ONLY
+/// thing separating `_ultoa_s` (sets errno, does NOT fire the handler — it
+/// hand-rolls `*_errno() = EINVAL`) from `_ltoa_s` (fires it, via
+/// MSVCRT_CHECK_PMT) is effect 4. Grading 3-of-4 would have called them equal
+/// and shipped a silently wrong `_ultoa_s`.
+///
+/// Bundling them means a new row cannot *forget* to check one.
+#[derive(PartialEq, Debug)]
+struct Effects { ret: i64, errno: i32, pmt: i32 }
+
+impl Effects {
+    /// Run `f` on the SUBJECT side with both side-channels zeroed first.
+    fn subject(f: impl FnOnce() -> i64) -> Effects {
+        unsafe {
+            subj_errno_set(0);
+            subj_invalid_pmt_reset();
+            let ret = f();
+            Effects { ret, errno: subj_errno_get(), pmt: subj_invalid_pmt_count() }
+        }
+    }
+    /// Run `f` on the REFERENCE side with *its* (separate) side-channels zeroed.
+    fn reference(f: impl FnOnce() -> i64) -> Effects {
+        unsafe {
+            ref_errno_set(0);
+            ref_invalid_pmt_reset();
+            let ret = f();
+            Effects { ret, errno: ref_errno_get(), pmt: ref_invalid_pmt_count() }
+        }
+    }
+}
+
+impl core::fmt::Display for Effects {
+    fn fmt(&self, w: &mut core::fmt::Formatter) -> core::fmt::Result {
+        let e = match self.errno { 0 => "-".into(), 22 => "EINVAL".into(), 34 => "ERANGE".into(),
+                                   80 => "STRUNCATE".into(), n => format!("errno{n}") };
+        write!(w, "ret={} errno={} handler={}", self.ret, e, if self.pmt > 0 { "FIRED" } else { "no" })
+    }
+}
+
+/// Grade a function on ALL FOUR effects at once (no buffer involved).
+fn check_effects(name: &'static str, mut f: impl FnMut(&mut Rng) -> (Effects, Effects, String)) {
+    let mut r = Rng(0x14057B7EF767814F);
+    for _ in 0..20_000 {
+        let (got, want, ctx) = f(&mut r);
+        if got != want {
+            record(name, V::Diverge, format!("[{ctx}]\n        cnt   = {got}\n        msvcrt= {want}"));
+            return;
+        }
+    }
+    record(name, V::Match, String::new());
+}
+
+/// Buffer AND all four effects — for the `_s` family, whose contract is both.
+///
+/// The FULL destination is compared, not just the string up to the NUL. That is
+/// deliberate and load-bearing: on a too-small buffer msvcrt's radix `_s` writes
+/// the digits BACKWARDS into the caller's buffer and only then NULs index 0, so
+/// everything past `[0]` is reversed residue. A "clean" implementation that just
+/// does `str[0] = 0; return ERANGE;` is string-identical and byte-different.
+/// What outcomes did the REFERENCE actually produce across the fuzz?
+///
+/// A row that reports MATCH having only ever exercised the happy path has proved
+/// nothing about the error contracts — and the error contracts are the whole
+/// reason the `_s` family is hard. This is the "a fuzzer only falsifies what it
+/// VARIES" rule (§9.60) turned into a measurement: if `ERANGE` never appears in
+/// the coverage line, the reversed-residue arm was never once executed and its
+/// green is worthless.
+///
+/// Enforced, not just printed: `require` names the outcomes a row MUST hit.
+#[derive(Default)]
+struct Cov { ok: u32, einval: u32, erange: u32, fired: u32 }
+impl Cov {
+    fn see(&mut self, e: &Effects) {
+        match e.ret as i32 { 0 => self.ok += 1, 22 => self.einval += 1, 34 => self.erange += 1, _ => {} }
+        if e.pmt > 0 { self.fired += 1; }
+    }
+    fn line(&self) -> String {
+        format!("ok={} EINVAL={} ERANGE={} handler-fired={}", self.ok, self.einval, self.erange, self.fired)
+    }
+    /// Returns the outcomes that were REQUIRED but never seen.
+    fn missing(&self, require: &[&'static str]) -> Vec<&'static str> {
+        require.iter().copied().filter(|w| match *w {
+            "ok" => self.ok == 0,
+            "EINVAL" => self.einval == 0,
+            "ERANGE" => self.erange == 0,
+            "handler" => self.fired == 0,
+            _ => false,
+        }).collect()
+    }
+}
+
+fn check_buf_fx(name: &'static str, require: &[&'static str],
+                mut f: impl FnMut(&mut Rng) -> (Vec<u8>, Effects, Vec<u8>, Effects, String)) {
+    let mut r = Rng(0x8EBC6AF09C88C6E3);
+    let mut cov = Cov::default();
+    for _ in 0..20_000 {
+        let (gb, ge, wb, we, ctx) = f(&mut r);
+        cov.see(&we);
+        if gb != wb || ge != we {
+            record(name, V::Diverge, format!("[{ctx}]\n        cnt   = {ge}  buf={gb:?}\n        msvcrt= {we}  buf={wb:?}"));
+            return;
+        }
+    }
+    let missing = cov.missing(require);
+    if !missing.is_empty() {
+        record(name, V::Diverge, format!("UNEXERCISED CONTRACT — the fuzz never reached {missing:?}.\n        \
+             This MATCH is worthless: the branch was never run. Widen the generator.\n        coverage: {}", cov.line()));
+        return;
+    }
+    record(name, V::Match, cov.line());
+}
+
+/// `check_buf_fx`'s wide twin.
+fn check_wbuf_fx(name: &'static str, require: &[&'static str],
+                 mut f: impl FnMut(&mut Rng) -> (Vec<u16>, Effects, Vec<u16>, Effects, String)) {
+    let mut r = Rng(0x5851F42D4C957F2D);
+    let mut cov = Cov::default();
+    for _ in 0..20_000 {
+        let (gb, ge, wb, we, ctx) = f(&mut r);
+        cov.see(&we);
+        if gb != wb || ge != we {
+            record(name, V::Diverge, format!("[{ctx}]\n        cnt   = {ge}  buf={gb:?}\n        msvcrt= {we}  buf={wb:?}"));
+            return;
+        }
+    }
+    let missing = cov.missing(require);
+    if !missing.is_empty() {
+        record(name, V::Diverge, format!("UNEXERCISED CONTRACT — the fuzz never reached {missing:?}.\n        \
+             This MATCH is worthless: the branch was never run. Widen the generator.\n        coverage: {}", cov.line()));
+        return;
+    }
+    record(name, V::Match, cov.line());
 }
 
 // ── cnt-rust's #[no_mangle] shims (the code under test) ──
@@ -146,6 +413,89 @@ fn gen_str(r: &mut Rng, maxlen: usize) -> Vec<u8> {
     v
 }
 
+/// The WIDE alphabet (wave 4). Deliberately weighted toward u16 values with the
+/// TOP BIT SET (0x8000..=0xFFFF): those are exactly where a signed-vs-unsigned
+/// element compare would diverge, which is the bug class that bit the narrow
+/// family in wave 3. If cnt-rust's `Elem for u16` were ever "fixed" to a signed
+/// diff, `wcscmp`/`wcsncmp` would flip sign on these and this fuzz would catch
+/// it. Also includes 0x0080..=0x00FF (the bytes that broke the narrow side) and
+/// lone surrogates, which are legal wchar_t values msvcrt treats as opaque.
+fn gen_wstr(r: &mut Rng, maxlen: usize) -> Vec<u16> {
+    let n = r.below(maxlen);
+    let mut v = Vec::with_capacity(n + 1);
+    for _ in 0..n {
+        let w = match r.below(6) {
+            0 => (b'a' + (r.below(26) as u8)) as u16,
+            1 => (b'A' + (r.below(26) as u8)) as u16,
+            2 => (b'0' + (r.below(10) as u8)) as u16,
+            3 => 0x80u16 + (r.below(0x80) as u16), // the narrow high-byte range
+            4 => 0x8000u16 + (r.below(0x8000) as u16), // TOP BIT SET
+            _ => 1 + (r.below(0xFFFE) as u16),
+        };
+        v.push(w);
+    }
+    v.push(0);
+    v
+}
+
+/// Float-literal strings, weighted toward the shapes that separate a naive
+/// accumulator from a correctly-rounded bignum: long mantissas, extreme
+/// exponents, and hard-to-round halfway cases.
+fn gen_float_str(r: &mut Rng) -> Vec<u8> {
+    let mut v: Vec<u8> = Vec::new();
+    match r.below(8) {
+        0 => { // simple
+            for _ in 0..1 + r.below(3) { v.push(b'0' + r.below(10) as u8); }
+            v.push(b'.');
+            for _ in 0..1 + r.below(3) { v.push(b'0' + r.below(10) as u8); }
+        }
+        1 => { // LONG mantissa — where naive accumulation loses bits
+            for _ in 0..17 + r.below(6) { v.push(b'0' + r.below(10) as u8); }
+            v.push(b'.');
+            for _ in 0..17 + r.below(6) { v.push(b'0' + r.below(10) as u8); }
+        }
+        2 => { // extreme exponent
+            for _ in 0..1 + r.below(4) { v.push(b'0' + r.below(10) as u8); }
+            v.push(b'.');
+            for _ in 0..1 + r.below(8) { v.push(b'0' + r.below(10) as u8); }
+            v.push(if r.below(2) == 0 { b'e' } else { b'E' });
+            if r.below(2) == 0 { v.push(b'-'); }
+            v.extend_from_slice(format!("{}", r.below(320)).as_bytes());
+        }
+        3 => { // subnormal / near-zero
+            v.extend_from_slice(b"0.");
+            for _ in 0..r.below(20) { v.push(b'0'); }
+            for _ in 0..1 + r.below(17) { v.push(b'0' + r.below(10) as u8); }
+            v.extend_from_slice(b"e-3");
+            v.push(b'0' + r.below(10) as u8);
+        }
+        4 => { // halfway-ish: ...5 at the rounding boundary
+            for _ in 0..15 + r.below(4) { v.push(b'0' + r.below(10) as u8); }
+            v.extend_from_slice(b"5e");
+            if r.below(2) == 0 { v.push(b'-'); }
+            v.extend_from_slice(format!("{}", r.below(40)).as_bytes());
+        }
+        5 => { // signed + leading space (the DJ Delorie *sret quirk)
+            if r.below(2) == 0 { v.push(b' '); }
+            v.push(if r.below(2) == 0 { b'-' } else { b'+' });
+            for _ in 0..1 + r.below(8) { v.push(b'0' + r.below(10) as u8); }
+            v.push(b'.');
+            for _ in 0..1 + r.below(8) { v.push(b'0' + r.below(10) as u8); }
+        }
+        6 => { // trailing junk (tests the end pointer)
+            for _ in 0..1 + r.below(6) { v.push(b'0' + r.below(10) as u8); }
+            v.push(b'.');
+            for _ in 0..1 + r.below(6) { v.push(b'0' + r.below(10) as u8); }
+            v.extend_from_slice(b"xyz");
+        }
+        _ => { // integer-only
+            for _ in 0..1 + r.below(19) { v.push(b'0' + r.below(10) as u8); }
+        }
+    }
+    v.push(0);
+    v
+}
+
 // ── verdict bookkeeping ──
 #[derive(PartialEq)]
 enum V { Match, SignOnly, Diverge }
@@ -193,6 +543,20 @@ fn check_buf(name: &'static str, mut f: impl FnMut(&mut Rng) -> (Vec<u8>, isize,
     record(name, V::Match, String::new());
 }
 
+/// `check_buf`'s wide twin: both the returned pointer offset (in ELEMENTS) and
+/// the full u16 destination must agree.
+fn check_wbuf(name: &'static str, mut f: impl FnMut(&mut Rng) -> (Vec<u16>, isize, Vec<u16>, isize, String)) {
+    let mut r = Rng(0x2545F4914F6CDD1D);
+    for _ in 0..20_000 {
+        let (gb, go, wb, wo, ctx) = f(&mut r);
+        if gb != wb || go != wo {
+            record(name, V::Diverge, format!("buf/ret differ [{ctx}]\n        cnt   ={gb:04x?} ret+{go}\n        msvcrt={wb:04x?} ret+{wo}"));
+            return;
+        }
+    }
+    record(name, V::Match, String::new());
+}
+
 /// Prove the shared-name shims resolve to MSVCRT-CRT-RUST, not glibc. The
 /// wrappers' `cstr_slice` NULL-guards (NULL → empty slice), so `strlen(NULL)`
 /// is 0; glibc's would fault. If this ever silently "passes" against glibc the
@@ -210,7 +574,85 @@ unsafe fn assert_shims_live() {
     let mut t = *b"abcd\0";
     let p = _strnset(t.as_mut_ptr(), b'z' as i32, 2);
     assert_eq!(p as usize - t.as_ptr() as usize, 2, "_strnset returned the START — that is cnt-rust's contract, not msvcrt's: the harness is linked against the wrong crate");
-    println!("  [self-check] msvcrt-crt-rust shims are live (strlen(NULL)==0, _strrev ok, _strnset returns str+n)");
+
+    // Wave 4: the same gate for the WIDE shims. glibc also exports `wcslen`, so
+    // without this we could be grading glibc's (which would fault on NULL, not
+    // return 0) and never know.
+    let wn = wcslen(core::ptr::null());
+    assert_eq!(wn, 0, "wcslen(NULL)!=0 — the wide shims are NOT msvcrt-crt-rust's");
+    let mut wb = [b'a' as u16, b'b' as u16, 0];
+    let _ = _wcsrev(wb.as_mut_ptr());
+    assert_eq!(wb, [b'b' as u16, b'a' as u16, 0], "_wcsrev misbehaved — bad link");
+
+    println!("  [self-check] msvcrt-crt-rust shims are live — narrow (strlen(NULL)==0, _strrev ok, _strnset returns str+n) and wide (wcslen(NULL)==0, _wcsrev ok)");
+
+    assert_null_tolerant();
+}
+
+/// ⚠️ **THE BLIND SPOT THAT SHIPPED A REGRESSION (field manual §9.64).**
+///
+/// The 20k-case fuzz generates real NUL-terminated strings. It NEVER passes NULL.
+/// So when the single-pass perf rewrite replaced `cstr_slice(p)` (which
+/// NULL-guards, returning `&[]`) with a raw pointer walk, msvcrt.dll silently
+/// went from *NULL behaves like ""* — its shipped, gate-green behaviour — to
+/// *NULL faults*. `classify` reported 45/45 MATCH. The net suite went 15/15 ->
+/// 13/15, and only an A/B control against the previous commit found it.
+///
+/// A fuzzer can only falsify what it VARIES (§9.60), and it was not varying
+/// nullness. So NULL is now a first-class, asserted input.
+///
+/// NB: this is graded against the CRATE'S OWN contract, not against the C — the
+/// genuine msvcrt dereferences and dies here, so there is no `ref_*` to compare
+/// with. Being *more* forgiving than the C is fine; silently becoming LESS
+/// forgiving than the last shipped build is what broke the boot.
+unsafe fn assert_null_tolerant() {
+    let s = b"abc\0";
+    let e = b"\0";
+    let (sp, ep) = (s.as_ptr(), e.as_ptr());
+
+    // NULL == "" for every reader we flipped.
+    assert!(strcmp(core::ptr::null(), ep) == 0, "strcmp(NULL, \"\") != 0");
+    assert!(strcmp(core::ptr::null(), sp) < 0, "strcmp(NULL, \"abc\") not < 0");
+    assert!(strcmp(sp, core::ptr::null()) > 0, "strcmp(\"abc\", NULL) not > 0");
+    assert_eq!(strncmp(core::ptr::null(), ep, 4), 0, "strncmp(NULL, \"\") != 0");
+    assert_eq!(strspn(core::ptr::null(), sp), 0, "strspn(NULL, ..) != 0");
+    assert_eq!(strcspn(core::ptr::null(), sp), 0, "strcspn(NULL, ..) != 0");
+    assert!(strpbrk(core::ptr::null(), sp).is_null(), "strpbrk(NULL, ..) != NULL");
+    assert!(strchr(core::ptr::null(), b'a' as i32).is_null(), "strchr(NULL, 'a') != NULL");
+    assert!(strrchr(core::ptr::null(), b'a' as i32).is_null(), "strrchr(NULL, 'a') != NULL");
+    // a NULL SET is empty, so nothing is in it / nothing is rejected
+    assert_eq!(strspn(sp, core::ptr::null()), 0, "strspn(.., NULL set) != 0");
+    assert_eq!(strcspn(sp, core::ptr::null()), 3, "strcspn(.., NULL set) != len");
+
+    // NULL source copies as "" (writes just the terminator).
+    let mut d = [0xAAu8; 8];
+    strcpy(d.as_mut_ptr(), core::ptr::null());
+    assert_eq!(d[0], 0, "strcpy(d, NULL) did not write \"\"");
+    let mut d2 = *b"xy\0\0\0\0\0\0";
+    strcat(d2.as_mut_ptr(), core::ptr::null());
+    assert_eq!(&d2[..3], b"xy\0", "strcat(d, NULL) perturbed d");
+
+    // ── the wide half ──
+    let ws = [b'a' as u16, b'b' as u16, b'c' as u16, 0];
+    let we = [0u16];
+    let (wsp, wep) = (ws.as_ptr(), we.as_ptr());
+    assert!(wcscmp(core::ptr::null(), wep) == 0, "wcscmp(NULL, L\"\") != 0");
+    assert!(wcscmp(core::ptr::null(), wsp) < 0, "wcscmp(NULL, L\"abc\") not < 0");
+    assert_eq!(wcsncmp(core::ptr::null(), wep, 4), 0, "wcsncmp(NULL, L\"\") != 0");
+    assert_eq!(wcsspn(core::ptr::null(), wsp), 0, "wcsspn(NULL, ..) != 0");
+    assert_eq!(wcscspn(core::ptr::null(), wsp), 0, "wcscspn(NULL, ..) != 0");
+    assert!(wcspbrk(core::ptr::null(), wsp).is_null(), "wcspbrk(NULL, ..) != NULL");
+    assert!(wcschr(core::ptr::null(), b'a' as u16).is_null(), "wcschr(NULL, 'a') != NULL");
+    assert!(wcsrchr(core::ptr::null(), b'a' as u16).is_null(), "wcsrchr(NULL, 'a') != NULL");
+    assert!(wcsstr(core::ptr::null(), wsp).is_null(), "wcsstr(NULL, ..) != NULL");
+    assert_eq!(wcsspn(wsp, core::ptr::null()), 0, "wcsspn(.., NULL set) != 0");
+    assert_eq!(wcscspn(wsp, core::ptr::null()), 3, "wcscspn(.., NULL set) != len");
+
+    let mut wd = [0xAAAAu16; 8];
+    wcscpy(wd.as_mut_ptr(), core::ptr::null());
+    assert_eq!(wd[0], 0, "wcscpy(d, NULL) did not write L\"\"");
+
+    println!("  [self-check] NULL is tolerated as \"\" by every flipped reader (narrow + wide) — the §9.64 regression class");
 }
 
 fn main() {
@@ -227,12 +669,50 @@ fn main() {
         if !r.note.is_empty() { println!("        {}", r.note); }
     }
     println!("\n  {m} MATCH   {s} SIGN-ONLY   {d} DIVERGE   (of {} tested)", res.len());
-    println!("\n  DEFERRED (not graded, not flipped — locale-dependent, Phase D):");
-    println!("    _stricmp / _strnicmp / _memicmp");
+
+    // ── THE GATE ────────────────────────────────────────────────────────────
+    // Until now this table was INFORMATIONAL: it printed `DIVERGE ✗ DO NOT FLIP`
+    // and exited 0. A divergence in a function that is ALREADY FLIPPED is not a
+    // suggestion — it means msvcrt.dll is shipping a wrong answer. Fail.
+    //
+    // `[PROBE]` rows are exempt BY DESIGN. A probe is a non-`#[no_mangle]` fn that
+    // asks "COULD we flip this?" before anything overrides the C — so a DIVERGE
+    // there is the probe WORKING, and a permanent, executable record of why that
+    // family is off-limits. (See `strtod [PROBE]`: cnt-rust's DJ Delorie
+    // accumulator vs msvcrt's correctly-rounded bignum — measured 14 ULPs apart.)
+    let shipped_divergences: Vec<&str> = res
+        .iter()
+        .filter(|r| r.v == V::Diverge && !r.name.contains("[PROBE]"))
+        .map(|r| r.name)
+        .collect();
+    if !shipped_divergences.is_empty() {
+        println!(
+            "\n  ✗ FAIL — these are FLIPPED and DIVERGENT, i.e. msvcrt.dll is shipping\n    \
+             a wrong answer for them: {shipped_divergences:?}\n"
+        );
+        std::process::exit(1);
+    }
+
+    println!("\n  PROBES (graded, deliberately NOT flipped — the C still ships):");
+    println!("    strtod [PROBE] — DIVERGE is the EXPECTED, LOAD-BEARING result.");
+    println!("      cnt-rust's core is ReactOS libcntpr's DJ Delorie parser: a naive");
+    println!("      `r = r*10 + d` accumulator, explicitly never correctly-rounded.");
+    println!("      msvcrt's is Wine's `fpnum_parse` + `bnum.h` — a base-10 BIGNUM,");
+    println!("      correctly rounded. Measured 14 ULPs apart on a hard-to-round input.");
+    println!("      => the \"assemble from cnt-rust\" thesis DOES NOT REACH the float");
+    println!("      family. And note _ecvt/_fcvt/_gcvt are literally `_snprintf(\"%.*le\")`");
+    println!("      calls, so float↔str is not a separate wave at all — it is PART OF");
+    println!("      THE PRINTF ENGINE (Phase C). Do not flip strtod/atof from cnt-rust.\n");
+
+    println!("  DEFERRED (not graded, not flipped — locale-dependent, Phase D):");
+    println!("    narrow: _stricmp / _strnicmp / _memicmp");
+    println!("    wide:   _wcsicmp / _wcsnicmp / _wcsicoll / _wcsnicoll / wcscoll");
+    println!("            _wcslwr / _wcsupr / towlower / towupper / the isw* ctype block");
     println!("      msvcrt folds via get_locinfo()->lc_handle[LC_CTYPE] + _tolower_l;");
     println!("      cnt-rust's fold is locale-blind ASCII. They agree ONLY in the \"C\"");
     println!("      locale — which is exactly what this harness pins, so a MATCH here");
-    println!("      would be a harness artifact, not a license to flip. See lane plan.\n");
+    println!("      would be a harness artifact, not a license to flip. See lane plan");
+    println!("      and field manual §9.60 (\"a harness can only falsify what it VARIES\").\n");
 }
 
 unsafe fn run() {
@@ -276,19 +756,117 @@ unsafe fn run() {
          if ref_memchr(a.as_ptr().cast(), c, n).is_null() { -1 } else { ref_memchr(a.as_ptr().cast(), c, n) as i64 - a.as_ptr() as i64 }, format!("c={c} n={n}")) });
 
     // ---- conversions ----
-    check_int("atoi", false, |r| { let a = gen_str(r, 18); (atoi(a.as_ptr()) as i64, ref_atoi(a.as_ptr()) as i64, format!("{a:?}")) });
-    check_int("atol", false, |r| { let a = gen_str(r, 18); (atol(a.as_ptr()) as i64, ref_atol(a.as_ptr()) as i64, format!("{a:?}")) });
-    check_int("_atoi64", false, |r| { let a = gen_str(r, 24); (_atoi64(a.as_ptr()), ref__atoi64(a.as_ptr()), format!("{a:?}")) });
-    check_int("strtol", false, |r| { let a = gen_str(r, 20); let b = [0i32, 2, 8, 10, 16, 36][r.below(6)];
+    //
+    // ═════ WAVE 6a: the integer-parse family, RE-GRADED through all 4 effects ═════
+    //
+    // These were flipped in waves 1-3 and passed — but the grader could only see
+    // VALUE and ENDPTR, because errno/handler observability did not exist until
+    // wave 5 built it. A stronger oracle is worth nothing if you only ever point
+    // it at NEW code, so they are re-entered here through `check_effects`.
+    //
+    // Two blind spots in the OLD rows, both deliberate now:
+    //   * the base set was [0,2,8,10,16,36] — every one of them VALID, so the
+    //     `MSVCRT_CHECK_PMT(base == 0 || base >= 2)` / `(base <= 36)` rejection
+    //     path was never once executed in 20,000 cases.
+    //   * NULL was never passed, so `CHECK_PMT(nptr != NULL)` was never executed.
+    //
+    // Both now are. `gen_str` already emits 0x80-0xFF and control bytes, which is
+    // what exercises the `_isspace_l()` leading-whitespace boundary — the one
+    // place these functions consult the locale. refimpl models the "C" locale, so
+    // a MATCH here proves C-locale equivalence, which is what msvcrt.dll ships
+    // with. (A non-C locale could still diverge; that is Phase D's problem and is
+    // recorded as such in the plan.)
+    const BASES: [i32; 9] = [0, 2, 8, 10, 16, 36, /* now the INVALID ones: */ 1, 37, -1];
+    const BASES2: [i32; 9] = BASES;
+
+    // `gen_str` is a general string fuzzer: random bytes with digits sprinkled in.
+    // The chance it ever emits a 19-DIGIT RUN is ~zero — so in 20,000 cases it
+    // never once drove the parse past _I64_MAX, and the entire saturate/ERANGE
+    // arm of these functions went untested. That is how `_atoi64` shipped on the
+    // kernel's WRAPPING parser while msvcrt's SATURATES: a value divergence that
+    // a value-comparing fuzzer could not see, purely for want of an input.
+    //
+    // A fuzzer only falsifies what it VARIES (§9.60). So generate the boundaries
+    // on purpose: long digit runs, and the exact values the C branches on.
+    fn gen_num_str(r: &mut Rng) -> Vec<u8> {
+        let core: Vec<u8> = match r.below(10) {
+            0 => b"9223372036854775807".to_vec(),   // _I64_MAX exactly       -> no ERANGE
+            1 => b"9223372036854775808".to_vec(),   // _I64_MAX + 1           -> saturate + ERANGE
+            2 => b"-9223372036854775808".to_vec(),  // _I64_MIN exactly       -> no ERANGE
+            3 => b"-9223372036854775809".to_vec(),  // _I64_MIN - 1           -> saturate + ERANGE
+            4 => b"4294967295".to_vec(),            // ULONG_MAX              -> strtoul edge
+            5 => b"4294967296".to_vec(),            // ULONG_MAX + 1          -> strtoul clamps
+            6 => b"-4294967296".to_vec(),           // < -ULONG_MAX           -> strtoul returns *1*
+            7 => b"2147483648".to_vec(),            // LONG_MAX + 1           -> strtol clamps
+            8 => {                                  // a random LONG digit run
+                let n = 15 + r.below(10);
+                let mut v = Vec::new();
+                if r.below(2) == 0 { v.push(b'-'); }
+                for _ in 0..n { v.push(b'0' + r.below(10) as u8); }
+                v
+            }
+            _ => {                                  // hex / octal / 0x-prefix paths
+                let pre: &[u8] = [&b"0x"[..], &b"0X"[..], &b"0"[..], &b""[..]][r.below(4)];
+                let n = 1 + r.below(18);
+                let mut v = pre.to_vec();
+                for _ in 0..n { v.push(b"0123456789abcdefABCDEF"[r.below(22)]); }
+                v
+            }
+        };
+        // wrap with the leading whitespace / sign / trailing-junk the C must skip
+        let mut v = Vec::new();
+        for _ in 0..r.below(3) { v.push(b" \t\n\x0b\x0c\r"[r.below(6)]); }
+        v.extend_from_slice(&core);
+        if r.below(3) == 0 { v.extend_from_slice(b"zz!"); }
+        v.push(0);
+        v
+    }
+    /// Half general-purpose strings, half boundary numerals.
+    fn gen_parse_input(r: &mut Rng) -> Vec<u8> {
+        if r.below(2) == 0 { gen_num_str(r) } else { gen_str(r, 22) }
+    }
+
+    check_effects("atoi", |r| {
+        let a = gen_parse_input(r);
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        (Effects::subject(|| atoi(p) as i64), Effects::reference(|| ref_atoi(p) as i64),
+         if null { "NULL".into() } else { format!("{a:?}") })
+    });
+    check_effects("atol", |r| {
+        let a = gen_parse_input(r);
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        (Effects::subject(|| atol(p) as i64), Effects::reference(|| ref_atol(p) as i64),
+         if null { "NULL".into() } else { format!("{a:?}") })
+    });
+    check_effects("_atoi64", |r| {
+        let a = gen_parse_input(r);
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        (Effects::subject(|| _atoi64(p)), Effects::reference(|| ref__atoi64(p)),
+         if null { "NULL".into() } else { format!("{a:?}") })
+    });
+    check_effects("strtol", |r| {
+        let a = gen_parse_input(r);
+        let b = BASES[r.below(9)];
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
         let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
-        let g = strtol(a.as_ptr(), &mut e1, b); let w = ref_strtol(a.as_ptr(), &mut e2, b);
-        let (o1, o2) = (e1 as i64 - a.as_ptr() as i64, e2 as i64 - a.as_ptr() as i64);
-        (((g as i64) << 8) ^ o1, ((w as i64) << 8) ^ o2, format!("base={b} {a:?} -> {g}/{w} end+{o1}/{o2}")) });
-    check_int("strtoul", false, |r| { let a = gen_str(r, 20); let b = [0i32, 2, 8, 10, 16, 36][r.below(6)];
+        let g = Effects::subject(|| { let v = strtol(p, &mut e1, b); ((v as i64) << 8) ^ (e1 as i64 - p as i64) });
+        let w = Effects::reference(|| { let v = ref_strtol(p, &mut e2, b); ((v as i64) << 8) ^ (e2 as i64 - p as i64) });
+        (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
+    });
+    check_effects("strtoul", |r| {
+        let a = gen_parse_input(r);
+        let b = BASES[r.below(9)];
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
         let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
-        let g = strtoul(a.as_ptr(), &mut e1, b); let w = ref_strtoul(a.as_ptr(), &mut e2, b);
-        let (o1, o2) = (e1 as i64 - a.as_ptr() as i64, e2 as i64 - a.as_ptr() as i64);
-        (((g as i64) << 8) ^ o1, ((w as i64) << 8) ^ o2, format!("base={b} {a:?} -> {g}/{w} end+{o1}/{o2}")) });
+        let g = Effects::subject(|| { let v = strtoul(p, &mut e1, b); ((v as i64) << 8) ^ (e1 as i64 - p as i64) });
+        let w = Effects::reference(|| { let v = ref_strtoul(p, &mut e2, b); ((v as i64) << 8) ^ (e2 as i64 - p as i64) });
+        (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
+    });
 
     // ---- mutators (compare destination bytes + returned pointer offset) ----
     check_buf("strcpy", |r| { let s = gen_str(r, 30);
@@ -364,4 +942,460 @@ unsafe fn run() {
         let (o1, o2) = (if p1.is_null() { -1 } else { p1 as isize - d1.as_ptr() as isize },
                         if p2.is_null() { -1 } else { p2 as isize - d2.as_ptr() as isize });
         (d1, o1, d2, o2, format!("c={c} n={n}")) });
+
+    // ─────────── WAVE 4: the wide family (vs the wcs.c reference TU) ───────────
+    // Offsets are in ELEMENTS (both sides use the same formula, so the compare is
+    // valid either way; /2 just makes a divergence report readable).
+    macro_rules! woff { ($p:expr, $base:expr) => {
+        if $p.is_null() { -1i64 } else { (($p as usize - $base.as_ptr() as usize) / 2) as i64 }
+    } }
+
+    check_int("wcslen", false, |r| { let a = gen_wstr(r, 40);
+        (wcslen(a.as_ptr()) as i64, ref_wcslen(a.as_ptr()) as i64, format!("{a:04x?}")) });
+    check_int("wcscmp", false, |r| { let a = gen_wstr(r, 20); let b = if r.below(3) == 0 { a.clone() } else { gen_wstr(r, 20) };
+        (wcscmp(a.as_ptr(), b.as_ptr()) as i64, ref_wcscmp(a.as_ptr(), b.as_ptr()) as i64, format!("{a:04x?} vs {b:04x?}")) });
+    check_int("wcsncmp", false, |r| { let a = gen_wstr(r, 20); let b = if r.below(3) == 0 { a.clone() } else { gen_wstr(r, 20) }; let n = r.below(22);
+        (wcsncmp(a.as_ptr(), b.as_ptr(), n) as i64, ref_wcsncmp(a.as_ptr(), b.as_ptr(), n) as i64, format!("n={n} {a:04x?} vs {b:04x?}")) });
+    check_int("wcschr", false, |r| { let a = gen_wstr(r, 30); let c = r.below(0x10000) as u16;
+        (woff!(wcschr(a.as_ptr(), c), a), woff!(ref_wcschr(a.as_ptr(), c), a), format!("c={c:04x} {a:04x?}")) });
+    check_int("wcsrchr", false, |r| { let a = gen_wstr(r, 30); let c = r.below(0x10000) as u16;
+        (woff!(wcsrchr(a.as_ptr(), c), a), woff!(ref_wcsrchr(a.as_ptr(), c), a), format!("c={c:04x} {a:04x?}")) });
+    check_int("wcsstr", false, |r| { let h = gen_wstr(r, 30);
+        let n = if r.below(2) == 0 && h.len() > 2 { let s = r.below(h.len() - 1); let e = s + r.below(h.len() - s); let mut v = h[s..e].to_vec(); v.push(0); v } else { gen_wstr(r, 6) };
+        (woff!(wcsstr(h.as_ptr(), n.as_ptr()), h), woff!(ref_wcsstr(h.as_ptr(), n.as_ptr()), h), format!("{h:04x?} / {n:04x?}")) });
+    check_int("wcsspn", false, |r| { let a = gen_wstr(r, 25); let b = gen_wstr(r, 8);
+        (wcsspn(a.as_ptr(), b.as_ptr()) as i64, ref_wcsspn(a.as_ptr(), b.as_ptr()) as i64, format!("{a:04x?} / {b:04x?}")) });
+    check_int("wcscspn", false, |r| { let a = gen_wstr(r, 25); let b = gen_wstr(r, 8);
+        (wcscspn(a.as_ptr(), b.as_ptr()) as i64, ref_wcscspn(a.as_ptr(), b.as_ptr()) as i64, format!("{a:04x?} / {b:04x?}")) });
+    check_int("wcspbrk", false, |r| { let a = gen_wstr(r, 25); let b = gen_wstr(r, 8);
+        (woff!(wcspbrk(a.as_ptr(), b.as_ptr()), a), woff!(ref_wcspbrk(a.as_ptr(), b.as_ptr()), a), format!("{a:04x?} / {b:04x?}")) });
+
+    check_wbuf("wcscpy", |r| { let s = gen_wstr(r, 30);
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 48], vec![0xAAAAu16; 48]);
+        let p1 = wcscpy(d1.as_mut_ptr(), s.as_ptr()); let p2 = ref_wcscpy(d2.as_mut_ptr(), s.as_ptr());
+        let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
+        (d1, o1, d2, o2, format!("{s:04x?}")) });
+    check_wbuf("wcscat", |r| { let a = gen_wstr(r, 12); let s = gen_wstr(r, 12);
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 48], vec![0xAAAAu16; 48]);
+        d1[..a.len()].copy_from_slice(&a); d2[..a.len()].copy_from_slice(&a);
+        let p1 = wcscat(d1.as_mut_ptr(), s.as_ptr()); let p2 = ref_wcscat(d2.as_mut_ptr(), s.as_ptr());
+        let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
+        (d1, o1, d2, o2, format!("{a:04x?} + {s:04x?}")) });
+    check_wbuf("_wcsrev", |r| { let s = gen_wstr(r, 30);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        let p1 = _wcsrev(d1.as_mut_ptr()); let p2 = ref__wcsrev(d2.as_mut_ptr());
+        let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
+        (d1, o1, d2, o2, format!("{s:04x?}")) });
+    check_wbuf("_wcsset", |r| { let s = gen_wstr(r, 30); let c = r.below(0x10000) as u16;
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        let p1 = _wcsset(d1.as_mut_ptr(), c); let p2 = ref__wcsset(d2.as_mut_ptr(), c);
+        let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
+        (d1, o1, d2, o2, format!("c={c:04x}")) });
+    // NB: `_wcsnset` returns the START (msvcrt: `wchar_t *ret = str;`), unlike its
+    // narrow twin `_strnset`, which returns the ADVANCED pointer. check_wbuf
+    // compares the returned offset, so this asymmetry is graded, not assumed.
+    // ───────── WAVE 5b: the `_s` secure family ─────────
+    //
+    // Grades ALL FOUR observable effects, not just the destination buffer:
+    //   1. the bytes        2. the RETURN CODE (0/EINVAL/ERANGE/STRUNCATE)
+    //   3. ERRNO            4. did the invalid-parameter handler FIRE
+    //
+    // errno is stored SEPARATELY per side on purpose (subjectimpl.c vs refimpl.c),
+    // so "did the SUBJECT set errno?" is answerable at all. An errno contract you
+    // cannot observe independently is a contract you are not testing.
+    //
+    // `check_buf` compares (bytes, ret-offset); we fold ret+errno into that offset
+    // so a divergence in EITHER lights up, and print both raw values in the note.
+    //
+    // Inputs deliberately span: elem too-small / exact / roomy, count == 0, and
+    // count == _TRUNCATE (usize::MAX) — the three branches that carry the quirks.
+    check_buf("strcpy_s", |r| {
+        let src = gen_str(r, 20);
+        let elem = r.below(24);
+        let (mut d1, mut d2) = (vec![0xAAu8; 40], vec![0xAAu8; 40]);
+        subj_errno_set(0); ref_errno_set(0);
+        let r1 = strcpy_s(d1.as_mut_ptr(), elem, src.as_ptr());
+        let e1 = subj_errno_get();
+        let r2 = ref_strcpy_s(d2.as_mut_ptr(), elem, src.as_ptr());
+        let e2 = ref_errno_get();
+        (d1, (r1 as isize) * 1000 + e1 as isize, d2, (r2 as isize) * 1000 + e2 as isize,
+         format!("elem={elem} src={src:?} ret {r1}/{r2} errno {e1}/{e2}"))
+    });
+    check_buf("strcat_s", |r| {
+        let src = gen_str(r, 14);
+        let pre = gen_str(r, 10);
+        let elem = r.below(28);
+        let (mut d1, mut d2) = (vec![0xAAu8; 40], vec![0xAAu8; 40]);
+        d1[..pre.len()].copy_from_slice(&pre); d2[..pre.len()].copy_from_slice(&pre);
+        subj_errno_set(0); ref_errno_set(0);
+        let r1 = strcat_s(d1.as_mut_ptr(), elem, src.as_ptr());
+        let e1 = subj_errno_get();
+        let r2 = ref_strcat_s(d2.as_mut_ptr(), elem, src.as_ptr());
+        let e2 = ref_errno_get();
+        (d1, (r1 as isize) * 1000 + e1 as isize, d2, (r2 as isize) * 1000 + e2 as isize,
+         format!("elem={elem} pre={pre:?} src={src:?} ret {r1}/{r2} errno {e1}/{e2}"))
+    });
+    check_buf("strncpy_s", |r| {
+        let src = gen_str(r, 20);
+        let elem = r.below(24);
+        let count = match r.below(5) { 0 => usize::MAX, 1 => 0, _ => r.below(24) };
+        let (mut d1, mut d2) = (vec![0xAAu8; 40], vec![0xAAu8; 40]);
+        subj_errno_set(0); ref_errno_set(0);
+        let r1 = strncpy_s(d1.as_mut_ptr(), elem, src.as_ptr(), count);
+        let e1 = subj_errno_get();
+        let r2 = ref_strncpy_s(d2.as_mut_ptr(), elem, src.as_ptr(), count);
+        let e2 = ref_errno_get();
+        let cs = if count == usize::MAX { "_TRUNCATE".to_string() } else { count.to_string() };
+        (d1, (r1 as isize) * 1000 + e1 as isize, d2, (r2 as isize) * 1000 + e2 as isize,
+         format!("elem={elem} count={cs} src={src:?} ret {r1}/{r2} errno {e1}/{e2}"))
+    });
+    check_buf("strncat_s", |r| {
+        let src = gen_str(r, 14);
+        let pre = gen_str(r, 10);
+        let elem = r.below(28);
+        let count = match r.below(5) { 0 => usize::MAX, 1 => 0, _ => r.below(20) };
+        let (mut d1, mut d2) = (vec![0xAAu8; 40], vec![0xAAu8; 40]);
+        d1[..pre.len()].copy_from_slice(&pre); d2[..pre.len()].copy_from_slice(&pre);
+        subj_errno_set(0); ref_errno_set(0);
+        let r1 = strncat_s(d1.as_mut_ptr(), elem, src.as_ptr(), count);
+        let e1 = subj_errno_get();
+        let r2 = ref_strncat_s(d2.as_mut_ptr(), elem, src.as_ptr(), count);
+        let e2 = ref_errno_get();
+        let cs = if count == usize::MAX { "_TRUNCATE".to_string() } else { count.to_string() };
+        (d1, (r1 as isize) * 1000 + e1 as isize, d2, (r2 as isize) * 1000 + e2 as isize,
+         format!("elem={elem} count={cs} pre={pre:?} src={src:?} ret {r1}/{r2} errno {e1}/{e2}"))
+    });
+    check_buf("_strnset_s", |r| {
+        let pre = gen_str(r, 20);
+        let size = r.below(26);
+        let count = r.below(26);
+        let c = (r.below(300) as i32) - 20;
+        let (mut d1, mut d2) = (vec![0xAAu8; 40], vec![0xAAu8; 40]);
+        d1[..pre.len()].copy_from_slice(&pre); d2[..pre.len()].copy_from_slice(&pre);
+        subj_errno_set(0); ref_errno_set(0);
+        let r1 = _strnset_s(d1.as_mut_ptr(), size, c, count);
+        let e1 = subj_errno_get();
+        let r2 = ref__strnset_s(d2.as_mut_ptr(), size, c, count);
+        let e2 = ref_errno_get();
+        (d1, (r1 as isize) * 1000 + e1 as isize, d2, (r2 as isize) * 1000 + e2 as isize,
+         format!("size={size} count={count} c={c} pre={pre:?} ret {r1}/{r2} errno {e1}/{e2}"))
+    });
+
+    // ───────── WAVE 5a: the plumbing-free leftovers ─────────
+    check_int("__strncnt", false, |r| { let a = gen_str(r, 40); let n = r.below(45);
+        (__strncnt(a.as_ptr(), n) as i64, ref___strncnt(a.as_ptr(), n) as i64, format!("n={n} {a:?}")) });
+    check_buf("_swab", |r| {
+        // odd `len` on purpose: msvcrt drops the trailing byte (len >>= 1).
+        let s = gen_str(r, 24);
+        let len = r.below(s.len() + 3) as i32 - 1;   // also exercises len <= 1 (no-op)
+        let (mut d1, mut d2) = (vec![0xAAu8; 40], vec![0xAAu8; 40]);
+        _swab(s.as_ptr(), d1.as_mut_ptr(), len);
+        ref__swab(s.as_ptr(), d2.as_mut_ptr(), len);
+        (d1, 0, d2, 0, format!("len={len}"))
+    });
+
+    // ───────── WAVE 5 PROBE: cnt-rust's float parser vs msvcrt's bignum ─────────
+    // NOT a flip. `strtod_probe` is a plain `pub unsafe fn` (no #[no_mangle]), so
+    // msvcrt.dll still uses its C strtod. This only asks: COULD we flip it?
+    //
+    // Graded on the BIT PATTERN, not `==`: two doubles that differ by one ULP are
+    // a real divergence for a CRT, and `-0.0 == 0.0` would hide a sign bug.
+    check_int("strtod [PROBE]", false, |r| {
+        let s = gen_float_str(r);
+        let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
+        let got = msvcrt_crt_rust::strtod_probe(s.as_ptr(), &mut e1);
+        let want = ref_strtod(s.as_ptr(), &mut e2);
+        let (gb, wb) = (got.to_bits() as i64, want.to_bits() as i64);
+        // also compare the end pointer (the `*sret` contract)
+        let (go, wo) = (e1 as usize - s.as_ptr() as usize, e2 as usize - s.as_ptr() as usize);
+        let ctx = format!("{:?} -> rust={got:?} (0x{:016x}) msvcrt={want:?} (0x{:016x}) end {go} vs {wo}",
+                          String::from_utf8_lossy(&s[..s.len()-1]), got.to_bits(), want.to_bits());
+        if go != wo { return (go as i64, wo as i64, format!("END-PTR differs: {ctx}")); }
+        (gb, wb, ctx)
+    });
+
+    check_wbuf("_wcsnset", |r| { let s = gen_wstr(r, 30); let c = r.below(0x10000) as u16; let n = r.below(34);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        let p1 = _wcsnset(d1.as_mut_ptr(), c, n); let p2 = ref__wcsnset(d2.as_mut_ptr(), c, n);
+        let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
+        (d1, o1, d2, o2, format!("c={c:04x} n={n}")) });
+
+    // ═════ WAVE 6b: the radix `_s` family ═════════════════════════════════════
+    //
+    // Ten functions, FOUR contracts (see msvcrt-crt-rust's wave-6b banner). The
+    // fuzz has to actually REACH each contract branch, so `size` is drawn small
+    // enough to be too small most of the time, `radix` includes out-of-range
+    // values, and NULL is drawn deliberately:
+    //
+    //   size  : 0..12  vs values needing up to 65 digits (base 2) -> ERANGE is COMMON
+    //   radix : 2..36 valid, plus 0/1/37/-1 invalid               -> EINVAL front door
+    //   str   : NULL 1-in-32                                      -> EINVAL front door
+    //
+    // and the FULL buffer is compared, which is what catches the reversed residue.
+    fn radix_of(r: &mut Rng) -> i32 {
+        match r.below(8) {
+            0 => 0, 1 => 1, 2 => 37, 3 => -1,      // the invalid ones
+            _ => 2 + r.below(35) as i32,           // 2..=36
+        }
+    }
+    // Skew hard to the extremes: i32::MIN/i64::MIN are where the
+    // `value < 0 && radix == 10` sign rule and the unsigned reinterpret collide.
+    fn v32(r: &mut Rng) -> i32 { match r.below(6) { 0 => i32::MIN, 1 => i32::MAX, 2 => 0, 3 => -1, _ => r.next() as i32 } }
+    fn v64(r: &mut Rng) -> i64 { match r.below(6) { 0 => i64::MIN, 1 => i64::MAX, 2 => 0, 3 => -1, _ => r.next() as i64 } }
+    fn vu64(r: &mut Rng) -> u64 { match r.below(5) { 0 => 0, 1 => u64::MAX, 2 => u32::MAX as u64, _ => r.next() } }
+    fn vu32(r: &mut Rng) -> u32 { match r.below(5) { 0 => 0, 1 => u32::MAX, 2 => 1, _ => r.next() as u32 } }
+
+    macro_rules! radix_s_n {
+        ($name:literal, $subj:ident, $refr:ident, $gen:ident, $req:expr) => {
+            check_buf_fx($name, $req, |r| {
+                let v = $gen(r);
+                let rx = radix_of(r);
+                let sz = r.below(13);
+                let null = r.below(32) == 0;
+                let (mut d1, mut d2) = (vec![0xAAu8; 72], vec![0xAAu8; 72]);
+                let (p1, p2) = if null { (core::ptr::null_mut(), core::ptr::null_mut()) }
+                               else { (d1.as_mut_ptr(), d2.as_mut_ptr()) };
+                let g = Effects::subject(|| $subj(v, p1, sz, rx) as i64);
+                let w = Effects::reference(|| $refr(v, p2, sz, rx) as i64);
+                (d1, g, d2, w, format!("v={v} radix={rx} size={sz}{}", if null { " str=NULL" } else { "" }))
+            });
+        };
+    }
+    macro_rules! radix_s_w {
+        ($name:literal, $subj:ident, $refr:ident, $gen:ident, $req:expr) => {
+            check_wbuf_fx($name, $req, |r| {
+                let v = $gen(r);
+                let rx = radix_of(r);
+                let sz = r.below(13);
+                let null = r.below(32) == 0;
+                let (mut d1, mut d2) = (vec![0xAAAAu16; 72], vec![0xAAAAu16; 72]);
+                let (p1, p2) = if null { (core::ptr::null_mut(), core::ptr::null_mut()) }
+                               else { (d1.as_mut_ptr(), d2.as_mut_ptr()) };
+                let g = Effects::subject(|| $subj(v, p1, sz, rx) as i64);
+                let w = Effects::reference(|| $refr(v, p2, sz, rx) as i64);
+                (d1, g, d2, w, format!("v={v} radix={rx} size={sz}{}", if null { " str=NULL" } else { "" }))
+            });
+        };
+    }
+
+    radix_s_n!("_itoa_s",    _itoa_s,    ref__itoa_s,    v32, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_n!("_ltoa_s",    _ltoa_s,    ref__ltoa_s,    v32, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_n!("_i64toa_s",  _i64toa_s,  ref__i64toa_s,  v64, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_n!("_ui64toa_s", _ui64toa_s, ref__ui64toa_s, vu64, &["ok", "EINVAL", "handler"]);
+    radix_s_n!("_ultoa_s",   _ultoa_s,   ref__ultoa_s,   vu32, &["ok", "EINVAL", "ERANGE"]);
+    radix_s_w!("_itow_s",    _itow_s,    ref__itow_s,    v32, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_w!("_ltow_s",    _ltow_s,    ref__ltow_s,    v32, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_w!("_i64tow_s",  _i64tow_s,  ref__i64tow_s,  v64, &["ok", "EINVAL", "ERANGE", "handler"]);
+    radix_s_w!("_ui64tow_s", _ui64tow_s, ref__ui64tow_s, vu64, &["ok", "EINVAL", "handler"]);
+    radix_s_w!("_ultow_s",   _ultow_s,   ref__ultow_s,   vu32, &["ok", "EINVAL", "ERANGE"]);
+
+    // _strtoi64 — the engine strtol/_atoi64 sit on, now exported directly.
+    check_effects("_strtoi64", |r| {
+        let a = gen_parse_input(r);
+        let b = BASES2[r.below(9)];
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
+        let g = Effects::subject(|| { let v = _strtoi64(p, &mut e1, b); v ^ (e1 as i64 - p as i64) });
+        let w = Effects::reference(|| { let v = ref__strtoi64(p, &mut e2, b); v ^ (e2 as i64 - p as i64) });
+        (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
+    });
+
+
+    // ═════ WAVE 6c: the wide `_s` family, tokenizers, memmove, _strtoui64 ═════
+    //
+    // The four wide `_s` writers each have a DIFFERENT handler contract (see the
+    // msvcrt-crt-rust banner), so each row's `require` list encodes it — and a
+    // wrong list fails loudly as UNEXERCISED rather than passing quietly:
+    //
+    //   wcscpy_s   handler on every error          -> require handler
+    //   wcsncpy_s  handler on the front door only  -> require ERANGE *and* handler
+    //   wcscat_s   handler NEVER                   -> require ok/EINVAL/ERANGE, NOT handler
+    //   wcsncat_s  handler on everything           -> require handler
+    check_wbuf_fx("wcscpy_s", &["ok", "EINVAL", "ERANGE", "handler"], |r| {
+        let src = gen_wstr(r, 20);
+        let elem = r.below(24);
+        let null_src = r.below(32) == 0;
+        let sp = if null_src { core::ptr::null() } else { src.as_ptr() };
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        let g = Effects::subject(|| wcscpy_s(d1.as_mut_ptr(), elem, sp) as i64);
+        let w = Effects::reference(|| ref_wcscpy_s(d2.as_mut_ptr(), elem, sp) as i64);
+        (d1, g, d2, w, format!("elem={elem} srclen={}{}", src.len()-1, if null_src { " src=NULL" } else { "" }))
+    });
+    check_wbuf_fx("wcsncpy_s", &["ok", "EINVAL", "ERANGE"], |r| {
+        let src = gen_wstr(r, 20);
+        let elem = r.below(24);
+        let count = match r.below(5) { 0 => usize::MAX, 1 => 0, _ => r.below(24) };
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        let g = Effects::subject(|| wcsncpy_s(d1.as_mut_ptr(), elem, src.as_ptr(), count) as i64);
+        let w = Effects::reference(|| ref_wcsncpy_s(d2.as_mut_ptr(), elem, src.as_ptr(), count) as i64);
+        let cs = if count == usize::MAX { "_TRUNCATE".into() } else { count.to_string() };
+        (d1, g, d2, w, format!("elem={elem} count={cs} srclen={}", src.len()-1))
+    });
+    check_wbuf_fx("wcscat_s", &["ok", "EINVAL", "ERANGE"], |r| {
+        let src = gen_wstr(r, 14);
+        let pre = gen_wstr(r, 10);
+        let elem = r.below(28);
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        d1[..pre.len()].copy_from_slice(&pre); d2[..pre.len()].copy_from_slice(&pre);
+        let g = Effects::subject(|| wcscat_s(d1.as_mut_ptr(), elem, src.as_ptr()) as i64);
+        let w = Effects::reference(|| ref_wcscat_s(d2.as_mut_ptr(), elem, src.as_ptr()) as i64);
+        (d1, g, d2, w, format!("elem={elem} prelen={} srclen={}", pre.len()-1, src.len()-1))
+    });
+    check_wbuf_fx("wcsncat_s", &["ok", "EINVAL", "ERANGE", "handler"], |r| {
+        let src = gen_wstr(r, 14);
+        let pre = gen_wstr(r, 10);
+        let elem = r.below(28);
+        let count = match r.below(5) { 0 => usize::MAX, 1 => 0, _ => r.below(20) };
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        d1[..pre.len()].copy_from_slice(&pre); d2[..pre.len()].copy_from_slice(&pre);
+        let g = Effects::subject(|| wcsncat_s(d1.as_mut_ptr(), elem, src.as_ptr(), count) as i64);
+        let w = Effects::reference(|| ref_wcsncat_s(d2.as_mut_ptr(), elem, src.as_ptr(), count) as i64);
+        let cs = if count == usize::MAX { "_TRUNCATE".into() } else { count.to_string() };
+        (d1, g, d2, w, format!("elem={elem} count={cs} prelen={} srclen={}", pre.len()-1, src.len()-1))
+    });
+    check_wbuf_fx("_wcsnset_s", &["ok", "EINVAL", "handler"], |r| {
+        let s = gen_wstr(r, 24);
+        let size = r.below(28);
+        let count = r.below(28);
+        let c = 0x41 + r.below(26) as u16;
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAAAA); d2.resize(40, 0xAAAA);
+        let g = Effects::subject(|| _wcsnset_s(d1.as_mut_ptr(), size, c, count) as i64);
+        let w = Effects::reference(|| ref__wcsnset_s(d2.as_mut_ptr(), size, c, count) as i64);
+        (d1, g, d2, w, format!("size={size} count={count} c={c:04x} len={}", s.len()-1))
+    });
+    check_wbuf_fx("_wcsset_s", &["ok", "EINVAL", "handler"], |r| {
+        let s = gen_wstr(r, 24);
+        let n = r.below(28);
+        let c = 0x41 + r.below(26) as u16;
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAAAA); d2.resize(40, 0xAAAA);
+        let g = Effects::subject(|| _wcsset_s(d1.as_mut_ptr(), n, c) as i64);
+        let w = Effects::reference(|| ref__wcsset_s(d2.as_mut_ptr(), n, c) as i64);
+        (d1, g, d2, w, format!("n={n} c={c:04x} len={}", s.len()-1))
+    });
+
+    check_wbuf("wcsncpy", |r| {
+        let s = gen_wstr(r, 24); let n = r.below(30);
+        let (mut d1, mut d2) = (vec![0xAAAAu16; 40], vec![0xAAAAu16; 40]);
+        let p1 = wcsncpy(d1.as_mut_ptr(), s.as_ptr(), n);
+        let p2 = ref_wcsncpy(d2.as_mut_ptr(), s.as_ptr(), n);
+        let (o1, o2) = (p1 as isize - d1.as_ptr() as isize, p2 as isize - d2.as_ptr() as isize);
+        (d1, o1, d2, o2, format!("n={n} srclen={}", s.len()-1))
+    });
+    check_int("wcsnlen", false, |r| {
+        let s = gen_wstr(r, 30); let m = r.below(34);
+        (wcsnlen(s.as_ptr(), m) as i64, ref_wcsnlen(s.as_ptr(), m) as i64, format!("m={m}"))
+    });
+
+    // Tokenizers: drive a FULL tokenisation loop, not one call — the contract is
+    // the sequence of tokens and the final ctx, not any single return.
+    check_buf("strtok_s", |r| {
+        let mut s1 = gen_str(r, 26); let delim = gen_str(r, 4);
+        let mut s2 = s1.clone();
+        let (mut c1, mut c2) = (core::ptr::null_mut::<u8>(), core::ptr::null_mut::<u8>());
+        let (mut out1, mut out2) = (Vec::new(), Vec::new());
+        let mut p1 = strtok_s(s1.as_mut_ptr(), delim.as_ptr(), &mut c1);
+        let mut p2 = ref_strtok_s(s2.as_mut_ptr(), delim.as_ptr(), &mut c2);
+        let mut guard = 0;
+        while (!p1.is_null() || !p2.is_null()) && guard < 40 {
+            out1.push(if p1.is_null() { -1 } else { p1 as isize - s1.as_ptr() as isize } as i64);
+            out2.push(if p2.is_null() { -1 } else { p2 as isize - s2.as_ptr() as isize } as i64);
+            p1 = strtok_s(core::ptr::null_mut(), delim.as_ptr(), &mut c1);
+            p2 = ref_strtok_s(core::ptr::null_mut(), delim.as_ptr(), &mut c2);
+            guard += 1;
+        }
+        // fold the token-offset sequence into the compared buffer
+        let b1: Vec<u8> = s1.iter().copied().chain(out1.iter().map(|v| *v as u8)).collect();
+        let b2: Vec<u8> = s2.iter().copied().chain(out2.iter().map(|v| *v as u8)).collect();
+        (b1, out1.len() as isize, b2, out2.len() as isize, format!("delim={delim:?} tokens={out1:?}/{out2:?}"))
+    });
+    check_wbuf("wcstok_s", |r| {
+        let mut s1 = gen_wstr(r, 26); let delim = gen_wstr(r, 4);
+        let mut s2 = s1.clone();
+        let (mut c1, mut c2) = (core::ptr::null_mut::<u16>(), core::ptr::null_mut::<u16>());
+        let (mut out1, mut out2) = (Vec::new(), Vec::new());
+        let mut p1 = wcstok_s(s1.as_mut_ptr(), delim.as_ptr(), &mut c1);
+        let mut p2 = ref_wcstok_s(s2.as_mut_ptr(), delim.as_ptr(), &mut c2);
+        let mut guard = 0;
+        while (!p1.is_null() || !p2.is_null()) && guard < 40 {
+            out1.push(if p1.is_null() { -1i64 } else { ((p1 as isize - s1.as_ptr() as isize) / 2) as i64 });
+            out2.push(if p2.is_null() { -1i64 } else { ((p2 as isize - s2.as_ptr() as isize) / 2) as i64 });
+            p1 = wcstok_s(core::ptr::null_mut(), delim.as_ptr(), &mut c1);
+            p2 = ref_wcstok_s(core::ptr::null_mut(), delim.as_ptr(), &mut c2);
+            guard += 1;
+        }
+        let b1: Vec<u16> = s1.iter().copied().chain(out1.iter().map(|v| *v as u16)).collect();
+        let b2: Vec<u16> = s2.iter().copied().chain(out2.iter().map(|v| *v as u16)).collect();
+        (b1, out1.len() as isize, b2, out2.len() as isize, format!("tokens={out1:?}/{out2:?}"))
+    });
+
+    check_effects("_strtoui64", |r| {
+        let a = gen_parse_input(r);
+        let b = BASES2[r.below(9)];
+        let null = r.below(32) == 0;
+        let p = if null { core::ptr::null() } else { a.as_ptr() };
+        let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
+        let g = Effects::subject(|| { let v = _strtoui64(p, &mut e1, b); (v as i64) ^ (e1 as i64 - p as i64) });
+        let w = Effects::reference(|| { let v = ref__strtoui64(p, &mut e2, b); (v as i64) ^ (e2 as i64 - p as i64) });
+        (g, w, format!("base={b} {}", if null { "NULL".into() } else { format!("{a:?}") }))
+    });
+
+
+    // ═════ WAVE 7: the case-insensitive family ════════════════════════════════
+    //
+    // gen_str emits 0x80-0xFF, which is the whole point here: `char` is SIGNED,
+    // and the two comparison functions treat the high half DIFFERENTLY.
+    //   _strnicmp folds on the sign-extended int, returns (unsigned char) c1-c2
+    //   _memicmp  folds via _tolower_l (non-ASCII passes THROUGH), returns c1-c2 RAW
+    // If they were the same comparison with a different bound, one of these rows
+    // would be redundant. They are not, so both are graded, and NULL is fuzzed
+    // (each has a front door, and they disagree about it too).
+    check_effects("_stricmp", |r| {
+        let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+        let na = r.below(32) == 0;
+        let (pa, pb) = (if na { core::ptr::null() } else { a.as_ptr() }, b.as_ptr());
+        (Effects::subject(|| _stricmp(pa, pb) as i64),
+         Effects::reference(|| ref__stricmp(pa, pb) as i64),
+         format!("{}{:?} vs {:?}", if na { "NULL " } else { "" }, a, b))
+    });
+    check_effects("_strnicmp", |r| {
+        let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+        let n = r.below(24);
+        let na = r.below(32) == 0;
+        let (pa, pb) = (if na { core::ptr::null() } else { a.as_ptr() }, b.as_ptr());
+        (Effects::subject(|| _strnicmp(pa, pb, n) as i64),
+         Effects::reference(|| ref__strnicmp(pa, pb, n) as i64),
+         format!("n={n} {}{:?} vs {:?}", if na { "NULL " } else { "" }, a, b))
+    });
+    check_effects("_memicmp", |r| {
+        let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+        let n = r.below(a.len().min(b.len()).max(1));
+        let na = r.below(32) == 0;
+        let pa = if na { core::ptr::null() } else { a.as_ptr() };
+        (Effects::subject(|| _memicmp(pa.cast(), b.as_ptr().cast(), n) as i64),
+         Effects::reference(|| ref__memicmp(pa.cast(), b.as_ptr().cast(), n) as i64),
+         format!("n={n} {}{:?} vs {:?}", if na { "NULL " } else { "" }, a, b))
+    });
+    // _strlwr_s / _strupr_s: hand-rolled errno, handler must NEVER fire.
+    check_buf_fx("_strlwr_s", &["ok", "EINVAL"], |r| {
+        let s = gen_str(r, 24);
+        let len = r.below(28);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAA); d2.resize(40, 0xAA);
+        let g = Effects::subject(|| _strlwr_s(d1.as_mut_ptr(), len) as i64);
+        let w = Effects::reference(|| ref__strlwr_s(d2.as_mut_ptr(), len) as i64);
+        (d1, g, d2, w, format!("len={len} slen={}", s.len()-1))
+    });
+    check_buf_fx("_strupr_s", &["ok", "EINVAL"], |r| {
+        let s = gen_str(r, 24);
+        let len = r.below(28);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAA); d2.resize(40, 0xAA);
+        let g = Effects::subject(|| _strupr_s(d1.as_mut_ptr(), len) as i64);
+        let w = Effects::reference(|| ref__strupr_s(d2.as_mut_ptr(), len) as i64);
+        (d1, g, d2, w, format!("len={len} slen={}", s.len()-1))
+    });
+
 }

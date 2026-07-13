@@ -21,16 +21,19 @@ set -euo pipefail
 
 ARCH="${1:-i386}"
 case "$ARCH" in
-  i386)  TARGET_JSON="uefildr-cargo/i686-kernel.json";    SMOKE_ARCH="i386-uefi" ;;
-  amd64) TARGET_JSON="uefildr-cargo/x86_64-kernel.json";  SMOKE_ARCH="amd64-uefi" ;;
-  arm64) TARGET_JSON="uefildr-cargo/aarch64-kernel.json"; SMOKE_ARCH="arm64" ;;
+  i386)  SMOKE_ARCH="i386-uefi" ;;
+  amd64) SMOKE_ARCH="amd64-uefi" ;;
+  arm64) SMOKE_ARCH="arm64" ;;
   *) echo "usage: $0 [i386|amd64|arm64]" >&2; exit 1 ;;
 esac
 
 cd "$(dirname "$0")/../../../.."  # → repo root
 
-# Pinned nightly, single-sourced from the repo root (see rust-toolchain.toml).
-VIBEOS_NIGHTLY="$(cat "$PWD/.rust-nightly")"
+# Shared cargo-invocation policy (builtin triple on amd64/arm64, nightly +
+# build-std on i386). Sets CELL_TARGET / CELL_STEM / CELL_STD / CELL_TOOLCHAIN.
+VIBEOS_ROOT="$PWD" . sdk/lib/rust/cargo-cell-args.sh
+cell_args "$ARCH" uefildr-cargo || exit 1
+
 REPO="$(pwd)"
 STRIP="$REPO/.build-tools/llvm-mingw/bin/llvm-strip"
 BUILD_DIR="build-$ARCH"
@@ -52,15 +55,14 @@ echo "[1/4] Refreshing cmake-built inputs (ninja uefildr, $ARCH) ..."
 # ---- 2. Cargo-driven EFI link -------------------------------------------
 echo "[2/4] Cargo build (uefildr-cargo, $ARCH) ..."
 cd sdk/lib/rust
-cargo "+${VIBEOS_NIGHTLY}" build --release \
-    --target "$TARGET_JSON" \
-    -Z build-std=core,alloc,compiler_builtins \
-    -Z build-std-features=compiler-builtins-mem \
+# shellcheck disable=SC2086  # CELL_TOOLCHAIN/CELL_STD are deliberately word-split
+cargo $CELL_TOOLCHAIN build --release \
+    --target "$CELL_TARGET" \
+    $CELL_STD \
     -p uefildr-cargo --bin uefildr
 
-TGT_TRIPLE="$(basename "$TARGET_JSON" .json)"
-CARGO_EXE="$(pwd)/target/$TGT_TRIPLE/release/uefildr.exe"
-CARGO_EFI="$(pwd)/target/$TGT_TRIPLE/release/uefildr.efi"
+CARGO_EXE="$(pwd)/target/$CELL_STEM/release/uefildr.exe"
+CARGO_EFI="$(pwd)/target/$CELL_STEM/release/uefildr.efi"
 
 # ---- 3. Post-build: rename + strip (matches cmake POST_BUILD) ------------
 echo "[3/4] Strip + rename -> uefildr.efi ..."

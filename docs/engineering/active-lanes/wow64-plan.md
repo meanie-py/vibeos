@@ -703,7 +703,7 @@ test what you thought of — worse, it silently *avoids* whatever the layer does
 support, because you never wrote the call that would have tripped it. M11 stops
 authoring guests: it runs `base/applications/testgui` built for i386 exactly as the
 LiveCD ships it (real `msvcrt` CRT startup, real import table, real window + child
-EDIT control). Full writeup + the five bugs it flushed out: field manual **§9.63**.
+EDIT control). Full writeup + the five bugs it flushed out: field manual **§9.67**.
 
 **Result.** The stock binary reaches `wWinMain` → `RegisterClassExW` →
 `CreateWindowExW` → `WM_CREATE`, and then dies in *exactly the same place as the

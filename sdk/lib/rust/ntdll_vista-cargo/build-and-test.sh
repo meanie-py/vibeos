@@ -12,35 +12,33 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../../.."  # → repo root
 
-# Pinned nightly, single-sourced from the repo root (see rust-toolchain.toml).
-VIBEOS_NIGHTLY="$(cat "$PWD/.rust-nightly")"
 OBJDUMP=".build-tools/llvm-mingw/bin/llvm-objdump"
 SPEC="dll/ntdll/nt_0600/ntdll_vista.spec"
 
 arch="${1:-i386}"
-case "$arch" in
-  i386)  tgt="i686-kernel" ;;
-  amd64) tgt="x86_64-kernel" ;;
-  arm64) tgt="aarch64-kernel" ;;
-  *) echo "usage: $0 [i386|amd64|arm64]" >&2; exit 2 ;;
-esac
+# Shared cargo-invocation policy (builtin triple on amd64/arm64, nightly +
+# build-std on i386). Sets CELL_TARGET / CELL_STEM / CELL_STD / CELL_TOOLCHAIN.
+VIBEOS_ROOT="$PWD" . sdk/lib/rust/cargo-cell-args.sh
+cell_args "$arch" ntdll_vista-cargo || { echo "usage: $0 [i386|amd64|arm64]" >&2; exit 2; }
 
 if [ ! -d "build-$arch" ]; then echo "build-$arch/ missing — run cmake first." >&2; exit 1; fi
-rustup toolchain list 2>&1 | grep -q nightly || { echo "nightly + rust-src required." >&2; exit 1; }
+if [ -n "$CELL_STD" ]; then
+  rustup toolchain list 2>&1 | grep -q nightly || { echo "nightly + rust-src required (i386 build-std)." >&2; exit 1; }
+fi
 
 echo "[1/3] Refreshing cmake-built inputs (build-$arch: ntdll_vista → sibling .a) ..."
 ( cd "build-$arch" && ninja ntdll_vista >/dev/null )
 
-echo "[2/3] Cargo build (ntdll-rust[vista] + ntdll_vista-cargo, $tgt) ..."
+echo "[2/3] Cargo build (ntdll-rust[vista] + ntdll_vista-cargo, $CELL_STEM) ..."
 cd sdk/lib/rust
-cargo "+${VIBEOS_NIGHTLY}" build --release \
-    --target "ntdll_vista-cargo/$tgt.json" \
-    -Z build-std=core,alloc,compiler_builtins \
-    -Z build-std-features=compiler-builtins-mem \
+# shellcheck disable=SC2086  # CELL_TOOLCHAIN/CELL_STD are deliberately word-split
+cargo $CELL_TOOLCHAIN build --release \
+    --target "$CELL_TARGET" \
+    $CELL_STD \
     -p ntdll_vista-cargo --bin ntdll_vista
 cd ../../..
 
-OUT="sdk/lib/rust/target/$tgt/release/ntdll_vista.exe"
+OUT="sdk/lib/rust/target/$CELL_STEM/release/ntdll_vista.exe"
 echo "    produced: $OUT ($(stat -c %s "$OUT") bytes)"
 
 echo "[3/3] Validating PE + spec-export coverage ..."

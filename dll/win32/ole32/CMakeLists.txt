@@ -29,8 +29,8 @@ list(APPEND SOURCE
     # comcat.c — replaced by Rust (ole32-rust ring/comcat.rs — ICatRegister/ICatInformation)
     # compobj.c — replaced by Rust (ole32-rust compobj.rs — COM runtime: CoInitialize/apartments/activation/DllMain)
     # compositemoniker.c — replaced by Rust (ole32-rust ring/compositemoniker.rs — the generic composite)
-    datacache.c
-    defaulthandler.c
+    # datacache.c — replaced by Rust (ole32-rust ring/datacache.rs — the OLE presentation cache: IOleCache2/IViewObject2/IDataObject over cached DIB+metafile presentations)
+    # defaulthandler.c — replaced by Rust (ole32-rust ring/defaulthandler.rs — the default object handler: IOleObject/IRunnableObject/IPersistStorage for an embedded object)
     # dictionary.c — replaced by Rust (ole32-rust ring/dictionary.rs — the comcat dictionary helper)
     # enumx.c — replaced by Rust (ole32-rust ring/enumx.rs — the generic IEnumXXX helper)
     # errorinfo.c — replaced by Rust (ole32-rust ring/errorinfo.rs — IErrorInfo/ICreateErrorInfo + the TLS slot)
@@ -48,13 +48,13 @@ list(APPEND SOURCE
     # ole2impl.c — replaced by Rust (ole32-rust ring/ole2impl.rs — OleCreate/OleCreateFromData)
     # ole2stubs.c — replaced by Rust (ole32-rust ring/ole2stubs.rs — small OLE stubs)
     # ole32_main.c — replaced by Rust (ole32-rust ring/ole32_main.rs — DllMain + OleMetafilePictFromIconAndLabel)
-    oleobj.c
+    # oleobj.c — replaced by Rust (ole32-rust ring/oleobj.rs — IOleAdviseHolder/IDataAdviseHolder + IEnumSTATDATA)
     # oleproxy.c — replaced by Rust (ole32-rust ring/oleproxy.rs — the proxy/stub class factories)
     # pointermoniker.c — replaced by Rust (ole32-rust ring/pointermoniker.rs — IMoniker over an IUnknown*)
     # rpc.c — replaced by Rust (ole32-rust rpc.rs — ORPC channel + apartment pumps)
-    stg_prop.c
-    stg_stream.c
-    storage32.c
+    # stg_prop.c — replaced by Rust (ole32-rust ring/stg_prop.rs — IPropertyStorage/IPropertySetStorage, the property-set on-disk format)
+    # stg_stream.c — replaced by Rust (ole32-rust ring/stg_stream.rs — IStream over a stream inside a compound file)
+    # storage32.c — replaced by Rust (ole32-rust ring/storage32.rs — the compound-file implementation: IStorage, the dir-entry tree, block chains, transactions)
     # stubmanager.c — replaced by Rust (ole32-rust stubmanager.rs — stub/ifstub lifetime)
     # usrmarshal.c — replaced by Rust (ole32-rust ring/usrmarshal.rs — the NDR *_User{Size,Marshal,Unmarshal,Free} helpers)
     )
