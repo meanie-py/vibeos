@@ -113,6 +113,31 @@ extern "C" {
     // wave 5 probe: the genuine msvcrt float parser (fpnum_parse + bnum.h bignum)
     fn ref_strtod(s: *const u8, e: *mut *mut u8) -> f64;
     fn ref_atof(s: *const u8) -> f64;
+    // wave 5a
+    fn ref__swab(src: *const u8, dst: *mut u8, len: i32);
+    fn ref___strncnt(s: *const u8, size: usize) -> usize;
+    fn _swab(src: *const u8, dst: *mut u8, len: i32);
+    fn __strncnt(s: *const u8, size: usize) -> usize;
+
+    // ── wave 5b: the `_s` secure family ──
+    fn ref_strcpy_s(d: *mut u8, elem: usize, s: *const u8) -> i32;
+    fn ref_strcat_s(d: *mut u8, elem: usize, s: *const u8) -> i32;
+    fn ref_strncpy_s(d: *mut u8, elem: usize, s: *const u8, n: usize) -> i32;
+    fn ref_strncat_s(d: *mut u8, elem: usize, s: *const u8, n: usize) -> i32;
+    fn ref__strnset_s(s: *mut u8, size: usize, c: i32, n: usize) -> i32;
+    fn strcpy_s(d: *mut u8, elem: usize, s: *const u8) -> i32;
+    fn strcat_s(d: *mut u8, elem: usize, s: *const u8) -> i32;
+    fn strncpy_s(d: *mut u8, elem: usize, s: *const u8, n: usize) -> i32;
+    fn strncat_s(d: *mut u8, elem: usize, s: *const u8, n: usize) -> i32;
+    fn _strnset_s(s: *mut u8, size: usize, c: i32, n: usize) -> i32;
+
+    // the two errno/handler channels — SEPARATE storage per side, on purpose
+    fn ref_errno_get() -> i32;          // refimpl.c  (the reference's)
+    fn ref_errno_set(v: i32);
+    fn subj_errno_get() -> i32;         // subjectimpl.c (the subject's)
+    fn subj_errno_set(v: i32);
+    fn subj_invalid_pmt_count() -> i32;
+    fn subj_invalid_pmt_reset();
 }
 
 // ── cnt-rust's #[no_mangle] shims (the code under test) ──
@@ -664,6 +689,106 @@ unsafe fn run() {
     // NB: `_wcsnset` returns the START (msvcrt: `wchar_t *ret = str;`), unlike its
     // narrow twin `_strnset`, which returns the ADVANCED pointer. check_wbuf
     // compares the returned offset, so this asymmetry is graded, not assumed.
+    // ───────── WAVE 5b: the `_s` secure family ─────────
+    //
+    // Grades ALL FOUR observable effects, not just the destination buffer:
+    //   1. the bytes        2. the RETURN CODE (0/EINVAL/ERANGE/STRUNCATE)
+    //   3. ERRNO            4. did the invalid-parameter handler FIRE
+    //
+    // errno is stored SEPARATELY per side on purpose (subjectimpl.c vs refimpl.c),
+    // so "did the SUBJECT set errno?" is answerable at all. An errno contract you
+    // cannot observe independently is a contract you are not testing.
+    //
+    // `check_buf` compares (bytes, ret-offset); we fold ret+errno into that offset
+    // so a divergence in EITHER lights up, and print both raw values in the note.
+    //
+    // Inputs deliberately span: elem too-small / exact / roomy, count == 0, and
+    // count == _TRUNCATE (usize::MAX) — the three branches that carry the quirks.
+    check_buf("strcpy_s", |r| {
+        let src = gen_str(r, 20);
+        let elem = r.below(24);
+        let (mut d1, mut d2) = (vec![0xAAu8; 40], vec![0xAAu8; 40]);
+        subj_errno_set(0); ref_errno_set(0);
+        let r1 = strcpy_s(d1.as_mut_ptr(), elem, src.as_ptr());
+        let e1 = subj_errno_get();
+        let r2 = ref_strcpy_s(d2.as_mut_ptr(), elem, src.as_ptr());
+        let e2 = ref_errno_get();
+        (d1, (r1 as isize) * 1000 + e1 as isize, d2, (r2 as isize) * 1000 + e2 as isize,
+         format!("elem={elem} src={src:?} ret {r1}/{r2} errno {e1}/{e2}"))
+    });
+    check_buf("strcat_s", |r| {
+        let src = gen_str(r, 14);
+        let pre = gen_str(r, 10);
+        let elem = r.below(28);
+        let (mut d1, mut d2) = (vec![0xAAu8; 40], vec![0xAAu8; 40]);
+        d1[..pre.len()].copy_from_slice(&pre); d2[..pre.len()].copy_from_slice(&pre);
+        subj_errno_set(0); ref_errno_set(0);
+        let r1 = strcat_s(d1.as_mut_ptr(), elem, src.as_ptr());
+        let e1 = subj_errno_get();
+        let r2 = ref_strcat_s(d2.as_mut_ptr(), elem, src.as_ptr());
+        let e2 = ref_errno_get();
+        (d1, (r1 as isize) * 1000 + e1 as isize, d2, (r2 as isize) * 1000 + e2 as isize,
+         format!("elem={elem} pre={pre:?} src={src:?} ret {r1}/{r2} errno {e1}/{e2}"))
+    });
+    check_buf("strncpy_s", |r| {
+        let src = gen_str(r, 20);
+        let elem = r.below(24);
+        let count = match r.below(5) { 0 => usize::MAX, 1 => 0, _ => r.below(24) };
+        let (mut d1, mut d2) = (vec![0xAAu8; 40], vec![0xAAu8; 40]);
+        subj_errno_set(0); ref_errno_set(0);
+        let r1 = strncpy_s(d1.as_mut_ptr(), elem, src.as_ptr(), count);
+        let e1 = subj_errno_get();
+        let r2 = ref_strncpy_s(d2.as_mut_ptr(), elem, src.as_ptr(), count);
+        let e2 = ref_errno_get();
+        let cs = if count == usize::MAX { "_TRUNCATE".to_string() } else { count.to_string() };
+        (d1, (r1 as isize) * 1000 + e1 as isize, d2, (r2 as isize) * 1000 + e2 as isize,
+         format!("elem={elem} count={cs} src={src:?} ret {r1}/{r2} errno {e1}/{e2}"))
+    });
+    check_buf("strncat_s", |r| {
+        let src = gen_str(r, 14);
+        let pre = gen_str(r, 10);
+        let elem = r.below(28);
+        let count = match r.below(5) { 0 => usize::MAX, 1 => 0, _ => r.below(20) };
+        let (mut d1, mut d2) = (vec![0xAAu8; 40], vec![0xAAu8; 40]);
+        d1[..pre.len()].copy_from_slice(&pre); d2[..pre.len()].copy_from_slice(&pre);
+        subj_errno_set(0); ref_errno_set(0);
+        let r1 = strncat_s(d1.as_mut_ptr(), elem, src.as_ptr(), count);
+        let e1 = subj_errno_get();
+        let r2 = ref_strncat_s(d2.as_mut_ptr(), elem, src.as_ptr(), count);
+        let e2 = ref_errno_get();
+        let cs = if count == usize::MAX { "_TRUNCATE".to_string() } else { count.to_string() };
+        (d1, (r1 as isize) * 1000 + e1 as isize, d2, (r2 as isize) * 1000 + e2 as isize,
+         format!("elem={elem} count={cs} pre={pre:?} src={src:?} ret {r1}/{r2} errno {e1}/{e2}"))
+    });
+    check_buf("_strnset_s", |r| {
+        let pre = gen_str(r, 20);
+        let size = r.below(26);
+        let count = r.below(26);
+        let c = (r.below(300) as i32) - 20;
+        let (mut d1, mut d2) = (vec![0xAAu8; 40], vec![0xAAu8; 40]);
+        d1[..pre.len()].copy_from_slice(&pre); d2[..pre.len()].copy_from_slice(&pre);
+        subj_errno_set(0); ref_errno_set(0);
+        let r1 = _strnset_s(d1.as_mut_ptr(), size, c, count);
+        let e1 = subj_errno_get();
+        let r2 = ref__strnset_s(d2.as_mut_ptr(), size, c, count);
+        let e2 = ref_errno_get();
+        (d1, (r1 as isize) * 1000 + e1 as isize, d2, (r2 as isize) * 1000 + e2 as isize,
+         format!("size={size} count={count} c={c} pre={pre:?} ret {r1}/{r2} errno {e1}/{e2}"))
+    });
+
+    // ───────── WAVE 5a: the plumbing-free leftovers ─────────
+    check_int("__strncnt", false, |r| { let a = gen_str(r, 40); let n = r.below(45);
+        (__strncnt(a.as_ptr(), n) as i64, ref___strncnt(a.as_ptr(), n) as i64, format!("n={n} {a:?}")) });
+    check_buf("_swab", |r| {
+        // odd `len` on purpose: msvcrt drops the trailing byte (len >>= 1).
+        let s = gen_str(r, 24);
+        let len = r.below(s.len() + 3) as i32 - 1;   // also exercises len <= 1 (no-op)
+        let (mut d1, mut d2) = (vec![0xAAu8; 40], vec![0xAAu8; 40]);
+        _swab(s.as_ptr(), d1.as_mut_ptr(), len);
+        ref__swab(s.as_ptr(), d2.as_mut_ptr(), len);
+        (d1, 0, d2, 0, format!("len={len}"))
+    });
+
     // ───────── WAVE 5 PROBE: cnt-rust's float parser vs msvcrt's bignum ─────────
     // NOT a flip. `strtod_probe` is a plain `pub unsafe fn` (no #[no_mangle]), so
     // msvcrt.dll still uses its C strtod. This only asks: COULD we flip it?

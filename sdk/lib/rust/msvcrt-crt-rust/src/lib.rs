@@ -1423,8 +1423,18 @@ pub unsafe extern "C" fn _wcsnset(s: *mut u16, c: u16, n: usize) -> *mut u16 {
 
 /// Probe: cnt-rust's `strtod` core, marshalled to the C signature.
 ///
+/// **HOST-ONLY (`cfg(target_os = "linux")`).** This exists solely so
+/// msvcrt-difftest can grade the float parser; it is never part of msvcrt.dll.
+/// It must not be compiled for the Windows targets, because i386 msvcrt builds
+/// with `-C target-feature=-sse,-sse2` (the ReactOS baseline) and an `f64`
+/// return needs SSE for the ABI:
+///
+///   error: this function definition uses SIMD vector type `f64` which (with
+///   the chosen ABI) requires the `sse` target feature, which is not enabled
+///
 /// # Safety
 /// `s` must be a valid NUL-terminated C string; `end` may be NULL.
+#[cfg(target_os = "linux")]
 pub unsafe fn strtod_probe(s: *const u8, end: *mut *mut u8) -> f64 {
     let sl = h::cstr_slice(s);
     let (v, consumed) = cnt_rust::core_rs::strtod::strtod_bytes(sl);
@@ -1432,4 +1442,318 @@ pub unsafe fn strtod_probe(s: *const u8, end: *mut *mut u8) -> f64 {
         *end = (s as *mut u8).add(consumed);
     }
     v
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Wave 5a: the plumbing-free leftovers of string.c.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// msvcrt `_swab`: swap adjacent byte pairs. `len` is a BYTE count and an odd
+/// trailing byte is simply not copied (`len >>= 1` after the `len > 1` guard) —
+/// a misfeature, reproduced.
+///
+/// Note `(unsigned)len >> 1`: a NEGATIVE len is guarded out by `len > 1` first,
+/// so the unsigned shift never sees one.
+#[no_mangle]
+pub unsafe extern "C" fn _swab(src: *const u8, dst: *mut u8, len: i32) {
+    if len > 1 {
+        let mut n = (len as u32) >> 1;
+        let (mut s, mut d) = (src, dst);
+        while n > 0 {
+            let s0 = *s;
+            let s1 = *s.add(1);
+            *d = s1;
+            *d.add(1) = s0;
+            d = d.add(2);
+            s = s.add(2);
+            n -= 1;
+        }
+    }
+}
+
+/// msvcrt `__strncnt`: count up to `size` non-NUL bytes.
+///
+/// ⚠️ TWO THINGS. (1) The body is `#if _MSVCR_VER >= 140`-gated and we build with
+/// `_MSVCR_VER=0`, so the shipped branch is `while (size-- && *str++)` — the
+/// bound is tested BEFORE the load, so it reads at most `size` bytes. The >=140
+/// branch (`*str++ && size--`) reads one MORE. Grading the wrong arm would be
+/// the §9.60 `_WIN64` blind spot all over again.
+/// (2) It is `n`-suffixed and bounded, so it gets an `oob_guard` row — the §9.61
+/// class (`_strnset`'s unbounded scan) is exactly this shape.
+#[no_mangle]
+pub unsafe extern "C" fn __strncnt(str_: *const u8, size: usize) -> usize {
+    let p = nz(str_);
+    let mut ret = 0usize;
+    let mut i = 0usize;
+    while i < size && *p.add(i) != 0 {
+        ret += 1;
+        i += 1;
+    }
+    ret
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Wave 5b: the `_s` (secure-CRT) string family.
+//
+// ⚠️ THE CONTRACT IS NOT JUST THE BUFFER. Every `_s` function has FOUR
+// observable effects, and a flip that gets only the first is silently wrong:
+//
+//   1. the destination bytes
+//   2. the RETURN CODE (0 / EINVAL / ERANGE / STRUNCATE)
+//   3. **errno**, set via `MSVCRT_CHECK_PMT` / `MSVCRT_INVALID_PMT`
+//   4. **the invalid-parameter handler firing** (apps install one; it can abort)
+//
+// msvcrt-difftest grades all four (see `subjectimpl.c`, which gives the SUBJECT
+// its own errno storage so it can be asserted independently of the reference's).
+//
+// The `_s` family is Wine-derived and its edge cases are NOT the ISO ones — e.g.
+// `strcat_s` truncates dst to "" on ERANGE, and `strncat_s` returns EINVAL (not
+// ERANGE) when dst has no terminator within `elem`. Reproduced exactly.
+// ─────────────────────────────────────────────────────────────────────────
+
+const EINVAL: i32 = 22;
+const ERANGE: i32 = 34;
+const STRUNCATE: i32 = 80;
+/// `((size_t)-1)` — the caller's "truncate rather than fail" sentinel.
+const TRUNCATE: usize = usize::MAX;
+
+extern "C" {
+    /// msvcrt's own per-thread errno slot. Inside msvcrt.dll this is the real C
+    /// one; in the harness it is `subjectimpl.c`'s (deliberately separate from
+    /// the reference's, so each side's errno can be asserted independently).
+    fn _errno() -> *mut i32;
+    /// msvcrt's invalid-parameter handler. Default behaviour is "no handler
+    /// installed → return", but an app CAN install one that aborts, so the call
+    /// itself is part of the contract and must actually happen.
+    fn _invalid_parameter(
+        expr: *const u16,
+        func: *const u16,
+        file: *const u16,
+        line: u32,
+        arg: usize,
+    );
+}
+
+/// `MSVCRT_INVALID_PMT(x, err)`: set errno, then invoke the handler.
+#[inline]
+unsafe fn invalid_pmt(err: i32) {
+    *_errno() = err;
+    _invalid_parameter(
+        core::ptr::null(),
+        core::ptr::null(),
+        core::ptr::null(),
+        0,
+        0,
+    );
+}
+
+/// `MSVCRT_CHECK_PMT(cond)`: on failure set errno=EINVAL + fire the handler.
+/// Returns the condition so call sites read like the C.
+#[inline]
+unsafe fn check_pmt(cond: bool) -> bool {
+    if !cond {
+        invalid_pmt(EINVAL);
+    }
+    cond
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn strcpy_s(dst: *mut u8, elem: usize, src: *const u8) -> i32 {
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem != 0) {
+        return EINVAL;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+    let mut i = 0usize;
+    while i < elem {
+        let c = *src.add(i);
+        *dst.add(i) = c;
+        if c == 0 {
+            return 0;
+        }
+        i += 1;
+    }
+    invalid_pmt(ERANGE);
+    *dst = 0; // dst[0], NOT dst[elem] — see the C's comment
+    ERANGE
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn strcat_s(dst: *mut u8, elem: usize, src: *const u8) -> i32 {
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem != 0) {
+        return EINVAL;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+    let mut i = 0usize;
+    while i < elem {
+        if *dst.add(i) == 0 {
+            let mut j = 0usize;
+            while j + i < elem {
+                let c = *src.add(j);
+                *dst.add(j + i) = c;
+                if c == 0 {
+                    return 0;
+                }
+                j += 1;
+            }
+            break; // fell out of the inner loop -> too small
+        }
+        i += 1;
+    }
+    invalid_pmt(ERANGE);
+    *dst = 0;
+    ERANGE
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn strncpy_s(
+    dst: *mut u8,
+    elem: usize,
+    src: *const u8,
+    count: usize,
+) -> i32 {
+    let truncate = count == TRUNCATE;
+    if count == 0 {
+        if !dst.is_null() && elem != 0 {
+            *dst = 0;
+        }
+        return 0;
+    }
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem != 0) {
+        return EINVAL;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+    let (mut p, mut s) = (dst, src);
+    let (mut e, mut c) = (elem, count);
+    while e != 0 && c != 0 && *s != 0 {
+        *p = *s;
+        p = p.add(1);
+        s = s.add(1);
+        e -= 1;
+        c -= 1;
+    }
+    if e == 0 && truncate {
+        *p.sub(1) = 0;
+        return STRUNCATE;
+    }
+    if e == 0 {
+        *dst = 0;
+        return ERANGE;
+    }
+    *p = 0;
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn strncat_s(
+    dst: *mut u8,
+    elem: usize,
+    src: *const u8,
+    count: usize,
+) -> i32 {
+    if !check_pmt(!dst.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(elem != 0) {
+        return EINVAL;
+    }
+    if count == 0 {
+        return 0;
+    }
+    if !check_pmt(!src.is_null()) {
+        *dst = 0;
+        return EINVAL;
+    }
+
+    let mut i = 0usize;
+    while i < elem && *dst.add(i) != 0 {
+        i += 1;
+    }
+    if i == elem {
+        // dst has no terminator inside elem: EINVAL, NOT ERANGE (a Wine quirk).
+        invalid_pmt(EINVAL);
+        *dst = 0;
+        return EINVAL;
+    }
+
+    let mut j = 0usize;
+    while j + i < elem {
+        if count == TRUNCATE && j + i == elem - 1 {
+            *dst.add(j + i) = 0;
+            return STRUNCATE;
+        }
+        if j == count {
+            *dst.add(j + i) = 0;
+            return 0;
+        }
+        let c = *src.add(j);
+        *dst.add(j + i) = c;
+        if c == 0 {
+            *dst.add(j + i) = 0;
+            return 0;
+        }
+        j += 1;
+    }
+
+    invalid_pmt(ERANGE);
+    *dst = 0;
+    ERANGE
+}
+
+/// ⚠️ Note the FINAL failure here sets **EINVAL**, not ERANGE — and unlike its
+/// siblings it calls `_invalid_parameter` BEFORE `*_errno() = EINVAL` (the C
+/// spells the macro out by hand rather than using MSVCRT_INVALID_PMT). The
+/// observable effects are the same set; reproduced in the C's order anyway.
+#[no_mangle]
+pub unsafe extern "C" fn _strnset_s(str_: *mut u8, size: usize, c: i32, count: usize) -> i32 {
+    if str_.is_null() && size == 0 && count == 0 {
+        return 0;
+    }
+    if !check_pmt(!str_.is_null()) {
+        return EINVAL;
+    }
+    if !check_pmt(size > 0) {
+        return EINVAL;
+    }
+    let mut i = 0usize;
+    while i < size - 1 && i < count {
+        if *str_.add(i) == 0 {
+            return 0;
+        }
+        *str_.add(i) = c as u8;
+        i += 1;
+    }
+    while i < size {
+        if *str_.add(i) == 0 {
+            return 0;
+        }
+        i += 1;
+    }
+    *str_ = 0;
+    _invalid_parameter(
+        core::ptr::null(),
+        core::ptr::null(),
+        core::ptr::null(),
+        0,
+        0,
+    );
+    *_errno() = EINVAL;
+    EINVAL
 }

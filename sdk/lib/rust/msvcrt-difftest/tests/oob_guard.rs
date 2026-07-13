@@ -47,6 +47,15 @@ extern "C" {
     // guarded from day one rather than after the fact.
     fn wcsncmp(a: *const u16, b: *const u16, n: usize) -> i32;
     fn _wcsnset(s: *mut u16, c: u16, n: usize) -> *mut u16;
+
+    // wave 5a — bounded, so it belongs here from day one (§9.61).
+    fn __strncnt(s: *const u8, size: usize) -> usize;
+
+    // wave 5b — the bounded members of the `_s` family. Their whole PURPOSE is
+    // not to run off a buffer, so an over-read here would be especially absurd.
+    fn strncpy_s(d: *mut u8, elem: usize, s: *const u8, n: usize) -> i32;
+    fn strncat_s(d: *mut u8, elem: usize, s: *const u8, n: usize) -> i32;
+    fn _strnset_s(s: *mut u8, size: usize, c: i32, n: usize) -> i32;
 }
 
 const PAGE: usize = 4096;
@@ -161,6 +170,26 @@ fn main() {
         })),
         ("_wcsnset", Box::new(move || unsafe {
             core::hint::black_box(_wcsnset(wguarded(k), 0x7A7A, k));
+        })),
+        ("__strncnt", Box::new(move || unsafe {
+            core::hint::black_box(__strncnt(guarded(k), k));
+        })),
+
+        // ── wave 5b: the bounded `_s` family ──
+        // src is the guarded (NUL-free) buffer; the copy is bounded by count<=k.
+        ("strncpy_s", Box::new(move || unsafe {
+            let mut d = [0u8; 128];
+            core::hint::black_box(strncpy_s(d.as_mut_ptr(), d.len(), guarded(k), k));
+        })),
+        ("strncat_s", Box::new(move || unsafe {
+            let mut d = [0u8; 128];
+            d[0] = 0;
+            core::hint::black_box(strncat_s(d.as_mut_ptr(), d.len(), guarded(k), k));
+        })),
+        // _strnset_s SCANS its own buffer up to `size` — so the guarded buffer is
+        // the subject, and size must not walk past it.
+        ("_strnset_s", Box::new(move || unsafe {
+            core::hint::black_box(_strnset_s(guarded(k), k, b'z' as i32, k));
         })),
     ];
 

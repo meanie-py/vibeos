@@ -549,12 +549,28 @@ fn main() {
         .opt_level(2)
         .file(manifest.join("refimpl.c"));
 
+    // The msvcrt internals the CRATE UNDER TEST imports (_errno /
+    // _invalid_parameter). Deliberately its OWN TU with NO refstub include, so
+    // these land un-namespaced — the reference's copies are `msvcrt_ref_*` and
+    // must stay unreachable from the subject (and vice versa: separate errno
+    // storage is what lets classify assert each side independently).
+    let mut subject_build = cc::Build::new();
+    subject_build
+        .warnings(false)
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .opt_level(2)
+        .file(manifest.join("subjectimpl.c"));
+    subject_build.cargo_metadata(false);
+
     // One archive, `libmsvcrt_ref.a` in OUT_DIR, holding all three objects.
     let mut objects: Vec<PathBuf> = Vec::new();
     refimpl_build.cargo_metadata(false);
     objects.extend(ref_tu(&string_c).compile_intermediates());
     objects.extend(ref_tu(&wcs_c).compile_intermediates());
     objects.extend(refimpl_build.compile_intermediates());
+    objects.extend(subject_build.compile_intermediates());
 
     let archive = out.join("libmsvcrt_ref.a");
     let _ = fs::remove_file(&archive);
@@ -584,6 +600,7 @@ fn main() {
     // printf.h is REAL logic (wcs.c instantiates it twice), not a stub.
     println!("cargo:rerun-if-changed={}", msvcrt_dir.join("printf.h").display());
     println!("cargo:rerun-if-changed={}", manifest.join("refimpl.c").display());
+    println!("cargo:rerun-if-changed={}", manifest.join("subjectimpl.c").display());
     println!("cargo:rerun-if-changed={}", refstub.display());
     println!("cargo:rerun-if-changed=build.rs");
 }
