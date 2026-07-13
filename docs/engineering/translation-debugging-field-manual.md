@@ -5206,6 +5206,45 @@ entry. Legit dispatch/yield/quantum paths dethrone (Prcb->CurrentThread=NewThrea
 BEFORE queuing the outgoing thread, so this is quiet on them and fires only on the
 illegal readier. That `0x56`/`[RQRUNNING]` caller line == THE BUG.
 
+**2026-07-13 ROOT CAUSE FOUND — `[RQRUNNING]` names it: `KiReadyThread`
+(thrdschd.rs:555) with `state=5`=Waiting.** The readier-side of the SwapBusy
+handshake is MISSING (ReactOS's SMP never implemented it; our UP-derived translation
+inherited the omission). Full mechanism:
+1. Thread T runs on CPU1 (`CurrentThread=T`). T commits a wait: sets `State=Waiting`,
+   sets `SwapBusy=1`, calls `KiSwapThread` — but is **still `Prcb->CurrentThread`**
+   until `KiSwapContext` actually switches away (`SwapBusy` clears in
+   `KiSwapContextResume`, AFTER the dethrone).
+2. CPU0 satisfies T's wait (`KiUnwaitThread` -> `KiReadyThread(T)` ->
+   `KiInsertDeferredReadyList(T)`) in that window: T is `Waiting` but STILL running on
+   CPU1. T gets `State=DeferredReady`, pushed to CPU0's deferred list.
+3. CPU0 drains -> `KiDeferredReadyThreadImpl(T)` LINKS T into a ready list (or sets it
+   `NextThread`) while T is **still CurrentThread on CPU1**.
+4. T is now both running on CPU1 AND a schedulable ready-list element -> a later
+   (re)queue double-links it -> the DispatcherReadyListHead tear (0x54/0x11/0x22), and
+   the assorted `0x1E`/`0x19`/`0xF4`/wedge faces are all downstream of that.
+
+**THE FIX (readier-side SwapBusy spin):** at `KiDeferredReadyThreadImpl` entry (the
+deferred-drain link point), spin `while read_volatile(&Thread->SwapBusy) != 0 {
+spin_loop() }` before making T schedulable. `SwapBusy` is set during the wait-commit
+and cleared by `KiSwapContextResume` only AFTER T is dethroned, so the spin guarantees
+T has left its CPU first. Mirrors the RUN-side spin already in `ctxswitch.S`.
+**Lock-safety (critical):** the drain runs with NO PRCB lock held (called from
+`KiCheckDeferredReadyList` after the dispatch/PRCB locks are released), and the
+descheduling CPU clears `SwapBusy` in `KiSwapContextResume` without needing any lock
+the spinner could hold -> no deadlock. (Do NOT put this spin inside
+`KxQueueReadyThread` or `KiInsertDeferredReadyList` — those run under a PRCB lock the
+descheduling CPU may need, which WOULD deadlock. The drain entry is the one lock-free
+readier point.) The `ki_check_not_running` tripwire is kept armed right after the spin
+as the validator: it must go SILENT.
+**Residual window (known, likely negligible):** between `State=Waiting` (set first) and
+`SwapBusy=1` (set a few lines later in the wait-commit), a readier that reaches the
+drain that fast would see `SwapBusy=0` and pass. If the validator still fires post-fix,
+tighten by setting `SwapBusy` BEFORE `State=Waiting` in the 6 wait-commit sites
+(wait.rs 496/500, 557/561, 679/683, 771/775, 979/983, 1132/1136).
+**Validation:** rebuild `--smp-kernel --cswitchdep`, burst ×16 — `0x56`/`[RQRUNNING]`
++ the `0x54`/`0x11`/`0x22` faces must go silent and the flake rate must drop toward 0.
+A deadlock from a mis-placed spin would show as INCREASED hangs (revert if so).
+
 **Integrated from a Codex handoff attempt (its cyber filter tripped on the "wild
 write" language, so it stalled — reword future handoffs):** (a) `expool.rs` removed
 the post-unlock `ExpCheckPoolBlocks` page-walk on the theory it RACES (walks a shared
