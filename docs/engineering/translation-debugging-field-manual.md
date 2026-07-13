@@ -5245,6 +5245,45 @@ tighten by setting `SwapBusy` BEFORE `State=Waiting` in the 6 wait-commit sites
 + the `0x54`/`0x11`/`0x22` faces must go silent and the flake rate must drop toward 0.
 A deadlock from a mis-placed spin would show as INCREASED hangs (revert if so).
 
+**2026-07-13 FIX ATTEMPT #1 FAILED (drain-spin) + reverted — and it exposed a PARADOX
+that is the real next lead.** The drain spin **deadlocked every boot** (0/16, wedge at
+1 cswitch): **deferred-ready threads NORMALLY carry `SwapBusy` set** (it is part of the
+readying transition), so `while SwapBusy` at `KiDeferredReadyThreadImpl` blocks the
+normal path forever. The "silent tripwires" it produced were a FALSE negative (the
+kernel hangs before reaching the corruption). Reverted (commit on branch). Lesson:
+`SwapBusy` set ≠ "still CurrentThread"; do not gate the drain on it.
+
+**THE PARADOX (this is where the next session starts):** the confirmed root — a thread
+readied by a cross-CPU `KiReadyThread`/unwait *while still `CurrentThread` mid-wait-
+commit* — **should be impossible under the dispatcher lock.** The wait-commit holds the
+global queued dispatcher lock (`KiAcquireDispatcherLockAtSynchLevel`, wait.rs:461)
+continuously through `State=Waiting` (496), `KiAddThreadToWaitList` (498),
+`KiSetThreadSwapBusy` (500), and into `KiSwapThread` (502) — there is NO
+`KiReleaseDispatcherLock` before the swap. The unwait path *also* holds the dispatcher
+lock (`eventobj.rs:75` `KiAcquireDispatcherLock` -> `KiWaitTest` -> `KiUnwaitThread` ->
+`KiReadyThread`). Two holders of the same global lock CANNOT overlap — so the unwait
+must wait until the commit releases it, by which point `T` should be dethroned. Yet
+`ki_check_not_running` (0x56) fires. **One of these must be true — resolve it first:**
+1. **The dispatcher lock is released too EARLY in the swap** — before `KiSwapThread`
+   dethrones `Prcb->CurrentThread`. TRACE where the queued dispatcher lock acquired at
+   wait.rs:461 is actually released during `KiSwapThread`/`KiSwapContext`/
+   `KiSwapContextResume` (asm `ctxswitch.S` + thrdini.rs). If it is released before the
+   dethrone (or before `SwapBusy`/state settle), a cross-CPU unwait slips in. This is
+   the prime suspect (an SMP dispatcher-lock-release-ordering translation bug).
+2. **A readier bypasses the dispatcher lock.** Audit ALL `KiReadyThread` callers
+   (eventobj:204, gate:268, queue:123, thrdobj:263, wait:204) — does every one hold the
+   dispatcher lock? One that doesn't is the race.
+3. **The queued dispatcher lock isn't actually global/serializing** in our SMP impl
+   (e.g. `KiAcquireDispatcherLock` vs `KiAcquireDispatcherLockAtSynchLevel` resolve to
+   different locks). Verify both resolve to the SAME `LOCK_QUEUE_DISPATCHER_LOCK` global.
+
+The right fix follows from which of (1)/(2)/(3) is true — most likely (1), and the fix
+is to release the dispatcher lock at the correct point (after dethrone), matching NT.
+`ki_check_not_running` (0x56) stays armed as the exact oracle: the fix is right when it
+goes silent AND the flake rate drops WITHOUT new hangs. Do this careful lock-ordering
+work FRESH, not at the tail of a long run — attempt #1 shows how a plausible-but-wrong
+placement makes things strictly worse.
+
 **Integrated from a Codex handoff attempt (its cyber filter tripped on the "wild
 write" language, so it stalled — reword future handoffs):** (a) `expool.rs` removed
 the post-unlock `ExpCheckPoolBlocks` page-walk on the theory it RACES (walks a shared
