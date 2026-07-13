@@ -496,6 +496,9 @@ pub unsafe extern "system" fn KiQuantumEnd() {
 
     NextThread = (*Prcb).NextThread;
 
+    #[cfg(feature = "smp")]
+    ntkrnl_sys::inline::ke::ki_check_promote_not_linked(NextThread, 0x03); // KiQuantumEnd
+
     KiSetThreadSwapBusy(Thread);
 
     (*Prcb).NextThread = core::ptr::null_mut();

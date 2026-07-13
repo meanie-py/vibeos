@@ -97,6 +97,9 @@ pub unsafe extern "system" fn KiDpcInterruptHandler() {
         OldThread = (*Prcb).CurrentThread;
         NewThread = (*Prcb).NextThread;
 
+        #[cfg(feature = "smp")]
+        ntkrnl_sys::inline::ke::ki_check_promote_not_linked(NewThread, 0x02); // KiDpcInterruptHandler
+
         (*Prcb).NextThread = core::ptr::null_mut();
         (*Prcb).CurrentThread = NewThread;
 

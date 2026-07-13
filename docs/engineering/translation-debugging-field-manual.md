@@ -5163,6 +5163,36 @@ the thread is wrongly linked into + its state + owning PRCB; `[RQTEAR]` (at
 `ki_rq_integrity`) dumps the corrupted link VALUE. One amplified burst with these
 should name the list + the value, from which the upstream writer follows.
 
+**2026-07-13 FORENSIC BURST — WILD-WRITE THEORY DEAD; it's a scheduler logic bug.**
+The `[RQLINKED]`/`[RQTEAR]` dumps are unambiguous:
+- `[RQLINKED]`: EVERY hit shows `thread.Flink == thread.Blink == head` where `head`
+  is the PRCB's `DispatcherReadyListHead[9]`, with `ownerCPU == thisCPU == 1`. That is
+  a thread **correctly, currently the sole element of CPU1's priority-9 ready list**
+  (head⇄X consistent) — being (re)queued from `traphandler.rs:106` (OldThread=
+  CurrentThread) AND `wait.rs:393` (KiExitDispatcher, also the outgoing CurrentThread).
+  Observed states: `2`=Running (the paradox) and `1`=Ready.
+- `[RQTEAR]` (site 0x22): the DOWNSTREAM wreckage — `head.Flink=head.Blink=X` but
+  `X.Flink=X.Blink=X` (self-looped), i.e. the one-element list after the botched
+  re-insert. `BADPTR` is just the self-looped node, NOT a foreign fingerprint.
+- List primitives (`RemoveEntryList`/`InsertTail/Head`/`InitializeListHead`) verified
+  correct-standard. **No foreign value ever appears in a torn link => NOT a wild
+  write.** The `0x19`/`0xF4` faces are downstream of the same scheduler damage (or the
+  racy pool checker), not an independent corruptor.
+
+**THE INVARIANT VIOLATION (precise):** `Prcb->CurrentThread` is simultaneously the
+sole element of that same Prcb's `DispatcherReadyListHead`. Both crash sites just
+re-queue the outgoing CurrentThread (NT-faithful), so the bug is whoever left it
+linked. Two sub-hypotheses, and a discriminator was built to decide between them:
+(A) a **set-NextThread path** promoted a still-linked thread to Running (so it was
+linked *before* it became current); (B) a **cross-CPU queue-while-running** race
+linked it *after*. New guard `ki_check_promote_not_linked(NextThread, site)` fires at
+the 4 promotion points (NextThread->CurrentThread=Running): `0x01` KiExitDispatcher,
+`0x02` KiDpcInterruptHandler, `0x03` KiQuantumEnd, `0x04` KiSwapThread. If it fires
+(`0x55` bugcheck + `[RQPROMOTE]` print) => hypothesis A and the site names the swap
+that saw it; if it stays SILENT while `0x54` keeps firing => hypothesis B (cross-CPU),
+and the next step is a guard in `KxQueueReadyThread` when it queues to a REMOTE prcb
+whose CurrentThread == the thread being queued.
+
 **Integrated from a Codex handoff attempt (its cyber filter tripped on the "wild
 write" language, so it stalled — reword future handoffs):** (a) `expool.rs` removed
 the post-unlock `ExpCheckPoolBlocks` page-walk on the theory it RACES (walks a shared

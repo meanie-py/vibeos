@@ -385,6 +385,9 @@ unsafe fn KiExitDispatcherImpl(OldIrql: KIRQL) {
 
     KiSetThreadSwapBusy(Thread);
 
+    #[cfg(feature = "smp")]
+    ntkrnl_sys::inline::ke::ki_check_promote_not_linked(NextThread, 0x01); // KiExitDispatcher
+
     (*Prcb).NextThread = core::ptr::null_mut();
     (*Prcb).CurrentThread = NextThread;
 

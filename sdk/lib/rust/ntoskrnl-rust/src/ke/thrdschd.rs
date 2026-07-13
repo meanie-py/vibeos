@@ -482,6 +482,9 @@ unsafe fn KiSwapThreadImpl(
             }
         }
 
+        #[cfg(feature = "smp")]
+        ntkrnl_sys::inline::ke::ki_check_promote_not_linked(NextThread, 0x04); // KiSwapThread
+
         (*Prcb).NextThread = core::ptr::null_mut();
         (*Prcb).CurrentThread = NextThread;
         *kt_State(NextThread) = Running;

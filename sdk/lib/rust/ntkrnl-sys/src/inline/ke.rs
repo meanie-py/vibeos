@@ -1776,6 +1776,43 @@ pub unsafe fn BitScanReverse(index: *mut ULONG, mask: ULONG) -> BOOLEAN {
 /// back-links are torn, the writer that LEFT it torn bugchecks in the act
 /// (P2 high byte = call-site marker), instead of the corruption surfacing
 /// later in KiSelectReadyThread's reader-side check. feature=smp only.
+/// §9.56 promotion-point discriminator. Call right before a thread is promoted to
+/// Running (NextThread -> CurrentThread). If it is STILL genuinely linked in a ready
+/// list at that moment, then whoever SET it as NextThread left it linked — the bug is
+/// upstream of the swap, in a set-NextThread path (NOT a cross-CPU queue-while-running
+/// race). Silent unless the invariant is already broken. `site` is a small tag so we
+/// know which swap function observed it.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn ki_check_promote_not_linked(thread: ddk::PKTHREAD, site: u64) {
+    if thread.is_null() { return; }
+    let entry = kt_wait_list_entry(thread);
+    let flink = (*entry).Flink;
+    let blink = (*entry).Blink;
+    let linked = !flink.is_null()
+        && !blink.is_null()
+        && flink != entry
+        && (*flink).Blink == entry
+        && (*blink).Flink == entry;
+    if linked {
+        crate::driver_ddk::DbgPrint(
+            b"[RQPROMOTE] site=%x thr=%p state=%u F=%p B=%p - NextThread linked at promotion => set-NextThread bug upstream\n\0".as_ptr() as *const i8,
+            site as u32,
+            thread,
+            kt_state_read(thread) as u32,
+            flink,
+            blink,
+        );
+        ddk::KeBugCheckEx(
+            0x96,
+            thread as usize as _,
+            ((0x55u64 << 40) | site) as _,
+            kt_state_read(thread) as _,
+            flink as usize as _,
+        );
+    }
+}
+
 #[cfg(feature = "smp")]
 #[inline]
 pub unsafe fn ki_rq_integrity(prcb: ddk::PKPRCB, priority: u32, site: u64) {
