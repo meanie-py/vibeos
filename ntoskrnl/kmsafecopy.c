@@ -32,11 +32,36 @@
  * first (the fault goes through MmAccessFault before reaching the dispatcher),
  * which a bare MmIsAddressValid pre-check could not.
  *
- * amd64 only for now: the amd64 table-based SEH personality is the validated one
- * (seh_poc.c PASS + __C_specific_handler in the link). i386's frame-based model
- * and arm64 are not yet exercised here, so on those arches the Rust safe_copy_*
- * primitive still does a PLAIN copy_nonoverlapping and a bad user pointer still
- * bugchecks (see probe.rs) — an honest, visible gap, tracked as owed work.
+ * amd64 ONLY — and that is a MEASURED result, not a guess. KmSafeCopySelfTest()
+ * below runs on every boot and prints `[KMSAFECOPY] ... (PASS)`; amd64 passes.
+ *
+ * arm64: TRIED AND REJECTED (2026-07-12). It looked ready on paper — the arm64
+ * kernel does define the personality routine (`llvm-nm build-arm64/ntoskrnl.exe`
+ * -> `T __C_specific_handler`, from rtl-except's translated arm64 handler) and
+ * dummy-pseh-verdict.md §C says native __try/__except "compiles today" on arm64.
+ * It compiles, and it catches a SOFTWARE raise. But it does NOT catch a HARDWARE
+ * page fault in kernel mode: with the copy enabled, a probe at a genuinely-unmapped
+ * VA (0x0000700000000000) did not reach the __except at all — the boot simply WEDGED
+ * (HANG_TIMEOUT, no bugcheck banner, no desktop). So arm64 keeps the plain copy.
+ *
+ * That is the whole reason the self-test exists. Shipping the cfg without it would
+ * have made safe_copy_from_user *look* protected on arm64 while actually converting a
+ * hostile-pointer BUGCHECK into a silent HANG — strictly worse than the honest crash,
+ * and far harder to attribute. An unproven protection is worse than a documented gap.
+ * (Second-order finding, owed: an uncaught kernel-mode fault on arm64 wedges instead
+ * of bugchecking — the arm64 exception path should still reach KeBugCheckEx.)
+ *
+ * Beware the false negative that nearly sank this: address 0x1 FAULTS on amd64 but is
+ * MAPPED on arm64 (the copy silently succeeded and returned garbage). A bad-pointer
+ * test that never actually faults proves nothing — assert BOTH that a valid copy
+ * still succeeds AND that an invalid one is caught, or a no-op "protection" passes.
+ *
+ * i386: also UNPROTECTED — its frame-based SEH lowering is MSVC-env-only
+ * (dummy-pseh-verdict.md §C). Plain copy_nonoverlapping; a bad user pointer still
+ * bugchecks (see probe.rs). An honest, visible gap; the i386 twins of these crashers
+ * stay quarantined until it closes. The arch-neutral close for BOTH i386 and arm64 is
+ * a Linux-extable-style fault-fixup primitive (a table keyed by faulting PC, consulted
+ * in KiPageFault) — it needs no working SEH at all.
  *
  * That gap is deliberately NOT papered over with an MmIsAddressValid pre-check:
  * MmIsAddressValid cannot distinguish "invalid" from "valid but paged out", so on
@@ -83,4 +108,47 @@ int KmProtectedCopyMemory(void *Dst, const void *Src, KMSIZE Len)
     {
         return 0;
     }
+}
+
+/*
+ * KmSafeCopySelfTest — a per-boot tripwire proving the HARDWARE-fault path works.
+ *
+ * Why this exists: seh_poc.c only ever proved that a *software* raise
+ * (ExRaiseStatus) dispatches. That is NOT what safe_copy_* depends on. The thing
+ * we actually rely on is a real page fault, taken inside a callee, unwinding into
+ * an __except one frame up: KiPageFault -> MmAccessFault (declines) ->
+ * KiDispatchException -> RtlDispatchException -> __C_specific_handler -> filter.
+ * Nothing was checking that end-to-end, on any arch, on any boot.
+ *
+ * Two assertions, both necessary:
+ *   good — a VALID copy must still succeed (a primitive that "never faults"
+ *          because it silently copies nothing would otherwise pass a bad-only test)
+ *   bad  — an INVALID source must be CAUGHT, not bugcheck
+ *
+ * Address 0x1 is deliberately chosen: unmapped, and below MmUserProbeAddress, so a
+ * range-only probe would happily wave it through — exactly the shape of the hostile
+ * pointer that produced the memcpy+0x40 cluster.
+ *
+ * Prints `[KMSAFECOPY] ... (PASS)`. A FAIL means the copy is silently unprotected;
+ * a BUGCHECK here means this arch's kernel SEH cannot catch a hardware fault, and
+ * the fault-tolerant copy MUST NOT be enabled on it. Failing loudly at boot is the
+ * entire point — a silently-unprotected copy is how the original cluster hid.
+ */
+extern unsigned long DbgPrint(const char *Format, ...);
+
+int KmSafeCopySelfTest(void)
+{
+    volatile char dst[8];
+    const char src[8] = { 'v', 'i', 'b', 'e', 'o', 's', '!', 0 };
+    int good, bad, ok;
+
+    good = KmProtectedCopyMemory((void *)dst, src, sizeof(src));
+    bad  = KmProtectedCopyMemory((void *)dst, (const void *)0x1, sizeof(src));
+
+    ok = (good == 1 && bad == 0);
+
+    DbgPrint("[KMSAFECOPY] fault-tolerant copy: valid=%d invalid_caught=%d (%s)\n",
+             good, (bad == 0), ok ? "PASS" : "FAIL");
+
+    return ok;
 }

@@ -1050,6 +1050,25 @@ impl Linker {
             }
         }
 
+        // Watch every C SHIM too — SAME false-fresh bug as the note above, one input
+        // further out. The shims (ntoskrnl/kmsafecopy.c, ntoskrnl/seh_poc.c, the
+        // *_rust_shims.c, the CRT printf shells, ...) live OUTSIDE sdk/lib/rust, so
+        // neither the workspace sweep above nor cargo's (already-disabled) default
+        // whole-package watching covers them. Editing one therefore left cargo
+        // reporting the module fresh while relinking a STALE object.
+        //
+        // Caught 2026-07-12 the expensive way: an edit to kmsafecopy.c's boot
+        // self-test never reached the arm64 kernel, and the boot dutifully printed
+        // the PREVIOUS build's verdict — a "result" for code that wasn't running.
+        // The first arm64 run only picked the shim up because build.rs itself had
+        // changed that time, which is exactly what makes this class so easy to miss.
+        for rel in &self.c_shims {
+            println!(
+                "cargo:rerun-if-changed={}",
+                self.repo_root.join(rel).display()
+            );
+        }
+
         // ---- Rust staticlib(s) (per-crate target dir) ----------------
         // A Win32Dll is USER-mode: its main body crate AND its rust_lib
         // siblings build the STANDARD user-mode target (hardfloat, precompiled
