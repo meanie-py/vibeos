@@ -5545,60 +5545,55 @@ exception handling actually compiles. Verify the harness before you debug the su
 
 ---
 
-### 9.64 (ROOT-CAUSED 2026-07-12, FIX SCOPED) arm64 kernel-mode faults on USER addresses are SILENTLY SWALLOWED — a DUMMY_PSEH crutch that fabricates a zero, skips the instruction, defeats SEH, and wedges on any loop
+### 9.64 (ROOT-CAUSED 2026-07-13) arm64 kernel-mode SEH cannot dispatch a hardware fault: RtlDispatchException wedges in a recursive fault storm → kernel stack overflow. The "silent-skip crutch" is a RED HERRING (never reached).
+
+**Correction to an earlier draft of this entry.** The first version blamed a DUMMY_PSEH
+"silent-skip crutch" in `ke/arm64/stubs.rs::KiDispatchException` (fabricate a zero in the faulting
+load's dest reg, `Pc += 4`, return). Instrumentation FALSIFIED that: the crutch is never reached.
+Left as a cautionary example — a hypothesis that explains the symptom is not evidence.
 
 **How it surfaced.** Enabling the fault-tolerant copy (§9.59, `ntoskrnl/kmsafecopy.c`) on arm64
-looked safe on paper: the arm64 kernel *defines* the SEH personality (`llvm-nm
-build-arm64/ntoskrnl.exe` → `T __C_specific_handler`, from rtl-except's translated arm64
-handler), and dummy-pseh-verdict §C says native `__try`/`__except` "compiles today" on arm64. It
-compiles. It catches a *software* raise. **It does not catch a hardware page fault** — a boot-time
-self-test probing an unmapped VA never reached the `__except` and the boot simply **WEDGED**
-(`HANG_TIMEOUT`, no bugcheck banner, no desktop).
+looked safe on paper: the kernel *defines* the SEH personality (`llvm-nm build-arm64/ntoskrnl.exe`
+→ `T __C_specific_handler`) and dummy-pseh-verdict §C says native `__try`/`__except` "compiles
+today" on arm64. It compiles and catches a *software* raise. A boot-time self-test probing a
+genuinely-unmapped VA (`0x0000700000000000`) **WEDGED** the boot (`HANG_TIMEOUT`, no bugcheck, no
+desktop) instead of returning `STATUS_ACCESS_VIOLATION`.
 
-**Root cause — `ke/arm64/stubs.rs::KiDispatchException`, kernel-mode path:**
-```rust
-if PreviousMode == KernelMode {
-    if FirstChance { if RtlDispatchException(..) != 0 { return; } }   // 1. try SEH
-    if code == STATUS_ACCESS_VIOLATION && FaultAddr < MmHighestUserAddress {
-        zero_reg!(Rd); (*TrapFrame).Pc += 4; return;                  // 2. SILENT SKIP  <-- crutch
-    }
-    KeBugCheckEx(KMODE_EXCEPTION_NOT_HANDLED, ..)                     // 3. correct, but UNREACHABLE
-}
-```
-Step 2 is a DUMMY_PSEH-era workaround: with `_SEH2_TRY` handlers dead, a kernel probe touching a
-bad user pointer would bugcheck, so the kernel fabricates a zero in the load's destination register
-and steps over the faulting instruction. **amd64 and i386 have NO such fixup** (amd64 only skips
-`int 3` for DbgBreakPoint, which is legitimate) — this is arm64-only.
+**What the evidence actually shows** (each datum from an instrument verified to emit):
+- `[MMDBG] FAR=0x700000000000  MmAccessFault=0xC0000005` — the fault DOES reach the arm64 data-abort
+  handler and `MmAccessFault` correctly DECLINES it (`ke/arm64/trap.rs`). Mm is innocent.
+- `KiDispatchException` IS entered, calls `RtlDispatchException` with a VALID kernel stack
+  (`SP=0xffff8000055ce090`). `[SEHDBG]` (which prints AFTER the call returns) never fires →
+  **`RtlDispatchException` never returns.**
+- GDB `bt` at the hang: stuck in `KiArm64VectorTable` (trap.S:317), `ESR=0x96000045`
+  (EC=0x25 data abort, DFSC=0x05 translation-fault-L1, WnR=1 write), and **`FAR` ≈ `SP`** — a
+  write fault on its OWN stack frame = **kernel stack overflow**.
+- First inner fault caught in GDB: **`ESR=0x86000007` → EC=0x21 Instruction Abort (same EL),
+  DFSC=0x07 translation-fault-L3.** The CPU tried to EXECUTE an unmapped address.
 
-**Three consequences, in increasing nastiness:**
-1. **It defeats SEH.** Whatever `RtlDispatchException` fails to resolve gets silently skipped
-   instead of failing, so a `__except` can never be reached for a user-address fault.
-2. **It silently corrupts data.** ANY kernel read of a hostile/garbage user pointer returns **0**
-   and execution continues. This is a live correctness+security issue independent of SEH.
-3. **It wedges on anything multi-instruction.** Skipping one load does not terminate a `memcpy`
-   loop — it refaults, gets skipped, refaults, forever. That is why an uncaught kernel fault on
-   arm64 **hangs instead of bugchecking**, even though the correct `KeBugCheckEx` sits right below.
+**Root cause (scoped, not yet fixed).** `RtlDispatchException` (rtl-except arm64) recurses/faults
+without bound while dispatching a real hardware fault, blowing the kernel stack → the vector's own
+register-save then faults past the guard page → infinite re-entry in `KiArm64VectorTable`. The
+FIRST inner fault being an **instruction abort** points at the unwinder computing a BOGUS handler
+routine PC and CALLing it — i.e. `RtlVirtualUnwind`/`__C_specific_handler` on arm64 KERNEL frames
+returns a garbage `ExceptionRoutine` (or the scope-table walk jumps into hyperspace). Confirmed
+NOT: the silent-skip crutch (unreached), `MmAccessFault` (declines correctly), `RtlpGetStackLimits`
+(returns the KTHREAD kernel stack), `RtlPcToFileHeader` (handles kernel PCs via
+`PsLoadedModuleSpinLock`), the `.pdata` directory (populated, size 0x63d0), the arm64
+`RUNTIME_FUNCTION` layout (8 bytes, correct), and clang's arm64 `__try` codegen (emits `.pdata` +
+`__C_specific_handler` ref — verified by standalone compile). The bug is INSIDE the arm64 virtual
+unwind / handler-routine computation for kernel-mode frames.
 
-**THE FALSE-NEGATIVE THAT ALMOST WON.** The first probe used address `0x1` and reported
-`no-fault`, which I initially read as "low VA is mapped on arm64". **Wrong.** It faulted; the
-crutch swallowed it and the copy returned **success with garbage**. A bad-pointer test whose
-address never actually faults proves NOTHING. Always assert BOTH halves — a valid copy still
-succeeds AND an invalid one is caught — or a no-op "protection" passes your test.
+**Owed (task #10).** Debug arm64 kernel-mode `RtlVirtualUnwind` on a `KmProtectedCopyMemory` →
+`KmCopyRaw` → `memcpy` fault: dump the `ExceptionRoutine` it returns and the `FunctionEntry`/unwind
+codes it decodes at each frame; the instruction abort says one of them is garbage. Interim: arm64
+keeps the plain copy and the honest documented gap. The arch-neutral escape hatch (works for i386
+too, needs NO SEH) remains a Linux-extable-style fault-fixup table consulted in the page-fault
+handler.
 
-**Why the self-test was worth its cost.** Shipping the arm64 `cfg` on the strength of the symbol
-check + the verdict doc would have made `safe_copy_from_user` *look* protected on arm64 while
-actually converting a hostile-pointer BUGCHECK into a silent HANG. An unproven protection is worse
-than a documented gap: it hides the hole instead of stating it.
-
-**Fix order (the crutch is LOAD-BEARING — do not just delete it):**
-1. Make `RtlDispatchException` resolve kernel-mode handlers on arm64 (it returned 0 for a `__except`
-   that has unwind tables and a live personality routine — suspect the function-table lookup for the
-   kernel image).
-2. Convert the remaining arm64 kernel probe/capture sites to the `Result`-returning
-   `safe_copy_*`/probe primitives so nothing depends on the crutch.
-3. THEN delete the fixup, restoring fail-loud (unhandled kernel fault → `KeBugCheckEx`, already
-   correct). Deleting it before 1–2 trades a silent hang for a boot bugcheck.
-
-**Arch-neutral alternative that sidesteps all of it:** a Linux-extable-style fault-fixup table
-(keyed by faulting PC, consulted in the page-fault handler) gives i386 AND arm64 a fault-tolerant
-copy with no working SEH at all. Probably the better investment than fixing arm64 kernel SEH.
+**Reusable lesson.** This entry was WRONG once (blamed the crutch) and its instrument lied once
+(a stale-shim build reported the previous kernel's verdict, §"Editing a kernel C SHIM…"). The
+discipline that eventually cracked it: (1) verify the instrument EMITS before trusting its silence
+— `[SEHDBG]:0` only meant something because `[UEXC]:2` proved the same macro worked; (2) probe an
+address that ACTUALLY faults — `0x1` is mapped on arm64, so it proved nothing; (3) when the result
+contradicts the code you wrote, first prove the code you wrote is the code that RAN.
