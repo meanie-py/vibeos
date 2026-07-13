@@ -1296,7 +1296,15 @@ unsafe fn IntGetWindowLong(hwnd: HWND, offset: i32, size: u32, unicode: i32) -> 
             SetLastError(ERROR_INVALID_INDEX);
             return 0;
         }
-        retvalue = *((wndPtr.add(1) as *mut u8).add(offset as usize) as *mut isize);
+        /* NOT `wndPtr.add(1)`: under WoW64 wndPtr is a normalized 32-bit COPY of
+         * the real 64-bit WND, and the extra bytes live after the ORIGINAL.
+         * wnd_extra_base() resolves both cases. */
+        let ExtraBase = crate::wow64::wnd_extra_base(wndPtr);
+        if ExtraBase.is_null() {
+            SetLastError(ERROR_INVALID_INDEX);
+            return 0;
+        }
+        retvalue = *(ExtraBase.add(offset as usize) as *mut isize);
         return retvalue;
     }
 

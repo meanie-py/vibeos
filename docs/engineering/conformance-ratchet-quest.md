@@ -538,7 +538,7 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   asserts BOTH a valid copy succeeds AND an invalid one is caught — this is now PERMANENT on amd64
   (first end-to-end proof in-tree that a real HARDWARE fault is caught in kernel mode; `seh_poc`
   only ever proved a software raise). arm64 **FAILED**: a probe at an unmapped VA wedges the boot.
-  Root cause (field manual §9.68): NOT the DUMMY_PSEH silent-skip crutch (that path is never
+  Root cause (field manual §9.69): NOT the DUMMY_PSEH silent-skip crutch (that path is never
   reached — an earlier hypothesis, falsified by instrumentation). `MmAccessFault` correctly
   declines; `KiDispatchException` is entered with a valid kernel stack; **arm64 kernel-mode
   `RtlDispatchException` never returns** — it recurses/faults (first inner fault = instruction

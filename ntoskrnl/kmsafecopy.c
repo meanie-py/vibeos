@@ -49,13 +49,13 @@
  * hostile-pointer BUGCHECK into a silent HANG — strictly worse than the honest crash,
  * and far harder to attribute. An unproven protection is worse than a documented gap.
  *
- * Root cause of the HANG (field manual §9.68): MmAccessFault correctly declines the
+ * Root cause of the HANG (field manual §9.69): MmAccessFault correctly declines the
  * fault (0xC0000005) and KiDispatchException IS entered with a valid kernel stack, but
  * arm64 kernel-mode RtlDispatchException never returns — it recurses/faults (first inner
  * fault is an INSTRUCTION abort, EC=0x21: it CALLs a bogus handler routine) and blows the
  * kernel stack, ending in an infinite re-entry of KiArm64VectorTable. So the bug is in
  * the arm64 virtual-unwind / __C_specific_handler path for kernel frames, NOT in Mm and
- * NOT in the (never-reached) DUMMY_PSEH silent-skip fixup. Owed = task #10 (field manual §9.68).
+ * NOT in the (never-reached) DUMMY_PSEH silent-skip fixup. Owed = task #10 (field manual §9.69).
  *
  * Beware the false negative that nearly sank this: address 0x1 FAULTS on amd64 but is
  * MAPPED on arm64 (the copy silently succeeded and returned garbage). A bad-pointer

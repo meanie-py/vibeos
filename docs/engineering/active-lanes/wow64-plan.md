@@ -695,3 +695,64 @@ shuffle. No emulator. (x86-on-x64 "for free" once C+D exist.)
   practical (wow64.dll is a clean greenfield candidate).
 - Every phase lands behind the existing gates: arm64 boots must stay green;
   x86 arches untouched by arch-gated exports (§9.43 ordinal discipline).
+
+## M11: the first STOCK binary — `testgui.exe` (i386, unmodified) under WoW64
+
+**Why.** Every guest through M10 was written by us, and a guest you author can only
+test what you thought of — worse, it silently *avoids* whatever the layer doesn't
+support, because you never wrote the call that would have tripped it. M11 stops
+authoring guests: it runs `base/applications/testgui` built for i386 exactly as the
+LiveCD ships it (real `msvcrt` CRT startup, real import table, real window + child
+EDIT control). Full writeup + the five bugs it flushed out: field manual **§9.67**.
+
+**Result.** The stock binary reaches `wWinMain` → `RegisterClassExW` →
+`CreateWindowExW` → `WM_CREATE`, and then dies in *exactly the same place as the
+NATIVE arm64 build of the same source* — a pre-existing user32 EDIT-control bug
+(`EDIT_LockBuffer` → `LocalLock` returns NULL), not a WoW64 bug. That identical
+failure IS the milestone: the emulation layer is now faithful.
+
+`hello32`/`gui32`/`win32`/`file32` all still 0x600D with the full closure staged.
+
+### The SysWOW64 DLL closure (`tools/fex/wow64-closure.py`)
+
+A CRT-linked binary drags in a real import graph: `testgui → user32 → advapi32 →
+rpcrt4 → wininet → …`, 53 modules. The old M8 rule ("do NOT stage advapi32/rpcrt4/
+msvcrt — they leave unbound IATs") was right about the hazard and wrong about the
+cure: a DLL that is staged but whose *own* imports are missing loads **half-bound**,
+and the first call through an unbound slot jumps to garbage. Not-staging only worked
+because nothing on the M8 path called into those DLLs.
+
+The cure is the **complete** closure — no module is ever left half-bound. A bigger
+PARTIAL set has exactly the same landmine, just later. `wow64-closure.py` computes it
+at stage time (stripped variants; 30 MB) and **hard-fails rather than emit a partial
+set**. The loader's `LDR: Skipping missing import` line is the standing oracle that
+the closure is still complete — it must never fire for a guest module.
+
+### The A/B control (`TryStartNativeTestGui`)
+
+winlogon also spawns the **native arm64** build of the same testgui.exe. Without a
+control, every crash inside a shared library looks like a WoW64 bug. With it, one
+boot partitions the entire search space. Keep it.
+
+### OWED (M11)
+
+- **The callback OUT-payload copy-back.** `WM_GETMINMAXINFO` / `WM_NCCALCSIZE` /
+  `WM_WINDOWPOSCHANGING` pass their payload as an OUT parameter — the window proc
+  writes into the struct win32k then reads back. We currently DROP the guest's edits
+  (restoring the kernel's original bytes), which is what we have shipped since M8.
+  Implementing the copy-back regressed `win32.exe` 0x600D → 0x600E: WM_PAINT /
+  WM_NCPAINT / WM_ERASEBKGND vanished and the size-negotiation messages each went
+  1× → 3× (win32k never converged on the geometry the guest handed back). Evidence
+  and the disabled code are in `wow64_callback.c`. Root-cause why the guest's
+  DefWindowProc returns geometry win32k won't converge on, then re-enable.
+- **The remaining loud refusals** (`wow64_manual.c`): `NtNotifyChangeDirectoryFile`,
+  `NtNotifyChangeKey(MultipleKeys)` — all inherently async, blocked on the kernel-side
+  `IO_STATUS_BLOCK32` fix (M10's owed item); `NtSetSystemInformation` — class-dependent
+  pointer-bearing buffers.
+- **`NtDeviceIoControlFile`/`NtFsControlFile` pass their IOCTL buffers through
+  untranslated.** Most are flat; a minority embed pointers. Fine until a guest sends
+  a pointer-bearing IOCTL, at which point the failure lands inside the driver.
+- **user32 EDIT control is broken NATIVELY** (all arches, not WoW64):
+  `EDIT_LockBuffer` gets `LocalLock(es->hloc32W) == NULL`, so `es->text` stays NULL and
+  `EDIT_EM_ReplaceSel` dereferences it. Every edit box in the OS is affected. Belongs
+  to a user32/kernel32 lane, not this one — but it is what currently stops `testgui`.
