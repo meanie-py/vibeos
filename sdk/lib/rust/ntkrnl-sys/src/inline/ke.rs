@@ -1375,7 +1375,14 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
     // node still in a doubly-linked list has neighbours that point back at it.
     // After a correct RemoveEntryList the stale Flink/Blink point at old
     // neighbours which now point to each other, so the back-check fails => quiet.
-    if kt_state_read(thread) == ddk::_KTHREAD_STATE_Ready as u8 {
+    // §9.56 (2026-07-13): the state gate above was the 0x53 oracle's HOLE — the
+    // gate signal path (KeSignalGateBoostPriority) sets State=DeferredReady
+    // ITSELF before calling KiReadyThread, so a still-LINKED gate-woken victim
+    // arrived here with state 7 and sailed past a Ready-only check (that's how
+    // the elimination round wrongly "refuted" still-linked). Run the linkage
+    // check for ALL states (tag 0x58). Legit paths stay quiet: a correctly
+    // removed node's stale neighbours no longer back-point at it.
+    {
         let entry = kt_wait_list_entry(thread);
         let flink = (*entry).Flink;
         let blink = (*entry).Blink;
@@ -1386,10 +1393,19 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
             && (*blink).Flink == entry;
         if still_linked {
             let caller_line = core::panic::Location::caller().line() as u64;
+            crate::driver_ddk::DbgPrint(
+                b"[RQDOUBLE] deferring a STILL-LINKED thread thr=%p state=%u waitreason=%u waitstatus=%p defproc=%u caller_line=%u\n\0".as_ptr() as *const i8,
+                thread,
+                kt_state_read(thread) as u32,
+                (*thread).WaitReason as u32,
+                (*thread).WaitStatus as usize as *const u8,
+                (*thread).__bindgen_anon_1.__bindgen_anon_1.DeferredProcessor as u32,
+                caller_line as u32,
+            );
             ddk::KeBugCheckEx(
                 0x96,
                 thread as usize as _,
-                ((0x53u64 << 40) | (caller_line << 8) | kt_state_read(thread) as u64) as _,
+                ((0x58u64 << 40) | (caller_line << 8) | kt_state_read(thread) as u64) as _,
                 prcb as usize as _,
                 caller_line as _,
             );
@@ -2384,6 +2400,16 @@ pub unsafe fn KxSingleThreadWait(
         (*due_time).QuadPart = (*timer).DueTime.QuadPart as i64;
         (*wait_block).NextWaitBlock = timer_block;
         (*timer_block).NextWaitBlock = wait_block;
+        // Defensive BOTH-ENDS init (parity with the C ke_x.h vibeos patch):
+        // the original macro relied on TimerBlock->WaitListEntry staying
+        // pre-linked from thread init, but it can be observed self-referencing
+        // (KiTimerExpiration -> KxUnwaitThread spin) or stale — and a stale
+        // RemoveEntryList in KiUnlinkThread writes through dangling pointers
+        // (§9.56 tear class). Idempotent regardless of prior state.
+        (*timer_block).WaitListEntry.Flink =
+            core::ptr::addr_of_mut!((*timer).Header.WaitListHead);
+        (*timer_block).WaitListEntry.Blink =
+            core::ptr::addr_of_mut!((*timer).Header.WaitListHead);
         (*timer).Header.WaitListHead.Flink =
             core::ptr::addr_of_mut!((*timer_block).WaitListEntry);
         (*timer).Header.WaitListHead.Blink =
@@ -2418,6 +2444,11 @@ pub unsafe fn KxDelayThreadWait(
     (*timer_block).NextWaitBlock = timer_block;
     KxSetTimerForThreadWait(timer, *interval, hand);
     (*due_time).QuadPart = (*timer).DueTime.QuadPart as i64;
+    // Defensive BOTH-ENDS init — see KxSingleThreadWait note (§9.56 tear class).
+    (*timer_block).WaitListEntry.Flink =
+        core::ptr::addr_of_mut!((*timer).Header.WaitListHead);
+    (*timer_block).WaitListEntry.Blink =
+        core::ptr::addr_of_mut!((*timer).Header.WaitListHead);
     (*timer).Header.WaitListHead.Flink =
         core::ptr::addr_of_mut!((*timer_block).WaitListEntry);
     (*timer).Header.WaitListHead.Blink =
@@ -2522,6 +2553,16 @@ pub unsafe fn KxQueueThreadWait(
         (*due_time).QuadPart = (*timer).DueTime.QuadPart as i64;
         (*wait_block).NextWaitBlock = timer_block;
         (*timer_block).NextWaitBlock = wait_block;
+        // Defensive BOTH-ENDS init (parity with the C ke_x.h vibeos patch):
+        // the original macro relied on TimerBlock->WaitListEntry staying
+        // pre-linked from thread init, but it can be observed self-referencing
+        // (KiTimerExpiration -> KxUnwaitThread spin) or stale — and a stale
+        // RemoveEntryList in KiUnlinkThread writes through dangling pointers
+        // (§9.56 tear class). Idempotent regardless of prior state.
+        (*timer_block).WaitListEntry.Flink =
+            core::ptr::addr_of_mut!((*timer).Header.WaitListHead);
+        (*timer_block).WaitListEntry.Blink =
+            core::ptr::addr_of_mut!((*timer).Header.WaitListHead);
         (*timer).Header.WaitListHead.Flink =
             core::ptr::addr_of_mut!((*timer_block).WaitListEntry);
         (*timer).Header.WaitListHead.Blink =
