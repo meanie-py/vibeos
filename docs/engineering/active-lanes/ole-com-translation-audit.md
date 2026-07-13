@@ -42,6 +42,34 @@ six files as the proving run. Full causal chain: field manual **§9.72**. Summar
   decls; computes the provided-name set from the crate's real prelude instead of a
   hardcoded list.
 
+### Owed follow-ups (none block the boot; recorded so they don't evaporate)
+
+Surfaced by the Tier-D burn-down. All are *duplicate-truth* smells — two declarations of one
+C type — which is the same family as the ghost-tax program:
+
+1. **Two `SYSTEMTIME`s in scope.** `prelude::SYSTEMTIME` (hand-written) vs com-sys's bindgen
+   `_SYSTEMTIME`. `UDATE.st` is the bindgen one; `vartype::get_date_format` takes the prelude
+   one. Layouts are provably identical (8 × WORD) and varformat bridges with a sound
+   `addr_of!().cast()`, but the duplicate will keep biting. Collapse onto bindgen.
+2. **`olesys::{ITypeLib, ITypeInfo, GUID}` vs `com_sys::*`** — the fable lane self-mirrored a
+   few COM types. Every module that calls into `typelib.rs` now needs a bridge cast
+   (`oleaut.rs:748`, `olepicture.rs`, `recinfo.rs`). Same cleanup that was deferred in 2026-07;
+   it is now costing a cast per call site rather than one.
+3. **`DISPATCH_*` typed inconsistently**: `DISPATCH_PROPERTYGET` is `u32` (`consts.rs`),
+   `DISPATCH_METHOD`/`DISPATCH_PROPERTYPUT` are `c_int` (`tierd_consts.rs`). Same flag family,
+   two types — forces asymmetric casts on one `wFlags`.
+4. **`olepicture.rs` defines private `BITMAPINFO`/`BITMAPINFOHEADER`/`RGBQUAD`**, shadowing
+   win_sys's. Self-consistent (its local `GetDIBits` binds the local types) but a duplicate-type
+   smell; removing them needs the prelude to export those three.
+5. **`table_audit` compares element VALUES, not the declared Rust length.** A `[u16; 6]` holding
+   5 initializers slips past it — the compiler catches that one, but a better diagnosis is cheap.
+6. **c2rust 0.22.1 panics on `varformat.c`** (`convert_type.rs:518`, an attributed fn-ptr type),
+   which is why that file alone had no compiler-exact anchor. Worth an upstream report.
+7. **Wine upstream quirk, deliberately preserved:** `VarFormatPercent`'s `bBracket` reads
+   `(*pbstrOut)[dwLen]` — the NUL terminator — so it is effectively always FALSE. The
+   translation had silently "fixed" it; per *the C is ground truth* the C behaviour was restored
+   and commented. Real bug, but upstream's, not ours to change unilaterally.
+
 ### The meta-lesson
 Every defect above produced code that **compiled, linked and booted**. Smoke cannot see a
 COM DLL with a wrong calling convention on a path the boot never takes, or a date-format
