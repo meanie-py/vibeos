@@ -5563,11 +5563,38 @@ KiDpcInterruptHandler) already held the lock — idle was the single hole. Fix: 
 PRCB lock in the idle promote, RE-CHECK NextThread under it (a displacement may have
 consumed it), promote, release before the SYNCH raise + swap. **Audit rule: a field
 guarded by lock L at N−1 of N sites is not guarded** — grep every reader/writer of
-`Prcb->NextThread` when touching scheduler code. Burst with this fix in flight;
-non-scheduler residuals in these bursts are the known §9.36 family (csrss 0xF4 after
-rpcrt4 `handler continued execution`; lsass user-AV hang) plus a cswitchdep tap
-miscalibration under SMP (amd64 MP swaps at SYNCH_LEVEL=12, tap expects DISPATCH=2 —
-fold into the owed per-CPU-cswitchdep work).
+`Prcb->NextThread` when touching scheduler code. Non-scheduler residuals in these
+bursts are the known §9.36 family (csrss 0xF4 after rpcrt4 `handler continued
+execution`; lsass user-AV hang) plus a cswitchdep tap miscalibration under SMP
+(amd64 MP swaps at SYNCH_LEVEL=12, tap expects DISPATCH=2 — fold into the owed
+per-CPU-cswitchdep work).
+
+**2026-07-14 (g) — idle-lock v1 SELF-REGRESSED (a lesson in lock+IRQL coupling),
+v2 lands the fix; oracles all-silent at 29/32; de-armed.**
+- **v1 (acquire AFTER `sti`) wedged 12/32 + 8× 0xF4, zero oracle hits.** Holding the
+  non-reentrant PrcbLock with interrupts ENABLED on the idle CPU lets any nesting
+  that reaches scheduler code on that CPU re-acquire → self-deadlock → system-wide
+  starvation (faces: post-marker taskbar-OnCreate wedge, csrss 0xF4 storm). **Rule:
+  adding a lock is only half the fix — the acquire must also inherit the IRQL/
+  interrupt discipline of the lock's other holders.** All other PrcbLock takers run
+  with the dispatch path masked; idle's `sti` made it the odd one out.
+- **v2 (4fc6a98c9b5): acquire→re-check→promote→release entirely inside the idle
+  loop's existing `cli` window, `sti` only after release** (UP keeps the C-faithful
+  early `sti`). Burst: **29/32, ZERO bugchecks, ZERO oracle hits, [IDLE-IRQL]
+  tripwire silent** (idle was at DISPATCH — v1's nesting vector was interrupt-driven,
+  not a below-DISPATCH bug). 1 of the 3 hangs = host contention ("serial still
+  flowing at deadline").
+- **New residual face to watch (NOT the tear): census `STUCK … GateWait …
+  HOLDER-STUCK(no signal ever)`** — 77 hits incl. on green boots (previous bursts:
+  0), SERVICES/setup/rpcss parked on session-space guarded-mutex gates whose holder
+  never signals. Either instrumentation drag (cswitchdep taps + oracles slow the
+  promote) or a real starvation the idle serialization unmasked. Census now prints
+  the heuristic gm-owner (`gm? owner=… state=…`) so the next wedge names the HOLDER.
+- **De-armed (db5b542a138):** `RQ_ORACLE_ARMED=false` turns the 15 protocol oracles
+  (0x54–0x63) print-only; corruption fingerprints (torn ready-list links, null queue
+  entries, ReadySummary inconsistency) stay armed. Fix set that closed the tear:
+  gate trylock + timer-block both-ends init + in-flight table dedupe + idle
+  NextThread lock v2.
 
 ### 9.57 (ROOT-CAUSED + FIXED 2026-07-11) A *correct* fix woke a latent panic: `NT_ASSERT` mistranslated as a hard `assert!`, dormant until IRP_MJ_CLEANUP started being delivered (arm64-only)
 
