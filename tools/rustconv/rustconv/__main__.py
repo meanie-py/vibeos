@@ -183,6 +183,36 @@ def resolve_c_path(path_str: str) -> Path:
     sys.exit(1)
 
 
+def _exports_lost_to_unextracted(scan) -> set[str]:
+    """Names the module's .spec EXPORTS that the scanner failed to extract.
+
+    `scan.unextracted` entries are free text ("* cp @ L69", "Cls::m @ L120") because the
+    declarator didn't parse — so the failed fn's real name is precisely what we do NOT
+    have. Recover it from the C instead: any spec export whose definition is present in
+    the source but absent from `scan.functions` was lost in the parse.
+    """
+    target = detect_target(scan.path)
+    if target is None or not target.spec_file or not target.spec_file.is_file():
+        return set()
+    try:
+        spec = parse_spec(target.spec_file)
+    except (OSError, ValueError):
+        return set()
+
+    got = {f.name for f in scan.functions}
+    text = scan.raw_source
+    lost: set[str] = set()
+    for name, entry in spec.items():
+        if name in got or not getattr(entry, "needs_implementation", True):
+            continue
+        # Defined in THIS file? A definition is `name` at the head of a line followed by
+        # `(` — the ReactOS/wine house style puts the return type + convention on their own
+        # lines above it. Cheap and precise enough to distinguish from a call site.
+        if re.search(rf"^{re.escape(name)}\s*\(", text, re.M):
+            lost.add(name)
+    return lost
+
+
 def _gate_unextracted(scan, allow_partial: bool):
     """Fail-loud gate: refuse to run a paid per-function translation over a
     file whose bodies the scanner could only PARTIALLY extract (C++ methods —
@@ -206,6 +236,31 @@ def _gate_unextracted(scan, allow_partial: bool):
         # .c files: parse artifacts (PSEH macro blocks etc.) have always been
         # dropped silently by the kernel pipeline — keep that path unblocked,
         # just make the drop visible.
+        #
+        # …UNLESS the dropped body is a real function. The "it's only a parse artifact"
+        # assumption held for PSEH macro blocks and quietly stopped holding for ws2_32:
+        # `inet_addr(IN CONST CHAR FAR* cp)` came back as an unextractable body named `cp`
+        # (tree-sitter can't parse `CHAR FAR*`), so an EXPORTED fn — one the net smoke test
+        # actually calls — would have been dropped from a paid run with a warning nobody
+        # reads. A lost export is never an artifact. Cross-check the drop against the
+        # module's .spec and HARD FAIL on a hit, per the fail-loud rule.
+        lost = sorted(_exports_lost_to_unextracted(scan))
+        if lost:
+            print(
+                f"\n✗ {scan.path.name}: {len(lost)} SPEC-EXPORTED function(s) are in the "
+                "unextractable set — this is a scanner parse failure, not a macro artifact:",
+                file=sys.stderr,
+            )
+            for name in lost[:12]:
+                print(f"    {name}", file=sys.stderr)
+            print(
+                "  Refusing to spend a paid translation that silently omits an export.\n"
+                "  Fix the scanner (see _blank_memmodel / _normalize_callbacks for the shape),\n"
+                "  or pass --allow-partial to translate the extractable subset deliberately.",
+                file=sys.stderr,
+            )
+            if not allow_partial:
+                sys.exit(1)
         print("  (.c file: legacy behavior, proceeding without these)", file=sys.stderr)
         return
     if allow_partial:
