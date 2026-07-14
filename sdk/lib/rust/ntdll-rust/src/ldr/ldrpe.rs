@@ -720,7 +720,7 @@ pub unsafe extern "system" fn LdrpSnapThunk(
     let mut OrdinalTable: PUSHORT;
     let mut ImportName: LPSTR = core::ptr::null_mut();
     let mut DotPosition: LPSTR;
-    let mut Hint: USHORT;
+    let mut Hint: USHORT = 0;
     let mut Status: NTSTATUS;
     let mut HardErrorParameters: [ULONG_PTR; 3] = [0; 3];
     let mut HardErrorDllName: _UNICODE_STRING = core::mem::zeroed();
@@ -831,9 +831,14 @@ pub unsafe extern "system" fn LdrpSnapThunk(
                     );
                 } else {
                     DbgPrint(
-                        b"LDR: SNAP FAIL import %s from %wZ\n\0".as_ptr() as PCHAR,
+                        b"LDR: SNAP FAIL import %s from %wZ (importer=%s thunk_rva=%p hint=%u nfuncs=%u ord=%u)\n\0".as_ptr() as PCHAR,
                         ImportName,
                         core::ptr::addr_of_mut!(SnapTarget),
+                        if !DllName.is_null() { DllName } else { b"?\0".as_ptr() as LPSTR },
+                        (*OriginalThunk).u1.AddressOfData as usize as *const u8,
+                        Hint as u32,
+                        (*ExportDirectory).NumberOfFunctions,
+                        Ordinal as u32,
                     );
                 }
 
