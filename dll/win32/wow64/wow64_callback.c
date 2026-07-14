@@ -460,21 +460,16 @@ int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status)
                  * win32.exe staying 0x600D. Only width-identical / pointer-free
                  * OUT fields are copied.
                  *
-                 * WM_GETMINMAXINFO (40b, 5 POINTs) and WM_NCCALCSIZE (rgrc rects)
-                 * are safe and enabled. WM_WINDOWPOSCHANGING is deliberately
-                 * NOT copied back — and this is a GUEST bug, not a marshalling
-                 * one (2026-07-13 down-vs-up trace, field manual): win32k sends
-                 * the guest a no-op frame (cx=cy=0, flags=SWP_NOSIZE|SWP_NOMOVE
-                 * =0x3) but the guest's 32-bit DefWindowProc returns it with
-                 * SWP_NOSIZE CLEARED (flags=0x6c) while leaving cx=cy=0. Copying
-                 * that back tells win32k "size to 0x0 AND do size it" -> the
-                 * window collapses to zero client area -> WM_PAINT never fires
-                 * (win32.exe 0x600D -> 0x600E). Field translation is correct
-                 * (verified: handles preserved, geometry per-field); the guest's
-                 * DefWindowProc is returning divergent flags, most likely because
-                 * its 32-bit view of the window's rcWindow is stale/zero (M9
-                 * shared-struct layer). Root-causing that is the owed WINDOWPOS
-                 * continuation. */
+                 * WM_GETMINMAXINFO (40b), WM_NCCALCSIZE (rgrc rects), and
+                 * WM_WINDOWPOSCHANGING (28<->40, field-translated) are all
+                 * enabled. WINDOWPOSCHANGING was long dropped because a naive
+                 * copy-back collapsed the window: the guest's DefWindowProc
+                 * returned SWP_NOSIZE-cleared cx=cy=0. That turned out NOT to be
+                 * this copy-back's fault — it was the unmarshalled
+                 * NtUserMessageCall(FNID_DEFWINDOWPROC) syscall handing win32k the
+                 * 28-byte WINDOWPOS to read as 40 (M16 Fix A, wow64_manual.c).
+                 * With Fix A the guest returns sane geometry, so this copy-back
+                 * is now correct + safe (win32.exe stays 0x600D). */
                 switch (Frame->Msg)
                 {
                     case WOW64_WM_GETMINMAXINFO: /* MINMAXINFO: 5 POINTs = 40b */
@@ -514,8 +509,33 @@ int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status)
                         break;
                     }
 
-                    /* WM_WINDOWPOSCHANGING is deliberately NOT copied back — see
-                     * the OWED note above the switch. */
+                    case WOW64_WM_WINDOWPOSCHANGING:
+                        /* WINDOWPOS 28->40, field-translated. Safe now that M16
+                         * Fix A (NtUserMessageCall marshalling) makes the guest's
+                         * DefWindowProc return SANE geometry — before Fix A it
+                         * returned SWP_NOSIZE-cleared cx=cy=0 and copying that
+                         * back collapsed the window. Copy geometry + flags;
+                         * PRESERVE the 64-bit hwnd/hwndInsertAfter from the
+                         * baseline restore (z-order handle sentinels don't
+                         * zero-extend; the common proc never repoints them). */
+                        if (Len32 >= sizeof(*A32) + sizeof(WOW64_WINDOWPOS32) &&
+                            Extra >= sizeof(WOW64_WINDOWPOS64))
+                        {
+                            const WOW64_WINDOWPOS32 *G32 = (const WOW64_WINDOWPOS32 *)P32;
+                            WOW64_WINDOWPOS64 *G64 = (WOW64_WINDOWPOS64 *)P64;
+                            G64->x = G32->x;
+                            G64->y = G32->y;
+                            G64->cx = G32->cx;
+                            G64->cy = G32->cy;
+                            G64->flags = G32->flags;
+                            if (Wow64TraceSyscalls)
+                                DbgPrint("[WOW64CB] WINDOWPOSCHANGING OUT copied back "
+                                         "(cx=%ld cy=%ld fl=0x%lx)\n",
+                                         (long)G64->cx, (long)G64->cy,
+                                         (unsigned long)G64->flags);
+                        }
+                        break;
+
                     default:
                         break;
                 }
