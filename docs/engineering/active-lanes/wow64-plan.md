@@ -992,10 +992,29 @@ the `DefWindowProc` geometry helpers. Hence: window creation, the message pump, 
 WM_PAINT are green, but DefWindowProc's WINDOWPOS/NCCALCSIZE geometry is wrong.
 
 **Suspected blast radius (all consistent with this root):**
-- WINDOWPOSCHANGING copy-back collapses the window (M15a-cont / task #43).
 - The M13 DOOM "offset content + magenta band" and `rcWindow == rcClient`
   (no non-client inset) anomalies — DOOM's client-origin/geometry likely computed
-  off the same mis-read `tagWND`.
+  off the same mis-read `tagWND` (e.g. `GetWindowRect`, window.c:1282, reads
+  `Wnd->rcWindow` DIRECTLY from the heap).
+
+**BUT the specific WINDOWPOSCHANGING failure is a DIFFERENT, more tractable
+mechanism (2026-07-13, evidence in defwnd.c:783).** The 32-bit user32
+DefWindowProc does NOT read the heap for WM_WINDOWPOSCHANGING — it forwards to
+`NtUserMessageCall(hWnd, Msg, wParam, lParam, &lResult, FNID_DEFWINDOWPROC, ...)`,
+a **syscall**. `lParam` is the guest's 28-byte 32-bit `WINDOWPOS`. That syscall is
+NOT manually thunked in wow64 (only the `SHAREDINFO` struct is — wow64_manual.c),
+so it goes through the flat generated thunk: the pointer is zero-extended but the
+**payload is not marshalled**, and 64-bit win32k's `IntDefWindowProc` reads the
+28-byte guest struct as a 40-byte `WINDOWPOS` → every field past the two leading
+handles is misaligned → garbage `cx/cy/flags` written back. This explains the
+`SWP_NOSIZE`-cleared / `cx=cy=0` return exactly. **Fix: a manual WoW64 thunk for
+`NtUserMessageCall` that marshals the `lParam` payload 32→64 (in) and 64→32 (out)
+keyed on (FNID, Msg)** — the syscall-direction mirror of the callback marshaller in
+wow64_callback.c. Confirm first with a win32k-side trace of the `WINDOWPOS`
+`IntDefWindowProc` receives from a WoW64 guest (expect garbage today). This is
+smaller than the full desktop-heap-WND-view and is the right next step for
+WINDOWPOS specifically; the direct-heap-read reframe above still stands for
+`GetWindowRect`-class functions and the DOOM geometry.
 
 **Fix options (real Windows solves this; pick one):**
 1. **Client-side thunked WND** — win32k publishes a per-process 32-bit-layout shadow
