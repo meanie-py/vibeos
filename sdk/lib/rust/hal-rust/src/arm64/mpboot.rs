@@ -34,10 +34,13 @@ use ntkrnl_sys::ddk;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 // ---------------------------------------------------------------------------
-// PSCI (ARM DEN0022). QEMU `virt` booted EL1-only (no `virtualization=on`)
-// services PSCI via SMC; its default FADT sets PSCI_COMPLIANT=1, USE_HVC=0.
-// SMC64 CPU_ON = 0xC400_0003. TODO(M5a-hardening): consume the FADT
-// ARM_BOOT_ARCH PSCI_USE_HVC bit instead of assuming SMC (NOTES.md §1).
+// PSCI (ARM DEN0022). QEMU `virt` advertises its PSCI conduit in the generated
+// DTB /psci node — VERIFIED `method = "hvc"` (dumpdtb: the node carries "hvc",
+// never "smc"). So the guest at EL1 must invoke PSCI via HVC; `smc #0` is
+// UNDEFINED here (no EL3) and corrupted the BSP (ESR EC=0, no clean return).
+// SMC64 CPU_ON function id 0xC400_0003 is unchanged — only the conduit differs.
+// TODO(M5a-hardening): consume the FADT ARM_BOOT_ARCH PSCI_USE_HVC bit instead
+// of hardcoding HVC, for firmware whose conduit is SMC (real EL3 secure-boot).
 // ---------------------------------------------------------------------------
 const PSCI_CPU_ON_SMC64: u64 = 0xC400_0003;
 const PSCI_SUCCESS: i64 = 0;
@@ -53,10 +56,17 @@ const PTE_TABLE: u64 = 1 << 1; // table descriptor (L0/L1/L2); cleared => block
 const PTE_AF: u64 = 1 << 10;
 const PTE_SH_INNER: u64 = 3 << 8;
 const PTE_AP_RW: u64 = 0 << 6;
-const PTE_ATTR_NORMAL: u64 = 0 << 2;
+const PTE_ATTR_NORMAL: u64 = 0 << 2; // MAIR AttrIndx 0 = 0xFF Normal-WB
+const PTE_ATTR_DEVICE: u64 = 1 << 2; // MAIR AttrIndx 1 = 0x00 Device-nGnRnE
 const TABLE_FLAGS: u64 = PTE_VALID | PTE_TABLE | PTE_AF | PTE_SH_INNER;
 // 1GB block descriptor at L1 (PUD): bit1=0 (block), Normal-WB, RW, AF, inner-sh.
 const BLOCK_FLAGS: u64 = PTE_VALID | PTE_AF | PTE_SH_INNER | PTE_AP_RW | PTE_ATTR_NORMAL;
+// Device 1GB block (for the PL011 UART @ 0x09000000): no shareability (ignored
+// for Device), Device-nGnRnE so the trampoline's post-MMU UART traces reach it.
+const BLOCK_FLAGS_DEVICE: u64 = PTE_VALID | PTE_AF | PTE_AP_RW | PTE_ATTR_DEVICE;
+// PL011 UART physical base (QEMU virt). Its 1GB block must be device-mapped in
+// the AP's temp TTBR0 so 'B'/'C'/hex traces (post-MMU, pre-br) reach hardware.
+const PL011_UART_PA: u64 = 0x0900_0000;
 
 const PGD_SHIFT: u32 = 39;
 const PUD_SHIFT: u32 = 30;
@@ -84,6 +94,11 @@ core::arch::global_asm!(
     ".global KiArm64ApTrampolineEnd",
     "KiArm64ApTrampolineStart:",
     // x0 = PSCI context_id (unused; params are read from the blob). MMU off.
+    // TRACE 'A' (MMU off): raw physical PL011 UART @ 0x09000000. Proves the AP
+    // actually executed the trampoline (vs. PSCI SUCCESS but no real start).
+    "    movz  x9, #0x0900, lsl #16",             // x9 = 0x09000000 (UART base)
+    "    mov   w10, #0x41",                        // 'A'
+    "    str   w10, [x9]",
     "    adr   x19, KiArm64ApTrampolineParams", // PC-relative → this copy's params
     "    ldr   x1, [x19, #0]",                   // ttbr0 (temp idmap PA)
     "    msr   ttbr0_el1, x1",
@@ -98,10 +113,34 @@ core::arch::global_asm!(
     "    ldr   x1, [x19, #32]",                  // sctlr with M=1
     "    msr   sctlr_el1, x1",
     "    isb",                                    // MMU on; low PC identity-mapped
+    // TRACE 'B' (MMU on): UART now reached via TTBR0 device map. Proves the
+    // MMU-enable succeeded and post-enable instruction fetch/data works.
+    "    movz  x9, #0x0900, lsl #16",
+    "    mov   w10, #0x42",                        // 'B'
+    "    str   w10, [x9]",
     "    ldr   x2, [x19, #40]",                  // sp (kernel VA)
     "    mov   sp, x2",
     "    ldr   x0, [x19, #48]",                  // x0 = LoaderBlock (VA)
     "    ldr   x1, [x19, #56]",                  // entry = KiSystemStartup (VA)
+    // TRACE: dump x1 (the br target) as 16 hex nibbles + newline, so a wrong
+    // entry value is visible directly on serial. Scratch: x9,x11-x15. x0,x1 kept.
+    "    movz  x9, #0x0900, lsl #16",
+    "    mov   x11, x1",
+    "    mov   x12, #60",
+    "1:",
+    "    lsr   x13, x11, x12",
+    "    and   x13, x13, #0xF",
+    "    add   x14, x13, #0x30",                  // '0'+n
+    "    add   x15, x13, #0x37",                  // 'A'+(n-10)
+    "    cmp   x13, #10",
+    "    csel  x13, x14, x15, lt",
+    "    str   w13, [x9]",
+    "    subs  x12, x12, #4",
+    "    b.ge  1b",
+    "    mov   w10, #0x0A",                        // newline
+    "    str   w10, [x9]",
+    "    mov   w10, #0x43",                        // 'C' (about to branch)
+    "    str   w10, [x9]",
     "    br    x1",                               // into high-half kernel; no return
     "    brk   #0",                               // unreachable guard
     ".balign 8",
@@ -161,6 +200,7 @@ unsafe fn read_mair() -> u64 { let v: u64; core::arch::asm!("mrs {}, mair_el1", 
 #[inline(always)]
 unsafe fn read_sctlr() -> u64 { let v: u64; core::arch::asm!("mrs {}, sctlr_el1", out(reg) v, options(nomem, nostack)); v }
 #[inline(always)]
+#[allow(dead_code)] // superseded by build_trampoline_idmap; kept for diagnostics
 unsafe fn read_ttbr0() -> u64 { let v: u64; core::arch::asm!("mrs {}, ttbr0_el1", out(reg) v, options(nomem, nostack)); v }
 #[inline(always)]
 unsafe fn read_ctr() -> u64 { let v: u64; core::arch::asm!("mrs {}, ctr_el0", out(reg) v, options(nomem, nostack)); v }
@@ -205,13 +245,17 @@ unsafe fn cache_sync(va: *mut u8, len: usize) {
     core::arch::asm!("dsb ish", "isb", options(nostack, preserves_flags));
 }
 
-/// Build a temporary identity map (TTBR0) covering `tramp_pa` with a single
-/// 1GB Normal-WB block. Returns the L0 (PGD) physical address, or 0 on OOM.
-/// FALLBACK ONLY — HalStartNextProcessor currently reuses the BSP's live TTBR0
-/// (correct device attributes for the UART). Kept for the case where the BSP's
-/// TTBR0 no longer identity-maps at KeStartAllProcessors time; a real use would
-/// also need a Device-attr block for the 0x0*000000 MMIO the AP touches early.
-#[allow(dead_code)]
+/// Build a temporary identity map (TTBR0) for the AP's MMU-enable window:
+/// a Normal-WB 1GB block covering `tramp_pa` (so the low PC + param reads work
+/// after `msr sctlr_el1`) plus a Device 1GB block covering the PL011 UART (so
+/// the trampoline's post-MMU diagnostic writes reach hardware). Returns the L0
+/// (PGD) physical address, or 0 on OOM.
+///
+/// This is REQUIRED, not a fallback: at KeStartAllProcessors time the BSP's live
+/// TTBR0 no longer identity-maps the contiguous scratch page (it lands hundreds
+/// of MB into RAM), so reusing it faults the AP's first post-MMU instruction
+/// fetch (observed: AP prints 'A' then dies before 'B'). QEMU virt's 1GB RAM
+/// keeps every PA < 0x8000_0000, so both blocks share PGD[0] with a single L1.
 unsafe fn build_trampoline_idmap(tramp_pa: u64) -> u64 {
     let l0 = alloc_page();
     let l1 = alloc_page();
@@ -220,10 +264,14 @@ unsafe fn build_trampoline_idmap(tramp_pa: u64) -> u64 {
     }
     let l0_pa = phys_of(l0);
     let l1_pa = phys_of(l1);
-    // L0[pgd] -> L1 table.
+    // L0[pgd] -> L1 table. Both tramp_pa and the UART are < 512GB => PGD[0].
     *(l0 as *mut u64).add(pgd_index(tramp_pa)) = (l1_pa & !0xFFFu64) | TABLE_FLAGS;
-    // L1[pud] = 1GB identity block covering tramp_pa.
+    // L1[pud(tramp)] = Normal 1GB identity block covering the trampoline page.
     *(l1 as *mut u64).add(pud_index(tramp_pa)) = (tramp_pa & !(ONE_GB - 1)) | BLOCK_FLAGS;
+    // L1[pud(uart)] = Device 1GB identity block covering the PL011 UART. (Same
+    // L1 as long as pgd_index(uart) == pgd_index(tramp) — true for QEMU virt.)
+    *(l1 as *mut u64).add(pud_index(PL011_UART_PA)) =
+        (PL011_UART_PA & !(ONE_GB - 1)) | BLOCK_FLAGS_DEVICE;
     // The AP's table walker reads these by PA; make them visible past our D-cache.
     cache_sync(l0, PAGE_SIZE);
     cache_sync(l1, PAGE_SIZE);
@@ -234,7 +282,7 @@ unsafe fn build_trampoline_idmap(tramp_pa: u64) -> u64 {
 unsafe fn psci_cpu_on(target_mpidr: u64, entry_pa: u64, context_id: u64) -> i64 {
     let result: i64;
     core::arch::asm!(
-        "smc #0",
+        "hvc #0", // QEMU virt PSCI conduit = HVC (DTB-verified); smc is UB here
         inout("x0") PSCI_CPU_ON_SMC64 => result,
         in("x1") target_mpidr,
         in("x2") entry_pa,
@@ -282,17 +330,16 @@ pub unsafe extern "system" fn HalStartNextProcessor(
     let tramp_pa = phys_of(tramp);
     core::ptr::copy_nonoverlapping(start, tramp, blob_len);
 
-    // TTBR0 for PC-continuity across the MMU-enable: reuse the BSP's LIVE TTBR0.
-    // At KeStartAllProcessors time (Phase 1) this is the early low identity map,
-    // which maps BOTH the trampoline RAM page (Normal) AND the PL011 UART at
-    // 0x09000000 (Device) with CORRECT per-region attributes — which early
-    // KiSystemStartup writes before it installs its own vectors. A hand-rolled
-    // idmap (build_trampoline_idmap, kept below as a fallback) covers the
-    // trampoline page but would map the UART as Normal memory (wrong for MMIO),
-    // so the live TTBR0 is the correct choice. If a future boot shows the BSP's
-    // TTBR0 no longer identity-maps here, switch to a full-attribute idmap.
-    let _ = tramp_pa;
-    let ttbr0 = read_ttbr0();
+    // TTBR0 for PC-continuity across the MMU-enable. The BSP's LIVE TTBR0 does
+    // NOT identity-map the contiguous scratch page here (it lands hundreds of MB
+    // into RAM), so the AP faulted its first post-MMU fetch — 'A' printed, 'B'
+    // never did. Build a dedicated idmap: Normal block for the trampoline page +
+    // Device block for the PL011 UART (so post-MMU traces reach hardware).
+    let ttbr0 = build_trampoline_idmap(tramp_pa);
+    if ttbr0 == 0 {
+        dbgp!(b"[SMP] arm64: trampoline idmap alloc failed\n\0");
+        return FALSE;
+    }
 
     // Patch the copied param block with the AP's boot state.
     let pp = tramp.add(params_off) as *mut u64;
@@ -321,6 +368,10 @@ pub unsafe extern "system" fn HalStartNextProcessor(
 
     let r = psci_cpu_on(target, tramp_pa, 0);
     if r == PSCI_SUCCESS {
+        // BSP survived the SMC and PSCI accepted CPU_ON. If this prints but the
+        // AP's 'A' never does, the AP was started at the wrong PA / never fetched
+        // our trampoline; if this DOESN'T print, the SMC itself wedged the BSP.
+        dbgp!(b"[SMP] arm64: BSP post-PSCI SUCCESS, AP should be launching\n\0");
         TRUE
     } else {
         dbgp!(b"[SMP] arm64: PSCI CPU_ON returned %d (no more CPUs / error)\n\0", r as i32);

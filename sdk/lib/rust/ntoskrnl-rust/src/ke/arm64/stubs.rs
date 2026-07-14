@@ -1022,6 +1022,11 @@ pub unsafe extern "system" fn KiDispatchException(
                 b"[KEXC] ESR=\0".as_ptr() as PCSTR,
                 (*TrapFrame).Esr as ULONG_PTR,
             );
+            // Which CPU faulted? MPIDR_EL1.Aff0 == 0 is the BSP, 1 = CPU1 (SMP
+            // bring-up: pins whether an AP or the BSP took the trap).
+            let mpidr: u64;
+            core::arch::asm!("mrs {}, mpidr_el1", out(reg) mpidr, options(nomem, nostack));
+            ARM64_UART_TRACE_HEX(b"[KEXC] MPIDR=\0".as_ptr() as PCSTR, mpidr as ULONG_PTR);
         }
         KeBugCheckEx(
             KMODE_EXCEPTION_NOT_HANDLED,

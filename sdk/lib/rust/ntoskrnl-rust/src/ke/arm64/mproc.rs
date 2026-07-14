@@ -131,9 +131,27 @@ mod smp_impl {
                 }
             }
             if spins >= AP_START_SPIN_LIMIT {
+                // Read the AP progress beacon twice with a delay between: if it
+                // rises, the AP is merely slow (bump the budget); if it's frozen,
+                // it's genuinely wedged at that milestone (smp-quest M5a debug).
+                use core::sync::atomic::Ordering;
+                let stage_a = crate::ke::arm64::kiinit::KiArm64ApStage.load(Ordering::SeqCst);
+                let mut d: u64 = 0;
+                while d < 500_000_000 {
+                    core::arch::asm!("yield", options(nomem, nostack, preserves_flags));
+                    d += 1;
+                }
+                let stage_b = crate::ke::arm64::kiinit::KiArm64ApStage.load(Ordering::SeqCst);
                 crate::dbg_print!(
-                    b"[SMP] arm64: CPU %lu NEVER SIGNALED (trampoline fault?) - continuing without it\n\0",
-                    processor_count
+                    b"[SMP] arm64: CPU %lu NEVER SIGNALED - AP beacon stage %lu -> %lu (%s)\n\0",
+                    processor_count,
+                    stage_a as u64,
+                    stage_b as u64,
+                    if stage_a == stage_b {
+                        b"FROZEN/hung\0".as_ptr()
+                    } else {
+                        b"rising/slow\0".as_ptr()
+                    },
                 );
                 // The AP owns ap_info/kernel_stack if it ever wakes — leak them
                 // rather than risk a use-after-free racing a late AP.
