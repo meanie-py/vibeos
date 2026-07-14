@@ -820,6 +820,23 @@ pub unsafe extern "system" fn LdrpSnapThunk(
                     Mask = 3;
                 }
 
+                // Name the failing snap on serial BEFORE the hard error: the
+                // -smp 4 deterministic c0000139 during csrss LoadServerDll
+                // (winsrv) dies without this ever reaching the log.
+                if IsOrdinal != 0 {
+                    DbgPrint(
+                        b"LDR: SNAP FAIL ordinal %u from %wZ\n\0".as_ptr() as PCHAR,
+                        OriginalOrdinal as u32,
+                        core::ptr::addr_of_mut!(SnapTarget),
+                    );
+                } else {
+                    DbgPrint(
+                        b"LDR: SNAP FAIL import %s from %wZ\n\0".as_ptr() as PCHAR,
+                        ImportName,
+                        core::ptr::addr_of_mut!(SnapTarget),
+                    );
+                }
+
                 NtRaiseHardError(
                     if IsOrdinal != 0 {
                         STATUS_ORDINAL_NOT_FOUND
