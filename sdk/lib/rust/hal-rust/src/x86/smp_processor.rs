@@ -452,7 +452,12 @@ unsafe fn identity_map_stub(_stub_va: *mut u8, stub_pa: u64) -> bool {
 
     let want = stub_pa | PTE_VALID_WRITE;
     let cur = pte.read_volatile();
-    if cur & 1 != 0 && cur != want {
+    // Ignore hardware-stamped Accessed/Dirty (bits 5/6) in the ours-vs-foreign
+    // compare: AP1 executing through this mapping sets A (and D on its stack
+    // pokes), and the exact-match check then called OUR OWN page "foreign" —
+    // HalStartNextProcessor returned FALSE for every AP after the first
+    // (the -smp 4 BUGCHECK 0x61 cap, quest log 2026-07-12).
+    if cur & 1 != 0 && (cur & !0x60u64) != want {
         return false; // foreign mapping at our VA — refuse to clobber
     }
     pte.write_volatile(want);
