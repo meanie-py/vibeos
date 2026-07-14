@@ -2266,6 +2266,76 @@ static NTSTATUS Wow64Manual_NtSetSystemInformation(ULONG *a)
                         "would let a guest corrupt kernel state");
 }
 
+/* M16 (task #43): NtUserMessageCall(hWnd, Msg, wParam, lParam, ResultInfo, FNID,
+ * Ansi). For FNID_DEFWINDOWPROC + WM_WINDOWPOSCHANG*, lParam is a WINDOWPOS the
+ * 64-bit win32k reads/writes as 40 bytes but the guest passes as 28 — the flat
+ * thunk hands win32k a misaligned struct (fields shift past the two leading
+ * handles), so DefWindowProc's size adjustment corrupts the window (collapses to
+ * 0x0, WM_PAINT never fires). Marshal the payload 32<->64 for this (FNID,Msg);
+ * every other message flat-passes exactly as the generated thunk did. See
+ * docs/engineering/active-lanes/wow64-plan.md (M16) + user32 defwnd.c:783. */
+#define WOW64_MC_FNID_DEFWINDOWPROC   0x029E
+#define WOW64_MC_WM_WINDOWPOSCHANGING 0x0046
+#define WOW64_MC_WM_WINDOWPOSCHANGED  0x0047
+typedef struct { ULONG hwnd, hwndInsertAfter; LONG x, y, cx, cy; ULONG flags; }
+    WOW64_MC_WP32; /* 28 */
+typedef struct { ULONGLONG hwnd, hwndInsertAfter; LONG x, y, cx, cy; ULONG flags, __pad; }
+    WOW64_MC_WP64; /* 40 */
+
+extern ULONG Wow64TraceSyscalls;
+
+static NTSTATUS Wow64Manual_NtUserMessageCall(ULONG *a)
+{
+    extern NTSTATUS NtUserMessageCall(PVOID, ULONG_PTR, PVOID, PVOID, PVOID,
+                                      ULONG_PTR, ULONG_PTR);
+    ULONG Msg = a[1];
+    ULONG FNID = a[5];
+
+    if (FNID == WOW64_MC_FNID_DEFWINDOWPROC &&
+        (Msg == WOW64_MC_WM_WINDOWPOSCHANGING || Msg == WOW64_MC_WM_WINDOWPOSCHANGED) &&
+        a[3])
+    {
+        WOW64_MC_WP32 *wp32 = (WOW64_MC_WP32 *)(ULONG_PTR)a[3];
+        WOW64_MC_WP64 wp64;
+        NTSTATUS St;
+        LONG in_cx = wp32->cx, in_cy = wp32->cy;
+        ULONG in_fl = wp32->flags;
+
+        /* 28 -> 40, per field. Handles sign-extend (real handles are small +ve
+         * and stay correct; HWND_TOPMOST/-NOTOPMOST sentinels widen correctly). */
+        wp64.hwnd = (ULONGLONG)(LONG_PTR)(LONG)wp32->hwnd;
+        wp64.hwndInsertAfter = (ULONGLONG)(LONG_PTR)(LONG)wp32->hwndInsertAfter;
+        wp64.x = wp32->x; wp64.y = wp32->y;
+        wp64.cx = wp32->cx; wp64.cy = wp32->cy;
+        wp64.flags = wp32->flags; wp64.__pad = 0;
+
+        St = NtUserMessageCall((PVOID)(LONG_PTR)(LONG)a[0], (ULONG_PTR)(LONG_PTR)(LONG)a[1],
+                               (PVOID)(LONG_PTR)(LONG)a[2], &wp64,
+                               (PVOID)(LONG_PTR)(LONG)a[4], (ULONG_PTR)(LONG_PTR)(LONG)a[5],
+                               (ULONG_PTR)(LONG_PTR)(LONG)a[6]);
+
+        /* 40 -> 28 back. Preserve the guest's original 64-bit-narrowed handles
+         * (win32k does not repoint them for this message). */
+        wp32->x = wp64.x; wp32->y = wp64.y;
+        wp32->cx = wp64.cx; wp32->cy = wp64.cy;
+        wp32->flags = wp64.flags;
+        wp32->hwndInsertAfter = (ULONG)wp64.hwndInsertAfter;
+
+        if (Wow64TraceSyscalls)
+            DbgPrint("[WOW64] NtUserMessageCall DWP WINDOWPOS marshalled "
+                     "(in cx=%ld cy=%ld fl=0x%lx -> out cx=%ld cy=%ld fl=0x%lx)\n",
+                     (long)in_cx, (long)in_cy, (unsigned long)in_fl,
+                     (long)wp32->cx, (long)wp32->cy, (unsigned long)wp32->flags);
+        return St;
+    }
+
+    /* Flat pass-through — byte-identical to the generated thunk. */
+    return NtUserMessageCall((PVOID)(LONG_PTR)(LONG)a[0], (ULONG_PTR)(LONG_PTR)(LONG)a[1],
+                             (PVOID)(LONG_PTR)(LONG)a[2], (PVOID)(LONG_PTR)(LONG)a[3],
+                             (PVOID)(LONG_PTR)(LONG)a[4], (ULONG_PTR)(LONG_PTR)(LONG)a[5],
+                             (ULONG_PTR)(LONG_PTR)(LONG)a[6]);
+}
+
 /* Name-dispatched entry point. Returns WOW64_MANUAL_UNIMPL if unhandled. */
 NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
 {
@@ -2339,6 +2409,8 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtGdiOpenDCW(Arguments);
     if (WOW64_IS("NtUserProcessConnect"))
         return Wow64Manual_NtUserProcessConnect(Arguments);
+    if (WOW64_IS("NtUserMessageCall"))
+        return Wow64Manual_NtUserMessageCall(Arguments);
     if (WOW64_IS("NtQueryValueKey"))
         return Wow64Manual_NtQueryValueKey(Arguments);
     if (WOW64_IS("NtUserRegisterClassExWOW"))
