@@ -287,6 +287,29 @@ def build_catalog(arch: str = "arm64", target: Target | None = None) -> Catalog:
             if s.name not in catalog.functions:
                 catalog.functions[s.name] = s
 
+    # Generic CRATE-LOCAL bindgen island (gen_driver_types.sh → <crate>/src/types_<arch>.rs).
+    # The generalization of the win32k_/winsrv_ branches above, for any DLL/driver whose
+    # private object model is generated rather than shared — ws2_32 (TCATALOG/TPROVIDER/
+    # NSCATALOG/NSQUERY/WSPROCESS/WSTHREAD/WSSOCKET/WSASYNCBLOCK from inc/ws2_32p.h, plus
+    # the winsock/ws2spi surface: INVALID_SOCKET, LPWSABUF, LPQOS, AF_*, …).
+    #
+    # Island types/constants are AUTHORITATIVE (same as win32k/winsrv): the C in this module
+    # is compiled against exactly these headers, so its field accesses and constant values
+    # are the island's, not some other module's same-named symbol. Functions add-if-absent so
+    # the shared NT/kernel surface stays the linkable one.
+    crate_files = getattr(target, "crate_bindgen_files", {}) or {}
+    crate_bindgen_path = crate_files.get(arch)
+    if crate_bindgen_path and crate_bindgen_path.exists():
+        module = getattr(target, "crate_module", "types") or "types"
+        types, functions, constants = _scan_bindgen(crate_bindgen_path, module)
+        for s in types:
+            catalog.types[s.name] = s
+        for s in constants:
+            catalog.constants[s.name] = s
+        for s in functions:
+            if s.name not in catalog.functions:
+                catalog.functions[s.name] = s
+
     # Also scan bindgen_common.rs
     common_path = NTKRNL_SYS_DIR / "bindgen_common.rs"
     if common_path.exists():

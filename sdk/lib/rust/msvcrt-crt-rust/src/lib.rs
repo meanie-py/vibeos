@@ -4347,7 +4347,7 @@ pub unsafe extern "C" fn wcsxfrm(dest: *mut u16, src: *const u16, len: usize) ->
 // the x86_64 host, which is the amd64 codegen), and PE-export-RVA verification will show
 // strtod at a low Rust RVA on amd64/arm64 and a high C RVA on i386. Owed work — lift the
 // i386 flip once the softfloat-f64-return ABI has a sanctioned expression — is recorded
-// in the lane plan and field manual §9.78.
+// in the lane plan and field manual §9.79.
 // ═══════════════════════════════════════════════════════════════════════════
 #[cfg(not(target_arch = "x86"))]
 mod fpnum;

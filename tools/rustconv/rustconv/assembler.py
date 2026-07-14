@@ -76,6 +76,11 @@ def assemble_file(
         sys_crate=target.sys_crate,
         sys_umbrella=target.sys_umbrella,
         c_source_path=c_source_path,
+        # Match the `translate` path (__main__.py): the --assemble route was silently
+        # skipping BOTH of these, so a COM target assembled here got no stdmethod! wrapper
+        # and a crate-island target got its `types` symbols collapsed into the sys umbrella.
+        com_method_macro=target.com_method_macro,
+        crate_module=getattr(target, "crate_module", "") if target.crate_bindgen_files else "",
     )
 
     # Land the file on the target crate's shared prelude (import-surface swap + drop the

@@ -966,7 +966,7 @@ is a DIVERGE. **All 13 public rows MATCH, plus `_atoldbl`/`__STRINGTOLD_L` byte-
 16-byte overrun-sentinel buffer.** The wave-5 `strtod [PROBE]` stays the lone red — as designed;
 it now records that the *cnt-rust route* is DIVERGE while the *ported engine* is MATCH.
 
-### Everything that mattered was found by trying to break the green (field manual §9.78)
+### Everything that mattered was found by trying to break the green (field manual §9.79)
 
 1. **A verbatim Wine bug that is provably INERT.** `fpnum_parse_bnum`'s sticky-scan reads `data[b]`
    instead of `data[i]` — a real upstream bug. Transcribed verbatim; the negative control ("fix" it,

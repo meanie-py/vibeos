@@ -6997,7 +6997,71 @@ the row.* An arch-conditional contract propagates silently through delegation. c
 already said this; the cost of not doing it is one DIVERGE per inherited branch, and the harness will
 only catch it if the fuzz happens to produce a byte pair whose raw difference isn't ±1.
 
-### 9.78 (2026-07-14) Porting msvcrt's bignum float parser: a verbatim upstream bug that is provably INERT, a signed-char/WEOF trap that is load-bearing, an i386 softfloat-return ABI wall, and a harness that could not see errno being *cleared*
+### 9.78 (ROOT-CAUSED + FIXED 2026-07-14) A parse failure in the *scanner* deletes a function from the plan, and every downstream check will pass — ws2_32 shipped a translation with no `bind`, `connect` or `sendto`
+
+**Symptom.** ws2_32-rust translated (34 files, ~14 K LOC), compiled to zero errors on i386,
+amd64 and arm64, passed the whole lint gate, linked, and booted to desktop on all three arches.
+It was missing `bind`, `connect`, `sendto`, `WSAConnect`, `WSAJoinLeaf` and `WSASendTo`.
+
+**Root cause.** `#define CONST const` (winnt.h). tree-sitter-c does not know `CONST`, so a
+parameter spelled
+
+    IN CONST struct sockaddr *name
+
+reads as *two* type-identifiers, and the **enclosing function produces ZERO
+`function_definition` nodes** — the function does not appear as unparseable, it simply does not
+appear. All six lost functions take exactly that parameter. Fixed in `scanner.py::_blank_memmodel`
+by normalising `CONST` → `const` alongside the existing `FAR`/`NEAR` blanking (§ the FAR fix that
+lost `inet_addr` the same way, commit `12ca1606704`).
+
+**Why nothing caught it — this is the transferable part.** A dropped export is invisible to every
+check we run, and it is worth understanding *why each one* is blind:
+
+| check | why it passes anyway |
+|---|---|
+| rustc | nothing in the crate calls the missing fn |
+| the linker | a `.spec` export with no implementation is **not an error** — the DLL just ships a smaller export table |
+| `verify_ffi` | compares a module's decls to its own `.spec`; it checks *conventions*, and has no opinion about a name that is simply absent |
+| smoke boot | passes unless the boot path happens to call that exact API |
+| the translation's own cost/coverage output | reports what it *planned*, and the function was never in the plan |
+
+The plan is derived from the parse. **If the parse silently loses an item, every downstream signal
+is computed over the reduced set and agrees with itself.** A pipeline cannot audit its own input.
+
+**The oracle has to come from outside the pipeline** — here, the `.spec`. `tools/verify_lost_exports.py`
+(gate-wired) reports a symbol that is (1) in the `.spec`, (2) defined in a `.c` that is **commented
+out** in the cmake, and (3) absent from Rust. All three conditions are load-bearing; dropping any
+one turns it into a wolf-crier, and this checker cried wolf **four separate times** before it was
+trustworthy:
+
+* `#if 0` bodies — kernel32's `IsValidLocaleName` lives in `#if 0 // See kernel32_vista`. The C
+  never compiled it either.
+* **prototypes with no body** — ReactOS puts the name at column 0 for a declaration *and* a
+  definition, so `^sym(` cannot tell them apart. kernel32's four `Get/SetFirmwareEnvironmentVariableEx*`
+  are declared in `client/sysinfo.c` and defined nowhere.
+* `.spec` **forwarders** — `@ stdcall GetEnvironmentStringsA() GetEnvironmentStrings` is served.
+* **assembly** implementations — ntdll's `KiUserExceptionDispatcher` is in `dispatch/*/dispatch.S`.
+
+And a partial cohab legitimately has hundreds of still-C exports (shell32: 200). *Missing from Rust*
+and *lost* are different claims; only the second is a defect.
+
+**Rule.** After any cohab flip, audit the flipped DLL's `.spec` against the Rust — do not trust
+"it compiled and booted". And when a *scanner* is the thing that failed, assume the failure is
+silent: instrument the count (`Functions (N)`) against an independent list, because a parser that
+drops an item does not raise, it just returns a shorter list.
+
+**Sibling class, same lane (`tools/verify_c_signatures.py`, also gate-wired):** the model reaches
+for the *pointer* flavour of a scalar with real regularity — `INT`→`LPINT` (6 fns), `SIZE_T`→`PSIZE_T`
+(3), `HANDLE`→`LPHANDLE` (2 exported), `DWORD`→`DWORD_PTR` (`WPUModifyIFSHandle`, installed in the
+provider upcall table). On 64-bit every one of these is the **same width**, so it links, runs and
+returns the right answer — and breaks on i386. rustc cannot see it (the C prototype is not in the
+Rust program) and the `.spec` records only the convention, so again the oracle must be the C source
+itself. Compare **pointer depth**, not pointer-vs-scalar: a mutation test proved the first version
+of that checker structurally blind to `HANDLE`-vs-`LPHANDLE` — the bug that motivated it — because
+*both* are pointers.
+
+
+### 9.79 (2026-07-14) Porting msvcrt's bignum float parser: a verbatim upstream bug that is provably INERT, a signed-char/WEOF trap that is load-bearing, an i386 softfloat-return ABI wall, and a harness that could not see errno being *cleared*
 
 **Context.** Wave 13 of the msvcrt-from-pieces lane ported msvcrt's own base-10 **bignum** float
 parser (`dll/win32/msvcrt/bnum.h` + `string.c`'s `fpnum_parse`/`fpnum_double`/`fpnum_ldouble`) to

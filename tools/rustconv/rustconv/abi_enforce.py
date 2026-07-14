@@ -92,59 +92,18 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+# The convention-alias table lives in `conventions.py` — the SINGLE source of truth,
+# shared with scanner.py (which needs the same names for its CALLING_CONVENTIONS) and
+# verified against the real headers by tools/verify_conv_macros.py. Aliased to the old
+# private names so the rest of this module is unchanged.
+#
+# This also absorbed a THIRD copy that used to live here as `_CONV_NORM` (8 entries, used
+# as the fallback when _derive_convention comes up empty). Three lists, three different
+# contents — so the same macro could be a known convention to one and invisible to another.
+# One copy now.
+from .conventions import CONV_KEYWORDS as _CONV_KEYWORDS
+from .conventions import KW_TO_CONV as _KW_TO_CONV
 from .scanner import scan_file
-
-# C calling-convention macro → normalized convention.
-_CONV_NORM = {
-    "NTAPI": "system",
-    "WINAPI": "system",
-    "STDCALL": "system",
-    "__stdcall": "system",
-    "FASTCALL": "fastcall",
-    "__fastcall": "fastcall",
-    "CDECL": "cdecl",
-    "__cdecl": "cdecl",
-}
-
-
-# Convention macros as they appear in the C text. Order = lookup priority.
-#
-# `CALLBACK` and `PASCAL` are __stdcall (sdk/include/psdk/minwindef.h:109 —
-# `#define CALLBACK __stdcall`; :117 — `#define PASCAL WINAPI`). Missing them is
-# not academic: they mark the fns C hands to the OS as *function pointers*
-# (`EnumFontFamiliesEx`'s enum proc, a `DialogBoxParam` DlgProc), so user32/gdi32
-# calls them through the pointer with stdcall. A Rust-ABI body there corrupts the
-# i386 stack on a call we don't even make ourselves. Their absence here silently
-# derived oleaut32's `font_enum_proc` (olefont.c) and `property_sheet_proc`
-# (olepropframe.c) as cdecl — caught by the pre-translation census, 2026-07.
-#
-# `WINAPIV` is __cdecl (minwindef.h:114), NOT a WINAPI variant — listed
-# explicitly so nobody "fixes" it into the system bucket. (`\b` already keeps the
-# WINAPI pattern from matching it.)
-_CONV_KEYWORDS = (
-    "NTAPI",
-    "WINAPIV",
-    "WINAPI",
-    "APIENTRY",
-    "STDMETHODCALLTYPE",
-    "CALLBACK",
-    "PASCAL",
-    "FASTCALL",
-    "CDECL",
-)
-_KW_TO_CONV = {
-    "NTAPI": "system",
-    "WINAPI": "system",
-    "APIENTRY": "system",
-    "STDMETHODCALLTYPE": "system",
-    "STDCALL": "system",
-    "CALLBACK": "system",
-    "PASCAL": "system",
-    "FASTCALL": "fastcall",
-    "CDECL": "cdecl",
-    "WINAPIV": "cdecl",
-}
-
 
 _COMMENT_RE = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 
@@ -252,7 +211,7 @@ def build_abi_map_from_c(c_path: Path) -> dict[str, tuple[str, bool]]:
         conv = _derive_convention(c_text, f.name)
         if conv is None:
             # Fall back to the (lossy) tree-sitter field, then cdecl.
-            conv = _CONV_NORM.get(f.calling_convention or "", "cdecl")
+            conv = _KW_TO_CONV.get(f.calling_convention or "", "cdecl")
         out[f.name] = (conv, f.is_static)
     return out
 
