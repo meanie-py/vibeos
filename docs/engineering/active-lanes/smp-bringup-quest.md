@@ -526,3 +526,25 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   verify FADT `PSCI_USE_HVC` (assumed SMC); confirm QEMU `virt` MPIDR = flat Aff0=index.
   Then M5b (SGI IPI: `HalRequestIpi`→GICD_SGIR@0xF00 + receive dispatch), M5c (AP
   schedules + the arm64 idle-loop PRCB-lock fix lands here), M5d (TLB shootdown + soak).
+- 2026-07-14 (cont.): **M5a code COMPILES INTO arm64 ntkrnlmp.exe** (commits
+  1da2142fdd3 + 84b08a8bf40). First `-smp 2` arm64 boot reached desktop but the SMP
+  code NEVER RAN — critical discovery: **the arm64 ntkrnlmp MEDIA PIPELINE is unwired**,
+  so `--smp-kernel` boots the UP `ntoskrnl.exe`, not ntkrnlmp. Three gaps, each now
+  pinned:
+    1. **Build:** `archcfg.ninja_targets["arm64"]` lists `ntoskrnl` but NOT `ntkrnlmp`,
+       so `build --arch arm64 --smp-kernel` never builds `ntkrnlmp.exe`. (amd64 builds it
+       via the `livecd` DAG + VIBEOS_SMP_DEFAULT_BOOT; arm64's hand-picked staged set omits it.)
+    2. **Stage:** `qemu/mkramdisk.sh` copies only `ntoskrnl.exe` (lines 76/266), never `ntkrnlmp.exe`.
+    3. **Boot-select:** `qemu/freeldr.ini` `[ReactOS_Arm64]` Options has no `/KERNEL=`, so
+       it defaults to `ntoskrnl.exe`. Needs `/KERNEL=ntkrnlmp.exe` when SMP (like
+       `livecd.ini`'s `[LiveCD_SMP]`).
+  **A NON-OBVIOUS TRAP this flushed out:** the `smp` feature is set ONLY by ntkrnlmp-cargo,
+  so `mproc.rs`'s `#[cfg(feature="smp")] smp_impl` is compiled ONLY in the ntkrnlmp build —
+  a plain `build --arch arm64 --smp-kernel` links `ntoskrnl.exe` (smp OFF) GREEN while
+  `ntkrnlmp` silently fails to relink and keeps a stale binary. **Always compile-check
+  SMP-gated kernel code with `ninja ntkrnlmp` (or a build that actually builds ntkrnlmp),
+  NOT the default `--smp-kernel` build** — the latter's green ntoskrnl.exe hides
+  smp_impl errors (cost: NonPagedPool/TAG_KERNEL imports + `as _` size cast, invisible
+  until `ninja ntkrnlmp`). **NEXT (M5a-media):** wire the 3 gaps above (conditional on
+  the existing VIBEOS_SMP_DEFAULT_BOOT env, mirroring the x86 livecd path), then re-boot
+  `-smp 2` to finally exercise mpboot/mproc and debug the real PSCI/trampoline path.
