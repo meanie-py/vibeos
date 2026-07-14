@@ -150,6 +150,37 @@ class C2RustError(RuntimeError):
 # Cache the raw .rs text per (path, mtime) so the second consumer is free.
 _TRANSPILE_CACHE: dict[tuple[str, float], str | None] = {}
 
+# The lines in c2rust/clang output that actually say WHY it gave up. Ordered by how
+# specific they are — a panic message beats a generic "error:".
+_C2RUST_REASON_PATTERNS = (
+    # c2rust ICE. NB the real line is `thread 'main' (3123720) panicked at <path>:L:C:` —
+    # the pid in parens sits between the quoted name and "panicked", so do NOT anchor
+    # ".*panicked" straight onto the closing quote.
+    re.compile(r"^thread\b.*panicked at .*$", re.M),
+    re.compile(r"^.*\bUnsupported\b.*$", re.M),  # explicit "unsupported node/type"
+    re.compile(r"^.*\bfatal error: .*$", re.M),  # missing header, etc.
+    re.compile(r"^.*\berror: .*$", re.M),  # clang parse error in OUR flags
+)
+
+
+def _c2rust_reason(stderr: str, stdout: str) -> str:
+    """Pull the most specific explanation out of c2rust's output.
+
+    Without this the caller could only say "(AST unsupported)" — a guess. c2rust fails for
+    at least three different reasons (an internal panic, a genuinely unsupported construct,
+    and a clang parse error caused by the flags WE pass it), and they need different fixes.
+    Reporting them as one opaque message is exactly the silent-degrade smell the strict mode
+    exists to avoid, one level up.
+    """
+    blob = f"{stderr}\n{stdout}"
+    for pat in _C2RUST_REASON_PATTERNS:
+        m = pat.search(blob)
+        if m:
+            line = m.group(0).strip()
+            return line[:300]
+    tail = [ln for ln in blob.splitlines() if ln.strip()][-1:]
+    return tail[0].strip()[:300] if tail else "(no output — c2rust said nothing)"
+
 
 def _transpile_text(
     c_file: Path, timeout: int = 180, verbose: bool = True, strict: bool = False
@@ -206,7 +237,9 @@ def _transpile_text(
             *flags,
         ]
         try:
-            subprocess.run(cmd, cwd=str(build_dir), capture_output=True, text=True, timeout=timeout)
+            proc = subprocess.run(
+                cmd, cwd=str(build_dir), capture_output=True, text=True, timeout=timeout
+            )
         except subprocess.TimeoutExpired:
             _TRANSPILE_CACHE[key] = None
             _fail(f"timeout on {c_file.name} after {timeout}s")
@@ -221,9 +254,15 @@ def _transpile_text(
             result = rs.read_text(errors="replace")
         else:
             _TRANSPILE_CACHE[key] = None
+            # SURFACE c2rust's own diagnosis. This used to say only "(AST unsupported)",
+            # which is a GUESS — the real reason (a clang parse error in OUR flags, a c2rust
+            # panic, an unsupported construct) was captured and thrown away, so every failure
+            # looked identical and un-actionable. Failing loud means saying WHY.
+            why = _c2rust_reason(proc.stderr, proc.stdout)
             _fail(
-                f"no .rs produced for {c_file.name} (AST unsupported) — this file cannot "
-                "be anchored; drop --c2rust to translate it pure-LLM as a deliberate choice"
+                f"no .rs produced for {c_file.name} — this file cannot be anchored; drop "
+                f"--c2rust to translate it pure-LLM as a deliberate choice.\n"
+                f"    c2rust said: {why}"
             )
             return None
     finally:
