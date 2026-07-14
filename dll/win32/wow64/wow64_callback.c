@@ -148,6 +148,9 @@ typedef struct _WOW64_WINDOWPOS32 {
  * RAW copy-down is only half the job: the guest's edits must be copied back up,
  * or they are silently dropped (the pre-M11 behaviour — the return path restored
  * the payload from the kernel's original buffer unconditionally). */
+#include "wow64_cb_automarshal.h"   /* M18: generated payload marshallers */
+
+#define WOW64_WM_COPYDATA         0x004A
 #define WOW64_WM_GETMINMAXINFO    0x0024
 #define WOW64_WM_WINDOWPOSCHANGING 0x0046
 #define WOW64_WM_WINDOWPOSCHANGED  0x0047
@@ -344,6 +347,58 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
                                              sizeof(*A32) + sizeof(*P32));
                     break;
                 }
+                /* M18: NCCALCSIZE_PARAMS + appended WINDOWPOS (wParam != 0;
+                 * wParam == 0 is a bare width-identical RECT and falls through
+                 * to the verbatim path). Guest user32 recomputes lppos from the
+                 * appended tail (message.c: Params->lppos = (PWINDOWPOS)(Params+1)),
+                 * so only the LAYOUT must be right. Generated marshallers. */
+                if (A64->Msg == WOW64_WM_NCCALCSIZE && A64->wParam &&
+                    Extra >= WOW64_CB_SIZE64_tagNCCALCSIZE_PARAMS +
+                             WOW64_CB_SIZE64__WINDOWPOS)
+                {
+                    const BYTE *S = (const BYTE *)Arg + sizeof(*A64);
+                    BYTE *D = Buf + sizeof(*A32);
+                    WowCbDown_tagNCCALCSIZE_PARAMS(S, D);
+                    WowCbDown__WINDOWPOS(S + WOW64_CB_SIZE64_tagNCCALCSIZE_PARAMS,
+                                           D + WOW64_CB_SIZE32_tagNCCALCSIZE_PARAMS);
+                    A32->lParamBufferSize = WOW64_CB_SIZE32_tagNCCALCSIZE_PARAMS +
+                                            WOW64_CB_SIZE32__WINDOWPOS;
+                    Wow64pEnterGuestCallback(&Frame, Index, Buf,
+                                             sizeof(*A32) + A32->lParamBufferSize);
+                    break;
+                }
+                /* M18: COPYDATASTRUCT header + trailing data blob (READ-only;
+                 * guest recomputes lpData = (cds + 1) in MsgiKMToUMMessage). */
+                if (A64->Msg == WOW64_WM_COPYDATA &&
+                    Extra >= WOW64_CB_SIZE64_tagCOPYDATASTRUCT)
+                {
+                    const BYTE *S = (const BYTE *)Arg + sizeof(*A64);
+                    BYTE *D = Buf + sizeof(*A32);
+                    ULONG Blob = Extra - WOW64_CB_SIZE64_tagCOPYDATASTRUCT;
+                    ULONG i;
+                    WowCbDown_tagCOPYDATASTRUCT(S, D);
+                    for (i = 0; i < Blob; i++)
+                        D[WOW64_CB_SIZE32_tagCOPYDATASTRUCT + i] =
+                            S[WOW64_CB_SIZE64_tagCOPYDATASTRUCT + i];
+                    A32->lParamBufferSize = WOW64_CB_SIZE32_tagCOPYDATASTRUCT + Blob;
+                    Wow64pEnterGuestCallback(&Frame, Index, Buf,
+                                             sizeof(*A32) + A32->lParamBufferSize);
+                    break;
+                }
+                /* M18: table-driven one-struct payloads (generated:
+                 * DRAWITEM / MEASUREITEM / HELP / NEXTMENU today). */
+                {
+                    const WOW64_CB_MARSHAL *Cbm = Wow64CbFindMarshal(A64->Msg);
+                    if (Cbm && Extra >= Cbm->Size64)
+                    {
+                        Cbm->Down((const BYTE *)Arg + sizeof(*A64),
+                                  Buf + sizeof(*A32));
+                        A32->lParamBufferSize = Cbm->Size32;
+                        Wow64pEnterGuestCallback(&Frame, Index, Buf,
+                                                 sizeof(*A32) + Cbm->Size32);
+                        break;
+                    }
+                }
                 if (Extra)
                 {
                     /* Everything else copies verbatim. That is CORRECT only for
@@ -537,7 +592,21 @@ int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status)
                         break;
 
                     default:
+                    {
+                        /* M18: table-driven copy-back (generated Up marshallers:
+                         * geometry/handles/uintptr values copy back sign-extended;
+                         * dereferenceable kernel pointers are preserved). */
+                        const WOW64_CB_MARSHAL *Cbm = Wow64CbFindMarshal(Frame->Msg);
+                        if (Cbm && Extra >= Cbm->Size64 &&
+                            Len32 >= sizeof(*A32) + Cbm->Size32)
+                        {
+                            Cbm->Up(P32, P64);
+                            if (Wow64TraceSyscalls)
+                                DbgPrint("[WOW64CB] msg 0x%lx OUT marshalled back (gen)\n",
+                                         (unsigned long)Frame->Msg);
+                        }
                         break;
+                    }
                 }
 
                 Frame->RetBuf = A64;
