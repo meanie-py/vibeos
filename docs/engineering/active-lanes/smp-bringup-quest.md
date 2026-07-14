@@ -465,3 +465,30 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   SMP with a 1-element processor array" (always take the locks / run the handshake;
   the same -smp 2 smoke becomes the UP test, deleting the "worked-on-UP-broke-on-SMP"
   bug class that hid this very flake). cswitchdep lane is CLOSED — do it here.
+- **M5 sub-item (surveyed 2026-07-14): the idle-loop `Prcb->NextThread` lock hole
+  exists IDENTICALLY on i386 and arm64 — but DON'T port it in isolation; land it
+  with each arch's AP bring-up.** The amd64 §9.56 v2 fix (acquire `KiAcquirePrcbLock`
+  inside the `cli` window, re-check NextThread under the lock, consume, `rq_inflight_unmark`,
+  release, THEN `sti`) has exact twins waiting:
+    - i386  — `ke/i386/thrdini.rs:302` (`KiIdleLoop`, consumes NextThread after `_enable()`,
+      lock-free, even under `#[cfg(feature="smp")]`).
+    - arm64 — `ke/arm64/thrdini.rs:253` (`KiIdleLoop`, consumes after `daifclr #2`, lock-free).
+  These compile into the real `ntkrnlmp.exe` for all three arches (`ntkrnlmp-cargo/build.rs`
+  always adds `smp`; `add_subdirectory(ntkrnlmp)` is unconditional), so they are
+  compile-real latent code, NOT dead source. **Zero risk to the shipping kernel:** the
+  `smp` feature is added only by `ntkrnlmp-cargo`, never `ntoskrnl-cargo`, so UP
+  `ntoskrnl.exe` (what the default gate boots) compiles only the
+  `#[cfg(not(feature="smp"))]` early-enable and none of the lock block.
+  **Why NOT now (the discipline call):** (1) unvalidatable — i386/arm64 have no APs yet
+  (M5 IS "start them"), so the lock is uncontended and its correctness can't be
+  boot-tested under contention; (2) it's entangled with the per-arch context-switch
+  handshake that M5 must complete anyway — specifically the **i386 `ctxswitch.S` has NO
+  SwapBusy spin** (separate landmine, this doc's UP-endgame notes), whereas amd64's does
+  (`ctxswitch.S:179`). The amd64 idle fix is self-contained (it never SETS `SwapBusy`, so
+  amd64's spin is a no-op for the idle-promoted thread — the explicit `KiReleasePrcbLock`
+  is the whole handshake), which is exactly why it ports as a clean mirror and NOT a
+  double-release hazard — confirmed 2026-07-14. But landing the idle lock without the
+  matching SwapBusy/release machinery for that arch is a half-fix that M5 will immediately
+  re-touch. **So: do i386's and arm64's idle-loop lock port as the last step of that
+  arch's AP bring-up, in the same change that adds the SwapBusy spin + AP start, so the
+  whole handshake is validated as a unit on `-smp 2`.**
