@@ -224,6 +224,26 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # exports). Baseline EMPTY = strict: a header that grows a new alias fails here.
     vcm = repo / "tools" / "verify_conv_macros.py"
     specs.append(("verify_conv_macros", [py, str(vcm)] if vcm.is_file() else ["MISSING"], "stdout"))
+    # A cohab flip that DROPS a function removes the DLL's export silently: rustc is happy
+    # (nothing calls it), the link is happy (a .spec export with no impl is not an error —
+    # the DLL just ships a smaller export table), and the boot is happy unless the boot path
+    # happens to call that exact API. ws2_32 lost `bind`, `connect`, `sendto`, `WSAConnect`,
+    # `WSAJoinLeaf` and `WSASendTo` this way — tree-sitter cannot parse `IN CONST struct
+    # sockaddr *`, so the scanner never put them in the plan and the crate compiled clean on
+    # all three arches. A socket client cannot bind or connect. Baseline EMPTY = strict.
+    vle = repo / "tools" / "verify_lost_exports.py"
+    specs.append(
+        ("verify_lost_exports", [py, str(vle)] if vle.is_file() else ["MISSING"], "stdout")
+    )
+    # Each translated fn's signature vs the C prototype it came from. The model reaches for
+    # the POINTER flavour of a scalar with real regularity (INT -> LPINT, SIZE_T -> PSIZE_T,
+    # HANDLE -> LPHANDLE, DWORD -> DWORD_PTR). Nothing else can see it: rustc never sees the
+    # C prototype, verify_ffi only checks conventions, and on 64-bit the wrong typedef is the
+    # same WIDTH — so it links, runs, and returns the right answer, then breaks on i386.
+    vcs = repo / "tools" / "verify_c_signatures.py"
+    specs.append(
+        ("verify_c_signatures", [py, str(vcs), "--all"] if vcs.is_file() else ["MISSING"], "stdout")
+    )
     # Inlined flag/constant-literal lint (AST/tree-sitter). verify_constants only
     # checks named `const` defs; this catches bare `0x2 /* TOP_LEVEL */` literals.
     # Carries residual FP classes (mask unions, informational args) → baseline gates NEW.
