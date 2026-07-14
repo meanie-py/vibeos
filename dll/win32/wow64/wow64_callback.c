@@ -151,7 +151,10 @@ typedef struct _WOW64_WINDOWPOS32 {
 #define WOW64_WM_GETMINMAXINFO    0x0024
 #define WOW64_WM_WINDOWPOSCHANGING 0x0046
 #define WOW64_WM_WINDOWPOSCHANGED  0x0047
+#define WOW64_WM_STYLECHANGING    0x007C
 #define WOW64_WM_NCCALCSIZE       0x0083
+#define WOW64_WM_SIZING           0x0214
+#define WOW64_WM_MOVING           0x0216
 
 /* ---- 32/64 mirrors of callback.h structs --------------------------------- */
 /* WINDOWPROC_CALLBACK_ARGUMENTS (index 0) */
@@ -474,15 +477,20 @@ int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status)
                  * continuation. */
                 switch (Frame->Msg)
                 {
-                    case WOW64_WM_GETMINMAXINFO:
-                        /* MINMAXINFO = 5 POINTs = 40 bytes, IDENTICAL 32/64
-                         * layout (no pointers/handles). The guest's edited
-                         * struct copies back verbatim. */
-                        if (Len32 >= sizeof(*A32) + 40 && Extra >= 40)
+                    case WOW64_WM_GETMINMAXINFO: /* MINMAXINFO: 5 POINTs = 40b */
+                    case WOW64_WM_SIZING:        /* RECT = 16b */
+                    case WOW64_WM_MOVING:        /* RECT = 16b */
+                    case WOW64_WM_STYLECHANGING: /* STYLESTRUCT = 8b */
+                        /* Width-identical, pointer-free OUT payloads: the guest's
+                         * edited struct copies back verbatim (Extra == the 64-bit
+                         * payload size == the 32-bit payload size for these). */
+                        if (Extra && Len32 >= sizeof(*A32) + Extra)
                         {
-                            for (i = 0; i < 40; i++) P64[i] = P32[i];
+                            for (i = 0; i < Extra; i++) P64[i] = P32[i];
                             if (Wow64TraceSyscalls)
-                                DbgPrint("[WOW64CB] GETMINMAXINFO OUT copied back (40b)\n");
+                                DbgPrint("[WOW64CB] msg 0x%lx OUT copied back (%lub)\n",
+                                         (unsigned long)Frame->Msg,
+                                         (unsigned long)Extra);
                         }
                         break;
 
