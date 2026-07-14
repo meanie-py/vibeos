@@ -1407,14 +1407,37 @@ fn rq_inflight_slot(t: usize, i: usize) -> usize {
 pub unsafe fn rq_inflight_mark(thread: ddk::PKTHREAD) -> bool {
     use core::sync::atomic::Ordering::SeqCst;
     let t = thread as usize;
+    // Full scan for an existing entry BEFORE inserting. Inserting at the first
+    // empty slot mid-scan creates DUPLICATE entries when an earlier-probe slot
+    // frees up between the original mark and a legal re-mark (Requeue): unmark
+    // then clears one twin and the stale twin fires a false 0x59 on the next
+    // legal wake with the old stamp. (2026-07-13: this was the 11/32 flood —
+    // all victims were boost-requeued ExWorker threads.)
+    let mut empty: Option<usize> = None;
     for i in 0..8 {
-        let slot = &RQ_INFLIGHT[rq_inflight_slot(t, i)];
-        let cur = slot.load(SeqCst);
+        let idx = rq_inflight_slot(t, i);
+        let cur = RQ_INFLIGHT[idx].load(SeqCst);
         if cur == t {
             return true;
         }
-        if cur == 0 && slot.compare_exchange(0, t, SeqCst, SeqCst).is_ok() {
+        if cur == 0 && empty.is_none() {
+            empty = Some(idx);
+        }
+    }
+    if let Some(idx) = empty {
+        if RQ_INFLIGHT[idx].compare_exchange(0, t, SeqCst, SeqCst).is_ok() {
             return false;
+        }
+        // Lost the slot race — one bounded retry over the whole window.
+        for i in 0..8 {
+            let idx = rq_inflight_slot(t, i);
+            let cur = RQ_INFLIGHT[idx].load(SeqCst);
+            if cur == t {
+                return true;
+            }
+            if cur == 0 && RQ_INFLIGHT[idx].compare_exchange(0, t, SeqCst, SeqCst).is_ok() {
+                return false;
+            }
         }
     }
     false // table pressure — stay lossy rather than false-positive
@@ -1424,11 +1447,12 @@ pub unsafe fn rq_inflight_mark(thread: ddk::PKTHREAD) -> bool {
 pub unsafe fn rq_inflight_unmark(thread: ddk::PKTHREAD) {
     use core::sync::atomic::Ordering::SeqCst;
     let t = thread as usize;
+    // Clear ALL matches (no early return): defensive against duplicate twins
+    // from the pre-fix mark() — see the duplicate-entry note in mark().
     for i in 0..8 {
         let slot = &RQ_INFLIGHT[rq_inflight_slot(t, i)];
         if slot.load(SeqCst) == t {
             slot.store(0, SeqCst);
-            return;
         }
     }
 }
@@ -1465,22 +1489,28 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
     // A collision here = a second wake of a thread already in ready-flight —
     // the true §9.56 first-illegal event; track_caller names the waker.
     let __waker_line = core::panic::Location::caller().line() as u32;
+    // Read the STALE stamp first: on collision it names the waker whose mark
+    // never got a promote-unmark — i.e. either the missing promotion site or
+    // the true first wake of a double-wake pair. (mark() never touches the
+    // stamp array, so order vs mark() is cosmetic; explicit is clearer.)
+    let __stale_by = rq_inflight_waker(thread);
     if rq_inflight_mark(thread) {
         let caller_line = core::panic::Location::caller().line() as u64;
         crate::driver_ddk::DbgPrint(
-            b"[RQDEFER2] DOUBLE-DEFER thr=%p state=%u waitreason=%u waitstatus=%p defproc=%u caller_line=%u\n\0".as_ptr() as *const i8,
+            b"[RQDEFER2] DOUBLE-DEFER thr=%p state=%u waitreason=%u waitstatus=%p defproc=%u caller_line=%u stale_by=%u\n\0".as_ptr() as *const i8,
             thread,
             kt_state_read(thread) as u32,
             (*thread).WaitReason as u32,
             (*thread).WaitStatus as usize as *const u8,
             (*thread).__bindgen_anon_1.__bindgen_anon_1.DeferredProcessor as u32,
             caller_line as u32,
+            __stale_by,
         );
         ddk::KeBugCheckEx(
             0x96,
             thread as usize as _,
             ((0x59u64 << 40) | (caller_line << 8) | kt_state_read(thread) as u64) as _,
-            (*thread).WaitReason as u64 as _,
+            __stale_by as u64 as _,
             caller_line as _,
         );
     }
