@@ -103,6 +103,12 @@ NTSTATUS WINAPI NtSetInformationFile(HANDLE File, PVOID Iosb, PVOID Info,
 NTSTATUS WINAPI NtQueryVolumeInformationFile(HANDLE File, PVOID Iosb, PVOID Info,
                                              ULONG Length, ULONG Class);
 NTSTATUS WINAPI NtFlushBuffersFile(HANDLE File, PVOID Iosb);
+NTSTATUS WINAPI NtQueryInformationThread(HANDLE Thread, ULONG Class, PVOID Info,
+                                         ULONG Length, PULONG ReturnLength);
+NTSTATUS WINAPI NtRemoveIoCompletion(HANDLE Port, PVOID *Key, PVOID *Context,
+                                     PVOID Iosb, PLARGE_INTEGER Timeout);
+LONG_PTR WINAPI NtUserEnumDisplayMonitors(HANDLE hdc, PVOID pRect,
+                                          PVOID hMonitorList, ULONG listSize);
 NTSTATUS WINAPI NtQueryDirectoryFile(HANDLE File, HANDLE Event, PVOID ApcRoutine,
                                      PVOID ApcContext, PVOID Iosb, PVOID Info,
                                      ULONG Length, ULONG Class, BOOLEAN SingleEntry,
@@ -2337,6 +2343,161 @@ static NTSTATUS Wow64Manual_NtUserMessageCall(ULONG *a)
 }
 
 /* Name-dispatched entry point. Returns WOW64_MANUAL_UNIMPL if unhandled. */
+/* ---- M18: NtQueryInformationThread (THREADINFOCLASS 32/64 marshal) ------ */
+
+#define WOW64_ThreadBasicInformation          0
+#define WOW64_ThreadTimes                     1
+#define WOW64_ThreadQuerySetWin32StartAddress 9
+#define WOW64_ThreadPerformanceCount          11
+#define WOW64_ThreadAmILastThread             12
+#define WOW64_ThreadPriorityBoost             14
+#define WOW64_ThreadIsIoPending               16
+#define WOW64_TEBSLOT_WOWTEBOFFSET            0x180c /* MmCreateTeb raw slot */
+
+typedef struct _WOW64_TBI64 {
+    ULONG ExitStatus; ULONG Pad0;
+    ULONGLONG TebBaseAddress;
+    ULONGLONG UniqueProcess; ULONGLONG UniqueThread;
+    ULONGLONG AffinityMask;
+    LONG Priority; LONG BasePriority;
+} WOW64_TBI64;
+
+typedef struct _WOW64_TBI32 {
+    ULONG ExitStatus; ULONG TebBaseAddress;
+    ULONG UniqueProcess; ULONG UniqueThread;
+    ULONG AffinityMask; LONG Priority; LONG BasePriority;
+} WOW64_TBI32;
+
+static NTSTATUS Wow64Manual_NtQueryInformationThread(ULONG *a)
+{
+    HANDLE Thread = (HANDLE)(LONG_PTR)(LONG)a[0];
+    ULONG Class = a[1];
+    PVOID Buf32 = (PVOID)(ULONG_PTR)a[2];
+    ULONG Len32 = a[3];
+    ULONG *RetLen32 = (ULONG *)(ULONG_PTR)a[4];
+
+    switch (Class)
+    {
+        case WOW64_ThreadBasicInformation:
+        {
+            WOW64_TBI64 T64;
+            WOW64_TBI32 *T32 = Buf32;
+            ULONG Ret64 = 0;
+            NTSTATUS St;
+            if (Len32 < sizeof(*T32))
+            {
+                if (RetLen32) *RetLen32 = sizeof(*T32);
+                return (NTSTATUS)0xC0000004L; /* INFO_LENGTH_MISMATCH */
+            }
+            St = NtQueryInformationThread(Thread, Class, &T64, sizeof(T64), &Ret64);
+            if (St < 0) return St;
+            T32->ExitStatus = T64.ExitStatus;
+            /* TebBaseAddress must be the 32-bit TEB. Same-process threads:
+             * TEB32 = TEB64 + WowTebOffset (the kernel MmCreateTeb slot we
+             * already use in Wow64LdrpInitialize). Cross-process handles
+             * would need NtReadVirtualMemory; report 0 rather than a 64-bit
+             * TEB the guest would misread. */
+            T32->TebBaseAddress = 0;
+            /* TEB64.ClientId.UniqueProcess is at +0x40 (TEB incomplete here) */
+            if (T64.UniqueProcess ==
+                *(ULONGLONG *)((PBYTE)NtCurrentTeb() + 0x40) &&
+                T64.TebBaseAddress)
+            {
+                LONG WowOff = *(LONG *)((PBYTE)(ULONG_PTR)T64.TebBaseAddress +
+                                        WOW64_TEBSLOT_WOWTEBOFFSET);
+                if (WowOff)
+                    T32->TebBaseAddress = (ULONG)(T64.TebBaseAddress + WowOff);
+            }
+            T32->UniqueProcess = (ULONG)T64.UniqueProcess;
+            T32->UniqueThread = (ULONG)T64.UniqueThread;
+            T32->AffinityMask = (ULONG)T64.AffinityMask;
+            T32->Priority = T64.Priority;
+            T32->BasePriority = T64.BasePriority;
+            if (RetLen32) *RetLen32 = sizeof(*T32);
+            return St;
+        }
+
+        case WOW64_ThreadQuerySetWin32StartAddress:
+        {
+            ULONGLONG Addr64 = 0;
+            ULONG Ret64 = 0;
+            NTSTATUS St;
+            if (Len32 < sizeof(ULONG))
+            {
+                if (RetLen32) *RetLen32 = sizeof(ULONG);
+                return (NTSTATUS)0xC0000004L;
+            }
+            St = NtQueryInformationThread(Thread, Class, &Addr64, sizeof(Addr64),
+                                          &Ret64);
+            if (St < 0) return St;
+            *(ULONG *)Buf32 = (ULONG)Addr64;
+            if (RetLen32) *RetLen32 = sizeof(ULONG);
+            return St;
+        }
+
+        /* Width-identical info classes: LARGE_INTEGERs / ULONGs only. */
+        case WOW64_ThreadTimes:            /* KERNEL_USER_TIMES: 4x LARGE_INTEGER */
+        case WOW64_ThreadPerformanceCount: /* LARGE_INTEGER */
+        case WOW64_ThreadAmILastThread:    /* ULONG */
+        case WOW64_ThreadPriorityBoost:    /* ULONG */
+        case WOW64_ThreadIsIoPending:      /* ULONG */
+            return NtQueryInformationThread(Thread, Class, Buf32, Len32, RetLen32);
+
+        default:
+            /* Fail loud: an unmarshalled class passed through silently would
+             * hand the guest 64-bit-laid-out data. */
+            DbgPrint("[WOW64] NtQueryInformationThread class %lu NEEDS MANUAL "
+                     "MARSHALLER — failing loud\n", Class);
+            return (NTSTATUS)0xC0000003L; /* INVALID_INFO_CLASS */
+    }
+}
+
+/* ---- M18: NtRemoveIoCompletion (IOCP dequeue: 2 out-slots + IOSB) -------- */
+
+static NTSTATUS Wow64Manual_NtRemoveIoCompletion(ULONG *a)
+{
+    HANDLE Port = (HANDLE)(LONG_PTR)(LONG)a[0];
+    ULONG *Key32 = (ULONG *)(ULONG_PTR)a[1];
+    ULONG *Ctx32 = (ULONG *)(ULONG_PTR)a[2];
+    PVOID Key64 = NULL, Ctx64 = NULL;
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    NTSTATUS St;
+
+    /* Timeout is a LARGE_INTEGER* — width-identical, guest pointer passes. */
+    St = NtRemoveIoCompletion(Port, &Key64, &Ctx64, &Iosb64,
+                              (PLARGE_INTEGER)(ULONG_PTR)a[4]);
+    if (St == 0)
+    {
+        if (Key32) *Key32 = (ULONG)(ULONG_PTR)Key64;
+        if (Ctx32) *Ctx32 = (ULONG)(ULONG_PTR)Ctx64;
+        Wow64pCopyIosbDown(&Iosb64, a[3]);
+    }
+    return St;
+}
+
+/* ---- M18: NtUserEnumDisplayMonitors (count-aware HMONITOR out-array) ----- */
+
+static NTSTATUS Wow64Manual_NtUserEnumDisplayMonitors(ULONG *a)
+{
+    ULONGLONG List64[16];
+    ULONG *List32 = (ULONG *)(ULONG_PTR)a[2];
+    ULONG Want = a[3];
+    LONG_PTR Got;
+    ULONG i;
+
+    if (!List32 || !Want)
+        return (NTSTATUS)(ULONG)NtUserEnumDisplayMonitors(
+            (HANDLE)(LONG_PTR)(LONG)a[0], (PVOID)(ULONG_PTR)a[1], NULL, 0);
+
+    if (Want > 16) Want = 16;   /* stack cap; count return still correct */
+    Got = NtUserEnumDisplayMonitors((HANDLE)(LONG_PTR)(LONG)a[0],
+                                    (PVOID)(ULONG_PTR)a[1] /* RECT: identical */,
+                                    List64, Want);
+    for (i = 0; i < Want && i < (ULONG)Got; i++)
+        List32[i] = (ULONG)List64[i];
+    return (NTSTATUS)(ULONG)Got;
+}
+
 NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
 {
     /* tiny hand strcmp to avoid a CRT dependency */
@@ -2489,6 +2650,12 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtNotifyChangeMultipleKeys(Arguments);
     if (WOW64_IS("NtSetSystemInformation"))
         return Wow64Manual_NtSetSystemInformation(Arguments);
+    if (WOW64_IS("NtQueryInformationThread"))
+        return Wow64Manual_NtQueryInformationThread(Arguments);
+    if (WOW64_IS("NtRemoveIoCompletion"))
+        return Wow64Manual_NtRemoveIoCompletion(Arguments);
+    if (WOW64_IS("NtUserEnumDisplayMonitors"))
+        return Wow64Manual_NtUserEnumDisplayMonitors(Arguments);
 #undef WOW64_IS
     /* M17: fall through to the marshalgen-generated thunks (flat thunks
      * recovered from header prototypes + layout-diff deep marshallers).

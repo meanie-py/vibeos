@@ -77,18 +77,19 @@ def extract_flags(build_dir: Path, tu_suffix: str) -> list[str]:
 # 2. Record-layout dump + parse
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Field:
-    offset: int          # byte offset (bitfields: byte of the storage unit)
-    depth: int           # 1 = top-level member of the record
+    offset: int  # byte offset (bitfields: byte of the storage unit)
+    depth: int  # 1 = top-level member of the record
     ctype: str
-    name: str            # "" for anonymous struct/union members
+    name: str  # "" for anonymous struct/union members
     is_bitfield: bool
 
 
 @dataclass
 class Record:
-    name: str            # e.g. "struct tagWINDOWPOS" / "union _FOO"
+    name: str  # e.g. "struct tagWINDOWPOS" / "union _FOO"
     size: int
     align: int
     fields: list[Field] = field(default_factory=list)
@@ -134,9 +135,7 @@ def parse_layout_dump(text: str) -> dict[str, Record]:
             continue
         m = _FIELD.match(line)
         if m:
-            offset, bits, indent, decl = (
-                int(m.group(1)), m.group(2), m.group(3), m.group(4)
-            )
+            offset, bits, indent, decl = (int(m.group(1)), m.group(2), m.group(3), m.group(4))
             depth = len(indent) // 2
             # decl is "TYPE name" or a nested "struct X name"; split the
             # trailing identifier off (may be absent for anonymous members).
@@ -145,8 +144,7 @@ def parse_layout_dump(text: str) -> dict[str, Record]:
                 ctype, fname = parts
             else:
                 ctype, fname = decl, ""
-            cur.fields.append(Field(offset, depth, ctype.strip(), fname,
-                                    bits is not None))
+            cur.fields.append(Field(offset, depth, ctype.strip(), fname, bits is not None))
     return records
 
 
@@ -154,11 +152,10 @@ def dump_layouts(flags: list[str], tu_source: str) -> dict[str, Record]:
     with tempfile.NamedTemporaryFile("w", suffix=".c", delete=False) as f:
         f.write(tu_source)
         tu = f.name
-    cmd = [str(CLANG), *flags, "-fsyntax-only",
-           "-Xclang", "-fdump-record-layouts-complete", tu]
+    cmd = [str(CLANG), *flags, "-fsyntax-only", "-Xclang", "-fdump-record-layouts-complete", tu]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        errs = "\n".join(l for l in r.stderr.splitlines() if "error:" in l)[:2000]
+        errs = "\n".join(ln for ln in r.stderr.splitlines() if "error:" in ln)[:2000]
         raise RuntimeError(f"layout TU failed to compile:\n{errs}")
     return parse_layout_dump(r.stdout)
 
@@ -167,11 +164,12 @@ def dump_layouts(flags: list[str], tu_source: str) -> dict[str, Record]:
 # 3. Prototype extraction (textual — headers are pre-SAL-stripped mingw)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Param:
-    ctype: str           # normalized, e.g. "PWINDOWPOS", "DWORD", "RECT *"
+    ctype: str  # normalized, e.g. "PWINDOWPOS", "DWORD", "RECT *"
     name: str
-    sal: str             # "", "in", "out", "inout" (best effort)
+    sal: str  # "", "in", "out", "inout" (best effort)
 
 
 @dataclass
@@ -244,31 +242,41 @@ def extract_prototypes(text: str, name_re: str) -> dict[str, Proto]:
             i += 1
         if depth or i >= len(text) or text[i] != ";":
             continue  # a call site or macro, not a prototype
-        arglist = re.sub(r"/\*.*?\*/", " ", text[m.end():i - 1], flags=re.S)
+        arglist = re.sub(r"/\*.*?\*/", " ", text[m.end() : i - 1], flags=re.S)
         arglist = re.sub(r"//[^\n]*", " ", arglist)
         # return type: scan the few lines above for the last type-ish token
-        pre = text[:m.start()].rsplit(";", 1)[-1]
-        toks = [t for t in re.split(r"[\s]+", pre)
-                if t and t not in ("NTSYSCALLAPI", "NTSYSAPI", "W32KAPI",
-                                   "APIENTRY", "NTAPI", "WINAPI", "__stdcall",
-                                   "__kernel_entry", "DECLSPEC_ADDRSAFE")]
+        pre = text[: m.start()].rsplit(";", 1)[-1]
+        toks = [
+            t
+            for t in re.split(r"[\s]+", pre)
+            if t
+            and t
+            not in (
+                "NTSYSCALLAPI",
+                "NTSYSAPI",
+                "W32KAPI",
+                "APIENTRY",
+                "NTAPI",
+                "WINAPI",
+                "__stdcall",
+                "__kernel_entry",
+                "DECLSPEC_ADDRSAFE",
+            )
+        ]
         ret = toks[-1] if toks else "?"
         params: list[Param] = []
         if arglist.strip() not in ("", "VOID", "void"):
             for raw in _split_params(arglist):
                 clean, sal = strip_annotations(raw)
                 # old-style annotation macros (ntuser.h/ntgdi.h use these)
-                for tok, d in (("INOUT", "inout"), ("IN", "in"), ("OUT", "out"),
-                               ("OPTIONAL", "")):
+                for tok, d in (("INOUT", "inout"), ("IN", "in"), ("OUT", "out"), ("OPTIONAL", "")):
                     if re.search(rf"\b{tok}\b", clean):
                         sal = sal or d
                         clean = re.sub(rf"\b{tok}\b", " ", clean)
                 clean = re.sub(r"\s+", " ", clean).strip()
-                pm = re.match(r"(.+?)\s*(\**)\s*([A-Za-z_]\w*)(\[\s*\d*\s*\])?$",
-                              clean)
+                pm = re.match(r"(.+?)\s*(\**)\s*([A-Za-z_]\w*)(\[\s*\d*\s*\])?$", clean)
                 if pm:
-                    ctype = (pm.group(1) + (" " + pm.group(2) if pm.group(2)
-                                            else "")).strip()
+                    ctype = (pm.group(1) + (" " + pm.group(2) if pm.group(2) else "")).strip()
                     pname = pm.group(3)
                     if pm.group(4):
                         ctype += " *"
@@ -303,31 +311,102 @@ def _split_params(arglist: str) -> list[str]:
 # scalar pointees whose width diverges 32/64 (auto-generatable: 64-bit local,
 # narrow copy-back)
 DIVERGENT_SCALARS = {
-    "SIZE_T", "PSIZE_T", "ULONG_PTR", "LONG_PTR", "SSIZE_T", "INT_PTR",
-    "UINT_PTR", "DWORD_PTR", "HANDLE", "PVOID", "LPVOID", "WPARAM", "LPARAM",
-    "LRESULT", "KAFFINITY", "HWND", "HMENU", "HICON", "HCURSOR", "HBRUSH",
-    "HDC", "HBITMAP", "HRGN", "HFONT", "HPALETTE", "HMODULE", "HINSTANCE",
-    "HDESK", "HWINSTA", "HHOOK", "HKL", "HMONITOR", "HRAWINPUT", "HIMC",
+    "SIZE_T",
+    "PSIZE_T",
+    "ULONG_PTR",
+    "LONG_PTR",
+    "SSIZE_T",
+    "INT_PTR",
+    "UINT_PTR",
+    "DWORD_PTR",
+    "HANDLE",
+    "PVOID",
+    "LPVOID",
+    "WPARAM",
+    "LPARAM",
+    "LRESULT",
+    "KAFFINITY",
+    "HWND",
+    "HMENU",
+    "HICON",
+    "HCURSOR",
+    "HBRUSH",
+    "HDC",
+    "HBITMAP",
+    "HRGN",
+    "HFONT",
+    "HPALETTE",
+    "HMODULE",
+    "HINSTANCE",
+    "HDESK",
+    "HWINSTA",
+    "HHOOK",
+    "HKL",
+    "HMONITOR",
+    "HRAWINPUT",
+    "HIMC",
 }
 # scalar pointees that are width-identical -> flat thunk already correct
 SAFE_SCALARS = {
-    "VOID", "CHAR", "UCHAR", "BOOLEAN", "BYTE", "WORD", "USHORT", "SHORT",
-    "WCHAR", "INT", "UINT", "LONG", "ULONG", "DWORD", "BOOL", "FLOAT",
-    "LONGLONG", "ULONGLONG", "LARGE_INTEGER", "ULARGE_INTEGER", "DWORD64",
-    "UINT64", "INT64", "NTSTATUS", "ACCESS_MASK", "COLORREF", "LCID", "LANGID",
-    "ATOM", "HRESULT",
+    "VOID",
+    "CHAR",
+    "UCHAR",
+    "BOOLEAN",
+    "BYTE",
+    "WORD",
+    "USHORT",
+    "SHORT",
+    "WCHAR",
+    "INT",
+    "UINT",
+    "LONG",
+    "ULONG",
+    "DWORD",
+    "BOOL",
+    "FLOAT",
+    "LONGLONG",
+    "ULONGLONG",
+    "LARGE_INTEGER",
+    "ULARGE_INTEGER",
+    "DWORD64",
+    "UINT64",
+    "INT64",
+    "NTSTATUS",
+    "ACCESS_MASK",
+    "COLORREF",
+    "LCID",
+    "LANGID",
+    "ATOM",
+    "HRESULT",
     # C builtins (Windows LLP64: long is 4 bytes on both widths)
-    "int", "unsigned", "long", "short", "char", "void", "float", "double",
-    "unsigned int", "unsigned long", "unsigned short", "unsigned char",
-    "signed char", "long long", "unsigned long long", "wchar_t", "__int64",
+    "int",
+    "unsigned",
+    "long",
+    "short",
+    "char",
+    "void",
+    "float",
+    "double",
+    "unsigned int",
+    "unsigned long",
+    "unsigned short",
+    "unsigned char",
+    "signed char",
+    "long long",
+    "unsigned long long",
+    "wchar_t",
+    "__int64",
 }
 
 
 def _norm_type(ctype: str) -> str:
     t = re.sub(r"/\*.*?\*/", " ", ctype)
-    toks = [k for k in t.split()
-            if k not in ("IN", "OUT", "OPTIONAL", "CONST", "const", "FAR",
-                         "NEAR", "volatile", "__unaligned")]
+    toks = [
+        k
+        for k in t.split()
+        if k
+        not in ("IN", "OUT", "OPTIONAL", "CONST", "const", "FAR", "NEAR", "volatile", "__unaligned")
+    ]
     return " ".join(toks).strip()
 
 
@@ -346,8 +425,7 @@ def resolve_exact(ctype: str, records: dict[str, Record]) -> Record | None:
     if t in TAG_ALIASES:
         return records.get(TAG_ALIASES[t])
     for kind in ("struct", "union"):
-        for tag in (f"{kind} _{t}", f"{kind} tag{t}", f"{kind} _tag{t}",
-                    f"{kind} {t}"):
+        for tag in (f"{kind} _{t}", f"{kind} tag{t}", f"{kind} _tag{t}", f"{kind} {t}"):
             if tag in records:
                 return records[tag]
     return None
@@ -360,7 +438,7 @@ def resolve_pointee(ctype: str, records: dict[str, Record]) -> Record | None:
         return resolve_exact(t, records)
     for prefix in ("LPC", "PC", "LP", "P"):
         if t.startswith(prefix):
-            r = resolve_exact(t[len(prefix):], records)
+            r = resolve_exact(t[len(prefix) :], records)
             if r:
                 return r
     return None
@@ -368,7 +446,7 @@ def resolve_pointee(ctype: str, records: dict[str, Record]) -> Record | None:
 
 @dataclass
 class StructVerdict:
-    cls: str             # IDENTICAL | WIDENING | SEMANTIC
+    cls: str  # IDENTICAL | WIDENING | SEMANTIC
     detail: str
     rec32: Record | None = None
     rec64: Record | None = None
@@ -381,7 +459,7 @@ def _scalar_base(t: str) -> str:
     """Peel P/LP from a scalar-pointer typedef name: PULONG -> ULONG."""
     for prefix in ("LPC", "PC", "LP", "P"):
         if t.startswith(prefix):
-            return t[len(prefix):]
+            return t[len(prefix) :]
     return t
 
 
@@ -415,16 +493,25 @@ def _field_class(ctype: str, db32, db64, _seen: set[str]) -> tuple[str, str]:
                 return ("WIDEN", f"ptr to divergent {pr.name} (deep)")
         return ("WIDEN", "")
     base = t
-    if base in SAFE_SCALARS or base in ("float", "double", "int", "unsigned",
-                                        "long", "char", "short",
-                                        "unsigned int", "unsigned long",
-                                        "unsigned short", "unsigned char"):
+    if base in SAFE_SCALARS or base in (
+        "float",
+        "double",
+        "int",
+        "unsigned",
+        "long",
+        "char",
+        "short",
+        "unsigned int",
+        "unsigned long",
+        "unsigned short",
+        "unsigned char",
+    ):
         return ("SAME", "")
     if base in DIVERGENT_SCALARS:
         return ("WIDEN", "")
     sb = _scalar_base(base)
     if sb in SAFE_SCALARS or sb in _STRING_PTEES:
-        return ("WIDEN", "")          # pointer typedef to width-identical data
+        return ("WIDEN", "")  # pointer typedef to width-identical data
     if sb in DIVERGENT_SCALARS:
         return ("WIDEN", f"ptr to {sb} (deep scalar)")
     pr = resolve_pointee(base, db32)
@@ -438,32 +525,29 @@ def _field_class(ctype: str, db32, db64, _seen: set[str]) -> tuple[str, str]:
     return ("SEMANTIC", f"unknown field type '{t}'")
 
 
-def diff_struct(name: str, db32: dict[str, Record],
-                db64: dict[str, Record],
-                _seen: set[str] | None = None) -> StructVerdict:
+def diff_struct(
+    name: str, db32: dict[str, Record], db64: dict[str, Record], _seen: set[str] | None = None
+) -> StructVerdict:
     _seen = _seen if _seen is not None else set()
     r32 = resolve_exact(name, db32)
     r64 = resolve_exact(name, db64)
     if not r32 or not r64:
-        return StructVerdict("SEMANTIC", f"layout of '{name}' not in dump "
-                                         "(add header to TU?)")
+        return StructVerdict("SEMANTIC", f"layout of '{name}' not in dump (add header to TU?)")
     if r32.name in _seen:
         return StructVerdict("IDENTICAL", "recursion cut")
     _seen.add(r32.name)
 
     f32, f64 = r32.top_fields(), r64.top_fields()
-    same_layout = (r32.size == r64.size and
-                   [(-1 if f.is_bitfield else f.offset, f.name) for f in f32]
-                   == [(-1 if f.is_bitfield else f.offset, f.name) for f in f64])
+    same_layout = r32.size == r64.size and [
+        (-1 if f.is_bitfield else f.offset, f.name) for f in f32
+    ] == [(-1 if f.is_bitfield else f.offset, f.name) for f in f64]
     if [f.name for f in f32] != [f.name for f in f64]:
-        return StructVerdict("SEMANTIC", "field lists differ across widths",
-                             r32, r64)
+        return StructVerdict("SEMANTIC", "field lists differ across widths", r32, r64)
     if r32.has_bitfield or r64.has_bitfield or r32.has_union or r64.has_union:
         if same_layout:
-            return StructVerdict("IDENTICAL", "same layout (union/bitfield)",
-                                 r32, r64)
-        return StructVerdict("SEMANTIC", "union/bitfield with divergent layout",
-                             r32, r64)
+            return StructVerdict("IDENTICAL", "same layout (union/bitfield)", r32, r64)
+        return StructVerdict("SEMANTIC", "union/bitfield with divergent layout", r32, r64)
+
     def span(fields: list[Field], i: int, total: int) -> tuple[int, int]:
         nxt = fields[i + 1].offset if i + 1 < len(fields) else total
         return (fields[i].offset, nxt - fields[i].offset)
@@ -479,10 +563,10 @@ def diff_struct(name: str, db32: dict[str, Record],
     # Layouts diverge. Hybrid per-field check: identical-span fields are
     # fine as-is (can't be pointers); divergent-span fields must be a known
     # widening shape (4->8 scalar/pointer, or a nested WIDENING struct).
-    for i, (a, b) in enumerate(zip(f32, f64)):
-        (o32, s32), (o64, s64) = span(f32, i, r32.size), span(f64, i, r64.size)
+    for i, (a, _b) in enumerate(zip(f32, f64, strict=False)):
+        (_o32, s32), (_o64, s64) = span(f32, i, r32.size), span(f64, i, r64.size)
         if s32 == s64:
-            continue                       # same span: not a pointer; done
+            continue  # same span: not a pointer; done
         if (s32, s64) == (4, 8):
             # some pointer/handle/uintptr — widens by sign-extension. If the
             # POINTEE is itself a divergent struct the marshaller must
@@ -493,15 +577,15 @@ def diff_struct(name: str, db32: dict[str, Record],
                 if sub.cls == "SEMANTIC":
                     return StructVerdict(
                         "SEMANTIC",
-                        f"field {a.name}: ptr to divergent {pr.name} "
-                        f"({sub.detail})", r32, r64)
+                        f"field {a.name}: ptr to divergent {pr.name} ({sub.detail})",
+                        r32,
+                        r64,
+                    )
             continue
         # other divergence: nested struct or array — classify by type
         cls, det = _field_class(a.ctype, db32, db64, _seen)
         if cls == "SEMANTIC":
-            return StructVerdict(
-                "SEMANTIC",
-                f"field {a.name} ({s32}->{s64}): {det}", r32, r64)
+            return StructVerdict("SEMANTIC", f"field {a.name} ({s32}->{s64}): {det}", r32, r64)
     return StructVerdict("WIDENING", "", r32, r64)
 
 
@@ -522,8 +606,15 @@ def classify_param(p: Param, db32, db64) -> tuple[str, str]:
     pointee = None
     if "*" in t:
         base = re.sub(r"\s*\*+$", "", t).strip()
-        if base in SAFE_SCALARS or base in ("void", "char", "wchar_t", "int",
-                                            "unsigned", "long", "short"):
+        if base in SAFE_SCALARS or base in (
+            "void",
+            "char",
+            "wchar_t",
+            "int",
+            "unsigned",
+            "long",
+            "short",
+        ):
             return ("FLAT", f"-> {base}: width-identical pointee")
         if base in DIVERGENT_SCALARS:
             return ("SCALAR_WIDEN", f"-> {base}: 4->8 scalar pointee")
@@ -541,13 +632,11 @@ def classify_param(p: Param, db32, db64) -> tuple[str, str]:
     pr = resolve_pointee(t, db32)
     if pr:
         v = diff_struct(pr.name, db32, db64)
-        return (v.cls, f"-> {pr.name}: {v.detail}" if v.detail
-                else f"-> {pr.name}")
+        return (v.cls, f"-> {pr.name}: {v.detail}" if v.detail else f"-> {pr.name}")
     return ("SEMANTIC", f"-> {pointee}: layout not in dump (add header to TU?)")
 
 
-PARAM_RANK = {"FLAT": 0, "IDENTICAL": 0, "SCALAR_WIDEN": 1, "WIDENING": 2,
-              "SEMANTIC": 3}
+PARAM_RANK = {"FLAT": 0, "IDENTICAL": 0, "SCALAR_WIDEN": 1, "WIDENING": 2, "SEMANTIC": 3}
 
 
 # ---------------------------------------------------------------------------
@@ -578,9 +667,19 @@ def load_needs_manual(gen_c: Path) -> list[str]:
 # 5b. Codegen — flat thunks for FLAT-OK, field-copy marshallers for WIDENING
 # ---------------------------------------------------------------------------
 
-_8BYTE_SCALARS = {"LONGLONG", "ULONGLONG", "DWORD64", "UINT64", "INT64",
-                  "LARGE_INTEGER", "ULARGE_INTEGER", "double", "__int64",
-                  "long long", "unsigned long long"}
+_8BYTE_SCALARS = {
+    "LONGLONG",
+    "ULONGLONG",
+    "DWORD64",
+    "UINT64",
+    "INT64",
+    "LARGE_INTEGER",
+    "ULARGE_INTEGER",
+    "double",
+    "__int64",
+    "long long",
+    "unsigned long long",
+}
 
 
 def _param_slots32(p: Param, db32) -> int:
@@ -602,17 +701,62 @@ def _ctag(rec: Record) -> str:
 
 
 _SCALAR_SIZES = {
-    **dict.fromkeys(("CHAR", "UCHAR", "BOOLEAN", "BYTE", "char",
-                     "unsigned char", "signed char"), 1),
-    **dict.fromkeys(("WORD", "USHORT", "SHORT", "WCHAR", "wchar_t", "ATOM",
-                     "LANGID", "short", "unsigned short"), 2),
-    **dict.fromkeys(("INT", "UINT", "LONG", "ULONG", "DWORD", "BOOL", "FLOAT",
-                     "NTSTATUS", "ACCESS_MASK", "COLORREF", "LCID", "HRESULT",
-                     "int", "unsigned", "unsigned int", "long",
-                     "unsigned long", "float"), 4),
-    **dict.fromkeys(("LONGLONG", "ULONGLONG", "DWORD64", "UINT64", "INT64",
-                     "LARGE_INTEGER", "ULARGE_INTEGER", "double", "__int64",
-                     "long long", "unsigned long long"), 8),
+    **dict.fromkeys(
+        ("CHAR", "UCHAR", "BOOLEAN", "BYTE", "char", "unsigned char", "signed char"), 1
+    ),
+    **dict.fromkeys(
+        (
+            "WORD",
+            "USHORT",
+            "SHORT",
+            "WCHAR",
+            "wchar_t",
+            "ATOM",
+            "LANGID",
+            "short",
+            "unsigned short",
+        ),
+        2,
+    ),
+    **dict.fromkeys(
+        (
+            "INT",
+            "UINT",
+            "LONG",
+            "ULONG",
+            "DWORD",
+            "BOOL",
+            "FLOAT",
+            "NTSTATUS",
+            "ACCESS_MASK",
+            "COLORREF",
+            "LCID",
+            "HRESULT",
+            "int",
+            "unsigned",
+            "unsigned int",
+            "long",
+            "unsigned long",
+            "float",
+        ),
+        4,
+    ),
+    **dict.fromkeys(
+        (
+            "LONGLONG",
+            "ULONGLONG",
+            "DWORD64",
+            "UINT64",
+            "INT64",
+            "LARGE_INTEGER",
+            "ULARGE_INTEGER",
+            "double",
+            "__int64",
+            "long long",
+            "unsigned long long",
+        ),
+        8,
+    ),
 }
 
 
@@ -633,23 +777,27 @@ def _esize(ctype: str, db: dict[str, Record], ptr_width: int) -> int | None:
     if t in DIVERGENT_SCALARS:
         return ptr_width
     sb = _scalar_base(t)
-    if sb != t and (sb in _SCALAR_SIZES or sb in _STRING_PTEES or
-                    sb in SAFE_SCALARS or sb in DIVERGENT_SCALARS or
-                    resolve_exact(sb, db)):
-        return ptr_width          # P/LP typedef pointer
+    if sb != t and (
+        sb in _SCALAR_SIZES
+        or sb in _STRING_PTEES
+        or sb in SAFE_SCALARS
+        or sb in DIVERGENT_SCALARS
+        or resolve_exact(sb, db)
+    ):
+        return ptr_width  # P/LP typedef pointer
     return None
 
 
-def _gen_struct_marshaller(rec32: Record, rec64: Record, db32, db64,
-                           emitted: dict[str, tuple[int, int]],
-                           out: list[str]) -> bool:
+def _gen_struct_marshaller(
+    rec32: Record, rec64: Record, db32, db64, emitted: dict[str, tuple[int, int]], out: list[str]
+) -> bool:
     """Emit In/Out field-copy pair for one WIDENING struct (recursing into
     nested divergent structs). Returns False if an unmarshallable field shape
     is hit (deep pointee, unknown divergence)."""
     tag = _ctag(rec32)
     if tag in emitted:
         return True
-    emitted[tag] = (rec32.size, rec64.size)   # reserve (cycle guard)
+    emitted[tag] = (rec32.size, rec64.size)  # reserve (cycle guard)
 
     f32, f64 = rec32.top_fields(), rec64.top_fields()
 
@@ -658,7 +806,7 @@ def _gen_struct_marshaller(rec32: Record, rec64: Record, db32, db64,
         return fields[i].offset, nxt - fields[i].offset
 
     body_in, body_out = [], []
-    for i, (a, b) in enumerate(zip(f32, f64)):
+    for i, (a, b) in enumerate(zip(f32, f64, strict=False)):
         (o32, s32) = span(f32, i, rec32.size)
         (o64, s64) = span(f64, i, rec64.size)
         # prefer the field's TRUE type size over the span (spans absorb
@@ -678,7 +826,7 @@ def _gen_struct_marshaller(rec32: Record, rec64: Record, db32, db64,
                 sub = diff_struct(pr.name, db32, db64)
                 if sub.cls == "WIDENING":
                     del emitted[tag]
-                    return False    # deep pointee: not generatable (v0)
+                    return False  # deep pointee: not generatable (v0)
                 if sub.cls == "SEMANTIC":
                     del emitted[tag]
                     return False
@@ -701,12 +849,13 @@ def _gen_struct_marshaller(rec32: Record, rec64: Record, db32, db64,
     out.append(
         f"/* {rec32.name}: {rec32.size} -> {rec64.size} bytes */\n"
         f"static void WowAmIn_{tag}(const unsigned char *s, unsigned char *d)\n"
-        "{\n" +
-        f"    WowAmZero(d, {rec64.size});\n" +
-        "\n".join(body_in) + "\n}\n\n" +
-        f"static void WowAmOut_{tag}(const unsigned char *s, unsigned char *d)\n"
-        "{\n" +
-        "\n".join(body_out) + "\n}\n")
+        "{\n"
+        + f"    WowAmZero(d, {rec64.size});\n"
+        + "\n".join(body_in)
+        + "\n}\n\n"
+        + f"static void WowAmOut_{tag}(const unsigned char *s, unsigned char *d)\n"
+        "{\n" + "\n".join(body_out) + "\n}\n"
+    )
     return True
 
 
@@ -777,12 +926,15 @@ def _flat_arg_exprs(proto: Proto, db32) -> tuple[list[str], int] | None:
         if n == 1:
             exprs.append(f"(ULONGLONG)(LONGLONG)(LONG)a[{slot}]")
         elif n == 2:
-            exprs.append(f"((ULONGLONG)a[{slot}] | ((ULONGLONG)a[{slot+1}] << 32))")
+            exprs.append(f"((ULONGLONG)a[{slot}] | ((ULONGLONG)a[{slot + 1}] << 32))")
         elif n <= 4:
             # by-value 9..16-byte struct: two AAPCS64 register halves
-            exprs.append(f"((ULONGLONG)a[{slot}] | ((ULONGLONG)a[{slot+1}] << 32))")
-            exprs.append(f"((ULONGLONG)a[{slot+2}] | ((ULONGLONG)a[{slot+3}] << 32))"
-                         if n == 4 else f"(ULONGLONG)a[{slot+2}]")
+            exprs.append(f"((ULONGLONG)a[{slot}] | ((ULONGLONG)a[{slot + 1}] << 32))")
+            exprs.append(
+                f"((ULONGLONG)a[{slot + 2}] | ((ULONGLONG)a[{slot + 3}] << 32))"
+                if n == 4
+                else f"(ULONGLONG)a[{slot + 2}]"
+            )
         else:
             return None
         slot += n
@@ -819,10 +971,10 @@ def _flat_arg_exprs(proto: Proto, db32) -> tuple[list[str], int] | None:
 
 # (WM name, value, struct) — payload is exactly one struct; auto-dispatched.
 CB_TABLE_MESSAGES = [
-    ("WM_DRAWITEM",    0x002B, "DRAWITEMSTRUCT"),
+    ("WM_DRAWITEM", 0x002B, "DRAWITEMSTRUCT"),
     ("WM_MEASUREITEM", 0x002C, "MEASUREITEMSTRUCT"),
-    ("WM_HELP",        0x0053, "HELPINFO"),
-    ("WM_NEXTMENU",    0x0213, "MDINEXTMENU"),
+    ("WM_HELP", 0x0053, "HELPINFO"),
+    ("WM_NEXTMENU", 0x0213, "MDINEXTMENU"),
 ]
 # extra per-struct pairs exported for the hand-coded special layouts
 CB_EXTRA_STRUCTS = ["NCCALCSIZE_PARAMS", "WINDOWPOS", "COPYDATASTRUCT"]
@@ -877,19 +1029,26 @@ def _is_deref_pointer(ctype: str, db32) -> bool:
     """A field whose value the KERNEL may dereference after copy-back (real
     memory pointer), as opposed to a handle/uintptr VALUE field."""
     t = re.sub(r"\[\d*\]$", "", _norm_type(ctype)).strip()
-    if t in DIVERGENT_SCALARS:      # HWND/HANDLE/ULONG_PTR/... value fields
+    if t in DIVERGENT_SCALARS:  # HWND/HANDLE/ULONG_PTR/... value fields
         return False
     if "*" in t:
         return True
     sb = _scalar_base(t)
-    if sb != t and (sb in SAFE_SCALARS or sb in _STRING_PTEES or
-                    sb in DIVERGENT_SCALARS or resolve_exact(sb, db32)):
-        return True                  # P/LP typedef
-    return False
+    # P/LP typedef -> pointer
+    return bool(
+        sb != t
+        and (
+            sb in SAFE_SCALARS
+            or sb in _STRING_PTEES
+            or sb in DIVERGENT_SCALARS
+            or resolve_exact(sb, db32)
+        )
+    )
 
 
-def _gen_cb_pair(rec32: Record, rec64: Record, db32, db64,
-                 emitted: dict[str, tuple[int, int]], out: list[str]) -> bool:
+def _gen_cb_pair(
+    rec32: Record, rec64: Record, db32, db64, emitted: dict[str, tuple[int, int]], out: list[str]
+) -> bool:
     """Emit WowCbDown_<tag> (64->32) / WowCbUp_<tag> (32->64, pointer fields
     preserved) for one struct. Nested divergent structs recurse."""
     tag = _ctag(rec32)
@@ -904,7 +1063,7 @@ def _gen_cb_pair(rec32: Record, rec64: Record, db32, db64,
         return fields[i].offset, nxt - fields[i].offset
 
     body_down, body_up = [], []
-    for i, (a, b) in enumerate(zip(f32, f64)):
+    for i, (a, b) in enumerate(zip(f32, f64, strict=False)):
         (o32, s32) = span(f32, i, rec32.size)
         (o64, s64) = span(f64, i, rec64.size)
         e32 = _esize(a.ctype, db32, 4)
@@ -919,8 +1078,9 @@ def _gen_cb_pair(rec32: Record, rec64: Record, db32, db64,
         if (s32, s64) == (4, 8):
             body_down.append(f"    WowCbNx(d + {o32}, s + {o64});{cmt}")
             if _is_deref_pointer(a.ctype, db32):
-                body_up.append(f"    /* {a.name}: kernel pointer preserved "
-                               "(guest value is scratch) */")
+                body_up.append(
+                    f"    /* {a.name}: kernel pointer preserved (guest value is scratch) */"
+                )
             else:
                 body_up.append(f"    WowCbSx(d + {o64}, s + {o32});{cmt}")
             continue
@@ -939,12 +1099,13 @@ def _gen_cb_pair(rec32: Record, rec64: Record, db32, db64,
     out.append(
         f"/* {rec32.name}: 32-bit {rec32.size}b <-> 64-bit {rec64.size}b */\n"
         f"void WowCbDown_{tag}(const unsigned char *s, unsigned char *d)\n"
-        "{\n" +
-        f"    WowCbZero(d, {rec32.size});\n" +
-        "\n".join(body_down) + "\n}\n\n" +
-        f"void WowCbUp_{tag}(const unsigned char *s, unsigned char *d)\n"
-        "{\n" +
-        "\n".join(body_up) + "\n}\n\n")
+        "{\n"
+        + f"    WowCbZero(d, {rec32.size});\n"
+        + "\n".join(body_down)
+        + "\n}\n\n"
+        + f"void WowCbUp_{tag}(const unsigned char *s, unsigned char *d)\n"
+        "{\n" + "\n".join(body_up) + "\n}\n\n"
+    )
     return True
 
 
@@ -978,7 +1139,8 @@ def cmd_gen_callback(args) -> int:
         tag = _ctag(r32)
         table_rows.append(
             f"    {{ 0x{val:04X} /* {nm} */, {r32.size}, {r64.size}, "
-            f"WowCbDown_{tag}, WowCbUp_{tag} }},")
+            f"WowCbDown_{tag}, WowCbUp_{tag} }},"
+        )
     for st in CB_EXTRA_STRUCTS:
         r32, r64 = resolve_exact(st, db32), resolve_exact(st, db64)
         if not r32 or not r64:
@@ -994,7 +1156,8 @@ def cmd_gen_callback(args) -> int:
         f"void WowCbUp_{t}(const unsigned char *s, unsigned char *d);\n"
         f"#define WOW64_CB_SIZE32_{t} {sz[0]}\n"
         f"#define WOW64_CB_SIZE64_{t} {sz[1]}"
-        for t, sz in emitted.items())
+        for t, sz in emitted.items()
+    )
     header = (
         "/* wow64_cb_automarshal.h — GENERATED by marshalgen. DO NOT EDIT. */\n"
         "#ifndef WOW64_CB_AUTOMARSHAL_H\n#define WOW64_CB_AUTOMARSHAL_H\n\n"
@@ -1006,33 +1169,38 @@ def cmd_gen_callback(args) -> int:
         "    void (*Up)(const unsigned char *, unsigned char *);\n"
         "} WOW64_CB_MARSHAL;\n\n"
         "const WOW64_CB_MARSHAL *Wow64CbFindMarshal(unsigned int Msg);\n\n"
-        + hdr_decls +
-        "\n\n#endif /* WOW64_CB_AUTOMARSHAL_H */\n")
+        + hdr_decls
+        + "\n\n#endif /* WOW64_CB_AUTOMARSHAL_H */\n"
+    )
 
-    body = (_CB_PRELUDE + "".join(pairs_out) +
-            "typedef struct _WOW64_CB_MARSHAL {\n"
-            "    unsigned int Msg;\n"
-            "    unsigned int Size32;\n"
-            "    unsigned int Size64;\n"
-            "    void (*Down)(const unsigned char *, unsigned char *);\n"
-            "    void (*Up)(const unsigned char *, unsigned char *);\n"
-            "} WOW64_CB_MARSHAL;\n\n"
-            "static const WOW64_CB_MARSHAL Wow64CbMarshalTable[] = {\n" +
-            "\n".join(table_rows) + "\n};\n\n"
-            "const WOW64_CB_MARSHAL *Wow64CbFindMarshal(unsigned int Msg)\n"
-            "{\n"
-            "    unsigned int i;\n"
-            "    for (i = 0; i < sizeof(Wow64CbMarshalTable) /\n"
-            "                    sizeof(Wow64CbMarshalTable[0]); i++)\n"
-            "        if (Wow64CbMarshalTable[i].Msg == Msg)\n"
-            "            return &Wow64CbMarshalTable[i];\n"
-            "    return 0;\n"
-            "}\n")
+    body = (
+        _CB_PRELUDE + "".join(pairs_out) + "typedef struct _WOW64_CB_MARSHAL {\n"
+        "    unsigned int Msg;\n"
+        "    unsigned int Size32;\n"
+        "    unsigned int Size64;\n"
+        "    void (*Down)(const unsigned char *, unsigned char *);\n"
+        "    void (*Up)(const unsigned char *, unsigned char *);\n"
+        "} WOW64_CB_MARSHAL;\n\n"
+        "static const WOW64_CB_MARSHAL Wow64CbMarshalTable[] = {\n"
+        + "\n".join(table_rows)
+        + "\n};\n\n"
+        "const WOW64_CB_MARSHAL *Wow64CbFindMarshal(unsigned int Msg)\n"
+        "{\n"
+        "    unsigned int i;\n"
+        "    for (i = 0; i < sizeof(Wow64CbMarshalTable) /\n"
+        "                    sizeof(Wow64CbMarshalTable[0]); i++)\n"
+        "        if (Wow64CbMarshalTable[i].Msg == Msg)\n"
+        "            return &Wow64CbMarshalTable[i];\n"
+        "    return 0;\n"
+        "}\n"
+    )
     (REPO / args.out).write_text(body)
     (REPO / args.out_header).write_text(header)
-    print(f"wrote {args.out} + {args.out_header}: "
-          f"{len(table_rows)} table messages, {len(emitted)} struct pairs",
-          file=sys.stderr)
+    print(
+        f"wrote {args.out} + {args.out_header}: "
+        f"{len(table_rows)} table messages, {len(emitted)} struct pairs",
+        file=sys.stderr,
+    )
     return 0
 
 
@@ -1047,10 +1215,12 @@ def cmd_gen(args) -> int:
     proto_text = "\n".join((REPO / h).read_text() for h in args.headers.split(","))
     protos = extract_prototypes(proto_text, r"Nt\w+")
     manual = load_needs_manual(Path(args.gen_c))
-    linkable = set(re.findall(r"(?m)^@ stdcall (?:-arch=\S+ )?(\w+)\(",
-                              (REPO / args.export_spec).read_text()))
+    linkable = set(
+        re.findall(r"(?m)^@ stdcall (?:-arch=\S+ )?(\w+)\(", (REPO / args.export_spec).read_text())
+    )
     hand_written = {
-        ln.split()[0] for ln in (REPO / args.manual_list).read_text().splitlines()
+        ln.split()[0]
+        for ln in (REPO / args.manual_list).read_text().splitlines()
         if ln.strip() and not ln.startswith("#")
     }
 
@@ -1072,7 +1242,7 @@ def cmd_gen(args) -> int:
             continue
 
         # classify each param
-        plan = []          # (param, class, rec32, rec64)
+        plan = []  # (param, class, rec32, rec64)
         ok = True
         for prm in p.params:
             cls, _det = classify_param(prm, db32, db64)
@@ -1085,11 +1255,9 @@ def cmd_gen(args) -> int:
                     ok = False
                     skipped.append(f"{name}: {prm.name} pointee unresolved")
                     break
-                if not _gen_struct_marshaller(pr32, pr64, db32, db64,
-                                              emitted_structs, struct_out):
+                if not _gen_struct_marshaller(pr32, pr64, db32, db64, emitted_structs, struct_out):
                     ok = False
-                    skipped.append(f"{name}: {_ctag(pr32)} not generatable "
-                                   "(deep pointee)")
+                    skipped.append(f"{name}: {_ctag(pr32)} not generatable (deep pointee)")
                     break
                 plan.append((prm, "WIDEN", pr32, pr64))
             else:
@@ -1112,18 +1280,17 @@ def cmd_gen(args) -> int:
             n = _param_slots32(prm, db32)
             if kind == "WIDEN":
                 tag = _ctag(pr32)
-                is_const = ("CONST" in prm.ctype or "const" in prm.ctype
-                            or prm.sal == "in")
+                is_const = "CONST" in prm.ctype or "const" in prm.ctype or prm.sal == "in"
+                decls.append(f"    unsigned char b{i}[{pr64.size}] __attribute__((aligned(16)));")
                 decls.append(
-                    f"    unsigned char b{i}[{pr64.size}] "
-                    f"__attribute__((aligned(16)));")
-                decls.append(
-                    f"    const unsigned char *g{i} = "
-                    f"(const unsigned char *)(ULONG_PTR)a[{slot}];")
+                    f"    const unsigned char *g{i} = (const unsigned char *)(ULONG_PTR)a[{slot}];"
+                )
                 pre.append(f"    if (g{i}) WowAmIn_{tag}(g{i}, b{i});")
                 if not is_const:
-                    post.append(f"    if (g{i}) WowAmOut_{tag}(b{i}, "
-                                f"(unsigned char *)(ULONG_PTR)a[{slot}]);")
+                    post.append(
+                        f"    if (g{i}) WowAmOut_{tag}(b{i}, "
+                        f"(unsigned char *)(ULONG_PTR)a[{slot}]);"
+                    )
                 exprs[i] = f"(g{i} ? (ULONGLONG)(ULONG_PTR)b{i} : 0)"
             slot += n
         nargs = len(exprs)
@@ -1132,17 +1299,19 @@ def cmd_gen(args) -> int:
         thunks.append(
             f"static NTSTATUS WowAmThunk_{name}(ULONG *a)\n"
             "{\n"
-            f"    extern ULONGLONG {name}({proto64});\n" +
-            ("\n".join(decls) + "\n" if decls else "") +
-            "    ULONGLONG r;\n"
-            "    (void)a;\n" +
-            ("\n".join(pre) + "\n" if pre else "") +
-            f"    r = {call};\n" +
-            ("\n".join(post) + "\n" if post else "") +
-            "    return (NTSTATUS)(ULONG)r;\n"
-            "}\n")
-        dispatch.append(f'    if (WowAmStrEq(Name, "{name}"))\n'
-                        f"        return WowAmThunk_{name}(Arguments);")
+            f"    extern ULONGLONG {name}({proto64});\n"
+            + ("\n".join(decls) + "\n" if decls else "")
+            + "    ULONGLONG r;\n"
+            "    (void)a;\n"
+            + ("\n".join(pre) + "\n" if pre else "")
+            + f"    r = {call};\n"
+            + ("\n".join(post) + "\n" if post else "")
+            + "    return (NTSTATUS)(ULONG)r;\n"
+            "}\n"
+        )
+        dispatch.append(
+            f'    if (WowAmStrEq(Name, "{name}"))\n        return WowAmThunk_{name}(Arguments);'
+        )
 
     out_path = REPO / args.out
     parts = [_GEN_PRELUDE]
@@ -1151,15 +1320,21 @@ def cmd_gen(args) -> int:
     parts.extend(thunks)
     parts.append(
         "\nNTSTATUS Wow64AutoMarshalDispatch(const char *Name, ULONG *Arguments)\n"
-        "{\n" + "\n".join(dispatch) +
-        "\n    return WOW64_MANUAL_UNIMPL;\n}\n")
+        "{\n" + "\n".join(dispatch) + "\n    return WOW64_MANUAL_UNIMPL;\n}\n"
+    )
     if skipped:
-        parts.append("\n/* NOT generated (still loud NEEDS_MANUAL stubs):\n" +
-                     "\n".join(f" *   {s}" for s in sorted(skipped)) + "\n */\n")
+        parts.append(
+            "\n/* NOT generated (still loud NEEDS_MANUAL stubs):\n"
+            + "\n".join(f" *   {s}" for s in sorted(skipped))
+            + "\n */\n"
+        )
     out_path.write_text("".join(parts))
-    print(f"wrote {out_path}: {len(thunks)} thunks, "
-          f"{len(emitted_structs)} struct marshaller pairs, "
-          f"{len(skipped)} skipped", file=sys.stderr)
+    print(
+        f"wrote {out_path}: {len(thunks)} thunks, "
+        f"{len(emitted_structs)} struct marshaller pairs, "
+        f"{len(skipped)} skipped",
+        file=sys.stderr,
+    )
     return 0
 
 
@@ -1173,22 +1348,19 @@ def cmd_report(args) -> int:
         for db, bdir in ((db32, b32), (db64, b64)):
             recs = dump_layouts(extract_flags(bdir, tu_suffix), tu_src)
             for k, v in recs.items():
-                db.setdefault(k, v)   # first TU wins on duplicates
+                db.setdefault(k, v)  # first TU wins on duplicates
     print(f"   {len(db32)} / {len(db64)} records", file=sys.stderr)
 
-    proto_text = "\n".join(
-        (REPO / h).read_text()
-        for h in args.headers.split(",")
-    )
+    proto_text = "\n".join((REPO / h).read_text() for h in args.headers.split(","))
     protos = extract_prototypes(proto_text, r"Nt\w+")
     print(f"   {len(protos)} prototypes", file=sys.stderr)
 
     manual = load_needs_manual(Path(args.gen_c))
     print(f"   {len(manual)} NEEDS_MANUAL stubs in {args.gen_c}", file=sys.stderr)
 
-    buckets: dict[str, list[str]] = {k: [] for k in
-                                     ("FLAT-OK", "SCALAR_WIDEN", "WIDENING",
-                                      "SEMANTIC", "NO-PROTO")}
+    buckets: dict[str, list[str]] = {
+        k: [] for k in ("FLAT-OK", "SCALAR_WIDEN", "WIDENING", "SEMANTIC", "NO-PROTO")
+    }
     lines = []
     for name in manual:
         p = protos.get(name)
@@ -1203,8 +1375,12 @@ def cmd_report(args) -> int:
                 worst = cls
             if cls not in ("FLAT", "IDENTICAL"):
                 details.append(f"{prm.name}:{cls}{det}")
-        key = {"FLAT": "FLAT-OK", "SCALAR_WIDEN": "SCALAR_WIDEN",
-               "WIDENING": "WIDENING", "SEMANTIC": "SEMANTIC"}[worst]
+        key = {
+            "FLAT": "FLAT-OK",
+            "SCALAR_WIDEN": "SCALAR_WIDEN",
+            "WIDENING": "WIDENING",
+            "SEMANTIC": "SEMANTIC",
+        }[worst]
         buckets[key].append(name)
         lines.append(f"{key:13} {name:40} {'; '.join(details)}")
 
@@ -1213,7 +1389,7 @@ def cmd_report(args) -> int:
     print()
     total = sum(len(v) for v in buckets.values())
     for k, v in buckets.items():
-        print(f"{k:13} {len(v):4}  ({100*len(v)//max(total,1)}%)")
+        print(f"{k:13} {len(v):4}  ({100 * len(v) // max(total, 1)}%)")
     print(f"{'TOTAL':13} {total:4}")
     return 0
 
@@ -1225,19 +1401,20 @@ def main() -> int:
     rp.add_argument("--build-dir", default="build-arm64")
     rp.add_argument("--build-dir32", default="build-i386")
     rp.add_argument("--tu-suffix", default="user32_stubs.c")
-    rp.add_argument("--gen-c",
-                    default="build-arm64/dll/win32/wow64/wow64_win32k_thunks.gen.c")
-    rp.add_argument("--headers",
-                    default="win32ss/include/ntuser.h,sdk/include/psdk/ntgdi.h,win32ss/include/ntgdibad.h")
+    rp.add_argument("--gen-c", default="build-arm64/dll/win32/wow64/wow64_win32k_thunks.gen.c")
+    rp.add_argument(
+        "--headers",
+        default="win32ss/include/ntuser.h,sdk/include/psdk/ntgdi.h,win32ss/include/ntgdibad.h",
+    )
     rp.set_defaults(func=cmd_report)
     gp = sub.add_parser("gen")
     gp.add_argument("--build-dir", default="build-arm64")
     gp.add_argument("--build-dir32", default="build-i386")
-    gp.add_argument("--gen-c",
-                    default="build-arm64/dll/win32/wow64/wow64_win32k_thunks.gen.c")
-    gp.add_argument("--headers",
-                    default="win32ss/include/ntuser.h,sdk/include/psdk/ntgdi.h,"
-                            "win32ss/include/ntgdibad.h")
+    gp.add_argument("--gen-c", default="build-arm64/dll/win32/wow64/wow64_win32k_thunks.gen.c")
+    gp.add_argument(
+        "--headers",
+        default="win32ss/include/ntuser.h,sdk/include/psdk/ntgdi.h,win32ss/include/ntgdibad.h",
+    )
     gp.add_argument("--export-spec", default="win32ss/win32u/win32u.spec")
     gp.add_argument("--manual-list", default="tools/wow64gen/manual-win32k.txt")
     gp.add_argument("--out", default="dll/win32/wow64/wow64_automarshal.c")
@@ -1246,8 +1423,7 @@ def main() -> int:
     cp.add_argument("--build-dir", default="build-arm64")
     cp.add_argument("--build-dir32", default="build-i386")
     cp.add_argument("--out", default="dll/win32/wow64/wow64_cb_automarshal.c")
-    cp.add_argument("--out-header",
-                    default="dll/win32/wow64/wow64_cb_automarshal.h")
+    cp.add_argument("--out-header", default="dll/win32/wow64/wow64_cb_automarshal.h")
     cp.set_defaults(func=cmd_gen_callback)
     args = ap.parse_args()
     return args.func(args)
