@@ -197,16 +197,23 @@ typedef long            LONG_PTR;
  * IMPORT namespace, where the harness cannot grade it. */
 #define get_locinfo             msvcrt_ref_get_locinfo
 #define msvcrt_get_thread_data  msvcrt_ref_get_thread_data
-#define CompareStringA          msvcrt_ref_CompareStringA
-#define LCMapStringA            msvcrt_ref_LCMapStringA
+/* CompareStringA / LCMapStringA / …W / GetStringTypeW / WideCharToMultiByte USED to be
+ * namespaced here.  As of wave 11 they are SHARED — one definition (refimpl.c), called by
+ * both sides.
+ *
+ * They are kernel32, i.e. the ENVIRONMENT, and they are never code under test: this crate
+ * does not flip kernel32.  The namespace exists to stop the reference calling into the
+ * SUBJECT; it was never needed for these.  And modelling them TWICE — once for each side —
+ * is the §9.73 trap in miniature: data (or behaviour) we hand to both sides can never be
+ * caught by a differential test, because a mistake makes both sides wrong the same way and
+ * classify still reports MATCH.  One copy, shared, so the comparison isolates the Rust's
+ * LOGIC around the NLS call rather than our model of the NLS itself.
+ *
+ * (This is what makes the non-C-locale mode gradeable at all — see ref_set_nls().) */
 #define ros_dbg_log             msvcrt_ref_ros_dbg_log
 #define wine_dbgstr_an          msvcrt_ref_wine_dbgstr_an
 /* …and the same for everything the WIDE reference TU (wcs.c) imports. */
 #define wine_dbgstr_wn             msvcrt_ref_wine_dbgstr_wn
-#define CompareStringW             msvcrt_ref_CompareStringW
-#define LCMapStringW               msvcrt_ref_LCMapStringW
-#define GetStringTypeW             msvcrt_ref_GetStringTypeW
-#define WideCharToMultiByte        msvcrt_ref_WideCharToMultiByte
 #define GetLastError               msvcrt_ref_GetLastError
 #define GetProcessHeap             msvcrt_ref_GetProcessHeap
 #define HeapAlloc                  msvcrt_ref_HeapAlloc

@@ -66,55 +66,12 @@ void _invalid_parameter(const void *expr, const void *func, const void *file,
 int  subj_invalid_pmt_count(void) { return subj_invalid_pmt_calls; }
 void subj_invalid_pmt_reset(void) { subj_invalid_pmt_calls = 0; }
 
-/* ------------------------------------------------------------------ *
- * GetStringTypeW — the NLS entry point behind the wc >= 256 path.
+/* GetStringTypeW lives in refimpl.c and is SHARED as of wave 11 (it is kernel32 — the
+ * environment, never code under test). Modelling it separately here would have been the
+ * §9.73 trap: behaviour handed to both sides can never be caught by a differential test.
  *
- * msvcrt's `_iswctype_l` (wcs.c) is:
- *
- *     if (wc == WEOF)  return 0;
- *     if (wc < 256)    return MSVCRT__pwctype[wc] & type;
- *     if (!GetStringTypeW(CT_CTYPE1, &wc, 1, &ct)) return 0;
- *     return ct & type;
- *
- * WAVE 10 DELETED A FAKE HERE.  Wave 9 hand-wrote a 256-entry `MSVCRT__pwctype`
- * table in this file, spelled out from first principles, because ctype.c was not
- * yet a reference TU and nothing else defined the symbol.  That made the harness
- * grade the Rust against *our own model of msvcrt* rather than against msvcrt.
- *
- * ctype.c is now reference TU #3, and it owns the real thing:
- *
- *     WORD  MSVCRT__wctype[257];
- *     WORD *MSVCRT__pwctype = MSVCRT__wctype + 1;   <-- note the +1, as with pctype
- *
- * so both sides now read msvcrt's genuine wide ctype table and the model is gone.
- * (The Rust's *indexing* was already right — `MSVCRT__pwctype[wc]`, matching the C.
- * It is the DATA that was ours, and data we supply to both sides can never be
- * caught by a differential test: a mistyped byte makes both sides wrong the same
- * way and classify still reports MATCH.  Delete fakes; do not grade them.)
- *
- * The harness is a HOST (linux-x86_64) binary, where WINAPI is a no-op, so plain
- * cdecl is right here. In msvcrt.dll itself this resolves to kernel32's stdcall
- * export and the Rust declares it `extern "system"` accordingly — see the flip.
- * ------------------------------------------------------------------ */
-/* Defined below, aimed at ctype.c's shared MSVCRT__wctype[] by a constructor. */
-extern unsigned short *MSVCRT__pwctype;
-
-int GetStringTypeW(unsigned int type, const unsigned short *src, int count,
-                   unsigned short *chartype)
-{
-    int i, n = count;
-
-    (void)type;
-    if (n < 0)
-    {
-        n = 0;
-        while (src[n]) n++;
-        n++;
-    }
-    for (i = 0; i < n; i++)
-        chartype[i] = (unsigned short)(src[i] < 256 ? MSVCRT__pwctype[src[i]] : 0);
-    return 1;
-}
+ * Wave 10 already deleted this file's hand-written 256-entry MSVCRT__pwctype table for
+ * the same reason; ctype.c owns the real one. */
 
 /* ------------------------------------------------------------------ *
  * The SUBJECT's locale + per-thread state (wave 10).
@@ -209,6 +166,51 @@ static void subj_locale_ctor(void)
 {
     MSVCRT__pwctype = MSVCRT__wctype + 1;
     (void)get_locinfo();
+}
+
+/* ── the NON-"C"-LOCALE mode (wave 11) ─────────────────────────────
+ *
+ * The lane's oldest documented blind spot (§9.60): the harness pins the "C" locale, and a
+ * whole family of msvcrt functions BRANCH on whether one is set —
+ *
+ *     if(!locinfo->lc_handle[LC_CTYPE]) { ...inline ASCII fold... }   // path 1: "C"
+ *     else                              { ..._tolower_l / LCMapStringW... }   // path 2
+ *
+ * With lc_handle[] pinned to zero, path 2 was NEVER EXERCISED — so `_stricmp`, `_strnicmp`,
+ * `_wcsicmp`, `_wcsnicmp`, `_strlwr_s`, `_strupr_s` and the wide twins could ship a
+ * path-1-only implementation and the harness would report MATCH forever. It did, and they
+ * did (waves 7-8).
+ *
+ * Planting a non-zero lc_handle makes path 2 live. What that grades is the Rust's LOGIC
+ * around the NLS call — does it call the same function, with the same arguments, and
+ * interpret the result the same way — because both sides now reach the SAME shared stub
+ * (refimpl.c's). What it does NOT grade is Windows' real NLS *data*, which is correct:
+ * that is kernel32's job, not msvcrt's, and it is the same bounded scope the
+ * __crtLCMapStringA arms of _toupper_l already have.
+ *
+ * A green from an unexercised branch is not a green. This is how the branch gets exercised. */
+extern const unsigned char *ref_nls_clmap(void);   /* refimpl.c — SHARED tables */
+extern const unsigned char *ref_nls_cumap(void);
+
+void subj_set_nls(int on)
+{
+    (void)get_locinfo();
+    /* mb_cur_max stays 1: this is a single-byte NLS locale (en-US), not a multibyte one.
+     * That keeps _isctype_l's table path live and isolates the change to exactly the
+     * lc_handle[LC_CTYPE] branches.
+     *
+     * The TABLES are swapped too, and that is load-bearing — see ref_set_nls(). Planting
+     * lc_handle alone makes msvcrt take path 2, but path 2 folds through pclmap[], and if
+     * that is still the C locale's ASCII map then both paths give the same answer and a
+     * path-1-only implementation is INDISTINGUISHABLE. The first version of this mode was
+     * exactly that false green; the negative control caught it.
+     *
+     * The tables come from refimpl.c so BOTH sides fold with the same bytes. Data supplied
+     * to both sides can never be caught differentially (§9.73), so we supply one copy. */
+    subj_locinfo.lc_handle[RL_LC_CTYPE]   = on ? 0x0409u : 0u;
+    subj_locinfo.lc_handle[RL_LC_COLLATE] = on ? 0x0409u : 0u;
+    subj_locinfo.pclmap = on ? ref_nls_clmap() : cloc_clmap;
+    subj_locinfo.pcumap = on ? ref_nls_cumap() : cloc_cumap;
 }
 
 /* ── the ref_integrity cross-check hooks ───────────────────────────

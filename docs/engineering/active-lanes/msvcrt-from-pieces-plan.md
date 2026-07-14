@@ -835,3 +835,70 @@ path 2 against the shared NLS stubs — the same argument that already makes `__
 (both sides call the same stub, so the comparison isolates the Rust's *logic*, and only the NLS *data* is
 out of scope, correctly, because that is kernel32's job). That closes the lane's oldest blind spot
 structurally rather than by promise.
+
+---
+
+## Wave 11 (2026-07-14) — §9.60 CLOSED. The harness now has a non-"C"-locale mode, and it convicted waves 7–8 the moment it worked.
+
+Wave 10 ended by naming the lane's oldest blind spot precisely: **waves 7 and 8 shipped
+locale-INDEPENDENT bodies for locale-DEPENDENT functions.** `_strnicmp_l` has two paths —
+
+```c
+if(!locinfo->lc_handle[LC_CTYPE]) { ...inline ASCII fold...; return (unsigned char)c1 - (unsigned char)c2; }
+do { c1 = _tolower_l((unsigned char)*s1++, locale); ... } while(...);   return c1 - c2;
+```
+
+— and we implemented only the first. Correct in the "C" locale (all the harness ever tested),
+wrong the moment `setlocale` is called. Note the two paths do not even agree on their *return
+convention*.
+
+### The false green, and why it matters more than the fix
+
+The obvious move — plant a non-zero `lc_handle[LC_CTYPE]` and re-run the rows — **did not work,
+and reported that it did.** Sabotaging `_strnicmp` to always take path 1 moved not one row.
+
+Because path 2 folds through `_tolower_l`, which reads `locinfo->pclmap[]` — and that was still
+the **C locale's** map, i.e. an ASCII fold. Both paths computed the same answer on every input, so
+a path-1-only implementation was *indistinguishable from a correct one*. The branch was being
+exercised and proved nothing.
+
+**It is not enough to exercise the branch. The branch has to be able to produce a different
+answer.** So the mode also swaps the ctype tables (`pclmap`/`pcumap` gain the Latin-1 case pairs,
+`0xC0–0xDE ↔ 0xE0–0xFE`), and `LCMapStringW` obeys the same rule. Now path 1 leaves `0xE9` alone
+while path 2 maps it to `0xC9`.
+
+This is §9.73 in miniature, again: **shared data cannot be caught differentially**, so the tables
+are one copy (refimpl's), aimed at by both sides — and the NLS entry points (`LCMapStringA/W`,
+`CompareStringA/W`, `GetStringTypeW`) are now **un-namespaced and shared**, because kernel32 is the
+*environment*, never code under test. What the mode grades is the Rust's LOGIC around the NLS call.
+Windows' real NLS *data* stays out of scope, correctly — that is kernel32's job.
+
+### Negative control (the only reason to believe any of this)
+
+| row | subject sabotaged to path-1-only | subject correct |
+|---|---|---|
+| `_strnicmp` (C locale) | **MATCH** ✓ | MATCH |
+| `_strnicmp [NLS]` | **DIVERGE** ✗ | MATCH |
+
+The C-locale row still passes under sabotage — correctly, because path 1 *is* right there. The two
+rows test genuinely different things. That is what a working instrument looks like.
+
+### What it caught immediately
+
+**`_wcsicmp [NLS]` DIVERGE** (`cnt=94 msvcrt=126`) — `_wcsicmp` has its own fold loop rather than
+delegating to `wcsnicmp_core`, so fixing the core had missed it. Exactly the class of bug the mode
+exists for, found the first time it ran honestly.
+
+### Flipped / fixed (+4 flips, 174 total)
+
+* **NEW:** `_towlower_l`, `_towupper_l`, `towlower`, `towupper` — the wide case mappers the whole
+  wide family funnels through (`wint_t` is **16-bit** in msvcrt, so `WEOF == 0xFFFF`). Exhaustive
+  over all 65,536 inputs, in **both** locale modes.
+* **path 2 added** to `_stricmp`, `_strnicmp`, `_wcsicmp`, `_wcsnicmp`, `_strlwr_s`, `_strupr_s`,
+  `_wcslwr_s`, `_wcsupr_s`. `_wcslwr_s_l` has no `lc_handle` branch of its own — it folds through
+  `_towlower_l` and inherits locale-correctness, so flipping the mapper fixed the family.
+
+### Verified
+
+`classify` **139 MATCH / 0 SIGN-ONLY / 1 DIVERGE** (the `strtod` probe — the expected DO-NOT-FLIP
+record) · `oob_guard` / `perf` / `link` / `ref_integrity` green · builds ×3 arches, all lints.

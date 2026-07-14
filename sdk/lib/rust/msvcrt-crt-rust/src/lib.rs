@@ -2814,36 +2814,56 @@ unsafe fn strnicmp_core(s1: *const u8, s2: *const u8, mut count: usize) -> i32 {
     if count == 0 {
         return 0; // before the front door, per the C
     }
-    // msvcrt.dll builds `_MSVCR_VER == 0`, which takes the NARROW check — no
-    // `count <= INT_MAX` arm (that one is _MSVCR_VER >= 80).
     if !check_pmt(!s1.is_null() && !s2.is_null()) {
         return NLSCMPERROR;
     }
-    // `char` is SIGNED: the C reads into an `int`, folds on the sign-extended
-    // value, and only casts to `unsigned char` in the RETURN. Both halves matter.
+
+    let li = sys::get_locinfo();
     let (mut p, mut q) = (s1 as *const i8, s2 as *const i8);
     let (mut c1, mut c2);
+
+    // ── path 1: the "C" locale (lc_handle[LC_CTYPE] == 0) ────────────────
+    //
+    // An INLINE ASCII fold on the SIGNED char, and note the return: the operands are
+    // re-read as UNSIGNED. `c1 -= 'A' - 'a'` is a SUBTRACTION of a NEGATIVE constant
+    // (-32), i.e. an ADD — transcribing it literally as `c1 -= 32` is how wave 7 first
+    // got 'I'(73) -> ')'(41), and classify convicted it with cnt=-131.
+    if (*li).lc_handle[sys::LC_CTYPE] == 0 {
+        loop {
+            c1 = *p as i32;
+            p = p.add(1);
+            if c1 >= b'A' as i32 && c1 <= b'Z' as i32 {
+                c1 += 32;
+            }
+            c2 = *q as i32;
+            q = q.add(1);
+            if c2 >= b'A' as i32 && c2 <= b'Z' as i32 {
+                c2 += 32;
+            }
+            count -= 1;
+            if count == 0 || c1 == 0 || c1 != c2 {
+                break;
+            }
+        }
+        return (c1 as u8) as i32 - (c2 as u8) as i32;
+    }
+
+    // ── path 2: a REAL locale ────────────────────────────────────────────
+    //
+    // Folds through `_tolower_l` — WITH the `(unsigned char)` cast, so unlike the int
+    // parsers this one never reaches the EILSEQ arm. And it returns the RAW difference,
+    // not the unsigned-re-read one. Two paths, two return conventions.
     loop {
-        // The C reads `c1 -= 'A' - 'a';` — and 'A'-'a' is NEGATIVE (-32), so it
-        // ADDS 32, folding uppercase DOWN to lowercase. Transcribing the `-=`
-        // literally as `c1 -= 32` maps 'I' to ')' and classify convicts it
-        // instantly. Spelled out here so nobody "fixes" it back.
-        c1 = *p as i32;
+        c1 = _tolower_l((*p as u8) as i32, core::ptr::null_mut());
         p = p.add(1);
-        if c1 >= b'A' as i32 && c1 <= b'Z' as i32 {
-            c1 += 32; // c1 -= ('A' - 'a')
-        }
-        c2 = *q as i32;
+        c2 = _tolower_l((*q as u8) as i32, core::ptr::null_mut());
         q = q.add(1);
-        if c2 >= b'A' as i32 && c2 <= b'Z' as i32 {
-            c2 += 32;
-        }
-        count -= 1; // C: `while(--count && c1 && c1==c2)`
+        count -= 1;
         if count == 0 || c1 == 0 || c1 != c2 {
             break;
         }
     }
-    (c1 as u8) as i32 - (c2 as u8) as i32
+    c1 - c2
 }
 
 #[no_mangle]
@@ -2925,16 +2945,37 @@ unsafe fn strcase_s_core(str_: *mut u8, len: usize, upper: bool) -> i32 {
         *_errno() = EINVAL; // errno only — no handler
         return EINVAL;
     }
+    // WAVE 11: `_strlwr_s_l` / `_strupr_s_l` carry their OWN lc_handle[LC_CTYPE] branch —
+    // an inline ASCII fold in the "C" locale, `_tolower_l((unsigned char)*str, locale)`
+    // otherwise. We shipped only the first half (wave 7), which is correct in the "C"
+    // locale and wrong the moment setlocale is called. Both halves now.
+    let li = sys::get_locinfo();
     let mut p = str_;
-    while *p != 0 {
-        let c = *p;
-        if upper {
-            if c.is_ascii_lowercase() {
-                *p = c - 32;
+
+    if (*li).lc_handle[sys::LC_CTYPE] == 0 {
+        while *p != 0 {
+            let c = *p;
+            if upper {
+                if c.is_ascii_lowercase() {
+                    *p = c - 32;
+                }
+            } else if c.is_ascii_uppercase() {
+                *p = c + 32;
             }
-        } else if c.is_ascii_uppercase() {
-            *p = c + 32;
+            p = p.add(1);
         }
+        return 0;
+    }
+
+    // The cast IS in the C here (`_tolower_l((unsigned char)*str, locale)`), so this path
+    // — unlike the int parsers — never reaches the EILSEQ arm.
+    while *p != 0 {
+        let c = (*p) as i32;
+        *p = if upper {
+            _toupper_l(c, core::ptr::null_mut()) as u8
+        } else {
+            _tolower_l(c, core::ptr::null_mut()) as u8
+        };
         p = p.add(1);
     }
     0
@@ -3008,10 +3049,14 @@ unsafe fn wcsnicmp_core(s1: *const u16, s2: *const u16, mut n: usize) -> i32 {
     }
     let (mut p, mut q) = (s1, s2);
     let (mut c1, mut c2);
+    // WAVE 11. Was `cw_lower` — an inline ASCII fold, so this was locale-INDEPENDENT.
+    // `_wcsnicmp_l` has NO lc_handle branch of its own: it folds through `_towlower_l`
+    // unconditionally and inherits that function's locale-correctness. Do the same, and
+    // the whole wide compare becomes locale-correct for free.
     loop {
-        c1 = cw_lower(*p);
+        c1 = _towlower_l(*p, core::ptr::null_mut());
         p = p.add(1);
-        c2 = cw_lower(*q);
+        c2 = _towlower_l(*q, core::ptr::null_mut());
         q = q.add(1);
         n -= 1; // C: `while(--n && c1 && (c1 == c2))`
         if n == 0 || c1 == 0 || c1 != c2 {
@@ -3036,9 +3081,13 @@ pub unsafe extern "C" fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32 {
     let (mut p, mut q) = (s1, s2);
     let (mut c1, mut c2);
     loop {
-        c1 = cw_lower(*p);
+        // WAVE 11: was `cw_lower` — an inline ASCII fold, i.e. locale-INDEPENDENT.
+        // `_wcsicmp_l` folds through `_towlower_l`, which carries the lc_handle branch.
+        // Caught by the [NLS] row the moment the harness's locale tables stopped being
+        // ASCII: cnt=94 vs msvcrt=126.
+        c1 = _towlower_l(*p, core::ptr::null_mut());
         p = p.add(1);
-        c2 = cw_lower(*q);
+        c2 = _towlower_l(*q, core::ptr::null_mut());
         q = q.add(1);
         if c1 == 0 || c1 != c2 {
             break;
@@ -3068,7 +3117,13 @@ unsafe fn wcscase_s_core(str_: *mut u16, n: usize, upper: bool) -> i32 {
         if *ptr == 0 {
             return 0;
         }
-        *ptr = if upper { cw_upper(*ptr) } else { cw_lower(*ptr) };
+        // WAVE 11: was cw_upper/cw_lower (ASCII). `_wcslwr_s_l` folds through
+        // `_towlower_l`, which carries the lc_handle branch.
+        *ptr = if upper {
+            _towupper_l(*ptr, core::ptr::null_mut())
+        } else {
+            _towlower_l(*ptr, core::ptr::null_mut())
+        };
         ptr = ptr.add(1);
     }
     // No terminator within n. MSDN says ERANGE; msvcrt returns EINVAL (Wine
@@ -3697,4 +3752,110 @@ pub unsafe extern "C" fn wcstok(str_: *mut u16, delim: *const u16) -> *mut u16 {
         delim,
         core::ptr::addr_of_mut!((*data).wcstok_next) as *mut *mut u16,
     )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WAVE 11 — path 2. Closing the lane's oldest blind spot (§9.60).
+//
+// Waves 7 and 8 shipped locale-INDEPENDENT bodies for a family of locale-DEPENDENT
+// functions. They passed `classify` — and they had to, because the harness pinned the
+// "C" locale, and in the "C" locale msvcrt takes an inline ASCII path:
+//
+//     int __cdecl _strnicmp_l(const char *s1, const char *s2, size_t count, _locale_t l) {
+//         ...
+//         if(!locinfo->lc_handle[LC_CTYPE]) {          // <-- path 1: the "C" locale
+//             do { if ((c1 = *s1++) >= 'A' && c1 <= 'Z') c1 -= 'A' - 'a'; ... } while(...);
+//             return (unsigned char)c1 - (unsigned char)c2;
+//         }
+//         do {                                          // <-- path 2: a REAL locale
+//             c1 = _tolower_l((unsigned char)*s1++, locale);
+//             c2 = _tolower_l((unsigned char)*s2++, locale);
+//         } while(--count && c1 && c1==c2);
+//         return c1-c2;                                 //     ...and a DIFFERENT return!
+//     }
+//
+// We implemented path 1 only. Correct in the "C" locale; wrong the moment `setlocale` is
+// called. That is not a bug the old harness could ever have caught — which is the actual
+// lesson: **a green from an unexercised branch is not a green.** So wave 11 makes the
+// harness exercise it (`subj_set_nls`/`ref_set_nls` plant a real `lc_handle[LC_CTYPE]`,
+// and both sides reach the SAME shared NLS stub) and only then writes the branch.
+//
+// Note the two paths do not even agree on their return convention: path 1 returns
+// `(unsigned char)c1 - (unsigned char)c2`, path 2 the raw `c1 - c2`.
+// ═══════════════════════════════════════════════════════════════════════════
+
+extern "system" {
+    /// kernel32 — WINAPI, so **stdcall on i386**. `extern "C"` here would link on
+    /// amd64/arm64 and fail only on i386 (the wave-9 `GetStringTypeW` bug).
+    fn LCMapStringW(
+        lcid: u32,
+        mapflags: u32,
+        src: *const u16,
+        srclen: i32,
+        dst: *mut u16,
+        dstlen: i32,
+    ) -> i32;
+}
+
+/// `_towlower_l (MSVCRT.@)` — the wide case-mapper the whole wide family funnels through.
+///
+/// `wint_t` is **16-bit** in msvcrt (hence `WEOF == 0xFFFF`), not the host's 32-bit.
+#[no_mangle]
+pub unsafe extern "C" fn _towlower_l(c: u16, locale: *mut core::ffi::c_void) -> u16 {
+    let li = locinfo_of(locale);
+    if (*li).lc_handle[sys::LC_CTYPE] == 0 {
+        if c >= b'A' as u16 && c <= b'Z' as u16 {
+            return c + (b'a' - b'A') as u16;
+        }
+        return c;
+    }
+    let mut ret: u16 = 0;
+    if LCMapStringW(
+        (*li).lc_handle[sys::LC_CTYPE],
+        LCMAP_LOWERCASE,
+        &c,
+        1,
+        &mut ret,
+        1,
+    ) == 0
+    {
+        return c; // NLS refused -> unchanged. Not an error, and no errno.
+    }
+    ret
+}
+
+/// `_towupper_l (MSVCRT.@)`
+#[no_mangle]
+pub unsafe extern "C" fn _towupper_l(c: u16, locale: *mut core::ffi::c_void) -> u16 {
+    let li = locinfo_of(locale);
+    if (*li).lc_handle[sys::LC_CTYPE] == 0 {
+        if c >= b'a' as u16 && c <= b'z' as u16 {
+            return c - (b'a' - b'A') as u16;
+        }
+        return c;
+    }
+    let mut ret: u16 = 0;
+    if LCMapStringW(
+        (*li).lc_handle[sys::LC_CTYPE],
+        LCMAP_UPPERCASE,
+        &c,
+        1,
+        &mut ret,
+        1,
+    ) == 0
+    {
+        return c;
+    }
+    ret
+}
+
+/// `towlower` / `towupper (MSVCRT.@)` — plain forms. Unlike the narrow `tolower`, these
+/// do NOT short-circuit on `initial_locale`; they are straight `_l` delegations.
+#[no_mangle]
+pub unsafe extern "C" fn towlower(c: u16) -> u16 {
+    _towlower_l(c, core::ptr::null_mut())
+}
+#[no_mangle]
+pub unsafe extern "C" fn towupper(c: u16) -> u16 {
+    _towupper_l(c, core::ptr::null_mut())
 }

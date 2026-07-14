@@ -298,6 +298,18 @@ extern "C" {
     fn strtok(s: *mut u8, delim: *const u8) -> *mut u8;
     fn ref_wcstok(s: *mut u16, delim: *const u16) -> *mut u16;
     fn wcstok(s: *mut u16, delim: *const u16) -> *mut u16;
+    // wave 11: the locale-mode switch (one per side — separate locinfo storage)
+    fn ref_set_nls(on: i32);
+    fn subj_set_nls(on: i32);
+    // wave 11: the wide case mappers (wint_t is 16-bit in msvcrt)
+    fn ref_towlower(c: u16) -> u16;
+    fn towlower(c: u16) -> u16;
+    fn ref_towupper(c: u16) -> u16;
+    fn towupper(c: u16) -> u16;
+    fn ref__towlower_l(c: u16, l: *mut core::ffi::c_void) -> u16;
+    fn _towlower_l(c: u16, l: *mut core::ffi::c_void) -> u16;
+    fn ref__towupper_l(c: u16, l: *mut core::ffi::c_void) -> u16;
+    fn _towupper_l(c: u16, l: *mut core::ffi::c_void) -> u16;
 }
 
 /// The four observable effects of a CRT call, as one comparable unit.
@@ -1592,6 +1604,125 @@ unsafe fn run() {
         let w = Effects::reference(|| ref__wcsupr_s(d2.as_mut_ptr(), n) as i64);
         (d1, g, d2, w, format!("n={n} slen={}", s.len()-1))
     });
+    // ══════════ WAVE 11 — the SAME ROWS, WITH A REAL LOCALE PLANTED ══════════
+    //
+    // THIS IS THE POINT OF WAVE 11. Every row above ran with `lc_handle[LC_CTYPE] == 0`,
+    // and msvcrt BRANCHES on that:
+    //
+    //     if(!locinfo->lc_handle[LC_CTYPE]) { ...inline ASCII fold... }   // what we tested
+    //     else                              { ..._tolower_l / LCMapStringW... }  // what we didn't
+    //
+    // So waves 7-8 could ship a path-1-only implementation and be reported MATCH forever.
+    // They did. `_stricmp`, `_strnicmp`, `_wcsicmp`, `_wcsnicmp`, `_strlwr_s`, `_strupr_s`
+    // and the wide folders were all locale-INDEPENDENT bodies for locale-DEPENDENT
+    // functions — correct in the "C" locale, wrong the moment setlocale is called. That is
+    // §9.60, and it was shipped, not merely documented.
+    //
+    // Planting a real lc_handle makes path 2 live on BOTH sides. Both then reach the SAME
+    // shared NLS stub (refimpl.c's — un-namespaced as of wave 11, because kernel32 is the
+    // environment, not code under test), so what this grades is the Rust's LOGIC around the
+    // NLS call: does it call the same function, with the same arguments, and read the result
+    // the same way. Windows' real NLS *data* is out of scope, correctly — that is kernel32's
+    // job, and it is the same bounded scope _toupper_l's __crtLCMapStringA arm already has.
+    //
+    // A green from an unexercised branch is not a green.
+    unsafe { ref_set_nls(1); subj_set_nls(1); }
+
+    check_effects("_stricmp [NLS]", |r| {
+        let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+        (Effects::subject(|| _stricmp(a.as_ptr(), b.as_ptr()) as i64),
+         Effects::reference(|| ref__stricmp(a.as_ptr(), b.as_ptr()) as i64),
+         format!("{a:?} vs {b:?}"))
+    });
+    check_effects("_strnicmp [NLS]", |r| {
+        let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+        let n = r.below(24);
+        (Effects::subject(|| _strnicmp(a.as_ptr(), b.as_ptr(), n) as i64),
+         Effects::reference(|| ref__strnicmp(a.as_ptr(), b.as_ptr(), n) as i64),
+         format!("n={n} {a:?} vs {b:?}"))
+    });
+    check_buf_fx("_strlwr_s [NLS]", &["ok", "EINVAL"], |r| {
+        let s = gen_str(r, 24);
+        let len = r.below(28);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAA); d2.resize(40, 0xAA);
+        let g = Effects::subject(|| _strlwr_s(d1.as_mut_ptr(), len) as i64);
+        let w = Effects::reference(|| ref__strlwr_s(d2.as_mut_ptr(), len) as i64);
+        (d1, g, d2, w, format!("len={len} slen={}", s.len()-1))
+    });
+    check_buf_fx("_strupr_s [NLS]", &["ok", "EINVAL"], |r| {
+        let s = gen_str(r, 24);
+        let len = r.below(28);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAA); d2.resize(40, 0xAA);
+        let g = Effects::subject(|| _strupr_s(d1.as_mut_ptr(), len) as i64);
+        let w = Effects::reference(|| ref__strupr_s(d2.as_mut_ptr(), len) as i64);
+        (d1, g, d2, w, format!("len={len} slen={}", s.len()-1))
+    });
+    check_effects("_wcsicmp [NLS]", |r| {
+        let (a, b) = (gen_wstr(r, 20), gen_wstr(r, 20));
+        (Effects::subject(|| _wcsicmp(a.as_ptr(), b.as_ptr()) as i64),
+         Effects::reference(|| ref__wcsicmp(a.as_ptr(), b.as_ptr()) as i64),
+         format!("alen={} blen={}", a.len()-1, b.len()-1))
+    });
+    check_effects("_wcsnicmp [NLS]", |r| {
+        let (a, b) = (gen_wstr(r, 20), gen_wstr(r, 20));
+        let n = r.below(24);
+        (Effects::subject(|| _wcsnicmp(a.as_ptr(), b.as_ptr(), n) as i64),
+         Effects::reference(|| ref__wcsnicmp(a.as_ptr(), b.as_ptr(), n) as i64),
+         format!("n={n} alen={} blen={}", a.len()-1, b.len()-1))
+    });
+    check_wbuf_fx("_wcslwr_s [NLS]", &["ok", "EINVAL"], |r| {
+        let s = gen_wstr(r, 24);
+        let n = r.below(28);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAAAA); d2.resize(40, 0xAAAA);
+        let g = Effects::subject(|| _wcslwr_s(d1.as_mut_ptr(), n) as i64);
+        let w = Effects::reference(|| ref__wcslwr_s(d2.as_mut_ptr(), n) as i64);
+        (d1, g, d2, w, format!("n={n} slen={}", s.len()-1))
+    });
+    check_wbuf_fx("_wcsupr_s [NLS]", &["ok", "EINVAL"], |r| {
+        let s = gen_wstr(r, 24);
+        let n = r.below(28);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAAAA); d2.resize(40, 0xAAAA);
+        let g = Effects::subject(|| _wcsupr_s(d1.as_mut_ptr(), n) as i64);
+        let w = Effects::reference(|| ref__wcsupr_s(d2.as_mut_ptr(), n) as i64);
+        (d1, g, d2, w, format!("n={n} slen={}", s.len()-1))
+    });
+
+    // The wide case mappers themselves, EXHAUSTIVE over the whole 16-bit wint_t domain,
+    // in BOTH locale modes. (`wint_t` is 16-bit in msvcrt, so WEOF is 0xFFFF — not the
+    // host's 32-bit 0xFFFFFFFF.)
+    macro_rules! wcase_row {
+        ($name:literal, $subj:expr, $refr:expr) => {{
+            let mut bad = None;
+            for c in 0u32..=0xFFFF {
+                let c = c as u16;
+                let (g, w) = ($subj(c), $refr(c));
+                if g != w {
+                    bad = Some(format!("c=0x{c:04x} cnt={g} msvcrt={w}"));
+                    break;
+                }
+            }
+            match bad {
+                Some(b) => record($name, V::Diverge, b),
+                None => record($name, V::Match, "exhaustive over 0x0000..=0xFFFF".into()),
+            }
+        }};
+    }
+    wcase_row!("towlower [NLS]", towlower, ref_towlower);
+    wcase_row!("towupper [NLS]", towupper, ref_towupper);
+
+    unsafe { ref_set_nls(0); subj_set_nls(0); }   // back to the "C" locale
+
+    wcase_row!("towlower", towlower, ref_towlower);
+    wcase_row!("towupper", towupper, ref_towupper);
+    wcase_row!("_towlower_l", |c| _towlower_l(c, core::ptr::null_mut()),
+                              |c| ref__towlower_l(c, core::ptr::null_mut()));
+    wcase_row!("_towupper_l", |c| _towupper_l(c, core::ptr::null_mut()),
+                              |c| ref__towupper_l(c, core::ptr::null_mut()));
+
     check_wbuf("_wcslwr", |r| {
         let s = gen_wstr(r, 30);
         let (mut d1, mut d2) = (s.clone(), s.clone());
