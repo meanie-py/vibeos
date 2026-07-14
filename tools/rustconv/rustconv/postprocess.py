@@ -13,7 +13,7 @@ universal enough to fix mechanically:
 from __future__ import annotations
 
 import re
-import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,6 +21,8 @@ from .abi_enforce import enforce_abi_from_c
 from .abi_map import build_win32k_abi_map
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from .scanner import CGlobal
     from .spec_parser import SpecEntry
 
@@ -514,6 +516,203 @@ def fix_portable_types(code: str) -> str:
             line = re.sub(r"(OBJ_\w+(?:\))?)\s+as\s+u64", r"\1 as _", line)
         new_lines.append(line)
     return "\n".join(new_lines)
+
+
+# ============================================================================
+# memoffset:: paths (there is no memoffset crate in this workspace)
+# ============================================================================
+
+# The model reliably reaches for the `memoffset` crate for `offset_of!` (it was
+# THE way to do this before Rust 1.77 stabilised `core::mem::offset_of!`), and
+# it emits two shapes, both seen for real in the ole32 run:
+#   memoffset::offset_of!(T, f)             <- the crate's own macro
+#   memoffset::core::mem::offset_of!(T, f)  <- a hallucinated hybrid of the two
+# Neither compiles: no crate in sdk/lib/rust/ depends on `memoffset`.  The
+# workspace answer is always core's macro.
+#
+# NOTE: the `memoffset::` PATH prefix is what we key on, never the bare word —
+# `memoffset` is also a legitimate *field* name in the wild (oleaut32's typelib
+# MSFT_TypeInfoBase.memoffset), and `(*base).memoffset` must survive untouched.
+_RE_MEMOFFSET_PATH = re.compile(r"\bmemoffset::(?:core::mem::)?offset_of\s*!")
+_RE_MEMOFFSET_USE = re.compile(r"^[ \t]*use\s+memoffset::.*?;[ \t]*\r?\n", re.MULTILINE)
+
+
+def fix_memoffset_paths(code: str) -> str:
+    """Rewrite `memoffset::[core::mem::]offset_of!` → `core::mem::offset_of!`.
+
+    Also rewrites `use memoffset::offset_of;` → `use core::mem::offset_of;`
+    (keeping any bare `offset_of!(...)` call sites the model paired with it
+    resolvable) and drops any other `use memoffset::...;` line, since the crate
+    does not exist in this workspace at all.
+    """
+    code = _RE_MEMOFFSET_PATH.sub("core::mem::offset_of!", code)
+
+    def fix_use(m: re.Match) -> str:
+        line = m.group(0)
+        if re.search(r"\buse\s+memoffset::offset_of\s*;", line):
+            return line.replace("memoffset::offset_of", "core::mem::offset_of")
+        # Anything else from a crate we don't have: drop the import outright.
+        return ""
+
+    return _RE_MEMOFFSET_USE.sub(fix_use, code)
+
+
+# ============================================================================
+# Old-bindgen union ACCESSOR-CALL form  →  plain field access
+# ============================================================================
+
+# Bindgen used to generate *methods* for anonymous-union members
+# (`unsafe { x.u1() }`), and the model was trained on that era.  The bindgen we
+# ship generates PLAIN FIELDS (verified: `pub QuadPart: LONGLONG` in
+# sdk/lib/rust/com-sys/src/bindgen_*.rs — zero `pub fn QuadPart(` anywhere in
+# the tree), so every `x.QuadPart()` is a compile error.
+#
+# Scoped by NAME (a curated accessor list), not by shape, because `.foo()` is
+# obviously also the shape of every real method call in the file.  The names
+# below are union/struct member names from the Windows headers; none of them is
+# a method we define anywhere.
+_ACCESSOR_FIELDS = frozenset(
+    {
+        "QuadPart",
+        "HighPart",
+        "LowPart",
+        "u",
+        "u1",
+        "u2",
+        "u3",
+        "s",
+        "s1",
+        "s2",
+        "s3",
+        "n",
+        "n1",
+        "n2",
+    }
+)
+
+# The DUMMY*/Anonymous* family is different: those names come from the SDK's
+# NONAMELESSUNION macros and our bindgen NEVER emits them under any spelling
+# (verified: zero hits for DUMMYUNIONNAME/DUMMYSTRUCTNAME/`pub Anonymous` across
+# every sdk/lib/rust/*/src/bindgen_*.rs).  What it emits is `__bindgen_anon_N`.
+# So for these, dropping the `()` is not enough — the field itself is renamed.
+_RE_ANON_FAMILY = re.compile(
+    r"(?<=[)\]\w])\.(?:DUMMYUNIONNAME|DUMMYSTRUCTNAME|Anonymous)(\d*)\s*(\(\s*\))?(?![A-Za-z0-9_])"
+)
+
+_RE_ACCESSOR_CALL = re.compile(
+    r"(?<=[)\]\w])\.(" + "|".join(sorted(_ACCESSOR_FIELDS, key=len, reverse=True)) + r")\s*\(\s*\)"
+)
+
+
+def fix_bindgen_accessor_calls(code: str) -> str:
+    """Old-bindgen union accessors: `x.QuadPart()` → `x.QuadPart`.
+
+    Two rewrites:
+      1. Known union/struct member names in method-call form lose the `()`
+         (`x.u1()` → `x.u1`, `x.QuadPart()` → `x.QuadPart`).
+      2. The `DUMMYUNIONNAME` / `DUMMYSTRUCTNAME` / `Anonymous` family — which
+         our bindgen renames wholesale — becomes `__bindgen_anon_N`
+         (`x.DUMMYUNIONNAME()` and bare `x.DUMMYUNIONNAME` both →
+         `x.__bindgen_anon_1`; a trailing digit is carried over, so
+         `DUMMYUNIONNAME2` → `__bindgen_anon_2`).
+
+    Comment lines are skipped.  Runs BEFORE fix_bindgen_anon_field_access so
+    that a `.LowPart()` first becomes `.LowPart` and then gets its
+    `.__bindgen_anon_1.` qualifier from that pass.
+    """
+    lines = code.split("\n")
+    out = []
+    for line in lines:
+        if line.lstrip().startswith("//"):
+            out.append(line)
+            continue
+        line = _RE_ACCESSOR_CALL.sub(r".\1", line)
+        line = _RE_ANON_FAMILY.sub(lambda m: f".__bindgen_anon_{m.group(1) or '1'}", line)
+        out.append(line)
+    return "\n".join(out)
+
+
+# ============================================================================
+# Rust-keyword C field names (`ref`, `type`, ...) — bindgen appends `_`
+# ============================================================================
+
+# A C struct field named `ref` (wine's refcounts: StorageBaseImpl.ref) is a hard
+# Rust PARSE error, so bindgen escapes it by appending an underscore — verified
+# against the generated bindings we actually ship (`pub type_: DWORD` in
+# com-sys, `pub in_: [c_uchar; 64]` in advapi32-sys).  Trailing underscore, NOT
+# a raw identifier, and NOT a numeric suffix.
+#
+# rustconv was not self-consistent about this: a single ole32 file declared the
+# field `ref_` but then reached for it as `.ref`, `.ref_` AND `.ref_0` at
+# different use sites.  Canonicalise every use site onto bindgen's spelling.
+#
+# Curated keyword list: Rust strict + reserved keywords that are plausible C
+# field names.  Deliberately EXCLUDED: `await`/`self`/`super`/`crate` (postfix
+# `.await` and `.self` shapes must not be touched) and `union` (a *weak*
+# keyword — a field named `union` is a valid Rust ident, so bindgen keeps it).
+_KEYWORD_FIELDS = (
+    "abstract",
+    "become",
+    "box",
+    "break",
+    "const",
+    "continue",
+    "dyn",
+    "enum",
+    "final",
+    "fn",
+    "impl",
+    "in",
+    "let",
+    "loop",
+    "macro",
+    "match",
+    "mod",
+    "move",
+    "mut",
+    "override",
+    "priv",
+    "ref",
+    "return",
+    "static",
+    "struct",
+    "trait",
+    "type",
+    "typeof",
+    "unsafe",
+    "use",
+    "virtual",
+    "where",
+    "yield",
+)
+
+# `.ref` / `.r#ref` / `.ref_0`  →  `.ref_`
+#   - `(?<=[)\]\w])` : a real receiver, so this is a field access
+#   - `(?:_\d+)?\b`  : also catches the model's spurious `_0` disambiguator.
+#     `.ref_` itself never matches (no word boundary between `f` and `_`), so the
+#     pass is idempotent, and `.reference` never matches either.
+_RE_KEYWORD_FIELD = re.compile(
+    r"(?<=[)\]\w])\.(?:r#)?(" + "|".join(_KEYWORD_FIELDS) + r")(?:_\d+)?\b(?!_)"
+)
+
+
+def fix_keyword_field_names(code: str) -> str:
+    """Canonicalise Rust-keyword C field names onto bindgen's `keyword_` spelling.
+
+    `(*this).ref` / `(*this).r#ref` / `(*this).ref_0` → `(*this).ref_`.
+    Generalised over the keyword list above so the next DLL's `type` / `box` /
+    `match` field is handled without a code change.
+
+    Comment lines are skipped.
+    """
+    lines = code.split("\n")
+    out = []
+    for line in lines:
+        if line.lstrip().startswith("//"):
+            out.append(line)
+            continue
+        out.append(_RE_KEYWORD_FIELD.sub(lambda m: f".{m.group(1)}_", line))
+    return "\n".join(out)
 
 
 # ============================================================================
@@ -1415,6 +1614,232 @@ _GDIOBJ_MACRO_VERBS = (
 )
 
 
+_EXTERN_OPEN_RE = re.compile(r'^[ \t]*extern\s+"([^"]+)"\s*\{[ \t]*$')
+_EXTERN_FN_NAME_RE = re.compile(r"^[ \t]*(?:pub\s+)?fn\s+([A-Za-z_]\w*)\b")
+_EXTERN_ATTR_RE = re.compile(r"^[ \t]*#\[[^\]]*\][ \t]*$")
+
+
+@lru_cache(maxsize=1)
+def _import_abi_map() -> dict[str, str]:
+    """symbol -> required extern ABI ("C" | "system"), from EVERY .spec in the tree.
+
+    THE INVARIANT: an imported symbol's calling convention is decided by the DLL that
+    EXPORTS it, and every one of those DLLs states it in a .spec. kernel32.spec says
+    `@ stdcall HeapAlloc(long long long)`; msvcrt.spec says `@ cdecl strcpy(ptr str)`.
+    So we never have to guess — and we must not, because guessing wrong is invisible.
+
+    WHY THIS IS NEEDED. An LLM translating a user-mode DLL sees a C file that calls
+    `strcpy(dst, src)` and `HeapAlloc(heap, 0, n)` and `SetLastError(e)` side by side, with
+    nothing in the source distinguishing their conventions (the C compiler knew from the
+    headers). It groups them into whichever `extern` block it happens to pick. ws2_32's raw
+    translation declared **HeapAlloc as `extern "C"` in some modules and `extern "system"` in
+    others** — HeapAlloc is stdcall, so the cdecl sites walk the i386 stack on every
+    allocation. It compiles. It links. It boots.
+
+    Nothing was checking: verify_ffi validates a module's decls against ITS OWN .spec, and
+    HeapAlloc is not in ws2_32.spec because it is an IMPORT. The one checker that could have
+    caught it had no reason to look at that name at all.
+
+    Conflicts (a name exported with different conventions by different DLLs — 20 of 18,028,
+    all kernel Ke*/Rtl* arch-variants) are DROPPED from the map rather than guessed. Fail
+    safe: an unknown name is left exactly as the model wrote it.
+
+    `varargs` is cdecl (that is how a variadic C fn is called); `thiscall`/`fastcall` are
+    grouped with stdcall under Rust's "system" for our targets.
+    """
+    from .config import REACTOS_ROOT
+
+    conv = {
+        "stdcall": "system",
+        "fastcall": "system",
+        "thiscall": "system",
+        "cdecl": "C",
+        "varargs": "C",
+    }
+    pat = re.compile(
+        r"^@\s+(stdcall|cdecl|varargs|thiscall|fastcall)\s+(?:-\S+\s+)*([A-Za-z_]\w*)\s*\("
+    )
+    seen: dict[str, set[str]] = {}
+    for spec in REACTOS_ROOT.rglob("*.spec"):
+        sp = str(spec)
+        if "/build-" in sp or "/.git/" in sp:
+            continue
+        try:
+            text = spec.read_text(errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            m = pat.match(line.strip())
+            if m:
+                seen.setdefault(m.group(2), set()).add(conv[m.group(1)])
+    # Unambiguous names only.
+    return {name: next(iter(cs)) for name, cs in seen.items() if len(cs) == 1}
+
+
+def enforce_import_abi(code: str, exports: dict | None = None) -> str:
+    """Force every imported fn decl into the extern block its exporting DLL's .spec requires.
+
+    See _import_abi_map for the invariant and for why nothing else catches this. Names the
+    module itself EXPORTS are skipped (a DLL may legitimately export its own fn that shares a
+    name with someone else's import; forcing that one would invert the bug).
+    """
+    abi_of = _import_abi_map()
+    if not abi_of:
+        return code
+    own = set(exports or {})
+
+    lines = code.splitlines(keepends=True)
+    out: list[str] = []
+    # required-abi -> [decl lines]
+    relocated: dict[str, list[str]] = {}
+    moved: list[str] = []
+    i, n = 0, len(lines)
+    while i < n:
+        m = _EXTERN_OPEN_RE.match(lines[i].rstrip("\n"))
+        if not m or m.group(1) not in ("system", "stdcall", "C", "cdecl"):
+            out.append(lines[i])
+            i += 1
+            continue
+        # Normalize the block's ABI to the two Rust spellings we emit.
+        block_abi = "system" if m.group(1) in ("system", "stdcall") else "C"
+        depth, j = 1, i + 1
+        while j < n:
+            depth += lines[j].count("{") - lines[j].count("}")
+            if depth == 0:
+                break
+            j += 1
+        if j >= n:  # unterminated — leave exactly as-is
+            out.append(lines[i])
+            i += 1
+            continue
+
+        kept: list[str] = []
+        pending: list[str] = []
+        hit = False
+        for ln in lines[i + 1 : j]:
+            if _EXTERN_ATTR_RE.match(ln.rstrip("\n")):
+                pending.append(ln)
+                continue
+            fn_m = _EXTERN_FN_NAME_RE.match(ln)
+            name = fn_m.group(1) if fn_m else None
+            want = abi_of.get(name) if name and name not in own else None
+            if want and want != block_abi:
+                relocated.setdefault(want, []).extend(pending)
+                relocated.setdefault(want, []).append(ln)
+                moved.append(f"{name}->{want}")
+                pending.clear()
+                hit = True
+                continue
+            kept.extend(pending)
+            pending.clear()
+            kept.append(ln)
+        kept.extend(pending)
+
+        if not hit:
+            out.extend(lines[i : j + 1])  # byte-identical passthrough
+            i = j + 1
+            continue
+        if any(k.strip() for k in kept):
+            out.append(f'extern "{m.group(1)}" {{\n')
+            out.extend(k if k.endswith("\n") else k + "\n" for k in kept)
+            out.append("}\n")
+        i = j + 1
+
+    if not moved:
+        return code
+    out.append(
+        f"// enforce_import_abi: moved {len(moved)} import decl(s) into the extern block their\n"
+        f"// exporting DLL's .spec requires: {', '.join(sorted(set(moved)))}.\n"
+        "// The CRT is cdecl, Win32 is stdcall, and the C source does not say which is which —\n"
+        "// a wrong guess is a silent i386 stack walk on every call. The .spec is the truth.\n"
+    )
+    for abi, decls in sorted(relocated.items()):
+        out.append(f'extern "{abi}" {{\n')
+        out.extend(decls)
+        out.append("}\n")
+    return "".join(out)
+
+
+def _filter_extern_block_decls(
+    code: str,
+    should_drop: Callable[[str], bool],
+    note: str,
+    abis: tuple[str, ...] | None = None,
+) -> str:
+    """Line-scan every `extern "X" { … }` block, dropping the decls `should_drop`
+    selects. Linear — it cannot backtrack.
+
+    This replaces a regex that was a catastrophic-backtracking bomb and hung
+    `rustconv translate` outright on ole32's storage32.c and moniker.c. The old
+    pattern matched the block body with an ambiguous `(…fn…;\\n)+` whose `[^;{]+`
+    return-type class also matched newlines, so a single iteration could swallow
+    several decl lines. That alone is survivable — the killer was that the
+    stitcher's merged extern block legitimately contains `static` declarations
+    among the fns, so the `+` ran out at the first `static` and could never reach
+    the closing `}`. The engine then re-partitioned the preceding 46 fn decls
+    every possible way: a clean 2^n (26 decls = 5s, 30 = 37s, 46 = never).
+
+    Because the hang looked like the *stitcher* spinning, the run got killed and
+    the pieces hand-assembled — silently bypassing all of postprocess(), ABI
+    enforcement included. Nearly every defect in that translation traces here.
+
+    The line scan is also strictly more capable: it can process the mixed
+    fn/static blocks the old pattern could never match at all.
+    """
+    lines = code.splitlines(keepends=True)
+    out: list[str] = []
+    i, n = 0, len(lines)
+    while i < n:
+        m = _EXTERN_OPEN_RE.match(lines[i].rstrip("\n"))
+        if not m or (abis is not None and m.group(1) not in abis):
+            out.append(lines[i])
+            i += 1
+            continue
+
+        abi = m.group(1)
+        depth, j = 1, i + 1
+        while j < n:
+            depth += lines[j].count("{") - lines[j].count("}")
+            if depth == 0:
+                break
+            j += 1
+        if j >= n:  # unterminated block — leave it exactly as it was
+            out.append(lines[i])
+            i += 1
+            continue
+
+        kept: list[str] = []
+        dropped: list[str] = []
+        pending_attrs: list[str] = []
+        for ln in lines[i + 1 : j]:
+            if _EXTERN_ATTR_RE.match(ln.rstrip("\n")):
+                pending_attrs.append(ln)
+                continue
+            fn_m = _EXTERN_FN_NAME_RE.match(ln)
+            if fn_m and should_drop(fn_m.group(1)):
+                dropped.append(fn_m.group(1))
+                pending_attrs.clear()  # the attribute belonged to the dropped fn
+                continue
+            kept.extend(pending_attrs)
+            pending_attrs.clear()
+            kept.append(ln)  # non-fn lines (`static IID_Foo: IID;`) pass through
+        kept.extend(pending_attrs)
+
+        if not dropped:
+            out.extend(lines[i : j + 1])  # byte-identical passthrough
+            i = j + 1
+            continue
+
+        if any(k.strip() for k in kept):
+            out.append(f'extern "{abi}" {{\n')
+            out.extend(k if k.endswith("\n") else k + "\n" for k in kept)
+            out.append("}\n")
+        out.append(note.format(n=len(dropped), names=", ".join(dropped)))
+        i = j + 1
+
+    return "".join(out)
+
+
 def drop_gdiobj_macro_externs(code: str) -> str:
     """Mode-4 safety net: drop `extern "C" { fn <T>_<Verb>(...); }` decls
     where <T>_<Verb> is a known GDI-object macro family pattern.
@@ -1426,45 +1851,20 @@ def drop_gdiobj_macro_externs(code: str) -> str:
     translation should inline-expand to the underlying GDIOBJ_*
     primitives (see win32k_translation_prompt.md §6).
     """
-    pat = re.compile(
-        r'^extern\s+"(?:C|system|stdcall|fastcall)"\s*\{\s*\n'
-        r"((?:[ \t]+(?:#\[[^\]]+\]\s*\n[ \t]+)?fn\s+[A-Za-z_]\w*\b"
-        r"(?:\s*\([^)]*\))?\s*(?:->\s*[^;{]+)?\s*;\s*\n)+)"
-        r"\}\s*\n?",
-        re.MULTILINE,
+
+    def _is_gdiobj_macro(name: str) -> bool:
+        prefix, _, rest = name.partition("_")
+        return prefix in _GDIOBJ_MACRO_FAMILIES and rest in _GDIOBJ_MACRO_VERBS
+
+    return _filter_extern_block_decls(
+        code,
+        _is_gdiobj_macro,
+        "// drop_gdiobj_macro_externs: dropped {n} bogus extern decl(s) for "
+        "GDI-object macro(s): {names} — these are macros in gdi/eng/<type>.h or "
+        "gdi/ntgdi/<type>.h, not real fns. Inline-expand via GDIOBJ_* primitives "
+        "per win32k_translation_prompt.md §6.\n",
+        abis=("C", "system", "stdcall", "fastcall"),
     )
-
-    def rewrite_block(m: re.Match) -> str:
-        body = m.group(1)
-        kept_fns: list[str] = []
-        dropped: list[str] = []
-        for line in body.splitlines(keepends=False):
-            fn_m = re.match(r"^\s*fn\s+([A-Za-z_]\w*)\b", line)
-            if not fn_m:
-                kept_fns.append(line)
-                continue
-            name = fn_m.group(1)
-            prefix, _, rest = name.partition("_")
-            if prefix in _GDIOBJ_MACRO_FAMILIES and rest in _GDIOBJ_MACRO_VERBS:
-                dropped.append(name)
-                continue
-            kept_fns.append(line)
-        if not dropped:
-            return m.group(0)
-        out = ""
-        if any(ln.strip() for ln in kept_fns):
-            out += 'extern "C" {\n' + "\n".join(kept_fns) + "\n}\n"
-        out += (
-            f"// drop_gdiobj_macro_externs: dropped {len(dropped)} bogus "
-            f"extern decl(s) for GDI-object macro(s): "
-            f"{', '.join(dropped)} — these are macros in "
-            f"gdi/eng/<type>.h or gdi/ntgdi/<type>.h, not real fns. "
-            f"Inline-expand via GDIOBJ_* primitives per "
-            f"win32k_translation_prompt.md §6.\n"
-        )
-        return out
-
-    return pat.sub(rewrite_block, code)
 
 
 _PSEH_MACRO_EXTERN_NAMES_RE = re.compile(r"^(?:_SEH2_\w+|RtlGetProcessHeap)$")
@@ -1488,40 +1888,14 @@ def drop_pseh_macro_externs(code: str) -> str:
     removes the block entirely if nothing real remains. Mirrors
     drop_gdiobj_macro_externs (win32k) for the user-mode substrate.
     """
-    pat = re.compile(
-        r'extern\s+"([^"]+)"\s*\{\s*\n'
-        r"((?:[ \t]*(?:#\[[^\]]+\]\s*\n[ \t]*)?(?:pub\s+)?fn\s+[A-Za-z_]\w*\b"
-        r"(?:\s*\([^)]*\))?\s*(?:->\s*[^;{]+)?\s*;\s*\n)+)"
-        r"[ \t]*\}\s*\n?",
-        re.MULTILINE,
+    return _filter_extern_block_decls(
+        code,
+        lambda name: bool(_PSEH_MACRO_EXTERN_NAMES_RE.match(name)),
+        "// drop_pseh_macro_externs: dropped {n} bogus extern decl(s): {names} — "
+        "PSEH _SEH2_* (and RtlGetProcessHeap) are macros, not symbols. Under "
+        "USE_DUMMY_PSEH the SEH path is dead; translate the body directly. "
+        "RtlGetProcessHeap → GetProcessHeap().\n",
     )
-
-    def rewrite_block(m: re.Match) -> str:
-        abi = m.group(1)
-        body = m.group(2)
-        kept: list[str] = []
-        dropped: list[str] = []
-        for line in body.splitlines(keepends=False):
-            fn_m = re.match(r"^\s*(?:pub\s+)?fn\s+([A-Za-z_]\w*)\b", line)
-            if fn_m and _PSEH_MACRO_EXTERN_NAMES_RE.match(fn_m.group(1)):
-                dropped.append(fn_m.group(1))
-                continue
-            kept.append(line)
-        if not dropped:
-            return m.group(0)
-        out = ""
-        if any(ln.strip() for ln in kept):
-            out += f'extern "{abi}" {{\n' + "\n".join(kept) + "\n}\n"
-        out += (
-            f"// drop_pseh_macro_externs: dropped {len(dropped)} bogus "
-            f"extern decl(s): {', '.join(dropped)} — PSEH _SEH2_* "
-            f"(and RtlGetProcessHeap) are macros, not symbols. Under "
-            f"USE_DUMMY_PSEH the SEH path is dead; translate the body "
-            f"directly. RtlGetProcessHeap → GetProcessHeap().\n"
-        )
-        return out
-
-    return pat.sub(rewrite_block, code)
 
 
 def fix_markdown_fence_leak(code: str) -> str:
@@ -1629,7 +2003,7 @@ _KNOWN_USER_SYS_CRATES = {
 }
 
 
-def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str) -> str:
+def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str, crate_module: str = "") -> str:
     """Deterministically retarget a user-mode translation's FFI imports.
 
     rustconv's prompt/catalog are kernel-oriented, so the LLM emits
@@ -1639,8 +2013,24 @@ def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str) -> str:
     `ntkrnl_sys::<mod>::` to `<sys_crate>::<sys_umbrella>::` and
     replaces the now-redundant explicit `use` lines with a single glob
     — LLM-independent, mirrors enforce_win32k_abi philosophy.
+
+    `crate_module` (e.g. "types") EXEMPTS the target's crate-local bindgen island
+    from that collapse and sends it to `crate::<crate_module>::` instead. It must run
+    FIRST, because the blanket `ntkrnl_sys::\\w+::` rule below would otherwise swallow
+    `ntkrnl_sys::types::` into the sys umbrella — and those symbols are NOT there.
+    ws2_32's `PWSSOCKET`/`TCATALOG`/`SOCKET_ERROR` live in ws2_32-rust's own generated
+    `types` module, so collapsing them onto `ntdll_sys::nt` yields an unresolved-import
+    wall at best, and at worst binds to a same-named-but-different NT symbol.
     """
     pfx = f"{sys_crate}::{sys_umbrella}::"
+    # 0. Crate-local bindgen island (gen_driver_types.sh) → `crate::<module>::`.
+    #    MUST precede the blanket collapse in step 1.
+    if crate_module:
+        code = re.sub(
+            rf"\b(?:ntkrnl_sys|{re.escape(sys_crate)})::{re.escape(crate_module)}::",
+            f"crate::{crate_module}::",
+            code,
+        )
     # 1. Any ntkrnl_sys::<module>:: (incl. nested) → <crate>::<umbrella>::
     code = re.sub(r"\bntkrnl_sys::\w+::", pfx, code)
     # 1b. Sibling user-mode substrate crates the LLM may have guessed wrong
@@ -1793,6 +2183,8 @@ def postprocess(
     sys_crate: str = "ntkrnl_sys",
     sys_umbrella: str | None = None,
     c_source_path: Path | None = None,
+    com_method_macro: str | None = None,
+    crate_module: str = "",
 ) -> str:
     """Apply all post-processing transforms to LLM-generated Rust code.
 
@@ -1801,6 +2193,15 @@ def postprocess(
         exports: Spec-exported functions (from resolver), enables #[no_mangle]
                  and fastcall fixes
         globals: C globals from scanner, enables global #[no_mangle] fixes
+        com_method_macro: name of the crate's stdcall-wrapper macro (e.g.
+                 "stdmethod"). A C `static … WINAPI` COM method is stdcall on
+                 i386, and rustc will NOT unify `extern "system"` with the
+                 `extern "stdcall"` fn type bindgen gives the vtbl slot — so the
+                 body needs a per-arch cfg pair. Naming the macro here renders
+                 that as one `stdmethod! { … }` instead of duplicating the body
+                 under two cfgs (149 methods in oleaut32's remaining files).
+                 None → the inline cfg-dual, for targets with no such macro
+                 (kernel, HAL, drivers).
 
     Only does SAFE transforms that don't depend on struct type context:
     - Type name underscore-prefixing (always correct)
@@ -1810,6 +2211,10 @@ def postprocess(
     - Bindgen anon field access (LARGE_INTEGER .LowPart/.HighPart,
       IO_STATUS_BLOCK .Status — universal, struct-type independent)
     - Enum literal replacements (KernelMode→0i32, UserMode→1i32, etc.)
+    - memoffset:: paths → core::mem::offset_of! (no memoffset crate here)
+    - Old-bindgen union accessor CALLS (.QuadPart(), .u1(), .DUMMYUNIONNAME())
+      → the plain fields / __bindgen_anon_N our bindgen actually emits
+    - Rust-keyword C field names (.ref/.ref_0/.r#ref → .ref_, same for .type etc.)
     - #[no_mangle] for spec exports and globals (when metadata provided)
     - Fastcall dual-cfg for i386 (when metadata provided)
     - Self-import removal (always safe)
@@ -1825,6 +2230,12 @@ def postprocess(
     code = fix_type_names(code)
     code = fix_enum_variants(code)
     code = fix_portable_types(code)
+    # Mechanical LLM output defects (all three hit for real in the ole32 run).
+    # Must run BEFORE fix_bindgen_anon_field_access: the accessor-call pass turns
+    # `.LowPart()` into `.LowPart`, which that pass then qualifies.
+    code = fix_memoffset_paths(code)
+    code = fix_bindgen_accessor_calls(code)
+    code = fix_keyword_field_names(code)
     code = fix_bindgen_anon_field_access(code)
     code = fix_enum_literal_replacements(code)
     if exports:
@@ -1847,10 +2258,13 @@ def postprocess(
     # its canonical extern/visibility. See abi_enforce.py. (win32k keeps its
     # own bindgen/spec-fused enforcer above; this covers every other target.)
     if c_source_path is not None and target_name != "win32k":
-        try:
-            code = enforce_abi_from_c(code, c_source_path)
-        except Exception as e:
-            print(f"  [abi_enforce] skipped ({e})", file=sys.stderr)
+        # Deliberately NO try/except. This is the one pass that guarantees a
+        # translated `static … WINAPI` COM method keeps its __stdcall; if it
+        # cannot run, the output is not safe to ship. Swallowing the failure and
+        # printing to stderr is how ~130 ole32 vtbl methods shipped with the Rust
+        # ABI — clean links on amd64/arm64, a corrupted stack on i386 at the first
+        # call. Fail loud (AGENTS.md) and let the caller decide.
+        code = enforce_abi_from_c(code, c_source_path, com_method_macro=com_method_macro)
     code = fix_self_imports(code)
     code = fix_extern_vs_local_dups(code)
     code = fix_extern_vs_local_static_dups(code)
@@ -1863,7 +2277,11 @@ def postprocess(
     # oriented prompt produced onto the user-mode substrate umbrella.
     # Last (after all import fixes have settled).
     if sys_umbrella:
-        code = collapse_sys_crate(code, sys_crate, sys_umbrella)
+        code = collapse_sys_crate(code, sys_crate, sys_umbrella, crate_module)
+        # User-mode only: force every IMPORT into the extern block its exporting DLL's .spec
+        # requires (CRT=cdecl, Win32=stdcall). The C source doesn't say which is which, so the
+        # model guesses — and ws2_32's raw output declared HeapAlloc BOTH ways across modules.
+        code = enforce_import_abi(code, exports)
         code = strip_user_inline_redeclarations(code)
         code = drop_pseh_macro_externs(code)
         code = fix_utf16_vec_literals(code)

@@ -32,41 +32,61 @@ extern "system" {
 extern "C" {
     fn DeviceSendNotification( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, guid: *const GUID, size: u32, context: *const core::ffi::c_void, );
     fn CdromMcnPollMark();
-    fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
     fn NT_SUCCESS(status: NTSTATUS) -> bool;
     fn strlen(s: *const u8) -> usize;
 }
 extern "system" {
     fn WDF_REQUEST_REUSE_PARAMS_INIT(params: *mut WDF_REQUEST_REUSE_PARAMS, flags: u32, status: NTSTATUS);
-    fn RequestClearSendTime(request: *mut core::ffi::c_void);
     fn DeviceGetExtension(device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
     fn DeviceSetParameter( deviceExtension: PCDROM_DEVICE_EXTENSION, SubKeyName: *mut u16, ValueName: *mut u16, Value: u32, ) -> i32;
-    fn RequestSend( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Target: *mut core::ffi::c_void, Options: u32, RequestSent: *mut u8, ) -> i32;
-    fn PAGED_CODE();
-    fn FREE_POOL(ptr: *mut core::ffi::c_void);
     fn UNREFERENCED_PARAMETER(param: NTSTATUS);
     fn RtlInitUnicodeString( DestinationString: *mut ntkrnl_sys::ddk::_UNICODE_STRING, SourceString: *const u16 );
     fn KeWaitForMutexObject( Mutex: *mut core::ffi::c_void, WaitReason: i32, WaitMode: i32, Alertable: i32, Timeout: *const core::ffi::c_void, ) -> i32;
-    fn KeGetCurrentIrql() -> KIRQL;
-    fn PoUnregisterPowerSettingCallback(Handle: *mut core::ffi::c_void) -> NTSTATUS;
-    fn RequestHandleEventNotification( DeviceExtension: PCDROM_DEVICE_EXTENSION, Param2: *mut core::ffi::c_void, Param3: *mut core::ffi::c_void, DataLength: *mut usize, ) -> i32;
-    fn FileObjectGetContext( FileObject: WDFFILEOBJECT, ) -> *mut FILE_OBJECT_CONTEXT;
-    fn CountOfSetBitsUChar(byte: u8) -> u8;
-    fn DeviceMarkActive(Extension: *mut CDROM_DEVICE_EXTENSION, Active: BOOLEAN, b: BOOLEAN);
-    fn DeviceZPODDIsInHomePosition(Extension: *mut CDROM_DEVICE_EXTENSION) -> BOOLEAN;
-    fn IsVolumeMounted(DeviceObject: PDEVICE_OBJECT) -> BOOLEAN;
-    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
     static GUID_IO_DEVICE_EXTERNAL_REQUEST: GUID;
     static GUID_IO_MEDIA_EJECT_REQUEST: GUID;
     static GUID_IO_DEVICE_BECOMING_READY: GUID;
     fn DeviceGetParameter( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, SubKeyName: *mut u16, ValueName: *mut u16, Data: *mut u32, ); // PULONG
+    fn PoRegisterPowerSettingCallback( DeviceObject: *mut core::ffi::c_void, SettingGuid: *const core::ffi::c_void, Callback: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, Handle: *mut *mut core::ffi::c_void, ) -> NTSTATUS;
+    fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attr: *mut WDF_OBJECT_ATTRIBUTES, context_type: *const core::ffi::c_void, );
+}
+
+// These two are cdecl, NOT stdcall — they were mis-declared in the `extern "system"` block
+// above, while their DEFINITIONS (common.rs / pnppower.rs) are `extern "C"` and cdrom.h
+// declares them with no NTAPI. On i386 `extern "system"` is stdcall, so those decls named
+// `_Name@12` while the definitions emitted `_Name` — an i386-only mismatch that AGENTS.md
+// calls out ("links silently on amd64/arm64 but breaks i386"). It stayed latent because the
+// old no-op `TracePrint` let LLVM fold these call paths away; giving TracePrint a real
+// out-of-line body surfaced them as `undefined symbol: _DeviceSendRequestSynchronously@12`.
+// Had this code ever run on i386 as declared, the stdcall callee-cleanup would have
+// corrupted the caller's stack.
+// STDCALL (NTAPI) — kernel/WDF exports and the in-crate fns whose DEFINITIONS are
+// `extern "system"`. On i386 these decorate as `_Name@N`.
+extern "system" {
+    fn IoFreeMdl(Mdl: PMDL);
+    fn KeGetCurrentIrql() -> KIRQL;
+    fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
+    fn PoUnregisterPowerSettingCallback(Handle: *mut core::ffi::c_void) -> NTSTATUS;
+    fn RequestHandleEventNotification( DeviceExtension: PCDROM_DEVICE_EXTENSION, Param2: *mut core::ffi::c_void, Param3: *mut core::ffi::c_void, DataLength: *mut usize, ) -> i32;
+    fn FileObjectGetContext( FileObject: WDFFILEOBJECT, ) -> *mut FILE_OBJECT_CONTEXT;
+}
+
+// CDECL — cdrom's OWN helpers. Every one of these is DEFINED `extern "C"` elsewhere in this
+// crate (common.rs / pnppower.rs / …) and declared with no NTAPI in cdrom.h, but they were
+// all sitting in the `extern "system"` block above, so on i386 the call sites emitted
+// `_Name@N` while the definitions emitted `_Name`. See the block comment above.
+extern "C" {
     fn DeviceSendRequestSynchronously( Device: WDFDEVICE, Request: WDFREQUEST, WaitForCompletion: BOOLEAN, ) -> NTSTATUS;
+    fn DevicePowerSettingCallback( Setting: *mut core::ffi::c_void, Value: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, );
+    fn RequestClearSendTime(request: *mut core::ffi::c_void);
+    fn RequestSend( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Target: *mut core::ffi::c_void, Options: u32, RequestSent: *mut u8, ) -> i32;
+    fn PAGED_CODE();
+    fn FREE_POOL(ptr: *mut core::ffi::c_void);
+    fn CountOfSetBitsUChar(byte: u8) -> u8;
+    fn DeviceMarkActive(Extension: *mut CDROM_DEVICE_EXTENSION, Active: BOOLEAN, b: BOOLEAN);
+    fn DeviceZPODDIsInHomePosition(Extension: *mut CDROM_DEVICE_EXTENSION) -> BOOLEAN;
+    fn IsVolumeMounted(DeviceObject: PDEVICE_OBJECT) -> BOOLEAN;
     fn DeviceReleaseQueue(Device: WDFDEVICE);
     fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, Flags: u32, Status: *mut NTSTATUS, SenseData: *mut i64, ) -> i32;
-    fn IoFreeMdl(Mdl: PMDL);
-    fn PoRegisterPowerSettingCallback( DeviceObject: *mut core::ffi::c_void, SettingGuid: *const core::ffi::c_void, Callback: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, Handle: *mut *mut core::ffi::c_void, ) -> NTSTATUS;
-    fn DevicePowerSettingCallback( Setting: *mut core::ffi::c_void, Value: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, );
-    fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attr: *mut WDF_OBJECT_ATTRIBUTES, context_type: *const core::ffi::c_void, );
 }
 
 // ---- file-scope preamble (translated) ----
@@ -206,7 +226,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
         lowestSetBit ^= (*info).Gesn.EventMask;
 
         if thisEventBit != lowestSetBit {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
                 b"GESN::NONE: Compliant drive found, removing GESN hack (%x, %x)\n\0".as_ptr() as *const i8,
@@ -235,7 +255,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
     requiredLength = 4;
 
     if dataLength < requiredLength {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_MCN,
             b"error - GESN returned only %x bytes data for fdo %p\n\0".as_ptr() as *const i8,
@@ -246,7 +266,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
     }
 
     if dataLength > requiredLength {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_MCN,
             b"error - GESN returned too many (%x) bytes data for fdo %p\n\0".as_ptr() as *const i8,
@@ -276,7 +296,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                 if (*info).MediaChangeRetryCount >= 4 {
                     static OpChangeMask: u8 = 0x02;
 
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_ERROR,
                         TRACE_FLAG_MCN,
                         b"GESN OpChange events are broken.  Working around this problem in software (for WDFDEVICE %p)\n\0".as_ptr() as *const i8,
@@ -300,7 +320,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                 } else if (event == NOTIFICATION_OPERATIONAL_OPCODE_FEATURE_ADDED)
                     | (event == NOTIFICATION_OPERATIONAL_OPCODE_FEATURE_CHANGE)
                 {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_MCN,
                         b"GESN says features added/changed for WDFDEVICE %p\n\0".as_ptr()
@@ -356,7 +376,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
             if (*externalInfo).ExternalEvent() as u32 != NOTIFICATION_EXTERNAL_EVENT_BUTTON_DOWN {
                 // break;
             } else {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
                     b"GESN::EXTERNAL: Event: %x Status %x Req %x\n\0".as_ptr() as *const i8,
@@ -391,7 +411,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
             if ((*mediaInfo).MediaEvent() as u32 == NOTIFICATION_MEDIA_EVENT_NEW_MEDIA)
                 || ((*mediaInfo).MediaEvent() as u32 == NOTIFICATION_MEDIA_EVENT_MEDIA_CHANGE)
             {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
                     b"GESN::MEDIA ARRIVAL, Status %x\n\0".as_ptr() as *const i8,
@@ -408,7 +428,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                         == LOADING_MECHANISM_CADDY)
                     && ((*(*DeviceExtension).ZeroPowerODDInfo).Load == 0))
                 {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_POWER,
                         b"GesnDataInterpret: MediaArrival event detected, device marked as active\n\0".as_ptr() as *const i8,
@@ -417,7 +437,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                     DeviceMarkActive(DeviceExtension, TRUE as BOOLEAN, FALSE as BOOLEAN);
                 }
             } else if (*mediaInfo).MediaEvent() as u32 == NOTIFICATION_MEDIA_EVENT_MEDIA_REMOVAL {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
                     b"GESN::MEDIA REMOVAL, Status %x\n\0".as_ptr() as *const i8,
@@ -431,7 +451,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                         == LOADING_MECHANISM_CADDY)
                     && ((*(*DeviceExtension).ZeroPowerODDInfo).Load == 0))
                 {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_POWER,
                         b"GesnDataInterpret: MediaRemoval event detected, device marked as idle\n\0".as_ptr() as *const i8,
@@ -440,7 +460,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                     DeviceMarkActive(DeviceExtension, FALSE as BOOLEAN, FALSE as BOOLEAN);
                 }
             } else if (*mediaInfo).MediaEvent() as u32 == NOTIFICATION_MEDIA_EVENT_EJECT_REQUEST {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
                     b"GESN::MEDIA EJECTION, Status %x\n\0".as_ptr() as *const i8,
@@ -466,7 +486,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
             busyData.Estimated100msToReady = (((*busyInfo).Time[0] as u32) << 8)
                 | ((*busyInfo).Time[1] as u32) & 0xff;
 
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
                 b"GESN::BUSY: Event: %x Status %x Time %x\n\0".as_ptr() as *const i8,
@@ -476,7 +496,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
             );
 
             if busyData.Estimated100msToReady >= GESN_DEVICE_BUSY_LOWER_THRESHOLD_100_MS {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
                     b"GesnDataInterpret: media BECOMING_READY\n\0".as_ptr() as *const i8,
@@ -500,7 +520,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
                 inHomePosition = DeviceZPODDIsInHomePosition(DeviceExtension);
 
                 if inHomePosition == (FALSE as BOOLEAN) {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_POWER,
                         b"GesnDataInterpret: LoChange event detected, device marked as active\n\0"
@@ -509,7 +529,7 @@ pub unsafe extern "C" fn GesnDataInterpret(
 
                     DeviceMarkActive(DeviceExtension, TRUE as BOOLEAN, FALSE as BOOLEAN);
                 } else {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_POWER,
                         b"GesnDataInterpret: LoChange event detected, device marked as idle\n\0"
@@ -566,7 +586,7 @@ pub unsafe extern "C" fn DeviceInternalSetMediaChangeState(
 
         if (*info).MediaChangeDetectionDisableCount != 0 {
             #[cfg(debug_assertions)]
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
                 b"DeviceInternalSetMediaChangeState: MCN not enabled, state changed from %s to %s\n\0"
@@ -579,7 +599,7 @@ pub unsafe extern "C" fn DeviceInternalSetMediaChangeState(
         }
 
         #[cfg(debug_assertions)]
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
             b"DeviceInternalSetMediaChangeState: State change from %s to %s\n\0"
@@ -602,7 +622,7 @@ pub unsafe extern "C" fn DeviceInternalSetMediaChangeState(
 
         if NewState == MediaPresent {
             #[cfg(debug_assertions)]
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
                 b"DeviceInternalSetMediaChangeState: Reporting media ARRIVAL\n\0"
@@ -618,7 +638,7 @@ pub unsafe extern "C" fn DeviceInternalSetMediaChangeState(
             );
         } else if NewState == MediaNotPresent || NewState == MediaUnavailable {
             #[cfg(debug_assertions)]
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
                 b"DeviceInternalSetMediaChangeState: Reporting media REMOVAL\n\0"
@@ -754,7 +774,7 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(status) {
-            TracePrint(
+            TracePrint!(
                 2, // TRACE_LEVEL_ERROR
                 0, // TRACE_FLAG_GENERAL
                 b"RequestSetupMcnRequest: WdfIoTargetFormatRequestForInternalIoctlOthers failed, %!STATUS!\n\0"
@@ -865,7 +885,7 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
     // to call ClassError() with correct parameters.
     if SRB_STATUS((*info).MediaChangeSrb.SrbStatus) != 0 { // SRB_STATUS_SUCCESS is 0
         let sense_buf = (*info).MediaChangeSrb.SenseInfoBuffer as *const SENSE_DATA;
-        TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
+        TracePrint!(TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
             b"MCN request - failed - srb status=%x, sense=%x/%x/%x.\n\0".as_ptr() as *const i8,
             (*info).MediaChangeSrb.SrbStatus as u32,
             (*sense_buf).SenseKey() as u32,
@@ -892,7 +912,7 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
         (*(*DeviceExtension).PrivateFdoData).LoggedTURFailureSinceLastIO = 0; // FALSE
 
         if (*info).Gesn.Supported == 0 {
-            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
                 b"MCN request - succeeded (GESN NOT supported, setting MediaPresent).\n\0".as_ptr() as *const i8,
             );
 
@@ -903,7 +923,7 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
                 core::ptr::null_mut(),
             );
         } else {
-            TracePrint(TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
+            TracePrint!(TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
                 b"MCN request - succeeded (GESN supported).\n\0".as_ptr() as *const i8,
             );
         }
@@ -911,14 +931,14 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
 
     if (*info).Gesn.Supported != 0 {
         if status == ntkrnl_sys::constants::STATUS_DATA_OVERRUN {
-            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
                 b"MCN Request - Data Overrun\n\0".as_ptr() as *const i8,
             );
             status = 0; // STATUS_SUCCESS
         }
 
         if !(status >= 0) { // NT_SUCCESS
-            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
                 b"MCN Request: GESN failed with status %x\n\0".as_ptr() as *const i8,
                 status,
             );
@@ -967,7 +987,7 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
                 &mut workItem,
             );
 
-            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
                 b"MCN Request: Disabling GESN for WDFDEVICE %p\n\0".as_ptr() as *const i8,
                 (*DeviceExtension).Device,
             );
@@ -1131,12 +1151,12 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
             let mut tempStatus: NTSTATUS = STATUS_SUCCESS;
 
             // TracePrint macros disabled due to varargs; original C calls commented
-            // TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+            // TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
             //             "DeviceInitializeMcn: Testing for GESN\n"));
             tempStatus = DeviceInitializeGesn(DeviceExtension);
 
             if tempStatus >= 0 {
-                // TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+                // TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
                 //             "DeviceInitializeMcn: GESN available for %p\n",
                 //             DeviceExtension->DeviceObject));
                 NT_ASSERT(((*mediaChangeInfo).Gesn.Supported != 0) as i32);
@@ -1144,7 +1164,7 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
                 NT_ASSERT(((*mediaChangeInfo).Gesn.BufferSize != 0) as i32);
                 NT_ASSERT(((*mediaChangeInfo).Gesn.EventMask != 0) as i32);
             } else {
-                // TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+                // TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
                 //             "DeviceInitializeMcn: GESN *NOT* available for %p\n",
                 //             DeviceExtension->DeviceObject));
                 NT_ASSERT(((*mediaChangeInfo).Gesn.Supported == 0) as i32);
@@ -1284,7 +1304,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
             status = RequestSetupMcnRequest(DeviceExtension, 1);
 
             if !NT_SUCCESS(status) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_MCN,
                     b"Setup Mcn request failed %x for WDFDEVICE %p\n\0".as_ptr() as *const i8,
@@ -1353,7 +1373,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                     CLASSP_REG_MMC_DETECTION_VALUE_NAME,
                     CdromDetectionUnsupported,
                 );
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_MCN,
                     b"GESN test failed %x for WDFDEVICE %p\n\0".as_ptr() as *const i8,
@@ -1366,7 +1386,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
             if !NT_SUCCESS(status) {
                 // This may be other errors that should not disable GESN
                 // for all future start_device calls.
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_MCN,
                     b"GESN test failed %x for WDFDEVICE %p\n\0".as_ptr() as *const i8,
@@ -1379,7 +1399,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                 // available bits.  Use this to mask future requests.
                 header = (*info).Gesn.Buffer as *mut NOTIFICATION_EVENT_STATUS_HEADER;
 
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
                     b"WDFDEVICE %p supports event mask %x\n\0".as_ptr() as *const i8,
@@ -1388,14 +1408,14 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                 );
 
                 if ((*header).SupportedEventClasses as u32 & NOTIFICATION_MEDIA_STATUS_CLASS_MASK) != 0 {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_MCN,
                         b"GESN supports MCN\n\0".as_ptr() as *const i8,
                     );
                 }
                 if ((*header).SupportedEventClasses as u32 & NOTIFICATION_DEVICE_BUSY_CLASS_MASK) != 0 {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_MCN,
                         b"GESN supports DeviceBusy\n\0".as_ptr() as *const i8,
@@ -1403,14 +1423,14 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                 }
                 if ((*header).SupportedEventClasses as u32 & NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK) != 0 {
                     if ((*(*DeviceExtension).PrivateFdoData).HackFlags & FDO_HACK_GESN_IGNORE_OPCHANGE as ntkrnl_sys::ddk::ULONG_PTR) != 0 {
-                        TracePrint(
+                        TracePrint!(
                             TRACE_LEVEL_INFORMATION,
                             TRACE_FLAG_MCN,
                             b"GESN supports OpChange, but must ignore these events for compatibility\n\0".as_ptr() as *const i8,
                         );
                         (*header).SupportedEventClasses &= !NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK as u8;
                     } else {
-                        TracePrint(
+                        TracePrint!(
                             TRACE_LEVEL_INFORMATION,
                             TRACE_FLAG_MCN,
                             b"GESN supports OpChange\n\0".as_ptr() as *const i8,
@@ -1446,7 +1466,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                 // proper firmware.
                 //
                 if (*info).Gesn.EventMask == 0 {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_MCN,
                         b"GESN supported, but not mask we care about (%x) for FDO %p\n\0".as_ptr() as *const i8,
@@ -1456,14 +1476,14 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                     // NOTE: the status is still status_success.
                     break;
                 } else if CountOfSetBitsUChar((*info).Gesn.EventMask as u8) == 1 {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_MCN,
                         b"GESN hack not required for FDO %p\n\0".as_ptr() as *const i8,
                         (*DeviceExtension).DeviceObject,
                     );
                 } else {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_MCN,
                         b"GESN hack enabled for FDO %p\n\0".as_ptr() as *const i8,
@@ -1510,7 +1530,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
         //
 
         if ((*info).Gesn.EventMask as u32 & NOTIFICATION_MEDIA_STATUS_CLASS_MASK) != 0 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
                 b"Enabling GESN support for WDFDEVICE %p\n\0".as_ptr() as *const i8,
@@ -1524,7 +1544,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
                 CdromDetectionSupported,
             );
         } else {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
                 b"GESN available but not enabled for WDFDEVICE %p\n\0".as_ptr() as *const i8,
@@ -1535,7 +1555,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
     }
 
     if !NT_SUCCESS(status) {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_MCN,
             b"GESN support detection failed  for WDFDEVICE %p with status %08x\n\0".as_ptr() as *const i8,
@@ -1573,7 +1593,7 @@ pub unsafe extern "C" fn DeviceInitializeMediaChangeDetection(
     if disabled != 0 {
         let fmt = b"DeviceInitializeMediaChangeDetection: Disabled due to hardware limitations for this device\n\0"
             .as_ptr() as *const i8;
-        TracePrint(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt);
+        TracePrint!(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt);
     } else {
         disabled = DeviceIsMediaChangeDisabledForClass(DeviceExtension);
 
@@ -1584,7 +1604,7 @@ pub unsafe extern "C" fn DeviceInitializeMediaChangeDetection(
         };
         let fmt = b"DeviceInitializeMediaChangeDetection: MCN is %s\n\0"
             .as_ptr() as *const i8;
-        TracePrint(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt, disabled_str);
+        TracePrint!(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt, disabled_str);
 
         status = DeviceMediaChangeDeviceInstanceOverride(
             DeviceExtension,
@@ -1594,7 +1614,7 @@ pub unsafe extern "C" fn DeviceInitializeMediaChangeDetection(
         if !NT_SUCCESS(status) {
             let fmt = b"DeviceInitializeMediaChangeDetection: Instance using default\n\0"
                 .as_ptr() as *const i8;
-            TracePrint(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt);
+            TracePrint!(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt);
         } else {
             let override_action = if instanceOverride != 0 {
                 b"Enabling\0".as_ptr() as *const i8
@@ -1603,7 +1623,7 @@ pub unsafe extern "C" fn DeviceInitializeMediaChangeDetection(
             };
             let fmt = b"DeviceInitializeMediaChangeDetection: Instance override: %s MCN\n\0"
                 .as_ptr() as *const i8;
-            TracePrint(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt, override_action);
+            TracePrint!(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt, override_action);
             disabled = if instanceOverride == 0 { 1 } else { 0 }; // !instanceOverride
         }
 
@@ -1614,7 +1634,7 @@ pub unsafe extern "C" fn DeviceInitializeMediaChangeDetection(
         };
         let fmt = b"DeviceInitializeMediaChangeDetection: Instance MCN is %s\n\0"
             .as_ptr() as *const i8;
-        TracePrint(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt, final_disabled_str);
+        TracePrint!(4 /* TRACE_LEVEL_INFORMATION */, 0 /* TRACE_FLAG_MCN */, fmt, final_disabled_str);
     }
 
     if disabled == 0 {
@@ -1647,7 +1667,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
         &mut deviceKey,
     );
     if !NT_SUCCESS(status) {
-        TracePrint(
+        TracePrint!(
             4u32, /* TRACE_LEVEL_INFORMATION */
             0u32, /* TRACE_FLAG_MCN */
             b"DeviceMediaChangeDeviceInstanceOverride: Could not open device registry key [%lx]\n\0"
@@ -1673,7 +1693,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
     }
 
     if !NT_SUCCESS(status) {
-        TracePrint(
+        TracePrint!(
             4u32, /* TRACE_LEVEL_INFORMATION */
             0u32, /* TRACE_FLAG_MCN */
             b"DeviceMediaChangeDeviceInstanceOverride: subkey could not be created. %lx\n\0"
@@ -1707,7 +1727,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
     }
 
     if alwaysEnable != 0 && alwaysDisable != 0 {
-        TracePrint(
+        TracePrint!(
             4u32, /* TRACE_LEVEL_INFORMATION */
             0u32, /* TRACE_FLAG_MCN */
             b"DeviceMediaChangeDeviceInstanceOverride: %s selected\n\0"
@@ -1718,7 +1738,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
         status = STATUS_SUCCESS;
         *Enabled = 0; // FALSE
     } else if alwaysDisable != 0 {
-        TracePrint(
+        TracePrint!(
             4u32, /* TRACE_LEVEL_INFORMATION */
             0u32, /* TRACE_FLAG_MCN */
             b"DeviceMediaChangeDeviceInstanceOverride: %s selected\n\0"
@@ -1729,7 +1749,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
         status = STATUS_SUCCESS;
         *Enabled = 0; // FALSE
     } else if alwaysEnable != 0 {
-        TracePrint(
+        TracePrint!(
             4u32, /* TRACE_LEVEL_INFORMATION */
             0u32, /* TRACE_FLAG_MCN */
             b"DeviceMediaChangeDeviceInstanceOverride: %s selected\n\0"
@@ -1740,7 +1760,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
         status = STATUS_SUCCESS;
         *Enabled = 1; // TRUE
     } else {
-        TracePrint(
+        TracePrint!(
             4u32, /* TRACE_LEVEL_INFORMATION */
             0u32, /* TRACE_FLAG_MCN */
             b"DeviceMediaChangeDeviceInstanceOverride: %s selected\n\0"
@@ -1772,7 +1792,7 @@ pub unsafe extern "system" fn DeviceMediaChangeRegistryCallBack(
     let _ = ValueName;
 
     if Context.is_null() || EntryContext.is_null() {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_MCN,
             b"DeviceMediaChangeRegistryCallBack: NULL context should never be passed to registry call-back!\n\0".as_ptr() as *const i8,
@@ -1782,7 +1802,7 @@ pub unsafe extern "system" fn DeviceMediaChangeRegistryCallBack(
 
     let value_found: *mut u32 = EntryContext as *mut u32;
     if *value_found != 0 {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
             b"DeviceMediaChangeRegistryCallBack: already set to true\n\0".as_ptr() as *const i8,
@@ -1791,7 +1811,7 @@ pub unsafe extern "system" fn DeviceMediaChangeRegistryCallBack(
     }
 
     if ValueLength == core::mem::size_of::<u16>() as u32 {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_MCN,
             b"DeviceMediaChangeRegistryCallBack: NULL string should never be passed to registry call-back!\n\0".as_ptr() as *const i8,
@@ -1823,18 +1843,18 @@ pub unsafe extern "system" fn DeviceMediaChangeRegistryCallBack(
         value_length as ntkrnl_sys::ddk::SIZE_T,
     ) == value_length as ntkrnl_sys::ddk::SIZE_T
     {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_MCN,
             b"DeviceMediaChangeRegistryCallBack: Match found\n\0".as_ptr() as *const i8,
         );
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_MCN,
             b"DeviceMediaChangeRegistryCallBack: DeviceString at %p\n\0".as_ptr() as *const i8,
             (*device_string).Buffer,
         );
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_MCN,
             b"DeviceMediaChangeRegistryCallBack: KeyValue at %p\n\0".as_ptr() as *const i8,
@@ -1937,7 +1957,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
             ) as *mut i8;
 
             if device_string.Buffer.is_null() {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
                     b"DeviceIsMediaChangeDisabledDueToHardwareLimitation: Unable to alloc string buffer\n\0".as_ptr() as *const i8,
@@ -1990,7 +2010,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
             );
 
             if !NT_SUCCESS(status) {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_MCN,
                     b"DeviceIsMediaChangeDisabledDueToHardwareLimitation: cannot convert to unicode %lx\n\0"
@@ -2037,7 +2057,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
     }
 
     if media_change_notification_disabled > 0 {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
             b"DeviceIsMediaChangeDisabledDueToHardwareLimitation: Device is on MCN disable list\n\0"
@@ -2072,7 +2092,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledForClass(
         } else {
             b"Disabled\0".as_ptr() as *const i8
         };
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
             b"DeviceIsMediaChangeDisabledForClass: Defaulting to %s\n\0".as_ptr() as *const i8,
@@ -2110,7 +2130,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledForClass(
     );
 
     if NT_SUCCESS(status) {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_MCN,
             b"DeviceIsMediaChangeDisabledForClass: <Service>/Autorun flag = %d\n\0".as_ptr() as *const i8,
@@ -2126,7 +2146,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledForClass(
         );
 
         if NT_SUCCESS(status) {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_VERBOSE,
                 TRACE_FLAG_MCN,
                 b"DeviceIsMediaChangeDisabledForClass: <Service>/Parameters/Autorun flag = %d\n\0".as_ptr() as *const i8,
@@ -2144,7 +2164,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledForClass(
     } else {
         b"off\0".as_ptr() as *const i8
     };
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_MCN,
         b"DeviceIsMediaChangeDisabledForClass: Autoplay for device %p is %s\n\0".as_ptr() as *const i8,
@@ -2173,7 +2193,7 @@ pub unsafe extern "C" fn DeviceEnableMediaChangeDetection(
 
         // if (info == NULL)
         if info.is_null() {
-            TracePrint(0x4 /* TRACE_LEVEL_INFORMATION */, 0x2 /* TRACE_FLAG_MCN */,
+            TracePrint!(0x4 /* TRACE_LEVEL_INFORMATION */, 0x2 /* TRACE_FLAG_MCN */,
                        b"DeviceEnableMediaChangeDetection: not initialized\n\0".as_ptr() as *const i8);
             return;
         }
@@ -2198,7 +2218,7 @@ pub unsafe extern "C" fn DeviceEnableMediaChangeDetection(
         // NT_ASSERT(oldCount >= 0);
         NT_ASSERT((oldCount >= 0) as i32);
 
-        TracePrint(0x5 /* TRACE_LEVEL_VERBOSE */, 0x2 /* TRACE_FLAG_MCN */,
+        TracePrint!(0x5 /* TRACE_LEVEL_VERBOSE */, 0x2 /* TRACE_FLAG_MCN */,
                    b"DeviceEnableMediaChangeDetection: Disable count reduced to %d - \n\0".as_ptr() as *const i8,
                    oldCount);
 
@@ -2207,10 +2227,10 @@ pub unsafe extern "C" fn DeviceEnableMediaChangeDetection(
                 (*info).LastReportedMediaDetectionState = (*info).LastKnownMediaDetectionState;
             }
 
-            TracePrint(0x4 /* TRACE_LEVEL_INFORMATION */, 0x2 /* TRACE_FLAG_MCN */,
+            TracePrint!(0x4 /* TRACE_LEVEL_INFORMATION */, 0x2 /* TRACE_FLAG_MCN */,
                        b"MCN is enabled\n\0".as_ptr() as *const i8);
         } else {
-            TracePrint(0x5 /* TRACE_LEVEL_VERBOSE */, 0x2 /* TRACE_FLAG_MCN */,
+            TracePrint!(0x5 /* TRACE_LEVEL_VERBOSE */, 0x2 /* TRACE_FLAG_MCN */,
                        b"MCD still disabled\n\0".as_ptr() as *const i8);
         }
 
@@ -2254,8 +2274,8 @@ pub unsafe extern "C" fn DeviceDisableMediaChangeDetection(
     // info->MediaChangeDetectionDisableCount++;
     (*info).MediaChangeDetectionDisableCount += 1;
 
-    // TracePrint(...)
-    TracePrint(
+    // TracePrint!(...)
+    TracePrint!(
         TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_MCN,
         b"DisableMediaChangeDetection: disable count is %d\n\0".as_ptr() as *const i8,
@@ -2448,13 +2468,13 @@ pub unsafe extern "C" fn DeviceEnableMainTimer(
             -10000 * 100, // WDF_REL_TIMEOUT_IN_MS(100)
         );
 
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
             b"DeviceEnableMainTimer: Once a second timer enabled  for WDFDEVICE %p\n\0".as_ptr() as *const i8,
         );
     } else {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_MCN,
             b"DeviceEnableMainTimer: WDFDEVICE %p, Status %lx  initializing timer\n\0".as_ptr() as *const i8,
@@ -2486,14 +2506,14 @@ pub unsafe extern "C" fn DeviceDisableMainTimer(
         //
         WdfTimerStop(main_timer, 1);
 
-        TracePrint(
+        TracePrint!(
             4, // TRACE_LEVEL_INFORMATION
             1, // TRACE_FLAG_MCN
             b"DeviceDisableMainTimer: Once a second timer disabled for device %p\n\0".as_ptr() as *const i8,
             (*DeviceExtension).Device as *const core::ffi::c_void,
         );
     } else {
-        TracePrint(
+        TracePrint!(
             3, // TRACE_LEVEL_WARNING
             1, // TRACE_FLAG_MCN
             b"DeviceDisableMainTimer: Timer never enabled\n\0".as_ptr() as *const i8,
@@ -2828,7 +2848,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //             // set bit in the request (iow, highest priority), we know that the
 //             // hack is no longer required, as the device is ignoring "no change"
 //             // events when a real event is waiting in the other requested queues.
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                        "GESN::NONE: Compliant drive found, "
 //                        "removing GESN hack (%x, %x)\n",
 //                        thisEventBit, info->Gesn.EventMask));
@@ -2869,7 +2889,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     if (dataLength < requiredLength)
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
 //                    "error - GESN returned only %x bytes data for fdo %p\n",
 //                    dataLength, DeviceExtension->DeviceObject));
 //
@@ -2878,7 +2898,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     if (dataLength > requiredLength)
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
 //                    "error - GESN returned too many (%x) bytes data for fdo %p\n",
 //                    dataLength, DeviceExtension->DeviceObject));
 //     }
@@ -2935,7 +2955,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //             // At least one device reports "OpChange" repeatedly when re-inserting media
 //             // All seem to work well using this workaround
 //
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_MCN,
 //                         "GESN OpChange events are broken.  Working around this problem in software (for WDFDEVICE %p)\n",
 //                         DeviceExtension->Device));
 //
@@ -2968,7 +2988,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //         if ((event == NOTIFICATION_OPERATIONAL_OPCODE_FEATURE_ADDED) |
 //             (event == NOTIFICATION_OPERATIONAL_OPCODE_FEATURE_CHANGE))
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                        "GESN says features added/changed for WDFDEVICE %p\n",
 //                        DeviceExtension->Device));
 //
@@ -3031,7 +3051,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //             break;
 //         }
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                    "GESN::EXTERNAL: Event: %x Status %x Req %x\n",
 //                    externalInfo->ExternalEvent, externalInfo->ExternalStatus,
 //                    (externalInfo->Request[0] << 8) | externalInfo->Request[1]
@@ -3061,7 +3081,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //         if ((mediaInfo->MediaEvent == NOTIFICATION_MEDIA_EVENT_NEW_MEDIA) ||
 //             (mediaInfo->MediaEvent == NOTIFICATION_MEDIA_EVENT_MEDIA_CHANGE))
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                        "GESN::MEDIA ARRIVAL, Status %x\n",
 //                        mediaInfo->MediaStatus));
 //
@@ -3079,7 +3099,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //                 (DeviceExtension->ZeroPowerODDInfo->LoadingMechanism == LOADING_MECHANISM_CADDY) &&
 //                 (DeviceExtension->ZeroPowerODDInfo->Load == 0))                                     // Slot
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                            "GesnDataInterpret: MediaArrival event detected, device marked as active\n"));
 //
 //                 DeviceMarkActive(DeviceExtension, TRUE, FALSE);
@@ -3087,7 +3107,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //         }
 //         else if (mediaInfo->MediaEvent == NOTIFICATION_MEDIA_EVENT_MEDIA_REMOVAL)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                        "GESN::MEDIA REMOVAL, Status %x\n",
 //                        mediaInfo->MediaStatus));
 //
@@ -3101,7 +3121,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //                 (DeviceExtension->ZeroPowerODDInfo->LoadingMechanism == LOADING_MECHANISM_CADDY) &&
 //                 (DeviceExtension->ZeroPowerODDInfo->Load == 0))                                    // Slot
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                            "GesnDataInterpret: MediaRemoval event detected, device marked as idle\n"));
 //
 //                 DeviceMarkActive(DeviceExtension, FALSE, FALSE);
@@ -3109,7 +3129,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //         }
 //         else if (mediaInfo->MediaEvent == NOTIFICATION_MEDIA_EVENT_EJECT_REQUEST)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                        "GESN::MEDIA EJECTION, Status %x\n",
 //                        mediaInfo->MediaStatus));
 //
@@ -3134,7 +3154,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //         busyData.Estimated100msToReady = (busyInfo->Time[0] << 8) |
 //                                          (busyInfo->Time[1] & 0xff);
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                    "GESN::BUSY: Event: %x Status %x Time %x\n",
 //                    busyInfo->DeviceBusyEvent, busyInfo->DeviceBusyStatus,
 //                    busyData.Estimated100msToReady
@@ -3143,7 +3163,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //         // Ignore the notification if the time is small
 //         if (busyData.Estimated100msToReady >= GESN_DEVICE_BUSY_LOWER_THRESHOLD_100_MS)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                        "GesnDataInterpret: media BECOMING_READY\n"));
 //
 //             DeviceSendNotification(DeviceExtension,
@@ -3164,14 +3184,14 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //             if (inHomePosition == FALSE)
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                            "GesnDataInterpret: LoChange event detected, device marked as active\n"));
 //
 //                 DeviceMarkActive(DeviceExtension, TRUE, FALSE);
 //             }
 //             else
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER,
 //                            "GesnDataInterpret: LoChange event detected, device marked as idle\n"));
 //
 //                 DeviceMarkActive(DeviceExtension, FALSE, FALSE);
@@ -3259,7 +3279,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //     if (info->MediaChangeDetectionDisableCount != 0)
 //     {
 // #if DBG
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "DeviceInternalSetMediaChangeState: MCN not enabled, state "
 //                     "changed from %s to %s\n",
 //                     states[oldMediaState], states[NewState]));
@@ -3267,7 +3287,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //         return;
 //     }
 // #if DBG
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                 "DeviceInternalSetMediaChangeState: State change from %s to %s\n",
 //                 states[oldMediaState], states[NewState]));
 // #endif
@@ -3284,7 +3304,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     if (NewState == MediaPresent)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                    "DeviceInternalSetMediaChangeState: Reporting media ARRIVAL\n"));
 //
 //         DeviceSendNotification(DeviceExtension,
@@ -3294,7 +3314,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //     }
 //     else if ((NewState == MediaNotPresent) || (NewState == MediaUnavailable))
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                    "DeviceInternalSetMediaChangeState: Reporting media REMOVAL\n"));
 //         DeviceSendNotification(DeviceExtension,
 //                                &GUID_IO_MEDIA_REMOVAL,
@@ -3505,7 +3525,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                        "RequestSetupMcnRequest: WdfIoTargetFormatRequestForInternalIoctlOthers failed, %!STATUS!\n",
 //                        status));
 //         }
@@ -3658,7 +3678,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //     // to call ClassError() with correct parameters.
 //     if (SRB_STATUS(info->MediaChangeSrb.SrbStatus) != SRB_STATUS_SUCCESS)
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN, "MCN request - failed - srb status=%x, sense=%x/%x/%x.\n",
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN, "MCN request - failed - srb status=%x, sense=%x/%x/%x.\n",
 //                    info->MediaChangeSrb.SrbStatus,
 //                    ((PSENSE_DATA)(info->MediaChangeSrb.SenseInfoBuffer))->SenseKey,
 //                    ((PSENSE_DATA)(info->MediaChangeSrb.SenseInfoBuffer))->AdditionalSenseCode,
@@ -3686,7 +3706,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //         if (!info->Gesn.Supported)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                        "MCN request - succeeded (GESN NOT supported, setting MediaPresent).\n"));
 //
 //             // success != media for GESN case
@@ -3696,7 +3716,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //         }
 //         else
 //         {
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
 //                        "MCN request - succeeded (GESN supported).\n"));
 //         }
 //     }
@@ -3705,13 +3725,13 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //     {
 //         if (status == STATUS_DATA_OVERRUN)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, "MCN Request - Data Overrun\n"));
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, "MCN Request - Data Overrun\n"));
 //             status = STATUS_SUCCESS;
 //         }
 //
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, "MCN Request: GESN failed with status %x\n", status));
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, "MCN Request: GESN failed with status %x\n", status));
 //         }
 //         else
 //         {
@@ -3761,7 +3781,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //                                        &attributes,
 //                                        &workItem);
 //
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, "MCN Request: Disabling GESN for WDFDEVICE %p\n", DeviceExtension->Device));
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, "MCN Request: Disabling GESN for WDFDEVICE %p\n", DeviceExtension->Device));
 //
 //             if (NT_SUCCESS(status))
 //             {
@@ -3966,13 +3986,13 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //             // This is only valid for type5 devices.
 //             NTSTATUS tempStatus = STATUS_SUCCESS;
 //
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                        "DeviceInitializeMcn: Testing for GESN\n"));
 //             tempStatus = DeviceInitializeGesn(DeviceExtension);
 //
 //             if (NT_SUCCESS(tempStatus))
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                            "DeviceInitializeMcn: GESN available for %p\n",
 //                            DeviceExtension->DeviceObject));
 //                 NT_ASSERT(mediaChangeInfo->Gesn.Supported );
@@ -3982,7 +4002,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //             }
 //             else
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                            "DeviceInitializeMcn: GESN *NOT* available for %p\n",
 //                            DeviceExtension->DeviceObject));
 //                 NT_ASSERT(!mediaChangeInfo->Gesn.Supported);
@@ -4147,7 +4167,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //             if (!NT_SUCCESS(status))
 //             {
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
 //                            "Setup Mcn request failed %x for WDFDEVICE %p\n",
 //                            status, DeviceExtension->Device));
 //                 break;
@@ -4209,7 +4229,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //                                     CLASSP_REG_SUBKEY_NAME,
 //                                     CLASSP_REG_MMC_DETECTION_VALUE_NAME,
 //                                     CdromDetectionUnsupported);
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
 //                            "GESN test failed %x for WDFDEVICE %p\n",
 //                            status, DeviceExtension->Device));
 //                 break;
@@ -4219,7 +4239,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //             {
 //                 // this may be other errors that should not disable GESN
 //                 // for all future start_device calls.
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
 //                            "GESN test failed %x for WDFDEVICE %p\n",
 //                            status, DeviceExtension->Device));
 //                 break;
@@ -4230,20 +4250,20 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //                 // available bits.  use this to mask future requests.
 //                 header = (PNOTIFICATION_EVENT_STATUS_HEADER)(info->Gesn.Buffer);
 //
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                            "WDFDEVICE %p supports event mask %x\n",
 //                            DeviceExtension->Device, header->SupportedEventClasses));
 //
 //                 if (TEST_FLAG(header->SupportedEventClasses,
 //                               NOTIFICATION_MEDIA_STATUS_CLASS_MASK))
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                                "GESN supports MCN\n"));
 //                 }
 //                 if (TEST_FLAG(header->SupportedEventClasses,
 //                               NOTIFICATION_DEVICE_BUSY_CLASS_MASK))
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                                "GESN supports DeviceBusy\n"));
 //                 }
 //                 if (TEST_FLAG(header->SupportedEventClasses,
@@ -4252,14 +4272,14 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //                     if (TEST_FLAG(DeviceExtension->PrivateFdoData->HackFlags,
 //                                   FDO_HACK_GESN_IGNORE_OPCHANGE))
 //                     {
-//                         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//                         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                                     "GESN supports OpChange, but must ignore these events for compatibility\n"));
 //                         CLEAR_FLAG(header->SupportedEventClasses,
 //                                    NOTIFICATION_OPERATIONAL_CHANGE_CLASS_MASK);
 //                     }
 //                     else
 //                     {
-//                         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//                         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                                     "GESN supports OpChange\n"));
 //                     }
 //                 }
@@ -4294,7 +4314,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //                 //
 //                 if (info->Gesn.EventMask == 0)
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                                "GESN supported, but not mask we care about (%x) for FDO %p\n",
 //                                header->SupportedEventClasses,
 //                                DeviceExtension->DeviceObject));
@@ -4303,13 +4323,13 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //                 }
 //                 else if (CountOfSetBitsUChar(info->Gesn.EventMask) == 1)
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                                "GESN hack not required for FDO %p\n",
 //                                DeviceExtension->DeviceObject));
 //                 }
 //                 else
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                                "GESN hack enabled for FDO %p\n",
 //                                DeviceExtension->DeviceObject));
 //                     info->Gesn.HackEventMask = 1;
@@ -4352,7 +4372,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //         if (TEST_FLAG(info->Gesn.EventMask, NOTIFICATION_MEDIA_STATUS_CLASS_MASK))
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                        "Enabling GESN support for WDFDEVICE %p\n",
 //                        DeviceExtension->Device));
 //             info->Gesn.Supported = TRUE;
@@ -4364,7 +4384,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //         }
 //         else
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                        "GESN available but not enabled for WDFDEVICE %p\n",
 //                        DeviceExtension->Device));
 //             status = STATUS_NOT_SUPPORTED;
@@ -4373,7 +4393,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
 //                    "GESN support detection failed  for WDFDEVICE %p with status %08x\n",
 //                    DeviceExtension->Device, status));
 //
@@ -4441,7 +4461,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     if (disabled)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "DeviceInitializeMediaChangeDetection: Disabled due to hardware"
 //                     "limitations for this device\n"));
 //     }
@@ -4450,7 +4470,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //         // autorun should now be enabled by default for all media types.
 //         disabled = DeviceIsMediaChangeDisabledForClass(DeviceExtension);
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "DeviceInitializeMediaChangeDetection: MCN is %s\n",
 //                     (disabled ? "disabled" : "enabled")));
 //
@@ -4459,18 +4479,18 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                         "DeviceInitializeMediaChangeDetection: Instance using default\n"));
 //         }
 //         else
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                         "DeviceInitializeMediaChangeDetection: Instance override: %s MCN\n",
 //                         (instanceOverride ? "Enabling" : "Disabling")));
 //             disabled = !instanceOverride;
 //         }
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "DeviceInitializeMediaChangeDetection: Instance MCN is %s\n",
 //                     (disabled ? "disabled" : "enabled")));
 //     }
@@ -4531,7 +4551,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //     {
 //         // this can occur when a new device is added to the system
 //         // this is due to cdrom.sys being an 'essential' driver
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "DeviceMediaChangeDeviceInstanceOverride: "
 //                     "Could not open device registry key [%lx]\n", status));
 //     }
@@ -4548,7 +4568,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     if (!NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "DeviceMediaChangeDeviceInstanceOverride: "
 //                     "subkey could not be created. %lx\n", status));
 //     }
@@ -4582,7 +4602,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     if (alwaysEnable && alwaysDisable)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "DeviceMediaChangeDeviceInstanceOverride: %s selected\n",
 //                     "Both Enable and Disable set -- DISABLE"));
 //         NT_ASSERT(NT_SUCCESS(status));
@@ -4591,7 +4611,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //     }
 //     else if (alwaysDisable)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "DeviceMediaChangeDeviceInstanceOverride: %s selected\n",
 //                     "DISABLE"));
 //         NT_ASSERT(NT_SUCCESS(status));
@@ -4600,7 +4620,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //     }
 //     else if (alwaysEnable)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "DeviceMediaChangeDeviceInstanceOverride: %s selected\n",
 //                     "ENABLE"));
 //         NT_ASSERT(NT_SUCCESS(status));
@@ -4609,7 +4629,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //     }
 //     else
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "DeviceMediaChangeDeviceInstanceOverride: %s selected\n",
 //                     "DEFAULT"));
 //         status = STATUS_UNSUCCESSFUL;
@@ -4664,7 +4684,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     if ((Context == NULL) || (EntryContext == NULL))
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
 //                    "DeviceMediaChangeRegistryCallBack: NULL context should never be passed to registry call-back!\n"));
 //
 //         return STATUS_SUCCESS;
@@ -4674,14 +4694,14 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //     valueFound = EntryContext;
 //     if ((*valueFound) != 0)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                    "DeviceMediaChangeRegistryCallBack: already set to true\n"));
 //         return STATUS_SUCCESS;
 //     }
 //
 //     if (ValueLength == sizeof(WCHAR))
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
 //                    "DeviceMediaChangeRegistryCallBack: NULL string should never be passed to registry call-back!\n"));
 //         return STATUS_SUCCESS;
 //     }
@@ -4710,10 +4730,10 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //     // if the strings match, disable autorun
 //     if (RtlCompareMemory(deviceString->Buffer, keyValue, ValueLength) == ValueLength)
 //     {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN, "DeviceMediaChangeRegistryCallBack: Match found\n"));
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN, "DeviceMediaChangeRegistryCallBack: DeviceString at %p\n",
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN, "DeviceMediaChangeRegistryCallBack: Match found\n"));
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN, "DeviceMediaChangeRegistryCallBack: DeviceString at %p\n",
 //                     deviceString->Buffer));
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
 //                     "DeviceMediaChangeRegistryCallBack: KeyValue at %p\n",
 //                     keyValue));
 //         (*valueFound) = TRUE;
@@ -4855,7 +4875,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //                                                                  );
 //             if (deviceString.Buffer == NULL)
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                             "DeviceIsMediaChangeDisabledDueToHardwareLimitation: Unable to alloc string buffer\n" ));
 //                 status = STATUS_INTERNAL_ERROR;
 //             }
@@ -4901,7 +4921,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //                                                    );
 //             if (!NT_SUCCESS(status))
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                             "DeviceIsMediaChangeDisabledDueToHardwareLimitation: cannot convert "
 //                             "to unicode %lx\n", status));
 //             }
@@ -4943,7 +4963,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     if (mediaChangeNotificationDisabled > 0)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "DeviceIsMediaChangeDisabledDueToHardwareLimitation: Device is on MCN disable list\n"));
 //     }
 //
@@ -5000,7 +5020,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //     {
 //         // return the default value, which is the inverse of the registry setting default
 //         // since this routine asks if it's disabled
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                    "DeviceIsMediaChangeDisabledForClass: Defaulting to %s\n",
 //                    (mcnRegistryValue ? "Enabled" : "Disabled")));
 //         return (BOOLEAN)(mcnRegistryValue == 0);
@@ -5030,7 +5050,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     if (NT_SUCCESS(status))
 //     {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
 //                    "DeviceIsMediaChangeDisabledForClass: <Service>/Autorun flag = %d\n",
 //                    mcnRegistryValue));
 //     }
@@ -5043,7 +5063,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //         if (NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
 //                        "DeviceIsMediaChangeDisabledForClass: <Service>/Parameters/Autorun flag = %d\n",
 //                         mcnRegistryValue));
 //         }
@@ -5053,7 +5073,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     WdfRegistryClose(serviceKey);
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                "DeviceIsMediaChangeDisabledForClass: Autoplay for device %p is %s\n",
 //                DeviceExtension->DeviceObject,
 //                (mcnRegistryValue ? "on" : "off")
@@ -5104,7 +5124,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     if (info == NULL)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                     "DeviceEnableMediaChangeDetection: not initialized\n"));
 //         return;
 //     }
@@ -5119,7 +5139,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     NT_ASSERT(oldCount >= 0);
 //
-//     TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
+//     TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
 //                "DeviceEnableMediaChangeDetection: Disable count reduced to %d - \n",
 //                info->MediaChangeDetectionDisableCount));
 //
@@ -5130,11 +5150,11 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //             info->LastReportedMediaDetectionState = info->LastKnownMediaDetectionState;
 //         }
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, "MCN is enabled\n"));
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN, "MCN is enabled\n"));
 //     }
 //     else
 //     {
-//         TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN, "MCD still disabled\n"));
+//         TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN, "MCD still disabled\n"));
 //     }
 //
 //     // Let something else run.
@@ -5189,7 +5209,7 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //
 //     info->MediaChangeDetectionDisableCount++;
 //
-//     TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
+//     TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_MCN,
 //                "DisableMediaChangeDetection: disable count is %d\n",
 //                info->MediaChangeDetectionDisableCount));
 //
@@ -5482,13 +5502,13 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //     {
 //         WdfTimerStart(DeviceExtension->MainTimer,WDF_REL_TIMEOUT_IN_MS(100));
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                    "DeviceEnableMainTimer: Once a second timer enabled  for WDFDEVICE %p\n",
 //                    DeviceExtension->Device));
 //     }
 //     else
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                    "DeviceEnableMainTimer: WDFDEVICE %p, Status %lx  initializing timer\n",
 //                    DeviceExtension->Device, status));
 //     }
@@ -5537,13 +5557,13 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
 //         //
 //         WdfTimerStop(DeviceExtension->MainTimer,TRUE);
 //
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                    "DeviceDisableMainTimer: Once a second timer disabled for device %p\n",
 //                    DeviceExtension->Device));
 //     }
 //     else
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_MCN,
 //                    "DeviceDisableMainTimer: Timer never enabled\n"));
 //     }
 //

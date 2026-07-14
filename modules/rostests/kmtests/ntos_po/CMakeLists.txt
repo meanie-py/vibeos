@@ -10,6 +10,7 @@ list(APPEND POIRP_DRV_SOURCE
 
 add_library(poirp_drv MODULE ${POIRP_DRV_SOURCE})
 set_module_type(poirp_drv kernelmodedriver)
+kmt_enable_native_seh(poirp_drv)
 target_link_libraries(poirp_drv kmtest_printf ${PSEH_LIB})
 add_importlibs(poirp_drv ntoskrnl hal)
 target_compile_definitions(poirp_drv PRIVATE KMT_STANDALONE_DRIVER)

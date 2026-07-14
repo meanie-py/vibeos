@@ -40,6 +40,30 @@ static DWORD OutputResult(IN PCSTR TestName);
 static DWORD RunTest(IN PCSTR TestName);
 int __cdecl main(int ArgCount, char **Arguments);
 
+#ifdef VIBEOS_KMTEST_SERIAL
+/* vibeos conformance harness support: tee results to the kernel debug serial
+ * stream (ntdll DbgPrint) so the host captures them without guest-side files.
+ * BEGIN/END markers let the host parser attribute output — and hangs/crashes
+ * (a missing END) — to a named test. Results/assertions are untouched. */
+ULONG __cdecl DbgPrint(PCSTR Format, ...);
+
+static void SerialDumpLines(PCSTR Buffer, SIZE_T Length)
+{
+    /* DbgPrint output is truncated around 512 bytes; emit line-by-line */
+    SIZE_T Offset = 0;
+    while (Offset < Length)
+    {
+        SIZE_T LineLength = 0;
+        while (Offset + LineLength < Length && Buffer[Offset + LineLength] != '\n')
+            ++LineLength;
+        if (Offset + LineLength < Length)
+            ++LineLength; /* include the newline */
+        DbgPrint("%.*s", (int)LineLength, Buffer + Offset);
+        Offset += LineLength;
+    }
+}
+#endif /* VIBEOS_KMTEST_SERIAL */
+
 /**
  * @name OutputError
  *
@@ -54,6 +78,13 @@ OutputError(
     IN DWORD Error)
 {
     PSTR Message;
+
+#ifdef VIBEOS_KMTEST_SERIAL
+    /* stderr is unusable under the harness (DETACHED_PROCESS) — mirror the
+     * error + its file:line origin to serial so failures stay attributable */
+    DbgPrint("[KMTEST:ERROR] %s: error 0x%08lx\n", ErrorFileAndLine, Error);
+#endif
+
     if (!FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_ALLOCATE_BUFFER,
                    NULL, Error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&Message, 0, NULL))
     {
@@ -245,12 +276,26 @@ OutputResult(
     KmtFinishTest(TestName);
 
     LogBufferLength = ResultBuffer->LogBufferLength;
-    for (Offset = 0; Offset < LogBufferLength; Offset += BlockSize)
+    /* Under the vibeos harness (DETACHED_PROCESS) there is no console; skip
+     * the stdout dump instead of failing per-block and poisoning the exit
+     * code — the serial tee below carries the results. */
+    if (GetStdHandle(STD_OUTPUT_HANDLE) != NULL &&
+        GetStdHandle(STD_OUTPUT_HANDLE) != INVALID_HANDLE_VALUE)
     {
-        DWORD Length = min(LogBufferLength - Offset, BlockSize);
-        if (!WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), ResultBuffer->LogBuffer + Offset, Length, &BytesWritten, NULL))
-            error(Error);
+        for (Offset = 0; Offset < LogBufferLength; Offset += BlockSize)
+        {
+            DWORD Length = min(LogBufferLength - Offset, BlockSize);
+            if (!WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), ResultBuffer->LogBuffer + Offset, Length, &BytesWritten, NULL))
+                error(Error);
+        }
     }
+
+#ifdef VIBEOS_KMTEST_SERIAL
+    SerialDumpLines(ResultBuffer->LogBuffer, LogBufferLength);
+    DbgPrint("[KMTEST:END %s pass=%ld fail=%ld skip=%ld]\n",
+             TestName, ResultBuffer->Successes, ResultBuffer->Failures,
+             ResultBuffer->Skipped);
+#endif
 
     return Error;
 }
@@ -275,6 +320,10 @@ RunTest(
     DWORD BytesRead;
 
     assert(TestName != NULL);
+
+#ifdef VIBEOS_KMTEST_SERIAL
+    DbgPrint("[KMTEST:BEGIN %s]\n", TestName);
+#endif
 
     if (!ResultBuffer)
     {

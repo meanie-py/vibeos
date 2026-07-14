@@ -529,8 +529,11 @@ KiTryThreadLock(IN PKTHREAD Thread)
 {
     LONG Value;
 
-    /* If the lock isn't acquired, return false */
-    if (!Thread->ThreadLock) return FALSE;
+    /* If the lock is visibly held, fail fast (vibeos §9.56: upstream ReactOS
+       returned FALSE here when FREE — claiming success WITHOUT acquiring, so
+       KeSignalGateBoostPriority ran lockless against the gate waiter's commit
+       at SMP; dead code upstream, live bug at -smp 2) */
+    if (Thread->ThreadLock) return TRUE;
 
     /* Otherwise, try to acquire it and check the result */
     Value = 1;

@@ -1,4 +1,5 @@
 use super::ke_defs::*;
+use ntkrnl_sys::inline::ke::KiInsertDeferredReadyList; // §9.56: inline (not the extern-C shim) so #[track_caller] names the true site
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
@@ -28,7 +29,6 @@ use ntkrnl_sys::ddk::{
     KiAcquireThreadLock,
     KiExitDispatcher,
     KiInitializeUserApc,
-    KiInsertDeferredReadyList,
     KiReleaseApcLock,
     KiReleaseApcLockFromSynchLevel,
     KiReleaseDispatcherLockFromSynchLevel,

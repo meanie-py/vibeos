@@ -7,6 +7,7 @@ never absolute zero — the tree carries known pre-existing findings. Advisory
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -197,6 +198,13 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         )
     )
     specs.append(("lint_kernel", [py, str(lk)] if lk.is_file() else ["MISSING"], "stdout"))
+    # Stable-toolchain RATCHET: no `#![feature(...)]` in the workspace, no
+    # RUSTC_BOOTSTRAP in the build graph. The i386 `-Z build-std` cell (gcc.cmake,
+    # RUSTUP_TOOLCHAIN from .rust-nightly) is the ONE sanctioned nightly user.
+    # Baseline is EMPTY, so any finding is NEW and fails. Exists because the lane
+    # drove this to zero and a concurrent lane re-introduced it the same day.
+    ns = repo / "tools" / "scan_nightly_surface.py"
+    specs.append(("scan_nightly_surface", [py, str(ns)] if ns.is_file() else ["MISSING"], "stdout"))
     # C↔Rust differential oracles in tools/ (offsets are a compile-time gate, not
     # here). tables + match_consts are clean today (empty baseline = strict);
     # signatures carries known dual-cfg-shim FPs, so the baseline gates NEW only.
@@ -207,6 +215,35 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     ):
         t = repo / "tools" / rel
         specs.append((tool, [py, str(t)] if t.is_file() else ["MISSING"], "stdout"))
+    # Calling-convention alias table: every macro in the SDK headers that resolves to a
+    # convention (WSAAPI -> FAR PASCAL -> WINAPI -> __stdcall) must be known to
+    # rustconv's abi_enforce. It reads RAW C, so an UNKNOWN alias does not fail — it
+    # silently derives **cdecl**, which on i386 is a stack imbalance on every call the OS
+    # makes through the fn pointer, and it compiles/links/boots. 53 aliases today; the
+    # tool knew 9 until ws2_32 forced the issue (it would have mis-derived all 187
+    # exports). Baseline EMPTY = strict: a header that grows a new alias fails here.
+    vcm = repo / "tools" / "verify_conv_macros.py"
+    specs.append(("verify_conv_macros", [py, str(vcm)] if vcm.is_file() else ["MISSING"], "stdout"))
+    # A cohab flip that DROPS a function removes the DLL's export silently: rustc is happy
+    # (nothing calls it), the link is happy (a .spec export with no impl is not an error —
+    # the DLL just ships a smaller export table), and the boot is happy unless the boot path
+    # happens to call that exact API. ws2_32 lost `bind`, `connect`, `sendto`, `WSAConnect`,
+    # `WSAJoinLeaf` and `WSASendTo` this way — tree-sitter cannot parse `IN CONST struct
+    # sockaddr *`, so the scanner never put them in the plan and the crate compiled clean on
+    # all three arches. A socket client cannot bind or connect. Baseline EMPTY = strict.
+    vle = repo / "tools" / "verify_lost_exports.py"
+    specs.append(
+        ("verify_lost_exports", [py, str(vle)] if vle.is_file() else ["MISSING"], "stdout")
+    )
+    # Each translated fn's signature vs the C prototype it came from. The model reaches for
+    # the POINTER flavour of a scalar with real regularity (INT -> LPINT, SIZE_T -> PSIZE_T,
+    # HANDLE -> LPHANDLE, DWORD -> DWORD_PTR). Nothing else can see it: rustc never sees the
+    # C prototype, verify_ffi only checks conventions, and on 64-bit the wrong typedef is the
+    # same WIDTH — so it links, runs, and returns the right answer, then breaks on i386.
+    vcs = repo / "tools" / "verify_c_signatures.py"
+    specs.append(
+        ("verify_c_signatures", [py, str(vcs), "--all"] if vcs.is_file() else ["MISSING"], "stdout")
+    )
     # Inlined flag/constant-literal lint (AST/tree-sitter). verify_constants only
     # checks named `const` defs; this catches bare `0x2 /* TOP_LEVEL */` literals.
     # Carries residual FP classes (mask unions, informational args) → baseline gates NEW.
@@ -256,6 +293,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_dangling_transmute",
             [py, str(sdt), "--lint"] if sdt.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # The WoW64 win32k thunk table must be indexed by the GUEST's (i386) syscall
+    # numbers, not the host's. w32ksvc32.h gates NtUserSetWindowLongPtr on
+    # `#ifdef _WIN64`, so parsing it as flat text on a 64-bit host shifts every
+    # service number after it by one — 195 syscalls silently misrouted onto their
+    # neighbours (no fault: the signatures are plausible, the calls just do the
+    # wrong thing). x86 Doom's ShowWindow became ShowScrollBar. Field manual
+    # §9.71. This compares the generated table against the REAL i386 stubs
+    # disassembled out of the built user32/gdi32 — hard fail on any divergence.
+    vsn = repo / "tools" / "wow64gen" / "verify_svc_numbering.py"
+    specs.append(
+        (
+            "verify_svc_numbering",
+            [py, str(vsn)] if vsn.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -395,7 +448,13 @@ _CARGO_LINK_POCS = [
     ("ntdll", "ntdll-cargo", "ntdll", ("i386", "amd64", "arm64"), 1_000_000),
     ("ntdll_vista", "ntdll_vista-cargo", "ntdll_vista", ("i386", "amd64", "arm64"), 200_000),
 ]
-_ARCH_TARGET = {"i386": "i686-kernel", "amd64": "x86_64-kernel", "arm64": "aarch64-kernel"}
+# amd64/arm64 build the BUILTIN triple on stable (no -Z build-std); i386 keeps the
+# custom softfloat kernel json. gcc.cmake:add_cargo_module is the source of truth.
+_ARCH_TARGET = {
+    "i386": "i686-kernel",
+    "amd64": "x86_64-pc-windows-gnu",
+    "arm64": "aarch64-pc-windows-gnullvm",
+}
 
 
 def _one_cargo_link(
@@ -417,10 +476,17 @@ def _one_cargo_link(
         run.add(Stage(stage, status="skip", detail="no rustup (need nightly+rust-src)"))
         return
 
-    cp = run.run(
-        [
+    # Mirror gcc.cmake:add_cargo_module EXACTLY — this stage exists to prove the
+    # cmake→cargo link hasn't bit-rotted, so a different invocation would prove
+    # nothing. i386: pinned nightly + `-Z build-std` + the softfloat kernel json.
+    # amd64/arm64: pinned stable + the builtin triple, with the two `-C` flags that
+    # restore what the retired json carried (see gcc.cmake for the why).
+    env = None
+    if target.endswith("-kernel"):  # i386 — custom json, needs nightly build-std
+        nightly = (repo / ".rust-nightly").read_text().strip()
+        argv = [
             "cargo",
-            "+nightly",
+            f"+{nightly}",
             "build",
             "--release",
             "--target",
@@ -429,14 +495,21 @@ def _one_cargo_link(
             "build-std=core,alloc,compiler_builtins",
             "-Z",
             "build-std-features=compiler-builtins-mem",
-            "-p",
-            crate,
-            "--bin",
-            binname,
-        ],
+        ]
+    else:  # amd64 / arm64 — builtin triple on stable
+        argv = ["cargo", "build", "--release", "--target", target]
+        # link-self-contained is amd64-only: gnullvm rejects the flag outright.
+        rustflags = "-C force-frame-pointers=yes"
+        if target.startswith("x86_64"):
+            rustflags += " -C link-self-contained=no"
+        env = dict(os.environ, RUSTFLAGS=rustflags)
+
+    cp = run.run(
+        [*argv, "-p", crate, "--bin", binname],
         cwd=rust_ws,
         stage=stage,
         timeout=900,
+        env=env,
     )
     out = rust_ws / "target" / target / "release" / f"{binname}.exe"
     if cp.returncode != 0:
@@ -529,13 +602,20 @@ def run_committed_drift_guard(run: Run, repo: Path, arch: str | None = None) -> 
 
 
 def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
-    """Need a built binary (run after `build`). scan_ud2 + sacred primitives."""
+    """Need a built binary (run after `build`).
+
+    scan_ud2 + sacred primitives + scan_self_recursive. All three are POST-LINK
+    miscompile detectors: they read the emitted code, because the defects they
+    catch are invisible in the source (an ABI mismatch that LLVM turned into a
+    `ud2`; a Rust `memcpy` that LLVM lowered into a call to itself).
+    """
     py = sys.executable
     build_dir = repo / f"build-{arch}"
     ntos = build_dir / "ntoskrnl" / "ntoskrnl.exe"
     if not ntos.is_file():
         run.add(Stage("scan_ud2", status="skip", detail="no binary"))
         run.add(Stage("sacred_primitives", status="skip", detail="no binary"))
+        run.add(Stage("scan_self_recursive", status="skip", detail="no binary"))
         return
     # Binary lints are judged by exit code (by_exit_code=True), not baseline-diff:
     # their output is arch-specific so a single baseline can't match across arches
@@ -556,6 +636,18 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         repo,
         "sacred_primitives",
         ["bash", str(sp), str(build_dir)] if sp.is_file() else ["MISSING"],
+        strict=strict,
+        by_exit_code=True,
+    )
+    # A function whose first instruction jumps to itself = a silent infinite hang.
+    # Caught bootvid's self-recursive Rust memcpy/memset (stable-toolchain Axis B);
+    # see tools/scan_self_recursive.py for the full story.
+    selfrec = repo / "tools" / "scan_self_recursive.py"
+    _lint_stage(
+        run,
+        repo,
+        "scan_self_recursive",
+        [py, str(selfrec), "--check", str(build_dir)] if selfrec.is_file() else ["MISSING"],
         strict=strict,
         by_exit_code=True,
     )

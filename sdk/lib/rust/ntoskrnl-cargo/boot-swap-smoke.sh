@@ -18,16 +18,14 @@ set -euo pipefail
 cd "$(dirname "$0")/../../../.."  # → repo root
 
 ARCH="${1:-i386}"
-case "$ARCH" in
-  i386)  TARGET_ARG=ntoskrnl-cargo/i686-kernel.json; TARGET_STEM=i686-kernel; BUILD_STD=1; BUILD_STD_MEM=1 ;;
-  amd64) TARGET_ARG=ntoskrnl-cargo/x86_64-kernel.json; TARGET_STEM=x86_64-kernel; BUILD_STD=1; BUILD_STD_MEM=1 ;;
-  arm64) TARGET_ARG=ntoskrnl-cargo/aarch64-kernel.json; TARGET_STEM=aarch64-kernel; BUILD_STD=1; BUILD_STD_MEM=0 ;;
-  *) echo "unsupported arch '$ARCH' (i386|amd64|arm64)" >&2; exit 2 ;;
-esac
+# Shared cargo-invocation policy (builtin triple on amd64/arm64, nightly +
+# build-std on i386). Sets CELL_TARGET / CELL_STEM / CELL_STD / CELL_TOOLCHAIN.
+VIBEOS_ROOT="$PWD" . sdk/lib/rust/cargo-cell-args.sh
+cell_args "$ARCH" ntoskrnl-cargo || exit 2
 
 BUILD=build-$ARCH
 EXE=$BUILD/ntoskrnl/ntoskrnl.exe
-CARGO_OUT=sdk/lib/rust/target/$TARGET_STEM/release/ntoskrnl.exe
+CARGO_OUT=sdk/lib/rust/target/$CELL_STEM/release/ntoskrnl.exe
 BAK=$EXE.cmake-bak
 PEFIXUP=$BUILD/host-tools/bin/pefixup
 FIXFWD=sdk/tools/fix_lld_forwarding.py
@@ -37,8 +35,8 @@ if [ "$ARCH" = "arm64" ]; then
 fi
 
 [ -d "$BUILD" ] || { echo "$BUILD/ missing — run cmake first." >&2; exit 1; }
-if [ "$BUILD_STD" = "1" ]; then
-  rustup toolchain list 2>&1 | grep -q nightly || { echo "nightly + rust-src required." >&2; exit 1; }
+if [ -n "$CELL_STD" ]; then
+  rustup toolchain list 2>&1 | grep -q nightly || { echo "nightly + rust-src required (i386 build-std)." >&2; exit 1; }
 fi
 
 export CARGO_TARGET_I686_KERNEL_LINKER="$PWD/.build-tools/llvm-mingw/bin/i686-w64-mingw32-clang"
@@ -62,21 +60,12 @@ trap restore EXIT
 echo "[1/5] cmake baseline (ninja ntoskrnl → sibling .a + cmake exe) [$ARCH] ..."
 ( cd "$BUILD" && ninja ntoskrnl >/dev/null )
 
-echo "[2/5] Cargo build (ntoskrnl-cargo, $TARGET_STEM) ..."
-if [ "$BUILD_STD" = "1" ]; then
-  build_std_args=(-Z build-std=core,alloc,compiler_builtins)
-  if [ "$BUILD_STD_MEM" = "1" ]; then
-    build_std_args+=(-Z build-std-features=compiler-builtins-mem)
-  fi
-  ( cd sdk/lib/rust && cargo +nightly build --release \
-      --target "$TARGET_ARG" \
-      "${build_std_args[@]}" \
-      -p ntoskrnl-cargo --bin ntoskrnl )
-else
-  ( cd sdk/lib/rust && rustup run stable cargo build --release \
-      --target "$TARGET_ARG" \
-      -p ntoskrnl-cargo --bin ntoskrnl )
-fi
+echo "[2/5] Cargo build (ntoskrnl-cargo, $CELL_STEM) ..."
+# shellcheck disable=SC2086  # CELL_TOOLCHAIN/CELL_STD are deliberately word-split
+( cd sdk/lib/rust && cargo $CELL_TOOLCHAIN build --release \
+    --target "$CELL_TARGET" \
+    $CELL_STD \
+    -p ntoskrnl-cargo --bin ntoskrnl )
 test "$(head -c2 "$CARGO_OUT")" = "MZ" || { echo "FAIL: cargo ntoskrnl not a PE"; exit 1; }
 
 echo "[3/5] Swap + kernel post-link (native-pefixup --kernel + i386 fwd fix) ..."

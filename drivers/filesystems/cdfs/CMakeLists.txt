@@ -34,7 +34,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${CDFS_RUST_TARGET_DIR}
         RUSTFLAGS=${CDFS_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${CDFS_RUST_TARGET}
             -p cdfs-rust
             --manifest-path ${CDFS_RUST_WORKSPACE_DIR}/Cargo.toml

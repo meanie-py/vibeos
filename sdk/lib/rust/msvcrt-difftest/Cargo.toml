@@ -1,0 +1,87 @@
+# Differential harness: pins the Rust msvcrt string surface against the
+# *real compiled* msvcrt C reference (`dll/win32/msvcrt/string.c`).
+#
+# Host crate (std, `cargo test`, no QEMU). build.rs cc-compiles the
+# GENUINE string.c for linux-x86_64 with every one of its 106 public
+# symbols renamed to `ref_<name>` (a generated `-include` rename header),
+# so a test binary can hold BOTH the msvcrt C reference (`ref_strlen`,
+# `ref_itoa`, …) and cnt-rust's `#[no_mangle]` shims (`strlen`, `_itoa`,
+# …) at once and fuzz them for parity.
+#
+# Sibling exemplar: ../cnt-difftest (same trick, libcntpr reference).
+[package]
+name = "msvcrt-difftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# Grade THE SHIPPING ARTIFACT. `msvcrt-crt-rust` is what msvcrt.dll actually
+# links; its wrappers delegate to `cnt_rust::core_rs` but ADAPT it (unsigned-
+# char contract, clamped returns, msvcrt-contract ports). Depending on cnt-rust
+# directly here would be grading a proxy — and worse, cargo feature unification
+# would switch ON cnt-rust's `cabi` feature for msvcrt-crt-rust's copy too,
+# whose 208 #[no_mangle] shims would then collide with the wrappers.
+msvcrt-crt-rust = { path = "../msvcrt-crt-rust" }
+msvcrt-sys = { path = "../msvcrt-sys" }
+# guard-page probe (tests/oob_guard.rs): mmap/mprotect/fork.
+libc = "0.2"
+
+[build-dependencies]
+cc = "1"
+
+# `harness = false` for the reason cnt-difftest documents: cnt-rust exports a
+# `#[no_mangle] getenv` that shadows glibc's, libtest reads RUST_TEST_THREADS
+# through it, gets NULL, and misbehaves. A plain single-threaded `fn main()`
+# runner never calls getenv and never spawns threads.
+[[test]]
+name = "link"
+path = "tests/link.rs"
+harness = false
+
+# Classification driver: fuzzes each cnt-rust shim against the genuine msvcrt
+# reference and prints a MATCH / SIGN-ONLY / DIVERGE verdict per function —
+# the input to deciding which families are safe to flip into msvcrt.dll.
+[[test]]
+name = "classify"
+path = "tests/classify.rs"
+harness = false
+
+# Guard-page probe for the BOUNDED ("n"-suffixed) fns. classify.rs compares
+# VALUES and so is structurally blind to an out-of-bounds READ that still
+# returns the right answer — which is exactly how _strnset's unbounded NUL scan
+# passed 20k fuzz cases and then faulted in the guest. This places the buffer
+# flush against a PROT_NONE page so an over-read segfaults, in a forked child so
+# the offending function is named rather than taking the harness down.
+[[test]]
+name = "oob_guard"
+path = "tests/oob_guard.rs"
+harness = false
+
+# The oracle auditing ITSELF. Every other test here treats the compiled
+# string.c/wcs.c as ground truth; this one asks whether the host's headers
+# rewrote that truth on the way in. They did: glibc's __nonnull/__attribute_pure__
+# leaked onto the renamed reference symbols and deleted msvcrt's NULL guards.
+# A harness whose reference is miscompiled reports confident nonsense (§9.66).
+[[test]]
+name = "ref_integrity"
+path = "tests/ref_integrity.rs"
+harness = false
+
+# Throughput gate. classify.rs grades BEHAVIOUR, so a semantically perfect but
+# orders-of-magnitude slower body scores MATCH — which is how wave 2's per-byte
+# write_volatile memset shipped and blew the net suite's timeouts (71s -> 208s).
+# A flip >2x slower than the C it replaces FAILS here.
+[[test]]
+name = "perf"
+path = "tests/perf.rs"
+harness = false
+
+# The SIXTH instrument. classify grades VALUES, oob_guard grades ACCESS, perf grades
+# SPEED — and all three passed while wave 11 shipped a per-character get_locinfo() that
+# took the boot from 39s to 128s. perf cannot ever catch it (the harness stubs
+# get_locinfo() cheap for both sides, so the RATIO stays fine). So don't measure — COUNT.
+# See tests/hot_path.rs.
+[[test]]
+name = "hot_path"
+harness = false

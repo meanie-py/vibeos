@@ -205,18 +205,10 @@ unsafe fn GetWin32ClientInfo() -> PCLIENTINFO {
 // user_x.h: static __inline PVOID DesktopPtrToUser(PVOID Ptr)
 #[inline]
 unsafe fn DesktopPtrToUser(ptr: PVOID) -> PVOID {
-    GetW32ThreadInfo();
-    let pci: PCLIENTINFO = GetWin32ClientInfo();
-    let pdi: PDESKTOPINFO = (*pci).pDeskInfo;
-    // ASSERT(Ptr != NULL); ASSERT(pdi != NULL);
-    if (ptr as usize) >= ((*pdi).pvDesktopBase as usize)
-        && (ptr as usize) < ((*pdi).pvDesktopLimit as usize)
-    {
-        ((ptr as usize) - ((*pci).ulClientDelta as usize)) as PVOID
-    } else {
-        // Slow path: requires a call into win32k.
-        NtUserxGetDesktopMapping(ptr)
-    }
+    // WoW64: DESKTOPINFO is 64-bit-laid-out for a 32-bit guest, so the
+    // base/limit range check must be done through the normalizing view.
+    // Single definition lives in crate::wow64.
+    crate::wow64::desktop_ptr_to_user(ptr)
 }
 
 // ntwrapper.h: EXTINLINE PVOID NtUserxGetDesktopMapping(PVOID ptr)
@@ -1108,7 +1100,7 @@ pub unsafe extern "system" fn GetAncestor(hwnd: HWND, uType: UINT) -> HWND {
         // _SEH2_TRY
         {
             if !(*pWnd).spwndParent.is_null() && (*pWnd).fnid != FNID_MESSAGEWND {
-                let pwndAncestor: PWND = DesktopPtrToUser((*pWnd).spwndParent as PVOID) as PWND;
+                let pwndAncestor: PWND = crate::wow64::desktop_wnd_to_user((*pWnd).spwndParent as PVOID);
                 if !pwndAncestor.is_null() {
                     hwndAncestor = UserHMGetHandle(pwndAncestor);
                 }
@@ -1159,7 +1151,7 @@ pub unsafe extern "system" fn GetLastActivePopup(hWnd: HWND) -> HWND {
         // _SEH2_TRY
         {
             if !(*Wnd).spwndLastActive.is_null() {
-                let LastActive: PWND = DesktopPtrToUser((*Wnd).spwndLastActive as PVOID) as PWND;
+                let LastActive: PWND = crate::wow64::desktop_wnd_to_user((*Wnd).spwndLastActive as PVOID);
                 Ret = UserHMGetHandle(LastActive);
             }
         }
@@ -1180,11 +1172,11 @@ pub unsafe extern "system" fn GetParent(hWnd: HWND) -> HWND {
             WndParent = core::ptr::null_mut();
             if (*Wnd).style & WS_POPUP != 0 {
                 if !(*Wnd).spwndOwner.is_null() {
-                    WndParent = DesktopPtrToUser((*Wnd).spwndOwner as PVOID) as PWND;
+                    WndParent = crate::wow64::desktop_wnd_to_user((*Wnd).spwndOwner as PVOID);
                 }
             } else if (*Wnd).style & WS_CHILD != 0 {
                 if !(*Wnd).spwndParent.is_null() {
-                    WndParent = DesktopPtrToUser((*Wnd).spwndParent as PVOID) as PWND;
+                    WndParent = crate::wow64::desktop_wnd_to_user((*Wnd).spwndParent as PVOID);
                 }
             }
 
@@ -1223,41 +1215,41 @@ pub unsafe extern "system" fn GetWindow(hWnd: HWND, uCmd: UINT) -> HWND {
         match uCmd {
             GW_OWNER => {
                 if !(*Wnd).spwndOwner.is_null() {
-                    FoundWnd = DesktopPtrToUser((*Wnd).spwndOwner as PVOID) as PWND;
+                    FoundWnd = crate::wow64::desktop_wnd_to_user((*Wnd).spwndOwner as PVOID);
                 }
             }
 
             GW_HWNDFIRST => {
                 if !(*Wnd).spwndParent.is_null() {
-                    FoundWnd = DesktopPtrToUser((*Wnd).spwndParent as PVOID) as PWND;
+                    FoundWnd = crate::wow64::desktop_wnd_to_user((*Wnd).spwndParent as PVOID);
                     if !(*FoundWnd).spwndChild.is_null() {
-                        FoundWnd = DesktopPtrToUser((*FoundWnd).spwndChild as PVOID) as PWND;
+                        FoundWnd = crate::wow64::desktop_wnd_to_user((*FoundWnd).spwndChild as PVOID);
                     }
                 }
             }
 
             GW_HWNDNEXT => {
                 if !(*Wnd).spwndNext.is_null() {
-                    FoundWnd = DesktopPtrToUser((*Wnd).spwndNext as PVOID) as PWND;
+                    FoundWnd = crate::wow64::desktop_wnd_to_user((*Wnd).spwndNext as PVOID);
                 }
             }
 
             GW_HWNDPREV => {
                 if !(*Wnd).spwndPrev.is_null() {
-                    FoundWnd = DesktopPtrToUser((*Wnd).spwndPrev as PVOID) as PWND;
+                    FoundWnd = crate::wow64::desktop_wnd_to_user((*Wnd).spwndPrev as PVOID);
                 }
             }
 
             GW_CHILD => {
                 if !(*Wnd).spwndChild.is_null() {
-                    FoundWnd = DesktopPtrToUser((*Wnd).spwndChild as PVOID) as PWND;
+                    FoundWnd = crate::wow64::desktop_wnd_to_user((*Wnd).spwndChild as PVOID);
                 }
             }
 
             GW_HWNDLAST => {
                 FoundWnd = Wnd;
                 while !(*FoundWnd).spwndNext.is_null() {
-                    FoundWnd = DesktopPtrToUser((*FoundWnd).spwndNext as PVOID) as PWND;
+                    FoundWnd = crate::wow64::desktop_wnd_to_user((*FoundWnd).spwndNext as PVOID);
                 }
             }
 
@@ -1311,7 +1303,7 @@ pub unsafe extern "system" fn GetWindowInfo(hWnd: HWND, pwi: PWINDOWINFO) -> BOO
 
     // _SEH2_TRY
     {
-        pCls = DesktopPtrToUser((*pWnd).pcls as PVOID) as PCLS;
+        pCls = crate::wow64::desktop_cls_to_user((*pWnd).pcls as PVOID);
         (*pwi).rcWindow = (*pWnd).rcWindow;
         (*pwi).rcClient = (*pWnd).rcClient;
         (*pwi).dwStyle = (*pWnd).style;
@@ -1539,7 +1531,7 @@ pub unsafe extern "system" fn IsChild(hWndParent: HWND, hWnd: HWND) -> BOOL {
     {
         while !Wnd.is_null() && ((*Wnd).style & (WS_POPUP | WS_CHILD)) == WS_CHILD {
             if !(*Wnd).spwndParent.is_null() {
-                Wnd = DesktopPtrToUser((*Wnd).spwndParent as PVOID) as PWND;
+                Wnd = crate::wow64::desktop_wnd_to_user((*Wnd).spwndParent as PVOID);
 
                 if Wnd == WndParent {
                     Ret = 1;
@@ -1607,7 +1599,7 @@ pub unsafe extern "system" fn IsWindowVisible(hWnd: HWND) -> BOOL {
                 }
 
                 if !(*Wnd).spwndParent.is_null() {
-                    Wnd = DesktopPtrToUser((*Wnd).spwndParent as PVOID) as PWND;
+                    Wnd = crate::wow64::desktop_wnd_to_user((*Wnd).spwndParent as PVOID);
                 } else {
                     break;
                 }

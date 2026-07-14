@@ -161,7 +161,9 @@ def load_shim_signatures(subsystem: str) -> dict[str, str]:
     return sigs
 
 
-def build_file_prompt(scan: ScanResult, resolve: ResolveResult) -> str:
+def build_file_prompt(
+    scan: ScanResult, resolve: ResolveResult, target: Target | None = None
+) -> str:
     """Build the per-file prompt with C source, imports, exports, and gap functions."""
     parts = []
 
@@ -172,12 +174,16 @@ def build_file_prompt(scan: ScanResult, resolve: ResolveResult) -> str:
     # Determine subsystem for shim lookup
     subsystem = scan.path.parent.name
 
-    # Section 2: Exports from ntoskrnl.spec
+    # Section 2: Exports from the module's .spec. Name the REAL module: this said
+    # "ntoskrnl.spec" / "exported from ntoskrnl.exe" unconditionally, so a model
+    # translating ws2_32 was told its exports come from the kernel. A false premise in the
+    # prompt is not cosmetic — it is the one part of the input the model cannot check.
+    mod = target.name if target is not None else "ntoskrnl"
+    dll = "ntoskrnl.exe" if mod == "ntoskrnl" else f"{mod}.dll"
     if resolve.exports:
-        parts.append("### Exported Functions (from ntoskrnl.spec)")
+        parts.append(f"### Exported Functions (from {mod}.spec)")
         parts.append(
-            "These functions are exported from ntoskrnl.exe and MUST be "
-            "`#[no_mangle] pub unsafe`:\n"
+            f"These functions are exported from {dll} and MUST be `#[no_mangle] pub unsafe`:\n"
         )
         for name, entry in sorted(resolve.exports.items()):
             fwd = f" (forwards to {entry.forward_target})" if entry.forward_target else ""
@@ -271,10 +277,12 @@ def build_file_prompt(scan: ScanResult, resolve: ResolveResult) -> str:
     return "\n".join(parts)
 
 
-def build_full_prompt(scan: ScanResult, resolve: ResolveResult) -> str:
+def build_full_prompt(
+    scan: ScanResult, resolve: ResolveResult, target: Target | None = None
+) -> str:
     """Build the complete prompt (system + file)."""
-    system = load_system_prompt()
-    file_prompt = build_file_prompt(scan, resolve)
+    system = load_system_prompt(target)
+    file_prompt = build_file_prompt(scan, resolve, target)
     return system + "\n\n---\n\n" + file_prompt
 
 

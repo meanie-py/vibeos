@@ -1,0 +1,14 @@
+advapi32/security.rs: CreateProcessWithTokenW param 7: C `STARTUPINFOW *` vs Rust `LPSTARTUPINFOW`
+advapi32/security.rs: CreateProcessWithTokenW param 8: C `PROCESS_INFORMATION *` vs Rust `LPPROCESS_INFORMATION`
+cabinet/fdi.rs: FDIDestroy param 0: C `HFDI` vs Rust `isize`
+kernel32/console.rs: ConsoleMenuControl return: C `HMENU` vs Rust `HANDLE`
+kernel32/nls.rs: IntGetCodePageEntry return: C `FASTCALL` vs Rust `PCODEPAGE_ENTRY`
+kernel32/nls.rs: IntGetLoadedCodePageEntry return: C `FASTCALL` vs Rust `PCODEPAGE_ENTRY`
+lsasrv/registry.rs: LsapRegCreateKey param 3: C `HANDLE` vs Rust `PHANDLE`
+lsasrv/registry.rs: LsapRegOpenKey param 3: C `HANDLE` vs Rust `PHANDLE`
+mlang/mlang.rs: fnIMLangFontLink2_MapFont param 1: C `HDC` vs Rust `*mut c_void`
+mlang/mlang.rs: fnIMLangFontLink2_MapFont param 4: C `HFONT *` vs Rust `*mut *mut c_void`
+mscms/stub.rs: ConvertColorNameToIndex param 0: C `HPROFILE` vs Rust `isize`
+mscms/stub.rs: CreateDeviceLinkProfile param 0: C `PHPROFILE` vs Rust `*mut ::core::ffi::c_void`
+mscms/transform.rs: CreateMultiProfileTransform param 0: C `PHPROFILE` vs Rust `*mut isize`
+mscms/transform.rs: CreateMultiProfileTransform return: C `HTRANSFORM` vs Rust `isize`

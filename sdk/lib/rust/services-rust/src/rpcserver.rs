@@ -2392,7 +2392,7 @@ pub unsafe extern "system" fn RCreateServiceW(
                 lpImagePath as *const u8,
                 ((wcslen(lpImagePath) + 1) * core::mem::size_of::<u16>()) as DWORD,
             ) as DWORD;
-            if dwError != ERROR_SUCCESS {
+                if dwError != ERROR_SUCCESS {
                 break 'done;
             }
         }
@@ -2517,6 +2517,13 @@ pub unsafe extern "system" fn RCreateServiceW(
 
     if !lpImagePath.is_null() {
         HeapFree(GetProcessHeap(), 0, lpImagePath as *mut core::ffi::c_void);
+    }
+
+    if dwError != ERROR_SUCCESS {
+        DbgPrint(
+            b"[SERVICES] RCreateServiceW(%S) FAILED: %lu (late failure leaves a half-created service - upstream FIXME)\n\0".as_ptr() as *const i8,
+            lpServiceName, dwError,
+        );
     }
 
     dwError

@@ -12,7 +12,9 @@
 // char (*__kaboom1)[FIELD_OFFSET(IO_STACK_LOCATION, Parameters.Create.EaLength)] = 1;
 // Taken from https://stackoverflow.com/a/35261673
 
-#if !defined(_AMD64_)
+/* ARM64 shares the AMD64 layout: 8-byte pointers, same alignment rules
+   (the C_ASSERTs below verify that at compile time) */
+#if !defined(_AMD64_) && !defined(_ARM64_)
 
 C_ASSERT(sizeof(IO_STACK_LOCATION) == 36);
 

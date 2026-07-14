@@ -17,10 +17,10 @@ fn main() {
             "i686-kernel.json", "ntdll_vista-i386.rc.res", 0x6fc7_0000, "_DllMain@12",
         ),
         "x86_64" => (
-            "x86_64-kernel.json", "ntdll_vista-amd64.rc.res", 0x7fe_b200_0000, "DllMain",
+            "x86_64-pc-windows-gnu", "ntdll_vista-amd64.rc.res", 0x7fe_b200_0000, "DllMain",
         ),
         "aarch64" => (
-            "aarch64-kernel.json", "ntdll_vista-arm64.rc.res", 0x7fe_b200_0000, "DllMain",
+            "aarch64-pc-windows-gnullvm", "ntdll_vista-arm64.rc.res", 0x7fe_b200_0000, "DllMain",
         ),
         o => panic!("ntdll_vista-cargo: unsupported arch {o}"),
     };

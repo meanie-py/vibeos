@@ -1,0 +1,13 @@
+[package]
+name = "varargs-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]

@@ -14,7 +14,6 @@ use core::ffi::c_void;
 use core::ptr;
 
 extern "C" {
-    fn TracePrint(level: u32, flag: u32, format: *const i8, ...);
 }
 extern "system" {
     fn KeQueryTickCount(CurrentCount: *mut i64);
@@ -271,14 +270,14 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
                     // SCSI_SENSE_NOT_READY
                     if (*senseBuffer).AdditionalSenseCode == SCSI_ADSENSE_NO_MEDIA_IN_DEVICE {
                         if (*DeviceExtension).DeviceAdditionalData.Mmc.WriteAllowed != 0 {
-                            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+                            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
                                        b"DeviceErrorHandlerForMmc: media removed, writes will be failed until new media detected\n\0".as_ptr() as *const i8);
                         }
                         // REF #0002
                         (*DeviceExtension).DeviceAdditionalData.Mmc.WriteAllowed = 0;
                     } else if (*senseBuffer).AdditionalSenseCode == SCSI_ADSENSE_LUN_NOT_READY {
                         if (*senseBuffer).AdditionalSenseCodeQualifier == SCSI_SENSEQ_BECOMING_READY {
-                            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+                            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
                                        b"DeviceErrorHandlerForMmc: media becoming ready, SHOULD notify shell of change time by sending GESN request immediately!\n\0".as_ptr() as *const i8);
                         } else if ((*senseBuffer).AdditionalSenseCodeQualifier == SCSI_SENSEQ_OPERATION_IN_PROGRESS
                                    || (*senseBuffer).AdditionalSenseCodeQualifier == SCSI_SENSEQ_LONG_WRITE_IN_PROGRESS)
@@ -294,7 +293,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
                                       || (*Srb).Cdb[0] == SCSIOP_READ_TRACK_INFORMATION
                                       || (*Srb).Cdb[0] == SCSIOP_READ_DISK_INFORMATION
                                   ) {
-                            TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+                            TracePrint!(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
                                        b"DeviceErrorHandlerForMmc: LONG_WRITE or OP_IN_PROGRESS for limited subset of cmds -- setting retry to TRUE\n\0".as_ptr() as *const i8);
                             *Retry = 1;
                             *Status = STATUS_DEVICE_BUSY;
@@ -310,7 +309,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
                                 // REF #0002
                                 (*DeviceExtension).DeviceAdditionalData.Mmc.WriteAllowed = 0;
                                 (*DeviceExtension).DeviceAdditionalData.Mmc.UpdateState = CdromMmcUpdateRequired;
-                                TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+                                TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
                                            b"DeviceErrorHandlerForMmc: media change detected, need to update drive capabilities\n\0".as_ptr() as *const i8);
                                 mediaChange = 1;
                                 break 'unit_attention_inner;
@@ -319,7 +318,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
                                 // REF #0002
                                 (*DeviceExtension).DeviceAdditionalData.Mmc.WriteAllowed = 0;
                                 (*DeviceExtension).DeviceAdditionalData.Mmc.UpdateState = CdromMmcUpdateRequired;
-                                TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+                                TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
                                            b"DeviceErrorHandlerForMmc: bus reset detected, need to update drive capabilities\n\0".as_ptr() as *const i8);
                                 break 'unit_attention_inner;
                             }
@@ -330,7 +329,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
                                 'operator_inner: loop {
                                     match qualifier {
                                         SCSI_SENSEQ_MEDIUM_REMOVAL => {
-                                            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+                                            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
                                                        b"DeviceErrorHandlerForMmc: Eject requested by user\n\0".as_ptr() as *const i8);
                                             *Retry = 1;
                                             *Status = STATUS_DEVICE_BUSY;
@@ -346,7 +345,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
                                         _ => break 'operator_inner,
                                     }
                                     // Shared code for WRITE_PROTECT_DISABLE/ENABLE
-                                    TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+                                    TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
                                                if b != 0 {
                                                    b"DeviceErrorHandlerForMmc: Write protect disable requested by user\n\0".as_ptr()
                                                } else {
@@ -362,7 +361,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
                                 break 'unit_attention_inner;
                             }
                             _ => {
-                                TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+                                TracePrint!(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
                                            b"DeviceErrorHandlerForMmc: Unit attention %02x/%02x\n\0".as_ptr() as *const i8,
                                            (*senseBuffer).AdditionalSenseCode as core::ffi::c_uint,
                                            (*senseBuffer).AdditionalSenseCodeQualifier as core::ffi::c_uint);
@@ -375,7 +374,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
                 code if code == SCSI_SENSE_ILLEGAL_REQUEST as u32 => {
                     if (*senseBuffer).AdditionalSenseCode == SCSI_ADSENSE_WRITE_PROTECT {
                         if (*DeviceExtension).DeviceAdditionalData.Mmc.WriteAllowed != 0 {
-                            TracePrint(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+                            TracePrint!(TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
                                        b"DeviceErrorHandlerForMmc: media was writable, but failed request with WRITE_PROTECT error...\n\0".as_ptr() as *const i8);
                         }
                         // REF #0002
@@ -431,7 +430,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
 
             WdfWorkItemEnqueue(workItem);
 
-            TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+            TracePrint!(TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
                        b"DeviceErrorHandlerForMmc: Restore device default speed for %p\n\0".as_ptr() as *const i8,
                        (*DeviceExtension).DeviceObject);
         }
@@ -455,7 +454,7 @@ pub unsafe extern "system" fn DeviceErrorHandlerForHitachiGD2000(
     if (((*senseBuffer).SenseKey() & 0xf) as u8 == SCSI_SENSE_HARDWARE_ERROR)
         && ((*senseBuffer).AdditionalSenseCode == 0x44u8)
     {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_GENERAL,
             b"DeviceErrorHandlerForHitachiGD2000 (%p) => Internal Target Failure Detected -- spinning up drive\n\0"
@@ -546,7 +545,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
 
     let need_further_interpret: i32 = match additional_sense_code {
         SCSI_ADSENSE_LUN_NOT_READY => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretByAdditionalSenseCode: Lun not ready\n\0".as_ptr() as *const i8,
@@ -557,7 +556,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                 SCSI_SENSEQ_OPERATION_IN_PROGRESS => {
                     let mut not_ready: DEVICE_EVENT_BECOMING_READY = core::mem::zeroed();
 
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_GENERAL,
                         b"SenseInfoInterpretByAdditionalSenseCode: Operation In Progress\n\0".as_ptr()
@@ -583,7 +582,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                 SCSI_SENSEQ_BECOMING_READY => {
                     let mut not_ready: DEVICE_EVENT_BECOMING_READY = core::mem::zeroed();
 
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_GENERAL,
                         b"SenseInfoInterpretByAdditionalSenseCode: In process of becoming ready\n\0"
@@ -607,7 +606,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                     );
                 }
                 SCSI_SENSEQ_LONG_WRITE_IN_PROGRESS => {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_GENERAL,
                         b"SenseInfoInterpretByAdditionalSenseCode: Long write in progress\n\0"
@@ -621,7 +620,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                     *retry_interval_in_seconds = 0;
                 }
                 SCSI_SENSEQ_MANUAL_INTERVENTION_REQUIRED => {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_GENERAL,
                         b"SenseInfoInterpretByAdditionalSenseCode: Manual intervention required\n\0"
@@ -635,7 +634,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                     *retry_interval_in_seconds = NOT_READY_RETRY_INTERVAL;
                 }
                 SCSI_SENSEQ_FORMAT_IN_PROGRESS => {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_GENERAL,
                         b"SenseInfoInterpretByAdditionalSenseCode: Format in progress\n\0".as_ptr()
@@ -651,7 +650,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                 SCSI_SENSEQ_CAUSE_NOT_REPORTABLE
                 | SCSI_SENSEQ_INIT_COMMAND_REQUIRED
                 | _ => {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_GENERAL,
                         b"SenseInfoInterpretByAdditionalSenseCode: Initializing command required\n\0"
@@ -674,7 +673,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             need
         }
         SCSI_ADSENSE_NO_MEDIA_IN_DEVICE => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_VERBOSE,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretByAdditionalSenseCode: No Media in device.\n\0".as_ptr()
@@ -770,7 +769,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             need
         }
         SCSI_ADSENSE_ILLEGAL_BLOCK => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretByAdditionalSenseCode: Illegal block address\n\0".as_ptr()
@@ -781,7 +780,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             0
         }
         SCSI_ADSENSE_INVALID_LUN => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretByAdditionalSenseCode: Invalid LUN\n\0".as_ptr() as *const i8,
@@ -793,7 +792,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
         SCSI_ADSENSE_COPY_PROTECTION_FAILURE => {
             *retry = 0;
 
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretByAdditionalSenseCode: Key - Copy protection failure\n\0".as_ptr()
@@ -802,7 +801,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
 
             match additional_sense_code_qual {
                 SCSI_SENSEQ_AUTHENTICATION_FAILURE => {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_ERROR,
                         TRACE_FLAG_GENERAL,
                         b"SenseInfoInterpretByAdditionalSenseCode: Authentication failure\n\0"
@@ -811,7 +810,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                     *status = STATUS_CSS_AUTHENTICATION_FAILURE as i32;
                 }
                 SCSI_SENSEQ_KEY_NOT_PRESENT => {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_ERROR,
                         TRACE_FLAG_GENERAL,
                         b"SenseInfoInterpretByAdditionalSenseCode: Key not present\n\0".as_ptr()
@@ -820,7 +819,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                     *status = STATUS_CSS_KEY_NOT_PRESENT as i32;
                 }
                 SCSI_SENSEQ_KEY_NOT_ESTABLISHED => {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_ERROR,
                         TRACE_FLAG_GENERAL,
                         b"SenseInfoInterpretByAdditionalSenseCode: Key not established\n\0".as_ptr()
@@ -829,7 +828,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                     *status = STATUS_CSS_KEY_NOT_ESTABLISHED as i32;
                 }
                 SCSI_SENSEQ_READ_OF_SCRAMBLED_SECTOR_WITHOUT_AUTHENTICATION => {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_ERROR,
                         TRACE_FLAG_GENERAL,
                         b"SenseInfoInterpretByAdditionalSenseCode: Read of scrambled sector w/o authentication\n\0"
@@ -838,7 +837,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                     *status = STATUS_CSS_SCRAMBLED_SECTOR as i32;
                 }
                 SCSI_SENSEQ_MEDIA_CODE_MISMATCHED_TO_LOGICAL_UNIT => {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_ERROR,
                         TRACE_FLAG_GENERAL,
                         b"SenseInfoInterpretByAdditionalSenseCode: Media region does not logical unit region\n\0"
@@ -847,7 +846,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                     *status = STATUS_CSS_REGION_MISMATCH as i32;
                 }
                 SCSI_SENSEQ_LOGICAL_UNIT_RESET_COUNT_ERROR => {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_ERROR,
                         TRACE_FLAG_GENERAL,
                         b"SenseInfoInterpretByAdditionalSenseCode: Region set error -- region may be permanent\n\0"
@@ -863,7 +862,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             0 // FALSE
         }
         SCSI_ADSENSE_INVALID_CDB => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretByAdditionalSenseCode: Key - Invalid CDB\n\0".as_ptr()
@@ -878,7 +877,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
         SCSI_ADSENSE_MEDIUM_CHANGED => {
             *retry_interval_in_seconds = 0;
 
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
                 b"SenseInfoInterpretByAdditionalSenseCode: Media changed\n\0".as_ptr() as *const i8,
@@ -911,7 +910,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                         (*device_extension).MediaChangeCount
                     ) as *mut i32);
 
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_INFORMATION,
                         TRACE_FLAG_GENERAL,
                         b"SenseInfoInterpretByAdditionalSenseCode: Ejection request received!\n\0"
@@ -950,7 +949,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                 (*device_extension).MediaChangeCount
             ) as *mut i32);
 
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretByAdditionalSenseCode: Device information changed. Invalidate the bus\n\0"
@@ -981,7 +980,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             (*log_context).ErrorCode = IO_RECOVERED_VIA_ECC as i32;
 
             if (*sense_buffer).IncorrectLength() != 0 {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_GENERAL,
                     b"SenseInfoInterpretByAdditionalSenseCode: Incorrect length detected.\n\0"
@@ -1006,7 +1005,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             (*log_context).ErrorCode = IO_WRN_FAILURE_PREDICTED as i32;
 
             if (*sense_buffer).IncorrectLength() != 0 {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_GENERAL,
                     b"SenseInfoInterpretByAdditionalSenseCode: Incorrect length detected.\n\0"
@@ -1055,7 +1054,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
 
     match SenseKey {
         SCSI_SENSE_NOT_READY => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretBySenseKey: Key - Not Ready (bad block)\n\0".as_ptr() as *const i8,
@@ -1067,7 +1066,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
         }
 
         SCSI_SENSE_DATA_PROTECT => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretBySenseKey: Key - Media write protected\n\0".as_ptr() as *const i8,
@@ -1077,7 +1076,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
         }
 
         SCSI_SENSE_MEDIUM_ERROR => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretBySenseKey: Key - Medium Error (bad block)\n\0".as_ptr() as *const i8,
@@ -1090,7 +1089,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
         }
 
         SCSI_SENSE_HARDWARE_ERROR => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretBySenseKey: Key - Hardware error\n\0".as_ptr() as *const i8,
@@ -1103,7 +1102,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
         }
 
         SCSI_SENSE_ILLEGAL_REQUEST => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretBySenseKey: Key - Illegal SCSI request\n\0".as_ptr() as *const i8,
@@ -1113,7 +1112,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
         }
 
         SCSI_SENSE_UNIT_ATTENTION => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretBySenseKey: Key - Unit Attention\n\0".as_ptr() as *const i8,
@@ -1139,7 +1138,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
         }
 
         SCSI_SENSE_ABORTED_COMMAND => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretBySenseKey: Command aborted\n\0".as_ptr() as *const i8,
@@ -1150,7 +1149,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
         }
 
         SCSI_SENSE_BLANK_CHECK => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretBySenseKey: Media blank check\n\0".as_ptr() as *const i8,
@@ -1160,7 +1159,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
         }
 
         SCSI_SENSE_RECOVERED_ERROR => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretBySenseKey: Recovered error\n\0".as_ptr() as *const i8,
@@ -1172,7 +1171,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
             (*LogContext).ErrorCode = IO_ERR_CONTROLLER_ERROR;
 
             if (*SenseData).IncorrectLength() != 0 {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_GENERAL,
                     b"SenseInfoInterpretBySenseKey: Incorrect length detected.\n\0".as_ptr()
@@ -1185,7 +1184,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
         SCSI_SENSE_NO_SENSE => {
             // Check other indicators.
             if (*SenseData).IncorrectLength() != 0 {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_GENERAL,
                     b"SenseInfoInterpretBySenseKey: Incorrect length detected.\n\0".as_ptr()
@@ -1194,7 +1193,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
                 *Status = STATUS_INVALID_BLOCK_LENGTH;
                 *Retry = 0; // FALSE
             } else {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_GENERAL,
                     b"SenseInfoInterpretBySenseKey: No specific sense key\n\0".as_ptr() as *const i8,
@@ -1205,7 +1204,7 @@ pub unsafe extern "C" fn SenseInfoInterpretBySenseKey(
         }
 
         _ => {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretBySenseKey: Unrecognized sense code\n\0".as_ptr() as *const i8,
@@ -1669,7 +1668,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByScsiCommand(
                 && (*tempCdb2).GET_CONFIGURATION.as_ref().RequestType() as u32
                     == SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE
             {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_WARNING,
                     TRACE_FLAG_GENERAL,
                     b"TYPE ONE GetConfiguration failed. Set hack flag and retry.\n\0"
@@ -1749,7 +1748,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByIoControl(
 
     if !NT_SUCCESS(*Status) && IoControlCode == IOCTL_CDROM_SET_SPEED {
         (*DeviceExtension).DeviceAdditionalData.RestoreDefaults = 0;
-        TracePrint(4, 0x10, b"Disable restore default\n\0".as_ptr() as *const i8);
+        TracePrint!(4, 0x10, b"Disable restore default\n\0".as_ptr() as *const i8);
     }
 }
 
@@ -1799,7 +1798,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
 
     let srb_status = (*Srb).SrbStatus & SRB_STATUS_MASK;
     if srb_status == SRB_STATUS_INTERNAL_ERROR {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_GENERAL,
             b"SenseInfoInterpret: Internal Error code is %x\n\0".as_ptr() as *const i8,
@@ -1842,7 +1841,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
             0
         };
 
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_GENERAL,
             b"SCSI Error - \n\
@@ -1877,7 +1876,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
             mediaChangeCount = InterlockedIncrement(
                 ptr::addr_of_mut!((*DeviceExtension).MediaChangeCount) as *mut i32,
             ) as u32;
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_MCN,
                 b"SenseInfoInterpret: Media change count for device %d incremented to %#lx\n\0"
@@ -1956,7 +1955,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
             }
         }
     } else {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_GENERAL,
             b"SCSI Error - \n\
@@ -2054,7 +2053,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
         if !(*requestContext).OriginalRequest.is_null() &&
             WdfRequestIsCanceled((*requestContext).OriginalRequest) != 0
         {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_GENERAL,
                 b"Request %p was cancelled when it would have been retried\n\0"
@@ -2070,7 +2069,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
 
     // now, all decisions are made. display trace information.
     if retry != 0 {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_GENERAL,
             b"Command shall be retried in %2I64d.%03I64d seconds\n\0"
@@ -2079,7 +2078,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
             (*RetryIntervalIn100ns / 10000) % 1000,
         );
     } else {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_GENERAL,
             b"Will not retry; Sense/ASC/ASCQ of %02x/%02x/%02x\n\0"
@@ -2147,7 +2146,7 @@ pub unsafe extern "C" fn SenseInfoInterpretForZPODD(
             && additionalSenseCode == SCSI_ADSENSE_LUN_NOT_READY
             && additionalSenseCodeQual == SCSI_SENSEQ_BECOMING_READY
         {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_GENERAL,
                 b"SenseInfoInterpretForZPODD: In process of becoming ready\n\0".as_ptr()
@@ -2179,7 +2178,7 @@ pub unsafe extern "C" fn SenseInfoInterpretForZPODD(
     }
 
     if retry != 0 {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_GENERAL,
             b"Command shall be retried in %2I64d.%03I64d seconds\n\0".as_ptr() as *const i8,
@@ -2187,7 +2186,7 @@ pub unsafe extern "C" fn SenseInfoInterpretForZPODD(
             ((*RetryIntervalIn100ns / 10000) % 1000) as i64,
         );
     } else {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_GENERAL,
             b"Will not retry; Sense/ASC/ASCQ of %02x/%02x/%02x\n\0".as_ptr() as *const i8,
@@ -2415,7 +2414,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //             {
 //                 if (DeviceExtension->DeviceAdditionalData.Mmc.WriteAllowed)
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                                "DeviceErrorHandlerForMmc: media removed, writes will be "
 //                                "failed until new media detected\n"));
 //                 }
@@ -2427,7 +2426,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //             {
 //                 if (senseBuffer->AdditionalSenseCodeQualifier == SCSI_SENSEQ_BECOMING_READY)
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                                "DeviceErrorHandlerForMmc: media becoming ready, "
 //                                "SHOULD notify shell of change time by sending "
 //                                "GESN request immediately!\n"));
@@ -2448,7 +2447,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //                             )
 //                            )
 //                 {
-//                     TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//                     TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                                "DeviceErrorHandlerForMmc: LONG_WRITE or "
 //                                "OP_IN_PROGRESS for limited subset of cmds -- "
 //                                "setting retry to TRUE\n"));
@@ -2471,7 +2470,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //                 DeviceExtension->DeviceAdditionalData.Mmc.WriteAllowed = FALSE;
 //                 DeviceExtension->DeviceAdditionalData.Mmc.UpdateState = CdromMmcUpdateRequired;
 //
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                            "DeviceErrorHandlerForMmc: media change detected, need to "
 //                            "update drive capabilities\n"));
 //                 mediaChange = TRUE;
@@ -2485,7 +2484,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //                 DeviceExtension->DeviceAdditionalData.Mmc.WriteAllowed = FALSE;
 //                 DeviceExtension->DeviceAdditionalData.Mmc.UpdateState = CdromMmcUpdateRequired;
 //
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                            "DeviceErrorHandlerForMmc: bus reset detected, need to "
 //                            "update drive capabilities\n"));
 //                 break;
@@ -2502,7 +2501,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //                 case SCSI_SENSEQ_MEDIUM_REMOVAL:
 //                 {
 //                     // eject notification currently handled by classpnp
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                                "DeviceErrorHandlerForMmc: Eject requested by user\n"));
 //                     *Retry = TRUE;
 //                     *Status = STATUS_DEVICE_BUSY;
@@ -2513,7 +2512,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //                     b = TRUE;
 //                 case SCSI_SENSEQ_WRITE_PROTECT_ENABLE:
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                                "DeviceErrorHandlerForMmc: Write protect %s requested "
 //                                "by user\n",
 //                                (b ? "disable" : "enable")));
@@ -2535,7 +2534,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //             default:
 //             {
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                            "DeviceErrorHandlerForMmc: Unit attention %02x/%02x\n",
 //                            senseBuffer->AdditionalSenseCode,
 //                            senseBuffer->AdditionalSenseCodeQualifier));
@@ -2553,7 +2552,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //             {
 //                 if (DeviceExtension->DeviceAdditionalData.Mmc.WriteAllowed)
 //                 {
-//                     TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//                     TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                                "DeviceErrorHandlerForMmc: media was writable, but "
 //                                "failed request with WRITE_PROTECT error...\n"));
 //                 }
@@ -2627,7 +2626,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //             WdfWorkItemEnqueue(workItem);
 //
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                         "DeviceErrorHandlerForMmc: Restore device default speed for %p\n",
 //                         DeviceExtension->DeviceObject));
 //         }
@@ -2680,7 +2679,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //     if (((senseBuffer->SenseKey & 0xf) == SCSI_SENSE_HARDWARE_ERROR) &&
 //         (senseBuffer->AdditionalSenseCode == 0x44))
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                     "DeviceErrorHandlerForHitachiGD2000 (%p) => Internal Target "
 //                     "Failure Detected -- spinning up drive\n", DeviceExtension->Device));
 //
@@ -2788,7 +2787,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //     {
 //     case SCSI_ADSENSE_LUN_NOT_READY:
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretByAdditionalSenseCode: Lun not ready\n"));
 //
 //             //
@@ -2818,7 +2817,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //                 {
 //                     DEVICE_EVENT_BECOMING_READY notReady = {0};
 //
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                                 "SenseInfoInterpretByAdditionalSenseCode: Operation In Progress\n"));
 //
 //                     needFurtherInterpret = FALSE;
@@ -2842,7 +2841,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //                 {
 //                     DEVICE_EVENT_BECOMING_READY notReady = {0};
 //
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                                 "SenseInfoInterpretByAdditionalSenseCode: In process of becoming ready\n"));
 //
 //                     needFurtherInterpret = FALSE;
@@ -2864,7 +2863,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //             case SCSI_SENSEQ_LONG_WRITE_IN_PROGRESS:
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                                 "SenseInfoInterpretByAdditionalSenseCode: Long write in progress\n"));
 //
 //                     needFurtherInterpret = FALSE;
@@ -2880,7 +2879,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //             case SCSI_SENSEQ_MANUAL_INTERVENTION_REQUIRED:
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                                 "SenseInfoInterpretByAdditionalSenseCode: Manual intervention required\n"));
 //
 //                     needFurtherInterpret = FALSE;
@@ -2894,7 +2893,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //             case SCSI_SENSEQ_FORMAT_IN_PROGRESS:
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                                 "SenseInfoInterpretByAdditionalSenseCode: Format in progress\n"));
 //
 //                     needFurtherInterpret = FALSE;
@@ -2910,7 +2909,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //             case SCSI_SENSEQ_INIT_COMMAND_REQUIRED:
 //             default:
 //                 {
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                                 "SenseInfoInterpretByAdditionalSenseCode: Initializing command required\n"));
 //
 //                     needFurtherInterpret = FALSE;
@@ -2936,7 +2935,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //     case SCSI_ADSENSE_NO_MEDIA_IN_DEVICE:
 //         {
-//             TracePrint((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_VERBOSE, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretByAdditionalSenseCode: No Media in device.\n"));
 //
 //             needFurtherInterpret = FALSE;
@@ -3075,7 +3074,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //         {
 //             needFurtherInterpret = FALSE;
 //
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretByAdditionalSenseCode: Illegal block address\n"));
 //             *Status = STATUS_NONEXISTENT_SECTOR;
 //             *Retry = FALSE;
@@ -3086,7 +3085,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //         {
 //             needFurtherInterpret = FALSE;
 //
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretByAdditionalSenseCode: Invalid LUN\n"));
 //             *Status = STATUS_NO_SUCH_DEVICE;
 //             *Retry = FALSE;
@@ -3099,38 +3098,38 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //             *Retry = FALSE;
 //
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretByAdditionalSenseCode: Key - Copy protection failure\n"));
 //
 //             switch (AdditionalSenseCodeQual)
 //             {
 //             case SCSI_SENSEQ_AUTHENTICATION_FAILURE:
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                             "SenseInfoInterpretByAdditionalSenseCode: Authentication failure\n"));
 //                 *Status = STATUS_CSS_AUTHENTICATION_FAILURE;
 //                 break;
 //             case SCSI_SENSEQ_KEY_NOT_PRESENT:
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                             "SenseInfoInterpretByAdditionalSenseCode: Key not present\n"));
 //                 *Status = STATUS_CSS_KEY_NOT_PRESENT;
 //                 break;
 //             case SCSI_SENSEQ_KEY_NOT_ESTABLISHED:
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                             "SenseInfoInterpretByAdditionalSenseCode: Key not established\n"));
 //                 *Status = STATUS_CSS_KEY_NOT_ESTABLISHED;
 //                 break;
 //             case SCSI_SENSEQ_READ_OF_SCRAMBLED_SECTOR_WITHOUT_AUTHENTICATION:
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                             "SenseInfoInterpretByAdditionalSenseCode: Read of scrambled sector w/o authentication\n"));
 //                 *Status = STATUS_CSS_SCRAMBLED_SECTOR;
 //                 break;
 //             case SCSI_SENSEQ_MEDIA_CODE_MISMATCHED_TO_LOGICAL_UNIT:
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                             "SenseInfoInterpretByAdditionalSenseCode: Media region does not logical unit region\n"));
 //                 *Status = STATUS_CSS_REGION_MISMATCH;
 //                 break;
 //             case SCSI_SENSEQ_LOGICAL_UNIT_RESET_COUNT_ERROR:
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                             "SenseInfoInterpretByAdditionalSenseCode: Region set error -- region may be permanent\n"));
 //                 *Status = STATUS_CSS_RESETS_EXHAUSTED;
 //                 break;
@@ -3147,7 +3146,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //         {
 //             needFurtherInterpret = FALSE;
 //
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretByAdditionalSenseCode: Key - Invalid CDB\n"));
 //
 //             *Status = STATUS_INVALID_DEVICE_REQUEST;
@@ -3171,7 +3170,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //             needFurtherInterpret = FALSE;
 //             *RetryIntervalInSeconds = 0;
 //
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                         "SenseInfoInterpretByAdditionalSenseCode: Media changed\n"));
 //
 //             DeviceSetMediaChangeStateEx(DeviceExtension, MediaPresent, NULL);
@@ -3204,7 +3203,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //                     InterlockedIncrement((PLONG)&DeviceExtension->MediaChangeCount);
 //
-//                     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretByAdditionalSenseCode: Ejection request received!\n"));
 //                     //Send eject notification.
 //                     DeviceSendNotification(DeviceExtension,
@@ -3245,7 +3244,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //             // Device information has changed, we need to rescan the
 //             // bus for changed information such as the capacity.
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretByAdditionalSenseCode: Device information changed. Invalidate the bus\n"));
 //
 //             IoInvalidateDeviceRelations(DeviceExtension->LowerPdo, BusRelations);
@@ -3281,7 +3280,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //             if (senseBuffer->IncorrectLength)
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                             "SenseInfoInterpretByAdditionalSenseCode: Incorrect length detected.\n"));
 //                 *Status = STATUS_INVALID_BLOCK_LENGTH ;
 //             }
@@ -3312,7 +3311,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //             if (senseBuffer->IncorrectLength)
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                             "SenseInfoInterpretByAdditionalSenseCode: Incorrect length detected.\n"));
 //                 *Status = STATUS_INVALID_BLOCK_LENGTH ;
 //             }
@@ -3374,7 +3373,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //     {
 //     case SCSI_SENSE_NOT_READY:
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretBySenseKey: Key - Not Ready (bad block)\n"));
 //
 //             *Status = STATUS_DEVICE_NOT_READY;
@@ -3387,7 +3386,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //     case SCSI_SENSE_DATA_PROTECT:
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretBySenseKey: Key - Media write protected\n"));
 //             *Status = STATUS_MEDIA_WRITE_PROTECTED;
 //             *Retry = FALSE;
@@ -3396,7 +3395,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //     case SCSI_SENSE_MEDIUM_ERROR:
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretBySenseKey: Key - Medium Error (bad block)\n"));
 //
 //             *Status = STATUS_DEVICE_DATA_ERROR;
@@ -3410,7 +3409,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //     case SCSI_SENSE_HARDWARE_ERROR:
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretBySenseKey: Key - Hardware error\n"));
 //
 //             *Status = STATUS_IO_DEVICE_ERROR;
@@ -3424,7 +3423,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //     case SCSI_SENSE_ILLEGAL_REQUEST:
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretBySenseKey: Key - Illegal SCSI request\n"));
 //             *Status = STATUS_INVALID_DEVICE_REQUEST;
 //             *Retry = FALSE;
@@ -3434,7 +3433,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //     case SCSI_SENSE_UNIT_ATTENTION:
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretBySenseKey: Key - Unit Attention\n"));
 //
 //             // A media change may have occured so increment the change
@@ -3462,7 +3461,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //     case SCSI_SENSE_ABORTED_COMMAND:
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretBySenseKey: Command aborted\n"));
 //             *Status = STATUS_IO_DEVICE_ERROR;
 //             *Retry = TRUE;
@@ -3472,7 +3471,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //     case SCSI_SENSE_BLANK_CHECK:
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretBySenseKey: Media blank check\n"));
 //             *Retry = FALSE;
 //             *Status = STATUS_NO_DATA_DETECTED;
@@ -3481,7 +3480,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //     case SCSI_SENSE_RECOVERED_ERROR:
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretBySenseKey: Recovered error\n"));
 //             *Status = STATUS_SUCCESS;
 //             *Retry = FALSE;
@@ -3491,7 +3490,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //             if (SenseData->IncorrectLength)
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                             "SenseInfoInterpretBySenseKey: Incorrect length detected.\n"));
 //                 *Status = STATUS_INVALID_BLOCK_LENGTH ;
 //             }
@@ -3504,14 +3503,14 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //             // Check other indicators.
 //             if (SenseData->IncorrectLength)
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                             "SenseInfoInterpretBySenseKey: Incorrect length detected.\n"));
 //                 *Status = STATUS_INVALID_BLOCK_LENGTH ;
 //                 *Retry   = FALSE;
 //             }
 //             else
 //             {
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                             "SenseInfoInterpretBySenseKey: No specific sense key\n"));
 //                 *Status = STATUS_IO_DEVICE_ERROR;
 //                 *Retry = TRUE;
@@ -3522,7 +3521,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //     default:
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretBySenseKey: Unrecognized sense code\n"));
 //             *Status = STATUS_IO_DEVICE_ERROR;
 //             *Retry = TRUE;
@@ -4202,7 +4201,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //                 (((PCDB)Srb->Cdb)->GET_CONFIGURATION.RequestType == SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE))
 //             {
 //
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                            "TYPE ONE GetConfiguration failed. Set hack flag and retry.\n"));
 //                 SET_FLAG(DeviceExtension->DeviceAdditionalData.HackFlags, CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG);
 //                 *Retry = TRUE;
@@ -4306,7 +4305,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //         // Otherwise we will try to restore to default speed on next media change,
 //         // if requested by the caller.
 //         DeviceExtension->DeviceAdditionalData.RestoreDefaults = FALSE;
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "Disable restore default\n"));
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL, "Disable restore default\n"));
 //     }
 //
 //     return;
@@ -4386,7 +4385,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //     // as it has all the flags set.
 //     if (SRB_STATUS(Srb->SrbStatus) == SRB_STATUS_INTERNAL_ERROR)
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                     "SenseInfoInterpret: Internal Error code is %x\n",
 //                     Srb->InternalStatus));
 //
@@ -4419,7 +4418,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //         additionalSenseCodeQual = (readSector >= RTL_SIZEOF_THROUGH_FIELD(SENSE_DATA, AdditionalSenseCodeQualifier)) ?
 //                                    senseBuffer->AdditionalSenseCodeQualifier : 0;
 //
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                     "SCSI Error - \n"
 //                     "\tcdb: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n"
 //                     "\tsrb status: %X; sense: %02X/%02X/%02X; Retried count: %d\n\n",
@@ -4438,7 +4437,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //
 //             // A media change may have occured so increment the change count for the physical device
 //             mediaChangeCount = InterlockedIncrement((PLONG)&DeviceExtension->MediaChangeCount);
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
 //                        "SenseInfoInterpret: Media change count for device %d incremented to %#lx\n",
 //                        DeviceExtension->DeviceNumber, mediaChangeCount));
 //         }
@@ -4510,7 +4509,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //     {
 //         // Request sense buffer not valid. No sense information
 //         // to pinpoint the error. Return general request fail.
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                     "SCSI Error - \n"
 //                     "\tcdb: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n"
 //                     "\tsrb status: %X; sense info not valid; Retried count: %d\n\n",
@@ -4581,7 +4580,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //             WdfRequestIsCanceled(requestContext->OriginalRequest)
 //             )
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                        "Request %p was cancelled when it would have been retried\n",
 //                        requestContext->OriginalRequest));
 //
@@ -4594,7 +4593,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //     // now, all decisions are made. display trace information.
 //     if (retry)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                    "Command shall be retried in %2I64d.%03I64d seconds\n",
 //                    (*RetryIntervalIn100ns / UNIT_100NS_PER_SECOND),
 //                    (*RetryIntervalIn100ns / 10000) % 1000
@@ -4602,7 +4601,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //     }
 //     else
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                    "Will not retry; Sense/ASC/ASCQ of %02x/%02x/%02x\n",
 //                    senseBuffer->SenseKey,
 //                    senseBuffer->AdditionalSenseCode,
@@ -4693,7 +4692,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //             (additionalSenseCode == SCSI_ADSENSE_LUN_NOT_READY) &&
 //             (additionalSenseCodeQual == SCSI_SENSEQ_BECOMING_READY))
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                         "SenseInfoInterpretForZPODD: In process of becoming ready\n"));
 //
 //             zpoddInfo->BecomingReadyRetryCount--;
@@ -4720,7 +4719,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //     // now, all decisions are made. display trace information.
 //     if (retry)
 //     {
-//         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_GENERAL,
 //                    "Command shall be retried in %2I64d.%03I64d seconds\n",
 //                    (*RetryIntervalIn100ns / UNIT_100NS_PER_SECOND),
 //                    (*RetryIntervalIn100ns / 10000) % 1000
@@ -4728,7 +4727,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
 //     }
 //     else
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                    "Will not retry; Sense/ASC/ASCQ of %02x/%02x/%02x\n",
 //                    senseBuffer->SenseKey,
 //                    senseBuffer->AdditionalSenseCode,

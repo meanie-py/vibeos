@@ -35,13 +35,13 @@ fn main() {
             "___ImageBase",
         ),
         "x86_64" => (
-            "x86_64-kernel.json",
+            "x86_64-pc-windows-gnu",
             "ntdll-amd64.rc.res",
             0x7ff_b700_0000,
             "__ImageBase",
         ),
         "aarch64" => (
-            "aarch64-kernel.json",
+            "aarch64-pc-windows-gnullvm",
             "ntdll-arm64.rc.res",
             0x7ff_b700_0000,
             "__ImageBase",

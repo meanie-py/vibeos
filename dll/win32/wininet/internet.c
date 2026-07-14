@@ -273,10 +273,19 @@ BOOL WINAPI DllMain (HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
             g_dwTlsErrIndex = TlsAlloc();
 
             if (g_dwTlsErrIndex == TLS_OUT_OF_INDEXES)
+            {
+                /* Returning FALSE here aborts the whole process with
+                 * STATUS_DLL_INIT_FAILED, and rpcrt4 imports us, so that means
+                 * EVERY app. Say why. */
+                ERR("TlsAlloc failed -> DllMain returns FALSE (process will die "
+                    "with STATUS_DLL_INIT_FAILED)\n");
                 return FALSE;
+            }
 
             if(!init_urlcache())
             {
+                ERR("init_urlcache failed -> DllMain returns FALSE (process will die "
+                    "with STATUS_DLL_INIT_FAILED)\n");
                 TlsFree(g_dwTlsErrIndex);
                 return FALSE;
             }

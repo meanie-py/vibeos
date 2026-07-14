@@ -185,6 +185,13 @@ def test_payload_launched(
     marker = t.get("launch_marker")
     if not marker:
         pytest.skip(f"payload {payload!r} declares no launch_marker")
+    # A crashed guest produces no more serial (or reboots into the same crash),
+    # so draining the full launch_drain_secs budget after a BUGCHECK is pure
+    # waste — critical for long conformance sweeps where one wedged test would
+    # otherwise cost the whole ~90-min drain. Break early on the fail marker; the
+    # assert below then fails loud with the crash in the serial tail (and the
+    # conformance verb still parses the partial log for the CRASH attribution).
+    fail_marker = t.get("fail_marker", "*** BUGCHECK")
     output = vm._boot_output or ""
     if marker not in output:
         # Launcher may fire slightly after the boot marker — drain a little more.
@@ -192,6 +199,8 @@ def test_payload_launched(
             output += vm.serial_output(timeout=1.0)
             if marker in output:
                 break
+            if fail_marker and fail_marker in output:
+                break  # guest crashed — no point draining further
     assert marker in output, (
         f"--payload {payload} was passed but {marker!r} never appeared. Either "
         f"the media was not built with VIBEOS_PAYLOAD={payload} (fix: "

@@ -31,7 +31,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${NPFS_RUST_TARGET_DIR}
         RUSTFLAGS=${NPFS_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${NPFS_RUST_TARGET}
             -p npfs-rust
             --manifest-path ${NPFS_RUST_WORKSPACE_DIR}/Cargo.toml

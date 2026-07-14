@@ -1,0 +1,267 @@
+/*
+ * subjectimpl.c — the msvcrt internals that the CRATE UNDER TEST imports.
+ *
+ * `msvcrt-crt-rust` is the code that links into msvcrt.dll. For the `_s`
+ * ("secure") family its contract is not just the destination buffer — it is
+ * *errno* plus the *invalid-parameter handler*:
+ *
+ *     #define MSVCRT_INVALID_PMT(x,err) (*_errno() = (err), \
+ *                                        _invalid_parameter(NULL,NULL,NULL,0,0))
+ *
+ * Inside the real DLL those two resolve to msvcrt's own C. In this harness they
+ * must be supplied here.
+ *
+ * WHY NOT REUSE refimpl.c's? Because refimpl's are deliberately renamed into the
+ * private `msvcrt_ref_*` namespace (refstub/msvcrt.h) — that namespace exists
+ * precisely so the REFERENCE can never bind to the CODE UNDER TEST. Reusing them
+ * would defeat it, AND it would give the subject and the reference a SHARED
+ * errno — so a test could not tell which side set it.
+ *
+ * Separate storage is the point: `ref_strcpy_s` writes msvcrt_ref_errno_value,
+ * the Rust `strcpy_s` writes subj_errno_value, and classify asserts BOTH agree.
+ * An errno contract you cannot observe independently is an errno contract you are
+ * not testing.
+ *
+ * Compiled WITHOUT the rename prelude and WITHOUT refstub/msvcrt.h, so these land
+ * under their plain names — exactly what msvcrt-crt-rust's `extern "C"` block
+ * declares.
+ */
+
+#include <stddef.h>
+#include <stdint.h>
+
+/* ------------------------------------------------------------------ *
+ * errno — the SUBJECT's, independent of the reference's.
+ * ------------------------------------------------------------------ */
+static __thread int subj_errno_value;
+
+int *_errno(void)
+{
+    return &subj_errno_value;
+}
+
+/* Harness API (un-namespaced on purpose — these are read by classify.rs). */
+int  subj_errno_get(void)      { return subj_errno_value; }
+void subj_errno_set(int value) { subj_errno_value = value; }
+
+/* ------------------------------------------------------------------ *
+ * The invalid-parameter handler.
+ *
+ * Real msvcrt dispatches to a user-installed handler; the DEFAULT is "none
+ * installed -> just return", and the errno store (the part that IS a value
+ * contract) has already happened inside MSVCRT_INVALID_PMT before we get here.
+ * So a no-op is the faithful default — but we also COUNT the calls, because
+ * "did the invalid-parameter path fire at all?" is itself part of the `_s`
+ * contract and classify asserts on it.
+ * ------------------------------------------------------------------ */
+static __thread int subj_invalid_pmt_calls;
+
+void _invalid_parameter(const void *expr, const void *func, const void *file,
+                        unsigned int line, uintptr_t arg)
+{
+    (void)expr; (void)func; (void)file; (void)line; (void)arg;
+    subj_invalid_pmt_calls++;
+}
+
+int  subj_invalid_pmt_count(void) { return subj_invalid_pmt_calls; }
+void subj_invalid_pmt_reset(void) { subj_invalid_pmt_calls = 0; }
+
+/* GetStringTypeW lives in refimpl.c and is SHARED as of wave 11 (it is kernel32 — the
+ * environment, never code under test). Modelling it separately here would have been the
+ * §9.73 trap: behaviour handed to both sides can never be caught by a differential test.
+ *
+ * Wave 10 already deleted this file's hand-written 256-entry MSVCRT__pwctype table for
+ * the same reason; ctype.c owns the real one. */
+
+/* ------------------------------------------------------------------ *
+ * The SUBJECT's locale + per-thread state (wave 10).
+ *
+ * `get_locinfo`, `msvcrt_get_thread_data` and `MSVCRT__pwctype` are all in the
+ * anti-circularity namespace (refstub/msvcrt.h), so the reference's copies are
+ * `msvcrt_ref_*` and are unreachable from here.  The subject needs its own — and
+ * SHOULD have its own: separate storage is what lets classify compare each side's
+ * errno, invalid-parameter count and strtok cursor independently.
+ *
+ * But the two sides must agree on what the LOCALE IS, or the comparison grades data
+ * instead of code.  So the state is per-side while the DATA is shared:
+ *
+ *   MSVCRT__ctype[257] / MSVCRT__wctype[257]   ctype.c, NOT namespaced -> one copy,
+ *                                              msvcrt's genuine tables, both sides.
+ *   cloc_clmap / cloc_cumap                    lifted from locale.c by build.rs ->
+ *                                              identical bytes on both sides.
+ *
+ * That split is the point.  Data we supply to BOTH sides can never be caught by a
+ * differential test — a mistyped byte makes both sides wrong the same way and
+ * classify still reports MATCH.  So we supply as little of it as possible, and take
+ * what we do supply from msvcrt's own source.
+ * ------------------------------------------------------------------ */
+#include "locale_layout.h"
+#include "cloc_tables.h"   /* generated: cloc_clmap[256], cloc_cumap[256] */
+
+extern unsigned short MSVCRT__ctype[257];    /* ctype.c — shared, un-namespaced */
+extern unsigned short MSVCRT__wctype[257];   /* ctype.c — shared, un-namespaced */
+
+/* msvcrt exports these as POINTERS INTO the tables.  NOTE THE +1 on both: msvcrt sets
+ * `pctype = MSVCRT__ctype + 1`, which is why `_isctype_l`'s domain test is `c >= -1`
+ * (pctype[-1] is the real, addressable EOF slot).  Any implementation that indexes
+ * pctype with an *unsigned* c reads at 0xFFFFFFFF instead. */
+unsigned short *MSVCRT__pwctype;
+/* MSVCRT__pctype is NOT namespaced, so refimpl.c's definition is the one and only —
+ * do not define it here (it would be a duplicate symbol). */
+extern unsigned short *MSVCRT__pctype;
+
+static rl_threadlocinfo subj_locinfo;
+
+/* ── the get_locinfo() CALL COUNTER ────────────────────────────────
+ *
+ * Not instrumentation for its own sake — this is the sixth instrument, and it exists
+ * because the other five could not see a bug that turned the gate red.
+ *
+ * In the REAL msvcrt, `get_locinfo()` is NOT cheap:
+ *
+ *     pthreadlocinfo get_locinfo(void) {
+ *         thread_data_t *data = msvcrt_get_thread_data();   // GetLastError() +
+ *         update_thread_locale(data);                       // TlsGetValue()  +
+ *         ...                                               // SetLastError()
+ *
+ * — three Win32 calls. Call it once per CALL and nobody notices. Call it once per
+ * CHARACTER and `_wcsicmp` (registry key comparisons, on the boot's hot path) drags the
+ * whole boot from 39s to 128s and times out the kernel TDI self-test. Which is exactly
+ * what wave 11 shipped.
+ *
+ * Why no existing instrument caught it:
+ *   classify   — the ANSWERS were right. It grades values, not cost.
+ *   oob_guard  — in bounds.
+ *   perf       — 0.91x, PASSING. And it cannot ever catch this, because the harness
+ *                stubs get_locinfo() as a cheap static return for BOTH sides: they both
+ *                pay the same trivial cost, so the RATIO stays healthy while the real
+ *                DLL burns three syscalls a character. A stub in the harness hid a real
+ *                cost (§9.73, third variation).
+ *
+ * A ratio cannot express this. A COUNT can, exactly: `_wcsicmp` on an n-character string
+ * must call get_locinfo() O(1) times, not O(n). That is deterministic, immune to machine
+ * noise, and it is precisely the invariant the C's own structure encodes —
+ * `_wcsicmp_l` resolves the locale ONCE (`get_current_locale_noalloc(&tmp)`) and passes
+ * it down. See tests/hot_path.rs.
+ * ------------------------------------------------------------------ */
+static int subj_locinfo_calls;
+
+int  subj_locinfo_calls_get(void)   { return subj_locinfo_calls; }
+void subj_locinfo_calls_reset(void) { subj_locinfo_calls = 0; }
+
+/* The subject's own "C" locale — same tables as the reference's, per the note above.
+ * `lconv` is left NULL: no flipped function reads it (it is the fpnum/strtod path, and
+ * the float family is NOT flipped — see the wave-5 probe). */
+struct threadlocaleinfostruct *get_locinfo(void)
+{
+    subj_locinfo_calls++;
+    if (!subj_locinfo.pcumap)
+    {
+        subj_locinfo.mb_cur_max  = 1;
+        subj_locinfo.lc_codepage = 0;
+        /* lc_handle[] stays all-zero == the "C" locale. */
+        subj_locinfo.pctype      = MSVCRT__ctype + 1;
+        subj_locinfo.pclmap      = cloc_clmap;
+        subj_locinfo.pcumap      = cloc_cumap;
+    }
+    return (struct threadlocaleinfostruct *)&subj_locinfo;
+}
+
+/* Per-thread CRT data.  The subject's strtok/wcstok cursors live here, independent of
+ * the reference's — so a parity test must drive BOTH with the same call sequence.
+ * Only the fields the flipped code touches are modelled; the Rust reaches them via
+ * msvcrt-sys's bindgen offsets, which ref_integrity cross-checks against this C. */
+typedef struct __thread_data {
+    unsigned int   tid;
+    void          *handle;
+    int            thread_errno;
+    unsigned int   thread_doserrno;
+    int            unk1;
+    unsigned int   random_seed;
+    char          *strtok_next;
+    unsigned short *wcstok_next;
+    unsigned char *mbstok_next;
+    /* …the real struct continues; we never touch past here, and ref_integrity proves
+     * the offsets of the fields we DO touch match msvcrt-sys. */
+    char           _tail[512];
+} subj_thread_data_t;
+
+static __thread subj_thread_data_t subj_thread_data;
+
+void *msvcrt_get_thread_data(void)
+{
+    return &subj_thread_data;
+}
+
+/* locale.c's "setlocale() has never been called" flag — NOT namespaced, so refimpl.c
+ * owns the single definition and both sides branch on the same value. */
+extern int initial_locale;
+
+/* Constructor: wcs.c and the Rust both read MSVCRT__pwctype directly, without ever
+ * calling an initialiser. */
+__attribute__((constructor))
+static void subj_locale_ctor(void)
+{
+    MSVCRT__pwctype = MSVCRT__wctype + 1;
+    (void)get_locinfo();
+}
+
+/* ── the NON-"C"-LOCALE mode (wave 11) ─────────────────────────────
+ *
+ * The lane's oldest documented blind spot (§9.60): the harness pins the "C" locale, and a
+ * whole family of msvcrt functions BRANCH on whether one is set —
+ *
+ *     if(!locinfo->lc_handle[LC_CTYPE]) { ...inline ASCII fold... }   // path 1: "C"
+ *     else                              { ..._tolower_l / LCMapStringW... }   // path 2
+ *
+ * With lc_handle[] pinned to zero, path 2 was NEVER EXERCISED — so `_stricmp`, `_strnicmp`,
+ * `_wcsicmp`, `_wcsnicmp`, `_strlwr_s`, `_strupr_s` and the wide twins could ship a
+ * path-1-only implementation and the harness would report MATCH forever. It did, and they
+ * did (waves 7-8).
+ *
+ * Planting a non-zero lc_handle makes path 2 live. What that grades is the Rust's LOGIC
+ * around the NLS call — does it call the same function, with the same arguments, and
+ * interpret the result the same way — because both sides now reach the SAME shared stub
+ * (refimpl.c's). What it does NOT grade is Windows' real NLS *data*, which is correct:
+ * that is kernel32's job, not msvcrt's, and it is the same bounded scope the
+ * __crtLCMapStringA arms of _toupper_l already have.
+ *
+ * A green from an unexercised branch is not a green. This is how the branch gets exercised. */
+extern const unsigned char *ref_nls_clmap(void);   /* refimpl.c — SHARED tables */
+extern const unsigned char *ref_nls_cumap(void);
+
+void subj_set_nls(int on)
+{
+    (void)get_locinfo();
+    /* mb_cur_max stays 1: this is a single-byte NLS locale (en-US), not a multibyte one.
+     * That keeps _isctype_l's table path live and isolates the change to exactly the
+     * lc_handle[LC_CTYPE] branches.
+     *
+     * The TABLES are swapped too, and that is load-bearing — see ref_set_nls(). Planting
+     * lc_handle alone makes msvcrt take path 2, but path 2 folds through pclmap[], and if
+     * that is still the C locale's ASCII map then both paths give the same answer and a
+     * path-1-only implementation is INDISTINGUISHABLE. The first version of this mode was
+     * exactly that false green; the negative control caught it.
+     *
+     * The tables come from refimpl.c so BOTH sides fold with the same bytes. Data supplied
+     * to both sides can never be caught differentially (§9.73), so we supply one copy. */
+    subj_locinfo.lc_handle[RL_LC_CTYPE]   = on ? 0x0409u : 0u;
+    subj_locinfo.lc_handle[RL_LC_COLLATE] = on ? 0x0409u : 0u;
+    subj_locinfo.pclmap = on ? ref_nls_clmap() : cloc_clmap;
+    subj_locinfo.pcumap = on ? ref_nls_cumap() : cloc_cumap;
+}
+
+/* ── the ref_integrity cross-check hooks ───────────────────────────
+ * Rust's view of these structs comes from msvcrt-sys (bindgen). C's view is the two
+ * definitions above. If they disagree, every locale-aware flip reads garbage and the
+ * harness reports MATCH anyway (both sides would be reading the same garbage). So
+ * ref_integrity asserts, field by field, that C's offsetof == Rust's offset_of!. */
+#include <stddef.h>
+size_t subj_off_locinfo_pctype(void) { return offsetof(rl_threadlocinfo, pctype); }
+size_t subj_off_locinfo_pclmap(void) { return offsetof(rl_threadlocinfo, pclmap); }
+size_t subj_off_locinfo_pcumap(void) { return offsetof(rl_threadlocinfo, pcumap); }
+size_t subj_off_locinfo_mbcurmax(void) { return offsetof(rl_threadlocinfo, mb_cur_max); }
+size_t subj_off_locinfo_lchandle(void) { return offsetof(rl_threadlocinfo, lc_handle); }
+size_t subj_off_td_strtok(void)   { return offsetof(subj_thread_data_t, strtok_next); }
+size_t subj_off_td_wcstok(void)   { return offsetof(subj_thread_data_t, wcstok_next); }
+size_t subj_off_td_errno(void)    { return offsetof(subj_thread_data_t, thread_errno); }

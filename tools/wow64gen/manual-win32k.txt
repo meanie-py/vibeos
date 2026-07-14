@@ -27,3 +27,26 @@ NtUserDispatchMessage
 # user32 per-process win32k handshake: USERCONNECT is layout-divergent
 # (SHAREDINFO pointers widen; 0x124 -> 0x240). Task #29.
 NtUserProcessConnect
+
+# M8 window-creation path: pointer-bearing structs (WNDCLASSEX/CLSMENUNAME,
+# LARGE_STRING, PAINTSTRUCT) + the message pump family above.
+NtUserRegisterClassExWOW
+NtUserCreateWindowEx
+NtUserTranslateMessage
+NtUserBeginPaint
+NtUserEndPaint
+
+# M9 default-cursor load (LoadCursor(NULL, IDC_ARROW) during first window's
+# class setup): module/resource UNICODE_STRINGs widen 8->16 (align-8 probe),
+# and SetCursorIconData's CURSORDATA has pointer/HBITMAP fields that widen.
+NtUserFindExistingCursorIcon
+NtUserSetCursorIconData
+
+# The LARGE_STRING family. LARGE_STRING is 12 bytes on i386 and 16 on the host
+# (PVOID Buffer at +8), so auto-thunking one hands win32k a wild 64-bit pointer
+# that it dereferences under the USER lock — a whole-desktop wedge, not a clean
+# fault. NtUserCreateWindowEx (above) was listed in M8; NtUserDefSetText was
+# missed, and every stock window hits it via DefWindowProcW(WM_NCCREATE) setting
+# the title from CREATESTRUCT.lpszName. These two are the entire family — if a
+# new win32k syscall ever takes a PLARGE_STRING, it belongs here.
+NtUserDefSetText

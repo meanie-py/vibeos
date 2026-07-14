@@ -10,16 +10,24 @@ use ntkrnl_sys::ddk::{ExFreePool, IoAllocateIrp, IoAllocateMdl, IoFreeIrp, IoFre
 use core::ffi::c_void;
 
 extern "C" {
-    fn TracePrint(level: u32, flags: u32, format: *const i8, ...);
 }
 extern "system" {
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn DeviceSendSrbSynchronously( Device: WDFDEVICE, Srb: *mut SCSI_REQUEST_BLOCK, Buffer: *mut core::ffi::c_void, BufferSize: u32, ForcePIO: i32, Unknown: *mut core::ffi::c_void, ) -> NTSTATUS;
     fn NT_ASSERT(condition: i32);
-    static TRACE_FLAG_IOCTL: u32;
-    static TRACE_LEVEL_ERROR: u32;
     fn PAGED_CODE();
 }
+
+// WPP tracing constants. These are C *compile-time* constants (`storswtr.h`), NOT linkable
+// symbols — the translation wrongly emitted them as `extern "C" static`, which stayed
+// latent only because the old no-op `TracePrint` let LLVM fold its arguments away. With
+// `TracePrint` now a real extern call (its variadic entry lives in the C shim), the
+// arguments are materialised and the bogus externs became `undefined symbol` link errors.
+// Declared as `const` here, matching how the sibling modules (pnppower.rs, scratch.rs)
+// already do it. Values from sdk/include/ddk/storswtr.h; inert in any case, because
+// TracePrint is a no-op in the retail (non-WPP) build.
+const TRACE_FLAG_IOCTL: u32 = 5; // WPP_DEFINE_BIT index in WPP_NORMAL_FLAGS (storswtr.h:39)
+const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:27 / evntrace.h:63
 // C min() is a macro; extern "system" decl = i386 stdcall/cdecl mismatch vs
 // ddk_shims' extern "C" def → stack corruption. Local wrapper instead.
 #[inline] fn min(a: u32, b: u32) -> u32 { core::cmp::min(a, b) }
@@ -355,7 +363,7 @@ pub unsafe extern "system" fn DeviceGetConfigurationWithAlloc(
 
                 // make sure the size is reasonable
                 if size <= core::mem::size_of::<FEATURE_HEADER>() as u32 {
-                    TracePrint(
+                    TracePrint!(
                         TRACE_LEVEL_ERROR,
                         TRACE_FLAG_IOCTL,
                         b"DeviceGetConfigurationWithAlloc: drive reports only %x bytes?\n\0"
@@ -424,7 +432,7 @@ pub unsafe extern "system" fn DeviceGetConfigurationWithAlloc(
 
         if !NT_SUCCESS(status) {
             // it failed after a number of attempts, so just fail.
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_IOCTL,
                 b"DeviceGetConfigurationWithAlloc: Failed %d attempts to get all feature information\n\0"
@@ -487,7 +495,7 @@ pub unsafe extern "C" fn DeviceGetConfiguration(
         core::ptr::null_mut(),
     );
 
-    TracePrint(
+    TracePrint!(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_IOCTL,
         b"DeviceGetConfiguration: Status was %x\n\0".as_ptr() as *const i8,
@@ -518,7 +526,7 @@ pub unsafe extern "C" fn DeviceGetConfiguration(
         *ValidBytes = returned_val;
         status = STATUS_SUCCESS;
     } else {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_IOCTL,
             b"DeviceGetConfiguration: failed %x\n\0".as_ptr() as *const i8,
@@ -554,7 +562,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
         if defect_header.is_null() || writable_header.is_null() {
             /* cannot write this way */
         } else if CurrentOnly == 0u8 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_INIT,
                 b"DeviceUpdateMmcWriteCapability => Writes supported (defect management)\n\0".as_ptr() as *const i8,
@@ -562,7 +570,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
             *Writable = 1u8;
             return;
         } else if (*defect_header).Current() != 0 && (*writable_header).Current() != 0 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_INIT,
                 b"DeviceUpdateMmcWriteCapability => Writes *allowed* (defect management)\n\0".as_ptr() as *const i8,
@@ -607,7 +615,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
             if header.is_null() {
                 /* cannot write using this method */
             } else if CurrentOnly == 0u8 {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_INIT,
                     b"DeviceUpdateMmcWriteCapability => Writes supported (feature %04x)\n\0".as_ptr() as *const i8,
@@ -616,7 +624,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
                 *Writable = 1u8;
                 return;
             } else if (*header).Current() != 0 {
-                TracePrint(
+                TracePrint!(
                     TRACE_LEVEL_INFORMATION,
                     TRACE_FLAG_INIT,
                     b"DeviceUpdateMmcWriteCapability => Writes *allowed* (feature %04x)\n\0".as_ptr() as *const i8,
@@ -639,7 +647,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
         if header.is_null() || ((*header).Header.AdditionalLength as usize) < additional_length || (*header).Write() == 0 {
             /* cannot write this way */
         } else if CurrentOnly == 0u8 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_INIT,
                 b"DeviceUpdateMmcWriteCapability => Writes supported (feature %04x)\n\0".as_ptr() as *const i8,
@@ -648,7 +656,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
             *Writable = 1u8;
             return;
         } else if (*header).Header.Current() != 0 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_INIT,
                 b"DeviceUpdateMmcWriteCapability => Writes *allowed* (feature %04x)\n\0".as_ptr() as *const i8,
@@ -670,7 +678,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
         if header.is_null() || ((*header).Header.AdditionalLength as usize) < additional_length || (*header).Write() == 0 {
             /* cannot write this way */
         } else if CurrentOnly == 0u8 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_INIT,
                 b"DeviceUpdateMmcWriteCapability => Writes supported (feature %04x)\n\0".as_ptr() as *const i8,
@@ -679,7 +687,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
             *Writable = 1u8;
             return;
         } else if (*header).Header.Current() != 0 {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_INFORMATION,
                 TRACE_FLAG_INIT,
                 b"DeviceUpdateMmcWriteCapability => Writes *allowed* (feature %04x)\n\0".as_ptr() as *const i8,
@@ -724,7 +732,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
                         } else {
                             b"DeviceUpdateMmcWriteCapability => Writes supported (profile %04x)\n\0"
                         };
-                        TracePrint(
+                        TracePrint!(
                             TRACE_LEVEL_INFORMATION,
                             TRACE_FLAG_INIT,
                             msg.as_ptr() as *const i8,
@@ -789,7 +797,7 @@ pub unsafe extern "C" fn MmcDataFindFeaturePage(
             temp = temp.add((*header).AdditionalLength as usize);
 
             if temp > limit {
-                TracePrint(
+                TracePrint!(
                     3, // TRACE_LEVEL_WARNING
                     0x00000010, // TRACE_FLAG_GENERAL
                     b"Feature %x exists, but not safe to access all its data.  returning NULL\n"
@@ -831,7 +839,7 @@ pub unsafe extern "C" fn MmcDataFindProfileInProfiles(
 
     // sanity check
     if (*ProfileHeader).Header.AdditionalLength % 2 != 0 {
-        TracePrint(
+        TracePrint!(
             3 /* TRACE_LEVEL_WARNING */,
             0x40 /* TRACE_FLAG_GENERAL */,
             b"Profile total length %x is not integral multiple of 4\n\0".as_ptr() as *const i8,
@@ -962,7 +970,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnModePage2A(
             && dataLength
                 < (core::mem::offset_of!(CDVD_CAPABILITIES_PAGE, __bindgen_anon_3) as u32) + 2
         {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"ModePage 2Ah was requested, but drive reported only %x bytes (%x needed). Ignoring.\n\0"
@@ -973,7 +981,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnModePage2A(
             page = core::ptr::null();
         }
         if !page.is_null() && ((*page).PageCode() != MODE_PAGE_CAPABILITIES) {
-            TracePrint(
+            TracePrint!(
                 TRACE_LEVEL_WARNING,
                 TRACE_FLAG_INIT,
                 b"ModePage 2Ah was requested, but drive reported page %x\n\0"
@@ -1690,7 +1698,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //             // make sure the size is reasonable
 //             if (size <= sizeof(FEATURE_HEADER))
 //             {
-//                 TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//                 TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                            "DeviceGetConfigurationWithAlloc: drive reports only %x bytes?\n",
 //                            size));
 //                 status = STATUS_UNSUCCESSFUL;
@@ -1761,7 +1769,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //     if (!NT_SUCCESS(status))
 //     {
 //         // it failed after a number of attempts, so just fail.
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                    "DeviceGetConfigurationWithAlloc: Failed %d attempts to get all feature "
 //                    "information\n", i));
 //     }
@@ -1866,7 +1874,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //                                         FALSE,
 //                                         NULL);
 //
-//     TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
+//     TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_IOCTL,
 //                "DeviceGetConfiguration: Status was %x\n", status));
 //
 //     if (NT_SUCCESS(status) ||
@@ -1902,7 +1910,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //     }
 //     else
 //     {
-//         TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
+//         TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_IOCTL,
 //                    "DeviceGetConfiguration: failed %x\n", status));
 //     }
 //
@@ -1982,14 +1990,14 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //         }
 //         else if (!CurrentOnly)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                         "DeviceUpdateMmcWriteCapability => Writes supported (defect management)\n"));
 //             *Writable = TRUE;
 //             return;
 //         }
 //         else if (defectHeader->Current && writableHeader->Current)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                         "DeviceUpdateMmcWriteCapability => Writes *allowed* (defect management)\n"));
 //             *Writable = TRUE;
 //             *ValidationSchema = FeatureDefectManagement;
@@ -2051,7 +2059,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //             }
 //             else if (!CurrentOnly)
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                             "DeviceUpdateMmcWriteCapability => Writes supported (feature %04x)\n",
 //                             FeaturesToAllowWritesWith[count].FeatureToFind
 //                             ));
@@ -2060,7 +2068,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //             }
 //             else if (header->Current)
 //             {
-//                 TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                 TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                             "DeviceUpdateMmcWriteCapability => Writes *allowed* (feature %04x)\n",
 //                             FeaturesToAllowWritesWith[count].FeatureToFind
 //                             ));
@@ -2087,7 +2095,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //         }
 //         else if (!CurrentOnly)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                         "DeviceUpdateMmcWriteCapability => Writes supported (feature %04x)\n",
 //                         FeatureDvdPlusR
 //                         ));
@@ -2096,7 +2104,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //         }
 //         else if (header->Header.Current)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                         "DeviceUpdateMmcWriteCapability => Writes *allowed* (feature %04x)\n",
 //                         FeatureDvdPlusR
 //                         ));
@@ -2122,7 +2130,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //         }
 //         else if (!CurrentOnly)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                         "DeviceUpdateMmcWriteCapability => Writes supported (feature %04x)\n",
 //                         FeatureDvdPlusRDualLayer
 //                         ));
@@ -2131,7 +2139,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //         }
 //         else if (header->Header.Current)
 //         {
-//             TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                         "DeviceUpdateMmcWriteCapability => Writes *allowed* (feature %04x)\n",
 //                         FeatureDvdPlusRDualLayer
 //                         ));
@@ -2189,7 +2197,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //                                                  &exists);
 //                     if (exists)
 //                     {
-//                         TracePrint((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
+//                         TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_INIT,
 //                                     "DeviceUpdateMmcWriteCapability => Writes %s (profile %04x)\n",
 //                                     (CurrentOnly ? "*allowed*" : "supported"),
 //                                     FeatureDvdPlusR
@@ -2286,7 +2294,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //                 // it's not safe to view the amount of data (even though
 //                 // the header is safe) in this feature, pretend it wasn't
 //                 // transferred at all...
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                            "Feature %x exists, but not safe to access all its "
 //                            "data.  returning NULL\n", Feature));
 //                 return NULL;
@@ -2348,7 +2356,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //     // sanity check
 //     if (ProfileHeader->Header.AdditionalLength % 2 != 0)
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_GENERAL,
 //                    "Profile total length %x is not integral multiple of 4\n",
 //                    ProfileHeader->Header.AdditionalLength));
 //         NT_ASSERT(FALSE);
@@ -2600,7 +2608,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //             (dataLength < RTL_SIZEOF_THROUGH_FIELD(CDVD_CAPABILITIES_PAGE, WriteSpeedMaximum))
 //             )
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                         "ModePage 2Ah was requested, but drive reported "
 //                         "only %x bytes (%x needed). Ignoring.\n",
 //                         dataLength,
@@ -2612,7 +2620,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
 //         // Verify the page we requested is the one the drive actually provided
 //         if ((page != NULL) && (page->PageCode != MODE_PAGE_CAPABILITIES))
 //         {
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                         "ModePage 2Ah was requested, but drive reported "
 //                         "page %x\n",
 //                         page->PageCode

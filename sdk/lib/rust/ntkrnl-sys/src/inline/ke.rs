@@ -900,6 +900,16 @@ unsafe fn dh_set_inserted(header: *mut ddk::_DISPATCHER_HEADER, val: u8) {
     (*header).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_3.Inserted = val;
 }
 
+/// KTHREAD.State reader (mirror of kt_set_state).
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn kt_state_read(thread: ddk::PKTHREAD) -> u8 {
+    #[cfg(target_arch = "x86")]
+    { (*thread).State }
+    #[cfg(not(target_arch = "x86"))]
+    { (*thread).__bindgen_anon_5.__bindgen_anon_6.State }
+}
+
 /// KTHREAD.State — i386: direct field; amd64/arm64: nested.
 #[inline]
 unsafe fn kt_set_state(thread: ddk::PKTHREAD, val: u8) {
@@ -1193,17 +1203,31 @@ pub unsafe fn KiTryThreadLock(_thread: ddk::PKTHREAD) -> BOOLEAN {
     0 // FALSE
 }
 
-/// KiTryThreadLock — SMP (faithful to the C): FALSE if the lock is free,
-/// else exchange-1 and report whether it was still held.
+/// KiTryThreadLock — SMP: try-ACQUIRE Thread->ThreadLock. Returns FALSE(0) on
+/// success (lock now held by us), TRUE(1) on failure (someone else holds it) —
+/// the caller contract is `if KiTryThreadLock(t) { retry }` (gate.rs signal).
+///
+/// §9.56 ROOT-CAUSE FIX (2026-07-13): the previous shape — faithfully copied
+/// from ReactOS ke_x.h:533 — returned FALSE ("success") WITHOUT ACQUIRING when
+/// the lock read free (`if (!Thread->ThreadLock) return FALSE;`), an upstream
+/// ReactOS SMP bug that was dead code there (ReactOS never shipped SMP) and
+/// came alive at -smp 2 here: KeSignalGateBoostPriority proceeded lockless on
+/// the common path, popping + readying a gate waiter mid-commit → early/double
+/// ready → two CPUs InsertTailList the same KTHREAD WaitListEntry union into
+/// two lists concurrently → the DispatcherReadyListHead tears (site 0x11/0x22
+/// forensics: self-looped / cross-linked just-inserted entry). NT's primitive
+/// is KeTryToAcquireSpinLockAtDpcLevel — a real interlocked try-acquire.
 #[cfg(feature = "smp")]
 #[inline]
 pub unsafe fn KiTryThreadLock(thread: ddk::PKTHREAD) -> BOOLEAN {
     use core::sync::atomic::{AtomicI32, Ordering};
     let lock = core::ptr::addr_of_mut!((*thread).ThreadLock) as *mut i32;
-    if core::ptr::read_volatile(lock) == 0 {
-        return 0;
+    // Fast-fail without dirtying the cache line if visibly held.
+    if core::ptr::read_volatile(lock) != 0 {
+        return 1; // TRUE = failed, caller retries
     }
-    ((&*(lock as *const AtomicI32)).swap(1, Ordering::SeqCst) == 1) as BOOLEAN
+    // Actually acquire: old != 0 means we lost the race — failure.
+    ((&*(lock as *const AtomicI32)).swap(1, Ordering::SeqCst) != 0) as BOOLEAN
 }
 
 /// KiCheckDeferredReadyList — UP: no-op.
@@ -1320,11 +1344,253 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
     KiDeferredReadyThread(thread);
 }
 
+/// §9.56 double-DEFER oracle (0x59). The 0x58 linkage check is blind to a
+/// double-defer: BOTH pushes happen before either drain insert, so the thread
+/// is unlinked at both checks — yet one KTHREAD SwapListEntry.Next on two
+/// deferred SLISTs cross-routes the chains, and the two drain inserts then
+/// tear the ready list (the sequential self-loop face). Catch it AT PUSH TIME
+/// with an in-flight side table: mark on push, unmark at the drain pop.
+/// Lossy under collision pressure (8-probe open addressing) — a tripwire,
+/// not a lock.
+/// §9.56 oracle arming (2026-07-14): `true` = the 15 scheduler-protocol
+/// tripwires (tags 0x54–0x63) BUGCHECK at the catch; `false` = print-only
+/// ([RQ*] lines stay, cheap, always-on). De-armed after the fix set
+/// (gate trylock + timer-block init + in-flight dedupe + idle NextThread
+/// lock v2) took the amplified burst to 29/32 with zero oracle hits.
+/// Corruption FINGERPRINT bugchecks (torn ready-list links, null queue
+/// entries, ReadySummary inconsistency) are NOT gated — real corruption
+/// still stops the machine. Re-arm by flipping this for a debug burst.
+pub const RQ_ORACLE_ARMED: bool = false;
+
+#[cfg(feature = "smp")]
+static RQ_INFLIGHT: [core::sync::atomic::AtomicUsize; 512] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; 512];
+
+/// Waker identity per in-flight slot: the caller line of the defer that
+/// marked it (Requeue sites use 9000+site sentinels). Read back at the
+/// 0x5A/0x5D catch points as `deferred_by` — names the mystery waker.
+#[cfg(feature = "smp")]
+static RQ_WAKER_LINE: [core::sync::atomic::AtomicU32; 512] =
+    [const { core::sync::atomic::AtomicU32::new(0) }; 512];
+
+/// Look up who deferred this thread (0 = not marked / unknown).
+#[cfg(feature = "smp")]
+pub unsafe fn rq_inflight_waker(thread: ddk::PKTHREAD) -> u32 {
+    use core::sync::atomic::Ordering::SeqCst;
+    let t = thread as usize;
+    for i in 0..8 {
+        let idx = rq_inflight_slot(t, i);
+        if RQ_INFLIGHT[idx].load(SeqCst) == t {
+            return RQ_WAKER_LINE[idx].load(SeqCst);
+        }
+    }
+    0
+}
+
+/// Public stamping entry for out-of-crate direct-defer sites.
+#[cfg(feature = "smp")]
+pub unsafe fn rq_waker_stamp_pub(thread: ddk::PKTHREAD, line: u32) {
+    rq_waker_stamp(thread, line);
+}
+
+#[cfg(feature = "smp")]
+unsafe fn rq_waker_stamp(thread: ddk::PKTHREAD, line: u32) {
+    use core::sync::atomic::Ordering::SeqCst;
+    let t = thread as usize;
+    for i in 0..8 {
+        let idx = rq_inflight_slot(t, i);
+        if RQ_INFLIGHT[idx].load(SeqCst) == t {
+            RQ_WAKER_LINE[idx].store(line, SeqCst);
+            return;
+        }
+    }
+}
+
+#[cfg(feature = "smp")]
+#[inline]
+fn rq_inflight_slot(t: usize, i: usize) -> usize {
+    ((t >> 7).wrapping_add(i)) & 511
+}
+
+/// Returns true if the thread was ALREADY marked in-flight (double-defer).
+#[cfg(feature = "smp")]
+pub unsafe fn rq_inflight_mark(thread: ddk::PKTHREAD) -> bool {
+    use core::sync::atomic::Ordering::SeqCst;
+    let t = thread as usize;
+    // Full scan for an existing entry BEFORE inserting. Inserting at the first
+    // empty slot mid-scan creates DUPLICATE entries when an earlier-probe slot
+    // frees up between the original mark and a legal re-mark (Requeue): unmark
+    // then clears one twin and the stale twin fires a false 0x59 on the next
+    // legal wake with the old stamp. (2026-07-13: this was the 11/32 flood —
+    // all victims were boost-requeued ExWorker threads.)
+    let mut empty: Option<usize> = None;
+    for i in 0..8 {
+        let idx = rq_inflight_slot(t, i);
+        let cur = RQ_INFLIGHT[idx].load(SeqCst);
+        if cur == t {
+            return true;
+        }
+        if cur == 0 && empty.is_none() {
+            empty = Some(idx);
+        }
+    }
+    if let Some(idx) = empty {
+        if RQ_INFLIGHT[idx].compare_exchange(0, t, SeqCst, SeqCst).is_ok() {
+            return false;
+        }
+        // Lost the slot race — one bounded retry over the whole window.
+        for i in 0..8 {
+            let idx = rq_inflight_slot(t, i);
+            let cur = RQ_INFLIGHT[idx].load(SeqCst);
+            if cur == t {
+                return true;
+            }
+            if cur == 0 && RQ_INFLIGHT[idx].compare_exchange(0, t, SeqCst, SeqCst).is_ok() {
+                return false;
+            }
+        }
+    }
+    false // table pressure — stay lossy rather than false-positive
+}
+
+#[cfg(feature = "smp")]
+pub unsafe fn rq_inflight_unmark(thread: ddk::PKTHREAD) {
+    use core::sync::atomic::Ordering::SeqCst;
+    let t = thread as usize;
+    // Clear ALL matches (no early return): defensive against duplicate twins
+    // from the pre-fix mark() — see the duplicate-entry note in mark().
+    for i in 0..8 {
+        let slot = &RQ_INFLIGHT[rq_inflight_slot(t, i)];
+        if slot.load(SeqCst) == t {
+            slot.store(0, SeqCst);
+        }
+    }
+}
+
+/// §9.56 requeue variant — for the LEGAL re-defer sites that reposition a
+/// thread already in ready-flight (KiSetPriorityThread / affinity moves /
+/// standby displacement: remove-or-displace then re-defer). Skips the 0x59
+/// in-flight collision check (the thread is SUPPOSED to still be marked) and
+/// keeps the mark live — it is still in flight until promoted to Running.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn KiInsertDeferredReadyListRequeue(thread: ddk::PKTHREAD) {
+    let prcb = KeGetCurrentPrcb();
+    let _ = rq_inflight_mark(thread); // ensure marked; collision expected/legal
+    rq_waker_stamp(thread, 9000);
+    kt_set_state(thread, ddk::_KTHREAD_STATE_DeferredReady as u8);
+    kt_set_deferred_processor(thread, (*prcb).Number as u8);
+    (*thread).__bindgen_anon_3.SwapListEntry.Next = (*prcb).DeferredReadyListHead.Next;
+    (*prcb).DeferredReadyListHead.Next =
+        core::ptr::addr_of_mut!((*thread).__bindgen_anon_3.SwapListEntry);
+}
+
 /// KiInsertDeferredReadyList — SMP: push onto this CPU's deferred-ready list.
 #[cfg(feature = "smp")]
 #[inline]
+#[track_caller]
 pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
     let prcb = KeGetCurrentPrcb();
+
+    // §9.56 double-defer oracle (0x59) — LIFECYCLE v2 (2026-07-13): the mark
+    // now lives from WAKE (this push) to PROMOTION-to-Running (unmark at the
+    // 6 promote sites), not to drain-pop. v1 (unmark at pop) was blind to the
+    // observed sequential double: wake→pop→[2nd wake lands here]→insert→…
+    // A collision here = a second wake of a thread already in ready-flight —
+    // the true §9.56 first-illegal event; track_caller names the waker.
+    let __waker_line = core::panic::Location::caller().line() as u32;
+    // Read the STALE stamp first: on collision it names the waker whose mark
+    // never got a promote-unmark — i.e. either the missing promotion site or
+    // the true first wake of a double-wake pair. (mark() never touches the
+    // stamp array, so order vs mark() is cosmetic; explicit is clearer.)
+    let __stale_by = rq_inflight_waker(thread);
+    if rq_inflight_mark(thread) {
+        let caller_line = core::panic::Location::caller().line() as u64;
+        crate::driver_ddk::DbgPrint(
+            b"[RQDEFER2] DOUBLE-DEFER thr=%p state=%u waitreason=%u waitstatus=%p defproc=%u caller_line=%u stale_by=%u\n\0".as_ptr() as *const i8,
+            thread,
+            kt_state_read(thread) as u32,
+            (*thread).WaitReason as u32,
+            (*thread).WaitStatus as usize as *const u8,
+            (*thread).__bindgen_anon_1.__bindgen_anon_1.DeferredProcessor as u32,
+            caller_line as u32,
+            __stale_by,
+        );
+        if RQ_ORACLE_ARMED {
+        ddk::KeBugCheckEx(
+            0x96,
+            thread as usize as _,
+            ((0x59u64 << 40) | (caller_line << 8) | kt_state_read(thread) as u64) as _,
+            __stale_by as u64 as _,
+            caller_line as _,
+        );
+        }
+    }
+
+    // §9.56 hypothesis-B ROOT: deferring a thread that is CurrentThread (running)
+    // anywhere is the FIRST illegal readying (it sets State=DeferredReady + pushes to
+    // the deferred list; the drain later links it into the ready list while it still
+    // runs). #[track_caller] propagates (this fn is #[track_caller]) so the reported
+    // line is the READIER that called KiInsertDeferredReadyList on a running thread.
+    ki_check_not_running(thread, core::panic::Location::caller().line() as u64);
+
+    // §9.56 tripwire (0x53) — THE UNION-ALIAS TEAR.
+    // SwapListEntry.Next below shares memory with WaitListEntry.Flink (KTHREAD
+    // __bindgen_anon_3 is a union — same as NT). So deferring a thread that is
+    // STILL LINKED in some Prcb's DispatcherReadyListHead CLOBBERS that thread's
+    // ready-list Flink, tearing a list we do NOT hold the lock for — which is
+    // exactly how site 0x11 fires while its own PRCB lock IS held. NT permits the
+    // aliasing only because a Ready thread is always REMOVED from its ready list
+    // before being re-readied; that invariant is what we test here.
+    //
+    // NOTE: `State == Ready` alone is NOT the invariant — the legitimate
+    // remove-then-defer paths (KiSetPriorityThread / KiUpdateEffectiveAffinity)
+    // call RemoveEntryList first and only *then* defer, so State is still Ready
+    // while the thread is already UNLINKED. (A state-only check false-positived on
+    // every boot — that's how we learned this.) Test ACTUAL LINKAGE instead: a
+    // node still in a doubly-linked list has neighbours that point back at it.
+    // After a correct RemoveEntryList the stale Flink/Blink point at old
+    // neighbours which now point to each other, so the back-check fails => quiet.
+    // §9.56 (2026-07-13): the state gate above was the 0x53 oracle's HOLE — the
+    // gate signal path (KeSignalGateBoostPriority) sets State=DeferredReady
+    // ITSELF before calling KiReadyThread, so a still-LINKED gate-woken victim
+    // arrived here with state 7 and sailed past a Ready-only check (that's how
+    // the elimination round wrongly "refuted" still-linked). Run the linkage
+    // check for ALL states (tag 0x58). Legit paths stay quiet: a correctly
+    // removed node's stale neighbours no longer back-point at it.
+    {
+        let entry = kt_wait_list_entry(thread);
+        let flink = (*entry).Flink;
+        let blink = (*entry).Blink;
+        let still_linked = !flink.is_null()
+            && !blink.is_null()
+            && flink != entry // self-loop (InitializeListHead) == not in a list
+            && (*flink).Blink == entry
+            && (*blink).Flink == entry;
+        if still_linked {
+            let caller_line = core::panic::Location::caller().line() as u64;
+            crate::driver_ddk::DbgPrint(
+                b"[RQDOUBLE] deferring a STILL-LINKED thread thr=%p state=%u waitreason=%u waitstatus=%p defproc=%u caller_line=%u\n\0".as_ptr() as *const i8,
+                thread,
+                kt_state_read(thread) as u32,
+                (*thread).WaitReason as u32,
+                (*thread).WaitStatus as usize as *const u8,
+                (*thread).__bindgen_anon_1.__bindgen_anon_1.DeferredProcessor as u32,
+                caller_line as u32,
+            );
+            if RQ_ORACLE_ARMED {
+            ddk::KeBugCheckEx(
+                0x96,
+                thread as usize as _,
+                ((0x58u64 << 40) | (caller_line << 8) | kt_state_read(thread) as u64) as _,
+                prcb as usize as _,
+                caller_line as _,
+            );
+            }
+        }
+    }
+
+    rq_waker_stamp(thread, __waker_line);
     kt_set_state(thread, ddk::_KTHREAD_STATE_DeferredReady as u8);
     kt_set_deferred_processor(thread, (*prcb).Number as u8);
     // PushEntryList(&Prcb->DeferredReadyListHead, &Thread->SwapListEntry)
@@ -1721,18 +1987,305 @@ pub unsafe fn BitScanReverse(index: *mut ULONG, mask: ULONG) -> BOOLEAN {
 
 /// KxQueueReadyThread — queue thread to ready list (ke_x.h).
 #[inline]
+/// §9.56 ready-list integrity post-check. Called by each ready-list WRITER
+/// after its modify, still holding the PRCB lock. If a non-empty list's
+/// back-links are torn, the writer that LEFT it torn bugchecks in the act
+/// (P2 high byte = call-site marker), instead of the corruption surfacing
+/// later in KiSelectReadyThread's reader-side check. feature=smp only.
+/// §9.56 promotion-point discriminator. Call right before a thread is promoted to
+/// Running (NextThread -> CurrentThread). If it is STILL genuinely linked in a ready
+/// list at that moment, then whoever SET it as NextThread left it linked — the bug is
+/// upstream of the swap, in a set-NextThread path (NOT a cross-CPU queue-while-running
+/// race). Silent unless the invariant is already broken. `site` is a small tag so we
+/// know which swap function observed it.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn ki_check_promote_not_linked(thread: ddk::PKTHREAD, site: u64) {
+    if thread.is_null() { return; }
+    let entry = kt_wait_list_entry(thread);
+    let flink = (*entry).Flink;
+    let blink = (*entry).Blink;
+    let linked = !flink.is_null()
+        && !blink.is_null()
+        && flink != entry
+        && (*flink).Blink == entry
+        && (*blink).Flink == entry;
+    if linked {
+        crate::driver_ddk::DbgPrint(
+            b"[RQPROMOTE] site=%x thr=%p state=%u F=%p B=%p - NextThread linked at promotion => set-NextThread bug upstream\n\0".as_ptr() as *const i8,
+            site as u32,
+            thread,
+            kt_state_read(thread) as u32,
+            flink,
+            blink,
+        );
+        if RQ_ORACLE_ARMED {
+        ddk::KeBugCheckEx(
+            0x96,
+            thread as usize as _,
+            ((0x55u64 << 40) | site) as _,
+            kt_state_read(thread) as _,
+            flink as usize as _,
+        );
+        }
+    }
+}
+
+/// §9.56 hypothesis-B catcher. A thread is being queued to a ready list — but if it
+/// is CURRENTLY the CurrentThread of ANY cpu, it is a RUNNING thread and queuing it is
+/// the bug (the first, illegal queue; `0x54` only catches the second). The legitimate
+/// dispatch/yield/quantum paths all dethrone the outgoing thread (Prcb->CurrentThread =
+/// NewThread) BEFORE queuing it, so this is quiet on them and fires only on a path that
+/// readies a thread that is still running somewhere. `#[track_caller]` names the queuer.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn ki_check_not_running(thread: ddk::PKTHREAD, caller_line: u64) {
+    if thread.is_null() { return; }
+    let nproc = (crate::globals::KeNumberProcessors as usize).min(64);
+    for c in 0..nproc {
+        let p = *(core::ptr::addr_of!(crate::globals::KiProcessorBlock)
+            as *const *mut ddk::_KPRCB).add(c);
+        if p.is_null() { continue; }
+        if (*p).CurrentThread == thread {
+            // §9.56 paradox splitter: is the global dispatcher lock HELD right now?
+            // The readier SHOULD hold it (serializing vs the wait-commit). Held(1)
+            // yet the race happened => hypothesis (4) early-release/handoff bug.
+            // Not-held(0) => hypothesis (2) this readier bypassed the dispatcher lock.
+            let disp_lock_ptr =
+                (*KeGetCurrentPrcb()).LockQueue[LOCK_QUEUE_DISPATCHER_LOCK].Lock as *const usize;
+            let disp_held = if disp_lock_ptr.is_null() { 0xFFu32 }
+                else { (core::ptr::read_volatile(disp_lock_ptr) & 1) as u32 };
+            crate::driver_ddk::DbgPrint(
+                b"[RQRUNNING] queuing a RUNNING thread thr=%p state=%u runningOnCPU=%u caller_line=%u dispLockHeld=%u\n\0".as_ptr() as *const i8,
+                thread,
+                kt_state_read(thread) as u32,
+                c as u32,
+                caller_line as u32,
+                disp_held,
+            );
+            // §9.56 (2026-07-13): DOWNGRADED from bugcheck to print-only. This is
+            // NOT the bug — it is NT's LEGAL handoff window: the wait-commit
+            // releases the dispatcher lock BEFORE KiSwapThread dethrones (C
+            // wait.c:567/859, and KxInsertTimer embeds the release — our Rust is
+            // faithful), so a cross-CPU readier may legally link a
+            // still-CurrentThread thread; the run-side SwapBusy spin in
+            // ctxswitch.S is what makes that safe. The print stays as the
+            // breadcrumb for the DOWNSTREAM hazard this window enables: the
+            // self-swap (0x57 tripwire in KiSwapThreadImpl).
+        }
+    }
+}
+
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn ki_rq_integrity(prcb: ddk::PKPRCB, priority: u32, site: u64) {
+    if (*prcb).ReadySummary & (1u32 << priority) == 0 {
+        return; // not flagged occupied — nothing to check
+    }
+    let head =
+        core::ptr::addr_of_mut!((*prcb).DispatcherReadyListHead[priority as usize])
+            as ddk::PLIST_ENTRY;
+    let flink = (*head).Flink;
+    if flink == head {
+        return; // legitimately empty (summary may trail a removal); reader-side owns bit/empty
+    }
+    // first node must back-link to head, and head's back-neighbour must forward to head
+    let blink = (*head).Blink;
+    let flink_bad = (*flink).Blink != head;
+    let blink_bad = (*blink).Flink != head;
+    if flink_bad || blink_bad {
+        // §9.56 FORENSICS: the ready list is torn under a correctly-held PRCB lock,
+        // so the tear is almost certainly a VICTIM of a wild write. The VALUE now
+        // sitting in the corrupted link is the writer's fingerprint — dump it (and
+        // the raw LIST_ENTRY words + a couple of neighbour nodes) so a torn Flink
+        // that turns out to be e.g. a KTHREAD field / pool tag / small int / poison
+        // names the culprit. Print BEFORE the bugcheck (still under the lock; this
+        // is not mid-swap, so DbgPrint is safe here — unlike KiSwapContextResume).
+        let bad_ptr = if flink_bad { (*flink).Blink } else { (*blink).Flink };
+        crate::driver_ddk::DbgPrint(
+            b"[RQTEAR] site=%x pri=%u prcb=%p summary=%x head=%p F=%p B=%p | flink.Blink=%p(bad=%u) blink.Flink=%p(bad=%u) BADPTR=%p | head[F,B]=%p,%p flink[F,B]=%p,%p blink[F,B]=%p,%p\n\0".as_ptr() as *const i8,
+            site as u32,
+            priority,
+            prcb,
+            (*prcb).ReadySummary,
+            head,
+            flink,
+            blink,
+            (*flink).Blink,
+            flink_bad as u32,
+            (*blink).Flink,
+            blink_bad as u32,
+            bad_ptr,
+            (*head).Flink,
+            (*head).Blink,
+            (*flink).Flink,
+            (*flink).Blink,
+            (*blink).Flink,
+            (*blink).Blink,
+        );
+        ddk::KeBugCheckEx(
+            0x96,
+            prcb as usize as _,
+            ((site << 8) | priority as u64) as _,
+            bad_ptr as usize as _, // the corrupted link value (the fingerprint)
+            flink as usize as _,
+        );
+    }
+}
+
+#[cfg_attr(feature = "smp", track_caller)]
 pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
-    // UP kernel: the affinity gate is always TRUE. SMP: a thread not affine
-    // to this CPU is deferred instead (ke_x.h:1387).
+    // §9.56 hypothesis-B: catch the FIRST, illegal queue — a thread that is still
+    // CurrentThread (running) somewhere. Legit callers dethrone first, so quiet.
+    #[cfg(feature = "smp")]
+    ki_check_not_running(thread, core::panic::Location::caller().line() as u64);
+    // §9.56 tripwire 0x5D — queueing a DEFERRED-PARKED thread. Legit inputs
+    // here are Running (preempt re-queue of the outgoing thread) or Standby
+    // (displaced NextThread). State==DeferredReady means the thread is (or is
+    // about to be) parked on a deferred SLIST: the InsertTail below overwrites
+    // SwapListEntry.Next (union) and reroutes that SLIST into this ready
+    // list's interior — the §9.56 chain-corruption first-write. track_caller
+    // names the queuer.
     #[cfg(feature = "smp")]
     {
+        if kt_state_read(thread) == ddk::_KTHREAD_STATE_DeferredReady as u8 {
+            let caller_line = core::panic::Location::caller().line() as u64;
+            crate::driver_ddk::DbgPrint(
+                b"[RQ5D] KxQueueReadyThread on DEFERRED thr=%p defproc=%u reason=%u wstat=%p caller_line=%u deferred_by=%u\n\0".as_ptr() as *const i8,
+                thread,
+                (*thread).__bindgen_anon_1.__bindgen_anon_1.DeferredProcessor as u32,
+                (*thread).WaitReason as u32,
+                (*thread).WaitStatus as usize as *const u8,
+                caller_line as u32,
+                rq_inflight_waker(thread),
+            );
+            if RQ_ORACLE_ARMED {
+            ddk::KeBugCheckEx(
+                0x96,
+                thread as usize as _,
+                ((0x5Du64 << 40) | (caller_line << 8)
+                    | (*thread).__bindgen_anon_1.__bindgen_anon_1.DeferredProcessor as u64) as _,
+                prcb as usize as _,
+                caller_line as _,
+            );
+            }
+        }
+    }
+    // §9.56 entry diagnostics (holding the PRCB lock):
+    #[cfg(feature = "smp")]
+    {
+        let priority_c = (*thread).Priority as u32;
+        // (0x52) DOUBLE-QUEUE: this thread is already Ready — queuing it again
+        // re-inserts an entry that's still linked, tearing the list.
+        // (0x54) ALREADY-LINKED — the precise predicate.
+        // Inserting a node that is STILL LINKED into a ready list corrupts both
+        // that list and this one. The old 0x52 guard tested `State == Ready`, but
+        // STATE IS THE WRONG PREDICATE: a path that changes State without
+        // unlinking sails past it, and a burst proved it (0x52 silent while site
+        // 0x11 still tore the list right after a legit insert, PRCB lock held).
+        // Test LINKAGE directly instead — a node still in a doubly-linked list has
+        // neighbours that point back at it. After a correct RemoveEntryList the
+        // stale Flink/Blink point at old neighbours that now point to each other,
+        // so this is quiet on the legitimate paths.
+        let entry = kt_wait_list_entry(thread);
+        let flink = (*entry).Flink;
+        let blink = (*entry).Blink;
+        let already_linked = !flink.is_null()
+            && !blink.is_null()
+            && flink != entry // self-loop (InitializeListHead) == not in a list
+            && (*flink).Blink == entry
+            && (*blink).Flink == entry;
+        if already_linked {
+            let caller_line = core::panic::Location::caller().line() as u64;
+            // §9.56 FORENSICS: `thread` is genuinely doubly-linked in SOME ready
+            // list while being (re)queued. NT's dispatch/quantum paths queue
+            // Prcb->CurrentThread WITHOUT a linkage check (verified: our
+            // KiDpcInterruptHandler is an exact copy of NT KiDispatchInterrupt),
+            // so the corruption is UPSTREAM — something left this thread linked.
+            // Identify WHICH cpu's DispatcherReadyListHead[pri] it is linked into
+            // by scanning KiProcessorBlock, and dump its scheduling identity so
+            // the upstream writer can be traced. (Under the PRCB lock; not
+            // mid-swap; DbgPrint is safe here.)
+            let mut owner_cpu: i64 = -1;
+            let mut owner_pri: i64 = -1;
+            let nproc = crate::globals::KeNumberProcessors as usize;
+            for c in 0..nproc.min(64) {
+                let p = *(core::ptr::addr_of!(crate::globals::KiProcessorBlock)
+                    as *const *mut ddk::_KPRCB).add(c);
+                if p.is_null() { continue; }
+                for pr in 0..32usize {
+                    let h = core::ptr::addr_of_mut!((*p).DispatcherReadyListHead[pr]) as usize;
+                    // flink/blink point AT a list node; if this thread's forward
+                    // neighbour IS the list head, that names the owning list.
+                    if flink as usize == h || blink as usize == h {
+                        owner_cpu = c as i64;
+                        owner_pri = pr as i64;
+                    }
+                }
+            }
+            crate::driver_ddk::DbgPrint(
+                b"[RQLINKED] thr=%p site=%u pri=%u state=%u | F=%p B=%p ownerCPU=%d ownerPRI=%d | thisPrcb=%p thisCPU=%u\n\0".as_ptr() as *const i8,
+                thread,
+                caller_line as u32,
+                priority_c,
+                kt_state_read(thread) as u32,
+                flink,
+                blink,
+                owner_cpu as i32,
+                owner_pri as i32,
+                prcb,
+                (*prcb).Number as u32,
+            );
+            if RQ_ORACLE_ARMED {
+            ddk::KeBugCheckEx(
+                0x96,
+                thread as usize as _,
+                ((0x54u64 << 40) | (caller_line << 8) | priority_c as u64) as _,
+                kt_state_read(thread) as _, // the state that slipped past 0x52
+                caller_line as _,
+            );
+            }
+        }
+        // §9.56 (2026-07-13): affinity-defer branch MOVED BELOW the 0x5D/0x54
+        // guards — it used to sit above them, letting an already-linked or
+        // deferred OldThread with mismatched affinity bypass both and reach
+        // the drain unchecked (the deferred_by=0 0x5A face).
         if (*thread).Affinity & (*prcb).SetMember == 0 {
+            // §9.56 [RQAFF]: this branch is a DIRECT KiDeferredReadyThread
+            // caller (no in-flight mark => the deferred_by=0 face). Print the
+            // affinity evidence: a zero/corrupt Affinity routes EVERY requeue
+            // here and then KiSelectNextProcessor(trailing_zeros(0)=64) walks
+            // KiProcessorBlock[64] OUT OF BOUNDS (0x63 guards that).
+            crate::driver_ddk::DbgPrint(
+                b"[RQAFF] affinity-defer thr=%p affinity=%p setmember=%p state=%u reason=%u\n\0".as_ptr() as *const i8,
+                thread,
+                (*thread).Affinity as usize as *const u8,
+                (*prcb).SetMember as usize as *const u8,
+                kt_state_read(thread) as u32,
+                (*thread).WaitReason as u32,
+            );
+            if (*thread).Affinity == 0 {
+                if RQ_ORACLE_ARMED {
+                ddk::KeBugCheckEx(
+                    0x96,
+                    thread as usize as _,
+                    (0x63u64 << 40) as _,
+                    (*prcb).SetMember as _,
+                    0,
+                );
+                }
+            }
+            let _ = rq_inflight_mark(thread);
+            rq_waker_stamp(thread, 9100); // 9100 = affinity-defer direct path
             kt_set_state(thread, ddk::_KTHREAD_STATE_DeferredReady as u8);
             kt_set_deferred_processor(thread, (*prcb).Number as u8);
             KiReleasePrcbLock(prcb);
             KiDeferredReadyThread(thread);
             return;
         }
+        // (0x51) list ALREADY torn on entry — a prior/concurrent corruptor,
+        // not this insert.
+        ki_rq_integrity(prcb, priority_c, 0x51);
     }
     kt_set_state(thread, ddk::_KTHREAD_STATE_Ready as u8);
     let priority = (*thread).Priority as usize;
@@ -1748,6 +2301,8 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
         crate::base::InsertTailList(ready_list, kt_wait_list_entry(thread));
     }
     (*prcb).ReadySummary |= 1u32 << priority;
+    #[cfg(feature = "smp")]
+    ki_rq_integrity(prcb, priority as u32, 0x11); // site 0x11 = KxQueueReadyThread
     KiReleasePrcbLock(prcb);
 }
 
@@ -1762,13 +2317,44 @@ pub unsafe fn KiSelectReadyThread(priority: KPRIORITY, prcb: ddk::PKPRCB) -> ddk
     BitScanReverse(&mut high_priority, priority_set);
     high_priority += priority as ULONG;
 
-    let list_entry = (*prcb).DispatcherReadyListHead[high_priority as usize].Flink;
+    let list_head =
+        core::ptr::addr_of_mut!((*prcb).DispatcherReadyListHead[high_priority as usize]);
+    let list_entry = (*list_head).Flink;
+
+    // §9.56 tripwire (SMP ready-queue race hunt): ReadySummary said this
+    // priority is occupied, so its list MUST be non-empty. If it's empty
+    // (Flink == head) or its first node's back-link is broken
+    // (first->Blink != head), the ReadySummary/list pair is INCONSISTENT —
+    // a concurrent unserialized manipulation corrupted this Prcb's ready
+    // list. Catch it HERE, at the read, with the state that localizes the
+    // corruptor, instead of faulting downstream in RemoveEntryList (the
+    // 0x1E IN_PAGE_ERROR face). Both derefs below are safe: list_head lives
+    // in the PRCB, and the empty check gates the Blink deref so we never
+    // walk a self-referential-head-as-node. Release-mode (debug_asserts at
+    // the writer sites are compiled out).
+    #[cfg(feature = "smp")]
+    {
+        if list_entry == list_head as ddk::PLIST_ENTRY
+            || (*list_entry).Blink != list_head as ddk::PLIST_ENTRY
+        {
+            ddk::KeBugCheckEx(
+                0x96, // marker: SMP ready-list/ReadySummary inconsistency (§9.56)
+                prcb as usize as _,
+                high_priority as _,
+                (*prcb).ReadySummary as _,
+                list_entry as usize as _,
+            );
+        }
+    }
+
     let thread = (list_entry as usize
         - memoffset_of_wait_list_entry()) as ddk::PKTHREAD;
 
     if crate::base::RemoveEntryList(kt_wait_list_entry(thread)) {
         (*prcb).ReadySummary ^= 1u32 << high_priority;
     }
+    #[cfg(feature = "smp")]
+    ki_rq_integrity(prcb, high_priority, 0x33); // site 0x33 = KiSelectReadyThread post-remove
 
     thread
 }
@@ -2054,6 +2640,16 @@ pub unsafe fn KxSingleThreadWait(
         (*due_time).QuadPart = (*timer).DueTime.QuadPart as i64;
         (*wait_block).NextWaitBlock = timer_block;
         (*timer_block).NextWaitBlock = wait_block;
+        // Defensive BOTH-ENDS init (parity with the C ke_x.h vibeos patch):
+        // the original macro relied on TimerBlock->WaitListEntry staying
+        // pre-linked from thread init, but it can be observed self-referencing
+        // (KiTimerExpiration -> KxUnwaitThread spin) or stale — and a stale
+        // RemoveEntryList in KiUnlinkThread writes through dangling pointers
+        // (§9.56 tear class). Idempotent regardless of prior state.
+        (*timer_block).WaitListEntry.Flink =
+            core::ptr::addr_of_mut!((*timer).Header.WaitListHead);
+        (*timer_block).WaitListEntry.Blink =
+            core::ptr::addr_of_mut!((*timer).Header.WaitListHead);
         (*timer).Header.WaitListHead.Flink =
             core::ptr::addr_of_mut!((*timer_block).WaitListEntry);
         (*timer).Header.WaitListHead.Blink =
@@ -2088,6 +2684,11 @@ pub unsafe fn KxDelayThreadWait(
     (*timer_block).NextWaitBlock = timer_block;
     KxSetTimerForThreadWait(timer, *interval, hand);
     (*due_time).QuadPart = (*timer).DueTime.QuadPart as i64;
+    // Defensive BOTH-ENDS init — see KxSingleThreadWait note (§9.56 tear class).
+    (*timer_block).WaitListEntry.Flink =
+        core::ptr::addr_of_mut!((*timer).Header.WaitListHead);
+    (*timer_block).WaitListEntry.Blink =
+        core::ptr::addr_of_mut!((*timer).Header.WaitListHead);
     (*timer).Header.WaitListHead.Flink =
         core::ptr::addr_of_mut!((*timer_block).WaitListEntry);
     (*timer).Header.WaitListHead.Blink =
@@ -2192,6 +2793,16 @@ pub unsafe fn KxQueueThreadWait(
         (*due_time).QuadPart = (*timer).DueTime.QuadPart as i64;
         (*wait_block).NextWaitBlock = timer_block;
         (*timer_block).NextWaitBlock = wait_block;
+        // Defensive BOTH-ENDS init (parity with the C ke_x.h vibeos patch):
+        // the original macro relied on TimerBlock->WaitListEntry staying
+        // pre-linked from thread init, but it can be observed self-referencing
+        // (KiTimerExpiration -> KxUnwaitThread spin) or stale — and a stale
+        // RemoveEntryList in KiUnlinkThread writes through dangling pointers
+        // (§9.56 tear class). Idempotent regardless of prior state.
+        (*timer_block).WaitListEntry.Flink =
+            core::ptr::addr_of_mut!((*timer).Header.WaitListHead);
+        (*timer_block).WaitListEntry.Blink =
+            core::ptr::addr_of_mut!((*timer).Header.WaitListHead);
         (*timer).Header.WaitListHead.Flink =
             core::ptr::addr_of_mut!((*timer_block).WaitListEntry);
         (*timer).Header.WaitListHead.Blink =

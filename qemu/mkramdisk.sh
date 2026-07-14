@@ -501,12 +501,95 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         else
             echo "[!] VIBEOS_FEX=1: i386 gdi32/user32 missing — gui32 guest will stall at import"
         fi
+        # M11: the FULL SysWOW64 DLL set — the transitive import closure of the
+        # stock i386 guest (testgui.exe), computed at stage time.
+        #
+        # This SUPERSEDES the M8 rule ("do NOT stage advapi32/rpcrt4/msvcrt —
+        # they leave unbound IATs"). That rule was right about the hazard and
+        # wrong about the cure: when a DLL is staged but one of ITS imports is
+        # missing, the loader prints "Skipping missing import" and leaves that
+        # module half-bound; the first call through an unbound slot jumps to
+        # garbage (guest AV @0x76AA4, 2026-07-11). Not-staging avoided it only
+        # because nothing on the M8 path called into those DLLs. A CRT-linked
+        # binary DOES call them, so the answer is the COMPLETE closure — no
+        # module is ever left half-bound. A bigger PARTIAL set has the same
+        # landmine, just later. wow64-closure.py hard-fails rather than emit a
+        # partial set, and the loader's "Skipping missing import" line is the
+        # standing oracle that the closure is still complete.
+        TESTGUI32="${VIBEOS_TESTGUI32_EXE:-$PROJECT_DIR/build-i386/base/applications/testgui/testgui.exe}"
+        if [ -f "$TESTGUI32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging the SysWOW64 DLL closure (i386)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            CLOSURE=$(python3 "$PROJECT_DIR/tools/fex/wow64-closure.py" \
+                          --build-dir "$PROJECT_DIR/build-i386" "$TESTGUI32") || {
+                echo "[!] VIBEOS_FEX=1: SysWOW64 import closure is INCOMPLETE (see above)."
+                echo "[!]   Refusing to stage a partial set — a half-bound module crashes"
+                echo "[!]   at first call, far from the missing DLL. Build the module first."
+                exit 1
+            }
+            echo "$CLOSURE" | while IFS=$'\t' read -r name path; do
+                [ -n "$name" ] || continue
+                mcopy -o -i "$RAMDISK_IMG" "$path" "::/reactos/syswow64/$name"
+            done
+            echo "[*]   staged $(echo "$CLOSURE" | wc -l) SysWOW64 modules"
+            # testgui.exe — the M11 guest: a STOCK, unmodified ReactOS i386 GUI
+            # app (real msvcrt CRT startup, real import table, real window +
+            # message loop). Every earlier guest was one we wrote to dodge the
+            # gaps; this one can't dodge anything.
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/testgui.exe (M11 stock-binary guest)"
+            mcopy -o -i "$RAMDISK_IMG" "$TESTGUI32" ::/reactos/syswow64/testgui.exe
+            # The NATIVE arm64 build of the same app, into system32. This is the
+            # A/B control: same source, same user32-rust, one running native and
+            # one under WoW64. Without it there is no way to tell a WoW64 bug
+            # from a plain user32 bug that would crash natively too.
+            TESTGUI_NATIVE="${VIBEOS_TESTGUI_NATIVE:-$PROJECT_DIR/build-arm64/base/applications/testgui/testgui.exe}"
+            if [ -f "$TESTGUI_NATIVE" ]; then
+                echo "[*] VIBEOS_FEX=1 — staging system32/testgui.exe (native A/B control)"
+                mcopy -o -i "$RAMDISK_IMG" "$TESTGUI_NATIVE" ::/reactos/system32/testgui.exe
+            fi
+
+            # M12 — THE NORTH STAR: x86 Doom under WoW64. doomgeneric's Win32/GDI
+            # backend built for i386 (tools/doom/build.sh i386): a genuinely foreign
+            # mingw binary. Its import closure is the SAME 53 modules staged above,
+            # so nothing extra is needed beyond the exe + the IWAD.
+            DOOM32="${VIBEOS_DOOM32_EXE:-$PROJECT_DIR/tools/doom/doom-i386.exe}"
+            DOOMWAD="${VIBEOS_DOOM_WAD:-$PROJECT_DIR/tools/doom/doom1.wad}"
+            if [ -f "$DOOM32" ] && [ -f "$DOOMWAD" ]; then
+                echo "[*] VIBEOS_FEX=1 — staging syswow64/doom.exe + doom1.wad (M12: x86 DOOM)"
+                mcopy -o -i "$RAMDISK_IMG" "$DOOM32" ::/reactos/syswow64/doom.exe
+                mcopy -o -i "$RAMDISK_IMG" "$DOOMWAD" ::/reactos/syswow64/doom1.wad
+                # A/B control, same idea as the native testgui: the NATIVE arm64
+                # build of the very same doomgeneric. VIBEOS_DOOM_AB=1 stages it
+                # into system32 so both run side by side and a rendering failure
+                # can be attributed to the WoW64 layer or to win32k.
+                DOOM_NATIVE="${VIBEOS_DOOM_NATIVE:-$PROJECT_DIR/tools/doom/doom-arm64.exe}"
+                if [ "${VIBEOS_DOOM_AB:-0}" = "1" ] && [ -f "$DOOM_NATIVE" ]; then
+                    echo "[*] VIBEOS_DOOM_AB=1 — staging system32/doom.exe + doom1.wad (native A/B)"
+                    mcopy -o -i "$RAMDISK_IMG" "$DOOM_NATIVE" ::/reactos/system32/doom.exe
+                    mcopy -o -i "$RAMDISK_IMG" "$DOOMWAD" ::/reactos/system32/doom1.wad
+                fi
+            fi
+        fi
         # gui32.exe — the win32k-thunk guest (winlogon TryStartWow64Gui).
         GUI32="${VIBEOS_GUI32_EXE:-$PROJECT_DIR/build-fex-hello/gui32.exe}"
         if [ -f "$GUI32" ]; then
             echo "[*] VIBEOS_FEX=1 — staging syswow64/gui32.exe (wow64win guest)"
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$GUI32" ::/reactos/syswow64/gui32.exe
+        fi
+        # win32.exe — the M8 window-creation guest (winlogon TryStartWow64Win32).
+        WIN32APP="${VIBEOS_WIN32_EXE:-$PROJECT_DIR/build-fex-hello/win32.exe}"
+        if [ -f "$WIN32APP" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/win32.exe (M8 window guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$WIN32APP" ::/reactos/syswow64/win32.exe
+        fi
+        # file32.exe — the M10 file-I/O guest (winlogon TryStartWow64File).
+        FILE32="${VIBEOS_FILE32_EXE:-$PROJECT_DIR/build-fex-hello/file32.exe}"
+        if [ -f "$FILE32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/file32.exe (M10 file-I/O guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$FILE32" ::/reactos/syswow64/file32.exe
         fi
         # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
         # by winlogon's TryStartWow64Hello (silent no-op unless staged here).

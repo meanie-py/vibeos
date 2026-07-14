@@ -5491,6 +5491,35 @@ unsafe extern "C" fn IntCheckFrameEdge(Style: ULONG, ExStyle: ULONG) -> BOOL {
     }
 }
 
+/// Size, in bytes, of the CALLER's `LONG_PTR`.
+///
+/// `SetWindowLongPtr`/`GetWindowLongPtr` address a pointer-sized slot in the
+/// window's extra bytes. For a WoW64 (32-bit) caller that slot is FOUR bytes,
+/// not the kernel's eight — and the guest's class registration sized
+/// `cbwndExtra` in 32-bit units. Using the kernel's 8 therefore both overruns
+/// the region and trips the bounds check below (`0 + 8 > cbwndExtra(4)` →
+/// ERROR_INVALID_INDEX), so the store is silently REJECTED.
+///
+/// user32's EDIT control keeps its `EDITSTATE*` in exactly this slot, so every
+/// 32-bit edit box lost its state on creation and then dereferenced whatever it
+/// read back (M11: a fault at address 0x2A inside `EDIT_LockBuffer`).
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+unsafe fn UserCallerPtrSize() -> ULONG {
+    if (*PsGetCurrentProcess()).Wow64Process.is_null() {
+        core::mem::size_of::<LONG_PTR>() as ULONG
+    } else {
+        4
+    }
+}
+
+/// A 32-bit host has no WoW64 layer; every caller is 32-bit.
+#[cfg(target_arch = "x86")]
+#[inline]
+unsafe fn UserCallerPtrSize() -> ULONG {
+    core::mem::size_of::<LONG_PTR>() as ULONG
+}
+
 unsafe fn co_IntSetWindowLongPtr(hWnd: HWND, Index: DWORD, NewValue: LONG_PTR, Ansi: BOOL, Size: ULONG, bAlter: BOOL) -> LONG_PTR {
     let Window: PWND;
     let Parent: PWND;
@@ -5679,12 +5708,12 @@ unsafe extern "C" fn co_UserSetWindowLong(hWnd: HWND, Index: DWORD, NewValue: LO
 
 #[cfg(target_pointer_width = "64")]
 unsafe extern "C" fn co_UserSetWindowLongPtr(hWnd: HWND, Index: DWORD, NewValue: LONG_PTR, Ansi: BOOL) -> LONG_PTR {
-    co_IntSetWindowLongPtr(hWnd, Index, NewValue, Ansi, core::mem::size_of::<LONG_PTR>() as ULONG, 0)
+    co_IntSetWindowLongPtr(hWnd, Index, NewValue, Ansi, UserCallerPtrSize(), 0)
 }
 
 #[cfg(not(target_pointer_width = "64"))]
 unsafe extern "fastcall" fn co_UserSetWindowLongPtr(hWnd: HWND, Index: DWORD, NewValue: LONG_PTR, Ansi: BOOL) -> LONG_PTR {
-    co_IntSetWindowLongPtr(hWnd, Index, NewValue, Ansi, core::mem::size_of::<LONG_PTR>() as ULONG, 0)
+    co_IntSetWindowLongPtr(hWnd, Index, NewValue, Ansi, UserCallerPtrSize(), 0)
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -5739,7 +5768,7 @@ pub unsafe extern "system" fn NtUserSetWindowLongPtr(hWnd: HWND, Index: DWORD, N
         return 0;
     }
 
-    ret = co_IntSetWindowLongPtr(hWnd, Index, NewValue, Ansi, core::mem::size_of::<LONG_PTR>() as ULONG, 0);
+    ret = co_IntSetWindowLongPtr(hWnd, Index, NewValue, Ansi, UserCallerPtrSize(), 0);
 
     UserLeave();
 

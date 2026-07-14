@@ -7,6 +7,7 @@ list(APPEND EXAMPLE_DRV_SOURCE
 
 add_library(example_drv MODULE ${EXAMPLE_DRV_SOURCE})
 set_module_type(example_drv kernelmodedriver)
+kmt_enable_native_seh(example_drv)
 target_link_libraries(example_drv kmtest_printf ${PSEH_LIB})
 add_importlibs(example_drv ntoskrnl hal)
 target_compile_definitions(example_drv PRIVATE KMT_STANDALONE_DRIVER)

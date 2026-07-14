@@ -395,3 +395,73 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   SPECIALPOOL=* caught nothing at a store. Suspect: device-I/O completion / lost
   wakeup under real concurrency (§9.51 uniata family, not TLB). This is now THE
   gating item for M4 — the soak doubles as its corpus builder.
+- 2026-07-12: **M4 first soak DONE — 453 boots amd64 -smp 2, 3 failures, ALL
+  during the contended first hour; ~400 consecutive greens once the host went
+  quiet** (29s median boot; the evening's ~110s/-25%-flake numbers were
+  host-contention-amplified). §9.56 reframed: the residual race is REAL (the
+  0x19/0x1E crash faces can't be host artifacts) but its window opens under
+  extreme TCG timing skew — which is now the known repro amplifier. Next
+  round: farm under deliberate host load + `--cswitchdep` build to pin the
+  culprit hand-off. Also landed this session: the whole lane merged to
+  master (fast-forward e08f777401a + docs 34d29afda89) — M0–M3 on mainline,
+  all opt-in, defaults stay UP.
+- 2026-07-12: **NEW finding — amd64 AP-start caps at ONE AP (2 CPUs total).**
+  Probing `-smp 4` as a guest-concurrency amplifier for the §9.56 residual:
+  3/3 BUGCHECK 0x61 HAL1_INITIALIZATION_FAILED. Deterministic face on serial:
+  `[SMP] starting processor 2 … handing processor 2 to HAL … HalStartNextProcessor
+  returned FALSE for 2; stopping … successful AP startup count is 1`. So CPU1
+  (first AP) starts fine, CPU2 (second AP) fails inside HalStartNextProcessor,
+  count falls short of KeNumberProcessors → the M3 `HalAllProcessorsStarted()`
+  guard correctly bugchecks 0x61. This is a real multi-AP HAL bringup limit
+  (M5-adjacent), NOT the residual flake — but it BLOCKS the "add vCPUs" amplifier
+  strategy, so the §9.56 hunt stays on -smp 2 with cswitchdep + (next) kmtest
+  guest-load until HalStartNextProcessor handles N>1 APs. Likely a single-AP
+  assumption in the amd64 HAL AP-start (SIPI target / AP-startup scratch reused,
+  or a HalpProcessorIdentity/APIC-ID-to-index single-slot). Next: read
+  hal-rust amd64 HalStartNextProcessor + the AP trampoline scratch alloc
+  (HalpApPtScratch / low-1MB SIPI page — is it freed/reused after AP1?).
+- 2026-07-12: **§9.56 hunt strategy pivot (was chasing host timing).** 400
+  quiet-host greens proved ambient contention is a lottery, not a probe. New
+  plan: drive the race from inside the guest, host-independent — (a) more vCPUs
+  [BLOCKED, see above: HAL caps at 2], (b) `--cswitchdep` build so the wedge
+  face pins the illegal hand-off PC at switch time instead of a silent stall,
+  (c) kmtest guest-load (turnkey-ish, needs a rostests build) hammering
+  pool/IRP/sync — the suspect subsystems. Current soak: -smp 2 + cswitchdep +
+  SPECIALPOOL=*, 5h. If it still ghosts, kmtest guest-load is the escalation.
+- 2026-07-12 (cont.): **§9.56 BREAKTHROUGH — cswitchdep amplifier works; SwapBusy
+  root cause RETRACTED; real bug = a double-queue.** The `--cswitchdep` build is the
+  win of the pivot: it amplifies the residual from ~0.9% organic to ~25-45% per
+  16-boot burst (host-independent — global per-switch spinlock widens the window),
+  turning a multi-day flake into an on-demand repro. Hand-built ready-list tripwires
+  (0x96 invariant at KiSelectReadyThread; 0x52 double-queue guard at KxQueueReadyThread
+  entry) did the DETECTING (cswitchdep's OWN detector is useless at -smp 2 — single
+  global `held_spinlocks`/`switch_irql`, see owed fix below). Findings:
+  1. **RETRACTED the "SwapBusy wait-side unimplemented" root cause** (field manual
+     §9.56). The amd64 run-side SwapBusy spin ALREADY EXISTS — `ntoskrnl/ke/amd64/
+     ctxswitch.S:179-184` (`ThSwapBusy=0x95`, compiled at ntos.cmake:391). The earlier
+     "31 writes, 0 spin-waits" was a `.rs`-only grep that missed the ASM. ReactOS has
+     NO readier-side SwapBusy wait anywhere — a Rust spin would be dead code.
+  2. **CONFIRMED the real symptom: KxQueueReadyThread called on an already-Ready
+     thread (tripwire 0x52, priority 9)** re-inserts a still-linked WaitListEntry →
+     tears DispatcherReadyListHead → the 0x1E/0x19/wedge faces. Two 0x22 victims saw
+     the already-torn list downstream.
+  3. **Caller-pinning IN FLIGHT:** `#[track_caller]` on the inline KxQueueReadyThread
+     first reported shim_exports.rs:2069 for ALL callers — the extern-C symbol
+     (ke_defs.rs:85) flattened every in-crate call through the wrapper. Repointed
+     ke_defs to `pub use` the inline under `#[cfg(feature="smp")]` so track_caller
+     reports each true site; re-burst running to read the 0x52 param4 (caller line).
+     amd64 suspects: NtYieldExecution (thrdschd 858/882), unwait (wait.rs 379/392),
+     KiQuantumEnd (dpc 506), KiDispatchInterrupt preempt (traphandler 105).
+- **OWED (in-lane, do at a value-add point — likely alongside the UP→smp1 collapse):
+  make cswitchdep per-CPU.** Root defect: `VIBEOS_CSWITCHDEP.cpu` is a SINGLE global
+  `CpuState`; `held_spinlocks`/`switch_irql` are lone atomics shared by both CPUs, so
+  the SWAP_IRQL/held-count detector reads another CPU's state and false-positives
+  (the `expected=2 actual=12` / held-negative spam). Fix: `cpu: CpuState` →
+  `cpus: [CpuState; MAX_CPU]` (cache-line padded), index by `Prcb->Number` at the ~15
+  tap sites; per-thread shadow fields already thread-keyed and stay; global stats stay
+  global. ~1-2h. Payoff: the DETECTOR then works identically at N=1 and N=2 — a
+  permanent invariant checker for the unified path. This is a miniature of the whole
+  UP-vs-SMP two-regime problem, so it's the natural down-payment when we make "UP =
+  SMP with a 1-element processor array" (always take the locks / run the handshake;
+  the same -smp 2 smoke becomes the UP test, deleting the "worked-on-UP-broke-on-SMP"
+  bug class that hid this very flake). cswitchdep lane is CLOSED — do it here.

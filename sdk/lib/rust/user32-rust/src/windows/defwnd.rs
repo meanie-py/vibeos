@@ -219,16 +219,10 @@ unsafe fn GetW32ThreadInfo() -> PTHREADINFO {
 // desktop-heap mapping; fast path subtracts ulClientDelta, slow path calls win32k.
 #[inline]
 unsafe fn DesktopPtrToUser(ptr: PVOID) -> PVOID {
-    GetW32ThreadInfo();
-    let pci: PCLIENTINFO = GetWin32ClientInfo();
-    let pdi: PDESKTOPINFO = (*pci).pDeskInfo;
-    if (ptr as usize) >= ((*pdi).pvDesktopBase as usize)
-        && (ptr as usize) < ((*pdi).pvDesktopLimit as usize)
-    {
-        ((ptr as usize) - ((*pci).ulClientDelta as usize)) as PVOID
-    } else {
-        NtUserxGetDesktopMapping(ptr)
-    }
+    // WoW64: DESKTOPINFO is 64-bit-laid-out for a 32-bit guest, so the
+    // base/limit range check must be done through the normalizing view.
+    // Single definition lives in crate::wow64.
+    crate::wow64::desktop_ptr_to_user(ptr)
 }
 
 // user_x.h: `static __inline PDESKTOPINFO GetThreadDesktopInfo(VOID)` —
@@ -254,7 +248,9 @@ unsafe fn ISITHOOKED(HookId: INT) -> BOOL {
     if ((*pci).fsHooks & flag) != 0 {
         return TRUE;
     }
-    if !(*pci).pDeskInfo.is_null() && ((*(*pci).pDeskInfo).fsHooks & flag) != 0 {
+    if !(*pci).pDeskInfo.is_null()
+        && (crate::wow64::desktop_info_fshooks((*pci).pDeskInfo) & flag) != 0
+    {
         return TRUE;
     }
     FALSE
@@ -416,14 +412,14 @@ unsafe fn IntFindChildWindowToOwner_impl(hRoot: HWND, hOwner: HWND) -> HWND {
     let Owner: PWND = ValidateHwnd(hOwner);
 
     let mut Child: PWND = if !(*pRoot).spwndChild.is_null() {
-        DesktopPtrToUser((*pRoot).spwndChild as *mut _) as PWND
+        crate::wow64::desktop_wnd_to_user((*pRoot).spwndChild as PVOID)
     } else {
         core::ptr::null_mut()
     };
 
     while !Child.is_null() {
         let OwnerWnd: PWND = if !(*Child).spwndOwner.is_null() {
-            DesktopPtrToUser((*Child).spwndOwner as *mut _) as PWND
+            crate::wow64::desktop_wnd_to_user((*Child).spwndOwner as PVOID)
         } else {
             core::ptr::null_mut()
         };
@@ -437,7 +433,7 @@ unsafe fn IntFindChildWindowToOwner_impl(hRoot: HWND, hOwner: HWND) -> HWND {
         }
 
         Child = if !(*Child).spwndNext.is_null() {
-            DesktopPtrToUser((*Child).spwndNext as *mut _) as PWND
+            crate::wow64::desktop_wnd_to_user((*Child).spwndNext as PVOID)
         } else {
             core::ptr::null_mut()
         };
@@ -966,7 +962,7 @@ pub unsafe extern "system" fn User32DefWindowProc(
                 }
 
                 if ((*Wnd).style & WS_CHILD as ULONG) != 0 && !(*Wnd).spwndParent.is_null() {
-                    hWnd = UserHMGetHandle(DesktopPtrToUser((*Wnd).spwndParent as *mut _) as PWND);
+                    hWnd = UserHMGetHandle(crate::wow64::desktop_wnd_to_user((*Wnd).spwndParent as PVOID));
                 } else {
                     Msg = WM_UPDATEUISTATE;
                 }

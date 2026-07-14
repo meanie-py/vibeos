@@ -2,6 +2,46 @@
 include_directories(include)
 
 #
+# Native SEH for the standalone kernel-mode test drivers (amd64/arm64)
+#
+# USE_DUMMY_PSEH is the project-wide C compile mode, so every _SEH2_TRY/_SEH2_EXCEPT
+# compiles to a DEAD handler. A test driver that deliberately faults and expects to
+# catch it therefore BUGCHECKs instead. IoReadWrite_drv is the textbook case: fast I/O
+# hands the driver the raw user buffer, TestCommonWrite() derefs it with no NULL guard,
+# and its _SEH2_EXCEPT is supposed to turn the AV into STATUS_ACCESS_VIOLATION — which
+# is precisely what the test asserts.
+#
+# kmtest_drv and kmtest.exe opted into real clang SEH (below); the 17 STANDALONE helper
+# drivers never did, so their handlers were silently dead. That is the single root cause
+# of the IoReadWrite / NtCreateSection / MmMapLockedPagesSpecifyCache crasher quarantines
+# — the kernel was innocent in all three.
+#
+# pseh2.h's _USE_NATIVE_SEH branch outranks the global _USE_DUMMY_PSEH define and maps
+# _SEH2_TRY straight to __try. Coverage of a *hardware* fault relies on clang's
+# calls-only contract (dummy-pseh-verdict.md §C): the fault must happen in a CALLEE of
+# the __try body, so the return address lands inside the scope table. That holds here for
+# free — clang refuses to inline any callee into a __try region (the same funclet-EH
+# restriction that makes the shims TU below necessary), so the deref stays a real call.
+#
+# Applied to ALL standalone drivers, not just the three that fault today: the invariant
+# is "kmtest drivers get real SEH wherever clang lowers it", which keeps the next
+# SEH-using test from silently inheriting a dead handler.
+#
+# i386 stays dummy-PSEH — its SEH lowering is MSVC-env-only (dummy-pseh-verdict.md §C).
+# Those buckets remain baselined per-arch.
+#
+set(KMT_NATIVE_SEH_SHIMS ${CMAKE_CURRENT_SOURCE_DIR}/kmt_native_seh_shims.c)
+
+function(kmt_enable_native_seh _target)
+    if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+        target_compile_definitions(${_target} PRIVATE _USE_NATIVE_SEH)
+        # Out-of-line homes for FORCEINLINE SDK helpers clang won't inline into a
+        # __try region. See kmt_native_seh_shims.c.
+        target_sources(${_target} PRIVATE ${KMT_NATIVE_SEH_SHIMS})
+    endif()
+endfunction()
+
+#
 # subdirectories containing special-purpose drivers
 #
 add_subdirectory(example)
@@ -34,6 +74,12 @@ elseif(ARCH STREQUAL "amd64")
         ../apitests/rtl/amd64/RtlCaptureContext.c
         ${kmtest_common_asm}
     )
+endif()
+
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    # Native-SEH support (see the _USE_NATIVE_SEH opt-ins below): out-of-line
+    # homes for FORCEINLINE SDK helpers clang won't inline into __try regions.
+    list(APPEND COMMON_SOURCE kmt_native_seh_shims.c)
 endif()
 
 #
@@ -130,6 +176,14 @@ endif()
 
 add_library(kmtest_drv MODULE ${KMTEST_DRV_SOURCE})
 set_module_type(kmtest_drv kernelmodedriver)
+# Real clang SEH lowers on amd64/arm64 only (base/system/sehtest, dummy-pseh-verdict.md
+# §C); pseh2.h's _USE_NATIVE_SEH branch outranks the global _USE_DUMMY_PSEH define, so
+# SEH-dependent tests get real __try/__except semantics instead of dead handlers.
+# i386 stays dummy-PSEH (its SEH lowering is MSVC-env-only) — expect a crash/fail
+# bucket there, baselined per-arch.
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    target_compile_definitions(kmtest_drv PRIVATE _USE_NATIVE_SEH)
+endif()
 target_link_libraries(kmtest_drv kmtest_printf chkstk memcmp ntoskrnl_vista ${PSEH_LIB})
 add_importlibs(kmtest_drv ntoskrnl hal)
 add_dependencies(kmtest_drv bugcodes xdk)
@@ -185,9 +239,15 @@ list(APPEND KMTEST_SOURCE
 
 add_executable(kmtest ${KMTEST_SOURCE})
 set_module_type(kmtest win32cui)
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    # Same native-SEH opt-in as kmtest_drv above (user-mode dispatch proven by sehtest)
+    target_compile_definitions(kmtest PRIVATE _USE_NATIVE_SEH)
+endif()
 target_link_libraries(kmtest ${PSEH_LIB})
 add_importlibs(kmtest fltlib advapi32 ws2_32 msvcrt kernel32 ntdll)
 target_compile_definitions(kmtest PRIVATE KMT_USER_MODE NTDDI_VERSION=NTDDI_WS03SP1)
+# vibeos: tee results + BEGIN/END markers to kernel debug serial (host capture)
+target_compile_definitions(kmtest PRIVATE VIBEOS_KMTEST_SERIAL)
 #add_pch(kmtest include/kmt_test.h)
 set_target_properties(kmtest PROPERTIES OUTPUT_NAME "kmtest_")
 add_rostests_file(TARGET kmtest)

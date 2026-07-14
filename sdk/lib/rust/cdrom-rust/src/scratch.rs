@@ -35,7 +35,6 @@ const TRACE_LEVEL_FATAL: u32 = 1;
 const STATUS_INTERNAL_ERROR: i32 = 0xC00000E5u32 as i32;
 const STATUS_INTEGER_OVERFLOW: i32 = 0xC0000095u32 as i32;
 extern "C" {
-    fn TracePrint(level: u32, flag: u32, format: *const u8, status: NTSTATUS);
     fn CdromDbgPrintExHistory(
         component_id: u32,
         level: u32,
@@ -456,7 +455,7 @@ pub unsafe extern "system" fn ScratchBuffer_ResetItems(
         if status < 0 {
             let fmt = b"ScratchBuffer_ResetItems: WdfIoTargetFormatRequestForInternalIoctlOthers failed, %!STATUS!\n\0"
                 .as_ptr() as *const u8;
-            TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, fmt, status);
+            TracePrint!(TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL, fmt, status);
         }
     }
 
@@ -656,7 +655,7 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteCompletionRoutine(
     }
 
     if !NT_SUCCESS(WdfRequestGetStatus(Request)) {
-        TracePrint(
+        TracePrint!(
             TRACE_LEVEL_WARNING,
             TRACE_FLAG_INIT,
             b"WdfRequestSend: %lx\n\0".as_ptr() as *const u8,
@@ -1645,7 +1644,7 @@ pub unsafe extern "system" fn ScratchBuffer_ExecuteCdbEx(
 //         if (DeviceExtension->ScratchContext.ScratchBuffer == NULL)
 //         {
 //             status = STATUS_INSUFFICIENT_RESOURCES;
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                         "Failed to allocate scratch buffer of %x bytes\n",
 //                         DeviceExtension->ScratchContext.ScratchBufferSize
 //                         ));
@@ -1653,7 +1652,7 @@ pub unsafe extern "system" fn ScratchBuffer_ExecuteCdbEx(
 //         else if (BYTE_OFFSET(DeviceExtension->ScratchContext.ScratchBuffer) != 0)
 //         {
 //             status = STATUS_INTERNAL_ERROR;
-//             TracePrint((TRACE_LEVEL_FATAL, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_FATAL, TRACE_FLAG_INIT,
 //                         "Allocation of %x bytes non-paged pool was not "
 //                         "allocated on page boundary?  STATUS_INTERNAL_ERROR\n",
 //                         DeviceExtension->ScratchContext.ScratchBufferSize
@@ -1670,7 +1669,7 @@ pub unsafe extern "system" fn ScratchBuffer_ExecuteCdbEx(
 //         if (DeviceExtension->ScratchContext.ScratchBufferMdl == NULL)
 //         {
 //             status = STATUS_INSUFFICIENT_RESOURCES;
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                         "Failed to allocate MDL for %x byte buffer\n",
 //                         DeviceExtension->ScratchContext.ScratchBufferSize
 //                         ));
@@ -1696,7 +1695,7 @@ pub unsafe extern "system" fn ScratchBuffer_ExecuteCdbEx(
 //             (DeviceExtension->ScratchContext.ScratchRequest == NULL))
 //         {
 //             status = STATUS_INSUFFICIENT_RESOURCES;
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                         "Failed to allocate scratch MDL \n"));
 //         }
 //     }
@@ -1711,7 +1710,7 @@ pub unsafe extern "system" fn ScratchBuffer_ExecuteCdbEx(
 //         if (DeviceExtension->ScratchContext.ScratchSrb == NULL)
 //         {
 //             status = STATUS_INSUFFICIENT_RESOURCES;
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                         "Failed to allocate scratch SRB\n"));
 //         }
 //     }
@@ -1726,7 +1725,7 @@ pub unsafe extern "system" fn ScratchBuffer_ExecuteCdbEx(
 //         if (DeviceExtension->ScratchContext.ScratchSense == NULL)
 //         {
 //             status = STATUS_INSUFFICIENT_RESOURCES;
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                         "Failed to allocate scratch sense data\n"
 //                         ));
 //         }
@@ -1744,7 +1743,7 @@ pub unsafe extern "system" fn ScratchBuffer_ExecuteCdbEx(
 //         if (DeviceExtension->ScratchContext.ScratchHistory == NULL)
 //         {
 //             status = STATUS_INSUFFICIENT_RESOURCES;
-//             TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//             TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                         "Failed to allocate scratch history buffer\n"
 //                         ));
 //         }
@@ -1773,7 +1772,7 @@ pub unsafe extern "system" fn ScratchBuffer_ExecuteCdbEx(
 //             if (DeviceExtension->ScratchContext.PartialMdl == NULL)
 //             {
 //                 status = STATUS_INSUFFICIENT_RESOURCES;
-//                 TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//                 TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                             "Failed to allocate MDL for %x byte buffer\n",
 //                             DeviceExtension->ScratchContext.ScratchBufferSize
 //                             ));
@@ -1873,7 +1872,7 @@ pub unsafe extern "system" fn ScratchBuffer_ExecuteCdbEx(
 //                                                                 NULL, NULL);
 //         if (!NT_SUCCESS(status))
 //         {
-//             TracePrint((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
+//             TracePrint!((TRACE_LEVEL_ERROR, TRACE_FLAG_GENERAL,
 //                        "ScratchBuffer_ResetItems: WdfIoTargetFormatRequestForInternalIoctlOthers failed, %!STATUS!\n",
 //                        status));
 //         }
@@ -2118,7 +2117,7 @@ pub unsafe extern "system" fn ScratchBuffer_ExecuteCdbEx(
 //
 //     if (!NT_SUCCESS(WdfRequestGetStatus(Request)))
 //     {
-//         TracePrint((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
+//         TracePrint!((TRACE_LEVEL_WARNING, TRACE_FLAG_INIT,
 //                    "WdfRequestSend: %lx\n",
 //                     WdfRequestGetStatus(Request)
 //                     ));

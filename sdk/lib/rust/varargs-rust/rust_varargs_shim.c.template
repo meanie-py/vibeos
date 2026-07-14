@@ -1,0 +1,55 @@
+/* rust_varargs_shim.c — TEMPLATE. Copy into a module's dir and fill in PART 2.
+ *
+ * Stable Rust cannot do exactly two things (both are `c_variadic`,
+ * rust-lang/rust#44930 — FCP-complete, so this file is expected to be DELETED when
+ * it stabilizes; see docs/engineering/active-lanes/stable-toolchain-plan.md):
+ *
+ *   1. DEFINE a C-variadic function — `va_start` can only legally appear inside one.
+ *   2. va_arg.
+ *
+ * So this file supplies those two primitives and NOTHING else. Every variadic entry
+ * point below is a 3-line trampoline that hands straight back to Rust; all the real
+ * logic — the printf formatters, the strsafe length/NTSTATUS semantics, the driver
+ * notification dispatch — stays in Rust. This is a shim for a language gap, NOT a
+ * Rust translation being reverted to C (AGENTS.md "Rust Is The Goal").
+ *
+ * Rust side: sdk/lib/rust/varargs-rust (`VaArgs`), and the `*_v` callees below.
+ *
+ * WHY WE PASS `&ap` AND NOT `ap`: handing Rust a POINTER to the va_list avoids
+ * assuming `va_list` is itself a single pointer. It happens to be `char*` on all
+ * three of our Windows targets, but it is an array-of-struct on SysV x86-64, and the
+ * by-pointer form is correct on both — which is also what lets the mechanism be
+ * unit-tested natively on the host.
+ */
+
+#include <stdarg.h>
+
+/* ---- PART 1: the va_arg pullers (identical in every module) -------------------
+ * Each takes a POINTER to the caller's va_list and ADVANCES it, so successive pulls
+ * from Rust walk the argument list exactly as C's va_arg would.
+ * Mirrored by the `extern "C"` block in varargs-rust/src/lib.rs — keep in sync.
+ */
+int                vibeos_va_arg_i32(void *app) { return va_arg(*(va_list *)app, int); }
+unsigned int       vibeos_va_arg_u32(void *app) { return va_arg(*(va_list *)app, unsigned int); }
+long long          vibeos_va_arg_i64(void *app) { return va_arg(*(va_list *)app, long long); }
+unsigned long long vibeos_va_arg_u64(void *app) { return va_arg(*(va_list *)app, unsigned long long); }
+double             vibeos_va_arg_f64(void *app) { return va_arg(*(va_list *)app, double); }
+void *             vibeos_va_arg_ptr(void *app) { return va_arg(*(va_list *)app, void *); }
+
+/* ---- PART 2: this module's variadic entry points ------------------------------
+ * One trampoline per variadic function the module needs. Each does the va_start that
+ * Rust cannot, then calls the fixed-arity `_v` twin that holds the actual logic.
+ *
+ * Pattern:
+ *
+ *   extern <RET> <Name>_v(<fixed args>, void *ap);          // implemented in Rust
+ *
+ *   <RET> <Name>(<fixed args>, ...) {
+ *       va_list ap; va_start(ap, <last named arg>);
+ *       <RET> r = <Name>_v(<fixed args>, (void *)&ap);
+ *       va_end(ap);
+ *       return r;
+ *   }
+ *
+ * For a void-returning entry, drop `r` and the `return`.
+ */

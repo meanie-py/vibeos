@@ -123,6 +123,10 @@ extern "system" {
     fn GetTextExtentPoint32W(hdc: HDC, lpString: LPCWSTR, c: INT, psizl: *mut SIZE) -> BOOL;
 }
 
+extern "C" {
+    fn DbgPrint(Format: *const i8, ...) -> u32;
+}
+
 // ── kernel32 heap / global / multibyte (extern "system"). ─────────────────────
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
@@ -1319,6 +1323,14 @@ unsafe fn EDIT_LockBuffer(es: *mut EDITSTATE) {
                 textA = LocalLock((*es).hloc32A) as *mut CHAR;
             }
         } else {
+            /* ERR!() is a NO-OP in this translation (every ERR/WARN/TRACE was
+             * nulled out), so this used to fail in total silence and the caller
+             * then dereferenced es->text == NULL. */
+            DbgPrint(
+                b"[EDIT] LockBuffer: es->hloc32W is NULL - no buffer was ever \
+                  allocated; es->text stays NULL and the next access will AV\n\0"
+                    .as_ptr() as *const i8,
+            );
             ERR!();
             return;
         }
@@ -1341,6 +1353,20 @@ unsafe fn EDIT_LockBuffer(es: *mut EDITSTATE) {
             LocalUnlock((*es).hloc32A);
         } else {
             (*es).text = LocalLock((*es).hloc32W) as LPWSTR;
+        }
+
+        /* Every caller assumes es->text is valid after a Lock (that is the whole
+         * contract), and dereferences it without checking — EDIT_EM_ReplaceSel
+         * writes through it immediately. If the lock failed, say so HERE rather
+         * than letting it surface as an AV at address 0 three frames away. */
+        if (*es).text.is_null() {
+            DbgPrint(
+                b"[EDIT] LockBuffer: LocalLock(hloc32W=%p) returned NULL (buffer_size=%u) \
+                  - the edit buffer is unusable\n\0"
+                    .as_ptr() as *const i8,
+                (*es).hloc32W,
+                (*es).buffer_size,
+            );
         }
     }
     (*es).lock_count += 1;
