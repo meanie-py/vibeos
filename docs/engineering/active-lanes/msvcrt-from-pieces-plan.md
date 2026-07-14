@@ -943,7 +943,7 @@ builds ×3.
 
 ---
 
-## Wave 13 (2026-07-14) — the FLOAT PARSER. msvcrt's own bignum, PORTED. +15 flips (amd64/arm64), the lane's first true translation.
+## Wave 13 (2026-07-14) — the FLOAT PARSER. msvcrt's own bignum, PORTED. +15 flips (all three arches), the lane's first true translation.
 
 **This is the wave that wave 5 said we could not have.** Wave 5 cancelled "flip `strtod` from
 cnt-rust" after a probe showed cnt-rust's DJ-Delorie accumulator disagreeing with msvcrt's bignum by
@@ -952,7 +952,7 @@ assembly. Wave 13 does exactly that. `sdk/lib/rust/msvcrt-crt-rust/src/fpnum.rs`
 transcription of `dll/win32/msvcrt/bnum.h` + `string.c`'s `fpnum_parse`/`fpnum_parse_bnum`/
 `fpnum_double`/`fpnum_ldouble` — the base-10 circular-buffer bignum, correctly rounded.
 
-**Flipped (15, on amd64 + arm64):** `strtod` · `_strtod_l` · `atof` · `_atof_l` · `_atoflt_l` ·
+**Flipped (15, all three arches):** `strtod` · `_strtod_l` · `atof` · `_atof_l` · `_atoflt_l` ·
 `_atodbl` · `_atodbl_l` · `wcstod` · `_wcstod_l` · `_wtof` · `_wtof_l` · `_atoldbl` · `_atoldbl_l` ·
 `__STRINGTOLD` · `__STRINGTOLD_L` (+ the shared engine `fpnum_parse`/`fpnum_double`/`fpnum_ldouble`,
 kept internal — not `#[no_mangle]`, so the C engine still serves its C callers).
@@ -988,15 +988,19 @@ it now records that the *cnt-rust route* is DIVERGE while the *ported engine* is
    family while `strtod` stays green. Third variation of §9.73 in this lane: *the harness's own setup
    is part of the oracle.*
 
-### i386 is C, on purpose (softfloat `extern "C" fn -> f64` ABI wall)
+### i386 too — via x87 `ST(0)` (I first gated it out on a WRONG premise; §9.79 point 4)
 
-i386 msvcrt is `-march=pentium` (pre-SSE) and the i686 user target is `-sse,-sse2`; under that ABI a
-`double` returns in x87 `st0`, which is exactly what the C does — but rustc refuses to emit an
-`extern "C" fn -> f64` with SSE off. Enabling SSE would diverge from the baseline and change an ABI at
-the C-caller boundary, so the family is `#[cfg(not(target_arch = "x86"))]`: **amd64 + arm64 flip, i386
-keeps its correct C bignum.** Regression-free (i386 `strtod` still works), the host harness still fully
-grades the arch-independent Rust logic, and PE-export RVA shows the split. **Owed:** lift the i386 flip
-once softfloat-`f64`-return has a sanctioned expression (x87-return shim or a rustc capability).
+i386 msvcrt is `-march=pentium` (pre-SSE) and the i686 user target is `-sse,-sse2`. I initially read
+rustc's "SIMD vector type `f64` … requires the `sse` target feature" as "`extern "C" fn -> f64` is
+impossible here" and gated the family `#[cfg(not(target_arch = "x86"))]`. **That was backwards, and
+review caught it:** cnt-rust (`cabi/strtod.rs`, `core_rs/floatcvt.rs`) already ships `extern "C" -> f64`
+on no-SSE i386 — the C ABI returns `double` in x87 `ST(0)`, no SSE. What actually hard-errors is a
+**Rust-ABI** `-> f64` and the SSE-pulling `f64`/`f32` std methods (`is_infinite`/`from_bits`). Fix = three
+ABI-portable changes in `fpnum.rs`: mark the one internal `f64`-returning helper `extern "C"`; replace
+`is_infinite()` with memory bit-tests (`f64_is_inf`/`f32_is_inf`); replace `f64::from_bits` with a
+`store_bits` that writes the `u64` pattern into the destination. None needs reverting if vibeos ever drops
+the pre-SSE baseline (it targets Vista-era+, where SSE2 is universal — a candidate simplification, its own
+lane). **The family now flips on all three arches.**
 
 ### New guardians (the layout/scalar drift defense grew)
 
@@ -1013,7 +1017,7 @@ vs bindgen.
 `classify` **172 MATCH / 0 SIGN-ONLY / 1 DIVERGE** (the expected `strtod` probe) · all six instruments
 green · three negative controls run (one proved the Wine bug inert, one caught the signed-char trap, one
 exposed+fixed the errno-clear blind spot) · `vibeos-cli check` green · builds ×3. **msvcrt.dll is now
-209 functions of Rust on amd64/arm64 (194 on i386).**
+209 functions of Rust on all three arches.**
 
 ### Next, after wave 13
 

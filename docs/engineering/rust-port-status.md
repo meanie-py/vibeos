@@ -57,17 +57,17 @@ Tree inventory (2026-07-03): **~2,422 `.rs` files · 228 crates** under `sdk/lib
 | **Driver fleet** (storage, FS, input, bus, netstack) | see below — netstack is a from-scratch Rust rewrite; rest cohab-flipped | **~90–100%** |
 | **LSA/SAM server** (lsasrv / samsrv) | active frontier — samsrv ~90%, lsasrv ~50%+ | **partial** |
 | **explorer.exe** (desktop shell) | `explorer-rust` 22 `.rs`/22K LOC; 22 cohab markers; 2 glue `.cpp` left (settings_shim, util_vararg) | **~99%** |
-| **CRT** (msvcrt/ucrt body) | **209 fns of msvcrt.dll flipped to Rust on amd64/arm64 (194 on i386)** (waves 1–13, 2026-07-14) — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family is amd64/arm64 only — i386 keeps its correct C bignum (softfloat `extern "C" fn -> f64` ABI wall, field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). The 581 `.c` still compile; what remains is gated mainly on **printf** (Phase C). | **~13–19%** |
+| **CRT** (msvcrt/ucrt body) | **209 fns of msvcrt.dll flipped to Rust on all three arches** (waves 1–13, 2026-07-14) — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family flips on all three arches — i386 via x87 `ST(0)` extern-C returns (I first gated it out on a wrong premise; field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). The 581 `.c` still compile; what remains is gated mainly on **printf** (Phase C). | **~13–19%** |
 
 ### CRT (msvcrt) detail — the assemble-from-`cnt-rust` track
 
-**209 functions of `msvcrt.dll` are Rust on amd64/arm64 (194 on i386)** as of 2026-07-14
+**209 functions of `msvcrt.dll` are Rust on all three arches** as of 2026-07-14
 (waves 1–13). Verified by parsing the DLL's export table: every flip lands in the Rust cluster,
 every deliberate refusal is still C (`memmove`, `strtok`, `_ecvt`/`_fcvt`/`_gcvt` — the
 printf-backed converters — at the high RVAs). Wave 13 added the **bignum float parser** (`strtod`
-and the whole `atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` family) on
-amd64/arm64; on i386 those stay C (the softfloat `extern "C" fn -> f64` ABI wall — §9.79), so
-i386's `strtod` is still at a high C RVA while amd64/arm64's is in the Rust cluster.
+and the whole `atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` family) on **all three
+arches** — including i386, where an `extern "C" fn -> f64` returns via x87 `ST(0)` and needs no SSE
+(§9.79 point 4 corrects an earlier wrong read that had gated i386 out).
 
 Flipped: the mem/str floor (`memcpy` `memset` `memchr` `memcmp` `str{len,cmp,cpy,cat,chr,
 rchr,str,spn,cspn,pbrk,nlen,ncmp,ncpy,ncat}` `_str{lwr,upr,rev,set,nset}` `_memccpy` `_swab`
@@ -78,7 +78,7 @@ wide + all ten `_s` variants), the `_s` secure family (`strcpy_s` `strcat_s` `st
 `strncat_s` `_strnset_s` + the six wide), the tokenizers (`strtok_s` `wcstok_s`), the
 case-insensitive family (`_stricmp` `_strnicmp` `_memicmp` `_strlwr_s` `_strupr_s` + the six
 wide), the ctype/case + collation families (`ctype.c`'s 44 + `strcoll`/`strxfrm` and wide
-twins), and — amd64/arm64 only — the **bignum float parser** (`strtod` `_strtod_l` `atof`
+twins), and the **bignum float parser** (`strtod` `_strtod_l` `atof`
 `_atof_l` `_atoflt_l` `_atodbl` `_atodbl_l` `wcstod` `_wcstod_l` `_wtof` `_wtof_l` `_atoldbl`
 `_atoldbl_l` `__STRINGTOLD` `__STRINGTOLD_L`).
 

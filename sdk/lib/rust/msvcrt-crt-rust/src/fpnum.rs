@@ -368,7 +368,7 @@ fn fpnum_double(fp: &mut FpNum, d: &mut f64) -> i32 {
         if fp.sign == 1 {
             bits &= !(1u64 << (MANT_BITS + EXP_BITS - 1));
         }
-        *d = f64::from_bits(bits);
+        unsafe { store_bits(d, bits) };
         return 0;
     }
     if fp.m == 0 {
@@ -460,7 +460,7 @@ fn fpnum_double(fp: &mut FpNum, d: &mut f64) -> i32 {
     bits |= (fp.exp as u64) << (MANT_BITS - 1);
     bits |= fp.m & ((1u64 << (MANT_BITS - 1)) - 1);
 
-    *d = f64::from_bits(bits);
+    unsafe { store_bits(d, bits) };
     0
 }
 
@@ -959,14 +959,59 @@ pub struct CrtDouble {
 const OVERFLOW_: i32 = 3; // _OVERFLOW  (sdk/include/crt/math.h:41)
 const UNDERFLOW_: i32 = 4; // _UNDERFLOW (sdk/include/crt/math.h:42)
 
+/// `x.is_infinite()` without SSE.
+///
+/// The std `f64::is_infinite` / `f32::is_infinite` methods take their operand by value in
+/// the Rust ABI, which hard-errors on no-SSE i386 exactly like a Rust-ABI `-> f64` return.
+/// So read the operand's bits straight out of memory (a plain integer load — no float
+/// register, no ABI) and test the IEEE exponent/mantissa. Same bit form as cnt-rust's
+/// `core_rs/floatcvt.rs::is_finite`.
+///
+/// # Safety
+/// `p` must point to a valid `f64`.
+#[inline]
+unsafe fn f64_is_inf(p: *const f64) -> bool {
+    let bits = *(p as *const u64);
+    (bits & 0x7FFF_FFFF_FFFF_FFFF) == 0x7FF0_0000_0000_0000
+}
+/// f32 twin of [`f64_is_inf`].
+///
+/// # Safety
+/// `p` must point to a valid `f32`.
+#[inline]
+unsafe fn f32_is_inf(p: *const f32) -> bool {
+    let bits = *(p as *const u32);
+    (bits & 0x7FFF_FFFF) == 0x7F80_0000
+}
+
+/// The store-side twin of `f64::from_bits`, without SSE.
+///
+/// `f64::from_bits(u64) -> f64` returns an `f64` by value in the Rust ABI, so it hard-errors
+/// on no-SSE i386 like every other Rust-ABI `-> f64`. But we only ever want the bits *in a
+/// destination `f64`* — so write them straight into its storage as a `u64` (a plain integer
+/// store, no float register). Bit-identical to `*d = f64::from_bits(bits)`.
+///
+/// # Safety
+/// `d` must point to a writable `f64`.
+#[inline]
+unsafe fn store_bits(d: *mut f64, bits: u64) {
+    *(d as *mut u64) = bits;
+}
+
 /// `strtod_helper` (string.c:1024). The shared body of the whole narrow family.
 ///
 /// `perr` is the `_atoflt`/`_atodbl` out-of-band error channel: when it is non-NULL the
 /// ERANGE goes there INSTEAD of to errno. And when it is NULL, note the `#if _MSVCR_VER
 /// == 0` arm — this CRT **zeroes errno up front**, which the wide `_wcstod_l` does not.
 /// That asymmetry is real and `classify` grades it.
+/// `extern "C"`, NOT the default Rust ABI, ON PURPOSE. A Rust-ABI `-> f64` returns in
+/// `xmm0` and so hard-errors on the no-SSE i386 target ("SIMD vector type `f64` … requires
+/// the `sse` target feature"); an `extern "C"` `-> f64` returns in the x87 `ST(0)`
+/// register, needs no SSE, and is the i386 C ABI. This is the same technique cnt-rust's
+/// `cabi/strtod.rs` and `core_rs/floatcvt.rs::fl` use. On amd64/arm64 it is a no-op
+/// (their C ABI returns f64 in xmm0/d0 anyway).
 #[inline]
-unsafe fn strtod_helper(
+unsafe extern "C" fn strtod_helper(
     str_: *const u8,
     end: *mut *mut u8,
     locale: *mut c_void,
@@ -1048,7 +1093,7 @@ pub unsafe extern "C" fn _atoflt_l(
     let d = strtod_helper(str_, core::ptr::null_mut(), locale, &mut err);
     (*value).f = d as f32;
 
-    if (*value).f.is_infinite() {
+    if f32_is_inf(core::ptr::addr_of!((*value).f)) {
         return OVERFLOW_;
     }
     if (d != 0.0 || err != 0) && (*value).f > -f32::MIN_POSITIVE && (*value).f < f32::MIN_POSITIVE {
@@ -1066,7 +1111,7 @@ pub unsafe extern "C" fn _atodbl_l(
     let mut err: i32 = 0;
     (*value).x = strtod_helper(str_, core::ptr::null_mut(), locale, &mut err);
 
-    if (*value).x.is_infinite() {
+    if f64_is_inf(core::ptr::addr_of!((*value).x)) {
         return OVERFLOW_;
     }
     if ((*value).x != 0.0 || err != 0)

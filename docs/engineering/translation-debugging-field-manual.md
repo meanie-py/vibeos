@@ -7061,7 +7061,7 @@ of that checker structurally blind to `HANDLE`-vs-`LPHANDLE` — the bug that mo
 *both* are pointers.
 
 
-### 9.79 (2026-07-14) Porting msvcrt's bignum float parser: a verbatim upstream bug that is provably INERT, a signed-char/WEOF trap that is load-bearing, an i386 softfloat-return ABI wall, and a harness that could not see errno being *cleared*
+### 9.79 (2026-07-14) Porting msvcrt's bignum float parser: a verbatim upstream bug that is provably INERT, a signed-char/WEOF trap that is load-bearing, an i386 x87 float-ABI I first read BACKWARDS, and a harness that could not see errno being *cleared*
 
 **Context.** Wave 13 of the msvcrt-from-pieces lane ported msvcrt's own base-10 **bignum** float
 parser (`dll/win32/msvcrt/bnum.h` + `string.c`'s `fpnum_parse`/`fpnum_double`/`fpnum_ldouble`) to
@@ -7071,7 +7071,7 @@ accumulator disagreeing with msvcrt by **14 ULPs**; the honest path was always t
 machinery. The oracle already existed — `string.c`/`wcs.c` compile as reference TUs in
 `msvcrt-difftest`, so every parsed `double` is graded on its exact **64-bit pattern**. It landed
 **`strtod`/`_strtod_l`/`atof`/`_atof_l`/`_atoflt_l`/`_atodbl(_l)`/`wcstod`/`_wcstod_l`/`_wtof(_l)`/
-`_atoldbl(_l)`/`__STRINGTOLD(_L)` — 15 functions on amd64 + arm64**, all bit-exact. Four durable
+`_atoldbl(_l)`/`__STRINGTOLD(_L)` — 15 functions on all three arches**, all bit-exact. Four durable
 lessons, three of them found by *trying to break my own green*.
 
 **1. A verbatim upstream bug can be provably inert — instrument reachability, don't assume.**
@@ -7118,21 +7118,35 @@ root: a harness convenience (a stub, a cheap `get_locinfo`, a pre-zeroed errno) 
 assumption about the environment, and the assumption is itself untested until a negative control
 attacks it.
 
-**4. i386 hits a softfloat `extern "C" fn -> f64` ABI wall — flip amd64/arm64, keep i386's C.**
-i386 msvcrt is built `-march=pentium` (pre-SSE) and the whole i686 user-mode target carries
-`-C target-feature=-sse,-sse2` (`.cargo/config.toml`); under the i386 C ABI a `double` returns in the
-x87 `st0` register, no SSE needed — which is exactly what the C `strtod` does. But current rustc
-**refuses to emit an `extern "C" fn(..) -> f64` when SSE is disabled** ("SIMD vector type `f64` …
-requires the `sse` target feature"), a conservative guard that fires even though the x87 return is
-well-defined. Enabling SSE to dodge it would diverge from the `-march=pentium` baseline and change an
-ABI at the exact boundary the C callers cross, so the float family is gated
-`#[cfg(not(target_arch = "x86"))]`: it flips on amd64 + arm64 and i386 keeps its (correct, x87) C
-bignum. Regression-free — i386 still has a working `strtod` (the same Wine bignum, in C), the
-host-built harness fully grades the shipping Rust logic (the module is arch-independent), and PE-export
-RVA shows the split. **Owed:** lift the i386 flip once the softfloat-`f64`-return ABI has a sanctioned
-expression (an x87-return shim, or a rustc capability). This is the "fail loud, never silently degrade"
-rule applied to a toolchain gap: gate it explicitly with the reason, don't hack the ABI to force a
-uniform-looking flip.
+**4. i386 (32-bit x86) works too — via x87 `ST(0)` — and my first read of the ABI wall was BACKWARDS.**
+i386 msvcrt is built `-march=pentium` (pre-SSE — a ReactOS old-hardware-compat choice) and the whole
+i686 user-mode target carries `-C target-feature=-sse,-sse2` (`.cargo/config.toml`). rustc *does* reject
+some `f64`-across-a-function-boundary code on that no-SSE target with "SIMD vector type `f64` … requires
+the `sse` target feature" — and I first read that as "`extern "C" fn -> f64` is impossible on i386" and
+gated the whole family `#[cfg(not(target_arch = "x86"))]`. **That was exactly wrong, and the reviewer
+caught it by pointing at prior art:** cnt-rust had already solved this, painstakingly, and its comments
+state the rule precisely (`cabi/strtod.rs`, `core_rs/floatcvt.rs::fl`):
+
+> the C ABI returns `f64` in the x87 `ST(0)` register — no SSE — so an **`extern "C"` `-> f64` compiles
+> on no-SSE i386**. What actually hard-errors is a **Rust-ABI `-> f64`** (that one wants `xmm0`) and the
+> SSE-pulling `f64`/`f32` *std methods* (`is_infinite`, `is_finite`, `abs`), whose operand crosses a
+> Rust-ABI boundary by value.
+
+So the fix is not to gate i386 out — it is three small, ABI-portable changes: (a) mark the one internal
+`f64`-returning helper (`strtod_helper`) `extern "C"` so it returns via `ST(0)`; (b) replace the two
+`is_infinite()` calls with bit tests that read the operand's *memory* as an integer (a plain load, no
+float register); (c) replace `f64::from_bits` with a `store_bits` that writes the `u64` pattern straight
+into the destination's storage. None of these is a hack: `extern "C" -> f64` and integer bit-ops are all
+correct *with* SSE too, so if vibeos ever drops the pre-SSE baseline (it targets Vista-era+ hardware,
+where SSE2 is universal) not one line here needs reverting. The family now flips on **all three arches**.
+
+**The meta-lesson — and it is the important one:** a compiler error that names a feature (`requires the
+`sse` target feature`) is describing *one* codegen path, not a universal impossibility. Before you gate a
+whole family out "because the toolchain can't," check whether a sibling crate in the same tree already
+ships the thing — the answer here was one `grep` away in cnt-rust, and the reviewer's "didn't we already
+write softfloat painstakingly?" was worth more than my confident ABI paragraph. "Fail loud, don't
+silently degrade" is right; but *gating a family out is itself a silent degrade dressed up as caution* if
+the block was never real.
 
 **Reusable takeaways.**
 - When a **negative control does not bite**, you have found a hole in the *corpus or the instrument*,
@@ -7145,3 +7159,5 @@ uniform-looking flip.
 - **Grep every new flip — and everything it CALLS — for arch-conditional (`_WIN64`) contracts and for
   side-channel writes (`errno`, the invalid-parameter handler) BEFORE trusting the harness**, because
   the harness only catches what its setup lets it observe.
+- **A feature-named compiler error is a codegen constraint, not a law of nature.** `extern "C" -> f64`
+  through x87 is the counter-example. Check for in-tree prior art before declaring a target unsupported.
