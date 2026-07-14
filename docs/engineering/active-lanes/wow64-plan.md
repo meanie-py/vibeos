@@ -997,8 +997,16 @@ WM_PAINT are green, but DefWindowProc's WINDOWPOS/NCCALCSIZE geometry is wrong.
   off the same mis-read `tagWND` (e.g. `GetWindowRect`, window.c:1282, reads
   `Wnd->rcWindow` DIRECTLY from the heap).
 
-**BUT the specific WINDOWPOSCHANGING failure is a DIFFERENT, more tractable
-mechanism (2026-07-13, evidence in defwnd.c:783).** The 32-bit user32
+**UPDATE 2026-07-13 — the WINDOWPOSCHANGING half is FIXED and landed** (M16 Fix A +
+Fix B, commits `b8263e6a22d` + `3cf1faee89b`). It was the tractable mechanism below,
+confirmed by an in→out trace: pre-fix win32k returned garbage (cx=cy=0, SWP_NOSIZE
+cleared); post-fix it returns the WINDOWPOS correctly (SWP_NOSIZE preserved,
+cx=640→640). The callback copy-back (M15a) is re-enabled on top. win32.exe stays
+0x600D. **What REMAINS of M16 is only the direct desktop-heap `tagWND` reads**
+(`GetWindowRect` window.c:1282 reads `Wnd->rcWindow` straight from the heap) — that
+still needs one of the three fixes below, and is the likely DOOM geometry lead.
+
+**The WINDOWPOSCHANGING mechanism (now fixed), for the record (defwnd.c:783):** The 32-bit user32
 DefWindowProc does NOT read the heap for WM_WINDOWPOSCHANGING — it forwards to
 `NtUserMessageCall(hWnd, Msg, wParam, lParam, &lResult, FNID_DEFWINDOWPROC, ...)`,
 a **syscall**. `lParam` is the guest's 28-byte 32-bit `WINDOWPOS`. That syscall is
