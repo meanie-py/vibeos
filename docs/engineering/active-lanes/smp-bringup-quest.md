@@ -548,3 +548,47 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   until `ninja ntkrnlmp`). **NEXT (M5a-media):** wire the 3 gaps above (conditional on
   the existing VIBEOS_SMP_DEFAULT_BOOT env, mirroring the x86 livecd path), then re-boot
   `-smp 2` to finally exercise mpboot/mproc and debug the real PSCI/trampoline path.
+- 2026-07-14 (cont.): **M5a COMPLETE — arm64 CPU 1 boots via PSCI to KiIdleLoop; BSP
+  reports "2 processor(s) online" (commit adf7e452fdb).** Media pipeline wired
+  (archcfg builds ntkrnlmp for arm64; mkramdisk `--smp` stages it + injects
+  `/KERNEL=ntkrnlmp.exe`; commit df353be6e20). Three greenfield bugs, each pinned
+  before the next surfaced (reusable arm64-AP-bringup gotchas — will recur for any
+  future arm64 secondary-core work):
+    1. **PSCI conduit = HVC, not SMC.** `smc #0` is UNDEFINED on QEMU virt (EL1-only,
+       no EL3) → the BSP took an EC=0 abort and wedged *right after* the CPU_ON call
+       (MPIDR=0x80000000 ⇒ it was the BSP, not the AP; "post-PSCI SUCCESS" never
+       printed). QEMU's generated DTB carries `method = "hvc"` (verified by
+       `-machine dumpdtb` → the /psci node has "hvc", never "smc"). Fixed: `hvc #0`.
+       (Consuming the FADT ARM_BOOT_ARCH PSCI_USE_HVC bit is TODO for real EL3 firmware.)
+    2. **AP MMU-enable needs a purpose-built idmap.** The BSP's live TTBR0 does NOT
+       identity-map the contiguous scratch trampoline page (MmAllocateContiguousMemory
+       lands it hundreds of MB into RAM), so the AP's first instruction fetch after
+       `msr sctlr_el1` faulted — it printed the MMU-off 'A' trace then died before 'B'.
+       Fixed: `build_trampoline_idmap` now maps a Normal-WB 1GB block for the trampoline
+       page + a Device 1GB block for the PL011 UART (MAIR Attr1=Device-nGnRnE, PTE
+       AttrIndx 1) so post-MMU trampoline traces still reach hardware.
+    3. **AP FP/SIMD trap → silent vector re-entry (the hard one).** The BSP inherits an
+       FP-enabled CPACR_EL1 from UEFI firmware; a PSCI-started AP comes up at the
+       trapping reset value (FPEN=00). The first NEON-vectorized store the AP executed
+       (KiInitSpinLocks' LockQueue block) took an EC=0x07 SIMD-disabled abort, and the
+       arm64 exception path re-entered the vector on a corrupted SP → silent infinite
+       re-entry (no [KEXC]). **GDB was decisive** where UART bisection wasn't (the two
+       CPUs' serial writes interleave char-by-char, making "how far did the AP get"
+       unreliable — a memory-only stage beacon fixed that and pinned the hang inside
+       KiInitSpinLocks; then GDB on the native `-smp 2` boot showed CPU1
+       PC=KiArm64VectorTable+0x200, "FPU disabled", garbage SP, and the BSP deadlocked
+       in KeIpiGenericCall). Fixed: set CPACR_EL1.FPEN=0b11 at the top of KiSystemStartup
+       (idempotent on the BSP; runs on all CPUs).
+  **Method note for the next debugger:** for arm64 SMP hangs, reach for GDB on a native
+  `qemu-system-aarch64 -smp 2 -s` boot early — `info threads` + `monitor info registers -a`
+  gives each CPU's PC/SP and `$ESR_EL1`/`$FAR_EL1` directly. UART tracing from an AP is
+  actively misleading because it interleaves with the BSP; use a memory beacon
+  (`KiArm64ApStage`, read by the BSP on handshake timeout with a hung-vs-slow re-read).
+  Default UP arm64 unaffected (boots to desktop; all AP code is smp-gated, CPACR OR is
+  idempotent).
+  **M5b (NEXT, exact starting point):** `-smp 2` boot now hangs *after* "2 processor(s)
+  online" — the BSP's first cross-CPU IPI (KeIpiGenericCall self-test / Phase-1 sync)
+  never delivers because the AP's **GIC CPU interface / SGI receive path is unwired**
+  (HalInitializeProcessor is an empty stub, so the AP's GICC/redistributor is never
+  enabled). Wire: AP-side GIC CPU-interface enable in HalInitializeProcessor + SGI
+  receive dispatch (trap.rs → KiIpiServiceRoutine) + HalRequestIpi → GICD_SGIR@0xF00.
