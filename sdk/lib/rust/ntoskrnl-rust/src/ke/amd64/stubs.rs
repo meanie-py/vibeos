@@ -77,18 +77,41 @@ pub unsafe extern "system" fn KiIdleLoop() -> ! {
         
         if !(*Prcb).NextThread.is_null() {
             core::arch::asm!("sti");
-            
+
+            // §9.56 SMP (2026-07-13): consume NextThread UNDER THE PRCB LOCK.
+            // Every other promote site (KiExitDispatcher, KiQuantumEnd, yield,
+            // KiDpcInterruptHandler) serializes NextThread consumption against
+            // KiDeferredReadyThread's standby-DISPLACEMENT (which runs under
+            // this lock and re-defers a NextThread it reads). The lock-free
+            // consume here (inherited verbatim from ReactOS's never-validated
+            // CONFIG_SMP C — both i386 and amd64 lack it) let the displacement
+            // read NextThread=T while idle promoted T to Running → a RUNNING
+            // thread got set DeferredReady → double-link tear (caught by the
+            // 0x5D/0x5A oracles as caller 429/deferred_by=9200, both victims
+            // runningOnCPU=1). Re-check under the lock: a displacement may
+            // have consumed/replaced it between the unlocked peek and here.
+            #[cfg(feature = "smp")]
+            ntkrnl_sys::inline::ke::KiAcquirePrcbLock(Prcb);
+            #[cfg(feature = "smp")]
+            if (*Prcb).NextThread.is_null() {
+                ntkrnl_sys::inline::ke::KiReleasePrcbLock(Prcb);
+                continue;
+            }
+
             let OldThread = (*Prcb).CurrentThread;
             let NewThread = (*Prcb).NextThread;
-            
+
             (*Prcb).NextThread = core::ptr::null_mut();
             (*Prcb).CurrentThread = NewThread;
-            
+
             (*(NewThread as *mut _KTHREAD)).__bindgen_anon_5.__bindgen_anon_6.State = 2u8;
 
             // §9.56 in-flight oracle: promotion-to-Running unmark (idle loop).
             #[cfg(feature = "smp")]
             ntkrnl_sys::inline::ke::rq_inflight_unmark(NewThread as *mut _KTHREAD);
+
+            #[cfg(feature = "smp")]
+            ntkrnl_sys::inline::ke::KiReleasePrcbLock(Prcb);
 
             #[cfg(feature = "smp")]
             {
