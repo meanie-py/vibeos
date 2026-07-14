@@ -1083,3 +1083,36 @@ win32u.spec makes stage 1 emit a silently-WRONG flat thunk (it can't see inside
 **Next targets**: the ntdll surface (64 NEEDS_MANUAL in wow64_thunks.gen.c) — same
 machinery, NTDLL_TU already sketched; then reverse-direction callback payload
 generation (mechanize M15a); then arrays/count-aware shapes (EnumDisplayMonitors).
+
+## M18 — scaling marshalgen: callbacks + last ntdll gaps + arrays (2026-07-14)
+
+Three fronts, all landed + oracle-green:
+
+**1. gen-callback (`wow64_cb_automarshal.c/h`)** — the KeUserModeCallback
+direction is now generated from the same layout DB. Direction semantics differ
+from syscalls and are encoded type-driven: Down (64→32) converts everything;
+Up (32→64) writes into the kernel's ORIGINAL packed buffer, so dereferenceable
+pointer fields (lppos) are PRESERVED while handles/uintptr value fields
+(hmenuNext, itemData) sign-extend back. Fixed silent verbatim-copy corruption
+for: WM_NCCALCSIZE wParam≠0 (NCCALCSIZE_PARAMS+appended WINDOWPOS, 96→80 —
+the guest's lppos fixup used to land mid-lppos64), WM_COPYDATA (24→12 header +
+blob), WM_DRAWITEM / WM_MEASUREITEM / WM_HELP / WM_NEXTMENU (table-driven both
+directions). Authoritative message set = win32k g_MsgMemory. Hand-written
+CREATESTRUCT/WINDOWPOS paths keep precedence.
+
+**2. ntdll audit + last app-relevant manuals** — 58/64 ntdll NEEDS_MANUAL
+stubs already had M10-era hand dispatch. Of the 6 gaps, wrote the 2 real apps
+hit: NtQueryInformationThread (TBI 48→28 with TEB32 via WowTebOffset;
+identical-class whitelist; unknown classes fail loud) and NtRemoveIoCompletion
+(IOCP dequeue; out-slots + IOSB via Wow64pCopyIosbDown). Remaining 4
+(scatter/gather/quota) stay loud stubs — no real caller.
+
+**3. Count-aware array** — NtUserEnumDisplayMonitors HMONITOR out-array
+marshalled via local ULONGLONG[16] + narrow copy-back.
+
+**Known flake family (tracked, NOT marshaller-related):** intermittent
+FEX-process startup death (~2-3/13 boots, lands on varying guests): gui32
+0xC000001D @ PC=0x4B5478 (2 hits, deterministic PC) and wow64probe 0xC0000005
+(1 hit; loads only libwow64fex.dll — proves it's the FEX layer, not wow64.dll).
+
+Commits: 0c4cf1de7a5 (gen-callback), b6a22290788 (ntdll manuals).
