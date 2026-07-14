@@ -6163,3 +6163,111 @@ real: function-local statics collide by name (wine's `variant.c` defines a *diff
 dead and comparing against it reports 7 bogus diffs; a name can be legitimately defined at
 two Rust scopes. Calibrate a new checker against known-good code **first** — a checker that
 cries wolf is worse than no checker, because it trains you to ignore the one true finding.
+
+### 9.73 (ROOT-CAUSED + FIXED 2026-07-13) The stub you wrote to make the reference *link* IS an oracle — and it will grade your code against your own model. Six shipped msvcrt functions were wrong; the differential harness said MATCH for four waves.
+
+**Symptom.** None. That is the point. `classify` — a 20,000-case differential fuzzer comparing
+Rust msvcrt bodies against msvcrt's genuine C, grading bytes + return + errno + invalid-parameter
+handler — reported **MATCH** for `_atoi64`, `strtol`, `strtoul`, `_strtoi64`, `_strtoui64` and
+`_memicmp` across waves 6–9. All six were shipping the wrong behaviour on master.
+
+**What broke.** The harness compiles msvcrt's real `string.c` / `wcs.c` as reference TUs. Those
+TUs *call* `_isspace_l` / `_tolower_l` / `_toupper_l`, which live in `ctype.c` — which was **not**
+a reference TU. So nothing defined them, and `refimpl.c` (the harness's "externals" file) supplied
+three convenient one-liners so the thing would link:
+
+```c
+int __cdecl _tolower_l(int c, _locale_t l) { (void)l; return ref_ascii_lower(c); }
+```
+
+That is not scaffolding. **That is the oracle.** Every reference call to `_tolower_l` was answered
+by *our model of msvcrt*, and our model was an ASCII fold. The Rust under test also folded ASCII.
+The two agreed, forever, about something neither of them was doing correctly.
+
+**What msvcrt actually does.** `_tolower_l` is a locale-table lookup with a domain test:
+
+```c
+if((unsigned)c < 256) {                      /* FALSE for a NEGATIVE c */
+    if(locinfo->pctype[c] & _LEADBYTE) return c;
+    return locinfo->pclmap[c];
+}
+/* ... else: build a 1-2 byte string, and: */
+*_errno() = EILSEQ;                          /* <-- a SIDE EFFECT, on the ordinary path */
+switch(__crtLCMapStringA(...)) { ... }
+```
+
+and msvcrt's own callers hand it a **raw signed `char`**:
+
+```c
+while(_isspace_l((unsigned char)*nptr, locale)) nptr++;   /* CAST */
+...
+char cur = _tolower_l(*nptr, locale);                     /* NO CAST -- string.c:1651 */
+```
+
+So any byte ≥ 0x80 sign-extends negative, misses `(unsigned)c < 256`, lands in the NLS arm, and
+**sets `errno = EILSEQ`**. Every one of the six functions inherits that. The *values* were fine
+(the bad fold just ends the parse) — only `_memicmp`, which consumes the folded byte, was wrong in
+its return value too. The entire defect lived in an effect the oracle had been taught not to have.
+
+**The fix.** Make `ctype.c` a real reference TU (so the reference grades itself), delete the three
+stubs, and *transcribe* the parsers so they call the same functions at the same points — rather
+than bolting msvcrt's contract onto a foreign engine (`cnt_rust::radix::parse_i64_clamped`, which
+has no way to express a side effect). Result: 6 DIVERGE → 0, and the same infrastructure unblocked
+50 new flips (the whole locale-table ctype/case family).
+
+**The rules that generalize.**
+
+1. **Anything you define so the reference will link is part of the oracle.** Audit those definitions
+   as carefully as the code under test. A one-line stub is a claim about msvcrt's semantics, and an
+   un-reviewed claim is a lie you have arranged to have confirmed.
+2. **Data you feed to BOTH sides can never be caught by a differential test.** A mistyped byte in a
+   shared table makes both sides wrong the *same* way and still reports MATCH. So supply as little
+   as possible, and take what you must supply from the real source (`build.rs` now *parses*
+   `locale.c`'s `cloc_clmap`/`cloc_cumap` rather than transcribing them; ctype.c's `MSVCRT__ctype`
+   is linked, not modelled).
+3. **A side effect is not something you can bolt onto a foreign engine.** If the C's behaviour comes
+   from *calling a particular function*, the faithful port calls that function. This is the same
+   lesson the wave-5 float probe taught (`strtod` needs msvcrt's bignum, not a BSD parser) and the
+   same one behind "cnt-rust supplies the ALGORITHM; msvcrt-crt-rust supplies msvcrt's SEMANTICS."
+4. **Model the target's constants, not the host's.** The harness had silently inherited glibc's
+   `EILSEQ` (84) where msvcrt says **42**. `EINVAL`(22)/`ERANGE`(34) happen to coincide between the
+   two OSes, which is exactly why nobody noticed. A numeric coincidence between two operating
+   systems is not a model — pin them.
+
+**Detector.** There isn't a generic one, and that is worth saying plainly. What surfaced this was
+*promoting a stub to a real TU* — i.e. deliberately reducing the amount of msvcrt the harness was
+pretending to be. **Periodically ask of any differential harness: what am I still MODELLING, and
+what would it cost to link the real thing instead?** Every model is a place the oracle can agree
+with you about a shared mistake.
+
+### 9.74 (2026-07-13) The corollary: `offset_of!` into a struct the harness defines differently is an oracle that agrees with a subject reading the wrong bytes
+
+Wave 10's Rust reads `locinfo->pctype/pclmap/pcumap` and `thread_data->strtok_next` through
+`msvcrt-sys` — a bindgen snapshot of msvcrt's **real** layout (`pcumap` @ 336 on amd64/arm64, @ **208**
+on i386; `pctype` and `mb_cur_max` migrate to the *front* of the struct at `_MSVCR_VER >= 140`). The
+differential harness links that same Rust and points it at a `threadlocinfo` **defined in the harness's
+own refstub**, which was a convenient cut-down (6 fields, `lc_handle[16]`).
+
+Two different layouts, one set of offsets. The Rust would have read its tables from past the end of the
+object — and since *both* sides would then be fed the same nonsense, `classify` would have reported
+MATCH. It does not crash. It just makes every verdict worthless.
+
+Three guards now, and each was **negative-controlled** (perturb → it must fail):
+
+| guard | checked by | catches |
+|---|---|---|
+| `msvcrt-sys/src/layout_<arch>.rs` | rustc, every Rust build | bindgen regenerated with wrong flags |
+| `dll/win32/msvcrt/rust_layout_assert.c` | clang, with **msvcrt's real flags**, ×3 arches, every build | the C headers moved under the snapshot |
+| `ref_integrity`'s `locale_layout_agrees_with_msvcrt_sys` | the harness, every run | the ORACLE's struct ≠ the shipping Rust's |
+
+Two footguns found while building them, both worth knowing:
+
+* **`compile_commands.json`'s `command` is a shell-quoted string.** CMake serialises the empty value
+  of `-D_CRTIMP=` as `-D_CRTIMP=""`. A naive `.split()` hands clang a literal two-quote value, and
+  since `_ACRTIMP` chains to `_CRTIMP`, every CRT declaration becomes `"" int __cdecl strcmp(...)`.
+  **`shlex.split()`, never `.split()`.**
+* **bindgen records the Windows spelling of a fixed-width type.** msvcrt's `__msvcrt_ulong` is 32-bit
+  on *both* branches (`unsigned int` under `__LP64__`, `unsigned long` under LLP64 — corecrt.h goes out
+  of its way to say so), but bindgen emits `c_ulong`, which is **64-bit on the linux host** that builds
+  the harness. Pin such aliases to `u32`/`i32` in the generated bindings; the guardian above is what
+  caught it, on day one, in anger.

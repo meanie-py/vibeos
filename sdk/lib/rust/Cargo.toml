@@ -49,6 +49,7 @@ members = [
     "crt-startup-rust",
     "crt-dllmain-rust",
     "crt0-rust",
+    "msvcrt-sys",
     "msvcrt-crt-rust",
     "msvcrt-crt-cargo",
     "msvcrt-difftest",

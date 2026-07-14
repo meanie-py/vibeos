@@ -23,6 +23,7 @@ publish = false
 # would switch ON cnt-rust's `cabi` feature for msvcrt-crt-rust's copy too,
 # whose 208 #[no_mangle] shims would then collide with the wrappers.
 msvcrt-crt-rust = { path = "../msvcrt-crt-rust" }
+msvcrt-sys = { path = "../msvcrt-sys" }
 # guard-page probe (tests/oob_guard.rs): mmap/mprotect/fork.
 libc = "0.2"
 

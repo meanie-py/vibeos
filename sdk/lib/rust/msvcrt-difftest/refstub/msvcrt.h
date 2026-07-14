@@ -185,9 +185,16 @@ typedef long            LONG_PTR;
 #define memmove                 msvcrt_ref_memmove
 #define _errno                  msvcrt_ref__errno
 #define _invalid_parameter      msvcrt_ref__invalid_parameter
-#define _isspace_l              msvcrt_ref__isspace_l
-#define _tolower_l              msvcrt_ref__tolower_l
-#define _toupper_l              msvcrt_ref__toupper_l
+/* _isspace_l / _tolower_l / _toupper_l USED to be here — they were things the reference
+ * IMPORTED, satisfied by refimpl.c's hand-written ASCII stubs.  As of wave 10 ctype.c is
+ * a reference TU and DEFINES them, so they are reference EXPORTS: the generated prelude
+ * renames them to `ref__tolower_l` &c. like every other one.
+ *
+ * Leaving them here would silently win — the refstub is included AFTER the prelude, so
+ * its #define overrides, ctype.c would emit `msvcrt_ref__tolower_l`, and every
+ * `ref__tolower_l` reference would fail to link.  (Which is exactly how this was found.)
+ * More importantly it would put the reference's own ctype implementation back in the
+ * IMPORT namespace, where the harness cannot grade it. */
 #define get_locinfo             msvcrt_ref_get_locinfo
 #define msvcrt_get_thread_data  msvcrt_ref_get_thread_data
 #define CompareStringA          msvcrt_ref_CompareStringA
@@ -231,6 +238,26 @@ void *__cdecl memmove(void *dst, const void *src, size_t n);
 #define STRUNCATE   80
 #define _NLSCMPERROR ((unsigned int)0x7fffffff)
 
+/* ── errno: MSVCRT's numbering, not the host's ──────────────────────
+ *
+ * This file used to pin only STRUNCATE (the host has no such value) and let EINVAL /
+ * ERANGE / EILSEQ fall through to glibc's <errno.h>.  That worked *by coincidence*:
+ *
+ *     EINVAL   msvcrt 22   glibc 22    same
+ *     ERANGE   msvcrt 34   glibc 34    same
+ *     EILSEQ   msvcrt 42   glibc 84    DIFFERENT
+ *
+ * Nothing exercised an EILSEQ path until ctype.c became a reference TU (wave 10), at
+ * which point the reference started reporting `errno=84` for a value msvcrt.dll would
+ * report as 42 — i.e. the oracle was modelling the HOST's errno, not msvcrt's.  A
+ * numeric coincidence between two operating systems is not a model.  Pin all three. */
+#undef EINVAL
+#undef ERANGE
+#undef EILSEQ
+#define EINVAL  22
+#define ERANGE  34
+#define EILSEQ  42
+
 /* dll/win32/msvcrt/include/limits.h — the 64-bit limits, and the
  * un-underscored aliases string.c/bnum.h actually use. */
 #define _I64_MAX    0x7fffffffffffffffLL
@@ -271,20 +298,56 @@ typedef struct { ULONG x80[3]; } WINE_BROKEN_LDOUBLE;  /* what wine's code write
  * locale exercises the genuine non-NLS code paths and CompareStringA /
  * LCMapStringA are dead code (they still have to link — see refimpl.c).
  *
- * lc_handle is oversized (16) because the LC_* indices in scope here come
- * from the HOST <locale.h> (LC_CTYPE=0 … LC_IDENTIFICATION=12), not from
- * MSVC's <locale.h> (LC_ALL=0 … LC_TIME=5).  The values are all zero
- * either way, so the index mapping is immaterial — the array just has to
- * be big enough not to read out of bounds.
+ * ── WAVE 10: THIS STRUCT IS NOW THE REAL LAYOUT, NOT A MODEL ────────
+ *
+ * It used to be a convenient cut-down (6 fields, `lc_handle[16]`).  That was fine
+ * while only the C could see it.  It stopped being fine when Rust started reading
+ * `locinfo->pctype/pclmap/pcumap`, because the SHIPPING Rust reads them through
+ * `msvcrt-sys` — a bindgen snapshot of msvcrt's REAL layout (`pcumap` @ 336 on
+ * amd64/arm64, @ 208 on i386).  The harness links that same Rust and points it at
+ * *this* struct.  Two different layouts, one set of offsets: the Rust would have read
+ * `pcumap` from beyond the end of the object, in the one component whose whole job is
+ * to be a trustworthy oracle.  A wrong offset there does not crash — it makes the
+ * oracle lie.
+ *
+ * So this is now a faithful transcription of msvcrt's `threadlocaleinfostruct`
+ * (dll/win32/msvcrt/include/corecrt.h, with the `_MSVCR_VER=0` branches resolved).
+ * The equivalence is not assumed — `ref_integrity` asserts, at run time, that C's
+ * `offsetof` here equals Rust's `offset_of!` in msvcrt-sys, field by field.
+ *
+ * `__msvcrt_ulong` is 32-bit on BOTH the host (LP64: `unsigned int`) and Windows
+ * (LLP64: `unsigned long`) — corecrt.h goes out of its way to guarantee that — so the
+ * host layout and the amd64 layout coincide exactly.  Spelled `unsigned int` here so
+ * it cannot depend on which one we are.
+ *
+ * lc_handle is now its REAL size (6), which means the LC_* indices must be MSVC's, not
+ * the host's — see the LC_* block below.
  * ------------------------------------------------------------------ */
-typedef struct threadlocaleinfostruct {
-    int             refcount;
-    unsigned int    lc_codepage;
-    unsigned int    lc_collate_cp;
-    LCID            lc_handle[16];
-    struct lconv   *lconv;
-    int             mb_cur_max;
-} threadlocinfo, *pthreadlocinfo;
+/* The layout itself lives in locale_layout.h, because subjectimpl.c needs it too and
+ * must NOT see this file's anti-circularity namespace block.  See that header. */
+#include "locale_layout.h"
+
+typedef RL_LC_ID LC_ID, *LPLC_ID;
+typedef struct threadlocaleinfostruct threadlocinfo, *pthreadlocinfo;
+
+/* MSVC's locale categories.  The host <locale.h> is included FIRST by every reference
+ * TU (`#include <locale.h>` then `#include "msvcrt.h"`), and glibc numbers these
+ * completely differently (LC_CTYPE=0 … LC_ALL=6 … LC_IDENTIFICATION=12).  With
+ * lc_handle[] at its real size of 6, a glibc `LC_ALL`(=6) would index one PAST the
+ * end.  Pin them to MSVC's numbering, which is what msvcrt's own code means.
+ * (Every handle is 0 in the "C" locale, so this changes no behaviour — only bounds.) */
+#undef LC_ALL
+#undef LC_COLLATE
+#undef LC_CTYPE
+#undef LC_MONETARY
+#undef LC_NUMERIC
+#undef LC_TIME
+#define LC_ALL      RL_LC_ALL
+#define LC_COLLATE  RL_LC_COLLATE
+#define LC_CTYPE    RL_LC_CTYPE
+#define LC_MONETARY RL_LC_MONETARY
+#define LC_NUMERIC  RL_LC_NUMERIC
+#define LC_TIME     RL_LC_TIME
 
 typedef struct threadmbcinfostruct {
     int             refcount;
@@ -365,17 +428,30 @@ typedef void  *LPVOID;
 typedef int    INT;
 typedef int    errno_t;
 
-/* dll/win32/msvcrt/include/ctype.h — the _pctype/_pwctype classification
- * bits.  Only the DEFERRED isw* family reads them (see refimpl.c). */
-#define _UPPER   0x1
-#define _LOWER   0x2
-#define _DIGIT   0x4
-#define _SPACE   0x8
-#define _PUNCT   0x10
-#define _CONTROL 0x20
-#define _BLANK   0x40
-#define _HEX     0x80
-#define _ALPHA   (0x0100|_UPPER|_LOWER)
+/* (glibc's internal ctype macros — __isascii/__toascii — are stripped in the generated
+ * prelude's stage -1, BEFORE the ref_* renames.  Doing it here would be too late: it
+ * would remove glibc's macro but leave the symbol un-renamed, and ctype.c would then
+ * define a plain `__isascii` that collides with the code under test.  See build.rs.) */
+
+/* locale.c's "setlocale() has never been called" flag.  ctype.c BRANCHES on it:
+ * toupper/tolower take a hardcoded-ASCII fast path when it is TRUE, and only fall
+ * through to _toupper_l/_tolower_l (the pcumap/pclmap lookup) when it is FALSE.
+ * Defined by refimpl.c (locale.c is not a reference TU). */
+extern BOOL initial_locale;
+
+/* dll/win32/msvcrt/include/ctype.h — the _pctype/_pwctype classification bits.
+ * Read by the isw* family (wcs.c) AND, since wave 10, by ctype.c — reference TU #3 —
+ * which is the whole narrow isXXX/toXXX surface. */
+#define _UPPER    RL_UPPER
+#define _LOWER    RL_LOWER
+#define _DIGIT    RL_DIGIT
+#define _SPACE    RL_SPACE
+#define _PUNCT    RL_PUNCT
+#define _CONTROL  RL_CONTROL
+#define _BLANK    RL_BLANK
+#define _HEX      RL_HEX
+#define _LEADBYTE RL_LEADBYTE
+#define _ALPHA    RL_ALPHA
 
 /* printf.h's template surface — verbatim from the real msvcrt.h. */
 typedef int (*puts_clbk_a)(void*, int, const char*);

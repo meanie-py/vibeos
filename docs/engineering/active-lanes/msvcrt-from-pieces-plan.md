@@ -722,3 +722,116 @@ effort:
 
 The next wave that isn't Phase C or D is small: `_strdup`/`_wcsdup`/`_mbsdup` (alloc
 + copy). Everything else of substance is behind those two doors.
+
+---
+
+## Wave 10 (2026-07-13) — the LOCALE DOOR. +50 flips (msvcrt.dll is **170 functions of Rust**), and 6 shipped bugs found in already-landed code.
+
+Phase D was recorded as blocked on one thing: *"a way to reach `locinfo` fields without hardcoding
+struct offsets."* Wave 10 built that, and it turned out to unlock rather more than the plan expected —
+including the discovery that **the harness's own convenience stubs had been the oracle for four waves**.
+
+### The reframe: the "C-locale blind spot" was never about the FUNCTION
+
+The lane had recorded the whole locale family as un-flippable, because the harness pins the "C" locale
+(§9.60) and would report MATCH for a `toupper` that is only C-locale-correct. That is true — **of a
+locale-INDEPENDENT implementation.** It was never true of a faithful one:
+
+```c
+int CDECL _toupper_l(int c, _locale_t locale) {
+    if((unsigned)c < 256) {
+        if(locinfo->pctype[c] & _LEADBYTE) return c;
+        return locinfo->pcumap[c];          /* <-- the LOCALE'S OWN table */
+```
+
+A Rust body that reads `locinfo->pcumap[c]` — *the same table* — inherits the C's locale-correctness
+**by construction**: the locale-dependence lives in the DATA, `setlocale` repopulates it, and both
+bodies follow it. The blind spot forbids hardcoding ASCII. It never forbade reading the real table.
+We simply had no way to reach the table without hand-rolling struct offsets — the
+`scan_magic_offsets` bug class that cost this repo the `KTHREAD.Teb` hunt and the amd64
+`TEB.GdiBatchCount`-at-`0x74` read that killed explorer (§9.41).
+
+### `msvcrt-sys` — the door (and it caught a bug on day one)
+
+`sdk/lib/rust/msvcrt-sys/`: bindgen over msvcrt's internal headers, `offset_of!` everywhere, no
+arithmetic. Two properties worth copying:
+
+* **The flags come from `compile_commands.json`, not a hand-copied list.** msvcrt is not built with the
+  default include path (its CMakeLists *removes* `sdk/include/crt`, substitutes its own, prepends
+  `sdk/include/wine`, sets `_MSVCR_VER=0`). A wrong `-D` makes bindgen emit a *different layout*, and a
+  machine-generated wrong offset is worse than a hand-rolled one because it looks trustworthy. So we read
+  the real compile command for `dll/win32/msvcrt/ctype.c` out of the build itself.
+* **The layout is guarded on two sides by two compilers, on every build** — `layout_<arch>.rs` (rustc) and
+  `dll/win32/msvcrt/rust_layout_assert.c` (**clang, with msvcrt's real flags, ×3 arches**), both pinned to
+  the same literals. Both negative-controlled. It earned its keep immediately: bindgen had recorded
+  `__msvcrt_ulong` as `c_ulong`, which is 32-bit on Windows but **64-bit on the linux host that builds the
+  difftest harness** — every field after `lc_handle` would have shifted, *in the oracle*. See §9.74.
+
+### What it found: six functions wrong on master (§9.73)
+
+Making `ctype.c` a real reference TU meant deleting `refimpl.c`'s three convenience stubs for
+`_isspace_l`/`_tolower_l`/`_toupper_l`. Those stubs were **the oracle**, and they were an ASCII fold.
+The instant the reference started grading itself, six already-shipped functions went DIVERGE:
+
+`_atoi64` · `strtol` · `strtoul` · `_strtoi64` · `_strtoui64` · `_memicmp`
+
+All six because msvcrt hands `_tolower_l` a **raw signed `char`** (`string.c:1651` — no cast, while the
+`_isspace_l` two lines above it *does* cast), so a byte ≥ 0x80 sign-extends negative, misses the table,
+and takes the NLS arm — **which sets `errno = EILSEQ`**. The values were right; the side effect was
+missing. Fixed by *transcribing* the parsers so they call the real `_tolower_l`/`_isspace_l` at the same
+points, rather than bolting msvcrt's contract onto `cnt_rust::radix::parse_i64_clamped` (which cannot
+express a side effect). **This is the wave-5 float lesson again, in a place we had not looked.**
+
+Also fixed: the harness had silently inherited **glibc's `EILSEQ` (84)** where msvcrt says **42**.
+`EINVAL`/`ERANGE` coincide between the two OSes, which is exactly why nobody noticed.
+
+### Flipped (50)
+
+* **ctype/case (44)** — the whole of `ctype.c`: `_isctype`/`_isctype_l`, the 13 `is*`/`_is*_l` pairs,
+  `ispunct`, `isblank`/`_isblank_l`, `__isascii`/`__toascii`/`iswascii`/`__iscsym`/`__iscsymf`/
+  `__iswcsym`/`__iswcsymf`, `toupper`/`tolower`/`_toupper`/`_tolower`/`_toupper_l`/`_tolower_l`,
+  `__pctype_func`/`__p__pctype`/`__pwctype_func`/`__p__pwctype`.
+* **thread_data tokenizers (2)** — `strtok`, `wcstok`. **Refused in wave 6c** purely for lack of the
+  struct offset; `msvcrt-sys` removed the obstacle.
+* **the six re-transcriptions** above.
+
+### What the exhaustive sweep caught
+
+* **`isblank` returns 0/1; `_isblank_l` returns the MASK (64).** Three lines apart in the same file:
+  the plain form is `return c == '\t' || _isctype(c, _BLANK);` and C's `||` **normalises**. It is the
+  only member of the narrow ctype family that returns a boolean. This is *precisely* the trap wave 9 hit
+  on the wide twin (`iswblank`) — and I walked into it again. Caught only because the sweep is exhaustive:
+  the divergence exists at exactly one input.
+* **`_toupper`/`_tolower` are `c ∓ 0x20`, UNCONDITIONALLY** (`/* sic */` in the C). No range check, no
+  table, no locale: `_toupper('0')` is `0x10`. A "reasonable" implementation would be a bug.
+* **`toupper` is not `_toupper_l(c, NULL)`** — it short-circuits on the global `initial_locale`.
+
+### Verified
+
+`classify` **125 MATCH / 0 SIGN-ONLY / 1 DIVERGE** (the `strtod` probe, which is the expected
+DO-NOT-FLIP record) · `oob_guard`, `perf`, `link`, `ref_integrity` all green · builds ×3 arches, all
+lints incl. `scan_magic_offsets` · PE export-RVA proves the Rust bodies won the link on every arch
+(wave-10 exports at `0x001d30–0x008480`; the deliberately-refused `memmove`/`strcoll`/`_strdup`/`strxfrm`
+still C at `0x072000+`).
+
+### Still open, and now sharply defined
+
+**Waves 7 and 8 shipped locale-INDEPENDENT implementations of locale-DEPENDENT functions.**
+`_strnicmp_l` has *two* paths:
+
+```c
+if(!locinfo->lc_handle[LC_CTYPE]) { ...inline ASCII fold...; return (unsigned char)c1 - (unsigned char)c2; }
+do { c1 = _tolower_l((unsigned char)*s1++, locale); ... } while(...);   /* a REAL locale */
+```
+
+Our Rust only implements path 1. It is correct in the "C" locale (all the harness tests) and wrong the
+moment `setlocale` is called. Same for `_stricmp`, `_wcsicmp`, `_wcsnicmp`, `_strlwr_s`/`_strupr_s` and
+the wide twins. **This is the documented §9.60 blind spot, shipped** — and the fix is not the hard part;
+the hard part is that a harness pinned to the C locale *cannot grade path 2*, so adding it would be a
+green from an unexercised branch, which is not a green.
+
+**Owed (wave 11): a non-C-locale mode for the harness.** Plant a non-zero `lc_handle[LC_CTYPE]`, and grade
+path 2 against the shared NLS stubs — the same argument that already makes `__crtLCMapStringA` gradeable
+(both sides call the same stub, so the comparison isolates the Rust's *logic*, and only the NLS *data* is
+out of scope, correctly, because that is kernel32's job). That closes the lane's oldest blind spot
+structurally rather than by promise.
