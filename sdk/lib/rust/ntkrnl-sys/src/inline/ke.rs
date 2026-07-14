@@ -1377,6 +1377,12 @@ pub unsafe fn rq_inflight_waker(thread: ddk::PKTHREAD) -> u32 {
     0
 }
 
+/// Public stamping entry for out-of-crate direct-defer sites.
+#[cfg(feature = "smp")]
+pub unsafe fn rq_waker_stamp_pub(thread: ddk::PKTHREAD, line: u32) {
+    rq_waker_stamp(thread, line);
+}
+
 #[cfg(feature = "smp")]
 unsafe fn rq_waker_stamp(thread: ddk::PKTHREAD, line: u32) {
     use core::sync::atomic::Ordering::SeqCst;
@@ -2195,6 +2201,30 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
         // deferred OldThread with mismatched affinity bypass both and reach
         // the drain unchecked (the deferred_by=0 0x5A face).
         if (*thread).Affinity & (*prcb).SetMember == 0 {
+            // §9.56 [RQAFF]: this branch is a DIRECT KiDeferredReadyThread
+            // caller (no in-flight mark => the deferred_by=0 face). Print the
+            // affinity evidence: a zero/corrupt Affinity routes EVERY requeue
+            // here and then KiSelectNextProcessor(trailing_zeros(0)=64) walks
+            // KiProcessorBlock[64] OUT OF BOUNDS (0x63 guards that).
+            crate::driver_ddk::DbgPrint(
+                b"[RQAFF] affinity-defer thr=%p affinity=%p setmember=%p state=%u reason=%u\n\0".as_ptr() as *const i8,
+                thread,
+                (*thread).Affinity as usize as *const u8,
+                (*prcb).SetMember as usize as *const u8,
+                kt_state_read(thread) as u32,
+                (*thread).WaitReason as u32,
+            );
+            if (*thread).Affinity == 0 {
+                ddk::KeBugCheckEx(
+                    0x96,
+                    thread as usize as _,
+                    (0x63u64 << 40) as _,
+                    (*prcb).SetMember as _,
+                    0,
+                );
+            }
+            let _ = rq_inflight_mark(thread);
+            rq_waker_stamp(thread, 9100); // 9100 = affinity-defer direct path
             kt_set_state(thread, ddk::_KTHREAD_STATE_DeferredReady as u8);
             kt_set_deferred_processor(thread, (*prcb).Number as u8);
             KiReleasePrcbLock(prcb);

@@ -261,6 +261,18 @@ unsafe fn KiSelectNextProcessor(Thread: PKTHREAD) -> ULONG {
 
     PreferredSet = (*Thread).Affinity;
 
+    // §9.56 guard 0x63: a zero affinity makes trailing_zeros() return 64 below
+    // and KiProcessorBlock[64] is walked OUT OF BOUNDS — fail loud instead.
+    if PreferredSet == 0 {
+        ntkrnl_sys::ddk::KeBugCheckEx(
+            0x96,
+            Thread as ntkrnl_sys::ddk::ULONG_PTR,
+            (0x63u64 << 40 | 1) as ntkrnl_sys::ddk::ULONG_PTR,
+            0,
+            0,
+        );
+    }
+
     IdleSet = PreferredSet & KiIdleSummary;
     if IdleSet != 0 {
         PreferredSet = IdleSet;
@@ -427,6 +439,13 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
             (*Prcb).NextThread = Thread;
             *kt_State(NextThread) = DeferredReady;
             *kt_DeferredProcessor(NextThread) = (*Prcb).Number as u8;
+            // §9.56: direct re-defer (displaced NextThread) — mark+stamp so
+            // deferred_by attributes it (9200) instead of reading 0.
+            #[cfg(feature = "smp")]
+            {
+                let _ = ntkrnl_sys::inline::ke::rq_inflight_mark(NextThread);
+                ntkrnl_sys::inline::ke::rq_waker_stamp_pub(NextThread, 9200);
+            }
             KiReleasePrcbLock(Prcb);
             KiDeferredReadyThreadImpl(NextThread);
             return;
