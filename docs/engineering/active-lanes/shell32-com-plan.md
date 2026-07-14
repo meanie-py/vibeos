@@ -1,9 +1,16 @@
 # shell32 COM/ATL C++ → Rust (lane: `shell32-com`)
 
 **Status:** OPEN (opened 2026-07-14). Worktree `vibeos-shell32-com`, branch `shell32-com`.
-**Experiment:** this lane's translation is **driven by Codex** (OpenAI `codex` CLI), not by
-`rustconv`. The user drives codex directly; the agent does scoping, integration, build, and
-gating. See §"Why Codex" for what we're actually testing.
+**Experiment:** **Codex drives `rustconv`.** The OpenAI `codex` CLI is the *agent* operating
+the pipeline here — it runs `python -m rustconv translate/submit/...` — in the seat Claude
+normally occupies. rustconv is still the translator; the models it calls are unchanged. The
+user drives codex directly. See §"Why Codex drives" for what we're actually testing.
+
+⚠️ **This lane SPENDS REAL MONEY from the repo's API keys.** rustconv's paid-call rules apply
+in full and codex must be told them: never kill a `translate` mid-run (one paid call **per
+function** — killing at 35/40 re-pays all 35); output streams to `tools/rustconv/.responses/`
+(the canonical copy — never `/tmp`); never re-translate a file that already has output without
+asking; `estimate` is a **floor**, real cost is routinely 2–5×. See AGENTS.md §rustconv.
 
 ## Scope — the last un-started chunk of shell32
 
@@ -121,11 +128,14 @@ Ordered so the *pattern* is proven on a cheap class before the monsters.
   `CShellLink.cpp` (3,323), `shlfileop.cpp` (2,569), `utils.cpp` (2,191),
   `CDefaultContextMenu.cpp` (1,995).
 
-## Codex prompt rules — shell32 flavor
+## Translation rules — shell32 flavor (feed these to rustconv/codex)
 
 ⚠️ The rules in `docs/engineering/rustconv-pipeline.md` §"Codex CLI" are **kernel-mode**
-(pool tags, IRQL, NTSTATUS, DUMMY_PSEH, `write_volatile` for captures(none)). shell32 is
-**usermode COM**. Most of that list does not apply. Use these instead:
+(pool tags, IRQL, NTSTATUS, DUMMY_PSEH, `write_volatile` for captures(none)) — as is
+rustconv's default system prompt, which assumes ntoskrnl/HAL C. shell32 is **usermode COM**.
+Most of that list does not apply, and some of it is actively wrong here (see HRESULT below).
+A first task for this lane is deciding whether these become a third rustconv system prompt
+(alongside `system_prompt_hal.md`) or stay prompt-level context. Use these rules:
 
 - `#[no_mangle] pub unsafe extern "system" fn` for exports; `extern "system"` for **every**
   COM method (stdcall on i386 — this is the ABI, not a style choice).
@@ -159,17 +169,24 @@ Ordered so the *pattern* is proven on a cheap class before the monsters.
 5. Screenshot check — but note the North Star caveat: the shot is taken at `shell ready`,
    **before** the taskbar paints. An empty tray is not a failure.
 
-## Why Codex (what this lane is actually testing)
+## Why Codex drives (what this lane is actually testing)
 
-`rustconv` is a C→Rust pipeline: its prompts, c2rust anchoring, and post-processors assume C.
-It has no answer for ATL templates, multiple inheritance, or vtable layout. Rather than
-extend it for a one-off C++ corpus, this lane tests whether **codex driven interactively by a
-human** is a better fit for C++→Rust, where the work is less "transliterate this function"
-and more "restructure this class."
+Two independent things are under test, and the lane should report on both separately:
 
-Report back into this doc: what codex got right, what it hallucinated, and whether the
-per-class recipe held. If it works, this becomes the template for the other C++ corpora; if
-it doesn't, we know to build the C++ path into rustconv instead.
+1. **Can a different agent harness drive rustconv?** Codex takes the seat Claude usually
+   occupies: scoping the file, running `translate`, integrating output, building, gating.
+   This is the real experiment — everything rustconv needs to be driven well (the paid-call
+   discipline, the cohab recipe, the verify checklist) currently lives in AGENTS.md and in
+   Claude's habits. If codex can drive it from the docs alone, the pipeline is genuinely
+   agent-portable; where codex trips, the docs have a gap worth fixing.
+2. **Can rustconv handle C++ at all?** Its prompts, c2rust anchoring, and post-processors
+   assume C. ATL templates, multiple inheritance, and vtable layout are outside what it was
+   built for. Expect to need a shell32/C++ system prompt; the §"Rust COM shell recipe" is
+   deliberately written as prompt-ready context to hand it.
 
-**Cost note:** codex runs on the user's ChatGPT auth, not the repo's API keys — so this lane
-does not draw on the rustconv translation budget.
+Report back into this doc: what codex got right, what it hallucinated, where the docs failed
+to convey a rule, and whether the per-class recipe held. If rustconv can't be made to do C++
+cleanly, that's a real result too — it tells us the C++ corpora need a different path.
+
+**Do not let a negative result get papered over.** If rustconv can't anchor a C++ file it
+must **hard fail** (AGENTS.md §"Fail loud"), not silently degrade to unanchored translation.
