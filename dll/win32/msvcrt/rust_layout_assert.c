@@ -46,6 +46,8 @@ VIBEOS_ASSERT_OFF(threadlocaleinfostruct, ctype1, 196);
 VIBEOS_ASSERT_OFF(threadlocaleinfostruct, pctype, 200);
 VIBEOS_ASSERT_OFF(threadlocaleinfostruct, pclmap, 204);
 VIBEOS_ASSERT_OFF(threadlocaleinfostruct, pcumap, 208);
+VIBEOS_ASSERT_OFF(threadlocaleinfostruct, lconv, 188);
+VIBEOS_ASSERT_OFF(lconv, decimal_point, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, locinfo, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, mbcinfo, 4);
 #endif
@@ -67,6 +69,8 @@ VIBEOS_ASSERT_OFF(threadlocaleinfostruct, ctype1, 312);
 VIBEOS_ASSERT_OFF(threadlocaleinfostruct, pctype, 320);
 VIBEOS_ASSERT_OFF(threadlocaleinfostruct, pclmap, 328);
 VIBEOS_ASSERT_OFF(threadlocaleinfostruct, pcumap, 336);
+VIBEOS_ASSERT_OFF(threadlocaleinfostruct, lconv, 296);
+VIBEOS_ASSERT_OFF(lconv, decimal_point, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, locinfo, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, mbcinfo, 8);
 #endif
@@ -88,6 +92,45 @@ VIBEOS_ASSERT_OFF(threadlocaleinfostruct, ctype1, 312);
 VIBEOS_ASSERT_OFF(threadlocaleinfostruct, pctype, 320);
 VIBEOS_ASSERT_OFF(threadlocaleinfostruct, pclmap, 328);
 VIBEOS_ASSERT_OFF(threadlocaleinfostruct, pcumap, 336);
+VIBEOS_ASSERT_OFF(threadlocaleinfostruct, lconv, 296);
+VIBEOS_ASSERT_OFF(lconv, decimal_point, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, locinfo, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, mbcinfo, 8);
 #endif
+
+/* ── wave 13 (fpnum.rs): the float parser's scalar pins ──────────────────── */
+
+#include <float.h>
+#include <errno.h>
+#include <math.h>
+
+/* 1. <float.h>'s exponent limits. fpnum_parse_bnum early-outs on these; if the
+      header moves them, our Rust silently parses a different range. */
+_Static_assert(DBL_MAX_10_EXP == 308, "fpnum.rs pins DBL_MAX_10_EXP=308");
+_Static_assert(DBL_MIN_10_EXP == -307, "fpnum.rs pins DBL_MIN_10_EXP=-307");
+_Static_assert(DBL_DIG == 15, "fpnum.rs pins DBL_DIG=15");
+_Static_assert(DBL80_MAX_10_EXP == 4932, "fpnum.rs pins DBL80_MAX_10_EXP=4932");
+_Static_assert(DBL80_MIN_10_EXP == -4951, "fpnum.rs pins DBL80_MIN_10_EXP=-4951");
+
+/* 2. errno / math return codes the float doors hand back. */
+_Static_assert(ERANGE == 34, "fpnum.rs pins ERANGE=34");
+_Static_assert(_OVERFLOW == 3, "fpnum.rs pins _OVERFLOW=3");
+_Static_assert(_UNDERFLOW == 4, "fpnum.rs pins _UNDERFLOW=4");
+
+/* 3. `char` MUST be signed.
+
+      string.c's strtod_str_get() returns `*(*p)++` -- a signed char widened to an
+      unsigned short. So an input byte of 0xFF sign-extends to 0xFFFF, which IS WEOF:
+      the parser sees end-of-input, but the cursor has already stepped past the byte
+      and the `if (nch != WEOF) unget()` therefore does not put it back. fpnum.rs
+      reproduces that with `*p as i8 as i16 as u16`. If char were ever UNSIGNED on
+      some target, the C would stop doing this and our Rust would be the one that is
+      wrong -- so the assumption is asserted rather than assumed. */
+_Static_assert((char)-1 < 0, "fpnum.rs assumes signed char (see strtod_str_get)");
+_Static_assert((wchar_t)(char)0xFF == 0xFFFF, "byte 0xFF must widen to WEOF");
+
+/* 4. MSVCRT__LDOUBLE is the 10-byte x87 struct, NOT Wine's 12-byte one.
+      __STRINGTOLD_L computes into the 12-byte WINE_BROKEN_LDOUBLE and copies only
+      sizeof(MSVCRT__LDOUBLE) bytes out. Getting this wrong overruns the caller. */
+_Static_assert(sizeof(MSVCRT__LDOUBLE) == 10, "fpnum.rs pins LDOUBLE=10");
+_Static_assert(sizeof(WINE_BROKEN_LDOUBLE) == 12, "fpnum.rs pins WINE_LDOUBLE=12");

@@ -4315,3 +4315,39 @@ pub unsafe extern "C" fn _wcsxfrm_l(
 pub unsafe extern "C" fn wcsxfrm(dest: *mut u16, src: *const u16, len: usize) -> usize {
     _wcsxfrm_l(dest, src, len, core::ptr::null_mut())
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WAVE 13 — the float PARSER (msvcrt's own bignum, ported).
+//
+// The first module in this crate that is a genuine TRANSLATION rather than an
+// assembly: cnt-rust's float parser is a different algorithm from a different
+// lineage and disagrees with msvcrt by double-digit ULPs (wave 5's probe, which
+// stays in `classify` as a DO-NOT-FLIP record). So `strtod` here is not a wrapper
+// around someone else's parser — it IS msvcrt's parser, transcribed.
+//
+// ── NOT ON i386 (target_arch = "x86") — and this is a toolchain limit, not a choice ──
+//
+// i386 msvcrt is built `-march=pentium` (compile_commands.json), i.e. the OS's i386
+// baseline is PRE-SSE, and the whole i686 user-mode target carries `-C
+// target-feature=-sse,-sse2` (.cargo/config.toml). Under the i386 C ABI a `double` is
+// returned in the x87 `st0` register — no SSE needed, and that is exactly what the C
+// `strtod` this would replace does.
+//
+// But current rustc REFUSES to emit an `extern "C" fn(..) -> f64` when SSE is disabled:
+// "this function definition uses SIMD vector type `f64` which (with the chosen ABI)
+// requires the `sse` target feature". The guard is conservative about the softfloat f64
+// ABI and fires even though the i386 C ABI's x87 return is perfectly well-defined. We
+// will not enable SSE to dodge it — that would diverge from the `-march=pentium` baseline
+// the rest of i386 msvcrt is built to, and it changes an ABI at the exact boundary the
+// C callers cross. So on i386 the float family stays its (correct, x87) C bignum, and
+// the flip lands on amd64 + arm64 only.
+//
+// This is a genuine regression-free split: i386 keeps a WORKING strtod (the same Wine
+// bignum, in C), the harness still fully grades the shipping Rust logic (it builds for
+// the x86_64 host, which is the amd64 codegen), and PE-export-RVA verification will show
+// strtod at a low Rust RVA on amd64/arm64 and a high C RVA on i386. Owed work — lift the
+// i386 flip once the softfloat-f64-return ABI has a sanctioned expression — is recorded
+// in the lane plan and field manual §9.78.
+// ═══════════════════════════════════════════════════════════════════════════
+#[cfg(not(target_arch = "x86"))]
+mod fpnum;

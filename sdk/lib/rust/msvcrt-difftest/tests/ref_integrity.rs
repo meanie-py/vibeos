@@ -193,6 +193,8 @@ fn locale_layout_agrees_with_msvcrt_sys() {
         fn subj_off_td_strtok() -> usize;
         fn subj_off_td_wcstok() -> usize;
         fn subj_off_td_errno() -> usize;
+        fn subj_off_locinfo_lconv() -> usize;
+        fn subj_off_lconv_decimalpoint() -> usize;
     }
 
     let checks: &[(&str, usize, usize)] = unsafe {
@@ -213,6 +215,18 @@ fn locale_layout_agrees_with_msvcrt_sys() {
              subj_off_td_wcstok(), offset_of!(sys::__thread_data, wcstok_next)),
             ("thread_data_t.thread_errno",
              subj_off_td_errno(), offset_of!(sys::__thread_data, thread_errno)),
+            // wave 13 — the float parser's two-hop reach into the locale's radix char.
+            ("threadlocinfo.lconv",
+             subj_off_locinfo_lconv(), offset_of!(sys::threadlocaleinfostruct, lconv)),
+            // The harness's `lconv` is the HOST's (glibc's) — the reference reads through
+            // that one — while the Rust reaches the same object through bindgen's WINDOWS
+            // layout. They agree only because `decimal_point` is the first member of both.
+            // That is true of C99 §7.11.1.1 and of corecrt, but it is not a layout
+            // guarantee, and if it ever stopped being true every strtod row would compare
+            // its input against a garbage radix character and go DIVERGE for a reason
+            // nobody would guess. So: verified, not assumed.
+            ("lconv.decimal_point",
+             subj_off_lconv_decimalpoint(), offset_of!(sys::lconv, decimal_point)),
         ]
     };
 

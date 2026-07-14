@@ -6996,3 +6996,88 @@ so it **inherits both contracts**, and the new flip walked straight into it: `cn
 the row.* An arch-conditional contract propagates silently through delegation. classify's own header
 already said this; the cost of not doing it is one DIVERGE per inherited branch, and the harness will
 only catch it if the fuzz happens to produce a byte pair whose raw difference isn't ±1.
+
+### 9.78 (2026-07-14) Porting msvcrt's bignum float parser: a verbatim upstream bug that is provably INERT, a signed-char/WEOF trap that is load-bearing, an i386 softfloat-return ABI wall, and a harness that could not see errno being *cleared*
+
+**Context.** Wave 13 of the msvcrt-from-pieces lane ported msvcrt's own base-10 **bignum** float
+parser (`dll/win32/msvcrt/bnum.h` + `string.c`'s `fpnum_parse`/`fpnum_double`/`fpnum_ldouble`) to
+Rust — the first module in the lane that is a genuine *translation*, not an assembly. Wave 5 had
+cancelled the "flip `strtod` from cnt-rust" plan after a probe showed cnt-rust's naive DJ-Delorie
+accumulator disagreeing with msvcrt by **14 ULPs**; the honest path was always to port msvcrt's
+machinery. The oracle already existed — `string.c`/`wcs.c` compile as reference TUs in
+`msvcrt-difftest`, so every parsed `double` is graded on its exact **64-bit pattern**. It landed
+**`strtod`/`_strtod_l`/`atof`/`_atof_l`/`_atoflt_l`/`_atodbl(_l)`/`wcstod`/`_wcstod_l`/`_wtof(_l)`/
+`_atoldbl(_l)`/`__STRINGTOLD(_L)` — 15 functions on amd64 + arm64**, all bit-exact. Four durable
+lessons, three of them found by *trying to break my own green*.
+
+**1. A verbatim upstream bug can be provably inert — instrument reachability, don't assume.**
+`fpnum_parse_bnum`'s round-decision has a real Wine bug: a `for(i=e-5; i>=b; i--)` sticky-scan whose
+body reads `data[b]` (the lowest limb) every iteration instead of `data[i]`. I transcribed it
+verbatim (the oracle is msvcrt, not IEEE) and then wrote a **negative control** — "fix" `b`→`i` and
+demand a DIVERGE. *The control did not bite.* That is the exact signature of an unverified
+transcription, so I did not shrug it off. I added an **exact-halfway-tie generator** (`gen_tie`:
+build `(2m+1)·2^k` as a finite decimal with schoolbook arithmetic — random digits are NEVER ties, so
+the entire `FP_ROUND_EVEN` arm was dead in the corpus) — still no bite. Then I *instrumented the
+engine's reachability* and got the actual answer: the discriminating state is **structurally
+unreachable**. `FP_ROUND_EVEN` requires a `500000000` (== `LIMB_MAX/2`) limb at position `e-4`; that
+value is produced only by `bnum_rshift(1)` on an odd limb, whose remainder lands in a freshly
+prepended *bottom* limb — so `EVEN ⟹ that limb is at b ⟹ b==e-4 ⟹ the scan range b..=e-5 is empty`.
+Whenever the scan body *does* run, `round` is `ZERO` and the strip-loop guarantees `data[b]≠0`
+(measured: **0 violations in 43,712 parses**), so buggy `data[b]` and correct `data[i]` both compute
+`FP_ROUND_DOWN`. Same bytes, always. **The lesson isn't "reproduce upstream bugs" — it's that when a
+negative control fails to bite, you have learned nothing until you find out WHY: either the corpus
+can't reach the state, or the code is inert. Instrumentation tells you which; a comment guessing "can't
+happen" does not.** (The tie-generator stays in the corpus as a live tripwire in case a future bignum
+change ever creates the discriminating state.)
+
+**2. The signed-char → WEOF trap is load-bearing and IS caught.** `strtod_str_get` does
+`return *(*p)++;` on a **signed** `char` widened to `wchar_t`. `char` is signed on all three targets
+(now asserted in `rust_layout_assert.c`), so byte `0xFF` sign-extends to `0xFFFF` — which *is* `WEOF`.
+The parser sees end-of-input at a byte it has **already stepped past**, so the trailing-`unget` does
+not put it back and the endptr lands one byte too far. Transcribed as `*p as i8 as i16 as u16`;
+negative control (drop the sign extension) correctly moved `strtod` and `__STRINGTOLD_L` to DIVERGE —
+and *only* the endptr-checking rows, since the value is unaffected. The wide side has no such trap
+(`wchar_t` is unsigned), which is a genuine narrow/wide contract difference the harness grades.
+
+**3. The harness could not see errno being *cleared* — the setup was part of the oracle (§9.73 again).**
+`strtod_helper` clears errno on entry (`#if _MSVCR_VER==0: *_errno()=0`); its wide twin `_wcstod_l`,
+written separately in `wcs.c`, does **not**. That is an observable CRT difference — a caller that sets
+`errno=0`, calls one, and tests ERANGE gets different answers. The harness could not see it: `Effects`
+**zeroed errno before every call**, so a redundant "clear errno" write changed nothing observable.
+Sabotaging `_wcstod_l` to clear errno moved **zero rows**. Fix: seed errno with a **non-zero sentinel**
+(`0x5A5A`) before each graded call instead of 0 — costs nothing (both sides get the same seed; a
+function that leaves errno alone still matches) and turns "did you touch errno at all?" into an
+observable. With the sentinel, the sabotage correctly reddens the whole wide family while `strtod`
+(which *should* clear) stays green. **Zeroing a side channel before a differential call is a claim that
+nobody clears it — and that claim was false.** This is the third variation in the lane of the same
+root: a harness convenience (a stub, a cheap `get_locinfo`, a pre-zeroed errno) silently encodes an
+assumption about the environment, and the assumption is itself untested until a negative control
+attacks it.
+
+**4. i386 hits a softfloat `extern "C" fn -> f64` ABI wall — flip amd64/arm64, keep i386's C.**
+i386 msvcrt is built `-march=pentium` (pre-SSE) and the whole i686 user-mode target carries
+`-C target-feature=-sse,-sse2` (`.cargo/config.toml`); under the i386 C ABI a `double` returns in the
+x87 `st0` register, no SSE needed — which is exactly what the C `strtod` does. But current rustc
+**refuses to emit an `extern "C" fn(..) -> f64` when SSE is disabled** ("SIMD vector type `f64` …
+requires the `sse` target feature"), a conservative guard that fires even though the x87 return is
+well-defined. Enabling SSE to dodge it would diverge from the `-march=pentium` baseline and change an
+ABI at the exact boundary the C callers cross, so the float family is gated
+`#[cfg(not(target_arch = "x86"))]`: it flips on amd64 + arm64 and i386 keeps its (correct, x87) C
+bignum. Regression-free — i386 still has a working `strtod` (the same Wine bignum, in C), the
+host-built harness fully grades the shipping Rust logic (the module is arch-independent), and PE-export
+RVA shows the split. **Owed:** lift the i386 flip once the softfloat-`f64`-return ABI has a sanctioned
+expression (an x87-return shim, or a rustc capability). This is the "fail loud, never silently degrade"
+rule applied to a toolchain gap: gate it explicitly with the reason, don't hack the ABI to force a
+uniform-looking flip.
+
+**Reusable takeaways.**
+- When a **negative control does not bite**, you have found a hole in the *corpus or the instrument*,
+  not a clean transcription. Instrument reachability to learn which; only then decide if the code is
+  inert. (An inert upstream bug is a fine thing to ship verbatim — but *prove* the inertness.)
+- A **coverage assertion must know the function's contract.** The float family splits on *how* it
+  reports range errors — errno (`strtod`) vs an out-of-band return code (`_atoflt_l`). A blanket
+  "require ERANGE" would have failed the return-code functions for behaving correctly; `check_fp`'s
+  `require` list is therefore per-row.
+- **Grep every new flip — and everything it CALLS — for arch-conditional (`_WIN64`) contracts and for
+  side-channel writes (`errno`, the invalid-parameter handler) BEFORE trusting the harness**, because
+  the harness only catches what its setup lets it observe.

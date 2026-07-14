@@ -56,13 +56,17 @@ Tree inventory (2026-07-03): **~2,422 `.rs` files · 228 crates** under `sdk/lib
 | **Driver fleet** (storage, FS, input, bus, netstack) | see below — netstack is a from-scratch Rust rewrite; rest cohab-flipped | **~90–100%** |
 | **LSA/SAM server** (lsasrv / samsrv) | active frontier — samsrv ~90%, lsasrv ~50%+ | **partial** |
 | **explorer.exe** (desktop shell) | `explorer-rust` 22 `.rs`/22K LOC; 22 cohab markers; 2 glue `.cpp` left (settings_shim, util_vararg) | **~99%** |
-| **CRT** (msvcrt/ucrt body) | **194 fns of msvcrt.dll flipped to Rust** (waves 1–12, 2026-07-14) — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), and the **collation** family. Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). The 581 `.c` still compile; what remains is gated mainly on **printf** (Phase C). | **~12–18%** |
+| **CRT** (msvcrt/ucrt body) | **209 fns of msvcrt.dll flipped to Rust on amd64/arm64 (194 on i386)** (waves 1–13, 2026-07-14) — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family is amd64/arm64 only — i386 keeps its correct C bignum (softfloat `extern "C" fn -> f64` ABI wall, field manual §9.78). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). The 581 `.c` still compile; what remains is gated mainly on **printf** (Phase C). | **~13–19%** |
 
 ### CRT (msvcrt) detail — the assemble-from-`cnt-rust` track
 
-**194 functions of `msvcrt.dll` are Rust** as of 2026-07-14 (waves 1–12). Verified by parsing
-the DLL's export table: every flip lands in the Rust cluster (RVA `0x001e20`–`0x0046e0`),
-every deliberate refusal is still C (`memmove`, `strtok`, `strtod`, `_ecvt` at `0x054000`+).
+**209 functions of `msvcrt.dll` are Rust on amd64/arm64 (194 on i386)** as of 2026-07-14
+(waves 1–13). Verified by parsing the DLL's export table: every flip lands in the Rust cluster,
+every deliberate refusal is still C (`memmove`, `strtok`, `_ecvt`/`_fcvt`/`_gcvt` — the
+printf-backed converters — at the high RVAs). Wave 13 added the **bignum float parser** (`strtod`
+and the whole `atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` family) on
+amd64/arm64; on i386 those stay C (the softfloat `extern "C" fn -> f64` ABI wall — §9.78), so
+i386's `strtod` is still at a high C RVA while amd64/arm64's is in the Rust cluster.
 
 Flipped: the mem/str floor (`memcpy` `memset` `memchr` `memcmp` `str{len,cmp,cpy,cat,chr,
 rchr,str,spn,cspn,pbrk,nlen,ncmp,ncpy,ncat}` `_str{lwr,upr,rev,set,nset}` `_memccpy` `_swab`
@@ -70,25 +74,32 @@ rchr,str,spn,cspn,pbrk,nlen,ncmp,ncpy,ncat}` `_str{lwr,upr,rev,set,nset}` `_memc
 nlen}` `_wcs{rev,set,nset}`), the integer parsers (`atoi` `atol` `_atoi64` `strtol` `strtoul`
 `_strtoi64` `_strtoui64`), the radix family (`_itoa` `_ltoa` `_ultoa` `_i64toa` `_ui64toa` +
 wide + all ten `_s` variants), the `_s` secure family (`strcpy_s` `strcat_s` `strncpy_s`
-`strncat_s` `_strnset_s` + the six wide), the tokenizers (`strtok_s` `wcstok_s`), and the
+`strncat_s` `_strnset_s` + the six wide), the tokenizers (`strtok_s` `wcstok_s`), the
 case-insensitive family (`_stricmp` `_strnicmp` `_memicmp` `_strlwr_s` `_strupr_s` + the six
-wide).
+wide), the ctype/case + collation families (`ctype.c`'s 44 + `strcoll`/`strxfrm` and wide
+twins), and — amd64/arm64 only — the **bignum float parser** (`strtod` `_strtod_l` `atof`
+`_atof_l` `_atoflt_l` `_atodbl` `_atodbl_l` `wcstod` `_wcstod_l` `_wtof` `_wtof_l` `_atoldbl`
+`_atoldbl_l` `__STRINGTOLD` `__STRINGTOLD_L`).
 
-**The method is the product.** Nothing flips without a differential proof. Four orthogonal
+**The method is the product.** Nothing flips without a differential proof. Six orthogonal
 harnesses (`sdk/lib/rust/msvcrt-difftest/`), each negative-controlled:
 
 | harness | asks | blind to |
 |---|---|---|
-| `classify` | wrong **values**? (20k fuzz cases vs the genuine C, grading bytes + return + **errno** + **invalid-parameter handler**, with per-row coverage requirements) | access, speed |
+| `classify` | wrong **values**? (20k fuzz cases vs the genuine C, grading bytes + **exact 64-bit float bit patterns** + return + **errno** (seeded with a non-zero sentinel so a spurious *clear* is visible) + **invalid-parameter handler**, with per-row coverage requirements) | access, speed |
 | `oob_guard` | right answer, wrong **memory**? (guard-page probes; 36 bounded fns) | values, speed |
 | `perf` | right answer, too **slowly**? (>2× the C fails) | values, access |
-| `ref_integrity` | **is the oracle itself honest?** (see §9.66 — glibc's attributes had been deleting the reference C's guards) | the subject |
+| `hot_path` | a per-element loop doing per-element **environment lookups**? (counts `get_locinfo()` at n=8 vs n=512 — the cost no *ratio* can see, §9.76) | values, access |
+| `ref_integrity` | **is the oracle itself honest?** (see §9.66 — glibc's attributes had been deleting the reference C's guards; also cross-checks every `msvcrt-sys` layout offset subject-vs-bindgen) | the subject |
+| `link` | do the shipping symbols actually **resolve** to the Rust bodies? | everything else |
 
 **What it has refused to flip, and why** — these are the interesting entries:
-- **`strtod`/`atof`/`_ecvt`/`_fcvt`/`_gcvt`** — cnt-rust's float parser is the ReactOS naive
-  accumulator; msvcrt's is a Wine bignum. Measured **14 ULPs apart**. The probe stays in the
-  tree as an executable DO-NOT-FLIP record. `_ecvt`/`_fcvt`/`_gcvt` are literally `_snprintf`
-  calls, so the whole float family is a **Phase C (printf)** deliverable, not a separate wave.
+- **`strtod`-from-`cnt-rust`** — cnt-rust's float parser is the ReactOS naive accumulator;
+  msvcrt's is a Wine bignum. Measured **14 ULPs apart**. The `strtod [PROBE]` row stays in the
+  tree as an executable DO-NOT-FLIP record for *that route*. **Wave 13 flipped `strtod` the
+  honest way instead** — by PORTING msvcrt's own bignum (`fpnum.rs`), bit-exact, amd64/arm64.
+  `_ecvt`/`_fcvt`/`_gcvt` (the float→string direction) are literally `_snprintf` calls and
+  remain a **Phase C (printf)** deliverable.
 - **`memmove`** — no oracle. The refstub routes it into the private anti-circularity
   namespace, so the compiled reference doesn't define an msvcrt `memmove` to compare against.
   The body would be three lines. It stays C.

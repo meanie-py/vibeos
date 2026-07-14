@@ -150,13 +150,36 @@ int  subj_locinfo_calls_get(void)   { return subj_locinfo_calls; }
 void subj_locinfo_calls_reset(void) { subj_locinfo_calls = 0; }
 
 /* The subject's own "C" locale — same tables as the reference's, per the note above.
- * `lconv` is left NULL: no flipped function reads it (it is the fpnum/strtod path, and
- * the float family is NOT flipped — see the wave-5 probe). */
+ *
+ * WAVE 13 ADDED `lconv`.  It used to be left NULL, and the comment here used to say
+ * "no flipped function reads it (it is the fpnum/strtod path, and the float family is
+ * NOT flipped)".  That is exactly the kind of load-bearing assumption a harness quietly
+ * accumulates — and the float family IS flipped now, so the subject's `fpnum_parse_bnum`
+ * dereferences `locinfo->lconv->decimal_point` on every call.  A NULL here is not a
+ * subtle divergence; it is a segfault in the test binary.
+ *
+ * Note the radix character must MATCH the reference's, for the usual reason: it is shared
+ * ENVIRONMENT, not code under test.  If the two sides disagreed about what "." means, the
+ * comparison would be measuring the harness rather than the Rust.
+ *
+ * `struct lconv` comes from the HOST's <locale.h> — which is also where the reference gets
+ * it (refstub/msvcrt.h:57), so both sides read the same object through the same layout.
+ * The subject, though, reaches it through BINDGEN's *Windows* layout, and the two only
+ * agree because `decimal_point` is the first member of both.  That is a true fact about
+ * C99 §7.11.1.1 and about corecrt, but it is not a layout GUARANTEE, so it is asserted at
+ * run time rather than believed: see subj_off_lconv_decimal_point() and its ref_integrity
+ * row. */
+#include <locale.h>
+static char subj_decimal_point[] = ".";
+static struct lconv subj_lconv;
+
 struct threadlocaleinfostruct *get_locinfo(void)
 {
     subj_locinfo_calls++;
     if (!subj_locinfo.pcumap)
     {
+        subj_lconv.decimal_point = subj_decimal_point;
+        subj_locinfo.lconv       = &subj_lconv;
         subj_locinfo.mb_cur_max  = 1;
         subj_locinfo.lc_codepage = 0;
         /* lc_handle[] stays all-zero == the "C" locale. */
@@ -265,3 +288,14 @@ size_t subj_off_locinfo_lchandle(void) { return offsetof(rl_threadlocinfo, lc_ha
 size_t subj_off_td_strtok(void)   { return offsetof(subj_thread_data_t, strtok_next); }
 size_t subj_off_td_wcstok(void)   { return offsetof(subj_thread_data_t, wcstok_next); }
 size_t subj_off_td_errno(void)    { return offsetof(subj_thread_data_t, thread_errno); }
+
+/* wave 13 — the float parser's two-hop reach: locinfo -> lconv -> decimal_point.
+ *
+ * `lconv` here is the HOST's (glibc's) struct, because that is the one the reference
+ * reads through; the Rust reaches the SAME object through bindgen's Windows layout.  They
+ * agree only because `decimal_point` is the first member on both sides.  True today, and
+ * asserted so it stays true — a silent disagreement would make every strtod row compare a
+ * radix character against garbage, and the whole float family would go DIVERGE with a
+ * completely misleading cause. */
+size_t subj_off_locinfo_lconv(void)      { return offsetof(rl_threadlocinfo, lconv); }
+size_t subj_off_lconv_decimalpoint(void) { return offsetof(struct lconv, decimal_point); }
