@@ -257,6 +257,7 @@ unsafe fn KeSignalGateBoostPriorityImpl(Gate: PKGATE) {
                         *kt_State(WaitThread) as u32,
                         Gate,
                     );
+                    if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
                     ntkrnl_sys::ddk::KeBugCheckEx(
                         0x96,
                         WaitThread as ntkrnl_sys::ddk::ULONG_PTR,
@@ -265,6 +266,7 @@ unsafe fn KeSignalGateBoostPriorityImpl(Gate: PKGATE) {
                         Gate as ntkrnl_sys::ddk::ULONG_PTR,
                         0,
                     );
+                    }
                 }
             }
 

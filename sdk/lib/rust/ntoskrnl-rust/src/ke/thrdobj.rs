@@ -274,6 +274,7 @@ unsafe fn KeReadyThread_impl(Thread: PKTHREAD) {
                 Thread,
                 (*Thread).WaitReason as u32,
             );
+            if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
             ntkrnl_sys::ddk::KeBugCheckEx(
                 0x96,
                 Thread as ntkrnl_sys::ddk::ULONG_PTR,
@@ -281,6 +282,7 @@ unsafe fn KeReadyThread_impl(Thread: PKTHREAD) {
                 0,
                 0,
             );
+            }
         }
     }
 

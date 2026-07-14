@@ -162,6 +162,7 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
                     n,
                     (*t).WaitReason as u32,
                 );
+                if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
                 ntkrnl_sys::ddk::KeBugCheckEx(
                     0x96,
                     t as ntkrnl_sys::ddk::ULONG_PTR,
@@ -170,6 +171,7 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
                     Prcb as ntkrnl_sys::ddk::ULONG_PTR,
                     probe as ntkrnl_sys::ddk::ULONG_PTR,
                 );
+                }
             }
             probe = (*probe).Next;
         }
@@ -191,6 +193,7 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
         {
             walk_count += 1;
             if walk_count > 64 {
+                if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
                 ntkrnl_sys::ddk::KeBugCheckEx(
                     0x96,
                     Prcb as ntkrnl_sys::ddk::ULONG_PTR,
@@ -198,6 +201,7 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
                     ListEntry as ntkrnl_sys::ddk::ULONG_PTR,
                     walk_count as ntkrnl_sys::ddk::ULONG_PTR,
                 );
+                }
             }
         }
         Thread = CONTAINING_RECORD(
@@ -264,6 +268,7 @@ unsafe fn KiSelectNextProcessor(Thread: PKTHREAD) -> ULONG {
     // §9.56 guard 0x63: a zero affinity makes trailing_zeros() return 64 below
     // and KiProcessorBlock[64] is walked OUT OF BOUNDS — fail loud instead.
     if PreferredSet == 0 {
+        if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
         ntkrnl_sys::ddk::KeBugCheckEx(
             0x96,
             Thread as ntkrnl_sys::ddk::ULONG_PTR,
@@ -271,6 +276,7 @@ unsafe fn KiSelectNextProcessor(Thread: PKTHREAD) -> ULONG {
             0,
             0,
         );
+        }
     }
 
     IdleSet = PreferredSet & KiIdleSummary;
@@ -500,6 +506,7 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
                 b,
                 ntkrnl_sys::inline::ke::rq_inflight_waker(Thread),
             );
+            if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
             ntkrnl_sys::ddk::KeBugCheckEx(
                 0x96,
                 Thread as ntkrnl_sys::ddk::ULONG_PTR,
@@ -509,6 +516,7 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
                 f as ntkrnl_sys::ddk::ULONG_PTR,
                 b as ntkrnl_sys::ddk::ULONG_PTR,
             );
+            }
         }
     }
 
@@ -649,6 +657,7 @@ unsafe fn KiSwapThreadImpl(
     #[cfg(feature = "smp")]
     {
         if NextThread == CurrentThread {
+            if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
             ntkrnl_sys::ddk::KeBugCheckEx(
                 0x96,
                 CurrentThread as ntkrnl_sys::ddk::ULONG_PTR,
@@ -658,6 +667,7 @@ unsafe fn KiSwapThreadImpl(
                 (*CurrentThread).SwapBusy as ntkrnl_sys::ddk::ULONG_PTR,
                 (*CurrentThread).Priority as u64 as ntkrnl_sys::ddk::ULONG_PTR,
             );
+            }
         }
     }
 

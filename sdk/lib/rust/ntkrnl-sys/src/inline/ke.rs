@@ -903,7 +903,7 @@ unsafe fn dh_set_inserted(header: *mut ddk::_DISPATCHER_HEADER, val: u8) {
 /// KTHREAD.State reader (mirror of kt_set_state).
 #[cfg(feature = "smp")]
 #[inline]
-unsafe fn kt_state_read(thread: ddk::PKTHREAD) -> u8 {
+pub unsafe fn kt_state_read(thread: ddk::PKTHREAD) -> u8 {
     #[cfg(target_arch = "x86")]
     { (*thread).State }
     #[cfg(not(target_arch = "x86"))]
@@ -1352,6 +1352,16 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
 /// with an in-flight side table: mark on push, unmark at the drain pop.
 /// Lossy under collision pressure (8-probe open addressing) — a tripwire,
 /// not a lock.
+/// §9.56 oracle arming (2026-07-14): `true` = the 15 scheduler-protocol
+/// tripwires (tags 0x54–0x63) BUGCHECK at the catch; `false` = print-only
+/// ([RQ*] lines stay, cheap, always-on). De-armed after the fix set
+/// (gate trylock + timer-block init + in-flight dedupe + idle NextThread
+/// lock v2) took the amplified burst to 29/32 with zero oracle hits.
+/// Corruption FINGERPRINT bugchecks (torn ready-list links, null queue
+/// entries, ReadySummary inconsistency) are NOT gated — real corruption
+/// still stops the machine. Re-arm by flipping this for a debug burst.
+pub const RQ_ORACLE_ARMED: bool = false;
+
 #[cfg(feature = "smp")]
 static RQ_INFLIGHT: [core::sync::atomic::AtomicUsize; 512] =
     [const { core::sync::atomic::AtomicUsize::new(0) }; 512];
@@ -1506,6 +1516,7 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
             caller_line as u32,
             __stale_by,
         );
+        if RQ_ORACLE_ARMED {
         ddk::KeBugCheckEx(
             0x96,
             thread as usize as _,
@@ -1513,6 +1524,7 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
             __stale_by as u64 as _,
             caller_line as _,
         );
+        }
     }
 
     // §9.56 hypothesis-B ROOT: deferring a thread that is CurrentThread (running)
@@ -1566,6 +1578,7 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
                 (*thread).__bindgen_anon_1.__bindgen_anon_1.DeferredProcessor as u32,
                 caller_line as u32,
             );
+            if RQ_ORACLE_ARMED {
             ddk::KeBugCheckEx(
                 0x96,
                 thread as usize as _,
@@ -1573,6 +1586,7 @@ pub unsafe fn KiInsertDeferredReadyList(thread: ddk::PKTHREAD) {
                 prcb as usize as _,
                 caller_line as _,
             );
+            }
         }
     }
 
@@ -2005,6 +2019,7 @@ pub unsafe fn ki_check_promote_not_linked(thread: ddk::PKTHREAD, site: u64) {
             flink,
             blink,
         );
+        if RQ_ORACLE_ARMED {
         ddk::KeBugCheckEx(
             0x96,
             thread as usize as _,
@@ -2012,6 +2027,7 @@ pub unsafe fn ki_check_promote_not_linked(thread: ddk::PKTHREAD, site: u64) {
             kt_state_read(thread) as _,
             flink as usize as _,
         );
+        }
     }
 }
 
@@ -2143,6 +2159,7 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
                 caller_line as u32,
                 rq_inflight_waker(thread),
             );
+            if RQ_ORACLE_ARMED {
             ddk::KeBugCheckEx(
                 0x96,
                 thread as usize as _,
@@ -2151,6 +2168,7 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
                 prcb as usize as _,
                 caller_line as _,
             );
+            }
         }
     }
     // §9.56 entry diagnostics (holding the PRCB lock):
@@ -2218,6 +2236,7 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
                 prcb,
                 (*prcb).Number as u32,
             );
+            if RQ_ORACLE_ARMED {
             ddk::KeBugCheckEx(
                 0x96,
                 thread as usize as _,
@@ -2225,6 +2244,7 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
                 kt_state_read(thread) as _, // the state that slipped past 0x52
                 caller_line as _,
             );
+            }
         }
         // §9.56 (2026-07-13): affinity-defer branch MOVED BELOW the 0x5D/0x54
         // guards — it used to sit above them, letting an already-linked or
@@ -2245,6 +2265,7 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
                 (*thread).WaitReason as u32,
             );
             if (*thread).Affinity == 0 {
+                if RQ_ORACLE_ARMED {
                 ddk::KeBugCheckEx(
                     0x96,
                     thread as usize as _,
@@ -2252,6 +2273,7 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
                     (*prcb).SetMember as _,
                     0,
                 );
+                }
             }
             let _ = rq_inflight_mark(thread);
             rq_waker_stamp(thread, 9100); // 9100 = affinity-defer direct path

@@ -122,6 +122,7 @@ pub unsafe extern "system" fn KiInsertQueue(
                     Queue,
                     (*Thread).WaitReason as u32,
                 );
+                if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
                 KeBugCheckEx(
                     0x96,
                     Thread as ULONG_PTR,
@@ -129,6 +130,7 @@ pub unsafe extern "system" fn KiInsertQueue(
                     Queue as ULONG_PTR,
                     WaitBlock as ULONG_PTR,
                 );
+                }
             }
         }
 

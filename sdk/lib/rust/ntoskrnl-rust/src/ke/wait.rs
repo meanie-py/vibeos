@@ -216,6 +216,7 @@ unsafe fn KiUnwaitThreadImpl(Thread: PKTHREAD, WaitStatus: isize, Increment: KPR
                 WaitStatus as usize as *const u8,
                 (*Thread).WaitReason as u32,
             );
+            if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
             ntkrnl_sys::ddk::KeBugCheckEx(
                 0x96,
                 Thread as ntkrnl_sys::ddk::ULONG_PTR,
@@ -225,6 +226,7 @@ unsafe fn KiUnwaitThreadImpl(Thread: PKTHREAD, WaitStatus: isize, Increment: KPR
                 WaitStatus as ntkrnl_sys::ddk::ULONG_PTR,
                 (*Thread).WaitReason as u64 as ntkrnl_sys::ddk::ULONG_PTR,
             );
+            }
         }
     }
 
