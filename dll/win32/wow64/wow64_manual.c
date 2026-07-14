@@ -78,6 +78,9 @@ NTSTATUS WINAPI NtCreateDirectoryObject(PHANDLE Handle, ACCESS_MASK Access,
 NTSTATUS WINAPI NtCreateEvent(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
                               ULONG EventType, BOOLEAN InitialState);
 NTSTATUS WINAPI NtOpenEvent(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa);
+NTSTATUS WINAPI NtCreateIoCompletion(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
+                                     ULONG Count);
+NTSTATUS WINAPI NtOpenIoCompletion(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa);
 NTSTATUS WINAPI NtSecureConnectPort(PHANDLE PortHandle, PVOID PortName,
                                     PVOID SecurityQos, PVOID ClientView,
                                     PVOID ServerSid, PVOID ServerView,
@@ -107,8 +110,9 @@ NTSTATUS WINAPI NtQueryInformationThread(HANDLE Thread, ULONG Class, PVOID Info,
                                          ULONG Length, PULONG ReturnLength);
 NTSTATUS WINAPI NtRemoveIoCompletion(HANDLE Port, PVOID *Key, PVOID *Context,
                                      PVOID Iosb, PLARGE_INTEGER Timeout);
-LONG_PTR WINAPI NtUserEnumDisplayMonitors(HANDLE hdc, PVOID pRect,
-                                          PVOID hMonitorList, ULONG listSize);
+INT WINAPI NtUserEnumDisplayMonitors(HANDLE hDC, PVOID pRect,
+                                     PVOID hMonitorList, PVOID monitorRectList,
+                                     ULONG listSize);
 NTSTATUS WINAPI NtQueryDirectoryFile(HANDLE File, HANDLE Event, PVOID ApcRoutine,
                                      PVOID ApcContext, PVOID Iosb, PVOID Info,
                                      ULONG Length, ULONG Class, BOOLEAN SingleEntry,
@@ -2343,6 +2347,33 @@ static NTSTATUS Wow64Manual_NtUserMessageCall(ULONG *a)
 }
 
 /* Name-dispatched entry point. Returns WOW64_MANUAL_UNIMPL if unhandled. */
+/* ---- M18: NtCreateIoCompletion (PHANDLE out-slot + optional OA) ----------
+ * Flushed out by marshal32.exe: the .spec typed it flat, so the PHANDLE arg
+ * got a flat thunk and the kernel's 8-byte handle write clobbered the guest's
+ * 4-byte slot + neighbor (CreateIoCompletionPort returned NULL). Same shape
+ * as NtCreateKeyedEvent. */
+
+static NTSTATUS Wow64Manual_NtCreateIoCompletion(ULONG *a)
+{
+    ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[0];
+    ACCESS_MASK Access = a[1];
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    PVOID Oa64Ptr = NULL;
+    HANDLE Handle = NULL;
+    NTSTATUS St;
+
+    if (a[2])
+    {
+        Wow64pMarshalOa(&Oa64, &Uname64, a[2]);
+        Oa64Ptr = &Oa64;
+    }
+    St = NtCreateIoCompletion(&Handle, Access, Oa64Ptr, a[3]);
+    if (St >= 0 && Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Handle;
+    return St;
+}
+
 /* ---- M18: NtQueryInformationThread (THREADINFOCLASS 32/64 marshal) ------ */
 
 #define WOW64_ThreadBasicInformation          0
@@ -2475,27 +2506,42 @@ static NTSTATUS Wow64Manual_NtRemoveIoCompletion(ULONG *a)
     return St;
 }
 
-/* ---- M18: NtUserEnumDisplayMonitors (count-aware HMONITOR out-array) ----- */
+/* ---- M18: NtUserEnumDisplayMonitors (count-aware HMONITOR out-array) -----
+ * The ROS syscall is FIVE args (the MSDN-shaped 4-arg prototype above it in
+ * ntuser.h is commented out — a trap marshal32.exe caught):
+ *   (HDC, LPCRECT, HMONITOR *hMonitorList, LPRECT monitorRectList, DWORD listSize)
+ * Only hMonitorList diverges (4 vs 8 per element); monitorRectList is RECTs
+ * (width-identical, guest pointer passes straight through). Probe call
+ * (both lists NULL) just returns the count. */
+
+#define WOW64_MON_MAX 16
 
 static NTSTATUS Wow64Manual_NtUserEnumDisplayMonitors(ULONG *a)
 {
-    ULONGLONG List64[16];
+    HANDLE Dc = (HANDLE)(LONG_PTR)(LONG)a[0];
+    PVOID Rect = (PVOID)(ULONG_PTR)a[1];      /* LPCRECT: width-identical */
     ULONG *List32 = (ULONG *)(ULONG_PTR)a[2];
-    ULONG Want = a[3];
-    LONG_PTR Got;
+    PVOID RectList = (PVOID)(ULONG_PTR)a[3];  /* LPRECT[]: width-identical */
+    ULONG Want = a[4];
+    ULONGLONG List64[WOW64_MON_MAX];
+    INT Got;
     ULONG i;
 
     if (!List32 || !Want)
-        return (NTSTATUS)(ULONG)NtUserEnumDisplayMonitors(
-            (HANDLE)(LONG_PTR)(LONG)a[0], (PVOID)(ULONG_PTR)a[1], NULL, 0);
-
-    if (Want > 16) Want = 16;   /* stack cap; count return still correct */
-    Got = NtUserEnumDisplayMonitors((HANDLE)(LONG_PTR)(LONG)a[0],
-                                    (PVOID)(ULONG_PTR)a[1] /* RECT: identical */,
-                                    List64, Want);
-    for (i = 0; i < Want && i < (ULONG)Got; i++)
+    {
+        /* Probe/count call (user32 makes this first with both lists NULL). */
+        return (NTSTATUS)NtUserEnumDisplayMonitors(Dc, Rect, NULL, RectList, 0);
+    }
+    if (Want > WOW64_MON_MAX)
+    {
+        DbgPrint("[WOW64] NtUserEnumDisplayMonitors: %lu monitors > cap %u — "
+                 "failing loud\n", Want, WOW64_MON_MAX);
+        return (NTSTATUS)0xC0000095L; /* INTEGER_OVERFLOW: never silently truncate */
+    }
+    Got = NtUserEnumDisplayMonitors(Dc, Rect, List64, RectList, Want);
+    for (i = 0; Got > 0 && i < Want && i < (ULONG)Got; i++)
         List32[i] = (ULONG)List64[i];
-    return (NTSTATUS)(ULONG)Got;
+    return (NTSTATUS)Got;
 }
 
 NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
@@ -2650,6 +2696,10 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtNotifyChangeMultipleKeys(Arguments);
     if (WOW64_IS("NtSetSystemInformation"))
         return Wow64Manual_NtSetSystemInformation(Arguments);
+    if (WOW64_IS("NtCreateIoCompletion"))
+        return Wow64Manual_NtCreateIoCompletion(Arguments);
+    if (WOW64_IS("NtOpenIoCompletion"))
+        return Wow64pOpenByOa(NtOpenIoCompletion, Arguments);
     if (WOW64_IS("NtQueryInformationThread"))
         return Wow64Manual_NtQueryInformationThread(Arguments);
     if (WOW64_IS("NtRemoveIoCompletion"))

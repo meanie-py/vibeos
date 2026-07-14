@@ -80,6 +80,21 @@ else
     echo "[!] file32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD)"
 fi
 
+# marshal32.exe — the M18 marshaller-verification guest: NtQueryInformationThread
+# TBI (verified against the guest's OWN TEB32), IOCP post/get sentinel round-trip
+# (NtRemoveIoCompletion out-slots + IOSB), EnumDisplayMonitors/GetMonitorInfo/
+# MonitorFromPoint (count-aware HMONITOR array + the new flat thunks).
+if [ -f "$I386_BUILD/win32ss/user/user32/CMakeFiles/libuser32.dir/libuser32.a" ]; then
+    "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
+        -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -o "$HARNESS_BUILD/marshal32.exe" "$HARNESS_SRC/Marshal32.c" \
+        "$I386_BUILD/win32ss/user/user32/CMakeFiles/libuser32.dir/libuser32.a" \
+        "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" \
+        "$I386_BUILD/dll/ntdll/CMakeFiles/libntdll.dir/libntdll.a"
+else
+    echo "[!] marshal32.exe skipped: build-i386 importlibs missing ($I386_BUILD)"
+fi
+
 echo
 echo "Built:"
-ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe "$HARNESS_BUILD"/hello32.exe "$HARNESS_BUILD"/gui32.exe "$HARNESS_BUILD"/win32.exe "$HARNESS_BUILD"/file32.exe 2>/dev/null || true
+ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe "$HARNESS_BUILD"/hello32.exe "$HARNESS_BUILD"/gui32.exe "$HARNESS_BUILD"/win32.exe "$HARNESS_BUILD"/file32.exe "$HARNESS_BUILD"/marshal32.exe 2>/dev/null || true

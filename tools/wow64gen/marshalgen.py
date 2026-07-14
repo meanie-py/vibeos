@@ -225,9 +225,24 @@ def strip_annotations(raw: str) -> tuple[str, str]:
     return "".join(out), sal
 
 
+def strip_comments(text: str) -> str:
+    """Blank out block + line comments (newlines preserved).
+
+    NOT cosmetic: ntuser.h keeps DEAD prototypes inside /* */ — the MSDN-shaped
+    4-arg NtUserEnumDisplayMonitors sits commented directly above the REAL
+    5-arg ROS one. Parsing a commented-out declaration yields a marshaller with
+    the wrong arg count that reads the guest stack at the wrong offsets; only
+    the last-definition-wins dict ordering hid it here. marshal32.exe caught
+    that class the hard way. Only LIVE declarations may reach the classifier.
+    """
+    text = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.S)
+    return re.sub(r"//[^\n]*", "", text)
+
+
 def extract_prototypes(text: str, name_re: str) -> dict[str, Proto]:
     """Find `<ret>\\n<CONV>\\n?Name(\\n  params...);` shapes for names matching
     name_re. Tolerant of NTSYSCALLAPI/W32KAPI/APIENTRY/NTAPI decoration."""
+    text = strip_comments(text)
     protos: dict[str, Proto] = {}
     pat = re.compile(r"\b(" + name_re + r")\s*\(", re.M)
     for m in pat.finditer(text):

@@ -584,6 +584,14 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$WIN32APP" ::/reactos/syswow64/win32.exe
         fi
+        # marshal32.exe — the M18 marshaller-verification guest (winlogon
+        # TryStartWow64Marshal): TBI/IOCP/monitor marshallers, self-verified.
+        MARSHAL32="${VIBEOS_MARSHAL32_EXE:-$PROJECT_DIR/build-fex-hello/marshal32.exe}"
+        if [ -f "$MARSHAL32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/marshal32.exe (M18 marshaller guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$MARSHAL32" ::/reactos/syswow64/marshal32.exe
+        fi
         # file32.exe — the M10 file-I/O guest (winlogon TryStartWow64File).
         FILE32="${VIBEOS_FILE32_EXE:-$PROJECT_DIR/build-fex-hello/file32.exe}"
         if [ -f "$FILE32" ]; then
