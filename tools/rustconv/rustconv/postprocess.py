@@ -13,6 +13,7 @@ universal enough to fix mechanically:
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -1618,6 +1619,116 @@ _EXTERN_FN_NAME_RE = re.compile(r"^[ \t]*(?:pub\s+)?fn\s+([A-Za-z_]\w*)\b")
 _EXTERN_ATTR_RE = re.compile(r"^[ \t]*#\[[^\]]*\][ \t]*$")
 
 
+@lru_cache(maxsize=1)
+def _crt_cdecl_names() -> frozenset[str]:
+    """Every msvcrt export that is genuinely __cdecl — from msvcrt.spec, the ground truth.
+
+    The CRT is cdecl; Win32 is stdcall. An LLM translating a user-mode DLL sees the C call
+    `strcpy(dst, src)` alongside `SetLastError(...)` and routinely lumps BOTH into one
+    `extern "system"` block. On i386 that makes every CRT call a stdcall call into a cdecl
+    callee: the callee doesn't pop, the caller doesn't either, and the stack walks. It
+    compiles, it links, and nothing in the pipeline was looking — verify_ffi checks decls
+    against the MODULE's .spec, and strcpy is not in ws2_32.spec because it is an IMPORT.
+
+    Seen for real in the first ws2_32 file off the wire (addrconv.rs):
+        extern "system" { fn _itoa(...); fn strcpy(...); fn strcat(...); }
+
+    `varargs` counts as cdecl here (that is how a variadic C fn is called).
+    """
+    from .config import REACTOS_ROOT
+
+    spec = REACTOS_ROOT / "dll" / "win32" / "msvcrt" / "msvcrt.spec"
+    if not spec.is_file():
+        return frozenset()
+    names: set[str] = set()
+    pat = re.compile(r"^@\s+(?:cdecl|varargs)\s+(?:-\S+\s+)*([A-Za-z_?@]\w*)")
+    for line in spec.read_text(errors="replace").splitlines():
+        m = pat.match(line.strip())
+        if m:
+            names.add(m.group(1))
+    return frozenset(names)
+
+
+def hoist_crt_cdecl_externs(code: str, exports: dict | None = None) -> str:
+    """Move CRT fn decls out of `extern "system"`/`"stdcall"` blocks into `extern "C"`.
+
+    See _crt_cdecl_names for why this is a silent i386 stack-corruption bug and why nothing
+    else catches it. Names the module itself EXPORTS are left alone (a DLL is free to export
+    its own stdcall fn that happens to share a CRT name — ws2_32 does not, but wsock32 and
+    the CRT-adjacent DLLs might, and guessing wrong here would be the same bug inverted).
+    """
+    crt = _crt_cdecl_names()
+    if not crt:
+        return code
+    own = set(exports or {})
+    targets = crt - own
+
+    lines = code.splitlines(keepends=True)
+    out: list[str] = []
+    moved: list[str] = []
+    moved_names: list[str] = []
+    i, n = 0, len(lines)
+    while i < n:
+        m = _EXTERN_OPEN_RE.match(lines[i].rstrip("\n"))
+        if not m or m.group(1) not in ("system", "stdcall"):
+            out.append(lines[i])
+            i += 1
+            continue
+        abi = m.group(1)
+        depth, j = 1, i + 1
+        while j < n:
+            depth += lines[j].count("{") - lines[j].count("}")
+            if depth == 0:
+                break
+            j += 1
+        if j >= n:  # unterminated — leave exactly as-is
+            out.append(lines[i])
+            i += 1
+            continue
+
+        kept: list[str] = []
+        pending: list[str] = []
+        hit = False
+        for ln in lines[i + 1 : j]:
+            if _EXTERN_ATTR_RE.match(ln.rstrip("\n")):
+                pending.append(ln)
+                continue
+            fn_m = _EXTERN_FN_NAME_RE.match(ln)
+            if fn_m and fn_m.group(1) in targets:
+                moved.extend(pending)
+                moved.append(ln)
+                moved_names.append(fn_m.group(1))
+                pending.clear()
+                hit = True
+                continue
+            kept.extend(pending)
+            pending.clear()
+            kept.append(ln)
+        kept.extend(pending)
+
+        if not hit:
+            out.extend(lines[i : j + 1])  # byte-identical passthrough
+            i = j + 1
+            continue
+        if any(k.strip() for k in kept):
+            out.append(f'extern "{abi}" {{\n')
+            out.extend(k if k.endswith("\n") else k + "\n" for k in kept)
+            out.append("}\n")
+        i = j + 1
+
+    if not moved:
+        return code
+    out.append(
+        f"// hoist_crt_cdecl_externs: moved {len(moved_names)} CRT decl(s) out of a stdcall\n"
+        f'// extern block into `extern "C"` (msvcrt.spec says cdecl): {", ".join(moved_names)}.\n'
+        "// On i386 a stdcall call into a cdecl callee walks the stack — nobody pops the args.\n"
+        'extern "C" {\n'
+    )
+    out.extend(moved)
+    out.append("}\n")
+    return "".join(out)
+
+
 def _filter_extern_block_decls(
     code: str,
     should_drop: Callable[[str], bool],
@@ -2136,6 +2247,9 @@ def postprocess(
     # Last (after all import fixes have settled).
     if sys_umbrella:
         code = collapse_sys_crate(code, sys_crate, sys_umbrella, crate_module)
+        # User-mode only: the CRT is cdecl, Win32 is stdcall, and the LLM lumps them into one
+        # `extern "system"` block. Kernel targets have no msvcrt import surface to confuse.
+        code = hoist_crt_cdecl_externs(code, exports)
         code = strip_user_inline_redeclarations(code)
         code = drop_pseh_macro_externs(code)
         code = fix_utf16_vec_literals(code)
