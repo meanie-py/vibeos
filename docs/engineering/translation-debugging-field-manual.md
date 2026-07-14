@@ -5526,6 +5526,49 @@ armed (guarded, cheap) until a clean soak confirms the eventual fix.
 at all** (matching ReactOS's incomplete i386 SMP) — a real gap for a future i386
 SMP kernel, but the current flake is amd64 where the spin is present.
 
+**2026-07-13 (f) — TWO more finds: the oracle's own hash table lied (false 0x59
+flood), then the deduped oracle caught the REAL hole: `KiIdleLoop` consumes
+`NextThread` with NO PRCB lock.**
+
+*Round 1 — the false flood (a10c86602f3).* The attribution burst came back 11/32,
+ALL nine 0x96 = tag 0x59 (double-defer) caller=708 (`KiReadyThread`), victims all
+KQUEUE-woken ExWorker threads (decode tip: `WaitStatus` = a POINTER for queue waiters
+— NT's queue wake stores the dequeued entry in WaitStatus; `0x100` = STATUS_KERNEL_APC).
+Root cause was the ORACLE ITSELF: `rq_inflight_mark()` CAS-inserted at the first empty
+probe slot *before finishing the 8-slot scan* for an existing entry. A legal Requeue
+re-mark (worker priority boosts, constantly) after an earlier-probe slot freed created
+a duplicate TWIN entry; promote-unmark cleared one, and the stale twin fired a false
+0x59 on the next legal wake. **Reusable rule: in an open-addressed probe table,
+insert-at-first-empty must only happen AFTER a full-window scan for the key** — and a
+diagnostic that bugchecks must be held to the same correctness bar as the kernel it
+polices (this is the SECOND false oracle of §9.56 after 0x56). Fix: full-scan-first
+mark, clear-all unmark, and `stale_by` (the stale mark's waker stamp) printed + packed
+into 0x59 P3.
+
+*Round 2 — the real hole (466d66bf550).* Deduped burst: 28/32, three catches, full
+attribution: 2× `[RQ5D]` caller=429 (= `wait.rs` KiExitDispatcher requeuing the OLD
+running thread) with `deferred_by=9200` (the standby-DISPLACEMENT re-defer), 1×
+`[RQ5A]` already-linked on the drain's private detached chain — and every victim
+`runningOnCPU=1` with interleaved `[RQRUNNING] caller=8888` breadcrumbs proving the
+drain processed a thread that was simultaneously CurrentThread on the other CPU.
+Mechanism: **`KiIdleLoop` read/nulled/promoted `Prcb->NextThread` LOCK-FREE** —
+inherited verbatim from ReactOS's never-validated CONFIG_SMP C (i386 AND amd64 both
+lack the acquire; same class as the KiTryThreadLock find: *treat every inherited
+CONFIG_SMP primitive as unreviewed*). The displacement branch of
+`KiDeferredReadyThreadImpl` (correctly under the PRCB lock) read `NextThread=T` while
+the idle CPU concurrently promoted T to Running, then set the RUNNING T DeferredReady
+and re-deferred it → T later requeued itself run-side while still on a drain chain →
+the double-link tear. Every OTHER promote site (KiExitDispatcher, KiQuantumEnd, yield,
+KiDpcInterruptHandler) already held the lock — idle was the single hole. Fix: acquire
+PRCB lock in the idle promote, RE-CHECK NextThread under it (a displacement may have
+consumed it), promote, release before the SYNCH raise + swap. **Audit rule: a field
+guarded by lock L at N−1 of N sites is not guarded** — grep every reader/writer of
+`Prcb->NextThread` when touching scheduler code. Burst with this fix in flight;
+non-scheduler residuals in these bursts are the known §9.36 family (csrss 0xF4 after
+rpcrt4 `handler continued execution`; lsass user-AV hang) plus a cswitchdep tap
+miscalibration under SMP (amd64 MP swaps at SYNCH_LEVEL=12, tap expects DISPATCH=2 —
+fold into the owed per-CPU-cswitchdep work).
+
 ### 9.57 (ROOT-CAUSED + FIXED 2026-07-11) A *correct* fix woke a latent panic: `NT_ASSERT` mistranslated as a hard `assert!`, dormant until IRP_MJ_CLEANUP started being delivered (arm64-only)
 
 **Symptom:** After merging origin/master into the conformance-ratchet lane, the ×3 landing
