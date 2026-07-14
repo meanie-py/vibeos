@@ -6321,3 +6321,80 @@ and share what you must. (Same reasoning retired the `msvcrt_ref_*` namespace fo
 
 **Generalises to:** any harness with a "mode" (endianness, alignment, locale, SMP-vs-UP, a feature
 flag). The mode is worthless until you have shown it can fail.
+
+### 9.76 (ROOT-CAUSED + FIXED 2026-07-14) Five instruments passed and the OS booted 3× slower: a cheap harness stub hid a real COST, and no *ratio* can ever catch that — count, don't measure
+
+**Symptom.** Wave 11 gave msvcrt's `_wcsicmp` its locale branch. Every instrument was green:
+
+| instrument | verdict | what it grades |
+|---|---|---|
+| `classify` (20k-case differential fuzz, 4 effects) | **139 MATCH** | values |
+| `oob_guard` | in bounds | access |
+| `perf` (2× bar vs the genuine C) | **0.91×, PASSING** | speed |
+| `ref_integrity` | oracle honest | the oracle |
+| `link` | resolves | symbols |
+
+and the gate went red: `test_tdi_selftest_roundtrip`, **deterministically, 3/3 retries**. Boot went
+from **39s to 128s**. The *smoke tests* — the North Star — caught what the entire differential
+harness could not.
+
+**Root cause.** The Rust folded each character through `_towlower_l(c, NULL)`, and a NULL locale
+makes that re-enter `get_locinfo()`. In the real msvcrt that is **not cheap**:
+
+```c
+thread_data_t *msvcrt_get_thread_data(void) {
+    DWORD err = GetLastError();                     /* Win32 call */
+    if (!(ptr = TlsGetValue( msvcrt_tls_index )))   /* Win32 call */
+    ...                                            /* SetLastError */
+```
+
+**Three Win32 calls per character**, in a function on the boot's hot path (registry key
+comparisons). The C never does this — it resolves the locale **once** and passes it down:
+
+```c
+INT CDECL _wcsicmp_l(const wchar_t *s1, const wchar_t *s2, _locale_t locale) {
+    if(!locale) locale = get_current_locale_noalloc(&tmp);   /* ONCE */
+    do { c1 = _towlower_l(*str1++, locale); ... }            /* ...then passed down */
+```
+
+**Why `perf` was blind — and always will be.** The harness stubs `get_locinfo()` as a static-address
+return. **Both** the reference and the subject pay that same trivial cost, so the *ratio* stays
+healthy while the real DLL burns three syscalls a character. This is §9.73's lesson in a third guise:
+there, a cheap stub (`refimpl`'s ASCII `_tolower_l`) hid a real **behaviour**; here a cheap stub hides
+a real **cost**. *Every stub is a claim about the environment, and a cheap stub claims the environment
+is cheap.*
+
+Tuning the stub to be "realistically slow" would be tuning a fake. So don't measure — **COUNT**.
+
+**The fix, and the new instrument.** `sdk/lib/rust/msvcrt-difftest/tests/hot_path.rs` (the sixth
+instrument) counts `get_locinfo()` calls and asserts:
+
+> **A function that walks `n` elements may consult the environment O(1) times, not O(n).**
+
+Deterministic, immune to machine noise, and exactly the invariant the C's own structure encodes. Run
+each function at n=8 and n=512 and demand the count doesn't grow.
+
+**It found two more instances on the FIRST run — both already landed on master:**
+
+| fn | n=8 | n=512 | |
+|---|---|---|---|
+| `_memicmp` | 16 | **1024** | two `get_locinfo()` *per byte* |
+| `strtol` | 9 | **513** | one *per digit* |
+
+(The C is per-character in those two as well, so this was faithfulness, not divergence — but
+`get_locinfo()` is idempotent, so hoisting is behaviourally identical and strictly better. msvcrt's own
+hot comparer hoists.)
+
+**Rules.**
+
+1. **A ratio cannot see a cost your harness stubbed out.** When the subject and the reference both call
+   the same cheap fake, the fake's real price is invisible. Ask of every stub: *what does this cost in
+   the real system?*
+2. **Count, don't measure, when the invariant is structural.** "O(1) environment lookups per call" is
+   an exact, deterministic property. Asserting it beats benchmarking it.
+3. **A perf gate only defends what it benches (§9.63, again).** The case-insensitive and case-mapping
+   families were not benched — they are now. Every new family gets benched *and* hot-path-counted when
+   it is flipped.
+4. **When the North Star disagrees with your instruments, the instruments are wrong.** The smoke test
+   is the source of truth for a reason. A green harness and a red boot means you are missing an
+   instrument — go build it.

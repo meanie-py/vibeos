@@ -112,11 +112,49 @@ extern unsigned short *MSVCRT__pctype;
 
 static rl_threadlocinfo subj_locinfo;
 
+/* ── the get_locinfo() CALL COUNTER ────────────────────────────────
+ *
+ * Not instrumentation for its own sake — this is the sixth instrument, and it exists
+ * because the other five could not see a bug that turned the gate red.
+ *
+ * In the REAL msvcrt, `get_locinfo()` is NOT cheap:
+ *
+ *     pthreadlocinfo get_locinfo(void) {
+ *         thread_data_t *data = msvcrt_get_thread_data();   // GetLastError() +
+ *         update_thread_locale(data);                       // TlsGetValue()  +
+ *         ...                                               // SetLastError()
+ *
+ * — three Win32 calls. Call it once per CALL and nobody notices. Call it once per
+ * CHARACTER and `_wcsicmp` (registry key comparisons, on the boot's hot path) drags the
+ * whole boot from 39s to 128s and times out the kernel TDI self-test. Which is exactly
+ * what wave 11 shipped.
+ *
+ * Why no existing instrument caught it:
+ *   classify   — the ANSWERS were right. It grades values, not cost.
+ *   oob_guard  — in bounds.
+ *   perf       — 0.91x, PASSING. And it cannot ever catch this, because the harness
+ *                stubs get_locinfo() as a cheap static return for BOTH sides: they both
+ *                pay the same trivial cost, so the RATIO stays healthy while the real
+ *                DLL burns three syscalls a character. A stub in the harness hid a real
+ *                cost (§9.73, third variation).
+ *
+ * A ratio cannot express this. A COUNT can, exactly: `_wcsicmp` on an n-character string
+ * must call get_locinfo() O(1) times, not O(n). That is deterministic, immune to machine
+ * noise, and it is precisely the invariant the C's own structure encodes —
+ * `_wcsicmp_l` resolves the locale ONCE (`get_current_locale_noalloc(&tmp)`) and passes
+ * it down. See tests/hot_path.rs.
+ * ------------------------------------------------------------------ */
+static int subj_locinfo_calls;
+
+int  subj_locinfo_calls_get(void)   { return subj_locinfo_calls; }
+void subj_locinfo_calls_reset(void) { subj_locinfo_calls = 0; }
+
 /* The subject's own "C" locale — same tables as the reference's, per the note above.
  * `lconv` is left NULL: no flipped function reads it (it is the fpnum/strtod path, and
  * the float family is NOT flipped — see the wave-5 probe). */
 struct threadlocaleinfostruct *get_locinfo(void)
 {
+    subj_locinfo_calls++;
     if (!subj_locinfo.pcumap)
     {
         subj_locinfo.mb_cur_max  = 1;

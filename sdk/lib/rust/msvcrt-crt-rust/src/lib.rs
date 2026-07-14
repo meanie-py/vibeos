@@ -1684,6 +1684,11 @@ unsafe fn strtoi64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) ->
     // it is to call the same functions at the same points — which is the lane's thesis
     // restated: cnt-rust supplies the ALGORITHM, msvcrt-crt-rust supplies msvcrt's
     // SEMANTICS. A side effect is not something you can bolt onto a foreign engine.
+    // ONE get_locinfo() for the whole parse — see `towlower_li`. The C resolves it per
+    // character (it hands `_isspace_l`/`_tolower_l` a NULL locale), which in the real DLL
+    // is three Win32 calls PER DIGIT. `hot_path` measured 513 lookups parsing a 512-digit
+    // number. Idempotent, so hoisting changes nothing observable.
+    let li = sys::get_locinfo();
     let p = nptr;
     let mut s = nptr;
     let mut base = base;
@@ -1692,7 +1697,7 @@ unsafe fn strtoi64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) ->
     let mut ret: i64 = 0;
 
     // `(unsigned char)*nptr` — the cast IS here in the C.
-    while _isspace_l(*s as i32, core::ptr::null_mut()) != 0 {
+    while isctype_li(*s as i32, sys::_SPACE as i32, li) != 0 {
         s = s.add(1);
     }
 
@@ -1707,7 +1712,7 @@ unsafe fn strtoi64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) ->
     // sign-extension exactly; `*s as i32` would not, and would lose the EILSEQ.
     if (base == 0 || base == 16)
         && *s == b'0'
-        && _tolower_l(*s.add(1) as i8 as i32, core::ptr::null_mut()) == b'x' as i32
+        && tolower_li(*s.add(1) as i8 as i32, li) == b'x' as i32
     {
         base = 16;
         s = s.add(2);
@@ -1721,7 +1726,7 @@ unsafe fn strtoi64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) ->
         // `char cur = _tolower_l(*nptr, locale);` — the int result is truncated back
         // into a SIGNED char, so a high-bit fold stays negative and fails both digit
         // tests below. Reproduce the truncation (`as i8`), not just the call.
-        let cur = _tolower_l(*s as i8 as i32, core::ptr::null_mut()) as i8 as i32;
+        let cur = tolower_li(*s as i8 as i32, li) as i8 as i32;
         let mut v: i32;
 
         if cur >= b'0' as i32 && cur <= b'9' as i32 {
@@ -1787,6 +1792,7 @@ unsafe fn strtoui64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) -
         return 0;
     }
 
+    let li = sys::get_locinfo(); // ONCE — see strtoi64_contract
     let p = nptr;
     let mut s = nptr;
     let mut base = base;
@@ -1794,7 +1800,7 @@ unsafe fn strtoui64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) -
     let mut got_digit = false;
     let mut ret: u64 = 0;
 
-    while _isspace_l(*s as i32, core::ptr::null_mut()) != 0 {
+    while isctype_li(*s as i32, sys::_SPACE as i32, li) != 0 {
         s = s.add(1);
     }
 
@@ -1807,7 +1813,7 @@ unsafe fn strtoui64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) -
 
     if (base == 0 || base == 16)
         && *s == b'0'
-        && _tolower_l(*s.add(1) as i8 as i32, core::ptr::null_mut()) == b'x' as i32
+        && tolower_li(*s.add(1) as i8 as i32, li) == b'x' as i32
     {
         base = 16;
         s = s.add(2);
@@ -1819,7 +1825,7 @@ unsafe fn strtoui64_contract(nptr: *const u8, endptr: *mut *mut u8, base: i32) -
 
     while *s != 0 {
         let raw = *s;
-        let cur = _tolower_l(raw as i8 as i32, core::ptr::null_mut()) as i8 as i32;
+        let cur = tolower_li(raw as i8 as i32, li) as i8 as i32;
         let v: u64;
 
         if cur >= b'0' as i32 && cur <= b'9' as i32 {
@@ -2854,9 +2860,9 @@ unsafe fn strnicmp_core(s1: *const u8, s2: *const u8, mut count: usize) -> i32 {
     // parsers this one never reaches the EILSEQ arm. And it returns the RAW difference,
     // not the unsigned-re-read one. Two paths, two return conventions.
     loop {
-        c1 = _tolower_l((*p as u8) as i32, core::ptr::null_mut());
+        c1 = tolower_li((*p as u8) as i32, li); // li resolved ONCE, above
         p = p.add(1);
-        c2 = _tolower_l((*q as u8) as i32, core::ptr::null_mut());
+        c2 = tolower_li((*q as u8) as i32, li);
         q = q.add(1);
         count -= 1;
         if count == 0 || c1 == 0 || c1 != c2 {
@@ -2898,6 +2904,13 @@ pub unsafe extern "C" fn _memicmp(
         }
         return 0;
     }
+    // Resolve the locale ONCE, not twice per byte. The C does it per byte (it passes a
+    // NULL `locale` straight into `_tolower_l`), and in the real DLL that is THREE Win32
+    // calls — GetLastError + TlsGetValue + SetLastError — per fold. `get_locinfo()` is
+    // idempotent, so hoisting is behaviourally identical and strictly better; msvcrt's own
+    // hot comparer (`_wcsicmp_l`) hoists too. Caught by `hot_path` (1024 lookups for a
+    // 512-byte compare).
+    let li = sys::get_locinfo();
     let (mut p, mut q) = (s1 as *const i8, s2 as *const i8);
     let mut ret = 0i32;
     while len != 0 {
@@ -2913,8 +2926,7 @@ pub unsafe extern "C" fn _memicmp(
         // NLS arm — which sets errno = EILSEQ and returns the LCMapString result. So
         // `_memicmp` on high-bit bytes differs from an ASCII fold in BOTH its return
         // value and its errno. Call the real thing; do not re-model it.
-        ret = _tolower_l(*p as i32, core::ptr::null_mut())
-            - _tolower_l(*q as i32, core::ptr::null_mut());
+        ret = tolower_li(*p as i32, li) - tolower_li(*q as i32, li);
         if ret != 0 {
             break;
         }
@@ -2972,9 +2984,9 @@ unsafe fn strcase_s_core(str_: *mut u8, len: usize, upper: bool) -> i32 {
     while *p != 0 {
         let c = (*p) as i32;
         *p = if upper {
-            _toupper_l(c, core::ptr::null_mut()) as u8
+            toupper_li(c, li) as u8   // li resolved ONCE, above
         } else {
-            _tolower_l(c, core::ptr::null_mut()) as u8
+            tolower_li(c, li) as u8
         };
         p = p.add(1);
     }
@@ -3047,6 +3059,7 @@ unsafe fn wcsnicmp_core(s1: *const u16, s2: *const u16, mut n: usize) -> i32 {
     if !check_pmt(!s1.is_null()) || !check_pmt(!s2.is_null()) {
         return NLSCMPERROR;
     }
+    let li = sys::get_locinfo(); // ONCE, not per char — see towlower_li
     let (mut p, mut q) = (s1, s2);
     let (mut c1, mut c2);
     // WAVE 11. Was `cw_lower` — an inline ASCII fold, so this was locale-INDEPENDENT.
@@ -3054,9 +3067,9 @@ unsafe fn wcsnicmp_core(s1: *const u16, s2: *const u16, mut n: usize) -> i32 {
     // unconditionally and inherits that function's locale-correctness. Do the same, and
     // the whole wide compare becomes locale-correct for free.
     loop {
-        c1 = _towlower_l(*p, core::ptr::null_mut());
+        c1 = towlower_li(*p, li);
         p = p.add(1);
-        c2 = _towlower_l(*q, core::ptr::null_mut());
+        c2 = towlower_li(*q, li);
         q = q.add(1);
         n -= 1; // C: `while(--n && c1 && (c1 == c2))`
         if n == 0 || c1 == 0 || c1 != c2 {
@@ -3078,6 +3091,9 @@ pub unsafe extern "C" fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32 {
     if !check_pmt(!s1.is_null()) || !check_pmt(!s2.is_null()) {
         return NLSCMPERROR;
     }
+    // The C resolves the locale ONCE (`get_current_locale_noalloc(&tmp)`) and passes it
+    // down. Doing it per character costs a TLS lookup per char — a 3x boot slowdown.
+    let li = sys::get_locinfo();
     let (mut p, mut q) = (s1, s2);
     let (mut c1, mut c2);
     loop {
@@ -3085,9 +3101,9 @@ pub unsafe extern "C" fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32 {
         // `_wcsicmp_l` folds through `_towlower_l`, which carries the lc_handle branch.
         // Caught by the [NLS] row the moment the harness's locale tables stopped being
         // ASCII: cnt=94 vs msvcrt=126.
-        c1 = _towlower_l(*p, core::ptr::null_mut());
+        c1 = towlower_li(*p, li);
         p = p.add(1);
-        c2 = _towlower_l(*q, core::ptr::null_mut());
+        c2 = towlower_li(*q, li);
         q = q.add(1);
         if c1 == 0 || c1 != c2 {
             break;
@@ -3110,6 +3126,7 @@ unsafe fn wcscase_s_core(str_: *mut u16, n: usize, upper: bool) -> i32 {
         *_errno() = EINVAL; // errno only — no handler
         return EINVAL;
     }
+    let li = sys::get_locinfo(); // ONCE, not per char — see towlower_li
     let mut left = n;
     let mut ptr = str_;
     while left != 0 {
@@ -3120,9 +3137,9 @@ unsafe fn wcscase_s_core(str_: *mut u16, n: usize, upper: bool) -> i32 {
         // WAVE 11: was cw_upper/cw_lower (ASCII). `_wcslwr_s_l` folds through
         // `_towlower_l`, which carries the lc_handle branch.
         *ptr = if upper {
-            _towupper_l(*ptr, core::ptr::null_mut())
+            towupper_li(*ptr, li)
         } else {
-            _towlower_l(*ptr, core::ptr::null_mut())
+            towlower_li(*ptr, li)
         };
         ptr = ptr.add(1);
     }
@@ -3408,11 +3425,10 @@ unsafe fn pctype_at(li: *mut sys::threadlocaleinfostruct, c: i32) -> u32 {
     *(*li).pctype.offset(c as isize) as u32
 }
 
-/// `_isctype_l (MSVCRT.@)`
-#[no_mangle]
-pub unsafe extern "C" fn _isctype_l(c: i32, ty: i32, locale: *mut core::ffi::c_void) -> i32 {
-    let li = locinfo_of(locale);
-
+/// `_isctype_l`, on an ALREADY-RESOLVED locinfo. See `towlower_li` for why the callers
+/// below must hoist this out of their per-character loops.
+#[inline]
+unsafe fn isctype_li(c: i32, ty: i32, li: *mut sys::threadlocaleinfostruct) -> i32 {
     // `c >= -1 && c <= 255` — and pctype[-1] is a real slot, hence offset(), not add().
     if (-1..=255).contains(&c) {
         return (pctype_at(li, c) as i32) & ty;
@@ -3444,6 +3460,12 @@ pub unsafe extern "C" fn _isctype_l(c: i32, ty: i32, locale: *mut core::ffi::c_v
         }
     }
     0
+}
+
+/// `_isctype_l (MSVCRT.@)`
+#[no_mangle]
+pub unsafe extern "C" fn _isctype_l(c: i32, ty: i32, locale: *mut core::ffi::c_void) -> i32 {
+    isctype_li(c, ty, locinfo_of(locale))
 }
 
 /// `_isctype (MSVCRT.@)`
@@ -3612,6 +3634,29 @@ unsafe fn case_map_wide(c: i32, li: *mut sys::threadlocaleinfostruct, mapflag: u
         1 => ret[0] as i32,
         _ => ret[0] as i32 + ((ret[1] as i32) << 8),
     }
+}
+
+/// The narrow case-mappers, on an ALREADY-RESOLVED locinfo — see `towlower_li` for why
+/// per-character `get_locinfo()` is a 3x boot slowdown rather than a style nit.
+#[inline]
+unsafe fn toupper_li(c: i32, li: *mut sys::threadlocaleinfostruct) -> i32 {
+    if (c as u32) < 256 {
+        if pctype_at(li, c) & sys::_LEADBYTE != 0 {
+            return c;
+        }
+        return *(*li).pcumap.offset(c as isize) as i32;
+    }
+    case_map_wide(c, li, LCMAP_UPPERCASE)
+}
+#[inline]
+unsafe fn tolower_li(c: i32, li: *mut sys::threadlocaleinfostruct) -> i32 {
+    if (c as u32) < 256 {
+        if pctype_at(li, c) & sys::_LEADBYTE != 0 {
+            return c;
+        }
+        return *(*li).pclmap.offset(c as isize) as i32;
+    }
+    case_map_wide(c, li, LCMAP_LOWERCASE)
 }
 
 /// `_toupper_l (MSVCRT.@)`
@@ -3800,9 +3845,25 @@ extern "system" {
 /// `_towlower_l (MSVCRT.@)` — the wide case-mapper the whole wide family funnels through.
 ///
 /// `wint_t` is **16-bit** in msvcrt (hence `WEOF == 0xFFFF`), not the host's 32-bit.
-#[no_mangle]
-pub unsafe extern "C" fn _towlower_l(c: u16, locale: *mut core::ffi::c_void) -> u16 {
-    let li = locinfo_of(locale);
+///
+/// ## Resolve the locale ONCE per CALL, never once per CHARACTER
+///
+/// The callers below (`_wcsicmp`, `_wcsnicmp`, the folders) run this per character. If
+/// each of those iterations re-enters `get_locinfo()` — a TLS lookup — the function goes
+/// from "a compare" to "a compare plus a TLS lookup per byte", and `_wcsicmp` is on the
+/// boot's hot path (registry key comparisons). It cost a **3x boot slowdown**, which timed
+/// out the kernel TDI self-test and turned the gate red. The C does not do this:
+///
+///     INT CDECL _wcsicmp_l(const wchar_t *s1, const wchar_t *s2, _locale_t locale) {
+///         if(!locale) locale = get_current_locale_noalloc(&tmp);   // ONCE
+///         do { c1 = _towlower_l(*str1++, locale); ... }            // ...then passed down
+///
+/// So the fold takes an ALREADY-RESOLVED locinfo, and the `_l` entry points below are thin
+/// wrappers that resolve it once. Neither `classify` nor `oob_guard` can see this — only
+/// `perf` and the smoke tests can, and `perf` was not benching this family (§9.63: "a perf
+/// gate only defends what it BENCHES"). It is benched now.
+#[inline]
+unsafe fn towlower_li(c: u16, li: *mut sys::threadlocaleinfostruct) -> u16 {
     if (*li).lc_handle[sys::LC_CTYPE] == 0 {
         if c >= b'A' as u16 && c <= b'Z' as u16 {
             return c + (b'a' - b'A') as u16;
@@ -3824,10 +3885,14 @@ pub unsafe extern "C" fn _towlower_l(c: u16, locale: *mut core::ffi::c_void) -> 
     ret
 }
 
-/// `_towupper_l (MSVCRT.@)`
+/// `_towlower_l (MSVCRT.@)`
 #[no_mangle]
-pub unsafe extern "C" fn _towupper_l(c: u16, locale: *mut core::ffi::c_void) -> u16 {
-    let li = locinfo_of(locale);
+pub unsafe extern "C" fn _towlower_l(c: u16, locale: *mut core::ffi::c_void) -> u16 {
+    towlower_li(c, locinfo_of(locale))
+}
+
+#[inline]
+unsafe fn towupper_li(c: u16, li: *mut sys::threadlocaleinfostruct) -> u16 {
     if (*li).lc_handle[sys::LC_CTYPE] == 0 {
         if c >= b'a' as u16 && c <= b'z' as u16 {
             return c - (b'a' - b'A') as u16;
@@ -3847,6 +3912,12 @@ pub unsafe extern "C" fn _towupper_l(c: u16, locale: *mut core::ffi::c_void) -> 
         return c;
     }
     ret
+}
+
+/// `_towupper_l (MSVCRT.@)`
+#[no_mangle]
+pub unsafe extern "C" fn _towupper_l(c: u16, locale: *mut core::ffi::c_void) -> u16 {
+    towupper_li(c, locinfo_of(locale))
 }
 
 /// `towlower` / `towupper (MSVCRT.@)` — plain forms. Unlike the narrow `tolower`, these
