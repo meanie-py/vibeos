@@ -1014,3 +1014,22 @@ vs bindgen.
 green · three negative controls run (one proved the Wine bug inert, one caught the signed-char trap, one
 exposed+fixed the errno-clear blind spot) · `vibeos-cli check` green · builds ×3. **msvcrt.dll is now
 209 functions of Rust on amd64/arm64 (194 on i386).**
+
+### Next, after wave 13
+
+**The big door is now `printf` (Phase C), and wave 13 unlocked half of it.** msvcrt's float
+FORMATTER (`%f`/`%e`/`%g`, and therefore `_ecvt`/`_fcvt`/`_gcvt`, which are literally `_snprintf`
+calls) rides on the SAME `bnum.h` bignum this wave ported for the parser — so the hard numeric core
+is now Rust and proven. What remains for printf is the `printf.h` templated ENGINE itself
+(~1300 lines, instantiated narrow `_a` + wide `_w`): the format-string state machine, flags/width/
+precision, positional params, and the digit-generation glue (`pf_output_fp`/`pf_output_hex_fp`).
+It is hand-transcribable exactly as `fpnum.rs` was — NOT a paid rustconv run — but it is large and
+needs its own **format-string differential harness** (fuzz `%`-specs, grade the emitted bytes +
+return + errno against the genuine `pf_printf_a`/`pf_printf_w`, which are already reachable as
+reference symbols in `wcs.c`). Scope it as its own sub-lane before starting; it is several waves.
+
+**Small gradeable wins available with ZERO new harness work** (do any time, e.g. as warm-ups):
+- `_strdup` / `_wcsdup` (+ `_mbsdup`) — `malloc(strlen+1)` + copy; grade the buffer CONTENTS and the
+  NULL disposition (the pointers differ; malloc is shared environment). ~1 short wave.
+- `rand` / `srand` — pure LCG on `thread_data->random_seed`; needs a 4th reference TU (`misc.c`) but
+  the logic is trivial and the seed field is already in `msvcrt-sys`'s `__thread_data`.
