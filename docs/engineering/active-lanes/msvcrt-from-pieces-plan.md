@@ -902,3 +902,41 @@ exists for, found the first time it ran honestly.
 
 `classify` **139 MATCH / 0 SIGN-ONLY / 1 DIVERGE** (the `strtod` probe — the expected DO-NOT-FLIP
 record) · `oob_guard` / `perf` / `link` / `ref_integrity` green · builds ×3 arches, all lints.
+
+---
+
+## Wave 12 (2026-07-14) — the collation family. +20 flips (**194 total**). Only possible because wave 11 exists.
+
+`strcoll` · `_stricoll` · `_strncoll` · `_strnicoll` · `strxfrm` (+ `_l` forms) and the five wide
+twins `wcscoll` · `_wcsicoll` · `_wcsncoll` · `_wcsnicoll` · `wcsxfrm`.
+
+Every one branches on `lc_handle[LC_COLLATE]`:
+
+```c
+if(!locinfo->lc_handle[LC_COLLATE])
+    return strcmp(str1, str2);                          /* path 1 — the "C" locale */
+return CompareStringA(locinfo->lc_handle[LC_COLLATE], SORT_STRINGSORT,
+          str1, -1, str2, -1) - CSTR_EQUAL;             /* path 2 */
+```
+
+Before wave 11's NLS mode the harness could only see path 1, so flipping these would have been §9.60
+all over again. Now both arms are graded, negative-controlled.
+
+### What the harness caught (three real bugs, all in the first run)
+
+1. **`strxfrm` / `wcsxfrm` were missing `errno`** — both set `EILSEQ` (LCMapString refused) and
+   `ERANGE` (key longer than the buffer). I never saw those lines: I read the C through a
+   comment-stripping `grep -vE "^\s*\*"`, which **also eats `*_errno() = ERANGE;`**. Second time that
+   filter has eaten load-bearing C (§9.77).
+2. **`_strncoll` inherited `strncmp`'s two contracts.** Its C-locale path is literally
+   `return strncmp(...)`, and `strncmp` has a `#if defined(_WIN64)` (i386 → raw byte-diff;
+   amd64/arm64 → clamp to ±1/0). The host reference compiles the **i386** arm while our Rust selects
+   the **amd64** one, so the row had to model it — exactly as the existing `strncmp[_WIN64]` row does.
+   classify's header already warned "any NEW flip must be grepped for `_WIN64` first"; I hadn't.
+3. `_wcsxfrm_l` widens `LCMapStringW`'s **byte** sort-key in place **walking backwards** so it never
+   clobbers a byte it hasn't read. Transcribe the direction, not just the effect.
+
+### Verified
+
+`classify` **159 MATCH / 0 SIGN-ONLY / 1 DIVERGE** (the `strtod` probe) · all six instruments green ·
+builds ×3.

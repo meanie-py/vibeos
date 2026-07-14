@@ -310,6 +310,27 @@ extern "C" {
     fn _towlower_l(c: u16, l: *mut core::ffi::c_void) -> u16;
     fn ref__towupper_l(c: u16, l: *mut core::ffi::c_void) -> u16;
     fn _towupper_l(c: u16, l: *mut core::ffi::c_void) -> u16;
+    // ── wave 12: the collation family ──
+    fn ref_strcoll(a: *const u8, b: *const u8) -> i32;
+    fn strcoll(a: *const u8, b: *const u8) -> i32;
+    fn ref__stricoll(a: *const u8, b: *const u8) -> i32;
+    fn _stricoll(a: *const u8, b: *const u8) -> i32;
+    fn ref__strncoll(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn _strncoll(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn ref__strnicoll(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn _strnicoll(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn ref_strxfrm(d: *mut u8, s: *const u8, n: usize) -> usize;
+    fn strxfrm(d: *mut u8, s: *const u8, n: usize) -> usize;
+    fn ref_wcscoll(a: *const u16, b: *const u16) -> i32;
+    fn wcscoll(a: *const u16, b: *const u16) -> i32;
+    fn ref__wcsicoll(a: *const u16, b: *const u16) -> i32;
+    fn _wcsicoll(a: *const u16, b: *const u16) -> i32;
+    fn ref__wcsncoll(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn _wcsncoll(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn ref__wcsnicoll(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn _wcsnicoll(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn ref_wcsxfrm(d: *mut u16, s: *const u16, n: usize) -> usize;
+    fn wcsxfrm(d: *mut u16, s: *const u16, n: usize) -> usize;
 }
 
 /// The four observable effects of a CRT call, as one comparable unit.
@@ -1626,7 +1647,105 @@ unsafe fn run() {
     // job, and it is the same bounded scope _toupper_l's __crtLCMapStringA arm already has.
     //
     // A green from an unexercised branch is not a green.
+
+    // ══ WAVE 12 — the COLLATION family, graded in BOTH locale modes ══════════
+    //
+    // These exist as flips only because wave 11 exists. Every one branches on
+    // `lc_handle[LC_COLLATE]`, so with the harness pinned to the "C" locale the
+    // CompareStringA/LCMapStringA arm was unreachable and a path-1-only body would have
+    // been reported MATCH forever — §9.60, exactly. The `[NLS]` copies below are the ones
+    // that carry the weight.
+    macro_rules! coll_rows {
+        ($suffix:literal) => {
+            check_effects(concat!("strcoll", $suffix), |r| {
+                let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+                (Effects::subject(|| strcoll(a.as_ptr(), b.as_ptr()) as i64),
+                 Effects::reference(|| ref_strcoll(a.as_ptr(), b.as_ptr()) as i64),
+                 format!("{a:?} vs {b:?}"))
+            });
+            check_effects(concat!("_stricoll", $suffix), |r| {
+                let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+                (Effects::subject(|| _stricoll(a.as_ptr(), b.as_ptr()) as i64),
+                 Effects::reference(|| ref__stricoll(a.as_ptr(), b.as_ptr()) as i64),
+                 format!("{a:?} vs {b:?}"))
+            });
+            // `_strncoll_l` path 1 is literally `return strncmp(str1, str2, count);` — so it
+            // INHERITS strncmp's two contracts (string.c `#if defined(_WIN64)`): i386
+            // returns the raw unsigned byte-diff, amd64/arm64 clamp to -1/0/1. The host
+            // reference compiled the i386 arm (_WIN64 undefined), so the amd64 subject must
+            // be graded against `clamp(ref)` — exactly as the `strncmp[_WIN64]` row does.
+            //
+            // classify's own header says "any NEW flip must be grepped for _WIN64 first",
+            // and this row is what happens when you don't: it came back DIVERGE with
+            // cnt=1 msvcrt=47.
+            //
+            // In the NLS arm the reference returns CompareStringA()-CSTR_EQUAL, already
+            // -1/0/1, so the clamp is a no-op there. One row covers both modes.
+            check_effects(concat!("_strncoll", $suffix), |r| {
+                let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+                let n = r.below(24);
+                (Effects::subject(|| _strncoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 Effects::reference(|| {
+                     let w = ref__strncoll(a.as_ptr(), b.as_ptr(), n) as i64;
+                     if cfg!(target_pointer_width = "64") { w.signum() } else { w }
+                 }),
+                 format!("n={n} {a:?} vs {b:?}"))
+            });
+            check_effects(concat!("_strnicoll", $suffix), |r| {
+                let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+                let n = r.below(24);
+                (Effects::subject(|| _strnicoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 Effects::reference(|| ref__strnicoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 format!("n={n} {a:?} vs {b:?}"))
+            });
+            check_buf_fx(concat!("strxfrm", $suffix), &["ok"], |r| {
+                let src = gen_str(r, 20);
+                let len = r.below(40);
+                let (mut d1, mut d2) = (vec![0xAAu8; 64], vec![0xAAu8; 64]);
+                let g = Effects::subject(|| strxfrm(d1.as_mut_ptr(), src.as_ptr(), len) as i64);
+                let w = Effects::reference(|| ref_strxfrm(d2.as_mut_ptr(), src.as_ptr(), len) as i64);
+                (d1, g, d2, w, format!("len={len} src={src:?}"))
+            });
+            check_effects(concat!("wcscoll", $suffix), |r| {
+                let (a, b) = (gen_wstr(r, 20), gen_wstr(r, 20));
+                (Effects::subject(|| wcscoll(a.as_ptr(), b.as_ptr()) as i64),
+                 Effects::reference(|| ref_wcscoll(a.as_ptr(), b.as_ptr()) as i64),
+                 format!("alen={} blen={}", a.len()-1, b.len()-1))
+            });
+            check_effects(concat!("_wcsicoll", $suffix), |r| {
+                let (a, b) = (gen_wstr(r, 20), gen_wstr(r, 20));
+                (Effects::subject(|| _wcsicoll(a.as_ptr(), b.as_ptr()) as i64),
+                 Effects::reference(|| ref__wcsicoll(a.as_ptr(), b.as_ptr()) as i64),
+                 format!("alen={} blen={}", a.len()-1, b.len()-1))
+            });
+            check_effects(concat!("_wcsncoll", $suffix), |r| {
+                let (a, b) = (gen_wstr(r, 20), gen_wstr(r, 20));
+                let n = r.below(24);
+                (Effects::subject(|| _wcsncoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 Effects::reference(|| ref__wcsncoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 format!("n={n}"))
+            });
+            check_effects(concat!("_wcsnicoll", $suffix), |r| {
+                let (a, b) = (gen_wstr(r, 20), gen_wstr(r, 20));
+                let n = r.below(24);
+                (Effects::subject(|| _wcsnicoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 Effects::reference(|| ref__wcsnicoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 format!("n={n}"))
+            });
+            check_wbuf_fx(concat!("wcsxfrm", $suffix), &["ok"], |r| {
+                let src = gen_wstr(r, 20);
+                let len = r.below(40);
+                let (mut d1, mut d2) = (vec![0xAAAAu16; 64], vec![0xAAAAu16; 64]);
+                let g = Effects::subject(|| wcsxfrm(d1.as_mut_ptr(), src.as_ptr(), len) as i64);
+                let w = Effects::reference(|| ref_wcsxfrm(d2.as_mut_ptr(), src.as_ptr(), len) as i64);
+                (d1, g, d2, w, format!("len={len} slen={}", src.len()-1))
+            });
+        };
+    }
+    coll_rows!("");                       // the "C" locale: path 1 (strcmp / ASCII fold)
+
     unsafe { ref_set_nls(1); subj_set_nls(1); }
+    coll_rows!(" [NLS]");                 // a REAL locale: path 2 (CompareString / LCMapString)
 
     check_effects("_stricmp [NLS]", |r| {
         let (a, b) = (gen_str(r, 20), gen_str(r, 20));

@@ -71,13 +71,20 @@ mod layout_amd64;
 #[cfg(target_arch = "aarch64")]
 mod layout_arm64;
 
-/// The locale category index used by the ctype/case-mapping paths (`LC_CTYPE`).
+/// MSVC's locale categories — the index into `locinfo->lc_handle[]` / `lc_id[]`.
 ///
-/// msvcrt indexes `locinfo->lc_handle[]` / `lc_id[]` by the `LC_*` category *constants*,
-/// which are 0..=5 with `LC_ALL == 0`. Spelled out here rather than pulled from bindgen
-/// because `<locale.h>`'s `LC_CTYPE` is a plain `#define` that bindgen's `--allowlist-var`
-/// will not emit under our tight allowlist.
+/// Spelled out here rather than pulled from bindgen because `<locale.h>`'s `LC_CTYPE` is a
+/// plain `#define` that bindgen's `--allowlist-var` will not emit under our tight allowlist.
+///
+/// **These are MSVC's numbers, not the host's.** glibc numbers the same names completely
+/// differently (`LC_CTYPE=0` … `LC_ALL=6` … `LC_IDENTIFICATION=12`), and `lc_handle[]` is
+/// only 6 entries long — so a host `LC_ALL` would index one PAST the end.
+pub const LC_ALL: usize = 0;
+pub const LC_COLLATE: usize = 1;
 pub const LC_CTYPE: usize = 2;
+pub const LC_MONETARY: usize = 3;
+pub const LC_NUMERIC: usize = 4;
+pub const LC_TIME: usize = 5;
 
 /// Safe-ish accessor for the current thread's locale info.
 ///

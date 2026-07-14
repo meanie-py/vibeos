@@ -6398,3 +6398,65 @@ hot comparer hoists.)
 4. **When the North Star disagrees with your instruments, the instruments are wrong.** The smoke test
    is the source of truth for a reason. A green harness and a red boot means you are missing an
    instrument — go build it.
+
+### 9.77 (2026-07-14) Two reading hazards that have now each cost a bug: a comment-stripping grep eats `*_errno() = ...`, and the host reference silently compiles the *i386* arm of every `#if defined(_WIN64)`
+
+Both surfaced flipping msvcrt's collation family. Both are about **reading the C wrong**, not
+writing the Rust wrong, and both were caught only by the differential harness.
+
+#### 1. Never read C through a comment-stripping grep
+
+To skim a function I used
+
+```
+sed -n '1478,1512p' string.c | grep -vE "^\s*\*|^/\*"
+```
+
+to drop the `*`-prefixed comment continuation lines. That pattern also drops **every statement
+that begins with a dereference**:
+
+```c
+        *_errno() = ERANGE;      /* starts with whitespace-then-star */
+        *p++ = *src++;
+```
+
+So the `_strxfrm_l` I read had **no errno in it at all**, and the flip I wrote had none either.
+`classify` convicted it (`ret=17` on both sides, `errno=ERANGE` only on msvcrt's).
+
+**This is the second time the same filter has eaten load-bearing C** — the first was `*p++ = *src++;`
+in `wcsncpy_s` (wave 6c), where it nearly produced a copy loop with its copy removed. The rule is
+absolute: **read the C unfiltered.** If it is long, page through it; do not filter it. A filter that
+removes comments is indistinguishable, to a regex, from one that removes pointer writes.
+
+#### 2. `_WIN64` — the host reference compiles the 32-bit arm
+
+The differential harness compiles msvcrt's real `.c` for the **host** (x86-64 Linux), where `_WIN64`
+is *not* defined. So every
+
+```c
+#if defined(_WIN64) || defined(_UCRT) || _MSVCR_VER >= 110
+    if ((unsigned char)*str1 > (unsigned char)*str2) return 1;   /* CLAMP  — amd64/arm64 */
+    ...
+#else
+    return (unsigned char)*str1 - (unsigned char)*str2;          /* RAW    — i386 */
+#endif
+```
+
+is graded on its **i386** arm — while `msvcrt-crt-rust`, compiled for the same host, selects its arm
+with `cfg!(target_pointer_width = "64")` and therefore ships the **amd64** one. *The oracle models
+i386 while the subject models amd64.*
+
+`strncmp` was already known and handled (two rows: the raw arm graded directly, the `_WIN64` arm
+graded against `clamp(ref)` — an exact model, since both C branches run the identical loop and then
+compare the same two bytes). But `_strncoll_l`'s "C"-locale path is literally
+
+```c
+return strncmp(str1, str2, count);
+```
+
+so it **inherits both contracts**, and the new flip walked straight into it: `cnt=1 msvcrt=47`.
+
+**Rule:** *grep every new flip — and everything it CALLS — for `#if defined(_WIN64)` before writing
+the row.* An arch-conditional contract propagates silently through delegation. classify's own header
+already said this; the cost of not doing it is one DIVERGE per inherited branch, and the harness will
+only catch it if the fuzz happens to produce a byte pair whose raw difference isn't ±1.

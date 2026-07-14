@@ -3930,3 +3930,388 @@ pub unsafe extern "C" fn towlower(c: u16) -> u16 {
 pub unsafe extern "C" fn towupper(c: u16) -> u16 {
     _towupper_l(c, core::ptr::null_mut())
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WAVE 12 — the collation family. Unblocked by wave 11, and ONLY by wave 11.
+//
+// Every one of these branches on `lc_handle[LC_COLLATE]`:
+//
+//     int CDECL _strcoll_l(const char *s1, const char *s2, _locale_t locale) {
+//         if(!locinfo->lc_handle[LC_COLLATE])
+//             return strcmp(str1, str2);                       // path 1: the "C" locale
+//         return CompareStringA(locinfo->lc_handle[LC_COLLATE], SORT_STRINGSORT,
+//                   str1, -1, str2, -1) - CSTR_EQUAL;          // path 2
+//     }
+//
+// Before wave 11 the harness could only ever see path 1, so flipping these would have
+// been §9.60 all over again — a green from an unexercised branch. The NLS mode plants a
+// real `lc_handle[LC_COLLATE]` AND makes the collation stub's answer differ from
+// `strcmp`'s, so path 2 is genuinely under test (§9.75: exercising a branch proves
+// nothing unless it can produce a DIFFERENT answer). Negative-controlled.
+//
+// Both sides reach the SAME `CompareStringA`/`LCMapStringA` — un-namespaced in wave 11,
+// because kernel32 is the ENVIRONMENT, never code under test. So what is graded is the
+// Rust's logic around the call: the flags, the lengths, and the `- CSTR_EQUAL` rebase.
+// Windows' real collation ORDER is out of scope, correctly.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const NORM_IGNORECASE: u32 = 0x0000_0001;
+const SORT_STRINGSORT: u32 = 0x0000_1000;
+const LCMAP_SORTKEY: u32 = 0x0000_0400;
+const CSTR_EQUAL: i32 = 2;
+/// The `size_t`-returning transforms use `INT_MAX` as their error value — 0x7FFFFFFF,
+/// NOT `usize::MAX`.
+const XFRM_ERR: usize = 0x7FFF_FFFF;
+
+extern "system" {
+    fn CompareStringA(lcid: u32, f: u32, s1: *const u8, l1: i32, s2: *const u8, l2: i32) -> i32;
+    fn CompareStringW(lcid: u32, f: u32, s1: *const u16, l1: i32, s2: *const u16, l2: i32) -> i32;
+    fn LCMapStringA(lcid: u32, f: u32, src: *const u8, sl: i32, dst: *mut u8, dl: i32) -> i32;
+}
+
+/// The `LC_COLLATE` handle — 0 in the "C" locale.
+#[inline]
+unsafe fn collate_handle(locale: *mut core::ffi::c_void) -> u32 {
+    (*locinfo_of(locale)).lc_handle[sys::LC_COLLATE]
+}
+
+// ── narrow ────────────────────────────────────────────────────────────────
+
+#[no_mangle]
+pub unsafe extern "C" fn _strcoll_l(s1: *const u8, s2: *const u8, l: *mut core::ffi::c_void) -> i32 {
+    let h = collate_handle(l);
+    if h == 0 {
+        return strcmp(s1, s2);
+    }
+    CompareStringA(h, SORT_STRINGSORT, s1, -1, s2, -1) - CSTR_EQUAL
+}
+#[no_mangle]
+pub unsafe extern "C" fn strcoll(s1: *const u8, s2: *const u8) -> i32 {
+    _strcoll_l(s1, s2, core::ptr::null_mut())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _stricoll_l(s1: *const u8, s2: *const u8, l: *mut core::ffi::c_void) -> i32 {
+    let h = collate_handle(l);
+    if h == 0 {
+        return _stricmp(s1, s2);
+    }
+    CompareStringA(h, NORM_IGNORECASE, s1, -1, s2, -1) - CSTR_EQUAL
+}
+#[no_mangle]
+pub unsafe extern "C" fn _stricoll(s1: *const u8, s2: *const u8) -> i32 {
+    _stricoll_l(s1, s2, core::ptr::null_mut())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _strncoll_l(
+    s1: *const u8,
+    s2: *const u8,
+    count: usize,
+    l: *mut core::ffi::c_void,
+) -> i32 {
+    let h = collate_handle(l);
+    if h == 0 {
+        return strncmp(s1, s2, count);
+    }
+    // NOTE the lengths: `strnlen(str, count)`, not -1. A bounded collate tells
+    // CompareStringA exactly how many bytes to look at.
+    CompareStringA(
+        h,
+        SORT_STRINGSORT,
+        s1,
+        strnlen(s1, count) as i32,
+        s2,
+        strnlen(s2, count) as i32,
+    ) - CSTR_EQUAL
+}
+#[no_mangle]
+pub unsafe extern "C" fn _strncoll(s1: *const u8, s2: *const u8, count: usize) -> i32 {
+    _strncoll_l(s1, s2, count, core::ptr::null_mut())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _strnicoll_l(
+    s1: *const u8,
+    s2: *const u8,
+    count: usize,
+    l: *mut core::ffi::c_void,
+) -> i32 {
+    let h = collate_handle(l);
+    if h == 0 {
+        return _strnicmp(s1, s2, count);
+    }
+    CompareStringA(
+        h,
+        NORM_IGNORECASE,
+        s1,
+        strnlen(s1, count) as i32,
+        s2,
+        strnlen(s2, count) as i32,
+    ) - CSTR_EQUAL
+}
+#[no_mangle]
+pub unsafe extern "C" fn _strnicoll(s1: *const u8, s2: *const u8, count: usize) -> i32 {
+    _strnicoll_l(s1, s2, count, core::ptr::null_mut())
+}
+
+/// `_strxfrm_l (MSVCRT.@)` — the sort-key transform. Five distinct returns.
+#[no_mangle]
+pub unsafe extern "C" fn _strxfrm_l(
+    dest: *mut u8,
+    src: *const u8,
+    len: usize,
+    l: *mut core::ffi::c_void,
+) -> usize {
+    if !check_pmt(!src.is_null()) {
+        return XFRM_ERR;
+    }
+    if !check_pmt(!dest.is_null() || len == 0) {
+        return XFRM_ERR;
+    }
+    let mut len = len;
+    if len > XFRM_ERR {
+        len = XFRM_ERR; // the C FIXMEs and clamps to INT_MAX
+    }
+
+    let h = collate_handle(l);
+    if h == 0 {
+        strncpy(dest, src, len);
+        return strlen(src);
+    }
+
+    let ret = LCMapStringA(h, LCMAP_SORTKEY, src, -1, core::ptr::null_mut(), 0);
+    if ret == 0 {
+        if len != 0 {
+            *dest = 0;
+        }
+        *_errno() = EILSEQ; // <-- MISSED IT THE FIRST TIME. See the note on _wcsxfrm_l.
+        return XFRM_ERR;
+    }
+    let ret = ret as usize;
+    if len == 0 {
+        return ret - 1;
+    }
+    if ret > len {
+        *dest = 0;
+        *_errno() = ERANGE; // <-- and this one
+        return ret - 1;
+    }
+    (LCMapStringA(h, LCMAP_SORTKEY, src, -1, dest, len as i32) - 1) as usize
+}
+#[no_mangle]
+pub unsafe extern "C" fn strxfrm(dest: *mut u8, src: *const u8, len: usize) -> usize {
+    _strxfrm_l(dest, src, len, core::ptr::null_mut())
+}
+
+// ── wide ──────────────────────────────────────────────────────────────────
+
+/// `_wcscoll_l` / `wcscoll (MSVCRT.@)`
+#[no_mangle]
+pub unsafe extern "C" fn _wcscoll_l(
+    s1: *const u16,
+    s2: *const u16,
+    l: *mut core::ffi::c_void,
+) -> i32 {
+    let h = collate_handle(l);
+    if h == 0 {
+        return wcscmp(s1, s2);
+    }
+    CompareStringW(h, SORT_STRINGSORT, s1, -1, s2, -1) - CSTR_EQUAL
+}
+#[no_mangle]
+pub unsafe extern "C" fn wcscoll(s1: *const u16, s2: *const u16) -> i32 {
+    _wcscoll_l(s1, s2, core::ptr::null_mut())
+}
+
+/// `_wcsicoll_l` / `_wcsicoll (MSVCRT.@)`
+///
+/// Path 1 is an INLINE ASCII fold and returns the RAW `c1 - c2` — it does NOT delegate to
+/// `_wcsicmp` (which folds through `_towlower_l`). Same family, different code.
+#[no_mangle]
+pub unsafe extern "C" fn _wcsicoll_l(
+    s1: *const u16,
+    s2: *const u16,
+    l: *mut core::ffi::c_void,
+) -> i32 {
+    let h = collate_handle(l);
+    if h == 0 {
+        let (mut p, mut q) = (s1, s2);
+        let (mut c1, mut c2);
+        loop {
+            c1 = *p;
+            p = p.add(1);
+            if c1 >= b'A' as u16 && c1 <= b'Z' as u16 {
+                c1 += 32;
+            }
+            c2 = *q;
+            q = q.add(1);
+            if c2 >= b'A' as u16 && c2 <= b'Z' as u16 {
+                c2 += 32;
+            }
+            if c1 == 0 || c1 != c2 {
+                break;
+            }
+        }
+        return c1 as i32 - c2 as i32;
+    }
+    CompareStringW(h, NORM_IGNORECASE, s1, -1, s2, -1) - CSTR_EQUAL
+}
+#[no_mangle]
+pub unsafe extern "C" fn _wcsicoll(s1: *const u16, s2: *const u16) -> i32 {
+    _wcsicoll_l(s1, s2, core::ptr::null_mut())
+}
+
+/// `_wcsncoll_l` / `_wcsncoll (MSVCRT.@)`
+#[no_mangle]
+pub unsafe extern "C" fn _wcsncoll_l(
+    s1: *const u16,
+    s2: *const u16,
+    count: usize,
+    l: *mut core::ffi::c_void,
+) -> i32 {
+    let h = collate_handle(l);
+    if h == 0 {
+        return wcsncmp(s1, s2, count);
+    }
+    CompareStringW(
+        h,
+        SORT_STRINGSORT,
+        s1,
+        wcsnlen(s1, count) as i32,
+        s2,
+        wcsnlen(s2, count) as i32,
+    ) - CSTR_EQUAL
+}
+#[no_mangle]
+pub unsafe extern "C" fn _wcsncoll(s1: *const u16, s2: *const u16, count: usize) -> i32 {
+    _wcsncoll_l(s1, s2, count, core::ptr::null_mut())
+}
+
+/// `_wcsnicoll_l` / `_wcsnicoll (MSVCRT.@)`
+///
+/// Path 1 tests `if (!count) return 0;` FIRST, then does its own ASCII fold.
+#[no_mangle]
+pub unsafe extern "C" fn _wcsnicoll_l(
+    s1: *const u16,
+    s2: *const u16,
+    mut count: usize,
+    l: *mut core::ffi::c_void,
+) -> i32 {
+    let h = collate_handle(l);
+    if h == 0 {
+        if count == 0 {
+            return 0;
+        }
+        let (mut p, mut q) = (s1, s2);
+        let (mut c1, mut c2);
+        loop {
+            c1 = *p;
+            p = p.add(1);
+            if c1 >= b'A' as u16 && c1 <= b'Z' as u16 {
+                c1 += 32;
+            }
+            c2 = *q;
+            q = q.add(1);
+            if c2 >= b'A' as u16 && c2 <= b'Z' as u16 {
+                c2 += 32;
+            }
+            count -= 1;
+            if count == 0 || c1 == 0 || c1 != c2 {
+                break;
+            }
+        }
+        return c1 as i32 - c2 as i32;
+    }
+    CompareStringW(
+        h,
+        NORM_IGNORECASE,
+        s1,
+        wcsnlen(s1, count) as i32,
+        s2,
+        wcsnlen(s2, count) as i32,
+    ) - CSTR_EQUAL
+}
+#[no_mangle]
+pub unsafe extern "C" fn _wcsnicoll(s1: *const u16, s2: *const u16, count: usize) -> i32 {
+    _wcsnicoll_l(s1, s2, count, core::ptr::null_mut())
+}
+
+/// `_wcsxfrm_l` / `wcsxfrm (MSVCRT.@)`
+///
+/// The subtle one. `LCMapStringW(LCMAP_SORTKEY, ...)` writes a **byte** sort key into a
+/// `wchar_t*` buffer, and the C then expands it in place — **walking BACKWARDS**, so the
+/// widening never clobbers a byte it has not read yet:
+///
+///     ret = LCMapStringW(..., dest, len) - 1;
+///     for(i=ret; i>=0; i--)
+///         dest[i] = ((unsigned char*)dest)[i];
+///
+/// Transcribe the direction, not just the effect.
+#[no_mangle]
+pub unsafe extern "C" fn _wcsxfrm_l(
+    dest: *mut u16,
+    src: *const u16,
+    len: usize,
+    l: *mut core::ffi::c_void,
+) -> usize {
+    if !check_pmt(!src.is_null()) {
+        return XFRM_ERR;
+    }
+    if !check_pmt(!dest.is_null() || len == 0) {
+        return XFRM_ERR;
+    }
+    let mut len = len;
+    if len > XFRM_ERR {
+        len = XFRM_ERR;
+    }
+
+    let h = collate_handle(l);
+    if h == 0 {
+        wcsncpy(dest, src, len);
+        return wcslen(src);
+    }
+
+    // ── THE TWO ERRNO SETS, AND HOW THEY WERE ALMOST MISSED ──────────────
+    //
+    // I read this function through `sed ... | grep -vE "^\s*\*|^/\*"` to strip the
+    // comment lines — and that pattern ALSO eats every statement beginning with a
+    // dereference. `        *_errno() = ERANGE;` starts with whitespace-then-star. So the
+    // C I read had no errno in it, and the first version of this flip had none either.
+    // classify convicted it (`ret=17` on both sides, `errno=ERANGE` on msvcrt's).
+    //
+    // This is the SECOND time the same filter has eaten load-bearing C (`*p++ = *src++;`
+    // in wave 6c). NEVER read C through a comment-stripping grep. Read it unfiltered.
+    let ret = LCMapStringW(h, LCMAP_SORTKEY, src, -1, core::ptr::null_mut(), 0);
+    if ret == 0 {
+        if len != 0 {
+            *dest = 0;
+        }
+        *_errno() = EILSEQ;
+        return XFRM_ERR;
+    }
+    let ret = ret as usize;
+    if len == 0 {
+        return ret - 1;
+    }
+    if ret > len {
+        *dest = 0;
+        *_errno() = ERANGE;
+        return ret - 1;
+    }
+
+    let n = (LCMapStringW(h, LCMAP_SORTKEY, src, -1, dest, len as i32) - 1) as isize;
+    // BACKWARDS — byte i must be read before wide slot i is written over it.
+    let bytes = dest as *const u8;
+    let mut i = n;
+    while i >= 0 {
+        let b = *bytes.offset(i);
+        *dest.offset(i) = b as u16;
+        i -= 1;
+    }
+    n as usize
+}
+#[no_mangle]
+pub unsafe extern "C" fn wcsxfrm(dest: *mut u16, src: *const u16, len: usize) -> usize {
+    _wcsxfrm_l(dest, src, len, core::ptr::null_mut())
+}
