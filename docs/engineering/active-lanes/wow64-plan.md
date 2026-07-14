@@ -970,3 +970,45 @@ shared-struct layer). **Owed WINDOWPOS continuation:** confirm the guest's
 clearing SWP_NOSIZE; then the field-correct copy-back can be re-enabled. This is
 also plausibly connected to the M13 doom offset-content / `rcWindow==rcClient`
 anomaly.
+
+## M16 (owed, newly scoped 2026-07-13): the 32-bit desktop-heap WND view
+
+The WINDOWPOSCHANGING finding above generalises to a real, named WoW64 gap that
+several parked items share a root with.
+
+**The problem.** win32k (64-bit) owns the desktop heap; every `tagWND` in it is in
+**64-bit layout** (pointer fields — `spwndNext`, `spwndParent`, `spwndChild`,
+`ppcls`, `pcls`, … — are 8 bytes each). The guest's 32-bit `user32.dll` maps that
+same desktop heap and dereferences `tagWND` at **32-bit offsets**. Any field past
+the first pointer is therefore read at the WRONG offset. `rcWindow`/`rcClient` (the
+RECTs `DefWindowProc` reads to answer WM_WINDOWPOSCHANGING / WM_NCCALCSIZE) sit well
+past several pointers, so the guest reads garbage/zero.
+
+**Why paint still works.** Everything that goes through a **syscall** is marshalled
+correctly (M6–M10): GetDC/BeginPaint/GetClientRect/etc. thunk into win32k and the
+32/64 translation happens in the thunk. Only code that reads the shared desktop-heap
+`tagWND` **directly** in user-mode hits the layout mismatch — and that is exactly
+the `DefWindowProc` geometry helpers. Hence: window creation, the message pump, and
+WM_PAINT are green, but DefWindowProc's WINDOWPOS/NCCALCSIZE geometry is wrong.
+
+**Suspected blast radius (all consistent with this root):**
+- WINDOWPOSCHANGING copy-back collapses the window (M15a-cont / task #43).
+- The M13 DOOM "offset content + magenta band" and `rcWindow == rcClient`
+  (no non-client inset) anomalies — DOOM's client-origin/geometry likely computed
+  off the same mis-read `tagWND`.
+
+**Fix options (real Windows solves this; pick one):**
+1. **Client-side thunked WND** — win32k publishes a per-process 32-bit-layout shadow
+   of each `tagWND` the client can read (what genuine WoW64 `gSharedInfo` +
+   `SERVERINFO`/`DISPLAYINFO` do); the 32-bit user32 reads the shadow. Most correct,
+   most work.
+2. **Force the reads through syscalls** — patch the 32-bit user32's DefWindowProc
+   geometry helpers to call `NtUserGetWindowRect`-class syscalls instead of touching
+   the heap. Smaller, but a user32 fork.
+3. **Layout-compatible `tagWND` prefix** — reorder `tagWND` so the client-read
+   fields (state flags, rcWindow, rcClient) share identical offsets in 32 and 64
+   bit. Fragile; touches win32k core.
+
+Verification oracle already exists: win32.exe's WINDOWPOSCHANGING round-trip
+(re-enable the copy-back and require 0x600D) plus DOOM's window geometry. This is
+the next substantial WoW64/USER milestone.
