@@ -80,7 +80,7 @@ pub static mut FrLdrDbgPrint: Option<unsafe extern "C" fn(*const u8, ...) -> ULO
 
 static mut LdrCoreEntries: [_LDR_DATA_TABLE_ENTRY; 3] = unsafe { core::mem::zeroed() };
 
-unsafe fn KiInitializePcr(
+pub(crate) unsafe fn KiInitializePcr(
     Pcr: PKIPCR,
     ProcessorNumber: ULONG,
     IdleThread: PKTHREAD,

@@ -1462,9 +1462,8 @@ pub unsafe extern "system" fn WRITE_REGISTER_BUFFER_ULONG(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KeStartAllProcessors() {
-}
+// KeStartAllProcessors moved to ke/arm64/mproc.rs (M5a: real PSCI CPU_ON body
+// under `feature = "smp"`, no-op under UP). See smp-bringup-quest.md.
 
 
 // ============================================================================

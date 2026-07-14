@@ -492,3 +492,37 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   re-touch. **So: do i386's and arm64's idle-loop lock port as the last step of that
   arch's AP bring-up, in the same change that adds the SwapBusy spin + AP start, so the
   whole handshake is validated as a unit on `-smp 2`.**
+- 2026-07-14: **M5 arch = arm64 (PSCI), user-chosen. M5a (first AP start + park) IN
+  PROGRESS.** Big scope reduction found on survey: the arm64 kernel entry is ALREADY
+  SMP-ready — `KiSystemStartup` (kiinit.rs:169) does `Cpu = KeNumberProcessors++` and
+  gates ALL global init `if Cpu == 0`, reads the per-AP PCR from `LoaderBlock->Prcb`
+  (CONTAINING_RECORD), and `KiSystemStartupBootStack` (kiinit.rs:285) already has the
+  alive handshake `(*LoaderBlock).Prcb = 0;` before `KiIdleLoop()`. So M5a is purely the
+  HAL mechanism + a KeStartAllProcessors driver — the kernel side needed no changes.
+  Written this session (WIP on branch, behind `feature="smp"` = ntkrnlmp only, zero UP
+  risk):
+    - `hal-rust/src/arm64/mpboot.rs` (NEW): `psci_cpu_on` (SMC64 `0xC4000003`), the AP
+      trampoline (`global_asm!`, PC-relative `adr` so it survives being copied to a scratch
+      page), a temp identity map, cache maintenance, and the real `HalStartNextProcessor`.
+      `halstubs.rs`'s FALSE stub is now `#[cfg(not(smp))]`.
+    - `ntoskrnl-rust/src/ke/arm64/mproc.rs` (NEW): `KeStartAllProcessors` — per-AP
+      `_KIPCR`+idle-`_ETHREAD`+kernel-stack alloc, `KiInitializePcr` (made `pub(crate)`),
+      publish to `KeLoaderBlock`, PSCI via HAL, bounded handshake wait. Auto-discovers the
+      AP count by probing MPIDR 1,2,… until PSCI returns INVALID_PARAMETERS (no MADT parser
+      needed). Replaced the empty `stubs.rs` `KeStartAllProcessors`.
+  **DESIGN CORRECTION to the staged `arm64-ap/AP-ENTRY-DESIGN.md`:** it hand-waved the
+  post-MMU-enable PC-continuity problem. The instruction right after `msr sctlr_el1`
+  (MMU on) is fetched at the trampoline's LOW physical PC, which the kernel's high-half
+  TTBR1 does NOT cover → instruction abort with no vectors installed = silent hang. Fix
+  (in mpboot.rs): build a TEMPORARY identity map (TTBR0, one 1GB Normal-WB block covering
+  the trampoline page) so the low PC stays mapped across the enable — the arm64 analogue of
+  amd64's "identity map is gone" temp-PTE. Deterministic; doesn't gamble on the BSP's
+  post-boot TTBR0 state. Second arm64-specific must-do the staged design omitted: **cache
+  maintenance** — the scratch page is patched via a cached VA but the AP fetches it by PA
+  with caches off, so `dc cvac`+`ic ivau`+`dsb`+`isb` over the page (and the idmap tables)
+  is mandatory or the AP runs stale bytes. **REMAINING M5a:** compile-green (in progress),
+  then first `-smp 2` arm64 boot + debug (greenfield PSCI — expect iteration on the
+  MPIDR encoding, FADT conduit SMC-vs-HVC, and the trampoline). Open per NOTES.md:
+  verify FADT `PSCI_USE_HVC` (assumed SMC); confirm QEMU `virt` MPIDR = flat Aff0=index.
+  Then M5b (SGI IPI: `HalRequestIpi`→GICD_SGIR@0xF00 + receive dispatch), M5c (AP
+  schedules + the arm64 idle-loop PRCB-lock fix lands here), M5d (TLB shootdown + soak).

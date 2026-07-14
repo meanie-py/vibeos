@@ -612,6 +612,9 @@ pub unsafe extern "system" fn HalSetTimeIncrement(Increment: ddk::ULONG) -> ddk:
     }
 }
 
+// SMP HAL (ntkrnlmp): the real PSCI CPU_ON body lives in mpboot.rs. UP HAL keeps
+// this FALSE stub (no APs to start).
+#[cfg(not(feature = "smp"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalStartNextProcessor(
     LoaderBlock: ddk::PLOADER_PARAMETER_BLOCK,
