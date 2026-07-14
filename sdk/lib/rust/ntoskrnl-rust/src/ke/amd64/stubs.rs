@@ -76,20 +76,48 @@ pub unsafe extern "system" fn KiIdleLoop() -> ! {
         }
         
         if !(*Prcb).NextThread.is_null() {
+            // UP keeps the C shape: enable interrupts before the (lock-free)
+            // consume. SMP MUST NOT: see below — the lock is held with
+            // interrupts disabled and sti happens only after release.
+            #[cfg(not(feature = "smp"))]
             core::arch::asm!("sti");
 
-            // §9.56 SMP (2026-07-13): consume NextThread UNDER THE PRCB LOCK.
-            // Every other promote site (KiExitDispatcher, KiQuantumEnd, yield,
-            // KiDpcInterruptHandler) serializes NextThread consumption against
-            // KiDeferredReadyThread's standby-DISPLACEMENT (which runs under
-            // this lock and re-defers a NextThread it reads). The lock-free
-            // consume here (inherited verbatim from ReactOS's never-validated
-            // CONFIG_SMP C — both i386 and amd64 lack it) let the displacement
-            // read NextThread=T while idle promoted T to Running → a RUNNING
-            // thread got set DeferredReady → double-link tear (caught by the
-            // 0x5D/0x5A oracles as caller 429/deferred_by=9200, both victims
-            // runningOnCPU=1). Re-check under the lock: a displacement may
-            // have consumed/replaced it between the unlocked peek and here.
+            // §9.56 SMP (2026-07-13): consume NextThread UNDER THE PRCB LOCK,
+            // WITH INTERRUPTS DISABLED. Every other promote site
+            // (KiExitDispatcher, KiQuantumEnd, yield, KiDpcInterruptHandler)
+            // serializes NextThread consumption against KiDeferredReadyThread's
+            // standby-DISPLACEMENT (which runs under this lock and re-defers a
+            // NextThread it reads). The lock-free consume here (inherited
+            // verbatim from ReactOS's never-validated CONFIG_SMP C — both i386
+            // and amd64 lack it) let the displacement read NextThread=T while
+            // idle promoted T to Running → a RUNNING thread got set
+            // DeferredReady → double-link tear (caught by the 0x5D/0x5A oracles
+            // as caller 429/deferred_by=9200, both victims runningOnCPU=1).
+            // The first fix attempt acquired AFTER `sti` — that burst wedged
+            // 20/32: anything that nests on this CPU while the non-reentrant
+            // PrcbLock is held and reaches scheduler code self-deadlocks the
+            // CPU. So: acquire inside the existing cli window, re-check
+            // NextThread under the lock, promote, release, THEN sti.
+            // §9.56 evidence tripwire (one-shot): idle must sit at DISPATCH
+            // here; below it, interrupt-exit DPC retire can nest scheduler
+            // code on this CPU (the self-deadlock food for fix attempt #1).
+            #[cfg(feature = "smp")]
+            {
+                let cr8: u64;
+                core::arch::asm!("mov {}, cr8", out(reg) cr8);
+                static IDLE_IRQL_WARNED: core::sync::atomic::AtomicBool =
+                    core::sync::atomic::AtomicBool::new(false);
+                if cr8 < 2
+                    && !IDLE_IRQL_WARNED.swap(true, core::sync::atomic::Ordering::Relaxed)
+                {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"[IDLE-IRQL] KiIdleLoop promote at CR8=%u (< DISPATCH!)\n\0".as_ptr()
+                            as *const i8,
+                        cr8 as u32,
+                    );
+                }
+            }
+
             #[cfg(feature = "smp")]
             ntkrnl_sys::inline::ke::KiAcquirePrcbLock(Prcb);
             #[cfg(feature = "smp")]
@@ -112,6 +140,9 @@ pub unsafe extern "system" fn KiIdleLoop() -> ! {
 
             #[cfg(feature = "smp")]
             ntkrnl_sys::inline::ke::KiReleasePrcbLock(Prcb);
+
+            #[cfg(feature = "smp")]
+            core::arch::asm!("sti");
 
             #[cfg(feature = "smp")]
             {
