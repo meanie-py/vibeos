@@ -933,3 +933,40 @@ process=doom, to catch the no-op copy in the act. The related small-magenta patc
 window's top-left on *rendering* boots (leftover un-painted window-background fill) and the
 `rcWindow == rcClient` no-non-client-inset anomaly (`WM_NCCALCSIZE` client-rect writeback
 dropped) are lesser follow-ups in the same win32k lane.
+
+## M15a: callback OUT-payload copy-back (2026-07-13) — GETMINMAXINFO + NCCALCSIZE landed
+
+Window messages that pass their `lParam` struct as an OUT parameter (the window
+proc writes into it and win32k reads it back — `co_IntCallWindowProc`,
+callback.rs, copies `lParamBufferSize` bytes from the returned buffer into the
+64-bit `lParam`) had their guest edits **silently dropped** since M8: the WoW64
+callback-return path (`Wow64pCompleteUserCallback`, wow64_callback.c) restored the
+kernel's ORIGINAL 64-bit payload and only copied back the proc's return value.
+
+Enabled the copy-back incrementally, **oracle-gated on win32.exe staying 0x600D**:
+- **WM_GETMINMAXINFO** — MINMAXINFO = 5 POINTs = 40 bytes, identical 32/64 layout,
+  no pointers → verbatim copy-back. Proven clean.
+- **WM_NCCALCSIZE** — `rgrc[]` rects (48b for wParam=TRUE, 16b for FALSE), all
+  width-identical RECTs → copy back the rects, PRESERVE the 64-bit `lppos` pointer
+  from the baseline restore. Proven clean.
+
+**WM_WINDOWPOSCHANGING is deliberately NOT copied back — and it's a GUEST bug, not
+a marshalling one.** A 2026-07-13 down-vs-up trace settled the historical
+regression (the 2026-07-12 attempt that took win32.exe 0x600D → 0x600E with a
+size-renegotiation loop). Ground truth:
+- **DOWN** (win32k → guest): a mix of real-geometry frames
+  `(cx=640 cy=400, fl=0x1803)` and no-op frames `(cx=0 cy=0, fl=0x3 =
+  SWP_NOSIZE|SWP_NOMOVE)`.
+- **UP** (guest → win32k, with clobber on): the guest's 32-bit DefWindowProc
+  returns the no-op frame with **SWP_NOSIZE CLEARED** (`fl=0x6c`) while leaving
+  `cx=cy=0`. Copying that back tells win32k "size to 0×0 AND do size it" → the
+  window collapses to zero client area → WM_PAINT never fires.
+
+Field translation is verified correct (handles preserved from baseline, geometry
+per-field). The defect is the guest DefWindowProc returning divergent flags — most
+likely because its 32-bit view of the window's `rcWindow` is stale/zero (the M9
+shared-struct layer). **Owed WINDOWPOS continuation:** confirm the guest's
+`rcWindow`/`rcClient` shadow under WoW64 and fix the source so DefWindowProc stops
+clearing SWP_NOSIZE; then the field-correct copy-back can be re-enabled. This is
+also plausibly connected to the M13 doom offset-content / `rcWindow==rcClient`
+anomaly.
