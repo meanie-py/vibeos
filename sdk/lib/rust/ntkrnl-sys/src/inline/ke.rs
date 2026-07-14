@@ -2087,18 +2087,6 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
     // CurrentThread (running) somewhere. Legit callers dethrone first, so quiet.
     #[cfg(feature = "smp")]
     ki_check_not_running(thread, core::panic::Location::caller().line() as u64);
-    // UP kernel: the affinity gate is always TRUE. SMP: a thread not affine
-    // to this CPU is deferred instead (ke_x.h:1387).
-    #[cfg(feature = "smp")]
-    {
-        if (*thread).Affinity & (*prcb).SetMember == 0 {
-            kt_set_state(thread, ddk::_KTHREAD_STATE_DeferredReady as u8);
-            kt_set_deferred_processor(thread, (*prcb).Number as u8);
-            KiReleasePrcbLock(prcb);
-            KiDeferredReadyThread(thread);
-            return;
-        }
-    }
     // §9.56 tripwire 0x5D — queueing a DEFERRED-PARKED thread. Legit inputs
     // here are Running (preempt re-queue of the outgoing thread) or Standby
     // (displaced NextThread). State==DeferredReady means the thread is (or is
@@ -2201,6 +2189,17 @@ pub unsafe fn KxQueueReadyThread(thread: ddk::PKTHREAD, prcb: ddk::PKPRCB) {
                 kt_state_read(thread) as _, // the state that slipped past 0x52
                 caller_line as _,
             );
+        }
+        // §9.56 (2026-07-13): affinity-defer branch MOVED BELOW the 0x5D/0x54
+        // guards — it used to sit above them, letting an already-linked or
+        // deferred OldThread with mismatched affinity bypass both and reach
+        // the drain unchecked (the deferred_by=0 0x5A face).
+        if (*thread).Affinity & (*prcb).SetMember == 0 {
+            kt_set_state(thread, ddk::_KTHREAD_STATE_DeferredReady as u8);
+            kt_set_deferred_processor(thread, (*prcb).Number as u8);
+            KiReleasePrcbLock(prcb);
+            KiDeferredReadyThread(thread);
+            return;
         }
         // (0x51) list ALREADY torn on entry — a prior/concurrent corruptor,
         // not this insert.
