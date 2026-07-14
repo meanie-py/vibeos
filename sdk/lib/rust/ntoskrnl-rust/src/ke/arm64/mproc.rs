@@ -35,11 +35,13 @@ pub use smp_impl::KeStartAllProcessors;
 mod smp_impl {
     use ntkrnl_sys::base::*;
     use ntkrnl_sys::constants::*;
+    use ntkrnl_sys::mm::NonPagedPool;
     use ntkrnl_sys::ddk::{
         _ETHREAD, _KIPCR, PKTHREAD,
         ExAllocatePoolZero, ExFreePoolWithTag,
         HalStartNextProcessor, MmCreateKernelStack, MmDeleteKernelStack,
     };
+    use crate::ke::ke_defs::TAG_KERNEL;
     use crate::ke::krnlinit::KeLoaderBlock;
     use super::super::kiinit::{KiInitializePcr, KiSystemStartup};
 
@@ -62,7 +64,7 @@ mod smp_impl {
         loop {
             ap_info = ExAllocatePoolZero(
                 NonPagedPool,
-                core::mem::size_of::<APINFO>() as SIZE_T,
+                core::mem::size_of::<APINFO>() as _,
                 TAG_KERNEL,
             ) as *mut APINFO;
             if ap_info.is_null() {
