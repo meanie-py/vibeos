@@ -43,6 +43,19 @@ extern "C" {
     fn ref_wcslen(s: *const u16) -> usize;
     fn ref_wcscpy(d: *mut u16, s: *const u16) -> *mut u16;
     fn ref_wcscmp(a: *const u16, b: *const u16) -> i32;
+    // ── the case-insensitive + case-mapping families (added after they cost a 3x boot) ──
+    fn _stricmp(a: *const u8, b: *const u8) -> i32;
+    fn ref__stricmp(a: *const u8, b: *const u8) -> i32;
+    fn _strnicmp(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn ref__strnicmp(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn _wcsicmp(a: *const u16, b: *const u16) -> i32;
+    fn ref__wcsicmp(a: *const u16, b: *const u16) -> i32;
+    fn _wcsnicmp(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn ref__wcsnicmp(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn towlower(c: u16) -> u16;
+    fn ref_towlower(c: u16) -> u16;
+    fn tolower(c: i32) -> i32;
+    fn ref_tolower(c: i32) -> i32;
     fn wcslen(s: *const u16) -> usize;
     fn wcscpy(d: *mut u16, s: *const u16) -> *mut u16;
     fn wcscmp(a: *const u16, b: *const u16) -> i32;
@@ -210,6 +223,68 @@ fn main() {
                 core::hint::black_box(ref_wcscmp(wsp, wsp));
             });
             rows.push(Row { name: format!("wcscmp/{n}"), rust: r, c });
+
+            // ══ the CASE-INSENSITIVE + CASE-MAPPING families ═══════════════════
+            //
+            // ADDED AFTER THEY BROKE THE GATE. Wave 11 gave `_wcsicmp` its locale
+            // branch and, in doing so, made it re-enter `get_locinfo()` — a TLS lookup
+            // — ONCE PER CHARACTER. `classify` said MATCH (the answers were right),
+            // `oob_guard` said in-bounds, and the boot went from 39s to 128s, timing
+            // out the kernel TDI self-test. The only instrument that could have caught
+            // it was this one, and it was not benching a single member of the family.
+            //
+            // §9.63, restated: A PERF GATE ONLY DEFENDS WHAT IT BENCHES. Every time a
+            // new family is flipped, it gets benched here — or the next per-character
+            // TLS lookup ships, and we find out from a red gate instead of a red bar.
+            let r = bench("_stricmp", n, || {
+                core::hint::black_box(_stricmp(strp, strp));
+            });
+            let c = bench("ref__stricmp", n, || {
+                core::hint::black_box(ref__stricmp(strp, strp));
+            });
+            rows.push(Row { name: format!("_stricmp/{n}"), rust: r, c });
+
+            let r = bench("_strnicmp", n, || {
+                core::hint::black_box(_strnicmp(strp, strp, n));
+            });
+            let c = bench("ref__strnicmp", n, || {
+                core::hint::black_box(ref__strnicmp(strp, strp, n));
+            });
+            rows.push(Row { name: format!("_strnicmp/{n}"), rust: r, c });
+
+            let r = bench("_wcsicmp", n, || {
+                core::hint::black_box(_wcsicmp(wsp, wsp));
+            });
+            let c = bench("ref__wcsicmp", n, || {
+                core::hint::black_box(ref__wcsicmp(wsp, wsp));
+            });
+            rows.push(Row { name: format!("_wcsicmp/{n}"), rust: r, c });
+
+            let r = bench("_wcsnicmp", n, || {
+                core::hint::black_box(_wcsnicmp(wsp, wsp, n));
+            });
+            let c = bench("ref__wcsnicmp", n, || {
+                core::hint::black_box(ref__wcsnicmp(wsp, wsp, n));
+            });
+            rows.push(Row { name: format!("_wcsnicmp/{n}"), rust: r, c });
+
+            // The scalar mappers, hammered n times — these are what the loops above
+            // call per character, so a regression here multiplies through everything.
+            let r = bench("towlower", n, || {
+                for c in 0..n { core::hint::black_box(towlower((c & 0xFFFF) as u16)); }
+            });
+            let c = bench("ref_towlower", n, || {
+                for c in 0..n { core::hint::black_box(ref_towlower((c & 0xFFFF) as u16)); }
+            });
+            rows.push(Row { name: format!("towlower/{n}"), rust: r, c });
+
+            let r = bench("tolower", n, || {
+                for c in 0..n { core::hint::black_box(tolower((c & 0xFF) as i32)); }
+            });
+            let c = bench("ref_tolower", n, || {
+                for c in 0..n { core::hint::black_box(ref_tolower((c & 0xFF) as i32)); }
+            });
+            rows.push(Row { name: format!("tolower/{n}"), rust: r, c });
 
             // ── the compare/copy family (equal inputs: forces the full walk) ──
             let r = bench("strcmp", n, || {

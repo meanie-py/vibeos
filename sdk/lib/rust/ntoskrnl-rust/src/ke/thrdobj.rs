@@ -260,6 +260,32 @@ unsafe fn KeReadyThread_impl(Thread: PKTHREAD) {
 
     OldIrql = KiAcquireDispatcherLock();
 
+    // §9.56 tripwire 0x62 — the LAST unguarded KiReadyThread caller (stack
+    // inswap / start paths). Legal inputs: Transition (stack back in) or
+    // Initialized/DeferredReady on start. Readying a Running/Ready/Waiting
+    // thread from here is the unnamed spurious wake.
+    #[cfg(feature = "smp")]
+    {
+        let st = *kt_State(Thread);
+        if st == 2u8 /*Running*/ || st == 1u8 /*Ready*/ || st == 3u8 /*Standby*/ {
+            crate::dbg_print!(
+                b"[RQ62] KeReadyThread on state=%u thr=%p reason=%u\n\0",
+                st as u32,
+                Thread,
+                (*Thread).WaitReason as u32,
+            );
+            if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
+            ntkrnl_sys::ddk::KeBugCheckEx(
+                0x96,
+                Thread as ntkrnl_sys::ddk::ULONG_PTR,
+                ((0x62u64 << 40) | (st as u64) << 8) as ntkrnl_sys::ddk::ULONG_PTR,
+                0,
+                0,
+            );
+            }
+        }
+    }
+
     KiReadyThread(Thread);
 
     KiReleaseDispatcherLock(OldIrql);

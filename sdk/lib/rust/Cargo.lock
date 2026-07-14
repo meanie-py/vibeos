@@ -1206,6 +1206,7 @@ name = "msvcrt-crt-rust"
 version = "0.1.0"
 dependencies = [
  "cnt-rust",
+ "msvcrt-sys",
 ]
 
 [[package]]
@@ -1215,7 +1216,12 @@ dependencies = [
  "cc",
  "libc",
  "msvcrt-crt-rust",
+ "msvcrt-sys",
 ]
+
+[[package]]
+name = "msvcrt-sys"
+version = "0.1.0"
 
 [[package]]
 name = "mup-rust"

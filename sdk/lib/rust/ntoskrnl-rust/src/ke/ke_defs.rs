@@ -82,6 +82,14 @@ extern "system" {
     // Must be "system" (stdcall on i386) to match the shim export's calling convention.
     pub fn PsGetCurrentThread() -> *mut ntkrnl_sys::ddk::_KTHREAD;
 }
+// §9.56 mechanism hunt: on SMP, bring the INLINE KxQueueReadyThread into scope
+// (instead of the extern-C shim symbol) so its #[track_caller] reports the TRUE
+// caller line. Going through the extern-C wrapper flattened every in-crate call
+// site to shim_exports.rs:2069, defeating the line-based discriminator. UP keeps
+// the extern symbol path unchanged.
+#[cfg(feature = "smp")]
+pub use ntkrnl_sys::inline::ke::KxQueueReadyThread;
+#[cfg(not(feature = "smp"))]
 extern "C" {
     pub fn KxQueueReadyThread(Thread: *mut ntkrnl_sys::ddk::_KTHREAD, Prcb: *mut ntkrnl_sys::ddk::_KPRCB);
 }

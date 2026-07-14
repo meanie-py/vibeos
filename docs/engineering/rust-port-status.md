@@ -56,11 +56,11 @@ Tree inventory (2026-07-03): **~2,422 `.rs` files · 228 crates** under `sdk/lib
 | **Driver fleet** (storage, FS, input, bus, netstack) | see below — netstack is a from-scratch Rust rewrite; rest cohab-flipped | **~90–100%** |
 | **LSA/SAM server** (lsasrv / samsrv) | active frontier — samsrv ~90%, lsasrv ~50%+ | **partial** |
 | **explorer.exe** (desktop shell) | `explorer-rust` 22 `.rs`/22K LOC; 22 cohab markers; 2 glue `.cpp` left (settings_shim, util_vararg) | **~99%** |
-| **CRT** (msvcrt/ucrt body) | **93 fns of msvcrt.dll flipped to Rust** (waves 1–8, 2026-07-12) — the whole pure string/mem/wide/radix/`_s`/case-insensitive floor, differentially proved against the genuine `string.c`/`wcs.c`. The 581 `.c` still compile; what remains is gated on **printf** (Phase C) and **locale** (Phase D), not on effort. | **~5–10%** |
+| **CRT** (msvcrt/ucrt body) | **194 fns of msvcrt.dll flipped to Rust** (waves 1–12, 2026-07-14) — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), and the **collation** family. Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). The 581 `.c` still compile; what remains is gated mainly on **printf** (Phase C). | **~12–18%** |
 
 ### CRT (msvcrt) detail — the assemble-from-`cnt-rust` track
 
-**93 functions of `msvcrt.dll` are Rust** as of 2026-07-12 (waves 1–8). Verified by parsing
+**194 functions of `msvcrt.dll` are Rust** as of 2026-07-14 (waves 1–12). Verified by parsing
 the DLL's export table: every flip lands in the Rust cluster (RVA `0x001e20`–`0x0046e0`),
 every deliberate refusal is still C (`memmove`, `strtok`, `strtod`, `_ecvt` at `0x054000`+).
 

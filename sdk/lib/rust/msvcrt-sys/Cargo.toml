@@ -1,0 +1,26 @@
+# msvcrt-sys — bindgen'd view of msvcrt.dll's INTERNAL state structs.
+#
+# Sibling of `ntkrnl-sys` (which does the same job for the kernel), and it exists for
+# the same reason: the Rust bodies we link into msvcrt.dll need to reach fields of C
+# structs whose layout is NOT stable by inspection, and hand-rolled numeric offsets are
+# a bug class this repo has already been burned by twice (field manual §9.41).
+#
+# What it unlocks: `threadlocinfo.pctype/pclmap/pcumap` — the locale's OWN ctype and
+# case-mapping tables. Reading those (rather than hardcoding ASCII) is what makes a
+# *faithful* locale-aware flip possible, and is the difference between inheriting the
+# C's locale-correctness and merely matching it in the "C" locale. See src/lib.rs.
+#
+# Regenerate (bindings + BOTH layout guardians, all 3 arches):
+#     python3 sdk/lib/rust/msvcrt-sys/generate_bindings.py
+# Verify committed output is current (wired into `vibeos-cli check`):
+#     python3 sdk/lib/rust/msvcrt-sys/generate_bindings.py --check
+
+[package]
+name = "msvcrt-sys"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]

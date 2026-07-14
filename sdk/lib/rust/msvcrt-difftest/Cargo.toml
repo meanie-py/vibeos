@@ -23,6 +23,7 @@ publish = false
 # would switch ON cnt-rust's `cabi` feature for msvcrt-crt-rust's copy too,
 # whose 208 #[no_mangle] shims would then collide with the wrappers.
 msvcrt-crt-rust = { path = "../msvcrt-crt-rust" }
+msvcrt-sys = { path = "../msvcrt-sys" }
 # guard-page probe (tests/oob_guard.rs): mmap/mprotect/fork.
 libc = "0.2"
 
@@ -74,4 +75,13 @@ harness = false
 [[test]]
 name = "perf"
 path = "tests/perf.rs"
+harness = false
+
+# The SIXTH instrument. classify grades VALUES, oob_guard grades ACCESS, perf grades
+# SPEED — and all three passed while wave 11 shipped a per-character get_locinfo() that
+# took the boot from 39s to 128s. perf cannot ever catch it (the harness stubs
+# get_locinfo() cheap for both sides, so the RATIO stays fine). So don't measure — COUNT.
+# See tests/hot_path.rs.
+[[test]]
+name = "hot_path"
 harness = false

@@ -139,6 +139,35 @@ static char ref_decimal_point[] = ".";
 static struct lconv ref_lconv;
 static threadlocinfo ref_locinfo;
 
+/* The C locale's lower/upper mapping tables, PARSED OUT OF locale.c by build.rs
+ * (they are `static const` there, so they cannot be linked).  Not hand-copied: the
+ * reference and the subject share ONE locinfo, so a mistyped byte would make them
+ * both wrong the same way and classify would still say MATCH.  See build.rs. */
+#include "cloc_tables.h"
+
+/* ctype.c (reference TU #3) owns the narrow ctype table.  It is shared ENVIRONMENT,
+ * not code under test — exactly like get_locinfo() itself: the reference and the
+ * subject must agree on what the locale IS, or the comparison means nothing.  Hence
+ * it is deliberately NOT in the ref_* rename lists.
+ *
+ * NOTE THE +1.  msvcrt sets `pctype = MSVCRT__ctype + 1`, so `pctype[-1]` is a real,
+ * addressable slot (the EOF entry) — which is why _isctype_l's domain test is
+ * `c >= -1`.  Any implementation that indexes pctype with an unsigned `c` reads at
+ * 0xFFFFFFFF instead. */
+extern WORD MSVCRT__ctype[257];
+
+/* locale.c's exported `_pctype` pointer (ctype.c's __p__pctype returns its address).
+ * locale.c is not a reference TU, so the harness owns this one. */
+unsigned short *MSVCRT__pctype = NULL;
+
+/* locale.c's "no setlocale() has been called yet" flag.  ctype.c BRANCHES on it:
+ * `toupper`/`tolower` take a hardcoded-ASCII fast path when it is TRUE and only fall
+ * through to `_toupper_l`/`_tolower_l` (the pcumap/pclmap lookup) when it is FALSE.
+ * TRUE is the truthful default here — the harness never calls setlocale — and the
+ * Rust flip must reproduce the same branch, or it is both slower and a different
+ * function. */
+BOOL initial_locale = TRUE;
+
 pthreadlocinfo CDECL get_locinfo(void)
 {
     if (!ref_locinfo.lconv)
@@ -148,6 +177,12 @@ pthreadlocinfo CDECL get_locinfo(void)
         ref_locinfo.lconv       = &ref_lconv;
         ref_locinfo.mb_cur_max  = 1;
         ref_locinfo.lc_codepage = 0;
+        /* The three tables that make the ctype/case family gradeable at all.
+         * Same assignment locale.c:654-656 makes for its static C locale. */
+        ref_locinfo.pctype      = MSVCRT__ctype + 1;
+        ref_locinfo.pclmap      = cloc_clmap;
+        ref_locinfo.pcumap      = cloc_cumap;
+        MSVCRT__pctype          = ref_locinfo.pctype;
     }
     return &ref_locinfo;
 }
@@ -158,6 +193,62 @@ pthreadlocinfo CDECL get_locinfo(void)
  * ref_strtok and the shim under test keep independent cursors, so a parity
  * test must drive both with the same call sequence.
  * ------------------------------------------------------------------ */
+/* ── the non-"C"-locale mode: a locale whose TABLES ARE NOT ASCII ──────────
+ *
+ * FIRST ATTEMPT AT THIS WAS A FALSE GREEN, and the negative control caught it. Planting a
+ * non-zero lc_handle DOES make msvcrt take its path 2:
+ *
+ *     if(!locinfo->lc_handle[LC_CTYPE]) { ...inline ASCII fold... }   // path 1
+ *     else { c1 = _tolower_l((unsigned char)*s1++, locale); ... }     // path 2
+ *
+ * ...but path 2 folds through `_tolower_l`, which reads `locinfo->pclmap[]` — and if that
+ * is still the *C locale's* map, it is an ASCII fold too. The two paths then agree on every
+ * input, a path-1-only implementation is indistinguishable from a correct one, and the
+ * harness reports MATCH. Which it did: sabotaging `_strnicmp` to always take path 1 did not
+ * move a single row.
+ *
+ * So the mode must also swap the TABLES. These are the C tables plus the Latin-1 case pairs
+ * (0xC0-0xDE <-> 0xE0-0xFE, holding 0xD7/0xF7 — the multiplication/division signs, which are
+ * not letters). Now path 1 leaves 0xE9 alone while path 2 maps it to 0xC9, the two paths are
+ * observably different, and the negative control bites.
+ *
+ * This is §9.73 in miniature, again: it is not enough to exercise the branch — the branch has
+ * to be able to PRODUCE A DIFFERENT ANSWER, or exercising it proves nothing. */
+static unsigned char nls_clmap[256];
+static unsigned char nls_cumap[256];
+
+static void ref_init_nls_tables(void)
+{
+    int c;
+    if (nls_cumap[0xE9]) return;             /* already built */
+    for (c = 0; c < 256; c++)
+    {
+        nls_clmap[c] = cloc_clmap[c];
+        nls_cumap[c] = cloc_cumap[c];
+    }
+    for (c = 0xC0; c <= 0xDE; c++)           /* Latin-1 uppercase -> lowercase */
+        if (c != 0xD7) nls_clmap[c] = (unsigned char)(c + 0x20);
+    for (c = 0xE0; c <= 0xFE; c++)           /* Latin-1 lowercase -> uppercase */
+        if (c != 0xF7) nls_cumap[c] = (unsigned char)(c - 0x20);
+}
+
+/* Exposed so the SUBJECT's locinfo can be aimed at the SAME tables. They are shared DATA —
+ * the environment both sides must agree on — exactly like MSVCRT__ctype. */
+const unsigned char *ref_nls_clmap(void) { ref_init_nls_tables(); return nls_clmap; }
+const unsigned char *ref_nls_cumap(void) { ref_init_nls_tables(); return nls_cumap; }
+
+/* The reference's mirror of subj_set_nls(). Both sides must be switched together, or the
+ * comparison is meaningless. */
+void ref_set_nls(int on)
+{
+    (void)get_locinfo();
+    ref_init_nls_tables();
+    ref_locinfo.lc_handle[LC_CTYPE]   = on ? 0x0409u : 0u;
+    ref_locinfo.lc_handle[LC_COLLATE] = on ? 0x0409u : 0u;
+    ref_locinfo.pclmap = on ? nls_clmap : cloc_clmap;
+    ref_locinfo.pcumap = on ? nls_cumap : cloc_cumap;
+}
+
 static __thread thread_data_t ref_thread_data;
 
 thread_data_t * CDECL msvcrt_get_thread_data(void)
@@ -166,16 +257,21 @@ thread_data_t * CDECL msvcrt_get_thread_data(void)
 }
 
 /* ------------------------------------------------------------------ *
- * _l ctype — the C locale (see ref_ascii_* above).
+ * _l ctype — GONE as of wave 10, and that is the upgrade.
  *
- * Domain-guarded: string.c hands _tolower_l a RAW `char` in places (e.g.
- * _strtoi64_l's "0x" sniff), which can be negative.  In the C locale msvcrt
- * passes anything outside the ASCII range through unchanged, which is what
- * the helpers do — and unlike a table lookup, they can't fault on it.
+ * refimpl.c used to hand-stub `_isspace_l` / `_tolower_l` / `_toupper_l` as ASCII
+ * approximations, because string.c and wcs.c call them and nothing else defined them.
+ * That made them the ORACLE for those calls — an oracle we wrote ourselves.
+ *
+ * ctype.c is now reference TU #3, so it defines the GENUINE ones, and the rename
+ * prelude routes string.c's internal calls to `ref__tolower_l` → msvcrt's real body →
+ * `locinfo->pclmap[c]`.  The reference stopped grading our approximation and started
+ * grading itself.
+ *
+ * On the subject side the same three names are now supplied by msvcrt-crt-rust's own
+ * flips.  Keeping the stubs here would be a duplicate-symbol link error — and, worse,
+ * whichever copy won would silently become the answer.
  * ------------------------------------------------------------------ */
-int __cdecl _isspace_l(int c, _locale_t locale) { (void)locale; return ref_ascii_space(c); }
-int __cdecl _tolower_l(int c, _locale_t locale) { (void)locale; return ref_ascii_lower(c); }
-int __cdecl _toupper_l(int c, _locale_t locale) { (void)locale; return ref_ascii_upper(c); }
 
 /* ------------------------------------------------------------------ *
  * NLS.  Dead code under the C locale (see get_locinfo above).  Minimal
@@ -318,53 +414,25 @@ DWORD WINAPI GetLastError(void)
 }
 
 /* ------------------------------------------------------------------ *
- * The wide ctype table.
+ * The wide ctype table — GONE as of wave 10, and this is the upgrade.
  *
- * msvcrt indexes MSVCRT__pwctype[wc] and masks with _ALPHA/_DIGIT/… .  Under
- * the C locale only ASCII is classified, so a 256-entry table spelled out from
- * first principles is the honest model.  (Written out, not taken from the host
- * <wctype.h>, for the same anti-hijack reason as ref_ascii_* above.)
+ * refimpl.c used to spell out a 256-entry `MSVCRT__pwctype` "from first principles",
+ * because wcs.c reads that global and, with only string.c + wcs.c as reference TUs,
+ * nothing defined it. So the reference graded itself against OUR MODEL of msvcrt.
  *
- * Only the DEFERRED isw* family reads this.  wcs.c guards its own indexing.
+ * ctype.c is now reference TU #3, and it carries the genuine article:
+ *
+ *     WORD  MSVCRT__wctype[257];
+ *     WORD *MSVCRT__pwctype = MSVCRT__wctype + 1;
+ *
+ * so this file's model is deleted and both sides read msvcrt's real table.  (The
+ * subject's copy of the *pointer* lives in subjectimpl.c — `MSVCRT__pwctype` IS
+ * namespaced (refstub/msvcrt.h), so the reference's is `msvcrt_ref__pwctype` and the
+ * two sides keep independent pointers — but they are aimed at the SAME shared
+ * `MSVCRT__wctype` table, which is NOT namespaced. That is the correct split: the
+ * locale DATA is environment both sides must agree on; the pointers and the errno
+ * are per-side state that classify compares.)
  * ------------------------------------------------------------------ */
-static WORD ref_wctype_table[256];
-static WORD *ref_pwctype_ptr;
-
-static void ref_init_wctype(void)
-{
-    int c;
-
-    if (ref_pwctype_ptr) return;
-    for (c = 0; c < 256; c++)
-    {
-        WORD f = 0;
-        if (c >= 'A' && c <= 'Z')                    f |= _UPPER;
-        if (c >= 'a' && c <= 'z')                    f |= _LOWER;
-        if (c >= '0' && c <= '9')                    f |= _DIGIT | _HEX;
-        if ((c >= 'a' && c <= 'f') ||
-            (c >= 'A' && c <= 'F'))                  f |= _HEX;
-        if (c == ' ' || (c >= '\t' && c <= '\r'))    f |= _SPACE;
-        if (c == ' ' || c == '\t')                   f |= _BLANK;
-        if (c < 0x20 || c == 0x7f)                   f |= _CONTROL;
-        if ((c >= '!' && c <= '/') || (c >= ':' && c <= '@') ||
-            (c >= '[' && c <= '`') || (c >= '{' && c <= '~')) f |= _PUNCT;
-        if (f & (_UPPER | _LOWER))                   f |= _ALPHA;
-        ref_wctype_table[c] = f;
-    }
-    ref_pwctype_ptr = ref_wctype_table;
-}
-
-/* msvcrt exports this as a POINTER to the table. */
-WORD *MSVCRT__pwctype;
-
-/* A constructor so the pointer is live before any test runs — wcs.c reads
- * MSVCRT__pwctype directly, it never calls an initializer. */
-__attribute__((constructor))
-static void ref_wctype_ctor(void)
-{
-    ref_init_wctype();
-    MSVCRT__pwctype = ref_pwctype_ptr;
-}
 
 /* ------------------------------------------------------------------ *
  * Locale plumbing.  get_current_locale_noalloc() fills a caller-provided
@@ -457,26 +525,72 @@ int WINAPI CompareStringW(LCID lcid, DWORD flags, const wchar_t *str1, int len1,
 int WINAPI LCMapStringW(LCID lcid, DWORD flags, const wchar_t *src, int srclen,
                         wchar_t *dst, int dstlen)
 {
+    /* The wide twin of __crtLCMapStringA, and it must obey the SAME non-ASCII mapping —
+     * otherwise `_towlower_l`'s path 2 (LCMapStringW) agrees with its path 1 (ASCII) on
+     * every input and a path-1-only implementation is again indistinguishable. See
+     * ref_set_nls(). Both sides call THIS function (it is un-namespaced as of wave 11:
+     * kernel32 is the environment, not code under test), so the comparison isolates the
+     * Rust's logic around the call, not our model of the NLS. */
     int i, n = ref_nls_wlen(src, srclen);
 
     (void)lcid;
-    if (flags & LCMAP_SORTKEY)
-    {
-        if (!dstlen) return n + 1;
-        if (dstlen < n + 1) return 0;
-        for (i = 0; i < n; i++) dst[i] = src[i];
-        dst[n] = 0;
-        return n + 1;
-    }
-
+    ref_init_nls_tables();
     if (!dstlen) return n;
     if (dstlen < n) return 0;
     for (i = 0; i < n; i++)
     {
-        int c = src[i];
-        if (flags & LCMAP_LOWERCASE)      c = ref_ascii_lower(c);
-        else if (flags & LCMAP_UPPERCASE) c = ref_ascii_upper(c);
-        dst[i] = (wchar_t)c;
+        wchar_t c = src[i];
+        if (c < 256)
+        {
+            if (flags & LCMAP_UPPERCASE)      c = nls_cumap[c];
+            else if (flags & LCMAP_LOWERCASE) c = nls_clmap[c];
+        }
+        dst[i] = c;
+    }
+    return n;
+}
+
+/* ------------------------------------------------------------------ *
+ * The two NLS entry points ctype.c reaches for OUTSIDE the byte range.
+ *
+ * Neither is namespaced, so there is ONE definition and both sides call it.  That is
+ * deliberate, and it is what makes the `c >= 256` arms gradeable at all:
+ *
+ *   _toupper_l(c) for c >= 256, even in the "C" locale, is NOT a table lookup — it
+ *   builds a 1-2 byte string, sets errno=EILSEQ if the high byte is not a leadbyte,
+ *   calls __crtLCMapStringA, and switches on the RETURN COUNT (0 -> c unchanged,
+ *   1 -> ret[0], else ret[0] | ret[1]<<8).
+ *
+ * All of that is real logic the Rust must reproduce, and it is exactly what a shared
+ * stub tests: both sides call the same function with the same arguments and must agree
+ * on how to interpret what comes back.  What the stub does NOT model is Windows' actual
+ * NLS *data* — so a divergence in kernel32's uppercase mapping is out of scope here
+ * (correctly: it is kernel32's job, not msvcrt's).  Same bounded blind spot the
+ * CompareStringA / LCMapStringA stubs already carry.
+ * ------------------------------------------------------------------ */
+BOOL WINAPI GetStringTypeExA(LCID lcid, DWORD type, const char *src, int len, WORD *out)
+{
+    int i, n = ref_nls_len(src, len);
+
+    (void)lcid; (void)type;
+    for (i = 0; i < n; i++)
+        out[i] = MSVCRT__ctype[(unsigned char)src[i] + 1];  /* +1: pctype's bias */
+    return TRUE;
+}
+
+int CDECL __crtLCMapStringA(LCID lcid, DWORD mapflags, const char *src, int srclen,
+                            char *dst, int dstlen, unsigned int codepage, int xflag)
+{
+    int i, n = ref_nls_len(src, srclen);
+
+    (void)lcid; (void)codepage; (void)xflag;
+    if (n > dstlen) n = dstlen;
+    for (i = 0; i < n; i++)
+    {
+        unsigned char c = (unsigned char)src[i];
+        if (mapflags & LCMAP_UPPERCASE)      dst[i] = (char)cloc_cumap[c];
+        else if (mapflags & LCMAP_LOWERCASE) dst[i] = (char)cloc_clmap[c];
+        else                                 dst[i] = (char)c;
     }
     return n;
 }
@@ -486,9 +600,12 @@ BOOL WINAPI GetStringTypeW(DWORD type, const wchar_t *src, int count, WORD *char
     int i, n = ref_nls_wlen(src, count);
 
     (void)type;
-    ref_init_wctype();
+    /* Reads msvcrt's REAL wide ctype table (ctype.c), not the model this file used to
+     * carry — see "The wide ctype table — GONE as of wave 10" above.  MSVCRT__pwctype
+     * is namespaced, so this is the reference's own pointer; it is aimed at the same
+     * shared MSVCRT__wctype[] the subject's is. */
     for (i = 0; i < n; i++)
-        chartype[i] = (WORD)(src[i] < 256 ? ref_wctype_table[src[i]] : 0);
+        chartype[i] = (WORD)(src[i] < 256 ? MSVCRT__pwctype[src[i]] : 0);
     return TRUE;
 }
 

@@ -241,6 +241,96 @@ extern "C" {
     fn iswupper(wc: u32) -> i32;
     fn iswxdigit(wc: u32) -> i32;
     fn iswblank(wc: u32) -> i32;
+
+    // ── wave 10: the narrow ctype/case family (ctype.c, reference TU #3) ──
+    fn ref_isalnum(c: i32) -> i32;
+    fn isalnum(c: i32) -> i32;
+    fn ref_isalpha(c: i32) -> i32;
+    fn isalpha(c: i32) -> i32;
+    fn ref_iscntrl(c: i32) -> i32;
+    fn iscntrl(c: i32) -> i32;
+    fn ref_isdigit(c: i32) -> i32;
+    fn isdigit(c: i32) -> i32;
+    fn ref_isgraph(c: i32) -> i32;
+    fn isgraph(c: i32) -> i32;
+    fn ref_islower(c: i32) -> i32;
+    fn islower(c: i32) -> i32;
+    fn ref_isprint(c: i32) -> i32;
+    fn isprint(c: i32) -> i32;
+    fn ref_ispunct(c: i32) -> i32;
+    fn ispunct(c: i32) -> i32;
+    fn ref_isspace(c: i32) -> i32;
+    fn isspace(c: i32) -> i32;
+    fn ref_isupper(c: i32) -> i32;
+    fn isupper(c: i32) -> i32;
+    fn ref_isxdigit(c: i32) -> i32;
+    fn isxdigit(c: i32) -> i32;
+    fn ref_isblank(c: i32) -> i32;
+    fn isblank(c: i32) -> i32;
+    fn ref_isleadbyte(c: i32) -> i32;
+    fn isleadbyte(c: i32) -> i32;
+    fn ref__isctype(c: i32, ty: i32) -> i32;
+    fn _isctype(c: i32, ty: i32) -> i32;
+    fn ref_toupper(c: i32) -> i32;
+    fn toupper(c: i32) -> i32;
+    fn ref_tolower(c: i32) -> i32;
+    fn tolower(c: i32) -> i32;
+    fn ref__toupper(c: i32) -> i32;
+    fn _toupper(c: i32) -> i32;
+    fn ref__tolower(c: i32) -> i32;
+    fn _tolower(c: i32) -> i32;
+    fn ref__toupper_l(c: i32, l: *mut core::ffi::c_void) -> i32;
+    fn _toupper_l(c: i32, l: *mut core::ffi::c_void) -> i32;
+    fn ref__tolower_l(c: i32, l: *mut core::ffi::c_void) -> i32;
+    fn _tolower_l(c: i32, l: *mut core::ffi::c_void) -> i32;
+    fn ref___isascii(c: i32) -> i32;
+    fn __isascii(c: i32) -> i32;
+    fn ref___toascii(c: i32) -> i32;
+    fn __toascii(c: i32) -> i32;
+    fn ref___iscsym(c: i32) -> i32;
+    fn __iscsym(c: i32) -> i32;
+    fn ref___iscsymf(c: i32) -> i32;
+    fn __iscsymf(c: i32) -> i32;
+    fn ref__isblank_l(c: i32, l: *mut core::ffi::c_void) -> i32;
+    fn _isblank_l(c: i32, l: *mut core::ffi::c_void) -> i32;
+    // the thread_data_t tokenizers (wave 10)
+    fn ref_strtok(s: *mut u8, delim: *const u8) -> *mut u8;
+    fn strtok(s: *mut u8, delim: *const u8) -> *mut u8;
+    fn ref_wcstok(s: *mut u16, delim: *const u16) -> *mut u16;
+    fn wcstok(s: *mut u16, delim: *const u16) -> *mut u16;
+    // wave 11: the locale-mode switch (one per side — separate locinfo storage)
+    fn ref_set_nls(on: i32);
+    fn subj_set_nls(on: i32);
+    // wave 11: the wide case mappers (wint_t is 16-bit in msvcrt)
+    fn ref_towlower(c: u16) -> u16;
+    fn towlower(c: u16) -> u16;
+    fn ref_towupper(c: u16) -> u16;
+    fn towupper(c: u16) -> u16;
+    fn ref__towlower_l(c: u16, l: *mut core::ffi::c_void) -> u16;
+    fn _towlower_l(c: u16, l: *mut core::ffi::c_void) -> u16;
+    fn ref__towupper_l(c: u16, l: *mut core::ffi::c_void) -> u16;
+    fn _towupper_l(c: u16, l: *mut core::ffi::c_void) -> u16;
+    // ── wave 12: the collation family ──
+    fn ref_strcoll(a: *const u8, b: *const u8) -> i32;
+    fn strcoll(a: *const u8, b: *const u8) -> i32;
+    fn ref__stricoll(a: *const u8, b: *const u8) -> i32;
+    fn _stricoll(a: *const u8, b: *const u8) -> i32;
+    fn ref__strncoll(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn _strncoll(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn ref__strnicoll(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn _strnicoll(a: *const u8, b: *const u8, n: usize) -> i32;
+    fn ref_strxfrm(d: *mut u8, s: *const u8, n: usize) -> usize;
+    fn strxfrm(d: *mut u8, s: *const u8, n: usize) -> usize;
+    fn ref_wcscoll(a: *const u16, b: *const u16) -> i32;
+    fn wcscoll(a: *const u16, b: *const u16) -> i32;
+    fn ref__wcsicoll(a: *const u16, b: *const u16) -> i32;
+    fn _wcsicoll(a: *const u16, b: *const u16) -> i32;
+    fn ref__wcsncoll(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn _wcsncoll(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn ref__wcsnicoll(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn _wcsnicoll(a: *const u16, b: *const u16, n: usize) -> i32;
+    fn ref_wcsxfrm(d: *mut u16, s: *const u16, n: usize) -> usize;
+    fn wcsxfrm(d: *mut u16, s: *const u16, n: usize) -> usize;
 }
 
 /// The four observable effects of a CRT call, as one comparable unit.
@@ -1333,6 +1423,56 @@ unsafe fn run() {
 
     // Tokenizers: drive a FULL tokenisation loop, not one call — the contract is
     // the sequence of tokens and the final ctx, not any single return.
+    // strtok / wcstok — the THREAD-DATA tokenizers (wave 10).
+    //
+    // Same drive-both-sides-with-one-sequence shape as strtok_s, except the cursor is
+    // not a caller-supplied ctx: each side keeps it in its OWN `thread_data_t`
+    // (refimpl's is namespaced to msvcrt_ref_get_thread_data; subjectimpl has its own),
+    // reached through msvcrt-sys's `offset_of!`. ref_integrity proves the two structs
+    // agree on where `strtok_next` lives, which is what makes this comparison mean
+    // anything at all.
+    //
+    // NOTE the contract these rows are really defending: `strtok` is NOT
+    // `strtok_s(.., &thread->strtok_next)`. It has no CHECK_PMT guards, so a
+    // `strtok(NULL, d)` on a fresh cursor returns NULL SILENTLY where strtok_s would
+    // fire the invalid-parameter handler. The Effects comparison (which grades the
+    // handler) is what would catch a lazy delegation.
+    check_buf("strtok", |r| {
+        let mut s1 = gen_str(r, 26); let delim = gen_str(r, 4);
+        let mut s2 = s1.clone();
+        let (mut out1, mut out2) = (Vec::new(), Vec::new());
+        let mut p1 = strtok(s1.as_mut_ptr(), delim.as_ptr());
+        let mut p2 = ref_strtok(s2.as_mut_ptr(), delim.as_ptr());
+        let mut guard = 0;
+        while (!p1.is_null() || !p2.is_null()) && guard < 40 {
+            out1.push(if p1.is_null() { -1 } else { p1 as isize - s1.as_ptr() as isize } as i64);
+            out2.push(if p2.is_null() { -1 } else { p2 as isize - s2.as_ptr() as isize } as i64);
+            p1 = strtok(core::ptr::null_mut(), delim.as_ptr());
+            p2 = ref_strtok(core::ptr::null_mut(), delim.as_ptr());
+            guard += 1;
+        }
+        let b1: Vec<u8> = s1.iter().copied().chain(out1.iter().map(|v| *v as u8)).collect();
+        let b2: Vec<u8> = s2.iter().copied().chain(out2.iter().map(|v| *v as u8)).collect();
+        (b1, out1.len() as isize, b2, out2.len() as isize, format!("delim={delim:?} tokens={out1:?}/{out2:?}"))
+    });
+    check_wbuf("wcstok", |r| {
+        let mut s1 = gen_wstr(r, 26); let delim = gen_wstr(r, 4);
+        let mut s2 = s1.clone();
+        let (mut out1, mut out2) = (Vec::new(), Vec::new());
+        let mut p1 = wcstok(s1.as_mut_ptr(), delim.as_ptr());
+        let mut p2 = ref_wcstok(s2.as_mut_ptr(), delim.as_ptr());
+        let mut guard = 0;
+        while (!p1.is_null() || !p2.is_null()) && guard < 40 {
+            out1.push(if p1.is_null() { -1i64 } else { ((p1 as isize - s1.as_ptr() as isize) / 2) as i64 });
+            out2.push(if p2.is_null() { -1i64 } else { ((p2 as isize - s2.as_ptr() as isize) / 2) as i64 });
+            p1 = wcstok(core::ptr::null_mut(), delim.as_ptr());
+            p2 = ref_wcstok(core::ptr::null_mut(), delim.as_ptr());
+            guard += 1;
+        }
+        let b1: Vec<u16> = s1.iter().copied().chain(out1.iter().map(|v| *v as u16)).collect();
+        let b2: Vec<u16> = s2.iter().copied().chain(out2.iter().map(|v| *v as u16)).collect();
+        (b1, out1.len() as isize, b2, out2.len() as isize, format!("tokens={out1:?}/{out2:?}"))
+    });
     check_buf("strtok_s", |r| {
         let mut s1 = gen_str(r, 26); let delim = gen_str(r, 4);
         let mut s2 = s1.clone();
@@ -1485,6 +1625,223 @@ unsafe fn run() {
         let w = Effects::reference(|| ref__wcsupr_s(d2.as_mut_ptr(), n) as i64);
         (d1, g, d2, w, format!("n={n} slen={}", s.len()-1))
     });
+    // ══════════ WAVE 11 — the SAME ROWS, WITH A REAL LOCALE PLANTED ══════════
+    //
+    // THIS IS THE POINT OF WAVE 11. Every row above ran with `lc_handle[LC_CTYPE] == 0`,
+    // and msvcrt BRANCHES on that:
+    //
+    //     if(!locinfo->lc_handle[LC_CTYPE]) { ...inline ASCII fold... }   // what we tested
+    //     else                              { ..._tolower_l / LCMapStringW... }  // what we didn't
+    //
+    // So waves 7-8 could ship a path-1-only implementation and be reported MATCH forever.
+    // They did. `_stricmp`, `_strnicmp`, `_wcsicmp`, `_wcsnicmp`, `_strlwr_s`, `_strupr_s`
+    // and the wide folders were all locale-INDEPENDENT bodies for locale-DEPENDENT
+    // functions — correct in the "C" locale, wrong the moment setlocale is called. That is
+    // §9.60, and it was shipped, not merely documented.
+    //
+    // Planting a real lc_handle makes path 2 live on BOTH sides. Both then reach the SAME
+    // shared NLS stub (refimpl.c's — un-namespaced as of wave 11, because kernel32 is the
+    // environment, not code under test), so what this grades is the Rust's LOGIC around the
+    // NLS call: does it call the same function, with the same arguments, and read the result
+    // the same way. Windows' real NLS *data* is out of scope, correctly — that is kernel32's
+    // job, and it is the same bounded scope _toupper_l's __crtLCMapStringA arm already has.
+    //
+    // A green from an unexercised branch is not a green.
+
+    // ══ WAVE 12 — the COLLATION family, graded in BOTH locale modes ══════════
+    //
+    // These exist as flips only because wave 11 exists. Every one branches on
+    // `lc_handle[LC_COLLATE]`, so with the harness pinned to the "C" locale the
+    // CompareStringA/LCMapStringA arm was unreachable and a path-1-only body would have
+    // been reported MATCH forever — §9.60, exactly. The `[NLS]` copies below are the ones
+    // that carry the weight.
+    macro_rules! coll_rows {
+        ($suffix:literal) => {
+            check_effects(concat!("strcoll", $suffix), |r| {
+                let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+                (Effects::subject(|| strcoll(a.as_ptr(), b.as_ptr()) as i64),
+                 Effects::reference(|| ref_strcoll(a.as_ptr(), b.as_ptr()) as i64),
+                 format!("{a:?} vs {b:?}"))
+            });
+            check_effects(concat!("_stricoll", $suffix), |r| {
+                let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+                (Effects::subject(|| _stricoll(a.as_ptr(), b.as_ptr()) as i64),
+                 Effects::reference(|| ref__stricoll(a.as_ptr(), b.as_ptr()) as i64),
+                 format!("{a:?} vs {b:?}"))
+            });
+            // `_strncoll_l` path 1 is literally `return strncmp(str1, str2, count);` — so it
+            // INHERITS strncmp's two contracts (string.c `#if defined(_WIN64)`): i386
+            // returns the raw unsigned byte-diff, amd64/arm64 clamp to -1/0/1. The host
+            // reference compiled the i386 arm (_WIN64 undefined), so the amd64 subject must
+            // be graded against `clamp(ref)` — exactly as the `strncmp[_WIN64]` row does.
+            //
+            // classify's own header says "any NEW flip must be grepped for _WIN64 first",
+            // and this row is what happens when you don't: it came back DIVERGE with
+            // cnt=1 msvcrt=47.
+            //
+            // In the NLS arm the reference returns CompareStringA()-CSTR_EQUAL, already
+            // -1/0/1, so the clamp is a no-op there. One row covers both modes.
+            check_effects(concat!("_strncoll", $suffix), |r| {
+                let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+                let n = r.below(24);
+                (Effects::subject(|| _strncoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 Effects::reference(|| {
+                     let w = ref__strncoll(a.as_ptr(), b.as_ptr(), n) as i64;
+                     if cfg!(target_pointer_width = "64") { w.signum() } else { w }
+                 }),
+                 format!("n={n} {a:?} vs {b:?}"))
+            });
+            check_effects(concat!("_strnicoll", $suffix), |r| {
+                let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+                let n = r.below(24);
+                (Effects::subject(|| _strnicoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 Effects::reference(|| ref__strnicoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 format!("n={n} {a:?} vs {b:?}"))
+            });
+            check_buf_fx(concat!("strxfrm", $suffix), &["ok"], |r| {
+                let src = gen_str(r, 20);
+                let len = r.below(40);
+                let (mut d1, mut d2) = (vec![0xAAu8; 64], vec![0xAAu8; 64]);
+                let g = Effects::subject(|| strxfrm(d1.as_mut_ptr(), src.as_ptr(), len) as i64);
+                let w = Effects::reference(|| ref_strxfrm(d2.as_mut_ptr(), src.as_ptr(), len) as i64);
+                (d1, g, d2, w, format!("len={len} src={src:?}"))
+            });
+            check_effects(concat!("wcscoll", $suffix), |r| {
+                let (a, b) = (gen_wstr(r, 20), gen_wstr(r, 20));
+                (Effects::subject(|| wcscoll(a.as_ptr(), b.as_ptr()) as i64),
+                 Effects::reference(|| ref_wcscoll(a.as_ptr(), b.as_ptr()) as i64),
+                 format!("alen={} blen={}", a.len()-1, b.len()-1))
+            });
+            check_effects(concat!("_wcsicoll", $suffix), |r| {
+                let (a, b) = (gen_wstr(r, 20), gen_wstr(r, 20));
+                (Effects::subject(|| _wcsicoll(a.as_ptr(), b.as_ptr()) as i64),
+                 Effects::reference(|| ref__wcsicoll(a.as_ptr(), b.as_ptr()) as i64),
+                 format!("alen={} blen={}", a.len()-1, b.len()-1))
+            });
+            check_effects(concat!("_wcsncoll", $suffix), |r| {
+                let (a, b) = (gen_wstr(r, 20), gen_wstr(r, 20));
+                let n = r.below(24);
+                (Effects::subject(|| _wcsncoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 Effects::reference(|| ref__wcsncoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 format!("n={n}"))
+            });
+            check_effects(concat!("_wcsnicoll", $suffix), |r| {
+                let (a, b) = (gen_wstr(r, 20), gen_wstr(r, 20));
+                let n = r.below(24);
+                (Effects::subject(|| _wcsnicoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 Effects::reference(|| ref__wcsnicoll(a.as_ptr(), b.as_ptr(), n) as i64),
+                 format!("n={n}"))
+            });
+            check_wbuf_fx(concat!("wcsxfrm", $suffix), &["ok"], |r| {
+                let src = gen_wstr(r, 20);
+                let len = r.below(40);
+                let (mut d1, mut d2) = (vec![0xAAAAu16; 64], vec![0xAAAAu16; 64]);
+                let g = Effects::subject(|| wcsxfrm(d1.as_mut_ptr(), src.as_ptr(), len) as i64);
+                let w = Effects::reference(|| ref_wcsxfrm(d2.as_mut_ptr(), src.as_ptr(), len) as i64);
+                (d1, g, d2, w, format!("len={len} slen={}", src.len()-1))
+            });
+        };
+    }
+    coll_rows!("");                       // the "C" locale: path 1 (strcmp / ASCII fold)
+
+    unsafe { ref_set_nls(1); subj_set_nls(1); }
+    coll_rows!(" [NLS]");                 // a REAL locale: path 2 (CompareString / LCMapString)
+
+    check_effects("_stricmp [NLS]", |r| {
+        let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+        (Effects::subject(|| _stricmp(a.as_ptr(), b.as_ptr()) as i64),
+         Effects::reference(|| ref__stricmp(a.as_ptr(), b.as_ptr()) as i64),
+         format!("{a:?} vs {b:?}"))
+    });
+    check_effects("_strnicmp [NLS]", |r| {
+        let (a, b) = (gen_str(r, 20), gen_str(r, 20));
+        let n = r.below(24);
+        (Effects::subject(|| _strnicmp(a.as_ptr(), b.as_ptr(), n) as i64),
+         Effects::reference(|| ref__strnicmp(a.as_ptr(), b.as_ptr(), n) as i64),
+         format!("n={n} {a:?} vs {b:?}"))
+    });
+    check_buf_fx("_strlwr_s [NLS]", &["ok", "EINVAL"], |r| {
+        let s = gen_str(r, 24);
+        let len = r.below(28);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAA); d2.resize(40, 0xAA);
+        let g = Effects::subject(|| _strlwr_s(d1.as_mut_ptr(), len) as i64);
+        let w = Effects::reference(|| ref__strlwr_s(d2.as_mut_ptr(), len) as i64);
+        (d1, g, d2, w, format!("len={len} slen={}", s.len()-1))
+    });
+    check_buf_fx("_strupr_s [NLS]", &["ok", "EINVAL"], |r| {
+        let s = gen_str(r, 24);
+        let len = r.below(28);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAA); d2.resize(40, 0xAA);
+        let g = Effects::subject(|| _strupr_s(d1.as_mut_ptr(), len) as i64);
+        let w = Effects::reference(|| ref__strupr_s(d2.as_mut_ptr(), len) as i64);
+        (d1, g, d2, w, format!("len={len} slen={}", s.len()-1))
+    });
+    check_effects("_wcsicmp [NLS]", |r| {
+        let (a, b) = (gen_wstr(r, 20), gen_wstr(r, 20));
+        (Effects::subject(|| _wcsicmp(a.as_ptr(), b.as_ptr()) as i64),
+         Effects::reference(|| ref__wcsicmp(a.as_ptr(), b.as_ptr()) as i64),
+         format!("alen={} blen={}", a.len()-1, b.len()-1))
+    });
+    check_effects("_wcsnicmp [NLS]", |r| {
+        let (a, b) = (gen_wstr(r, 20), gen_wstr(r, 20));
+        let n = r.below(24);
+        (Effects::subject(|| _wcsnicmp(a.as_ptr(), b.as_ptr(), n) as i64),
+         Effects::reference(|| ref__wcsnicmp(a.as_ptr(), b.as_ptr(), n) as i64),
+         format!("n={n} alen={} blen={}", a.len()-1, b.len()-1))
+    });
+    check_wbuf_fx("_wcslwr_s [NLS]", &["ok", "EINVAL"], |r| {
+        let s = gen_wstr(r, 24);
+        let n = r.below(28);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAAAA); d2.resize(40, 0xAAAA);
+        let g = Effects::subject(|| _wcslwr_s(d1.as_mut_ptr(), n) as i64);
+        let w = Effects::reference(|| ref__wcslwr_s(d2.as_mut_ptr(), n) as i64);
+        (d1, g, d2, w, format!("n={n} slen={}", s.len()-1))
+    });
+    check_wbuf_fx("_wcsupr_s [NLS]", &["ok", "EINVAL"], |r| {
+        let s = gen_wstr(r, 24);
+        let n = r.below(28);
+        let (mut d1, mut d2) = (s.clone(), s.clone());
+        d1.resize(40, 0xAAAA); d2.resize(40, 0xAAAA);
+        let g = Effects::subject(|| _wcsupr_s(d1.as_mut_ptr(), n) as i64);
+        let w = Effects::reference(|| ref__wcsupr_s(d2.as_mut_ptr(), n) as i64);
+        (d1, g, d2, w, format!("n={n} slen={}", s.len()-1))
+    });
+
+    // The wide case mappers themselves, EXHAUSTIVE over the whole 16-bit wint_t domain,
+    // in BOTH locale modes. (`wint_t` is 16-bit in msvcrt, so WEOF is 0xFFFF — not the
+    // host's 32-bit 0xFFFFFFFF.)
+    macro_rules! wcase_row {
+        ($name:literal, $subj:expr, $refr:expr) => {{
+            let mut bad = None;
+            for c in 0u32..=0xFFFF {
+                let c = c as u16;
+                let (g, w) = ($subj(c), $refr(c));
+                if g != w {
+                    bad = Some(format!("c=0x{c:04x} cnt={g} msvcrt={w}"));
+                    break;
+                }
+            }
+            match bad {
+                Some(b) => record($name, V::Diverge, b),
+                None => record($name, V::Match, "exhaustive over 0x0000..=0xFFFF".into()),
+            }
+        }};
+    }
+    wcase_row!("towlower [NLS]", towlower, ref_towlower);
+    wcase_row!("towupper [NLS]", towupper, ref_towupper);
+
+    unsafe { ref_set_nls(0); subj_set_nls(0); }   // back to the "C" locale
+
+    wcase_row!("towlower", towlower, ref_towlower);
+    wcase_row!("towupper", towupper, ref_towupper);
+    wcase_row!("_towlower_l", |c| _towlower_l(c, core::ptr::null_mut()),
+                              |c| ref__towlower_l(c, core::ptr::null_mut()));
+    wcase_row!("_towupper_l", |c| _towupper_l(c, core::ptr::null_mut()),
+                              |c| ref__towupper_l(c, core::ptr::null_mut()));
+
     check_wbuf("_wcslwr", |r| {
         let s = gen_wstr(r, 30);
         let (mut d1, mut d2) = (s.clone(), s.clone());
@@ -1511,10 +1868,12 @@ unsafe fn run() {
     // A random fuzz would hit all three, but exhaustion PROVES all three, and for
     // 65,536 cases x 13 predicates there is no reason to settle for less.
     //
-    // Note the subject reads subjectimpl.c's table and the reference reads
-    // refimpl's — separate storage, identical model — so a divergence here is a
-    // divergence in the Rust's MASKING, which is the only part under test (in the
-    // real DLL both sides read one shared msvcrt table).
+    // WAVE 10 made this honest. Both sides now read msvcrt's REAL wide ctype table
+    // (`MSVCRT__wctype`, which ctype.c owns and which is deliberately NOT namespaced —
+    // it is shared ENVIRONMENT, like the locale itself). Until then the subject read
+    // subjectimpl.c's hand-written 256-entry model and the reference read refimpl.c's,
+    // and a differential test can never catch data it feeds to BOTH sides: a mistyped
+    // byte makes both wrong the same way and still reports MATCH. The models are gone.
     macro_rules! ctype_row {
         ($name:literal, $subj:ident, $refr:ident) => {
             {
@@ -1547,6 +1906,101 @@ unsafe fn run() {
     ctype_row!("iswupper",  iswupper,  ref_iswupper);
     ctype_row!("iswxdigit", iswxdigit, ref_iswxdigit);
     ctype_row!("iswblank",  iswblank,  ref_iswblank);
+
+    // ══ WAVE 10 — the NARROW ctype/case family (the locale-table door) ══════════
+    //
+    // EXHAUSTIVE over -300..=600, not fuzzed. That range is chosen to straddle every
+    // regime msvcrt treats differently, and one of them is the whole point of the wave:
+    //
+    //     c <  -1        -> a sign-extended high-bit `char`. `(unsigned)c < 256` is
+    //                       FALSE, so `_tolower_l` MISSES the table and takes its NLS
+    //                       arm, which SETS errno = EILSEQ. msvcrt's own callers reach
+    //                       this constantly, because string.c hands `_tolower_l` a raw
+    //                       signed char with no cast (while the `_isspace_l` two lines
+    //                       above it DOES cast). This arm is why five shipped parsers
+    //                       and _memicmp were divergent the moment the oracle got honest.
+    //     c == -1        -> the EOF slot. pctype is `MSVCRT__ctype + 1`, so pctype[-1]
+    //                       is a REAL addressable entry — index it unsigned and you read
+    //                       at 0xFFFFFFFF instead.
+    //     0 ..= 255      -> the table proper (pctype / pclmap / pcumap).
+    //     256 ..= 600    -> the `c >= 256` NLS arm again, from the other side.
+    //
+    // And these grade ALL FOUR observable effects (return, errno, handler), not just the
+    // return — a `to*` row that compared only the value would be blind to the EILSEQ,
+    // which is exactly the effect that was hiding six shipped bugs.
+    macro_rules! nctype_row {
+        ($name:literal, $subj:expr, $refr:expr) => {{
+            let mut bad = None;
+            for c in -300i32..=600 {
+                let g = Effects::subject(|| $subj(c) as i64);
+                let w = Effects::reference(|| $refr(c) as i64);
+                if g != w {
+                    bad = Some(format!("c={c} cnt={g:?} msvcrt={w:?}"));
+                    break;
+                }
+            }
+            match bad {
+                Some(b) => record($name, V::Diverge, b),
+                None => record($name, V::Match, "exhaustive over -300..=600 (all 4 effects)".into()),
+            }
+        }};
+    }
+
+    nctype_row!("isalnum",    isalnum,    ref_isalnum);
+    nctype_row!("isalpha",    isalpha,    ref_isalpha);
+    nctype_row!("iscntrl",    iscntrl,    ref_iscntrl);
+    nctype_row!("isdigit",    isdigit,    ref_isdigit);
+    nctype_row!("isgraph",    isgraph,    ref_isgraph);
+    nctype_row!("islower",    islower,    ref_islower);
+    nctype_row!("isprint",    isprint,    ref_isprint);
+    nctype_row!("ispunct",    ispunct,    ref_ispunct);
+    nctype_row!("isspace",    isspace,    ref_isspace);
+    nctype_row!("isupper",    isupper,    ref_isupper);
+    nctype_row!("isxdigit",   isxdigit,   ref_isxdigit);
+    nctype_row!("isblank",    isblank,    ref_isblank);
+    // …and its `_l` sibling, which returns the MASK where the plain form's `||`
+    // normalises to 0/1. Same file, three lines apart, different contracts.
+    nctype_row!("_isblank_l", |c| _isblank_l(c, core::ptr::null_mut()),
+                              |c| ref__isblank_l(c, core::ptr::null_mut()));
+    nctype_row!("isleadbyte", isleadbyte, ref_isleadbyte);
+    nctype_row!("__isascii",  __isascii,  ref___isascii);
+    nctype_row!("__toascii",  __toascii,  ref___toascii);
+    nctype_row!("__iscsym",   __iscsym,   ref___iscsym);
+    nctype_row!("__iscsymf",  __iscsymf,  ref___iscsymf);
+
+    // The case-mapping family. `toupper`/`tolower` short-circuit on the global
+    // `initial_locale`; `_toupper`/`_tolower` are msvcrt's `/* sic */` — UNCONDITIONAL
+    // `c -/+ 0x20`, no range check, so `_toupper('0')` is 0x10. A "reasonable"
+    // implementation of those two would be a bug, and this row is what says so.
+    nctype_row!("toupper",    toupper,    ref_toupper);
+    nctype_row!("tolower",    tolower,    ref_tolower);
+    nctype_row!("_toupper",   _toupper,   ref__toupper);
+    nctype_row!("_tolower",   _tolower,   ref__tolower);
+    nctype_row!("_toupper_l", |c| _toupper_l(c, core::ptr::null_mut()),
+                              |c| ref__toupper_l(c, core::ptr::null_mut()));
+    nctype_row!("_tolower_l", |c| _tolower_l(c, core::ptr::null_mut()),
+                              |c| ref__tolower_l(c, core::ptr::null_mut()));
+
+    // _isctype over every mask, exhaustively — the primitive the whole is* family
+    // funnels through.
+    {
+        const MASKS: [i32; 10] = [1, 2, 4, 8, 0x10, 0x20, 0x40, 0x80, 0x100, 0x8000];
+        let mut bad = None;
+        'outer: for &ty in &MASKS {
+            for c in -300i32..=600 {
+                let g = Effects::subject(|| _isctype(c, ty) as i64);
+                let w = Effects::reference(|| ref__isctype(c, ty) as i64);
+                if g != w {
+                    bad = Some(format!("c={c} mask=0x{ty:x} cnt={g:?} msvcrt={w:?}"));
+                    break 'outer;
+                }
+            }
+        }
+        match bad {
+            Some(b) => record("_isctype", V::Diverge, b),
+            None => record("_isctype", V::Match, "exhaustive: 10 masks x -300..=600".into()),
+        }
+    }
     // iswctype with EVERY mask bit, over the whole domain.
     {
         let mut bad = None;

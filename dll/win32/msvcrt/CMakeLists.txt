@@ -122,6 +122,14 @@ list(APPEND MSVCRT_SOURCE
     ${msvcrt_shared_asm}
     reactos/misc.c
     reactos/system.cpp
+    # GUARDIAN: no code, only _Static_asserts. The Rust CRT bodies we cohab into this
+    # DLL (msvcrt-crt-rust) reach into `struct __thread_data` and `struct
+    # threadlocaleinfostruct` via a bindgen SNAPSHOT of their layout. This TU is
+    # compiled with msvcrt's real flags on all 3 arches, and fails the build the moment
+    # the C moves out from under that snapshot. @generated together with the Rust-side
+    # twin by sdk/lib/rust/msvcrt-sys/generate_bindings.py — regenerate both, never
+    # hand-edit one.
+    rust_layout_assert.c
     concurrency.c
     console.c
     ctype.c

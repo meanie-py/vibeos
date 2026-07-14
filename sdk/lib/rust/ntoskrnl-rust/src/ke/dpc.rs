@@ -47,6 +47,7 @@ extern "C" {
     fn KiComputeNewPriority(Thread: PKTHREAD, Decrement: ULONG) -> LONG;
     fn KiSelectReadyThread(Priority: LONG, Prcb: PKPRCB) -> PKTHREAD;
     fn KiSetThreadSwapBusy(Thread: PKTHREAD);
+    #[cfg(not(feature = "smp"))]
     fn KxQueueReadyThread(Thread: PKTHREAD, Prcb: PKPRCB);
 }
 #[cfg(target_arch = "x86")]
@@ -495,12 +496,17 @@ pub unsafe extern "system" fn KiQuantumEnd() {
 
     NextThread = (*Prcb).NextThread;
 
+    #[cfg(feature = "smp")]
+    ntkrnl_sys::inline::ke::ki_check_promote_not_linked(NextThread, 0x03); // KiQuantumEnd
+
     KiSetThreadSwapBusy(Thread);
 
     (*Prcb).NextThread = core::ptr::null_mut();
     (*Prcb).CurrentThread = NextThread;
 
     *kt_State(NextThread) = Running;
+    #[cfg(feature = "smp")]
+    ntkrnl_sys::inline::ke::rq_inflight_unmark(NextThread);
     (*Thread).WaitReason = _KWAIT_REASON_WrQuantumEnd as u8;
 
     KxQueueReadyThread(Thread, Prcb);
