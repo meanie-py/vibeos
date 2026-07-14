@@ -281,11 +281,11 @@ def cmd_prompt(args):
     res = resolve(scan, catalog, spec)
 
     if args.estimate:
-        prompt = build_full_prompt(scan, res)
+        prompt = build_full_prompt(scan, res, target)
         tokens = estimate_tokens(prompt)
         print(f"Estimated tokens: ~{tokens:,}", file=sys.stderr)
     else:
-        prompt = build_full_prompt(scan, res)
+        prompt = build_full_prompt(scan, res, target)
         print(prompt)
 
 
@@ -309,10 +309,10 @@ def cmd_submit(args):
     # For Gemini, combine into single prompt
     if model.startswith("claude-"):
         system_prompt = load_system_prompt(target)
-        file_prompt = build_file_prompt(scan, res)
+        file_prompt = build_file_prompt(scan, res, target)
     else:
         system_prompt = ""
-        file_prompt = build_full_prompt(scan, res)
+        file_prompt = build_full_prompt(scan, res, target)
 
     # Durable archive + cost banner + kill guard for this one paid call.
     warn_if_tmp_output(getattr(args, "output", None))
@@ -355,6 +355,7 @@ def cmd_submit(args):
             target_name=target.name,
             sys_crate=target.sys_crate,
             sys_umbrella=target.sys_umbrella,
+            crate_module=getattr(target, "crate_module", "") if target.crate_bindgen_files else "",
         )
         Path(args.output).write_text(code)
         print(f"Written to {args.output}", file=sys.stderr)
@@ -380,6 +381,7 @@ def cmd_submit(args):
             sys_umbrella=target.sys_umbrella,
             c_source_path=path,
             com_method_macro=target.com_method_macro,
+            crate_module=getattr(target, "crate_module", "") if target.crate_bindgen_files else "",
         )
         print(code)
 
@@ -403,8 +405,13 @@ def cmd_batch(args):
 
     print(f"Found {len(c_files)} C files in {dir_path.name}/", file=sys.stderr)
 
-    catalog = build_catalog(arch=args.arch)
-    spec = parse_spec()
+    # Resolve the target from the path like every other command, instead of silently
+    # defaulting to ntoskrnl: `batch` built its catalog and parsed its spec with no target
+    # at all, so batching a user-mode DLL got the KERNEL catalog and the KERNEL spec. For
+    # an ntoskrnl path this resolves to the same thing it always did (no behaviour change).
+    target = resolve_target(args, dir_path)
+    catalog = build_catalog(arch=args.arch, target=target)
+    spec = parse_spec(target.spec_file) if target.spec_file else {}
 
     model = resolve_model(args.model)
     use_claude = model.startswith("claude-")
@@ -422,9 +429,9 @@ def cmd_batch(args):
         res = resolve(scan, catalog, spec)
         resolves[cf.name] = res
         if use_claude:
-            prompts[cf.name] = build_file_prompt(scan, res)
+            prompts[cf.name] = build_file_prompt(scan, res, target)
         else:
-            prompts[cf.name] = build_full_prompt(scan, res)
+            prompts[cf.name] = build_full_prompt(scan, res, target)
 
     print(f"\nSubmitting {len(prompts)} files to {model}...", file=sys.stderr)
     results = submit_batch(prompts, model=model, system_prompt=system_prompt)
@@ -1542,6 +1549,11 @@ def cmd_translate(args):
             sys_umbrella=rustconv_target.sys_umbrella,
             c_source_path=c_file,
             com_method_macro=rustconv_target.com_method_macro,
+            crate_module=(
+                getattr(rustconv_target, "crate_module", "")
+                if rustconv_target.crate_bindgen_files
+                else ""
+            ),
         )
 
         # --- Post-translation audits -------------------------------------
@@ -1671,7 +1683,7 @@ def cmd_estimate(args):
     for cf in c_files:
         scan = scan_file(cf)
         res = resolve(scan, catalog, spec)
-        prompt = build_full_prompt(scan, res)
+        prompt = build_full_prompt(scan, res, rustconv_target)
         tokens = estimate_tokens(prompt)
         lines = len(scan.raw_source.splitlines())
         total_input += tokens

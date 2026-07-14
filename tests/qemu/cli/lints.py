@@ -215,6 +215,15 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     ):
         t = repo / "tools" / rel
         specs.append((tool, [py, str(t)] if t.is_file() else ["MISSING"], "stdout"))
+    # Calling-convention alias table: every macro in the SDK headers that resolves to a
+    # convention (WSAAPI -> FAR PASCAL -> WINAPI -> __stdcall) must be known to
+    # rustconv's abi_enforce. It reads RAW C, so an UNKNOWN alias does not fail — it
+    # silently derives **cdecl**, which on i386 is a stack imbalance on every call the OS
+    # makes through the fn pointer, and it compiles/links/boots. 53 aliases today; the
+    # tool knew 9 until ws2_32 forced the issue (it would have mis-derived all 187
+    # exports). Baseline EMPTY = strict: a header that grows a new alias fails here.
+    vcm = repo / "tools" / "verify_conv_macros.py"
+    specs.append(("verify_conv_macros", [py, str(vcm)] if vcm.is_file() else ["MISSING"], "stdout"))
     # Inlined flag/constant-literal lint (AST/tree-sitter). verify_constants only
     # checks named `const` defs; this catches bare `0x2 /* TOP_LEVEL */` literals.
     # Carries residual FP classes (mask unions, informational args) → baseline gates NEW.

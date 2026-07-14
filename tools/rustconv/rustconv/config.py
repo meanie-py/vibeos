@@ -213,6 +213,19 @@ KERNEL32_DIR = REACTOS_ROOT / "dll" / "win32" / "kernel32"
 # DeviceIoControls down to afd.sys. Usermode DLL, same ntdll-sys substrate as
 # kernel32 (Nt*/Rtl*); winsock2/WSP + AFD shared.h IOCTL types added per-crate.
 MSAFD_DIR = REACTOS_ROOT / "dll" / "win32" / "msafd"
+# ws2_32.dll — the WinSock 2.2 library (dll/win32/ws2_32, ~14.2K LOC / 35 .c / 187
+# spec exports). The TOP of the netstack→winsock vertical, one rung above msafd:
+# apps call the public sockets API here and ws2_32 dispatches through its
+# transport-provider catalog into msafd's WSP* entry points. ROS-NATIVE (not
+# Wine-derived), so the clean shape the pipeline handles best.
+#
+# The .c files include NOTHING — inc/ws2_32.h is a PCH (add_pch in CMakeLists) that
+# pulls windef/winbase/winreg/winnls/winuser + ws2spi + NDK rtlfuncs + pseh2 +
+# ws2help + nsp_dns + iptypes + the private inc/ws2_32p.h. The scanner must resolve
+# against that PCH, and the object model it defines (TCATALOG/NSCATALOG/WSPROCESS/
+# WSTHREAD/WSSOCKET/WSASYNCBLOCK) is bindgen-generated into ws2_32-rust's own `types`
+# module by gen_driver_types.sh — imported per-file at integration, never transcribed.
+WS2_32_DIR = REACTOS_ROOT / "dll" / "win32" / "ws2_32"
 LSASRV_DIR = REACTOS_ROOT / "dll" / "win32" / "lsasrv"
 NTDLL_SYS_DIR = REACTOS_ROOT / "sdk" / "lib" / "rust" / "ntdll-sys" / "src"
 NTDLL_BINDGEN_FILES = {
@@ -318,6 +331,20 @@ class Target:
     arches: tuple = ("i386", "amd64", "arm64")  # supported arches
     win32k_bindgen_files: dict = field(default_factory=dict)  # arch → win32k-sys .rs (win32k only)
     winsrv_bindgen_files: dict = field(default_factory=dict)  # arch → winsrv-sys .rs (winsrv only)
+    # A CRATE-LOCAL bindgen island (arch → .rs), as produced by
+    # tools/rustconv/gen_driver_types.sh into <crate>/src/types_<arch>.rs. This is the
+    # GENERIC form of the win32k_/winsrv_ hooks above: any DLL/driver whose private
+    # object model is bindgen-generated rather than shared (ws2_32's TCATALOG/WSSOCKET/
+    # NSQUERY, msafd's SOCKET_INFORMATION, the driver fleet's device extensions) points
+    # here, and the resolver puts those symbols in the catalog under `crate_module`.
+    #
+    # WHY IT MATTERS: without this the island's names come back UNRESOLVED, and an
+    # unresolved name is not a no-op — the model dutifully invents a forward declaration
+    # for it (a guessed struct, a guessed const value), which compiles, links, and is
+    # silently wrong. Feeding the island to the resolver instead means the model is TOLD
+    # the exact generated type and imports it. Pair with crate_module="types".
+    crate_bindgen_files: dict = field(default_factory=dict)
+    crate_module: str = "types"  # module path the island is imported from (crate::<crate_module>)
     # FFI substrate crate the translated Rust imports from. Default is
     # the kernel crate with per-module paths (ntkrnl_sys::ddk/base/…).
     # A user-mode target (smss-csrss) sets sys_crate="ntdll_sys" +
@@ -1279,6 +1306,42 @@ TARGETS = {
         sys_umbrella="nt",
         system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
     ),
+    # ws2_32.dll — the WinSock 2.2 library (top of the netstack→winsock vertical,
+    # one rung above msafd). Usermode DLL, same ntdll-sys substrate; the winsock/
+    # ws2spi surface + the private object model (ws2_32p.h) come from ws2_32-rust's
+    # own bindgen `types` module, imported per-file at integration.
+    #
+    # spec_file is SET (unlike msafd's None) and that is deliberate: ws2_32.spec is
+    # the ground truth for all 187 exports, so the pipeline both TELLS the model which
+    # fns must be #[no_mangle] and can AUDIT the result against it afterwards
+    # (export_audit). A None spec is exactly how ole32 shipped StgCreateDocfile as a
+    # private Rust-ABI fn with `_StgCreateDocfile@16` simply absent from the DLL.
+    #
+    # Validated by the winsock round-trip in test_net.py (a real usermode nettest.exe
+    # driving TCP + UDP through ws2_32 → msafd → AFD → netstack), not by a boot — but
+    # that oracle only covers the hot path (~12 of 187 exports), so the deterministic
+    # auditors carry the breadth.
+    "ws2_32": Target(
+        name="ws2_32",
+        source_dir=WS2_32_DIR,
+        output_crate=RUST_DIR / "ws2_32-rust",
+        bindgen_files=NTDLL_BINDGEN_FILES,
+        hal_bindgen_files={},
+        crate_bindgen_files={
+            a: RUST_DIR / "ws2_32-rust" / "src" / f"types_{a}.rs"
+            for a in ("i386", "amd64", "arm64")
+        },
+        crate_module="types",
+        spec_file=WS2_32_DIR / "ws2_32.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=None,
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+        sys_crate="ntdll_sys",
+        sys_umbrella="nt",
+        system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
+    ),
     # lsasrv.dll — Local Security Authority server. Own lsasrv-rust crate; same
     # user-mode substrate as kernel32/ntdll (ntdll_sys::nt base, auto-collapsed).
     # The LSAPR_*/SAMPR_*/DSROLER marshalled + policy info types live in
@@ -1453,6 +1516,11 @@ def detect_target(c_path: Path) -> Target:
     # shared.h IOCTL types come from msafd-rust's own types, imported per-file.
     if "/dll/win32/msafd/" in posix:
         return TARGETS["msafd"]
+    # ws2_32.dll body (the WinSock 2.2 library — top of the netstack→winsock
+    # vertical). Own ws2_32-rust crate, same ntdll_sys::nt base; the winsock/ws2spi
+    # surface + the ws2_32p.h object model come from ws2_32-rust's bindgen `types`.
+    if "/dll/win32/ws2_32/" in posix:
+        return TARGETS["ws2_32"]
     # lsasrv.dll body (LSA server). Own lsasrv-rust crate, same user-mode
     # substrate as ntdll (ntdll_sys::nt base). LSAPR_*/DSROLER marshalled types
     # come from lsasrv-sys, imported per-file at integration.

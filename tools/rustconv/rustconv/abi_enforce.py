@@ -121,29 +121,107 @@ _CONV_NORM = {
 # `WINAPIV` is __cdecl (minwindef.h:114), NOT a WINAPI variant — listed
 # explicitly so nobody "fixes" it into the system bucket. (`\b` already keeps the
 # WINAPI pattern from matching it.)
-_CONV_KEYWORDS = (
-    "NTAPI",
-    "WINAPIV",
-    "WINAPI",
-    "APIENTRY",
-    "STDMETHODCALLTYPE",
-    "CALLBACK",
-    "PASCAL",
-    "FASTCALL",
-    "CDECL",
-)
+# The table below is the TRANSITIVE CLOSURE of every convention-aliasing macro in the
+# SDK headers, not a hand-picked list — because a single-level reading misses the
+# second-order aliases. `#define WSPAPI WSAAPI` (ws2spi.h:39) -> `#define WSAAPI FAR
+# PASCAL` (winsock2.h:578) -> `#define PASCAL WINAPI` -> `__stdcall`. We read the RAW C
+# text (not preprocessed output), so an unknown alias does NOT fall back to "unknown" —
+# `_derive_convention` returns **cdecl**, silently. On i386 that is a stack imbalance on
+# every call the OS makes through the pointer.
+#
+# ws2_32 is the case that forced this: EVERY one of its 187 exports is declared
+#   SOCKET
+#   WSAAPI
+#   socket(int af, int type, int protocol)
+# so before this table the whole DLL would have been derived cdecl. `SEC_ENTRY` (sspi.h)
+# does the same to secur32, `NET_API_FUNCTION` to netapi32, `WINGDIPAPI` to gdiplus,
+# `RPC_ENTRY`/`__RPC_USER` to rpcrt4 + every generated proxy, `DESK_EXT_CALLBACK` to the
+# desk control panel, `ACMAPI` to the audio codecs.
+#
+# ole32/oleaut32 escaped this only by luck: Wine's style writes `HRESULT WINAPI Foo(...)`
+# at definition sites and reserves STDAPI/WINOLEAPI for the *headers*. ROS-native code
+# (ws2_32, mswsock) puts the macro on the definition, so it does not get that luck.
+#
+# Regenerate with tools/verify_conv_macros.py --emit; `vibeos-cli check` runs it in
+# --check mode and FAILS if a header adds an alias this table doesn't know. Do not hand-
+# edit an entry without re-running it. Citations are file:line into the real headers.
+#
+# `WINAPIV` is __cdecl (minwindef.h:114), NOT a WINAPI variant — as are the other V-suffix
+# variadic forms (STDAPIV, VFWAPIV, STDMETHODVCALLTYPE, RPC_VAR_ENTRY). Listed explicitly
+# so nobody "fixes" them into the system bucket. (`\b` already keeps the WINAPI pattern
+# from matching WINAPIV.)
+#
+# `CALLBACK`/`PASCAL` are __stdcall (minwindef.h:109/:117). Missing them was not academic:
+# they mark the fns C hands to the OS as *function pointers* (an `EnumFontFamiliesEx` enum
+# proc, a `DialogBoxParam` DlgProc), so user32/gdi32 calls them through the pointer with
+# stdcall, and a Rust-ABI body there corrupts the i386 stack on a call we never make
+# ourselves. Their absence silently derived oleaut32's `font_enum_proc` (olefont.c) and
+# `property_sheet_proc` (olepropframe.c) as cdecl — caught by the census, 2026-07.
 _KW_TO_CONV = {
+    # --- __stdcall ("system") ---
     "NTAPI": "system",
-    "WINAPI": "system",
+    "WINAPI": "system",  # psdk/minwindef.h
     "APIENTRY": "system",
-    "STDMETHODCALLTYPE": "system",
     "STDCALL": "system",
-    "CALLBACK": "system",
-    "PASCAL": "system",
-    "FASTCALL": "fastcall",
+    "CALLBACK": "system",  # psdk/minwindef.h:109
+    "PASCAL": "system",  # psdk/minwindef.h:117
+    "pascal": "system",  # psdk/minwindef.h:100
+    "STDMETHODCALLTYPE": "system",  # psdk/basetyps.h:37
+    "STDAPICALLTYPE": "system",  # psdk/basetyps.h:39
+    "STDAPI": "system",  # psdk/basetyps.h:41  (EXTERN_C HRESULT STDAPICALLTYPE)
+    "STDMETHODIMP": "system",  # psdk/basetyps.h:43
+    "BOOLAPI": "system",  # psdk/winhttp.h:29  (BOOL WINAPI — type-led, so easy to miss)
+    "WINOLEAPI": "system",  # psdk/objbase.h:1054
+    "WSAAPI": "system",  # psdk/winsock2.h:578  (FAR PASCAL)
+    "WSPAPI": "system",  # psdk/ws2spi.h:39     (-> WSAAPI)
+    "SEC_ENTRY": "system",  # psdk/sspi.h:27
+    "NET_API_FUNCTION": "system",  # psdk/lmcons.h:7
+    "WINGDIPAPI": "system",  # psdk/gdiplusmem.h:22
+    "ACMAPI": "system",  # psdk/msacm.h
+    "VFWAPI": "system",  # psdk/vfw.h:26
+    "WMIAPI": "system",  # psdk/evntrace.h:8
+    "EVNTAPI": "system",  # psdk/evntprov.h:28
+    "IMAGEAPI": "system",  # psdk/imagehlp.h:84
+    "DBHLPAPI": "system",  # psdk/imagehlp.h:95
+    "INSTAPI": "system",  # psdk/odbcinst.h:11
+    "SQL_API": "system",  # psdk/sqltypes.h:8
+    "DWMAPI": "system",  # psdk/dwmapi.h:28
+    "PSSTDAPI": "system",  # psdk/propvarutil.h:27
+    "STRSAFEAPI": "system",  # psdk/strsafe.h:80
+    "STRSAFE_INLINE_API": "system",  # psdk/strsafe.h:81
+    "WINSNMPAPI": "system",  # psdk/winsnmp.h:34
+    "NETIOAPI_API": "system",  # psdk/netioapi.h:16
+    "NETIOAPI_API_": "system",  # psdk/netioapi.h:10
+    "PFAPIENTRY": "system",  # psdk/fltdefs.h:38
+    "NCB_POST": "system",  # psdk/nb30.h:91
+    "EXPENTRY": "system",  # psdk/ddeml.h:45
+    "DDAPI": "system",  # psdk/ddrawi.h:36
+    "APIPRIVATE": "system",  # psdk/wingdi.h
+    "CPSUICALLBACK": "system",  # psdk/compstui.h:812
+    "DESK_EXT_CALLBACK": "system",  # reactos/dll/desk/deskcplx.h:4
+    "MSGDUMP_API": "system",  # reactos/msgdump.h:30
+    "RPC_ENTRY": "system",  # psdk/rpc.h:63
+    "__RPC_API": "system",  # psdk/rpc.h:60
+    "__RPC_USER": "system",  # psdk/rpc.h:61
+    "__RPC_STUB": "system",  # psdk/rpc.h:62
+    "__RPC_CALLEE": "system",  # psdk/rpcndr.h:86
+    # --- __cdecl ---
     "CDECL": "cdecl",
-    "WINAPIV": "cdecl",
+    "WINAPIV": "cdecl",  # psdk/minwindef.h:114
+    "STDAPIV": "cdecl",  # psdk/basetyps.h:45
+    "STDAPIVCALLTYPE": "cdecl",  # psdk/basetyps.h:40
+    "STDMETHODIMPV": "cdecl",  # psdk/basetyps.h:47
+    "STDMETHODVCALLTYPE": "cdecl",  # psdk/basetyps.h:38
+    "VFWAPIV": "cdecl",  # psdk/vfw.h:27
+    "RPC_VAR_ENTRY": "cdecl",  # psdk/rpcndr.h:87
+    "EFIAPI": "cdecl",  # reactos/edk2/ProcessorBind.h:260
+    # --- __fastcall ---
+    "FASTCALL": "fastcall",
 }
+# Lookup priority. Longest-first so a V-suffix variadic form is never shadowed by its
+# stdcall stem (`\b` already prevents WINAPI from matching WINAPIV, but the ordering is
+# the belt to that suspenders — a future non-\b caller of this tuple stays correct).
+_CONV_KEYWORDS = tuple(sorted(_KW_TO_CONV, key=len, reverse=True))
 
 
 _COMMENT_RE = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)

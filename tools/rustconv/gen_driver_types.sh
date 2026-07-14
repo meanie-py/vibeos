@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|afd|msafd|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbport|uniata>}"
+DRIVER="${1:?usage: gen_driver_types.sh <acpi|classpnp|cdrom|cdfs|afd|msafd|ws2_32|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbport|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -583,6 +583,58 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
                -DDLL_EXPORT_VERSION=0x502 )
+    ;;
+  ws2_32)
+    # USERMODE Winsock 2.2 library (dll/win32/ws2_32) — the rung ABOVE msafd in the
+    # netstack→winsock vertical, and the TOP of it: the public Win32 sockets API that
+    # applications call. ws2_32 dispatches through the transport-provider catalog into
+    # msafd's WSP* entry points (which become IOCTL_AFD_* down to afd.sys). Same USERMODE=1
+    # treatment as msafd: blocklist against ntdll-sys and re-export `pub use ntdll_sys::nt::*;`
+    # so NT base types keep ONE identity across the whole vertical.
+    #
+    # Wrapper = inc/ws2_32.h, which IS the module's PCH (CMakeLists: `add_pch(ws2_32
+    # inc/ws2_32.h SOURCE)`). That matters: the .c files include NOTHING themselves — they
+    # rely entirely on the PCH having already pulled windef/winbase/winreg/winnls/winuser,
+    # ws2spi, the NDK rtlfuncs, pseh2, ws2help, nsp_dns, iptypes, and finally the private
+    # inc/ws2_32p.h. ws2_32p.h has no #includes of its own and does not compile standalone,
+    # so the PCH is the ONLY correct wrapper.
+    #
+    # The whole point of allowlisting ws2_32p.h is the object model: TCATALOG/TCATALOG_ENTRY/
+    # TPROVIDER (transport-provider catalog), NSCATALOG/NSPROVIDER/NSQUERY (namespace),
+    # WSPROCESS/WSTHREAD/WSSOCKET (the refcounted per-process/thread/socket objects), and
+    # WSASYNCBLOCK (the async window-message machinery). These are reference-counted C-with-
+    # objects with hot field access on every socket call — hand-transcribing them is exactly
+    # the offset-drift class `scan_magic_offsets` exists to catch, so GENERATE them.
+    #
+    # BLOCKLIST_FUNCS=1: ws2_32p.h declares the internal Ws*/Ns* prototypes (WsProcOpen,
+    # WsSockOpen, WsTcOpen, ...) that the translated modules themselves define — emitting them
+    # as externs here would collide under the flat `use crate::types::*` glob.
+    # BLOCKLIST_VARS=1: ws2_32 keeps module globals (WsProcess/WsAsyncQueue/startup lock).
+    # CALLBACK_SYSTEM=1: the LPWSP*/LPFN_*/upcall fn-ptr types must be extern "system" —
+    # on i386 these are stdcall, and a cdecl fn-ptr in a provider dispatch slot is a silent
+    # stack imbalance on every socket call (the ole32 CALLBACK class, one layer down).
+    #
+    # -DLE mirrors the module's own `add_definitions(-DLE)`; the extra -I matches its
+    # `include_directories(inc ${REACTOS_SOURCE_DIR}/sdk/include/reactos/winsock)`.
+    # Version macros track the global usermode build (DLL_EXPORT_VERSION default 0x502 →
+    # ws2help_static is NOT linked, so no ws2help static surface to model).
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    BLOCKLIST_VARS=1
+    CALLBACK_SYSTEM=1
+    DRIVER_DIR="${SRC}/dll/win32/ws2_32/inc"
+    WRAPPER_INC=$'#include "ws2_32.h"'
+    ALLOW_FILES=( --allowlist-file '.*ws2_32[/\\]inc[/\\]ws2_32p?\.h'
+                  --allowlist-file '.*[/\\]ws2spi\.h' --allowlist-file '.*[/\\]winsock2\.h'
+                  --allowlist-file '.*[/\\]winsock\.h' --allowlist-file '.*[/\\]ws2def\.h'
+                  --allowlist-file '.*[/\\]ws2help\.h' --allowlist-file '.*[/\\]nsp_dns\.h'
+                  --allowlist-file '.*[/\\]nspapi\.h' --allowlist-file '.*[/\\]svcguid\.h'
+                  --allowlist-file '.*[/\\]iptypes\.h' --allowlist-file '.*[/\\]wsahelp\.h'
+                  --allowlist-file '.*[/\\]mswsock\.h' )
+    EXTRA_INC=( -I"${SRC}/sdk/include/reactos/winsock" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 -DLE )
     ;;
   usbstor)
     # USB mass-storage class driver (drivers/usb/usbstor). All private structs are defined

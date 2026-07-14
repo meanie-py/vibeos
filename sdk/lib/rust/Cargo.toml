@@ -38,6 +38,7 @@ members = [
     "cdfs-rust",
     "afd-rust",
     "msafd-rust",
+    "ws2_32-rust",
     "access",
     "avltable",
     "bitmap",

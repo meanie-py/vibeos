@@ -1861,7 +1861,7 @@ _KNOWN_USER_SYS_CRATES = {
 }
 
 
-def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str) -> str:
+def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str, crate_module: str = "") -> str:
     """Deterministically retarget a user-mode translation's FFI imports.
 
     rustconv's prompt/catalog are kernel-oriented, so the LLM emits
@@ -1871,8 +1871,24 @@ def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str) -> str:
     `ntkrnl_sys::<mod>::` to `<sys_crate>::<sys_umbrella>::` and
     replaces the now-redundant explicit `use` lines with a single glob
     — LLM-independent, mirrors enforce_win32k_abi philosophy.
+
+    `crate_module` (e.g. "types") EXEMPTS the target's crate-local bindgen island
+    from that collapse and sends it to `crate::<crate_module>::` instead. It must run
+    FIRST, because the blanket `ntkrnl_sys::\\w+::` rule below would otherwise swallow
+    `ntkrnl_sys::types::` into the sys umbrella — and those symbols are NOT there.
+    ws2_32's `PWSSOCKET`/`TCATALOG`/`SOCKET_ERROR` live in ws2_32-rust's own generated
+    `types` module, so collapsing them onto `ntdll_sys::nt` yields an unresolved-import
+    wall at best, and at worst binds to a same-named-but-different NT symbol.
     """
     pfx = f"{sys_crate}::{sys_umbrella}::"
+    # 0. Crate-local bindgen island (gen_driver_types.sh) → `crate::<module>::`.
+    #    MUST precede the blanket collapse in step 1.
+    if crate_module:
+        code = re.sub(
+            rf"\b(?:ntkrnl_sys|{re.escape(sys_crate)})::{re.escape(crate_module)}::",
+            f"crate::{crate_module}::",
+            code,
+        )
     # 1. Any ntkrnl_sys::<module>:: (incl. nested) → <crate>::<umbrella>::
     code = re.sub(r"\bntkrnl_sys::\w+::", pfx, code)
     # 1b. Sibling user-mode substrate crates the LLM may have guessed wrong
@@ -2026,6 +2042,7 @@ def postprocess(
     sys_umbrella: str | None = None,
     c_source_path: Path | None = None,
     com_method_macro: str | None = None,
+    crate_module: str = "",
 ) -> str:
     """Apply all post-processing transforms to LLM-generated Rust code.
 
@@ -2118,7 +2135,7 @@ def postprocess(
     # oriented prompt produced onto the user-mode substrate umbrella.
     # Last (after all import fixes have settled).
     if sys_umbrella:
-        code = collapse_sys_crate(code, sys_crate, sys_umbrella)
+        code = collapse_sys_crate(code, sys_crate, sys_umbrella, crate_module)
         code = strip_user_inline_redeclarations(code)
         code = drop_pseh_macro_externs(code)
         code = fix_utf16_vec_literals(code)

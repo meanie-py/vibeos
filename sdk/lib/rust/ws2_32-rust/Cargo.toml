@@ -1,0 +1,36 @@
+# ws2_32-rust — Rust translation of dll/win32/ws2_32 (the WinSock 2.2 library).
+# staticlib → libws2_32_rust.a, cohab-linked into the cmake-built ws2_32.dll with
+# the translated .c files commented out (per-file flip, like msafd-rust/kernel32-rust).
+#
+# The TOP rung of the netstack→winsock vertical: applications call the public Win32
+# sockets API here (socket/connect/send/recv/select/WSAStartup/...); ws2_32 dispatches
+# through its transport-provider catalog into msafd's WSP* entry points, which become
+# IOCTL_AFD_* DeviceIoControls down to afd.sys → netstack → smoltcp. That whole path is
+# covered end-to-end by tests/qemu/test_net.py::test_usermode_winsock_roundtrip (a real
+# usermode nettest.exe doing TCP + UDP round-trips), so unlike ole32/oleaut32 this
+# translation has a LIVE runtime oracle in the gate — use it, but note it exercises the
+# hot path (~12 of 187 exports), not the breadth. The deterministic auditors
+# (export_audit vs the .spec, audit_abi, table_audit) carry the rest.
+#
+# User-mode DLL: standard per-arch targets (i686/x86_64 gnu, aarch64 gnullvm) with i386
+# -sse,-sse2 (user-mode no-SSE rule). Nt*/Rtl* FFI from ntdll-sys; the winsock/ws2spi
+# surface AND the module's private object model (TCATALOG/NSCATALOG/WSPROCESS/WSTHREAD/
+# WSSOCKET/WSASYNCBLOCK from inc/ws2_32p.h) are bindgen-GENERATED per arch into the
+# `types` module by tools/rustconv/gen_driver_types.sh — not hand-transcribed, because
+# those are refcounted objects with hot field access on every socket call and a
+# mis-transcribed offset is a silent ABI break (the scan_magic_offsets class).
+[package]
+name = "ws2_32-rust"
+version = "0.1.0"
+edition = "2021"
+# staticlib cohab crate only — stop Cargo auto-discovering any src/main.rs.
+autobins = false
+
+[lib]
+name = "ws2_32_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }
