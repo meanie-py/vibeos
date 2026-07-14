@@ -268,10 +268,7 @@ extern "C" {
     fn StorPortNotification(NotificationType: u32, HwDeviceExtension: PVOID, ...) -> ULONG;
 }
 
-/// `AhciDebugPrint(format, ...)` — debug macro (expands to DbgPrint in debug builds).
-/// No-op in Rust: debug prints are unavailable at cohab link time and not needed for correctness.
-#[inline]
-pub unsafe extern "C" fn AhciDebugPrint(_level: *const i8, _args: ...) {}
+// AhciDebugPrint is now a macro (see lib.rs) — stable Rust cannot define a C-variadic fn.
 
 /// `StorPortCopyMemory(Dest, Src, Len)` — C macro wrapper around `memcpy`.
 #[inline]

@@ -584,7 +584,13 @@ pub unsafe extern "system" fn ClientThreadSetupHelper(IsCallback: BOOL) -> BOOL 
         gSharedInfo = UserCon.siClient;
         gpsi = gSharedInfo.psi;
         gHandleTable = gSharedInfo.aheList as PUSER_HANDLE_TABLE;
-        gHandleEntries = SharedPtrToUser((*gHandleTable).handles as PVOID) as PUSER_HANDLE_ENTRY;
+        // WoW64: the shared handle table is 64-bit-laid-out, so `handles` is at the
+        // wrong offset here and gHandleEntries would be a garbage pointer.
+        // GetUser32Handle() reads entries through crate::wow64 instead.
+        crate::wow64::UserWow64Init();
+        if !crate::wow64::IsWow64() {
+            gHandleEntries = SharedPtrToUser((*gHandleTable).handles as PVOID) as PUSER_HANDLE_ENTRY;
+        }
     }
 
     if RegisterClientPFN() == 0 {
@@ -660,7 +666,8 @@ pub unsafe extern "system" fn Init(UserCon: PUSERCONNECT) -> BOOL {
         gSharedInfo = (*UserCon).siClient;
         gpsi = gSharedInfo.psi;
         gHandleTable = gSharedInfo.aheList as PUSER_HANDLE_TABLE;
-        if !gHandleTable.is_null() {
+        crate::wow64::UserWow64Init();
+        if !gHandleTable.is_null() && !crate::wow64::IsWow64() {
             gHandleEntries = SharedPtrToUser((*gHandleTable).handles as *mut core::ffi::c_void) as PUSER_HANDLE_ENTRY;
         }
     }

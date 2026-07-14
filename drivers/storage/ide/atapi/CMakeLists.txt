@@ -27,7 +27,6 @@ add_custom_command(
     OUTPUT ${ATAPI_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${ATAPI_RUST_TARGET_DIR}
-        RUSTC_BOOTSTRAP=1
         RUSTFLAGS=${ATAPI_RUST_RUSTFLAGS}
         cargo build --release --target ${ATAPI_RUST_TARGET}
             -p atapi-rust

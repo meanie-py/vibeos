@@ -332,6 +332,13 @@ class Target:
     # user-mode specifics (ntdll_sys::nt umbrella, FORCEINLINE
     # NtCurrent*/_PEB/_TEB, user-mode not kernel-mode).
     system_prompt_addendum: Path | None = None
+    # Name of the crate's stdcall-wrapper macro for COM vtbl methods, if it has
+    # one. A C `static … WINAPI` method is __stdcall on i386, and rustc will not
+    # unify `extern "system"` with the `extern "stdcall"` fn type bindgen gives
+    # the vtbl slot — so each body needs a per-arch cfg pair. With a macro named
+    # here, abi_enforce emits one `stdmethod! { … }`; without it, the body is
+    # duplicated under two cfgs (correct, just verbose). See abi_enforce.py.
+    com_method_macro: str | None = None
 
 
 TARGETS = {
@@ -1570,18 +1577,52 @@ def _dll_crate_from_path(posix: str):
     return name, REACTOS_ROOT.joinpath(*sub)
 
 
+def _detect_com_method_macro(crate: Path) -> str | None:
+    """ "stdmethod" if the target crate defines that macro, else None.
+
+    Detected, not assumed: emitting `stdmethod! { … }` into a crate that lacks the
+    macro is a build break, and hardcoding a list of "COM crates" rots. Absent the
+    macro, abi_enforce falls back to the inline cfg-dual, which is always correct.
+    """
+    src = crate / "src"
+    if not src.is_dir():
+        return None
+    for f in src.rglob("*.rs"):
+        try:
+            if "macro_rules! stdmethod" in f.read_text(errors="replace"):
+                return "stdmethod"
+        except OSError:
+            continue
+    return None
+
+
+def _find_dll_spec(name: str, source_dir: Path) -> Path | None:
+    """The DLL's own .spec — the ground truth for which fns must be exported.
+
+    This used to be None for every user-mode DLL, so the pipeline had no idea
+    which functions were exports: it neither told the model nor enforced
+    #[no_mangle]. That is how ole32's `StgCreateDocfile` came back a private
+    Rust-ABI fn with `_StgCreateDocfile@16` simply absent from the DLL.
+    A few dirs ship more than one .spec (msvfw32, uxtheme, winmm) — <dirname>.spec
+    is the one their CMakeLists feeds to spec2def.
+    """
+    cand = source_dir / f"{name}.spec"
+    return cand if cand.is_file() else None
+
+
 def make_user_dll_target(name: str, source_dir: Path) -> "Target":
     """A self-contained user-mode-DLL target (modeled on userinit/winlogon):
     output to sdk/lib/rust/<name>-rust, ntdll_sys substrate (provides the NT/Rtl
     types Wine code uses via winternl; Win32 APIs get forward-declared by the
     mechanical prompt). Used for standalone dll/win32/* DLLs not in TARGETS."""
+    crate = RUST_DIR / f"{name}-rust"
     return Target(
         name=name,
         source_dir=source_dir,
-        output_crate=RUST_DIR / f"{name}-rust",
+        output_crate=crate,
         bindgen_files=NTDLL_BINDGEN_FILES,
         hal_bindgen_files={},
-        spec_file=None,
+        spec_file=_find_dll_spec(name, source_dir),
         system_prompt=TEMPLATES_DIR / "system_prompt.md",
         src_subdir=None,
         cmake_deps_file=None,
@@ -1590,6 +1631,7 @@ def make_user_dll_target(name: str, source_dir: Path) -> "Target":
         sys_crate="ntdll_sys",
         sys_umbrella="nt",
         system_prompt_addendum=TEMPLATES_DIR / "system_prompt_user.md",
+        com_method_macro=_detect_com_method_macro(crate),
     )
 
 

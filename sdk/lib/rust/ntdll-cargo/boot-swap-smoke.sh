@@ -21,8 +21,7 @@ cd "$(dirname "$0")/../../../.."  # → repo root
 arch="${1:-i386}"
 module="${2:-ntdll}"
 case "$arch" in
-  i386)  tgt="i686-kernel" ;;
-  amd64) tgt="x86_64-kernel" ;;
+  i386|amd64) ;;
   *) echo "usage: $0 [i386|amd64] [ntdll|ntdll_vista]  (arm64 has no livecd)" >&2; exit 2 ;;
 esac
 case "$module" in
@@ -30,9 +29,13 @@ case "$module" in
   ntdll_vista) crate="ntdll_vista-cargo"; dll="build-$arch/dll/ntdll/nt_0600/ntdll_vista.dll" ;;
   *) echo "module must be ntdll or ntdll_vista" >&2; exit 2 ;;
 esac
+# Shared cargo-invocation policy (builtin triple on amd64, nightly + build-std
+# on i386). Sets CELL_TARGET / CELL_STEM / CELL_STD / CELL_TOOLCHAIN.
+VIBEOS_ROOT="$PWD" . sdk/lib/rust/cargo-cell-args.sh
+cell_args "$arch" "$crate" || exit 2
 
 BUILD="build-$arch"
-CARGO_OUT="sdk/lib/rust/target/$tgt/release/$module.exe"
+CARGO_OUT="sdk/lib/rust/target/$CELL_STEM/release/$module.exe"
 BAK="$dll.cmake-bak"
 
 [ -d "$BUILD" ] || { echo "$BUILD/ missing — run cmake first." >&2; exit 1; }
@@ -51,11 +54,11 @@ trap restore EXIT
 echo "[1/5] cmake baseline ($arch $module → sibling .a + cmake DLL) ..."
 ( cd "$BUILD" && ninja "$module" >/dev/null )
 
-echo "[2/5] Cargo build ($crate, $tgt) ..."
-( cd sdk/lib/rust && cargo +nightly build --release \
-    --target "$crate/$tgt.json" \
-    -Z build-std=core,alloc,compiler_builtins \
-    -Z build-std-features=compiler-builtins-mem \
+echo "[2/5] Cargo build ($crate, $CELL_STEM) ..."
+# shellcheck disable=SC2086  # CELL_TOOLCHAIN/CELL_STD are deliberately word-split
+( cd sdk/lib/rust && cargo $CELL_TOOLCHAIN build --release \
+    --target "$CELL_TARGET" \
+    $CELL_STD \
     -p "$crate" --bin "$module" )
 test "$(head -c2 "$CARGO_OUT")" = "MZ" || { echo "FAIL: cargo $module not a PE"; exit 1; }
 

@@ -86,16 +86,19 @@ extern "C" {
 }
 
 // CRT helpers used by the registry/console paths (driver_ddk + ntkrnl-sys provides
-// swprintf/wcslen; _strnicmp & the *snprintf/strncpy come from the C runtime libs).
+// swprintf/wcslen; _strnicmp & strncpy come from the C runtime libs).
 extern "C" {
     fn _strnicmp(a: PCCHAR, b: PCCHAR, n: usize) -> core::ffi::c_int;
     fn strncpy(dst: *mut CHAR, src: *const CHAR, n: usize) -> *mut CHAR;
-    // _vsnprintf with the Rust c_variadic VaList (matches the scsiport-rust pattern).
-    fn _vsnprintf(
+    // vibeos_vsnprintf — the `_vsnprintf` forwarder in drivers/storage/ide/uniata/
+    // rust_varargs_shim.c. Stable Rust cannot name a `va_list` (`c_variadic`,
+    // rust-lang#44930), so it holds a POINTER to the C frame's va_list and the shim
+    // derefs it into the real ntoskrnl `_vsnprintf`. Buffer + NUL termination stay here.
+    fn vibeos_vsnprintf(
         buf: *mut CHAR,
         n: usize,
         fmt: *const CHAR,
-        ap: core::ffi::VaList,
+        ap: *mut core::ffi::c_void,
     ) -> core::ffi::c_int;
 }
 
@@ -3316,18 +3319,25 @@ pub unsafe extern "system" fn AtapiAdapterControl(
 }
 
 // ===========================================================================
-//  _PrintNtConsole  (sole _cdecl variadic export-ish helper; not #[no_mangle])
+//  _PrintNtConsole  (sole _cdecl variadic helper)
 // ===========================================================================
 const DEBUG_MSG_BUFFER_SIZE: usize = 512;
 
-pub unsafe extern "C" fn _PrintNtConsole(DebugMessage: PCCH, mut args: ...) {
+/// Fixed-arity twin of the `_PrintNtConsole` C-variadic entry point in
+/// `drivers/storage/ide/uniata/rust_varargs_shim.c`. The C side exists only to do the
+/// `va_start` that stable Rust cannot (`c_variadic`, rust-lang#44930); `ap` is a pointer
+/// to its `va_list`. All the logic — the 512-byte buffer, the NUL termination, the
+/// HalDisplayString call — lives here; C only forwards the list into `_vsnprintf`.
+/// Call sites keep calling `_PrintNtConsole(...)` (the extern variadic decl in types_*.rs).
+#[no_mangle]
+pub unsafe extern "C" fn _PrintNtConsole_v(DebugMessage: PCCH, ap: *mut core::ffi::c_void) {
     let mut dbg_print_tmp_buff: [UCHAR; DEBUG_MSG_BUFFER_SIZE] = [0; DEBUG_MSG_BUFFER_SIZE];
 
-    _vsnprintf(
+    vibeos_vsnprintf(
         dbg_print_tmp_buff.as_mut_ptr() as *mut CHAR,
         DEBUG_MSG_BUFFER_SIZE - 1,
         DebugMessage as *const CHAR,
-        args.as_va_list(),
+        ap,
     );
 
     dbg_print_tmp_buff[DEBUG_MSG_BUFFER_SIZE - 1] = 0;

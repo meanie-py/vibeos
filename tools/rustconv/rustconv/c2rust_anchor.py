@@ -21,6 +21,7 @@ Output lands at DIR/src/<stem>.rs.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import shutil
@@ -36,6 +37,25 @@ from .config import REACTOS_ROOT
 # vs the translation target is harmless.
 _DB_BUILD_DIRS = ["build-amd64", "build-arm64", "build-i386"]
 
+# Builds run at a CANONICAL bind-mount path (tools/canon-run.sh, default
+# /tmp/vibeos) so ccache/sccache keys match across worktrees. Every path in
+# compile_commands.json is therefore spelled /tmp/vibeos/... — a path that only
+# resolves INSIDE a live build's mount namespace. c2rust runs outside it, so
+# every consumed path must be mapped back onto the real checkout. The mount is a
+# bind of exactly this tree, so the rewrite is a plain prefix swap.
+_CANON_ROOT = os.environ.get("VIBEOS_CANON", "/tmp/vibeos").rstrip("/")
+
+
+def _decanon(s: str) -> str:
+    """Map canonical-build paths back onto this checkout (no-op if absent).
+
+    Substring, not prefix: the flags arrive attached (`-I/tmp/vibeos/sdk/include`),
+    so anchoring at the start of the token would miss every include path.
+    """
+    if not _CANON_ROOT:
+        return s
+    return s.replace(_CANON_ROOT, str(REACTOS_ROOT))
+
 
 def _find_db_entry(c_file: Path) -> tuple[dict, Path] | None:
     """Return (entry, build_dir) for c_file from the first build db that has it."""
@@ -50,7 +70,7 @@ def _find_db_entry(c_file: Path) -> tuple[dict, Path] | None:
         except Exception:
             continue
         for e in db:
-            if str(Path(e["file"]).resolve()) == cf:
+            if str(Path(_decanon(e["file"])).resolve()) == cf:
                 return e, (REACTOS_ROOT / bd)
     return None
 
@@ -65,10 +85,10 @@ def _extract_clang_flags(entry: dict) -> list[str]:
     while i < len(toks):
         t = toks[i]
         if t.startswith("-D") or t.startswith("-I") or t.startswith("--target"):
-            keep.append(t)
+            keep.append(_decanon(t))
         elif t in ("-isystem", "-include", "-imacros") and i + 1 < len(toks):
             keep.append(t)
-            keep.append(toks[i + 1])
+            keep.append(_decanon(toks[i + 1]))
             i += 1
         i += 1
     return keep

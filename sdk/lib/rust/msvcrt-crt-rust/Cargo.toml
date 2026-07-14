@@ -1,0 +1,44 @@
+# msvcrt-crt-rust — the user-mode msvcrt.dll CRT-body cohab staticlib.
+#
+# "assemble the Rust CRT from pieces": this crate is the SCOPED override that
+# feeds msvcrt.dll's body (`msvcrt_static`) one pure-algorithm family at a
+# time. It links into the cmake `msvcrt` MODULE *before* `msvcrt_static`, so
+# lld first-match selects these Rust symbols and the C monolith's copies
+# (`dll/win32/msvcrt/string.c` etc.) go dead — the standard
+# --allow-multiple-definition cohab (like libcntpr.cmake's cnt-rust swap).
+#
+# It depends on `cnt-rust` with `default-features = false` so ONLY `core_rs`
+# (the difftest-pinned single-source-of-truth logic) compiles — no `cabi`,
+# so cnt-rust's 208 #[no_mangle] symbols do NOT leak into this .a. Each wave
+# hand-exports exactly the family being flipped, delegating the actual
+# formatting to `cnt_rust::core_rs::*`. This keeps the flip surgical and the
+# logic un-duplicated.
+#
+# Wave 1 (2026-07-12): the int↔string radix family (_itoa/_ltoa/_ultoa/
+# _i64toa/_ui64toa + wide twins). Semantics verified identical to msvcrt's
+# `ltoa_helper` (sign only radix==10, unsigned reinterpret otherwise,
+# lowercase digits, no NULL/radix guards). See
+# docs/engineering/active-lanes/msvcrt-from-pieces-plan.md Phase A/B.
+
+[package]
+name = "msvcrt-crt-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# A plain rlib. The staticlib that msvcrt.dll links is the sibling
+# `msvcrt-crt-cargo` umbrella (the repo's standard `*-rust` + `*-cargo` split).
+#
+# Keeping this an rlib is what lets the host harness `msvcrt-difftest` link
+# THIS crate — the code that actually ships — and fuzz it against the genuine
+# msvcrt C. Waves 1-2 graded cnt-rust's `cabi` shims as a proxy, which was
+# sound only while the wrappers were verbatim copies of them; wave 3's wrappers
+# deliberately ADAPT cnt-rust (unsigned-char contract, clamped returns, two
+# msvcrt-contract ports), so the proxy would no longer be the artifact.
+# Grade the artifact. See msvcrt-crt-cargo/Cargo.toml for why the split is
+# structurally forced (crate-type is not feature-conditional).
+path = "src/lib.rs"
+
+[dependencies]
+cnt-rust = { path = "../cnt-rust", default-features = false }
+msvcrt-sys = { path = "../msvcrt-sys" }

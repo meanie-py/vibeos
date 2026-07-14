@@ -504,17 +504,74 @@ window is created, the pump runs — **an x86 program owns a real window on the
 arm64 desktop.** win32.exe exits `0x600E` (window+callbacks OK; WM_PAINT is
 M9). Native i386/amd64/arm64 unaffected (arch-gated / runtime-flagged).
 
-## M9 (OWED): WM_PAINT delivery for the WoW64 window
+## M8.5 (2026-07-12): default-cursor marshalling — win32.exe gets its FULL message set
 
-The M8 window is created + shown (all server-side inside the one
-`NtUserCreateWindowEx` syscall) and the pump returns messages, but no WM_PAINT
-reaches the guest. Next: trace win32k's paint-region scan
-(`IntGetPaintMessage`/`co_IntPeekMessage` QS_PAINT path) for the WoW64 window —
-either the window isn't being marked dirty on show, or the pump-delivered MSG
-marshalling drops/duplicates messages so the queue never reaches the
-"empty → synthesize WM_PAINT" state (54 GetMessage=>1 with no dispatch effect
-is the symptom to chase first). Once WM_PAINT paints the client rect, win32.exe
-hits `0x600D` and the door to a real windowed app (→ Doom) is open.
+Fixed a real BUGCHECK 0x1E on the way to M9 (field manual §9.58a). `win32.exe`
+registers with `hCursor=NULL`, so window creation loads `IDC_ARROW`:
+`NtUserSetCursorIconData` + `NtUserFindExistingCursorIcon` take module/resource
+`UNICODE_STRING`s that were **passthrough** thunks → the guest's 32-bit
+`UNICODE_STRING` (4-aligned) hit win32k's `ProbeForRead(.,16,8)` →
+`STATUS_DATATYPE_MISALIGNMENT` → 0x1E. Fix: manual marshallers widening both
+strings 8→16 + repacking `CURSORDATA` 0x58→0x88 (`wow64_manual.c`), added to
+`manual-win32k.txt`. Post-fix the window creates and the guest wndproc receives
+its **full** message set through the callback bridge (WM_NCCREATE, WM_NCCALCSIZE,
+WM_CREATE, WM_SHOWWINDOW, WM_NCPAINT, WM_ERASEBKGND, WM_ACTIVATE, WM_SIZE,
+WM_MOVE, …). Also added an **on-entry** win32k syscall trace (`[WOW64>]`, gated
+on `Wow64TraceSyscalls`) so a thunk that *faults* the kernel still names itself.
+
+## M9 (DONE — `win32.exe` 0x600D): the 32-bit client view of USER's shared structures
+
+**win32.exe now creates a window, receives WM_PAINT, and paints its client rect
+through the native arm64 win32k.** `0x600E → 0x600D`; `gui32` stays `0x600D`.
+Full writeup + the reusable lessons: field manual **§9.58b**.
+
+The symptom was that `PeekMessageA` returned `WM_PAINT` with the right hwnd 200×
+(win32k's paint path was always correct) but the guest never dispatched it —
+`user32!DispatchMessageA` calls `ValidateHwnd()` first and silently `return 0`s on
+NULL, with no syscall.
+
+**Root cause — a layout problem, not a mapping one.** user32 reads three things
+*straight out of shared memory with no syscall*, and all three are laid out by a
+64-bit kernel:
+1. the shared **USER handle table** (`gSharedInfo.aheList`) — what `ValidateHwnd` indexes,
+2. the desktop heap's **WND / CLS** objects, via `DesktopPtrToUser()`,
+3. **DESKTOPINFO** (`pvDesktopBase`/`pvDesktopLimit`/`fsHooks`/`spwnd`).
+
+They are already *addressable* by the guest (win32k maps them <4GB for WoW64 procs
+via `W32Wow64ZeroBits`) — just not *parseable*. Shadowing only (1) kernel-side (the
+first instinct, and what the earlier attempt did) fixes validation and then walks
+straight into (2): the guest dereferences the now-validated WND and AVs. So the fix
+is **client-side**, mirroring the M6/M7 GDI pattern exactly:
+
+- **`user32-rust/src/wow64.rs`** (new) — `g_UserWow64` (detected at connect via
+  `ProcessWow64Information`, like `GdiProcessSetup`), the `*64` shapes (`Wnd64`,
+  `Cls64`, `DesktopInfo64`, `UserHandleTable64`/`Entry64`), and a normalizing view
+  over each. WND/CLS become cached **snapshots** — sound because the client's
+  desktop-heap mapping is `PAGE_READONLY`, so user32 never writes through a `PWND`.
+  Typed `desktop_wnd_to_user()`/`desktop_cls_to_user()` replace the ~25 raw
+  `DesktopPtrToUser(x->spwnd*/pcls)` sites.
+- **`win32k-rust/src/wow64.rs`** (new) — win32k writes CLIENTINFO into the **64-bit**
+  TEB, but a WoW64 guest reads it from **TEB32**, which was therefore all zeros
+  (`ulClientDelta == 0`, `pDeskInfo == NULL` — the actual reason the guest computed a
+  raw kernel pointer). `Wow64PublishClientInfo()` projects it into a `ClientInfo32`
+  in TEB32 at thread init + desktop assignment.
+- **Layout tripwire** — `user32-rust` also builds natively for amd64/arm64, so a
+  `#[cfg(not(target_arch = "x86"))] mod layout_guard` asserts each `*64` shape still
+  *is* the real struct (size + per-field `offset_of!`). It caught a bogus padding word
+  in `Cls64` on the first compile. `ntuser.h` drift now breaks the 64-bit build instead
+  of silently corrupting WoW64 clients.
+
+**Owed, but LOUD:** `MENU`/`ITEM`, `HOOK`, `SBINFO` are desktop-heap objects with
+pointers and have no `*64` shape yet (nothing on the M9 path reaches them).
+`wow64_unsupported()` prints a one-shot warning naming the type instead of letting a
+32-bit client silently walk a 64-bit `MENU`. First WoW64 app that needs menus turns
+that print into the work order.
+
+**Gotcha worth repeating:** the guest's `user32.dll`/`gdi32.dll` are staged from
+**`build-i386/`**. An arm64-only rebuild ships a *stale* client — and the kernel half
+alone against a stale client is actively harmful (`0x600E` → `0xC000001D`, wild jump),
+because a non-zero `ulClientDelta` makes the unmodified client start translating
+pointers with 32-bit offsets into 64-bit structs. Rebuild **both** arches.
 
 *Same divergence class still owed elsewhere (next layers toward Doom):*
 - **TEB GdiTebBatch GDIBS\* batch commands** — gui32 didn't batch; the
@@ -522,6 +579,55 @@ hits `0x600D` and the door to a real windowed app (→ Doom) is open.
 - **user32 HANDLEENTRY / SERVERINFO / desktop-heap structs** — the M8 pump path
   exercises SHAREDINFO reads; deeper window ops (subclassing, prop lists) will
   surface more 32/64 divergence in the user handle table.
+
+## M10: file I/O — the `IO_STATUS_BLOCK` family
+
+The first thing Doom does is `ReadFile` a WAD, and that path was quietly broken.
+
+`IO_STATUS_BLOCK` ends in `ULONG_PTR Information` — **4 bytes in the guest, 8 on
+the host**. So the guest's struct is 8 bytes and the host kernel writes 16. Yet
+`NtReadFile`, `NtWriteFile`, `NtQueryInformationFile`, `NtSetInformationFile`,
+`NtQueryVolumeInformationFile` and `NtFlushBuffersFile` were never listed in
+`tools/wow64gen/manual.txt`, so wow64gen **auto**-thunked them: it handed the
+guest's 8-byte IOSB straight through. Two bugs at once — an 8-byte overflow past
+the guest struct, and an `Information` read from the wrong offset (i.e. every
+`ReadFile` byte count was garbage). This is exactly the failure wow64gen's manual
+list exists to prevent; the names were simply missing from it. *Lesson: the
+deep-marshal list is only as good as its audit — the generator cannot infer
+struct-ness from a `.spec`, so a syscall taking a divergent struct is silently
+wrong until somebody puts it on the list.*
+
+Fixed in `dll/win32/wow64/wow64_manual.c`: all six, plus `NtQueryDirectoryFile`
+(which additionally takes a `PUNICODE_STRING` search mask). The remaining IOSB
+takers (`NtLockFile`, `NtQueryEaFile`, `NtCancelIoFile`, `NtNotifyChangeKey`,
+`NtDeviceIoControlFile`, …) are now on the manual list too, so they fail **loud**
+instead of silently corrupting — implement on demand.
+
+**Async is the hazard, and we do not take it.** The host IOSB we marshal into
+lives on the thunk's stack frame. Returning `STATUS_PENDING` would leave the
+kernel holding a pointer into a frame that is about to die — the dead-frame-IOSB
+corruption class (field manual §9.36, which cost this project real days). So:
+
+- an explicit async request (guest passed an `Event` or an APC routine) is
+  **refused loudly before the call is issued** — no IRP, no corruption;
+- if the host pends anyway (async handle, guest polling its IOSB), we **block on
+  the file handle** until completion rather than return over a live pointer into
+  a dead frame.
+
+*Owed — the real async fix is kernel-side*, and it is what NT itself does: I/O
+completion should write an `IO_STATUS_BLOCK32` when the requesting process is
+WoW64 (NT gates this on `IoIs32bitProcess(Irp)`). Our single choke point is
+`*(*Irp).UserIosb = (*Irp).IoStatus;` in `iomgr-rust/src/irp.rs`. It needs care:
+64-bit code (wow64.dll, the 64-bit ntdll) *also* runs in a WoW64 process and
+passes genuine 64-bit IOSBs, so the gate must be per-IRP (captured at syscall
+entry), never merely "the process is WoW64". Until that lands, async file I/O
+from a guest is refused rather than mis-served.
+
+Oracle: **`file32.exe`** (`tools/fex/hello-compute/File32.c`, launched by
+winlogon's `TryStartWow64File`) — opens a real file, checks `GetFileSize`, reads
+it and **asserts the returned byte count**, seeks and re-reads, round-trips a
+write, and enumerates a directory. The byte count *is* `IOSB.Information`, so a
+regression in this marshalling cannot pass the test.
 
 *Still deferred (owed, the next milestones):*
 - **advapi32.dll / usp10.dll (i386) staging** — user32 imports them; the loader
@@ -589,3 +695,162 @@ shuffle. No emulator. (x86-on-x64 "for free" once C+D exist.)
   practical (wow64.dll is a clean greenfield candidate).
 - Every phase lands behind the existing gates: arm64 boots must stay green;
   x86 arches untouched by arch-gated exports (§9.43 ordinal discipline).
+
+## M11: the first STOCK binary — `testgui.exe` (i386, unmodified) under WoW64
+
+**Why.** Every guest through M10 was written by us, and a guest you author can only
+test what you thought of — worse, it silently *avoids* whatever the layer doesn't
+support, because you never wrote the call that would have tripped it. M11 stops
+authoring guests: it runs `base/applications/testgui` built for i386 exactly as the
+LiveCD ships it (real `msvcrt` CRT startup, real import table, real window + child
+EDIT control). Full writeup + the five bugs it flushed out: field manual **§9.67**.
+
+**Result.** The stock binary reaches `wWinMain` → `RegisterClassExW` →
+`CreateWindowExW` → `WM_CREATE`, and then dies in *exactly the same place as the
+NATIVE arm64 build of the same source* — a pre-existing user32 EDIT-control bug
+(`EDIT_LockBuffer` → `LocalLock` returns NULL), not a WoW64 bug. That identical
+failure IS the milestone: the emulation layer is now faithful.
+
+`hello32`/`gui32`/`win32`/`file32` all still 0x600D with the full closure staged.
+
+### The SysWOW64 DLL closure (`tools/fex/wow64-closure.py`)
+
+A CRT-linked binary drags in a real import graph: `testgui → user32 → advapi32 →
+rpcrt4 → wininet → …`, 53 modules. The old M8 rule ("do NOT stage advapi32/rpcrt4/
+msvcrt — they leave unbound IATs") was right about the hazard and wrong about the
+cure: a DLL that is staged but whose *own* imports are missing loads **half-bound**,
+and the first call through an unbound slot jumps to garbage. Not-staging only worked
+because nothing on the M8 path called into those DLLs.
+
+The cure is the **complete** closure — no module is ever left half-bound. A bigger
+PARTIAL set has exactly the same landmine, just later. `wow64-closure.py` computes it
+at stage time (stripped variants; 30 MB) and **hard-fails rather than emit a partial
+set**. The loader's `LDR: Skipping missing import` line is the standing oracle that
+the closure is still complete — it must never fire for a guest module.
+
+### The A/B control (`TryStartNativeTestGui`)
+
+winlogon also spawns the **native arm64** build of the same testgui.exe. Without a
+control, every crash inside a shared library looks like a WoW64 bug. With it, one
+boot partitions the entire search space. Keep it.
+
+### OWED (M11)
+
+- **The callback OUT-payload copy-back.** `WM_GETMINMAXINFO` / `WM_NCCALCSIZE` /
+  `WM_WINDOWPOSCHANGING` pass their payload as an OUT parameter — the window proc
+  writes into the struct win32k then reads back. We currently DROP the guest's edits
+  (restoring the kernel's original bytes), which is what we have shipped since M8.
+  Implementing the copy-back regressed `win32.exe` 0x600D → 0x600E: WM_PAINT /
+  WM_NCPAINT / WM_ERASEBKGND vanished and the size-negotiation messages each went
+  1× → 3× (win32k never converged on the geometry the guest handed back). Evidence
+  and the disabled code are in `wow64_callback.c`. Root-cause why the guest's
+  DefWindowProc returns geometry win32k won't converge on, then re-enable.
+- **The remaining loud refusals** (`wow64_manual.c`): `NtNotifyChangeDirectoryFile`,
+  `NtNotifyChangeKey(MultipleKeys)` — all inherently async, blocked on the kernel-side
+  `IO_STATUS_BLOCK32` fix (M10's owed item); `NtSetSystemInformation` — class-dependent
+  pointer-bearing buffers.
+- **`NtDeviceIoControlFile`/`NtFsControlFile` pass their IOCTL buffers through
+  untranslated.** Most are flat; a minority embed pointers. Fine until a guest sends
+  a pointer-bearing IOCTL, at which point the failure lands inside the driver.
+- ~~user32 EDIT control is broken NATIVELY~~ **FIXED 2026-07-13 (field manual §9.70).**
+  Root cause was in kernel32, not user32: `GlobalLock` had its SEH *filter expression*
+  translated into a runtime value (`let __except_val = EXCEPTION_EXECUTE_HANDLER;` then
+  `if __except_val != 0`), so the exception HANDLER ran on every call and the real result
+  was dead code — `GlobalLock` (and therefore `LocalLock`) returned NULL unconditionally.
+  Every edit box in the OS, on every arch, had a NULL text buffer. With it fixed, the
+  stock testgui.exe **PASSES under WoW64**: EDIT control created, WM_PAINT, message pump
+  alive, still running — same as native.
+
+### M11 FINAL: PASS (2026-07-13)
+
+`testgui.exe` — a **stock, unmodified, CRT-linked i386 GUI binary** — now runs under
+WoW64/FEX on arm64 to completion:
+
+```
+[TESTGUI] wWinMain entered (hInstance=00400000)
+[TESTGUI] RegisterClassExW succeeded
+[TESTGUI] WM_CREATE received
+[TESTGUI] EDIT control created (hWnd=00020188)
+[TESTGUI] CreateWindowExW succeeded (hWnd=00020186)
+[TESTGUI] WM_PAINT received
+[TESTGUI] Window shown, focus set, entering message loop
+[WINLOGON] testgui.exe still running after 20s = PASS
+```
+
+Both it and the native arm64 build of the same source sit in the taskbar side by side.
+hello32/gui32/win32/file32 all 0x600D; shell ready ×2; zero `NEEDS MANUAL` stubs; no
+BUGCHECK. The A/B control (`TryStartNativeTestGui`) is what made the last bug findable:
+when native and WoW64 failed *identically* the bug was shared (kernel32's GlobalLock);
+the moment native passed and WoW64 didn't, the remaining delta was a stale guest
+kernel32 in the ramdisk. Keep the control.
+
+## M12: x86 DOOM under WoW64 on arm64 — the north star
+
+`tools/doom/build.sh i386` → doomgeneric's Win32/GDI backend, a genuinely foreign
+mingw binary that has never heard of ReactOS. Its import closure is **exactly the
+same 53 modules testgui needs**, so M11's closure work covered it with nothing added.
+Staged into `syswow64/` (+ the 4 MB shareware IWAD) and spawned by
+`winlogon-rust::TryStartWow64Doom` (silent no-op unless staged; it also suppresses
+the testgui pair and notepad, which would otherwise sit on top of DOOM's window —
+doomgeneric creates its window at `CW_USEDEFAULT` and never calls
+`SetForegroundWindow`).
+
+**It runs.** Under FEX on arm64, the x86 binary:
+- starts through msvcrt's CRT and binds its whole import graph,
+- opens and reads the 4 MB IWAD (`NtReadFile` ×934),
+- registers its class, creates its window, and **`NtUserShowWindow` shows it**
+  (it appears in the taskbar as "DOOM Shareware"),
+- pumps messages (`NtUserPeekMessage` ×4000+) and paces frames (`NtDelayExecution`),
+- and **renders**: `NtGdiStretchDIBitsInternal` ×4000+, each copying 400 scanlines.
+
+### The bug it found: 195 misrouted syscalls (field manual §9.71)
+
+DOOM was the first guest to call a win32k syscall above index 541 — and there the
+thunk table was **off by one**. `w32ksvc32.h` gates `NtUserSetWindowLongPtr` on
+`#ifdef _WIN64`; `wow64gen.py` parsed the file as flat text, included that entry on
+the 64-bit host, and shifted every service number after it. The guest's
+`NtUserShowWindow` (0x1227) dispatched to the host's `NtUserShowScrollBar`. Nothing
+faulted — the neighbours have plausible signatures — so DOOM's window simply never
+became visible while it happily rendered thousands of frames into a DC nobody could
+see. Fixed by making `parse_sysfuncs` expand the list **as the 32-bit guest does**,
+and permanently guarded by `tools/wow64gen/verify_svc_numbering.py` (wired into
+`vibeos-cli check`), which compares the generated table against the REAL i386 syscall
+stubs disassembled out of the build.
+
+### OWED: DOOM's frames don't reach the screen
+
+DOOM renders, but the pixels don't land in its window. **This is NOT a WoW64 bug** —
+the A/B control proves it: the NATIVE arm64 build of the same doomgeneric
+(`VIBEOS_DOOM_AB=1` stages it into system32) misrenders the same way, painting its
+framebuffer *outside* its own window (over whatever else is on the desktop).
+
+
+**Investigation notes (2026-07-13, instrumented then reverted — findings only).**
+Traced with one-shot DbgPrints in `NtUserShowWindow` and `DceResetActiveDCEs`.
+What is RIGHT: the show path reaches `co_WinPosSetWindowPos -> DceResetActiveDCEs`;
+DOOM's cached DCE **is** found and revisited on show; its visible region is
+recomputed correctly to `bbox=(0,0,640,400)` complexity=2 (NOT empty); the window
+is at (0,0), DC origin (0,0), `StretchDIBits` returns 400 scanlines. So the clip
+is not the problem. Two real anomalies remain for the win32k lane to chase:
+  1. DOOM's window has `rcWindow == rcClient == (0,0,640,400)` — **no non-client
+     inset at all**, i.e. `WM_NCCALCSIZE`'s client-rect writeback is being dropped
+     (compare testgui, which also shows rcWindow==rcClient). A window with a
+     caption should have a smaller client rect.
+  2. gui32's magenta (a DIRECT display DC) DOES reach the framebuffer, while
+     DOOM's window-DC blits do not — with a provably-correct visrgn. So the
+     divergence is between a window DC and a direct DC at blit time (surface
+     target / screen offset), not the visible region. Start there, not at DCE.
+
+The shape: doomgeneric does
+
+```c
+    s_Hdc = GetDC(hwnd);        /* window not yet visible */
+    ShowWindow(hwnd, SW_SHOW);  /* becomes visible AFTER the DC was cached */
+    ...
+    StretchDIBits(s_Hdc, ...);  /* forever, into that one cached DC */
+```
+
+so the DC's visible region is computed while the window is hidden and must be
+recomputed when it is shown (`DceResetActiveDCEs` / DCE visrgn invalidation). That
+is win32k/GDI territory, not the WoW64 layer — it belongs to a win32k lane. The
+WoW64 side of DOOM is done.

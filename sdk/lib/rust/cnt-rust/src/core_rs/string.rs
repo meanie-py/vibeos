@@ -15,6 +15,26 @@
 pub trait Elem: Copy + PartialEq {
     const ZERO: Self;
     fn diff(a: Self, b: Self) -> i32;
+    /// The **unsigned** element difference — the textbook-libc / msvcrt
+    /// convention (`(unsigned char)*s1 - (unsigned char)*s2`), as opposed
+    /// to [`Elem::diff`]'s signed-`char` libcntpr convention.
+    ///
+    /// Two CRT bodies in this tree want *different* answers here and both
+    /// are right for their caller, so the contract is a knob rather than a
+    /// bug:
+    ///   * the **kernel** (libcntpr) wants [`diff`](Elem::diff) — signed
+    ///     `char`, pinned by `cnt-difftest`;
+    ///   * **msvcrt.dll** wants this one — pinned by `msvcrt-difftest`.
+    /// They agree on ASCII and disagree in *sign* on any byte >= 0x80, so
+    /// picking the wrong one silently corrupts ordering/search on non-ASCII
+    /// data (UTF-8 paths, accented filenames, binary buffers).
+    ///
+    /// Defaults to [`diff`](Elem::diff): `u16` is `wchar_t`, unsigned by
+    /// definition, so the two already coincide there and only `u8` overrides.
+    #[inline]
+    fn udiff(a: Self, b: Self) -> i32 {
+        Self::diff(a, b)
+    }
     /// `_TCHAR cc = c;` — the `strchr`/`strrchr` target cast.
     fn from_cint(c: i32) -> Self;
 }
@@ -23,6 +43,10 @@ impl Elem for u8 {
     #[inline]
     fn diff(a: u8, b: u8) -> i32 {
         (a as i8 as i32) - (b as i8 as i32)
+    }
+    #[inline]
+    fn udiff(a: u8, b: u8) -> i32 {
+        (a as i32) - (b as i32)
     }
     #[inline]
     fn from_cint(c: i32) -> u8 {
@@ -64,6 +88,36 @@ pub fn cmp<T: Elem>(a: &[T], b: &[T]) -> i32 {
         let cb = if i < b.len() { b[i] } else { T::ZERO };
         if ca != cb {
             return T::diff(ca, cb);
+        }
+        if ca == T::ZERO {
+            return 0; // both reached the terminator equal
+        }
+    }
+    0
+}
+
+/// [`cmp`]'s **unsigned-element** twin — the msvcrt / textbook-libc
+/// contract (`(unsigned char)*s1 - (unsigned char)*s2`). Identical
+/// stopping rule; only [`Elem::udiff`] replaces [`Elem::diff`], so the
+/// two agree on ASCII and differ in *sign* on bytes >= 0x80.
+///
+/// Deliberately a separate function rather than a knob threaded through
+/// [`cmp`]: the kernel's `strcmp` is on every hot path in the OS and this
+/// crate has been bitten before by codegen that shifted under it
+/// (`core_rs::mem::set`'s DCE'd fill), so `cmp`'s body stays byte-for-byte
+/// what it was. The duplicated loop is the cheap side of that trade.
+///
+/// Returns the raw difference; callers wanting msvcrt's `strcmp` must clamp
+/// to -1/0/1 themselves (msvcrt.dll's narrow `strcmp` does, its i386
+/// `strncmp` does not — see `msvcrt-crt-rust`).
+#[inline]
+pub fn cmp_u<T: Elem>(a: &[T], b: &[T]) -> i32 {
+    let n = a.len().max(b.len());
+    for i in 0..=n {
+        let ca = if i < a.len() { a[i] } else { T::ZERO };
+        let cb = if i < b.len() { b[i] } else { T::ZERO };
+        if ca != cb {
+            return T::udiff(ca, cb);
         }
         if ca == T::ZERO {
             return 0; // both reached the terminator equal
@@ -143,6 +197,23 @@ pub fn ncmp<T: Elem>(a: &[T], b: &[T], n: usize) -> i32 {
         let cb = if i < b.len() { b[i] } else { T::ZERO };
         if ca != cb {
             return T::diff(ca, cb);
+        }
+        if ca == T::ZERO {
+            return 0;
+        }
+    }
+    0
+}
+
+/// [`ncmp`]'s **unsigned-element** twin — see [`cmp_u`] for why this is a
+/// separate function and not a knob on [`ncmp`].
+#[inline]
+pub fn ncmp_u<T: Elem>(a: &[T], b: &[T], n: usize) -> i32 {
+    for i in 0..n {
+        let ca = if i < a.len() { a[i] } else { T::ZERO };
+        let cb = if i < b.len() { b[i] } else { T::ZERO };
+        if ca != cb {
+            return T::udiff(ca, cb);
         }
         if ca == T::ZERO {
             return 0;

@@ -1,5 +1,4 @@
 #![no_std]
-#![feature(c_variadic)]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut, unused_unsafe)]
 #![allow(clippy::all)]
@@ -12,6 +11,31 @@
 //! dispatch table populated by WdfVersionBind at load — see kmdf-sys). The C
 //! wdfdriverentry stub (FxDriverEntry) stays the linker entry point and binds the
 //! framework before invoking this crate's DriverEntry.
+
+// `TracePrint!(level, flag, fmt, ...)` — WPP tracing. In the retail C build this is
+// `#define TracePrint!(x)` (storswtr.h:124): it expands to NOTHING and its arguments are
+// never evaluated. The translation rendered it as a no-op C-variadic *fn*, which stable
+// Rust cannot define (`c_variadic`, rust-lang#44930).
+//
+// It is a MACRO and not a C trampoline on purpose. A trampoline is an OPAQUE extern call,
+// so LLVM can no longer fold the arguments of all ~960 call sites — which (a) emits a dead
+// call + argument evaluation per site, and (b) uncloaked a `ud2` cascade that BUGCHECK'd
+// i386 (0x1E / 0xC000001D at a `ud2` right after `calll _TracePrint`; see the field manual,
+// "a NO-OP debug-print fn is a CLOAK"). The macro restores exactly the pre-existing codegen
+// AND is the faithful translation of the C macro. Arguments are still evaluated-then-dropped,
+// matching what the old no-op fn did.
+// NOTE: no argument is type-bound. The 11 extern decls this replaced did NOT agree with each
+// other on their parameter types — some modules declared the level/flag as `u32` while call
+// sites in aacs.rs pass `i32` constants, and the format pointer is `*const i8` in some modules
+// and `*const u8` in others. Pinning any of them to one type here would reject call sites that
+// compile today. (Each module's decl only had to be self-consistent, because nothing ever
+// checked them against a single definition — itself a small warning about these decls.)
+// Arguments are consumed BY VALUE (`let _ = $arg`), not by reference: some call sites pass a
+// field of a `#[repr(packed)]` struct, and `&packed.field` is E0793. By-value is also exactly
+// what the old `TracePrint(..)` fn call did — it copied each argument in.
+macro_rules! TracePrint {
+    ($($arg:expr),* $(,)?) => {{ $( let _ = $arg; )* }};
+}
 
 pub mod types;
 pub mod glue;

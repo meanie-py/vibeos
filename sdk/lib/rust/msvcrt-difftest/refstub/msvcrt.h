@@ -1,0 +1,507 @@
+/*
+ * Minimal <msvcrt.h> for compiling the GENUINE dll/win32/msvcrt/string.c
+ * on the host (linux x86_64, glibc).
+ *
+ * THE GUARD IS THE TRICK.  We deliberately reuse the include guard of the
+ * real dll/win32/msvcrt/msvcrt.h (`__WINE_MSVCRT_H`).  string.c does
+ * `#include "msvcrt.h"`, and a *quoted* include always searches the
+ * directory of the including file first — i.e. it resolves to the REAL
+ * 464-line header, which drags in windef.h/winbase.h/winnls.h and the
+ * whole NT/PSDK chain.  Because build.rs force-includes THIS file first
+ * (`-include ref_prelude.h` → `#include <msvcrt.h>` off the refstub
+ * include path), the guard is already set by the time string.c gets
+ * there, so the real header expands to nothing and we escape the chain
+ * WITHOUT touching a single line of the reference source.
+ *
+ * The same does NOT apply to "bnum.h": that header is REAL LOGIC (the
+ * base-10 bignum used by strtod/fpnum_parse), so we let string.c pull the
+ * genuine dll/win32/msvcrt/bnum.h and merely supply the types it needs
+ * (DWORD/BOOL/ULONGLONG/assert) from here.  Stubbing bnum.h would have
+ * silently replaced the very algorithm under test.
+ *
+ * "winnls.h", "wine/asm.h" and "wine/debug.h" have no same-dir file, so
+ * they fall through to the refstub include path and land on our stubs.
+ */
+#ifndef __WINE_MSVCRT_H
+#define __WINE_MSVCRT_H
+
+/* ------------------------------------------------------------------ *
+ * Types we must define BEFORE any host header can, because MSVC's width
+ * differs from glibc's.  We claim glibc's own include guards so its
+ * <wchar.h>/<wctype.h> (pulled below) skip their definitions and ours win.
+ *
+ *   wint_t    MSVC 16-bit (so WEOF == 0xFFFF); glibc 32-bit (0xFFFFFFFF).
+ *             fpnum_parse compares its `wchar_t` getter result against WEOF.
+ *   mbstate_t MSVC `int` (dll/win32/msvcrt/include/wchar.h); glibc a struct.
+ * ------------------------------------------------------------------ */
+#define __wint_t_defined 1
+#define _WINT_T 1
+typedef unsigned short wint_t;
+#define WEOF ((wint_t)0xFFFF)
+
+#define __mbstate_t_defined 1
+typedef int mbstate_t;
+
+/* ------------------------------------------------------------------ *
+ * Host libc.  Pull EVERY header string.c would pull (assert/stdlib/
+ * stdio/math/limits/locale/float) plus the ones we need, BEFORE the
+ * `wchar_t` remap below — no host header may ever be parsed under the
+ * 16-bit wchar_t model.  string.c's own #includes then no-op on their
+ * guards.
+ * ------------------------------------------------------------------ */
+#include <assert.h>
+#include <ctype.h>
+#include <errno.h>
+#include <float.h>
+#include <limits.h>
+#include <locale.h>
+#include <math.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* ------------------------------------------------------------------ *
+ * Windows type model
+ * ------------------------------------------------------------------ */
+
+/* Windows wchar_t is 16-bit; the host's is 32-bit.  Everything below
+ * (and all of string.c) sees the Windows width, so `_itow`/`_ltow`/
+ * `_i64tow` produce byte-identical buffers to a `*mut u16` Rust shim. */
+#define wchar_t unsigned short
+
+/* Calling conventions: no-ops on the SysV host. */
+#define CDECL
+#define __cdecl
+#define WINAPI
+#define WINAPIV       /* wcs.c's varargs entry points (_snwprintf, _scprintf, …) */
+#define __stdcall
+
+#define __int64 long long   /* macro, not typedef, so `unsigned __int64` parses */
+
+typedef int                 BOOL;
+#ifndef TRUE
+#define TRUE  1
+#define FALSE 0
+#endif
+typedef unsigned char       UCHAR;
+typedef unsigned char       BYTE;
+typedef unsigned short      WORD;
+typedef unsigned int        DWORD;   /* Windows DWORD is 32-bit */
+typedef unsigned int        ULONG;
+typedef int                 LONG;
+typedef unsigned int        UINT;
+typedef long long           LONGLONG;
+typedef unsigned long long  ULONGLONG;
+typedef unsigned int        LCID;
+typedef unsigned short      WCHAR;
+typedef WCHAR              *PWCHAR;
+typedef void               *HANDLE;
+typedef void               *HMODULE;
+
+/* corecrt.h: "we need 32-bit longs even on 64-bit" — same rule here, the
+ * host is LP64 so Windows `long` is `int`.  This is what makes
+ * `_ltoa(-1, buf, 16)` produce "ffffffff" (32-bit unsigned reinterpret)
+ * instead of the host's 64-bit "ffffffffffffffff". */
+typedef int                 __msvcrt_long;
+typedef unsigned int        __msvcrt_ulong;
+
+/* …and the matching limit macros.  <limits.h> above gave us the LP64
+ * values; string.c's clamps (_atol_l / _strtol_l / _strtoul_l) must see
+ * the Windows 32-bit ones or they become no-ops.
+ *
+ * ULONG_MAX is deliberately a SIGNED 64-bit constant: `__int64 ret >
+ * ULONG_MAX` has to stay a signed compare (on Win32, `unsigned long` is
+ * 32-bit and promotes to __int64).  0xFFFFFFFFUL would be 64-bit
+ * unsigned on the host and would wrongly clamp every negative value. */
+#undef  LONG_MAX
+#define LONG_MAX  0x7FFFFFFFL
+#undef  LONG_MIN
+#define LONG_MIN  (-0x7FFFFFFFL - 1)
+#undef  ULONG_MAX
+#define ULONG_MAX 0xFFFFFFFFLL
+
+/* ------------------------------------------------------------------ *
+ * glibc's WIDE headers — pulled here, and *deliberately* UNDER the 16-bit
+ * wchar_t remap.  This is the exact opposite of the rule for the narrow
+ * headers above, and the reason is worth stating.
+ *
+ * wcs.c does its own `#include <wchar.h>` / `<wctype.h>`, and it does so
+ * AFTER build.rs's prelude has renamed wcs.c's public symbols to `ref_*`.
+ * If glibc were left to declare `ref_wcslen`, `ref_wcscmp`, … under the HOST
+ * 32-bit wchar_t, every one of wcs.c's 16-bit definitions would be a
+ * conflicting-types error.  Parsed HERE, under the remap, glibc's wide
+ * prototypes come out 16-bit — i.e. precisely the Windows ones wcs.c goes on
+ * to define — and wcs.c's own includes then hit these guards and expand to
+ * nothing.  That turns a 100-error collision into a no-op.
+ *
+ * Three do NOT line up even at 16-bit, because glibc's *shape* differs:
+ * `wcstok` is 3-arg (msvcrt's is 2-arg here), and `wcstol`/`wcstoul` return an
+ * LP64 `long`.  Those are hidden from glibc by the prelude's stage 0 and
+ * re-declared with their Windows prototypes in stage 3 — the same two-step the
+ * narrow `atol`/`strtol`/`strtoul` trio already needs (see build.rs).
+ * ------------------------------------------------------------------ */
+#include <wchar.h>
+#include <wctype.h>
+
+typedef unsigned long   ULONG_PTR;   /* pointer-sized, host LP64 */
+typedef long            LONG_PTR;
+
+/* ------------------------------------------------------------------ *
+ * THE ANTI-CIRCULARITY NAMESPACE  (must precede every declaration below,
+ * and every host header above, in that order — see build.rs)
+ *
+ * The finished test binary links the reference objects TOGETHER WITH
+ * cnt-rust's `#[no_mangle]` shims, and cnt-rust exports `memmove`,
+ * `strlen`, `tolower`, `floor`, `log10`, `_invalid_parameter`, … .  A
+ * static definition beats the shared libc at link time, so:
+ *
+ *   - an un-namespaced `memmove` call inside `ref_memcpy` would silently
+ *     bind to *the code under test* — the reference would be grading
+ *     itself — and
+ *   - a second `_invalid_parameter` definition is a hard duplicate-symbol
+ *     link error.
+ *
+ * So every symbol the reference IMPORTS from "the CRT" is renamed into a
+ * private `msvcrt_ref_*` namespace right here.  Both TUs (the string.c TU
+ * and refimpl.c) see this header, so both agree on the renamed names, and
+ * nothing called `_errno` / `memmove` / `get_locinfo` / … escapes the crate.
+ *
+ * It sits ABOVE the declarations on purpose: renaming a name that has
+ * already been declared leaves the *call sites* renamed but unprototyped,
+ * and C's implicit-declaration rule then invents `int f()` — which
+ * truncates a returned pointer to 32 bits.  (That is exactly how
+ * `get_locinfo()` first came back as a garbage pointer here.)
+ *
+ * Deliberately NOT namespaced — see the harness notes in src/lib.rs:
+ *   floor, log10   only I10_OUTPUT uses them; sharing one libm between
+ *                  reference and subject is the standard difftest move —
+ *                  it factors libm exactness out of the comparison.
+ *   sprintf        I10_OUTPUT's "%.*le"; the host printf engine.
+ *   malloc         _strdup only needs *a* heap.
+ * ------------------------------------------------------------------ */
+#define memmove                 msvcrt_ref_memmove
+#define _errno                  msvcrt_ref__errno
+#define _invalid_parameter      msvcrt_ref__invalid_parameter
+/* _isspace_l / _tolower_l / _toupper_l USED to be here — they were things the reference
+ * IMPORTED, satisfied by refimpl.c's hand-written ASCII stubs.  As of wave 10 ctype.c is
+ * a reference TU and DEFINES them, so they are reference EXPORTS: the generated prelude
+ * renames them to `ref__tolower_l` &c. like every other one.
+ *
+ * Leaving them here would silently win — the refstub is included AFTER the prelude, so
+ * its #define overrides, ctype.c would emit `msvcrt_ref__tolower_l`, and every
+ * `ref__tolower_l` reference would fail to link.  (Which is exactly how this was found.)
+ * More importantly it would put the reference's own ctype implementation back in the
+ * IMPORT namespace, where the harness cannot grade it. */
+#define get_locinfo             msvcrt_ref_get_locinfo
+#define msvcrt_get_thread_data  msvcrt_ref_get_thread_data
+/* CompareStringA / LCMapStringA / …W / GetStringTypeW / WideCharToMultiByte USED to be
+ * namespaced here.  As of wave 11 they are SHARED — one definition (refimpl.c), called by
+ * both sides.
+ *
+ * They are kernel32, i.e. the ENVIRONMENT, and they are never code under test: this crate
+ * does not flip kernel32.  The namespace exists to stop the reference calling into the
+ * SUBJECT; it was never needed for these.  And modelling them TWICE — once for each side —
+ * is the §9.73 trap in miniature: data (or behaviour) we hand to both sides can never be
+ * caught by a differential test, because a mistake makes both sides wrong the same way and
+ * classify still reports MATCH.  One copy, shared, so the comparison isolates the Rust's
+ * LOGIC around the NLS call rather than our model of the NLS itself.
+ *
+ * (This is what makes the non-C-locale mode gradeable at all — see ref_set_nls().) */
+#define ros_dbg_log             msvcrt_ref_ros_dbg_log
+#define wine_dbgstr_an          msvcrt_ref_wine_dbgstr_an
+/* …and the same for everything the WIDE reference TU (wcs.c) imports. */
+#define wine_dbgstr_wn             msvcrt_ref_wine_dbgstr_wn
+#define GetLastError               msvcrt_ref_GetLastError
+#define GetProcessHeap             msvcrt_ref_GetProcessHeap
+#define HeapAlloc                  msvcrt_ref_HeapAlloc
+#define HeapFree                   msvcrt_ref_HeapFree
+#define _mbtowc_l                  msvcrt_ref__mbtowc_l
+#define _get_output_format         msvcrt_ref__get_output_format
+#define get_current_locale_noalloc msvcrt_ref_get_current_locale_noalloc
+#define free_locale_noalloc        msvcrt_ref_free_locale_noalloc
+#define MSVCRT__pwctype            msvcrt_ref__pwctype
+/* An MSVC intrinsic (printf.h's %e exponent sizing).  The host has no such
+ * builtin, so it becomes a real call — namespaced like every other import so
+ * it can never collide with a kernel/CRT crate that exports the same name. */
+#define _BitScanReverse            msvcrt_ref__BitScanReverse
+
+void *__cdecl memmove(void *dst, const void *src, size_t n);
+
+/* winnt.h.  ARRAY_SIZE is load-bearing: strstr()'s KMP fallback sizes its
+ * `lps` table with it.  Miss it and C's implicit-function-declaration rule
+ * turns `ARRAY_SIZE(lps)` into a *call* to an undefined `int ARRAY_SIZE()`
+ * — a silently wrong strstr that still links.  build.rs promotes
+ * implicit-function-declaration to an error precisely so a future missing
+ * macro can't do that again. */
+#define ARRAY_SIZE(x)     (sizeof(x) / sizeof((x)[0]))
+#define DECLSPEC_ALIGN(x) __attribute__((aligned(x)))
+#define FIELD_OFFSET(t,f) ((LONG)__builtin_offsetof(t,f))
+
+/* MSVC secure-CRT bits (crtdefs.h / errno.h) */
+#define _TRUNCATE   ((size_t)-1)
+#define STRUNCATE   80
+#define _NLSCMPERROR ((unsigned int)0x7fffffff)
+
+/* ── errno: MSVCRT's numbering, not the host's ──────────────────────
+ *
+ * This file used to pin only STRUNCATE (the host has no such value) and let EINVAL /
+ * ERANGE / EILSEQ fall through to glibc's <errno.h>.  That worked *by coincidence*:
+ *
+ *     EINVAL   msvcrt 22   glibc 22    same
+ *     ERANGE   msvcrt 34   glibc 34    same
+ *     EILSEQ   msvcrt 42   glibc 84    DIFFERENT
+ *
+ * Nothing exercised an EILSEQ path until ctype.c became a reference TU (wave 10), at
+ * which point the reference started reporting `errno=84` for a value msvcrt.dll would
+ * report as 42 — i.e. the oracle was modelling the HOST's errno, not msvcrt's.  A
+ * numeric coincidence between two operating systems is not a model.  Pin all three. */
+#undef EINVAL
+#undef ERANGE
+#undef EILSEQ
+#define EINVAL  22
+#define ERANGE  34
+#define EILSEQ  42
+
+/* dll/win32/msvcrt/include/limits.h — the 64-bit limits, and the
+ * un-underscored aliases string.c/bnum.h actually use. */
+#define _I64_MAX    0x7fffffffffffffffLL
+#define _I64_MIN    (-_I64_MAX - 1)
+#define _UI64_MAX   0xffffffffffffffffULL
+#define I64_MIN     _I64_MIN
+#define I64_MAX     _I64_MAX
+#define UI64_MAX    _UI64_MAX
+
+/* dll/win32/msvcrt/include/math.h — _atodbl/_atoflt/_atoldbl return codes */
+#define _OVERFLOW   3
+#define _UNDERFLOW  4
+
+/* (wint_t / WEOF are defined at the very top — they have to precede the
+ * <wchar.h> pull whose guard we claim.) */
+
+/* stdlib.h (MSVC): _atoflt/_atodbl/_atoldbl out-params */
+typedef struct { float  f; } _CRT_FLOAT;
+typedef struct { double x; } _CRT_DOUBLE;
+typedef struct { unsigned char ld[10]; } _LDOUBLE;
+
+/* msvcrt.h (verbatim decls, __REACTOS__ flavour) */
+#define DBL80_MAX_10_EXP 4932
+#define DBL80_MIN_10_EXP -4951
+typedef struct { UCHAR ld[10]; } MSVCRT__LDOUBLE;      /* real x87 80-bit: 10 bytes */
+typedef struct { ULONG x80[3]; } WINE_BROKEN_LDOUBLE;  /* what wine's code writes */
+
+/* ------------------------------------------------------------------ *
+ * Locale model — the DEFAULT "C" locale, faithfully.
+ *
+ * The real threadlocinfo is huge; string.c touches exactly three fields:
+ *   locinfo->lc_handle[LC_CTYPE]     (_strlwr_l / _strupr_l family)
+ *   locinfo->lc_handle[LC_COLLATE]   (_strcoll_l / _stricoll_l / _strxfrm_l)
+ *   locinfo->lconv->decimal_point    (fpnum_parse / strtod)
+ *
+ * In the C locale every lc_handle[] is 0, and string.c *branches on that*:
+ * `if(!locinfo->lc_handle[LC_COLLATE]) return strcmp(...)`.  So the C
+ * locale exercises the genuine non-NLS code paths and CompareStringA /
+ * LCMapStringA are dead code (they still have to link — see refimpl.c).
+ *
+ * ── WAVE 10: THIS STRUCT IS NOW THE REAL LAYOUT, NOT A MODEL ────────
+ *
+ * It used to be a convenient cut-down (6 fields, `lc_handle[16]`).  That was fine
+ * while only the C could see it.  It stopped being fine when Rust started reading
+ * `locinfo->pctype/pclmap/pcumap`, because the SHIPPING Rust reads them through
+ * `msvcrt-sys` — a bindgen snapshot of msvcrt's REAL layout (`pcumap` @ 336 on
+ * amd64/arm64, @ 208 on i386).  The harness links that same Rust and points it at
+ * *this* struct.  Two different layouts, one set of offsets: the Rust would have read
+ * `pcumap` from beyond the end of the object, in the one component whose whole job is
+ * to be a trustworthy oracle.  A wrong offset there does not crash — it makes the
+ * oracle lie.
+ *
+ * So this is now a faithful transcription of msvcrt's `threadlocaleinfostruct`
+ * (dll/win32/msvcrt/include/corecrt.h, with the `_MSVCR_VER=0` branches resolved).
+ * The equivalence is not assumed — `ref_integrity` asserts, at run time, that C's
+ * `offsetof` here equals Rust's `offset_of!` in msvcrt-sys, field by field.
+ *
+ * `__msvcrt_ulong` is 32-bit on BOTH the host (LP64: `unsigned int`) and Windows
+ * (LLP64: `unsigned long`) — corecrt.h goes out of its way to guarantee that — so the
+ * host layout and the amd64 layout coincide exactly.  Spelled `unsigned int` here so
+ * it cannot depend on which one we are.
+ *
+ * lc_handle is now its REAL size (6), which means the LC_* indices must be MSVC's, not
+ * the host's — see the LC_* block below.
+ * ------------------------------------------------------------------ */
+/* The layout itself lives in locale_layout.h, because subjectimpl.c needs it too and
+ * must NOT see this file's anti-circularity namespace block.  See that header. */
+#include "locale_layout.h"
+
+typedef RL_LC_ID LC_ID, *LPLC_ID;
+typedef struct threadlocaleinfostruct threadlocinfo, *pthreadlocinfo;
+
+/* MSVC's locale categories.  The host <locale.h> is included FIRST by every reference
+ * TU (`#include <locale.h>` then `#include "msvcrt.h"`), and glibc numbers these
+ * completely differently (LC_CTYPE=0 … LC_ALL=6 … LC_IDENTIFICATION=12).  With
+ * lc_handle[] at its real size of 6, a glibc `LC_ALL`(=6) would index one PAST the
+ * end.  Pin them to MSVC's numbering, which is what msvcrt's own code means.
+ * (Every handle is 0 in the "C" locale, so this changes no behaviour — only bounds.) */
+#undef LC_ALL
+#undef LC_COLLATE
+#undef LC_CTYPE
+#undef LC_MONETARY
+#undef LC_NUMERIC
+#undef LC_TIME
+#define LC_ALL      RL_LC_ALL
+#define LC_COLLATE  RL_LC_COLLATE
+#define LC_CTYPE    RL_LC_CTYPE
+#define LC_MONETARY RL_LC_MONETARY
+#define LC_NUMERIC  RL_LC_NUMERIC
+#define LC_TIME     RL_LC_TIME
+
+typedef struct threadmbcinfostruct {
+    int             refcount;
+    int             mbcodepage;
+    int             ismbcodepage;
+} threadmbcinfo, *pthreadmbcinfo;
+
+typedef struct _locale_tstruct {
+    pthreadlocinfo  locinfo;
+    pthreadmbcinfo  mbcinfo;
+    /* the struct tag is ALSO a typedef name: wcs.c's _wcsicmp_l family
+     * declares `_locale_tstruct tmp = {0};` on the stack. */
+} _locale_tstruct, *_locale_t;
+
+pthreadlocinfo CDECL get_locinfo(void);
+
+/* One cursor per reference TU: strtok (string.c) and wcstok (wcs.c). */
+typedef struct __thread_data {
+    char           *strtok_next;
+    wchar_t        *wcstok_next;
+} thread_data_t;
+
+extern thread_data_t * CDECL msvcrt_get_thread_data(void);
+
+/* ------------------------------------------------------------------ *
+ * Externals string.c calls (implemented in refimpl.c).  All of these are
+ * already inside the msvcrt_ref_* import namespace declared far above.
+ * ------------------------------------------------------------------ */
+int * __cdecl _errno(void);
+void  __cdecl _invalid_parameter(const wchar_t *expr, const wchar_t *func,
+                                 const wchar_t *file, unsigned int line,
+                                 uintptr_t arg);
+int __cdecl _isspace_l(int c, _locale_t locale);
+int __cdecl _tolower_l(int c, _locale_t locale);
+int __cdecl _toupper_l(int c, _locale_t locale);
+
+/* msvcrt.h's invalid-parameter macros, verbatim */
+#define MSVCRT_INVALID_PMT(x,err)   (*_errno() = (err), _invalid_parameter(NULL, NULL, NULL, 0, 0))
+#define MSVCRT_CHECK_PMT_ERR(x,err) ((x) || (MSVCRT_INVALID_PMT( 0, (err) ), FALSE))
+#define MSVCRT_CHECK_PMT(x)         MSVCRT_CHECK_PMT_ERR((x), EINVAL)
+
+/* msvcrt.h's float-parse plumbing (definitions live in string.c itself) */
+enum fpmod {
+    FP_ROUND_ZERO,
+    FP_ROUND_DOWN,
+    FP_ROUND_EVEN,
+    FP_ROUND_UP,
+    FP_VAL_INFINITY,
+    FP_VAL_NAN
+};
+
+struct fpnum {
+    int         sign;
+    int         exp;
+    ULONGLONG   m;
+    enum fpmod  mod;
+};
+
+struct fpnum fpnum_parse(wchar_t (*)(void*), void (*)(void*),
+        void*, pthreadlocinfo, BOOL);
+int fpnum_double(struct fpnum*, double*);
+
+/* ------------------------------------------------------------------ *
+ * THE SECOND REFERENCE TU — dll/win32/msvcrt/wcs.c.
+ *
+ * wcs.c is 3100 lines, but only ~14 of its 176 public symbols are the pure
+ * wide-string family under test (wcslen/wcscmp/wcschr/…).  The bulk is the
+ * printf engine, which it instantiates twice by #including the REAL
+ * "printf.h" (narrow, then again with PRINTF_WIDE).  That engine is compiled
+ * as genuine, untranscribed code — and is inert: nothing under test calls it.
+ * It just has to *link*, which is why its type surface is declared here.
+ * ------------------------------------------------------------------ */
+typedef char  *LPSTR;
+typedef const char *LPCSTR;
+typedef unsigned short *LPWSTR;
+typedef const unsigned short *LPCWSTR;
+typedef void  *LPVOID;
+typedef int    INT;
+typedef int    errno_t;
+
+/* (glibc's internal ctype macros — __isascii/__toascii — are stripped in the generated
+ * prelude's stage -1, BEFORE the ref_* renames.  Doing it here would be too late: it
+ * would remove glibc's macro but leave the symbol un-renamed, and ctype.c would then
+ * define a plain `__isascii` that collides with the code under test.  See build.rs.) */
+
+/* locale.c's "setlocale() has never been called" flag.  ctype.c BRANCHES on it:
+ * toupper/tolower take a hardcoded-ASCII fast path when it is TRUE, and only fall
+ * through to _toupper_l/_tolower_l (the pcumap/pclmap lookup) when it is FALSE.
+ * Defined by refimpl.c (locale.c is not a reference TU). */
+extern BOOL initial_locale;
+
+/* dll/win32/msvcrt/include/ctype.h — the _pctype/_pwctype classification bits.
+ * Read by the isw* family (wcs.c) AND, since wave 10, by ctype.c — reference TU #3 —
+ * which is the whole narrow isXXX/toXXX surface. */
+#define _UPPER    RL_UPPER
+#define _LOWER    RL_LOWER
+#define _DIGIT    RL_DIGIT
+#define _SPACE    RL_SPACE
+#define _PUNCT    RL_PUNCT
+#define _CONTROL  RL_CONTROL
+#define _BLANK    RL_BLANK
+#define _HEX      RL_HEX
+#define _LEADBYTE RL_LEADBYTE
+#define _ALPHA    RL_ALPHA
+
+/* printf.h's template surface — verbatim from the real msvcrt.h. */
+typedef int (*puts_clbk_a)(void*, int, const char*);
+typedef int (*puts_clbk_w)(void*, int, const wchar_t*);
+typedef union _printf_arg
+{
+    void *get_ptr;
+    int get_int;
+    LONGLONG get_longlong;
+    double get_double;
+} printf_arg;
+typedef printf_arg (*args_clbk)(void*, int, int, va_list*);
+int pf_printf_a(puts_clbk_a, void*, const char*, _locale_t,
+        DWORD, args_clbk, void*, va_list*);
+int pf_printf_w(puts_clbk_w, void*, const wchar_t*, _locale_t,
+        DWORD, args_clbk, void*, va_list*);
+int create_positional_ctx_a(void*, const char*, va_list);
+int create_positional_ctx_w(void*, const wchar_t*, va_list);
+printf_arg arg_clbk_valist(void*, int, int, va_list*);
+printf_arg arg_clbk_positional(void*, int, int, va_list*);
+#define MSVCRT_PRINTF_POSITIONAL_PARAMS             (0x0100)
+#define MSVCRT_PRINTF_INVOKE_INVALID_PARAM_HANDLER  (0x0200)
+#define _TWO_DIGIT_EXPONENT 0x1
+#define _ARGMAX 100
+
+/* msvcrt internals wcs.c imports (all implemented in refimpl.c). */
+extern WORD *MSVCRT__pwctype;
+unsigned int __cdecl _get_output_format(void);
+int    __cdecl _mbtowc_l(wchar_t*, const char*, size_t, _locale_t);
+_locale_t CDECL get_current_locale_noalloc(_locale_t);
+void   CDECL free_locale_noalloc(_locale_t);
+int    __cdecl _iswspace_l(wchar_t, _locale_t);
+wint_t __cdecl _towlower_l(wint_t, _locale_t);
+wint_t __cdecl _towupper_l(wint_t, _locale_t);
+int    __cdecl _wctomb_l(char*, wchar_t, _locale_t);
+
+/* Win32 that the wide NLS / heap paths import (all in refimpl.c). */
+DWORD  WINAPI GetLastError(void);
+HANDLE WINAPI GetProcessHeap(void);
+LPVOID WINAPI HeapAlloc(HANDLE, DWORD, size_t);
+BOOL   WINAPI HeapFree(HANDLE, DWORD, LPVOID);
+
+/* MSVC intrinsic — printf.h's exponent sizing.  (refimpl.c) */
+unsigned char _BitScanReverse(unsigned int *index, unsigned int mask);
+
+#endif /* __WINE_MSVCRT_H */

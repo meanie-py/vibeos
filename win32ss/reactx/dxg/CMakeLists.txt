@@ -36,7 +36,6 @@ add_custom_command(
     OUTPUT ${DXG_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${DXG_RUST_TARGET_DIR}
-        RUSTC_BOOTSTRAP=1
         RUSTFLAGS=${DXG_RUST_RUSTFLAGS}
         cargo build --release --target ${DXG_RUST_TARGET}
             -p dxg-rust

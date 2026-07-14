@@ -31,7 +31,7 @@ add_custom_command(
     OUTPUT ${VERSION_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${VERSION_RUST_TARGET_DIR}
-        RUSTC_BOOTSTRAP=1
+       
         cargo build --release --target ${VERSION_RUST_TARGET}
             -p version-rust
             --manifest-path ${VERSION_RUST_WORKSPACE_DIR}/Cargo.toml

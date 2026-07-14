@@ -31,7 +31,6 @@ add_custom_command(
     OUTPUT ${USBAUDIO_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${USBAUDIO_RUST_TARGET_DIR}
-        RUSTC_BOOTSTRAP=1
         RUSTFLAGS=${USBAUDIO_RUST_RUSTFLAGS}
         cargo build --release --target ${USBAUDIO_RUST_TARGET}
             -p usbaudio-rust

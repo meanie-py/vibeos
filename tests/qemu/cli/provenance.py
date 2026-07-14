@@ -78,7 +78,11 @@ def discover_rust_archives(build_dir: Path) -> list[Path]:
 
 # arch -> the cargo workspace target stem (add_cargo_module's custom-target json
 # stem == cargo's CARGO_TARGET_DIR subdir; gcc.cmake:add_cargo_module).
-_CARGO_STEM = {"i386": "i686-kernel", "amd64": "x86_64-kernel", "arm64": "aarch64-kernel"}
+_CARGO_STEM = {
+    "i386": "i686-kernel",
+    "amd64": "x86_64-pc-windows-gnu",
+    "arm64": "aarch64-pc-windows-gnullvm",
+}
 
 
 def workspace_cargo_target(repo: Path, arch: str) -> Path | None:

@@ -22,8 +22,8 @@ fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     let (target_json, entry, image_base): (&str, &str, u64) = match arch.as_str() {
         "x86" => ("i686-kernel.json", "_DriverEntry@8", 0x0001_0000),
-        "x86_64" => ("x86_64-kernel.json", "DriverEntry", 0x0001_0000),
-        "aarch64" => ("aarch64-kernel.json", "DriverEntry", 0x7FFB_0000_0000),
+        "x86_64" => ("x86_64-pc-windows-gnu", "DriverEntry", 0x0001_0000),
+        "aarch64" => ("aarch64-pc-windows-gnullvm", "DriverEntry", 0x7FFB_0000_0000),
         other => panic!("netstack-cargo: unsupported arch {other} (i386/amd64/arm64 only)"),
     };
 

@@ -780,6 +780,64 @@ unsafe fn TryStartWow64Hello() {
     }
 }
 
+/* M10 file-I/O probe: an i386 guest that reads, writes and enumerates real
+ * files. It is the oracle for the IO_STATUS_BLOCK 32<->64 marshalling — the
+ * byte count ReadFile hands back IS IoStatusBlock.Information, which is 4 bytes
+ * wide in the guest and 8 on the host. Silent no-op unless staged;
+ * verdict = [file32] serial lines + exit 0x600D. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartWow64File() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent — don't spawn a guest that can't run
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\file32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 11] = wstr_arr!("file32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] file32.exe (i386 file-I/O guest) created (PID %lu) - waiting\n\0".as_ptr()
+                as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 60_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] file32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(file32.exe) FAILED (error %lu)\n\0".as_ptr() as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 /* M8 window-creation probe: an i386 guest with user32 imports that registers
  * a class, creates a REAL window, and pumps messages (forces user32 client
  * connect + kernel->user callbacks under wow64). Silent no-op unless staged;
@@ -841,6 +899,269 @@ unsafe fn TryStartWow64Win32() {
             GetLastError(),
         );
     }
+}
+
+/* True iff the WoW64 (i386) doom.exe was staged into syswow64. When it is, DOOM
+ * is the demo: the other GUI guests would materialise on top of its window and
+ * occlude it (doomgeneric creates its window at CW_USEDEFAULT and never calls
+ * SetForegroundWindow). Same rationale as DoomStaged() gating the notepad spawn. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn Wow64DoomStaged() -> bool {
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return false;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\doom.exe").as_ptr());
+    GetFileAttributesW(Path.as_ptr()) != 0xFFFF_FFFF
+}
+
+/* M12 — THE NORTH STAR: x86 DOOM, under WoW64, on arm64.
+ *
+ * doomgeneric's Win32/GDI backend built for i386 (tools/doom/build.sh i386) —
+ * a genuinely foreign binary, compiled by mingw against the real msvcrt, that
+ * has never heard of ReactOS. It needs everything the lane has built: the CRT
+ * bootstrap and the 53-module SysWOW64 closure (M11), window creation and the
+ * message pump (M8), the 32-bit client view of USER/GDI (M9/M6/M7), file I/O to
+ * read the 4 MB IWAD (M10), and a GDI blit path for its 320x200 framebuffer.
+ *
+ * Its import closure is EXACTLY the same 53 modules testgui needs — msvcrt,
+ * user32, gdi32, kernel32 — so M11's closure work covers it with nothing added.
+ *
+ * Like every other guest: silent no-op unless staged (VIBEOS_FEX=1 image). */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartWow64Doom() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\doom.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    /* "<windir>\syswow64\doom.exe" -iwad <windir>\syswow64\doom1.wad
+     * The WAD goes by ABSOLUTE path: doomgeneric's cwd is not guaranteed. */
+    let mut Line: [u16; 2 * MAX_PATH as usize] = [0; 2 * MAX_PATH as usize];
+    Line[0] = b'"' as u16;
+    wcscat(Line.as_mut_ptr(), Path.as_ptr());
+    wcscat(Line.as_mut_ptr(), wstr!("\" -iwad ").as_ptr());
+    let mut Wad: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    GetWindowsDirectoryW(Wad.as_mut_ptr(), MAX_PATH - 32);
+    wcscat(Wad.as_mut_ptr(), wstr!("\\syswow64\\doom1.wad").as_ptr());
+    wcscat(Line.as_mut_ptr(), Wad.as_ptr());
+
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let mut Desk: [u16; 16] = wstr_arr!("WinSta0\\Default");
+    Si.lpDesktop = Desk.as_mut_ptr();
+    if CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    ) == 0
+    {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(WoW64 doom.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+        return;
+    }
+
+    DbgPrint(
+        b"[WINLOGON] *** x86 DOOM under WoW64 created (PID %lu) *** - watching\n\0".as_ptr()
+            as *const i8,
+        Pi.dwProcessId,
+    );
+    /* Doom never exits on its own. Still running = it is playing. */
+    const WAIT_TIMEOUT_D: DWORD = 0x102;
+    if WaitForSingleObject(Pi.hProcess, 90_000) == WAIT_TIMEOUT_D {
+        DbgPrint(
+            b"[WINLOGON] *** x86 DOOM still running after 90s = IT IS RUNNING *** \
+              (leaving it up)\n\0"
+                .as_ptr() as *const i8,
+        );
+    } else {
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] x86 DOOM EXITED = 0x%lx (it should never exit)\n\0".as_ptr()
+                as *const i8,
+            ExitCode,
+        );
+    }
+    CloseHandle(Pi.hThread);
+    CloseHandle(Pi.hProcess);
+}
+
+/* M11 A/B control: the NATIVE arm64 build of testgui.exe.
+ *
+ * The WoW64 guest and this one are the SAME SOURCE, and both drive the same
+ * user32-rust. So when the 32-bit one dies inside a user32 control, this says
+ * whether the WoW64 layer is at fault or whether user32 is simply broken there
+ * for everyone. Without a control, every user32 crash looks like a WoW64 bug.
+ *
+ * Only spawned in a VIBEOS_FEX dev boot (gated on Wow64SupportStaged, like the
+ * guests), so the normal smoke media never sees it. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartNativeTestGui() {
+    if !Wow64SupportStaged() {
+        return;
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\system32\\testgui.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 12] = wstr_arr!("testgui.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let mut Desk: [u16; 16] = wstr_arr!("WinSta0\\Default");
+    Si.lpDesktop = Desk.as_mut_ptr();
+    if CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    ) == 0
+    {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(native testgui.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+        return;
+    }
+    DbgPrint(
+        b"[WINLOGON] NATIVE testgui.exe created (PID %lu) - A/B control for the WoW64 one\n\0"
+            .as_ptr() as *const i8,
+        Pi.dwProcessId,
+    );
+    const WAIT_TIMEOUT_N: DWORD = 0x102;
+    if WaitForSingleObject(Pi.hProcess, 20_000) == WAIT_TIMEOUT_N {
+        DbgPrint(
+            b"[WINLOGON] NATIVE testgui.exe still running after 20s (healthy)\n\0".as_ptr()
+                as *const i8,
+        );
+    } else {
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] NATIVE testgui.exe EXITED = 0x%lx <- if this also dies, the bug is \
+              in user32, NOT in the WoW64 layer\n\0"
+                .as_ptr() as *const i8,
+            ExitCode,
+        );
+    }
+    CloseHandle(Pi.hThread);
+    CloseHandle(Pi.hProcess);
+}
+
+/* M11: a STOCK, unmodified i386 binary — base/applications/testgui, built for
+ * i386 exactly as the livecd ships it. Every guest before this one (hello32,
+ * gui32, win32, file32) was written BY US, which means each could quietly dodge
+ * whatever WoW64 didn't support yet. testgui can't dodge anything: it's linked
+ * against the real msvcrt CRT (so the entrypoint is msvcrt's startup, not a
+ * hand-rolled `_start`), it has a real import table (the full 53-module
+ * SysWOW64 closure), and it registers a class, creates a window with a child
+ * EDIT control, and pumps messages.
+ *
+ * It never exits — it's a message loop. So the verdict is inverted from the
+ * other guests: STILL RUNNING after the wait means the CRT started, the imports
+ * bound, the window came up and the pump is alive = PASS. An exit means it
+ * either failed its own checks (1) or died (0xC0000005 &c). It is deliberately
+ * left running so its window is on screen for the screenshot.
+ *
+ * Verdict: [TESTGUI] serial lines (wWinMain -> RegisterClassExW ->
+ * CreateWindowExW -> WM_CREATE -> WM_PAINT) + a blue/green window. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartWow64TestGui() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent — don't spawn a guest that can't run
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\testgui.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 12] = wstr_arr!("testgui.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    /* Must live on the INPUT desktop or the pump starves (§9.22 class). */
+    let mut Desk: [u16; 16] = wstr_arr!("WinSta0\\Default");
+    Si.lpDesktop = Desk.as_mut_ptr();
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok == 0 {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(testgui.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+        return;
+    }
+
+    DbgPrint(
+        b"[WINLOGON] testgui.exe (STOCK i386 GUI app) created (PID %lu) - watching\n\0".as_ptr()
+            as *const i8,
+        Pi.dwProcessId,
+    );
+    const WAIT_TIMEOUT_: DWORD = 0x102;
+    if WaitForSingleObject(Pi.hProcess, 20_000) == WAIT_TIMEOUT_ {
+        DbgPrint(
+            b"[WINLOGON] testgui.exe still running after 20s = PASS (CRT started, imports \
+              bound, message pump alive) - leaving it up\n\0"
+                .as_ptr() as *const i8,
+        );
+    } else {
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] testgui.exe EXITED = 0x%lx (a stock GUI app should never exit; \
+              it should still be pumping)\n\0"
+                .as_ptr() as *const i8,
+            ExitCode,
+        );
+    }
+    CloseHandle(Pi.hThread);
+    CloseHandle(Pi.hProcess);
 }
 
 /* wow64win probe (M4): a real i386 GUI guest with kernel32+gdi32 imports that
@@ -1414,8 +1735,13 @@ pub unsafe extern "system" fn WinMain(
         // When doom.exe is staged (VIBEOS_DOOM=1) it IS the demo GUI app —
         // notepad would materialize on top of it and steal focus (see
         // DoomStaged doc comment). Only the notepad spawn is gated; doom and
-        // cmd.exe below always run.
-        if !DoomStaged() {
+        // cmd.exe below always run. The WoW64 (i386) doom lives in syswow64,
+        // so it needs its own check.
+        #[cfg(target_arch = "aarch64")]
+        let DoomOwnsTheDesktop = DoomStaged() || Wow64DoomStaged();
+        #[cfg(not(target_arch = "aarch64"))]
+        let DoomOwnsTheDesktop = DoomStaged();
+        if !DoomOwnsTheDesktop {
             let mut Si: STARTUPINFOW = zeroed();
             let mut Pi: PROCESS_INFORMATION = zeroed();
             let mut NoteLine: [u16; 12] = wstr_arr!("notepad.exe");
@@ -1469,6 +1795,27 @@ pub unsafe extern "system" fn WinMain(
         /* M8: window-creation guest AFTER the direct-DC guest (gui32 is the
          * regression oracle; win32 is the frontier). */
         TryStartWow64Win32();
+
+        /* M10: file-I/O guest — the IO_STATUS_BLOCK marshalling oracle. */
+        TryStartWow64File();
+
+        /* The testgui pair never exits, so it would sit on top of DOOM's window.
+         * When the WoW64 doom is staged, DOOM is the demo — skip them. */
+        if !Wow64DoomStaged() {
+            /* M11 A/B control: the NATIVE arm64 build of the very same app, so a
+             * failure can be attributed. If native testgui reaches WM_PAINT and
+             * the WoW64 one does not, the bug is in the WoW64 layer; if they fail
+             * the same way, it is a plain user32 bug and belongs to another lane. */
+            TryStartNativeTestGui();
+
+            /* M11: the first STOCK i386 binary — real CRT, real imports, real
+             * window. It never exits: it stays up for the screenshot. */
+            TryStartWow64TestGui();
+        }
+
+        /* M12 — THE NORTH STAR: x86 Doom under WoW64. Last, and alone on the
+         * desktop; it never exits. */
+        TryStartWow64Doom();
 
         /* DOOM (opt-in, VIBEOS_DOOM=1): spawned LAST among GUI apps for
          * foreground focus, and BEFORE the cmd.exe INFINITE wait below. */

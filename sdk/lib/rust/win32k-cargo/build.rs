@@ -55,13 +55,13 @@ fn main() {
             0x0001_0000,
         ),
         "x86_64" => (
-            "x86_64-kernel.json",
+            "x86_64-pc-windows-gnu",
             "win32k-amd64.rc.res",
             "DriverEntry",
             0x0001_0000,
         ),
         "aarch64" => (
-            "aarch64-kernel.json",
+            "aarch64-pc-windows-gnullvm",
             "win32k-arm64.rc.res",
             "DriverEntry",
             0x7FFB_0000_0000,

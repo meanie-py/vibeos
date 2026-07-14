@@ -7,10 +7,12 @@ yet landed-and-closed. When a lane closes, its doc moves **out** of here: to
 closing lane go to `docs/product/vibeos-roadmap.md` (Check-back ledger / Known-bugs
 registry), never left to rot in an archived doc.
 
-**Open lanes as of 2026-07-11** (`git worktree list` is the live source of truth):
+**Open lanes as of 2026-07-12** (`git worktree list` is the live source of truth):
 
 | Lane (worktree/branch) | Doc |
 |---|---|
 | `fex-arm` | [fex-bringup-plan.md](fex-bringup-plan.md), [wow64-plan.md](wow64-plan.md) |
 | `conformance-ratchet` | conformance-ratchet-quest.md *(lives on the branch until it lands)* |
 | `smp-bringup` | [smp-bringup-quest.md](smp-bringup-quest.md) |
+| `msvcrt-homebrew` | [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
+| `stable-toolchain` | [stable-toolchain-plan.md](stable-toolchain-plan.md) |

@@ -50,9 +50,9 @@ int main(void)
     {
         HANDLE ev = NULL;
         int i, waited = 0;
-        DWORD w;
+        DWORD w = WAIT_OBJECT_0;
 
-        for (i = 0; i < 60 && !ev; ++i)
+        for (i = 0; i < 24 && !ev; ++i)
         {
             ev = OpenEventA(SYNCHRONIZE, FALSE, "SC_AutoStartComplete");
             if (!ev)
@@ -60,28 +60,30 @@ int main(void)
         }
         if (!ev)
         {
-            DbgPrint("[KMTEST-SWEEP] FATAL: SC_AutoStartComplete event never appeared (services.exe wedged pre-autostart?)\n");
-            fclose(f);
-            return 1;
-        }
-        DbgPrint("[KMTEST-SWEEP] waiting for SCM auto-start completion\n");
-        while ((w = WaitForSingleObject(ev, 30000)) == WAIT_TIMEOUT)
-        {
-            waited += 30;
-            DbgPrint("[KMTEST-SWEEP] still waiting for SC_AutoStartComplete (%ds)\n", waited);
-            if (waited >= 900)
-                break;
-        }
-        CloseHandle(ev);
-        if (w != WAIT_OBJECT_0)
-        {
-            DbgPrint("[KMTEST-SWEEP] FATAL: SCM auto-start did not complete in %ds — proceeding anyway to gather evidence\n", waited);
-            /* deliberate fall-through: the per-test timeouts below attribute
-             * the damage; a wedged SCM is itself a conformance finding */
+            /* arm64 (2026-07-12): services.exe never publishes SC_AutoStartComplete
+             * on arm64, so the event never appears (x86 signals it within the first
+             * few tries). The sweep runs AFTER the desktop is up (explorer startup
+             * walk), by which point boot auto-start is functionally complete — so
+             * PROCEED rather than FATAL-return. If a test's CreateService then blocks,
+             * the per-test timeout below attributes it and that is itself the arm64
+             * SCM finding (services-rust: publish SC_AutoStartComplete on arm64). */
+            DbgPrint("[KMTEST-SWEEP] WARN: SC_AutoStartComplete never appeared (arm64 services gap?) — proceeding without the gate\n");
         }
         else
         {
-            DbgPrint("[KMTEST-SWEEP] SCM auto-start complete (waited ~%ds)\n", waited);
+            DbgPrint("[KMTEST-SWEEP] waiting for SCM auto-start completion\n");
+            while ((w = WaitForSingleObject(ev, 30000)) == WAIT_TIMEOUT)
+            {
+                waited += 30;
+                DbgPrint("[KMTEST-SWEEP] still waiting for SC_AutoStartComplete (%ds)\n", waited);
+                if (waited >= 900)
+                    break;
+            }
+            CloseHandle(ev);
+            if (w != WAIT_OBJECT_0)
+                DbgPrint("[KMTEST-SWEEP] WARN: SCM auto-start did not complete in %ds — proceeding anyway to gather evidence\n", waited);
+            else
+                DbgPrint("[KMTEST-SWEEP] SCM auto-start complete (waited ~%ds)\n", waited);
         }
     }
 
@@ -95,8 +97,20 @@ int main(void)
         DWORD wait;
         char *nl = strpbrk(line, "\r\n");
 
-        if (nl)
-            *nl = 0;
+        if (!nl)
+        {
+            /* Line longer than the buffer (in practice an over-long '#' comment
+             * in the test list): fgets stopped WITHOUT a newline. Drain the rest
+             * of the physical line so its tail is not read as a bogus test name
+             * on the next iteration — a real test name is always short — then
+             * skip it. (Bug 2026-07-12: a 155-char i386 quarantine comment split
+             * here and the tail "...symbol-poor)." got launched as a fake test,
+             * polluting the baseline and poisoning the result buffer.) */
+            int ch;
+            while ((ch = fgetc(f)) != EOF && ch != '\n') { }
+            continue;
+        }
+        *nl = 0;
         if (!line[0] || line[0] == '#')
             continue;
         ++total;

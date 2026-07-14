@@ -111,16 +111,20 @@ pub unsafe extern "system" fn NtWaitForMultipleObjects(
                 Ok(v) => v, Err(s) => return s,
             };
         }
-        if let Err(s) = probe_user_buffer(HandleArray as *const _, (ObjectCount as usize) * core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
-            return s;
-        }
     }
 
-    core::ptr::copy_nonoverlapping(
-        HandleArray as *const u8,
-        Handles.as_mut_ptr() as *mut u8,
-        (ObjectCount as usize) * core::mem::size_of::<HANDLE>()
-    );
+    // Fault-tolerant capture of the caller's handle array. The C original wrapped
+    // this copy in _SEH2_TRY (dead under DUMMY_PSEH); a kernel-mode caller with a
+    // hostile HandleArray (kmtest ZwWaitForMultipleObjects) faulted memcpy+0x40.
+    if let Err(s) = safe_copy_from_user(
+        Handles.as_mut_ptr() as *mut core::ffi::c_void,
+        HandleArray as *const core::ffi::c_void,
+        (ObjectCount as usize) * core::mem::size_of::<HANDLE>(),
+        core::mem::align_of::<HANDLE>(),
+        PreviousMode,
+    ) {
+        return s;
+    }
 
     let TimeOut = if PreviousMode != 0 && !TimeOut.is_null() {
         &mut SafeTimeOut as *mut LARGE_INTEGER

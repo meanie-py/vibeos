@@ -289,6 +289,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "com-sys"
+version = "0.1.0"
+
+[[package]]
 name = "compress"
 version = "0.1.0"
 
@@ -1190,6 +1194,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "msvcrt-crt-cargo"
+version = "0.1.0"
+dependencies = [
+ "msvcrt-crt-rust",
+ "panic-common",
+]
+
+[[package]]
+name = "msvcrt-crt-rust"
+version = "0.1.0"
+dependencies = [
+ "cnt-rust",
+ "msvcrt-sys",
+]
+
+[[package]]
+name = "msvcrt-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "libc",
+ "msvcrt-crt-rust",
+ "msvcrt-sys",
+]
+
+[[package]]
+name = "msvcrt-sys"
+version = "0.1.0"
+
+[[package]]
 name = "mup-rust"
 version = "0.1.0"
 dependencies = [
@@ -1354,6 +1388,22 @@ version = "0.1.0"
 dependencies = [
  "dbgprint-rust",
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "ole32-rust"
+version = "0.1.0"
+dependencies = [
+ "com-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "oleaut32-rust"
+version = "0.1.0"
+dependencies = [
+ "com-sys",
+ "panic-common",
 ]
 
 [[package]]
@@ -1818,6 +1868,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "varargs-rust",
 ]
 
 [[package]]
@@ -1974,6 +2025,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "varargs-rust",
 ]
 
 [[package]]
@@ -2180,6 +2232,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "varargs-rust",
 ]
 
 [[package]]
@@ -2196,6 +2249,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "varargs-rust",
 ]
 
 [[package]]
@@ -2204,6 +2258,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "varargs-rust",
 ]
 
 [[package]]
@@ -2251,6 +2306,10 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+
+[[package]]
+name = "varargs-rust"
+version = "0.1.0"
 
 [[package]]
 name = "vdm-rust"

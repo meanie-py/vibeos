@@ -2294,7 +2294,7 @@ pub unsafe extern "system" fn FatSetPurgeFailureMode(
                 (*fcb).PurgeFailureModeEnableCount += 1;
             } else {
                 // Original: ASSERT(FlagOn(SetPurgeInput->Flags, SET_PURGE_FAILURE_MODE_DISABLED));
-                assert!((input_flags & SET_PURGE_FAILURE_MODE_DISABLED) != 0);
+                debug_assert!((input_flags & SET_PURGE_FAILURE_MODE_DISABLED) != 0);
 
                 if (*fcb).PurgeFailureModeEnableCount == 0 {
                     break STATUS_INVALID_PARAMETER;

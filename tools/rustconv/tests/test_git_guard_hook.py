@@ -25,9 +25,7 @@ pytestmark = pytest.mark.skipif(not shutil.which("git"), reason="git not on PATH
 
 
 def _git(repo, *args, **kw):
-    return subprocess.run(
-        ["git", *args], cwd=repo, capture_output=True, text=True, **kw
-    )
+    return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, **kw)
 
 
 @pytest.fixture

@@ -34,7 +34,6 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${FASTFAT_RUST_TARGET_DIR}
         RUSTFLAGS=${FASTFAT_RUST_RUSTFLAGS}
-        RUSTC_BOOTSTRAP=1
         cargo build --release --target ${FASTFAT_RUST_TARGET}
             -p fastfat-rust
             --manifest-path ${FASTFAT_RUST_WORKSPACE_DIR}/Cargo.toml

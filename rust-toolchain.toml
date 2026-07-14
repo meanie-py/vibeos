@@ -1,0 +1,25 @@
+# Pinned Rust toolchain — the DEFAULT (stable) channel used by every cargo build
+# that does NOT set RUSTUP_TOOLCHAIN explicitly. That is the whole driver / user-DLL
+# staticlib fleet (drivers/**, dll/**, win32ss/** — they call plain `cargo build`
+# with a BUILTIN target triple, never build-std).
+#
+# The 42 `*-cargo` LINK cells are the exception: sdk/cmake/gcc.cmake sets
+# RUSTUP_TOOLCHAIN from `.rust-nightly` (env beats this file), because they still
+# need `-Z build-std` + the custom kernel target JSONs. Retiring that is the
+# stable-toolchain lane (docs/engineering/active-lanes/stable-toolchain-plan.md).
+#
+# WHY AN EXACT VERSION, NOT "stable": until 2026-07-12 nothing pinned the toolchain
+# at all, so `nightly` floated to whatever rustup last installed and the build was
+# one `rustup update` away from breaking — upstream has already REMOVED the
+# `VaListImpl` / `.as_va_list()` c_variadic API our 25 variadic defs are written
+# against (it is `VaList` + `next_arg::<T>()` now). Pin what works; bump
+# deliberately, re-running the miscompile tripwires (scan_ud2, scan_captures,
+# verify_sacred_primitives) as AGENTS.md requires.
+[toolchain]
+channel = "1.92.0"
+profile = "minimal"
+targets = [
+    "x86_64-pc-windows-gnu",
+    "i686-pc-windows-gnu",
+    "aarch64-pc-windows-gnullvm",
+]

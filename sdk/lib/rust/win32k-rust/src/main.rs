@@ -564,6 +564,10 @@ pub unsafe extern "system" fn InitThreadCallback(Thread: PETHREAD) -> NTSTATUS {
     }
     (*pci).dwExpWinVer = (*ptiCurrent).dwExpWinVer;
 
+    /* A 32-bit guest reads its CLIENTINFO from TEB32, which win32k never
+     * touches otherwise — project it (no-op for native processes). */
+    crate::wow64::Wow64PublishClientInfo(ptiCurrent);
+
     /* Need to pass the user Startup Information to the current process. */
     if !ProcessParams.is_null() {
         if (*(*ptiCurrent).ppi).usi.cb == 0 {

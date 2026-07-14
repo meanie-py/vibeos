@@ -8,9 +8,11 @@
 //! TRACE/WARN/ERR/FIXME and the wine debug machinery are no-ops and are omitted.
 //!
 //! ⚠ INTEGRATION NOTE: `ShellMessageBoxA` is a genuine C-variadic export (`...` + va_list
-//! forwarded to FormatMessageA). Defining a variadic fn in Rust needs the crate-root
-//! feature gate `#![feature(c_variadic)]` in `src/lib.rs` (same as version-rust /
-//! scsiport-rust / ntoskrnl-rust kdb_print). The integrator must add that line to lib.rs.
+//! forwarded to FormatMessageA). Stable Rust cannot DEFINE a variadic fn (`c_variadic`,
+//! rust-lang#44930), so the variadic entry point is a 3-line trampoline in
+//! `dll/win32/shell32/rust_varargs_shim.c` and the body below is its fixed-arity `_v`
+//! twin (see `sdk/lib/rust/varargs-rust` for the contract). The exported ordinal-183
+//! symbol + its cdecl variadic ABI are unchanged.
 //!
 //! ABI: WINAPI -> extern "system" (i386 `_Name@N`); plain cdecl/EXTERN_C -> extern "C"
 //! (i386 `_Name`). Imports declared with the convention matching each obj decoration
@@ -1465,15 +1467,20 @@ pub unsafe extern "system" fn RegisterShellHook(hWnd: HWND, dwType: DWORD) -> BO
     FALSE
 }
 
-/// ShellMessageBoxA [SHELL32.183] (cdecl, variadic — needs crate `#![feature(c_variadic)]`)
+/// ShellMessageBoxA [SHELL32.183] — fixed-arity twin of the C-variadic entry point in
+/// `dll/win32/shell32/rust_varargs_shim.c`. The C side exists only to do the `va_start`
+/// that stable Rust cannot (`c_variadic`, rust-lang#44930) and to keep the EXPORTED
+/// ordinal-183 symbol's variadic cdecl (WINAPIV) ABI for external callers; `ap` is a
+/// pointer to its `va_list` — which is exactly what FormatMessageA's `Arguments`
+/// parameter wants, so it forwards unchanged. All the logic stays here.
 #[no_mangle]
-pub unsafe extern "C" fn ShellMessageBoxA(
+pub unsafe extern "C" fn ShellMessageBoxA_v(
     hInstance: HINSTANCE,
     hWnd: HWND,
     lpText: LPCSTR,
     lpCaption: LPCSTR,
     uType: UINT,
-    mut args: ...
+    ap: *mut c_void,
 ) -> c_int {
     let mut szText: *mut CHAR = core::ptr::null_mut();
     let mut szTitle: [CHAR; 100] = [0; 100];
@@ -1525,7 +1532,8 @@ pub unsafe extern "C" fn ShellMessageBoxA(
         pszText = lpText;
     }
 
-    let mut va = args.as_va_list();
+    // `ap` IS the `va_list *` FormatMessageA wants for `Arguments` (the C shim passed
+    // `&ap` of its va_start'ed list) — forward it unchanged.
     FormatMessageA(
         FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_STRING,
         pszText as LPCVOID,
@@ -1533,7 +1541,7 @@ pub unsafe extern "C" fn ShellMessageBoxA(
         0,
         &mut pszTemp as *mut LPSTR as LPSTR,
         0,
-        &mut va as *mut _ as *mut c_void,
+        ap,
     );
 
     ret = MessageBoxA(hWnd, pszTemp, pszTitle, uType | MB_SETFOREGROUND);

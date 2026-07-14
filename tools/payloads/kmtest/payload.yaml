@@ -8,7 +8,10 @@
 #     autostart mechanism, walked by explorer's AutoStartupApplications; a
 #     native GUI-subsystem exe — a .cmd there dies silently, ShellExecuteExW
 #     on scripts from the startup walk never spawns cmd.exe)
-#   * kmtest-tests.txt (the sweep list) next to the binaries
+#   * kmtest-tests-{arch}.txt (the PER-ARCH sweep list) staged in-guest as
+#     bin/kmtest-tests.txt. Per-arch because i386 runs kmtest_drv under
+#     DUMMY_PSEH (native SEH is amd64/arm64-only) → a strictly larger set of
+#     structural crashers than amd64, so quarantines diverge by arch.
 # Booting a rostests-less build with this payload fails loudly on serial
 # ([KMTEST-SWEEP] launch FAILED) — no silent degradation.
 name: kmtest
@@ -20,7 +23,7 @@ binaries:
   - src: tools/payloads/kmtest/kmtest-sweep-{arch}.exe
     root: image
     dest: Profiles/All Users/Start Menu/Programs/StartUp/kmtest-sweep.exe
-  - src: tools/payloads/kmtest/kmtest-tests.txt
+  - src: tools/payloads/kmtest/kmtest-tests-{arch}.txt
     dest: bin/kmtest-tests.txt
 
 test:
