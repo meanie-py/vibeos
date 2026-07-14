@@ -192,11 +192,12 @@ def load_manual_list(path: str | None) -> set[str]:
     manual: set[str] = set()
     if not path:
         return manual
-    with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            line = line.split("#", 1)[0].strip()
-            if line:
-                manual.add(line)
+    for one in path.split(","):
+        with open(one, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.split("#", 1)[0].strip()
+                if line:
+                    manual.add(line)
     return manual
 
 
@@ -412,8 +413,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--out-c", help="write generated C here (default: stdout)")
     ap.add_argument(
         "--manual-list",
-        help="file of Nt* names forced to WOW64_NEEDS_MANUAL "
-        "(struct args needing deep marshalling)",
+        help="comma-separated file(s) of Nt* names forced to "
+        "WOW64_NEEDS_MANUAL (struct args needing deep marshalling)",
     )
     ap.add_argument("--stats", action="store_true", help="print a coverage summary to stderr")
     ap.add_argument(

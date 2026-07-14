@@ -574,6 +574,348 @@ def load_needs_manual(gen_c: Path) -> list[str]:
     return re.findall(r"/\* (\w+): WOW64_NEEDS_MANUAL", txt)
 
 
+# ---------------------------------------------------------------------------
+# 5b. Codegen — flat thunks for FLAT-OK, field-copy marshallers for WIDENING
+# ---------------------------------------------------------------------------
+
+_8BYTE_SCALARS = {"LONGLONG", "ULONGLONG", "DWORD64", "UINT64", "INT64",
+                  "LARGE_INTEGER", "ULARGE_INTEGER", "double", "__int64",
+                  "long long", "unsigned long long"}
+
+
+def _param_slots32(p: Param, db32) -> int:
+    """Guest (i686 stdcall) stack dwords this parameter consumes."""
+    t = _norm_type(p.ctype)
+    if "*" in t:
+        return 1
+    r = resolve_exact(t, db32)
+    if r:
+        return max(1, (r.size + 3) // 4)
+    if t in _8BYTE_SCALARS:
+        return 2
+    return 1
+
+
+def _ctag(rec: Record) -> str:
+    """struct tagMSG -> tagMSG (identifier-safe)."""
+    return rec.name.split(None, 1)[1]
+
+
+_SCALAR_SIZES = {
+    **dict.fromkeys(("CHAR", "UCHAR", "BOOLEAN", "BYTE", "char",
+                     "unsigned char", "signed char"), 1),
+    **dict.fromkeys(("WORD", "USHORT", "SHORT", "WCHAR", "wchar_t", "ATOM",
+                     "LANGID", "short", "unsigned short"), 2),
+    **dict.fromkeys(("INT", "UINT", "LONG", "ULONG", "DWORD", "BOOL", "FLOAT",
+                     "NTSTATUS", "ACCESS_MASK", "COLORREF", "LCID", "HRESULT",
+                     "int", "unsigned", "unsigned int", "long",
+                     "unsigned long", "float"), 4),
+    **dict.fromkeys(("LONGLONG", "ULONGLONG", "DWORD64", "UINT64", "INT64",
+                     "LARGE_INTEGER", "ULARGE_INTEGER", "double", "__int64",
+                     "long long", "unsigned long long"), 8),
+}
+
+
+def _esize(ctype: str, db: dict[str, Record], ptr_width: int) -> int | None:
+    """True size of a field's type at one width, or None if unknown."""
+    t = _norm_type(ctype)
+    am = re.search(r"\[(\d+)\]$", t)
+    if am:
+        elem = _esize(re.sub(r"\[\d+\]$", "", t).strip(), db, ptr_width)
+        return elem * int(am.group(1)) if elem else None
+    if "*" in t:
+        return ptr_width
+    r = resolve_exact(t, db)
+    if r:
+        return r.size
+    if t in _SCALAR_SIZES:
+        return _SCALAR_SIZES[t]
+    if t in DIVERGENT_SCALARS:
+        return ptr_width
+    sb = _scalar_base(t)
+    if sb != t and (sb in _SCALAR_SIZES or sb in _STRING_PTEES or
+                    sb in SAFE_SCALARS or sb in DIVERGENT_SCALARS or
+                    resolve_exact(sb, db)):
+        return ptr_width          # P/LP typedef pointer
+    return None
+
+
+def _gen_struct_marshaller(rec32: Record, rec64: Record, db32, db64,
+                           emitted: dict[str, tuple[int, int]],
+                           out: list[str]) -> bool:
+    """Emit In/Out field-copy pair for one WIDENING struct (recursing into
+    nested divergent structs). Returns False if an unmarshallable field shape
+    is hit (deep pointee, unknown divergence)."""
+    tag = _ctag(rec32)
+    if tag in emitted:
+        return True
+    emitted[tag] = (rec32.size, rec64.size)   # reserve (cycle guard)
+
+    f32, f64 = rec32.top_fields(), rec64.top_fields()
+
+    def span(fields, i, total):
+        nxt = fields[i + 1].offset if i + 1 < len(fields) else total
+        return fields[i].offset, nxt - fields[i].offset
+
+    body_in, body_out = [], []
+    for i, (a, b) in enumerate(zip(f32, f64)):
+        (o32, s32) = span(f32, i, rec32.size)
+        (o64, s64) = span(f64, i, rec64.size)
+        # prefer the field's TRUE type size over the span (spans absorb
+        # alignment padding: UNICODE_STRING.MaximumLength spans 2 vs 6)
+        e32 = _esize(a.ctype, db32, 4)
+        e64 = _esize(b.ctype, db64, 8)
+        if e32 is not None and e64 is not None:
+            s32, s64 = e32, e64
+        cmt = f" /* {a.name} */"
+        if s32 == s64:
+            body_in.append(f"    WowAmCpy(d + {o64}, s + {o32}, {s32});{cmt}")
+            body_out.append(f"    WowAmCpy(d + {o32}, s + {o64}, {s32});{cmt}")
+            continue
+        if (s32, s64) == (4, 8):
+            pr = resolve_pointee(a.ctype, db32)
+            if pr:
+                sub = diff_struct(pr.name, db32, db64)
+                if sub.cls == "WIDENING":
+                    del emitted[tag]
+                    return False    # deep pointee: not generatable (v0)
+                if sub.cls == "SEMANTIC":
+                    del emitted[tag]
+                    return False
+            body_in.append(f"    WowAmSx(d + {o64}, s + {o32});{cmt}")
+            body_out.append(f"    WowAmNx(d + {o32}, s + {o64});{cmt}")
+            continue
+        # nested divergent struct?
+        nr32 = resolve_exact(a.ctype, db32)
+        nr64 = resolve_exact(a.ctype, db64)
+        if nr32 and nr64 and (nr32.size, nr64.size) == (s32, s64):
+            if not _gen_struct_marshaller(nr32, nr64, db32, db64, emitted, out):
+                del emitted[tag]
+                return False
+            ntag = _ctag(nr32)
+            body_in.append(f"    WowAmIn_{ntag}(s + {o32}, d + {o64});{cmt}")
+            body_out.append(f"    WowAmOut_{ntag}(s + {o64}, d + {o32});{cmt}")
+            continue
+        del emitted[tag]
+        return False
+    out.append(
+        f"/* {rec32.name}: {rec32.size} -> {rec64.size} bytes */\n"
+        f"static void WowAmIn_{tag}(const unsigned char *s, unsigned char *d)\n"
+        "{\n" +
+        f"    WowAmZero(d, {rec64.size});\n" +
+        "\n".join(body_in) + "\n}\n\n" +
+        f"static void WowAmOut_{tag}(const unsigned char *s, unsigned char *d)\n"
+        "{\n" +
+        "\n".join(body_out) + "\n}\n")
+    return True
+
+
+_GEN_PRELUDE = """\
+/*
+ * wow64_automarshal.c — GENERATED by tools/wow64gen/marshalgen.py. DO NOT EDIT.
+ *
+ * 32->64 syscall thunks that wow64gen (stage 1) could not derive from the
+ * .spec alone: flat thunks recovered from real header prototypes, and
+ * field-copy deep marshallers generated from clang record-layout diffs
+ * (i686 vs aarch64) through the real header stack.
+ *
+ * Regenerate:  python3 tools/wow64gen/marshalgen.py gen
+ * (requires configured build-arm64/ + build-i386/ for compile_commands.json)
+ */
+
+#include <stdarg.h>
+#define WIN32_NO_STATUS
+#include <windef.h>
+#include <winnt.h>
+#include <ndk/ntndk.h>
+
+#define WOW64_MANUAL_UNIMPL ((NTSTATUS)0xC0BBBBBB)
+
+static void WowAmCpy(unsigned char *d, const unsigned char *s, unsigned n)
+{
+    while (n--) *d++ = *s++;
+}
+
+static void WowAmZero(unsigned char *d, unsigned n)
+{
+    while (n--) *d++ = 0;
+}
+
+/* 4 -> 8 sign-extend (covers pointers/handles: guest VAs < 2GB, and
+ * pseudo-handles (-1, -2) which are only correct sign-extended) */
+static void WowAmSx(unsigned char *d, const unsigned char *s)
+{
+    LONG v;
+    LONGLONG w;
+    WowAmCpy((unsigned char *)&v, s, 4);
+    w = (LONGLONG)v;
+    WowAmCpy(d, (const unsigned char *)&w, 8);
+}
+
+/* 8 -> 4 narrow */
+static void WowAmNx(unsigned char *d, const unsigned char *s)
+{
+    WowAmCpy(d, s, 4);
+}
+
+static int WowAmStrEq(const char *a, const char *b)
+{
+    while (*a && *a == *b) { a++; b++; }
+    return *a == *b;
+}
+
+"""
+
+
+def _flat_arg_exprs(proto: Proto, db32) -> tuple[list[str], int] | None:
+    """Build the 64-bit call argument expressions for a flat/widening thunk.
+    Returns (exprs, total_slots) or None if a param shape defeats flat
+    passing (by-value struct > 16 bytes)."""
+    exprs, slot = [], 0
+    for p in proto.params:
+        n = _param_slots32(p, db32)
+        if n == 1:
+            exprs.append(f"(ULONGLONG)(LONGLONG)(LONG)a[{slot}]")
+        elif n == 2:
+            exprs.append(f"((ULONGLONG)a[{slot}] | ((ULONGLONG)a[{slot+1}] << 32))")
+        elif n <= 4:
+            # by-value 9..16-byte struct: two AAPCS64 register halves
+            exprs.append(f"((ULONGLONG)a[{slot}] | ((ULONGLONG)a[{slot+1}] << 32))")
+            exprs.append(f"((ULONGLONG)a[{slot+2}] | ((ULONGLONG)a[{slot+3}] << 32))"
+                         if n == 4 else f"(ULONGLONG)a[{slot+2}]")
+        else:
+            return None
+        slot += n
+    return exprs, slot
+
+
+def cmd_gen(args) -> int:
+    b64, b32 = Path(args.build_dir), Path(args.build_dir32)
+    db32: dict[str, Record] = {}
+    db64: dict[str, Record] = {}
+    for tu_suffix, tu_src in WIN32K_TUS:
+        for db, bdir in ((db32, b32), (db64, b64)):
+            for k, v in dump_layouts(extract_flags(bdir, tu_suffix), tu_src).items():
+                db.setdefault(k, v)
+    proto_text = "\n".join((REPO / h).read_text() for h in args.headers.split(","))
+    protos = extract_prototypes(proto_text, r"Nt\w+")
+    manual = load_needs_manual(Path(args.gen_c))
+    linkable = set(re.findall(r"(?m)^@ stdcall (?:-arch=\S+ )?(\w+)\(",
+                              (REPO / args.export_spec).read_text()))
+    hand_written = {
+        ln.split()[0] for ln in (REPO / args.manual_list).read_text().splitlines()
+        if ln.strip() and not ln.startswith("#")
+    }
+
+    emitted_structs: dict[str, tuple[int, int]] = {}
+    struct_out: list[str] = []
+    thunks: list[str] = []
+    dispatch: list[str] = []
+    skipped: list[str] = []
+
+    for name in manual:
+        if name in hand_written:
+            continue
+        p = protos.get(name)
+        if not p:
+            skipped.append(f"{name}: no prototype")
+            continue
+        if name not in linkable:
+            skipped.append(f"{name}: not exported by {args.export_spec}")
+            continue
+
+        # classify each param
+        plan = []          # (param, class, rec32, rec64)
+        ok = True
+        for prm in p.params:
+            cls, _det = classify_param(prm, db32, db64)
+            if cls in ("FLAT", "IDENTICAL"):
+                plan.append((prm, "FLAT", None, None))
+            elif cls == "WIDENING":
+                pr32 = resolve_pointee(prm.ctype, db32) or resolve_exact(prm.ctype, db32)
+                pr64 = resolve_pointee(prm.ctype, db64) or resolve_exact(prm.ctype, db64)
+                if not pr32 or not pr64:
+                    ok = False
+                    skipped.append(f"{name}: {prm.name} pointee unresolved")
+                    break
+                if not _gen_struct_marshaller(pr32, pr64, db32, db64,
+                                              emitted_structs, struct_out):
+                    ok = False
+                    skipped.append(f"{name}: {_ctag(pr32)} not generatable "
+                                   "(deep pointee)")
+                    break
+                plan.append((prm, "WIDEN", pr32, pr64))
+            else:
+                ok = False
+                skipped.append(f"{name}: param {prm.name} is {cls}")
+                break
+        if not ok:
+            continue
+
+        flat = _flat_arg_exprs(p, db32)
+        if flat is None:
+            skipped.append(f"{name}: by-value struct > 16 bytes")
+            continue
+        exprs, _slots = flat
+
+        # patch WIDEN params: local 64-bit buffer + in/out marshal
+        decls, pre, post = [], [], []
+        slot = 0
+        for i, (prm, kind, pr32, pr64) in enumerate(plan):
+            n = _param_slots32(prm, db32)
+            if kind == "WIDEN":
+                tag = _ctag(pr32)
+                is_const = ("CONST" in prm.ctype or "const" in prm.ctype
+                            or prm.sal == "in")
+                decls.append(
+                    f"    unsigned char b{i}[{pr64.size}] "
+                    f"__attribute__((aligned(16)));")
+                decls.append(
+                    f"    const unsigned char *g{i} = "
+                    f"(const unsigned char *)(ULONG_PTR)a[{slot}];")
+                pre.append(f"    if (g{i}) WowAmIn_{tag}(g{i}, b{i});")
+                if not is_const:
+                    post.append(f"    if (g{i}) WowAmOut_{tag}(b{i}, "
+                                f"(unsigned char *)(ULONG_PTR)a[{slot}]);")
+                exprs[i] = f"(g{i} ? (ULONGLONG)(ULONG_PTR)b{i} : 0)"
+            slot += n
+        nargs = len(exprs)
+        proto64 = ", ".join(["ULONGLONG"] * nargs) if nargs else "void"
+        call = f"{name}({', '.join(exprs)})"
+        thunks.append(
+            f"static NTSTATUS WowAmThunk_{name}(ULONG *a)\n"
+            "{\n"
+            f"    extern ULONGLONG {name}({proto64});\n" +
+            ("\n".join(decls) + "\n" if decls else "") +
+            "    ULONGLONG r;\n"
+            "    (void)a;\n" +
+            ("\n".join(pre) + "\n" if pre else "") +
+            f"    r = {call};\n" +
+            ("\n".join(post) + "\n" if post else "") +
+            "    return (NTSTATUS)(ULONG)r;\n"
+            "}\n")
+        dispatch.append(f'    if (WowAmStrEq(Name, "{name}"))\n'
+                        f"        return WowAmThunk_{name}(Arguments);")
+
+    out_path = REPO / args.out
+    parts = [_GEN_PRELUDE]
+    parts.extend(struct_out)
+    parts.append("\n")
+    parts.extend(thunks)
+    parts.append(
+        "\nNTSTATUS Wow64AutoMarshalDispatch(const char *Name, ULONG *Arguments)\n"
+        "{\n" + "\n".join(dispatch) +
+        "\n    return WOW64_MANUAL_UNIMPL;\n}\n")
+    if skipped:
+        parts.append("\n/* NOT generated (still loud NEEDS_MANUAL stubs):\n" +
+                     "\n".join(f" *   {s}" for s in sorted(skipped)) + "\n */\n")
+    out_path.write_text("".join(parts))
+    print(f"wrote {out_path}: {len(thunks)} thunks, "
+          f"{len(emitted_structs)} struct marshaller pairs, "
+          f"{len(skipped)} skipped", file=sys.stderr)
+    return 0
+
+
 def cmd_report(args) -> int:
     b64, b32 = Path(args.build_dir), Path(args.build_dir32)
 
@@ -641,6 +983,18 @@ def main() -> int:
     rp.add_argument("--headers",
                     default="win32ss/include/ntuser.h,sdk/include/psdk/ntgdi.h,win32ss/include/ntgdibad.h")
     rp.set_defaults(func=cmd_report)
+    gp = sub.add_parser("gen")
+    gp.add_argument("--build-dir", default="build-arm64")
+    gp.add_argument("--build-dir32", default="build-i386")
+    gp.add_argument("--gen-c",
+                    default="build-arm64/dll/win32/wow64/wow64_win32k_thunks.gen.c")
+    gp.add_argument("--headers",
+                    default="win32ss/include/ntuser.h,sdk/include/psdk/ntgdi.h,"
+                            "win32ss/include/ntgdibad.h")
+    gp.add_argument("--export-spec", default="win32ss/win32u/win32u.spec")
+    gp.add_argument("--manual-list", default="tools/wow64gen/manual-win32k.txt")
+    gp.add_argument("--out", default="dll/win32/wow64/wow64_automarshal.c")
+    gp.set_defaults(func=cmd_gen)
     args = ap.parse_args()
     return args.func(args)
 

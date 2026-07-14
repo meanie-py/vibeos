@@ -2490,7 +2490,13 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
     if (WOW64_IS("NtSetSystemInformation"))
         return Wow64Manual_NtSetSystemInformation(Arguments);
 #undef WOW64_IS
-    return WOW64_MANUAL_UNIMPL;
+    /* M17: fall through to the marshalgen-generated thunks (flat thunks
+     * recovered from header prototypes + layout-diff deep marshallers).
+     * Hand-written marshallers above always take precedence. */
+    {
+        extern NTSTATUS Wow64AutoMarshalDispatch(const char *, ULONG *);
+        return Wow64AutoMarshalDispatch(Name, Arguments);
+    }
 }
 
 int Wow64pStrEq(const char *a, const char *b)

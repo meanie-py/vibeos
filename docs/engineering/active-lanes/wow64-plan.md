@@ -1039,3 +1039,47 @@ WINDOWPOS specifically; the direct-heap-read reframe above still stands for
 Verification oracle already exists: win32.exe's WINDOWPOSCHANGING round-trip
 (re-enable the copy-back and require 0x600D) plus DOOM's window geometry. This is
 the next substantial WoW64/USER milestone.
+
+## M17 — marshalgen: bulk marshaller GENERATION (2026-07-14)
+
+The manual-marshaller era is over as a scaling strategy. `tools/wow64gen/marshalgen.py`
+(wow64gen stage 2) mechanizes the whole pipeline that M8–M16 did by hand:
+
+1. **Layouts**: `clang -Xclang -fdump-record-layouts-complete` through the real
+   header stack at BOTH `-target i686-w64-mingw32` and `aarch64-w64-mingw32`
+   (flags stolen from each build's compile_commands.json). Authoritative
+   per-field offsets from the same compiler that builds the DLLs — no
+   hand-maintained struct tables, no drift.
+2. **Prototypes**: Nt* param lists + SAL direction extracted textually from
+   ntuser.h / ntgdi.h / ntgdibad.h (pre-preprocessing — mingw no_sal strips SAL).
+3. **Classify** (`report` subcommand): per-syscall verdict —
+   FLAT-OK (flat thunk was already correct) / WIDENING (auto-generatable
+   field-copy marshaller) / SEMANTIC (honest manual residue) / SCALAR_WIDEN.
+4. **Generate** (`gen` subcommand): `dll/win32/wow64/wow64_automarshal.c`
+   (checked in) — flat thunks + `WowAmIn_/WowAmOut_<tag>` field-copy pairs,
+   dispatched from `Wow64ManualDispatch`'s UNIMPL tail (hand-written always wins).
+
+**Win32k residue results** (93 NEEDS_MANUAL stubs):
+- 45 were FLAT-OK all along (no marshalling needed — the .spec just lacked type info)
+- 32 WIDENING (auto-generatable); 15 SEMANTIC (12 D3DKMT unions + LARGE_STRING/
+  USERCONNECT already hand-done); 1 no-proto (DxEng)
+- **Validation**: the WIDENING set independently rediscovers the exact set of
+  hand-written manual marshallers from M8–M10 (MSG, PAINTSTRUCT, UNICODE_STRING,
+  CURSORDATA, WNDCLASSEXW, CLSMENUNAME). The classifier reproduces months of
+  hand-derived knowledge from first principles.
+
+**Landed coverage**: +18 win32u.spec exports (stubs always existed in sys-stubs.S —
+only export lines were missing; arg counts from w32ksvc32.h for i386 @N decoration)
+→ 17 new stage-1 flat thunks; +1 generated deep marshaller (NtUserChangeDisplaySettings,
+UNICODE_STRING). `tools/wow64gen/automarshal-win32k.txt` force-stubs spec-flat-typed
+syscalls whose payloads diverge (wow64gen --manual-list is now comma-separated) —
+this is the guard against the silent-wrong-flat-thunk trap the spec additions opened.
+
+**Trap for posterity**: typing a divergent-payload syscall as all-`long` in
+win32u.spec makes stage 1 emit a silently-WRONG flat thunk (it can't see inside
+`ptr`). Any spec export added for automarshal MUST be checked against
+`marshalgen report` and force-listed if not FLAT-OK.
+
+**Next targets**: the ntdll surface (64 NEEDS_MANUAL in wow64_thunks.gen.c) — same
+machinery, NTDLL_TU already sketched; then reverse-direction callback payload
+generation (mechanize M15a); then arrays/count-aware shapes (EnumDisplayMonitors).
