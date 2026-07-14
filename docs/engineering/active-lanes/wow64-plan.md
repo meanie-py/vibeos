@@ -1116,3 +1116,35 @@ FEX-process startup death (~2-3/13 boots, lands on varying guests): gui32
 (1 hit; loads only libwow64fex.dll — proves it's the FEX layer, not wow64.dll).
 
 Commits: 0c4cf1de7a5 (gen-callback), b6a22290788 (ntdll manuals).
+
+### M18 addendum — marshal32.exe, the self-verifying oracle (2026-07-14)
+
+M17/M18 landed marshallers that **no guest exercised**. `tools/fex/hello-compute/Marshal32.c`
+closes that hole: an i386 guest that checks each marshalled value **against itself**
+(its own TEB32, its own posted sentinels), so a wrong marshal fails deterministically
+rather than "looking fine". Launched by winlogon (`TryStartWow64Marshal`), staged by
+mkramdisk; verdict `[marshal32] …` + exit 0x600D.
+
+It found two real bugs on its first run — both invisible to every other guest:
+
+1. **NtCreateIoCompletion / NtOpenIoCompletion were flat-thunked.** The .spec types the
+   PHANDLE out-slot as a bare `ptr`, so the flat thunk let the kernel's **8-byte** handle
+   write smash the guest's **4-byte** slot *and its neighbor* — `CreateIoCompletionPort`
+   returned NULL. This is precisely the silent-wrong-flat-thunk trap M17 documented,
+   caught live. Fixed: manual marshallers (NtCreateKeyedEvent shape) + force-listed in
+   `manual.txt`.
+
+2. **`ntuser.h` keeps a DEAD prototype in a block comment.** The MSDN-shaped 4-arg
+   `NtUserEnumDisplayMonitors` sits commented directly above the REAL 5-arg ROS one
+   (extra OUT `monitorRectList`). A marshaller written from the dead declaration reads
+   every subsequent arg at the wrong guest-stack slot. Fixed the marshaller (+ fail-loud
+   on >16 monitors instead of silent truncation) and hardened marshalgen:
+   `strip_comments()` now runs before prototype extraction, so **no commented-out
+   declaration can ever reach the classifier**. (Only last-definition-wins dict ordering
+   had hidden this in the generator; the hand-written path had no such luck.)
+
+**Durable lesson:** a marshaller without a guest that can *disprove* it is an untested
+assertion. Every future marshalgen batch should land with a marshal32 check that verifies
+the value round-trips, not merely that the call returns success.
+
+Oracle arm64-20260714-183400: all SIX guests 0x600d. Commit 44e6ab10649.
