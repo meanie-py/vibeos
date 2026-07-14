@@ -191,10 +191,22 @@ def _normalize_callbacks(text: str) -> str:
 # bit), so this is differential-oracle safe in the same way _normalize_callbacks is.
 RE_EMPTY_MEMMODEL = re.compile(r"\b(?:FAR|NEAR)\b")
 
+# `CONST` is `#define CONST const` (winnt.h) — same macro, uppercase. tree-sitter-c does not
+# know it, so `CONST struct sockaddr *name` reads as TWO type-identifiers and the enclosing
+# function produces ZERO function_definition nodes: it is silently dropped from the plan.
+#
+# That is not hypothetical either. It ate `bind` (socklife.c), `connect` (sockctrl.c) and
+# `sendto` (send.c) — the three core socket calls, all three of which take
+# `IN CONST struct sockaddr *name` — so ws2_32 was translated, compiled clean on all three
+# arches, and passed every check while missing the functions a socket client cannot work
+# without. Only the .spec export audit caught it. Normalise to the lowercase keyword.
+RE_UPPER_CONST = re.compile(r"\bCONST\b")
+
 
 def _blank_memmodel(text: str) -> str:
-    """Blank the empty `FAR`/`NEAR` decorations so tree-sitter can parse the params."""
-    return RE_EMPTY_MEMMODEL.sub("", text)
+    """Blank the empty `FAR`/`NEAR` decorations and normalise `CONST` so tree-sitter can
+    parse the params. Both are no-op/aliased Win32 macros with no ABI meaning."""
+    return RE_UPPER_CONST.sub("const", RE_EMPTY_MEMMODEL.sub("", text))
 
 
 @dataclass
