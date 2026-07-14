@@ -15,6 +15,12 @@
 #   ftfd rust_begin_unwind — a `#[panic_handler]` written `loop {}`: a panic that
 #                       hangs SILENTLY. Should adopt panic-common (prints + bugchecks).
 #   cdrom abort       — abort() stub written as a spin.
+#   ntkrnlmp xHalHaltSystem — SANCTIONED, not debt: the HAL-dispatch halt
+#                       fallback IS "spin forever" by contract (C: while(TRUE);
+#                       fstub-rust halstub.rs `loop {}`). Appears only in the
+#                       SMP-kernel sibling binary (ntkrnlmp.exe, built via
+#                       --smp-kernel); same fn in ntoskrnl.exe doesn't fold to
+#                       a first-insn self-jump there.
 #
 # Refresh (after fixing some): re-run the scanner on all 3 arches and union the output.
 beepmidi.dll: exp2
@@ -45,5 +51,6 @@ d3dx9_42.dll: exp2
 d3dx9_43.dll: exp2
 dsound.dll: exp2
 ftfd.dll: _RNvCsiGVaDesi5rv_7___rustc17rust_begin_unwind
+ntkrnlmp.exe: xHalHaltSystem
 ucrtbase.dll: exp2f
 ucrtbase.dll: exp2l
