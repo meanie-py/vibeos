@@ -202,13 +202,13 @@ unsafe fn report(eproc: *mut _EPROCESS, kthread: *mut _KTHREAD, object: usize) {
             // holder, not just its victims. `gm?` marks the heuristic: a bare
             // KeWaitForGate user makes these fields garbage — sanity-gated on
             // the owner looking like an aligned kernel pointer.
-            #[cfg(feature = "smp")]
+            #[cfg(all(feature = "smp", target_arch = "x86_64"))]
             {
                 use ntkrnl_sys::ddk::_KGUARDED_MUTEX;
                 let gate_off = core::mem::offset_of!(_KGUARDED_MUTEX, Gate);
                 let gm = (object - gate_off) as *const _KGUARDED_MUTEX;
                 let owner = core::ptr::read_volatile(core::ptr::addr_of!((*gm).Owner));
-                if (owner as usize) >= 0xFFFF_8000_0000_0000 && ((owner as usize) & 7) == 0 {
+                if (owner as u64) >= 0xFFFF_8000_0000_0000 && ((owner as usize) & 7) == 0 {
                     crate::dbg_print!(
                         b"[CENSUS]   gm? owner=%p state=%u waitreason=%u count=%d contention=%u\n\0",
                         owner,
