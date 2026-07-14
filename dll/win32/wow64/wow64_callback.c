@@ -444,31 +444,73 @@ int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status)
                     Frame->Buf64[i] = ((const BYTE *)Frame->OrigArg)[i];
                 A64->Result = A32->Result;
 
-                /* OWED — do NOT re-enable without re-reading this.
+                /* OUT-payload copy-back (M15a). Several window messages pass
+                 * their lParam struct as an OUT parameter: the window proc
+                 * WRITES into it and win32k reads the result back
+                 * (co_IntCallWindowProc copies lParamBufferSize bytes at
+                 * Args+sizeof(ARGS_64) into the 64-bit lParam — callback.rs).
+                 * The baseline restore above (from OrigArg) discards the guest's
+                 * edits, so for OUT messages we must translate the guest's
+                 * 32-bit modified payload back into the 64-bit slot P64.
                  *
-                 * WM_GETMINMAXINFO / WM_NCCALCSIZE / WM_WINDOWPOSCHANGING pass
-                 * their payload as an OUT parameter: natively, the window proc
-                 * writes into the very struct win32k then reads back. Restoring
-                 * the kernel's original bytes here therefore DROPS whatever the
-                 * guest's proc wrote, which is wrong in principle.
+                 * Re-enabled INCREMENTALLY, per message, oracle-gated on
+                 * win32.exe staying 0x600D. Only width-identical / pointer-free
+                 * OUT fields are copied.
                  *
-                 * Copying them back is, however, what the payloads are shaped
-                 * for — and doing it (2026-07-12) REGRESSED a passing oracle:
-                 * win32.exe went 0x600D -> 0x600E, its WM_PAINT / WM_NCPAINT /
-                 * WM_ERASEBKGND vanished entirely and WM_MOVE / WM_SIZE /
-                 * WM_GETMINMAXINFO / WM_NCCALCSIZE each went 1x -> 3x: honouring
-                 * the guest's geometry sent win32k into repeated size
-                 * renegotiation and the window never settled enough to paint.
-                 *
-                 * So the guest's edits stay dropped for now — the SAME behaviour
-                 * we have shipped since M8, not a new bug — and the real fix
-                 * (work out why the guest's DefWindowProc returns geometry
-                 * win32k won't converge on) is owed. The down-repack above is
-                 * kept: the guest at least now SEES a correct WINDOWPOS instead
-                 * of a 40-byte struct read as 28. */
-                (void)P32;
-                (void)P64;
-                (void)Extra;
+                 * WM_GETMINMAXINFO (40b, 5 POINTs) and WM_NCCALCSIZE (rgrc rects)
+                 * are safe and enabled. WM_WINDOWPOSCHANGING is deliberately
+                 * NOT copied back — and this is a GUEST bug, not a marshalling
+                 * one (2026-07-13 down-vs-up trace, field manual): win32k sends
+                 * the guest a no-op frame (cx=cy=0, flags=SWP_NOSIZE|SWP_NOMOVE
+                 * =0x3) but the guest's 32-bit DefWindowProc returns it with
+                 * SWP_NOSIZE CLEARED (flags=0x6c) while leaving cx=cy=0. Copying
+                 * that back tells win32k "size to 0x0 AND do size it" -> the
+                 * window collapses to zero client area -> WM_PAINT never fires
+                 * (win32.exe 0x600D -> 0x600E). Field translation is correct
+                 * (verified: handles preserved, geometry per-field); the guest's
+                 * DefWindowProc is returning divergent flags, most likely because
+                 * its 32-bit view of the window's rcWindow is stale/zero (M9
+                 * shared-struct layer). Root-causing that is the owed WINDOWPOS
+                 * continuation. */
+                switch (Frame->Msg)
+                {
+                    case WOW64_WM_GETMINMAXINFO:
+                        /* MINMAXINFO = 5 POINTs = 40 bytes, IDENTICAL 32/64
+                         * layout (no pointers/handles). The guest's edited
+                         * struct copies back verbatim. */
+                        if (Len32 >= sizeof(*A32) + 40 && Extra >= 40)
+                        {
+                            for (i = 0; i < 40; i++) P64[i] = P32[i];
+                            if (Wow64TraceSyscalls)
+                                DbgPrint("[WOW64CB] GETMINMAXINFO OUT copied back (40b)\n");
+                        }
+                        break;
+
+                    case WOW64_WM_NCCALCSIZE:
+                        /* NCCALCSIZE_PARAMS: rgrc[3] (48b, RECTs, width-identical)
+                         * then PWINDOWPOS lppos (8b host / 4b guest). The proc
+                         * computes the client rect into rgrc[0]; win32k reads it
+                         * back to derive the non-client inset. Copy back ONLY the
+                         * rects (pointer-free) and PRESERVE the 64-bit lppos from
+                         * the baseline restore. wParam==FALSE is a lone RECT
+                         * (16b) — Extra distinguishes. */
+                    {
+                        ULONG cb = (Extra >= 48) ? 48 : Extra;
+                        if (cb && Len32 >= sizeof(*A32) + cb)
+                        {
+                            for (i = 0; i < cb; i++) P64[i] = P32[i];
+                            if (Wow64TraceSyscalls)
+                                DbgPrint("[WOW64CB] NCCALCSIZE OUT copied back (%lub rects)\n",
+                                         (unsigned long)cb);
+                        }
+                        break;
+                    }
+
+                    /* WM_WINDOWPOSCHANGING is deliberately NOT copied back — see
+                     * the OWED note above the switch. */
+                    default:
+                        break;
+                }
 
                 Frame->RetBuf = A64;
                 Frame->RetLen = N;
