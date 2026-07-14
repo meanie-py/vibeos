@@ -6271,3 +6271,53 @@ Two footguns found while building them, both worth knowing:
   of its way to say so), but bindgen emits `c_ulong`, which is **64-bit on the linux host** that builds
   the harness. Pin such aliases to `u32`/`i32` in the generated bindings; the guardian above is what
   caught it, on day one, in anger.
+
+### 9.75 (2026-07-14) Exercising a branch proves nothing if the branch cannot produce a DIFFERENT ANSWER — a differential harness's "non-default mode" that was a false green
+
+**Context.** msvcrt has a whole family of functions that branch on whether a real locale is set:
+
+```c
+int __cdecl _strnicmp_l(const char *s1, const char *s2, size_t count, _locale_t locale) {
+    if(!locinfo->lc_handle[LC_CTYPE]) {          /* path 1: the "C" locale */
+        do { if ((c1 = *s1++) >= 'A' && c1 <= 'Z') c1 -= 'A' - 'a'; ... } while(...);
+        return (unsigned char)c1 - (unsigned char)c2;
+    }
+    do { c1 = _tolower_l((unsigned char)*s1++, locale); ... } while(...);   /* path 2 */
+    return c1 - c2;                              /* ...and a DIFFERENT return convention */
+}
+```
+
+Our differential harness pinned the "C" locale, so **path 2 was never exercised** and a path-1-only
+Rust implementation was reported MATCH forever. It was, and they were (`_stricmp`, `_strnicmp`,
+`_wcsicmp`, `_wcsnicmp`, `_strlwr_s`, `_strupr_s` + wide twins — correct in the "C" locale, wrong the
+moment `setlocale` is called).
+
+**The trap.** The obvious fix is to plant a non-zero `lc_handle[LC_CTYPE]` and re-run the rows. That
+**does** make msvcrt take path 2 — and it still proves nothing, because path 2 folds through
+`_tolower_l`, which reads `locinfo->pclmap[]`, which was **still the C locale's map**: an ASCII fold.
+Both paths therefore computed the *same answer on every input*. A path-1-only body was
+indistinguishable from a correct one, and the new "mode" reported a confident green.
+
+We only found out because we ran the negative control: **sabotage the subject to always take path 1,
+and demand the new rows convict it.** They didn't move.
+
+**The rule.**
+
+> **Exercising a branch is not the same as testing it.** A branch is only tested when the two sides of
+> it can produce *different observable results* for some input you actually generate. Before trusting a
+> "new mode" in any harness, ask: *what input makes the mode's answer differ from the default mode's?*
+> If you cannot name one, the mode is decorative.
+
+The fix was to make the alternate locale's tables genuinely non-ASCII (Latin-1 case pairs,
+`0xC0–0xDE ↔ 0xE0–0xFE`), so path 1 leaves `0xE9` alone while path 2 maps it to `0xC9`. Then the
+negative control bit, and the *first honest run* immediately convicted `_wcsicmp` — which has its own
+fold loop rather than delegating to the shared core, so an earlier fix had missed it.
+
+**The corollary, which is §9.73 restated:** the alternate-mode tables must be **one copy, shared by
+both sides**. Data you hand to both the reference and the subject can never be caught differentially —
+a mistake makes both wrong the same way and classify still says MATCH. So supply as little as possible,
+and share what you must. (Same reasoning retired the `msvcrt_ref_*` namespace for `LCMapStringA/W`,
+`CompareStringA/W` and `GetStringTypeW`: kernel32 is the *environment*, never code under test.)
+
+**Generalises to:** any harness with a "mode" (endianness, alignment, locale, SMP-vs-UP, a feature
+flag). The mode is worthless until you have shown it can fail.
