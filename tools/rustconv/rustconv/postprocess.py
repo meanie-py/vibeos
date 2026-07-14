@@ -1620,61 +1620,88 @@ _EXTERN_ATTR_RE = re.compile(r"^[ \t]*#\[[^\]]*\][ \t]*$")
 
 
 @lru_cache(maxsize=1)
-def _crt_cdecl_names() -> frozenset[str]:
-    """Every msvcrt export that is genuinely __cdecl — from msvcrt.spec, the ground truth.
+def _import_abi_map() -> dict[str, str]:
+    """symbol -> required extern ABI ("C" | "system"), from EVERY .spec in the tree.
 
-    The CRT is cdecl; Win32 is stdcall. An LLM translating a user-mode DLL sees the C call
-    `strcpy(dst, src)` alongside `SetLastError(...)` and routinely lumps BOTH into one
-    `extern "system"` block. On i386 that makes every CRT call a stdcall call into a cdecl
-    callee: the callee doesn't pop, the caller doesn't either, and the stack walks. It
-    compiles, it links, and nothing in the pipeline was looking — verify_ffi checks decls
-    against the MODULE's .spec, and strcpy is not in ws2_32.spec because it is an IMPORT.
+    THE INVARIANT: an imported symbol's calling convention is decided by the DLL that
+    EXPORTS it, and every one of those DLLs states it in a .spec. kernel32.spec says
+    `@ stdcall HeapAlloc(long long long)`; msvcrt.spec says `@ cdecl strcpy(ptr str)`.
+    So we never have to guess — and we must not, because guessing wrong is invisible.
 
-    Seen for real in the first ws2_32 file off the wire (addrconv.rs):
-        extern "system" { fn _itoa(...); fn strcpy(...); fn strcat(...); }
+    WHY THIS IS NEEDED. An LLM translating a user-mode DLL sees a C file that calls
+    `strcpy(dst, src)` and `HeapAlloc(heap, 0, n)` and `SetLastError(e)` side by side, with
+    nothing in the source distinguishing their conventions (the C compiler knew from the
+    headers). It groups them into whichever `extern` block it happens to pick. ws2_32's raw
+    translation declared **HeapAlloc as `extern "C"` in some modules and `extern "system"` in
+    others** — HeapAlloc is stdcall, so the cdecl sites walk the i386 stack on every
+    allocation. It compiles. It links. It boots.
 
-    `varargs` counts as cdecl here (that is how a variadic C fn is called).
+    Nothing was checking: verify_ffi validates a module's decls against ITS OWN .spec, and
+    HeapAlloc is not in ws2_32.spec because it is an IMPORT. The one checker that could have
+    caught it had no reason to look at that name at all.
+
+    Conflicts (a name exported with different conventions by different DLLs — 20 of 18,028,
+    all kernel Ke*/Rtl* arch-variants) are DROPPED from the map rather than guessed. Fail
+    safe: an unknown name is left exactly as the model wrote it.
+
+    `varargs` is cdecl (that is how a variadic C fn is called); `thiscall`/`fastcall` are
+    grouped with stdcall under Rust's "system" for our targets.
     """
     from .config import REACTOS_ROOT
 
-    spec = REACTOS_ROOT / "dll" / "win32" / "msvcrt" / "msvcrt.spec"
-    if not spec.is_file():
-        return frozenset()
-    names: set[str] = set()
-    pat = re.compile(r"^@\s+(?:cdecl|varargs)\s+(?:-\S+\s+)*([A-Za-z_?@]\w*)")
-    for line in spec.read_text(errors="replace").splitlines():
-        m = pat.match(line.strip())
-        if m:
-            names.add(m.group(1))
-    return frozenset(names)
+    conv = {
+        "stdcall": "system",
+        "fastcall": "system",
+        "thiscall": "system",
+        "cdecl": "C",
+        "varargs": "C",
+    }
+    pat = re.compile(
+        r"^@\s+(stdcall|cdecl|varargs|thiscall|fastcall)\s+(?:-\S+\s+)*([A-Za-z_]\w*)\s*\("
+    )
+    seen: dict[str, set[str]] = {}
+    for spec in REACTOS_ROOT.rglob("*.spec"):
+        sp = str(spec)
+        if "/build-" in sp or "/.git/" in sp:
+            continue
+        try:
+            text = spec.read_text(errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            m = pat.match(line.strip())
+            if m:
+                seen.setdefault(m.group(2), set()).add(conv[m.group(1)])
+    # Unambiguous names only.
+    return {name: next(iter(cs)) for name, cs in seen.items() if len(cs) == 1}
 
 
-def hoist_crt_cdecl_externs(code: str, exports: dict | None = None) -> str:
-    """Move CRT fn decls out of `extern "system"`/`"stdcall"` blocks into `extern "C"`.
+def enforce_import_abi(code: str, exports: dict | None = None) -> str:
+    """Force every imported fn decl into the extern block its exporting DLL's .spec requires.
 
-    See _crt_cdecl_names for why this is a silent i386 stack-corruption bug and why nothing
-    else catches it. Names the module itself EXPORTS are left alone (a DLL is free to export
-    its own stdcall fn that happens to share a CRT name — ws2_32 does not, but wsock32 and
-    the CRT-adjacent DLLs might, and guessing wrong here would be the same bug inverted).
+    See _import_abi_map for the invariant and for why nothing else catches this. Names the
+    module itself EXPORTS are skipped (a DLL may legitimately export its own fn that shares a
+    name with someone else's import; forcing that one would invert the bug).
     """
-    crt = _crt_cdecl_names()
-    if not crt:
+    abi_of = _import_abi_map()
+    if not abi_of:
         return code
     own = set(exports or {})
-    targets = crt - own
 
     lines = code.splitlines(keepends=True)
     out: list[str] = []
+    # required-abi -> [decl lines]
+    relocated: dict[str, list[str]] = {}
     moved: list[str] = []
-    moved_names: list[str] = []
     i, n = 0, len(lines)
     while i < n:
         m = _EXTERN_OPEN_RE.match(lines[i].rstrip("\n"))
-        if not m or m.group(1) not in ("system", "stdcall"):
+        if not m or m.group(1) not in ("system", "stdcall", "C", "cdecl"):
             out.append(lines[i])
             i += 1
             continue
-        abi = m.group(1)
+        # Normalize the block's ABI to the two Rust spellings we emit.
+        block_abi = "system" if m.group(1) in ("system", "stdcall") else "C"
         depth, j = 1, i + 1
         while j < n:
             depth += lines[j].count("{") - lines[j].count("}")
@@ -1694,10 +1721,12 @@ def hoist_crt_cdecl_externs(code: str, exports: dict | None = None) -> str:
                 pending.append(ln)
                 continue
             fn_m = _EXTERN_FN_NAME_RE.match(ln)
-            if fn_m and fn_m.group(1) in targets:
-                moved.extend(pending)
-                moved.append(ln)
-                moved_names.append(fn_m.group(1))
+            name = fn_m.group(1) if fn_m else None
+            want = abi_of.get(name) if name and name not in own else None
+            if want and want != block_abi:
+                relocated.setdefault(want, []).extend(pending)
+                relocated.setdefault(want, []).append(ln)
+                moved.append(f"{name}->{want}")
                 pending.clear()
                 hit = True
                 continue
@@ -1711,7 +1740,7 @@ def hoist_crt_cdecl_externs(code: str, exports: dict | None = None) -> str:
             i = j + 1
             continue
         if any(k.strip() for k in kept):
-            out.append(f'extern "{abi}" {{\n')
+            out.append(f'extern "{m.group(1)}" {{\n')
             out.extend(k if k.endswith("\n") else k + "\n" for k in kept)
             out.append("}\n")
         i = j + 1
@@ -1719,13 +1748,15 @@ def hoist_crt_cdecl_externs(code: str, exports: dict | None = None) -> str:
     if not moved:
         return code
     out.append(
-        f"// hoist_crt_cdecl_externs: moved {len(moved_names)} CRT decl(s) out of a stdcall\n"
-        f'// extern block into `extern "C"` (msvcrt.spec says cdecl): {", ".join(moved_names)}.\n'
-        "// On i386 a stdcall call into a cdecl callee walks the stack — nobody pops the args.\n"
-        'extern "C" {\n'
+        f"// enforce_import_abi: moved {len(moved)} import decl(s) into the extern block their\n"
+        f"// exporting DLL's .spec requires: {', '.join(sorted(set(moved)))}.\n"
+        "// The CRT is cdecl, Win32 is stdcall, and the C source does not say which is which —\n"
+        "// a wrong guess is a silent i386 stack walk on every call. The .spec is the truth.\n"
     )
-    out.extend(moved)
-    out.append("}\n")
+    for abi, decls in sorted(relocated.items()):
+        out.append(f'extern "{abi}" {{\n')
+        out.extend(decls)
+        out.append("}\n")
     return "".join(out)
 
 
@@ -2247,9 +2278,10 @@ def postprocess(
     # Last (after all import fixes have settled).
     if sys_umbrella:
         code = collapse_sys_crate(code, sys_crate, sys_umbrella, crate_module)
-        # User-mode only: the CRT is cdecl, Win32 is stdcall, and the LLM lumps them into one
-        # `extern "system"` block. Kernel targets have no msvcrt import surface to confuse.
-        code = hoist_crt_cdecl_externs(code, exports)
+        # User-mode only: force every IMPORT into the extern block its exporting DLL's .spec
+        # requires (CRT=cdecl, Win32=stdcall). The C source doesn't say which is which, so the
+        # model guesses — and ws2_32's raw output declared HeapAlloc BOTH ways across modules.
+        code = enforce_import_abi(code, exports)
         code = strip_user_inline_redeclarations(code)
         code = drop_pseh_macro_externs(code)
         code = fix_utf16_vec_literals(code)

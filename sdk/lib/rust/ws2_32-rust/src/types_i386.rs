@@ -455,6 +455,114 @@ pub const SO_OPENTYPE: u32 = 28680;
 pub const SO_SYNCHRONOUS_NONALERT: u32 = 32;
 pub const WINSOCK_ROOT: &[u8; 54] = b"System\\CurrentControlSet\\Services\\WinSock2\\Parameters\0";
 pub const MAXALIASES: u32 = 35;
+pub const IFF_UP: u32 = 1;
+pub const IFF_BROADCAST: u32 = 2;
+pub const IFF_LOOPBACK: u32 = 4;
+pub const IFF_POINTTOPOINT: u32 = 8;
+pub const IFF_MULTICAST: u32 = 16;
+pub const IP_OPTIONS: u32 = 1;
+pub const IP_HDRINCL: u32 = 2;
+pub const IP_TOS: u32 = 3;
+pub const IP_TTL: u32 = 4;
+pub const IP_MULTICAST_IF: u32 = 9;
+pub const IP_MULTICAST_TTL: u32 = 10;
+pub const IP_MULTICAST_LOOP: u32 = 11;
+pub const IP_ADD_MEMBERSHIP: u32 = 12;
+pub const IP_DROP_MEMBERSHIP: u32 = 13;
+pub const IP_DONTFRAGMENT: u32 = 14;
+pub const IP_ADD_SOURCE_MEMBERSHIP: u32 = 15;
+pub const IP_DROP_SOURCE_MEMBERSHIP: u32 = 16;
+pub const IP_BLOCK_SOURCE: u32 = 17;
+pub const IP_UNBLOCK_SOURCE: u32 = 18;
+pub const IP_PKTINFO: u32 = 19;
+pub const IP_HOPLIMIT: u32 = 21;
+pub const IP_RECEIVE_BROADCAST: u32 = 22;
+pub const IP_RECVIF: u32 = 24;
+pub const IP_RECVDSTADDR: u32 = 25;
+pub const IP_IFLIST: u32 = 28;
+pub const IP_ADD_IFLIST: u32 = 29;
+pub const IP_DEL_IFLIST: u32 = 30;
+pub const IP_UNICAST_IF: u32 = 31;
+pub const IP_RTHDR: u32 = 32;
+pub const IP_RECVRTHDR: u32 = 38;
+pub const IP_TCLASS: u32 = 39;
+pub const IP_RECVTCLASS: u32 = 40;
+pub const IP_ORIGINAL_ARRIVAL_IF: u32 = 47;
+pub const IP_UNSPECIFIED_TYPE_OF_SERVICE: i32 = -1;
+pub const MCAST_JOIN_GROUP: u32 = 41;
+pub const MCAST_LEAVE_GROUP: u32 = 42;
+pub const MCAST_BLOCK_SOURCE: u32 = 43;
+pub const MCAST_UNBLOCK_SOURCE: u32 = 44;
+pub const MCAST_JOIN_SOURCE_GROUP: u32 = 45;
+pub const MCAST_LEAVE_SOURCE_GROUP: u32 = 46;
+pub const IPV6_HOPOPTS: u32 = 1;
+pub const IPV6_HDRINCL: u32 = 2;
+pub const IPV6_UNICAST_HOPS: u32 = 4;
+pub const IPV6_MULTICAST_IF: u32 = 9;
+pub const IPV6_MULTICAST_HOPS: u32 = 10;
+pub const IPV6_MULTICAST_LOOP: u32 = 11;
+pub const IPV6_ADD_MEMBERSHIP: u32 = 12;
+pub const IPV6_JOIN_GROUP: u32 = 12;
+pub const IPV6_DROP_MEMBERSHIP: u32 = 13;
+pub const IPV6_LEAVE_GROUP: u32 = 13;
+pub const IPV6_DONTFRAG: u32 = 14;
+pub const IPV6_PKTINFO: u32 = 19;
+pub const IPV6_HOPLIMIT: u32 = 21;
+pub const IPV6_PROTECTION_LEVEL: u32 = 23;
+pub const IPV6_RECVIF: u32 = 24;
+pub const IPV6_RECVDSTADDR: u32 = 25;
+pub const IPV6_CHECKSUM: u32 = 26;
+pub const IPV6_V6ONLY: u32 = 27;
+pub const IPV6_IFLIST: u32 = 28;
+pub const IPV6_ADD_IFLIST: u32 = 29;
+pub const IPV6_DEL_IFLIST: u32 = 30;
+pub const IPV6_UNICAST_IF: u32 = 31;
+pub const IPV6_RTHDR: u32 = 32;
+pub const IPV6_RECVRTHDR: u32 = 38;
+pub const IPV6_TCLASS: u32 = 39;
+pub const IPV6_RECVTCLASS: u32 = 40;
+pub const IP_UNSPECIFIED_HOP_LIMIT: i32 = -1;
+pub const IP_PROTECTION_LEVEL: u32 = 23;
+pub const PROTECTION_LEVEL_UNRESTRICTED: u32 = 10;
+pub const PROTECTION_LEVEL_EDGERESTRICTED: u32 = 20;
+pub const PROTECTION_LEVEL_RESTRICTED: u32 = 30;
+pub const PROTECTION_LEVEL_DEFAULT: u32 = 20;
+pub const INET_ADDRSTRLEN: u32 = 22;
+pub const INET6_ADDRSTRLEN: u32 = 65;
+pub const TCP_OFFLOAD_NO_PREFERENCE: u32 = 0;
+pub const TCP_OFFLOAD_NOT_PREFERRED: u32 = 1;
+pub const TCP_OFFLOAD_PREFERRED: u32 = 2;
+pub const TCP_EXPEDITED_1122: u32 = 2;
+pub const TCP_KEEPALIVE: u32 = 3;
+pub const TCP_MAXSEG: u32 = 4;
+pub const TCP_MAXRT: u32 = 5;
+pub const TCP_STDURG: u32 = 6;
+pub const TCP_NOURG: u32 = 7;
+pub const TCP_ATMARK: u32 = 8;
+pub const TCP_NOSYNRETRIES: u32 = 9;
+pub const TCP_TIMESTAMPS: u32 = 10;
+pub const TCP_OFFLOAD_PREFERENCE: u32 = 11;
+pub const TCP_CONGESTION_ALGORITHM: u32 = 12;
+pub const TCP_DELAY_FIN_ACK: u32 = 13;
+pub const IN6ADDR_LINKLOCALPREFIX_LENGTH: u32 = 64;
+pub const IN6ADDR_MULTICASTPREFIX_LENGTH: u32 = 8;
+pub const IN6ADDR_SOLICITEDNODEMULTICASTPREFIX_LENGTH: u32 = 104;
+pub const IN6ADDR_V4MAPPEDPREFIX_LENGTH: u32 = 96;
+pub const IN6ADDR_6TO4PREFIX_LENGTH: u32 = 16;
+pub const IN6ADDR_TEREDOPREFIX_LENGTH: u32 = 32;
+pub const UDP_NOCHECKSUM: u32 = 1;
+pub const UDP_CHECKSUM_COVERAGE: u32 = 20;
+pub const EAI_AGAIN: u32 = 11002;
+pub const EAI_BADFLAGS: u32 = 10022;
+pub const EAI_FAIL: u32 = 11003;
+pub const EAI_FAMILY: u32 = 10047;
+pub const EAI_MEMORY: u32 = 8;
+pub const EAI_NOSECURENAME: u32 = 11032;
+pub const EAI_NONAME: u32 = 11001;
+pub const EAI_SERVICE: u32 = 10109;
+pub const EAI_SOCKTYPE: u32 = 10044;
+pub const EAI_IPSECPOLICY: u32 = 11033;
+pub const GAI_STRERROR_BUFFER_SIZE: u32 = 1024;
 pub type u_char = ::core::ffi::c_uchar;
 pub type u_short = ::core::ffi::c_ushort;
 pub type u_int = ::core::ffi::c_uint;
@@ -3101,3 +3209,211 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
 }
+#[repr(C)]
+pub struct sockaddr_in6_old {
+    pub sin6_family: SHORT,
+    pub sin6_port: USHORT,
+    pub sin6_flowinfo: ULONG,
+    pub sin6_addr: IN6_ADDR,
+}
+#[repr(C)]
+pub struct sockaddr_gen {
+    pub Address: __BindgenUnionField<sockaddr>,
+    pub AddressIn: __BindgenUnionField<sockaddr_in>,
+    pub AddressIn6: __BindgenUnionField<sockaddr_in6_old>,
+    pub bindgen_union_field: [u32; 6usize],
+}
+#[repr(C)]
+pub struct _INTERFACE_INFO {
+    pub iiFlags: ULONG,
+    pub iiAddress: sockaddr_gen,
+    pub iiBroadcastAddress: sockaddr_gen,
+    pub iiNetmask: sockaddr_gen,
+}
+pub type INTERFACE_INFO = _INTERFACE_INFO;
+pub type LPINTERFACE_INFO = *mut _INTERFACE_INFO;
+#[repr(C)]
+pub struct _INTERFACE_INFO_EX {
+    pub iiFlags: ULONG,
+    pub iiAddress: SOCKET_ADDRESS,
+    pub iiBroadcastAddress: SOCKET_ADDRESS,
+    pub iiNetmask: SOCKET_ADDRESS,
+}
+pub type INTERFACE_INFO_EX = _INTERFACE_INFO_EX;
+pub type LPINTERFACE_INFO_EX = *mut _INTERFACE_INFO_EX;
+#[repr(C)]
+pub struct sockaddr_in6 {
+    pub sin6_family: ADDRESS_FAMILY,
+    pub sin6_port: USHORT,
+    pub sin6_flowinfo: ULONG,
+    pub sin6_addr: IN6_ADDR,
+    pub __bindgen_anon_1: sockaddr_in6__bindgen_ty_1,
+}
+#[repr(C)]
+pub struct sockaddr_in6__bindgen_ty_1 {
+    pub sin6_scope_id: __BindgenUnionField<ULONG>,
+    pub sin6_scope_struct: __BindgenUnionField<SCOPE_ID>,
+    pub bindgen_union_field: u32,
+}
+pub type SOCKADDR_IN6_LH = sockaddr_in6;
+pub type PSOCKADDR_IN6_LH = *mut sockaddr_in6;
+pub type LPSOCKADDR_IN6_LH = *mut sockaddr_in6;
+#[repr(C)]
+pub struct sockaddr_in6_w2ksp1 {
+    pub sin6_family: ::core::ffi::c_short,
+    pub sin6_port: USHORT,
+    pub sin6_flowinfo: ULONG,
+    pub sin6_addr: in6_addr,
+    pub sin6_scope_id: ULONG,
+}
+pub type SOCKADDR_IN6_W2KSP1 = sockaddr_in6_w2ksp1;
+pub type PSOCKADDR_IN6_W2KSP1 = *mut sockaddr_in6_w2ksp1;
+pub type LPSOCKADDR_IN6_W2KSP1 = *mut sockaddr_in6_w2ksp1;
+pub type SOCKADDR_IN6 = SOCKADDR_IN6_W2KSP1;
+pub type PSOCKADDR_IN6 = *mut SOCKADDR_IN6_W2KSP1;
+pub type LPSOCKADDR_IN6 = *mut SOCKADDR_IN6_W2KSP1;
+#[repr(C)]
+pub struct _SOCKADDR_INET {
+    pub Ipv4: __BindgenUnionField<SOCKADDR_IN>,
+    pub Ipv6: __BindgenUnionField<SOCKADDR_IN6>,
+    pub si_family: __BindgenUnionField<ADDRESS_FAMILY>,
+    pub bindgen_union_field: [u32; 7usize],
+}
+pub type SOCKADDR_INET = _SOCKADDR_INET;
+pub type PSOCKADDR_INET = *mut _SOCKADDR_INET;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _sockaddr_in6_pair {
+    pub SourceAddress: PSOCKADDR_IN6,
+    pub DestinationAddress: PSOCKADDR_IN6,
+}
+pub type SOCKADDR_IN6_PAIR = _sockaddr_in6_pair;
+pub type PSOCKADDR_IN6_PAIR = *mut _sockaddr_in6_pair;
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+unsafe extern "C" {
+}
+pub const _MULTICAST_MODE_TYPE_MCAST_INCLUDE: _MULTICAST_MODE_TYPE = 0;
+pub const _MULTICAST_MODE_TYPE_MCAST_EXCLUDE: _MULTICAST_MODE_TYPE = 1;
+pub type _MULTICAST_MODE_TYPE = ::core::ffi::c_uint;
+pub use self::_MULTICAST_MODE_TYPE as MULTICAST_MODE_TYPE;
+#[repr(C)]
+pub struct ip_mreq {
+    pub imr_multiaddr: IN_ADDR,
+    pub imr_interface: IN_ADDR,
+}
+pub type IP_MREQ = ip_mreq;
+pub type PIP_MREQ = *mut ip_mreq;
+#[repr(C)]
+pub struct ip_mreq_source {
+    pub imr_multiaddr: IN_ADDR,
+    pub imr_sourceaddr: IN_ADDR,
+    pub imr_interface: IN_ADDR,
+}
+pub type IP_MREQ_SOURCE = ip_mreq_source;
+pub type PIP_MREQ_SOURCE = *mut ip_mreq_source;
+#[repr(C)]
+pub struct ip_msfilter {
+    pub imsf_multiaddr: IN_ADDR,
+    pub imsf_interface: IN_ADDR,
+    pub imsf_fmode: MULTICAST_MODE_TYPE,
+    pub imsf_numsrc: ULONG,
+    pub imsf_slist: [IN_ADDR; 1usize],
+}
+pub type IP_MSFILTER = ip_msfilter;
+pub type PIP_MSFILTER = *mut ip_msfilter;
+#[repr(C)]
+pub struct ipv6_mreq {
+    pub ipv6mr_multiaddr: IN6_ADDR,
+    pub ipv6mr_interface: ULONG,
+}
+pub type IPV6_MREQ = ipv6_mreq;
+pub type PIPV6_MREQ = *mut ipv6_mreq;
+#[repr(C)]
+pub struct group_req {
+    pub gr_interface: ULONG,
+    pub gr_group: SOCKADDR_STORAGE,
+}
+pub type GROUP_REQ = group_req;
+pub type PGROUP_REQ = *mut group_req;
+#[repr(C)]
+pub struct group_source_req {
+    pub gsr_interface: ULONG,
+    pub gsr_group: SOCKADDR_STORAGE,
+    pub gsr_source: SOCKADDR_STORAGE,
+}
+pub type GROUP_SOURCE_REQ = group_source_req;
+pub type PGROUP_SOURCE_REQ = *mut group_source_req;
+#[repr(C)]
+pub struct group_filter {
+    pub gf_interface: ULONG,
+    pub gf_group: SOCKADDR_STORAGE,
+    pub gf_fmode: MULTICAST_MODE_TYPE,
+    pub gf_numsrc: ULONG,
+    pub gf_slist: [SOCKADDR_STORAGE; 1usize],
+}
+pub type GROUP_FILTER = group_filter;
+pub type PGROUP_FILTER = *mut group_filter;
+#[repr(C)]
+pub struct in_pktinfo {
+    pub ipi_addr: IN_ADDR,
+    pub ipi_ifindex: ULONG,
+}
+pub type IN_PKTINFO = in_pktinfo;
+pub type PIN_PKTINFO = *mut in_pktinfo;
+#[repr(C)]
+pub struct in6_pktinfo {
+    pub ipi6_addr: IN6_ADDR,
+    pub ipi6_ifindex: ULONG,
+}
+pub type IN6_PKTINFO = in6_pktinfo;
+pub type PIN6_PKTINFO = *mut in6_pktinfo;
+pub type ADDRINFOT = ADDRINFOA;
+pub type PADDRINFOT = *mut ADDRINFOA;
+pub type ADDRINFO = ADDRINFOA;
+pub type LPADDRINFO = *mut ADDRINFOA;
+pub type socklen_t = ::core::ffi::c_int;

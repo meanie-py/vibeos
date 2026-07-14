@@ -623,10 +623,18 @@ case "$DRIVER" in
     BLOCKLIST_VARS=1
     CALLBACK_SYSTEM=1
     DRIVER_DIR="${SRC}/dll/win32/ws2_32/inc"
-    WRAPPER_INC=$'#include "ws2_32.h"'
+    # ws2_32.h is the PCH, but addrinfo.c/rnr.c ALSO include <ws2tcpip.h> on top of it (that
+    # is where SOCKADDR_IN6/IN6_ADDR/addrinfo live — via ws2ipdef.h). Allowlisting a header
+    # the wrapper never includes does nothing, so include it here as the .c files do.
+    WRAPPER_INC=$'#include "ws2_32.h"\n#include <ws2tcpip.h>'
+    # ws2ipdef.h/ws2tcpip.h carry the IPv6 surface (sockaddr_in6 with its scope-id union,
+    # in6_addr, ipv6_mreq) that addrinfo.c/rnr.c use. Leaving them out does not produce an
+    # error — it produces a MISSING type, which the model then hand-invents, and a
+    # hand-invented sockaddr_in6 is a silent wire-format bug.
     ALLOW_FILES=( --allowlist-file '.*ws2_32[/\\]inc[/\\]ws2_32p?\.h'
                   --allowlist-file '.*[/\\]ws2spi\.h' --allowlist-file '.*[/\\]winsock2\.h'
                   --allowlist-file '.*[/\\]winsock\.h' --allowlist-file '.*[/\\]ws2def\.h'
+                  --allowlist-file '.*[/\\]ws2ipdef\.h' --allowlist-file '.*[/\\]ws2tcpip\.h'
                   --allowlist-file '.*[/\\]ws2help\.h' --allowlist-file '.*[/\\]nsp_dns\.h'
                   --allowlist-file '.*[/\\]nspapi\.h' --allowlist-file '.*[/\\]svcguid\.h'
                   --allowlist-file '.*[/\\]iptypes\.h' --allowlist-file '.*[/\\]wsahelp\.h'
