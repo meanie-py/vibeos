@@ -903,15 +903,33 @@ no input. `vm.py`/smoke and `run.sh --gui` already attach them; `start.sh` now d
 too (virtio kbd+mouse + modern virtio-mmio, mirroring vm.py). That fixed *input*
 availability — but rendering reliability is a separate, still-open win32k bug (next).
 
-**OWED — the remaining M14 blocker: the intermittent window-DC render (M13).** DOOM
+**PARKED — the remaining M14 blocker: the intermittent window-DC render (M13).** DOOM
 blits its 640×400 frame thousands of times per boot into a DC it cached via
-`GetDC(hwnd)` *before* `ShowWindow` (see the doomgeneric shape above). On show, that
-cached DCE's visible region must be recomputed (`DceResetActiveDCEs` / visrgn
-invalidation). It works most boots but not all — on a miss the cached DC keeps a stale
-(hidden→empty) visrgn, every blit clips to nothing, and the window shows only its
-magenta background despite `StretchDIBits` running continuously. This is a
-timing-dependent win32k race (worse cold-JIT), NOT a WoW64 bug. Fixing it is what turns
-M14 from "renders sometimes" into "reliably playable." The separate small-magenta
-patch at the window's top-left on *rendering* boots (a leftover un-painted
-window-background fill) plus the `rcWindow == rcClient` no-non-client-inset anomaly
-(`WM_NCCALCSIZE` client-rect writeback dropped) are lesser win32k follow-ups.
+`GetDC(hwnd)` *before* `ShowWindow` (see the doomgeneric shape above). It works most
+boots but not all — on a miss the window shows only its magenta background despite
+`StretchDIBits` running continuously. This is a timing-dependent win32k race (worse
+cold-JIT), **NOT a WoW64 bug** — the native arm64 A/B DOOM misrenders identically.
+
+**2026-07-13 — the "stale empty visrgn / blit clips to nothing" hypothesis is DISPROVEN.**
+Three instrumented soaks (probes parked in git stash `ca1bdab8` —
+`m13-render-probes`) settled the clip path completely. On *every* boot, rendered and
+magenta alike:
+- **visrgn is correct**: `DceResetActiveDCEs`→`DceUpdateVisRgn` on ShowWindow recomputes
+  the cached DC's visrgn to `(0,0,640,400)c2` (M13-RST probe in `windc.rs`).
+- **surface is correct + identical**: `fffffa80001efe50` on every boot (M13-VIS in `dibobj.rs`).
+- **the blit clip (RAO) is correct**: `CLIPPING_UpdateGCRegion` (reached via DOOM's real
+  path `StretchDIBits`→SRCCOPY branch→`NtGdiBitBlt`) computes `rao=(0,0,640,400)c2`,
+  clip/meta/api all null, org=(0,0), on rendered *and* magenta boots (M13-UGR in `cliprgn.rs`).
+
+So clip/surface/visrgn are all correct 100% of the time; the magenta is **not** a
+clipping failure. What the screenshots show is that DOOM's `NtGdiBitBlt` intermittently
+deposits **no pixels** into a correctly-clipped, correct surface — the window's
+erase-background magenta persists. That points downstream of the clip, at the **DIB→surface
+pixel copy** (`IntSetDIBits` / `EXLATEOBJ` color translation / `EngBitBlt`) or a **ramfb
+scanout / dirty-rect timing** race — deep native win32k/framebuffer, off the WoW64 mission.
+Next probe for whoever resumes: instrument inside `NtGdiBitBlt`/`EngBitBlt` (bytes actually
+written to `pdc.dclevel.pSurface`) or dump the surface bits right after the blit, gated on
+process=doom, to catch the no-op copy in the act. The related small-magenta patch at the
+window's top-left on *rendering* boots (leftover un-painted window-background fill) and the
+`rcWindow == rcClient` no-non-client-inset anomaly (`WM_NCCALCSIZE` client-rect writeback
+dropped) are lesser follow-ups in the same win32k lane.
