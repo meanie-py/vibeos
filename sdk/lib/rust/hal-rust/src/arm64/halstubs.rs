@@ -61,6 +61,10 @@ pub(crate) struct HalpCpuState {
     /// pair inside the tick path delivers DISPATCH work in exception context
     /// (BUGCHECK 0x1E, EC=0x0E illegal-execution-state).
     pub(crate) interrupt_context_depth: AtomicU32,
+    /// M5c tail: this CPU's virtual timer is armed (banked PPI-27 enabled +
+    /// CNTV deadline programmed). APs arm lazily on their first IRQ after
+    /// clock init publishes the interval (clock.rs vtimer_percpu_arm).
+    pub(crate) vtimer_armed: AtomicU32,
 }
 
 #[allow(clippy::declare_interior_mutable_const)]
@@ -68,6 +72,7 @@ const HALP_CPU_STATE_INIT: HalpCpuState = HalpCpuState {
     soft_int_pending: AtomicU32::new(0),
     soft_int_in_progress: AtomicI32::new(0),
     interrupt_context_depth: AtomicU32::new(0),
+    vtimer_armed: AtomicU32::new(0),
 };
 static HalpCpuStates: [HalpCpuState; HALP_MAX_CPUS] = [HALP_CPU_STATE_INIT; HALP_MAX_CPUS];
 
@@ -84,6 +89,13 @@ pub(crate) unsafe fn halp_cpu_state() -> &'static HalpCpuState {
     let pcr = halp_pcr();
     let n = if pcr.is_null() { 0 } else { (*pcr).Prcb.Number as usize };
     &HalpCpuStates[n % HALP_MAX_CPUS]
+}
+
+/// This CPU's processor number (0 pre-PCR: BSP only).
+#[inline(always)]
+pub(crate) unsafe fn halp_cpu_number() -> u32 {
+    let pcr = halp_pcr();
+    if pcr.is_null() { 0 } else { (*pcr).Prcb.Number as u32 }
 }
 
 #[inline(always)]

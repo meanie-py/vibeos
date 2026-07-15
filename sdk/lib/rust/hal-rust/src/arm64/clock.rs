@@ -165,6 +165,13 @@ extern "C" {
     /// `KeUpdateSystemTime`; matches the `extern "C"` definition in
     /// `ntoskrnl-rust ke/time.rs`.
     fn KeUpdateSystemTime(TrapFrame: *mut core::ffi::c_void, Increment: u32, Irql: u8);
+    /// ntoskrnl export (ke/time.rs). AP clock ticks call this INSTEAD of
+    /// KeUpdateSystemTime: per-thread user/kernel time, per-PRCB DPC-rate
+    /// bookkeeping, and quantum decrement/quantum-end — everything per-CPU —
+    /// without advancing the global InterruptTime/SystemTime/KeTickCount
+    /// (exactly one CPU may own wall-clock advance: CPU0, NT rule).
+    #[cfg(feature = "smp")]
+    fn KeUpdateRunTime(TrapFrame: *mut core::ffi::c_void, Irql: u8);
 }
 
 extern "system" {
@@ -285,6 +292,37 @@ pub(crate) unsafe fn gic_send_sgi(targets: u64) {
     }
     core::arch::asm!("dsb ish", options(nostack, preserves_flags));
     mmio_write(gicd, GICD_SGIR, (list << 16) | SGI_IPI_INTID);
+}
+
+/// M5c tail: arm THIS CPU's virtual timer — banked PPI-27 priority/enable
+/// (the GICv2 IPRIORITYR/ISENABLER0 copies for INTIDs < 32 are per accessing
+/// core, so this MUST run on the CPU being armed) + the first CNTV deadline.
+/// APs call this lazily from their first IRQ after clock init published the
+/// interval (they cannot arm in HalInitializeProcessor — that runs before
+/// clock init, when the interval is still unknown); the BSP arms inline in
+/// HalInitializeClockArm64 and never takes this path.
+#[cfg(feature = "smp")]
+unsafe fn vtimer_percpu_arm(interval: u64) {
+    let gicd = GICD_BASE.load(Ordering::SeqCst);
+    if gicd == 0 {
+        return;
+    }
+    core::ptr::write_volatile(
+        (gicd + GICD_IPRIORITYR + VTIMER_INTID as usize) as *mut u8,
+        gic_priority(CLOCK_LEVEL),
+    );
+    mmio_write(
+        gicd,
+        GICD_ISENABLER + (VTIMER_INTID as usize / 32) * 4,
+        1u32 << (VTIMER_INTID % 32),
+    );
+    vtimer_rearm(interval);
+    // One-shot by construction (armed flag gates the caller). IRQ context;
+    // DbgPrint on arm64 is the polled UART — safe here.
+    DbgPrint(
+        b"[SMP] CPU%u vtimer armed (banked PPI-27 + CNTV)\n\0".as_ptr(),
+        super::halstubs::halp_cpu_number(),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -496,6 +534,21 @@ pub unsafe extern "system" fn HalInitializeClockArm64(
     TIMER_INTERVAL.store(interval, Ordering::SeqCst);
     if interval != 0 {
         vtimer_rearm(interval);
+        super::halstubs::halp_cpu_state()
+            .vtimer_armed
+            .store(1, Ordering::SeqCst);
+    }
+
+    // M5c tail: kick every AP with an SGI so each arms its own vtimer NOW
+    // (HalClockInterruptArm64 lazy-arms on the first IRQ once TIMER_INTERVAL
+    // is published — the banked PPI-27 registers and CNTV are per-CPU, so the
+    // BSP cannot arm them remotely). GICv2 SGIR target-list-filter 01 =
+    // "all CPUs but self" — no CPU enumeration needed, and a no-op on -smp 1.
+    // Self-healing: if this SGI is ever lost, the next dispatch IPI arms it.
+    #[cfg(feature = "smp")]
+    {
+        core::arch::asm!("dsb ish", options(nostack, preserves_flags));
+        mmio_write(gicd, GICD_SGIR, (1u32 << 24) | SGI_IPI_INTID);
     }
 }
 
@@ -534,6 +587,23 @@ pub unsafe extern "system" fn HalClockInterruptArm64(trap_frame: *mut core::ffi:
         .fetch_add(1, Ordering::SeqCst);
     let _depth_guard = DepthGuard;
 
+    // M5c tail: AP lazy vtimer arming. Any IRQ on an AP after clock init has
+    // published the interval (the init-time SGI kick, or a dispatch IPI)
+    // arms this CPU's banked PPI-27 + CNTV once.
+    #[cfg(feature = "smp")]
+    {
+        let cpu = super::halstubs::halp_cpu_state();
+        if cpu.vtimer_armed.load(Ordering::Relaxed) == 0
+            && super::halstubs::halp_cpu_number() != 0
+        {
+            let interval = TIMER_INTERVAL.load(Ordering::SeqCst);
+            if interval != 0 {
+                vtimer_percpu_arm(interval);
+                cpu.vtimer_armed.store(1, Ordering::SeqCst);
+            }
+        }
+    }
+
     let iar = mmio_read(gicc, GICC_IAR);
     let intid = iar & 0x3FF;
 
@@ -560,7 +630,30 @@ pub unsafe extern "system" fn HalClockInterruptArm64(trap_frame: *mut core::ffi:
         // interrupt context.  The DISPATCH_LEVEL software interrupt that
         // timer-expiration raises is retired by `KiIdleLoop`.
         let old_irql = super::halstubs::KeGetCurrentIrql();
+        #[cfg(not(feature = "smp"))]
         KeUpdateSystemTime(trap_frame, CLOCK_INCREMENT_100NS, old_irql);
+        // SMP: exactly ONE CPU advances InterruptTime/SystemTime/KeTickCount
+        // (double-advance = wall clock runs Nx fast). APs do the per-CPU
+        // share only: thread time, DPC-rate bookkeeping, quantum end.
+        #[cfg(feature = "smp")]
+        if super::halstubs::halp_cpu_number() == 0 {
+            KeUpdateSystemTime(trap_frame, CLOCK_INCREMENT_100NS, old_irql);
+        } else {
+            // One-shot M5c evidence: this AP's CNTV is delivering (armed=1 →
+            // ticked=2). The -smp quest greps "CPUn clock tick live".
+            let cpu = super::halstubs::halp_cpu_state();
+            if cpu
+                .vtimer_armed
+                .compare_exchange(1, 2, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                DbgPrint(
+                    b"[SMP] CPU%u clock tick live (per-CPU CNTV delivering)\n\0".as_ptr(),
+                    super::halstubs::halp_cpu_number(),
+                );
+            }
+            KeUpdateRunTime(trap_frame, old_irql);
+        }
     } else if intid < SGI_INTID_MAX {
         // SGI == the NT IPI (HalRequestIpi doorbell). Bracket at IPI_LEVEL —
         // raises this CPU's soft IRQL + PMR and marks exception context (no
