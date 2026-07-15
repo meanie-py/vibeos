@@ -631,3 +631,52 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   list, arm64 leg). Then M5d: KiTbShootdown via SGI + `-smp 2` soak. AP-local vtimer
   (per-CPU clock ticks) is also still un-armed — the AP gets no CNTV interrupts; fine
   for idle+IPIs, needed for real per-CPU quantum/timer work.
+
+- **2026-07-14 (cont.) — M5c CORE COMPLETE: arm64 AP provably SCHEDULES.** Commit
+  `e257ec33d80`. Proof: `[SMP] CPU1 scheduling live (first non-idle context switch)`
+  on 3/3 arm64 `-smp 2` boots (45–55s to desktop, 2 CPUs online, self-test 0x3 OK,
+  zero WAITDEP/BUGCHECK); UP arm64 regression green (47s); amd64 `-smp 2` regression
+  green (marker still prints post-hoist). The `-smp` milestone gate (test_milestones
+  requires `CPU<n> scheduling live` per AP when `VIBEOS_QEMU_SMP > 1`) is now
+  satisfiable on arm64 — note the CLI `smoke` fast path does NOT run test_milestones,
+  which is why the M5b smokes passed without it; only pytest/gate runs enforce it.
+  Three pieces:
+    1. **Visibility tap hoisted arch-neutral** (amd64/ipi.rs → ke/ipi.rs, pure
+       atomics), parameterized by CPU number so each arch derives it from its own
+       invariant PCR source (arm64's linked `KeGetPcr` is the stale-x18 copy —
+       thrdini.rs comment). arm64 leg: count tap in KiSwapContextResume (Number!=0 &&
+       new != IdleThread), flush at idle-loop top (idle context — never print from
+       the mid-swap tap).
+    2. **arm64 KiIdleLoop SMP promote fixes** (mirrors amd64/stubs.rs, §9.56): consume
+       NextThread UNDER THE PRCB LOCK with IRQs still masked + re-check under the lock
+       (the inherited lock-free consume races KiDeferredReadyThread's standby
+       displacement → a Running thread set DeferredReady → union-alias list tear);
+       the KiSelectReadyThread branch gets the same lock treatment; and
+       `rq_inflight_unmark` at BOTH promote sites. **The missing unmark was why the
+       M5b `-smp 2` settle logs spammed `[RQDEFER2] DOUBLE-DEFER` with
+       `stale_by == caller_line`** — every arm64 idle-loop promote (BSP and AP)
+       leaked a stale in-flight mark, so each subsequent wake false-positived the
+       §9.56 oracle. 0 occurrences across all post-fix boots. UP shape byte-identical
+       (cfg-gated). arm64 SMP `SYNCH_LEVEL == DISPATCH_LEVEL` (ke_defs) and idle is
+       pinned at DISPATCH, so no SYNCH raise around the swap (amd64 raises to 12).
+    3. **Fail-loud UP HalStartNextProcessor stub** — the trap that cost this session a
+       debug round: the arm64 SMP HAL flavor rides the **VIBEOS_SMP_DEFAULT_BOOT cmake
+       CACHE var** (gcc.cmake → `VIBEOS_SMP_HAL=1` env → hal-rust `smp` feature), so a
+       plain UP `vibeos-cli build --arch arm64` reconfigure flips hal.dll back to UP,
+       and a later raw `ninja ntkrnlmp` inherits the UP cache — **MP kernel + UP HAL
+       boot fine on arm64 (no MISMATCHED_HAL 0x79 handshake here!) and silently
+       degrade to 1 CPU**: HalStartNextProcessor is the cfg(not(smp)) FALSE stub, and
+       mproc.rs reads FALSE as "no more CPUs". The stub now DbgPrints the rebuild
+       hint. **Rule: after ANY plain arm64 build, re-run `build --arch arm64
+       --smp-kernel` before trusting an -smp boot** (it reconfigures the cache,
+       rebuilds the smp HAL, and runs `mkramdisk --refresh --smp` itself — no manual
+       mkramdisk needed).
+  **M5c tail (owed):** AP-local vtimer arming — CPU1 still gets no CNTV interrupts, so
+  it never reaches 1000 switches by boot-marker time (threads land there only via
+  explicit dispatch IPIs); per-CPU quantum-end/timer work needs it. Candidate design:
+  arm each CPU's vtimer + banked PPI-27 enable from a KeIpiGenericCall broadcast worker
+  at HalInitializeClockArm64 time (generic call runs on every CPU at IPI_LEVEL — the
+  banked GICC/PPI registers REQUIRE running on the target CPU); gate KeUpdateSystemTime
+  to Prcb.Number==0, others do KeUpdateRunTime. Then **M5d:** KiTbShootdown via SGI +
+  `-smp 2` soak. (arm64 currently has NO cross-CPU TLB shootdown — KeFlushEntireTb et
+  al are still UP-shaped; correctness has ridden on low cross-CPU VM churn so far.)
