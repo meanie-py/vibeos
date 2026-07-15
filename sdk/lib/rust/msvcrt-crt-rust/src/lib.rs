@@ -4336,4 +4336,5 @@ pub unsafe extern "C" fn wcsxfrm(dest: *mut u16, src: *const u16, len: usize) ->
 // (`is_infinite`, `is_finite`, `abs`). fpnum.rs therefore keeps every f64-returning
 // helper `extern "C"` and uses bit-based finite/inf predicates — see its `no_sse` notes.
 // ═══════════════════════════════════════════════════════════════════════════
+mod bnum;
 mod fpnum;
