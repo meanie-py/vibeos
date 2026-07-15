@@ -925,7 +925,155 @@ fn main() {
         .file(manifest.join("subjectimpl.c"));
     subject_build.cargo_metadata(false);
 
-    // One archive, `libmsvcrt_ref.a` in OUT_DIR, holding all three objects.
+    // ── the printf PROBE unit: ReactOS `printf/streamout.c` as `so_*` ────
+    //
+    // NOT an oracle and NOT under test — a THIRD party, for one question:
+    // does cnt-rust's already-Rust printf engine (`cabi::streamout`) agree
+    // with msvcrt's `pf_printf_a` closely enough to ASSEMBLE rather than
+    // port? (tests/printf_probe.rs — assemble-vs-port decision, wave 14.)
+    //
+    // We can't link cnt-rust here (its `cabi` feature ships the same 200+
+    // `#[no_mangle]` names this crate's subject exports), so we compare BY
+    // TRANSITIVITY: this TU is a VERBATIM copy of cnt-difftest's proven
+    // `ref_streamout` recipe (same flat va_list <stdarg.h>, same bit-exact
+    // floor/log10/pow model, same -mlong-double-64), i.e. the exact
+    // configuration cnt-difftest proved byte-identical to the Rust engine.
+    // so_streamout ≡ streamout-Rust, so `so_* vs ref_sprintf` answers
+    // `streamout-Rust vs msvcrt`. It lives in the `so_*` namespace: no
+    // rename prelude, no ref_* — nothing binds to it by accident.
+    //
+    // mbtowc/wctomb are stubbed to fail (-1) exactly as in cnt-difftest;
+    // the Rust engine imports the same two externs, so wide-conversion rows
+    // compare msvcrt's real MBCS against the engine's failure path — those
+    // rows probe the GAP, not a bug in the recipe.
+    let refstub_printf = manifest.join("refstub_printf");
+    let cnt_refstub = repo.join("sdk/lib/rust/cnt-difftest/refstub");
+    assert!(
+        cnt_refstub.join("stdio.h").is_file(),
+        "cnt-difftest refstub moved: {}",
+        cnt_refstub.display()
+    );
+    let inc = |p: PathBuf| format!("#include \"{}\"\n", p.display());
+    let so_body = format!(
+        "#include <stddef.h>\n#include <math.h>\n#include <float.h>\n\
+         #define _LIBCNT_\n#define __declspec(x)\n#define __int64 long long\n\
+         #define _TCHAR char\n#define _T(x) x\n\
+         #define _tcscpy strcpy\n#define _tcslen strlen\n#define _tcschr strchr\n\
+         #define _isnan(x) isnan(x)\n#define _finite(x) isfinite(x)\n\
+         static double cnt_floor(double x){{ if(!isfinite(x))return x;\
+           long long i=(long long)x; double di=(double)i;\
+           return di>x?di-1.0:di; }}\n\
+         static double cnt_pow10i(int n){{ double r=1.0,b=10.0;\
+           unsigned k=(n<0)?(unsigned)(-(long)n):(unsigned)n;\
+           while(k){{if(k&1)r*=b;b*=b;k>>=1;}} return n<0?1.0/r:r; }}\n\
+         static double cnt_powm(double a,double e){{ (void)a;\
+           return cnt_pow10i((int)e); }}\n\
+         static double cnt_log10(double f){{ if(!isfinite(f))return 308.;\
+           if(f==0.0)return 0.0;\
+           if(f<0.0)f=-f; union{{double d;unsigned long long u;}} v;\
+           v.d=f; int biased=(int)((v.u>>52)&0x7ff);\
+           int e=(int)(((double)(biased-1023))*0.3010299956639812);\
+           while(cnt_pow10i(e)>f)e--; while(cnt_pow10i(e+1)<=f)e++;\
+           return (double)e; }}\n\
+         #define floor(x) cnt_floor(x)\n#define log10(x) cnt_log10(x)\n\
+         #define pow(a,b) cnt_powm((a),(b))\n\
+         static int so_mbtowc(wchar_t*w,const char*m,size_t n){{(void)w;(void)m;(void)n;return -1;}}\n\
+         static int so_wctomb(char*m,wchar_t w){{(void)m;(void)w;return -1;}}\n\
+         #define mbtowc so_mbtowc\n#define wctomb so_wctomb\n\
+         #define streamout so_streamout\n#define format_float so_format_float\n\
+         {}\
+         /* driver: build a FILE and run the genuine engine over a flat\
+            va_list (refstub_printf stdarg). `cnt` is the initial\
+            _iobuf._cnt, i.e. the output bound. */\n\
+         int so_run(char* base,int cnt,const char* fmt,char* va){{\
+           FILE f; f._base=base; f._ptr=base; f._cnt=cnt;\
+           f._flag=0x40|0x2; f._charbuf=0; f._bufsiz=0; f._tmpfname=0; f._file=0;\
+           return so_streamout(&f, fmt, (va_list)va); }}\n",
+        inc(repo.join("sdk/lib/crt/printf/streamout.c"))
+    );
+    let so_c = out.join("so_streamout.c");
+    fs::write(&so_c, &so_body).unwrap();
+    let mut so_build = cc::Build::new();
+    so_build
+        .include(&refstub_printf)
+        .include(&cnt_refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-mlong-double-64")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&so_c);
+
+    // The msvcrt side of the probe: wcs.c compiled a SECOND time, in the
+    // `pfflat_*` namespace, under the FLAT `char*` va_list
+    // (refstub_printf/stdarg.h). Two reasons this is a separate
+    // instantiation instead of a call into the existing `ref_*` one:
+    //
+    //  1. The ref_* engine is not CALLABLE on this host. Two escapes were
+    //     eaten before this landed: `ref__snprintf` forwards to plain
+    //     `vsnprintf` (a symbol wcs.c never defines under _MSVCR_VER=0),
+    //     which binds to GLIBC — the probe's first "msvcrt" column was
+    //     the host libc ((nil), 2-digit exponents, no %I64). And
+    //     `ref__vsnprintf` SIGSEGVs by construction: it forwards
+    //     `&valist` as `va_list*`, coherent only when va_list is a plain
+    //     pointer — under the SysV register-save-area va_list, `*valist`
+    //     reinterprets the decayed pointer variable as the tag struct.
+    //  2. The flat model IS the Windows-x64 va_list (char* over 8-byte
+    //     slots), so this instantiation is the target-faithful one, and
+    //     it consumes the SAME hand-packed buffer as so_run — a true
+    //     apples-to-apples drive of both engines.
+    //
+    // prelude2 = prelude with every wcs.c-owned symbol retargeted
+    // ref_→pfflat_; string.c/ctype.c symbols STAY ref_, so cross-TU calls
+    // (memcpy, fpnum_parse, _isdigit_l…) resolve into the existing
+    // reference objects and are not duplicated. tests/printf_probe.rs
+    // carries an %I64d oracle-honesty canary so any future escape back
+    // to the host libc fails loudly.
+    let mut prelude2 = prelude.replace("MSVCRT_REF_PRELUDE_H", "MSVCRT_PFFLAT_PRELUDE_H");
+    for sym in WCS_PUBLIC_SYMBOLS {
+        prelude2 = prelude2.replace(
+            &format!("#define {sym} ref_{sym}\n"),
+            &format!("#define {sym} pfflat_{sym}\n"),
+        );
+    }
+    // The five wide LP32 symbols are wcs.c-owned too; their stage-3 blocks
+    // (rename + spelled-out prototype) both mention ref_<name>.
+    for sym in ["wcstok", "wcstol", "wcstoul", "wcstombs", "wctomb"] {
+        prelude2 = prelude2.replace(&format!("ref_{sym}"), &format!("pfflat_{sym}"));
+    }
+    assert!(
+        prelude2.contains("#define _vsnprintf pfflat__vsnprintf"),
+        "pfflat prelude transform failed — probe entry would collide with ref_*"
+    );
+    let prelude2_h = out.join("pfflat_prelude.h");
+    fs::write(&prelude2_h, &prelude2).unwrap();
+
+    let mut pfflat_build = cc::Build::new();
+    pfflat_build
+        // Own object dir: cc names intermediates by a hash of the SOURCE
+        // path, and this is wcs.c's SECOND compilation — sharing OUT_DIR
+        // would overwrite the ref_* object and link this one twice.
+        .out_dir(out.join("pfflat"))
+        .include(&refstub_printf) // flat <stdarg.h> FIRST — the whole point
+        .include(&refstub)
+        .include(&out)
+        .define("__REACTOS__", None)
+        .define("_MSVCR_VER", "0")
+        .warnings(false)
+        // Same tripwires + genuineness flags as ref_tu, same reasons.
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .flag("-fno-builtin")
+        .flag("-fno-tree-loop-distribute-patterns")
+        .flag("-ffp-contract=off")
+        .flag("-include")
+        .flag(prelude2_h.to_str().unwrap())
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&wcs_c);
+
+    // One archive, `libmsvcrt_ref.a` in OUT_DIR, holding all the objects.
     let mut objects: Vec<PathBuf> = Vec::new();
     refimpl_build.cargo_metadata(false);
     objects.extend(ref_tu(&string_c).compile_intermediates());
@@ -933,6 +1081,8 @@ fn main() {
     objects.extend(ref_tu(&ctype_c).compile_intermediates());
     objects.extend(refimpl_build.compile_intermediates());
     objects.extend(subject_build.compile_intermediates());
+    objects.extend(so_build.compile_intermediates());
+    objects.extend(pfflat_build.compile_intermediates());
 
     let archive = out.join("libmsvcrt_ref.a");
     let _ = fs::remove_file(&archive);
@@ -967,5 +1117,10 @@ fn main() {
     println!("cargo:rerun-if-changed={}", manifest.join("refimpl.c").display());
     println!("cargo:rerun-if-changed={}", manifest.join("subjectimpl.c").display());
     println!("cargo:rerun-if-changed={}", refstub.display());
+    println!("cargo:rerun-if-changed={}", refstub_printf.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        repo.join("sdk/lib/crt/printf/streamout.c").display()
+    );
     println!("cargo:rerun-if-changed=build.rs");
 }

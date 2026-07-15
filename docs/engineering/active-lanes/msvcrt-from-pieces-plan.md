@@ -1037,3 +1037,33 @@ reference symbols in `wcs.c`). Scope it as its own sub-lane before starting; it 
   NULL disposition (the pointers differ; malloc is shared environment). ~1 short wave.
 - `rand` / `srand` — pure LCG on `thread_data->random_seed`; needs a 4th reference TU (`misc.c`) but
   the logic is trivial and the seed field is already in `msvcrt-sys`'s `__thread_data`.
+
+## Wave 14a (2026-07-14) — the printf PROBE. Assemble-vs-port decided: **PORT printf.h**. Bonus: a kernel hang found + fixed.
+
+The wave-13 question ("can cnt-rust's already-Rust `streamout` sit behind the msvcrt printf
+exports?") got its answer from a **C-vs-C third-party differential**, no new translation spent:
+`tests/printf_probe.rs` drives (a) genuine `printf/streamout.c` compiled under cnt-difftest's
+exact proven recipe — the configuration cnt-difftest proved byte-equal to the Rust engine, so
+every verdict transfers to streamout-Rust by transitivity — against (b) the genuine msvcrt
+`pf_printf_a`, as a SECOND compilation of wcs.c in a `pfflat_*` namespace under a **flat
+`char*` va_list** (the Windows-x64 model; the SysV-compiled `ref_*` copy is structurally
+uncallable — full story + the glibc-escape oracle lesson in field manual **§9.80**). Both
+engines consume the SAME hand-packed 8-byte-slot buffer; an `%I64d` oracle-honesty canary
+hard-fails the probe if the reference ever escapes to the host libc again.
+
+**Verdict (111 MATCH / 27 DIVERGE):**
+- **Integers/strings/chars/pointers: streamout ≡ msvcrt** — 75/78 rows byte-identical
+  (deltas: `%#x` of 0, `%jd`, `%td`). The parser/state-machine half of the engines agree.
+- **Floats: msvcrt's bignum formatter is structurally better** than streamout's double-math:
+  exact high-precision digits (`%.30f`), denormals, `-0.0`, `%g` trailing-zero strip + form
+  threshold, `1.#INF00` padding, real `%a` (streamout's is a FIXME).
+- **Decision: PORT `printf.h`'s engine to Rust (wave 14b), do NOT assemble streamout** — that
+  would silently downgrade msvcrt.dll's float output (the DLL ships the Wine engine today;
+  never-weaken applies). `bnum.rs` (wave 13) is the shared limb engine the formatter needs;
+  the probe's `pfflat_*` oracle + flat-va_list drive IS the grading harness for the port.
+
+**Bonus find (the probe's first product, before any comparison):** the kernel's Rust
+`streamout` float path hung FOREVER on `%f/%e/%g` of ±Inf — `fl::exp10_floor`'s correction
+loop never terminates on Inf (`pow10(309)` saturates; `Inf <= Inf`). Guarded to return 308
+(`DBL_MAX_10_EXP`, = NaN's accidental value) in `fl` + every recipe C-twin; ±Inf/NaN rows now
+pinned in cnt-difftest (`diff_streamout_float`). Field manual §9.80 finding 0.
