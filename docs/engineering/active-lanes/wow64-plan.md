@@ -887,6 +887,23 @@ drive keys via QMP, save `/tmp/play-{0..4}.png`) — or `tools/doom/play.sh`.
 The historical "rendering INTERMITTENT" text below is kept for the debugging
 narrative; it is SUPERSEDED by the §9.73 fix.
 
+**Post-fix 6-boot render soak (2026-07-15, clean probe-free build, 6-way
+contended):** the render fix is **4/4 on every boot where doom's process
+actually ran** (~2200 StretchDIBits each, full gameplay). The two misses were
+NOT render failures: one boot was reaped at the 420s lifetime cap before doom's
+frame loop ramped (only 20 blits — host CPU contention from 6 concurrent arm64
+TCG VMs), and one was a genuine **doom guest-code crash** — `C0000005` NULL-read
+at guest PC `0x5BFE18` (in doom.exe's own image, `ExAddr=0`), i.e. doom
+dereferencing a NULL it got back from some WoW64 syscall without checking. That
+last one is a **residual startup flake** (startup-death family, cousin of §9.72),
+exacerbated by contention, and is INDEPENDENT of the render/input fixes (both
+run long after doom init). PC `0x5BFE18` is ABOVE doom.exe's static image
+(top symbol `__tls_end` @ `0x4A8004`), so the fault is inside a loaded SysWOW64
+DLL (kernel32/gdi32/user32 base there), not doom's own code — a guest DLL
+deref'ing a NULL it got back from some WoW64 syscall during process init. OWED:
+capture the guest module base map on a repro (a `[LDR]`/`Wow64` load trace) to
+name the DLL + the returning syscall. Not a regression; not chased this session.
+
 **Rendering — works on some boots, magenta on others (M13 is NOT closed).** A boot
 with only the WoW64 x86 DOOM (no A/B native build) *sometimes* shows DOOM's
 attract-mode demo animating in its window on the desktop — the E1M1 corridor, "DOOM
