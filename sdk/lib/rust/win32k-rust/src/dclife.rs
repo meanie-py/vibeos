@@ -906,7 +906,7 @@ pub unsafe extern "fastcall" fn DC_vPrepareDCsForBlit(
         prcSecond = core::ptr::null();
     }
 
-    if (*pdcDest).fs & 0x00000004 != 0 {
+    if (*pdcDest).fs & (DC_DIRTY_RAO as i32) != 0 {
         CLIPPING_UpdateGCRegion(pdcDest);
     }
 
@@ -933,7 +933,7 @@ pub unsafe extern "fastcall" fn DC_vPrepareDCsForBlit(
 
     #[cfg(debug_assertions)]
     {
-        (*pdcFirst).fs |= 0x00000040;
+        (*pdcFirst).fs |= DC_PREPARED as i32;
     }
 
     if pdcSecond.is_null() {
@@ -962,7 +962,7 @@ pub unsafe extern "fastcall" fn DC_vPrepareDCsForBlit(
 
     #[cfg(debug_assertions)]
     {
-        (*pdcSecond).fs |= 0x00000040;
+        (*pdcSecond).fs |= DC_PREPARED as i32;
     }
 }
 
@@ -1009,7 +1009,7 @@ pub unsafe extern "C" fn DC_vPrepareDCsForBlit(
         prcSecond = core::ptr::null();
     }
 
-    if (*pdcDest).fs & 0x00000004 != 0 {
+    if (*pdcDest).fs & (DC_DIRTY_RAO as i32) != 0 {
         CLIPPING_UpdateGCRegion(pdcDest);
     }
 
@@ -1036,7 +1036,7 @@ pub unsafe extern "C" fn DC_vPrepareDCsForBlit(
 
     #[cfg(debug_assertions)]
     {
-        (*pdcFirst).fs |= 0x00000040;
+        (*pdcFirst).fs |= DC_PREPARED as i32;
     }
 
     if pdcSecond.is_null() {
@@ -1065,7 +1065,7 @@ pub unsafe extern "C" fn DC_vPrepareDCsForBlit(
 
     #[cfg(debug_assertions)]
     {
-        (*pdcSecond).fs |= 0x00000040;
+        (*pdcSecond).fs |= DC_PREPARED as i32;
     }
 }
 
