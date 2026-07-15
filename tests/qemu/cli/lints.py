@@ -282,6 +282,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Dangling pointers to transmute temporaries: `let p = transmute::<[u8;N],
+    # [u16;M]>(x).as_ptr()` (or the same as a struct field) — a rustconv artifact
+    # where C's stack-backed WCHAR[] became a storageless temporary, so the stored
+    # pointer dangles the instant the statement ends. Confirmed real 2026-07-12
+    # (disk-rust symbolic-link printf fmt; lsasrv RTL_QUERY_REGISTRY_TABLE Name).
+    # Baseline is EMPTY — the class is fully fixed; this gate keeps it at zero.
+    sdt = repo / "tools" / "scan_dangling_transmute.py"
+    specs.append(
+        (
+            "scan_dangling_transmute",
+            [py, str(sdt), "--lint"] if sdt.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The WoW64 win32k thunk table must be indexed by the GUEST's (i386) syscall
     # numbers, not the host's. w32ksvc32.h gates NtUserSetWindowLongPtr on
     # `#ifdef _WIN64`, so parsing it as flat text on a 64-bit host shifts every
