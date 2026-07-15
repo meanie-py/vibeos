@@ -868,12 +868,24 @@ recomputed when it is shown (`DceResetActiveDCEs` / DCE visrgn invalidation). Th
 is win32k/GDI territory, not the WoW64 layer — it belongs to a win32k lane. The
 WoW64 side of DOOM is done.
 
-## M14: x86 DOOM under WoW64/FEX on arm64 — INPUT done; rendering INTERMITTENT (2026-07-13)
+## M14: x86 DOOM under WoW64/FEX on arm64 — DONE (renders + playable, 2026-07-15)
 
-Status: **input is solid and fully proven; rendering works but is intermittent** —
-the M13 window-DC blit bug is real and still open. Reproduce with
-**`tools/doom/play.sh`** (rebuilds the FEX ramdisk, boots arm64, drives keys via QMP,
-saves `/tmp/doom-play-{0..4}.png`).
+Status: **CLOSED. DOOM renders full gameplay on every boot AND takes keyboard
+input.** Two independent root-caused fixes closed it:
+- **Rendering (M13, commit 6213b784ad7):** `DC_vPrepareDCsForBlit` checked the
+  wrong `fs` bit (0x04 DC_CANCELED vs 0x10 DC_DIRTY_RAO), so the blit clip
+  object was never rebuilt and cached DCs drew through a stale region. 12-boot
+  soak → 10/10 render (2 host-contention reaps, not misrenders). Field manual §9.73.
+- **Input (M14, commit 525084ded8b):** the guest's `TEB32.Win32ThreadInfo` was
+  never populated, so user32's window-ownership check in `IntCallMessageProc`
+  dropped every keystroke with ERROR_MESSAGE_SYNC_ONLY. `Wow64PublishClientInfo`
+  now writes it. Verified: QMP-injected ESC/ENTER navigate DOOM's main menu →
+  skill-select; DROP count 8→0; WM_KEYDOWN reaches the guest WndProc.
+
+Reproduce with the session's `/tmp/doom-play.sh` (restage FEX ramdisk, boot arm64,
+drive keys via QMP, save `/tmp/play-{0..4}.png`) — or `tools/doom/play.sh`.
+The historical "rendering INTERMITTENT" text below is kept for the debugging
+narrative; it is SUPERSEDED by the §9.73 fix.
 
 **Rendering — works on some boots, magenta on others (M13 is NOT closed).** A boot
 with only the WoW64 x86 DOOM (no A/B native build) *sometimes* shows DOOM's
