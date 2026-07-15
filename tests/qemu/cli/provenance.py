@@ -213,7 +213,7 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
             ninja never relinked it, and mkramdisk staged the old binary.
 
     WHY NOT `artifact.mtime >= newest .rs` (the obvious rule — it false-RED the
-    arm64 gate, field-manual §9.80): that is a proxy, and it is wrong whenever an
+    arm64 gate, field-manual §9.81): that is a proxy, and it is wrong whenever an
     edit is CODEGEN-NEUTRAL. cargo rebuilds, emits a byte-identical .a,
     copy_if_different deliberately does not touch the staged copy, nothing
     relinks (correctly — there is nothing to relink), and the artifact stays older
@@ -226,7 +226,7 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
     whose mtime moves ONLY when the content really changed, so an identical
     rebuild is silent, while A still proves the rebuild happened at all.
 
-    WHY NOT `ninja -n` (the other obvious rule — it is BLIND, §9.80): CMake's
+    WHY NOT `ninja -n` (the other obvious rule — it is BLIND, §9.81): CMake's
     CONFIGURE_DEPENDS globs make the glob-verify edge dirty by design on every
     build, so under -n (which executes nothing) ninja assumes the cmake stamp
     changes, marks the regen edge dirty, and STOPS PLANNING — it never evaluates

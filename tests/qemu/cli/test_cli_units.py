@@ -2410,7 +2410,7 @@ def test_conformance_rostests_preflight(tmp_path):
 # These pin BOTH directions, because the bug they encode was a checker that looked healthy:
 # the obvious rule (binary must be newer than the newest .rs) false-RED the arm64 gate on a
 # codegen-neutral edit, and the obvious replacement (`ninja -n`) was structurally blind and
-# passed the benign case while missing a real stale cohab. Field manual §9.80.
+# passed the benign case while missing a real stale cohab. Field manual §9.81.
 
 
 @pytest.fixture
