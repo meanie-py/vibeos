@@ -897,12 +897,20 @@ at guest PC `0x5BFE18` (in doom.exe's own image, `ExAddr=0`), i.e. doom
 dereferencing a NULL it got back from some WoW64 syscall without checking. That
 last one is a **residual startup flake** (startup-death family, cousin of §9.72),
 exacerbated by contention, and is INDEPENDENT of the render/input fixes (both
-run long after doom init). PC `0x5BFE18` is ABOVE doom.exe's static image
-(top symbol `__tls_end` @ `0x4A8004`), so the fault is inside a loaded SysWOW64
-DLL (kernel32/gdi32/user32 base there), not doom's own code — a guest DLL
-deref'ing a NULL it got back from some WoW64 syscall during process init. OWED:
-capture the guest module base map on a repro (a `[LDR]`/`Wow64` load trace) to
-name the DLL + the returning syscall. Not a regression; not chased this session.
+run long after doom init). Characterized (not yet fixed):
+- It is a **NULL function-pointer CALL**, not a data deref: `[UEXC-KILL] PC=0x0
+  LR=0x5BFE18` — doom's code at `0x5BFE18` called through a pointer that was 0.
+- `0x5BFE18` is between doom.exe's image (`~0x400000`, top data symbol
+  `__tls_end` @ `0x4A8004`) and the first SysWOW64 DLL base (`0x6CD80000`) — so
+  it's in doom's own later sections (`.idata`/thunk region), i.e. doom calling
+  an IAT/callback slot that was 0.
+- It is **NOT a loader closure gap**: no `LDR: Skipping missing import` /
+  `c0000135` on the crashed boot OR the rendering boots (checked both).
+- Only reproduced under 6-way host contention (sibling agents' VMs loaded the
+  host); ~8 single-VM doom boots this session never hit it.
+OWED: repro under controlled contention with a per-slot syscall/callback trace
+to catch which slot doom read as 0 (a win32k callback-table entry or a lazily-
+bound thunk are the leads). Not a regression; not chased further this session.
 
 **Rendering — works on some boots, magenta on others (M13 is NOT closed).** A boot
 with only the WoW64 x86 DOOM (no A/B native build) *sometimes* shows DOOM's
