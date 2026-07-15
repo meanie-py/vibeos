@@ -7217,7 +7217,7 @@ read against their C; the verdicts are in the tool's docstring. Two of them are 
 and `ZwCreateKey` takes `PHANDLE` — the C only compiles because `void*` implicitly converts to
 `void**`. **Do not "fix" the Rust to match under-typed C.**
 
-### 9.81 (2026-07-14, (a) FIXED / (b) OPEN) The two staleness oracles: an mtime rule that false-REDs on a codegen-neutral edit, and a `ninja -n` oracle that is blind on every arch
+### 9.81 (2026-07-14, BOTH FIXED) The two staleness oracles: an mtime rule that false-REDs on a codegen-neutral edit, and a `ninja -n` oracle that is blind on every arch
 
 Both live in `tests/qemu/cli/provenance.py` and both guard the same thing — "did the staged
 binary come from the current sources?" — the class that false-greened arm64 six times
@@ -7261,7 +7261,7 @@ must-NOT-fire.
 
 **Blind alley — do NOT "fix" it with `ninja -n`.** That swaps a false RED for a false GREEN:
 
-#### (b) `_ninja_has_work` returns False even when a rebuild IS pending — on ALL arches. OPEN.
+#### (b) `_ninja_has_work` returned False even when a rebuild WAS pending — on ALL arches, so **editing any C file and running smoke booted the stale ISO and called it a pass**. FIXED.
 
 **Verified:** with a genuine pending rebuild (proved by running real `ninja`, which compiled
 ws2_32-rust and relinked), `_ninja_has_work` returned **False** for `dll/win32/ws2_32/ws2_32.dll`
@@ -7285,14 +7285,45 @@ always-dirty by construction, so the next `-n` stops in exactly the same place. 
 premise ("cmake re-runs ... so the dirty set is evaluated against the updated graph") is simply
 not what `-n` does. **`ninja -n` cannot be a staleness oracle in a CONFIGURE_DEPENDS project.**
 
-**Consequence:** the tier-1 ninja staleness net has never fired. The mtime nets in (a) are
-carrying the whole load, which is also why (a)'s false RED was the first symptom anyone saw.
+**Consequence — this is the important part, and it is much worse than "a dead net".** Look at
+where it sat in `check_staleness`. Tier 2 only runs when the git fingerprint moved, and it then
+decides *whether the change was build-relevant*. `rust_src_hash` is scoped to `sdk/lib/rust`.
+So the `ninja -n` call was **the only thing covering every non-Rust build input** — C, asm,
+cmake, `.spec`, `.rc`, mkramdisk. With it blind, the chain ran:
 
-**The sound fix is content, not mtime and not `-n`:** compare a *fingerprint* of the crate's
-`.rs` set against one recorded at the artifact's last successful link (the stamp mechanism
-already fingerprints git content for exactly this reason — `git_fingerprint`). An mtime cannot
-distinguish "not rebuilt" from "rebuilt to identical bytes", and `-n` cannot see past the regen
-edge; only content can answer "would rebuilding change this artifact?".
+    edit a tracked, compiled .c  ->  git fingerprint moved  ->  tier 2
+      rust_src_hash unchanged (it is C)      -> no reason
+      _ninja_has_work                        -> False (blind)
+      boot media sha unchanged (not rebuilt) -> no reason
+    -> no reasons at all -> "clean-diff (non-build change)" -> FRESH -> smoke boots the STALE iso
+
+Measured on the real repo, not reasoned about: editing `dll/3rdparty/dxtn/txc_compress_dxtn.c`
+gave `fresh=True, reasons=['clean-diff (non-build change)']`. A C source change was classified
+exactly like a doc edit. The North Star's "smoke refuses to boot stale media" was defeated for
+**every C-side change in the tree**, and had been for as long as the oracle existed.
+
+**FIXED** with `build_src_hash()` — a git content fingerprint of everything that can change the
+boot media, stamped at build time and compared in tier 2. Content is the only thing that can
+answer this: an mtime cannot tell "not rebuilt" from "rebuilt to identical bytes" (that is (a)),
+and `-n` cannot see past the regen edge. Two design points worth keeping:
+  * **It is an EXCLUDE-list (`docs/`, `*.md`, `.github`, `.claude`), never an include-list.**
+    An unknown path must land on the build-relevant side: over-including costs a no-op rebuild,
+    under-including boots stale media and reports a pass. `tests/` and `tools/` are deliberately
+    build-relevant — `archcfg.py` picks the arm64 staged set, `qemu/mkramdisk.sh` assembles the
+    ramdisk, and `tools/libschily/*.c` is compiled.
+  * **An absent stamp field is LOUD, not clean.** `build_src_hash` defaults to `""` so old
+    stamps still load; `""` reports "stamp predates build-source fingerprinting — run `build`
+    to re-stamp" rather than comparing equal to nothing and reading as fresh. A defaulted field
+    that silently means "verified" is the same shape as everything else in §9.80/§9.81.
+
+`_ninja_has_work` was **deleted**, not left unused, with a tombstone comment: a plausible helper
+named "has work" is exactly what the next person reaches for.
+
+**The fixture was lying too.** `staleness_repo` had no `.gitignore`, so its own stamp file (in
+`build-i386/`) showed up as untracked and moved every fingerprint — which meant those tests never
+matched tier 1 and always fell through to tier 2, where the blind oracle waved them through.
+`test_staleness_fresh_cold` was **passing because of the bug**. A fixture that does not model the
+real repo turns its tests into a green that means nothing.
 
 **Rule.** When a gate check fires, find out whether it is *right* before you satisfy it — and
 when you replace an oracle, test the replacement on a KNOWN-BAD input, not just a known-good

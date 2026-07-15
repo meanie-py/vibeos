@@ -447,6 +447,10 @@ class Stamp:
     cold: bool
     contributing: dict = field(default_factory=dict)  # rel path -> sha256
     rust_targets: list = field(default_factory=list)
+    # Defaulted so a stamp written before this field existed still loads. An EMPTY value
+    # therefore means "this stamp cannot answer the question", NOT "nothing changed" —
+    # check_staleness must say so out loud rather than let it read as clean.
+    build_src_hash: str = ""
 
     def write(self, build_dir: Path) -> Path:
         path = build_dir / STAMP_NAME
@@ -467,6 +471,40 @@ class Stamp:
 
 def rust_src_hash(repo: Path) -> str:
     return git_fingerprint(repo, list(archcfg.RUST_SRC_DIRS))
+
+
+# Paths that CANNOT change the boot media. Deliberately an EXCLUDE-list, not an
+# include-list: an unknown path must land on the build-RELEVANT side, because the two
+# errors are not symmetric. Over-including costs a no-op rebuild; under-including boots
+# stale media and reports a pass — which is precisely what the oracle this replaces did
+# (field-manual §9.81b). So this stays as short as the evidence allows: `docs/` holds no
+# build inputs at all, and markdown is never compiled. Everything else — including tests/
+# and tools/ — is treated as build-relevant, because it can be: archcfg.py decides which
+# ninja targets get staged into the arm64 ramdisk, qemu/mkramdisk.sh assembles it, and
+# tools/ carries real compiled sources (tools/libschily/*.c, tools/gen-delaylib.py).
+# This is exactly the set the old code meant by "nothing build-relevant (docs, this plan)".
+NON_BUILD_PATHSPEC = (
+    ":(exclude)docs",
+    ":(exclude)*.md",
+    ":(exclude).github",
+    ":(exclude).claude",
+)
+
+
+def build_src_hash(repo: Path) -> str:
+    """Fingerprint of every source that can change the boot media.
+
+    This is the tier-2 answer to "the git fingerprint moved — was it build-relevant?".
+    It replaced a `ninja -n` dry-run that was structurally incapable of answering:
+    CMake's CONFIGURE_DEPENDS globs make the glob-verify edge dirty by design on every
+    build, so under -n (which executes nothing) ninja assumes the cmake stamp changes,
+    marks the regen edge dirty, and STOPS PLANNING — it never evaluates the targets it
+    was asked about, and reported "no work" for `livecd` on amd64 with a rebuild pending.
+    Since rust_src_hash covered only sdk/lib/rust, that made the dry-run the ONLY thing
+    standing between a C edit and "clean-diff (non-build change) -> FRESH": editing a
+    tracked, compiled .c and running smoke booted the STALE iso and called it a pass.
+    Content, not mtime and not -n, is the only thing that answers this honestly."""
+    return git_fingerprint(repo, [".", *NON_BUILD_PATHSPEC])
 
 
 def contributing_hashes(repo: Path, arch: str) -> dict:
@@ -504,6 +542,7 @@ def make_stamp(repo: Path, arch: str, cold: bool, ts: int) -> Stamp:
         ts=ts,
         git_fingerprint=git_fingerprint(repo),
         rust_src_hash=rust_src_hash(repo),
+        build_src_hash=build_src_hash(repo),
         boot_media=cfg.boot_media_rel,
         boot_media_sha=_sha256_file(media),
         cold=cold,
@@ -524,41 +563,26 @@ class Staleness:
         return (not self.fresh and not self.media_missing) or self.media_missing
 
 
-def _ninja_has_work(build_dir: Path, targets: list[str]) -> bool:
-    """Reconfigure-then-dry-run over ALL boot targets in one invocation (cmake
-    re-runs — cheap/idempotent — so the dirty set is evaluated against the
-    *updated* graph, then `ninja -n` reports work). Checking every ninja_target,
-    not just the first, means a pending relink of any of them (win32k, fastfat,
-    livecd_hives, uefildr…) is caught, not only ntoskrnl's. We treat ONLY a 'no
-    work to do' as clean (plan §5/§20 'don't filter naively')."""
-    from . import canon
-
-    cmd = ["ninja", "-n", *targets]
-    if canon.is_canonical(build_dir):
-        # canonical build dirs bake /tmp/vibeos paths — ninja must run under the
-        # canon-run bind mount or every input stats as missing → phantom work
-        cmd = canon.wrap(build_dir.parent, cmd)
-    out = _run(cmd, build_dir)
-    # ninja prints "ninja: no work to do." when clean. The reconfigure line
-    # ("Re-running CMake...") is expected and not by itself staleness; we look
-    # for actual build edges.
-    if not out:
-        return False
-    if "no work to do" in out:
-        return False
-    # Any non-cmake build edge line means real work pending.
-    for line in out.splitlines():
-        s = line.strip()
-        if not s or s.startswith("ninja:"):
-            continue
-        if (
-            "Re-running CMake" in s
-            or "Regenerating ninja files" in s
-            or "Re-checking globbed directories" in s  # glob re-stat, not build work
-        ):
-            continue
-        return True
-    return False
+# DELETED 2026-07-14: `_ninja_has_work(build_dir, targets)` — a `ninja -n` dry-run that
+# was the tier-2 oracle for "did a non-Rust build input change?". It NEVER worked, on any
+# arch, and it failed silently in the false-GREEN direction (field-manual §9.81b):
+#
+#   $ ninja -n dll/win32/ws2_32/ws2_32.dll
+#   [0/2] Re-checking globbed directories...
+#   [1/2] Re-running CMake...          <- and nothing else, EVER
+#
+# CMake's CONFIGURE_DEPENDS globs install a glob-verify edge that is dirty by design on
+# every build. Under -n no command executes, so ninja must assume that edge changes the
+# cmake stamp, marks the regen edge dirty, and STOPS PLANNING — regenerating build.ninja
+# would invalidate the rest of the graph, so it never evaluates the targets you asked
+# about. It printed only those two lines, which the parser skipped as "not real work",
+# and returned False = clean. Verified: False for `livecd` on amd64 with a rebuild
+# genuinely pending. Running `cmake .` or `ninja build.ninja` first does NOT help; the
+# glob edge is always-dirty by construction.
+#
+# It is deleted rather than left unused: a plausible-looking helper named "has work" is
+# exactly what the next person reaches for. Use build_src_hash() — content, not a
+# dry-run. Do not reintroduce a `ninja -n` staleness probe in a CONFIGURE_DEPENDS tree.
 
 
 def check_staleness(repo: Path, arch: str) -> Staleness:
@@ -598,8 +622,16 @@ def check_staleness(repo: Path, arch: str) -> Staleness:
         reasons.append(
             "rust source changed since build" + (" (last build WARM — may mask)" if warm else "")
         )
-    if _ninja_has_work(build_dir, list(cfg.ninja_targets)):
-        reasons.append(f"ninja reports work for one of `{', '.join(cfg.ninja_targets)}`")
+    # Everything that is NOT Rust: C, asm, cmake, .spec, .rc, mkramdisk, archcfg…
+    # rust_src_hash above covers only sdk/lib/rust, so without this a C edit reads as a
+    # non-build change and smoke boots stale media (§9.81b).
+    if not stamp.build_src_hash:
+        reasons.append(
+            "stamp predates build-source fingerprinting — cannot verify non-Rust sources; "
+            "run `build` to re-stamp"
+        )
+    elif build_src_hash(repo) != stamp.build_src_hash:
+        reasons.append("build source changed since build (C/asm/cmake/spec/rc)")
     # arm64 re-stage trap: a contributing binary newer than boot.img.
     if cfg.needs_mkramdisk:
         media_mtime = media.stat().st_mtime
