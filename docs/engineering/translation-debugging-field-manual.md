@@ -453,7 +453,26 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 ### Hand-encoded `[u16; N]` literal one short — silently truncated registry/object path (ERROR_FILE_NOT_FOUND from a "correct" call chain)
 **Symptom:** an API fails with ERROR_FILE_NOT_FOUND / STATUS_OBJECT_NAME_NOT_FOUND on a path that provably exists; every function in the chain reads as a faithful translation; compiles + links clean; boots green (the broken path may simply never be exercised by boot — this one hid in `RCreateServiceW` until the kmtest conformance sweep called it, 2026-07-10).
 **Root cause:** a wide-string constant hand-encoded as `static X: [u16; N] = [b'S' as u16, ...]` was sized one element short, so the LAST character was dropped to make room for the NUL — `SERVICES_KEY [u16; 33]` spelled `System\CurrentControlSet\Service` (no trailing `s`), and services-rust opened a nonexistent parent key. The intent comment above the array says the right string, so review eyes slide right past it; only decoding the bytes shows the truncation.
-**Fix:** count = `chars + 1`; better, avoid hand arrays entirely (`w!()` / `wstr!` macro or a `const fn` UTF-16 builder). To sweep for siblings, decode every `static NAME: [u16; N]` against its `// L"..."` intent comment (one-shot scanner did this 2026-07-10; SERVICES_KEY was the only true hit). A durable lint (`scan_wide_literals`-style, wired into `vibeos-cli check`) is OWED — the class is invisible to every existing gate.
+**Fix:** count = `chars + 1`; better, avoid hand arrays entirely (`w!()` / `wstr!` macro or a `const fn` UTF-16 builder). To sweep for siblings, decode every `static NAME: [u16; N]` against its `// L"..."` intent comment (one-shot scanner did this 2026-07-10; SERVICES_KEY was the only true hit). **The durable lint LANDED 2026-07-15**: `tools/scan_wide_literals.py`, gate-wired
+(`vibeos-cli check`), baseline EMPTY. It decodes every `static/const NAME: [u16; N]` and diffs it
+against the `// L"..."` comment above it; findings name the dropped characters and the needed
+element count. It found one more real survivor immediately — hal `x86/kdpci.rs` `KEY_NAME [u16; 60]`
+spelled `…\PCI\Debu` (missing the `g`), *dead* behind `let _ = KEY_NAME;` because the author hit
+the bug, wrote "g missing — pad it", and worked around it with `build_wstr` instead of fixing it
+(deleted). Two design notes worth keeping, both learned by the first fleet run reporting **20
+findings of which 19 were its own gaps**:
+* **The oracle is prose, so it must not over-read prose.** `L"..."` appears inside comments that are
+  *about the syntax* ("Rust doesn't have `L"..."`, so spell them out") and inside *abbreviated*
+  paths (`L"\Registry\Machine\...\Version"`). Neither is a specification — skip any intent
+  containing `...`, and only take a CONTIGUOUS `//` run (a blank line means the comment is not this
+  literal's spec).
+* **No blanket "must end in NUL" rule.** UNICODE_STRING Buffers legitimately have none (`Length`
+  carries the size) — five correct ones exist in iomgr/fsrtl/npfs. Fire only when the comment
+  itself claims "NUL-terminated". Also strip *all* trailing NULs on both sides: hal `usage.rs`
+  really has a double terminator, and rtl-rxact's comment spells the NUL (`L"RXACT\0"`).
+Mutation-tested both directions (`tools/test_scan_wide_literals.py`, 12 cases, in `check-tooling`);
+it reports coverage (`85/782 had an intent comment`) because "0 findings" over 0 comparisons is the
+green that means nothing.
 **Triangulation recipe that found it:** per-stage DbgPrint bisection in the failing RPC (one boot) + a parallel subagent diff-audit of the Rust vs upstream C (found the literal by byte-decode) + a second subagent proving the create call *cannot* return 2 (pinning it on the parent open). Three probes, one statement.
 
 ### STATUS_OBJECT_PATH_SYNTAX_BAD (0xC000003B) / garbage wide path from a bindgen `#define X L"..."`
@@ -7470,3 +7489,40 @@ OUT_DIR silently overwrite and double-link); the flat stdarg.h must also define 
   down-payment — parser and formatter share the limb engine); do NOT assemble streamout under
   msvcrt exports — it would silently downgrade the DLL's float output, violating never-weaken.
   The kernel keeps streamout (faithful to ReactOS crt by construction; its quirks are its C's).
+
+### 9.84 (2026-07-15) `NET_FLAKE` that is not a flake: the net suite times out at 600s having never booted, because another lane's `farm` owns every host CPU lease
+
+**Symptom.** A gate with `✓ build ×3  ✓ lint ×3  ✓ smoke:i386  ✓ smoke:amd64  ✓ smoke:arm64` and
+`✗ smoke:net(NET_FLAKE, 3 attempts)` — `15 errors in 600.39s`. Every one of the 15 net tests errors
+with an identical flat `Failed: Timeout (>600.0s)`, **including `test_boot_with_nic`, the first one**.
+
+**It is not the network, and it is not your change.** The tell is in the captured setup output:
+
+```
+[hostlock] waiting for host CPU lease (boot:amd64-uefi-net)...
+ERROR tests/qemu/test_net.py::test_boot_with_nic - Failed: Timeout (>600.0s)
+```
+
+The suite spent its entire 600s **queued on the hostlock (4 leases)** and never booted a VM. When
+another worktree is running `vibeos-cli farm` (an all-night, whole-host soak) plus its own smokes,
+load sits at ~24 and the leases never free. The gate's own retry (3 attempts) cannot help: it
+re-queues into the same saturated lock.
+
+**How to tell starvation from a real net regression, in ten seconds:**
+* **All 15 error** (not fail) with the **same** 600s number, first test included → fixture never
+  ran. A real regression fails a *specific* test with a *specific* assertion.
+* `✓ smoke:i386/amd64/arm64` on the **same media** → the OS boots fine; only this lane starved.
+* `uptime` (load ≫ cores) and `./vibeos-cli ps` (`slots: N/10 in use`, OWNER paths pointing at
+  *other worktrees*) name the culprit.
+* `grep hostlock` the pytest output. That line is the whole diagnosis.
+
+**What to do.** NOT `--allow-stale`, not a re-gate (it will starve again), and above all **never
+kill the other lane's QEMUs or farm** — they are someone's deliberate soak, and broad `pkill -f
+qemu` matches your own process tree (AGENTS.md). Park the work committed-but-unpushed and wait:
+`while kill -0 <farm-pid>; do sleep 120; done; ./vibeos-cli gate`. A gate that is red for a reason
+outside the tree is not a green you may push on the strength of "it's probably fine" — the ×3-green
+push rule exists exactly so that judgement is not yours to make at 1am.
+
+**Related, and the reason this bit at all:** the standing rule is that the flake farm runs only
+when no other agents are working. Two lanes each politely declining to soak, and one lane not
+declining, produce this. If you start a farm, expect to be the reason another lane's gate is red.

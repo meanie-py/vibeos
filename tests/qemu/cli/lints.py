@@ -282,6 +282,21 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Hand-encoded UTF-16 string literals decoded against their `// L"..."` intent
+    # comment. The SERVICES_KEY class (2026-07-10): `static X: [u16; 33]` sized by
+    # hand, one element short, silently dropped the last character -> services-rust
+    # opened `...\Service` and every registration failed ERROR_FILE_NOT_FOUND. rustc
+    # cannot see it (the array is well-formed at any length) and the comment above it
+    # says the RIGHT string, so review slides off. Baseline is EMPTY — the one real
+    # survivor (hal kdpci KEY_NAME, truncated AND dead) is deleted; this keeps it at 0.
+    swl = repo / "tools" / "scan_wide_literals.py"
+    specs.append(
+        (
+            "scan_wide_literals",
+            [py, str(swl)] if swl.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Dangling pointers to transmute temporaries: `let p = transmute::<[u8;N],
     # [u16;M]>(x).as_ptr()` (or the same as a struct field) — a rustconv artifact
     # where C's stack-backed WCHAR[] became a storageless temporary, so the stored
