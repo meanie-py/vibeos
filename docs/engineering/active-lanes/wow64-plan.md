@@ -1110,10 +1110,18 @@ identical-class whitelist; unknown classes fail loud) and NtRemoveIoCompletion
 **3. Count-aware array** — NtUserEnumDisplayMonitors HMONITOR out-array
 marshalled via local ULONGLONG[16] + narrow copy-back.
 
-**Known flake family (tracked, NOT marshaller-related):** intermittent
-FEX-process startup death (~2-3/13 boots, lands on varying guests): gui32
-0xC000001D @ PC=0x4B5478 (2 hits, deterministic PC) and wow64probe 0xC0000005
-(1 hit; loads only libwow64fex.dll — proves it's the FEX layer, not wow64.dll).
+**Startup-death flake family — ROOT-CAUSED + FIXED 2026-07-14 (field manual
+§9.72).** Face A (5 corpus hits, the 0xC000001D deaths at deterministic
+PC): SCTLR_EL1.UCI was never set, so FEX's rare inline `dc cvau` flush
+(Arm64JITCore::ExitFunctionLink back-patch) trapped as EC 0x18 →
+STATUS_ILLEGAL_INSTRUCTION. Fixed in kiinit (UCI|UCT|DZE, per-CPU) +
+deterministic fexprobe tripwire (`mrs CTR_EL0`/`dc cvau`/`dc zva` at EL0
+every boot). Face B (1 hit, wow64probe 0xC0000005 mid-ProcessInit):
+pre-ThreadInit exception amplified into recursion-until-stack-overflow by
+the NULL THREAD_STATE deref in BTCpuResetToConsistentStateImpl — vendored
+guard landed (passes pre-thread exceptions to the next handler); the seed
+AV (NULL node in the invalidation Threads walk, n=1) stays open but will
+now self-report truthfully if it recurs.
 
 Commits: 0c4cf1de7a5 (gen-callback), b6a22290788 (ntdll manuals).
 
