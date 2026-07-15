@@ -592,3 +592,42 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   (HalInitializeProcessor is an empty stub, so the AP's GICC/redistributor is never
   enabled). Wire: AP-side GIC CPU-interface enable in HalInitializeProcessor + SGI
   receive dispatch (trap.rs → KiIpiServiceRoutine) + HalRequestIpi → GICD_SGIR@0xF00.
+
+- **2026-07-14 — M5b COMPLETE: arm64 GIC SGI IPI wired; `-smp 2` boots to DESKTOP
+  (3/3 green ~50s; UP regression green).** Commit `8439ceca339`. The self-test proof:
+  `[SMP] KeIpiGenericCall self-test: worker ran on 0x3 == active set OK` — SGI path
+  works end to end (HalRequestIpi → GICD_SGIR → AP IRQ → KiIpiServiceRoutine → packet
+  worker → signal-done), and the boot then continues clean through SMSS to
+  `shell ready` + explorer `_tWinMain`. Zero IRQL violations / WAITDEP / BUGCHECK.
+  What it took (three pieces, all in the commit):
+    1. **SGI transport (hal clock.rs).** SGI 0 == the NT IPI at IPI_LEVEL(14) → GIC prio
+       0x10 (above CLOCK 0x20, below only HIGH). Send: `gic_send_sgi` (`dsb ish` then
+       GICD_SGIR@0xF00, target-list filter 0). Receive: new `intid < 16` branch in
+       HalClockInterruptArm64 — HalpEnterInterruptIrql(IPI_LEVEL) → KiIpiServiceRoutine
+       (new arm64 spec export) → HalpExitInterruptIrql; EOI writes back the full IAR
+       (source-CPU field included). Per-CPU enable: `gic_percpu_init` — the GICv2
+       IPRIORITYR/ISENABLER0 copies for INTIDs 0-31 and the whole GICC are **banked per
+       accessing core**, so each AP programs its own in HalInitializeProcessor (was an
+       empty stub) and the BSP gets its bank at clock init.
+    2. **The early-window mapping problem.** KeStartAllProcessors (+ the IPI self-test)
+       runs **before MmInitSystem(1)** — MmMapIoSpace can't exist yet, so the GIC is
+       reached via boot-identity PAs (`gic_ensure_early_bases`, first-writer-wins CAS;
+       clock init later overwrites with the real VAs). The identity mapping itself is
+       now **guaranteed by the loader**: ported `MempMapDevicePage` to the live Rust
+       winldr_arm64.rs and mapped UART/fw_cfg/GICD/GICC with Device attrs. (Side find:
+       the 2026-07-05 tripwire commit had added that function to the by-then-INERT C
+       winldr — classic edited-the-dead-C trap — so the fw_cfg mapping never shipped and
+       early device access worked only by accident of the UEFI memory-map walk.)
+    3. **Per-CPU IRQL + softint state (halstubs.rs) — the silent prerequisite.** The
+       arm64 HAL kept ONE global soft IRQL + ONE softint pending mask + ONE
+       interrupt-context depth. With 2 CPUs that's lost-update city: CPU0's clock tick
+       would gate CPU1's softint dispatch, and CPU1's lower-drain could consume (and
+       clear) a DISPATCH request CPU0 posted for itself — lost-DPC hangs. Soft IRQL now
+       lives in **KPCR.CurrentIrql via tpidr_el1** (KiInitializePcr already initializes
+       it per CPU; boot-global fallback for the pre-tpidr window), and pending/
+       in-progress/depth live in a cache-line-padded per-CPU array.
+  **M5c (NEXT):** prove the AP actually *schedules* (desktop boots, but nothing yet
+  measures CPU1 picking up threads — wire the CPU1-visibility counter from the M3-tail
+  list, arm64 leg). Then M5d: KiTbShootdown via SGI + `-smp 2` soak. AP-local vtimer
+  (per-CPU clock ticks) is also still un-armed — the AP gets no CNTV interrupts; fine
+  for idle+IPIs, needed for real per-CPU quantum/timer work.
