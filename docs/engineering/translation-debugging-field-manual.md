@@ -7059,3 +7059,58 @@ Rust program) and the `.spec` records only the convention, so again the oracle m
 itself. Compare **pointer depth**, not pointer-vs-scalar: a mutation test proved the first version
 of that checker structurally blind to `HANDLE`-vs-`LPHANDLE` — the bug that motivated it — because
 *both* are pointers.
+
+### 9.79 (2026-07-14) An oracle that resolves a type wrongly reports *its own ignorance* as a defect — and the ambiguity check cannot save you when the parser is blind to the true declaration
+
+**Symptom.** `verify_c_signatures` (§9.78's sibling) was landed with 14 baselined findings and a
+note that `lsasrv LsapRegCreateKey` "looks genuinely real". On triage, **all 14 were the checker's
+own bugs, and the one real defect in the tree was one it could not see.**
+
+**Root causes (four, each a different flavour of the same mistake — a guess with no evidence):**
+1. **`.idl` outvoted `.h`.** The harvest read `sdk/include/psdk/*.idl` as C. `cordebug.idl` says
+   `typedef SIZE_T LPSTARTUPINFOW;` — an *RPC wire placeholder*, not the C type — so the correct
+   advapi32 translation was reported as a bug. **An IDL typedef states a marshalling
+   representation; the C compiler that built the .c never saw the .idl.**
+2. **The true declaration was invisible, so the false one looked unanimous.** The real
+   `} STARTUPINFOW, *LPSTARTUPINFOW;` is a *braced* typedef, excluded by the regex. The AMBIGUOUS
+   machinery (which exists exactly to refuse guessing) fires only on *conflicting* declarations —
+   **a parser blind to the true source sees no conflict and reports a confident wrong answer.**
+   *A checker that can only see one source cannot tell that it is the wrong one.*
+3. **A naming convention applied blind.** `^(?:LP|P)[A-Z]` read **`POINT` as a pointer to `OINT`** —
+   and likewise PROCESS_INFORMATION, PALETTEENTRY, PIXELFORMATDESCRIPTOR, POLYTEXTW. Only trust the
+   P/LP convention when the *remainder names a type you actually harvested*.
+4. **Multi-word base types.** `typedef _W64 unsigned long ULONG_PTR` was parsed as base=`_W64`,
+   harvesting **`unsigned`** as a typedef aliased to `_W64` — poisoning the whole integer tower
+   (SIZE_T→ULONG_PTR→unsigned→_W64→unresolvable). Also `typedef void* PVOID` (star glued to the
+   base) vs `typedef void *PVOID`: **C has no star on a base type; every star binds to a declarator.**
+
+**The false-GREEN half, which is worse.** An unresolvable name silently returned depth 0. An unknown
+C type and an unknown Rust type then both land on 0, compare **equal**, and the pair is reported as
+*verified* having been checked not at all. Fixed by raising `Unknown` and counting it: unresolvable
+is a **reported blind spot**, never a verdict. (`ole32` skips 308 types — now visible, previously
+laundered into a green.)
+
+**What the fixed checker found immediately:** `ws2_32 WPUCompleteOverlappedRequest(.., DWORD dwError,
+DWORD cbTransferred, ..)` translated with **`DWORD_PTR`** — contradicted by the C, by `ws2spi.h`, and
+by the `.spec` (`long`). 4 bytes vs 8 on amd64, on an exported SPI entry point, in the crate that had
+just been landed "0 findings".
+
+**Depth is not enough — width matters too.** `DWORD_PTR` is *not a pointer*; it is an integer that is
+4 bytes on i386 and 8 on amd64. A depth comparison is structurally blind to `DWORD`→`DWORD_PTR`,
+which the tool's own docstring **advertised catching**. Width cannot be compared numerically (the
+headers carry both `#ifdef` branches and we do not preprocess) but it does not need to be: what makes
+it a bug is that one side is **arch-variable** and the other **fixed**, which is decidable from the
+name (`_PTR_SIZED`).
+
+**Rule / recipe.** An oracle needs an oracle. **Mutation-test every checker in both directions** —
+a "must catch" table of the bugs it exists for (catches false NEGATIVES / a checker gone blind) and a
+"must not fire" table of correct code (catches false POSITIVES). Only the first table's absence lets a
+tool *look* healthy while detecting nothing. Both live in `tools/test_verify_c_signatures.py`, wired
+into `vibeos-cli check-tooling`. And **always print coverage next to findings**: "0 findings" from an
+oracle that skipped everything is otherwise indistinguishable from one that checked everything.
+
+**Triage, don't bless.** The 9 lines left in `tools/lint-baseline/verify_c_signatures.txt` were each
+read against their C; the verdicts are in the tool's docstring. Two of them are **the C being wrong**:
+`LsapRegCreateKey`/`LsapRegOpenKey` declare `OUT HANDLE KeyHandle` while every caller passes `&handle`
+and `ZwCreateKey` takes `PHANDLE` — the C only compiles because `void*` implicitly converts to
+`void**`. **Do not "fix" the Rust to match under-typed C.**
