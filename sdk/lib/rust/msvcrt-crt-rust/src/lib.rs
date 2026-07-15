@@ -4338,3 +4338,8 @@ pub unsafe extern "C" fn wcsxfrm(dest: *mut u16, src: *const u16, len: usize) ->
 // ═══════════════════════════════════════════════════════════════════════════
 mod bnum;
 mod fpnum;
+// Wave 14b — msvcrt's printf ENGINE (printf.h transcription; shares bnum with
+// the wave-13 parser). `pub` so msvcrt-difftest can drive it directly against
+// the genuine pf_printf_a (the pfflat_* oracle). Export shells come at flip
+// time; nothing here is #[no_mangle] yet.
+pub mod printf;
