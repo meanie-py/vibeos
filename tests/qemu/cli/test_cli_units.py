@@ -104,6 +104,18 @@ def staleness_repo(tmp_path: Path, monkeypatch) -> Path:
     (r / "sdk" / "lib" / "rust" / "x.rs").write_text("fn k(){}\n")
     (r / "docs" / "readme.md").write_text("hi\n")
     (r / "build-i386" / "livecd.iso").write_bytes(b"ISO-CONTENT-v1")
+    # Model the real repo: build-*/ is gitignored. Without this the fixture's own STAMP
+    # (written into build-i386/ after the commit) shows up as an untracked file and moves
+    # every fingerprint between make_stamp and check_staleness — which is why these tests
+    # never matched tier 1 and reached the tier-2 path at all. They passed only because the
+    # oracle down there was blind and called everything "clean-diff (non-build change)".
+    (r / ".gitignore").write_text("build-*/\n")
+    # Non-Rust build inputs. rust_src_hash is scoped to sdk/lib/rust, so these are the
+    # ones the deleted `ninja -n` oracle was supposed to cover and silently did not.
+    (r / "dll" / "win32" / "thing").mkdir(parents=True)
+    (r / "dll" / "win32" / "thing" / "thing.c").write_text("int f(void){return 1;}\n")
+    (r / "dll" / "win32" / "thing" / "CMakeLists.txt").write_text("add_library(thing thing.c)\n")
+    (r / "dll" / "win32" / "thing" / "thing.spec").write_text("@ stdcall f()\n")
     _git(r, "init", "-q")
     _git(r, "config", "user.email", "t@t")
     _git(r, "config", "user.name", "t")
@@ -2481,3 +2493,77 @@ def test_cohab_cargo_output_missing_is_stale(cohab_repo: Path):
     os.utime(cohab_repo / "sdk/lib/rust/widget-rust/src/lib.rs", (5000, 5000))
     r = _cohab(cohab_repo)
     assert r and "missing" in r[0], r
+
+
+# --- tier-2: non-Rust build inputs (the deleted `ninja -n` oracle's job) -----------------
+#
+# The regression these pin is a FALSE GREEN, not a crash: `_ninja_has_work` returned False
+# for every target on every arch (CONFIGURE_DEPENDS globs make -n stop at the regen edge),
+# and rust_src_hash only covers sdk/lib/rust — so editing a tracked, compiled .c and running
+# smoke classified it as "clean-diff (non-build change)", called the tree FRESH, and booted
+# the stale iso. Field manual §9.81b.
+
+
+def test_staleness_c_source_change_is_stale(staleness_repo: Path):
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (staleness_repo / "dll" / "win32" / "thing" / "thing.c").write_text("int f(void){return 2;}\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale and not v.fresh, v.reasons
+    assert any("build source changed" in r for r in v.reasons), v.reasons
+
+
+def test_staleness_cmake_change_is_stale(staleness_repo: Path):
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (staleness_repo / "dll" / "win32" / "thing" / "CMakeLists.txt").write_text("# retarget\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale, v.reasons
+
+
+def test_staleness_spec_change_is_stale(staleness_repo: Path):
+    """A .spec is neither Rust nor C, and it changes the DLL's export table."""
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (staleness_repo / "dll" / "win32" / "thing" / "thing.spec").write_text("@ stdcall g()\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale, v.reasons
+
+
+def test_staleness_untracked_c_file_is_stale(staleness_repo: Path):
+    """A brand-new, never-committed source still changes the build."""
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (staleness_repo / "dll" / "win32" / "thing" / "extra.c").write_text("int g(void){return 0;}\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale, v.reasons
+
+
+def test_staleness_old_stamp_without_build_hash_is_loud_not_clean(staleness_repo: Path):
+    """A stamp written before build_src_hash existed cannot answer the question. It must
+    say so, not read as clean — an absent field defaulting to "" that compares equal to
+    nothing is the same silent-guess shape this whole fix is about."""
+    s = provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1)
+    s.build_src_hash = ""  # simulate a pre-existing stamp
+    s.write(staleness_repo / "build-i386")
+    (staleness_repo / "docs" / "readme.md").write_text("force tier 2\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale, v.reasons
+    assert any("predates build-source fingerprinting" in r for r in v.reasons), v.reasons
+
+
+def test_staleness_doc_change_still_clean_diff(staleness_repo: Path):
+    """The must-NOT-fire half: docs are excluded, so a docs-only delta stays FRESH. The
+    gate's docs-only fast path depends on this, and an over-broad build-relevant set would
+    quietly turn every doc edit into a full rebuild."""
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (staleness_repo / "docs" / "readme.md").write_text("changed doc\n")
+    (staleness_repo / "notes.md").write_text("top-level markdown\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.fresh and not v.stale, v.reasons

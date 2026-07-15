@@ -4336,4 +4336,15 @@ pub unsafe extern "C" fn wcsxfrm(dest: *mut u16, src: *const u16, len: usize) ->
 // (`is_infinite`, `is_finite`, `abs`). fpnum.rs therefore keeps every f64-returning
 // helper `extern "C"` and uses bit-based finite/inf predicates — see its `no_sse` notes.
 // ═══════════════════════════════════════════════════════════════════════════
+mod bnum;
 mod fpnum;
+// Wave 14b — msvcrt's printf ENGINE (printf.h transcription; shares bnum with
+// the wave-13 parser). `pub` so msvcrt-difftest can drive it directly against
+// the genuine pf_printf_a (the pfflat_* oracle; 142 narrow + 30 wide rows
+// byte-identical). The six engine symbols (pf_printf_a/_w, arg_clbk_valist/
+// _positional, create_positional_ctx_a/_w) are #[no_mangle]: wcs.c's ~50
+// C printf shells (sprintf, _snwprintf, _vscprintf_p_l, …) are trivial
+// va_start wrappers calling the engine BY NAME, so whole-archive first-match
+// flips every printf-family export's machinery to Rust while the shells stay
+// C until a later varargs-shell wave.
+pub mod printf;

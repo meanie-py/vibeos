@@ -1197,6 +1197,7 @@ dependencies = [
 name = "msvcrt-crt-cargo"
 version = "0.1.0"
 dependencies = [
+ "cnt-rust",
  "msvcrt-crt-rust",
  "panic-common",
 ]

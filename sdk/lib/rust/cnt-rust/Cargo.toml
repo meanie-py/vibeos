@@ -30,6 +30,16 @@ default = ["float"]
 # Does NOT imply `float`: the i386 kernel links cabi WITHOUT float
 # (no-SSE — see below). cnt-difftest gets float via `default`.
 cabi = []
+# ONLY cabi/math.rs's 66 #[no_mangle] libm exports (sin/cos/exp/pow/…),
+# none of the other ~200 shims. For msvcrt-crt-cargo: msvcrt.dll's math
+# exports bind to the same plain engine names crtmath defines, so the
+# kernel-proven Rust libm flips them via lld first-match — but the full
+# `cabi` layer would collide with msvcrt-crt-rust's own wrappers in the
+# same staticlib (strlen, memcpy, …). A strict subset of `cabi` (enabling
+# both == `cabi`). The msvcrt DIFFTEST must NOT see this feature: it
+# links msvcrt-crt-rust (the rlib), not msvcrt-crt-cargo, precisely so
+# these 66 symbols never shadow host libm under the reference TUs.
+cabi-math = []
 # The `core_rs` forbid-unsafe float surface: `core_rs::{floatcvt,scanf}`
 # + the matching `cabi/manual.rs` shims (_fcvt/_ecvt/_gcvt/_gcvt_s +
 # cnt_vs*scanf). Default-on so cnt-difftest / standalone are unchanged.
