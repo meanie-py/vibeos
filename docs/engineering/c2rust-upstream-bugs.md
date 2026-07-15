@@ -5,10 +5,16 @@ translation path, `tools/rustconv/rustconv/c2rust_anchor.py`). Both are reproduc
 scratch, root-caused in c2rust's own source, and minimized to standalone C that needs no
 ReactOS headers. §1 additionally has a **verified one-line fix**.
 
-Status: **not yet filed upstream** (github.com/immunant/c2rust/issues). The two sections below
-are paste-ready. Neither is a duplicate as far as issue search shows; the closest existing
-issue is [#231](https://github.com/immunant/c2rust/issues/231) (closed, `CTypeId`/`CStmtId` on
-FANN) which shares §2's *downstream symptom* but not its cause.
+Status: **BANKED — deliberately not filed yet** (2026-07-15 call). Filing is an outward-facing
+post from a repo that has not launched, so it waits until after the vibeos launch; the analysis
+is finished and keeps indefinitely. This is a decision, not a TODO someone forgot — do **not**
+file these on your own initiative. Both sections below are paste-ready and the `gh` commands are
+at the bottom, so posting later is a copy-paste.
+
+Neither is a duplicate as far as issue search shows; the closest existing issue is
+[#231](https://github.com/immunant/c2rust/issues/231) (closed, `CTypeId`/`CStmtId` on FANN)
+which shares §2's *downstream symptom* but not its cause. Re-check both before posting — this
+is pinned to c2rust 0.22.1 and upstream may have moved by then.
 
 ---
 
@@ -162,10 +168,11 @@ directory, repoint `file`/`-o` at the target, and run `c2rust transpile` under
 Note c2rust only *parses* the compile DB for flags — it uses its own bundled libclang, so the
 compiler path in `command` is never executed.
 
-## Filing these (NOT done — needs a human to approve an outward-facing post)
+## Filing these (BANKED until after the vibeos launch — do not file unprompted)
 
 `gh` is authenticated as `meanie-py` and `immunant/c2rust` has issues enabled, so these are one
-command each. Bodies are split out verbatim under `docs/engineering/c2rust-issues/`:
+command each whenever the call is made. Bodies are split out verbatim under
+`docs/engineering/c2rust-issues/`:
 
 ```bash
 gh issue create --repo immunant/c2rust \
