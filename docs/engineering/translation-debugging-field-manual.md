@@ -7114,3 +7114,86 @@ read against their C; the verdicts are in the tool's docstring. Two of them are 
 `LsapRegCreateKey`/`LsapRegOpenKey` declare `OUT HANDLE KeyHandle` while every caller passes `&handle`
 and `ZwCreateKey` takes `PHANDLE` — the C only compiles because `void*` implicitly converts to
 `void**`. **Do not "fix" the Rust to match under-typed C.**
+
+### 9.80 (2026-07-14, (a) FIXED / (b) OPEN) The two staleness oracles: an mtime rule that false-REDs on a codegen-neutral edit, and a `ninja -n` oracle that is blind on every arch
+
+Both live in `tests/qemu/cli/provenance.py` and both guard the same thing — "did the staged
+binary come from the current sources?" — the class that false-greened arm64 six times
+(fastfat→ramdisk→pl011→gdi32→user32→advapi32, §9.6c.1). Found while gating a one-word ws2_32
+signature fix; **neither was found by the gate reporting a bug, both were found by the gate
+reporting the WRONG THING and being chased down.**
+
+#### (a) `cohab_staleness_reasons` false-REDs on a no-op-codegen edit — real, narrow, still there
+
+**Symptom:** `artifact-check(boot media missing or stale)` → `ws2_32.dll: stale — ws2_32-rust
+has .rs newer than the built binary (cohab flip not rebuilt; ...)`, on every arm64 build, while
+the build was in fact perfectly up to date.
+
+**Mechanism:** the rule is `artifact.mtime >= newest .rs mtime` — a *proxy*. The ws2_32 fix
+(`WPUCompleteOverlappedRequest`: `DWORD_PTR`→`DWORD` on an unimplemented stub whose params are
+unused) is **codegen-neutral on arm64**: cargo rebuilt, emitted a **byte-identical** `.a`,
+cmake's `copy_if_different` correctly did NOT touch the staged copy, so nothing relinked (there
+was nothing to relink) and `ws2_32.dll` stayed older than the `.rs` **permanently** — until an
+unrelated ws2_32-rust change forced a relink. Any semantically-null-but-textual edit does this.
+
+**A false RED is not the safe direction.** It is the mirror of the false green the check exists
+to catch, and it teaches people to `touch` binaries or ignore artifact-check — which is how the
+false greens got in.
+
+**FIXED** by splitting the chain at the copy, which is where the mtime semantics change:
+```
+.rs --cargo--> <t>/release/lib<c>.a --copy_if_different--> lib<c>.a --link--> artifact
+               [A: touched on EVERY cargo run]              [B: touched only on CHANGE]
+```
+  * **A.** cargo's own output >= newest `.rs`  => the crate really was rebuilt (catches the
+    original never-built-for-this-arch bug: gdi32/user32/advapi32…).
+  * **B.** artifact >= the COPIED staticlib   => the link consumed the current `.a` (catches
+    the other half: crate rebuilt+changed, but the .dll wasn't in the staged target set).
+Both compare files whose mtime moves exactly when it should, so an identical rebuild is silent
+while a real one is still caught. Crates with NO staticlib in their chain are cargo-*linked*
+modules (ntoskrnl-cargo/win32k produce the binary directly) — "staticlib absent" means
+"different build shape", not "never built"; reading it as the latter reported ntoskrnl.exe and
+win32k.sys as never-compiled on a green tree. They keep the old rule. Pinned by 5 tests in
+`test_cli_units.py` (`test_cohab_*`), including the codegen-neutral case as an explicit
+must-NOT-fire.
+
+**Blind alley — do NOT "fix" it with `ninja -n`.** That swaps a false RED for a false GREEN:
+
+#### (b) `_ninja_has_work` returns False even when a rebuild IS pending — on ALL arches. OPEN.
+
+**Verified:** with a genuine pending rebuild (proved by running real `ninja`, which compiled
+ws2_32-rust and relinked), `_ninja_has_work` returned **False** for `dll/win32/ws2_32/ws2_32.dll`
+AND for `ntoskrnl` (arm64) AND for **`livecd`** (amd64 — i.e. the x86 tier-1 target).
+
+**Mechanism (structural, not a parsing bug):**
+```
+$ ninja -n dll/win32/ws2_32/ws2_32.dll
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...          <- and NOTHING else, ever
+```
+CMake's `CONFIGURE_DEPENDS` globs install a glob-verification edge that is dirty **by design on
+every build** (that is how re-globbing works). Under `-n` no command executes, so ninja must
+assume that edge changes the cmake stamp → the regen edge is dirty → and ninja **stops planning
+there**, because regenerating `build.ninja` invalidates the rest of the graph. It never
+evaluates the targets you asked about. `_ninja_has_work` filters `Re-running CMake` /
+`Re-checking globbed directories` out as "not real work" and returns False = clean.
+
+Running `cmake .` or `ninja build.ninja` for real **first does not help** — the glob edge is
+always-dirty by construction, so the next `-n` stops in exactly the same place. The docstring's
+premise ("cmake re-runs ... so the dirty set is evaluated against the updated graph") is simply
+not what `-n` does. **`ninja -n` cannot be a staleness oracle in a CONFIGURE_DEPENDS project.**
+
+**Consequence:** the tier-1 ninja staleness net has never fired. The mtime nets in (a) are
+carrying the whole load, which is also why (a)'s false RED was the first symptom anyone saw.
+
+**The sound fix is content, not mtime and not `-n`:** compare a *fingerprint* of the crate's
+`.rs` set against one recorded at the artifact's last successful link (the stamp mechanism
+already fingerprints git content for exactly this reason — `git_fingerprint`). An mtime cannot
+distinguish "not rebuilt" from "rebuilt to identical bytes", and `-n` cannot see past the regen
+edge; only content can answer "would rebuilding change this artifact?".
+
+**Rule.** When a gate check fires, find out whether it is *right* before you satisfy it — and
+when you replace an oracle, test the replacement on a KNOWN-BAD input, not just a known-good
+one. The `ninja -n` "fix" passed the benign case perfectly and silently failed to catch a real
+stale cohab injected on purpose; only the deliberate known-bad probe exposed it. Same lesson as
+§9.79's mutation tables, one layer down.
