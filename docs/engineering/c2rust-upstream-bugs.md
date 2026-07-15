@@ -161,3 +161,23 @@ directory, repoint `file`/`-o` at the target, and run `c2rust transpile` under
 `tools/canon-run.sh` (the `/tmp/vibeos` mount must exist for the `-I` paths to resolve).
 Note c2rust only *parses* the compile DB for flags — it uses its own bundled libclang, so the
 compiler path in `command` is never executed.
+
+## Filing these (NOT done — needs a human to approve an outward-facing post)
+
+`gh` is authenticated as `meanie-py` and `immunant/c2rust` has issues enabled, so these are one
+command each. Bodies are split out verbatim under `docs/engineering/c2rust-issues/`:
+
+```bash
+gh issue create --repo immunant/c2rust \
+  --title "ICE: knr_function_type_with_parameters does not unwrap CTypeKind::Attributed (taking the address of a __stdcall fn)" \
+  --body-file docs/engineering/c2rust-issues/1-attributed-knr-ice.md
+
+gh issue create --repo immunant/c2rust \
+  --title "ICE: __label__ (GCC local label) unsupported — panics in the comment locator instead of stopping on its own \"AST was invalid\" diagnostic" \
+  --body-file docs/engineering/c2rust-issues/2-label-decl-ice.md
+```
+
+§1 is worth filing with the patch attached — it is a one-line fix, verified locally (patched
+0.22.1, rebuilt, both the 3-line reproducer and the real 2618-line `varformat.c` transpile).
+§2 is two defects in one report; a maintainer may want it split (the missing `__label__` support
+vs. panicking after already printing an actionable diagnostic).
