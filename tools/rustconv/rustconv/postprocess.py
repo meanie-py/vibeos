@@ -13,6 +13,7 @@ universal enough to fix mechanically:
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -1618,6 +1619,147 @@ _EXTERN_FN_NAME_RE = re.compile(r"^[ \t]*(?:pub\s+)?fn\s+([A-Za-z_]\w*)\b")
 _EXTERN_ATTR_RE = re.compile(r"^[ \t]*#\[[^\]]*\][ \t]*$")
 
 
+@lru_cache(maxsize=1)
+def _import_abi_map() -> dict[str, str]:
+    """symbol -> required extern ABI ("C" | "system"), from EVERY .spec in the tree.
+
+    THE INVARIANT: an imported symbol's calling convention is decided by the DLL that
+    EXPORTS it, and every one of those DLLs states it in a .spec. kernel32.spec says
+    `@ stdcall HeapAlloc(long long long)`; msvcrt.spec says `@ cdecl strcpy(ptr str)`.
+    So we never have to guess — and we must not, because guessing wrong is invisible.
+
+    WHY THIS IS NEEDED. An LLM translating a user-mode DLL sees a C file that calls
+    `strcpy(dst, src)` and `HeapAlloc(heap, 0, n)` and `SetLastError(e)` side by side, with
+    nothing in the source distinguishing their conventions (the C compiler knew from the
+    headers). It groups them into whichever `extern` block it happens to pick. ws2_32's raw
+    translation declared **HeapAlloc as `extern "C"` in some modules and `extern "system"` in
+    others** — HeapAlloc is stdcall, so the cdecl sites walk the i386 stack on every
+    allocation. It compiles. It links. It boots.
+
+    Nothing was checking: verify_ffi validates a module's decls against ITS OWN .spec, and
+    HeapAlloc is not in ws2_32.spec because it is an IMPORT. The one checker that could have
+    caught it had no reason to look at that name at all.
+
+    Conflicts (a name exported with different conventions by different DLLs — 20 of 18,028,
+    all kernel Ke*/Rtl* arch-variants) are DROPPED from the map rather than guessed. Fail
+    safe: an unknown name is left exactly as the model wrote it.
+
+    `varargs` is cdecl (that is how a variadic C fn is called); `thiscall`/`fastcall` are
+    grouped with stdcall under Rust's "system" for our targets.
+    """
+    from .config import REACTOS_ROOT
+
+    conv = {
+        "stdcall": "system",
+        "fastcall": "system",
+        "thiscall": "system",
+        "cdecl": "C",
+        "varargs": "C",
+    }
+    pat = re.compile(
+        r"^@\s+(stdcall|cdecl|varargs|thiscall|fastcall)\s+(?:-\S+\s+)*([A-Za-z_]\w*)\s*\("
+    )
+    seen: dict[str, set[str]] = {}
+    for spec in REACTOS_ROOT.rglob("*.spec"):
+        sp = str(spec)
+        if "/build-" in sp or "/.git/" in sp:
+            continue
+        try:
+            text = spec.read_text(errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            m = pat.match(line.strip())
+            if m:
+                seen.setdefault(m.group(2), set()).add(conv[m.group(1)])
+    # Unambiguous names only.
+    return {name: next(iter(cs)) for name, cs in seen.items() if len(cs) == 1}
+
+
+def enforce_import_abi(code: str, exports: dict | None = None) -> str:
+    """Force every imported fn decl into the extern block its exporting DLL's .spec requires.
+
+    See _import_abi_map for the invariant and for why nothing else catches this. Names the
+    module itself EXPORTS are skipped (a DLL may legitimately export its own fn that shares a
+    name with someone else's import; forcing that one would invert the bug).
+    """
+    abi_of = _import_abi_map()
+    if not abi_of:
+        return code
+    own = set(exports or {})
+
+    lines = code.splitlines(keepends=True)
+    out: list[str] = []
+    # required-abi -> [decl lines]
+    relocated: dict[str, list[str]] = {}
+    moved: list[str] = []
+    i, n = 0, len(lines)
+    while i < n:
+        m = _EXTERN_OPEN_RE.match(lines[i].rstrip("\n"))
+        if not m or m.group(1) not in ("system", "stdcall", "C", "cdecl"):
+            out.append(lines[i])
+            i += 1
+            continue
+        # Normalize the block's ABI to the two Rust spellings we emit.
+        block_abi = "system" if m.group(1) in ("system", "stdcall") else "C"
+        depth, j = 1, i + 1
+        while j < n:
+            depth += lines[j].count("{") - lines[j].count("}")
+            if depth == 0:
+                break
+            j += 1
+        if j >= n:  # unterminated — leave exactly as-is
+            out.append(lines[i])
+            i += 1
+            continue
+
+        kept: list[str] = []
+        pending: list[str] = []
+        hit = False
+        for ln in lines[i + 1 : j]:
+            if _EXTERN_ATTR_RE.match(ln.rstrip("\n")):
+                pending.append(ln)
+                continue
+            fn_m = _EXTERN_FN_NAME_RE.match(ln)
+            name = fn_m.group(1) if fn_m else None
+            want = abi_of.get(name) if name and name not in own else None
+            if want and want != block_abi:
+                relocated.setdefault(want, []).extend(pending)
+                relocated.setdefault(want, []).append(ln)
+                moved.append(f"{name}->{want}")
+                pending.clear()
+                hit = True
+                continue
+            kept.extend(pending)
+            pending.clear()
+            kept.append(ln)
+        kept.extend(pending)
+
+        if not hit:
+            out.extend(lines[i : j + 1])  # byte-identical passthrough
+            i = j + 1
+            continue
+        if any(k.strip() for k in kept):
+            out.append(f'extern "{m.group(1)}" {{\n')
+            out.extend(k if k.endswith("\n") else k + "\n" for k in kept)
+            out.append("}\n")
+        i = j + 1
+
+    if not moved:
+        return code
+    out.append(
+        f"// enforce_import_abi: moved {len(moved)} import decl(s) into the extern block their\n"
+        f"// exporting DLL's .spec requires: {', '.join(sorted(set(moved)))}.\n"
+        "// The CRT is cdecl, Win32 is stdcall, and the C source does not say which is which —\n"
+        "// a wrong guess is a silent i386 stack walk on every call. The .spec is the truth.\n"
+    )
+    for abi, decls in sorted(relocated.items()):
+        out.append(f'extern "{abi}" {{\n')
+        out.extend(decls)
+        out.append("}\n")
+    return "".join(out)
+
+
 def _filter_extern_block_decls(
     code: str,
     should_drop: Callable[[str], bool],
@@ -1861,7 +2003,7 @@ _KNOWN_USER_SYS_CRATES = {
 }
 
 
-def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str) -> str:
+def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str, crate_module: str = "") -> str:
     """Deterministically retarget a user-mode translation's FFI imports.
 
     rustconv's prompt/catalog are kernel-oriented, so the LLM emits
@@ -1871,8 +2013,24 @@ def collapse_sys_crate(code: str, sys_crate: str, sys_umbrella: str) -> str:
     `ntkrnl_sys::<mod>::` to `<sys_crate>::<sys_umbrella>::` and
     replaces the now-redundant explicit `use` lines with a single glob
     — LLM-independent, mirrors enforce_win32k_abi philosophy.
+
+    `crate_module` (e.g. "types") EXEMPTS the target's crate-local bindgen island
+    from that collapse and sends it to `crate::<crate_module>::` instead. It must run
+    FIRST, because the blanket `ntkrnl_sys::\\w+::` rule below would otherwise swallow
+    `ntkrnl_sys::types::` into the sys umbrella — and those symbols are NOT there.
+    ws2_32's `PWSSOCKET`/`TCATALOG`/`SOCKET_ERROR` live in ws2_32-rust's own generated
+    `types` module, so collapsing them onto `ntdll_sys::nt` yields an unresolved-import
+    wall at best, and at worst binds to a same-named-but-different NT symbol.
     """
     pfx = f"{sys_crate}::{sys_umbrella}::"
+    # 0. Crate-local bindgen island (gen_driver_types.sh) → `crate::<module>::`.
+    #    MUST precede the blanket collapse in step 1.
+    if crate_module:
+        code = re.sub(
+            rf"\b(?:ntkrnl_sys|{re.escape(sys_crate)})::{re.escape(crate_module)}::",
+            f"crate::{crate_module}::",
+            code,
+        )
     # 1. Any ntkrnl_sys::<module>:: (incl. nested) → <crate>::<umbrella>::
     code = re.sub(r"\bntkrnl_sys::\w+::", pfx, code)
     # 1b. Sibling user-mode substrate crates the LLM may have guessed wrong
@@ -2026,6 +2184,7 @@ def postprocess(
     sys_umbrella: str | None = None,
     c_source_path: Path | None = None,
     com_method_macro: str | None = None,
+    crate_module: str = "",
 ) -> str:
     """Apply all post-processing transforms to LLM-generated Rust code.
 
@@ -2118,7 +2277,11 @@ def postprocess(
     # oriented prompt produced onto the user-mode substrate umbrella.
     # Last (after all import fixes have settled).
     if sys_umbrella:
-        code = collapse_sys_crate(code, sys_crate, sys_umbrella)
+        code = collapse_sys_crate(code, sys_crate, sys_umbrella, crate_module)
+        # User-mode only: force every IMPORT into the extern block its exporting DLL's .spec
+        # requires (CRT=cdecl, Win32=stdcall). The C source doesn't say which is which, so the
+        # model guesses — and ws2_32's raw output declared HeapAlloc BOTH ways across modules.
+        code = enforce_import_abi(code, exports)
         code = strip_user_inline_redeclarations(code)
         code = drop_pseh_macro_externs(code)
         code = fix_utf16_vec_literals(code)

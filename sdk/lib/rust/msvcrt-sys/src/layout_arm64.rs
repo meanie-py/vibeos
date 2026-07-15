@@ -23,5 +23,7 @@ const _: () = assert!(offset_of!(threadlocaleinfostruct, ctype1) == 312, "msvcrt
 const _: () = assert!(offset_of!(threadlocaleinfostruct, pctype) == 320, "msvcrt-sys: threadlocaleinfostruct.pctype moved on arm64 -- REGENERATE msvcrt-sys");
 const _: () = assert!(offset_of!(threadlocaleinfostruct, pclmap) == 328, "msvcrt-sys: threadlocaleinfostruct.pclmap moved on arm64 -- REGENERATE msvcrt-sys");
 const _: () = assert!(offset_of!(threadlocaleinfostruct, pcumap) == 336, "msvcrt-sys: threadlocaleinfostruct.pcumap moved on arm64 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(threadlocaleinfostruct, lconv) == 296, "msvcrt-sys: threadlocaleinfostruct.lconv moved on arm64 -- REGENERATE msvcrt-sys");
+const _: () = assert!(offset_of!(lconv, decimal_point) == 0, "msvcrt-sys: lconv.decimal_point moved on arm64 -- REGENERATE msvcrt-sys");
 const _: () = assert!(offset_of!(localeinfo_struct, locinfo) == 0, "msvcrt-sys: localeinfo_struct.locinfo moved on arm64 -- REGENERATE msvcrt-sys");
 const _: () = assert!(offset_of!(localeinfo_struct, mbcinfo) == 8, "msvcrt-sys: localeinfo_struct.mbcinfo moved on arm64 -- REGENERATE msvcrt-sys");

@@ -183,6 +183,36 @@ def resolve_c_path(path_str: str) -> Path:
     sys.exit(1)
 
 
+def _exports_lost_to_unextracted(scan) -> set[str]:
+    """Names the module's .spec EXPORTS that the scanner failed to extract.
+
+    `scan.unextracted` entries are free text ("* cp @ L69", "Cls::m @ L120") because the
+    declarator didn't parse — so the failed fn's real name is precisely what we do NOT
+    have. Recover it from the C instead: any spec export whose definition is present in
+    the source but absent from `scan.functions` was lost in the parse.
+    """
+    target = detect_target(scan.path)
+    if target is None or not target.spec_file or not target.spec_file.is_file():
+        return set()
+    try:
+        spec = parse_spec(target.spec_file)
+    except (OSError, ValueError):
+        return set()
+
+    got = {f.name for f in scan.functions}
+    text = scan.raw_source
+    lost: set[str] = set()
+    for name, entry in spec.items():
+        if name in got or not getattr(entry, "needs_implementation", True):
+            continue
+        # Defined in THIS file? A definition is `name` at the head of a line followed by
+        # `(` — the ReactOS/wine house style puts the return type + convention on their own
+        # lines above it. Cheap and precise enough to distinguish from a call site.
+        if re.search(rf"^{re.escape(name)}\s*\(", text, re.M):
+            lost.add(name)
+    return lost
+
+
 def _gate_unextracted(scan, allow_partial: bool):
     """Fail-loud gate: refuse to run a paid per-function translation over a
     file whose bodies the scanner could only PARTIALLY extract (C++ methods —
@@ -206,6 +236,31 @@ def _gate_unextracted(scan, allow_partial: bool):
         # .c files: parse artifacts (PSEH macro blocks etc.) have always been
         # dropped silently by the kernel pipeline — keep that path unblocked,
         # just make the drop visible.
+        #
+        # …UNLESS the dropped body is a real function. The "it's only a parse artifact"
+        # assumption held for PSEH macro blocks and quietly stopped holding for ws2_32:
+        # `inet_addr(IN CONST CHAR FAR* cp)` came back as an unextractable body named `cp`
+        # (tree-sitter can't parse `CHAR FAR*`), so an EXPORTED fn — one the net smoke test
+        # actually calls — would have been dropped from a paid run with a warning nobody
+        # reads. A lost export is never an artifact. Cross-check the drop against the
+        # module's .spec and HARD FAIL on a hit, per the fail-loud rule.
+        lost = sorted(_exports_lost_to_unextracted(scan))
+        if lost:
+            print(
+                f"\n✗ {scan.path.name}: {len(lost)} SPEC-EXPORTED function(s) are in the "
+                "unextractable set — this is a scanner parse failure, not a macro artifact:",
+                file=sys.stderr,
+            )
+            for name in lost[:12]:
+                print(f"    {name}", file=sys.stderr)
+            print(
+                "  Refusing to spend a paid translation that silently omits an export.\n"
+                "  Fix the scanner (see _blank_memmodel / _normalize_callbacks for the shape),\n"
+                "  or pass --allow-partial to translate the extractable subset deliberately.",
+                file=sys.stderr,
+            )
+            if not allow_partial:
+                sys.exit(1)
         print("  (.c file: legacy behavior, proceeding without these)", file=sys.stderr)
         return
     if allow_partial:
@@ -281,11 +336,11 @@ def cmd_prompt(args):
     res = resolve(scan, catalog, spec)
 
     if args.estimate:
-        prompt = build_full_prompt(scan, res)
+        prompt = build_full_prompt(scan, res, target)
         tokens = estimate_tokens(prompt)
         print(f"Estimated tokens: ~{tokens:,}", file=sys.stderr)
     else:
-        prompt = build_full_prompt(scan, res)
+        prompt = build_full_prompt(scan, res, target)
         print(prompt)
 
 
@@ -309,10 +364,10 @@ def cmd_submit(args):
     # For Gemini, combine into single prompt
     if model.startswith("claude-"):
         system_prompt = load_system_prompt(target)
-        file_prompt = build_file_prompt(scan, res)
+        file_prompt = build_file_prompt(scan, res, target)
     else:
         system_prompt = ""
-        file_prompt = build_full_prompt(scan, res)
+        file_prompt = build_full_prompt(scan, res, target)
 
     # Durable archive + cost banner + kill guard for this one paid call.
     warn_if_tmp_output(getattr(args, "output", None))
@@ -355,6 +410,7 @@ def cmd_submit(args):
             target_name=target.name,
             sys_crate=target.sys_crate,
             sys_umbrella=target.sys_umbrella,
+            crate_module=getattr(target, "crate_module", "") if target.crate_bindgen_files else "",
         )
         Path(args.output).write_text(code)
         print(f"Written to {args.output}", file=sys.stderr)
@@ -380,6 +436,7 @@ def cmd_submit(args):
             sys_umbrella=target.sys_umbrella,
             c_source_path=path,
             com_method_macro=target.com_method_macro,
+            crate_module=getattr(target, "crate_module", "") if target.crate_bindgen_files else "",
         )
         print(code)
 
@@ -403,8 +460,13 @@ def cmd_batch(args):
 
     print(f"Found {len(c_files)} C files in {dir_path.name}/", file=sys.stderr)
 
-    catalog = build_catalog(arch=args.arch)
-    spec = parse_spec()
+    # Resolve the target from the path like every other command, instead of silently
+    # defaulting to ntoskrnl: `batch` built its catalog and parsed its spec with no target
+    # at all, so batching a user-mode DLL got the KERNEL catalog and the KERNEL spec. For
+    # an ntoskrnl path this resolves to the same thing it always did (no behaviour change).
+    target = resolve_target(args, dir_path)
+    catalog = build_catalog(arch=args.arch, target=target)
+    spec = parse_spec(target.spec_file) if target.spec_file else {}
 
     model = resolve_model(args.model)
     use_claude = model.startswith("claude-")
@@ -422,9 +484,9 @@ def cmd_batch(args):
         res = resolve(scan, catalog, spec)
         resolves[cf.name] = res
         if use_claude:
-            prompts[cf.name] = build_file_prompt(scan, res)
+            prompts[cf.name] = build_file_prompt(scan, res, target)
         else:
-            prompts[cf.name] = build_full_prompt(scan, res)
+            prompts[cf.name] = build_full_prompt(scan, res, target)
 
     print(f"\nSubmitting {len(prompts)} files to {model}...", file=sys.stderr)
     results = submit_batch(prompts, model=model, system_prompt=system_prompt)
@@ -1542,6 +1604,11 @@ def cmd_translate(args):
             sys_umbrella=rustconv_target.sys_umbrella,
             c_source_path=c_file,
             com_method_macro=rustconv_target.com_method_macro,
+            crate_module=(
+                getattr(rustconv_target, "crate_module", "")
+                if rustconv_target.crate_bindgen_files
+                else ""
+            ),
         )
 
         # --- Post-translation audits -------------------------------------
@@ -1671,7 +1738,7 @@ def cmd_estimate(args):
     for cf in c_files:
         scan = scan_file(cf)
         res = resolve(scan, catalog, spec)
-        prompt = build_full_prompt(scan, res)
+        prompt = build_full_prompt(scan, res, rustconv_target)
         tokens = estimate_tokens(prompt)
         lines = len(scan.raw_source.splitlines())
         total_input += tokens

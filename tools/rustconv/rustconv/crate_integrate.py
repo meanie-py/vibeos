@@ -299,7 +299,7 @@ def _macro_generated_names(text: str, path: Path) -> set[str]:
         from .export_audit import scan_macro_generated_fns
 
         names |= set(scan_macro_generated_fns(text, path))
-    except Exception:  # noqa: BLE001 - a scan miss must never take integration down
+    except Exception:  # a scan miss must never take integration down
         pass
 
     for m in _RE_MACRO_RULES.finditer(text):  # repetition

@@ -597,6 +597,11 @@ unsafe extern "system" fn LsapCopyFromClientBuffer(
 pub unsafe extern "C" fn LsapInitAuthPackages() -> NTSTATUS {
     let name_bytes: [u8; 48] = *b"A\0u\0t\0h\0e\0n\0t\0i\0c\0a\0t\0i\0o\0n\0 \0P\0a\0c\0k\0a\0g\0e\0s\0\0\0";
     let lsa_bytes: [u8; 8] = *b"L\0s\0a\0\0\0";
+    // The [u16] name must OUTLIVE AuthPackageTable — its Name field stores a raw pointer
+    // that RtlQueryRegistryValues dereferences below. Transmuting inline and calling
+    // `.as_ptr()` on the temporary left Name dangling the instant the table initializer
+    // ended (dangling_pointers_from_temporaries). Bind it to a function-scoped local.
+    let name_wide: [u16; 24] = ::core::mem::transmute::<[u8; 48], [u16; 24]>(name_bytes);
 
     let mut AuthPackageTable: [_RTL_QUERY_REGISTRY_TABLE; 2] = [
         _RTL_QUERY_REGISTRY_TABLE {
@@ -610,7 +615,7 @@ pub unsafe extern "C" fn LsapInitAuthPackages() -> NTSTATUS {
                 PRTL_QUERY_REGISTRY_ROUTINE,
             >(LsapAddAuthPackage),
             Flags: 0,
-            Name: ::core::mem::transmute::<[u8; 48], [u16; 24]>(name_bytes).as_ptr() as PCWSTR,
+            Name: name_wide.as_ptr() as PCWSTR,
             EntryContext: core::ptr::null_mut(),
             DefaultType: REG_NONE as ULONG,
             DefaultData: core::ptr::null_mut(),
