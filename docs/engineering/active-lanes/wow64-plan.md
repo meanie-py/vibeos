@@ -614,14 +614,27 @@ corruption class (field manual §9.36, which cost this project real days). So:
   the file handle** until completion rather than return over a live pointer into
   a dead frame.
 
-*Owed — the real async fix is kernel-side*, and it is what NT itself does: I/O
-completion should write an `IO_STATUS_BLOCK32` when the requesting process is
-WoW64 (NT gates this on `IoIs32bitProcess(Irp)`). Our single choke point is
-`*(*Irp).UserIosb = (*Irp).IoStatus;` in `iomgr-rust/src/irp.rs`. It needs care:
-64-bit code (wow64.dll, the 64-bit ntdll) *also* runs in a WoW64 process and
-passes genuine 64-bit IOSBs, so the gate must be per-IRP (captured at syscall
-entry), never merely "the process is WoW64". Until that lands, async file I/O
-from a guest is refused rather than mis-served.
+*~~Owed~~ — **LANDED 2026-07-14 (M15b)**: the kernel-side IOSB32 fix is in.*
+Design as planned, with the per-IRP gate solved by a **per-call TEB latch**:
+wow64.dll's `NtReadFile`/`NtWriteFile` thunks store the guest IOSB pointer in
+`TEB.Instrumentation[0]` right before the syscall; the kernel entry
+(`IopCaptureWow64Iosb32`, iofunc.rs) consumes it (read-and-clear) only when the
+process is WoW64 AND the latch equals the IoStatusBlock argument exactly, then
+probes 8/4 instead of 16/8 and marks the IRP (`IRP_WOW64_IOSB32`, kernel-
+internal bit 0x8000_0000). Both `IopCompleteRequest` UserIosb writes (irp.rs)
+and both fast-IO direct writes emit the 8-byte `{Status, Information}` layout
+when marked — sync AND async. The thunks now pass the guest IOSB straight
+through (no host stack IOSB → the dead-frame hazard is gone by construction)
+and accept Event-based/polled overlapped I/O; only a guest APC routine still
+refuses loudly (no 64→32 user-APC dispatch yet). 64-bit host code in the same
+process is unaffected: its calls never latch. i386 kernels compile the capture
+out (no WoW64-of-32-bit; its bindgen EPROCESS has no Wow64Process).
+Oracle: **`async32.exe`** (`Async32.c`, winlogon `TryStartWow64Async`) —
+overlapped ReadFile with event: `OVERLAPPED.Internal/InternalHigh` (the IOSB32)
+must show SUCCESS/512, **`.Offset` must survive** (a 16-byte write would clobber
+it — the layout-drift tripwire), bytes must match a sync control read, plus an
+eventless poll rung. Verified 0x600D with all five sibling guests green on the
+same boot.
 
 Oracle: **`file32.exe`** (`tools/fex/hello-compute/File32.c`, launched by
 winlogon's `TryStartWow64File`) — opens a real file, checks `GetFileSize`, reads
@@ -933,6 +946,52 @@ process=doom, to catch the no-op copy in the act. The related small-magenta patc
 window's top-left on *rendering* boots (leftover un-painted window-background fill) and the
 `rcWindow == rcClient` no-non-client-inset anomaly (`WM_NCCALCSIZE` client-rect writeback
 dropped) are lesser follow-ups in the same win32k lane.
+
+**2026-07-14 overnight — REFRAMED with the owed probe armed. Evidence chain:**
+
+- **The old probe placement was wrong for doom's path.** Doom's `StretchDIBits` is
+  SRCCOPY, which takes GreStretchDIBitsInternal's *memory-DC* branch
+  (`IntSetDIBits` → `NtGdiBitBlt`, dibobj.rs:2109), NOT the `IntEngStretchBlt`
+  branch. The new `M13-BLT` probe checksums guest DIB / converted tmp bitmap /
+  dest strip pre+post around that real path.
+- **12-boot instrumented soak (`/tmp/m13pix`)**: every boot shows `ret=1`,
+  `tmpmid==dibmid` (conversion pipeline delivers the frame), and `pre==post`
+  at the dest-rect mid-strip — the blit deposits nothing at the sampled row.
+  `dstD=(4,23,644,423)` constant: DC origin says doom's client starts (4,23),
+  window at (0,0) outer 640×400 (AdjustWindowRect added nothing under wow64 —
+  separate small bug).
+- **Screendump ground truth**: doom's window is *entirely absent* on all 12
+  boots — no caption, no borders, no fill; only its taskbar button exists. But
+  doom CONTENT (title screen on boot1, live demo gameplay on boot10!) shows in
+  a ~192×123 patch at exactly **win32.exe's dead window's client rect**
+  ((44,63)-(236,186)) — doom's 640×400 blits are being clipped to a stale
+  region belonging to a destroyed window.
+- **Dead lore killed #1**: the "small magenta patch at top-left" is
+  `gui32.exe`'s DESIGNED output (`PatBlt(dc, 8,8, 160,120)` magenta on a direct
+  display DC) — never a doom artifact.
+- **Dead lore killed #2**: the copy-back family is NOT the culprit — value
+  traces show NCCALCSIZE returns the correct client (44,63,236,186), the
+  WINDOWPOSCHANGING copy-backs carry NOMOVE|NOSIZE don't-cares, and
+  WINDOWPOSCHANGED confirms correct final geometry for both win32 (40,40
+  200×150) and doom ((0,0) 640×400). The M9 snapshot is also fresh-per-call
+  (`normalize_wnd` re-reads the kernel WND every access) — no reuse poisoning.
+- The "second doom window" (semi-random tall geometry, garbage-looking NCCALC
+  rects) is user32's hidden **Default IME window** — cosmetic, ignore.
+
+**Working hypothesis (one mechanism, all three faces): recycled DCE with stale
+`prgnVis`.** doomgeneric caches `GetDC(hwnd)` *before* `ShowWindow`. win32.exe
+(and gui32/file32/marshal32) run and exit first; their window destruction frees
+DCE entries. If doom's `GetDC` reuses a freed DCE whose vis region is never
+recomputed for doom's window, the blit clip stays stuck at the *previous
+owner's* region: a fresh/reset DCE → full render (historic "rendered" boots),
+win32's DCE → the 192×123 crop observed tonight, a degenerate/empty one → no
+pixels at all (historic "magenta", now fully invisible since M15a's NCCALC
+fix changed the erase path). This is a **native win32k windc.rs bug** (matches
+the old note that native arm64 A/B doom misrenders identically) — likely a
+dropped DCX_DCEDIRTY/vis-invalidate side-effect in the windc.c → windc.rs
+translation (§9.53 dropped-side-effect class). A clip-bounds probe
+(`cplx`/`rclBounds` in M13-BLT v2) is the confirm; then diff windc.rs's DCE
+reuse path against windc.c.
 
 ## M15a: callback OUT-payload copy-back (2026-07-13) — GETMINMAXINFO + NCCALCSIZE landed
 

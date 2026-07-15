@@ -80,6 +80,19 @@ else
     echo "[!] file32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD)"
 fi
 
+# async32.exe — the M15b overlapped-I/O guest: Event-based + polled ReadFile on a
+# FILE_FLAG_OVERLAPPED handle. The oracle for kernel-side IO_STATUS_BLOCK32
+# completion (OVERLAPPED.Internal/InternalHigh ARE the guest IOSB32; .Offset is
+# the 16-byte-clobber detector).
+if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
+    "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
+        -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -o "$HARNESS_BUILD/async32.exe" "$HARNESS_SRC/Async32.c" \
+        "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+else
+    echo "[!] async32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD)"
+fi
+
 # marshal32.exe — the M18 marshaller-verification guest: NtQueryInformationThread
 # TBI (verified against the guest's OWN TEB32), IOCP post/get sentinel round-trip
 # (NtRemoveIoCompletion out-slots + IOSB), EnumDisplayMonitors/GetMonitorInfo/

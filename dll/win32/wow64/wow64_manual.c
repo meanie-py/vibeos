@@ -627,24 +627,57 @@ static NTSTATUS Wow64pFinishIosb(NTSTATUS St, HANDLE File,
     return St;
 }
 
-/* NtReadFile / NtWriteFile share their shape exactly. */
+/* NtReadFile / NtWriteFile share their shape exactly.
+ *
+ * M15b — kernel-side IOSB32: these two no longer marshal through a host IOSB.
+ * We latch the guest's IOSB address into TEB.Instrumentation[0]; the kernel's
+ * NtReadFile/NtWriteFile entry consumes the latch (read-and-clear, honored
+ * only when it matches the IoStatusBlock argument exactly), marks the IRP,
+ * and I/O completion writes the 8-byte IO_STATUS_BLOCK32 layout — sync AND
+ * async. That kills the dead-frame hazard outright (the kernel holds a
+ * pointer into the GUEST's IOSB, which outlives this frame by construction),
+ * so Event-based/polled overlapped I/O from guests is now allowed through.
+ * A guest APC routine still can't be honored (no 64->32 user-APC dispatch
+ * yet) — that stays a loud refusal. */
 typedef NTSTATUS (WINAPI *WOW64_RW_FN)(HANDLE, HANDLE, PVOID, PVOID, PVOID,
                                        PVOID, ULONG, PLARGE_INTEGER, PULONG);
+
+/* TEB.Instrumentation offset (arm64 host) — pinned by the kernel-side layout
+ * assert (ntkrnl-sys offset_check_arm64.rs: _TEB.Instrumentation == 5816).
+ * Drift here degrades to "latch never matches" + the kernel's loud [IOSB32]
+ * mismatch print + the async32.exe oracle failing its OVERLAPPED.Offset
+ * clobber check — never to silent corruption. */
+#define WOW64_TEB_INSTRUMENTATION0 5816
+
+static void Wow64pLatchIosb32(ULONG Iosb32Ptr)
+{
+    *(ULONG_PTR *)((unsigned char *)NtCurrentTeb() + WOW64_TEB_INSTRUMENTATION0) =
+        (ULONG_PTR)Iosb32Ptr;
+}
 
 static NTSTATUS Wow64pReadWriteFile(WOW64_RW_FN Fn, ULONG *a, const char *Who)
 {
     HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
-    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
     NTSTATUS St;
 
-    if (Wow64pRefuseAsync(a[1], a[2], Who))
+    if (a[2])
+    {
+        DbgPrint("[WOW64]   %s: guest ApcRoutine=%08lx is not supported yet "
+                 "(no 64->32 user-APC dispatch) — refusing\n", Who, a[2]);
         return WOW64_STATUS_NOT_IMPLEMENTED;
+    }
 
     /* ByteOffset is a LARGE_INTEGER* and Key a ULONG* — both layout-identical. */
-    St = Fn(File, NULL, NULL, NULL, &Iosb64,
+    Wow64pLatchIosb32(a[4]);
+    St = Fn(File, Event, NULL, (PVOID)(ULONG_PTR)a[3],
+            (PVOID)(ULONG_PTR)a[4],
             (PVOID)(ULONG_PTR)a[5], a[6],
             (PLARGE_INTEGER)(ULONG_PTR)a[7], (PULONG)(ULONG_PTR)a[8]);
-    return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
+    /* The kernel consumed the latch at entry; clear defensively for paths
+     * that fail before reaching it (bad handle, etc.). */
+    Wow64pLatchIosb32(0);
+    return St;
 }
 
 static NTSTATUS Wow64Manual_NtReadFile(ULONG *a)
