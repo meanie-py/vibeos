@@ -7425,3 +7425,40 @@ the printed fields (not the word "race") as the starting evidence.
 Re-read the live code before implementing X: here X was already done, three times over, and had been
 since before the item was written. And when a bug note says "race", check whether anything in the
 evidence is actually *non-deterministic* — "identical across hits" is the opposite of a race.
+
+### 9.83 (2026-07-15) `NET_FLAKE` that is not a flake: the net suite times out at 600s having never booted, because another lane's `farm` owns every host CPU lease
+
+**Symptom.** A gate with `✓ build ×3  ✓ lint ×3  ✓ smoke:i386  ✓ smoke:amd64  ✓ smoke:arm64` and
+`✗ smoke:net(NET_FLAKE, 3 attempts)` — `15 errors in 600.39s`. Every one of the 15 net tests errors
+with an identical flat `Failed: Timeout (>600.0s)`, **including `test_boot_with_nic`, the first one**.
+
+**It is not the network, and it is not your change.** The tell is in the captured setup output:
+
+```
+[hostlock] waiting for host CPU lease (boot:amd64-uefi-net)...
+ERROR tests/qemu/test_net.py::test_boot_with_nic - Failed: Timeout (>600.0s)
+```
+
+The suite spent its entire 600s **queued on the hostlock (4 leases)** and never booted a VM. When
+another worktree is running `vibeos-cli farm` (an all-night, whole-host soak) plus its own smokes,
+load sits at ~24 and the leases never free. The gate's own retry (3 attempts) cannot help: it
+re-queues into the same saturated lock.
+
+**How to tell starvation from a real net regression, in ten seconds:**
+* **All 15 error** (not fail) with the **same** 600s number, first test included → fixture never
+  ran. A real regression fails a *specific* test with a *specific* assertion.
+* `✓ smoke:i386/amd64/arm64` on the **same media** → the OS boots fine; only this lane starved.
+* `uptime` (load ≫ cores) and `./vibeos-cli ps` (`slots: N/10 in use`, OWNER paths pointing at
+  *other worktrees*) name the culprit.
+* `grep hostlock` the pytest output. That line is the whole diagnosis.
+
+**What to do.** NOT `--allow-stale`, not a re-gate (it will starve again), and above all **never
+kill the other lane's QEMUs or farm** — they are someone's deliberate soak, and broad `pkill -f
+qemu` matches your own process tree (AGENTS.md). Park the work committed-but-unpushed and wait:
+`while kill -0 <farm-pid>; do sleep 120; done; ./vibeos-cli gate`. A gate that is red for a reason
+outside the tree is not a green you may push on the strength of "it's probably fine" — the ×3-green
+push rule exists exactly so that judgement is not yours to make at 1am.
+
+**Related, and the reason this bit at all:** the standing rule is that the flake farm runs only
+when no other agents are working. Two lanes each politely declining to soak, and one lane not
+declining, produce this. If you start a farm, expect to be the reason another lane's gate is red.
