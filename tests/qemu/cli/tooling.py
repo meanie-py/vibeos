@@ -36,6 +36,7 @@ _PYTEST_SUITES = [
     # defects in the code when it is wrong, and reports "verified" over types it never
     # resolved when it is blind — neither shows up in review or in its own output.
     (".", ".", "tools/test_verify_c_signatures.py"),
+    (".", ".", "tools/test_scan_wide_literals.py"),
 ]
 
 

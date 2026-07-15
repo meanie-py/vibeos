@@ -453,7 +453,26 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 ### Hand-encoded `[u16; N]` literal one short — silently truncated registry/object path (ERROR_FILE_NOT_FOUND from a "correct" call chain)
 **Symptom:** an API fails with ERROR_FILE_NOT_FOUND / STATUS_OBJECT_NAME_NOT_FOUND on a path that provably exists; every function in the chain reads as a faithful translation; compiles + links clean; boots green (the broken path may simply never be exercised by boot — this one hid in `RCreateServiceW` until the kmtest conformance sweep called it, 2026-07-10).
 **Root cause:** a wide-string constant hand-encoded as `static X: [u16; N] = [b'S' as u16, ...]` was sized one element short, so the LAST character was dropped to make room for the NUL — `SERVICES_KEY [u16; 33]` spelled `System\CurrentControlSet\Service` (no trailing `s`), and services-rust opened a nonexistent parent key. The intent comment above the array says the right string, so review eyes slide right past it; only decoding the bytes shows the truncation.
-**Fix:** count = `chars + 1`; better, avoid hand arrays entirely (`w!()` / `wstr!` macro or a `const fn` UTF-16 builder). To sweep for siblings, decode every `static NAME: [u16; N]` against its `// L"..."` intent comment (one-shot scanner did this 2026-07-10; SERVICES_KEY was the only true hit). A durable lint (`scan_wide_literals`-style, wired into `vibeos-cli check`) is OWED — the class is invisible to every existing gate.
+**Fix:** count = `chars + 1`; better, avoid hand arrays entirely (`w!()` / `wstr!` macro or a `const fn` UTF-16 builder). To sweep for siblings, decode every `static NAME: [u16; N]` against its `// L"..."` intent comment (one-shot scanner did this 2026-07-10; SERVICES_KEY was the only true hit). **The durable lint LANDED 2026-07-15**: `tools/scan_wide_literals.py`, gate-wired
+(`vibeos-cli check`), baseline EMPTY. It decodes every `static/const NAME: [u16; N]` and diffs it
+against the `// L"..."` comment above it; findings name the dropped characters and the needed
+element count. It found one more real survivor immediately — hal `x86/kdpci.rs` `KEY_NAME [u16; 60]`
+spelled `…\PCI\Debu` (missing the `g`), *dead* behind `let _ = KEY_NAME;` because the author hit
+the bug, wrote "g missing — pad it", and worked around it with `build_wstr` instead of fixing it
+(deleted). Two design notes worth keeping, both learned by the first fleet run reporting **20
+findings of which 19 were its own gaps**:
+* **The oracle is prose, so it must not over-read prose.** `L"..."` appears inside comments that are
+  *about the syntax* ("Rust doesn't have `L"..."`, so spell them out") and inside *abbreviated*
+  paths (`L"\Registry\Machine\...\Version"`). Neither is a specification — skip any intent
+  containing `...`, and only take a CONTIGUOUS `//` run (a blank line means the comment is not this
+  literal's spec).
+* **No blanket "must end in NUL" rule.** UNICODE_STRING Buffers legitimately have none (`Length`
+  carries the size) — five correct ones exist in iomgr/fsrtl/npfs. Fire only when the comment
+  itself claims "NUL-terminated". Also strip *all* trailing NULs on both sides: hal `usage.rs`
+  really has a double terminator, and rtl-rxact's comment spells the NUL (`L"RXACT\0"`).
+Mutation-tested both directions (`tools/test_scan_wide_literals.py`, 12 cases, in `check-tooling`);
+it reports coverage (`85/782 had an intent comment`) because "0 findings" over 0 comparisons is the
+green that means nothing.
 **Triangulation recipe that found it:** per-stage DbgPrint bisection in the failing RPC (one boot) + a parallel subagent diff-audit of the Rust vs upstream C (found the literal by byte-decode) + a second subagent proving the create call *cannot* return 2 (pinning it on the parent open). Three probes, one statement.
 
 ### STATUS_OBJECT_PATH_SYNTAX_BAD (0xC000003B) / garbage wide path from a bindgen `#define X L"..."`
