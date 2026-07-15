@@ -7338,8 +7338,77 @@ one. The `ninja -n` "fix" passed the benign case perfectly and silently failed t
 stale cohab injected on purpose; only the deliberate known-bad probe exposed it. Same lesson as
 §9.80's mutation tables, one layer down.
 
+### 9.82 (2026-07-14) The winlogon 0x4C "init-ordering race": the owed fix was already in the tree — the hypothesis was wrong, and the evidence never fit it
 
-### 9.82 (2026-07-14) The printf probe: a third-party C-vs-C differential that found a KERNEL HANG before writing any new Rust — and two ways a compiled-but-never-called oracle lies
+**The owed item** (MEMORY.md + §9.36): *"winlogon 0x4C init-ordering race (all arches, ~3/20).
+kernel32's DllMain `_snwprintf("%wZ")` RACING basesrv's population of BASE_STATIC_SERVER_DATA
+(csrss accepts the connect before the CSR shared section is fully populated). Real fix owed:
+publish-last ordering in csrsrv/basesrv (populate the shared section BEFORE accepting connects)."*
+
+**That fix is already implemented, and was the whole time.** Read the live Rust (the C is inert —
+both `csrsrv` and `basesrv` are full cohab flips into `smss-csrss-rust`):
+
+* `csrsrv/init.rs` `CsrServerInitialization` — **step 5** `CsrParseServerCommandLine` (which calls
+  `CsrLoadServerDll` → basesrv's `ServerDllInitialization`) runs at line 1095; **step 7**
+  `CsrApiPortInitialize` — which *creates the API port* — runs at line 1107. No client can connect
+  before the port name exists.
+* `csrsrv/server.rs` `CsrLoadServerDll` — calls `init_proc(ServerDll)` **synchronously** and only
+  then, `if Status >= 0`, publishes `CsrSrvSharedStaticServerData[ServerId] = ServerDll->SharedSection`.
+* `basesrv/init.rs` `BaseInitializeStaticServerData` — its **last statement** is
+  `(*LoadedServerDll).SharedSection = BaseStaticServerData` (the C's `/* Finally, set the pointer */`).
+
+So it is publish-last at three nested levels. Implementing the "owed fix" would have been a no-op
+edit to already-correct code — and the effort would have been spent looking for a race that the
+control flow forbids.
+
+**The evidence never fit a race either.** The live tripwire's own comment records the observation:
+`WindowsDirectory.Buffer` reads as a **kernel VA `0xFFFF8000050D4CB0`, *identical across hits***.
+A race produces *varying* garbage; an identical value across boots is a deterministic write or a
+deterministic misread. (§9.36's other datum, `Buffer == 0x73`, is string DATA read as a pointer —
+that is the offset-drift smell, §9.41's class, not a race either.) The word "race" was doing the
+work that evidence should have been doing.
+
+**Leads checked and closed while here** (all were plausible, none is the bug):
+* **Struct layout drift** for `_BASE_STATIC_SERVER_DATA` between writer and reader — both
+  `ntdll-sys` and `winsrv-sys` declare it identically, and both sides use `ntdll-sys` anyway.
+* **`CSR_SERVER_DLL.SharedSection` at the wrong offset** — the field really is `#ifdef CSR_DBG`
+  dependent (`csrsrv.h` C_ASSERTs 0x3C with, 0x38 without, on 32-bit), and the Rust struct carries
+  `NameTable` unconditionally. But `csrsrv.h:18` does `#if DBG → #define CSR_DBG` and the build
+  passes `-DDBG=1`, so CSR_DBG is ON and the Rust layout is right. (Two comments in `basesrv/init.rs`
+  quote 0x3C and 0x38 respectively — they are describing the two C_ASSERT branches, not disagreeing.)
+* **Shared-section view delta** — `CsrSrvAttachSharedSection` maps into every client at the same
+  fixed base with `SEC_NO_CHANGE`, so server-side pointers are valid client-side; there is no delta
+  to get wrong.
+
+**Status: NOT REPRODUCING — downgrade from "open bug with a fix owed" to "re-open on evidence".**
+The mitigation prints `[kernel32] BASE_STATIC_SERVER_DATA CORRUPT: …` / `… snapshot CORRUPT (raced
+basesrv?): …` on every hit and reroutes to fallback strings. Measured 2026-07-14:
+  * **20/20 arm64 boots green, ZERO tripwire hits** (`smoke --arch arm64 --repeat 20`, the
+    sanctioned parallel-TCG repro path). Against the recorded rates that is
+    P(0 hits | 1-in-10) ≈ 0.12 and P(0 hits | 3-in-20) ≈ 0.04 — so the face is either gone or far
+    rarer than recorded.
+  * **Zero hits across every retained log on the box** (1254 run dirs).
+  * Zero `0x4C` / `0xC000021A` in the 20-boot run.
+
+**The negative is only worth anything because the detector was proven visible first.** Two checks,
+both necessary: the same arm64 serial logs carry user-mode `DbgPrint` output (`[EXPLORER] _tWinMain
+entered`, `[WIN32K] shell ready`), so a user-mode print from kernel32 *would* reach the log; and the
+marker appears **exactly 20 times** in the aggregate `full.log`, proving all 20 boots' serial was
+captured and not just the first (per-boot dirs hold only screenshots — the serial is aggregated).
+Without that second check, "zero hits in 20 boots" would really have been "zero hits in 1
+observable boot". Confirm a detector can be *seen* before reading its silence as absence — the
+§9.80/§9.81 lesson, one more time.
+
+**Do NOT implement the owed "publish-last" fix.** Re-open only on a fresh tripwire print, and treat
+the printed fields (not the word "race") as the starting evidence.
+
+**Rule.** An owed item that names its own fix ("just do X") is a hypothesis wearing a fix's clothes.
+Re-read the live code before implementing X: here X was already done, three times over, and had been
+since before the item was written. And when a bug note says "race", check whether anything in the
+evidence is actually *non-deterministic* — "identical across hits" is the opposite of a race.
+
+
+### 9.83 (2026-07-14) The printf probe: a third-party C-vs-C differential that found a KERNEL HANG before writing any new Rust — and two ways a compiled-but-never-called oracle lies
 
 **Context.** Wave 14 of the msvcrt lane needed an assemble-vs-port decision for the printf family:
 is cnt-rust's already-Rust `streamout` engine close enough to msvcrt's `pf_printf_a` to sit behind

@@ -1047,7 +1047,7 @@ exact proven recipe — the configuration cnt-difftest proved byte-equal to the 
 every verdict transfers to streamout-Rust by transitivity — against (b) the genuine msvcrt
 `pf_printf_a`, as a SECOND compilation of wcs.c in a `pfflat_*` namespace under a **flat
 `char*` va_list** (the Windows-x64 model; the SysV-compiled `ref_*` copy is structurally
-uncallable — full story + the glibc-escape oracle lesson in field manual **§9.82**). Both
+uncallable — full story + the glibc-escape oracle lesson in field manual **§9.83**). Both
 engines consume the SAME hand-packed 8-byte-slot buffer; an `%I64d` oracle-honesty canary
 hard-fails the probe if the reference ever escapes to the host libc again.
 
@@ -1066,7 +1066,7 @@ hard-fails the probe if the reference ever escapes to the host libc again.
 `streamout` float path hung FOREVER on `%f/%e/%g` of ±Inf — `fl::exp10_floor`'s correction
 loop never terminates on Inf (`pow10(309)` saturates; `Inf <= Inf`). Guarded to return 308
 (`DBL_MAX_10_EXP`, = NaN's accidental value) in `fl` + every recipe C-twin; ±Inf/NaN rows now
-pinned in cnt-difftest (`diff_streamout_float`). Field manual §9.82 finding 0.
+pinned in cnt-difftest (`diff_streamout_float`). Field manual §9.83 finding 0.
 
 ## Wave 14m (2026-07-14) — the MATH DOOR. +45 exports flipped for the cost of ONE Cargo feature. msvcrt.dll's libm is the kernel's Rust engine now.
 
@@ -1085,7 +1085,7 @@ user-mode flip is the SAME substitution the kernel already shipped and gated.
 template now gates every cabi submodule on `cabi` except `math.rs` (compiled under either
 feature) — enabled from **msvcrt-crt-cargo** (the staticlib), NOT msvcrt-crt-rust (the rlib):
 the difftest links the rlib, and 66 `#[no_mangle]` libm names there would shadow the HOST libm
-under the reference TUs (oracle contamination — the probe's §9.82 lesson applied proactively).
+under the reference TUs (oracle contamination — the probe's §9.83 lesson applied proactively).
 `extern crate cnt_rust` forces the objects into the archive; whole-archive + lld first-match
 does the rest. Verified in the built DLL by export-RVA clustering: `sin` 0x119A0 / `cos`
 0x10020 / `sqrt` 0x12390 sit beside known-Rust `strlen` 0xE410; unflipped `frexp`/`ldiv`/`sinf`
