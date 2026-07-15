@@ -1040,6 +1040,25 @@ Verification oracle already exists: win32.exe's WINDOWPOSCHANGING round-trip
 (re-enable the copy-back and require 0x600D) plus DOOM's window geometry. This is
 the next substantial WoW64/USER milestone.
 
+**CLOSED 2026-07-14 — the "remaining half" was already fixed; the scoping was done
+against dead C source.** The direct-heap-read framing above cites
+`window.c:1282` — but that file is **inert cohab source**; the live i386
+`GetWindowRect` is `user32-rust/src/windows/window.rs:1367`, whose
+`ValidateHwnd` → `ValidateHandle` routes TYPE_WINDOW through
+`wow64::desktop_wnd_to_user` → the **M9 normalizing snapshot**, which already
+fills `rcWindow`/`rcClient` (wow64.rs:431). The truncated `spwnd*` snapshot
+fields are also sound: `(kernelVA − ulClientDelta) mod 2^32` lands on the
+correct <4GB client mapping, so chain walks translate correctly. Proof: the
+win32.exe **geometry rung** (0xBADB/0xBADC/0xBADD) asserts
+GetWindowRect == requested 40,40 200×150, client strictly inset (the
+rcWindow==rcClient doom detector), and ClientToScreen consistency — green on
+first boot: `wnd 40,40-240,190 client 192x123 origin 44,63` (classic metrics
+exact: 4px borders + 19px caption). The M13 doom `rcWindow == rcClient`
+observation predates the M15a/M16-A landings and is superseded by this rung;
+doom's remaining render issue is the M13 DIB→surface pixel-copy lane, not
+geometry. Options 1–3 above are moot; option-1-lite (M9 snapshots) had
+already won.
+
 ## M17 — marshalgen: bulk marshaller GENERATION (2026-07-14)
 
 The manual-marshaller era is over as a scaling strategy. `tools/wow64gen/marshalgen.py`
