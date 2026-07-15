@@ -709,13 +709,22 @@ pub unsafe extern "system" fn HalSetTimeIncrement(Increment: ddk::ULONG) -> ddk:
 }
 
 // SMP HAL (ntkrnlmp): the real PSCI CPU_ON body lives in mpboot.rs. UP HAL keeps
-// this FALSE stub (no APs to start).
+// this FALSE stub (no APs to start) — but a CALL here means an MP kernel is
+// running on a UP hal.dll (the smp HAL flavor rides the VIBEOS_SMP_DEFAULT_BOOT
+// cmake cache var, so a plain UP `build` reconfigure silently flips hal.dll
+// back to UP and a later `ninja ntkrnlmp` inherits it; arm64 has no
+// MISMATCHED_HAL 0x79 handshake to catch the pair). Fail loud, not silent
+// 1-CPU degrade — this exact mismatch cost an M5c debug round (2026-07-14).
 #[cfg(not(feature = "smp"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalStartNextProcessor(
     LoaderBlock: ddk::PLOADER_PARAMETER_BLOCK,
     ProcessorState: ddk::PKPROCESSOR_STATE,
 ) -> ddk::BOOLEAN {
+    DbgPrint(
+        b"[SMP] arm64 HalStartNextProcessor: UP HAL stub called - MP kernel on a UP hal.dll? Rebuild with --smp-kernel (VIBEOS_SMP_DEFAULT_BOOT)\n\0"
+            .as_ptr(),
+    );
     FALSE
 }
 
