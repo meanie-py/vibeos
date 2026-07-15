@@ -344,3 +344,16 @@ unsigned int _get_output_format(void)
 {
     return 0;
 }
+
+/* Subject twin of refimpl's `_mbtowc_l` (the reference's copy is namespaced
+ * msvcrt_ref__mbtowc_l by refstub/msvcrt.h, unreachable from here).  MUST stay
+ * body-identical to refimpl.c's or every wide-conversion printf row
+ * false-DIVERGEs: C locale, single-byte, 1:1 onto U+0000..U+00FF. */
+int _mbtowc_l(unsigned short *dst, const char *str, size_t n, void *locale)
+{
+    (void)locale;
+    if (!str || !n) return 0;
+    if (!*str) { if (dst) *dst = 0; return 0; }
+    if (dst) *dst = (unsigned short)(unsigned char)*str;
+    return 1;
+}

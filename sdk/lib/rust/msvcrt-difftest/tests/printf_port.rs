@@ -22,10 +22,13 @@
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_void};
 
-use msvcrt_crt_rust::printf::{arg_clbk_valist, pf_printf_a, puts_clbk_str_a, StrCtxA};
+use msvcrt_crt_rust::printf::{
+    arg_clbk_valist, pf_printf_a, pf_printf_w, puts_clbk_str_a, puts_clbk_str_w, StrCtxA, StrCtxW,
+};
 
 extern "C" {
     fn pfflat__vsnprintf(buf: *mut c_char, n: usize, fmt: *const c_char, va: *mut u8) -> c_int;
+    fn pfflat__vsnwprintf(buf: *mut u16, n: usize, fmt: *const u16, va: *mut u8) -> c_int;
 }
 
 /// wcs.c:881-890 (`_vsnprintf`), reproduced over the Rust engine: same sink,
@@ -127,6 +130,73 @@ fn run_row(fmt: &str, args: &[V]) -> Option<String> {
         format!("{fmt:?}"),
         esc(&rbuf[..rlen]),
         esc(&sbuf[..slen]),
+    ))
+}
+
+/// wcs.c:900-908 (`_vsnwprintf`) over the Rust wide engine.
+unsafe fn rust_vsnwprintf(buf: *mut u16, len: usize, fmt: *const u16, va: *mut u8) -> i32 {
+    let mut ctx = StrCtxW { len, buf };
+    let mut cursor = va;
+    let ret = pf_printf_w(
+        puts_clbk_str_w,
+        &mut ctx as *mut StrCtxW as *mut c_void,
+        fmt,
+        core::ptr::null_mut(),
+        0,
+        arg_clbk_valist,
+        core::ptr::null_mut(),
+        &mut cursor,
+    );
+    let nul = 0u16;
+    puts_clbk_str_w(&mut ctx as *mut StrCtxW as *mut c_void, 1, &nul);
+    ret
+}
+
+fn wz(s: &str) -> Vec<u16> {
+    let mut v: Vec<u16> = s.chars().map(|c| c as u16).collect();
+    v.push(0);
+    v
+}
+
+fn wesc(w: &[u16]) -> String {
+    esc(&w.iter().map(|&c| if c < 0x100 { c as u8 } else { b'?' }).collect::<Vec<u8>>())
+}
+
+/// Wide twin of run_row: same slot packing, wide format, wide buffers.
+fn run_row_w(fmt: &str, args: &[V]) -> Option<String> {
+    let mut slots: Vec<u64> = Vec::new();
+    for a in args {
+        match *a {
+            V::I(v) => slots.push(v as u32 as u64),
+            V::L(v) => slots.push(v as u64),
+            V::F(v) => slots.push(v.to_bits()),
+            V::S(b) => slots.push(b.as_ptr() as u64),
+            V::W(w) => slots.push(w.as_ptr() as u64),
+            V::P(p) => slots.push(p),
+        }
+    }
+    slots.extend([0u64; 4]);
+    let fmtw = wz(fmt);
+
+    let mut rbuf = [0xAAAAu16; 512];
+    let rn = unsafe {
+        pfflat__vsnwprintf(rbuf.as_mut_ptr(), 512, fmtw.as_ptr(), slots.as_ptr() as *mut u8)
+    };
+    let mut sbuf = [0xAAAAu16; 512];
+    let sn = unsafe {
+        rust_vsnwprintf(sbuf.as_mut_ptr(), 512, fmtw.as_ptr(), slots.as_ptr() as *mut u8)
+    };
+
+    if rn == sn && rbuf[..] == sbuf[..] {
+        return None;
+    }
+    let rlen = rn.clamp(0, 511) as usize;
+    let slen = sn.clamp(0, 511) as usize;
+    Some(format!(
+        "  DIVERGE(w) {:<15} C(ret {rn})={:?}  rust(ret {sn})={:?}",
+        format!("{fmt:?}"),
+        wesc(&rbuf[..rlen]),
+        wesc(&sbuf[..slen]),
     ))
 }
 
@@ -310,16 +380,84 @@ fn printf_port_matches_genuine_engine() {
         ("%300.250x", &[V::I(0xbeef)]),
     ];
 
+    // The WIDE engine (pf_printf_w — about to own swprintf/_snwprintf): a
+    // representative sweep re-run wide. Note msvcrt's legacy wide-%s/%c
+    // semantics (in the WIDE engine, %s takes a WIDE string and %S/%hs a
+    // narrow one) — graded against the genuine engine, not against C99.
+    let wrows: &[(&str, &[V])] = &[
+        ("plain text", &[]),
+        ("100%%", &[]),
+        ("%d", &[V::I(-42)]),
+        ("%05d", &[V::I(42)]),
+        ("%#x", &[V::I(0x2a)]),
+        ("%*.*d", &[V::I(8), V::I(4), V::I(42)]),
+        ("%I64d", &[V::L(-5)]),
+        ("%llx", &[V::L(0xdead_beef_cafe)]),
+        ("%hd", &[V::I(0x12345678u32 as i32)]),
+        ("%c", &[V::I(b'A' as i32)]),
+        ("%C", &[V::I(b'A' as i32)]),
+        ("%s", &[V::W(WHELLO)]),
+        ("%S", &[V::S(HELLO)]),
+        ("%ls", &[V::W(WHELLO)]),
+        ("%hs", &[V::S(HELLO)]),
+        ("%ws", &[V::W(WHELLO)]),
+        // NOTE: wide "%s" with NULL is deliberately ABSENT here. printf.h:266
+        // answers it with `L"(null)"` — the engine's ONE wide literal — and on
+        // the host gcc compiles that as 32-bit wchars, which the 16-bit
+        // reference engine then reads as ['(',0,'n',0,'u',0]: a host artifact,
+        // not target behavior (cnt-difftest's "the wide twin needs 16-bit L
+        // literals the host can't express"). The Rust emits the target-true
+        // 16-bit "(null)"; it is pinned by the dedicated check below instead.
+        ("%.3s", &[V::W(WHELLO)]),
+        ("%10s", &[V::W(WHELLO)]),
+        ("%p", &[V::P(0x1234)]),
+        ("%f", &[V::F(3.141592653589793)]),
+        ("%e", &[V::F(0.000123)]),
+        ("%g", &[V::F(1000000.0)]),
+        ("%.17g", &[V::F(0.1)]),
+        ("%.30f", &[V::F(0.1)]),
+        ("%a", &[V::F(0.5)]),
+        ("%f", &[V::F(f64::INFINITY)]),
+        ("%e", &[V::F(f64::NAN)]),
+        ("%128d", &[V::I(7)]),
+        ("%-200s|", &[V::W(WHELLO)]),
+        ("x=%d s=%s f=%f", &[V::I(7), V::W(WHELLO), V::F(0.25)]),
+    ];
+
+    // The wide NULL-%s row the sweep above skips (host L"" artifact — see the
+    // NOTE in wrows): pin the Rust engine's target-true output directly.
+    {
+        let slots: [u64; 5] = [0; 5];
+        let mut sbuf = [0xAAAAu16; 64];
+        let fmtw = wz("%s");
+        let sn = unsafe {
+            rust_vsnwprintf(sbuf.as_mut_ptr(), 64, fmtw.as_ptr(), slots.as_ptr() as *mut u8)
+        };
+        let want: Vec<u16> = "(null)".chars().map(|c| c as u16).collect();
+        assert_eq!(
+            (sn, &sbuf[..6]),
+            (6, &want[..]),
+            "wide %s NULL must print the 16-bit \"(null)\""
+        );
+    }
+
     let mut diverges: Vec<String> = Vec::new();
     for (fmt, args) in rows {
         if let Some(d) = run_row(fmt, args) {
             diverges.push(d);
         }
     }
+    let narrow_total = rows.len();
+    let narrow_ok = narrow_total - diverges.len();
+    for (fmt, args) in wrows {
+        if let Some(d) = run_row_w(fmt, args) {
+            diverges.push(d);
+        }
+    }
     println!(
-        "printf_port: {}/{} rows match",
-        rows.len() - diverges.len(),
-        rows.len()
+        "printf_port: narrow {narrow_ok}/{narrow_total}, wide {}/{} rows match",
+        wrows.len() - (diverges.len() - (narrow_total - narrow_ok)),
+        wrows.len()
     );
     if !diverges.is_empty() {
         for d in &diverges {

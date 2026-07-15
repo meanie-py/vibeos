@@ -1107,3 +1107,44 @@ lacks (`sinf cosf expf logf log10f powf fmodf frexp` + `_copysign _scalb _fpclas
 Bessel family (`j0 j1 jn y0 y1 yn` — errno/_handle_error semantics), the i386 `_CI*` compiler
 thunks + `__libm_sse2_*` register-convention entries, and the FP-environment block
 (`_control87/_statusfp/fe*` — stateful, shared with the C runtime init).
+
+## Wave 14b (2026-07-15) — msvcrt's printf ENGINE, PORTED. 2,312 lines, 142 narrow + 30 wide rows byte-identical, and the DLL's stream-printf family runs it.
+
+The port the 14a probe demanded, landed in two commits:
+
+**Part 1 — the engine.** `msvcrt-crt-rust/src/printf.rs`: faithful transcription of
+`printf.h` + wcs.c's callback/positional machinery — pf_printf state machine,
+`pf_output_fp` (bignum floats over wave-13's `bnum.rs`: parser and formatter now share one
+limb engine, as the C shares `bnum.h`), `pf_output_hex_fp` (%a), integer conv, wide/narrow
+cross-conversion, positional args. One `PfChar` generic (u8/u16) monomorphized like the C's
+double-include; i386 no-SSE discipline; flat va cursor (4-byte slots on x86, 8 elsewhere).
+Drafted by a transcription subagent against a stubbed crate surface — **compiled clean and
+graded 142/142 on the first run**. Quirks kept + marked (`BUG-KEPT`: the wide engine's
+HeapAlloc sizes in BYTES not APICHARs — upstream Wine fixed it, this tree hasn't).
+
+**Grading:** `tests/printf_port.rs` — the Rust engine vs `pfflat__vsnprintf`/`_vsnwprintf`
+(the 14a oracle) over the probe corpus + big-width HeapAlloc rows, full 512-unit buffer
+images compared. **Narrow 142/142, wide 30/30.** One excluded row, and it convicted the
+HOST, not the port: wide `%s` of NULL goes through printf.h:266's `L"(null)"` — the engine's
+single wide literal — which gcc compiles as 32-bit wchars, so the 16-bit REFERENCE engine
+emits `['(',0,'n',0,'u',0]` on the host only. The Rust's target-true 16-bit `"(null)"` is
+pinned by a dedicated assert instead.
+
+**Part 2 — the flip, and what it taught.** The six engine symbols went `#[no_mangle]`
+(pf_printf_a/_w, arg_clbk_valist/_positional, create_positional_ctx_a/_w) expecting
+whole-archive first-match to swing every shell. Reality (read the DLL): **cross-TU callers
+flipped — file.c's whole stream family (printf/fprintf/vfprintf/…) now calls the Rust
+`pf_printf_a`/`create_positional_ctx_a` (verified by disassembly: `vfprintf_helper` →
+`callq 0x8060 <pf_printf_a>`, the Rust region). But wcs.c's OWN shells (sprintf/_snprintf/
+swprintf/…) did NOT** — clang IPA-specialized the same-TU engine into them
+(`pf_printf_a.specialized.N` local clones), and intra-TU inlining never consults the
+linker. **Cohab rule to remember: symbol replacement flips a TU's *callers*, not its
+*housemates*.** Safe intermediate state — both engines are proven byte-identical — but the
+sprintf-family shells stay C until **wave 14c**: define the ~50 variadic shells over the
+Rust engine via the sanctioned `varargs-rust` va_start-trampoline pattern, which also
+retires wcs.c's whole printf instantiation.
+
+**Environment notes:** subject-side heap/`_get_output_format`/`_mbtowc_l`/`_wctomb_l`
+externs added to subjectimpl.c/refimpl.c (the reference's copies are namespaced
+`msvcrt_ref_*`; `_wctomb_l` forwards to the genuine `ref__wctomb_l` so both sides run ONE
+converter — the same wiring the DLL has, where the C still owns those symbols).

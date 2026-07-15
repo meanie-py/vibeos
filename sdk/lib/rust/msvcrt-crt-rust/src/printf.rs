@@ -2111,6 +2111,7 @@ unsafe fn pf_printf<C: PfChar>(
 
 /// msvcrt.h:390-391 — `int pf_printf_a(puts_clbk_a, void*, const char*,
 /// _locale_t, DWORD, args_clbk, void*, va_list*)`.
+#[no_mangle]
 pub unsafe extern "C" fn pf_printf_a(
     pf_puts: PutsClbk<u8>,
     puts_ctx: *mut c_void,
@@ -2125,6 +2126,7 @@ pub unsafe extern "C" fn pf_printf_a(
 }
 
 /// msvcrt.h:392-393 — the wide twin.
+#[no_mangle]
 pub unsafe extern "C" fn pf_printf_w(
     pf_puts: PutsClbk<u16>,
     puts_ctx: *mut c_void,
@@ -2142,6 +2144,7 @@ pub unsafe extern "C" fn pf_printf_w(
 
 /// wcs.c:847-865 — `arg_clbk_valist`: the sequential (non-positional) argument
 /// source; each call does one `va_arg(*valist, T)` on the shared cursor.
+#[no_mangle]
 pub unsafe extern "C" fn arg_clbk_valist(
     _ctx: *mut c_void,
     _arg_pos: i32,
@@ -2174,6 +2177,7 @@ pub unsafe extern "C" fn arg_clbk_valist(
 /// non-positional '*' width inside a positional format hands pos == -1 and the
 /// C reads args[-1] — verbatim (create_positional_ctx normally rejects mixed
 /// formats before this can be reached).
+#[no_mangle]
 pub unsafe extern "C" fn arg_clbk_positional(
     ctx: *mut c_void,
     pos: i32,
@@ -2294,6 +2298,7 @@ unsafe fn create_positional_ctx<C: PfChar>(
 /// msvcrt.h:394 — `int create_positional_ctx_a(void*, const char*, va_list)`.
 /// `valist` is the flat byte cursor BY VALUE (a copy — the C's va_list is a
 /// `char*` on all three targets).
+#[no_mangle]
 pub unsafe extern "C" fn create_positional_ctx_a(
     args_ctx: *mut c_void,
     format: *const u8,
@@ -2303,6 +2308,7 @@ pub unsafe extern "C" fn create_positional_ctx_a(
 }
 
 /// msvcrt.h:395 — the wide twin.
+#[no_mangle]
 pub unsafe extern "C" fn create_positional_ctx_w(
     args_ctx: *mut c_void,
     format: *const u16,
