@@ -680,3 +680,40 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   to Prcb.Number==0, others do KeUpdateRunTime. Then **M5d:** KiTbShootdown via SGI +
   `-smp 2` soak. (arm64 currently has NO cross-CPU TLB shootdown — KeFlushEntireTb et
   al are still UP-shaped; correctness has ridden on low cross-CPU VM churn so far.)
+
+- **2026-07-14 (cont.) — M5c tail COMPLETE (AP vtimer, commit `503ba99aa99`) + M5d
+  COMPLETE (TLB, commit `27f632fc0f1`): arm64 SMP is at FEATURE PARITY with amd64.**
+  Evidence chain on 3/3 `-smp 2` boots (~47s, zero WAITDEP/BUGCHECK/DOUBLE-DEFER; UP
+  regression green): `[SMP] CPU1 vtimer armed (banked PPI-27 + CNTV)` → `[SMP] CPU1
+  clock tick live (per-CPU CNTV delivering)` → `[SMP] CPU1 scheduling live`.
+  - **Vtimer design that landed (simpler than the generic-call candidate above):** APs
+    arm LAZILY — HalClockInterruptArm64 arms this CPU's banked PPI-27 + CNTV on its
+    first IRQ once TIMER_INTERVAL is published, and clock init kicks all APs with one
+    SGI (`GICD_SGIR` target-filter 01 = all-but-self, no CPU enumeration, no new
+    kernel→HAL imports). Self-healing off any later dispatch IPI if the kick is lost.
+    Tick routing: CPU0 keeps KeUpdateSystemTime (sole wall-clock owner, NT rule); APs
+    call KeUpdateRunTime — which turned out to be 100% per-PRCB-shaped already (thread
+    time, DPC-rate, quantum-end via the M5b per-CPU softint state): zero kernel changes.
+  - **M5d verdict: arm64 needs NO software shootdown protocol.** Full audit of every
+    `tlbi` in the kernel: KeInvalidateTlbEntry (`vale1is`), KeFlushProcessTb /
+    KeFlushEntireTb / KiSwapProcess (`vmalle1is`) are all INNER-SHAREABLE — the
+    hardware (and QEMU MTTCG) broadcasts the invalidate to every core, and the
+    trailing `dsb ish` completes only when all cores have dropped the entries. That IS
+    the shootdown + ack. The amd64 0xE1 descriptor machinery has no arm64 twin BY
+    DESIGN. KeFlushCurrentTb's non-IS `vmalle1` is correct per NT contract (current
+    CPU only; callers audited: freeze + sysldr post-reloc, both local-scoped).
+  - **Real latent bug fixed:** every broadcast flush site was missing the leading
+    `dsb ishst` that publishes the caller's PTE store to REMOTE table walkers before
+    the invalidate — a remote walk could refill from the stale PTE. TCG's strong
+    memory model forgives it, real ARM hardware does not. Added everywhere (KiSwap-
+    Process already had its dsb).
+  - **Owed (perf, not correctness):** KiSwapProcess's `vmalle1is` full-flushes every
+    core's TLB on each process switch (no ASIDs on this port yet — TTBR writes carry
+    ASID 0). ASID-based switching would localize it. Roadmap Owed-work item.
+  - **Overnight `-smp 2` soak launched** (farm, arm64+amd64, 7h, `VIBEOS_QEMU_SMP=2`
+    env — farm has no --smp flag; the harness reads the env var directly, vm.py:974).
+  **NEXT:** i386 M5 (APIC HAL — plan discussed 2026-07-14: PIC cannot do SMP at all,
+  8259 has no IPIs; the Rust APIC HAL exists but is cfg-gated x86_64 — un-gate + add
+  i386 halves + TPR IRQL as Phase A "i386 UP on APIC", then Phase B AP start reusing
+  aptramp32 + ke/ipi.rs, landing the i386 idle-lock + ctxswitch SwapBusy in the same
+  change). Or land the arm64 lane on master first (full ×3 gate → merge → push).
