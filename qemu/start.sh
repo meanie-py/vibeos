@@ -31,7 +31,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # (not $$) because start.sh itself is short-lived; we want to skip past the
 # calling bash (per-tool-call in claude, login in terminal, transient in $()).
 # See lib/common.sh:owner_pid_for for the rationale in full.
-OWNER_PID="$(owner_pid_for "$PPID")"
+# VIBEOS_QEMU_OWNER_PID: explicit owner override for detached driver scripts.
+# The ancestry walk lands on the first NON-SHELL ancestor — for an agent's
+# `setsid nohup bash driver.sh` that is the agent harness's TRANSIENT relay
+# process, which dies when the launching tool-call returns; any sibling
+# session's reaper then sees launcher_pid dead and SIGTERMs the QEMU mid-run
+# (bit the fex-m4 lane 2026-07-15). A long-lived driver passes its own $$.
+OWNER_PID="${VIBEOS_QEMU_OWNER_PID:-$(owner_pid_for "$PPID")}"
 
 # --- arg parsing ------------------------------------------------------------
 ARCH=""

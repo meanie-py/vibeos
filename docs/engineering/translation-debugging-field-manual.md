@@ -6111,3 +6111,16 @@ Nothing crashed, because the neighbours are *plausible*: the guest's `NtUserShow
 3. **"Works on boots where X happens to run" is a dirty-bit-never-consumed shape.** If correctness depends on whether an unrelated path touched the object between update and use, hunt for a dirty flag whose consumer checks the wrong condition.
 
 **Detector (owed).** Sweep win32k-rust for `fs [&|]=` / `& 0x` bit tests against numeric literals where the C uses `_DCFLAGS`/named flags; extend `scan_magic_offsets.py` with a bit-literal shape or add a one-shot grep to `vibeos-cli check`.
+
+### 9.74 (PROCESS TRAP 2026-07-15) A win32k probe that "built fine" for 3 boots but never appeared on serial — a `cannot find ULONG` compile error in ONE file let cargo re-link the STALE cached rlib, so the edit never shipped
+
+**Symptom.** Added a `DbgPrint` + a one-line field write to `win32k-rust/src/wow64.rs`, rebuilt (`ninja win32k` → `Finished`), staged, booted — the print never fired and the fix had no effect. Repeated three times. A *different* edit in the same crate (dibobj.rs M13-BLT probe) DID ship on the same builds, "proving" the crate was recompiling.
+
+**Root.** The wow64.rs edit referenced `ULONG`, which isn't imported in that file → `error[E0412]`. But the earlier `ninja` runs were launched as `... 2>&1 | grep -E 'error|Finished' && setsid nohup ... &` — the grep matched a `Finished` line from a *sibling* cargo unit and the compound `&&` proceeded to stage; the real per-crate error scrolled past unexamined. Cargo, on the failed compile, **left the previous successful rlib in place**, and the win32k link consumed that stale rlib — so the binary had the OLD wow64.rs (no field write, no print string) while dibobj.rs's object was fresh. `strings win32k.sys | grep '<my new literal>'` = 0 was the tell: the source string wasn't in the binary at all.
+
+**Fix.** `pti as usize as u32` (the field is `ULONG`=u32; use the primitive or import ULONG). Then the string appeared in the binary and the fix took.
+
+**Reusable rules.**
+1. **Never trust a piped/`&&`-chained `ninja` "Finished" as proof your file compiled.** grep for `error[` AND `FAILED` explicitly, and read the *per-crate* `Compiling <crate>` / error lines — a `Finished` can come from another unit in the same invocation.
+2. **After a Rust probe that MUST appear on serial, verify the literal is in the binary before booting:** `strings <module> | grep -c '<my unique print literal>'`. Zero = it never compiled in; stop and fix the build, don't waste a boot.
+3. **A cargo compile error leaves the prior rlib; the link can silently succeed against stale objects.** "Other edits in the crate shipped" does NOT prove *your* file did — cargo is per-file incremental and one file's error doesn't fail-fast the others' cached outputs at link time here.
