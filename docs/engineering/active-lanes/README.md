@@ -16,3 +16,4 @@ registry), never left to rot in an archived doc.
 | `smp-bringup` | [smp-bringup-quest.md](smp-bringup-quest.md) |
 | `msvcrt-homebrew` | [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
 | `stable-toolchain` | [stable-toolchain-plan.md](stable-toolchain-plan.md) |
+| `i386-apic-hal` | [i386-apic-hal-plan.md](i386-apic-hal-plan.md) *(Phase A only; Phase B returns to `smp-bringup`)* |
