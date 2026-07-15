@@ -7426,7 +7426,71 @@ Re-read the live code before implementing X: here X was already done, three time
 since before the item was written. And when a bug note says "race", check whether anything in the
 evidence is actually *non-deterministic* — "identical across hits" is the opposite of a race.
 
-### 9.83 (2026-07-15) `NET_FLAKE` that is not a flake: the net suite times out at 600s having never booted, because another lane's `farm` owns every host CPU lease
+
+### 9.83 (2026-07-14) The printf probe: a third-party C-vs-C differential that found a KERNEL HANG before writing any new Rust — and two ways a compiled-but-never-called oracle lies
+
+**Context.** Wave 14 of the msvcrt lane needed an assemble-vs-port decision for the printf family:
+is cnt-rust's already-Rust `streamout` engine close enough to msvcrt's `pf_printf_a` to sit behind
+the msvcrt exports? Direct grading is impossible (linking cnt-rust's `cabi` into msvcrt-difftest
+collides 200+ `#[no_mangle]`s with the subject), so the probe compared **two compiled C references
+by transitivity**: ReactOS `printf/streamout.c` compiled under cnt-difftest's exact proven recipe
+(flat va_list + bit-identical `floor/log10/pow` model — the configuration cnt-difftest proved
+byte-equal to the Rust engine) vs the genuine msvcrt engine already compiled inert inside
+msvcrt-difftest's wcs.c reference TU. `sdk/lib/rust/msvcrt-difftest/tests/printf_probe.rs`.
+
+**Finding 0 — the probe found a real kernel hang before comparing anything.** The first run hung in
+`fl::exp10_floor`'s C twin: for ±Inf the exponent-correction loop `while (pow10(e+1) <= f) e++;`
+never terminates (`pow10(309)` saturates to +Inf; `Inf <= Inf` holds). The Rust engine shipping in
+the KERNEL (`cabi/streamout.rs` → `fl::exp10_floor`, amd64/arm64 float path) had the identical
+loop, unguarded — **any `%f/%e/%g` of an infinity through the kernel's Rust streamout was a silent
+infinite loop**. The genuine C only "worked" via UB (`(int)floor(log10(inf))` → garbage exponent →
+digits later overwritten by the `#INF` special path). Fix: `exp10_floor` returns **308**
+(`DBL_MAX_10_EXP`, and exactly the value NaN already fell out with) for `biased == 0x7ff`, same
+guard in every `cnt_log10` C-twin copy (3× cnt-difftest, 1× msvcrt-difftest), plus ±Inf/NaN rows in
+cnt-difftest's `diff_streamout_float` as the permanent tripwire. Lesson: **a differential probe's
+first product is often a crash/hang in the harness path itself — chase it before dismissing it as a
+harness artifact.** This one was the shipped engine's bug reflected in its bit-identical twin.
+
+**Finding 1 — the oracle answered with the wrong LIBC and only style told us.** The probe first
+called `ref__snprintf`, whose body is `vsnprintf(...)` — a symbol wcs.c never *defines* under
+`_MSVCR_VER=0`, so inside the harness it bound to **glibc**, and the whole "msvcrt" column was the
+host libc. No crash, plausible outputs. The tells were stylistic fingerprints: `%p` → `(nil)`,
+2-digit exponents (`e+00`), `%I64d` parsed as width-64, `%zd`/`%jd` accepted. Fix + permanent
+guard: an **oracle-honesty canary** — `%I64d` must print `-5` (glibc right-pads to width 64);
+HARD-FAIL the probe before any verdict if it doesn't. Generalizes §9.66 (ref-integrity): *a
+reference that links is not yet a reference; assert a behavior only the intended engine has.*
+
+**Finding 2 — Wine/ReactOS printf code is structurally UNCALLABLE when compiled under the SysV
+va_list.** Second attempt called `ref__vsnprintf` via a varargs trampoline → SIGSEGV inside
+`arg_clbk_valist`. The engine forwards `&valist` as `va_list*` — coherent only where `va_list` is a
+plain pointer (all Windows targets). Under SysV's `__va_list_tag[1]`, a `va_list` *parameter*
+decays to `tag*`, so `&valist` is `tag**`, and the callee's `va_arg(*valist, T)` reinterprets the
+pointer variable itself as the register-save struct → wild read. (Real Wine avoids this on Linux
+with `__ms_va_list`; this tree never needed to — it only builds for Windows targets.) So the
+harness's ref wcs.c printf entries were *compiled* fine and *inert* fine, but no in-process caller
+could ever legally drive them. Fix: compile wcs.c a SECOND time in a `pfflat_*` namespace under a
+**flat `char*` <stdarg.h>** (msvcrt-difftest/refstub_printf/) — which is precisely the Windows-x64
+va_list model, so the probe's drive is also the target-faithful one, and both engines consume the
+SAME hand-packed 8-byte-slot buffer. Mechanics that made it work: prelude2 = prelude with only the
+wcs.c-owned symbols retargeted `ref_→pfflat_` (string.c/ctype cross-calls stay `ref_*`); a separate
+`cc` `out_dir` (cc hashes the SOURCE path for object names — two compilations of one file in one
+OUT_DIR silently overwrite and double-link); the flat stdarg.h must also define `__gnuc_va_list`
+(glibc headers consume gcc's <stdarg.h> contract).
+
+**The verdict the probe produced (111 MATCH / 27 DIVERGE, decision-grade):**
+- Integer / string / char / pointer formatting: **streamout ≡ msvcrt** (75/78 rows; deltas are
+  `%#x` of 0 → msvcrt `0` vs streamout `0x0`, and `%jd`/`%td` unknown to streamout).
+- Float formatting: **structural fidelity gap, msvcrt wins**: exact binary expansion at high
+  precision (`%.30f` → `0.100000000000000005551115123126` vs zero-padded), denormals
+  (`4.940656e-324` vs `0.000000e-308` garbage), `-0.0` sign kept, `%g` trailing-zero stripping +
+  correct e/f-form threshold, `1.#INF00`-style precision padding, and a real `%a` hex-float
+  implementation (streamout's `%a` is a FIXME falling through to `%f`).
+- Decision: **PORT msvcrt's `printf.h` engine** (the wave-13 `bnum.rs` extraction was exactly the
+  down-payment — parser and formatter share the limb engine); do NOT assemble streamout under
+  msvcrt exports — it would silently downgrade the DLL's float output, violating never-weaken.
+  The kernel keeps streamout (faithful to ReactOS crt by construction; its quirks are its C's).
+
+### 9.84 (2026-07-15) `NET_FLAKE` that is not a flake: the net suite times out at 600s having never booted, because another lane's `farm` owns every host CPU lease
 
 **Symptom.** A gate with `✓ build ×3  ✓ lint ×3  ✓ smoke:i386  ✓ smoke:amd64  ✓ smoke:arm64` and
 `✗ smoke:net(NET_FLAKE, 3 attempts)` — `15 errors in 600.39s`. Every one of the 15 net tests errors

@@ -23,4 +23,15 @@ path = "src/lib.rs"
 
 [dependencies]
 msvcrt-crt-rust = { path = "../msvcrt-crt-rust" }
+# The math wave (wave 14m): cnt-rust's `cabi-math` compiles ONLY
+# cabi/math.rs — the 66 kernel-proven libm exports (sin/cos/exp/pow/…).
+# msvcrt.dll's math exports bind to the same plain engine names crtmath
+# defines, so pulling these into the whole-archive Rust lib flips them by
+# lld first-match. Deliberately enabled HERE (the staticlib) and not in
+# msvcrt-crt-rust (the rlib): the difftest links the rlib, and 66
+# #[no_mangle] libm names there would shadow the HOST libm under the
+# reference TUs — oracle contamination. Engine equality is graded where
+# it lives: cnt-difftest, against the same sdk/lib/crt/math sources
+# crtmath compiles.
+cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-math"] }
 panic-common = { path = "../panic-common", features = ["user"] }

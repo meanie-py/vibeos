@@ -299,3 +299,61 @@ size_t subj_off_td_errno(void)    { return offsetof(subj_thread_data_t, thread_e
  * completely misleading cause. */
 size_t subj_off_locinfo_lconv(void)      { return offsetof(rl_threadlocinfo, lconv); }
 size_t subj_off_lconv_decimalpoint(void) { return offsetof(struct lconv, decimal_point); }
+
+/* ── wave 14b: the Rust printf ENGINE's environment ─────────────────────────
+ *
+ * msvcrt.dll's printf engine imports these from kernel32 / its own C.  The
+ * reference's copies live in the msvcrt_ref_* namespace (refstub/msvcrt.h) —
+ * deliberately unreachable — so the SUBJECT gets its own here.  A heap is a
+ * heap (malloc IS the faithful model, same argument as refimpl's), and the
+ * engine only ever compares heap CONTENTS, never identities. */
+#include <stdlib.h>
+
+static int subj_process_heap;
+
+void *GetProcessHeap(void)
+{
+    return &subj_process_heap;
+}
+
+void *HeapAlloc(void *heap, unsigned int flags, size_t size)
+{
+    void *p;
+
+    (void)heap;
+    p = malloc(size ? size : 1);
+    if (p && (flags & 0x8 /* HEAP_ZERO_MEMORY */))
+    {
+        unsigned char *b = p;
+        size_t i;
+        for (i = 0; i < size; i++) b[i] = 0;
+    }
+    return p;
+}
+
+int HeapFree(void *heap, unsigned int flags, void *ptr)
+{
+    (void)heap; (void)flags;
+    free(ptr);
+    return 1;
+}
+
+/* printf's %e exponent width: msvcrt default = 3-digit form (see refimpl's
+ * msvcrt_ref_ twin — the two must agree or every %e row false-DIVERGEs). */
+unsigned int _get_output_format(void)
+{
+    return 0;
+}
+
+/* Subject twin of refimpl's `_mbtowc_l` (the reference's copy is namespaced
+ * msvcrt_ref__mbtowc_l by refstub/msvcrt.h, unreachable from here).  MUST stay
+ * body-identical to refimpl.c's or every wide-conversion printf row
+ * false-DIVERGEs: C locale, single-byte, 1:1 onto U+0000..U+00FF. */
+int _mbtowc_l(unsigned short *dst, const char *str, size_t n, void *locale)
+{
+    (void)locale;
+    if (!str || !n) return 0;
+    if (!*str) { if (dst) *dst = 0; return 0; }
+    if (dst) *dst = (unsigned short)(unsigned char)*str;
+    return 1;
+}
