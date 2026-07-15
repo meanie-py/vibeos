@@ -411,6 +411,45 @@ for FONT in tahoma.ttf tahomabd.ttf Marlett.ttf arial.ttf arialbd.ttf cour.ttf t
     fi
 done
 
+# --- kmtest corpus (the arm64 twin of add_rostests_file) --------------------
+# x86 stages the kmtests onto the LiveCD declaratively: every kmtest driver
+# calls add_rostests_file(TARGET x), which is add_cd_file(... DESTINATION
+# "reactos/bin") (sdk/cmake/CMakeMacros.cmake). arm64 has no cd-file pass, so
+# without this block `vibeos-cli conformance --arch arm64` boots an image with
+# the sweep runner but no corpus for it to run -> [KMTEST-SWEEP] launch FAILED.
+#
+# reactos/bin, and ALL of it in that ONE directory, is load-bearing rather than
+# cosmetic: KmtpCreateService resolves each driver by taking
+# GetModuleFileName(kmtest_.exe), truncating at the last backslash, and
+# appending "<name>_drv.sys" (kmtest/service.c:428-439, which then
+# GetFileAttributes()-checks it). A driver staged anywhere else is simply never
+# found, so the flat layout mirrors x86 exactly.
+#
+# Globbed, not enumerated, so STAGING can't drift (same rationale as RMC
+# above). Note the glob can only stage what got BUILT, and that list is still
+# hand-maintained upstream: kmtest_all -> kmtest_drivers in kmtests/
+# CMakeLists.txt, which today omits the cc*/fltmgr drivers (x86 doesn't notice
+# — its livecd DAG builds every add_rostests_file target). That's harmless
+# while no visible test needs them (none of the 3 sweep lists reference a
+# Cc*/Flt* test), but if you make one visible, add its driver to
+# kmtest_drivers or arm64 will silently sweep without it.
+# Self-gating on the artifacts: they exist only when the build dir is
+# configured -DENABLE_ROSTESTS(_KMTESTS)=ON, which is precisely when x86's
+# add_rostests_file fires — so an unconfigured build stages nothing and the
+# ramdisk stays byte-identical. archcfg.py builds `kmtest_all` (optional) so
+# what lands here is freshly built, never a stale leftover.
+KMTESTS_DIR="$BUILD_DIR/modules/rostests/kmtests"
+if [ -f "$KMTESTS_DIR/kmtest_.exe" ]; then
+    echo "[*] Staging kmtest corpus..."
+    mdir -i "$RAMDISK_IMG" ::/reactos/bin >/dev/null 2>&1 \
+        || mmd -i "$RAMDISK_IMG" ::/reactos/bin
+    RMC "$KMTESTS_DIR/kmtest_.exe" ::/reactos/bin/kmtest_.exe
+    # Flatten: co-located next to kmtest_.exe regardless of source subdir.
+    while IFS= read -r drv; do
+        RMC "$drv" "::/reactos/bin/$(basename "$drv")"
+    done < <(find "$KMTESTS_DIR" -name '*_drv.sys' | sort)
+fi
+
 # --- Payloads (opt-in, VIBEOS_PAYLOAD=name[,name...]) -----------------------
 # Declarative test/demo app staging — docs/engineering/payload-harness-design.md.
 # OFF by default: with no payloads selected the compiler prints nothing and the

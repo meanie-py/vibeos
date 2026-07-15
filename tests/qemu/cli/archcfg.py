@@ -143,7 +143,20 @@ _CFGS = {
             "mswsock",
             "nettest",
         ),
-        ninja_targets_optional=("arm64input", "arm64vid"),
+        # kmtest_all (kmtest_ .exe + the standalone *_drv.sys corpus) is the
+        # `vibeos-cli conformance --arch arm64` payload; mkramdisk.sh stages it
+        # to reactos/bin. It is the SAME stale-staged-binary trap as every entry
+        # above: x86's `livecd` DAG re-rolls the corpus on every build (each
+        # driver calls add_rostests_file -> add_cd_file), but arm64's hand-picked
+        # staged set rebuilt none of it, so the ramdisk would ship whatever
+        # *_drv.sys happened to be left in build-arm64/ from some older ninja —
+        # i.e. a conformance sweep silently grading STALE test binaries.
+        # OPTIONAL, not required: the corpus only exists when the build dir is
+        # configured -DENABLE_ROSTESTS(_KMTESTS)=ON (both cmake options default
+        # OFF), and a kmtests-off dir must still build normally. The loud failure
+        # for "asked for conformance without the corpus" already lives at the
+        # right layer — conformance.py refuses up front with the configure line.
+        ninja_targets_optional=("arm64input", "arm64vid", "kmtest_all"),
         needs_mkramdisk=True,
         boot_media_rel="qemu/boot.img",
         staged_bins_rel=(

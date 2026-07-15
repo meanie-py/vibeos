@@ -778,13 +778,20 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     if not _verify_flag_artifacts(run, repo, build_dir, args):
         return run.finalize(repo)
 
-    # optional arch-specific targets (best-effort)
-    if cfg.ninja_targets_optional:
+    # optional arch-specific targets (best-effort) — ONE ninja per target.
+    # Batching them into a single `ninja a b c` makes the field's "absent on
+    # some branches" tolerance all-or-nothing: ninja rejects the whole command
+    # on the first unknown target, so one absent target silently skips the
+    # present ones. That bites for real — kmtest_all only exists when the build
+    # dir is configured ENABLE_ROSTESTS(_KMTESTS)=ON (both default OFF), and a
+    # kmtests-off dir would take arm64input/arm64vid down with it, staging a
+    # stale input/video driver into the ramdisk with no error anywhere.
+    for target in cfg.ninja_targets_optional:
         run.run(
-            wrap(["ninja", *cfg.ninja_targets_optional]),
+            wrap(["ninja", target]),
             cwd=build_dir,
             env=build_env,
-            stage="ninja-optional",
+            stage=f"ninja-optional:{target}",
             timeout=900,
         )
 
