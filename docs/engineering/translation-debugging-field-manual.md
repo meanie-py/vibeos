@@ -7066,3 +7066,243 @@ Rust program) and the `.spec` records only the convention, so again the oracle m
 itself. Compare **pointer depth**, not pointer-vs-scalar: a mutation test proved the first version
 of that checker structurally blind to `HANDLE`-vs-`LPHANDLE` — the bug that motivated it — because
 *both* are pointers.
+
+
+### 9.79 (2026-07-14) Porting msvcrt's bignum float parser: a verbatim upstream bug that is provably INERT, a signed-char/WEOF trap that is load-bearing, an i386 x87 float-ABI I first read BACKWARDS, and a harness that could not see errno being *cleared*
+
+**Context.** Wave 13 of the msvcrt-from-pieces lane ported msvcrt's own base-10 **bignum** float
+parser (`dll/win32/msvcrt/bnum.h` + `string.c`'s `fpnum_parse`/`fpnum_double`/`fpnum_ldouble`) to
+Rust — the first module in the lane that is a genuine *translation*, not an assembly. Wave 5 had
+cancelled the "flip `strtod` from cnt-rust" plan after a probe showed cnt-rust's naive DJ-Delorie
+accumulator disagreeing with msvcrt by **14 ULPs**; the honest path was always to port msvcrt's
+machinery. The oracle already existed — `string.c`/`wcs.c` compile as reference TUs in
+`msvcrt-difftest`, so every parsed `double` is graded on its exact **64-bit pattern**. It landed
+**`strtod`/`_strtod_l`/`atof`/`_atof_l`/`_atoflt_l`/`_atodbl(_l)`/`wcstod`/`_wcstod_l`/`_wtof(_l)`/
+`_atoldbl(_l)`/`__STRINGTOLD(_L)` — 15 functions on all three arches**, all bit-exact. Four durable
+lessons, three of them found by *trying to break my own green*.
+
+**1. A verbatim upstream bug can be provably inert — instrument reachability, don't assume.**
+`fpnum_parse_bnum`'s round-decision has a real Wine bug: a `for(i=e-5; i>=b; i--)` sticky-scan whose
+body reads `data[b]` (the lowest limb) every iteration instead of `data[i]`. I transcribed it
+verbatim (the oracle is msvcrt, not IEEE) and then wrote a **negative control** — "fix" `b`→`i` and
+demand a DIVERGE. *The control did not bite.* That is the exact signature of an unverified
+transcription, so I did not shrug it off. I added an **exact-halfway-tie generator** (`gen_tie`:
+build `(2m+1)·2^k` as a finite decimal with schoolbook arithmetic — random digits are NEVER ties, so
+the entire `FP_ROUND_EVEN` arm was dead in the corpus) — still no bite. Then I *instrumented the
+engine's reachability* and got the actual answer: the discriminating state is **structurally
+unreachable**. `FP_ROUND_EVEN` requires a `500000000` (== `LIMB_MAX/2`) limb at position `e-4`; that
+value is produced only by `bnum_rshift(1)` on an odd limb, whose remainder lands in a freshly
+prepended *bottom* limb — so `EVEN ⟹ that limb is at b ⟹ b==e-4 ⟹ the scan range b..=e-5 is empty`.
+Whenever the scan body *does* run, `round` is `ZERO` and the strip-loop guarantees `data[b]≠0`
+(measured: **0 violations in 43,712 parses**), so buggy `data[b]` and correct `data[i]` both compute
+`FP_ROUND_DOWN`. Same bytes, always. **The lesson isn't "reproduce upstream bugs" — it's that when a
+negative control fails to bite, you have learned nothing until you find out WHY: either the corpus
+can't reach the state, or the code is inert. Instrumentation tells you which; a comment guessing "can't
+happen" does not.** (The tie-generator stays in the corpus as a live tripwire in case a future bignum
+change ever creates the discriminating state.)
+
+**2. The signed-char → WEOF trap is load-bearing and IS caught.** `strtod_str_get` does
+`return *(*p)++;` on a **signed** `char` widened to `wchar_t`. `char` is signed on all three targets
+(now asserted in `rust_layout_assert.c`), so byte `0xFF` sign-extends to `0xFFFF` — which *is* `WEOF`.
+The parser sees end-of-input at a byte it has **already stepped past**, so the trailing-`unget` does
+not put it back and the endptr lands one byte too far. Transcribed as `*p as i8 as i16 as u16`;
+negative control (drop the sign extension) correctly moved `strtod` and `__STRINGTOLD_L` to DIVERGE —
+and *only* the endptr-checking rows, since the value is unaffected. The wide side has no such trap
+(`wchar_t` is unsigned), which is a genuine narrow/wide contract difference the harness grades.
+
+**3. The harness could not see errno being *cleared* — the setup was part of the oracle (§9.73 again).**
+`strtod_helper` clears errno on entry (`#if _MSVCR_VER==0: *_errno()=0`); its wide twin `_wcstod_l`,
+written separately in `wcs.c`, does **not**. That is an observable CRT difference — a caller that sets
+`errno=0`, calls one, and tests ERANGE gets different answers. The harness could not see it: `Effects`
+**zeroed errno before every call**, so a redundant "clear errno" write changed nothing observable.
+Sabotaging `_wcstod_l` to clear errno moved **zero rows**. Fix: seed errno with a **non-zero sentinel**
+(`0x5A5A`) before each graded call instead of 0 — costs nothing (both sides get the same seed; a
+function that leaves errno alone still matches) and turns "did you touch errno at all?" into an
+observable. With the sentinel, the sabotage correctly reddens the whole wide family while `strtod`
+(which *should* clear) stays green. **Zeroing a side channel before a differential call is a claim that
+nobody clears it — and that claim was false.** This is the third variation in the lane of the same
+root: a harness convenience (a stub, a cheap `get_locinfo`, a pre-zeroed errno) silently encodes an
+assumption about the environment, and the assumption is itself untested until a negative control
+attacks it.
+
+**4. i386 (32-bit x86) works too — via x87 `ST(0)` — and my first read of the ABI wall was BACKWARDS.**
+i386 msvcrt is built `-march=pentium` (pre-SSE — a ReactOS old-hardware-compat choice) and the whole
+i686 user-mode target carries `-C target-feature=-sse,-sse2` (`.cargo/config.toml`). rustc *does* reject
+some `f64`-across-a-function-boundary code on that no-SSE target with "SIMD vector type `f64` … requires
+the `sse` target feature" — and I first read that as "`extern "C" fn -> f64` is impossible on i386" and
+gated the whole family `#[cfg(not(target_arch = "x86"))]`. **That was exactly wrong, and the reviewer
+caught it by pointing at prior art:** cnt-rust had already solved this, painstakingly, and its comments
+state the rule precisely (`cabi/strtod.rs`, `core_rs/floatcvt.rs::fl`):
+
+> the C ABI returns `f64` in the x87 `ST(0)` register — no SSE — so an **`extern "C"` `-> f64` compiles
+> on no-SSE i386**. What actually hard-errors is a **Rust-ABI `-> f64`** (that one wants `xmm0`) and the
+> SSE-pulling `f64`/`f32` *std methods* (`is_infinite`, `is_finite`, `abs`), whose operand crosses a
+> Rust-ABI boundary by value.
+
+So the fix is not to gate i386 out — it is three small, ABI-portable changes: (a) mark the one internal
+`f64`-returning helper (`strtod_helper`) `extern "C"` so it returns via `ST(0)`; (b) replace the two
+`is_infinite()` calls with bit tests that read the operand's *memory* as an integer (a plain load, no
+float register); (c) replace `f64::from_bits` with a `store_bits` that writes the `u64` pattern straight
+into the destination's storage. None of these is a hack: `extern "C" -> f64` and integer bit-ops are all
+correct *with* SSE too, so if vibeos ever drops the pre-SSE baseline (it targets Vista-era+ hardware,
+where SSE2 is universal) not one line here needs reverting. The family now flips on **all three arches**.
+
+**The meta-lesson — and it is the important one:** a compiler error that names a feature (`requires the
+`sse` target feature`) is describing *one* codegen path, not a universal impossibility. Before you gate a
+whole family out "because the toolchain can't," check whether a sibling crate in the same tree already
+ships the thing — the answer here was one `grep` away in cnt-rust, and the reviewer's "didn't we already
+write softfloat painstakingly?" was worth more than my confident ABI paragraph. "Fail loud, don't
+silently degrade" is right; but *gating a family out is itself a silent degrade dressed up as caution* if
+the block was never real.
+
+**Reusable takeaways.**
+- When a **negative control does not bite**, you have found a hole in the *corpus or the instrument*,
+  not a clean transcription. Instrument reachability to learn which; only then decide if the code is
+  inert. (An inert upstream bug is a fine thing to ship verbatim — but *prove* the inertness.)
+- A **coverage assertion must know the function's contract.** The float family splits on *how* it
+  reports range errors — errno (`strtod`) vs an out-of-band return code (`_atoflt_l`). A blanket
+  "require ERANGE" would have failed the return-code functions for behaving correctly; `check_fp`'s
+  `require` list is therefore per-row.
+- **Grep every new flip — and everything it CALLS — for arch-conditional (`_WIN64`) contracts and for
+  side-channel writes (`errno`, the invalid-parameter handler) BEFORE trusting the harness**, because
+  the harness only catches what its setup lets it observe.
+- **A feature-named compiler error is a codegen constraint, not a law of nature.** `extern "C" -> f64`
+  through x87 is the counter-example. Check for in-tree prior art before declaring a target unsupported.
+
+### 9.80 (2026-07-14) An oracle that resolves a type wrongly reports *its own ignorance* as a defect — and the ambiguity check cannot save you when the parser is blind to the true declaration
+
+**Symptom.** `verify_c_signatures` (§9.78's sibling) was landed with 14 baselined findings and a
+note that `lsasrv LsapRegCreateKey` "looks genuinely real". On triage, **all 14 were the checker's
+own bugs, and the one real defect in the tree was one it could not see.**
+
+**Root causes (four, each a different flavour of the same mistake — a guess with no evidence):**
+1. **`.idl` outvoted `.h`.** The harvest read `sdk/include/psdk/*.idl` as C. `cordebug.idl` says
+   `typedef SIZE_T LPSTARTUPINFOW;` — an *RPC wire placeholder*, not the C type — so the correct
+   advapi32 translation was reported as a bug. **An IDL typedef states a marshalling
+   representation; the C compiler that built the .c never saw the .idl.**
+2. **The true declaration was invisible, so the false one looked unanimous.** The real
+   `} STARTUPINFOW, *LPSTARTUPINFOW;` is a *braced* typedef, excluded by the regex. The AMBIGUOUS
+   machinery (which exists exactly to refuse guessing) fires only on *conflicting* declarations —
+   **a parser blind to the true source sees no conflict and reports a confident wrong answer.**
+   *A checker that can only see one source cannot tell that it is the wrong one.*
+3. **A naming convention applied blind.** `^(?:LP|P)[A-Z]` read **`POINT` as a pointer to `OINT`** —
+   and likewise PROCESS_INFORMATION, PALETTEENTRY, PIXELFORMATDESCRIPTOR, POLYTEXTW. Only trust the
+   P/LP convention when the *remainder names a type you actually harvested*.
+4. **Multi-word base types.** `typedef _W64 unsigned long ULONG_PTR` was parsed as base=`_W64`,
+   harvesting **`unsigned`** as a typedef aliased to `_W64` — poisoning the whole integer tower
+   (SIZE_T→ULONG_PTR→unsigned→_W64→unresolvable). Also `typedef void* PVOID` (star glued to the
+   base) vs `typedef void *PVOID`: **C has no star on a base type; every star binds to a declarator.**
+
+**The false-GREEN half, which is worse.** An unresolvable name silently returned depth 0. An unknown
+C type and an unknown Rust type then both land on 0, compare **equal**, and the pair is reported as
+*verified* having been checked not at all. Fixed by raising `Unknown` and counting it: unresolvable
+is a **reported blind spot**, never a verdict. (`ole32` skips 308 types — now visible, previously
+laundered into a green.)
+
+**What the fixed checker found immediately:** `ws2_32 WPUCompleteOverlappedRequest(.., DWORD dwError,
+DWORD cbTransferred, ..)` translated with **`DWORD_PTR`** — contradicted by the C, by `ws2spi.h`, and
+by the `.spec` (`long`). 4 bytes vs 8 on amd64, on an exported SPI entry point, in the crate that had
+just been landed "0 findings".
+
+**Depth is not enough — width matters too.** `DWORD_PTR` is *not a pointer*; it is an integer that is
+4 bytes on i386 and 8 on amd64. A depth comparison is structurally blind to `DWORD`→`DWORD_PTR`,
+which the tool's own docstring **advertised catching**. Width cannot be compared numerically (the
+headers carry both `#ifdef` branches and we do not preprocess) but it does not need to be: what makes
+it a bug is that one side is **arch-variable** and the other **fixed**, which is decidable from the
+name (`_PTR_SIZED`).
+
+**Rule / recipe.** An oracle needs an oracle. **Mutation-test every checker in both directions** —
+a "must catch" table of the bugs it exists for (catches false NEGATIVES / a checker gone blind) and a
+"must not fire" table of correct code (catches false POSITIVES). Only the first table's absence lets a
+tool *look* healthy while detecting nothing. Both live in `tools/test_verify_c_signatures.py`, wired
+into `vibeos-cli check-tooling`. And **always print coverage next to findings**: "0 findings" from an
+oracle that skipped everything is otherwise indistinguishable from one that checked everything.
+
+**Triage, don't bless.** The 9 lines left in `tools/lint-baseline/verify_c_signatures.txt` were each
+read against their C; the verdicts are in the tool's docstring. Two of them are **the C being wrong**:
+`LsapRegCreateKey`/`LsapRegOpenKey` declare `OUT HANDLE KeyHandle` while every caller passes `&handle`
+and `ZwCreateKey` takes `PHANDLE` — the C only compiles because `void*` implicitly converts to
+`void**`. **Do not "fix" the Rust to match under-typed C.**
+
+### 9.81 (2026-07-14, (a) FIXED / (b) OPEN) The two staleness oracles: an mtime rule that false-REDs on a codegen-neutral edit, and a `ninja -n` oracle that is blind on every arch
+
+Both live in `tests/qemu/cli/provenance.py` and both guard the same thing — "did the staged
+binary come from the current sources?" — the class that false-greened arm64 six times
+(fastfat→ramdisk→pl011→gdi32→user32→advapi32, §9.6c.1). Found while gating a one-word ws2_32
+signature fix; **neither was found by the gate reporting a bug, both were found by the gate
+reporting the WRONG THING and being chased down.**
+
+#### (a) `cohab_staleness_reasons` false-REDs on a no-op-codegen edit — real, narrow, still there
+
+**Symptom:** `artifact-check(boot media missing or stale)` → `ws2_32.dll: stale — ws2_32-rust
+has .rs newer than the built binary (cohab flip not rebuilt; ...)`, on every arm64 build, while
+the build was in fact perfectly up to date.
+
+**Mechanism:** the rule is `artifact.mtime >= newest .rs mtime` — a *proxy*. The ws2_32 fix
+(`WPUCompleteOverlappedRequest`: `DWORD_PTR`→`DWORD` on an unimplemented stub whose params are
+unused) is **codegen-neutral on arm64**: cargo rebuilt, emitted a **byte-identical** `.a`,
+cmake's `copy_if_different` correctly did NOT touch the staged copy, so nothing relinked (there
+was nothing to relink) and `ws2_32.dll` stayed older than the `.rs` **permanently** — until an
+unrelated ws2_32-rust change forced a relink. Any semantically-null-but-textual edit does this.
+
+**A false RED is not the safe direction.** It is the mirror of the false green the check exists
+to catch, and it teaches people to `touch` binaries or ignore artifact-check — which is how the
+false greens got in.
+
+**FIXED** by splitting the chain at the copy, which is where the mtime semantics change:
+```
+.rs --cargo--> <t>/release/lib<c>.a --copy_if_different--> lib<c>.a --link--> artifact
+               [A: touched on EVERY cargo run]              [B: touched only on CHANGE]
+```
+  * **A.** cargo's own output >= newest `.rs`  => the crate really was rebuilt (catches the
+    original never-built-for-this-arch bug: gdi32/user32/advapi32…).
+  * **B.** artifact >= the COPIED staticlib   => the link consumed the current `.a` (catches
+    the other half: crate rebuilt+changed, but the .dll wasn't in the staged target set).
+Both compare files whose mtime moves exactly when it should, so an identical rebuild is silent
+while a real one is still caught. Crates with NO staticlib in their chain are cargo-*linked*
+modules (ntoskrnl-cargo/win32k produce the binary directly) — "staticlib absent" means
+"different build shape", not "never built"; reading it as the latter reported ntoskrnl.exe and
+win32k.sys as never-compiled on a green tree. They keep the old rule. Pinned by 5 tests in
+`test_cli_units.py` (`test_cohab_*`), including the codegen-neutral case as an explicit
+must-NOT-fire.
+
+**Blind alley — do NOT "fix" it with `ninja -n`.** That swaps a false RED for a false GREEN:
+
+#### (b) `_ninja_has_work` returns False even when a rebuild IS pending — on ALL arches. OPEN.
+
+**Verified:** with a genuine pending rebuild (proved by running real `ninja`, which compiled
+ws2_32-rust and relinked), `_ninja_has_work` returned **False** for `dll/win32/ws2_32/ws2_32.dll`
+AND for `ntoskrnl` (arm64) AND for **`livecd`** (amd64 — i.e. the x86 tier-1 target).
+
+**Mechanism (structural, not a parsing bug):**
+```
+$ ninja -n dll/win32/ws2_32/ws2_32.dll
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...          <- and NOTHING else, ever
+```
+CMake's `CONFIGURE_DEPENDS` globs install a glob-verification edge that is dirty **by design on
+every build** (that is how re-globbing works). Under `-n` no command executes, so ninja must
+assume that edge changes the cmake stamp → the regen edge is dirty → and ninja **stops planning
+there**, because regenerating `build.ninja` invalidates the rest of the graph. It never
+evaluates the targets you asked about. `_ninja_has_work` filters `Re-running CMake` /
+`Re-checking globbed directories` out as "not real work" and returns False = clean.
+
+Running `cmake .` or `ninja build.ninja` for real **first does not help** — the glob edge is
+always-dirty by construction, so the next `-n` stops in exactly the same place. The docstring's
+premise ("cmake re-runs ... so the dirty set is evaluated against the updated graph") is simply
+not what `-n` does. **`ninja -n` cannot be a staleness oracle in a CONFIGURE_DEPENDS project.**
+
+**Consequence:** the tier-1 ninja staleness net has never fired. The mtime nets in (a) are
+carrying the whole load, which is also why (a)'s false RED was the first symptom anyone saw.
+
+**The sound fix is content, not mtime and not `-n`:** compare a *fingerprint* of the crate's
+`.rs` set against one recorded at the artifact's last successful link (the stamp mechanism
+already fingerprints git content for exactly this reason — `git_fingerprint`). An mtime cannot
+distinguish "not rebuilt" from "rebuilt to identical bytes", and `-n` cannot see past the regen
+edge; only content can answer "would rebuilding change this artifact?".
+
+**Rule.** When a gate check fires, find out whether it is *right* before you satisfy it — and
+when you replace an oracle, test the replacement on a KNOWN-BAD input, not just a known-good
+one. The `ninja -n` "fix" passed the benign case perfectly and silently failed to catch a real
+stale cohab injected on purpose; only the deliberate known-bad probe exposed it. Same lesson as
+§9.80's mutation tables, one layer down.

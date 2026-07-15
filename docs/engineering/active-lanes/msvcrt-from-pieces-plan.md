@@ -940,3 +940,100 @@ all over again. Now both arms are graded, negative-controlled.
 
 `classify` **159 MATCH / 0 SIGN-ONLY / 1 DIVERGE** (the `strtod` probe) · all six instruments green ·
 builds ×3.
+
+---
+
+## Wave 13 (2026-07-14) — the FLOAT PARSER. msvcrt's own bignum, PORTED. +15 flips (all three arches), the lane's first true translation.
+
+**This is the wave that wave 5 said we could not have.** Wave 5 cancelled "flip `strtod` from
+cnt-rust" after a probe showed cnt-rust's DJ-Delorie accumulator disagreeing with msvcrt's bignum by
+**14 ULPs**. The recorded honest path was: *port msvcrt's own machinery* — a translation, not an
+assembly. Wave 13 does exactly that. `sdk/lib/rust/msvcrt-crt-rust/src/fpnum.rs` is a faithful
+transcription of `dll/win32/msvcrt/bnum.h` + `string.c`'s `fpnum_parse`/`fpnum_parse_bnum`/
+`fpnum_double`/`fpnum_ldouble` — the base-10 circular-buffer bignum, correctly rounded.
+
+**Flipped (15, all three arches):** `strtod` · `_strtod_l` · `atof` · `_atof_l` · `_atoflt_l` ·
+`_atodbl` · `_atodbl_l` · `wcstod` · `_wcstod_l` · `_wtof` · `_wtof_l` · `_atoldbl` · `_atoldbl_l` ·
+`__STRINGTOLD` · `__STRINGTOLD_L` (+ the shared engine `fpnum_parse`/`fpnum_double`/`fpnum_ldouble`,
+kept internal — not `#[no_mangle]`, so the C engine still serves its C callers).
+
+### The oracle is the strongest the lane has ever had: an exact 64-bit BIT PATTERN
+
+`string.c`/`wcs.c` are already reference TUs, so `ref_strtod` is msvcrt's genuine bignum compiled for
+the host. `classify` compares the raw `u64` of every returned `double` (`-0.0 != 0.0` matters), the
+endptr displacement, errno, and the invalid-parameter count. There is no "close enough": a 1-ULP slip
+is a DIVERGE. **All 13 public rows MATCH, plus `_atoldbl`/`__STRINGTOLD_L` byte-exact on a
+16-byte overrun-sentinel buffer.** The wave-5 `strtod [PROBE]` stays the lone red — as designed;
+it now records that the *cnt-rust route* is DIVERGE while the *ported engine* is MATCH.
+
+### Everything that mattered was found by trying to break the green (field manual §9.79)
+
+1. **A verbatim Wine bug that is provably INERT.** `fpnum_parse_bnum`'s sticky-scan reads `data[b]`
+   instead of `data[i]` — a real upstream bug. Transcribed verbatim; the negative control ("fix" it,
+   demand DIVERGE) **did not bite**. That is the signature of an unverified transcription, so I did not
+   assume — I built an exact-halfway-**tie** generator (`gen_tie`; random digits are never ties, so the
+   whole `FP_ROUND_EVEN` arm was dead in the corpus), still no bite, then **instrumented reachability**
+   and proved the discriminating state is *structurally unreachable* (a `LIMB_MAX/2` limb can only sit
+   at `b`, forcing `b==e-4` and an empty scan range; whenever the scan runs, `data[b]≠0` — 0 violations
+   in 43,712 parses — so both spellings compute the same round). Kept the bug to match msvcrt's bytes;
+   the tie-corpus stays as a live tripwire.
+2. **The signed-char → WEOF trap, load-bearing.** `strtod_str_get` widens a *signed* `char`, so byte
+   `0xFF` becomes `0xFFFF == WEOF`: the parser sees EOF at a byte it already stepped past, and the
+   endptr lands one too far. Reproduced with `*p as i8 as i16 as u16`; the negative control reddens
+   exactly the endptr-checking rows.
+3. **A harness blind spot: it could not see errno being CLEARED.** `strtod_helper` clears errno on
+   entry; the wide `_wcstod_l` does not — an observable difference. `Effects` **zeroed errno before
+   each call**, so a redundant clear was invisible (sabotage moved 0 rows). Fixed by seeding a
+   **non-zero sentinel** (`0x5A5A`) instead of 0; now the sabotage correctly reddens the whole wide
+   family while `strtod` stays green. Third variation of §9.73 in this lane: *the harness's own setup
+   is part of the oracle.*
+
+### i386 too — via x87 `ST(0)` (I first gated it out on a WRONG premise; §9.79 point 4)
+
+i386 msvcrt is `-march=pentium` (pre-SSE) and the i686 user target is `-sse,-sse2`. I initially read
+rustc's "SIMD vector type `f64` … requires the `sse` target feature" as "`extern "C" fn -> f64` is
+impossible here" and gated the family `#[cfg(not(target_arch = "x86"))]`. **That was backwards, and
+review caught it:** cnt-rust (`cabi/strtod.rs`, `core_rs/floatcvt.rs`) already ships `extern "C" -> f64`
+on no-SSE i386 — the C ABI returns `double` in x87 `ST(0)`, no SSE. What actually hard-errors is a
+**Rust-ABI** `-> f64` and the SSE-pulling `f64`/`f32` std methods (`is_infinite`/`from_bits`). Fix = three
+ABI-portable changes in `fpnum.rs`: mark the one internal `f64`-returning helper `extern "C"`; replace
+`is_infinite()` with memory bit-tests (`f64_is_inf`/`f32_is_inf`); replace `f64::from_bits` with a
+`store_bits` that writes the `u64` pattern into the destination. None needs reverting if vibeos ever drops
+the pre-SSE baseline (it targets Vista-era+, where SSE2 is universal — a candidate simplification, its own
+lane). **The family now flips on all three arches.**
+
+### New guardians (the layout/scalar drift defense grew)
+
+`msvcrt-sys` now guards the float parser's two-hop reach `locinfo → lconv → decimal_point` on both
+compilers (a genuinely arch-varying offset: `lconv` at 188 on i386, 296 on amd64/arm64 — a hand-number
+would have been a §9.41-class bug), and `rust_layout_assert.c` gained scalar pins for the `<float.h>`
+exponent limits, `ERANGE`/`_OVERFLOW`/`_UNDERFLOW`, **`char` must be signed** (the WEOF trap depends on
+it), and `sizeof(MSVCRT__LDOUBLE)==10` vs `WINE_BROKEN_LDOUBLE==12` (the deliberate 10-of-12-byte copy
+that dodges ReactOS's documented overrun). `ref_integrity` cross-checks the new `lconv` offsets subject
+vs bindgen.
+
+### Verified
+
+`classify` **172 MATCH / 0 SIGN-ONLY / 1 DIVERGE** (the expected `strtod` probe) · all six instruments
+green · three negative controls run (one proved the Wine bug inert, one caught the signed-char trap, one
+exposed+fixed the errno-clear blind spot) · `vibeos-cli check` green · builds ×3. **msvcrt.dll is now
+209 functions of Rust on all three arches.**
+
+### Next, after wave 13
+
+**The big door is now `printf` (Phase C), and wave 13 unlocked half of it.** msvcrt's float
+FORMATTER (`%f`/`%e`/`%g`, and therefore `_ecvt`/`_fcvt`/`_gcvt`, which are literally `_snprintf`
+calls) rides on the SAME `bnum.h` bignum this wave ported for the parser — so the hard numeric core
+is now Rust and proven. What remains for printf is the `printf.h` templated ENGINE itself
+(~1300 lines, instantiated narrow `_a` + wide `_w`): the format-string state machine, flags/width/
+precision, positional params, and the digit-generation glue (`pf_output_fp`/`pf_output_hex_fp`).
+It is hand-transcribable exactly as `fpnum.rs` was — NOT a paid rustconv run — but it is large and
+needs its own **format-string differential harness** (fuzz `%`-specs, grade the emitted bytes +
+return + errno against the genuine `pf_printf_a`/`pf_printf_w`, which are already reachable as
+reference symbols in `wcs.c`). Scope it as its own sub-lane before starting; it is several waves.
+
+**Small gradeable wins available with ZERO new harness work** (do any time, e.g. as warm-ups):
+- `_strdup` / `_wcsdup` (+ `_mbsdup`) — `malloc(strlen+1)` + copy; grade the buffer CONTENTS and the
+  NULL disposition (the pointers differ; malloc is shared environment). ~1 short wave.
+- `rand` / `srand` — pure LCG on `thread_data->random_seed`; needs a 4th reference TU (`misc.c`) but
+  the logic is trivial and the seed field is already in `msvcrt-sys`'s `__thread_data`.

@@ -4315,3 +4315,25 @@ pub unsafe extern "C" fn _wcsxfrm_l(
 pub unsafe extern "C" fn wcsxfrm(dest: *mut u16, src: *const u16, len: usize) -> usize {
     _wcsxfrm_l(dest, src, len, core::ptr::null_mut())
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WAVE 13 — the float PARSER (msvcrt's own bignum, ported).
+//
+// The first module in this crate that is a genuine TRANSLATION rather than an
+// assembly: cnt-rust's float parser is a different algorithm from a different
+// lineage and disagrees with msvcrt by double-digit ULPs (wave 5's probe, which
+// stays in `classify` as a DO-NOT-FLIP record). So `strtod` here is not a wrapper
+// around someone else's parser — it IS msvcrt's parser, transcribed.
+//
+// ── i386 works too — via x87 ST(0), the way cnt-rust already does it ──
+//
+// i386 msvcrt is `-march=pentium` (pre-SSE) and the i686 user target carries
+// `-C target-feature=-sse,-sse2`. The KEY fact (learned from cnt-rust/src/cabi/strtod.rs
+// and core_rs/floatcvt.rs, which shipped this painstakingly): an `extern "C" fn -> f64`
+// returns via the x87 `ST(0)` register, needs NO SSE, and IS the i386 C ABI msvcrt's
+// callers expect — so it compiles on no-SSE i386. What hard-errors on no-SSE i386 is a
+// **Rust-ABI** `-> f64` (that one wants xmm) and the SSE-pulling `f64`/`f32` std methods
+// (`is_infinite`, `is_finite`, `abs`). fpnum.rs therefore keeps every f64-returning
+// helper `extern "C"` and uses bit-based finite/inf predicates — see its `no_sse` notes.
+// ═══════════════════════════════════════════════════════════════════════════
+mod fpnum;

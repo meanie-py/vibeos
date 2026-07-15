@@ -196,12 +196,42 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
     misses it).
 
     Self-maintaining net (no archcfg list to forget): for every boot-set binary
-    mapping to a `<stem>-rust` crate, assert the built artifact is NEWER than the
-    crate's newest .rs. A cohab flip not rebuilt => artifact older than its source
-    => loud STALE here, instead of a silent stale-C boot. Mtime-based and run
-    unconditionally (a flip that wasn't rebuilt leaves the build-stamp fingerprint
-    matching, so the tier-1 fast path can't be trusted for it); the gate flow is
-    build->smoke back-to-back so mtimes are authoritative."""
+    mapping to a `<stem>-rust` crate, check the TWO links in the chain that can
+    actually break. Run unconditionally (a flip that wasn't rebuilt leaves the
+    build-stamp fingerprint matching, so the tier-1 fast path can't be trusted for
+    it); the gate flow is build->smoke back-to-back so mtimes are authoritative.
+
+        .rs --cargo--> <target>/release/lib<c>.a --copy_if_different--> lib<c>.a --link--> artifact
+                       [A: touched on every cargo run]                  [B: touched only on CHANGE]
+
+      A. cargo's own output must be at least as new as the newest .rs
+         => "cargo has run since the sources changed". Catches the original bug:
+            a crate that is never built for this arch at all (gdi32/user32/...).
+      B. the artifact must be at least as new as the COPIED staticlib it links
+         => "the link consumed the current .a". Catches the other half: the crate
+            rebuilt and changed, but the .dll was not in the staged target set so
+            ninja never relinked it, and mkramdisk staged the old binary.
+
+    WHY NOT `artifact.mtime >= newest .rs` (the obvious rule — it false-RED the
+    arm64 gate, field-manual §9.81): that is a proxy, and it is wrong whenever an
+    edit is CODEGEN-NEUTRAL. cargo rebuilds, emits a byte-identical .a,
+    copy_if_different deliberately does not touch the staged copy, nothing
+    relinks (correctly — there is nothing to relink), and the artifact stays older
+    than the .rs FOREVER. The ws2_32 `WPUCompleteOverlappedRequest` signature fix
+    (DWORD_PTR->DWORD on an unimplemented stub with unused params) did exactly
+    this and red the arm64 gate on every run while the build was perfectly current.
+    A false RED is not the safe direction: it is the mirror of the false green this
+    check exists to catch, and it teaches people to `touch` binaries to shut it up.
+    Splitting the chain at the copy is what fixes it — B compares against the file
+    whose mtime moves ONLY when the content really changed, so an identical
+    rebuild is silent, while A still proves the rebuild happened at all.
+
+    WHY NOT `ninja -n` (the other obvious rule — it is BLIND, §9.81): CMake's
+    CONFIGURE_DEPENDS globs make the glob-verify edge dirty by design on every
+    build, so under -n (which executes nothing) ninja assumes the cmake stamp
+    changes, marks the regen edge dirty, and STOPS PLANNING — it never evaluates
+    the target you asked about. `_ninja_has_work` returns False for `livecd` on
+    amd64 with a rebuild genuinely pending. Do not route this check through it."""
     build_dir = repo / f"build-{archcfg.base_arch(arch)}"
     reasons = []
     for rel in boot_set_cohab_rels(repo, arch):
@@ -214,12 +244,73 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
             )
             continue
         newest_rs = _newest_rs_mtime(crate)
-        if newest_rs and artifact.stat().st_mtime < newest_rs:
+        cargo_out, copied = _crate_staticlibs(repo, build_dir, crate)
+
+        if cargo_out is None and copied is None:
+            # No staticlib anywhere in this crate's chain => it is not a
+            # staticlib-cohab at all but a cargo-LINKED module (ntoskrnl-cargo /
+            # win32k produce the binary directly through reactos-link, consuming
+            # the crate as an rlib). "Staticlib absent" means "different build
+            # shape", NOT "never built" — reading it as the latter reported
+            # ntoskrnl.exe and win32k.sys as never-compiled on a green tree. Keep
+            # the original artifact-vs-source rule for these; cargo_link_staleness
+            # _reasons is the check that actually models that shape.
+            if newest_rs and artifact.stat().st_mtime < newest_rs:
+                reasons.append(
+                    f"{rel}: stale — {crate.name} has .rs newer than the built binary "
+                    f"(cohab flip not rebuilt; `build` force-rebuilds it, or add to ninja_targets)"
+                )
+            continue
+
+        # A. did cargo run since the sources changed?
+        if newest_rs and cargo_out is None:
             reasons.append(
-                f"{rel}: stale — {crate.name} has .rs newer than the built binary "
-                f"(cohab flip not rebuilt; `build` force-rebuilds it, or add to ninja_targets)"
+                f"{rel}: stale — {crate.name} has a staged staticlib but cargo's own "
+                f"output is missing for this arch (cohab crate never compiled here)"
+            )
+            continue
+        if newest_rs and cargo_out is not None and cargo_out.stat().st_mtime < newest_rs:
+            reasons.append(
+                f"{rel}: stale — {crate.name} .rs is newer than cargo's own output "
+                f"({cargo_out.name}); the crate was not rebuilt (add to ninja_targets?)"
+            )
+            continue
+        # B. did the link consume the current staticlib?
+        if copied is not None and artifact.stat().st_mtime < copied.stat().st_mtime:
+            reasons.append(
+                f"{rel}: stale — {copied.name} is newer than the built binary; the "
+                f"cohab staticlib changed but {Path(rel).name} was never relinked "
+                f"(not in ninja_targets?)"
             )
     return reasons
+
+
+def _crate_staticlibs(repo: Path, build_dir: Path, crate: Path) -> tuple[Path | None, Path | None]:
+    """(cargo's own output, the copied staticlib) for a cohab crate, newest of each.
+
+    They are DIFFERENT FILES with deliberately different mtime behaviour and the
+    distinction is the whole point of the check above: cargo's output is re-emitted
+    on every cargo run, while the copy is touched only when the bytes changed
+    (cmake `copy_if_different`). Cargo's lives under a `rust-<x>-target/` (per-module
+    custom command) or the shared `sdk/lib/rust/target/<stem>/` (add_cargo_module);
+    the copy sits in the module's build dir. Returns None for either if absent."""
+    lib = "lib" + crate.name.replace("-", "_") + ".a"
+    cands = list(build_dir.rglob(lib))
+    ws = repo / "sdk" / "lib" / "rust" / "target"
+    if ws.is_dir():
+        cands += list(ws.rglob(lib))
+
+    def _in_cargo_target(p: Path) -> bool:
+        return any(part == "target" or part.endswith("-target") for part in p.parts)
+
+    def _newest(ps: list[Path]) -> Path | None:
+        ps = [p for p in ps if p.is_file()]
+        return max(ps, key=lambda p: p.stat().st_mtime) if ps else None
+
+    return (
+        _newest([p for p in cands if _in_cargo_target(p)]),
+        _newest([p for p in cands if not _in_cargo_target(p)]),
+    )
 
 
 _CARGO_CALL_RE = re.compile(

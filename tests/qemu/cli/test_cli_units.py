@@ -2403,3 +2403,81 @@ def test_conformance_rostests_preflight(tmp_path):
     assert conformance_mod._rostests_enabled(tmp_path, "amd64") is False
     (bd / "CMakeCache.txt").write_text("FOO:BOOL=ON\n")
     assert conformance_mod._rostests_enabled(tmp_path, "amd64") is False
+
+
+# --- cohab staleness: the mtime chain (.rs -> cargo .a -> copied .a -> binary) -----------
+#
+# These pin BOTH directions, because the bug they encode was a checker that looked healthy:
+# the obvious rule (binary must be newer than the newest .rs) false-RED the arm64 gate on a
+# codegen-neutral edit, and the obvious replacement (`ninja -n`) was structurally blind and
+# passed the benign case while missing a real stale cohab. Field manual §9.81.
+
+
+@pytest.fixture
+def cohab_repo(tmp_path: Path, monkeypatch) -> Path:
+    """A fake arm64 tree with the full staticlib-cohab chain for one crate."""
+    r = tmp_path / "repo"
+    crate = r / "sdk" / "lib" / "rust" / "widget-rust" / "src"
+    crate.mkdir(parents=True)
+    (crate.parent / "Cargo.toml").write_text("[package]\nname='widget-rust'\n")
+    (crate / "lib.rs").write_text("// v1\n")
+    mod = r / "build-arm64" / "drivers" / "widget"
+    cargo_out = mod / "rust-widget-target" / "aarch64-pc-windows-gnullvm" / "release"
+    cargo_out.mkdir(parents=True)
+    (r / "qemu").mkdir(parents=True)
+    (r / "qemu" / "mkramdisk.sh").write_text('RMC "$BUILD_DIR/drivers/widget/widget.sys" ::/w\n')
+    for p, t in (
+        (crate / "lib.rs", 1000),
+        (cargo_out / "libwidget_rust.a", 2000),
+        (mod / "libwidget_rust.a", 2000),
+        (mod / "widget.sys", 2000),
+    ):
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if not p.exists():
+            p.write_bytes(b"x")
+        os.utime(p, (t, t))
+    return r
+
+
+def _cohab(repo: Path) -> list[str]:
+    return [x for x in provenance.cohab_staleness_reasons(repo, "arm64") if "widget" in x]
+
+
+def test_cohab_clean_tree(cohab_repo: Path):
+    assert _cohab(cohab_repo) == []
+
+
+def test_cohab_codegen_neutral_edit_is_NOT_stale(cohab_repo: Path):
+    """THE false-RED. The .rs is newer than the binary, but cargo re-ran and emitted an
+    identical .a, so copy_if_different left the copy (and hence the link) alone. Nothing is
+    stale — the binary genuinely reflects the source."""
+    src = cohab_repo / "sdk/lib/rust/widget-rust/src/lib.rs"
+    os.utime(src, (3000, 3000))  # edited AFTER the binary was linked
+    cargo_a = next((cohab_repo / "build-arm64").rglob("rust-widget-target/**/libwidget_rust.a"))
+    os.utime(cargo_a, (4000, 4000))  # cargo re-ran...
+    # ...and the copy + binary were NOT touched, because the bytes did not change.
+    assert _cohab(cohab_repo) == []
+
+
+def test_cohab_crate_not_rebuilt_is_stale(cohab_repo: Path):
+    """Rule A: the .rs changed and cargo never ran => the crate is not in this arch's DAG."""
+    os.utime(cohab_repo / "sdk/lib/rust/widget-rust/src/lib.rs", (5000, 5000))
+    r = _cohab(cohab_repo)
+    assert r and "cargo's own output" in r[0], r
+
+
+def test_cohab_binary_not_relinked_is_stale(cohab_repo: Path):
+    """Rule B: the staticlib really changed but the .sys was never relinked (the gdi32 class
+    that this whole check exists for)."""
+    mod = cohab_repo / "build-arm64" / "drivers" / "widget"
+    os.utime(mod / "libwidget_rust.a", (6000, 6000))  # copy updated => bytes DID change
+    r = _cohab(cohab_repo)
+    assert r and "never relinked" in r[0], r
+
+
+def test_cohab_cargo_output_missing_is_stale(cohab_repo: Path):
+    """The crate has a staged staticlib but was never compiled for this arch."""
+    next((cohab_repo / "build-arm64").rglob("rust-widget-target/**/libwidget_rust.a")).unlink()
+    os.utime(cohab_repo / "sdk/lib/rust/widget-rust/src/lib.rs", (5000, 5000))
+    r = _cohab(cohab_repo)
+    assert r and "missing" in r[0], r

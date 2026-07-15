@@ -355,20 +355,52 @@ extern "C" {
 #[derive(PartialEq, Debug)]
 struct Effects { ret: i64, errno: i32, pmt: i32 }
 
+/// errno is seeded with THIS, not with 0, before every graded call.
+///
+/// # Why not 0 (wave 13, and it was a real blind spot for twelve waves)
+///
+/// The harness used to zero errno before each call. That makes a function which *itself*
+/// zeroes errno **invisible** — errno was already 0, so the write changes nothing anybody
+/// can observe. And msvcrt has exactly such a function:
+///
+/// ```c
+/// static inline double strtod_helper(..., int *perr) {
+///     if (perr) *perr = 0;
+/// #if _MSVCR_VER == 0
+///     else *_errno() = 0;          /* <-- strtod/atof CLEAR errno on entry */
+/// #endif
+/// ```
+///
+/// while its wide twin `_wcstod_l` — written out separately in wcs.c — **does not**. So
+/// `strtod("abc")` clears a pre-existing errno and `wcstod(L"abc")` preserves it. A caller
+/// that sets `errno = 0`, calls one, and tests for ERANGE gets different answers from the
+/// two. That is a genuine, observable difference in the CRT, and the old harness could not
+/// see it: sabotaging `_wcstod_l` to clear errno moved **zero rows**.
+///
+/// Seeding a sentinel instead costs nothing (both sides get the same seed, so any function
+/// that leaves errno alone still reports the sentinel on both sides and still MATCHes) and
+/// turns "did you touch errno at all?" into an observable. The value is deliberately not a
+/// real errno constant, so it can never be confused with one the code under test set.
+///
+/// The general shape, and the third time this lane has met it: **the harness's own setup is
+/// part of the oracle.** Zeroing a side channel before the call is a claim that nobody
+/// clears it — and that claim was false. (§9.73: a convenience stub IS an oracle.)
+const ERRNO_SEED: i32 = 0x5A5A;
+
 impl Effects {
-    /// Run `f` on the SUBJECT side with both side-channels zeroed first.
+    /// Run `f` on the SUBJECT side with both side-channels seeded first.
     fn subject(f: impl FnOnce() -> i64) -> Effects {
         unsafe {
-            subj_errno_set(0);
+            subj_errno_set(ERRNO_SEED);
             subj_invalid_pmt_reset();
             let ret = f();
             Effects { ret, errno: subj_errno_get(), pmt: subj_invalid_pmt_count() }
         }
     }
-    /// Run `f` on the REFERENCE side with *its* (separate) side-channels zeroed.
+    /// Run `f` on the REFERENCE side with *its* (separate) side-channels seeded.
     fn reference(f: impl FnOnce() -> i64) -> Effects {
         unsafe {
-            ref_errno_set(0);
+            ref_errno_set(ERRNO_SEED);
             ref_invalid_pmt_reset();
             let ret = f();
             Effects { ret, errno: ref_errno_get(), pmt: ref_invalid_pmt_count() }
@@ -2019,4 +2051,768 @@ unsafe fn run() {
         }
     }
 
+    // ══ WAVE 13 — the float PARSER (msvcrt's own bignum, ported) ══════════════
+    //
+    // The wave-5 probe (above) is still here and still DIVERGEs, and that is the point:
+    // it records that cnt-rust's DJ Delorie parser is a DIFFERENT ALGORITHM and can never
+    // be flipped. What changed is that `strtod` no longer takes that route — the Rust in
+    // msvcrt-crt-rust/src/fpnum.rs IS msvcrt's bignum, transcribed from bnum.h +
+    // string.c. So the probe should stay red while the rows below go green. If the probe
+    // ever turns green, something has quietly re-pointed it at the new engine and it has
+    // stopped being a control.
+    //
+    // The oracle here is the strongest the lane has: an exact 64-bit BIT PATTERN. Not
+    // `==` — `-0.0 == 0.0` would hide a sign bug and a 1-ULP slip is a real CRT defect.
+    fp_rows();
+
+}
+
+// ── wave 13's float instrumentation ───────────────────────────────────────────
+
+/// Everything a float door can observe: the value's BITS, where it stopped, and both
+/// side-channels. Compared as a unit — a right value with a wrong endptr is a bug, and so
+/// is a right value with a missing ERANGE.
+#[derive(PartialEq, Default)]
+struct Fp {
+    bits: u64,
+    end: i64,
+    errno: i32,
+    pmt: i32,
+    ret: i32,
+}
+
+impl core::fmt::Display for Fp {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(
+            f,
+            "0x{:016x} ({:?})  end={}  errno={}  pmt={}  ret={}",
+            self.bits,
+            f64::from_bits(self.bits),
+            self.end,
+            self.errno,
+            self.pmt,
+            self.ret
+        )
+    }
+}
+
+/// Wave 13's corpus.
+///
+/// `gen_float_str` (wave 5) was built to embarrass a NAIVE parser — long mantissas, hard
+/// exponents. That is not enough here, because the thing under test IS the bignum, and a
+/// bignum has whole regions of behaviour a short input can never reach:
+///
+///   * the **circular buffer running out of limbs** (128 limbs x 9 digits = 1152 digits),
+///     whose overflow arm is a sticky-OR that NO shorter input executes;
+///   * the limb-boundary `bnum_lshift(29)` / `bnum_rshift(9)` normalisation loops;
+///   * the `INT_MAX`-saturating exponent arithmetic;
+///   * the rollback/`unget` paths on malformed tails;
+///   * and the `_MSVCR_VER == 0` contract — `inf`/`nan`/`0x` must NOT parse.
+///
+/// A fuzzer only falsifies what it VARIES (§9.60), so each of those is a deliberate arm.
+fn gen_fp(r: &mut Rng) -> Vec<u8> {
+    let mut v: Vec<u8> = Vec::new();
+    match r.below(24) {
+        // ── EXACT HALFWAY TIES (12% of the corpus). See gen_tie: these are the only
+        //    inputs that reach FP_ROUND_EVEN at all, and the only ones that can falsify
+        //    the sticky-scan transcription. Random digits are NEVER ties. ──
+        19 | 20 => return gen_tie(r),
+        // ── the BNUM-LEVEL tie: 27 significant digits, then a '5', then a zero run, then
+        //    a lone non-zero digit. The bignum keeps 3 limbs = 27 decimal digits of
+        //    mantissa, so THIS is the cut its round mode is about. ──
+        21 => {
+            for _ in 0..27 { v.push(b'1' + r.below(9) as u8); }
+            v.push(b'5');
+            for _ in 0..r.below(30) { v.push(b'0'); }
+            if r.below(2) == 0 { v.push(b'1' + r.below(9) as u8); }
+            if r.below(2) == 0 {
+                v.push(b'e');
+                if r.below(2) == 0 { v.push(b'-'); }
+                v.extend_from_slice(format!("{}", r.below(60)).as_bytes());
+            }
+        }
+
+        // ── fixed torture literals: the exact IEEE boundaries, where 1 ULP shows ──
+        0 => v.extend_from_slice(b"1.7976931348623157e308"), // DBL_MAX
+        1 => v.extend_from_slice(b"1.7976931348623159e308"), // just over -> inf + ERANGE
+        2 => v.extend_from_slice(b"2.2250738585072014e-308"), // smallest normal
+        3 => v.extend_from_slice(b"2.2250738585072011e-308"), // the famous "PHP hang" denormal
+        4 => v.extend_from_slice(b"4.9406564584124654e-324"), // smallest subnormal
+        5 => v.extend_from_slice(b"2.4703282292062327e-324"), // half of it — rounds to 0 or to min
+        6 => v.extend_from_slice(b"0.0000000000000000087519423665610e-32"), // wave 5's 14-ULP input
+        7 => v.extend_from_slice(b"9007199254740993"), // 2^53+1: first unrepresentable integer
+        8 => v.extend_from_slice(b"1e400"),           // overflow -> ERANGE
+        9 => v.extend_from_slice(b"1e-400"),          // underflow -> ERANGE
+
+        // ── exponent arithmetic that saturates at INT_MAX inside the parser ──
+        10 => {
+            v.extend_from_slice(b"1e");
+            if r.below(2) == 0 {
+                v.push(b'-');
+            }
+            v.extend_from_slice(format!("{}", r.next() % 4_000_000_000u64).as_bytes());
+        }
+
+        // ── THE CIRCULAR BUFFER. >1152 digits exhausts the 128-limb ring, and the
+        //    "buffer full" arm folds the rest into a sticky bit. Unreachable below ~1152. ──
+        11 => {
+            for _ in 0..1100 + r.below(400) {
+                v.push(b'0' + r.below(10) as u8);
+            }
+            if r.below(2) == 0 {
+                v.push(b'.');
+                for _ in 0..r.below(300) {
+                    v.push(b'0' + r.below(10) as u8);
+                }
+            }
+        }
+
+        // ── halfway cases: an exact "5" tail is where FP_ROUND_EVEN decides ──
+        12 => {
+            for _ in 0..15 + r.below(6) {
+                v.push(b'0' + r.below(10) as u8);
+            }
+            v.push(b'.');
+            for _ in 0..r.below(20) {
+                v.push(b'0' + r.below(10) as u8);
+            }
+            v.push(b'5');
+            if r.below(2) == 0 {
+                for _ in 0..r.below(6) {
+                    v.push(b'0'); // trailing zeros: still EXACTLY half -> ties-to-even
+                }
+            } else {
+                v.push(b'1' + r.below(9) as u8); // ...or a hair over half -> round up
+            }
+        }
+
+        // ── the _MSVCR_VER == 0 CONTRACT. These must NOT parse in *this* CRT. ──
+        13 => v.extend_from_slice(match r.below(6) {
+            0 => &b"inf"[..],
+            1 => &b"INFINITY"[..],
+            2 => &b"nan"[..],
+            3 => &b"NaN"[..],
+            4 => &b"0x10"[..],
+            _ => &b"0X1p3"[..],
+        }),
+
+        // ── the 'd'/'D' Fortran exponent msvcrt has never dropped ──
+        14 => {
+            for _ in 0..1 + r.below(8) {
+                v.push(b'0' + r.below(10) as u8);
+            }
+            v.push(if r.below(2) == 0 { b'd' } else { b'D' });
+            if r.below(2) == 0 {
+                v.push(b'-');
+            }
+            v.extend_from_slice(format!("{}", r.below(320)).as_bytes());
+        }
+
+        // ── the rollback/unget paths: malformed, partially-formed, empty ──
+        15 => v.extend_from_slice(match r.below(9) {
+            0 => &b""[..],
+            1 => &b"."[..],
+            2 => &b"-"[..],
+            3 => &b"+"[..],
+            4 => &b"-."[..],
+            5 => &b"1e"[..],
+            6 => &b"1e+"[..],
+            7 => &b".e5"[..],
+            _ => &b"-.e-"[..],
+        }),
+
+        // ── THE SIGNED-CHAR / WEOF TRAP. A 0xFF byte sign-extends to 0xFFFF == WEOF, so
+        //    the parser sees end-of-input at a byte it has ALREADY stepped over. ──
+        16 => {
+            for _ in 0..1 + r.below(4) {
+                v.push(b'0' + r.below(10) as u8);
+            }
+            v.push(0xFF);
+            for _ in 0..r.below(3) {
+                v.push(b'0' + r.below(10) as u8);
+            }
+        }
+
+        // ── the other high bytes: 0x80..0xFE widen to 0xFF80..0xFFFE, which are NOT WEOF ──
+        17 => {
+            for _ in 0..1 + r.below(4) {
+                v.push(b'0' + r.below(10) as u8);
+            }
+            v.push(0x80 + r.below(0x7F) as u8);
+            for _ in 0..r.below(3) {
+                v.push(b'0' + r.below(10) as u8);
+            }
+        }
+
+        // ── leading whitespace (the skip loop) then the parser's own sign ──
+        18 => {
+            for _ in 0..r.below(4) {
+                v.push([b' ', b'\t', b'\n', b'\r', 0x0b, 0x0c][r.below(6)]);
+            }
+            if r.below(2) == 0 {
+                v.push(if r.below(2) == 0 { b'-' } else { b'+' });
+            }
+            for _ in 0..1 + r.below(20) {
+                v.push(b'0' + r.below(10) as u8);
+            }
+            v.push(b'.');
+            for _ in 0..r.below(25) {
+                v.push(b'0' + r.below(10) as u8);
+            }
+        }
+
+        // ── the bulk: general random floats across the whole exponent range ──
+        _ => {
+            if r.below(3) == 0 {
+                v.push(if r.below(2) == 0 { b'-' } else { b'+' });
+            }
+            for _ in 0..r.below(30) {
+                v.push(b'0' + r.below(10) as u8);
+            }
+            if r.below(4) != 0 {
+                v.push(b'.');
+                for _ in 0..r.below(30) {
+                    v.push(b'0' + r.below(10) as u8);
+                }
+            }
+            if r.below(2) == 0 {
+                v.push(if r.below(2) == 0 { b'e' } else { b'E' });
+                match r.below(3) {
+                    0 => v.push(b'-'),
+                    1 => v.push(b'+'),
+                    _ => {}
+                }
+                v.extend_from_slice(format!("{}", r.below(700)).as_bytes());
+            }
+            if r.below(6) == 0 {
+                v.extend_from_slice(b"xyz"); // trailing junk -> exercises the endptr
+            }
+        }
+    }
+    v.push(0);
+    v
+}
+
+/// Multiply a decimal digit-string (most significant first) by a small integer, in place.
+/// Schoolbook, exact, no float anywhere near it.
+fn dec_mul(d: &mut Vec<u8>, k: u32) {
+    let mut carry = 0u32;
+    for x in d.iter_mut().rev() {
+        let t = (*x as u32) * k + carry;
+        *x = (t % 10) as u8;
+        carry = t / 10;
+    }
+    while carry > 0 {
+        d.insert(0, (carry % 10) as u8);
+        carry /= 10;
+    }
+}
+
+/// **Exact halfway ties** — the inputs a correctly-rounded parser exists for, and the ones
+/// a random-digit fuzzer will never, ever produce.
+///
+/// A tie is a decimal that lands exactly midway between two adjacent doubles: take a 53-bit
+/// mantissa `m`, and the value `(2m+1) * 2^(k-53)` is precisely the midpoint of the two
+/// doubles with mantissas `m` and `m+1`. Every such value has a FINITE exact decimal
+/// expansion (because `2^-n == 5^n / 10^n`), so we can write it down exactly with schoolbook
+/// arithmetic — no float involved, no rounding introduced by the generator itself.
+///
+/// This matters for two reasons, and I only found the second one by trying to break the
+/// first:
+///
+///   1. **`FP_ROUND_EVEN` is only reachable from a tie.** Without this generator the entire
+///      ties-to-even arm of `fpnum_double` — the whole reason msvcrt carries a bignum —
+///      is dead code as far as the harness is concerned. 20,000 rows of random digits and
+///      not one of them is a tie.
+///
+///   2. **It is the only way to falsify Wine's sticky-scan bug.** `fpnum_parse_bnum`'s
+///      round decision reads limb `e-4` and then scans the limbs below it — and Wine's scan
+///      re-reads the LOWEST limb every iteration instead of the i'th (see fpnum.rs). The
+///      two behaviours diverge only when limb `e-4` is EXACTLY `LIMB_MAX/2`, which is to say
+///      only on a tie, and only when the limbs below it are a MIX of zero and non-zero.
+///      So: emit the tie, then optionally push a lone non-zero digit far out to the right,
+///      past enough zeros to leave an intervening limb empty. `nudge` is that offset.
+///
+/// Negative-controlled: with `b.at(b.b)` "corrected" to `b.at(i)` in fpnum.rs, these rows
+/// go DIVERGE. Before this generator existed, they did not — the fix was invisible, and the
+/// transcription was therefore unverified. A guard that cannot be shown to fail is worthless.
+fn gen_tie(r: &mut Rng) -> Vec<u8> {
+    // A 53-bit mantissa, skewed to the extremes where the exponent logic is liveliest.
+    let m: u64 = match r.below(4) {
+        0 => 1u64 << 52,                       // the smallest normal mantissa
+        1 => (1u64 << 53) - 1,                 // the largest
+        2 => (1u64 << 52) | (r.next() & 0xF),  // just above the boundary
+        _ => (1u64 << 52) | (r.next() & ((1 << 52) - 1)),
+    };
+    let odd = 2 * m + 1; // the midpoint's numerator: always odd, always exact
+
+    // 2^k, for k on both sides of zero — negative k is where the FINITE-but-long decimal
+    // expansions live (2^-60 is 60 digits of exactness), which is what stresses the limbs.
+    let k: i32 = (r.below(140) as i32) - 120;
+
+    let mut digits: Vec<u8> = odd
+        .to_string()
+        .bytes()
+        .map(|c| c - b'0')
+        .collect();
+
+    let mut point_from_right: i32 = 0;
+    if k >= 0 {
+        for _ in 0..k {
+            dec_mul(&mut digits, 2);
+        }
+    } else {
+        for _ in 0..(-k) {
+            dec_mul(&mut digits, 5); // 2^-1 == 5/10: multiply by 5, move the point one left
+        }
+        point_from_right = -k;
+    }
+
+    // Render as an exact decimal string.
+    let mut s: Vec<u8> = Vec::new();
+    if r.below(4) == 0 {
+        s.push(b'-');
+    }
+    let n = digits.len() as i32;
+    if point_from_right == 0 {
+        s.extend(digits.iter().map(|&d| d + b'0'));
+    } else if point_from_right >= n {
+        s.extend_from_slice(b"0.");
+        for _ in 0..(point_from_right - n) {
+            s.push(b'0');
+        }
+        s.extend(digits.iter().map(|&d| d + b'0'));
+    } else {
+        let split = (n - point_from_right) as usize;
+        s.extend(digits[..split].iter().map(|&d| d + b'0'));
+        s.push(b'.');
+        s.extend(digits[split..].iter().map(|&d| d + b'0'));
+    }
+
+    // The nudge: a lone non-zero digit pushed out past `pad` zeros. `pad == 0` leaves the
+    // value an EXACT tie (ties-to-even decides it); a large `pad` leaves limb e-4 sitting
+    // at exactly 500000000 while a limb further down is non-zero — the one state in which
+    // Wine's sticky-scan bug is observable.
+    match r.below(3) {
+        0 => {} // leave it an exact tie
+        _ => {
+            if point_from_right == 0 {
+                s.push(b'.');
+            }
+            let pad = r.below(45);
+            for _ in 0..pad {
+                s.push(b'0');
+            }
+            s.push(b'1' + r.below(9) as u8);
+        }
+    }
+
+    s.push(0);
+    s
+}
+
+/// The wide corpus is the narrow one widened — which is not a lazy shortcut but the
+/// interesting case: byte 0xFF widens to `L'\u{00FF}'` (ÿ), which is **NOT** WEOF, so the
+/// wide parser does NOT stop there while the narrow one does. Same input text, genuinely
+/// different contract, and both sides of the harness see it. A literal 0xFFFF is injected
+/// separately to reach the wide side's own WEOF.
+fn gen_fp_w(r: &mut Rng) -> Vec<u16> {
+    let b = gen_fp(r);
+    let mut v: Vec<u16> = b.iter().map(|&c| c as u16).collect();
+    if r.below(16) == 0 && v.len() > 2 {
+        let at = 1 + r.below(v.len() - 2);
+        v[at] = 0xFFFF;
+    }
+    v
+}
+
+/// Compare a float door on all its observables, and REFUSE to report MATCH on a row that
+/// never exercised the contract it exists to test.
+///
+/// The coverage gate is the §9.60 rule made mechanical: a `strtod` row that only ever saw
+/// well-formed in-range inputs has proved nothing about ERANGE or about rejection, and its
+/// green would be worthless.
+///
+/// `require` is per-row and NOT boilerplate, because the family splits on *how it reports
+/// errors*:
+///
+///   * `strtod`/`wcstod`/`atof` set **errno** — so they must be seen to produce ERANGE.
+///   * `_atoflt_l`/`_atodbl`/`__STRINGTOLD_L` take the `perr` arm of `strtod_helper` and
+///     never touch errno at all: the range error comes back **out-of-band** as an
+///     `_OVERFLOW`/`_UNDERFLOW` **return code**. Demanding an ERANGE of those rows would
+///     be demanding the wrong contract — and a blanket `require` list would have done
+///     exactly that, failing them for behaving correctly.
+///
+/// Which is itself the lesson: the coverage assertion has to know what the function
+/// promises, or it is just another thing that is confidently wrong.
+fn check_fp(
+    name: &'static str,
+    require: &[&'static str],
+    mut f: impl FnMut(&mut Rng) -> (Fp, Fp, String),
+) {
+    let mut r = Rng(0xD1B54A32D192ED03);
+    let (mut saw_erange, mut saw_value, mut saw_reject, mut saw_ret) = (0u32, 0u32, 0u32, 0u32);
+
+    for _ in 0..20_000 {
+        let (got, want, ctx) = f(&mut r);
+
+        // Coverage is measured on the REFERENCE — what msvcrt actually did — so a subject
+        // that never sets errno cannot flatter its own coverage.
+        if want.errno == 34 {
+            saw_erange += 1;
+        }
+        if want.bits != 0 && want.bits != 0x8000_0000_0000_0000 {
+            saw_value += 1;
+        }
+        if want.end == 0 {
+            saw_reject += 1;
+        }
+        if want.ret != 0 {
+            saw_ret += 1;
+        }
+
+        if got != want {
+            record(
+                name,
+                V::Diverge,
+                format!("[{ctx}]\n        rust  = {got}\n        msvcrt= {want}"),
+            );
+            return;
+        }
+    }
+
+    let missing: Vec<&str> = require
+        .iter()
+        .copied()
+        .filter(|w| match *w {
+            "ERANGE" => saw_erange == 0,
+            "value" => saw_value == 0,
+            "reject" => saw_reject == 0,
+            "ret" => saw_ret == 0,
+            _ => false,
+        })
+        .collect();
+    if !missing.is_empty() {
+        record(
+            name,
+            V::Diverge,
+            format!(
+                "MATCHED, but the row never exercised: {}. \
+                 A green from an unexercised contract is not a green (§9.60).",
+                missing.join(", ")
+            ),
+        );
+        return;
+    }
+
+    record(
+        name,
+        V::Match,
+        format!("ERANGE x{saw_erange}, values x{saw_value}, rejects x{saw_reject}, err-ret x{saw_ret}"),
+    );
+}
+
+fn fp_rows() {
+    use core::ffi::c_void;
+
+    #[repr(C)]
+    struct CrtFloat {
+        f: f32,
+    }
+    #[repr(C)]
+    struct CrtDouble {
+        x: f64,
+    }
+
+    extern "C" {
+        // ── the reference (msvcrt's genuine string.c / wcs.c, compiled for the host) ──
+        fn ref__strtod_l(s: *const u8, e: *mut *mut u8, l: *mut c_void) -> f64;
+        fn ref__atof_l(s: *const u8, l: *mut c_void) -> f64;
+        fn ref__atoflt_l(v: *mut CrtFloat, s: *mut u8, l: *mut c_void) -> i32;
+        fn ref__atodbl(v: *mut CrtDouble, s: *mut u8) -> i32;
+        fn ref__atodbl_l(v: *mut CrtDouble, s: *mut u8, l: *mut c_void) -> i32;
+        fn ref_wcstod(s: *const u16, e: *mut *mut u16) -> f64;
+        fn ref__wcstod_l(s: *const u16, e: *mut *mut u16, l: *mut c_void) -> f64;
+        fn ref__wtof(s: *const u16) -> f64;
+        fn ref__wtof_l(s: *const u16, l: *mut c_void) -> f64;
+        fn ref__atoldbl(v: *mut u8, s: *mut u8) -> i32;
+        fn ref___STRINGTOLD_L(
+            v: *mut u8,
+            e: *mut *mut u8,
+            s: *const u8,
+            f: i32,
+            l: *mut c_void,
+        ) -> i32;
+
+        // ── the subject (msvcrt-crt-rust's #[no_mangle] bodies — the code that SHIPS) ──
+        fn strtod(s: *const u8, e: *mut *mut u8) -> f64;
+        fn _strtod_l(s: *const u8, e: *mut *mut u8, l: *mut c_void) -> f64;
+        fn atof(s: *const u8) -> f64;
+        fn _atof_l(s: *const u8, l: *mut c_void) -> f64;
+        fn _atoflt_l(v: *mut CrtFloat, s: *mut u8, l: *mut c_void) -> i32;
+        fn _atodbl(v: *mut CrtDouble, s: *mut u8) -> i32;
+        fn _atodbl_l(v: *mut CrtDouble, s: *mut u8, l: *mut c_void) -> i32;
+        fn wcstod(s: *const u16, e: *mut *mut u16) -> f64;
+        fn _wcstod_l(s: *const u16, e: *mut *mut u16, l: *mut c_void) -> f64;
+        fn _wtof(s: *const u16) -> f64;
+        fn _wtof_l(s: *const u16, l: *mut c_void) -> f64;
+        fn _atoldbl(v: *mut u8, s: *mut u8) -> i32;
+        fn __STRINGTOLD_L(
+            v: *mut u8,
+            e: *mut *mut u8,
+            s: *const u8,
+            f: i32,
+            l: *mut c_void,
+        ) -> i32;
+    }
+
+    /// endptr as a displacement from the start of the string. `-1` for NULL.
+    macro_rules! eoff {
+        ($p:expr, $base:expr) => {
+            if $p.is_null() {
+                -1i64
+            } else {
+                ($p as usize as i64) - ($base.as_ptr() as usize as i64)
+            }
+        };
+    }
+
+    unsafe {
+        // ── strtod / _strtod_l ────────────────────────────────────────────────
+        check_fp("strtod", &["ERANGE", "value", "reject"], |r| {
+            let s = gen_fp(r);
+            let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
+            let g = Effects::subject(|| strtod(s.as_ptr(), &mut e1).to_bits() as i64);
+            let w = Effects::reference(|| ref_strtod(s.as_ptr(), &mut e2).to_bits() as i64);
+            let ctx = format!("{:?}", String::from_utf8_lossy(&s[..s.len() - 1]));
+            (
+                Fp { bits: g.ret as u64, end: eoff!(e1, s), errno: g.errno, pmt: g.pmt, ret: 0 },
+                Fp { bits: w.ret as u64, end: eoff!(e2, s), errno: w.errno, pmt: w.pmt, ret: 0 },
+                ctx,
+            )
+        });
+
+        check_fp("_strtod_l", &["ERANGE", "value", "reject"], |r| {
+            let s = gen_fp(r);
+            let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
+            let n = core::ptr::null_mut();
+            let g = Effects::subject(|| _strtod_l(s.as_ptr(), &mut e1, n).to_bits() as i64);
+            let w = Effects::reference(|| ref__strtod_l(s.as_ptr(), &mut e2, n).to_bits() as i64);
+            let ctx = format!("{:?}", String::from_utf8_lossy(&s[..s.len() - 1]));
+            (
+                Fp { bits: g.ret as u64, end: eoff!(e1, s), errno: g.errno, pmt: g.pmt, ret: 0 },
+                Fp { bits: w.ret as u64, end: eoff!(e2, s), errno: w.errno, pmt: w.pmt, ret: 0 },
+                ctx,
+            )
+        });
+
+        // atof/_atof_l pass endptr = NULL, which is a DIFFERENT arm of strtod_helper
+        // (the `#if _MSVCR_VER == 0` errno reset only happens on the perr==NULL path).
+        check_fp("atof", &["ERANGE", "value"], |r| {
+            let s = gen_fp(r);
+            let g = Effects::subject(|| atof(s.as_ptr()).to_bits() as i64);
+            let w = Effects::reference(|| ref_atof(s.as_ptr()).to_bits() as i64);
+            let ctx = format!("{:?}", String::from_utf8_lossy(&s[..s.len() - 1]));
+            (
+                Fp { bits: g.ret as u64, end: 0, errno: g.errno, pmt: g.pmt, ret: 0 },
+                Fp { bits: w.ret as u64, end: 0, errno: w.errno, pmt: w.pmt, ret: 0 },
+                ctx,
+            )
+        });
+
+        check_fp("_atof_l", &["ERANGE", "value"], |r| {
+            let s = gen_fp(r);
+            let n = core::ptr::null_mut();
+            let g = Effects::subject(|| _atof_l(s.as_ptr(), n).to_bits() as i64);
+            let w = Effects::reference(|| ref__atof_l(s.as_ptr(), n).to_bits() as i64);
+            let ctx = format!("{:?}", String::from_utf8_lossy(&s[..s.len() - 1]));
+            (
+                Fp { bits: g.ret as u64, end: 0, errno: g.errno, pmt: g.pmt, ret: 0 },
+                Fp { bits: w.ret as u64, end: 0, errno: w.errno, pmt: w.pmt, ret: 0 },
+                ctx,
+            )
+        });
+
+        // ── the _CRT_FLOAT / _CRT_DOUBLE doors ────────────────────────────────
+        //
+        // These take the `perr` arm of strtod_helper — errno is NOT touched; the ERANGE
+        // comes back out-of-band and is folded into an _OVERFLOW/_UNDERFLOW return. So
+        // the `errno` column here should stay 0 on BOTH sides, and the `ret` column is
+        // where the contract lives. A row that graded only the value would miss all of it.
+        check_fp("_atoflt_l", &["value", "ret"], |r| {
+            let mut s = gen_fp(r);
+            let n = core::ptr::null_mut();
+            let (mut v1, mut v2) = (CrtFloat { f: 0.0 }, CrtFloat { f: 0.0 });
+            let g = Effects::subject(|| _atoflt_l(&mut v1, s.as_mut_ptr(), n) as i64);
+            let w = Effects::reference(|| ref__atoflt_l(&mut v2, s.as_mut_ptr(), n) as i64);
+            let ctx = format!("{:?}", String::from_utf8_lossy(&s[..s.len() - 1]));
+            (
+                Fp { bits: v1.f.to_bits() as u64, end: 0, errno: g.errno, pmt: g.pmt, ret: g.ret as i32 },
+                Fp { bits: v2.f.to_bits() as u64, end: 0, errno: w.errno, pmt: w.pmt, ret: w.ret as i32 },
+                ctx,
+            )
+        });
+
+        check_fp("_atodbl", &["value", "ret"], |r| {
+            let mut s = gen_fp(r);
+            let (mut v1, mut v2) = (CrtDouble { x: 0.0 }, CrtDouble { x: 0.0 });
+            let g = Effects::subject(|| _atodbl(&mut v1, s.as_mut_ptr()) as i64);
+            let w = Effects::reference(|| ref__atodbl(&mut v2, s.as_mut_ptr()) as i64);
+            let ctx = format!("{:?}", String::from_utf8_lossy(&s[..s.len() - 1]));
+            (
+                Fp { bits: v1.x.to_bits(), end: 0, errno: g.errno, pmt: g.pmt, ret: g.ret as i32 },
+                Fp { bits: v2.x.to_bits(), end: 0, errno: w.errno, pmt: w.pmt, ret: w.ret as i32 },
+                ctx,
+            )
+        });
+
+        check_fp("_atodbl_l", &["value", "ret"], |r| {
+            let mut s = gen_fp(r);
+            let n = core::ptr::null_mut();
+            let (mut v1, mut v2) = (CrtDouble { x: 0.0 }, CrtDouble { x: 0.0 });
+            let g = Effects::subject(|| _atodbl_l(&mut v1, s.as_mut_ptr(), n) as i64);
+            let w = Effects::reference(|| ref__atodbl_l(&mut v2, s.as_mut_ptr(), n) as i64);
+            let ctx = format!("{:?}", String::from_utf8_lossy(&s[..s.len() - 1]));
+            (
+                Fp { bits: v1.x.to_bits(), end: 0, errno: g.errno, pmt: g.pmt, ret: g.ret as i32 },
+                Fp { bits: v2.x.to_bits(), end: 0, errno: w.errno, pmt: w.pmt, ret: w.ret as i32 },
+                ctx,
+            )
+        });
+
+        // ── the wide family ───────────────────────────────────────────────────
+        //
+        // `_wcstod_l` is NOT `strtod_helper` with a wide cursor. The C wrote it out
+        // separately and it is DIFFERENT: it does not zero errno on entry. Transcribe the
+        // file you are replacing, not the one next to it — and grade it separately, which
+        // is the only reason we would ever find out.
+        check_fp("wcstod", &["ERANGE", "value", "reject"], |r| {
+            let s = gen_fp_w(r);
+            let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
+            let g = Effects::subject(|| wcstod(s.as_ptr(), &mut e1).to_bits() as i64);
+            let w = Effects::reference(|| ref_wcstod(s.as_ptr(), &mut e2).to_bits() as i64);
+            let ctx = format!("{:?}", String::from_utf16_lossy(&s[..s.len() - 1]));
+            // endptr displacement is in WCHARS on this side
+            let (o1, o2) = (
+                if e1.is_null() { -1 } else { (e1 as usize as i64 - s.as_ptr() as usize as i64) / 2 },
+                if e2.is_null() { -1 } else { (e2 as usize as i64 - s.as_ptr() as usize as i64) / 2 },
+            );
+            (
+                Fp { bits: g.ret as u64, end: o1, errno: g.errno, pmt: g.pmt, ret: 0 },
+                Fp { bits: w.ret as u64, end: o2, errno: w.errno, pmt: w.pmt, ret: 0 },
+                ctx,
+            )
+        });
+
+        check_fp("_wcstod_l", &["ERANGE", "value", "reject"], |r| {
+            let s = gen_fp_w(r);
+            let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
+            let n = core::ptr::null_mut();
+            let g = Effects::subject(|| _wcstod_l(s.as_ptr(), &mut e1, n).to_bits() as i64);
+            let w = Effects::reference(|| ref__wcstod_l(s.as_ptr(), &mut e2, n).to_bits() as i64);
+            let ctx = format!("{:?}", String::from_utf16_lossy(&s[..s.len() - 1]));
+            let (o1, o2) = (
+                if e1.is_null() { -1 } else { (e1 as usize as i64 - s.as_ptr() as usize as i64) / 2 },
+                if e2.is_null() { -1 } else { (e2 as usize as i64 - s.as_ptr() as usize as i64) / 2 },
+            );
+            (
+                Fp { bits: g.ret as u64, end: o1, errno: g.errno, pmt: g.pmt, ret: 0 },
+                Fp { bits: w.ret as u64, end: o2, errno: w.errno, pmt: w.pmt, ret: 0 },
+                ctx,
+            )
+        });
+
+        check_fp("_wtof", &["ERANGE", "value"], |r| {
+            let s = gen_fp_w(r);
+            let g = Effects::subject(|| _wtof(s.as_ptr()).to_bits() as i64);
+            let w = Effects::reference(|| ref__wtof(s.as_ptr()).to_bits() as i64);
+            let ctx = format!("{:?}", String::from_utf16_lossy(&s[..s.len() - 1]));
+            (
+                Fp { bits: g.ret as u64, end: 0, errno: g.errno, pmt: g.pmt, ret: 0 },
+                Fp { bits: w.ret as u64, end: 0, errno: w.errno, pmt: w.pmt, ret: 0 },
+                ctx,
+            )
+        });
+
+        check_fp("_wtof_l", &["ERANGE", "value"], |r| {
+            let s = gen_fp_w(r);
+            let n = core::ptr::null_mut();
+            let g = Effects::subject(|| _wtof_l(s.as_ptr(), n).to_bits() as i64);
+            let w = Effects::reference(|| ref__wtof_l(s.as_ptr(), n).to_bits() as i64);
+            let ctx = format!("{:?}", String::from_utf16_lossy(&s[..s.len() - 1]));
+            (
+                Fp { bits: g.ret as u64, end: 0, errno: g.errno, pmt: g.pmt, ret: 0 },
+                Fp { bits: w.ret as u64, end: 0, errno: w.errno, pmt: w.pmt, ret: 0 },
+                ctx,
+            )
+        });
+
+        // ── the 80-bit family ─────────────────────────────────────────────────
+        //
+        // The out-param is a **10-byte** MSVCRT__LDOUBLE, while the parser computes into a
+        // 12-byte WINE_BROKEN_LDOUBLE and copies only 10 out. ReactOS's own comment on
+        // that struct is "The wine version is wrong and causes buffer overruns in the
+        // test!", so this row hands BOTH sides a 16-byte buffer pre-filled with a sentinel
+        // and compares ALL 16 — an overrun of even one byte past the tenth is a DIVERGE,
+        // not a silent corruption of whatever the caller kept next to it.
+        {
+            let mut r = Rng(0x2545F4914F6CDD1D);
+            let mut diverged: Option<String> = None;
+            let (mut saw_ok, mut saw_err) = (0u32, 0u32);
+            for _ in 0..20_000 {
+                let mut s = gen_fp(&mut r);
+                let (mut b1, mut b2) = ([0xAAu8; 16], [0xAAu8; 16]);
+                let g = Effects::subject(|| _atoldbl(b1.as_mut_ptr(), s.as_mut_ptr()) as i64);
+                let w = Effects::reference(|| ref__atoldbl(b2.as_mut_ptr(), s.as_mut_ptr()) as i64);
+                if w.ret == 0 { saw_ok += 1; } else { saw_err += 1; }
+                if b1 != b2 || g != w {
+                    diverged = Some(format!(
+                        "[{:?}]\n        rust  = {b1:02x?} ret={} errno={} pmt={}\n        msvcrt= {b2:02x?} ret={} errno={} pmt={}",
+                        String::from_utf8_lossy(&s[..s.len() - 1]),
+                        g.ret, g.errno, g.pmt, w.ret, w.errno, w.pmt));
+                    break;
+                }
+            }
+            match diverged {
+                Some(d) => record("_atoldbl", V::Diverge, d),
+                None if saw_ok == 0 || saw_err == 0 => record(
+                    "_atoldbl", V::Diverge,
+                    format!("MATCHED, but only saw ok={saw_ok} err={saw_err} — one arm was never exercised (§9.60)")),
+                None => record("_atoldbl", V::Match,
+                    format!("16-byte buffer compared (10 written + 6 sentinel: overrun-proof); ok x{saw_ok}, err x{saw_err}")),
+            }
+        }
+
+        check_fp("__STRINGTOLD_L", &["value", "ret", "reject"], |r| {
+            let mut s = gen_fp(r);
+            let n = core::ptr::null_mut();
+            let (mut b1, mut b2) = ([0xAAu8; 16], [0xAAu8; 16]);
+            let (mut e1, mut e2) = (core::ptr::null_mut(), core::ptr::null_mut());
+            let g = Effects::subject(|| {
+                __STRINGTOLD_L(b1.as_mut_ptr(), &mut e1, s.as_mut_ptr(), 0, n) as i64
+            });
+            let w = Effects::reference(|| {
+                ref___STRINGTOLD_L(b2.as_mut_ptr(), &mut e2, s.as_mut_ptr(), 0, n) as i64
+            });
+            let ctx = format!(
+                "{:?} bytes rust={b1:02x?} msvcrt={b2:02x?}",
+                String::from_utf8_lossy(&s[..s.len() - 1])
+            );
+            // Fold the 16-byte out-param into the `bits` column so one comparison covers
+            // the value, the return code, the endptr AND the overrun sentinel.
+            let h = |b: &[u8; 16]| -> u64 {
+                let mut h = 0xcbf29ce484222325u64;
+                for &x in b {
+                    h ^= x as u64;
+                    h = h.wrapping_mul(0x100000001b3);
+                }
+                h
+            };
+            (
+                Fp { bits: h(&b1), end: eoff!(e1, s), errno: g.errno, pmt: g.pmt, ret: g.ret as i32 },
+                Fp { bits: h(&b2), end: eoff!(e2, s), errno: w.errno, pmt: w.pmt, ret: w.ret as i32 },
+                ctx,
+            )
+        });
+    }
 }
