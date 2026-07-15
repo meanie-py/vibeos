@@ -993,6 +993,22 @@ translation (§9.53 dropped-side-effect class). A clip-bounds probe
 (`cplx`/`rclBounds` in M13-BLT v2) is the confirm; then diff windc.rs's DCE
 reuse path against windc.c.
 
+**CLOSED 2026-07-15 — ROOT CAUSE FOUND + FIXED (commit 6213b784ad7; field
+manual §9.73).** The clip probe confirmed the stale-clip mechanism but moved
+the blame one stage later: the DCE/vis/Rao pipeline was updating CORRECTLY
+(as the parked probes had said) — what never refreshed was **`dc.co`, the
+clip object blits actually consume**. `DC_vPrepareDCsForBlit` (dclife.rs)
+translated `fs & DC_DIRTY_RAO` as `fs & 0x04` — which is `DC_CANCELED`;
+`DC_DIRTY_RAO` is `0x10` — so `CLIPPING_UpdateGCRegion` (the only co rebuild)
+never ran on the blit path, and a cached DC kept the recycled DCE's previous
+region forever. One wrong nibble = the entire historic intermittency (render
+depended on whether an unrelated correctly-checking path touched the DC
+first). Post-fix boot: clip snaps to doom's real client `(4,23,636,396)` at
+frame 0, dest-strip checksums flip to the frame content, and the screendump
+shows **full DOOM gameplay** on the arm64 desktop. All six guests 0x600D on
+the same media. The M13-BLT/clip probe (dibobj.rs) is temporary and parked
+uncommitted; determinism soak + M14 input drive are the follow-ups.
+
 ## M15a: callback OUT-payload copy-back (2026-07-13) — GETMINMAXINFO + NCCALCSIZE landed
 
 Window messages that pass their `lParam` struct as an OUT parameter (the window
