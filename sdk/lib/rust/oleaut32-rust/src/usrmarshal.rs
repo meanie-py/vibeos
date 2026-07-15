@@ -2909,7 +2909,7 @@ pub unsafe extern "system" fn IClassFactory2_CreateInstanceLic_Proxy(
     pUnkReserved: *mut IUnknown,
     riid: REFIID,
     bstrKey: BSTR,
-    ppvObj: PVOID,
+    ppvObj: *mut PVOID,
 ) -> HRESULT {
 
     TRACE!(
@@ -2919,7 +2919,7 @@ pub unsafe extern "system" fn IClassFactory2_CreateInstanceLic_Proxy(
         ppvObj,
     );
 
-    *(ppvObj as *mut PVOID) = core::ptr::null_mut();
+    *ppvObj = core::ptr::null_mut();
 
     if !pUnkOuter.is_null() {
         ERR!(b"aggregation is not allowed on remote objects\n\0".as_ptr());

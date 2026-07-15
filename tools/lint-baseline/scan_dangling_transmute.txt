@@ -1,0 +1,2 @@
+# scan_dangling_transmute baseline — EMPTY: the dangling-transmute class is
+# fully fixed (2026-07-12). Any finding is a NEW regression; fix it, do not add here.

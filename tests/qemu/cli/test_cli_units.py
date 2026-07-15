@@ -104,6 +104,18 @@ def staleness_repo(tmp_path: Path, monkeypatch) -> Path:
     (r / "sdk" / "lib" / "rust" / "x.rs").write_text("fn k(){}\n")
     (r / "docs" / "readme.md").write_text("hi\n")
     (r / "build-i386" / "livecd.iso").write_bytes(b"ISO-CONTENT-v1")
+    # Model the real repo: build-*/ is gitignored. Without this the fixture's own STAMP
+    # (written into build-i386/ after the commit) shows up as an untracked file and moves
+    # every fingerprint between make_stamp and check_staleness — which is why these tests
+    # never matched tier 1 and reached the tier-2 path at all. They passed only because the
+    # oracle down there was blind and called everything "clean-diff (non-build change)".
+    (r / ".gitignore").write_text("build-*/\n")
+    # Non-Rust build inputs. rust_src_hash is scoped to sdk/lib/rust, so these are the
+    # ones the deleted `ninja -n` oracle was supposed to cover and silently did not.
+    (r / "dll" / "win32" / "thing").mkdir(parents=True)
+    (r / "dll" / "win32" / "thing" / "thing.c").write_text("int f(void){return 1;}\n")
+    (r / "dll" / "win32" / "thing" / "CMakeLists.txt").write_text("add_library(thing thing.c)\n")
+    (r / "dll" / "win32" / "thing" / "thing.spec").write_text("@ stdcall f()\n")
     _git(r, "init", "-q")
     _git(r, "config", "user.email", "t@t")
     _git(r, "config", "user.name", "t")
@@ -2403,3 +2415,155 @@ def test_conformance_rostests_preflight(tmp_path):
     assert conformance_mod._rostests_enabled(tmp_path, "amd64") is False
     (bd / "CMakeCache.txt").write_text("FOO:BOOL=ON\n")
     assert conformance_mod._rostests_enabled(tmp_path, "amd64") is False
+
+
+# --- cohab staleness: the mtime chain (.rs -> cargo .a -> copied .a -> binary) -----------
+#
+# These pin BOTH directions, because the bug they encode was a checker that looked healthy:
+# the obvious rule (binary must be newer than the newest .rs) false-RED the arm64 gate on a
+# codegen-neutral edit, and the obvious replacement (`ninja -n`) was structurally blind and
+# passed the benign case while missing a real stale cohab. Field manual §9.81.
+
+
+@pytest.fixture
+def cohab_repo(tmp_path: Path, monkeypatch) -> Path:
+    """A fake arm64 tree with the full staticlib-cohab chain for one crate."""
+    r = tmp_path / "repo"
+    crate = r / "sdk" / "lib" / "rust" / "widget-rust" / "src"
+    crate.mkdir(parents=True)
+    (crate.parent / "Cargo.toml").write_text("[package]\nname='widget-rust'\n")
+    (crate / "lib.rs").write_text("// v1\n")
+    mod = r / "build-arm64" / "drivers" / "widget"
+    cargo_out = mod / "rust-widget-target" / "aarch64-pc-windows-gnullvm" / "release"
+    cargo_out.mkdir(parents=True)
+    (r / "qemu").mkdir(parents=True)
+    (r / "qemu" / "mkramdisk.sh").write_text('RMC "$BUILD_DIR/drivers/widget/widget.sys" ::/w\n')
+    for p, t in (
+        (crate / "lib.rs", 1000),
+        (cargo_out / "libwidget_rust.a", 2000),
+        (mod / "libwidget_rust.a", 2000),
+        (mod / "widget.sys", 2000),
+    ):
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if not p.exists():
+            p.write_bytes(b"x")
+        os.utime(p, (t, t))
+    return r
+
+
+def _cohab(repo: Path) -> list[str]:
+    return [x for x in provenance.cohab_staleness_reasons(repo, "arm64") if "widget" in x]
+
+
+def test_cohab_clean_tree(cohab_repo: Path):
+    assert _cohab(cohab_repo) == []
+
+
+def test_cohab_codegen_neutral_edit_is_NOT_stale(cohab_repo: Path):
+    """THE false-RED. The .rs is newer than the binary, but cargo re-ran and emitted an
+    identical .a, so copy_if_different left the copy (and hence the link) alone. Nothing is
+    stale — the binary genuinely reflects the source."""
+    src = cohab_repo / "sdk/lib/rust/widget-rust/src/lib.rs"
+    os.utime(src, (3000, 3000))  # edited AFTER the binary was linked
+    cargo_a = next((cohab_repo / "build-arm64").rglob("rust-widget-target/**/libwidget_rust.a"))
+    os.utime(cargo_a, (4000, 4000))  # cargo re-ran...
+    # ...and the copy + binary were NOT touched, because the bytes did not change.
+    assert _cohab(cohab_repo) == []
+
+
+def test_cohab_crate_not_rebuilt_is_stale(cohab_repo: Path):
+    """Rule A: the .rs changed and cargo never ran => the crate is not in this arch's DAG."""
+    os.utime(cohab_repo / "sdk/lib/rust/widget-rust/src/lib.rs", (5000, 5000))
+    r = _cohab(cohab_repo)
+    assert r and "cargo's own output" in r[0], r
+
+
+def test_cohab_binary_not_relinked_is_stale(cohab_repo: Path):
+    """Rule B: the staticlib really changed but the .sys was never relinked (the gdi32 class
+    that this whole check exists for)."""
+    mod = cohab_repo / "build-arm64" / "drivers" / "widget"
+    os.utime(mod / "libwidget_rust.a", (6000, 6000))  # copy updated => bytes DID change
+    r = _cohab(cohab_repo)
+    assert r and "never relinked" in r[0], r
+
+
+def test_cohab_cargo_output_missing_is_stale(cohab_repo: Path):
+    """The crate has a staged staticlib but was never compiled for this arch."""
+    next((cohab_repo / "build-arm64").rglob("rust-widget-target/**/libwidget_rust.a")).unlink()
+    os.utime(cohab_repo / "sdk/lib/rust/widget-rust/src/lib.rs", (5000, 5000))
+    r = _cohab(cohab_repo)
+    assert r and "missing" in r[0], r
+
+
+# --- tier-2: non-Rust build inputs (the deleted `ninja -n` oracle's job) -----------------
+#
+# The regression these pin is a FALSE GREEN, not a crash: `_ninja_has_work` returned False
+# for every target on every arch (CONFIGURE_DEPENDS globs make -n stop at the regen edge),
+# and rust_src_hash only covers sdk/lib/rust — so editing a tracked, compiled .c and running
+# smoke classified it as "clean-diff (non-build change)", called the tree FRESH, and booted
+# the stale iso. Field manual §9.81b.
+
+
+def test_staleness_c_source_change_is_stale(staleness_repo: Path):
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (staleness_repo / "dll" / "win32" / "thing" / "thing.c").write_text("int f(void){return 2;}\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale and not v.fresh, v.reasons
+    assert any("build source changed" in r for r in v.reasons), v.reasons
+
+
+def test_staleness_cmake_change_is_stale(staleness_repo: Path):
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (staleness_repo / "dll" / "win32" / "thing" / "CMakeLists.txt").write_text("# retarget\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale, v.reasons
+
+
+def test_staleness_spec_change_is_stale(staleness_repo: Path):
+    """A .spec is neither Rust nor C, and it changes the DLL's export table."""
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (staleness_repo / "dll" / "win32" / "thing" / "thing.spec").write_text("@ stdcall g()\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale, v.reasons
+
+
+def test_staleness_untracked_c_file_is_stale(staleness_repo: Path):
+    """A brand-new, never-committed source still changes the build."""
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (staleness_repo / "dll" / "win32" / "thing" / "extra.c").write_text("int g(void){return 0;}\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale, v.reasons
+
+
+def test_staleness_old_stamp_without_build_hash_is_loud_not_clean(staleness_repo: Path):
+    """A stamp written before build_src_hash existed cannot answer the question. It must
+    say so, not read as clean — an absent field defaulting to "" that compares equal to
+    nothing is the same silent-guess shape this whole fix is about."""
+    s = provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1)
+    s.build_src_hash = ""  # simulate a pre-existing stamp
+    s.write(staleness_repo / "build-i386")
+    (staleness_repo / "docs" / "readme.md").write_text("force tier 2\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale, v.reasons
+    assert any("predates build-source fingerprinting" in r for r in v.reasons), v.reasons
+
+
+def test_staleness_doc_change_still_clean_diff(staleness_repo: Path):
+    """The must-NOT-fire half: docs are excluded, so a docs-only delta stays FRESH. The
+    gate's docs-only fast path depends on this, and an over-broad build-relevant set would
+    quietly turn every doc edit into a full rebuild."""
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    (staleness_repo / "docs" / "readme.md").write_text("changed doc\n")
+    (staleness_repo / "notes.md").write_text("top-level markdown\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.fresh and not v.stale, v.reasons

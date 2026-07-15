@@ -32,6 +32,10 @@ _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),
     (".", ".", "tests/qemu/cli/test_cli_units.py"),
     (".", ".", "tools/wow64gen/test_wow64gen.py"),
+    # An oracle needs an oracle. verify_c_signatures reports its own type-resolution gaps as
+    # defects in the code when it is wrong, and reports "verified" over types it never
+    # resolved when it is blind — neither shows up in review or in its own output.
+    (".", ".", "tools/test_verify_c_signatures.py"),
 ]
 
 

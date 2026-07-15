@@ -61,7 +61,7 @@ Tree inventory (2026-07-03): **~2,422 `.rs` files · 228 crates** under `sdk/lib
 
 ### CRT (msvcrt) detail — the assemble-from-`cnt-rust` track
 
-**240 Rust-defined `msvcrt.dll` exports on all three arches** as of 2026-07-14 (waves 1–13: 209 hand-flipped wrappers; wave 14m: +45 libm exports assembled from cnt-rust's `cabi/math.rs` via the `cabi-math` feature — engine grading lives in cnt-difftest; wave 14a decided printf is a PORT, see the lane plan + field manual §9.80)
+**240 Rust-defined `msvcrt.dll` exports on all three arches** as of 2026-07-14 (waves 1–13: 209 hand-flipped wrappers; wave 14m: +45 libm exports assembled from cnt-rust's `cabi/math.rs` via the `cabi-math` feature — engine grading lives in cnt-difftest; wave 14a decided printf is a PORT, see the lane plan + field manual §9.82)
 (waves 1–13). Verified by parsing the DLL's export table: every flip lands in the Rust cluster,
 every deliberate refusal is still C (`memmove`, `strtok`, `_ecvt`/`_fcvt`/`_gcvt` — the
 printf-backed converters — at the high RVAs). Wave 13 added the **bignum float parser** (`strtod`

@@ -563,6 +563,13 @@ The Rust port (`ex-rust/src/uuid.rs`) replaced the union with a bare `GuidInit: 
 
 The specific ways the LLM C→Rust output is wrong — each entry is a distinct defect class, how it manifests at compile/link/runtime, and the cheapest oracle to catch it before it ships.
 
+### Dangling pointer to a by-value `transmute` temporary (the WCHAR[] → storageless-temporary trap, 2026-07-12)
+**Symptom:** intermittent corruption / garbage strings on a path that reads a stored `*const u16`. Confirmed live: `disk-rust/pnp.rs` — the dangling pointer was the **printf FORMAT STRING** passed to `RtlStringCchPrintfW` when creating a disk's `\Device\Harddisk%d\Partition0` / `\DosDevices\PhysicalDrive%d` symbolic links; `lsasrv-rust/authpackage.rs` — a dangling `Name` field in an `RTL_QUERY_REGISTRY_TABLE` read later by `RtlQueryRegistryValues`.
+**Cause:** C's `WCHAR foo[] = L"..."` is a stack array with real storage, so `&foo[0]` stays valid for the array's whole scope. The mechanical translation becomes `core::mem::transmute::<[u8; N], [u16; M]>(bytes).as_ptr()` — but the transmute produces a **by-value temporary** `[u16; M]` with no binding; `.as_ptr()` borrows it; the temporary is dropped at the end of the *statement*; the stored pointer then dangles. Two escaping shapes: `let p = transmute(...).as_ptr()` (let-bound) and `Field: transmute(...).as_ptr()` (struct field that outlives the initializer).
+**Why it hid:** the `dangling_pointers_from_temporaries` warning fires precisely on it — but nobody surfaced Rust warnings (105/255 crates carry crate-root `#![allow(...)]`, and the rest's warnings were never read until the 2026-07-12 survey). On amd64/arm64 the freed stack slot often still holds the right bytes (nothing reused it yet), so it "works" until timing changes — classic Heisenbug.
+**NOT a bug (don't flag):** the *same transmute as a direct call argument* — `func(transmute(x).as_ptr())` — is sound (the temporary lives to the end of the call statement, valid during the call). And the *reference* form `transmute::<&[u8; N], &[u16; M]>(b"...")` is sound: it yields a reference into the `b"..."` **'static** literal, so `.as_ptr()` is 'static. Only the by-VALUE array escaping form dangles.
+**Fix:** bind the transmuted array to a scoped local, then take `.as_ptr()` of the *binding*: `let foo_wide: [u16; M] = transmute::<[u8; N], [u16; M]>(bytes); let p = foo_wide.as_ptr();`.
+**Oracle:** rustc's own `dangling_pointers_from_temporaries` lint (surface warnings and it's exact), or the grep-time gate `tools/scan_dangling_transmute.py --lint` (wired into `vibeos-cli check`, empty baseline — the class is fully fixed, any hit is a NEW regression). Suppress a verified FP with `// nolint: dangling-transmute (reason)`.
 ### C post-inc/dec value expression rewritten with wrong read order (`x = y--` reads post value)
 **Symptom:** a count/index handed onward is off by one, and everything downstream of a threshold check silently misbehaves. Flagship instance (conformance catch #2, 2026-07-10): ob-rust `ObpDecrementHandleCount` translated C `ProcessHandleCount = HandleCount--` as decrement-then-read, so the CloseProcedure got the POST-decrement count — 0 instead of 1 on the last handle — and `IopCloseFile`'s `if (HandleCount != 1) return;` bailed, meaning **IRP_MJ_CLEANUP was never delivered to any driver in the system's history** (per-handle driver state leaked; second kmtest process got STATUS_ACCESS_DENIED on a stale MDL registration). Compiles clean, links clean, boots green — nothing in the boot path re-opens a MaintainHandleCount device twice.
 **Root cause class:** C's value-bearing `x++`/`x--`/compound assignments inside larger expressions force the translator to split into statements, and it sometimes puts the read on the wrong side of the mutation. Post-forms yield the OLD value; pre-forms the NEW.
@@ -7162,8 +7169,177 @@ the block was never real.
 - **A feature-named compiler error is a codegen constraint, not a law of nature.** `extern "C" -> f64`
   through x87 is the counter-example. Check for in-tree prior art before declaring a target unsupported.
 
+### 9.80 (2026-07-14) An oracle that resolves a type wrongly reports *its own ignorance* as a defect — and the ambiguity check cannot save you when the parser is blind to the true declaration
 
-### 9.80 (2026-07-14) The printf probe: a third-party C-vs-C differential that found a KERNEL HANG before writing any new Rust — and two ways a compiled-but-never-called oracle lies
+**Symptom.** `verify_c_signatures` (§9.78's sibling) was landed with 14 baselined findings and a
+note that `lsasrv LsapRegCreateKey` "looks genuinely real". On triage, **all 14 were the checker's
+own bugs, and the one real defect in the tree was one it could not see.**
+
+**Root causes (four, each a different flavour of the same mistake — a guess with no evidence):**
+1. **`.idl` outvoted `.h`.** The harvest read `sdk/include/psdk/*.idl` as C. `cordebug.idl` says
+   `typedef SIZE_T LPSTARTUPINFOW;` — an *RPC wire placeholder*, not the C type — so the correct
+   advapi32 translation was reported as a bug. **An IDL typedef states a marshalling
+   representation; the C compiler that built the .c never saw the .idl.**
+2. **The true declaration was invisible, so the false one looked unanimous.** The real
+   `} STARTUPINFOW, *LPSTARTUPINFOW;` is a *braced* typedef, excluded by the regex. The AMBIGUOUS
+   machinery (which exists exactly to refuse guessing) fires only on *conflicting* declarations —
+   **a parser blind to the true source sees no conflict and reports a confident wrong answer.**
+   *A checker that can only see one source cannot tell that it is the wrong one.*
+3. **A naming convention applied blind.** `^(?:LP|P)[A-Z]` read **`POINT` as a pointer to `OINT`** —
+   and likewise PROCESS_INFORMATION, PALETTEENTRY, PIXELFORMATDESCRIPTOR, POLYTEXTW. Only trust the
+   P/LP convention when the *remainder names a type you actually harvested*.
+4. **Multi-word base types.** `typedef _W64 unsigned long ULONG_PTR` was parsed as base=`_W64`,
+   harvesting **`unsigned`** as a typedef aliased to `_W64` — poisoning the whole integer tower
+   (SIZE_T→ULONG_PTR→unsigned→_W64→unresolvable). Also `typedef void* PVOID` (star glued to the
+   base) vs `typedef void *PVOID`: **C has no star on a base type; every star binds to a declarator.**
+
+**The false-GREEN half, which is worse.** An unresolvable name silently returned depth 0. An unknown
+C type and an unknown Rust type then both land on 0, compare **equal**, and the pair is reported as
+*verified* having been checked not at all. Fixed by raising `Unknown` and counting it: unresolvable
+is a **reported blind spot**, never a verdict. (`ole32` skips 308 types — now visible, previously
+laundered into a green.)
+
+**What the fixed checker found immediately:** `ws2_32 WPUCompleteOverlappedRequest(.., DWORD dwError,
+DWORD cbTransferred, ..)` translated with **`DWORD_PTR`** — contradicted by the C, by `ws2spi.h`, and
+by the `.spec` (`long`). 4 bytes vs 8 on amd64, on an exported SPI entry point, in the crate that had
+just been landed "0 findings".
+
+**Depth is not enough — width matters too.** `DWORD_PTR` is *not a pointer*; it is an integer that is
+4 bytes on i386 and 8 on amd64. A depth comparison is structurally blind to `DWORD`→`DWORD_PTR`,
+which the tool's own docstring **advertised catching**. Width cannot be compared numerically (the
+headers carry both `#ifdef` branches and we do not preprocess) but it does not need to be: what makes
+it a bug is that one side is **arch-variable** and the other **fixed**, which is decidable from the
+name (`_PTR_SIZED`).
+
+**Rule / recipe.** An oracle needs an oracle. **Mutation-test every checker in both directions** —
+a "must catch" table of the bugs it exists for (catches false NEGATIVES / a checker gone blind) and a
+"must not fire" table of correct code (catches false POSITIVES). Only the first table's absence lets a
+tool *look* healthy while detecting nothing. Both live in `tools/test_verify_c_signatures.py`, wired
+into `vibeos-cli check-tooling`. And **always print coverage next to findings**: "0 findings" from an
+oracle that skipped everything is otherwise indistinguishable from one that checked everything.
+
+**Triage, don't bless.** The 9 lines left in `tools/lint-baseline/verify_c_signatures.txt` were each
+read against their C; the verdicts are in the tool's docstring. Two of them are **the C being wrong**:
+`LsapRegCreateKey`/`LsapRegOpenKey` declare `OUT HANDLE KeyHandle` while every caller passes `&handle`
+and `ZwCreateKey` takes `PHANDLE` — the C only compiles because `void*` implicitly converts to
+`void**`. **Do not "fix" the Rust to match under-typed C.**
+
+### 9.81 (2026-07-14, BOTH FIXED) The two staleness oracles: an mtime rule that false-REDs on a codegen-neutral edit, and a `ninja -n` oracle that is blind on every arch
+
+Both live in `tests/qemu/cli/provenance.py` and both guard the same thing — "did the staged
+binary come from the current sources?" — the class that false-greened arm64 six times
+(fastfat→ramdisk→pl011→gdi32→user32→advapi32, §9.6c.1). Found while gating a one-word ws2_32
+signature fix; **neither was found by the gate reporting a bug, both were found by the gate
+reporting the WRONG THING and being chased down.**
+
+#### (a) `cohab_staleness_reasons` false-REDs on a no-op-codegen edit — real, narrow, still there
+
+**Symptom:** `artifact-check(boot media missing or stale)` → `ws2_32.dll: stale — ws2_32-rust
+has .rs newer than the built binary (cohab flip not rebuilt; ...)`, on every arm64 build, while
+the build was in fact perfectly up to date.
+
+**Mechanism:** the rule is `artifact.mtime >= newest .rs mtime` — a *proxy*. The ws2_32 fix
+(`WPUCompleteOverlappedRequest`: `DWORD_PTR`→`DWORD` on an unimplemented stub whose params are
+unused) is **codegen-neutral on arm64**: cargo rebuilt, emitted a **byte-identical** `.a`,
+cmake's `copy_if_different` correctly did NOT touch the staged copy, so nothing relinked (there
+was nothing to relink) and `ws2_32.dll` stayed older than the `.rs` **permanently** — until an
+unrelated ws2_32-rust change forced a relink. Any semantically-null-but-textual edit does this.
+
+**A false RED is not the safe direction.** It is the mirror of the false green the check exists
+to catch, and it teaches people to `touch` binaries or ignore artifact-check — which is how the
+false greens got in.
+
+**FIXED** by splitting the chain at the copy, which is where the mtime semantics change:
+```
+.rs --cargo--> <t>/release/lib<c>.a --copy_if_different--> lib<c>.a --link--> artifact
+               [A: touched on EVERY cargo run]              [B: touched only on CHANGE]
+```
+  * **A.** cargo's own output >= newest `.rs`  => the crate really was rebuilt (catches the
+    original never-built-for-this-arch bug: gdi32/user32/advapi32…).
+  * **B.** artifact >= the COPIED staticlib   => the link consumed the current `.a` (catches
+    the other half: crate rebuilt+changed, but the .dll wasn't in the staged target set).
+Both compare files whose mtime moves exactly when it should, so an identical rebuild is silent
+while a real one is still caught. Crates with NO staticlib in their chain are cargo-*linked*
+modules (ntoskrnl-cargo/win32k produce the binary directly) — "staticlib absent" means
+"different build shape", not "never built"; reading it as the latter reported ntoskrnl.exe and
+win32k.sys as never-compiled on a green tree. They keep the old rule. Pinned by 5 tests in
+`test_cli_units.py` (`test_cohab_*`), including the codegen-neutral case as an explicit
+must-NOT-fire.
+
+**Blind alley — do NOT "fix" it with `ninja -n`.** That swaps a false RED for a false GREEN:
+
+#### (b) `_ninja_has_work` returned False even when a rebuild WAS pending — on ALL arches, so **editing any C file and running smoke booted the stale ISO and called it a pass**. FIXED.
+
+**Verified:** with a genuine pending rebuild (proved by running real `ninja`, which compiled
+ws2_32-rust and relinked), `_ninja_has_work` returned **False** for `dll/win32/ws2_32/ws2_32.dll`
+AND for `ntoskrnl` (arm64) AND for **`livecd`** (amd64 — i.e. the x86 tier-1 target).
+
+**Mechanism (structural, not a parsing bug):**
+```
+$ ninja -n dll/win32/ws2_32/ws2_32.dll
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...          <- and NOTHING else, ever
+```
+CMake's `CONFIGURE_DEPENDS` globs install a glob-verification edge that is dirty **by design on
+every build** (that is how re-globbing works). Under `-n` no command executes, so ninja must
+assume that edge changes the cmake stamp → the regen edge is dirty → and ninja **stops planning
+there**, because regenerating `build.ninja` invalidates the rest of the graph. It never
+evaluates the targets you asked about. `_ninja_has_work` filters `Re-running CMake` /
+`Re-checking globbed directories` out as "not real work" and returns False = clean.
+
+Running `cmake .` or `ninja build.ninja` for real **first does not help** — the glob edge is
+always-dirty by construction, so the next `-n` stops in exactly the same place. The docstring's
+premise ("cmake re-runs ... so the dirty set is evaluated against the updated graph") is simply
+not what `-n` does. **`ninja -n` cannot be a staleness oracle in a CONFIGURE_DEPENDS project.**
+
+**Consequence — this is the important part, and it is much worse than "a dead net".** Look at
+where it sat in `check_staleness`. Tier 2 only runs when the git fingerprint moved, and it then
+decides *whether the change was build-relevant*. `rust_src_hash` is scoped to `sdk/lib/rust`.
+So the `ninja -n` call was **the only thing covering every non-Rust build input** — C, asm,
+cmake, `.spec`, `.rc`, mkramdisk. With it blind, the chain ran:
+
+    edit a tracked, compiled .c  ->  git fingerprint moved  ->  tier 2
+      rust_src_hash unchanged (it is C)      -> no reason
+      _ninja_has_work                        -> False (blind)
+      boot media sha unchanged (not rebuilt) -> no reason
+    -> no reasons at all -> "clean-diff (non-build change)" -> FRESH -> smoke boots the STALE iso
+
+Measured on the real repo, not reasoned about: editing `dll/3rdparty/dxtn/txc_compress_dxtn.c`
+gave `fresh=True, reasons=['clean-diff (non-build change)']`. A C source change was classified
+exactly like a doc edit. The North Star's "smoke refuses to boot stale media" was defeated for
+**every C-side change in the tree**, and had been for as long as the oracle existed.
+
+**FIXED** with `build_src_hash()` — a git content fingerprint of everything that can change the
+boot media, stamped at build time and compared in tier 2. Content is the only thing that can
+answer this: an mtime cannot tell "not rebuilt" from "rebuilt to identical bytes" (that is (a)),
+and `-n` cannot see past the regen edge. Two design points worth keeping:
+  * **It is an EXCLUDE-list (`docs/`, `*.md`, `.github`, `.claude`), never an include-list.**
+    An unknown path must land on the build-relevant side: over-including costs a no-op rebuild,
+    under-including boots stale media and reports a pass. `tests/` and `tools/` are deliberately
+    build-relevant — `archcfg.py` picks the arm64 staged set, `qemu/mkramdisk.sh` assembles the
+    ramdisk, and `tools/libschily/*.c` is compiled.
+  * **An absent stamp field is LOUD, not clean.** `build_src_hash` defaults to `""` so old
+    stamps still load; `""` reports "stamp predates build-source fingerprinting — run `build`
+    to re-stamp" rather than comparing equal to nothing and reading as fresh. A defaulted field
+    that silently means "verified" is the same shape as everything else in §9.80/§9.81.
+
+`_ninja_has_work` was **deleted**, not left unused, with a tombstone comment: a plausible helper
+named "has work" is exactly what the next person reaches for.
+
+**The fixture was lying too.** `staleness_repo` had no `.gitignore`, so its own stamp file (in
+`build-i386/`) showed up as untracked and moved every fingerprint — which meant those tests never
+matched tier 1 and always fell through to tier 2, where the blind oracle waved them through.
+`test_staleness_fresh_cold` was **passing because of the bug**. A fixture that does not model the
+real repo turns its tests into a green that means nothing.
+
+**Rule.** When a gate check fires, find out whether it is *right* before you satisfy it — and
+when you replace an oracle, test the replacement on a KNOWN-BAD input, not just a known-good
+one. The `ninja -n` "fix" passed the benign case perfectly and silently failed to catch a real
+stale cohab injected on purpose; only the deliberate known-bad probe exposed it. Same lesson as
+§9.80's mutation tables, one layer down.
+
+
+### 9.82 (2026-07-14) The printf probe: a third-party C-vs-C differential that found a KERNEL HANG before writing any new Rust — and two ways a compiled-but-never-called oracle lies
 
 **Context.** Wave 14 of the msvcrt lane needed an assemble-vs-port decision for the printf family:
 is cnt-rust's already-Rust `streamout` engine close enough to msvcrt's `pf_printf_a` to sit behind

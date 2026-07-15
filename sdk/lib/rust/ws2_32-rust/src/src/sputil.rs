@@ -109,8 +109,8 @@ pub static mut Ipv6Guid: GUID = _GUID {
 pub unsafe extern "system" fn WPUCompleteOverlappedRequest(
     s: SOCKET,
     lpOverlapped: LPWSAOVERLAPPED,
-    dwError: DWORD_PTR,
-    cbTransferred: DWORD_PTR,
+    dwError: DWORD,
+    cbTransferred: DWORD,
     lpErrno: LPINT,
 ) -> i32 {
     DbgPrint(
