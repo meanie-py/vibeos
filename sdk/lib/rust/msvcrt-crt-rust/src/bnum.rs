@@ -11,8 +11,6 @@
 //! the only way to guarantee that is one implementation. The C achieves it the same way:
 //! `bnum.h` is `#include`d by both `string.c` (parse) and `printf.h` (format).
 
-use crate::sys as _; // keep crate-path parity; unused here but documents the shared home
-
 pub(crate) const LIMB_DIGITS: i32 = 9;
 pub(crate) const LIMB_MAX: u32 = 1_000_000_000; // 10^9
 

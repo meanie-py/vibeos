@@ -14,6 +14,12 @@
 // Force the rlib's objects (the #[no_mangle] CRT bodies) into the archive.
 extern crate msvcrt_crt_rust;
 
+// The math wave: cnt-rust built with ONLY `cabi-math` (see Cargo.toml) —
+// forces cabi/math.rs's 66 libm exports (sin/cos/exp/pow/…) into the
+// archive, where whole-archive + lld first-match flips msvcrt.dll's math
+// exports off crtmath's C/asm onto the kernel-proven Rust engine.
+extern crate cnt_rust;
+
 // The dup vs any other Rust staticlib in the module is absorbed by
 // --allow-multiple-definition (mirrors crt-dllmain-rust).
 #[no_mangle]

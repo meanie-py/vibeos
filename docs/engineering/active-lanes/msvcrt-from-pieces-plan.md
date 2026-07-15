@@ -1067,3 +1067,43 @@ hard-fails the probe if the reference ever escapes to the host libc again.
 loop never terminates on Inf (`pow10(309)` saturates; `Inf <= Inf`). Guarded to return 308
 (`DBL_MAX_10_EXP`, = NaN's accidental value) in `fl` + every recipe C-twin; ±Inf/NaN rows now
 pinned in cnt-difftest (`diff_streamout_float`). Field manual §9.80 finding 0.
+
+## Wave 14m (2026-07-14) — the MATH DOOR. +45 exports flipped for the cost of ONE Cargo feature. msvcrt.dll's libm is the kernel's Rust engine now.
+
+The single highest-leverage flip in the lane so far, and it wrote almost no new code:
+
+**The discovery that made it cheap:** msvcrt.dll's math exports (`sin`/`cos`/`exp`/`pow`/…)
+bind DIRECTLY to `crtmath`'s plain-name engine symbols — Wine's `MSVCRT_*` wrapper functions
+in `math.c` are dead code (the spec maps no functions through them; its 48 `MSVCRT_` lines are
+all data externs). And `cnt-rust/cabi/math.rs` already defines those same plain names in Rust
+on all three arches: kernel-flipped, cnt-difftest-graded **against the very
+`sdk/lib/crt/math/*.c` sources crtmath compiles** (`USE_MSVCRT_PREFIX` is vestigial — appears
+nowhere in math/float sources; only the Bessel files touch errno, and they stay C). So the
+user-mode flip is the SAME substitution the kernel already shipped and gated.
+
+**Mechanism (the whole wave):** a new `cabi-math` cnt-rust feature — gen_cnt.py's mod.rs
+template now gates every cabi submodule on `cabi` except `math.rs` (compiled under either
+feature) — enabled from **msvcrt-crt-cargo** (the staticlib), NOT msvcrt-crt-rust (the rlib):
+the difftest links the rlib, and 66 `#[no_mangle]` libm names there would shadow the HOST libm
+under the reference TUs (oracle contamination — the probe's §9.80 lesson applied proactively).
+`extern crate cnt_rust` forces the objects into the archive; whole-archive + lld first-match
+does the rest. Verified in the built DLL by export-RVA clustering: `sin` 0x119A0 / `cos`
+0x10020 / `sqrt` 0x12390 sit beside known-Rust `strlen` 0xE410; unflipped `frexp`/`ldiv`/`sinf`
+sit in the C region 0x7A640+.
+
+**Count:** +45 exported functions (measured: `llvm-nm` of the Rust archive ∩ the DLL's COFF
+export table = **240 Rust-defined msvcrt.dll exports**, amd64). 21 of math.rs's 66 symbols
+aren't msvcrt exports (`exp2`/`round`/`scalbn`/`nextafter*`/`sincos`/`_dclass` family…) and
+ride along inert. Displaced per arch: i386's x87 asm (`sin_asm.s` etc.), amd64's
+`fabs/fmod/sqrt` .S, arm64's portable C — the identical displacement the kernel gate already
+validated.
+
+**Trap eaten + template-fixed:** cabi/mod.rs is `@generated` but had drifted (hand-added
+`mod strtod/wcs/search`) — the regen silently erased them and broke cnt-difftest. The three
+modules live in the gen_cnt.py template now; never hand-edit mod.rs.
+
+**Still C (the follow-up ledger for this family):** the f32 twins msvcrt exports that math.rs
+lacks (`sinf cosf expf logf log10f powf fmodf frexp` + `_copysign _scalb _fpclass _cabs`), the
+Bessel family (`j0 j1 jn y0 y1 yn` — errno/_handle_error semantics), the i386 `_CI*` compiler
+thunks + `__libm_sse2_*` register-convention entries, and the FP-environment block
+(`_control87/_statusfp/fe*` — stateful, shared with the C runtime init).

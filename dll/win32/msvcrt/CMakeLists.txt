@@ -220,6 +220,8 @@ file(GLOB_RECURSE MSVCRT_CRT_RUST_SOURCES CONFIGURE_DEPENDS
     ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-rust/src/*.rs
     ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-cargo/src/*.rs
     ${MSVCRT_RUST_WORKSPACE_DIR}/cnt-rust/src/core_rs/*.rs
+    # cabi/math.rs is IN the DLL since the math wave (cabi-math feature).
+    ${MSVCRT_RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/*.rs
 )
 add_custom_command(
     OUTPUT ${MSVCRT_CRT_RUST_LIB}
