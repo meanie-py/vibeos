@@ -594,7 +594,7 @@ def _integer_values(text: str) -> Counter[int]:
     return values
 
 
-def normalize_worker_body(rust: str) -> str:
+def normalize_worker_body(rust: str, expected_signature: str | None = None) -> str:
     """Normalize only syntax the deterministic shell32 substrate already owns."""
     names = "|".join(sorted(_CPP_COM_DEBUG_MACROS))
     rust = re.sub(r"^\s*```(?:rust)?\s*|\s*```\s*$", "", rust, flags=re.I)
@@ -621,6 +621,47 @@ def normalize_worker_body(rust: str) -> str:
     rust = re.sub(r"\bcrate::(?:types|shellcom)::", "", rust)
     # HRESULT is a C/Rust scalar alias, not a tuple struct constructor.
     rust = re.sub(r"\bHRESULT\s*\(\s*([A-Z][A-Z0-9_]*)\s*\)", r"\1", rust)
+    # A model may name a constant array bound with `let`, which parses but does
+    # not compile in a type-level array length. Promote only bindings whose RHS
+    # is provably integer/operator/cast syntax and which are actually consumed
+    # as an array bound. Runtime-derived bindings remain untouched.
+    constant_binding = re.compile(r"\blet\s+([A-Za-z_]\w*)\s*:\s*usize\s*=\s*([^;]+);")
+    for match in reversed(list(constant_binding.finditer(rust))):
+        name, expression = match.groups()
+        tail = rust[match.end() :]
+        lowercase_words = re.findall(r"\b[a-z_][A-Za-z0-9_]*\b", expression)
+        constant_only = all(word in {"as", "usize"} for word in lowercase_words)
+        if constant_only and re.search(rf"\[[^;\]]*;\s*{re.escape(name)}\s*\]", tail):
+            replacement = f"const {name}: usize = {expression};"
+            rust = rust[: match.start()] + replacement + rust[match.end() :]
+    if expected_signature is not None:
+        # Rust warns about unused parameters, so cheap models often rename an
+        # ABI-owned `param` to `_param`. The deterministic wrapper fixes the
+        # worker signature; restore those exact names in signature and body.
+        expected_params = re.findall(r"\b([A-Za-z_]\w*)\s*:", expected_signature)
+        for name in expected_params:
+            rust = re.sub(rf"\b_{re.escape(name)}\b", name, rust)
+        expected_name_match = re.search(r"\bfn\s+([A-Za-z_]\w*)\s*\(", expected_signature)
+        if expected_name_match is not None:
+            expected_name = expected_name_match.group(1)
+            actual = re.search(
+                rf"\b(?:pub\s+)?(?:unsafe\s+)?fn\s+{re.escape(expected_name)}\s*\(",
+                rust,
+            )
+            if actual is not None:
+                opening = rust.find("(", actual.start())
+                closing = _matching_paren(rust, opening)
+                brace = rust.find("{", closing + 1)
+                actual_params = [
+                    match.group(1)
+                    for item in _split_args(rust[opening + 1 : closing])
+                    if (match := re.match(r"\s*([A-Za-z_]\w*)\s*:", item))
+                ]
+                # The model owns no part of the worker surface. If its parameter
+                # list still names the generated slots in order, replace all of
+                # its type/return/qualifier spellings with the exact authority.
+                if brace >= 0 and actual_params == expected_params:
+                    rust = rust[: actual.start()] + expected_signature + " " + rust[brace:]
     return rust
 
 

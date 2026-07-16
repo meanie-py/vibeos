@@ -8,6 +8,7 @@ import re
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import replace
 from pathlib import Path
 
 from . import (
@@ -59,6 +60,7 @@ from .cpp_com import (
     worker_signature,
 )
 from .extern_audit import run_extern_audit, run_extern_fix
+from .fact_seal import FactSealError, fact_contract, prepare_sealed_source, unseal_facts
 from .function_prompt import (
     build_file_context,
     build_function_prompt,
@@ -1151,6 +1153,11 @@ def cmd_translate(args):
     rustconv_target = resolve_target(args, target_path)
     print(f"Target: {rustconv_target.name}", file=sys.stderr)
 
+    if getattr(args, "seal_facts", False) and not (
+        rustconv_target.name == "shell32" and getattr(args, "cpp_com", False)
+    ):
+        raise CppComError("--seal-facts currently requires shell32 --cpp-com")
+
     cpp_com_cls = None
     cpp_com_interfaces = []
     if rustconv_target.name == "shell32":
@@ -1306,6 +1313,32 @@ def cmd_translate(args):
             sorted_deps = prepare_helper_closure(deps, args.class_name)
             cpp_com_wide_statics = render_wide_literal_statics(deps, sorted_deps)
 
+        seal_enabled = bool(
+            rustconv_target.name == "shell32" and getattr(args, "seal_facts", False)
+        )
+        fact_seals = (
+            {dep.name: prepare_sealed_source(dep.body_text) for dep in sorted_deps}
+            if seal_enabled
+            else {}
+        )
+
+        def _model_dep(dep, fact_seals=fact_seals):
+            sealed = fact_seals.get(dep.name)
+            return replace(dep, body_text=sealed.text) if sealed is not None else dep
+
+        def _fact_contract(dep, fact_seals=fact_seals) -> str:
+            sealed = fact_seals.get(dep.name)
+            return fact_contract(sealed) if sealed is not None else ""
+
+        def _unseal_result(dep, rust: str, fact_seals=fact_seals) -> str:
+            sealed = fact_seals.get(dep.name)
+            if sealed is None:
+                return rust
+            try:
+                return unseal_facts(rust, sealed)
+            except FactSealError as error:
+                raise CppComError(f"{dep.name}: {error}") from error
+
         # Filter to single function if requested
         if args.fn:
             sorted_deps = [d for d in sorted_deps if d.name == args.fn]
@@ -1362,7 +1395,7 @@ def cmd_translate(args):
             if sorted_deps:
                 func_res = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
                 prompt = build_function_prompt(
-                    sorted_deps[0],
+                    _model_dep(sorted_deps[0]),
                     func_res,
                     {},
                     all_deps,
@@ -1370,6 +1403,7 @@ def cmd_translate(args):
                     catalog_fn_names,
                     file_res.exports,
                     target=rustconv_target,
+                    deterministic_contract=_fact_contract(sorted_deps[0]),
                 )
                 if not use_claude:
                     prompt = system_prompt + "\n\n---\n\n" + prompt if system_prompt else prompt
@@ -1380,7 +1414,7 @@ def cmd_translate(args):
                 # Print full prompt for first function
                 func_res = resolve_function(sorted_deps[0], catalog, file_res.exports, scan.defines)
                 prompt = build_function_prompt(
-                    sorted_deps[0],
+                    _model_dep(sorted_deps[0]),
                     func_res,
                     {},
                     all_deps,
@@ -1389,6 +1423,7 @@ def cmd_translate(args):
                     file_res.exports,
                     target=rustconv_target,
                     c2rust_anchor=c2rust_anchors.get(sorted_deps[0].name),
+                    deterministic_contract=_fact_contract(sorted_deps[0]),
                 )
                 full = (system_prompt + "\n\n---\n\n" + prompt) if system_prompt else prompt
                 print(full)
@@ -1428,7 +1463,11 @@ def cmd_translate(args):
         # killed/capped run for $0 (skip functions whose C body is unchanged).
         # Coexists with the sink archive (which is per-run, kill-safe streaming);
         # this one is the stable, cross-run skip layer. --no-resume forces fresh.
-        cache = ResponseCache(f"{subsystem}__{c_file.stem}")
+        cache_tag = getattr(args, "cache_tag", None)
+        cache_suffix = f"__{cache_tag}" if cache_tag else ""
+        if seal_enabled:
+            cache_suffix += "__factseal_v1"
+        cache = ResponseCache(f"{subsystem}__{c_file.stem}{cache_suffix}")
         resumed = 0
         if cache.count() and not no_resume:
             print(
@@ -1444,7 +1483,9 @@ def cmd_translate(args):
         for dep in paid_deps:
             hit = None if no_resume else cache.get(dep.name, dep.body_text)
             if hit is not None and rustconv_target.name == "shell32":
-                hit = normalize_worker_body(hit)
+                hit = normalize_worker_body(
+                    hit, worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
+                )
                 if audit_worker_body(
                     dep.body_text,
                     hit,
@@ -1463,7 +1504,7 @@ def cmd_translate(args):
         if archive is not None and pending_paid_deps:
             _fr0 = resolve_function(pending_paid_deps[0], catalog, file_res.exports, scan.defines)
             _p0 = build_function_prompt(
-                pending_paid_deps[0],
+                _model_dep(pending_paid_deps[0]),
                 _fr0,
                 {},
                 all_deps_for_context,
@@ -1471,6 +1512,7 @@ def cmd_translate(args):
                 catalog_fn_names,
                 file_res.exports,
                 target=rustconv_target,
+                deterministic_contract=_fact_contract(pending_paid_deps[0]),
             )
             _est_in = (estimate_tokens(_p0) + estimate_tokens(system_prompt)) * len(
                 pending_paid_deps
@@ -1492,7 +1534,10 @@ def cmd_translate(args):
                 if not no_resume:
                     hit = cache.get(dep.name, dep.body_text)
                     if hit is not None and rustconv_target.name == "shell32":
-                        hit = normalize_worker_body(hit)
+                        hit = normalize_worker_body(
+                            hit,
+                            worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
+                        )
                         findings = audit_worker_body(
                             dep.body_text,
                             hit,
@@ -1537,7 +1582,7 @@ def cmd_translate(args):
                     return (fi, dp, None)
                 fres = resolve_function(dp, catalog, file_res.exports, scan.defines)
                 up = build_function_prompt(
-                    dp,
+                    _model_dep(dp),
                     fres,
                     ctx,
                     all_deps_for_context,
@@ -1547,6 +1592,7 @@ def cmd_translate(args):
                     target=rustconv_target,
                     include_shared=False,
                     c2rust_anchor=c2rust_anchors.get(dp.name),
+                    deterministic_contract=_fact_contract(dp),
                 )
                 sk = ResponseSink(archive.stream_path(fi, dp.name)) if archive is not None else None
                 try:
@@ -1573,7 +1619,11 @@ def cmd_translate(args):
                         continue  # skipped after cost cap
                     if r.success:
                         if rustconv_target.name == "shell32":
-                            r.rust_code = normalize_worker_body(r.rust_code)
+                            r.rust_code = _unseal_result(dp, r.rust_code)
+                            r.rust_code = normalize_worker_body(
+                                r.rust_code,
+                                worker_signature(dp.name, dp.cpp_class, dp.params, dp.return_type),
+                            )
                             findings = audit_worker_body(
                                 dp.body_text,
                                 r.rust_code,
@@ -1634,7 +1684,10 @@ def cmd_translate(args):
             if not no_resume:
                 hit = cache.get(dep.name, dep.body_text)
                 if hit is not None and rustconv_target.name == "shell32":
-                    hit = normalize_worker_body(hit)
+                    hit = normalize_worker_body(
+                        hit,
+                        worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
+                    )
                     findings = audit_worker_body(
                         dep.body_text,
                         hit,
@@ -1663,7 +1716,7 @@ def cmd_translate(args):
             # (file_context), so include_shared=False keeps it out of the
             # full-price per-function user message.
             user_prompt = build_function_prompt(
-                dep,
+                _model_dep(dep),
                 func_res,
                 translated,
                 all_deps_for_context,
@@ -1673,6 +1726,7 @@ def cmd_translate(args):
                 target=rustconv_target,
                 include_shared=False,
                 c2rust_anchor=c2rust_anchors.get(dep.name),
+                deterministic_contract=_fact_contract(dep),
             )
 
             # Stream this function's output straight to the durable archive.
@@ -1698,7 +1752,11 @@ def cmd_translate(args):
 
             if result.success:
                 if rustconv_target.name == "shell32":
-                    result.rust_code = normalize_worker_body(result.rust_code)
+                    result.rust_code = _unseal_result(dep, result.rust_code)
+                    result.rust_code = normalize_worker_body(
+                        result.rust_code,
+                        worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
+                    )
                     findings = audit_worker_body(
                         dep.body_text,
                         result.rust_code,
@@ -2530,6 +2588,14 @@ def main():
     )
     p.add_argument("--class", dest="class_name", help="Class selected by --cpp-com")
     p.add_argument(
+        "--seal-facts",
+        dest="seal_facts",
+        action="store_true",
+        help="EXPERIMENTAL shell32 COM mode: lower HRESULT predicates and replace each "
+        "constant occurrence with an audited opaque token during the paid call. Uses a "
+        "separate response-cache namespace.",
+    )
+    p.add_argument(
         "--sdk-header",
         help="WIDL-generated C header used as COM vtable ground truth",
     )
@@ -2562,6 +2628,12 @@ def main():
         help="Ignore the .responses/ resume cache and re-translate every "
         "function fresh (cache still refreshed). Default resumes "
         "unchanged-body functions for $0.",
+    )
+    p.add_argument(
+        "--cache-tag",
+        default=None,
+        help="Append an isolated namespace tag to the response-cache key. Intended for "
+        "controlled model/prompt experiments that must not overwrite production entries.",
     )
     p.add_argument(
         "--c2rust",

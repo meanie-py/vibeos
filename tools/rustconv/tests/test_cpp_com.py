@@ -599,6 +599,33 @@ def test_worker_normalizer_removes_declaration_only_ffi_blocks():
     assert "Call(GetLastError())" in normalized
 
 
+def test_worker_normalizer_restores_generated_parameter_names():
+    raw = "pub unsafe fn Worker(_this: *mut C, _value: DWORD) { use_it(_value) }"
+    signature = "pub unsafe fn Worker(this: *mut C, value: DWORD)"
+    normalized = normalize_worker_body(raw, signature)
+    assert "fn Worker(this: *mut C, value: DWORD)" in normalized
+    assert "use_it(value)" in normalized
+
+
+def test_worker_normalizer_replaces_model_type_spellings_with_generated_signature():
+    raw = "pub unsafe fn Worker(this: *mut C, value: u32) -> i32 { value as i32 }"
+    signature = "pub unsafe fn Worker(this: *mut C, value: DWORD) -> HRESULT"
+    normalized = normalize_worker_body(raw, signature)
+    assert normalized == signature + " { value as i32 }"
+
+
+def test_worker_normalizer_promotes_proven_constant_array_bound_only():
+    raw = """pub unsafe fn Worker(n: usize) {
+    let fixed: usize = (38 + 1) as usize;
+    let runtime: usize = n + 1;
+    let a: [u16; fixed] = [0; fixed];
+    use_it(a, runtime);
+}"""
+    normalized = normalize_worker_body(raw)
+    assert "const fixed: usize = (38 + 1) as usize;" in normalized
+    assert "let runtime: usize = n + 1;" in normalized
+
+
 def test_worker_audit_does_not_treat_macros_or_cast_types_as_constants():
     c_body = (
         "{ if (FAILED(hr)) return (HRESULT)(UINT)(SIZE_T)value; "

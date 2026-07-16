@@ -515,6 +515,7 @@ def build_function_prompt(
     target: Target | None = None,
     include_shared: bool = True,
     c2rust_anchor: str | None = None,
+    deterministic_contract: str = "",
 ) -> str:
     """Build a complete prompt for translating a single C function.
 
@@ -582,6 +583,9 @@ def build_function_prompt(
     callee_info = _format_callee_context(func, translated, all_deps, catalog_fn_names)
     if callee_info:
         parts.append(callee_info)
+
+    if deterministic_contract:
+        parts.append(deterministic_contract)
 
     # The C function source
     parts.append("\n## C Function to Translate\n")
