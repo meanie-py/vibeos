@@ -7,15 +7,19 @@
 //!
 //! Resolution:
 //!   amd64 (x86_64)     → `hal_apic` ALWAYS (amd64 has no PIC flavor).
-//!   i386  (x86) + apic → `hal_apic` (the i386-apic-hal lane's opt-in flavor).
-//!   i386  (x86)        → `hal_pic`  (default; also every FreeLDR mini-HAL,
-//!                                    which never enables `apic`).
+//!   i386  (x86) + apic → `hal_apic` (the DEFAULT since the i386-apic-hal lane
+//!                                    landed — hal-cargo enables `apic` unless
+//!                                    the PIC escape hatch is requested).
+//!   i386  (x86)        → `hal_pic`  (the legacy 8259 PIC: the `--hal-pic` /
+//!                                    VIBEOS_PIC_HAL escape hatch, and every
+//!                                    FreeLDR mini-HAL, which never enables `apic`).
 //!   aarch64            → neither (the x86 module isn't compiled there).
 //!
-//! The `apic` cargo feature is set by hal-cargo's build.rs from VIBEOS_APIC_HAL
-//! (cmake -DVIBEOS_APIC_HAL=ON). Gating on these cfgs rather than on the feature
-//! keeps amd64 APIC-by-default with no feature and lets one `#[cfg(hal_apic)]`
-//! cover both x86_64 and i386-opt-in.
+//! The `apic` cargo feature is enabled BY DEFAULT on x86 by hal-cargo's build.rs
+//! (it treats the ABSENCE of VIBEOS_PIC_HAL as "build APIC"; -DVIBEOS_PIC_HAL=ON
+//! turns it back off for the legacy PIC). Gating on these cfgs rather than on the
+//! feature keeps amd64 APIC-by-default with no feature and lets one
+//! `#[cfg(hal_apic)]` cover both x86_64 and i386.
 
 use std::env;
 
@@ -32,7 +36,8 @@ fn main() {
     match arch.as_str() {
         // amd64 is the APIC flavor unconditionally — no i386-style PIC option.
         "x86_64" => println!("cargo:rustc-cfg=hal_apic"),
-        // i386: opt-in APIC, else PIC (default + all mini-HAL builds).
+        // i386: APIC by default (hal-cargo enables `apic` unless the PIC escape
+        // hatch is set); PIC only for --hal-pic and every mini-HAL build.
         "x86" => {
             if apic_feature {
                 println!("cargo:rustc-cfg=hal_apic");

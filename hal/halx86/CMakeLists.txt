@@ -34,18 +34,19 @@ if(ARCH STREQUAL "i386")
     # pic-flavor asm (file-track so an edit re-invokes the opaque cargo link);
     # and the checked-in pic/halpic.rc resource.
     # File-track the self-hosted flavor asm so an edit re-invokes the opaque
-    # cargo link. The APIC flavor (-DVIBEOS_APIC_HAL=ON) assembles a different
-    # set (apic/apictrap.S + apic/tsccal.S) — track THAT set instead, matching
-    # hal-cargo/build.rs's VIBEOS_APIC_HAL asm switch.
-    if(VIBEOS_APIC_HAL)
-        set(_HAL_I386_FLAVOR_ASM
-            ${CMAKE_CURRENT_SOURCE_DIR}/apic/apictrap.S
-            ${CMAKE_CURRENT_SOURCE_DIR}/apic/tsccal.S)
-    else()
+    # cargo link. The DEFAULT i386 flavor is now APIC (apic/apictrap.S +
+    # apic/tsccal.S); the legacy PIC escape hatch (-DVIBEOS_PIC_HAL=ON) assembles
+    # a different set (generic/systimer.S + generic/trap.S + pic/pic.S) — track
+    # THAT set instead, matching hal-cargo/build.rs's VIBEOS_PIC_HAL asm switch.
+    if(VIBEOS_PIC_HAL)
         set(_HAL_I386_FLAVOR_ASM
             ${CMAKE_CURRENT_SOURCE_DIR}/generic/systimer.S
             ${CMAKE_CURRENT_SOURCE_DIR}/generic/trap.S
             ${CMAKE_CURRENT_SOURCE_DIR}/pic/pic.S)
+    else()
+        set(_HAL_I386_FLAVOR_ASM
+            ${CMAKE_CURRENT_SOURCE_DIR}/apic/apictrap.S
+            ${CMAKE_CURRENT_SOURCE_DIR}/apic/tsccal.S)
     endif()
     set(HAL_CARGO_EXTRA_DEPENDS
         chkstk

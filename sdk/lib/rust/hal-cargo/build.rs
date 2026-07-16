@@ -43,13 +43,17 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
-    // i386 APIC HAL flavor (i386-apic-hal lane): VIBEOS_APIC_HAL=1 (cmake
-    // -DVIBEOS_APIC_HAL=ON via `vibeos-cli build --hal-apic`) builds hal-rust
-    // with the `apic` feature AND swaps the assembled x86 asm set from the PIC
-    // trap/timer set to the APIC set (apictrap.S + tsccal.S). amd64 is always
-    // the APIC flavor regardless of this env. Same env→features plumbing as
-    // VIBEOS_SMP_HAL. Ignored on arm64.
-    let apic_hal = arch == "x86" && env::var("VIBEOS_APIC_HAL").is_ok();
+    // i386 HAL interrupt-model flavor. As of the i386-apic-hal lane landing the
+    // APIC flavor (LAPIC/IOAPIC/TPR, lazy-IRQL, RTC clock) is the DEFAULT on
+    // i386; the legacy 8259 PIC flavor is the opt-out escape hatch, selected by
+    // VIBEOS_PIC_HAL=1 (cmake -DVIBEOS_PIC_HAL=ON via `vibeos-cli build
+    // --hal-pic`). The APIC flavor builds hal-rust with the `apic` feature AND
+    // assembles the APIC asm set (apictrap.S + tsccal.S) instead of the PIC set
+    // (generic/systimer.S + generic/trap.S + pic/pic.S). amd64 is always the
+    // APIC flavor regardless of this env. Same env→features plumbing as
+    // VIBEOS_SMP_HAL. Ignored on arm64. (The PIC modules stay in-tree, gated
+    // off — never deleted — so the flip is one `git revert` away.)
+    let apic_hal = arch == "x86" && env::var("VIBEOS_PIC_HAL").is_err();
 
     // cnt-rust-lib `float` feature, mirroring libcntpr.cmake CNT_RUST_FEATURES:
     // i386 omits it (no-SSE softfloat kernel), amd64/arm64 enable it. Used only
@@ -169,7 +173,7 @@ fn main() {
     // bit so the MISMATCHED_HAL handshake accepts ntkrnlmp.exe. Same env→
     // features plumbing as the kernel's VIBEOS_LOCKDEP.
     println!("cargo:rerun-if-env-changed=VIBEOS_SMP_HAL");
-    println!("cargo:rerun-if-env-changed=VIBEOS_APIC_HAL");
+    println!("cargo:rerun-if-env-changed=VIBEOS_PIC_HAL");
     // Combine flavor features (they compose: an SMP APIC HAL = both, the future
     // i386 halmacpi in Phase B). rust_features REPLACES the set, so pass one
     // combined list rather than two calls.
