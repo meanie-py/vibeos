@@ -256,16 +256,21 @@ reported. Only the two futures processed before the old abort have recorded usag
 metadata ($0.00667); the total provider charge for the other completed streams is unknown.
 
 `candidate-check` now supports `full_module: true`, so the assembled class can be compiled
-without pretending an accepted per-function base exists. The resulting x3 oracle is
-`.responses/candidate-oracles/20260716-004452-273547/report.json`. It is correctly red with
-62 diagnostics on each architecture. The residual is now an explicit substrate manifest:
-`CStringW`, `IShellItemArray`/complete `IShellItem`, menu/invoke-command structs and handle
-aliases, Win32 clipboard/menu externs and constants, `IID_PPV_ARG`/`MAKE_HRESULT` lowering,
-and the file-scope `CMVERBMAP` table. Three ordinary Rust casts remain after that surface.
+without pretending an accepted per-function base exists. The first x3 oracle,
+`.responses/candidate-oracles/20260716-004452-273547/report.json`, was correctly red with 62
+diagnostics on each architecture. That residual became the implementation manifest for a
+deterministic C++ support closure: shared WIDL-derived `IShellItem`/`IShellItemArray` ABI,
+menu/invoke-command types and constants, source-selected Win32 extern declarations, numeric
+resource/`#define` recovery, simple `CMVERBMAP` aggregate recovery, `IID_PPV_ARG` and C scalar
+conversion lowerings, and an owned process-heap `CStringW` replacement including resource
+loading. These transforms run downstream of the response cache.
 
-That is the useful out-of-sample result: DeepSeek preserved and audited all eight workers,
-but a complete new class still cannot be accepted until rustconv generates the header/global/
-RAII substrate it currently borrows from an accepted module. Do not escalate this class to
-Sonnet; model capacity is not the blocker. The next investment is deterministic per-class
-substrate/addendum generation, starting with header-derived Win32 types/externs and exact
-lowering for `IID_PPV_ARG`, then a reusable owned-wide-string replacement for `CStringW`.
+The exact same eight cached DeepSeek workers were then replayed for 0 input tokens, 0 output
+tokens, and $0. The final full-module oracle is
+`.responses/candidate-oracles/20260716-141118-212665/report.json`: zero diagnostics and green
+on i386, amd64, and arm64. The real `shell32-rust` crate also `cargo check`s on all three
+target triples. This is the first out-of-sample proof that improving deterministic support
+can turn a complete cheap-model class from 62 compiler errors to accepted without a retry or
+stronger model. Compile-green is not yet integration-green: the class still needs C++
+linkage adapters for the two internal `SHELL_*` helpers and the normal class-atomic cohab
+build/smoke gate before its C++ owner can be disabled.

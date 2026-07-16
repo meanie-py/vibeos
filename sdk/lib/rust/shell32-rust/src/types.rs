@@ -27,6 +27,8 @@ pub type HKEY = HANDLE;
 pub type PHKEY = *mut HKEY;
 pub type HINSTANCE = HANDLE;
 pub type HWND = HANDLE;
+pub type HMENU = HANDLE;
+pub type HGLOBAL = HANDLE;
 pub type HBITMAP = HANDLE;
 pub type COLORREF = DWORD;
 
@@ -57,8 +59,57 @@ pub const E_NOINTERFACE: HRESULT = 0x80004002u32 as HRESULT;
 pub const E_POINTER: HRESULT = 0x80004003u32 as HRESULT;
 pub const CLASS_E_NOAGGREGATION: HRESULT = 0x80040110u32 as HRESULT;
 pub const E_OUTOFMEMORY: HRESULT = 0x8007000Eu32 as HRESULT;
+pub const E_FAIL: HRESULT = 0x80004005u32 as HRESULT;
 pub const ERROR_SUCCESS: LONG = 0;
 pub const HEAP_ZERO_MEMORY: DWORD = 8;
+
+pub const CF_UNICODETEXT: UINT = 13;
+pub const GMEM_MOVEABLE: UINT = 2;
+pub const GMEM_SHARE: UINT = 8192;
+pub const ERROR_BUFFER_OVERFLOW: DWORD = 111;
+pub const CMF_NOVERBS: UINT = 0x0000_0008;
+pub const CMF_EXTENDEDVERBS: UINT = 0x0000_0100;
+pub const MIIM_ID: UINT = 0x0000_0002;
+pub const MIIM_TYPE: UINT = 0x0000_0010;
+pub const MFT_STRING: UINT = 0;
+pub const SEVERITY_SUCCESS: DWORD = 0;
+
+#[inline]
+pub const fn MAKE_HRESULT(severity: DWORD, facility: DWORD, code: DWORD) -> HRESULT {
+    ((severity << 31) | (facility << 16) | code) as HRESULT
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct CMINVOKECOMMANDINFO {
+    pub cbSize: DWORD,
+    pub fMask: DWORD,
+    pub hwnd: HWND,
+    pub lpVerb: LPCSTR,
+    pub lpParameters: LPCSTR,
+    pub lpDirectory: LPCSTR,
+    pub nShow: INT,
+    pub dwHotKey: DWORD,
+    pub hIcon: HANDLE,
+}
+pub type LPCMINVOKECOMMANDINFO = *mut CMINVOKECOMMANDINFO;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct MENUITEMINFOW {
+    pub cbSize: UINT,
+    pub fMask: UINT,
+    pub fType: UINT,
+    pub fState: UINT,
+    pub wID: UINT,
+    pub hSubMenu: HMENU,
+    pub hbmpChecked: HBITMAP,
+    pub hbmpUnchecked: HBITMAP,
+    pub dwItemData: ULONG_PTR,
+    pub dwTypeData: LPWSTR,
+    pub cch: UINT,
+    pub hbmpItem: HBITMAP,
+}
 
 /// SIZE and POINT from wtypes.h.
 #[repr(C)]

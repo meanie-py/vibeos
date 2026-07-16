@@ -694,6 +694,254 @@ def normalize_worker_body(rust: str, expected_signature: str | None = None) -> s
     return rust
 
 
+def normalize_worker_semantics(source: str, rust: str) -> str:
+    """Lower compiler-known C/ATL conveniences after a cached/model worker returns.
+
+    These rewrites depend only on syntax present in the original worker.  They are
+    deliberately downstream of the response cache: improving a deterministic
+    lowering must never require buying the same model response again.
+    """
+    # IID_PPV_ARG(T, &out) is a header macro, not a callable ABI symbol.
+    rust = re.sub(
+        r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*&mut\s+([A-Za-z_]\w*)\s*\)",
+        r"core::ptr::addr_of!(IID_\1), core::ptr::addr_of_mut!(\2).cast()",
+        rust,
+    )
+    # Win32 error APIs use LONG in HRESULT_FROM_WIN32, while most producers spell
+    # the value DWORD.  The C macro performs this scalar conversion implicitly.
+    rust = re.sub(
+        r"\bHRESULT_FROM_WIN32\s*\(\s*([A-Za-z_]\w*)\s*\)", r"HRESULT_FROM_WIN32(\1 as LONG)", rust
+    )
+    # void-pointer arguments accept any object pointer in C.
+    rust = re.sub(
+        r"\bSetClipboard_body\s*\(([^,]+),\s*([A-Za-z_]\w*)\s*,\s*([^\)]+)\)",
+        r"SetClipboard_body(\1, \2 as *const core::ffi::c_void, \3)",
+        rust,
+    )
+    # ERROR_SUCCESS is canonically LONG in the shared substrate; DWORD-returning
+    # helpers receive the same zero bit pattern through C's usual conversion.
+    rust = re.sub(r"\{\s*ERROR_SUCCESS\s*\}\s*else", "{ ERROR_SUCCESS as DWORD } else", rust)
+    # CStringW(MAKEINTRESOURCEW(id)) invokes ATL's resource-string constructor.
+    # Cheap models commonly mistake the integer resource token for a string pointer.
+    resource = re.search(
+        r"CStringW\s+([A-Za-z_]\w*)\s*\(\s*MAKEINTRESOURCEW\s*\(\s*([A-Za-z_]\w*)\s*\)\s*\)",
+        source,
+    )
+    if resource is not None:
+        _name, resource_id = resource.groups()
+        binding = re.search(
+            rf"let\s+([A-Za-z_]\w*)\s*:\s*\*const\s+u16\s*=\s*{re.escape(resource_id)}[^;]*;",
+            rust,
+        )
+        if binding is not None:
+            rust_name = binding.group(1)
+            rust = (
+                rust[: binding.start()]
+                + f"let mut {rust_name} = CStringW::from_resource({resource_id} as UINT);"
+                + rust[binding.end() :]
+            )
+            rust = re.sub(
+                rf"\b{re.escape(rust_name)}\s+as\s+\*mut\s+u16", f"{rust_name}.as_mut_ptr()", rust
+            )
+    if re.search(r"\bSIZE_T\s+[A-Za-z_]\w*\s*=\s*lstrlenW", source):
+        rust = re.sub(
+            r"let\s+cch\s*=\s*lstrlenW\(([^)]+)\)\s*\+\s*1\s*;",
+            r"let cch: SIZE_T = lstrlenW(\1) as SIZE_T + 1;",
+            rust,
+        )
+    if re.search(r"CStringW\s*&\s*[A-Za-z_]\w*", source):
+        rust = re.sub(r"(?m)^(\s*)paths\s*\+=", r"\1*paths +=", rust)
+    # File-scope C arrays decay to pointers at call sites.
+    rust = re.sub(
+        r"SHELL_MapContextMenuVerbToCmdId\s*\(([^,]+),\s*g_VerbMap\s*\)",
+        r"SHELL_MapContextMenuVerbToCmdId(\1, core::ptr::addr_of!(g_VerbMap).cast())",
+        rust,
+    )
+    rust = re.sub(
+        r"&g_VerbMap\s+as\s+\*const\s+u8\s+as\s+\*const\s+core::ffi::c_void",
+        "core::ptr::addr_of!(g_VerbMap).cast()",
+        rust,
+    )
+    rust = re.sub(r"\bcmd_id\s*==\s*(IDC_[A-Za-z_]\w*)", r"cmd_id == \1 as INT", rust)
+    return rust
+
+
+_CPP_SUPPORT_EXTERNS = {
+    "GlobalAlloc": "    fn GlobalAlloc(flags: UINT, bytes: SIZE_T) -> HGLOBAL;",
+    "GlobalLock": "    fn GlobalLock(memory: HGLOBAL) -> LPVOID;",
+    "GlobalUnlock": "    fn GlobalUnlock(memory: HGLOBAL) -> BOOL;",
+    "GlobalFree": "    fn GlobalFree(memory: HGLOBAL) -> HGLOBAL;",
+    "OpenClipboard": "    fn OpenClipboard(owner: HWND) -> BOOL;",
+    "EmptyClipboard": "    fn EmptyClipboard() -> BOOL;",
+    "SetClipboardData": "    fn SetClipboardData(format: UINT, memory: HANDLE) -> HANDLE;",
+    "CloseClipboard": "    fn CloseClipboard() -> BOOL;",
+    "GetLastError": "    fn GetLastError() -> DWORD;",
+    "lstrlenW": "    fn lstrlenW(text: LPCWSTR) -> INT;",
+    "StrChrW": "    fn StrChrW(text: LPCWSTR, ch: WCHAR) -> LPWSTR;",
+    "CoTaskMemFree": "    fn CoTaskMemFree(memory: LPVOID);",
+    "InsertMenuItemW": (
+        "    fn InsertMenuItemW(menu: HMENU, item: UINT, by_position: BOOL, "
+        "info: *const MENUITEMINFOW) -> BOOL;"
+    ),
+    "SHCreateShellItemArrayFromDataObject": (
+        "    fn SHCreateShellItemArrayFromDataObject(data: *mut IDataObject, "
+        "riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;"
+    ),
+    "SHELL_MapContextMenuVerbToCmdId": (
+        "    fn SHELL_MapContextMenuVerbToCmdId(info: LPCMINVOKECOMMANDINFO, "
+        "map: *const CMVERBMAP) -> INT;"
+    ),
+    "SHELL_GetCommandStringImpl": (
+        "    fn SHELL_GetCommandStringImpl(command: SIZE_T, flags: UINT, buffer: LPSTR, "
+        "capacity: UINT, map: *const CMVERBMAP) -> HRESULT;"
+    ),
+}
+
+
+def _render_cmverbmap(source: str) -> str:
+    match = re.search(
+        r"static\s+const\s+CMVERBMAP\s+([A-Za-z_]\w*)\s*\[\s*\]\s*=\s*\{(?P<body>.*?)\}\s*;",
+        source,
+        flags=re.S,
+    )
+    if match is None:
+        return ""
+    entries = []
+    for item in re.finditer(
+        r"\{\s*(?P<verb>\"(?:\\.|[^\"])*\"|NULL)\s*(?:,\s*(?P<cmd>[A-Za-z_]\w*|\d+))?\s*\}",
+        match.group("body"),
+    ):
+        token, command = item.group("verb"), item.group("cmd") or "0"
+        verb = "core::ptr::null()" if token == "NULL" else f'b{token[:-1]}\\0".as_ptr() as LPCSTR'
+        entries.append(f"    CMVERBMAP {{ Verb: {verb}, CmdId: {command} as WORD }},")
+    if not entries:
+        raise CppComError("CMVERBMAP table was found but no aggregate entries were parsed")
+    return "\n".join(
+        [
+            "#[repr(C)]",
+            "pub struct CMVERBMAP { pub Verb: LPCSTR, pub CmdId: WORD }",
+            f"pub static mut {match.group(1)}: [CMVERBMAP; {len(entries)}] = [",
+            *entries,
+            "];",
+        ]
+    )
+
+
+def render_cpp_support(source_path: Path) -> str:
+    """Render the deterministic non-class support closure selected by one C++ file."""
+    source = source_path.read_text(encoding="utf-8", errors="replace")
+    chunks = ["// Deterministic C++ support closure selected from source identifiers."]
+
+    # Local numeric macros and shell32 resource IDs are compiler-facing facts.
+    definitions = dict(
+        re.findall(r"^\s*#define\s+([A-Za-z_]\w*)\s+([0-9]+|0[xX][0-9A-Fa-f]+)\s*$", source, re.M)
+    )
+    resource_header = source_path.parent / "shresdef.h"
+    if resource_header.is_file():
+        resource_text = resource_header.read_text(encoding="utf-8", errors="replace")
+        definitions.update(
+            re.findall(
+                r"^\s*#define\s+([A-Za-z_]\w*)\s+([0-9]+|0[xX][0-9A-Fa-f]+)\s*$",
+                resource_text,
+                re.M,
+            )
+        )
+    used_words = set(re.findall(r"\b[A-Za-z_]\w*\b", source))
+    for name in sorted(used_words & definitions.keys()):
+        chunks.append(f"pub const {name}: UINT = {definitions[name]};")
+
+    table = _render_cmverbmap(source)
+    if table:
+        chunks.append(table)
+
+    if "CComHeapPtr" in used_words:
+        used_words.add("CoTaskMemFree")
+    selected = [decl for name, decl in _CPP_SUPPORT_EXTERNS.items() if name in used_words]
+    if selected:
+        chunks.append('extern "system" {\n' + "\n".join(selected) + "\n}")
+
+    if "CopyMemory" in used_words or "ZeroMemory" in used_words:
+        chunks.append(
+            'extern "C" {\n'
+            "    fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void,\n"
+            "        bytes: usize) -> *mut core::ffi::c_void;\n"
+            "    fn memset(dst: *mut core::ffi::c_void, value: INT,\n"
+            "        bytes: usize) -> *mut core::ffi::c_void;\n"
+            "}\n"
+            "#[inline]\nunsafe fn CopyMemory(dst: LPVOID, src: LPCVOID, bytes: usize) {\n"
+            "    let _ = memcpy(dst, src, bytes);\n}\n"
+            "#[inline]\nunsafe fn ZeroMemory(dst: LPVOID, bytes: usize) {\n"
+            "    let _ = memset(dst, 0, bytes);\n}"
+        )
+
+    if "CStringW" in used_words:
+        chunks.append(_CPP_CSTRINGW_SUPPORT)
+    return "\n\n".join(chunks)
+
+
+_CPP_CSTRINGW_SUPPORT = r"""extern "system" {
+    fn HeapReAlloc(heap: HANDLE, flags: DWORD, memory: LPVOID, bytes: usize) -> LPVOID;
+    fn GetModuleHandleW(name: LPCWSTR) -> HINSTANCE;
+    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
+}
+
+pub struct CStringW { buffer: LPWSTR, len: usize, capacity: usize }
+impl CStringW {
+    pub const fn new() -> Self { Self { buffer: core::ptr::null_mut(), len: 0, capacity: 0 } }
+    pub unsafe fn from_resource(id: UINT) -> Self {
+        let mut value = Self::new();
+        let mut stack = [0u16; 256];
+        let count = LoadStringW(
+            GetModuleHandleW(core::ptr::null()), id, stack.as_mut_ptr(), stack.len() as INT,
+        );
+        if count > 0 { value.append_ptr_len(stack.as_ptr(), count as usize); }
+        value
+    }
+    pub fn as_ptr(&self) -> LPCWSTR {
+        if self.buffer.is_null() { CPP_COM_EMPTY_WSTR.as_ptr() } else { self.buffer }
+    }
+    pub fn as_mut_ptr(&mut self) -> LPWSTR { self.as_ptr() as LPWSTR }
+    unsafe fn reserve(&mut self, needed: usize) -> bool {
+        if needed <= self.capacity { return true; }
+        let capacity = needed.next_power_of_two().max(16);
+        let bytes = capacity * core::mem::size_of::<WCHAR>();
+        let next = if self.buffer.is_null() {
+            HeapAlloc(GetProcessHeap(), 0, bytes)
+        } else {
+            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), bytes)
+        } as LPWSTR;
+        if next.is_null() { return false; }
+        self.buffer = next; self.capacity = capacity; true
+    }
+    unsafe fn append_ptr_len(&mut self, text: LPCWSTR, count: usize) {
+        if text.is_null() || !self.reserve(self.len + count + 1) { return; }
+        let _ = memcpy(
+            self.buffer.add(self.len).cast(), text.cast(),
+            count * core::mem::size_of::<WCHAR>(),
+        );
+        self.len += count; *self.buffer.add(self.len) = 0;
+    }
+    unsafe fn append_ptr(&mut self, text: LPCWSTR) {
+        if !text.is_null() { self.append_ptr_len(text, lstrlenW(text) as usize); }
+    }
+    unsafe fn append_char(&mut self, ch: WCHAR) { self.append_ptr_len(core::ptr::addr_of!(ch), 1); }
+}
+impl core::ops::AddAssign<LPCWSTR> for CStringW {
+    fn add_assign(&mut self, rhs: LPCWSTR) { unsafe { self.append_ptr(rhs) } }
+}
+impl core::ops::AddAssign<WCHAR> for CStringW {
+    fn add_assign(&mut self, rhs: WCHAR) { unsafe { self.append_char(rhs) } }
+}
+impl Drop for CStringW {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.buffer.is_null() { HeapFree(GetProcessHeap(), 0, self.buffer.cast()); }
+        }
+    }
+}
+static CPP_COM_EMPTY_WSTR: [WCHAR; 1] = [0];"""
+
+
 def worker_signature(
     name: str, class_name: str | None, params: list[tuple[str, str]], return_type: str
 ) -> str:

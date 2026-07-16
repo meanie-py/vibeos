@@ -18,9 +18,11 @@ from rustconv.cpp_com import (
     discover_widl_header,
     lower_trivial_worker,
     normalize_worker_body,
+    normalize_worker_semantics,
     parse_widl_interface,
     prepare_helper_closure,
     render_class_scaffold,
+    render_cpp_support,
     render_interface,
     render_object_map_adapter,
     render_wide_literal_statics,
@@ -758,6 +760,37 @@ def test_worker_normalizer_promotes_proven_constant_array_bound_only():
     normalized = normalize_worker_body(raw)
     assert "const fixed: usize = (38 + 1) as usize;" in normalized
     assert "let runtime: usize = n + 1;" in normalized
+
+
+def test_cpp_support_closure_is_source_selected_and_recovers_file_scope_table():
+    rust = render_cpp_support(SHELL32 / "CCopyAsPathMenu.cpp")
+    assert "pub const IDS_COPYASPATHMENU: UINT = 30328;" in rust
+    assert 'CMVERBMAP { Verb: b"copyaspath\\0".as_ptr()' in rust
+    assert "fn SHCreateShellItemArrayFromDataObject" in rust
+    assert "fn CoTaskMemFree" in rust  # selected by CComHeapPtr ownership
+    assert "pub struct CStringW" in rust
+    assert "fn HeapReAlloc" in rust
+
+
+def test_cpp_semantic_lowering_runs_after_cache_and_owns_header_macros():
+    source = """HRESULT C::f() {
+        SIZE_T cch = lstrlenW(str) + 1;
+        CStringW text(MAKEINTRESOURCEW(IDS_TEXT));
+        CComPtr<IShellItemArray> array;
+        return Call(IID_PPV_ARG(IShellItemArray, &array));
+    }"""
+    rust = """pub unsafe fn C_f_body() -> HRESULT {
+        let cch = lstrlenW(str) + 1;
+        let str_text: *const u16 = IDS_TEXT as usize as *const u16;
+        mii.dwTypeData = str_text as *mut u16;
+        Call(IID_PPV_ARG(IShellItemArray, &mut array))
+    }"""
+    lowered = normalize_worker_semantics(source, rust)
+    assert "let cch: SIZE_T = lstrlenW(str) as SIZE_T + 1;" in lowered
+    assert "CStringW::from_resource(IDS_TEXT as UINT)" in lowered
+    assert "str_text.as_mut_ptr()" in lowered
+    assert "core::ptr::addr_of!(IID_IShellItemArray)" in lowered
+    assert "core::ptr::addr_of_mut!(array).cast()" in lowered
 
 
 def test_worker_audit_does_not_treat_macros_or_cast_types_as_constants():

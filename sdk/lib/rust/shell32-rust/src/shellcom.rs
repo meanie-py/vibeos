@@ -20,6 +20,10 @@ pub type LPARAM = LONG_PTR; // windef.h
 pub type SFGAOF = DWORD; // shobjidl (ULONG attribute mask)
 pub type SHGDNF = DWORD; // shobjidl (SHGDN flags)
 pub type SIGDN = u32; // shobjidl (v1_enum)
+pub const SIGDN_DESKTOPABSOLUTEPARSING: SIGDN = 0x8002_8000;
+pub type SICHINTF = DWORD;
+pub type GETPROPERTYSTOREFLAGS = DWORD;
+pub type SIATTRIBFLAGS = DWORD;
 pub type PWSTR = LPWSTR; // winnt.h
 pub type VARTYPE = u16; // wtypes.h
 
@@ -95,6 +99,7 @@ pub struct ITEMIDLIST {
 }
 pub type LPITEMIDLIST = *mut ITEMIDLIST;
 pub type LPCITEMIDLIST = *const ITEMIDLIST;
+pub type PCIDLIST_ABSOLUTE = LPCITEMIDLIST;
 pub type LPCSHITEMID = *const SHITEMID;
 
 /// PIDLTYPE (pidl.h) — first byte of PIDLDATA, one of the PT_* tags below.
@@ -512,9 +517,49 @@ pub struct IShellItem {
 }
 #[repr(C)]
 pub struct IShellItemVtbl {
-    pub QueryInterface: usize,
-    pub AddRef: usize,
+    pub QueryInterface: unsafe extern "system" fn(*mut IShellItem, REFIID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(*mut IShellItem) -> ULONG,
     pub Release: unsafe extern "system" fn(*mut IShellItem) -> ULONG,
+    pub BindToHandler: unsafe extern "system" fn(*mut IShellItem, *mut IBindCtx, REFGUID, REFIID, *mut *mut c_void) -> HRESULT,
+    pub GetParent: unsafe extern "system" fn(*mut IShellItem, *mut *mut IShellItem) -> HRESULT,
+    pub GetDisplayName: unsafe extern "system" fn(*mut IShellItem, SIGDN, *mut LPWSTR) -> HRESULT,
+    pub GetAttributes: unsafe extern "system" fn(*mut IShellItem, SFGAOF, *mut SFGAOF) -> HRESULT,
+    pub Compare: unsafe extern "system" fn(*mut IShellItem, *mut IShellItem, SICHINTF, *mut INT) -> HRESULT,
+}
+
+#[repr(C)]
+pub struct PROPERTYKEY {
+    pub fmtid: GUID,
+    pub pid: DWORD,
+}
+pub type REFPROPERTYKEY = *const PROPERTYKEY;
+
+#[repr(C)]
+pub struct IEnumShellItems {
+    pub lpVtbl: *const c_void,
+}
+
+#[repr(C)]
+pub struct IShellItemArray {
+    pub lpVtbl: *const IShellItemArrayVtbl,
+}
+#[repr(C)]
+pub struct IShellItemArrayVtbl {
+    pub QueryInterface: unsafe extern "system" fn(*mut IShellItemArray, REFIID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(*mut IShellItemArray) -> ULONG,
+    pub Release: unsafe extern "system" fn(*mut IShellItemArray) -> ULONG,
+    pub BindToHandler: unsafe extern "system" fn(*mut IShellItemArray, *mut IBindCtx, REFGUID, REFIID, *mut *mut c_void) -> HRESULT,
+    pub GetPropertyStore: unsafe extern "system" fn(*mut IShellItemArray, GETPROPERTYSTOREFLAGS, REFIID, *mut *mut c_void) -> HRESULT,
+    pub GetPropertyDescriptionList: unsafe extern "system" fn(*mut IShellItemArray, REFPROPERTYKEY, REFIID, *mut *mut c_void) -> HRESULT,
+    pub GetAttributes: unsafe extern "system" fn(*mut IShellItemArray, SIATTRIBFLAGS, SFGAOF, *mut SFGAOF) -> HRESULT,
+    pub GetCount: unsafe extern "system" fn(*mut IShellItemArray, *mut DWORD) -> HRESULT,
+    pub GetItemAt: unsafe extern "system" fn(*mut IShellItemArray, DWORD, *mut *mut IShellItem) -> HRESULT,
+    pub EnumItems: unsafe extern "system" fn(*mut IShellItemArray, *mut *mut IEnumShellItems) -> HRESULT,
+}
+
+extern "C" {
+    pub static IID_IShellItem: IID;
+    pub static IID_IShellItemArray: IID;
 }
 
 #[repr(C)]

@@ -56,9 +56,11 @@ from .cpp_com import (
     discover_widl_header,
     lower_trivial_worker,
     normalize_worker_body,
+    normalize_worker_semantics,
     parse_widl_interface,
     prepare_helper_closure,
     render_class_scaffold,
+    render_cpp_support,
     render_interface,
     render_object_map_adapter,
     render_wide_literal_statics,
@@ -1494,7 +1496,8 @@ def cmd_translate(args):
             signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
             rust = normalize_worker_body(rust, signature)
             rust = _unseal_result(dep, rust)
-            return normalize_worker_body(rust, signature)
+            rust = normalize_worker_body(rust, signature)
+            return normalize_worker_semantics(dep.body_text, rust)
 
         # `--fn` selects the paid/output unit, not its dependency knowledge.
         # Preserve the complete prepared closure for local-worker signatures.
@@ -1652,6 +1655,7 @@ def cmd_translate(args):
                 hit = normalize_worker_body(
                     hit, worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
                 )
+                hit = normalize_worker_semantics(dep.body_text, hit)
                 if audit_worker_body(
                     dep.body_text,
                     hit,
@@ -1704,6 +1708,7 @@ def cmd_translate(args):
                             hit,
                             worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
                         )
+                        hit = normalize_worker_semantics(dep.body_text, hit)
                         findings = audit_worker_body(
                             dep.body_text,
                             hit,
@@ -1892,6 +1897,7 @@ def cmd_translate(args):
                         hit,
                         worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
                     )
+                    hit = normalize_worker_semantics(dep.body_text, hit)
                     findings = audit_worker_body(
                         dep.body_text,
                         hit,
@@ -2186,6 +2192,7 @@ def cmd_translate(args):
                 raise CppComError("internal error: shell32 COM preflight state was lost")
             deterministic = [render_interface(item) for item in cpp_com_interfaces]
             deterministic.append(render_class_scaffold(cpp_com_cls, cpp_com_interfaces))
+            deterministic.append(render_cpp_support(c_file))
             if cpp_com_wide_statics:
                 deterministic.append(cpp_com_wide_statics)
             stitched = "\n\n".join(deterministic) + "\n\n" + stitched

@@ -307,6 +307,15 @@ assembled module directly and does not require or consult an accepted base funct
 mode is the honest oracle for generated scaffold/substrate completeness; do not manufacture
 a base merely to make the replacement-mode harness run.
 
+The shell32 C++ stitcher also emits a source-selected deterministic support closure after
+the class/vtable scaffold. It currently owns numeric local/resource macros, simple
+`CMVERBMAP` aggregate tables, known Win32 FFI signatures, compiler/header macro lowerings
+such as `IID_PPV_ARG`, implicit C scalar/pointer conversions, and the proven `CStringW`
+operations used by the pilot. Post-response semantic lowerings deliberately run on cache
+hits as well as fresh responses: expanding deterministic knowledge must not force a paid
+regeneration. Shared COM interfaces remain in `shellcom.rs`; extend that canonical ABI from
+WIDL rather than generating per-file duplicates.
+
 Parallel DeepSeek translation drains every submitted future even when one worker fails API,
 seal, or body audit. Accepted workers are committed immediately to the per-function resume
 cache; rustconv raises a combined error only after the pool is drained. Declaration-only
@@ -339,3 +348,9 @@ workers reached 10/10 model-tier and 20/20 overall on all three architectures. T
 in-sample substrate result, not yet a production acceptance-rate estimate: broaden the
 corpus across classes, and keep fact/call closure, body audit, skeleton compatibility, and
 x3 compilation mandatory.
+
+The first class with no accepted Rust base, `CCopyAsPathMenu`, initially produced the same
+62 full-module diagnostics on every architecture. After the deterministic support closure
+landed, the unchanged eight cached DeepSeek workers replayed for $0 and the module reached
+zero diagnostics on i386/amd64/arm64. This validates substrate repair as the correct route
+for unresolved ABI/header surface; it does not waive class-atomic link and smoke gates.
