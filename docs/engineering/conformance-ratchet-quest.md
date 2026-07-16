@@ -660,3 +660,68 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
     mkramdisk glob can't stage them. Harmless today (no visible Cc*/Flt* test is in any of the 3
     sweep lists) — but if you make one visible, add its driver there. Also `fltlib.dll` is not
     built for arm64 at all (`LDR: Skipping missing import fltlib.dll for kmtest_.exe`).
+- 2026-07-15 (later): **arm64 SCM BROUGHT UP — the Layer 3/4 entry above is now WRONG in its key
+  claim, and the real blocker is a DROPPED RpcTryExcept in advapi32-rust.** Correcting the record
+  first, then the chain.
+  * **CORRECTION — "spawning services.exe WEDGES the arm64 boot" NO LONGER REPRODUCES.** That was
+    measured on a tree ~30 commits behind mainline; after merging current master the same wiring
+    boots to `shell ready` in ~41s with services.exe running. Do NOT chase the "wedge". (The
+    ZwLoadDriver-hang hypothesis for it was already flagged doubtful there; it is now moot.)
+  * **The bring-up chain (each layer found by measurement, all now working on arm64):**
+    1. **npfs.sys** — never built/staged/loaded. Registered Start=1 in the SYSTEM hive already, but
+       arm64 honours iomgr's hand-rolled `STAGED_SVCS` list, not the registry. Added → loads clean
+       (`ZwLoadDriver …\Npfs -> 0x00000000`). This is npfs's FIRST LIGHT on arm64.
+    2. **services.exe** — never built/staged/spawned (`winlogon.rs` cfg(aarch64) skipped the SCM).
+       Its whole import set was already staged; only the binary was missing.
+    3. **lsass — NOT OPTIONAL.** `ScmCreateServiceDatabase` ends in `ScmWaitForLsa()` =
+       `WaitForSingleObject(LSA_RPC_SERVER_ACTIVE, INFINITE)` (services-rust/src/services.rs:253);
+       only lsass signals it. SCM-without-LSA hangs FOREVER mid-database (measured: stuck 420s+
+       after "LastKnownGood OK"). x86 never hit it because its winlogon branch starts lsass.
+       lsasrv/samsrv were the only 2 of lsass's 15 transitive DLLs unstaged.
+    4. **msv1_0 — invisible to an import walk.** lsass exited `0xC0000135` (STATUS_DLL_NOT_FOUND)
+       with EVERY static import present and NO delay-import directory: lsasrv loads the MSV1_0 auth
+       package BY NAME at runtime (the Lsa "Authentication Packages" value) and propagates the
+       failure as lsass's exit code. **Reusable lesson: a transitive import-table closure is
+       necessary but NOT sufficient for "what does this binary need staged" — runtime LoadLibrary
+       by registry name is invisible to it.**
+    5. Result: **the SCM is fully up on arm64.** wWinMain → CheckForLiveCD → Events created →
+       Security initialized → LastKnownGood → **ServiceDatabase OK** → RegisterServicesProcess →
+       ScmAutoStartServices → **SC_AutoStartComplete FIRES**. npfs creates `NtControlPipe0`. The
+       kmtest sweep now passes through the **REAL SCM gate** (`SCM auto-start complete (waited
+       ~0s)`) instead of the arm64 WARN-and-proceed path, and the SCM services kmtest's
+       CreateService as far as `ScmLoadService(Kmtest)`. **The boot still reaches the desktop.**
+       => The 07-12 "services.exe never publishes SC_AutoStartComplete on arm64" finding is CLOSED.
+  * **THE REMAINING BUG (real, general, not arm64-specific): advapi32-rust dropped the C's
+    RpcTryExcept.** services.exe dies with `[UEXC] Code=0x6BA` (RPC_S_SERVER_UNAVAILABLE) inside
+    `ScmLoadService(Kmtest)` "logging success event" → `ScmLogEvent` → `RegisterEventSourceW`.
+      - C (`dll/win32/advapi32/service/eventlog.c:1276-1289`): the `ElfrRegisterEventSourceW` RPC
+        call is wrapped `RpcTryExcept { … } RpcExcept(EXCEPTION_EXECUTE_HANDLER) { Status =
+        I_RpcMapWin32Status(RpcExceptionCode()); } RpcEndExcept;` — the raise is CAUGHT and mapped,
+        so RegisterEventSourceW returns NULL and ScmLogEvent's `if hLog.is_null() { return; }`
+        handles it gracefully.
+      - Rust (`sdk/lib/rust/advapi32-rust/src/service/eventlog.rs:944`, the LIVE cohab body):
+        `Status = ElfrRegisterEventSourceW(…);` — **NAKED. The handler was dropped in translation.**
+        The raise escapes and kills the caller.
+      - **§9.53 class** (dropped/no-op'd exception handling in a translation). LATENT ON ALL ARCHES
+        — x86 only escapes it because EventLog always runs there. `ScmLogEvent` already carries a
+        VIBEOS half-workaround for exactly this (`if ScmInitialize != 0 { return; }`, whose comment
+        names DUMMY_PSEH and the dead RPC handler) — it covers only the INIT phase, not post-init
+        service loads.
+      - **Fix = restore the catch**, not stage more services. Rust can't `__try`, so the sanctioned
+        pattern is a native-SEH C shim (the `ntoskrnl/kmsafecopy.c` precedent: `_USE_NATIVE_SEH` C
+        wrapper, Rust calls it; clang SEH is calls-only, and an RPC stub call IS a call, so the
+        raise lands in a callee with the return address inside the __try scope table).
+  * **DO NOT "fix" this by staging eventlog.exe — MEASURED REGRESSION.** It builds and starts
+    (pid=268) but never connects to the control pipe, so the SCM blocks EARLIER, at
+    `ScmStartUserModeService(EventLog): waiting for connect`, and never reaches
+    SC_AutoStartComplete at all. Strictly worse than leaving it absent. Reverted.
+  * **NOT LANDED.** The chain (npfs+services+lsass+msv1_0 staging, archcfg targets, iomgr
+    STAGED_SVCS Npfs, winlogon StartServicesManager+StartLsass) is parked. Two reasons: the SCM
+    still dies at the RpcTryExcept bug above, and turning on a full autostart storm changes the
+    arm64 boot profile — which wants measuring before it's inflicted on the smp lane's 1-in-258
+    0x4E flake hunt. NOTE `winlogon.rs` deliberately does NOT call `WaitForLsass()` on arm64 (x86
+    does): services.exe already does its own ScmWaitForLsa, and making winlogon wait would put a
+    fresh INFINITE wait directly on the boot-to-desktop path.
+  * Owed housekeeping when it lands: the `STAGED_SVCS` edit shifts iomgr/driver.rs line numbers, so
+    the lint baselines (`lint_kernel`, `scan_silent_failures`) need regenerating — the "2 new/4 new"
+    they report are pre-existing findings at drifted line numbers, not new defects.
