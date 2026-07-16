@@ -26,6 +26,7 @@ from rustconv.cpp_com import (
     render_interface,
     render_object_map_adapter,
     render_wide_literal_statics,
+    require_supported_worker_raii,
     strip_debug_statements,
     worker_signature,
 )
@@ -730,11 +731,39 @@ def test_worker_semantics_restores_cpp_com_ptr_scope_exit_ownership():
     assert "folder = core::ptr::null_mut();" in normalized
 
 
+def test_sibling_receiver_insertion_preserves_explicit_other_object_receiver():
+    source = """HRESULT C::f(ARG a) {
+        C_g_body(a);
+        other->g(a);
+    }"""
+    rust = """pub unsafe fn C_f_body(this: *mut C, a: ARG) {
+        C_g_body(a);
+        C_g_body(other, a);
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "C_g_body(this, a)" in normalized
+    assert "C_g_body(other, a)" in normalized
+    assert "C_g_body(this, other, a)" not in normalized
+
+
+def test_custom_body_local_raii_fails_before_payment():
+    dep = FunctionDep(name="C_AddPages", body_text="HRESULT f() { CDrop drop(data); }")
+    with pytest.raises(CppComError, match="CDrop local"):
+        require_supported_worker_raii([dep])
+
+
 def test_worker_semantics_rejects_unanchored_cpp_com_ptr_local():
     source = "CComPtr<IShellFolder> folder; return use(folder);"
     rust = "pub unsafe fn C_f_body() -> HRESULT { use_folder() }"
     with pytest.raises(CppComError, match="CComPtr local folder"):
         normalize_worker_semantics(source, rust)
+
+
+def test_worker_audit_rejects_model_owned_scope_guards():
+    source = "{ return S_OK; }"
+    rust = "pub unsafe fn C_f_body() -> HRESULT { let _g = scopeguard::guard(p, drop); S_OK }"
+    findings = audit_worker_body(source, rust, "C_f_body")
+    assert any("model-owned ownership guard" in item for item in findings)
 
 
 def test_worker_audit_rejects_body_local_abi_types():
@@ -745,6 +774,12 @@ def test_worker_audit_rejects_body_local_abi_types():
     }"""
     findings = audit_worker_body(source, rust, "C_f_body")
     assert any("ABI type declaration" in item for item in findings)
+
+
+def test_worker_audit_ignores_abi_words_in_comments():
+    source = "{ return S_OK; }"
+    rust = "pub unsafe fn C_f_body() -> HRESULT { // define struct elsewhere\n S_OK }"
+    assert audit_worker_body(source, rust, "C_f_body") == []
 
 
 def test_proven_unimplemented_stub_is_lowered_without_a_model():
@@ -1012,6 +1047,36 @@ def test_invalid_filename_static_is_passed_as_a_pointer():
     )
     assert "core::ptr::addr_of!(IID_IShellFolder2)" in lowered
     assert "core::ptr::addr_of_mut!((*this).m_pisfInner).cast()" in lowered
+
+
+def test_folder_options_support_owns_full_sdk_sfv_create_layout():
+    source = SHELL32 / "CFolderOptions.cpp"
+    support = render_cpp_support(source)
+    assert "pub struct SFV_CREATE" in support
+    assert "pub pshf: *mut IShellFolder" in support
+    assert "pub psvOuter: *mut core::ffi::c_void" in support
+    assert "pub psfvcb: *mut core::ffi::c_void" in support
+    assert "fn SHCreateShellFolderView(create: *const SFV_CREATE" in support
+
+
+def test_sfv_create_model_shadow_is_replaced_from_source_authority():
+    source = """HRESULT f() {
+        CComPtr<IShellFolder> pSF;
+        SFV_CREATE create = { sizeof(SFV_CREATE), pSF };
+        return SHCreateShellFolderView(&create, out);
+    }"""
+    rust = """pub unsafe fn f() -> HRESULT {
+        #[repr(C)] struct SFV_CREATE { cbSize: u32, pFolder: *mut IShellFolder }
+        let mut pSF: *mut IShellFolder = core::ptr::null_mut();
+        let create = SFV_CREATE { cbSize: 8, pFolder: pSF };
+        SHCreateShellFolderView(&create, out)
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "struct SFV_CREATE" not in normalized
+    assert "size_of::<SFV_CREATE>() as UINT" in normalized
+    assert "pshf: pSF" in normalized
+    assert "psvOuter: core::ptr::null_mut()" in normalized
+    assert "psfvcb: core::ptr::null_mut()" in normalized
 
 
 def test_worker_audit_does_not_treat_macros_or_cast_types_as_constants():

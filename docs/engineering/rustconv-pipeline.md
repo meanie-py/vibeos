@@ -371,3 +371,11 @@ the C++ owner was disabled. The integrated image built and passed the complete t
 gate. The full pipeline result is therefore: two template workers plus eight cached
 DeepSeek workers, no retry or stronger model, 62-to-zero x3 diagnostics, and class-atomic
 link/smoke acceptance.
+
+A later paired test retried three heterogeneous DeepSeek rejects once with Sonnet under the
+same sealed mechanical contract. Final acceptance was 0/3 for $0.127848: one refactored
+shared cleanup beyond occurrence-level call certification, one added a second model-owned
+`scopeguard` cleanup layer, and one invented helpers for an unsupported `CDrop` owner after
+reintroducing `SUCCEEDED`. Treat custom C++ RAII and shared-cleanup CFGs as deterministic
+substrate/decomposition work, not automatic Sonnet routes. Static difficulty may nominate a
+stronger model only after the substrate classifier is clear.

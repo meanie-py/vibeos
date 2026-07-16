@@ -301,3 +301,8 @@ FinalConstruct failure cleanup, zero compiler diagnostics on all three targets, 
 representative control skeletons. It is wired as the Rust object-map owner; warm builds are
 green x3, and the clean integrated build/lint/shell-ready/network gate passed at
 `/tmp/vibeos-cli/20260716-173526-gate-i386+amd64+arm64/full.log`.
+
+The paired Sonnet follow-up accepted 0/3 heterogeneous rejects under the same mechanical
+gates ($0.127848). Do not route on LOC/branch complexity alone: `SFV_CREATE`, custom `CDrop`
+RAII, and shared `goto` cleanup need deterministic type/lifetime/CFG ownership first.
+Sonnet remains a residual judgment tier only after that classifier is clean.

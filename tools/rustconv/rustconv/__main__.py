@@ -66,11 +66,18 @@ from .cpp_com import (
     render_interface,
     render_object_map_adapter,
     render_wide_literal_statics,
+    require_supported_worker_raii,
     strip_debug_statements,
     worker_signature,
 )
 from .extern_audit import run_extern_audit, run_extern_fix
-from .fact_seal import FactSealError, fact_contract, prepare_sealed_source, unseal_facts
+from .fact_seal import (
+    FactSealError,
+    canonicalize_hresult_predicates,
+    fact_contract,
+    prepare_sealed_source,
+    unseal_facts,
+)
 from .function_prompt import (
     build_file_context,
     build_function_prompt,
@@ -1461,6 +1468,7 @@ def cmd_translate(args):
             sorted_deps = prepare_helper_closure(
                 deps, args.class_name, cpp_com_cls.plain_state_fields()
             )
+            require_supported_worker_raii(sorted_deps)
             cpp_com_wide_statics = render_wide_literal_statics(deps, sorted_deps)
 
         fact_seal_enabled = bool(
@@ -1518,6 +1526,7 @@ def cmd_translate(args):
                     rust = unseal_calls(rust, calls)
                 facts = fact_seals.get(dep.name)
                 if facts is not None:
+                    rust = canonicalize_hresult_predicates(rust)
                     rust = unseal_facts(rust, facts)
                 return rust
             except (CallSealError, FactSealError) as error:

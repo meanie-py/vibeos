@@ -714,6 +714,37 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     """
     # no_std shell modules never own a `std` dependency.
     rust = rust.replace("std::", "core::")
+    sfv_create = re.search(
+        r"\bSFV_CREATE\s+([A-Za-z_]\w*)\s*=\s*\{\s*sizeof\s*\(\s*SFV_CREATE\s*\)\s*,\s*"
+        r"([A-Za-z_]\w*)\s*\}\s*;",
+        source,
+    )
+    if sfv_create is not None:
+        local_name, folder_name = sfv_create.groups()
+        # The SDK declaration is the ABI authority. A model-local shadow type is
+        # never accepted, even if its guessed prefix happens to compile.
+        rust = re.sub(
+            r"(?s)(?:#\[repr\(C\)\]\s*)?struct\s+SFV_CREATE\s*\{[^{}]*\}\s*",
+            "",
+            rust,
+        )
+        initializer = (
+            f"let {local_name} = SFV_CREATE {{\n"
+            "        cbSize: core::mem::size_of::<SFV_CREATE>() as UINT,\n"
+            f"        pshf: {folder_name},\n"
+            "        psvOuter: core::ptr::null_mut(),\n"
+            "        psfvcb: core::ptr::null_mut(),\n"
+            "    };"
+        )
+        rust, replacements = re.subn(
+            rf"(?s)let\s+(?:mut\s+)?{re.escape(local_name)}(?:\s*:[^=]+)?\s*=\s*"
+            r"SFV_CREATE\s*\{.*?\}\s*;",
+            initializer,
+            rust,
+            count=1,
+        )
+        if replacements != 1:
+            raise CppComError(f"SFV_CREATE local {local_name}: worker initializer not found")
     # CComPtr locals have scope-exit semantics on every C++ return path.  Keep
     # the model's raw pointer spelling (which makes vtable calls simple), but
     # attach a deterministic guard to its slot.  This closes failure exits the
@@ -785,8 +816,25 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         if owner is not None
         else set()
     )
-    for callee in sibling_calls:
-        rust = re.sub(rf"\b{re.escape(callee)}\s*\((?!\s*this\b)\s*", f"{callee}(this, ", rust)
+    sibling_arities: dict[str, set[int]] = {}
+    masked_source = _masked_cpp(source)
+    for _start, end, callee, arity in _named_call_spans(source, sibling_calls):
+        opening = masked_source.find("(", end)
+        tail = masked_source[opening + 1 :].lstrip()
+        source_has_this = tail.startswith("this") and not re.match(r"this[A-Za-z0-9_]", tail)
+        sibling_arities.setdefault(callee, set()).add(arity - 1 if source_has_this else arity)
+    insertions = []
+    masked_rust = _masked_cpp(rust)
+    for _start, end, callee, arity in _named_call_spans(rust, sibling_calls):
+        if arity not in sibling_arities.get(callee, set()):
+            continue
+        opening = masked_rust.find("(", end)
+        tail = masked_rust[opening + 1 :].lstrip()
+        if tail.startswith("this") and not re.match(r"this[A-Za-z0-9_]", tail):
+            continue
+        insertions.append((opening + 1, "this" + (", " if arity else "")))
+    for position, insertion in reversed(insertions):
+        rust = rust[:position] + insertion + rust[position:]
     # Header-only predicates and HRESULT helpers are deterministic expressions.
     rust = re.sub(r"\bFAILED_UNEXPECTEDLY\s*\(([^()]+)\)", r"((\1) < 0)", rust)
     rust = re.sub(r"\bSCODE_CODE\s*\(([^()]+)\)", r"(((\1) as u32) & 0xffff)", rust)
@@ -957,6 +1005,10 @@ _CPP_SUPPORT_EXTERNS = {
         "    fn SHCreateShellItem(parent: PCIDLIST_ABSOLUTE, folder: *mut IShellFolder, "
         "child: LPCITEMIDLIST, item: *mut *mut IShellItem) -> HRESULT;"
     ),
+    "SHCreateShellFolderView": (
+        "    fn SHCreateShellFolderView(create: *const SFV_CREATE, "
+        "view: *mut *mut IShellView) -> HRESULT;"
+    ),
     "SHFree": "    fn SHFree(memory: LPVOID);",
     "ILGetNext": "    fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;",
     "SHELL32_CoCreateInitSF": (
@@ -1087,6 +1139,17 @@ def render_cpp_support(
         chunks.append(
             "pub static INVALID_FILETITLE_CHARACTERSW: [WCHAR; 10] = "
             "[0x005c, 0x002f, 0x003a, 0x002a, 0x003f, 0x0022, 0x003c, 0x003e, 0x007c, 0];"
+        )
+
+    if "SFV_CREATE" in used_words:
+        chunks.append(
+            "#[repr(C)]\n"
+            "pub struct SFV_CREATE {\n"
+            "    pub cbSize: UINT,\n"
+            "    pub pshf: *mut IShellFolder,\n"
+            "    pub psvOuter: *mut core::ffi::c_void,\n"
+            "    pub psfvcb: *mut core::ffi::c_void,\n"
+            "}"
         )
 
     table = _render_cmverbmap(source)
@@ -1511,6 +1574,19 @@ def prepare_helper_closure(
     return topological_sort(rewritten)
 
 
+def require_supported_worker_raii(deps: list) -> None:
+    """Reject body-local C++ owners whose lifetime is not deterministic yet."""
+    unsupported = []
+    for dep in deps:
+        if re.search(r"\bCDrop\s+[A-Za-z_]\w*\s*\(", dep.body_text):
+            unsupported.append(f"{dep.name}: CDrop local")
+    if unsupported:
+        raise CppComError(
+            "unsupported body-local C++ RAII requires deterministic lowering before payment: "
+            + ", ".join(unsupported)
+        )
+
+
 def apply_interface_method_signatures(
     deps: list[FunctionDep], class_name: str, interfaces: list[InterfaceSpec]
 ) -> list[FunctionDep]:
@@ -1646,15 +1722,17 @@ def audit_worker_body(
                 f"expected `{_canonical_signature(expected_signature)}`, got `{actual}`"
             )
 
+    executable_rust = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", rust, flags=re.S)
     forbidden = {
         "#[no_mangle]": "export attribute",
-        'extern "': "ABI declaration",
         ".unwrap()": "Option/panic ABI guess",
+        "scopeguard::": "model-owned ownership guard",
     }
     for token, description in forbidden.items():
-        if token in rust:
+        if token in executable_rust:
             findings.append(f"worker emitted forbidden {description}: {token}")
-    executable_rust = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", rust, flags=re.S)
+    if re.search(r"\bextern\s+", executable_rust):
+        findings.append('worker emitted forbidden ABI declaration: extern "')
     if re.search(r"(?m)\bgoto\s+[A-Za-z_]\w*\s*;|^\s*[A-Za-z_]\w*\s*:\s*$", executable_rust):
         findings.append("worker emitted raw C goto/label syntax")
     if re.search(r"\?[^;{}\n]+:\s*[^:={}]", executable_rust):
@@ -1662,13 +1740,16 @@ def audit_worker_body(
     # Calling QueryInterface through an input object's deterministic vtable is
     # ordinary method-body behavior.  Only a model-owned implementation would
     # compete with the generated COM scaffold.
-    if re.search(r"\bfn\s+[A-Za-z_]\w*QueryInterface\s*\(", rust):
+    if re.search(r"\bfn\s+[A-Za-z_]\w*QueryInterface\s*\(", executable_rust):
         findings.append("worker emitted forbidden QueryInterface implementation")
-    if re.search(r"\bfn\s+[A-Za-z_]\w*CreateInstance\s*\(", rust):
+    if re.search(r"\bfn\s+[A-Za-z_]\w*CreateInstance\s*\(", executable_rust):
         findings.append("worker emitted forbidden activation factory implementation")
-    if re.search(r"\b(?:struct|static)\s+[A-Za-z_]\w*Vtbl\b|\b[A-Za-z_]\w*Vtbl\s*\{", rust):
+    if re.search(
+        r"\b(?:struct|static)\s+[A-Za-z_]\w*Vtbl\b|\b[A-Za-z_]\w*Vtbl\s*\{",
+        executable_rust,
+    ):
         findings.append("worker emitted forbidden vtable definition")
-    if re.search(r"\b(?:struct|union|enum)\s+[A-Za-z_]\w*\b", rust):
+    if re.search(r"\b(?:struct|union|enum)\s+[A-Za-z_]\w*\b", executable_rust):
         findings.append("worker emitted forbidden ABI type declaration")
 
     # Strings and comments contain printf formats and prose, not program constants.

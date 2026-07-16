@@ -68,3 +68,10 @@ def test_unseal_recovers_exact_original_values_only_from_executable_code():
 
     with pytest.raises(FactSealError, match="missing"):
         unseal_facts('unsafe fn body() { /* 0 + S_OK */ TRACE("0"); }', sealed)
+
+
+def test_model_hresult_predicate_can_be_canonicalized_before_fact_recovery():
+    sealed = prepare_sealed_source("HRESULT f() { return SUCCEEDED(hr); }")
+    model = "unsafe fn f() -> bool { SUCCEEDED(hr) }"
+    restored = unseal_facts(canonicalize_hresult_predicates(model), sealed)
+    assert "((hr) >= 0)" in restored

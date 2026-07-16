@@ -173,9 +173,10 @@ branch or loop, but cannot prove FFI types, pointer semantics, call arguments, o
 The correct role is a cheap veto alongside closed fact/call sets, never a replacement for
 the compiler or semantic tests.
 
-### Sonnet escalation result
+### Sonnet escalation result on the initial 20-worker corpus
 
-The same three DeepSeek residuals were retried with `claude-sonnet-4-5-20250929`. The first
+The initial 20-worker corpus's three DeepSeek residuals were retried with
+`claude-sonnet-4-5-20250929`. The first
 attempt exposed a harness bug: statement-position `TRACE`/`ERR` macros were omitted from the
 sealed call set but remained visible to the model, so Sonnet treated them as runtime calls
 and renumbered the envelope. rustconv now removes complete debug-macro statements from the
@@ -339,3 +340,37 @@ Eight representative lifecycle, helper, forwarding, branching, ownership, and ou
 workers also preserved the exact normalized control skeleton. The integrated module passed
 the clean i386/amd64/arm64 build, lint, shell-ready smoke, and network gate at
 `/tmp/vibeos-cli/20260716-173526-gate-i386+amd64+arm64/full.log`.
+
+### Paired Sonnet experiment on heterogeneous rejects
+
+Three rejected DeepSeek workers were resubmitted once with the pinned
+`claude-sonnet-4-5-20250929`, using an isolated cache tag and the same mechanical prompt,
+fact seal, call seal, signature authority, and audits. This was an explicit capacity/router
+experiment, not a retry loop.
+
+| Worker | Sonnet result | Sonnet cost |
+|---|---|---:|
+| `CQueryAssociations_GetString` | call-envelope reject | $0.092568 |
+| `ResetDefViewFolderSettings` | initially audit-green; rejected after ownership/compile review | $0.010680 |
+| `CDrvDefExt_AddPages` | fact-envelope reject; deterministic replay exposed unsupported RAII | $0.024600 |
+
+Sonnet accepted **0/3** after the complete mechanical review, for $0.127848. `GetString`
+removed raw `goto` by duplicating/refactoring cleanup, but damaged occurrence-level call
+identity. `ResetDefViewFolderSettings` introduced `scopeguard` cleanup in addition to the
+source-derived `CppComPtrGuard`, requiring an undeclared crate and risking double release.
+`AddPages` reintroduced `SUCCEEDED` instead of its sealed comparison; canonicalizing that
+spelling recovered the fact at $0, but the body invented `CDrop_new/GetCount/drop` helpers
+and invalid manual COM releases.
+
+The corresponding three DeepSeek calls cost $0.03383722. Deterministic SDK ownership made
+the cached DeepSeek FolderOptions worker acceptable without regeneration; neither model can
+own the custom `CDrop` lifetime yet. rustconv now hard-fails any `CDrop` body-local owner
+before payment, generates the full four-field SDK `SFV_CREATE`, rejects model-owned
+`scopeguard`, canonicalizes reintroduced HRESULT predicates before fact recovery, and inserts
+sibling receivers by proven arity so calls on another object are not rewritten as `this`.
+
+The measured routing boundary is therefore **not complexity alone**. First classify
+unsupported ABI/RAII/CFG substrate and close it deterministically. Sonnet is only a plausible
+route for residual expression/control judgment after those mechanical obligations are gone;
+this sample provides no positive evidence for routine Sonnet escalation in the sealed
+mechanical lane.
