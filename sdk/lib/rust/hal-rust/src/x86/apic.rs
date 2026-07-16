@@ -452,6 +452,10 @@ unsafe extern "C" {
     fn HalpApcInterrupt();
     #[cfg(target_arch = "x86")]
     fn HalpDispatchInterrupt();
+    // Serial flavor banner (i386): variadic cdecl, resolved via the ntoskrnl
+    // import lib — proves in every boot log that the APIC HAL is live.
+    #[cfg(target_arch = "x86")]
+    fn DbgPrint(fmt: *const u8, ...) -> u32;
 }
 
 // ---------------------------------------------------------------------------
@@ -943,6 +947,12 @@ pub unsafe extern "system" fn ApicInitializeIOApic() {
 pub unsafe extern "system" fn HalpInitializePICs(EnableInterrupts: BOOLEAN) {
     let mut eflags = read_eflags();
     cli();
+
+    // Flavor banner — proves in the boot log that the i386 APIC HAL is live
+    // (LAPIC/IOAPIC/TPR, lazy IRQL, RTC system clock).  i386 only; amd64 boot
+    // path is unchanged.
+    #[cfg(target_arch = "x86")]
+    DbgPrint(b"[HAL] i386 APIC flavor active: LAPIC/IOAPIC/TPR, lazy-IRQL, RTC clock\n\0".as_ptr());
 
     HalpInitializeLegacyPICs();
     ApicInitializeIOApic();

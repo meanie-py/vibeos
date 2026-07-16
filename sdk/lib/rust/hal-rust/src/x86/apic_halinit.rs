@@ -35,7 +35,7 @@ const APIC_PROFILE_LEVEL: u8 = 15;
 #[cfg(target_arch = "x86")]
 const CLOCK2_LEVEL: u8 = 28;
 #[cfg(target_arch = "x86")]
-const APIC_PROFILE_LEVEL: u8 = 31; // HIGH_LEVEL
+const APIC_PROFILE_LEVEL: u8 = 31; // HIGH_LEVEL  // nolint: inline-literal (i386 HIGH_LEVEL=31, not the amd64 15 the scanner knows)
 const IDT_INTERNAL: u8 = 17;
 const IDT_DEVICE: u8 = 33;
 
