@@ -50,3 +50,10 @@ def test_unseal_does_not_recover_ambiguous_or_declared_callee_names():
         )
     with pytest.raises(CallSealError, match="missing/non-executable"):
         unseal_calls("unsafe fn Worker_body() {}", sealed)
+
+
+def test_call_seal_skips_cpp_direct_initializer_declarator():
+    source = "void f() { CComHeapPtr<ITEMIDLIST> pidl(SHCreate(path)); Use(pidl); }"
+    sealed = seal_calls(source, {"pidl", "SHCreate", "Use"})
+    assert [call.original for call in sealed.calls] == ["SHCreate", "Use"]
+    assert "CComHeapPtr<ITEMIDLIST> pidl(" in sealed.text

@@ -598,14 +598,57 @@ def test_custom_base_class_fails_before_inherited_state_is_lost():
         cls.require_supported()
 
 
-def test_custom_atl_lifecycle_fails_before_factory_generation():
+def test_final_construct_is_wired_before_query_interface():
     cls = analyze_class(
         SHELL32 / "folders" / "CMyDocsFolder.cpp",
         "CMyDocsFolder",
         object_map_source=SHELL32 / "shell32.cpp",
     )
-    with pytest.raises(CppComError, match="custom ATL lifecycle method FinalConstruct"):
-        cls.require_supported()
+    cls.require_supported()
+    assert cls.final_construct
+    interfaces = [
+        InterfaceSpec(
+            entry.interface,
+            (
+                InterfaceMethod(
+                    "QueryInterface",
+                    "HRESULT",
+                    ((f"{entry.interface} *", "This"), ("REFIID", "riid"), ("void **", "ppv")),
+                ),
+                InterfaceMethod("AddRef", "ULONG", ((f"{entry.interface} *", "This"),)),
+                InterfaceMethod("Release", "ULONG", ((f"{entry.interface} *", "This"),)),
+            ),
+            "fixture.h",
+        )
+        for entry in cls.com_map
+    ]
+    rust = render_class_scaffold(cls, interfaces)
+    construct = rust.index("CMyDocsFolder_FinalConstruct_body(this)")
+    query = rust.index("CMyDocsFolder_QueryInterface(this, riid, ppv)", construct)
+    assert construct < query
+    assert "if construct_hr < 0" in rust
+    assert "CMyDocsFolder_Release(this);" in rust
+
+
+def test_static_methods_and_destructor_debris_are_not_object_state():
+    folder = analyze_class(
+        SHELL32 / "CFolderOptions.cpp",
+        "CFolderOptions",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    assert folder.state_fields == ["CComPtr<IUnknown> m_pSite"]
+    notification = analyze_class(
+        SHELL32 / "CUserNotification.cpp",
+        "CUserNotification",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    assert all(not field.startswith(("static ", "~", "#")) for field in notification.state_fields)
+
+
+def test_cpp_header_scan_extracts_inline_class_methods():
+    scan = scan_file(SHELL32 / "folders" / "CMyDocsFolder.h", force_cpp=True)
+    methods = {item.name for item in scan.functions if item.cpp_class == "CMyDocsFolder"}
+    assert {"GetMaxLength", "GetValidCharacters"} <= methods
 
 
 def test_worker_audit_preserves_constants_and_rejects_abi_surface():
@@ -647,6 +690,24 @@ def test_worker_audit_allows_query_interface_calls_but_rejects_implementation():
     implementation = "pub unsafe fn C_QueryInterface() -> HRESULT { S_OK }"
     findings = audit_worker_body(source, implementation, "C_QueryInterface")
     assert any("QueryInterface implementation" in item for item in findings)
+
+
+def test_worker_audit_rejects_raw_c_control_flow_but_ignores_comments():
+    signature = "pub unsafe fn C_Work_body(this: *mut C) -> HRESULT"
+    rust = signature + " { // goto harmless;\n goto cleanup;\ncleanup:\n S_OK }"
+    findings = audit_worker_body(
+        "HRESULT C::Work() { return S_OK; }", rust, "C_Work_body", signature
+    )
+    assert "worker emitted raw C goto/label syntax" in findings
+
+
+def test_worker_audit_allows_create_instance_calls_but_rejects_implementations():
+    source = "{ return CoCreateInstance(clsid, NULL, flags, iid, out); }"
+    call = "pub unsafe fn C_f_body() -> HRESULT { CoCreateInstance(clsid, NULL, flags, iid, out) }"
+    assert audit_worker_body(source, call, "C_f_body") == []
+    implementation = "pub unsafe fn C_CreateInstance() -> HRESULT { E_NOTIMPL }"
+    findings = audit_worker_body(source, implementation, "C_CreateInstance")
+    assert any("activation factory implementation" in item for item in findings)
 
 
 def test_worker_semantics_restores_cpp_com_ptr_scope_exit_ownership():
@@ -907,6 +968,42 @@ def test_folder_pair_support_closes_internal_factory_and_header_macros():
     adapter = render_object_map_adapter(cls)
     assert "Shell32RustCoCreateInitSF" in adapter
 
+
+def test_mydocs_support_includes_header_inline_dependencies_and_sdk_facts():
+    source = SHELL32 / "folders" / "CMyDocsFolder.cpp"
+    header = (SHELL32 / "folders" / "CMyDocsFolder.h").read_text()
+    support = render_cpp_support(source, additional_source=header)
+    assert "fn _ILCreateMyDocuments() -> LPITEMIDLIST" in support
+    assert "fn SHStrDupW(source: LPCWSTR" in support
+    assert "pub const CSIDL_PERSONAL: INT = 0x0005" in support
+    assert "pub const SFGAO_HASPROPSHEET: SFGAOF = 0x0000_0040" in support
+    assert "pub static INVALID_FILETITLE_CHARACTERSW: [WCHAR; 10]" in support
+    assert "static CLSID_MyDocuments: GUID" in support
+
+
+def test_mydocs_semantics_lower_assert_iid_alias_and_bool_helper():
+    source = "HRESULT C::f() { ATLASSERT(x); return S_OK; }"
+    rust = """pub unsafe fn C_f_body(this: *mut C, pidl: LPCITEMIDLIST) -> HRESULT {
+        ATLASSERT((*this).x);
+        let ppv = &mut (*this).inner;
+        let hr = Make(IID_PPV_ARG(IShellFolder2, ppv));
+        if !_ILIsSpecialFolder(pidl) { return hr; }
+        S_OK
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "ATLASSERT" not in normalized
+    assert "IID_PPV_ARG" not in normalized
+    assert "addr_of!(IID_IShellFolder2)" in normalized
+    assert "addr_of_mut!((*this).inner).cast()" in normalized
+    assert "_ILIsSpecialFolder(pidl) == 0" in normalized
+
+
+def test_invalid_filename_static_is_passed_as_a_pointer():
+    source = "{ return SHStrDupW(INVALID_FILETITLE_CHARACTERSW, out); }"
+    rust = "pub unsafe fn f(out: *mut LPWSTR) { SHStrDupW(INVALID_FILETITLE_CHARACTERSW, out); }"
+    normalized = normalize_worker_semantics(source, rust)
+    assert "SHStrDupW(INVALID_FILETITLE_CHARACTERSW.as_ptr(), out)" in normalized
+
     lowered = normalize_worker_semantics(
         "HRESULT CFontsFolder::Initialize() { "
         "return SHELL32_CoCreateInitSF(IID_PPV_ARG(IShellFolder2, &m_pisfInner)); }",
@@ -951,3 +1048,15 @@ def test_worker_audit_checks_the_deterministic_signature():
         "signature differs" in finding
         for finding in audit_worker_body("{ return E_NOTIMPL; }", bad, "C_f_body", expected)
     )
+
+
+def test_worker_normalizer_does_not_parse_rust_path_colons_as_parameters():
+    expected = (
+        "pub unsafe fn C_f_body(this: *mut C, out: *mut core::ffi::c_void, "
+        "size: *mut DWORD) -> HRESULT"
+    )
+    model = (
+        "pub unsafe fn C_f_body(this: *mut C, out: *mut core::ffi::c_void, "
+        "size: *mut u32) -> i32 { S_OK }"
+    )
+    assert normalize_worker_body(model, expected).startswith(expected + " {")

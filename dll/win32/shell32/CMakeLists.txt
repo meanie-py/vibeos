@@ -50,7 +50,7 @@ list(APPEND SOURCE
     folders/CDesktopFolder.cpp
     folders/CFSFolder.cpp
     folders/CDrivesFolder.cpp
-    folders/CMyDocsFolder.cpp
+    # folders/CMyDocsFolder.cpp — replaced by Rust (shell32-rust/src/my_docs_folder.rs); cohab via libshell32_rust.a
     folders/CPrinterFolder.cpp
     # folders/CAdminToolsFolder.cpp — replaced by Rust (shell32-rust/src/admin_tools_folder.rs); cohab via libshell32_rust.a
     folders/CNetFolder.cpp

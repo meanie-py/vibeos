@@ -83,6 +83,7 @@ class CppComClass:
     registry_resource: str | None = None
     not_aggregatable: bool = False
     object_map_clsid: str | None = None
+    final_construct: bool = False
     method_names: list[str] = field(default_factory=list)
     base_classes: list[str] = field(default_factory=list)
     state_fields: list[str] = field(default_factory=list)
@@ -269,6 +270,11 @@ def _state_fields(body: str) -> list[str]:
         statement = " ".join(statement.split())
         if not statement or "(" in statement or ")" in statement or statement == "override":
             continue
+        # Static declarations do not contribute to an instance layout.  Macro
+        # removal can also leave a destructor's leading `~` or disabled `#if`
+        # method debris joined to the following static declaration.
+        if statement.startswith(("static ", "~", "#")) or " #" in statement:
+            continue
         # Access labels and macro debris contain no plausible declarator.
         if re.search(r"\b[A-Za-z_]\w*\s*(?:\[[^]]+\])?$", statement):
             fields.append(statement)
@@ -361,11 +367,9 @@ def analyze_class(
         unsupported.append(
             f"custom/inherited base class {base} needs deterministic inherited layout mapping"
         )
-    for lifecycle in ("FinalConstruct", "FinalRelease"):
-        if re.search(rf"\b{lifecycle}\s*\(", body):
-            unsupported.append(
-                f"custom ATL lifecycle method {lifecycle} needs deterministic factory wiring"
-            )
+    final_construct = bool(re.search(r"\bFinalConstruct\s*\(", body))
+    if re.search(r"\bFinalRelease\s*\(", body):
+        unsupported.append("custom ATL lifecycle method FinalRelease needs deterministic wiring")
     resource = re.search(r"\bDECLARE_REGISTRY_RESOURCEID\s*\(\s*([^)\s]+)\s*\)", body)
     not_agg = bool(re.search(r"\bDECLARE_NOT_AGGREGATABLE\s*\(", body))
     clsid = None
@@ -386,6 +390,7 @@ def analyze_class(
         registry_resource=resource.group(1) if resource else None,
         not_aggregatable=not_agg,
         object_map_clsid=clsid,
+        final_construct=final_construct,
         method_names=method_names or [],
         base_classes=bases,
         state_fields=_state_fields(body),
@@ -667,7 +672,13 @@ def normalize_worker_body(rust: str, expected_signature: str | None = None) -> s
         # Rust warns about unused parameters, so cheap models often rename an
         # ABI-owned `param` to `_param`. The deterministic wrapper fixes the
         # worker signature; restore those exact names in signature and body.
-        expected_params = re.findall(r"\b([A-Za-z_]\w*)\s*:", expected_signature)
+        expected_opening = expected_signature.find("(")
+        expected_closing = _matching_paren(expected_signature, expected_opening)
+        expected_params = [
+            match.group(1)
+            for item in _split_args(expected_signature[expected_opening + 1 : expected_closing])
+            if (match := re.match(r"\s*([A-Za-z_]\w*)\s*:", item))
+        ]
         for name in expected_params:
             rust = re.sub(rf"\b_{re.escape(name)}\b", name, rust)
         expected_name_match = re.search(r"\bfn\s+([A-Za-z_]\w*)\s*\(", expected_signature)
@@ -785,6 +796,33 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         rust,
     )
     rust = re.sub(r"if\s+_ILIsDesktop\s*\((.*?)\)\s*\{", r"if _ILIsDesktop(\1) != 0 {", rust)
+    rust = re.sub(
+        r"if\s+!_ILIsSpecialFolder\s*\((.*?)\)\s*\{",
+        r"if _ILIsSpecialFolder(\1) == 0 {",
+        rust,
+    )
+    rust = re.sub(r"(?m)^\s*ATLASSERT\s*\([^;]*\)\s*;\s*", "", rust)
+    rust = re.sub(
+        r"\bSHStrDupW\s*\(\s*INVALID_FILETITLE_CHARACTERSW\s*,",
+        "SHStrDupW(INVALID_FILETITLE_CHARACTERSW.as_ptr(),",
+        rust,
+    )
+    iid_alias = re.search(
+        r"let\s+([A-Za-z_]\w*)\s*=\s*&mut\s+\(\*this\)\.([A-Za-z_]\w*)\s*;",
+        rust,
+    )
+    if iid_alias is not None:
+        alias, field = iid_alias.groups()
+        iid_use = re.compile(rf"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*{re.escape(alias)}\s*\)")
+        matched_use = iid_use.search(rust)
+        if matched_use is not None:
+            interface = matched_use.group(1)
+            replacement = (
+                f"core::ptr::addr_of!(IID_{interface}), "
+                f"core::ptr::addr_of_mut!((*this).{field}).cast()"
+            )
+            rust = rust[: iid_alias.start()] + rust[iid_alias.end() :]
+            rust = iid_use.sub(replacement, rust, count=1)
     rust = re.sub(
         r"let\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)\s*=\s*"
         r"([^,;]+),\s*([^;]+);",
@@ -905,6 +943,7 @@ _CPP_SUPPORT_EXTERNS = {
     "lstrlenW": "    fn lstrlenW(text: LPCWSTR) -> INT;",
     "StrChrW": "    fn StrChrW(text: LPCWSTR, ch: WCHAR) -> LPWSTR;",
     "CoTaskMemFree": "    fn CoTaskMemFree(memory: LPVOID);",
+    "SHStrDupW": "    fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;",
     "ILClone": "    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;",
     "ILFindLastID": "    fn ILFindLastID(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;",
     "ILFree": "    fn ILFree(pidl: LPITEMIDLIST);",
@@ -948,6 +987,7 @@ _CPP_SUPPORT_EXTERNS = {
 _CPP_SUPPORT_C_EXTERNS = {
     "_ILIsDesktop": "    fn _ILIsDesktop(pidl: LPCITEMIDLIST) -> BOOL;",
     "_ILIsSpecialFolder": "    fn _ILIsSpecialFolder(pidl: LPCITEMIDLIST) -> BOOL;",
+    "_ILCreateMyDocuments": "    fn _ILCreateMyDocuments() -> LPITEMIDLIST;",
     "memcpy": (
         "    fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, "
         "bytes: usize) -> *mut core::ffi::c_void;"
@@ -963,6 +1003,7 @@ _CPP_SUPPORT_GUIDS = {
     "CLSID_AdminFolderShortcut",
     "CLSID_FontsFolderShortcut",
     "CLSID_ShellFSFolder",
+    "CLSID_MyDocuments",
     "IID_IDataObject",
     "IID_IShellFolder",
     "IID_IShellFolder2",
@@ -998,7 +1039,20 @@ def _render_cmverbmap(source: str) -> str:
     )
 
 
-def render_cpp_support(source_path: Path, exclude_guids: set[str] | None = None) -> str:
+_CPP_SUPPORT_CONSTANTS = {
+    "CSIDL_PERSONAL": ("INT", "0x0005"),
+    "SFGAO_CANCOPY": ("SFGAOF", "0x0000_0001"),
+    "SFGAO_CANRENAME": ("SFGAOF", "0x0000_0010"),
+    "SFGAO_CANDELETE": ("SFGAOF", "0x0000_0020"),
+    "SFGAO_HASPROPSHEET": ("SFGAOF", "0x0000_0040"),
+}
+
+
+def render_cpp_support(
+    source_path: Path,
+    exclude_guids: set[str] | None = None,
+    additional_source: str = "",
+) -> str:
     """Render the deterministic non-class support closure selected by one C++ file."""
     source = source_path.read_text(encoding="utf-8", errors="replace")
     chunks = ["// Deterministic C++ support closure selected from source identifiers."]
@@ -1017,13 +1071,23 @@ def render_cpp_support(source_path: Path, exclude_guids: set[str] | None = None)
                 re.M,
             )
         )
-    used_words = set(re.findall(r"\b[A-Za-z_]\w*\b", source))
+    selection_source = source + "\n" + additional_source
+    used_words = set(re.findall(r"\b[A-Za-z_]\w*\b", selection_source))
     used_words.update(
         f"IID_{interface}"
         for interface in re.findall(r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)", source)
     )
     for name in sorted(used_words & definitions.keys()):
         chunks.append(f"pub const {name}: UINT = {definitions[name]};")
+    for name in sorted(used_words & _CPP_SUPPORT_CONSTANTS.keys()):
+        rust_type, value = _CPP_SUPPORT_CONSTANTS[name]
+        chunks.append(f"pub const {name}: {rust_type} = {value};")
+
+    if "INVALID_FILETITLE_CHARACTERSW" in used_words:
+        chunks.append(
+            "pub static INVALID_FILETITLE_CHARACTERSW: [WCHAR; 10] = "
+            "[0x005c, 0x002f, 0x003a, 0x002a, 0x003f, 0x0022, 0x003c, 0x003e, 0x007c, 0];"
+        )
 
     table = _render_cmverbmap(source)
     if table:
@@ -1585,17 +1649,23 @@ def audit_worker_body(
     forbidden = {
         "#[no_mangle]": "export attribute",
         'extern "': "ABI declaration",
-        "CreateInstance": "activation factory",
         ".unwrap()": "Option/panic ABI guess",
     }
     for token, description in forbidden.items():
         if token in rust:
             findings.append(f"worker emitted forbidden {description}: {token}")
+    executable_rust = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", rust, flags=re.S)
+    if re.search(r"(?m)\bgoto\s+[A-Za-z_]\w*\s*;|^\s*[A-Za-z_]\w*\s*:\s*$", executable_rust):
+        findings.append("worker emitted raw C goto/label syntax")
+    if re.search(r"\?[^;{}\n]+:\s*[^:={}]", executable_rust):
+        findings.append("worker emitted raw C ternary syntax")
     # Calling QueryInterface through an input object's deterministic vtable is
     # ordinary method-body behavior.  Only a model-owned implementation would
     # compete with the generated COM scaffold.
     if re.search(r"\bfn\s+[A-Za-z_]\w*QueryInterface\s*\(", rust):
         findings.append("worker emitted forbidden QueryInterface implementation")
+    if re.search(r"\bfn\s+[A-Za-z_]\w*CreateInstance\s*\(", rust):
+        findings.append("worker emitted forbidden activation factory implementation")
     if re.search(r"\b(?:struct|static)\s+[A-Za-z_]\w*Vtbl\b|\b[A-Za-z_]\w*Vtbl\s*\{", rust):
         findings.append("worker emitted forbidden vtable definition")
     if re.search(r"\b(?:struct|union|enum)\s+[A-Za-z_]\w*\b", rust):
@@ -1880,6 +1950,20 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
             "    });",
             "    Shell32RustObjectLock();",
             f"    {cls.name}_ctor_body(this);",
+        ]
+    )
+    if cls.final_construct:
+        lines.extend(
+            [
+                f"    let construct_hr = {cls.name}_FinalConstruct_body(this);",
+                "    if construct_hr < 0 {",
+                f"        {cls.name}_Release(this);",
+                "        return construct_hr;",
+                "    }",
+            ]
+        )
+    lines.extend(
+        [
             f"    let hr = {cls.name}_QueryInterface(this, riid, ppv);",
             f"    {cls.name}_Release(this);",
             "    hr",

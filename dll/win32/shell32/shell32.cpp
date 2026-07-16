@@ -406,6 +406,23 @@ public:
     };
 };
 
+extern "C" HRESULT WINAPI CMyDocsFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CMyDocsFolderRustEntry : public CMyDocsFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CMyDocsFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 
 BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktopRustEntry)
@@ -420,7 +437,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_DragDropHelper, CDropTargetHelperRustEntry)
     OBJECT_ENTRY(CLSID_ControlPanel, CControlPanelFolder)
     OBJECT_ENTRY(CLSID_OpenControlPanel, COpenControlPanelRustEntry)
-    OBJECT_ENTRY(CLSID_MyDocuments, CMyDocsFolder)
+    OBJECT_ENTRY(CLSID_MyDocuments, CMyDocsFolderRustEntry)
     OBJECT_ENTRY(CLSID_NetworkPlaces, CNetFolder)
     OBJECT_ENTRY(CLSID_FontsFolderShortcut, CFontsFolderRustEntry)
     OBJECT_ENTRY(CLSID_Printers, CPrinterFolder)

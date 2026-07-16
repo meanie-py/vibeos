@@ -59,3 +59,12 @@ def test_unseal_requires_closed_token_set_and_allows_required_repetition():
     assert duplicated.count(sealed.facts[0].original) >= 2
     with pytest.raises(FactSealError, match="invented"):
         unseal_facts(rust + " __RUSTCONV_FACT_9999__", sealed)
+
+
+def test_unseal_recovers_exact_original_values_only_from_executable_code():
+    sealed = seal_facts("return 0 + 0 + S_OK;")
+    restored = unseal_facts("unsafe fn body() -> HRESULT { return 0 + 0 + S_OK; }", sealed)
+    assert "return 0 + 0 + S_OK" in restored
+
+    with pytest.raises(FactSealError, match="missing"):
+        unseal_facts('unsafe fn body() { /* 0 + S_OK */ TRACE("0"); }', sealed)

@@ -55,6 +55,7 @@ from .cpp_com import (
     apply_interface_method_signatures,
     audit_worker_body,
     discover_widl_header,
+    find_class_header,
     lower_trivial_worker,
     normalize_worker_body,
     normalize_worker_semantics,
@@ -329,6 +330,34 @@ def cmd_dup_census(args):
     dup_census.print_census(report, as_json=args.json)
 
 
+def _extend_cpp_class_scan(scan, source: Path, class_name: str):
+    """Merge source-owned in-class method definitions from the defining header.
+
+    C++ permits method bodies in the class header.  They are part of the same
+    class-atomic translation and vtable contract even when the implementation
+    file contains most out-of-line methods.  Force the C++ grammar for `.h` and
+    merge only this class's definitions; unrelated header helpers stay outside
+    the paid closure.
+    """
+    header = find_class_header(source, class_name)
+    if header == source:
+        return scan
+    header_scan = scan_file(header, force_cpp=True)
+    inline = [item for item in header_scan.functions if item.cpp_class == class_name]
+    existing = {item.name for item in scan.functions if item.cpp_class == class_name}
+    duplicate = sorted(item.name for item in inline if item.name in existing)
+    if duplicate:
+        raise CppComError(
+            f"{class_name}: method body defined in both implementation and header: "
+            + ", ".join(duplicate)
+        )
+    scan.functions.extend(inline)
+    scan.identifiers.update(header_scan.identifiers)
+    scan.local_names.update(header_scan.local_names)
+    scan.unextracted.extend(item for item in header_scan.unextracted if class_name in item)
+    return scan
+
+
 def cmd_candidate_check(args):
     """Batch-compile candidate workers against real target substrate."""
     manifest = Path(args.manifest)
@@ -358,7 +387,7 @@ def cmd_cpp_com(args):
     if not source.is_file() or source.suffix.lower() not in (".cpp", ".cc", ".cxx"):
         raise CppComError(f"C++ source not found: {source}")
 
-    scan = scan_file(source)
+    scan = _extend_cpp_class_scan(scan_file(source), source, args.class_name)
     class_methods = [f for f in scan.functions if f.cpp_class == args.class_name]
     if not class_methods:
         raise CppComError(f"{args.class_name}: no extracted method bodies in {source}")
@@ -1224,7 +1253,7 @@ def cmd_translate(args):
                 "c2rust does not provide a C++/ATL behavior anchor. Refusing --cpp-com "
                 "--c2rust rather than silently running unanchored."
             )
-        scan = scan_file(target_path)
+        scan = _extend_cpp_class_scan(scan_file(target_path), target_path, args.class_name)
         if scan.unextracted:
             raise CppComError(
                 f"{target_path.name}: {len(scan.unextracted)} body/bodies remain unextractable; "
@@ -1362,6 +1391,8 @@ def cmd_translate(args):
 
         capped = False  # set if --cost-cap is hit mid-file
         scan = scan_file(c_file)
+        if rustconv_target.name == "shell32":
+            scan = _extend_cpp_class_scan(scan, c_file, args.class_name)
         try:
             source_file_label = str(c_file.relative_to(REACTOS_ROOT))
         except ValueError:
@@ -1657,6 +1688,7 @@ def cmd_translate(args):
                 {
                     "interfaces": [entry.interface for entry in cpp_com_cls.com_map],
                     "state": state_shape,
+                    "final_construct": cpp_com_cls.final_construct,
                 },
                 sort_keys=True,
             )
@@ -2266,6 +2298,7 @@ def cmd_translate(args):
                 render_cpp_support(
                     c_file,
                     {f"IID_{interface.name}" for interface in cpp_com_interfaces},
+                    "\n".join(dep.body_text for dep in sorted_deps),
                 )
             )
             if cpp_com_wide_statics:

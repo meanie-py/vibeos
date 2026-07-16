@@ -51,6 +51,7 @@ pub mod copy_as_path_menu;
 pub mod drop_target_helper;
 pub mod exe_drop_handler;
 pub mod fonts_folder;
+pub mod my_docs_folder;
 pub mod open_control_panel;
 pub mod shell_item;
 

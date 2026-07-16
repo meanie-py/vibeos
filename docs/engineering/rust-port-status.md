@@ -174,7 +174,7 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   security.c` + generated RPC.
 - **shell32 COM classes (81 `.cpp`, ~64K LOC) — pilot in flight.** `CDropTargetHelper`,
   `CActiveDesktop`, `COpenControlPanel`, `CExeDropHandler`, `CCopyAsPathMenu`, `CShellItem`,
-  `CFontsFolder`, and `CAdminToolsFolder` are Rust-owned activated classes.
+  `CFontsFolder`, `CAdminToolsFolder`, and `CMyDocsFolder` are Rust-owned activated classes.
   `CCopyAsPathMenu` is the first out-of-sample cheap-model
   class: two deterministic workers plus eight unchanged cached DeepSeek workers went from
   62 diagnostics per architecture to zero after deterministic support closure, then passed
@@ -191,7 +191,9 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   asking the model to invent linkage. Exact prepared-body translation memory reused 19/22
   workers between the Fonts/Admin pair, while source-derived scope guards now restore
   body-local `CComPtr<T>` cleanup on every exit path. `CExeDropHandler` is the first
-  scalar-state pilot and `CCopyAsPathMenu` is the first object-field RAII-state pilot.
+  scalar-state pilot, `CCopyAsPathMenu` is the first object-field RAII-state pilot, and
+  `CMyDocsFolder` is the first six-interface class with a deterministic `FinalConstruct`
+  activation/failure-cleanup path.
   C++/RAII state, aggregatable classes, custom/inherited base
   layouts, same-arity overloads, and internal COM objects without an `OBJECT_ENTRY` remain loud
   preflight failures until their layout/lifetime/construction mappings are implemented.

@@ -87,6 +87,18 @@ def seal_calls(text: str, required_calls: set[str]) -> SealedCalls:
         name = match.group(1)
         if match.start(1) <= body_start or name not in required:
             continue
+        # C++ direct initialization looks call-like to a lexical scanner:
+        # ``CComHeapPtr<ITEMIDLIST> pidl(factory())``. The declarator name is
+        # storage, not a runtime callee.
+        statement_start = max(
+            body_start,
+            masked.rfind(";", body_start, match.start(1)),
+            masked.rfind("{", body_start, match.start(1)),
+            masked.rfind("}", body_start, match.start(1)),
+        )
+        prefix = masked[statement_start + 1 : match.start(1)].lstrip()
+        if re.fullmatch(r"[A-Z_]\w*(?:\s*<[^;{}()]+>)?\s+\**\s*", prefix):
+            continue
         spans.append((match.start(1), match.end(1), name))
 
     result = text

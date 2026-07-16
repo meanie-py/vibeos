@@ -316,3 +316,25 @@ images passed the complete i386/amd64/arm64 gate, including network smoke, at
 `/tmp/vibeos-cli/20260716-154657-gate-i386+amd64+arm64/full.log`. This sharpens the acceptance
 rule: rustc and control skeletons are necessary, but source-derived ownership must also be
 mechanical before a C++ RAII worker can be accepted.
+
+### Heterogeneous-class validation: `CMyDocsFolder`
+
+The first deliberately heterogeneous class set exposed useful failures before integration:
+`CQueryAssociations` retained raw C `goto`, `CFolderOptions` invented a truncated SDK ABI
+struct, and `CDrvDefExt` exposed a false call-seal match on a C++ direct initializer plus a
+model-owned `CComPtr`. Those bodies remain rejected and their paid artifacts remain cached;
+none were silently accepted or regenerated.
+
+`CMyDocsFolder` then exercised a distinct accepted shape: six COM interfaces, 53 flattened
+vtable slots, header-inline methods, plain and `CComPtr` state, destructor cleanup, and
+`FinalConstruct`. DeepSeek produced 25 paid workers (about $0.08) and one body lowered for
+$0. All workers passed the closed fact/call/ABI audit. The first compiler oracle reported
+14 identical diagnostics per architecture; deterministic replay added source-selected
+header dependencies, SDK constants and UTF-16 data, `IID_PPV_ARG` alias lowering, Win32
+BOOL conversion, and debug-assert removal. The unchanged cache then compiled with zero
+diagnostics on i386, amd64, and arm64 at
+`.responses/candidate-oracles/20260716-171735-558326/report.json`.
+
+Eight representative lifecycle, helper, forwarding, branching, ownership, and out-parameter
+workers also preserved the exact normalized control skeleton. The integrated module builds
+on all three architectures; the clean smoke gate is the remaining landing oracle.

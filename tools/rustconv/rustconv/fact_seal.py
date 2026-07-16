@@ -207,6 +207,36 @@ def unseal_facts(rust: str, sealed: SealedSource) -> str:
     expected = {fact.placeholder for fact in sealed.facts}
     present = _PLACEHOLDER_RE.findall(rust)
     unknown = sorted(set(present) - expected)
+    missing_names = expected - set(present)
+
+    # Cheap models sometimes replace an opaque token with a correctly guessed
+    # spelling, especially zero. Recover only exact executable occurrences of
+    # the source-owned spelling. Since equal-valued occurrence tokens restore
+    # identically, assigning them in source order does not delegate a value or
+    # weaken the closed value set. Comments and string/char literals are masked.
+    if missing_names and not unknown:
+        masked = _code_mask(rust)
+        replacements: list[tuple[int, int, str]] = []
+        by_original: dict[tuple[str, str], list[SealedFact]] = {}
+        for fact in sealed.facts:
+            if fact.placeholder in missing_names:
+                by_original.setdefault((fact.original, fact.kind), []).append(fact)
+        for (original, kind), facts in by_original.items():
+            if kind == "symbol":
+                pattern = re.compile(rf"\b{re.escape(original)}\b")
+            else:
+                pattern = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(original)}(?![A-Za-z0-9_])")
+            spans = [(match.start(), match.end()) for match in pattern.finditer(masked)]
+            if len(spans) < len(facts):
+                continue
+            replacements.extend(
+                (start, end, fact.placeholder)
+                for (start, end), fact in zip(spans, facts, strict=False)
+            )
+        for start, end, placeholder in sorted(replacements, reverse=True):
+            rust = rust[:start] + placeholder + rust[end:]
+        present = _PLACEHOLDER_RE.findall(rust)
+
     missing = sorted(expected - set(present))
     findings = []
     if missing:

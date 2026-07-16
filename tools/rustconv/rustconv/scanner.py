@@ -914,10 +914,10 @@ def _resolve_pp_conditionals(path: Path, text: str) -> str:
     return "\n".join(out)
 
 
-def scan_file(path: Path) -> ScanResult:
+def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
     """Parse a C/C++ source file and extract structural information."""
     raw = _expand_split_includes(path, path.read_text(errors="replace"))
-    is_cpp = path.suffix.lower() in _CPP_SUFFIXES
+    is_cpp = force_cpp or path.suffix.lower() in _CPP_SUFFIXES
     if is_cpp:
         # Resolve preprocessor conditionals so #ifdef-spanning constructs don't
         # break tree-sitter function extraction (uniata etc.). Macros preserved.

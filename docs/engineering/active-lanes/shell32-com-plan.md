@@ -287,3 +287,16 @@ path `CComPtr` release that compilation and skeleton comparison could not see; b
 `CComPtr<T>` cleanup is now a source-derived deterministic scope guard. Keep that ownership
 guard mandatory for future RAII-bearing classes, and treat exact-memory reuse as an audited
 zero-call route rather than a model route.
+
+## Heterogeneous-class checkpoint (2026-07-16)
+
+The broadened corpus now includes helper-heavy, dialog, registry, and FinalConstruct folder
+classes. Rejections are informative and durable: raw C control flow, model-owned SDK structs,
+and model-owned `CComPtr` representations stay red without retries. A false call seal on a
+C++ direct initializer is fixed mechanically.
+
+`CMyDocsFolder` is the accepted heterogeneous result: 25 cached DeepSeek workers plus one
+deterministic stub, six generated interfaces / 53 slots, deterministic state ownership and
+FinalConstruct failure cleanup, zero compiler diagnostics on all three targets, and 8/8 exact
+representative control skeletons. It is wired as the Rust object-map owner; warm builds are
+green x3 and the clean integrated gate remains the landing oracle.
