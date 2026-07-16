@@ -772,3 +772,36 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   (was: services.exe died silently). Next step toward a baseline = translate `FatSetEndOfFileInfo`
   (rustconv single-function, ~$0.03–0.15, or a careful hand-translation of the C), re-run the arm64
   sweep, and clear whatever further stubs the kmtest binaries hit.
+
+### 2026-07-16 — fastfat FatSetEndOfFileInfo TRANSLATED + validated; arm64 baseline now blocked on a 0x3 thread-exit crash
+
+* **`FatSetEndOfFileInfo` recovered.** rustconv `translate --fn FatSetEndOfFileInfo --mode mechanical`
+  ($0.06, durable archive under `tools/rustconv/.responses/`), integrated into `fastfat-rust/src/
+  fileinfo.rs` (the dropped-at-translate `extern` stub replaced with the real body), and the
+  shadowing bugcheck stub removed from `rust_cohab_stub.c` (lld `--allow-multiple-definition` is
+  first-match and the C obj links first, so leaving it would have silently kept the stub winning).
+  Integration was ~a dozen house-convention fixes: bindgen field paths
+  (`Parameters.SetFile.__bindgen_anon_1.__bindgen_anon_1.AdvanceOnly`, `.__bindgen_anon_1.LowPart`),
+  `FatUnpinBcb`/`FatGetDirentFromFcbOrDcb` taking `addr_of_mut!(Bcb)` not the Bcb, `NodeType(Fcb)`
+  untyped-cast removal, `NT_ASSERT((..) as i32)`, local `const FcbGood/STATUS_FILE_CLOSED`, an
+  `IsFileDeleted` extern, and the `if false /* _SEH2_AbnormalTermination() always false */` idiom
+  (mirrors `FatSetAllocationInfo`) that also dead-eliminates the macro-only `CcGetFileSizePointer`.
+  **Compiles clean on all three arches** (i386/amd64/arm64). **Lands separately** — a genuine
+  dropped-translation recovery, inert on normal boots (nothing SetEndOfFile's the FAT ramdisk there).
+* **VALIDATED end-to-end on the arm64 sweep.** With the SCM chain applied: `ScmLoadService(EventLog)
+  done: 0` → `logging success event` → `event logged OK`. i.e. the full ScmLogEvent lifecycle
+  (RegisterEventSourceW → ReportEventW → DeregisterEventSource) now runs — the RpcTryExcept fix + the
+  fastfat fix together. The SCM then created `NtControlPipe0` and walked the autostart list all the
+  way to **SamSs** (SAM). Two fastfat translation gaps down; the SCM is deep into real service
+  startup now.
+* **NEW blocker for the baseline: `BUGCHECK 0x3` in `LpcExitThread`.** During a **System thread
+  exit** (`PspExitThread … about to call LpcExitThread`), right after the `[NETSTACK] TDI self-test`
+  + `SET_INFO self-test` ran, and while the SCM was `ScmStartUserModeService(SamSs): waiting for
+  connect`. Params `(0xfffffa…d60, 0xfffffa…c00, 0, 3)` — both kernel pointers, so likely a
+  `KeBugCheckEx(3, thr, obj, 0, 3)` from the LPC/thread-teardown path, NOT a literal
+  INVALID_AFFINITY_SET. **Sole banner in the log (not a §9.54 mask.)** Almost certainly the known
+  arm64 thread-teardown flake family (cf. the netstack-TDI 0x1E residual + the smp lane's 1-in-258
+  0x4E) amplified by the dense thread churn of full service startup — **unrelated to fastfat/
+  advapi32** (the boot is well past both). This is a distinct LPC/PS-thread-exit lane. `SC_AutoStartComplete`
+  never fires, so the kmtest sweep still never runs → **still no baseline**, but the wall is now two
+  subsystems deeper than where "fix services" started.

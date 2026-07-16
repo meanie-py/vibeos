@@ -619,7 +619,10 @@ NTSTATUS FatGetRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_
 NTSTATUS FatQueryRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatQueryBpb(PIRP_CONTEXT a, PIRP b)           { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 NTSTATUS FatMarkHandle(PIRP_CONTEXT a, PIRP b)         { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatSetEndOfFileInfo(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* FatSetEndOfFileInfo — recovered to Rust (fileinfo.rs, rustconv 2026-07-16). The
+ * bugcheck stub is removed so the Rust #[no_mangle] definition is the sole symbol
+ * (lld --allow-multiple-definition is first-match, and this C obj links BEFORE
+ * libfastfat_rust.a — leaving the stub here would shadow the real impl). */
 NTSTATUS FatOpenVolume(PVOID a0, PVOID a1, PVOID a2, PVOID a3, PVOID a4, PVOID a5) { (void)a0;(void)a1;(void)a2;(void)a3;(void)a4;(void)a5; STUB_BUGCHECK(); return STATUS_SUCCESS; }
 /* FatOpenExistingDirectory -> now REAL in fastfat-rust create.rs (field manual §9.45); stub removed so the Rust symbol wins */
 /* FatLowLevelReadWrite -> rust_cohab_fat.c (real macro) */
