@@ -773,6 +773,39 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   (rustconv single-function, ~$0.03–0.15, or a careful hand-translation of the C), re-run the arm64
   sweep, and clear whatever further stubs the kmtest binaries hit.
 
+### 2026-07-16 (later) — arm64 SCM fully UP; conformance sweep RUNS; first arm64 result captured
+
+**Three fixes landed** (all ×3-gate-green, on master): the advapi32 `RpcTryExcept` (`f754a3a8155`),
+the fastfat `FatSetEndOfFileInfo` recovery (`e5f2b28a3b5`), and the lpc `LpcExitThread` §9.65
+(`ce89f8d6af1`) + a `verify_ffi` baseline re-anchor (`3d004d50edd`). Together they clear the whole
+arm64 SCM path.
+
+* **The `LpcExitThread` 0x3 — hypothesis CONFIRMED by re-sweep.** After the §9.65 fix, the boot
+  emits many `PspExitThread: about to call LpcExitThread` with **no `0x3` following** (pre-fix, that
+  line was immediately followed by the bugcheck). So the always-on `DbgBreakPoint()` (C: DBG-gated
+  `ASSERT(FALSE)` for the "thread exits holding a reply message" TODO) *was* the 0x3.
+* **End-to-end validated on arm64** (SCM chain applied): threads exit cleanly → SCM starts
+  `DcomLaunch` → `EventLog` (**connect + START both succeed** now) → `Rpcss`/`Themes`/`SamSs`/… →
+  `SamSs` times out `connect result=1053` but the SCM correctly **does not block**, walks the rest of
+  the list, and **`SC_AutoStartComplete` FIRES**. The kmtest sweep sees it (`SCM auto-start complete
+  (waited ~0s)`), reads `kmtest-tests.txt`, and **runs the first test to a real result:**
+  **`[KMTEST:END CmSecurity pass=300 fail=89 skip=2]`** — the first arm64 kmtest result ever.
+* **The last mile — sweep stalls after test 1 (distinct, arm64-specific).** The 2nd `kmtest_.exe`
+  launches and immediately hits `*** ASSERT FAILED: BytesReturned == sizeof(RequestPacket) at
+  kmtest\support.c:52` → `Callback handler dying! Error code 2`. That's the kmtest **usermode-callback
+  worker** (`KmtUserModeWorker`): a test needing usermode callbacks (e.g. `QueryVirtualMemory`) spawns
+  a worker that loops on `IOCTL_KMTEST_USERMODE_AWAIT_REQ`; on arm64 that METHOD_BUFFERED IOCTL came
+  back with the wrong `BytesReturned`, so the worker asserts + dies and the kernel-side test hangs
+  waiting for a callback that never returns → the sweep drains out (`launched=1 sweep=DID NOT
+  FINISH`). i386 runs the full sweep (task #1 baseline), so this is an arm64 IOCTL/harness gap, NOT
+  the SCM. **This is the remaining blocker for a *full* multi-test arm64 baseline.**
+* **Landing the SCM chain is a cross-lane decision.** With the 3 fixes in, the chain no longer
+  regresses the arm64 desktop boot (it reaches the shell WITH services running). But it turns on a
+  full autostart storm on *every* arm64 boot, which changes the boot profile the smp lane's 1-in-258
+  0x4E flake hunt runs against. The clean landing is to **gate winlogon's `StartServicesManager` to
+  conformance-mode** (`VIBEOS_PAYLOAD=kmtest`) so normal arm64 boots stay lean — then land + coordinate
+  with the smp lane. Chain parked in stash `arm64-scm-bringup v5`.
+
 ### 2026-07-16 — fastfat FatSetEndOfFileInfo TRANSLATED + validated; arm64 baseline now blocked on a 0x3 thread-exit crash
 
 * **`FatSetEndOfFileInfo` recovered.** rustconv `translate --fn FatSetEndOfFileInfo --mode mechanical`
