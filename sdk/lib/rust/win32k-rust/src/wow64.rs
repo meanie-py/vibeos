@@ -121,6 +121,15 @@ pub(crate) unsafe fn Wow64PublishClientInfo(pti: PTHREADINFO) {
     let teb32 = teb64.add(WOW64_TEB32_OFFSET) as *mut _TEB32;
     let ci32 = (teb32 as *mut u8).add(teb32_clientinfo_offset()) as *mut ClientInfo32;
 
+    /* TEB.Win32ThreadInfo — the 32-bit user32 reads this via GetW32ThreadInfo()
+     * to test window ownership (IntCallMessageProc: wnd_pti(Wnd) == it). win32k
+     * writes the full kernel THREADINFO into the 64-bit TEB (main.rs), but the
+     * guest reads the 32-bit TEB, where it stayed 0 → every pump-dispatched
+     * message (WM_KEYDOWN/mouse) was dropped ERROR_MESSAGE_SYNC_ONLY (M14 doom
+     * input). The WND snapshot's head.pti is the SAME low-32 truncation of the
+     * kernel THREADINFO VA (normalize_wnd), so the two sides compare equal. */
+    (*teb32).Win32ThreadInfo = pti as usize as u32;
+
     RtlZeroMemory(ci32 as *mut core::ffi::c_void, core::mem::size_of::<ClientInfo32>());
 
     (*ci32).CI_flags = (*pci).CI_flags as u32;

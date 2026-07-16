@@ -1,0 +1,161 @@
+"""Tests for scan_wide_literals — both directions.
+
+The must-NOT-fire half is not politeness here, it is the whole viability of the lint. Its first
+fleet run produced 20 findings of which 19 were its own gaps (prose containing `L"..."`, comments
+that spell `\\0` explicitly, double NUL terminators, and UNICODE_STRING buffers that correctly have
+no terminator at all). A lint that reports 19 pieces of correct code alongside 1 real bug is worse
+than no lint: it gets baselined wholesale and the real bug rides along inside the baseline.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from scan_wide_literals import scan_file
+
+
+def _scan(tmp_path: Path, src: str) -> list[str]:
+    f = tmp_path / "t.rs"
+    f.write_text(src)
+    findings, _seen, _compared = scan_file(f)
+    return findings
+
+
+def _coverage(tmp_path: Path, src: str) -> tuple[int, int]:
+    f = tmp_path / "t.rs"
+    f.write_text(src)
+    _findings, seen, compared = scan_file(f)
+    return seen, compared
+
+
+# --- MUST CATCH -------------------------------------------------------------------------
+
+
+def test_catches_the_services_key_truncation(tmp_path: Path):
+    """THE motivating bug, verbatim: [u16; 33] silently dropped the final 's', so services-rust
+    opened `...\\Service` and every registration failed with ERROR_FILE_NOT_FOUND."""
+    out = _scan(
+        tmp_path,
+        '// L"System\\\\CurrentControlSet\\\\Services" — NUL-terminated.\n'
+        "static SERVICES_KEY: [u16; 33] = [\n"
+        + ", ".join(f"b'{c}' as u16" for c in "System")
+        + ", b'\\\\' as u16, "
+        + ", ".join(f"b'{c}' as u16" for c in "CurrentControlSet")
+        + ", b'\\\\' as u16, "
+        + ", ".join(f"b'{c}' as u16" for c in "Service")
+        + ", 0,\n];\n",
+    )
+    assert len(out) == 1, out
+    assert "TRUNCATED" in out[0]
+    assert "dropped 's'" in out[0]
+    assert "need 34 elements" in out[0]
+
+
+def test_catches_missing_nul_when_the_comment_promises_one(tmp_path: Path):
+    out = _scan(
+        tmp_path,
+        '// L"Services" — NUL-terminated.\n'
+        "static K: [u16; 8] = [" + ", ".join(f"b'{c}' as u16" for c in "Services") + "];\n",
+    )
+    assert len(out) == 1 and "NO NUL terminator" in out[0], out
+
+
+def test_catches_wrong_content(tmp_path: Path):
+    out = _scan(
+        tmp_path,
+        '// L"Widget"\nstatic K: [u16; 7] = ['
+        + ", ".join(f"b'{c}' as u16" for c in "Wodget")
+        + ", 0];\n",
+    )
+    assert len(out) == 1 and "Wodget" in out[0], out
+
+
+# --- MUST NOT FIRE ----------------------------------------------------------------------
+
+
+def test_correct_literal_is_silent(tmp_path: Path):
+    assert (
+        _scan(
+            tmp_path,
+            '// L"Services" — NUL-terminated.\n'
+            "static K: [u16; 9] = [" + ", ".join(f"b'{c}' as u16" for c in "Services") + ", 0];\n",
+        )
+        == []
+    )
+
+
+def test_unicode_string_buffer_without_nul_is_silent(tmp_path: Path):
+    """iomgr's `\\??\\` prefixes are UNICODE_STRING Buffers: Length carries the size and a
+    terminator is genuinely unnecessary. A blanket "must end in NUL" rule flagged five of these,
+    all correct."""
+    src = (
+        '// L"\\\\??\\\\" — 4 wide chars, no null needed (Length == MaximumLength)\n'
+        "static P: [u16; 4] = [0x5C, 0x3F, 0x3F, 0x5C];\n"
+    )
+    assert _scan(tmp_path, src) == []
+
+
+def test_prose_mentioning_L_syntax_is_not_an_intent(tmp_path: Path):
+    """hal's halpnpdd.rs really says: `Rust doesn't have L"...", so spell them out`. Reading that
+    as the spec reported three correct literals as mismatches."""
+    src = (
+        '// UTF-16 string literals — Rust doesn\'t have `L"..."`, so spell them out.\n'
+        "// All NUL-terminated.\n"
+        "const ID: [u16; 3] = [b'A' as u16, b'B' as u16, 0];\n"
+    )
+    _seen, compared = _coverage(tmp_path, src)
+    assert _scan(tmp_path, src) == []
+    assert compared == 0, "an ellipsis is not a specification; it must not count as coverage"
+
+
+def test_abbreviated_path_intent_is_skipped(tmp_path: Path):
+    """`L"\\\\Registry\\\\Machine\\\\...\\\\Version"` states nothing checkable."""
+    src = (
+        "// L\"\\\\Registry\\\\Machine\\\\...\\\\Version\"\nconst K: [u16; 2] = [b'A' as u16, 0];\n"
+    )
+    assert _scan(tmp_path, src) == []
+
+
+def test_comment_spelling_the_nul_explicitly_is_silent(tmp_path: Path):
+    """rtl-rxact writes `// L"RXACT\\0" / L"Log\\0"`. The \\0 is the same terminator the array
+    already has; not stripping it on the intent side reported both as TRUNCATED."""
+    src = (
+        '// L"RXACT\\0" / L"Log\\0" (RtlInitUnicodeString scans for the NUL).\n'
+        "static RXACT_NAME: [u16; 6] = [0x0052, 0x0058, 0x0041, 0x0043, 0x0054, 0x0000];\n"
+    )
+    assert _scan(tmp_path, src) == []
+
+
+def test_double_nul_is_silent(tmp_path: Path):
+    """hal usage.rs really ends `0x0000, 0x0000`. Harmless — RtlInitUnicodeString stops at the
+    first — but a one-NUL strip reported it as a content mismatch."""
+    src = "// L\"AB\"\nconst K: [u16; 4] = [b'A' as u16, b'B' as u16, 0x0000, 0x0000];\n"
+    assert _scan(tmp_path, src) == []
+
+
+def test_alternatives_in_one_comment_match_either(tmp_path: Path):
+    """`// L"DependOnService" / L"DependOnGroup"` documents a family; demanding the first would
+    report the second as wrong."""
+    src = (
+        '// L"DependOnService" / L"DependOnGroup"\n'
+        "static V: [u16; 14] = [" + ", ".join(f"b'{c}' as u16" for c in "DependOnGroup") + ", 0];\n"
+    )
+    assert _scan(tmp_path, src) == []
+
+
+def test_unrelated_comment_above_a_blank_line_is_not_the_intent(tmp_path: Path):
+    """Only a CONTIGUOUS `//` block is this literal's spec."""
+    src = "// L\"Something\"\n\nstatic K: [u16; 3] = [b'A' as u16, b'B' as u16, 0];\n"
+    _seen, compared = _coverage(tmp_path, src)
+    assert compared == 0 and _scan(tmp_path, src) == []
+
+
+def test_coverage_is_reported(tmp_path: Path):
+    """A literal with no intent comment is a blind spot, not a pass — it must not count as
+    'compared'. "0 findings" over 0 comparisons is the green that means nothing."""
+    src = "static K: [u16; 3] = [b'A' as u16, b'B' as u16, 0];\n"
+    seen, compared = _coverage(tmp_path, src)
+    assert seen == 1 and compared == 0

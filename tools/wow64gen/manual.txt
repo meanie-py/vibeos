@@ -89,3 +89,5 @@ NtCancelIoFile
 NtNotifyChangeKey
 NtNotifyChangeMultipleKeys
 NtRemoveIoCompletion
+NtCreateIoCompletion
+NtOpenIoCompletion

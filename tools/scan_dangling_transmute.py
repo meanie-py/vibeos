@@ -124,8 +124,10 @@ def main() -> int:
                 print(f"{rel}:{lineno}: dangling pointer to transmute temporary ({kind})")
                 print(f"    {snippet}")
     if not lint and total:
-        print(f"\n{total} finding(s). Fix: bind the transmuted array to a scoped local, "
-              f"then take .as_ptr() of the binding.")
+        print(
+            f"\n{total} finding(s). Fix: bind the transmuted array to a scoped local, "
+            f"then take .as_ptr() of the binding."
+        )
     return 1 if total else 0
 
 

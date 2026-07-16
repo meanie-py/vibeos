@@ -97,8 +97,18 @@ def _lint_stage(
     — every line reads as "new". These tools already encode the correct per-arch
     pass/fail in their exit code (their own EXPECTED-site classification), so the
     exit code is the right signal."""
+    if cmd[0] == "NOCHECK":
+        # Genuinely nothing to lint (no matching sources). Not a coverage loss.
+        return run.add(Stage(name, status="skip", detail="no sources to check"))
     if cmd[0] == "MISSING":
-        return run.add(Stage(name, status="skip", detail="tool unavailable"))
+        # A missing TOOL is MISSING COVERAGE, not a pass. Silently skipping it
+        # means that the day shellcheck/ruff/etc falls out of the image, the gate
+        # keeps printing green while the check it advertises simply isn't running
+        # — the check most likely to vanish unnoticed is the one nobody sees fail.
+        # strict (the gate) must have the coverage it claims → fail; a casual
+        # local `check` warns, so it stays usable without every tool installed.
+        st = "fail" if strict else "warn"
+        return run.add(Stage(name, status=st, detail="tool unavailable — LINT NOT RUN (no coverage)"))
     cp = run.run(cmd, cwd=cwd or repo, stage=f"lint:{name}")
     if by_exit_code:
         text = _rel((cp.stdout or "") + "\n" + (cp.stderr or ""), repo)
@@ -161,11 +171,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     rc = repo / "tools" / "rustconv" / "rustconv"
     lk = repo / "tools" / "lint_kernel.py"
     specs = [
+        # Two very different reasons shellcheck might not run, which the single
+        # ["MISSING"] sentinel used to conflate — and they deserve OPPOSITE
+        # verdicts: "no shell sources to lint" is genuinely nothing to do, while
+        # "shellcheck is not installed" is COVERAGE SILENTLY LOST and must be
+        # loud (see _lint_stage). Keep them distinct so the honest failure can't
+        # be mistaken for the benign one.
         (
             "shellcheck",
             [sc, "-S", "warning", "-f", "gcc", *sh_files]
             if sc != "MISSING" and sh_files
-            else ["MISSING"],
+            else (["MISSING"] if sc == "MISSING" else ["NOCHECK"]),
             "stdout",
         ),
         ("py-syntax", [py, "-m", "compileall", "-q", "tests/qemu", "tools"], "both"),
@@ -279,6 +295,21 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_magic_offsets",
             [py, str(smo), "--lint"] if smo.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # Hand-encoded UTF-16 string literals decoded against their `// L"..."` intent
+    # comment. The SERVICES_KEY class (2026-07-10): `static X: [u16; 33]` sized by
+    # hand, one element short, silently dropped the last character -> services-rust
+    # opened `...\Service` and every registration failed ERROR_FILE_NOT_FOUND. rustc
+    # cannot see it (the array is well-formed at any length) and the comment above it
+    # says the RIGHT string, so review slides off. Baseline is EMPTY — the one real
+    # survivor (hal kdpci KEY_NAME, truncated AND dead) is deleted; this keeps it at 0.
+    swl = repo / "tools" / "scan_wide_literals.py"
+    specs.append(
+        (
+            "scan_wide_literals",
+            [py, str(swl)] if swl.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -595,8 +626,28 @@ def run_committed_drift_guard(run: Run, repo: Path, arch: str | None = None) -> 
     if cp.returncode == 0:
         if "0 OK," in summary and "skipped" in summary:
             run.add(Stage("committed_drift", status="skip", detail="no build dir"))
-        else:
-            run.add(Stage("committed_drift", exit=0, status="ok", detail=summary or "no drift"))
+            return
+        # A per-artifact SKIP is NOT a pass — it means that fallback was never
+        # verified, and folding it into a ✓ is exactly how one goes stale unseen.
+        # Real case (2026-07-15): svcctl_s.arm64.rs sat stale vs the generator
+        # because NOTHING ever builds services.exe on arm64, so this checker had
+        # always self-skipped it and the stage stayed green. The moment the build
+        # dir had the inputs, it caught the drift instantly. Report unverified
+        # artifacts as WARN (visible, non-blocking) rather than silence.
+        m = re.search(r"(\d+) skipped", summary)
+        if m and int(m.group(1)) > 0:
+            skipped = [ln.strip() for ln in tail if "SKIP" in ln.upper()]
+            run.add(
+                Stage(
+                    "committed_drift",
+                    exit=0,
+                    status="warn",
+                    detail=f"{summary} — skipped artifacts are UNVERIFIED, not OK",
+                    salient=skipped[:5],
+                )
+            )
+            return
+        run.add(Stage("committed_drift", exit=0, status="ok", detail=summary or "no drift"))
         return
     run.add(Stage("committed_drift", exit=cp.returncode, status="fail", detail=summary or "DRIFT"))
 

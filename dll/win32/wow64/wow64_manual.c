@@ -78,6 +78,9 @@ NTSTATUS WINAPI NtCreateDirectoryObject(PHANDLE Handle, ACCESS_MASK Access,
 NTSTATUS WINAPI NtCreateEvent(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
                               ULONG EventType, BOOLEAN InitialState);
 NTSTATUS WINAPI NtOpenEvent(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa);
+NTSTATUS WINAPI NtCreateIoCompletion(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa,
+                                     ULONG Count);
+NTSTATUS WINAPI NtOpenIoCompletion(PHANDLE Handle, ACCESS_MASK Access, PVOID Oa);
 NTSTATUS WINAPI NtSecureConnectPort(PHANDLE PortHandle, PVOID PortName,
                                     PVOID SecurityQos, PVOID ClientView,
                                     PVOID ServerSid, PVOID ServerView,
@@ -103,6 +106,13 @@ NTSTATUS WINAPI NtSetInformationFile(HANDLE File, PVOID Iosb, PVOID Info,
 NTSTATUS WINAPI NtQueryVolumeInformationFile(HANDLE File, PVOID Iosb, PVOID Info,
                                              ULONG Length, ULONG Class);
 NTSTATUS WINAPI NtFlushBuffersFile(HANDLE File, PVOID Iosb);
+NTSTATUS WINAPI NtQueryInformationThread(HANDLE Thread, ULONG Class, PVOID Info,
+                                         ULONG Length, PULONG ReturnLength);
+NTSTATUS WINAPI NtRemoveIoCompletion(HANDLE Port, PVOID *Key, PVOID *Context,
+                                     PVOID Iosb, PLARGE_INTEGER Timeout);
+INT WINAPI NtUserEnumDisplayMonitors(HANDLE hDC, PVOID pRect,
+                                     PVOID hMonitorList, PVOID monitorRectList,
+                                     ULONG listSize);
 NTSTATUS WINAPI NtQueryDirectoryFile(HANDLE File, HANDLE Event, PVOID ApcRoutine,
                                      PVOID ApcContext, PVOID Iosb, PVOID Info,
                                      ULONG Length, ULONG Class, BOOLEAN SingleEntry,
@@ -617,24 +627,57 @@ static NTSTATUS Wow64pFinishIosb(NTSTATUS St, HANDLE File,
     return St;
 }
 
-/* NtReadFile / NtWriteFile share their shape exactly. */
+/* NtReadFile / NtWriteFile share their shape exactly.
+ *
+ * M15b — kernel-side IOSB32: these two no longer marshal through a host IOSB.
+ * We latch the guest's IOSB address into TEB.Instrumentation[0]; the kernel's
+ * NtReadFile/NtWriteFile entry consumes the latch (read-and-clear, honored
+ * only when it matches the IoStatusBlock argument exactly), marks the IRP,
+ * and I/O completion writes the 8-byte IO_STATUS_BLOCK32 layout — sync AND
+ * async. That kills the dead-frame hazard outright (the kernel holds a
+ * pointer into the GUEST's IOSB, which outlives this frame by construction),
+ * so Event-based/polled overlapped I/O from guests is now allowed through.
+ * A guest APC routine still can't be honored (no 64->32 user-APC dispatch
+ * yet) — that stays a loud refusal. */
 typedef NTSTATUS (WINAPI *WOW64_RW_FN)(HANDLE, HANDLE, PVOID, PVOID, PVOID,
                                        PVOID, ULONG, PLARGE_INTEGER, PULONG);
+
+/* TEB.Instrumentation offset (arm64 host) — pinned by the kernel-side layout
+ * assert (ntkrnl-sys offset_check_arm64.rs: _TEB.Instrumentation == 5816).
+ * Drift here degrades to "latch never matches" + the kernel's loud [IOSB32]
+ * mismatch print + the async32.exe oracle failing its OVERLAPPED.Offset
+ * clobber check — never to silent corruption. */
+#define WOW64_TEB_INSTRUMENTATION0 5816
+
+static void Wow64pLatchIosb32(ULONG Iosb32Ptr)
+{
+    *(ULONG_PTR *)((unsigned char *)NtCurrentTeb() + WOW64_TEB_INSTRUMENTATION0) =
+        (ULONG_PTR)Iosb32Ptr;
+}
 
 static NTSTATUS Wow64pReadWriteFile(WOW64_RW_FN Fn, ULONG *a, const char *Who)
 {
     HANDLE File = (HANDLE)(LONG_PTR)(LONG)a[0];
-    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
     NTSTATUS St;
 
-    if (Wow64pRefuseAsync(a[1], a[2], Who))
+    if (a[2])
+    {
+        DbgPrint("[WOW64]   %s: guest ApcRoutine=%08lx is not supported yet "
+                 "(no 64->32 user-APC dispatch) — refusing\n", Who, a[2]);
         return WOW64_STATUS_NOT_IMPLEMENTED;
+    }
 
     /* ByteOffset is a LARGE_INTEGER* and Key a ULONG* — both layout-identical. */
-    St = Fn(File, NULL, NULL, NULL, &Iosb64,
+    Wow64pLatchIosb32(a[4]);
+    St = Fn(File, Event, NULL, (PVOID)(ULONG_PTR)a[3],
+            (PVOID)(ULONG_PTR)a[4],
             (PVOID)(ULONG_PTR)a[5], a[6],
             (PLARGE_INTEGER)(ULONG_PTR)a[7], (PULONG)(ULONG_PTR)a[8]);
-    return Wow64pFinishIosb(St, File, &Iosb64, a[4], Who);
+    /* The kernel consumed the latch at entry; clear defensively for paths
+     * that fail before reaching it (bad handle, etc.). */
+    Wow64pLatchIosb32(0);
+    return St;
 }
 
 static NTSTATUS Wow64Manual_NtReadFile(ULONG *a)
@@ -2266,7 +2309,274 @@ static NTSTATUS Wow64Manual_NtSetSystemInformation(ULONG *a)
                         "would let a guest corrupt kernel state");
 }
 
+/* M16 (task #43): NtUserMessageCall(hWnd, Msg, wParam, lParam, ResultInfo, FNID,
+ * Ansi). For FNID_DEFWINDOWPROC + WM_WINDOWPOSCHANG*, lParam is a WINDOWPOS the
+ * 64-bit win32k reads/writes as 40 bytes but the guest passes as 28 — the flat
+ * thunk hands win32k a misaligned struct (fields shift past the two leading
+ * handles), so DefWindowProc's size adjustment corrupts the window (collapses to
+ * 0x0, WM_PAINT never fires). Marshal the payload 32<->64 for this (FNID,Msg);
+ * every other message flat-passes exactly as the generated thunk did. See
+ * docs/engineering/active-lanes/wow64-plan.md (M16) + user32 defwnd.c:783. */
+#define WOW64_MC_FNID_DEFWINDOWPROC   0x029E
+#define WOW64_MC_WM_WINDOWPOSCHANGING 0x0046
+#define WOW64_MC_WM_WINDOWPOSCHANGED  0x0047
+typedef struct { ULONG hwnd, hwndInsertAfter; LONG x, y, cx, cy; ULONG flags; }
+    WOW64_MC_WP32; /* 28 */
+typedef struct { ULONGLONG hwnd, hwndInsertAfter; LONG x, y, cx, cy; ULONG flags, __pad; }
+    WOW64_MC_WP64; /* 40 */
+
+extern ULONG Wow64TraceSyscalls;
+
+static NTSTATUS Wow64Manual_NtUserMessageCall(ULONG *a)
+{
+    extern NTSTATUS NtUserMessageCall(PVOID, ULONG_PTR, PVOID, PVOID, PVOID,
+                                      ULONG_PTR, ULONG_PTR);
+    ULONG Msg = a[1];
+    ULONG FNID = a[5];
+
+    if (FNID == WOW64_MC_FNID_DEFWINDOWPROC &&
+        (Msg == WOW64_MC_WM_WINDOWPOSCHANGING || Msg == WOW64_MC_WM_WINDOWPOSCHANGED) &&
+        a[3])
+    {
+        WOW64_MC_WP32 *wp32 = (WOW64_MC_WP32 *)(ULONG_PTR)a[3];
+        WOW64_MC_WP64 wp64;
+        NTSTATUS St;
+        LONG in_cx = wp32->cx, in_cy = wp32->cy;
+        ULONG in_fl = wp32->flags;
+
+        /* 28 -> 40, per field. Handles sign-extend (real handles are small +ve
+         * and stay correct; HWND_TOPMOST/-NOTOPMOST sentinels widen correctly). */
+        wp64.hwnd = (ULONGLONG)(LONG_PTR)(LONG)wp32->hwnd;
+        wp64.hwndInsertAfter = (ULONGLONG)(LONG_PTR)(LONG)wp32->hwndInsertAfter;
+        wp64.x = wp32->x; wp64.y = wp32->y;
+        wp64.cx = wp32->cx; wp64.cy = wp32->cy;
+        wp64.flags = wp32->flags; wp64.__pad = 0;
+
+        St = NtUserMessageCall((PVOID)(LONG_PTR)(LONG)a[0], (ULONG_PTR)(LONG_PTR)(LONG)a[1],
+                               (PVOID)(LONG_PTR)(LONG)a[2], &wp64,
+                               (PVOID)(LONG_PTR)(LONG)a[4], (ULONG_PTR)(LONG_PTR)(LONG)a[5],
+                               (ULONG_PTR)(LONG_PTR)(LONG)a[6]);
+
+        /* 40 -> 28 back. Preserve the guest's original 64-bit-narrowed handles
+         * (win32k does not repoint them for this message). */
+        wp32->x = wp64.x; wp32->y = wp64.y;
+        wp32->cx = wp64.cx; wp32->cy = wp64.cy;
+        wp32->flags = wp64.flags;
+        wp32->hwndInsertAfter = (ULONG)wp64.hwndInsertAfter;
+
+        if (Wow64TraceSyscalls)
+            DbgPrint("[WOW64] NtUserMessageCall DWP WINDOWPOS marshalled "
+                     "(in cx=%ld cy=%ld fl=0x%lx -> out cx=%ld cy=%ld fl=0x%lx)\n",
+                     (long)in_cx, (long)in_cy, (unsigned long)in_fl,
+                     (long)wp32->cx, (long)wp32->cy, (unsigned long)wp32->flags);
+        return St;
+    }
+
+    /* Flat pass-through — byte-identical to the generated thunk. */
+    return NtUserMessageCall((PVOID)(LONG_PTR)(LONG)a[0], (ULONG_PTR)(LONG_PTR)(LONG)a[1],
+                             (PVOID)(LONG_PTR)(LONG)a[2], (PVOID)(LONG_PTR)(LONG)a[3],
+                             (PVOID)(LONG_PTR)(LONG)a[4], (ULONG_PTR)(LONG_PTR)(LONG)a[5],
+                             (ULONG_PTR)(LONG_PTR)(LONG)a[6]);
+}
+
 /* Name-dispatched entry point. Returns WOW64_MANUAL_UNIMPL if unhandled. */
+/* ---- M18: NtCreateIoCompletion (PHANDLE out-slot + optional OA) ----------
+ * Flushed out by marshal32.exe: the .spec typed it flat, so the PHANDLE arg
+ * got a flat thunk and the kernel's 8-byte handle write clobbered the guest's
+ * 4-byte slot + neighbor (CreateIoCompletionPort returned NULL). Same shape
+ * as NtCreateKeyedEvent. */
+
+static NTSTATUS Wow64Manual_NtCreateIoCompletion(ULONG *a)
+{
+    ULONG *Handle32 = (ULONG *)(ULONG_PTR)a[0];
+    ACCESS_MASK Access = a[1];
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64;
+    PVOID Oa64Ptr = NULL;
+    HANDLE Handle = NULL;
+    NTSTATUS St;
+
+    if (a[2])
+    {
+        Wow64pMarshalOa(&Oa64, &Uname64, a[2]);
+        Oa64Ptr = &Oa64;
+    }
+    St = NtCreateIoCompletion(&Handle, Access, Oa64Ptr, a[3]);
+    if (St >= 0 && Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Handle;
+    return St;
+}
+
+/* ---- M18: NtQueryInformationThread (THREADINFOCLASS 32/64 marshal) ------ */
+
+#define WOW64_ThreadBasicInformation          0
+#define WOW64_ThreadTimes                     1
+#define WOW64_ThreadQuerySetWin32StartAddress 9
+#define WOW64_ThreadPerformanceCount          11
+#define WOW64_ThreadAmILastThread             12
+#define WOW64_ThreadPriorityBoost             14
+#define WOW64_ThreadIsIoPending               16
+#define WOW64_TEBSLOT_WOWTEBOFFSET            0x180c /* MmCreateTeb raw slot */
+
+typedef struct _WOW64_TBI64 {
+    ULONG ExitStatus; ULONG Pad0;
+    ULONGLONG TebBaseAddress;
+    ULONGLONG UniqueProcess; ULONGLONG UniqueThread;
+    ULONGLONG AffinityMask;
+    LONG Priority; LONG BasePriority;
+} WOW64_TBI64;
+
+typedef struct _WOW64_TBI32 {
+    ULONG ExitStatus; ULONG TebBaseAddress;
+    ULONG UniqueProcess; ULONG UniqueThread;
+    ULONG AffinityMask; LONG Priority; LONG BasePriority;
+} WOW64_TBI32;
+
+static NTSTATUS Wow64Manual_NtQueryInformationThread(ULONG *a)
+{
+    HANDLE Thread = (HANDLE)(LONG_PTR)(LONG)a[0];
+    ULONG Class = a[1];
+    PVOID Buf32 = (PVOID)(ULONG_PTR)a[2];
+    ULONG Len32 = a[3];
+    ULONG *RetLen32 = (ULONG *)(ULONG_PTR)a[4];
+
+    switch (Class)
+    {
+        case WOW64_ThreadBasicInformation:
+        {
+            WOW64_TBI64 T64;
+            WOW64_TBI32 *T32 = Buf32;
+            ULONG Ret64 = 0;
+            NTSTATUS St;
+            if (Len32 < sizeof(*T32))
+            {
+                if (RetLen32) *RetLen32 = sizeof(*T32);
+                return (NTSTATUS)0xC0000004L; /* INFO_LENGTH_MISMATCH */
+            }
+            St = NtQueryInformationThread(Thread, Class, &T64, sizeof(T64), &Ret64);
+            if (St < 0) return St;
+            T32->ExitStatus = T64.ExitStatus;
+            /* TebBaseAddress must be the 32-bit TEB. Same-process threads:
+             * TEB32 = TEB64 + WowTebOffset (the kernel MmCreateTeb slot we
+             * already use in Wow64LdrpInitialize). Cross-process handles
+             * would need NtReadVirtualMemory; report 0 rather than a 64-bit
+             * TEB the guest would misread. */
+            T32->TebBaseAddress = 0;
+            /* TEB64.ClientId.UniqueProcess is at +0x40 (TEB incomplete here) */
+            if (T64.UniqueProcess ==
+                *(ULONGLONG *)((PBYTE)NtCurrentTeb() + 0x40) &&
+                T64.TebBaseAddress)
+            {
+                LONG WowOff = *(LONG *)((PBYTE)(ULONG_PTR)T64.TebBaseAddress +
+                                        WOW64_TEBSLOT_WOWTEBOFFSET);
+                if (WowOff)
+                    T32->TebBaseAddress = (ULONG)(T64.TebBaseAddress + WowOff);
+            }
+            T32->UniqueProcess = (ULONG)T64.UniqueProcess;
+            T32->UniqueThread = (ULONG)T64.UniqueThread;
+            T32->AffinityMask = (ULONG)T64.AffinityMask;
+            T32->Priority = T64.Priority;
+            T32->BasePriority = T64.BasePriority;
+            if (RetLen32) *RetLen32 = sizeof(*T32);
+            return St;
+        }
+
+        case WOW64_ThreadQuerySetWin32StartAddress:
+        {
+            ULONGLONG Addr64 = 0;
+            ULONG Ret64 = 0;
+            NTSTATUS St;
+            if (Len32 < sizeof(ULONG))
+            {
+                if (RetLen32) *RetLen32 = sizeof(ULONG);
+                return (NTSTATUS)0xC0000004L;
+            }
+            St = NtQueryInformationThread(Thread, Class, &Addr64, sizeof(Addr64),
+                                          &Ret64);
+            if (St < 0) return St;
+            *(ULONG *)Buf32 = (ULONG)Addr64;
+            if (RetLen32) *RetLen32 = sizeof(ULONG);
+            return St;
+        }
+
+        /* Width-identical info classes: LARGE_INTEGERs / ULONGs only. */
+        case WOW64_ThreadTimes:            /* KERNEL_USER_TIMES: 4x LARGE_INTEGER */
+        case WOW64_ThreadPerformanceCount: /* LARGE_INTEGER */
+        case WOW64_ThreadAmILastThread:    /* ULONG */
+        case WOW64_ThreadPriorityBoost:    /* ULONG */
+        case WOW64_ThreadIsIoPending:      /* ULONG */
+            return NtQueryInformationThread(Thread, Class, Buf32, Len32, RetLen32);
+
+        default:
+            /* Fail loud: an unmarshalled class passed through silently would
+             * hand the guest 64-bit-laid-out data. */
+            DbgPrint("[WOW64] NtQueryInformationThread class %lu NEEDS MANUAL "
+                     "MARSHALLER — failing loud\n", Class);
+            return (NTSTATUS)0xC0000003L; /* INVALID_INFO_CLASS */
+    }
+}
+
+/* ---- M18: NtRemoveIoCompletion (IOCP dequeue: 2 out-slots + IOSB) -------- */
+
+static NTSTATUS Wow64Manual_NtRemoveIoCompletion(ULONG *a)
+{
+    HANDLE Port = (HANDLE)(LONG_PTR)(LONG)a[0];
+    ULONG *Key32 = (ULONG *)(ULONG_PTR)a[1];
+    ULONG *Ctx32 = (ULONG *)(ULONG_PTR)a[2];
+    PVOID Key64 = NULL, Ctx64 = NULL;
+    WOW64_IO_STATUS_BLOCK64_M Iosb64 = {0};
+    NTSTATUS St;
+
+    /* Timeout is a LARGE_INTEGER* — width-identical, guest pointer passes. */
+    St = NtRemoveIoCompletion(Port, &Key64, &Ctx64, &Iosb64,
+                              (PLARGE_INTEGER)(ULONG_PTR)a[4]);
+    if (St == 0)
+    {
+        if (Key32) *Key32 = (ULONG)(ULONG_PTR)Key64;
+        if (Ctx32) *Ctx32 = (ULONG)(ULONG_PTR)Ctx64;
+        Wow64pCopyIosbDown(&Iosb64, a[3]);
+    }
+    return St;
+}
+
+/* ---- M18: NtUserEnumDisplayMonitors (count-aware HMONITOR out-array) -----
+ * The ROS syscall is FIVE args (the MSDN-shaped 4-arg prototype above it in
+ * ntuser.h is commented out — a trap marshal32.exe caught):
+ *   (HDC, LPCRECT, HMONITOR *hMonitorList, LPRECT monitorRectList, DWORD listSize)
+ * Only hMonitorList diverges (4 vs 8 per element); monitorRectList is RECTs
+ * (width-identical, guest pointer passes straight through). Probe call
+ * (both lists NULL) just returns the count. */
+
+#define WOW64_MON_MAX 16
+
+static NTSTATUS Wow64Manual_NtUserEnumDisplayMonitors(ULONG *a)
+{
+    HANDLE Dc = (HANDLE)(LONG_PTR)(LONG)a[0];
+    PVOID Rect = (PVOID)(ULONG_PTR)a[1];      /* LPCRECT: width-identical */
+    ULONG *List32 = (ULONG *)(ULONG_PTR)a[2];
+    PVOID RectList = (PVOID)(ULONG_PTR)a[3];  /* LPRECT[]: width-identical */
+    ULONG Want = a[4];
+    ULONGLONG List64[WOW64_MON_MAX];
+    INT Got;
+    ULONG i;
+
+    if (!List32 || !Want)
+    {
+        /* Probe/count call (user32 makes this first with both lists NULL). */
+        return (NTSTATUS)NtUserEnumDisplayMonitors(Dc, Rect, NULL, RectList, 0);
+    }
+    if (Want > WOW64_MON_MAX)
+    {
+        DbgPrint("[WOW64] NtUserEnumDisplayMonitors: %lu monitors > cap %u — "
+                 "failing loud\n", Want, WOW64_MON_MAX);
+        return (NTSTATUS)0xC0000095L; /* INTEGER_OVERFLOW: never silently truncate */
+    }
+    Got = NtUserEnumDisplayMonitors(Dc, Rect, List64, RectList, Want);
+    for (i = 0; Got > 0 && i < Want && i < (ULONG)Got; i++)
+        List32[i] = (ULONG)List64[i];
+    return (NTSTATUS)Got;
+}
+
 NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
 {
     /* tiny hand strcmp to avoid a CRT dependency */
@@ -2339,6 +2649,8 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtGdiOpenDCW(Arguments);
     if (WOW64_IS("NtUserProcessConnect"))
         return Wow64Manual_NtUserProcessConnect(Arguments);
+    if (WOW64_IS("NtUserMessageCall"))
+        return Wow64Manual_NtUserMessageCall(Arguments);
     if (WOW64_IS("NtQueryValueKey"))
         return Wow64Manual_NtQueryValueKey(Arguments);
     if (WOW64_IS("NtUserRegisterClassExWOW"))
@@ -2417,8 +2729,24 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtNotifyChangeMultipleKeys(Arguments);
     if (WOW64_IS("NtSetSystemInformation"))
         return Wow64Manual_NtSetSystemInformation(Arguments);
+    if (WOW64_IS("NtCreateIoCompletion"))
+        return Wow64Manual_NtCreateIoCompletion(Arguments);
+    if (WOW64_IS("NtOpenIoCompletion"))
+        return Wow64pOpenByOa(NtOpenIoCompletion, Arguments);
+    if (WOW64_IS("NtQueryInformationThread"))
+        return Wow64Manual_NtQueryInformationThread(Arguments);
+    if (WOW64_IS("NtRemoveIoCompletion"))
+        return Wow64Manual_NtRemoveIoCompletion(Arguments);
+    if (WOW64_IS("NtUserEnumDisplayMonitors"))
+        return Wow64Manual_NtUserEnumDisplayMonitors(Arguments);
 #undef WOW64_IS
-    return WOW64_MANUAL_UNIMPL;
+    /* M17: fall through to the marshalgen-generated thunks (flat thunks
+     * recovered from header prototypes + layout-diff deep marshallers).
+     * Hand-written marshallers above always take precedence. */
+    {
+        extern NTSTATUS Wow64AutoMarshalDispatch(const char *, ULONG *);
+        return Wow64AutoMarshalDispatch(Name, Arguments);
+    }
 }
 
 int Wow64pStrEq(const char *a, const char *b)

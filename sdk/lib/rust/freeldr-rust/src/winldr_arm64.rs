@@ -69,6 +69,7 @@ const ARM64_PTE_AP_RW: u64 = 0u64 << 6; /* Read-Write */
 #[allow(dead_code)]
 const ARM64_PTE_AP_RO: u64 = 1u64 << 7; /* Read-Only */
 const ARM64_PTE_ATTR_NORMAL: u64 = 0u64 << 2; /* Normal memory */
+const ARM64_PTE_ATTR_DEVICE: u64 = 1u64 << 2; /* Device-nGnRnE (MAIR Attr1) */
 
 /* Standard page entry for kernel memory */
 const ARM64_KERNEL_PAGE_FLAGS: u64 = ARM64_PTE_VALID
@@ -77,6 +78,10 @@ const ARM64_KERNEL_PAGE_FLAGS: u64 = ARM64_PTE_VALID
     | ARM64_PTE_SH_INNER
     | ARM64_PTE_AP_RW
     | ARM64_PTE_ATTR_NORMAL;
+
+/* Device MMIO page entry (Device-nGnRnE via MAIR Attr1, no shareability bits) */
+const ARM64_DEVICE_PAGE_FLAGS: u64 =
+    ARM64_PTE_VALID | ARM64_PTE_PAGE | ARM64_PTE_AF | ARM64_PTE_AP_RW | ARM64_PTE_ATTR_DEVICE;
 /* Table descriptors (L0/L1/L2) — see C comment for the AF/SH_INNER rationale. */
 const ARM64_KERNEL_TABLE_FLAGS: u64 =
     ARM64_PTE_VALID | ARM64_PTE_TABLE | ARM64_PTE_AF | ARM64_PTE_SH_INNER;
@@ -170,6 +175,36 @@ unsafe fn MempMapSinglePage(VirtualAddress: ULONG64, PhysicalAddress: ULONG64) -
     *Pte.add(Index as usize) = (PhysicalAddress & !0xFFFu64) | ARM64_KERNEL_PAGE_FLAGS;
 
     return 1u8;
+}
+
+/// Identity-map one MMIO page with Device-nGnRnE attributes. Port of the C
+/// `MempMapDevicePage` (winldr.c) — the 2026-07-05 tripwire commit added it to
+/// the by-then-inert C file, so it never shipped until this port. The kernel's
+/// early boot (pre-MmMapIoSpace) reaches the PL011 UART, fw_cfg, and — for SMP
+/// AP bring-up (M5b) — the GICv2 through these identity mappings; mapping them
+/// explicitly here removes the dependence on whatever the UEFI memory-map walk
+/// happened to cover (and gives them proper Device attributes instead of
+/// accidental Normal-WB).
+unsafe fn MempMapDevicePage(PhysicalAddress: ULONG64) -> BOOLEAN {
+    let Pud = MempGetOrCreatePageDir(Arm64Pgd, ARM64_PGD_INDEX(PhysicalAddress));
+    if Pud.is_null() {
+        return 0u8;
+    }
+
+    let Pmd = MempGetOrCreatePageDir(Pud, ARM64_PUD_INDEX(PhysicalAddress));
+    if Pmd.is_null() {
+        return 0u8;
+    }
+
+    let Pte = MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(PhysicalAddress));
+    if Pte.is_null() {
+        return 0u8;
+    }
+
+    *Pte.add(ARM64_PTE_INDEX(PhysicalAddress) as usize) =
+        (PhysicalAddress & !0xFFFu64) | ARM64_DEVICE_PAGE_FLAGS;
+
+    1u8
 }
 
 unsafe fn MempIsPageMapped(VirtualAddress: PVOID) -> BOOLEAN {
@@ -304,6 +339,27 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
     Pmd = MempGetOrCreatePageDir(Pud, ARM64_PUD_INDEX(MM_HAL_VA_START));
     MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(MM_HAL_VA_START));
     MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(MM_HAL_VA_START + 2 * 1024 * 1024));
+
+    /* Identity-map the QEMU virt device pages the kernel touches before
+     * MmMapIoSpace exists (Device attrs; see MempMapDevicePage):
+     *   0x09000000 PL011 UART      — Arm64UartKernelBase early serial
+     *   0x09020000 fw_cfg          — Phase-0 tripwire-channel probe
+     *   0x08000000 GICv2 GICD      — early-SMP IPI send (KeStartAllProcessors
+     *   0x08010000 GICv2 GICC        runs before MmInitSystem(1); M5b)
+     * Non-fatal on failure, mirroring the C: a UP boot without them loses
+     * only the affected feature, and the HAL reports IPI loss loudly. */
+    if MempMapDevicePage(0x09000000u64) == 0u8 {
+        ERR(b"Could not map PL011 UART page\n\0".as_ptr() as PCHAR);
+    }
+    if MempMapDevicePage(0x09020000u64) == 0u8 {
+        ERR(b"Could not map fw_cfg page (tripwire channel disabled)\n\0".as_ptr() as PCHAR);
+    }
+    if MempMapDevicePage(0x08000000u64) == 0u8 {
+        ERR(b"Could not map GICD page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+    }
+    if MempMapDevicePage(0x08010000u64) == 0u8 {
+        ERR(b"Could not map GICC page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+    }
 
     1u8
 }
