@@ -1423,7 +1423,10 @@ def cmd_translate(args):
         cpp_com_wide_statics = ""
 
         if rustconv_target.name == "shell32":
-            sorted_deps = prepare_helper_closure(deps, args.class_name)
+            assert cpp_com_cls is not None
+            sorted_deps = prepare_helper_closure(
+                deps, args.class_name, cpp_com_cls.plain_state_fields()
+            )
             cpp_com_wide_statics = render_wide_literal_statics(deps, sorted_deps)
 
         fact_seal_enabled = bool(
@@ -1486,6 +1489,17 @@ def cmd_translate(args):
             except (CallSealError, FactSealError) as error:
                 raise CppComError(f"{dep.name}: {error}") from error
 
+        def _normalize_unseal_result(dep, rust: str) -> str:
+            """Discard model-owned declarations before enforcing executable seals."""
+            signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
+            rust = normalize_worker_body(rust, signature)
+            rust = _unseal_result(dep, rust)
+            return normalize_worker_body(rust, signature)
+
+        # `--fn` selects the paid/output unit, not its dependency knowledge.
+        # Preserve the complete prepared closure for local-worker signatures.
+        context_deps = list(sorted_deps)
+
         # Filter to single function if requested
         if args.fn:
             sorted_deps = [d for d in sorted_deps if d.name == args.fn]
@@ -1523,7 +1537,7 @@ def cmd_translate(args):
             # Just show the plan
             print("\n  Translation order:", file=sys.stderr)
             all_deps = (
-                sorted_deps
+                context_deps
                 if rustconv_target.name == "shell32"
                 else extract_call_graph(scan, spec_exports=file_res.exports)
             )
@@ -1579,7 +1593,7 @@ def cmd_translate(args):
 
         # Translate function by function
         all_deps_for_context = (
-            sorted_deps
+            context_deps
             if rustconv_target.name == "shell32"
             else extract_call_graph(scan, spec_exports=file_res.exports)
         )
@@ -1766,21 +1780,21 @@ def cmd_translate(args):
                 f"  ⚡ parallel: {len(todo)} fn(s) @ concurrency={conc} ({resumed} cached)",
                 file=sys.stderr,
             )
+            parallel_errors = []
             with ThreadPoolExecutor(max_workers=conc) as ex:
                 for fut in as_completed([ex.submit(_work, it) for it in todo]):
-                    fi, dp, r, elapsed_ms = fut.result()
+                    try:
+                        fi, dp, r, elapsed_ms = fut.result()
+                    except Exception as error:
+                        parallel_errors.append(str(error))
+                        print(f"  parallel worker FAIL: {error}", file=sys.stderr)
+                        continue
                     if r is None:
                         continue  # skipped after cost cap
                     if r.success:
                         try:
                             if rustconv_target.name == "shell32":
-                                r.rust_code = _unseal_result(dp, r.rust_code)
-                                r.rust_code = normalize_worker_body(
-                                    r.rust_code,
-                                    worker_signature(
-                                        dp.name, dp.cpp_class, dp.params, dp.return_type
-                                    ),
-                                )
+                                r.rust_code = _normalize_unseal_result(dp, r.rust_code)
                                 findings = audit_worker_body(
                                     dp.body_text,
                                     r.rust_code,
@@ -1805,7 +1819,9 @@ def cmd_translate(args):
                                 error=str(error),
                                 **_result_fields(r, elapsed_ms),
                             )
-                            raise
+                            parallel_errors.append(str(error))
+                            print(f"  [{fi}] {dp.name} AUDIT REJECT: {error}", file=sys.stderr)
+                            continue
                         translated[dp.name] = r.rust_code
                         cache.put(dp.name, dp.body_text, r.rust_code)
                         total_in += r.input_tokens
@@ -1845,6 +1861,13 @@ def cmd_translate(args):
                             **_result_fields(r, elapsed_ms),
                         )
                         print(f"  [{fi}] {dp.name} FAIL: {r.error}", file=sys.stderr)
+                        parallel_errors.append(f"{dp.name}: {r.error}")
+            if parallel_errors:
+                raise CppComError(
+                    "parallel translation completed with rejected/failed worker(s); "
+                    "all other accepted paid artifacts were preserved in the resume cache:\n  - "
+                    + "\n  - ".join(parallel_errors)
+                )
 
         for func_idx, dep in enumerate(sorted_deps, 1):
             if conc > 1:
@@ -1937,11 +1960,7 @@ def cmd_translate(args):
             if result.success:
                 try:
                     if rustconv_target.name == "shell32":
-                        result.rust_code = _unseal_result(dep, result.rust_code)
-                        result.rust_code = normalize_worker_body(
-                            result.rust_code,
-                            worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
-                        )
+                        result.rust_code = _normalize_unseal_result(dep, result.rust_code)
                         findings = audit_worker_body(
                             dep.body_text,
                             result.rust_code,

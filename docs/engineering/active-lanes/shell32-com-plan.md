@@ -230,3 +230,39 @@ synthetic Rust substrate, and one duplicated an ABI struct locally. Stronger gen
 not overcome missing deterministic context. Production routing should therefore classify
 and close substrate gaps before paying for escalation; Sonnet remains for genuine residual
 semantic/structural failures after that gate.
+
+## Deterministic substrate replay (2026-07-16)
+
+The missing-context backlog from the routing checkpoint is closed for the measured corpus.
+Bounded repair now owns the known wide-length/allocation/byte-copy idioms, COM union and out
+pointer adaptations, exact sealed strsafe append formats, ABI struct field/null restoration,
+and signed C pointer offsets. Replaying the durable DeepSeek candidates made no paid calls
+and compiles **20/20 x3**, so the DeepSeek model tier is 10/10 after repair on this sample.
+The successful report is
+`.responses/candidate-oracles/20260716-004449-286078/report.json`.
+
+Model-emitted local ABI types are explicitly rejected. The next routing experiment should
+expand beyond the three classes and, importantly, test generated scaffold/substrate
+authority where no accepted Rust implementation of the same function exists. Until that
+out-of-sample result exists, keep the fixed DeepSeek budget and all mechanical acceptance
+gates; do not reinterpret this in-sample 10/10 as permission to bulk-convert shell32.
+
+## Out-of-sample `CCopyAsPathMenu` checkpoint (2026-07-16)
+
+The next Wave-1 source now passes deterministic COM preflight. rustconv owns its
+`CComPtr<IDataObject>` field layout, AddRef/Release assignment, final release, sibling worker
+binding, and C++ reference signatures. Two bodies lowered for $0; eight sealed DeepSeek body
+artifacts are preserved under
+`~/vibeos-rust-staging/shell32-com/copy-as-path-pilot/` and the in-repo response cache. An
+old parallel fail-fast bug was fixed without regenerating any paid function: all futures are
+now drained and individually cached, and declaration-only token externs are removed before
+the executable call seal is checked.
+
+The new full-module oracle is deliberately red x3:
+`.responses/candidate-oracles/20260716-004452-273547/report.json` reports 62 diagnostics per
+architecture. Unlike the first corpus, this class has no accepted Rust module supplying its
+environment. The remaining manifest is mostly deterministic substrate—ATL `CStringW`,
+complete shell-item interfaces, menu/command structs, Win32 FFI/constants, macro lowering,
+and the file-scope verb table—plus three compiler-guided casts. Do not pay Sonnet for it.
+Close those generated substrate categories, replay the cached class for $0, and require the
+full-module x3 oracle before considering integration or the Wave-1 boot gate.

@@ -200,3 +200,72 @@ C-to-Rust call adaptation, not routine Sonnet retries for unresolved-symbol diag
    Do not pay a stronger model until the deterministic substrate is complete.
 5. Reserve Sonnet for residual semantic or structural failures after that substrate gate,
    especially high-difficulty workers.
+
+### Deterministic substrate replay (2026-07-16)
+
+The three DeepSeek residuals were replayed from the durable cache after extending the
+bounded repair layer; no model calls were made. The same corpus now compiles **20/20 on
+i386, amd64, and arm64** after deterministic repair, including 10/10 model-tier workers.
+
+The new repairs are deliberately closed transformations rather than rustc-suggestion
+application:
+
+- `std` paths become `core` in the `no_std` candidate crate;
+- known wide-length and shell-allocation spellings resolve to helpers already present in
+  the accepted module;
+- C `memcpy` becomes `core::ptr::copy_nonoverlapping` over `u8`, preserving the original
+  byte count exactly;
+- generated COM out parameters and anonymous-union member paths receive their ABI-owned
+  casts/field paths;
+- only the exact fact-sealed `L"%ls "` and `L"\"%ls\" "` strsafe formats lower to the
+  existing append helper; arbitrary printf formats remain red;
+- ABI struct field names, pointer nulls, and signed pointer offsets are restored only from
+  the accepted base initializer/declarations.
+
+The durable successful oracle is
+`.responses/candidate-oracles/20260716-004449-286078/report.json`. The repair report names
+every transformation per worker, so an acceptance can be audited without inspecting a
+compiler scratch tree.
+
+This does not make compilation a semantic proof. It does establish the economic result the
+spike was looking for: the tested DeepSeek generation tier reaches 10/10 once common C/COM
+surface differences are owned deterministically. Body-local `struct`/`union`/`enum`
+declarations are now rejected as model-owned ABI surface; generated scaffold types remain
+the only authority. The next corpus should therefore broaden source classes and exercise
+these repairs without an already accepted per-function implementation before changing the
+production router threshold.
+
+### Out-of-sample class pilot: `CCopyAsPathMenu`
+
+`CCopyAsPathMenu.cpp` was the first test with no accepted Rust implementation of the same
+class. Its initial preflight failed loud on `CComPtr<IDataObject> m_pDataObject`. The
+deterministic scaffold now maps a `CComPtr<T>` object field to one raw ABI slot, initializes
+it null, routes assignment through a generated AddRef-before-Release helper, and releases it
+after the translated destructor body. Sibling method calls and C++ reference declarators are
+also normalized to generated Rust worker names/signatures before prompting.
+
+The real 162-line class had two trivial bodies lowered for $0 and eight fact/call-sealed
+DeepSeek workers. A parallel audit originally stopped on the first rejected future even
+though the other paid responses had finished. All raw streams survived in
+`.responses/20260716-002746-CCopyAsPathMenu.cpp/`; seven were recovered by deterministic
+replay and the eighth had already committed. No function was regenerated. rustconv now
+normalizes declaration-only model output before enforcing executable call tokens, seals
+rewritten local/sibling worker calls under their actual Rust names, and drains every parallel
+future so accepted paid artifacts reach the resume cache before a combined failure is
+reported. Only the two futures processed before the old abort have recorded usage/cost
+metadata ($0.00667); the total provider charge for the other completed streams is unknown.
+
+`candidate-check` now supports `full_module: true`, so the assembled class can be compiled
+without pretending an accepted per-function base exists. The resulting x3 oracle is
+`.responses/candidate-oracles/20260716-004452-273547/report.json`. It is correctly red with
+62 diagnostics on each architecture. The residual is now an explicit substrate manifest:
+`CStringW`, `IShellItemArray`/complete `IShellItem`, menu/invoke-command structs and handle
+aliases, Win32 clipboard/menu externs and constants, `IID_PPV_ARG`/`MAKE_HRESULT` lowering,
+and the file-scope `CMVERBMAP` table. Three ordinary Rust casts remain after that surface.
+
+That is the useful out-of-sample result: DeepSeek preserved and audited all eight workers,
+but a complete new class still cannot be accepted until rustconv generates the header/global/
+RAII substrate it currently borrows from an accepted module. Do not escalate this class to
+Sonnet; model capacity is not the blocker. The next investment is deterministic per-class
+substrate/addendum generation, starting with header-derived Win32 types/externs and exact
+lowering for `IID_PPV_ARG`, then a reusable owned-wide-string replacement for `CStringW`.

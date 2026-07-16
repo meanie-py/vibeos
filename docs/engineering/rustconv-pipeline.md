@@ -277,6 +277,10 @@ python -m rustconv --arch amd64 translate path/to/Class.cpp \
 python -m rustconv candidate-check candidates.json
 python -m rustconv candidate-check candidates.json --repair
 
+# Compile a whole newly generated module with no accepted function base.
+# Manifest candidate entry: {"name":"pilot", "candidate":"pilot.rs", "full_module":true}
+python -m rustconv candidate-check module-candidates.json
+
 # Compare ordered cross-language branch/loop/return shape (veto, not acceptance).
 python -m rustconv skeleton-check candidates.json
 
@@ -291,9 +295,25 @@ fails loud before the normal body audit. Each mode has a separate response-cache
 `candidate-check` generates a durable synthetic `no_std` crate under
 `.responses/candidate-oracles/`, replaces exactly one worker per isolated module backed by
 an accepted shell32 base, and checks i386/amd64/arm64. `--repair` is deliberately bounded:
-generated signatures and constant contexts, accepted-base argument casts/initializers, and
-lexically proven mutable reassignment. It does not apply rustc suggestions blindly or call
-an LLM. A red candidate makes the command nonzero.
+generated signatures and constant contexts; accepted-base argument casts, initializers,
+and ABI struct fields; lexically proven mutable reassignment; and closed C-idiom lowerings
+for known wide strings, shell allocation, byte-preserving memcpy, COM out pointers/unions,
+and the two exact sealed strsafe append formats. It does not apply rustc suggestions blindly
+or call an LLM. Every repair is named in `report.json`; a red candidate makes the command
+nonzero.
+
+For out-of-sample class pilots, a candidate entry with `"full_module": true` compiles the
+assembled module directly and does not require or consult an accepted base function. This
+mode is the honest oracle for generated scaffold/substrate completeness; do not manufacture
+a base merely to make the replacement-mode harness run.
+
+Parallel DeepSeek translation drains every submitted future even when one worker fails API,
+seal, or body audit. Accepted workers are committed immediately to the per-function resume
+cache; rustconv raises a combined error only after the pool is drained. Declaration-only
+extern blocks are deterministically discarded before executable fact/call closure, so a
+cheap model cannot make a token fail merely by redundantly declaring a scaffold-owned call.
+This ordering does not weaken the call proof: after normalization each required token must
+still occur exactly once as executable code.
 
 Every non-dry `translate` appends JSONL to `.responses/outcomes.jsonl`: model, target, arch,
 mode, seal flags, source hashes, cheap routing features, outcome, token/cost/latency, and
@@ -313,3 +333,9 @@ skeletons. Retrying the three residuals with Sonnet produced 0/3 compile-green b
 dominant failures were missing Rust substrate/API adaptations, not model capacity. Route
 unresolved-symbol and duplicate-ABI-type failures back into deterministic context/repair
 work before paying for a stronger model.
+
+After those substrate adaptations landed, a zero-call replay of the same cached DeepSeek
+workers reached 10/10 model-tier and 20/20 overall on all three architectures. This is an
+in-sample substrate result, not yet a production acceptance-rate estimate: broaden the
+corpus across classes, and keep fact/call closure, body audit, skeleton compatibility, and
+x3 compilation mandatory.

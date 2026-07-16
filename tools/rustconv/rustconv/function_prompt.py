@@ -238,6 +238,16 @@ def _format_callee_context(
             parts.append(f"### `{callee_name}` (already translated to Rust)")
             parts.append(f"```rust\n{sig}\n```\n")
 
+        elif callee_name.endswith("_body") and callee_name[:-5] in by_name:
+            # shell32 deterministically rewrites same-file helpers and sibling
+            # methods to their collision-free Rust worker names before sealing.
+            from .cpp_com import worker_signature
+
+            dep = by_name[callee_name[:-5]]
+            sig = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type) + ";"
+            parts.append(f"### `{callee_name}` (generated local Rust worker)")
+            parts.append(f"```rust\n{sig}\n```\n")
+
         elif callee_name in local_names:
             # Local function not yet translated — show only the C signature.
             dep = by_name[callee_name]
@@ -252,6 +262,14 @@ def _format_callee_context(
             # Extern function from catalog
             parts.append(f"- `{callee_name}` — extern function (available from ntkrnl_sys)")
 
+        elif getattr(func, "cpp_class", None) and callee_name.startswith(
+            f"{func.cpp_class}_cpp_com_"
+        ):
+            parts.append(
+                f"- `{callee_name}` — deterministic COM scaffold helper "
+                "(already available; call it directly and do not declare it)"
+            )
+
         else:
             # Unknown — also look in existing translated Rust files
             rust_sig = _find_rust_function_sig(callee_name)
@@ -260,7 +278,8 @@ def _format_callee_context(
                 parts.append(f"```rust\n{rust_sig}\n```\n")
             else:
                 parts.append(
-                    f"- `{callee_name}` — unknown extern (declare in extern block if needed)"
+                    f"- `{callee_name}` — unresolved external "
+                    "(keep the symbolic call; deterministic integration owns its declaration)"
                 )
 
     if len(parts) <= 2:

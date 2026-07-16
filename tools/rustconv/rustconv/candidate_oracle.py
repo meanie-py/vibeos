@@ -24,6 +24,7 @@ class CandidateSpec:
     candidate: Path
     base: Path
     base_function: str | None = None
+    full_module: bool = False
 
 
 def masked_rust(text: str) -> str:
@@ -136,10 +137,11 @@ def load_manifest(path: Path) -> tuple[list[CandidateSpec], Path, Path]:
     candidates = [
         CandidateSpec(
             item["name"],
-            item["function"],
+            item.get("function", ""),
             resolve(item["candidate"]),
-            resolve(item["base"]),
+            resolve(item.get("base", item["candidate"])),
             item.get("base_function"),
+            bool(item.get("full_module", False)),
         )
         for item in items
     ]
@@ -179,8 +181,14 @@ def build_oracle_crate(
     for index, candidate in enumerate(candidates):
         module_name = f"candidate_{index:04d}_{_slug(candidate.name)}"
         module_path = (src / f"{module_name}.rs").resolve()
-        base_text = candidate.base.read_text()
         candidate_text = candidate.candidate.read_text()
+        if candidate.full_module:
+            module_path.write_text(candidate_text)
+            module_paths[module_path] = candidate.name
+            module_lines.append(f"#[path = {json.dumps(str(module_path))}] mod {module_name};")
+            repairs[candidate.name] = []
+            continue
+        base_text = candidate.base.read_text()
         candidate_function = candidate.function
         if candidate.base_function and candidate.base_function != candidate.function:
             start, end = function_span(candidate_text, candidate.function)
@@ -336,6 +344,7 @@ def run_oracle(manifest: Path, arches: list[str], repair: bool = False) -> dict:
                 "base_function": candidate.base_function or candidate.function,
                 "candidate": str(candidate.candidate),
                 "base": str(candidate.base),
+                "full_module": candidate.full_module,
                 "status": "ok"
                 if all(item["status"] == "ok" for item in per_arch.values())
                 else "failed",

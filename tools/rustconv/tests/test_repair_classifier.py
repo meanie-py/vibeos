@@ -92,3 +92,84 @@ def test_repair_restores_base_mutability_bool_values_and_integer_predicate():
         "base_argument_values:1",
         "base_integer_predicates:1",
     )
+
+
+def test_repair_lowers_no_std_wide_alloc_and_typed_memcpy_idioms():
+    base = """unsafe fn wide_len(_: LPCWSTR) -> usize { 0 }
+    unsafe fn body(this: *mut Object, file: LPCWSTR) -> HRESULT {
+        let len = wide_len(file);
+        let target = crate::wine::shellole::SHAlloc((len + 1) * core::mem::size_of::<WCHAR>()) as LPWSTR;
+        core::ptr::copy_nonoverlapping(file, target, len + 1);
+        0
+    }"""
+    candidate = """unsafe fn body(this: *mut Object, file: LPCWSTR) -> HRESULT {
+        let len = strlenW(file) as usize;
+        let target = SHAlloc((len + 1) * std::mem::size_of::<WCHAR>()) as LPWSTR;
+        memcpy(target as *mut core::ffi::c_void, file as *const core::ffi::c_void,
+               (len + 1) * core::mem::size_of::<WCHAR>());
+        0
+    }"""
+    result = repair_worker(base, candidate, "body")
+    assert "let len = wide_len(file) as usize" in result.code
+    assert "crate::wine::shellole::SHAlloc" in result.code
+    assert "core::ptr::copy_nonoverlapping(" in result.code
+    assert "(file) as *const u8, (target) as *mut u8" in result.code
+    assert "(len + 1) * core::mem::size_of::<WCHAR>()" in result.code
+    assert result.applied == (
+        "no_std_paths:1",
+        "callee_alias:strlenW->wide_len:1",
+        "callee_path:SHAlloc:1",
+        "typed_memcpy:1",
+    )
+
+
+def test_repair_lowers_com_union_out_pointers_and_sealed_strsafe_append():
+    base = """unsafe fn init_format_etc(_: *mut FORMATETC, _: u16, _: u32) {}
+    unsafe fn append_argument(_: &mut LPWSTR, _: &mut usize, _: LPCWSTR, _: bool) {}
+    unsafe fn body(data: *mut IDataObject) -> HRESULT {
+        let mut fmt: FORMATETC = core::mem::zeroed();
+        let mut medium: STGMEDIUM = core::mem::zeroed();
+        init_format_etc(&mut fmt, CF_HDROP, TYMED_HGLOBAL);
+        let _ = medium.u.hGlobal;
+        0
+    }"""
+    candidate = """pub static CPP_COM_WSTR_0123456789AB: [WCHAR; 7] = [0x22, 0x25, 0x6c, 0x73, 0x22, 0x20, 0];
+    unsafe fn body(data: *mut IDataObject) -> HRESULT {
+        let mut fmt: FORMATETC = std::mem::zeroed();
+        let mut medium: STGMEDIUM = std::mem::zeroed();
+        InitFormatEtc(&mut fmt, CF_HDROP, TYMED_HGLOBAL);
+        ((*(*data).lpVtbl).GetData)(data, &mut fmt, &mut medium);
+        let _ = medium.hGlobal;
+        let mut end = core::ptr::null_mut();
+        let mut remaining = 10;
+        StringCchPrintfExW(end, remaining, &mut end, &mut remaining, 0,
+            CPP_COM_WSTR_0123456789AB.as_ptr(), core::ptr::null());
+        0
+    }"""
+    result = repair_worker(base, candidate, "body")
+    assert "init_format_etc(&mut fmt" in result.code
+    assert "(&mut fmt as *mut FORMATETC).cast()" in result.code
+    assert "(&mut medium as *mut STGMEDIUM).cast()" in result.code
+    assert "medium.u.hGlobal" in result.code
+    assert "append_argument(&mut end, &mut remaining, core::ptr::null(), true)" in result.code
+
+
+def test_repair_restores_abi_struct_field_names_pointer_nulls_and_signed_offsets():
+    base = """unsafe fn body() -> HRESULT {
+        let mut info = INFO { hInstApp: core::ptr::null_mut(), hIconOrMonitor: core::ptr::null_mut() };
+        let p = path.offset(wsprintfW(path, FORMAT.as_ptr()) as isize);
+        let error = ERROR_SUCCESS as DWORD;
+        0
+    }"""
+    candidate = """unsafe fn body() -> HRESULT {
+        let mut info = INFO { hInstApp: 0, hIcon: core::ptr::null_mut() };
+        let offset = wsprintfW(path, FORMAT.as_ptr());
+        let p = path.add(offset);
+        let error: u32 = if ok { ERROR_SUCCESS } else { GetLastError() };
+        0
+    }"""
+    result = repair_worker(base, candidate, "body")
+    assert "hInstApp: core::ptr::null_mut()" in result.code
+    assert "hIconOrMonitor: core::ptr::null_mut()" in result.code
+    assert "path.offset(offset as isize)" in result.code
+    assert "ERROR_SUCCESS as u32" in result.code

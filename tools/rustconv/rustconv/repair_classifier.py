@@ -118,6 +118,311 @@ def _call_arguments(function: str) -> dict[str, list[list[tuple[int, int]]]]:
     return calls
 
 
+def _call_sites(function: str, callee: str) -> list[tuple[int, int, list[tuple[int, int]]]]:
+    """Return call and argument spans for a named callee, including nested syntax."""
+    masked = masked_rust(function)
+    sites = []
+    for match in re.finditer(rf"\b{re.escape(callee)}\s*\)?\s*\(", masked):
+        opening = masked.rfind("(", match.start(), match.end())
+        depth = 0
+        closing = None
+        for pos in range(opening, len(masked)):
+            char = masked[pos]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    closing = pos
+                    break
+        if closing is None:
+            continue
+        arguments = []
+        start = opening + 1
+        nested = 0
+        for pos in range(start, closing + 1):
+            char = masked[pos] if pos < closing else ","
+            if char in "([{":
+                nested += 1
+            elif char in ")]}":
+                nested -= 1
+            elif char == "," and nested == 0:
+                left, right = start, pos
+                while left < right and function[left].isspace():
+                    left += 1
+                while right > left and function[right - 1].isspace():
+                    right -= 1
+                if left < right:
+                    arguments.append((left, right))
+                start = pos + 1
+        sites.append((match.start(), closing + 1, arguments))
+    return sites
+
+
+def _strip_void_pointer_cast(expression: str) -> str:
+    return re.sub(r"\s+as\s+\*(?:mut|const)\s+(?:core::ffi::)?c_void\s*$", "", expression).strip()
+
+
+def _generated_wide_units(rust: str) -> dict[str, tuple[int, ...]]:
+    values = {}
+    pattern = re.compile(
+        r"(?m)^pub static (CPP_COM_WSTR_[0-9A-F]{12}):\s*\[WCHAR;\s*\d+\]\s*=\s*"
+        r"\[([^\]]*)\];"
+    )
+    for match in pattern.finditer(rust):
+        try:
+            values[match.group(1)] = tuple(
+                int(token.strip(), 0) for token in match.group(2).split(",") if token.strip()
+            )
+        except ValueError:
+            continue
+    return values
+
+
+def _struct_initializer_fields(function: str) -> dict[tuple[str, str], dict[str, tuple[int, int]]]:
+    """Return field-value spans for simple named local struct initializers."""
+    masked = masked_rust(function)
+    initializers = {}
+    pattern = re.compile(r"\blet\s+(?:mut\s+)?([A-Za-z_]\w*)\s*(?::[^=;]+)?=\s*([A-Za-z_]\w*)\s*\{")
+    for match in pattern.finditer(masked):
+        opening = masked.find("{", match.start(), match.end())
+        depth = 0
+        closing = None
+        for pos in range(opening, len(masked)):
+            if masked[pos] == "{":
+                depth += 1
+            elif masked[pos] == "}":
+                depth -= 1
+                if depth == 0:
+                    closing = pos
+                    break
+        if closing is None:
+            continue
+        fields = {}
+        start = opening + 1
+        nested = 0
+        for pos in range(start, closing + 1):
+            char = masked[pos] if pos < closing else ","
+            if char in "([{":
+                nested += 1
+            elif char in ")]}":
+                nested -= 1
+            elif char == "," and nested == 0:
+                item = function[start:pos]
+                field = re.match(r"\s*([A-Za-z_]\w*)\s*:\s*", item)
+                if field:
+                    value_start = start + field.end()
+                    value_end = pos
+                    while value_end > value_start and function[value_end - 1].isspace():
+                        value_end -= 1
+                    fields[field.group(1)] = (value_start, value_end)
+                start = pos + 1
+        initializers[(match.group(1), match.group(2))] = fields
+    return initializers
+
+
+def _restore_abi_struct_fields(base: str, candidate: str) -> tuple[str, int]:
+    """Restore ABI field spellings and pointer nulls from an accepted initializer."""
+    base_initializers = _struct_initializer_fields(base)
+    candidate_initializers = _struct_initializer_fields(candidate)
+    edits = []
+    for key, candidate_fields in candidate_initializers.items():
+        base_fields = base_initializers.get(key)
+        if not base_fields:
+            continue
+        base_names = set(base_fields)
+        for candidate_name, candidate_span in candidate_fields.items():
+            base_name = candidate_name
+            if base_name not in base_names:
+                matches = sorted(
+                    name
+                    for name in base_names
+                    if len(candidate_name) >= 4 and name.startswith(candidate_name)
+                )
+                if len(matches) != 1:
+                    continue
+                base_name = matches[0]
+                # Replace the field name immediately preceding its value.
+                colon = candidate.rfind(":", 0, candidate_span[0])
+                name_match = re.search(r"([A-Za-z_]\w*)\s*$", candidate[:colon])
+                if name_match:
+                    edits.append((name_match.start(1), name_match.end(1), base_name))
+            candidate_value = candidate[slice(*candidate_span)].strip()
+            base_value = base[slice(*base_fields[base_name])].strip()
+            if candidate_value == "0" and base_value in {
+                "core::ptr::null()",
+                "core::ptr::null_mut()",
+            }:
+                edits.append((*candidate_span, base_value))
+    for start, end, replacement in reversed(edits):
+        candidate = candidate[:start] + replacement + candidate[end:]
+    return candidate, len(edits)
+
+
+def _lower_known_c_idioms(
+    base: str, candidate: str, fact_source: str | None = None
+) -> tuple[str, list[str]]:
+    """Lower only closed C idioms backed by symbols present in the accepted module."""
+    applied = []
+    replacements = 0
+
+    candidate, count = re.subn(r"\bstd::", "core::", candidate)
+    if count:
+        applied.append(f"no_std_paths:{count}")
+
+    aliases = {
+        "InitFormatEtc": "init_format_etc",
+        "strlenW": "wide_len",
+        "wcslen": "wide_len",
+    }
+    for source, target in aliases.items():
+        if re.search(rf"\bfn\s+{re.escape(target)}\b", base):
+            candidate, count = re.subn(rf"\b{re.escape(source)}\b", target, candidate)
+            if count:
+                applied.append(f"callee_alias:{source}->{target}:{count}")
+
+    if "crate::wine::shellole::SHAlloc" in base:
+        candidate, count = re.subn(
+            r"(?<![:\w])SHAlloc\s*\(", "crate::wine::shellole::SHAlloc(", candidate
+        )
+        if count:
+            applied.append(f"callee_path:SHAlloc:{count}")
+
+    candidate, field_repairs = _restore_abi_struct_fields(base, candidate)
+    if field_repairs:
+        applied.append(f"abi_struct_fields:{field_repairs}")
+
+    # C pointer arithmetic commonly carries a signed INT result. Rust's `add`
+    # requires usize; use `offset` only when the binding is proven to come from
+    # wsprintfW (whose deterministic declaration returns INT).
+    signed_offsets = set(re.findall(r"\blet\s+([A-Za-z_]\w*)\s*=\s*wsprintfW\s*\(", candidate))
+    offset_edits = 0
+    for name in signed_offsets:
+        candidate, count = re.subn(
+            rf"\.add\(\s*{re.escape(name)}\s*\)",
+            f".offset({name} as isize)",
+            candidate,
+        )
+        offset_edits += count
+    if offset_edits:
+        applied.append(f"signed_pointer_offsets:{offset_edits}")
+
+    if (
+        re.search(r"\blet\s+[A-Za-z_]\w*\s*:\s*u32\s*=\s*if\b", candidate)
+        and "ERROR_SUCCESS as DWORD" in base
+    ):
+        candidate, count = re.subn(
+            r"(?<![\w:])ERROR_SUCCESS(?!\s+as\b)", "ERROR_SUCCESS as u32", candidate
+        )
+        if count:
+            applied.append(f"typed_error_success:{count}")
+
+    # Bindgen represents STGMEDIUM's anonymous C union through `u`. Only touch
+    # locals whose declared type proves that member path.
+    medium_names = [
+        match.group("name")
+        for match in _LOCAL_RE.finditer(candidate)
+        if re.sub(r"\s", "", match.group("type")) == "STGMEDIUM"
+    ]
+    for name in medium_names:
+        if re.search(rf"\b{re.escape(name)}\.u\.hGlobal\b", base):
+            candidate, count = re.subn(
+                rf"\b{re.escape(name)}\.hGlobal\b", f"{name}.u.hGlobal", candidate
+            )
+            replacements += count
+    if replacements:
+        applied.append(f"anonymous_union_members:{replacements}")
+
+    # IDataObject::GetData is ABI-owned: its two out parameters are opaque in
+    # the generated COM vtable, while the worker owns concrete local mirrors.
+    typed_locals = {
+        match.group("name"): re.sub(r"\s", "", match.group("type"))
+        for match in _LOCAL_RE.finditer(candidate)
+    }
+    edits = []
+    for _, _, arguments in _call_sites(candidate, "GetData"):
+        for index, expected in ((1, "FORMATETC"), (2, "STGMEDIUM")):
+            if index >= len(arguments):
+                continue
+            start, end = arguments[index]
+            expression = candidate[start:end]
+            local = re.fullmatch(r"&mut\s+([A-Za-z_]\w*)", expression.strip())
+            if local and typed_locals.get(local.group(1)) == expected:
+                edits.append((start, end, f"(&mut {local.group(1)} as *mut {expected}).cast()"))
+    for start, end, replacement in reversed(edits):
+        candidate = candidate[:start] + replacement + candidate[end:]
+    if edits:
+        applied.append(f"com_out_pointer_casts:{len(edits)}")
+
+    # `memcpy(dst, src, bytes)` has a mechanically identical Rust primitive.
+    # Preserve its byte count exactly; do not infer an element type from sizeof.
+    edits = []
+    for start, end, arguments in _call_sites(candidate, "memcpy"):
+        if len(arguments) != 3:
+            continue
+        dst = _strip_void_pointer_cast(candidate[slice(*arguments[0])])
+        src = _strip_void_pointer_cast(candidate[slice(*arguments[1])])
+        byte_count = candidate[slice(*arguments[2])].strip()
+        if (
+            dst != candidate[slice(*arguments[0])].strip()
+            and src != candidate[slice(*arguments[1])].strip()
+        ):
+            edits.append(
+                (
+                    start,
+                    end,
+                    "core::ptr::copy_nonoverlapping("
+                    f"({src}) as *const u8, ({dst}) as *mut u8, {byte_count})",
+                )
+            )
+    for start, end, replacement in reversed(edits):
+        candidate = candidate[:start] + replacement + candidate[end:]
+    if edits:
+        applied.append(f"typed_memcpy:{len(edits)}")
+
+    # The two strsafe calls in this C idiom are append-with-optional-quotes.
+    # Decode the fact-sealed UTF-16 format; do not infer from a model string.
+    wide_units = _generated_wide_units(fact_source if fact_source is not None else candidate)
+    edits = []
+    if re.search(r"\bfn\s+append_argument\b", base):
+        for start, end, arguments in _call_sites(candidate, "StringCchPrintfExW"):
+            if len(arguments) != 7:
+                continue
+            flags = candidate[slice(*arguments[4])].strip()
+            format_arg = candidate[slice(*arguments[5])].strip()
+            format_match = re.fullmatch(r"(CPP_COM_WSTR_[0-9A-F]{12})\.as_ptr\(\)", format_arg)
+            if flags != "0" or format_match is None:
+                continue
+            units = wide_units.get(format_match.group(1))
+            if units is None:
+                continue
+            if units == (0x25, 0x6C, 0x73, 0x20, 0):
+                quote = False
+            elif units == (0x22, 0x25, 0x6C, 0x73, 0x22, 0x20, 0):
+                quote = True
+            else:
+                continue
+            end_arg = candidate[slice(*arguments[2])].strip()
+            remaining_arg = candidate[slice(*arguments[3])].strip()
+            source = candidate[slice(*arguments[6])].strip()
+            if not end_arg.startswith("&mut ") or not remaining_arg.startswith("&mut "):
+                continue
+            edits.append(
+                (
+                    start,
+                    end,
+                    f"append_argument({end_arg}, {remaining_arg}, {source}, "
+                    f"{'true' if quote else 'false'})",
+                )
+            )
+    for start, end, replacement in reversed(edits):
+        candidate = candidate[:start] + replacement + candidate[end:]
+    if edits:
+        applied.append(f"strsafe_append:{len(edits)}")
+
+    return candidate, applied
+
+
 def _restore_base_argument_casts(base_function: str, candidate_function: str) -> tuple[str, int]:
     """Copy cast-only argument shapes from an already accepted worker."""
     base_calls = _call_arguments(base_function)
@@ -283,6 +588,8 @@ def repair_worker(base: str, candidate: str, function: str) -> RepairResult:
             applied.append("generated_signature")
         if not applied:
             applied.append("worker_normalization")
+    normalized, idiom_repairs = _lower_known_c_idioms(base, normalized, candidate)
+    applied.extend(idiom_repairs)
     normalized, restored_casts = _restore_base_argument_casts(base_function, normalized)
     if restored_casts:
         applied.append(f"base_argument_casts:{restored_casts}")

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from rustconv.call_seal import seal_calls, unseal_calls
 from rustconv.callgraph import FunctionDep, extract_call_graph
 from rustconv.config import REACTOS_ROOT, TARGETS, detect_target
 from rustconv.cpp_com import (
@@ -26,7 +27,7 @@ from rustconv.cpp_com import (
     strip_debug_statements,
     worker_signature,
 )
-from rustconv.function_prompt import load_function_system_prompt
+from rustconv.function_prompt import _format_callee_context, load_function_system_prompt
 from rustconv.resolver import ResolveResult
 from rustconv.scanner import scan_file
 from rustconv.stitcher import _generate_imports_from_resolve
@@ -234,11 +235,18 @@ def test_object_map_adapter_redirects_atl_creation():
         ("void **", "*mut *mut core::ffi::c_void"),
         ("const IID *", "*const IID"),
         ("IDataObject *", "*mut IDataObject"),
+        ("CStringW &", "&mut CStringW"),
+        ("const CStringW &", "&CStringW"),
         ("DWORD", "DWORD"),
     ],
 )
 def test_c_declarator_mapping(c_type: str, rust_type: str):
     assert c_type_to_rust(c_type) == rust_type
+
+
+def test_worker_signature_moves_reference_punctuation_from_scanner_name():
+    signature = worker_signature("AppendToPathList", None, [("CStringW", "&paths")], "void")
+    assert signature == "pub unsafe fn AppendToPathList_body(paths: &mut CStringW) -> ()"
 
 
 def test_plain_c_state_has_deterministic_layout_and_zero_initialization():
@@ -273,7 +281,7 @@ def test_plain_c_state_has_deterministic_layout_and_zero_initialization():
     assert "sPathTarget: core::mem::zeroed()," in rust
 
 
-def test_cpp_raii_state_still_fails_before_scaffold_generation(tmp_path: Path):
+def test_ccomptr_state_has_deterministic_layout_assignment_and_release(tmp_path: Path):
     source = tmp_path / "CState.cpp"
     source.write_text(
         """
@@ -293,7 +301,53 @@ class CState :
     object_map = tmp_path / "shell32.cpp"
     object_map.write_text("OBJECT_ENTRY(CLSID_State, CState)\n")
     cls = analyze_class(source, "CState", object_map_source=object_map)
-    with pytest.raises(CppComError, match=r"explicit C\+\+ layout/lifetime mapping"):
+    cls.require_supported()
+    field = cls.plain_state_fields()[0]
+    assert field.rust_type == "*mut IUnknown"
+    assert field.assignment_helper == "cpp_com_assign_m_site"
+    interfaces = [
+        InterfaceSpec(
+            "IFoo",
+            (
+                InterfaceMethod("QueryInterface", "HRESULT", (("IFoo *", "This"),)),
+                InterfaceMethod("AddRef", "ULONG", (("IFoo *", "This"),)),
+                InterfaceMethod("Release", "ULONG", (("IFoo *", "This"),)),
+            ),
+            "fixture.h",
+        )
+    ]
+    rust = render_class_scaffold(cls, interfaces)
+    assert "pub m_site: *mut IUnknown" in rust
+    assert "let unknown = value as *mut IUnknown" in rust
+    assert "core::mem::transmute((*(*unknown).lpVtbl).AddRef)" in rust
+    assert "add_ref(unknown)" in rust
+    assert "let unknown = old as *mut IUnknown" in rust
+    assert "core::mem::transmute((*(*unknown).lpVtbl).Release)" in rust
+    assert "release(unknown)" in rust
+    assert "CState_cpp_com_assign_m_site(this, core::ptr::null_mut())" in rust
+
+
+def test_unmapped_cpp_raii_state_still_fails_before_scaffold_generation(tmp_path: Path):
+    source = tmp_path / "CState.cpp"
+    source.write_text(
+        """
+class CState :
+    public CComCoClass<CState>,
+    public CComObjectRootEx<CComMultiThreadModelNoCS>,
+    public IFoo
+{
+    CStringW m_text;
+    DECLARE_NOT_AGGREGATABLE(CState)
+    BEGIN_COM_MAP(CState)
+        COM_INTERFACE_ENTRY_IID(IID_IFoo, IFoo)
+    END_COM_MAP()
+};
+"""
+    )
+    object_map = tmp_path / "shell32.cpp"
+    object_map.write_text("OBJECT_ENTRY(CLSID_State, CState)\n")
+    cls = analyze_class(source, "CState", object_map_source=object_map)
+    with pytest.raises(CppComError, match="not proven C scalar/pointer state"):
         cls.require_supported()
 
 
@@ -347,6 +401,7 @@ def test_helper_closure_binds_overloads_and_excludes_unrelated_functions():
         "COpenControlPanel_dtor",
     }
     assert "FindExeCplClass_2_body(pszName, clsid)" in by_name["COpenControlPanel_Open"].body_text
+    assert "FindExeCplClass_2_body" in by_name["COpenControlPanel_Open"].callees
     assert (
         "FindExeCplClass_body(Canonical, HKEY_CURRENT_USER, FALSE, clsid)"
         in by_name["FindExeCplClass_2"].body_text
@@ -357,6 +412,42 @@ def test_helper_closure_binds_overloads_and_excludes_unrelated_functions():
     statics = render_wide_literal_statics(extract_call_graph(scan), plan)
     assert "pub static CPP_COM_WSTR_" in statics
     assert "[WCHAR;" in statics
+
+
+def test_helper_closure_makes_ccomptr_assignment_and_access_explicit():
+    source = SHELL32 / "CCopyAsPathMenu.cpp"
+    cls = analyze_class(source, "CCopyAsPathMenu", object_map_source=SHELL32 / "shell32.cpp")
+    cls.require_supported()
+    plan = prepare_helper_closure(
+        extract_call_graph(scan_file(source)), "CCopyAsPathMenu", cls.plain_state_fields()
+    )
+    by_name = {dep.name: dep for dep in plan}
+    initialize = by_name["CCopyAsPathMenu_Initialize"]
+    assert "CCopyAsPathMenu_cpp_com_assign_m_pDataObject(this, pdtobj);" in initialize.body_text
+    assert "CCopyAsPathMenu_cpp_com_assign_m_pDataObject" in initialize.callees
+    assert (
+        "CCopyAsPathMenu_DoCopyAsPath_body(this->m_pDataObject)"
+        in by_name["CCopyAsPathMenu_InvokeCommand"].body_text
+    )
+    assert "CCopyAsPathMenu_DoCopyAsPath_body" in by_name["CCopyAsPathMenu_InvokeCommand"].callees
+    assert "DoCopyAsPath" not in by_name["CCopyAsPathMenu_InvokeCommand"].callees
+
+
+def test_rewritten_local_worker_has_deterministic_rust_callee_context():
+    caller = FunctionDep(
+        name="C_Call",
+        cpp_class="C",
+        cpp_method="Call",
+        callees={"Helper_body"},
+    )
+    helper = FunctionDep(
+        name="Helper",
+        params=[("DWORD", "value")],
+        return_type="HRESULT",
+    )
+    context = _format_callee_context(caller, {}, [caller, helper], set())
+    assert "generated local Rust worker" in context
+    assert "pub unsafe fn Helper_body(value: DWORD) -> HRESULT;" in context
 
 
 def test_wide_character_literals_are_numeric_before_prompting():
@@ -543,6 +634,16 @@ def test_worker_audit_allows_vtable_calls_but_rejects_option_guessing():
     assert any("Option/panic ABI guess" in item for item in findings)
 
 
+def test_worker_audit_rejects_body_local_abi_types():
+    source = "{ return Call(); }"
+    rust = """pub unsafe fn C_f_body() -> HRESULT {
+        #[repr(C)] struct ABI_INFO { size: DWORD }
+        Call()
+    }"""
+    findings = audit_worker_body(source, rust, "C_f_body")
+    assert any("ABI type declaration" in item for item in findings)
+
+
 def test_proven_unimplemented_stub_is_lowered_without_a_model():
     signature = "pub unsafe fn C_f_body(this: *mut C) -> HRESULT"
     assert lower_trivial_worker("C::f() { UNIMPLEMENTED; return E_NOTIMPL; }", signature) == (
@@ -618,6 +719,18 @@ def test_worker_normalizer_removes_declaration_only_ffi_blocks():
     normalized = normalize_worker_body(raw)
     assert 'extern "system"' not in normalized
     assert "Call(GetLastError())" in normalized
+
+
+def test_worker_normalizer_discards_token_declaration_before_call_seal_audit():
+    sealed = seal_calls("HRESULT f() { return Call(1); }", {"Call"})
+    raw = """pub unsafe fn f() -> HRESULT {
+        extern "system" { fn __RUSTCONV_CALL_0000__(value: DWORD) -> HRESULT; }
+        __RUSTCONV_CALL_0000__(1)
+    }"""
+    normalized = normalize_worker_body(raw)
+    assert 'extern "system"' not in normalized
+    restored = unseal_calls(normalized, sealed)
+    assert "Call(1)" in restored
 
 
 def test_worker_normalizer_restores_generated_parameter_names():

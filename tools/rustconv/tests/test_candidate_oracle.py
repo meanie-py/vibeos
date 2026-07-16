@@ -76,6 +76,36 @@ def test_generated_crate_maps_generated_worker_to_accepted_internal_name(tmp_pat
     assert "C_Load_body" not in generated
 
 
+def test_generated_crate_accepts_full_module_without_accepted_function_base(tmp_path):
+    types = tmp_path / "types.rs"
+    shellcom = tmp_path / "shellcom.rs"
+    types.write_text("pub type DWORD = u32;\n")
+    shellcom.write_text("")
+    candidate = tmp_path / "candidate.rs"
+    candidate.write_text("use crate::types::*; pub unsafe fn body(x: DWORD) -> DWORD { x }")
+    specs = [CandidateSpec("module", "", candidate, candidate, full_module=True)]
+    paths, repairs = build_oracle_crate(specs, types, shellcom, tmp_path / "oracle")
+    assert next(iter(paths)).read_text() == candidate.read_text()
+    assert repairs == {"module": []}
+
+
+def test_manifest_full_module_defaults_base_to_candidate(tmp_path):
+    candidate = tmp_path / "candidate.rs"
+    candidate.write_text("fn body() {}")
+    types = tmp_path / "types.rs"
+    shellcom = tmp_path / "shellcom.rs"
+    types.write_text("")
+    shellcom.write_text("")
+    manifest = tmp_path / "module.json"
+    manifest.write_text(
+        '{"target":"shell32","types":"types.rs","shellcom":"shellcom.rs",'
+        '"candidates":[{"name":"module","candidate":"candidate.rs",'
+        '"full_module":true}]}'
+    )
+    specs, _, _ = load_manifest(manifest)
+    assert specs == [CandidateSpec("module", "", candidate.resolve(), candidate.resolve(), None, True)]
+
+
 def test_corpus_manifest_defaults_candidate_to_durable_candidates_dir(tmp_path):
     (tmp_path / "candidates").mkdir()
     candidate = tmp_path / "candidates/case-1.rs"

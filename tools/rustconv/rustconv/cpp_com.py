@@ -59,6 +59,19 @@ class PlainStateField:
     declaration: str
     c_type: str
     name: str
+    com_ptr_interface: str | None = None
+
+    @property
+    def rust_type(self) -> str:
+        if self.com_ptr_interface is not None:
+            return f"*mut {self.com_ptr_interface}"
+        return c_type_to_rust(self.c_type)
+
+    @property
+    def assignment_helper(self) -> str | None:
+        if self.com_ptr_interface is None:
+            return None
+        return f"cpp_com_assign_{self.name}"
 
 
 @dataclass
@@ -272,6 +285,15 @@ def _parse_plain_state_field(declaration: str) -> PlainStateField:
     semantics and must remain a loud preflight failure.
     """
     text = " ".join(declaration.split())
+    com_ptr = re.fullmatch(r"CComPtr\s*<\s*([A-Za-z_]\w*)\s*>\s+([A-Za-z_]\w*)", text)
+    if com_ptr is not None:
+        interface, name = com_ptr.groups()
+        return PlainStateField(
+            declaration=text,
+            c_type=f"{interface} *",
+            name=name,
+            com_ptr_interface=interface,
+        )
     if any(token in text for token in ("<", ">", "&", "[", "]", "{", "}", "=", ",", ":")):
         raise CppComError(
             f"state field needs an explicit C++ layout/lifetime mapping: {declaration}"
@@ -485,12 +507,17 @@ def c_type_to_rust(c_type: str) -> str:
     text = " ".join(c_type.replace("CONST", "const").split())
     is_const = text.startswith("const ")
     text = re.sub(r"^const\s+", "", text)
+    is_reference = text.endswith("&")
+    if is_reference:
+        text = text[:-1].rstrip()
     stars = text.count("*")
     base = " ".join(text.replace("*", " ").split())
     rust = _RUST_SCALARS.get(base, base)
     for depth in range(stars):
         qualifier = "const" if is_const and depth == 0 else "mut"
         rust = f"*{qualifier} {rust}"
+    if is_reference:
+        rust = f"&{'' if is_const else 'mut '}{rust}"
     return rust
 
 
@@ -614,7 +641,8 @@ def normalize_worker_body(rust: str, expected_signature: str | None = None) -> s
     # substrate remains the single ABI authority. The audit still rejects any
     # declaration shape this narrow matcher cannot prove is declarations-only.
     rust = re.sub(
-        r'\s*extern\s+"(?:C|system)"\s*\{(?:\s*(?:pub\s+)?fn\s+[^;]+;)+\s*\}\s*',
+        r'\s*extern\s+"(?:C|system)"\s*\{(?:\s*(?:pub\s+)?(?:fn\s+[^;]+|'
+        r"static\s+(?:mut\s+)?[A-Za-z_]\w*\s*:\s*[^;]+);)+\s*\}\s*",
         "\n    ",
         rust,
         flags=re.S,
@@ -676,11 +704,17 @@ def worker_signature(
     their C definitions; the model owns neither surface.
     """
     rendered = [f"this: *mut {class_name}"] if class_name else []
-    rendered.extend(
-        f"{param_name or f'arg{i}'}: {c_type_to_rust(c_type)}"
-        for i, (c_type, param_name) in enumerate(params)
-    )
-    ret = c_type_to_rust(return_type) if return_type else "()"
+    for i, (c_type, param_name) in enumerate(params):
+        # The generic scanner intentionally preserves declarator punctuation,
+        # but for C++ references clang-style source often attaches `&`/`*` to
+        # the name (`CStringW`, `&paths`). Move it back to the type before the
+        # deterministic Rust mapping.
+        declarator = param_name or f"arg{i}"
+        while declarator.startswith(("&", "*")):
+            c_type = f"{c_type} {declarator[0]}"
+            declarator = declarator[1:]
+        rendered.append(f"{declarator}: {c_type_to_rust(c_type)}")
+    ret = "()" if not return_type or return_type.strip() == "void" else c_type_to_rust(return_type)
     return f"pub unsafe fn {name}_body({', '.join(rendered)}) -> {ret}"
 
 
@@ -800,7 +834,34 @@ def _named_call_spans(text: str, names: set[str]) -> list[tuple[int, int, str, i
     return spans
 
 
-def prepare_helper_closure(deps: list[FunctionDep], class_name: str) -> list[FunctionDep]:
+def _rewrite_com_ptr_state(
+    body: str, class_name: str, state_fields: list[PlainStateField]
+) -> tuple[str, set[str]]:
+    """Make CComPtr assignment/refcount behavior explicit before model translation."""
+    callees = set()
+    for state in state_fields:
+        helper = state.assignment_helper
+        if helper is None:
+            continue
+        qualified_helper = f"{class_name}_{helper}"
+        # CComPtr::operator=(T*) is the only accepted mutation shape. Compound,
+        # address-taking, Attach/Detach, and member calls remain untouched and
+        # therefore fail later audits/compile rather than losing ownership.
+        assignment = re.compile(
+            rf"(?<![\w.>])(?:this\s*->\s*)?{re.escape(state.name)}\s*=\s*([^;]+);"
+        )
+        body, count = assignment.subn(rf"{qualified_helper}(this, \1);", body)
+        if count:
+            callees.add(qualified_helper)
+        body = re.sub(rf"(?<![\w.>]){re.escape(state.name)}\b", f"this->{state.name}", body)
+    return body, callees
+
+
+def prepare_helper_closure(
+    deps: list[FunctionDep],
+    class_name: str,
+    state_fields: list[PlainStateField] | None = None,
+) -> list[FunctionDep]:
     """Select and bind the exact same-file helper closure for one COM class.
 
     C++ overload resolution is deliberately not reimplemented. The accepted
@@ -862,6 +923,18 @@ def prepare_helper_closure(deps: list[FunctionDep], class_name: str) -> list[Fun
             binding[key] = dep
 
     helper_names = set(by_source)
+    method_targets = {}
+    for dep in class_deps:
+        method = dep.cpp_method
+        if method in (None, class_name, f"~{class_name}"):
+            continue
+        if method in method_targets:
+            raise CppComError(
+                f"{class_name}: overloaded sibling method {method} needs explicit "
+                "deterministic call binding"
+            )
+        method_targets[method] = dep
+    method_names = set(method_targets)
     selected: dict[str, FunctionDep] = {}
     queue = list(class_deps)
     while queue:
@@ -882,6 +955,7 @@ def prepare_helper_closure(deps: list[FunctionDep], class_name: str) -> list[Fun
     rewritten: list[FunctionDep] = []
     for dep in plan:
         body = _rewrite_wide_literals(dep.body_text)
+        body, state_callees = _rewrite_com_ptr_state(body, class_name, state_fields or [])
         local_targets: set[str] = set()
         spans = _named_call_spans(body, helper_names)
         for start, end, source_name, arity in reversed(spans):
@@ -893,9 +967,24 @@ def prepare_helper_closure(deps: list[FunctionDep], class_name: str) -> list[Fun
             # self is harmless for genuine recursion; _format_callee_context
             # intentionally omits it too.
             if target.name != dep.name:
-                local_targets.add(target.name)
-        external = {name for name in dep.callees if name not in helper_names}
-        rewritten.append(replace(dep, body_text=body, callees=external | local_targets))
+                local_targets.add(f"{target.name}_body")
+        method_spans = _named_call_spans(body, method_names)
+        definition_brace = body.find("{")
+        for start, end, source_name, _arity in reversed(method_spans):
+            target = method_targets[source_name]
+            # Keep this worker's C++ definition declarator recognizable; only
+            # sibling calls become deterministic Rust worker calls.
+            if target.name == dep.name and start < definition_brace:
+                continue
+            body = body[:start] + f"{target.name}_body" + body[end:]
+            if target.name != dep.name:
+                local_targets.add(f"{target.name}_body")
+        external = {
+            name for name in dep.callees if name not in helper_names and name not in method_names
+        }
+        rewritten.append(
+            replace(dep, body_text=body, callees=external | local_targets | state_callees)
+        )
 
     return topological_sort(rewritten)
 
@@ -1047,6 +1136,8 @@ def audit_worker_body(
             findings.append(f"worker emitted forbidden {description}: {token}")
     if re.search(r"\b(?:struct|static)\s+[A-Za-z_]\w*Vtbl\b|\b[A-Za-z_]\w*Vtbl\s*\{", rust):
         findings.append("worker emitted forbidden vtable definition")
+    if re.search(r"\b(?:struct|union|enum)\s+[A-Za-z_]\w*\b", rust):
+        findings.append("worker emitted forbidden ABI type declaration")
 
     # Strings and comments contain printf formats and prose, not program constants.
     open_brace, close_brace = c_body.find("{"), c_body.rfind("}")
@@ -1158,8 +1249,36 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
         lines.append(f"    pub {entry.interface}_iface: {entry.interface},")
     lines.append("    pub ref_count: core::sync::atomic::AtomicI32,")
     for state in cls.plain_state_fields():
-        lines.append(f"    pub {state.name}: {c_type_to_rust(state.c_type)},")
+        lines.append(f"    pub {state.name}: {state.rust_type},")
     lines.extend(["}", ""])
+
+    for state in cls.plain_state_fields():
+        if state.com_ptr_interface is None:
+            continue
+        helper = f"{cls.name}_{state.assignment_helper}"
+        interface = state.com_ptr_interface
+        lines.extend(
+            [
+                f"unsafe fn {helper}(this: *mut {cls.name}, value: *mut {interface}) {{",
+                f"    let old = (*this).{state.name};",
+                "    if old == value { return; }",
+                "    if !value.is_null() {",
+                "        let unknown = value as *mut IUnknown;",
+                '        let add_ref: unsafe extern "system" fn(*mut IUnknown) -> ULONG =',
+                "            core::mem::transmute((*(*unknown).lpVtbl).AddRef);",
+                "        add_ref(unknown);",
+                "    }",
+                f"    (*this).{state.name} = value;",
+                "    if !old.is_null() {",
+                "        let unknown = old as *mut IUnknown;",
+                '        let release: unsafe extern "system" fn(*mut IUnknown) -> ULONG =',
+                "            core::mem::transmute((*(*unknown).lpVtbl).Release);",
+                "        release(unknown);",
+                "    }",
+                "}",
+                "",
+            ]
+        )
 
     for entry in cls.com_map:
         iface = by_name[entry.interface]
@@ -1237,6 +1356,15 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
             "core::sync::atomic::Ordering::SeqCst) - 1;",
             "    if refs == 0 {",
             f"        {cls.name}_dtor_body(this);",
+        ]
+    )
+    for state in cls.plain_state_fields():
+        if state.assignment_helper is not None:
+            lines.append(
+                f"        {cls.name}_{state.assignment_helper}(this, core::ptr::null_mut());"
+            )
+    lines.extend(
+        [
             "        Shell32RustObjectUnlock();",
             "        HeapFree(GetProcessHeap(), 0, this as *mut core::ffi::c_void);",
             "    }",
