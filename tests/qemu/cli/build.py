@@ -798,6 +798,11 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         ramdisk = repo / "qemu" / "ramdisk.img"
         flag = "--refresh" if ramdisk.is_file() else ""
         cmd = ["bash", str(mk)] + ([flag] if flag else [])
+        # SMP media (smp-bringup-quest.md M5): stage ntkrnlmp.exe + boot-select it
+        # via /KERNEL=ntkrnlmp.exe. Opt-in with --smp-kernel; a plain build omits
+        # --smp so the ramdisk boots UP ntoskrnl.exe (default stays UP).
+        if getattr(args, "smp_kernel", False):
+            cmd.append("--smp")
         cp = run.run(cmd, cwd=repo, stage="mkramdisk", timeout=900)
         if cp.returncode != 0:
             run.classification = "RESTAGE_FAIL"

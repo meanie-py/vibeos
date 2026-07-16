@@ -722,3 +722,429 @@ effort:
 
 The next wave that isn't Phase C or D is small: `_strdup`/`_wcsdup`/`_mbsdup` (alloc
 + copy). Everything else of substance is behind those two doors.
+
+---
+
+## Wave 10 (2026-07-13) — the LOCALE DOOR. +50 flips (msvcrt.dll is **170 functions of Rust**), and 6 shipped bugs found in already-landed code.
+
+Phase D was recorded as blocked on one thing: *"a way to reach `locinfo` fields without hardcoding
+struct offsets."* Wave 10 built that, and it turned out to unlock rather more than the plan expected —
+including the discovery that **the harness's own convenience stubs had been the oracle for four waves**.
+
+### The reframe: the "C-locale blind spot" was never about the FUNCTION
+
+The lane had recorded the whole locale family as un-flippable, because the harness pins the "C" locale
+(§9.60) and would report MATCH for a `toupper` that is only C-locale-correct. That is true — **of a
+locale-INDEPENDENT implementation.** It was never true of a faithful one:
+
+```c
+int CDECL _toupper_l(int c, _locale_t locale) {
+    if((unsigned)c < 256) {
+        if(locinfo->pctype[c] & _LEADBYTE) return c;
+        return locinfo->pcumap[c];          /* <-- the LOCALE'S OWN table */
+```
+
+A Rust body that reads `locinfo->pcumap[c]` — *the same table* — inherits the C's locale-correctness
+**by construction**: the locale-dependence lives in the DATA, `setlocale` repopulates it, and both
+bodies follow it. The blind spot forbids hardcoding ASCII. It never forbade reading the real table.
+We simply had no way to reach the table without hand-rolling struct offsets — the
+`scan_magic_offsets` bug class that cost this repo the `KTHREAD.Teb` hunt and the amd64
+`TEB.GdiBatchCount`-at-`0x74` read that killed explorer (§9.41).
+
+### `msvcrt-sys` — the door (and it caught a bug on day one)
+
+`sdk/lib/rust/msvcrt-sys/`: bindgen over msvcrt's internal headers, `offset_of!` everywhere, no
+arithmetic. Two properties worth copying:
+
+* **The flags come from `compile_commands.json`, not a hand-copied list.** msvcrt is not built with the
+  default include path (its CMakeLists *removes* `sdk/include/crt`, substitutes its own, prepends
+  `sdk/include/wine`, sets `_MSVCR_VER=0`). A wrong `-D` makes bindgen emit a *different layout*, and a
+  machine-generated wrong offset is worse than a hand-rolled one because it looks trustworthy. So we read
+  the real compile command for `dll/win32/msvcrt/ctype.c` out of the build itself.
+* **The layout is guarded on two sides by two compilers, on every build** — `layout_<arch>.rs` (rustc) and
+  `dll/win32/msvcrt/rust_layout_assert.c` (**clang, with msvcrt's real flags, ×3 arches**), both pinned to
+  the same literals. Both negative-controlled. It earned its keep immediately: bindgen had recorded
+  `__msvcrt_ulong` as `c_ulong`, which is 32-bit on Windows but **64-bit on the linux host that builds the
+  difftest harness** — every field after `lc_handle` would have shifted, *in the oracle*. See §9.74.
+
+### What it found: six functions wrong on master (§9.73)
+
+Making `ctype.c` a real reference TU meant deleting `refimpl.c`'s three convenience stubs for
+`_isspace_l`/`_tolower_l`/`_toupper_l`. Those stubs were **the oracle**, and they were an ASCII fold.
+The instant the reference started grading itself, six already-shipped functions went DIVERGE:
+
+`_atoi64` · `strtol` · `strtoul` · `_strtoi64` · `_strtoui64` · `_memicmp`
+
+All six because msvcrt hands `_tolower_l` a **raw signed `char`** (`string.c:1651` — no cast, while the
+`_isspace_l` two lines above it *does* cast), so a byte ≥ 0x80 sign-extends negative, misses the table,
+and takes the NLS arm — **which sets `errno = EILSEQ`**. The values were right; the side effect was
+missing. Fixed by *transcribing* the parsers so they call the real `_tolower_l`/`_isspace_l` at the same
+points, rather than bolting msvcrt's contract onto `cnt_rust::radix::parse_i64_clamped` (which cannot
+express a side effect). **This is the wave-5 float lesson again, in a place we had not looked.**
+
+Also fixed: the harness had silently inherited **glibc's `EILSEQ` (84)** where msvcrt says **42**.
+`EINVAL`/`ERANGE` coincide between the two OSes, which is exactly why nobody noticed.
+
+### Flipped (50)
+
+* **ctype/case (44)** — the whole of `ctype.c`: `_isctype`/`_isctype_l`, the 13 `is*`/`_is*_l` pairs,
+  `ispunct`, `isblank`/`_isblank_l`, `__isascii`/`__toascii`/`iswascii`/`__iscsym`/`__iscsymf`/
+  `__iswcsym`/`__iswcsymf`, `toupper`/`tolower`/`_toupper`/`_tolower`/`_toupper_l`/`_tolower_l`,
+  `__pctype_func`/`__p__pctype`/`__pwctype_func`/`__p__pwctype`.
+* **thread_data tokenizers (2)** — `strtok`, `wcstok`. **Refused in wave 6c** purely for lack of the
+  struct offset; `msvcrt-sys` removed the obstacle.
+* **the six re-transcriptions** above.
+
+### What the exhaustive sweep caught
+
+* **`isblank` returns 0/1; `_isblank_l` returns the MASK (64).** Three lines apart in the same file:
+  the plain form is `return c == '\t' || _isctype(c, _BLANK);` and C's `||` **normalises**. It is the
+  only member of the narrow ctype family that returns a boolean. This is *precisely* the trap wave 9 hit
+  on the wide twin (`iswblank`) — and I walked into it again. Caught only because the sweep is exhaustive:
+  the divergence exists at exactly one input.
+* **`_toupper`/`_tolower` are `c ∓ 0x20`, UNCONDITIONALLY** (`/* sic */` in the C). No range check, no
+  table, no locale: `_toupper('0')` is `0x10`. A "reasonable" implementation would be a bug.
+* **`toupper` is not `_toupper_l(c, NULL)`** — it short-circuits on the global `initial_locale`.
+
+### Verified
+
+`classify` **125 MATCH / 0 SIGN-ONLY / 1 DIVERGE** (the `strtod` probe, which is the expected
+DO-NOT-FLIP record) · `oob_guard`, `perf`, `link`, `ref_integrity` all green · builds ×3 arches, all
+lints incl. `scan_magic_offsets` · PE export-RVA proves the Rust bodies won the link on every arch
+(wave-10 exports at `0x001d30–0x008480`; the deliberately-refused `memmove`/`strcoll`/`_strdup`/`strxfrm`
+still C at `0x072000+`).
+
+### Still open, and now sharply defined
+
+**Waves 7 and 8 shipped locale-INDEPENDENT implementations of locale-DEPENDENT functions.**
+`_strnicmp_l` has *two* paths:
+
+```c
+if(!locinfo->lc_handle[LC_CTYPE]) { ...inline ASCII fold...; return (unsigned char)c1 - (unsigned char)c2; }
+do { c1 = _tolower_l((unsigned char)*s1++, locale); ... } while(...);   /* a REAL locale */
+```
+
+Our Rust only implements path 1. It is correct in the "C" locale (all the harness tests) and wrong the
+moment `setlocale` is called. Same for `_stricmp`, `_wcsicmp`, `_wcsnicmp`, `_strlwr_s`/`_strupr_s` and
+the wide twins. **This is the documented §9.60 blind spot, shipped** — and the fix is not the hard part;
+the hard part is that a harness pinned to the C locale *cannot grade path 2*, so adding it would be a
+green from an unexercised branch, which is not a green.
+
+**Owed (wave 11): a non-C-locale mode for the harness.** Plant a non-zero `lc_handle[LC_CTYPE]`, and grade
+path 2 against the shared NLS stubs — the same argument that already makes `__crtLCMapStringA` gradeable
+(both sides call the same stub, so the comparison isolates the Rust's *logic*, and only the NLS *data* is
+out of scope, correctly, because that is kernel32's job). That closes the lane's oldest blind spot
+structurally rather than by promise.
+
+---
+
+## Wave 11 (2026-07-14) — §9.60 CLOSED. The harness now has a non-"C"-locale mode, and it convicted waves 7–8 the moment it worked.
+
+Wave 10 ended by naming the lane's oldest blind spot precisely: **waves 7 and 8 shipped
+locale-INDEPENDENT bodies for locale-DEPENDENT functions.** `_strnicmp_l` has two paths —
+
+```c
+if(!locinfo->lc_handle[LC_CTYPE]) { ...inline ASCII fold...; return (unsigned char)c1 - (unsigned char)c2; }
+do { c1 = _tolower_l((unsigned char)*s1++, locale); ... } while(...);   return c1 - c2;
+```
+
+— and we implemented only the first. Correct in the "C" locale (all the harness ever tested),
+wrong the moment `setlocale` is called. Note the two paths do not even agree on their *return
+convention*.
+
+### The false green, and why it matters more than the fix
+
+The obvious move — plant a non-zero `lc_handle[LC_CTYPE]` and re-run the rows — **did not work,
+and reported that it did.** Sabotaging `_strnicmp` to always take path 1 moved not one row.
+
+Because path 2 folds through `_tolower_l`, which reads `locinfo->pclmap[]` — and that was still
+the **C locale's** map, i.e. an ASCII fold. Both paths computed the same answer on every input, so
+a path-1-only implementation was *indistinguishable from a correct one*. The branch was being
+exercised and proved nothing.
+
+**It is not enough to exercise the branch. The branch has to be able to produce a different
+answer.** So the mode also swaps the ctype tables (`pclmap`/`pcumap` gain the Latin-1 case pairs,
+`0xC0–0xDE ↔ 0xE0–0xFE`), and `LCMapStringW` obeys the same rule. Now path 1 leaves `0xE9` alone
+while path 2 maps it to `0xC9`.
+
+This is §9.73 in miniature, again: **shared data cannot be caught differentially**, so the tables
+are one copy (refimpl's), aimed at by both sides — and the NLS entry points (`LCMapStringA/W`,
+`CompareStringA/W`, `GetStringTypeW`) are now **un-namespaced and shared**, because kernel32 is the
+*environment*, never code under test. What the mode grades is the Rust's LOGIC around the NLS call.
+Windows' real NLS *data* stays out of scope, correctly — that is kernel32's job.
+
+### Negative control (the only reason to believe any of this)
+
+| row | subject sabotaged to path-1-only | subject correct |
+|---|---|---|
+| `_strnicmp` (C locale) | **MATCH** ✓ | MATCH |
+| `_strnicmp [NLS]` | **DIVERGE** ✗ | MATCH |
+
+The C-locale row still passes under sabotage — correctly, because path 1 *is* right there. The two
+rows test genuinely different things. That is what a working instrument looks like.
+
+### What it caught immediately
+
+**`_wcsicmp [NLS]` DIVERGE** (`cnt=94 msvcrt=126`) — `_wcsicmp` has its own fold loop rather than
+delegating to `wcsnicmp_core`, so fixing the core had missed it. Exactly the class of bug the mode
+exists for, found the first time it ran honestly.
+
+### Flipped / fixed (+4 flips, 174 total)
+
+* **NEW:** `_towlower_l`, `_towupper_l`, `towlower`, `towupper` — the wide case mappers the whole
+  wide family funnels through (`wint_t` is **16-bit** in msvcrt, so `WEOF == 0xFFFF`). Exhaustive
+  over all 65,536 inputs, in **both** locale modes.
+* **path 2 added** to `_stricmp`, `_strnicmp`, `_wcsicmp`, `_wcsnicmp`, `_strlwr_s`, `_strupr_s`,
+  `_wcslwr_s`, `_wcsupr_s`. `_wcslwr_s_l` has no `lc_handle` branch of its own — it folds through
+  `_towlower_l` and inherits locale-correctness, so flipping the mapper fixed the family.
+
+### Verified
+
+`classify` **139 MATCH / 0 SIGN-ONLY / 1 DIVERGE** (the `strtod` probe — the expected DO-NOT-FLIP
+record) · `oob_guard` / `perf` / `link` / `ref_integrity` green · builds ×3 arches, all lints.
+
+---
+
+## Wave 12 (2026-07-14) — the collation family. +20 flips (**194 total**). Only possible because wave 11 exists.
+
+`strcoll` · `_stricoll` · `_strncoll` · `_strnicoll` · `strxfrm` (+ `_l` forms) and the five wide
+twins `wcscoll` · `_wcsicoll` · `_wcsncoll` · `_wcsnicoll` · `wcsxfrm`.
+
+Every one branches on `lc_handle[LC_COLLATE]`:
+
+```c
+if(!locinfo->lc_handle[LC_COLLATE])
+    return strcmp(str1, str2);                          /* path 1 — the "C" locale */
+return CompareStringA(locinfo->lc_handle[LC_COLLATE], SORT_STRINGSORT,
+          str1, -1, str2, -1) - CSTR_EQUAL;             /* path 2 */
+```
+
+Before wave 11's NLS mode the harness could only see path 1, so flipping these would have been §9.60
+all over again. Now both arms are graded, negative-controlled.
+
+### What the harness caught (three real bugs, all in the first run)
+
+1. **`strxfrm` / `wcsxfrm` were missing `errno`** — both set `EILSEQ` (LCMapString refused) and
+   `ERANGE` (key longer than the buffer). I never saw those lines: I read the C through a
+   comment-stripping `grep -vE "^\s*\*"`, which **also eats `*_errno() = ERANGE;`**. Second time that
+   filter has eaten load-bearing C (§9.77).
+2. **`_strncoll` inherited `strncmp`'s two contracts.** Its C-locale path is literally
+   `return strncmp(...)`, and `strncmp` has a `#if defined(_WIN64)` (i386 → raw byte-diff;
+   amd64/arm64 → clamp to ±1/0). The host reference compiles the **i386** arm while our Rust selects
+   the **amd64** one, so the row had to model it — exactly as the existing `strncmp[_WIN64]` row does.
+   classify's header already warned "any NEW flip must be grepped for `_WIN64` first"; I hadn't.
+3. `_wcsxfrm_l` widens `LCMapStringW`'s **byte** sort-key in place **walking backwards** so it never
+   clobbers a byte it hasn't read. Transcribe the direction, not just the effect.
+
+### Verified
+
+`classify` **159 MATCH / 0 SIGN-ONLY / 1 DIVERGE** (the `strtod` probe) · all six instruments green ·
+builds ×3.
+
+---
+
+## Wave 13 (2026-07-14) — the FLOAT PARSER. msvcrt's own bignum, PORTED. +15 flips (all three arches), the lane's first true translation.
+
+**This is the wave that wave 5 said we could not have.** Wave 5 cancelled "flip `strtod` from
+cnt-rust" after a probe showed cnt-rust's DJ-Delorie accumulator disagreeing with msvcrt's bignum by
+**14 ULPs**. The recorded honest path was: *port msvcrt's own machinery* — a translation, not an
+assembly. Wave 13 does exactly that. `sdk/lib/rust/msvcrt-crt-rust/src/fpnum.rs` is a faithful
+transcription of `dll/win32/msvcrt/bnum.h` + `string.c`'s `fpnum_parse`/`fpnum_parse_bnum`/
+`fpnum_double`/`fpnum_ldouble` — the base-10 circular-buffer bignum, correctly rounded.
+
+**Flipped (15, all three arches):** `strtod` · `_strtod_l` · `atof` · `_atof_l` · `_atoflt_l` ·
+`_atodbl` · `_atodbl_l` · `wcstod` · `_wcstod_l` · `_wtof` · `_wtof_l` · `_atoldbl` · `_atoldbl_l` ·
+`__STRINGTOLD` · `__STRINGTOLD_L` (+ the shared engine `fpnum_parse`/`fpnum_double`/`fpnum_ldouble`,
+kept internal — not `#[no_mangle]`, so the C engine still serves its C callers).
+
+### The oracle is the strongest the lane has ever had: an exact 64-bit BIT PATTERN
+
+`string.c`/`wcs.c` are already reference TUs, so `ref_strtod` is msvcrt's genuine bignum compiled for
+the host. `classify` compares the raw `u64` of every returned `double` (`-0.0 != 0.0` matters), the
+endptr displacement, errno, and the invalid-parameter count. There is no "close enough": a 1-ULP slip
+is a DIVERGE. **All 13 public rows MATCH, plus `_atoldbl`/`__STRINGTOLD_L` byte-exact on a
+16-byte overrun-sentinel buffer.** The wave-5 `strtod [PROBE]` stays the lone red — as designed;
+it now records that the *cnt-rust route* is DIVERGE while the *ported engine* is MATCH.
+
+### Everything that mattered was found by trying to break the green (field manual §9.79)
+
+1. **A verbatim Wine bug that is provably INERT.** `fpnum_parse_bnum`'s sticky-scan reads `data[b]`
+   instead of `data[i]` — a real upstream bug. Transcribed verbatim; the negative control ("fix" it,
+   demand DIVERGE) **did not bite**. That is the signature of an unverified transcription, so I did not
+   assume — I built an exact-halfway-**tie** generator (`gen_tie`; random digits are never ties, so the
+   whole `FP_ROUND_EVEN` arm was dead in the corpus), still no bite, then **instrumented reachability**
+   and proved the discriminating state is *structurally unreachable* (a `LIMB_MAX/2` limb can only sit
+   at `b`, forcing `b==e-4` and an empty scan range; whenever the scan runs, `data[b]≠0` — 0 violations
+   in 43,712 parses — so both spellings compute the same round). Kept the bug to match msvcrt's bytes;
+   the tie-corpus stays as a live tripwire.
+2. **The signed-char → WEOF trap, load-bearing.** `strtod_str_get` widens a *signed* `char`, so byte
+   `0xFF` becomes `0xFFFF == WEOF`: the parser sees EOF at a byte it already stepped past, and the
+   endptr lands one too far. Reproduced with `*p as i8 as i16 as u16`; the negative control reddens
+   exactly the endptr-checking rows.
+3. **A harness blind spot: it could not see errno being CLEARED.** `strtod_helper` clears errno on
+   entry; the wide `_wcstod_l` does not — an observable difference. `Effects` **zeroed errno before
+   each call**, so a redundant clear was invisible (sabotage moved 0 rows). Fixed by seeding a
+   **non-zero sentinel** (`0x5A5A`) instead of 0; now the sabotage correctly reddens the whole wide
+   family while `strtod` stays green. Third variation of §9.73 in this lane: *the harness's own setup
+   is part of the oracle.*
+
+### i386 too — via x87 `ST(0)` (I first gated it out on a WRONG premise; §9.79 point 4)
+
+i386 msvcrt is `-march=pentium` (pre-SSE) and the i686 user target is `-sse,-sse2`. I initially read
+rustc's "SIMD vector type `f64` … requires the `sse` target feature" as "`extern "C" fn -> f64` is
+impossible here" and gated the family `#[cfg(not(target_arch = "x86"))]`. **That was backwards, and
+review caught it:** cnt-rust (`cabi/strtod.rs`, `core_rs/floatcvt.rs`) already ships `extern "C" -> f64`
+on no-SSE i386 — the C ABI returns `double` in x87 `ST(0)`, no SSE. What actually hard-errors is a
+**Rust-ABI** `-> f64` and the SSE-pulling `f64`/`f32` std methods (`is_infinite`/`from_bits`). Fix = three
+ABI-portable changes in `fpnum.rs`: mark the one internal `f64`-returning helper `extern "C"`; replace
+`is_infinite()` with memory bit-tests (`f64_is_inf`/`f32_is_inf`); replace `f64::from_bits` with a
+`store_bits` that writes the `u64` pattern into the destination. None needs reverting if vibeos ever drops
+the pre-SSE baseline (it targets Vista-era+, where SSE2 is universal — a candidate simplification, its own
+lane). **The family now flips on all three arches.**
+
+### New guardians (the layout/scalar drift defense grew)
+
+`msvcrt-sys` now guards the float parser's two-hop reach `locinfo → lconv → decimal_point` on both
+compilers (a genuinely arch-varying offset: `lconv` at 188 on i386, 296 on amd64/arm64 — a hand-number
+would have been a §9.41-class bug), and `rust_layout_assert.c` gained scalar pins for the `<float.h>`
+exponent limits, `ERANGE`/`_OVERFLOW`/`_UNDERFLOW`, **`char` must be signed** (the WEOF trap depends on
+it), and `sizeof(MSVCRT__LDOUBLE)==10` vs `WINE_BROKEN_LDOUBLE==12` (the deliberate 10-of-12-byte copy
+that dodges ReactOS's documented overrun). `ref_integrity` cross-checks the new `lconv` offsets subject
+vs bindgen.
+
+### Verified
+
+`classify` **172 MATCH / 0 SIGN-ONLY / 1 DIVERGE** (the expected `strtod` probe) · all six instruments
+green · three negative controls run (one proved the Wine bug inert, one caught the signed-char trap, one
+exposed+fixed the errno-clear blind spot) · `vibeos-cli check` green · builds ×3. **msvcrt.dll is now
+209 functions of Rust on all three arches.**
+
+### Next, after wave 13
+
+**The big door is now `printf` (Phase C), and wave 13 unlocked half of it.** msvcrt's float
+FORMATTER (`%f`/`%e`/`%g`, and therefore `_ecvt`/`_fcvt`/`_gcvt`, which are literally `_snprintf`
+calls) rides on the SAME `bnum.h` bignum this wave ported for the parser — so the hard numeric core
+is now Rust and proven. What remains for printf is the `printf.h` templated ENGINE itself
+(~1300 lines, instantiated narrow `_a` + wide `_w`): the format-string state machine, flags/width/
+precision, positional params, and the digit-generation glue (`pf_output_fp`/`pf_output_hex_fp`).
+It is hand-transcribable exactly as `fpnum.rs` was — NOT a paid rustconv run — but it is large and
+needs its own **format-string differential harness** (fuzz `%`-specs, grade the emitted bytes +
+return + errno against the genuine `pf_printf_a`/`pf_printf_w`, which are already reachable as
+reference symbols in `wcs.c`). Scope it as its own sub-lane before starting; it is several waves.
+
+**Small gradeable wins available with ZERO new harness work** (do any time, e.g. as warm-ups):
+- `_strdup` / `_wcsdup` (+ `_mbsdup`) — `malloc(strlen+1)` + copy; grade the buffer CONTENTS and the
+  NULL disposition (the pointers differ; malloc is shared environment). ~1 short wave.
+- `rand` / `srand` — pure LCG on `thread_data->random_seed`; needs a 4th reference TU (`misc.c`) but
+  the logic is trivial and the seed field is already in `msvcrt-sys`'s `__thread_data`.
+
+## Wave 14a (2026-07-14) — the printf PROBE. Assemble-vs-port decided: **PORT printf.h**. Bonus: a kernel hang found + fixed.
+
+The wave-13 question ("can cnt-rust's already-Rust `streamout` sit behind the msvcrt printf
+exports?") got its answer from a **C-vs-C third-party differential**, no new translation spent:
+`tests/printf_probe.rs` drives (a) genuine `printf/streamout.c` compiled under cnt-difftest's
+exact proven recipe — the configuration cnt-difftest proved byte-equal to the Rust engine, so
+every verdict transfers to streamout-Rust by transitivity — against (b) the genuine msvcrt
+`pf_printf_a`, as a SECOND compilation of wcs.c in a `pfflat_*` namespace under a **flat
+`char*` va_list** (the Windows-x64 model; the SysV-compiled `ref_*` copy is structurally
+uncallable — full story + the glibc-escape oracle lesson in field manual **§9.83**). Both
+engines consume the SAME hand-packed 8-byte-slot buffer; an `%I64d` oracle-honesty canary
+hard-fails the probe if the reference ever escapes to the host libc again.
+
+**Verdict (111 MATCH / 27 DIVERGE):**
+- **Integers/strings/chars/pointers: streamout ≡ msvcrt** — 75/78 rows byte-identical
+  (deltas: `%#x` of 0, `%jd`, `%td`). The parser/state-machine half of the engines agree.
+- **Floats: msvcrt's bignum formatter is structurally better** than streamout's double-math:
+  exact high-precision digits (`%.30f`), denormals, `-0.0`, `%g` trailing-zero strip + form
+  threshold, `1.#INF00` padding, real `%a` (streamout's is a FIXME).
+- **Decision: PORT `printf.h`'s engine to Rust (wave 14b), do NOT assemble streamout** — that
+  would silently downgrade msvcrt.dll's float output (the DLL ships the Wine engine today;
+  never-weaken applies). `bnum.rs` (wave 13) is the shared limb engine the formatter needs;
+  the probe's `pfflat_*` oracle + flat-va_list drive IS the grading harness for the port.
+
+**Bonus find (the probe's first product, before any comparison):** the kernel's Rust
+`streamout` float path hung FOREVER on `%f/%e/%g` of ±Inf — `fl::exp10_floor`'s correction
+loop never terminates on Inf (`pow10(309)` saturates; `Inf <= Inf`). Guarded to return 308
+(`DBL_MAX_10_EXP`, = NaN's accidental value) in `fl` + every recipe C-twin; ±Inf/NaN rows now
+pinned in cnt-difftest (`diff_streamout_float`). Field manual §9.83 finding 0.
+
+## Wave 14m (2026-07-14) — the MATH DOOR. +45 exports flipped for the cost of ONE Cargo feature. msvcrt.dll's libm is the kernel's Rust engine now.
+
+The single highest-leverage flip in the lane so far, and it wrote almost no new code:
+
+**The discovery that made it cheap:** msvcrt.dll's math exports (`sin`/`cos`/`exp`/`pow`/…)
+bind DIRECTLY to `crtmath`'s plain-name engine symbols — Wine's `MSVCRT_*` wrapper functions
+in `math.c` are dead code (the spec maps no functions through them; its 48 `MSVCRT_` lines are
+all data externs). And `cnt-rust/cabi/math.rs` already defines those same plain names in Rust
+on all three arches: kernel-flipped, cnt-difftest-graded **against the very
+`sdk/lib/crt/math/*.c` sources crtmath compiles** (`USE_MSVCRT_PREFIX` is vestigial — appears
+nowhere in math/float sources; only the Bessel files touch errno, and they stay C). So the
+user-mode flip is the SAME substitution the kernel already shipped and gated.
+
+**Mechanism (the whole wave):** a new `cabi-math` cnt-rust feature — gen_cnt.py's mod.rs
+template now gates every cabi submodule on `cabi` except `math.rs` (compiled under either
+feature) — enabled from **msvcrt-crt-cargo** (the staticlib), NOT msvcrt-crt-rust (the rlib):
+the difftest links the rlib, and 66 `#[no_mangle]` libm names there would shadow the HOST libm
+under the reference TUs (oracle contamination — the probe's §9.83 lesson applied proactively).
+`extern crate cnt_rust` forces the objects into the archive; whole-archive + lld first-match
+does the rest. Verified in the built DLL by export-RVA clustering: `sin` 0x119A0 / `cos`
+0x10020 / `sqrt` 0x12390 sit beside known-Rust `strlen` 0xE410; unflipped `frexp`/`ldiv`/`sinf`
+sit in the C region 0x7A640+.
+
+**Count:** +45 exported functions (measured: `llvm-nm` of the Rust archive ∩ the DLL's COFF
+export table = **240 Rust-defined msvcrt.dll exports**, amd64). 21 of math.rs's 66 symbols
+aren't msvcrt exports (`exp2`/`round`/`scalbn`/`nextafter*`/`sincos`/`_dclass` family…) and
+ride along inert. Displaced per arch: i386's x87 asm (`sin_asm.s` etc.), amd64's
+`fabs/fmod/sqrt` .S, arm64's portable C — the identical displacement the kernel gate already
+validated.
+
+**Trap eaten + template-fixed:** cabi/mod.rs is `@generated` but had drifted (hand-added
+`mod strtod/wcs/search`) — the regen silently erased them and broke cnt-difftest. The three
+modules live in the gen_cnt.py template now; never hand-edit mod.rs.
+
+**Still C (the follow-up ledger for this family):** the f32 twins msvcrt exports that math.rs
+lacks (`sinf cosf expf logf log10f powf fmodf frexp` + `_copysign _scalb _fpclass _cabs`), the
+Bessel family (`j0 j1 jn y0 y1 yn` — errno/_handle_error semantics), the i386 `_CI*` compiler
+thunks + `__libm_sse2_*` register-convention entries, and the FP-environment block
+(`_control87/_statusfp/fe*` — stateful, shared with the C runtime init).
+
+## Wave 14b (2026-07-15) — msvcrt's printf ENGINE, PORTED. 2,312 lines, 142 narrow + 30 wide rows byte-identical, and the DLL's stream-printf family runs it.
+
+The port the 14a probe demanded, landed in two commits:
+
+**Part 1 — the engine.** `msvcrt-crt-rust/src/printf.rs`: faithful transcription of
+`printf.h` + wcs.c's callback/positional machinery — pf_printf state machine,
+`pf_output_fp` (bignum floats over wave-13's `bnum.rs`: parser and formatter now share one
+limb engine, as the C shares `bnum.h`), `pf_output_hex_fp` (%a), integer conv, wide/narrow
+cross-conversion, positional args. One `PfChar` generic (u8/u16) monomorphized like the C's
+double-include; i386 no-SSE discipline; flat va cursor (4-byte slots on x86, 8 elsewhere).
+Drafted by a transcription subagent against a stubbed crate surface — **compiled clean and
+graded 142/142 on the first run**. Quirks kept + marked (`BUG-KEPT`: the wide engine's
+HeapAlloc sizes in BYTES not APICHARs — upstream Wine fixed it, this tree hasn't).
+
+**Grading:** `tests/printf_port.rs` — the Rust engine vs `pfflat__vsnprintf`/`_vsnwprintf`
+(the 14a oracle) over the probe corpus + big-width HeapAlloc rows, full 512-unit buffer
+images compared. **Narrow 142/142, wide 30/30.** One excluded row, and it convicted the
+HOST, not the port: wide `%s` of NULL goes through printf.h:266's `L"(null)"` — the engine's
+single wide literal — which gcc compiles as 32-bit wchars, so the 16-bit REFERENCE engine
+emits `['(',0,'n',0,'u',0]` on the host only. The Rust's target-true 16-bit `"(null)"` is
+pinned by a dedicated assert instead.
+
+**Part 2 — the flip, and what it taught.** The six engine symbols went `#[no_mangle]`
+(pf_printf_a/_w, arg_clbk_valist/_positional, create_positional_ctx_a/_w) expecting
+whole-archive first-match to swing every shell. Reality (read the DLL): **cross-TU callers
+flipped — file.c's whole stream family (printf/fprintf/vfprintf/…) now calls the Rust
+`pf_printf_a`/`create_positional_ctx_a` (verified by disassembly: `vfprintf_helper` →
+`callq 0x8060 <pf_printf_a>`, the Rust region). But wcs.c's OWN shells (sprintf/_snprintf/
+swprintf/…) did NOT** — clang IPA-specialized the same-TU engine into them
+(`pf_printf_a.specialized.N` local clones), and intra-TU inlining never consults the
+linker. **Cohab rule to remember: symbol replacement flips a TU's *callers*, not its
+*housemates*.** Safe intermediate state — both engines are proven byte-identical — but the
+sprintf-family shells stay C until **wave 14c**: define the ~50 variadic shells over the
+Rust engine via the sanctioned `varargs-rust` va_start-trampoline pattern, which also
+retires wcs.c's whole printf instantiation.
+
+**Environment notes:** subject-side heap/`_get_output_format`/`_mbtowc_l`/`_wctomb_l`
+externs added to subjectimpl.c/refimpl.c (the reference's copies are namespaced
+`msvcrt_ref_*`; `_wctomb_l` forwards to the genuine `ref__wctomb_l` so both sides run ONE
+converter — the same wiring the DLL has, where the C still owns those symbols).

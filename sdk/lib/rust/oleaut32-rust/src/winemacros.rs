@@ -5,6 +5,38 @@
 #![allow(clippy::all)]
 use crate::prelude::*;
 
+// A COM vtbl method is STDMETHODCALLTYPE = __stdcall on i386, cdecl elsewhere.
+// com-sys/bindgen spells the vtbl slot with the CONCRETE ABI (`unsafe extern
+// "stdcall" fn(..)` on i386), and rustc keeps `extern "system"` a NOMINALLY
+// DISTINCT fn type from `extern "stdcall"` even where they lower identically —
+// so a method declared `extern "system"` will NOT unify with its own slot
+// (`error[E0308]: expected "stdcall" fn, found "system" fn`). Declare vtbl
+// methods with this macro so the ABI is spelled the way com-sys spells it.
+//
+// Hoisted here (was a file-local macro_rules in oleaut.rs, hence invisible to
+// every other module) so newly translated COM files can see it; mirrors
+// ole32-rust/src/winemacros.rs. rustconv emits this form — see abi_enforce.py's
+// `com_method_macro`.
+#[macro_export]
+macro_rules! stdmethod {
+    ( $(#[$m:meta])* fn $name:ident ( $($arg:ident : $ty:ty),* $(,)? ) -> $ret:ty $body:block ) => {
+        $(#[$m])*
+        #[cfg(target_arch = "x86")]
+        unsafe extern "stdcall" fn $name ( $($arg : $ty),* ) -> $ret $body
+        $(#[$m])*
+        #[cfg(not(target_arch = "x86"))]
+        unsafe extern "C" fn $name ( $($arg : $ty),* ) -> $ret $body
+    };
+    ( $(#[$m:meta])* fn $name:ident ( $($arg:ident : $ty:ty),* $(,)? ) $body:block ) => {
+        $(#[$m])*
+        #[cfg(target_arch = "x86")]
+        unsafe extern "stdcall" fn $name ( $($arg : $ty),* ) $body
+        $(#[$m])*
+        #[cfg(not(target_arch = "x86"))]
+        unsafe extern "C" fn $name ( $($arg : $ty),* ) $body
+    };
+}
+
 // ---- Win32 word/byte/lang macros (minwindef.h / ntbasedef.h) ----
 #[inline]
 pub fn HIWORD(v: u32) -> u16 { (v >> 16) as u16 }
@@ -205,6 +237,212 @@ macro_rules! ALIGN_POINTER {
     ($ptr:expr, $align:expr) => {
         $ptr = ((($ptr) as usize + ($align) as usize) & !(($align) as usize)) as _
     };
+}
+
+// ---- winnt.h ARRAY_SIZE ----
+// `#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))` (winnt_old.h:4762). A macro, not a
+// fn, because it must take the ARRAY (a `[T; N]` place) and not decay it to a pointer —
+// `.len()` on the array type is the exact Rust equivalent and is const-folded identically.
+// (varformat.rs re-declares a function-local `macro_rules! ARRAY_SIZE` further down the
+// file; macro_rules are textually scoped, so that one shadows this from its definition
+// point onward and the earlier call sites — varformat.rs:1810/1829/1836 — need this one.)
+#[macro_export]
+macro_rules! ARRAY_SIZE {
+    ($arr:expr) => {
+        ($arr).len()
+    };
+}
+
+/// Same `ARRAY_SIZE`, in the VALUE namespace. varformat.rs is inconsistent about which
+/// spelling it uses — some sites are `ARRAY_SIZE!(buff)` (macro, handled above), others are
+/// `ARRAY_SIZE(buff)` (function-call syntax: varformat.rs:964/1431/2242/2268/2275/2284), and
+/// function-call syntax cannot invoke a macro_rules. A generic const fn renders
+/// `sizeof(x)/sizeof(x[0])` exactly and type-safely: `N` comes from the array's own type, so
+/// it cannot disagree with the buffer the way a hand-written literal count could.
+///
+/// The array is taken BY VALUE because that is how the call sites pass it. Every such buffer
+/// is `[WCHAR; N]` (Copy), so this is a copy the optimiser deletes — `_a` is never read and
+/// `N` is a compile-time constant. (A `&[T; N]` signature would be tidier but would not
+/// resolve the existing call sites, which is the entire point.)
+#[inline(always)]
+pub const fn ARRAY_SIZE<T: Copy, const N: usize>(_a: [T; N]) -> usize {
+    N
+}
+
+/// C `assert(expr)` called with function-call syntax (connpt.rs:296 —
+/// `assert(nextslot == (*This).nSinks)`).
+///
+/// Rust's `assert` is a macro, so `assert(x)` finds nothing in the value namespace and fails
+/// with E0423. This is the value-namespace companion. `debug_assert!` is the faithful
+/// rendering, not `assert!`: ReactOS builds the DLLs with NDEBUG, under which
+/// `<assert.h>`'s `assert` expands to nothing — so an unconditional panic here would abort
+/// on an invariant the C deliberately does not check in a shipping build. Gating on
+/// `debug_assertions` reproduces NDEBUG exactly.
+#[inline(always)]
+pub fn assert(cond: bool) {
+    debug_assert!(cond, "oleaut32-rust: C assert() failed");
+}
+
+// ---- wine/debug.h:382 `#define WINE_MESSAGE wine_dbg_printf` (→ MESSAGE, debug.h:415) ----
+// Unlike TRACE/WARN (no-ops) and ERR/FIXME (raw-format prints), MESSAGE is used for
+// *interpolated* output — olepicture.rs:4505-4514 hex-dumps an unrecognised image header a
+// byte at a time. `wine_dbg_printf` is a REAL exported symbol (wine/debug.h:180, defined in
+// sdk/lib/rtl/wine_debug.c), so forward the varargs to it verbatim and keep the dump live
+// rather than stubbing it into silence.
+#[macro_export]
+macro_rules! MESSAGE {
+    ($($t:tt)*) => {{
+        unsafe { $crate::debug_shims::wine_dbg_printf($($t)*) }
+    }};
+}
+
+// ---- wine/list.h — the doubly-linked list olefont.c keeps its HFONT cache in ----
+// `struct list` and its operations are `static inline` in the header (list.h:37-40, 78-113):
+// they are NOT exported symbols, so they have to exist as Rust bodies. Transcribed
+// verbatim from the header; the pointer dances are load-bearing.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct list {
+    pub next: *mut list,
+    pub prev: *mut list,
+}
+unsafe impl Sync for list {}
+/// rustconv spells `struct list *` as `*mut list_entry` in olefont.rs's extern block;
+/// same type, different name. (Not to be confused with winnt's `LIST_ENTRY`, which is a
+/// *different* struct — Flink/Blink — already mirrored in prelude.rs.)
+pub type list_entry = list;
+
+/// list.h:78 — add an element after the specified one
+#[inline]
+pub unsafe fn list_add_after(elem: *mut list, to_add: *mut list) {
+    (*to_add).next = (*elem).next;
+    (*to_add).prev = elem;
+    (*(*elem).next).prev = to_add;
+    (*elem).next = to_add;
+}
+/// list.h:87 — add an element before the specified one
+#[inline]
+pub unsafe fn list_add_before(elem: *mut list, to_add: *mut list) {
+    (*to_add).next = elem;
+    (*to_add).prev = (*elem).prev;
+    (*(*elem).prev).next = to_add;
+    (*elem).prev = to_add;
+}
+/// list.h:96 — add element at the head of the list
+#[inline]
+pub unsafe fn list_add_head(list: *mut list, elem: *mut list) {
+    list_add_after(list, elem);
+}
+/// list.h:102 — add element at the tail of the list
+#[inline]
+pub unsafe fn list_add_tail(list: *mut list, elem: *mut list) {
+    list_add_before(list, elem);
+}
+/// list.h:108 — remove an element from its list
+#[inline]
+pub unsafe fn list_remove(elem: *mut list) {
+    (*(*elem).next).prev = (*elem).prev;
+    (*(*elem).prev).next = (*elem).next;
+}
+/// list.h:115 — get the next element (NULL at the end)
+#[inline]
+pub unsafe fn list_next(list: *const list, elem: *const list) -> *mut list {
+    let ret = (*elem).next;
+    if (*elem).next == list as *mut list { core::ptr::null_mut() } else { ret }
+}
+/// list.h:131 — get the first element
+#[inline]
+pub unsafe fn list_head(list: *const list) -> *mut list {
+    list_next(list, list)
+}
+/// list.h:149 — initialize a list
+#[inline]
+pub unsafe fn list_init(list: *mut list) {
+    (*list).next = list;
+    (*list).prev = list;
+}
+
+// ---- C `min(a, b)` (windef.h macro) → generic free fn (the `max` above's twin) ----
+#[inline]
+pub fn min<T: PartialOrd>(a: T, b: T) -> T {
+    if a <= b { a } else { b }
+}
+
+// ---- winuser.h:589 `MAKEINTRESOURCEW(i) ((LPWSTR)(ULONG_PTR)(WORD)(i))` ----
+#[inline]
+pub fn MAKEINTRESOURCEW(i: WORD) -> LPWSTR {
+    i as usize as LPWSTR
+}
+
+// ---- wingdi.h `RGB(r,g,b) ((COLORREF)(((BYTE)(r)|((WORD)((BYTE)(g))<<8))|(((DWORD)(BYTE)(b))<<16))) ----
+#[inline]
+pub fn RGB(r: u8, g: u8, b: u8) -> COLORREF {
+    (r as COLORREF) | ((g as COLORREF) << 8) | ((b as COLORREF) << 16)
+}
+
+// ---- V_* rvalue accessors (oleauto.h V_UNION map; the `*_ref` lvalue forms are in
+// winemacros_gen.rs — these are the read-only spellings the C uses in expressions) ----
+#[inline]
+pub unsafe fn V_VT(v: *const VARIANT) -> VARTYPE {
+    (*v).n1.n2.vt
+}
+#[inline]
+pub unsafe fn V_BSTR(v: *const VARIANT) -> BSTR {
+    (*v).n1.n2.n3.bstrVal
+}
+#[inline]
+pub unsafe fn V_R8(v: *const VARIANT) -> f64 {
+    (*v).n1.n2.n3.dblVal
+}
+#[inline]
+pub unsafe fn V_BOOL(v: *const VARIANT) -> VARIANT_BOOL {
+    (*v).n1.n2.n3.boolVal
+}
+#[inline]
+pub unsafe fn V_I2(v: *const VARIANT) -> SHORT {
+    (*v).n1.n2.n3.iVal
+}
+#[inline]
+pub unsafe fn V_I4(v: *const VARIANT) -> LONG {
+    (*v).n1.n2.n3.lVal
+}
+#[inline]
+pub unsafe fn V_UINT(v: *const VARIANT) -> UINT {
+    (*v).n1.n2.n3.uintVal
+}
+#[inline]
+pub unsafe fn V_CY(v: *const VARIANT) -> CY {
+    (*v).n1.n2.n3.cyVal
+}
+#[inline]
+pub unsafe fn V_DATE(v: *const VARIANT) -> DATE {
+    (*v).n1.n2.n3.date
+}
+
+// ---- varformat.c:164-167 — the FMT_HEADER `starts[]` selectors ----
+// These are file-local C macros, not SDK ones: each picks a section offset out of the parsed
+// format header, falling back to the positive section when the specific one is absent. The
+// fallback is the whole point ("#,##0" formats a negative number with the positive section),
+// so it is transcribed exactly rather than simplified.
+/// varformat.c:164 — `FmtGetPositive(x) (x->starts[0])`
+#[inline]
+pub unsafe fn FmtGetPositive(x: *const FMT_HEADER) -> u8 {
+    (*x).starts[0]
+}
+/// varformat.c:165 — `FmtGetNegative(x) (x->starts[1] ? x->starts[1] : x->starts[0])`
+#[inline]
+pub unsafe fn FmtGetNegative(x: *const FMT_HEADER) -> u8 {
+    if (*x).starts[1] != 0 { (*x).starts[1] } else { (*x).starts[0] }
+}
+/// varformat.c:166 — `FmtGetZero(x) (x->starts[2] ? x->starts[2] : x->starts[0])`
+#[inline]
+pub unsafe fn FmtGetZero(x: *const FMT_HEADER) -> u8 {
+    if (*x).starts[2] != 0 { (*x).starts[2] } else { (*x).starts[0] }
+}
+/// varformat.c:167 — `FmtGetNull(x) (x->starts[3] ? x->starts[3] : x->starts[0])`
+#[inline]
+pub unsafe fn FmtGetNull(x: *const FMT_HEADER) -> u8 {
+    if (*x).starts[3] != 0 { (*x).starts[3] } else { (*x).starts[0] }
 }
 
 // ---- wine debug channel macro forms (TRACE!(..) style call sites) ----

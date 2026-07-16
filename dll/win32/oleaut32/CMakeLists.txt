@@ -23,18 +23,18 @@ add_rpcproxy_files(oleaut32_oaidl.idl oleaut32_ocidl.idl)
 # SafeArrayCreate*), oleaut, dispatch and typelib flipped 2026-07-12 once their
 # Rust twins reached full export coverage.
 list(APPEND SOURCE
-    connpt.c
+    # connpt.c — replaced by Rust (oleaut32-rust connpt.rs — IConnectionPoint/IEnumConnections + CreateConnectionPoint; full)
     # dispatch.c — replaced by Rust (oleaut32-rust dispatch.rs — CreateStdDispatch/DispInvoke/DispGetIDsOfNames/DispGetParam + StdDispatch vtbl; full)
     # hash.c — replaced by Rust (oleaut32-rust hash.rs — LHashValOfNameSys A/W; full)
     # oleaut.c — replaced by Rust (oleaut32-rust oleaut.rs — BSTR SysAlloc* family + DllGetClassObject/proxy-stub + OleTranslateColor; full)
-    olefont.c
-    olepicture.c
-    olepropframe.c
-    recinfo.c
+    # olefont.c — replaced by Rust (oleaut32-rust olefont.rs — IFont/IFontDisp/IPersistStream(Init)/IPersistPropertyBag + OleCreateFontIndirect; full)
+    # olepicture.c — replaced by Rust (oleaut32-rust olepicture.rs — IPicture/IPersistStream + OleLoadPicture{,Ex,File,Path}/OleCreatePictureIndirect/OleSavePictureFile; full)
+    # olepropframe.c — replaced by Rust (oleaut32-rust olepropframe.rs — OleCreatePropertyFrame{,Indirect}; full)
+    # recinfo.c — replaced by Rust (oleaut32-rust recinfo.rs — IRecordInfo + GetRecordInfoFrom{Guids,TypeInfo}; full)
     # safearray.c — replaced by Rust (oleaut32-rust safearray.rs — SAFEARRAY incl. Create/CreateEx/CreateVector*/CopyData; full)
     # typelib.c — replaced by Rust (oleaut32-rust typelib.rs + typelib/ submodules — LoadTypeLib/RegisterTypeLib/CreateTypeLib*/DispCallFunc/ClearCustData + ITypeInfo/ITypeLib/MSFT/SLTG; full)
     # usrmarshal.c — replaced by Rust (oleaut32-rust usrmarshal.rs — VARIANT/BSTR/LPSAFEARRAY user-marshal + proxy/stub; full)
-    varformat.c
+    # varformat.c — replaced by Rust (oleaut32-rust varformat.rs — VarFormat* family/VarTokenizeFormatString/VarMonthName/VarWeekdayName; full)
     # variant.c — replaced by Rust (oleaut32-rust variant.rs — VariantInit/Clear/Copy/Change + arithmetic; full)
     # vartype.c — replaced by Rust (oleaut32-rust vartype.rs — VarXxxFromYyy coercion matrix, 253 exports; full)
     )

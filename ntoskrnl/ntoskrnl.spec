@@ -735,7 +735,7 @@
 @ stdcall -arch=arm64 KiDispatchInterruptArm64(long)
 @ stdcall -arch=arm64 KiDispatchSoftwareIntArm64()
 @ extern -arch=i386,arm,x86_64 KiEnableTimerWatchdog
-@ stdcall -arch=i386,arm KiIpiServiceRoutine(ptr ptr)
+@ stdcall -arch=i386,arm,arm64 KiIpiServiceRoutine(ptr ptr)
 @ fastcall -arch=i386,arm KiReleaseSpinLock(ptr)
 @ cdecl -arch=i386,arm KiUnexpectedInterrupt()
 @ stdcall -arch=i386 Kii386SpinOnSpinLock(ptr long)

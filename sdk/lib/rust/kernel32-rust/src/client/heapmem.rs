@@ -261,7 +261,7 @@ pub unsafe extern "system" fn HeapUsage(
     dwFlags: DWORD,
     Unknown_: DWORD,
     Unknown2: DWORD,
-    Usage: *mut PVOID,
+    Usage: PVOID,
 ) -> BOOL {
     let Status: NTSTATUS;
 

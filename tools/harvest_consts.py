@@ -24,6 +24,7 @@ Usage:
   tools/harvest_consts.py --from-errors errs.txt                 # scrape rustc E0425s
   tools/harvest_consts.py --type DWORD ...                       # emitted Rust type
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,7 +37,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 def header_files() -> list[Path]:
     out: list[Path] = []
-    for root in [REPO / "sdk" / "include"] + sorted(REPO.glob("build-*/sdk/include")):
+    for root in [REPO / "sdk" / "include", *sorted(REPO.glob("build-*/sdk/include"))]:
         if root.is_dir():
             out += sorted(root.rglob("*.h"))
     return out
@@ -177,8 +178,7 @@ def main() -> int:
         print(f"pub const {n}: {args.type} = {rust};")
 
     if missing:
-        print("\nNOT FOUND in any header (resolve by hand, citing a source):",
-              file=sys.stderr)
+        print("\nNOT FOUND in any header (resolve by hand, citing a source):", file=sys.stderr)
         for n in missing:
             print(f"  {n}", file=sys.stderr)
     return 0

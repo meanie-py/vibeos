@@ -875,7 +875,7 @@ input.** Two independent root-caused fixes closed it:
 - **Rendering (M13, commit 6213b784ad7):** `DC_vPrepareDCsForBlit` checked the
   wrong `fs` bit (0x04 DC_CANCELED vs 0x10 DC_DIRTY_RAO), so the blit clip
   object was never rebuilt and cached DCs drew through a stale region. 12-boot
-  soak → 10/10 render (2 host-contention reaps, not misrenders). Field manual §9.73.
+  soak → 10/10 render (2 host-contention reaps, not misrenders). Field manual §9.86.
 - **Input (M14, commit 525084ded8b):** the guest's `TEB32.Win32ThreadInfo` was
   never populated, so user32's window-ownership check in `IntCallMessageProc`
   dropped every keystroke with ERROR_MESSAGE_SYNC_ONLY. `Wow64PublishClientInfo`
@@ -885,7 +885,7 @@ input.** Two independent root-caused fixes closed it:
 Reproduce with the session's `/tmp/doom-play.sh` (restage FEX ramdisk, boot arm64,
 drive keys via QMP, save `/tmp/play-{0..4}.png`) — or `tools/doom/play.sh`.
 The historical "rendering INTERMITTENT" text below is kept for the debugging
-narrative; it is SUPERSEDED by the §9.73 fix.
+narrative; it is SUPERSEDED by the §9.86 fix.
 
 **Post-fix 6-boot render soak (2026-07-15, clean probe-free build, 6-way
 contended):** the render fix is **4/4 on every boot where doom's process
@@ -895,7 +895,7 @@ frame loop ramped (only 20 blits — host CPU contention from 6 concurrent arm64
 TCG VMs), and one was a genuine **doom guest-code crash** — `C0000005` NULL-read
 at guest PC `0x5BFE18` (in doom.exe's own image, `ExAddr=0`), i.e. doom
 dereferencing a NULL it got back from some WoW64 syscall without checking. That
-last one is a **residual startup flake** (startup-death family, cousin of §9.72),
+last one is a **residual startup flake** (startup-death family, cousin of §9.85),
 exacerbated by contention, and is INDEPENDENT of the render/input fixes (both
 run long after doom init). Characterized (not yet fixed):
 - It is a **NULL function-pointer CALL**, not a data deref: `[UEXC-KILL] PC=0x0
@@ -1031,7 +1031,7 @@ translation (§9.53 dropped-side-effect class). A clip-bounds probe
 reuse path against windc.c.
 
 **CLOSED 2026-07-15 — ROOT CAUSE FOUND + FIXED (commit 6213b784ad7; field
-manual §9.73).** The clip probe confirmed the stale-clip mechanism but moved
+manual §9.86).** The clip probe confirmed the stale-clip mechanism but moved
 the blame one stage later: the DCE/vis/Rao pipeline was updating CORRECTLY
 (as the parked probes had said) — what never refreshed was **`dc.co`, the
 clip object blits actually consume**. `DC_vPrepareDCsForBlit` (dclife.rs)
@@ -1242,7 +1242,7 @@ identical-class whitelist; unknown classes fail loud) and NtRemoveIoCompletion
 marshalled via local ULONGLONG[16] + narrow copy-back.
 
 **Startup-death flake family — ROOT-CAUSED + FIXED 2026-07-14 (field manual
-§9.72).** Face A (5 corpus hits, the 0xC000001D deaths at deterministic
+§9.85).** Face A (5 corpus hits, the 0xC000001D deaths at deterministic
 PC): SCTLR_EL1.UCI was never set, so FEX's rare inline `dc cvau` flush
 (Arm64JITCore::ExitFunctionLink back-patch) trapped as EC 0x18 →
 STATUS_ILLEGAL_INSTRUCTION. Fixed in kiinit (UCI|UCT|DZE, per-CPU) +

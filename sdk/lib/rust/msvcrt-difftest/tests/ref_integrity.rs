@@ -151,4 +151,105 @@ fn main() {
         println!("  Do NOT trust any classify/perf result until this is green.\n");
         std::process::exit(1);
     }
+
+    // The oracle can also lie by AGREEING with a subject that is reading the wrong
+    // bytes. Check that too.
+    locale_layout_agrees_with_msvcrt_sys();
+}
+
+/// Does the harness's C agree with `msvcrt-sys` about where the locale fields LIVE?
+///
+/// This is the third thing that can make the oracle lie, and it is the quietest.
+///
+/// The shipping Rust reads `locinfo->pctype/pclmap/pcumap` and `thread_data->strtok_next`
+/// through `msvcrt-sys` — a bindgen snapshot of msvcrt's REAL layout (`pcumap` sits at
+/// offset 336 on amd64/arm64 but 208 on i386, and `pctype`/`mb_cur_max` migrate to the
+/// FRONT of the struct at `_MSVCR_VER >= 140`). The harness links that same Rust and
+/// points it at structs defined in C, here, for the host.
+///
+/// If those two layouts disagree the Rust reads its tables from past the end of the
+/// object. It does not crash — it silently reads neighbouring memory, and since BOTH
+/// sides would be fed the same nonsense, classify would cheerfully report MATCH. A
+/// wrong offset in the oracle is not a bug you find later; it is a bug that makes every
+/// future verdict worthless.
+///
+/// So: assert it. C's `offsetof` (subjectimpl.c) == Rust's `offset_of!` (msvcrt-sys),
+/// field by field, at run time, on every test run.
+///
+/// (This is the harness-side twin of the two compile-time guardians that protect the
+/// DLL itself: `msvcrt-sys/src/layout_<arch>.rs` on the rustc side, and
+/// `dll/win32/msvcrt/rust_layout_assert.c` — compiled with msvcrt's REAL flags, on all
+/// three arches — on the clang side.)
+fn locale_layout_agrees_with_msvcrt_sys() {
+    use core::mem::offset_of;
+    use msvcrt_sys as sys;
+
+    extern "C" {
+        fn subj_off_locinfo_pctype() -> usize;
+        fn subj_off_locinfo_pclmap() -> usize;
+        fn subj_off_locinfo_pcumap() -> usize;
+        fn subj_off_locinfo_mbcurmax() -> usize;
+        fn subj_off_locinfo_lchandle() -> usize;
+        fn subj_off_td_strtok() -> usize;
+        fn subj_off_td_wcstok() -> usize;
+        fn subj_off_td_errno() -> usize;
+        fn subj_off_locinfo_lconv() -> usize;
+        fn subj_off_lconv_decimalpoint() -> usize;
+    }
+
+    let checks: &[(&str, usize, usize)] = unsafe {
+        &[
+            ("threadlocinfo.pctype",
+             subj_off_locinfo_pctype(), offset_of!(sys::threadlocaleinfostruct, pctype)),
+            ("threadlocinfo.pclmap",
+             subj_off_locinfo_pclmap(), offset_of!(sys::threadlocaleinfostruct, pclmap)),
+            ("threadlocinfo.pcumap",
+             subj_off_locinfo_pcumap(), offset_of!(sys::threadlocaleinfostruct, pcumap)),
+            ("threadlocinfo.mb_cur_max",
+             subj_off_locinfo_mbcurmax(), offset_of!(sys::threadlocaleinfostruct, mb_cur_max)),
+            ("threadlocinfo.lc_handle",
+             subj_off_locinfo_lchandle(), offset_of!(sys::threadlocaleinfostruct, lc_handle)),
+            ("thread_data_t.strtok_next",
+             subj_off_td_strtok(), offset_of!(sys::__thread_data, strtok_next)),
+            ("thread_data_t.wcstok_next",
+             subj_off_td_wcstok(), offset_of!(sys::__thread_data, wcstok_next)),
+            ("thread_data_t.thread_errno",
+             subj_off_td_errno(), offset_of!(sys::__thread_data, thread_errno)),
+            // wave 13 — the float parser's two-hop reach into the locale's radix char.
+            ("threadlocinfo.lconv",
+             subj_off_locinfo_lconv(), offset_of!(sys::threadlocaleinfostruct, lconv)),
+            // The harness's `lconv` is the HOST's (glibc's) — the reference reads through
+            // that one — while the Rust reaches the same object through bindgen's WINDOWS
+            // layout. They agree only because `decimal_point` is the first member of both.
+            // That is true of C99 §7.11.1.1 and of corecrt, but it is not a layout
+            // guarantee, and if it ever stopped being true every strtod row would compare
+            // its input against a garbage radix character and go DIVERGE for a reason
+            // nobody would guess. So: verified, not assumed.
+            ("lconv.decimal_point",
+             subj_off_lconv_decimalpoint(), offset_of!(sys::lconv, decimal_point)),
+        ]
+    };
+
+    let mut bad = Vec::new();
+    for (name, c_off, rust_off) in checks {
+        let mark = if c_off == rust_off { "✓" } else { "✗" };
+        println!("  {mark} {name:28} C={c_off:<4} rust={rust_off}");
+        if c_off != rust_off {
+            bad.push(format!("{name}: C says {c_off}, msvcrt-sys says {rust_off}"));
+        }
+    }
+
+    if !bad.is_empty() {
+        println!("\n  THE ORACLE'S STRUCTS DO NOT MATCH THE SHIPPING RUST'S:");
+        for b in &bad {
+            println!("    - {b}");
+        }
+        println!("\n  The Rust under test reads locale/thread fields at msvcrt-sys's offsets.");
+        println!("  If the harness's C lays them out differently, the Rust reads the WRONG");
+        println!("  BYTES here — and because both sides get the same wrong bytes, classify");
+        println!("  will still say MATCH. Every verdict from this run is worthless.");
+        println!("\n  Fix refstub/locale_layout.h (or regenerate msvcrt-sys), do not paper over.\n");
+        panic!("locale layout mismatch between the harness C and msvcrt-sys");
+    }
+    println!("  layout agrees — the Rust reads the fields the C actually has.");
 }

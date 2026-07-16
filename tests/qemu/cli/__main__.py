@@ -321,8 +321,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--timeout",
         type=int,
         default=6000,
-        help="serial-drain budget in seconds (default 6000; the sweep's "
-        "launch_drain_secs is 5400)",
+        help="serial-drain budget in seconds (default 6000; the sweep's launch_drain_secs is 5400)",
     )
     cf.set_defaults(fn=conformance_mod.conformance)
 

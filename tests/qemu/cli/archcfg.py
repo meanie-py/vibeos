@@ -143,7 +143,11 @@ _CFGS = {
             "mswsock",
             "nettest",
         ),
-        ninja_targets_optional=("arm64input", "arm64vid"),
+        # ntkrnlmp = the arm64 SMP kernel (smp-bringup-quest.md M5). Built
+        # best-effort so `--smp-kernel` media has it to stage; mkramdisk only
+        # copies + boot-selects it when VIBEOS_SMP_DEFAULT_BOOT is set, so a
+        # normal arm64 build just builds it and ignores it (default stays UP).
+        ninja_targets_optional=("arm64input", "arm64vid", "ntkrnlmp"),
         needs_mkramdisk=True,
         boot_media_rel="qemu/boot.img",
         staged_bins_rel=(

@@ -1,8 +1,85 @@
 # ole32 + oleaut32 → Rust — Audit & Translation Strategy
 
-*Lane doc, opened 2026-07-11 on the `research` branch. Research artifacts referenced
-below were produced against the 2026-07-11 tree + the main checkout's `build-amd64`
-binaries.*
+*Lane doc, opened 2026-07-11 on the `research` branch.*
+
+## ✅ STATUS (2026-07-13) — **ole32 AND oleaut32 are both 100% Rust.**
+
+`oleaut32`'s last six C TUs (`connpt`, `olefont`, `olepicture`, `olepropframe`, `recinfo`,
+`varformat` — 9,172 LOC) are translated, so **both DLLs' C `SOURCE` lists are now empty**
+except `guid.c` (the `initguid.h` data TU) and the generated RPC proxies. Translation
+cost: **$3.13**.
+
+### The point of this pass was the TOOL, not the translation
+
+We fixed rustconv FIRST, using ole32's shipped defects as evidence, then used oleaut32's
+six files as the proving run. Full causal chain: field manual **§9.72**. Summary:
+
+| Defect | Consequence | Fix |
+|---|---|---|
+| `drop_pseh_macro_externs` catastrophic-backtracking regex (clean 2^n; 46 decls = never returns) | `translate` hung → operator killed it and hand-assembled the `.responses/` pieces → **bypassed ALL of `postprocess()`**, incl. ABI enforcement + the already-paid preamble. The root of nearly every "LLM bug" on the big files. | linear line-scan; 2.3 ms, and handles the mixed fn/`static` blocks the old regex could never match at all |
+| `abi_enforce` conflated **linkage** with **calling convention** (`static` ⇒ drop the `extern`) | ~130 ole32 + 153 oleaut32 COM methods got the **Rust ABI** instead of `__stdcall`. Links clean on amd64/arm64; corrupts the i386 stack at the first vtbl call. | `is_static` now controls visibility ONLY; the convention always comes from the C |
+| `_derive_convention` stopped at a `/* [out] */` comment between `)` and `{` | silently fell back to **cdecl** for 17 more genuine WINAPI methods (survives the fix above: still wrong on i386) | skip comments as well as whitespace |
+| `CALLBACK`/`PASCAL` missing from the convention keywords | the fns C hands to the OS **as function pointers** (an EnumFontFamiliesEx callback, a DlgProc) got the Rust ABI — corrupting the stack on a call **we never make ourselves**, so there is no call site to inspect and nothing to grep for | added; `WINAPIV` pinned explicitly to cdecl |
+| `make_user_dll_target` had `spec_file=None` for EVERY user-mode DLL | the pipeline never knew which fns were exports — it neither told the model nor enforced `#[no_mangle]`. That is how `_StgCreateDocfile@16` went missing from a shipped DLL. | locate `<dll>.spec`; `export_audit.py` gates it |
+| `c2rust_anchor` matched the compile DB by worktree path | the canonical bind-mount build (`/tmp/vibeos`) made **every** lookup miss → `--c2rust` always hard-failed, repo-wide. Written off as "c2rust doesn't work here." | map canonical paths back onto the checkout |
+
+### New deterministic oracles (wired into the pipeline; no LLM, $0)
+- **`vtbl_gen.py`** — COM vtbl tables from the C initializer + bindgen's field order. The
+  LLM had dropped **all 10** of storage32's (a COM object with no methods at all). Agrees
+  **149/149 slots** with the hand-written tables. An arity mismatch raises rather than
+  zipping a table into the wrong methods. *Do not let c2rust emit these either* — it
+  hardcodes each slot as `f as unsafe extern "C" fn(..)`, the amd64 spelling, wrong on i386.
+- **`table_audit.py`** — every file-scope C data table compared element-by-element.
+  Caught `fmtLongTime` in `varformat.c` — the one file c2rust **cannot** anchor (upstream
+  panic, `convert_type.rs:518`) and therefore the only one with no other oracle. Models
+  C's implicit zero-fill (`BYTE t[256]` with 103 written elements is 256 bytes).
+- **`export_audit.py`** — every `.spec` export must be a `#[no_mangle]` fn with the spec's
+  convention. **ole32 and oleaut32 now both audit CLEAN** (255 / 398 exports needing a symbol).
+- **`preamble_audit.py`** — file-scope C decls missing from the translated preamble.
+- **`crate_integrate.py`** — the "integrate into a crate with a prelude" step that had only
+  ever existed as a hand-written one-off script. Drops locally-redeclared Win32 imports
+  (`extern "C" fn HeapAlloc` — that's stdcall on i386!) in favour of the prelude's correct
+  decls; computes the provided-name set from the crate's real prelude instead of a
+  hardcoded list.
+
+### Owed follow-ups (none block the boot; recorded so they don't evaporate)
+
+Surfaced by the Tier-D burn-down. All are *duplicate-truth* smells — two declarations of one
+C type — which is the same family as the ghost-tax program:
+
+1. **Two `SYSTEMTIME`s in scope.** `prelude::SYSTEMTIME` (hand-written) vs com-sys's bindgen
+   `_SYSTEMTIME`. `UDATE.st` is the bindgen one; `vartype::get_date_format` takes the prelude
+   one. Layouts are provably identical (8 × WORD) and varformat bridges with a sound
+   `addr_of!().cast()`, but the duplicate will keep biting. Collapse onto bindgen.
+2. **`olesys::{ITypeLib, ITypeInfo, GUID}` vs `com_sys::*`** — the fable lane self-mirrored a
+   few COM types. Every module that calls into `typelib.rs` now needs a bridge cast
+   (`oleaut.rs:748`, `olepicture.rs`, `recinfo.rs`). Same cleanup that was deferred in 2026-07;
+   it is now costing a cast per call site rather than one.
+3. **`DISPATCH_*` typed inconsistently**: `DISPATCH_PROPERTYGET` is `u32` (`consts.rs`),
+   `DISPATCH_METHOD`/`DISPATCH_PROPERTYPUT` are `c_int` (`tierd_consts.rs`). Same flag family,
+   two types — forces asymmetric casts on one `wFlags`.
+4. **`olepicture.rs` defines private `BITMAPINFO`/`BITMAPINFOHEADER`/`RGBQUAD`**, shadowing
+   win_sys's. Self-consistent (its local `GetDIBits` binds the local types) but a duplicate-type
+   smell; removing them needs the prelude to export those three.
+5. **`table_audit` compares element VALUES, not the declared Rust length.** A `[u16; 6]` holding
+   5 initializers slips past it — the compiler catches that one, but a better diagnosis is cheap.
+6. **c2rust 0.22.1 panics on `varformat.c`** (`convert_type.rs:518`, an attributed fn-ptr type),
+   which is why that file alone had no compiler-exact anchor. Worth an upstream report.
+7. **Wine upstream quirk, deliberately preserved:** `VarFormatPercent`'s `bBracket` reads
+   `(*pbstrOut)[dwLen]` — the NUL terminator — so it is effectively always FALSE. The
+   translation had silently "fixed" it; per *the C is ground truth* the C behaviour was restored
+   and commented. Real bug, but upstream's, not ours to change unilaterally.
+
+### The meta-lesson
+Every defect above produced code that **compiled, linked and booted**. Smoke cannot see a
+COM DLL with a wrong calling convention on a path the boot never takes, or a date-format
+table with one wrong byte. **When translating a library rather than a boot-path component,
+the boot is not the oracle — the C is.** Build the differential checks and run them in the
+pipeline, or ship silent wrongness.
+
+---
+
+*(The 2026-07-12 status and the original strategy/inventory follow.)*
 
 ## ✅ STATUS (2026-07-12, final) — **ole32 is 100% Rust. All 29 TUs flipped, boots ×3.**
 

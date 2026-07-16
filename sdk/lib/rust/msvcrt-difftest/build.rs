@@ -411,6 +411,99 @@ const WCS_PUBLIC_SYMBOLS: &[&str] = &[
     "wctomb_s",
 ];
 
+/// `ctype.c` — reference TU #3 (wave 10).
+///
+/// This is the TU that makes *locale-aware* flips gradeable. Every one of these is
+/// either a `locinfo->pctype[]` lookup (the `is*` family) or a `locinfo->pcumap[]` /
+/// `pclmap[]` lookup (the case-mapping family) — i.e. they read the locale's OWN
+/// tables. A Rust body that reads the same tables inherits the C's locale-correctness
+/// by construction, which is precisely why the "C"-locale pinning (§9.60) does NOT
+/// block this family the way it blocks a hardcoded-ASCII implementation.
+///
+/// ctype.c also brings two DATA symbols with it, deliberately NOT renamed:
+///   * `MSVCRT__ctype[257]`  — the narrow ctype table; `pctype` is this **+ 1**
+///     (which is why `_isctype_l` accepts `c >= -1`: `pctype[-1]` is the EOF slot).
+///   * `MSVCRT__wctype[]` / `MSVCRT__pwctype` — the wide table.
+/// Both are shared ENVIRONMENT, not code under test — the same argument that makes
+/// `get_locinfo()` shared. Reference and subject must agree on what the locale *is*,
+/// or the comparison is meaningless. (Wave 9 hand-wrote a 256-entry `MSVCRT__pwctype`
+/// in subjectimpl.c precisely because ctype.c was not yet a reference TU; that
+/// approximation is now deleted in favour of msvcrt's real table.)
+const CTYPE_PUBLIC_SYMBOLS: &[&str] = &[
+    "__p__pctype",
+    "__pctype_func",
+    "__p__pwctype",
+    "__pwctype_func",
+    "_isctype_l",
+    "_isctype",
+    "_isalnum_l",
+    "isalnum",
+    "_isalpha_l",
+    "isalpha",
+    "_iscntrl_l",
+    "iscntrl",
+    "_isdigit_l",
+    "isdigit",
+    "_isgraph_l",
+    "isgraph",
+    "_isleadbyte_l",
+    "isleadbyte",
+    "_islower_l",
+    "islower",
+    "_isprint_l",
+    "isprint",
+    "ispunct",
+    "_isspace_l",
+    "isspace",
+    "_isupper_l",
+    "isupper",
+    "_isxdigit_l",
+    "isxdigit",
+    "_isblank_l",
+    "isblank",
+    "__isascii",
+    "__toascii",
+    "iswascii",
+    "__iscsym",
+    "__iscsymf",
+    "__iswcsym",
+    "__iswcsymf",
+    "_toupper_l",
+    "toupper",
+    "_toupper",
+    "_tolower_l",
+    "tolower",
+    "_tolower",
+];
+
+/// Lift a `static const unsigned char NAME[256] = { 0x00, 0x01, ... };` table out of
+/// a C source, verbatim.
+///
+/// Used for locale.c's `cloc_clmap`/`cloc_cumap` — the C locale's lower/upper mapping
+/// tables. They are `static`, so the harness cannot link them; parsing them is how we
+/// get the REAL bytes without hand-transcribing (see the call site for why a hand copy
+/// would be invisible-wrong).
+fn extract_u8_table(src: &str, name: &str) -> Option<Vec<u8>> {
+    let decl = format!("{name}[256]");
+    let start = src.find(&decl)?;
+    let open = src[start..].find('{')? + start;
+    let close = src[open..].find('}')? + open;
+    let mut out = Vec::new();
+    for tok in src[open + 1..close].split(',') {
+        let t = tok.trim();
+        if t.is_empty() {
+            continue;
+        }
+        let v = if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+            u8::from_str_radix(hex, 16).ok()?
+        } else {
+            t.parse::<u8>().ok()?
+        };
+        out.push(v);
+    }
+    Some(out)
+}
+
 /// Every `NAME` in a Wine export banner: ` *  NAME (MSVCRT.@)`.
 fn exported_symbols(src: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -482,7 +575,9 @@ fn main() {
     let msvcrt_dir = repo.join("dll/win32/msvcrt");
     let string_c = msvcrt_dir.join("string.c");
     let wcs_c = msvcrt_dir.join("wcs.c");
-    for src in [&string_c, &wcs_c] {
+    let ctype_c = msvcrt_dir.join("ctype.c");
+    let locale_c = msvcrt_dir.join("locale.c");
+    for src in [&string_c, &wcs_c, &ctype_c, &locale_c] {
         assert!(
             src.is_file(),
             "msvcrt reference source not found: {}",
@@ -490,12 +585,14 @@ fn main() {
         );
     }
 
-    // The union of both TUs' public symbols.  They are disjoint by
-    // construction (see WCS_PUBLIC_SYMBOLS) — assert it, because an overlap
-    // would silently become a duplicate-symbol link error much later.
+    // The union of all three TUs' public symbols.  They are disjoint by
+    // construction (see WCS_PUBLIC_SYMBOLS / CTYPE_PUBLIC_SYMBOLS) — assert it,
+    // because an overlap would silently become a duplicate-symbol link error much
+    // later.
     let all_symbols: Vec<&str> = PUBLIC_SYMBOLS
         .iter()
         .chain(WCS_PUBLIC_SYMBOLS.iter())
+        .chain(CTYPE_PUBLIC_SYMBOLS.iter())
         .copied()
         .collect();
     {
@@ -503,23 +600,103 @@ fn main() {
         for s in &all_symbols {
             assert!(
                 seen.insert(*s),
-                "string.c and wcs.c both define `{s}` — the union rename prelude \
+                "two reference TUs both define `{s}` — the union rename prelude \
                  would emit two `ref_{s}` definitions"
             );
         }
     }
 
+    // ── the C locale's case-mapping tables, LIFTED FROM THE SOURCE ──
+    //
+    // `_tolower_l`/`_toupper_l` are, for c < 256, exactly `locinfo->pclmap[c]` /
+    // `pcumap[c]`. To grade them the harness's locinfo must carry the REAL tables —
+    // but msvcrt keeps them `static const` inside locale.c, so they cannot be linked.
+    //
+    // Do NOT hand-transcribe them. A hand copy is invisible-wrong: reference and
+    // subject share ONE locinfo, so a mistyped byte makes them both wrong the SAME
+    // way and classify still reports MATCH. Parse them out of locale.c instead, so
+    // the harness's tables move when msvcrt's do.
+    let locale_src = fs::read_to_string(&locale_c).unwrap();
+    let mut tables = String::from(
+        "/* GENERATED by msvcrt-difftest/build.rs — lifted verbatim from\n\
+         * dll/win32/msvcrt/locale.c so they cannot drift. Do not edit. */\n",
+    );
+    for name in ["cloc_clmap", "cloc_cumap"] {
+        let body = extract_u8_table(&locale_src, name).unwrap_or_else(|| {
+            panic!(
+                "could not find `static const unsigned char {name}[256]` in locale.c — \
+                 msvcrt's C-locale case-mapping tables moved. The harness cannot grade \
+                 _tolower_l/_toupper_l without them."
+            )
+        });
+        assert_eq!(
+            body.len(),
+            256,
+            "{name} in locale.c has {} entries, expected 256",
+            body.len()
+        );
+        tables.push_str(&format!(
+            "static const unsigned char {name}[256] = {{{}}};\n",
+            body.iter()
+                .map(|b| b.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+    }
+    fs::write(out.join("cloc_tables.h"), &tables).unwrap();
+
     // ── the generated rename prelude ────────────────────────────────
     let mut prelude = String::new();
     prelude.push_str(
         "/* GENERATED by msvcrt-difftest/build.rs — do not edit.\n\
-         * Force-included (-include) at the top of BOTH reference TUs\n\
-         * (string.c and wcs.c).  One union prelude, so a cross-TU call\n\
-         * (wcs.c -> string.c's fpnum_parse/memcpy/strlen) resolves\n\
-         * ref_* -> ref_* instead of escaping to the host libc.\n\
+         * Force-included (-include) at the top of ALL THREE reference TUs\n\
+         * (string.c, wcs.c, ctype.c).  One union prelude, so a cross-TU call\n\
+         * (wcs.c -> string.c's fpnum_parse/memcpy/strlen; string.c -> ctype.c's\n\
+         * _tolower_l) resolves ref_* -> ref_* instead of escaping to the host libc.\n\
          */\n\
          #ifndef MSVCRT_REF_PRELUDE_H\n\
          #define MSVCRT_REF_PRELUDE_H\n\n\
+         /* ═══ stage -1: glibc's ctype MACROS must not exist. ══════════════════\n\
+          *\n\
+          * <ctype.h> defines the whole isXXX/toXXX family as FUNCTION-LIKE MACROS:\n\
+          *\n\
+          *     #define isalnum(c) __isctype((c), _ISalnum)\n\
+          *\n\
+          * Stage 1 below renames `isalnum` -> `ref_isalnum` before the host headers\n\
+          * are read, so glibc's line above is macro-expanded on the way in and we\n\
+          * get `#define ref_isalnum(c) ...` — a function-like macro named exactly\n\
+          * what ctype.c is about to DEFINE.  ctype.c's `int CDECL isalnum(int c)`\n\
+          * then renames to `ref_isalnum(int c)`, which the preprocessor happily\n\
+          * treats as an invocation with c = `int c`:\n\
+          *\n\
+          *     error: expected ')' before 'c'\n\
+          *\n\
+          * __NO_CTYPE is glibc's own documented switch for exactly this: it keeps\n\
+          * the prototypes and suppresses the macros.  (This is why ctype.c could\n\
+          * not become a reference TU until now — the string/wcs TUs never *defined*\n\
+          * a name glibc macro-ises.)\n\
+          *\n\
+          * __NO_CTYPE does NOT cover the double-underscore spellings, which glibc\n\
+          * defines unconditionally because it uses them internally:\n\
+          *\n\
+          *     #define __isascii(c) (((c) & ~0x7f) == 0)        <ctype.h>:99\n\
+          *\n\
+          * and ctype.c *defines functions* named `__isascii` / `__toascii`.  Those we\n\
+          * have to #undef — and the ORDER matters, which cost a link error to learn:\n\
+          * a macro name inside a `#define` directive is NOT macro-expanded, so glibc's\n\
+          * line above does not become `#define ref___isascii(...)`; it CLOBBERS our\n\
+          * stage-1 rename of the same name.  Undef it AFTER stage 1 and the symbol is\n\
+          * left un-renamed, so ctype.c defines a PLAIN `__isascii` that collides with\n\
+          * the Rust under test.\n\
+          *\n\
+          * So: pull <ctype.h> here, strip its macros here, and only THEN rename.  The\n\
+          * plain-named prototypes it leaves behind are harmless — nothing calls them. */\n\
+         #define __NO_CTYPE 1\n\
+         #include <ctype.h>\n\
+         #undef __isascii\n\
+         #undef __toascii\n\
+         #undef isascii\n\
+         #undef toascii\n\n\
          /* stage 0: hide the symbols whose glibc prototype DISAGREES with\n\
           * msvcrt's, so glibc never gets to declare them (a 32-bit `long`\n\
           * return, or — for wcstok — a different arity). */\n",
@@ -634,7 +811,7 @@ fn main() {
     // DEFINES, and fail the build if one is missing from the lists. A hand-kept
     // list that nothing checks is a list that is already wrong.
     let mut undeclared: Vec<String> = Vec::new();
-    for (path, file) in [("string.c", &string_c), ("wcs.c", &wcs_c)] {
+    for (path, file) in [("string.c", &string_c), ("wcs.c", &wcs_c), ("ctype.c", &ctype_c)] {
         let src = fs::read_to_string(file).unwrap();
         for name in exported_symbols(&src) {
             // A banner can precede an #if'd-out body; only count real definitions.
@@ -714,6 +891,7 @@ fn main() {
     let mut refimpl_build = cc::Build::new();
     refimpl_build
         .include(&refstub)
+        .include(&out) // cloc_tables.h — the C locale's pclmap/pcumap, lifted from locale.c
         .define("__REACTOS__", None)
         .define("_MSVCR_VER", "0")
         .warnings(false)
@@ -732,6 +910,13 @@ fn main() {
     // storage is what lets classify assert each side independently).
     let mut subject_build = cc::Build::new();
     subject_build
+        // refstub/ is on the path ONLY for locale_layout.h + the generated cloc tables.
+        // subjectimpl.c must NEVER include refstub/msvcrt.h — that header carries the
+        // anti-circularity namespace block, and pulling it here would rename the
+        // SUBJECT's _errno/get_locinfo into msvcrt_ref_*, i.e. bind the code under test
+        // to the reference's state. locale_layout.h is deliberately namespace-free.
+        .include(&refstub)
+        .include(&out)
         .warnings(false)
         .flag("-Werror=implicit-function-declaration")
         .flag("-Werror=implicit-int")
@@ -740,13 +925,164 @@ fn main() {
         .file(manifest.join("subjectimpl.c"));
     subject_build.cargo_metadata(false);
 
-    // One archive, `libmsvcrt_ref.a` in OUT_DIR, holding all three objects.
+    // ── the printf PROBE unit: ReactOS `printf/streamout.c` as `so_*` ────
+    //
+    // NOT an oracle and NOT under test — a THIRD party, for one question:
+    // does cnt-rust's already-Rust printf engine (`cabi::streamout`) agree
+    // with msvcrt's `pf_printf_a` closely enough to ASSEMBLE rather than
+    // port? (tests/printf_probe.rs — assemble-vs-port decision, wave 14.)
+    //
+    // We can't link cnt-rust here (its `cabi` feature ships the same 200+
+    // `#[no_mangle]` names this crate's subject exports), so we compare BY
+    // TRANSITIVITY: this TU is a VERBATIM copy of cnt-difftest's proven
+    // `ref_streamout` recipe (same flat va_list <stdarg.h>, same bit-exact
+    // floor/log10/pow model, same -mlong-double-64), i.e. the exact
+    // configuration cnt-difftest proved byte-identical to the Rust engine.
+    // so_streamout ≡ streamout-Rust, so `so_* vs ref_sprintf` answers
+    // `streamout-Rust vs msvcrt`. It lives in the `so_*` namespace: no
+    // rename prelude, no ref_* — nothing binds to it by accident.
+    //
+    // mbtowc/wctomb are stubbed to fail (-1) exactly as in cnt-difftest;
+    // the Rust engine imports the same two externs, so wide-conversion rows
+    // compare msvcrt's real MBCS against the engine's failure path — those
+    // rows probe the GAP, not a bug in the recipe.
+    let refstub_printf = manifest.join("refstub_printf");
+    let cnt_refstub = repo.join("sdk/lib/rust/cnt-difftest/refstub");
+    assert!(
+        cnt_refstub.join("stdio.h").is_file(),
+        "cnt-difftest refstub moved: {}",
+        cnt_refstub.display()
+    );
+    let inc = |p: PathBuf| format!("#include \"{}\"\n", p.display());
+    let so_body = format!(
+        "#include <stddef.h>\n#include <math.h>\n#include <float.h>\n\
+         #define _LIBCNT_\n#define __declspec(x)\n#define __int64 long long\n\
+         #define _TCHAR char\n#define _T(x) x\n\
+         #define _tcscpy strcpy\n#define _tcslen strlen\n#define _tcschr strchr\n\
+         #define _isnan(x) isnan(x)\n#define _finite(x) isfinite(x)\n\
+         static double cnt_floor(double x){{ if(!isfinite(x))return x;\
+           long long i=(long long)x; double di=(double)i;\
+           return di>x?di-1.0:di; }}\n\
+         static double cnt_pow10i(int n){{ double r=1.0,b=10.0;\
+           unsigned k=(n<0)?(unsigned)(-(long)n):(unsigned)n;\
+           while(k){{if(k&1)r*=b;b*=b;k>>=1;}} return n<0?1.0/r:r; }}\n\
+         static double cnt_powm(double a,double e){{ (void)a;\
+           return cnt_pow10i((int)e); }}\n\
+         static double cnt_log10(double f){{ if(!isfinite(f))return 308.;\
+           if(f==0.0)return 0.0;\
+           if(f<0.0)f=-f; union{{double d;unsigned long long u;}} v;\
+           v.d=f; int biased=(int)((v.u>>52)&0x7ff);\
+           int e=(int)(((double)(biased-1023))*0.3010299956639812);\
+           while(cnt_pow10i(e)>f)e--; while(cnt_pow10i(e+1)<=f)e++;\
+           return (double)e; }}\n\
+         #define floor(x) cnt_floor(x)\n#define log10(x) cnt_log10(x)\n\
+         #define pow(a,b) cnt_powm((a),(b))\n\
+         static int so_mbtowc(wchar_t*w,const char*m,size_t n){{(void)w;(void)m;(void)n;return -1;}}\n\
+         static int so_wctomb(char*m,wchar_t w){{(void)m;(void)w;return -1;}}\n\
+         #define mbtowc so_mbtowc\n#define wctomb so_wctomb\n\
+         #define streamout so_streamout\n#define format_float so_format_float\n\
+         {}\
+         /* driver: build a FILE and run the genuine engine over a flat\
+            va_list (refstub_printf stdarg). `cnt` is the initial\
+            _iobuf._cnt, i.e. the output bound. */\n\
+         int so_run(char* base,int cnt,const char* fmt,char* va){{\
+           FILE f; f._base=base; f._ptr=base; f._cnt=cnt;\
+           f._flag=0x40|0x2; f._charbuf=0; f._bufsiz=0; f._tmpfname=0; f._file=0;\
+           return so_streamout(&f, fmt, (va_list)va); }}\n",
+        inc(repo.join("sdk/lib/crt/printf/streamout.c"))
+    );
+    let so_c = out.join("so_streamout.c");
+    fs::write(&so_c, &so_body).unwrap();
+    let mut so_build = cc::Build::new();
+    so_build
+        .include(&refstub_printf)
+        .include(&cnt_refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-mlong-double-64")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&so_c);
+
+    // The msvcrt side of the probe: wcs.c compiled a SECOND time, in the
+    // `pfflat_*` namespace, under the FLAT `char*` va_list
+    // (refstub_printf/stdarg.h). Two reasons this is a separate
+    // instantiation instead of a call into the existing `ref_*` one:
+    //
+    //  1. The ref_* engine is not CALLABLE on this host. Two escapes were
+    //     eaten before this landed: `ref__snprintf` forwards to plain
+    //     `vsnprintf` (a symbol wcs.c never defines under _MSVCR_VER=0),
+    //     which binds to GLIBC — the probe's first "msvcrt" column was
+    //     the host libc ((nil), 2-digit exponents, no %I64). And
+    //     `ref__vsnprintf` SIGSEGVs by construction: it forwards
+    //     `&valist` as `va_list*`, coherent only when va_list is a plain
+    //     pointer — under the SysV register-save-area va_list, `*valist`
+    //     reinterprets the decayed pointer variable as the tag struct.
+    //  2. The flat model IS the Windows-x64 va_list (char* over 8-byte
+    //     slots), so this instantiation is the target-faithful one, and
+    //     it consumes the SAME hand-packed buffer as so_run — a true
+    //     apples-to-apples drive of both engines.
+    //
+    // prelude2 = prelude with every wcs.c-owned symbol retargeted
+    // ref_→pfflat_; string.c/ctype.c symbols STAY ref_, so cross-TU calls
+    // (memcpy, fpnum_parse, _isdigit_l…) resolve into the existing
+    // reference objects and are not duplicated. tests/printf_probe.rs
+    // carries an %I64d oracle-honesty canary so any future escape back
+    // to the host libc fails loudly.
+    let mut prelude2 = prelude.replace("MSVCRT_REF_PRELUDE_H", "MSVCRT_PFFLAT_PRELUDE_H");
+    for sym in WCS_PUBLIC_SYMBOLS {
+        prelude2 = prelude2.replace(
+            &format!("#define {sym} ref_{sym}\n"),
+            &format!("#define {sym} pfflat_{sym}\n"),
+        );
+    }
+    // The five wide LP32 symbols are wcs.c-owned too; their stage-3 blocks
+    // (rename + spelled-out prototype) both mention ref_<name>.
+    for sym in ["wcstok", "wcstol", "wcstoul", "wcstombs", "wctomb"] {
+        prelude2 = prelude2.replace(&format!("ref_{sym}"), &format!("pfflat_{sym}"));
+    }
+    assert!(
+        prelude2.contains("#define _vsnprintf pfflat__vsnprintf"),
+        "pfflat prelude transform failed — probe entry would collide with ref_*"
+    );
+    let prelude2_h = out.join("pfflat_prelude.h");
+    fs::write(&prelude2_h, &prelude2).unwrap();
+
+    let mut pfflat_build = cc::Build::new();
+    pfflat_build
+        // Own object dir: cc names intermediates by a hash of the SOURCE
+        // path, and this is wcs.c's SECOND compilation — sharing OUT_DIR
+        // would overwrite the ref_* object and link this one twice.
+        .out_dir(out.join("pfflat"))
+        .include(&refstub_printf) // flat <stdarg.h> FIRST — the whole point
+        .include(&refstub)
+        .include(&out)
+        .define("__REACTOS__", None)
+        .define("_MSVCR_VER", "0")
+        .warnings(false)
+        // Same tripwires + genuineness flags as ref_tu, same reasons.
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .flag("-fno-builtin")
+        .flag("-fno-tree-loop-distribute-patterns")
+        .flag("-ffp-contract=off")
+        .flag("-include")
+        .flag(prelude2_h.to_str().unwrap())
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&wcs_c);
+
+    // One archive, `libmsvcrt_ref.a` in OUT_DIR, holding all the objects.
     let mut objects: Vec<PathBuf> = Vec::new();
     refimpl_build.cargo_metadata(false);
     objects.extend(ref_tu(&string_c).compile_intermediates());
     objects.extend(ref_tu(&wcs_c).compile_intermediates());
+    objects.extend(ref_tu(&ctype_c).compile_intermediates());
     objects.extend(refimpl_build.compile_intermediates());
     objects.extend(subject_build.compile_intermediates());
+    objects.extend(so_build.compile_intermediates());
+    objects.extend(pfflat_build.compile_intermediates());
 
     let archive = out.join("libmsvcrt_ref.a");
     let _ = fs::remove_file(&archive);
@@ -772,11 +1108,19 @@ fn main() {
 
     println!("cargo:rerun-if-changed={}", string_c.display());
     println!("cargo:rerun-if-changed={}", wcs_c.display());
+    println!("cargo:rerun-if-changed={}", ctype_c.display());
+    // Not compiled — PARSED, for the C-locale cloc_clmap/cloc_cumap tables.
+    println!("cargo:rerun-if-changed={}", locale_c.display());
     println!("cargo:rerun-if-changed={}", msvcrt_dir.join("bnum.h").display());
     // printf.h is REAL logic (wcs.c instantiates it twice), not a stub.
     println!("cargo:rerun-if-changed={}", msvcrt_dir.join("printf.h").display());
     println!("cargo:rerun-if-changed={}", manifest.join("refimpl.c").display());
     println!("cargo:rerun-if-changed={}", manifest.join("subjectimpl.c").display());
     println!("cargo:rerun-if-changed={}", refstub.display());
+    println!("cargo:rerun-if-changed={}", refstub_printf.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        repo.join("sdk/lib/crt/printf/streamout.c").display()
+    );
     println!("cargo:rerun-if-changed=build.rs");
 }

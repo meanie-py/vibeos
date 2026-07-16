@@ -453,7 +453,26 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 ### Hand-encoded `[u16; N]` literal one short — silently truncated registry/object path (ERROR_FILE_NOT_FOUND from a "correct" call chain)
 **Symptom:** an API fails with ERROR_FILE_NOT_FOUND / STATUS_OBJECT_NAME_NOT_FOUND on a path that provably exists; every function in the chain reads as a faithful translation; compiles + links clean; boots green (the broken path may simply never be exercised by boot — this one hid in `RCreateServiceW` until the kmtest conformance sweep called it, 2026-07-10).
 **Root cause:** a wide-string constant hand-encoded as `static X: [u16; N] = [b'S' as u16, ...]` was sized one element short, so the LAST character was dropped to make room for the NUL — `SERVICES_KEY [u16; 33]` spelled `System\CurrentControlSet\Service` (no trailing `s`), and services-rust opened a nonexistent parent key. The intent comment above the array says the right string, so review eyes slide right past it; only decoding the bytes shows the truncation.
-**Fix:** count = `chars + 1`; better, avoid hand arrays entirely (`w!()` / `wstr!` macro or a `const fn` UTF-16 builder). To sweep for siblings, decode every `static NAME: [u16; N]` against its `// L"..."` intent comment (one-shot scanner did this 2026-07-10; SERVICES_KEY was the only true hit). A durable lint (`scan_wide_literals`-style, wired into `vibeos-cli check`) is OWED — the class is invisible to every existing gate.
+**Fix:** count = `chars + 1`; better, avoid hand arrays entirely (`w!()` / `wstr!` macro or a `const fn` UTF-16 builder). To sweep for siblings, decode every `static NAME: [u16; N]` against its `// L"..."` intent comment (one-shot scanner did this 2026-07-10; SERVICES_KEY was the only true hit). **The durable lint LANDED 2026-07-15**: `tools/scan_wide_literals.py`, gate-wired
+(`vibeos-cli check`), baseline EMPTY. It decodes every `static/const NAME: [u16; N]` and diffs it
+against the `// L"..."` comment above it; findings name the dropped characters and the needed
+element count. It found one more real survivor immediately — hal `x86/kdpci.rs` `KEY_NAME [u16; 60]`
+spelled `…\PCI\Debu` (missing the `g`), *dead* behind `let _ = KEY_NAME;` because the author hit
+the bug, wrote "g missing — pad it", and worked around it with `build_wstr` instead of fixing it
+(deleted). Two design notes worth keeping, both learned by the first fleet run reporting **20
+findings of which 19 were its own gaps**:
+* **The oracle is prose, so it must not over-read prose.** `L"..."` appears inside comments that are
+  *about the syntax* ("Rust doesn't have `L"..."`, so spell them out") and inside *abbreviated*
+  paths (`L"\Registry\Machine\...\Version"`). Neither is a specification — skip any intent
+  containing `...`, and only take a CONTIGUOUS `//` run (a blank line means the comment is not this
+  literal's spec).
+* **No blanket "must end in NUL" rule.** UNICODE_STRING Buffers legitimately have none (`Length`
+  carries the size) — five correct ones exist in iomgr/fsrtl/npfs. Fire only when the comment
+  itself claims "NUL-terminated". Also strip *all* trailing NULs on both sides: hal `usage.rs`
+  really has a double terminator, and rtl-rxact's comment spells the NUL (`L"RXACT\0"`).
+Mutation-tested both directions (`tools/test_scan_wide_literals.py`, 12 cases, in `check-tooling`);
+it reports coverage (`85/782 had an intent comment`) because "0 findings" over 0 comparisons is the
+green that means nothing.
 **Triangulation recipe that found it:** per-stage DbgPrint bisection in the failing RPC (one boot) + a parallel subagent diff-audit of the Rust vs upstream C (found the literal by byte-decode) + a second subagent proving the create call *cannot* return 2 (pinning it on the parent open). Three probes, one statement.
 
 ### STATUS_OBJECT_PATH_SYNTAX_BAD (0xC000003B) / garbage wide path from a bindgen `#define X L"..."`
@@ -563,6 +582,13 @@ The Rust port (`ex-rust/src/uuid.rs`) replaced the union with a bare `GuidInit: 
 
 The specific ways the LLM C→Rust output is wrong — each entry is a distinct defect class, how it manifests at compile/link/runtime, and the cheapest oracle to catch it before it ships.
 
+### Dangling pointer to a by-value `transmute` temporary (the WCHAR[] → storageless-temporary trap, 2026-07-12)
+**Symptom:** intermittent corruption / garbage strings on a path that reads a stored `*const u16`. Confirmed live: `disk-rust/pnp.rs` — the dangling pointer was the **printf FORMAT STRING** passed to `RtlStringCchPrintfW` when creating a disk's `\Device\Harddisk%d\Partition0` / `\DosDevices\PhysicalDrive%d` symbolic links; `lsasrv-rust/authpackage.rs` — a dangling `Name` field in an `RTL_QUERY_REGISTRY_TABLE` read later by `RtlQueryRegistryValues`.
+**Cause:** C's `WCHAR foo[] = L"..."` is a stack array with real storage, so `&foo[0]` stays valid for the array's whole scope. The mechanical translation becomes `core::mem::transmute::<[u8; N], [u16; M]>(bytes).as_ptr()` — but the transmute produces a **by-value temporary** `[u16; M]` with no binding; `.as_ptr()` borrows it; the temporary is dropped at the end of the *statement*; the stored pointer then dangles. Two escaping shapes: `let p = transmute(...).as_ptr()` (let-bound) and `Field: transmute(...).as_ptr()` (struct field that outlives the initializer).
+**Why it hid:** the `dangling_pointers_from_temporaries` warning fires precisely on it — but nobody surfaced Rust warnings (105/255 crates carry crate-root `#![allow(...)]`, and the rest's warnings were never read until the 2026-07-12 survey). On amd64/arm64 the freed stack slot often still holds the right bytes (nothing reused it yet), so it "works" until timing changes — classic Heisenbug.
+**NOT a bug (don't flag):** the *same transmute as a direct call argument* — `func(transmute(x).as_ptr())` — is sound (the temporary lives to the end of the call statement, valid during the call). And the *reference* form `transmute::<&[u8; N], &[u16; M]>(b"...")` is sound: it yields a reference into the `b"..."` **'static** literal, so `.as_ptr()` is 'static. Only the by-VALUE array escaping form dangles.
+**Fix:** bind the transmuted array to a scoped local, then take `.as_ptr()` of the *binding*: `let foo_wide: [u16; M] = transmute::<[u8; N], [u16; M]>(bytes); let p = foo_wide.as_ptr();`.
+**Oracle:** rustc's own `dangling_pointers_from_temporaries` lint (surface warnings and it's exact), or the grep-time gate `tools/scan_dangling_transmute.py --lint` (wired into `vibeos-cli check`, empty baseline — the class is fully fixed, any hit is a NEW regression). Suppress a verified FP with `// nolint: dangling-transmute (reason)`.
 ### C post-inc/dec value expression rewritten with wrong read order (`x = y--` reads post value)
 **Symptom:** a count/index handed onward is off by one, and everything downstream of a threshold check silently misbehaves. Flagship instance (conformance catch #2, 2026-07-10): ob-rust `ObpDecrementHandleCount` translated C `ProcessHandleCount = HandleCount--` as decrement-then-read, so the CloseProcedure got the POST-decrement count — 0 instead of 1 on the last handle — and `IopCloseFile`'s `if (HandleCount != 1) return;` bailed, meaning **IRP_MJ_CLEANUP was never delivered to any driver in the system's history** (per-handle driver state leaked; second kmtest process got STATUS_ACCESS_DENIED on a stale MDL registration). Compiles clean, links clean, boots green — nothing in the boot path re-opens a MaintainHandleCount device twice.
 **Root cause class:** C's value-bearing `x++`/`x--`/compound assignments inside larger expressions force the translator to split into statements, and it sometimes puts the read on the wrong side of the mutation. Post-forms yield the OLD value; pre-forms the NEW.
@@ -4976,7 +5002,7 @@ Files: netstack-rust/src/tditrans.rs (INBOX lock), netstack-rust/src/hal.rs
 on-CPU1 visibility counter, targeted single-VA remote flushes, packet mailbox,
 i386/arm64 parity.
 
-### 9.56 (OPEN 2026-07-11) The -smp 2 residual flake: ~1/4–1/3 of boots creep-wedge or crash with device-I/O/pool faces — pre-existing at M3b, control-verified; NOT the M3-tail TLB/IPI work
+### 9.56 (OPEN — symptom confirmed, cause re-opened 2026-07-12) The -smp 2 residual: a real double-queue tears a DispatcherReadyListHead (KxQueueReadyThread called on an already-Ready thread). NOTE: the earlier "SwapBusy wait-side unimplemented" root cause is RETRACTED — the amd64 run-side spin already exists in ctxswitch.S (a `.rs`-only grep missed the asm); which call site issues the second queue is not yet pinned
 
 **Faces (all from one corpus, 2026-07-11, amd64 `-smp 2`, TCG):**
 - `[NETSTACK] TDI self-test: CONNECT FAILED 0xc00000b5` (STATUS_IO_TIMEOUT) — appears
@@ -5140,6 +5166,542 @@ IN_PAGE_ERRORs into ONE precise 'ready list inconsistent on entry' report that
 says whether the list was ALREADY corrupt when KiSelectReadyThread ran (someone
 else corrupted it — then GDB-watchpoint that CPU's ReadySummary/list) or is
 being torn concurrently. Same amplifier build (--cswitchdep) makes it fire fast.
+
+**RETRACTED ROOT CAUSE (2026-07-12) — "SwapBusy wait-side unimplemented" was WRONG.**
+The earlier conclusion here claimed the SwapBusy run-side handshake was missing
+(31 writes, 0 spin-waits) and the fix was to add a Rust spin before committing
+NextThread to Running. **That grep only covered `.rs` files and missed the
+assembly.** The run-side spin already exists and is correct on amd64:
+`ntoskrnl/ke/amd64/ctxswitch.S:179-184` (`KiSwapContextInternal`) spins
+`cmp byte ptr [r8 + ThSwapBusy], 0 / pause` on the incoming thread, with
+`ThSwapBusy = 0x95` (=149, matching `offset_check_amd64.rs`), and that file IS
+compiled (`ntos.cmake:391`, not cohab-flipped — only `thrdini.c` is, because
+Rust took over `KiSwapContextResume`). arm64 has the same spin
+(`ctxswitch.S:161`, offset `0x95`). The C reference agrees the handshake has
+exactly two halves and no more: `grep SwapBusy ntoskrnl/ke/*.c` shows only
+`KiSetThreadSwapBusy` (set) + `SwapBusy=FALSE` in `thrdini.c`/`thrdobj.c`
+(clear); **ReactOS has NO readier-side SwapBusy wait anywhere** — the only
+consumer is the arch `ctxswitch.S` run-side spin. So adding a Rust run-side
+spin would be dead/duplicate code and fix nothing. Lesson (reusable): when
+grepping for a "missing" mechanism in this tree, `.rs` is not the whole kernel —
+the arch context-switch primitives are still hand-written **assembly**
+(`ke/{i386,amd64,arm64}/ctxswitch.S`), and offset symbols like `ThSwapBusy` come
+from generated `ksamd64.inc` (genincdata), not the Rust offset_of.
+
+**STILL OPEN — the confirmed symptom, mechanism NOT yet pinned.** The tripwire
+chain is still valid up to the observation, only the *cause* was misattributed:
+(1) release-mode ready-list invariant at KiSelectReadyThread (0x96) -> torn
+Blink on a live list; (2) per-writer post-checks (0x11/0x22/0x33/0x44) ->
+tearing writer = KxQueueReadyThread (0x11); (3) entry checks split already-torn
+(0x51) vs double-queue (0x52) -> **0x52 fires: KxQueueReadyThread is called on a
+thread already State=Ready.** That double-queue is real and re-inserts a
+still-linked `WaitListEntry`, tearing `DispatcherReadyListHead[pri]` -> the 0x1E
+IN_PAGE_ERROR / silent wedge. cswitchdep amplifies it 0.9%->~25% because its
+global per-switch spinlock widens whatever the racing window is. What is NOT yet
+known: **which of the ~9 KxQueueReadyThread call sites** (mostly reached via
+`KiReadyThread`->`KiInsertDeferredReadyList`->deferred-ready drain, plus the
+direct preempt paths in thrdschd/wait/dpc/traphandler) issues the *second* queue
+on an already-Ready thread, and whether the bug is a genuine double-ready or a
+deferred-ready-list / PRCB-lock drain gap. Candidate class: a thread sitting on
+one CPU's `DeferredReadyListHead` while ALSO Ready on a PRCB list, or a
+reprioritization path (`KiSetPriorityThread`/`KiReadyThread`) that re-queues
+without first removing under the right lock.
+
+**2026-07-12 ELIMINATION ROUND — the tear is NOT produced by the ready-list API.**
+Four amplified bursts (`--smp-kernel --cswitchdep`, 16 boots each) with successively
+sharper tripwires. THREE precise, state-independent guards ALL went SILENT:
+- **0x52** (double-queue: `KxQueueReadyThread` on a `State==Ready` thread) — silent.
+  It DID fire once early, but later bursts tore the list with 0x52 quiet =>
+  **`State` is the WRONG PREDICATE** (a path can change State without unlinking).
+- **0x53** (`KiInsertDeferredReadyList` on a still-LINKED thread) — silent =>
+  **the WaitListEntry/SwapListEntry UNION-ALIAS theory is REFUTED.** (Good theory:
+  `SwapListEntry.Next` really does alias `WaitListEntry.Flink`, and a deferred write
+  would tear a list with NO lock on the victim PRCB — it just isn't happening.)
+- **0x54** (`KxQueueReadyThread` entry: node ALREADY LINKED — the precise
+  "do my neighbours point back at me?" test) — silent => **no still-linked node is
+  ever re-inserted.**
+Yet **site 0x11/0x22 keep firing**: `ki_rq_integrity` finds the list broken
+*immediately after a legitimate insert, with the correct PRCB lock held*.
+Lock discipline was audited and is SOUND: `KiAcquirePrcbLock` is a real SeqCst
+test-and-set on `(*prcb).PrcbLock`; every mutator (`KxQueueReadyThread`,
+`KiDeferredReadyThread`, `KiSelectReadyThread`, `KiSetPriorityThread`,
+`KiSetAffinityThread`, balmgr) pairs with the correct PRCB's lock; `KiQuantumEnd`'s
+lock hand-off into `KxQueueReadyThread` (release-inside-callee) is correct NT
+semantics; all `KiSelectNextThread`/`KiSelectReadyThread` callers hold the lock.
+
+**=> REFRAME: the ready-list tear is very likely a VICTIM, not the bug.** A wild
+write / use-after-free scribbling kernel memory would corrupt whatever is nearby and
+produce exactly this: a locked, API-correct list observed broken. **Corroborating: the
+same corpus carries `0x19 BAD_POOL_HEADER` (x2) and `0xF4` (x4)** — independent
+memory-corruption faces. Chasing scheduler *logic* further is likely wasted; the
+scheduler keeps coming up clean under every precise test.
+
+**NEXT TOOL (stop adding tripwires):** catch the corrupting STORE, not its victims.
+A GDB **hardware watchpoint** on the `Prcb->DispatcherReadyListHead[pri]` that gets
+torn (pri 8/9 observed) reports the culprit PC directly — use the kernel-debug
+toolkit (`qemu/start.sh amd64 --gdb` + `run-until.sh`), which needs the native/KVM
+backend. Note `SPECIALPOOL=*` has already come back empty here — expected, since it
+guards POOL and the PRCB is not pool; that null result is consistent with the wild
+writer living outside pool allocations (or writing through a stale/freed pointer).
+
+**2026-07-12 OVERNIGHT — the invariant that's broken is now NAMED.** A linkage-based
+guard (`0x54`, "is this node genuinely doubly-linked right now?") fired from
+**`traphandler.rs:106` — `KiDpcInterruptHandler`'s preempt branch** — with param3
+(state) showing **`0x2` = Running** (and one `0x1`=Ready). I.e. **`Prcb->CurrentThread`
+is Running yet SIMULTANEOUSLY linked in a ready list**, and the dispatch path queues
+it (`KxQueueReadyThread(OldThread=CurrentThread)`) → tears the list. Crucially this
+path is a **NT-faithful exact copy** (`KiDpcInterruptHandler` == NT
+`KiDispatchInterrupt`, `ntoskrnl/ke/i386/thrdini.c:460` — same structure, NO OldThread
+linkage check), so the tear here is still a VICTIM; the corruption is **UPSTREAM** —
+something leaves a Running/CurrentThread thread linked in a `DispatcherReadyListHead`.
+That is a *specific, traceable* invariant violation (much sharper than "list torn").
+Also this burst: **`0x19` absent** (weak — low base rate; the Codex pool-checker
+hypothesis needs a farm to confirm/deny), **`[WAITDEP]` silent** (§9.36 not implicated
+on amd64 SMP here).
+
+**Now hunting: who leaves CurrentThread linked?** Candidates — a cross-CPU
+reprioritization/affinity path (`KiSetPriorityThread`/`KiSetAffinityThread`/balmgr)
+that manipulates a thread by its `NextProcessor` while it is actually Running on its
+CPU, or a `KiSelectReadyThread` remove that doesn't fully unlink, or the unlocked
+`NextThread` pre-check race at `KiDpcInterruptHandler` (checks `Prcb->NextThread`
+before taking the PRCB lock). Enriched forensics added: `[RQLINKED]` (at the `0x54`
+site) scans `KiProcessorBlock` to report WHICH cpu's `DispatcherReadyListHead[pri]`
+the thread is wrongly linked into + its state + owning PRCB; `[RQTEAR]` (at
+`ki_rq_integrity`) dumps the corrupted link VALUE. One amplified burst with these
+should name the list + the value, from which the upstream writer follows.
+
+**2026-07-13 FORENSIC BURST — WILD-WRITE THEORY DEAD; it's a scheduler logic bug.**
+The `[RQLINKED]`/`[RQTEAR]` dumps are unambiguous:
+- `[RQLINKED]`: EVERY hit shows `thread.Flink == thread.Blink == head` where `head`
+  is the PRCB's `DispatcherReadyListHead[9]`, with `ownerCPU == thisCPU == 1`. That is
+  a thread **correctly, currently the sole element of CPU1's priority-9 ready list**
+  (head⇄X consistent) — being (re)queued from `traphandler.rs:106` (OldThread=
+  CurrentThread) AND `wait.rs:393` (KiExitDispatcher, also the outgoing CurrentThread).
+  Observed states: `2`=Running (the paradox) and `1`=Ready.
+- `[RQTEAR]` (site 0x22): the DOWNSTREAM wreckage — `head.Flink=head.Blink=X` but
+  `X.Flink=X.Blink=X` (self-looped), i.e. the one-element list after the botched
+  re-insert. `BADPTR` is just the self-looped node, NOT a foreign fingerprint.
+- List primitives (`RemoveEntryList`/`InsertTail/Head`/`InitializeListHead`) verified
+  correct-standard. **No foreign value ever appears in a torn link => NOT a wild
+  write.** The `0x19`/`0xF4` faces are downstream of the same scheduler damage (or the
+  racy pool checker), not an independent corruptor.
+
+**THE INVARIANT VIOLATION (precise):** `Prcb->CurrentThread` is simultaneously the
+sole element of that same Prcb's `DispatcherReadyListHead`. Both crash sites just
+re-queue the outgoing CurrentThread (NT-faithful), so the bug is whoever left it
+linked. Two sub-hypotheses, and a discriminator was built to decide between them:
+(A) a **set-NextThread path** promoted a still-linked thread to Running (so it was
+linked *before* it became current); (B) a **cross-CPU queue-while-running** race
+linked it *after*. New guard `ki_check_promote_not_linked(NextThread, site)` fires at
+the 4 promotion points (NextThread->CurrentThread=Running): `0x01` KiExitDispatcher,
+`0x02` KiDpcInterruptHandler, `0x03` KiQuantumEnd, `0x04` KiSwapThread. If it fires
+(`0x55` bugcheck + `[RQPROMOTE]` print) => hypothesis A and the site names the swap
+that saw it; if it stays SILENT while `0x54` keeps firing => hypothesis B (cross-CPU),
+and the next step is a guard in `KxQueueReadyThread` when it queues to a REMOTE prcb
+whose CurrentThread == the thread being queued.
+
+**2026-07-13 DISCRIMINATOR RESULT = hypothesis B.** `[RQPROMOTE]`/`0x55` stayed
+SILENT across the burst (NextThread is CLEAN at all 4 promotion points) while `0x54`
+kept firing (state=`1`=Ready now). So the thread becomes CurrentThread cleanly and is
+**readied/linked into the ready list WHILE it is the running thread** — a queue of a
+running thread. `0x54` only catches the *second* (already-linked) queue; the *first*
+illegal queue is the culprit. New catcher `ki_check_not_running(thread)` scans
+`KiProcessorBlock`; if the thread being queued is CurrentThread of ANY cpu it prints
+`[RQRUNNING]` + bugchecks `0x56` with the queuer's `#[track_caller]` line. Placed at
+BOTH ready-list entry points: `KxQueueReadyThread` entry and `KiDeferredReadyThreadImpl`
+entry. Legit dispatch/yield/quantum paths dethrone (Prcb->CurrentThread=NewThread)
+BEFORE queuing the outgoing thread, so this is quiet on them and fires only on the
+illegal readier. That `0x56`/`[RQRUNNING]` caller line == THE BUG.
+
+**2026-07-13 ROOT CAUSE FOUND — `[RQRUNNING]` names it: `KiReadyThread`
+(thrdschd.rs:555) with `state=5`=Waiting.** The readier-side of the SwapBusy
+handshake is MISSING (ReactOS's SMP never implemented it; our UP-derived translation
+inherited the omission). Full mechanism:
+1. Thread T runs on CPU1 (`CurrentThread=T`). T commits a wait: sets `State=Waiting`,
+   sets `SwapBusy=1`, calls `KiSwapThread` — but is **still `Prcb->CurrentThread`**
+   until `KiSwapContext` actually switches away (`SwapBusy` clears in
+   `KiSwapContextResume`, AFTER the dethrone).
+2. CPU0 satisfies T's wait (`KiUnwaitThread` -> `KiReadyThread(T)` ->
+   `KiInsertDeferredReadyList(T)`) in that window: T is `Waiting` but STILL running on
+   CPU1. T gets `State=DeferredReady`, pushed to CPU0's deferred list.
+3. CPU0 drains -> `KiDeferredReadyThreadImpl(T)` LINKS T into a ready list (or sets it
+   `NextThread`) while T is **still CurrentThread on CPU1**.
+4. T is now both running on CPU1 AND a schedulable ready-list element -> a later
+   (re)queue double-links it -> the DispatcherReadyListHead tear (0x54/0x11/0x22), and
+   the assorted `0x1E`/`0x19`/`0xF4`/wedge faces are all downstream of that.
+
+**THE FIX (readier-side SwapBusy spin):** at `KiDeferredReadyThreadImpl` entry (the
+deferred-drain link point), spin `while read_volatile(&Thread->SwapBusy) != 0 {
+spin_loop() }` before making T schedulable. `SwapBusy` is set during the wait-commit
+and cleared by `KiSwapContextResume` only AFTER T is dethroned, so the spin guarantees
+T has left its CPU first. Mirrors the RUN-side spin already in `ctxswitch.S`.
+**Lock-safety (critical):** the drain runs with NO PRCB lock held (called from
+`KiCheckDeferredReadyList` after the dispatch/PRCB locks are released), and the
+descheduling CPU clears `SwapBusy` in `KiSwapContextResume` without needing any lock
+the spinner could hold -> no deadlock. (Do NOT put this spin inside
+`KxQueueReadyThread` or `KiInsertDeferredReadyList` — those run under a PRCB lock the
+descheduling CPU may need, which WOULD deadlock. The drain entry is the one lock-free
+readier point.) The `ki_check_not_running` tripwire is kept armed right after the spin
+as the validator: it must go SILENT.
+**Residual window (known, likely negligible):** between `State=Waiting` (set first) and
+`SwapBusy=1` (set a few lines later in the wait-commit), a readier that reaches the
+drain that fast would see `SwapBusy=0` and pass. If the validator still fires post-fix,
+tighten by setting `SwapBusy` BEFORE `State=Waiting` in the 6 wait-commit sites
+(wait.rs 496/500, 557/561, 679/683, 771/775, 979/983, 1132/1136).
+**Validation:** rebuild `--smp-kernel --cswitchdep`, burst ×16 — `0x56`/`[RQRUNNING]`
++ the `0x54`/`0x11`/`0x22` faces must go silent and the flake rate must drop toward 0.
+A deadlock from a mis-placed spin would show as INCREASED hangs (revert if so).
+
+**2026-07-13 FIX ATTEMPT #1 FAILED (drain-spin) + reverted — and it exposed a PARADOX
+that is the real next lead.** The drain spin **deadlocked every boot** (0/16, wedge at
+1 cswitch): **deferred-ready threads NORMALLY carry `SwapBusy` set** (it is part of the
+readying transition), so `while SwapBusy` at `KiDeferredReadyThreadImpl` blocks the
+normal path forever. The "silent tripwires" it produced were a FALSE negative (the
+kernel hangs before reaching the corruption). Reverted (commit on branch). Lesson:
+`SwapBusy` set ≠ "still CurrentThread"; do not gate the drain on it.
+
+**THE PARADOX (this is where the next session starts):** the confirmed root — a thread
+readied by a cross-CPU `KiReadyThread`/unwait *while still `CurrentThread` mid-wait-
+commit* — **should be impossible under the dispatcher lock.** The wait-commit holds the
+global queued dispatcher lock (`KiAcquireDispatcherLockAtSynchLevel`, wait.rs:461)
+continuously through `State=Waiting` (496), `KiAddThreadToWaitList` (498),
+`KiSetThreadSwapBusy` (500), and into `KiSwapThread` (502) — there is NO
+`KiReleaseDispatcherLock` before the swap. The unwait path *also* holds the dispatcher
+lock (`eventobj.rs:75` `KiAcquireDispatcherLock` -> `KiWaitTest` -> `KiUnwaitThread` ->
+`KiReadyThread`). Two holders of the same global lock CANNOT overlap — so the unwait
+must wait until the commit releases it, by which point `T` should be dethroned. Yet
+`ki_check_not_running` (0x56) fires. **One of these must be true — resolve it first:**
+1. **The dispatcher lock is released too EARLY in the swap** — before `KiSwapThread`
+   dethrones `Prcb->CurrentThread`. TRACE where the queued dispatcher lock acquired at
+   wait.rs:461 is actually released during `KiSwapThread`/`KiSwapContext`/
+   `KiSwapContextResume` (asm `ctxswitch.S` + thrdini.rs). If it is released before the
+   dethrone (or before `SwapBusy`/state settle), a cross-CPU unwait slips in. This is
+   the prime suspect (an SMP dispatcher-lock-release-ordering translation bug).
+2. **A readier bypasses the dispatcher lock.** Audit ALL `KiReadyThread` callers
+   (eventobj:204, gate:268, queue:123, thrdobj:263, wait:204) — does every one hold the
+   dispatcher lock? One that doesn't is the race.
+3. **The queued dispatcher lock isn't actually global/serializing** in our SMP impl
+   (e.g. `KiAcquireDispatcherLock` vs `KiAcquireDispatcherLockAtSynchLevel` resolve to
+   different locks). Verify both resolve to the SAME `LOCK_QUEUE_DISPATCHER_LOCK` global.
+
+The right fix follows from which of (1)/(2)/(3) is true — most likely (1), and the fix
+is to release the dispatcher lock at the correct point (after dethrone), matching NT.
+`ki_check_not_running` (0x56) stays armed as the exact oracle: the fix is right when it
+goes silent AND the flake rate drops WITHOUT new hangs. Do this careful lock-ordering
+work FRESH, not at the tail of a long run — attempt #1 shows how a plausible-but-wrong
+placement makes things strictly worse.
+
+**2026-07-13 — hypothesis (3) [LockQueue not wired] RULED OUT; paradox refined.**
+Verified amd64 wires the dispatcher lock correctly on BOTH CPUs: the real amd64
+`KiSystemStartupBootStack` lives in `sdk/lib/rust/ntoskrnl-rust/src/ke/amd64/
+krnlinit.rs:146` (NOT kiinit.rs; the C `amd64/krnlinit.c` is cohab-commented at
+ntos.cmake:410), and at line 164 it calls `KiInitSpinLocks(Prcb, Prcb->Number)`
+BEFORE the `Number==0` branch — so both the BSP and the AP set
+`LockQueue[DispatcherLock].Lock = &KiDispatcherLock` (one shared global). Both CPUs'
+`KeAcquireQueuedSpinLock*` therefore contend the SAME lock word; the dispatcher lock
+genuinely serializes. So (3) is out. Remaining, for the fresh session:
+- **(2) a `KiReadyThread` caller bypasses the dispatcher lock.** Audit all callers
+  (eventobj:204, gate:268, queue:123, thrdobj:263, wait:204) — one readying without
+  the dispatcher lock held is the race. CHEAPEST to check; do first.
+- **(4) the dispatcher lock is released too early across the swap.** Our wait-commit
+  holds it from wait.rs:461 through `KiSwapThread` with NO release before the swap, so
+  it is handed off across `KiSwapContext` (T swaps out holding it, NextThread swaps in
+  holding it, NextThread releases it later). If our handoff releases it BEFORE the
+  dethrone (`Prcb->CurrentThread = NextThread` in KiSwapThreadImpl) is visible, a
+  cross-CPU unwait slips in. Trace exactly where `&KiDispatcherLock` is released
+  relative to the dethrone in the swap.
+- **(5) `ki_check_not_running` (0x56) may be catching a TOLERATED transient.** Take
+  seriously: "readied while still `CurrentThread`" is arguably the NORMAL handoff
+  window (T is `Prcb->CurrentThread` until dethroned; the run-side spin in ctxswitch.S
+  protects actually RUNNING it). If NT tolerates linking such a thread (its
+  `WaitListEntry` is free, so it's a clean single insert), then 0x56 is a red herring
+  and the REAL bug is the DOUBLE-link (0x54) with a different cause. Before building
+  another fix on 0x56, confirm it is not benign.
+**DECISIVE NEXT INSTRUMENT (splits (2) vs (4)):** in `ki_check_not_running`, also read
+and print whether `&KiDispatcherLock` (bit 0) is HELD when it fires. Held => a readier
+is running under the dispatcher lock yet the race still happened => (4) [early release
+/ handoff bug]. Not held => (2) [a readier bypasses the lock]. One armed burst decides.
+State at this point: fix attempt #1 reverted, clean baseline restored, all diagnostics
+(0x54/0x56/[RQRUNNING]/[RQLINKED]) committed + armed on branch `smp-bringup`. NOT on
+master. The root-cause DIRECTION (readier vs wait-commit race) is solid; the precise
+serialization break + the correct fix are the remaining work.
+
+**2026-07-13 (fresh session) — THE PARADOX DISSOLVES: 0x56 was a FALSE ORACLE, and the
+real defect is the SELF-SWAP WEDGE.** Two findings that rewrite the frame:
+1. **"Readied while still CurrentThread" is NT's LEGAL, designed-for window — hypothesis
+   (5) was right.** The earlier claim "wait.rs never releases the dispatcher lock before
+   the swap" was WRONG: the C releases it in EVERY commit path *before* `KiSwapThread`
+   (wait.c:567/859 explicitly; the timeout paths via **`KxInsertTimer`, which embeds
+   `KiReleaseDispatcherLockFromSynchLevel()`** — ntkrnl-sys inline/ke.rs:1599 is
+   faithful, and wait.rs mirrors all of it). So by design a cross-CPU readier may
+   acquire the dispatcher lock, unwait T, and link/standby it while T is still
+   `Prcb->CurrentThread` mid-commit; safety is delegated entirely to the per-PRCB locks
+   + the run-side SwapBusy spin. BOTH splitter faces (dispLockHeld=1/Waiting and
+   dispLockHeld=0/gate) are this legal transient. `ki_check_not_running` downgraded to
+   print-only (`[RQRUNNING]` = breadcrumb marking the window, NOT a bug); its bugchecks
+   were killing overnight bursts on legal behavior and masking the real fault downstream.
+2. **The real defect: the legal window enables a SELF-TARGETING READY, and our swap
+   wedges on it.** Sequence: T mid-commit on CPU1 (lock released, still CurrentThread,
+   `SwapBusy=1`); CPU0's deferred drain — typically after the **AdjustUnwait priority
+   boost** (thrdschd.rs:275-324; explains the observed pri-9/10) — targets CPU1 and
+   either (a) preempt-tests `Thread->Priority > Prcb->CurrentThread->Priority` where
+   CurrentThread==T itself, so boosted-T preempts ITSELF → `Prcb->NextThread = T`
+   (self-standby), or (b) equal-pri falls through → T linked into CPU1's own ready list
+   (self-queue, the `[RQLINKED]` sole-element face). CPU1's `KiSwapThread` then resolves
+   **NextThread == CurrentThread == T** and calls `KiSwapContext(T, T)`; ctxswitch.S's
+   run-side spin waits on `[T+ThSwapBusy]` — which only clears in `KiSwapContextResume`
+   AFTER the spin, i.e. **T waits forever on its own flag → CPU dead at SYNCH → the
+   silent HANG_TIMEOUT / service-connect creep-wedge face.** NT tolerates old==new
+   (semantically "signaled before I left — resume in place"); ReactOS's never-validated
+   SMP spin (inherited verbatim by the C at ke/{amd64,arm64}/ctxswitch.S — i386 has no
+   spin at all) does not. Tripwire **0x57** armed at `KiSwapThreadImpl` post-resolution
+   (`NextThread == CurrentThread` → 0x96, P2 tag 0x57|state|cpu, P3=SwapBusy, P4=pri) to
+   convert the silent wedge into an attributed report. PREDICTION for the armed burst:
+   0x57 replaces (most of) the HANG_TIMEOUTs. FIX once proven: old==new short-circuit of
+   the SwapBusy spin in ctxswitch.S (`cmp rdx, r8 / je` past the spin on amd64; arm64
+   `x1 vs x2` twin at ctxswitch.S:159; the rest of the self-swap path is benign —
+   verified: stack save/reload is idempotent, resume clears SwapBusy, no CR3 change).
+
+**2026-07-13 (b) — 0x57 burst result: self-swap NOT the (first) culprit; forensics
+instead CONVICTED a lockless gate signal → ROOT CAUSE = `KiTryThreadLock` NEVER
+ACQUIRES (an inherited UPSTREAM ReactOS SMP bug).** The 0x57-armed burst (16 boots,
+12/16 green) produced ZERO 0x57 but 3× the site-0x22 tear with pristine forensics:
+`[RQTEAR]` showed the JUST-INSERTED sole-element entry either self-looped
+(`entry.F=entry.B=entry`, head still →entry) or half-foreign (`entry.F=our ready
+head, entry.B=another thread's WaitListEntry`). Working the interleavings backward,
+both shapes are the exact fingerprints of **two CPUs concurrently InsertTailList-ing
+the SAME KTHREAD WaitListEntry union into two different lists** (the deferred
+drain's ready insert racing the victim's own `KiAddThreadToWaitList` in its next
+wait-commit; the interleave where writer B re-reads `head.Blink` after writer A's
+store yields the self-loop exactly). A ready that early is only possible if a
+signaler bypassed the wait-side serialization — and the only lockless readier is
+`KeSignalGateBoostPriority`, whose sole mutual exclusion against the gate waiter's
+commit is `KiTryThreadLock`. Reading it: **`ntkrnl-sys/inline/ke.rs` returned
+0/"success" when the lock read FREE — WITHOUT ACQUIRING IT** (only the contended
+path did the interlocked swap). Faithfully translated from **ReactOS's own
+`ke_x.h:533`** (`if (!Thread->ThreadLock) return FALSE;`) — dead code upstream
+(ReactOS never shipped SMP; the UP variant is a no-op), a live catastrophic hole at
+`-smp 2`: on the COMMON (uncontended) path the gate signaler popped + readied the
+waiter with NO lock, including the window BEFORE the waiter set `SwapBusy` — so the
+waiter could be picked up and RUN on another CPU while still running its commit on
+its own CPU (**double-run, one stack, two CPUs**), or its deferred ready could land
+mid-next-wait-commit (the observed double-insert tears). Paged pool rides guarded
+mutexes → gates, so the traffic is constant. FIX (both homes): try-ACQUIRE semantics
+— visibly-held → fail(1); else interlocked swap(1), old!=0 → fail — in
+`ntkrnl-sys/inline/ke.rs::KiTryThreadLock` (live) and `ke_x.h:528` (reference
+parity). Lesson (reusable, add to the §1–8 canon): **"faithful to the C" is not
+"correct" for SMP-only C paths — ReactOS's CONFIG_SMP code was NEVER validated
+(it never booted SMP upstream); treat every inherited SMP-branch primitive as
+unreviewed and verify it against NT semantics, not against ReactOS.** 0x57 stays
+armed through validation: with the trylock fixed, a properly-serialized gate signal
+still readies a pre-dethrone waiter (legal NT window), so the self-swap wedge may
+now surface as the NEXT layer — if 0x57 fires, apply the old==new spin-skip in
+ctxswitch.S. Validation burst running: expect 0x22/[RQTEAR] silent, flake → ~0.
+
+**2026-07-13 (c) — trylock-fix validation: 12/16 → 14/16; tear NOT fully gone; two
+more holes found and plugged.** Post-fix burst: 2 fails — 1× the same site-0x22
+self-loop tear (pri 9), 1× 0x1E c0000006 post-marker. So the gate trylock was A
+source (rate improved), not the only one. Re-decode of the self-loop: it does NOT
+require two CPUs — a SINGLE sequential `InsertTailList(H, e)` when `H.Blink == e`
+(thread ALREADY the tail/sole element of that same list) produces `e.F=e.B=e`
+exactly. I.e. a plain SEQUENTIAL DOUBLE-READY of a parked thread — and the 0x22
+drain-insert site has NO already-linked guard of its own. Two findings this round:
+1. **The 0x53 "still-linked defer" oracle had a HOLE that invalidates the earlier
+   elimination-round refutation:** its linkage check was gated on `State==Ready`,
+   but `KeSignalGateBoostPriority` sets `State=DeferredReady` ITSELF before calling
+   `KiReadyThread` — so a still-linked gate-woken victim arrived at
+   `KiInsertDeferredReadyList` with state 7 and was never checked. Replaced with
+   **0x58**: linkage check for ALL states + `[RQDOUBLE]` print (state, WaitReason,
+   WaitStatus, DeferredProcessor — enough to name the waker class without
+   track_caller). Also learned: `[RQRUNNING] state=7` prints are ROUTINE (gate wakes
+   legitimately enter KiReadyThread with state pre-set to 7) — not evidence.
+2. **The Rust `Kx{Single,Delay,Queue}ThreadWait` only carried HALF of the C's
+   defensive timer-block init** (`ke_x.h` writes BOTH ends: `TimerBlock->
+   WaitListEntry.F/B = &Timer->Header.WaitListHead` AND the head's F/B; the Rust
+   inline wrote only the head side). A stale/self-referencing `TimerBlock->
+   WaitListEntry` makes `KiUnlinkThread`'s ring-walk `RemoveEntryList` write through
+   dangling pointers (tear class) or no-op (the documented KiTimerExpiration spin).
+   Ported the both-ends init to all 3 Rust setups (KxMultiThreadWait already used
+   InitializeListHead+InsertTailList — fine).
+
+**2026-07-13 (d) — oracle-escalation ladder converged; first 16/16 GREEN amplified
+burst.** Burst-by-burst (all `--smp-kernel --cswitchdep` ×16, same host):
+- 0x59 burst (double-DEFER in-flight table): **0x59 SILENT**, 12/16, 4× tear —
+  so no double-push either; the second insert reaches the drain-insert site
+  without passing KiReadyThread/KiInsertDeferredReadyList.
+- 0x5A/0x5B burst (pre-insert linked guard at the drain's own insert + chain-cycle
+  cap): NO tears at all; 14/16 with 2× a NEW deterministic face — 0x1E c0000006 at
+  the SAME PC both times = **KiSelectReadyThread+0xE2** (ntkrnlmp symbolication;
+  the ready-list walk eating a wild entry — downstream victim, not culprit).
+  Precursor print: a thread arriving AT THE DRAIN with **State==Ready** — i.e. it
+  was KxQueueReadyThread'd (state=1 + linked, union Next overwritten) WHILE parked
+  on a deferred SLIST → the drain then walks ready-list interiors as SLIST links.
+- 0x5C/0x5D burst (drain pre-validates every chain node is DeferredReady-for-this-
+  cpu; KxQueueReadyThread bugchecks on a DeferredReady input): **16/16 GREEN,
+  both oracles silent.** Suspicious (green + no hits): either the cumulative fixes
+  (trylock + timer-block init) close it and earlier 0x1E pair was residual timing,
+  or 0x5C's per-drain walk perturbs the window (Heisenberg), or luck (~12% for a
+  16-green at the prior rate). ×32 confirmation burst running.
+Armed oracle inventory (all on branch, to be de-armed before landing): 0x54
+(KxQueueReadyThread linked), 0x55 (promote-linked), 0x57 (self-swap), 0x58
+(defer-linked, all states), 0x59 (double-defer table), 0x5A (drain-insert linked),
+0x5B (chain>64), 0x5C (chain node not DeferredReady-for-cpu), 0x5D
+(KxQueueReadyThread on DeferredReady); prints [RQRUNNING] (benign-window
+breadcrumb) [RQTEAR] [RQDOUBLE] [RQDEFER2] [RQ5A] [RQ5C] [RQ5D].
+
+**2026-07-13 (e) — evening rounds: every WAKER acquitted; the anomaly is now
+"running thread in ready-flight" with all doors guarded.** Round-by-round:
+- ×32 post-16/16: 29/32, **0x5D fired ×2** — threads found DEFERRED-PARKED while
+  being the outgoing CurrentThread at the preempt/exit-dispatcher requeues
+  (traphandler:109, wait.rs:396→now 427/429). So something wakes RUNNING threads.
+- **0x5E** (KiUnwaitThread on non-Waiting = spurious unwait, WaitStatus names the
+  waker class) + **0x5F** (gate pop of non-GateWait): both **SILENT** across ×32 —
+  unwait and gate funnels are CLEAN. (Also: a 0x54 read as "state=GateWait" was a
+  P2 MISREAD — that byte is the PRIORITY; the RQLINKED companion print showed
+  state=Ready. Always cross-check P2 decodes against the companion dumps.)
+- **0x60** (manual queue wake in KeInsertQueue — bypasses KiUnwaitThread, so 0x5E
+  is blind to it; fingerprint WaitReason=0): **SILENT** — queue wake clean.
+- **In-flight oracle lifecycle v2**: mark at defer-push, unmark at
+  PROMOTION-to-Running (7 sites: KiSwapThreadImpl ×3, KiExitDispatcher,
+  KiQuantumEnd, KiDpcInterruptHandler, amd64 idle loop — the idle loop was missed
+  first and leaks marks), requeue variant (no collision check) for the legal
+  repositioners: KiSetPriorityThread ×2, KiUpdateEffectiveAffinity ×2, balmgr
+  boost re-defer (missed first → 0/32 false-0x59s, every boot, caller 114 —
+  LESSON: enumerate ALL repositioners before arming a wake-to-run mark).
+- v2 ×32: 29/32 — **0x59 STILL SILENT** (no double-push even wake→run), hits =
+  0x5D ×2 + **0x5A** (drain-insert already-linked, state=Ready, reason=31
+  =WrDispatchInt → last touched by the DPC-preempt requeue). Breadcrumb: the
+  drain observed a chain node with **state=Running mid-walk**, and one drain ran
+  with dispLockHeld=1. Reading: a wake races the victim's own preempt-requeue
+  (both orderings caught), waker STILL unidentified — all guarded funnels pass.
+- Current instrument: **waker identity stamping** — RQ_WAKER_LINE parallel array
+  records each defer's caller line (Requeue=9000); 0x5A/0x5D dumps now print
+  `deferred_by=<line>`, naming the waker retroactively at the catch point.
+  Remaining unguarded readier if deferred_by comes back useless: KeReadyThread
+  (thrdobj — stack-inswap; would need state==Transition guard).
+
+**2026-07-13 SPLITTER RESULT — MIXED, so it is TWO faces, not one:**
+`[RQRUNNING]` now prints `dispLockHeld`. Across a burst:
+- **`dispLockHeld=1` AND `state=5`=Waiting** (both held cases): the readier HOLDS the
+  global dispatcher lock, yet the thread is `Waiting` + still `CurrentThread` on the
+  OTHER cpu. => **hypothesis (4) CONFIRMED as the primary face.** The wait-commit's
+  DETHRONE is not serialized against the dispatcher lock: the descheduling cpu has let
+  a lock-holding readier proceed while its thread is still `CurrentThread`. The
+  wait-commit (wait.rs:461 acquires the dispatcher lock, holds it into `KiSwapThread`
+  at 502) hands the lock off across `KiSwapContext`; the bug is that the handoff frees
+  the lock (or the dethrone becomes visible) at the wrong point relative to
+  `Prcb->CurrentThread = NextThread` in `KiSwapThreadImpl`. FIX = make the dethrone
+  happen-before any other cpu can acquire the dispatcher lock (trace the exact
+  release/handoff point of `&KiDispatcherLock` across the swap; align to NT).
+- **`dispLockHeld=0` AND `state=7`=DeferredReady**: lockless readier / deferred-drain
+  re-processing. => **hypothesis (2) also real.** Concrete instance:
+  `gate.rs:268` (`KeSignalGateBoostPriority`) calls `KiReadyThread(WaitThread)` AFTER
+  releasing the gate object lock (254), the thread lock (256), and the dispatcher lock
+  (265) — a fully lockless ready. If that gate-waiter is still descheduling
+  (`CurrentThread` mid-swap), it readies a running thread. Audit the gate/queue signal
+  paths against NT for the missing serialization.
+Both faces reduce to the same invariant: **a thread must be fully dethroned (no longer
+any cpu's `CurrentThread`) before it can be readied/linked.** The correct fix enforces
+that — most cleanly by fixing the dispatcher-lock/dethrone ordering (face 4) and the
+lockless gate/queue readiers (face 2). `0x56`/`dispLockHeld` is the exact oracle for
+both. This is careful SMP lock-protocol work for a FRESH session — the overnight run
+took it from "wild-write mystery" to two precisely-characterized serialization faces
+with a live oracle, a clean reverted baseline, and every step committed.
+
+**Integrated from a Codex handoff attempt (its cyber filter tripped on the "wild
+write" language, so it stalled — reword future handoffs):** (a) `expool.rs` removed
+the post-unlock `ExpCheckPoolBlocks` page-walk on the theory it RACES (walks a shared
+page after dropping the pool lock → can read a neighbour mid-split → **false** 0x19).
+NT keeps that call (`ex/pool` ~line 2455) but only under `DBG`; our port runs it
+always-on, so it's a plausible always-on-checked-build-assert-as-SMP-bug (cf. §9.57).
+KEPT as a marked experiment; permanent fix if confirmed = gate to checked-builds, not
+delete. (b) `#[cfg(not(smp))]` on the local `KxQueueReadyThread` externs in
+`traphandler/dpc/wait.rs` — CORRECT, removes decls that were still shadowing the
+`ke_defs` inline-repoint on SMP (this is why `0x54` now reports `traphandler.rs:106`
+instead of the shim). (c) `[WAITDEP]` waitlist dump — harmless additive §9.36 signal.
+
+**PRIOR (superseded) NEXT-DIAGNOSTIC note:** the 0x52 bugcheck currently reports
+`(thread, (0x52<<8)|pri, state, prcb)` but NOT *who called*. Add the caller
+return address (`code_addr!()` at each KxQueueReadyThread site, or capture the
+return address in KxQueueReadyThread itself) into a spare 0x52 param, rebuild
+`--smp-kernel --cswitchdep`, and run one ~16-boot amplified burst — that pins the
+exact second-queuer call site in one cycle. THEN read that path against NT
+ke_x.h/thrdschd.c for the missing lock/removal. Keep the 0x96/0x52 tripwires
+armed (guarded, cheap) until a clean soak confirms the eventual fix.
+
+**Separate latent (M5, not this flake): i386 `ctxswitch.S` has NO SwapBusy spin
+at all** (matching ReactOS's incomplete i386 SMP) — a real gap for a future i386
+SMP kernel, but the current flake is amd64 where the spin is present.
+
+**2026-07-13 (f) — TWO more finds: the oracle's own hash table lied (false 0x59
+flood), then the deduped oracle caught the REAL hole: `KiIdleLoop` consumes
+`NextThread` with NO PRCB lock.**
+
+*Round 1 — the false flood (a10c86602f3).* The attribution burst came back 11/32,
+ALL nine 0x96 = tag 0x59 (double-defer) caller=708 (`KiReadyThread`), victims all
+KQUEUE-woken ExWorker threads (decode tip: `WaitStatus` = a POINTER for queue waiters
+— NT's queue wake stores the dequeued entry in WaitStatus; `0x100` = STATUS_KERNEL_APC).
+Root cause was the ORACLE ITSELF: `rq_inflight_mark()` CAS-inserted at the first empty
+probe slot *before finishing the 8-slot scan* for an existing entry. A legal Requeue
+re-mark (worker priority boosts, constantly) after an earlier-probe slot freed created
+a duplicate TWIN entry; promote-unmark cleared one, and the stale twin fired a false
+0x59 on the next legal wake. **Reusable rule: in an open-addressed probe table,
+insert-at-first-empty must only happen AFTER a full-window scan for the key** — and a
+diagnostic that bugchecks must be held to the same correctness bar as the kernel it
+polices (this is the SECOND false oracle of §9.56 after 0x56). Fix: full-scan-first
+mark, clear-all unmark, and `stale_by` (the stale mark's waker stamp) printed + packed
+into 0x59 P3.
+
+*Round 2 — the real hole (466d66bf550).* Deduped burst: 28/32, three catches, full
+attribution: 2× `[RQ5D]` caller=429 (= `wait.rs` KiExitDispatcher requeuing the OLD
+running thread) with `deferred_by=9200` (the standby-DISPLACEMENT re-defer), 1×
+`[RQ5A]` already-linked on the drain's private detached chain — and every victim
+`runningOnCPU=1` with interleaved `[RQRUNNING] caller=8888` breadcrumbs proving the
+drain processed a thread that was simultaneously CurrentThread on the other CPU.
+Mechanism: **`KiIdleLoop` read/nulled/promoted `Prcb->NextThread` LOCK-FREE** —
+inherited verbatim from ReactOS's never-validated CONFIG_SMP C (i386 AND amd64 both
+lack the acquire; same class as the KiTryThreadLock find: *treat every inherited
+CONFIG_SMP primitive as unreviewed*). The displacement branch of
+`KiDeferredReadyThreadImpl` (correctly under the PRCB lock) read `NextThread=T` while
+the idle CPU concurrently promoted T to Running, then set the RUNNING T DeferredReady
+and re-deferred it → T later requeued itself run-side while still on a drain chain →
+the double-link tear. Every OTHER promote site (KiExitDispatcher, KiQuantumEnd, yield,
+KiDpcInterruptHandler) already held the lock — idle was the single hole. Fix: acquire
+PRCB lock in the idle promote, RE-CHECK NextThread under it (a displacement may have
+consumed it), promote, release before the SYNCH raise + swap. **Audit rule: a field
+guarded by lock L at N−1 of N sites is not guarded** — grep every reader/writer of
+`Prcb->NextThread` when touching scheduler code. Non-scheduler residuals in these
+bursts are the known §9.36 family (csrss 0xF4 after rpcrt4 `handler continued
+execution`; lsass user-AV hang) plus a cswitchdep tap miscalibration under SMP
+(amd64 MP swaps at SYNCH_LEVEL=12, tap expects DISPATCH=2 — fold into the owed
+per-CPU-cswitchdep work).
+
+**2026-07-14 (g) — idle-lock v1 SELF-REGRESSED (a lesson in lock+IRQL coupling),
+v2 lands the fix; oracles all-silent at 29/32; de-armed.**
+- **v1 (acquire AFTER `sti`) wedged 12/32 + 8× 0xF4, zero oracle hits.** Holding the
+  non-reentrant PrcbLock with interrupts ENABLED on the idle CPU lets any nesting
+  that reaches scheduler code on that CPU re-acquire → self-deadlock → system-wide
+  starvation (faces: post-marker taskbar-OnCreate wedge, csrss 0xF4 storm). **Rule:
+  adding a lock is only half the fix — the acquire must also inherit the IRQL/
+  interrupt discipline of the lock's other holders.** All other PrcbLock takers run
+  with the dispatch path masked; idle's `sti` made it the odd one out.
+- **v2 (4fc6a98c9b5): acquire→re-check→promote→release entirely inside the idle
+  loop's existing `cli` window, `sti` only after release** (UP keeps the C-faithful
+  early `sti`). Burst: **29/32, ZERO bugchecks, ZERO oracle hits, [IDLE-IRQL]
+  tripwire silent** (idle was at DISPATCH — v1's nesting vector was interrupt-driven,
+  not a below-DISPATCH bug). 1 of the 3 hangs = host contention ("serial still
+  flowing at deadline").
+- **New residual face to watch (NOT the tear): census `STUCK … GateWait …
+  HOLDER-STUCK(no signal ever)`** — 77 hits incl. on green boots (previous bursts:
+  0), SERVICES/setup/rpcss parked on session-space guarded-mutex gates whose holder
+  never signals. Either instrumentation drag (cswitchdep taps + oracles slow the
+  promote) or a real starvation the idle serialization unmasked. Census now prints
+  the heuristic gm-owner (`gm? owner=… state=…`) so the next wedge names the HOLDER.
+- **De-armed (db5b542a138):** `RQ_ORACLE_ARMED=false` turns the 15 protocol oracles
+  (0x54–0x63) print-only; corruption fingerprints (torn ready-list links, null queue
+  entries, ReadySummary inconsistency) stay armed. Fix set that closed the tear:
+  gate trylock + timer-block both-ends init + in-flight table dedupe + idle
+  NextThread lock v2.
 
 ### 9.57 (ROOT-CAUSED + FIXED 2026-07-11) A *correct* fix woke a latent panic: `NT_ASSERT` mistranslated as a hard `assert!`, dormant until IRP_MJ_CLEANUP started being delivered (arm64-only)
 
@@ -6078,7 +6640,894 @@ Nothing crashed, because the neighbours are *plausible*: the guest's `NtUserShow
 
 **The permanent guard** is exactly that comparison: `tools/wow64gen/verify_svc_numbering.py` disassembles the **real i386 `user32.dll`/`gdi32.dll` syscall stubs** out of the build (the ground truth the guest executes — `movl $0x1227, %eax`), and hard-fails if any of them maps to a different name than the generated table has at that index. It is wired into `vibeos-cli check`. Ground truth beats a second parse of the same header.
 
-### 9.72 (ROOT-CAUSED + FIXED 2026-07-14) The FEX startup-death flake was a trapped `dc cvau`: SCTLR_EL1's EL0-usability bits (UCI/UCT/DZE) were never set, and EC 0x18 has no handler
+### 9.72 (ROOT-CAUSED + FIXED 2026-07-13) The rustconv defect chain behind ole32's silent bugs: one regex hang bypassed the entire post-processor, and `abi_enforce` was throwing away the calling convention it had correctly derived
+
+The ole32 translation shipped ~130 COM vtbl methods with the **Rust ABI** instead of
+`__stdcall`, an export (`StgCreateDocfile`) with no `#[no_mangle]`, all 10 file-scope vtbl
+tables missing, and seven wrong constants. Those were read as "LLM sloppiness." They were
+not. They were **four tool bugs**, and they compound — this is the whole causal chain:
+
+**1. A catastrophic-backtracking regex hung `postprocess`, and the hang looked like the
+stitcher.** `drop_pseh_macro_externs` matched an extern block's body with an ambiguous
+`(…fn…;\n)+` whose `[^;{]+` return-type class *also matches newlines*. Fine on its own —
+the killer was that the stitcher's merged extern block legitimately contains `static`
+decls among the fns, so the `+` ran out at the first `static` and **could never reach the
+closing `}`**. The engine then re-partitioned the preceding 46 fn decls every possible
+way: a clean 2^n (18 decls = 13 ms, 26 = 5.1 s, 30 = 37 s, **46 = never returns**). Only
+big files have a long enough decl run, which is why it looked file-specific.
+`drop_gdiobj_macro_externs` (win32k) carried the identical latent bomb.
+- It printed nothing of its own, so the last message on screen was `Stitching N
+  functions…` — and *the stitcher got blamed for years*. `stitch_file` takes **10 ms**.
+- **The damage is the workaround.** The operator kills the wedged run and hand-assembles
+  the `.responses/*.rs` pieces — which **bypasses `postprocess()` entirely**, and with it
+  ABI enforcement *and* the already-paid-for translated preamble. Nearly every "LLM bug"
+  on `storage32.c`/`moniker.c` traces to this one regex.
+- Fix: a linear line-scan (`_filter_extern_block_decls`) — find the opener, brace-depth to
+  the closer, filter per line. 2.3 ms, and *strictly more capable* (it can process the
+  mixed fn/static blocks the old pattern could never match at all).
+- **Lesson: a hang is a correctness bug.** It doesn't just cost time; it trains an operator
+  into a workaround that silently disables your safety passes.
+
+**2. `abi_enforce` derived the right convention and then discarded it.** It correctly
+computed `('system', True)` for every `static … WINAPI` COM method — then
+`_canonical_block()` did `if is_static: return f"unsafe fn {name}…"`, dropping the
+`extern`. It **conflated linkage with calling convention**. In C, `static` controls
+*linkage*; `WINAPI` controls the *convention*, and `static HRESULT WINAPI Foo()` is both.
+Result: Rust-ABI fns in C vtbl slots — links clean on amd64/arm64, corrupts the i386 stack
+at the first call. 130 in ole32; **153** in oleaut32's remaining six files.
+
+**3. `_derive_convention` fell back to cdecl on a comment.** It scanned `)`→`{` for a
+definition skipping *whitespace only*. wine annotates the last parameter:
+```c
+    IEnumSTATSTG**  ppenum)    /* [out] */
+    {
+```
+It stopped on the `/`, concluded "not a definition", returned `None`, and the caller
+**silently fell back to cdecl** — mis-deriving 17 more genuine WINAPI methods. Note this
+survives the fix in (2) untouched: they'd come out `extern "C"`, still wrong on i386.
+
+**4. `CALLBACK`/`PASCAL` were missing from the convention keyword list** (`minwindef.h`:
+`#define CALLBACK __stdcall`). These mark exactly the fns C hands to the OS **as function
+pointers** — an `EnumFontFamiliesEx` callback, a DlgProc. user32/gdi32 call them *through
+the pointer with stdcall*, so a Rust-ABI body corrupts the i386 stack on a call **we never
+make ourselves**: no call site in our code to inspect, nothing to grep for.
+
+#### The three deterministic oracles that came out of this (use them; don't ask an LLM)
+- **`vtbl_gen.py`** — COM vtbl tables generated from the C initializer + the *bindgen*
+  struct's field order. The LLM dropped **all 10** of storage32's (a COM object with no
+  methods at all) because `translate` is function-granular and file-scope data falls to a
+  single preamble call that silently truncated. Arity mismatch **raises** rather than
+  zip a table into the wrong methods. Independently agreed **149/149 slots** with the
+  hand-written tables. *Do not let c2rust emit these either*: it hardcodes each slot as
+  `f as unsafe extern "C" fn(..)`, the amd64 spelling, which is simply wrong on i386.
+- **`table_audit.py`** — compares every file-scope C data table against the Rust,
+  element by element. It caught `fmtLongTime` in `varformat.c`, the one file c2rust
+  **cannot** anchor (upstream panic, `convert_type.rs:518`) and therefore the only file
+  with no other oracle. **Model C's implicit zero-fill**: `BYTE t[256]` with 103 written
+  elements is 256 bytes; Rust has no such rule and must spell all 256.
+- **`export_audit.py`** — every `.spec` export must exist as a `#[no_mangle]` fn with the
+  spec's convention. `make_user_dll_target` had `spec_file=None` for *every* user-mode DLL,
+  so the pipeline never knew which fns were exports — it neither told the model nor
+  enforced `#[no_mangle]`. That is how `_StgCreateDocfile@16` went missing from a DLL.
+
+#### The meta-lesson
+Every one of these produced code that **compiled, linked, and booted**. The smoke tests
+cannot see a COM DLL with a wrong calling convention on a path the boot doesn't take, or a
+date-format table with one wrong byte. When translating a *library* rather than a boot-path
+component, the boot is not the oracle — **the C is**. Build the differential checks
+(convention, exports, tables, vtbl slots) and run them in the pipeline, or you will ship
+silent wrongness and only find it when a user formats a date.
+
+**Corollary — audit the tool with the tool.** Every false positive `table_audit` produced
+against *shipped, working* code was a bug in the auditor, and each one taught something
+real: function-local statics collide by name (wine's `variant.c` defines a *different*
+`prio2vt` in `VarAdd` and `VarMul`); `#ifdef __REACTOS__` means half the file-scope C is
+dead and comparing against it reports 7 bogus diffs; a name can be legitimately defined at
+two Rust scopes. Calibrate a new checker against known-good code **first** — a checker that
+cries wolf is worse than no checker, because it trains you to ignore the one true finding.
+
+### 9.73 (ROOT-CAUSED + FIXED 2026-07-13) The stub you wrote to make the reference *link* IS an oracle — and it will grade your code against your own model. Six shipped msvcrt functions were wrong; the differential harness said MATCH for four waves.
+
+**Symptom.** None. That is the point. `classify` — a 20,000-case differential fuzzer comparing
+Rust msvcrt bodies against msvcrt's genuine C, grading bytes + return + errno + invalid-parameter
+handler — reported **MATCH** for `_atoi64`, `strtol`, `strtoul`, `_strtoi64`, `_strtoui64` and
+`_memicmp` across waves 6–9. All six were shipping the wrong behaviour on master.
+
+**What broke.** The harness compiles msvcrt's real `string.c` / `wcs.c` as reference TUs. Those
+TUs *call* `_isspace_l` / `_tolower_l` / `_toupper_l`, which live in `ctype.c` — which was **not**
+a reference TU. So nothing defined them, and `refimpl.c` (the harness's "externals" file) supplied
+three convenient one-liners so the thing would link:
+
+```c
+int __cdecl _tolower_l(int c, _locale_t l) { (void)l; return ref_ascii_lower(c); }
+```
+
+That is not scaffolding. **That is the oracle.** Every reference call to `_tolower_l` was answered
+by *our model of msvcrt*, and our model was an ASCII fold. The Rust under test also folded ASCII.
+The two agreed, forever, about something neither of them was doing correctly.
+
+**What msvcrt actually does.** `_tolower_l` is a locale-table lookup with a domain test:
+
+```c
+if((unsigned)c < 256) {                      /* FALSE for a NEGATIVE c */
+    if(locinfo->pctype[c] & _LEADBYTE) return c;
+    return locinfo->pclmap[c];
+}
+/* ... else: build a 1-2 byte string, and: */
+*_errno() = EILSEQ;                          /* <-- a SIDE EFFECT, on the ordinary path */
+switch(__crtLCMapStringA(...)) { ... }
+```
+
+and msvcrt's own callers hand it a **raw signed `char`**:
+
+```c
+while(_isspace_l((unsigned char)*nptr, locale)) nptr++;   /* CAST */
+...
+char cur = _tolower_l(*nptr, locale);                     /* NO CAST -- string.c:1651 */
+```
+
+So any byte ≥ 0x80 sign-extends negative, misses `(unsigned)c < 256`, lands in the NLS arm, and
+**sets `errno = EILSEQ`**. Every one of the six functions inherits that. The *values* were fine
+(the bad fold just ends the parse) — only `_memicmp`, which consumes the folded byte, was wrong in
+its return value too. The entire defect lived in an effect the oracle had been taught not to have.
+
+**The fix.** Make `ctype.c` a real reference TU (so the reference grades itself), delete the three
+stubs, and *transcribe* the parsers so they call the same functions at the same points — rather
+than bolting msvcrt's contract onto a foreign engine (`cnt_rust::radix::parse_i64_clamped`, which
+has no way to express a side effect). Result: 6 DIVERGE → 0, and the same infrastructure unblocked
+50 new flips (the whole locale-table ctype/case family).
+
+**The rules that generalize.**
+
+1. **Anything you define so the reference will link is part of the oracle.** Audit those definitions
+   as carefully as the code under test. A one-line stub is a claim about msvcrt's semantics, and an
+   un-reviewed claim is a lie you have arranged to have confirmed.
+2. **Data you feed to BOTH sides can never be caught by a differential test.** A mistyped byte in a
+   shared table makes both sides wrong the *same* way and still reports MATCH. So supply as little
+   as possible, and take what you must supply from the real source (`build.rs` now *parses*
+   `locale.c`'s `cloc_clmap`/`cloc_cumap` rather than transcribing them; ctype.c's `MSVCRT__ctype`
+   is linked, not modelled).
+3. **A side effect is not something you can bolt onto a foreign engine.** If the C's behaviour comes
+   from *calling a particular function*, the faithful port calls that function. This is the same
+   lesson the wave-5 float probe taught (`strtod` needs msvcrt's bignum, not a BSD parser) and the
+   same one behind "cnt-rust supplies the ALGORITHM; msvcrt-crt-rust supplies msvcrt's SEMANTICS."
+4. **Model the target's constants, not the host's.** The harness had silently inherited glibc's
+   `EILSEQ` (84) where msvcrt says **42**. `EINVAL`(22)/`ERANGE`(34) happen to coincide between the
+   two OSes, which is exactly why nobody noticed. A numeric coincidence between two operating
+   systems is not a model — pin them.
+
+**Detector.** There isn't a generic one, and that is worth saying plainly. What surfaced this was
+*promoting a stub to a real TU* — i.e. deliberately reducing the amount of msvcrt the harness was
+pretending to be. **Periodically ask of any differential harness: what am I still MODELLING, and
+what would it cost to link the real thing instead?** Every model is a place the oracle can agree
+with you about a shared mistake.
+
+### 9.74 (2026-07-13) The corollary: `offset_of!` into a struct the harness defines differently is an oracle that agrees with a subject reading the wrong bytes
+
+Wave 10's Rust reads `locinfo->pctype/pclmap/pcumap` and `thread_data->strtok_next` through
+`msvcrt-sys` — a bindgen snapshot of msvcrt's **real** layout (`pcumap` @ 336 on amd64/arm64, @ **208**
+on i386; `pctype` and `mb_cur_max` migrate to the *front* of the struct at `_MSVCR_VER >= 140`). The
+differential harness links that same Rust and points it at a `threadlocinfo` **defined in the harness's
+own refstub**, which was a convenient cut-down (6 fields, `lc_handle[16]`).
+
+Two different layouts, one set of offsets. The Rust would have read its tables from past the end of the
+object — and since *both* sides would then be fed the same nonsense, `classify` would have reported
+MATCH. It does not crash. It just makes every verdict worthless.
+
+Three guards now, and each was **negative-controlled** (perturb → it must fail):
+
+| guard | checked by | catches |
+|---|---|---|
+| `msvcrt-sys/src/layout_<arch>.rs` | rustc, every Rust build | bindgen regenerated with wrong flags |
+| `dll/win32/msvcrt/rust_layout_assert.c` | clang, with **msvcrt's real flags**, ×3 arches, every build | the C headers moved under the snapshot |
+| `ref_integrity`'s `locale_layout_agrees_with_msvcrt_sys` | the harness, every run | the ORACLE's struct ≠ the shipping Rust's |
+
+Two footguns found while building them, both worth knowing:
+
+* **`compile_commands.json`'s `command` is a shell-quoted string.** CMake serialises the empty value
+  of `-D_CRTIMP=` as `-D_CRTIMP=""`. A naive `.split()` hands clang a literal two-quote value, and
+  since `_ACRTIMP` chains to `_CRTIMP`, every CRT declaration becomes `"" int __cdecl strcmp(...)`.
+  **`shlex.split()`, never `.split()`.**
+* **bindgen records the Windows spelling of a fixed-width type.** msvcrt's `__msvcrt_ulong` is 32-bit
+  on *both* branches (`unsigned int` under `__LP64__`, `unsigned long` under LLP64 — corecrt.h goes out
+  of its way to say so), but bindgen emits `c_ulong`, which is **64-bit on the linux host** that builds
+  the harness. Pin such aliases to `u32`/`i32` in the generated bindings; the guardian above is what
+  caught it, on day one, in anger.
+
+### 9.75 (2026-07-14) Exercising a branch proves nothing if the branch cannot produce a DIFFERENT ANSWER — a differential harness's "non-default mode" that was a false green
+
+**Context.** msvcrt has a whole family of functions that branch on whether a real locale is set:
+
+```c
+int __cdecl _strnicmp_l(const char *s1, const char *s2, size_t count, _locale_t locale) {
+    if(!locinfo->lc_handle[LC_CTYPE]) {          /* path 1: the "C" locale */
+        do { if ((c1 = *s1++) >= 'A' && c1 <= 'Z') c1 -= 'A' - 'a'; ... } while(...);
+        return (unsigned char)c1 - (unsigned char)c2;
+    }
+    do { c1 = _tolower_l((unsigned char)*s1++, locale); ... } while(...);   /* path 2 */
+    return c1 - c2;                              /* ...and a DIFFERENT return convention */
+}
+```
+
+Our differential harness pinned the "C" locale, so **path 2 was never exercised** and a path-1-only
+Rust implementation was reported MATCH forever. It was, and they were (`_stricmp`, `_strnicmp`,
+`_wcsicmp`, `_wcsnicmp`, `_strlwr_s`, `_strupr_s` + wide twins — correct in the "C" locale, wrong the
+moment `setlocale` is called).
+
+**The trap.** The obvious fix is to plant a non-zero `lc_handle[LC_CTYPE]` and re-run the rows. That
+**does** make msvcrt take path 2 — and it still proves nothing, because path 2 folds through
+`_tolower_l`, which reads `locinfo->pclmap[]`, which was **still the C locale's map**: an ASCII fold.
+Both paths therefore computed the *same answer on every input*. A path-1-only body was
+indistinguishable from a correct one, and the new "mode" reported a confident green.
+
+We only found out because we ran the negative control: **sabotage the subject to always take path 1,
+and demand the new rows convict it.** They didn't move.
+
+**The rule.**
+
+> **Exercising a branch is not the same as testing it.** A branch is only tested when the two sides of
+> it can produce *different observable results* for some input you actually generate. Before trusting a
+> "new mode" in any harness, ask: *what input makes the mode's answer differ from the default mode's?*
+> If you cannot name one, the mode is decorative.
+
+The fix was to make the alternate locale's tables genuinely non-ASCII (Latin-1 case pairs,
+`0xC0–0xDE ↔ 0xE0–0xFE`), so path 1 leaves `0xE9` alone while path 2 maps it to `0xC9`. Then the
+negative control bit, and the *first honest run* immediately convicted `_wcsicmp` — which has its own
+fold loop rather than delegating to the shared core, so an earlier fix had missed it.
+
+**The corollary, which is §9.73 restated:** the alternate-mode tables must be **one copy, shared by
+both sides**. Data you hand to both the reference and the subject can never be caught differentially —
+a mistake makes both wrong the same way and classify still says MATCH. So supply as little as possible,
+and share what you must. (Same reasoning retired the `msvcrt_ref_*` namespace for `LCMapStringA/W`,
+`CompareStringA/W` and `GetStringTypeW`: kernel32 is the *environment*, never code under test.)
+
+**Generalises to:** any harness with a "mode" (endianness, alignment, locale, SMP-vs-UP, a feature
+flag). The mode is worthless until you have shown it can fail.
+
+### 9.76 (ROOT-CAUSED + FIXED 2026-07-14) Five instruments passed and the OS booted 3× slower: a cheap harness stub hid a real COST, and no *ratio* can ever catch that — count, don't measure
+
+**Symptom.** Wave 11 gave msvcrt's `_wcsicmp` its locale branch. Every instrument was green:
+
+| instrument | verdict | what it grades |
+|---|---|---|
+| `classify` (20k-case differential fuzz, 4 effects) | **139 MATCH** | values |
+| `oob_guard` | in bounds | access |
+| `perf` (2× bar vs the genuine C) | **0.91×, PASSING** | speed |
+| `ref_integrity` | oracle honest | the oracle |
+| `link` | resolves | symbols |
+
+and the gate went red: `test_tdi_selftest_roundtrip`, **deterministically, 3/3 retries**. Boot went
+from **39s to 128s**. The *smoke tests* — the North Star — caught what the entire differential
+harness could not.
+
+**Root cause.** The Rust folded each character through `_towlower_l(c, NULL)`, and a NULL locale
+makes that re-enter `get_locinfo()`. In the real msvcrt that is **not cheap**:
+
+```c
+thread_data_t *msvcrt_get_thread_data(void) {
+    DWORD err = GetLastError();                     /* Win32 call */
+    if (!(ptr = TlsGetValue( msvcrt_tls_index )))   /* Win32 call */
+    ...                                            /* SetLastError */
+```
+
+**Three Win32 calls per character**, in a function on the boot's hot path (registry key
+comparisons). The C never does this — it resolves the locale **once** and passes it down:
+
+```c
+INT CDECL _wcsicmp_l(const wchar_t *s1, const wchar_t *s2, _locale_t locale) {
+    if(!locale) locale = get_current_locale_noalloc(&tmp);   /* ONCE */
+    do { c1 = _towlower_l(*str1++, locale); ... }            /* ...then passed down */
+```
+
+**Why `perf` was blind — and always will be.** The harness stubs `get_locinfo()` as a static-address
+return. **Both** the reference and the subject pay that same trivial cost, so the *ratio* stays
+healthy while the real DLL burns three syscalls a character. This is §9.73's lesson in a third guise:
+there, a cheap stub (`refimpl`'s ASCII `_tolower_l`) hid a real **behaviour**; here a cheap stub hides
+a real **cost**. *Every stub is a claim about the environment, and a cheap stub claims the environment
+is cheap.*
+
+Tuning the stub to be "realistically slow" would be tuning a fake. So don't measure — **COUNT**.
+
+**The fix, and the new instrument.** `sdk/lib/rust/msvcrt-difftest/tests/hot_path.rs` (the sixth
+instrument) counts `get_locinfo()` calls and asserts:
+
+> **A function that walks `n` elements may consult the environment O(1) times, not O(n).**
+
+Deterministic, immune to machine noise, and exactly the invariant the C's own structure encodes. Run
+each function at n=8 and n=512 and demand the count doesn't grow.
+
+**It found two more instances on the FIRST run — both already landed on master:**
+
+| fn | n=8 | n=512 | |
+|---|---|---|---|
+| `_memicmp` | 16 | **1024** | two `get_locinfo()` *per byte* |
+| `strtol` | 9 | **513** | one *per digit* |
+
+(The C is per-character in those two as well, so this was faithfulness, not divergence — but
+`get_locinfo()` is idempotent, so hoisting is behaviourally identical and strictly better. msvcrt's own
+hot comparer hoists.)
+
+**Rules.**
+
+1. **A ratio cannot see a cost your harness stubbed out.** When the subject and the reference both call
+   the same cheap fake, the fake's real price is invisible. Ask of every stub: *what does this cost in
+   the real system?*
+2. **Count, don't measure, when the invariant is structural.** "O(1) environment lookups per call" is
+   an exact, deterministic property. Asserting it beats benchmarking it.
+3. **A perf gate only defends what it benches (§9.63, again).** The case-insensitive and case-mapping
+   families were not benched — they are now. Every new family gets benched *and* hot-path-counted when
+   it is flipped.
+4. **When the North Star disagrees with your instruments, the instruments are wrong.** The smoke test
+   is the source of truth for a reason. A green harness and a red boot means you are missing an
+   instrument — go build it.
+
+### 9.77 (2026-07-14) Two reading hazards that have now each cost a bug: a comment-stripping grep eats `*_errno() = ...`, and the host reference silently compiles the *i386* arm of every `#if defined(_WIN64)`
+
+Both surfaced flipping msvcrt's collation family. Both are about **reading the C wrong**, not
+writing the Rust wrong, and both were caught only by the differential harness.
+
+#### 1. Never read C through a comment-stripping grep
+
+To skim a function I used
+
+```
+sed -n '1478,1512p' string.c | grep -vE "^\s*\*|^/\*"
+```
+
+to drop the `*`-prefixed comment continuation lines. That pattern also drops **every statement
+that begins with a dereference**:
+
+```c
+        *_errno() = ERANGE;      /* starts with whitespace-then-star */
+        *p++ = *src++;
+```
+
+So the `_strxfrm_l` I read had **no errno in it at all**, and the flip I wrote had none either.
+`classify` convicted it (`ret=17` on both sides, `errno=ERANGE` only on msvcrt's).
+
+**This is the second time the same filter has eaten load-bearing C** — the first was `*p++ = *src++;`
+in `wcsncpy_s` (wave 6c), where it nearly produced a copy loop with its copy removed. The rule is
+absolute: **read the C unfiltered.** If it is long, page through it; do not filter it. A filter that
+removes comments is indistinguishable, to a regex, from one that removes pointer writes.
+
+#### 2. `_WIN64` — the host reference compiles the 32-bit arm
+
+The differential harness compiles msvcrt's real `.c` for the **host** (x86-64 Linux), where `_WIN64`
+is *not* defined. So every
+
+```c
+#if defined(_WIN64) || defined(_UCRT) || _MSVCR_VER >= 110
+    if ((unsigned char)*str1 > (unsigned char)*str2) return 1;   /* CLAMP  — amd64/arm64 */
+    ...
+#else
+    return (unsigned char)*str1 - (unsigned char)*str2;          /* RAW    — i386 */
+#endif
+```
+
+is graded on its **i386** arm — while `msvcrt-crt-rust`, compiled for the same host, selects its arm
+with `cfg!(target_pointer_width = "64")` and therefore ships the **amd64** one. *The oracle models
+i386 while the subject models amd64.*
+
+`strncmp` was already known and handled (two rows: the raw arm graded directly, the `_WIN64` arm
+graded against `clamp(ref)` — an exact model, since both C branches run the identical loop and then
+compare the same two bytes). But `_strncoll_l`'s "C"-locale path is literally
+
+```c
+return strncmp(str1, str2, count);
+```
+
+so it **inherits both contracts**, and the new flip walked straight into it: `cnt=1 msvcrt=47`.
+
+**Rule:** *grep every new flip — and everything it CALLS — for `#if defined(_WIN64)` before writing
+the row.* An arch-conditional contract propagates silently through delegation. classify's own header
+already said this; the cost of not doing it is one DIVERGE per inherited branch, and the harness will
+only catch it if the fuzz happens to produce a byte pair whose raw difference isn't ±1.
+
+### 9.78 (ROOT-CAUSED + FIXED 2026-07-14) A parse failure in the *scanner* deletes a function from the plan, and every downstream check will pass — ws2_32 shipped a translation with no `bind`, `connect` or `sendto`
+
+**Symptom.** ws2_32-rust translated (34 files, ~14 K LOC), compiled to zero errors on i386,
+amd64 and arm64, passed the whole lint gate, linked, and booted to desktop on all three arches.
+It was missing `bind`, `connect`, `sendto`, `WSAConnect`, `WSAJoinLeaf` and `WSASendTo`.
+
+**Root cause.** `#define CONST const` (winnt.h). tree-sitter-c does not know `CONST`, so a
+parameter spelled
+
+    IN CONST struct sockaddr *name
+
+reads as *two* type-identifiers, and the **enclosing function produces ZERO
+`function_definition` nodes** — the function does not appear as unparseable, it simply does not
+appear. All six lost functions take exactly that parameter. Fixed in `scanner.py::_blank_memmodel`
+by normalising `CONST` → `const` alongside the existing `FAR`/`NEAR` blanking (§ the FAR fix that
+lost `inet_addr` the same way, commit `12ca1606704`).
+
+**Why nothing caught it — this is the transferable part.** A dropped export is invisible to every
+check we run, and it is worth understanding *why each one* is blind:
+
+| check | why it passes anyway |
+|---|---|
+| rustc | nothing in the crate calls the missing fn |
+| the linker | a `.spec` export with no implementation is **not an error** — the DLL just ships a smaller export table |
+| `verify_ffi` | compares a module's decls to its own `.spec`; it checks *conventions*, and has no opinion about a name that is simply absent |
+| smoke boot | passes unless the boot path happens to call that exact API |
+| the translation's own cost/coverage output | reports what it *planned*, and the function was never in the plan |
+
+The plan is derived from the parse. **If the parse silently loses an item, every downstream signal
+is computed over the reduced set and agrees with itself.** A pipeline cannot audit its own input.
+
+**The oracle has to come from outside the pipeline** — here, the `.spec`. `tools/verify_lost_exports.py`
+(gate-wired) reports a symbol that is (1) in the `.spec`, (2) defined in a `.c` that is **commented
+out** in the cmake, and (3) absent from Rust. All three conditions are load-bearing; dropping any
+one turns it into a wolf-crier, and this checker cried wolf **four separate times** before it was
+trustworthy:
+
+* `#if 0` bodies — kernel32's `IsValidLocaleName` lives in `#if 0 // See kernel32_vista`. The C
+  never compiled it either.
+* **prototypes with no body** — ReactOS puts the name at column 0 for a declaration *and* a
+  definition, so `^sym(` cannot tell them apart. kernel32's four `Get/SetFirmwareEnvironmentVariableEx*`
+  are declared in `client/sysinfo.c` and defined nowhere.
+* `.spec` **forwarders** — `@ stdcall GetEnvironmentStringsA() GetEnvironmentStrings` is served.
+* **assembly** implementations — ntdll's `KiUserExceptionDispatcher` is in `dispatch/*/dispatch.S`.
+
+And a partial cohab legitimately has hundreds of still-C exports (shell32: 200). *Missing from Rust*
+and *lost* are different claims; only the second is a defect.
+
+**Rule.** After any cohab flip, audit the flipped DLL's `.spec` against the Rust — do not trust
+"it compiled and booted". And when a *scanner* is the thing that failed, assume the failure is
+silent: instrument the count (`Functions (N)`) against an independent list, because a parser that
+drops an item does not raise, it just returns a shorter list.
+
+**Sibling class, same lane (`tools/verify_c_signatures.py`, also gate-wired):** the model reaches
+for the *pointer* flavour of a scalar with real regularity — `INT`→`LPINT` (6 fns), `SIZE_T`→`PSIZE_T`
+(3), `HANDLE`→`LPHANDLE` (2 exported), `DWORD`→`DWORD_PTR` (`WPUModifyIFSHandle`, installed in the
+provider upcall table). On 64-bit every one of these is the **same width**, so it links, runs and
+returns the right answer — and breaks on i386. rustc cannot see it (the C prototype is not in the
+Rust program) and the `.spec` records only the convention, so again the oracle must be the C source
+itself. Compare **pointer depth**, not pointer-vs-scalar: a mutation test proved the first version
+of that checker structurally blind to `HANDLE`-vs-`LPHANDLE` — the bug that motivated it — because
+*both* are pointers.
+
+
+### 9.79 (2026-07-14) Porting msvcrt's bignum float parser: a verbatim upstream bug that is provably INERT, a signed-char/WEOF trap that is load-bearing, an i386 x87 float-ABI I first read BACKWARDS, and a harness that could not see errno being *cleared*
+
+**Context.** Wave 13 of the msvcrt-from-pieces lane ported msvcrt's own base-10 **bignum** float
+parser (`dll/win32/msvcrt/bnum.h` + `string.c`'s `fpnum_parse`/`fpnum_double`/`fpnum_ldouble`) to
+Rust — the first module in the lane that is a genuine *translation*, not an assembly. Wave 5 had
+cancelled the "flip `strtod` from cnt-rust" plan after a probe showed cnt-rust's naive DJ-Delorie
+accumulator disagreeing with msvcrt by **14 ULPs**; the honest path was always to port msvcrt's
+machinery. The oracle already existed — `string.c`/`wcs.c` compile as reference TUs in
+`msvcrt-difftest`, so every parsed `double` is graded on its exact **64-bit pattern**. It landed
+**`strtod`/`_strtod_l`/`atof`/`_atof_l`/`_atoflt_l`/`_atodbl(_l)`/`wcstod`/`_wcstod_l`/`_wtof(_l)`/
+`_atoldbl(_l)`/`__STRINGTOLD(_L)` — 15 functions on all three arches**, all bit-exact. Four durable
+lessons, three of them found by *trying to break my own green*.
+
+**1. A verbatim upstream bug can be provably inert — instrument reachability, don't assume.**
+`fpnum_parse_bnum`'s round-decision has a real Wine bug: a `for(i=e-5; i>=b; i--)` sticky-scan whose
+body reads `data[b]` (the lowest limb) every iteration instead of `data[i]`. I transcribed it
+verbatim (the oracle is msvcrt, not IEEE) and then wrote a **negative control** — "fix" `b`→`i` and
+demand a DIVERGE. *The control did not bite.* That is the exact signature of an unverified
+transcription, so I did not shrug it off. I added an **exact-halfway-tie generator** (`gen_tie`:
+build `(2m+1)·2^k` as a finite decimal with schoolbook arithmetic — random digits are NEVER ties, so
+the entire `FP_ROUND_EVEN` arm was dead in the corpus) — still no bite. Then I *instrumented the
+engine's reachability* and got the actual answer: the discriminating state is **structurally
+unreachable**. `FP_ROUND_EVEN` requires a `500000000` (== `LIMB_MAX/2`) limb at position `e-4`; that
+value is produced only by `bnum_rshift(1)` on an odd limb, whose remainder lands in a freshly
+prepended *bottom* limb — so `EVEN ⟹ that limb is at b ⟹ b==e-4 ⟹ the scan range b..=e-5 is empty`.
+Whenever the scan body *does* run, `round` is `ZERO` and the strip-loop guarantees `data[b]≠0`
+(measured: **0 violations in 43,712 parses**), so buggy `data[b]` and correct `data[i]` both compute
+`FP_ROUND_DOWN`. Same bytes, always. **The lesson isn't "reproduce upstream bugs" — it's that when a
+negative control fails to bite, you have learned nothing until you find out WHY: either the corpus
+can't reach the state, or the code is inert. Instrumentation tells you which; a comment guessing "can't
+happen" does not.** (The tie-generator stays in the corpus as a live tripwire in case a future bignum
+change ever creates the discriminating state.)
+
+**2. The signed-char → WEOF trap is load-bearing and IS caught.** `strtod_str_get` does
+`return *(*p)++;` on a **signed** `char` widened to `wchar_t`. `char` is signed on all three targets
+(now asserted in `rust_layout_assert.c`), so byte `0xFF` sign-extends to `0xFFFF` — which *is* `WEOF`.
+The parser sees end-of-input at a byte it has **already stepped past**, so the trailing-`unget` does
+not put it back and the endptr lands one byte too far. Transcribed as `*p as i8 as i16 as u16`;
+negative control (drop the sign extension) correctly moved `strtod` and `__STRINGTOLD_L` to DIVERGE —
+and *only* the endptr-checking rows, since the value is unaffected. The wide side has no such trap
+(`wchar_t` is unsigned), which is a genuine narrow/wide contract difference the harness grades.
+
+**3. The harness could not see errno being *cleared* — the setup was part of the oracle (§9.73 again).**
+`strtod_helper` clears errno on entry (`#if _MSVCR_VER==0: *_errno()=0`); its wide twin `_wcstod_l`,
+written separately in `wcs.c`, does **not**. That is an observable CRT difference — a caller that sets
+`errno=0`, calls one, and tests ERANGE gets different answers. The harness could not see it: `Effects`
+**zeroed errno before every call**, so a redundant "clear errno" write changed nothing observable.
+Sabotaging `_wcstod_l` to clear errno moved **zero rows**. Fix: seed errno with a **non-zero sentinel**
+(`0x5A5A`) before each graded call instead of 0 — costs nothing (both sides get the same seed; a
+function that leaves errno alone still matches) and turns "did you touch errno at all?" into an
+observable. With the sentinel, the sabotage correctly reddens the whole wide family while `strtod`
+(which *should* clear) stays green. **Zeroing a side channel before a differential call is a claim that
+nobody clears it — and that claim was false.** This is the third variation in the lane of the same
+root: a harness convenience (a stub, a cheap `get_locinfo`, a pre-zeroed errno) silently encodes an
+assumption about the environment, and the assumption is itself untested until a negative control
+attacks it.
+
+**4. i386 (32-bit x86) works too — via x87 `ST(0)` — and my first read of the ABI wall was BACKWARDS.**
+i386 msvcrt is built `-march=pentium` (pre-SSE — a ReactOS old-hardware-compat choice) and the whole
+i686 user-mode target carries `-C target-feature=-sse,-sse2` (`.cargo/config.toml`). rustc *does* reject
+some `f64`-across-a-function-boundary code on that no-SSE target with "SIMD vector type `f64` … requires
+the `sse` target feature" — and I first read that as "`extern "C" fn -> f64` is impossible on i386" and
+gated the whole family `#[cfg(not(target_arch = "x86"))]`. **That was exactly wrong, and the reviewer
+caught it by pointing at prior art:** cnt-rust had already solved this, painstakingly, and its comments
+state the rule precisely (`cabi/strtod.rs`, `core_rs/floatcvt.rs::fl`):
+
+> the C ABI returns `f64` in the x87 `ST(0)` register — no SSE — so an **`extern "C"` `-> f64` compiles
+> on no-SSE i386**. What actually hard-errors is a **Rust-ABI `-> f64`** (that one wants `xmm0`) and the
+> SSE-pulling `f64`/`f32` *std methods* (`is_infinite`, `is_finite`, `abs`), whose operand crosses a
+> Rust-ABI boundary by value.
+
+So the fix is not to gate i386 out — it is three small, ABI-portable changes: (a) mark the one internal
+`f64`-returning helper (`strtod_helper`) `extern "C"` so it returns via `ST(0)`; (b) replace the two
+`is_infinite()` calls with bit tests that read the operand's *memory* as an integer (a plain load, no
+float register); (c) replace `f64::from_bits` with a `store_bits` that writes the `u64` pattern straight
+into the destination's storage. None of these is a hack: `extern "C" -> f64` and integer bit-ops are all
+correct *with* SSE too, so if vibeos ever drops the pre-SSE baseline (it targets Vista-era+ hardware,
+where SSE2 is universal) not one line here needs reverting. The family now flips on **all three arches**.
+
+**The meta-lesson — and it is the important one:** a compiler error that names a feature (`requires the
+`sse` target feature`) is describing *one* codegen path, not a universal impossibility. Before you gate a
+whole family out "because the toolchain can't," check whether a sibling crate in the same tree already
+ships the thing — the answer here was one `grep` away in cnt-rust, and the reviewer's "didn't we already
+write softfloat painstakingly?" was worth more than my confident ABI paragraph. "Fail loud, don't
+silently degrade" is right; but *gating a family out is itself a silent degrade dressed up as caution* if
+the block was never real.
+
+**Reusable takeaways.**
+- When a **negative control does not bite**, you have found a hole in the *corpus or the instrument*,
+  not a clean transcription. Instrument reachability to learn which; only then decide if the code is
+  inert. (An inert upstream bug is a fine thing to ship verbatim — but *prove* the inertness.)
+- A **coverage assertion must know the function's contract.** The float family splits on *how* it
+  reports range errors — errno (`strtod`) vs an out-of-band return code (`_atoflt_l`). A blanket
+  "require ERANGE" would have failed the return-code functions for behaving correctly; `check_fp`'s
+  `require` list is therefore per-row.
+- **Grep every new flip — and everything it CALLS — for arch-conditional (`_WIN64`) contracts and for
+  side-channel writes (`errno`, the invalid-parameter handler) BEFORE trusting the harness**, because
+  the harness only catches what its setup lets it observe.
+- **A feature-named compiler error is a codegen constraint, not a law of nature.** `extern "C" -> f64`
+  through x87 is the counter-example. Check for in-tree prior art before declaring a target unsupported.
+
+### 9.80 (2026-07-14) An oracle that resolves a type wrongly reports *its own ignorance* as a defect — and the ambiguity check cannot save you when the parser is blind to the true declaration
+
+**Symptom.** `verify_c_signatures` (§9.78's sibling) was landed with 14 baselined findings and a
+note that `lsasrv LsapRegCreateKey` "looks genuinely real". On triage, **all 14 were the checker's
+own bugs, and the one real defect in the tree was one it could not see.**
+
+**Root causes (four, each a different flavour of the same mistake — a guess with no evidence):**
+1. **`.idl` outvoted `.h`.** The harvest read `sdk/include/psdk/*.idl` as C. `cordebug.idl` says
+   `typedef SIZE_T LPSTARTUPINFOW;` — an *RPC wire placeholder*, not the C type — so the correct
+   advapi32 translation was reported as a bug. **An IDL typedef states a marshalling
+   representation; the C compiler that built the .c never saw the .idl.**
+2. **The true declaration was invisible, so the false one looked unanimous.** The real
+   `} STARTUPINFOW, *LPSTARTUPINFOW;` is a *braced* typedef, excluded by the regex. The AMBIGUOUS
+   machinery (which exists exactly to refuse guessing) fires only on *conflicting* declarations —
+   **a parser blind to the true source sees no conflict and reports a confident wrong answer.**
+   *A checker that can only see one source cannot tell that it is the wrong one.*
+3. **A naming convention applied blind.** `^(?:LP|P)[A-Z]` read **`POINT` as a pointer to `OINT`** —
+   and likewise PROCESS_INFORMATION, PALETTEENTRY, PIXELFORMATDESCRIPTOR, POLYTEXTW. Only trust the
+   P/LP convention when the *remainder names a type you actually harvested*.
+4. **Multi-word base types.** `typedef _W64 unsigned long ULONG_PTR` was parsed as base=`_W64`,
+   harvesting **`unsigned`** as a typedef aliased to `_W64` — poisoning the whole integer tower
+   (SIZE_T→ULONG_PTR→unsigned→_W64→unresolvable). Also `typedef void* PVOID` (star glued to the
+   base) vs `typedef void *PVOID`: **C has no star on a base type; every star binds to a declarator.**
+
+**The false-GREEN half, which is worse.** An unresolvable name silently returned depth 0. An unknown
+C type and an unknown Rust type then both land on 0, compare **equal**, and the pair is reported as
+*verified* having been checked not at all. Fixed by raising `Unknown` and counting it: unresolvable
+is a **reported blind spot**, never a verdict. (`ole32` skips 308 types — now visible, previously
+laundered into a green.)
+
+**What the fixed checker found immediately:** `ws2_32 WPUCompleteOverlappedRequest(.., DWORD dwError,
+DWORD cbTransferred, ..)` translated with **`DWORD_PTR`** — contradicted by the C, by `ws2spi.h`, and
+by the `.spec` (`long`). 4 bytes vs 8 on amd64, on an exported SPI entry point, in the crate that had
+just been landed "0 findings".
+
+**Depth is not enough — width matters too.** `DWORD_PTR` is *not a pointer*; it is an integer that is
+4 bytes on i386 and 8 on amd64. A depth comparison is structurally blind to `DWORD`→`DWORD_PTR`,
+which the tool's own docstring **advertised catching**. Width cannot be compared numerically (the
+headers carry both `#ifdef` branches and we do not preprocess) but it does not need to be: what makes
+it a bug is that one side is **arch-variable** and the other **fixed**, which is decidable from the
+name (`_PTR_SIZED`).
+
+**Rule / recipe.** An oracle needs an oracle. **Mutation-test every checker in both directions** —
+a "must catch" table of the bugs it exists for (catches false NEGATIVES / a checker gone blind) and a
+"must not fire" table of correct code (catches false POSITIVES). Only the first table's absence lets a
+tool *look* healthy while detecting nothing. Both live in `tools/test_verify_c_signatures.py`, wired
+into `vibeos-cli check-tooling`. And **always print coverage next to findings**: "0 findings" from an
+oracle that skipped everything is otherwise indistinguishable from one that checked everything.
+
+**Triage, don't bless.** The 9 lines left in `tools/lint-baseline/verify_c_signatures.txt` were each
+read against their C; the verdicts are in the tool's docstring. Two of them are **the C being wrong**:
+`LsapRegCreateKey`/`LsapRegOpenKey` declare `OUT HANDLE KeyHandle` while every caller passes `&handle`
+and `ZwCreateKey` takes `PHANDLE` — the C only compiles because `void*` implicitly converts to
+`void**`. **Do not "fix" the Rust to match under-typed C.**
+
+### 9.81 (2026-07-14, BOTH FIXED) The two staleness oracles: an mtime rule that false-REDs on a codegen-neutral edit, and a `ninja -n` oracle that is blind on every arch
+
+Both live in `tests/qemu/cli/provenance.py` and both guard the same thing — "did the staged
+binary come from the current sources?" — the class that false-greened arm64 six times
+(fastfat→ramdisk→pl011→gdi32→user32→advapi32, §9.6c.1). Found while gating a one-word ws2_32
+signature fix; **neither was found by the gate reporting a bug, both were found by the gate
+reporting the WRONG THING and being chased down.**
+
+#### (a) `cohab_staleness_reasons` false-REDs on a no-op-codegen edit — real, narrow, still there
+
+**Symptom:** `artifact-check(boot media missing or stale)` → `ws2_32.dll: stale — ws2_32-rust
+has .rs newer than the built binary (cohab flip not rebuilt; ...)`, on every arm64 build, while
+the build was in fact perfectly up to date.
+
+**Mechanism:** the rule is `artifact.mtime >= newest .rs mtime` — a *proxy*. The ws2_32 fix
+(`WPUCompleteOverlappedRequest`: `DWORD_PTR`→`DWORD` on an unimplemented stub whose params are
+unused) is **codegen-neutral on arm64**: cargo rebuilt, emitted a **byte-identical** `.a`,
+cmake's `copy_if_different` correctly did NOT touch the staged copy, so nothing relinked (there
+was nothing to relink) and `ws2_32.dll` stayed older than the `.rs` **permanently** — until an
+unrelated ws2_32-rust change forced a relink. Any semantically-null-but-textual edit does this.
+
+**A false RED is not the safe direction.** It is the mirror of the false green the check exists
+to catch, and it teaches people to `touch` binaries or ignore artifact-check — which is how the
+false greens got in.
+
+**FIXED** by splitting the chain at the copy, which is where the mtime semantics change:
+```
+.rs --cargo--> <t>/release/lib<c>.a --copy_if_different--> lib<c>.a --link--> artifact
+               [A: touched on EVERY cargo run]              [B: touched only on CHANGE]
+```
+  * **A.** cargo's own output >= newest `.rs`  => the crate really was rebuilt (catches the
+    original never-built-for-this-arch bug: gdi32/user32/advapi32…).
+  * **B.** artifact >= the COPIED staticlib   => the link consumed the current `.a` (catches
+    the other half: crate rebuilt+changed, but the .dll wasn't in the staged target set).
+Both compare files whose mtime moves exactly when it should, so an identical rebuild is silent
+while a real one is still caught. Crates with NO staticlib in their chain are cargo-*linked*
+modules (ntoskrnl-cargo/win32k produce the binary directly) — "staticlib absent" means
+"different build shape", not "never built"; reading it as the latter reported ntoskrnl.exe and
+win32k.sys as never-compiled on a green tree. They keep the old rule. Pinned by 5 tests in
+`test_cli_units.py` (`test_cohab_*`), including the codegen-neutral case as an explicit
+must-NOT-fire.
+
+**Blind alley — do NOT "fix" it with `ninja -n`.** That swaps a false RED for a false GREEN:
+
+#### (b) `_ninja_has_work` returned False even when a rebuild WAS pending — on ALL arches, so **editing any C file and running smoke booted the stale ISO and called it a pass**. FIXED.
+
+**Verified:** with a genuine pending rebuild (proved by running real `ninja`, which compiled
+ws2_32-rust and relinked), `_ninja_has_work` returned **False** for `dll/win32/ws2_32/ws2_32.dll`
+AND for `ntoskrnl` (arm64) AND for **`livecd`** (amd64 — i.e. the x86 tier-1 target).
+
+**Mechanism (structural, not a parsing bug):**
+```
+$ ninja -n dll/win32/ws2_32/ws2_32.dll
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...          <- and NOTHING else, ever
+```
+CMake's `CONFIGURE_DEPENDS` globs install a glob-verification edge that is dirty **by design on
+every build** (that is how re-globbing works). Under `-n` no command executes, so ninja must
+assume that edge changes the cmake stamp → the regen edge is dirty → and ninja **stops planning
+there**, because regenerating `build.ninja` invalidates the rest of the graph. It never
+evaluates the targets you asked about. `_ninja_has_work` filters `Re-running CMake` /
+`Re-checking globbed directories` out as "not real work" and returns False = clean.
+
+Running `cmake .` or `ninja build.ninja` for real **first does not help** — the glob edge is
+always-dirty by construction, so the next `-n` stops in exactly the same place. The docstring's
+premise ("cmake re-runs ... so the dirty set is evaluated against the updated graph") is simply
+not what `-n` does. **`ninja -n` cannot be a staleness oracle in a CONFIGURE_DEPENDS project.**
+
+**Consequence — this is the important part, and it is much worse than "a dead net".** Look at
+where it sat in `check_staleness`. Tier 2 only runs when the git fingerprint moved, and it then
+decides *whether the change was build-relevant*. `rust_src_hash` is scoped to `sdk/lib/rust`.
+So the `ninja -n` call was **the only thing covering every non-Rust build input** — C, asm,
+cmake, `.spec`, `.rc`, mkramdisk. With it blind, the chain ran:
+
+    edit a tracked, compiled .c  ->  git fingerprint moved  ->  tier 2
+      rust_src_hash unchanged (it is C)      -> no reason
+      _ninja_has_work                        -> False (blind)
+      boot media sha unchanged (not rebuilt) -> no reason
+    -> no reasons at all -> "clean-diff (non-build change)" -> FRESH -> smoke boots the STALE iso
+
+Measured on the real repo, not reasoned about: editing `dll/3rdparty/dxtn/txc_compress_dxtn.c`
+gave `fresh=True, reasons=['clean-diff (non-build change)']`. A C source change was classified
+exactly like a doc edit. The North Star's "smoke refuses to boot stale media" was defeated for
+**every C-side change in the tree**, and had been for as long as the oracle existed.
+
+**FIXED** with `build_src_hash()` — a git content fingerprint of everything that can change the
+boot media, stamped at build time and compared in tier 2. Content is the only thing that can
+answer this: an mtime cannot tell "not rebuilt" from "rebuilt to identical bytes" (that is (a)),
+and `-n` cannot see past the regen edge. Two design points worth keeping:
+  * **It is an EXCLUDE-list (`docs/`, `*.md`, `.github`, `.claude`), never an include-list.**
+    An unknown path must land on the build-relevant side: over-including costs a no-op rebuild,
+    under-including boots stale media and reports a pass. `tests/` and `tools/` are deliberately
+    build-relevant — `archcfg.py` picks the arm64 staged set, `qemu/mkramdisk.sh` assembles the
+    ramdisk, and `tools/libschily/*.c` is compiled.
+  * **An absent stamp field is LOUD, not clean.** `build_src_hash` defaults to `""` so old
+    stamps still load; `""` reports "stamp predates build-source fingerprinting — run `build`
+    to re-stamp" rather than comparing equal to nothing and reading as fresh. A defaulted field
+    that silently means "verified" is the same shape as everything else in §9.80/§9.81.
+
+`_ninja_has_work` was **deleted**, not left unused, with a tombstone comment: a plausible helper
+named "has work" is exactly what the next person reaches for.
+
+**The fixture was lying too.** `staleness_repo` had no `.gitignore`, so its own stamp file (in
+`build-i386/`) showed up as untracked and moved every fingerprint — which meant those tests never
+matched tier 1 and always fell through to tier 2, where the blind oracle waved them through.
+`test_staleness_fresh_cold` was **passing because of the bug**. A fixture that does not model the
+real repo turns its tests into a green that means nothing.
+
+**Rule.** When a gate check fires, find out whether it is *right* before you satisfy it — and
+when you replace an oracle, test the replacement on a KNOWN-BAD input, not just a known-good
+one. The `ninja -n` "fix" passed the benign case perfectly and silently failed to catch a real
+stale cohab injected on purpose; only the deliberate known-bad probe exposed it. Same lesson as
+§9.80's mutation tables, one layer down.
+
+### 9.82 (2026-07-14) The winlogon 0x4C "init-ordering race": the owed fix was already in the tree — the hypothesis was wrong, and the evidence never fit it
+
+**The owed item** (MEMORY.md + §9.36): *"winlogon 0x4C init-ordering race (all arches, ~3/20).
+kernel32's DllMain `_snwprintf("%wZ")` RACING basesrv's population of BASE_STATIC_SERVER_DATA
+(csrss accepts the connect before the CSR shared section is fully populated). Real fix owed:
+publish-last ordering in csrsrv/basesrv (populate the shared section BEFORE accepting connects)."*
+
+**That fix is already implemented, and was the whole time.** Read the live Rust (the C is inert —
+both `csrsrv` and `basesrv` are full cohab flips into `smss-csrss-rust`):
+
+* `csrsrv/init.rs` `CsrServerInitialization` — **step 5** `CsrParseServerCommandLine` (which calls
+  `CsrLoadServerDll` → basesrv's `ServerDllInitialization`) runs at line 1095; **step 7**
+  `CsrApiPortInitialize` — which *creates the API port* — runs at line 1107. No client can connect
+  before the port name exists.
+* `csrsrv/server.rs` `CsrLoadServerDll` — calls `init_proc(ServerDll)` **synchronously** and only
+  then, `if Status >= 0`, publishes `CsrSrvSharedStaticServerData[ServerId] = ServerDll->SharedSection`.
+* `basesrv/init.rs` `BaseInitializeStaticServerData` — its **last statement** is
+  `(*LoadedServerDll).SharedSection = BaseStaticServerData` (the C's `/* Finally, set the pointer */`).
+
+So it is publish-last at three nested levels. Implementing the "owed fix" would have been a no-op
+edit to already-correct code — and the effort would have been spent looking for a race that the
+control flow forbids.
+
+**The evidence never fit a race either.** The live tripwire's own comment records the observation:
+`WindowsDirectory.Buffer` reads as a **kernel VA `0xFFFF8000050D4CB0`, *identical across hits***.
+A race produces *varying* garbage; an identical value across boots is a deterministic write or a
+deterministic misread. (§9.36's other datum, `Buffer == 0x73`, is string DATA read as a pointer —
+that is the offset-drift smell, §9.41's class, not a race either.) The word "race" was doing the
+work that evidence should have been doing.
+
+**Leads checked and closed while here** (all were plausible, none is the bug):
+* **Struct layout drift** for `_BASE_STATIC_SERVER_DATA` between writer and reader — both
+  `ntdll-sys` and `winsrv-sys` declare it identically, and both sides use `ntdll-sys` anyway.
+* **`CSR_SERVER_DLL.SharedSection` at the wrong offset** — the field really is `#ifdef CSR_DBG`
+  dependent (`csrsrv.h` C_ASSERTs 0x3C with, 0x38 without, on 32-bit), and the Rust struct carries
+  `NameTable` unconditionally. But `csrsrv.h:18` does `#if DBG → #define CSR_DBG` and the build
+  passes `-DDBG=1`, so CSR_DBG is ON and the Rust layout is right. (Two comments in `basesrv/init.rs`
+  quote 0x3C and 0x38 respectively — they are describing the two C_ASSERT branches, not disagreeing.)
+* **Shared-section view delta** — `CsrSrvAttachSharedSection` maps into every client at the same
+  fixed base with `SEC_NO_CHANGE`, so server-side pointers are valid client-side; there is no delta
+  to get wrong.
+
+**Status: NOT REPRODUCING — downgrade from "open bug with a fix owed" to "re-open on evidence".**
+The mitigation prints `[kernel32] BASE_STATIC_SERVER_DATA CORRUPT: …` / `… snapshot CORRUPT (raced
+basesrv?): …` on every hit and reroutes to fallback strings. Measured 2026-07-14:
+  * **20/20 arm64 boots green, ZERO tripwire hits** (`smoke --arch arm64 --repeat 20`, the
+    sanctioned parallel-TCG repro path). Against the recorded rates that is
+    P(0 hits | 1-in-10) ≈ 0.12 and P(0 hits | 3-in-20) ≈ 0.04 — so the face is either gone or far
+    rarer than recorded.
+  * **Zero hits across every retained log on the box** (1254 run dirs).
+  * Zero `0x4C` / `0xC000021A` in the 20-boot run.
+
+**The negative is only worth anything because the detector was proven visible first.** Two checks,
+both necessary: the same arm64 serial logs carry user-mode `DbgPrint` output (`[EXPLORER] _tWinMain
+entered`, `[WIN32K] shell ready`), so a user-mode print from kernel32 *would* reach the log; and the
+marker appears **exactly 20 times** in the aggregate `full.log`, proving all 20 boots' serial was
+captured and not just the first (per-boot dirs hold only screenshots — the serial is aggregated).
+Without that second check, "zero hits in 20 boots" would really have been "zero hits in 1
+observable boot". Confirm a detector can be *seen* before reading its silence as absence — the
+§9.80/§9.81 lesson, one more time.
+
+**Do NOT implement the owed "publish-last" fix.** Re-open only on a fresh tripwire print, and treat
+the printed fields (not the word "race") as the starting evidence.
+
+**Rule.** An owed item that names its own fix ("just do X") is a hypothesis wearing a fix's clothes.
+Re-read the live code before implementing X: here X was already done, three times over, and had been
+since before the item was written. And when a bug note says "race", check whether anything in the
+evidence is actually *non-deterministic* — "identical across hits" is the opposite of a race.
+
+
+### 9.83 (2026-07-14) The printf probe: a third-party C-vs-C differential that found a KERNEL HANG before writing any new Rust — and two ways a compiled-but-never-called oracle lies
+
+**Context.** Wave 14 of the msvcrt lane needed an assemble-vs-port decision for the printf family:
+is cnt-rust's already-Rust `streamout` engine close enough to msvcrt's `pf_printf_a` to sit behind
+the msvcrt exports? Direct grading is impossible (linking cnt-rust's `cabi` into msvcrt-difftest
+collides 200+ `#[no_mangle]`s with the subject), so the probe compared **two compiled C references
+by transitivity**: ReactOS `printf/streamout.c` compiled under cnt-difftest's exact proven recipe
+(flat va_list + bit-identical `floor/log10/pow` model — the configuration cnt-difftest proved
+byte-equal to the Rust engine) vs the genuine msvcrt engine already compiled inert inside
+msvcrt-difftest's wcs.c reference TU. `sdk/lib/rust/msvcrt-difftest/tests/printf_probe.rs`.
+
+**Finding 0 — the probe found a real kernel hang before comparing anything.** The first run hung in
+`fl::exp10_floor`'s C twin: for ±Inf the exponent-correction loop `while (pow10(e+1) <= f) e++;`
+never terminates (`pow10(309)` saturates to +Inf; `Inf <= Inf` holds). The Rust engine shipping in
+the KERNEL (`cabi/streamout.rs` → `fl::exp10_floor`, amd64/arm64 float path) had the identical
+loop, unguarded — **any `%f/%e/%g` of an infinity through the kernel's Rust streamout was a silent
+infinite loop**. The genuine C only "worked" via UB (`(int)floor(log10(inf))` → garbage exponent →
+digits later overwritten by the `#INF` special path). Fix: `exp10_floor` returns **308**
+(`DBL_MAX_10_EXP`, and exactly the value NaN already fell out with) for `biased == 0x7ff`, same
+guard in every `cnt_log10` C-twin copy (3× cnt-difftest, 1× msvcrt-difftest), plus ±Inf/NaN rows in
+cnt-difftest's `diff_streamout_float` as the permanent tripwire. Lesson: **a differential probe's
+first product is often a crash/hang in the harness path itself — chase it before dismissing it as a
+harness artifact.** This one was the shipped engine's bug reflected in its bit-identical twin.
+
+**Finding 1 — the oracle answered with the wrong LIBC and only style told us.** The probe first
+called `ref__snprintf`, whose body is `vsnprintf(...)` — a symbol wcs.c never *defines* under
+`_MSVCR_VER=0`, so inside the harness it bound to **glibc**, and the whole "msvcrt" column was the
+host libc. No crash, plausible outputs. The tells were stylistic fingerprints: `%p` → `(nil)`,
+2-digit exponents (`e+00`), `%I64d` parsed as width-64, `%zd`/`%jd` accepted. Fix + permanent
+guard: an **oracle-honesty canary** — `%I64d` must print `-5` (glibc right-pads to width 64);
+HARD-FAIL the probe before any verdict if it doesn't. Generalizes §9.66 (ref-integrity): *a
+reference that links is not yet a reference; assert a behavior only the intended engine has.*
+
+**Finding 2 — Wine/ReactOS printf code is structurally UNCALLABLE when compiled under the SysV
+va_list.** Second attempt called `ref__vsnprintf` via a varargs trampoline → SIGSEGV inside
+`arg_clbk_valist`. The engine forwards `&valist` as `va_list*` — coherent only where `va_list` is a
+plain pointer (all Windows targets). Under SysV's `__va_list_tag[1]`, a `va_list` *parameter*
+decays to `tag*`, so `&valist` is `tag**`, and the callee's `va_arg(*valist, T)` reinterprets the
+pointer variable itself as the register-save struct → wild read. (Real Wine avoids this on Linux
+with `__ms_va_list`; this tree never needed to — it only builds for Windows targets.) So the
+harness's ref wcs.c printf entries were *compiled* fine and *inert* fine, but no in-process caller
+could ever legally drive them. Fix: compile wcs.c a SECOND time in a `pfflat_*` namespace under a
+**flat `char*` <stdarg.h>** (msvcrt-difftest/refstub_printf/) — which is precisely the Windows-x64
+va_list model, so the probe's drive is also the target-faithful one, and both engines consume the
+SAME hand-packed 8-byte-slot buffer. Mechanics that made it work: prelude2 = prelude with only the
+wcs.c-owned symbols retargeted `ref_→pfflat_` (string.c/ctype cross-calls stay `ref_*`); a separate
+`cc` `out_dir` (cc hashes the SOURCE path for object names — two compilations of one file in one
+OUT_DIR silently overwrite and double-link); the flat stdarg.h must also define `__gnuc_va_list`
+(glibc headers consume gcc's <stdarg.h> contract).
+
+**The verdict the probe produced (111 MATCH / 27 DIVERGE, decision-grade):**
+- Integer / string / char / pointer formatting: **streamout ≡ msvcrt** (75/78 rows; deltas are
+  `%#x` of 0 → msvcrt `0` vs streamout `0x0`, and `%jd`/`%td` unknown to streamout).
+- Float formatting: **structural fidelity gap, msvcrt wins**: exact binary expansion at high
+  precision (`%.30f` → `0.100000000000000005551115123126` vs zero-padded), denormals
+  (`4.940656e-324` vs `0.000000e-308` garbage), `-0.0` sign kept, `%g` trailing-zero stripping +
+  correct e/f-form threshold, `1.#INF00`-style precision padding, and a real `%a` hex-float
+  implementation (streamout's `%a` is a FIXME falling through to `%f`).
+- Decision: **PORT msvcrt's `printf.h` engine** (the wave-13 `bnum.rs` extraction was exactly the
+  down-payment — parser and formatter share the limb engine); do NOT assemble streamout under
+  msvcrt exports — it would silently downgrade the DLL's float output, violating never-weaken.
+  The kernel keeps streamout (faithful to ReactOS crt by construction; its quirks are its C's).
+
+### 9.84 (2026-07-15) `NET_FLAKE` that is not a flake: the net suite times out at 600s having never booted, because another lane's `farm` owns every host CPU lease
+
+**Symptom.** A gate with `✓ build ×3  ✓ lint ×3  ✓ smoke:i386  ✓ smoke:amd64  ✓ smoke:arm64` and
+`✗ smoke:net(NET_FLAKE, 3 attempts)` — `15 errors in 600.39s`. Every one of the 15 net tests errors
+with an identical flat `Failed: Timeout (>600.0s)`, **including `test_boot_with_nic`, the first one**.
+
+**It is not the network, and it is not your change.** The tell is in the captured setup output:
+
+```
+[hostlock] waiting for host CPU lease (boot:amd64-uefi-net)...
+ERROR tests/qemu/test_net.py::test_boot_with_nic - Failed: Timeout (>600.0s)
+```
+
+The suite spent its entire 600s **queued on the hostlock (4 leases)** and never booted a VM. When
+another worktree is running `vibeos-cli farm` (an all-night, whole-host soak) plus its own smokes,
+load sits at ~24 and the leases never free. The gate's own retry (3 attempts) cannot help: it
+re-queues into the same saturated lock.
+
+**How to tell starvation from a real net regression, in ten seconds:**
+* **All 15 error** (not fail) with the **same** 600s number, first test included → fixture never
+  ran. A real regression fails a *specific* test with a *specific* assertion.
+* `✓ smoke:i386/amd64/arm64` on the **same media** → the OS boots fine; only this lane starved.
+* `uptime` (load ≫ cores) and `./vibeos-cli ps` (`slots: N/10 in use`, OWNER paths pointing at
+  *other worktrees*) name the culprit.
+* `grep hostlock` the pytest output. That line is the whole diagnosis.
+
+**What to do.** NOT `--allow-stale`, not a re-gate (it will starve again), and above all **never
+kill the other lane's QEMUs or farm** — they are someone's deliberate soak, and broad `pkill -f
+qemu` matches your own process tree (AGENTS.md). Park the work committed-but-unpushed and wait:
+`while kill -0 <farm-pid>; do sleep 120; done; ./vibeos-cli gate`. A gate that is red for a reason
+outside the tree is not a green you may push on the strength of "it's probably fine" — the ×3-green
+push rule exists exactly so that judgement is not yours to make at 1am.
+
+**Related, and the reason this bit at all:** the standing rule is that the flake farm runs only
+when no other agents are working. Two lanes each politely declining to soak, and one lane not
+declining, produce this. If you start a farm, expect to be the reason another lane's gate is red.
+
+### 9.85 (ROOT-CAUSED + FIXED 2026-07-14) The FEX startup-death flake was a trapped `dc cvau`: SCTLR_EL1's EL0-usability bits (UCI/UCT/DZE) were never set, and EC 0x18 has no handler
 
 **Symptom.** ~2-3 of 13 arm64 boots, one FEX/WoW64 guest (gui32, win32 — whichever got there first) died 0xC000001D at a *deterministic* address (PC=0x4B5478, LR=0x4B51FC, byte-identical registers across five separate boots spanning two days). Everything else in the boot was green.
 
@@ -6095,7 +7544,7 @@ Nothing crashed, because the neighbours are *plausible*: the guest's `NtUserShow
 
 **Sibling (Face B, guard landed, seed still open):** the one non-0xC000001D corpus hit was wow64probe dying 0xC0000005 mid-`BTCpuProcessInit` — a seed AV inside `InvalidationTracker::InvalidateIntervalInternal` (a Threads-map node with a NULL `InternalThreadState*`, pre-ThreadInit, provenance unexplained at n=1), then **amplified into a ~1600-frame recursion → stack overflow** because `BTCpuResetToConsistentStateImpl` derefs the THREAD_STATE TLS slot (NULL before `BTCpuThreadInit`) in `CallRetStack::GetInfoThread`. Vendored patch in `external/fex/Source/Windows/WOW64/Module.cpp`: NULL-thread guard returns the exception to the next handler (overcommit handling kept reachable), so a recurrence now reports the true seed fault in one clean `[UEXC]` line instead of a storm.
 
-### 9.73 (ROOT-CAUSED + FIXED 2026-07-15) A hand-typed BIT-FLAG literal that names the wrong enum member — `DC_vPrepareDCsForBlit` tested `fs & 0x04` (DC_CANCELED) where the C tests DC_DIRTY_RAO (0x10), and every GDI blit drew through a stale clip
+### 9.86 (ROOT-CAUSED + FIXED 2026-07-15) A hand-typed BIT-FLAG literal that names the wrong enum member — `DC_vPrepareDCsForBlit` tested `fs & 0x04` (DC_CANCELED) where the C tests DC_DIRTY_RAO (0x10), and every GDI blit drew through a stale clip
 
 **Symptom.** The M13 "intermittent doom render": an app that caches `GetDC(hwnd)` and blits continuously (doomgeneric's `StretchDIBits` loop) sometimes drew nothing — or drew clipped to a rectangle belonging to a *previously destroyed window* — while `NtGdiBitBlt` returned TRUE every time. Whether a given boot rendered was timing luck. The native arm64 build misrendered identically (never a WoW64 bug).
 
@@ -6112,7 +7561,7 @@ Nothing crashed, because the neighbours are *plausible*: the guest's `NtUserShow
 
 **Detector (owed).** Sweep win32k-rust for `fs [&|]=` / `& 0x` bit tests against numeric literals where the C uses `_DCFLAGS`/named flags; extend `scan_magic_offsets.py` with a bit-literal shape or add a one-shot grep to `vibeos-cli check`.
 
-### 9.74 (PROCESS TRAP 2026-07-15) A win32k probe that "built fine" for 3 boots but never appeared on serial — a `cannot find ULONG` compile error in ONE file let cargo re-link the STALE cached rlib, so the edit never shipped
+### 9.87 (PROCESS TRAP 2026-07-15) A win32k probe that "built fine" for 3 boots but never appeared on serial — a `cannot find ULONG` compile error in ONE file let cargo re-link the STALE cached rlib, so the edit never shipped
 
 **Symptom.** Added a `DbgPrint` + a one-line field write to `win32k-rust/src/wow64.rs`, rebuilt (`ninja win32k` → `Finished`), staged, booted — the print never fired and the fix had no effect. Repeated three times. A *different* edit in the same crate (dibobj.rs M13-BLT probe) DID ship on the same builds, "proving" the crate was recompiling.
 

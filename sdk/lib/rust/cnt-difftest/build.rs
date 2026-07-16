@@ -944,7 +944,8 @@ fn main() {
            while(k){{if(k&1)r*=b;b*=b;k>>=1;}} return n<0?1.0/r:r; }}\n\
          static double cnt_powm(double a,double e){{ (void)a;\
            return cnt_pow10i((int)e); }}\n\
-         static double cnt_log10(double f){{ if(f==0.0)return 0.0;\
+         static double cnt_log10(double f){{ if(!isfinite(f))return 308.;\
+           if(f==0.0)return 0.0;\
            if(f<0.0)f=-f; union{{double d;unsigned long long u;}} v;\
            v.d=f; int biased=(int)((v.u>>52)&0x7ff);\
            int e=(int)(((double)(biased-1023))*0.3010299956639812);\
@@ -1037,7 +1038,8 @@ fn main() {
            while(k){{if(k&1)r*=b;b*=b;k>>=1;}} return n<0?1.0/r:r; }}\n\
          static double cnt_powm(double a,double e){{ (void)a;\
            return cnt_pow10i((int)e); }}\n\
-         static double cnt_log10(double f){{ if(f==0.0)return 0.0;\
+         static double cnt_log10(double f){{ if(!isfinite(f))return 308.;\
+           if(f==0.0)return 0.0;\
            if(f<0.0)f=-f; union{{double d;unsigned long long u;}} v;\
            v.d=f; int biased=(int)((v.u>>52)&0x7ff);\
            int e=(int)(((double)(biased-1023))*0.3010299956639812);\
@@ -1120,7 +1122,8 @@ fn main() {
            while(k){{if(k&1)r*=b;b*=b;k>>=1;}} return n<0?1.0/r:r; }}\n\
          static double cnt_powm(double a,double e){{ (void)a;\
            return cnt_pow10i((int)e); }}\n\
-         static double cnt_log10(double f){{ if(f==0.0)return 0.0;\
+         static double cnt_log10(double f){{ if(!isfinite(f))return 308.;\
+           if(f==0.0)return 0.0;\
            if(f<0.0)f=-f; union{{double d;unsigned long long u;}} v;\
            v.d=f; int biased=(int)((v.u>>52)&0x7ff);\
            int e=(int)(((double)(biased-1023))*0.3010299956639812);\

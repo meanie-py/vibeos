@@ -2,19 +2,9 @@ use crate::prelude::*;
 use crate::typelib::LoadTypeLib;
 use core::ffi::c_void;
 
-// COM vtbl thunks use STDMETHODCALLTYPE. The com_sys/bindgen `IPSFactoryBufferVtbl`
-// encodes that as the concrete resolution of the Windows "system" ABI — extern
-// "stdcall" on i386 and extern "C" on amd64/arm64 — not the "system" alias, which
-// rustc keeps nominally distinct. Emit each thunk with the matching concrete ABI so
-// its fn item slots into the bindgen vtbl fields.
-macro_rules! stdmethod {
-    ( fn $name:ident ( $($arg:ident : $ty:ty),* $(,)? ) -> $ret:ty $body:block ) => {
-        #[cfg(target_arch = "x86")]
-        unsafe extern "stdcall" fn $name ( $($arg : $ty),* ) -> $ret $body
-        #[cfg(not(target_arch = "x86"))]
-        unsafe extern "C" fn $name ( $($arg : $ty),* ) -> $ret $body
-    };
-}
+// `stdmethod!` (the STDMETHODCALLTYPE vtbl-thunk macro that used to live here) is
+// now crate-level in winemacros.rs — a file-local `macro_rules!` was invisible to
+// every other module, so each new COM file re-hit the same wall.
 
 // CRT printf family (cdecl varargs) — the only function externs kept locally;
 // every other former local decl is provided by the prelude with the correct
@@ -87,9 +77,9 @@ static mut cs_bstr_cache_dbg: CRITICAL_SECTION_DEBUG = CRITICAL_SECTION_DEBUG {
     },
     EntryCount: 0,
     ContentionCount: 0,
-    Flags: 0,
-    CreatorBackTraceIndexHigh: 0,
-    SpareWORD: 0,
+    // The trailing member is a union (ndk/rtltypes.h:1432-1442); zero it via the
+    // pointer-sized arm, which covers every alternative.
+    c2rust_unnamed: RTL_CRITICAL_SECTION_DEBUG_u { WineDebugString: 0 },
 };
 
 #[repr(C)]

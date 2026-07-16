@@ -33,6 +33,7 @@ BOOT_SIZE_MB=280
 # populate call idempotent (harmless on a fresh image, overwrite on refresh)
 # — zero list drift vs the full build path (same calls run either way).
 REFRESH=""
+SMP=""   # --smp: stage ntkrnlmp.exe + boot-select it (smp-bringup-quest.md M5)
 
 # Stage debug-stripped PE twins into the ramdisk (same rationale as the livecd
 # strip pass in boot/boot_images.cmake): DWARF sections are never mapped, and
@@ -55,6 +56,9 @@ for arg in "$@"; do
         --rebuild)
             echo "[*] Rebuilding kernel..."
             ninja -C "$BUILD_DIR" ntoskrnl hal uefildr ramdisk fastfat
+            ;;
+        --smp)
+            SMP=1
             ;;
         --refresh)
             REFRESH=1
@@ -264,6 +268,11 @@ PROFILES
 # Copy system files
 echo "[*] Populating ramdisk..."
 RMC "$BUILD_DIR/ntoskrnl/ntoskrnl.exe"                        ::/reactos/system32/ntoskrnl.exe
+# SMP kernel (M5): the ntkrnlmp.exe target lives in the ntkrnlmp/ subdir. Only
+# staged with --smp; freeldr.ini boot-select (below) points /KERNEL at it.
+if [ -n "$SMP" ]; then
+    RMC "$BUILD_DIR/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"           ::/reactos/system32/ntkrnlmp.exe
+fi
 RMC "$BUILD_DIR/hal/halarm64/hal.dll"                          ::/reactos/system32/hal.dll
 RMC "$BUILD_DIR/drivers/base/kdrosdbg/kdcom.dll"               ::/reactos/system32/kdcom.dll
 RMC "$BUILD_DIR/drivers/base/bootvid/bootvid.dll"              ::/reactos/system32/bootvid.dll
@@ -640,8 +649,19 @@ mmd -i "$BOOT_IMG" ::/EFI/BOOT
 # Copy bootloader
 mcopy -i "$BOOT_IMG" "$UEFILDR" ::/EFI/BOOT/BOOTAA64.EFI
 
-# Copy freeldr.ini
-mcopy -i "$BOOT_IMG" "$FREELDR_INI" ::/freeldr.ini
+# Copy freeldr.ini — with --smp, boot-select the SMP kernel by injecting
+# /KERNEL=ntkrnlmp.exe into the [ReactOS_Arm64] Options (mirrors the x86
+# livecd.ini [LiveCD_SMP] entry). Default (no --smp) ships the file verbatim
+# so it boots UP ntoskrnl.exe.
+if [ -n "$SMP" ]; then
+    SMP_INI="$(mktemp)"
+    sed 's#^\(Options=\)#\1/KERNEL=ntkrnlmp.exe #' "$FREELDR_INI" > "$SMP_INI"
+    echo "[*] SMP: freeldr.ini -> /KERNEL=ntkrnlmp.exe"
+    mcopy -o -i "$BOOT_IMG" "$SMP_INI" ::/freeldr.ini
+    rm -f "$SMP_INI"
+else
+    mcopy -i "$BOOT_IMG" "$FREELDR_INI" ::/freeldr.ini
+fi
 
 # Copy ramdisk image
 echo "[*] Copying ramdisk.img to boot.img..."

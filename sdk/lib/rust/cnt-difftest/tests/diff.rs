@@ -3132,6 +3132,25 @@ fn diff_streamout_float() {
             so!(cnt, "%G", v);
         }
     }
+
+    // Specials — ±Inf and NaN. These rows are the tripwire for the
+    // exp10_floor non-finite guard (fl::exp10_floor returns 308 for
+    // biased==0x7ff; the recipe's cnt_log10 carries the identical
+    // `!isfinite → 308.` guard): before the guard BOTH sides spun
+    // forever in the log10 correction loop on ±Inf (`pow10(309)`
+    // saturates to +Inf and `Inf <= Inf` holds) — a silent kernel hang
+    // on any `%f` of an infinity, found by the msvcrt printf probe
+    // (2026-07-14). The effective output is the genuine `#INF`/`#QNAN`
+    // prepend-and-truncate path in format_float.
+    for &v in &[f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+        for &cnt in &[512i32, -2] {
+            so!(cnt, "%f", v);
+            so!(cnt, "%e", v);
+            so!(cnt, "%g", v);
+            so!(cnt, "%.3E", v);
+            so!(cnt, "%12.2f", v);
+        }
+    }
 }
 
 // ── Wave MATH-CLASS — IEEE-754 predicates + integer abs ─────────────────

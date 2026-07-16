@@ -21,9 +21,14 @@ extern "C" fn rust_eh_personality() {}
 pub mod prelude;
 pub mod debug_shims;
 pub mod consts;
+// Tier-D constants (harvested from the SDK headers, cited) + the IID/CLSID externs.
+pub mod tierd_consts;
+pub mod iids;
 pub mod winemacros;
 pub mod winemacros_gen;
 pub mod commacros_gen;
+// Non-COM Win32 ABI island (wincodec/olectl/prsht/wingdi) — bindgen, per-arch.
+pub mod win_sys;
 
 // rustconv track
 pub mod hash;
@@ -37,3 +42,11 @@ pub mod vartype;
 pub mod olesys;
 pub mod dispatch;
 pub mod typelib;
+
+// rustconv track (Tier-D) — the last six C TUs of oleaut32
+pub mod connpt;
+pub mod olefont;
+pub mod olepicture;
+pub mod olepropframe;
+pub mod recinfo;
+pub mod varformat;

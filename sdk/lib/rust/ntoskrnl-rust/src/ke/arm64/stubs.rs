@@ -291,6 +291,12 @@ pub unsafe extern "system" fn KiDispatchInterruptArm64(Intid: ULONG) -> BOOLEAN 
 
 #[no_mangle]
 pub unsafe extern "system" fn KeFlushEntireTb(Invalid: BOOLEAN, AllProcessors: BOOLEAN) {
+    // `vmalle1is` broadcasts to every core in the inner-shareable domain —
+    // this IS the arm64 SMP shootdown (no IPI protocol; smp-bringup-quest.md
+    // M5d). `dsb ishst` first: publish the caller's PTE stores to remote
+    // table walkers before invalidating; `dsb ish` after: wait until every
+    // core has dropped the stale entries.
+    core::arch::asm!("dsb ishst", options(nomem, nostack));
     core::arch::asm!("tlbi vmalle1is", options(nomem, nostack));
     core::arch::asm!("dsb ish", options(nomem, nostack));
     core::arch::asm!("isb", options(nomem, nostack));
@@ -1022,6 +1028,11 @@ pub unsafe extern "system" fn KiDispatchException(
                 b"[KEXC] ESR=\0".as_ptr() as PCSTR,
                 (*TrapFrame).Esr as ULONG_PTR,
             );
+            // Which CPU faulted? MPIDR_EL1.Aff0 == 0 is the BSP, 1 = CPU1 (SMP
+            // bring-up: pins whether an AP or the BSP took the trap).
+            let mpidr: u64;
+            core::arch::asm!("mrs {}, mpidr_el1", out(reg) mpidr, options(nomem, nostack));
+            ARM64_UART_TRACE_HEX(b"[KEXC] MPIDR=\0".as_ptr() as PCSTR, mpidr as ULONG_PTR);
         }
         KeBugCheckEx(
             KMODE_EXCEPTION_NOT_HANDLED,
@@ -1264,8 +1275,12 @@ pub unsafe extern "system" fn KiSwapProcess(NewProcess: PKPROCESS, OldProcess: P
 
 #[no_mangle]
 pub unsafe extern "system" fn KeFlushCurrentTb() {
+    // Local-only by CONTRACT (NT: flush the CURRENT processor's TLB) — the
+    // non-IS `vmalle1` is correct here, not an SMP bug. Callers audited
+    // (M5d): freeze path + sysldr post-relocation flush, both local-scoped.
+    core::arch::asm!("dsb nshst", options(nomem, nostack));
     core::arch::asm!("tlbi vmalle1", options(nomem, nostack));
-    core::arch::asm!("dsb ish", options(nomem, nostack));
+    core::arch::asm!("dsb nsh", options(nomem, nostack));
     core::arch::asm!("isb", options(nomem, nostack));
 }
 
@@ -1462,9 +1477,8 @@ pub unsafe extern "system" fn WRITE_REGISTER_BUFFER_ULONG(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn KeStartAllProcessors() {
-}
+// KeStartAllProcessors moved to ke/arm64/mproc.rs (M5a: real PSCI CPU_ON body
+// under `feature = "smp"`, no-op under UP). See smp-bringup-quest.md.
 
 
 // ============================================================================

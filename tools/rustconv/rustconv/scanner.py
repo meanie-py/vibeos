@@ -15,14 +15,19 @@ import tree_sitter_c as tsc
 import tree_sitter_cpp as tscpp
 from tree_sitter import Language, Parser
 
+from .conventions import KW_TO_CONV
+
 C_LANG = Language(tsc.language())
 CPP_LANG = Language(tscpp.language())
 
 # Extensions that select the C++ grammar.
 _CPP_SUFFIXES = (".cpp", ".cc", ".cxx", ".c++", ".cpp")
 
-# Calling convention macros
-CALLING_CONVENTIONS = {"NTAPI", "FASTCALL", "WINAPI", "CDECL", "__cdecl", "__stdcall", "__fastcall"}
+# Every macro that ALIASES a calling convention, from the ONE shared table
+# (conventions.py — verified against the real SDK headers by tools/verify_conv_macros.py).
+# This used to be a hand-written set of 7 that did not know WSAAPI/WSPAPI/SEC_ENTRY/…, so a
+# ws2_32 fn declared `SOCKET WSAAPI socket(...)` came back with calling_convention=None.
+CALLING_CONVENTIONS = set(KW_TO_CONV) | {"__cdecl", "__stdcall", "__fastcall"}
 
 # Section markers in ReactOS C files
 RE_GLOBALS_SECTION = re.compile(r"/\*\s*GLOBALS\s*\*/")
@@ -122,13 +127,86 @@ def _strip_sal(text: str) -> str:
 # NTAPI/WINAPI are intentionally NOT normalized here: their error-recovery is
 # benign (separate function_definition nodes survive) and they're already in
 # CALLING_CONVENTIONS, so the existing scans depend on seeing them verbatim.
-RE_UNPARSEABLE_CC = re.compile(r"\b(?:CALLBACK|APIENTRY|APIPRIVATE|WINAPIV|PASCAL)\b")
+# Derived from the ONE shared table, not hand-listed — the hand-listed version knew 5 of
+# these and so could not parse `CHAR FAR* WSAAPI inet_ntoa(...)` (ws2_32) at all.
+#
+# BENIGN_VERBATIM are the aliases tree-sitter recovers from cleanly (separate
+# function_definition nodes survive). They are left alone because existing scans depend on
+# seeing them verbatim — CALLING_CONVENTIONS matches the token as written.
+_BENIGN_VERBATIM = frozenset({"NTAPI", "WINAPI", "FASTCALL", "CDECL", "STDMETHODCALLTYPE"})
+_NORMALIZE_TO = {"system": "__stdcall", "cdecl": "__cdecl", "fastcall": "__fastcall"}
+_UNPARSEABLE = sorted(
+    (k for k, v in KW_TO_CONV.items() if k not in _BENIGN_VERBATIM and not k.startswith("_")),
+    key=len,
+    reverse=True,
+)
+_CC_ALT = "|".join(re.escape(k) for k in _UNPARSEABLE)
+RE_UNPARSEABLE_CC = re.compile(r"\b(?:" + _CC_ALT + r")\b")
+
+# A convention keyword sitting between a POINTER return type and the name — the one
+# position tree-sitter-c cannot parse in any spelling:
+#
+#     CHAR * __stdcall inet_ntoa(...)     <- FAILS  (no function_definition node at all)
+#     CHAR __stdcall * inet_ntoa(...)     <- parses
+#     CHAR *           inet_ntoa(...)     <- parses
+#
+# ws2_32's `CHAR FAR* / WSAAPI / inet_ntoa` lands exactly there, so mapping the alias to
+# `__stdcall` (which fixes the non-pointer case) *creates* this one. Drop the keyword here
+# instead. Lossless in practice: the scanner's `calling_convention` field is already None
+# for every one of these shapes (it is documented lossy on own-line macros), and the
+# authoritative convention is re-derived from the RAW C text by abi_enforce._derive_convention,
+# which never sees this rewrite.
+RE_CC_AFTER_PTR = re.compile(r"(\*\s*)\b(?:" + _CC_ALT + r")\b")
 
 
 def _normalize_callbacks(text: str) -> str:
-    """Map the tree-sitter-unparseable __stdcall aliases to `__stdcall` so the
-    function signatures parse. Differential-oracle safe (same ABI, only helps)."""
-    return RE_UNPARSEABLE_CC.sub("__stdcall", text)
+    """Make the tree-sitter-unparseable convention aliases parse.
+
+    Two rules, in order:
+      1. after a pointer return type -> DROP (the position tree-sitter cannot parse at all)
+      2. anywhere else               -> map to the raw `__stdcall`/`__cdecl` keyword
+
+    Differential-oracle safe (same ABI, only helps): an alias and its target are the same
+    convention by definition, and abi_enforce derives the real convention from raw C.
+
+    Without this, tree-sitter recovers CATASTROPHICALLY — `static BOOL CALLBACK Foo(){...}`
+    made it merge every following function into one giant function_definition, so
+    concfg/font.c yielded 2 of 14 fns. ws2_32 hit the same wall through `WSAAPI`.
+    """
+    text = RE_CC_AFTER_PTR.sub(r"\1", text)
+    return RE_UNPARSEABLE_CC.sub(lambda m: _NORMALIZE_TO[KW_TO_CONV[m.group(0)]], text)
+
+
+# The 16-bit memory-model decorations. Both are `#define`d to NOTHING (minwindef.h:129),
+# but tree-sitter does not know that, and a parameter spelled `CONST CHAR FAR* cp` is two
+# type-identifiers before the `*` — which it cannot disambiguate, so it fails the ENTIRE
+# enclosing function_definition. The function is then silently dropped from the scan.
+#
+# That is not hypothetical: `inet_addr(IN CONST CHAR FAR* cp)` (addrconv.c:70) was reported
+# as an unextractable body named `cp`, and inet_addr — an *exported* ws2_32 fn that
+# nettest.exe itself calls — was simply absent from the translation plan. `FAR` is all over
+# the winsock/mswsock/wsock32 signatures, so this drops functions across the whole family.
+#
+# Blank them before parsing: they carry no ABI meaning on any target we build (flat 32/64-
+# bit), so this is differential-oracle safe in the same way _normalize_callbacks is.
+RE_EMPTY_MEMMODEL = re.compile(r"\b(?:FAR|NEAR)\b")
+
+# `CONST` is `#define CONST const` (winnt.h) — same macro, uppercase. tree-sitter-c does not
+# know it, so `CONST struct sockaddr *name` reads as TWO type-identifiers and the enclosing
+# function produces ZERO function_definition nodes: it is silently dropped from the plan.
+#
+# That is not hypothetical either. It ate `bind` (socklife.c), `connect` (sockctrl.c) and
+# `sendto` (send.c) — the three core socket calls, all three of which take
+# `IN CONST struct sockaddr *name` — so ws2_32 was translated, compiled clean on all three
+# arches, and passed every check while missing the functions a socket client cannot work
+# without. Only the .spec export audit caught it. Normalise to the lowercase keyword.
+RE_UPPER_CONST = re.compile(r"\bCONST\b")
+
+
+def _blank_memmodel(text: str) -> str:
+    """Blank the empty `FAR`/`NEAR` decorations and normalise `CONST` so tree-sitter can
+    parse the params. Both are no-op/aliased Win32 macros with no ABI meaning."""
+    return RE_UPPER_CONST.sub("const", RE_EMPTY_MEMMODEL.sub("", text))
 
 
 @dataclass
@@ -767,7 +845,9 @@ def scan_file(path: Path) -> ScanResult:
         # break tree-sitter function extraction (uniata etc.). Macros preserved.
         raw = _resolve_pp_conditionals(path, raw)
     source_text = _normalize_callbacks(
-        _strip_sal(_expand_csr_api(_resolve_known_preproc(_strip_known_off_ifdefs(raw))))
+        _blank_memmodel(
+            _strip_sal(_expand_csr_api(_resolve_known_preproc(_strip_known_off_ifdefs(raw))))
+        )
     )
     source = source_text.encode("utf-8")
 
