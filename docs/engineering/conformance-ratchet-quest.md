@@ -946,3 +946,37 @@ The 2 boots that didn't reach SamSs in the runs were the pre-existing netstack-T
 (upstream of services, unrelated). **Reusable lesson (also in the field manual):** a
 `SECURITY_SERVICES_STARTED`-style cross-process named-event handshake is timing-fragile here;
 prefer the named pipe (or another reliably-shared object) as the rendezvous.
+
+### 2026-07-16 (fixed) — arm64 user-APC delivery: the test-2 wedge is CLEARED; sweep runs end-to-end
+
+The arm64 user-APC-delivery blocker (test-2 stall, task #2) is **FIXED** (field manual §9.90). Root
+cause: the arm64 SVC return path (`KiSvcDispatch → KiTrapReturn → eret`, `ke/arm64/trap.rs`) never
+delivered pending user-mode APCs — unlike amd64's `KiSystemServiceExit` (`trap.S:911`, checks
+`UserApcPending` → `KiInitiateUserApc`) and i386's trap epilog. `UserApcPending` never cleared, so a
+`UserMode` `KeWaitForSingleObject` (the kmtest usermode-callback worker's
+`IOCTL_KMTEST_USERMODE_AWAIT_REQ`) re-returned `STATUS_USER_APC` (0xC0) forever, the worker asserted
+`BytesReturned == sizeof(RequestPacket)` and died, and the kernel-side test hung → `launched=1
+sweep=DID NOT FINISH`.
+
+**Fix:** new `KiDeliverUserApcArm64` at the SVC (`case 0x15`) tail — on return-to-EL0 with
+`UserApcPending` set, raise APC_LEVEL, `KiDeliverApc(UserMode, ExceptionFrame, TrapFrame)`, lower.
+Mirrors amd64; DAIF-neutral (uses `KfRaiseIrql`, not sti/cli) because on this port the SVC runs
+IRQ-masked and `KiTrapReturn` owns the banking window. Arm64-only (`ke/arm64/`); x86 untouched.
+
+**Validated (uninstrumented):** arm64 boot-to-desktop still green (41s); the conformance sweep went
+`launched=1 sweep=DID NOT FINISH` → **`launched=81 sweep=done`**. `ExCallback` (former test-2 wedge)
+and `ExDoubleList` now pass — the sweep runs to completion end-to-end for the FIRST time.
+
+**Still no clean baseline — the NEXT wedge is `ExFastMutex` (distinct, in-kernel, NOT user-APC).**
+Post-fix the sweep reports `ok=3 bad=78`, but that's a **cascade**: `ExFastMutex` TIMEOUTs in-kernel
+(`kmtest_drv.c:454 KeWaitForSingleObject timed out!` — the worker's `AWAIT_REQ` returns
+`STATUS_TIMEOUT`, not `STATUS_USER_APC`; the kernel test never posts a callback because it's hung),
+and being unreapable it poisons the remaining 77 tests with `SET_RESULTBUFFER errors=1` (the same
+cascade mechanism as amd64's SeTokenFiltering/TcpIpConnect). Clue: `MmGetSystemRoutineAddress:
+'ExiAcquireFastMutex'/'ExiReleaseFastMutex'/'ExiTryToAcquireFastMutex' NOT FOUND` — ExFastMutex
+resolves the internal fast-mutex primitives by name and they're unexported on our build. The
+`support.c:52` assert is **collateral** (worker times out because the kernel test is stuck), not the
+user-APC path. **Next step toward the arm64 baseline:** quarantine `ExFastMutex` in
+`tools/payloads/kmtest/kmtest-tests-arm64.txt`, re-sweep to unmask the ~77 cascade victims' real
+results, iterate on any further wedgers, then `conformance --arch arm64 --write-baseline`. The
+user-APC fix lands on its own (a real, correct kernel fix; unblocks the whole sweep).

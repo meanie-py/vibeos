@@ -7660,3 +7660,58 @@ that reached services. Commit 74c08f68e68.
 is timing-fragile here — prefer a named *pipe* (or another object one side is the sole creator of and
 the other only opens) as the rendezvous. And for any "a print makes it work" bug: localize by
 elimination from unperturbed evidence, and always re-verify the fix with the prints removed.
+
+### 9.90 (ROOT-CAUSED + FIXED 2026-07-16) arm64 never delivered user-mode APCs on return-to-EL0 — a `UserMode` `KeWaitForSingleObject` returned `STATUS_USER_APC` forever
+
+**Symptom.** The arm64 kmtest conformance sweep captured **exactly one** result (`CmSecurity`) then
+wedged: the 2nd test's usermode-callback worker (`kmtest/support.c` `KmtUserModeWorker`) hit
+`*** ASSERT FAILED: BytesReturned == sizeof(RequestPacket) at support.c:52` → `Callback handler
+dying! Error code 2`, and the kernel-side test hung forever waiting for a callback that never
+came → `sweep=DID NOT FINISH launched=1`. Instrumenting the worker's driver wait
+(`IOCTL_KMTEST_USERMODE_AWAIT_REQ`) showed `KeWaitForSingleObject(&ev, UserRequest, UserMode,
+Alertable=FALSE, ...)` returning **`STATUS_USER_APC` (0xC0) persistently** — re-issue after
+re-issue, even with `Alertable=FALSE`.
+
+**Why 0xC0 from a non-alertable wait.** `KeWaitForSingleObject` bails a `UserMode` wait for a user
+APC whenever `Thread->ApcState.UserApcPending` is set (`ke/wait.c:329` — the `!Alertable` branch
+still checks `UserApcPending`). `STATUS_USER_APC` is the "unwind to user mode and deliver the queued
+APC" signal: the syscall returns, and on the way back to user the trap exit is supposed to run
+`KiDeliverApc(UserMode, …)`, which dequeues the user APC, runs its routine, and **clears
+`UserApcPending`**. If that delivery never happens, `UserApcPending` stays set and *every* later
+`UserMode` wait instantly re-returns 0xC0.
+
+**Root cause — the delivery step is simply absent on arm64.** amd64 does it in
+`KiSystemServiceExit` (`ntoskrnl/ke/amd64/trap.S:911`): `cmp AsUserApcPending / call
+KiInitiateUserApc` → raise APC_LEVEL, `KiDeliverApc(UserMode, ExFrame, TrapFrame)`, lower. i386 has
+the equivalent in its trap epilog. **arm64's `KiSvcDispatch` returned straight to `KiTrapReturn` →
+`eret` with no `UserApcPending` check anywhere in `ke/arm64/trap.rs` or `trap.S`** — grep the whole
+arm64 tree and `UserApcPending`/`KiDeliverApc`/`KiInitiateUserApc` appear in *none* of it. The
+original ReactOS `arm64/trap.c` never had it either (this arm64 port predates a working user-APC
+path), so it's a port gap, not a translation drop. Every queued user APC on arm64 — the kmtest
+worker's, and in principle any `QueueUserAPC`/alertable-wait target — was silently never delivered.
+
+**Fix.** Add the missing step to the arm64 SVC return, mirroring amd64. New
+`KiDeliverUserApcArm64(TrapFrame, ExceptionFrame)` in `ke/arm64/trap.rs`, called at the tail of
+`case 0x15` (SVC) after `KiSvcDispatch`: if returning to EL0 (`Spsr & 0xF == 0`) and
+`kt_ApcState(Thread).UserApcPending != 0`, `KfRaiseIrql(APC_LEVEL)` →
+`KiDeliverApc(1 /*UserMode*/, ExceptionFrame, TrapFrame)` → `KfLowerIrql(old)`. `KiDeliverApc`
+rewrites the trap frame (`Pc → KeUserApcDispatcher`, `Sp → user stack with the saved CONTEXT`,
+clears `UserApcPending`) so the trailing `eret` lands in the dispatcher. The handler already had
+`ExceptionFrame` in hand (captured by `EXFRAME_SAVE` in `trap.S`), so no signature change was
+needed. **Deliberately does NOT toggle PSTATE.DAIF** (unlike amd64's sti/cli): on this port the
+whole SVC runs with IRQs masked, `KiTrapReturn` owns the ELR/SPSR per-exception banking window, and
+the APC user stack is the thread's own resident stack (`KiInitializeUserApc` pre-faults it). IRQL on
+arm64 is a GIC-PMR/PCR concern here, not a DAIF one — `KfRaiseIrql` is the correct DAIF-neutral gate.
+This is SVC (synchronous, thread-body) context — the canonical safe point for user-APC delivery, NOT
+the IRQ-exception context the `KiIrqHandler` "APC delivery wedges" warning is about.
+
+**Result (uninstrumented).** The arm64 sweep went from `launched=1 sweep=DID NOT FINISH` to
+`launched=81 sweep=done`: `ExCallback` (the former test-2 wedge) and `ExDoubleList` now pass, and
+the sweep runs to completion end-to-end for the first time. (The remaining `ok=3` is an *unrelated*
+`ExFastMutex` in-kernel hang cascading the tail — a separate quarantine item, NOT this bug.)
+
+**Reusable rule.** A `UserMode` `KeWaitForSingleObject` returning `STATUS_USER_APC` *persistently*
+(re-issue after re-issue, `Alertable` irrelevant) is the fingerprint of a **return-to-user path that
+doesn't deliver user APCs** — check that the arch's syscall/trap exit actually calls
+`KiDeliverApc(UserMode, …)`, don't assume it does just because the amd64 sibling does. New arch ports
+are the usual offenders.

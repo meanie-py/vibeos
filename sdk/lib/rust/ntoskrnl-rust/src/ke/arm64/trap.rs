@@ -300,6 +300,58 @@ unsafe fn KiSvcDispatch(TrapFrame: PKTRAP_FRAME) {
     }
 }
 
+extern "C" {
+    fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
+    fn KfLowerIrql(NewIrql: KIRQL);
+}
+
+/// Deliver a pending user-mode APC on the return-to-EL0 path.
+///
+/// The arm64 SVC exit (`KiSvcDispatch` → `KiTrapReturn` → `eret`) had NO
+/// user-APC delivery step — unlike amd64's `KiSystemServiceExit` (trap.S:911),
+/// which checks `Thread->ApcState.UserApcPending` and calls `KiInitiateUserApc`
+/// before returning to user mode (and i386's equivalent in its trap epilog).
+/// Without it a queued user APC is never delivered: a `UserMode`
+/// `KeWaitForSingleObject` keeps returning STATUS_USER_APC because
+/// `UserApcPending` is never cleared, and the thread never runs the APC
+/// routine. (Root cause of the kmtest usermode-callback worker wedge —
+/// `IOCTL_KMTEST_USERMODE_AWAIT_REQ` returned 0xC0 persistently — which was
+/// the last blocker on a full arm64 conformance baseline.)
+///
+/// Mirrors amd64 `KiInitiateUserApc`: raise to APC_LEVEL, run
+/// `KiDeliverApc(UserMode, ExceptionFrame, TrapFrame)` — which dequeues the
+/// user APC, runs its KernelRoutine, clears `UserApcPending`, and (via
+/// `KiInitializeUserApc`) rewrites the trap frame (Pc → KeUserApcDispatcher,
+/// Sp → user stack holding the saved CONTEXT) so the trailing `eret` lands in
+/// the dispatcher — then lower back to the entry IRQL.
+///
+/// We deliberately do NOT toggle PSTATE.DAIF (unlike amd64's sti/cli around the
+/// call): on this port the whole SVC runs with IRQs masked, `KiTrapReturn` owns
+/// the ELR/SPSR per-exception banking window, and the APC's user stack is the
+/// thread's own resident stack (KiInitializeUserApc pre-faults it anyway).
+/// IRQL here is a GIC-PMR / PCR concern, not a DAIF one — `KfRaiseIrql` is the
+/// correct, DAIF-neutral gate. This is SVC (synchronous, thread-body) context,
+/// the canonical safe point for user-APC delivery — NOT the IRQ-exception
+/// context the `KiIrqHandler` DAIF warning is about.
+#[inline]
+unsafe fn KiDeliverUserApcArm64(
+    TrapFrame: PKTRAP_FRAME,
+    ExceptionFrame: ntkrnl_sys::ddk::PKEXCEPTION_FRAME,
+) {
+    // Only a return to EL0 (user) with a pending user APC needs this.
+    if ((*TrapFrame).Spsr & 0xF) != 0 {
+        return;
+    }
+    let Thread = KeGetCurrentThread() as PKTHREAD;
+    if kt_ApcState(Thread).UserApcPending == 0 {
+        return;
+    }
+
+    let OldIrql = KfRaiseIrql(APC_LEVEL);
+    ntkrnl_sys::ddk::KiDeliverApc(1i8 /* UserMode */, ExceptionFrame, TrapFrame);
+    KfLowerIrql(OldIrql);
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn KiSynchronousExceptionHandler(
     TrapFrame: PKTRAP_FRAME,
@@ -494,6 +546,11 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
             if user_svc {
                 crate::ke::cswitchdep::VibeosCswitchdepUserExit(crate::code_addr!());
             }
+
+            // Deliver any pending user-mode APC before the eret back to EL0
+            // (amd64 KiSystemServiceExit parity — see KiDeliverUserApcArm64).
+            // No-op unless we're returning to user with UserApcPending set.
+            KiDeliverUserApcArm64(TrapFrame, ExceptionFrame);
         }
 
         0x26 => {
