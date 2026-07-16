@@ -7526,3 +7526,48 @@ push rule exists exactly so that judgement is not yours to make at 1am.
 **Related, and the reason this bit at all:** the standing rule is that the flake farm runs only
 when no other agents are working. Two lanes each politely declining to soak, and one lane not
 declining, produce this. If you start a farm, expect to be the reason another lane's gate is red.
+
+### 9.88 (2026-07-16) The kmtest MmMdl `-smp 2` 0x1E is TWO bugs — a system-PTE leak (FIXED) masking a kernel-stack teardown race (OPEN)
+
+Hunting the amd64 `-smp 2` kmtest **MmMdl** 0x1E (task #10, ~10%/sweep in the 20-sweep
+guest-load soak). Amplifier: a temporary MmMdl-dense sweep list (warmup + MmMdl ×25/boot,
+restored before landing) + a background boot/capture loop that copies the shared serial log
+to a durable dir on each BUGCHECK (the log is overwritten by the next boot — capture between
+runs). Two distinct bugs came out, and the first was masking the second:
+
+**Bug 1 — system-PTE leak + use-after-free alias (FIXED, `ARM3/mdlsup.rs`).** `MmUnmapLockedPages`
+carried an i386-bringup band-aid (commit `15434cd8dea`): `if (*Mdl).ByteCount > 16MB { return; }`.
+It FALSE-FIRED on kmtest MmMdl's legitimate **32MB** MDL maps, so the kernel-path unmap bailed
+WITHOUT `MiReleaseSystemPtes` and — worse — without ZEROING the PTEs. `MmFreePagesFromMdl` runs
+right after, so the freed pages stayed mapped by *valid* system PTEs. That leaked the pool
+(observable as the escalating soft face: `MmMapLockedPagesSpecifyCache` starts returning NULL,
+MmMdl.c:68/100/103/104 fail with `MappedSystemVa` holding a stale VA) and, on `-smp 2`, left a
+use-after-free window. **Fix:** a precise UAF guard instead of a size cap — a genuinely
+system-mapped MDL can never span more PTEs than the whole pool, so bail only when
+`PageCount > MmTotalSystemPtes`, else release properly (which zeroes the PTEs). `MiReleaseSystemPtes`
+bounds-checks StartingPte itself as a backstop. Validated: dense MmMdl ×25/boot went `fail=4`→`fail=0`,
+boot completes. **Reusable lesson:** a defensive "looks corrupt, bail" guard keyed on a *magnitude*
+(size, count) rather than a *structural invariant* will false-fire on the legitimate large case —
+and a bail that neither releases NOR invalidates a mapping is strictly worse than crashing (it
+leaks AND aliases). Guard on the invariant (`≤ pool size`, `within [start,end]`), not the magnitude.
+
+**Bug 2 — kernel-stack IN_PAGE_ERROR teardown race (CHARACTERIZED, OPEN).** Fixing Bug 1
+*unmasked* Bug 1's mask: with the pool healthy, far more map/unmap cycles succeed → far more
+scheduling/teardown churn → the real 0x1E now fires ~33–50%/boot (was ~10%). Signature:
+`BUGCHECK 0x1E (0xC0000006, …)` — exception code **`0xC0000006 = STATUS_IN_PAGE_ERROR`**, not a
+plain AV. The reported RIP resolves to an **ICF-folded** `STATUS_NOT_IMPLEMENTED` stub (a `retq`) —
+a red herring; the true signal is that the fault is a `ret` reading `[rsp]`, and the fault VA
+(`0xfffff880…`) is in the **kernel-stack region** (confirmed: the `[SMP] handing processor N to HAL`
+boot lines show AP stacks at `Rsp=fffff8800…`). So a thread ran on a kernel stack whose PTE was
+invalid. FLIGHTREC shows the crashing thread parked on a **gate** (WS-pushlock contention) then
+was woken. **NOT stack-swap:** ReactOS's own `KiCheckThreadStackSwap` (ke_x.h, faithfully
+translated) only swaps `Priority >= LOW_REALTIME_PRIORITY+9` (=25) threads; kmtest threads run
+~pri 8. So the mechanism is a **kernel-stack free-and-reuse / teardown race** — each kmtest is a
+fresh process/thread, so teardown churn is high, and under MmMdl's 2GB memory pressure at `-smp 2`
+a stack's system PTEs get released/reused while another CPU still references the stack. Next target:
+GDB watchpoint on the faulting stack VA's PTE, or instrument `MmDeleteKernelStack` / the thread-exit
+→ stack-free path for the missing "thread is off all CPUs" synchronization. Triage tooling notes:
+(a) resolve folded RIPs by disassembling — a 1-instruction `retq`/`mov eax,STATUS;ret` is ICF-folded
+and its symbol is meaningless; walk the stack return slots instead. (b) `0xfffff880…` = kernel
+stacks, `0xfffffa80…` = the MDL/nonpaged system-VA region — the fault being in the *former* is what
+ruled out "dangling MDL mapping" and pointed at the stack.

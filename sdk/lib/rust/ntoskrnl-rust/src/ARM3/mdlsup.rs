@@ -633,15 +633,27 @@ pub unsafe extern "system" fn MmUnmapLockedPages(mut BaseAddress: PVOID, Mdl: PM
     let mut PointerPte: PMMPTE;
 
     if BaseAddress as ULONG_PTR > MM_HIGHEST_USER_ADDRESS as ULONG_PTR {
-        // Guard against use-after-free: if ByteCount looks like freed pool fill
-        // (> 16MB or contains 0xFCFCFCFC pattern), skip to avoid cascade corruption
+        // Use-after-free defense that is NOT a size cap. A genuinely system-mapped
+        // MDL can never span more PTEs than the entire system-PTE pool, so an absurd
+        // PageCount is the tell that this MDL is freed pool fill (0xFCFCFCFC…) — reject
+        // it. The old `ByteCount > 16MB → return` band-aid (commit 15434cd8dea, an
+        // i386-bringup patch) false-fired on every legitimate large MDL: kmtest MmMdl
+        // maps 32MB MDLs, so unmap bailed WITHOUT releasing — and worse, without
+        // ZEROING — their system PTEs. That left freed pages (MmFreePagesFromMdl runs
+        // right after) still mapped by VALID PTEs with live TLB entries: the -smp 2
+        // use-after-free alias behind the MmMdl 0x1E, plus a steady system-PTE leak
+        // that eventually starved MmMapLockedPagesSpecifyCache to NULL. Releasing
+        // properly (below) zeroes the PTEs, closing the alias and returning the pool.
+        // MiReleaseSystemPtes bounds-checks StartingPte itself, so a genuinely corrupt
+        // (but small) PageCount still can't scribble the pool.
+        let total_sys_ptes = core::ptr::addr_of!(crate::ARM3::syspte::MmTotalSystemPtes).read();
         let byte_count = (*Mdl).ByteCount;
-        if byte_count > 0x01000000 {
-            return;
-        }
-
         Base = ((*Mdl).StartVa as ULONG_PTR + (*Mdl).ByteOffset as ULONG_PTR) as PVOID;
         PageCount = (ADDRESS_AND_SIZE_TO_SPAN_PAGES(Base, byte_count as usize)) as u32;
+
+        if PageCount == 0 || PageCount > total_sys_ptes {
+            return;
+        }
 
         PointerPte = MiAddressToPte(BaseAddress);
 
@@ -649,7 +661,7 @@ pub unsafe extern "system" fn MmUnmapLockedPages(mut BaseAddress: PVOID, Mdl: PM
             MdlPages = MmGetMdlPfnArray(Mdl);
             ExtraPageCount = *(MdlPages.add(PageCount as usize)) as PFN_COUNT;
             // Guard: ExtraPageCount from corrupt PFN array entry (use-after-free / out-of-bounds)
-            if ExtraPageCount > 0x10000 {
+            if ExtraPageCount > total_sys_ptes {
                 return;
             }
             PageCount += ExtraPageCount;
@@ -657,8 +669,8 @@ pub unsafe extern "system" fn MmUnmapLockedPages(mut BaseAddress: PVOID, Mdl: PM
             BaseAddress = (BaseAddress as ULONG_PTR - ((ExtraPageCount as ULONG_PTR) << PAGE_SHIFT)) as PVOID;
         }
 
-        // Final guard: if total PageCount is unreasonable after adjustments, bail out
-        if PageCount > 0x10000 {
+        // Total span after adjustments must still fit the pool.
+        if PageCount > total_sys_ptes {
             return;
         }
 
