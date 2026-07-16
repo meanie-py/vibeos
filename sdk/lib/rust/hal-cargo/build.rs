@@ -43,6 +43,14 @@ use std::env;
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
+    // i386 APIC HAL flavor (i386-apic-hal lane): VIBEOS_APIC_HAL=1 (cmake
+    // -DVIBEOS_APIC_HAL=ON via `vibeos-cli build --hal-apic`) builds hal-rust
+    // with the `apic` feature AND swaps the assembled x86 asm set from the PIC
+    // trap/timer set to the APIC set (apictrap.S + tsccal.S). amd64 is always
+    // the APIC flavor regardless of this env. Same env→features plumbing as
+    // VIBEOS_SMP_HAL. Ignored on arm64.
+    let apic_hal = arch == "x86" && env::var("VIBEOS_APIC_HAL").is_ok();
+
     // cnt-rust-lib `float` feature, mirroring libcntpr.cmake CNT_RUST_FEATURES:
     // i386 omits it (no-SSE softfloat kernel), amd64/arm64 enable it. Used only
     // on x86/amd64 (the halx86 flavors that reuse libcntpr); arm64 halstubs
@@ -79,11 +87,23 @@ fn main() {
             "i686-kernel.json",
             "_HalInitSystem@8",
             0x0001_0000,
-            &[
-                "hal/halx86/generic/systimer.S",
-                "hal/halx86/generic/trap.S",
-                "hal/halx86/pic/pic.S",
-            ],
+            if apic_hal {
+                // APIC flavor (i386-apic-hal lane), mirroring amd64's set:
+                // apic/apictrap.S provides ALL FIVE i386 trap stubs
+                // (HalpClock/ClockIpi/Profile/Apc/DispatchInterrupt) + the
+                // spurious service, and apic/tsccal.S the TSC calibration ISR.
+                // This set DELIBERATELY EXCLUDES the PIC set below
+                // (generic/systimer.S + generic/trap.S + pic/pic.S) — trap.S and
+                // pic.S define HalpApc/Clock/Profile/DispatchInterrupt too and
+                // would collide (see the i386-apic-hal lane's asm audit).
+                &["hal/halx86/apic/apictrap.S", "hal/halx86/apic/tsccal.S"] as &[&str]
+            } else {
+                &[
+                    "hal/halx86/generic/systimer.S",
+                    "hal/halx86/generic/trap.S",
+                    "hal/halx86/pic/pic.S",
+                ] as &[&str]
+            },
             // liblibcntpr.a (C CRT) DROPPED — cnt-rust-lib (.rust_lib below)
             // provides hal's translatable libcntpr surface; the only irreducible
             // C floor i386 hal pulls is the two C-variadic printf shells
@@ -149,8 +169,19 @@ fn main() {
     // bit so the MISMATCHED_HAL handshake accepts ntkrnlmp.exe. Same env→
     // features plumbing as the kernel's VIBEOS_LOCKDEP.
     println!("cargo:rerun-if-env-changed=VIBEOS_SMP_HAL");
+    println!("cargo:rerun-if-env-changed=VIBEOS_APIC_HAL");
+    // Combine flavor features (they compose: an SMP APIC HAL = both, the future
+    // i386 halmacpi in Phase B). rust_features REPLACES the set, so pass one
+    // combined list rather than two calls.
+    let mut hal_features: Vec<&str> = Vec::new();
     if env::var("VIBEOS_SMP_HAL").is_ok() {
-        linker = linker.rust_features(&["smp"]);
+        hal_features.push("smp");
+    }
+    if apic_hal {
+        hal_features.push("apic");
+    }
+    if !hal_features.is_empty() {
+        linker = linker.rust_features(&hal_features);
     }
 
     // x86/amd64 only: cntpr's Rust half as a cargo-native sibling staticlib

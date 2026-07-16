@@ -627,6 +627,11 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # LiveCD_SMP (ntkrnlmp.exe) entry. Reconciled every build like the
             # instrumentation flags so a plain build flips it back OFF.
             "VIBEOS_SMP_DEFAULT_BOOT": bool(getattr(args, "smp_kernel", False)),
+            # i386 APIC HAL flavor (i386-apic-hal lane): build hal.dll with the
+            # LAPIC/IOAPIC/TPR interrupt model instead of the 8259 PIC. Opt-in
+            # (`--hal-apic`); reconciled every build so a plain build reverts to
+            # PIC. i386 only — amd64 hal is already APIC.
+            "VIBEOS_APIC_HAL": bool(getattr(args, "hal_apic", False)),
         },
     )
     if wrapped is None:

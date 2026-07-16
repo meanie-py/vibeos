@@ -33,12 +33,24 @@ if(ARCH STREQUAL "i386")
     # C liblibcntpr.a references them undefined — same as amd64); the self-hosted
     # pic-flavor asm (file-track so an edit re-invokes the opaque cargo link);
     # and the checked-in pic/halpic.rc resource.
+    # File-track the self-hosted flavor asm so an edit re-invokes the opaque
+    # cargo link. The APIC flavor (-DVIBEOS_APIC_HAL=ON) assembles a different
+    # set (apic/apictrap.S + apic/tsccal.S) — track THAT set instead, matching
+    # hal-cargo/build.rs's VIBEOS_APIC_HAL asm switch.
+    if(VIBEOS_APIC_HAL)
+        set(_HAL_I386_FLAVOR_ASM
+            ${CMAKE_CURRENT_SOURCE_DIR}/apic/apictrap.S
+            ${CMAKE_CURRENT_SOURCE_DIR}/apic/tsccal.S)
+    else()
+        set(_HAL_I386_FLAVOR_ASM
+            ${CMAKE_CURRENT_SOURCE_DIR}/generic/systimer.S
+            ${CMAKE_CURRENT_SOURCE_DIR}/generic/trap.S
+            ${CMAKE_CURRENT_SOURCE_DIR}/pic/pic.S)
+    endif()
     set(HAL_CARGO_EXTRA_DEPENDS
         chkstk
         rust_cnt ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a
-        ${CMAKE_CURRENT_SOURCE_DIR}/generic/systimer.S
-        ${CMAKE_CURRENT_SOURCE_DIR}/generic/trap.S
-        ${CMAKE_CURRENT_SOURCE_DIR}/pic/pic.S
+        ${_HAL_I386_FLAVOR_ASM}
         ${CMAKE_SOURCE_DIR}/sdk/lib/rust/hal-cargo/data/hal-i386.rc.res)
 
 elseif(ARCH STREQUAL "amd64")

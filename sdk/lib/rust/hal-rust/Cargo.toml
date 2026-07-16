@@ -29,3 +29,13 @@ minihal = []
 # `vibeos-cli build --smp-kernel`). An smp HAL pairs with ntkrnlmp.exe and
 # REFUSES the UP ntoskrnl.exe (exact-equality BuildType check) — by design.
 smp = []
+# APIC HAL flavor for i386 (i386-apic-hal lane). amd64 is ALWAYS the APIC
+# flavor (no feature needed — build.rs emits `hal_apic` unconditionally on
+# x86_64); on i386 the default is the 8259 PIC flavor and this feature swaps
+# in the LAPIC/IOAPIC/TPR interrupt model. Selected via VIBEOS_APIC_HAL=1 env
+# → hal-cargo build.rs (plumbed from cmake -DVIBEOS_APIC_HAL=ON, i.e.
+# `vibeos-cli build --hal-apic`), exactly like the `smp` feature's
+# VIBEOS_SMP_HAL path. The feature only toggles the build.rs `hal_apic`/
+# `hal_pic` cfgs (see build.rs); modules gate on those, never on the feature
+# directly, so amd64 needs no feature to be APIC.
+apic = []
