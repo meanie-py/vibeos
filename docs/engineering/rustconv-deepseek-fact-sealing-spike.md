@@ -336,5 +336,6 @@ diagnostics on i386, amd64, and arm64 at
 `.responses/candidate-oracles/20260716-171735-558326/report.json`.
 
 Eight representative lifecycle, helper, forwarding, branching, ownership, and out-parameter
-workers also preserved the exact normalized control skeleton. The integrated module builds
-on all three architectures; the clean smoke gate is the remaining landing oracle.
+workers also preserved the exact normalized control skeleton. The integrated module passed
+the clean i386/amd64/arm64 build, lint, shell-ready smoke, and network gate at
+`/tmp/vibeos-cli/20260716-173526-gate-i386+amd64+arm64/full.log`.
