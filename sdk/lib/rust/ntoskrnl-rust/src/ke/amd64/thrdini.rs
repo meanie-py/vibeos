@@ -234,7 +234,7 @@ pub unsafe extern "system" fn KiSwapContextResume(
     #[cfg(feature = "smp")]
     {
         if (*Pcr).Prcb.Number != 0 && NewThread != (*Pcr).Prcb.IdleThread {
-            super::ipi::KiSmpNoteApSwitch((*Pcr).Prcb.Number as u32);
+            crate::ke::ipi::KiSmpNoteApSwitch((*Pcr).Prcb.Number as u32);
         }
     }
 
