@@ -271,6 +271,15 @@ tokens, and $0. The final full-module oracle is
 on i386, amd64, and arm64. The real `shell32-rust` crate also `cargo check`s on all three
 target triples. This is the first out-of-sample proof that improving deterministic support
 can turn a complete cheap-model class from 62 compiler errors to accepted without a retry or
-stronger model. Compile-green is not yet integration-green: the class still needs C++
-linkage adapters for the two internal `SHELL_*` helpers and the normal class-atomic cohab
-build/smoke gate before its C++ owner can be disabled.
+stronger model.
+
+The final integration added source-selected C-linkage bridges for the two internal
+`SHELL_*` helpers, redirected the ATL object-map entry to the generated Rust factory, and
+disabled the C++ owner. Replaying the unchanged cache with the bridges remained green x3 in
+`.responses/candidate-oracles/20260716-141659-316267/`. The integrated shell32 image then
+built and passed the complete i386/amd64/arm64 gate, including all three shell-ready smokes
+and network checks (`/tmp/vibeos-cli/20260716-143231-gate-i386+amd64+arm64/full.log`). A
+targeted i386 Shift+F10 probe reached a live filesystem context menu without crashing, but
+the existing WOW64 32-bit `MENU`/`ITEM` desktop-heap layout limitation rendered its labels
+as garbage, so that probe is not evidence that the Copy-as-path label or command invocation
+worked. The class-atomic build and full smoke gate are the durable acceptance evidence.

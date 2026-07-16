@@ -788,10 +788,12 @@ _CPP_SUPPORT_EXTERNS = {
         "riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;"
     ),
     "SHELL_MapContextMenuVerbToCmdId": (
+        '    #[link_name = "Shell32RustMapContextMenuVerbToCmdId"]\n'
         "    fn SHELL_MapContextMenuVerbToCmdId(info: LPCMINVOKECOMMANDINFO, "
         "map: *const CMVERBMAP) -> INT;"
     ),
     "SHELL_GetCommandStringImpl": (
+        '    #[link_name = "Shell32RustGetCommandStringImpl"]\n'
         "    fn SHELL_GetCommandStringImpl(command: SIZE_T, flags: UINT, buffer: LPSTR, "
         "capacity: UINT, map: *const CMVERBMAP) -> HRESULT;"
     ),
@@ -1681,34 +1683,56 @@ def render_object_map_adapter(cls: CppComClass) -> str:
     # require_supported already proves both the activation entry and the
     # non-aggregatable lifetime contract used by the generated factory.
     adapter = f"{cls.name}RustEntry"
-    return "\n".join(
-        [
-            f'extern "C" HRESULT WINAPI {cls.name}_CreateInstance(',
-            "    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);",
-            "",
-            f"class {adapter} : public {cls.name}",
-            "{",
-            "public:",
-            "    class _CreatorClass",
-            "    {",
-            "    public:",
-            "        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)",
-            "        {",
-            f"            return {cls.name}_CreateInstance(",
-            "                static_cast<IUnknown *>(pv), riid, ppv);",
-            "        }",
-            "    };",
-            "};",
-            "",
-            f"// ObjectMap replacement: OBJECT_ENTRY({cls.object_map_clsid}, {adapter})",
-            "// One-time bridge functions (place after gModule is defined):",
-            "#ifndef SHELL32_RUST_OBJECT_LOCK_BRIDGE_DEFINED",
-            "#define SHELL32_RUST_OBJECT_LOCK_BRIDGE_DEFINED",
-            'extern "C" void WINAPI Shell32RustObjectLock() { gModule.Lock(); }',
-            'extern "C" void WINAPI Shell32RustObjectUnlock() { gModule.Unlock(); }',
-            "#endif",
-        ]
-    )
+    lines = [
+        f'extern "C" HRESULT WINAPI {cls.name}_CreateInstance(',
+        "    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);",
+        "",
+        f"class {adapter} : public {cls.name}",
+        "{",
+        "public:",
+        "    class _CreatorClass",
+        "    {",
+        "    public:",
+        "        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)",
+        "        {",
+        f"            return {cls.name}_CreateInstance(",
+        "                static_cast<IUnknown *>(pv), riid, ppv);",
+        "        }",
+        "    };",
+        "};",
+        "",
+        f"// ObjectMap replacement: OBJECT_ENTRY({cls.object_map_clsid}, {adapter})",
+        "// One-time bridge functions (place after gModule is defined):",
+        "#ifndef SHELL32_RUST_OBJECT_LOCK_BRIDGE_DEFINED",
+        "#define SHELL32_RUST_OBJECT_LOCK_BRIDGE_DEFINED",
+        'extern "C" void WINAPI Shell32RustObjectLock() { gModule.Lock(); }',
+        'extern "C" void WINAPI Shell32RustObjectUnlock() { gModule.Unlock(); }',
+        "#endif",
+    ]
+    source = cls.source.read_text(encoding="utf-8", errors="replace")
+    if "SHELL_MapContextMenuVerbToCmdId" in source:
+        lines.extend(
+            [
+                "",
+                'extern "C" INT WINAPI Shell32RustMapContextMenuVerbToCmdId(',
+                "    LPCMINVOKECOMMANDINFO pInfo, const CMVERBMAP *pMap)",
+                "{",
+                "    return SHELL_MapContextMenuVerbToCmdId(pInfo, pMap);",
+                "}",
+            ]
+        )
+    if "SHELL_GetCommandStringImpl" in source:
+        lines.extend(
+            [
+                "",
+                'extern "C" HRESULT WINAPI Shell32RustGetCommandStringImpl(',
+                "    SIZE_T CmdId, UINT uFlags, LPSTR Buf, UINT cchBuf, const CMVERBMAP *pMap)",
+                "{",
+                "    return SHELL_GetCommandStringImpl(CmdId, uFlags, Buf, cchBuf, pMap);",
+                "}",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def discover_widl_header(

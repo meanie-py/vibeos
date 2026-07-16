@@ -353,4 +353,9 @@ The first class with no accepted Rust base, `CCopyAsPathMenu`, initially produce
 62 full-module diagnostics on every architecture. After the deterministic support closure
 landed, the unchanged eight cached DeepSeek workers replayed for $0 and the module reached
 zero diagnostics on i386/amd64/arm64. This validates substrate repair as the correct route
-for unresolved ABI/header surface; it does not waive class-atomic link and smoke gates.
+for unresolved ABI/header surface. Deterministic C-linkage bridges then exposed its two
+internal C++ `SHELL_*` helpers, the generated ATL adapter took over the object-map entry, and
+the C++ owner was disabled. The integrated image built and passed the complete three-arch
+gate. The full pipeline result is therefore: two template workers plus eight cached
+DeepSeek workers, no retry or stronger model, 62-to-zero x3 diagnostics, and class-atomic
+link/smoke acceptance.

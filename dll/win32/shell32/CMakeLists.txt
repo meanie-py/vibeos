@@ -79,7 +79,7 @@ list(APPEND SOURCE
     CNewMenu.cpp
     CSendToMenu.cpp
     CCopyMoveToMenu.cpp
-    CCopyAsPathMenu.cpp
+    # CCopyAsPathMenu.cpp — replaced by Rust (shell32-rust/src/copy_as_path_menu.rs); cohab via libshell32_rust.a
     CShellDispatch.cpp
     CFolder.cpp
     CFolderItems.cpp

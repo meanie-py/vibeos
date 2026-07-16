@@ -173,8 +173,11 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
 - **kernel32/advapi32 tails.** kernel32 NLS `locale.c` + resources; advapi32 `wine/
   security.c` + generated RPC.
 - **shell32 COM classes (81 `.cpp`, ~64K LOC) — pilot in flight.** `CDropTargetHelper`,
-  `CActiveDesktop`, `COpenControlPanel`, and `CExeDropHandler` are Rust-owned activated
-  classes. rustconv now
+  `CActiveDesktop`, `COpenControlPanel`, `CExeDropHandler`, and `CCopyAsPathMenu` are
+  Rust-owned activated classes. `CCopyAsPathMenu` is the first out-of-sample cheap-model
+  class: two deterministic workers plus eight unchanged cached DeepSeek workers went from
+  62 diagnostics per architecture to zero after deterministic support closure, then passed
+  the full integrated three-architecture gate. rustconv now
   parses ATL COM maps, reads
   flattened interface slots/signatures from WIDL-generated or legacy `DECLARE_INTERFACE_` SDK
   headers, and generates interface structs,
@@ -182,8 +185,10 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   glue deterministically; the model sees method bodies only. Same-file free-helper closures are
   limited to internal linkage, selected transitively, overload-bound by proven-distinct arity,
   and renamed before prompting; wide literals are emitted as deterministic UTF-16 statics. Plain
-  C scalar/pointer object state is now laid out and zero-initialized deterministically;
-  `CExeDropHandler` is the first stateful pilot and `CShellItem` is the next ready class.
+  C scalar/pointer object state and `CComPtr<T>` ownership are now laid out and initialized
+  deterministically; source-selected bridges expose required internal C++ helpers without
+  asking the model to invent linkage. `CExeDropHandler` is the first scalar-state pilot,
+  `CCopyAsPathMenu` is the first RAII-state pilot, and `CShellItem` is the next ready class.
   C++/RAII state, aggregatable classes, custom/inherited base
   layouts, same-arity overloads, and internal COM objects without an `OBJECT_ENTRY` remain loud
   preflight failures until their layout/lifetime/construction mappings are implemented.

@@ -258,11 +258,18 @@ old parallel fail-fast bug was fixed without regenerating any paid function: all
 now drained and individually cached, and declaration-only token externs are removed before
 the executable call seal is checked.
 
-The new full-module oracle is deliberately red x3:
-`.responses/candidate-oracles/20260716-004452-273547/report.json` reports 62 diagnostics per
-architecture. Unlike the first corpus, this class has no accepted Rust module supplying its
-environment. The remaining manifest is mostly deterministic substrate—ATL `CStringW`,
-complete shell-item interfaces, menu/command structs, Win32 FFI/constants, macro lowering,
-and the file-scope verb table—plus three compiler-guided casts. Do not pay Sonnet for it.
-Close those generated substrate categories, replay the cached class for $0, and require the
-full-module x3 oracle before considering integration or the Wave-1 boot gate.
+The first full-module oracle,
+`.responses/candidate-oracles/20260716-004452-273547/report.json`, reported 62 diagnostics
+per architecture because this class had no accepted Rust module supplying its environment.
+The deterministic substrate now owns ATL `CStringW`, complete shell-item interfaces,
+menu/command structs, Win32 FFI/constants, macro lowering, the file-scope verb table, and
+the internal-C++ linkage bridges. Replaying the exact cached class cost $0 and reached zero
+diagnostics x3 in `.responses/candidate-oracles/20260716-141659-316267/`.
+
+`CCopyAsPathMenu.cpp` is now disabled, its ATL object-map entry activates the generated Rust
+factory, and the integrated image passed the complete i386/amd64/arm64 gate at
+`/tmp/vibeos-cli/20260716-143231-gate-i386+amd64+arm64/full.log`. A targeted i386 context-menu
+probe was inconclusive beyond no-crash because the pre-existing WOW64 32-bit `MENU`/`ITEM`
+desktop-heap layout limitation corrupts menu labels. Treat the full class-atomic link and
+shell-ready x3 gate as the landed oracle; retain a direct Copy-as-path invocation test as an
+owed behavioral oracle once that menu-view limitation no longer masks it.

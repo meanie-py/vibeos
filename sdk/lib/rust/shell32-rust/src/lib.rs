@@ -46,6 +46,7 @@ pub mod types;
 // vtables) used by the PIDL core (pidl/shellpath/shellord). Promoted from pidl.rs.
 pub mod shellcom;
 pub mod active_desktop;
+pub mod copy_as_path_menu;
 pub mod drop_target_helper;
 pub mod exe_drop_handler;
 pub mod open_control_panel;

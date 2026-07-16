@@ -770,6 +770,20 @@ def test_cpp_support_closure_is_source_selected_and_recovers_file_scope_table():
     assert "fn CoTaskMemFree" in rust  # selected by CComHeapPtr ownership
     assert "pub struct CStringW" in rust
     assert "fn HeapReAlloc" in rust
+    assert rust.count("fn InsertMenuItemW") == 1
+    assert 'link_name = "Shell32RustMapContextMenuVerbToCmdId"' in rust
+
+
+def test_copy_as_path_adapter_bridges_internal_cpp_linkage():
+    cls = analyze_class(
+        SHELL32 / "CCopyAsPathMenu.cpp",
+        "CCopyAsPathMenu",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    adapter = render_object_map_adapter(cls)
+    assert "class CCopyAsPathMenuRustEntry" in adapter
+    assert "Shell32RustMapContextMenuVerbToCmdId" in adapter
+    assert "Shell32RustGetCommandStringImpl" in adapter
 
 
 def test_cpp_semantic_lowering_runs_after_cache_and_owns_header_macros():

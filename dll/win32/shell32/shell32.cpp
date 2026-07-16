@@ -338,6 +338,23 @@ public:
     };
 };
 
+extern "C" HRESULT WINAPI CCopyAsPathMenu_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CCopyAsPathMenuRustEntry : public CCopyAsPathMenu
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CCopyAsPathMenu_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 
 BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktopRustEntry)
@@ -362,7 +379,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_OpenWithMenu, COpenWithMenu)
     OBJECT_ENTRY(CLSID_NewMenu, CNewMenu)
     OBJECT_ENTRY(CLSID_SendToMenu, CSendToMenu)
-    OBJECT_ENTRY(CLSID_CopyAsPathMenu, CCopyAsPathMenu)
+    OBJECT_ENTRY(CLSID_CopyAsPathMenu, CCopyAsPathMenuRustEntry)
     OBJECT_ENTRY(CLSID_CopyToMenu, CCopyToMenu)
     OBJECT_ENTRY(CLSID_MoveToMenu, CMoveToMenu)
     OBJECT_ENTRY(CLSID_StartMenu, CStartMenuDummy)
@@ -385,6 +402,18 @@ extern "C" void WINAPI Shell32RustObjectLock()
 extern "C" void WINAPI Shell32RustObjectUnlock()
 {
     gModule.Unlock();
+}
+
+extern "C" INT WINAPI Shell32RustMapContextMenuVerbToCmdId(
+    LPCMINVOKECOMMANDINFO pInfo, const CMVERBMAP *pMap)
+{
+    return SHELL_MapContextMenuVerbToCmdId(pInfo, pMap);
+}
+
+extern "C" HRESULT WINAPI Shell32RustGetCommandStringImpl(
+    SIZE_T CmdId, UINT uFlags, LPSTR Buf, UINT cchBuf, const CMVERBMAP *pMap)
+{
+    return SHELL_GetCommandStringImpl(CmdId, uFlags, Buf, cchBuf, pMap);
 }
 
 
