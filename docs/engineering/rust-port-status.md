@@ -172,9 +172,21 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   (~50%+, `lsasrv-rust` 20 `.rs`) are the active server-side frontier.
 - **kernel32/advapi32 tails.** kernel32 NLS `locale.c` + resources; advapi32 `wine/
   security.c` + generated RPC.
-- **shell32 COM classes (81 `.cpp`, ~64K LOC) — not started.** ATL/COM vtable impls
-  (CDefView / CShellLink / folders / droptargets) — a heavy C++→Rust effort separate from
-  the C→Rust pipeline that finished shell32's 14 wine-derived `.c` files.
+- **shell32 COM classes (81 `.cpp`, ~64K LOC) — pilot in flight.** `CDropTargetHelper`,
+  `CActiveDesktop`, `COpenControlPanel`, and `CExeDropHandler` are Rust-owned activated
+  classes. rustconv now
+  parses ATL COM maps, reads
+  flattened interface slots/signatures from WIDL-generated or legacy `DECLARE_INTERFACE_` SDK
+  headers, and generates interface structs,
+  vtables, pointer recovery, QueryInterface/refcounting, the Rust factory, and ATL activation
+  glue deterministically; the model sees method bodies only. Same-file free-helper closures are
+  limited to internal linkage, selected transitively, overload-bound by proven-distinct arity,
+  and renamed before prompting; wide literals are emitted as deterministic UTF-16 statics. Plain
+  C scalar/pointer object state is now laid out and zero-initialized deterministically;
+  `CExeDropHandler` is the first stateful pilot and `CShellItem` is the next ready class.
+  C++/RAII state, aggregatable classes, custom/inherited base
+  layouts, same-arity overloads, and internal COM objects without an `OBJECT_ENTRY` remain loud
+  preflight failures until their layout/lifetime/construction mappings are implemented.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions

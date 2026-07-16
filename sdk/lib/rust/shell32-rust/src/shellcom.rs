@@ -23,6 +23,46 @@ pub type SIGDN = u32; // shobjidl (v1_enum)
 pub type PWSTR = LPWSTR; // winnt.h
 pub type VARTYPE = u16; // wtypes.h
 
+/// SHDRAGIMAGE from shobjidl.h, used by IDragSourceHelper.
+#[repr(C)]
+pub struct SHDRAGIMAGE {
+    pub sizeDragImage: SIZE,
+    pub ptOffset: POINT,
+    pub hbmpDragImage: HBITMAP,
+    pub crColorKey: COLORREF,
+}
+pub type LPSHDRAGIMAGE = *mut SHDRAGIMAGE;
+
+// Active Desktop's current implementation is a pure E_NOTIMPL stub. These SDK
+// records cross its COM ABI only by pointer, so opaque repr(C) pointees are exact
+// for this class; promote their fields from shlobj.h before any body dereferences
+// them.
+#[repr(C)]
+pub struct WALLPAPEROPT {
+    _opaque: [u8; 0],
+}
+pub type LPWALLPAPEROPT = *mut WALLPAPEROPT;
+pub type LPCWALLPAPEROPT = *const WALLPAPEROPT;
+
+#[repr(C)]
+pub struct COMPONENTSOPT {
+    _opaque: [u8; 0],
+}
+pub type LPCOMPONENTSOPT = *mut COMPONENTSOPT;
+pub type LPCCOMPONENTSOPT = *const COMPONENTSOPT;
+
+#[repr(C)]
+pub struct COMPONENT {
+    _opaque: [u8; 0],
+}
+pub type LPCOMPONENT = *mut COMPONENT;
+pub type LPCCOMPONENT = *const COMPONENT;
+
+#[repr(C)]
+pub struct IErrorLog {
+    pub lpVtbl: *mut core::ffi::c_void,
+}
+
 // ── GUID family (guiddef.h) ─────────────────────────────────────────────────────────────
 /// GUID/CLSID/IID/FMTID — { Data1: u32; Data2: u16; Data3: u16; Data4: [u8;8] }.
 #[repr(C)]
@@ -412,7 +452,7 @@ pub struct IDataObjectVtbl {
     pub QueryInterface: usize,
     pub AddRef: usize,
     pub Release: unsafe extern "system" fn(*mut IDataObject) -> ULONG,
-    pub GetData: usize,
+    pub GetData: unsafe extern "system" fn(*mut IDataObject, *mut c_void, *mut c_void) -> HRESULT,
     pub GetDataHere: usize,
     pub QueryGetData: usize,
     pub GetCanonicalFormatEtc: usize,

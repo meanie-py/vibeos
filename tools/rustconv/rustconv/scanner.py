@@ -372,15 +372,87 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                 if sub.type == "function_declarator":
                     declarator = sub
 
-    if declarator is None:
-        return None
-
     cpp_class = None
     is_ctor = False
     is_dtor = False
+    recovered_declarator = False
+
+    if declarator is None and node.type == "function_definition":
+        # tree-sitter-cpp parses some perfectly ordinary out-of-line methods
+        # without a calling-convention token as ``field_identifier`` + ERROR:
+        #
+        #     BOOL CThing::Method(DWORD flags) { ... }
+        #
+        # Recover only that narrow, compiler-unambiguous surface from the text
+        # before the compound body.  This keeps the class-atomic fail-loud gate
+        # useful without accepting arbitrary malformed C++.
+        body_node = next((c for c in node.children if c.type == "compound_statement"), None)
+        if body_node is not None:
+            signature = source[node.start_byte : body_node.start_byte].decode(
+                "utf-8", errors="replace"
+            )
+            recovered = re.fullmatch(
+                r"\s*(?P<prefix>.*?)\b(?P<class>[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)"
+                r"::(?P<name>~?[A-Za-z_]\w*)\s*\((?P<params>.*)\)\s*",
+                signature,
+                flags=re.S,
+            )
+            if recovered:
+                prefix_tokens = recovered.group("prefix").split()
+                is_static = "static" in prefix_tokens
+                prefix_tokens = [token for token in prefix_tokens if token != "static"]
+                for token in tuple(prefix_tokens):
+                    if token in CALLING_CONVENTIONS:
+                        calling_convention = token
+                        prefix_tokens.remove(token)
+                return_type = " ".join(prefix_tokens)
+                cpp_class = recovered.group("class")
+                name = recovered.group("name")
+                is_dtor = name.startswith("~")
+                name = name.lstrip("~")
+                is_ctor = name == cpp_class.rpartition("::")[2]
+
+                raw_params = recovered.group("params").strip()
+                if raw_params and raw_params != "VOID":
+                    depth = 0
+                    pieces: list[str] = []
+                    start = 0
+                    for index, char in enumerate(raw_params):
+                        if char in "(<[":
+                            depth += 1
+                        elif char in ")>]":
+                            depth -= 1
+                        elif char == "," and depth == 0:
+                            pieces.append(raw_params[start:index].strip())
+                            start = index + 1
+                    pieces.append(raw_params[start:].strip())
+                    for raw_param in pieces:
+                        parts = raw_param.rsplit(None, 1)
+                        if len(parts) == 2:
+                            ptype, pname = parts
+                            while pname.startswith("*"):
+                                ptype += " *"
+                                pname = pname[1:]
+                            params.append((ptype.strip(), pname.strip()))
+                        elif "*" in raw_param:
+                            adjacent = re.match(r"(?P<type>.+\*)(?P<name>[A-Za-z_]\w*)$", raw_param)
+                            if adjacent:
+                                params.append(
+                                    (adjacent.group("type").strip(), adjacent.group("name"))
+                                )
+                            else:
+                                params.append((raw_param, ""))
+                        else:
+                            params.append((raw_param, ""))
+
+                declarator = node  # mark the deliberately recovered shape as parsed
+                recovered_declarator = True
+
+    if declarator is None:
+        return None
 
     # Extract function name from declarator
-    for child in declarator.children:
+    for child in () if recovered_declarator else declarator.children:
         if child.type == "identifier":
             name = _extract_text(child, source)
         elif child.type == "field_identifier":
@@ -421,6 +493,12 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                             ptype += " *"
                             pname = pname[1:]
                         params.append((ptype.strip(), pname.strip()))
+                    elif parts and "*" in parts[0]:
+                        adjacent = re.match(r"(?P<type>.+\*)(?P<name>[A-Za-z_]\w*)$", parts[0])
+                        if adjacent:
+                            params.append((adjacent.group("type").strip(), adjacent.group("name")))
+                        else:
+                            params.append((parts[0], ""))
                     elif parts and parts[0] != "VOID":
                         params.append((parts[0], ""))
 

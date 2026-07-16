@@ -7059,3 +7059,74 @@ Rust program) and the `.spec` records only the convention, so again the oracle m
 itself. Compare **pointer depth**, not pointer-vs-scalar: a mutation test proved the first version
 of that checker structurally blind to `HANDLE`-vs-`LPHANDLE` — the bug that motivated it — because
 *both* are pointers.
+
+### 9.79 (2026-07-14) C++ COM translation: the model owns bodies, never interfaces, vtables, offsets, lifetime, or activation
+
+**Failure class:** asking an LLM to translate an ATL class as one blob lets it invent the most
+dangerous parts of the result: inherited slot order, `this` adjustment for secondary interfaces,
+calling convention, IID routing, refcount lifetime, and class-factory registration. Those errors
+can compile on 64-bit and corrupt the i386 stack or return the wrong interface pointer at runtime.
+
+**Pipeline rule:** `rustconv cpp-com` derives the class COM map from the defining C++ header and
+the flattened vtable signatures from compiler-facing SDK headers (WIDL `*Vtbl` structs or legacy
+`DECLARE_INTERFACE_` blocks). It emits the Rust interface types/vtables, `offset_of!` wrappers,
+QueryInterface/AddRef/Release, allocation/factory, and an ATL
+object-map adapter deterministically. Paid calls receive only a flat
+`Class_Method_body(this, ...)` worker contract. Unsupported COM-map macros, scanner gaps, missing
+WIDL headers, unmapped class fields, aggregation, or internal construction without an
+`OBJECT_ENTRY` hard-fail before a paid call.
+
+Two adjacent boundaries are equally strict. A custom C++ base class is inherited object layout
+and behavior, even when the derived class declares no fields; it must not be mislabeled
+"stateless." A selected class method that calls a same-file helper is class-atomic only when the
+complete transitive helper closure is selected. rustconv now does that deterministically and binds
+overloads by arity to collision-free `<helper>[_N]_body` names before prompting. Same-name,
+same-arity overloads still hard-fail: implementing general C++ overload resolution would be a
+guess. Only `static`/internal-linkage free functions enter that closure: a same-file exported
+function such as `SHCreateShellItem` remains a module ABI call instead of silently changing
+ownership and export semantics. The C++ scanner has a narrow textual recovery for tree-sitter's
+`RET Class::Method(...)` misparse so this gate sees unadorned out-of-line methods rather than
+silently losing them.
+
+Plain C object fields are also deterministic now: a simple scalar/pointer declaration is emitted
+directly in the Rust-owned `#[repr(C)]` object and zero-initialized before the translated
+constructor runs. This admits `CShellItem`'s `LPITEMIDLIST m_pidl` without asking the model to
+invent layout. Templates/RAII wrappers (`CComPtr`, `CComHeapPtr`), references, arrays, bitfields,
+initializers, and multi-declarator fields still hard-fail because their hidden layout and lifetime
+semantics need an explicit mapping rather than a plausible-looking Rust field.
+
+The first stateful pilot, `CExeDropHandler`, added two adjacent guards. Flattened parent/child
+interfaces repeat inherited methods with a different receiver spelling (`IPersist *` versus
+`IPersistFile *`); compare the return type and non-receiver parameters before declaring a
+conflict. Also, an empty constructor body can still have a non-empty initializer list: only
+proven zero initializers may lower to the factory's already-zeroed state. Non-zero initializers
+remain real worker behavior. C wide character literals are normalized to exact UTF-16 code-unit
+integers before prompting, and worker audits allow calls through `lpVtbl` while rejecting
+`Option`/`unwrap` guesses or model-defined vtable surfaces.
+
+`COpenControlPanel` exposed two more surfaces that must stay deterministic. First, tree-sitter
+found its out-of-line `HRESULT WINAPI Class::Method` bodies but lost the return types; the
+flattened WIDL vtable now overwrites scanner method types (while retaining source parameter names)
+before worker signatures are built. Second, even Sonnet invented
+`const ERROR_NOT_FOUND: DWORD = 2` (the SDK value is 1168) and replaced `CSIDL_CONTROLS` with
+`0x0007` (the SDK value is 3). The symbolic audit caught both, and now also rejects a worker that
+defines any source symbolic constant locally. C++ `L"..."` literals are replaced before prompting
+with content-hashed `CPP_COM_WSTR_*` references and emitted as exact UTF-16 statics, so neither
+cheap nor premium models transcribe string data. Declaration-only local `extern` blocks are
+removed; module-level FFI remains engineer/compiler-owned.
+
+**Cheap-model result:** the first `CDropTargetHelper` DeepSeek pilot preserved symbolic
+`E_NOTIMPL`, but on trivial bodies it also invented variadic debug externs, emitted Markdown,
+overqualified types, and produced `HRESULT(E_NOTIMPL)` as though the scalar alias were a tuple
+struct. Deterministic normalization handles syntax-only debug-macro forms; body audits reject ABI
+surface, signature drift, and dropped symbolic or numeric constants before caching. DeepSeek is
+therefore a screened draft option, not the unattended default for COM ownership/control flow; use
+Sonnet for real bodies until a broader corpus proves otherwise.
+
+Before paying, exact whole-body stubs are lowered mechanically: a body consisting only of
+`UNIMPLEMENTED;` and an optional symbolic HRESULT return becomes its flat Rust worker at $0. This
+translated all 23 `CActiveDesktop` bodies without invoking the selected Sonnet backend; any extra
+statement makes the recognizer decline and leaves the body on the normal audited model path. The
+same deterministic pass now handles an exact `*out = SYMBOL; return SYMBOL;` body and synthesizes
+empty implicit constructors/destructors, which kept `COpenControlPanel::GetCurrentView` and its
+lifetime workers off the paid path.

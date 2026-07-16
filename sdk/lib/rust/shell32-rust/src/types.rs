@@ -27,6 +27,8 @@ pub type HKEY = HANDLE;
 pub type PHKEY = *mut HKEY;
 pub type HINSTANCE = HANDLE;
 pub type HWND = HANDLE;
+pub type HBITMAP = HANDLE;
+pub type COLORREF = DWORD;
 
 pub type LPVOID = *mut c_void;
 pub type LPCVOID = *const c_void;
@@ -37,6 +39,8 @@ pub type LPSTR = *mut CHAR;
 pub type LPCSTR = *const CHAR;
 pub type LPWSTR = *mut WCHAR;
 pub type LPCWSTR = *const WCHAR;
+pub type PCWSTR = *const WCHAR;
+pub type LPCOLESTR = *const WCHAR;
 
 pub const FALSE: BOOL = 0;
 pub const TRUE: BOOL = 1;
@@ -48,7 +52,28 @@ pub type HRESULT = LONG;
 pub type REGSAM = DWORD;
 
 pub const S_OK: HRESULT = 0;
+pub const E_NOTIMPL: HRESULT = 0x80004001u32 as HRESULT;
+pub const E_NOINTERFACE: HRESULT = 0x80004002u32 as HRESULT;
+pub const E_POINTER: HRESULT = 0x80004003u32 as HRESULT;
+pub const CLASS_E_NOAGGREGATION: HRESULT = 0x80040110u32 as HRESULT;
+pub const E_OUTOFMEMORY: HRESULT = 0x8007000Eu32 as HRESULT;
 pub const ERROR_SUCCESS: LONG = 0;
+pub const HEAP_ZERO_MEMORY: DWORD = 8;
+
+/// SIZE and POINT from wtypes.h.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct SIZE {
+    pub cx: LONG,
+    pub cy: LONG,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct POINT {
+    pub x: LONG,
+    pub y: LONG,
+}
 
 /// `HRESULT_FROM_WIN32` (winerror.h): positive Win32 error → 0x8007xxxx; pass-through
 /// otherwise. Faithful port of `__HRESULT_FROM_WIN32`.

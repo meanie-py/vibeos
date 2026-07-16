@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from .callgraph import FunctionDep
 from .config import NTOSKRNL_DIR, OUTPUT_CRATE, TARGETS, TEMPLATES_DIR, Target
+from .cpp_com import worker_signature
 from .resolver import GAP_FUNCTIONS, ResolveResult
 from .spec_parser import rust_calling_convention
 
@@ -56,6 +57,11 @@ def load_function_system_prompt(target: Target | None = None, mode: str = "idiom
     """
     if target is None:
         target = TARGETS["ntoskrnl"]
+    if target.name == "shell32":
+        # C++ COM mode is body-only in BOTH styles. The deterministic cpp_com
+        # layer owns every ABI artifact; using the generic mechanical/kernel
+        # prompt here would tell the model to regenerate those artifacts.
+        return target.system_prompt.read_text()
     if mode == "mechanical":
         mech = TEMPLATES_DIR / "function_prompt_mechanical.md"
         base = mech.read_text()
@@ -79,7 +85,13 @@ def _format_import_context(resolve: ResolveResult, target: Target | None = None)
     """
     parts = []
     parts.append("## Available Imports (pre-resolved for this function)")
-    parts.append("These types/functions are available from ntkrnl_sys. Use them directly:\n")
+    if target is not None and target.name == "shell32":
+        parts.append(
+            "These exact symbols are available from crate::types / crate::shellcom. "
+            "Use them directly; keep unresolved constants symbolic:\n"
+        )
+    else:
+        parts.append("These types/functions are available from ntkrnl_sys. Use them directly:\n")
 
     is_hal = target is not None and target.name == "hal"
     # Hand-written module names that should be folded into `ddk` for HAL.
@@ -106,6 +118,9 @@ def _format_import_context(resolve: ResolveResult, target: Target | None = None)
 
     for module in sorted(merged):
         names = sorted(merged[module])
+        if target is not None and target.name == "shell32":
+            parts.append(f"From `crate::{module}`: {', '.join(f'`{n}`' for n in names)}")
+            continue
         if module in ("ddk", "hal_ddk"):
             parts.append(f"From `ntkrnl_sys::{module}`: {', '.join(f'`{n}`' for n in names[:60])}")
             if len(names) > 60:
@@ -412,13 +427,19 @@ def build_file_context(
     gap_info = _format_gap_functions(file_res.gap_functions, subsystem)
     if gap_info:
         parts.append(gap_info)
-    globals_info = _format_globals_context(scan.globals, scan.globals_text or scan.preamble_text)
+    globals_info = (
+        ""
+        if target is not None and target.name == "shell32"
+        else _format_globals_context(scan.globals, scan.globals_text or scan.preamble_text)
+    )
     if globals_info:
         parts.append(globals_info)
     return "\n".join(parts)
 
 
-def _format_method_context(func: FunctionDep, scan: ScanResult) -> str:
+def _format_method_context(
+    func: FunctionDep, scan: ScanResult, target: Target | None = None
+) -> str:
     """C++-method translation contract + the owning class's definition
     (bodies stripped). The flat `Cls_method(this: *mut Cls, …)` convention is
     the cohab ABI — see docs/engineering/explorer-rust-translation-plan.md."""
@@ -428,6 +449,25 @@ def _format_method_context(func: FunctionDep, scan: ScanResult) -> str:
     m = func.cpp_method
     if not cls or not m:  # not a C++ method (or no method name) — no contract to emit
         return ""
+    if target is not None and target.name == "shell32":
+        signature = worker_signature(func.name, cls, func.params, func.return_type)
+        lines = [
+            "\n## C++ Method Body Worker\n",
+            f"This is `{cls}::{m}`. The deterministic COM generator owns its ABI wrapper.\n",
+            f"- Emit exactly `{signature}` with the C++ body.\n",
+            "- Do not emit `#[no_mangle]`, `extern`, vtables, QueryInterface, refcounting, "
+            "or factories.\n",
+            f"- Implicit fields become `(*this).field`; sibling bodies are "
+            f"`{cls}_<method>_body`.\n",
+            "- A COM call is `((*(*ptr).lpVtbl).Method)(ptr, ...)`; vtable slots are "
+            "mandatory function pointers, never `Option`, `as_ref`, or `unwrap`.\n",
+            "- `CPP_COM_WSTR_*` values are deterministic UTF-16 statics; preserve each exact "
+            "`.as_ptr()` expression. Never define a symbolic C constant locally.\n",
+        ]
+        ctx = extract_class_context(scan, cls)
+        if ctx:
+            lines.append(f"\n### Class definition (method bodies stripped)\n```cpp\n{ctx}\n```\n")
+        return "".join(lines)
     lines = [
         "\n## C++ Method → Free Function\n",
         f"This C body is the C++ method `{cls}::{m}`. Translate it as a FREE function:\n",
@@ -446,6 +486,22 @@ def _format_method_context(func: FunctionDep, scan: ScanResult) -> str:
     if ctx:
         lines.append(f"\n### Class definition (method bodies stripped)\n```cpp\n{ctx}\n```\n")
     return "".join(lines)
+
+
+def _format_shell32_helper_context(func: FunctionDep) -> str:
+    signature = worker_signature(func.name, None, func.params, func.return_type)
+    return (
+        "\n## Same-file Helper Body Worker\n\n"
+        "This helper belongs to the deterministic closure of the selected COM class.\n"
+        f"- Emit exactly `{signature}` with the C++ body.\n"
+        "- Its name and signature were derived from the source; do not add `this`.\n"
+        "- Calls already ending in `_body` were overload-bound deterministically; preserve "
+        "those exact names.\n"
+        "- `CPP_COM_WSTR_*` values are deterministic UTF-16 statics; preserve each exact "
+        "`.as_ptr()` expression.\n"
+        "- Never define a symbolic C constant locally. Use its supplied name directly.\n"
+        "- Do not emit `#[no_mangle]`, `extern`, vtables, factories, imports, or globals.\n"
+    )
 
 
 def build_function_prompt(
@@ -498,7 +554,9 @@ def build_function_prompt(
 
     # C++ method → free-function convention + class layout context
     if getattr(func, "cpp_class", None):
-        parts.append(_format_method_context(func, scan))
+        parts.append(_format_method_context(func, scan, target=target))
+    elif target is not None and target.name == "shell32":
+        parts.append(_format_shell32_helper_context(func))
 
     # Export info
     export_info = _format_export_info(func, spec_exports)
@@ -512,8 +570,10 @@ def build_function_prompt(
         gap_info = _format_gap_functions(resolve.gap_functions, subsystem)
         if gap_info:
             parts.append(gap_info)
-        globals_info = _format_globals_context(
-            scan.globals, scan.globals_text or scan.preamble_text
+        globals_info = (
+            ""
+            if target is not None and target.name == "shell32"
+            else _format_globals_context(scan.globals, scan.globals_text or scan.preamble_text)
         )
         if globals_info:
             parts.append(globals_info)

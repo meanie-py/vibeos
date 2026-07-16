@@ -269,9 +269,78 @@ public:
     }
 };
 
+/* Registration remains ATL-owned for translated classes, but activation is Rust-owned. */
+extern "C" HRESULT WINAPI CActiveDesktop_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CActiveDesktopRustEntry : public CActiveDesktop
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CActiveDesktop_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CDropTargetHelper_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CDropTargetHelperRustEntry : public CDropTargetHelper
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CDropTargetHelper_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI COpenControlPanel_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class COpenControlPanelRustEntry : public COpenControlPanel
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return COpenControlPanel_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CExeDropHandler_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CExeDropHandlerRustEntry : public CExeDropHandler
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CExeDropHandler_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 
 BEGIN_OBJECT_MAP(ObjectMap)
-    OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktop)
+    OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktopRustEntry)
     OBJECT_ENTRY(CLSID_ShellFSFolder, CFSFolder)
     OBJECT_ENTRY(CLSID_MyComputer, CDrivesFolder)
     OBJECT_ENTRY(CLSID_ShellDesktop, CDesktopFolder)
@@ -280,9 +349,9 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ShellItem, CShellItem)
     OBJECT_ENTRY(CLSID_ShellLink, CShellLink)
     OBJECT_ENTRY(CLSID_Shell, CShellDispatch)
-    OBJECT_ENTRY(CLSID_DragDropHelper, CDropTargetHelper)
+    OBJECT_ENTRY(CLSID_DragDropHelper, CDropTargetHelperRustEntry)
     OBJECT_ENTRY(CLSID_ControlPanel, CControlPanelFolder)
-    OBJECT_ENTRY(CLSID_OpenControlPanel, COpenControlPanel)
+    OBJECT_ENTRY(CLSID_OpenControlPanel, COpenControlPanelRustEntry)
     OBJECT_ENTRY(CLSID_MyDocuments, CMyDocsFolder)
     OBJECT_ENTRY(CLSID_NetworkPlaces, CNetFolder)
     OBJECT_ENTRY(CLSID_FontsFolderShortcut, CFontsFolder)
@@ -301,12 +370,22 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_MenuBand, CMenuBand)
     OBJECT_ENTRY(CLSID_MenuDeskBar, CMenuDeskBar)
     OBJECT_ENTRY(CLSID_MergedFolder, CMergedFolder)
-    OBJECT_ENTRY(CLSID_ExeDropHandler, CExeDropHandler)
+    OBJECT_ENTRY(CLSID_ExeDropHandler, CExeDropHandlerRustEntry)
     OBJECT_ENTRY(CLSID_QueryAssociations, CQueryAssociations)
     OBJECT_ENTRY(CLSID_UserNotification, CUserNotification)
 END_OBJECT_MAP()
 
 CShell32Module  gModule;
+
+extern "C" void WINAPI Shell32RustObjectLock()
+{
+    gModule.Lock();
+}
+
+extern "C" void WINAPI Shell32RustObjectUnlock()
+{
+    gModule.Unlock();
+}
 
 
 /***********************************************************************
