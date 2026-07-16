@@ -29,12 +29,38 @@ the 8259 PIC HAL, byte-unchanged, and amd64/arm64 are provably untouched.
 - **Lazy IRQL (`APIC_LAZY_IRQL`) is the default** and booted first try; the eager
   path is kept behind a `const bool` for bisection.
 
-**Owed before landing (A6 tail):** full `vibeos-cli gate` ×3 on defaults
-(in progress — `verify_signatures`'s "993 new" is a *worktree artifact*: it needs
-a full `build-amd64/` header dump, absent in an i386-only worktree; not a real
-regression). Then the user-approved **flip of the i386 default to APIC + gating
-PIC out** (pic_pic/pic_halinit/irql tables/timer/profil stay in-tree, gated off —
-never deleted). Phase B (AP start) returns to the smp-bringup lane.
+**Validation (done 2026-07-16):**
+- i386 APIC flavor: **6/6 boots to desktop** green (1 initial + 5/5 soak), banner
+  confirmed in the serial log.
+- i386 default (PIC): builds + boots green, **no apic banner** (confirmed still
+  PIC) — zero regression from the shared-file edits.
+- amd64: builds + boots + net green, all lints clean **including
+  `verify_signatures`** — which confirms the "993 new" seen during i386-only
+  builds was purely the missing-`build-amd64` worktree artifact, not a real
+  regression (verify_signatures always reads `build-amd64/` headers; absent in an
+  i386-only tree → partial C-proto dump → spurious diff).
+- arm64: hal-rust compiles clean; provably unaffected (x86-gated module + a
+  build.rs that emits neither flavor cfg for aarch64). Full arm64 smoke skipped as
+  provably-irrelevant to save time.
+
+**Owed (A6 tail — deliberately left for the user):** the **flip of the i386
+default to APIC + gating PIC off**. APIC works and is validated, so this is
+authorized in principle ("once apic works drop pic"), but it inverts the default
+i386 `hal.dll` (what every i386 dev/gate builds) and the `--hal-apic` CLI
+semantics — a consequential, measure-twice change best pulled with the user
+present, especially given the explicit "don't delete, just gate it off" caution.
+Ready-to-execute plan:
+  1. `hal-cargo/build.rs`: `apic_hal = arch=="x86" && env::var("VIBEOS_PIC_HAL").is_err()`
+     (apic default on x86; PIC via a `VIBEOS_PIC_HAL` escape hatch).
+  2. Plumb `VIBEOS_PIC_HAL` through `gcc.cmake` + `build.py`; rename `--hal-apic`
+     → `--hal-pic` (the escape hatch).
+  3. Rebuild default i386 → now APIC → soak; keep PIC modules in-tree, gated off
+     (never deleted).
+It is **contained to this feature branch** (master stays PIC until merged), and
+reversible with a single `git revert`.
+
+Phase B (AP start, idle-lock/SwapBusy, M5c taps) returns to the smp-bringup lane,
+reusing aptramp32 + ke/ipi.rs + this APIC HAL.
 
 ---
 
