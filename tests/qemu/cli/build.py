@@ -778,22 +778,52 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     if not _verify_flag_artifacts(run, repo, build_dir, args):
         return run.finalize(repo)
 
-    # optional arch-specific targets (best-effort) — ONE ninja per target.
-    # Batching them into a single `ninja a b c` makes the field's "absent on
-    # some branches" tolerance all-or-nothing: ninja rejects the whole command
-    # on the first unknown target, so one absent target silently skips the
-    # present ones. That bites for real — kmtest_all only exists when the build
-    # dir is configured ENABLE_ROSTESTS(_KMTESTS)=ON (both default OFF), and a
-    # kmtests-off dir would take arm64input/arm64vid down with it, staging a
-    # stale input/video driver into the ramdisk with no error anywhere.
+    # optional arch-specific targets — ONE ninja per target, and every outcome
+    # REPORTED. "Optional" means the target may be ABSENT (not in this build's
+    # ninja graph); it has never meant "ignore whether it built".
+    #
+    # Two ways this used to lie, both of which stage a STALE binary into the
+    # arm64 ramdisk and still go green — the exact false-green class archcfg's
+    # comment block exists to prevent:
+    #   1. Batching (`ninja a b c`): ninja rejects the WHOLE command on the first
+    #      unknown target, so one absent target silently skipped the present
+    #      ones. kmtest_all only exists under -DENABLE_ROSTESTS(_KMTESTS)=ON
+    #      (both default OFF), so a kmtests-off dir took arm64input/arm64vid —
+    #      and ntkrnlmp — down with it.
+    #   2. Discarding the result: a target that EXISTS but FAILS TO COMPILE was
+    #      swallowed whole. arm64input could stop building entirely and the build
+    #      stayed ✓ while mkramdisk staged the last-good .sys.
+    #
+    # So: absence is a VISIBLE skip; a real build failure FAILS the build. And
+    # the polarity is fail-loud — only ninja's recognised "unknown target" counts
+    # as absence. Anything we can't classify is a failure, never a shrug.
     for target in cfg.ninja_targets_optional:
-        run.run(
+        cp = run.run(
             wrap(["ninja", target]),
             cwd=build_dir,
             env=build_env,
             stage=f"ninja-optional:{target}",
             timeout=900,
         )
+        if cp.returncode == 0:
+            run.add(Stage(f"opt:{target}", status="ok"))
+            continue
+        blob = (cp.stdout or "") + (cp.stderr or "")
+        if "unknown target" in blob.lower():
+            run.add(Stage(f"opt:{target}", status="skip", detail="absent from ninja graph"))
+            continue
+        cls, salient = _classify_build_failure(cp.stdout or "", cp.stderr or "")
+        run.classification = cls
+        run.add(
+            Stage(
+                f"opt:{target}",
+                exit=cp.returncode,
+                status="fail",
+                detail=f"optional target FAILED to build ({cls}) — not absent, broken",
+                salient=salient,
+            )
+        )
+        return run.finalize(repo)
 
     # --- cache hit-rate stats (also the determinism gauge) ---
     if caching and build_env is not None:
