@@ -7617,3 +7617,46 @@ GDB watchpoint on the faulting stack VA's PTE, or instrument `MmDeleteKernelStac
 and its symbol is meaningless; walk the stack return slots instead. (b) `0xfffff880…` = kernel
 stacks, `0xfffffa80…` = the MDL/nonpaged system-VA region — the fault being in the *former* is what
 ruled out "dangling MDL mapping" and pointed at the stack.
+
+### 9.89 (ROOT-CAUSED + FIXED 2026-07-16) The SamSs 30s SCM stall was a cross-process named-EVENT sharing Heisenbug — fix by syncing on the PIPE, not the event
+
+**Symptom.** Every boot, every arch: the SCM auto-start stalled ~30s on SamSs
+(`[SERVICES] ScmStartUserModeService(SamSs): connect result=1053` = ERROR_SERVICE_REQUEST_TIMEOUT),
+then continued to `SC_AutoStartComplete`. Non-blocking (desktop boots), but it delayed the
+conformance sweep and every service after SamSs by 30s.
+
+**The Heisenbug tell.** Adding *any* `DbgPrint` to the lsass/lsasrv/SCM handshake made it connect
+reliably (instrumented boots 3/3 `result=0`; uninstrumented 0/N). That is the signature of a timing
+race, and it's the trap: you "fix" it by observing it, then it regresses when you remove the probe.
+Don't trust an instrumented green here — verify the structural fix UNINSTRUMENTED (I ran 4× per
+build).
+
+**Localizing without perturbing (elimination, since prints move the bug).** lsasrv's
+`DispatcherThread` = `WaitForSingleObject(SECURITY_SERVICES_STARTED, INFINITE)` →
+`I_ScIsSecurityProcess()` → `StartServiceCtrlDispatcherW`. In timeout boots the pre-existing
+`[SCTRL] connecting pipe=…NtControlPipe0` print was ABSENT, so the connect was never reached;
+`I_ScIsSecurityProcess` is a one-line global store (can't hang) — so the *only* place it could wedge
+is the INFINITE event wait. Root cause: `SECURITY_SERVICES_STARTED` is created independently by the
+SCM (services.exe) AND lsasrv, meant to dedup to one shared kernel object — but **cross-process
+named-object sharing is timing-fragile in this kernel**: when lsasrv won the create race the SCM's
+`SetEvent` intermittently did not wake this waiter. (Two structural fixes that FAILED, and what they
+proved: (a) spawning the dispatcher first — reorder `ServiceInit` ahead of `LsapInitLsa` in lsass —
+crashed it early, 0x3E6; (b) forcing lsasrv to `OpenEventW` the SCM's object instead of creating one
+STILL 4/4-timed-out, proving even Open couldn't reliably see it. The event link itself is the
+unreliable part.)
+
+**Fix — rendezvous on the named PIPE.** Every other service connects via its control pipe reliably
+every boot, and the SCM creates `NtControlPipe0` *just before* it signals the event
+(`ScmCreateNewControlPipe` then `SetSecurityServicesEvent`, services-rust database.rs). So: (1) lsasrv
+`DispatcherThread` — the event wait is now best-effort/BOUNDED (3s)/non-fatal, proceed to the connect
+regardless; (2) advapi32 `ScConnectControlPipe` — for the security process (`bSecurityServiceProcess`)
+POLL `WaitNamedPipeW` until `NtControlPipe0` exists (it returns FALSE-fast/`FILE_NOT_FOUND` for a
+not-yet-created pipe — it opens the always-present NPFS root device then `FSCTL_PIPE_WAIT`s the
+specific name — so the poll is cheap). Non-security services unchanged (single 30s wait): the SCM
+creates their pipe before spawning them. Uninstrumented result: `SamSs connect result=0` on 5/5 boots
+that reached services. Commit 74c08f68e68.
+
+**Reusable rule.** A cross-process handshake gated on a shared *named event* that both sides create
+is timing-fragile here — prefer a named *pipe* (or another object one side is the sole creator of and
+the other only opens) as the rendezvous. And for any "a print makes it work" bug: localize by
+elimination from unperturbed evidence, and always re-verify the fix with the prints removed.

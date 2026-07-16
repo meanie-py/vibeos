@@ -909,3 +909,40 @@ accept 0x00000000` (a genuine wedge, correctly NOT auto-retried — `HANG_TIMEOU
 retryable), but arm64 smoked **3/3 green on immediate repeat** and the re-gate was clean. That
 flake is upstream of services (driver-init) and unrelated to this change; re-run the gate if it
 hits. Full baseline still owed on the arm64 user-APC bug (test-2, above).
+
+### 2026-07-16 (fixed + landed) — SamSs 30s SCM connect-timeout: root-caused + fixed (74c08f68e68)
+
+The SamSs `connect result=1053` timeout (documented above as an owed, shared follow-up) is
+**FIXED on all arches**. It was NOT a dropped call — it was a genuine Heisenbug.
+
+**Root cause (by elimination + [SCTRL]/handshake tracing):** lsasrv's `DispatcherThread` gated
+the SamSs pipe-connect on `WaitForSingleObject(SECURITY_SERVICES_STARTED, INFINITE)`. That named
+event is created independently by BOTH the SCM (services.exe) and lsasrv and is supposed to
+resolve to one shared kernel object — but that **cross-process named-object sharing is
+timing-fragile in this kernel**: when lsasrv won the create race, the SCM's `SetEvent`
+intermittently did NOT wake this waiter, so the dispatcher hung on the INFINITE wait, never
+reached `StartServiceCtrlDispatcher`, and the SCM timed SamSs out at 30s. Classic Heisenbug —
+**any DbgPrint added to the path perturbed the timing enough to make it "work"** (instrumented
+boots connected 3/3; uninstrumented timed out), which is exactly why it was hard to pin. Two
+structural fixes FAILED and taught the shape: (1) spawning the dispatcher first (reorder
+`ServiceInit` ahead of `LsapInitLsa`) crashed it early (0x3E6); (2) forcing lsasrv to *open* the
+event instead of create it still 4/4-timed-out — proving even `OpenEventW` couldn't reliably see
+the SCM's object. So the event itself is the unreliable link.
+
+**Fix — sync on the PIPE, not the event.** Every other service connects via its control pipe
+reliably every boot, and the SCM creates `NtControlPipe0` *just before* it signals the event
+(`ScmCreateNewControlPipe` then `SetSecurityServicesEvent` in database.rs) — so the pipe is the
+earlier, reliable rendezvous. (a) lsasrv `DispatcherThread`: the `SECURITY_SERVICES_STARTED` wait
+is now best-effort + BOUNDED (3s) + non-fatal; it proceeds to the connect regardless. (b)
+advapi32 `ScConnectControlPipe`: for the security process (`bSecurityServiceProcess`), POLL
+`WaitNamedPipeW` until `NtControlPipe0` exists (it returns FALSE-fast/FILE_NOT_FOUND for a
+not-yet-created pipe, so the poll is cheap) — the SCM creates the pipe lazily as it loads SamSs,
+which can be after lsass starts. Non-security services are UNCHANGED (single 30s wait): the SCM
+creates their pipe before it spawns them.
+
+**Verified arm64:** `SamSs connect result=0` on 5/5 boots that reached services (was a 30s timeout
+on EVERY boot before); `ScmAutoStartServices completed` fires promptly. Gate ×3 green + pushed.
+The 2 boots that didn't reach SamSs in the runs were the pre-existing netstack-TDI self-test flake
+(upstream of services, unrelated). **Reusable lesson (also in the field manual):** a
+`SECURITY_SERVICES_STARTED`-style cross-process named-event handshake is timing-fragile here;
+prefer the named pipe (or another reliably-shared object) as the rendezvous.
