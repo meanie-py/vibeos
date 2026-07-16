@@ -583,3 +583,80 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   `rdx`/`r8`/`r9` + the symbolicated caller return address for the exact call site, then diff that
   path vs C. NtCreateSection 0x50 (PAGE_FAULT_IN_NONPAGED_AREA) still un-triaged at this depth.
   Both stay quarantined. (This is a genuinely deep MM bug; the triage above is the head start.)
+- 2026-07-15: **M3 arm64 Layer 2 CLEARED (landed); Layers 3+4 root-caused — the blocker is that
+  arm64 HAS NO SCM.** Picked up on the smp-bringup lane's ask (they want looped
+  `conformance --arch arm64 --smp 2` as guest-load soak to amplify a 1-in-258 arm64 0x4E). Two of
+  their three predicted gaps were ALREADY CLOSED — mkramdisk.sh has had the arm64 payload leg
+  (`compile.py manifest --arch arm64`) all along, `build-arm64` already had
+  `ENABLE_ROSTESTS_KMTESTS=ON`, and `kmtest-sweep-arm64.exe` + `kmtest-tests-arm64.txt` already
+  existed. The real gap was the one the 07-12 entry above named:
+  * **Layer 2 (FIXED, landed).** The corpus never reached the ramdisk. Fixed in BOTH halves,
+    because staging alone would have been worse than useless: arm64 builds a hand-picked staged
+    set (archcfg.py), so the 14 `*_drv.sys` already in `build-arm64/` were STALE leftovers from an
+    old ninja — staging those would have graded stale test binaries (the exact false-green trap
+    archcfg's own comment block documents 5× over). So: `kmtest_all` added to arm64's OPTIONAL
+    targets (optional because both cmake ROSTESTS options default OFF), and mkramdisk stages
+    `kmtest_.exe` + every `*_drv.sys` FLAT into `reactos/bin` (flat is load-bearing:
+    `KmtpCreateService` resolves drivers as `GetModuleFileName(kmtest_.exe)` → truncate → append,
+    `kmtest/service.c:428-439`). Proof it cleared: the sweep now finds
+    `X:\reactos\bin\kmtest-tests.txt` and launches tests (was `launch FAILED err=2`).
+    Sibling latent fix: `ninja_targets_optional` ran as ONE batched `ninja a b c`, so a single
+    absent target (a kmtests-off dir has no `kmtest_all`) would silently take arm64input/arm64vid
+    down with it and stage a stale input/video driver. Now one ninja per target.
+  * **Layer 3 (ROOT CAUSE, blocks the baseline): arm64 has NO Service Control Manager.**
+    `winlogon.rs:1340` is a `#[cfg(target_arch = "aarch64")]` fork that prints
+    `"ARM64: Skipping RPC, services, lsass, notifications, GINA"` and does nothing, while the
+    `not(aarch64)` branch does the real `StartRpcServer`/`StartServicesManager`/`StartLsass`.
+    services.exe was never built, never staged, never spawned. kmtest's whole model is
+    `OpenSCManager`→`CreateService`→`StartService` = advapi32 → RPC `ncacn_np` `\pipe\ntsvcs`
+    (`advapi32/service/scm.c:42-44`) → services.exe (`services/rpcserver.c:115`), so EVERY test
+    raised **RPC_S_SERVER_UNAVAILABLE (0x6BA)** before its first print — `[UEXC] Code=0x6BA
+    ESR=0x56000000` (EC=0x15 = SVC, i.e. a software raise, not a hardware fault) →
+    `[UEXC-KILL] Proc=kmtest_.exe`. The sweep only ever saw a 180s per-test TIMEOUT, which is why
+    this looked like a hang. **This CORRECTS the 07-12 Layer 1 note above**, which recorded
+    "services.exe never publishes SC_AutoStartComplete on arm64" — that phrasing implies it runs.
+    It does not exist. (The sweep's 24×5s wait for that event is therefore 120s of dead time on
+    every arm64 sweep.)
+  * **Layer 4 (the wall, UNSOLVED): spawning services.exe WEDGES the arm64 boot.** All the pieces
+    build fine for arm64 (`services`, `lsass`, `npfs` are all valid targets) and services.exe's
+    entire import set (advapi32, advapi32_vista, kernel32, msvcrt, ntdll, rpcrt4, user32, userenv)
+    is ALREADY staged. Wired it up end-to-end and measured, A/B:
+      - npfs.sys staged + hand-loaded + corpus staged, WITHOUT the winlogon spawn →
+        **arm64 boots GREEN, 41s.** `[SYSDRV] staged ZwLoadDriver …\Npfs -> 0x00000000` — **npfs
+        first light on arm64 is CLEAN.**
+      - PLUS the winlogon spawn → `StartServicesManager: CreateProcessW OK (PID=176)` then
+        **HANG_TIMEOUT**, explorer never starts, serial goes silent.
+    So services.exe is the wedge and npfs is innocent. **Mechanism UNKNOWN — do not assume.**
+    The tempting story is the documented "ZwLoadDriver HANGS on a service whose .sys is absent
+    from the minimal ramdisk" bug (`iomgr/driver.rs:1200`, the very bug that forces arm64's
+    hand-rolled STAGED_SVCS list instead of the bulk Start=1 enumeration), hit from services.exe's
+    usermode autostart storm. **But the evidence argues against it:** services-rust has 63
+    `DbgPrint` sites (which DO reach serial) and emitted **ZERO** `[SERVICES]` lines, so it
+    probably never reaches its autostart loop at all — it dies/wedges before its first print.
+    Next step is therefore instrumentation, not theory: a MAIN-PROBE in services-rust's entry
+    (the same tool that corrected the 07-12 red herring) to find whether it reaches `main` at all.
+    Also note `IopDoLoadUnloadDriver` (`driver.rs:2301-2312`) waits on its work item with
+    `Timeout=NULL` — an INFINITE wait — when called from a non-system process (i.e. services.exe),
+    so anything that fails to complete that work item hangs the caller forever with no timeout.
+  * **PARKED, ready to resume (2 paired stashes on `conformance-ratchet`):**
+    `arm64-scm-bringup: npfs+services staging, archcfg targets, iomgr STAGED_SVCS Npfs` +
+    `arm64-scm: winlogon StartServicesManager enable`. Both proven to the states above. NOT landed:
+    without the SCM they deliver nothing today, and adding an unexercised driver load + a 368KB
+    npfs.sys to every arm64 boot is pure flake surface — precisely the wrong thing to do while the
+    smp lane is hunting a 1-in-258 arm64 0x4E.
+  * **DISPOSITION / answer to the smp-bringup lane:** arm64 kmtest guest-load soak is **blocked**
+    behind an arm64 SCM bring-up (its own lane: Layer 4 + then first light of RPC/SCM on arm64),
+    NOT the quick amplifier they hoped for. Their **amd64** §9.56/0xF4 soak works TODAY (baseline
+    committed, `conformance --arch amd64 --smp N` ready).
+  * **Harness bug found en route (real, unfixed, moot until Layer 4):** `vm.py` hardcodes
+    `MAX_VM_LIFETIME_SECONDS = 30*60` (threading.Timer + lockfile deadline) while
+    `conformance --timeout` defaults to 6000s and kmtest's `launch_drain_secs` is 5400 — and the
+    `VIBEOS_QEMU_MAX_LIFETIME` env override AGENTS.md documents is honoured ONLY by the shell
+    toolkit (`qemu/lib/common.sh:21`), NOT by the Python harness. So any sweep >30 min is killed
+    mid-run. Nobody hit it because the amd64 sweep finishes inside 30 min. Fix = have vm.py read
+    the documented env var, and have conformance.py raise it for its own boot only.
+  * **Latent, bounded:** `kmtest_drivers` (kmtests/CMakeLists.txt:258) is a hand-list that has
+    already drifted — it omits the cc*/fltmgr drivers, so `kmtest_all` doesn't build them and the
+    mkramdisk glob can't stage them. Harmless today (no visible Cc*/Flt* test is in any of the 3
+    sweep lists) — but if you make one visible, add its driver there. Also `fltlib.dll` is not
+    built for arm64 at all (`LDR: Skipping missing import fltlib.dll for kmtest_.exe`).
