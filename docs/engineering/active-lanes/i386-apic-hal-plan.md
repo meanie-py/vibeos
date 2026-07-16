@@ -1,5 +1,44 @@
 # i386 APIC HAL — Phase A work plan (lane brief)
 
+## Phase A — OUTCOME (2026-07-16): i386 UP boots to desktop on the APIC HAL ✅
+
+The core deliverable is **done and committed** (branch `i386-apic-hal`,
+commits `44cfed5ceb1` + `0311b6973b8`). The i386 APIC HAL flavor boots UP to the
+graphical desktop and survives a **5/5 green soak**; the default i386 media stays
+the 8259 PIC HAL, byte-unchanged, and amd64/arm64 are provably untouched.
+
+**How it was built (differs from the brief's plan in a few places):**
+- **Flavor mechanism = env-swap of `hal.dll`, not a sibling `halaacpi.dll`.**
+  `hal-rust` gained an `apic` feature + a `build.rs` emitting `hal_apic`/`hal_pic`
+  cfgs (amd64 always `hal_apic`; i386 `hal_pic` by default, `hal_apic` with the
+  feature; mini-HAL loaders stay `hal_pic`). Modules gate on the *flavor* cfg,
+  never raw `target_arch`. `vibeos-cli build --hal-apic` → `-DVIBEOS_APIC_HAL=ON`
+  → `gcc.cmake` threads `VIBEOS_APIC_HAL=1` into hal-cargo → build.rs enables the
+  feature AND swaps the assembled asm to the APIC set (`apictrap.S` + `tsccal.S`).
+  A plain build reconciles back to PIC. The always-built sibling `halaacpi.dll` +
+  a `[LiveCD_Aacpi]` boot entry were deemed unnecessary — making `hal.dll` itself
+  the apic flavor is simpler and is the intended end-state (APIC replaces PIC).
+- **The i386 halves were ported in-place with `#[cfg(target_arch = ...)]` arms**
+  (amd64 paths preserved byte-for-byte), not as separate files — matching the
+  codebase's pcr/memory/misc convention.
+- **Clock decision reversed vs the brief:** the brief recommended keeping the
+  8254 PIT for Phase A, but the C APIC flavor's clock is the **CMOS RTC** (IRQ8 →
+  IOAPIC → 0xD1, `rtctimer.c`), and that's what shipped — C-faithful, and the
+  amd64 LAPIC-timer-as-clock KVM workaround was deliberately NOT ported (the HAL
+  is not bent for QEMU on i386; a TCG-drops-IRQ8 fallback would be a build flag).
+- **Lazy IRQL (`APIC_LAZY_IRQL`) is the default** and booted first try; the eager
+  path is kept behind a `const bool` for bisection.
+
+**Owed before landing (A6 tail):** full `vibeos-cli gate` ×3 on defaults
+(in progress — `verify_signatures`'s "993 new" is a *worktree artifact*: it needs
+a full `build-amd64/` header dump, absent in an i386-only worktree; not a real
+regression). Then the user-approved **flip of the i386 default to APIC + gating
+PIC out** (pic_pic/pic_halinit/irql tables/timer/profil stay in-tree, gated off —
+never deleted). Phase B (AP start) returns to the smp-bringup lane.
+
+---
+
+
 **Deliverable:** i386 UP boots to desktop on an APIC/IOAPIC/TPR-model HAL flavor,
 gate green. Opt-in flavor only — the default i386 media keeps the PIC HAL
 untouched. **Phase B (multi-CPU: AP start, idle-lock/SwapBusy, M5c taps) is
