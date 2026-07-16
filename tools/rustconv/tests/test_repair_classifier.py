@@ -52,6 +52,33 @@ def test_repair_restores_only_base_authorized_call_argument_casts():
     assert result.applied == ("base_argument_casts:2",)
 
 
+def test_repair_lowers_guid_predicates_static_addresses_and_extra_receiver():
+    base = """unsafe fn cpp_com_iid_equal(_: REFIID, _: REFIID) -> bool { true }
+    pub unsafe fn body(this: *mut Object, rbhid: REFGUID) -> HRESULT {
+        if cpp_com_iid_equal(rbhid, core::ptr::addr_of!(BHID_Value)) {
+            External(&BHID_Value as *const GUID);
+            OneArg(&mut this);
+        }
+        0
+    }"""
+    candidate = """pub unsafe fn body(this: *mut Object, rbhid: REFGUID) -> HRESULT {
+        if IsEqualGUID(rbhid, BHID_Value) {
+            External(BHID_Value);
+            OneArg(this, &mut this);
+        }
+        0
+    }"""
+    result = repair_worker(base, candidate, "body")
+    assert "cpp_com_iid_equal(rbhid, core::ptr::addr_of!(BHID_Value))" in result.code
+    assert "External(&BHID_Value as *const GUID)" in result.code
+    assert "OneArg(&mut this)" in result.code
+    assert result.applied == (
+        "guid_predicates:1",
+        "base_call_arity:1",
+        "base_argument_casts:1",
+    )
+
+
 def test_repair_restores_base_initializer_and_marks_reassigned_local_mutable():
     base = """pub unsafe fn body() -> HRESULT {
         let out: PWSTR = core::ptr::null_mut();

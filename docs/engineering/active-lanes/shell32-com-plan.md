@@ -306,3 +306,10 @@ The paired Sonnet follow-up accepted 0/3 heterogeneous rejects under the same me
 gates ($0.127848). Do not route on LOC/branch complexity alone: `SFV_CREATE`, custom `CDrop`
 RAII, and shared `goto` cleanup need deterministic type/lifetime/CFG ownership first.
 Sonnet remains a residual judgment tier only after that classifier is clean.
+
+A second comparison used five substrate-backed high-band workers and stitched each candidate
+into an accepted full module. After bounded repair Sonnet was green x3 on 3/5 versus DeepSeek
+2/5, with 2 versus 24 remaining diagnostics per architecture. Sonnet was closer to the
+agent-finished body on four cases at 2.55x model cost. The emerging router is therefore:
+cheap-first for ordinary workers, but escalate a substrate-clean high-band compile reject
+instead of spending agent time repairing broad ownership/type-shape residue.

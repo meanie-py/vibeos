@@ -746,6 +746,14 @@ def test_sibling_receiver_insertion_preserves_explicit_other_object_receiver():
     assert "C_g_body(this, other, a)" not in normalized
 
 
+def test_worker_semantics_lowers_static_guid_predicate_without_model_pointer_cast():
+    normalized = normalize_worker_semantics(
+        "HRESULT f() { return IsEqualGUID(rbhid, BHID_SFObject); }",
+        "pub unsafe fn f() -> bool { IsEqualGUID(rbhid, BHID_SFObject) }",
+    )
+    assert "cpp_com_iid_equal(rbhid, core::ptr::addr_of!(BHID_SFObject))" in normalized
+
+
 def test_custom_body_local_raii_fails_before_payment():
     dep = FunctionDep(name="C_AddPages", body_text="HRESULT f() { CDrop drop(data); }")
     with pytest.raises(CppComError, match="CDrop local"):

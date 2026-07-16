@@ -2,11 +2,28 @@ from rustconv.candidate_oracle import (
     CandidateOracleError,
     CandidateSpec,
     build_oracle_crate,
+    carry_deterministic_cpp_support,
     carry_deterministic_wide_statics,
     function_span,
     load_manifest,
     replace_function,
+    worker_distance,
 )
+
+
+def test_carry_deterministic_cpp_com_ptr_guard_for_spliced_worker():
+    base = "pub unsafe fn worker() { CppComPtrGuard::new(slot); }"
+    candidate = """pub struct CppComPtrGuard<T> { slot: *mut *mut T }
+impl<T> CppComPtrGuard<T> { pub const fn new(slot: *mut *mut T) -> Self { Self { slot } } }
+impl<T> Drop for CppComPtrGuard<T> {
+    fn drop(&mut self) { unsafe { if !(*self.slot).is_null() { *self.slot = core::ptr::null_mut(); } } }
+}
+pub unsafe fn worker() { CppComPtrGuard::new(slot); }
+"""
+    carried = carry_deterministic_cpp_support(base, candidate)
+    assert carried.count("pub struct CppComPtrGuard") == 1
+    assert "impl<T> Drop for CppComPtrGuard<T>" in carried
+    assert carried.endswith(base)
 
 
 def test_function_span_ignores_braces_in_strings_and_comments():
@@ -26,6 +43,16 @@ def test_replace_function_keeps_base_neighbors():
     merged = replace_function(base, candidate, "body")
     assert "fn before" in merged and "fn after" in merged
     assert "{ x + 1 }" in merged
+
+
+def test_worker_distance_ignores_signature_and_whitespace():
+    base = "pub unsafe fn body(x: u32) -> u32 { let y = x + 1; y }"
+    same_body = "fn body(value: usize) {\nlet y=x+1; y\n}"
+    changed = "fn body() { let y = x + 2; y }"
+    assert worker_distance(base, same_body, "body")["edit_tokens"] == 0
+    distance = worker_distance(base, changed, "body")
+    assert distance["edit_tokens"] == 1
+    assert distance["edit_hunks"] == 1
 
 
 def test_missing_function_fails_loudly():

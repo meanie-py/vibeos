@@ -8,6 +8,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from .config import REACTOS_ROOT, RUST_TARGETS, RUSTCONV_RESPONSES_DIR
@@ -95,6 +96,41 @@ def replace_function(base: str, candidate: str, name: str) -> str:
     return base[:base_start] + candidate[candidate_start:candidate_end] + base[base_end:]
 
 
+_DISTANCE_TOKEN = re.compile(
+    r"[A-Za-z_]\w*|0[xX][0-9A-Fa-f]+|\d+|::|->|=>|==|!=|<=|>=|&&|\|\||[^\s]"
+)
+
+
+def worker_distance(base: str, candidate: str, name: str) -> dict[str, int | float]:
+    """Normalized body-token distance from a candidate to an accepted worker."""
+
+    def body_tokens(text: str) -> list[str]:
+        start, end = function_span(text, name)
+        function = text[start:end]
+        masked = masked_rust(function)
+        opening = masked.find("{")
+        return _DISTANCE_TOKEN.findall(masked[opening + 1 : -1])
+
+    accepted = body_tokens(base)
+    proposed = body_tokens(candidate)
+    matcher = SequenceMatcher(a=accepted, b=proposed, autojunk=False)
+    edit_tokens = 0
+    edit_hunks = 0
+    for tag, a0, a1, b0, b1 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        edit_hunks += 1
+        edit_tokens += max(a1 - a0, b1 - b0)
+    denominator = max(len(accepted), len(proposed), 1)
+    return {
+        "accepted_tokens": len(accepted),
+        "candidate_tokens": len(proposed),
+        "edit_tokens": edit_tokens,
+        "edit_hunks": edit_hunks,
+        "similarity": round(1.0 - (edit_tokens / denominator), 4),
+    }
+
+
 _WIDE_STATIC_RE = re.compile(
     r"(?m)^pub static (CPP_COM_WSTR_[0-9A-F]{12}): \[WCHAR; \d+\] = \[[^\n]+;\n?"
 )
@@ -107,6 +143,39 @@ def carry_deterministic_wide_statics(base: str, candidate: str) -> str:
         if not re.search(rf"\b{re.escape(match.group(1))}\s*:", base):
             additions.append(match.group(0).rstrip())
     return ("\n".join(additions) + "\n\n" + base) if additions else base
+
+
+def _braced_item(rust: str, declaration: str) -> str:
+    """Return one generated braced item selected by its declaration."""
+    masked = masked_rust(rust)
+    match = re.search(declaration, masked, re.M)
+    if match is None:
+        raise CandidateOracleError(f"generated support item not found: {declaration}")
+    opening = masked.find("{", match.end())
+    if opening < 0:
+        raise CandidateOracleError(f"generated support item has no body: {declaration}")
+    depth = 0
+    for pos in range(opening, len(masked)):
+        if masked[pos] == "{":
+            depth += 1
+        elif masked[pos] == "}":
+            depth -= 1
+            if depth == 0:
+                return rust[match.start() : pos + 1]
+    raise CandidateOracleError(f"unbalanced generated support item: {declaration}")
+
+
+def carry_deterministic_cpp_support(base: str, candidate: str) -> str:
+    """Carry rustconv-owned support required by a spliced worker body."""
+    if "CppComPtrGuard::" not in candidate or "struct CppComPtrGuard" in base:
+        return base
+    declarations = (
+        r"^pub\s+struct\s+CppComPtrGuard<T>\s*",
+        r"^impl<T>\s+CppComPtrGuard<T>\s*",
+        r"^impl<T>\s+Drop\s+for\s+CppComPtrGuard<T>\s*",
+    )
+    support = "\n".join(_braced_item(candidate, declaration) for declaration in declarations)
+    return support + "\n\n" + base
 
 
 def load_manifest(path: Path) -> tuple[list[CandidateSpec], Path, Path]:
@@ -213,6 +282,7 @@ def build_oracle_crate(
             repairs[candidate.name] = list(repaired.applied)
         merged = replace_function(base_text, candidate_text, candidate_function)
         merged = carry_deterministic_wide_statics(merged, candidate_text)
+        merged = carry_deterministic_cpp_support(merged, candidate_text)
         module_path.write_text(merged)
         module_paths[module_path] = candidate.name
         module_lines.append(f"#[path = {json.dumps(str(module_path))}] mod {module_name};")
@@ -331,6 +401,7 @@ def run_oracle(manifest: Path, arches: list[str], repair: bool = False) -> dict:
         (output / f"cargo-{arch}.stderr.txt").write_text(process.stderr)
 
     results = []
+    module_by_name = {name: path for path, name in module_paths.items()}
     for candidate in candidates:
         per_arch = {}
         for arch in arches:
@@ -345,6 +416,13 @@ def run_oracle(manifest: Path, arches: list[str], repair: bool = False) -> dict:
                 "candidate": str(candidate.candidate),
                 "base": str(candidate.base),
                 "full_module": candidate.full_module,
+                "distance_to_accepted": None
+                if candidate.full_module
+                else worker_distance(
+                    candidate.base.read_text(),
+                    module_by_name[candidate.name].read_text(),
+                    candidate.base_function or candidate.function,
+                ),
                 "status": "ok"
                 if all(item["status"] == "ok" for item in per_arch.values())
                 else "failed",
@@ -383,4 +461,12 @@ def print_report(report: dict, as_json: bool = False) -> None:
         applied = report.get("repairs", {}).get(item["name"], [])
         if applied:
             print(f"    repairs: {', '.join(applied)}")
+        distance = item.get("distance_to_accepted")
+        if distance is not None:
+            print(
+                "    accepted-distance: "
+                f"similarity={distance['similarity']:.4f}, "
+                f"edit_tokens={distance['edit_tokens']}, "
+                f"edit_hunks={distance['edit_hunks']}"
+            )
     print(f"  durable oracle: {report['output']}")

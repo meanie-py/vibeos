@@ -270,6 +270,16 @@ def _lower_known_c_idioms(
     if count:
         applied.append(f"no_std_paths:{count}")
 
+    if re.search(r"\bfn\s+cpp_com_iid_equal\b", base):
+        candidate, count = re.subn(
+            r"\bIsEqualGUID\s*\(\s*([^,]+),\s*((?:BHID|CLSID|IID)_[A-Za-z_]\w*)\s*\)"
+            r"(?:\s*!=\s*0)?",
+            r"cpp_com_iid_equal(\1, core::ptr::addr_of!(\2))",
+            candidate,
+        )
+        if count:
+            applied.append(f"guid_predicates:{count}")
+
     aliases = {
         "InitFormatEtc": "init_format_etc",
         "strlenW": "wide_len",
@@ -438,15 +448,47 @@ def _restore_base_argument_casts(base_function: str, candidate_function: str) ->
             for base_span, candidate_span in zip(base_args, candidate_args, strict=True):
                 base_arg = base_function[slice(*base_span)]
                 candidate_arg = candidate_function[slice(*candidate_span)]
-                if (
-                    base_arg != candidate_arg
-                    and " as " in base_arg
-                    and _without_casts(base_arg) == _without_casts(candidate_arg)
+                base_address = re.fullmatch(
+                    r"(?:core::ptr::addr_of!\(\s*|&\s*)([A-Za-z_]\w*)\s*\)?"
+                    r"(?:\s+as\s+\*const\s+GUID)?",
+                    base_arg.strip(),
+                )
+                candidate_static = re.fullmatch(r"[A-Za-z_]\w*", candidate_arg.strip())
+                if base_arg != candidate_arg and (
+                    (
+                        " as " in base_arg
+                        and _without_casts(base_arg) == _without_casts(candidate_arg)
+                    )
+                    or (
+                        base_address is not None
+                        and candidate_static is not None
+                        and base_address.group(1) == candidate_static.group(0)
+                    )
                 ):
                     replacements.append((*candidate_span, base_arg))
     for start, end, replacement in reversed(replacements):
         candidate_function = candidate_function[:start] + replacement + candidate_function[end:]
     return candidate_function, len(replacements)
+
+
+def _restore_base_call_arity(base_function: str, candidate_function: str) -> tuple[str, int]:
+    """Remove a model-invented receiver when accepted base arity proves it extra."""
+    edits = []
+    base_calls = _call_arguments(base_function)
+    candidate_calls = _call_arguments(candidate_function)
+    for callee, base_occurrences in base_calls.items():
+        candidate_occurrences = candidate_calls.get(callee, [])
+        if len(base_occurrences) != len(candidate_occurrences):
+            continue
+        for base_args, candidate_args in zip(base_occurrences, candidate_occurrences, strict=True):
+            if len(candidate_args) != len(base_args) + 1 or len(candidate_args) < 2:
+                continue
+            if candidate_function[slice(*candidate_args[0])].strip() != "this":
+                continue
+            edits.append((candidate_args[0][0], candidate_args[1][0]))
+    for start, end in reversed(edits):
+        candidate_function = candidate_function[:start] + candidate_function[end:]
+    return candidate_function, len(edits)
 
 
 _LOCAL_RE = re.compile(
@@ -590,6 +632,9 @@ def repair_worker(base: str, candidate: str, function: str) -> RepairResult:
             applied.append("worker_normalization")
     normalized, idiom_repairs = _lower_known_c_idioms(base, normalized, candidate)
     applied.extend(idiom_repairs)
+    normalized, arity_repairs = _restore_base_call_arity(base_function, normalized)
+    if arity_repairs:
+        applied.append(f"base_call_arity:{arity_repairs}")
     normalized, restored_casts = _restore_base_argument_casts(base_function, normalized)
     if restored_casts:
         applied.append(f"base_argument_casts:{restored_casts}")

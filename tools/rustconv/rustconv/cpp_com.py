@@ -843,6 +843,12 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         r"cpp_com_iid_equal(\1, core::ptr::addr_of!(\2))",
         rust,
     )
+    rust = re.sub(
+        r"\bIsEqualGUID\s*\(\s*([^,]+),\s*((?:BHID|CLSID|IID)_[A-Za-z_]\w*)\s*\)"
+        r"(?:\s*!=\s*0)?",
+        r"cpp_com_iid_equal(\1, core::ptr::addr_of!(\2))",
+        rust,
+    )
     rust = re.sub(r"if\s+_ILIsDesktop\s*\((.*?)\)\s*\{", r"if _ILIsDesktop(\1) != 0 {", rust)
     rust = re.sub(
         r"if\s+!_ILIsSpecialFolder\s*\((.*?)\)\s*\{",

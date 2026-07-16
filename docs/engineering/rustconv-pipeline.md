@@ -379,3 +379,11 @@ shared cleanup beyond occurrence-level call certification, one added a second mo
 reintroducing `SUCCEEDED`. Treat custom C++ RAII and shared-cleanup CFGs as deterministic
 substrate/decomposition work, not automatic Sonnet routes. Static difficulty may nominate a
 stronger model only after the substrate classifier is clear.
+
+The subsequent hard-five stitched-worker comparison measured repair distance against accepted
+full modules rather than demanding raw envelope acceptance. After identical bounded repairs,
+Sonnet was x3-compile-green on 3/5 versus DeepSeek 2/5, left 2 versus 24 diagnostics per
+architecture, and was closer to the accepted worker on four of five cases (496 versus 683
+normalized edit tokens). Sonnet cost 2.55x for this set. Route substrate-clean high-band
+compile failures to Sonnet when agent repair time matters; keep low/medium and deterministic
+shapes on the cheaper lane.

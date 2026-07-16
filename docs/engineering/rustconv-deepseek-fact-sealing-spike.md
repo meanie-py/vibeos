@@ -374,3 +374,27 @@ unsupported ABI/RAII/CFG substrate and close it deterministically. Sonnet is onl
 route for residual expression/control judgment after those mechanical obligations are gone;
 this sample provides no positive evidence for routine Sonnet escalation in the sealed
 mechanical lane.
+
+### Hard-five stitched repair-distance experiment
+
+A follow-up changed the oracle from worker-envelope acceptance to the practical question:
+replace one hard worker inside an accepted full Rust module, apply the same bounded repairs,
+then compile on all three architectures. The set covered COM dispatch/ownership, PIDL naming,
+clipboard enumeration, shell execution, and data-object extraction. Three pairs were fresh;
+the two prior high-band pairs were reused. Total cost was $0.03696180 for DeepSeek and
+$0.09437100 for Sonnet (2.55x).
+
+Raw stitched candidates were DeepSeek 0/5 and Sonnet 2/5. After bounded deterministic repair,
+DeepSeek reached 2/5 and Sonnet 3/5. The remaining per-architecture diagnostic count was 24
+versus 2. Relative to the accepted agent-finished bodies, DeepSeek needed 683 normalized edit
+tokens across 129 hunks; Sonnet needed 496 across 85 and was closer on four of five workers.
+The metric is diagnostic, not an acceptance oracle, but manual review found no dropped source
+branch or loop. The two non-exact skeletons added explicit cleanup control.
+
+This reverses the earlier conclusion only for a narrower population: once deterministic
+substrate is present and a worker is genuinely high-band, Sonnet materially lowers agent
+repair distance. The router should still start cheap, but compile-red high-band ownership or
+type-shape residue is now evidence for escalation rather than repeated DeepSeek repair.
+Detailed artifacts and per-worker results are in
+`~/vibeos-rust-staging/shell32-com/hard5-v1/report.md`; the bounded oracle is
+`.responses/candidate-oracles/20260716-184656-823245/report.json`.
