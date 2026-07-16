@@ -7527,6 +7527,52 @@ push rule exists exactly so that judgement is not yours to make at 1am.
 when no other agents are working. Two lanes each politely declining to soak, and one lane not
 declining, produce this. If you start a farm, expect to be the reason another lane's gate is red.
 
+### 9.85 (ROOT-CAUSED + FIXED 2026-07-14) The FEX startup-death flake was a trapped `dc cvau`: SCTLR_EL1's EL0-usability bits (UCI/UCT/DZE) were never set, and EC 0x18 has no handler
+
+**Symptom.** ~2-3 of 13 arm64 boots, one FEX/WoW64 guest (gui32, win32 — whichever got there first) died 0xC000001D at a *deterministic* address (PC=0x4B5478, LR=0x4B51FC, byte-identical registers across five separate boots spanning two days). Everything else in the boot was green.
+
+**How it was cracked — entirely from saved serial logs, zero repro boots.** The `[UEXC-KILL]` banner captures the faulting instruction bytes: `Instr=0xD50B7B33` = `dc cvau, x19`. The first-chance ESR `0x6212DE76` decodes as EC=0x18 (trapped system instruction) with ISS fields Op0=1/Op1=3/CRn=7/CRm=11/Op2=1/Rt=19 — *the ESR names the exact instruction and register*. EC 0x18 means the op was architecturally **trapped**, not invalid: `dc cvau` at EL0 traps iff SCTLR_EL1.UCI=0. The boot-time `[KISTART] SCTLR_EL1=0x30D0198D` dump (bit 26 clear) confirmed UCI was **never set** — vibeos inherits SCTLR from EDK2 and no code in the tree ever wrote it. `KiSynchronousExceptionHandler` has no EC-0x18 arm, so the default arm delivered STATUS_ILLEGAL_INSTRUCTION.
+
+**Why it was FLAKY when the bit was ALWAYS wrong** (the instructive part): symbolication put PC at `FEXCore::CPU::Arm64JITCore::ExitFunctionLink` — the lazy block-linker, which back-patches one branch instruction in live JIT code and flushes it with an *inline* `dc cvau`. FEX's bulk flushes go through the NtFlushInstructionCache **syscall** (EL1 does the maintenance — no trap). So the landmine only fired on the rare lazy-link path, ~once per boot at most, in whichever process happened to take it. A permanently-wrong config bit + a rarely-taken code path = a "flake" that is actually deterministic.
+
+**Fix.** `KiInitializeKernel` (per-CPU, next to the existing CNTKCTL_EL1 EL0-counter fix — same "reset value traps EL0" family) ORs UCI (bit 26) + UCT (bit 15) + DZE (bit 14) into SCTLR_EL1, matching production Windows-on-ARM64 (EL0 cache maintenance, `CTR_EL0` reads, and `DC ZVA` are all user-visible there; ARM64 memcpy/memset/JIT runtimes use them). **Tripwire:** fexprobe.exe executes `mrs CTR_EL0` + `dc cvau` + `dc zva` at EL0 every boot before FEX init — a regression now kills the probe deterministically instead of a random guest at ~1%.
+
+**Reusable rules.**
+1. **On an arm64 0xC000001D, decode the ESR before theorizing.** EC 0x18 = *trapped-but-legal* system instruction — a missing SCTLR/CNTKCTL/CPACR enable bit, not bad code. The ISS hands you the exact op and register.
+2. **"Flaky" + "byte-identical registers every hit" = deterministic bug on a rarely-taken path.** Hunt for why the path is rare, not for a race.
+3. When bringing up a Windows-compatible arm64 kernel, audit the full EL0-usability surface once: SCTLR UCI/UCT/DZE, CNTKCTL EL0PCTEN/EL0VCTEN, CPACR FPEN — every one of these resets to "trap EL0" and real Windows enables them all.
+
+**Sibling (Face B, guard landed, seed still open):** the one non-0xC000001D corpus hit was wow64probe dying 0xC0000005 mid-`BTCpuProcessInit` — a seed AV inside `InvalidationTracker::InvalidateIntervalInternal` (a Threads-map node with a NULL `InternalThreadState*`, pre-ThreadInit, provenance unexplained at n=1), then **amplified into a ~1600-frame recursion → stack overflow** because `BTCpuResetToConsistentStateImpl` derefs the THREAD_STATE TLS slot (NULL before `BTCpuThreadInit`) in `CallRetStack::GetInfoThread`. Vendored patch in `external/fex/Source/Windows/WOW64/Module.cpp`: NULL-thread guard returns the exception to the next handler (overcommit handling kept reachable), so a recurrence now reports the true seed fault in one clean `[UEXC]` line instead of a storm.
+
+### 9.86 (ROOT-CAUSED + FIXED 2026-07-15) A hand-typed BIT-FLAG literal that names the wrong enum member — `DC_vPrepareDCsForBlit` tested `fs & 0x04` (DC_CANCELED) where the C tests DC_DIRTY_RAO (0x10), and every GDI blit drew through a stale clip
+
+**Symptom.** The M13 "intermittent doom render": an app that caches `GetDC(hwnd)` and blits continuously (doomgeneric's `StretchDIBits` loop) sometimes drew nothing — or drew clipped to a rectangle belonging to a *previously destroyed window* — while `NtGdiBitBlt` returned TRUE every time. Whether a given boot rendered was timing luck. The native arm64 build misrendered identically (never a WoW64 bug).
+
+**The hunt (what finally cracked a lane that had been parked as "clip disproven").** Earlier probes measured the DCE vis region and `prgnRao` at update time and found them CORRECT on every boot — so clipping was ruled out and the lane parked pointing at the DIB pixel copy. The missing measurement was the **clip object the blit actually consumes** (`dc.co`), sampled AT THE BLIT: a checksum probe around doom's real path (`GreStretchDIBitsInternal` SRCCOPY → memory-DC → `NtGdiBitBlt`) printing `pdc.co.iDComplexity/rclBounds` showed `clip=(40,40,240,190)` — the DEAD win32.exe test window's rect — on every frame, while vis/Rao were right. The gap between "Rao correct" and "co stale" is exactly one function: `CLIPPING_UpdateGCRegion` rebuilds co from Rao, and it only runs when a consumer sees `DC_DIRTY_RAO`.
+
+**Root.** `dclife.rs DC_vPrepareDCsForBlit` (both arch variants) translated the C's `if (pdcDest->fs & DC_DIRTY_RAO)` as `fs & 0x00000004`. In `_DCFLAGS` (dc.h) 0x04 is **DC_CANCELED**; DC_DIRTY_RAO is **0x10**. Every *setter* used the named constant correctly, so the dirty bit was raised and never consumed on the blit path; the co refresh only happened if some other correctly-checking path (dcobjs.rs select-clip etc.) happened to touch the DC first — the whole flake in one wrong nibble. (Same commit: the debug-only "prepared" mark set 0x40 = DC_ACCUM_APP instead of DC_PREPARED 0x8000 — inert in release, corrupting in DBG.)
+
+**Fix.** Use the bindgen enum names (`DC_DIRTY_RAO as i32`, `DC_PREPARED as i32`) — the constants were ALWAYS available via `win32k_sys::win32k::*`; the literals were pure translation debris.
+
+**Reusable rules.**
+1. **A hand-typed bit-mask literal in translated Rust is the flag-cousin of the magic struct offset** (§ scan_magic_offsets class). If the C tests an enum/#define bit and the Rust tests `0xNN`, treat it as wrong until proven right — the fix is the named constant, never a corrected literal.
+2. **When a region/state pipeline has N derived stages, probe the LAST consumer, not the producers.** Vis and Rao being provably correct still says nothing about the object the drawing call reads (`dc.co`). Instrument at the point of consumption (here: checksums + clip bounds around the actual blit), and the stale stage identifies itself.
+3. **"Works on boots where X happens to run" is a dirty-bit-never-consumed shape.** If correctness depends on whether an unrelated path touched the object between update and use, hunt for a dirty flag whose consumer checks the wrong condition.
+
+**Detector (owed).** Sweep win32k-rust for `fs [&|]=` / `& 0x` bit tests against numeric literals where the C uses `_DCFLAGS`/named flags; extend `scan_magic_offsets.py` with a bit-literal shape or add a one-shot grep to `vibeos-cli check`.
+
+### 9.87 (PROCESS TRAP 2026-07-15) A win32k probe that "built fine" for 3 boots but never appeared on serial — a `cannot find ULONG` compile error in ONE file let cargo re-link the STALE cached rlib, so the edit never shipped
+
+**Symptom.** Added a `DbgPrint` + a one-line field write to `win32k-rust/src/wow64.rs`, rebuilt (`ninja win32k` → `Finished`), staged, booted — the print never fired and the fix had no effect. Repeated three times. A *different* edit in the same crate (dibobj.rs M13-BLT probe) DID ship on the same builds, "proving" the crate was recompiling.
+
+**Root.** The wow64.rs edit referenced `ULONG`, which isn't imported in that file → `error[E0412]`. But the earlier `ninja` runs were launched as `... 2>&1 | grep -E 'error|Finished' && setsid nohup ... &` — the grep matched a `Finished` line from a *sibling* cargo unit and the compound `&&` proceeded to stage; the real per-crate error scrolled past unexamined. Cargo, on the failed compile, **left the previous successful rlib in place**, and the win32k link consumed that stale rlib — so the binary had the OLD wow64.rs (no field write, no print string) while dibobj.rs's object was fresh. `strings win32k.sys | grep '<my new literal>'` = 0 was the tell: the source string wasn't in the binary at all.
+
+**Fix.** `pti as usize as u32` (the field is `ULONG`=u32; use the primitive or import ULONG). Then the string appeared in the binary and the fix took.
+
+**Reusable rules.**
+1. **Never trust a piped/`&&`-chained `ninja` "Finished" as proof your file compiled.** grep for `error[` AND `FAILED` explicitly, and read the *per-crate* `Compiling <crate>` / error lines — a `Finished` can come from another unit in the same invocation.
+2. **After a Rust probe that MUST appear on serial, verify the literal is in the binary before booting:** `strings <module> | grep -c '<my unique print literal>'`. Zero = it never compiled in; stop and fix the build, don't waste a boot.
+3. **A cargo compile error leaves the prior rlib; the link can silently succeed against stale objects.** "Other edits in the crate shipped" does NOT prove *your* file did — cargo is per-file incremental and one file's error doesn't fail-fast the others' cached outputs at link time here.
 ### 9.88 (2026-07-16) The kmtest MmMdl `-smp 2` 0x1E is TWO bugs — a system-PTE leak (FIXED) masking a kernel-stack teardown race (OPEN)
 
 Hunting the amd64 `-smp 2` kmtest **MmMdl** 0x1E (task #10, ~10%/sweep in the 20-sweep

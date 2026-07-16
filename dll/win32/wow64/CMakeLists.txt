@@ -38,7 +38,7 @@ add_custom_command(
         --spec ${REACTOS_SOURCE_DIR}/win32ss/win32u/win32u.spec
         --arch ${ARCH}
         --sysfuncs ${REACTOS_SOURCE_DIR}/win32ss/w32ksvc32.h
-        --manual-list ${REACTOS_SOURCE_DIR}/tools/wow64gen/manual-win32k.txt
+        --manual-list ${REACTOS_SOURCE_DIR}/tools/wow64gen/manual-win32k.txt,${REACTOS_SOURCE_DIR}/tools/wow64gen/automarshal-win32k.txt
         --symbol-prefix Wow64Win32kThunk
         --out-c ${_wow64_w32k_thunks}
     DEPENDS
@@ -46,6 +46,7 @@ add_custom_command(
         ${REACTOS_SOURCE_DIR}/win32ss/win32u/win32u.spec
         ${REACTOS_SOURCE_DIR}/win32ss/w32ksvc32.h
         ${REACTOS_SOURCE_DIR}/tools/wow64gen/manual-win32k.txt
+        ${REACTOS_SOURCE_DIR}/tools/wow64gen/automarshal-win32k.txt
     COMMENT "wow64gen: generating WoW64 win32k thunk table")
 
 add_library(wow64 MODULE
@@ -53,6 +54,8 @@ add_library(wow64 MODULE
     wow64_thunks.c
     wow64_win32k.c
     wow64_manual.c
+    wow64_automarshal.c
+    wow64_cb_automarshal.c
     wow64_callback.c
     wow64.rc
     ${CMAKE_CURRENT_BINARY_DIR}/wow64.def)

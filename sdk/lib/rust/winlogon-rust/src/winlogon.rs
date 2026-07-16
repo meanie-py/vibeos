@@ -838,6 +838,64 @@ unsafe fn TryStartWow64File() {
     }
 }
 
+/* M15b async file-I/O probe: an i386 guest doing Event-based + polled
+ * overlapped ReadFile on a FILE_FLAG_OVERLAPPED handle. It is the oracle for
+ * kernel-side IO_STATUS_BLOCK32 completion — OVERLAPPED.Internal/InternalHigh
+ * ARE the guest IOSB32, and .Offset detects a stray 16-byte (64-bit layout)
+ * write. Silent no-op unless staged; verdict = [async32] lines + exit 0x600D. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartWow64Async() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent — don't spawn a guest that can't run
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\async32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 12] = wstr_arr!("async32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] async32.exe (i386 overlapped-I/O guest) created (PID %lu) - waiting\n\0"
+                .as_ptr() as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 60_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] async32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(async32.exe) FAILED (error %lu)\n\0".as_ptr() as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 /* M8 window-creation probe: an i386 guest with user32 imports that registers
  * a class, creates a REAL window, and pumps messages (forces user32 client
  * connect + kernel->user callbacks under wow64). Silent no-op unless staged;
@@ -913,6 +971,67 @@ unsafe fn Wow64DoomStaged() -> bool {
     }
     wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\doom.exe").as_ptr());
     GetFileAttributesW(Path.as_ptr()) != 0xFFFF_FFFF
+}
+
+/* M18 marshaller-verification probe: an i386 guest that self-verifies the
+ * generated/manual marshallers no earlier guest touches — TBI against its own
+ * TEB32, IOCP sentinel round-trip, monitor enumeration. Silent no-op unless
+ * staged; verdict = [marshal32] serial lines + exit 0x600D. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartWow64Marshal() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\marshal32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 14] = wstr_arr!("marshal32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    /* EnumDisplayMonitors needs a user32 connect on the input desktop. */
+    let mut Desk: [u16; 16] = wstr_arr!("WinSta0\\Default");
+    Si.lpDesktop = Desk.as_mut_ptr();
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] marshal32.exe (i386 marshaller-verify guest) created (PID %lu) - waiting\n\0"
+                .as_ptr() as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 60_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] marshal32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(marshal32.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
 }
 
 /* M12 — THE NORTH STAR: x86 DOOM, under WoW64, on arm64.
@@ -1798,6 +1917,12 @@ pub unsafe extern "system" fn WinMain(
 
         /* M10: file-I/O guest — the IO_STATUS_BLOCK marshalling oracle. */
         TryStartWow64File();
+
+        /* M15b: overlapped-I/O guest — kernel-side IOSB32 completion oracle. */
+        TryStartWow64Async();
+
+        /* M18: marshaller-verification guest (TBI/IOCP/monitors). */
+        TryStartWow64Marshal();
 
         /* The testgui pair never exits, so it would sit on top of DOOM's window.
          * When the WoW64 doom is staged, DOOM is the demo — skip them. */

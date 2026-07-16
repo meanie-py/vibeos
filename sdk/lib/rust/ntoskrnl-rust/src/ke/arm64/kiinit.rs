@@ -246,6 +246,25 @@ pub unsafe extern "system" fn KiSystemStartup(
         tmp = out(reg) _,
     );
 
+    // Same family, SCTLR_EL1 edition: grant EL0 the cache-maintenance surface
+    // production Windows-on-ARM64 exposes. The reset value leaves UCI/UCT/DZE
+    // clear, so EL0 `dc cvau` (FEX's inline JIT icache flush on the guest-SMC
+    // path), `mrs CTR_EL0` (cache geometry, read by ARM64 memcpy/JIT runtimes)
+    // and `dc zva` (memset fast path) all trap to EL1 as EC=0x18 and die as
+    // STATUS_ILLEGAL_INSTRUCTION. That was the task-#46 FEX startup-death
+    // flake: rare only because QEMU's CTR_EL0 DIC/IDC lets vixl skip
+    // maintenance on the common flush path, so `dc cvau` executed maybe once
+    // per boot. UCI (bit 26) + UCT (bit 15) + DZE (bit 14). fexprobe.exe
+    // executes all three ops every boot as the deterministic tripwire.
+    core::arch::asm!(
+        "mrs {tmp}, sctlr_el1",
+        "orr {tmp}, {tmp}, #0x04000000", // UCI
+        "orr {tmp}, {tmp}, #0xC000",     // UCT | DZE
+        "msr sctlr_el1, {tmp}",
+        "isb",
+        tmp = out(reg) _,
+    );
+
     // Install ARM64 exception vector table (VBAR_EL1)
     {
         let vbar = KiArm64VectorTable.as_ptr() as u64;

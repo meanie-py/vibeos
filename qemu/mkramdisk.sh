@@ -420,6 +420,45 @@ for FONT in tahoma.ttf tahomabd.ttf Marlett.ttf arial.ttf arialbd.ttf cour.ttf t
     fi
 done
 
+# --- kmtest corpus (the arm64 twin of add_rostests_file) --------------------
+# x86 stages the kmtests onto the LiveCD declaratively: every kmtest driver
+# calls add_rostests_file(TARGET x), which is add_cd_file(... DESTINATION
+# "reactos/bin") (sdk/cmake/CMakeMacros.cmake). arm64 has no cd-file pass, so
+# without this block `vibeos-cli conformance --arch arm64` boots an image with
+# the sweep runner but no corpus for it to run -> [KMTEST-SWEEP] launch FAILED.
+#
+# reactos/bin, and ALL of it in that ONE directory, is load-bearing rather than
+# cosmetic: KmtpCreateService resolves each driver by taking
+# GetModuleFileName(kmtest_.exe), truncating at the last backslash, and
+# appending "<name>_drv.sys" (kmtest/service.c:428-439, which then
+# GetFileAttributes()-checks it). A driver staged anywhere else is simply never
+# found, so the flat layout mirrors x86 exactly.
+#
+# Globbed, not enumerated, so STAGING can't drift (same rationale as RMC
+# above). Note the glob can only stage what got BUILT, and that list is still
+# hand-maintained upstream: kmtest_all -> kmtest_drivers in kmtests/
+# CMakeLists.txt, which today omits the cc*/fltmgr drivers (x86 doesn't notice
+# — its livecd DAG builds every add_rostests_file target). That's harmless
+# while no visible test needs them (none of the 3 sweep lists reference a
+# Cc*/Flt* test), but if you make one visible, add its driver to
+# kmtest_drivers or arm64 will silently sweep without it.
+# Self-gating on the artifacts: they exist only when the build dir is
+# configured -DENABLE_ROSTESTS(_KMTESTS)=ON, which is precisely when x86's
+# add_rostests_file fires — so an unconfigured build stages nothing and the
+# ramdisk stays byte-identical. archcfg.py builds `kmtest_all` (optional) so
+# what lands here is freshly built, never a stale leftover.
+KMTESTS_DIR="$BUILD_DIR/modules/rostests/kmtests"
+if [ -f "$KMTESTS_DIR/kmtest_.exe" ]; then
+    echo "[*] Staging kmtest corpus..."
+    mdir -i "$RAMDISK_IMG" ::/reactos/bin >/dev/null 2>&1 \
+        || mmd -i "$RAMDISK_IMG" ::/reactos/bin
+    RMC "$KMTESTS_DIR/kmtest_.exe" ::/reactos/bin/kmtest_.exe
+    # Flatten: co-located next to kmtest_.exe regardless of source subdir.
+    while IFS= read -r drv; do
+        RMC "$drv" "::/reactos/bin/$(basename "$drv")"
+    done < <(find "$KMTESTS_DIR" -name '*_drv.sys' | sort)
+fi
+
 # --- Payloads (opt-in, VIBEOS_PAYLOAD=name[,name...]) -----------------------
 # Declarative test/demo app staging — docs/engineering/payload-harness-design.md.
 # OFF by default: with no payloads selected the compiler prints nothing and the
@@ -593,12 +632,28 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$WIN32APP" ::/reactos/syswow64/win32.exe
         fi
+        # marshal32.exe — the M18 marshaller-verification guest (winlogon
+        # TryStartWow64Marshal): TBI/IOCP/monitor marshallers, self-verified.
+        MARSHAL32="${VIBEOS_MARSHAL32_EXE:-$PROJECT_DIR/build-fex-hello/marshal32.exe}"
+        if [ -f "$MARSHAL32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/marshal32.exe (M18 marshaller guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$MARSHAL32" ::/reactos/syswow64/marshal32.exe
+        fi
         # file32.exe — the M10 file-I/O guest (winlogon TryStartWow64File).
         FILE32="${VIBEOS_FILE32_EXE:-$PROJECT_DIR/build-fex-hello/file32.exe}"
         if [ -f "$FILE32" ]; then
             echo "[*] VIBEOS_FEX=1 — staging syswow64/file32.exe (M10 file-I/O guest)"
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$FILE32" ::/reactos/syswow64/file32.exe
+        fi
+        # async32.exe — the M15b overlapped-I/O guest (winlogon TryStartWow64Async):
+        # kernel-side IO_STATUS_BLOCK32 completion oracle.
+        ASYNC32="${VIBEOS_ASYNC32_EXE:-$PROJECT_DIR/build-fex-hello/async32.exe}"
+        if [ -f "$ASYNC32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/async32.exe (M15b overlapped-I/O guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$ASYNC32" ::/reactos/syswow64/async32.exe
         fi
         # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
         # by winlogon's TryStartWow64Hello (silent no-op unless staged here).
