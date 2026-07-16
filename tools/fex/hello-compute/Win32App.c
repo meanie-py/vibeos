@@ -19,6 +19,9 @@
 #define W32_FAIL_REGCLASS    0xBAD5
 #define W32_FAIL_CREATEWND   0xBAD6
 #define W32_FAIL_NO_CREATE   0xBAD7 /* window made but WM_CREATE never hit wndproc */
+#define W32_FAIL_WNDRECT     0xBADB /* GetWindowRect wrong (M16 heap-read path) */
+#define W32_FAIL_CLIRECT     0xBADC /* GetClientRect wrong / no NC inset (doom bug) */
+#define W32_FAIL_CLI2SCR     0xBADD /* ClientToScreen origin not inside window */
 #define W32_WARN_NO_PAINT    0x600E /* window + callbacks + pump OK, WM_PAINT not yet
                                      * generated (M9 win32k paint-invalidation) */
 #define W32_PASS             0x600D /* window created, WM_PAINT painted magenta */
@@ -140,6 +143,52 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     {
         Report("[win32] WARN: window+callbacks+pump OK, no WM_PAINT (M9 owed)\n");
         ExitProcess(W32_WARN_NO_PAINT);
+    }
+
+    /* --- M16 geometry rung: the guest verifies window geometry AGAINST WHAT IT
+     * ASKED FOR. GetWindowRect/GetClientRect read the desktop-heap WND via
+     * user32's ValidateHwnd (the M9 wow64 snapshot); wrong 32/64 offsets or a
+     * stale/unfilled snapshot fail these deterministically. The client-height
+     * check is the doom detector: rcWindow == rcClient means the non-client
+     * inset (caption+borders) vanished. */
+    {
+        RECT wr, cr;
+        POINT pt;
+        char buf[128];
+
+        if (!GetWindowRect(hwnd, &wr) ||
+            wr.left != 40 || wr.top != 40 ||
+            (wr.right - wr.left) != 200 || (wr.bottom - wr.top) != 150)
+        {
+            wsprintfA(buf, "[win32] FAIL: GetWindowRect %ld,%ld-%ld,%ld want 40,40 200x150\n",
+                      wr.left, wr.top, wr.right, wr.bottom);
+            Report(buf);
+            ExitProcess(W32_FAIL_WNDRECT);
+        }
+        if (!GetClientRect(hwnd, &cr) ||
+            cr.left != 0 || cr.top != 0 ||
+            cr.right <= 0 || cr.right > 200 ||
+            cr.bottom <= 0 || cr.bottom >= 150 /* == 150 -> NC inset vanished */)
+        {
+            wsprintfA(buf, "[win32] FAIL: GetClientRect %ld,%ld-%ld,%ld (want 0,0 <200x<150)\n",
+                      cr.left, cr.top, cr.right, cr.bottom);
+            Report(buf);
+            ExitProcess(W32_FAIL_CLIRECT);
+        }
+        pt.x = 0;
+        pt.y = 0;
+        if (!ClientToScreen(hwnd, &pt) ||
+            pt.x <= wr.left || pt.x >= wr.right ||
+            pt.y <= wr.top || pt.y >= wr.bottom)
+        {
+            wsprintfA(buf, "[win32] FAIL: ClientToScreen(0,0) -> %ld,%ld outside %ld,%ld-%ld,%ld\n",
+                      pt.x, pt.y, wr.left, wr.top, wr.right, wr.bottom);
+            Report(buf);
+            ExitProcess(W32_FAIL_CLI2SCR);
+        }
+        wsprintfA(buf, "[win32] geometry: wnd %ld,%ld-%ld,%ld client %ldx%ld origin %ld,%ld\n",
+                  wr.left, wr.top, wr.right, wr.bottom, cr.right, cr.bottom, pt.x, pt.y);
+        Report(buf);
     }
 
     Report("[win32] PASS: 32-bit window created, painted through native win32k\n");

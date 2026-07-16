@@ -50,3 +50,11 @@ NtUserSetCursorIconData
 # the title from CREATESTRUCT.lpszName. These two are the entire family — if a
 # new win32k syscall ever takes a PLARGE_STRING, it belongs here.
 NtUserDefSetText
+
+# M16 (task #43): NtUserMessageCall(FNID_DEFWINDOWPROC, WM_WINDOWPOSCHANG*) carries
+# a WINDOWPOS by lParam. The guest passes a 28-byte 32-bit WINDOWPOS; 64-bit win32k
+# reads it as 40 bytes -> field shift past the two leading handles -> garbage
+# cx/cy/flags, so DefWindowProc's WINDOWPOSCHANGING size adjustment corrupts the
+# window (collapses to 0x0, no WM_PAINT). The manual thunk marshals the lParam
+# payload 32<->64 for this (FNID,Msg); every other message flat-passes as before.
+NtUserMessageCall

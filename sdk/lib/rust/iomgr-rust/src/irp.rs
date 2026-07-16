@@ -633,7 +633,14 @@ unsafe fn IopCompleteRequestInner(
         }
 
         if !(*Irp).UserIosb.is_null() {
-            *(*Irp).UserIosb = (*Irp).IoStatus;
+            if ((*Irp).Flags & crate::iofunc::IRP_WOW64_IOSB32) != 0 {
+                // wow64-plan M15b: guest IO_STATUS_BLOCK32 — write the 8-byte layout.
+                let P = (*Irp).UserIosb as *mut crate::iofunc::IoStatusBlock32;
+                (*P).Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+                (*P).Information = (*Irp).IoStatus.Information as u32;
+            } else {
+                *(*Irp).UserIosb = (*Irp).IoStatus;
+            }
         }
 
         if !(*Irp).UserEvent.is_null() {
@@ -712,7 +719,14 @@ unsafe fn IopCompleteRequestInner(
     } else {
         if (*Irp).PendingReturned != 0 && !FileObject.is_null() {
             if ((*Irp).Flags & IRP_SYNCHRONOUS_API) != 0 {
-                *(*Irp).UserIosb = (*Irp).IoStatus;
+                if ((*Irp).Flags & crate::iofunc::IRP_WOW64_IOSB32) != 0 {
+                    // wow64-plan M15b: guest IO_STATUS_BLOCK32 — 8-byte layout.
+                    let P = (*Irp).UserIosb as *mut crate::iofunc::IoStatusBlock32;
+                    (*P).Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+                    (*P).Information = (*Irp).IoStatus.Information as u32;
+                } else {
+                    *(*Irp).UserIosb = (*Irp).IoStatus;
+                }
 
                 if !(*Irp).UserEvent.is_null() {
                     KeSetEvent((*Irp).UserEvent as PVOID, 0, 0u8);

@@ -148,10 +148,16 @@ typedef struct _WOW64_WINDOWPOS32 {
  * RAW copy-down is only half the job: the guest's edits must be copied back up,
  * or they are silently dropped (the pre-M11 behaviour — the return path restored
  * the payload from the kernel's original buffer unconditionally). */
+#include "wow64_cb_automarshal.h"   /* M18: generated payload marshallers */
+
+#define WOW64_WM_COPYDATA         0x004A
 #define WOW64_WM_GETMINMAXINFO    0x0024
 #define WOW64_WM_WINDOWPOSCHANGING 0x0046
 #define WOW64_WM_WINDOWPOSCHANGED  0x0047
+#define WOW64_WM_STYLECHANGING    0x007C
 #define WOW64_WM_NCCALCSIZE       0x0083
+#define WOW64_WM_SIZING           0x0214
+#define WOW64_WM_MOVING           0x0216
 
 /* ---- 32/64 mirrors of callback.h structs --------------------------------- */
 /* WINDOWPROC_CALLBACK_ARGUMENTS (index 0) */
@@ -341,6 +347,58 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
                                              sizeof(*A32) + sizeof(*P32));
                     break;
                 }
+                /* M18: NCCALCSIZE_PARAMS + appended WINDOWPOS (wParam != 0;
+                 * wParam == 0 is a bare width-identical RECT and falls through
+                 * to the verbatim path). Guest user32 recomputes lppos from the
+                 * appended tail (message.c: Params->lppos = (PWINDOWPOS)(Params+1)),
+                 * so only the LAYOUT must be right. Generated marshallers. */
+                if (A64->Msg == WOW64_WM_NCCALCSIZE && A64->wParam &&
+                    Extra >= WOW64_CB_SIZE64_tagNCCALCSIZE_PARAMS +
+                             WOW64_CB_SIZE64__WINDOWPOS)
+                {
+                    const BYTE *S = (const BYTE *)Arg + sizeof(*A64);
+                    BYTE *D = Buf + sizeof(*A32);
+                    WowCbDown_tagNCCALCSIZE_PARAMS(S, D);
+                    WowCbDown__WINDOWPOS(S + WOW64_CB_SIZE64_tagNCCALCSIZE_PARAMS,
+                                           D + WOW64_CB_SIZE32_tagNCCALCSIZE_PARAMS);
+                    A32->lParamBufferSize = WOW64_CB_SIZE32_tagNCCALCSIZE_PARAMS +
+                                            WOW64_CB_SIZE32__WINDOWPOS;
+                    Wow64pEnterGuestCallback(&Frame, Index, Buf,
+                                             sizeof(*A32) + A32->lParamBufferSize);
+                    break;
+                }
+                /* M18: COPYDATASTRUCT header + trailing data blob (READ-only;
+                 * guest recomputes lpData = (cds + 1) in MsgiKMToUMMessage). */
+                if (A64->Msg == WOW64_WM_COPYDATA &&
+                    Extra >= WOW64_CB_SIZE64_tagCOPYDATASTRUCT)
+                {
+                    const BYTE *S = (const BYTE *)Arg + sizeof(*A64);
+                    BYTE *D = Buf + sizeof(*A32);
+                    ULONG Blob = Extra - WOW64_CB_SIZE64_tagCOPYDATASTRUCT;
+                    ULONG i;
+                    WowCbDown_tagCOPYDATASTRUCT(S, D);
+                    for (i = 0; i < Blob; i++)
+                        D[WOW64_CB_SIZE32_tagCOPYDATASTRUCT + i] =
+                            S[WOW64_CB_SIZE64_tagCOPYDATASTRUCT + i];
+                    A32->lParamBufferSize = WOW64_CB_SIZE32_tagCOPYDATASTRUCT + Blob;
+                    Wow64pEnterGuestCallback(&Frame, Index, Buf,
+                                             sizeof(*A32) + A32->lParamBufferSize);
+                    break;
+                }
+                /* M18: table-driven one-struct payloads (generated:
+                 * DRAWITEM / MEASUREITEM / HELP / NEXTMENU today). */
+                {
+                    const WOW64_CB_MARSHAL *Cbm = Wow64CbFindMarshal(A64->Msg);
+                    if (Cbm && Extra >= Cbm->Size64)
+                    {
+                        Cbm->Down((const BYTE *)Arg + sizeof(*A64),
+                                  Buf + sizeof(*A32));
+                        A32->lParamBufferSize = Cbm->Size32;
+                        Wow64pEnterGuestCallback(&Frame, Index, Buf,
+                                                 sizeof(*A32) + Cbm->Size32);
+                        break;
+                    }
+                }
                 if (Extra)
                 {
                     /* Everything else copies verbatim. That is CORRECT only for
@@ -444,31 +502,112 @@ int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status)
                     Frame->Buf64[i] = ((const BYTE *)Frame->OrigArg)[i];
                 A64->Result = A32->Result;
 
-                /* OWED — do NOT re-enable without re-reading this.
+                /* OUT-payload copy-back (M15a). Several window messages pass
+                 * their lParam struct as an OUT parameter: the window proc
+                 * WRITES into it and win32k reads the result back
+                 * (co_IntCallWindowProc copies lParamBufferSize bytes at
+                 * Args+sizeof(ARGS_64) into the 64-bit lParam — callback.rs).
+                 * The baseline restore above (from OrigArg) discards the guest's
+                 * edits, so for OUT messages we must translate the guest's
+                 * 32-bit modified payload back into the 64-bit slot P64.
                  *
-                 * WM_GETMINMAXINFO / WM_NCCALCSIZE / WM_WINDOWPOSCHANGING pass
-                 * their payload as an OUT parameter: natively, the window proc
-                 * writes into the very struct win32k then reads back. Restoring
-                 * the kernel's original bytes here therefore DROPS whatever the
-                 * guest's proc wrote, which is wrong in principle.
+                 * Re-enabled INCREMENTALLY, per message, oracle-gated on
+                 * win32.exe staying 0x600D. Only width-identical / pointer-free
+                 * OUT fields are copied.
                  *
-                 * Copying them back is, however, what the payloads are shaped
-                 * for — and doing it (2026-07-12) REGRESSED a passing oracle:
-                 * win32.exe went 0x600D -> 0x600E, its WM_PAINT / WM_NCPAINT /
-                 * WM_ERASEBKGND vanished entirely and WM_MOVE / WM_SIZE /
-                 * WM_GETMINMAXINFO / WM_NCCALCSIZE each went 1x -> 3x: honouring
-                 * the guest's geometry sent win32k into repeated size
-                 * renegotiation and the window never settled enough to paint.
-                 *
-                 * So the guest's edits stay dropped for now — the SAME behaviour
-                 * we have shipped since M8, not a new bug — and the real fix
-                 * (work out why the guest's DefWindowProc returns geometry
-                 * win32k won't converge on) is owed. The down-repack above is
-                 * kept: the guest at least now SEES a correct WINDOWPOS instead
-                 * of a 40-byte struct read as 28. */
-                (void)P32;
-                (void)P64;
-                (void)Extra;
+                 * WM_GETMINMAXINFO (40b), WM_NCCALCSIZE (rgrc rects), and
+                 * WM_WINDOWPOSCHANGING (28<->40, field-translated) are all
+                 * enabled. WINDOWPOSCHANGING was long dropped because a naive
+                 * copy-back collapsed the window: the guest's DefWindowProc
+                 * returned SWP_NOSIZE-cleared cx=cy=0. That turned out NOT to be
+                 * this copy-back's fault — it was the unmarshalled
+                 * NtUserMessageCall(FNID_DEFWINDOWPROC) syscall handing win32k the
+                 * 28-byte WINDOWPOS to read as 40 (M16 Fix A, wow64_manual.c).
+                 * With Fix A the guest returns sane geometry, so this copy-back
+                 * is now correct + safe (win32.exe stays 0x600D). */
+                switch (Frame->Msg)
+                {
+                    case WOW64_WM_GETMINMAXINFO: /* MINMAXINFO: 5 POINTs = 40b */
+                    case WOW64_WM_SIZING:        /* RECT = 16b */
+                    case WOW64_WM_MOVING:        /* RECT = 16b */
+                    case WOW64_WM_STYLECHANGING: /* STYLESTRUCT = 8b */
+                        /* Width-identical, pointer-free OUT payloads: the guest's
+                         * edited struct copies back verbatim (Extra == the 64-bit
+                         * payload size == the 32-bit payload size for these). */
+                        if (Extra && Len32 >= sizeof(*A32) + Extra)
+                        {
+                            for (i = 0; i < Extra; i++) P64[i] = P32[i];
+                            if (Wow64TraceSyscalls)
+                                DbgPrint("[WOW64CB] msg 0x%lx OUT copied back (%lub)\n",
+                                         (unsigned long)Frame->Msg,
+                                         (unsigned long)Extra);
+                        }
+                        break;
+
+                    case WOW64_WM_NCCALCSIZE:
+                        /* NCCALCSIZE_PARAMS: rgrc[3] (48b, RECTs, width-identical)
+                         * then PWINDOWPOS lppos (8b host / 4b guest). The proc
+                         * computes the client rect into rgrc[0]; win32k reads it
+                         * back to derive the non-client inset. Copy back ONLY the
+                         * rects (pointer-free) and PRESERVE the 64-bit lppos from
+                         * the baseline restore. wParam==FALSE is a lone RECT
+                         * (16b) — Extra distinguishes. */
+                    {
+                        ULONG cb = (Extra >= 48) ? 48 : Extra;
+                        if (cb && Len32 >= sizeof(*A32) + cb)
+                        {
+                            for (i = 0; i < cb; i++) P64[i] = P32[i];
+                            if (Wow64TraceSyscalls)
+                                DbgPrint("[WOW64CB] NCCALCSIZE OUT copied back (%lub rects)\n",
+                                         (unsigned long)cb);
+                        }
+                        break;
+                    }
+
+                    case WOW64_WM_WINDOWPOSCHANGING:
+                        /* WINDOWPOS 28->40, field-translated. Safe now that M16
+                         * Fix A (NtUserMessageCall marshalling) makes the guest's
+                         * DefWindowProc return SANE geometry — before Fix A it
+                         * returned SWP_NOSIZE-cleared cx=cy=0 and copying that
+                         * back collapsed the window. Copy geometry + flags;
+                         * PRESERVE the 64-bit hwnd/hwndInsertAfter from the
+                         * baseline restore (z-order handle sentinels don't
+                         * zero-extend; the common proc never repoints them). */
+                        if (Len32 >= sizeof(*A32) + sizeof(WOW64_WINDOWPOS32) &&
+                            Extra >= sizeof(WOW64_WINDOWPOS64))
+                        {
+                            const WOW64_WINDOWPOS32 *G32 = (const WOW64_WINDOWPOS32 *)P32;
+                            WOW64_WINDOWPOS64 *G64 = (WOW64_WINDOWPOS64 *)P64;
+                            G64->x = G32->x;
+                            G64->y = G32->y;
+                            G64->cx = G32->cx;
+                            G64->cy = G32->cy;
+                            G64->flags = G32->flags;
+                            if (Wow64TraceSyscalls)
+                                DbgPrint("[WOW64CB] WINDOWPOSCHANGING OUT copied back "
+                                         "(cx=%ld cy=%ld fl=0x%lx)\n",
+                                         (long)G64->cx, (long)G64->cy,
+                                         (unsigned long)G64->flags);
+                        }
+                        break;
+
+                    default:
+                    {
+                        /* M18: table-driven copy-back (generated Up marshallers:
+                         * geometry/handles/uintptr values copy back sign-extended;
+                         * dereferenceable kernel pointers are preserved). */
+                        const WOW64_CB_MARSHAL *Cbm = Wow64CbFindMarshal(Frame->Msg);
+                        if (Cbm && Extra >= Cbm->Size64 &&
+                            Len32 >= sizeof(*A32) + Cbm->Size32)
+                        {
+                            Cbm->Up(P32, P64);
+                            if (Wow64TraceSyscalls)
+                                DbgPrint("[WOW64CB] msg 0x%lx OUT marshalled back (gen)\n",
+                                         (unsigned long)Frame->Msg);
+                        }
+                        break;
+                    }
+                }
 
                 Frame->RetBuf = A64;
                 Frame->RetLen = N;
