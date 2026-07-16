@@ -261,3 +261,38 @@ tree-sitter's C grammar is **lenient, not a preprocessor** — real files parse 
 ## DeepSeek mechanical-mode failure modes (detector/auto-fix backlog)
 
 DeepSeek (`--mode mechanical`) is the cheap gruntwork tier but markedly weaker than Claude. Recurring failure modes found grinding driver crates — each a candidate auto-fix/detector: (1) **leaves raw C `goto`/labels** in complex fns → wrap body in a `'cleanup: { ... }` block, forward `goto Exit`→`break 'cleanup`; detector: grep live `goto |^\s*\w+:\s*$`. (2) **`expr as usize < size_of::<T>()` without parens** → rustc mis-parses `<` as generics; `cargo fix --broken-code --allow-dirty` auto-applies the paren suggestion (run *before* grinding). (3) **adds `use ...::*` globs** → E0659 cascades (+700 phantom errors in one turn); rail: NEVER glob, use explicit `use ntkrnl_sys::ddk::{Name};`. (4) **stubs hard functions to no-ops** (`{ let _ = a; }`) — flag in review. (5) **wrong module path for driver-private structs** (`ntkrnl_sys::ddk::FDE` when it's `crate::types`) — bulk-sed. (6) **strips *correct* `as i32` casts** on C-shaped shims → E0308 flood; feed callee signatures into the prompt. (7) **drops bit-masking helper calls** (`SRB_STATUS(x)==S` → `x==S`) — compiler can't catch; detector: call-superset (every `NAME(` in input reappears in output). (8) **emits C ternary `?:` and stream-of-consciousness `//` comments** — reject output containing `?...:`. **General:** the grinder's self-reported error counts are routinely exaggerated — trust your own `cargo check`. Re-running repair on already-regressed code does NOT self-heal a prior semantic drop — run deterministic passes first, repair on a **clean** baseline.
+
+## shell32 cheap-model evidence path
+
+The shell32 C++/COM lane has stricter body-worker experiments that never delegate ABI,
+constants, or the runtime call set to the model:
+
+```bash
+# Preview is guaranteed inspection-only; --prompt forces --dry-run.
+python -m rustconv --arch amd64 translate path/to/Class.cpp \
+  --target shell32 --cpp-com --class CClass --fn CClass_Method \
+  --mode mechanical --model deepseek --seal-facts --seal-calls --prompt
+
+# Batch N candidate/base replacements, one cargo invocation per architecture.
+python -m rustconv candidate-check candidates.json
+python -m rustconv candidate-check candidates.json --repair
+
+# Read-only opportunity census; alpha matches are never reused automatically.
+python -m rustconv dup-census dll/win32/shell32 --top 20
+```
+
+`--seal-facts` owns HRESULT predicates and constant occurrences. `--seal-calls` owns each
+known runtime callee occurrence with a unique exactly-once executable token. Either envelope
+fails loud before the normal body audit. Each mode has a separate response-cache suffix.
+
+`candidate-check` generates a durable synthetic `no_std` crate under
+`.responses/candidate-oracles/`, replaces exactly one worker per isolated module backed by
+an accepted shell32 base, and checks i386/amd64/arm64. `--repair` is deliberately bounded:
+generated signatures and constant contexts, accepted-base argument casts/initializers, and
+lexically proven mutable reassignment. It does not apply rustc suggestions blindly or call
+an LLM. A red candidate makes the command nonzero.
+
+Every non-dry `translate` appends JSONL to `.responses/outcomes.jsonl`: model, target, arch,
+mode, seal flags, source hashes, cheap routing features, outcome, token/cost/latency, and
+artifact/cache identity. This ledger is the input to a future measured difficulty router;
+do not invent thresholds before the representative corpus exists.

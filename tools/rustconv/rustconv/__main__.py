@@ -7,12 +7,15 @@ import json
 import re
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
 
 from . import (
     callout_annotate,
+    candidate_oracle,
+    dup_census,
     file_splitter,
     gdi_lock_inventory,
     seh_belt,
@@ -26,6 +29,7 @@ from . import (
 from .assembler import assemble_file, generate_lib_rs, generate_mod_rs
 from .batch_runner import TranslationResult, submit_batch, submit_single
 from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
+from .call_seal import CallSealError, call_contract, seal_calls, unseal_calls
 from .callgraph import extract_call_graph, topological_sort
 from .catalog import build_catalog, print_catalog_stats
 from .checker import check_all_targets, print_check_report
@@ -69,6 +73,7 @@ from .function_prompt import (
 )
 from .function_resolver import resolve_function
 from .objdiff import run_objdiff
+from .outcome_ledger import OutcomeLedger
 from .postprocess import postprocess
 from .preamble_audit import audit_preamble
 from .probe_migrate import (
@@ -303,6 +308,32 @@ def cmd_scan(args):
     path = resolve_c_path(args.file)
     result = scan_file(path)
     print_scan_result(result)
+
+
+def cmd_dup_census(args):
+    """Read-only exact/alpha-normalized function duplication census."""
+    paths = []
+    for raw in args.paths:
+        path = Path(raw)
+        if not path.is_absolute():
+            path = REACTOS_ROOT / path
+        if not path.exists():
+            raise FileNotFoundError(f"dup-census scope not found: {path}")
+        paths.append(path.resolve())
+    report = dup_census.run_census(paths, REACTOS_ROOT, top=args.top)
+    dup_census.print_census(report, as_json=args.json)
+
+
+def cmd_candidate_check(args):
+    """Batch-compile candidate workers against real target substrate."""
+    manifest = Path(args.manifest)
+    if not manifest.is_absolute():
+        manifest = (Path.cwd() / manifest).resolve()
+    arches = args.arches or ["i386", "amd64", "arm64"]
+    report = candidate_oracle.run_oracle(manifest, arches, repair=args.repair)
+    candidate_oracle.print_report(report, as_json=args.json)
+    if any(item["status"] != "ok" for item in report["results"]):
+        sys.exit(1)
 
 
 def cmd_cpp_com(args):
@@ -1137,6 +1168,12 @@ def cmd_probe_migrate(args):
 def cmd_translate(args):
     """Function-by-function translation pipeline."""
 
+    # The CLI contract says --prompt is inspection-only. Enforce it here before
+    # creating a paid archive or resolving a backend so a prompt preview can
+    # never drift into an API call.
+    if getattr(args, "prompt", False):
+        args.dry_run = True
+
     # Resolve target: single file or directory
     target_path = Path(args.path)
     if not target_path.is_absolute():
@@ -1153,10 +1190,10 @@ def cmd_translate(args):
     rustconv_target = resolve_target(args, target_path)
     print(f"Target: {rustconv_target.name}", file=sys.stderr)
 
-    if getattr(args, "seal_facts", False) and not (
+    if (getattr(args, "seal_facts", False) or getattr(args, "seal_calls", False)) and not (
         rustconv_target.name == "shell32" and getattr(args, "cpp_com", False)
     ):
-        raise CppComError("--seal-facts currently requires shell32 --cpp-com")
+        raise CppComError("--seal-facts/--seal-calls currently require shell32 --cpp-com")
 
     cpp_com_cls = None
     cpp_com_interfaces = []
@@ -1279,6 +1316,7 @@ def cmd_translate(args):
     # response lands here as it generates, and a Ctrl-C points back at the
     # preserved work instead of feeling like it threw away what you paid for.
     archive = None
+    outcome_ledger = None
     running_cost = 0.0
     # Hard safety brake: stop before the next paid call once cumulative spend
     # crosses this. None = no cap. Prevents a runaway bill.
@@ -1288,6 +1326,17 @@ def cmd_translate(args):
         warn_if_tmp_output(getattr(args, "output", None))
         archive = RunArchive(label=target_path.name, model=model, target=rustconv_target.name)
         install_kill_guard(archive)
+        outcome_ledger = OutcomeLedger(
+            archive.dir.name,
+            {
+                "model": model,
+                "target": rustconv_target.name,
+                "arch": args.arch,
+                "mode": mode,
+                "seal_facts": bool(getattr(args, "seal_facts", False)),
+                "seal_calls": bool(getattr(args, "seal_calls", False)),
+            },
+        )
 
     total_files = len(c_files)
     audit_findings: dict[str, list[str]] = {}
@@ -1298,6 +1347,58 @@ def cmd_translate(args):
 
         capped = False  # set if --cost-cap is hit mid-file
         scan = scan_file(c_file)
+        try:
+            source_file_label = str(c_file.relative_to(REACTOS_ROOT))
+        except ValueError:
+            source_file_label = str(c_file)
+
+        def _record_outcome(
+            dep,
+            outcome: str,
+            *,
+            outcome_ledger=outcome_ledger,
+            source_file_label=source_file_label,
+            **fields,
+        ):
+            if outcome_ledger is None:
+                return
+            outcome_ledger.record(
+                unit=dep.name,
+                source=dep.body_text,
+                outcome=outcome,
+                source_file=source_file_label,
+                cpp_class=dep.cpp_class,
+                **fields,
+            )
+
+        def _record_preamble(
+            source: str,
+            outcome: str,
+            *,
+            outcome_ledger=outcome_ledger,
+            source_file_label=source_file_label,
+            **fields,
+        ):
+            if outcome_ledger is not None:
+                outcome_ledger.record(
+                    unit=PREAMBLE_KEY,
+                    source=source,
+                    outcome=outcome,
+                    source_file=source_file_label,
+                    cpp_class=None,
+                    **fields,
+                )
+
+        def _result_fields(result, elapsed_ms: int, model=model) -> dict:
+            return {
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+                "cache_read_tokens": result.cache_read_tokens,
+                "cache_write_tokens": result.cache_write_tokens,
+                "cost_usd": round(cost_usd(model, result.input_tokens, result.output_tokens), 8),
+                "elapsed_ms": elapsed_ms,
+            }
+
         _gate_unextracted(scan, getattr(args, "allow_partial", False))
         file_res = file_resolve(scan, catalog, spec)
         subsystem = c_file.parent.name
@@ -1313,30 +1414,55 @@ def cmd_translate(args):
             sorted_deps = prepare_helper_closure(deps, args.class_name)
             cpp_com_wide_statics = render_wide_literal_statics(deps, sorted_deps)
 
-        seal_enabled = bool(
+        fact_seal_enabled = bool(
             rustconv_target.name == "shell32" and getattr(args, "seal_facts", False)
+        )
+        call_seal_enabled = bool(
+            rustconv_target.name == "shell32" and getattr(args, "seal_calls", False)
         )
         fact_seals = (
             {dep.name: prepare_sealed_source(dep.body_text) for dep in sorted_deps}
-            if seal_enabled
+            if fact_seal_enabled
+            else {}
+        )
+        model_sources = {
+            dep.name: fact_seals[dep.name].text if dep.name in fact_seals else dep.body_text
+            for dep in sorted_deps
+        }
+        call_seals = (
+            {
+                dep.name: seal_calls(
+                    model_sources[dep.name],
+                    set(dep.callees) | {f"{callee}_body" for callee in dep.callees},
+                )
+                for dep in sorted_deps
+            }
+            if call_seal_enabled
             else {}
         )
 
-        def _model_dep(dep, fact_seals=fact_seals):
-            sealed = fact_seals.get(dep.name)
-            return replace(dep, body_text=sealed.text) if sealed is not None else dep
+        def _model_dep(dep, model_sources=model_sources, call_seals=call_seals):
+            sealed_calls = call_seals.get(dep.name)
+            body_text = sealed_calls.text if sealed_calls is not None else model_sources[dep.name]
+            return replace(dep, body_text=body_text) if body_text != dep.body_text else dep
 
-        def _fact_contract(dep, fact_seals=fact_seals) -> str:
-            sealed = fact_seals.get(dep.name)
-            return fact_contract(sealed) if sealed is not None else ""
+        def _deterministic_contract(dep, fact_seals=fact_seals, call_seals=call_seals) -> str:
+            facts = fact_seals.get(dep.name)
+            calls = call_seals.get(dep.name)
+            return (fact_contract(facts) if facts is not None else "") + (
+                call_contract(calls) if calls is not None else ""
+            )
 
-        def _unseal_result(dep, rust: str, fact_seals=fact_seals) -> str:
-            sealed = fact_seals.get(dep.name)
-            if sealed is None:
-                return rust
+        def _unseal_result(dep, rust: str, fact_seals=fact_seals, call_seals=call_seals) -> str:
             try:
-                return unseal_facts(rust, sealed)
-            except FactSealError as error:
+                calls = call_seals.get(dep.name)
+                if calls is not None:
+                    rust = unseal_calls(rust, calls)
+                facts = fact_seals.get(dep.name)
+                if facts is not None:
+                    rust = unseal_facts(rust, facts)
+                return rust
+            except (CallSealError, FactSealError) as error:
                 raise CppComError(f"{dep.name}: {error}") from error
 
         # Filter to single function if requested
@@ -1403,7 +1529,7 @@ def cmd_translate(args):
                     catalog_fn_names,
                     file_res.exports,
                     target=rustconv_target,
-                    deterministic_contract=_fact_contract(sorted_deps[0]),
+                    deterministic_contract=_deterministic_contract(sorted_deps[0]),
                 )
                 if not use_claude:
                     prompt = system_prompt + "\n\n---\n\n" + prompt if system_prompt else prompt
@@ -1423,7 +1549,7 @@ def cmd_translate(args):
                     file_res.exports,
                     target=rustconv_target,
                     c2rust_anchor=c2rust_anchors.get(sorted_deps[0].name),
-                    deterministic_contract=_fact_contract(sorted_deps[0]),
+                    deterministic_contract=_deterministic_contract(sorted_deps[0]),
                 )
                 full = (system_prompt + "\n\n---\n\n" + prompt) if system_prompt else prompt
                 print(full)
@@ -1450,6 +1576,9 @@ def cmd_translate(args):
                 if lowered is not None:
                     translated[dep.name] = lowered
                     deterministic_workers.add(dep.name)
+        for dep in sorted_deps:
+            if dep.name in deterministic_workers:
+                _record_outcome(dep, "deterministic", route="trivial_worker")
         total_in = 0
         total_out = 0
 
@@ -1465,8 +1594,10 @@ def cmd_translate(args):
         # this one is the stable, cross-run skip layer. --no-resume forces fresh.
         cache_tag = getattr(args, "cache_tag", None)
         cache_suffix = f"__{cache_tag}" if cache_tag else ""
-        if seal_enabled:
+        if fact_seal_enabled:
             cache_suffix += "__factseal_v1"
+        if call_seal_enabled:
+            cache_suffix += "__callseal_v1"
         cache = ResponseCache(f"{subsystem}__{c_file.stem}{cache_suffix}")
         resumed = 0
         if cache.count() and not no_resume:
@@ -1512,7 +1643,7 @@ def cmd_translate(args):
                 catalog_fn_names,
                 file_res.exports,
                 target=rustconv_target,
-                deterministic_contract=_fact_contract(pending_paid_deps[0]),
+                deterministic_contract=_deterministic_contract(pending_paid_deps[0]),
             )
             _est_in = (estimate_tokens(_p0) + estimate_tokens(system_prompt)) * len(
                 pending_paid_deps
@@ -1558,6 +1689,7 @@ def cmd_translate(args):
                     if hit is not None:
                         translated[dep.name] = hit
                         resumed += 1
+                        _record_outcome(dep, "cache_hit", cache_key=cache.dir.name)
                         continue
                 todo.append((func_idx, dep))
             ctx = dict(translated)  # static callee context (mechanical fns are independent)
@@ -1579,7 +1711,7 @@ def cmd_translate(args):
             ):
                 fi, dp = item
                 if stop.is_set():
-                    return (fi, dp, None)
+                    return (fi, dp, None, 0)
                 fres = resolve_function(dp, catalog, file_res.exports, scan.defines)
                 up = build_function_prompt(
                     _model_dep(dp),
@@ -1592,9 +1724,10 @@ def cmd_translate(args):
                     target=rustconv_target,
                     include_shared=False,
                     c2rust_anchor=c2rust_anchors.get(dp.name),
-                    deterministic_contract=_fact_contract(dp),
+                    deterministic_contract=_deterministic_contract(dp),
                 )
                 sk = ResponseSink(archive.stream_path(fi, dp.name)) if archive is not None else None
+                started = time.monotonic()
                 try:
                     r = submit_single(
                         up,
@@ -1606,7 +1739,7 @@ def cmd_translate(args):
                 finally:
                     if sk is not None:
                         sk.close()
-                return (fi, dp, r)
+                return (fi, dp, r, int((time.monotonic() - started) * 1000))
 
             print(
                 f"  ⚡ parallel: {len(todo)} fn(s) @ concurrency={conc} ({resumed} cached)",
@@ -1614,41 +1747,61 @@ def cmd_translate(args):
             )
             with ThreadPoolExecutor(max_workers=conc) as ex:
                 for fut in as_completed([ex.submit(_work, it) for it in todo]):
-                    fi, dp, r = fut.result()
+                    fi, dp, r, elapsed_ms = fut.result()
                     if r is None:
                         continue  # skipped after cost cap
                     if r.success:
-                        if rustconv_target.name == "shell32":
-                            r.rust_code = _unseal_result(dp, r.rust_code)
-                            r.rust_code = normalize_worker_body(
-                                r.rust_code,
-                                worker_signature(dp.name, dp.cpp_class, dp.params, dp.return_type),
-                            )
-                            findings = audit_worker_body(
-                                dp.body_text,
-                                r.rust_code,
-                                f"{dp.name}_body",
-                                worker_signature(
-                                    dp.name,
-                                    dp.cpp_class,
-                                    dp.params,
-                                    dp.return_type,
-                                ),
-                            )
-                            if findings:
-                                raise CppComError(
-                                    f"{dp.name}: paid body failed deterministic audit:\n  - "
-                                    + "\n  - ".join(findings)
+                        try:
+                            if rustconv_target.name == "shell32":
+                                r.rust_code = _unseal_result(dp, r.rust_code)
+                                r.rust_code = normalize_worker_body(
+                                    r.rust_code,
+                                    worker_signature(
+                                        dp.name, dp.cpp_class, dp.params, dp.return_type
+                                    ),
                                 )
+                                findings = audit_worker_body(
+                                    dp.body_text,
+                                    r.rust_code,
+                                    f"{dp.name}_body",
+                                    worker_signature(
+                                        dp.name,
+                                        dp.cpp_class,
+                                        dp.params,
+                                        dp.return_type,
+                                    ),
+                                )
+                                if findings:
+                                    raise CppComError(
+                                        f"{dp.name}: paid body failed deterministic audit:\n  - "
+                                        + "\n  - ".join(findings)
+                                    )
+                        except CppComError as error:
+                            _record_outcome(
+                                dp,
+                                "audit_reject",
+                                stage="body_audit",
+                                error=str(error),
+                                **_result_fields(r, elapsed_ms),
+                            )
+                            raise
                         translated[dp.name] = r.rust_code
                         cache.put(dp.name, dp.body_text, r.rust_code)
                         total_in += r.input_tokens
                         total_out += r.output_tokens
+                        artifact = None
                         if archive is not None:
-                            archive.commit(
+                            artifact = archive.commit(
                                 fi, dp.name, r.rust_code, r.input_tokens, r.output_tokens
                             )
                             running_cost += cost_usd(model, r.input_tokens, r.output_tokens)
+                        _record_outcome(
+                            dp,
+                            "generated",
+                            stage="body_audit" if rustconv_target.name == "shell32" else "api",
+                            artifact=str(artifact) if artifact is not None else None,
+                            **_result_fields(r, elapsed_ms),
+                        )
                         print(
                             f"  [{fi}] {dp.name} OK ({r.input_tokens}/{r.output_tokens})"
                             f"  [running ${running_cost:.2f}]",
@@ -1663,6 +1816,13 @@ def cmd_translate(args):
                                 file=sys.stderr,
                             )
                     else:
+                        _record_outcome(
+                            dp,
+                            "api_error",
+                            stage="submit",
+                            error=r.error,
+                            **_result_fields(r, elapsed_ms),
+                        )
                         print(f"  [{fi}] {dp.name} FAIL: {r.error}", file=sys.stderr)
 
         for func_idx, dep in enumerate(sorted_deps, 1):
@@ -1705,6 +1865,7 @@ def cmd_translate(args):
                 if hit is not None:
                     translated[dep.name] = hit
                     resumed += 1
+                    _record_outcome(dep, "cache_hit", cache_key=cache.dir.name)
                     print("CACHED ($0)", file=sys.stderr)
                     continue
 
@@ -1726,13 +1887,14 @@ def cmd_translate(args):
                 target=rustconv_target,
                 include_shared=False,
                 c2rust_anchor=c2rust_anchors.get(dep.name),
-                deterministic_contract=_fact_contract(dep),
+                deterministic_contract=_deterministic_contract(dep),
             )
 
             # Stream this function's output straight to the durable archive.
             sink = None
             if archive is not None:
                 sink = ResponseSink(archive.stream_path(func_idx, dep.name))
+            started = time.monotonic()
             try:
                 if use_claude:
                     result = submit_single(
@@ -1749,37 +1911,49 @@ def cmd_translate(args):
             finally:
                 if sink is not None:
                     sink.close()
+            elapsed_ms = int((time.monotonic() - started) * 1000)
 
             if result.success:
-                if rustconv_target.name == "shell32":
-                    result.rust_code = _unseal_result(dep, result.rust_code)
-                    result.rust_code = normalize_worker_body(
-                        result.rust_code,
-                        worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
-                    )
-                    findings = audit_worker_body(
-                        dep.body_text,
-                        result.rust_code,
-                        f"{dep.name}_body",
-                        worker_signature(
-                            dep.name,
-                            dep.cpp_class,
-                            dep.params,
-                            dep.return_type,
-                        ),
-                    )
-                    if findings:
-                        raise CppComError(
-                            f"{dep.name}: paid body failed deterministic audit:\n  - "
-                            + "\n  - ".join(findings)
+                try:
+                    if rustconv_target.name == "shell32":
+                        result.rust_code = _unseal_result(dep, result.rust_code)
+                        result.rust_code = normalize_worker_body(
+                            result.rust_code,
+                            worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type),
                         )
+                        findings = audit_worker_body(
+                            dep.body_text,
+                            result.rust_code,
+                            f"{dep.name}_body",
+                            worker_signature(
+                                dep.name,
+                                dep.cpp_class,
+                                dep.params,
+                                dep.return_type,
+                            ),
+                        )
+                        if findings:
+                            raise CppComError(
+                                f"{dep.name}: paid body failed deterministic audit:\n  - "
+                                + "\n  - ".join(findings)
+                            )
+                except CppComError as error:
+                    _record_outcome(
+                        dep,
+                        "audit_reject",
+                        stage="body_audit",
+                        error=str(error),
+                        **_result_fields(result, elapsed_ms),
+                    )
+                    raise
                 translated[dep.name] = result.rust_code
                 # Persist for cross-run resume the instant it returns.
                 cache.put(dep.name, dep.body_text, result.rust_code)
                 total_in += result.input_tokens
                 total_out += result.output_tokens
+                artifact = None
                 if archive is not None:
-                    archive.commit(
+                    artifact = archive.commit(
                         func_idx,
                         dep.name,
                         result.rust_code,
@@ -1797,7 +1971,21 @@ def cmd_translate(args):
                         f"OK ({result.input_tokens} in / {result.output_tokens} out)",
                         file=sys.stderr,
                     )
+                _record_outcome(
+                    dep,
+                    "generated",
+                    stage="body_audit" if rustconv_target.name == "shell32" else "api",
+                    artifact=str(artifact) if artifact is not None else None,
+                    **_result_fields(result, elapsed_ms),
+                )
             else:
+                _record_outcome(
+                    dep,
+                    "api_error",
+                    stage="submit",
+                    error=result.error,
+                    **_result_fields(result, elapsed_ms),
+                )
                 print(f"FAIL: {result.error}", file=sys.stderr)
 
             # Hard cost cap — stop before the next (paid) call if we've crossed it.
@@ -1828,6 +2016,7 @@ def cmd_translate(args):
         if pre_hit is not None:
             preamble_rust = pre_hit
             resumed += 1
+            _record_preamble(preamble_src, "cache_hit", cache_key=cache.dir.name)
             print("  [preamble] CACHED ($0)", file=sys.stderr)
         elif preamble_src and not capped:
             print(
@@ -1837,6 +2026,7 @@ def cmd_translate(args):
             pre_sink = None
             if archive is not None:
                 pre_sink = ResponseSink(archive.stream_path(0, "preamble"))
+            pre_started = time.monotonic()
             try:
                 if use_claude:
                     pre_res = submit_single(
@@ -1852,13 +2042,15 @@ def cmd_translate(args):
             finally:
                 if pre_sink is not None:
                     pre_sink.close()
+            pre_elapsed_ms = int((time.monotonic() - pre_started) * 1000)
             if pre_res.success:
                 preamble_rust = pre_res.rust_code
                 cache.put(PREAMBLE_KEY, preamble_src, pre_res.rust_code)
                 total_in += pre_res.input_tokens
                 total_out += pre_res.output_tokens
+                pre_artifact = None
                 if archive is not None:
-                    archive.commit(
+                    pre_artifact = archive.commit(
                         0,
                         "preamble",
                         pre_res.rust_code,
@@ -1866,10 +2058,24 @@ def cmd_translate(args):
                         pre_res.output_tokens,
                     )
                     running_cost += cost_usd(model, pre_res.input_tokens, pre_res.output_tokens)
+                _record_preamble(
+                    preamble_src,
+                    "generated",
+                    stage="api",
+                    artifact=str(pre_artifact) if pre_artifact is not None else None,
+                    **_result_fields(pre_res, pre_elapsed_ms),
+                )
                 print(
                     f"OK ({pre_res.input_tokens} in / {pre_res.output_tokens} out)", file=sys.stderr
                 )
             else:
+                _record_preamble(
+                    preamble_src,
+                    "api_error",
+                    stage="submit",
+                    error=pre_res.error,
+                    **_result_fields(pre_res, pre_elapsed_ms),
+                )
                 # The preamble is the ONLY pass that sees file-scope C — every
                 # struct, typedef and lookup table in the file rides on it.
                 # "Stitching without preamble" silently ships a crate missing all
@@ -2265,6 +2471,34 @@ def main():
     p = sub.add_parser("scan", help="Parse C file, print analysis")
     p.add_argument("file", help="C source file (relative to ntoskrnl/ or absolute)")
 
+    # dup-census — read-only opportunity measurement; never reuses output.
+    p = sub.add_parser(
+        "dup-census",
+        help="Report exact and alpha-normalized duplicate C/C++ function bodies",
+    )
+    p.add_argument("paths", nargs="+", help="Source file/directory scopes relative to repo root")
+    p.add_argument("--top", type=int, default=20, help="Largest groups to include (default 20)")
+    p.add_argument("--json", action="store_true", help="Machine-readable report")
+
+    # candidate-check — N isolated worker replacements, one cargo check per arch.
+    p = sub.add_parser(
+        "candidate-check",
+        help="Batch cargo-check candidate workers against the real shell32 substrate",
+    )
+    p.add_argument("manifest", help="JSON candidate/base/function manifest")
+    p.add_argument(
+        "--arches",
+        nargs="+",
+        choices=["i386", "amd64", "arm64"],
+        help="Architectures to check (default all three)",
+    )
+    p.add_argument("--json", action="store_true", help="Machine-readable report")
+    p.add_argument(
+        "--repair",
+        action="store_true",
+        help="Apply only deterministic base-authority worker repairs before checking",
+    )
+
     # cpp-com — deterministic C++/ATL class ABI preflight + scaffold. No LLM.
     p = sub.add_parser(
         "cpp-com",
@@ -2596,6 +2830,14 @@ def main():
         "separate response-cache namespace.",
     )
     p.add_argument(
+        "--seal-calls",
+        dest="seal_calls",
+        action="store_true",
+        help="EXPERIMENTAL shell32 COM mode: replace each known runtime callee occurrence "
+        "with an audited opaque token during the paid call. Uses a separate response-cache "
+        "namespace.",
+    )
+    p.add_argument(
         "--sdk-header",
         help="WIDL-generated C header used as COM vtable ground truth",
     )
@@ -2711,6 +2953,8 @@ def main():
 
     commands = {
         "scan": cmd_scan,
+        "dup-census": cmd_dup_census,
+        "candidate-check": cmd_candidate_check,
         "cpp-com": cmd_cpp_com,
         "resolve": cmd_resolve,
         "semdiff": cmd_semdiff,

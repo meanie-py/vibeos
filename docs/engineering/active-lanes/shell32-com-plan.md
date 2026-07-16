@@ -190,3 +190,24 @@ cleanly, that's a real result too — it tells us the C++ corpora need a differe
 
 **Do not let a negative result get papered over.** If rustconv can't anchor a C++ file it
 must **hard fail** (AGENTS.md §"Fail loud"), not silently degrade to unanchored translation.
+
+## Pipeline checkpoint (2026-07-15)
+
+The lane now has a deterministic cheap-model acceptance path before any class integration:
+
+- COM interfaces, vtables, object layout, factories, worker signatures, helper closure, and
+  wide literals are generated without an LLM.
+- `--seal-facts --seal-calls` closes constants/HRESULT predicates and every known runtime
+  call occurrence around the paid body worker.
+- `candidate-check` batches isolated candidates into one synthetic crate and checks i386,
+  amd64, and arm64, with diagnostics attributed per worker.
+- `candidate-check --repair` uses only generated/accepted-base/lexical authority. Two fresh
+  DeepSeek `GetPath` candidates went raw-red on FFI typing and repair-green on all three
+  arches for $0.00494 and $0.00425 respectively.
+- The append-only outcome ledger records routing/cost evidence, and `dup-census` measured
+  5.9% exact duplicate copies plus 1.2% alpha-only copies across `dll/win32`.
+
+This is a pipeline spike, not authorization to swap `COpenControlPanel` or skip the Wave 1
+pilot gate. The next experiment is a stratified 20-method routing corpus; production class
+translation still escalates any model-owned audit/compile failure to Sonnet after the fixed
+DeepSeek budget.

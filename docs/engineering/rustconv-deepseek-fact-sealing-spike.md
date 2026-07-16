@@ -60,18 +60,86 @@ needs to compile each candidate against the real target crate and feed bounded c
 diagnostics into deterministic repair/model routing. Parsing plus lexical audits are not
 enough for millions of lines.
 
-## Recommended next spike
+## Follow-up spike: mechanical acceptance and cost evidence
 
-Add a candidate harness that:
+The recommended candidate harness now exists:
 
-1. substitutes one worker into an isolated generated class crate;
-2. runs stable `cargo check` for the target ABI surface;
-3. classifies diagnostics into deterministic repairs (signature/type aliases, const
-   context, imports, pointer casts) versus model-owned body failures;
-4. retries only the failed worker with a bounded diagnostic prompt;
-5. routes to Sonnet after a fixed DeepSeek attempt budget;
-6. measures first-pass compile, deterministic-repair compile, final compile, audit, token
-   cost, and wall time over 20 representative methods.
+- `rustconv candidate-check manifest.json` substitutes N workers into N isolated modules
+  backed by an accepted shell32 module and runs one `cargo check` per architecture. Rustc
+  diagnostics are attributed to the owning candidate and the complete oracle is durable
+  under `.responses/candidate-oracles/`.
+- `--repair` applies bounded repairs whose authority is either the generated worker
+  signature, the accepted base worker, or Rust lexical structure. Current repairs cover
+  constant array bounds, generated signatures, call-argument casts, local initializers,
+  and mutable reassignment. It does not ask an LLM to interpret rustc.
+- `rustconv translate` appends every deterministic, cached, generated, rejected, and API
+  error outcome to `.responses/outcomes.jsonl`, including content identity, cheap routing
+  features, tokens, cost, latency, model, mode, and sealing flags.
+- `rustconv dup-census` measures exact and alpha-normalized C/C++ function duplication.
+  Alpha results are deliberately census-only; no translation is instantiated from them.
 
-That experiment will answer the real routing question: what fraction of ordinary Wine
-methods can finish on DeepSeek automatically, rather than merely produce plausible Rust.
+### Duplication census
+
+| Scope | Functions | Exact duplicate copies | Alpha-only copies |
+|---|---:|---:|---:|
+| `dll/win32/shell32` | 2,854 | 150 (5.3%) | 6 (0.2%) |
+| `dll/win32` | 47,747 | 2,806 (5.9%) | 570 (1.2%) |
+
+The broader scan covered 1,542 files. It had 1,559 AST alpha fallbacks and 193 bodies the
+existing scanner did not extract. The exact reuse pool is real but not large enough to be
+the whole strategy. The census also showed many tiny repeated shapes, strengthening the
+case for deterministic zero-LLM templates. Alpha-renamed substitution remains unsafe until
+scope, signature, substrate, and identifier re-instantiation are proven.
+
+### Call sealing
+
+`--seal-calls` now composes with `--seal-facts`. It replaces every known runtime call
+occurrence, including deterministic `*_body` helper rewrites, with a unique opaque token.
+The response must contain every token exactly once in executable code; missing, duplicated,
+comment-only, or invented tokens fail before normalization. The mode has its own response
+cache namespace.
+
+Two fresh fact+call-sealed `GetPath` trials were produced. The first happened while exposing
+a CLI bug: `--prompt` claimed to imply `--dry-run` but did not. No output was lost; the paid
+artifact was moved intact to durable staging, and `cmd_translate` now forces dry-run before
+creating an archive/backend whenever `--prompt` is set.
+
+| Trial | Input / output | Cost | Raw x3 compile | Deterministic repair x3 |
+|---|---:|---:|---|---|
+| fact+call 1 | 1,828 / 4,026 | $0.00494 | E0308 FFI casts | PASS |
+| fact+call 2 | 1,871 / 3,387 | $0.00425 | E0308 FFI casts | PASS |
+
+Both responses passed the closed fact/call envelopes and strict body audit before compile.
+The batched oracle then exposed only mechanical Rust issues. Trial 1 needed generated
+signature restoration, three accepted-base call casts, and one accepted-base initializer.
+Trial 2 needed the signature, the same three casts, and one lexical mutable-reassignment
+repair. The accepted baseline stayed unchanged, and all three candidates compiled on i386,
+amd64, and arm64 in one oracle run per architecture.
+
+The current positive result is therefore narrower and stronger than “DeepSeek writes good
+Rust”: on this representative worker, DeepSeek preserved the model-owned control flow while
+the harness owned constants, calls, signature, compile acceptance, and bounded repairs.
+
+### What to take seriously from the cost-floor brainstorm
+
+1. **Take now:** exact duplicate mining, zero-LLM body templates, call sealing, batched
+   compilation, a compounding deterministic repair library, an outcome ledger, and a static
+   difficulty router once the ledger has enough examples.
+2. **Measure next:** using sealed facts as a dependency manifest to remove definition-heavy
+   prompt context. Sealing alone did not shrink this prompt: the call contract added input
+   tokens. Context removal, not token replacement, is the hypothesized saving.
+3. **Use selectively:** differential execution for truly host-runnable pure helpers. Most
+   shell/COM methods are stateful and cannot use it cheaply.
+4. **Deprioritize:** a second cheap-model “judge.” Compile plus closed lexical/ABI contracts
+   are stronger and cheaper; another model call should only address residual semantic cases.
+5. **Park:** fine-tuning until the ledger quantifies the residual that templates, DeepSeek,
+   and deterministic repair cannot absorb. The accepted corpus is valuable, but clean
+   function-pair extraction and evaluation are prerequisites, not a free by-product.
+
+## Next routing experiment
+
+Run 20 representative methods stratified by cheap static features (size, branches, loops,
+calls, pointers, gotos). For each, record template eligibility, first-pass envelope/audit,
+raw compile, deterministic-repair compile, tokens/cost, and whether a model-owned failure
+requires Sonnet. That gives the first evidence-backed router rather than hard-coding a
+DeepSeek optimism threshold from one easy worker.
