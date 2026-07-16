@@ -583,3 +583,400 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   `rdx`/`r8`/`r9` + the symbolicated caller return address for the exact call site, then diff that
   path vs C. NtCreateSection 0x50 (PAGE_FAULT_IN_NONPAGED_AREA) still un-triaged at this depth.
   Both stay quarantined. (This is a genuinely deep MM bug; the triage above is the head start.)
+- 2026-07-15: **M3 arm64 Layer 2 CLEARED (landed); Layers 3+4 root-caused — the blocker is that
+  arm64 HAS NO SCM.** Picked up on the smp-bringup lane's ask (they want looped
+  `conformance --arch arm64 --smp 2` as guest-load soak to amplify a 1-in-258 arm64 0x4E). Two of
+  their three predicted gaps were ALREADY CLOSED — mkramdisk.sh has had the arm64 payload leg
+  (`compile.py manifest --arch arm64`) all along, `build-arm64` already had
+  `ENABLE_ROSTESTS_KMTESTS=ON`, and `kmtest-sweep-arm64.exe` + `kmtest-tests-arm64.txt` already
+  existed. The real gap was the one the 07-12 entry above named:
+  * **Layer 2 (FIXED, landed).** The corpus never reached the ramdisk. Fixed in BOTH halves,
+    because staging alone would have been worse than useless: arm64 builds a hand-picked staged
+    set (archcfg.py), so the 14 `*_drv.sys` already in `build-arm64/` were STALE leftovers from an
+    old ninja — staging those would have graded stale test binaries (the exact false-green trap
+    archcfg's own comment block documents 5× over). So: `kmtest_all` added to arm64's OPTIONAL
+    targets (optional because both cmake ROSTESTS options default OFF), and mkramdisk stages
+    `kmtest_.exe` + every `*_drv.sys` FLAT into `reactos/bin` (flat is load-bearing:
+    `KmtpCreateService` resolves drivers as `GetModuleFileName(kmtest_.exe)` → truncate → append,
+    `kmtest/service.c:428-439`). Proof it cleared: the sweep now finds
+    `X:\reactos\bin\kmtest-tests.txt` and launches tests (was `launch FAILED err=2`).
+    Sibling latent fix: `ninja_targets_optional` ran as ONE batched `ninja a b c`, so a single
+    absent target (a kmtests-off dir has no `kmtest_all`) would silently take arm64input/arm64vid
+    down with it and stage a stale input/video driver. Now one ninja per target.
+  * **Layer 3 (ROOT CAUSE, blocks the baseline): arm64 has NO Service Control Manager.**
+    `winlogon.rs:1340` is a `#[cfg(target_arch = "aarch64")]` fork that prints
+    `"ARM64: Skipping RPC, services, lsass, notifications, GINA"` and does nothing, while the
+    `not(aarch64)` branch does the real `StartRpcServer`/`StartServicesManager`/`StartLsass`.
+    services.exe was never built, never staged, never spawned. kmtest's whole model is
+    `OpenSCManager`→`CreateService`→`StartService` = advapi32 → RPC `ncacn_np` `\pipe\ntsvcs`
+    (`advapi32/service/scm.c:42-44`) → services.exe (`services/rpcserver.c:115`), so EVERY test
+    raised **RPC_S_SERVER_UNAVAILABLE (0x6BA)** before its first print — `[UEXC] Code=0x6BA
+    ESR=0x56000000` (EC=0x15 = SVC, i.e. a software raise, not a hardware fault) →
+    `[UEXC-KILL] Proc=kmtest_.exe`. The sweep only ever saw a 180s per-test TIMEOUT, which is why
+    this looked like a hang. **This CORRECTS the 07-12 Layer 1 note above**, which recorded
+    "services.exe never publishes SC_AutoStartComplete on arm64" — that phrasing implies it runs.
+    It does not exist. (The sweep's 24×5s wait for that event is therefore 120s of dead time on
+    every arm64 sweep.)
+  * **Layer 4 (the wall, UNSOLVED): spawning services.exe WEDGES the arm64 boot.** All the pieces
+    build fine for arm64 (`services`, `lsass`, `npfs` are all valid targets) and services.exe's
+    entire import set (advapi32, advapi32_vista, kernel32, msvcrt, ntdll, rpcrt4, user32, userenv)
+    is ALREADY staged. Wired it up end-to-end and measured, A/B:
+      - npfs.sys staged + hand-loaded + corpus staged, WITHOUT the winlogon spawn →
+        **arm64 boots GREEN, 41s.** `[SYSDRV] staged ZwLoadDriver …\Npfs -> 0x00000000` — **npfs
+        first light on arm64 is CLEAN.**
+      - PLUS the winlogon spawn → `StartServicesManager: CreateProcessW OK (PID=176)` then
+        **HANG_TIMEOUT**, explorer never starts, serial goes silent.
+    So services.exe is the wedge and npfs is innocent. **Mechanism UNKNOWN — do not assume.**
+    The tempting story is the documented "ZwLoadDriver HANGS on a service whose .sys is absent
+    from the minimal ramdisk" bug (`iomgr/driver.rs:1200`, the very bug that forces arm64's
+    hand-rolled STAGED_SVCS list instead of the bulk Start=1 enumeration), hit from services.exe's
+    usermode autostart storm. **But the evidence argues against it:** services-rust has 63
+    `DbgPrint` sites (which DO reach serial) and emitted **ZERO** `[SERVICES]` lines, so it
+    probably never reaches its autostart loop at all — it dies/wedges before its first print.
+    Next step is therefore instrumentation, not theory: a MAIN-PROBE in services-rust's entry
+    (the same tool that corrected the 07-12 red herring) to find whether it reaches `main` at all.
+    Also note `IopDoLoadUnloadDriver` (`driver.rs:2301-2312`) waits on its work item with
+    `Timeout=NULL` — an INFINITE wait — when called from a non-system process (i.e. services.exe),
+    so anything that fails to complete that work item hangs the caller forever with no timeout.
+  * **PARKED, ready to resume (2 paired stashes on `conformance-ratchet`):**
+    `arm64-scm-bringup: npfs+services staging, archcfg targets, iomgr STAGED_SVCS Npfs` +
+    `arm64-scm: winlogon StartServicesManager enable`. Both proven to the states above. NOT landed:
+    without the SCM they deliver nothing today, and adding an unexercised driver load + a 368KB
+    npfs.sys to every arm64 boot is pure flake surface — precisely the wrong thing to do while the
+    smp lane is hunting a 1-in-258 arm64 0x4E.
+  * **DISPOSITION / answer to the smp-bringup lane:** arm64 kmtest guest-load soak is **blocked**
+    behind an arm64 SCM bring-up (its own lane: Layer 4 + then first light of RPC/SCM on arm64),
+    NOT the quick amplifier they hoped for. Their **amd64** §9.56/0xF4 soak works TODAY (baseline
+    committed, `conformance --arch amd64 --smp N` ready).
+  * **Harness bug found en route (real, unfixed, moot until Layer 4):** `vm.py` hardcodes
+    `MAX_VM_LIFETIME_SECONDS = 30*60` (threading.Timer + lockfile deadline) while
+    `conformance --timeout` defaults to 6000s and kmtest's `launch_drain_secs` is 5400 — and the
+    `VIBEOS_QEMU_MAX_LIFETIME` env override AGENTS.md documents is honoured ONLY by the shell
+    toolkit (`qemu/lib/common.sh:21`), NOT by the Python harness. So any sweep >30 min is killed
+    mid-run. Nobody hit it because the amd64 sweep finishes inside 30 min. Fix = have vm.py read
+    the documented env var, and have conformance.py raise it for its own boot only.
+  * **Latent, bounded:** `kmtest_drivers` (kmtests/CMakeLists.txt:258) is a hand-list that has
+    already drifted — it omits the cc*/fltmgr drivers, so `kmtest_all` doesn't build them and the
+    mkramdisk glob can't stage them. Harmless today (no visible Cc*/Flt* test is in any of the 3
+    sweep lists) — but if you make one visible, add its driver there. Also `fltlib.dll` is not
+    built for arm64 at all (`LDR: Skipping missing import fltlib.dll for kmtest_.exe`).
+- 2026-07-15 (later): **arm64 SCM BROUGHT UP — the Layer 3/4 entry above is now WRONG in its key
+  claim, and the real blocker is a DROPPED RpcTryExcept in advapi32-rust.** Correcting the record
+  first, then the chain.
+  * **CORRECTION — "spawning services.exe WEDGES the arm64 boot" NO LONGER REPRODUCES.** That was
+    measured on a tree ~30 commits behind mainline; after merging current master the same wiring
+    boots to `shell ready` in ~41s with services.exe running. Do NOT chase the "wedge". (The
+    ZwLoadDriver-hang hypothesis for it was already flagged doubtful there; it is now moot.)
+  * **The bring-up chain (each layer found by measurement, all now working on arm64):**
+    1. **npfs.sys** — never built/staged/loaded. Registered Start=1 in the SYSTEM hive already, but
+       arm64 honours iomgr's hand-rolled `STAGED_SVCS` list, not the registry. Added → loads clean
+       (`ZwLoadDriver …\Npfs -> 0x00000000`). This is npfs's FIRST LIGHT on arm64.
+    2. **services.exe** — never built/staged/spawned (`winlogon.rs` cfg(aarch64) skipped the SCM).
+       Its whole import set was already staged; only the binary was missing.
+    3. **lsass — NOT OPTIONAL.** `ScmCreateServiceDatabase` ends in `ScmWaitForLsa()` =
+       `WaitForSingleObject(LSA_RPC_SERVER_ACTIVE, INFINITE)` (services-rust/src/services.rs:253);
+       only lsass signals it. SCM-without-LSA hangs FOREVER mid-database (measured: stuck 420s+
+       after "LastKnownGood OK"). x86 never hit it because its winlogon branch starts lsass.
+       lsasrv/samsrv were the only 2 of lsass's 15 transitive DLLs unstaged.
+    4. **msv1_0 — invisible to an import walk.** lsass exited `0xC0000135` (STATUS_DLL_NOT_FOUND)
+       with EVERY static import present and NO delay-import directory: lsasrv loads the MSV1_0 auth
+       package BY NAME at runtime (the Lsa "Authentication Packages" value) and propagates the
+       failure as lsass's exit code. **Reusable lesson: a transitive import-table closure is
+       necessary but NOT sufficient for "what does this binary need staged" — runtime LoadLibrary
+       by registry name is invisible to it.**
+    5. Result: **the SCM is fully up on arm64.** wWinMain → CheckForLiveCD → Events created →
+       Security initialized → LastKnownGood → **ServiceDatabase OK** → RegisterServicesProcess →
+       ScmAutoStartServices → **SC_AutoStartComplete FIRES**. npfs creates `NtControlPipe0`. The
+       kmtest sweep now passes through the **REAL SCM gate** (`SCM auto-start complete (waited
+       ~0s)`) instead of the arm64 WARN-and-proceed path, and the SCM services kmtest's
+       CreateService as far as `ScmLoadService(Kmtest)`. **The boot still reaches the desktop.**
+       => The 07-12 "services.exe never publishes SC_AutoStartComplete on arm64" finding is CLOSED.
+  * **THE REMAINING BUG (real, general, not arm64-specific): advapi32-rust dropped the C's
+    RpcTryExcept.** services.exe dies with `[UEXC] Code=0x6BA` (RPC_S_SERVER_UNAVAILABLE) inside
+    `ScmLoadService(Kmtest)` "logging success event" → `ScmLogEvent` → `RegisterEventSourceW`.
+      - C (`dll/win32/advapi32/service/eventlog.c:1276-1289`): the `ElfrRegisterEventSourceW` RPC
+        call is wrapped `RpcTryExcept { … } RpcExcept(EXCEPTION_EXECUTE_HANDLER) { Status =
+        I_RpcMapWin32Status(RpcExceptionCode()); } RpcEndExcept;` — the raise is CAUGHT and mapped,
+        so RegisterEventSourceW returns NULL and ScmLogEvent's `if hLog.is_null() { return; }`
+        handles it gracefully.
+      - Rust (`sdk/lib/rust/advapi32-rust/src/service/eventlog.rs:944`, the LIVE cohab body):
+        `Status = ElfrRegisterEventSourceW(…);` — **NAKED. The handler was dropped in translation.**
+        The raise escapes and kills the caller.
+      - **§9.53 class** (dropped/no-op'd exception handling in a translation). LATENT ON ALL ARCHES
+        — x86 only escapes it because EventLog always runs there. `ScmLogEvent` already carries a
+        VIBEOS half-workaround for exactly this (`if ScmInitialize != 0 { return; }`, whose comment
+        names DUMMY_PSEH and the dead RPC handler) — it covers only the INIT phase, not post-init
+        service loads.
+      - **Fix = restore the catch**, not stage more services. Rust can't `__try`, so the sanctioned
+        pattern is a native-SEH C shim (the `ntoskrnl/kmsafecopy.c` precedent: `_USE_NATIVE_SEH` C
+        wrapper, Rust calls it; clang SEH is calls-only, and an RPC stub call IS a call, so the
+        raise lands in a callee with the return address inside the __try scope table).
+  * **DO NOT "fix" this by staging eventlog.exe — MEASURED REGRESSION.** It builds and starts
+    (pid=268) but never connects to the control pipe, so the SCM blocks EARLIER, at
+    `ScmStartUserModeService(EventLog): waiting for connect`, and never reaches
+    SC_AutoStartComplete at all. Strictly worse than leaving it absent. Reverted.
+  * **NOT LANDED.** The chain (npfs+services+lsass+msv1_0 staging, archcfg targets, iomgr
+    STAGED_SVCS Npfs, winlogon StartServicesManager+StartLsass) is parked. Two reasons: the SCM
+    still dies at the RpcTryExcept bug above, and turning on a full autostart storm changes the
+    arm64 boot profile — which wants measuring before it's inflicted on the smp lane's 1-in-258
+    0x4E flake hunt. NOTE `winlogon.rs` deliberately does NOT call `WaitForLsass()` on arm64 (x86
+    does): services.exe already does its own ScmWaitForLsa, and making winlogon wait would put a
+    fresh INFINITE wait directly on the boot-to-desktop path.
+  * Owed housekeeping when it lands: the `STAGED_SVCS` edit shifts iomgr/driver.rs line numbers, so
+    the lint baselines (`lint_kernel`, `scan_silent_failures`) need regenerating — the "2 new/4 new"
+    they report are pre-existing findings at drifted line numbers, not new defects.
+
+### 2026-07-15 (later) — RpcTryExcept FIXED (native-SEH shim); the arm64 baseline is now blocked one level deeper, in fastfat
+
+* **The dropped RpcTryExcept is FIXED and validated live.** New file
+  `dll/win32/advapi32/service/eventlog_seh.c` provides native-SEH C thunks
+  (`ElfrRegisterEventSourceW_seh` / `ElfrReportEventW_seh` / `ElfrDeregisterEventSource_seh`) that
+  restore the `RpcTryExcept { … } RpcExcept { I_RpcMapWin32Status(RpcExceptionCode()) }` the cohab
+  dropped. Compiled with `_USE_NATIVE_SEH`, which `pseh2.h` checks (line 28) BEFORE the global
+  `_USE_DUMMY_PSEH` default (line 179), so this one TU gets a real `__try` while the rest of
+  advapi32 stays DUMMY. The "calls-only" contract holds trivially — the `__try` body is nothing but
+  the RPC stub call, so the raise lands one frame down in the stub (return address inside the scope
+  table). It's a SOFTWARE raise (RpcRaiseException), which clang native SEH catches on amd64 AND
+  arm64 — kmsafecopy's arm64 *hardware*-fault gap (§9.69) does not apply. `eventlog.rs` declares the
+  three thunks and routes the ScmLogEvent-lifecycle sites through them. i386 keeps a pass-through
+  (`#else`) — clang i386 native SEH is unreliable (the reason `USE_DUMMY_PSEH` is the i386 default;
+  the kmtest native-SEH opt-in likewise excludes i386), and EventLog is present on the x86 boot so
+  the stub never raises there anyway. **Measured on arm64 (with the parked SCM chain applied):**
+  services.exe no longer dies at `ScmLoadService` with 0x6BA. It survives, logs the DcomLaunch
+  load-failure gracefully (`ScmLoadService(DcomLaunch) done: 2`), and proceeds through the autostart
+  list. **This closes the RpcTryExcept blocker (task #11).**
+* **The advapi32 fix LANDS on its own** — it is a genuine, general robustness fix (a dropped
+  exception handler) and is **inert on every current normal boot** (arm64 doesn't run services yet;
+  x86 has EventLog present → no raise), so it gates ×3 green without the SCM chain.
+* **NEW blocker for the arm64 baseline — a fastfat dropped-translation stub.** With services.exe now
+  surviving, the SCM autostarts **EventLog**; `eventlog.exe` runs and writes its `.evt` log →
+  `SetEndOfFile` → fastfat `FatSetEndOfFileInfo` → **BUGCHECK 0x23 FAT_FILE_SYSTEM (0xdead0000)**.
+  Root cause: `FatSetEndOfFileInfo` was **dropped during the fastfat C→Rust translation**
+  (`sdk/lib/rust/fastfat-rust/src/fileinfo.rs:2442` — *"no bank body (dropped at translate) —
+  link-recover later"* — it's declared `extern` and the link falls through to a bugcheck stub at
+  `drivers/filesystems/fastfat/rust_cohab_stub.c:622`, `KeBugCheckEx(0x23,0xDEAD0000,…)`). It is
+  **one of 25** such `STUB_BUGCHECK()` fastfat functions. This is arm64-specific ONLY because arm64
+  boots off the FAT32 ramdisk so every file write goes through fastfat; on x86 the boot FS differs
+  and these stubs are never hit. The C original is intact (`fileinfo.c:4387-4775`, ~200 lines of
+  active code: SEH unwind-on-abort restoring file sizes, `FatInitializeCacheMap`/`CcSetFileSizes`/
+  `MmCanFileBeTruncated`, `FatAddFileAllocation`, dirent updates). **This is a distinct fastfat
+  translation lane, not part of "fix services."**
+* **Consequence for landing the SCM chain:** it can't land until `FatSetEndOfFileInfo` (and likely a
+  few sibling stubs the sweep exercises) are translated — the now-surviving services.exe reaches
+  EventLog and bugchecks, which would *regress the arm64 desktop boot*. The parked stash note
+  (`arm64-scm-bringup v3`) records this. Pre-fix, services.exe died at the first ScmLogEvent (0x6BA)
+  before ever reaching EventLog, which is why the chain's earlier "boot still reaches desktop"
+  measurement held — the RpcTryExcept fix is precisely what advances the boot far enough to expose
+  the fastfat gap.
+* **Baseline status: still none.** The sweep now reports `sweep=DID NOT FINISH BUGCHECK=0x00000023`
+  (was: services.exe died silently). Next step toward a baseline = translate `FatSetEndOfFileInfo`
+  (rustconv single-function, ~$0.03–0.15, or a careful hand-translation of the C), re-run the arm64
+  sweep, and clear whatever further stubs the kmtest binaries hit.
+
+### 2026-07-16 (later) — arm64 SCM fully UP; conformance sweep RUNS; first arm64 result captured
+
+**Three fixes landed** (all ×3-gate-green, on master): the advapi32 `RpcTryExcept` (`f754a3a8155`),
+the fastfat `FatSetEndOfFileInfo` recovery (`e5f2b28a3b5`), and the lpc `LpcExitThread` §9.65
+(`ce89f8d6af1`) + a `verify_ffi` baseline re-anchor (`3d004d50edd`). Together they clear the whole
+arm64 SCM path.
+
+* **The `LpcExitThread` 0x3 — hypothesis CONFIRMED by re-sweep.** After the §9.65 fix, the boot
+  emits many `PspExitThread: about to call LpcExitThread` with **no `0x3` following** (pre-fix, that
+  line was immediately followed by the bugcheck). So the always-on `DbgBreakPoint()` (C: DBG-gated
+  `ASSERT(FALSE)` for the "thread exits holding a reply message" TODO) *was* the 0x3.
+* **End-to-end validated on arm64** (SCM chain applied): threads exit cleanly → SCM starts
+  `DcomLaunch` → `EventLog` (**connect + START both succeed** now) → `Rpcss`/`Themes`/`SamSs`/… →
+  `SamSs` times out `connect result=1053` but the SCM correctly **does not block**, walks the rest of
+  the list, and **`SC_AutoStartComplete` FIRES**. The kmtest sweep sees it (`SCM auto-start complete
+  (waited ~0s)`), reads `kmtest-tests.txt`, and **runs the first test to a real result:**
+  **`[KMTEST:END CmSecurity pass=300 fail=89 skip=2]`** — the first arm64 kmtest result ever.
+* **The last mile — sweep stalls after test 1 (distinct, arm64-specific).** The 2nd `kmtest_.exe`
+  launches and immediately hits `*** ASSERT FAILED: BytesReturned == sizeof(RequestPacket) at
+  kmtest\support.c:52` → `Callback handler dying! Error code 2`. That's the kmtest **usermode-callback
+  worker** (`KmtUserModeWorker`): a test needing usermode callbacks (e.g. `QueryVirtualMemory`) spawns
+  a worker that loops on `IOCTL_KMTEST_USERMODE_AWAIT_REQ`; on arm64 that METHOD_BUFFERED IOCTL came
+  back with the wrong `BytesReturned`, so the worker asserts + dies and the kernel-side test hangs
+  waiting for a callback that never returns → the sweep drains out (`launched=1 sweep=DID NOT
+  FINISH`). i386 runs the full sweep (task #1 baseline), so this is an arm64 IOCTL/harness gap, NOT
+  the SCM. **This is the remaining blocker for a *full* multi-test arm64 baseline.**
+* **Landing the SCM chain is a cross-lane decision.** With the 3 fixes in, the chain no longer
+  regresses the arm64 desktop boot (it reaches the shell WITH services running). But it turns on a
+  full autostart storm on *every* arm64 boot, which changes the boot profile the smp lane's 1-in-258
+  0x4E flake hunt runs against. The clean landing is to **gate winlogon's `StartServicesManager` to
+  conformance-mode** (`VIBEOS_PAYLOAD=kmtest`) so normal arm64 boots stay lean — then land + coordinate
+  with the smp lane. Chain parked in stash `arm64-scm-bringup v5`.
+
+### 2026-07-16 — fastfat FatSetEndOfFileInfo TRANSLATED + validated; arm64 baseline now blocked on a 0x3 thread-exit crash
+
+* **`FatSetEndOfFileInfo` recovered.** rustconv `translate --fn FatSetEndOfFileInfo --mode mechanical`
+  ($0.06, durable archive under `tools/rustconv/.responses/`), integrated into `fastfat-rust/src/
+  fileinfo.rs` (the dropped-at-translate `extern` stub replaced with the real body), and the
+  shadowing bugcheck stub removed from `rust_cohab_stub.c` (lld `--allow-multiple-definition` is
+  first-match and the C obj links first, so leaving it would have silently kept the stub winning).
+  Integration was ~a dozen house-convention fixes: bindgen field paths
+  (`Parameters.SetFile.__bindgen_anon_1.__bindgen_anon_1.AdvanceOnly`, `.__bindgen_anon_1.LowPart`),
+  `FatUnpinBcb`/`FatGetDirentFromFcbOrDcb` taking `addr_of_mut!(Bcb)` not the Bcb, `NodeType(Fcb)`
+  untyped-cast removal, `NT_ASSERT((..) as i32)`, local `const FcbGood/STATUS_FILE_CLOSED`, an
+  `IsFileDeleted` extern, and the `if false /* _SEH2_AbnormalTermination() always false */` idiom
+  (mirrors `FatSetAllocationInfo`) that also dead-eliminates the macro-only `CcGetFileSizePointer`.
+  **Compiles clean on all three arches** (i386/amd64/arm64). **Lands separately** — a genuine
+  dropped-translation recovery, inert on normal boots (nothing SetEndOfFile's the FAT ramdisk there).
+* **VALIDATED end-to-end on the arm64 sweep.** With the SCM chain applied: `ScmLoadService(EventLog)
+  done: 0` → `logging success event` → `event logged OK`. i.e. the full ScmLogEvent lifecycle
+  (RegisterEventSourceW → ReportEventW → DeregisterEventSource) now runs — the RpcTryExcept fix + the
+  fastfat fix together. The SCM then created `NtControlPipe0` and walked the autostart list all the
+  way to **SamSs** (SAM). Two fastfat translation gaps down; the SCM is deep into real service
+  startup now.
+* **NEW blocker for the baseline: `BUGCHECK 0x3` in `LpcExitThread`.** During a **System thread
+  exit** (`PspExitThread … about to call LpcExitThread`), right after the `[NETSTACK] TDI self-test`
+  + `SET_INFO self-test` ran, and while the SCM was `ScmStartUserModeService(SamSs): waiting for
+  connect`. Params `(0xfffffa…d60, 0xfffffa…c00, 0, 3)` — both kernel pointers, so likely a
+  `KeBugCheckEx(3, thr, obj, 0, 3)` from the LPC/thread-teardown path, NOT a literal
+  INVALID_AFFINITY_SET. **Sole banner in the log (not a §9.54 mask.)** Almost certainly the known
+  arm64 thread-teardown flake family (cf. the netstack-TDI 0x1E residual + the smp lane's 1-in-258
+  0x4E) amplified by the dense thread churn of full service startup — **unrelated to fastfat/
+  advapi32** (the boot is well past both). This is a distinct LPC/PS-thread-exit lane. `SC_AutoStartComplete`
+  never fires, so the kmtest sweep still never runs → **still no baseline**, but the wall is now two
+  subsystems deeper than where "fix services" started.
+  *(SUPERSEDED — the 0x3 was the LpcExitThread §9.65 `DbgBreakPoint`, fixed+landed `ce89f8d6af1`; see
+  the "arm64 SCM fully UP" milestone entry above and the test-2 root-cause below.)*
+
+### 2026-07-16 (later still) — test-2 stall ROOT-CAUSED: an arm64 kernel user-APC-delivery bug (NOT the harness)
+
+Instrumenting `IOCTL_KMTEST_USERMODE_AWAIT_REQ`'s `KeWaitForSingleObject` (the usermode-callback
+worker `kmtest/support.c`) showed it returns **`STATUS_USER_APC` (0xC0) *persistently*** — even though
+the wait is `Alertable=FALSE`. `STATUS_USER_APC` from a `UserMode` wait means "unwind to user mode to
+deliver the queued user APC," but on arm64 that APC is **never delivered/cleared**, so every re-issue
+of the wait returns 0xC0 again. The driver's `break`-on-APC then completes the IOCTL with
+`Information = 0`; the usermode worker's `ASSERT(BytesReturned == sizeof(RequestPacket))` fires, the
+worker dies, and the kernel-side test hangs → sweep stalls after test 1.
+
+* This is the **same arm64 user-APC-delivery family** as the `KiUserModeCallout` issues (field manual)
+  — a real kernel bug, well beyond the kmtest harness or the SCM.
+* **A speculative "re-wait on APC" patch in `kmtest_drv.c` was WRONG and was REVERTED.** It turned the
+  single mis-sized return into an *infinite loop* (spin on 0xC0, flooding serial, hanging the boot) —
+  which is itself the proof that the pending user APC is never delivered. Lesson: the fix belongs in
+  the arm64 return-to-usermode APC path, not the test harness. (Also: never loop a driver dispatch on
+  `STATUS_USER_APC`.)
+* **Next step for a full multi-test arm64 baseline** = fix arm64 user-APC delivery (why a pending user
+  APC on a `UserMode` `KeWaitForSingleObject` is never delivered on return-to-usermode). Distinct
+  kernel lane; owed. Until then the arm64 conformance sweep captures **exactly one** result
+  (CmSecurity 300/89/2) before the first callback-using test wedges.
+
+### 2026-07-16 (landed) — arm64 SCM chain LANDED for arch parity (services always-on)
+
+The parked SCM chain (`stash@{0}`) is now on **master** (`76189a16a5d`, merged `d7ff4125020`):
+archcfg builds npfs/services/lsass/lsasrv/samsrv/msv1_0 for arm64, mkramdisk stages them,
+iomgr adds `Npfs` to arm64 `STAGED_SVCS`, and winlogon's `#[cfg(aarch64)]` branch calls
+`StartServicesManager` + `StartLsass`. **User directive: "fix the services and have arch
+parity"** — landed **always-on** (not conformance-mode-gated); arm64 now runs services on
+every boot, exactly like x86.
+
+**Parity is literal, not aspirational — it's the SAME code path.** Booted amd64 and arm64
+side by side: the SCM autostart sequence is **byte-for-byte identical** (EventLog
+starts+connects `result=0`, Rpcss/Themes walked, then SamSs). services-rust is arch-independent;
+landing the chain just lets arm64 reach it. arm64 boots to desktop in ~44s WITH services (vs
+~40s lean — no meaningful slowdown; the "arm64-with-services is slow" worry from the prior
+checkpoint was overstated: services start **async after** the shell marker, so `shell ready`
+timing is unchanged; the 30s SamSs wait below is background). Gate ×3 green + stamp + pushed.
+
+**Deliberate x86 divergence retained:** arm64 skips `WaitForLsass()` after `StartLsass` (x86
+keeps it). services.exe does its own `ScmWaitForLsa`; putting an INFINITE lsass wait on the
+boot-owning process (winlogon) would move the hang onto the boot-to-desktop path.
+
+**NOT fixed — SamSs 30s connect-timeout (`connect result=1053`), PRE-EXISTING + SHARED across
+ALL arches (amd64 shows the identical timeout), NON-BLOCKING.** The `SUMS(SamSs): CreateProcessW
+returned pid=0` is a red herring — `ScmIsSecurityService` (matches `\system32\lsass.exe` in the
+ImagePath) deliberately skips CreateProcessW for the security service (lsass is already
+running), so `ProcessInformation.dwProcessId` stays 0. The real gap: lsass comes up (signals
+`LSA_RPC_SERVER_ACTIVE`, so `WaitForLsass`/`ScmWaitForLsa` return) but lsasrv's `DispatcherThread`
+→ `StartServiceCtrlDispatcher` handshake to `\pipe\net\NtControlPipe0` (the fixed security-service
+pipe) doesn't complete within `PipeTimeout=30000`, so the SCM times SamSs out and continues
+(`ScmAutoStartServices completed` → `SC_AutoStartComplete` fires ~30s later, in the background).
+The code is all present + translated correctly: SCM `SetSecurityServicesEvent()` (services.rs:182),
+lsass `wWinMain` calls `LsapInitLsa`+`ServiceInit` (lsass-rust:41,53), lsasrv `DispatcherThread`
+waits `SECURITY_SERVICES_STARTED` → `I_ScIsSecurityProcess` → `StartServiceCtrlDispatcherW`
+(lsasrv-rust/service.rs:237-294). So it's a runtime handshake failure, not a dropped call.
+**Next diagnostic (owed, benefits all arches):** instrument lsasrv `DispatcherThread` (traces are
+`__WINE_DBCL_TRACE`-gated → invisible) to see whether it clears the `SECURITY_SERVICES_STARTED`
+wait and whether `StartServiceCtrlDispatcherW` connects/returns — then trace the SCM side
+`ScmWaitForServiceConnect(SamSs)` on NtControlPipe0.
+
+**Gate note for the smp lane (heads-up):** arm64 now runs the full service storm on every boot
+(more thread churn). Separately, the pre-existing arm64 **netstack-TDI self-test** silent-wedge
+flake still bites: the first gate here hard-failed `HANG_TIMEOUT` at `[NETSTACK] TDI server:
+accept 0x00000000` (a genuine wedge, correctly NOT auto-retried — `HANG_TIMEOUT` isn't blanket-
+retryable), but arm64 smoked **3/3 green on immediate repeat** and the re-gate was clean. That
+flake is upstream of services (driver-init) and unrelated to this change; re-run the gate if it
+hits. Full baseline still owed on the arm64 user-APC bug (test-2, above).
+
+### 2026-07-16 (fixed + landed) — SamSs 30s SCM connect-timeout: root-caused + fixed (74c08f68e68)
+
+The SamSs `connect result=1053` timeout (documented above as an owed, shared follow-up) is
+**FIXED on all arches**. It was NOT a dropped call — it was a genuine Heisenbug.
+
+**Root cause (by elimination + [SCTRL]/handshake tracing):** lsasrv's `DispatcherThread` gated
+the SamSs pipe-connect on `WaitForSingleObject(SECURITY_SERVICES_STARTED, INFINITE)`. That named
+event is created independently by BOTH the SCM (services.exe) and lsasrv and is supposed to
+resolve to one shared kernel object — but that **cross-process named-object sharing is
+timing-fragile in this kernel**: when lsasrv won the create race, the SCM's `SetEvent`
+intermittently did NOT wake this waiter, so the dispatcher hung on the INFINITE wait, never
+reached `StartServiceCtrlDispatcher`, and the SCM timed SamSs out at 30s. Classic Heisenbug —
+**any DbgPrint added to the path perturbed the timing enough to make it "work"** (instrumented
+boots connected 3/3; uninstrumented timed out), which is exactly why it was hard to pin. Two
+structural fixes FAILED and taught the shape: (1) spawning the dispatcher first (reorder
+`ServiceInit` ahead of `LsapInitLsa`) crashed it early (0x3E6); (2) forcing lsasrv to *open* the
+event instead of create it still 4/4-timed-out — proving even `OpenEventW` couldn't reliably see
+the SCM's object. So the event itself is the unreliable link.
+
+**Fix — sync on the PIPE, not the event.** Every other service connects via its control pipe
+reliably every boot, and the SCM creates `NtControlPipe0` *just before* it signals the event
+(`ScmCreateNewControlPipe` then `SetSecurityServicesEvent` in database.rs) — so the pipe is the
+earlier, reliable rendezvous. (a) lsasrv `DispatcherThread`: the `SECURITY_SERVICES_STARTED` wait
+is now best-effort + BOUNDED (3s) + non-fatal; it proceeds to the connect regardless. (b)
+advapi32 `ScConnectControlPipe`: for the security process (`bSecurityServiceProcess`), POLL
+`WaitNamedPipeW` until `NtControlPipe0` exists (it returns FALSE-fast/FILE_NOT_FOUND for a
+not-yet-created pipe, so the poll is cheap) — the SCM creates the pipe lazily as it loads SamSs,
+which can be after lsass starts. Non-security services are UNCHANGED (single 30s wait): the SCM
+creates their pipe before it spawns them.
+
+**Verified arm64:** `SamSs connect result=0` on 5/5 boots that reached services (was a 30s timeout
+on EVERY boot before); `ScmAutoStartServices completed` fires promptly. Gate ×3 green + pushed.
+The 2 boots that didn't reach SamSs in the runs were the pre-existing netstack-TDI self-test flake
+(upstream of services, unrelated). **Reusable lesson (also in the field manual):** a
+`SECURITY_SERVICES_STARTED`-style cross-process named-event handshake is timing-fragile here;
+prefer the named pipe (or another reliably-shared object) as the rendezvous.
+
+### 2026-07-16 (fixed) — arm64 user-APC delivery: the test-2 wedge is CLEARED; sweep runs end-to-end
+
+The arm64 user-APC-delivery blocker (test-2 stall, task #2) is **FIXED** (field manual §9.90). Root
+cause: the arm64 SVC return path (`KiSvcDispatch → KiTrapReturn → eret`, `ke/arm64/trap.rs`) never
+delivered pending user-mode APCs — unlike amd64's `KiSystemServiceExit` (`trap.S:911`, checks
+`UserApcPending` → `KiInitiateUserApc`) and i386's trap epilog. `UserApcPending` never cleared, so a
+`UserMode` `KeWaitForSingleObject` (the kmtest usermode-callback worker's
+`IOCTL_KMTEST_USERMODE_AWAIT_REQ`) re-returned `STATUS_USER_APC` (0xC0) forever, the worker asserted
+`BytesReturned == sizeof(RequestPacket)` and died, and the kernel-side test hung → `launched=1
+sweep=DID NOT FINISH`.
+
+**Fix:** new `KiDeliverUserApcArm64` at the SVC (`case 0x15`) tail — on return-to-EL0 with
+`UserApcPending` set, raise APC_LEVEL, `KiDeliverApc(UserMode, ExceptionFrame, TrapFrame)`, lower.
+Mirrors amd64; DAIF-neutral (uses `KfRaiseIrql`, not sti/cli) because on this port the SVC runs
+IRQ-masked and `KiTrapReturn` owns the banking window. Arm64-only (`ke/arm64/`); x86 untouched.
+
+**Validated (uninstrumented):** arm64 boot-to-desktop still green (41s); the conformance sweep went
+`launched=1 sweep=DID NOT FINISH` → **`launched=81 sweep=done`**. `ExCallback` (former test-2 wedge)
+and `ExDoubleList` now pass — the sweep runs to completion end-to-end for the FIRST time.
+
+**Still no clean baseline — the NEXT wedge is `ExFastMutex` (distinct, in-kernel, NOT user-APC).**
+Post-fix the sweep reports `ok=3 bad=78`, but that's a **cascade**: `ExFastMutex` TIMEOUTs in-kernel
+(`kmtest_drv.c:454 KeWaitForSingleObject timed out!` — the worker's `AWAIT_REQ` returns
+`STATUS_TIMEOUT`, not `STATUS_USER_APC`; the kernel test never posts a callback because it's hung),
+and being unreapable it poisons the remaining 77 tests with `SET_RESULTBUFFER errors=1` (the same
+cascade mechanism as amd64's SeTokenFiltering/TcpIpConnect). Clue: `MmGetSystemRoutineAddress:
+'ExiAcquireFastMutex'/'ExiReleaseFastMutex'/'ExiTryToAcquireFastMutex' NOT FOUND` — ExFastMutex
+resolves the internal fast-mutex primitives by name and they're unexported on our build. The
+`support.c:52` assert is **collateral** (worker times out because the kernel test is stuck), not the
+user-APC path. **Next step toward the arm64 baseline:** quarantine `ExFastMutex` in
+`tools/payloads/kmtest/kmtest-tests-arm64.txt`, re-sweep to unmask the ~77 cascade victims' real
+results, iterate on any further wedgers, then `conformance --arch arm64 --write-baseline`. The
+user-APC fix lands on its own (a real, correct kernel fix; unblocks the whole sweep).

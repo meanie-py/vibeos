@@ -139,11 +139,55 @@ _CFGS = {
             "netstack",
             "livecd_hives",
             "afd",
+            # npfs = the named-pipe FS, services = the SCM. arm64 had NEITHER,
+            # which is why the kmtest sweep couldn't run: every test's
+            # CreateService is advapi32 -> RPC over \pipe\ntsvcs -> services.exe,
+            # so with no npfs and no SCM each test raised RPC_S_SERVER_UNAVAILABLE
+            # (0x6BA) before its first print. Both already build for arm64 and
+            # mkramdisk.sh stages them; npfs is already Start=1-registered in the
+            # arm64 SYSTEM hive and is hand-loaded via iomgr's STAGED_SVCS.
+            "npfs",
+            "services",
+            # lsass + its 2 unstaged DLLs. NOT optional once services runs:
+            # ScmCreateServiceDatabase ends in ScmWaitForLsa() =
+            # WaitForSingleObject(LSA_RPC_SERVER_ACTIVE, INFINITE), and only
+            # lsass.exe signals that event — an SCM without an LSA hangs forever
+            # mid-database, so SC_AutoStartComplete never fires and every kmtest
+            # times out. lsasrv/samsrv are the only 2 of lsass's 15 transitive
+            # DLLs not already staged for the boot.
+            "lsass",
+            "lsasrv",
+            "samsrv",
+            # msv1_0 = the MSV1_0 auth package lsasrv loads BY NAME at runtime
+            # (Lsa "Authentication Packages"), so no import-table walk finds it:
+            # lsass's every static import resolved and it still exited
+            # 0xC0000135 (STATUS_DLL_NOT_FOUND) without it.
+            "msv1_0",
             "msafd",
             "mswsock",
             "nettest",
         ),
-        ninja_targets_optional=("arm64input", "arm64vid"),
+        # ntkrnlmp = the arm64 SMP kernel (smp-bringup-quest.md M5). Built
+        # best-effort so `--smp-kernel` media has it to stage; mkramdisk only
+        # copies + boot-selects it when VIBEOS_SMP_DEFAULT_BOOT is set, so a
+        # normal arm64 build just builds it and ignores it (default stays UP).
+        # kmtest_all (kmtest_ .exe + the standalone *_drv.sys corpus) is the
+        # `vibeos-cli conformance --arch arm64` payload; mkramdisk.sh stages it
+        # to reactos/bin. It is the SAME stale-staged-binary trap as every entry
+        # above: x86's `livecd` DAG re-rolls the corpus on every build (each
+        # driver calls add_rostests_file -> add_cd_file), but arm64's hand-picked
+        # staged set rebuilt none of it, so the ramdisk would ship whatever
+        # *_drv.sys happened to be left in build-arm64/ from some older ninja —
+        # i.e. a conformance sweep silently grading STALE test binaries.
+        # OPTIONAL, not required: the corpus only exists when the build dir is
+        # configured -DENABLE_ROSTESTS(_KMTESTS)=ON (both cmake options default
+        # OFF), and a kmtests-off dir must still build normally. The loud failure
+        # for "asked for conformance without the corpus" already lives at the
+        # right layer — conformance.py refuses up front with the configure line.
+        # (Both are best-effort and INDEPENDENT: build.py runs one ninja per
+        # optional target, so an absent kmtest_all can't take ntkrnlmp down with
+        # it — which the old single batched `ninja a b c` would have done.)
+        ninja_targets_optional=("arm64input", "arm64vid", "ntkrnlmp", "kmtest_all"),
         needs_mkramdisk=True,
         boot_media_rel="qemu/boot.img",
         staged_bins_rel=(

@@ -240,7 +240,31 @@ unsafe fn ScConnectControlPipe(hPipe: *mut HANDLE) -> DWORD {
         fn DbgPrint(fmt: *const u8, ...) -> u32;
     }
     DbgPrint(b"[SCTRL] pid=%lu connecting pipe=%ws\n\0".as_ptr(), GetCurrentProcessId(), NtControlPipeName.as_ptr());
-    if WaitNamedPipeW(NtControlPipeName.as_ptr(), 30000) == 0 {
+    // The security service (lsass) can reach here BEFORE the SCM has created its
+    // control pipe (NtControlPipe0): the SCM creates it lazily as it loads the
+    // SamSs image, which can be after lsass starts. WaitNamedPipeW returns FALSE
+    // *immediately* (ERROR_FILE_NOT_FOUND) for a pipe that does not yet exist
+    // rather than waiting, so for the security process POLL until it appears.
+    // This is what makes the SamSs handshake reliable: lsasrv no longer gates on
+    // the cross-process SECURITY_SERVICES_STARTED event (whose object sharing was
+    // timing-fragile in this kernel — it intermittently left the lsasrv dispatcher
+    // hung on an INFINITE wait, so SamSs timed out at 30s / connect result=1053 on
+    // every boot, all arches). The pipe shares reliably across processes; the
+    // event did not. Non-security services never need this — the SCM creates
+    // their pipe before it spawns them, so a single 30s wait is right for them.
+    let mut pipe_ready: BOOL = FALSE as BOOL;
+    if bSecurityServiceProcess != 0 {
+        for _ in 0..600u32 {
+            if WaitNamedPipeW(NtControlPipeName.as_ptr(), 1000) != 0 {
+                pipe_ready = TRUE as BOOL;
+                break;
+            }
+            Sleep(50); // ~30s cap; the SCM creates NtControlPipe0 within the boot
+        }
+    } else if WaitNamedPipeW(NtControlPipeName.as_ptr(), 30000) != 0 {
+        pipe_ready = TRUE as BOOL;
+    }
+    if pipe_ready == FALSE as BOOL {
         DbgPrint(b"[SCTRL] pid=%lu WaitNamedPipe FAILED err=%lu\n\0".as_ptr(), GetCurrentProcessId(), GetLastError());
         return ERROR_FAILED_SERVICE_CONTROLLER_CONNECT;
     }

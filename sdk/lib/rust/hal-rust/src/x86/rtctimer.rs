@@ -1,10 +1,18 @@
-//! apic/rtctimer.c — APIC-backend clock + IPI handlers (amd64 only).
+//! apic/rtctimer.c — APIC-backend clock + IPI handlers.
 //!
-//! Drives the system clock from the CMOS RTC periodic interrupt (IRQ8 vector
-//! 0xD1) on amd64.  Companion to apic/apictimer.c (profile timer) and
-//! generic/timer.c (PIC backend on i386).
+//! The system clock on the APIC flavor.  The two arches drive it differently:
+//!   - **i386** (C-faithful): the CMOS RTC periodic interrupt (IRQ8) routed
+//!     through the IOAPIC to vector 0xD1 — exactly the upstream rtctimer.c.
+//!   - **amd64**: the RTC path is replaced by the LOCAL APIC TIMER, because
+//!     QEMU's emulated mc146818 intermittently stops raising periodic IRQ8
+//!     under KVM (starving NT timer expiration).  That is an amd64/QEMU
+//!     workaround, deliberately NOT applied to i386 — the i386 lane keeps the
+//!     honest RTC clock (and if TCG ever drops IRQ8, that becomes a separate
+//!     opt-in build flag, per the lane's "don't bend the HAL for QEMU" rule).
+//!
+//! Companion to apic/apictimer.c (profile timer).
 
-#![cfg(target_arch = "x86_64")]
+#![allow(non_snake_case, non_upper_case_globals, dead_code, unused_unsafe, unused_imports)]
 
 use ntkrnl_sys::ddk::{KeSetTimeIncrement};
 use ntkrnl_sys::hal_ddk::{
@@ -19,17 +27,48 @@ use ntkrnl_sys::hal_ddk::{
 // Externs — kernel/HAL functions not exposed via bindgen for hal_ddk.
 // ----------------------------------------------------------------------------
 
-// KiEnterInterruptTrap is a no-op macro inside HAL (halp.h:598).  See
-// hal-rust/src/x86/timer.rs for the same shim on i386.
+// KiEnterInterruptTrap: a no-op macro inside HAL on amd64 (halp.h:598 is gated
+// `#ifdef _M_AMD64`); on i386 the HAL falls through to ntoskrnl's real
+// FORCEINLINE (trap_x.h) which terminates the SEH chain, zeroes Dr7, and stamps
+// the DBG trap-frame fields.  Same shim as timer.rs / apic.rs.
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn KiEnterInterruptTrap(_TrapFrame: PKTRAP_FRAME) {}
 
-// KeUpdateSystemTime + KeUpdateRunTime are exported by ntoskrnl.exe.
-// Use the kernel import library (matches the C HAL path).
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn KiEnterInterruptTrap(TrapFrame: PKTRAP_FRAME) {
+    core::arch::asm!("mov dword ptr fs:[0], 0xFFFFFFFF", options(nostack, preserves_flags));
+    (*TrapFrame).Dr7 = 0;
+    (*TrapFrame).DbgArgPointer = (*TrapFrame).Edx;
+    (*TrapFrame).DbgArgMark = 0xBADB_0D00;
+    (*TrapFrame).DbgEip = (*TrapFrame).Eip;
+    (*TrapFrame).DbgEbp = (*TrapFrame).Ebp;
+    (*TrapFrame).PreviousPreviousMode = 0xFFFF_FFFF;
+}
+
+// i386 trap exit (fastcall, noreturn) — used on the spurious path.
+#[cfg(target_arch = "x86")]
+unsafe extern "fastcall" {
+    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
+}
+
+// KeUpdateSystemTime + KeUpdateRunTime are exported by ntoskrnl.exe.  Per
+// ntoskrnl.spec the i386 conventions DIFFER: KeUpdateSystemTime is FASTCALL
+// (`@KeUpdateSystemTime@12`), KeUpdateRunTime is stdcall (`_KeUpdateRunTime@8`).
+// On amd64 both reduce to the single x64 convention (extern "system").
+#[cfg(target_arch = "x86_64")]
 unsafe extern "system" {
     fn KeUpdateSystemTime(TrapFrame: PKTRAP_FRAME, Increment: ULONG, Irql: KIRQL);
     fn KeUpdateRunTime(TrapFrame: PKTRAP_FRAME, Irql: KIRQL);
-    // TEMP clock-rate probe.
+}
+#[cfg(target_arch = "x86")]
+unsafe extern "fastcall" {
+    fn KeUpdateSystemTime(TrapFrame: PKTRAP_FRAME, Increment: ULONG, Irql: KIRQL);
+}
+#[cfg(target_arch = "x86")]
+unsafe extern "system" {
+    fn KeUpdateRunTime(TrapFrame: PKTRAP_FRAME, Irql: KIRQL);
 }
 
 // variadic — cdecl on all arches (never stdcall)
@@ -48,12 +87,16 @@ unsafe fn KiEndInterrupt(Irql: KIRQL, TrapFrame: PKTRAP_FRAME) {
 }
 
 unsafe extern "system" {
-    // Provided by another hal-rust module (apic_halinit.rs / pic_halinit.rs).
+    // Provided by another hal-rust module (apic.rs).  NTAPI/stdcall on i386.
     fn HalEnableSystemInterrupt(Vector: ULONG, Irql: KIRQL, Mode: u32) -> u8;
-    // Provided by HAL itself (apic_halinit / apic.c).
     fn HalEndSystemInterrupt(Irql: ULONG, TrapFrame: PKTRAP_FRAME);
-    // Provided by hal/halx86/apic/apic.c (still C side).
-    fn HalpBroadcastClockIpi(Vector: ULONG);
+}
+
+// HalpBroadcastClockIpi is FASTCALL taking a UCHAR vector (up.rs UP stub /
+// smp_processor.rs).  amd64's undecorated link tolerated the old system+ULONG
+// decl, but i386 needs the exact `@HalpBroadcastClockIpi@4` fastcall symbol.
+unsafe extern "fastcall" {
+    fn HalpBroadcastClockIpi(Vector: UCHAR);
 }
 
 // ----------------------------------------------------------------------------
@@ -61,6 +104,7 @@ unsafe extern "system" {
 // `__writeeflags` are clang intrinsics, no linkable symbol.
 // ----------------------------------------------------------------------------
 
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn read_eflags() -> ULONG_PTR {
     let f: ULONG_PTR;
@@ -73,6 +117,7 @@ unsafe fn read_eflags() -> ULONG_PTR {
     f
 }
 
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn write_eflags(f: ULONG_PTR) {
     core::arch::asm!(
@@ -81,6 +126,20 @@ unsafe fn write_eflags(f: ULONG_PTR) {
         in(reg) f,
         options(nomem),
     );
+}
+
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn read_eflags() -> ULONG_PTR {
+    let f: ULONG_PTR;
+    core::arch::asm!("pushfd", "pop {0:e}", out(reg) f, options(nomem, preserves_flags));
+    f
+}
+
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn write_eflags(f: ULONG_PTR) {
+    core::arch::asm!("push {0:e}", "popfd", in(reg) f, options(nomem));
 }
 
 #[inline(always)]
@@ -186,6 +245,7 @@ unsafe fn RtcSetClockRate(ClockRate: UCHAR) {
 // HalpInitializeClock — INIT section; called once during HAL init on amd64.
 // ----------------------------------------------------------------------------
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "system" fn HalpInitializeClock() {
     // amd64 drives the system clock from the LOCAL APIC TIMER (periodic), NOT
@@ -247,10 +307,41 @@ pub unsafe extern "system" fn HalpInitializeClock() {
     write_eflags(eflags);
 }
 
+// i386 (C-faithful, rtctimer.c:98-139): enable the CMOS RTC periodic interrupt,
+// set the rate, publish the min/max increment to the kernel, and unmask the RTC
+// line in the IOAPIC (routed to APIC_CLOCK_VECTOR at CLOCK_LEVEL).
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "system" fn HalpInitializeClock() {
+    let eflags = read_eflags();
+    cli();
+
+    // Enable the periodic interrupt in the CMOS.
+    HalpAcquireCmosSpinLock();
+    let register_b = HalpReadCmos(RTC_REGISTER_B as UCHAR);
+    HalpWriteCmos(RTC_REGISTER_B as UCHAR, register_b | RTC_REG_B_PI as UCHAR);
+    HalpReleaseCmosSpinLock();
+
+    // Set the initial rate (rate 10 = 64 Hz / 15.625 ms).
+    RtcSetClockRate(HalpCurrentClockRate);
+
+    write_eflags(eflags);
+
+    HalpMinimumTimeIncrement = RtcClockRateToPreciseIncrement(RtcMinimumClockRate) / 1000;
+    HalpMaximumTimeIncrement = RtcClockRateToPreciseIncrement(RtcMaximumClockRate) / 1000;
+    KeSetTimeIncrement(HalpMaximumTimeIncrement, HalpMinimumTimeIncrement);
+
+    // Unmask the RTC IRQ8 line (routed through the IOAPIC to vector 0xD1).
+    HalEnableSystemInterrupt(APIC_CLOCK_VECTOR, CLOCK_LEVEL as KIRQL, _KINTERRUPT_MODE_Latched);
+}
+
 // ----------------------------------------------------------------------------
 // Clock interrupt handler (RTC IRQ8 via APIC vector 0xD1).
 // ----------------------------------------------------------------------------
 
+// amd64: LAPIC-timer clock (see HalpInitializeClock); handler returns and the
+// asm/KiEndInterrupt does the EOI.
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "C" fn HalpClockInterruptHandler(TrapFrame: PKTRAP_FRAME) {
     let mut Irql: KIRQL = 0;
@@ -279,7 +370,7 @@ pub unsafe extern "C" fn HalpClockInterruptHandler(TrapFrame: PKTRAP_FRAME) {
     }
 
     // Broadcast the clock IPI to other CPUs.
-    HalpBroadcastClockIpi(CLOCK_IPI_VECTOR);
+    HalpBroadcastClockIpi(CLOCK_IPI_VECTOR as UCHAR);
 
     // KeUpdateSystemTime returns through the trap; KiEndInterrupt is a no-op on amd64
     // but keep it for symmetry with the C source.
@@ -287,10 +378,47 @@ pub unsafe extern "C" fn HalpClockInterruptHandler(TrapFrame: PKTRAP_FRAME) {
     KiEndInterrupt(Irql, TrapFrame);
 }
 
+// i386 (C-faithful, rtctimer.c:141-197): FASTCALL trap entry.  Acks the RTC
+// (register C), advances time, broadcasts the clock IPI, then KeUpdateSystemTime
+// exits the trap (noreturn on x86); the spurious path exits via KiEoiHelper.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn HalpClockInterruptHandler(TrapFrame: PKTRAP_FRAME) {
+    let mut Irql: KIRQL = 0;
+
+    KiEnterInterruptTrap(TrapFrame);
+
+    if HalBeginSystemInterrupt(CLOCK_LEVEL as KIRQL, APIC_CLOCK_VECTOR, &raw mut Irql) != 0 {
+        // Read register C so the RTC can raise the next interrupt.
+        HalpReadCmos(RTC_REGISTER_C as UCHAR);
+
+        let mut last_increment = HalpCurrentTimeIncrement;
+        HalpRunningFraction += HalpCurrentFractionalIncrement;
+        if HalpRunningFraction >= 1000 {
+            last_increment += 1;
+            HalpRunningFraction -= 1000;
+        }
+
+        if HalpSetClockRate != 0 {
+            RtcSetClockRate(HalpNextClockRate);
+            HalpSetClockRate = 0;
+        }
+
+        HalpBroadcastClockIpi(CLOCK_IPI_VECTOR as UCHAR);
+
+        // On x86 the kernel exits this trap (KeUpdateSystemTime does not return).
+        KeUpdateSystemTime(TrapFrame, last_increment, Irql);
+    }
+
+    // Spurious (or already exited above): end the interrupt.
+    KiEoiHelper(TrapFrame);
+}
+
 // ----------------------------------------------------------------------------
 // IPI handler for the broadcast clock IPI.
 // ----------------------------------------------------------------------------
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "C" fn HalpClockIpiHandler(TrapFrame: PKTRAP_FRAME) {
     let mut Irql: KIRQL = 0;
@@ -306,16 +434,51 @@ pub unsafe extern "C" fn HalpClockIpiHandler(TrapFrame: PKTRAP_FRAME) {
     KiEndInterrupt(Irql, TrapFrame);
 }
 
+// i386 (C-faithful, rtctimer.c:199-227): FASTCALL; KeUpdateRunTime returns on
+// x86 (unlike KeUpdateSystemTime), so the trap is closed via KiEoiHelper.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn HalpClockIpiHandler(TrapFrame: PKTRAP_FRAME) {
+    let mut Irql: KIRQL = 0;
+
+    KiEnterInterruptTrap(TrapFrame);
+
+    if HalBeginSystemInterrupt(CLOCK_LEVEL as KIRQL, CLOCK_IPI_VECTOR, &raw mut Irql) != 0 {
+        KeUpdateRunTime(TrapFrame, Irql);
+    }
+
+    KiEoiHelper(TrapFrame);
+}
+
 // ----------------------------------------------------------------------------
 // HalSetTimeIncrement — find largest rate that yields increment <= requested.
 // ----------------------------------------------------------------------------
 
+// amd64: fixed LAPIC-timer tick, so resolution changes aren't honoured.
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "system" fn HalSetTimeIncrement(_Increment: ULONG) -> ULONG {
-    // The LAPIC-timer clock runs at a fixed 15.625 ms tick. Dynamic timer-
-    // resolution changes (which would reprogram APIC_TICR) are not supported;
-    // report the current increment so callers see a stable resolution.
     HalpCurrentTimeIncrement
+}
+
+// i386 (C-faithful, rtctimer.c:229-251): pick the largest RTC rate whose
+// increment is <= the requested one, and schedule the rate change.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "system" fn HalSetTimeIncrement(Increment: ULONG) -> ULONG {
+    let mut rate = RtcMinimumClockRate;
+    while rate < RtcMaximumClockRate {
+        let next_increment = RtcClockRateToPreciseIncrement(rate + 1) / 1000;
+        if next_increment > Increment {
+            break;
+        }
+        rate += 1;
+    }
+
+    HalpNextClockRate = rate;
+    HalpSetClockRate = 1;
+
+    RtcClockRateToPreciseIncrement(rate) / 1000
 }
 
 // ============================================================================

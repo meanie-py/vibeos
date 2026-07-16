@@ -376,25 +376,18 @@ pub unsafe extern "system" fn HalpRegisterPciDebuggingDeviceInfo() {
         }
 
         // L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\PCI\\Debug"
-        const KEY_NAME: [u16; 60] = [
-            0x005C, 0x0052, 0x0065, 0x0067, 0x0069, 0x0073, 0x0074, 0x0072, 0x0079, 0x005C,
-            0x004D, 0x0061, 0x0063, 0x0068, 0x0069, 0x006E, 0x0065, 0x005C, 0x0053, 0x0079,
-            0x0073, 0x0074, 0x0065, 0x006D, 0x005C, 0x0043, 0x0075, 0x0072, 0x0072, 0x0065,
-            0x006E, 0x0074, 0x0043, 0x006F, 0x006E, 0x0074, 0x0072, 0x006F, 0x006C, 0x0053,
-            0x0065, 0x0074, 0x005C, 0x0053, 0x0065, 0x0072, 0x0076, 0x0069, 0x0063, 0x0065,
-            0x0073, 0x005C, 0x0050, 0x0043, 0x0049, 0x005C, 0x0044, 0x0065, 0x0062, 0x0075,
-        ];
-        // Buffer is [u16; 60] above for "\\Registry...\\Debu"; "g" missing — pad it.
-        // Easier: use RtlInitUnicodeString on a properly null-terminated buffer.
-
-        // Actually re-do this cleanly with a U16 vector built at boot.
+        //
+        // Built at runtime rather than hand-encoded. A `const KEY_NAME: [u16; 60]` used to sit
+        // here and was TRUNCATED — it spelled "...\\PCI\\Debu", missing the final 'g' (the
+        // SERVICES_KEY class, field-manual §9.6-services). It was dead (`let _ = KEY_NAME;`)
+        // because the author hit the bug, left a "g missing — pad it" note, and worked around it
+        // with build_wstr instead of fixing it. Deleted 2026-07-15 after scan_wide_literals
+        // decoded it and reported the drop; the live path below was always correct.
         let key_name_buf = build_wstr(b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\PCI\\Debug\0");
         let mut key_name: UNICODE_STRING = core::mem::zeroed();
         key_name.Length = ((key_name_buf.len() - 1) * 2) as USHORT;
         key_name.MaximumLength = (key_name_buf.len() * 2) as USHORT;
         key_name.Buffer = key_name_buf.as_ptr() as *mut u16;
-
-        let _ = KEY_NAME; // silence unused
 
         let mut handle: HANDLE = ptr::null_mut();
         let status = HalpOpenRegistryKey(

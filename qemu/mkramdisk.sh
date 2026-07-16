@@ -33,6 +33,7 @@ BOOT_SIZE_MB=280
 # populate call idempotent (harmless on a fresh image, overwrite on refresh)
 # — zero list drift vs the full build path (same calls run either way).
 REFRESH=""
+SMP=""   # --smp: stage ntkrnlmp.exe + boot-select it (smp-bringup-quest.md M5)
 
 # Stage debug-stripped PE twins into the ramdisk (same rationale as the livecd
 # strip pass in boot/boot_images.cmake): DWARF sections are never mapped, and
@@ -55,6 +56,9 @@ for arg in "$@"; do
         --rebuild)
             echo "[*] Rebuilding kernel..."
             ninja -C "$BUILD_DIR" ntoskrnl hal uefildr ramdisk fastfat
+            ;;
+        --smp)
+            SMP=1
             ;;
         --refresh)
             REFRESH=1
@@ -267,6 +271,11 @@ PROFILES
 # Copy system files
 echo "[*] Populating ramdisk..."
 RMC "$BUILD_DIR/ntoskrnl/ntoskrnl.exe"                        ::/reactos/system32/ntoskrnl.exe
+# SMP kernel (M5): the ntkrnlmp.exe target lives in the ntkrnlmp/ subdir. Only
+# staged with --smp; freeldr.ini boot-select (below) points /KERNEL at it.
+if [ -n "$SMP" ]; then
+    RMC "$BUILD_DIR/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"           ::/reactos/system32/ntkrnlmp.exe
+fi
 RMC "$BUILD_DIR/hal/halarm64/hal.dll"                          ::/reactos/system32/hal.dll
 RMC "$BUILD_DIR/drivers/base/kdrosdbg/kdcom.dll"               ::/reactos/system32/kdcom.dll
 RMC "$BUILD_DIR/drivers/base/bootvid/bootvid.dll"              ::/reactos/system32/bootvid.dll
@@ -413,6 +422,76 @@ for FONT in tahoma.ttf tahomabd.ttf Marlett.ttf arial.ttf arialbd.ttf cour.ttf t
         mcopy -o -i "$RAMDISK_IMG" "$SOURCE_DIR/media/fonts/$FONT"                  "::reactos/Fonts/$FONT"
     fi
 done
+
+# --- kmtest corpus (the arm64 twin of add_rostests_file) --------------------
+# x86 stages the kmtests onto the LiveCD declaratively: every kmtest driver
+# calls add_rostests_file(TARGET x), which is add_cd_file(... DESTINATION
+# "reactos/bin") (sdk/cmake/CMakeMacros.cmake). arm64 has no cd-file pass, so
+# without this block `vibeos-cli conformance --arch arm64` boots an image with
+# the sweep runner but no corpus for it to run -> [KMTEST-SWEEP] launch FAILED.
+#
+# reactos/bin, and ALL of it in that ONE directory, is load-bearing rather than
+# cosmetic: KmtpCreateService resolves each driver by taking
+# GetModuleFileName(kmtest_.exe), truncating at the last backslash, and
+# appending "<name>_drv.sys" (kmtest/service.c:428-439, which then
+# GetFileAttributes()-checks it). A driver staged anywhere else is simply never
+# found, so the flat layout mirrors x86 exactly.
+#
+# Globbed, not enumerated, so STAGING can't drift (same rationale as RMC
+# above). Note the glob can only stage what got BUILT, and that list is still
+# hand-maintained upstream: kmtest_all -> kmtest_drivers in kmtests/
+# CMakeLists.txt, which today omits the cc*/fltmgr drivers (x86 doesn't notice
+# — its livecd DAG builds every add_rostests_file target). That's harmless
+# while no visible test needs them (none of the 3 sweep lists reference a
+# Cc*/Flt* test), but if you make one visible, add its driver to
+# kmtest_drivers or arm64 will silently sweep without it.
+# Self-gating on the artifacts: they exist only when the build dir is
+# configured -DENABLE_ROSTESTS(_KMTESTS)=ON, which is precisely when x86's
+# add_rostests_file fires — so an unconfigured build stages nothing and the
+# ramdisk stays byte-identical. archcfg.py builds `kmtest_all` (optional) so
+# what lands here is freshly built, never a stale leftover.
+# npfs.sys + services.exe — the SCM chain the kmtest corpus needs.
+# Every kmtest loads its driver via CreateService/StartService, which is
+# advapi32 -> RPC ncacn_np "\pipe\ntsvcs" -> services.exe (scm.c:42-44,
+# services/rpcserver.c:115). So the sweep needs BOTH the named-pipe FS and the
+# SCM itself, neither of which arm64 has ever staged: without them every test
+# raises RPC_S_SERVER_UNAVAILABLE (0x6BA) before its first print and the sweep
+# only sees a 180s timeout. Npfs is already registered Start=1 in the arm64
+# SYSTEM hive; it just needs the binary here + an entry in iomgr's arm64
+# STAGED_SVCS (the arm64 boot hand-loads an explicit list instead of the bulk
+# Start=1 enumeration). services.exe's whole import set (advapi32, rpcrt4,
+# user32, userenv, msvcrt, ntdll, kernel32, advapi32_vista) is already staged
+# above. lsass is deliberately NOT staged: kmtest needs the SCM, not the LSA,
+# and lsass would drag in lsasrv/samsrv.
+RMC "$BUILD_DIR/drivers/filesystems/npfs/npfs.sys"             ::/reactos/system32/drivers/npfs.sys
+RMC "$BUILD_DIR/base/system/services/services.exe"             ::/reactos/system32/services.exe
+# lsass is NOT optional once services.exe runs: ScmCreateServiceDatabase ends in
+# ScmWaitForLsa() = WaitForSingleObject(LSA_RPC_SERVER_ACTIVE, INFINITE), and
+# only lsass.exe ever signals that event (services-rust/src/services.rs:253). An
+# SCM without an LSA hangs forever mid-database (measured: stuck 420s+ after
+# "LastKnownGood OK"), so SC_AutoStartComplete never fires and every kmtest times
+# out. lsasrv/samsrv are the only 2 of lsass's 15 transitive DLLs not already
+# staged above.
+RMC "$BUILD_DIR/base/system/lsass/lsass.exe"                   ::/reactos/system32/lsass.exe
+RMC "$BUILD_DIR/dll/win32/lsasrv/lsasrv.dll"                   ::/reactos/system32/lsasrv.dll
+RMC "$BUILD_DIR/dll/win32/samsrv/samsrv.dll"                   ::/reactos/system32/samsrv.dll
+# msv1_0 = the MSV1_0 authentication package. lsasrv loads it BY NAME at runtime
+# (the Lsa "Authentication Packages" registry value), so it is invisible to an
+# import-table walk — lsass.exe's every STATIC import resolves and it still died
+# with ExitStatus=0xC0000135 (STATUS_DLL_NOT_FOUND) propagated as its exit code.
+RMC "$BUILD_DIR/dll/win32/msv1_0/msv1_0.dll"                   ::/reactos/system32/msv1_0.dll
+
+KMTESTS_DIR="$BUILD_DIR/modules/rostests/kmtests"
+if [ -f "$KMTESTS_DIR/kmtest_.exe" ]; then
+    echo "[*] Staging kmtest corpus..."
+    mdir -i "$RAMDISK_IMG" ::/reactos/bin >/dev/null 2>&1 \
+        || mmd -i "$RAMDISK_IMG" ::/reactos/bin
+    RMC "$KMTESTS_DIR/kmtest_.exe" ::/reactos/bin/kmtest_.exe
+    # Flatten: co-located next to kmtest_.exe regardless of source subdir.
+    while IFS= read -r drv; do
+        RMC "$drv" "::/reactos/bin/$(basename "$drv")"
+    done < <(find "$KMTESTS_DIR" -name '*_drv.sys' | sort)
+fi
 
 # --- Payloads (opt-in, VIBEOS_PAYLOAD=name[,name...]) -----------------------
 # Declarative test/demo app staging — docs/engineering/payload-harness-design.md.
@@ -587,12 +666,28 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$WIN32APP" ::/reactos/syswow64/win32.exe
         fi
+        # marshal32.exe — the M18 marshaller-verification guest (winlogon
+        # TryStartWow64Marshal): TBI/IOCP/monitor marshallers, self-verified.
+        MARSHAL32="${VIBEOS_MARSHAL32_EXE:-$PROJECT_DIR/build-fex-hello/marshal32.exe}"
+        if [ -f "$MARSHAL32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/marshal32.exe (M18 marshaller guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$MARSHAL32" ::/reactos/syswow64/marshal32.exe
+        fi
         # file32.exe — the M10 file-I/O guest (winlogon TryStartWow64File).
         FILE32="${VIBEOS_FILE32_EXE:-$PROJECT_DIR/build-fex-hello/file32.exe}"
         if [ -f "$FILE32" ]; then
             echo "[*] VIBEOS_FEX=1 — staging syswow64/file32.exe (M10 file-I/O guest)"
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$FILE32" ::/reactos/syswow64/file32.exe
+        fi
+        # async32.exe — the M15b overlapped-I/O guest (winlogon TryStartWow64Async):
+        # kernel-side IO_STATUS_BLOCK32 completion oracle.
+        ASYNC32="${VIBEOS_ASYNC32_EXE:-$PROJECT_DIR/build-fex-hello/async32.exe}"
+        if [ -f "$ASYNC32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/async32.exe (M15b overlapped-I/O guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$ASYNC32" ::/reactos/syswow64/async32.exe
         fi
         # WOW64 Phase C: the real i386 guest exe, launched through CreateProcessW
         # by winlogon's TryStartWow64Hello (silent no-op unless staged here).
@@ -627,8 +722,19 @@ mmd -i "$BOOT_IMG" ::/EFI/BOOT
 # Copy bootloader
 mcopy -i "$BOOT_IMG" "$UEFILDR" ::/EFI/BOOT/BOOTAA64.EFI
 
-# Copy freeldr.ini
-mcopy -i "$BOOT_IMG" "$FREELDR_INI" ::/freeldr.ini
+# Copy freeldr.ini — with --smp, boot-select the SMP kernel by injecting
+# /KERNEL=ntkrnlmp.exe into the [ReactOS_Arm64] Options (mirrors the x86
+# livecd.ini [LiveCD_SMP] entry). Default (no --smp) ships the file verbatim
+# so it boots UP ntoskrnl.exe.
+if [ -n "$SMP" ]; then
+    SMP_INI="$(mktemp)"
+    sed 's#^\(Options=\)#\1/KERNEL=ntkrnlmp.exe #' "$FREELDR_INI" > "$SMP_INI"
+    echo "[*] SMP: freeldr.ini -> /KERNEL=ntkrnlmp.exe"
+    mcopy -o -i "$BOOT_IMG" "$SMP_INI" ::/freeldr.ini
+    rm -f "$SMP_INI"
+else
+    mcopy -i "$BOOT_IMG" "$FREELDR_INI" ::/freeldr.ini
+fi
 
 # Copy ramdisk image
 echo "[*] Copying ramdisk.img to boot.img..."

@@ -228,7 +228,7 @@ pub unsafe extern "C" fn KiTbLazyIdleExit() {
     let me = (*(KeGetCurrentPrcb())).SetMember;
     KiTbLazyIdleSet.fetch_and(!me, Ordering::SeqCst);
     KiIpiServiceSelf(me);
-    KiSmpApMarkerFlush();
+    crate::ke::ipi::KiSmpApMarkerFlush((*(KeGetCurrentPrcb())).Number as u32);
 }
 
 /// 0xE1 receive body. Called from trap.S's KiIpiInterrupt with cr8 still at
@@ -346,58 +346,10 @@ unsafe fn ki_tb_shootdown(va: u64) {
 pub unsafe extern "C" fn KiIpiHandlerAmd64() {}
 
 // ---------------------------------------------------------------------------
-// M3 visibility: prove each AP schedules real (non-idle) threads. The COUNT
-// is taken in KiSwapContextResume (Prcb->Number != 0, incoming thread not the
-// idle thread) — a bare atomic increment, because mid-context-switch (before
-// OldThread->SwapBusy is released) is NO place to call DbgPrint: a contended
-// print there wedges the CPU mid-swap holding the dead thread, and everything
-// queued to this CPU starves (creeping SamSs/TDI wedge face, 2026-07-11).
-// The PRINT happens from idle-exit (idle-thread context, no dispatcher state
-// held) — APs idle constantly, so the marker lands moments after the
-// threshold. One-shot markers at the 1st and 1000th non-idle switch; the
-// -smp smoke milestone check greps "CPU<n> scheduling live".
+// M3 visibility ("[SMP] CPUn scheduling live") — HOISTED to ke/ipi.rs
+// (M5c, arch-neutral so the arm64 leg shares it). The count tap stays in
+// this arch's KiSwapContextResume (thrdini.rs); the flush call below.
 // ---------------------------------------------------------------------------
-#[cfg(feature = "smp")]
-static KiSmpApSwitchCount: [core::sync::atomic::AtomicU32; 64] = {
-    #[allow(clippy::declare_interior_mutable_const)]
-    const ZERO: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
-    [ZERO; 64]
-};
-/// bit0 = "first switch" marker printed, bit1 = "1000 switches" marker printed.
-#[cfg(feature = "smp")]
-static KiSmpApMarkerState: [core::sync::atomic::AtomicU32; 64] = {
-    #[allow(clippy::declare_interior_mutable_const)]
-    const ZERO: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
-    [ZERO; 64]
-};
-
-/// Context-switch tap: count only. NEVER print from here (see block comment).
-#[cfg(feature = "smp")]
-#[inline(always)]
-pub(crate) unsafe fn KiSmpNoteApSwitch(Number: u32) {
-    use core::sync::atomic::Ordering;
-    KiSmpApSwitchCount[(Number & 63) as usize].fetch_add(1, Ordering::Relaxed);
-}
-
-/// Idle-exit tap: emit any marker the counters have earned. Runs on the AP
-/// itself in idle-thread context — safe to DbgPrint.
-#[cfg(feature = "smp")]
-#[inline(always)]
-unsafe fn KiSmpApMarkerFlush() {
-    use core::sync::atomic::Ordering;
-    let number = (*(KeGetCurrentPrcb())).Number as u32;
-    if number == 0 {
-        return;
-    }
-    let i = (number & 63) as usize;
-    let n = KiSmpApSwitchCount[i].load(Ordering::Relaxed);
-    if n >= 1 && KiSmpApMarkerState[i].fetch_or(1, Ordering::Relaxed) & 1 == 0 {
-        crate::dbg_print!(b"[SMP] CPU%u scheduling live (first non-idle context switch)\n\0", number);
-    }
-    if n >= 1000 && KiSmpApMarkerState[i].fetch_or(2, Ordering::Relaxed) & 2 == 0 {
-        crate::dbg_print!(b"[SMP] CPU%u scheduling live (1000 non-idle context switches)\n\0", number);
-    }
-}
 
 /// amd64 KeIpiGenericCall — NT rendezvous semantics ("run Function on every
 /// processor simultaneously at IPI_LEVEL, return the caller's own result")

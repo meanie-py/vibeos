@@ -465,3 +465,291 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   SMP with a 1-element processor array" (always take the locks / run the handshake;
   the same -smp 2 smoke becomes the UP test, deleting the "worked-on-UP-broke-on-SMP"
   bug class that hid this very flake). cswitchdep lane is CLOSED — do it here.
+- **M5 sub-item (surveyed 2026-07-14): the idle-loop `Prcb->NextThread` lock hole
+  exists IDENTICALLY on i386 and arm64 — but DON'T port it in isolation; land it
+  with each arch's AP bring-up.** The amd64 §9.56 v2 fix (acquire `KiAcquirePrcbLock`
+  inside the `cli` window, re-check NextThread under the lock, consume, `rq_inflight_unmark`,
+  release, THEN `sti`) has exact twins waiting:
+    - i386  — `ke/i386/thrdini.rs:302` (`KiIdleLoop`, consumes NextThread after `_enable()`,
+      lock-free, even under `#[cfg(feature="smp")]`).
+    - arm64 — `ke/arm64/thrdini.rs:253` (`KiIdleLoop`, consumes after `daifclr #2`, lock-free).
+  These compile into the real `ntkrnlmp.exe` for all three arches (`ntkrnlmp-cargo/build.rs`
+  always adds `smp`; `add_subdirectory(ntkrnlmp)` is unconditional), so they are
+  compile-real latent code, NOT dead source. **Zero risk to the shipping kernel:** the
+  `smp` feature is added only by `ntkrnlmp-cargo`, never `ntoskrnl-cargo`, so UP
+  `ntoskrnl.exe` (what the default gate boots) compiles only the
+  `#[cfg(not(feature="smp"))]` early-enable and none of the lock block.
+  **Why NOT now (the discipline call):** (1) unvalidatable — i386/arm64 have no APs yet
+  (M5 IS "start them"), so the lock is uncontended and its correctness can't be
+  boot-tested under contention; (2) it's entangled with the per-arch context-switch
+  handshake that M5 must complete anyway — specifically the **i386 `ctxswitch.S` has NO
+  SwapBusy spin** (separate landmine, this doc's UP-endgame notes), whereas amd64's does
+  (`ctxswitch.S:179`). The amd64 idle fix is self-contained (it never SETS `SwapBusy`, so
+  amd64's spin is a no-op for the idle-promoted thread — the explicit `KiReleasePrcbLock`
+  is the whole handshake), which is exactly why it ports as a clean mirror and NOT a
+  double-release hazard — confirmed 2026-07-14. But landing the idle lock without the
+  matching SwapBusy/release machinery for that arch is a half-fix that M5 will immediately
+  re-touch. **So: do i386's and arm64's idle-loop lock port as the last step of that
+  arch's AP bring-up, in the same change that adds the SwapBusy spin + AP start, so the
+  whole handshake is validated as a unit on `-smp 2`.**
+- 2026-07-14: **M5 arch = arm64 (PSCI), user-chosen. M5a (first AP start + park) IN
+  PROGRESS.** Big scope reduction found on survey: the arm64 kernel entry is ALREADY
+  SMP-ready — `KiSystemStartup` (kiinit.rs:169) does `Cpu = KeNumberProcessors++` and
+  gates ALL global init `if Cpu == 0`, reads the per-AP PCR from `LoaderBlock->Prcb`
+  (CONTAINING_RECORD), and `KiSystemStartupBootStack` (kiinit.rs:285) already has the
+  alive handshake `(*LoaderBlock).Prcb = 0;` before `KiIdleLoop()`. So M5a is purely the
+  HAL mechanism + a KeStartAllProcessors driver — the kernel side needed no changes.
+  Written this session (WIP on branch, behind `feature="smp"` = ntkrnlmp only, zero UP
+  risk):
+    - `hal-rust/src/arm64/mpboot.rs` (NEW): `psci_cpu_on` (SMC64 `0xC4000003`), the AP
+      trampoline (`global_asm!`, PC-relative `adr` so it survives being copied to a scratch
+      page), a temp identity map, cache maintenance, and the real `HalStartNextProcessor`.
+      `halstubs.rs`'s FALSE stub is now `#[cfg(not(smp))]`.
+    - `ntoskrnl-rust/src/ke/arm64/mproc.rs` (NEW): `KeStartAllProcessors` — per-AP
+      `_KIPCR`+idle-`_ETHREAD`+kernel-stack alloc, `KiInitializePcr` (made `pub(crate)`),
+      publish to `KeLoaderBlock`, PSCI via HAL, bounded handshake wait. Auto-discovers the
+      AP count by probing MPIDR 1,2,… until PSCI returns INVALID_PARAMETERS (no MADT parser
+      needed). Replaced the empty `stubs.rs` `KeStartAllProcessors`.
+  **DESIGN CORRECTION to the staged `arm64-ap/AP-ENTRY-DESIGN.md`:** it hand-waved the
+  post-MMU-enable PC-continuity problem. The instruction right after `msr sctlr_el1`
+  (MMU on) is fetched at the trampoline's LOW physical PC, which the kernel's high-half
+  TTBR1 does NOT cover → instruction abort with no vectors installed = silent hang. Fix
+  (in mpboot.rs): build a TEMPORARY identity map (TTBR0, one 1GB Normal-WB block covering
+  the trampoline page) so the low PC stays mapped across the enable — the arm64 analogue of
+  amd64's "identity map is gone" temp-PTE. Deterministic; doesn't gamble on the BSP's
+  post-boot TTBR0 state. Second arm64-specific must-do the staged design omitted: **cache
+  maintenance** — the scratch page is patched via a cached VA but the AP fetches it by PA
+  with caches off, so `dc cvac`+`ic ivau`+`dsb`+`isb` over the page (and the idmap tables)
+  is mandatory or the AP runs stale bytes. **REMAINING M5a:** compile-green (in progress),
+  then first `-smp 2` arm64 boot + debug (greenfield PSCI — expect iteration on the
+  MPIDR encoding, FADT conduit SMC-vs-HVC, and the trampoline). Open per NOTES.md:
+  verify FADT `PSCI_USE_HVC` (assumed SMC); confirm QEMU `virt` MPIDR = flat Aff0=index.
+  Then M5b (SGI IPI: `HalRequestIpi`→GICD_SGIR@0xF00 + receive dispatch), M5c (AP
+  schedules + the arm64 idle-loop PRCB-lock fix lands here), M5d (TLB shootdown + soak).
+- 2026-07-14 (cont.): **M5a code COMPILES INTO arm64 ntkrnlmp.exe** (commits
+  1da2142fdd3 + 84b08a8bf40). First `-smp 2` arm64 boot reached desktop but the SMP
+  code NEVER RAN — critical discovery: **the arm64 ntkrnlmp MEDIA PIPELINE is unwired**,
+  so `--smp-kernel` boots the UP `ntoskrnl.exe`, not ntkrnlmp. Three gaps, each now
+  pinned:
+    1. **Build:** `archcfg.ninja_targets["arm64"]` lists `ntoskrnl` but NOT `ntkrnlmp`,
+       so `build --arch arm64 --smp-kernel` never builds `ntkrnlmp.exe`. (amd64 builds it
+       via the `livecd` DAG + VIBEOS_SMP_DEFAULT_BOOT; arm64's hand-picked staged set omits it.)
+    2. **Stage:** `qemu/mkramdisk.sh` copies only `ntoskrnl.exe` (lines 76/266), never `ntkrnlmp.exe`.
+    3. **Boot-select:** `qemu/freeldr.ini` `[ReactOS_Arm64]` Options has no `/KERNEL=`, so
+       it defaults to `ntoskrnl.exe`. Needs `/KERNEL=ntkrnlmp.exe` when SMP (like
+       `livecd.ini`'s `[LiveCD_SMP]`).
+  **A NON-OBVIOUS TRAP this flushed out:** the `smp` feature is set ONLY by ntkrnlmp-cargo,
+  so `mproc.rs`'s `#[cfg(feature="smp")] smp_impl` is compiled ONLY in the ntkrnlmp build —
+  a plain `build --arch arm64 --smp-kernel` links `ntoskrnl.exe` (smp OFF) GREEN while
+  `ntkrnlmp` silently fails to relink and keeps a stale binary. **Always compile-check
+  SMP-gated kernel code with `ninja ntkrnlmp` (or a build that actually builds ntkrnlmp),
+  NOT the default `--smp-kernel` build** — the latter's green ntoskrnl.exe hides
+  smp_impl errors (cost: NonPagedPool/TAG_KERNEL imports + `as _` size cast, invisible
+  until `ninja ntkrnlmp`). **NEXT (M5a-media):** wire the 3 gaps above (conditional on
+  the existing VIBEOS_SMP_DEFAULT_BOOT env, mirroring the x86 livecd path), then re-boot
+  `-smp 2` to finally exercise mpboot/mproc and debug the real PSCI/trampoline path.
+- 2026-07-14 (cont.): **M5a COMPLETE — arm64 CPU 1 boots via PSCI to KiIdleLoop; BSP
+  reports "2 processor(s) online" (commit adf7e452fdb).** Media pipeline wired
+  (archcfg builds ntkrnlmp for arm64; mkramdisk `--smp` stages it + injects
+  `/KERNEL=ntkrnlmp.exe`; commit df353be6e20). Three greenfield bugs, each pinned
+  before the next surfaced (reusable arm64-AP-bringup gotchas — will recur for any
+  future arm64 secondary-core work):
+    1. **PSCI conduit = HVC, not SMC.** `smc #0` is UNDEFINED on QEMU virt (EL1-only,
+       no EL3) → the BSP took an EC=0 abort and wedged *right after* the CPU_ON call
+       (MPIDR=0x80000000 ⇒ it was the BSP, not the AP; "post-PSCI SUCCESS" never
+       printed). QEMU's generated DTB carries `method = "hvc"` (verified by
+       `-machine dumpdtb` → the /psci node has "hvc", never "smc"). Fixed: `hvc #0`.
+       (Consuming the FADT ARM_BOOT_ARCH PSCI_USE_HVC bit is TODO for real EL3 firmware.)
+    2. **AP MMU-enable needs a purpose-built idmap.** The BSP's live TTBR0 does NOT
+       identity-map the contiguous scratch trampoline page (MmAllocateContiguousMemory
+       lands it hundreds of MB into RAM), so the AP's first instruction fetch after
+       `msr sctlr_el1` faulted — it printed the MMU-off 'A' trace then died before 'B'.
+       Fixed: `build_trampoline_idmap` now maps a Normal-WB 1GB block for the trampoline
+       page + a Device 1GB block for the PL011 UART (MAIR Attr1=Device-nGnRnE, PTE
+       AttrIndx 1) so post-MMU trampoline traces still reach hardware.
+    3. **AP FP/SIMD trap → silent vector re-entry (the hard one).** The BSP inherits an
+       FP-enabled CPACR_EL1 from UEFI firmware; a PSCI-started AP comes up at the
+       trapping reset value (FPEN=00). The first NEON-vectorized store the AP executed
+       (KiInitSpinLocks' LockQueue block) took an EC=0x07 SIMD-disabled abort, and the
+       arm64 exception path re-entered the vector on a corrupted SP → silent infinite
+       re-entry (no [KEXC]). **GDB was decisive** where UART bisection wasn't (the two
+       CPUs' serial writes interleave char-by-char, making "how far did the AP get"
+       unreliable — a memory-only stage beacon fixed that and pinned the hang inside
+       KiInitSpinLocks; then GDB on the native `-smp 2` boot showed CPU1
+       PC=KiArm64VectorTable+0x200, "FPU disabled", garbage SP, and the BSP deadlocked
+       in KeIpiGenericCall). Fixed: set CPACR_EL1.FPEN=0b11 at the top of KiSystemStartup
+       (idempotent on the BSP; runs on all CPUs).
+  **Method note for the next debugger:** for arm64 SMP hangs, reach for GDB on a native
+  `qemu-system-aarch64 -smp 2 -s` boot early — `info threads` + `monitor info registers -a`
+  gives each CPU's PC/SP and `$ESR_EL1`/`$FAR_EL1` directly. UART tracing from an AP is
+  actively misleading because it interleaves with the BSP; use a memory beacon
+  (`KiArm64ApStage`, read by the BSP on handshake timeout with a hung-vs-slow re-read).
+  Default UP arm64 unaffected (boots to desktop; all AP code is smp-gated, CPACR OR is
+  idempotent).
+  **M5b (NEXT, exact starting point):** `-smp 2` boot now hangs *after* "2 processor(s)
+  online" — the BSP's first cross-CPU IPI (KeIpiGenericCall self-test / Phase-1 sync)
+  never delivers because the AP's **GIC CPU interface / SGI receive path is unwired**
+  (HalInitializeProcessor is an empty stub, so the AP's GICC/redistributor is never
+  enabled). Wire: AP-side GIC CPU-interface enable in HalInitializeProcessor + SGI
+  receive dispatch (trap.rs → KiIpiServiceRoutine) + HalRequestIpi → GICD_SGIR@0xF00.
+
+- **2026-07-14 — M5b COMPLETE: arm64 GIC SGI IPI wired; `-smp 2` boots to DESKTOP
+  (3/3 green ~50s; UP regression green).** Commit `8439ceca339`. The self-test proof:
+  `[SMP] KeIpiGenericCall self-test: worker ran on 0x3 == active set OK` — SGI path
+  works end to end (HalRequestIpi → GICD_SGIR → AP IRQ → KiIpiServiceRoutine → packet
+  worker → signal-done), and the boot then continues clean through SMSS to
+  `shell ready` + explorer `_tWinMain`. Zero IRQL violations / WAITDEP / BUGCHECK.
+  What it took (three pieces, all in the commit):
+    1. **SGI transport (hal clock.rs).** SGI 0 == the NT IPI at IPI_LEVEL(14) → GIC prio
+       0x10 (above CLOCK 0x20, below only HIGH). Send: `gic_send_sgi` (`dsb ish` then
+       GICD_SGIR@0xF00, target-list filter 0). Receive: new `intid < 16` branch in
+       HalClockInterruptArm64 — HalpEnterInterruptIrql(IPI_LEVEL) → KiIpiServiceRoutine
+       (new arm64 spec export) → HalpExitInterruptIrql; EOI writes back the full IAR
+       (source-CPU field included). Per-CPU enable: `gic_percpu_init` — the GICv2
+       IPRIORITYR/ISENABLER0 copies for INTIDs 0-31 and the whole GICC are **banked per
+       accessing core**, so each AP programs its own in HalInitializeProcessor (was an
+       empty stub) and the BSP gets its bank at clock init.
+    2. **The early-window mapping problem.** KeStartAllProcessors (+ the IPI self-test)
+       runs **before MmInitSystem(1)** — MmMapIoSpace can't exist yet, so the GIC is
+       reached via boot-identity PAs (`gic_ensure_early_bases`, first-writer-wins CAS;
+       clock init later overwrites with the real VAs). The identity mapping itself is
+       now **guaranteed by the loader**: ported `MempMapDevicePage` to the live Rust
+       winldr_arm64.rs and mapped UART/fw_cfg/GICD/GICC with Device attrs. (Side find:
+       the 2026-07-05 tripwire commit had added that function to the by-then-INERT C
+       winldr — classic edited-the-dead-C trap — so the fw_cfg mapping never shipped and
+       early device access worked only by accident of the UEFI memory-map walk.)
+    3. **Per-CPU IRQL + softint state (halstubs.rs) — the silent prerequisite.** The
+       arm64 HAL kept ONE global soft IRQL + ONE softint pending mask + ONE
+       interrupt-context depth. With 2 CPUs that's lost-update city: CPU0's clock tick
+       would gate CPU1's softint dispatch, and CPU1's lower-drain could consume (and
+       clear) a DISPATCH request CPU0 posted for itself — lost-DPC hangs. Soft IRQL now
+       lives in **KPCR.CurrentIrql via tpidr_el1** (KiInitializePcr already initializes
+       it per CPU; boot-global fallback for the pre-tpidr window), and pending/
+       in-progress/depth live in a cache-line-padded per-CPU array.
+  **M5c (NEXT):** prove the AP actually *schedules* (desktop boots, but nothing yet
+  measures CPU1 picking up threads — wire the CPU1-visibility counter from the M3-tail
+  list, arm64 leg). Then M5d: KiTbShootdown via SGI + `-smp 2` soak. AP-local vtimer
+  (per-CPU clock ticks) is also still un-armed — the AP gets no CNTV interrupts; fine
+  for idle+IPIs, needed for real per-CPU quantum/timer work.
+
+- **2026-07-14 (cont.) — M5c CORE COMPLETE: arm64 AP provably SCHEDULES.** Commit
+  `e257ec33d80`. Proof: `[SMP] CPU1 scheduling live (first non-idle context switch)`
+  on 3/3 arm64 `-smp 2` boots (45–55s to desktop, 2 CPUs online, self-test 0x3 OK,
+  zero WAITDEP/BUGCHECK); UP arm64 regression green (47s); amd64 `-smp 2` regression
+  green (marker still prints post-hoist). The `-smp` milestone gate (test_milestones
+  requires `CPU<n> scheduling live` per AP when `VIBEOS_QEMU_SMP > 1`) is now
+  satisfiable on arm64 — note the CLI `smoke` fast path does NOT run test_milestones,
+  which is why the M5b smokes passed without it; only pytest/gate runs enforce it.
+  Three pieces:
+    1. **Visibility tap hoisted arch-neutral** (amd64/ipi.rs → ke/ipi.rs, pure
+       atomics), parameterized by CPU number so each arch derives it from its own
+       invariant PCR source (arm64's linked `KeGetPcr` is the stale-x18 copy —
+       thrdini.rs comment). arm64 leg: count tap in KiSwapContextResume (Number!=0 &&
+       new != IdleThread), flush at idle-loop top (idle context — never print from
+       the mid-swap tap).
+    2. **arm64 KiIdleLoop SMP promote fixes** (mirrors amd64/stubs.rs, §9.56): consume
+       NextThread UNDER THE PRCB LOCK with IRQs still masked + re-check under the lock
+       (the inherited lock-free consume races KiDeferredReadyThread's standby
+       displacement → a Running thread set DeferredReady → union-alias list tear);
+       the KiSelectReadyThread branch gets the same lock treatment; and
+       `rq_inflight_unmark` at BOTH promote sites. **The missing unmark was why the
+       M5b `-smp 2` settle logs spammed `[RQDEFER2] DOUBLE-DEFER` with
+       `stale_by == caller_line`** — every arm64 idle-loop promote (BSP and AP)
+       leaked a stale in-flight mark, so each subsequent wake false-positived the
+       §9.56 oracle. 0 occurrences across all post-fix boots. UP shape byte-identical
+       (cfg-gated). arm64 SMP `SYNCH_LEVEL == DISPATCH_LEVEL` (ke_defs) and idle is
+       pinned at DISPATCH, so no SYNCH raise around the swap (amd64 raises to 12).
+    3. **Fail-loud UP HalStartNextProcessor stub** — the trap that cost this session a
+       debug round: the arm64 SMP HAL flavor rides the **VIBEOS_SMP_DEFAULT_BOOT cmake
+       CACHE var** (gcc.cmake → `VIBEOS_SMP_HAL=1` env → hal-rust `smp` feature), so a
+       plain UP `vibeos-cli build --arch arm64` reconfigure flips hal.dll back to UP,
+       and a later raw `ninja ntkrnlmp` inherits the UP cache — **MP kernel + UP HAL
+       boot fine on arm64 (no MISMATCHED_HAL 0x79 handshake here!) and silently
+       degrade to 1 CPU**: HalStartNextProcessor is the cfg(not(smp)) FALSE stub, and
+       mproc.rs reads FALSE as "no more CPUs". The stub now DbgPrints the rebuild
+       hint. **Rule: after ANY plain arm64 build, re-run `build --arch arm64
+       --smp-kernel` before trusting an -smp boot** (it reconfigures the cache,
+       rebuilds the smp HAL, and runs `mkramdisk --refresh --smp` itself — no manual
+       mkramdisk needed).
+  **M5c tail (owed):** AP-local vtimer arming — CPU1 still gets no CNTV interrupts, so
+  it never reaches 1000 switches by boot-marker time (threads land there only via
+  explicit dispatch IPIs); per-CPU quantum-end/timer work needs it. Candidate design:
+  arm each CPU's vtimer + banked PPI-27 enable from a KeIpiGenericCall broadcast worker
+  at HalInitializeClockArm64 time (generic call runs on every CPU at IPI_LEVEL — the
+  banked GICC/PPI registers REQUIRE running on the target CPU); gate KeUpdateSystemTime
+  to Prcb.Number==0, others do KeUpdateRunTime. Then **M5d:** KiTbShootdown via SGI +
+  `-smp 2` soak. (arm64 currently has NO cross-CPU TLB shootdown — KeFlushEntireTb et
+  al are still UP-shaped; correctness has ridden on low cross-CPU VM churn so far.)
+
+- **2026-07-14 (cont.) — M5c tail COMPLETE (AP vtimer, commit `503ba99aa99`) + M5d
+  COMPLETE (TLB, commit `27f632fc0f1`): arm64 SMP is at FEATURE PARITY with amd64.**
+  Evidence chain on 3/3 `-smp 2` boots (~47s, zero WAITDEP/BUGCHECK/DOUBLE-DEFER; UP
+  regression green): `[SMP] CPU1 vtimer armed (banked PPI-27 + CNTV)` → `[SMP] CPU1
+  clock tick live (per-CPU CNTV delivering)` → `[SMP] CPU1 scheduling live`.
+  - **Vtimer design that landed (simpler than the generic-call candidate above):** APs
+    arm LAZILY — HalClockInterruptArm64 arms this CPU's banked PPI-27 + CNTV on its
+    first IRQ once TIMER_INTERVAL is published, and clock init kicks all APs with one
+    SGI (`GICD_SGIR` target-filter 01 = all-but-self, no CPU enumeration, no new
+    kernel→HAL imports). Self-healing off any later dispatch IPI if the kick is lost.
+    Tick routing: CPU0 keeps KeUpdateSystemTime (sole wall-clock owner, NT rule); APs
+    call KeUpdateRunTime — which turned out to be 100% per-PRCB-shaped already (thread
+    time, DPC-rate, quantum-end via the M5b per-CPU softint state): zero kernel changes.
+  - **M5d verdict: arm64 needs NO software shootdown protocol.** Full audit of every
+    `tlbi` in the kernel: KeInvalidateTlbEntry (`vale1is`), KeFlushProcessTb /
+    KeFlushEntireTb / KiSwapProcess (`vmalle1is`) are all INNER-SHAREABLE — the
+    hardware (and QEMU MTTCG) broadcasts the invalidate to every core, and the
+    trailing `dsb ish` completes only when all cores have dropped the entries. That IS
+    the shootdown + ack. The amd64 0xE1 descriptor machinery has no arm64 twin BY
+    DESIGN. KeFlushCurrentTb's non-IS `vmalle1` is correct per NT contract (current
+    CPU only; callers audited: freeze + sysldr post-reloc, both local-scoped).
+  - **Real latent bug fixed:** every broadcast flush site was missing the leading
+    `dsb ishst` that publishes the caller's PTE store to REMOTE table walkers before
+    the invalidate — a remote walk could refill from the stale PTE. TCG's strong
+    memory model forgives it, real ARM hardware does not. Added everywhere (KiSwap-
+    Process already had its dsb).
+  - **Owed (perf, not correctness):** KiSwapProcess's `vmalle1is` full-flushes every
+    core's TLB on each process switch (no ASIDs on this port yet — TTBR writes carry
+    ASID 0). ASID-based switching would localize it. Roadmap Owed-work item.
+  - **Overnight `-smp 2` soak launched** (farm, arm64+amd64, 7h, `VIBEOS_QEMU_SMP=2`
+    env — farm has no --smp flag; the harness reads the env var directly, vm.py:974).
+  **NEXT:** i386 M5 (APIC HAL — plan discussed 2026-07-14: PIC cannot do SMP at all,
+  8259 has no IPIs; the Rust APIC HAL exists but is cfg-gated x86_64 — un-gate + add
+  i386 halves + TPR IRQL as Phase A "i386 UP on APIC", then Phase B AP start reusing
+  aptramp32 + ke/ipi.rs, landing the i386 idle-lock + ctxswitch SwapBusy in the same
+  change). Or land the arm64 lane on master first (full ×3 gate → merge → push).
+
+## Conformance-soak triage (2026-07-16) — amd64 `-smp 2` kmtest guest-load
+
+  Working the bugs the 20-sweep kmtest guest-load soak surfaced (task #10; full writeup field-manual §9.88). Amplifier =
+  a temporary MmMdl-dense sweep list (`kmtest-tests-amd64.txt` warmup + MmMdl ×25/boot;
+  RESTORE from `scratchpad/kmtest-tests-amd64.txt.REAL` before landing) + a background
+  boot/capture loop (`scratchpad/mmMdl_capture.sh` → `~/vibeos-flake-farm/mmMdl-evidence/`).
+
+  - **MmMdl 0x1E — ROOT-CAUSED + FIXED (`ARM3/mdlsup.rs` `MmUnmapLockedPages`).** The
+    kernel-path unmap carried an i386-bringup band-aid (commit `15434cd8dea`, "restore
+    explorer.exe"): `if ByteCount > 16MB { return; }`. That FALSE-FIRED on kmtest MmMdl's
+    legitimate **32MB** MDL maps, so unmap bailed WITHOUT `MiReleaseSystemPtes` — and,
+    critically, without ZEROING the PTEs. `MmFreePagesFromMdl` runs right after, so the
+    freed pages stayed mapped by **valid** system PTEs with live TLB entries → a
+    use-after-free alias: on `-smp 2`, CPU1 reallocates a page CPU0 still aliases → the
+    ~10% 0x1E. The same leak steadily starved `MmMapLockedPagesSpecifyCache`→NULL (the
+    `fail=4` soft face: MmMdl.c:68/100/103/104, with `MappedSystemVa` left holding a stale
+    VA). **Fix:** a precise use-after-free guard instead of a size cap — a genuinely
+    system-mapped MDL can never span more PTEs than the whole pool, so bail only when
+    `PageCount > MmTotalSystemPtes`, else release properly (zeroes the PTEs, closes the
+    alias, returns the pool). `MiReleaseSystemPtes` bounds-checks StartingPte itself as a
+    backstop. **Validated:** dense MmMdl ×25/boot went `fail=4`→`fail=0`, boot completes
+    (`done total=61`). Crash-rate confirmation (0 across many exposed runs) + gate ×3 in
+    progress before landing. (Residual `pass 569→563` across the 25× dense runs is benign
+    system-PTE fragmentation from the unnatural repeat, not a leak.)
+  - **KeIrql `fail 0→3` — NOT a kernel bug; kmtest build-config artifact.** amd64
+    `KeRaiseIrqlToSynchLevel` is a `FORCEINLINE` (xdk/amd64/ke.h:117) with a *compile-time*
+    `#ifdef CONFIG_SMP` → `KfRaiseIrql(12)` else `KfRaiseIrql(2)`. kmtest_drv is compiled
+    WITHOUT CONFIG_SMP → returns 2, but runs on ntkrnlmp (Prcb->BuildType clears the
+    UNIPROCESSOR bit) so `KmtIsMultiProcessorBuild=TRUE` and the test expects SYNCH=12
+    (KeIrql.c:32,111-116). Our `KfRaiseIrql(12)` (CR8=12) is fine. Disposition: compile
+    kmtest_drv with CONFIG_SMP for SMP conformance runs, or seed a separate SMP baseline
+    (conformance-harness scope, not the kernel). KeEvent's `pass` drift is the same class
+    (MP-build-detected sub-test expectations). Neither is a kernel change.
+  - **0xF4 boot-phase (2/20 soak) — pre-existing §9.56-class, still OPEN.** Separate from
+    MmMdl; not chased this pass.

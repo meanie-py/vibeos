@@ -1,25 +1,59 @@
 //! APIC HAL — LAPIC/IOAPIC programming, IRQL via TPR, software-interrupt
 //! delivery via APIC self-IPI.  Translated from `hal/halx86/apic/apic.c`.
 //!
-//! Amd64-only (apic.cmake is amd64-only in the main HAL).  All `#ifndef
-//! _M_AMD64` paths in the C source are dead on amd64 and are dropped
-//! here — IRQL maintenance uses CR8 directly, the APC/dispatch software
-//! traps live in apic/apictrap.S, and Kf{Raise,Lower}Irql / KeGetCurrentIrql
-//! / KeRaiseIrqlTo* are provided by ntoskrnl on amd64.
+//! Dual-arch (i386-apic-hal lane): compiled whenever `hal_apic` is set —
+//! amd64 always, or i386 with the `apic` feature.  The two arches diverge in
+//! their IRQL model, which is `#[cfg(target_arch = ...)]`-forked in place:
+//!   - **amd64**: IRQL lives in CR8 (linear `irql<<4` TPR map); the APC/dispatch
+//!     software traps live in apic/apictrap.S; Kf{Raise,Lower}Irql /
+//!     KeGetCurrentIrql / KeRaiseIrqlTo* come from ntoskrnl.
+//!   - **i386**: 32 IRQLs compress onto 16 TPR classes via the HalpIRQLtoTPR /
+//!     HalVectorToIRQL tables; IRQL is kept lazily in KPCR.Irql (APIC_LAZY_IRQL)
+//!     and only flushed to the TPR when an interrupt would actually fire; the
+//!     HAL owns the APC(0x3D)/DISPATCH(0x41) software vectors + their handlers,
+//!     and exports the Kf/Ke IRQL primitives itself.  All from the C source's
+//!     `#ifndef _M_AMD64` / APIC_LAZY_IRQL branches.
 //!
 //! Companion files: apic_halinit.rs (boot phases), apictimer.rs (profile
 //! timer), rtctimer.rs (system clock), tsc.rs (calibration).
 
-#![cfg(target_arch = "x86_64")]
+#![allow(
+    non_snake_case,
+    non_upper_case_globals,
+    dead_code,
+    unused_unsafe,
+    unused_imports,
+    unused_variables,
+    unused_mut
+)]
 
 use ntkrnl_sys::hal_ddk::{
-    BOOLEAN, CLOCK_LEVEL, DISPATCH_LEVEL, KAFFINITY, KIRQL, PKAFFINITY, PKIRQL, PKTRAP_FRAME,
-    UCHAR, ULONG, ULONG_PTR, _KINTERRUPT_MODE_LevelSensitive as LEVEL_SENSITIVE, _KIPCR,
+    BOOLEAN, KAFFINITY, KIRQL, PKAFFINITY, PKIRQL, PKTRAP_FRAME, UCHAR, ULONG, ULONG_PTR,
+    _KINTERRUPT_MODE_LevelSensitive as LEVEL_SENSITIVE, _KIPCR,
 };
 
+// DISPATCH_LEVEL / CLOCK_LEVEL differ per arch (16-level amd64 vs 32-level
+// i386), so define them locally rather than importing the bindgen #define —
+// the loop range in HalpGetRootInterruptVector depends on the right value.
+#[cfg(target_arch = "x86_64")]
+const DISPATCH_LEVEL: KIRQL = 2;
+#[cfg(target_arch = "x86_64")]
+const CLOCK_LEVEL: KIRQL = 13;
+#[cfg(target_arch = "x86")]
+const DISPATCH_LEVEL: KIRQL = 2;
+#[cfg(target_arch = "x86")]
+const CLOCK_LEVEL: KIRQL = 28; // CLOCK2_LEVEL on i386
+
 // apicp.h vector constants — apicp.h is HAL-private, not in bindgen.
+// APC/DISPATCH software-interrupt vectors differ per arch (apicp.h).
+#[cfg(target_arch = "x86_64")]
 const APC_VECTOR: ULONG = 0x1F;
+#[cfg(target_arch = "x86_64")]
 const DISPATCH_VECTOR: ULONG = 0x2F;
+#[cfg(target_arch = "x86")]
+const APC_VECTOR: ULONG = 0x3D;
+#[cfg(target_arch = "x86")]
+const DISPATCH_VECTOR: ULONG = 0x41;
 const CLOCK_IPI_VECTOR: ULONG = 0xD2;
 
 use crate::x86::pcr::KeGetPcr;
@@ -28,8 +62,16 @@ use crate::x86::pcr::KeGetPcr;
 // APIC / IOAPIC register addresses (apicp.h, _M_AMD64 branch).
 // ---------------------------------------------------------------------------
 
+// LAPIC/IOAPIC MMIO window (apicp.h): high-canonical on amd64, the i386
+// non-PAE fixed HAL window 0xFFFE0000/0xFFFE1000 on x86.
+#[cfg(target_arch = "x86_64")]
 const APIC_BASE: usize = 0xFFFFFFFFFFFE0000u64 as usize;
+#[cfg(target_arch = "x86_64")]
 const IOAPIC_BASE: usize = 0xFFFFFFFFFFFE1000u64 as usize;
+#[cfg(target_arch = "x86")]
+const APIC_BASE: usize = 0xFFFE0000;
+#[cfg(target_arch = "x86")]
+const IOAPIC_BASE: usize = 0xFFFE1000;
 
 // APIC register offsets — APIC_REGISTER enum from apicp.h.
 const APIC_ID: ULONG = 0x0020;
@@ -67,9 +109,16 @@ const IOAPIC_PHYS_BASE: u64 = 0xFEC00000;
 const APIC_MAX_IRQ: UCHAR = 24;
 const APIC_FREE_VECTOR: UCHAR = 0xFF;
 const APIC_RESERVED_VECTOR: UCHAR = 0xFE;
+// Spurious/error vectors differ per arch (apicp.h).
+#[cfg(target_arch = "x86_64")]
 const APIC_SPURIOUS_VECTOR: UCHAR = 0xDF;
-const APIC_NMI_VECTOR: UCHAR = 0xFF;
+#[cfg(target_arch = "x86_64")]
 const APIC_ERROR_VECTOR: UCHAR = 0xE2;
+#[cfg(target_arch = "x86")]
+const APIC_SPURIOUS_VECTOR: UCHAR = 0x1F;
+#[cfg(target_arch = "x86")]
+const APIC_ERROR_VECTOR: UCHAR = 0xE3;
+const APIC_NMI_VECTOR: UCHAR = 0xFF;
 const APIC_CLOCK_VECTOR: ULONG = 0xD1;
 const APIC_CLOCK_INDEX: UCHAR = 8;
 
@@ -100,19 +149,113 @@ const APIC_DSH_SELF: u32 = 1;
 
 const APIC_DF_FLAT: ULONG = 0xFFFFFFFF;
 
-// IrqlToTpr / TprToIrql (apicp.h amd64 branch — linear TPR mapping).
+// ---------------------------------------------------------------------------
+// IRQL model selector.
+//   amd64: 16 IRQLs map linearly onto the 16 TPR priority classes; the current
+//          IRQL lives in CR8.  No lazy path.
+//   i386 : 32 IRQLs compress non-uniformly onto 16 TPR classes via lookup
+//          tables, and APIC_LAZY_IRQL keeps the soft IRQL in KPCR.Irql, only
+//          writing the (uncached MMIO) TPR when an interrupt actually needs it.
+// ---------------------------------------------------------------------------
+
+// APIC_LAZY_IRQL is `#define`d for !_M_AMD64 in the C.  Kept as a const bool so
+// the eager path (write the TPR on every IRQL change) stays compiled and can be
+// flipped for bisection — but lazy is the default (and avoids reading the TPR
+// MMIO before the LAPIC is even mapped).  amd64 never consults it (CR8 path).
+#[cfg(target_arch = "x86")]
+const APIC_LAZY_IRQL: bool = true;
+
+// i386 IRQL↔TPR compression tables (apic.c:31-88, _M_IX86 branch).
+#[cfg(target_arch = "x86")]
+static HalpIRQLtoTPR: [UCHAR; 32] = [
+    0x00, // 0  PASSIVE_LEVEL
+    0x3d, // 1  APC_LEVEL
+    0x41, // 2  DISPATCH_LEVEL
+    0x41, // 3
+    0x51, // 4
+    0x61, // 5
+    0x71, // 6
+    0x81, // 7
+    0x91, // 8
+    0xa1, // 9
+    0xb1, // 10
+    0xb1, // 11
+    0xb1, // 12
+    0xb1, // 13
+    0xb1, // 14
+    0xb1, // 15 DEVICE IRQL
+    0xb1, // 16
+    0xb1, // 17
+    0xb1, // 18
+    0xb1, // 19
+    0xb1, // 20
+    0xb1, // 21
+    0xb1, // 22
+    0xb1, // 23
+    0xb1, // 24
+    0xb1, // 25
+    0xb1, // 26
+    0xc1, // 27 PROFILE_LEVEL
+    0xd1, // 28 CLOCK2_LEVEL
+    0xe1, // 29 IPI_LEVEL
+    0xef, // 30 POWER_LEVEL
+    0xff, // 31 HIGH_LEVEL
+];
+
+#[cfg(target_arch = "x86")]
+static HalVectorToIRQL: [KIRQL; 16] = [
+    0,    // 00 PASSIVE_LEVEL
+    0xff, // 10
+    0xff, // 20
+    1,    // 3D APC_LEVEL
+    2,    // 41 DISPATCH_LEVEL
+    4,    // 50
+    5,    // 60
+    6,    // 70
+    7,    // 80 DEVICE IRQL
+    8,    // 90
+    9,    // A0
+    10,   // B0
+    27,   // C1 PROFILE_LEVEL
+    28,   // D1 CLOCK2_LEVEL
+    29,   // E1 IPI_LEVEL / EF POWER_LEVEL
+    31,   // FF HIGH_LEVEL
+];
+
+// IrqlToTpr / TprToIrql / IrqlToSoftVector — apicp.h.  amd64 = linear; i386 =
+// table lookups (IrqlToSoftVector == IrqlToTpr on i386, per apicp.h:56).
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 fn irql_to_tpr(irql: KIRQL) -> ULONG {
     (irql as ULONG) << 4
 }
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 fn tpr_to_irql(tpr: ULONG) -> KIRQL {
     (tpr >> 4) as KIRQL
 }
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 fn irql_to_soft_vector(irql: KIRQL) -> UCHAR {
     (((irql as ULONG) << 4) | 0xf) as UCHAR
 }
+
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+fn irql_to_tpr(irql: KIRQL) -> ULONG {
+    HalpIRQLtoTPR[irql as usize] as ULONG
+}
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+fn tpr_to_irql(tpr: ULONG) -> KIRQL {
+    HalVectorToIRQL[(tpr >> 4) as usize]
+}
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+fn irql_to_soft_vector(irql: KIRQL) -> UCHAR {
+    HalpIRQLtoTPR[irql as usize]
+}
+
 #[inline(always)]
 fn apic_logical_id(cpu: ULONG) -> UCHAR {
     1u8 << cpu
@@ -148,6 +291,7 @@ unsafe fn apic_write(reg: ULONG, value: ULONG) {
     write_register_ulong(APIC_BASE + reg as usize, value)
 }
 
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn read_eflags() -> ULONG_PTR {
     let f: ULONG_PTR;
@@ -155,9 +299,24 @@ unsafe fn read_eflags() -> ULONG_PTR {
     f
 }
 
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn write_eflags(f: ULONG_PTR) {
     core::arch::asm!("push {0}", "popfq", in(reg) f, options(nomem));
+}
+
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn read_eflags() -> ULONG_PTR {
+    let f: ULONG_PTR;
+    core::arch::asm!("pushfd", "pop {0:e}", out(reg) f, options(nomem, preserves_flags));
+    f
+}
+
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn write_eflags(f: ULONG_PTR) {
+    core::arch::asm!("push {0:e}", "popfd", in(reg) f, options(nomem));
 }
 
 #[inline(always)]
@@ -202,6 +361,9 @@ unsafe fn write_msr(msr: u32, value: u64) {
     );
 }
 
+// CR8 is amd64-only (there is no CR8 on i386 — the i386 IRQL model uses the
+// soft KPCR.Irql byte + lazy TPR instead).
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn read_cr8() -> u64 {
     let v: u64;
@@ -209,6 +371,7 @@ unsafe fn read_cr8() -> u64 {
     v
 }
 
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn write_cr8(v: u64) {
     core::arch::asm!("mov cr8, {0}", in(reg) v, options(nomem, nostack, preserves_flags));
@@ -226,6 +389,9 @@ unsafe fn vector_to_idt_entry(vector: ULONG) -> usize {
     vec_to_idt(vector) as usize
 }
 
+// amd64: build a full 16-byte IDT gate (Selector KGDT64_R0_CODE + 64-bit split
+// offset + type/dpl/present).  This mirrors the amd64 KeRegisterInterruptHandler.
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn register_interrupt_handler(vector: ULONG, handler: *mut core::ffi::c_void) {
     let pcr = KeGetPcr() as *mut _KIPCR;
@@ -246,17 +412,103 @@ unsafe fn register_interrupt_handler(vector: ULONG, handler: *mut core::ffi::c_v
     inner.Reserved1 = 0;
 }
 
+// i386: the kernel pre-creates every IDT entry with the correct selector +
+// 32-bit-interrupt-gate access; KeRegisterInterruptHandler only patches the
+// 32-bit handler offset, split across the 8-byte KIDTENTRY's Offset (low 16)
+// and ExtendedOffset (high 16).  (internal/i386/ke.h KeRegisterInterruptHandler.)
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn register_interrupt_handler(vector: ULONG, handler: *mut core::ffi::c_void) {
+    let pcr = KeGetPcr() as *mut _KIPCR;
+    let entry = vector_to_idt_entry(vector) as usize;
+    let e = &mut *(*pcr).IDT.add(entry);
+    let address = handler as usize;
+    e.Offset = (address & 0xffff) as u16;
+    e.ExtendedOffset = ((address >> 16) & 0xffff) as u16;
+}
+
 // ---------------------------------------------------------------------------
 // Externs — pulled in from sibling HAL files.
 // ---------------------------------------------------------------------------
 
-unsafe extern "C" {
+// NTAPI HAL helpers — stdcall on i386 (`_Name@N`), Microsoft-x64 on amd64;
+// `extern "system"` decorates correctly on both (defined in pic.rs / usage.rs).
+unsafe extern "system" {
     fn HalpInitializeLegacyPICs();
     fn HalpRegisterVector(IdtType: UCHAR, BusVector: ULONG, SystemVector: ULONG, Irql: KIRQL);
+}
+
+// Trap-stub symbols from apic/apictrap.S — address-taken only (installed into
+// the IDT), never called with args, so the ABI is irrelevant; only the symbol
+// name matters (`_HalpClockInterrupt` on i386, `HalpClockInterrupt` on amd64 —
+// both what `extern "C"` produces).
+unsafe extern "C" {
     fn HalpClockInterrupt();
     fn HalpClockIpi();
     // Spurious LAPIC ISR (apicp.h: __cdecl).
     fn ApicSpuriousService();
+    // i386 APC/DISPATCH software-interrupt trap stubs (apictrap.S _M_IX86 half).
+    #[cfg(target_arch = "x86")]
+    fn HalpApcInterrupt();
+    #[cfg(target_arch = "x86")]
+    fn HalpDispatchInterrupt();
+    // Serial flavor banner (i386): variadic cdecl, resolved via the ntoskrnl
+    // import lib — proves in every boot log that the APIC HAL is live.
+    #[cfg(target_arch = "x86")]
+    fn DbgPrint(fmt: *const u8, ...) -> u32;
+}
+
+// ---------------------------------------------------------------------------
+// i386-only kernel helpers + trap-frame inlines for the APC/dispatch handlers
+// (amd64 handles APC/dispatch entirely in apictrap.S — none of this compiles).
+// ---------------------------------------------------------------------------
+
+#[cfg(target_arch = "x86")]
+const APC_LEVEL: KIRQL = 1;
+#[cfg(target_arch = "x86")]
+const SYNCH_LEVEL: KIRQL = DISPATCH_LEVEL; // UP i386: SYNCH == DISPATCH
+#[cfg(target_arch = "x86")]
+const EFLAGS_V86_MASK: ULONG = 0x0002_0000;
+#[cfg(target_arch = "x86")]
+const KERNEL_MODE: i8 = 0;
+#[cfg(target_arch = "x86")]
+const USER_MODE: i8 = 1;
+#[cfg(target_arch = "x86")]
+const EXCEPTION_CHAIN_END: usize = !0;
+
+// KiDeliverApc / KiDispatchInterrupt are NTAPI (stdcall) exports; KiEoiHelper is
+// FASTCALL and DECLSPEC_NORETURN.  Same declarations pic_pic.rs uses.
+#[cfg(target_arch = "x86")]
+unsafe extern "system" {
+    fn KiDeliverApc(PreviousMode: i8, ExceptionFrame: *mut core::ffi::c_void, TrapFrame: PKTRAP_FRAME);
+    fn KiDispatchInterrupt();
+}
+#[cfg(target_arch = "x86")]
+unsafe extern "fastcall" {
+    fn KiEoiHelper(TrapFrame: PKTRAP_FRAME) -> !;
+}
+
+// KiUserTrap / KiEnterInterruptTrap are FORCEINLINE in the C (trap_x.h) — never
+// exported — so replicate them.  KiEnterInterruptTrap must stamp the DBG
+// trap-frame fields (our kernel is a DBG build), else KiExitTrapDebugChecks
+// bugchecks on the magic mismatch.  Verbatim from pic_pic.rs / timer.rs.
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn KiUserTrap(TrapFrame: PKTRAP_FRAME) -> BOOLEAN {
+    if ((*TrapFrame).SegCs & 1) != 0 { 1 } else { 0 }
+}
+
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn KiEnterInterruptTrap(TrapFrame: PKTRAP_FRAME) {
+    let pcr = KeGetPcr();
+    (*pcr).__bindgen_anon_1.NtTib.ExceptionList = EXCEPTION_CHAIN_END as *mut _;
+    (*TrapFrame).Dr7 = 0;
+    (*TrapFrame).DbgArgPointer = (*TrapFrame).Edx;
+    (*TrapFrame).DbgArgMark = 0xBADB_0D00;
+    (*TrapFrame).DbgEip = (*TrapFrame).Eip;
+    (*TrapFrame).DbgEbp = (*TrapFrame).Ebp;
+    (*TrapFrame).PreviousPreviousMode = !0;
 }
 
 // ---------------------------------------------------------------------------
@@ -385,20 +637,66 @@ unsafe fn apic_get_processor_irql() -> KIRQL {
     tpr_to_irql(apic_read(APIC_PPR))
 }
 
+// amd64: IRQL is CR8, directly.
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn apic_get_current_irql() -> KIRQL {
     read_cr8() as KIRQL
 }
-
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn apic_set_irql(irql: KIRQL) {
     write_cr8(irql as u64);
 }
-
 // On amd64, ApicLowerIrql == ApicSetIrql (no APIC_LAZY_IRQL on amd64).
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn apic_lower_irql(irql: KIRQL) {
     write_cr8(irql as u64);
+}
+
+// i386: the lazy model (apic.c:205-254).  Raising only writes the soft
+// KPCR.Irql byte; the hard TPR is deferred and written on the lowering path
+// (or in HalBeginSystemInterrupt) only when it must actually take effect.
+// KPCR.IRR is repurposed here as "the hard IRQL currently latched in the TPR".
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn apic_get_current_irql() -> KIRQL {
+    if APIC_LAZY_IRQL {
+        (*KeGetPcr()).Irql
+    } else {
+        tpr_to_irql(apic_read(APIC_TPR))
+    }
+}
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn apic_set_irql(irql: KIRQL) {
+    if APIC_LAZY_IRQL {
+        (*KeGetPcr()).Irql = irql;
+    } else {
+        apic_write(APIC_TPR, irql_to_tpr(irql));
+    }
+}
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn apic_lower_irql(irql: KIRQL) {
+    if APIC_LAZY_IRQL {
+        let pcr = KeGetPcr();
+        (*pcr).Irql = irql;
+        // Only push the hard TPR back down if it is currently latched higher.
+        if (irql as ULONG) < (*pcr).IRR {
+            (*pcr).IRR = irql as ULONG;
+            apic_write(APIC_TPR, irql_to_tpr(irql));
+        }
+    } else {
+        apic_write(APIC_TPR, irql_to_tpr(irql));
+    }
+}
+
+// ApicRaiseIrql == ApicSetIrql on both arches (apic.c:233).
+#[inline(always)]
+unsafe fn apic_raise_irql(irql: KIRQL) {
+    apic_set_irql(irql);
 }
 
 // ---------------------------------------------------------------------------
@@ -497,6 +795,11 @@ pub unsafe extern "system" fn ApicInitializeLocalApic(Cpu: ULONG) {
 
     // Set IRQL from PCR.
     apic_set_irql((*KeGetPcr()).Irql);
+    // i386 lazy model: seed the hard-IRQL shadow (KPCR.IRR) to match (apic.c:361-364).
+    #[cfg(target_arch = "x86")]
+    if APIC_LAZY_IRQL {
+        (*KeGetPcr()).IRR = (*KeGetPcr()).Irql as ULONG;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -573,15 +876,34 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn ApicInitializeIOApic() {
-    use ntkrnl_sys::hal_ddk::PHARDWARE_PTE;
+    // amd64 has one HARDWARE_PTE; i386 bindgen names the non-PAE layout
+    // _HARDWARE_PTE_X86 (there is also a PAE variant), so alias per arch.
+    #[cfg(target_arch = "x86_64")]
+    use ntkrnl_sys::hal_ddk::PHARDWARE_PTE as HwPte;
+    #[cfg(target_arch = "x86")]
+    use ntkrnl_sys::hal_ddk::PHARDWARE_PTE_X86 as HwPte;
 
-    // HalAddressToPte = MiAddressToPte (FORCEINLINE in halp.h →
-    // internal/amd64/mm.h).  Inline the amd64 PTE address math.
-    const PTE_BASE_AMD64: usize = 0xFFFFF68000000000;
-    let offset = ((IOAPIC_BASE as u64) >> 9) & (0xFFFFFFFFFu64 << 3);
-    let pte: PHARDWARE_PTE = (PTE_BASE_AMD64 + offset as usize) as PHARDWARE_PTE;
+    // HalAddressToPte = MiAddressToPte (FORCEINLINE in halp.h → internal/<arch>/mm.h).
+    // amd64: 4-level self-map, 8-byte PTEs, PTE_BASE 0xFFFFF68000000000.
+    #[cfg(target_arch = "x86_64")]
+    let pte: HwPte = {
+        const PTE_BASE_AMD64: usize = 0xFFFFF68000000000;
+        let offset = ((IOAPIC_BASE as u64) >> 9) & (0xFFFFFFFFFu64 << 3);
+        (PTE_BASE_AMD64 + offset as usize) as HwPte
+    };
+    // i386 non-PAE: 2-level, 4-byte PTEs, PTE_BASE 0xC0000000.
+    // MiAddressToPte(VA) = PTE_BASE + (VA >> 12) * 4.
+    #[cfg(target_arch = "x86")]
+    let pte: HwPte = {
+        const PTE_BASE_I386: usize = 0xC0000000;
+        (PTE_BASE_I386 + ((IOAPIC_BASE >> 12) << 2)) as HwPte
+    };
 
+    // PFN is 64-bit on amd64, 32-bit (ULONG) on i386 — cast to fit the setter.
+    #[cfg(target_arch = "x86_64")]
     (*pte).set_PageFrameNumber(IOAPIC_PHYS_BASE / 4096);
+    #[cfg(target_arch = "x86")]
+    (*pte).set_PageFrameNumber((IOAPIC_PHYS_BASE / 4096) as u32);
     (*pte).set_Valid(1);
     (*pte).set_Write(1);
     (*pte).set_Owner(1);
@@ -626,6 +948,12 @@ pub unsafe extern "system" fn HalpInitializePICs(EnableInterrupts: BOOLEAN) {
     let mut eflags = read_eflags();
     cli();
 
+    // Flavor banner — proves in the boot log that the i386 APIC HAL is live
+    // (LAPIC/IOAPIC/TPR, lazy IRQL, RTC system clock).  i386 only; amd64 boot
+    // path is unchanged.
+    #[cfg(target_arch = "x86")]
+    DbgPrint(b"[HAL] i386 APIC flavor active: LAPIC/IOAPIC/TPR, lazy-IRQL, RTC clock\n\0".as_ptr());
+
     HalpInitializeLegacyPICs();
     ApicInitializeIOApic();
 
@@ -638,7 +966,14 @@ pub unsafe extern "system" fn HalpInitializePICs(EnableInterrupts: BOOLEAN) {
 
     register_interrupt_handler(APIC_CLOCK_VECTOR, HalpClockInterrupt as _);
     register_interrupt_handler(CLOCK_IPI_VECTOR, HalpClockIpi as _);
-    // amd64: APC + dispatch handlers live in apic/apictrap.S, not here.
+    // amd64: APC + dispatch handlers live in apic/apictrap.S.  i386: the HAL owns
+    // the APC(0x3D)/DISPATCH(0x41) software vectors, so install their trap stubs
+    // (apic.c:538-541).
+    #[cfg(target_arch = "x86")]
+    {
+        register_interrupt_handler(APC_VECTOR, HalpApcInterrupt as _);
+        register_interrupt_handler(DISPATCH_VECTOR, HalpDispatchInterrupt as _);
+    }
 
     HalpRegisterVector(IDT_INTERNAL, 0, APC_VECTOR, 1 /* APC_LEVEL */);
     HalpRegisterVector(IDT_INTERNAL, 0, DISPATCH_VECTOR, DISPATCH_LEVEL as KIRQL);
@@ -719,12 +1054,35 @@ pub unsafe extern "system" fn HalDisableSystemInterrupt(Vector: ULONG, _Irql: KI
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalBeginSystemInterrupt(
     Irql: KIRQL,
-    _Vector: ULONG,
+    Vector: ULONG,
     OldIrql: PKIRQL,
 ) -> BOOLEAN {
     let current = apic_get_current_irql();
+
+    // i386 lazy path (apic.c:753-793): a raise never touches the hard TPR, so an
+    // interrupt can fire while the soft IRQL is already >= its level.  Catch that:
+    // flush the real TPR, record it in the IRR shadow, EOI, and re-request the
+    // interrupt via self-IPI so it re-fires once the IRQL drops — then report it
+    // as spurious (FALSE).
+    #[cfg(target_arch = "x86")]
+    if APIC_LAZY_IRQL && current >= Irql {
+        let pcr = KeGetPcr();
+        apic_write(APIC_TPR, irql_to_tpr(current));
+        (*pcr).IRR = current as ULONG;
+        apic_send_eoi();
+        let index = HalpVectorToIndex[Vector as usize];
+        if (index as ULONG) < APIC_MAX_IRQ as ULONG {
+            let redir = apic_read_io_redirection_entry(index);
+            apic_request_self_interrupt(Vector as UCHAR, redir.trigger_mode() as UCHAR);
+        } else {
+            // Reserved (software) vector — edge-triggered self-IPI.
+            apic_request_self_interrupt(Vector as UCHAR, APIC_TGM_EDGE as UCHAR);
+        }
+        return 0; // FALSE — pretend spurious
+    }
+
     core::ptr::write_volatile(OldIrql, current);
-    apic_set_irql(Irql);
+    apic_raise_irql(Irql);
     sti();
     1 // TRUE
 }
@@ -737,4 +1095,109 @@ pub unsafe extern "system" fn HalBeginSystemInterrupt(
 pub unsafe extern "system" fn HalEndSystemInterrupt(OldIrql: KIRQL, _TrapFrame: PKTRAP_FRAME) {
     apic_send_eoi();
     apic_lower_irql(OldIrql);
+}
+
+// ===========================================================================
+// i386 software-interrupt trap handlers + IRQL primitives (apic.c:556-644,
+// 823-887, all `#ifndef _M_AMD64`).  amd64 delivers APC/dispatch entirely in
+// apictrap.S and gets the Kf/Ke IRQL functions from ntoskrnl, so none of this
+// compiles there.  The trap stubs in apic/apictrap.S (`_HalpApcInterrupt` etc.)
+// build the full KTRAP_FRAME then tail-call these `@..Handler@4` fastcall fns.
+// ===========================================================================
+
+// HalpApcInterruptHandler — apic.c:556-603.  DECLSPEC_NORETURN FASTCALL.
+#[cfg(target_arch = "x86")]
+#[unsafe(no_mangle)]
+pub unsafe extern "fastcall" fn HalpApcInterruptHandler(TrapFrame: PKTRAP_FRAME) -> ! {
+    KiEnterInterruptTrap(TrapFrame);
+
+    let mut old_irql: KIRQL = 0;
+    if APIC_LAZY_IRQL {
+        if HalBeginSystemInterrupt(APC_LEVEL, APC_VECTOR, &raw mut old_irql) == 0 {
+            // "Spurious": HalBeginSystemInterrupt re-queued it; just exit.
+            KiEoiHelper(TrapFrame);
+        }
+    } else {
+        old_irql = apic_get_current_irql();
+    }
+
+    apic_raise_irql(APC_LEVEL);
+    apic_send_eoi();
+
+    // Kernel or user APC?
+    let mode = if KiUserTrap(TrapFrame) != 0 || ((*TrapFrame).EFlags & EFLAGS_V86_MASK) != 0 {
+        USER_MODE
+    } else {
+        KERNEL_MODE
+    };
+
+    sti();
+    KiDeliverApc(mode, core::ptr::null_mut(), TrapFrame);
+    cli();
+
+    apic_lower_irql(old_irql);
+    KiEoiHelper(TrapFrame);
+}
+
+// HalpDispatchInterruptHandler — apic.c:605-644.  DECLSPEC_NORETURN FASTCALL.
+#[cfg(target_arch = "x86")]
+#[unsafe(no_mangle)]
+pub unsafe extern "fastcall" fn HalpDispatchInterruptHandler(TrapFrame: PKTRAP_FRAME) -> ! {
+    KiEnterInterruptTrap(TrapFrame);
+
+    let mut old_irql: KIRQL = 0;
+    if APIC_LAZY_IRQL {
+        if HalBeginSystemInterrupt(DISPATCH_LEVEL, DISPATCH_VECTOR, &raw mut old_irql) == 0 {
+            KiEoiHelper(TrapFrame);
+        }
+    } else {
+        old_irql = apic_get_current_irql();
+    }
+
+    apic_raise_irql(DISPATCH_LEVEL);
+    apic_send_eoi();
+
+    sti();
+    KiDispatchInterrupt();
+    cli();
+
+    apic_lower_irql(old_irql);
+    KiEoiHelper(TrapFrame);
+}
+
+// KeGetCurrentIrql — apic.c:824-830.  NTAPI.
+#[cfg(target_arch = "x86")]
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn KeGetCurrentIrql() -> KIRQL {
+    apic_get_current_irql()
+}
+
+// KfLowerIrql — apic.c:832-847.  FASTCALL.
+#[cfg(target_arch = "x86")]
+#[unsafe(no_mangle)]
+pub unsafe extern "fastcall" fn KfLowerIrql(OldIrql: KIRQL) {
+    apic_lower_irql(OldIrql);
+}
+
+// KfRaiseIrql — apic.c:849-871.  FASTCALL.  Returns the previous IRQL.
+#[cfg(target_arch = "x86")]
+#[unsafe(no_mangle)]
+pub unsafe extern "fastcall" fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL {
+    let old_irql = apic_get_current_irql();
+    apic_raise_irql(NewIrql);
+    old_irql
+}
+
+// KeRaiseIrqlToDpcLevel — apic.c:873-878.  NTAPI.
+#[cfg(target_arch = "x86")]
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn KeRaiseIrqlToDpcLevel() -> KIRQL {
+    KfRaiseIrql(DISPATCH_LEVEL)
+}
+
+// KeRaiseIrqlToSynchLevel — apic.c:880-885.  NTAPI.
+#[cfg(target_arch = "x86")]
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn KeRaiseIrqlToSynchLevel() -> KIRQL {
+    KfRaiseIrql(SYNCH_LEVEL)
 }

@@ -67,6 +67,7 @@ extern "system" {
     pub fn RegQueryInfoKeyW( hKey: HKEY, lpClass: *mut u16, lpcchClass: *mut DWORD, lpReserved: *mut DWORD, lpcSubKeys: *mut DWORD, lpcbMaxSubKeyLen: *mut DWORD, lpcbMaxClassLen: *mut DWORD, lpcValues: *mut DWORD, lpcbMaxValueNameLen: *mut DWORD, lpcbMaxValueLen: *mut DWORD, lpcbSecurityDescriptor: *mut DWORD, lpftLastWriteTime: *mut FILETIME, ) -> LONG;
     // kernel32 base APIs — service/sctrl.c (Wave 2). WINAPI = stdcall.
     pub fn WaitNamedPipeW(lpNamedPipeName: LPCWSTR, nTimeOut: DWORD) -> BOOL;
+    pub fn Sleep(dwMilliseconds: DWORD);
     pub fn CreateFileW( lpFileName: LPCWSTR, dwDesiredAccess: DWORD, dwShareMode: DWORD, lpSecurityAttributes: LPVOID, dwCreationDisposition: DWORD, dwFlagsAndAttributes: DWORD, hTemplateFile: HANDLE, ) -> HANDLE;
     pub fn SetNamedPipeHandleState( hNamedPipe: HANDLE, lpMode: LPDWORD, lpMaxCollectionCount: LPDWORD, lpCollectDataTimeout: LPDWORD, ) -> BOOL;
     pub fn GetCurrentProcessId() -> DWORD;

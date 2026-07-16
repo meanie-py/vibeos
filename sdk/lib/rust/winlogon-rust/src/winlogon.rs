@@ -838,6 +838,64 @@ unsafe fn TryStartWow64File() {
     }
 }
 
+/* M15b async file-I/O probe: an i386 guest doing Event-based + polled
+ * overlapped ReadFile on a FILE_FLAG_OVERLAPPED handle. It is the oracle for
+ * kernel-side IO_STATUS_BLOCK32 completion — OVERLAPPED.Internal/InternalHigh
+ * ARE the guest IOSB32, and .Offset detects a stray 16-byte (64-bit layout)
+ * write. Silent no-op unless staged; verdict = [async32] lines + exit 0x600D. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartWow64Async() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent — don't spawn a guest that can't run
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\async32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 12] = wstr_arr!("async32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] async32.exe (i386 overlapped-I/O guest) created (PID %lu) - waiting\n\0"
+                .as_ptr() as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 60_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] async32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(async32.exe) FAILED (error %lu)\n\0".as_ptr() as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 /* M8 window-creation probe: an i386 guest with user32 imports that registers
  * a class, creates a REAL window, and pumps messages (forces user32 client
  * connect + kernel->user callbacks under wow64). Silent no-op unless staged;
@@ -913,6 +971,67 @@ unsafe fn Wow64DoomStaged() -> bool {
     }
     wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\doom.exe").as_ptr());
     GetFileAttributesW(Path.as_ptr()) != 0xFFFF_FFFF
+}
+
+/* M18 marshaller-verification probe: an i386 guest that self-verifies the
+ * generated/manual marshallers no earlier guest touches — TBI against its own
+ * TEB32, IOCP sentinel round-trip, monitor enumeration. Silent no-op unless
+ * staged; verdict = [marshal32] serial lines + exit 0x600D. */
+#[cfg(target_arch = "aarch64")]
+unsafe fn TryStartWow64Marshal() {
+    if !Wow64SupportStaged() {
+        return; // FEX CPU layer absent
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\marshal32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 14] = wstr_arr!("marshal32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    /* EnumDisplayMonitors needs a user32 connect on the input desktop. */
+    let mut Desk: [u16; 16] = wstr_arr!("WinSta0\\Default");
+    Si.lpDesktop = Desk.as_mut_ptr();
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] marshal32.exe (i386 marshaller-verify guest) created (PID %lu) - waiting\n\0"
+                .as_ptr() as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 60_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] marshal32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(marshal32.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
 }
 
 /* M12 — THE NORTH STAR: x86 DOOM, under WoW64, on arm64.
@@ -1339,10 +1458,58 @@ pub unsafe extern "system" fn WinMain(
 
     #[cfg(target_arch = "aarch64")]
     {
+        /* arm64 still skips winlogon's OWN RPC server, notifications and GINA
+         * (nothing on arm64 consumes the winlogon RPC interface yet) — but NOT
+         * the SCM, and NOT lsass.
+         *
+         * services.exe is the Service Control Manager, and without it arm64 has
+         * no CreateService/StartService at all: that is what blocked the kmtest
+         * conformance sweep, where every test is advapi32 -> RPC over
+         * \pipe\ntsvcs -> services.exe and so raised RPC_S_SERVER_UNAVAILABLE
+         * (0x6BA) before printing a line. Its whole import set and npfs.sys (the
+         * pipe transport) are staged on the ramdisk now.
+         *
+         * lsass MUST come with it, and is not optional: ScmCreateServiceDatabase
+         * ends with ScmWaitForLsa(), which is a
+         * WaitForSingleObject(LSA_RPC_SERVER_ACTIVE, INFINITE) — the event only
+         * lsass.exe ever signals (services-rust/src/services.rs:253). Starting
+         * the SCM WITHOUT lsass therefore hangs services.exe inside
+         * ScmCreateServiceDatabase forever (measured 2026-07-15: the SCM reached
+         * "LastKnownGood OK" and then sat on that INFINITE wait for 420s+, so
+         * SC_AutoStartComplete never fired and the kmtest sweep timed out every
+         * test). x86 has never hit it because its branch below starts lsass.
+         *
+         * All three (SCM, lsass, and the RPC/pipe transport under them) are
+         * non-fatal exactly like the x86 branch: if any fails we log and boot on,
+         * so the desktop North Star cannot regress behind them.
+         *
+         * DELIBERATE divergence from x86: we do NOT call WaitForLsass() after
+         * StartLsass(). services.exe already does its own ScmWaitForLsa, so
+         * nothing needs winlogon to block here — and making winlogon wait on
+         * lsass would put a brand-new INFINITE wait directly on the arm64
+         * boot-to-desktop path (the very failure mode above, moved into the
+         * process that OWNS the boot). Let the SCM do the waiting. */
         DbgPrint(
-            b"[WINLOGON] ARM64: Skipping RPC, services, lsass, notifications, GINA\n\0".as_ptr()
-                as *const i8,
+            b"[WINLOGON] ARM64: Skipping RPC, notifications, GINA\n\0".as_ptr() as *const i8,
         );
+        DbgPrint(b"[WINLOGON] ARM64: Calling StartServicesManager\n\0".as_ptr() as *const i8);
+        if StartServicesManager() == 0 {
+            DbgPrint(
+                b"[WINLOGON] StartServicesManager failed (non-fatal)\n\0".as_ptr() as *const i8,
+            );
+        } else {
+            DbgPrint(b"[WINLOGON] StartServicesManager OK\n\0".as_ptr() as *const i8);
+        }
+
+        DbgPrint(b"[WINLOGON] ARM64: Calling StartLsass\n\0".as_ptr() as *const i8);
+        if StartLsass() == 0 {
+            DbgPrint(
+                b"[WINLOGON] StartLsass failed (error %lu, non-fatal)\n\0".as_ptr() as *const i8,
+                GetLastError(),
+            );
+        } else {
+            DbgPrint(b"[WINLOGON] ARM64: StartLsass OK\n\0".as_ptr() as *const i8);
+        }
     }
 
     #[cfg(not(target_arch = "aarch64"))]
@@ -1798,6 +1965,12 @@ pub unsafe extern "system" fn WinMain(
 
         /* M10: file-I/O guest — the IO_STATUS_BLOCK marshalling oracle. */
         TryStartWow64File();
+
+        /* M15b: overlapped-I/O guest — kernel-side IOSB32 completion oracle. */
+        TryStartWow64Async();
+
+        /* M18: marshaller-verification guest (TBI/IOCP/monitors). */
+        TryStartWow64Marshal();
 
         /* The testgui pair never exits, so it would sit on top of DOOM's window.
          * When the WoW64 doom is staged, DOOM is the demo — skip them. */

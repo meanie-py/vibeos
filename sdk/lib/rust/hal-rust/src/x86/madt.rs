@@ -4,11 +4,11 @@
 //! APIC physical address + I/O APIC physical addresses, and fills
 //! HalpProcessorIdentity[] with one slot per enabled CPU.
 //!
-//! amd64-only.  HalAcpiGetTable lives in lib_hal_acpi (acpi/halacpi.c)
-//! which is linked into halacpi.dll/halmacpi.dll but NOT the standard
-//! PIC hal.dll — so on i386, halacpi.dll uses the C madt.c.  amd64
-//! always builds the APIC HAL, so HalAcpiGetTable is always present.
-#![cfg(target_arch = "x86_64")]
+//! Compiled on the APIC flavor (`hal_apic`): amd64 always, i386 with the `apic`
+//! feature.  HalAcpiGetTable is Rust (halacpi.rs) and live on both arches, so
+//! the parser is fully portable — only the PROCESSOR_IDENTITY layout asserts
+//! differ (its trailing PKPRCB pointer is 4 bytes on i386, 8 on amd64).
+#![allow(non_snake_case, non_upper_case_globals, dead_code, unused_unsafe)]
 
 use ntkrnl_sys::ddk::{UCHAR, ULONG, ULONG_PTR};
 use ntkrnl_sys::hal_ddk::{
@@ -58,13 +58,26 @@ const HALP_APIC_MODE_LEGACY: ULONG = 0x0000_0010;
 const LAPIC_FLAG_ENABLED: ULONG = 0x0000_0001;
 const LAPIC_FLAG_ONLINE_CAPABLE: ULONG = 0x0000_0002;
 
-const _LAYOUT_CHECKS_AMD64: () = {
+// PROCESSOR_IDENTITY's trailing PKPRCB is pointer-sized, so its offset/size
+// depend on the arch: amd64 pads the 4 leading UCHARs to an 8-byte pointer
+// boundary (ProcessorPrcb @ 0x08, size 0x10); i386 packs it at 0x04 (size 0x08).
+#[cfg(target_arch = "x86_64")]
+const _LAYOUT_CHECKS_PROC_ID: () = {
     assert!(core::mem::size_of::<PROCESSOR_IDENTITY>() == 0x10);
+    assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, ProcessorPrcb) == 0x08);
+};
+#[cfg(target_arch = "x86")]
+const _LAYOUT_CHECKS_PROC_ID: () = {
+    assert!(core::mem::size_of::<PROCESSOR_IDENTITY>() == 0x08);
+    assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, ProcessorPrcb) == 0x04);
+};
+
+// Arch-independent layout checks (pointer-free structs — identical on i386/amd64).
+const _LAYOUT_CHECKS: () = {
     assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, ProcessorId) == 0x00);
     assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, LapicId) == 0x01);
     assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, ProcessorStarted) == 0x02);
     assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, BSPCheck) == 0x03);
-    assert!(core::mem::offset_of!(PROCESSOR_IDENTITY, ProcessorPrcb) == 0x08);
 
     assert!(core::mem::size_of::<HALP_APIC_INFO_TABLE>() == 0xc10);
     assert!(core::mem::offset_of!(HALP_APIC_INFO_TABLE, ApicMode) == 0x000);

@@ -453,7 +453,26 @@ Bugs that link clean and compile clean but corrupt memory or strings at runtime 
 ### Hand-encoded `[u16; N]` literal one short — silently truncated registry/object path (ERROR_FILE_NOT_FOUND from a "correct" call chain)
 **Symptom:** an API fails with ERROR_FILE_NOT_FOUND / STATUS_OBJECT_NAME_NOT_FOUND on a path that provably exists; every function in the chain reads as a faithful translation; compiles + links clean; boots green (the broken path may simply never be exercised by boot — this one hid in `RCreateServiceW` until the kmtest conformance sweep called it, 2026-07-10).
 **Root cause:** a wide-string constant hand-encoded as `static X: [u16; N] = [b'S' as u16, ...]` was sized one element short, so the LAST character was dropped to make room for the NUL — `SERVICES_KEY [u16; 33]` spelled `System\CurrentControlSet\Service` (no trailing `s`), and services-rust opened a nonexistent parent key. The intent comment above the array says the right string, so review eyes slide right past it; only decoding the bytes shows the truncation.
-**Fix:** count = `chars + 1`; better, avoid hand arrays entirely (`w!()` / `wstr!` macro or a `const fn` UTF-16 builder). To sweep for siblings, decode every `static NAME: [u16; N]` against its `// L"..."` intent comment (one-shot scanner did this 2026-07-10; SERVICES_KEY was the only true hit). A durable lint (`scan_wide_literals`-style, wired into `vibeos-cli check`) is OWED — the class is invisible to every existing gate.
+**Fix:** count = `chars + 1`; better, avoid hand arrays entirely (`w!()` / `wstr!` macro or a `const fn` UTF-16 builder). To sweep for siblings, decode every `static NAME: [u16; N]` against its `// L"..."` intent comment (one-shot scanner did this 2026-07-10; SERVICES_KEY was the only true hit). **The durable lint LANDED 2026-07-15**: `tools/scan_wide_literals.py`, gate-wired
+(`vibeos-cli check`), baseline EMPTY. It decodes every `static/const NAME: [u16; N]` and diffs it
+against the `// L"..."` comment above it; findings name the dropped characters and the needed
+element count. It found one more real survivor immediately — hal `x86/kdpci.rs` `KEY_NAME [u16; 60]`
+spelled `…\PCI\Debu` (missing the `g`), *dead* behind `let _ = KEY_NAME;` because the author hit
+the bug, wrote "g missing — pad it", and worked around it with `build_wstr` instead of fixing it
+(deleted). Two design notes worth keeping, both learned by the first fleet run reporting **20
+findings of which 19 were its own gaps**:
+* **The oracle is prose, so it must not over-read prose.** `L"..."` appears inside comments that are
+  *about the syntax* ("Rust doesn't have `L"..."`, so spell them out") and inside *abbreviated*
+  paths (`L"\Registry\Machine\...\Version"`). Neither is a specification — skip any intent
+  containing `...`, and only take a CONTIGUOUS `//` run (a blank line means the comment is not this
+  literal's spec).
+* **No blanket "must end in NUL" rule.** UNICODE_STRING Buffers legitimately have none (`Length`
+  carries the size) — five correct ones exist in iomgr/fsrtl/npfs. Fire only when the comment
+  itself claims "NUL-terminated". Also strip *all* trailing NULs on both sides: hal `usage.rs`
+  really has a double terminator, and rtl-rxact's comment spells the NUL (`L"RXACT\0"`).
+Mutation-tested both directions (`tools/test_scan_wide_literals.py`, 12 cases, in `check-tooling`);
+it reports coverage (`85/782 had an intent comment`) because "0 findings" over 0 comparisons is the
+green that means nothing.
 **Triangulation recipe that found it:** per-stage DbgPrint bisection in the failing RPC (one boot) + a parallel subagent diff-audit of the Rust vs upstream C (found the literal by byte-decode) + a second subagent proving the create call *cannot* return 2 (pinning it on the parent open). Three probes, one statement.
 
 ### STATUS_OBJECT_PATH_SYNTAX_BAD (0xC000003B) / garbage wide path from a bindgen `#define X L"..."`
@@ -563,6 +582,13 @@ The Rust port (`ex-rust/src/uuid.rs`) replaced the union with a bare `GuidInit: 
 
 The specific ways the LLM C→Rust output is wrong — each entry is a distinct defect class, how it manifests at compile/link/runtime, and the cheapest oracle to catch it before it ships.
 
+### Dangling pointer to a by-value `transmute` temporary (the WCHAR[] → storageless-temporary trap, 2026-07-12)
+**Symptom:** intermittent corruption / garbage strings on a path that reads a stored `*const u16`. Confirmed live: `disk-rust/pnp.rs` — the dangling pointer was the **printf FORMAT STRING** passed to `RtlStringCchPrintfW` when creating a disk's `\Device\Harddisk%d\Partition0` / `\DosDevices\PhysicalDrive%d` symbolic links; `lsasrv-rust/authpackage.rs` — a dangling `Name` field in an `RTL_QUERY_REGISTRY_TABLE` read later by `RtlQueryRegistryValues`.
+**Cause:** C's `WCHAR foo[] = L"..."` is a stack array with real storage, so `&foo[0]` stays valid for the array's whole scope. The mechanical translation becomes `core::mem::transmute::<[u8; N], [u16; M]>(bytes).as_ptr()` — but the transmute produces a **by-value temporary** `[u16; M]` with no binding; `.as_ptr()` borrows it; the temporary is dropped at the end of the *statement*; the stored pointer then dangles. Two escaping shapes: `let p = transmute(...).as_ptr()` (let-bound) and `Field: transmute(...).as_ptr()` (struct field that outlives the initializer).
+**Why it hid:** the `dangling_pointers_from_temporaries` warning fires precisely on it — but nobody surfaced Rust warnings (105/255 crates carry crate-root `#![allow(...)]`, and the rest's warnings were never read until the 2026-07-12 survey). On amd64/arm64 the freed stack slot often still holds the right bytes (nothing reused it yet), so it "works" until timing changes — classic Heisenbug.
+**NOT a bug (don't flag):** the *same transmute as a direct call argument* — `func(transmute(x).as_ptr())` — is sound (the temporary lives to the end of the call statement, valid during the call). And the *reference* form `transmute::<&[u8; N], &[u16; M]>(b"...")` is sound: it yields a reference into the `b"..."` **'static** literal, so `.as_ptr()` is 'static. Only the by-VALUE array escaping form dangles.
+**Fix:** bind the transmuted array to a scoped local, then take `.as_ptr()` of the *binding*: `let foo_wide: [u16; M] = transmute::<[u8; N], [u16; M]>(bytes); let p = foo_wide.as_ptr();`.
+**Oracle:** rustc's own `dangling_pointers_from_temporaries` lint (surface warnings and it's exact), or the grep-time gate `tools/scan_dangling_transmute.py --lint` (wired into `vibeos-cli check`, empty baseline — the class is fully fixed, any hit is a NEW regression). Suppress a verified FP with `// nolint: dangling-transmute (reason)`.
 ### C post-inc/dec value expression rewritten with wrong read order (`x = y--` reads post value)
 **Symptom:** a count/index handed onward is off by one, and everything downstream of a threshold check silently misbehaves. Flagship instance (conformance catch #2, 2026-07-10): ob-rust `ObpDecrementHandleCount` translated C `ProcessHandleCount = HandleCount--` as decrement-then-read, so the CloseProcedure got the POST-decrement count — 0 instead of 1 on the last handle — and `IopCloseFile`'s `if (HandleCount != 1) return;` bailed, meaning **IRP_MJ_CLEANUP was never delivered to any driver in the system's history** (per-handle driver state leaked; second kmtest process got STATUS_ACCESS_DENIED on a stale MDL registration). Compiles clean, links clean, boots green — nothing in the boot path re-opens a MaintainHandleCount device twice.
 **Root cause class:** C's value-bearing `x++`/`x--`/compound assignments inside larger expressions force the translator to split into statements, and it sometimes puts the read on the wrong side of the mutation. Post-forms yield the OLD value; pre-forms the NEW.
@@ -7060,7 +7086,7 @@ itself. Compare **pointer depth**, not pointer-vs-scalar: a mutation test proved
 of that checker structurally blind to `HANDLE`-vs-`LPHANDLE` — the bug that motivated it — because
 *both* are pointers.
 
-### 9.79 (2026-07-14) C++ COM translation: the model owns bodies, never interfaces, vtables, offsets, lifetime, or activation
+### 9.78a (2026-07-14) C++ COM translation: the model owns bodies, never interfaces, vtables, offsets, lifetime, or activation
 
 **Failure class:** asking an LLM to translate an ATL class as one blob lets it invent the most
 dangerous parts of the result: inherited slot order, `this` adjustment for secondary interfaces,
@@ -7130,3 +7156,631 @@ statement makes the recognizer decline and leaves the body on the normal audited
 same deterministic pass now handles an exact `*out = SYMBOL; return SYMBOL;` body and synthesizes
 empty implicit constructors/destructors, which kept `COpenControlPanel::GetCurrentView` and its
 lifetime workers off the paid path.
+### 9.79 (2026-07-14) Porting msvcrt's bignum float parser: a verbatim upstream bug that is provably INERT, a signed-char/WEOF trap that is load-bearing, an i386 x87 float-ABI I first read BACKWARDS, and a harness that could not see errno being *cleared*
+
+**Context.** Wave 13 of the msvcrt-from-pieces lane ported msvcrt's own base-10 **bignum** float
+parser (`dll/win32/msvcrt/bnum.h` + `string.c`'s `fpnum_parse`/`fpnum_double`/`fpnum_ldouble`) to
+Rust — the first module in the lane that is a genuine *translation*, not an assembly. Wave 5 had
+cancelled the "flip `strtod` from cnt-rust" plan after a probe showed cnt-rust's naive DJ-Delorie
+accumulator disagreeing with msvcrt by **14 ULPs**; the honest path was always to port msvcrt's
+machinery. The oracle already existed — `string.c`/`wcs.c` compile as reference TUs in
+`msvcrt-difftest`, so every parsed `double` is graded on its exact **64-bit pattern**. It landed
+**`strtod`/`_strtod_l`/`atof`/`_atof_l`/`_atoflt_l`/`_atodbl(_l)`/`wcstod`/`_wcstod_l`/`_wtof(_l)`/
+`_atoldbl(_l)`/`__STRINGTOLD(_L)` — 15 functions on all three arches**, all bit-exact. Four durable
+lessons, three of them found by *trying to break my own green*.
+
+**1. A verbatim upstream bug can be provably inert — instrument reachability, don't assume.**
+`fpnum_parse_bnum`'s round-decision has a real Wine bug: a `for(i=e-5; i>=b; i--)` sticky-scan whose
+body reads `data[b]` (the lowest limb) every iteration instead of `data[i]`. I transcribed it
+verbatim (the oracle is msvcrt, not IEEE) and then wrote a **negative control** — "fix" `b`→`i` and
+demand a DIVERGE. *The control did not bite.* That is the exact signature of an unverified
+transcription, so I did not shrug it off. I added an **exact-halfway-tie generator** (`gen_tie`:
+build `(2m+1)·2^k` as a finite decimal with schoolbook arithmetic — random digits are NEVER ties, so
+the entire `FP_ROUND_EVEN` arm was dead in the corpus) — still no bite. Then I *instrumented the
+engine's reachability* and got the actual answer: the discriminating state is **structurally
+unreachable**. `FP_ROUND_EVEN` requires a `500000000` (== `LIMB_MAX/2`) limb at position `e-4`; that
+value is produced only by `bnum_rshift(1)` on an odd limb, whose remainder lands in a freshly
+prepended *bottom* limb — so `EVEN ⟹ that limb is at b ⟹ b==e-4 ⟹ the scan range b..=e-5 is empty`.
+Whenever the scan body *does* run, `round` is `ZERO` and the strip-loop guarantees `data[b]≠0`
+(measured: **0 violations in 43,712 parses**), so buggy `data[b]` and correct `data[i]` both compute
+`FP_ROUND_DOWN`. Same bytes, always. **The lesson isn't "reproduce upstream bugs" — it's that when a
+negative control fails to bite, you have learned nothing until you find out WHY: either the corpus
+can't reach the state, or the code is inert. Instrumentation tells you which; a comment guessing "can't
+happen" does not.** (The tie-generator stays in the corpus as a live tripwire in case a future bignum
+change ever creates the discriminating state.)
+
+**2. The signed-char → WEOF trap is load-bearing and IS caught.** `strtod_str_get` does
+`return *(*p)++;` on a **signed** `char` widened to `wchar_t`. `char` is signed on all three targets
+(now asserted in `rust_layout_assert.c`), so byte `0xFF` sign-extends to `0xFFFF` — which *is* `WEOF`.
+The parser sees end-of-input at a byte it has **already stepped past**, so the trailing-`unget` does
+not put it back and the endptr lands one byte too far. Transcribed as `*p as i8 as i16 as u16`;
+negative control (drop the sign extension) correctly moved `strtod` and `__STRINGTOLD_L` to DIVERGE —
+and *only* the endptr-checking rows, since the value is unaffected. The wide side has no such trap
+(`wchar_t` is unsigned), which is a genuine narrow/wide contract difference the harness grades.
+
+**3. The harness could not see errno being *cleared* — the setup was part of the oracle (§9.73 again).**
+`strtod_helper` clears errno on entry (`#if _MSVCR_VER==0: *_errno()=0`); its wide twin `_wcstod_l`,
+written separately in `wcs.c`, does **not**. That is an observable CRT difference — a caller that sets
+`errno=0`, calls one, and tests ERANGE gets different answers. The harness could not see it: `Effects`
+**zeroed errno before every call**, so a redundant "clear errno" write changed nothing observable.
+Sabotaging `_wcstod_l` to clear errno moved **zero rows**. Fix: seed errno with a **non-zero sentinel**
+(`0x5A5A`) before each graded call instead of 0 — costs nothing (both sides get the same seed; a
+function that leaves errno alone still matches) and turns "did you touch errno at all?" into an
+observable. With the sentinel, the sabotage correctly reddens the whole wide family while `strtod`
+(which *should* clear) stays green. **Zeroing a side channel before a differential call is a claim that
+nobody clears it — and that claim was false.** This is the third variation in the lane of the same
+root: a harness convenience (a stub, a cheap `get_locinfo`, a pre-zeroed errno) silently encodes an
+assumption about the environment, and the assumption is itself untested until a negative control
+attacks it.
+
+**4. i386 (32-bit x86) works too — via x87 `ST(0)` — and my first read of the ABI wall was BACKWARDS.**
+i386 msvcrt is built `-march=pentium` (pre-SSE — a ReactOS old-hardware-compat choice) and the whole
+i686 user-mode target carries `-C target-feature=-sse,-sse2` (`.cargo/config.toml`). rustc *does* reject
+some `f64`-across-a-function-boundary code on that no-SSE target with "SIMD vector type `f64` … requires
+the `sse` target feature" — and I first read that as "`extern "C" fn -> f64` is impossible on i386" and
+gated the whole family `#[cfg(not(target_arch = "x86"))]`. **That was exactly wrong, and the reviewer
+caught it by pointing at prior art:** cnt-rust had already solved this, painstakingly, and its comments
+state the rule precisely (`cabi/strtod.rs`, `core_rs/floatcvt.rs::fl`):
+
+> the C ABI returns `f64` in the x87 `ST(0)` register — no SSE — so an **`extern "C"` `-> f64` compiles
+> on no-SSE i386**. What actually hard-errors is a **Rust-ABI `-> f64`** (that one wants `xmm0`) and the
+> SSE-pulling `f64`/`f32` *std methods* (`is_infinite`, `is_finite`, `abs`), whose operand crosses a
+> Rust-ABI boundary by value.
+
+So the fix is not to gate i386 out — it is three small, ABI-portable changes: (a) mark the one internal
+`f64`-returning helper (`strtod_helper`) `extern "C"` so it returns via `ST(0)`; (b) replace the two
+`is_infinite()` calls with bit tests that read the operand's *memory* as an integer (a plain load, no
+float register); (c) replace `f64::from_bits` with a `store_bits` that writes the `u64` pattern straight
+into the destination's storage. None of these is a hack: `extern "C" -> f64` and integer bit-ops are all
+correct *with* SSE too, so if vibeos ever drops the pre-SSE baseline (it targets Vista-era+ hardware,
+where SSE2 is universal) not one line here needs reverting. The family now flips on **all three arches**.
+
+**The meta-lesson — and it is the important one:** a compiler error that names a feature (`requires the
+`sse` target feature`) is describing *one* codegen path, not a universal impossibility. Before you gate a
+whole family out "because the toolchain can't," check whether a sibling crate in the same tree already
+ships the thing — the answer here was one `grep` away in cnt-rust, and the reviewer's "didn't we already
+write softfloat painstakingly?" was worth more than my confident ABI paragraph. "Fail loud, don't
+silently degrade" is right; but *gating a family out is itself a silent degrade dressed up as caution* if
+the block was never real.
+
+**Reusable takeaways.**
+- When a **negative control does not bite**, you have found a hole in the *corpus or the instrument*,
+  not a clean transcription. Instrument reachability to learn which; only then decide if the code is
+  inert. (An inert upstream bug is a fine thing to ship verbatim — but *prove* the inertness.)
+- A **coverage assertion must know the function's contract.** The float family splits on *how* it
+  reports range errors — errno (`strtod`) vs an out-of-band return code (`_atoflt_l`). A blanket
+  "require ERANGE" would have failed the return-code functions for behaving correctly; `check_fp`'s
+  `require` list is therefore per-row.
+- **Grep every new flip — and everything it CALLS — for arch-conditional (`_WIN64`) contracts and for
+  side-channel writes (`errno`, the invalid-parameter handler) BEFORE trusting the harness**, because
+  the harness only catches what its setup lets it observe.
+- **A feature-named compiler error is a codegen constraint, not a law of nature.** `extern "C" -> f64`
+  through x87 is the counter-example. Check for in-tree prior art before declaring a target unsupported.
+
+### 9.80 (2026-07-14) An oracle that resolves a type wrongly reports *its own ignorance* as a defect — and the ambiguity check cannot save you when the parser is blind to the true declaration
+
+**Symptom.** `verify_c_signatures` (§9.78's sibling) was landed with 14 baselined findings and a
+note that `lsasrv LsapRegCreateKey` "looks genuinely real". On triage, **all 14 were the checker's
+own bugs, and the one real defect in the tree was one it could not see.**
+
+**Root causes (four, each a different flavour of the same mistake — a guess with no evidence):**
+1. **`.idl` outvoted `.h`.** The harvest read `sdk/include/psdk/*.idl` as C. `cordebug.idl` says
+   `typedef SIZE_T LPSTARTUPINFOW;` — an *RPC wire placeholder*, not the C type — so the correct
+   advapi32 translation was reported as a bug. **An IDL typedef states a marshalling
+   representation; the C compiler that built the .c never saw the .idl.**
+2. **The true declaration was invisible, so the false one looked unanimous.** The real
+   `} STARTUPINFOW, *LPSTARTUPINFOW;` is a *braced* typedef, excluded by the regex. The AMBIGUOUS
+   machinery (which exists exactly to refuse guessing) fires only on *conflicting* declarations —
+   **a parser blind to the true source sees no conflict and reports a confident wrong answer.**
+   *A checker that can only see one source cannot tell that it is the wrong one.*
+3. **A naming convention applied blind.** `^(?:LP|P)[A-Z]` read **`POINT` as a pointer to `OINT`** —
+   and likewise PROCESS_INFORMATION, PALETTEENTRY, PIXELFORMATDESCRIPTOR, POLYTEXTW. Only trust the
+   P/LP convention when the *remainder names a type you actually harvested*.
+4. **Multi-word base types.** `typedef _W64 unsigned long ULONG_PTR` was parsed as base=`_W64`,
+   harvesting **`unsigned`** as a typedef aliased to `_W64` — poisoning the whole integer tower
+   (SIZE_T→ULONG_PTR→unsigned→_W64→unresolvable). Also `typedef void* PVOID` (star glued to the
+   base) vs `typedef void *PVOID`: **C has no star on a base type; every star binds to a declarator.**
+
+**The false-GREEN half, which is worse.** An unresolvable name silently returned depth 0. An unknown
+C type and an unknown Rust type then both land on 0, compare **equal**, and the pair is reported as
+*verified* having been checked not at all. Fixed by raising `Unknown` and counting it: unresolvable
+is a **reported blind spot**, never a verdict. (`ole32` skips 308 types — now visible, previously
+laundered into a green.)
+
+**What the fixed checker found immediately:** `ws2_32 WPUCompleteOverlappedRequest(.., DWORD dwError,
+DWORD cbTransferred, ..)` translated with **`DWORD_PTR`** — contradicted by the C, by `ws2spi.h`, and
+by the `.spec` (`long`). 4 bytes vs 8 on amd64, on an exported SPI entry point, in the crate that had
+just been landed "0 findings".
+
+**Depth is not enough — width matters too.** `DWORD_PTR` is *not a pointer*; it is an integer that is
+4 bytes on i386 and 8 on amd64. A depth comparison is structurally blind to `DWORD`→`DWORD_PTR`,
+which the tool's own docstring **advertised catching**. Width cannot be compared numerically (the
+headers carry both `#ifdef` branches and we do not preprocess) but it does not need to be: what makes
+it a bug is that one side is **arch-variable** and the other **fixed**, which is decidable from the
+name (`_PTR_SIZED`).
+
+**Rule / recipe.** An oracle needs an oracle. **Mutation-test every checker in both directions** —
+a "must catch" table of the bugs it exists for (catches false NEGATIVES / a checker gone blind) and a
+"must not fire" table of correct code (catches false POSITIVES). Only the first table's absence lets a
+tool *look* healthy while detecting nothing. Both live in `tools/test_verify_c_signatures.py`, wired
+into `vibeos-cli check-tooling`. And **always print coverage next to findings**: "0 findings" from an
+oracle that skipped everything is otherwise indistinguishable from one that checked everything.
+
+**Triage, don't bless.** The 9 lines left in `tools/lint-baseline/verify_c_signatures.txt` were each
+read against their C; the verdicts are in the tool's docstring. Two of them are **the C being wrong**:
+`LsapRegCreateKey`/`LsapRegOpenKey` declare `OUT HANDLE KeyHandle` while every caller passes `&handle`
+and `ZwCreateKey` takes `PHANDLE` — the C only compiles because `void*` implicitly converts to
+`void**`. **Do not "fix" the Rust to match under-typed C.**
+
+### 9.81 (2026-07-14, BOTH FIXED) The two staleness oracles: an mtime rule that false-REDs on a codegen-neutral edit, and a `ninja -n` oracle that is blind on every arch
+
+Both live in `tests/qemu/cli/provenance.py` and both guard the same thing — "did the staged
+binary come from the current sources?" — the class that false-greened arm64 six times
+(fastfat→ramdisk→pl011→gdi32→user32→advapi32, §9.6c.1). Found while gating a one-word ws2_32
+signature fix; **neither was found by the gate reporting a bug, both were found by the gate
+reporting the WRONG THING and being chased down.**
+
+#### (a) `cohab_staleness_reasons` false-REDs on a no-op-codegen edit — real, narrow, still there
+
+**Symptom:** `artifact-check(boot media missing or stale)` → `ws2_32.dll: stale — ws2_32-rust
+has .rs newer than the built binary (cohab flip not rebuilt; ...)`, on every arm64 build, while
+the build was in fact perfectly up to date.
+
+**Mechanism:** the rule is `artifact.mtime >= newest .rs mtime` — a *proxy*. The ws2_32 fix
+(`WPUCompleteOverlappedRequest`: `DWORD_PTR`→`DWORD` on an unimplemented stub whose params are
+unused) is **codegen-neutral on arm64**: cargo rebuilt, emitted a **byte-identical** `.a`,
+cmake's `copy_if_different` correctly did NOT touch the staged copy, so nothing relinked (there
+was nothing to relink) and `ws2_32.dll` stayed older than the `.rs` **permanently** — until an
+unrelated ws2_32-rust change forced a relink. Any semantically-null-but-textual edit does this.
+
+**A false RED is not the safe direction.** It is the mirror of the false green the check exists
+to catch, and it teaches people to `touch` binaries or ignore artifact-check — which is how the
+false greens got in.
+
+**FIXED** by splitting the chain at the copy, which is where the mtime semantics change:
+```
+.rs --cargo--> <t>/release/lib<c>.a --copy_if_different--> lib<c>.a --link--> artifact
+               [A: touched on EVERY cargo run]              [B: touched only on CHANGE]
+```
+  * **A.** cargo's own output >= newest `.rs`  => the crate really was rebuilt (catches the
+    original never-built-for-this-arch bug: gdi32/user32/advapi32…).
+  * **B.** artifact >= the COPIED staticlib   => the link consumed the current `.a` (catches
+    the other half: crate rebuilt+changed, but the .dll wasn't in the staged target set).
+Both compare files whose mtime moves exactly when it should, so an identical rebuild is silent
+while a real one is still caught. Crates with NO staticlib in their chain are cargo-*linked*
+modules (ntoskrnl-cargo/win32k produce the binary directly) — "staticlib absent" means
+"different build shape", not "never built"; reading it as the latter reported ntoskrnl.exe and
+win32k.sys as never-compiled on a green tree. They keep the old rule. Pinned by 5 tests in
+`test_cli_units.py` (`test_cohab_*`), including the codegen-neutral case as an explicit
+must-NOT-fire.
+
+**Blind alley — do NOT "fix" it with `ninja -n`.** That swaps a false RED for a false GREEN:
+
+#### (b) `_ninja_has_work` returned False even when a rebuild WAS pending — on ALL arches, so **editing any C file and running smoke booted the stale ISO and called it a pass**. FIXED.
+
+**Verified:** with a genuine pending rebuild (proved by running real `ninja`, which compiled
+ws2_32-rust and relinked), `_ninja_has_work` returned **False** for `dll/win32/ws2_32/ws2_32.dll`
+AND for `ntoskrnl` (arm64) AND for **`livecd`** (amd64 — i.e. the x86 tier-1 target).
+
+**Mechanism (structural, not a parsing bug):**
+```
+$ ninja -n dll/win32/ws2_32/ws2_32.dll
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...          <- and NOTHING else, ever
+```
+CMake's `CONFIGURE_DEPENDS` globs install a glob-verification edge that is dirty **by design on
+every build** (that is how re-globbing works). Under `-n` no command executes, so ninja must
+assume that edge changes the cmake stamp → the regen edge is dirty → and ninja **stops planning
+there**, because regenerating `build.ninja` invalidates the rest of the graph. It never
+evaluates the targets you asked about. `_ninja_has_work` filters `Re-running CMake` /
+`Re-checking globbed directories` out as "not real work" and returns False = clean.
+
+Running `cmake .` or `ninja build.ninja` for real **first does not help** — the glob edge is
+always-dirty by construction, so the next `-n` stops in exactly the same place. The docstring's
+premise ("cmake re-runs ... so the dirty set is evaluated against the updated graph") is simply
+not what `-n` does. **`ninja -n` cannot be a staleness oracle in a CONFIGURE_DEPENDS project.**
+
+**Consequence — this is the important part, and it is much worse than "a dead net".** Look at
+where it sat in `check_staleness`. Tier 2 only runs when the git fingerprint moved, and it then
+decides *whether the change was build-relevant*. `rust_src_hash` is scoped to `sdk/lib/rust`.
+So the `ninja -n` call was **the only thing covering every non-Rust build input** — C, asm,
+cmake, `.spec`, `.rc`, mkramdisk. With it blind, the chain ran:
+
+    edit a tracked, compiled .c  ->  git fingerprint moved  ->  tier 2
+      rust_src_hash unchanged (it is C)      -> no reason
+      _ninja_has_work                        -> False (blind)
+      boot media sha unchanged (not rebuilt) -> no reason
+    -> no reasons at all -> "clean-diff (non-build change)" -> FRESH -> smoke boots the STALE iso
+
+Measured on the real repo, not reasoned about: editing `dll/3rdparty/dxtn/txc_compress_dxtn.c`
+gave `fresh=True, reasons=['clean-diff (non-build change)']`. A C source change was classified
+exactly like a doc edit. The North Star's "smoke refuses to boot stale media" was defeated for
+**every C-side change in the tree**, and had been for as long as the oracle existed.
+
+**FIXED** with `build_src_hash()` — a git content fingerprint of everything that can change the
+boot media, stamped at build time and compared in tier 2. Content is the only thing that can
+answer this: an mtime cannot tell "not rebuilt" from "rebuilt to identical bytes" (that is (a)),
+and `-n` cannot see past the regen edge. Two design points worth keeping:
+  * **It is an EXCLUDE-list (`docs/`, `*.md`, `.github`, `.claude`), never an include-list.**
+    An unknown path must land on the build-relevant side: over-including costs a no-op rebuild,
+    under-including boots stale media and reports a pass. `tests/` and `tools/` are deliberately
+    build-relevant — `archcfg.py` picks the arm64 staged set, `qemu/mkramdisk.sh` assembles the
+    ramdisk, and `tools/libschily/*.c` is compiled.
+  * **An absent stamp field is LOUD, not clean.** `build_src_hash` defaults to `""` so old
+    stamps still load; `""` reports "stamp predates build-source fingerprinting — run `build`
+    to re-stamp" rather than comparing equal to nothing and reading as fresh. A defaulted field
+    that silently means "verified" is the same shape as everything else in §9.80/§9.81.
+
+`_ninja_has_work` was **deleted**, not left unused, with a tombstone comment: a plausible helper
+named "has work" is exactly what the next person reaches for.
+
+**The fixture was lying too.** `staleness_repo` had no `.gitignore`, so its own stamp file (in
+`build-i386/`) showed up as untracked and moved every fingerprint — which meant those tests never
+matched tier 1 and always fell through to tier 2, where the blind oracle waved them through.
+`test_staleness_fresh_cold` was **passing because of the bug**. A fixture that does not model the
+real repo turns its tests into a green that means nothing.
+
+**Rule.** When a gate check fires, find out whether it is *right* before you satisfy it — and
+when you replace an oracle, test the replacement on a KNOWN-BAD input, not just a known-good
+one. The `ninja -n` "fix" passed the benign case perfectly and silently failed to catch a real
+stale cohab injected on purpose; only the deliberate known-bad probe exposed it. Same lesson as
+§9.80's mutation tables, one layer down.
+
+### 9.82 (2026-07-14) The winlogon 0x4C "init-ordering race": the owed fix was already in the tree — the hypothesis was wrong, and the evidence never fit it
+
+**The owed item** (MEMORY.md + §9.36): *"winlogon 0x4C init-ordering race (all arches, ~3/20).
+kernel32's DllMain `_snwprintf("%wZ")` RACING basesrv's population of BASE_STATIC_SERVER_DATA
+(csrss accepts the connect before the CSR shared section is fully populated). Real fix owed:
+publish-last ordering in csrsrv/basesrv (populate the shared section BEFORE accepting connects)."*
+
+**That fix is already implemented, and was the whole time.** Read the live Rust (the C is inert —
+both `csrsrv` and `basesrv` are full cohab flips into `smss-csrss-rust`):
+
+* `csrsrv/init.rs` `CsrServerInitialization` — **step 5** `CsrParseServerCommandLine` (which calls
+  `CsrLoadServerDll` → basesrv's `ServerDllInitialization`) runs at line 1095; **step 7**
+  `CsrApiPortInitialize` — which *creates the API port* — runs at line 1107. No client can connect
+  before the port name exists.
+* `csrsrv/server.rs` `CsrLoadServerDll` — calls `init_proc(ServerDll)` **synchronously** and only
+  then, `if Status >= 0`, publishes `CsrSrvSharedStaticServerData[ServerId] = ServerDll->SharedSection`.
+* `basesrv/init.rs` `BaseInitializeStaticServerData` — its **last statement** is
+  `(*LoadedServerDll).SharedSection = BaseStaticServerData` (the C's `/* Finally, set the pointer */`).
+
+So it is publish-last at three nested levels. Implementing the "owed fix" would have been a no-op
+edit to already-correct code — and the effort would have been spent looking for a race that the
+control flow forbids.
+
+**The evidence never fit a race either.** The live tripwire's own comment records the observation:
+`WindowsDirectory.Buffer` reads as a **kernel VA `0xFFFF8000050D4CB0`, *identical across hits***.
+A race produces *varying* garbage; an identical value across boots is a deterministic write or a
+deterministic misread. (§9.36's other datum, `Buffer == 0x73`, is string DATA read as a pointer —
+that is the offset-drift smell, §9.41's class, not a race either.) The word "race" was doing the
+work that evidence should have been doing.
+
+**Leads checked and closed while here** (all were plausible, none is the bug):
+* **Struct layout drift** for `_BASE_STATIC_SERVER_DATA` between writer and reader — both
+  `ntdll-sys` and `winsrv-sys` declare it identically, and both sides use `ntdll-sys` anyway.
+* **`CSR_SERVER_DLL.SharedSection` at the wrong offset** — the field really is `#ifdef CSR_DBG`
+  dependent (`csrsrv.h` C_ASSERTs 0x3C with, 0x38 without, on 32-bit), and the Rust struct carries
+  `NameTable` unconditionally. But `csrsrv.h:18` does `#if DBG → #define CSR_DBG` and the build
+  passes `-DDBG=1`, so CSR_DBG is ON and the Rust layout is right. (Two comments in `basesrv/init.rs`
+  quote 0x3C and 0x38 respectively — they are describing the two C_ASSERT branches, not disagreeing.)
+* **Shared-section view delta** — `CsrSrvAttachSharedSection` maps into every client at the same
+  fixed base with `SEC_NO_CHANGE`, so server-side pointers are valid client-side; there is no delta
+  to get wrong.
+
+**Status: NOT REPRODUCING — downgrade from "open bug with a fix owed" to "re-open on evidence".**
+The mitigation prints `[kernel32] BASE_STATIC_SERVER_DATA CORRUPT: …` / `… snapshot CORRUPT (raced
+basesrv?): …` on every hit and reroutes to fallback strings. Measured 2026-07-14:
+  * **20/20 arm64 boots green, ZERO tripwire hits** (`smoke --arch arm64 --repeat 20`, the
+    sanctioned parallel-TCG repro path). Against the recorded rates that is
+    P(0 hits | 1-in-10) ≈ 0.12 and P(0 hits | 3-in-20) ≈ 0.04 — so the face is either gone or far
+    rarer than recorded.
+  * **Zero hits across every retained log on the box** (1254 run dirs).
+  * Zero `0x4C` / `0xC000021A` in the 20-boot run.
+
+**The negative is only worth anything because the detector was proven visible first.** Two checks,
+both necessary: the same arm64 serial logs carry user-mode `DbgPrint` output (`[EXPLORER] _tWinMain
+entered`, `[WIN32K] shell ready`), so a user-mode print from kernel32 *would* reach the log; and the
+marker appears **exactly 20 times** in the aggregate `full.log`, proving all 20 boots' serial was
+captured and not just the first (per-boot dirs hold only screenshots — the serial is aggregated).
+Without that second check, "zero hits in 20 boots" would really have been "zero hits in 1
+observable boot". Confirm a detector can be *seen* before reading its silence as absence — the
+§9.80/§9.81 lesson, one more time.
+
+**Do NOT implement the owed "publish-last" fix.** Re-open only on a fresh tripwire print, and treat
+the printed fields (not the word "race") as the starting evidence.
+
+**Rule.** An owed item that names its own fix ("just do X") is a hypothesis wearing a fix's clothes.
+Re-read the live code before implementing X: here X was already done, three times over, and had been
+since before the item was written. And when a bug note says "race", check whether anything in the
+evidence is actually *non-deterministic* — "identical across hits" is the opposite of a race.
+
+
+### 9.83 (2026-07-14) The printf probe: a third-party C-vs-C differential that found a KERNEL HANG before writing any new Rust — and two ways a compiled-but-never-called oracle lies
+
+**Context.** Wave 14 of the msvcrt lane needed an assemble-vs-port decision for the printf family:
+is cnt-rust's already-Rust `streamout` engine close enough to msvcrt's `pf_printf_a` to sit behind
+the msvcrt exports? Direct grading is impossible (linking cnt-rust's `cabi` into msvcrt-difftest
+collides 200+ `#[no_mangle]`s with the subject), so the probe compared **two compiled C references
+by transitivity**: ReactOS `printf/streamout.c` compiled under cnt-difftest's exact proven recipe
+(flat va_list + bit-identical `floor/log10/pow` model — the configuration cnt-difftest proved
+byte-equal to the Rust engine) vs the genuine msvcrt engine already compiled inert inside
+msvcrt-difftest's wcs.c reference TU. `sdk/lib/rust/msvcrt-difftest/tests/printf_probe.rs`.
+
+**Finding 0 — the probe found a real kernel hang before comparing anything.** The first run hung in
+`fl::exp10_floor`'s C twin: for ±Inf the exponent-correction loop `while (pow10(e+1) <= f) e++;`
+never terminates (`pow10(309)` saturates to +Inf; `Inf <= Inf` holds). The Rust engine shipping in
+the KERNEL (`cabi/streamout.rs` → `fl::exp10_floor`, amd64/arm64 float path) had the identical
+loop, unguarded — **any `%f/%e/%g` of an infinity through the kernel's Rust streamout was a silent
+infinite loop**. The genuine C only "worked" via UB (`(int)floor(log10(inf))` → garbage exponent →
+digits later overwritten by the `#INF` special path). Fix: `exp10_floor` returns **308**
+(`DBL_MAX_10_EXP`, and exactly the value NaN already fell out with) for `biased == 0x7ff`, same
+guard in every `cnt_log10` C-twin copy (3× cnt-difftest, 1× msvcrt-difftest), plus ±Inf/NaN rows in
+cnt-difftest's `diff_streamout_float` as the permanent tripwire. Lesson: **a differential probe's
+first product is often a crash/hang in the harness path itself — chase it before dismissing it as a
+harness artifact.** This one was the shipped engine's bug reflected in its bit-identical twin.
+
+**Finding 1 — the oracle answered with the wrong LIBC and only style told us.** The probe first
+called `ref__snprintf`, whose body is `vsnprintf(...)` — a symbol wcs.c never *defines* under
+`_MSVCR_VER=0`, so inside the harness it bound to **glibc**, and the whole "msvcrt" column was the
+host libc. No crash, plausible outputs. The tells were stylistic fingerprints: `%p` → `(nil)`,
+2-digit exponents (`e+00`), `%I64d` parsed as width-64, `%zd`/`%jd` accepted. Fix + permanent
+guard: an **oracle-honesty canary** — `%I64d` must print `-5` (glibc right-pads to width 64);
+HARD-FAIL the probe before any verdict if it doesn't. Generalizes §9.66 (ref-integrity): *a
+reference that links is not yet a reference; assert a behavior only the intended engine has.*
+
+**Finding 2 — Wine/ReactOS printf code is structurally UNCALLABLE when compiled under the SysV
+va_list.** Second attempt called `ref__vsnprintf` via a varargs trampoline → SIGSEGV inside
+`arg_clbk_valist`. The engine forwards `&valist` as `va_list*` — coherent only where `va_list` is a
+plain pointer (all Windows targets). Under SysV's `__va_list_tag[1]`, a `va_list` *parameter*
+decays to `tag*`, so `&valist` is `tag**`, and the callee's `va_arg(*valist, T)` reinterprets the
+pointer variable itself as the register-save struct → wild read. (Real Wine avoids this on Linux
+with `__ms_va_list`; this tree never needed to — it only builds for Windows targets.) So the
+harness's ref wcs.c printf entries were *compiled* fine and *inert* fine, but no in-process caller
+could ever legally drive them. Fix: compile wcs.c a SECOND time in a `pfflat_*` namespace under a
+**flat `char*` <stdarg.h>** (msvcrt-difftest/refstub_printf/) — which is precisely the Windows-x64
+va_list model, so the probe's drive is also the target-faithful one, and both engines consume the
+SAME hand-packed 8-byte-slot buffer. Mechanics that made it work: prelude2 = prelude with only the
+wcs.c-owned symbols retargeted `ref_→pfflat_` (string.c/ctype cross-calls stay `ref_*`); a separate
+`cc` `out_dir` (cc hashes the SOURCE path for object names — two compilations of one file in one
+OUT_DIR silently overwrite and double-link); the flat stdarg.h must also define `__gnuc_va_list`
+(glibc headers consume gcc's <stdarg.h> contract).
+
+**The verdict the probe produced (111 MATCH / 27 DIVERGE, decision-grade):**
+- Integer / string / char / pointer formatting: **streamout ≡ msvcrt** (75/78 rows; deltas are
+  `%#x` of 0 → msvcrt `0` vs streamout `0x0`, and `%jd`/`%td` unknown to streamout).
+- Float formatting: **structural fidelity gap, msvcrt wins**: exact binary expansion at high
+  precision (`%.30f` → `0.100000000000000005551115123126` vs zero-padded), denormals
+  (`4.940656e-324` vs `0.000000e-308` garbage), `-0.0` sign kept, `%g` trailing-zero stripping +
+  correct e/f-form threshold, `1.#INF00`-style precision padding, and a real `%a` hex-float
+  implementation (streamout's `%a` is a FIXME falling through to `%f`).
+- Decision: **PORT msvcrt's `printf.h` engine** (the wave-13 `bnum.rs` extraction was exactly the
+  down-payment — parser and formatter share the limb engine); do NOT assemble streamout under
+  msvcrt exports — it would silently downgrade the DLL's float output, violating never-weaken.
+  The kernel keeps streamout (faithful to ReactOS crt by construction; its quirks are its C's).
+
+### 9.84 (2026-07-15) `NET_FLAKE` that is not a flake: the net suite times out at 600s having never booted, because another lane's `farm` owns every host CPU lease
+
+**Symptom.** A gate with `✓ build ×3  ✓ lint ×3  ✓ smoke:i386  ✓ smoke:amd64  ✓ smoke:arm64` and
+`✗ smoke:net(NET_FLAKE, 3 attempts)` — `15 errors in 600.39s`. Every one of the 15 net tests errors
+with an identical flat `Failed: Timeout (>600.0s)`, **including `test_boot_with_nic`, the first one**.
+
+**It is not the network, and it is not your change.** The tell is in the captured setup output:
+
+```
+[hostlock] waiting for host CPU lease (boot:amd64-uefi-net)...
+ERROR tests/qemu/test_net.py::test_boot_with_nic - Failed: Timeout (>600.0s)
+```
+
+The suite spent its entire 600s **queued on the hostlock (4 leases)** and never booted a VM. When
+another worktree is running `vibeos-cli farm` (an all-night, whole-host soak) plus its own smokes,
+load sits at ~24 and the leases never free. The gate's own retry (3 attempts) cannot help: it
+re-queues into the same saturated lock.
+
+**How to tell starvation from a real net regression, in ten seconds:**
+* **All 15 error** (not fail) with the **same** 600s number, first test included → fixture never
+  ran. A real regression fails a *specific* test with a *specific* assertion.
+* `✓ smoke:i386/amd64/arm64` on the **same media** → the OS boots fine; only this lane starved.
+* `uptime` (load ≫ cores) and `./vibeos-cli ps` (`slots: N/10 in use`, OWNER paths pointing at
+  *other worktrees*) name the culprit.
+* `grep hostlock` the pytest output. That line is the whole diagnosis.
+
+**What to do.** NOT `--allow-stale`, not a re-gate (it will starve again), and above all **never
+kill the other lane's QEMUs or farm** — they are someone's deliberate soak, and broad `pkill -f
+qemu` matches your own process tree (AGENTS.md). Park the work committed-but-unpushed and wait:
+`while kill -0 <farm-pid>; do sleep 120; done; ./vibeos-cli gate`. A gate that is red for a reason
+outside the tree is not a green you may push on the strength of "it's probably fine" — the ×3-green
+push rule exists exactly so that judgement is not yours to make at 1am.
+
+**Related, and the reason this bit at all:** the standing rule is that the flake farm runs only
+when no other agents are working. Two lanes each politely declining to soak, and one lane not
+declining, produce this. If you start a farm, expect to be the reason another lane's gate is red.
+
+### 9.85 (ROOT-CAUSED + FIXED 2026-07-14) The FEX startup-death flake was a trapped `dc cvau`: SCTLR_EL1's EL0-usability bits (UCI/UCT/DZE) were never set, and EC 0x18 has no handler
+
+**Symptom.** ~2-3 of 13 arm64 boots, one FEX/WoW64 guest (gui32, win32 — whichever got there first) died 0xC000001D at a *deterministic* address (PC=0x4B5478, LR=0x4B51FC, byte-identical registers across five separate boots spanning two days). Everything else in the boot was green.
+
+**How it was cracked — entirely from saved serial logs, zero repro boots.** The `[UEXC-KILL]` banner captures the faulting instruction bytes: `Instr=0xD50B7B33` = `dc cvau, x19`. The first-chance ESR `0x6212DE76` decodes as EC=0x18 (trapped system instruction) with ISS fields Op0=1/Op1=3/CRn=7/CRm=11/Op2=1/Rt=19 — *the ESR names the exact instruction and register*. EC 0x18 means the op was architecturally **trapped**, not invalid: `dc cvau` at EL0 traps iff SCTLR_EL1.UCI=0. The boot-time `[KISTART] SCTLR_EL1=0x30D0198D` dump (bit 26 clear) confirmed UCI was **never set** — vibeos inherits SCTLR from EDK2 and no code in the tree ever wrote it. `KiSynchronousExceptionHandler` has no EC-0x18 arm, so the default arm delivered STATUS_ILLEGAL_INSTRUCTION.
+
+**Why it was FLAKY when the bit was ALWAYS wrong** (the instructive part): symbolication put PC at `FEXCore::CPU::Arm64JITCore::ExitFunctionLink` — the lazy block-linker, which back-patches one branch instruction in live JIT code and flushes it with an *inline* `dc cvau`. FEX's bulk flushes go through the NtFlushInstructionCache **syscall** (EL1 does the maintenance — no trap). So the landmine only fired on the rare lazy-link path, ~once per boot at most, in whichever process happened to take it. A permanently-wrong config bit + a rarely-taken code path = a "flake" that is actually deterministic.
+
+**Fix.** `KiInitializeKernel` (per-CPU, next to the existing CNTKCTL_EL1 EL0-counter fix — same "reset value traps EL0" family) ORs UCI (bit 26) + UCT (bit 15) + DZE (bit 14) into SCTLR_EL1, matching production Windows-on-ARM64 (EL0 cache maintenance, `CTR_EL0` reads, and `DC ZVA` are all user-visible there; ARM64 memcpy/memset/JIT runtimes use them). **Tripwire:** fexprobe.exe executes `mrs CTR_EL0` + `dc cvau` + `dc zva` at EL0 every boot before FEX init — a regression now kills the probe deterministically instead of a random guest at ~1%.
+
+**Reusable rules.**
+1. **On an arm64 0xC000001D, decode the ESR before theorizing.** EC 0x18 = *trapped-but-legal* system instruction — a missing SCTLR/CNTKCTL/CPACR enable bit, not bad code. The ISS hands you the exact op and register.
+2. **"Flaky" + "byte-identical registers every hit" = deterministic bug on a rarely-taken path.** Hunt for why the path is rare, not for a race.
+3. When bringing up a Windows-compatible arm64 kernel, audit the full EL0-usability surface once: SCTLR UCI/UCT/DZE, CNTKCTL EL0PCTEN/EL0VCTEN, CPACR FPEN — every one of these resets to "trap EL0" and real Windows enables them all.
+
+**Sibling (Face B, guard landed, seed still open):** the one non-0xC000001D corpus hit was wow64probe dying 0xC0000005 mid-`BTCpuProcessInit` — a seed AV inside `InvalidationTracker::InvalidateIntervalInternal` (a Threads-map node with a NULL `InternalThreadState*`, pre-ThreadInit, provenance unexplained at n=1), then **amplified into a ~1600-frame recursion → stack overflow** because `BTCpuResetToConsistentStateImpl` derefs the THREAD_STATE TLS slot (NULL before `BTCpuThreadInit`) in `CallRetStack::GetInfoThread`. Vendored patch in `external/fex/Source/Windows/WOW64/Module.cpp`: NULL-thread guard returns the exception to the next handler (overcommit handling kept reachable), so a recurrence now reports the true seed fault in one clean `[UEXC]` line instead of a storm.
+
+### 9.86 (ROOT-CAUSED + FIXED 2026-07-15) A hand-typed BIT-FLAG literal that names the wrong enum member — `DC_vPrepareDCsForBlit` tested `fs & 0x04` (DC_CANCELED) where the C tests DC_DIRTY_RAO (0x10), and every GDI blit drew through a stale clip
+
+**Symptom.** The M13 "intermittent doom render": an app that caches `GetDC(hwnd)` and blits continuously (doomgeneric's `StretchDIBits` loop) sometimes drew nothing — or drew clipped to a rectangle belonging to a *previously destroyed window* — while `NtGdiBitBlt` returned TRUE every time. Whether a given boot rendered was timing luck. The native arm64 build misrendered identically (never a WoW64 bug).
+
+**The hunt (what finally cracked a lane that had been parked as "clip disproven").** Earlier probes measured the DCE vis region and `prgnRao` at update time and found them CORRECT on every boot — so clipping was ruled out and the lane parked pointing at the DIB pixel copy. The missing measurement was the **clip object the blit actually consumes** (`dc.co`), sampled AT THE BLIT: a checksum probe around doom's real path (`GreStretchDIBitsInternal` SRCCOPY → memory-DC → `NtGdiBitBlt`) printing `pdc.co.iDComplexity/rclBounds` showed `clip=(40,40,240,190)` — the DEAD win32.exe test window's rect — on every frame, while vis/Rao were right. The gap between "Rao correct" and "co stale" is exactly one function: `CLIPPING_UpdateGCRegion` rebuilds co from Rao, and it only runs when a consumer sees `DC_DIRTY_RAO`.
+
+**Root.** `dclife.rs DC_vPrepareDCsForBlit` (both arch variants) translated the C's `if (pdcDest->fs & DC_DIRTY_RAO)` as `fs & 0x00000004`. In `_DCFLAGS` (dc.h) 0x04 is **DC_CANCELED**; DC_DIRTY_RAO is **0x10**. Every *setter* used the named constant correctly, so the dirty bit was raised and never consumed on the blit path; the co refresh only happened if some other correctly-checking path (dcobjs.rs select-clip etc.) happened to touch the DC first — the whole flake in one wrong nibble. (Same commit: the debug-only "prepared" mark set 0x40 = DC_ACCUM_APP instead of DC_PREPARED 0x8000 — inert in release, corrupting in DBG.)
+
+**Fix.** Use the bindgen enum names (`DC_DIRTY_RAO as i32`, `DC_PREPARED as i32`) — the constants were ALWAYS available via `win32k_sys::win32k::*`; the literals were pure translation debris.
+
+**Reusable rules.**
+1. **A hand-typed bit-mask literal in translated Rust is the flag-cousin of the magic struct offset** (§ scan_magic_offsets class). If the C tests an enum/#define bit and the Rust tests `0xNN`, treat it as wrong until proven right — the fix is the named constant, never a corrected literal.
+2. **When a region/state pipeline has N derived stages, probe the LAST consumer, not the producers.** Vis and Rao being provably correct still says nothing about the object the drawing call reads (`dc.co`). Instrument at the point of consumption (here: checksums + clip bounds around the actual blit), and the stale stage identifies itself.
+3. **"Works on boots where X happens to run" is a dirty-bit-never-consumed shape.** If correctness depends on whether an unrelated path touched the object between update and use, hunt for a dirty flag whose consumer checks the wrong condition.
+
+**Detector (owed).** Sweep win32k-rust for `fs [&|]=` / `& 0x` bit tests against numeric literals where the C uses `_DCFLAGS`/named flags; extend `scan_magic_offsets.py` with a bit-literal shape or add a one-shot grep to `vibeos-cli check`.
+
+### 9.87 (PROCESS TRAP 2026-07-15) A win32k probe that "built fine" for 3 boots but never appeared on serial — a `cannot find ULONG` compile error in ONE file let cargo re-link the STALE cached rlib, so the edit never shipped
+
+**Symptom.** Added a `DbgPrint` + a one-line field write to `win32k-rust/src/wow64.rs`, rebuilt (`ninja win32k` → `Finished`), staged, booted — the print never fired and the fix had no effect. Repeated three times. A *different* edit in the same crate (dibobj.rs M13-BLT probe) DID ship on the same builds, "proving" the crate was recompiling.
+
+**Root.** The wow64.rs edit referenced `ULONG`, which isn't imported in that file → `error[E0412]`. But the earlier `ninja` runs were launched as `... 2>&1 | grep -E 'error|Finished' && setsid nohup ... &` — the grep matched a `Finished` line from a *sibling* cargo unit and the compound `&&` proceeded to stage; the real per-crate error scrolled past unexamined. Cargo, on the failed compile, **left the previous successful rlib in place**, and the win32k link consumed that stale rlib — so the binary had the OLD wow64.rs (no field write, no print string) while dibobj.rs's object was fresh. `strings win32k.sys | grep '<my new literal>'` = 0 was the tell: the source string wasn't in the binary at all.
+
+**Fix.** `pti as usize as u32` (the field is `ULONG`=u32; use the primitive or import ULONG). Then the string appeared in the binary and the fix took.
+
+**Reusable rules.**
+1. **Never trust a piped/`&&`-chained `ninja` "Finished" as proof your file compiled.** grep for `error[` AND `FAILED` explicitly, and read the *per-crate* `Compiling <crate>` / error lines — a `Finished` can come from another unit in the same invocation.
+2. **After a Rust probe that MUST appear on serial, verify the literal is in the binary before booting:** `strings <module> | grep -c '<my unique print literal>'`. Zero = it never compiled in; stop and fix the build, don't waste a boot.
+3. **A cargo compile error leaves the prior rlib; the link can silently succeed against stale objects.** "Other edits in the crate shipped" does NOT prove *your* file did — cargo is per-file incremental and one file's error doesn't fail-fast the others' cached outputs at link time here.
+### 9.88 (2026-07-16) The kmtest MmMdl `-smp 2` 0x1E is TWO bugs — a system-PTE leak (FIXED) masking a kernel-stack teardown race (OPEN)
+
+Hunting the amd64 `-smp 2` kmtest **MmMdl** 0x1E (task #10, ~10%/sweep in the 20-sweep
+guest-load soak). Amplifier: a temporary MmMdl-dense sweep list (warmup + MmMdl ×25/boot,
+restored before landing) + a background boot/capture loop that copies the shared serial log
+to a durable dir on each BUGCHECK (the log is overwritten by the next boot — capture between
+runs). Two distinct bugs came out, and the first was masking the second:
+
+**Bug 1 — system-PTE leak + use-after-free alias (FIXED, `ARM3/mdlsup.rs`).** `MmUnmapLockedPages`
+carried an i386-bringup band-aid (commit `15434cd8dea`): `if (*Mdl).ByteCount > 16MB { return; }`.
+It FALSE-FIRED on kmtest MmMdl's legitimate **32MB** MDL maps, so the kernel-path unmap bailed
+WITHOUT `MiReleaseSystemPtes` and — worse — without ZEROING the PTEs. `MmFreePagesFromMdl` runs
+right after, so the freed pages stayed mapped by *valid* system PTEs. That leaked the pool
+(observable as the escalating soft face: `MmMapLockedPagesSpecifyCache` starts returning NULL,
+MmMdl.c:68/100/103/104 fail with `MappedSystemVa` holding a stale VA) and, on `-smp 2`, left a
+use-after-free window. **Fix:** a precise UAF guard instead of a size cap — a genuinely
+system-mapped MDL can never span more PTEs than the whole pool, so bail only when
+`PageCount > MmTotalSystemPtes`, else release properly (which zeroes the PTEs). `MiReleaseSystemPtes`
+bounds-checks StartingPte itself as a backstop. Validated: dense MmMdl ×25/boot went `fail=4`→`fail=0`,
+boot completes. **Reusable lesson:** a defensive "looks corrupt, bail" guard keyed on a *magnitude*
+(size, count) rather than a *structural invariant* will false-fire on the legitimate large case —
+and a bail that neither releases NOR invalidates a mapping is strictly worse than crashing (it
+leaks AND aliases). Guard on the invariant (`≤ pool size`, `within [start,end]`), not the magnitude.
+
+**Bug 2 — kernel-stack IN_PAGE_ERROR teardown race (CHARACTERIZED, OPEN).** Fixing Bug 1
+*unmasked* Bug 1's mask: with the pool healthy, far more map/unmap cycles succeed → far more
+scheduling/teardown churn → the real 0x1E now fires ~33–50%/boot (was ~10%). Signature:
+`BUGCHECK 0x1E (0xC0000006, …)` — exception code **`0xC0000006 = STATUS_IN_PAGE_ERROR`**, not a
+plain AV. The reported RIP resolves to an **ICF-folded** `STATUS_NOT_IMPLEMENTED` stub (a `retq`) —
+a red herring; the true signal is that the fault is a `ret` reading `[rsp]`, and the fault VA
+(`0xfffff880…`) is in the **kernel-stack region** (confirmed: the `[SMP] handing processor N to HAL`
+boot lines show AP stacks at `Rsp=fffff8800…`). So a thread ran on a kernel stack whose PTE was
+invalid. FLIGHTREC shows the crashing thread parked on a **gate** (WS-pushlock contention) then
+was woken. **NOT stack-swap:** ReactOS's own `KiCheckThreadStackSwap` (ke_x.h, faithfully
+translated) only swaps `Priority >= LOW_REALTIME_PRIORITY+9` (=25) threads; kmtest threads run
+~pri 8. So the mechanism is a **kernel-stack free-and-reuse / teardown race** — each kmtest is a
+fresh process/thread, so teardown churn is high, and under MmMdl's 2GB memory pressure at `-smp 2`
+a stack's system PTEs get released/reused while another CPU still references the stack. Next target:
+GDB watchpoint on the faulting stack VA's PTE, or instrument `MmDeleteKernelStack` / the thread-exit
+→ stack-free path for the missing "thread is off all CPUs" synchronization. Triage tooling notes:
+(a) resolve folded RIPs by disassembling — a 1-instruction `retq`/`mov eax,STATUS;ret` is ICF-folded
+and its symbol is meaningless; walk the stack return slots instead. (b) `0xfffff880…` = kernel
+stacks, `0xfffffa80…` = the MDL/nonpaged system-VA region — the fault being in the *former* is what
+ruled out "dangling MDL mapping" and pointed at the stack.
+
+### 9.89 (ROOT-CAUSED + FIXED 2026-07-16) The SamSs 30s SCM stall was a cross-process named-EVENT sharing Heisenbug — fix by syncing on the PIPE, not the event
+
+**Symptom.** Every boot, every arch: the SCM auto-start stalled ~30s on SamSs
+(`[SERVICES] ScmStartUserModeService(SamSs): connect result=1053` = ERROR_SERVICE_REQUEST_TIMEOUT),
+then continued to `SC_AutoStartComplete`. Non-blocking (desktop boots), but it delayed the
+conformance sweep and every service after SamSs by 30s.
+
+**The Heisenbug tell.** Adding *any* `DbgPrint` to the lsass/lsasrv/SCM handshake made it connect
+reliably (instrumented boots 3/3 `result=0`; uninstrumented 0/N). That is the signature of a timing
+race, and it's the trap: you "fix" it by observing it, then it regresses when you remove the probe.
+Don't trust an instrumented green here — verify the structural fix UNINSTRUMENTED (I ran 4× per
+build).
+
+**Localizing without perturbing (elimination, since prints move the bug).** lsasrv's
+`DispatcherThread` = `WaitForSingleObject(SECURITY_SERVICES_STARTED, INFINITE)` →
+`I_ScIsSecurityProcess()` → `StartServiceCtrlDispatcherW`. In timeout boots the pre-existing
+`[SCTRL] connecting pipe=…NtControlPipe0` print was ABSENT, so the connect was never reached;
+`I_ScIsSecurityProcess` is a one-line global store (can't hang) — so the *only* place it could wedge
+is the INFINITE event wait. Root cause: `SECURITY_SERVICES_STARTED` is created independently by the
+SCM (services.exe) AND lsasrv, meant to dedup to one shared kernel object — but **cross-process
+named-object sharing is timing-fragile in this kernel**: when lsasrv won the create race the SCM's
+`SetEvent` intermittently did not wake this waiter. (Two structural fixes that FAILED, and what they
+proved: (a) spawning the dispatcher first — reorder `ServiceInit` ahead of `LsapInitLsa` in lsass —
+crashed it early, 0x3E6; (b) forcing lsasrv to `OpenEventW` the SCM's object instead of creating one
+STILL 4/4-timed-out, proving even Open couldn't reliably see it. The event link itself is the
+unreliable part.)
+
+**Fix — rendezvous on the named PIPE.** Every other service connects via its control pipe reliably
+every boot, and the SCM creates `NtControlPipe0` *just before* it signals the event
+(`ScmCreateNewControlPipe` then `SetSecurityServicesEvent`, services-rust database.rs). So: (1) lsasrv
+`DispatcherThread` — the event wait is now best-effort/BOUNDED (3s)/non-fatal, proceed to the connect
+regardless; (2) advapi32 `ScConnectControlPipe` — for the security process (`bSecurityServiceProcess`)
+POLL `WaitNamedPipeW` until `NtControlPipe0` exists (it returns FALSE-fast/`FILE_NOT_FOUND` for a
+not-yet-created pipe — it opens the always-present NPFS root device then `FSCTL_PIPE_WAIT`s the
+specific name — so the poll is cheap). Non-security services unchanged (single 30s wait): the SCM
+creates their pipe before spawning them. Uninstrumented result: `SamSs connect result=0` on 5/5 boots
+that reached services. Commit 74c08f68e68.
+
+**Reusable rule.** A cross-process handshake gated on a shared *named event* that both sides create
+is timing-fragile here — prefer a named *pipe* (or another object one side is the sole creator of and
+the other only opens) as the rendezvous. And for any "a print makes it work" bug: localize by
+elimination from unperturbed evidence, and always re-verify the fix with the prints removed.
+
+### 9.90 (ROOT-CAUSED + FIXED 2026-07-16) arm64 never delivered user-mode APCs on return-to-EL0 — a `UserMode` `KeWaitForSingleObject` returned `STATUS_USER_APC` forever
+
+**Symptom.** The arm64 kmtest conformance sweep captured **exactly one** result (`CmSecurity`) then
+wedged: the 2nd test's usermode-callback worker (`kmtest/support.c` `KmtUserModeWorker`) hit
+`*** ASSERT FAILED: BytesReturned == sizeof(RequestPacket) at support.c:52` → `Callback handler
+dying! Error code 2`, and the kernel-side test hung forever waiting for a callback that never
+came → `sweep=DID NOT FINISH launched=1`. Instrumenting the worker's driver wait
+(`IOCTL_KMTEST_USERMODE_AWAIT_REQ`) showed `KeWaitForSingleObject(&ev, UserRequest, UserMode,
+Alertable=FALSE, ...)` returning **`STATUS_USER_APC` (0xC0) persistently** — re-issue after
+re-issue, even with `Alertable=FALSE`.
+
+**Why 0xC0 from a non-alertable wait.** `KeWaitForSingleObject` bails a `UserMode` wait for a user
+APC whenever `Thread->ApcState.UserApcPending` is set (`ke/wait.c:329` — the `!Alertable` branch
+still checks `UserApcPending`). `STATUS_USER_APC` is the "unwind to user mode and deliver the queued
+APC" signal: the syscall returns, and on the way back to user the trap exit is supposed to run
+`KiDeliverApc(UserMode, …)`, which dequeues the user APC, runs its routine, and **clears
+`UserApcPending`**. If that delivery never happens, `UserApcPending` stays set and *every* later
+`UserMode` wait instantly re-returns 0xC0.
+
+**Root cause — the delivery step is simply absent on arm64.** amd64 does it in
+`KiSystemServiceExit` (`ntoskrnl/ke/amd64/trap.S:911`): `cmp AsUserApcPending / call
+KiInitiateUserApc` → raise APC_LEVEL, `KiDeliverApc(UserMode, ExFrame, TrapFrame)`, lower. i386 has
+the equivalent in its trap epilog. **arm64's `KiSvcDispatch` returned straight to `KiTrapReturn` →
+`eret` with no `UserApcPending` check anywhere in `ke/arm64/trap.rs` or `trap.S`** — grep the whole
+arm64 tree and `UserApcPending`/`KiDeliverApc`/`KiInitiateUserApc` appear in *none* of it. The
+original ReactOS `arm64/trap.c` never had it either (this arm64 port predates a working user-APC
+path), so it's a port gap, not a translation drop. Every queued user APC on arm64 — the kmtest
+worker's, and in principle any `QueueUserAPC`/alertable-wait target — was silently never delivered.
+
+**Fix.** Add the missing step to the arm64 SVC return, mirroring amd64. New
+`KiDeliverUserApcArm64(TrapFrame, ExceptionFrame)` in `ke/arm64/trap.rs`, called at the tail of
+`case 0x15` (SVC) after `KiSvcDispatch`: if returning to EL0 (`Spsr & 0xF == 0`) and
+`kt_ApcState(Thread).UserApcPending != 0`, `KfRaiseIrql(APC_LEVEL)` →
+`KiDeliverApc(1 /*UserMode*/, ExceptionFrame, TrapFrame)` → `KfLowerIrql(old)`. `KiDeliverApc`
+rewrites the trap frame (`Pc → KeUserApcDispatcher`, `Sp → user stack with the saved CONTEXT`,
+clears `UserApcPending`) so the trailing `eret` lands in the dispatcher. The handler already had
+`ExceptionFrame` in hand (captured by `EXFRAME_SAVE` in `trap.S`), so no signature change was
+needed. **Deliberately does NOT toggle PSTATE.DAIF** (unlike amd64's sti/cli): on this port the
+whole SVC runs with IRQs masked, `KiTrapReturn` owns the ELR/SPSR per-exception banking window, and
+the APC user stack is the thread's own resident stack (`KiInitializeUserApc` pre-faults it). IRQL on
+arm64 is a GIC-PMR/PCR concern here, not a DAIF one — `KfRaiseIrql` is the correct DAIF-neutral gate.
+This is SVC (synchronous, thread-body) context — the canonical safe point for user-APC delivery, NOT
+the IRQ-exception context the `KiIrqHandler` "APC delivery wedges" warning is about.
+
+**Result (uninstrumented).** The arm64 sweep went from `launched=1 sweep=DID NOT FINISH` to
+`launched=81 sweep=done`: `ExCallback` (the former test-2 wedge) and `ExDoubleList` now pass, and
+the sweep runs to completion end-to-end for the first time. (The remaining `ok=3` is an *unrelated*
+`ExFastMutex` in-kernel hang cascading the tail — a separate quarantine item, NOT this bug.)
+
+**Reusable rule.** A `UserMode` `KeWaitForSingleObject` returning `STATUS_USER_APC` *persistently*
+(re-issue after re-issue, `Alertable` irrelevant) is the fingerprint of a **return-to-user path that
+doesn't deliver user APCs** — check that the arch's syscall/trap exit actually calls
+`KiDeliverApc(UserMode, …)`, don't assume it does just because the amd64 sibling does. New arch ports
+are the usual offenders.

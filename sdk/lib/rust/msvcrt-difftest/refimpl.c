@@ -473,6 +473,18 @@ int __cdecl _mbtowc_l(wchar_t *dst, const char *str, size_t n, _locale_t locale)
     return 1;
 }
 
+/* Unlike _mbtowc_l above, `_wctomb_l` IS defined by wcs.c — as ref__wctomb_l
+ * (and pfflat__wctomb_l) under the rename preludes.  The SUBJECT (the Rust
+ * printf engine, wave 14b) imports plain `_wctomb_l`, exactly as it will in
+ * msvcrt.dll where the C converter still owns that symbol.  Forward to the
+ * genuine compiled body so subject and reference run the SAME converter and
+ * the printf rows grade the ENGINE, not the conversion. */
+int __cdecl ref__wctomb_l(char *dst, wchar_t ch, _locale_t locale);
+int __cdecl _wctomb_l(char *dst, wchar_t ch, _locale_t locale)
+{
+    return ref__wctomb_l(dst, ch, locale);
+}
+
 /* ------------------------------------------------------------------ *
  * MSVC intrinsic.  `_BitScanReverse(&i, mask)` → index of the highest set
  * bit; returns 0 (and leaves *index untouched) when mask == 0.

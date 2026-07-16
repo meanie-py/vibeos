@@ -29,7 +29,7 @@
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/create.rs:146: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/devctrl.rs:28: IoSetCompletionRoutine: IoSetCompletionRoutine is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/dirctrl.rs:42: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
-  [C_MACRO] sdk/lib/rust/fastfat-rust/src/fileinfo.rs:175: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
+  [C_MACRO] sdk/lib/rust/fastfat-rust/src/fileinfo.rs:177: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/flush.rs:54: IoGetCurrentIrpStackLocation: IoGetCurrentIrpStackLocation is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/flush.rs:55: IoCopyCurrentIrpStackLocationToNext: IoCopyCurrentIrpStackLocationToNext is a C macro, not a real function — should be inlined in Rust
   [C_MACRO] sdk/lib/rust/fastfat-rust/src/flush.rs:56: IoSetCompletionRoutine: IoSetCompletionRoutine is a C macro, not a real function — should be inlined in Rust

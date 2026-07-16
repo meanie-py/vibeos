@@ -1279,19 +1279,46 @@ def main() -> int:
 
     mod_rs = (
         AUTOGEN
+        # Under `cabi-math` alone (the msvcrt.dll math flip — see below) only
+        # math.rs compiles, so the shared helpers and RAND_STATE are unused in
+        # that configuration; every full-`cabi` build still sees dead code.
+        + '#![cfg_attr(not(feature = "cabi"), allow(dead_code))]\n'
         + HELPERS
-        + "\nmod generated;\npub use generated::*;\n"
+        # Everything except math.rs is gated on the full `cabi` feature. The
+        # narrower `cabi-math` feature (Cargo.toml) compiles ONLY math.rs —
+        # it exists so msvcrt-crt-cargo can pull the 66 kernel-proven libm
+        # exports into msvcrt.dll WITHOUT the other ~200 #[no_mangle] shims,
+        # which would collide with msvcrt-crt-rust's own wrappers in the same
+        # staticlib. (The kernel + cnt-difftest builds pass `cabi`, under
+        # which all of this is exactly what it always was.)
+        + '#[cfg(feature = "cabi")]\nmod generated;\n'
+        + '#[cfg(feature = "cabi")]\npub use generated::*;\n'
         # hand-written, no differential target (see manual.rs)
-        + "mod manual;\npub use manual::*;\n"
+        + '#[cfg(feature = "cabi")]\nmod manual;\n'
+        + '#[cfg(feature = "cabi")]\npub use manual::*;\n'
         # hand-written printf engine (streamout/wstreamout + the Rust
         # format_float on amd64/arm64); not a gen_cnt family, its
         # differential lives in cnt-difftest's ref_streamout. See
         # streamout.rs.
-        + "mod streamout;\npub use streamout::*;\n"
+        + '#[cfg(feature = "cabi")]\nmod streamout;\n'
+        + '#[cfg(feature = "cabi")]\npub use streamout::*;\n'
         # hand-written math classification + integer-abs shims (Wave
         # MATH-CLASS); pure IEEE-754 bit ops, no FP arithmetic (i386
         # no-SSE safe). Differential lives in cnt-difftest. See math.rs.
+        # Compiled under BOTH `cabi` and `cabi-math` (any gate on the
+        # cabi mod itself in lib.rs).
         + "mod math;\npub use math::*;\n"
+        # hand-written strtod / wide-string / bsearch-lfind shim modules.
+        # (These three were once hand-added to the generated mod.rs — a
+        # DO-NOT-EDIT drift that a 2026-07-14 regen silently erased,
+        # breaking cnt-difftest. They live in the template now; never
+        # hand-edit mod.rs.)
+        + '#[cfg(feature = "cabi")]\nmod strtod;\n'
+        + '#[cfg(feature = "cabi")]\npub use strtod::*;\n'
+        + '#[cfg(feature = "cabi")]\nmod wcs;\n'
+        + '#[cfg(feature = "cabi")]\npub use wcs::*;\n'
+        + '#[cfg(feature = "cabi")]\nmod search;\n'
+        + '#[cfg(feature = "cabi")]\npub use search::*;\n'
     )
 
     spec = {

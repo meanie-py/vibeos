@@ -1210,10 +1210,20 @@ pub unsafe extern "fastcall" fn IopInitializeSystemDrivers() {
         //      load AFTER netstack (it binds netstack's TDI devices). Stock x86
         //      orders this via the "NDIS Wrapper" → "TDI" load groups; on arm64 we
         //      enforce the order explicitly by listing afd second.
+        //   3. npfs.sys (named-pipe FS) — the transport under LOCAL RPC: advapi32's
+        //      SCM client binds ncacn_np "\pipe\ntsvcs" (advapi32/service/scm.c:42-44)
+        //      and services.exe listens on it (services/rpcserver.c:115). Without it
+        //      every CreateService raises RPC_S_SERVER_UNAVAILABLE (0x6BA), which is
+        //      what blocked the whole arm64 kmtest conformance sweep. It is already
+        //      registered Start=1 in the SYSTEM hive (drivers/filesystems/npfs/
+        //      npfs_reg.inf) and mkramdisk.sh now stages the binary; it only ever
+        //      failed to load because this list — not the registry — is what arm64
+        //      actually honours. Order-independent (no dependency on the two above).
         ARM64_UART_TRACE!("[SYSDRV] ARM64: system-start skipped; loading staged drivers\r\n");
-        const STAGED_SVCS: [&[u16]; 2] = [
+        const STAGED_SVCS: [&[u16]; 3] = [
             crate::wstr!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\netstack"),
             crate::wstr!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Afd"),
+            crate::wstr!("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Npfs"),
         ];
         for svc_path in STAGED_SVCS {
             let mut svc = _UNICODE_STRING {

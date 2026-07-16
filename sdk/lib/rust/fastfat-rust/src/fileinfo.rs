@@ -160,6 +160,8 @@ extern "system" {
     fn FatAddFileAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, FileObject: *mut FILE_OBJECT, size: u32, );
     fn FatTruncateFileAllocation(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, size: u32);
     fn FatSetFileSizeInDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, null: *const c_void, );
+    fn FatSetFileSizeInDirentNoRaise( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, null: *const c_void, );
+    fn IsFileDeleted(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> BOOLEAN;
     fn CcGetFileSizePointer(FileObject: *mut FILE_OBJECT) -> *mut LARGE_INTEGER;
     fn _SEH2_AbnormalTermination() -> u8;
     fn FatBugCheck(a: u32, b: u32, c: u32);
@@ -2438,9 +2440,226 @@ pub unsafe extern "system" fn FatSetRenameInfo(
     Status
 }
 
-extern "system" {
-    // FatSetEndOfFileInfo: no bank body (dropped at translate) — link-recover later.
-    fn FatSetEndOfFileInfo(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, FileObject: *mut FILE_OBJECT, Vcb: *mut VCB, Fcb: *mut FCB) -> NTSTATUS;
+// Local consts matching the house pattern (flush.rs, verfysup.rs) — FcbCondition
+// is compared as u32; STATUS_FILE_CLOSED is not in the shared constants module.
+const FcbGood: u32 = 1;
+const STATUS_FILE_CLOSED: NTSTATUS = 0xC0000128_u32 as i32;
+
+// FatSetEndOfFileInfo — recovered from the dropped-at-translate stub (rustconv
+// --fn, mechanical mode, 2026-07-16; C original fileinfo.c:4387). The two SEH
+// blocks (outer TRY/FINALLY + inner AdvanceOnly TRY/FINALLY) follow the house
+// idiom used across this file: `loop { … break }` for try_return/try_exit, the
+// FINALLY cleanup inline after, `_SEH2_AbnormalTermination()` gating the size
+// unwind (always 0 under DUMMY_PSEH, like every other fastfat fn here). Fixes the
+// arm64 BUGCHECK 0x23 0xdead0000 that hit when eventlog.exe (SetEndOfFile on the
+// FAT32 ramdisk) reached the rust_cohab_stub.c bugcheck stub.
+#[no_mangle]
+pub unsafe extern "system" fn FatSetEndOfFileInfo(
+    IrpContext: *mut IRP_CONTEXT,
+    Irp: *mut IRP,
+    FileObject: *mut FILE_OBJECT,
+    Vcb: *mut VCB,
+    Fcb: *mut FCB,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Buffer: PFILE_END_OF_FILE_INFORMATION = core::ptr::null_mut();
+    let mut NewFileSize: u32 = 0;
+    let mut InitialFileSize: u32 = 0;
+    let mut InitialValidDataLength: u32 = 0;
+    let mut InitialValidDataToDisk: u32 = 0;
+    let mut CacheMapInitialized: i32 = 0;
+    let mut UnwindFileSizes: i32 = 0;
+    let mut ResourceAcquired: i32 = 0;
+
+    DebugTrace(1, Dbg, b"FatSetEndOfFileInfo...\n\0".as_ptr() as *const i8, 0);
+
+    Buffer = (*Irp).AssociatedIrp.SystemBuffer as PFILE_END_OF_FILE_INFORMATION;
+
+    loop {
+        if NodeType(Fcb) != FAT_NTC_FCB {
+            DebugTrace(0, Dbg, b"Cannot change size of a directory\n\0".as_ptr() as *const i8, 0);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+        }
+
+        if FatIsIoRangeValid((*Fcb).Vcb, (*Buffer).EndOfFile, 0) == 0 {
+            DebugTrace(0, Dbg, b"Illegal allocation size\n\0".as_ptr() as *const i8, 0);
+            Status = STATUS_DISK_FULL;
+            break;
+        }
+
+        NewFileSize = (*Buffer).EndOfFile.__bindgen_anon_1.LowPart;
+
+        if (*Fcb).Header.AllocationSize.QuadPart == FCB_LOOKUP_ALLOCATIONSIZE_HINT
+            && (*Fcb).FcbCondition == FcbGood
+        {
+            FatLookupFileAllocationSize(IrpContext, Fcb);
+        }
+
+        if (*(*FileObject).SectionObjectPointer).DataSectionObject != core::ptr::null_mut()
+            && (*(*FileObject).SectionObjectPointer).SharedCacheMap == core::ptr::null_mut()
+            && FlagOn((*Irp).Flags, IRP_PAGING_IO) == 0
+        {
+            if FlagOn((*FileObject).Flags, FO_CLEANUP_COMPLETE) != 0 {
+                FatRaiseStatus(IrpContext, STATUS_FILE_CLOSED);
+            }
+
+            FatInitializeCacheMap(
+                FileObject,
+                core::ptr::addr_of_mut!((*Fcb).Header.AllocationSize) as *mut CC_FILE_SIZES,
+                0,
+                &raw const FatData.CacheManagerCallbacks,
+                Fcb,
+            );
+
+            CacheMapInitialized = 1;
+        }
+
+        if (*IoGetCurrentIrpStackLocation(Irp)).Parameters.SetFile.__bindgen_anon_1.__bindgen_anon_1.AdvanceOnly != 0 {
+            if IsFileDeleted(IrpContext, Fcb) == 0 && (*Fcb).FcbCondition == FcbGood {
+                let mut Dirent: *mut DIRENT = core::ptr::null_mut();
+                let mut DirentBcb: *mut BCB = core::ptr::null_mut();
+
+                if NewFileSize >= (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart {
+                    NewFileSize = (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart;
+                }
+
+                NT_ASSERT((NewFileSize <= (*Fcb).Header.AllocationSize.__bindgen_anon_1.LowPart) as i32);
+
+                FatGetDirentFromFcbOrDcb(
+                    IrpContext,
+                    Fcb,
+                    0u8,
+                    core::ptr::addr_of_mut!(Dirent),
+                    (core::ptr::addr_of_mut!(DirentBcb)).cast(),
+                );
+
+                loop {
+                    if NewFileSize > (*Dirent).FileSize {
+                        (*Dirent).FileSize = NewFileSize;
+
+                        FatSetDirtyBcb(IrpContext, DirentBcb, (*Fcb).Vcb, 1);
+
+                        FatNotifyReportChange(
+                            IrpContext,
+                            Vcb,
+                            Fcb,
+                            FILE_NOTIFY_CHANGE_SIZE,
+                            FILE_ACTION_MODIFIED,
+                        );
+                    }
+                    break;
+                }
+
+                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
+            } else {
+                DebugTrace(0, Dbg, b"Cannot set size on deleted file.\n\0".as_ptr() as *const i8, 0);
+            }
+
+            Status = STATUS_SUCCESS;
+            break;
+        }
+
+        if NewFileSize > (*Fcb).Header.AllocationSize.__bindgen_anon_1.LowPart {
+            FatAddFileAllocation(IrpContext, Fcb, FileObject, NewFileSize);
+        }
+
+        if (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart != NewFileSize {
+            if NewFileSize < (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart {
+                if (*Fcb).PurgeFailureModeEnableCount != 0 {
+                    Status = STATUS_PURGE_FAILED;
+                    break;
+                }
+
+                if MmCanFileBeTruncated(
+                    (*FileObject).SectionObjectPointer,
+                    core::ptr::addr_of_mut!((*Buffer).EndOfFile),
+                ) == 0
+                {
+                    Status = STATUS_USER_MAPPED_FILE;
+                    break;
+                }
+
+                ResourceAcquired = ExAcquireResourceExclusiveLite((*Fcb).Header.PagingIoResource, 1) as i32;
+            }
+
+            InitialFileSize = (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart;
+            InitialValidDataLength = (*Fcb).Header.ValidDataLength.__bindgen_anon_1.LowPart;
+            InitialValidDataToDisk = (*Fcb).ValidDataToDisk;
+            UnwindFileSizes = 1;
+
+            (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart = NewFileSize;
+
+            if (*Fcb).Header.ValidDataLength.__bindgen_anon_1.LowPart > NewFileSize {
+                (*Fcb).Header.ValidDataLength.__bindgen_anon_1.LowPart = NewFileSize;
+            }
+
+            if (*Fcb).ValidDataToDisk > NewFileSize {
+                (*Fcb).ValidDataToDisk = NewFileSize;
+            }
+
+            DebugTrace(0, Dbg, b"New file size is 0x%08lx.\n\0".as_ptr() as *const i8, NewFileSize as i32);
+
+            CcSetFileSizes(
+                FileObject,
+                core::ptr::addr_of_mut!((*Fcb).Header.AllocationSize) as *mut CC_FILE_SIZES,
+            );
+
+            FatSetFileSizeInDirent(IrpContext, Fcb, core::ptr::null_mut());
+
+            FatNotifyReportChange(
+                IrpContext,
+                Vcb,
+                Fcb,
+                FILE_NOTIFY_CHANGE_SIZE,
+                FILE_ACTION_MODIFIED,
+            );
+
+            SetFlag(core::ptr::addr_of_mut!((*Fcb).FcbState), FCB_STATE_TRUNCATE_ON_CLOSE);
+        }
+
+        (*FileObject).Flags |= FO_FILE_MODIFIED;
+
+        Status = STATUS_SUCCESS;
+
+        break;
+    }
+
+    FatUnpinRepinnedBcbs(IrpContext);
+
+    loop {
+        DebugUnwind(b"FatSetEndOfFileInfo\0".as_ptr() as *const core::ffi::c_void);
+
+        // _SEH2_AbnormalTermination() is always 0 under DUMMY_PSEH (dead handler) —
+        // hardcoded false to match the house idiom (FatSetAllocationInfo above) and
+        // to dead-eliminate the CcGetFileSizePointer reference (a DDK macro, not a
+        // linkable symbol). The size-unwind only mattered on a real SEH unwind, which
+        // never happens in this build mode.
+        if false /* _SEH2_AbnormalTermination() always false */ && UnwindFileSizes != 0 {
+            (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart = InitialFileSize;
+            (*Fcb).Header.ValidDataLength.__bindgen_anon_1.LowPart = InitialValidDataLength;
+            (*Fcb).ValidDataToDisk = InitialValidDataToDisk;
+
+            if (*(*FileObject).SectionObjectPointer).SharedCacheMap != core::ptr::null_mut() {
+                *CcGetFileSizePointer(FileObject) = (*Fcb).Header.FileSize;
+            }
+
+            FatSetFileSizeInDirentNoRaise(IrpContext, Fcb, core::ptr::null_mut());
+        }
+
+        if CacheMapInitialized != 0 {
+            CcUninitializeCacheMap(FileObject, core::ptr::null_mut(), core::ptr::null_mut());
+        }
+
+        if ResourceAcquired != 0 {
+            ExReleaseResourceLite((*Fcb).Header.PagingIoResource);
+        }
+
+        DebugTrace(-1, Dbg, b"FatSetEndOfFileInfo -> %08lx\n\0".as_ptr() as *const i8, Status);
+        break;
+    }
+
+    Status
 }
 
 

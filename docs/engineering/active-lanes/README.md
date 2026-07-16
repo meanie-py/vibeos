@@ -17,3 +17,4 @@ registry), never left to rot in an archived doc.
 | `msvcrt-homebrew` | [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
 | `stable-toolchain` | [stable-toolchain-plan.md](stable-toolchain-plan.md) |
 | `shell32-com` | [shell32-com-plan.md](shell32-com-plan.md) *(translation driven by Codex, not rustconv)* |
+| `i386-apic-hal` | [i386-apic-hal-plan.md](i386-apic-hal-plan.md) *(Phase A **LANDED** 2026-07-16 — APIC is now the i386 default HAL, legacy PIC behind `--hal-pic`; Phase B returns to `smp-bringup`)* |

@@ -22,6 +22,8 @@
 #[deny(unsafe_code)]
 pub mod core_rs;
 
-// The C-ABI shim layer is generated and unsafe.
-#[cfg(feature = "cabi")]
+// The C-ABI shim layer is generated and unsafe. `cabi-math` compiles
+// ONLY cabi/math.rs (the msvcrt.dll libm flip — see Cargo.toml); the
+// full `cabi` compiles everything, exactly as before.
+#[cfg(any(feature = "cabi", feature = "cabi-math"))]
 pub mod cabi;

@@ -627,6 +627,12 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # LiveCD_SMP (ntkrnlmp.exe) entry. Reconciled every build like the
             # instrumentation flags so a plain build flips it back OFF.
             "VIBEOS_SMP_DEFAULT_BOOT": bool(getattr(args, "smp_kernel", False)),
+            # i386 HAL flavor: APIC (LAPIC/IOAPIC/TPR) is the DEFAULT as of the
+            # i386-apic-hal lane landing. The legacy 8259 PIC is the opt-out
+            # escape hatch (`--hal-pic` → -DVIBEOS_PIC_HAL=ON); reconciled every
+            # build so a plain build reverts to the APIC HAL. i386 only — amd64
+            # hal is always APIC.
+            "VIBEOS_PIC_HAL": bool(getattr(args, "hal_pic", False)),
         },
     )
     if wrapped is None:
@@ -778,15 +784,52 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     if not _verify_flag_artifacts(run, repo, build_dir, args):
         return run.finalize(repo)
 
-    # optional arch-specific targets (best-effort)
-    if cfg.ninja_targets_optional:
-        run.run(
-            wrap(["ninja", *cfg.ninja_targets_optional]),
+    # optional arch-specific targets — ONE ninja per target, and every outcome
+    # REPORTED. "Optional" means the target may be ABSENT (not in this build's
+    # ninja graph); it has never meant "ignore whether it built".
+    #
+    # Two ways this used to lie, both of which stage a STALE binary into the
+    # arm64 ramdisk and still go green — the exact false-green class archcfg's
+    # comment block exists to prevent:
+    #   1. Batching (`ninja a b c`): ninja rejects the WHOLE command on the first
+    #      unknown target, so one absent target silently skipped the present
+    #      ones. kmtest_all only exists under -DENABLE_ROSTESTS(_KMTESTS)=ON
+    #      (both default OFF), so a kmtests-off dir took arm64input/arm64vid —
+    #      and ntkrnlmp — down with it.
+    #   2. Discarding the result: a target that EXISTS but FAILS TO COMPILE was
+    #      swallowed whole. arm64input could stop building entirely and the build
+    #      stayed ✓ while mkramdisk staged the last-good .sys.
+    #
+    # So: absence is a VISIBLE skip; a real build failure FAILS the build. And
+    # the polarity is fail-loud — only ninja's recognised "unknown target" counts
+    # as absence. Anything we can't classify is a failure, never a shrug.
+    for target in cfg.ninja_targets_optional:
+        cp = run.run(
+            wrap(["ninja", target]),
             cwd=build_dir,
             env=build_env,
-            stage="ninja-optional",
+            stage=f"ninja-optional:{target}",
             timeout=900,
         )
+        if cp.returncode == 0:
+            run.add(Stage(f"opt:{target}", status="ok"))
+            continue
+        blob = (cp.stdout or "") + (cp.stderr or "")
+        if "unknown target" in blob.lower():
+            run.add(Stage(f"opt:{target}", status="skip", detail="absent from ninja graph"))
+            continue
+        cls, salient = _classify_build_failure(cp.stdout or "", cp.stderr or "")
+        run.classification = cls
+        run.add(
+            Stage(
+                f"opt:{target}",
+                exit=cp.returncode,
+                status="fail",
+                detail=f"optional target FAILED to build ({cls}) — not absent, broken",
+                salient=salient,
+            )
+        )
+        return run.finalize(repo)
 
     # --- cache hit-rate stats (also the determinism gauge) ---
     if caching and build_env is not None:
@@ -798,6 +841,11 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         ramdisk = repo / "qemu" / "ramdisk.img"
         flag = "--refresh" if ramdisk.is_file() else ""
         cmd = ["bash", str(mk)] + ([flag] if flag else [])
+        # SMP media (smp-bringup-quest.md M5): stage ntkrnlmp.exe + boot-select it
+        # via /KERNEL=ntkrnlmp.exe. Opt-in with --smp-kernel; a plain build omits
+        # --smp so the ramdisk boots UP ntoskrnl.exe (default stays UP).
+        if getattr(args, "smp_kernel", False):
+            cmd.append("--smp")
         cp = run.run(cmd, cwd=repo, stage="mkramdisk", timeout=900)
         if cp.returncode != 0:
             run.classification = "RESTAGE_FAIL"
