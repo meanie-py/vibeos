@@ -838,3 +838,27 @@ arm64 SCM path.
   advapi32** (the boot is well past both). This is a distinct LPC/PS-thread-exit lane. `SC_AutoStartComplete`
   never fires, so the kmtest sweep still never runs → **still no baseline**, but the wall is now two
   subsystems deeper than where "fix services" started.
+  *(SUPERSEDED — the 0x3 was the LpcExitThread §9.65 `DbgBreakPoint`, fixed+landed `ce89f8d6af1`; see
+  the "arm64 SCM fully UP" milestone entry above and the test-2 root-cause below.)*
+
+### 2026-07-16 (later still) — test-2 stall ROOT-CAUSED: an arm64 kernel user-APC-delivery bug (NOT the harness)
+
+Instrumenting `IOCTL_KMTEST_USERMODE_AWAIT_REQ`'s `KeWaitForSingleObject` (the usermode-callback
+worker `kmtest/support.c`) showed it returns **`STATUS_USER_APC` (0xC0) *persistently*** — even though
+the wait is `Alertable=FALSE`. `STATUS_USER_APC` from a `UserMode` wait means "unwind to user mode to
+deliver the queued user APC," but on arm64 that APC is **never delivered/cleared**, so every re-issue
+of the wait returns 0xC0 again. The driver's `break`-on-APC then completes the IOCTL with
+`Information = 0`; the usermode worker's `ASSERT(BytesReturned == sizeof(RequestPacket))` fires, the
+worker dies, and the kernel-side test hangs → sweep stalls after test 1.
+
+* This is the **same arm64 user-APC-delivery family** as the `KiUserModeCallout` issues (field manual)
+  — a real kernel bug, well beyond the kmtest harness or the SCM.
+* **A speculative "re-wait on APC" patch in `kmtest_drv.c` was WRONG and was REVERTED.** It turned the
+  single mis-sized return into an *infinite loop* (spin on 0xC0, flooding serial, hanging the boot) —
+  which is itself the proof that the pending user APC is never delivered. Lesson: the fix belongs in
+  the arm64 return-to-usermode APC path, not the test harness. (Also: never loop a driver dispatch on
+  `STATUS_USER_APC`.)
+* **Next step for a full multi-test arm64 baseline** = fix arm64 user-APC delivery (why a pending user
+  APC on a `UserMode` `KeWaitForSingleObject` is never delivered on return-to-usermode). Distinct
+  kernel lane; owed. Until then the arm64 conformance sweep captures **exactly one** result
+  (CmSecurity 300/89/2) before the first callback-using test wedges.
