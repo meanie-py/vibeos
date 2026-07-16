@@ -139,6 +139,30 @@ _CFGS = {
             "netstack",
             "livecd_hives",
             "afd",
+            # npfs = the named-pipe FS, services = the SCM. arm64 had NEITHER,
+            # which is why the kmtest sweep couldn't run: every test's
+            # CreateService is advapi32 -> RPC over \pipe\ntsvcs -> services.exe,
+            # so with no npfs and no SCM each test raised RPC_S_SERVER_UNAVAILABLE
+            # (0x6BA) before its first print. Both already build for arm64 and
+            # mkramdisk.sh stages them; npfs is already Start=1-registered in the
+            # arm64 SYSTEM hive and is hand-loaded via iomgr's STAGED_SVCS.
+            "npfs",
+            "services",
+            # lsass + its 2 unstaged DLLs. NOT optional once services runs:
+            # ScmCreateServiceDatabase ends in ScmWaitForLsa() =
+            # WaitForSingleObject(LSA_RPC_SERVER_ACTIVE, INFINITE), and only
+            # lsass.exe signals that event — an SCM without an LSA hangs forever
+            # mid-database, so SC_AutoStartComplete never fires and every kmtest
+            # times out. lsasrv/samsrv are the only 2 of lsass's 15 transitive
+            # DLLs not already staged for the boot.
+            "lsass",
+            "lsasrv",
+            "samsrv",
+            # msv1_0 = the MSV1_0 auth package lsasrv loads BY NAME at runtime
+            # (Lsa "Authentication Packages"), so no import-table walk finds it:
+            # lsass's every static import resolved and it still exited
+            # 0xC0000135 (STATUS_DLL_NOT_FOUND) without it.
+            "msv1_0",
             "msafd",
             "mswsock",
             "nettest",

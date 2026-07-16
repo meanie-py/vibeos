@@ -1458,10 +1458,58 @@ pub unsafe extern "system" fn WinMain(
 
     #[cfg(target_arch = "aarch64")]
     {
+        /* arm64 still skips winlogon's OWN RPC server, notifications and GINA
+         * (nothing on arm64 consumes the winlogon RPC interface yet) — but NOT
+         * the SCM, and NOT lsass.
+         *
+         * services.exe is the Service Control Manager, and without it arm64 has
+         * no CreateService/StartService at all: that is what blocked the kmtest
+         * conformance sweep, where every test is advapi32 -> RPC over
+         * \pipe\ntsvcs -> services.exe and so raised RPC_S_SERVER_UNAVAILABLE
+         * (0x6BA) before printing a line. Its whole import set and npfs.sys (the
+         * pipe transport) are staged on the ramdisk now.
+         *
+         * lsass MUST come with it, and is not optional: ScmCreateServiceDatabase
+         * ends with ScmWaitForLsa(), which is a
+         * WaitForSingleObject(LSA_RPC_SERVER_ACTIVE, INFINITE) — the event only
+         * lsass.exe ever signals (services-rust/src/services.rs:253). Starting
+         * the SCM WITHOUT lsass therefore hangs services.exe inside
+         * ScmCreateServiceDatabase forever (measured 2026-07-15: the SCM reached
+         * "LastKnownGood OK" and then sat on that INFINITE wait for 420s+, so
+         * SC_AutoStartComplete never fired and the kmtest sweep timed out every
+         * test). x86 has never hit it because its branch below starts lsass.
+         *
+         * All three (SCM, lsass, and the RPC/pipe transport under them) are
+         * non-fatal exactly like the x86 branch: if any fails we log and boot on,
+         * so the desktop North Star cannot regress behind them.
+         *
+         * DELIBERATE divergence from x86: we do NOT call WaitForLsass() after
+         * StartLsass(). services.exe already does its own ScmWaitForLsa, so
+         * nothing needs winlogon to block here — and making winlogon wait on
+         * lsass would put a brand-new INFINITE wait directly on the arm64
+         * boot-to-desktop path (the very failure mode above, moved into the
+         * process that OWNS the boot). Let the SCM do the waiting. */
         DbgPrint(
-            b"[WINLOGON] ARM64: Skipping RPC, services, lsass, notifications, GINA\n\0".as_ptr()
-                as *const i8,
+            b"[WINLOGON] ARM64: Skipping RPC, notifications, GINA\n\0".as_ptr() as *const i8,
         );
+        DbgPrint(b"[WINLOGON] ARM64: Calling StartServicesManager\n\0".as_ptr() as *const i8);
+        if StartServicesManager() == 0 {
+            DbgPrint(
+                b"[WINLOGON] StartServicesManager failed (non-fatal)\n\0".as_ptr() as *const i8,
+            );
+        } else {
+            DbgPrint(b"[WINLOGON] StartServicesManager OK\n\0".as_ptr() as *const i8);
+        }
+
+        DbgPrint(b"[WINLOGON] ARM64: Calling StartLsass\n\0".as_ptr() as *const i8);
+        if StartLsass() == 0 {
+            DbgPrint(
+                b"[WINLOGON] StartLsass failed (error %lu, non-fatal)\n\0".as_ptr() as *const i8,
+                GetLastError(),
+            );
+        } else {
+            DbgPrint(b"[WINLOGON] ARM64: StartLsass OK\n\0".as_ptr() as *const i8);
+        }
     }
 
     #[cfg(not(target_arch = "aarch64"))]

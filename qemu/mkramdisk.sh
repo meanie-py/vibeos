@@ -447,6 +447,37 @@ done
 # add_rostests_file fires — so an unconfigured build stages nothing and the
 # ramdisk stays byte-identical. archcfg.py builds `kmtest_all` (optional) so
 # what lands here is freshly built, never a stale leftover.
+# npfs.sys + services.exe — the SCM chain the kmtest corpus needs.
+# Every kmtest loads its driver via CreateService/StartService, which is
+# advapi32 -> RPC ncacn_np "\pipe\ntsvcs" -> services.exe (scm.c:42-44,
+# services/rpcserver.c:115). So the sweep needs BOTH the named-pipe FS and the
+# SCM itself, neither of which arm64 has ever staged: without them every test
+# raises RPC_S_SERVER_UNAVAILABLE (0x6BA) before its first print and the sweep
+# only sees a 180s timeout. Npfs is already registered Start=1 in the arm64
+# SYSTEM hive; it just needs the binary here + an entry in iomgr's arm64
+# STAGED_SVCS (the arm64 boot hand-loads an explicit list instead of the bulk
+# Start=1 enumeration). services.exe's whole import set (advapi32, rpcrt4,
+# user32, userenv, msvcrt, ntdll, kernel32, advapi32_vista) is already staged
+# above. lsass is deliberately NOT staged: kmtest needs the SCM, not the LSA,
+# and lsass would drag in lsasrv/samsrv.
+RMC "$BUILD_DIR/drivers/filesystems/npfs/npfs.sys"             ::/reactos/system32/drivers/npfs.sys
+RMC "$BUILD_DIR/base/system/services/services.exe"             ::/reactos/system32/services.exe
+# lsass is NOT optional once services.exe runs: ScmCreateServiceDatabase ends in
+# ScmWaitForLsa() = WaitForSingleObject(LSA_RPC_SERVER_ACTIVE, INFINITE), and
+# only lsass.exe ever signals that event (services-rust/src/services.rs:253). An
+# SCM without an LSA hangs forever mid-database (measured: stuck 420s+ after
+# "LastKnownGood OK"), so SC_AutoStartComplete never fires and every kmtest times
+# out. lsasrv/samsrv are the only 2 of lsass's 15 transitive DLLs not already
+# staged above.
+RMC "$BUILD_DIR/base/system/lsass/lsass.exe"                   ::/reactos/system32/lsass.exe
+RMC "$BUILD_DIR/dll/win32/lsasrv/lsasrv.dll"                   ::/reactos/system32/lsasrv.dll
+RMC "$BUILD_DIR/dll/win32/samsrv/samsrv.dll"                   ::/reactos/system32/samsrv.dll
+# msv1_0 = the MSV1_0 authentication package. lsasrv loads it BY NAME at runtime
+# (the Lsa "Authentication Packages" registry value), so it is invisible to an
+# import-table walk — lsass.exe's every STATIC import resolves and it still died
+# with ExitStatus=0xC0000135 (STATUS_DLL_NOT_FOUND) propagated as its exit code.
+RMC "$BUILD_DIR/dll/win32/msv1_0/msv1_0.dll"                   ::/reactos/system32/msv1_0.dll
+
 KMTESTS_DIR="$BUILD_DIR/modules/rostests/kmtests"
 if [ -f "$KMTESTS_DIR/kmtest_.exe" ]; then
     echo "[*] Staging kmtest corpus..."
