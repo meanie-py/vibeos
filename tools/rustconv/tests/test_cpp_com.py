@@ -589,6 +589,23 @@ def test_internal_com_object_fails_until_construction_is_mapped():
         cls.require_supported()
 
 
+def test_struct_class_object_entry_auto_and_fixed_scalar_array_are_supported():
+    scan = scan_file(SHELL32 / "CRecycleBinCleaner.cpp")
+    assert {item.cpp_class for item in scan.functions if item.name != "CreateInstance"} == {
+        "CRecycleBinCleaner"
+    }
+    cls = analyze_class(
+        SHELL32 / "CRecycleBinCleaner.cpp",
+        "CRecycleBinCleaner",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    cls.require_supported()
+    assert cls.object_map_clsid == "CLSID_RecycleBinCleaner"
+    assert cls.state_fields == ["WCHAR m_wszVolume[4]"]
+    state = cls.plain_state_fields()[0]
+    assert (state.name, state.rust_type) == ("m_wszVolume", "[WCHAR; 4]")
+
+
 def test_custom_base_class_fails_before_inherited_state_is_lost():
     cls = analyze_class(
         SHELL32 / "CCopyMoveToMenu.cpp",
@@ -744,6 +761,28 @@ def test_sibling_receiver_insertion_preserves_explicit_other_object_receiver():
     assert "C_g_body(this, a)" in normalized
     assert "C_g_body(other, a)" in normalized
     assert "C_g_body(this, other, a)" not in normalized
+
+
+def test_inline_struct_receiver_resource_string_and_callback_are_lowered():
+    source = """__stdcall Initialize() {
+        CStringW Tmp(MAKEINTRESOURCEW(IDS_TEXT));
+        C_Output_body(IDS_TEXT, out);
+        *pdwlSpaceUsed = bin.i64Size;
+        picb->ScanProgress(bin.i64Size, flags, NULL);
+    }"""
+    rust = """pub unsafe fn C_Initialize_body(this: *mut C) {
+        let Tmp = CStringW::new((IDS_TEXT as u16) as *mut u16);
+        SHStrDupW(Tmp, out);
+        C_Output_body(IDS_TEXT, out);
+        *pdwlSpaceUsed = bin.i64Size;
+        ((*(*picb)).lpVtbl).ScanProgress(picb, bin.i64Size, flags, core::ptr::null());
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "CStringW::from_resource(IDS_TEXT as UINT)" in normalized
+    assert "SHStrDupW(Tmp.as_ptr(), out)" in normalized
+    assert "C_Output_body(this, IDS_TEXT, out)" in normalized
+    assert "*pdwlSpaceUsed = bin.i64Size as DWORDLONG" in normalized
+    assert "((*(*picb).lpVtbl).ScanProgress)(" in normalized
 
 
 def test_worker_semantics_lowers_static_guid_predicate_without_model_pointer_cast():
@@ -966,7 +1005,9 @@ def test_cshellitem_support_and_semantics_are_deterministic():
     rust = """pub unsafe fn C_f_body(this: *mut C) -> HRESULT {
         let mut out: *mut IShellFolder = std::ptr::null_mut();
         if FAILED_UNEXPECTEDLY(hr) { return hr; }
-        CShellItem_get_shellfolder_body(pbc, IID_PPV_ARG(IShellFolder, &mut out as *mut *mut IShellFolder))
+        CShellItem_get_shellfolder_body(
+            pbc, IID_PPV_ARG(IShellFolder, &mut out as *mut *mut IShellFolder)
+        )
     }"""
     normalized = normalize_worker_semantics(source, rust)
     assert "core::ptr::null_mut" in normalized

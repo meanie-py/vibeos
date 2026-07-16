@@ -60,12 +60,14 @@ class PlainStateField:
     c_type: str
     name: str
     com_ptr_interface: str | None = None
+    array_len: int | None = None
 
     @property
     def rust_type(self) -> str:
         if self.com_ptr_interface is not None:
             return f"*mut {self.com_ptr_interface}"
-        return c_type_to_rust(self.c_type)
+        rust = c_type_to_rust(self.c_type)
+        return f"[{rust}; {self.array_len}]" if self.array_len is not None else rust
 
     @property
     def assignment_helper(self) -> str | None:
@@ -122,7 +124,7 @@ class CppComClass:
         return json.dumps(data, indent=2, sort_keys=True)
 
 
-_CLASS_HEAD = re.compile(r"\bclass\s+(?P<name>[A-Za-z_]\w*)\s*(?P<bases>:[^{]+)?\{")
+_CLASS_HEAD = re.compile(r"\b(?:class|struct)\s+(?P<name>[A-Za-z_]\w*)\s*(?P<bases>:[^{]+)?\{")
 _BEGIN_MAP = re.compile(r"\bBEGIN_COM_MAP\s*\(\s*(\w+)\s*\)")
 _END_MAP = re.compile(r"\bEND_COM_MAP\s*\(\s*\)")
 _MAP_ENTRY = re.compile(r"\b(COM_INTERFACE_ENTRY(?:2)?(?:_IID)?)\s*\(([^)]*)\)")
@@ -300,6 +302,45 @@ def _parse_plain_state_field(declaration: str) -> PlainStateField:
             name=name,
             com_ptr_interface=interface,
         )
+    fixed_array = re.fullmatch(
+        r"(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*)\s+"
+        r"(?P<name>[A-Za-z_]\w*)\s*\[\s*(?P<count>\d+)\s*\]",
+        text,
+    )
+    if fixed_array is not None:
+        c_type = fixed_array.group("type")
+        base = " ".join(re.sub(r"\b(?:const|volatile)\b", "", c_type).split())
+        scalar_types = set(_RUST_SCALARS) | {
+            "BOOL",
+            "BOOLEAN",
+            "BYTE",
+            "CHAR",
+            "DWORD",
+            "DWORD64",
+            "HRESULT",
+            "INT",
+            "INT_PTR",
+            "LONG",
+            "LONG_PTR",
+            "LONGLONG",
+            "SIZE_T",
+            "UINT",
+            "UINT_PTR",
+            "ULONG",
+            "ULONG_PTR",
+            "ULONGLONG",
+            "USHORT",
+            "WCHAR",
+            "WORD",
+        }
+        if base not in scalar_types:
+            raise CppComError(f"state field array element type is not proven scalar: {declaration}")
+        return PlainStateField(
+            declaration=text,
+            c_type=c_type,
+            name=fixed_array.group("name"),
+            array_len=int(fixed_array.group("count")),
+        )
     if any(token in text for token in ("<", ">", "&", "[", "]", "{", "}", "=", ",", ":")):
         raise CppComError(
             f"state field needs an explicit C++ layout/lifetime mapping: {declaration}"
@@ -373,15 +414,21 @@ def analyze_class(
     resource = re.search(r"\bDECLARE_REGISTRY_RESOURCEID\s*\(\s*([^)\s]+)\s*\)", body)
     not_agg = bool(re.search(r"\bDECLARE_NOT_AGGREGATABLE\s*\(", body))
     clsid = None
+    activation_sources = [source]
+    if header != source:
+        activation_sources.append(header)
     if object_map_source and object_map_source.is_file():
-        object_map = object_map_source.read_text(encoding="utf-8", errors="replace")
+        activation_sources.append(object_map_source.resolve())
+    for activation_source in dict.fromkeys(activation_sources):
+        object_map = activation_source.read_text(encoding="utf-8", errors="replace")
         hit = re.search(
-            rf"\bOBJECT_ENTRY\s*\(\s*([^,]+?)\s*,\s*"
+            rf"\bOBJECT_ENTRY(?:_AUTO)?\s*\(\s*([^,]+?)\s*,\s*"
             rf"{re.escape(class_name)}(?:RustEntry)?\s*\)",
             object_map,
         )
         if hit:
             clsid = hit.group(1).strip()
+            break
     return CppComClass(
         name=class_name,
         source=source,
@@ -811,6 +858,14 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     # C++ sibling calls have an implicit receiver. The prepared source names
     # every such worker explicitly, so receiver insertion is syntax-authoritative.
     owner = re.search(r"\b([A-Za-z_]\w*)::[~A-Za-z_]\w*\s*\(", source)
+    if owner is None:
+        # Inline ATL methods lose the qualified `Class::Method` spelling in
+        # the prepared source, but the generated worker signature still owns
+        # the receiver type.  Recover that deterministic owner instead.
+        owner = re.search(
+            r"\bfn\s+[A-Za-z_]\w*_body\s*\(\s*this\s*:\s*\*mut\s+([A-Za-z_]\w*)",
+            rust,
+        )
     sibling_calls = (
         set(re.findall(rf"\b({re.escape(owner.group(1))}_[A-Za-z_]\w*_body)\s*\(", source))
         if owner is not None
@@ -946,7 +1001,7 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         source,
     )
     if resource is not None:
-        _name, resource_id = resource.groups()
+        source_name, resource_id = resource.groups()
         binding = re.search(
             rf"let\s+([A-Za-z_]\w*)\s*:\s*\*const\s+u16\s*=\s*{re.escape(resource_id)}[^;]*;",
             rust,
@@ -961,6 +1016,44 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
             rust = re.sub(
                 rf"\b{re.escape(rust_name)}\s+as\s+\*mut\s+u16", f"{rust_name}.as_mut_ptr()", rust
             )
+        else:
+            rust = re.sub(
+                rf"let\s+(?:mut\s+)?{re.escape(source_name)}\s*=\s*CStringW::new\([^;]*\);",
+                f"let mut {source_name} = CStringW::from_resource({resource_id} as UINT);",
+                rust,
+                count=1,
+            )
+        rust = re.sub(
+            rf"\bSHStrDupW\s*\(\s*{re.escape(source_name)}\s*,",
+            f"SHStrDupW({source_name}.as_ptr(),",
+            rust,
+        )
+    # Fixed C arrays retain their extent in generated Rust object state.
+    rust = re.sub(r"\b_countof\s*\(([^()]+|\(\*this\)\.[A-Za-z_]\w*)\)", r"\1.len()", rust)
+    rust = re.sub(
+        r"\bStringCchCopyW\s*\(\s*(\(\*this\)\.[A-Za-z_]\w*)\s*,",
+        r"StringCchCopyW(\1.as_mut_ptr(),",
+        rust,
+    )
+    rust = re.sub(
+        r"\bSHEmptyRecycleBinW\s*\(\s*([^,]+),\s*(\(\*this\)\.[A-Za-z_]\w*)\s*,",
+        r"SHEmptyRecycleBinW(\1, \2.as_ptr(),",
+        rust,
+    )
+    # COM callback syntax is fixed by the generated interface vtable.  Some
+    # models add one dereference around the interface before selecting lpVtbl
+    # and omit the call-parentheses required for a Rust function-pointer field.
+    rust = re.sub(
+        r"\(\(\*\(\*([A-Za-z_]\w*)\)\)\.lpVtbl\)\.([A-Za-z_]\w*)\(",
+        r"((*(*\1).lpVtbl).\2)(",
+        rust,
+    )
+    if re.search(r"\*pdwlSpaceUsed\s*=\s*bin\.i64Size", source):
+        rust = re.sub(
+            r"\bbin\.i64Size\b(?!\s+as\s+DWORDLONG|\s*=)",
+            "bin.i64Size as DWORDLONG",
+            rust,
+        )
     if re.search(r"\bSIZE_T\s+[A-Za-z_]\w*\s*=\s*lstrlenW", source):
         rust = re.sub(
             r"let\s+cch\s*=\s*lstrlenW\(([^)]+)\)\s*\+\s*1\s*;",
@@ -1016,6 +1109,17 @@ _CPP_SUPPORT_EXTERNS = {
         "view: *mut *mut IShellView) -> HRESULT;"
     ),
     "SHFree": "    fn SHFree(memory: LPVOID);",
+    "SHQueryRecycleBinW": (
+        "    fn SHQueryRecycleBinW(root: LPCWSTR, info: *mut SHQUERYRBINFO) -> HRESULT;"
+    ),
+    "SHEmptyRecycleBinW": (
+        "    fn SHEmptyRecycleBinW(owner: HWND, root: LPCWSTR, flags: DWORD) -> HRESULT;"
+    ),
+    "SHGetSpecialFolderLocation": (
+        "    fn SHGetSpecialFolderLocation(owner: HWND, csidl: INT, "
+        "pidl: *mut LPITEMIDLIST) -> HRESULT;"
+    ),
+    "ShellExecuteExW": "    fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;",
     "ILGetNext": "    fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;",
     "SHELL32_CoCreateInitSF": (
         '    #[link_name = "Shell32RustCoCreateInitSF"]\n'
@@ -1098,7 +1202,15 @@ def _render_cmverbmap(source: str) -> str:
 
 
 _CPP_SUPPORT_CONSTANTS = {
+    "CSIDL_BITBUCKET": ("INT", "0x000a"),
     "CSIDL_PERSONAL": ("INT", "0x0005"),
+    "EVCCBF_LASTNOTIFICATION": ("DWORD", "0x0001"),
+    "EVCF_HASSETTINGS": ("DWORD", "0x0001"),
+    "SEE_MASK_IDLIST": ("ULONG", "0x0000_0004"),
+    "SHERB_NOCONFIRMATION": ("DWORD", "0x0000_0001"),
+    "SHERB_NOPROGRESSUI": ("DWORD", "0x0000_0002"),
+    "SHERB_NOSOUND": ("DWORD", "0x0000_0004"),
+    "SW_SHOWNORMAL": ("INT", "1"),
     "SFGAO_CANCOPY": ("SFGAOF", "0x0000_0001"),
     "SFGAO_CANRENAME": ("SFGAOF", "0x0000_0010"),
     "SFGAO_CANDELETE": ("SFGAOF", "0x0000_0020"),
@@ -1158,12 +1270,37 @@ def render_cpp_support(
             "}"
         )
 
+    if "DWORDLONG" in used_words:
+        chunks.append("pub type DWORDLONG = u64;")
+    if "SHQUERYRBINFO" in used_words:
+        chunks.append(
+            "#[repr(C)]\n"
+            "pub struct SHQUERYRBINFO {\n"
+            "    pub cbSize: DWORD,\n"
+            "    pub i64Size: i64,\n"
+            "    pub i64NumItems: i64,\n"
+            "}"
+        )
+    if "SHELLEXECUTEINFOW" in used_words:
+        chunks.append(
+            "#[repr(C)]\n"
+            "pub struct SHELLEXECUTEINFOW {\n"
+            "    pub cbSize: DWORD, pub fMask: ULONG, pub hwnd: HWND,\n"
+            "    pub lpVerb: LPCWSTR, pub lpFile: LPCWSTR, pub lpParameters: LPCWSTR,\n"
+            "    pub lpDirectory: LPCWSTR, pub nShow: INT, pub hInstApp: HINSTANCE,\n"
+            "    pub lpIDList: LPVOID, pub lpClass: LPCWSTR, pub hkeyClass: HKEY,\n"
+            "    pub dwHotKey: DWORD, pub icon_or_monitor: HANDLE, pub hProcess: HANDLE,\n"
+            "}"
+        )
+
     table = _render_cmverbmap(source)
     if table:
         chunks.append(table)
 
     if "CComHeapPtr" in used_words:
         used_words.add("CoTaskMemFree")
+    if "CStringW" in used_words:
+        used_words.update(("lstrlenW", "memcpy"))
     selected = [decl for name, decl in _CPP_SUPPORT_EXTERNS.items() if name in used_words]
     if selected:
         chunks.append('extern "system" {\n' + "\n".join(selected) + "\n}")
@@ -1192,6 +1329,18 @@ def render_cpp_support(
             "    let _ = memset(dst, 0, bytes);\n}"
         )
 
+    if "StringCchCopyW" in used_words:
+        chunks.append(
+            "#[inline]\n"
+            "unsafe fn StringCchCopyW(dst: LPWSTR, capacity: usize, src: LPCWSTR) -> HRESULT {\n"
+            "    if dst.is_null() || src.is_null() || capacity == 0 { return E_INVALIDARG; }\n"
+            "    let len = lstrlenW(src) as usize;\n"
+            "    if len >= capacity { *dst = 0; return E_FAIL; }\n"
+            "    let bytes = (len + 1) * core::mem::size_of::<WCHAR>();\n"
+            "    let _ = memcpy(dst.cast(), src.cast(), bytes);\n"
+            "    S_OK\n"
+            "}"
+        )
     if "CStringW" in used_words:
         chunks.append(_CPP_CSTRINGW_SUPPORT)
     if "CComPtr" in used_words:
@@ -1857,9 +2006,11 @@ def render_class_scaffold(cls: CppComClass, interfaces: list[InterfaceSpec]) -> 
         "    fn Shell32RustObjectLock();",
         "    fn Shell32RustObjectUnlock();",
         "}",
-        'extern "C" {',
-        "    pub static IID_IUnknown: IID;",
-        "}",
+        *(
+            []
+            if any(entry.interface == "IUnknown" for entry in cls.com_map)
+            else ['extern "C" {', "    pub static IID_IUnknown: IID;", "}"]
+        ),
         "",
         "#[repr(C)]",
         f"pub struct {cls.name} {{",

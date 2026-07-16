@@ -53,6 +53,7 @@ pub mod exe_drop_handler;
 pub mod fonts_folder;
 pub mod my_docs_folder;
 pub mod open_control_panel;
+pub mod recycle_bin_cleaner;
 pub mod shell_item;
 
 // wine/ — wine-derived pure-C bodies. Wave 0: shellreg (SHReg* registry wrappers).

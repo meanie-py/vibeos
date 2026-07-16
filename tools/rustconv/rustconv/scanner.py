@@ -517,6 +517,21 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                         cpp_class = _extract_text(c, source)
                         break
                 break
+            # Macro-heavy ATL classes can make tree-sitter wrap the otherwise
+            # intact class/struct body in one ERROR node.  Recover only when
+            # that node begins with an actual class-key followed by its type
+            # identifier; the owning syntax is still compiler-unambiguous.
+            if anc.type == "ERROR":
+                children = list(anc.children)
+                # The observed recovery case is `struct Name : ATL...`.
+                # Do not extend this to a malformed `class` ERROR: in large
+                # headers tree-sitter may absorb later free helpers into that
+                # node, falsely turning them into class methods.
+                if children and children[0].type == "struct":
+                    owner = next((c for c in children[1:] if c.type == "type_identifier"), None)
+                    if owner is not None:
+                        cpp_class = _extract_text(owner, source)
+                        break
             anc = anc.parent
         if cpp_class and name == cpp_class:
             is_ctor = True

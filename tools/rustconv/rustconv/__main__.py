@@ -1286,6 +1286,32 @@ def cmd_translate(args):
                 )
                 for entry in cpp_com_cls.com_map
             ]
+        # Parameter interfaces are ABI too.  Expand the WIDL closure
+        # recursively so callback/service vtables referenced by a COM-map
+        # method are generated from SDK authority instead of guessed by the
+        # body model (for example IEmptyVolumeCacheCallBack).
+        class_interface_names = {entry.interface for entry in cpp_com_cls.com_map}
+        known_interfaces = {item.name for item in cpp_com_interfaces}
+        queue = list(cpp_com_interfaces)
+        while queue:
+            interface = queue.pop(0)
+            referenced = {
+                name
+                for method in interface.methods
+                for c_type, _param in method.params
+                for name in re.findall(r"\b(I[A-Z][A-Za-z0-9_]*)\s*\*", c_type)
+            }
+            for name in sorted(referenced - known_interfaces):
+                try:
+                    header = discover_widl_header(REACTOS_ROOT, args.arch, interface=name)
+                    dependency = parse_widl_interface(header, name)
+                except CppComError:
+                    # Not every I-prefixed pointer is a COM interface
+                    # (ITEMIDLIST is the common shell counterexample).
+                    continue
+                cpp_com_interfaces.append(dependency)
+                known_interfaces.add(name)
+                queue.append(dependency)
         implemented = {
             f.name
             for f in scan.functions
@@ -1294,6 +1320,7 @@ def cmd_translate(args):
         required = {
             method.name
             for interface in cpp_com_interfaces
+            if interface.name in class_interface_names
             for method in interface.methods
             if method.name not in ("QueryInterface", "AddRef", "Release")
         }

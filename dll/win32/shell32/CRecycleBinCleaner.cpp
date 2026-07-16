@@ -146,4 +146,22 @@ public:
 };
 
 
-OBJECT_ENTRY_AUTO(CLSID_RecycleBinCleaner, CRecycleBinCleaner)
+/* Keep ATL registration metadata, but delegate activation to the generated Rust owner. */
+extern "C" HRESULT WINAPI CRecycleBinCleaner_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CRecycleBinCleanerRustEntry : public CRecycleBinCleaner
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CRecycleBinCleaner_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+OBJECT_ENTRY_AUTO(CLSID_RecycleBinCleaner, CRecycleBinCleanerRustEntry)

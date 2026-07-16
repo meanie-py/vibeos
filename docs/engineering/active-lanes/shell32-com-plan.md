@@ -313,3 +313,29 @@ into an accepted full module. After bounded repair Sonnet was green x3 on 3/5 ve
 agent-finished body on four cases at 2.55x model cost. The emerging router is therefore:
 cheap-first for ordinary workers, but escalate a substrate-clean high-band compile reject
 instead of spending agent time repairing broad ownership/type-shape residue.
+
+## Three-class production batch checkpoint (2026-07-16)
+
+A production-shaped batch exercised `CQueryAssociations`, `CFolderOptions`, and
+`CRecycleBinCleaner` together (~1,167 C++ lines). Deterministic preflight was extended for
+ATL classes declared with `struct`, `OBJECT_ENTRY_AUTO`, fixed scalar-array state, and
+recursively referenced WIDL callback interfaces. Internal `*_CreateInstance` classes still
+fail loud because their initializer/factory argument contract is not mapped yet.
+
+The router separated the three outcomes without discarding artifacts:
+
+- `CQueryAssociations::GetString` (231 nonblank lines, 94 calls, 72 sealed call occurrences)
+  damaged the call envelope with DeepSeek; the already-preserved Sonnet trial had also
+  failed the same envelope. It is owed deterministic CFG decomposition, not another retry.
+- `CFolderOptions` assembled entirely from the durable cache for $0, but remains substrate-
+  red on property-sheet and browser-service ABI. Its model work is preserved for replay.
+- `CRecycleBinCleaner` was the fresh accepted class: seven DeepSeek calls cost about $0.02
+  and all passed fact/call/body audit. Source-derived support for callback vtables, resource
+  strings, fixed arrays, recycle-bin/ShellExecute structs and APIs, implicit sibling
+  receivers, and signed SDK fields reduced 24 unique compiler diagnostics to zero on
+  i386/amd64/arm64 without regenerating a worker. ATL registration now delegates activation
+  to the Rust factory; all three real shell32 images link.
+
+This is the first batch where the useful result is deliberately heterogeneous: one accepted
+class, one reusable substrate backlog, and one deterministic-decomposition reject. Bulk
+throughput should count all three outcomes rather than treating non-integration as lost work.
