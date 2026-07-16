@@ -47,7 +47,6 @@ _NON_FACT_WORDS = {
     "CLSID",
     "DWORD",
     "ERR",
-    "FALSE",
     "FIXME",
     "GUID",
     "HRESULT",
@@ -58,7 +57,6 @@ _NON_FACT_WORDS = {
     "POINTL",
     "SIZE_T",
     "TRACE",
-    "TRUE",
     "UINT",
     "ULONG",
     "WCHAR",
@@ -157,7 +155,15 @@ def seal_facts(text: str) -> SealedSource:
             continue
         # Exclude `(TYPE *)value` and `TYPE *name` contexts.
         start = match.start()
-        cast_type = start > 0 and masked[start - 1] == "(" and bool(re.match(r"\s*\**\s*\)", tail))
+        closing = re.match(r"\s*\**\s*\)", tail)
+        after_cast = tail[closing.end() :].lstrip() if closing is not None else ""
+        cast_type = (
+            start > 0
+            and masked[start - 1] == "("
+            and closing is not None
+            and bool(after_cast)
+            and after_cast[0] not in ",);]}"
+        )
         declaration_type = bool(re.match(r"\s+\**\s*[A-Za-z_]\w*", tail))
         if cast_type or declaration_type:
             continue

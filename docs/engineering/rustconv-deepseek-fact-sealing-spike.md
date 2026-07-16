@@ -136,10 +136,67 @@ the harness owned constants, calls, signature, compile acceptance, and bounded r
    and deterministic repair cannot absorb. The accepted corpus is valuable, but clean
    function-pair extraction and evaluation are prerequisites, not a free by-product.
 
-## Next routing experiment
+## Stratified 20-method routing experiment
 
-Run 20 representative methods stratified by cheap static features (size, branches, loops,
-calls, pointers, gotos). For each, record template eligibility, first-pass envelope/audit,
-raw compile, deterministic-repair compile, tokens/cost, and whether a model-owned failure
-requires Sonnet. That gives the first evidence-backed router rather than hard-coding a
-DeepSeek optimism threshold from one easy worker.
+The follow-up corpus used 20 real shell32 workers across `CActiveDesktop`,
+`CExeDropHandler`, and `COpenControlPanel`: 10 zero-LLM template shapes and 10 model-tier
+bodies spanning low, medium, and high static difficulty. Artifacts and the manifest are
+durable under `~/vibeos-rust-staging/shell32-com/routing-corpus-v1/`.
+
+Nine fresh DeepSeek calls plus one reused sealed `GetPath` response consumed 18,053 input
+and 38,651 output tokens. Fresh spend was $0.04757; including the earlier cached `GetPath`
+call makes the ten-body historical cost $0.05182. All ten model responses passed fact
+sealing, call sealing, and the strict body audit before compilation.
+
+| Route | Raw x3 compile | After bounded repair | Fresh cost |
+|---|---:|---:|---:|
+| deterministic template | 10/10 | 10/10 | $0 |
+| DeepSeek body worker | 3/10 | 7/10 | $0.04757 |
+| total | 13/20 | 17/20 | $0.04757 |
+
+The useful router split is already visible: low model-tier workers were 4/4 repair-green,
+medium were 2/3, and high were 1/3. The three remaining failures were not constant or
+control-flow corruption: `Drop` and `Load` retained C API spellings that the isolated Rust
+substrate did not expose, while `Open` needed Rust ABI/type adaptation.
+
+### Cross-language semantic skeleton
+
+`rustconv skeleton-check corpus.json` now parses each source C/C++ worker and candidate Rust
+worker with tree-sitter and compares a normalized ordered control skeleton. It records
+branch/loop/return shape and a fuzzy sequence score while ignoring language-specific syntax
+and expressions. This corpus was 20/20 exact on normalized control skeletons; fuzzy scores
+ranged from 0.8325 to 1.0.
+
+That is useful evidence, but deliberately not an acceptance threshold. A compile-red
+`COpenControlPanel::Open` still scored 0.9417: structural similarity can catch a dropped
+branch or loop, but cannot prove FFI types, pointer semantics, call arguments, or ownership.
+The correct role is a cheap veto alongside closed fact/call sets, never a replacement for
+the compiler or semantic tests.
+
+### Sonnet escalation result
+
+The same three DeepSeek residuals were retried with `claude-sonnet-4-5-20250929`. The first
+attempt exposed a harness bug: statement-position `TRACE`/`ERR` macros were omitted from the
+sealed call set but remained visible to the model, so Sonnet treated them as runtime calls
+and renumbered the envelope. rustconv now removes complete debug-macro statements from the
+model-only body and dependency view before fact/call sealing; nested or conditional uses are
+left intact. The fixed prompt retained exactly ten call tokens for `Drop`.
+
+All three fixed Sonnet calls passed the deterministic envelopes and audit for about $0.05,
+but compiled 0/3 both raw and after the existing bounded repairs. `Drop` and `Load` failed
+mostly on the same unavailable C API spellings; `Open` emitted a body-local duplicate
+`SHELLEXECUTEINFOW`, producing a distinct Rust type, plus an integer mismatch. This is the
+important economic result: escalating model strength did not repair missing deterministic
+substrate. The next investment should be generated FFI/type/callee context and mechanical
+C-to-Rust call adaptation, not routine Sonnet retries for unresolved-symbol diagnostics.
+
+### Initial routing policy
+
+1. Instantiate known templates without a model.
+2. Send low/medium non-template workers to sealed DeepSeek mechanical mode.
+3. Require exact fact/call closure, strict body audit, semantic-skeleton compatibility, and
+   x3 compile after bounded repair.
+4. Classify unresolved symbols and duplicate local ABI types as harness/substrate work.
+   Do not pay a stronger model until the deterministic substrate is complete.
+5. Reserve Sonnet for residual semantic or structural failures after that substrate gate,
+   especially high-difficulty workers.

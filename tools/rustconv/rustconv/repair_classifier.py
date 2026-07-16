@@ -169,6 +169,62 @@ def _restore_base_initializers(base_function: str, candidate_function: str) -> t
     return candidate_function, len(replacements)
 
 
+def _restore_base_mutability(base_function: str, candidate_function: str) -> tuple[str, int]:
+    base_locals = {match.group("name"): match for match in _LOCAL_RE.finditer(base_function)}
+    insertions = []
+    for match in _LOCAL_RE.finditer(candidate_function):
+        base_match = base_locals.get(match.group("name"))
+        if (
+            base_match is not None
+            and base_match.group("mutable")
+            and not match.group("mutable")
+            and re.sub(r"\s", "", match.group("type"))
+            == re.sub(r"\s", "", base_match.group("type"))
+        ):
+            insertions.append(match.start("name"))
+    for position in reversed(insertions):
+        candidate_function = candidate_function[:position] + "mut " + candidate_function[position:]
+    return candidate_function, len(insertions)
+
+
+def _restore_base_argument_values(base_function: str, candidate_function: str) -> tuple[str, int]:
+    base_calls = _call_arguments(base_function)
+    candidate_calls = _call_arguments(candidate_function)
+    replacements = []
+    equivalents = {("TRUE", "true"), ("FALSE", "false")}
+    for callee, base_occurrences in base_calls.items():
+        candidate_occurrences = candidate_calls.get(callee, [])
+        if len(base_occurrences) != len(candidate_occurrences):
+            continue
+        for base_args, candidate_args in zip(base_occurrences, candidate_occurrences, strict=True):
+            if len(base_args) != len(candidate_args):
+                continue
+            for base_span, candidate_span in zip(base_args, candidate_args, strict=True):
+                base_arg = base_function[slice(*base_span)].strip()
+                candidate_arg = candidate_function[slice(*candidate_span)].strip()
+                if (base_arg, candidate_arg) in equivalents:
+                    replacements.append((*candidate_span, base_arg))
+    for start, end, replacement in reversed(replacements):
+        candidate_function = candidate_function[:start] + replacement + candidate_function[end:]
+    return candidate_function, len(replacements)
+
+
+def _restore_base_integer_predicates(
+    base_function: str, candidate_function: str
+) -> tuple[str, int]:
+    replacements = []
+    pattern = re.compile(r"\bif\s+([A-Z][A-Za-z0-9_]*\s*\([^{};]+\))\s*\{")
+    compact_base = re.sub(r"\s+", "", base_function)
+    for match in pattern.finditer(candidate_function):
+        expression = match.group(1)
+        compact_expression = re.sub(r"\s+", "", expression)
+        if f"if{compact_expression}!=0{{" in compact_base:
+            replacements.append((match.start(1), match.end(1), expression + " != 0"))
+    for start, end, replacement in reversed(replacements):
+        candidate_function = candidate_function[:start] + replacement + candidate_function[end:]
+    return candidate_function, len(replacements)
+
+
 def _repair_reassigned_locals(candidate_function: str) -> tuple[str, int]:
     masked = masked_rust(candidate_function)
 
@@ -233,6 +289,15 @@ def repair_worker(base: str, candidate: str, function: str) -> RepairResult:
     normalized, restored_initializers = _restore_base_initializers(base_function, normalized)
     if restored_initializers:
         applied.append(f"base_initializers:{restored_initializers}")
+    normalized, restored_mutability = _restore_base_mutability(base_function, normalized)
+    if restored_mutability:
+        applied.append(f"base_mutability:{restored_mutability}")
+    normalized, restored_values = _restore_base_argument_values(base_function, normalized)
+    if restored_values:
+        applied.append(f"base_argument_values:{restored_values}")
+    normalized, restored_predicates = _restore_base_integer_predicates(base_function, normalized)
+    if restored_predicates:
+        applied.append(f"base_integer_predicates:{restored_predicates}")
     normalized, mutable_locals = _repair_reassigned_locals(normalized)
     if mutable_locals:
         applied.append(f"mutable_reassignments:{mutable_locals}")

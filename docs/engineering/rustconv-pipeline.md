@@ -277,6 +277,9 @@ python -m rustconv --arch amd64 translate path/to/Class.cpp \
 python -m rustconv candidate-check candidates.json
 python -m rustconv candidate-check candidates.json --repair
 
+# Compare ordered cross-language branch/loop/return shape (veto, not acceptance).
+python -m rustconv skeleton-check candidates.json
+
 # Read-only opportunity census; alpha matches are never reused automatically.
 python -m rustconv dup-census dll/win32/shell32 --top 20
 ```
@@ -296,3 +299,17 @@ Every non-dry `translate` appends JSONL to `.responses/outcomes.jsonl`: model, t
 mode, seal flags, source hashes, cheap routing features, outcome, token/cost/latency, and
 artifact/cache identity. This ledger is the input to a future measured difficulty router;
 do not invent thresholds before the representative corpus exists.
+
+`skeleton-check` parses the C/C++ worker and Rust candidate with their native tree-sitter
+grammars, then compares a deliberately small semantic skeleton: ordered conditionals,
+loops, switches/matches, breaks/continues, and returns. It reports exact normalized shape
+plus a fuzzy sequence score. Use it to reject obvious dropped or invented control flow.
+Never accept on a similarity score: it cannot prove expressions, FFI types, pointer
+semantics, ownership, or call arguments, and the compiler remains mandatory.
+
+The first 20-worker shell32 corpus measured templates at 10/10 x3 compile for $0 and sealed
+DeepSeek at 3/10 raw, 7/10 after bounded repair. All 20 had exact normalized control
+skeletons. Retrying the three residuals with Sonnet produced 0/3 compile-green because the
+dominant failures were missing Rust substrate/API adaptations, not model capacity. Route
+unresolved-symbol and duplicate-ABI-type failures back into deterministic context/repair
+work before paying for a stronger model.

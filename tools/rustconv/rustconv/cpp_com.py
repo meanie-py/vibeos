@@ -148,6 +148,7 @@ def _class_bases(header: Path, class_name: str) -> list[str]:
         if match.group("name") != class_name:
             continue
         raw = (match.group("bases") or "").lstrip(":").strip()
+        raw = re.sub(r"/\*.*?\*/|//[^\n]*", " ", raw, flags=re.S)
         return _split_args(raw) if raw else []
     raise CppComError(f"{class_name}: class definition not found in {header}")
 
@@ -734,6 +735,29 @@ def _matching_paren(text: str, opening: int) -> int:
     raise CppComError("unbalanced helper call argument list")
 
 
+def strip_debug_statements(text: str) -> str:
+    """Remove complete shell32 debug-macro statements from a model-only view."""
+    masked = _masked_cpp(text)
+    spans = []
+    for match in re.finditer(r"\b(?:TRACE|FIXME|WARN|ERR|MESSAGE)\s*\(", masked):
+        before = masked[: match.start()].rstrip()
+        if before and before[-1] not in "{;}":
+            continue
+        opening = masked.find("(", match.start())
+        try:
+            closing = _matching_paren(masked, opening)
+        except CppComError:
+            continue
+        end = closing + 1
+        while end < len(masked) and masked[end].isspace():
+            end += 1
+        if end < len(masked) and masked[end] == ";":
+            spans.append((match.start(), end + 1))
+    for start, end in reversed(spans):
+        text = text[:start] + " " * (end - start) + text[end:]
+    return text
+
+
 def _argument_count(text: str, opening: int, closing: int) -> int:
     inner = text[opening + 1 : closing]
     if not inner.strip() or inner.strip() == "void":
@@ -950,6 +974,10 @@ def lower_trivial_worker(c_body: str, expected_signature: str) -> str | None:
             if match is None or match.group(1).strip() not in {"0", "NULL", "nullptr", "FALSE"}:
                 return None
     body = c_body[open_brace + 1 : close_brace]
+    # TRACE/FIXME/WARN/ERR/MESSAGE are no-op macro_rules in the shell32 Rust
+    # substrate. Remove only complete call statements before proving the
+    # remainder is one of the closed trivial shapes below.
+    body = strip_debug_statements(body)
     body = re.sub(r"/\*.*?\*/|//[^\n]*", " ", body, flags=re.S)
     body = re.sub(r"\bUNIMPLEMENTED\s*;", " ", body)
     body = " ".join(body.split())

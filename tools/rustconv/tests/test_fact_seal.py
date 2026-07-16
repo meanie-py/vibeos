@@ -42,6 +42,11 @@ def test_prepare_canonicalizes_before_sealing_generated_zero():
     assert [fact.original for fact in sealed.facts] == ["0", "S_OK"]
 
 
+def test_boolean_macros_are_values_owned_by_fact_sealing():
+    sealed = seal_facts("Call(TRUE); Call(FALSE);")
+    assert [fact.original for fact in sealed.facts] == ["TRUE", "FALSE"]
+
+
 def test_unseal_requires_closed_token_set_and_allows_required_repetition():
     sealed = seal_facts("return S_OK + 7;")
     rust = f"unsafe fn body() -> HRESULT {{ {sealed.text} }}"

@@ -209,5 +209,24 @@ The lane now has a deterministic cheap-model acceptance path before any class in
 
 This is a pipeline spike, not authorization to swap `COpenControlPanel` or skip the Wave 1
 pilot gate. The next experiment is a stratified 20-method routing corpus; production class
-translation still escalates any model-owned audit/compile failure to Sonnet after the fixed
-DeepSeek budget.
+translation still classifies any model-owned audit/compile failure after the fixed DeepSeek
+budget before deciding whether stronger-model escalation is warranted.
+
+## Routing corpus checkpoint (2026-07-15)
+
+The 20-method experiment is complete. Ten deterministic templates compiled 10/10 on all
+three arches for $0. Ten sealed DeepSeek workers compiled 3/10 raw and 7/10 after bounded
+repair; combined acceptance was 17/20 for $0.04757 of fresh DeepSeek spend. Low-difficulty
+model workers were 4/4 repair-green, medium 2/3, and high 1/3.
+
+`rustconv skeleton-check` added a cross-language tree-sitter control-skeleton oracle. All
+20 candidates preserved the normalized branch/loop/return skeleton, but a compile-red worker
+scored 0.9417, so the metric is a veto for obvious structural drops rather than an acceptance
+proof.
+
+The three residuals were escalated through a fixed, isolated Sonnet run. All passed the
+closed envelopes, but none compiled: two were dominated by C API spellings absent from the
+synthetic Rust substrate, and one duplicated an ABI struct locally. Stronger generation did
+not overcome missing deterministic context. Production routing should therefore classify
+and close substrate gaps before paying for escalation; Sonnet remains for genuine residual
+semantic/structural failures after that gate.

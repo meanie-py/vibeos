@@ -22,6 +22,7 @@ from . import (
     seh_inventory,
     seh_llm_lower,
     seh_rewrite,
+    semantic_skeleton,
     semdiff,
     switch_extract,
     user_lock_inventory,
@@ -61,6 +62,7 @@ from .cpp_com import (
     render_interface,
     render_object_map_adapter,
     render_wide_literal_statics,
+    strip_debug_statements,
     worker_signature,
 )
 from .extern_audit import run_extern_audit, run_extern_fix
@@ -334,6 +336,15 @@ def cmd_candidate_check(args):
     candidate_oracle.print_report(report, as_json=args.json)
     if any(item["status"] != "ok" for item in report["results"]):
         sys.exit(1)
+
+
+def cmd_skeleton_check(args):
+    """Compare C++ and Rust candidates using an experimental semantic skeleton."""
+    manifest = Path(args.manifest)
+    if not manifest.is_absolute():
+        manifest = (Path.cwd() / manifest).resolve()
+    report = semantic_skeleton.run_corpus(manifest)
+    semantic_skeleton.print_report(report, as_json=args.json)
 
 
 def cmd_cpp_com(args):
@@ -1335,6 +1346,7 @@ def cmd_translate(args):
                 "mode": mode,
                 "seal_facts": bool(getattr(args, "seal_facts", False)),
                 "seal_calls": bool(getattr(args, "seal_calls", False)),
+                "cache_tag": getattr(args, "cache_tag", None),
             },
         )
 
@@ -1420,13 +1432,16 @@ def cmd_translate(args):
         call_seal_enabled = bool(
             rustconv_target.name == "shell32" and getattr(args, "seal_calls", False)
         )
+        model_bodies = {dep.name: strip_debug_statements(dep.body_text) for dep in sorted_deps}
         fact_seals = (
-            {dep.name: prepare_sealed_source(dep.body_text) for dep in sorted_deps}
+            {dep.name: prepare_sealed_source(model_bodies[dep.name]) for dep in sorted_deps}
             if fact_seal_enabled
             else {}
         )
         model_sources = {
-            dep.name: fact_seals[dep.name].text if dep.name in fact_seals else dep.body_text
+            dep.name: fact_seals[dep.name].text
+            if dep.name in fact_seals
+            else model_bodies[dep.name]
             for dep in sorted_deps
         }
         call_seals = (
@@ -1444,7 +1459,13 @@ def cmd_translate(args):
         def _model_dep(dep, model_sources=model_sources, call_seals=call_seals):
             sealed_calls = call_seals.get(dep.name)
             body_text = sealed_calls.text if sealed_calls is not None else model_sources[dep.name]
-            return replace(dep, body_text=body_text) if body_text != dep.body_text else dep
+            debug_macros = {"TRACE", "FIXME", "WARN", "ERR", "MESSAGE"}
+            callees = dep.callees - debug_macros
+            return (
+                replace(dep, body_text=body_text, callees=callees)
+                if body_text != dep.body_text or callees != dep.callees
+                else dep
+            )
 
         def _deterministic_contract(dep, fact_seals=fact_seals, call_seals=call_seals) -> str:
             facts = fact_seals.get(dep.name)
@@ -2499,6 +2520,13 @@ def main():
         help="Apply only deterministic base-authority worker repairs before checking",
     )
 
+    p = sub.add_parser(
+        "skeleton-check",
+        help="Compare C++/Rust control and mutation AST skeletons (experimental, non-gating)",
+    )
+    p.add_argument("manifest", help="JSON routing corpus manifest")
+    p.add_argument("--json", action="store_true", help="Machine-readable report")
+
     # cpp-com — deterministic C++/ATL class ABI preflight + scaffold. No LLM.
     p = sub.add_parser(
         "cpp-com",
@@ -2955,6 +2983,7 @@ def main():
         "scan": cmd_scan,
         "dup-census": cmd_dup_census,
         "candidate-check": cmd_candidate_check,
+        "skeleton-check": cmd_skeleton_check,
         "cpp-com": cmd_cpp_com,
         "resolve": cmd_resolve,
         "semdiff": cmd_semdiff,

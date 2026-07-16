@@ -23,6 +23,7 @@ from rustconv.cpp_com import (
     render_interface,
     render_object_map_adapter,
     render_wide_literal_statics,
+    strip_debug_statements,
     worker_signature,
 )
 from rustconv.function_prompt import load_function_system_prompt
@@ -114,6 +115,13 @@ def test_com_map_ignores_commented_out_interfaces():
         object_map_source=SHELL32 / "shell32.cpp",
     )
     assert [entry.interface for entry in cls.com_map] == ["IActiveDesktop", "IPropertyBag"]
+    assert cls.base_classes == [
+        "public CComCoClass<CActiveDesktop, &CLSID_ActiveDesktop>",
+        "public CComObjectRootEx<CComMultiThreadModelNoCS>",
+        "public IActiveDesktop",
+        "public IPropertyBag",
+    ]
+    cls.require_supported()
 
 
 def test_shell32_has_a_dedicated_body_only_target_and_prompt():
@@ -541,6 +549,19 @@ def test_proven_unimplemented_stub_is_lowered_without_a_model():
         signature + " { E_NOTIMPL }"
     )
     assert lower_trivial_worker("C::f() { UNIMPLEMENTED; mutate_state(); }", signature) is None
+    assert lower_trivial_worker('C::f() { FIXME("%p", this); return E_NOTIMPL; }', signature) == (
+        signature + " { E_NOTIMPL }"
+    )
+    assert lower_trivial_worker('C::f() { TRACE("%p", this); mutate_state(); }', signature) is None
+
+
+def test_model_view_strips_only_complete_debug_statements():
+    source = 'C::f() { TRACE("x"); value = Call(); if (WARN("y")) return 1; ERR("z"); }'
+    stripped = strip_debug_statements(source)
+    assert 'TRACE("x")' not in stripped
+    assert 'ERR("z")' not in stripped
+    assert 'WARN("y")' in stripped
+    assert "value = Call()" in stripped
 
 
 def test_empty_constructor_only_lowers_proven_zero_initializers():

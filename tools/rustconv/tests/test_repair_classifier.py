@@ -70,3 +70,25 @@ def test_repair_restores_base_initializer_and_marks_reassigned_local_mutable():
     assert "let out: PWSTR = core::ptr::null_mut();" in result.code
     assert "let mut hr: HRESULT;" in result.code
     assert result.applied == ("base_initializers:1", "mutable_reassignments:1")
+
+
+def test_repair_restores_base_mutability_bool_values_and_integer_predicate():
+    base = """pub unsafe fn body() -> HRESULT {
+        let mut out: PWSTR = core::ptr::null_mut();
+        if IS_INTRESOURCE(out) != 0 { Call(TRUE, &mut out); }
+        0
+    }"""
+    candidate = """pub unsafe fn body() -> HRESULT {
+        let out: PWSTR = core::ptr::null_mut();
+        if IS_INTRESOURCE(out) { Call(true, &mut out); }
+        0
+    }"""
+    result = repair_worker(base, candidate, "body")
+    assert "let mut out" in result.code
+    assert "IS_INTRESOURCE(out) != 0" in result.code
+    assert "Call(TRUE, &mut out)" in result.code
+    assert result.applied == (
+        "base_mutability:1",
+        "base_argument_values:1",
+        "base_integer_predicates:1",
+    )

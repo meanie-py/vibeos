@@ -2,7 +2,9 @@ from rustconv.candidate_oracle import (
     CandidateOracleError,
     CandidateSpec,
     build_oracle_crate,
+    carry_deterministic_wide_statics,
     function_span,
+    load_manifest,
     replace_function,
 )
 
@@ -54,3 +56,51 @@ def test_generated_crate_batches_candidate_modules(tmp_path):
     assert set(paths.values()) == {"first", "second"}
     assert repairs == {}
     assert len(list((tmp_path / "oracle/src").glob("candidate_*.rs"))) == 2
+
+
+def test_generated_crate_maps_generated_worker_to_accepted_internal_name(tmp_path):
+    types = tmp_path / "types.rs"
+    shellcom = tmp_path / "shellcom.rs"
+    types.write_text("pub type DWORD = u32;\n")
+    shellcom.write_text("")
+    base = tmp_path / "base.rs"
+    base.write_text("unsafe fn load(value: DWORD) -> DWORD { value }")
+    candidate = tmp_path / "candidate.rs"
+    candidate.write_text(
+        "pub unsafe fn C_Load_body(value: DWORD) -> DWORD { value.wrapping_add(1) }"
+    )
+    specs = [CandidateSpec("load", "C_Load_body", candidate, base, "load")]
+    paths, _ = build_oracle_crate(specs, types, shellcom, tmp_path / "oracle")
+    generated = next(iter(paths)).read_text()
+    assert "unsafe fn load(value: DWORD) -> DWORD { value.wrapping_add(1) }" in generated
+    assert "C_Load_body" not in generated
+
+
+def test_corpus_manifest_defaults_candidate_to_durable_candidates_dir(tmp_path):
+    (tmp_path / "candidates").mkdir()
+    candidate = tmp_path / "candidates/case-1.rs"
+    base = tmp_path / "base.rs"
+    candidate.write_text("fn body() {}")
+    base.write_text("fn body() {}")
+    types = tmp_path / "types.rs"
+    shellcom = tmp_path / "shellcom.rs"
+    types.write_text("")
+    shellcom.write_text("")
+    manifest = tmp_path / "corpus.json"
+    manifest.write_text(
+        '{"target":"shell32","types":"types.rs","shellcom":"shellcom.rs",'
+        '"cases":[{"id":"case-1","function":"body","candidate_function":"body",'
+        '"base":"base.rs"}]}'
+    )
+    specs, _, _ = load_manifest(manifest)
+    assert specs == [CandidateSpec("case-1", "body", candidate.resolve(), base.resolve())]
+
+
+def test_only_generated_wide_statics_are_carried_into_base():
+    candidate = """pub static CPP_COM_WSTR_0123456789AB: [WCHAR; 2] = [65, 0];
+pub static MODEL_DATA: [WCHAR; 2] = [66, 0];
+fn body() {}
+"""
+    merged = carry_deterministic_wide_statics("fn base() {}\n", candidate)
+    assert "CPP_COM_WSTR_0123456789AB" in merged
+    assert "MODEL_DATA" not in merged

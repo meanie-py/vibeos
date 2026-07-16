@@ -23,6 +23,7 @@ class CandidateSpec:
     function: str
     candidate: Path
     base: Path
+    base_function: str | None = None
 
 
 def masked_rust(text: str) -> str:
@@ -93,6 +94,20 @@ def replace_function(base: str, candidate: str, name: str) -> str:
     return base[:base_start] + candidate[candidate_start:candidate_end] + base[base_end:]
 
 
+_WIDE_STATIC_RE = re.compile(
+    r"(?m)^pub static (CPP_COM_WSTR_[0-9A-F]{12}): \[WCHAR; \d+\] = \[[^\n]+;\n?"
+)
+
+
+def carry_deterministic_wide_statics(base: str, candidate: str) -> str:
+    """Carry only rustconv-generated UTF-16 data needed by a worker."""
+    additions = []
+    for match in _WIDE_STATIC_RE.finditer(candidate):
+        if not re.search(rf"\b{re.escape(match.group(1))}\s*:", base):
+            additions.append(match.group(0).rstrip())
+    return ("\n".join(additions) + "\n\n" + base) if additions else base
+
+
 def load_manifest(path: Path) -> tuple[list[CandidateSpec], Path, Path]:
     data = json.loads(path.read_text())
     if data.get("target", "shell32") != "shell32":
@@ -106,15 +121,30 @@ def load_manifest(path: Path) -> tuple[list[CandidateSpec], Path, Path]:
         local = (root / value).resolve()
         return local if local.exists() else (REACTOS_ROOT / value).resolve()
 
+    items = data.get("candidates")
+    if items is None:
+        items = [
+            {
+                "name": item["id"],
+                "function": item.get("candidate_function", f"{item['function']}_body"),
+                "candidate": item.get("candidate", f"candidates/{item['id']}.rs"),
+                "base": item["base"],
+                "base_function": item.get("base_function"),
+            }
+            for item in data.get("cases", [])
+        ]
     candidates = [
         CandidateSpec(
             item["name"],
             item["function"],
             resolve(item["candidate"]),
             resolve(item["base"]),
+            item.get("base_function"),
         )
-        for item in data["candidates"]
+        for item in items
     ]
+    if not candidates:
+        raise CandidateOracleError("manifest has no candidates/cases")
     substrate = REACTOS_ROOT / "sdk/lib/rust/shell32-rust/src"
     types_path = resolve(data.get("types", str(substrate / "types.rs")))
     shellcom_path = resolve(data.get("shellcom", str(substrate / "shellcom.rs")))
@@ -151,13 +181,30 @@ def build_oracle_crate(
         module_path = (src / f"{module_name}.rs").resolve()
         base_text = candidate.base.read_text()
         candidate_text = candidate.candidate.read_text()
+        candidate_function = candidate.function
+        if candidate.base_function and candidate.base_function != candidate.function:
+            start, end = function_span(candidate_text, candidate.function)
+            function_text = candidate_text[start:end]
+            function_text, replacements = re.subn(
+                rf"(\bfn\s+){re.escape(candidate.function)}\b",
+                rf"\g<1>{candidate.base_function}",
+                function_text,
+                count=1,
+            )
+            if replacements != 1:
+                raise CandidateOracleError(
+                    f"cannot map {candidate.function} to base function {candidate.base_function}"
+                )
+            candidate_text = candidate_text[:start] + function_text + candidate_text[end:]
+            candidate_function = candidate.base_function
         if repair:
             from .repair_classifier import repair_worker
 
-            repaired = repair_worker(base_text, candidate_text, candidate.function)
+            repaired = repair_worker(base_text, candidate_text, candidate_function)
             candidate_text = repaired.code
             repairs[candidate.name] = list(repaired.applied)
-        merged = replace_function(base_text, candidate_text, candidate.function)
+        merged = replace_function(base_text, candidate_text, candidate_function)
+        merged = carry_deterministic_wide_statics(merged, candidate_text)
         module_path.write_text(merged)
         module_paths[module_path] = candidate.name
         module_lines.append(f"#[path = {json.dumps(str(module_path))}] mod {module_name};")
@@ -286,6 +333,7 @@ def run_oracle(manifest: Path, arches: list[str], repair: bool = False) -> dict:
             {
                 "name": candidate.name,
                 "function": candidate.function,
+                "base_function": candidate.base_function or candidate.function,
                 "candidate": str(candidate.candidate),
                 "base": str(candidate.base),
                 "status": "ok"
