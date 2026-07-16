@@ -16,3 +16,4 @@ registry), never left to rot in an archived doc.
 | `smp-bringup` | [smp-bringup-quest.md](smp-bringup-quest.md) |
 | `msvcrt-homebrew` | [msvcrt-from-pieces-plan.md](msvcrt-from-pieces-plan.md) |
 | `stable-toolchain` | [stable-toolchain-plan.md](stable-toolchain-plan.md) |
+| `i386-apic-hal` | [i386-apic-hal-plan.md](i386-apic-hal-plan.md) *(Phase A **LANDED** 2026-07-16 — APIC is now the i386 default HAL, legacy PIC behind `--hal-pic`; Phase B returns to `smp-bringup`)* |

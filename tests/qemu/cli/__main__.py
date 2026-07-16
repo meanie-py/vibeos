@@ -80,6 +80,15 @@ def build_parser() -> argparse.ArgumentParser:
         "-DVIBEOS_SMP_DEFAULT_BOOT=ON). Opt-in only; default media stays UP. "
         "Pair with `smoke --smp N` to boot it with N vCPUs",
     )
+    b.add_argument(
+        "--hal-pic",
+        action="store_true",
+        help="i386 legacy PIC HAL escape hatch "
+        "(docs/engineering/active-lanes/i386-apic-hal-plan.md): build hal.dll "
+        "with the legacy 8259 PIC interrupt model instead of the DEFAULT "
+        "LAPIC/IOAPIC/TPR APIC HAL (-DVIBEOS_PIC_HAL=ON). i386 only (amd64 hal "
+        "is always APIC); a plain build is the APIC HAL",
+    )
     b.add_argument("--strict", action="store_true")
     b.add_argument(
         "--cache",

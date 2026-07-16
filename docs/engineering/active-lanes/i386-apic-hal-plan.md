@@ -1,8 +1,86 @@
 # i386 APIC HAL — Phase A work plan (lane brief)
 
+## Phase A — LANDED (2026-07-16): APIC is now the i386 DEFAULT HAL ✅
+
+The core deliverable **and** the A6 default-flip are **done** (branch
+`i386-apic-hal`). The i386 APIC HAL (LAPIC/IOAPIC/TPR, lazy-IRQL, RTC clock) is
+now the **default** `hal.dll` on i386 — a plain `vibeos-cli build --arch i386`
+produces APIC media that boots UP to the graphical desktop. The legacy 8259 PIC
+HAL is preserved in-tree, gated off, and still reachable via the `--hal-pic`
+(`VIBEOS_PIC_HAL`) escape hatch — **never deleted**, so the whole change is one
+`git revert` away. amd64/arm64 are provably untouched.
+
+**How it was built (differs from the brief's plan in a few places):**
+- **Flavor mechanism = env-swap of `hal.dll`, not a sibling `halaacpi.dll`.**
+  `hal-rust` gained an `apic` feature + a `build.rs` emitting `hal_apic`/`hal_pic`
+  cfgs (amd64 always `hal_apic`; i386 `hal_apic` by default now, `hal_pic` only
+  via the `--hal-pic` escape hatch; mini-HAL loaders stay `hal_pic`). Modules
+  gate on the *flavor* cfg, never raw `target_arch`. Post-flip a plain
+  `vibeos-cli build --arch i386` is the APIC HAL: hal-cargo/build.rs treats the
+  ABSENCE of `VIBEOS_PIC_HAL` as "build APIC" → enables the `apic` feature AND
+  assembles the APIC asm set (`apictrap.S` + `tsccal.S`). The `--hal-pic` escape
+  hatch → `-DVIBEOS_PIC_HAL=ON` → `gcc.cmake` threads `VIBEOS_PIC_HAL=1` into
+  hal-cargo → the legacy 8259 PIC set (`generic/systimer.S` + `generic/trap.S` +
+  `pic/pic.S`). A plain build reconciles back to APIC. The always-built sibling `halaacpi.dll` +
+  a `[LiveCD_Aacpi]` boot entry were deemed unnecessary — making `hal.dll` itself
+  the apic flavor is simpler and is the intended end-state (APIC replaces PIC).
+- **The i386 halves were ported in-place with `#[cfg(target_arch = ...)]` arms**
+  (amd64 paths preserved byte-for-byte), not as separate files — matching the
+  codebase's pcr/memory/misc convention.
+- **Clock decision reversed vs the brief:** the brief recommended keeping the
+  8254 PIT for Phase A, but the C APIC flavor's clock is the **CMOS RTC** (IRQ8 →
+  IOAPIC → 0xD1, `rtctimer.c`), and that's what shipped — C-faithful, and the
+  amd64 LAPIC-timer-as-clock KVM workaround was deliberately NOT ported (the HAL
+  is not bent for QEMU on i386; a TCG-drops-IRQ8 fallback would be a build flag).
+- **Lazy IRQL (`APIC_LAZY_IRQL`) is the default** and booted first try; the eager
+  path is kept behind a `const bool` for bisection.
+
+**Validation (2026-07-16):**
+- **Audit** — the i386 halves are a *faithful* port of the C: `HalpIRQLtoTPR[32]`
+  / `HalVectorToIRQL[16]` byte-identical to `apic.c`; the lazy-IRQL
+  get/set/lower model, `HalBeginSystemInterrupt`'s lazy re-queue, and every
+  handler (APC / DISPATCH / clock / profile) match `apic.c` / `rtctimer.c` /
+  `apictimer.c`; all ABIs verified against `ntoskrnl.spec` (`KeUpdateSystemTime`
+  fastcall, `KiEoiHelper` fastcall-noreturn, etc.). No correctness bugs found.
+- **i386 APIC opt-in (pre-flip)** — cold-built, **6/6 boots to desktop** (1 +
+  5/5 soak), banner confirmed at runtime.
+- **i386 DEFAULT (post-flip)** — a plain `--clean` build produces an APIC
+  `hal.dll` (banner string present) and boots **3/3 to desktop**, banner
+  confirmed at runtime. All 40+ scanners green (`scan_ud2`, `sacred_primitives`,
+  `verify_signatures`, `scan_irql_balance`, `scan_cc_mismatch`, …).
+- **Legacy PIC escape hatch (`--hal-pic`)** — a `--clean` build produces a PIC
+  `hal.dll` (no banner string) and boots green with no runtime banner: zero
+  regression, the escape hatch is intact.
+- **amd64 / arm64** — provably unaffected by the flip (amd64's `hal_apic` comes
+  from the unchanged `x86_64` match arm; `VIBEOS_PIC_HAL` is never set for them).
+  Confirmed green by the landing gate ×3.
+
+**A6 default-flip — DONE** (was "owed, left for the user"; authorized by "once
+apic works drop pic", pulled after the hardening pass above). APIC is now the
+i386 default; the legacy PIC is the `--hal-pic` / `VIBEOS_PIC_HAL` escape hatch.
+Six files:
+  1. `hal-cargo/build.rs` — `apic_hal = arch=="x86" && env::var("VIBEOS_PIC_HAL").is_err()`
+     (absence of the env ⇒ build APIC).
+  2. `hal-rust/build.rs` — doc/comment only (the cfg logic keys off the `apic`
+     feature, which hal-cargo now enables by default; unchanged).
+  3. `gcc.cmake` + `hal/halx86/CMakeLists.txt` — thread `VIBEOS_PIC_HAL=1` into
+     hal-cargo only when requested; invert the i386 flavor-asm dep-track default
+     to the APIC set.
+  4. `tests/qemu/cli/build.py` + `__main__.py` — reconcile key `VIBEOS_APIC_HAL`
+     → `VIBEOS_PIC_HAL`; rename `--hal-apic` → `--hal-pic`.
+The PIC modules stay in-tree, **gated off, never deleted** (translation-preserve
+rule) — the flip is one `git revert` away. Landed on `master` via the usual
+merge after a green FULL gate ×3.
+
+Phase B (AP start, idle-lock/SwapBusy, M5c taps) returns to the smp-bringup lane,
+reusing aptramp32 + ke/ipi.rs + this APIC HAL.
+
+---
+
+
 **Deliverable:** i386 UP boots to desktop on an APIC/IOAPIC/TPR-model HAL flavor,
-gate green. Opt-in flavor only — the default i386 media keeps the PIC HAL
-untouched. **Phase B (multi-CPU: AP start, idle-lock/SwapBusy, M5c taps) is
+gate green. ✅ **DONE + made the default** (A6 flip landed; legacy PIC preserved
+behind `--hal-pic`). **Phase B (multi-CPU: AP start, idle-lock/SwapBusy, M5c taps) is
 explicitly OUT of this lane** — it returns to the smp-bringup lane when Phase A
 lands (see `smp-bringup-quest.md`).
 
@@ -72,8 +150,9 @@ Survey provenance: 2026-07-15 scout over the tree at `smp-bringup` post-M5d
 
 ## Lane rules
 
-- Opt-in flavor only; default i386 PIC media must stay byte-identical. Gate ×3
-  before landing (the flavor build is additional, not a replacement).
+- ~~Opt-in flavor only; default i386 PIC media must stay byte-identical.~~
+  **Superseded by the A6 flip (2026-07-16): APIC is now the default; the legacy
+  PIC is the `--hal-pic` escape hatch.** Gate ×3 before landing.
 - Expect a debug tail: IRQL-model swaps manifest as lost softints / subtle hangs
   (see field manual §9.19-§9.22 for the arm64 equivalents of this bug class and
   the debugcon/serial tooling that found them).

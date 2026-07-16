@@ -693,6 +693,14 @@ function(add_cargo_module _target _crate _output)
     if(VIBEOS_SMP_DEFAULT_BOOT AND _crate STREQUAL "hal-cargo")
         list(APPEND _cargo_env VIBEOS_SMP_HAL=1)
     endif()
+    # i386 legacy PIC HAL escape hatch (-DVIBEOS_PIC_HAL=ON, `vibeos-cli build
+    # --hal-pic`): build hal.dll with the 8259 PIC flavor instead of the DEFAULT
+    # APIC flavor (LAPIC/IOAPIC/TPR). i386 only — amd64 hal is always APIC. A
+    # plain build (no env) is the APIC HAL; hal-cargo/build.rs treats the ABSENCE
+    # of VIBEOS_PIC_HAL as "build APIC".
+    if(VIBEOS_PIC_HAL AND _crate STREQUAL "hal-cargo")
+        list(APPEND _cargo_env VIBEOS_PIC_HAL=1)
+    endif()
 
     # Rebuild triggers: glob the bin crate (build.rs + target jsons + Cargo.toml
     # + any src), the shared reactos-link engine, and the rust body crate. A

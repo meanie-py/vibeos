@@ -1,14 +1,14 @@
-//! APIC HAL boot phases — per-processor LAPIC bring-up + IDT wiring
-//! at amd64-specific vectors (0xD1 clock, 0xFD profile).
+//! APIC HAL boot phases — per-processor LAPIC bring-up + IDT wiring at the
+//! APIC clock/profile vectors (0xD1 clock, 0xFD profile).
 //!
-//! Translated from `hal/halx86/apic/halinit.c` — amd64-only (the file
-//! lives in apic.cmake which is only included for amd64).
-//!
-//! Cfg-gated to `target_arch = "x86_64"` since pic_halinit.rs already
-//! provides HalpInitProcessor / HalpInitPhase0 / HalpInitPhase1 for
-//! i386; one Rust module per arch with the same exported names.
+//! Translated from `hal/halx86/apic/halinit.c`.  Compiled on the APIC flavor
+//! (`hal_apic`): amd64 always, or i386 with the `apic` feature.  Defines the
+//! same HalpInitProcessor / HalpInitPhase0 / HalpInitPhase1 that pic_halinit.rs
+//! provides on the PIC flavor — the two are swapped by the hal_apic/hal_pic
+//! module gates in mod.rs, never linked together.  The only per-arch delta is
+//! the clock/profile IRQL levels (16-level amd64 vs 32-level i386).
 
-#![cfg(target_arch = "x86_64")]
+#![allow(non_snake_case, non_upper_case_globals, dead_code, unused_unsafe)]
 
 use ntkrnl_sys::hal_ddk::{
     HalpClockInterrupt, HalpEnableInterruptHandler, HalpInitDma, HalpProfileInterrupt,
@@ -25,8 +25,17 @@ use crate::x86::smp_processor::HalpSetupProcessorsTable;
 // APIC vector + level constants (apic/apicp.h, _M_AMD64 branch).
 const APIC_CLOCK_VECTOR: ULONG = 0xD1;
 const APIC_PROFILE_VECTOR: ULONG = 0xFD;
-const CLOCK2_LEVEL: u8 = 13; // = CLOCK_LEVEL on amd64
-const APIC_PROFILE_LEVEL: u8 = 15; // = PROFILE_LEVEL on amd64
+// Clock/profile IRQL levels (apicp.h).  amd64 collapses to 16 IRQLs
+// (CLOCK=13, PROFILE=HIGH=15); i386 has 32 (CLOCK2=28, and the profile timer
+// is deliberately parked at HIGH_LEVEL=31 so it out-prioritises the clock).
+#[cfg(target_arch = "x86_64")]
+const CLOCK2_LEVEL: u8 = 13;
+#[cfg(target_arch = "x86_64")]
+const APIC_PROFILE_LEVEL: u8 = 15;
+#[cfg(target_arch = "x86")]
+const CLOCK2_LEVEL: u8 = 28;
+#[cfg(target_arch = "x86")]
+const APIC_PROFILE_LEVEL: u8 = 31; // HIGH_LEVEL  // nolint: inline-literal (i386 HIGH_LEVEL=31, not the amd64 15 the scanner knows)
 const IDT_INTERNAL: u8 = 17;
 const IDT_DEVICE: u8 = 33;
 

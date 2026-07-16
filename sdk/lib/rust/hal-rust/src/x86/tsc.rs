@@ -1,13 +1,14 @@
 //! TSC calibration + RDTSC-based stall / perf counter — translated from
-//! `hal/halx86/apic/tsc.c`.  Amd64-only (apic.cmake is amd64-only in the
-//! main HAL).
+//! `hal/halx86/apic/tsc.c`.  Compiled on the APIC flavor (`hal_apic`): amd64
+//! always, i386 with the `apic` feature.
 //!
 //! Calibrates the TSC frequency by running the CMOS RTC at 1024 Hz, sampling
 //! NUM_SAMPLES rdtsc readings via TscCalibrationISR (apic/tsccal.S), then
 //! linear-regressing to get cycles-per-second.  Drives KeQueryPerformanceCounter
-//! and KeStallExecutionProcessor.
+//! and KeStallExecutionProcessor.  The only per-arch delta is the IDT-gate write
+//! (8-byte i386 gate vs 16-byte amd64 gate) and the eflags push width.
 
-#![cfg(target_arch = "x86_64")]
+#![allow(non_snake_case, non_upper_case_globals, dead_code, unused_unsafe)]
 
 use ntkrnl_sys::ddk::KeBugCheck;
 use ntkrnl_sys::hal_ddk::{
@@ -52,6 +53,7 @@ const INITIAL_STALL_COUNT: i64 = 100;
 // linkable symbol; replicate inline.
 // ---------------------------------------------------------------------------
 
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn read_eflags() -> ULONG_PTR {
     let f: ULONG_PTR;
@@ -64,6 +66,7 @@ unsafe fn read_eflags() -> ULONG_PTR {
     f
 }
 
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn write_eflags(f: ULONG_PTR) {
     core::arch::asm!(
@@ -72,6 +75,20 @@ unsafe fn write_eflags(f: ULONG_PTR) {
         in(reg) f,
         options(nomem),
     );
+}
+
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn read_eflags() -> ULONG_PTR {
+    let f: ULONG_PTR;
+    core::arch::asm!("pushfd", "pop {0:e}", out(reg) f, options(nomem, preserves_flags));
+    f
+}
+
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn write_eflags(f: ULONG_PTR) {
+    core::arch::asm!("push {0:e}", "popfd", in(reg) f, options(nomem));
 }
 
 #[inline(always)]
@@ -136,6 +153,7 @@ unsafe fn vector_to_idt_entry(vector: ULONG) -> usize {
     vec_to_idt(vector) as usize
 }
 
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn register_interrupt_handler(vector: ULONG, handler: PVOID) {
     let pcr = crate::x86::pcr::KeGetPcr() as *mut _KIPCR;
@@ -156,6 +174,7 @@ unsafe fn register_interrupt_handler(vector: ULONG, handler: PVOID) {
     inner.Reserved1 = 0;
 }
 
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 unsafe fn query_interrupt_handler(vector: ULONG) -> PVOID {
     let pcr = crate::x86::pcr::KeGetPcr() as *mut _KIPCR;
@@ -166,6 +185,29 @@ unsafe fn query_interrupt_handler(vector: ULONG) -> PVOID {
         | ((inner.OffsetMiddle as u64) << 16)
         | (inner.OffsetLow as u64);
     address as PVOID
+}
+
+// i386: 8-byte KIDTENTRY — patch only the split 32-bit offset (kernel pre-set
+// the selector + gate type).  Same shape as apic.rs's register_interrupt_handler.
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn register_interrupt_handler(vector: ULONG, handler: PVOID) {
+    let pcr = crate::x86::pcr::KeGetPcr() as *mut _KIPCR;
+    let entry = vector_to_idt_entry(vector) as usize;
+    let e = &mut *(*pcr).IDT.add(entry);
+    let address = handler as usize;
+    e.Offset = (address & 0xffff) as u16;
+    e.ExtendedOffset = ((address >> 16) & 0xffff) as u16;
+}
+
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+unsafe fn query_interrupt_handler(vector: ULONG) -> PVOID {
+    let pcr = crate::x86::pcr::KeGetPcr() as *mut _KIPCR;
+    let entry = vector_to_idt_entry(vector) as usize;
+    let e = &*(*pcr).IDT.add(entry);
+    let address = ((e.ExtendedOffset as u32) << 16) | (e.Offset as u32);
+    address as usize as PVOID
 }
 
 // ---------------------------------------------------------------------------
