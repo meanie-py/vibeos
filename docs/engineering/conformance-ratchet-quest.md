@@ -725,3 +725,50 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   * Owed housekeeping when it lands: the `STAGED_SVCS` edit shifts iomgr/driver.rs line numbers, so
     the lint baselines (`lint_kernel`, `scan_silent_failures`) need regenerating — the "2 new/4 new"
     they report are pre-existing findings at drifted line numbers, not new defects.
+
+### 2026-07-15 (later) — RpcTryExcept FIXED (native-SEH shim); the arm64 baseline is now blocked one level deeper, in fastfat
+
+* **The dropped RpcTryExcept is FIXED and validated live.** New file
+  `dll/win32/advapi32/service/eventlog_seh.c` provides native-SEH C thunks
+  (`ElfrRegisterEventSourceW_seh` / `ElfrReportEventW_seh` / `ElfrDeregisterEventSource_seh`) that
+  restore the `RpcTryExcept { … } RpcExcept { I_RpcMapWin32Status(RpcExceptionCode()) }` the cohab
+  dropped. Compiled with `_USE_NATIVE_SEH`, which `pseh2.h` checks (line 28) BEFORE the global
+  `_USE_DUMMY_PSEH` default (line 179), so this one TU gets a real `__try` while the rest of
+  advapi32 stays DUMMY. The "calls-only" contract holds trivially — the `__try` body is nothing but
+  the RPC stub call, so the raise lands one frame down in the stub (return address inside the scope
+  table). It's a SOFTWARE raise (RpcRaiseException), which clang native SEH catches on amd64 AND
+  arm64 — kmsafecopy's arm64 *hardware*-fault gap (§9.69) does not apply. `eventlog.rs` declares the
+  three thunks and routes the ScmLogEvent-lifecycle sites through them. i386 keeps a pass-through
+  (`#else`) — clang i386 native SEH is unreliable (the reason `USE_DUMMY_PSEH` is the i386 default;
+  the kmtest native-SEH opt-in likewise excludes i386), and EventLog is present on the x86 boot so
+  the stub never raises there anyway. **Measured on arm64 (with the parked SCM chain applied):**
+  services.exe no longer dies at `ScmLoadService` with 0x6BA. It survives, logs the DcomLaunch
+  load-failure gracefully (`ScmLoadService(DcomLaunch) done: 2`), and proceeds through the autostart
+  list. **This closes the RpcTryExcept blocker (task #11).**
+* **The advapi32 fix LANDS on its own** — it is a genuine, general robustness fix (a dropped
+  exception handler) and is **inert on every current normal boot** (arm64 doesn't run services yet;
+  x86 has EventLog present → no raise), so it gates ×3 green without the SCM chain.
+* **NEW blocker for the arm64 baseline — a fastfat dropped-translation stub.** With services.exe now
+  surviving, the SCM autostarts **EventLog**; `eventlog.exe` runs and writes its `.evt` log →
+  `SetEndOfFile` → fastfat `FatSetEndOfFileInfo` → **BUGCHECK 0x23 FAT_FILE_SYSTEM (0xdead0000)**.
+  Root cause: `FatSetEndOfFileInfo` was **dropped during the fastfat C→Rust translation**
+  (`sdk/lib/rust/fastfat-rust/src/fileinfo.rs:2442` — *"no bank body (dropped at translate) —
+  link-recover later"* — it's declared `extern` and the link falls through to a bugcheck stub at
+  `drivers/filesystems/fastfat/rust_cohab_stub.c:622`, `KeBugCheckEx(0x23,0xDEAD0000,…)`). It is
+  **one of 25** such `STUB_BUGCHECK()` fastfat functions. This is arm64-specific ONLY because arm64
+  boots off the FAT32 ramdisk so every file write goes through fastfat; on x86 the boot FS differs
+  and these stubs are never hit. The C original is intact (`fileinfo.c:4387-4775`, ~200 lines of
+  active code: SEH unwind-on-abort restoring file sizes, `FatInitializeCacheMap`/`CcSetFileSizes`/
+  `MmCanFileBeTruncated`, `FatAddFileAllocation`, dirent updates). **This is a distinct fastfat
+  translation lane, not part of "fix services."**
+* **Consequence for landing the SCM chain:** it can't land until `FatSetEndOfFileInfo` (and likely a
+  few sibling stubs the sweep exercises) are translated — the now-surviving services.exe reaches
+  EventLog and bugchecks, which would *regress the arm64 desktop boot*. The parked stash note
+  (`arm64-scm-bringup v3`) records this. Pre-fix, services.exe died at the first ScmLogEvent (0x6BA)
+  before ever reaching EventLog, which is why the chain's earlier "boot still reaches desktop"
+  measurement held — the RpcTryExcept fix is precisely what advances the boot far enough to expose
+  the fastfat gap.
+* **Baseline status: still none.** The sweep now reports `sweep=DID NOT FINISH BUGCHECK=0x00000023`
+  (was: services.exe died silently). Next step toward a baseline = translate `FatSetEndOfFileInfo`
+  (rustconv single-function, ~$0.03–0.15, or a careful hand-translation of the C), re-run the arm64
+  sweep, and clear whatever further stubs the kmtest binaries hit.

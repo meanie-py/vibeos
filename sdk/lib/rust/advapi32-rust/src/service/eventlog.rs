@@ -29,6 +29,45 @@ extern "system" {
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> i32;
 }
 
+// ---- native-SEH thunks (service/eventlog_seh.c) --------------------------
+// The C original wrapped every EventLog RPC client-stub call in RpcTryExcept so
+// an absent EventLog server (RPC_S_SERVER_UNAVAILABLE raise) returned an error
+// instead of unwinding out of the process. Rust has no __try, so this cohab
+// dropped those handlers — a raise escaped and killed services.exe at
+// ScmLoadService with 0x6BA on the arm64 minimal-SCM boot. eventlog_seh.c is a
+// native-SEH C boundary (real __try on amd64/arm64, pass-through on i386) that
+// restores the catch; we call these *_seh thunks instead of the raw Elfr* stubs
+// at the three ScmLogEvent-lifecycle sites (Register/Report/Deregister). Same
+// ABI as the bindgen stubs (extern "system" => __stdcall@N on i386, cdecl on
+// win64). See eventlog_seh.c for the full rationale.
+extern "system" {
+    fn ElfrRegisterEventSourceW_seh(
+        UNCServerName: EVENTLOG_HANDLE_W,
+        ModuleName: PRPC_UNICODE_STRING,
+        RegModuleName: PRPC_UNICODE_STRING,
+        MajorVersion: ULONG,
+        MinorVersion: ULONG,
+        LogHandle: *mut IELF_HANDLE,
+    ) -> NTSTATUS;
+    fn ElfrReportEventW_seh(
+        LogHandle: IELF_HANDLE,
+        Time: ULONG,
+        EventType: USHORT,
+        EventCategory: USHORT,
+        EventID: ULONG,
+        NumStrings: USHORT,
+        DataSize: ULONG,
+        ComputerName: PRPC_UNICODE_STRING,
+        UserSID: PRPC_SID,
+        Strings: *mut PRPC_UNICODE_STRING,
+        Data: *mut u8,
+        Flags: USHORT,
+        RecordNumber: PULONG,
+        TimeWritten: PULONG,
+    ) -> NTSTATUS;
+    fn ElfrDeregisterEventSource_seh(LogHandle: *mut IELF_HANDLE) -> NTSTATUS;
+}
+
 // ---- file-scope preamble (translated) ----
 static mut EmptyStringU: RPC_UNICODE_STRING = RPC_UNICODE_STRING {
     Length: 0,
@@ -338,7 +377,7 @@ pub unsafe extern "system" fn ElfDeregisterEventSource(hEventLog: HANDLE) -> NTS
     let mut hEventLog = hEventLog;
     let Status: NTSTATUS;
 
-    Status = ElfrDeregisterEventSource(&mut hEventLog);
+    Status = ElfrDeregisterEventSource_seh(&mut hEventLog);
 
     Status
 }
@@ -941,7 +980,7 @@ pub unsafe extern "system" fn ElfRegisterEventSourceW(
 
     *phEventLog = core::ptr::null_mut();
 
-    Status = ElfrRegisterEventSourceW(
+    Status = ElfrRegisterEventSourceW_seh(
         pUNCServerName,
         SourceNameU as PRPC_UNICODE_STRING,
         core::ptr::addr_of_mut!(EmptyStringU),
@@ -1128,7 +1167,7 @@ pub unsafe extern "system" fn ElfReportEventW(
     NtQuerySystemTime(&mut SystemTime);
     RtlTimeToSecondsSince1970(&mut SystemTime, &mut Time);
 
-    Status = ElfrReportEventW(
+    Status = ElfrReportEventW_seh(
         hEventLog,
         Time,
         EventType,
