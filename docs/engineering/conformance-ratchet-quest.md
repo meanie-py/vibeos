@@ -725,3 +725,140 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
   * Owed housekeeping when it lands: the `STAGED_SVCS` edit shifts iomgr/driver.rs line numbers, so
     the lint baselines (`lint_kernel`, `scan_silent_failures`) need regenerating — the "2 new/4 new"
     they report are pre-existing findings at drifted line numbers, not new defects.
+
+### 2026-07-15 (later) — RpcTryExcept FIXED (native-SEH shim); the arm64 baseline is now blocked one level deeper, in fastfat
+
+* **The dropped RpcTryExcept is FIXED and validated live.** New file
+  `dll/win32/advapi32/service/eventlog_seh.c` provides native-SEH C thunks
+  (`ElfrRegisterEventSourceW_seh` / `ElfrReportEventW_seh` / `ElfrDeregisterEventSource_seh`) that
+  restore the `RpcTryExcept { … } RpcExcept { I_RpcMapWin32Status(RpcExceptionCode()) }` the cohab
+  dropped. Compiled with `_USE_NATIVE_SEH`, which `pseh2.h` checks (line 28) BEFORE the global
+  `_USE_DUMMY_PSEH` default (line 179), so this one TU gets a real `__try` while the rest of
+  advapi32 stays DUMMY. The "calls-only" contract holds trivially — the `__try` body is nothing but
+  the RPC stub call, so the raise lands one frame down in the stub (return address inside the scope
+  table). It's a SOFTWARE raise (RpcRaiseException), which clang native SEH catches on amd64 AND
+  arm64 — kmsafecopy's arm64 *hardware*-fault gap (§9.69) does not apply. `eventlog.rs` declares the
+  three thunks and routes the ScmLogEvent-lifecycle sites through them. i386 keeps a pass-through
+  (`#else`) — clang i386 native SEH is unreliable (the reason `USE_DUMMY_PSEH` is the i386 default;
+  the kmtest native-SEH opt-in likewise excludes i386), and EventLog is present on the x86 boot so
+  the stub never raises there anyway. **Measured on arm64 (with the parked SCM chain applied):**
+  services.exe no longer dies at `ScmLoadService` with 0x6BA. It survives, logs the DcomLaunch
+  load-failure gracefully (`ScmLoadService(DcomLaunch) done: 2`), and proceeds through the autostart
+  list. **This closes the RpcTryExcept blocker (task #11).**
+* **The advapi32 fix LANDS on its own** — it is a genuine, general robustness fix (a dropped
+  exception handler) and is **inert on every current normal boot** (arm64 doesn't run services yet;
+  x86 has EventLog present → no raise), so it gates ×3 green without the SCM chain.
+* **NEW blocker for the arm64 baseline — a fastfat dropped-translation stub.** With services.exe now
+  surviving, the SCM autostarts **EventLog**; `eventlog.exe` runs and writes its `.evt` log →
+  `SetEndOfFile` → fastfat `FatSetEndOfFileInfo` → **BUGCHECK 0x23 FAT_FILE_SYSTEM (0xdead0000)**.
+  Root cause: `FatSetEndOfFileInfo` was **dropped during the fastfat C→Rust translation**
+  (`sdk/lib/rust/fastfat-rust/src/fileinfo.rs:2442` — *"no bank body (dropped at translate) —
+  link-recover later"* — it's declared `extern` and the link falls through to a bugcheck stub at
+  `drivers/filesystems/fastfat/rust_cohab_stub.c:622`, `KeBugCheckEx(0x23,0xDEAD0000,…)`). It is
+  **one of 25** such `STUB_BUGCHECK()` fastfat functions. This is arm64-specific ONLY because arm64
+  boots off the FAT32 ramdisk so every file write goes through fastfat; on x86 the boot FS differs
+  and these stubs are never hit. The C original is intact (`fileinfo.c:4387-4775`, ~200 lines of
+  active code: SEH unwind-on-abort restoring file sizes, `FatInitializeCacheMap`/`CcSetFileSizes`/
+  `MmCanFileBeTruncated`, `FatAddFileAllocation`, dirent updates). **This is a distinct fastfat
+  translation lane, not part of "fix services."**
+* **Consequence for landing the SCM chain:** it can't land until `FatSetEndOfFileInfo` (and likely a
+  few sibling stubs the sweep exercises) are translated — the now-surviving services.exe reaches
+  EventLog and bugchecks, which would *regress the arm64 desktop boot*. The parked stash note
+  (`arm64-scm-bringup v3`) records this. Pre-fix, services.exe died at the first ScmLogEvent (0x6BA)
+  before ever reaching EventLog, which is why the chain's earlier "boot still reaches desktop"
+  measurement held — the RpcTryExcept fix is precisely what advances the boot far enough to expose
+  the fastfat gap.
+* **Baseline status: still none.** The sweep now reports `sweep=DID NOT FINISH BUGCHECK=0x00000023`
+  (was: services.exe died silently). Next step toward a baseline = translate `FatSetEndOfFileInfo`
+  (rustconv single-function, ~$0.03–0.15, or a careful hand-translation of the C), re-run the arm64
+  sweep, and clear whatever further stubs the kmtest binaries hit.
+
+### 2026-07-16 (later) — arm64 SCM fully UP; conformance sweep RUNS; first arm64 result captured
+
+**Three fixes landed** (all ×3-gate-green, on master): the advapi32 `RpcTryExcept` (`f754a3a8155`),
+the fastfat `FatSetEndOfFileInfo` recovery (`e5f2b28a3b5`), and the lpc `LpcExitThread` §9.65
+(`ce89f8d6af1`) + a `verify_ffi` baseline re-anchor (`3d004d50edd`). Together they clear the whole
+arm64 SCM path.
+
+* **The `LpcExitThread` 0x3 — hypothesis CONFIRMED by re-sweep.** After the §9.65 fix, the boot
+  emits many `PspExitThread: about to call LpcExitThread` with **no `0x3` following** (pre-fix, that
+  line was immediately followed by the bugcheck). So the always-on `DbgBreakPoint()` (C: DBG-gated
+  `ASSERT(FALSE)` for the "thread exits holding a reply message" TODO) *was* the 0x3.
+* **End-to-end validated on arm64** (SCM chain applied): threads exit cleanly → SCM starts
+  `DcomLaunch` → `EventLog` (**connect + START both succeed** now) → `Rpcss`/`Themes`/`SamSs`/… →
+  `SamSs` times out `connect result=1053` but the SCM correctly **does not block**, walks the rest of
+  the list, and **`SC_AutoStartComplete` FIRES**. The kmtest sweep sees it (`SCM auto-start complete
+  (waited ~0s)`), reads `kmtest-tests.txt`, and **runs the first test to a real result:**
+  **`[KMTEST:END CmSecurity pass=300 fail=89 skip=2]`** — the first arm64 kmtest result ever.
+* **The last mile — sweep stalls after test 1 (distinct, arm64-specific).** The 2nd `kmtest_.exe`
+  launches and immediately hits `*** ASSERT FAILED: BytesReturned == sizeof(RequestPacket) at
+  kmtest\support.c:52` → `Callback handler dying! Error code 2`. That's the kmtest **usermode-callback
+  worker** (`KmtUserModeWorker`): a test needing usermode callbacks (e.g. `QueryVirtualMemory`) spawns
+  a worker that loops on `IOCTL_KMTEST_USERMODE_AWAIT_REQ`; on arm64 that METHOD_BUFFERED IOCTL came
+  back with the wrong `BytesReturned`, so the worker asserts + dies and the kernel-side test hangs
+  waiting for a callback that never returns → the sweep drains out (`launched=1 sweep=DID NOT
+  FINISH`). i386 runs the full sweep (task #1 baseline), so this is an arm64 IOCTL/harness gap, NOT
+  the SCM. **This is the remaining blocker for a *full* multi-test arm64 baseline.**
+* **Landing the SCM chain is a cross-lane decision.** With the 3 fixes in, the chain no longer
+  regresses the arm64 desktop boot (it reaches the shell WITH services running). But it turns on a
+  full autostart storm on *every* arm64 boot, which changes the boot profile the smp lane's 1-in-258
+  0x4E flake hunt runs against. The clean landing is to **gate winlogon's `StartServicesManager` to
+  conformance-mode** (`VIBEOS_PAYLOAD=kmtest`) so normal arm64 boots stay lean — then land + coordinate
+  with the smp lane. Chain parked in stash `arm64-scm-bringup v5`.
+
+### 2026-07-16 — fastfat FatSetEndOfFileInfo TRANSLATED + validated; arm64 baseline now blocked on a 0x3 thread-exit crash
+
+* **`FatSetEndOfFileInfo` recovered.** rustconv `translate --fn FatSetEndOfFileInfo --mode mechanical`
+  ($0.06, durable archive under `tools/rustconv/.responses/`), integrated into `fastfat-rust/src/
+  fileinfo.rs` (the dropped-at-translate `extern` stub replaced with the real body), and the
+  shadowing bugcheck stub removed from `rust_cohab_stub.c` (lld `--allow-multiple-definition` is
+  first-match and the C obj links first, so leaving it would have silently kept the stub winning).
+  Integration was ~a dozen house-convention fixes: bindgen field paths
+  (`Parameters.SetFile.__bindgen_anon_1.__bindgen_anon_1.AdvanceOnly`, `.__bindgen_anon_1.LowPart`),
+  `FatUnpinBcb`/`FatGetDirentFromFcbOrDcb` taking `addr_of_mut!(Bcb)` not the Bcb, `NodeType(Fcb)`
+  untyped-cast removal, `NT_ASSERT((..) as i32)`, local `const FcbGood/STATUS_FILE_CLOSED`, an
+  `IsFileDeleted` extern, and the `if false /* _SEH2_AbnormalTermination() always false */` idiom
+  (mirrors `FatSetAllocationInfo`) that also dead-eliminates the macro-only `CcGetFileSizePointer`.
+  **Compiles clean on all three arches** (i386/amd64/arm64). **Lands separately** — a genuine
+  dropped-translation recovery, inert on normal boots (nothing SetEndOfFile's the FAT ramdisk there).
+* **VALIDATED end-to-end on the arm64 sweep.** With the SCM chain applied: `ScmLoadService(EventLog)
+  done: 0` → `logging success event` → `event logged OK`. i.e. the full ScmLogEvent lifecycle
+  (RegisterEventSourceW → ReportEventW → DeregisterEventSource) now runs — the RpcTryExcept fix + the
+  fastfat fix together. The SCM then created `NtControlPipe0` and walked the autostart list all the
+  way to **SamSs** (SAM). Two fastfat translation gaps down; the SCM is deep into real service
+  startup now.
+* **NEW blocker for the baseline: `BUGCHECK 0x3` in `LpcExitThread`.** During a **System thread
+  exit** (`PspExitThread … about to call LpcExitThread`), right after the `[NETSTACK] TDI self-test`
+  + `SET_INFO self-test` ran, and while the SCM was `ScmStartUserModeService(SamSs): waiting for
+  connect`. Params `(0xfffffa…d60, 0xfffffa…c00, 0, 3)` — both kernel pointers, so likely a
+  `KeBugCheckEx(3, thr, obj, 0, 3)` from the LPC/thread-teardown path, NOT a literal
+  INVALID_AFFINITY_SET. **Sole banner in the log (not a §9.54 mask.)** Almost certainly the known
+  arm64 thread-teardown flake family (cf. the netstack-TDI 0x1E residual + the smp lane's 1-in-258
+  0x4E) amplified by the dense thread churn of full service startup — **unrelated to fastfat/
+  advapi32** (the boot is well past both). This is a distinct LPC/PS-thread-exit lane. `SC_AutoStartComplete`
+  never fires, so the kmtest sweep still never runs → **still no baseline**, but the wall is now two
+  subsystems deeper than where "fix services" started.
+  *(SUPERSEDED — the 0x3 was the LpcExitThread §9.65 `DbgBreakPoint`, fixed+landed `ce89f8d6af1`; see
+  the "arm64 SCM fully UP" milestone entry above and the test-2 root-cause below.)*
+
+### 2026-07-16 (later still) — test-2 stall ROOT-CAUSED: an arm64 kernel user-APC-delivery bug (NOT the harness)
+
+Instrumenting `IOCTL_KMTEST_USERMODE_AWAIT_REQ`'s `KeWaitForSingleObject` (the usermode-callback
+worker `kmtest/support.c`) showed it returns **`STATUS_USER_APC` (0xC0) *persistently*** — even though
+the wait is `Alertable=FALSE`. `STATUS_USER_APC` from a `UserMode` wait means "unwind to user mode to
+deliver the queued user APC," but on arm64 that APC is **never delivered/cleared**, so every re-issue
+of the wait returns 0xC0 again. The driver's `break`-on-APC then completes the IOCTL with
+`Information = 0`; the usermode worker's `ASSERT(BytesReturned == sizeof(RequestPacket))` fires, the
+worker dies, and the kernel-side test hangs → sweep stalls after test 1.
+
+* This is the **same arm64 user-APC-delivery family** as the `KiUserModeCallout` issues (field manual)
+  — a real kernel bug, well beyond the kmtest harness or the SCM.
+* **A speculative "re-wait on APC" patch in `kmtest_drv.c` was WRONG and was REVERTED.** It turned the
+  single mis-sized return into an *infinite loop* (spin on 0xC0, flooding serial, hanging the boot) —
+  which is itself the proof that the pending user APC is never delivered. Lesson: the fix belongs in
+  the arm64 return-to-usermode APC path, not the test harness. (Also: never loop a driver dispatch on
+  `STATUS_USER_APC`.)
+* **Next step for a full multi-test arm64 baseline** = fix arm64 user-APC delivery (why a pending user
+  APC on a `UserMode` `KeWaitForSingleObject` is never delivered on return-to-usermode). Distinct
+  kernel lane; owed. Until then the arm64 conformance sweep captures **exactly one** result
+  (CmSecurity 300/89/2) before the first callback-using test wedges.

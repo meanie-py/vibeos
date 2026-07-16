@@ -61,7 +61,17 @@ pub unsafe extern "system" fn LpcExitThread(Thread: PETHREAD) {
 
     Message = LpcpGetMessageFromThread(Thread);
     if !Message.is_null() {
-        DbgBreakPoint();
+        // C original (ntoskrnl/lpc/close.c): `/* FIXME: TODO */ ASSERT(FALSE);`
+        // — the "thread exits still holding a reply message" case is an
+        // unimplemented ReactOS TODO. ASSERT(FALSE) is DBG-gated, so the FREE
+        // build (which is what ships and boots) compiles it out and continues,
+        // leaking the message. The translation turned it into an UNCONDITIONAL
+        // DbgBreakPoint() (the §9.65 anti-pattern: a debug macro rendered as an
+        // always-on call) — on arm64, under the dense LPC traffic of full service
+        // startup, a thread does exit with a pending message here, and the break
+        // crashed the system (BUGCHECK during PspExitThread). Match the free
+        // build: do not break. (Proper reclaim is the same TODO upstream carries.)
+        let _ = Message;
     }
 
     KeReleaseGuardedMutex(core::ptr::addr_of_mut!(LpcpLock));

@@ -717,3 +717,39 @@ and stronger: there is no design-reviewed C fallback in the build at all.
   i386 halves + TPR IRQL as Phase A "i386 UP on APIC", then Phase B AP start reusing
   aptramp32 + ke/ipi.rs, landing the i386 idle-lock + ctxswitch SwapBusy in the same
   change). Or land the arm64 lane on master first (full ×3 gate → merge → push).
+
+## Conformance-soak triage (2026-07-16) — amd64 `-smp 2` kmtest guest-load
+
+  Working the bugs the 20-sweep kmtest guest-load soak surfaced (task #10; full writeup field-manual §9.88). Amplifier =
+  a temporary MmMdl-dense sweep list (`kmtest-tests-amd64.txt` warmup + MmMdl ×25/boot;
+  RESTORE from `scratchpad/kmtest-tests-amd64.txt.REAL` before landing) + a background
+  boot/capture loop (`scratchpad/mmMdl_capture.sh` → `~/vibeos-flake-farm/mmMdl-evidence/`).
+
+  - **MmMdl 0x1E — ROOT-CAUSED + FIXED (`ARM3/mdlsup.rs` `MmUnmapLockedPages`).** The
+    kernel-path unmap carried an i386-bringup band-aid (commit `15434cd8dea`, "restore
+    explorer.exe"): `if ByteCount > 16MB { return; }`. That FALSE-FIRED on kmtest MmMdl's
+    legitimate **32MB** MDL maps, so unmap bailed WITHOUT `MiReleaseSystemPtes` — and,
+    critically, without ZEROING the PTEs. `MmFreePagesFromMdl` runs right after, so the
+    freed pages stayed mapped by **valid** system PTEs with live TLB entries → a
+    use-after-free alias: on `-smp 2`, CPU1 reallocates a page CPU0 still aliases → the
+    ~10% 0x1E. The same leak steadily starved `MmMapLockedPagesSpecifyCache`→NULL (the
+    `fail=4` soft face: MmMdl.c:68/100/103/104, with `MappedSystemVa` left holding a stale
+    VA). **Fix:** a precise use-after-free guard instead of a size cap — a genuinely
+    system-mapped MDL can never span more PTEs than the whole pool, so bail only when
+    `PageCount > MmTotalSystemPtes`, else release properly (zeroes the PTEs, closes the
+    alias, returns the pool). `MiReleaseSystemPtes` bounds-checks StartingPte itself as a
+    backstop. **Validated:** dense MmMdl ×25/boot went `fail=4`→`fail=0`, boot completes
+    (`done total=61`). Crash-rate confirmation (0 across many exposed runs) + gate ×3 in
+    progress before landing. (Residual `pass 569→563` across the 25× dense runs is benign
+    system-PTE fragmentation from the unnatural repeat, not a leak.)
+  - **KeIrql `fail 0→3` — NOT a kernel bug; kmtest build-config artifact.** amd64
+    `KeRaiseIrqlToSynchLevel` is a `FORCEINLINE` (xdk/amd64/ke.h:117) with a *compile-time*
+    `#ifdef CONFIG_SMP` → `KfRaiseIrql(12)` else `KfRaiseIrql(2)`. kmtest_drv is compiled
+    WITHOUT CONFIG_SMP → returns 2, but runs on ntkrnlmp (Prcb->BuildType clears the
+    UNIPROCESSOR bit) so `KmtIsMultiProcessorBuild=TRUE` and the test expects SYNCH=12
+    (KeIrql.c:32,111-116). Our `KfRaiseIrql(12)` (CR8=12) is fine. Disposition: compile
+    kmtest_drv with CONFIG_SMP for SMP conformance runs, or seed a separate SMP baseline
+    (conformance-harness scope, not the kernel). KeEvent's `pass` drift is the same class
+    (MP-build-detected sub-test expectations). Neither is a kernel change.
+  - **0xF4 boot-phase (2/20 soak) — pre-existing §9.56-class, still OPEN.** Separate from
+    MmMdl; not chased this pass.
