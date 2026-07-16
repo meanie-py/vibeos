@@ -283,3 +283,36 @@ targeted i386 Shift+F10 probe reached a live filesystem context menu without cra
 the existing WOW64 32-bit `MENU`/`ITEM` desktop-heap layout limitation rendered its labels
 as garbage, so that probe is not evidence that the Copy-as-path label or command invocation
 worked. The class-atomic build and full smoke gate are the durable acceptance evidence.
+
+### Broader validation: exact translation memory and source-derived RAII
+
+Three further out-of-sample classes were translated and compiled as complete generated
+modules: `CShellItem`, `CFontsFolder`, and `CAdminToolsFolder`. `CFontsFolder` required 22
+fresh sealed DeepSeek workers (about $0.06). An exact prepared-body translation memory then
+reused 19 of those 22 workers for the structurally identical `CAdminToolsFolder`; only
+`GetAttributesOf`, `GetClassID`, and `Initialize` made API calls (about $0.01). Every memory
+hit is keyed by method/signature, class interface/state shape, and sealing namespace, then
+passes ordinary normalization and audit before local-cache promotion. Alpha-only matches
+remain census evidence and are not reused.
+
+This is a measured 86% worker-call reduction and roughly 83% cost reduction for the folder
+pair. It is not a fleet-wide duplication estimate, but it proves accepted translations can
+eliminate calls mechanically rather than merely serve as prompt examples. The final pair
+oracle is `.responses/candidate-oracles/20260716-152746-058544/report.json`; both candidates
+have zero diagnostics on i386, amd64, and arm64.
+
+Manual ownership review of `CShellItem` found a compiler-invisible failure mode: DeepSeek
+emitted explicit `CComPtr` releases on normal paths but missed one early failure return.
+rustconv now derives every body-local `CComPtr<T>` from the C++ source, requires an anchored
+null raw-pointer slot, and injects a deterministic `CppComPtrGuard<T>` that releases the
+current slot on every Rust scope exit. Explicit releases null the watched slot, keeping
+cleanup idempotent. Replaying the same cache cost $0 and remained green x3 in
+`.responses/candidate-oracles/20260716-152731-352100/report.json`.
+
+All three classes were then wired through generated Rust factories and deterministic ATL
+object-map adapters. The folder C++ owners are disabled; `CShellItem.cpp` remains compiled
+for unrelated exported/free-function owners while activation routes to Rust. The integrated
+images passed the complete i386/amd64/arm64 gate, including network smoke, at
+`/tmp/vibeos-cli/20260716-154657-gate-i386+amd64+arm64/full.log`. This sharpens the acceptance
+rule: rustc and control skeletons are necessary, but source-derived ownership must also be
+mechanical before a C++ RAII worker can be accepted.

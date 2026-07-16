@@ -115,6 +115,35 @@ def call_contract(sealed: SealedCalls) -> str:
 
 def unseal_calls(rust: str, sealed: SealedCalls) -> str:
     expected = {call.placeholder for call in sealed.calls}
+    masked = _code_mask(rust)
+    executable = _PLACEHOLDER_RE.findall(masked)
+    missing_tokens = expected - set(executable)
+
+    # A model sometimes sees a generated sibling-worker declaration in context
+    # and writes that exact callee name instead of preserving its opaque token.
+    # Recover only the mechanically unambiguous case: every missing token for one
+    # callee has exactly one matching executable direct-call identifier.  Comments,
+    # declarations, duplicates, and approximate spellings remain hard failures.
+    missing_by_original: dict[str, list[SealedCall]] = {}
+    for call in sealed.calls:
+        if call.placeholder in missing_tokens:
+            missing_by_original.setdefault(call.original, []).append(call)
+    replacements: list[tuple[int, int, str]] = []
+    for original, calls in missing_by_original.items():
+        matches = []
+        for match in re.finditer(rf"\b{re.escape(original)}\s*(?=\()", masked):
+            prefix = masked[max(0, match.start() - 8) : match.start()]
+            if re.search(r"\bfn\s*$", prefix):
+                continue
+            matches.append(match)
+        if len(matches) == len(calls):
+            replacements.extend(
+                (match.start(), match.start() + len(original), call.placeholder)
+                for match, call in zip(matches, calls, strict=True)
+            )
+    for start, end, placeholder in sorted(replacements, reverse=True):
+        rust = rust[:start] + placeholder + rust[end:]
+
     executable = _PLACEHOLDER_RE.findall(_code_mask(rust))
     all_present = _PLACEHOLDER_RE.findall(rust)
     missing = sorted(expected - set(executable))

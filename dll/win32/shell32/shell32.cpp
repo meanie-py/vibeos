@@ -355,6 +355,57 @@ public:
     };
 };
 
+extern "C" HRESULT WINAPI CShellItem_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CShellItemRustEntry : public CShellItem
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CShellItem_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CFontsFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CFontsFolderRustEntry : public CFontsFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CFontsFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CAdminToolsFolder_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CAdminToolsFolderRustEntry : public CAdminToolsFolder
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CAdminToolsFolder_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 
 BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktopRustEntry)
@@ -363,7 +414,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ShellDesktop, CDesktopFolder)
     OBJECT_ENTRY(CLSID_ShellFileDefExt, CFileDefExt)
     OBJECT_ENTRY(CLSID_ShellDrvDefExt, CDrvDefExt)
-    OBJECT_ENTRY(CLSID_ShellItem, CShellItem)
+    OBJECT_ENTRY(CLSID_ShellItem, CShellItemRustEntry)
     OBJECT_ENTRY(CLSID_ShellLink, CShellLink)
     OBJECT_ENTRY(CLSID_Shell, CShellDispatch)
     OBJECT_ENTRY(CLSID_DragDropHelper, CDropTargetHelperRustEntry)
@@ -371,9 +422,9 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_OpenControlPanel, COpenControlPanelRustEntry)
     OBJECT_ENTRY(CLSID_MyDocuments, CMyDocsFolder)
     OBJECT_ENTRY(CLSID_NetworkPlaces, CNetFolder)
-    OBJECT_ENTRY(CLSID_FontsFolderShortcut, CFontsFolder)
+    OBJECT_ENTRY(CLSID_FontsFolderShortcut, CFontsFolderRustEntry)
     OBJECT_ENTRY(CLSID_Printers, CPrinterFolder)
-    OBJECT_ENTRY(CLSID_AdminFolderShortcut, CAdminToolsFolder)
+    OBJECT_ENTRY(CLSID_AdminFolderShortcut, CAdminToolsFolderRustEntry)
     OBJECT_ENTRY(CLSID_ShellFldSetExt, CFolderOptions)
     OBJECT_ENTRY(CLSID_RecycleBin, CRecycleBin)
     OBJECT_ENTRY(CLSID_OpenWithMenu, COpenWithMenu)
@@ -402,6 +453,13 @@ extern "C" void WINAPI Shell32RustObjectLock()
 extern "C" void WINAPI Shell32RustObjectUnlock()
 {
     gModule.Unlock();
+}
+
+extern "C" HRESULT WINAPI Shell32RustCoCreateInitSF(
+    LPCITEMIDLIST pidlRoot, const GUID *clsid, INT csidl,
+    REFIID riid, LPVOID *ppvOut)
+{
+    return SHELL32_CoCreateInitSF(pidlRoot, clsid, csidl, riid, ppvOut);
 }
 
 extern "C" INT WINAPI Shell32RustMapContextMenuVerbToCmdId(

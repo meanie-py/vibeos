@@ -8,6 +8,7 @@ import re
 import sys
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
@@ -94,7 +95,7 @@ from .prompt_builder import (
 )
 from .resolver import print_resolve_result, resolve
 from .resolver import resolve as file_resolve
-from .response_cache import PREAMBLE_KEY, ResponseCache
+from .response_cache import PREAMBLE_KEY, ExactBodyTranslationMemory, ResponseCache
 from .scanner import print_scan_result, scan_file
 from .seh_classifier import classify_directory, classify_file, print_classification, to_json
 from .shim_generator import check_shims, generate_shims
@@ -1637,6 +1638,43 @@ def cmd_translate(args):
         if call_seal_enabled:
             cache_suffix += "__callseal_v1"
         cache = ResponseCache(f"{subsystem}__{c_file.stem}{cache_suffix}")
+        translation_memory = None
+        memory_seeded: set[str] = set()
+        memory_identity: Callable[..., dict[str, object]] | None = None
+        if (
+            rustconv_target.name == "shell32"
+            and cpp_com_cls is not None
+            and mode == "mechanical"
+            and fact_seal_enabled
+            and call_seal_enabled
+        ):
+            translation_memory = ExactBodyTranslationMemory()
+            state_shape = [
+                (field.name, field.rust_type, field.com_ptr_interface)
+                for field in cpp_com_cls.plain_state_fields()
+            ]
+            class_shape = json.dumps(
+                {
+                    "interfaces": [entry.interface for entry in cpp_com_cls.com_map],
+                    "state": state_shape,
+                },
+                sort_keys=True,
+            )
+
+            def _memory_identity(dep, *, class_shape=class_shape, cache_suffix=cache_suffix):
+                assert dep.cpp_class is not None
+                return {
+                    "body_text": dep.body_text,
+                    "class_name": dep.cpp_class,
+                    "method": dep.cpp_method,
+                    "return_type": dep.return_type,
+                    "params": dep.params,
+                    "class_shape": class_shape,
+                    "namespace": f"mechanical{cache_suffix}",
+                }
+
+            memory_identity = _memory_identity
+
         resumed = 0
         if cache.count() and not no_resume:
             print(
@@ -1648,6 +1686,24 @@ def cmd_translate(args):
         # estimate = first-function prompt × function count (each call re-sends
         # context, so this is a floor, not a ceiling).
         paid_deps = [dep for dep in sorted_deps if dep.name not in deterministic_workers]
+        if translation_memory is not None and not no_resume:
+            for dep in paid_deps:
+                if dep.cpp_class is None:
+                    continue
+                if cache.get(dep.name, dep.body_text) is not None:
+                    continue
+                assert memory_identity is not None
+                hit = translation_memory.get(**memory_identity(dep))
+                if hit is None:
+                    continue
+                signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
+                hit = normalize_worker_body(hit, signature)
+                hit = normalize_worker_semantics(dep.body_text, hit)
+                findings = audit_worker_body(dep.body_text, hit, f"{dep.name}_body", signature)
+                if findings:
+                    continue
+                cache.put(dep.name, dep.body_text, hit)
+                memory_seeded.add(dep.name)
         pending_paid_deps = []
         for dep in paid_deps:
             hit = None if no_resume else cache.get(dep.name, dep.body_text)
@@ -1729,7 +1785,11 @@ def cmd_translate(args):
                     if hit is not None:
                         translated[dep.name] = hit
                         resumed += 1
-                        _record_outcome(dep, "cache_hit", cache_key=cache.dir.name)
+                        _record_outcome(
+                            dep,
+                            "translation_memory_hit" if dep.name in memory_seeded else "cache_hit",
+                            cache_key=cache.dir.name,
+                        )
                         continue
                 todo.append((func_idx, dep))
             ctx = dict(translated)  # static callee context (mechanical fns are independent)
@@ -1829,6 +1889,9 @@ def cmd_translate(args):
                             continue
                         translated[dp.name] = r.rust_code
                         cache.put(dp.name, dp.body_text, r.rust_code)
+                        if translation_memory is not None and dp.cpp_class is not None:
+                            assert memory_identity is not None
+                            translation_memory.put(r.rust_code, **memory_identity(dp))
                         total_in += r.input_tokens
                         total_out += r.output_tokens
                         artifact = None
@@ -1915,7 +1978,11 @@ def cmd_translate(args):
                 if hit is not None:
                     translated[dep.name] = hit
                     resumed += 1
-                    _record_outcome(dep, "cache_hit", cache_key=cache.dir.name)
+                    _record_outcome(
+                        dep,
+                        "translation_memory_hit" if dep.name in memory_seeded else "cache_hit",
+                        cache_key=cache.dir.name,
+                    )
                     print("CACHED ($0)", file=sys.stderr)
                     continue
 
@@ -1995,6 +2062,9 @@ def cmd_translate(args):
                 translated[dep.name] = result.rust_code
                 # Persist for cross-run resume the instant it returns.
                 cache.put(dep.name, dep.body_text, result.rust_code)
+                if translation_memory is not None and dep.cpp_class is not None:
+                    assert memory_identity is not None
+                    translation_memory.put(result.rust_code, **memory_identity(dep))
                 total_in += result.input_tokens
                 total_out += result.output_tokens
                 artifact = None
@@ -2192,7 +2262,12 @@ def cmd_translate(args):
                 raise CppComError("internal error: shell32 COM preflight state was lost")
             deterministic = [render_interface(item) for item in cpp_com_interfaces]
             deterministic.append(render_class_scaffold(cpp_com_cls, cpp_com_interfaces))
-            deterministic.append(render_cpp_support(c_file))
+            deterministic.append(
+                render_cpp_support(
+                    c_file,
+                    {f"IID_{interface.name}" for interface in cpp_com_interfaces},
+                )
+            )
             if cpp_com_wide_statics:
                 deterministic.append(cpp_com_wide_statics)
             stitched = "\n\n".join(deterministic) + "\n\n" + stitched

@@ -52,9 +52,9 @@ list(APPEND SOURCE
     folders/CDrivesFolder.cpp
     folders/CMyDocsFolder.cpp
     folders/CPrinterFolder.cpp
-    folders/CAdminToolsFolder.cpp
+    # folders/CAdminToolsFolder.cpp — replaced by Rust (shell32-rust/src/admin_tools_folder.rs); cohab via libshell32_rust.a
     folders/CNetFolder.cpp
-    folders/CFontsFolder.cpp
+    # folders/CFontsFolder.cpp — replaced by Rust (shell32-rust/src/fonts_folder.rs); cohab via libshell32_rust.a
     folders/CControlPanelFolder.cpp
     folders/CRecycleBin.cpp
     folders/CRecycleBinFolderViewCB.cpp

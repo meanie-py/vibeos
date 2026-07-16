@@ -33,3 +33,20 @@ def test_unseal_requires_each_call_once_in_executable_code():
             "unsafe fn f() { __RUSTCONV_CALL_0000__(1); /* __RUSTCONV_CALL_0000__ */ }",
             sealed,
         )
+
+
+def test_unseal_recovers_one_exact_prematurely_restored_direct_call():
+    sealed = seal_calls("int f() { return Worker_body(1); }", {"Worker_body"})
+    restored = unseal_calls("unsafe fn f() { Worker_body(1) }", sealed)
+    assert "Worker_body(1)" in restored
+
+
+def test_unseal_does_not_recover_ambiguous_or_declared_callee_names():
+    sealed = seal_calls("int f() { return Worker_body(1); }", {"Worker_body"})
+    with pytest.raises(CallSealError, match="missing/non-executable"):
+        unseal_calls(
+            "unsafe fn f() { Worker_body(1); Worker_body(2); }",
+            sealed,
+        )
+    with pytest.raises(CallSealError, match="missing/non-executable"):
+        unseal_calls("unsafe fn Worker_body() {}", sealed)

@@ -636,6 +636,46 @@ def test_worker_audit_allows_vtable_calls_but_rejects_option_guessing():
     assert any("Option/panic ABI guess" in item for item in findings)
 
 
+def test_worker_audit_allows_query_interface_calls_but_rejects_implementation():
+    source = "{ return object->QueryInterface(riid, out); }"
+    call = (
+        "pub unsafe fn C_f_body() -> HRESULT { "
+        "((*(*object).lpVtbl).QueryInterface)(object, riid, out) }"
+    )
+    assert audit_worker_body(source, call, "C_f_body") == []
+
+    implementation = "pub unsafe fn C_QueryInterface() -> HRESULT { S_OK }"
+    findings = audit_worker_body(source, implementation, "C_QueryInterface")
+    assert any("QueryInterface implementation" in item for item in findings)
+
+
+def test_worker_semantics_restores_cpp_com_ptr_scope_exit_ownership():
+    source = """HRESULT C::f() {
+        CComPtr<IShellFolder> folder;
+        CComPtr<IShellFolder> desktop;
+        return SHGetDesktopFolder(&folder);
+    }"""
+    rust = """pub unsafe fn C_f_body() -> HRESULT {
+        let mut folder: *mut IShellFolder = core::ptr::null_mut();
+        let mut desktop: *mut IShellFolder = core::ptr::null_mut();
+        let hr = SHGetDesktopFolder(&mut folder);
+        if hr < 0 { return hr; }
+        ((*(*folder).lpVtbl).Release)(folder);
+        hr
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "let _folder_cpp_com_guard = CppComPtrGuard::new(" in normalized
+    assert "let _desktop_cpp_com_guard = CppComPtrGuard::new(" in normalized
+    assert "folder = core::ptr::null_mut();" in normalized
+
+
+def test_worker_semantics_rejects_unanchored_cpp_com_ptr_local():
+    source = "CComPtr<IShellFolder> folder; return use(folder);"
+    rust = "pub unsafe fn C_f_body() -> HRESULT { use_folder() }"
+    with pytest.raises(CppComError, match="CComPtr local folder"):
+        normalize_worker_semantics(source, rust)
+
+
 def test_worker_audit_rejects_body_local_abi_types():
     source = "{ return Call(); }"
     rust = """pub unsafe fn C_f_body() -> HRESULT {
@@ -797,6 +837,7 @@ def test_cpp_semantic_lowering_runs_after_cache_and_owns_header_macros():
         let cch = lstrlenW(str) + 1;
         let str_text: *const u16 = IDS_TEXT as usize as *const u16;
         mii.dwTypeData = str_text as *mut u16;
+        let mut array: *mut IShellItemArray = core::ptr::null_mut();
         Call(IID_PPV_ARG(IShellItemArray, &mut array))
     }"""
     lowered = normalize_worker_semantics(source, rust)
@@ -805,6 +846,75 @@ def test_cpp_semantic_lowering_runs_after_cache_and_owns_header_macros():
     assert "str_text.as_mut_ptr()" in lowered
     assert "core::ptr::addr_of!(IID_IShellItemArray)" in lowered
     assert "core::ptr::addr_of_mut!(array).cast()" in lowered
+
+
+def test_cshellitem_support_and_semantics_are_deterministic():
+    source_path = SHELL32 / "CShellItem.cpp"
+    support = render_cpp_support(source_path)
+    assert "fn ILClone" in support
+    assert "fn SHGetDesktopFolder" in support
+    assert 'extern "C" {\n    fn _ILIsDesktop' in support
+    assert "static BHID_SFObject: GUID" in support
+    assert "static IID_IShellFolder: GUID" in support
+    source = """HRESULT CShellItem::f() {
+        return CShellItem_get_shellfolder_body(this, pbc, riid, out);
+    }"""
+    rust = """pub unsafe fn C_f_body(this: *mut C) -> HRESULT {
+        let mut out: *mut IShellFolder = std::ptr::null_mut();
+        if FAILED_UNEXPECTEDLY(hr) { return hr; }
+        CShellItem_get_shellfolder_body(pbc, IID_PPV_ARG(IShellFolder, &mut out as *mut *mut IShellFolder))
+    }"""
+    normalized = normalize_worker_semantics(source, rust)
+    assert "core::ptr::null_mut" in normalized
+    assert "if ((hr) < 0)" in normalized
+    assert "CShellItem_get_shellfolder_body(this, pbc," in normalized
+    assert "core::ptr::addr_of!(IID_IShellFolder)" in normalized
+    recursive = normalize_worker_semantics(
+        "HRESULT CShellItem::BindToHandler() { return CShellItem_BindToHandler_body(pbc); }",
+        "pub unsafe fn CShellItem_BindToHandler_body(this: *mut CShellItem, pbc: *mut IBindCtx) "
+        "-> HRESULT { CShellItem_BindToHandler_body(pbc) }",
+    )
+    assert "fn CShellItem_BindToHandler_body(this: *mut CShellItem" in recursive
+    assert "CShellItem_BindToHandler_body(this, pbc)" in recursive
+    tuple_lowered = normalize_worker_semantics(
+        "HRESULT CShellItem::f() { return IID_PPV_ARG(IShellFolder, ppsf); }",
+        "pub unsafe fn f() { let (riid, ppv) = IID_PPV_ARG(ppsf); }",
+    )
+    assert "let riid = core::ptr::addr_of!(IID_IShellFolder);" in tuple_lowered
+    assert "let ppv = ppsf.cast();" in tuple_lowered
+
+
+def test_helper_closure_does_not_rebind_other_object_com_method():
+    source = SHELL32 / "CShellItem.cpp"
+    cls = analyze_class(source, "CShellItem", object_map_source=SHELL32 / "shell32.cpp")
+    deps = prepare_helper_closure(
+        extract_call_graph(scan_file(source)), "CShellItem", cls.plain_state_fields()
+    )
+    compare = next(dep for dep in deps if dep.name == "CShellItem_Compare")
+    assert "pIDList->GetIDList" in compare.body_text
+    assert "pIDList->CShellItem_GetIDList_body" not in compare.body_text
+
+
+def test_folder_pair_support_closes_internal_factory_and_header_macros():
+    source = SHELL32 / "folders" / "CFontsFolder.cpp"
+    support = render_cpp_support(source)
+    assert 'link_name = "Shell32RustCoCreateInitSF"' in support
+    assert "fn _ILIsSpecialFolder" in support
+    assert "static CLSID_ShellFSFolder: GUID" in support
+    assert "static IID_IShellFolder2: GUID" in support
+    assert "static IID_IShellFolder2: GUID" not in render_cpp_support(source, {"IID_IShellFolder2"})
+    cls = analyze_class(source, "CFontsFolder", object_map_source=SHELL32 / "shell32.cpp")
+    adapter = render_object_map_adapter(cls)
+    assert "Shell32RustCoCreateInitSF" in adapter
+
+    lowered = normalize_worker_semantics(
+        "HRESULT CFontsFolder::Initialize() { "
+        "return SHELL32_CoCreateInitSF(IID_PPV_ARG(IShellFolder2, &m_pisfInner)); }",
+        "pub unsafe fn f(this: *mut CFontsFolder) { "
+        "SHELL32_CoCreateInitSF(IID_PPV_ARG(IShellFolder2, &mut (*this).m_pisfInner)) }",
+    )
+    assert "core::ptr::addr_of!(IID_IShellFolder2)" in lowered
+    assert "core::ptr::addr_of_mut!((*this).m_pisfInner).cast()" in lowered
 
 
 def test_worker_audit_does_not_treat_macros_or_cast_types_as_constants():

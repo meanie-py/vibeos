@@ -329,6 +329,18 @@ mode, seal flags, source hashes, cheap routing features, outcome, token/cost/lat
 artifact/cache identity. This ledger is the input to a future measured difficulty router;
 do not invent thresholds before the representative corpus exists.
 
+Sealed mechanical shell32 COM runs also consult an exact prepared-body translation memory
+before making an API call. Its key includes the method/signature, deterministic interface
+and state shape, and sealing namespace; only the owning class identifier may be substituted.
+Every hit still passes the normal semantic normalization and worker audit before promotion
+to the per-file response cache. Alpha-normalized census matches are never executable reuse.
+
+Body-local `CComPtr<T>` ownership is deterministic. The source declaration must correspond
+to exactly one null-initialized raw Rust pointer slot; rustconv injects a `CppComPtrGuard<T>`
+watching that slot so every return path releases it. Any explicit translated release nulls
+the slot and is therefore idempotent with the guard. A missing/renamed slot hard-fails
+normalization rather than trusting the model to reproduce C++ scope-exit cleanup.
+
 `skeleton-check` parses the C/C++ worker and Rust candidate with their native tree-sitter
 grammars, then compares a deliberately small semantic skeleton: ordered conditionals,
 loops, switches/matches, breaks/continues, and returns. It reports exact normalized shape

@@ -26,6 +26,8 @@ pub type GETPROPERTYSTOREFLAGS = DWORD;
 pub type SIATTRIBFLAGS = DWORD;
 pub type PWSTR = LPWSTR; // winnt.h
 pub type VARTYPE = u16; // wtypes.h
+pub type SHCONTF = DWORD;
+pub type SHCOLSTATEF = DWORD;
 
 /// SHDRAGIMAGE from shobjidl.h, used by IDragSourceHelper.
 #[repr(C)]
@@ -99,8 +101,39 @@ pub struct ITEMIDLIST {
 }
 pub type LPITEMIDLIST = *mut ITEMIDLIST;
 pub type LPCITEMIDLIST = *const ITEMIDLIST;
+pub type PIDLIST_ABSOLUTE = LPITEMIDLIST;
 pub type PCIDLIST_ABSOLUTE = LPCITEMIDLIST;
+pub type PIDLIST_RELATIVE = LPITEMIDLIST;
+pub type PCUIDLIST_RELATIVE = LPCITEMIDLIST;
+pub type PCUITEMID_CHILD = LPCITEMIDLIST;
+pub type PCUITEMID_CHILD_ARRAY = *const PCUITEMID_CHILD;
+pub type PITEMID_CHILD = LPITEMIDLIST;
+pub type LPOLESTR = LPWSTR;
 pub type LPCSHITEMID = *const SHITEMID;
+
+pub const SHGDN_NORMAL: SHGDNF = 0;
+pub const SHGDN_FORPARSING: SHGDNF = 0x8000;
+pub const SFGAO_STORAGE: SFGAOF = 0x0000_0008;
+pub const SFGAO_STORAGEANCESTOR: SFGAOF = 0x0080_0000;
+pub const SFGAO_VALIDATE: SFGAOF = 0x0100_0000;
+pub const SFGAO_FILESYSANCESTOR: SFGAOF = 0x1000_0000;
+pub const SFGAO_FOLDER: SFGAOF = 0x2000_0000;
+pub const SFGAO_FILESYSTEM: SFGAOF = 0x4000_0000;
+pub const SFGAO_HASSUBFOLDER: SFGAOF = 0x8000_0000;
+pub const CSIDL_FONTS: INT = 0x0014;
+pub const CSIDL_COMMON_ADMINTOOLS: INT = 0x002f;
+
+#[repr(C)]
+pub struct IEnumExtraSearch {
+    _opaque: [u8; 0],
+}
+
+#[repr(C)]
+pub struct SHELLDETAILS {
+    pub fmt: INT,
+    pub cxChar: INT,
+    pub str_: STRRET,
+}
 
 /// PIDLTYPE (pidl.h) — first byte of PIDLDATA, one of the PT_* tags below.
 pub type PIDLTYPE = BYTE;
@@ -331,8 +364,8 @@ pub struct IUnknown {
 #[repr(C)]
 pub struct IUnknownVtbl {
     pub QueryInterface: unsafe extern "system" fn(*mut IUnknown, REFIID, *mut *mut c_void) -> HRESULT,
-    pub AddRef: usize,
-    pub Release: usize,
+    pub AddRef: unsafe extern "system" fn(*mut IUnknown) -> ULONG,
+    pub Release: unsafe extern "system" fn(*mut IUnknown) -> ULONG,
 }
 
 #[repr(C)]
@@ -343,7 +376,7 @@ pub struct IShellFolder {
 pub struct IShellFolderVtbl {
     pub QueryInterface:
         unsafe extern "system" fn(*mut IShellFolder, REFIID, *mut *mut c_void) -> HRESULT,
-    pub AddRef: usize,
+    pub AddRef: unsafe extern "system" fn(*mut IShellFolder) -> ULONG,
     pub Release: unsafe extern "system" fn(*mut IShellFolder) -> ULONG,
     pub ParseDisplayName: unsafe extern "system" fn(
         *mut IShellFolder,
@@ -365,10 +398,19 @@ pub struct IShellFolderVtbl {
     pub BindToStorage: usize,
     pub CompareIDs:
         unsafe extern "system" fn(*mut IShellFolder, LPARAM, LPCITEMIDLIST, LPCITEMIDLIST) -> HRESULT,
-    pub CreateViewObject: usize,
+    pub CreateViewObject:
+        unsafe extern "system" fn(*mut IShellFolder, HWND, REFIID, *mut *mut c_void) -> HRESULT,
     pub GetAttributesOf:
-        unsafe extern "system" fn(*mut IShellFolder, UINT, *mut LPCITEMIDLIST, *mut DWORD) -> HRESULT,
-    pub GetUIObjectOf: usize,
+        unsafe extern "system" fn(*mut IShellFolder, UINT, *const LPCITEMIDLIST, *mut DWORD) -> HRESULT,
+    pub GetUIObjectOf: unsafe extern "system" fn(
+        *mut IShellFolder,
+        HWND,
+        UINT,
+        *const LPCITEMIDLIST,
+        REFIID,
+        *mut UINT,
+        *mut *mut c_void,
+    ) -> HRESULT,
     pub GetDisplayNameOf:
         unsafe extern "system" fn(*mut IShellFolder, LPCITEMIDLIST, DWORD, *mut STRRET) -> HRESULT,
     pub SetNameOf: usize,

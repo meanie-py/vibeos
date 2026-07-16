@@ -701,10 +701,136 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     deliberately downstream of the response cache: improving a deterministic
     lowering must never require buying the same model response again.
     """
+    # no_std shell modules never own a `std` dependency.
+    rust = rust.replace("std::", "core::")
+    # CComPtr locals have scope-exit semantics on every C++ return path.  Keep
+    # the model's raw pointer spelling (which makes vtable calls simple), but
+    # attach a deterministic guard to its slot.  This closes failure exits the
+    # model may overlook and makes ownership independent of control-flow style.
+    com_ptr_locals = re.findall(
+        r"\bCComPtr\s*<\s*([A-Za-z_]\w*)\s*>\s+([A-Za-z_]\w*)\s*[;=]",
+        source,
+    )
+    for interface, name in com_ptr_locals:
+        declaration = re.compile(
+            rf"(?P<indent>^[ \t]*)let\s+mut\s+{re.escape(name)}\s*:\s*"
+            rf"\*mut\s+{re.escape(interface)}\s*=\s*core::ptr::null_mut\(\)\s*;",
+            re.M,
+        )
+        matches = list(declaration.finditer(rust))
+        if len(matches) != 1:
+            raise CppComError(
+                f"CComPtr local {name}: expected one null raw-pointer declaration in worker, "
+                f"found {len(matches)}"
+            )
+        match = matches[0]
+        guard = (
+            match.group(0)
+            + "\n"
+            + match.group("indent")
+            + f"let _{name}_cpp_com_guard = CppComPtrGuard::new("
+            + f"core::ptr::addr_of_mut!({name}));"
+        )
+        rust = rust[: match.start()] + guard + rust[match.end() :]
+
+        # DeepSeek commonly emits explicit CComPtr-destructor releases on some
+        # branches.  Null the watched slot after those releases so the guard is
+        # idempotent while retaining the exact point at which C++ destroyed it.
+        release = re.compile(
+            rf"(?P<indent>^[ \t]*)\(\(\*\(\*{re.escape(name)}\)\.lpVtbl\)\.Release\)"
+            rf"\({re.escape(name)}\);",
+            re.M,
+        )
+        rust = release.sub(
+            lambda item, local_name=name: (
+                item.group(0)
+                + "\n"
+                + item.group("indent")
+                + f"{local_name} = core::ptr::null_mut();"
+            ),
+            rust,
+        )
     # IID_PPV_ARG(T, &out) is a header macro, not a callable ABI symbol.
     rust = re.sub(
-        r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*&mut\s+([A-Za-z_]\w*)\s*\)",
+        r"\bIID_PPV_ARG\s*\(\s*(?:&IID_)?([A-Za-z_]\w*)\s*,\s*"
+        r"&mut\s+([A-Za-z_]\w*)(?:\s+as\s+[^,)]+(?:<[^>]+>)?)?\s*,?\s*\)",
         r"core::ptr::addr_of!(IID_\1), core::ptr::addr_of_mut!(\2).cast()",
+        rust,
+    )
+    source_iid_args = re.findall(
+        r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)", source
+    )
+    for interface, output in source_iid_args:
+        rust = re.sub(
+            rf"\bIID_PPV_ARG\s*\(\s*{re.escape(output)}\s*\)",
+            f"core::ptr::addr_of!(IID_{interface}), {output}.cast()",
+            rust,
+        )
+    # C++ sibling calls have an implicit receiver. The prepared source names
+    # every such worker explicitly, so receiver insertion is syntax-authoritative.
+    owner = re.search(r"\b([A-Za-z_]\w*)::[~A-Za-z_]\w*\s*\(", source)
+    sibling_calls = (
+        set(re.findall(rf"\b({re.escape(owner.group(1))}_[A-Za-z_]\w*_body)\s*\(", source))
+        if owner is not None
+        else set()
+    )
+    for callee in sibling_calls:
+        rust = re.sub(rf"\b{re.escape(callee)}\s*\((?!\s*this\b)\s*", f"{callee}(this, ", rust)
+    # Header-only predicates and HRESULT helpers are deterministic expressions.
+    rust = re.sub(r"\bFAILED_UNEXPECTEDLY\s*\(([^()]+)\)", r"((\1) < 0)", rust)
+    rust = re.sub(r"\bSCODE_CODE\s*\(([^()]+)\)", r"(((\1) as u32) & 0xffff)", rust)
+    rust = re.sub(
+        r"\bIsEqualGUID\s*\(\s*([^,]+),\s*&([A-Za-z_]\w*)\s+as\s+\*const\s+GUID\s*\)\s*!=\s*0",
+        r"cpp_com_iid_equal(\1, core::ptr::addr_of!(\2))",
+        rust,
+    )
+    rust = re.sub(r"if\s+_ILIsDesktop\s*\((.*?)\)\s*\{", r"if _ILIsDesktop(\1) != 0 {", rust)
+    rust = re.sub(
+        r"let\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)\s*=\s*"
+        r"([^,;]+),\s*([^;]+);",
+        r"let \1 = \3; let \2 = \4;",
+        rust,
+    )
+    rust = re.sub(
+        r"(\.CompareIDs\)\([^,]+,)\s*([A-Za-z_]\w*)\s*,",
+        r"\1 \2 as LPARAM,",
+        rust,
+    )
+    rust = re.sub(r"\bGET_SHGDN_RELATION\s*\(([^()]+)\)", r"((\1 as DWORD) & 0xff)", rust)
+    rust = re.sub(r"\bGET_SHGDN_FOR\s*\(([^()]+)\)", r"((\1 as DWORD) & 0xff00)", rust)
+    rust = re.sub(r"\(\*this\)\.m_pisfInner\.as_ptr\(\)", "(*this).m_pisfInner", rust)
+    rust = re.sub(r"\(\*this\)\.m_pisfInner\.p\b", "(*this).m_pisfInner", rust)
+    rust = re.sub(
+        r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*"
+        r"&mut\s+\(\*this\)\.([A-Za-z_]\w*)\s*\)",
+        r"core::ptr::addr_of!(IID_\1), core::ptr::addr_of_mut!((*this).\2).cast()",
+        rust,
+    )
+    iid_binding = re.search(
+        r"let\s+([A-Za-z_]\w*)\s*=\s*IID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*"
+        r"&mut\s+\(\*this\)\.([A-Za-z_]\w*)\s*\)\s*;",
+        rust,
+    )
+    if iid_binding is not None:
+        binding, interface, field = iid_binding.groups()
+        expansion = (
+            f"core::ptr::addr_of!(IID_{interface}), core::ptr::addr_of_mut!((*this).{field}).cast()"
+        )
+        rust = rust[: iid_binding.start()] + rust[iid_binding.end() :]
+        rust = re.sub(rf"\b{re.escape(binding)}\s*,", expansion + ",", rust, count=1)
+    transformed_binding = re.search(
+        r"let\s+([A-Za-z_]\w*)\s*=\s*"
+        r"(core::ptr::addr_of!\(IID_[A-Za-z_]\w*\))\s*,\s*"
+        r"(core::ptr::addr_of_mut!\(\(\*this\)\.[A-Za-z_]\w*\)\.cast\(\))\s*;",
+        rust,
+    )
+    if transformed_binding is not None:
+        binding, iid, output = transformed_binding.groups()
+        rust = rust[: transformed_binding.start()] + rust[transformed_binding.end() :]
+        rust = re.sub(rf"\b{re.escape(binding)}\s*,", f"{iid}, {output},", rust, count=1)
+    rust = re.sub(
+        r"\bSHFree\s*\(\s*(\(\*this\)\.[A-Za-z_]\w*)\s*\)",
+        r"SHFree((\1) as LPVOID)",
         rust,
     )
     # Win32 error APIs use LONG in HRESULT_FROM_WIN32, while most producers spell
@@ -779,6 +905,26 @@ _CPP_SUPPORT_EXTERNS = {
     "lstrlenW": "    fn lstrlenW(text: LPCWSTR) -> INT;",
     "StrChrW": "    fn StrChrW(text: LPCWSTR, ch: WCHAR) -> LPWSTR;",
     "CoTaskMemFree": "    fn CoTaskMemFree(memory: LPVOID);",
+    "ILClone": "    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;",
+    "ILFindLastID": "    fn ILFindLastID(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;",
+    "ILFree": "    fn ILFree(pidl: LPITEMIDLIST);",
+    "ILRemoveLastID": "    fn ILRemoveLastID(pidl: LPITEMIDLIST) -> BOOL;",
+    "SHGetDesktopFolder": ("    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;"),
+    "SHGetNameFromIDList": (
+        "    fn SHGetNameFromIDList(pidl: PCIDLIST_ABSOLUTE, sigdn: SIGDN, "
+        "name: *mut PWSTR) -> HRESULT;"
+    ),
+    "SHCreateShellItem": (
+        "    fn SHCreateShellItem(parent: PCIDLIST_ABSOLUTE, folder: *mut IShellFolder, "
+        "child: LPCITEMIDLIST, item: *mut *mut IShellItem) -> HRESULT;"
+    ),
+    "SHFree": "    fn SHFree(memory: LPVOID);",
+    "ILGetNext": "    fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;",
+    "SHELL32_CoCreateInitSF": (
+        '    #[link_name = "Shell32RustCoCreateInitSF"]\n'
+        "    fn SHELL32_CoCreateInitSF(root: LPCITEMIDLIST, clsid: *const GUID, "
+        "csidl: INT, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;"
+    ),
     "InsertMenuItemW": (
         "    fn InsertMenuItemW(menu: HMENU, item: UINT, by_position: BOOL, "
         "info: *const MENUITEMINFOW) -> BOOL;"
@@ -797,6 +943,29 @@ _CPP_SUPPORT_EXTERNS = {
         "    fn SHELL_GetCommandStringImpl(command: SIZE_T, flags: UINT, buffer: LPSTR, "
         "capacity: UINT, map: *const CMVERBMAP) -> HRESULT;"
     ),
+}
+
+_CPP_SUPPORT_C_EXTERNS = {
+    "_ILIsDesktop": "    fn _ILIsDesktop(pidl: LPCITEMIDLIST) -> BOOL;",
+    "_ILIsSpecialFolder": "    fn _ILIsSpecialFolder(pidl: LPCITEMIDLIST) -> BOOL;",
+    "memcpy": (
+        "    fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, "
+        "bytes: usize) -> *mut core::ffi::c_void;"
+    ),
+}
+
+_CPP_SUPPORT_GUIDS = {
+    "BHID_DataObject",
+    "BHID_SFObject",
+    "BHID_SFUIObject",
+    "BHID_SFViewObject",
+    "CLSID_ShellItem",
+    "CLSID_AdminFolderShortcut",
+    "CLSID_FontsFolderShortcut",
+    "CLSID_ShellFSFolder",
+    "IID_IDataObject",
+    "IID_IShellFolder",
+    "IID_IShellFolder2",
 }
 
 
@@ -829,7 +998,7 @@ def _render_cmverbmap(source: str) -> str:
     )
 
 
-def render_cpp_support(source_path: Path) -> str:
+def render_cpp_support(source_path: Path, exclude_guids: set[str] | None = None) -> str:
     """Render the deterministic non-class support closure selected by one C++ file."""
     source = source_path.read_text(encoding="utf-8", errors="replace")
     chunks = ["// Deterministic C++ support closure selected from source identifiers."]
@@ -849,6 +1018,10 @@ def render_cpp_support(source_path: Path) -> str:
             )
         )
     used_words = set(re.findall(r"\b[A-Za-z_]\w*\b", source))
+    used_words.update(
+        f"IID_{interface}"
+        for interface in re.findall(r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)", source)
+    )
     for name in sorted(used_words & definitions.keys()):
         chunks.append(f"pub const {name}: UINT = {definitions[name]};")
 
@@ -861,6 +1034,16 @@ def render_cpp_support(source_path: Path) -> str:
     selected = [decl for name, decl in _CPP_SUPPORT_EXTERNS.items() if name in used_words]
     if selected:
         chunks.append('extern "system" {\n' + "\n".join(selected) + "\n}")
+    selected_c = [decl for name, decl in _CPP_SUPPORT_C_EXTERNS.items() if name in used_words]
+    if selected_c:
+        chunks.append('extern "C" {\n' + "\n".join(selected_c) + "\n}")
+    selected_guids = sorted((used_words & _CPP_SUPPORT_GUIDS) - (exclude_guids or set()))
+    if selected_guids:
+        chunks.append(
+            'extern "C" {\n'
+            + "\n".join(f"    static {name}: GUID;" for name in selected_guids)
+            + "\n}"
+        )
 
     if "CopyMemory" in used_words or "ZeroMemory" in used_words:
         chunks.append(
@@ -878,7 +1061,27 @@ def render_cpp_support(source_path: Path) -> str:
 
     if "CStringW" in used_words:
         chunks.append(_CPP_CSTRINGW_SUPPORT)
+    if "CComPtr" in used_words:
+        chunks.append(_CPP_COMPTR_GUARD_SUPPORT)
     return "\n\n".join(chunks)
+
+
+_CPP_COMPTR_GUARD_SUPPORT = r"""pub struct CppComPtrGuard<T> { slot: *mut *mut T }
+impl<T> CppComPtrGuard<T> {
+    pub const fn new(slot: *mut *mut T) -> Self { Self { slot } }
+}
+impl<T> Drop for CppComPtrGuard<T> {
+    fn drop(&mut self) {
+        unsafe {
+            let value = *self.slot;
+            if !value.is_null() {
+                let unknown = value as *mut IUnknown;
+                ((*(*unknown).lpVtbl).Release)(unknown);
+                *self.slot = core::ptr::null_mut();
+            }
+        }
+    }
+}"""
 
 
 _CPP_CSTRINGW_SUPPORT = r"""extern "system" {
@@ -1221,6 +1424,11 @@ def prepare_helper_closure(
         method_spans = _named_call_spans(body, method_names)
         definition_brace = body.find("{")
         for start, end, source_name, _arity in reversed(method_spans):
+            receiver = re.search(r"([A-Za-z_]\w*)\s*(?:->|\.)\s*$", body[:start])
+            if receiver is not None and receiver.group(1) != "this":
+                # Calls through another COM object are not implicit sibling
+                # calls merely because their method spelling collides.
+                continue
             target = method_targets[source_name]
             # Keep this worker's C++ definition declarator recognizable; only
             # sibling calls become deterministic Rust worker calls.
@@ -1377,13 +1585,17 @@ def audit_worker_body(
     forbidden = {
         "#[no_mangle]": "export attribute",
         'extern "': "ABI declaration",
-        "QueryInterface": "QueryInterface implementation",
         "CreateInstance": "activation factory",
         ".unwrap()": "Option/panic ABI guess",
     }
     for token, description in forbidden.items():
         if token in rust:
             findings.append(f"worker emitted forbidden {description}: {token}")
+    # Calling QueryInterface through an input object's deterministic vtable is
+    # ordinary method-body behavior.  Only a model-owned implementation would
+    # compete with the generated COM scaffold.
+    if re.search(r"\bfn\s+[A-Za-z_]\w*QueryInterface\s*\(", rust):
+        findings.append("worker emitted forbidden QueryInterface implementation")
     if re.search(r"\b(?:struct|static)\s+[A-Za-z_]\w*Vtbl\b|\b[A-Za-z_]\w*Vtbl\s*\{", rust):
         findings.append("worker emitted forbidden vtable definition")
     if re.search(r"\b(?:struct|union|enum)\s+[A-Za-z_]\w*\b", rust):
@@ -1729,6 +1941,18 @@ def render_object_map_adapter(cls: CppComClass) -> str:
                 "    SIZE_T CmdId, UINT uFlags, LPSTR Buf, UINT cchBuf, const CMVERBMAP *pMap)",
                 "{",
                 "    return SHELL_GetCommandStringImpl(CmdId, uFlags, Buf, cchBuf, pMap);",
+                "}",
+            ]
+        )
+    if "SHELL32_CoCreateInitSF" in source:
+        lines.extend(
+            [
+                "",
+                'extern "C" HRESULT WINAPI Shell32RustCoCreateInitSF(',
+                "    LPCITEMIDLIST pidlRoot, const GUID *clsid, INT csidl,",
+                "    REFIID riid, LPVOID *ppvOut)",
+                "{",
+                "    return SHELL32_CoCreateInitSF(pidlRoot, clsid, csidl, riid, ppvOut);",
                 "}",
             ]
         )

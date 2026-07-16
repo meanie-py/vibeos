@@ -273,3 +273,17 @@ probe was inconclusive beyond no-crash because the pre-existing WOW64 32-bit `ME
 desktop-heap layout limitation corrupts menu labels. Treat the full class-atomic link and
 shell-ready x3 gate as the landed oracle; retain a direct Copy-as-path invocation test as an
 owed behavioral oracle once that menu-view limitation no longer masks it.
+
+## Three-class scaling checkpoint (2026-07-16)
+
+`CShellItem`, `CFontsFolder`, and `CAdminToolsFolder` are now Rust-owned activated classes.
+Their complete generated modules compile with zero diagnostics on all three target triples,
+and the integrated images pass the full shell-ready and network gate at
+`/tmp/vibeos-cli/20260716-154657-gate-i386+amd64+arm64/full.log`.
+
+The exact-body translation memory reused 19/22 folder workers across the Fonts/Admin pair,
+reducing the second class to three API calls. Semantic review also caught a missed failure-
+path `CComPtr` release that compilation and skeleton comparison could not see; body-local
+`CComPtr<T>` cleanup is now a source-derived deterministic scope guard. Keep that ownership
+guard mandatory for future RAII-bearing classes, and treat exact-memory reuse as an audited
+zero-call route rather than a model route.
