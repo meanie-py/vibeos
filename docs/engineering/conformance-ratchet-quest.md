@@ -862,3 +862,50 @@ worker dies, and the kernel-side test hangs → sweep stalls after test 1.
   APC on a `UserMode` `KeWaitForSingleObject` is never delivered on return-to-usermode). Distinct
   kernel lane; owed. Until then the arm64 conformance sweep captures **exactly one** result
   (CmSecurity 300/89/2) before the first callback-using test wedges.
+
+### 2026-07-16 (landed) — arm64 SCM chain LANDED for arch parity (services always-on)
+
+The parked SCM chain (`stash@{0}`) is now on **master** (`76189a16a5d`, merged `d7ff4125020`):
+archcfg builds npfs/services/lsass/lsasrv/samsrv/msv1_0 for arm64, mkramdisk stages them,
+iomgr adds `Npfs` to arm64 `STAGED_SVCS`, and winlogon's `#[cfg(aarch64)]` branch calls
+`StartServicesManager` + `StartLsass`. **User directive: "fix the services and have arch
+parity"** — landed **always-on** (not conformance-mode-gated); arm64 now runs services on
+every boot, exactly like x86.
+
+**Parity is literal, not aspirational — it's the SAME code path.** Booted amd64 and arm64
+side by side: the SCM autostart sequence is **byte-for-byte identical** (EventLog
+starts+connects `result=0`, Rpcss/Themes walked, then SamSs). services-rust is arch-independent;
+landing the chain just lets arm64 reach it. arm64 boots to desktop in ~44s WITH services (vs
+~40s lean — no meaningful slowdown; the "arm64-with-services is slow" worry from the prior
+checkpoint was overstated: services start **async after** the shell marker, so `shell ready`
+timing is unchanged; the 30s SamSs wait below is background). Gate ×3 green + stamp + pushed.
+
+**Deliberate x86 divergence retained:** arm64 skips `WaitForLsass()` after `StartLsass` (x86
+keeps it). services.exe does its own `ScmWaitForLsa`; putting an INFINITE lsass wait on the
+boot-owning process (winlogon) would move the hang onto the boot-to-desktop path.
+
+**NOT fixed — SamSs 30s connect-timeout (`connect result=1053`), PRE-EXISTING + SHARED across
+ALL arches (amd64 shows the identical timeout), NON-BLOCKING.** The `SUMS(SamSs): CreateProcessW
+returned pid=0` is a red herring — `ScmIsSecurityService` (matches `\system32\lsass.exe` in the
+ImagePath) deliberately skips CreateProcessW for the security service (lsass is already
+running), so `ProcessInformation.dwProcessId` stays 0. The real gap: lsass comes up (signals
+`LSA_RPC_SERVER_ACTIVE`, so `WaitForLsass`/`ScmWaitForLsa` return) but lsasrv's `DispatcherThread`
+→ `StartServiceCtrlDispatcher` handshake to `\pipe\net\NtControlPipe0` (the fixed security-service
+pipe) doesn't complete within `PipeTimeout=30000`, so the SCM times SamSs out and continues
+(`ScmAutoStartServices completed` → `SC_AutoStartComplete` fires ~30s later, in the background).
+The code is all present + translated correctly: SCM `SetSecurityServicesEvent()` (services.rs:182),
+lsass `wWinMain` calls `LsapInitLsa`+`ServiceInit` (lsass-rust:41,53), lsasrv `DispatcherThread`
+waits `SECURITY_SERVICES_STARTED` → `I_ScIsSecurityProcess` → `StartServiceCtrlDispatcherW`
+(lsasrv-rust/service.rs:237-294). So it's a runtime handshake failure, not a dropped call.
+**Next diagnostic (owed, benefits all arches):** instrument lsasrv `DispatcherThread` (traces are
+`__WINE_DBCL_TRACE`-gated → invisible) to see whether it clears the `SECURITY_SERVICES_STARTED`
+wait and whether `StartServiceCtrlDispatcherW` connects/returns — then trace the SCM side
+`ScmWaitForServiceConnect(SamSs)` on NtControlPipe0.
+
+**Gate note for the smp lane (heads-up):** arm64 now runs the full service storm on every boot
+(more thread churn). Separately, the pre-existing arm64 **netstack-TDI self-test** silent-wedge
+flake still bites: the first gate here hard-failed `HANG_TIMEOUT` at `[NETSTACK] TDI server:
+accept 0x00000000` (a genuine wedge, correctly NOT auto-retried — `HANG_TIMEOUT` isn't blanket-
+retryable), but arm64 smoked **3/3 green on immediate repeat** and the re-gate was clean. That
+flake is upstream of services (driver-init) and unrelated to this change; re-run the gate if it
+hits. Full baseline still owed on the arm64 user-APC bug (test-2, above).
