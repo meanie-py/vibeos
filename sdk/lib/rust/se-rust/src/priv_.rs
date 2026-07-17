@@ -537,9 +537,9 @@ pub unsafe extern "system" fn NtPrivilegeCheck(
     if previous_mode != 0i8 {
         if let Err(s) = probe_user_buffer(
             required_privileges as _,
-            (core::mem::size_of::<PRIVILEGE_SET>()
+            core::mem::size_of::<PRIVILEGE_SET>()
                 - core::mem::size_of::<[LUID_AND_ATTRIBUTES; 1]>()
-                + core::mem::size_of::<LUID_AND_ATTRIBUTES>()),
+                + core::mem::size_of::<LUID_AND_ATTRIBUTES>() ,
             core::mem::size_of::<ULONG>(),
             previous_mode,
         ) {
@@ -560,9 +560,9 @@ pub unsafe extern "system" fn NtPrivilegeCheck(
 
         if let Err(s) = probe_user_buffer(
             required_privileges as _,
-            (core::mem::size_of::<PRIVILEGE_SET>()
+            core::mem::size_of::<PRIVILEGE_SET>()
                 - core::mem::size_of::<[LUID_AND_ATTRIBUTES; 1]>()
-                + (privilege_count as usize * core::mem::size_of::<LUID_AND_ATTRIBUTES>())),
+                + (privilege_count as usize * core::mem::size_of::<LUID_AND_ATTRIBUTES>()) ,
             core::mem::size_of::<ULONG>(),
             previous_mode,
         ) {
@@ -628,7 +628,7 @@ pub unsafe extern "system" fn NtPrivilegeCheck(
     if let Err(s) = safe_copy_to_user(
         core::ptr::addr_of_mut!((*required_privileges).Privilege[0]) as *mut _,
         privileges as _,
-        (privilege_count as usize * core::mem::size_of::<LUID_AND_ATTRIBUTES>()),
+        privilege_count as usize * core::mem::size_of::<LUID_AND_ATTRIBUTES>() ,
         core::mem::size_of::<ULONG>(),
         previous_mode,
     ) {

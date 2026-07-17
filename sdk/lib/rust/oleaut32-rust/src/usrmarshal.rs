@@ -68,9 +68,9 @@ pub struct variant_wire_t {
     pub switch_is: DWORD,
 }
 
-pub const FADF_AUTOSETFLAGS: USHORT = (FADF_HAVEIID | FADF_RECORD | FADF_HAVEVARTYPE |
+pub const FADF_AUTOSETFLAGS: USHORT = FADF_HAVEIID | FADF_RECORD | FADF_HAVEVARTYPE |
                                         FADF_BSTR | FADF_UNKNOWN | FADF_DISPATCH |
-                                        FADF_VARIANT | FADF_CREATEVECTOR);
+                                        FADF_VARIANT | FADF_CREATEVECTOR ;
 
 unsafe fn dump_user_flags(pFlags: *const DWORD) {
     if HIWORD(*pFlags) as u32 == NDR_LOCAL_DATA_REPRESENTATION {
@@ -79,19 +79,19 @@ unsafe fn dump_user_flags(pFlags: *const DWORD) {
         TRACE!(b"MAKELONG(0x%04x, \0".as_ptr() as *const i8, HIWORD(*pFlags));
     }
     match LOWORD(*pFlags) {
-        MSHCTX_LOCAL => TRACE!(b"MSHCTX_LOCAL)\0".as_ptr() as *const i8),
-        MSHCTX_NOSHAREDMEM => TRACE!(b"MSHCTX_NOSHAREDMEM)\0".as_ptr() as *const i8),
-        MSHCTX_DIFFERENTMACHINE => TRACE!(b"MSHCTX_DIFFERENTMACHINE)\0".as_ptr() as *const i8),
-        MSHCTX_INPROC => TRACE!(b"MSHCTX_INPROC)\0".as_ptr() as *const i8),
+        _MSHCTX_LOCAL => TRACE!(b"MSHCTX_LOCAL)\0".as_ptr() as *const i8),
+        _MSHCTX_NOSHAREDMEM => TRACE!(b"MSHCTX_NOSHAREDMEM)\0".as_ptr() as *const i8),
+        _MSHCTX_DIFFERENTMACHINE => TRACE!(b"MSHCTX_DIFFERENTMACHINE)\0".as_ptr() as *const i8),
+        _MSHCTX_INPROC => TRACE!(b"MSHCTX_INPROC)\0".as_ptr() as *const i8),
         _ => TRACE!(b"%d)\0".as_ptr() as *const i8, LOWORD(*pFlags)),
     }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn CLEANLOCALSTORAGE_UserSize(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     mut Start: ULONG,
-    pstg: *mut CLEANLOCALSTORAGE,
+    _pstg: *mut CLEANLOCALSTORAGE,
 ) -> ULONG {
     Start = ((Start) + (3u32)) & !(3u32);
     Start + core::mem::size_of::<DWORD>() as ULONG
@@ -99,7 +99,7 @@ pub unsafe extern "system" fn CLEANLOCALSTORAGE_UserSize(
 
 #[no_mangle]
 pub unsafe extern "system" fn CLEANLOCALSTORAGE_UserMarshal(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     mut Buffer: *mut u8,
     pstg: *mut CLEANLOCALSTORAGE,
 ) -> *mut u8 {
@@ -149,7 +149,7 @@ pub unsafe extern "system" fn CLEANLOCALSTORAGE_UserMarshal(
 
 #[no_mangle]
 pub unsafe extern "system" fn CLEANLOCALSTORAGE_UserUnmarshal(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     mut Buffer: *mut u8,
     pstr: *mut CLEANLOCALSTORAGE,
 ) -> *mut u8 {
@@ -160,14 +160,14 @@ pub unsafe extern "system" fn CLEANLOCALSTORAGE_UserUnmarshal(
 
 #[no_mangle]
 pub unsafe extern "system" fn CLEANLOCALSTORAGE_UserFree(
-    pFlags: *mut ULONG,
-    pstr: *mut CLEANLOCALSTORAGE,
+    _pFlags: *mut ULONG,
+    _pstr: *mut CLEANLOCALSTORAGE,
 ) {
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn BSTR_UserSize(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     Start: ULONG,
     pstr: *mut BSTR,
 ) -> ULONG {
@@ -193,7 +193,7 @@ pub unsafe extern "system" fn BSTR_UserSize(
     Start
 }
 #[no_mangle]
-pub unsafe extern "system" fn BSTR_UserMarshal(pFlags: *mut ULONG, mut Buffer: *mut u8, pstr: *mut *mut u16) -> *mut u8 {
+pub unsafe extern "system" fn BSTR_UserMarshal(_pFlags: *mut ULONG, mut Buffer: *mut u8, pstr: *mut *mut u16) -> *mut u8 {
 
     let len: DWORD = SysStringByteLen(*pstr);
 
@@ -218,7 +218,7 @@ pub unsafe extern "system" fn BSTR_UserMarshal(pFlags: *mut ULONG, mut Buffer: *
 
 #[no_mangle]
 pub unsafe extern "system" fn BSTR_UserUnmarshal(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     Buffer: *mut u8,
     pstr: *mut *mut u16,
 ) -> *mut u8 {
@@ -268,7 +268,7 @@ pub unsafe extern "system" fn BSTR_UserUnmarshal(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn BSTR_UserFree(pFlags: *mut ULONG, pstr: *mut BSTR) {
+pub unsafe extern "system" fn BSTR_UserFree(_pFlags: *mut ULONG, pstr: *mut BSTR) {
     TRACE!(
         b"(%x,%p) => %p\n\0".as_ptr() as *const i8,
         *pFlags,
@@ -279,7 +279,7 @@ pub unsafe extern "system" fn BSTR_UserFree(pFlags: *mut ULONG, pstr: *mut BSTR)
     *pstr = core::ptr::null_mut();
 }
 #[no_mangle]
-pub unsafe extern "C" fn get_type_size(pFlags: *mut ULONG, vt: VARTYPE) -> u32 {
+pub unsafe extern "C" fn get_type_size(_pFlags: *mut ULONG, vt: VARTYPE) -> u32 {
     if vt & VT_ARRAY != 0 {
         return 4;
     }
@@ -341,24 +341,24 @@ unsafe fn interface_user_size(pFlags: *mut ULONG, Start: ULONG, riid: *const GUI
 unsafe fn wire_extra_user_size(pFlags: *mut ULONG, Start: ULONG, pvar: *mut VARIANT) -> ULONG {
     if V_ISARRAY(pvar) {
         if V_ISBYREF(pvar) {
-            return LPSAFEARRAY_UserSize(pFlags, Start, (*V_ARRAYREF_ref(pvar)));
+            return LPSAFEARRAY_UserSize(pFlags, Start, *V_ARRAYREF_ref(pvar) );
         } else {
             return LPSAFEARRAY_UserSize(pFlags, Start, core::ptr::addr_of_mut!((*V_ARRAY_ref(pvar))));
         }
     }
 
-    match (*V_VT_ref(pvar)) {
+    match *V_VT_ref(pvar)  {
         VT_BSTR => {
             return BSTR_UserSize(pFlags, Start, core::ptr::addr_of_mut!((*V_BSTR_ref(pvar))));
         }
         vt if vt == (VT_BSTR | VT_BYREF) => {
-            return BSTR_UserSize(pFlags, Start, (*V_BSTRREF_ref(pvar)));
+            return BSTR_UserSize(pFlags, Start, *V_BSTRREF_ref(pvar) );
         }
         vt if vt == (VT_VARIANT | VT_BYREF) => {
-            return VARIANT_UserSize(pFlags, Start, (*V_VARIANTREF_ref(pvar)));
+            return VARIANT_UserSize(pFlags, Start, *V_VARIANTREF_ref(pvar) );
         }
         VT_UNKNOWN => {
-            return interface_user_size(pFlags, Start, &IID_IUnknown, (*V_UNKNOWN_ref(pvar)));
+            return interface_user_size(pFlags, Start, &IID_IUnknown, *V_UNKNOWN_ref(pvar) );
         }
         vt if vt == (VT_UNKNOWN | VT_BYREF) => {
             return interface_user_size(pFlags, Start, &IID_IUnknown, *(*V_UNKNOWNREF_ref(pvar)));
@@ -482,7 +482,7 @@ pub unsafe extern "system" fn VARIANT_UserSize(
     let mut Start = Start;
     let align: i32;
 
-    Start = ((Start + 7) & !7);
+    Start = (Start + 7) & !7 ;
     Start += core::mem::size_of::<variant_wire_t>() as ULONG;
     
     if (*pvar).n1.n2.vt & VT_BYREF as u16 != 0 {
@@ -490,7 +490,7 @@ pub unsafe extern "system" fn VARIANT_UserSize(
     }
 
     align = get_type_alignment(pFlags, (*pvar).n1.n2.vt) as i32;
-    Start = ((Start + align as ULONG) & !(align as ULONG));
+    Start = (Start + align as ULONG) & !(align as ULONG) ;
 
     if (*pvar).n1.n2.vt == (VT_VARIANT | VT_BYREF) as u16 {
         Start += 4;
@@ -509,7 +509,7 @@ pub unsafe extern "system" fn VARIANT_UserMarshal(
     Buffer: *mut u8,
     pvar: *mut VARIANT,
 ) -> *mut u8 {
-    let mut header: *mut variant_wire_t;
+    let header: *mut variant_wire_t;
     let type_size: ULONG;
     let align: i32;
     let mut Pos: *mut u8;
@@ -540,8 +540,8 @@ pub unsafe extern "system" fn VARIANT_UserMarshal(
     }
 
     Pos = header.offset(1) as *mut u8;
-    type_size = get_type_size(pFlags, (*V_VT_ref(pvar)));
-    align = get_type_alignment(pFlags, (*V_VT_ref(pvar))) as i32;
+    type_size = get_type_size(pFlags, *V_VT_ref(pvar) );
+    align = get_type_alignment(pFlags, *V_VT_ref(pvar) ) as i32;
     ALIGN_POINTER!(Pos, align);
 
     if (*header).vt & VT_BYREF as USHORT != 0 {
@@ -581,7 +581,7 @@ pub unsafe extern "system" fn VARIANT_UserMarshal(
 
     if (*header).vt & VT_ARRAY as USHORT != 0 {
         if (*header).vt & VT_BYREF as USHORT != 0 {
-            Pos = LPSAFEARRAY_UserMarshal(pFlags, Pos, (*V_ARRAYREF_ref(pvar)));
+            Pos = LPSAFEARRAY_UserMarshal(pFlags, Pos, *V_ARRAYREF_ref(pvar) );
         } else {
             Pos = LPSAFEARRAY_UserMarshal(pFlags, Pos, core::ptr::addr_of_mut!((*V_ARRAY_ref(pvar))));
         }
@@ -591,10 +591,10 @@ pub unsafe extern "system" fn VARIANT_UserMarshal(
                 Pos = BSTR_UserMarshal(pFlags, Pos, core::ptr::addr_of_mut!((*V_BSTR_ref(pvar))));
             }
             x if x == (VT_BSTR | VT_BYREF) as USHORT => {
-                Pos = BSTR_UserMarshal(pFlags, Pos, (*V_BSTRREF_ref(pvar)));
+                Pos = BSTR_UserMarshal(pFlags, Pos, *V_BSTRREF_ref(pvar) );
             }
             x if x == (VT_VARIANT | VT_BYREF) as USHORT => {
-                Pos = VARIANT_UserMarshal(pFlags, Pos, (*V_VARIANTREF_ref(pvar)));
+                Pos = VARIANT_UserMarshal(pFlags, Pos, *V_VARIANTREF_ref(pvar) );
             }
             x if x == VT_UNKNOWN as USHORT => {
                 #[cfg(feature = "__REACTOS__")]
@@ -603,7 +603,7 @@ pub unsafe extern "system" fn VARIANT_UserMarshal(
                 }
                 #[cfg(not(feature = "__REACTOS__"))]
                 {
-                    Pos = interface_variant_marshal(pFlags, Pos, &IID_IUnknown, (*V_UNKNOWN_ref(pvar)));
+                    Pos = interface_variant_marshal(pFlags, Pos, &IID_IUnknown, *V_UNKNOWN_ref(pvar) );
                 }
             }
             x if x == (VT_UNKNOWN | VT_BYREF) as USHORT => {
@@ -768,7 +768,7 @@ pub unsafe extern "system" fn VARIANT_UserUnmarshal(
 
     if (*header).vt & VT_ARRAY != 0 {
         if (*header).vt & VT_BYREF != 0 {
-            Pos = LPSAFEARRAY_UserUnmarshal(pFlags, Pos, (*V_ARRAYREF_ref(pvar)));
+            Pos = LPSAFEARRAY_UserUnmarshal(pFlags, Pos, *V_ARRAYREF_ref(pvar) );
         } else {
             Pos = LPSAFEARRAY_UserUnmarshal(pFlags, Pos, V_ARRAY_ref(pvar));
         }
@@ -820,7 +820,7 @@ pub unsafe extern "system" fn VARIANT_UserUnmarshal(
 #[no_mangle]
 pub unsafe extern "system" fn VARIANT_UserFree(pFlags: *mut ULONG, pvar: *mut VARIANT) {
 
-    let vt: VARTYPE = (*V_VT_ref(pvar));
+    let vt: VARTYPE = *V_VT_ref(pvar) ;
     let mut ref_: LPVOID = core::ptr::null_mut();
 
     TRACE!(b"(%x,%p)\n\0".as_ptr(), *pFlags, pvar);
@@ -837,17 +837,17 @@ pub unsafe extern "system" fn VARIANT_UserFree(pFlags: *mut ULONG, pvar: *mut VA
 
     if (vt & VT_ARRAY) != 0 {
         if (vt & VT_BYREF) != 0 {
-            LPSAFEARRAY_UserFree(pFlags, (*V_ARRAYREF_ref(pvar)));
+            LPSAFEARRAY_UserFree(pFlags, *V_ARRAYREF_ref(pvar) );
         } else {
             LPSAFEARRAY_UserFree(pFlags, V_ARRAY_ref(pvar));
         }
     } else {
         match vt {
             _ if vt == (VT_BSTR | VT_BYREF) => {
-                BSTR_UserFree(pFlags, (*V_BSTRREF_ref(pvar)));
+                BSTR_UserFree(pFlags, *V_BSTRREF_ref(pvar) );
             }
             _ if vt == (VT_VARIANT | VT_BYREF) => {
-                VARIANT_UserFree(pFlags, (*V_VARIANTREF_ref(pvar)));
+                VARIANT_UserFree(pFlags, *V_VARIANTREF_ref(pvar) );
             }
             _ if vt == (VT_RECORD | VT_BYREF) => {
                 FIXME!(b"handle BRECORD by ref\n\0".as_ptr());
@@ -882,7 +882,7 @@ unsafe fn SAFEARRAY_GetCellCount(psa: *const SAFEARRAY) -> ULONG {
 
 unsafe fn SAFEARRAY_GetUnionType(psa: *mut SAFEARRAY) -> SF_TYPE {
     let mut vt: VARTYPE = 0;
-    let mut hr: HRESULT;
+    let hr: HRESULT;
 
     hr = SafeArrayGetVartype(psa, &mut vt);
     if FAILED(hr) {
@@ -1202,14 +1202,14 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
     ppsa: *mut *mut SAFEARRAY,
 ) -> *mut u8 {
     let mut ptr: ULONG;
-    let mut wiresa: wireSAFEARRAY;
-    let mut cDims: ULONG;
+    let wiresa: wireSAFEARRAY;
+    let cDims: ULONG;
     let mut hr: HRESULT;
-    let mut sftype: ULONG;
-    let mut cell_count: ULONG;
+    let sftype: ULONG;
+    let cell_count: ULONG;
     let mut guid: GUID = core::mem::zeroed();
-    let mut vt: VARTYPE;
-    let mut wiresab: *mut SAFEARRAYBOUND;
+    let vt: VARTYPE;
+    let wiresab: *mut SAFEARRAYBOUND;
 
     TRACE!(b"(\0".as_ptr() as _);
     dump_user_flags(pFlags);
@@ -1401,9 +1401,9 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserFree(pFlags: *mut ULONG, ppsa: *mu
 
 #[no_mangle]
 pub unsafe extern "system" fn HFONT_UserSize(
-    pFlags: *mut ULONG,
-    Start: ULONG,
-    phfont: *mut HFONT,
+    _pFlags: *mut ULONG,
+    _Start: ULONG,
+    _phfont: *mut HFONT,
 ) -> ULONG {
     FIXME!(b":stub\n\0".as_ptr() as *const i8);
     0
@@ -1411,9 +1411,9 @@ pub unsafe extern "system" fn HFONT_UserSize(
 
 #[no_mangle]
 pub unsafe extern "system" fn HFONT_UserMarshal(
-    pFlags: *mut ULONG,
-    Buffer: *mut u8,
-    phfont: *mut HFONT,
+    _pFlags: *mut ULONG,
+    _Buffer: *mut u8,
+    _phfont: *mut HFONT,
 ) -> *mut u8 {
     FIXME!(b":stub\n\0".as_ptr() as *const i8);
     core::ptr::null_mut()
@@ -1421,16 +1421,16 @@ pub unsafe extern "system" fn HFONT_UserMarshal(
 
 #[no_mangle]
 pub unsafe extern "system" fn HFONT_UserUnmarshal(
-    pFlags: *mut ULONG,
-    Buffer: *mut u8,
-    phfont: *mut HFONT,
+    _pFlags: *mut ULONG,
+    _Buffer: *mut u8,
+    _phfont: *mut HFONT,
 ) -> *mut u8 {
     FIXME!(b":stub\n\0".as_ptr() as *const i8);
     core::ptr::null_mut()
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn HFONT_UserFree(pFlags: *mut ULONG, phfont: *mut HFONT) {
+pub unsafe extern "system" fn HFONT_UserFree(_pFlags: *mut ULONG, _phfont: *mut HFONT) {
     FIXME!(b":stub\n\0".as_ptr() as *const i8);
 }
 #[no_mangle]
@@ -1445,7 +1445,7 @@ pub unsafe extern "system" fn IDispatch_Invoke_Proxy(
     pExcepInfo: *mut EXCEPINFO,
     puArgErr: *mut UINT,
 ) -> HRESULT {
-    let mut hr: HRESULT;
+    let hr: HRESULT;
     let mut VarResult: VARIANT = core::mem::zeroed();
     let mut rgVarRefIdx: *mut UINT = core::ptr::null_mut();
     let mut rgVarRef: *mut VARIANTARG = core::ptr::null_mut();
@@ -1568,8 +1568,8 @@ pub unsafe extern "system" fn IDispatch_Invoke_Stub(
     rgVarRef: *mut VARIANTARG,
 ) -> HRESULT {
     let mut hr: HRESULT = S_OK;
-    let mut rgvarg: *mut VARIANTARG;
-    let mut arg: *mut VARIANTARG;
+    let rgvarg: *mut VARIANTARG;
+    let arg: *mut VARIANTARG;
     let mut u: UINT;
 
     VariantInit(pVarResult);
@@ -1663,7 +1663,7 @@ pub unsafe extern "system" fn IEnumVARIANT_Next_Stub(
     pCeltFetched: *mut ULONG,
 ) -> HRESULT {
 
-    let mut hr: HRESULT;
+    let hr: HRESULT;
     *pCeltFetched = 0;
     hr = IEnumVARIANT_Next(This, celt, rgVar, pCeltFetched);
     if hr == S_OK {
@@ -1678,7 +1678,7 @@ unsafe fn free_embedded_arraydesc(adesc: *mut ARRAYDESC) {
             free_embedded_typedesc((*adesc).tdescElem.__bindgen_anon_1.lptdesc);
             CoTaskMemFree((*adesc).tdescElem.__bindgen_anon_1.lptdesc as LPVOID);
         }
-        VT_CARRAY => {
+        _VT_CARRAY => {
             free_embedded_arraydesc((*adesc).tdescElem.__bindgen_anon_1.lpadesc);
             CoTaskMemFree((*adesc).tdescElem.__bindgen_anon_1.lpadesc as LPVOID);
         }
@@ -1692,7 +1692,7 @@ unsafe fn free_embedded_typedesc(tdesc: *mut TYPEDESC) {
             free_embedded_typedesc((*tdesc).__bindgen_anon_1.lptdesc);
             CoTaskMemFree((*tdesc).__bindgen_anon_1.lptdesc as *mut core::ffi::c_void);
         }
-        VT_CARRAY => {
+        _VT_CARRAY => {
             free_embedded_arraydesc((*tdesc).__bindgen_anon_1.lpadesc);
             CoTaskMemFree((*tdesc).__bindgen_anon_1.lpadesc as *mut core::ffi::c_void);
         }
@@ -1911,7 +1911,7 @@ pub unsafe extern "system" fn ITypeInfo_GetTypeAttr_Stub(
     ppTypeAttr: *mut LPTYPEATTR,
     pDummy: *mut CLEANLOCALSTORAGE,
 ) -> HRESULT {
-    let mut hr: HRESULT;
+    let hr: HRESULT;
     TRACE!(b"(%p, %p)\n\0".as_ptr() as PCHAR, This, ppTypeAttr);
 
     hr = ITypeInfo_GetTypeAttr(This, ppTypeAttr);
@@ -2039,38 +2039,38 @@ pub unsafe extern "system" fn ITypeInfo_GetNames_Stub(
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_GetIDsOfNames_Proxy(
-    This: *mut ITypeInfo,
-    rgszNames: *mut LPOLESTR,
-    cNames: UINT,
-    pMemId: *mut MEMBERID,
+    _This: *mut ITypeInfo,
+    _rgszNames: *mut LPOLESTR,
+    _cNames: UINT,
+    _pMemId: *mut MEMBERID,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as *const i8);
     E_FAIL
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_GetIDsOfNames_Stub(
-    This: *mut ITypeInfo
+    _This: *mut ITypeInfo
 ) -> HRESULT {
     FIXME!("not implemented\n");
     E_FAIL
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_Invoke_Proxy(
-    This: *mut ITypeInfo,
-    pvInstance: PVOID,
-    memid: MEMBERID,
-    wFlags: WORD,
-    pDispParams: *mut DISPPARAMS,
-    pVarResult: *mut VARIANT,
-    pExcepInfo: *mut EXCEPINFO,
-    puArgErr: *mut UINT,
+    _This: *mut ITypeInfo,
+    _pvInstance: PVOID,
+    _memid: MEMBERID,
+    _wFlags: WORD,
+    _pDispParams: *mut DISPPARAMS,
+    _pVarResult: *mut VARIANT,
+    _pExcepInfo: *mut EXCEPINFO,
+    _puArgErr: *mut UINT,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as PCHAR);
     E_FAIL
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_Invoke_Stub(
-    This: *mut ITypeInfo,
+    _This: *mut ITypeInfo,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as *const i8);
     E_FAIL
@@ -2258,36 +2258,36 @@ pub unsafe extern "system" fn ITypeInfo_GetDllEntry_Stub(
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_AddressOfMember_Proxy(
-    This: *mut ITypeInfo,
-    memid: MEMBERID,
-    invKind: INVOKEKIND,
-    ppv: *mut PVOID,
+    _This: *mut ITypeInfo,
+    _memid: MEMBERID,
+    _invKind: INVOKEKIND,
+    _ppv: *mut PVOID,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as *const i8);
     E_FAIL
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_AddressOfMember_Stub(
-    This: *mut ITypeInfo
+    _This: *mut ITypeInfo
 ) -> HRESULT {
     FIXME!("not implemented\n");
     E_FAIL
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_CreateInstance_Proxy(
-    This: *mut ITypeInfo,
-    pUnkOuter: *mut IUnknown,
-    riid: *const IID,
-    ppvObj: *mut LPVOID,
+    _This: *mut ITypeInfo,
+    _pUnkOuter: *mut IUnknown,
+    _riid: *const IID,
+    _ppvObj: *mut LPVOID,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr());
     E_FAIL
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_CreateInstance_Stub(
-    This: *mut ITypeInfo,
-    riid: *const GUID,
-    ppvObj: *mut *mut IUnknown,
+    _This: *mut ITypeInfo,
+    _riid: *const GUID,
+    _ppvObj: *mut *mut IUnknown,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as *const i8);
     E_FAIL
@@ -2329,7 +2329,7 @@ pub unsafe extern "system" fn ITypeInfo_GetContainingTypeLib_Stub(
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_ReleaseTypeAttr_Proxy(
-    This: *mut ITypeInfo,
+    _This: *mut ITypeInfo,
     pTypeAttr: *mut TYPEATTR,
 ) {
     
@@ -2339,14 +2339,14 @@ pub unsafe extern "system" fn ITypeInfo_ReleaseTypeAttr_Proxy(
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_ReleaseTypeAttr_Stub(
-    This: *mut ITypeInfo,
+    _This: *mut ITypeInfo,
 ) -> HRESULT {
     TRACE!(b"nothing to do\n\0".as_ptr() as *const i8);
     0
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_ReleaseFuncDesc_Proxy(
-    This: *mut ITypeInfo,
+    _This: *mut ITypeInfo,
     pFuncDesc: *mut FUNCDESC) {
     let mut param: SHORT;
     TRACE!(b"(%p, %p)\n\0".as_ptr() as PCHAR, This, pFuncDesc);
@@ -2370,14 +2370,14 @@ pub unsafe extern "system" fn ITypeInfo_ReleaseFuncDesc_Proxy(
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_ReleaseFuncDesc_Stub(
-    This: *mut ITypeInfo
+    _This: *mut ITypeInfo
 ) -> HRESULT {
     TRACE!(b"nothing to do\n\0".as_ptr() as PCHAR);
     S_OK
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_ReleaseVarDesc_Proxy(
-    This: *mut ITypeInfo,
+    _This: *mut ITypeInfo,
     pVarDesc: *mut VARDESC,
 ) {
     TRACE!(b"(%p, %p)\n\0".as_ptr() as PCHAR, This, pVarDesc);
@@ -2393,7 +2393,7 @@ pub unsafe extern "system" fn ITypeInfo_ReleaseVarDesc_Proxy(
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeInfo_ReleaseVarDesc_Stub(
-    This: *mut core::ffi::c_void,
+    _This: *mut core::ffi::c_void,
 ) -> HRESULT {
     TRACE!(b"nothing to do\n\0".as_ptr() as *const i8);
     0
@@ -2513,7 +2513,7 @@ pub unsafe extern "system" fn ITypeLib_GetLibAttr_Stub(
     ppTLibAttr: *mut LPTLIBATTR,
     pDummy: *mut CLEANLOCALSTORAGE,
 ) -> HRESULT {
-    let mut hr: HRESULT;
+    let hr: HRESULT;
     TRACE!(b"(%p, %p)\n\0".as_ptr() as PCHAR, This, ppTLibAttr);
     
     hr = ITypeLib_GetLibAttr(This, ppTLibAttr);
@@ -2618,53 +2618,53 @@ pub unsafe extern "system" fn ITypeLib_GetDocumentation_Stub(
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeLib_IsName_Proxy(
-    This: *mut ITypeLib,
-    szNameBuf: LPOLESTR,
-    lHashVal: ULONG,
-    pfName: *mut BOOL,
+    _This: *mut ITypeLib,
+    _szNameBuf: LPOLESTR,
+    _lHashVal: ULONG,
+    _pfName: *mut BOOL,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as *const i8);
     E_FAIL
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeLib_IsName_Stub(
-    This: *mut ITypeLib,
-    szNameBuf: LPOLESTR,
-    lHashVal: ULONG,
-    pfName: *mut BOOL,
-    pBstrLibName: *mut BSTR,
+    _This: *mut ITypeLib,
+    _szNameBuf: LPOLESTR,
+    _lHashVal: ULONG,
+    _pfName: *mut BOOL,
+    _pBstrLibName: *mut BSTR,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as PCHAR);
     E_FAIL
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeLib_FindName_Proxy(
-    This: *mut ITypeLib,
-    szNameBuf: LPOLESTR,
-    lHashVal: ULONG,
-    ppTInfo: *mut *mut ITypeInfo,
-    rgMemId: *mut MEMBERID,
-    pcFound: *mut USHORT,
+    _This: *mut ITypeLib,
+    _szNameBuf: LPOLESTR,
+    _lHashVal: ULONG,
+    _ppTInfo: *mut *mut ITypeInfo,
+    _rgMemId: *mut MEMBERID,
+    _pcFound: *mut USHORT,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as *const i8);
     E_FAIL
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeLib_FindName_Stub(
-    This: *mut ITypeLib,
-    szNameBuf: LPOLESTR,
-    lHashVal: ULONG,
-    ppTInfo: *mut *mut ITypeInfo,
-    rgMemId: *mut MEMBERID,
-    pcFound: *mut USHORT,
-    pBstrLibName: *mut BSTR,
+    _This: *mut ITypeLib,
+    _szNameBuf: LPOLESTR,
+    _lHashVal: ULONG,
+    _ppTInfo: *mut *mut ITypeInfo,
+    _rgMemId: *mut MEMBERID,
+    _pcFound: *mut USHORT,
+    _pBstrLibName: *mut BSTR,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as PCHAR);
     E_FAIL
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeLib_ReleaseTLibAttr_Proxy(
-    This: *mut ITypeLib,
+    _This: *mut ITypeLib,
     pTLibAttr: *mut TLIBATTR,
 ) {
     TRACE!(b"(%p, %p)\n\0".as_ptr() as *const i8, This, pTLibAttr);
@@ -2672,25 +2672,25 @@ pub unsafe extern "system" fn ITypeLib_ReleaseTLibAttr_Proxy(
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeLib_ReleaseTLibAttr_Stub(
-    This: *mut ITypeLib
+    _This: *mut ITypeLib
 ) -> HRESULT {
     TRACE!(b"nothing to do\n\0".as_ptr() as *const i8);
     return 0; // S_OK
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeLib2_GetLibStatistics_Proxy(
-    This: *mut ITypeLib2,
-    pcUniqueNames: *mut ULONG,
-    pcchUniqueNames: *mut ULONG,
+    _This: *mut ITypeLib2,
+    _pcUniqueNames: *mut ULONG,
+    _pcchUniqueNames: *mut ULONG,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as *const i8);
     E_FAIL
 }
 #[no_mangle]
 pub unsafe extern "system" fn ITypeLib2_GetLibStatistics_Stub(
-    This: *mut ITypeLib2,
-    pcUniqueNames: *mut ULONG,
-    pcchUniqueNames: *mut ULONG,
+    _This: *mut ITypeLib2,
+    _pcUniqueNames: *mut ULONG,
+    _pcchUniqueNames: *mut ULONG,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as PCHAR);
     E_FAIL
@@ -2814,12 +2814,12 @@ pub unsafe extern "system" fn IPropertyBag_Read_Proxy(
         return E_NOTIMPL;
     }
 
-    match (*V_VT_ref(pVar)) {
+    match *V_VT_ref(pVar)  {
         VT_DISPATCH => {
             pUnk = (*V_DISPATCH_ref(pVar)) as *mut IUnknown;
         }
         VT_UNKNOWN => {
-            pUnk = (*V_UNKNOWN_ref(pVar));
+            pUnk = *V_UNKNOWN_ref(pVar) ;
         }
         VT_SAFEARRAY => {
             FIXME!(b"Safearray support not yet implemented.\n\0".as_ptr() as PCHAR);
@@ -2906,7 +2906,7 @@ pub unsafe extern "system" fn IPropertyBag_Read_Stub(
 pub unsafe extern "system" fn IClassFactory2_CreateInstanceLic_Proxy(
     This: *mut IClassFactory2,
     pUnkOuter: *mut IUnknown,
-    pUnkReserved: *mut IUnknown,
+    _pUnkReserved: *mut IUnknown,
     riid: REFIID,
     bstrKey: BSTR,
     ppvObj: *mut PVOID,
@@ -2972,7 +2972,7 @@ pub unsafe extern "system" fn IEnumConnections_Next_Stub(
     rgcd: LPCONNECTDATA,
     pcFetched: *mut ULONG,
 ) -> HRESULT {
-    let mut hr: HRESULT;
+    let hr: HRESULT;
 
     TRACE!(b"(%u, %p, %p)\n\0".as_ptr() as PCHAR, cConnections, rgcd, pcFetched);
 
@@ -3150,18 +3150,18 @@ pub unsafe extern "system" fn IEnumOleUndoUnits_Next_Stub(
 }
 #[no_mangle]
 pub unsafe extern "system" fn IQuickActivate_QuickActivate_Proxy(
-    This: *mut IQuickActivate,
-    pQaContainer: *mut QACONTAINER,
-    pQaControl: *mut QACONTROL,
+    _This: *mut IQuickActivate,
+    _pQaContainer: *mut QACONTAINER,
+    _pQaControl: *mut QACONTROL,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as *const i8);
     E_NOTIMPL
 }
 #[no_mangle]
 pub unsafe extern "system" fn IQuickActivate_QuickActivate_Stub(
-    This: *mut IQuickActivate,
-    pQaContainer: *mut QACONTAINER,
-    pQaControl: *mut QACONTROL,
+    _This: *mut IQuickActivate,
+    _pQaContainer: *mut QACONTAINER,
+    _pQaControl: *mut QACONTROL,
 ) -> HRESULT {
     FIXME!(b"not implemented\n\0".as_ptr() as *const i8);
     E_NOTIMPL

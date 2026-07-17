@@ -22,55 +22,55 @@ pub unsafe extern "C" fn NoUiUnInitialize() {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn NoUiDrawBackdrop(DrawHeight: ULONG) {
+pub unsafe extern "C" fn NoUiDrawBackdrop(_DrawHeight: ULONG) {
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn NoUiFillArea(
-    Left: ULONG,
-    Top: ULONG,
-    Right: ULONG,
-    Bottom: ULONG,
-    FillChar: CHAR,
-    Attr: UCHAR,
+    _Left: ULONG,
+    _Top: ULONG,
+    _Right: ULONG,
+    _Bottom: ULONG,
+    _FillChar: CHAR,
+    _Attr: UCHAR,
 ) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn NoUiDrawShadow(Left: ULONG, Top: ULONG, Right: ULONG, Bottom: ULONG) {
+pub unsafe extern "C" fn NoUiDrawShadow(_Left: ULONG, _Top: ULONG, _Right: ULONG, _Bottom: ULONG) {
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn NoUiDrawBox(
-    Left: ULONG,
-    Top: ULONG,
-    Right: ULONG,
-    Bottom: ULONG,
-    VertStyle: UCHAR,
-    HorzStyle: UCHAR,
-    Fill: BOOLEAN,
-    Shadow: BOOLEAN,
-    Attr: UCHAR,
+    _Left: ULONG,
+    _Top: ULONG,
+    _Right: ULONG,
+    _Bottom: ULONG,
+    _VertStyle: UCHAR,
+    _HorzStyle: UCHAR,
+    _Fill: BOOLEAN,
+    _Shadow: BOOLEAN,
+    _Attr: UCHAR,
 ) {
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn NoUiDrawText(
-    X: ULONG,
-    Y: ULONG,
+    _X: ULONG,
+    _Y: ULONG,
     Text: PCSTR,
-    Attr: UCHAR,
+    _Attr: UCHAR,
 ) {
     printf(b"%s\n\0".as_ptr() as *const i8, Text);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn NoUiDrawText2(
-    X: u32,
-    Y: u32,
+    _X: u32,
+    _Y: u32,
     MaxNumChars: u32,
     Text: PCSTR,
-    Attr: u8,
+    _Attr: u8,
 ) {
     let mut MaxNumChars = MaxNumChars;
     if MaxNumChars == 0 {
@@ -81,12 +81,12 @@ pub unsafe extern "C" fn NoUiDrawText2(
 
 #[no_mangle]
 pub unsafe extern "C" fn NoUiDrawCenteredText(
-    Left: u32,
-    Top: u32,
-    Right: u32,
-    Bottom: u32,
+    _Left: u32,
+    _Top: u32,
+    _Right: u32,
+    _Bottom: u32,
     TextString: PCSTR,
-    Attr: u8,
+    _Attr: u8,
 ) {
     printf(b"%s\n\0".as_ptr() as *const i8, TextString);
 }
@@ -109,53 +109,53 @@ pub unsafe extern "C" fn NoUiMessageBox(MessageText: PCSTR) {
 pub unsafe extern "C" fn NoUiMessageBoxCritical(MessageText: PCSTR) {
     // noui.c:100 — `#ifdef UEFIBOOT TRACE;return; #endif` then unconditional
     // printf. UEFIBOOT off (smoke path) → printf variant only.
-    printf(((b"%s\n\0".as_ptr()) as *const i8), MessageText);
-    printf(((b"Press any key\n\0".as_ptr()) as *const i8));
+    printf((b"%s\n\0".as_ptr()) as *const i8 , MessageText);
+    printf((b"Press any key\n\0".as_ptr()) as *const i8 );
     MachConsGetCh();
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn NoUiSetProgressBarText(ProgressText: PCSTR) {
+pub unsafe extern "C" fn NoUiSetProgressBarText(_ProgressText: PCSTR) {
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn NoUiTickProgressBar(
-    SubPercentTimes100: ULONG)
+    _SubPercentTimes100: ULONG)
 {
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn NoUiDrawProgressBarCenter(
-    ProgressText: PCSTR)
+    _ProgressText: PCSTR)
 {
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn NoUiDrawProgressBar(
-    Left: ULONG,
-    Top: ULONG,
-    Right: ULONG,
-    Bottom: ULONG,
-    ProgressText: PCSTR,
+    _Left: ULONG,
+    _Top: ULONG,
+    _Right: ULONG,
+    _Bottom: ULONG,
+    _ProgressText: PCSTR,
 ) {
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn NoUiEditBox(
-    MessageText: PCSTR,
-    EditTextBuffer: PCHAR,
-    Length: ULONG,
+    _MessageText: PCSTR,
+    _EditTextBuffer: PCHAR,
+    _Length: ULONG,
 ) -> BOOLEAN {
     return 0u8;
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn NoUiTextToColor(ColorText: PCSTR) -> u8 {
+pub unsafe extern "C" fn NoUiTextToColor(_ColorText: PCSTR) -> u8 {
     0
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn NoUiTextToFillStyle(FillStyleText: PCSTR) -> u8 {
+pub unsafe extern "C" fn NoUiTextToFillStyle(_FillStyleText: PCSTR) -> u8 {
     return 0;
 }
 
@@ -169,23 +169,23 @@ pub unsafe extern "C" fn NoUiFadeOut() {
 
 #[no_mangle]
 pub unsafe extern "C" fn NoUiDisplayMenu(
-    MenuHeader: PCSTR,
-    MenuFooter: PCSTR,
-    MenuItemList: *mut PCSTR,
-    MenuItemCount: ULONG,
+    _MenuHeader: PCSTR,
+    _MenuFooter: PCSTR,
+    _MenuItemList: *mut PCSTR,
+    _MenuItemCount: ULONG,
     DefaultMenuItem: ULONG,
-    MenuTimeOut: LONG,
+    _MenuTimeOut: LONG,
     SelectedMenuItem: PULONG,
-    CanEscape: BOOLEAN,
-    KeyPressFilter: UiMenuKeyPressFilterCallback,
-    Context: PVOID,
+    _CanEscape: BOOLEAN,
+    _KeyPressFilter: UiMenuKeyPressFilterCallback,
+    _Context: PVOID,
 ) -> BOOLEAN {
     *SelectedMenuItem = DefaultMenuItem;
     1u8
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn NoUiDrawMenu(MenuInfo: PUI_MENU_INFO) {
+pub unsafe extern "C" fn NoUiDrawMenu(_MenuInfo: PUI_MENU_INFO) {
 }
 
 

@@ -107,7 +107,7 @@ pub unsafe extern "system" fn KdVmDbgDumpBuffer(
         CurrentRow = CurrentRow.offset(16);
         i += 1;
     }
-    KdVmDbgDumpRow(CurrentRow, (Size % 16));
+    KdVmDbgDumpRow(CurrentRow, Size % 16 );
 }
 
 unsafe fn KdVmAddToBuffer(
@@ -306,13 +306,13 @@ pub unsafe extern "system" fn KdD3Transition() -> NTSTATUS {
 }
 #[no_mangle]
 pub unsafe extern "system" fn KdSave(
-    SleepTransition: BOOLEAN
+    _SleepTransition: BOOLEAN
 ) -> NTSTATUS {
     STATUS_SUCCESS
 }
 #[no_mangle]
 pub unsafe extern "system" fn KdRestore(
-    SleepTransition: BOOLEAN
+    _SleepTransition: BOOLEAN
 ) -> NTSTATUS {
     STATUS_SUCCESS
 }
@@ -322,7 +322,7 @@ pub unsafe extern "system" fn KdDebuggerInitialize0(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
 ) -> NTSTATUS {
 
-    let mut CommandLine: PCHAR;
+    let CommandLine: PCHAR;
     let mut PortString: PCHAR;
     let Status: NTSTATUS;
 
@@ -372,7 +372,7 @@ pub unsafe extern "system" fn KdDebuggerInitialize0(
 
 #[no_mangle]
 pub unsafe extern "system" fn KdDebuggerInitialize1(
-    LoaderBlock: PLOADER_PARAMETER_BLOCK
+    _LoaderBlock: PLOADER_PARAMETER_BLOCK
 ) -> NTSTATUS {
     
     KDDBGPRINT!(b"KdDebuggerInitialize1()\n\0".as_ptr() as *const i8);

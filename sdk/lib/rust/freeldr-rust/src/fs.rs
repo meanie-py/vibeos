@@ -241,7 +241,7 @@ unsafe fn NormalizeArcDeviceName(
 ) -> PCHAR
 {
     let mut Count: u32;
-    let mut NameLength: usize;
+    let NameLength: usize;
     let mut p: PCCH;
     let End: PCCH;
     let mut q: PCHAR;
@@ -295,7 +295,7 @@ pub unsafe extern "C" fn ArcOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: PULONG
     let mut DeviceName: PCHAR;
     let mut FileName: PSTR;
     let mut Length: usize;
-    let mut DeviceOpenMode: OPENMODE;
+    let DeviceOpenMode: OPENMODE;
     let mut DeviceId: u32;
 
     TRACE(b"Opening file '%s'...\n\0".as_ptr() as PCCH, (Path) as usize);
@@ -535,7 +535,7 @@ pub unsafe extern "C" fn FsOpenFile(
 ) -> ARC_STATUS
 {
     let mut Status: NTSTATUS;
-    let mut cchPathLen: usize;
+    let cchPathLen: usize;
     let mut FullPath: [u8; MAX_PATH] = [0; MAX_PATH];
 
     if strrchr(FileName as *const i8, ')' as i32).is_null() {

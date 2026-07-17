@@ -1,9 +1,6 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{FILE_BOTH_DIR_INFORMATION, FILE_DIRECTORY_INFORMATION, FILE_FULL_DIR_INFORMATION, FILE_ID_BOTH_DIR_INFORMATION, FILE_ID_FULL_DIR_INFORMATION, FILE_NAMES_INFORMATION, IoGetCurrentIrpStackLocation, PIO_STACK_LOCATION, PIRP, PSTRING, RtlUpcaseUnicodeString};
-use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, CCB_FLAG_ENUM_INITIALIZED, CCB_FLAG_ENUM_MATCH_ALL, CCB_FLAG_ENUM_NAME_EXP_HAS_WILD, CCB_FLAG_ENUM_NOMATCH_CONSTANT_ENTRY, CCB_FLAG_ENUM_RETURN_NEXT, CCB_FLAG_ENUM_VERSION_EXP_HAS_WILD, CCB_FLAG_ENUM_VERSION_MATCH_ALL, CCB_FLAG_IGNORE_CASE, CD_NAME, DIRENT, DIRENT_FLAG_CONSTANT_ENTRY, FCB, FCB_INDEX, FILE_ENUM_CONTEXT, IRP_CONTEXT, PCCB, PFCB, PFILE_ENUM_CONTEXT, PIRP_CONTEXT, PVCB};
 use ntkrnl_sys::ddk::{FILE_OBJECT, IO_STACK_LOCATION, IRP, POOL_TYPE, _FILE_INFORMATION_CLASS_FileBothDirectoryInformation as FileBothDirectoryInformation, _FILE_INFORMATION_CLASS_FileDirectoryInformation as FileDirectoryInformation, _FILE_INFORMATION_CLASS_FileFullDirectoryInformation as FileFullDirectoryInformation, _FILE_INFORMATION_CLASS_FileIdBothDirectoryInformation as FileIdBothDirectoryInformation, _FILE_INFORMATION_CLASS_FileIdFullDirectoryInformation as FileIdFullDirectoryInformation, _FILE_INFORMATION_CLASS_FileNamesInformation as FileNamesInformation, _UNICODE_STRING};
@@ -132,7 +129,7 @@ pub unsafe extern "C" fn CdCommonDirControl(
     Irp: *mut IRP,
 ) -> NTSTATUS {
     unsafe {
-        let mut Status: NTSTATUS;
+        let Status: NTSTATUS;
         let IrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
         let mut Fcb: *mut FCB = core::ptr::null_mut();
         let mut Ccb: *mut CCB = core::ptr::null_mut();
@@ -190,7 +187,7 @@ pub unsafe extern "C" fn CdQueryDirectory(
     let mut DoCcbUpdate: BOOLEAN = 0; // FALSE
     let UserBuffer: *mut u8;
     let mut BytesRemainingInBuffer: u32;
-    let mut BaseLength: u32;
+    let BaseLength: u32;
     let mut DirInfo: *mut FILE_BOTH_DIR_INFORMATION = core::ptr::null_mut();
     let mut NamesInfo: *mut FILE_NAMES_INFORMATION;
     let mut IdFullDirInfo: *mut FILE_ID_FULL_DIR_INFORMATION;
@@ -593,15 +590,15 @@ pub unsafe extern "C" fn CdInitializeEnumeration(
 
     // PAGED_CODE(); // no-op in this translation
 
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let mut FileName: *mut _UNICODE_STRING;
     let mut WildCardName: CD_NAME = core::mem::zeroed();
     let mut SearchExpression: CD_NAME = core::mem::zeroed();
     let mut CcbFlags: ULONG;
 
-    let mut DirentOffset: ULONG;
+    let DirentOffset: ULONG;
     let mut LastDirentOffset: ULONG;
-    let mut KnownOffset: BOOLEAN;
+    let KnownOffset: BOOLEAN;
     let mut Found: BOOLEAN;
 
     // If the user has specified that the scan be restarted, and has specified a new query pattern, reinitialize the CCB.

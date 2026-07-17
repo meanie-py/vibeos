@@ -1276,13 +1276,21 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
             use ntkrnl_sys::ddk::KeGetCurrentProcessorNumber;
             unsafe extern "system" {
                 fn KeIpiGenericCall(
-                    Function: Option<unsafe extern "C" fn(usize) -> usize>,
+                    // PKIPI_BROADCAST_WORKER is NTAPI (stdcall on i386): the
+                    // worker MUST be `extern "system"`, not `extern "C"`. A cdecl
+                    // worker leaves KeIpiGenericCall's `(Function)(Argument)` call
+                    // 4 bytes off (callee doesn't clean the stdcall arg) → the
+                    // rendezvous frame skews → bad ret → EIP executes on the stack
+                    // → deterministic 0x50. Invisible on amd64/arm64 (extern "C"
+                    // == extern "system" there); i386-fatal. (field manual §9.91
+                    // ABI family; the i386 M5 -smp 1 blocker, 2026-07-16.)
+                    Function: Option<unsafe extern "system" fn(usize) -> usize>,
                     Argument: usize,
                 ) -> usize;
                 static KeActiveProcessors: usize;
                 static KeNumberProcessors: i8;
             }
-            unsafe extern "C" fn gc_selftest_worker(arg: usize) -> usize {
+            unsafe extern "system" fn gc_selftest_worker(arg: usize) -> usize {
                 let mask = &*(arg as *const AtomicU64);
                 mask.fetch_or(1u64 << KeGetCurrentProcessorNumber(), Ordering::SeqCst);
                 0

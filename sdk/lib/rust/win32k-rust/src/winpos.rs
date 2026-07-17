@@ -545,8 +545,9 @@ unsafe fn SelectWindowRgn(Window: PWND, hRgnClip: HRGN) {
     }
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn ActivateOtherWindowMin(Wnd: PWND) -> BOOL {
+unsafe fn ActivateOtherWindowMin(Wnd: PWND) -> BOOL {
     let mut ActivePrev: BOOL;
     let mut FindTopWnd: BOOL;
     let pWndTopMost: PWND;
@@ -627,6 +628,7 @@ unsafe extern "fastcall" fn ActivateOtherWindowMin(Wnd: PWND) -> BOOL {
     }
     0
 }
+}
 
 #[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn can_activate_window(Wnd: PWND) -> u8 {
@@ -659,8 +661,9 @@ unsafe fn can_activate_window_impl(Wnd: PWND) -> u8 {
     1u8
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_WinPosActivateOtherWindow(Wnd: PWND) {
+unsafe fn co_WinPosActivateOtherWindow(Wnd: PWND) {
     let mut WndTo: PWND = core::ptr::null_mut();
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
 
@@ -742,6 +745,7 @@ unsafe extern "fastcall" fn co_WinPosActivateOtherWindow(Wnd: PWND) {
     if !WndTo.is_null() {
         UserDerefObjectCo(WndTo);
     }
+}
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -941,7 +945,8 @@ unsafe fn make_point_onscreen(pt: *mut POINT) {
 }
 
 
-unsafe extern "fastcall" fn IntSetWindowPlacement(Wnd: PWND, wpl: *mut WINDOWPLACEMENT, Flags: UINT) -> BOOL {
+fastcall_fn! {
+unsafe fn IntSetWindowPlacement(Wnd: PWND, wpl: *mut WINDOWPLACEMENT, Flags: UINT) -> BOOL {
     let sAsync: BOOL;
     let SWP_Flags: UINT;
 
@@ -999,9 +1004,11 @@ unsafe extern "fastcall" fn IntSetWindowPlacement(Wnd: PWND, wpl: *mut WINDOWPLA
     }
     1
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_WinPosArrangeIconicWindows(parent: PWND) -> UINT {
+unsafe fn co_WinPosArrangeIconicWindows(parent: PWND) -> UINT {
     let mut rectParent: RECTL = core::mem::zeroed();
     let mut Child: PWND;
     let mut x: INT;
@@ -1055,8 +1062,10 @@ unsafe extern "fastcall" fn co_WinPosArrangeIconicWindows(parent: PWND) -> UINT 
     }
     yspacing as UINT
 }
+}
 
-unsafe extern "fastcall" fn WinPosFindIconPos(Window: PWND, pos2: *mut POINT) {
+fastcall_fn! {
+unsafe fn WinPosFindIconPos(Window: PWND, pos2: *mut POINT) {
     let mut rectParent: RECT = core::mem::zeroed();
     let mut pwndChild: PWND;
     let pwndParent: PWND;
@@ -1118,6 +1127,7 @@ unsafe extern "fastcall" fn WinPosFindIconPos(Window: PWND, pos2: *mut POINT) {
     (*Window).InternalPos.IconPos.x = (*pos2).x;
     (*Window).InternalPos.IconPos.y = (*pos2).y;
     (*Window).InternalPos.flags |= WPF_MININIT;
+}
 }
 
 #[no_mangle]
@@ -1213,8 +1223,9 @@ unsafe fn IntGetWindowBorders(Style: DWORD, ExStyle: DWORD) -> DWORD {
     adjust
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_WinPosGetMinMaxInfo(
+unsafe fn co_WinPosGetMinMaxInfo(
     Window: PWND,
     MaxSize: *mut POINT,
     MaxPos: *mut POINT,
@@ -1349,6 +1360,7 @@ unsafe extern "fastcall" fn co_WinPosGetMinMaxInfo(
     }
 
     0
+}
 }
 
 unsafe fn IntValidateParent(Child: PWND, ValidateRgn: PREGION) -> BOOL {
@@ -1487,7 +1499,8 @@ unsafe fn get_valid_rects_impl(
     }
 }
 
-unsafe extern "fastcall" fn co_WinPosDoNCCALCSize(
+fastcall_fn! {
+unsafe fn co_WinPosDoNCCALCSize(
     Window: PWND,
     WinPos: PWINDOWPOS,
     WindowRect: *mut RECTL,
@@ -1591,6 +1604,7 @@ unsafe extern "fastcall" fn co_WinPosDoNCCALCSize(
 
     wvrFlags as LONG
 }
+}
 
 #[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn co_WinPosDoWinPosChanging(
@@ -1676,7 +1690,8 @@ unsafe fn co_WinPosDoWinPosChanging_impl(
     1u8
 }
 
-unsafe extern "fastcall" fn WinPosDoOwnedPopups(Window: PWND, mut hWndInsertAfter: HWND) -> HWND {
+fastcall_fn! {
+unsafe fn WinPosDoOwnedPopups(Window: PWND, mut hWndInsertAfter: HWND) -> HWND {
     let mut List: *mut HWND = core::ptr::null_mut();
     let mut Owner: HWND;
     let Style: LONG;
@@ -1826,6 +1841,7 @@ unsafe extern "fastcall" fn WinPosDoOwnedPopups(Window: PWND, mut hWndInsertAfte
 
     hWndInsertAfter
 }
+}
 
 #[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn WinPosInternalMoveWindow(Window: PWND, MoveX: i32, MoveY: i32) {
@@ -1857,7 +1873,8 @@ unsafe fn WinPosInternalMoveWindow_impl(Window: PWND, MoveX: i32, MoveY: i32) {
     }
 }
 
-unsafe extern "fastcall" fn WinPosFixupFlags(WinPos: *mut WINDOWPOS, Wnd: PWND) -> u8 {
+fastcall_fn! {
+unsafe fn WinPosFixupFlags(WinPos: *mut WINDOWPOS, Wnd: PWND) -> u8 {
     let Parent: PWND;
     let mut pt: POINT = core::mem::zeroed();
 
@@ -1967,6 +1984,7 @@ unsafe extern "fastcall" fn WinPosFixupFlags(WinPos: *mut WINDOWPOS, Wnd: PWND) 
 
     1u8
 }
+}
 
 const HWND_TOP: HWND = 0 as HWND;
 const HWND_BOTTOM: HWND = 1 as HWND;
@@ -2069,8 +2087,9 @@ unsafe fn IntImeWindowPosChanged() {
     IntFreeHwndList(pWL);
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_WinPosSetWindowPos(
+unsafe fn co_WinPosSetWindowPos(
     Window: PWND,
     WndInsertAfter: HWND,
     x: INT,
@@ -2596,6 +2615,7 @@ unsafe extern "fastcall" fn co_WinPosSetWindowPos(
 
     1u8
 }
+}
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -2641,8 +2661,9 @@ unsafe extern "C" fn co_WinPosGetNonClientSize(
     Result
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_WinPosSendSizeMove(Wnd: PWND) {
+unsafe fn co_WinPosSendSizeMove(Wnd: PWND) {
     let mut Rect: RECTL = core::mem::zeroed();
     let mut lParam: LPARAM;
     let mut wParam: WPARAM = SIZE_RESTORED as WPARAM;
@@ -2674,10 +2695,12 @@ unsafe extern "fastcall" fn co_WinPosSendSizeMove(Wnd: PWND) {
 
     IntEngWindowChanged(Wnd, WOC_RGN_CLIENT);
 }
+}
 
+fastcall_fn! {
 #[cfg_attr(target_arch = "x86", export_name = "co_WinPosMinMaximize")]
 #[no_mangle]
-unsafe extern "fastcall" fn co_WinPosMinMaximize(
+unsafe fn co_WinPosMinMaximize(
     Wnd: PWND,
     ShowFlag: UINT,
     NewPos: *mut RECTL,
@@ -2833,6 +2856,7 @@ unsafe extern "fastcall" fn co_WinPosMinMaximize(
 
     SwpFlags
 }
+}
 
 unsafe fn IntForceMinimizeWindow(pWnd: PWND) {
     let hRgn: HRGN;
@@ -2866,9 +2890,10 @@ unsafe fn IntForceMinimizeWindow(pWnd: PWND) {
     }
 }
 
+fastcall_fn! {
 #[cfg_attr(target_arch = "x86", export_name = "co_WinPosShowWindow")]
 #[no_mangle]
-unsafe extern "fastcall" fn co_WinPosShowWindow(Wnd: PWND, mut Cmd: INT) -> BOOLEAN {
+unsafe fn co_WinPosShowWindow(Wnd: PWND, mut Cmd: INT) -> BOOLEAN {
     let WasVisible: BOOLEAN;
     let mut Swp: UINT = 0;
     let mut EventMsg: UINT = 0;
@@ -3120,6 +3145,7 @@ unsafe extern "fastcall" fn co_WinPosShowWindow(Wnd: PWND, mut Cmd: INT) -> BOOL
     }
 
     WasVisible
+}
 }
 
 unsafe fn co_WinPosSearchChildren(
@@ -4968,8 +4994,9 @@ unsafe extern "C" fn co_IntCalculateSnapPosition(
     (*pos2).bottom = (*pos2).top + height as i32;
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_IntSnapWindow(Wnd: PWND, Edge: UINT) {
+unsafe fn co_IntSnapWindow(Wnd: PWND, Edge: UINT) {
     let mut newPos: RECT = core::mem::zeroed();
     let wasSnapped: BOOLEAN = IntIsWindowSnapped(Wnd);
     let normal: UINT = (((*Wnd).style & (WS_MAXIMIZE | WS_MINIMIZE)) == 0) as UINT;
@@ -5018,6 +5045,7 @@ unsafe extern "fastcall" fn co_IntSnapWindow(Wnd: PWND, Edge: UINT) {
     if hasRef != 0 {
         UserDerefObjectCo(Wnd);
     }
+}
 }
 
 #[cfg(target_arch = "x86")]

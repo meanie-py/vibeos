@@ -402,8 +402,8 @@ pub unsafe extern "C" fn LsarpLookupPrivilegeDisplayName(
     DisplayName: *mut PRPC_UNICODE_STRING,
     LanguageReturned: *mut USHORT,
 ) -> NTSTATUS {
-    let mut DisplayNameBuffer: PRPC_UNICODE_STRING;
-    let mut hInstance: HINSTANCE;
+    let DisplayNameBuffer: PRPC_UNICODE_STRING;
+    let hInstance: HINSTANCE;
     let mut Index: ULONG;
     let mut nLength: UINT;
 
@@ -535,9 +535,9 @@ pub unsafe extern "C" fn LsarpLookupPrivilegeValue(Name: *mut _RPC_UNICODE_STRIN
             WellKnownPrivileges[Priv as usize].Name as *const u16,
         ) == 0
         {
-            return (core::ptr::addr_of!(
+            return core::ptr::addr_of!(
                 (*WellKnownPrivileges.as_ptr().add(Priv as usize)).Luid
-            ) as *mut _LUID);
+            ) as *mut _LUID ;
         }
         Priv = Priv.wrapping_add(1);
     }
@@ -656,10 +656,10 @@ pub unsafe extern "C" fn LsarpEnumeratePrivileges(
 }
 #[no_mangle]
 pub unsafe extern "C" fn LsapLookupAccountRightName(
-    mut RightValue: ULONG,
-    mut Name: *mut PRPC_UNICODE_STRING,
+    RightValue: ULONG,
+    Name: *mut PRPC_UNICODE_STRING,
 ) -> NTSTATUS {
-    let mut NameBuffer: PRPC_UNICODE_STRING;
+    let NameBuffer: PRPC_UNICODE_STRING;
     for right_data in &WellKnownRights {
         if right_data.Flag == RightValue {
             NameBuffer = MIDL_user_allocate(

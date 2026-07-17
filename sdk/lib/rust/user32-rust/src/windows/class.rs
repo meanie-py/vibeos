@@ -46,12 +46,28 @@ extern "system" {
 }
 
 // user32-internal FASTCALL helper (user32p.h).
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn TestWindowProcess(pWnd: PWND) -> BOOL;                     // user32p.h
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn TestWindowProcess(pWnd: PWND) -> BOOL;                     // user32p.h
 }
 
 // ntdll activation-context APIs (not in crate::internal; resolve via importlib).
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn RtlActivateActivationContextUnsafeFast(
+        Frame: *mut RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED,
+        Context: PVOID,
+    ) -> PVOID;
+    fn RtlDeactivateActivationContextUnsafeFast(
+        Frame: *mut RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED,
+    ) -> PVOID;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn RtlActivateActivationContextUnsafeFast(
         Frame: *mut RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED,
         Context: PVOID,
@@ -448,8 +464,9 @@ unsafe fn ClassNameToVersion_impl(
 }
 
 // VersionRegisterClass — FASTCALL, declared in regcontrol.h → cross-TU export.
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn VersionRegisterClass(
+pub unsafe fn VersionRegisterClass(
     mut pszClass: PCWSTR,
     lpLibFileName: LPCWSTR,
     Contex: HANDLE,
@@ -509,6 +526,7 @@ pub unsafe extern "fastcall" fn VersionRegisterClass(
     }
     RtlDeactivateActivationContextUnsafeFast(&mut Frame);
     Ret
+}
 }
 
 #[no_mangle]
@@ -766,6 +784,7 @@ unsafe extern "C" fn IntGetClsWndProc(pWnd: PWND, Class: PCLS, Ansi: i32) -> DWO
     IntGetClsWndProc_impl(pWnd, Class, Ansi)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntGetClsWndProc_impl(pWnd: PWND, Class: PCLS, Ansi: i32) -> DWORD_PTR {
     let mut i: i32;
     let gcpd: DWORD_PTR;
@@ -835,6 +854,7 @@ unsafe extern "C" fn IntGetWndProc(pWnd: PWND, Ansi: i32) -> WNDPROC {
     IntGetWndProc_impl(pWnd, Ansi)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntGetWndProc_impl(pWnd: PWND, Ansi: i32) -> WNDPROC {
     let mut i: i32;
     let gcpd: WNDPROC;

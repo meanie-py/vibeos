@@ -1,16 +1,12 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ps::*;
-use ntkrnl_sys::ddk::{FAST_IO_DISPATCH, IoGetCurrentIrpStackLocation, IoGetDeviceToVerify, IoGetStackLimits, IoGetTopLevelIrp, IoMarkIrpPending, IoRaiseHardError, IoSetDeviceToVerify, IoSetTopLevelIrp, KeAreAllApcsDisabled, LARGE_INTEGER, PDEVICE_OBJECT, PETHREAD, PEXCEPTION_POINTERS, PFILE_OBJECT, PIO_STATUS_BLOCK, PIRP, PLARGE_INTEGER, PVPB, PsGetCurrentThread, IRP, _UNICODE_STRING};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{FAST_IO_DISPATCH, IoGetCurrentIrpStackLocation, IoGetDeviceToVerify, IoGetStackLimits, IoGetTopLevelIrp, IoMarkIrpPending, IoRaiseHardError, IoSetDeviceToVerify, IoSetTopLevelIrp, KeAreAllApcsDisabled, LARGE_INTEGER, PDEVICE_OBJECT, PEXCEPTION_POINTERS, PFILE_OBJECT, PIO_STATUS_BLOCK, PLARGE_INTEGER, PsGetCurrentThread, IRP, _UNICODE_STRING};
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CD_DATA, CdFsdPostRequest, CdPerformVerify, FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_DISABLE_POPUPS, IRP_CONTEXT_FLAG_FORCE_POST, IRP_CONTEXT_FLAG_MORE_PROCESSING, IRP_CONTEXT_FLAG_TOP_LEVEL, PIRP_CONTEXT, THREAD_CONTEXT, TYPE_OF_OPEN, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, RAW_DIRENT, SECTOR_SIZE, SYSTEM_USE_XA};
+use crate::types::{CD_DATA, CdFsdPostRequest, CdPerformVerify, FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_DISABLE_POPUPS, IRP_CONTEXT_FLAG_FORCE_POST, IRP_CONTEXT_FLAG_MORE_PROCESSING, IRP_CONTEXT_FLAG_TOP_LEVEL, THREAD_CONTEXT, TYPE_OF_OPEN, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, RAW_DIRENT, SECTOR_SIZE, SYSTEM_USE_XA};
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastCheckLockForRead, FsRtlIsNtstatusExpected, FsRtlNormalizeNtstatus, IoCompleteRequest, IoIsErrorUserInduced, ASSERT_IRP, ASSERT_OPTIONAL_IRP_CONTEXT, ClearFlag};
-use crate::glue::{CDFS_BUG_CHECK_CDDATA, CDFS_NTC_IRP_CONTEXT, IRP_MN_COMPLETE, STATUS_CANT_WAIT, STATUS_DISK_CORRUPT_ERROR, STATUS_DRIVER_INTERNAL_ERROR, STATUS_FILE_CORRUPT_ERROR, STATUS_VERIFY_REQUIRED};
+use crate::glue::{CDFS_BUG_CHECK_CDDATA, IRP_MN_COMPLETE, STATUS_CANT_WAIT, STATUS_DISK_CORRUPT_ERROR, STATUS_DRIVER_INTERNAL_ERROR, STATUS_FILE_CORRUPT_ERROR, STATUS_VERIFY_REQUIRED};
 
 // cdecl cdfs-internal routines (C defs in filobsup.c are plain cdecl, no NTAPI).
 extern "C" {
@@ -659,7 +655,7 @@ pub unsafe extern "system" fn CdFastIoCheckIfPossible(
     // C: Fcb->FileLock — lives in the FCB_DATA arm of the FCB type union
     // (bindgen collapsed __bindgen_anon_2 to an opaque blob; reinterpret it).
     let FcbData = core::ptr::addr_of_mut!((*Fcb).__bindgen_anon_2) as *mut crate::types::FCB_DATA;
-    if ((*FcbData).FileLock.is_null()
+    if (*FcbData).FileLock.is_null()
         || FsRtlFastCheckLockForRead(
             (*FcbData).FileLock,
             FileOffset,
@@ -667,7 +663,7 @@ pub unsafe extern "system" fn CdFastIoCheckIfPossible(
             LockKey,
             FileObject,
             PsGetCurrentProcess() as *mut core::ffi::c_void,
-        ) != 0)
+        ) != 0
     {
         return 1;
     }

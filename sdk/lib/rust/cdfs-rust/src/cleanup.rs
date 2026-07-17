@@ -1,5 +1,3 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CcUninitializeCacheMap, IoAcquireVpbSpinLock, IoGetCurrentIrpStackLocation, IoGetRequestorProcess, IoReleaseVpbSpinLock, IoRemoveShareAccess, PFILE_OBJECT, PIRP};
 use core::ffi::c_void;
@@ -103,8 +101,8 @@ pub unsafe extern "C" fn CdCommonCleanup(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let mut FileObject: PFILE_OBJECT;
-    let mut TypeOfOpen: TYPE_OF_OPEN;
+    let FileObject: PFILE_OBJECT;
+    let TypeOfOpen: TYPE_OF_OPEN;
 
     let mut SendUnlockNotification: BOOLEAN = 0;
     let mut AttemptTeardown: BOOLEAN = 0;

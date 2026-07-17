@@ -13,6 +13,22 @@
 //! docs/engineering/user32-translation-audit.md for the per-wave plan.
 
 // Foundation: minimal Win32 type aliases + the NtUser* syscall import surface.
+// Emit a fn twice: `extern "fastcall"` on i386, `extern "C"` elsewhere.
+// FASTCALL only exists as a distinct ABI on x86; rustc treats "fastcall" as "C"
+// on other arches today and makes it a HARD ERROR on newer toolchains
+// (unsupported_calling_conventions). Same pattern as ex-rust's fastcall_export!.
+macro_rules! fastcall_fn {
+    ($(#[$attr:meta])* $vis:vis unsafe fn $name:ident($($params:tt)*) $(-> $ret:ty)? $body:block) => {
+        $(#[$attr])*
+        #[cfg(target_arch = "x86")]
+        $vis unsafe extern "fastcall" fn $name($($params)*) $(-> $ret)? $body
+
+        $(#[$attr])*
+        #[cfg(not(target_arch = "x86"))]
+        $vis unsafe extern "C" fn $name($($params)*) $(-> $ret)? $body
+    };
+}
+
 pub mod types;
 pub mod ntuser;
 

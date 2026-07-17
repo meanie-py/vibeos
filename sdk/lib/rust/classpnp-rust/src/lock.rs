@@ -95,7 +95,7 @@ pub unsafe extern "system" fn ClassCompleteRequest(
     IoCompleteRequest(Irp, PriorityBoost);
 }
 #[no_mangle]
-pub unsafe extern "stdcall" fn RemoveTrackingCompareRoutine(
+pub unsafe extern "system" fn RemoveTrackingCompareRoutine(
     Table: PRTL_GENERIC_TABLE,
     FirstStruct: PVOID,
     SecondStruct: PVOID,
@@ -110,7 +110,7 @@ pub unsafe extern "stdcall" fn RemoveTrackingCompareRoutine(
     GenericEqual
 }
 #[no_mangle]
-pub unsafe extern "stdcall" fn RemoveTrackingAllocateRoutine(
+pub unsafe extern "system" fn RemoveTrackingAllocateRoutine(
     Table: PRTL_GENERIC_TABLE,
     ByteSize: CLONG,
 ) -> PVOID {
@@ -121,7 +121,7 @@ pub unsafe extern "stdcall" fn RemoveTrackingAllocateRoutine(
     )
 }
 #[no_mangle]
-pub unsafe extern "stdcall" fn RemoveTrackingFreeRoutine(Table: PRTL_GENERIC_TABLE, Buffer: *mut core::ffi::c_void) {
+pub unsafe extern "system" fn RemoveTrackingFreeRoutine(Table: PRTL_GENERIC_TABLE, Buffer: *mut core::ffi::c_void) {
     let _ = Table;
     if !Buffer.is_null() {
         ExFreePool(Buffer);

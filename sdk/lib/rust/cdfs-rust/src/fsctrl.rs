@@ -1,10 +1,8 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CcWaitForCurrentLazyWriterActivity, DISK_GEOMETRY, GUID, _IO_STATUS_BLOCK, LUID, PCH, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PVPB, RtlOemStringToCountedUnicodeString, STRING};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{CcWaitForCurrentLazyWriterActivity, DISK_GEOMETRY, _IO_STATUS_BLOCK, LUID, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PVPB, RtlOemStringToCountedUnicodeString, STRING};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, CDROM_TOC_LARGE, CdCheckForDismount, CdFreeDirCache, CdProcessToc, FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_FORCE_POST, PIRP_CONTEXT, PVCB, VCB, VCB_STATE_NOTIFY_REMOUNT, VOLUME_DEVICE_OBJECT, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_LOCK, FILE_OBJECT, IO_STACK_LOCATION, IRP, POPLOCK, VPB, _UNICODE_STRING};
@@ -14,7 +12,7 @@ use crate::glue::{CDFS_BUG_CHECK_FSCTRL, CDFS_RESIDUAL_REFERENCE, Ccb, FSRTL_VOL
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::cddata::CdData;
 use crate::types::{CdInitializeVcb, CdUpdateVcbFromVolDescriptor, CdDismountVcb, TRACK_DATA};
-use crate::types::{VCB_CONDITION, _VCB_CONDITION_VcbDismountInProgress, _VCB_CONDITION_VcbInvalid, _VCB_CONDITION_VcbNotMounted, FCB_DATA, FCB_INDEX, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpenValue};
+use crate::types::{_VCB_CONDITION_VcbDismountInProgress, _VCB_CONDITION_VcbInvalid, _VCB_CONDITION_VcbNotMounted, FCB_DATA, FCB_INDEX, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpenValue};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{CdMarkRealDevVerifyOk};
 use crate::glue::{CdNonPagedPool};
@@ -442,28 +440,28 @@ pub unsafe extern "C" fn CdUserFsctl(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP
         FSCTL_REQUEST_FILTER_OPLOCK => {
             Status = CdOplockRequest(IrpContext, Irp);
         }
-        FSCTL_LOCK_VOLUME => {
+        _FSCTL_LOCK_VOLUME => {
             Status = CdLockVolume(IrpContext, Irp);
         }
-        FSCTL_UNLOCK_VOLUME => {
+        _FSCTL_UNLOCK_VOLUME => {
             Status = CdUnlockVolume(IrpContext, Irp);
         }
-        FSCTL_DISMOUNT_VOLUME => {
+        _FSCTL_DISMOUNT_VOLUME => {
             Status = CdDismountVolume(IrpContext, Irp);
         }
-        FSCTL_IS_VOLUME_DIRTY => {
+        _FSCTL_IS_VOLUME_DIRTY => {
             Status = CdIsVolumeDirty(IrpContext, Irp);
         }
-        FSCTL_IS_VOLUME_MOUNTED => {
+        _FSCTL_IS_VOLUME_MOUNTED => {
             Status = CdIsVolumeMounted(IrpContext, Irp);
         }
-        FSCTL_IS_PATHNAME_VALID => {
+        _FSCTL_IS_PATHNAME_VALID => {
             Status = CdIsPathnameValid(IrpContext, Irp);
         }
-        FSCTL_INVALIDATE_VOLUMES => {
+        _FSCTL_INVALIDATE_VOLUMES => {
             Status = CdInvalidateVolumes(IrpContext, Irp);
         }
-        FSCTL_ALLOW_EXTENDED_DASD_IO => {
+        _FSCTL_ALLOW_EXTENDED_DASD_IO => {
             Status = CdAllowExtendedDasdIo(IrpContext, Irp);
         }
         _ => {
@@ -476,7 +474,7 @@ pub unsafe extern "C" fn CdUserFsctl(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdReMountOldVcb(
-    IrpContext: *mut IRP_CONTEXT,
+    _IrpContext: *mut IRP_CONTEXT,
     OldVcb: *mut VCB,
     NewVcb: *mut VCB,
     DeviceObjectWeTalkTo: *mut DEVICE_OBJECT,
@@ -936,9 +934,9 @@ pub unsafe extern "C" fn CdUnlockVolume(
     // left as identifier assuming caller provides definition
     // Uncomment and adjust if value known: const FSRTL_VOLUME_UNLOCK: u32 = 2;
 
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let IrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
-    let mut Vcb: *mut VCB;
+    let Vcb: *mut VCB;
     let mut Fcb: *mut FCB = core::ptr::null_mut();
     let mut Ccb: *mut CCB = core::ptr::null_mut();
 
@@ -981,9 +979,9 @@ pub unsafe extern "C" fn CdDismountVolume(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let IrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
-    let mut Vcb: *mut VCB;
+    let Vcb: *mut VCB;
     let mut Fcb: *mut FCB = core::ptr::null_mut();
     let mut Ccb: *mut CCB = core::ptr::null_mut();
 
@@ -2027,7 +2025,7 @@ pub unsafe extern "C" fn CdInvalidateVolumes(
     const IO_TYPE_VPB: u16 = 10; // iotypes.h
     const KERNEL_MODE: i8 = 0; // KernelMode
 
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let mut SavedIrql: KIRQL = 0;
 

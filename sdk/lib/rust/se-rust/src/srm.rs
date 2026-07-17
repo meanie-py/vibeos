@@ -1007,6 +1007,7 @@ pub unsafe extern "system" fn SeRegisterLogonSessionTerminatedRoutine(
     STATUS_SUCCESS
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn SeUnregisterLogonSessionTerminatedRoutine(
     CallbackRoutine: PSE_LOGON_SESSION_TERMINATED_ROUTINE,

@@ -333,23 +333,23 @@ const TRACE_FLAG_GENERAL: u32 = 0;
 // Constants required by the function
 const TRACE_LEVEL_INFORMATION: u32 = 4;
 const MODE_PAGE_FAULT_REPORTING: UCHAR = 0x1C;
-const STATUS_WMI_READ_ONLY: NTSTATUS = (0xC0000202u32 as i32);
-const STATUS_WMI_GUID_NOT_FOUND: NTSTATUS = (0xC0000201u32 as i32);
+const STATUS_WMI_READ_ONLY: NTSTATUS = 0xC00002C6u32 as i32;
+const STATUS_WMI_GUID_NOT_FOUND: NTSTATUS = 0xC0000295u32 as i32;
 const IO_NO_INCREMENT: CCHAR = 0;
 
 
 const SMART_LOG_SECTOR_SIZE: usize = 512;
 const FailurePredictionSense: u32 = 2; // TODO: verify
 const FailurePredictionNone: u32 = 0;
-const STATUS_INSUFFICIENT_RESOURCES: i32 = (0xC000009Au32 as i32);
-const STATUS_NOT_SUPPORTED: i32 = (0xC00000BBu32 as i32);
+const STATUS_INSUFFICIENT_RESOURCES: i32 = 0xC000009Au32 as i32 ;
+const STATUS_NOT_SUPPORTED: i32 = 0xC00000BBu32 as i32 ;
 const STATUS_SUCCESS: i32 = 0;
 
 
 
-const STATUS_INVALID_PARAMETER: i32 = (0xC000000Du32 as i32);
-const STATUS_BUFFER_TOO_SMALL: i32 = (0xC0000023u32 as i32);
-const STATUS_WMI_ITEMID_NOT_FOUND: i32 = (0xC0000284u32 as i32);
+const STATUS_INVALID_PARAMETER: i32 = 0xC000000Du32 as i32 ;
+const STATUS_BUFFER_TOO_SMALL: i32 = 0xC0000023u32 as i32 ;
+const STATUS_WMI_ITEMID_NOT_FOUND: i32 = 0xC0000297u32 as i32;
 
 
 const ReadLogSectors: u32 = 6;
@@ -516,7 +516,7 @@ pub unsafe extern "system" fn DiskReadSmartLog(
             srbControl = core::ptr::null_mut();
         }
     } else {
-        status = (0xC000009Au32 as i32); // STATUS_INSUFFICIENT_RESOURCES
+        status = 0xC000009Au32 as i32 ; // STATUS_INSUFFICIENT_RESOURCES
     }
     status
 }
@@ -1006,8 +1006,8 @@ pub unsafe extern "system" fn DiskSendFailurePredictIoctl(
 }
 
 
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn DiskGetModePage(
+#[no_mangle]
+ pub unsafe extern "system" fn DiskGetModePage(
     Fdo: *mut DEVICE_OBJECT,
     PageMode: u8,
     PageControl: u8,
@@ -1405,7 +1405,7 @@ pub unsafe extern "C" fn DiskReadFailurePredictData(
     const FailurePredictionSmart: u32 = 2;
     const FailurePredictionSense: u32 = 3;
 
-    match ((*diskData).FailurePredictionCapability as u32) {
+    match (*diskData).FailurePredictionCapability as u32  {
         FailurePredictionSmart => {
             let mut outBuffer: *mut u8 = core::ptr::null_mut();
             let mut outBufferSize: u32 = 0;
@@ -1764,8 +1764,8 @@ pub unsafe extern "system" fn DiskInfoExceptionComplete(
     const SRB_SIMPLE_TAG_REQUEST: u16 = 0x20;
     const SP_UNTAGGED: u32 = 0xffffffff;
     const MAXIMUM_RETRIES: u32 = 3;
-    const STATUS_VERIFY_REQUIRED: NTSTATUS = (0xC000018Eu32 as i32);
-    const STATUS_IO_DEVICE_ERROR: NTSTATUS = (0xC0000185u32 as i32);
+    const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x80000016u32 as i32;
+    const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185u32 as i32 ;
     const IRP_MJ_SCSI: u8 = 0x0F;
     const MODE_PAGE_FAULT_REPORTING: u8 = 0x1C;
     const TRACE_LEVEL_INFORMATION: u32 = 4;
@@ -1903,7 +1903,7 @@ pub unsafe extern "system" fn DiskInfoExceptionComplete(
             );
 
             IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
-            return (0xC0000016u32 as i32); // STATUS_MORE_PROCESSING_REQUIRED
+            return 0xC0000016u32 as i32 ; // STATUS_MORE_PROCESSING_REQUIRED
         }
     } else {
         let mut pageData: *mut MODE_INFO_EXCEPTIONS = core::ptr::null_mut();
@@ -1993,7 +1993,7 @@ pub unsafe extern "system" fn DiskInfoExceptionComplete(
         IoFreeIrp(Irp);
     }
 
-    (0xC0000016u32 as i32) // STATUS_MORE_PROCESSING_REQUIRED
+    0xC0000016u32 as i32  // STATUS_MORE_PROCESSING_REQUIRED
 }
 
 
@@ -2211,7 +2211,7 @@ pub unsafe extern "system" fn DiskInfoExceptionCheck(
             (*srbExDataCdb16).SenseInfoBuffer = senseInfoBuffer;
             cdb = &raw mut (*srbExDataCdb16).Cdb as *mut u8 as *mut CDB;
         } else {
-            if (0i32 == 0) {
+            if 0i32 == 0  {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
                     b"drivers/storage/class/disk/diskwmi.c\0"
@@ -3253,7 +3253,7 @@ pub unsafe extern "system" fn DiskFdoExecuteWmiMethod(
                                 if OutBufferSize >= sizeNeeded {
                                     outParams = Buffer as *mut WRITE_LOG_SECTORS_OUT;
                                     status = DiskWriteSmartLog(
-                                        (fdoExtension as *mut core::ffi::c_void),
+                                        fdoExtension as *mut core::ffi::c_void ,
                                         (*inParams).SectorCount,
                                         (*inParams).LogAddress,
                                         &raw mut (*inParams).LogSectors as *mut u8,

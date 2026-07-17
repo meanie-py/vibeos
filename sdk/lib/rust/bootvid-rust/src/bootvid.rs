@@ -211,7 +211,7 @@ pub unsafe extern "system" fn VidCleanUp() {
     VidSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_BLACK as UCHAR);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ResetDisplay(SetMode: BOOLEAN) {
+pub unsafe extern "C" fn ResetDisplay(_SetMode: BOOLEAN) {
     core::ptr::write_bytes(BackBuffer as *mut u8, 0, BackBufferSize as usize);
     core::ptr::write_bytes(FrameBufferStart as *mut u8, 0, FrameBufferSize as usize);
 

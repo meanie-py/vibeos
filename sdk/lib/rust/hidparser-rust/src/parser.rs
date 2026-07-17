@@ -1,18 +1,15 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use core::ffi::c_void;
 
 use crate::parser_h::{
     HID_COLLECTION, PHID_COLLECTION, __HID_COLLECTION__,
     HID_REPORT, PHID_REPORT, _HID_REPORT,
     HID_REPORT_ITEM, PHID_REPORT_ITEM,
-    GLOBAL_ITEM_STATE, PGLOBAL_ITEM_STATE, __GLOBAL_ITEM_STATE__, __GLOBAL_ITEM_STATE_,
+    GLOBAL_ITEM_STATE, PGLOBAL_ITEM_STATE, __GLOBAL_ITEM_STATE__,
     LOCAL_ITEM_STATE, PLOCAL_ITEM_STATE,
-    USAGE_VALUE, usage_value, PUSAGE_VALUE,
-    ITEM_PREFIX, PITEM_PREFIX,
-    SHORT_ITEM, PSHORT_ITEM,
-    LONG_ITEM, PLONG_ITEM,
+    USAGE_VALUE, usage_value,
+    ITEM_PREFIX,
+    SHORT_ITEM,
+    LONG_ITEM,
     MAIN_ITEM_DATA, PMAIN_ITEM_DATA,
     HID_PARSER_CONTEXT, PHID_PARSER_CONTEXT,
 };
@@ -128,9 +125,9 @@ const COLLECTION_LOGICAL: u8 = 1;
 
 // Item size array (external static, defined in file scope)
 #[no_mangle]
-pub unsafe extern "C" fn HidParser_DeleteReport(Report: PHID_REPORT) {}
+pub unsafe extern "C" fn HidParser_DeleteReport(_Report: PHID_REPORT) {}
 #[no_mangle]
-pub unsafe extern "C" fn HidParser_FreeCollection(mut Collection: PHID_COLLECTION) {}
+pub unsafe extern "C" fn HidParser_FreeCollection(_Collection: PHID_COLLECTION) {}
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_AllocateCollection(
     ParentCollection: *mut HID_COLLECTION,
@@ -187,8 +184,8 @@ pub unsafe extern "C" fn HidParser_AllocateCollection(
 }
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_AddCollection(
-    mut CurrentCollection: PHID_COLLECTION,
-    mut NewCollection: PHID_COLLECTION,
+    CurrentCollection: PHID_COLLECTION,
+    NewCollection: PHID_COLLECTION,
 ) -> NTSTATUS {
     let mut NewAllocCollection: *mut PHID_COLLECTION = core::ptr::null_mut();
     let mut CollectionCount: u32 = 0;
@@ -217,10 +214,10 @@ pub unsafe extern "C" fn HidParser_AddCollection(
 }
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_FindReportInCollection(
-    mut Collection: *mut HID_COLLECTION,
-    mut ReportType: u8,
-    mut ReportID: u8,
-    mut OutReport: *mut *mut HID_REPORT,
+    Collection: *mut HID_COLLECTION,
+    ReportType: u8,
+    ReportID: u8,
+    OutReport: *mut *mut HID_REPORT,
 ) -> NTSTATUS {
     let mut Index: u32 = 0;
     let mut Status: NTSTATUS = 0;
@@ -272,9 +269,9 @@ pub unsafe extern "C" fn HidParser_FindReport(
 
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_AllocateReport(
-    mut ReportType: u8,
-    mut ReportID: u8,
-    mut OutReport: *mut PHID_REPORT,
+    ReportType: u8,
+    ReportID: u8,
+    OutReport: *mut PHID_REPORT,
 ) -> NTSTATUS {
     // HIDP_STATUS_SUCCESS / HIDP_STATUS_INTERNAL_ERROR imported from hid_sys.
     let mut Report: PHID_REPORT = core::ptr::null_mut::<HID_REPORT>();
@@ -289,7 +286,7 @@ pub unsafe extern "C" fn HidParser_AllocateReport(
 }
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_AddReportToCollection(
-    ParserContext: *mut HID_PARSER_CONTEXT,
+    _ParserContext: *mut HID_PARSER_CONTEXT,
     CurrentCollection: *mut HID_COLLECTION,
     NewReport: *mut HID_REPORT,
 ) -> NTSTATUS {
@@ -318,12 +315,12 @@ pub unsafe extern "C" fn HidParser_AddReportToCollection(
 }
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_GetReport(
-    mut ParserContext: PHID_PARSER_CONTEXT,
-    mut Collection: PHID_COLLECTION,
-    mut ReportType: u8,
-    mut ReportID: u8,
-    mut CreateIfNotExists: u8,
-    mut OutReport: *mut PHID_REPORT,
+    ParserContext: PHID_PARSER_CONTEXT,
+    Collection: PHID_COLLECTION,
+    ReportType: u8,
+    ReportID: u8,
+    CreateIfNotExists: u8,
+    OutReport: *mut PHID_REPORT,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = 0;
     Status = HidParser_FindReport(ParserContext, ReportType, ReportID, OutReport);
@@ -367,12 +364,12 @@ pub unsafe extern "C" fn HidParser_ReserveReportItems(
 }
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_InitReportItem(
-    mut Report: PHID_REPORT,
-    mut ReportItem: PHID_REPORT_ITEM,
-    mut GlobalItemState: PGLOBAL_ITEM_STATE,
-    mut LocalItemState: PLOCAL_ITEM_STATE,
-    mut ItemData: PMAIN_ITEM_DATA,
-    mut ReportItemIndex: ULONG,
+    Report: PHID_REPORT,
+    ReportItem: PHID_REPORT_ITEM,
+    GlobalItemState: PGLOBAL_ITEM_STATE,
+    LocalItemState: PLOCAL_ITEM_STATE,
+    ItemData: PMAIN_ITEM_DATA,
+    ReportItemIndex: ULONG,
 ) -> NTSTATUS {
     let mut LogicalMinimum: ULONG;
     let mut LogicalMaximum: ULONG;
@@ -483,9 +480,9 @@ pub unsafe extern "C" fn HidParser_UpdateCurrentCollectionReport(
 }
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_UpdateCollectionReport(
-    mut ParserContext: PHID_PARSER_CONTEXT,
-    mut Report: PHID_REPORT,
-    mut NewReport: PHID_REPORT,
+    ParserContext: PHID_PARSER_CONTEXT,
+    Report: PHID_REPORT,
+    NewReport: PHID_REPORT,
 ) -> BOOLEAN {
     return HidParser_UpdateCurrentCollectionReport(
         (*(*(*ParserContext).RootCollection).Nodes.offset(
@@ -502,7 +499,7 @@ pub unsafe extern "C" fn HidParser_AddMainItem(
     GlobalItemState: PGLOBAL_ITEM_STATE,
     LocalItemState: PLOCAL_ITEM_STATE,
     ItemData: PMAIN_ITEM_DATA,
-    Collection: PHID_COLLECTION,
+    _Collection: PHID_COLLECTION,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = 0;
     let mut Index: ULONG = 0;
@@ -1157,10 +1154,10 @@ pub unsafe extern "C" fn HidParser_NumberOfTopCollections(ParserCtx: *mut core::
 }
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_BuildContext(
-    mut ParserContext: PVOID,
-    mut CollectionIndex: ULONG,
-    mut ContextSize: ULONG,
-    mut CollectionContext: *mut PVOID,
+    ParserContext: PVOID,
+    CollectionIndex: ULONG,
+    ContextSize: ULONG,
+    CollectionContext: *mut PVOID,
 ) -> NTSTATUS {
     let mut Collection: PHID_COLLECTION = core::ptr::null_mut::<__HID_COLLECTION__>();
     let mut Context: PVOID = core::ptr::null_mut::<core::ffi::c_void>();

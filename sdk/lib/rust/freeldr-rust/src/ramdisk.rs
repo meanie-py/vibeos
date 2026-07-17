@@ -58,24 +58,24 @@ extern "C" {
     fn FsRegisterDevice(DeviceName: PCSTR, DeviceVtbl: *const core::ffi::c_void);
 }
 
-unsafe extern "C" fn RamDiskClose(FileId: ULONG) -> ARC_STATUS {
+unsafe extern "C" fn RamDiskClose(_FileId: ULONG) -> ARC_STATUS {
     ESUCCESS
 }
 
-unsafe extern "C" fn RamDiskGetFileInformation(FileId: ULONG, Information: *mut FILEINFORMATION) -> ARC_STATUS {
+unsafe extern "C" fn RamDiskGetFileInformation(_FileId: ULONG, Information: *mut FILEINFORMATION) -> ARC_STATUS {
     core::ptr::write_bytes(Information, 0, 1);
-    (*Information).EndingAddress.QuadPart = ((RamDiskImageLength) as i64);
-    (*Information).CurrentAddress.QuadPart = ((RamDiskOffset) as i64);
+    (*Information).EndingAddress.QuadPart = (RamDiskImageLength) as i64 ;
+    (*Information).CurrentAddress.QuadPart = (RamDiskOffset) as i64 ;
     (*Information).Type = DiskPeripheral;
 
     ESUCCESS
 }
 
-unsafe extern "C" fn RamDiskOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut ULONG) -> ARC_STATUS {
+unsafe extern "C" fn RamDiskOpen(_Path: PCHAR, _OpenMode: OPENMODE, _FileId: *mut ULONG) -> ARC_STATUS {
     ESUCCESS
 }
 
-unsafe extern "C" fn RamDiskRead(FileId: ULONG, Buffer: PVOID, N: ULONG, Count: *mut ULONG) -> ARC_STATUS {
+unsafe extern "C" fn RamDiskRead(_FileId: ULONG, Buffer: PVOID, N: ULONG, Count: *mut ULONG) -> ARC_STATUS {
     let StartAddress: PVOID;
 
     if RamDiskOffset >= RamDiskImageLength || RamDiskOffset + ((N) as u64) > RamDiskImageLength {
@@ -86,19 +86,19 @@ unsafe extern "C" fn RamDiskRead(FileId: ULONG, Buffer: PVOID, N: ULONG, Count: 
     StartAddress = (RamDiskBase as ULONG_PTR + ((RamDiskImageOffset) as usize) + RamDiskOffset as ULONG_PTR) as PVOID;
 
     RtlCopyMemory(Buffer, StartAddress, N as SIZE_T);
-    RamDiskOffset += ((N) as u64);
+    RamDiskOffset += (N) as u64 ;
     *Count = N;
 
     return ESUCCESS;
 }
 
-unsafe extern "C" fn RamDiskSeek(FileId: ULONG, Position: *mut LARGE_INTEGER, SeekMode: SEEKMODE) -> ARC_STATUS {
+unsafe extern "C" fn RamDiskSeek(_FileId: ULONG, Position: *mut LARGE_INTEGER, SeekMode: SEEKMODE) -> ARC_STATUS {
     let mut NewPosition: LARGE_INTEGER = *Position;
 
     match SeekMode {
         SeekAbsolute => {},
         SeekRelative => {
-            NewPosition.QuadPart += ((RamDiskOffset) as i64);
+            NewPosition.QuadPart += (RamDiskOffset) as i64 ;
         },
         _ => {
             return EINVAL;
@@ -109,7 +109,7 @@ unsafe extern "C" fn RamDiskSeek(FileId: ULONG, Position: *mut LARGE_INTEGER, Se
         return EINVAL;
     }
 
-    RamDiskOffset = ((NewPosition.QuadPart) as u64);
+    RamDiskOffset = (NewPosition.QuadPart) as u64 ;
     ESUCCESS
 }
 
@@ -123,7 +123,7 @@ unsafe fn RamDiskLoadVirtualFile(
     let mut ChunkSize: u32;
     let mut Count: u32 = 0;
     let mut TotalRead: u64;
-    let mut PercentPerChunk: u32;
+    let PercentPerChunk: u32;
     let mut Percent: u32;
     let mut Information: FILEINFORMATION = core::mem::zeroed();
     let mut Position: LARGE_INTEGER = core::mem::zeroed();
@@ -143,7 +143,7 @@ unsafe fn RamDiskLoadVirtualFile(
     }
 
     Information.EndingAddress.QuadPart = Information.EndingAddress.QuadPart - Information.StartingAddress.QuadPart;
-    Information.StartingAddress.QuadPart = ((0u64) as i64);
+    Information.StartingAddress.QuadPart = (0u64) as i64 ;
 
     if Information.FileNameLength == 0 && *Information.FileName.as_ptr() == 0 &&
         (Information.Type == DiskPeripheral || Information.Type == FloppyDiskPeripheral)
@@ -153,7 +153,7 @@ unsafe fn RamDiskLoadVirtualFile(
         if Status != ESUCCESS {
             ERR(b"Couldn't retrieve volume size on device '%s', falling back to RAW size\n\0".as_ptr() as PCSTR, (FileName) as usize);
         } else {
-            Information.EndingAddress.QuadPart = ((VolumeSize) as i64);
+            Information.EndingAddress.QuadPart = (VolumeSize) as i64 ;
         }
     }
 
@@ -164,7 +164,7 @@ unsafe fn RamDiskLoadVirtualFile(
         UiMessageBox(b"RAM disk too big.\0".as_ptr() as PCSTR);
         return ENOMEM;
     }
-    RamDiskFileSize = ((Information.EndingAddress.QuadPart) as u64);
+    RamDiskFileSize = (Information.EndingAddress.QuadPart) as u64 ;
 
     ChunkSize = 8 * 1024 * 1024;
     if RamDiskFileSize < ChunkSize as u64 {
@@ -172,7 +172,7 @@ unsafe fn RamDiskLoadVirtualFile(
     } else {
         PercentPerChunk = 100 * ChunkSize / RamDiskFileSize as u32;
     }
-    RamDiskBase = MmAllocateMemoryWithType(((RamDiskFileSize) as usize), LoaderXIPRom);
+    RamDiskBase = MmAllocateMemoryWithType((RamDiskFileSize) as usize , LoaderXIPRom);
     if RamDiskBase.is_null() {
         RamDiskFileSize = 0;
         ArcClose(RamFileId);
@@ -252,7 +252,7 @@ pub unsafe extern "C" fn RamDiskInitialize(
         }
 
         RamDiskBase = gInitRamDiskBase;
-        RamDiskFileSize = ((gInitRamDiskSize) as u64);
+        RamDiskFileSize = (gInitRamDiskSize) as u64 ;
     }
     else
     {

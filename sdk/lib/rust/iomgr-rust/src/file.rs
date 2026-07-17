@@ -554,7 +554,7 @@ pub unsafe extern "system" fn IopDoNameTransmogrify(
         .MountPointReparseBuffer
         .SubstituteNameLength;
 
-    if ((MAXUSHORT as ULONG - (*DataBuffer).Reserved as ULONG) <= (Length as ULONG + 2)) {
+    if (MAXUSHORT as ULONG - (*DataBuffer).Reserved as ULONG) <= (Length as ULONG + 2)  {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_IO_REPARSE_DATA_INVALID;
         ExFreePool(DataBuffer as PVOID);
         return;
@@ -1441,7 +1441,7 @@ pub unsafe extern "system" fn IopDeleteFile(ObjectBody: PVOID) {
         IoGetRelatedDeviceObject(FileObject)
     };
 
-    if ((*FileObject).Flags & FO_HANDLE_CREATED == 0) {
+    if (*FileObject).Flags & FO_HANDLE_CREATED == 0  {
         IopCloseFile(null_mut(), ObjectBody, 0, 1, 1);
     }
 

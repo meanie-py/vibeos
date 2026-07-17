@@ -1,17 +1,12 @@
 use crate::kbdclass_h::*;
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ex::*;
-use ntkrnl_sys::ob::*;
 use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::ddk::{PCUNICODE_STRING, PDEVICE_OBJECT, PIRP, PUNICODE_STRING, _UNICODE_STRING};
-use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
+use ntkrnl_sys::ddk::{PCUNICODE_STRING, PDEVICE_OBJECT, PIRP, _UNICODE_STRING};
+use ntkrnl_sys::ddk::ExAllocatePoolWithTag;
 use ntkrnl_sys::inline::tier1::IoSkipCurrentIrpStackLocation;
-use core::ffi::c_void;
 
 #[no_mangle]
 pub unsafe extern "system" fn ForwardIrpAndForget(

@@ -706,8 +706,7 @@ pub unsafe extern "system" fn IKsControl_fnKsProperty(
     DataLength: ULONG,
     BytesReturned: *mut ULONG,
 ) -> NTSTATUS {
-    let This = core::mem::transmute::<usize, *mut IKsFilterImpl>(
-        (iface as usize)
+    let This = core::ptr::with_exposed_provenance_mut::<IKsFilterImpl>((iface as usize)
             - core::mem::offset_of!(IKsFilterImpl, lpVtblKsControl),
     );
 
@@ -732,8 +731,7 @@ pub unsafe extern "system" fn IKsControl_fnKsMethod(
     DataLength: ULONG,
     BytesReturned: *mut ULONG,
 ) -> NTSTATUS {
-    let This = core::mem::transmute::<usize, *mut IKsFilterImpl>(
-        (iface as usize)
+    let This = core::ptr::with_exposed_provenance_mut::<IKsFilterImpl>((iface as usize)
             .wrapping_sub(core::mem::offset_of!(IKsFilterImpl, lpVtblKsControl)),
     );
     KsSynchronousIoControlDevice(
@@ -1348,9 +1346,8 @@ pub unsafe extern "system" fn IKsFilter_DispatchDeviceIoControl(
         return Status;
     }
 
-    This = core::mem::transmute(
-        (Filter as usize).wrapping_sub(
-            &raw const (*core::ptr::null_mut::<IKsFilterImpl>()).Header.OuterUnknown as usize,
+    This = core::ptr::with_exposed_provenance_mut::<IKsFilterImpl>((Filter as usize).wrapping_sub(
+            core::mem::offset_of!(IKsFilterImpl, Header.OuterUnknown),
         ),
     );
 
@@ -2018,10 +2015,9 @@ pub unsafe extern "system" fn KsFilterAcquireProcessingMutex(
 pub unsafe extern "system" fn KsFilterReleaseProcessingMutex(
     Filter: PKSFILTER,
 ) {
-    let This: *mut IKsFilterImpl = core::mem::transmute(
-        (Filter as usize)
+    let This: *mut IKsFilterImpl = core::ptr::with_exposed_provenance_mut::<IKsFilterImpl>((Filter as usize)
             .wrapping_sub(
-                &raw mut (*core::ptr::null_mut::<IKsFilterImpl>()).Filter as usize,
+                core::mem::offset_of!(IKsFilterImpl, Filter),
             ),
     );
     KeReleaseMutex(&raw mut (*This).ProcessingMutex, 0u8);
@@ -2195,7 +2191,7 @@ pub unsafe extern "system" fn KsFilterGetFirstChildPin(
     PinId: ULONG,
 ) -> PKSPIN {
     let This = (Filter as usize)
-        .wrapping_sub(&raw const (*core::ptr::null_mut::<IKsFilterImpl>()).Filter as usize)
+        .wrapping_sub(core::mem::offset_of!(IKsFilterImpl, Filter))
         as *mut IKsFilterImpl;
 
     if PinId >= (*((*This).Filter.Descriptor)).PinDescriptorsCount {

@@ -1,8 +1,6 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, IoAcquireVpbSpinLock, IoReleaseVpbSpinLock, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PVPB, VPB};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, IoAcquireVpbSpinLock, IoReleaseVpbSpinLock, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, VPB};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{FCB, IRP_CONTEXT, PIRP_CONTEXT, VCB, VCB_STATE_DISMOUNTED, VCB_STATE_REMOVABLE_MEDIA, VOLUME_DEVICE_OBJECT, _VCB_CONDITION_VcbDismountInProgress as VcbDismountInProgress, _VCB_CONDITION_VcbInvalid as VcbInvalid, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress, _VCB_CONDITION_VcbMounted as VcbMounted, _VCB_CONDITION_VcbNotMounted as VcbNotMounted};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, IO_STACK_LOCATION, IRP};
@@ -160,7 +158,7 @@ pub unsafe extern "C" fn CdPerformVerify(
     mut Irp: PIRP,
     DeviceToVerify: PDEVICE_OBJECT,
 ) -> NTSTATUS {
-    let mut Vcb: *mut VCB;
+    let Vcb: *mut VCB;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let IrpSp: *mut IO_STACK_LOCATION;
 

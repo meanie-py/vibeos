@@ -174,7 +174,7 @@ unsafe fn UefiEnsureDiskReadBufferAligned(
     Alignment: ULONG,
 ) -> BOOLEAN {
     let RequiredAlignment: ULONG = if Alignment == 0 { 1 } else { Alignment };
-    let mut Status: EFI_STATUS;
+    let Status: EFI_STATUS;
 
     if DiskReadBuffer != core::ptr::null_mut() && DiskReadBufferAlignment >= RequiredAlignment &&
         UefiIsAlignedPointer(DiskReadBuffer, RequiredAlignment) != 0
@@ -193,7 +193,7 @@ unsafe fn UefiEnsureDiskReadBufferAligned(
     }
 
     Status = (*(*GlobalSystemTable).BootServices).AllocatePool.unwrap()(EfiLoaderData,
-                                                           ((DiskReadBufferSize + ((RequiredAlignment) as usize)) as UINTN),
+                                                           (DiskReadBufferSize + ((RequiredAlignment) as usize)) as UINTN ,
                                                            &mut DiskReadBufferRaw as *mut _ as *mut *mut core::ffi::c_void);
     if EFI_ERROR(Status) != 0 || DiskReadBufferRaw == core::ptr::null_mut()
     {
@@ -203,7 +203,7 @@ unsafe fn UefiEnsureDiskReadBufferAligned(
     }
     DiskReadBufferFromPool = 1u8;
 
-    DiskReadBuffer = ALIGN_UP_POINTER_BY(DiskReadBufferRaw, ((RequiredAlignment) as usize)) as PVOID;
+    DiskReadBuffer = ALIGN_UP_POINTER_BY(DiskReadBufferRaw, (RequiredAlignment) as usize ) as PVOID;
     if UefiIsAlignedPointer(DiskReadBuffer, RequiredAlignment) == 0
     {
         ERR(b"Aligned disk read buffer is not properly aligned (align %lu)\n\0".as_ptr() as PCHAR, (RequiredAlignment) as usize);
@@ -234,9 +234,9 @@ unsafe fn UefiReadGptHeader(
     DriveNumber: UCHAR,
     GptHeader: PGPT_TABLE_HEADER,
 ) -> BOOLEAN {
-    let mut ArcDriveIndex: ULONG;
+    let ArcDriveIndex: ULONG;
     let mut BlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
-    let mut Status: EFI_STATUS;
+    let _Status: EFI_STATUS;
     let BlockSize: ULONG;
     let IoAlign: ULONG;
     let HeaderLba: ULONGLONG = 1;
@@ -319,9 +319,9 @@ pub unsafe extern "C" fn UefiGetGptPartitionEntry(
     let mut Status: EFI_STATUS;
     let BlockSize: ULONG;
     let EntryLba: ULONGLONG;
-    let mut EntryOffset: ULONG;
+    let EntryOffset: ULONG;
     let EntriesPerBlock: ULONG;
-    let mut UnusedGuid: EFI_GUID = EFI_PART_TYPE_UNUSED_GUID;
+    let UnusedGuid: EFI_GUID = EFI_PART_TYPE_UNUSED_GUID;
 
     if DriveNumber < FIRST_BIOS_DISK {
         return 0u8;
@@ -411,7 +411,7 @@ unsafe fn UefiGetBootPartitionEntry(
     let mut PartitionNum: ULONG;
     let ArcDriveIndex: ULONG;
     let mut BootBlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
-    let mut Status: EFI_STATUS;
+    let Status: EFI_STATUS;
     let BootPartitionSize: ULONGLONG;
     let mut TempPartitionEntry: PARTITION_TABLE_ENTRY = core::mem::zeroed();
 
@@ -421,7 +421,7 @@ unsafe fn UefiGetBootPartitionEntry(
         return 0u8;
     }
 
-    ArcDriveIndex = ((DriveNumber - FIRST_BIOS_DISK) as u32);
+    ArcDriveIndex = (DriveNumber - FIRST_BIOS_DISK) as u32 ;
     if ArcDriveIndex >= ((PcBiosDiskCount) as u32) || handles == core::ptr::null_mut() || UefiBootRootIndex >= HandleCount {
         return 0u8;
     }
@@ -458,14 +458,14 @@ unsafe fn UefiGetBootPartitionEntry(
     if IsGpt != 0 {
         let mut GptHeader: GPT_TABLE_HEADER = core::mem::zeroed();
         let mut GptEntry: GPT_PARTITION_ENTRY = core::mem::zeroed();
-        let ArcDriveIndex: ULONG = ((DriveNumber - FIRST_BIOS_DISK) as u32);
+        let ArcDriveIndex: ULONG = (DriveNumber - FIRST_BIOS_DISK) as u32 ;
         let mut RootBlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
         let BlockSize: ULONG;
         let mut EntryLba: ULONGLONG;
         let mut EntryOffset: ULONG;
         let EntriesPerBlock: ULONG;
         let mut Status: EFI_STATUS;
-        let mut UnusedGuid: EFI_GUID = EFI_PART_TYPE_UNUSED_GUID;
+        let UnusedGuid: EFI_GUID = EFI_PART_TYPE_UNUSED_GUID;
 
         if UefiReadGptHeader(DriveNumber, core::ptr::addr_of_mut!(GptHeader)) == 0 {
             ERR(b"Failed to read GPT header\n\0".as_ptr() as PCHAR);
@@ -627,17 +627,17 @@ unsafe extern "C" fn UefiDiskGetFileInformation(FileId: ULONG, Information: *mut
     ESUCCESS
 }
 
-unsafe extern "C" fn UefiDiskOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut ULONG) -> ARC_STATUS {
-    let mut Context: *mut DISKCONTEXT;
+unsafe extern "C" fn UefiDiskOpen(Path: PCHAR, _OpenMode: OPENMODE, FileId: *mut ULONG) -> ARC_STATUS {
+    let Context: *mut DISKCONTEXT;
     let mut DriveNumber: UCHAR = 0;
     let mut DrivePartition: ULONG = 0;
-    let mut SectorSize: ULONG;
+    let SectorSize: ULONG;
     let mut SectorOffset: ULONGLONG = 0;
     let mut SectorCount: ULONGLONG = 0;
-    let mut ArcDriveIndex: ULONG;
+    let ArcDriveIndex: ULONG;
     let mut PartitionTableEntry: PARTITION_TABLE_ENTRY = core::mem::zeroed();
     let mut BlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
-    let mut Status: EFI_STATUS;
+    let Status: EFI_STATUS;
 
     TRACE(b"UefiDiskOpen: File ID: %p, Path: %s\n\0".as_ptr() as PCHAR, (FileId) as usize, (Path) as usize);
 
@@ -657,7 +657,7 @@ unsafe extern "C" fn UefiDiskOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut 
         return EINVAL;
     }
 
-    ArcDriveIndex = ((DriveNumber - FIRST_BIOS_DISK) as u32);
+    ArcDriveIndex = (DriveNumber - FIRST_BIOS_DISK) as u32 ;
     if ArcDriveIndex >= ((PcBiosDiskCount) as u32) || InternalUefiDisk == core::ptr::null_mut() {
         return EINVAL;
     }
@@ -685,8 +685,8 @@ unsafe extern "C" fn UefiDiskOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut 
             return EINVAL;
         }
 
-        SectorOffset = ((PartitionTableEntry.SectorCountBeforePartition) as u64);
-        SectorCount = ((PartitionTableEntry.PartitionSectorCount) as u64);
+        SectorOffset = (PartitionTableEntry.SectorCountBeforePartition) as u64 ;
+        SectorCount = (PartitionTableEntry.PartitionSectorCount) as u64 ;
     } else {
         let mut Geometry: GEOMETRY = core::mem::zeroed();
         if MachDiskGetDriveGeometry(DriveNumber, &mut Geometry) == 0 {
@@ -725,12 +725,12 @@ unsafe extern "C" fn UefiDiskRead(FileId: ULONG, Buffer: PVOID, N: ULONG, Count:
     let mut SectorOffset: ULONGLONG;
     let mut ret: BOOLEAN;
     let mut BlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
-    let mut Status: EFI_STATUS;
+    let _Status: EFI_STATUS;
     let ArcDriveIndex: ULONG;
     let mut N_remaining: ULONG = N;
 
     TotalSectors = (N + (*Context).SectorSize - 1) / (*Context).SectorSize;
-    MaxSectors = ((DiskReadBufferSize / (((*Context).SectorSize) as usize)) as u32);
+    MaxSectors = (DiskReadBufferSize / (((*Context).SectorSize) as usize)) as u32 ;
     SectorOffset = (*Context).SectorOffset + (*Context).SectorNumber;
 
     if MaxSectors == 0 {
@@ -739,7 +739,7 @@ unsafe extern "C" fn UefiDiskRead(FileId: ULONG, Buffer: PVOID, N: ULONG, Count:
         return EIO;
     }
 
-    ArcDriveIndex = (((*Context).DriveNumber - FIRST_BIOS_DISK) as u32);
+    ArcDriveIndex = ((*Context).DriveNumber - FIRST_BIOS_DISK) as u32 ;
     if ArcDriveIndex >= ((PcBiosDiskCount) as u32) || InternalUefiDisk == core::ptr::null_mut() {
         ERR(b"Invalid drive number %d\n\0".as_ptr() as PCHAR, ((*Context).DriveNumber) as usize);
         *Count = 0;
@@ -794,7 +794,7 @@ unsafe extern "C" fn UefiDiskRead(FileId: ULONG, Buffer: PVOID, N: ULONG, Count:
         TotalSectors -= ReadSectors;
     }
 
-    *Count = ((Ptr as ULONG_PTR - ((Buffer as ULONG_PTR as ULONG) as usize)) as u32);
+    *Count = (Ptr as ULONG_PTR - ((Buffer as ULONG_PTR as ULONG) as usize)) as u32 ;
     (*Context).SectorNumber = SectorOffset - (*Context).SectorOffset;
 
     if ret != 0 { ESUCCESS } else { EIO }
@@ -808,7 +808,7 @@ unsafe extern "C" fn UefiDiskSeek(FileId: ULONG, Position: *mut LARGE_INTEGER, S
     match SeekMode {
         SeekAbsolute => {},
         SeekRelative => {
-            NewPosition.QuadPart += ((*Context).SectorNumber as i64 * (*Context).SectorSize as i64);
+            NewPosition.QuadPart += (*Context).SectorNumber as i64 * (*Context).SectorSize as i64 ;
         },
         _ => {
             return EINVAL;
@@ -834,16 +834,16 @@ unsafe extern "C" fn UefiDiskSeek(FileId: ULONG, Position: *mut LARGE_INTEGER, S
 }
 
 unsafe fn GetHarddiskInformation(DriveNumber: UCHAR) {
-    let mut Mbr: PMASTER_BOOT_RECORD;
-    let mut Buffer: PULONG;
+    let Mbr: PMASTER_BOOT_RECORD;
+    let Buffer: PULONG;
     let mut i: ULONG;
     let mut Checksum: ULONG;
-    let mut Signature: ULONG;
-    let mut ValidPartitionTable: BOOLEAN;
+    let Signature: ULONG;
+    let ValidPartitionTable: BOOLEAN;
     let mut ArcName: [CHAR; 260] = [0; 260];
     let mut PartitionTableEntry: PARTITION_TABLE_ENTRY = core::mem::zeroed();
-    let mut ArcDriveIndex: ULONG;
-    let mut Identifier: PCHAR;
+    let ArcDriveIndex: ULONG;
+    let Identifier: PCHAR;
 
     ArcDriveIndex = DriveNumber.wrapping_sub(FIRST_BIOS_DISK) as ULONG;
     if ArcDriveIndex >= 32 {
@@ -895,26 +895,26 @@ unsafe fn GetHarddiskInformation(DriveNumber: UCHAR) {
     DiskReportError(1u8);
 
     if ArcDriveIndex < ((PcBiosDiskCount) as u32) && InternalUefiDisk != core::ptr::null_mut() {
-        (*InternalUefiDisk.add(ArcDriveIndex as usize)).NumOfPartitions = ((i) as u8);
+        (*InternalUefiDisk.add(ArcDriveIndex as usize)).NumOfPartitions = (i) as u8 ;
     }
 
-    *Identifier.add(0) = ((Hex[((Checksum >> 28) & 0x0F) as usize]) as i8);
-    *Identifier.add(1) = ((Hex[((Checksum >> 24) & 0x0F) as usize]) as i8);
-    *Identifier.add(2) = ((Hex[((Checksum >> 20) & 0x0F) as usize]) as i8);
-    *Identifier.add(3) = ((Hex[((Checksum >> 16) & 0x0F) as usize]) as i8);
-    *Identifier.add(4) = ((Hex[((Checksum >> 12) & 0x0F) as usize]) as i8);
-    *Identifier.add(5) = ((Hex[((Checksum >> 8) & 0x0F) as usize]) as i8);
-    *Identifier.add(6) = ((Hex[((Checksum >> 4) & 0x0F) as usize]) as i8);
-    *Identifier.add(7) = ((Hex[(Checksum & 0x0F) as usize]) as i8);
+    *Identifier.add(0) = (Hex[((Checksum >> 28) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(1) = (Hex[((Checksum >> 24) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(2) = (Hex[((Checksum >> 20) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(3) = (Hex[((Checksum >> 16) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(4) = (Hex[((Checksum >> 12) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(5) = (Hex[((Checksum >> 8) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(6) = (Hex[((Checksum >> 4) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(7) = (Hex[(Checksum & 0x0F) as usize]) as i8 ;
     *Identifier.add(8) = b'-' as CHAR;
-    *Identifier.add(9) = ((Hex[((Signature >> 28) & 0x0F) as usize]) as i8);
-    *Identifier.add(10) = ((Hex[((Signature >> 24) & 0x0F) as usize]) as i8);
-    *Identifier.add(11) = ((Hex[((Signature >> 20) & 0x0F) as usize]) as i8);
-    *Identifier.add(12) = ((Hex[((Signature >> 16) & 0x0F) as usize]) as i8);
-    *Identifier.add(13) = ((Hex[((Signature >> 12) & 0x0F) as usize]) as i8);
-    *Identifier.add(14) = ((Hex[((Signature >> 8) & 0x0F) as usize]) as i8);
-    *Identifier.add(15) = ((Hex[((Signature >> 4) & 0x0F) as usize]) as i8);
-    *Identifier.add(16) = ((Hex[(Signature & 0x0F) as usize]) as i8);
+    *Identifier.add(9) = (Hex[((Signature >> 28) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(10) = (Hex[((Signature >> 24) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(11) = (Hex[((Signature >> 20) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(12) = (Hex[((Signature >> 16) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(13) = (Hex[((Signature >> 12) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(14) = (Hex[((Signature >> 8) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(15) = (Hex[((Signature >> 4) & 0x0F) as usize]) as i8 ;
+    *Identifier.add(16) = (Hex[(Signature & 0x0F) as usize]) as i8 ;
     *Identifier.add(17) = b'-' as CHAR;
     *Identifier.add(18) = if ValidPartitionTable != 0 { b'A' as CHAR } else { b'X' as CHAR };
     *Identifier.add(19) = 0;
@@ -923,7 +923,7 @@ unsafe fn GetHarddiskInformation(DriveNumber: UCHAR) {
 
 unsafe fn UefiSetupBlockDevices() {
     let mut BlockDeviceIndex: ULONG;
-    let mut SystemHandleCount: ULONG;
+    let SystemHandleCount: ULONG;
     let mut Status: EFI_STATUS;
     let mut i: ULONG;
     let mut HandleSize: UINTN = 0;
@@ -951,7 +951,7 @@ unsafe fn UefiSetupBlockDevices() {
         return;
     }
 
-    handles = MmAllocateMemoryWithType(((HandleSize) as usize), LoaderFirmwareTemporary) as *mut EFI_HANDLE;
+    handles = MmAllocateMemoryWithType((HandleSize) as usize , LoaderFirmwareTemporary) as *mut EFI_HANDLE;
     if handles == core::ptr::null_mut() {
         ERR(b"Failed to allocate memory for handles\n\0".as_ptr() as PCHAR);
         return;
@@ -1058,7 +1058,7 @@ unsafe fn UefiSetupBlockDevices() {
             b"Found root block device at index %lu: BlockSize=%lu, LastBlock=%llu\n\0".as_ptr() as PCHAR, (i) as usize, ((*(*BlockIo).Media).BlockSize) as usize, ((*(*BlockIo).Media).LastBlock) as usize,
         );
 
-        (*InternalUefiDisk.offset(BlockDeviceIndex as isize)).ArcDriveNumber = ((BlockDeviceIndex) as u8);
+        (*InternalUefiDisk.offset(BlockDeviceIndex as isize)).ArcDriveNumber = (BlockDeviceIndex) as u8 ;
         (*InternalUefiDisk.offset(BlockDeviceIndex as isize)).UefiHandleIndex = i;
         (*InternalUefiDisk.offset(BlockDeviceIndex as isize)).Handle = *handles.offset(i as isize);
         (*InternalUefiDisk.offset(BlockDeviceIndex as isize)).IsThisTheBootDrive = 0u8;
@@ -1069,7 +1069,7 @@ unsafe fn UefiSetupBlockDevices() {
             TRACE(b"Boot device is at ARC drive index %lu (root device)\n\0".as_ptr() as PCHAR, (BlockDeviceIndex) as usize);
         }
 
-        PcBiosDiskCount = ((BlockDeviceIndex.wrapping_add(1)) as u8);
+        PcBiosDiskCount = (BlockDeviceIndex.wrapping_add(1)) as u8 ;
 
         TRACE(
             b"Calling GetHarddiskInformation for drive %d (BlockDeviceIndex=%lu)\n\0".as_ptr() as PCHAR, (BlockDeviceIndex.wrapping_add(FIRST_BIOS_DISK as ULONG)) as usize, (BlockDeviceIndex) as usize,
@@ -1238,7 +1238,7 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
 #[no_mangle]
 pub unsafe extern "C" fn UefiInitializeBootDevices() -> BOOLEAN {
     let mut BlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
-    let mut Status: EFI_STATUS;
+    let Status: EFI_STATUS;
     let ArcDriveIndex: ULONG;
     let Mbr: PMASTER_BOOT_RECORD;
     let Buffer: PULONG;
@@ -1386,7 +1386,7 @@ pub unsafe extern "C" fn UefiDiskReadLogicalSectors(
 
     if UefiIsAlignedPointer(Buffer, if IoAlign == 0 { 1 } else { IoAlign }) == 0 {
         let mut TotalSectors: ULONG = SectorCount;
-        let MaxSectors: ULONG = ((DiskReadBufferSize / ((BlockSize) as usize)) as u32);
+        let MaxSectors: ULONG = (DiskReadBufferSize / ((BlockSize) as usize)) as u32 ;
         let mut CurrentSector: ULONGLONG = SectorNumber;
         let mut OutPtr: PUCHAR = Buffer as PUCHAR;
 
@@ -1414,7 +1414,7 @@ pub unsafe extern "C" fn UefiDiskReadLogicalSectors(
                 return 0u8;
             }
 
-            RtlCopyMemory(OutPtr as PVOID, DiskReadBuffer, ((ReadSize) as usize));
+            RtlCopyMemory(OutPtr as PVOID, DiskReadBuffer, (ReadSize) as usize );
             OutPtr = OutPtr.offset(ReadSize as isize);
             CurrentSector += ReadSectors as ULONGLONG;
             TotalSectors -= ReadSectors;
@@ -1445,13 +1445,13 @@ pub unsafe extern "C" fn UefiDiskReadLogicalSectors(
 pub unsafe extern "C" fn UefiDiskGetDriveGeometry(DriveNumber: UCHAR, Geometry: PGEOMETRY) -> BOOLEAN {
     let ArcDriveIndex: ULONG;
     let mut BlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
-    let mut Status: EFI_STATUS;
+    let Status: EFI_STATUS;
 
     if DriveNumber < FIRST_BIOS_DISK {
         return 0u8;
     }
 
-    ArcDriveIndex = ((DriveNumber - FIRST_BIOS_DISK) as u32);
+    ArcDriveIndex = (DriveNumber - FIRST_BIOS_DISK) as u32 ;
 
     if InternalUefiDisk == core::ptr::null_mut() {
         ERR(b"InternalUefiDisk not initialized\n\0".as_ptr() as PCHAR);
@@ -1490,9 +1490,9 @@ pub unsafe extern "C" fn UefiDiskGetDriveGeometry(DriveNumber: UCHAR, Geometry: 
 
 #[no_mangle]
 pub unsafe extern "C" fn UefiDiskGetCacheableBlockCount(DriveNumber: UCHAR) -> ULONG {
-    let mut ArcDriveIndex: ULONG;
+    let ArcDriveIndex: ULONG;
     let mut BlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
-    let mut Status: EFI_STATUS;
+    let Status: EFI_STATUS;
 
     if DriveNumber < FIRST_BIOS_DISK {
         return 0;

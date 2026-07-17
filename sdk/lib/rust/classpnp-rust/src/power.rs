@@ -36,7 +36,7 @@ unsafe extern "C" {
     fn ClassAcquireRemoveLock(DeviceObject: PDEVICE_OBJECT, Tag: PIRP) -> LONG;
 }
 // NEEDS SHARED SUBSTRATE: Po* and sense APIs not yet in ntkrnl-sys or driver_ddk
-unsafe extern "stdcall" {
+unsafe extern "system" {
     fn PoSetPowerState(
         DeviceObject: PDEVICE_OBJECT,
         Type: ntkrnl_sys::ddk::POWER_STATE_TYPE,
@@ -304,7 +304,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                         GET_FDO_EXTENSON_SENSE_DATA_LENGTH((*commonExtension).PartitionZeroExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION) as u32);
                     SrbSetTimeOutValue(srbHeader as PVOID, timeoutValue);
                     SrbAssignSrbFlags(srbHeader as PVOID,
-                        (SRB_FLAGS_NO_DATA_TRANSFER | SRB_FLAGS_DISABLE_AUTOSENSE | SRB_FLAGS_DISABLE_SYNCH_TRANSFER | SRB_FLAGS_NO_QUEUE_FREEZE));
+                        SRB_FLAGS_NO_DATA_TRANSFER | SRB_FLAGS_DISABLE_AUTOSENSE | SRB_FLAGS_DISABLE_SYNCH_TRANSFER | SRB_FLAGS_NO_QUEUE_FREEZE );
                     if (*PowerContext).Options.LockQueue() != 0 {
                         SrbSetSrbFlags(srbHeader as PVOID, SRB_FLAGS_BYPASS_LOCKED_QUEUE);
                     }
@@ -611,12 +611,12 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     SrbSetTimeOutValue(srbHeader as PVOID, (*fdoExtension).TimeOutValue);
                     SrbAssignSrbFlags(
                         srbHeader as PVOID,
-                        (SRB_FLAGS_NO_DATA_TRANSFER
+                        SRB_FLAGS_NO_DATA_TRANSFER
                             | SRB_FLAGS_DISABLE_AUTOSENSE
                             | SRB_FLAGS_DISABLE_SYNCH_TRANSFER
                             | SRB_FLAGS_NO_QUEUE_FREEZE
                             | SRB_FLAGS_BYPASS_LOCKED_QUEUE
-                            | SRB_FLAGS_D3_PROCESSING),
+                            | SRB_FLAGS_D3_PROCESSING ,
                     );
 
                     IoSetCompletionRoutine(
@@ -692,12 +692,12 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     SrbSetTimeOutValue(srbHeader as PVOID, (*fdoExtension).TimeOutValue);
                     SrbAssignSrbFlags(
                         srbHeader as PVOID,
-                        (SRB_FLAGS_NO_DATA_TRANSFER
+                        SRB_FLAGS_NO_DATA_TRANSFER
                             | SRB_FLAGS_DISABLE_AUTOSENSE
                             | SRB_FLAGS_DISABLE_SYNCH_TRANSFER
                             | SRB_FLAGS_NO_QUEUE_FREEZE
                             | SRB_FLAGS_BYPASS_LOCKED_QUEUE
-                            | SRB_FLAGS_D3_PROCESSING),
+                            | SRB_FLAGS_D3_PROCESSING ,
                     );
                     SrbSetCdbLength(srbHeader as PVOID, 10u8);
 
@@ -879,12 +879,12 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     SrbSetTimeOutValue(srbHeader as PVOID, timeoutValue);
                     SrbAssignSrbFlags(
                         srbHeader as PVOID,
-                        (SRB_FLAGS_NO_DATA_TRANSFER
+                        SRB_FLAGS_NO_DATA_TRANSFER
                             | SRB_FLAGS_DISABLE_AUTOSENSE
                             | SRB_FLAGS_DISABLE_SYNCH_TRANSFER
                             | SRB_FLAGS_NO_QUEUE_FREEZE
                             | SRB_FLAGS_BYPASS_LOCKED_QUEUE
-                            | SRB_FLAGS_D3_PROCESSING),
+                            | SRB_FLAGS_D3_PROCESSING ,
                     );
                     SrbSetCdbLength(srbHeader as PVOID, 6u8);
 

@@ -357,7 +357,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                 &raw mut (*Header).ClassEventData as *mut UCHAR as PNOTIFICATION_OPERATIONAL_STATUS;
             if (*opChangeInfo).OperationalEvent() != (NOTIFICATION_OPERATIONAL_EVENT_CHANGE_REQUESTED) as u8 {
                 let event: ULONG =
-                    (((((*opChangeInfo).Operation[0] as i32) << 8) | (((*opChangeInfo).Operation[1] as i32) & 0xff)) as u32);
+                    ((((*opChangeInfo).Operation[0] as i32) << 8) | (((*opChangeInfo).Operation[1] as i32) & 0xff)) as u32 ;
                 if (*info).MediaChangeRetryCount >= 4 {
                     const OP_CHANGE_MASK: UCHAR = 0x02u8;
                     TracePrint(
@@ -513,7 +513,7 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                         | (((*externalInfo).Request[1] as i32) & 0xff)) as USHORT;
                 // KeQuerySystemTime expanded: assign SharedSystemTime
                 (*(&raw mut externalData.SystemTime as *mut ULONG64)) =
-                    (*(&raw const SharedSystemTime as *const LARGE_INTEGER as *const ULONG64));
+                    *(&raw const SharedSystemTime as *const LARGE_INTEGER as *const ULONG64) ;
                 externalData.SystemTime.QuadPart *= KeQueryTimeIncrement() as LONGLONG;
                 TracePrint(
                     (4i32) as u32,

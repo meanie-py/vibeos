@@ -176,8 +176,8 @@ unsafe fn PcVideoVesaGetSVGAModeInformation(
 
     Regs.w.ax = 0x4F01;
     Regs.w.cx = Mode;
-    Regs.w.es = ((BIOSCALLBUFSEGMENT) as u16);
-    Regs.w.di = ((BIOSCALLBUFOFFSET) as u16);
+    Regs.w.es = (BIOSCALLBUFSEGMENT) as u16 ;
+    Regs.w.di = (BIOSCALLBUFOFFSET) as u16 ;
     Int386(0x10, &mut Regs, &mut Regs);
 
     if Regs.w.ax != 0x004F {
@@ -283,9 +283,9 @@ unsafe fn PcVideoGetDisplayMode() {
        PcVideoVesaGetSVGAModeInformation(Mode, &mut VesaVideoModeInformation) != 0
     {
         TRACE(b"VESA mode detected\n\0".as_ptr() as *const i8);
-        ScreenWidth = ((VesaVideoModeInformation.WidthInPixels) as u32);
-        ScreenHeight = ((VesaVideoModeInformation.HeightInPixels) as u32);
-        BytesPerScanLine = ((VesaVideoModeInformation.BytesPerScanLine) as u32);
+        ScreenWidth = (VesaVideoModeInformation.WidthInPixels) as u32 ;
+        ScreenHeight = (VesaVideoModeInformation.HeightInPixels) as u32 ;
+        BytesPerScanLine = (VesaVideoModeInformation.BytesPerScanLine) as u32 ;
         BiosVideoMode = Mode;
         DisplayMode = if 0x0108 <= Mode && Mode <= 0x010C {
             VideoTextMode
@@ -297,14 +297,14 @@ unsafe fn PcVideoGetDisplayMode() {
     else if PcVideoGetBiosMode(&mut Mode) != 0
     {
 
-        let BiosMode = (*(0x449 as *const UCHAR)) & 0x7F;
+        let _BiosMode = (*(0x449 as *const UCHAR)) & 0x7F;
         BiosVideoMode = Mode;
         TRACE(b"BIOS mode detected\n\0".as_ptr() as *const i8);
 
-        ScreenWidth = ((*(0x44A as *const USHORT)) as u32);
+        ScreenWidth = (*(0x44A as *const USHORT)) as u32 ;
         ScreenHeight = 1 + *(0x484 as *const UCHAR) as ULONG;
 
-        BytesPerScanLine = (((*(0x489 as *const UCHAR)) & 0x90) as u32);
+        BytesPerScanLine = ((*(0x489 as *const UCHAR)) & 0x90) as u32 ;
         BytesPerScanLine = ((BytesPerScanLine & 0x80) >> 6) | ((BytesPerScanLine & 0x10) >> 4);
         BytesPerScanLine = match BytesPerScanLine {
             x if x == VERTRES_200_SCANLINES as u32 => 200,
@@ -606,9 +606,9 @@ unsafe fn PcVideoSetMode(NewMode: USHORT) -> BOOLEAN {
             return 0u8;
         }
 
-        ScreenWidth = ((VesaVideoModeInformation.WidthInPixels) as u32);
-        ScreenHeight = ((VesaVideoModeInformation.HeightInPixels) as u32);
-        BytesPerScanLine = ((VesaVideoModeInformation.BytesPerScanLine) as u32);
+        ScreenWidth = (VesaVideoModeInformation.WidthInPixels) as u32 ;
+        ScreenHeight = (VesaVideoModeInformation.HeightInPixels) as u32 ;
+        BytesPerScanLine = (VesaVideoModeInformation.BytesPerScanLine) as u32 ;
         BiosVideoMode = NewMode;
         DisplayMode = if 0x0108 <= NewMode && NewMode <= 0x010C { VideoTextMode } else { VideoGraphicsMode };
         VesaVideoMode = 1u8;
@@ -638,7 +638,7 @@ unsafe fn PcVideoSetMemoryBank(BankNumber: USHORT) {
     Int386(0x10, &mut Regs, &mut Regs);
 
     if Regs.w.ax == 0x004F {
-        CurrentMemoryBank = ((BankNumber) as u32);
+        CurrentMemoryBank = (BankNumber) as u32 ;
     }
 }
 

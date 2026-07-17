@@ -931,8 +931,7 @@ pub unsafe extern "C" fn RedirectSavedLink(
     NextEntry = (*SavedLinkInformation).SymbolicLinksListHead.Flink;
     while NextEntry != &raw mut (*SavedLinkInformation).SymbolicLinksListHead {
         SymlinkInformation = (NextEntry as usize).wrapping_sub(
-            &raw mut (*::core::ptr::null_mut::<SYMLINK_INFORMATION>()).SymbolicLinksListEntry
-                as usize,
+            core::mem::offset_of!(SYMLINK_INFORMATION, SymbolicLinksListEntry),
         ) as *mut SYMLINK_INFORMATION;
 
         if RtlEqualUnicodeString(

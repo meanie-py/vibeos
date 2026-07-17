@@ -102,12 +102,12 @@ unsafe fn GetExtendedMemoryConfiguration(pMemoryAtOneMB: *mut ULONG, pMemoryAtSi
 
     if INT386_SUCCESS(RegsOut) != 0 {
         if RegsOut.w.ax == 0 {
-            *pMemoryAtSixteenMB = ((RegsOut.w.dx) as u32);
-            *pMemoryAtOneMB = ((RegsOut.w.cx) as u32);
+            *pMemoryAtSixteenMB = (RegsOut.w.dx) as u32 ;
+            *pMemoryAtOneMB = (RegsOut.w.cx) as u32 ;
             return 1u8;
         } else {
-            *pMemoryAtSixteenMB = ((RegsOut.w.bx) as u32);
-            *pMemoryAtOneMB = ((RegsOut.w.ax) as u32);
+            *pMemoryAtSixteenMB = (RegsOut.w.bx) as u32 ;
+            *pMemoryAtOneMB = (RegsOut.w.ax) as u32 ;
             return 1u8;
         }
     }
@@ -120,14 +120,14 @@ unsafe fn GetExtendedMemoryConfiguration(pMemoryAtOneMB: *mut ULONG, pMemoryAtSi
     TRACE(b"CF set = %s\n\0".as_ptr() as PCHAR, (if (RegsOut.x.eflags & EFLAGS_CF) != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize);
 
     if INT386_SUCCESS(RegsOut) != 0 && RegsOut.w.ax != 0 {
-        *pMemoryAtOneMB = ((RegsOut.w.ax) as u32);
+        *pMemoryAtOneMB = (RegsOut.w.ax) as u32 ;
         return 1u8;
     }
 
     WRITE_PORT_UCHAR(0x70 as PUCHAR, 0x31);
     *pMemoryAtOneMB = READ_PORT_UCHAR(0x71 as PUCHAR) as ULONG;
-    *pMemoryAtOneMB = (*pMemoryAtOneMB & 0xFFFF);
-    *pMemoryAtOneMB = (*pMemoryAtOneMB << 8);
+    *pMemoryAtOneMB = *pMemoryAtOneMB & 0xFFFF ;
+    *pMemoryAtOneMB = *pMemoryAtOneMB << 8 ;
 
     TRACE(b"Int15h Failed\n\0".as_ptr() as PCHAR);
     TRACE(b"CMOS reports: 0x%lx\n\0".as_ptr() as PCHAR, (*pMemoryAtOneMB) as usize);
@@ -174,13 +174,13 @@ unsafe fn GetEbdaLocation(
 }
 
 unsafe fn PcMemCheckUsableMemorySize() {
-    let mut Size: ULONG;
-    let mut RequiredSize: ULONG;
+    let Size: ULONG;
+    let RequiredSize: ULONG;
 
     TRACE(b"PcMemCheckUsableMemorySize()\n\0".as_ptr() as PCHAR);
 
     Size = (*(0x413 as ULONG_PTR as *const USHORT) as ULONG) * 1024;
-    RequiredSize = ((FREELDR_BASE + FrLdrImageSize + PAGE_SIZE) as u32);
+    RequiredSize = (FREELDR_BASE + FrLdrImageSize + PAGE_SIZE) as u32 ;
     if Size < RequiredSize {
         FrLdrBugCheckWithMessage(
             MEMORY_INIT_FAILURE,
@@ -193,7 +193,7 @@ unsafe fn PcMemCheckUsableMemorySize() {
     }
 }
 
-unsafe fn PcMemGetBiosMemoryMap(MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemoryMapSize: ULONG) -> ULONG {
+unsafe fn PcMemGetBiosMemoryMap(_MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemoryMapSize: ULONG) -> ULONG {
     let mut Regs: REGS = core::mem::zeroed();
     let mut RealBaseAddress: ULONGLONG;
     let mut EndAddress: ULONGLONG;
@@ -211,8 +211,8 @@ unsafe fn PcMemGetBiosMemoryMap(MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemory
         Regs.x.eax = 0x0000E820;
         Regs.x.edx = 0x534D4150;
         Regs.x.ecx = core::mem::size_of::<BIOS_MEMORY_MAP>() as ULONG;
-        Regs.w.es = ((BIOSCALLBUFSEGMENT) as u16);
-        Regs.w.di = ((BIOSCALLBUFOFFSET) as u16);
+        Regs.w.es = (BIOSCALLBUFSEGMENT) as u16 ;
+        Regs.w.di = (BIOSCALLBUFOFFSET) as u16 ;
         Int386(0x15, &mut Regs, &mut Regs);
 
         TRACE(b"Memory Map Entry %lu\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize);
@@ -377,7 +377,7 @@ unsafe fn PcMemGetBiosMemoryMap(MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemory
         } else {
             PcMapCount = AddMemoryDescriptor(
                 PcMemoryMap.as_mut_ptr(),
-                ((MAX_BIOS_DESCRIPTORS) as u32),
+                (MAX_BIOS_DESCRIPTORS) as u32 ,
                 (RealBaseAddress / MM_PAGE_SIZE as ULONGLONG) as PFN_NUMBER,
                 (RealSize / MM_PAGE_SIZE as ULONGLONG) as PFN_NUMBER,
                 MemoryType,
@@ -442,7 +442,7 @@ unsafe fn ReserveMemory(
 
     PcMapCount = AddMemoryDescriptor(
         MemoryMap,
-        ((MAX_BIOS_DESCRIPTORS) as u32),
+        (MAX_BIOS_DESCRIPTORS) as u32 ,
         BasePage,
         PageCount,
         MemoryType,
@@ -463,7 +463,7 @@ unsafe fn SetMemory(
 
     PcMapCount = AddMemoryDescriptor(
         MemoryMap,
-        ((MAX_BIOS_DESCRIPTORS) as u32),
+        (MAX_BIOS_DESCRIPTORS) as u32 ,
         BasePage,
         PageCount,
         MemoryType,
@@ -514,7 +514,7 @@ pub unsafe fn PcMemFinalizeMemoryMap(
 
 #[no_mangle]
 pub unsafe extern "C" fn PcMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREELDR_MEMORY_DESCRIPTOR {
-    let mut EntryCount: ULONG;
+    let EntryCount: ULONG;
     let mut ExtendedMemorySizeAtOneMB: ULONG = 0;
     let mut ExtendedMemorySizeAtSixteenMB: ULONG = 0;
     let mut EbdaBase: ULONG = 0;
@@ -524,7 +524,7 @@ pub unsafe extern "C" fn PcMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREELD
 
     PcMemCheckUsableMemorySize();
 
-    EntryCount = PcMemGetBiosMemoryMap(PcMemoryMap.as_mut_ptr(), ((MAX_BIOS_DESCRIPTORS) as u32));
+    EntryCount = PcMemGetBiosMemoryMap(PcMemoryMap.as_mut_ptr(), (MAX_BIOS_DESCRIPTORS) as u32 );
 
     if EntryCount == 0 {
         GetExtendedMemoryConfiguration(&mut ExtendedMemorySizeAtOneMB,
@@ -553,7 +553,7 @@ pub unsafe extern "C" fn PcMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREELD
         if GetEbdaLocation(&mut EbdaBase, &mut EbdaSize) != 0 {
             PcMapCount = AddMemoryDescriptor(PcMemoryMap.as_mut_ptr(),
                                              MAX_BIOS_DESCRIPTORS as ULONG,
-                                             (EbdaBase as ULONG_PTR / (PAGE_SIZE as ULONG_PTR)),
+                                             EbdaBase as ULONG_PTR / (PAGE_SIZE as ULONG_PTR) ,
                                              ADDRESS_AND_SIZE_TO_SPAN_PAGES!(EbdaBase, EbdaSize),
                                              LoaderFirmwarePermanent);
         }

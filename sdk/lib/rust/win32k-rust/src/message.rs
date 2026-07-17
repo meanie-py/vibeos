@@ -589,7 +589,8 @@ unsafe extern "C" fn lParamMemorySize(Msg: UINT, wParam: WPARAM, lParam: LPARAM)
     MsgMemorySize(MsgMemoryEntry, wParam, lParam)
 }
 
-unsafe extern "fastcall" fn PackParam(
+fastcall_fn! {
+unsafe fn PackParam(
     lParamPacked: *mut LPARAM,
     Msg: UINT,
     wParam: WPARAM,
@@ -718,6 +719,7 @@ unsafe extern "fastcall" fn PackParam(
 
     STATUS_SUCCESS
 }
+}
 
 unsafe fn UnpackParam(lParamPacked: LPARAM, Msg: UINT, wParam: WPARAM, lParam: LPARAM, NonPagedPoolUsed: BOOL) -> NTSTATUS {
     let UnpackedParams: *mut NCCALCSIZE_PARAMS;
@@ -756,7 +758,8 @@ unsafe fn UnpackParam(lParamPacked: LPARAM, Msg: UINT, wParam: WPARAM, lParam: L
     STATUS_INVALID_PARAMETER
 }
 
-unsafe extern "fastcall" fn CopyMsgToKernelMem(
+fastcall_fn! {
+unsafe fn CopyMsgToKernelMem(
     KernelModeMsg: *mut MSG,
     UserModeMsg: *mut MSG,
     MsgMemoryEntry: PMSGMEMORY,
@@ -816,8 +819,10 @@ unsafe extern "fastcall" fn CopyMsgToKernelMem(
 
     STATUS_SUCCESS
 }
+}
 
-unsafe extern "fastcall" fn CopyMsgToUserMem(
+fastcall_fn! {
+unsafe fn CopyMsgToUserMem(
     UserModeMsg: *mut MSG,
     KernelModeMsg: *mut MSG,
 ) -> NTSTATUS {
@@ -849,6 +854,7 @@ unsafe extern "fastcall" fn CopyMsgToUserMem(
     }
 
     STATUS_SUCCESS
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -1065,7 +1071,8 @@ unsafe fn IntMsgCreateStructW_impl(
     1
 }
 
-unsafe extern "fastcall" fn IntCallWndProc(
+fastcall_fn! {
+unsafe fn IntCallWndProc(
     Window: PWND,
     hWnd: HWND,
     Msg: UINT,
@@ -1122,8 +1129,10 @@ unsafe extern "fastcall" fn IntCallWndProc(
         UserHeapFree(pszClass);
     }
 }
+}
 
-unsafe extern "fastcall" fn IntCallWndProcRet(
+fastcall_fn! {
+unsafe fn IntCallWndProcRet(
     Window: PWND,
     hWnd: HWND,
     Msg: UINT,
@@ -1182,6 +1191,7 @@ unsafe extern "fastcall" fn IntCallWndProcRet(
     if !pszClass.is_null() {
         UserHeapFree(pszClass);
     }
+}
 }
 
 unsafe fn handle_internal_message(pWnd: PWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -1557,8 +1567,9 @@ pub unsafe extern "system" fn co_IntPeekMessage(
     }
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_IntWaitMessage(
+unsafe fn co_IntWaitMessage(
     Window: PWND,
     MsgFilterMin: UINT,
     MsgFilterMax: UINT,
@@ -1594,6 +1605,7 @@ unsafe extern "fastcall" fn co_IntWaitMessage(
             return FALSE as BOOL;
         }
     }
+}
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -1895,8 +1907,9 @@ unsafe fn IntSendToImpl(Window: PWND, ptiCur: PTHREADINFO, _Msg: u32) -> PTHREAD
     }
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn UserPostMessage(
+unsafe fn UserPostMessage(
     Wnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -1985,6 +1998,7 @@ unsafe extern "fastcall" fn UserPostMessage(
     }
     TRUE.try_into().unwrap()
 }
+}
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -2036,7 +2050,8 @@ unsafe extern "C" fn co_IntSendMessage(
     0
 }
 
-unsafe extern "fastcall" fn co_IntSendMessageTimeoutSingle(
+fastcall_fn! {
+unsafe fn co_IntSendMessageTimeoutSingle(
     hWnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -2220,9 +2235,11 @@ unsafe extern "fastcall" fn co_IntSendMessageTimeoutSingle(
     UserDerefObjectCo(Window);
     Ret
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_IntSendMessageTimeout(
+unsafe fn co_IntSendMessageTimeout(
     hWnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -2290,6 +2307,7 @@ unsafe extern "fastcall" fn co_IntSendMessageTimeout(
 
     1 as LRESULT
 }
+}
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -2331,8 +2349,9 @@ unsafe extern "C" fn co_IntSendMessageNoWait(
     )
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn co_IntSendMessageWithCallBack(
+unsafe fn co_IntSendMessageWithCallBack(
     hWnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -2500,8 +2519,10 @@ unsafe extern "fastcall" fn co_IntSendMessageWithCallBack(
     UserDerefObjectCo(Window);
     Ret
 }
+}
 
-unsafe extern "fastcall" fn co_IntDoSendMessage(
+fastcall_fn! {
+unsafe fn co_IntDoSendMessage(
     hWnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -2576,9 +2597,11 @@ unsafe extern "fastcall" fn co_IntDoSendMessage(
 
     Result as LRESULT
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn UserSendNotifyMessage(
+unsafe fn UserSendNotifyMessage(
     hWnd: HWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -2621,6 +2644,7 @@ unsafe extern "fastcall" fn UserSendNotifyMessage(
         Ret = co_IntSendMessageNoWait(hWnd, Msg, wParam, lParam) as BOOL;
     }
     Ret
+}
 }
 
 #[no_mangle]

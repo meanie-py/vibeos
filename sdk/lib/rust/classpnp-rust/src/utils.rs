@@ -1694,7 +1694,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
 
     'work: loop {
         match (*(*fdoExtension).FunctionSupportInfo).LowerLayerSupport.AccessAlignmentProperty {
-            _CLASS_FUNCTION_SUPPORT_STATE_SupportUnknown => {
+            CLASS_FUNCTION_SUPPORT_SupportUnknown => {
                 status = ClassForwardIrpSynchronous(commonExtension, Irp);
                 if ClasspLowerLayerNotSupport(status) {
                     if ClasspIsObsoletePortDriver(fdoExtension) == 0 {
@@ -3022,10 +3022,10 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
         }
     }
 
-    if ((!(((*dsmAttributes).Flags & DEVICE_DSM_FLAG_ENTIRE_DATA_SET_RANGE) != 0)
+    if (!(((*dsmAttributes).Flags & DEVICE_DSM_FLAG_ENTIRE_DATA_SET_RANGE) != 0)
          && ((*dsmAttributes).DataSetRangesOffset == 0 || (*dsmAttributes).DataSetRangesLength == 0))
         || (((*dsmAttributes).Flags & DEVICE_DSM_FLAG_ENTIRE_DATA_SET_RANGE) != 0
-            && ((*dsmAttributes).DataSetRangesOffset != 0 || (*dsmAttributes).DataSetRangesLength != 0)))
+            && ((*dsmAttributes).DataSetRangesOffset != 0 || (*dsmAttributes).DataSetRangesLength != 0))
     {
         let status: NTSTATUS = STATUS_INVALID_PARAMETER;
         // goto Exit
@@ -5603,7 +5603,7 @@ pub unsafe extern "C" fn ClasspZeroQERR(DeviceObject: PDEVICE_OBJECT) {
             TRACE_FLAG_SCSI,
             b"ClasspZeroQERR: Unable to allocate mode data buffer\n\0".as_ptr() as PCHAR,
         );
-        core::ptr::write_bytes((modeData as *mut u8), 0, 0); // dummy to satisfy label? No, just goto exit.
+        core::ptr::write_bytes(modeData as *mut u8 , 0, 0); // dummy to satisfy label? No, just goto exit.
         // Actually we just need to exit. Use labelled block.
         // We'll restructure with labelled block.
         // But we'll implement goto with 'exit block.

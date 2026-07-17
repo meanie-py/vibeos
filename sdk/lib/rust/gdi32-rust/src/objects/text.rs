@@ -128,7 +128,14 @@ extern "C" {
 }
 
 // ── FASTCALL gdi32-private helpers ─────────────────────────────────────────────
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn GdiGetLDC(hdc: HDC) -> PLDC; // misc.rs
+    fn FONT_TextMetricWToA(ptmW: *const TEXTMETRICW, ptmA: LPTEXTMETRICA);
+    fn HEAP_strdupA2W(ppszW: *mut PWSTR, lpszA: PCSTR) -> NTSTATUS;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn GdiGetLDC(hdc: HDC) -> PLDC; // misc.rs
     fn FONT_TextMetricWToA(ptmW: *const TEXTMETRICW, ptmA: LPTEXTMETRICA);
     fn HEAP_strdupA2W(ppszW: *mut PWSTR, lpszA: PCSTR) -> NTSTATUS;

@@ -89,7 +89,7 @@ unsafe fn SpiGetInquiryData(
         let mut lunEntry: PLIST_ENTRY = (*bus).LunsListHead.Flink as PLIST_ENTRY;
         while lunEntry != &raw mut (*bus).LunsListHead {
             let lunExt: PSCSI_PORT_LUN_EXTENSION = (lunEntry as usize).wrapping_sub(
-                &raw mut (*core::ptr::null_mut::<SCSI_PORT_LUN_EXTENSION>()).LunEntry as usize,
+                core::mem::offset_of!(SCSI_PORT_LUN_EXTENSION, LunEntry),
             ) as PSCSI_PORT_LUN_EXTENSION;
 
             (*InquiryData).PathId = (*lunExt).PathId;

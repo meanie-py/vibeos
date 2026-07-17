@@ -873,9 +873,7 @@ pub unsafe extern "system" fn PciIdeXGetBusData(
 ) -> NTSTATUS {
     let fdo_extension: PFDO_DEVICE_EXTENSION = (DeviceExtension as usize)
         .wrapping_sub(
-            core::ptr::addr_of!(
-                (*core::ptr::null::<FDO_DEVICE_EXTENSION>()).MiniControllerExtension
-            ) as usize,
+            core::mem::offset_of!(FDO_DEVICE_EXTENSION, MiniControllerExtension),
         ) as PFDO_DEVICE_EXTENSION;
 
     let bytes_read = ((*fdo_extension).BusInterface.GetBusData).unwrap()(
@@ -905,7 +903,7 @@ pub unsafe extern "system" fn PciIdeXSetBusData(
     }
 
     let FdoExtension = (DeviceExtension as usize).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<_FDO_DEVICE_EXTENSION>()).MiniControllerExtension) as usize,
+        core::mem::offset_of!(_FDO_DEVICE_EXTENSION, MiniControllerExtension),
     ) as *mut _FDO_DEVICE_EXTENSION;
 
     let mut OldIrql: u8 = 0;

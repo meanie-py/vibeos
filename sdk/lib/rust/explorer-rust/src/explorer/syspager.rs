@@ -29,7 +29,6 @@ use explorer_sys::server::{
     CW_USEDEFAULT, GET_X_LPARAM, TOOLINFOW, TTF_IDISHWND, TTS_NOPREFIX, TTTOOLINFOW_V1_SIZE,
 };
 use explorer_sys::types::TIM_Default;
-use winsrv_sys::consts::*;
 use winsrv_sys::w;
 use winsrv_sys::winsrv::*;
 
@@ -2220,8 +2219,8 @@ unsafe fn sp_notify_icon(
 }
 
 unsafe fn sp_get_size(this: *mut CSysPagerWnd, is_horizontal: BOOL, size: *mut SIZE) {
-    let mut rows: i32;
-    let mut columns: i32;
+    let rows: i32;
+    let columns: i32;
     let mut cy_button = GetSystemMetrics(SM_CYSMICON as i32) + 2;
     let mut cx_button = GetSystemMetrics(SM_CXSMICON as i32) + 2;
     if g_TaskbarSettings.UseCompactTrayIcons() == 0 {

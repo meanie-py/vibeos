@@ -35,7 +35,6 @@ use explorer_sys::server::{
 };
 use crate::explorer::settings::g_TaskbarSettings;
 use explorer_sys::types::TaskbarSettings;
-use winsrv_sys::consts::*;
 use winsrv_sys::w;
 use winsrv_sys::winsrv::*;
 

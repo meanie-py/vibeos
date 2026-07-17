@@ -126,7 +126,29 @@ extern "system" {
 //   FASTCALL → extern "fastcall" on i386 (`@Name@N`); cdecl/WINAPI → extern "C"
 //   / "system" per the header.  (ValidateHwnd family comes from crate::internal.)
 // ───────────────────────────────────────────────────────────────────────────
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    // user32p.h
+    fn GetThreadDesktopWnd() -> PWND;                 // PWND FASTCALL GetThreadDesktopWnd(VOID)
+    fn TestWindowProcess(pwnd: PWND) -> BOOL;         // BOOL FASTCALL TestWindowProcess(PWND)
+    // window.c (file-local extern): LPCWSTR FASTCALL ClassNameToVersion(...)
+    fn ClassNameToVersion(
+        lpszClass: *const core::ffi::c_void,
+        lpszMenuName: LPCWSTR,
+        plpLibFileName: *mut LPCWSTR,
+        pContext: *mut HANDLE,
+        bAnsi: BOOL,
+    ) -> LPCWSTR;
+    // regcontrol.h: BOOL FASTCALL VersionRegisterClass(PCWSTR,LPCWSTR,HANDLE,HMODULE *)
+    fn VersionRegisterClass(
+        pszClass: PCWSTR,
+        lpLibFileName: LPCWSTR,
+        pContext: HANDLE,
+        phLibModule: *mut HMODULE,
+    ) -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     // user32p.h
     fn GetThreadDesktopWnd() -> PWND;                 // PWND FASTCALL GetThreadDesktopWnd(VOID)
     fn TestWindowProcess(pwnd: PWND) -> BOOL;         // BOOL FASTCALL TestWindowProcess(PWND)

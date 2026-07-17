@@ -320,9 +320,9 @@ pub unsafe extern "system" fn KeBugCheckEx(
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlAssert(
-    FailedAssertion: PVOID,
-    FileName: PVOID,
-    LineNumber: ULONG,
+    _FailedAssertion: PVOID,
+    _FileName: PVOID,
+    _LineNumber: ULONG,
     Message: PCHAR,
 ) {
     if !Message.is_null() {

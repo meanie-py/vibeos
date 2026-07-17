@@ -221,7 +221,7 @@ pub unsafe extern "system" fn ScrubRegistryRoutine(
         NextEntry = (*DeviceExtension).DeviceListHead.Flink as *mut LIST_ENTRY;
         while NextEntry != core::ptr::addr_of_mut!((*DeviceExtension).DeviceListHead) {
             DeviceInfo = (NextEntry as usize).wrapping_sub(
-                core::ptr::addr_of_mut!((*core::ptr::null_mut::<DEVICE_INFORMATION>()).DeviceListEntry) as usize,
+                core::mem::offset_of!(DEVICE_INFORMATION, DeviceListEntry),
             ) as *mut DEVICE_INFORMATION;
 
             if !((*DeviceInfo).UniqueId.is_null()
@@ -536,9 +536,7 @@ pub unsafe extern "C" fn MountMgrNextDriveLetterWorker(
     NextEntry = (*DeviceExtension).DeviceListHead.Flink;
     while NextEntry != core::ptr::addr_of_mut!((*DeviceExtension).DeviceListHead) {
         DeviceInformation = ((NextEntry as usize).wrapping_sub(
-            core::ptr::addr_of_mut!(
-                (*core::ptr::null_mut::<DEVICE_INFORMATION>()).DeviceListEntry
-            ) as usize,
+            core::mem::offset_of!(DEVICE_INFORMATION, DeviceListEntry),
         )) as PDEVICE_INFORMATION;
         if RtlCompareUnicodeString(
             core::ptr::addr_of_mut!((*DeviceInformation).DeviceName) as *const _UNICODE_STRING,
@@ -566,9 +564,7 @@ pub unsafe extern "C" fn MountMgrNextDriveLetterWorker(
     NextEntry = (*DeviceInformation).SymbolicLinksListHead.Flink;
     while NextEntry != core::ptr::addr_of_mut!((*DeviceInformation).SymbolicLinksListHead) {
         SymlinkInformation = ((NextEntry as usize).wrapping_sub(
-            core::ptr::addr_of_mut!(
-                (*core::ptr::null_mut::<SYMLINK_INFORMATION>()).SymbolicLinksListEntry
-            ) as usize,
+            core::mem::offset_of!(SYMLINK_INFORMATION, SymbolicLinksListEntry),
         )) as PSYMLINK_INFORMATION;
         if IsDriveLetter(core::ptr::addr_of_mut!((*SymlinkInformation).Name)) != 0u8
             && (*SymlinkInformation).Online != 0
@@ -1722,9 +1718,7 @@ pub unsafe extern "C" fn MountMgrQueryDosVolumePaths(
             core::ptr::null_mut(),
         );
         Entry = (*DeviceExtension).DeviceListHead.Flink;
-        let offset = core::ptr::addr_of_mut!(
-            (*core::ptr::null_mut::<DEVICE_INFORMATION>()).DeviceListEntry
-        ) as usize;
+        let offset = core::mem::offset_of!(DEVICE_INFORMATION, DeviceListEntry);
         while Entry != core::ptr::addr_of_mut!((*DeviceExtension).DeviceListHead) {
             ListDeviceInfo =
                 (Entry as usize).wrapping_sub(offset) as PDEVICE_INFORMATION;
@@ -3013,9 +3007,7 @@ pub unsafe extern "C" fn MountMgrVolumeMountPointDeleted(
         Entry = (*DeviceInformation).ReplicatedUniqueIdsListHead.Flink;
         while Entry != core::ptr::addr_of_mut!((*DeviceInformation).ReplicatedUniqueIdsListHead) {
             UniqueIdReplicate = (Entry as usize).wrapping_sub(
-                core::ptr::addr_of_mut!(
-                    (*core::ptr::null_mut::<UNIQUE_ID_REPLICATE>()).ReplicatedUniqueIdsListEntry
-                ) as usize,
+                core::mem::offset_of!(UNIQUE_ID_REPLICATE, ReplicatedUniqueIdsListEntry),
             ) as PUNIQUE_ID_REPLICATE;
 
             if (*(*UniqueIdReplicate).UniqueId).UniqueIdLength as i32
@@ -3062,9 +3054,7 @@ pub unsafe extern "C" fn MountMgrVolumeMountPointDeleted(
     Entry = (*TargetDeviceInformation).AssociatedDevicesHead.Flink;
     while Entry != core::ptr::addr_of_mut!((*TargetDeviceInformation).AssociatedDevicesHead) {
         AssociatedEntry = (Entry as usize).wrapping_sub(
-            core::ptr::addr_of_mut!(
-                (*core::ptr::null_mut::<ASSOCIATED_DEVICE_ENTRY>()).AssociatedDevicesEntry
-            ) as usize,
+            core::mem::offset_of!(ASSOCIATED_DEVICE_ENTRY, AssociatedDevicesEntry),
         ) as PASSOCIATED_DEVICE_ENTRY;
 
         if (*AssociatedEntry).DeviceInformation == DeviceInformation

@@ -129,7 +129,6 @@ pub type PLSA_TOKEN_INFORMATION_NULL = *mut LSA_TOKEN_INFORMATION_NULL;
 // (same #[repr(C)] layout). Alias rather than redefine so the file's
 // PLSA_TOKEN_INFORMATION_V1 and the bindgen `*mut _LSA_TOKEN_INFORMATION_V1` used
 // elsewhere in this file are the *same* type (avoids cross-definition mismatches).
-pub use crate::prelude::_LSA_TOKEN_INFORMATION_V1 as LSA_TOKEN_INFORMATION_V1;
 pub type PLSA_TOKEN_INFORMATION_V1 = *mut _LSA_TOKEN_INFORMATION_V1;
 
 pub type PLSA_CLIENT_REQUEST = PVOID;
@@ -251,12 +250,12 @@ pub struct SAMPR_PSID_ARRAY {
 pub type PSAMPR_PSID_ARRAY = *mut SAMPR_PSID_ARRAY;
 
 unsafe extern "system" fn LsapAddAuthPackage(
-    ValueName: PWSTR,
-    ValueType: ULONG,
+    _ValueName: PWSTR,
+    _ValueType: ULONG,
     ValueData: PVOID,
     ValueLength: ULONG,
     Context: PVOID,
-    EntryContext: PVOID,
+    _EntryContext: PVOID,
 ) -> NTSTATUS {
     let mut Package: PAUTH_PACKAGE = core::ptr::null_mut();
     let mut PackageName: _UNICODE_STRING = _UNICODE_STRING {
@@ -502,7 +501,7 @@ unsafe extern "system" fn LsapAddAuthPackage(
 unsafe fn LsapGetAuthenticationPackage(PackageId: ULONG) -> PAUTH_PACKAGE {
     let mut ListEntry: PLIST_ENTRY = PackageListHead.Flink;
     while ListEntry != core::ptr::addr_of!(PackageListHead) as *mut _ {
-        let offset = &raw mut (*core::ptr::null_mut::<AUTH_PACKAGE>()).Entry as usize;
+        let offset = core::mem::offset_of!(AUTH_PACKAGE, Entry);
         let Package = ((ListEntry as usize) - offset) as PAUTH_PACKAGE;
         if (*Package).Id == PackageId {
             return Package;
@@ -546,7 +545,7 @@ unsafe extern "system" fn LsapAllocateClientBuffer(
 }
 
 unsafe extern "system" fn LsapFreeClientBuffer(
-    mut ClientRequest: PLSA_CLIENT_REQUEST,
+    ClientRequest: PLSA_CLIENT_REQUEST,
     mut ClientBaseAddress: PVOID,
 ) -> NTSTATUS {
     if ClientBaseAddress.is_null() {
@@ -713,7 +712,7 @@ ros_dbg_log(
 let mut ListEntry = PackageListHead.Flink as PLIST_ENTRY;
 let head_ptr = core::ptr::addr_of_mut!(PackageListHead);
 while ListEntry != head_ptr {
-    let entry_offset = core::ptr::addr_of!((*core::ptr::null::<AUTH_PACKAGE>()).Entry) as usize;
+    let entry_offset = core::mem::offset_of!(AUTH_PACKAGE, Entry);
     let Package = (ListEntry as usize).wrapping_sub(entry_offset) as PAUTH_PACKAGE;
     if PackageNameLength == (*(*Package).Name).Length as u32
         && _strnicmp(
@@ -744,7 +743,7 @@ pub unsafe extern "C" fn LsapCallAuthenticationPackage(
     RequestMsg: *mut LSA_API_MSG,
     LogonContext: *mut LSAP_LOGON_CONTEXT,
 ) -> NTSTATUS {
-    let mut Package: PAUTH_PACKAGE;
+    let Package: PAUTH_PACKAGE;
     let mut LocalBuffer: PVOID = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
@@ -927,7 +926,7 @@ unsafe fn LsapCopyLocalGroups(
         + ((ClientGroupsCount - 1) as ULONG)
             * core::mem::size_of::<SID_AND_ATTRIBUTES>() as ULONG;
 
-    let mut local_groups: PTOKEN_GROUPS = RtlAllocateHeap(
+    let local_groups: PTOKEN_GROUPS = RtlAllocateHeap(
         RtlGetProcessHeap(),
         HEAP_ZERO_MEMORY,
         local_groups_length as SIZE_T,
@@ -1036,9 +1035,9 @@ unsafe fn LsapAddLocalGroups(
     TokenInformationType: LSA_TOKEN_INFORMATION_TYPE,
     LocalGroups: PTOKEN_GROUPS,
 ) -> NTSTATUS {
-    let mut TokenInfo1: PLSA_TOKEN_INFORMATION_V1;
-    let mut Groups: PTOKEN_GROUPS;
-    let mut Length: ULONG;
+    let TokenInfo1: PLSA_TOKEN_INFORMATION_V1;
+    let Groups: PTOKEN_GROUPS;
+    let Length: ULONG;
     let mut i: ULONG;
     let mut j: ULONG;
 
@@ -1256,8 +1255,8 @@ unsafe fn LsapAppendSidToGroups(
     RelativeId: ULONG,
 ) -> NTSTATUS {
     let mut Groups: PTOKEN_GROUPS = core::ptr::null_mut();
-    let mut Sid: PSID;
-    let mut Length: ULONG;
+    let Sid: PSID;
+    let Length: ULONG;
     let mut i: ULONG;
 
     Sid = LsapAppendRidToSid(DomainSid, RelativeId);
@@ -1612,7 +1611,7 @@ unsafe fn LsapSetTokenOwner(
 ) -> NTSTATUS {
     let mut TokenInfo1: *mut _LSA_TOKEN_INFORMATION_V1 = core::ptr::null_mut();
     let mut OwnerSid: PSID_AND_ATTRIBUTES = core::ptr::null_mut();
-    let mut Length: u32;
+    let Length: u32;
 
     if TokenInformationType == _LSA_TOKEN_INFORMATION_TYPE_LsaTokenInformationV1 {
         TokenInfo1 = TokenInformation as *mut _LSA_TOKEN_INFORMATION_V1;
@@ -1708,8 +1707,8 @@ unsafe fn LsapAddPrivilegeToTokenPrivileges(
     token_privileges: *mut PTOKEN_PRIVILEGES,
     Privilege: PLSAPR_LUID_AND_ATTRIBUTES,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut local: PTOKEN_PRIVILEGES;
+    let status: NTSTATUS = STATUS_SUCCESS;
+    let local: PTOKEN_PRIVILEGES;
     if (*token_privileges).is_null() {
         let length = core::mem::size_of::<TOKEN_PRIVILEGES>()
             + ((1usize - ANYSIZE_ARRAY as usize) * core::mem::size_of::<LUID_AND_ATTRIBUTES>());
@@ -1863,8 +1862,8 @@ pub unsafe extern "C" fn LsapLogonUser(
     let mut LocalGroups: PTOKEN_GROUPS = core::ptr::null_mut();
     let mut TokenHandle: HANDLE = core::ptr::null_mut();
     let mut i: ULONG;
-    let mut PackageId: ULONG;
-    let mut LogonType: SECURITY_LOGON_TYPE;
+    let PackageId: ULONG;
+    let LogonType: SECURITY_LOGON_TYPE;
     let mut Status: NTSTATUS;
     let mut UserName: PUNICODE_STRING = core::ptr::null_mut();
     let mut LogonDomainName: PUNICODE_STRING = core::ptr::null_mut();
@@ -1905,28 +1904,29 @@ pub unsafe extern "C" fn LsapLogonUser(
         }
     }
 
-    if (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LocalGroupsCount > 0 {
-        Status = LsapCopyLocalGroups(
-            LogonContext,
-            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LocalGroups as *mut _ as PTOKEN_GROUPS,
-            (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LocalGroupsCount,
-            &mut LocalGroups,
-        );
-        if !NT_SUCCESS(Status) {
-            ERR!(b"LsapCopyLocalGroups failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
-            // goto done
-            Status = Status;
-            // We'll handle this later, but need to jump to done. Use a labeled block.
-            // We'll restructure `done` as a block with break.
-            // Let's implement the function with a loop and break.
-        }
-        else {
-            TRACE!(b"GroupCount: %lu\n\0".as_ptr() as *const u8, (*LocalGroups).GroupCount);
-        }
-    }
-
-    // We'll use a 'done block' to simplify goto.
+    // We'll use a 'done block' to simplify goto. The LocalGroups copy lives
+    // INSIDE the block so its failure path can `break 'done Status` — matching
+    // the C original's `goto done` (authpackage.c:1466). (It was previously
+    // stranded above the block with a no-op `Status = Status`, so a failed
+    // LsapCopyLocalGroups silently fell through into LsaApLogonUser* instead of
+    // aborting the logon.)
     let result: NTSTATUS = 'done: {
+        if (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LocalGroupsCount > 0 {
+            Status = LsapCopyLocalGroups(
+                LogonContext,
+                (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LocalGroups as *mut _ as PTOKEN_GROUPS,
+                (*RequestMsg).__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.LogonUserW.__bindgen_anon_1.Request.LocalGroupsCount,
+                &mut LocalGroups,
+            );
+            if !NT_SUCCESS(Status) {
+                ERR!(b"LsapCopyLocalGroups failed (Status 0x%08lx)\n\0".as_ptr() as *const u8, Status);
+                break 'done Status;
+            }
+            else {
+                TRACE!(b"GroupCount: %lu\n\0".as_ptr() as *const u8, (*LocalGroups).GroupCount);
+            }
+        }
+
         if (*Package).LsaApLogonUserEx2.is_some() {
             Status = (*Package).LsaApLogonUserEx2.unwrap()(
                 LogonContext as PLSA_CLIENT_REQUEST,

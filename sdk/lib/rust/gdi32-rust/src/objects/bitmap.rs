@@ -88,7 +88,12 @@ extern "system" {
 }
 
 // ── GdiGetLDC (FASTCALL → extern "fastcall", i386 `@GdiGetLDC@4`) ────────────────
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn GdiGetLDC(hdc: HDC) -> PLDC;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn GdiGetLDC(hdc: HDC) -> PLDC;
 }
 
@@ -194,8 +199,9 @@ fn width_bytes_align32(cx: LONG, bpp: LONG) -> LONG {
 }
 
 /* Copied from win32ss/gdi/eng/surface.c */
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn BitmapFormat(cBits: ULONG, iCompression: ULONG) -> ULONG {
+pub unsafe fn BitmapFormat(cBits: ULONG, iCompression: ULONG) -> ULONG {
     match iCompression {
         // BI_RGB / BI_BITFIELDS — fall through
         x if x == BI_RGB || x == BI_BITFIELDS => {
@@ -224,6 +230,7 @@ pub unsafe extern "fastcall" fn BitmapFormat(cBits: ULONG, iCompression: ULONG) 
         _ => 0,
     }
 }
+}
 
 /* Copied from win32ss/gdi/eng/surface.c */
 #[no_mangle]
@@ -247,8 +254,9 @@ pub static mut gajBitsPerFormat: [UCHAR; 11] = [
  * Return the size of the bitmap info structure including color table.
  * 11/16/1999 (RJJ) lifted from wine
  */
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn DIB_BitmapInfoSize(
+pub unsafe fn DIB_BitmapInfoSize(
     info: *const BITMAPINFO,
     coloruse: WORD,
     max: BOOL,
@@ -297,14 +305,16 @@ pub unsafe extern "fastcall" fn DIB_BitmapInfoSize(
                 })) as INT;
     }
 }
+}
 
 /*
  * Return the full scan size for a bitmap.
  *
  * Based on Wine, Utils.c and Windows Graphics Prog pg 595, SDK amvideo.h.
  */
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn DIB_BitmapMaxBitsSize(Info: PBITMAPINFO, ScanLines: UINT) -> UINT {
+pub unsafe fn DIB_BitmapMaxBitsSize(Info: PBITMAPINFO, ScanLines: UINT) -> UINT {
     let Ret: UINT;
 
     if Info.is_null() {
@@ -334,6 +344,7 @@ pub unsafe extern "fastcall" fn DIB_BitmapMaxBitsSize(Info: PBITMAPINFO, ScanLin
         }
     }
     Ret
+}
 }
 
 /*

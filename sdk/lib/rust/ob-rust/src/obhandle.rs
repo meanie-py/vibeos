@@ -437,7 +437,7 @@ unsafe fn ObpChargeQuotaForObject(
             (*object_header).__bindgen_anon_2.QuotaBlockCharged = OBP_SYSTEM_PROCESS_QUOTA as PVOID;
         } else {
             (*object_header).__bindgen_anon_2.QuotaBlockCharged = PsChargeSharedPoolQuota(
-                (PsGetCurrentProcess() as *mut _EPROCESS),
+                PsGetCurrentProcess() as *mut _EPROCESS ,
                 paged_pool_charge as usize as _,
                 non_paged_pool_charge as usize as _,
             ) as *mut core::ffi::c_void;
@@ -577,7 +577,7 @@ unsafe fn ObpCloseHandleTableEntry(
     if (*object_type).TypeInfo.OkayToCloseProcedure.is_some() {
         ObpCalloutStart(&mut callout_irql as *mut _);
         if ((*object_type).TypeInfo.OkayToCloseProcedure.unwrap())(
-            (PsGetCurrentProcess() as *mut _EPROCESS),
+            PsGetCurrentProcess() as *mut _EPROCESS ,
             body,
             handle,
             access_mode,
@@ -608,7 +608,7 @@ unsafe fn ObpCloseHandleTableEntry(
 
     ExDestroyHandle(handle_table, handle, handle_entry);
 
-    ObpDecrementHandleCount(body, (PsGetCurrentProcess() as *mut _EPROCESS), granted_access, object_type);
+    ObpDecrementHandleCount(body, PsGetCurrentProcess() as *mut _EPROCESS , granted_access, object_type);
 
     ObDereferenceObject(body);
 
@@ -985,7 +985,7 @@ unsafe fn ObpCreateUnnamedHandle(
         &mut desired_access as *mut _,
         access_mode,
         handle_attributes,
-        (PsGetCurrentProcess() as *mut _EPROCESS),
+        PsGetCurrentProcess() as *mut _EPROCESS ,
     );
     if status < 0 {
         if attached_to_process != 0 {
@@ -1035,7 +1035,7 @@ unsafe fn ObpCreateUnnamedHandle(
 
     ObpDecrementHandleCount(
         core::ptr::addr_of_mut!((*object_header).Body) as PVOID,
-        (PsGetCurrentProcess() as *mut _EPROCESS),
+        PsGetCurrentProcess() as *mut _EPROCESS ,
         granted_access,
         object_type,
     );
@@ -1103,7 +1103,7 @@ unsafe fn ObpCreateHandle(
         access_state,
         access_mode,
         handle_attributes,
-        (PsGetCurrentProcess() as *mut _EPROCESS),
+        PsGetCurrentProcess() as *mut _EPROCESS ,
         open_reason,
     );
     if status < 0 {
@@ -1178,7 +1178,7 @@ unsafe fn ObpCreateHandle(
 
     ObpDecrementHandleCount(
         core::ptr::addr_of_mut!((*object_header).Body) as PVOID,
-        (PsGetCurrentProcess() as *mut _EPROCESS),
+        PsGetCurrentProcess() as *mut _EPROCESS ,
         granted_access,
         object_type,
     );
@@ -1206,7 +1206,7 @@ unsafe fn ObpCloseHandle(mut handle: HANDLE, access_mode: KPROCESSOR_MODE) -> NT
     let mut apc_state: _KAPC_STATE = core::mem::zeroed();
     let handle_table_entry: PHANDLE_TABLE_ENTRY;
     let mut status: NTSTATUS;
-    let process = (PsGetCurrentProcess() as *mut _EPROCESS);
+    let process = PsGetCurrentProcess() as *mut _EPROCESS ;
 
     if access_mode == 0i8 && handle == (-1isize) as HANDLE {
         return STATUS_INVALID_HANDLE;
@@ -1491,6 +1491,7 @@ pub unsafe extern "system" fn ObKillProcess(process: PEPROCESS) {
     ExDestroyHandleTable(handle_table, core::ptr::null_mut());
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn ObDuplicateObject(
     source_process: PEPROCESS,
@@ -1661,7 +1662,7 @@ pub unsafe extern "system" fn ObDuplicateObject(
             passed_access_state,
             previous_mode,
             handle_attributes,
-            (PsGetCurrentProcess() as *mut _EPROCESS),
+            PsGetCurrentProcess() as *mut _EPROCESS ,
             ObDuplicateHandle,
         );
     }

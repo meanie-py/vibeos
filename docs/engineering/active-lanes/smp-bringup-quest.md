@@ -753,3 +753,55 @@ and stronger: there is no design-reviewed C fallback in the build at all.
     (MP-build-detected sub-test expectations). Neither is a kernel change.
   - **0xF4 boot-phase (2/20 soak) — pre-existing §9.56-class, still OPEN.** Separate from
     MmMdl; not chased this pass.
+
+## i386 M5 (Phase B) — AP-start bringup (2026-07-16, in progress)
+
+Unblocked by the i386 APIC HAL landing as the default (Phase A). Working
+`build --arch i386 --smp-kernel` + `smoke --smp N`. Progress this pass — three
+root-caused i386 SMP bugs FIXED + LANDED (commit on `smp-bringup`; full writeup
+field-manual **§9.91**):
+
+1. **HAL SMP gating** keyed on `hal_apic`/`hal_pic` (not `target_arch`) so
+   i386-on-APIC gets the real `smp_processor`/`trampoline` symbols + a new i386
+   (2-level non-PAE) `identity_map_stub`. amd64 provably no-op.
+2. **0x79 MISMATCHED_HAL** — swapped i386 `PRCB_BUILD_UNIPROCESSOR/DEBUG` consts
+   (masked on UP, unmasked SMP). Fixed to canonical DEBUG=1/UNIPROCESSOR=2.
+3. **KeStartAllProcessors GDT + loader-block corruption** — `KDESCRIPTOR` missing
+   `Pad` (→ `sgdt` base misaligned → 0x1E in memcpy) + AP-handshake `offset(0/1/2)`
+   clobbering `LoadOrderListHead`/`MemoryDescriptorListHead` (→ 0x50 + a masking
+   module-list-walk cascade). Now named-field writes + `addr_of_mut!` matching
+   `ke/amd64/mproc.rs`.
+
+4. **Bug D (2026-07-16) — the M3 KeIpiGenericCall self-test worker was cdecl,
+   not NTAPI.** `ex-rust/src/init.rs`'s `gc_selftest_worker` + the local
+   `KeIpiGenericCall` `Function` param were `extern "C"`; `PKIPI_BROADCAST_WORKER`
+   is `NTAPI` (stdcall on i386), so the stdcall call site left ESP 4 bytes low →
+   rendezvous frame skew → `ret` onto the stack → deterministic `0x50` (EIP =
+   stack VA `0xf7bbbba0`). NOT a `KeStartAllProcessors` bug (that returns clean —
+   a GDB `watch` on its saved-return slot proved the frame intact). Invisible on
+   amd64/arm64 (`extern "C"==extern "system"`). Fix = both → `extern "system"`.
+   Full writeup: field-manual **§9.91 Bug D**.
+
+**Boot state after ALL FOUR fixes (2026-07-16): i386 SMP kernel boots to a
+fully-rendered desktop at BOTH `-smp 1` and `-smp 2`** — `_tWinMain entered` +
+`shell ready`, 0 bugchecks in 3385 serial lines. At `-smp 2` the BSP starts CPU 1
+(`HalStartNextProcessor` INIT-SIPI-SIPI on the first call) and the AP completes
+the `KeLoaderBlock->Prcb` handshake in `KiSystemStartup` (the BSP has no timeout
+on that spin, so boot-to-desktop *proves* the AP ran). The KeIpiGenericCall
+self-test now prints `worker ran on 0x1 == active set OK`. **This is i386 M5
+Phase B DONE — boot parity with amd64's M0–M3.**
+
+**NEXT (i386 M5 Phase C — AP schedules):** at `-smp 2` the AP is started + handshaked
+but its `KeActiveProcessors` bit is still 0 (self-test's active set = `0x1`), i.e.
+CPU 1 hasn't reached idle-loop scheduling yet. Bring the i386 AP to full
+schedule-participation: idle-loop `NextThread` lock + `ctxswitch.S` `SwapBusy`
+handshake (mirror the amd64 M3 work; land together per the M5 discipline note
+above), then prove it with the M3 CPU1-visibility counter and a `-smp 2` soak.
+GDB recipe that cracked Bug D (banked for Phase C): **`hbreak`** the suspect fn
+(a plain `break` at `--gdb-wait` reset is clobbered when freeldr copies the kernel
+over the `0xCC`), `add-symbol-file build-i386/ntoskrnl/ntkrnlmp/ntkrnlmp.exe
+0x804c4000` (kbase-stable `0x804c3000`; symbolicate ntkrnlmp, NOT ntoskrnl — the
+toolkit's `find-kbase`/`addr2sym` default to the UP binary), and **read the gdb
+port from `qemu/runs/<run-id>/manifest.json` (`gdb_port`), never hardcode 12001**
+— auto-alloc drifts across runs and a stale QEMU on the assumed port silently
+eats your breakpoints.

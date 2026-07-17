@@ -159,7 +159,7 @@ unsafe fn InfpCacheFreeLine(
     Line: PINFCACHELINE
 ) -> PINFCACHELINE
 {
-    let mut Next: PINFCACHELINE;
+    let Next: PINFCACHELINE;
     let mut Field: PINFCACHEFIELD;
 
     if Line == core::ptr::null_mut() {
@@ -188,7 +188,7 @@ unsafe fn InfpCacheFreeSection(
     Section: PINFCACHESECTION
 ) -> PINFCACHESECTION
 {
-    let mut Next: PINFCACHESECTION;
+    let Next: PINFCACHESECTION;
 
     if Section == core::ptr::null_mut() {
         return core::ptr::null_mut();
@@ -310,7 +310,7 @@ unsafe fn InfpAddFieldToLine(
     Line: PINFCACHELINE,
     Data: PCSTR,
 ) -> PVOID {
-    let mut Field: PINFCACHEFIELD;
+    let Field: PINFCACHEFIELD;
     let Size: usize;
 
     Size = core::mem::size_of::<INFCACHEFIELD>() + strlen(Data);
@@ -416,7 +416,7 @@ unsafe fn add_section_from_token(parser: *mut parser) -> PVOID {
     let mut Section: PINFCACHESECTION;
 
     if (*parser).token_len > MAX_SECTION_NAME_LEN {
-        (*parser).error = ((0u8) as u32);
+        (*parser).error = (0u8) as u32 ;
         return core::ptr::null_mut();
     }
 
@@ -424,7 +424,7 @@ unsafe fn add_section_from_token(parser: *mut parser) -> PVOID {
     if Section.is_null() {
         Section = InfpCacheAddSection((*parser).file, (*parser).token.as_ptr());
         if Section.is_null() {
-            (*parser).error = ((0u8) as u32);
+            (*parser).error = (0u8) as u32 ;
             return core::ptr::null_mut();
         }
     }
@@ -439,7 +439,7 @@ unsafe fn add_field_from_token(
     parser: *mut parser,
     is_key: i32,
 ) -> PVOID {
-    let mut field: PVOID;
+    let field: PVOID;
 
     if (*parser).line.is_null() {
         if (*parser).cur_section.is_null() {
@@ -803,7 +803,7 @@ unsafe fn InfpParseBuffer(
     parser.stack_pos = 0;
     parser.cur_section = core::ptr::null_mut();
     parser.line_pos = 1;
-    parser.error = ((1u8) as u32);
+    parser.error = (1u8) as u32 ;
     parser.token_len = 0;
 
     while !pos.is_null() {
@@ -814,7 +814,7 @@ unsafe fn InfpParseBuffer(
         if !error_line.is_null() {
             *error_line = parser.line_pos;
         }
-        return ((parser.error) as u8);
+        return (parser.error) as u8 ;
     }
 
     (*file).StringsSection = InfpCacheFindSection(file, b"Strings\0".as_ptr() as PCSTR);
@@ -831,8 +831,8 @@ pub unsafe extern "C" fn InfOpenFile(
 
     let mut Information: FILEINFORMATION = core::mem::zeroed();
     let mut FileId: ULONG = 0;
-    let mut FileBuffer: PCHAR;
-    let mut FileSize: ULONG;
+    let FileBuffer: PCHAR;
+    let FileSize: ULONG;
     let mut Count: ULONG = 0;
     let mut Cache: PINFCACHE;
     let Success: BOOLEAN;
@@ -853,7 +853,7 @@ pub unsafe extern "C" fn InfOpenFile(
     }
     FileSize = Information.EndingAddress.__bindgen_anon_1.LowPart;
 
-    FileBuffer = FrLdrTempAlloc(((FileSize + 1) as usize), TAG_INF_FILE) as PCHAR;
+    FileBuffer = FrLdrTempAlloc((FileSize + 1) as usize , TAG_INF_FILE) as PCHAR;
     if FileBuffer.is_null() {
         ArcClose(FileId);
         return 0;
@@ -893,7 +893,7 @@ pub unsafe extern "C" fn InfOpenFile(
 
 #[no_mangle]
 pub unsafe extern "C" fn InfCloseFile(InfHandle: HINF) {
-    let mut Cache: PINFCACHE;
+    let Cache: PINFCACHE;
 
     Cache = InfHandle as PINFCACHE;
 
@@ -1076,7 +1076,7 @@ pub unsafe extern "C" fn InfGetFieldCount(Context: PINFCONTEXT) -> LONG {
         return 0;
     }
 
-    (((*((*Context).Line as PINFCACHELINE)).FieldCount) as i32)
+    ((*((*Context).Line as PINFCACHELINE)).FieldCount) as i32
 }
 
 #[no_mangle]
@@ -1088,7 +1088,7 @@ pub unsafe extern "C" fn InfGetBinaryField(
     RequiredSize: PULONG,
 ) -> BOOLEAN {
 
-    let mut CacheLine: PINFCACHELINE;
+    let CacheLine: PINFCACHELINE;
     let mut CacheField: PINFCACHEFIELD;
     let mut Index: ULONG;
     let Size: ULONG;
@@ -1144,10 +1144,10 @@ pub unsafe extern "C" fn InfGetIntField(
     FieldIndex: ULONG,
     IntegerValue: PLONG,
 ) -> BOOLEAN {
-    let mut CacheLine: PINFCACHELINE;
+    let CacheLine: PINFCACHELINE;
     let mut CacheField: PINFCACHEFIELD;
     let mut Index: ULONG;
-    let mut Ptr: PCHAR;
+    let Ptr: PCHAR;
 
     if Context.is_null() || (*Context).Line.is_null() || IntegerValue.is_null() {
         return 0u8;
@@ -1256,10 +1256,10 @@ pub unsafe extern "C" fn InfGetStringField(
     RequiredSize: PULONG,
 ) -> BOOLEAN {
 
-    let mut CacheLine: PINFCACHELINE;
+    let CacheLine: PINFCACHELINE;
     let mut CacheField: PINFCACHEFIELD;
     let mut Index: ULONG;
-    let mut Ptr: PCHAR;
+    let Ptr: PCHAR;
     let Size: usize;
 
     if Context.is_null() || (*Context).Line.is_null() {

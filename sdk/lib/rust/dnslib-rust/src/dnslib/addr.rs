@@ -1,4 +1,3 @@
-use ntdll_sys::nt::*;
 pub use crate::dnslib::types::*;
 
 // Address family constants from winsock

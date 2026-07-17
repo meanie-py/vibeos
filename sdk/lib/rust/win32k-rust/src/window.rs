@@ -1481,6 +1481,7 @@ unsafe extern "fastcall" fn IntGetWindowProc(pWnd: PWND, Ansi: BOOL) -> WNDPROC 
     IntGetWindowProc_impl(pWnd, Ansi)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntGetWindowProc_impl(pWnd: PWND, Ansi: BOOL) -> WNDPROC {
     let mut i: INT;
     let Class: PCLS;
@@ -1542,6 +1543,7 @@ unsafe fn IntGetWindowProc_impl(pWnd: PWND, Ansi: BOOL) -> WNDPROC {
     }
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntSetWindowProc(pWnd: PWND, mut NewWndProc: WNDPROC, mut Ansi: i32) -> WNDPROC {
     let mut i: i32;
     let CallProc: PCALLPROCDATA;
@@ -2145,7 +2147,8 @@ unsafe fn IntUnlinkWindow_impl(Wnd: PWND) {
     WndSetNext(Wnd, core::ptr::null_mut());
 }
 
-unsafe extern "fastcall" fn IntGrowHwndList(ppwl: *mut PWINDOWLIST) -> BOOL {
+fastcall_fn! {
+unsafe fn IntGrowHwndList(ppwl: *mut PWINDOWLIST) -> BOOL {
     let pwlOld: PWINDOWLIST;
     let pwlNew: PWINDOWLIST;
     let ibOld: SIZE_T;
@@ -2171,8 +2174,10 @@ unsafe extern "fastcall" fn IntGrowHwndList(ppwl: *mut PWINDOWLIST) -> BOOL {
     *ppwl = pwlNew;
     1
 }
+}
 
-unsafe extern "fastcall" fn IntPopulateHwndList(mut pwl: PWINDOWLIST, mut pwnd: PWND, dwFlags: DWORD) -> PWINDOWLIST {
+fastcall_fn! {
+unsafe fn IntPopulateHwndList(mut pwl: PWINDOWLIST, mut pwnd: PWND, dwFlags: DWORD) -> PWINDOWLIST {
     while !pwnd.is_null() {
         if (*pwl).pti.is_null() || (*pwl).pti == HEAD_pti(core::ptr::addr_of!((*pwnd).head)) {
             *(*pwl).phwndLast = UserHMGetHandle(pwnd as PVOID);
@@ -2199,9 +2204,11 @@ unsafe extern "fastcall" fn IntPopulateHwndList(mut pwl: PWINDOWLIST, mut pwnd: 
 
     pwl
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntBuildHwndList(pwnd: PWND, dwFlags: DWORD, pti: PTHREADINFO) -> PWINDOWLIST {
+unsafe fn IntBuildHwndList(pwnd: PWND, dwFlags: DWORD, pti: PTHREADINFO) -> PWINDOWLIST {
     let mut pwl: PWINDOWLIST;
     let cbWL: DWORD;
 
@@ -2239,6 +2246,7 @@ unsafe extern "fastcall" fn IntBuildHwndList(pwnd: PWND, dwFlags: DWORD, pti: PT
     gpwlList = pwl;
 
     pwl
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -2688,8 +2696,10 @@ unsafe fn IntFixWindowCoordinates_impl(
     }
 }
 
+fastcall_fn! {
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
-unsafe extern "fastcall" fn IntCreateWindow(
+unsafe fn IntCreateWindow(
     Cs: *mut CREATESTRUCTW,
     WindowName: PLARGE_STRING,
     Class: PCLS,
@@ -2997,6 +3007,7 @@ unsafe extern "fastcall" fn IntCreateWindow(
     }
 
     core::ptr::null_mut()
+}
 }
 
 unsafe fn alloc_error(pWnd: PWND) -> PWND {
@@ -4136,7 +4147,8 @@ pub unsafe extern "C" fn NtUserCreateWindowEx(
     hwnd
 }
 
-unsafe extern "fastcall" fn IntDestroyOwnedWindows(Window: PWND) {
+fastcall_fn! {
+unsafe fn IntDestroyOwnedWindows(Window: PWND) {
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
 
     let List = IntWinListOwnedPopups(Window);
@@ -4165,6 +4177,7 @@ unsafe extern "fastcall" fn IntDestroyOwnedWindows(Window: PWND) {
     }
 
     ExFreePoolWithTag(List as PVOID, USERTAG_WINDOWLIST);
+}
 }
 
 #[no_mangle]
@@ -4848,8 +4861,9 @@ pub unsafe extern "C" fn NtUserFindWindowEx(
     Ret
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn UserGetAncestor(pWnd: PWND, uType: UINT) -> PWND {
+unsafe fn UserGetAncestor(pWnd: PWND, uType: UINT) -> PWND {
     let mut WndAncestor: PWND;
     let mut Parent: PWND;
     let pwndMessage: PWND;
@@ -4911,6 +4925,7 @@ unsafe extern "fastcall" fn UserGetAncestor(pWnd: PWND, uType: UINT) -> PWND {
     }
 
     WndAncestor
+}
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]

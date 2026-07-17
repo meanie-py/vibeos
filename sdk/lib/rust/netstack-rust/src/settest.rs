@@ -6,13 +6,13 @@
 //! transport acknowledges it. Proves the dispatch → worker route-program path the
 //! usermode `route` command / dhcpcsvc ride on.
 
-use core::mem::{size_of, zeroed};
+use core::mem::size_of;
 use core::ptr::null_mut;
 use core::sync::atomic::Ordering;
 
 use ntkrnl_sys::ddk::{
-    ExAllocatePoolWithTag, ExFreePool, IO_STATUS_BLOCK, IoBuildDeviceIoControlRequest,
-    IofCallDriver, KeInitializeEvent, KeWaitForSingleObject, KEVENT, LARGE_INTEGER,
+    ExAllocatePoolWithTag, ExFreePool, IoBuildDeviceIoControlRequest,
+    IofCallDriver,
     ObReferenceObjectByHandle, ObfDereferenceObject, PsCreateSystemThread, PVOID, ZwClose,
     _FILE_OBJECT,
 };

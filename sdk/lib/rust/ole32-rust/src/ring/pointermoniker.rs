@@ -609,7 +609,7 @@ pub unsafe extern "system" fn CreatePointerMoniker(
 
 #[no_mangle]
 pub unsafe extern "system" fn PointerMoniker_CreateInstance(
-    iface: *mut IClassFactory,
+    _iface: *mut IClassFactory,
     pUnk: *mut IUnknown,
     riid: REFIID,
     ppv: *mut LPVOID,

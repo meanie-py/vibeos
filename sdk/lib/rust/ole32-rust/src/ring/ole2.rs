@@ -405,7 +405,7 @@ pub unsafe extern "system" fn OleBuildVersion() -> DWORD {
 
 /// ole2.c:169 OleInitialize [OLE32.@]
 #[no_mangle]
-pub unsafe extern "system" fn OleInitialize(reserved: LPVOID) -> HRESULT {
+pub unsafe extern "system" fn OleInitialize(_reserved: LPVOID) -> HRESULT {
     TRACE!(b"(%p)\n\0".as_ptr(), reserved);
 
     // The first duty of OleInitialize is to initialize the COM libraries.
@@ -464,7 +464,7 @@ pub unsafe extern "system" fn OleUninitialize() {
 
 /// ole2.c:269 OleInitializeWOW [OLE32.@]
 #[no_mangle]
-pub unsafe extern "system" fn OleInitializeWOW(x: DWORD, y: DWORD) -> HRESULT {
+pub unsafe extern "system" fn OleInitializeWOW(_x: DWORD, _y: DWORD) -> HRESULT {
     FIXME!(b"(0x%08x, 0x%08x),stub!\n\0".as_ptr(), x, y);
     0
 }
@@ -1056,7 +1056,7 @@ pub unsafe extern "system" fn DoDragDrop(
 
 /// ole2.c:854 OleQueryLinkFromData [OLE32.@]
 #[no_mangle]
-pub unsafe extern "system" fn OleQueryLinkFromData(pSrcDataObject: *mut IDataObject) -> HRESULT {
+pub unsafe extern "system" fn OleQueryLinkFromData(_pSrcDataObject: *mut IDataObject) -> HRESULT {
     FIXME!(b"(%p),stub!\n\0".as_ptr(), pSrcDataObject);
     S_FALSE
 }
@@ -3282,7 +3282,7 @@ pub unsafe extern "system" fn PropVariantCopy(
     pvarDest: *mut PROPVARIANT,
     pvarSrc: *const PROPVARIANT,
 ) -> HRESULT {
-    let mut len: ULONG;
+    let len: ULONG;
 
     TRACE!(
         b"(%p, %p vt %04x)\n\0".as_ptr(),

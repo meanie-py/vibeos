@@ -1,7 +1,6 @@
 use super::vdm_types::{
-    wcslen, wcsncpy, HandleToUlong, _snwprintf, _wcsicmp, _wcsnicmp, NT_SUCCESS,
+    wcslen, wcsncpy, _snwprintf, _wcsicmp, _wcsnicmp, NT_SUCCESS,
 };
-use core::ffi::c_void;
 use ntdll_sys::nt::*;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
@@ -228,11 +227,11 @@ unsafe fn CheckForGlobalDriveLetter(DriveLetter: SHORT) -> BOOLEAN {
 }
 
 unsafe fn SendWinStationBSM(
-    Flags: DWORD,
-    Recipients: LPDWORD,
-    Message: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
+    _Flags: DWORD,
+    _Recipients: LPDWORD,
+    _Message: UINT,
+    _wParam: WPARAM,
+    _lParam: LPARAM,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
@@ -355,7 +354,7 @@ unsafe fn BroadcastDriveLetterChange(
     Status
 }
 
-unsafe extern "system" fn BaseSrvBSMThread(StartupContext: PVOID) -> ULONG {
+unsafe extern "system" fn BaseSrvBSMThread(_StartupContext: PVOID) -> ULONG {
     let mut ExitStatus: ULONG;
     let mut Status: NTSTATUS;
     let mut CurrentRequest: PBSM_REQUEST;
@@ -533,7 +532,7 @@ pub unsafe extern "system" fn BaseSrvDefineDosDevice(
     let mut CchLengthLeft: ULONG;
     let mut CchLength: ULONG;
     let mut TargetLength: ULONG;
-    let mut TargetBuffer: PWSTR;
+    let TargetBuffer: PWSTR;
     let mut CurrentBuffer: PWSTR;
 
     #[repr(C)]
@@ -549,7 +548,7 @@ pub unsafe extern "system" fn BaseSrvDefineDosDevice(
     let mut SecurityDescriptor: SecurityDescriptorUnion = core::mem::zeroed();
     let mut Dacl: DaclUnion = core::mem::zeroed();
 
-    let mut AccessMask: ACCESS_MASK;
+    let AccessMask: ACCESS_MASK;
     let mut CallerLuid: LUID = core::mem::zeroed();
     let mut CurrentPtr: *mut WCHAR;
     let mut CurrentChar: WCHAR;

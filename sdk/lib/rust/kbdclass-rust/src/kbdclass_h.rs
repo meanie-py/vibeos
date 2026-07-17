@@ -11,7 +11,7 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{PDEVICE_OBJECT, PFILE_OBJECT, PIRP, PKEYBOARD_INPUT_DATA, HANDLE, KSPIN_LOCK, LPCWSTR, _UNICODE_STRING};
+use ntkrnl_sys::ddk::{PDEVICE_OBJECT, PIRP, PKEYBOARD_INPUT_DATA, HANDLE, LPCWSTR, _UNICODE_STRING};
 use ntkrnl_sys::driver_ddk::{
     ctl_code, FILE_DEVICE_KEYBOARD, FILE_ANY_ACCESS, METHOD_BUFFERED, METHOD_NEITHER,
 };

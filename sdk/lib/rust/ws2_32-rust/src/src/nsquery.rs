@@ -165,7 +165,7 @@ pub unsafe extern "system" fn WsNqDelete(NsQuery: PNSQUERY) {
         Entry = RemoveHeadList(core::ptr::addr_of_mut!((*NsQuery).ProviderList));
 
         Provider = (Entry as usize).wrapping_sub(
-            core::ptr::addr_of_mut!((*core::ptr::null_mut::<NSQUERY_PROVIDER>()).QueryLink) as usize
+            core::mem::offset_of!(NSQUERY_PROVIDER, QueryLink)
         ) as PNSQUERY_PROVIDER;
 
         WsNqProvDelete(Provider);
@@ -231,7 +231,7 @@ pub unsafe extern "system" fn WsNqLookupServiceEnd(NsQuery: PNSQUERY) -> DWORD {
     Entry = (*NsQuery).ProviderList.Flink;
     while Entry != core::ptr::addr_of_mut!((*NsQuery).ProviderList) {
         Provider = (Entry as usize -
-            core::ptr::addr_of_mut!((*core::ptr::null_mut::<NSQUERY_PROVIDER>()).QueryLink) as usize)
+            core::mem::offset_of!(NSQUERY_PROVIDER, QueryLink))
             as PNSQUERY_PROVIDER;
 
         WsNqProvLookupServiceEnd(Provider);
@@ -444,7 +444,7 @@ pub unsafe extern "system" fn WsNqLookupServiceBegin(
 
         Entry = (*NsQuery).ProviderList.Flink;
         NextProvider = (Entry as usize).wrapping_sub(
-            core::ptr::addr_of_mut!((*core::ptr::null_mut::<_NSQUERY_PROVIDER>()).QueryLink) as usize
+            core::mem::offset_of!(_NSQUERY_PROVIDER, QueryLink)
         ) as PNSQUERY_PROVIDER;
 
         while !NextProvider.is_null() {
@@ -471,14 +471,14 @@ pub unsafe extern "system" fn WsNqLookupServiceBegin(
             Entry = RemoveHeadList(&mut (*NsQuery).ProviderList);
 
             Provider = (Entry as usize).wrapping_sub(
-                core::ptr::addr_of_mut!((*core::ptr::null_mut::<_NSQUERY_PROVIDER>()).QueryLink) as usize
+                core::mem::offset_of!(_NSQUERY_PROVIDER, QueryLink)
             ) as PNSQUERY_PROVIDER;
             WsNqProvDelete(Provider);
         }
     } else {
         Entry = (*NsQuery).ProviderList.Flink;
         (*NsQuery).ActiveProvider = (Entry as usize).wrapping_sub(
-            core::ptr::addr_of_mut!((*core::ptr::null_mut::<_NSQUERY_PROVIDER>()).QueryLink) as usize
+            core::mem::offset_of!(_NSQUERY_PROVIDER, QueryLink)
         ) as PNSQUERY_PROVIDER;
     }
 
@@ -495,7 +495,7 @@ pub unsafe extern "system" fn WsNqNextProvider(
     Entry = (*Provider).QueryLink.Flink;
     if Entry != core::ptr::addr_of_mut!((*Query).ProviderList) {
         NextProvider = (Entry as usize).wrapping_sub(
-            core::ptr::addr_of_mut!((*core::ptr::null_mut::<NSQUERY_PROVIDER>()).QueryLink) as usize
+            core::mem::offset_of!(NSQUERY_PROVIDER, QueryLink)
         ) as PNSQUERY_PROVIDER;
     }
 
@@ -512,7 +512,7 @@ pub unsafe extern "system" fn WsNqPreviousProvider(
     Entry = (*Provider).QueryLink.Blink;
     if Entry != core::ptr::addr_of_mut!((*Query).ProviderList) {
         PrevProvider = (Entry as usize).wrapping_sub(
-            core::ptr::addr_of_mut!((*core::ptr::null_mut::<_NSQUERY_PROVIDER>()).QueryLink) as usize
+            core::mem::offset_of!(_NSQUERY_PROVIDER, QueryLink)
         ) as PNSQUERY_PROVIDER;
     }
 

@@ -182,8 +182,7 @@ pub unsafe extern "system" fn IKsDevice_fnInitializeObjectBag(
 pub unsafe extern "system" fn IKsDevice_fnAcquireDevice(
     iface: *mut IKsDevice,
 ) -> NTSTATUS {
-    let This: PKSIDEVICE_HEADER = core::mem::transmute(
-        (iface as usize)
+    let This: PKSIDEVICE_HEADER = core::ptr::with_exposed_provenance_mut::<KSIDEVICE_HEADER>((iface as usize)
             .wrapping_sub(core::mem::offset_of!(KSIDEVICE_HEADER, BasicHeader.OuterUnknown)),
     );
     KeWaitForSingleObject(
@@ -199,12 +198,9 @@ pub unsafe extern "system" fn IKsDevice_fnAcquireDevice(
 pub unsafe extern "system" fn IKsDevice_fnReleaseDevice(
     iface: *mut IKsDevice,
 ) -> NTSTATUS {
-    let this: PKSIDEVICE_HEADER = core::mem::transmute::<usize, *mut KSIDEVICE_HEADER>(
-        (iface as usize)
+    let this: PKSIDEVICE_HEADER = core::ptr::with_exposed_provenance_mut::<KSIDEVICE_HEADER>((iface as usize)
             .wrapping_sub(
-                &raw const (*core::ptr::null_mut::<KSIDEVICE_HEADER>())
-                    .BasicHeader
-                    .OuterUnknown as usize,
+                core::mem::offset_of!(KSIDEVICE_HEADER, BasicHeader.OuterUnknown),
             ),
     );
     KeReleaseMutex(&raw mut (*this).DeviceMutex, 0u8) as NTSTATUS
@@ -217,8 +213,7 @@ pub unsafe extern "system" fn IKsDevice_fnGetAdapterObject(
     MaxMappingsByteCount: *mut u32,
     MappingTableStride: *mut u32,
 ) -> NTSTATUS {
-    let This: PKSIDEVICE_HEADER = core::mem::transmute(
-        (iface as usize)
+    let This: PKSIDEVICE_HEADER = core::ptr::with_exposed_provenance_mut::<KSIDEVICE_HEADER>((iface as usize)
             .wrapping_sub(core::mem::offset_of!(KSIDEVICE_HEADER, BasicHeader.OuterUnknown))
     );
     *Object = (*This).AdapterObject;

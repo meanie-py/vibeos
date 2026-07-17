@@ -608,7 +608,7 @@ const SCSI_REQUEST_BLOCK_SIZE: ULONG = 0x58;
 const DISK_TAG_SRB: ULONG = 0x53446353;
 const DISK_TAG_MODE_DATA: ULONG = 0x4D446353;
 
-const STATUS_NO_MEDIA_IN_DEVICE: NTSTATUS = (0xC0000013u32 as i32);
+const STATUS_NO_MEDIA_IN_DEVICE: NTSTATUS = 0xC0000013u32 as i32 ;
 
 // Forward declarations for functions not available in ntkrnl_sys
 
@@ -623,32 +623,11 @@ const IO_NO_INCREMENT: i8 = 0;
 const TRUE: BOOLEAN = 1;
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_PENDING: NTSTATUS = 0x00000103i32;
-const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = (0xC000009Au32 as i32);
+const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009Au32 as i32 ;
 
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
-#[no_mangle]
 #[no_mangle]
 
 
-#[no_mangle]
 pub unsafe extern "system" fn DiskDriverReinit(
     DriverObject: PDRIVER_OBJECT,
     Nothing: PVOID,
@@ -1006,7 +985,7 @@ pub unsafe extern "C" fn DiskCreateFdo(
         status = RtlStringCchPrintfW(
             (&raw mut dirBuffer) as *mut u16,
             (core::mem::size_of::<[u16; 64]>() / core::mem::size_of::<u16>()).wrapping_sub(1),
-            (w!("\\Device\\Harddisk%d").as_ptr() as *const u16),
+            w!("\\Device\\Harddisk%d").as_ptr() as *const u16 ,
             *DeviceCount,
         );
         if !(status >= 0) {
@@ -2210,11 +2189,7 @@ pub unsafe extern "system" fn DiskFlushComplete(
     while IsListEmpty(&raw mut (*FlushContext).CurrList) == 0 {
         let listEntry: PLIST_ENTRY = RemoveHeadList(&raw mut (*FlushContext).CurrList);
         let tempIrp: PIRP = (listEntry as ULONG_PTR).wrapping_sub(
-            &raw mut (*core::ptr::null_mut::<IRP>())
-                .Tail
-                .Overlay
-                .__bindgen_anon_2
-                .ListEntry as ULONG_PTR,
+            core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as ULONG_PTR,
         ) as PIRP;
 
         InitializeListHead(&raw mut (*tempIrp).Tail.Overlay.__bindgen_anon_2.ListEntry);
@@ -2270,11 +2245,11 @@ pub unsafe extern "C" fn DiskModeSelect(
     const SRB_EX_DATA_TYPE_SCSI_CDB16: u16 = 0;         // placeholder
     const SRBEX_DATA_SCSI_CDB16_LENGTH: u32 = 32;       // placeholder
     const SCSIOP_MODE_SELECT: u8 = 0x15;                // typical
-    const STATUS_VERIFY_REQUIRED: NTSTATUS = (0xC0000182u32 as i32);
+    const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x80000016u32 as i32;
     const SRB_STATUS_DATA_OVERRUN: u8 = 0x12;
     const SRB_STATUS_AUTOSENSE_VALID: u8 = 0x80;
     const SRB_STATUS_QUEUE_FROZEN: u8 = 0x40;
-    const STATUS_INTERNAL_ERROR: NTSTATUS = (0xC00000FAu32 as i32);
+    const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC00000E5u32 as i32;
 
     // Local variables, preserving C names and pointer types
     let fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION =
@@ -3179,7 +3154,7 @@ pub unsafe extern "C" fn DiskLogCacheInformation(
             (((*FdoExtension).DeviceFlags as i32 & (DEV_WRITE_CACHE) as i32) != 0) as i32;
 
         (*logEntry).FinalStatus = Status;
-        (*logEntry).ErrorCode = (if bIsEnabled != 0 { IO_WRITE_CACHE_ENABLED } else { IO_WRITE_CACHE_DISABLED });
+        (*logEntry).ErrorCode = if bIsEnabled != 0 { IO_WRITE_CACHE_ENABLED } else { IO_WRITE_CACHE_DISABLED } ;
         (*logEntry).SequenceNumber = 0u32;
         (*logEntry).MajorFunctionCode = (IRP_MJ_SCSI) as u8;
         (*logEntry).IoControlCode = 0u32;

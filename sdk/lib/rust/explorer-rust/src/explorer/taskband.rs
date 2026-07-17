@@ -21,7 +21,6 @@ use explorer_sys::com::*;
 use explorer_sys::externs::*;
 use explorer_sys::globals::*;
 use explorer_sys::server::{interlocked_decrement, interlocked_increment, GET_Y_LPARAM};
-use winsrv_sys::consts::*;
 use winsrv_sys::winsrv::*;
 
 // CTaskSwitchWnd_CreateInstance is still C++ (taskswnd.cpp); precomp.h now gives

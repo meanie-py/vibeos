@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 extern "system" {
     fn MulDiv(nNumber: i32, nNumerator: i32, nDenominator: i32) -> i32;
@@ -2923,20 +2922,19 @@ unsafe extern "C" fn impl_from_IPicture(iface: *mut IPicture) -> *mut OLEPicture
 }
 unsafe extern "C" fn impl_from_IDispatch(iface: *mut IDispatch) -> *mut OLEPictureImpl {
     (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<OLEPictureImpl>()).IDispatch_iface) as ULONG_PTR
+        core::mem::offset_of!(OLEPictureImpl, IDispatch_iface) as ULONG_PTR
     ) as *mut OLEPictureImpl
 }
 unsafe extern "C" fn impl_from_IPersistStream(iface: *mut IPersistStream) -> *mut OLEPictureImpl {
     (iface as usize).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<OLEPictureImpl>()).IPersistStream_iface) as usize
+        core::mem::offset_of!(OLEPictureImpl, IPersistStream_iface)
     ) as *mut OLEPictureImpl
 }
 unsafe extern "C" fn impl_from_IConnectionPointContainer(
     iface: *mut IConnectionPointContainer,
 ) -> *mut OLEPictureImpl {
     return (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<OLEPictureImpl>()).IConnectionPointContainer_iface)
-            as ULONG_PTR,
+        core::mem::offset_of!(OLEPictureImpl, IConnectionPointContainer_iface) as ULONG_PTR,
     ) as *mut OLEPictureImpl;
 }
 unsafe extern "C" fn xpixels_to_himetric(pixels: INT, hdc: HDC) -> OLE_XSIZE_HIMETRIC {
@@ -2991,7 +2989,7 @@ unsafe extern "C" fn OLEPictureImpl_SetIcon(This: *mut OLEPictureImpl) {
     TRACE!(b"icon handle %p\n\0".as_ptr() as *const i8, (*This).desc.__bindgen_anon_1.icon.as_ref().hicon);
     
     if GetIconInfo((*This).desc.__bindgen_anon_1.icon.as_ref().hicon, &mut infoIcon) != 0 {
-        let mut hdcRef: HDC;
+        let hdcRef: HDC;
         let mut bm: core::mem::MaybeUninit<BITMAP> = core::mem::MaybeUninit::uninit();
 
         TRACE!(b"bitmap handle for icon is %p\n\0".as_ptr() as *const i8, infoIcon.hbmColor);
@@ -3055,8 +3053,8 @@ unsafe extern "C" fn OLEPictureImpl_Construct(
     pict: *mut *mut OLEPictureImpl,
 ) -> HRESULT {
 
-    let mut newObject: *mut OLEPictureImpl;
-    let mut hr: HRESULT;
+    let newObject: *mut OLEPictureImpl;
+    let hr: HRESULT;
 
     if !pictDesc.is_null() {
         TRACE!(b"(%p) type = %d\n\0".as_ptr(), pictDesc, (*pictDesc).picType);
@@ -3813,7 +3811,7 @@ fn OLEPictureImpl_EnumConnectionPoints(
     iface: *mut IConnectionPointContainer,
     ppEnum: *mut *mut IEnumConnectionPoints,
 ) -> HRESULT {
-    let This: *mut OLEPictureImpl = impl_from_IConnectionPointContainer(iface);
+    let _This: *mut OLEPictureImpl = impl_from_IConnectionPointContainer(iface);
     FIXME!(
         b"(%p,%p), stub!\n\0".as_ptr() as *const i8,
         This,
@@ -3907,7 +3905,7 @@ stdmethod! {
 fn OLEPictureImpl_IsDirty(
     iface: *mut IPersistStream
 ) -> HRESULT {
-    let This: *mut OLEPictureImpl = impl_from_IPersistStream(iface);
+    let _This: *mut OLEPictureImpl = impl_from_IPersistStream(iface);
     FIXME!(b"(%p),stub!\n\0".as_ptr() as *const i8, This);
     E_NOTIMPL
 }
@@ -3920,8 +3918,8 @@ unsafe extern "C" fn OLEPictureImpl_LoadWICSource(
     let mut bih: BITMAPINFOHEADER = core::mem::zeroed();
     let mut width: UINT = 0;
     let mut height: UINT = 0;
-    let mut stride: UINT;
-    let mut buffersize: UINT;
+    let stride: UINT;
+    let buffersize: UINT;
     let mut bits: *mut BYTE = core::ptr::null_mut();
     let mut mask: *mut BYTE = core::ptr::null_mut();
     let mut rc: WICRect = core::mem::zeroed();
@@ -4133,9 +4131,9 @@ unsafe extern "C" fn OLEPictureImpl_LoadIcon(
     xbuf: *mut BYTE,
     xread: ULONG,
 ) -> HRESULT {
-    let mut hicon: HICON;
+    let hicon: HICON;
     let cifd: *mut CURSORICONFILEDIR = xbuf as *mut CURSORICONFILEDIR;
-    let mut hdcRef: HDC;
+    let hdcRef: HDC;
     let mut i: i32;
 
     TRACE!(
@@ -4239,7 +4237,7 @@ unsafe extern "C" fn OLEPictureImpl_LoadEnhMetafile(
     size: ULONG,
 ) -> HRESULT {
 
-    let mut hemf: HENHMETAFILE;
+    let hemf: HENHMETAFILE;
     let mut hdr: ENHMETAHEADER = core::mem::zeroed();
 
     hemf = SetEnhMetaFileBits(size as UINT, data);
@@ -4319,7 +4317,7 @@ fn OLEPictureImpl_Load(
     let mut headerread: ULONG;
     let mut xbuf: *mut BYTE;
     let mut header: [DWORD; 2] = [0; 2];
-    let mut magic: WORD;
+    let magic: WORD;
     let mut statstg: STATSTG = core::mem::zeroed();
     let This: *mut OLEPictureImpl = impl_from_IPersistStream(iface);
 
@@ -4511,19 +4509,19 @@ unsafe extern "C" fn serializeBMP(
 ) -> i32 {
 
     let mut success: i32 = 0;
-    let mut hDC: HDC;
-    let mut pInfoBitmap: *mut BITMAPINFO;
+    let hDC: HDC;
+    let pInfoBitmap: *mut BITMAPINFO;
     let mut iNumPaletteEntries: i32;
-    let mut pPixelData: *mut u8;
-    let mut pFileHeader: *mut BITMAPFILEHEADER;
-    let mut pInfoHeader: *mut BITMAPINFO;
+    let pPixelData: *mut u8;
+    let pFileHeader: *mut BITMAPFILEHEADER;
+    let pInfoHeader: *mut BITMAPINFO;
 
     pInfoBitmap = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        (core::mem::size_of::<BITMAPINFOHEADER>().wrapping_add(
+        core::mem::size_of::<BITMAPINFOHEADER>().wrapping_add(
             256usize.wrapping_mul(core::mem::size_of::<RGBQUAD>())
-        ) as SIZE_T),
+        ) as SIZE_T ,
     ) as *mut BITMAPINFO;
 
     hDC = GetDC(core::ptr::null_mut());
@@ -4625,8 +4623,8 @@ unsafe extern "C" fn serializeIcon(
     *pLength = 0;
     
     if GetIconInfo(hIcon, &mut infoIcon) != 0 {
-        let mut hDC: HDC;
-        let mut pInfoBitmap: *mut BITMAPINFO;
+        let hDC: HDC;
+        let pInfoBitmap: *mut BITMAPINFO;
         let mut pIconData: *mut u8 = core::ptr::null_mut();
         let mut iDataSize: u32 = 0;
 
@@ -4640,13 +4638,13 @@ unsafe extern "C" fn serializeIcon(
         (*pInfoBitmap).bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as u32;
         GetDIBits(hDC, infoIcon.hbmColor, 0, 0, core::ptr::null_mut(), pInfoBitmap, 0);
 
-        let mut pIconDir: *mut CURSORICONFILEDIR;
+        let pIconDir: *mut CURSORICONFILEDIR;
         let mut pIconEntry: *mut CURSORICONFILEDIRENTRY;
         let mut pIconBitmapHeader: *mut BITMAPINFOHEADER;
-        let mut iOffsetPalette: u32;
-        let mut iOffsetColorData: u32;
-        let mut iOffsetMaskData: u32;
-        let mut iLengthScanLineMask: u32;
+        let iOffsetPalette: u32;
+        let iOffsetColorData: u32;
+        let iOffsetMaskData: u32;
+        let iLengthScanLineMask: u32;
         let mut iNumEntriesPalette: u32;
 
         iLengthScanLineMask = ((((*pInfoBitmap).bmiHeader.biWidth + 31) >> 5) << 2) as u32;
@@ -4833,7 +4831,7 @@ fn OLEPictureImpl_Save(
 
     TRACE!(b"%p %p %d\n\0".as_ptr(), This, pStm, fClearDirty);
 
-    let mut current_block_72: u64;
+    let current_block_72: u64;
     match (*This).desc.picType {
         0 => {
             header[0] = 0x0000746c;
@@ -5550,7 +5548,7 @@ pub unsafe extern "system" fn OleCreatePictureIndirect(
 #[no_mangle]
 pub unsafe extern "system" fn OleLoadPicture(
     lpstream: LPSTREAM,
-    lSize: LONG,
+    _lSize: LONG,
     fRunmode: BOOL,
     riid: REFIID,
     ppvObj: *mut LPVOID,
@@ -5613,12 +5611,12 @@ pub unsafe extern "system" fn OleLoadPicture(
 #[no_mangle]
 pub unsafe extern "system" fn OleLoadPictureEx(
     lpstream: LPSTREAM,
-    lSize: LONG,
+    _lSize: LONG,
     fRunmode: BOOL,
     riid: REFIID,
-    xsiz: DWORD,
-    ysiz: DWORD,
-    flags: DWORD,
+    _xsiz: DWORD,
+    _ysiz: DWORD,
+    _flags: DWORD,
     ppvObj: *mut LPVOID,
 ) -> HRESULT {
     let mut ps: LPPERSISTSTREAM = core::ptr::null_mut();
@@ -5810,9 +5808,9 @@ pub unsafe extern "system" fn OleSavePictureFile(
 #[no_mangle]
 pub unsafe extern "system" fn OleLoadPicturePath(
     szURLorPath: LPOLESTR,
-    punkCaller: LPUNKNOWN,
-    dwReserved: DWORD,
-    clrReserved: OLE_COLOR,
+    _punkCaller: LPUNKNOWN,
+    _dwReserved: DWORD,
+    _clrReserved: OLE_COLOR,
     riid: REFIID,
     ppvRet: *mut LPVOID,
 ) -> HRESULT {
@@ -5826,7 +5824,7 @@ pub unsafe extern "system" fn OleLoadPicturePath(
     ];
     let mut stream: *mut IStream = core::ptr::null_mut();
     let mut hRes: HRESULT;
-    let mut file_candidate: *mut WCHAR;
+    let file_candidate: *mut WCHAR;
     let mut path_buf: [WCHAR; 260] = [0; 260];
 
     if szURLorPath.is_null() || ppvRet.is_null() {
@@ -5901,7 +5899,7 @@ unsafe extern "C" fn impl_from_IClassFactory(
     iface: *mut IClassFactory,
 ) -> *mut IClassFactoryImpl {
     return (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<IClassFactoryImpl>()).IClassFactory_iface) as ULONG_PTR,
+        core::mem::offset_of!(IClassFactoryImpl, IClassFactory_iface) as ULONG_PTR,
     ) as *mut IClassFactoryImpl;
 }
 stdmethod! {
@@ -5962,7 +5960,7 @@ fn SPCF_CreateInstance(
 }
 stdmethod! {
 fn SPCF_LockServer(iface: LPCLASSFACTORY, dolock: BOOL) -> HRESULT {
-    let This: *mut IClassFactoryImpl = impl_from_IClassFactory(iface as *mut IClassFactory);
+    let _This: *mut IClassFactoryImpl = impl_from_IClassFactory(iface as *mut IClassFactory);
     FIXME!(b"(%p)->(%d),stub!\n\0".as_ptr() as *const i8, This, dolock);
     S_OK
 }

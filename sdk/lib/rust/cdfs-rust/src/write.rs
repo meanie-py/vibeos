@@ -1,9 +1,5 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, KeInitializeEvent, _EVENT_TYPE_NotificationEvent, PIO_STACK_LOCATION, PIRP};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, PIO_STACK_LOCATION};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, FCB, IRP_CONTEXT, TYPE_OF_OPEN, SECTOR_MASK};
 use ntkrnl_sys::ddk::{FILE_OBJECT, IRP};
@@ -110,7 +106,7 @@ pub unsafe extern "C" fn CdCommonWrite(
     }
 
     let Wait: BOOLEAN = BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
-    let SynchronousIo: BOOLEAN = FlagOn((*(*IrpSp).FileObject).Flags, FO_SYNCHRONOUS_IO);
+    let _SynchronousIo: BOOLEAN = FlagOn((*(*IrpSp).FileObject).Flags, FO_SYNCHRONOUS_IO);
 
     let StartingOffset: LONGLONG = (*IrpSp).Parameters.Write.ByteOffset.QuadPart;
     let OriginalByteCount: ULONG = (*IrpSp).Parameters.Write.Length;
@@ -120,7 +116,7 @@ pub unsafe extern "C" fn CdCommonWrite(
     CdAcquireFileShared(IrpContext, Fcb);
 
     // SEH try-finally replaced by a loop whose cleanup runs after the loop.
-    let mut ReleaseFile: BOOLEAN = 1; // TRUE
+    let ReleaseFile: BOOLEAN = 1; // TRUE
 
     // The SEH try block becomes a loop; break 'try_exit emulates try_return.
     'try_exit: loop {

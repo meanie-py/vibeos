@@ -27,8 +27,8 @@ extern "C" {
 pub unsafe extern "C" fn IniFileInitialize() -> u8 {
     let mut FileInformation: FILEINFORMATION = core::mem::zeroed();
     let mut FileId: u32 = 0;
-    let mut FreeLoaderIniFileData: *mut c_void;
-    let mut FreeLoaderIniFileSize: u32;
+    let FreeLoaderIniFileData: *mut c_void;
+    let FreeLoaderIniFileSize: u32;
     let mut Count: u32 = 0;
     let mut Status: ARC_STATUS;
     let Success: u8;

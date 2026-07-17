@@ -22,7 +22,7 @@ pub static mut SeLsaCommandPort: HANDLE =
 pub static mut SeRmCommandPort: HANDLE =
     ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void;
 
-unsafe fn LsapComponentTest(Message: *mut LSAP_RM_API_MESSAGE) {
+unsafe fn LsapComponentTest(_Message: *mut LSAP_RM_API_MESSAGE) {
     if (*__wine_dbch___default).flags as i32 & ((1i32) << __WINE_DBCL_ERR as i32) != 0 {
         ros_dbg_log(
             __WINE_DBCL_ERR,
@@ -37,7 +37,7 @@ unsafe fn LsapComponentTest(Message: *mut LSAP_RM_API_MESSAGE) {
     }
 }
 
-unsafe fn LsapAdtWriteLog(Message: PLSAP_RM_API_MESSAGE) {
+unsafe fn LsapAdtWriteLog(_Message: PLSAP_RM_API_MESSAGE) {
     if ((*__wine_dbch___default).flags as core::ffi::c_int
         & (1i32 << __WINE_DBCL_ERR as core::ffi::c_int))
         != 0
@@ -52,7 +52,7 @@ unsafe fn LsapAdtWriteLog(Message: PLSAP_RM_API_MESSAGE) {
         );
     }
 }
-unsafe fn LsapAsync(mut Message: PLSAP_RM_API_MESSAGE) {
+unsafe fn LsapAsync(_Message: PLSAP_RM_API_MESSAGE) {
     if (*__wine_dbch___default).flags as ::core::ffi::c_int
         & (1 as ::core::ffi::c_int) << __WINE_DBCL_ERR as ::core::ffi::c_int
         != 0
@@ -71,7 +71,7 @@ unsafe fn LsapAsync(mut Message: PLSAP_RM_API_MESSAGE) {
     }
 }
 
-unsafe extern "system" fn LsapRmServerThread(StartContext: *mut c_void) -> u32 {
+unsafe extern "system" fn LsapRmServerThread(_StartContext: *mut c_void) -> u32 {
 
     let mut Message: LSAP_RM_API_MESSAGE = core::mem::zeroed();
     Message.Header.u1.s1.TotalLength = size_of::<LSAP_RM_API_MESSAGE>() as i16;

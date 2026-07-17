@@ -1178,8 +1178,8 @@ pub unsafe extern "system" fn VarI8FromCy(cyIn: CY, pi64Out: *mut LONG64) -> HRE
 pub unsafe extern "system" fn VarI8FromDate(dateIn: f64, pi64Out: *mut i64) -> i32 {
     VarI8FromR8(dateIn, pi64Out)
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn VarI8FromStr(
+#[no_mangle]
+ pub unsafe extern "system" fn VarI8FromStr(
     strIn: *mut u16,
     lcid: u32,
     dwFlags: u32,
@@ -1404,7 +1404,7 @@ pub unsafe extern "system" fn VarR4FromDec(pDecIn: *mut DECIMAL, pFltOut: *mut f
         divisor = -divisor;
     }
 
-    let hi32 = (*DEC_HI32_ref(pDecIn));
+    let hi32 = *DEC_HI32_ref(pDecIn) ;
     let high_part = if hi32 != 0 {
         let mut hp = (hi32 as f64) / divisor;
         hp *= 4294967296.0;
@@ -2173,10 +2173,10 @@ unsafe fn VARIANT_Mul(ulLeft: u32, ulRight: u32, pulHigh: *mut u32) -> u32 {
 }
 
 unsafe fn VARIANT_DecCmp(pDecLeft: *const DECIMAL, pDecRight: *const DECIMAL) -> i32 {
-    let left_hi = (*DEC_HI32_ref(pDecLeft as *mut DECIMAL));
-    let right_hi = (*DEC_HI32_ref(pDecRight as *mut DECIMAL));
-    let left_lo = (*DEC_LO64_ref(pDecLeft as *mut DECIMAL));
-    let right_lo = (*DEC_LO64_ref(pDecRight as *mut DECIMAL));
+    let left_hi = *DEC_HI32_ref(pDecLeft as *mut DECIMAL) ;
+    let right_hi = *DEC_HI32_ref(pDecRight as *mut DECIMAL) ;
+    let left_lo = *DEC_LO64_ref(pDecLeft as *mut DECIMAL) ;
+    let right_lo = *DEC_LO64_ref(pDecRight as *mut DECIMAL) ;
     if left_hi < right_hi || (left_hi <= right_hi && left_lo < right_lo) {
         -1
     } else if left_hi == right_hi && left_lo == right_lo {
@@ -2257,9 +2257,9 @@ pub unsafe extern "system" fn VarDecAdd(
 unsafe fn VARIANT_DIFromDec(from: *const DECIMAL, to: *mut VARIANT_DI) {
     (*to).scale = DEC_SCALE(from as *mut DECIMAL);
     (*to).sign = if DEC_SIGN(from as *mut DECIMAL) != 0 { 1 } else { 0 };
-    (*to).bitsnum[0] = (*DEC_LO32_ref(from as *mut DECIMAL));
-    (*to).bitsnum[1] = (*DEC_MID32_ref(from as *mut DECIMAL));
-    (*to).bitsnum[2] = (*DEC_HI32_ref(from as *mut DECIMAL));
+    (*to).bitsnum[0] = *DEC_LO32_ref(from as *mut DECIMAL) ;
+    (*to).bitsnum[1] = *DEC_MID32_ref(from as *mut DECIMAL) ;
+    (*to).bitsnum[2] = *DEC_HI32_ref(from as *mut DECIMAL) ;
 }
 
 unsafe fn VARIANT_DecFromDI(from: *const VARIANT_DI, to: *mut DECIMAL) {
@@ -2430,7 +2430,7 @@ unsafe fn VARIANT_DI_tostringW(a: *const VARIANT_DI, s: *mut u16, n: u32) -> i32
         let scale = (*a).scale as u32;
         /* check for decimal point. "i" now has string length */
         if i <= scale {
-            let mut numzeroes = scale + 1 - i;
+            let numzeroes = scale + 1 - i;
             if i + 1 + numzeroes >= n {
                 overflow = true;
             } else {
@@ -2568,8 +2568,8 @@ unsafe fn VARIANT_int_addlossy(
     let mut underflow: i32 = 0;
 
     if VARIANT_int_iszero(a, an) != 0 {
-        let mut bn_local = bn;
-        let mut an_local = an;
+        let bn_local = bn;
+        let an_local = an;
         while bn_local > an_local && VARIANT_int_iszero(b.add(an_local as usize), bn_local - an_local) == 0 {
             VARIANT_int_divbychar(b, bn_local, 10);
             *bscale -= 1;
@@ -3057,7 +3057,7 @@ unsafe fn VARIANT_do_division(
         hRet = S_OK;
         if di_result.scale > DEC_MAX_SCALE {
             let mut remainder: u8 = 0;
-            let warn_fmt1 = b"result scale is %u, scaling (with loss of significant digits)...\n\0";
+            let _warn_fmt1 = b"result scale is %u, scaling (with loss of significant digits)...\n\0";
             WARN!(warn_fmt1.as_ptr() as *const i8, di_result.scale);
             while di_result.scale > DEC_MAX_SCALE
                 && VARIANT_int_iszero(di_result.bitsnum.as_ptr(), 3) == 0
@@ -3066,7 +3066,7 @@ unsafe fn VARIANT_do_division(
                 di_result.scale -= 1;
             }
             if di_result.scale > DEC_MAX_SCALE {
-                let warn_fmt2 = b"result underflowed, setting to 0\n\0";
+                let _warn_fmt2 = b"result underflowed, setting to 0\n\0";
                 WARN!(warn_fmt2.as_ptr() as *const i8);
                 di_result.scale = 0;
                 di_result.sign = 0;
@@ -3569,7 +3569,7 @@ pub unsafe extern "system" fn VarBstrFromUI1(
 
 #[no_mangle]
 pub unsafe extern "system" fn VarBstrFromI2(sIn: i16, lcid: u32, dwFlags: u32, pbstrOut: *mut *mut u16) -> i32 {
-    let mut ul64: u64 = (sIn as i32).unsigned_abs() as u64;
+    let ul64: u64 = (sIn as i32).unsigned_abs() as u64;
     let mut flags = dwFlags;
     if sIn < 0 {
         flags |= VAR_NEGATIVE;
@@ -3579,7 +3579,7 @@ pub unsafe extern "system" fn VarBstrFromI2(sIn: i16, lcid: u32, dwFlags: u32, p
 
 #[no_mangle]
 pub unsafe extern "system" fn VarBstrFromI4(lIn: i32, lcid: u32, dwFlags: u32, pbstrOut: *mut *mut u16) -> i32 {
-    let mut ul64: u64;
+    let ul64: u64;
     let mut flags = dwFlags;
     if lIn < 0 {
         ul64 = (-(lIn as i64)) as u64;
@@ -3591,7 +3591,7 @@ pub unsafe extern "system" fn VarBstrFromI4(lIn: i32, lcid: u32, dwFlags: u32, p
 }
 
 unsafe fn VARIANT_BstrReplaceDecimal(buff: *const u16, lcid: u32, dwFlags: u32) -> *mut u16 {
-    let mut bstrOut;
+    let bstrOut;
     let mut lpDecimalSep: [u16; 16] = [0u16; 16];
     let empty: [u16; 1] = [0u16];
 

@@ -107,7 +107,17 @@ pub unsafe fn RtlInitEmptyUnicodeString(
 
 // ─── 3. user32-internal cohab symbols (in the surviving C objects) ────────────
 // FASTCALL → extern "fastcall" on i386 (`@Name@N`); matches user32p.h.
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    pub fn ValidateHwnd(hwnd: HWND) -> PWND;
+    pub fn ValidateHwndOrDesk(hwnd: HWND) -> PWND;
+    pub fn ValidateHwndNoErr(hwnd: HWND) -> PWND;
+    pub fn BeginIfHookedUserApiHook() -> BOOL;
+    pub fn EndUserApiHook() -> BOOL;
+    pub fn IsInsideUserApiHook() -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     pub fn ValidateHwnd(hwnd: HWND) -> PWND;
     pub fn ValidateHwndOrDesk(hwnd: HWND) -> PWND;
     pub fn ValidateHwndNoErr(hwnd: HWND) -> PWND;

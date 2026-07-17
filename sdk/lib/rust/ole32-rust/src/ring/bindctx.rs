@@ -264,7 +264,7 @@ unsafe extern "system" fn BindCtxImpl_GetRunningObjectTable(
     iface: *mut IBindCtx,
     pprot: *mut *mut IRunningObjectTable,
 ) -> HRESULT {
-    let This = impl_from_IBindCtx(iface);
+    let _This = impl_from_IBindCtx(iface);
 
     TRACE!(b"(%p,%p)\n\0".as_ptr() as *const i8, This, pprot);
 
@@ -407,7 +407,7 @@ unsafe extern "system" fn BindCtxImpl_RevokeObjectParam(
 }
 
 unsafe extern "system" fn BindCtxImpl_EnumObjectParam(
-    iface: *mut IBindCtx,
+    _iface: *mut IBindCtx,
     pszkey: *mut *mut IEnumString,
 ) -> HRESULT {
     TRACE!(

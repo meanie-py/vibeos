@@ -1655,7 +1655,7 @@ fn EnumMonikerImpl_QueryInterface(
     riid: *const IID,
     ppvObject: *mut *mut c_void,
 ) -> HRESULT {
-    let This = impl_from_IEnumMoniker(iface);
+    let _This = impl_from_IEnumMoniker(iface);
 
     TRACE!(b"(%p,%s,%p)\n\0".as_ptr() as *const c_char, This,
            debugstr_guid(riid as *const c_void), ppvObject);

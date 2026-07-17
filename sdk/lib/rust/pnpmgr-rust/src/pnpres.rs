@@ -1685,7 +1685,7 @@ pub unsafe extern "system" fn IopDetectResourceConflict(
 
                 let name_slice = core::slice::from_raw_parts(
                     (*KeyNameInformation).Name.as_ptr(),
-                    ((*KeyNameInformation).NameLength as usize / core::mem::size_of::<u16>() + 1),
+                    (*KeyNameInformation).NameLength as usize / core::mem::size_of::<u16>() + 1 ,
                 );
                 let mut found_translated = false;
                 for window in name_slice.windows(11) {

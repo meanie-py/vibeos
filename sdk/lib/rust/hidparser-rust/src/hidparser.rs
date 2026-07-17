@@ -1,43 +1,25 @@
-use crate::parser_h::{
-    USAGE_VALUE, usage_value, PUSAGE_VALUE,
-    HID_COLLECTION, PHID_COLLECTION, __HID_COLLECTION__,
-    HID_REPORT, PHID_REPORT, _HID_REPORT,
-    HID_REPORT_ITEM, PHID_REPORT_ITEM,
-    PGLOBAL_ITEM_STATE, PLOCAL_ITEM_STATE,
-    ITEM_PREFIX, PITEM_PREFIX,
-    SHORT_ITEM, PSHORT_ITEM,
-    LONG_ITEM, PLONG_ITEM,
-    MAIN_ITEM_DATA, PMAIN_ITEM_DATA,
-    GLOBAL_ITEM_STATE,
-};
 use hid_sys::{
     HIDP_DEVICE_DESC, PHIDP_DEVICE_DESC,
     HIDP_COLLECTION_DESC, PHIDP_COLLECTION_DESC,
     HIDP_REPORT_IDS, PHIDP_REPORT_IDS,
     HIDP_CAPS,
     HIDP_REPORT_TYPE,
-    PHIDP_REPORT_DESCRIPTOR,
-    HIDP_VALUE_CAPS, PHIDP_VALUE_CAPS,
+    PHIDP_REPORT_DESCRIPTOR, PHIDP_VALUE_CAPS,
     HIDP_BUTTON_CAPS,
-    HIDP_DATA, PHIDP_DATA,
+    HIDP_DATA,
     HIDP_KEYBOARD_DIRECTION,
     HIDP_KEYBOARD_MODIFIER_STATE, PHIDP_KEYBOARD_MODIFIER_STATE,
     PHIDP_INSERT_SCANCODES,
-    HIDP_LINK_COLLECTION_NODE, PHIDP_LINK_COLLECTION_NODE,
-    HIDP_EXTENDED_ATTRIBUTES, PHIDP_EXTENDED_ATTRIBUTES,
+    HIDP_LINK_COLLECTION_NODE,
+    HIDP_EXTENDED_ATTRIBUTES,
     USAGE,
     HidP_Input, HidP_Output, HidP_Feature,
     HIDP_STATUS_INVALID_REPORT_TYPE, HIDP_STATUS_I8042_TRANS_UNKNOWN,
-    HIDP_STATUS_SUCCESS, HIDP_STATUS_INTERNAL_ERROR,
-    HIDP_STATUS_USAGE_NOT_FOUND, HIDP_STATUS_REPORT_DOES_NOT_EXIST,
+    HIDP_STATUS_SUCCESS,
 };
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::rtl::*;
 
-use core::ffi::c_void;
 
 // Local consts — not in substrate. HID_REPORT_TYPE_* is the parser-private bitmask
 // (parser.h: INPUT=0x01/OUTPUT=0x02/FEATURE=0x04/ANY=0x07) — distinct from the DDK
@@ -122,7 +104,7 @@ extern "C" {
 pub unsafe extern "system" fn HidParser_GetCollectionDescription(
     ReportDesc: PHIDP_REPORT_DESCRIPTOR,
     DescLength: ULONG,
-    PoolType: POOL_TYPE,
+    _PoolType: POOL_TYPE,
     DeviceDescription: PHIDP_DEVICE_DESC,
 ) -> NTSTATUS {
     let mut ParserStatus: NTSTATUS;
@@ -339,7 +321,7 @@ pub unsafe extern "system" fn HidParser_GetCollectionDescription(
 pub unsafe extern "system" fn HidParser_FreeCollectionDescription(
     DeviceDescription: *mut HIDP_DEVICE_DESC,
 ) {
-    let mut Index: u32;
+    let _Index: u32;
     for Index in 0..(*DeviceDescription).CollectionDescLength {
         FreeFunction(
             (*(*DeviceDescription).CollectionDesc.add(Index as usize)).PreparsedData
@@ -438,9 +420,9 @@ pub unsafe extern "system" fn HidParser_GetCaps(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_MaxUsageListLength(
-    mut CollectionContext: PVOID,
-    mut ReportType: HIDP_REPORT_TYPE,
-    mut UsagePage: USAGE,
+    CollectionContext: PVOID,
+    ReportType: HIDP_REPORT_TYPE,
+    UsagePage: USAGE,
 ) -> ULONG {
     if UsagePage as i32 == HID_USAGE_PAGE_UNDEFINED as i32 {
         DbgPrint(
@@ -784,12 +766,12 @@ pub unsafe extern "system" fn HidParser_GetScaledUsageValue(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_TranslateUsageAndPagesToI8042ScanCodes(
-    mut ChangedUsageList: *const USAGE_AND_PAGE,
-    mut UsageListLength: u32,
-    mut KeyAction: HIDP_KEYBOARD_DIRECTION,
-    mut ModifierState: *mut HIDP_KEYBOARD_MODIFIER_STATE,
-    mut InsertCodesProcedure: PHIDP_INSERT_SCANCODES,
-    mut InsertCodesContext: *mut ::core::ffi::c_void,
+    ChangedUsageList: *const USAGE_AND_PAGE,
+    UsageListLength: u32,
+    KeyAction: HIDP_KEYBOARD_DIRECTION,
+    ModifierState: *mut HIDP_KEYBOARD_MODIFIER_STATE,
+    InsertCodesProcedure: PHIDP_INSERT_SCANCODES,
+    InsertCodesContext: *mut ::core::ffi::c_void,
 ) -> NTSTATUS {
     let mut Index: u32 = 0;
     let mut Status: NTSTATUS = HIDP_STATUS_SUCCESS;
@@ -827,13 +809,13 @@ pub unsafe extern "system" fn HidParser_TranslateUsageAndPagesToI8042ScanCodes(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_GetUsagesEx(
-    mut CollectionContext: PVOID,
-    mut ReportType: HIDP_REPORT_TYPE,
-    mut LinkCollection: USHORT,
-    mut ButtonList: PUSAGE_AND_PAGE,
-    mut UsageLength: *mut ULONG,
-    mut Report: PCHAR,
-    mut ReportLength: ULONG,
+    CollectionContext: PVOID,
+    ReportType: HIDP_REPORT_TYPE,
+    LinkCollection: USHORT,
+    ButtonList: PUSAGE_AND_PAGE,
+    UsageLength: *mut ULONG,
+    Report: PCHAR,
+    ReportLength: ULONG,
 ) -> NTSTATUS {
     return HidParser_GetUsages(
         CollectionContext,
@@ -849,11 +831,11 @@ pub unsafe extern "system" fn HidParser_GetUsagesEx(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_UsageAndPageListDifference(
-    mut PreviousUsageList: *mut USAGE_AND_PAGE,
-    mut CurrentUsageList: *mut USAGE_AND_PAGE,
-    mut BreakUsageList: *mut USAGE_AND_PAGE,
-    mut MakeUsageList: *mut USAGE_AND_PAGE,
-    mut UsageListLength: u32,
+    PreviousUsageList: *mut USAGE_AND_PAGE,
+    CurrentUsageList: *mut USAGE_AND_PAGE,
+    BreakUsageList: *mut USAGE_AND_PAGE,
+    MakeUsageList: *mut USAGE_AND_PAGE,
+    UsageListLength: u32,
 ) -> i32 {
     let mut Index: u32 = 0;
     let mut SubIndex: u32 = 0;
@@ -951,13 +933,13 @@ pub unsafe extern "system" fn HidParser_UsageAndPageListDifference(
 }
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_GetSpecificButtonCaps(
-    CollectionContext: *mut core::ffi::c_void,
-    ReportType: i32,
-    UsagePage: u16,
-    LinkCollection: u16,
-    Usage: u16,
-    ButtonCaps: *mut HIDP_BUTTON_CAPS,
-    ButtonCapsLength: *mut u32,
+    _CollectionContext: *mut core::ffi::c_void,
+    _ReportType: i32,
+    _UsagePage: u16,
+    _LinkCollection: u16,
+    _Usage: u16,
+    _ButtonCaps: *mut HIDP_BUTTON_CAPS,
+    _ButtonCapsLength: *mut u32,
 ) -> i32 {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -979,12 +961,12 @@ pub unsafe extern "system" fn HidParser_GetSpecificButtonCaps(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_GetData(
-    CollectionContext: *mut core::ffi::c_void,
-    ReportType: HIDP_REPORT_TYPE,
-    DataList: *mut HIDP_DATA,
-    DataLength: *mut u32,
-    Report: *mut i8,
-    ReportLength: u32,
+    _CollectionContext: *mut core::ffi::c_void,
+    _ReportType: HIDP_REPORT_TYPE,
+    _DataList: *mut HIDP_DATA,
+    _DataLength: *mut u32,
+    _Report: *mut i8,
+    _ReportLength: u32,
 ) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -1006,11 +988,11 @@ pub unsafe extern "system" fn HidParser_GetData(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_GetExtendedAttributes(
-    CollectionContext: *mut core::ffi::c_void,
-    ReportType: HIDP_REPORT_TYPE,
-    DataIndex: u16,
-    Attributes: *mut HIDP_EXTENDED_ATTRIBUTES,
-    LengthAttributes: *mut u32,
+    _CollectionContext: *mut core::ffi::c_void,
+    _ReportType: HIDP_REPORT_TYPE,
+    _DataIndex: u16,
+    _Attributes: *mut HIDP_EXTENDED_ATTRIBUTES,
+    _LengthAttributes: *mut u32,
 ) -> NTSTATUS {
 
     DbgPrint(
@@ -1035,9 +1017,9 @@ pub unsafe extern "system" fn HidParser_GetExtendedAttributes(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_GetLinkCollectionNodes(
-    CollectionContext: *mut core::ffi::c_void,
-    LinkCollectionNodes: *mut HIDP_LINK_COLLECTION_NODE,
-    LinkCollectionNodesLength: *mut u32,
+    _CollectionContext: *mut core::ffi::c_void,
+    _LinkCollectionNodes: *mut HIDP_LINK_COLLECTION_NODE,
+    _LinkCollectionNodesLength: *mut u32,
 ) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -1116,10 +1098,10 @@ pub unsafe extern "system" fn HidParser_GetUsageValue(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_SysPowerEvent(
-    CollectionContext: *mut core::ffi::c_void,
-    HidPacket: *mut i8,
-    HidPacketLength: u16,
-    OutputBuffer: *mut u32,
+    _CollectionContext: *mut core::ffi::c_void,
+    _HidPacket: *mut i8,
+    _HidPacketLength: u16,
+    _OutputBuffer: *mut u32,
 ) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -1142,8 +1124,8 @@ pub unsafe extern "system" fn HidParser_SysPowerEvent(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_SysPowerCaps(
-    CollectionContext: PVOID,
-    OutputBuffer: PULONG,
+    _CollectionContext: PVOID,
+    _OutputBuffer: PULONG,
 ) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -1166,15 +1148,15 @@ pub unsafe extern "system" fn HidParser_SysPowerCaps(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_GetUsageValueArray(
-    CollectionContext: *mut core::ffi::c_void,
-    ReportType: i32,
-    UsagePage: u16,
-    LinkCollection: u16,
-    Usage: u16,
-    UsageValue: *mut i8,
-    UsageValueByteLength: u16,
-    Report: *mut i8,
-    ReportLength: u32,
+    _CollectionContext: *mut core::ffi::c_void,
+    _ReportType: i32,
+    _UsagePage: u16,
+    _LinkCollection: u16,
+    _Usage: u16,
+    _UsageValue: *mut i8,
+    _UsageValueByteLength: u16,
+    _Report: *mut i8,
+    _ReportLength: u32,
 ) -> i32 {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -1197,14 +1179,14 @@ pub unsafe extern "system" fn HidParser_GetUsageValueArray(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_UnsetUsages(
-    CollectionContext: PVOID,
-    ReportType: HIDP_REPORT_TYPE,
-    UsagePage: USAGE,
-    LinkCollection: USHORT,
-    UsageList: PUSAGE,
-    UsageLength: PULONG,
-    Report: PCHAR,
-    ReportLength: ULONG,
+    _CollectionContext: PVOID,
+    _ReportType: HIDP_REPORT_TYPE,
+    _UsagePage: USAGE,
+    _LinkCollection: USHORT,
+    _UsageList: PUSAGE,
+    _UsageLength: PULONG,
+    _Report: PCHAR,
+    _ReportLength: ULONG,
 ) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -1226,12 +1208,12 @@ pub unsafe extern "system" fn HidParser_UnsetUsages(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_TranslateUsagesToI8042ScanCodes(
-    ChangedUsageList: PUSAGE,
-    UsageListLength: ULONG,
-    KeyAction: HIDP_KEYBOARD_DIRECTION,
-    ModifierState: PHIDP_KEYBOARD_MODIFIER_STATE,
-    InsertCodesProcedure: PHIDP_INSERT_SCANCODES,
-    InsertCodesContext: PVOID,
+    _ChangedUsageList: PUSAGE,
+    _UsageListLength: ULONG,
+    _KeyAction: HIDP_KEYBOARD_DIRECTION,
+    _ModifierState: PHIDP_KEYBOARD_MODIFIER_STATE,
+    _InsertCodesProcedure: PHIDP_INSERT_SCANCODES,
+    _InsertCodesContext: PVOID,
 ) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -1252,14 +1234,14 @@ pub unsafe extern "system" fn HidParser_TranslateUsagesToI8042ScanCodes(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_SetUsages(
-    mut CollectionContext: PVOID,
-    mut ReportType: HIDP_REPORT_TYPE,
-    mut UsagePage: USAGE,
-    mut LinkCollection: USHORT,
-    mut UsageList: PUSAGE,
-    mut UsageLength: PULONG,
-    mut Report: PCHAR,
-    mut ReportLength: ULONG,
+    _CollectionContext: PVOID,
+    _ReportType: HIDP_REPORT_TYPE,
+    _UsagePage: USAGE,
+    _LinkCollection: USHORT,
+    _UsageList: PUSAGE,
+    _UsageLength: PULONG,
+    _Report: PCHAR,
+    _ReportLength: ULONG,
 ) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -1282,15 +1264,15 @@ pub unsafe extern "system" fn HidParser_SetUsages(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_SetUsageValueArray(
-    CollectionContext: *mut core::ffi::c_void,
-    ReportType: HIDP_REPORT_TYPE,
-    UsagePage: USAGE,
-    LinkCollection: USHORT,
-    Usage: USAGE,
-    UsageValue: *mut i8,
-    UsageValueByteLength: USHORT,
-    Report: *mut i8,
-    ReportLength: u32,
+    _CollectionContext: *mut core::ffi::c_void,
+    _ReportType: HIDP_REPORT_TYPE,
+    _UsagePage: USAGE,
+    _LinkCollection: USHORT,
+    _Usage: USAGE,
+    _UsageValue: *mut i8,
+    _UsageValueByteLength: USHORT,
+    _Report: *mut i8,
+    _ReportLength: u32,
 ) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -1311,14 +1293,14 @@ pub unsafe extern "system" fn HidParser_SetUsageValueArray(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_SetUsageValue(
-    CollectionContext: *mut core::ffi::c_void,
-    ReportType: HIDP_REPORT_TYPE,
-    UsagePage: USAGE,
-    LinkCollection: USHORT,
-    Usage: USAGE,
-    UsageValue: ULONG,
-    Report: PCHAR,
-    ReportLength: ULONG,
+    _CollectionContext: *mut core::ffi::c_void,
+    _ReportType: HIDP_REPORT_TYPE,
+    _UsagePage: USAGE,
+    _LinkCollection: USHORT,
+    _Usage: USAGE,
+    _UsageValue: ULONG,
+    _Report: PCHAR,
+    _ReportLength: ULONG,
 ) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -1342,14 +1324,14 @@ pub unsafe extern "system" fn HidParser_SetUsageValue(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_SetScaledUsageValue(
-    CollectionContext: *mut core::ffi::c_void,
-    ReportType: HIDP_REPORT_TYPE,
-    UsagePage: USAGE,
-    LinkCollection: USHORT,
-    Usage: USAGE,
-    UsageValue: LONG,
-    Report: *mut i8,
-    ReportLength: ULONG,
+    _CollectionContext: *mut core::ffi::c_void,
+    _ReportType: HIDP_REPORT_TYPE,
+    _UsagePage: USAGE,
+    _LinkCollection: USHORT,
+    _Usage: USAGE,
+    _UsageValue: LONG,
+    _Report: *mut i8,
+    _ReportLength: ULONG,
 ) -> NTSTATUS {
 
     DbgPrint(
@@ -1372,12 +1354,12 @@ pub unsafe extern "system" fn HidParser_SetScaledUsageValue(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_SetData(
-    mut CollectionContext: *mut core::ffi::c_void,
-    mut ReportType: u32,
-    mut DataList: *mut HIDP_DATA,
-    mut DataLength: *mut u32,
-    mut Report: *mut i8,
-    mut ReportLength: u32,
+    _CollectionContext: *mut core::ffi::c_void,
+    _ReportType: u32,
+    _DataList: *mut HIDP_DATA,
+    _DataLength: *mut u32,
+    _Report: *mut i8,
+    _ReportLength: u32,
 ) -> i32 {
     DbgPrint(
         c"WARNING:  %s at %s:%d is unimplemented!()\n".as_ptr() as *const i8,
@@ -1400,8 +1382,8 @@ pub unsafe extern "system" fn HidParser_SetData(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_MaxDataListLength(
-    CollectionContext: *mut core::ffi::c_void,
-    ReportType: i32,
+    _CollectionContext: *mut core::ffi::c_void,
+    _ReportType: i32,
 ) -> u32 {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -1424,11 +1406,11 @@ pub unsafe extern "system" fn HidParser_MaxDataListLength(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_InitializeReportForID(
-    mut CollectionContext: PVOID,
-    mut ReportType: HIDP_REPORT_TYPE,
-    mut ReportID: UCHAR,
-    mut Report: PCHAR,
-    mut ReportLength: ULONG,
+    _CollectionContext: PVOID,
+    _ReportType: HIDP_REPORT_TYPE,
+    _ReportID: UCHAR,
+    _Report: PCHAR,
+    _ReportLength: ULONG,
 ) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
@@ -1452,10 +1434,10 @@ pub unsafe extern "system" fn HidParser_InitializeReportForID(
 
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_GetValueCaps(
-    CollectionContext: PVOID,
-    ReportType: HIDP_REPORT_TYPE,
-    ValueCaps: PHIDP_VALUE_CAPS,
-    ValueCapsLength: PULONG,
+    _CollectionContext: PVOID,
+    _ReportType: HIDP_REPORT_TYPE,
+    _ValueCaps: PHIDP_VALUE_CAPS,
+    _ValueCapsLength: PULONG,
 ) -> NTSTATUS {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,

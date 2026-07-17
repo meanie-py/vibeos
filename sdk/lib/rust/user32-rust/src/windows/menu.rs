@@ -30,7 +30,13 @@ macro_rules! TRACE { ($($arg:expr),* $(,)?) => { { $( let _ = $arg; )* } }; }
 //   not extern. ValidateHandle/ValidateHandleNoErr/SetLastError/DestroyMenu/strlenW are
 //   real exports from other user32 TUs.
 // ValidateHandle/ValidateHandleNoErr are `PVOID FASTCALL` (user32p.h) → @Name@N on i386.
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn ValidateHandle(hObject: HANDLE, ObjType: UINT) -> *mut core::ffi::c_void;
+    fn ValidateHandleNoErr(handle: HANDLE, type_: UINT) -> *mut core::ffi::c_void;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn ValidateHandle(hObject: HANDLE, ObjType: UINT) -> *mut core::ffi::c_void;
     fn ValidateHandleNoErr(handle: HANDLE, type_: UINT) -> *mut core::ffi::c_void;
 }

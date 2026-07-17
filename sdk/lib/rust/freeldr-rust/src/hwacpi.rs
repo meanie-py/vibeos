@@ -114,20 +114,20 @@ pub unsafe extern "C" fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA
 
         PartialDescriptor = core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors[0]);
         (*PartialDescriptor).Type = 8u8;
-        (*PartialDescriptor).ShareDisposition = ((CmResourceShareUndetermined) as u8);
+        (*PartialDescriptor).ShareDisposition = (CmResourceShareUndetermined) as u8 ;
         (*PartialDescriptor).u.DeviceSpecificData.DataSize = TableSize;
 
         AcpiBiosData = (PartialDescriptor.offset(1)) as PACPI_BIOS_DATA;
 
         if (*Rsdp).revision > 0 {
             TRACE(b"ACPI >1.0, using XSDT address\n\0".as_ptr() as *const i8);
-            (*AcpiBiosData).RSDTAddress.QuadPart = (((*Rsdp).xsdt_physical_address) as i64);
+            (*AcpiBiosData).RSDTAddress.QuadPart = ((*Rsdp).xsdt_physical_address) as i64 ;
         } else {
             TRACE(b"ACPI 1.0, using RSDT address\n\0".as_ptr() as *const i8);
             (*AcpiBiosData).RSDTAddress.s.LowPart = (*Rsdp).rsdt_physical_address;
         }
 
-        (*AcpiBiosData).Count = ((PcBiosMapCount) as u64);
+        (*AcpiBiosData).Count = (PcBiosMapCount) as u64 ;
         core::ptr::copy_nonoverlapping(
             core::ptr::addr_of!(PcBiosMemoryMap) as *const u8,
             core::ptr::addr_of_mut!((*AcpiBiosData).MemoryMap[0]) as *mut u8,

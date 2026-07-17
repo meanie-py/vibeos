@@ -37,7 +37,12 @@ const FSRTL_FAST_IO_TOP_LEVEL_IRP: ULONG_PTR = 0x04;
 extern "system" {
     fn FsRtlIsNtstatusExpected(Status: NTSTATUS) -> BOOLEAN;
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn IofCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn IofCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 extern "C" {

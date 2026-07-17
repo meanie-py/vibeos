@@ -430,7 +430,8 @@ unsafe extern "C" fn IntGetScrollBarInfo(Wnd: HWND, Bar: INT, ScrollBarInfo: PSC
     NtUserGetScrollBarInfo(Wnd, IntScrollGetObjectId(Bar), ScrollBarInfo)
 }
 
-unsafe extern "fastcall" fn IntUpdateScrollArrows(
+fastcall_fn! {
+unsafe fn IntUpdateScrollArrows(
     Wnd: HWND,
     hDC: HDC,
     ScrollBarInfo: PSCROLLBARINFO,
@@ -449,6 +450,7 @@ unsafe extern "fastcall" fn IntUpdateScrollArrows(
     NtUserSetScrollBarInfo(Wnd, IntScrollGetObjectId(SBType), info);
 
     IntDrawScrollArrows(hDC, ScrollBarInfo, Vertical);
+}
 }
 
 unsafe fn IntDrawScrollBar(Wnd: HWND, DC: HDC, Bar: INT) {
@@ -524,7 +526,8 @@ unsafe fn IntScrollPtInRectEx_impl(Rect: LPRECT, Pt: POINT, Vertical: BOOL) -> B
     PtInRect(&TempRect, Pt)
 }
 
-unsafe extern "fastcall" fn IntScrollHitTest(ScrollBarInfo: PSCROLLBARINFO, Vertical: BOOL, mut Pt: POINT, Dragging: BOOL) -> DWORD {
+fastcall_fn! {
+unsafe fn IntScrollHitTest(ScrollBarInfo: PSCROLLBARINFO, Vertical: BOOL, mut Pt: POINT, Dragging: BOOL) -> DWORD {
 
     let ArrowSize: INT;
     let ThumbSize: INT;
@@ -578,8 +581,10 @@ unsafe extern "fastcall" fn IntScrollHitTest(ScrollBarInfo: PSCROLLBARINFO, Vert
 
     SCROLL_THUMB
 }
+}
 
-unsafe extern "fastcall" fn IntScrollGetScrollBarRect(
+fastcall_fn! {
+unsafe fn IntScrollGetScrollBarRect(
     Wnd: HWND,
     Bar: INT,
     Rect: *mut RECT,
@@ -701,6 +706,7 @@ unsafe extern "fastcall" fn IntScrollGetScrollBarRect(
         }
     }
     Vertical
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -868,7 +874,8 @@ unsafe fn IntScrollHandleKbdEventImpl(Wnd: HWND, mut wParam: WPARAM, lParam: LPA
     );
 }
 
-unsafe extern "fastcall" fn IntScrollHandleScrollEvent(Wnd: HWND, SBType: INT, Msg: UINT, mut Pt: POINT) {
+fastcall_fn! {
+unsafe fn IntScrollHandleScrollEvent(Wnd: HWND, SBType: INT, Msg: UINT, mut Pt: POINT) {
     static mut PrevPt: POINT = POINT { x: 0, y: 0 };
     static mut TrackThumbPos: UINT = 0;
     static mut LastClickPos: INT = 0;
@@ -1196,6 +1203,7 @@ unsafe extern "fastcall" fn IntScrollHandleScrollEvent(Wnd: HWND, SBType: INT, M
     }
 
     ReleaseDC(Wnd, Dc);
+}
 }
 
 unsafe fn IntScrollCreateScrollBar(Wnd: HWND, lpCreate: LPCREATESTRUCTW) {

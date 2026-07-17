@@ -1328,9 +1328,9 @@ unsafe fn IofCompleteRequestInner(Irp: PIRP, PriorityBoost: CCHAR) {
             }
         }
 
-        if ((NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) && ((*StackPtr).Control & SL_INVOKE_ON_SUCCESS) != 0)
+        if (NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) && ((*StackPtr).Control & SL_INVOKE_ON_SUCCESS) != 0)
             || (!NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) && ((*StackPtr).Control & SL_INVOKE_ON_ERROR) != 0)
-            || ((*Irp).Cancel != 0 && ((*StackPtr).Control & SL_INVOKE_ON_CANCEL) != 0))
+            || ((*Irp).Cancel != 0 && ((*StackPtr).Control & SL_INVOKE_ON_CANCEL) != 0)
         {
             IopClearStackLocation(StackPtr);
 

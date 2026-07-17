@@ -489,7 +489,7 @@ pub unsafe extern "system" fn DriverEntry(
 
 // Forward declarations for unknown symbols – deduplicated by the caller.
 
-extern {
+extern "C" {
     // Constant wide string; replace with actual registry path.
     static WINPE_REG_KEY_NAME: *const u16;
 }
@@ -3046,8 +3046,8 @@ pub unsafe extern "system" fn IoctlWorkItemRoutine(WorkItem: WDFWORKITEM) {
         );
     }
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "C" fn RequestProcessSerializedIoctl(
+#[no_mangle]
+ pub unsafe extern "C" fn RequestProcessSerializedIoctl(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
 ) -> i32 {

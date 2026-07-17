@@ -62,7 +62,7 @@ unsafe fn SepAdjustPrivileges(
 
         if (*(*Token).Privileges.add(i as usize)).Attributes != NewAttributes {
             if !PreviousState.is_null() {
-                *(*PreviousState).Privileges.as_mut_ptr().add(ChangeCount as usize) = (*(*Token).Privileges.add(i as usize));
+                *(*PreviousState).Privileges.as_mut_ptr().add(ChangeCount as usize) = *(*Token).Privileges.add(i as usize) ;
             }
 
             if ApplyChanges != 0 {
@@ -164,7 +164,7 @@ unsafe fn SepAdjustGroups(
 
         if (*(*Token).UserAndGroups.add(GroupsInToken as usize)).Attributes != NewAttributes {
             if !PreviousGroupsState.is_null() {
-                *(*PreviousGroupsState).Groups.as_mut_ptr().add(ChangeCount as usize) = (*(*Token).UserAndGroups.add(GroupsInToken as usize));
+                *(*PreviousGroupsState).Groups.as_mut_ptr().add(ChangeCount as usize) = *(*Token).UserAndGroups.add(GroupsInToken as usize) ;
             }
 
             if ApplyChanges != 0 {

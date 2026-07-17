@@ -134,7 +134,7 @@ unsafe fn SetupLdrLoadNlsData(
     InfHandle: HINF,
     SearchPath: PCSTR,
 ) {
-    let mut Success: u8;
+    let Success: u8;
     let mut InfContext: INFCONTEXT = core::mem::zeroed();
     let mut AnsiData: PCSTR = core::ptr::null();
     let mut AnsiFileName: _UNICODE_STRING = core::mem::zeroed();
@@ -219,7 +219,7 @@ unsafe fn SetupLdrInitErrataInf(
         return 0u8;
     }
 
-    RtlStringCbCopyA((ErrataFilePath.as_mut_ptr() as *mut i8), core::mem::size_of_val(&ErrataFilePath), SystemRoot);
+    RtlStringCbCopyA(ErrataFilePath.as_mut_ptr() as *mut i8 , core::mem::size_of_val(&ErrataFilePath), SystemRoot);
     RtlStringCbCatA(ErrataFilePath.as_mut_ptr(), core::mem::size_of_val(&ErrataFilePath), FileName);
 
     PhysicalBase = WinLdrLoadModule(ErrataFilePath.as_ptr() as PCSTR, &mut FileSize, LoaderRegistryData);
@@ -322,7 +322,7 @@ unsafe fn SetupLdrScanBootDrivers(
             core::ptr::null(),
             w!("Boot File System").as_ptr() as *const u16,
             SERVICE_ERROR_CRITICAL,
-            ((-1i32) as u32),
+            (-1i32) as u32 ,
         );
         if Success == 0 {
             ERR(b"Failed to add filesystem driver %S\n\0".as_ptr() as PCSTR, (BootFileSystem) as usize);
@@ -509,14 +509,14 @@ unsafe fn NtLdrGetHigherPriorityOptions(
         if Masks[i as usize] != 0 {
             if !ExtraOptions.is_null() && !(*HighPriorOptionsMap.as_ptr().add(i as usize)).ExtraOptions.is_null() {
                 RtlStringCbCatA(
-                    (*ExtraOptions as *mut u8),
+                    *ExtraOptions as *mut u8 ,
                     ExtraOptsSize,
                     (*HighPriorOptionsMap.as_ptr().add(i as usize)).ExtraOptions,
                 );
             }
             if !HigherPriorityOptions.is_null() && !(*HighPriorOptionsMap.as_ptr().add(i as usize)).HigherPriorOptions.is_null() {
                 RtlStringCbCatA(
-                    (*HigherPriorityOptions as *mut u8),
+                    *HigherPriorityOptions as *mut u8 ,
                     HighPriorOptsSize,
                     (*HighPriorOptionsMap.as_ptr().add(i as usize)).HigherPriorOptions,
                 );
@@ -530,7 +530,7 @@ unsafe fn NtLdrGetHigherPriorityOptions(
 pub unsafe extern "C" fn LoadReactOSSetup(
     Argc: u32,
     Argv: *mut PSTR,
-    Envp: *mut PSTR,
+    _Envp: *mut PSTR,
 ) -> ARC_STATUS {
 
     let Status: ARC_STATUS;
@@ -540,7 +540,7 @@ pub unsafe extern "C" fn LoadReactOSSetup(
     let mut FileName: PSTR;
     let mut FileNameLength: u32 = 0;
     let BootFromFloppy: u8;
-    let Success: u8;
+    let _Success: u8;
     let mut InfHandle: HINF = core::ptr::null_mut();
     let mut InfContext: INFCONTEXT = core::mem::zeroed();
     let mut i: u32;
@@ -595,13 +595,13 @@ pub unsafe extern "C" fn LoadReactOSSetup(
         RtlStringCbCopyA(FilePath.as_mut_ptr() as PSTR, FilePath.len(), BootPath.as_ptr() as PCSTR);
         RtlStringCbCopyA(BootPath.as_mut_ptr() as PSTR, BootPath.len(), SystemPartition);
         if *FilePath.as_ptr() != b'\\' && *FilePath.as_ptr() != b'/' {
-            RtlStringCbCatA((BootPath.as_mut_ptr() as PSTR as *mut u8), BootPath.len(), b"\\\0".as_ptr() as PCSTR);
+            RtlStringCbCatA(BootPath.as_mut_ptr() as PSTR as *mut u8 , BootPath.len(), b"\\\0".as_ptr() as PCSTR);
         }
-        RtlStringCbCatA((BootPath.as_mut_ptr() as PSTR as *mut u8), BootPath.len(), FilePath.as_ptr() as PCSTR);
+        RtlStringCbCatA(BootPath.as_mut_ptr() as PSTR as *mut u8 , BootPath.len(), FilePath.as_ptr() as PCSTR);
     }
 
     if *BootPath.as_ptr() == 0 || *BootPath.as_ptr().add(strlen(BootPath.as_ptr() as PCSTR) - 1) != b'\\' {
-        RtlStringCbCatA((BootPath.as_mut_ptr() as PSTR as *mut u8), BootPath.len(), b"\\\0".as_ptr() as PCSTR);
+        RtlStringCbCatA(BootPath.as_mut_ptr() as PSTR as *mut u8 , BootPath.len(), b"\\\0".as_ptr() as PCSTR);
     }
 
     TRACE(b"BootPath: '%s'\n\0".as_ptr() as PCSTR, (BootPath.as_ptr()) as usize);
@@ -626,7 +626,7 @@ pub unsafe extern "C" fn LoadReactOSSetup(
 
     BootFromFloppy = if !strstr(BootPath.as_ptr() as PCSTR, b"fdisk\0".as_ptr() as PCSTR).is_null() { 1u8 } else { 0u8 };
 
-    FileName = (BootPath.as_mut_ptr().add(strlen(BootPath.as_ptr() as PCSTR)) as *mut i8);
+    FileName = BootPath.as_mut_ptr().add(strlen(BootPath.as_ptr() as PCSTR)) as *mut i8 ;
     i = if BootFromFloppy != 0 { 0 } else { 1 };
     loop {
         SystemPath = SourcePaths.0[i as usize];
@@ -637,7 +637,7 @@ pub unsafe extern "C" fn LoadReactOSSetup(
         FileNameLength = (BootPath.len() - (FileName as usize - BootPath.as_ptr() as usize)) as u32;
         RtlStringCbCopyA(FileName, FileNameLength as usize, SystemPath);
         RtlStringCbCopyA(FilePath.as_mut_ptr() as PSTR, FilePath.len(), BootPath.as_ptr() as PCSTR);
-        RtlStringCbCatA((FilePath.as_mut_ptr() as PSTR as *mut u8), FilePath.len(), b"txtsetup.sif\0".as_ptr() as PCSTR);
+        RtlStringCbCatA(FilePath.as_mut_ptr() as PSTR as *mut u8 , FilePath.len(), b"txtsetup.sif\0".as_ptr() as PCSTR);
         if InfOpenFile(&mut InfHandle, FilePath.as_ptr() as PCSTR, &mut ErrorLine) != 0 {
             break;
         }
@@ -760,7 +760,7 @@ pub unsafe extern "C" fn LoadReactOSSetup(
     }
 
     RtlStringCbCopyA(FilePath.as_mut_ptr() as PSTR, FilePath.len(), BootPath.as_ptr() as PCSTR);
-    RtlStringCbCatA((FilePath.as_mut_ptr() as PSTR as *mut u8), FilePath.len(), b"system32\\\0".as_ptr() as PCSTR);
+    RtlStringCbCatA(FilePath.as_mut_ptr() as PSTR as *mut u8 , FilePath.len(), b"system32\\\0".as_ptr() as PCSTR);
     SetupLdrLoadNlsData(LoaderBlock, InfHandle, FilePath.as_ptr() as PCSTR);
 
     let Success = SetupLdrInitErrataInf(LoaderBlock, InfHandle, BootPath.as_ptr() as PCSTR);

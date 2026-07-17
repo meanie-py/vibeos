@@ -368,7 +368,8 @@ unsafe extern "C" fn POLYGONFILL_MakeEdgeList(Points: PPOINT, Count: i32) -> *mu
     return core::ptr::null_mut();
 }
 
-unsafe extern "fastcall" fn POLYGONFILL_UpdateScanline(pEdge: *mut FILL_EDGE, Scanline: i32) {
+fastcall_fn! {
+unsafe fn POLYGONFILL_UpdateScanline(pEdge: *mut FILL_EDGE, Scanline: i32) {
     if (*pEdge).dy == 0 {
         return;
     }
@@ -405,6 +406,7 @@ unsafe extern "fastcall" fn POLYGONFILL_UpdateScanline(pEdge: *mut FILL_EDGE, Sc
             (*pEdge).x += (*pEdge).XDirection;
         }
     }
+}
 }
 
 #[cfg(target_arch = "x86")]

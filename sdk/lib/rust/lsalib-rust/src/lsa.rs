@@ -172,9 +172,9 @@ pub unsafe extern "system" fn LsaDeregisterLogonProcess(LsaHandle: HANDLE) -> NT
     let mut Status: NTSTATUS = 0;
 
     ApiMessage.__bindgen_anon_1.__bindgen_anon_1.ApiNumber = LSASS_REQUEST_DEREGISTER_LOGON_PROCESS;
-    ApiMessage.h.u1.s1.DataLength = (core::mem::size_of::<ULONG>()
+    ApiMessage.h.u1.s1.DataLength = core::mem::size_of::<ULONG>()
         .wrapping_add(core::mem::size_of::<NTSTATUS>())
-        .wrapping_add(core::mem::size_of::<LSA_DEREGISTER_LOGON_PROCESS_MSG>()) as CSHORT);
+        .wrapping_add(core::mem::size_of::<LSA_DEREGISTER_LOGON_PROCESS_MSG>()) as CSHORT ;
     ApiMessage.h.u1.s1.TotalLength = LSA_PORT_MESSAGE_SIZE as CSHORT;
     ApiMessage.h.u2.ZeroInit = 0 as ULONG;
 
@@ -229,7 +229,7 @@ pub unsafe extern "system" fn LsaFreeReturnBuffer(Buffer: *mut core::ffi::c_void
     let mut Buffer = Buffer;
     let mut Size: ntkrnl_sys::ddk::SIZE_T = 0; // u32 on i386, u64 on 64-bit
     return ZwFreeVirtualMemory(
-        (-1isize as *mut core::ffi::c_void),
+        -1isize as *mut core::ffi::c_void ,
         core::ptr::addr_of_mut!(Buffer),
         core::ptr::addr_of_mut!(Size),
         MEM_RELEASE as u32,
@@ -243,7 +243,7 @@ pub unsafe extern "system" fn LsaLookupAuthenticationPackage(
     AuthenticationPackage: PULONG,
 ) -> NTSTATUS {
     let mut ApiMessage: LSA_API_MSG = core::mem::zeroed();
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     if (*PackageName).Length as u32 > LSASS_MAX_PACKAGE_NAME_LENGTH {
         return STATUS_NAME_TOO_LONG;
@@ -322,7 +322,7 @@ pub unsafe extern "system" fn LsaLogonUser(
     SubStatus: PNTSTATUS,
 ) -> NTSTATUS {
     let mut ApiMessage: LSA_API_MSG = unsafe { core::mem::zeroed() };
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     ApiMessage.__bindgen_anon_1.__bindgen_anon_1.ApiNumber = LSASS_REQUEST_LOGON_USER;
     ApiMessage.h.u1.s1.DataLength = (core::mem::size_of::<ULONG>()
@@ -421,7 +421,7 @@ pub unsafe extern "system" fn LsaRegisterLogonProcess(
 
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
     ObjectAttributes.RootDirectory = core::ptr::null_mut::<core::ffi::c_void>() as HANDLE;
-    ObjectAttributes.Attributes = (OBJ_CASE_INSENSITIVE as u32 | OBJ_PERMANENT as u32);
+    ObjectAttributes.Attributes = OBJ_CASE_INSENSITIVE as u32 | OBJ_PERMANENT as u32 ;
     ObjectAttributes.ObjectName = &raw mut EventName as PUNICODE_STRING;
     ObjectAttributes.SecurityDescriptor = core::ptr::null_mut::<core::ffi::c_void>() as *mut core::ffi::c_void;
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut::<core::ffi::c_void>() as *mut core::ffi::c_void;

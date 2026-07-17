@@ -1,8 +1,5 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CcMapData, PLARGE_INTEGER, RtlOemToUnicodeN};
-use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CD_NAME, COMPOUND_DIRENT, DIRENT, DIRENT_ENUM_CONTEXT, DIRENT_FLAG_ALLOC_BUFFER, FCB, FCB_INDEX, FILE_CONTEXT_MULTIPLE_DIRENTS, FILE_ENUM_CONTEXT, IRP_CONTEXT, PDIRENT, PIRP_CONTEXT, RIFF_HEADER, VCB, VCB_STATE_CDXA, VCB_STATE_JOLIET, XA_EXTENT_TYPE, _XA_EXTENT_TYPE_CDAudio as CDAudio, _XA_EXTENT_TYPE_Form1Data as Form1Data, _XA_EXTENT_TYPE_Mode2Form2Data as Mode2Form2Data};
 use ntkrnl_sys::ddk::{_UNICODE_STRING, FSRTL_ADVANCED_FCB_HEADER};
@@ -152,7 +149,7 @@ pub unsafe extern "C" fn CdLookupDirent(
     (*DirContext).DataLength = SECTOR_SIZE;
     (*DirContext).SectorOffset = SectorOffset(DirentOffset);
 
-    if ((*DirContext).DataLength as i64 > ((*FcbHeader(Fcb)).FileSize.QuadPart - BaseOffset)) {
+    if (*DirContext).DataLength as i64 > ((*FcbHeader(Fcb)).FileSize.QuadPart - BaseOffset)  {
         (*DirContext).DataLength = ((*FcbHeader(Fcb)).FileSize.QuadPart - BaseOffset) as u32;
     }
 
@@ -165,7 +162,7 @@ pub unsafe extern "C" fn CdLookupDirent(
         core::ptr::addr_of_mut!((*DirContext).Sector),
     );
 
-    if ((*DirContext).Bcb.is_null() || (*DirContext).Sector.is_null()) {
+    if (*DirContext).Bcb.is_null() || (*DirContext).Sector.is_null()  {
         CdRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
     }
 
@@ -371,9 +368,9 @@ pub unsafe extern "C" fn CdUpdateDirentName(
     IgnoreCase: ULONG,
 ) -> () {
     unsafe {
-        let mut DirectoryValue: UCHAR;
+        let DirectoryValue: UCHAR;
         let mut Length: ULONG;
-        let mut Status: NTSTATUS;
+        let Status: NTSTATUS;
 
         PAGED_CODE();
 
@@ -544,7 +541,7 @@ pub unsafe extern "C" fn CdFindFile(
     MatchingName: *mut *mut CD_NAME,
 ) -> i32 {
     let mut Dirent: *mut DIRENT;
-    let mut ShortNameDirentOffset: u32;
+    let ShortNameDirentOffset: u32;
     let mut Found: i32 = 0; // FALSE
 
     // PAGED_CODE(); // omitted, debug only
@@ -805,7 +802,7 @@ pub unsafe extern "C" fn CdCheckRawDirentBounds(
     DirContext: *mut DIRENT_ENUM_CONTEXT,
 ) -> u32 {
     let mut NextDirentOffset: u32;
-    let mut RawDirent: *mut RAW_DIRENT;
+    let RawDirent: *mut RAW_DIRENT;
 
     PAGED_CODE();
     UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);

@@ -147,24 +147,24 @@ unsafe fn VARIANT_Coerce(
                 (*V_I1_ref(pd)) = 0;
                 return S_OK;
             }
-            VT_I2 => return VarI1FromI2((*V_I2_ref(ps)), core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
-            VT_I4 => return VarI1FromI4((*V_I4_ref(ps)), core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
+            VT_I2 => return VarI1FromI2(*V_I2_ref(ps) , core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
+            VT_I4 => return VarI1FromI4(*V_I4_ref(ps) , core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
             VT_UI1 => {
                 (*V_I1_ref(pd)) = (*V_UI1_ref(ps)) as i8;
                 return S_OK;
             }
-            VT_UI2 => return VarI1FromUI2((*V_UI2_ref(ps)), core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
-            VT_UI4 => return VarI1FromUI4((*V_UI4_ref(ps)), core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
-            VT_I8 => return VarI1FromI8((*V_I8_ref(ps)), core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
-            VT_UI8 => return VarI1FromUI8((*V_UI8_ref(ps)), core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
-            VT_R4 => return VarI1FromR4((*V_R4_ref(ps)), core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
-            VT_R8 => return VarI1FromR8((*V_R8_ref(ps)), core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
-            VT_DATE => return VarI1FromDate((*V_DATE_ref(ps)), core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
-            VT_BOOL => return VarI1FromBool((*V_BOOL_ref(ps)), core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
-            VT_CY => return VarI1FromCy((*V_CY_ref(ps)), core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
+            VT_UI2 => return VarI1FromUI2(*V_UI2_ref(ps) , core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
+            VT_UI4 => return VarI1FromUI4(*V_UI4_ref(ps) , core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
+            VT_I8 => return VarI1FromI8(*V_I8_ref(ps) , core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
+            VT_UI8 => return VarI1FromUI8(*V_UI8_ref(ps) , core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
+            VT_R4 => return VarI1FromR4(*V_R4_ref(ps) , core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
+            VT_R8 => return VarI1FromR8(*V_R8_ref(ps) , core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
+            VT_DATE => return VarI1FromDate(*V_DATE_ref(ps) , core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
+            VT_BOOL => return VarI1FromBool(*V_BOOL_ref(ps) , core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
+            VT_CY => return VarI1FromCy(*V_CY_ref(ps) , core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
             VT_DECIMAL => return VarI1FromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
-            VT_DISPATCH => return VarI1FromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
-            VT_BSTR => return VarI1FromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
+            VT_DISPATCH => return VarI1FromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
+            VT_BSTR => return VarI1FromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_I1_ref(pd)))),
             _ => {}
         },
         VT_I2 => match vtFrom {
@@ -172,24 +172,24 @@ unsafe fn VARIANT_Coerce(
                 (*V_I2_ref(pd)) = 0;
                 return S_OK;
             }
-            VT_I1 => return VarI2FromI1((*V_I1_ref(ps)), core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
-            VT_I4 => return VarI2FromI4((*V_I4_ref(ps)), core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
-            VT_UI1 => return VarI2FromUI1((*V_UI1_ref(ps)), core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
+            VT_I1 => return VarI2FromI1(*V_I1_ref(ps) , core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
+            VT_I4 => return VarI2FromI4(*V_I4_ref(ps) , core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
+            VT_UI1 => return VarI2FromUI1(*V_UI1_ref(ps) , core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
             VT_UI2 => {
                 (*V_I2_ref(pd)) = (*V_UI2_ref(ps)) as i16;
                 return S_OK;
             }
-            VT_UI4 => return VarI2FromUI4((*V_UI4_ref(ps)), core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
-            VT_I8 => return VarI2FromI8((*V_I8_ref(ps)), core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
-            VT_UI8 => return VarI2FromUI8((*V_UI8_ref(ps)), core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
-            VT_R4 => return VarI2FromR4((*V_R4_ref(ps)), core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
-            VT_R8 => return VarI2FromR8((*V_R8_ref(ps)), core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
-            VT_DATE => return VarI2FromDate((*V_DATE_ref(ps)), core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
-            VT_BOOL => return VarI2FromBool((*V_BOOL_ref(ps)), core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
-            VT_CY => return VarI2FromCy((*V_CY_ref(ps)), core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
+            VT_UI4 => return VarI2FromUI4(*V_UI4_ref(ps) , core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
+            VT_I8 => return VarI2FromI8(*V_I8_ref(ps) , core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
+            VT_UI8 => return VarI2FromUI8(*V_UI8_ref(ps) , core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
+            VT_R4 => return VarI2FromR4(*V_R4_ref(ps) , core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
+            VT_R8 => return VarI2FromR8(*V_R8_ref(ps) , core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
+            VT_DATE => return VarI2FromDate(*V_DATE_ref(ps) , core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
+            VT_BOOL => return VarI2FromBool(*V_BOOL_ref(ps) , core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
+            VT_CY => return VarI2FromCy(*V_CY_ref(ps) , core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
             VT_DECIMAL => return VarI2FromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
-            VT_DISPATCH => return VarI2FromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
-            VT_BSTR => return VarI2FromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
+            VT_DISPATCH => return VarI2FromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
+            VT_BSTR => return VarI2FromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_I2_ref(pd)))),
             _ => {}
         },
         VT_I4 => match vtFrom {
@@ -197,24 +197,24 @@ unsafe fn VARIANT_Coerce(
                 (*V_I4_ref(pd)) = 0;
                 return S_OK;
             }
-            VT_I1 => return VarI4FromI1((*V_I1_ref(ps)), core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
-            VT_I2 => return VarI4FromI2((*V_I2_ref(ps)), core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
-            VT_UI1 => return VarI4FromUI1((*V_UI1_ref(ps)), core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
-            VT_UI2 => return VarI4FromUI2((*V_UI2_ref(ps)), core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
+            VT_I1 => return VarI4FromI1(*V_I1_ref(ps) , core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
+            VT_I2 => return VarI4FromI2(*V_I2_ref(ps) , core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
+            VT_UI1 => return VarI4FromUI1(*V_UI1_ref(ps) , core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
+            VT_UI2 => return VarI4FromUI2(*V_UI2_ref(ps) , core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
             VT_UI4 => {
                 (*V_I4_ref(pd)) = (*V_UI4_ref(ps)) as i32;
                 return S_OK;
             }
-            VT_I8 => return VarI4FromI8((*V_I8_ref(ps)), core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
-            VT_UI8 => return VarI4FromUI8((*V_UI8_ref(ps)), core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
-            VT_R4 => return VarI4FromR4((*V_R4_ref(ps)), core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
-            VT_R8 => return VarI4FromR8((*V_R8_ref(ps)), core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
-            VT_DATE => return VarI4FromDate((*V_DATE_ref(ps)), core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
-            VT_BOOL => return VarI4FromBool((*V_BOOL_ref(ps)), core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
-            VT_CY => return VarI4FromCy((*V_CY_ref(ps)), core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
+            VT_I8 => return VarI4FromI8(*V_I8_ref(ps) , core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
+            VT_UI8 => return VarI4FromUI8(*V_UI8_ref(ps) , core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
+            VT_R4 => return VarI4FromR4(*V_R4_ref(ps) , core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
+            VT_R8 => return VarI4FromR8(*V_R8_ref(ps) , core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
+            VT_DATE => return VarI4FromDate(*V_DATE_ref(ps) , core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
+            VT_BOOL => return VarI4FromBool(*V_BOOL_ref(ps) , core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
+            VT_CY => return VarI4FromCy(*V_CY_ref(ps) , core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
             VT_DECIMAL => return VarI4FromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
-            VT_DISPATCH => return VarI4FromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
-            VT_BSTR => return VarI4FromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
+            VT_DISPATCH => return VarI4FromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
+            VT_BSTR => return VarI4FromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_I4_ref(pd)))),
             _ => {}
         },
         VT_UI1 => match vtFrom {
@@ -226,20 +226,20 @@ unsafe fn VARIANT_Coerce(
                 (*V_UI1_ref(pd)) = (*V_I1_ref(ps)) as u8;
                 return S_OK;
             }
-            VT_I2 => return VarUI1FromI2((*V_I2_ref(ps)), core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
-            VT_I4 => return VarUI1FromI4((*V_I4_ref(ps)), core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
-            VT_UI2 => return VarUI1FromUI2((*V_UI2_ref(ps)), core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
-            VT_UI4 => return VarUI1FromUI4((*V_UI4_ref(ps)), core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
-            VT_I8 => return VarUI1FromI8((*V_I8_ref(ps)), core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
-            VT_UI8 => return VarUI1FromUI8((*V_UI8_ref(ps)), core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
-            VT_R4 => return VarUI1FromR4((*V_R4_ref(ps)), core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
-            VT_R8 => return VarUI1FromR8((*V_R8_ref(ps)), core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
-            VT_DATE => return VarUI1FromDate((*V_DATE_ref(ps)), core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
-            VT_BOOL => return VarUI1FromBool((*V_BOOL_ref(ps)), core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
-            VT_CY => return VarUI1FromCy((*V_CY_ref(ps)), core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
+            VT_I2 => return VarUI1FromI2(*V_I2_ref(ps) , core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
+            VT_I4 => return VarUI1FromI4(*V_I4_ref(ps) , core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
+            VT_UI2 => return VarUI1FromUI2(*V_UI2_ref(ps) , core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
+            VT_UI4 => return VarUI1FromUI4(*V_UI4_ref(ps) , core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
+            VT_I8 => return VarUI1FromI8(*V_I8_ref(ps) , core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
+            VT_UI8 => return VarUI1FromUI8(*V_UI8_ref(ps) , core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
+            VT_R4 => return VarUI1FromR4(*V_R4_ref(ps) , core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
+            VT_R8 => return VarUI1FromR8(*V_R8_ref(ps) , core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
+            VT_DATE => return VarUI1FromDate(*V_DATE_ref(ps) , core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
+            VT_BOOL => return VarUI1FromBool(*V_BOOL_ref(ps) , core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
+            VT_CY => return VarUI1FromCy(*V_CY_ref(ps) , core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
             VT_DECIMAL => return VarUI1FromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
-            VT_DISPATCH => return VarUI1FromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
-            VT_BSTR => return VarUI1FromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
+            VT_DISPATCH => return VarUI1FromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
+            VT_BSTR => return VarUI1FromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_UI1_ref(pd)))),
             _ => {}
         },
         VT_UI2 => match vtFrom {
@@ -247,24 +247,24 @@ unsafe fn VARIANT_Coerce(
                 (*V_UI2_ref(pd)) = 0;
                 return S_OK;
             }
-            VT_I1 => return VarUI2FromI1((*V_I1_ref(ps)), core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
+            VT_I1 => return VarUI2FromI1(*V_I1_ref(ps) , core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
             VT_I2 => {
                 (*V_UI2_ref(pd)) = (*V_I2_ref(ps)) as u16;
                 return S_OK;
             }
-            VT_I4 => return VarUI2FromI4((*V_I4_ref(ps)), core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
-            VT_UI1 => return VarUI2FromUI1((*V_UI1_ref(ps)), core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
-            VT_UI4 => return VarUI2FromUI4((*V_UI4_ref(ps)), core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
-            VT_I8 => return VarUI4FromI8((*V_I8_ref(ps)), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
-            VT_UI8 => return VarUI4FromUI8((*V_UI8_ref(ps)), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
-            VT_R4 => return VarUI2FromR4((*V_R4_ref(ps)), core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
-            VT_R8 => return VarUI2FromR8((*V_R8_ref(ps)), core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
-            VT_DATE => return VarUI2FromDate((*V_DATE_ref(ps)), core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
-            VT_BOOL => return VarUI2FromBool((*V_BOOL_ref(ps)), core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
-            VT_CY => return VarUI2FromCy((*V_CY_ref(ps)), core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
+            VT_I4 => return VarUI2FromI4(*V_I4_ref(ps) , core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
+            VT_UI1 => return VarUI2FromUI1(*V_UI1_ref(ps) , core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
+            VT_UI4 => return VarUI2FromUI4(*V_UI4_ref(ps) , core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
+            VT_I8 => return VarUI4FromI8(*V_I8_ref(ps) , core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_UI8 => return VarUI4FromUI8(*V_UI8_ref(ps) , core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_R4 => return VarUI2FromR4(*V_R4_ref(ps) , core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
+            VT_R8 => return VarUI2FromR8(*V_R8_ref(ps) , core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
+            VT_DATE => return VarUI2FromDate(*V_DATE_ref(ps) , core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
+            VT_BOOL => return VarUI2FromBool(*V_BOOL_ref(ps) , core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
+            VT_CY => return VarUI2FromCy(*V_CY_ref(ps) , core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
             VT_DECIMAL => return VarUI2FromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
-            VT_DISPATCH => return VarUI2FromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
-            VT_BSTR => return VarUI2FromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
+            VT_DISPATCH => return VarUI2FromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
+            VT_BSTR => return VarUI2FromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_UI2_ref(pd)))),
             _ => {}
         },
         VT_UI4 => match vtFrom {
@@ -272,24 +272,24 @@ unsafe fn VARIANT_Coerce(
                 (*V_UI4_ref(pd)) = 0;
                 return S_OK;
             }
-            VT_I1 => return VarUI4FromI1((*V_I1_ref(ps)), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
-            VT_I2 => return VarUI4FromI2((*V_I2_ref(ps)), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_I1 => return VarUI4FromI1(*V_I1_ref(ps) , core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_I2 => return VarUI4FromI2(*V_I2_ref(ps) , core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
             VT_I4 => {
                 (*V_UI4_ref(pd)) = (*V_I4_ref(ps)) as u32;
                 return S_OK;
             }
-            VT_UI1 => return VarUI4FromUI1((*V_UI1_ref(ps)), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
-            VT_UI2 => return VarUI4FromUI2((*V_UI2_ref(ps)), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
-            VT_I8 => return VarUI4FromI8((*V_I8_ref(ps)), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
-            VT_UI8 => return VarUI4FromUI8((*V_UI8_ref(ps)), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
-            VT_R4 => return VarUI4FromR4((*V_R4_ref(ps)), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
-            VT_R8 => return VarUI4FromR8((*V_R8_ref(ps)), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
-            VT_DATE => return VarUI4FromDate((*V_DATE_ref(ps)), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
-            VT_BOOL => return VarUI4FromBool((*V_BOOL_ref(ps)), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
-            VT_CY => return VarUI4FromCy((*V_CY_ref(ps)), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_UI1 => return VarUI4FromUI1(*V_UI1_ref(ps) , core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_UI2 => return VarUI4FromUI2(*V_UI2_ref(ps) , core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_I8 => return VarUI4FromI8(*V_I8_ref(ps) , core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_UI8 => return VarUI4FromUI8(*V_UI8_ref(ps) , core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_R4 => return VarUI4FromR4(*V_R4_ref(ps) , core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_R8 => return VarUI4FromR8(*V_R8_ref(ps) , core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_DATE => return VarUI4FromDate(*V_DATE_ref(ps) , core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_BOOL => return VarUI4FromBool(*V_BOOL_ref(ps) , core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_CY => return VarUI4FromCy(*V_CY_ref(ps) , core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
             VT_DECIMAL => return VarUI4FromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
-            VT_DISPATCH => return VarUI4FromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
-            VT_BSTR => return VarUI4FromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_DISPATCH => return VarUI4FromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
+            VT_BSTR => return VarUI4FromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_UI4_ref(pd)))),
             _ => {}
         },
         VT_UI8 => match vtFrom {
@@ -304,23 +304,23 @@ unsafe fn VARIANT_Coerce(
                 (*V_UI8_ref(pd)) = (*V_I4_ref(ps)) as u64;
                 return S_OK;
             }
-            VT_I1 => return VarUI8FromI1((*V_I1_ref(ps)), core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
-            VT_I2 => return VarUI8FromI2((*V_I2_ref(ps)), core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
-            VT_UI1 => return VarUI8FromUI1((*V_UI1_ref(ps)), core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
-            VT_UI2 => return VarUI8FromUI2((*V_UI2_ref(ps)), core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
-            VT_UI4 => return VarUI8FromUI4((*V_UI4_ref(ps)), core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
+            VT_I1 => return VarUI8FromI1(*V_I1_ref(ps) , core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
+            VT_I2 => return VarUI8FromI2(*V_I2_ref(ps) , core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
+            VT_UI1 => return VarUI8FromUI1(*V_UI1_ref(ps) , core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
+            VT_UI2 => return VarUI8FromUI2(*V_UI2_ref(ps) , core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
+            VT_UI4 => return VarUI8FromUI4(*V_UI4_ref(ps) , core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
             VT_I8 => {
                 (*V_UI8_ref(pd)) = (*V_I8_ref(ps)) as u64;
                 return S_OK;
             }
-            VT_R4 => return VarUI8FromR4((*V_R4_ref(ps)), core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
-            VT_R8 => return VarUI8FromR8((*V_R8_ref(ps)), core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
-            VT_DATE => return VarUI8FromDate((*V_DATE_ref(ps)), core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
-            VT_BOOL => return VarUI8FromBool((*V_BOOL_ref(ps)), core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
-            VT_CY => return VarUI8FromCy((*V_CY_ref(ps)), core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
+            VT_R4 => return VarUI8FromR4(*V_R4_ref(ps) , core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
+            VT_R8 => return VarUI8FromR8(*V_R8_ref(ps) , core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
+            VT_DATE => return VarUI8FromDate(*V_DATE_ref(ps) , core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
+            VT_BOOL => return VarUI8FromBool(*V_BOOL_ref(ps) , core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
+            VT_CY => return VarUI8FromCy(*V_CY_ref(ps) , core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
             VT_DECIMAL => return VarUI8FromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
-            VT_DISPATCH => return VarUI8FromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
-            VT_BSTR => return VarUI8FromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
+            VT_DISPATCH => return VarUI8FromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
+            VT_BSTR => return VarUI8FromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_UI8_ref(pd)))),
             _ => {}
         },
         VT_I8 => match vtFrom {
@@ -332,23 +332,23 @@ unsafe fn VARIANT_Coerce(
                 (*V_I8_ref(pd)) = (*V_I4_ref(ps)) as i64;
                 return S_OK;
             }
-            VT_I1 => return VarI8FromI1((*V_I1_ref(ps)), core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
-            VT_I2 => return VarI8FromI2((*V_I2_ref(ps)), core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
-            VT_UI1 => return VarI8FromUI1((*V_UI1_ref(ps)), core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
-            VT_UI2 => return VarI8FromUI2((*V_UI2_ref(ps)), core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
-            VT_UI4 => return VarI8FromUI4((*V_UI4_ref(ps)), core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
+            VT_I1 => return VarI8FromI1(*V_I1_ref(ps) , core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
+            VT_I2 => return VarI8FromI2(*V_I2_ref(ps) , core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
+            VT_UI1 => return VarI8FromUI1(*V_UI1_ref(ps) , core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
+            VT_UI2 => return VarI8FromUI2(*V_UI2_ref(ps) , core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
+            VT_UI4 => return VarI8FromUI4(*V_UI4_ref(ps) , core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
             VT_UI8 => {
                 (*V_I8_ref(pd)) = (*V_UI8_ref(ps)) as i64;
                 return S_OK;
             }
-            VT_R4 => return VarI8FromR4((*V_R4_ref(ps)), core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
-            VT_R8 => return VarI8FromR8((*V_R8_ref(ps)), core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
-            VT_DATE => return VarI8FromDate((*V_DATE_ref(ps)), core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
-            VT_BOOL => return VarI8FromBool((*V_BOOL_ref(ps)), core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
-            VT_CY => return VarI8FromCy((*V_CY_ref(ps)), core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
+            VT_R4 => return VarI8FromR4(*V_R4_ref(ps) , core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
+            VT_R8 => return VarI8FromR8(*V_R8_ref(ps) , core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
+            VT_DATE => return VarI8FromDate(*V_DATE_ref(ps) , core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
+            VT_BOOL => return VarI8FromBool(*V_BOOL_ref(ps) , core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
+            VT_CY => return VarI8FromCy(*V_CY_ref(ps) , core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
             VT_DECIMAL => return VarI8FromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
-            VT_DISPATCH => return VarI8FromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
-            VT_BSTR => return VarI8FromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
+            VT_DISPATCH => return VarI8FromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
+            VT_BSTR => return VarI8FromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_I8_ref(pd)))),
             _ => {}
         },
         VT_R4 => match vtFrom {
@@ -356,21 +356,21 @@ unsafe fn VARIANT_Coerce(
                 (*V_R4_ref(pd)) = 0.0f32;
                 return S_OK;
             }
-            VT_I1 => return VarR4FromI1((*V_I1_ref(ps)), core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
-            VT_I2 => return VarR4FromI2((*V_I2_ref(ps)), core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
-            VT_I4 => return VarR4FromI4((*V_I4_ref(ps)), core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
-            VT_UI1 => return VarR4FromUI1((*V_UI1_ref(ps)), core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
-            VT_UI2 => return VarR4FromUI2((*V_UI2_ref(ps)), core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
-            VT_UI4 => return VarR4FromUI4((*V_UI4_ref(ps)), core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
-            VT_I8 => return VarR4FromI8((*V_I8_ref(ps)), core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
-            VT_UI8 => return VarR4FromUI8((*V_UI8_ref(ps)), core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
-            VT_R8 => return VarR4FromR8((*V_R8_ref(ps)), core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
-            VT_DATE => return VarR4FromDate((*V_DATE_ref(ps)), core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
-            VT_BOOL => return VarR4FromBool((*V_BOOL_ref(ps)), core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
-            VT_CY => return VarR4FromCy((*V_CY_ref(ps)), core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_I1 => return VarR4FromI1(*V_I1_ref(ps) , core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_I2 => return VarR4FromI2(*V_I2_ref(ps) , core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_I4 => return VarR4FromI4(*V_I4_ref(ps) , core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_UI1 => return VarR4FromUI1(*V_UI1_ref(ps) , core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_UI2 => return VarR4FromUI2(*V_UI2_ref(ps) , core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_UI4 => return VarR4FromUI4(*V_UI4_ref(ps) , core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_I8 => return VarR4FromI8(*V_I8_ref(ps) , core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_UI8 => return VarR4FromUI8(*V_UI8_ref(ps) , core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_R8 => return VarR4FromR8(*V_R8_ref(ps) , core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_DATE => return VarR4FromDate(*V_DATE_ref(ps) , core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_BOOL => return VarR4FromBool(*V_BOOL_ref(ps) , core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_CY => return VarR4FromCy(*V_CY_ref(ps) , core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
             VT_DECIMAL => return VarR4FromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
-            VT_DISPATCH => return VarR4FromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
-            VT_BSTR => return VarR4FromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_DISPATCH => return VarR4FromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
+            VT_BSTR => return VarR4FromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_R4_ref(pd)))),
             _ => {}
         },
         VT_R8 => match vtFrom {
@@ -378,21 +378,21 @@ unsafe fn VARIANT_Coerce(
                 (*V_R8_ref(pd)) = 0.0f64;
                 return S_OK;
             }
-            VT_I1 => return VarR8FromI1((*V_I1_ref(ps)), core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
-            VT_I2 => return VarR8FromI2((*V_I2_ref(ps)), core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
-            VT_I4 => return VarR8FromI4((*V_I4_ref(ps)), core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
-            VT_UI1 => return VarR8FromUI1((*V_UI1_ref(ps)), core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
-            VT_UI2 => return VarR8FromUI2((*V_UI2_ref(ps)), core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
-            VT_UI4 => return VarR8FromUI4((*V_UI4_ref(ps)), core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
-            VT_I8 => return VarR8FromI8((*V_I8_ref(ps)), core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
-            VT_UI8 => return VarR8FromUI8((*V_UI8_ref(ps)), core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
-            VT_R4 => return VarR8FromR4((*V_R4_ref(ps)), core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
-            VT_DATE => return VarR8FromDate((*V_DATE_ref(ps)), core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
-            VT_BOOL => return VarR8FromBool((*V_BOOL_ref(ps)), core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
-            VT_CY => return VarR8FromCy((*V_CY_ref(ps)), core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_I1 => return VarR8FromI1(*V_I1_ref(ps) , core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_I2 => return VarR8FromI2(*V_I2_ref(ps) , core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_I4 => return VarR8FromI4(*V_I4_ref(ps) , core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_UI1 => return VarR8FromUI1(*V_UI1_ref(ps) , core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_UI2 => return VarR8FromUI2(*V_UI2_ref(ps) , core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_UI4 => return VarR8FromUI4(*V_UI4_ref(ps) , core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_I8 => return VarR8FromI8(*V_I8_ref(ps) , core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_UI8 => return VarR8FromUI8(*V_UI8_ref(ps) , core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_R4 => return VarR8FromR4(*V_R4_ref(ps) , core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_DATE => return VarR8FromDate(*V_DATE_ref(ps) , core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_BOOL => return VarR8FromBool(*V_BOOL_ref(ps) , core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_CY => return VarR8FromCy(*V_CY_ref(ps) , core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
             VT_DECIMAL => return VarR8FromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
-            VT_DISPATCH => return VarR8FromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
-            VT_BSTR => return VarR8FromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_DISPATCH => return VarR8FromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
+            VT_BSTR => return VarR8FromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_R8_ref(pd)))),
             _ => {}
         },
         VT_DATE => match vtFrom {
@@ -400,21 +400,21 @@ unsafe fn VARIANT_Coerce(
                 (*V_DATE_ref(pd)) = 0.0f64;
                 return S_OK;
             }
-            VT_I1 => return VarDateFromI1((*V_I1_ref(ps)), core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
-            VT_I2 => return VarDateFromI2((*V_I2_ref(ps)), core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
-            VT_I4 => return VarDateFromI4((*V_I4_ref(ps)), core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
-            VT_UI1 => return VarDateFromUI1((*V_UI1_ref(ps)), core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
-            VT_UI2 => return VarDateFromUI2((*V_UI2_ref(ps)), core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
-            VT_UI4 => return VarDateFromUI4((*V_UI4_ref(ps)), core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
-            VT_I8 => return VarDateFromI8((*V_I8_ref(ps)), core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
-            VT_UI8 => return VarDateFromUI8((*V_UI8_ref(ps)), core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
-            VT_R4 => return VarDateFromR4((*V_R4_ref(ps)), core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
-            VT_R8 => return VarDateFromR8((*V_R8_ref(ps)), core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
-            VT_BOOL => return VarDateFromBool((*V_BOOL_ref(ps)), core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
-            VT_CY => return VarDateFromCy((*V_CY_ref(ps)), core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_I1 => return VarDateFromI1(*V_I1_ref(ps) , core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_I2 => return VarDateFromI2(*V_I2_ref(ps) , core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_I4 => return VarDateFromI4(*V_I4_ref(ps) , core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_UI1 => return VarDateFromUI1(*V_UI1_ref(ps) , core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_UI2 => return VarDateFromUI2(*V_UI2_ref(ps) , core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_UI4 => return VarDateFromUI4(*V_UI4_ref(ps) , core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_I8 => return VarDateFromI8(*V_I8_ref(ps) , core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_UI8 => return VarDateFromUI8(*V_UI8_ref(ps) , core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_R4 => return VarDateFromR4(*V_R4_ref(ps) , core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_R8 => return VarDateFromR8(*V_R8_ref(ps) , core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_BOOL => return VarDateFromBool(*V_BOOL_ref(ps) , core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_CY => return VarDateFromCy(*V_CY_ref(ps) , core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
             VT_DECIMAL => return VarDateFromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
-            VT_DISPATCH => return VarDateFromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
-            VT_BSTR => return VarDateFromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_DISPATCH => return VarDateFromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
+            VT_BSTR => return VarDateFromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_DATE_ref(pd)))),
             _ => {}
         },
         VT_BOOL => match vtFrom {
@@ -422,21 +422,21 @@ unsafe fn VARIANT_Coerce(
                 (*V_BOOL_ref(pd)) = 0;
                 return S_OK;
             }
-            VT_I1 => return VarBoolFromI1((*V_I1_ref(ps)), core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
-            VT_I2 => return VarBoolFromI2((*V_I2_ref(ps)), core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
-            VT_I4 => return VarBoolFromI4((*V_I4_ref(ps)), core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
-            VT_UI1 => return VarBoolFromUI1((*V_UI1_ref(ps)), core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
-            VT_UI2 => return VarBoolFromUI2((*V_UI2_ref(ps)), core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
-            VT_UI4 => return VarBoolFromUI4((*V_UI4_ref(ps)), core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
-            VT_I8 => return VarBoolFromI8((*V_I8_ref(ps)), core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
-            VT_UI8 => return VarBoolFromUI8((*V_UI8_ref(ps)), core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
-            VT_R4 => return VarBoolFromR4((*V_R4_ref(ps)), core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
-            VT_R8 => return VarBoolFromR8((*V_R8_ref(ps)), core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
-            VT_DATE => return VarBoolFromDate((*V_DATE_ref(ps)), core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
-            VT_CY => return VarBoolFromCy((*V_CY_ref(ps)), core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_I1 => return VarBoolFromI1(*V_I1_ref(ps) , core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_I2 => return VarBoolFromI2(*V_I2_ref(ps) , core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_I4 => return VarBoolFromI4(*V_I4_ref(ps) , core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_UI1 => return VarBoolFromUI1(*V_UI1_ref(ps) , core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_UI2 => return VarBoolFromUI2(*V_UI2_ref(ps) , core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_UI4 => return VarBoolFromUI4(*V_UI4_ref(ps) , core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_I8 => return VarBoolFromI8(*V_I8_ref(ps) , core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_UI8 => return VarBoolFromUI8(*V_UI8_ref(ps) , core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_R4 => return VarBoolFromR4(*V_R4_ref(ps) , core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_R8 => return VarBoolFromR8(*V_R8_ref(ps) , core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_DATE => return VarBoolFromDate(*V_DATE_ref(ps) , core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_CY => return VarBoolFromCy(*V_CY_ref(ps) , core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
             VT_DECIMAL => return VarBoolFromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
-            VT_DISPATCH => return VarBoolFromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
-            VT_BSTR => return VarBoolFromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_DISPATCH => return VarBoolFromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
+            VT_BSTR => return VarBoolFromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BOOL_ref(pd)))),
             _ => {}
         },
         VT_BSTR => match vtFrom {
@@ -446,24 +446,24 @@ unsafe fn VARIANT_Coerce(
             }
             VT_BOOL => {
                 if wFlags as u32 & (VARIANT_ALPHABOOL | VARIANT_LOCALBOOL) != 0 {
-                    return VarBstrFromBool((*V_BOOL_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd))));
+                    return VarBstrFromBool(*V_BOOL_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd))));
                 }
-                return VarBstrFromI2((*V_BOOL_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd))));
+                return VarBstrFromI2(*V_BOOL_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd))));
             }
-            VT_I1 => return VarBstrFromI1((*V_I1_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
-            VT_I2 => return VarBstrFromI2((*V_I2_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
-            VT_I4 => return VarBstrFromI4((*V_I4_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
-            VT_UI1 => return VarBstrFromUI1((*V_UI1_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
-            VT_UI2 => return VarBstrFromUI2((*V_UI2_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
-            VT_UI4 => return VarBstrFromUI4((*V_UI4_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
-            VT_I8 => return VarBstrFromI8((*V_I8_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
-            VT_UI8 => return VarBstrFromUI8((*V_UI8_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
-            VT_R4 => return VarBstrFromR4((*V_R4_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
-            VT_R8 => return VarBstrFromR8((*V_R8_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
-            VT_DATE => return VarBstrFromDate((*V_DATE_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
-            VT_CY => return VarBstrFromCy((*V_CY_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
+            VT_I1 => return VarBstrFromI1(*V_I1_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
+            VT_I2 => return VarBstrFromI2(*V_I2_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
+            VT_I4 => return VarBstrFromI4(*V_I4_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
+            VT_UI1 => return VarBstrFromUI1(*V_UI1_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
+            VT_UI2 => return VarBstrFromUI2(*V_UI2_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
+            VT_UI4 => return VarBstrFromUI4(*V_UI4_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
+            VT_I8 => return VarBstrFromI8(*V_I8_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
+            VT_UI8 => return VarBstrFromUI8(*V_UI8_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
+            VT_R4 => return VarBstrFromR4(*V_R4_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
+            VT_R8 => return VarBstrFromR8(*V_R8_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
+            VT_DATE => return VarBstrFromDate(*V_DATE_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
+            VT_CY => return VarBstrFromCy(*V_CY_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
             VT_DECIMAL => return VarBstrFromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
-            VT_DISPATCH => return VarBstrFromDisp((*V_DISPATCH_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
+            VT_DISPATCH => return VarBstrFromDisp(*V_DISPATCH_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_BSTR_ref(pd)))),
             _ => {}
         },
         VT_CY => match vtFrom {
@@ -471,21 +471,21 @@ unsafe fn VARIANT_Coerce(
                 (*V_CY_ref(pd)).int64 = 0;
                 return S_OK;
             }
-            VT_I1 => return VarCyFromI1((*V_I1_ref(ps)), core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
-            VT_I2 => return VarCyFromI2((*V_I2_ref(ps)), core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
-            VT_I4 => return VarCyFromI4((*V_I4_ref(ps)), core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
-            VT_UI1 => return VarCyFromUI1((*V_UI1_ref(ps)), core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
-            VT_UI2 => return VarCyFromUI2((*V_UI2_ref(ps)), core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
-            VT_UI4 => return VarCyFromUI4((*V_UI4_ref(ps)), core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
-            VT_I8 => return VarCyFromI8((*V_I8_ref(ps)), core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
-            VT_UI8 => return VarCyFromUI8((*V_UI8_ref(ps)), core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
-            VT_R4 => return VarCyFromR4((*V_R4_ref(ps)), core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
-            VT_R8 => return VarCyFromR8((*V_R8_ref(ps)), core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
-            VT_DATE => return VarCyFromDate((*V_DATE_ref(ps)), core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
-            VT_BOOL => return VarCyFromBool((*V_BOOL_ref(ps)), core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_I1 => return VarCyFromI1(*V_I1_ref(ps) , core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_I2 => return VarCyFromI2(*V_I2_ref(ps) , core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_I4 => return VarCyFromI4(*V_I4_ref(ps) , core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_UI1 => return VarCyFromUI1(*V_UI1_ref(ps) , core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_UI2 => return VarCyFromUI2(*V_UI2_ref(ps) , core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_UI4 => return VarCyFromUI4(*V_UI4_ref(ps) , core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_I8 => return VarCyFromI8(*V_I8_ref(ps) , core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_UI8 => return VarCyFromUI8(*V_UI8_ref(ps) , core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_R4 => return VarCyFromR4(*V_R4_ref(ps) , core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_R8 => return VarCyFromR8(*V_R8_ref(ps) , core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_DATE => return VarCyFromDate(*V_DATE_ref(ps) , core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_BOOL => return VarCyFromBool(*V_BOOL_ref(ps) , core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
             VT_DECIMAL => return VarCyFromDec(core::ptr::addr_of_mut!((*V_DECIMAL_ref(ps))), core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
-            VT_DISPATCH => return VarCyFromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
-            VT_BSTR => return VarCyFromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_DISPATCH => return VarCyFromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
+            VT_BSTR => return VarCyFromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_CY_ref(pd)))),
             _ => {}
         },
         VT_DECIMAL => match vtFrom {
@@ -496,20 +496,20 @@ unsafe fn VARIANT_Coerce(
                 (*DEC_LO32_ref(core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd))))) = if vtFrom == VT_BOOL && (*V_BOOL_ref(ps)) != 0 { 1 } else { 0 };
                 return S_OK;
             }
-            VT_I1 => return VarDecFromI1((*V_I1_ref(ps)), core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
-            VT_I2 => return VarDecFromI2((*V_I2_ref(ps)), core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
-            VT_I4 => return VarDecFromI4((*V_I4_ref(ps)), core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
-            VT_UI1 => return VarDecFromUI1((*V_UI1_ref(ps)), core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
-            VT_UI2 => return VarDecFromUI2((*V_UI2_ref(ps)), core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
-            VT_UI4 => return VarDecFromUI4((*V_UI4_ref(ps)), core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
-            VT_I8 => return VarDecFromI8((*V_I8_ref(ps)), core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
-            VT_UI8 => return VarDecFromUI8((*V_UI8_ref(ps)), core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
-            VT_R4 => return VarDecFromR4((*V_R4_ref(ps)), core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
-            VT_R8 => return VarDecFromR8((*V_R8_ref(ps)), core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
-            VT_DATE => return VarDecFromDate((*V_DATE_ref(ps)), core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
-            VT_CY => return VarDecFromCy((*V_CY_ref(ps)), core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
-            VT_DISPATCH => return VarDecFromDisp((*V_DISPATCH_ref(ps)), lcid, core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
-            VT_BSTR => return VarDecFromStr((*V_BSTR_ref(ps)), lcid, dwFlags, core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_I1 => return VarDecFromI1(*V_I1_ref(ps) , core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_I2 => return VarDecFromI2(*V_I2_ref(ps) , core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_I4 => return VarDecFromI4(*V_I4_ref(ps) , core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_UI1 => return VarDecFromUI1(*V_UI1_ref(ps) , core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_UI2 => return VarDecFromUI2(*V_UI2_ref(ps) , core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_UI4 => return VarDecFromUI4(*V_UI4_ref(ps) , core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_I8 => return VarDecFromI8(*V_I8_ref(ps) , core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_UI8 => return VarDecFromUI8(*V_UI8_ref(ps) , core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_R4 => return VarDecFromR4(*V_R4_ref(ps) , core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_R8 => return VarDecFromR8(*V_R8_ref(ps) , core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_DATE => return VarDecFromDate(*V_DATE_ref(ps) , core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_CY => return VarDecFromCy(*V_CY_ref(ps) , core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_DISPATCH => return VarDecFromDisp(*V_DISPATCH_ref(ps) , lcid, core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
+            VT_BSTR => return VarDecFromStr(*V_BSTR_ref(ps) , lcid, dwFlags, core::ptr::addr_of_mut!((*V_DECIMAL_ref(pd)))),
             _ => {}
         },
         VT_UNKNOWN => match vtFrom {
@@ -518,7 +518,7 @@ unsafe fn VARIANT_Coerce(
                     (*V_UNKNOWN_ref(pd)) = core::ptr::null_mut();
                     res = S_OK;
                 } else {
-                    res = IDispatch_QueryInterface((*V_DISPATCH_ref(ps)), &IID_IUnknown, V_UNKNOWN_ref(pd) as *mut *mut core::ffi::c_void);
+                    res = IDispatch_QueryInterface(*V_DISPATCH_ref(ps) , &IID_IUnknown, V_UNKNOWN_ref(pd) as *mut *mut core::ffi::c_void);
                 }
             }
             _ => {}
@@ -529,7 +529,7 @@ unsafe fn VARIANT_Coerce(
                     (*V_DISPATCH_ref(pd)) = core::ptr::null_mut();
                     res = S_OK;
                 } else {
-                    res = IUnknown_QueryInterface((*V_UNKNOWN_ref(ps)), &IID_IDispatch, V_DISPATCH_ref(pd) as *mut *mut core::ffi::c_void);
+                    res = IUnknown_QueryInterface(*V_UNKNOWN_ref(ps) , &IID_IDispatch, V_DISPATCH_ref(pd) as *mut *mut core::ffi::c_void);
                 }
             }
             _ => {}
@@ -543,15 +543,15 @@ unsafe fn VARIANT_Coerce(
 unsafe fn VARIANT_CoerceArray(pd: *mut VARIANTARG, ps: *mut VARIANTARG, vt: VARTYPE) -> HRESULT {
 
     if vt == VT_BSTR && (*V_VT_ref(ps)) == (VT_ARRAY | VT_UI1) {
-        return BstrFromVector((*V_ARRAY_ref(ps)), core::ptr::addr_of_mut!((*V_BSTR_ref(pd))));
+        return BstrFromVector(*V_ARRAY_ref(ps) , core::ptr::addr_of_mut!((*V_BSTR_ref(pd))));
     }
 
     if (*V_VT_ref(ps)) == VT_BSTR && vt == (VT_ARRAY | VT_UI1) {
-        return VectorFromBstr((*V_BSTR_ref(ps)), core::ptr::addr_of_mut!((*V_ARRAY_ref(pd))));
+        return VectorFromBstr(*V_BSTR_ref(ps) , core::ptr::addr_of_mut!((*V_ARRAY_ref(pd))));
     }
 
     if (*V_VT_ref(ps)) == vt {
-        return SafeArrayCopy((*V_ARRAY_ref(ps)), core::ptr::addr_of_mut!((*V_ARRAY_ref(pd))));
+        return SafeArrayCopy(*V_ARRAY_ref(ps) , core::ptr::addr_of_mut!((*V_ARRAY_ref(pd))));
     }
 
     DISP_E_TYPEMISMATCH
@@ -571,7 +571,7 @@ unsafe fn VARIANT_FetchDispatchValue(pvDispatch: LPVARIANT, pValue: LPVARIANT) -
             return DISP_E_TYPEMISMATCH;
         }
         hres = IDispatch_Invoke(
-            (*V_DISPATCH_ref(pvDispatch)),
+            *V_DISPATCH_ref(pvDispatch) ,
             DISPID_VALUE as DISPID,
             &IID_NULL,
             LOCALE_USER_DEFAULT,
@@ -616,15 +616,15 @@ pub unsafe extern "C" fn VARIANT_ClearInd(pVarg: *mut VARIANTARG) -> HRESULT {
 
     TRACE!(b"(%s)\n\0".as_ptr() as *const i8, debugstr_variant(pVarg));
 
-    hres = VARIANT_ValidateType((*V_VT_ref(pVarg)));
+    hres = VARIANT_ValidateType(*V_VT_ref(pVarg) );
     if FAILED(hres) {
         return hres;
     }
 
-    match (*V_VT_ref(pVarg)) {
+    match *V_VT_ref(pVarg)  {
         VT_DISPATCH | VT_UNKNOWN => {
             if !(*V_UNKNOWN_ref(pVarg)).is_null() {
-                IUnknown_Release((*V_UNKNOWN_ref(pVarg)));
+                IUnknown_Release(*V_UNKNOWN_ref(pVarg) );
             }
         }
         VT_UNKNOWN_VT_BYREF | VT_DISPATCH_VT_BYREF => {
@@ -633,13 +633,13 @@ pub unsafe extern "C" fn VARIANT_ClearInd(pVarg: *mut VARIANTARG) -> HRESULT {
             }
         }
         VT_BSTR => {
-            SysFreeString((*V_BSTR_ref(pVarg)));
+            SysFreeString(*V_BSTR_ref(pVarg) );
         }
         VT_BSTR_VT_BYREF => {
             SysFreeString(*(*V_BSTRREF_ref(pVarg)));
         }
         VT_VARIANT_VT_BYREF => {
-            VariantClear((*V_VARIANTREF_ref(pVarg)));
+            VariantClear(*V_VARIANTREF_ref(pVarg) );
         }
         VT_RECORD | VT_RECORD_VT_BYREF => {
             let pBr = core::ptr::addr_of_mut!((*pVarg).n1.n2.n3.brecVal);
@@ -655,7 +655,7 @@ pub unsafe extern "C" fn VARIANT_ClearInd(pVarg: *mut VARIANTARG) -> HRESULT {
                         hres = SafeArrayDestroy(*(*V_ARRAYREF_ref(pVarg)));
                     }
                 } else if !(*V_ARRAY_ref(pVarg)).is_null() {
-                    hres = SafeArrayDestroy((*V_ARRAY_ref(pVarg)));
+                    hres = SafeArrayDestroy(*V_ARRAY_ref(pVarg) );
                 }
             }
         }
@@ -672,14 +672,14 @@ pub unsafe extern "system" fn VariantClear(pVarg: *mut VARIANTARG) -> HRESULT {
 
     TRACE!(b"(%s)\n\0".as_ptr() as *const i8, debugstr_variant(pVarg));
 
-    hres = VARIANT_ValidateType((*V_VT_ref(pVarg)));
+    hres = VARIANT_ValidateType(*V_VT_ref(pVarg) );
 
     if SUCCEEDED(hres) {
         if !V_ISBYREF(pVarg) {
             if V_ISARRAY(pVarg) || (*V_VT_ref(pVarg)) == VT_SAFEARRAY {
-                hres = SafeArrayDestroy((*V_ARRAY_ref(pVarg)));
+                hres = SafeArrayDestroy(*V_ARRAY_ref(pVarg) );
             } else if (*V_VT_ref(pVarg)) == VT_BSTR {
-                SysFreeString((*V_BSTR_ref(pVarg)));
+                SysFreeString(*V_BSTR_ref(pVarg) );
             } else if (*V_VT_ref(pVarg)) == VT_RECORD {
                 let pBr = core::ptr::addr_of_mut!((*pVarg).n1.n2.n3.brecVal);
                 if !(*pBr).pRecInfo.is_null() {
@@ -688,7 +688,7 @@ pub unsafe extern "system" fn VariantClear(pVarg: *mut VARIANTARG) -> HRESULT {
                 }
             } else if (*V_VT_ref(pVarg)) == VT_DISPATCH || (*V_VT_ref(pVarg)) == VT_UNKNOWN {
                 if !(*V_UNKNOWN_ref(pVarg)).is_null() {
-                    IUnknown_Release((*V_UNKNOWN_ref(pVarg)));
+                    IUnknown_Release(*V_UNKNOWN_ref(pVarg) );
                 }
             }
         }
@@ -733,7 +733,7 @@ pub unsafe extern "system" fn VariantCopy(pvargDest: *mut VARIANTARG, pvargSrc: 
 
     TRACE!(b"(%s,%s)\n\0".as_ptr() as *const i8, debugstr_variant(pvargDest), debugstr_variant(pvargSrc));
 
-    if V_TYPE(pvargSrc) == VT_CLSID || FAILED(VARIANT_ValidateType((*V_VT_ref(pvargSrc)))) {
+    if V_TYPE(pvargSrc) == VT_CLSID || FAILED(VARIANT_ValidateType(*V_VT_ref(pvargSrc) )) {
         return DISP_E_BADVARTYPE;
     }
 
@@ -743,9 +743,9 @@ pub unsafe extern "system" fn VariantCopy(pvargDest: *mut VARIANTARG, pvargSrc: 
             *pvargDest = *pvargSrc;
 
             if !V_ISBYREF(pvargSrc) {
-                match (*V_VT_ref(pvargSrc)) {
+                match *V_VT_ref(pvargSrc)  {
                     VT_BSTR => {
-                        let bstr_src = (*V_BSTR_ref(pvargSrc));
+                        let bstr_src = *V_BSTR_ref(pvargSrc) ;
                         let byte_len = SysStringByteLen(bstr_src);
                         let new_bstr = SysAllocStringByteLen(bstr_src as *mut i8, byte_len);
                         (*V_BSTR_ref(pvargDest)) = new_bstr;
@@ -757,7 +757,7 @@ pub unsafe extern "system" fn VariantCopy(pvargDest: *mut VARIANTARG, pvargSrc: 
                         hres = VARIANT_CopyIRecordInfo(pvargDest, pvargSrc);
                     }
                     VT_DISPATCH | VT_UNKNOWN => {
-                        let unk_src = (*V_UNKNOWN_ref(pvargSrc));
+                        let unk_src = *V_UNKNOWN_ref(pvargSrc) ;
                         (*V_UNKNOWN_ref(pvargDest)) = unk_src;
                         if !unk_src.is_null() {
                             IUnknown_AddRef(unk_src);
@@ -765,7 +765,7 @@ pub unsafe extern "system" fn VariantCopy(pvargDest: *mut VARIANTARG, pvargSrc: 
                     }
                     _ => {
                         if V_ISARRAY(pvargSrc) {
-                            hres = SafeArrayCopy((*V_ARRAY_ref(pvargSrc)), V_ARRAY_ref(pvargDest));
+                            hres = SafeArrayCopy(*V_ARRAY_ref(pvargSrc) , V_ARRAY_ref(pvargDest));
                         }
                     }
                 }
@@ -841,10 +841,10 @@ pub unsafe extern "system" fn VariantCopyInd(pvargDest: *mut VARIANT, pvargSrc: 
             IUnknown_AddRef(*(*V_UNKNOWNREF_ref(pSrc)));
         }
     } else if (*V_VT_ref(pSrc)) == (VT_VARIANT | VT_BYREF) {
-        if (*V_VT_ref((*V_VARIANTREF_ref(pSrc)))) == (VT_VARIANT | VT_BYREF) {
+        if (*V_VT_ref(*V_VARIANTREF_ref(pSrc) )) == (VT_VARIANT | VT_BYREF) {
             hres = E_INVALIDARG;
         } else {
-            hres = VariantCopyInd(pvargDest, (*V_VARIANTREF_ref(pSrc)));
+            hres = VariantCopyInd(pvargDest, *V_VARIANTREF_ref(pSrc) );
         }
 
         if pSrc != pvargSrc {
@@ -909,7 +909,7 @@ pub unsafe extern "system" fn VariantChangeTypeEx(
     if vt == VT_CLSID {
         res = DISP_E_BADVARTYPE;
     } else {
-        res = VARIANT_ValidateType((*V_VT_ref(pvargSrc)));
+        res = VARIANT_ValidateType(*V_VT_ref(pvargSrc) );
 
         if SUCCEEDED(res) {
             res = VARIANT_ValidateType(vt);
@@ -972,10 +972,10 @@ unsafe fn VARIANT_DateFromJulian(dateIn: i32) -> i32 {
 }
 
 unsafe fn VARIANT_DMYFromJulian(jd: i32, year: *mut u16, month: *mut u16, day: *mut u16) {
-    let mut j: i32;
-    let mut i: i32;
+    let j: i32;
+    let i: i32;
     let mut l: i32;
-    let mut n: i32;
+    let n: i32;
 
     l = jd + 68569;
     n = l * 4 / 146097;
@@ -1292,7 +1292,7 @@ pub unsafe extern "system" fn VarDateFromUdate(
 #[no_mangle]
 pub unsafe extern "system" fn VarUdateFromDate(
     dateIn: f64,
-    dwFlags: u32,
+    _dwFlags: u32,
     lpUdate: *mut UDATE,
 ) -> HRESULT {
     static CUMULATIVE_DAYS: [u16; 13] = [
@@ -1330,7 +1330,7 @@ pub unsafe extern "system" fn VarUdateFromDate(
         core::ptr::addr_of_mut!((*lpUdate).st.wDay),
     );
     
-    let mut datePart_dow = (datePart + 1.5) / 7.0;
+    let datePart_dow = (datePart + 1.5) / 7.0;
     (*lpUdate).st.wDayOfWeek = ((datePart_dow - floor(datePart_dow)) * 7.0) as u16;
     if (*lpUdate).st.wDayOfWeek == 0 {
         (*lpUdate).st.wDayOfWeek = 5;
@@ -1895,8 +1895,8 @@ pub unsafe extern "system" fn VarNumFromParseNum(
         R8_MAX/100000000.0, R8_MAX/1000000000.0, R8_MAX/10000000000.0
     ];
 
-    let mut wholeNumberDigits: i32;
-    let mut fractionalDigits: i32;
+    let wholeNumberDigits: i32;
+    let fractionalDigits: i32;
     let mut divisor10: i32 = 0;
     let mut multiplier10: i32 = 0;
 
@@ -2287,14 +2287,14 @@ pub unsafe extern "system" fn VarNumFromParseNum(
 pub unsafe extern "system" fn VarCat(left: LPVARIANT, right: LPVARIANT, out: LPVARIANT) -> HRESULT {
     let mut left_str: BSTR = core::ptr::null_mut();
     let mut right_str: BSTR = core::ptr::null_mut();
-    let mut leftvt: VARTYPE;
-    let mut rightvt: VARTYPE;
+    let leftvt: VARTYPE;
+    let rightvt: VARTYPE;
     let mut hres: HRESULT;
 
     TRACE!(b"%s,%s,%p)\n\0".as_ptr() as *const i8, debugstr_variant(left), debugstr_variant(right), out);
 
-    leftvt = (*V_VT_ref(left));
-    rightvt = (*V_VT_ref(right));
+    leftvt = *V_VT_ref(left) ;
+    rightvt = *V_VT_ref(right) ;
 
     if leftvt == VT_NULL && rightvt == VT_NULL {
         (*V_VT_ref(out)) = VT_NULL;
@@ -2359,7 +2359,7 @@ pub unsafe extern "system" fn VarCat(left: LPVARIANT, right: LPVARIANT, out: LPV
     }
 
     if leftvt == VT_BSTR {
-        left_str = (*V_BSTR_ref(left));
+        left_str = *V_BSTR_ref(left) ;
     } else {
         let mut converted: VARIANTARG = core::mem::zeroed();
         let mut tmp: LPVARIANT = left;
@@ -2382,7 +2382,7 @@ pub unsafe extern "system" fn VarCat(left: LPVARIANT, right: LPVARIANT, out: LPV
 
         hres = VariantChangeTypeEx(&mut converted, tmp, 0, (VARIANT_ALPHABOOL | VARIANT_LOCALBOOL) as USHORT, VT_BSTR);
         if SUCCEEDED(hres) {
-            left_str = (*V_BSTR_ref(&mut converted));
+            left_str = *V_BSTR_ref(&mut converted) ;
         } else if hres != DISP_E_TYPEMISMATCH {
             VariantClear(&mut converted);
             if (*V_VT_ref(left)) != VT_BSTR {
@@ -2396,7 +2396,7 @@ pub unsafe extern "system" fn VarCat(left: LPVARIANT, right: LPVARIANT, out: LPV
     }
 
     if rightvt == VT_BSTR {
-        right_str = (*V_BSTR_ref(right));
+        right_str = *V_BSTR_ref(right) ;
     } else {
         let mut converted: VARIANTARG = core::mem::zeroed();
         let mut tmp: LPVARIANT = right;
@@ -2419,7 +2419,7 @@ pub unsafe extern "system" fn VarCat(left: LPVARIANT, right: LPVARIANT, out: LPV
 
         hres = VariantChangeTypeEx(&mut converted, tmp, 0, (VARIANT_ALPHABOOL | VARIANT_LOCALBOOL) as USHORT, VT_BSTR);
         if SUCCEEDED(hres) {
-            right_str = (*V_BSTR_ref(&mut converted));
+            right_str = *V_BSTR_ref(&mut converted) ;
         } else if hres != DISP_E_TYPEMISMATCH {
             VariantClear(&mut converted);
             if (*V_VT_ref(left)) != VT_BSTR {
@@ -2463,12 +2463,12 @@ pub unsafe extern "system" fn VarCmp(
     lcid: LCID,
     flags: DWORD,
 ) -> HRESULT {
-    let mut lvt: VARTYPE;
-    let mut rvt: VARTYPE;
+    let lvt: VARTYPE;
+    let rvt: VARTYPE;
     let mut vt: VARTYPE;
     let mut rv: VARIANT = core::mem::zeroed();
     let mut lv: VARIANT = core::mem::zeroed();
-    let mut xmask: DWORD;
+    let xmask: DWORD;
     let mut rc: HRESULT;
 
     TRACE!(
@@ -2519,13 +2519,13 @@ pub unsafe extern "system" fn VarCmp(
     VariantInit(&mut rv);
 
     if xmask == VTBIT_BSTR {
-        return VarBstrCmp((*V_BSTR_ref(left)), (*V_BSTR_ref(right)), lcid, flags);
+        return VarBstrCmp(*V_BSTR_ref(left) , *V_BSTR_ref(right) , lcid, flags);
     }
 
     if xmask & VTBIT_BSTR != 0 {
-        let mut bstrv: *mut VARIANT;
-        let mut nonbv: *mut VARIANT;
-        let mut nonbvt: VARTYPE;
+        let bstrv: *mut VARIANT;
+        let nonbv: *mut VARIANT;
+        let nonbvt: VARTYPE;
         let mut swap = 0;
 
         if lvt == VT_BSTR {
@@ -2556,7 +2556,7 @@ pub unsafe extern "system" fn VarCmp(
                 if FAILED(rc) {
                     return rc;
                 }
-                rc = VarBstrCmp((*V_BSTR_ref(bstrv)), (*V_BSTR_ref(&mut rv)), lcid, flags);
+                rc = VarBstrCmp(*V_BSTR_ref(bstrv) , *V_BSTR_ref(&mut rv) , lcid, flags);
                 VariantClear(&mut rv);
             } else if !(*V_BSTR_ref(bstrv)).is_null() && *(*V_BSTR_ref(bstrv)) != 0 {
                 rc = _VarChangeTypeExWrap(&mut lv, bstrv, lcid, 0, VT_R8);
@@ -2626,11 +2626,11 @@ pub unsafe extern "system" fn VarCmp(
     }
 
     match vt {
-        VT_CY => VarCyCmp((*V_CY_ref(&mut lv)), (*V_CY_ref(&mut rv))),
+        VT_CY => VarCyCmp(*V_CY_ref(&mut lv) , *V_CY_ref(&mut rv) ),
         VT_DECIMAL => VarDecCmp(V_DECIMAL_ref(&mut lv), V_DECIMAL_ref(&mut rv)),
         VT_I8 => {
-            let a = (*V_I8_ref(&mut lv));
-            let b = (*V_I8_ref(&mut rv));
+            let a = *V_I8_ref(&mut lv) ;
+            let b = *V_I8_ref(&mut rv) ;
             if a == b {
                 VARCMP_EQ
             } else if a < b {
@@ -2640,8 +2640,8 @@ pub unsafe extern "system" fn VarCmp(
             }
         }
         VT_R4 => {
-            let a = (*V_R4_ref(&mut lv));
-            let b = (*V_R4_ref(&mut rv));
+            let a = *V_R4_ref(&mut lv) ;
+            let b = *V_R4_ref(&mut rv) ;
             if a == b {
                 VARCMP_EQ
             } else if a < b {
@@ -2651,8 +2651,8 @@ pub unsafe extern "system" fn VarCmp(
             }
         }
         VT_R8 => {
-            let a = (*V_R8_ref(&mut lv));
-            let b = (*V_R8_ref(&mut rv));
+            let a = *V_R8_ref(&mut lv) ;
+            let b = *V_R8_ref(&mut rv) ;
             if a == b {
                 VARCMP_EQ
             } else if a < b {
@@ -2783,7 +2783,7 @@ pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: 
                     }
                 }
                 VT_BSTR => {
-                    hres = VarBoolFromStr((*V_BSTR_ref(right_ptr)),
+                    hres = VarBoolFromStr(*V_BSTR_ref(right_ptr) ,
                         LOCALE_USER_DEFAULT, VAR_LOCALBOOL, &mut b);
                     if FAILED(hres) {
                         return hres;
@@ -2814,7 +2814,7 @@ pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: 
         let mut d: f64 = 0.0;
 
         if (*V_VT_ref(&mut varLeft)) == VT_BSTR &&
-            FAILED(VarR8FromStr((*V_BSTR_ref(&mut varLeft)),
+            FAILED(VarR8FromStr(*V_BSTR_ref(&mut varLeft) ,
             LOCALE_USER_DEFAULT, 0, &mut d)) {
             hres = VariantChangeType(&mut varLeft, &mut varLeft,
                 VARIANT_LOCALBOOL as USHORT, VT_BOOL);
@@ -2831,7 +2831,7 @@ pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: 
         let mut d: f64 = 0.0;
 
         if (*V_VT_ref(&mut varRight)) == VT_BSTR &&
-            FAILED(VarR8FromStr((*V_BSTR_ref(&mut varRight)),
+            FAILED(VarR8FromStr(*V_BSTR_ref(&mut varRight) ,
             LOCALE_USER_DEFAULT, 0, &mut d)) {
             hres = VariantChangeType(&mut varRight, &mut varRight,
                 VARIANT_LOCALBOOL as USHORT, VT_BOOL);
@@ -2878,8 +2878,8 @@ pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: 
 #[no_mangle]
 pub unsafe extern "system" fn VarAdd(mut left: LPVARIANT, mut right: LPVARIANT, result: LPVARIANT) -> HRESULT {
     let mut hres: HRESULT;
-    let mut lvt: VARTYPE;
-    let mut rvt: VARTYPE;
+    let lvt: VARTYPE;
+    let rvt: VARTYPE;
     let mut resvt: VARTYPE;
     let mut tvt: VARTYPE;
     let mut lv: VARIANT = core::mem::zeroed();
@@ -2887,7 +2887,7 @@ pub unsafe extern "system" fn VarAdd(mut left: LPVARIANT, mut right: LPVARIANT, 
     let mut tv: VARIANT = core::mem::zeroed();
     let mut tempLeft: VARIANT = core::mem::zeroed();
     let mut tempRight: VARIANT = core::mem::zeroed();
-    let mut r8res: f64;
+    let r8res: f64;
 
     const VT_EMPTY_PRIO: u32 = 0;
     const VT_UI1_PRIO: u32 = 1;
@@ -3125,7 +3125,7 @@ pub unsafe extern "system" fn VarAdd(mut left: LPVARIANT, mut right: LPVARIANT, 
             }
         }
         VT_CY => {
-            hres = VarCyAdd((*V_CY_ref(&mut lv)), (*V_CY_ref(&mut rv)), V_CY_ref(result));
+            hres = VarCyAdd(*V_CY_ref(&mut lv) , *V_CY_ref(&mut rv) , V_CY_ref(result));
             'end: {
                 if hres != S_OK {
                     (*V_VT_ref(result)) = VT_EMPTY;
@@ -3141,7 +3141,7 @@ pub unsafe extern "system" fn VarAdd(mut left: LPVARIANT, mut right: LPVARIANT, 
             }
         }
         VT_BSTR => {
-            hres = VarBstrCat((*V_BSTR_ref(&mut lv)), (*V_BSTR_ref(&mut rv)), V_BSTR_ref(result));
+            hres = VarBstrCat(*V_BSTR_ref(&mut lv) , *V_BSTR_ref(&mut rv) , V_BSTR_ref(result));
             'end: {
                 if hres != S_OK {
                     (*V_VT_ref(result)) = VT_EMPTY;
@@ -3354,7 +3354,7 @@ pub unsafe extern "system" fn VarMul(left: LPVARIANT, right: LPVARIANT, result: 
                 break 'end;
             }
             VT_CY => {
-                hres = VarCyMul((*V_CY_ref(&mut lv)), (*V_CY_ref(&mut rv)), V_CY_ref(result));
+                hres = VarCyMul(*V_CY_ref(&mut lv) , *V_CY_ref(&mut rv) , V_CY_ref(result));
                 break 'end;
             }
             VT_I8 => {
@@ -3414,11 +3414,11 @@ pub unsafe extern "system" fn VarDiv(left: LPVARIANT, right: LPVARIANT, result: 
 
     let mut hres: HRESULT = S_OK;
     let mut resvt: VARTYPE = VT_EMPTY;
-    let mut leftvt: VARTYPE;
-    let mut rightvt: VARTYPE;
-    let mut rightExtraFlags: VARTYPE;
-    let mut leftExtraFlags: VARTYPE;
-    let mut ExtraFlags: VARTYPE;
+    let leftvt: VARTYPE;
+    let rightvt: VARTYPE;
+    let rightExtraFlags: VARTYPE;
+    let leftExtraFlags: VARTYPE;
+    let ExtraFlags: VARTYPE;
     let mut lv: VARIANT = core::mem::zeroed();
     let mut rv: VARIANT = core::mem::zeroed();
     let mut tempLeft: VARIANT = core::mem::zeroed();
@@ -3556,11 +3556,11 @@ pub unsafe extern "system" fn VarDiv(left: LPVARIANT, right: LPVARIANT, result: 
 pub unsafe extern "system" fn VarSub(left: LPVARIANT, right: LPVARIANT, result: LPVARIANT) -> HRESULT {
     let mut hres: HRESULT = S_OK;
     let mut resvt: VARTYPE = VT_EMPTY;
-    let mut leftvt: VARTYPE;
-    let mut rightvt: VARTYPE;
-    let mut rightExtraFlags: VARTYPE;
-    let mut leftExtraFlags: VARTYPE;
-    let mut ExtraFlags: VARTYPE;
+    let leftvt: VARTYPE;
+    let rightvt: VARTYPE;
+    let rightExtraFlags: VARTYPE;
+    let leftExtraFlags: VARTYPE;
+    let ExtraFlags: VARTYPE;
     let mut lv: VARIANT = core::mem::zeroed();
     let mut rv: VARIANT = core::mem::zeroed();
     let mut tempLeft: VARIANT = core::mem::zeroed();
@@ -3597,7 +3597,7 @@ pub unsafe extern "system" fn VarSub(left: LPVARIANT, right: LPVARIANT, result: 
             }
             hres = VARIANT_FetchDispatchValue(left, &mut tempLeft);
             if FAILED(hres) { break 'end; }
-            let left = &mut tempLeft;
+            let _left = &mut tempLeft;
         }
         if ((*V_VT_ref(right)) & VT_TYPEMASK) == VT_DISPATCH &&
             ((*V_VT_ref(right)) & (!VT_TYPEMASK)) == 0 &&
@@ -3622,7 +3622,7 @@ pub unsafe extern "system" fn VarSub(left: LPVARIANT, right: LPVARIANT, result: 
             }
             hres = VARIANT_FetchDispatchValue(right, &mut tempRight);
             if FAILED(hres) { break 'end; }
-            let right = &mut tempRight;
+            let _right = &mut tempRight;
         }
 
         leftvt = (*V_VT_ref(left)) & VT_TYPEMASK;
@@ -3757,7 +3757,7 @@ pub unsafe extern "system" fn VarSub(left: LPVARIANT, right: LPVARIANT, result: 
                 (*V_DATE_ref(result)) = (*V_DATE_ref(&mut lv)) - (*V_DATE_ref(&mut rv));
             }
             VT_CY => {
-                hres = VarCySub((*V_CY_ref(&mut lv)), (*V_CY_ref(&mut rv)), V_CY_ref(result));
+                hres = VarCySub(*V_CY_ref(&mut lv) , *V_CY_ref(&mut rv) , V_CY_ref(result));
             }
             VT_R4 => {
                 (*V_R4_ref(result)) = (*V_R4_ref(&mut lv)) - (*V_R4_ref(&mut rv));
@@ -3847,11 +3847,11 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
             (*V_VT_ref(pVarOut)) = VT_NULL;
             (*V_I4_ref(pVarOut)) = 0;
 
-            match (*V_VT_ref(pVarLeft)) {
+            match *V_VT_ref(pVarLeft)  {
                 VT_DATE | VT_R8 => {
                     if (*V_R8_ref(pVarLeft)) != 0.0 {
                         'VarOr_AsEmpty: {
-                            match (*V_VT_ref(pVarLeft)) {
+                            match *V_VT_ref(pVarLeft)  {
                                 VT_BSTR => {
                                     if (*V_BSTR_ref(pVarLeft)).is_null() {
                                         hRet = DISP_E_BADVARTYPE;
@@ -3884,7 +3884,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                             hRet = VariantCopy(&mut varLeft, pVarLeft);
                             if FAILED(hRet) { break 'VarOr_Exit; }
                             pVarLeft = &mut varLeft;
-                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, (*V_VT_ref(pVarOut)));
+                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, *V_VT_ref(pVarOut) );
                             break 'VarOr_Exit;
                         }
                     }
@@ -3901,7 +3901,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                 VT_I2 | VT_UI2 => {
                     if (*V_I2_ref(pVarLeft)) != 0 {
                         'VarOr_AsEmpty: {
-                            match (*V_VT_ref(pVarLeft)) {
+                            match *V_VT_ref(pVarLeft)  {
                                 VT_BSTR => {
                                     if (*V_BSTR_ref(pVarLeft)).is_null() {
                                         hRet = DISP_E_BADVARTYPE;
@@ -3934,7 +3934,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                             hRet = VariantCopy(&mut varLeft, pVarLeft);
                             if FAILED(hRet) { break 'VarOr_Exit; }
                             pVarLeft = &mut varLeft;
-                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, (*V_VT_ref(pVarOut)));
+                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, *V_VT_ref(pVarOut) );
                             break 'VarOr_Exit;
                         }
                     }
@@ -3944,7 +3944,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                 VT_I1 => {
                     if (*V_I1_ref(pVarLeft)) != 0 {
                         'VarOr_AsEmpty: {
-                            match (*V_VT_ref(pVarLeft)) {
+                            match *V_VT_ref(pVarLeft)  {
                                 VT_BSTR => {
                                     if (*V_BSTR_ref(pVarLeft)).is_null() {
                                         hRet = DISP_E_BADVARTYPE;
@@ -3977,7 +3977,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                             hRet = VariantCopy(&mut varLeft, pVarLeft);
                             if FAILED(hRet) { break 'VarOr_Exit; }
                             pVarLeft = &mut varLeft;
-                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, (*V_VT_ref(pVarOut)));
+                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, *V_VT_ref(pVarOut) );
                             break 'VarOr_Exit;
                         }
                     }
@@ -3994,7 +3994,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                 VT_R4 => {
                     if (*V_R4_ref(pVarLeft)) != 0.0 {
                         'VarOr_AsEmpty: {
-                            match (*V_VT_ref(pVarLeft)) {
+                            match *V_VT_ref(pVarLeft)  {
                                 VT_BSTR => {
                                     if (*V_BSTR_ref(pVarLeft)).is_null() {
                                         hRet = DISP_E_BADVARTYPE;
@@ -4027,7 +4027,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                             hRet = VariantCopy(&mut varLeft, pVarLeft);
                             if FAILED(hRet) { break 'VarOr_Exit; }
                             pVarLeft = &mut varLeft;
-                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, (*V_VT_ref(pVarOut)));
+                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, *V_VT_ref(pVarOut) );
                             break 'VarOr_Exit;
                         }
                     }
@@ -4037,7 +4037,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                 VT_I4 | VT_UI4 | VT_INT | VT_UINT => {
                     if (*V_I4_ref(pVarLeft)) != 0 {
                         'VarOr_AsEmpty: {
-                            match (*V_VT_ref(pVarLeft)) {
+                            match *V_VT_ref(pVarLeft)  {
                                 VT_BSTR => {
                                     if (*V_BSTR_ref(pVarLeft)).is_null() {
                                         hRet = DISP_E_BADVARTYPE;
@@ -4070,7 +4070,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                             hRet = VariantCopy(&mut varLeft, pVarLeft);
                             if FAILED(hRet) { break 'VarOr_Exit; }
                             pVarLeft = &mut varLeft;
-                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, (*V_VT_ref(pVarOut)));
+                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, *V_VT_ref(pVarOut) );
                             break 'VarOr_Exit;
                         }
                     }
@@ -4080,7 +4080,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                 VT_CY => {
                     if (*V_CY_ref(pVarLeft)).int64 != 0 {
                         'VarOr_AsEmpty: {
-                            match (*V_VT_ref(pVarLeft)) {
+                            match *V_VT_ref(pVarLeft)  {
                                 VT_BSTR => {
                                     if (*V_BSTR_ref(pVarLeft)).is_null() {
                                         hRet = DISP_E_BADVARTYPE;
@@ -4113,7 +4113,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                             hRet = VariantCopy(&mut varLeft, pVarLeft);
                             if FAILED(hRet) { break 'VarOr_Exit; }
                             pVarLeft = &mut varLeft;
-                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, (*V_VT_ref(pVarOut)));
+                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, *V_VT_ref(pVarOut) );
                             break 'VarOr_Exit;
                         }
                     }
@@ -4123,7 +4123,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                 VT_I8 | VT_UI8 => {
                     if (*V_I8_ref(pVarLeft)) != 0 {
                         'VarOr_AsEmpty: {
-                            match (*V_VT_ref(pVarLeft)) {
+                            match *V_VT_ref(pVarLeft)  {
                                 VT_BSTR => {
                                     if (*V_BSTR_ref(pVarLeft)).is_null() {
                                         hRet = DISP_E_BADVARTYPE;
@@ -4156,7 +4156,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                             hRet = VariantCopy(&mut varLeft, pVarLeft);
                             if FAILED(hRet) { break 'VarOr_Exit; }
                             pVarLeft = &mut varLeft;
-                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, (*V_VT_ref(pVarOut)));
+                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, *V_VT_ref(pVarOut) );
                             break 'VarOr_Exit;
                         }
                     }
@@ -4166,7 +4166,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                 VT_DECIMAL => {
                     if (*DEC_HI32_ref(V_DECIMAL_ref(pVarLeft))) != 0 || (*DEC_LO64_ref(V_DECIMAL_ref(pVarLeft))) != 0 {
                         'VarOr_AsEmpty: {
-                            match (*V_VT_ref(pVarLeft)) {
+                            match *V_VT_ref(pVarLeft)  {
                                 VT_BSTR => {
                                     if (*V_BSTR_ref(pVarLeft)).is_null() {
                                         hRet = DISP_E_BADVARTYPE;
@@ -4199,7 +4199,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                             hRet = VariantCopy(&mut varLeft, pVarLeft);
                             if FAILED(hRet) { break 'VarOr_Exit; }
                             pVarLeft = &mut varLeft;
-                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, (*V_VT_ref(pVarOut)));
+                            hRet = VariantChangeType(pVarOut, pVarLeft, 0, *V_VT_ref(pVarOut) );
                             break 'VarOr_Exit;
                         }
                     }
@@ -4214,7 +4214,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                         break 'VarOr_Exit;
                     }
 
-                    hRet = VarBoolFromStr((*V_BSTR_ref(pVarLeft)), LOCALE_USER_DEFAULT, VAR_LOCALBOOL, &mut b);
+                    hRet = VarBoolFromStr(*V_BSTR_ref(pVarLeft) , LOCALE_USER_DEFAULT, VAR_LOCALBOOL, &mut b);
                     if SUCCEEDED(hRet) && b != 0 {
                         (*V_VT_ref(pVarOut)) = VT_BOOL;
                         (*V_BOOL_ref(pVarOut)) = b;
@@ -4239,7 +4239,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
             }
 
             'VarOr_AsEmpty: {
-                match (*V_VT_ref(pVarLeft)) {
+                match *V_VT_ref(pVarLeft)  {
                     VT_BSTR => {
                         if (*V_BSTR_ref(pVarLeft)).is_null() {
                             hRet = DISP_E_BADVARTYPE;
@@ -4272,7 +4272,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
                 hRet = VariantCopy(&mut varLeft, pVarLeft);
                 if FAILED(hRet) { break 'VarOr_Exit; }
                 pVarLeft = &mut varLeft;
-                hRet = VariantChangeType(pVarOut, pVarLeft, 0, (*V_VT_ref(pVarOut)));
+                hRet = VariantChangeType(pVarOut, pVarLeft, 0, *V_VT_ref(pVarOut) );
                 break 'VarOr_Exit;
             }
         }
@@ -4332,7 +4332,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
             let mut d: f64 = 0.0;
 
             if (*V_VT_ref(&mut varLeft)) == VT_BSTR &&
-                FAILED(VarR8FromStr((*V_BSTR_ref(&mut varLeft)), LOCALE_USER_DEFAULT, 0, &mut d)) {
+                FAILED(VarR8FromStr(*V_BSTR_ref(&mut varLeft) , LOCALE_USER_DEFAULT, 0, &mut d)) {
                 hRet = VariantChangeType(&mut varLeft, &mut varLeft, VARIANT_LOCALBOOL as USHORT, VT_BOOL);
             }
             if SUCCEEDED(hRet) && (*V_VT_ref(&mut varLeft)) != vt {
@@ -4348,7 +4348,7 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
             let mut d: f64 = 0.0;
 
             if (*V_VT_ref(&mut varRight)) == VT_BSTR &&
-                FAILED(VarR8FromStr((*V_BSTR_ref(&mut varRight)), LOCALE_USER_DEFAULT, 0, &mut d)) {
+                FAILED(VarR8FromStr(*V_BSTR_ref(&mut varRight) , LOCALE_USER_DEFAULT, 0, &mut d)) {
                 hRet = VariantChangeType(&mut varRight, &mut varRight, VARIANT_LOCALBOOL as USHORT, VT_BOOL);
             }
             if SUCCEEDED(hRet) && (*V_VT_ref(&mut varRight)) != vt {
@@ -4411,7 +4411,7 @@ pub unsafe extern "system" fn VarAbs(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
 
     *pVarOut = *pVarIn;
 
-    match (*V_VT_ref(pVarIn)) {
+    match *V_VT_ref(pVarIn)  {
         VT_I1 => {
             if (*V_I1_ref(pVarIn)) == I1_MIN as i8 {
                 hRet = DISP_E_OVERFLOW;
@@ -4456,7 +4456,7 @@ pub unsafe extern "system" fn VarAbs(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             }
         }
         VT_BSTR => {
-            hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, 0, V_R8_ref(&mut varIn));
+            hRet = VarR8FromStr(*V_BSTR_ref(pVarIn) , LOCALE_USER_DEFAULT, 0, V_R8_ref(&mut varIn));
             if !FAILED(hRet) {
                 (*V_VT_ref(pVarOut)) = VT_R8;
                 pVarIn = &mut varIn;
@@ -4482,7 +4482,7 @@ pub unsafe extern "system" fn VarAbs(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             }
         }
         VT_CY => {
-            hRet = VarCyAbs((*V_CY_ref(pVarIn)), core::ptr::addr_of_mut!((*V_CY_ref(pVarOut))));
+            hRet = VarCyAbs(*V_CY_ref(pVarIn) , core::ptr::addr_of_mut!((*V_CY_ref(pVarOut))));
         }
         VT_DECIMAL => {
             (*V_DECIMAL_ref(pVarOut)).__bindgen_anon_1.__bindgen_anon_1.sign &= !DECIMAL_NEG;
@@ -4525,24 +4525,24 @@ pub unsafe extern "system" fn VarFix(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
         }
         pVarIn = &mut temp;
     }
-    (*V_VT_ref(pVarOut)) = (*V_VT_ref(pVarIn));
+    (*V_VT_ref(pVarOut)) = *V_VT_ref(pVarIn) ;
 
-    match (*V_VT_ref(pVarIn)) {
+    match *V_VT_ref(pVarIn)  {
         VT_UI1 => {
-            (*V_UI1_ref(pVarOut)) = (*V_UI1_ref(pVarIn));
+            (*V_UI1_ref(pVarOut)) = *V_UI1_ref(pVarIn) ;
         }
         VT_BOOL => {
             (*V_VT_ref(pVarOut)) = VT_I2;
-            (*V_I2_ref(pVarOut)) = (*V_I2_ref(pVarIn));
+            (*V_I2_ref(pVarOut)) = *V_I2_ref(pVarIn) ;
         }
         VT_I2 => {
-            (*V_I2_ref(pVarOut)) = (*V_I2_ref(pVarIn));
+            (*V_I2_ref(pVarOut)) = *V_I2_ref(pVarIn) ;
         }
         VT_I4 => {
-            (*V_I4_ref(pVarOut)) = (*V_I4_ref(pVarIn));
+            (*V_I4_ref(pVarOut)) = *V_I4_ref(pVarIn) ;
         }
         VT_I8 => {
-            (*V_I8_ref(pVarOut)) = (*V_I8_ref(pVarIn));
+            (*V_I8_ref(pVarOut)) = *V_I8_ref(pVarIn) ;
         }
         VT_R4 => {
             if (*V_R4_ref(pVarIn)) < 0.0f32 {
@@ -4553,23 +4553,23 @@ pub unsafe extern "system" fn VarFix(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
         }
         VT_BSTR => {
             (*V_VT_ref(pVarOut)) = VT_R8;
-            hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, 0, &mut (*V_R8_ref(pVarOut)));
+            hRet = VarR8FromStr(*V_BSTR_ref(pVarIn) , LOCALE_USER_DEFAULT, 0, &mut (*V_R8_ref(pVarOut)));
             pVarIn = pVarOut;
             if (*V_R8_ref(pVarIn)) < 0.0 {
-                (*V_R8_ref(pVarOut)) = ceil((*V_R8_ref(pVarIn)));
+                (*V_R8_ref(pVarOut)) = ceil(*V_R8_ref(pVarIn) );
             } else {
-                (*V_R8_ref(pVarOut)) = floor((*V_R8_ref(pVarIn)));
+                (*V_R8_ref(pVarOut)) = floor(*V_R8_ref(pVarIn) );
             }
         }
         VT_DATE | VT_R8 => {
             if (*V_R8_ref(pVarIn)) < 0.0 {
-                (*V_R8_ref(pVarOut)) = ceil((*V_R8_ref(pVarIn)));
+                (*V_R8_ref(pVarOut)) = ceil(*V_R8_ref(pVarIn) );
             } else {
-                (*V_R8_ref(pVarOut)) = floor((*V_R8_ref(pVarIn)));
+                (*V_R8_ref(pVarOut)) = floor(*V_R8_ref(pVarIn) );
             }
         }
         VT_CY => {
-            hRet = VarCyFix((*V_CY_ref(pVarIn)), &mut (*V_CY_ref(pVarOut)));
+            hRet = VarCyFix(*V_CY_ref(pVarIn) , &mut (*V_CY_ref(pVarOut)));
         }
         VT_DECIMAL => {
             hRet = VarDecFix(&(*V_DECIMAL_ref(pVarIn)), &mut (*V_DECIMAL_ref(pVarOut)));
@@ -4581,7 +4581,7 @@ pub unsafe extern "system" fn VarFix(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
         VT_NULL => {
         }
         _ => {
-            if V_TYPE(pVarIn) == VT_CLSID || FAILED(VARIANT_ValidateType((*V_VT_ref(pVarIn)))) {
+            if V_TYPE(pVarIn) == VT_CLSID || FAILED(VARIANT_ValidateType(*V_VT_ref(pVarIn) )) {
                 hRet = DISP_E_BADVARTYPE;
             } else {
                 hRet = DISP_E_TYPEMISMATCH;
@@ -4616,23 +4616,23 @@ pub unsafe extern "system" fn VarInt(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
         }
         pVarIn = &mut temp;
     }
-    (*V_VT_ref(pVarOut)) = (*V_VT_ref(pVarIn));
+    (*V_VT_ref(pVarOut)) = *V_VT_ref(pVarIn) ;
 
-    match (*V_VT_ref(pVarIn)) {
+    match *V_VT_ref(pVarIn)  {
         4 => {
             (*V_R4_ref(pVarOut)) = floor((*V_R4_ref(pVarIn)) as f64) as f32;
         }
         8 => {
             (*V_VT_ref(pVarOut)) = 5;
-            hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), 0x0400, 0, V_R8_ref(pVarOut));
+            hRet = VarR8FromStr(*V_BSTR_ref(pVarIn) , 0x0400, 0, V_R8_ref(pVarOut));
             pVarIn = pVarOut;
-            (*V_R8_ref(pVarOut)) = floor((*V_R8_ref(pVarIn)));
+            (*V_R8_ref(pVarOut)) = floor(*V_R8_ref(pVarIn) );
         }
         7 | 5 => {
-            (*V_R8_ref(pVarOut)) = floor((*V_R8_ref(pVarIn)));
+            (*V_R8_ref(pVarOut)) = floor(*V_R8_ref(pVarIn) );
         }
         6 => {
-            hRet = VarCyInt((*V_CY_ref(pVarIn)), V_CY_ref(pVarOut));
+            hRet = VarCyInt(*V_CY_ref(pVarIn) , V_CY_ref(pVarOut));
         }
         14 => {
             hRet = VarDecInt(V_DECIMAL_ref(pVarIn), V_DECIMAL_ref(pVarOut));
@@ -4649,7 +4649,7 @@ pub unsafe extern "system" fn VarInt(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
 
 #[no_mangle]
 pub unsafe extern "system" fn VarXor(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, pVarOut: LPVARIANT) -> HRESULT {
-    let mut vt: VARTYPE;
+    let vt: VARTYPE;
     let mut varLeft: VARIANT = core::mem::zeroed();
     let mut varRight: VARIANT = core::mem::zeroed();
     let mut tempLeft: VARIANT = core::mem::zeroed();
@@ -4724,7 +4724,7 @@ pub unsafe extern "system" fn VarXor(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, 
     }
 
     if (*V_VT_ref(&mut varLeft)) == VT_BSTR {
-        hRet = VarR8FromStr((*V_BSTR_ref(&mut varLeft)), LOCALE_USER_DEFAULT, 0, &mut d);
+        hRet = VarR8FromStr(*V_BSTR_ref(&mut varLeft) , LOCALE_USER_DEFAULT, 0, &mut d);
         hRet = VariantChangeType(&mut varLeft, &mut varLeft, VARIANT_LOCALBOOL as USHORT,
                                  if FAILED(hRet) { VT_BOOL } else { VT_I4 });
         if FAILED(hRet) {
@@ -4737,7 +4737,7 @@ pub unsafe extern "system" fn VarXor(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, 
     }
 
     if (*V_VT_ref(&mut varRight)) == VT_BSTR {
-        hRet = VarR8FromStr((*V_BSTR_ref(&mut varRight)), LOCALE_USER_DEFAULT, 0, &mut d);
+        hRet = VarR8FromStr(*V_BSTR_ref(&mut varRight) , LOCALE_USER_DEFAULT, 0, &mut d);
         hRet = VariantChangeType(&mut varRight, &mut varRight, VARIANT_LOCALBOOL as USHORT,
                                  if FAILED(hRet) { VT_BOOL } else { VT_I4 });
         if FAILED(hRet) {
@@ -4881,9 +4881,9 @@ pub unsafe extern "system" fn VarNeg(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
         }
         pVarIn = &mut temp;
     }
-    (*V_VT_ref(pVarOut)) = (*V_VT_ref(pVarIn));
+    (*V_VT_ref(pVarOut)) = *V_VT_ref(pVarIn) ;
 
-    match (*V_VT_ref(pVarIn)) {
+    match *V_VT_ref(pVarIn)  {
         VT_UI1 => {
             (*V_VT_ref(pVarOut)) = VT_I2;
             (*V_I2_ref(pVarOut)) = -((*V_UI1_ref(pVarIn)) as i16);
@@ -4916,7 +4916,7 @@ pub unsafe extern "system" fn VarNeg(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
         VT_I8 => {
             if (*V_I8_ref(pVarIn)) == I8_MIN {
                 (*V_VT_ref(pVarOut)) = VT_R8;
-                hRet = VarR8FromI8((*V_I8_ref(pVarIn)), &mut (*V_R8_ref(pVarOut)));
+                hRet = VarR8FromI8(*V_I8_ref(pVarIn) , &mut (*V_R8_ref(pVarOut)));
                 (*V_R8_ref(pVarOut)) *= -1.0;
             } else {
                 (*V_I8_ref(pVarOut)) = -(*V_I8_ref(pVarIn));
@@ -4929,14 +4929,14 @@ pub unsafe extern "system" fn VarNeg(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             (*V_R8_ref(pVarOut)) = -(*V_R8_ref(pVarIn));
         }
         VT_CY => {
-            hRet = VarCyNeg((*V_CY_ref(pVarIn)), &mut (*V_CY_ref(pVarOut)));
+            hRet = VarCyNeg(*V_CY_ref(pVarIn) , &mut (*V_CY_ref(pVarOut)));
         }
         VT_DECIMAL => {
             hRet = VarDecNeg(&(*V_DECIMAL_ref(pVarIn)), &mut (*V_DECIMAL_ref(pVarOut)));
         }
         VT_BSTR => {
             (*V_VT_ref(pVarOut)) = VT_R8;
-            hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, 0, &mut (*V_R8_ref(pVarOut)));
+            hRet = VarR8FromStr(*V_BSTR_ref(pVarIn) , LOCALE_USER_DEFAULT, 0, &mut (*V_R8_ref(pVarOut)));
             (*V_R8_ref(pVarOut)) = -(*V_R8_ref(pVarOut));
         }
         VT_EMPTY => {
@@ -4946,7 +4946,7 @@ pub unsafe extern "system" fn VarNeg(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
         VT_NULL => {
         }
         _ => {
-            if V_TYPE(pVarIn) == VT_CLSID || FAILED(VARIANT_ValidateType((*V_VT_ref(pVarIn)))) {
+            if V_TYPE(pVarIn) == VT_CLSID || FAILED(VARIANT_ValidateType(*V_VT_ref(pVarIn) )) {
                 hRet = DISP_E_BADVARTYPE;
             } else {
                 hRet = DISP_E_TYPEMISMATCH;
@@ -4991,10 +4991,10 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
 
     if (*V_VT_ref(pVarIn)) == VT_BSTR {
         (*V_VT_ref(&mut varIn)) = VT_R8;
-        hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, 0, V_R8_ref(&mut varIn));
+        hRet = VarR8FromStr(*V_BSTR_ref(pVarIn) , LOCALE_USER_DEFAULT, 0, V_R8_ref(&mut varIn));
         if FAILED(hRet) {
             (*V_VT_ref(&mut varIn)) = VT_BOOL;
-            hRet = VarBoolFromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, VAR_LOCALBOOL, V_BOOL_ref(&mut varIn));
+            hRet = VarBoolFromStr(*V_BSTR_ref(pVarIn) , LOCALE_USER_DEFAULT, VAR_LOCALBOOL, V_BOOL_ref(&mut varIn));
         }
         if FAILED(hRet) {
             'VarNot_Exit: {
@@ -5009,9 +5009,9 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
         pVarIn = &mut varIn;
     }
 
-    (*V_VT_ref(pVarOut)) = (*V_VT_ref(pVarIn));
+    (*V_VT_ref(pVarOut)) = *V_VT_ref(pVarIn) ;
 
-    match (*V_VT_ref(pVarIn)) {
+    match *V_VT_ref(pVarIn)  {
         VT_I1 => {
             (*V_I4_ref(pVarOut)) = !(*V_I1_ref(pVarIn)) as i32;
             (*V_VT_ref(pVarOut)) = VT_I4;
@@ -5061,17 +5061,17 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             (*V_VT_ref(pVarOut)) = VT_I4;
         }
         VT_R4 => {
-            hRet = VarI4FromR4((*V_R4_ref(pVarIn)), V_I4_ref(pVarOut));
+            hRet = VarI4FromR4(*V_R4_ref(pVarIn) , V_I4_ref(pVarOut));
             (*V_I4_ref(pVarOut)) = !(*V_I4_ref(pVarOut));
             (*V_VT_ref(pVarOut)) = VT_I4;
         }
         VT_DATE | VT_R8 => {
-            hRet = VarI4FromR8((*V_R8_ref(pVarIn)), V_I4_ref(pVarOut));
+            hRet = VarI4FromR8(*V_R8_ref(pVarIn) , V_I4_ref(pVarOut));
             (*V_I4_ref(pVarOut)) = !(*V_I4_ref(pVarOut));
             (*V_VT_ref(pVarOut)) = VT_I4;
         }
         VT_CY => {
-            hRet = VarI4FromCy((*V_CY_ref(pVarIn)), V_I4_ref(pVarOut));
+            hRet = VarI4FromCy(*V_CY_ref(pVarIn) , V_I4_ref(pVarOut));
             (*V_I4_ref(pVarOut)) = !(*V_I4_ref(pVarOut));
             (*V_VT_ref(pVarOut)) = VT_I4;
         }
@@ -5083,7 +5083,7 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             // No-Op
         }
         _ => {
-            if V_TYPE(pVarIn) == VT_CLSID || FAILED(VARIANT_ValidateType((*V_VT_ref(pVarIn)))) {
+            if V_TYPE(pVarIn) == VT_CLSID || FAILED(VARIANT_ValidateType(*V_VT_ref(pVarIn) )) {
                 hRet = DISP_E_BADVARTYPE;
             } else {
                 hRet = DISP_E_TYPEMISMATCH;
@@ -5103,7 +5103,7 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
 pub unsafe extern "system" fn VarRound(pVarIn: LPVARIANT, deci: i32, pVarOut: LPVARIANT) -> HRESULT {
     let mut varIn: VARIANT = core::mem::zeroed();
     let mut hRet: HRESULT = S_OK;
-    let mut factor: f32;
+    let factor: f32;
     let mut temp: VARIANT = core::mem::zeroed();
 
     VariantInit(&mut temp);
@@ -5121,25 +5121,25 @@ pub unsafe extern "system" fn VarRound(pVarIn: LPVARIANT, deci: i32, pVarOut: LP
         pVarIn = &mut temp;
     }
 
-    match (*V_VT_ref(pVarIn)) {
+    match *V_VT_ref(pVarIn)  {
         VT_I1 | VT_I8 | VT_UI2 | VT_UI4 => {
             hRet = DISP_E_BADVARTYPE;
         }
 
         VT_UI1 => {
-            (*V_VT_ref(pVarOut)) = (*V_VT_ref(pVarIn));
-            (*V_UI1_ref(pVarOut)) = (*V_UI1_ref(pVarIn));
+            (*V_VT_ref(pVarOut)) = *V_VT_ref(pVarIn) ;
+            (*V_UI1_ref(pVarOut)) = *V_UI1_ref(pVarIn) ;
         }
         VT_I2 => {
-            (*V_VT_ref(pVarOut)) = (*V_VT_ref(pVarIn));
-            (*V_I2_ref(pVarOut)) = (*V_I2_ref(pVarIn));
+            (*V_VT_ref(pVarOut)) = *V_VT_ref(pVarIn) ;
+            (*V_I2_ref(pVarOut)) = *V_I2_ref(pVarIn) ;
         }
         VT_I4 => {
-            (*V_VT_ref(pVarOut)) = (*V_VT_ref(pVarIn));
-            (*V_I4_ref(pVarOut)) = (*V_I4_ref(pVarIn));
+            (*V_VT_ref(pVarOut)) = *V_VT_ref(pVarIn) ;
+            (*V_I4_ref(pVarOut)) = *V_I4_ref(pVarIn) ;
         }
         VT_NULL => {
-            (*V_VT_ref(pVarOut)) = (*V_VT_ref(pVarIn));
+            (*V_VT_ref(pVarOut)) = *V_VT_ref(pVarIn) ;
         }
 
         VT_EMPTY => {
@@ -5148,10 +5148,10 @@ pub unsafe extern "system" fn VarRound(pVarIn: LPVARIANT, deci: i32, pVarOut: LP
         }
         VT_BOOL => {
             (*V_VT_ref(pVarOut)) = VT_I2;
-            (*V_I2_ref(pVarOut)) = (*V_BOOL_ref(pVarIn));
+            (*V_I2_ref(pVarOut)) = *V_BOOL_ref(pVarIn) ;
         }
         VT_BSTR => {
-            hRet = VarR8FromStr((*V_BSTR_ref(pVarIn)), LOCALE_USER_DEFAULT, 0, V_R8_ref(&mut varIn));
+            hRet = VarR8FromStr(*V_BSTR_ref(pVarIn) , LOCALE_USER_DEFAULT, 0, V_R8_ref(&mut varIn));
             if FAILED(hRet) {
             } else {
                 (*V_VT_ref(&mut varIn)) = VT_R8;
@@ -5162,7 +5162,7 @@ pub unsafe extern "system" fn VarRound(pVarIn: LPVARIANT, deci: i32, pVarOut: LP
                 } else {
                     (*V_R8_ref(pVarOut)) = ceil((*V_R8_ref(pVarIn)) * pow(10.0, deci as f64) - 0.5) / pow(10.0, deci as f64);
                 }
-                (*V_VT_ref(pVarOut)) = (*V_VT_ref(pVarIn));
+                (*V_VT_ref(pVarOut)) = *V_VT_ref(pVarIn) ;
             }
         }
 
@@ -5172,7 +5172,7 @@ pub unsafe extern "system" fn VarRound(pVarIn: LPVARIANT, deci: i32, pVarOut: LP
             } else {
                 (*V_R8_ref(pVarOut)) = ceil((*V_R8_ref(pVarIn)) * pow(10.0, deci as f64) - 0.5) / pow(10.0, deci as f64);
             }
-            (*V_VT_ref(pVarOut)) = (*V_VT_ref(pVarIn));
+            (*V_VT_ref(pVarOut)) = *V_VT_ref(pVarIn) ;
         }
         VT_R4 => {
             if (*V_R4_ref(pVarIn)) > 0.0 {
@@ -5180,7 +5180,7 @@ pub unsafe extern "system" fn VarRound(pVarIn: LPVARIANT, deci: i32, pVarOut: LP
             } else {
                 (*V_R4_ref(pVarOut)) = (ceil(((*V_R4_ref(pVarIn)) * pow(10.0, deci as f64) as f32 - 0.5) as f64) / pow(10.0, deci as f64)) as f32;
             }
-            (*V_VT_ref(pVarOut)) = (*V_VT_ref(pVarIn));
+            (*V_VT_ref(pVarOut)) = *V_VT_ref(pVarIn) ;
         }
         VT_DATE => {
             if (*V_DATE_ref(pVarIn)) > 0.0 {
@@ -5188,7 +5188,7 @@ pub unsafe extern "system" fn VarRound(pVarIn: LPVARIANT, deci: i32, pVarOut: LP
             } else {
                 (*V_DATE_ref(pVarOut)) = ceil((*V_DATE_ref(pVarIn)) * pow(10.0, deci as f64) - 0.5) / pow(10.0, deci as f64);
             }
-            (*V_VT_ref(pVarOut)) = (*V_VT_ref(pVarIn));
+            (*V_VT_ref(pVarOut)) = *V_VT_ref(pVarIn) ;
         }
         VT_CY => {
             if deci > 3 {
@@ -5202,7 +5202,7 @@ pub unsafe extern "system" fn VarRound(pVarIn: LPVARIANT, deci: i32, pVarOut: LP
             } else {
                 ((*V_CY_ref(pVarOut))).int64 = (ceil(((*V_CY_ref(pVarIn))).int64 as f64 / factor as f64) * factor as f64) as i64;
             }
-            (*V_VT_ref(pVarOut)) = (*V_VT_ref(pVarIn));
+            (*V_VT_ref(pVarOut)) = *V_VT_ref(pVarIn) ;
         }
         VT_DECIMAL => {
             let mut dbl: f64 = 0.0;
@@ -5249,7 +5249,7 @@ pub unsafe extern "system" fn VarIdiv(left: LPVARIANT, right: LPVARIANT, result:
     let rightvt: VARTYPE;
     let rightExtraFlags: VARTYPE;
     let leftExtraFlags: VARTYPE;
-    let ExtraFlags: VARTYPE;
+    let _ExtraFlags: VARTYPE;
     let mut lv: VARIANT = core::mem::zeroed();
     let mut rv: VARIANT = core::mem::zeroed();
     let mut tempLeft: VARIANT = core::mem::zeroed();
@@ -5686,7 +5686,7 @@ pub unsafe extern "system" fn VarPow(left: LPVARIANT, right: LPVARIANT, result: 
     }
 
     *(&mut (*result).n1.n2.vt) = VT_R8;
-    *(&mut (*result).n1.n2.n3.dblVal) = pow((*V_R8_ref(&mut dl)), (*V_R8_ref(&mut dr)));
+    *(&mut (*result).n1.n2.n3.dblVal) = pow(*V_R8_ref(&mut dl) , *V_R8_ref(&mut dr) );
 
     VariantClear(&mut dl);
     VariantClear(&mut dr);
@@ -5700,11 +5700,11 @@ pub unsafe extern "system" fn VarPow(left: LPVARIANT, right: LPVARIANT, result: 
 pub unsafe extern "system" fn VarImp(left: LPVARIANT, right: LPVARIANT, result: LPVARIANT) -> HRESULT {
     let mut hres: HRESULT = S_OK;
     let mut resvt: VARTYPE = VT_EMPTY;
-    let mut leftvt: VARTYPE;
-    let mut rightvt: VARTYPE;
-    let mut rightExtraFlags: VARTYPE;
-    let mut leftExtraFlags: VARTYPE;
-    let mut ExtraFlags: VARTYPE;
+    let leftvt: VARTYPE;
+    let rightvt: VARTYPE;
+    let rightExtraFlags: VARTYPE;
+    let leftExtraFlags: VARTYPE;
+    let ExtraFlags: VARTYPE;
     let mut lv: VARIANT = core::mem::zeroed();
     let mut rv: VARIANT = core::mem::zeroed();
     let mut d: f64 = 0.0;
@@ -5793,7 +5793,7 @@ pub unsafe extern "system" fn VarImp(left: LPVARIANT, right: LPVARIANT, result: 
                 }
             }
             VT_BSTR => {
-                hres = VarBoolFromStr((*V_BSTR_ref(right_ptr)), LOCALE_USER_DEFAULT, VAR_LOCALBOOL, &mut b);
+                hres = VarBoolFromStr(*V_BSTR_ref(right_ptr) , LOCALE_USER_DEFAULT, VAR_LOCALBOOL, &mut b);
                 if FAILED(hres) { break 'VarImp_Exit; }
                 else if b == 0 {
                     (*V_VT_ref(result)) = VT_NULL;
@@ -5835,7 +5835,7 @@ pub unsafe extern "system" fn VarImp(left: LPVARIANT, right: LPVARIANT, result: 
                 }
             }
             VT_BSTR => {
-                hres = VarBoolFromStr((*V_BSTR_ref(left_ptr)), LOCALE_USER_DEFAULT, VAR_LOCALBOOL, &mut b);
+                hres = VarBoolFromStr(*V_BSTR_ref(left_ptr) , LOCALE_USER_DEFAULT, VAR_LOCALBOOL, &mut b);
                 if FAILED(hres) { break 'VarImp_Exit; }
                 else if b == VARIANT_TRUE as i16 {
                     resvt = VT_NULL;
@@ -5860,7 +5860,7 @@ pub unsafe extern "system" fn VarImp(left: LPVARIANT, right: LPVARIANT, result: 
         if FAILED(hres) { break 'VarImp_Exit; }
     }
 
-    if (*V_VT_ref(&mut lv)) == VT_BSTR && FAILED(VarR8FromStr((*V_BSTR_ref(&mut lv)), LOCALE_USER_DEFAULT, 0, &mut d)) {
+    if (*V_VT_ref(&mut lv)) == VT_BSTR && FAILED(VarR8FromStr(*V_BSTR_ref(&mut lv) , LOCALE_USER_DEFAULT, 0, &mut d)) {
         hres = VariantChangeType(&mut lv, &mut lv, VARIANT_LOCALBOOL as USHORT, VT_BOOL);
     }
     if SUCCEEDED(hres) && (*V_VT_ref(&mut lv)) != resvt {
@@ -5868,7 +5868,7 @@ pub unsafe extern "system" fn VarImp(left: LPVARIANT, right: LPVARIANT, result: 
     }
     if FAILED(hres) { break 'VarImp_Exit; }
 
-    if (*V_VT_ref(&mut rv)) == VT_BSTR && FAILED(VarR8FromStr((*V_BSTR_ref(&mut rv)), LOCALE_USER_DEFAULT, 0, &mut d)) {
+    if (*V_VT_ref(&mut rv)) == VT_BSTR && FAILED(VarR8FromStr(*V_BSTR_ref(&mut rv) , LOCALE_USER_DEFAULT, 0, &mut d)) {
         hres = VariantChangeType(&mut rv, &mut rv, VARIANT_LOCALBOOL as USHORT, VT_BOOL);
     }
     if SUCCEEDED(hres) && (*V_VT_ref(&mut rv)) != resvt {

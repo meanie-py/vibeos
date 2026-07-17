@@ -175,7 +175,7 @@ pub unsafe extern "C" fn WinLdrEnableFifo(PortId: ULONG, Enable: BOOLEAN) {
 #[no_mangle]
 pub unsafe extern "C" fn WinLdrInitializeHeadlessPort() {
 
-    let mut PortNumber: ULONG;
+    let PortNumber: ULONG;
     let mut BaudRate: ULONG;
     let mut PortAddress: PUCHAR;
     let AnsiReset: PCSTR = b"\x1B[m\0".as_ptr() as PCSTR;
@@ -230,7 +230,7 @@ pub unsafe extern "C" fn WinLdrInitializeHeadlessPort() {
 
         i = 0;
         while i < strlen(AnsiReset as *const i8) as ULONG {
-            WinLdrPortPutByte(WinLdrTerminalDeviceId, ((*AnsiReset.add(i as usize)) as u8));
+            WinLdrPortPutByte(WinLdrTerminalDeviceId, (*AnsiReset.add(i as usize)) as u8 );
             StallExecutionProcessor(WinLdrTerminalDelay);
             i += 1;
         }

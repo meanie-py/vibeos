@@ -54,7 +54,13 @@ extern "system" {
     fn GetWindowRect(hWnd: HWND, lpRect: LPRECT) -> BOOL;
 }
 
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn GdiGetLDC(hdc: HDC) -> PLDC;
+    fn hGetPEBHandle(Type: HANDLECACHETYPE, cr: COLORREF) -> HGDIOBJ;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn GdiGetLDC(hdc: HDC) -> PLDC;
     fn hGetPEBHandle(Type: HANDLECACHETYPE, cr: COLORREF) -> HGDIOBJ;
 }
@@ -121,8 +127,9 @@ unsafe fn SortRects(pRect: PRECT, nCount: INT) {
 /*
  * I thought it was okay to have this in DeleteObject but~ Speed. (jt)
  */
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn DeleteRegion(hrgn: HRGN) -> BOOL {
+pub unsafe fn DeleteRegion(hrgn: HRGN) -> BOOL {
     let Rgn_Attr: PRGN_ATTR = GdiGetRgnAttr(hrgn);
 
     if !Rgn_Attr.is_null() {
@@ -137,9 +144,11 @@ pub unsafe extern "fastcall" fn DeleteRegion(hrgn: HRGN) -> BOOL {
     }
     NtGdiDeleteObjectApp(hrgn as HANDLE)
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn MirrorRgnByWidth(
+pub unsafe fn MirrorRgnByWidth(
     hrgn: HRGN,
     Width: INT,
     phrgn: *mut HRGN,
@@ -193,6 +202,7 @@ pub unsafe extern "fastcall" fn MirrorRgnByWidth(
         }
     }
     Ret
+}
 }
 
 #[no_mangle]

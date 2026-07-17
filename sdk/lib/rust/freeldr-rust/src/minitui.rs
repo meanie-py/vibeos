@@ -40,12 +40,12 @@ pub unsafe extern "C" fn MiniTuiInitialize() -> BOOLEAN {
     UiCenterMenu = 0u8;
     UiUseSpecialEffects = 0u8;
 
-    *UiTitleBoxTitleText.as_mut_ptr() = ((0u8) as i8);
+    *UiTitleBoxTitleText.as_mut_ptr() = (0u8) as i8 ;
 
     RtlStringCbCopyA(
         UiTimeText.as_mut_ptr(),
         core::mem::size_of_val(&UiTimeText),
-        ((b"Seconds until highlighted choice will be started automatically:\0".as_ptr()) as *const i8),
+        (b"Seconds until highlighted choice will be started automatically:\0".as_ptr()) as *const i8 ,
     );
 
     1u8
@@ -59,7 +59,7 @@ pub unsafe extern "C" fn MiniTuiDrawBackdrop(DrawHeight: ULONG) {
         0,
         UiScreenWidth - 1,
         DrawHeight - 1,
-        ((UiBackdropFillStyle) as i8),
+        (UiBackdropFillStyle) as i8 ,
         ATTR(UiBackdropFgColor, UiBackdropBgColor),
     );
 
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn MiniTuiFadeInBackdrop() {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn MiniTuiDrawStatusText(StatusText: PCSTR) {
+pub unsafe extern "C" fn MiniTuiDrawStatusText(_StatusText: PCSTR) {
     /* Minimal UI doesn't have a status bar */
 }
 
@@ -80,13 +80,13 @@ pub unsafe extern "C" fn MiniTuiDrawStatusText(StatusText: PCSTR) {
 pub unsafe extern "C" fn MiniTuiSetProgressBarText(
     ProgressText: PCSTR
 ) {
-    let mut ProgressBarWidth: ULONG;
+    let ProgressBarWidth: ULONG;
     let mut ProgressString: [u8; 256] = [0; 256];
 
     ProgressBarWidth = UiProgressBar.Right - UiProgressBar.Left + 1;
 
     RtlStringCbCopyA(ProgressString.as_mut_ptr() as *mut i8, core::mem::size_of_val(&ProgressString), ProgressText as *const i8);
-    TuiTruncateStringEllipsis(((ProgressString.as_mut_ptr()) as *mut i8), ProgressBarWidth);
+    TuiTruncateStringEllipsis((ProgressString.as_mut_ptr()) as *mut i8 , ProgressBarWidth);
 
     TuiFillArea(UiProgressBar.Left, UiProgressBar.Top,
                 UiProgressBar.Right,
@@ -96,13 +96,13 @@ pub unsafe extern "C" fn MiniTuiSetProgressBarText(
     TuiDrawCenteredText(UiProgressBar.Left, UiProgressBar.Top,
                         UiProgressBar.Right,
                         UiProgressBar.Bottom - 2,
-                        ((ProgressString.as_mut_ptr()) as *const i8), ATTR(UiTextColor, UiMenuBgColor));
+                        (ProgressString.as_mut_ptr()) as *const i8 , ATTR(UiTextColor, UiMenuBgColor));
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn MiniTuiTickProgressBar(SubPercentTimes100: ULONG) {
-    let mut ProgressBarWidth: ULONG;
-    let mut FillCount: ULONG;
+    let ProgressBarWidth: ULONG;
+    let FillCount: ULONG;
 
     ProgressBarWidth = UiProgressBar.Right - UiProgressBar.Left + 1;
 

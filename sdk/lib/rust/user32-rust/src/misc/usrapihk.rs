@@ -380,6 +380,7 @@ pub unsafe extern "system" fn ClearUserApiHook(mut hInstance: HINSTANCE) -> BOOL
     (!hInstance.is_null()) as BOOL
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn InitUserApiHook(hInstance: HINSTANCE, pfn: USERAPIHOOKPROC) -> BOOL {
     let mut uah: USERAPIHOOK = core::mem::zeroed();

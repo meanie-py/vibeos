@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -41,15 +40,14 @@ pub struct EnumConnectionsImpl {
 pub type PEnumConnectionsImpl = *mut EnumConnectionsImpl;
 unsafe extern "C" fn impl_from_IConnectionPoint(iface: *mut IConnectionPoint) -> *mut ConnectionPointImpl {
     (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<ConnectionPointImpl>()).IConnectionPoint_iface) as ULONG_PTR
+        core::mem::offset_of!(ConnectionPointImpl, IConnectionPoint_iface) as ULONG_PTR
     ) as *mut ConnectionPointImpl
 }
 unsafe extern "C" fn impl_from_IEnumConnections(
     iface: *mut IEnumConnections,
 ) -> *mut EnumConnectionsImpl {
     return (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<EnumConnectionsImpl>()).IEnumConnections_iface)
-            as ULONG_PTR,
+        core::mem::offset_of!(EnumConnectionsImpl, IEnumConnections_iface) as ULONG_PTR,
     ) as *mut EnumConnectionsImpl;
 }
 unsafe extern "C" fn ConnectionPointImpl_Destroy(Obj: *mut ConnectionPointImpl) {
@@ -71,7 +69,7 @@ fn ConnectionPointImpl_QueryInterface(
     riid: *const IID,
     ppvObject: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
-    let This: *mut ConnectionPointImpl = impl_from_IConnectionPoint(iface);
+    let _This: *mut ConnectionPointImpl = impl_from_IConnectionPoint(iface);
     TRACE!(b"(%p)->(%s, %p)\n\0".as_ptr() as *const i8, This, debugstr_guid(riid), ppvObject);
 
     if ppvObject.is_null() {
@@ -255,7 +253,7 @@ fn ConnectionPointImpl_EnumConnections(
     ppEnum: *mut LPENUMCONNECTIONS,
 ) -> HRESULT {
     let This: *mut ConnectionPointImpl = impl_from_IConnectionPoint(iface);
-    let mut pCD: *mut CONNECTDATA;
+    let pCD: *mut CONNECTDATA;
     let mut i: DWORD;
     let mut nextslot: DWORD;
     let EnumObj: *mut EnumConnectionsImpl;
@@ -356,7 +354,7 @@ fn EnumConnectionsImpl_QueryInterface(
     riid: *const IID,
     ppvObject: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
-    let This: *mut ConnectionPointImpl = iface as *mut ConnectionPointImpl;
+    let _This: *mut ConnectionPointImpl = iface as *mut ConnectionPointImpl;
     TRACE!(
         b"(%p)->(%s, %p)\n\0".as_ptr() as *const i8,
         This,

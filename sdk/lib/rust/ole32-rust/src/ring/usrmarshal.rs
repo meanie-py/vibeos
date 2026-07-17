@@ -474,7 +474,7 @@ pub unsafe extern "system" fn CLIPFORMAT_UserMarshal(
  */
 #[no_mangle]
 pub unsafe extern "system" fn CLIPFORMAT_UserUnmarshal(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     mut pBuffer: *mut u8,
     pCF: *mut CLIPFORMAT,
 ) -> *mut u8 {
@@ -785,7 +785,7 @@ pub unsafe extern "system" fn HGLOBAL_UserMarshal(
  */
 #[no_mangle]
 pub unsafe extern "system" fn HGLOBAL_UserUnmarshal(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     mut pBuffer: *mut u8,
     phGlobal: *mut HGLOBAL,
 ) -> *mut u8 {
@@ -956,7 +956,7 @@ pub unsafe extern "system" fn HBITMAP_UserMarshal(
  */
 #[no_mangle]
 pub unsafe extern "system" fn HBITMAP_UserUnmarshal(
-    flags: *mut ULONG,
+    _flags: *mut ULONG,
     mut buffer: *mut u8,
     bmp: *mut HBITMAP,
 ) -> *mut u8 {
@@ -1169,7 +1169,7 @@ pub unsafe extern "system" fn HMETAFILE_UserMarshal(
  */
 #[no_mangle]
 pub unsafe extern "system" fn HMETAFILE_UserUnmarshal(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     mut pBuffer: *mut u8,
     phmf: *mut HMETAFILE,
 ) -> *mut u8 {
@@ -1320,7 +1320,7 @@ pub unsafe extern "system" fn HENHMETAFILE_UserMarshal(
  */
 #[no_mangle]
 pub unsafe extern "system" fn HENHMETAFILE_UserUnmarshal(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     mut pBuffer: *mut u8,
     phEmf: *mut crate::user32::HENHMETAFILE,
 ) -> *mut u8 {
@@ -1573,7 +1573,7 @@ pub unsafe extern "system" fn HMETAFILEPICT_UserFree(
  */
 #[no_mangle]
 pub unsafe extern "system" fn WdtpInterfacePointer_UserSize(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     RealFlags: ULONG,
     StartingSize: ULONG,
     punk: *mut IUnknown,
@@ -1614,7 +1614,7 @@ pub unsafe extern "system" fn WdtpInterfacePointer_UserSize(
  */
 #[no_mangle]
 pub unsafe extern "system" fn WdtpInterfacePointer_UserMarshal(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     RealFlags: ULONG,
     mut pBuffer: *mut u8,
     punk: *mut IUnknown,
@@ -1676,7 +1676,7 @@ pub unsafe extern "system" fn WdtpInterfacePointer_UserMarshal(
  */
 #[no_mangle]
 pub unsafe extern "system" fn WdtpInterfacePointer_UserUnmarshal(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     mut pBuffer: *mut u8,
     ppunk: *mut *mut IUnknown,
     riid: REFIID,
@@ -2336,7 +2336,7 @@ pub unsafe extern "system" fn FLAG_STGMEDIUM_UserFree(
 
 #[no_mangle]
 pub unsafe extern "system" fn SNB_UserSize(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     StartingSize: ULONG,
     pSnb: *mut SNB,
 ) -> ULONG {
@@ -2369,7 +2369,7 @@ pub unsafe extern "system" fn SNB_UserSize(
 
 #[no_mangle]
 pub unsafe extern "system" fn SNB_UserMarshal(
-    pFlags: *mut ULONG,
+    _pFlags: *mut ULONG,
     mut pBuffer: *mut u8,
     pSnb: *mut SNB,
 ) -> *mut u8 {
@@ -3648,7 +3648,7 @@ pub unsafe extern "system" fn IDataObject_SetData_Stub(
 #[no_mangle]
 pub unsafe extern "system" fn IOleInPlaceActiveObject_TranslateAccelerator_Proxy(
     This: *mut IOleInPlaceActiveObject,
-    lpmsg: LPMSG,
+    _lpmsg: LPMSG,
 ) -> HRESULT {
     TRACE!(b"(%p %p)\n\0".as_ptr() as *const i8, This, lpmsg);
     IOleInPlaceActiveObject_RemoteTranslateAccelerator_Proxy(This)
@@ -3656,7 +3656,7 @@ pub unsafe extern "system" fn IOleInPlaceActiveObject_TranslateAccelerator_Proxy
 
 #[no_mangle]
 pub unsafe extern "system" fn IOleInPlaceActiveObject_TranslateAccelerator_Stub(
-    This: *mut IOleInPlaceActiveObject,
+    _This: *mut IOleInPlaceActiveObject,
 ) -> HRESULT {
     TRACE!(b"(%p)\n\0".as_ptr() as *const i8, This);
     S_FALSE

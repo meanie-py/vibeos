@@ -82,6 +82,7 @@ pub unsafe extern "C" fn UserGetCallProcInfo(
 }
 
 #[cfg(target_arch = "x86")]
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe extern "fastcall" fn UserSearchForCallProc(
     mut pcpd: PCALLPROCDATA,
     WndProc: WNDPROC,
@@ -96,6 +97,7 @@ unsafe extern "fastcall" fn UserSearchForCallProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe extern "C" fn UserSearchForCallProc(
     mut pcpd: PCALLPROCDATA,
     WndProc: WNDPROC,
