@@ -732,7 +732,7 @@ pub unsafe extern "system" fn FatCommonCreate(
 
             if (*Fcb).FcbCondition == FcbGood as u32 {
                 if IsPagingFile && FirstLoop && NodeType(Fcb as *const c_void) == (FAT_NTC_FCB) as u32 &&
-                    (!IsListEmpty(&FatData.AsyncCloseList as *const _) || !IsListEmpty(&FatData.DelayedCloseList as *const _)) {
+                    (!IsListEmpty(&raw const FatData.AsyncCloseList as *const _) || !IsListEmpty(&raw const FatData.DelayedCloseList as *const _)) {
                     FatFspClose(Vcb);
                     FirstLoop = false;
                     continue;

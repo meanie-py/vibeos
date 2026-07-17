@@ -941,8 +941,8 @@ extern "C" {
 pub unsafe fn UpdateTotalCommittedPages(delta: i32) {
     use core::sync::atomic::{AtomicUsize, Ordering};
 
-    let total = &*(&MmTotalCommittedPages as *const _ as *const AtomicUsize);
-    let peak = &*(&MmPeakCommitment as *const _ as *const AtomicUsize);
+    let total = &*(&raw const MmTotalCommittedPages as *const _ as *const AtomicUsize);
+    let peak = &*(&raw const MmPeakCommitment as *const _ as *const AtomicUsize);
 
     let new_total = if delta >= 0 {
         total.fetch_add(delta as usize, Ordering::SeqCst).wrapping_add(delta as usize)

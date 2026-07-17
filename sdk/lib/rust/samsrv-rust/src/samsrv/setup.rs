@@ -1195,7 +1195,7 @@ pub unsafe extern "C" fn SampInitializeSAM() -> BOOL {
             break 'done;
         }
 
-        RtlInitializeSid(pBuiltinSid, &mut SecurityNtAuthority, 1);
+        RtlInitializeSid(pBuiltinSid, &raw mut SecurityNtAuthority, 1);
         *RtlSubAuthoritySid(pBuiltinSid, 0) = SECURITY_BUILTIN_DOMAIN_RID as ULONG;
 
         pInteractiveSid = RtlAllocateHeap(RtlGetProcessHeap(), 0, RtlLengthRequiredSid(1) as SIZE_T);
@@ -1205,7 +1205,7 @@ pub unsafe extern "C" fn SampInitializeSAM() -> BOOL {
             break 'done;
         }
 
-        RtlInitializeSid(pInteractiveSid, &mut SecurityNtAuthority, 1);
+        RtlInitializeSid(pInteractiveSid, &raw mut SecurityNtAuthority, 1);
         *RtlSubAuthoritySid(pInteractiveSid, 0) = SECURITY_INTERACTIVE_RID as ULONG;
 
         pAuthenticatedUserSid =
@@ -1216,7 +1216,7 @@ pub unsafe extern "C" fn SampInitializeSAM() -> BOOL {
             break 'done;
         }
 
-        RtlInitializeSid(pAuthenticatedUserSid, &mut SecurityNtAuthority, 1);
+        RtlInitializeSid(pAuthenticatedUserSid, &raw mut SecurityNtAuthority, 1);
         *RtlSubAuthoritySid(pAuthenticatedUserSid, 0) = SECURITY_AUTHENTICATED_USER_RID as ULONG;
 
         Status = SampGetAccountDomainInfo(&mut AccountDomainInfo);

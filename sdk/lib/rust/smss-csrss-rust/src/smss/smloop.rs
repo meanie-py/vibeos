@@ -176,7 +176,7 @@ unsafe extern "system" fn SmpLoadDeferedSubsystem(
     }
 
     NextEntry = SmpSubSystemsToDefer.Flink;
-    while NextEntry != &SmpSubSystemsToDefer as *const _ as PLIST_ENTRY {
+    while NextEntry != &raw const SmpSubSystemsToDefer as *const _ as PLIST_ENTRY {
         RegEntry = CONTAINING_RECORD(
             NextEntry as PVOID,
             core::ptr::null_mut(),
@@ -417,7 +417,7 @@ pub unsafe extern "system" fn SmpApiLoop(Parameter: PVOID) -> ULONG {
     let mut ProcessInformation: PROCESS_BASIC_INFORMATION = core::mem::zeroed();
     let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
 
-    core::sync::atomic::AtomicI32::from_ptr(&SmTotalApiThreads as *const _ as *mut i32)
+    core::sync::atomic::AtomicI32::from_ptr(&raw const SmTotalApiThreads as *const _ as *mut i32)
         .fetch_add(1, core::sync::atomic::Ordering::SeqCst);
 
     RtlSetThreadIsCritical(1u8, core::ptr::null_mut(), 1u8);

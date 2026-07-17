@@ -194,7 +194,7 @@ pub unsafe extern "system" fn DriverEntry(
         FILE_DEVICE_DISK_FILE_SYSTEM,
         0,
         0, // FALSE
-        &mut FatDiskFileSystemDeviceObject,
+        &raw mut FatDiskFileSystemDeviceObject,
     );
     if !NT_SUCCESS(Status) {
         return Status;
@@ -212,7 +212,7 @@ pub unsafe extern "system" fn DriverEntry(
         FILE_DEVICE_CD_ROM_FILE_SYSTEM,
         0,
         0, // FALSE
-        &mut FatCdromFileSystemDeviceObject,
+        &raw mut FatCdromFileSystemDeviceObject,
     );
     if !NT_SUCCESS(Status) {
         IoDeleteDevice(FatDiskFileSystemDeviceObject);
@@ -327,13 +327,13 @@ pub unsafe extern "system" fn DriverEntry(
     );
     FatData.NodeTypeCode = (FAT_NTC_DATA_HEADER) as u16;
     FatData.NodeByteSize = core::mem::size_of::<FAT_DATA>() as NODE_BYTE_SIZE;
-    InitializeListHead(&mut FatData.VcbQueue);
+    InitializeListHead(&raw mut FatData.VcbQueue);
     FatData.DriverObject = DriverObject;
     FatData.DiskFileSystemDeviceObject = FatDiskFileSystemDeviceObject as PVOID;
     FatData.CdromFileSystemDeviceObject = FatCdromFileSystemDeviceObject as PVOID;
 
-    InitializeListHead(&mut FatData.AsyncCloseList);
-    InitializeListHead(&mut FatData.DelayedCloseList);
+    InitializeListHead(&raw mut FatData.AsyncCloseList);
+    InitializeListHead(&raw mut FatData.DelayedCloseList);
 
     FatData.FatCloseItem = IoAllocateWorkItem(FatDiskFileSystemDeviceObject);
     if FatData.FatCloseItem.is_null() {
@@ -350,7 +350,7 @@ pub unsafe extern "system" fn DriverEntry(
     }
     core::ptr::write_bytes(FatData.ZeroPage as *mut u8, 0, 0x1000);
 
-    KeInitializeSpinLock(&mut FatData.GeneralSpinLock);
+    KeInitializeSpinLock(&raw mut FatData.GeneralSpinLock);
 
     match MmQuerySystemSize() as u32 {
         0 => {
@@ -412,10 +412,10 @@ pub unsafe extern "system" fn DriverEntry(
         FatData.set_CodePageInvariant(1); // TRUE
     }
 
-    ExInitializeResourceLite(&mut FatData.Resource);
+    ExInitializeResourceLite(&raw mut FatData.Resource);
 
     ExInitializeNPagedLookasideList(
-        &mut FatIrpContextLookasideList,
+        &raw mut FatIrpContextLookasideList,
         None,
         None,
         POOL_NX_ALLOCATION | POOL_RAISE_IF_ALLOCATION_FAILURE,
@@ -424,7 +424,7 @@ pub unsafe extern "system" fn DriverEntry(
         MaxDepth,
     );
     ExInitializeNPagedLookasideList(
-        &mut FatNonPagedFcbLookasideList,
+        &raw mut FatNonPagedFcbLookasideList,
         None,
         None,
         POOL_NX_ALLOCATION | POOL_RAISE_IF_ALLOCATION_FAILURE,
@@ -433,7 +433,7 @@ pub unsafe extern "system" fn DriverEntry(
         MaxDepth,
     );
     ExInitializeNPagedLookasideList(
-        &mut FatEResourceLookasideList,
+        &raw mut FatEResourceLookasideList,
         None,
         None,
         POOL_NX_ALLOCATION | POOL_RAISE_IF_ALLOCATION_FAILURE,
@@ -443,8 +443,8 @@ pub unsafe extern "system" fn DriverEntry(
     );
 
     ExInitializeSListHead(core::ptr::addr_of_mut!(FatCloseContextSList) as *mut SLIST_HEADER);
-    ExInitializeFastMutex(&mut FatCloseQueueMutex);
-    KeInitializeEvent(&mut FatReserveEvent, _EVENT_TYPE_SynchronizationEvent, 1); // TRUE
+    ExInitializeFastMutex(&raw mut FatCloseQueueMutex);
+    KeInitializeEvent(&raw mut FatReserveEvent, _EVENT_TYPE_SynchronizationEvent, 1); // TRUE
 
     IoRegisterFileSystem(FatDiskFileSystemDeviceObject);
     ObReferenceObject(FatDiskFileSystemDeviceObject as PVOID);

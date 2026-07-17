@@ -823,7 +823,7 @@ pub unsafe extern "system" fn SmpConfigureEnvironment(
                 ValueData,
                 ValueLength as usize,
             );
-            RtlInitUnicodeString(&mut SmpDefaultLibPath, SmpDefaultLibPathBuffer);
+            RtlInitUnicodeString(&raw mut SmpDefaultLibPath, SmpDefaultLibPathBuffer);
         }
     }
 
@@ -1110,7 +1110,7 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
 
     'quickie: loop {
         if InitialCall != 0 {
-            SmpPrimarySecurityDescriptor = &mut SmpPrimarySDBody as *mut _ as PISECURITY_DESCRIPTOR;
+            SmpPrimarySecurityDescriptor = &raw mut SmpPrimarySDBody as *mut _ as PISECURITY_DESCRIPTOR;
             RtlCreateSecurityDescriptor(
                 SmpPrimarySecurityDescriptor as *mut _,
                 SECURITY_DESCRIPTOR_REVISION as ULONG,
@@ -1122,7 +1122,7 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
                 0u8,
             );
 
-            SmpLiberalSecurityDescriptor = &mut SmpLiberalSDBody as *mut _ as PISECURITY_DESCRIPTOR;
+            SmpLiberalSecurityDescriptor = &raw mut SmpLiberalSDBody as *mut _ as PISECURITY_DESCRIPTOR;
             RtlCreateSecurityDescriptor(
                 SmpLiberalSecurityDescriptor as *mut _,
                 SECURITY_DESCRIPTOR_REVISION as ULONG,
@@ -1135,7 +1135,7 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
             );
 
             SmpKnownDllsSecurityDescriptor =
-                &mut SmpKnownDllsSDBody as *mut _ as PISECURITY_DESCRIPTOR;
+                &raw mut SmpKnownDllsSDBody as *mut _ as PISECURITY_DESCRIPTOR;
             RtlCreateSecurityDescriptor(
                 SmpKnownDllsSecurityDescriptor as *mut _,
                 SECURITY_DESCRIPTOR_REVISION as ULONG,
@@ -1147,7 +1147,7 @@ pub unsafe extern "system" fn SmpCreateSecurityDescriptors(InitialCall: u8) -> N
                 0u8,
             );
 
-            SmpApiPortSecurityDescriptor = &mut SmpApiPortSDBody as *mut _ as PISECURITY_DESCRIPTOR;
+            SmpApiPortSecurityDescriptor = &raw mut SmpApiPortSDBody as *mut _ as PISECURITY_DESCRIPTOR;
             RtlCreateSecurityDescriptor(
                 SmpApiPortSecurityDescriptor as *mut _,
                 SECURITY_DESCRIPTOR_REVISION as ULONG,
@@ -1737,15 +1737,15 @@ unsafe extern "system" fn SmpInitializeKnownDllsInternal(
         let _ = Status1;
 
         NextEntry = SmpKnownDllsList.Flink;
-        while NextEntry != &mut SmpKnownDllsList {
+        while NextEntry != &raw mut SmpKnownDllsList {
             RegEntry = (NextEntry as *mut u8)
                 .offset(-(core::mem::offset_of!(SMP_REGISTRY_VALUE, Entry) as isize))
                 as PSMP_REGISTRY_VALUE;
             NextEntry = (*NextEntry).Flink;
 
-            if !SmpFindRegistryValue(&mut SmpExcludeKnownDllsList, (*RegEntry).Name.Buffer)
+            if !SmpFindRegistryValue(&raw mut SmpExcludeKnownDllsList, (*RegEntry).Name.Buffer)
                 .is_null()
-                || !SmpFindRegistryValue(&mut SmpExcludeKnownDllsList, (*RegEntry).Value.Buffer)
+                || !SmpFindRegistryValue(&raw mut SmpExcludeKnownDllsList, (*RegEntry).Value.Buffer)
                     .is_null()
             {
                 continue;
@@ -1861,7 +1861,7 @@ pub unsafe extern "system" fn SmpInitializeKnownDlls() -> NTSTATUS {
     let mut NextEntry: PLIST_ENTRY;
 
     RtlInitUnicodeString(&mut KnownDllsName, wstr!("\\KnownDlls\0"));
-    Status = SmpInitializeKnownDllsInternal(&mut KnownDllsName, &mut SmpKnownDllPath);
+    Status = SmpInitializeKnownDllsInternal(&mut KnownDllsName, &raw mut SmpKnownDllPath);
 
     Head = core::ptr::addr_of_mut!(SmpKnownDllsList);
     while !IsListEmpty(Head) {
@@ -2410,9 +2410,9 @@ pub unsafe extern "system" fn SmpLoadDataFromRegistry(InitialCommand: PUNICODE_S
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut DestinationString: _UNICODE_STRING = core::mem::zeroed();
 
-    RtlInitUnicodeString(&mut SmpDebugKeyword, wstr!("debug\0"));
-    RtlInitUnicodeString(&mut SmpASyncKeyword, wstr!("async\0"));
-    RtlInitUnicodeString(&mut SmpAutoChkKeyword, wstr!("autocheck\0"));
+    RtlInitUnicodeString(&raw mut SmpDebugKeyword, wstr!("debug\0"));
+    RtlInitUnicodeString(&raw mut SmpASyncKeyword, wstr!("async\0"));
+    RtlInitUnicodeString(&raw mut SmpAutoChkKeyword, wstr!("autocheck\0"));
 
     InitializeListHead(core::ptr::addr_of_mut!(SmpBootExecuteList));
     InitializeListHead(core::ptr::addr_of_mut!(SmpSetupExecuteList));
@@ -2428,7 +2428,7 @@ pub unsafe extern "system" fn SmpLoadDataFromRegistry(InitialCommand: PUNICODE_S
 
     SmpPagingFileInitialize();
 
-    Status = RtlCreateEnvironment(1u8, &mut SmpDefaultEnvironment as *mut PWCHAR);
+    Status = RtlCreateEnvironment(1u8, &raw mut SmpDefaultEnvironment as *mut PWCHAR);
     if !NT_SUCCESS(Status) {
         return Status;
     }
@@ -2498,7 +2498,7 @@ pub unsafe extern "system" fn SmpLoadDataFromRegistry(InitialCommand: PUNICODE_S
         SmpPrimarySecurityDescriptor as PVOID,
     );
     Status = NtCreateDirectoryObject(
-        &mut SmpSessionsObjectDirectory,
+        &raw mut SmpSessionsObjectDirectory,
         DIRECTORY_ALL_ACCESS,
         &mut ObjectAttributes,
     );
@@ -2562,7 +2562,7 @@ pub unsafe extern "system" fn SmpLoadDataFromRegistry(InitialCommand: PUNICODE_S
 
     Status = SmpLoadSubSystemsForMuSession(
         &mut MuSessionId,
-        &mut SmpWindowsSubSysProcessId,
+        &raw mut SmpWindowsSubSysProcessId,
         InitialCommand,
     );
     Status

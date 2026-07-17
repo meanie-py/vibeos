@@ -251,11 +251,11 @@ pub unsafe extern "system" fn SamrSetSecurityObject(
     }
 
     match (*DbObject).ObjectType {
-        SamDbServerObject => Mapping = &ServerMapping as *const _ as PGENERIC_MAPPING,
-        SamDbDomainObject => Mapping = &DomainMapping as *const _ as PGENERIC_MAPPING,
-        SamDbAliasObject => Mapping = &AliasMapping as *const _ as PGENERIC_MAPPING,
-        SamDbGroupObject => Mapping = &GroupMapping as *const _ as PGENERIC_MAPPING,
-        SamDbUserObject => Mapping = &UserMapping as *const _ as PGENERIC_MAPPING,
+        SamDbServerObject => Mapping = &raw const ServerMapping as *const _ as PGENERIC_MAPPING,
+        SamDbDomainObject => Mapping = &raw const DomainMapping as *const _ as PGENERIC_MAPPING,
+        SamDbAliasObject => Mapping = &raw const AliasMapping as *const _ as PGENERIC_MAPPING,
+        SamDbGroupObject => Mapping = &raw const GroupMapping as *const _ as PGENERIC_MAPPING,
+        SamDbUserObject => Mapping = &raw const UserMapping as *const _ as PGENERIC_MAPPING,
         _ => return STATUS_INVALID_HANDLE,
     }
 
@@ -345,7 +345,7 @@ pub unsafe extern "system" fn SamrQuerySecurityObject(
 
     *SecurityDescriptor = core::ptr::null_mut();
 
-    RtlAcquireResourceShared(&mut SampResource, 1u8);
+    RtlAcquireResourceShared(&raw mut SampResource, 1u8);
 
     if SecurityInformation
         & (DACL_SECURITY_INFORMATION | OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION)
@@ -461,7 +461,7 @@ pub unsafe extern "system" fn SamrQuerySecurityObject(
         *SecurityDescriptor = SdData;
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     if !NT_SUCCESS(Status) {
         if !ResultSd.is_null() {
@@ -521,7 +521,7 @@ pub unsafe extern "system" fn SamrLookupDomainInSamServer(
     let mut Found: BOOL = 0;
     let mut Status: NTSTATUS;
 
-    RtlAcquireResourceShared(&mut SampResource, 1u8);
+    RtlAcquireResourceShared(&raw mut SampResource, 1u8);
 
     'done: {
         Status = SampValidateDbObject(
@@ -615,7 +615,7 @@ pub unsafe extern "system" fn SamrLookupDomainInSamServer(
     SampRegCloseKey(&mut DomainKeyHandle);
     SampRegCloseKey(&mut DomainsKeyHandle);
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -1958,9 +1958,9 @@ pub unsafe extern "system" fn SamrCreateGroupInDomain(
     let mut szRid: [u16; 9] = [0; 9];
     let mut Status: NTSTATUS;
 
-    RtlMapGenericMask(&mut DesiredAccess, &mut GroupMapping);
+    RtlMapGenericMask(&mut DesiredAccess, &raw mut GroupMapping);
 
-    RtlAcquireResourceExclusive(&mut SampResource, 1u8);
+    RtlAcquireResourceExclusive(&raw mut SampResource, 1u8);
 
     'done: loop {
         Status = SampValidateDbObject(
@@ -2103,7 +2103,7 @@ pub unsafe extern "system" fn SamrCreateGroupInDomain(
         RtlFreeHeap(RtlGetProcessHeap(), 0, Sd);
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -2131,7 +2131,7 @@ pub unsafe extern "system" fn SamrEnumerateGroupsInDomain(
     let mut MoreEntries: BOOLEAN = 0u8;
     let mut Status: NTSTATUS;
 
-    RtlAcquireResourceShared(&mut SampResource, 1u8);
+    RtlAcquireResourceShared(&raw mut SampResource, 1u8);
 
     'done: {
         Status = SampValidateDbObject(
@@ -2297,7 +2297,7 @@ pub unsafe extern "system" fn SamrEnumerateGroupsInDomain(
         Status = STATUS_MORE_ENTRIES;
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -2333,9 +2333,9 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
         return STATUS_INVALID_PARAMETER;
     }
 
-    RtlMapGenericMask(&mut DesiredAccess, &mut UserMapping);
+    RtlMapGenericMask(&mut DesiredAccess, &raw mut UserMapping);
 
-    RtlAcquireResourceExclusive(&mut SampResource, 1u8);
+    RtlAcquireResourceExclusive(&raw mut SampResource, 1u8);
 
     'done: {
         Status = SampValidateDbObject(
@@ -2580,7 +2580,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
             UserObject,
             wstr!("LMPwd"),
             REG_BINARY,
-            &EmptyLmHash as *const _ as PVOID,
+            &raw const EmptyLmHash as *const _ as PVOID,
             core::mem::size_of::<ENCRYPTED_LM_OWF_PASSWORD>() as ULONG,
         );
         if !NT_SUCCESS(Status) {
@@ -2591,7 +2591,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
             UserObject,
             wstr!("NTPwd"),
             REG_BINARY,
-            &EmptyNtHash as *const _ as PVOID,
+            &raw const EmptyNtHash as *const _ as PVOID,
             core::mem::size_of::<ENCRYPTED_NT_OWF_PASSWORD>() as ULONG,
         );
         if !NT_SUCCESS(Status) {
@@ -2654,7 +2654,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
         RtlFreeHeap(RtlGetProcessHeap(), 0, UserSid);
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -2875,9 +2875,9 @@ pub unsafe extern "system" fn SamrCreateAliasInDomain(
     let mut szRid: [u16; 9] = [0; 9];
     let mut Status: NTSTATUS;
 
-    RtlMapGenericMask(&mut DesiredAccess, &mut AliasMapping);
+    RtlMapGenericMask(&mut DesiredAccess, &raw mut AliasMapping);
 
-    RtlAcquireResourceExclusive(&mut SampResource, 1u8);
+    RtlAcquireResourceExclusive(&raw mut SampResource, 1u8);
 
     'done: loop {
         Status = SampValidateDbObject(
@@ -3001,7 +3001,7 @@ pub unsafe extern "system" fn SamrCreateAliasInDomain(
         RtlFreeHeap(RtlGetProcessHeap(), 0, Sd);
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -3029,7 +3029,7 @@ pub unsafe extern "system" fn SamrEnumerateAliasesInDomain(
     let mut MoreEntries: BOOLEAN = 0u8;
     let mut Status: NTSTATUS;
 
-    RtlAcquireResourceShared(&mut SampResource, 1u8);
+    RtlAcquireResourceShared(&raw mut SampResource, 1u8);
 
     'done: loop {
         Status = SampValidateDbObject(
@@ -3196,7 +3196,7 @@ pub unsafe extern "system" fn SamrEnumerateAliasesInDomain(
         Status = STATUS_MORE_ENTRIES;
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -3382,7 +3382,7 @@ pub unsafe extern "system" fn SamrLookupNamesInDomain(
     let mut RelativeId: ULONG;
     let mut Status: NTSTATUS;
 
-    RtlAcquireResourceShared(&mut SampResource, 1u8);
+    RtlAcquireResourceShared(&raw mut SampResource, 1u8);
 
     Status = SampValidateDbObject(
         DomainHandle,
@@ -3583,7 +3583,7 @@ pub unsafe extern "system" fn SamrLookupNamesInDomain(
         (*Use).Count = 0;
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -3614,7 +3614,7 @@ pub unsafe extern "system" fn SamrLookupIdsInDomain(
         Use,
     );
 
-    RtlAcquireResourceShared(&mut SampResource, 1u8);
+    RtlAcquireResourceShared(&raw mut SampResource, 1u8);
 
     'done: loop {
         Status = SampValidateDbObject(
@@ -3906,7 +3906,7 @@ pub unsafe extern "system" fn SamrLookupIdsInDomain(
         (*Use).Count = 0;
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -4388,7 +4388,7 @@ pub unsafe extern "system" fn SamrAddMemberToGroup(
     let mut UserObject: PSAM_DB_OBJECT = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
-    RtlAcquireResourceExclusive(&mut SampResource, 1u8);
+    RtlAcquireResourceExclusive(&raw mut SampResource, 1u8);
 
     'done: {
         Status = SampValidateDbObject(
@@ -4428,7 +4428,7 @@ pub unsafe extern "system" fn SamrAddMemberToGroup(
         SampCloseDbObject(UserObject);
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -4439,7 +4439,7 @@ pub unsafe extern "system" fn SamrDeleteGroup(GroupHandle: *mut SAMPR_HANDLE) ->
     let mut Length: ULONG = 0;
     let mut Status: NTSTATUS;
 
-    RtlAcquireResourceExclusive(&mut SampResource, 1u8);
+    RtlAcquireResourceExclusive(&raw mut SampResource, 1u8);
 
     'done: loop {
         Status = SampValidateDbObject(
@@ -4479,7 +4479,7 @@ pub unsafe extern "system" fn SamrDeleteGroup(GroupHandle: *mut SAMPR_HANDLE) ->
         break 'done;
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -4493,7 +4493,7 @@ pub unsafe extern "system" fn SamrRemoveMemberFromGroup(
     let mut UserObject: PSAM_DB_OBJECT = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
-    RtlAcquireResourceExclusive(&mut SampResource, 1u8);
+    RtlAcquireResourceExclusive(&raw mut SampResource, 1u8);
 
     'done: {
         /* Validate the group handle */
@@ -4533,7 +4533,7 @@ pub unsafe extern "system" fn SamrRemoveMemberFromGroup(
         SampCloseDbObject(UserObject);
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -4551,7 +4551,7 @@ pub unsafe extern "system" fn SamrGetMembersInGroup(
 
     TRACE!(b"SamrGetMembersInGroup(%p %p)\n\0".as_ptr() as *const i8, GroupHandle, Members);
 
-    RtlAcquireResourceShared(&mut SampResource, 1u8);
+    RtlAcquireResourceShared(&raw mut SampResource, 1u8);
 
     'done: {
         Status = SampValidateDbObject(
@@ -4647,7 +4647,7 @@ pub unsafe extern "system" fn SamrGetMembersInGroup(
         }
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -4668,7 +4668,7 @@ pub unsafe extern "system" fn SamrSetMemberAttributesOfGroup(
         Attributes,
     );
 
-    RtlAcquireResourceExclusive(&mut SampResource, 1u8);
+    RtlAcquireResourceExclusive(&raw mut SampResource, 1u8);
 
     'done: {
         Status = SampValidateDbObject(
@@ -4699,7 +4699,7 @@ pub unsafe extern "system" fn SamrSetMemberAttributesOfGroup(
         }
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -5068,7 +5068,7 @@ pub unsafe extern "system" fn SamrSetInformationAlias(
         Buffer,
     );
 
-    RtlAcquireResourceExclusive(&mut SampResource, 1u8);
+    RtlAcquireResourceExclusive(&raw mut SampResource, 1u8);
 
     'done: {
         Status = SampValidateDbObject(
@@ -5098,7 +5098,7 @@ pub unsafe extern "system" fn SamrSetInformationAlias(
         }
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -5220,7 +5220,7 @@ pub unsafe extern "system" fn SamrGetMembersInAlias(
         Members,
     );
 
-    RtlAcquireResourceShared(&mut SampResource, 1u8);
+    RtlAcquireResourceShared(&raw mut SampResource, 1u8);
 
     'done: {
         Status = SampValidateDbObject(
@@ -5259,7 +5259,7 @@ pub unsafe extern "system" fn SamrGetMembersInAlias(
         }
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -8331,7 +8331,7 @@ pub unsafe extern "system" fn SamrRemoveMemberFromForeignDomain(
     let mut Rid: ULONG = 0;
     let mut Status: NTSTATUS;
 
-    RtlAcquireResourceExclusive(&mut SampResource, 1u8);
+    RtlAcquireResourceExclusive(&raw mut SampResource, 1u8);
 
     'done: {
         /* Validate the domain object */
@@ -8361,7 +8361,7 @@ pub unsafe extern "system" fn SamrRemoveMemberFromForeignDomain(
         Status = SampRemoveMemberFromAllAliases(DomainObject, MemberSid);
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -8695,9 +8695,9 @@ pub unsafe extern "system" fn SamrCreateUser2InDomain(
         return STATUS_INVALID_PARAMETER;
     }
 
-    RtlMapGenericMask(&mut DesiredAccess, &mut UserMapping);
+    RtlMapGenericMask(&mut DesiredAccess, &raw mut UserMapping);
 
-    RtlAcquireResourceExclusive(&mut SampResource, 1u8);
+    RtlAcquireResourceExclusive(&raw mut SampResource, 1u8);
 
     'done: {
         Status = SampValidateDbObject(
@@ -8968,7 +8968,7 @@ pub unsafe extern "system" fn SamrCreateUser2InDomain(
         RtlFreeHeap(RtlGetProcessHeap(), 0, UserSid);
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }
@@ -9243,7 +9243,7 @@ pub unsafe extern "system" fn SamrSetInformationUser2(
         }
     }
 
-    RtlAcquireResourceExclusive(&mut SampResource, 1u8);
+    RtlAcquireResourceExclusive(&raw mut SampResource, 1u8);
 
     Status = SampValidateDbObject(
         UserHandle,
@@ -9252,7 +9252,7 @@ pub unsafe extern "system" fn SamrSetInformationUser2(
         &mut UserObject,
     );
     if !NT_SUCCESS(Status) {
-        RtlReleaseResource(&mut SampResource);
+        RtlReleaseResource(&raw mut SampResource);
         return Status;
     }
 
@@ -9374,7 +9374,7 @@ pub unsafe extern "system" fn SamrSetInformationUser2(
         }
     }
 
-    RtlReleaseResource(&mut SampResource);
+    RtlReleaseResource(&raw mut SampResource);
 
     Status
 }

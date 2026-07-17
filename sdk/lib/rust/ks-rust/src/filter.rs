@@ -793,12 +793,12 @@ pub unsafe extern "system" fn IKsFilter_fnQueryInterface(
     let This: *mut IKsFilterImpl = CONTAINING_RECORD!(iface, IKsFilterImpl, Header.OuterUnknown);
 
     if IsEqualGUIDAligned(refiid, &IID_IUnknown) != 0 ||
-       IsEqualGUIDAligned(refiid, &IID_IKsFilter) != 0
+       IsEqualGUIDAligned(refiid, &raw const IID_IKsFilter) != 0
     {
         *Output = &mut (*This).Header.OuterUnknown as *mut _ as PVOID;
         _InterlockedIncrement(&mut (*This).ref_);
         return STATUS_SUCCESS;
-    } else if IsEqualGUIDAligned(refiid, &IID_IKsControl) != 0 {
+    } else if IsEqualGUIDAligned(refiid, &raw const IID_IKsControl) != 0 {
         *Output = &mut (*This).lpVtblKsControl as *mut _ as PVOID;
         _InterlockedIncrement(&mut (*This).ref_);
         return STATUS_SUCCESS;
@@ -1056,7 +1056,7 @@ pub unsafe extern "C" fn IKsFilter_GetFilterFromIrp(
 
     Status = (*(*(*ObjectHeader).Unknown).lpVtbl).QueryInterface.expect("non-null function pointer")(
         (*ObjectHeader).Unknown as *mut IUnknown,
-        &IID_IKsFilter,
+        &raw const IID_IKsFilter,
         Filter as *mut PVOID,
     );
 
@@ -1610,7 +1610,7 @@ pub unsafe extern "C" fn IKsFilter_CopyFilterDescriptor(
 
     AutomationTable.PropertyItemSize = core::mem::size_of::<KSPROPERTY_ITEM>() as ULONG;
     AutomationTable.PropertySetsCount = 3;
-    AutomationTable.PropertySets = &FilterPropertySet as *const KSPROPERTY_SET;
+    AutomationTable.PropertySets = &raw const FilterPropertySet as *const KSPROPERTY_SET;
 
     Status = KsMergeAutomationTables(
         &raw const (*((*This).Filter.Descriptor)).AutomationTable as *mut PKSAUTOMATION_TABLE,
@@ -1933,8 +1933,8 @@ pub unsafe extern "system" fn KspCreateFilter(
 
     (*This).ref_ = 1;
     (*This).Header.OuterUnknown = &raw mut vt_IKsFilter as PUNKNOWN;
-    (*This).lpVtblKsControl = &mut vt_IKsControl;
-    (*This).lpVtblKsProcessingObject = &mut vt_IKsProcessingObject;
+    (*This).lpVtblKsControl = &raw mut vt_IKsControl;
+    (*This).lpVtblKsProcessingObject = &raw mut vt_IKsProcessingObject;
 
     (*This).Factory = Factory;
     (*This).FilterFactory = iface;
@@ -1980,7 +1980,7 @@ pub unsafe extern "system" fn KspCreateFilter(
         }
     }
 
-    Status = KsAllocateObjectHeader(&raw mut (*This).ObjectHeader as *mut KSOBJECT_HEADER, 2, CreateItem, Irp, &mut DispatchTable);
+    Status = KsAllocateObjectHeader(&raw mut (*This).ObjectHeader as *mut KSOBJECT_HEADER, 2, CreateItem, Irp, &raw mut DispatchTable);
     if !NT_SUCCESS(Status) {
         return Status;
     }

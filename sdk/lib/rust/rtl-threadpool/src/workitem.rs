@@ -471,7 +471,7 @@ unsafe extern "system" fn RtlpIoWorkerThreadProc(Parameter: PVOID) -> ULONG {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     'init: {
-        if InterlockedIncrement(&mut ThreadPoolIOWorkerThreads) > MAX_WORKERTHREADS as LONG {
+        if InterlockedIncrement(&raw mut ThreadPoolIOWorkerThreads) > MAX_WORKERTHREADS as LONG {
             /* Oops, too many worker threads... */
             break 'init;
         }
@@ -518,20 +518,20 @@ unsafe extern "system" fn RtlpIoWorkerThreadProc(Parameter: PVOID) -> ULONG {
                 /* We timed out, let's see if we're allowed to terminate */
                 Terminate = 0u8;
 
-                Status = RtlEnterCriticalSection(&mut ThreadPoolLock);
+                Status = RtlEnterCriticalSection(&raw mut ThreadPoolLock);
                 if NT_SUCCESS(Status) {
                     if (ThreadInfo.Flags & WT_EXECUTEINPERSISTENTIOTHREAD) != 0 {
                         /* This thread is supposed to be persistent. Don't terminate! */
-                        RtlLeaveCriticalSection(&mut ThreadPoolLock);
+                        RtlLeaveCriticalSection(&raw mut ThreadPoolLock);
 
                         Timeout.QuadPart = -0x7FFFFFFFFFFFFFFFi64;
                         continue 'wait;
                     }
 
-                    Terminate = ((core::ptr::read_volatile(&ThreadPoolIOWorkerThreads)
-                        - core::ptr::read_volatile(&ThreadPoolIOWorkerThreadsLongRequests)
+                    Terminate = ((core::ptr::read_volatile(&raw const ThreadPoolIOWorkerThreads)
+                        - core::ptr::read_volatile(&raw const ThreadPoolIOWorkerThreadsLongRequests)
                         >= WORKERTHREAD_CREATION_THRESHOLD as LONG)
-                        && (core::ptr::read_volatile(&ThreadPoolIOWorkerThreadsRequests) == 0))
+                        && (core::ptr::read_volatile(&raw const ThreadPoolIOWorkerThreadsRequests) == 0))
                         as BOOLEAN;
 
                     if Terminate != 0 {
@@ -541,11 +541,11 @@ unsafe extern "system" fn RtlpIoWorkerThreadProc(Parameter: PVOID) -> ULONG {
 
                     if Terminate != 0 {
                         /* Rundown the thread and unlink it from the list */
-                        InterlockedDecrement(&mut ThreadPoolIOWorkerThreads);
+                        InterlockedDecrement(&raw mut ThreadPoolIOWorkerThreads);
                         RemoveEntryList(core::ptr::addr_of_mut!(ThreadInfo.ListEntry) as PLIST_ENTRY);
                     }
 
-                    RtlLeaveCriticalSection(&mut ThreadPoolLock);
+                    RtlLeaveCriticalSection(&raw mut ThreadPoolLock);
 
                     if Terminate != 0 {
                         /* Break the infinite loop and terminate */
@@ -565,7 +565,7 @@ unsafe extern "system" fn RtlpIoWorkerThreadProc(Parameter: PVOID) -> ULONG {
         }
     }
 
-    InterlockedDecrement(&mut ThreadPoolIOWorkerThreads);
+    InterlockedDecrement(&raw mut ThreadPoolIOWorkerThreads);
 
     /* Signal initialization completion */
     InterlockedExchange(Parameter as *mut LONG, 1);
@@ -787,7 +787,7 @@ pub unsafe extern "system" fn RtlSetIoCompletionCallback(
     let mut FileCompletionInfo: FILE_COMPLETION_INFORMATION = core::mem::zeroed();
     let mut Status: NTSTATUS;
 
-    if !(*((&ThreadPoolInitialized) as *const LONG as *const core::ffi::c_void as *const LONG)
+    if !(*((&raw const ThreadPoolInitialized) as *const LONG as *const core::ffi::c_void as *const LONG)
         .cast::<core::sync::atomic::AtomicI32>())
         .load(core::sync::atomic::Ordering::SeqCst)
         .eq(&1)

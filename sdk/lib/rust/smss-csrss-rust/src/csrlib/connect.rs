@@ -172,7 +172,7 @@ unsafe fn CsrpConnectToServer(ObjectDirectory: PCWSTR) -> NTSTATUS {
     }
 
     Status = NtSecureConnectPort(
-        &mut CsrApiPort,
+        &raw mut CsrApiPort,
         &mut PortName,
         &mut SecurityQos,
         &mut LpcWrite,
@@ -281,7 +281,7 @@ pub unsafe extern "system" fn CsrClientConnectToServer(
                 hCsrSrv,
                 &mut CsrServerRoutineName,
                 0,
-                &mut CsrServerApiRoutine as *mut _ as *mut PVOID,
+                &raw mut CsrServerApiRoutine as *mut _ as *mut PVOID,
             );
 
             CsrPortHeap = RtlGetProcessHeap();

@@ -1416,7 +1416,7 @@ pub unsafe extern "system" fn RSetServiceObjectSecurity(
             dwSecurityInformation,
             lpSecurityDescriptor as PSECURITY_DESCRIPTOR,
             core::ptr::addr_of_mut!((*lpService).pSecurityDescriptor),
-            &mut ScmServiceMapping,
+            &raw mut ScmServiceMapping,
             hToken,
         );
         if !NT_SUCCESS(Status) {

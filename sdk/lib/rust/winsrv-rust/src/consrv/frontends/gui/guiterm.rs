@@ -1191,7 +1191,7 @@ pub unsafe extern "system" fn GuiLoadFrontEnd(
     (*GuiInitInfo).hIcon = (*ConsoleStartInfo).hIcon;
     (*GuiInitInfo).hIconSm = (*ConsoleStartInfo).hIconSm;
 
-    (*FrontEnd).Vtbl = &GuiVtbl as *const _ as *mut _;
+    (*FrontEnd).Vtbl = &raw const GuiVtbl as *const _ as *mut _;
     (*FrontEnd).Context = core::ptr::null_mut();
     (*FrontEnd).Context2 = GuiInitInfo as PVOID;
 

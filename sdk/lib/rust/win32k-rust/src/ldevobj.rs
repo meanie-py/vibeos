@@ -220,7 +220,7 @@ static mut gpldevWin32k: *mut LDEVOBJ = core::ptr::null_mut();
 pub unsafe extern "system" fn InitLDEVImpl() -> NTSTATUS {
     let mut cbSize: ULONG = 0;
 
-    InitializeListHead(&mut gleLdevListHead);
+    InitializeListHead(&raw mut gleLdevListHead);
 
     ghsemLDEVList = EngCreateSemaphore();
     if ghsemLDEVList.is_null() {

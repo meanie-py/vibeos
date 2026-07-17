@@ -2158,7 +2158,7 @@ pub unsafe extern "C" fn KspCreatePin(
     (*This).BasicHeader.KsDevice = KsDevice;
     (*This).BasicHeader.Type = KsObjectTypePin;
     (*This).BasicHeader.Parent.KsFilter = (*(*Filter).lpVtbl).GetStruct.expect("non-null function pointer")(Filter);
-    (*This).BasicHeader.OuterUnknown = &mut vt_IKsPin as *mut _ as PUNKNOWN;
+    (*This).BasicHeader.OuterUnknown = &raw mut vt_IKsPin as *mut _ as PUNKNOWN;
     InitializeListHead(&mut (*This).BasicHeader.EventList);
     KeInitializeSpinLock(&mut (*This).BasicHeader.EventListLock);
 
@@ -2188,7 +2188,7 @@ pub unsafe extern "C" fn KspCreatePin(
 
     (*This).FrameSize = FrameSize;
     (*This).NumFrames = NumFrames;
-    (*This).lpVtblReferenceClock = &mut vt_ReferenceClock;
+    (*This).lpVtblReferenceClock = &raw mut vt_ReferenceClock;
     (*This).ref_ = 1;
     (*This).FileObject = (*IoStack).FileObject;
     (*This).Filter = Filter;
@@ -2226,7 +2226,7 @@ pub unsafe extern "C" fn KspCreatePin(
     core::ptr::write_bytes(&mut AutomationTable, 0, 1);
 
     AutomationTable.PropertyItemSize = core::mem::size_of::<KSPROPERTY_ITEM>() as ULONG;
-    AutomationTable.PropertySets = &PinPropertySet as *const _ as *mut KSPROPERTY_SET;
+    AutomationTable.PropertySets = &raw const PinPropertySet as *const _ as *mut KSPROPERTY_SET;
     AutomationTable.PropertySetsCount = (core::mem::size_of_val(&PinPropertySet) / core::mem::size_of::<KSPROPERTY_SET>()) as ULONG;
 
     Status = KsMergeAutomationTables(

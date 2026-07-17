@@ -1398,7 +1398,7 @@ unsafe fn IntResolveDesktop_impl(
             (*ObjectName).Buffer,
             (*ObjectName).MaximumLength as usize / core::mem::size_of::<u16>(),
             fmt1_z.as_ptr(),
-            &gustrWindowStationsDir as *const _UNICODE_STRING,
+            &raw const gustrWindowStationsDir as *const _UNICODE_STRING,
             &WinStaName as *const _UNICODE_STRING,
         ));
         if !NT_SUCCESS(Status) {
@@ -1479,7 +1479,7 @@ unsafe fn IntResolveDesktop_impl(
                     (*ObjectName).Buffer,
                     (*ObjectName).MaximumLength as usize / core::mem::size_of::<u16>(),
                     svc_full_fmt.as_ptr(),
-                    &gustrWindowStationsDir as *const _UNICODE_STRING,
+                    &raw const gustrWindowStationsDir as *const _UNICODE_STRING,
                     ProcessLuid.HighPart,
                     ProcessLuid.LowPart,
                 ));
@@ -2784,8 +2784,8 @@ unsafe fn IntPaintDesktop_impl(hDC: HDC) -> i32 {
             RECTL_vOffsetRect(&mut Rect, -Rect.left, -Rect.top);
         }
 
-        hFont1 = GreCreateFontIndirectW(&gspv.ncm.lfCaptionFont);
-        hFont2 = GreCreateFontIndirectW(&gspv.ncm.lfMenuFont);
+        hFont1 = GreCreateFontIndirectW(&raw const gspv.ncm.lfCaptionFont);
+        hFont2 = GreCreateFontIndirectW(&raw const gspv.ncm.lfMenuFont);
 
         if !hFont1.is_null() {
             hOldFont = NtGdiSelectFont(hDC, hFont1);

@@ -437,7 +437,7 @@ unsafe fn LsapGetDomainInfo() -> i32 {
             1,
             SECURITY_BUILTIN_DOMAIN_RID,
             0, 0, 0, 0, 0, 0, 0,
-            &mut BuiltinDomainSid,
+            &raw mut BuiltinDomainSid,
         );
         if !NT_SUCCESS(status) {
             break 'done status;

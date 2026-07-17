@@ -3532,7 +3532,7 @@ pub unsafe extern "system" fn AtapiRegCheckParameterValue(
     let mut zero: LONG = Default as LONG;
     let mut parameters: [RTL_QUERY_REGISTRY_TABLE; 2] = core::mem::zeroed();
     let mut doRun: LONG = Default as LONG;
-    let RegistryPath: PUNICODE_STRING = &mut SavedRegPath;
+    let RegistryPath: PUNICODE_STRING = &raw mut SavedRegPath;
     let mut paramPath: UNICODE_STRING = core::mem::zeroed();
 
     if g_Dump != 0 {
@@ -3705,7 +3705,7 @@ pub unsafe extern "system" fn DriverEntry(
     if ReEnter == 0 {
         // get registry path to settings
         RtlCopyMemory(
-            (&mut SavedRegPath) as *mut _ as PVOID,
+            (&raw mut SavedRegPath) as *mut _ as PVOID,
             RegistryPath as PVOID,
             core::mem::size_of::<UNICODE_STRING>(),
         );

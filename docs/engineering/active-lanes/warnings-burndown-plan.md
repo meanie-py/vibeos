@@ -115,15 +115,34 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
     cfg-fragile crate — swept cleanly by running `cargo fix` on the **i386 target** (keeps
     the `winsrv_sys::nt::*` glob i386 needs for `SetWindowLongPtrW`); 0 over-removals.
   Real bug also fixed in batch 1: disk-rust 6 wrong STATUS_* constants (verify_constants).
+- **2026-07-17 — `static_mut_refs` mechanical batch (the first "riskier" Tier-1.5 class).**
+  ~272 `&STATIC`→`&raw const STATIC` / `&mut STATIC`→`&raw mut STATIC` conversions across
+  56 files / 21 cold crates (samsrv, ks, win32k, smss-csrss, fastfat, classpnp, usbaudio,
+  lsasrv, acpi, mountmgr, rtl-threadpool, uniata, …). **`cargo fix` cannot do this** (the
+  suggestion is `MaybeIncorrect`), so the transform is driven by rustc's own byte-span
+  JSON suggestions (`smr_apply_json.py`): capture `--message-format=json` from a
+  `--keep-going` workspace build on all 3 targets, dedup convertible (pure `&raw` prefix)
+  edits by byte-span, apply once per file descending. **The build is a total oracle here:**
+  a `&raw` site genuinely *used as a reference* (`for x in &STATIC`, `&STATIC` passed to a
+  `&T` param) fails to compile — never silently miscompiles. 22 such ref-needed sites
+  (kdgdb, ks/pin, lsasrv/privileges iterators, services/database, win32k/keyboard+input+
+  msgqueue, winsrv/terminal) were caught by the post-apply build and **reverted to
+  reference form** (they stay as warnings — the honest state; converting them needs real
+  refactor). All 3 arches build clean (0 real breakage). No generated files, no line-shift
+  → **no baseline reconciliation needed** (every edit is a same-line in-place rewrite).
+  Fenced (untouched): ntoskrnl-rust 53, oleaut32-rust 19, hal-rust, etc.
 
 ## Remaining work (2026-07-17, prioritized) — the plain-buildable cold-crate noise is DONE
 
 The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
-- **`static_mut_refs` (~640)** — real UB-risk lint, but `cargo fix` SKIPS it (its `&raw const`
-  suggestion is `MaybeIncorrect`: ref→ptr can change semantics). Needs a targeted transform
-  (`&STATIC`→`&raw const STATIC`, `&mut STATIC`→`&raw mut STATIC`) with per-site build
-  validation — the sites used as a `&T`/`&mut T` reference (not a pointer) break and must be
-  left alone. NOT a blind sweep. Task #6.
+- **`static_mut_refs` — cold-crate `&raw` batch DONE (2026-07-17, ~272 sites, see log).**
+  Residual owed: **(a)** the 22 ref-needed sites reverted to reference form — these need a
+  real fix, and the cleanest is often `static mut`→`static` where the datum is provably
+  read-only (e.g. lsasrv `WellKnownPrivileges`/`WellKnownRights` are `static const` tables in
+  the C source, only ever indexed/iterated) — but that cascades into `unused_unsafe` cleanup,
+  so it's a separate semantic pass, not mechanical. **(b)** fenced hot-lane sites (ntoskrnl
+  53, oleaut32 19, hal) — do when those lanes are quiet. **(c)** freeldr/netstack sites (don't
+  plain-build). The transform driver is reusable: `smr_apply_json.py` + `smr_revert_broken.py`.
 - **`clashing_extern_declarations` (~1457)** — Tier-2 SIGNAL, manual audit (ABI-mismatch
   class, `verify_ffi`'s domain). Each is a potential silent miscall on amd64/arm64. Task #4.
 - **`unused_assignments` (~1436)** — triaged in batch-1 as verified-safe noise; `cargo fix`

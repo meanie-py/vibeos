@@ -2540,7 +2540,7 @@ pub unsafe extern "stdcall" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORR
             EXLATEOBJ_vInitialize(
                 &mut exlo,
                 (*psurfSrc).ppal,
-                &mut gpalRGB,
+                &raw mut gpalRGB,
                 CLR_INVALID,
                 CLR_INVALID,
                 CLR_INVALID,
@@ -2644,7 +2644,7 @@ pub unsafe extern "C" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORREF {
             EXLATEOBJ_vInitialize(
                 &mut exlo,
                 (*psurfSrc).ppal,
-                &mut gpalRGB,
+                &raw mut gpalRGB,
                 CLR_INVALID,
                 CLR_INVALID,
                 CLR_INVALID,

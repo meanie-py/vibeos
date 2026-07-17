@@ -901,7 +901,7 @@ pub unsafe extern "system" fn DriverEntry(
     PsEstablishWin32Callouts(core::ptr::addr_of_mut!(CalloutData) as *mut _);
 
     GlobalUserHeap = UserCreateHeap(
-        &mut GlobalUserHeapSection,
+        &raw mut GlobalUserHeapSection,
         &mut GlobalUserHeapBase,
         1 * 1024 * 1024,
     );

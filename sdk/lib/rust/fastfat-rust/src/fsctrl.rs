@@ -11081,7 +11081,7 @@ pub unsafe extern "system" fn FatMountVolume(
         (*Vcb).ChangeCount = ChangeCount;
 
         Links = FatData.VcbQueue.Flink;
-        while Links != &FatData.VcbQueue as *const _ as PLIST_ENTRY {
+        while Links != &raw const FatData.VcbQueue as *const _ as PLIST_ENTRY {
             OldVcb = ((Links as usize) - core::mem::offset_of!(VCB, VcbLinks)) as PVCB;
             OldVpb = (*OldVcb).Vpb;
 
@@ -11162,7 +11162,7 @@ pub unsafe extern "system" fn FatMountVolume(
                     (*OldVcb).VirtualVolumeFile,
                     &FileSizes,
                     1u8,
-                    &FatData.CacheManagerNoOpCallbacks,
+                    &raw const FatData.CacheManagerNoOpCallbacks,
                     Vcb as *mut core::ffi::c_void,
                 );
 

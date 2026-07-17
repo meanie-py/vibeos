@@ -1167,7 +1167,7 @@ unsafe fn LsapLookupIsolatedNames(
 
         if RtlEqualUnicodeString(
             AccountNames.add(i as usize) as *mut _UNICODE_STRING as PCUNICODE_STRING,
-            &mut BuiltinDomainName as *mut _UNICODE_STRING as PCUNICODE_STRING,
+            &raw mut BuiltinDomainName as *mut _UNICODE_STRING as PCUNICODE_STRING,
             1u8,
         ) != 0
         {
@@ -1181,7 +1181,7 @@ unsafe fn LsapLookupIsolatedNames(
             (*SidsBuffer.add(i as usize)).Flags = 0;
             Status = LsapAddDomainToDomainsList(
                 DomainsBuffer,
-                &mut BuiltinDomainName as *mut _UNICODE_STRING,
+                &raw mut BuiltinDomainName as *mut _UNICODE_STRING,
                 BuiltinDomainSid,
                 &mut DomainIndex as *mut u32,
             );
@@ -1196,7 +1196,7 @@ unsafe fn LsapLookupIsolatedNames(
 
         if RtlEqualUnicodeString(
             AccountNames.add(i as usize) as *mut _UNICODE_STRING as PCUNICODE_STRING,
-            &mut AccountDomainName as *mut _UNICODE_STRING as PCUNICODE_STRING,
+            &raw mut AccountDomainName as *mut _UNICODE_STRING as PCUNICODE_STRING,
             1u8,
         ) != 0
         {
@@ -1210,7 +1210,7 @@ unsafe fn LsapLookupIsolatedNames(
             (*SidsBuffer.add(i as usize)).Flags = 0;
             Status = LsapAddDomainToDomainsList(
                 DomainsBuffer,
-                &mut AccountDomainName as *mut _UNICODE_STRING,
+                &raw mut AccountDomainName as *mut _UNICODE_STRING,
                 AccountDomainSid,
                 &mut DomainIndex as *mut u32,
             );
@@ -1435,7 +1435,7 @@ unsafe fn LsapLookupIsolatedAccountNames(
                     (*SidsBuffer.offset(i as isize)).DomainIndex = -1i32;
                     (*SidsBuffer.offset(i as isize)).Flags = 0;
 
-                    Status = LsapAddDomainToDomainsList(DomainsBuffer, &mut AccountDomainName, AccountDomainSid, &mut DomainIndex);
+                    Status = LsapAddDomainToDomainsList(DomainsBuffer, &raw mut AccountDomainName, AccountDomainSid, &mut DomainIndex);
                     if !NT_SUCCESS(Status) {
                         break;
                     }
@@ -1627,7 +1627,7 @@ unsafe fn LsapLookupBuiltinNames(
             if RtlEqualUnicodeString(
                 DomainNames.add(i as usize) as *mut RPC_UNICODE_STRING as PUNICODE_STRING
                     as PCUNICODE_STRING,
-                &BuiltinDomainName as PCUNICODE_STRING,
+                &raw const BuiltinDomainName as PCUNICODE_STRING,
                 1u8,
             ) == 0
             {

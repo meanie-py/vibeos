@@ -1913,7 +1913,7 @@ pub unsafe extern "system" fn ClasspPowerSettingCallback(
         }
     }
 
-    if IsEqualGUID(SettingGuid, &GUID_DISK_IDLE_TIMEOUT) {
+    if IsEqualGUID(SettingGuid, &raw const GUID_DISK_IDLE_TIMEOUT) {
         if ValueLength as usize != core::mem::size_of::<ULONG>() || Value.is_null() {
             return STATUS_INVALID_PARAMETER;
         }
@@ -1935,7 +1935,7 @@ pub unsafe extern "system" fn ClasspPowerSettingCallback(
             fdoEntry = (*fdoEntry).ListEntry.Flink as PIDLE_POWER_FDO_LIST_ENTRY;
         }
         KeReleaseGuardedMutex((&raw mut IdlePowerFDOListMutex).cast());
-    } else if IsEqualGUID(SettingGuid, &GUID_CONSOLE_DISPLAY_STATE) {
+    } else if IsEqualGUID(SettingGuid, &raw const GUID_CONSOLE_DISPLAY_STATE) {
         if ValueLength as usize == core::mem::size_of::<ULONG>() && !Value.is_null() {
             if *(Value as PULONG) == PowerMonitorOff as ULONG {
                 ClasspScreenOff = TRUE as BOOLEAN;

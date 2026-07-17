@@ -593,7 +593,7 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
                 if device.is_null() {
                     status = IoRegisterDeviceInterface(
                         (*DeviceData).Common.Self_,
-                        &GUID_DEVICE_SYS_BUTTON,
+                        &raw const GUID_DEVICE_SYS_BUTTON,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );
@@ -606,7 +606,7 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
                 {
                     status = IoRegisterDeviceInterface(
                         (*DeviceData).Common.Self_,
-                        &GUID_DEVICE_THERMAL_ZONE,
+                        &raw const GUID_DEVICE_THERMAL_ZONE,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );
@@ -619,7 +619,7 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
                 {
                     status = IoRegisterDeviceInterface(
                         (*DeviceData).Common.Self_,
-                        &GUID_DEVICE_FAN,
+                        &raw const GUID_DEVICE_FAN,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );
@@ -632,7 +632,7 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
                 {
                     status = IoRegisterDeviceInterface(
                         (*DeviceData).Common.Self_,
-                        &GUID_DEVICE_LID,
+                        &raw const GUID_DEVICE_LID,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );
@@ -645,7 +645,7 @@ pub unsafe extern "C" fn Bus_PDO_PnP(
                 {
                     status = IoRegisterDeviceInterface(
                         (*DeviceData).Common.Self_,
-                        &GUID_DEVICE_PROCESSOR,
+                        &raw const GUID_DEVICE_PROCESSOR,
                         core::ptr::null_mut(),
                         &mut (*DeviceData).InterfaceName,
                     );

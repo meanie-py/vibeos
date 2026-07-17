@@ -247,8 +247,8 @@ unsafe fn handle_gdb_query() -> KDSTATUS {
         sprintf(
             gdb_out.as_mut_ptr(),
             b"QC:p%lx.%lx;\0".as_ptr() as *const i8,
-            handle_to_gdb_pid(PsGetThreadProcessId((&CurrentStateChange as *const _ as ULONG_PTR) as PETHREAD)),
-            handle_to_gdb_tid(PsGetThreadId((&CurrentStateChange as *const _ as ULONG_PTR) as PETHREAD))
+            handle_to_gdb_pid(PsGetThreadProcessId((&raw const CurrentStateChange as *const _ as ULONG_PTR) as PETHREAD)),
+            handle_to_gdb_tid(PsGetThreadId((&raw const CurrentStateChange as *const _ as ULONG_PTR) as PETHREAD))
         );
         return send_gdb_packet(gdb_out.as_ptr());
     }

@@ -1982,7 +1982,7 @@ pub unsafe extern "system" fn CreateRemoteDatabaseWorker(
 
         /* Finish initiating strings */
         RtlAppendUnicodeStringToString(&mut DatabaseName, &(*DeviceInformation).DeviceName);
-        RtlAppendUnicodeStringToString(&mut DatabaseName, &RemoteDatabase);
+        RtlAppendUnicodeStringToString(&mut DatabaseName, &raw const RemoteDatabase);
         *DatabaseName.Buffer.add((DatabaseName.Length / core::mem::size_of::<u16>() as u16) as usize) = UNICODE_NULL;
 
         /* Create database */
@@ -2067,7 +2067,7 @@ pub unsafe extern "C" fn OpenRemoteDatabase(
     );
     RtlAppendUnicodeStringToString(
         &mut DeviceRemoteDatabase,
-        &RemoteDatabase as *const _UNICODE_STRING,
+        &raw const RemoteDatabase as *const _UNICODE_STRING,
     );
     *DeviceRemoteDatabase.Buffer.add(
         DeviceRemoteDatabase.Length as usize / core::mem::size_of::<u16>(),

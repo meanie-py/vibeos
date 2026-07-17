@@ -764,7 +764,7 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
             break;
         }
     }
-    Success = RtlCreateUnicodeString(&mut BaseSrvKernel32DllPath, Buffer.as_ptr());
+    Success = RtlCreateUnicodeString(&raw mut BaseSrvKernel32DllPath, Buffer.as_ptr());
 
     if SessionId != 0 {
         let sessions = [

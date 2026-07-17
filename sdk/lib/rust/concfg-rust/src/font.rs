@@ -872,7 +872,7 @@ pub unsafe extern "C" fn InitTTFontCache() {
                 );
             }
 
-            PushEntryList(&mut TTFontCache, core::ptr::addr_of_mut!((*FontEntry).Entry));
+            PushEntryList(&raw mut TTFontCache, core::ptr::addr_of_mut!((*FontEntry).Entry));
         }
 
         dwIndex += 1;

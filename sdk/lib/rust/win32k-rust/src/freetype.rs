@@ -1329,7 +1329,7 @@ unsafe fn InitFontSupport_impl() -> BOOL {
     }
     ExInitializeFastMutex(g_FreeTypeLock as _ );
 
-    ulError = FT_Init_FreeType(&mut g_FreeTypeLibrary) as ULONG;
+    ulError = FT_Init_FreeType(&raw mut g_FreeTypeLibrary) as ULONG;
     if ulError != 0 {
         return 0;
     }
@@ -2380,7 +2380,7 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
         }
 
         RtlInitEmptyUnicodeString(&mut PathName, pszBuffer, Length as USHORT);
-        RtlAppendUnicodeStringToString(&mut PathName, &DosPathPrefix);
+        RtlAppendUnicodeStringToString(&mut PathName, &raw const DosPathPrefix);
         RtlAppendUnicodeStringToString(&mut PathName, FileName);
     } else {
         Status = IntDuplicateUnicodeString(FileName as _ , &mut PathName);
@@ -2517,7 +2517,7 @@ unsafe fn IntGdiAddFontResourceSingle_impl(
         ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
         ObjectAttributes.RootDirectory = core::ptr::null_mut();
         ObjectAttributes.Attributes = OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE;
-        ObjectAttributes.ObjectName = &mut g_FontRegPath;
+        ObjectAttributes.ObjectName = &raw mut g_FontRegPath;
         ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
         ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
@@ -2702,7 +2702,7 @@ unsafe fn IntGdiRemoveFontResourceSingle_impl(
         }
 
         RtlInitEmptyUnicodeString(&mut PathName, pszBuffer, Length as USHORT);
-        RtlAppendUnicodeStringToString(&mut PathName, &DosPathPrefix);
+        RtlAppendUnicodeStringToString(&mut PathName, &raw const DosPathPrefix);
         RtlAppendUnicodeStringToString(&mut PathName, FileName);
     } else {
         Status = IntDuplicateUnicodeString(FileName as _ , &mut PathName);
@@ -7849,8 +7849,8 @@ pub unsafe extern "system" fn IntExtTextOutW(
             }
         }
 
-        EXLATEOBJ_vInitialize(&mut exloRGB2Dst, &mut gpalRGB, (*psurf).ppal, 0, 0, 0);
-        EXLATEOBJ_vInitialize(&mut exloDst2RGB, (*psurf).ppal, &mut gpalRGB, 0, 0, 0);
+        EXLATEOBJ_vInitialize(&mut exloRGB2Dst, &raw mut gpalRGB, (*psurf).ppal, 0, 0, 0);
+        EXLATEOBJ_vInitialize(&mut exloDst2RGB, (*psurf).ppal, &raw mut gpalRGB, 0, 0, 0);
 
         if (*pdcattr).ulDirty_ & DIRTY_TEXT != 0 {
             DC_vUpdateTextBrush(dc);
@@ -7964,7 +7964,7 @@ pub unsafe extern "system" fn IntExtTextOutW(
                     &mut DestRect,
                     core::ptr::addr_of_mut!(MaskRect) as PPOINTL,
                     core::ptr::addr_of_mut!((*dc).eboText.BrushObject),
-                    &mut g_PointZero,
+                    &raw mut g_PointZero,
                 );
 
                 EngUnlockSurface(psoGlyph);

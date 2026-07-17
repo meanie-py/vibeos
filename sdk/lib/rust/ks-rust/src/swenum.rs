@@ -154,7 +154,7 @@ pub unsafe extern "C" fn KspCreatePDO(
     let mut Status: NTSTATUS;
     let mut DeviceExtension: PCOMMON_DEVICE_EXTENSION;
 
-    CurDeviceId = InterlockedIncrement(&mut KsDeviceCount) as ULONG;
+    CurDeviceId = InterlockedIncrement(&raw mut KsDeviceCount) as ULONG;
 
     swprintf(
         Buffer.as_mut_ptr(),

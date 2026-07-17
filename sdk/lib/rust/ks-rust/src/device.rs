@@ -569,7 +569,7 @@ pub unsafe extern "system" fn KsInitializeDevice(
         return Status;
     }
 
-    (*Header).BasicHeader.OuterUnknown = &vt_IKsDevice as *const _ as PUNKNOWN;
+    (*Header).BasicHeader.OuterUnknown = &raw const vt_IKsDevice as *const _ as PUNKNOWN;
     (*Header).ref_ = 1;
 
     (*Header).KsDevice.Bag = AllocateItem(

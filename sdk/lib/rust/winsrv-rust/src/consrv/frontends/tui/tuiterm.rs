@@ -836,8 +836,8 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
     }
 
     ActiveConsole = core::ptr::null_mut();
-    InitializeListHead(&mut VirtConsList);
-    InitializeCriticalSection(&mut ActiveVirtConsLock);
+    InitializeListHead(&raw mut VirtConsList);
+    InitializeCriticalSection(&raw mut ActiveVirtConsLock);
 
     if DeviceIoControl(
         ConsoleDeviceHandle,
@@ -853,7 +853,7 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
         Success = 0;
         'Quit: loop {
             if Success == 0 {
-                DeleteCriticalSection(&mut ActiveVirtConsLock);
+                DeleteCriticalSection(&raw mut ActiveVirtConsLock);
                 CloseHandle(ConsoleDeviceHandle);
             }
 
@@ -878,7 +878,7 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
     }
 
     if Success == 0 {
-        DeleteCriticalSection(&mut ActiveVirtConsLock);
+        DeleteCriticalSection(&raw mut ActiveVirtConsLock);
         CloseHandle(ConsoleDeviceHandle);
     }
 

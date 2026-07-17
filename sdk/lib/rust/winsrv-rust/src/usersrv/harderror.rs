@@ -868,7 +868,7 @@ unsafe fn UserpFormatMessages(
                     &mut cszBuffer,
                     0,
                     w!("\n%wZ").as_ptr() as PCWSTR,
-                    &g_OKTerminateU,
+                    &raw const g_OKTerminateU,
                 );
             }
             if (*Message).ValidResponseOptions == OptionOkCancel {
@@ -879,7 +879,7 @@ unsafe fn UserpFormatMessages(
                     &mut cszBuffer,
                     0,
                     w!("\n%wZ").as_ptr() as PCWSTR,
-                    &g_CancelDebugU,
+                    &raw const g_CancelDebugU,
                 );
             }
         }

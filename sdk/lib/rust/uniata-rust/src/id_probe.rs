@@ -1806,7 +1806,7 @@ pub unsafe extern "system" fn UniataClaimLegacyPCIIDE(i: ULONG) -> NTSTATUS {
 
     RtlInitUnicodeString(&mut devname, wsz_PCIIDE.as_ptr());
     status = HalAssignSlotResources(
-        &mut SavedRegPath,
+        &raw mut SavedRegPath,
         &mut devname,
         SavedDriverObject,
         *(*BMList.add(i as usize)).__bindgen_anon_1.PciIdeDevObj.as_ref(),
