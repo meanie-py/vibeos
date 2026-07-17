@@ -150,6 +150,32 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
   `DeviceErrorHandlerForMmc` (0 vs 4) + `DevicePowerSettingCallback` (3 vs 4) — are the
   same-crate-redecl pattern (fixable by `use`, address-of only so no live miscall). This is what
   surfaced the 520-symbol fix vector documented below. No live bug found; all latent.
+- **2026-07-17 — clashing_extern CONV bucket POC: real i386 bug CONFIRMED, but NOT a burndown
+  win — reverted.** Isolated the *hard* CONV signal (`clash_hardsignal.py`): of the i686 CONV
+  clashes, 36 are the clean shape — a driver crate's local `extern "C" {}` forward-decl of a fn
+  the same crate **defines** `pub unsafe extern "system" fn`. On i386 `"system"`=stdcall
+  (callee-clean), `"C"`=cdecl (caller-clean), and grep confirmed these are used for **real calls**
+  (`return ForwardIrpAndForget(DeviceObject, Irp)`, `USBH_Wait(10)`, `PciReadDeviceConfig(..)`,
+  `PortFdoScsi(..)`, …), not address-of → a genuine **double-cleanup + `_Name@N`-decoration
+  mismatch** latent in serial/usbhub/pcix/storport/usbstor/usbccgp/classpnp. Applied the fix
+  (`clash_conv_apply.py`: relocate each clashing decl out of its `extern "C"` block — which also
+  holds genuinely-cdecl variadics like `DbgPrint` that must stay `C` — into a new
+  `extern "system"` block). Keep-going census ×3: i686 CONV **42→6** (the 6 = the def-is-C or
+  external-USBD skips), **0 compile errors in edited crates**, amd64/arm64 a codegen no-op
+  (`system`==`C` there; the ±28 total wobble is keep-going build non-determinism, not the change).
+  **BUT edited-file clash count 72→72 — ZERO net burndown.** The CONV clashes don't *clear*, they
+  **reclassify to pointer-type-diffs**: the local decls also carry loose `PVOID`/`*mut c_void`
+  typing vs the canonical typed decl (same benign clash the redecl POC hit). So flipping the ABI
+  is a strict i386 *correctness* improvement but reduces the warning count by nothing. Reverted:
+  it's real driver-ABI work, but **(a)** zero burndown (the lane's goal), and **(b)**
+  **unvalidatable here** — these drivers load on no smoke path, so the fix can't be demonstrated;
+  landing a 14-file driver-ABI change on reasoning alone is exactly the smoke-can't-reach-it churn
+  to avoid. **Disposition: the CONV-i386 bucket is a real latent-bug find for a proper, *validated*
+  driver-ABI lane (align call decls to def convention AND boot an i386 config that loads the
+  driver), NOT a warnings-lane drive-by.** Tools kept in scratchpad (`clash_hardsignal.py`,
+  `clash_conv_apply.py`, `conv_fixable.json`). Net conclusion across both POCs: **every
+  clashing_extern bucket that looked mechanical (same-crate-redecl AND CONV-i386) is not — the
+  loose FFI typing that co-occurs with the flagged difference is load-bearing.**
 
 ## Remaining work (2026-07-17, prioritized) — the plain-buildable cold-crate noise is DONE
 
@@ -170,7 +196,12 @@ The `cargo fix`-reachable Tier-1 noise is largely burned down. What's left:
     conventions are identical, so it's *invisible there* and the ×3 gate stays green — a
     latent i386-only footgun on less-exercised paths. Fix = make each local re-decl's `extern`
     string match the true export (NTAPI → `"system"`; genuine cdecl helpers → `"C"`); build
-    oracle catches wrong guesses.
+    oracle catches wrong guesses. **POC 2026-07-17 (see progress log): flipping the `extern`
+    string alone is a real i386 correctness fix but does NOT clear the warning** — the same local
+    decls also carry loose `PVOID`/`*mut c_void` typing, so the clash reclassifies to a benign
+    pointer-type-diff (edited-file count 72→72, zero burndown). And it's *unvalidatable* in this
+    lane (drivers load on no smoke path). Treat the CONV-i386 bucket as a latent-bug find for a
+    proper validated driver-ABI lane, not a burndown item.
   - **ARGCOUNT differs — 6 sites — the highest-value needles.** A different *arg count* is
     almost always a real bug (a caller passing the wrong number of args) or a macro-shim
     artifact. Investigate these 6 first — cheap, potentially real.
