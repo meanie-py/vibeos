@@ -280,9 +280,11 @@ python -m rustconv --arch amd64 translate path/to/Class.cpp \
 # Batch N candidate/base replacements, one cargo invocation per architecture.
 python -m rustconv candidate-check candidates.json
 python -m rustconv candidate-check candidates.json --repair
+python -m rustconv substrate-plan .responses/candidate-oracles/<run>/report.json
 
 # Compile a whole newly generated module with no accepted function base.
-# Manifest candidate entry: {"name":"pilot", "candidate":"pilot.rs", "full_module":true}
+# Manifest candidate entry: {"name":"pilot", "candidate":"pilot.rs",
+#   "source":"path/to/Class.cpp", "full_module":true}
 python -m rustconv candidate-check module-candidates.json
 
 # Compare ordered cross-language branch/loop/return shape (veto, not acceptance).
@@ -311,8 +313,20 @@ assembled module directly and does not require or consult an accepted base funct
 mode is the honest oracle for generated scaffold/substrate completeness; do not manufacture
 a base merely to make the replacement-mode harness run.
 
+Every candidate oracle report now contains `substrate_analysis`: unresolved diagnostics are
+collapsed into distinct roots across architectures, indexed against candidate definitions,
+shell32 shared/module Rust, project Rust, SDK headers/IDL, and the optional manifest `source`,
+then routed to deterministic ownership buckets. `rustconv substrate-plan REPORT.json` prints
+that plan; `--refresh` recomputes it after analyzer changes. Follow
+`rustconv-substrate-closure-protocol.md` rather than repairing a rustc cascade site by site.
+This analysis is frontend-neutral and is intended for ordinary C modules too.
+
 The shell32 C++ stitcher also emits a source-selected deterministic support closure after
-the class/vtable scaffold. It currently owns numeric local/resource macros, simple
+the class/vtable scaffold. Selection includes the implementation, defining class header,
+prepared workers, and generated interface/scaffold surface so types used only by WIDL or an
+inline declaration are not missed. It currently owns numeric local/resource/unique-SDK
+literal facts, simple source and SDK `typedef struct` POD closures (including embedded PODs,
+SAL-stripped fields, proven fixed arrays, and pointer aliases), simple
 `CMVERBMAP` aggregate tables, known Win32 FFI signatures, compiler/header macro lowerings
 such as `IID_PPV_ARG`, implicit C scalar/pointer conversions, and the proven `CStringW`
 operations used by the pilot. Post-response semantic lowerings deliberately run on cache

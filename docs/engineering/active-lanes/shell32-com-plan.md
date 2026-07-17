@@ -361,10 +361,19 @@ the earlier complete DeepSeek `CreateShortcutIcon` output for $0 and closed 91/9
 
 The full cached module is durable at
 `~/vibeos-rust-staging/shell32-com/monsters-v1/CShellLink-full.rs`. It is not integration-ready:
-the full-module oracle at
-`.responses/candidate-oracles/20260716-212005-236836/report.json` reports 743 diagnostics per
-architecture (674 unresolved substrate symbols, 48 type mismatches, 21 other). This is the
-next substrate tranche, not permission to wire the class. `CDefaultContextMenu.cpp` is the
+the baseline full-module oracle at
+`.responses/candidate-oracles/20260716-212005-236836/report.json` reported 743 diagnostics per
+architecture (674 unresolved substrate symbols, 48 type mismatches, 21 other). The first
+language-neutral substrate-closure pass added cross-arch diagnostic-root clustering,
+authority indexing, source/header selection, canonical `com-sys` reuse, unique literal SDK
+facts, and simple recursive SDK POD generation. A $0 replay at
+`.responses/candidate-oracles/20260716-220619-970061/report.json` now reports 492 diagnostics
+per architecture (309 unresolved, 152 type mismatches, 31 other) and only 51 distinct
+unresolved roots, down from 164. This exposes deeper type errors while shrinking the actual
+authority backlog; it is still not permission to wire the class. Follow
+`docs/engineering/rustconv-substrate-closure-protocol.md` for the closure loop.
+
+`CDefaultContextMenu.cpp` is the
 contrasting deterministic reject: aggregation/internal activation and two
 `CAtlList<...>` owners fail preflight before any model call. Add an explicit C++ list/factory
 bridge before spending on that class; never reinterpret those owners as Rust `Vec`.

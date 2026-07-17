@@ -16,7 +16,9 @@ def test_carry_deterministic_cpp_com_ptr_guard_for_spliced_worker():
     candidate = """pub struct CppComPtrGuard<T> { slot: *mut *mut T }
 impl<T> CppComPtrGuard<T> { pub const fn new(slot: *mut *mut T) -> Self { Self { slot } } }
 impl<T> Drop for CppComPtrGuard<T> {
-    fn drop(&mut self) { unsafe { if !(*self.slot).is_null() { *self.slot = core::ptr::null_mut(); } } }
+    fn drop(&mut self) {
+        unsafe { if !(*self.slot).is_null() { *self.slot = core::ptr::null_mut(); } }
+    }
 }
 pub unsafe fn worker() { CppComPtrGuard::new(slot); }
 """
@@ -130,7 +132,28 @@ def test_manifest_full_module_defaults_base_to_candidate(tmp_path):
         '"full_module":true}]}'
     )
     specs, _, _ = load_manifest(manifest)
-    assert specs == [CandidateSpec("module", "", candidate.resolve(), candidate.resolve(), None, True)]
+    assert specs == [
+        CandidateSpec("module", "", candidate.resolve(), candidate.resolve(), None, True)
+    ]
+
+
+def test_manifest_resolves_optional_source_for_substrate_analysis(tmp_path):
+    candidate = tmp_path / "candidate.rs"
+    source = tmp_path / "source.c"
+    types = tmp_path / "types.rs"
+    shellcom = tmp_path / "shellcom.rs"
+    candidate.write_text("fn body() {}")
+    source.write_text("void body(void) {}")
+    types.write_text("")
+    shellcom.write_text("")
+    manifest = tmp_path / "module.json"
+    manifest.write_text(
+        '{"target":"shell32","types":"types.rs","shellcom":"shellcom.rs",'
+        '"candidates":[{"name":"module","candidate":"candidate.rs",'
+        '"source":"source.c","full_module":true}]}'
+    )
+    specs, _, _ = load_manifest(manifest)
+    assert specs[0].source == source.resolve()
 
 
 def test_corpus_manifest_defaults_candidate_to_durable_candidates_dir(tmp_path):

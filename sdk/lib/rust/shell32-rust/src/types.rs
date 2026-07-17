@@ -5,6 +5,13 @@
 
 use core::ffi::c_void;
 
+// Canonical per-architecture SDK layouts. Keep ABI-heavy COM/Win32 records in
+// com-sys rather than growing a second hand-maintained shell32 copy.
+pub use com_sys::{
+    BIND_OPTS, FORMATETC, HDC, HICON, POINTL, STATDATA, STATSTG, STGMEDIUM, SYSTEMTIME,
+    ULARGE_INTEGER, WPARAM,
+};
+
 pub type BOOL = i32;
 pub type BOOLEAN = u8;
 pub type DWORD = u32;
@@ -30,6 +37,7 @@ pub type HWND = HANDLE;
 pub type HMENU = HANDLE;
 pub type HGLOBAL = HANDLE;
 pub type HBITMAP = HANDLE;
+pub type HPROPSHEETPAGE = HANDLE;
 pub type COLORREF = DWORD;
 
 pub type LPVOID = *mut c_void;
@@ -65,6 +73,9 @@ pub const E_INVALIDARG: HRESULT = 0x80070057u32 as HRESULT;
 pub const MK_E_NOOBJECT: HRESULT = 0x800401E5u32 as HRESULT;
 pub const ERROR_SUCCESS: LONG = 0;
 pub const HEAP_ZERO_MEMORY: DWORD = 8;
+pub const CP_ACP: UINT = 0;
+pub const UNICODE_NULL: WCHAR = 0;
+pub const MAX_PATH: usize = 260;
 
 pub const CF_UNICODETEXT: UINT = 13;
 pub const GMEM_MOVEABLE: UINT = 2;
@@ -127,6 +138,52 @@ pub struct SIZE {
 pub struct POINT {
     pub x: LONG,
     pub y: LONG,
+}
+
+/// winuser.h notification header. `idFrom` is pointer-sized on Win64.
+#[repr(C)]
+pub struct NMHDR {
+    pub hwndFrom: HWND,
+    pub idFrom: UINT_PTR,
+    pub code: UINT,
+}
+
+pub type LPNMHDR = *mut NMHDR;
+
+#[repr(C)]
+pub struct PSHNOTIFY {
+    pub hdr: NMHDR,
+    pub lParam: LONG_PTR,
+}
+
+/// Canonical shellapi.h file-information records shared by C and C++ ports.
+#[repr(C)]
+pub struct SHFILEINFOA {
+    pub hIcon: HICON,
+    pub iIcon: INT,
+    pub dwAttributes: DWORD,
+    pub szDisplayName: [CHAR; MAX_PATH],
+    pub szTypeName: [CHAR; 80],
+}
+
+#[repr(C)]
+pub struct SHFILEINFOW {
+    pub hIcon: HICON,
+    pub iIcon: INT,
+    pub dwAttributes: DWORD,
+    pub szDisplayName: [WCHAR; MAX_PATH],
+    pub szTypeName: [WCHAR; 80],
+}
+
+extern "system" {
+    pub fn lstrcpynW(dst: LPWSTR, src: LPCWSTR, capacity: INT) -> LPWSTR;
+}
+
+extern "C" {
+    pub fn wcscpy(dst: LPWSTR, src: LPCWSTR) -> LPWSTR;
+    pub fn wcschr(text: LPCWSTR, character: WCHAR) -> LPWSTR;
+    pub fn wcscmp(left: LPCWSTR, right: LPCWSTR) -> INT;
+    pub fn wcslen(text: LPCWSTR) -> usize;
 }
 
 /// `HRESULT_FROM_WIN32` (winerror.h): positive Win32 error → 0x8007xxxx; pass-through

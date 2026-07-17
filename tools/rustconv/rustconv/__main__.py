@@ -25,6 +25,7 @@ from . import (
     seh_rewrite,
     semantic_skeleton,
     semdiff,
+    substrate_closure,
     switch_extract,
     user_lock_inventory,
 )
@@ -393,6 +394,23 @@ def cmd_candidate_check(args):
     candidate_oracle.print_report(report, as_json=args.json)
     if any(item["status"] != "ok" for item in report["results"]):
         sys.exit(1)
+
+
+def cmd_substrate_plan(args):
+    """Inspect or regenerate the authority plan for a candidate oracle report."""
+    report_path = Path(args.report).resolve()
+    report = json.loads(report_path.read_text())
+    analysis = report.get("substrate_analysis")
+    if analysis is None or args.refresh:
+        sources = {
+            item["name"]: Path(item["source"]).resolve() if item.get("source") else None
+            for item in report.get("results", [])
+        }
+        analysis = substrate_closure.analyze_report(report, candidate_sources=sources)
+        if args.refresh:
+            report["substrate_analysis"] = analysis
+            report_path.write_text(json.dumps(report, indent=2, sort_keys=True))
+    substrate_closure.print_analysis(analysis, as_json=args.json, limit=args.limit)
 
 
 def cmd_skeleton_check(args):
@@ -2391,11 +2409,19 @@ def cmd_translate(args):
                 raise CppComError("internal error: shell32 COM preflight state was lost")
             deterministic = [render_interface(item) for item in cpp_com_interfaces]
             deterministic.append(render_class_scaffold(cpp_com_cls, cpp_com_interfaces))
+            support_selection = "\n".join(
+                [
+                    cpp_com_cls.header.read_text(encoding="utf-8", errors="replace"),
+                    *(dep.body_text for dep in sorted_deps),
+                    *deterministic,
+                ]
+            )
             deterministic.append(
                 render_cpp_support(
                     c_file,
                     {f"IID_{interface.name}" for interface in cpp_com_interfaces},
-                    "\n".join(dep.body_text for dep in sorted_deps),
+                    support_selection,
+                    {pod.name for pod in cpp_com_cls.pod_state_types},
                 )
             )
             if cpp_com_wide_statics:
@@ -2749,6 +2775,19 @@ def main():
         "--repair",
         action="store_true",
         help="Apply only deterministic base-authority worker repairs before checking",
+    )
+
+    p = sub.add_parser(
+        "substrate-plan",
+        help="Cluster a candidate oracle report into canonical substrate authority roots",
+    )
+    p.add_argument("report", help="candidate-oracle report.json")
+    p.add_argument("--json", action="store_true", help="Machine-readable authority plan")
+    p.add_argument("--limit", type=int, default=25, help="Roots to print (default 25)")
+    p.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Recompute and update substrate_analysis in the durable report",
     )
 
     p = sub.add_parser(
@@ -3218,6 +3257,7 @@ def main():
         "scan": cmd_scan,
         "dup-census": cmd_dup_census,
         "candidate-check": cmd_candidate_check,
+        "substrate-plan": cmd_substrate_plan,
         "skeleton-check": cmd_skeleton_check,
         "cpp-com": cmd_cpp_com,
         "resolve": cmd_resolve,

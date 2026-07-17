@@ -18,7 +18,8 @@ import ast
 import hashlib
 import json
 import re
-from collections import Counter
+import subprocess
+from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -1533,10 +1534,171 @@ _CPP_SUPPORT_CONSTANTS = {
 }
 
 
+def _sdk_numeric_definitions(source_path: Path, used_words: set[str]) -> dict[str, str]:
+    """Resolve simple referenced SDK numeric facts in one indexed header pass.
+
+    Only architecture-invariant literal definitions are admitted. Expressions,
+    aliases, casts, and conflicting spellings remain unresolved and visible to
+    the substrate planner.
+    """
+    repo_root = next(
+        (parent for parent in source_path.parents if (parent / "sdk/include").is_dir()), None
+    )
+    if repo_root is None:
+        return {}
+    pattern = (
+        r"^\s*#\s*define\s+[A-Za-z_]\w*\s+(?:0[xX][0-9A-Fa-f]+|[0-9]+)[uUlL]*\b"
+        r"|^\s*[A-Za-z_]\w*\s*=\s*(?:0[xX][0-9A-Fa-f]+|[0-9]+)[uUlL]*\s*,"
+    )
+    process = subprocess.run(
+        ["rg", "-n", "--no-heading", "--glob", "*.h", pattern, str(repo_root / "sdk/include")],
+        capture_output=True,
+        text=True,
+    )
+    if process.returncode not in (0, 1):
+        return {}
+    values: dict[str, set[str]] = defaultdict(set)
+    definition = re.compile(
+        r"^\s*(?:#\s*define\s+)?(?P<name>[A-Za-z_]\w*)\s*(?:=\s*|\s+)"
+        r"(?P<value>0[xX][0-9A-Fa-f]+|[0-9]+)[uUlL]*\b"
+    )
+    for line in process.stdout.splitlines():
+        parts = line.split(":", 2)
+        if len(parts) != 3:
+            continue
+        match = definition.match(parts[2])
+        if match is not None and match.group("name") in used_words:
+            values[match.group("name")].add(match.group("value"))
+    return {name: next(iter(found)) for name, found in values.items() if len(found) == 1}
+
+
+def _shared_substrate_type_names(repo_root: Path) -> set[str]:
+    names = set()
+    for path in (
+        repo_root / "sdk/lib/rust/shell32-rust/src/types.rs",
+        repo_root / "sdk/lib/rust/shell32-rust/src/shellcom.rs",
+    ):
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        names.update(
+            re.findall(r"\bpub\s+(?:struct|union|enum|type)\s+(?:r#)?([A-Za-z_]\w*)", text)
+        )
+    return names
+
+
+def _sdk_pod_support(source_path: Path, used_words: set[str]) -> str:
+    """Generate the simple referenced SDK POD closure from header authority."""
+    repo_root = next(
+        (parent for parent in source_path.parents if (parent / "sdk/include").is_dir()), None
+    )
+    if repo_root is None:
+        return ""
+    shared = _shared_substrate_type_names(repo_root)
+    variants: dict[str, set[tuple[str, tuple[tuple[str, bool], ...], bool]]] = defaultdict(set)
+    typedef = re.compile(
+        r"typedef\s+struct(?:\s+[A-Za-z_]\w*)?\s*\{(?P<body>[^{}]*)\}\s*"
+        r"(?P<aliases>[^;]+);",
+        re.S,
+    )
+    for header in sorted((repo_root / "sdk/include").rglob("*.h")):
+        text = header.read_text(encoding="utf-8", errors="replace")
+        for match in typedef.finditer(text):
+            aliases = []
+            for raw in match.group("aliases").split(","):
+                token = " ".join(raw.split())
+                alias = re.fullmatch(r"(?P<pointer>\*+\s*)?(?P<name>[A-Za-z_]\w*)", token)
+                if alias is not None:
+                    aliases.append((alias.group("name"), bool(alias.group("pointer"))))
+            base = next((name for name, pointer in aliases if not pointer), None)
+            if base is None:
+                continue
+            prefix = text[: match.start()]
+            packed = prefix.rfind("pshpack1.h") > prefix.rfind("poppack.h")
+            body = " ".join(match.group("body").split())
+            variants[base].add((body, tuple(aliases), packed))
+
+    # Identical repeated declarations are harmless; conflicting layouts or
+    # aliases are not. Keep ambiguity visible to the compiler/substrate plan.
+    records = {
+        base: (body, list(aliases), packed)
+        for base, found in variants.items()
+        if len(found) == 1
+        for body, aliases, packed in found
+    }
+
+    alias_to_base = {
+        alias: base for base, (_body, aliases, _packed) in records.items() for alias, _ in aliases
+    }
+    selected = {
+        alias_to_base[name]
+        for name in used_words - shared
+        if name in alias_to_base and alias_to_base[name] not in shared
+    }
+    # Embedded SDK records are part of the same deterministic layout closure.
+    changed = True
+    while changed:
+        changed = False
+        for base in list(selected):
+            body = records[base][0]
+            for dependency in set(re.findall(r"\b[A-Za-z_]\w*\b", body)) & alias_to_base.keys():
+                target = alias_to_base[dependency]
+                if target not in selected and target not in shared:
+                    selected.add(target)
+                    changed = True
+
+    all_bounds = {
+        bound
+        for base in selected
+        for bound in re.findall(r"\[\s*([A-Za-z_]\w*)\s*\]", records[base][0])
+    }
+    numeric = {
+        name: int(value, 0)
+        for name, value in _sdk_numeric_definitions(source_path, all_bounds).items()
+    }
+    chunks = []
+    for base in sorted(selected):
+        body, aliases, packed = records[base]
+        declarations = [
+            re.sub(r"\b_[A-Za-z0-9_]+_\b(?:\s*\([^)]*\))?\s*", "", " ".join(item.split()))
+            for item in body.split(";")
+            if item.strip()
+        ]
+        fields = []
+        try:
+            for declaration in declarations:
+                fields.append(
+                    _parse_plain_state_field(
+                        declaration,
+                        allowed_pod_types=set(records) | _POD_LEAF_TYPES,
+                        array_constants=numeric,
+                    )
+                )
+        except CppComError:
+            continue
+        representation = "#[repr(C, packed)]" if packed else "#[repr(C)]"
+        lines = [representation, f"pub struct {base} {{"]
+        for state_field in fields:
+            field_name = (
+                f"r#{state_field.name}"
+                if state_field.name in _RUST_KEYWORDS
+                else state_field.name
+            )
+            lines.append(f"    pub {field_name}: {state_field.rust_type},")
+        lines.append("}")
+        for alias, pointer in aliases:
+            if alias != base and (alias in used_words or alias in shared):
+                target = f"*mut {base}" if pointer else base
+                lines.append(f"pub type {alias} = {target};")
+        chunks.append("\n".join(lines))
+    return "\n\n".join(chunks)
+
+
 def render_cpp_support(
     source_path: Path,
     exclude_guids: set[str] | None = None,
     additional_source: str = "",
+    exclude_types: set[str] | None = None,
 ) -> str:
     """Render the deterministic non-class support closure selected by one C++ file."""
     source = source_path.read_text(encoding="utf-8", errors="replace")
@@ -1562,11 +1724,57 @@ def render_cpp_support(
         f"IID_{interface}"
         for interface in re.findall(r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)", source)
     )
+    # File-scope PODs are source authority, not model work. This is shared by C
+    # and C++ inputs; only simple, fully parsed layouts are emitted.
+    source_pod_names = set(re.findall(r"\bstruct\s+([A-Za-z_]\w*)\s*\{", source))
+    referenced_pods = {
+        name
+        for name in source_pod_names
+        if len(re.findall(rf"\b{re.escape(name)}\b", source)) > 1
+        or re.search(rf"\b{re.escape(name)}\b", additional_source)
+    }
+    for name in sorted(referenced_pods - (exclude_types or set())):
+        definition = _pod_definition(source, name)
+        if definition is None:
+            continue
+        body, packed = definition
+        declarations = [" ".join(item.split()) for item in body.split(";") if item.strip()]
+        constants = _numeric_array_constants(source_path, declarations)
+        fields = []
+        try:
+            for declaration in declarations:
+                fields.append(
+                    _parse_plain_state_field(
+                        declaration,
+                        allowed_pod_types=source_pod_names | _POD_LEAF_TYPES,
+                        array_constants=constants,
+                    )
+                )
+        except CppComError:
+            continue
+        representation = "#[repr(C, packed)]" if packed else "#[repr(C)]"
+        lines = [representation, f"pub struct {name} {{"]
+        for state_field in fields:
+            field_name = (
+                f"r#{state_field.name}"
+                if state_field.name in _RUST_KEYWORDS
+                else state_field.name
+            )
+            lines.append(f"    pub {field_name}: {state_field.rust_type},")
+        lines.append("}")
+        chunks.append("\n".join(lines))
     for name in sorted(used_words & definitions.keys()):
         chunks.append(f"pub const {name}: UINT = {definitions[name]};")
     for name in sorted(used_words & _CPP_SUPPORT_CONSTANTS.keys()):
         rust_type, value = _CPP_SUPPORT_CONSTANTS[name]
         chunks.append(f"pub const {name}: {rust_type} = {value};")
+    owned_constants = definitions.keys() | _CPP_SUPPORT_CONSTANTS.keys()
+    for name, value in sorted(_sdk_numeric_definitions(source_path, used_words).items()):
+        if name not in owned_constants:
+            chunks.append(f"pub const {name}: DWORD = {value};")
+    sdk_pods = _sdk_pod_support(source_path, used_words)
+    if sdk_pods:
+        chunks.append(sdk_pods)
 
     if "INVALID_FILETITLE_CHARACTERSW" in used_words:
         chunks.append(
@@ -1587,6 +1795,13 @@ def render_cpp_support(
 
     if "DWORDLONG" in used_words:
         chunks.append("pub type DWORDLONG = u64;")
+    if "EXPPS" in used_words:
+        chunks.append("pub type EXPPS = UINT;")
+    if "LPFNSVADDPROPSHEETPAGE" in used_words:
+        chunks.append(
+            "pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern \"system\" fn("
+            "HPROPSHEETPAGE, LPARAM) -> BOOL>;"
+        )
     if "SHQUERYRBINFO" in used_words:
         chunks.append(
             "#[repr(C)]\n"

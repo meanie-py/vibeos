@@ -398,3 +398,19 @@ type-shape residue is now evidence for escalation rather than repeated DeepSeek 
 Detailed artifacts and per-worker results are in
 `~/vibeos-rust-staging/shell32-com/hard5-v1/report.md`; the bounded oracle is
 `.responses/candidate-oracles/20260716-184656-823245/report.json`.
+
+### Language-neutral substrate closure on the giant class
+
+The `CShellLink` stitched module turned the remaining compile cascade into a reusable
+protocol rather than another shell32-specific repair script. `candidate-check` now records
+the optional source file, collapses identical unresolved diagnostics across architectures,
+indexes candidate/shell32/project/SDK/source authorities, and emits a generation plan.
+`rustconv substrate-plan` can inspect or refresh that plan independently.
+
+On the unchanged 91-worker cache, canonical `com-sys` reuse, unique literal SDK facts,
+source/class/WIDL-aware selection, and conservative recursive SDK POD generation reduced the
+oracle from 743 to 492 diagnostics per architecture and from 164 to 51 distinct unresolved
+roots. The SDK type backlog fell from seven families to zero without asking either model for
+a layout. Type-mismatch diagnostics rose as missing names stopped masking deeper checks;
+that is progress, not a regression. The reusable protocol and stop rules now live in
+`docs/engineering/rustconv-substrate-closure-protocol.md`.

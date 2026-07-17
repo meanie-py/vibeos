@@ -26,6 +26,7 @@ class CandidateSpec:
     base: Path
     base_function: str | None = None
     full_module: bool = False
+    source: Path | None = None
 
 
 def masked_rust(text: str) -> str:
@@ -211,6 +212,7 @@ def load_manifest(path: Path) -> tuple[list[CandidateSpec], Path, Path]:
             resolve(item.get("base", item["candidate"])),
             item.get("base_function"),
             bool(item.get("full_module", False)),
+            resolve(item["source"]) if item.get("source") else None,
         )
         for item in items
     ]
@@ -242,7 +244,9 @@ def build_oracle_crate(
     src.mkdir(parents=True, exist_ok=True)
     (output / "Cargo.toml").write_text(
         '[package]\nname = "rustconv-candidate-oracle"\nversion = "0.0.0"\n'
-        'edition = "2021"\n\n[lib]\ncrate-type = ["rlib"]\n\n[workspace]\n'
+        'edition = "2021"\n\n[lib]\ncrate-type = ["rlib"]\n\n'
+        f'[dependencies]\ncom-sys = {{ path = "{REACTOS_ROOT / "sdk/lib/rust/com-sys"}" }}\n\n'
+        "[workspace]\n"
     )
     module_paths: dict[Path, str] = {}
     repairs: dict[str, list[str]] = {}
@@ -416,6 +420,7 @@ def run_oracle(manifest: Path, arches: list[str], repair: bool = False) -> dict:
                 "candidate": str(candidate.candidate),
                 "base": str(candidate.base),
                 "full_module": candidate.full_module,
+                "source": str(candidate.source) if candidate.source is not None else None,
                 "distance_to_accepted": None
                 if candidate.full_module
                 else worker_distance(
@@ -440,6 +445,12 @@ def run_oracle(manifest: Path, arches: list[str], repair: bool = False) -> dict:
         "global_errors": global_errors,
         "results": results,
     }
+    from .substrate_closure import analyze_report
+
+    report["substrate_analysis"] = analyze_report(
+        report,
+        candidate_sources={candidate.name: candidate.source for candidate in candidates},
+    )
     (output / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True))
     return report
 
@@ -468,5 +479,19 @@ def print_report(report: dict, as_json: bool = False) -> None:
                 f"similarity={distance['similarity']:.4f}, "
                 f"edit_tokens={distance['edit_tokens']}, "
                 f"edit_hunks={distance['edit_hunks']}"
+            )
+    substrate = report.get("substrate_analysis", {})
+    if substrate:
+        print(
+            "  substrate roots: "
+            f"{substrate.get('unique_unresolved_roots', 0)} unique; "
+            + ", ".join(
+                f"{route}={count}" for route, count in substrate.get("route_counts", {}).items()
+            )
+        )
+        for root in substrate.get("roots", [])[:10]:
+            print(
+                f"    {root['symbol']}: impact={root['impact']}, "
+                f"authority={root['authority']}, route={root['route']}"
             )
     print(f"  durable oracle: {report['output']}")

@@ -947,6 +947,98 @@ def test_worker_semantics_lowers_balanced_countof_member_forms():
     assert "((*p).third).len()" in normalized
 
 
+def test_cpp_support_generates_used_source_local_pods_and_honors_exclusion(tmp_path: Path):
+    source = tmp_path / "local.cpp"
+    source.write_text(
+        '#include "pshpack1.h"\n'
+        "struct LOCAL_INFO { DWORD size; WCHAR label[12]; };\n"
+        '#include "poppack.h"\n'
+        "struct UNUSED_INFO { DWORD ignored; };\n"
+        "HRESULT f(LOCAL_INFO *info) { return info->size; }\n"
+    )
+    support = render_cpp_support(source)
+    assert "#[repr(C, packed)]\npub struct LOCAL_INFO" in support
+    assert "pub size: DWORD" in support
+    assert "pub label: [WCHAR; 12]" in support
+    assert "UNUSED_INFO" not in support
+    assert "struct LOCAL_INFO" not in render_cpp_support(source, exclude_types={"LOCAL_INFO"})
+
+
+def test_cpp_support_derives_unique_numeric_sdk_facts(tmp_path: Path):
+    repo = tmp_path / "repo"
+    source = repo / "dll/win32/example/worker.cpp"
+    header = repo / "sdk/include/psdk/example.h"
+    source.parent.mkdir(parents=True)
+    header.parent.mkdir(parents=True)
+    source.write_text("DWORD f() { return SDK_FLAG | CONFLICT_FLAG | EXPRESSION_FLAG; }")
+    header.write_text(
+        "#define SDK_FLAG 0x40U\n"
+        "#define CONFLICT_FLAG 1\n"
+        "#define EXPRESSION_FLAG (1 << 2)\n"
+        "enum E {\n    ENUM_FLAG = 7,\n};\n"
+    )
+    second = repo / "sdk/include/psdk/conflict.h"
+    second.write_text("#define CONFLICT_FLAG 2\n")
+    support = render_cpp_support(source, additional_source="ENUM_FLAG")
+    assert "pub const SDK_FLAG: DWORD = 0x40;" in support
+    assert "pub const ENUM_FLAG: DWORD = 7;" in support
+    assert "CONFLICT_FLAG: DWORD" not in support
+    assert "EXPRESSION_FLAG: DWORD" not in support
+
+
+def test_cpp_support_derives_referenced_sdk_pod_closure(tmp_path: Path):
+    repo = tmp_path / "repo"
+    source = repo / "dll/win32/example/worker.cpp"
+    header = repo / "sdk/include/psdk/example.h"
+    source.parent.mkdir(parents=True)
+    header.parent.mkdir(parents=True)
+    source.write_text("HRESULT f(LPOUTER value) { return value->inner.value; }")
+    header.write_text(
+        "#define LABEL_COUNT 4\n"
+        "typedef struct tagINNER { DWORD value; } INNER, *LPINNER;\n"
+        "typedef struct { INNER inner; _Field_z_ WCHAR label[LABEL_COUNT]; } OUTER, *LPOUTER;\n"
+        "typedef struct { DWORD ignored; } UNUSED, *LPUNUSED;\n"
+    )
+    support = render_cpp_support(source)
+    assert "pub struct INNER" in support
+    assert "pub value: DWORD" in support
+    assert "pub struct OUTER" in support
+    assert "pub inner: INNER" in support
+    assert "pub label: [WCHAR; 4]" in support
+    assert "pub type LPOUTER = *mut OUTER;" in support
+    assert "UNUSED" not in support
+
+
+def test_cpp_support_rejects_conflicting_sdk_pod_layouts(tmp_path: Path):
+    repo = tmp_path / "repo"
+    source = repo / "dll/win32/example/worker.cpp"
+    include = repo / "sdk/include/psdk"
+    source.parent.mkdir(parents=True)
+    include.mkdir(parents=True)
+    source.write_text("HRESULT f(LPCONFLICT value);")
+    (include / "first.h").write_text(
+        "typedef struct { DWORD first; } CONFLICT, *LPCONFLICT;\n"
+    )
+    (include / "second.h").write_text(
+        "typedef struct { DWORD second; } CONFLICT, *LPCONFLICT;\n"
+    )
+    support = render_cpp_support(source)
+    assert "pub struct CONFLICT" not in support
+    assert "pub type LPCONFLICT" not in support
+
+
+def test_cpp_support_derives_shell_property_sheet_callback_alias(tmp_path: Path):
+    repo = tmp_path / "repo"
+    source = repo / "dll/win32/example/worker.cpp"
+    (repo / "sdk/include").mkdir(parents=True)
+    source.parent.mkdir(parents=True)
+    source.write_text("HRESULT f(EXPPS page, LPFNSVADDPROPSHEETPAGE callback);")
+    support = render_cpp_support(source)
+    assert "pub type EXPPS = UINT;" in support
+    assert "pub type LPFNSVADDPROPSHEETPAGE" in support
+    assert 'extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL' in support
+
+
 def test_worker_audit_ignores_abi_words_in_comments():
     source = "{ return S_OK; }"
     rust = "pub unsafe fn C_f_body() -> HRESULT { // define struct elsewhere\n S_OK }"
