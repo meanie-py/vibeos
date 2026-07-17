@@ -508,6 +508,23 @@ public:
     };
 };
 
+extern "C" HRESULT WINAPI CFolderOptions_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CFolderOptionsRustEntry : public CFolderOptions
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CFolderOptions_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 
 BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ActiveDesktop, CActiveDesktopRustEntry)
@@ -527,7 +544,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_FontsFolderShortcut, CFontsFolderRustEntry)
     OBJECT_ENTRY(CLSID_Printers, CPrinterFolderRustEntry)
     OBJECT_ENTRY(CLSID_AdminFolderShortcut, CAdminToolsFolderRustEntry)
-    OBJECT_ENTRY(CLSID_ShellFldSetExt, CFolderOptions)
+    OBJECT_ENTRY(CLSID_ShellFldSetExt, CFolderOptionsRustEntry)
     OBJECT_ENTRY(CLSID_RecycleBin, CRecycleBin)
     OBJECT_ENTRY(CLSID_OpenWithMenu, COpenWithMenuRustEntry)
     OBJECT_ENTRY(CLSID_NewMenu, CNewMenuRustEntry)

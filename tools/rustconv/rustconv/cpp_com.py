@@ -874,6 +874,10 @@ def c_type_to_rust(c_type: str) -> str:
         text = text[:-1].rstrip()
     stars = text.count("*")
     base = " ".join(text.replace("*", " ").split())
+    # WIDL preserves explicit C tag spelling in a few signatures
+    # (``struct tagNMHDR *``). Rust names the tag type directly; retaining the
+    # C keyword produces invalid ``*mut struct tagNMHDR`` syntax.
+    base = re.sub(r"^(?:struct|enum|union)\s+", "", base)
     # C++ nested PODs are emitted as module-level Rust structs by the
     # deterministic scaffold (``CShellLink::volume_info`` -> ``volume_info``).
     base = re.sub(r"\b[A-Za-z_]\w*::", "", base)

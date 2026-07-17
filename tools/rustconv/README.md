@@ -36,3 +36,5 @@ WIDL-declared interface inheritance also owns physical slot aliasing, so a COM m
 both `IContextMenu2` and `IContextMenu` produces one derived slot and deterministic QI routes.
 C/C++ function-parameter arrays decay to pointers for both `name[]` and `name []` spellings;
 declarator whitespace must never leak into a model prompt or generated Rust signature.
+Explicit C tag keywords in WIDL signatures are normalized too: `struct tagNMHDR *` becomes
+`*mut tagNMHDR`, never the invalid Rust spelling `*mut struct tagNMHDR`.

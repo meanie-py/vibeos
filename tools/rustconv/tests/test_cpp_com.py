@@ -307,6 +307,8 @@ def test_object_map_adapter_redirects_atl_creation():
         ("IDataObject *", "*mut IDataObject"),
         ("CStringW &", "&mut CStringW"),
         ("const CStringW &", "&CStringW"),
+        ("struct tagNMHDR *", "*mut tagNMHDR"),
+        ("const struct DEFFOLDERSETTINGS *", "*const DEFFOLDERSETTINGS"),
         ("DWORD", "DWORD"),
     ],
 )

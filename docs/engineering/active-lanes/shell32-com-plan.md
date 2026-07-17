@@ -422,6 +422,23 @@ contrasting deterministic reject: aggregation/internal activation and two
 `CAtlList<...>` owners fail preflight before any model call. Add an explicit C++ list/factory
 bridge before spending on that class; never reinterpret those owners as Rust `Vec`.
 
+## Folder-options hybrid checkpoint (2026-07-17)
+
+`CFolderOptions` replayed entirely from the durable cache for $0 and now has Rust-owned COM
+identity, three published interfaces, refcounting, site ownership, activation, and trivial
+methods. Its earlier synthetic rejection correctly identified two non-Rust-shaped surfaces:
+property-page callbacks retain the object as an opaque dialog parameter, while the private
+`IBrowserService2` dependency pulls a very large inherited SDK vtable into an otherwise small
+class. Both are now contained behind narrow C ABI bridges instead of being guessed or passed
+through the model. The view dialog calls exported Rust helpers rather than casting the opaque
+parameter to the old C++ object layout.
+
+This establishes a reusable hybrid rule: when C++ callbacks retain a Rust-owned COM object,
+store its first published interface pointer, balance lifetime through `IUnknown`, and expose
+every later operation through an explicit ABI helper. Never invoke nonvirtual C++ methods or
+read C++ fields through that pointer. WIDL tag spellings such as `struct tagNMHDR *` are also
+normalized deterministically to valid Rust tag names before candidate assembly.
+
 ## Second monster checkpoint: complete substrate closure (2026-07-16)
 
 `CNewMenu.cpp` is the first giant class whose newly assembled module is compile-clean in the

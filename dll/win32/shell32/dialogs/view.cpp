@@ -23,10 +23,15 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL (fprop);
 
-static inline CFolderOptions*
+extern "C" BOOL WINAPI CFolderOptions_CanSetDefFolderSettings_RustBridge(void *pObject);
+extern "C" HRESULT WINAPI CFolderOptions_ApplyDefFolderSettings_RustBridge(
+    void *pObject, BOOL ResetToDefault);
+extern "C" HRESULT WINAPI CFolderOptions_ResetGlobalAndDefViewFolderSettings_RustBridge();
+
+static inline void*
 GetFolderOptions(HWND hwndDlg)
 {
-    return (CFolderOptions*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+    return (void*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
 }
 
 static inline IRegTreeOptions*
@@ -50,9 +55,9 @@ static BOOL
 ViewDlg_OnInitDialog(HWND hwndDlg, LPPROPSHEETPAGE psp)
 {
     SetWindowLongPtr(hwndDlg, GWLP_USERDATA, psp->lParam);
-    CFolderOptions *pFO = (CFolderOptions*)psp->lParam;
+    void *pFO = (void*)psp->lParam;
 
-    if (!pFO || !pFO->CanSetDefFolderSettings())
+    if (!pFO || !CFolderOptions_CanSetDefFolderSettings_RustBridge(pFO))
     {
         // The global options (started from rundll32 or control panel) 
         // has no browser to copy the current settings from.
@@ -234,11 +239,12 @@ FolderOptionsViewDlg(
                 {
                     HRESULT hr = HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
                     bool ResetToDefault = LOWORD(wParam) == IDC_VIEW_RESET_ALL;
-                    CFolderOptions *pFO = GetFolderOptions(hwndDlg);
+                    void *pFO = GetFolderOptions(hwndDlg);
                     if (pFO)
-                        hr = pFO->ApplyDefFolderSettings(ResetToDefault); // Use IBrowserService2
+                        hr = CFolderOptions_ApplyDefFolderSettings_RustBridge(
+                            pFO, ResetToDefault); // Use IBrowserService2
                     if (ResetToDefault && hr == HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED))
-                        hr = CFolderOptions::ResetGlobalAndDefViewFolderSettings(); // No browser
+                        hr = CFolderOptions_ResetGlobalAndDefViewFolderSettings_RustBridge(); // No browser
                     if (FAILED(hr))
                         SHELL_ErrorBox(hwndDlg, hr);
                     break;

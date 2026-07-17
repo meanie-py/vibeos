@@ -417,8 +417,11 @@ The next production-shaped three-class batch confirmed that routing must retain 
 decomposition tier above model selection. `CRecycleBinCleaner` used seven fresh sealed
 DeepSeek workers (~$0.02), then replayed unchanged from 24 unique full-module diagnostics to
 zero x3 after deterministic WIDL callback, ATL resource-string, array, SDK-struct/FFI, and
-implicit-receiver support landed. `CFolderOptions` remains a reusable property-sheet/service
-substrate backlog. The 231-line, 94-call `CQueryAssociations::GetString` worker broke its
+implicit-receiver support landed. `CFolderOptions` later closed through a hybrid substrate:
+Rust owns activation, public vtables, refcount, and site state, while narrow C++ bridges own
+the retained property-page callbacks and private `IBrowserService2` operation. The dialog
+keeps only an opaque published-interface pointer and calls Rust ABI helpers, never the retired
+C++ layout. The 231-line, 94-call `CQueryAssociations::GetString` worker broke its
 72-token call envelope with DeepSeek, while a prior isolated Sonnet artifact had already
 failed the same envelope. Route that shape to deterministic CFG decomposition; do not spend
 on repeated whole-worker retries merely because a stronger model exists.
