@@ -22,7 +22,14 @@ extern "C" {
     static GUID_DEVICE_INTERFACE_REMOVAL: GUID;
     fn memcmp( s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize, ) -> i32;
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn InterlockedExchange(Target: *mut i32, Value: i32) -> i32;
+    fn InterlockedIncrement(Addend: *mut i32) -> i32;
+    fn InterlockedDecrement(Addend: *mut i32) -> i32;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn InterlockedExchange(Target: *mut i32, Value: i32) -> i32;
     fn InterlockedIncrement(Addend: *mut i32) -> i32;
     fn InterlockedDecrement(Addend: *mut i32) -> i32;
@@ -231,8 +238,7 @@ pub unsafe extern "C" fn HasDriveLetter(mut DeviceInformation: PDEVICE_INFORMATI
     NextEntry = (*DeviceInformation).SymbolicLinksListHead.Flink as PLIST_ENTRY;
     while NextEntry != &raw mut (*DeviceInformation).SymbolicLinksListHead {
         SymlinkInfo = (NextEntry as usize).wrapping_sub(
-            &raw mut (*core::ptr::null_mut::<SYMLINK_INFORMATION>()).SymbolicLinksListEntry
-                as usize,
+            core::mem::offset_of!(SYMLINK_INFORMATION, SymbolicLinksListEntry),
         ) as *mut SYMLINK_INFORMATION as PSYMLINK_INFORMATION;
         if IsDriveLetter(&raw mut (*SymlinkInfo).Name) != 0
             && (*SymlinkInfo).Online as i32 != 0
@@ -649,7 +655,7 @@ pub unsafe extern "C" fn FindDeviceInfo(
 
     NextEntry = (*DeviceExtension).DeviceListHead.Flink as PLIST_ENTRY;
     while NextEntry != core::ptr::addr_of_mut!((*DeviceExtension).DeviceListHead) {
-        let offset = core::ptr::addr_of_mut!((*core::ptr::null_mut::<DEVICE_INFORMATION>()).DeviceListEntry) as usize;
+        let offset = core::mem::offset_of!(DEVICE_INFORMATION, DeviceListEntry);
         DeviceInfo = ((NextEntry as usize).wrapping_sub(offset)) as PDEVICE_INFORMATION;
 
         if RtlEqualUnicodeString(
@@ -740,8 +746,7 @@ pub unsafe extern "C" fn MountMgrFreeSavedLink(mut SavedLinkInformation: PSAVED_
     while !IsListEmpty(&raw mut (*SavedLinkInformation).SymbolicLinksListHead) {
         NextEntry = RemoveHeadList(&raw mut (*SavedLinkInformation).SymbolicLinksListHead);
         SymlinkInformation = (NextEntry as ULONG_PTR).wrapping_sub(
-            &raw mut (*core::ptr::null_mut::<SYMLINK_INFORMATION>()).SymbolicLinksListEntry
-                as ULONG_PTR,
+            core::mem::offset_of!(SYMLINK_INFORMATION, SymbolicLinksListEntry) as ULONG_PTR,
         ) as *mut SYMLINK_INFORMATION as PSYMLINK_INFORMATION;
         GlobalDeleteSymbolicLink(&raw mut (*SymlinkInformation).Name);
         FreePool((*SymlinkInformation).Name.Buffer as *mut core::ffi::c_void);
@@ -1015,8 +1020,7 @@ pub unsafe extern "C" fn MountMgrMountedDeviceArrival(
         NextEntry = (*DeviceExtension).OfflineDeviceListHead.Flink;
         while NextEntry != &raw mut (*DeviceExtension).OfflineDeviceListHead {
             CurrentDevice = (NextEntry as usize).wrapping_sub(
-                &raw mut (*core::ptr::null_mut::<DEVICE_INFORMATION>()).DeviceListEntry
-                    as *mut _ as usize,
+                core::mem::offset_of!(DEVICE_INFORMATION, DeviceListEntry),
             ) as PDEVICE_INFORMATION;
             if RtlEqualUnicodeString(
                 &raw mut (*DeviceInformation).SymbolicName,
@@ -1082,8 +1086,7 @@ pub unsafe extern "C" fn MountMgrMountedDeviceArrival(
     NextEntry = (*DeviceExtension).DeviceListHead.Flink;
     while NextEntry != &raw mut (*DeviceExtension).DeviceListHead {
         CurrentDevice = (NextEntry as usize).wrapping_sub(
-            &raw mut (*core::ptr::null_mut::<DEVICE_INFORMATION>()).DeviceListEntry
-                as *mut _ as usize,
+            core::mem::offset_of!(DEVICE_INFORMATION, DeviceListEntry),
         ) as PDEVICE_INFORMATION;
         if RtlEqualUnicodeString(
             &raw mut (*CurrentDevice).DeviceName,
@@ -1391,8 +1394,7 @@ pub unsafe extern "C" fn MountMgrMountedDeviceArrival(
     NextEntry = (*DeviceInformation).SymbolicLinksListHead.Flink;
     while NextEntry != &raw mut (*DeviceInformation).SymbolicLinksListHead {
         SymlinkInformation = (NextEntry as usize).wrapping_sub(
-            &raw mut (*core::ptr::null_mut::<SYMLINK_INFORMATION>()).SymbolicLinksListEntry
-                as *mut _ as usize,
+            core::mem::offset_of!(SYMLINK_INFORMATION, SymbolicLinksListEntry),
         ) as PSYMLINK_INFORMATION;
         SendLinkCreated(&raw mut (*SymlinkInformation).Name);
         NextEntry = (*NextEntry).Flink;
@@ -1540,8 +1542,7 @@ pub unsafe extern "C" fn MountMgrMountedDeviceArrival(
         ReconcileThisDatabaseWithMaster(DeviceExtension, DeviceInformation);
         NextEntry = (*DeviceExtension).DeviceListHead.Flink;
         CurrentDevice = (NextEntry as usize).wrapping_sub(
-            &raw mut (*core::ptr::null_mut::<DEVICE_INFORMATION>()).DeviceListEntry
-                as *mut _ as usize,
+            core::mem::offset_of!(DEVICE_INFORMATION, DeviceListEntry),
         ) as PDEVICE_INFORMATION;
         while CurrentDevice != DeviceInformation {
             if (*CurrentDevice).NoDatabase == 0 {
@@ -1549,8 +1550,7 @@ pub unsafe extern "C" fn MountMgrMountedDeviceArrival(
             }
             NextEntry = (*NextEntry).Flink;
             CurrentDevice = (NextEntry as usize).wrapping_sub(
-                &raw mut (*core::ptr::null_mut::<DEVICE_INFORMATION>()).DeviceListEntry
-                    as *mut _ as usize,
+                core::mem::offset_of!(DEVICE_INFORMATION, DeviceListEntry),
             ) as PDEVICE_INFORMATION;
         }
         KeReleaseSemaphore(&raw mut (*DeviceExtension).DeviceLock, IO_NO_INCREMENT, 1, FALSE);
@@ -1845,7 +1845,7 @@ pub unsafe extern "system" fn MountMgrCleanup(
     NextEntry = (*DeviceExtension).IrpListHead.Flink as PLIST_ENTRY;
     loop {
         ListIrp = (NextEntry as usize).wrapping_sub(
-            &raw mut (*core::ptr::null_mut::<IRP>()).Tail.Overlay.__bindgen_anon_2.ListEntry as usize,
+            core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry),
         ) as *mut IRP as PIRP;
         if (*IoGetCurrentIrpStackLocation(ListIrp)).FileObject == FileObject {
             (*ListIrp).Cancel = 1;

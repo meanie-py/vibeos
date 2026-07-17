@@ -64,7 +64,12 @@ const IRP_SYNCHRONOUS_PAGING_IO: u32 = 0x00000040;
 const SL_PENDING_RETURNED: u8 = 0x01;
 const WatchTree: u16 = 0x0001;
 
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn IofCompleteRequest(irp: PIRP, priority_boost: i8);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn IofCompleteRequest(irp: PIRP, priority_boost: i8);
 }
 

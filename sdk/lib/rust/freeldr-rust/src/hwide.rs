@@ -13,7 +13,14 @@ extern "C" {
     fn ERR(fmt: *const i8, ...);
     fn TRACE(fmt: *const i8, ...);
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn RtlUshortByteSwap(Source: USHORT) -> USHORT;
+    fn RtlUlongByteSwap(Source: ULONG) -> ULONG;
+    fn RtlUlonglongByteSwap(Source: ULONGLONG) -> ULONGLONG;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn RtlUshortByteSwap(Source: USHORT) -> USHORT;
     fn RtlUlongByteSwap(Source: ULONG) -> ULONG;
     fn RtlUlonglongByteSwap(Source: ULONGLONG) -> ULONGLONG;

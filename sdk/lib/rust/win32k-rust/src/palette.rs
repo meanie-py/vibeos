@@ -603,8 +603,9 @@ pub unsafe extern "C" fn PALETTE_vGetBitMasks(ppal: PPALETTE, pulColors: PULONG)
     }
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn ColorCorrection(PalGDI: PPALETTE, PaletteEntry: PPALETTEENTRY, Colors: u32) {
+pub unsafe fn ColorCorrection(PalGDI: PPALETTE, PaletteEntry: PPALETTEENTRY, Colors: u32) {
     let ppdev: PPDEVOBJ = (*PalGDI).hPDev as PPDEVOBJ;
 
     if ppdev.is_null() { return; }
@@ -620,6 +621,7 @@ pub unsafe extern "fastcall" fn ColorCorrection(PalGDI: PPALETTE, PaletteEntry: 
             i += 1;
         }
     }
+}
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]

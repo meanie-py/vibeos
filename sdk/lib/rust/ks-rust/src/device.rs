@@ -202,9 +202,7 @@ pub unsafe extern "system" fn IKsDevice_fnReleaseDevice(
     let this: PKSIDEVICE_HEADER = core::mem::transmute::<usize, *mut KSIDEVICE_HEADER>(
         (iface as usize)
             .wrapping_sub(
-                &raw const (*core::ptr::null_mut::<KSIDEVICE_HEADER>())
-                    .BasicHeader
-                    .OuterUnknown as usize,
+                core::mem::offset_of!(KSIDEVICE_HEADER, BasicHeader.OuterUnknown),
             ),
     );
     KeReleaseMutex(&raw mut (*this).DeviceMutex, 0u8) as NTSTATUS

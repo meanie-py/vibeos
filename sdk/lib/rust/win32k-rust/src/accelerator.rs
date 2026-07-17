@@ -106,7 +106,8 @@ unsafe fn UserGetAccelObjectImpl(hAccel: HACCEL) -> PACCELERATOR_TABLE {
 }
 
 
-unsafe extern "fastcall" fn co_IntTranslateAccelerator(
+fastcall_fn! {
+unsafe fn co_IntTranslateAccelerator(
     Window: PWND,
     pMsg: *const MSG,
     pAccel: *const ACCEL,
@@ -208,6 +209,7 @@ unsafe extern "fastcall" fn co_IntTranslateAccelerator(
     }
 
     1
+}
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]

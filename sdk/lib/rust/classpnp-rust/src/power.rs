@@ -36,7 +36,7 @@ unsafe extern "C" {
     fn ClassAcquireRemoveLock(DeviceObject: PDEVICE_OBJECT, Tag: PIRP) -> LONG;
 }
 // NEEDS SHARED SUBSTRATE: Po* and sense APIs not yet in ntkrnl-sys or driver_ddk
-unsafe extern "stdcall" {
+unsafe extern "system" {
     fn PoSetPowerState(
         DeviceObject: PDEVICE_OBJECT,
         Type: ntkrnl_sys::ddk::POWER_STATE_TYPE,

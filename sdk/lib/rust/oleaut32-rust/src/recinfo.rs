@@ -67,7 +67,7 @@ unsafe fn V_UINT_PTR_ref(v: *mut VARIANT) -> *mut UINT_PTR {
 
 unsafe extern "C" fn impl_from_IRecordInfo(iface: *mut IRecordInfo) -> *mut IRecordInfoImpl {
     return (iface as UINT_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<IRecordInfoImpl>()).IRecordInfo_iface) as UINT_PTR
+        core::mem::offset_of!(IRecordInfoImpl, IRecordInfo_iface) as UINT_PTR
     ) as *mut IRecordInfoImpl;
 }
 unsafe extern "C" fn copy_to_variant(

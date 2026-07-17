@@ -48,7 +48,15 @@ extern "system" {
 // user32-internal C symbols (still in the cohab C objects of this DLL).
 // `FASTCALL` → `extern "fastcall"` on i386; data globals → plain extern statics.
 // ---------------------------------------------------------------------------
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn ValidateHwnd(hwnd: HWND) -> PWND;
+    fn BeginIfHookedUserApiHook() -> BOOL;
+    fn EndUserApiHook() -> BOOL;
+    fn IsInsideUserApiHook() -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn ValidateHwnd(hwnd: HWND) -> PWND;
     fn BeginIfHookedUserApiHook() -> BOOL;
     fn EndUserApiHook() -> BOOL;

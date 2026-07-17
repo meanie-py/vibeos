@@ -502,7 +502,7 @@ unsafe extern "system" fn LsapAddAuthPackage(
 unsafe fn LsapGetAuthenticationPackage(PackageId: ULONG) -> PAUTH_PACKAGE {
     let mut ListEntry: PLIST_ENTRY = PackageListHead.Flink;
     while ListEntry != core::ptr::addr_of!(PackageListHead) as *mut _ {
-        let offset = &raw mut (*core::ptr::null_mut::<AUTH_PACKAGE>()).Entry as usize;
+        let offset = core::mem::offset_of!(AUTH_PACKAGE, Entry);
         let Package = ((ListEntry as usize) - offset) as PAUTH_PACKAGE;
         if (*Package).Id == PackageId {
             return Package;
@@ -713,7 +713,7 @@ ros_dbg_log(
 let mut ListEntry = PackageListHead.Flink as PLIST_ENTRY;
 let head_ptr = core::ptr::addr_of_mut!(PackageListHead);
 while ListEntry != head_ptr {
-    let entry_offset = core::ptr::addr_of!((*core::ptr::null::<AUTH_PACKAGE>()).Entry) as usize;
+    let entry_offset = core::mem::offset_of!(AUTH_PACKAGE, Entry);
     let Package = (ListEntry as usize).wrapping_sub(entry_offset) as PAUTH_PACKAGE;
     if PackageNameLength == (*(*Package).Name).Length as u32
         && _strnicmp(

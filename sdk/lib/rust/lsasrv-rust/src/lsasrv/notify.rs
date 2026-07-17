@@ -61,9 +61,7 @@ unsafe fn LsapGetNotificationEntry(
     while NotificationEntry != core::ptr::addr_of_mut!(NotificationListHead) {
         let CurrentNotification: PLSA_NOTIFICATION_ENTRY = (NotificationEntry as usize)
             .wrapping_sub(
-                core::ptr::addr_of_mut!(
-                    (*core::ptr::null_mut::<LSA_NOTIFICATION_ENTRY>()).Entry
-                ) as usize,
+                core::mem::offset_of!(LSA_NOTIFICATION_ENTRY, Entry),
             ) as PLSA_NOTIFICATION_ENTRY;
 
         if (*CurrentNotification).ClientId.UniqueProcess

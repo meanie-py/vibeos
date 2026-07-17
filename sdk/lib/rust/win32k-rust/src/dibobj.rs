@@ -3383,7 +3383,8 @@ unsafe fn DIB_BitmapInfoSize_impl(info: *const BITMAPINFO, coloruse: u16) -> i32
     }
 }
 
-unsafe extern "fastcall" fn DIB_MapPaletteColors(ppalDc: PPALETTE, lpbmi: *const BITMAPINFO) -> HPALETTE {
+fastcall_fn! {
+unsafe fn DIB_MapPaletteColors(ppalDc: PPALETTE, lpbmi: *const BITMAPINFO) -> HPALETTE {
     let ppalNew: PPALETTE;
     let mut nNumColors: ULONG;
     let mut lpIndex: *mut USHORT;
@@ -3420,6 +3421,7 @@ unsafe extern "fastcall" fn DIB_MapPaletteColors(ppalDc: PPALETTE, lpbmi: *const
     PALETTE_UnlockPalette(ppalNew);
 
     hpal
+}
 }
 
 #[cfg(target_arch = "x86")]

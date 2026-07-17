@@ -15,7 +15,12 @@ use ntkrnl_sys::ddk::{
 use ntkrnl_sys::ob::ObDereferenceObject;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn IofCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn IofCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 

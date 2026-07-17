@@ -65,7 +65,12 @@ extern "C" {
 }
 
 // gdi32p.h: `GdiGetLDC` is defined FASTCALL in misc.rs (i386 `@GdiGetLDC@4`).
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn GdiGetLDC(hdc: HDC) -> PLDC;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn GdiGetLDC(hdc: HDC) -> PLDC;
 }
 

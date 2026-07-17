@@ -705,7 +705,7 @@ pub unsafe extern "C" fn LsapLookupFullyQualifiedWellKnownName(
 ) -> PWELL_KNOWN_SID {
     let mut list_entry: *mut LIST_ENTRY = WellKnownSidListHead.Flink;
     while list_entry != core::ptr::addr_of_mut!(WellKnownSidListHead) {
-        let offset = (&raw mut (*core::ptr::null_mut::<WELL_KNOWN_SID>()).ListEntry as *mut LIST_ENTRY) as usize;
+        let offset = core::mem::offset_of!(WELL_KNOWN_SID, ListEntry);
         let ptr = ((list_entry as usize) - offset) as *mut WELL_KNOWN_SID;
         if RtlEqualUnicodeString(AccountName as *const _UNICODE_STRING, &raw mut (*ptr).AccountName as *const _UNICODE_STRING, 1u8) != 0
             && RtlEqualUnicodeString(DomainName as *const _UNICODE_STRING, &raw mut (*ptr).DomainName as *const _UNICODE_STRING, 1u8) != 0

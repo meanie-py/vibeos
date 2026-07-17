@@ -2210,11 +2210,7 @@ pub unsafe extern "system" fn DiskFlushComplete(
     while IsListEmpty(&raw mut (*FlushContext).CurrList) == 0 {
         let listEntry: PLIST_ENTRY = RemoveHeadList(&raw mut (*FlushContext).CurrList);
         let tempIrp: PIRP = (listEntry as ULONG_PTR).wrapping_sub(
-            &raw mut (*core::ptr::null_mut::<IRP>())
-                .Tail
-                .Overlay
-                .__bindgen_anon_2
-                .ListEntry as ULONG_PTR,
+            core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as ULONG_PTR,
         ) as PIRP;
 
         InitializeListHead(&raw mut (*tempIrp).Tail.Overlay.__bindgen_anon_2.ListEntry);

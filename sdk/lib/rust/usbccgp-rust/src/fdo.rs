@@ -639,13 +639,13 @@ pub unsafe extern "C" fn FDO_HandleResetCyclePort(
             Entry = RemoveHeadList(core::ptr::addr_of_mut!(TempList));
             ListIrp = ((Entry as usize)
                 .wrapping_sub(
-                    &raw const (*(core::ptr::null::<IRP>())).Tail.Overlay.__bindgen_anon_2.ListEntry as usize,
+                    core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry),
                 ) /* CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry) */)
                 as PIRP;
             /* CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry) */
             ListIrp = ((Entry as usize)
                 .wrapping_sub(
-                    &raw const (*(core::ptr::null::<IRP>())).Tail.Overlay.__bindgen_anon_2.ListEntry as usize,
+                    core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry),
                 )) as PIRP;
 
             /* Complete request with status success */

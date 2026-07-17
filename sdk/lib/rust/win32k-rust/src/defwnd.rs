@@ -376,7 +376,8 @@ unsafe fn DefWndHandleWindowPosChanged_impl(pWnd: PWND, WinPos: PWINDOWPOS) -> L
     0
 }
 
-unsafe extern "fastcall" fn DefWndHandleSysCommand(mut pWnd: PWND, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+fastcall_fn! {
+unsafe fn DefWndHandleSysCommand(mut pWnd: PWND, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
     let mut lResult: LRESULT = 0;
     let mut Hook: u8 = 0u8;
 
@@ -458,6 +459,7 @@ unsafe extern "fastcall" fn DefWndHandleSysCommand(mut pWnd: PWND, wParam: WPARA
     }
 
     if Hook != 0 { 1 } else { 0 }
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -927,8 +929,9 @@ unsafe fn IntDefWindowProc_WM_SETREDRAW(Wnd: PWND, wParam: WPARAM) -> LRESULT {
     0
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntDefWindowProc(
+unsafe fn IntDefWindowProc(
     Wnd: PWND,
     Msg: UINT,
     mut wParam: WPARAM,
@@ -1682,6 +1685,7 @@ unsafe extern "fastcall" fn IntDefWindowProc(
         _ => {}
     }
     lResult
+}
 }
 
 

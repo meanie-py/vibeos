@@ -155,7 +155,12 @@ unsafe fn RtlULongMult(uMultiplicand: ULONG, uMultiplier: ULONG, puResult: *mut 
 }
 
 // ── FASTCALL gdi32-private helpers (gdi32p.h) ──────────────────────────────────
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn HEAP_strdupA2W_buf(lpszA: PCSTR, pszStaticBuff: PWSTR, cchStaticBuff: SIZE_T) -> PWSTR;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn HEAP_strdupA2W_buf(lpszA: PCSTR, pszStaticBuff: PWSTR, cchStaticBuff: SIZE_T) -> PWSTR;
 }
 
@@ -332,8 +337,9 @@ const INITIAL_FAMILY_COUNT: INT = 64;
 /***********************************************************************
  *              TEXTMETRIC conversion functions.
  */
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn FONT_TextMetricWToA(ptmW: *const TEXTMETRICW, ptmA: LPTEXTMETRICA) {
+pub unsafe fn FONT_TextMetricWToA(ptmW: *const TEXTMETRICW, ptmA: LPTEXTMETRICA) {
     (*ptmA).tmHeight = (*ptmW).tmHeight;
     (*ptmA).tmAscent = (*ptmW).tmAscent;
     (*ptmA).tmDescent = (*ptmW).tmDescent;
@@ -368,6 +374,7 @@ pub unsafe extern "fastcall" fn FONT_TextMetricWToA(ptmW: *const TEXTMETRICW, pt
     (*ptmA).tmStruckOut = (*ptmW).tmStruckOut;
     (*ptmA).tmPitchAndFamily = (*ptmW).tmPitchAndFamily;
     (*ptmA).tmCharSet = (*ptmW).tmCharSet;
+}
 }
 
 /***********************************************************************
@@ -467,22 +474,26 @@ unsafe fn FONT_GetCharsByRangeA(
     str_
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn NewTextMetricW2A(tma: *mut NEWTEXTMETRICA, tmw: *mut NEWTEXTMETRICW) {
+pub unsafe fn NewTextMetricW2A(tma: *mut NEWTEXTMETRICA, tmw: *mut NEWTEXTMETRICW) {
     FONT_TextMetricWToA(tmw as *const TEXTMETRICW, tma as LPTEXTMETRICA);
     (*tma).ntmFlags = (*tmw).ntmFlags;
     (*tma).ntmSizeEM = (*tmw).ntmSizeEM;
     (*tma).ntmCellHeight = (*tmw).ntmCellHeight;
     (*tma).ntmAvgWidth = (*tmw).ntmAvgWidth;
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn NewTextMetricExW2A(
+pub unsafe fn NewTextMetricExW2A(
     tma: *mut NEWTEXTMETRICEXA,
     tmw: *mut NEWTEXTMETRICEXW,
 ) {
     NewTextMetricW2A(&mut (*tma).ntmTm, &mut (*tmw).ntmTm);
     (*tma).ntmFontSig = (*tmw).ntmFontSig;
+}
 }
 
 // IntFontFamilyCompareEx's flags
@@ -541,8 +552,9 @@ unsafe extern "C" fn IntFontFamilyCompare(ffi1: *const c_void, ffi2: *const c_vo
 const IEFF_UNICODE: DWORD = 1;
 const IEFF_EXTENDED: DWORD = 2;
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IntFontFamilyListUnique(
+pub unsafe fn IntFontFamilyListUnique(
     InfoList: *mut FONTFAMILYINFO,
     mut nCount: INT,
     plf: *const LOGFONTW,
@@ -584,6 +596,7 @@ pub unsafe extern "fastcall" fn IntFontFamilyListUnique(
     nCount = result.offset_from(InfoList) as INT;
 
     nCount
+}
 }
 
 unsafe fn IntEnumFontFamilies(
@@ -2369,8 +2382,9 @@ extern "C" {
 }
 
 // Convert single or multiple font path(s)
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IntConvertFontPaths(
+pub unsafe fn IntConvertFontPaths(
     pszFiles: PCWSTR,
     pcFiles: PDWORD,
     pcwc: PDWORD,
@@ -2544,6 +2558,7 @@ pub unsafe extern "fastcall" fn IntConvertFontPaths(
     }
 
     pszBuff
+}
 }
 
 // Wide string literals used by IntConvertFontPaths (UTF-16, NUL-terminated).

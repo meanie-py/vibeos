@@ -796,8 +796,9 @@ unsafe fn MENU_GetStartOfPrevColumn(menu: PMENU) -> UINT {
     i
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn MENU_FindItem(pmenu: *mut PMENU, nPos: *mut UINT, wFlags: UINT) -> PITEM {
+unsafe fn MENU_FindItem(pmenu: *mut PMENU, nPos: *mut UINT, wFlags: UINT) -> PITEM {
     let menu: PMENU = *pmenu;
     let mut fallback: PITEM = core::ptr::null_mut();
     let mut fallback_pos: UINT = 0;
@@ -843,6 +844,7 @@ unsafe extern "fastcall" fn MENU_FindItem(pmenu: *mut PMENU, nPos: *mut UINT, wF
     }
 
     fallback
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -1007,8 +1009,9 @@ unsafe extern "C" fn MENU_InsertItem(mut menu: PMENU, mut pos: UINT, flags: UINT
     newItems.offset(pos as isize)
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntInsertMenuItem(
+unsafe fn IntInsertMenuItem(
     MenuObject: PMENU,
     mut uItem: UINT,
     fByPosition: BOOL,
@@ -1052,8 +1055,10 @@ unsafe extern "fastcall" fn IntInsertMenuItem(
 
     1
 }
+}
 
-unsafe extern "fastcall" fn IntCreateMenu(
+fastcall_fn! {
+unsafe fn IntCreateMenu(
     Handle: PHANDLE,
     IsMenuBar: BOOL,
     Desktop: PDESKTOP,
@@ -1092,6 +1097,7 @@ unsafe extern "fastcall" fn IntCreateMenu(
     (*Menu).TimeToHide = (0u8 as i32);
 
     Menu
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -1174,8 +1180,9 @@ unsafe fn IntCloneMenuItems_impl(Destination: PMENU, Source: PMENU) -> i32 {
     1
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IntCloneMenu(Source: PMENU) -> PMENU {
+pub unsafe fn IntCloneMenu(Source: PMENU) -> PMENU {
     let mut hMenu: HANDLE = core::ptr::null_mut();
     let Menu: PMENU;
 
@@ -1217,6 +1224,7 @@ pub unsafe extern "fastcall" fn IntCloneMenu(Source: PMENU) -> PMENU {
     IntCloneMenuItems(Menu, Source);
 
     Menu
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -1808,7 +1816,8 @@ pub unsafe extern "C" fn IntSetMenuItemInfo(
     1
 }
 
-unsafe extern "fastcall" fn IntEnableMenuItem(MenuObject: PMENU, uIDEnableItem: UINT, uEnable: UINT) -> UINT {
+fastcall_fn! {
+unsafe fn IntEnableMenuItem(MenuObject: PMENU, uIDEnableItem: UINT, uEnable: UINT) -> UINT {
     let MenuItem: PITEM;
     let res: UINT;
 
@@ -1841,6 +1850,7 @@ unsafe extern "fastcall" fn IntEnableMenuItem(MenuObject: PMENU, uIDEnableItem: 
         }
     }
     res
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -1939,7 +1949,8 @@ unsafe fn UserSetMenuDefaultItem_impl(MenuObject: PMENU, uItem: UINT, fByPos: UI
     0
 }
 
-unsafe extern "fastcall" fn IntGetMenuDefaultItem(MenuObject: PMENU, fByPos: UINT, gmdiFlags: UINT, gismc: *mut DWORD) -> UINT {
+fastcall_fn! {
+unsafe fn IntGetMenuDefaultItem(MenuObject: PMENU, fByPos: UINT, gmdiFlags: UINT, gismc: *mut DWORD) -> UINT {
     let mut i: UINT = 0;
     let mut MenuItem: PITEM = (*MenuObject).rgItems;
 
@@ -1979,6 +1990,7 @@ unsafe extern "fastcall" fn IntGetMenuDefaultItem(MenuObject: PMENU, fByPos: UIN
         (*MenuItem).wID as UINT
     }
 }
+}
 
 #[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn co_IntGetSubMenu(mut pMenu: PMENU, mut nPos: core::ffi::c_int) -> PMENU {
@@ -2006,8 +2018,9 @@ unsafe extern "C" fn co_IntGetSubMenu(mut pMenu: PMENU, mut nPos: core::ffi::c_i
     (*pItem).spSubMenu
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn MENU_InitSysMenuPopup(menu: PMENU, style: DWORD, clsStyle: DWORD, HitTest: LONG) {
+unsafe fn MENU_InitSysMenuPopup(menu: PMENU, style: DWORD, clsStyle: DWORD, HitTest: LONG) {
     let mut gray: BOOL;
     let DefItem: UINT;
 
@@ -2036,6 +2049,7 @@ unsafe extern "fastcall" fn MENU_InitSysMenuPopup(menu: PMENU, style: DWORD, cls
     }
 
     UserSetMenuDefaultItem(menu, DefItem, MF_BYCOMMAND);
+}
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -2142,13 +2156,15 @@ unsafe fn MENU_DrawPopupGlyph_impl(
 }
 
 
-unsafe extern "fastcall" fn MENU_AdjustMenuItemRect(menu: PMENU, rect: PRECTL) {
+fastcall_fn! {
+unsafe fn MENU_AdjustMenuItemRect(menu: PMENU, rect: PRECTL) {
     if (*menu).dwArrowsOn() != 0 {
         let arrow_bitmap_height: UINT;
         arrow_bitmap_height = (*pusi(gpsi)).oembmi[OBI_UPARROW as usize].cy as UINT;
         (*rect).top += arrow_bitmap_height as i32 - (*menu).iTop as i32;
         (*rect).bottom += arrow_bitmap_height as i32 - (*menu).iTop as i32;
     }
+}
 }
 
 unsafe fn MENU_FindItemByCoords(menu: *mut MENU, mut pt: POINT, pos: *mut UINT) -> *mut ITEM {
@@ -2220,7 +2236,8 @@ unsafe fn IntMenuItemFromPoint_impl(_pWnd: PWND, hMenu: HMENU, ptScreen: POINT) 
     pos as INT
 }
 
-unsafe extern "fastcall" fn MENU_FindItemByKey(WndOwner: PWND, mut menu: PMENU, Key: WCHAR, ForceMenuChar: BOOL) -> UINT {
+fastcall_fn! {
+unsafe fn MENU_FindItemByKey(WndOwner: PWND, mut menu: PMENU, Key: WCHAR, ForceMenuChar: BOOL) -> UINT {
     let MenuChar: LRESULT;
     let mut Flags: WORD = 0;
 
@@ -2275,6 +2292,7 @@ unsafe extern "fastcall" fn MENU_FindItemByKey(WndOwner: PWND, mut menu: PMENU, 
         }
     }
     (-1i32) as UINT
+}
 }
 
 unsafe fn MENU_GetBitmapItemSize(lpitem: PITEM, size: *mut SIZE, WndOwner: PWND) {
@@ -2660,7 +2678,8 @@ unsafe fn IntGetDialogBaseUnits() -> LONG {
     units as LONG
 }
 
-unsafe extern "fastcall" fn MENU_CalcItemSize(
+fastcall_fn! {
+unsafe fn MENU_CalcItemSize(
     hdc: HDC,
     lpitem: PITEM,
     Menu: PMENU,
@@ -2844,6 +2863,7 @@ unsafe extern "fastcall" fn MENU_CalcItemSize(
     (*lpitem).cyItem += (itemheight as u32);
     let _ = (textandbmp, check_bitmap_width);
 }
+}
 
 unsafe fn MENU_GetMaxPopupHeight(lppop: PMENU) -> UINT {
     if (*lppop).cyMax != 0 {
@@ -2852,7 +2872,8 @@ unsafe fn MENU_GetMaxPopupHeight(lppop: PMENU) -> UINT {
     (UserGetSystemMetrics(SM_CYSCREEN as ULONG) - UserGetSystemMetrics(SM_CYBORDER as ULONG)) as UINT
 }
 
-unsafe extern "fastcall" fn MENU_PopupMenuCalcSize(Menu: PMENU, WndOwner: PWND) {
+fastcall_fn! {
+unsafe fn MENU_PopupMenuCalcSize(Menu: PMENU, WndOwner: PWND) {
     let mut lpitem: PITEM;
     let hdc: HDC;
     let mut start: i32;
@@ -2942,8 +2963,10 @@ unsafe extern "fastcall" fn MENU_PopupMenuCalcSize(Menu: PMENU, WndOwner: PWND) 
     }
     UserReleaseDC(core::ptr::null_mut(), hdc, 0);
 }
+}
 
-unsafe extern "fastcall" fn MENU_MenuBarCalcSize(hdc: HDC, lprect: LPRECT, lppop: PMENU, pwndOwner: PWND) {
+fastcall_fn! {
+unsafe fn MENU_MenuBarCalcSize(hdc: HDC, lprect: LPRECT, lppop: PMENU, pwndOwner: PWND) {
     let mut lpitem: *mut ITEM;
     let mut start: UINT;
     let mut i: UINT;
@@ -3031,6 +3054,7 @@ unsafe extern "fastcall" fn MENU_MenuBarCalcSize(hdc: HDC, lprect: LPRECT, lppop
         lpitem = lpitem.offset(-1);
     }
 }
+}
 
 unsafe fn MENU_DrawScrollArrows(lppop: PMENU, hdc: HDC) {
     let arrow_bitmap_height: UINT;
@@ -3055,7 +3079,8 @@ unsafe fn MENU_DrawScrollArrows(lppop: PMENU, hdc: HDC) {
     UITOOLS95_DrawFrameMenu(hdc, &mut rect, Flags | DFCS_MENUARROWDOWN);
 }
 
-unsafe extern "fastcall" fn MENU_DrawMenuItem(
+fastcall_fn! {
+unsafe fn MENU_DrawMenuItem(
     Wnd: PWND,
     Menu: PMENU,
     WndOwner: PWND,
@@ -3445,8 +3470,10 @@ unsafe extern "fastcall" fn MENU_DrawMenuItem(
         }
     }
 }
+}
 
-unsafe extern "fastcall" fn MENU_DrawPopupMenu(wnd: PWND, hdc: HDC, menu: PMENU) {
+fastcall_fn! {
+unsafe fn MENU_DrawPopupMenu(wnd: PWND, hdc: HDC, menu: PMENU) {
     let mut hPrevBrush: HBRUSH = core::ptr::null_mut();
     let mut brush: HBRUSH = (IntGetSysColorBrush(COLOR_MENU as i32) as HBRUSH);
     let mut rect: RECT = core::mem::zeroed();
@@ -3488,6 +3515,7 @@ unsafe extern "fastcall" fn MENU_DrawPopupMenu(wnd: PWND, hdc: HDC, menu: PMENU)
             NtGdiSelectBrush(hdc, hPrevBrush);
         }
     }
+}
 }
 
 #[no_mangle]
@@ -3775,7 +3803,8 @@ unsafe fn MENU_MoveRect(flags: UINT, x: *mut INT, y: *mut INT, width: INT, heigh
     0
 }
 
-unsafe extern "fastcall" fn MENU_ShowPopup(pwndOwner: PWND, menu: PMENU, id: UINT, mut flags: UINT, mut x: INT, mut y: INT, pExclude: *const RECT) -> BOOL {
+fastcall_fn! {
+unsafe fn MENU_ShowPopup(pwndOwner: PWND, menu: PMENU, id: UINT, mut flags: UINT, mut x: INT, mut y: INT, pExclude: *const RECT) -> BOOL {
     let width: INT;
     let height: INT;
     let mut ptx: POINT = core::mem::zeroed();
@@ -3902,6 +3931,7 @@ unsafe extern "fastcall" fn MENU_ShowPopup(pwndOwner: PWND, menu: PMENU, id: UIN
 
     1
 }
+}
 
 unsafe fn MENU_EnsureMenuItemVisible(lppop: PMENU, wIndex: UINT, hdc: HDC) {
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
@@ -3935,7 +3965,8 @@ unsafe fn MENU_EnsureMenuItemVisible(lppop: PMENU, wIndex: UINT, hdc: HDC) {
     }
 }
 
-unsafe extern "fastcall" fn MENU_SelectItem(
+fastcall_fn! {
+unsafe fn MENU_SelectItem(
     pwndOwner: PWND,
     menu: PMENU,
     wIndex: UINT,
@@ -4043,6 +4074,7 @@ unsafe extern "fastcall" fn MENU_SelectItem(
     }
     UserReleaseDC(pWnd, hdc, 0u8 as BOOL);
 }
+}
 
 #[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn MENU_MoveSelection(pwndOwner: PWND, menu: PMENU, offset: INT) {
@@ -4086,7 +4118,8 @@ unsafe fn MENU_MoveSelection_impl(pwndOwner: PWND, menu: PMENU, offset: INT) {
     }
 }
 
-unsafe extern "fastcall" fn MENU_HideSubPopups(
+fastcall_fn! {
+unsafe fn MENU_HideSubPopups(
     pWndOwner: PWND,
     Menu: PMENU,
     SendMenuSelect: BOOL,
@@ -4130,8 +4163,10 @@ unsafe extern "fastcall" fn MENU_HideSubPopups(
         }
     }
 }
+}
 
-unsafe extern "fastcall" fn MENU_ShowSubPopup(WndOwner: PWND, Menu: PMENU, SelectFirst: BOOL, mut Flags: UINT) -> PMENU {
+fastcall_fn! {
+unsafe fn MENU_ShowSubPopup(WndOwner: PWND, Menu: PMENU, SelectFirst: BOOL, mut Flags: UINT) -> PMENU {
     let mut Rect: RECT = core::mem::zeroed();
     let mut ParentRect: RECT = core::mem::zeroed();
     let Item: *mut ITEM;
@@ -4292,8 +4327,10 @@ unsafe extern "fastcall" fn MENU_ShowSubPopup(WndOwner: PWND, Menu: PMENU, Selec
     }
     (*Item).spSubMenu
 }
+}
 
-unsafe extern "fastcall" fn MENU_ExecFocusedItem(pmt: *mut MTRACKER, Menu: PMENU, Flags: UINT) -> INT {
+fastcall_fn! {
+unsafe fn MENU_ExecFocusedItem(pmt: *mut MTRACKER, Menu: PMENU, Flags: UINT) -> INT {
     let Item: PITEM;
 
     if Menu.is_null() || (*Menu).cItems == 0 || (*Menu).iItem == NO_SELECTED_ITEM as i32 {
@@ -4346,8 +4383,10 @@ unsafe extern "fastcall" fn MENU_ExecFocusedItem(pmt: *mut MTRACKER, Menu: PMENU
 
     -1
 }
+}
 
-unsafe extern "fastcall" fn MENU_SwitchTracking(
+fastcall_fn! {
+unsafe fn MENU_SwitchTracking(
     pmt: *mut MTRACKER,
     PtMenu: PMENU,
     Index: UINT,
@@ -4371,8 +4410,10 @@ unsafe extern "fastcall" fn MENU_SwitchTracking(
 
     MENU_SelectItem((*pmt).OwnerWnd, PtMenu, Index, 1, core::ptr::null_mut());
 }
+}
 
-unsafe extern "fastcall" fn MENU_ButtonDown(pmt: *mut MTRACKER, PtMenu: PMENU, Flags: UINT) -> BOOL {
+fastcall_fn! {
+unsafe fn MENU_ButtonDown(pmt: *mut MTRACKER, PtMenu: PMENU, Flags: UINT) -> BOOL {
     if !PtMenu.is_null() {
         let mut id: UINT = 0;
         let item: PITEM;
@@ -4397,8 +4438,10 @@ unsafe extern "fastcall" fn MENU_ButtonDown(pmt: *mut MTRACKER, PtMenu: PMENU, F
     }
     0
 }
+}
 
-unsafe extern "fastcall" fn MENU_ButtonUp(pmt: *mut MTRACKER, PtMenu: PMENU, Flags: UINT) -> INT {
+fastcall_fn! {
+unsafe fn MENU_ButtonUp(pmt: *mut MTRACKER, PtMenu: PMENU, Flags: UINT) -> INT {
     if !PtMenu.is_null() {
         let mut Id: UINT = 0;
         let item: *mut ITEM;
@@ -4427,6 +4470,7 @@ unsafe extern "fastcall" fn MENU_ButtonUp(pmt: *mut MTRACKER, PtMenu: PMENU, Fla
         }
     }
     -1
+}
 }
 
 unsafe fn MENU_PtMenu(menu: PMENU, pt: POINT) -> PMENU {
@@ -4465,7 +4509,8 @@ unsafe fn MENU_PtMenu(menu: PMENU, pt: POINT) -> PMENU {
     ret
 }
 
-unsafe extern "fastcall" fn MENU_MouseMove(pmt: *mut MTRACKER, PtMenu: PMENU, Flags: UINT) -> BOOL {
+fastcall_fn! {
+unsafe fn MENU_MouseMove(pmt: *mut MTRACKER, PtMenu: PMENU, Flags: UINT) -> BOOL {
     let mut Index: UINT = NO_SELECTED_ITEM as UINT;
 
     if !PtMenu.is_null() {
@@ -4479,6 +4524,7 @@ unsafe extern "fastcall" fn MENU_MouseMove(pmt: *mut MTRACKER, PtMenu: PMENU, Fl
         (*pmt).CurrentMenu = MENU_ShowSubPopup((*pmt).OwnerWnd, PtMenu, 0, Flags);
     }
     1
+}
 }
 
 unsafe fn MENU_GetSubPopup(menu: PMENU) -> PMENU {
@@ -4495,7 +4541,8 @@ unsafe fn MENU_GetSubPopup(menu: PMENU) -> PMENU {
     core::ptr::null_mut()
 }
 
-unsafe extern "fastcall" fn MENU_DoNextMenu(pmt: *mut MTRACKER, Vk: UINT, wFlags: UINT) -> LRESULT {
+fastcall_fn! {
+unsafe fn MENU_DoNextMenu(pmt: *mut MTRACKER, Vk: UINT, wFlags: UINT) -> LRESULT {
     let mut atEnd: BOOL = 0;
 
     if Vk == VK_LEFT && (*(*pmt).TopMenu).iItem == 0 {
@@ -4629,6 +4676,7 @@ unsafe extern "fastcall" fn MENU_DoNextMenu(pmt: *mut MTRACKER, Vk: UINT, wFlags
     }
     0
 }
+}
 
 #[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn MENU_SuspendPopup(pmt: *mut MTRACKER, uMsg: UINT) -> BOOL {
@@ -4705,7 +4753,8 @@ unsafe fn MENU_KeyEscape_impl(pmt: *mut MTRACKER, Flags: UINT) -> BOOL {
     EndMenu
 }
 
-unsafe extern "fastcall" fn MENU_KeyLeft(pmt: *mut MTRACKER, Flags: UINT, msg: UINT) {
+fastcall_fn! {
+unsafe fn MENU_KeyLeft(pmt: *mut MTRACKER, Flags: UINT, msg: UINT) {
     let mut MenuTmp: PMENU;
     let mut MenuPrev: PMENU;
     let PrevCol: UINT;
@@ -4746,8 +4795,10 @@ unsafe extern "fastcall" fn MENU_KeyLeft(pmt: *mut MTRACKER, Flags: UINT, msg: U
         }
     }
 }
+}
 
-unsafe extern "fastcall" fn MENU_KeyRight(pmt: *mut MTRACKER, Flags: UINT, msg: UINT) {
+fastcall_fn! {
+unsafe fn MENU_KeyRight(pmt: *mut MTRACKER, Flags: UINT, msg: UINT) {
     let mut menutmp: PMENU;
     let NextCol: UINT;
 
@@ -4792,8 +4843,10 @@ unsafe extern "fastcall" fn MENU_KeyRight(pmt: *mut MTRACKER, Flags: UINT, msg: 
         }
     }
 }
+}
 
-unsafe extern "fastcall" fn MENU_TrackMenu(
+fastcall_fn! {
+unsafe fn MENU_TrackMenu(
     pmenu: PMENU,
     wFlags: UINT,
     x: INT,
@@ -5217,9 +5270,11 @@ unsafe extern "fastcall" fn MENU_TrackMenu(
     }
     executedMenuId
 }
+}
 
 
-unsafe extern "fastcall" fn MENU_InitTracking(pWnd: PWND, Menu: PMENU, bPopup: u8, wFlags: UINT) -> u8 {
+fastcall_fn! {
+unsafe fn MENU_InitTracking(pWnd: PWND, Menu: PMENU, bPopup: u8, wFlags: UINT) -> u8 {
     let capture_win: HWND;
     let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
 
@@ -5274,6 +5329,7 @@ unsafe extern "fastcall" fn MENU_InitTracking(pWnd: PWND, Menu: PMENU, bPopup: u
         0,
     );
     1
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -5707,8 +5763,9 @@ pub unsafe extern "system" fn PopupMenuWndProc(
 
 // MM_SETMENUHANDLE/MM_GETMENUHANDLE are defined as pub const near the top of this file.
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IntHiliteMenuItem(
+pub unsafe fn IntHiliteMenuItem(
     WindowObject: PWND,
     MenuObject: PMENU,
     uItemHilite: UINT,
@@ -5741,6 +5798,7 @@ pub unsafe extern "fastcall" fn IntHiliteMenuItem(
     MENU_SelectItem(WindowObject, pMenu, uItemHilite, 1, core::ptr::null_mut());
 
     1
+}
 }
 
 unsafe extern "system" fn intGetTitleBarInfo(pWindowObject: PWND, bti: PTITLEBARINFO) -> BOOLEAN {
@@ -5857,7 +5915,8 @@ unsafe extern "system" fn intGetTitleBarInfo(pWindowObject: PWND, bti: PTITLEBAR
     retValue
 }
 
-unsafe extern "fastcall" fn UserInsertMenuItem(
+fastcall_fn! {
+unsafe fn UserInsertMenuItem(
     Menu: PMENU,
     uItem: UINT,
     fByPosition: BOOL,
@@ -5919,6 +5978,7 @@ unsafe extern "fastcall" fn UserInsertMenuItem(
 
     SetLastNtError(Status);
     0
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -5994,8 +6054,9 @@ unsafe fn IntGetSubMenu_impl(hMenu: HMENU, mut nPos: core::ffi::c_int) -> HMENU 
     core::ptr::null_mut()
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntFindSubMenu(hMenu: *mut HMENU, hSubTarget: HMENU) -> UINT {
+unsafe fn IntFindSubMenu(hMenu: *mut HMENU, hSubTarget: HMENU) -> UINT {
     let mut menu: PMENU;
     let pSubTarget: PMENU;
     let posIdx: UINT;
@@ -6018,6 +6079,7 @@ unsafe extern "fastcall" fn IntFindSubMenu(hMenu: *mut HMENU, hSubTarget: HMENU)
     };
 
     posIdx
+}
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -6187,8 +6249,9 @@ pub unsafe extern "C" fn IntMenuItemInfo(
     Ret
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn UserMenuItemInfo(
+pub unsafe fn UserMenuItemInfo(
     mut Menu: PMENU,
     mut Item: UINT,
     ByPosition: BOOL,
@@ -6272,8 +6335,10 @@ pub unsafe extern "fastcall" fn UserMenuItemInfo(
 
     Ret
 }
+}
 
-unsafe extern "fastcall" fn UserMenuInfo(
+fastcall_fn! {
+unsafe fn UserMenuInfo(
     Menu: PMENU,
     UnsafeMenuInfo: PROSMENUINFO,
     SetOrGet: i32,
@@ -6327,6 +6392,7 @@ unsafe extern "fastcall" fn UserMenuInfo(
     }
 
     Res
+}
 }
 
 #[cfg(target_arch = "x86")]
@@ -6439,7 +6505,8 @@ unsafe fn IntSetSystemMenu_impl(Window: PWND, Menu: PMENU) -> BOOL {
     TRUE as BOOL
 }
 
-unsafe extern "fastcall" fn MENU_GetSystemMenu(Window: PWND, Popup: PMENU) -> PMENU {
+fastcall_fn! {
+unsafe fn MENU_GetSystemMenu(Window: PWND, Popup: PMENU) -> PMENU {
     let Menu: PMENU;
     let mut NewMenu: PMENU = core::ptr::null_mut();
     let SysMenu: PMENU;
@@ -6531,6 +6598,7 @@ unsafe extern "fastcall" fn MENU_GetSystemMenu(Window: PWND, Popup: PMENU) -> PM
     ERR!(b"failed to load system menu!\n\0".as_ptr());
     core::ptr::null_mut()
 }
+}
 
 #[cfg(target_pointer_width = "32")]
 #[no_mangle]
@@ -6586,8 +6654,9 @@ unsafe fn IntGetSystemMenu_impl(Window: PWND, bRevert: BOOL) -> PMENU {
     core::ptr::null_mut()
 }
 
+fastcall_fn! {
 #[no_mangle]
-unsafe extern "fastcall" fn IntSetMenu(
+unsafe fn IntSetMenu(
     Wnd: PWND,
     Menu: HMENU,
     Changed: *mut BOOL,
@@ -6640,6 +6709,7 @@ unsafe extern "fastcall" fn IntSetMenu(
     }
 
     1
+}
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]

@@ -23,7 +23,12 @@ const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001_u32 as i32;
 /// ObReferenceObject -- forwarding to ObfReferenceObject.
 #[inline]
 unsafe fn ObReferenceObject(object: PVOID) {
+    #[cfg(target_arch = "x86")]
     extern "fastcall" {
+        fn ObfReferenceObject(Object: PVOID);
+    }
+    #[cfg(not(target_arch = "x86"))]
+    extern "C" {
         fn ObfReferenceObject(Object: PVOID);
     }
     ObfReferenceObject(object);
@@ -32,7 +37,12 @@ unsafe fn ObReferenceObject(object: PVOID) {
 /// ObDereferenceObject -- forwarding to ObfDereferenceObject.
 #[inline]
 unsafe fn ObDereferenceObject(object: PVOID) {
+    #[cfg(target_arch = "x86")]
     extern "fastcall" {
+        fn ObfDereferenceObject(Object: PVOID);
+    }
+    #[cfg(not(target_arch = "x86"))]
+    extern "C" {
         fn ObfDereferenceObject(Object: PVOID);
     }
     ObfDereferenceObject(object);

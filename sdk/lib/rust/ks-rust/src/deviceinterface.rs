@@ -24,7 +24,7 @@ pub unsafe extern "C" fn KspSetDeviceInterfacesState(
     while Entry != ListHead {
         SymEntry = core::mem::transmute::<isize, PSYMBOLIC_LINK_ENTRY>(
             (Entry as isize).wrapping_sub(
-                &raw const (*core::ptr::null_mut::<SYMBOLIC_LINK_ENTRY>()).Entry as isize,
+                core::mem::offset_of!(SYMBOLIC_LINK_ENTRY, Entry) as isize,
             ),
         );
         Status = IoSetDeviceInterfaceState(&raw mut (*SymEntry).SymbolicLink, Enable as BOOLEAN);
@@ -109,7 +109,7 @@ pub unsafe extern "C" fn KspSetFilterFactoriesState(
     while Entry != &mut (*DeviceHeader).ItemList && Status == STATUS_SUCCESS {
         let CreateEntry: PCREATE_ITEM_ENTRY = core::mem::transmute(
             (Entry as usize).wrapping_sub(
-                &raw mut (*core::ptr::null_mut::<CREATE_ITEM_ENTRY>()).Entry as usize,
+                core::mem::offset_of!(CREATE_ITEM_ENTRY, Entry),
             ),
         );
 

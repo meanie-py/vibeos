@@ -859,9 +859,7 @@ pub unsafe extern "system" fn USB2_RebalanceEndpoint(
         Entry = RemoveHeadList(List);
 
         Endpoint = ((Entry as usize)
-            - (core::ptr::addr_of_mut!(
-                (*(core::ptr::null_mut::<USBPORT_ENDPOINT>())).RebalanceLink.Flink
-            ) as usize)) as *mut USBPORT_ENDPOINT as PUSBPORT_ENDPOINT;
+            - (core::mem::offset_of!(USBPORT_ENDPOINT, RebalanceLink.Flink))) as *mut USBPORT_ENDPOINT as PUSBPORT_ENDPOINT;
 
         (*Endpoint).RebalanceLink.Flink = core::ptr::null_mut();
         (*Endpoint).RebalanceLink.Blink = core::ptr::null_mut();
@@ -968,9 +966,7 @@ pub unsafe extern "system" fn USB2_Rebalance(
         Entry = (*RebalanceList).Flink;
 
         Endpoint = (Entry as ULONG_PTR).wrapping_sub(
-            core::ptr::addr_of_mut!(
-                (*core::ptr::null_mut::<USBPORT_ENDPOINT>()).RebalanceLink.Flink
-            ) as ULONG_PTR,
+            core::mem::offset_of!(USBPORT_ENDPOINT, RebalanceLink.Flink) as ULONG_PTR,
         ) as *mut USBPORT_ENDPOINT;
 
         RemoveHeadList(RebalanceList);

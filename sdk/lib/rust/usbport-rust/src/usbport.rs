@@ -113,9 +113,7 @@ pub unsafe extern "system" fn USBPORT_FindUSB2Controller(
         && USB2FdoEntry != core::ptr::addr_of_mut!(USBPORT_USB2FdoList)
     {
         USB2FdoExtension = ((USB2FdoEntry as usize)
-            - (core::ptr::addr_of_mut!(
-                (*core::ptr::null_mut::<USBPORT_DEVICE_EXTENSION>()).ControllerLink
-            ) as usize)) as *mut USBPORT_DEVICE_EXTENSION
+            - (core::mem::offset_of!(USBPORT_DEVICE_EXTENSION, ControllerLink))) as *mut USBPORT_DEVICE_EXTENSION
             as PUSBPORT_DEVICE_EXTENSION;
 
         if (*USB2FdoExtension).BusNumber == (*FdoExtension).BusNumber
@@ -980,7 +978,7 @@ pub unsafe extern "system" fn USBPORT_DpcHandler(FdoDevice: PDEVICE_OBJECT) {
 
     while !Entry.is_null() && Entry != core::ptr::addr_of_mut!((*FdoExtension).EndpointList) {
         Endpoint = (Entry as usize).wrapping_sub(
-            core::ptr::addr_of_mut!((*(core::ptr::null_mut::<USBPORT_ENDPOINT>())).EndpointLink) as usize,
+            core::mem::offset_of!(USBPORT_ENDPOINT, EndpointLink),
         ) as *mut USBPORT_ENDPOINT as PUSBPORT_ENDPOINT;
 
         LockCounter = InterlockedIncrement(
@@ -1015,7 +1013,7 @@ pub unsafe extern "system" fn USBPORT_DpcHandler(FdoDevice: PDEVICE_OBJECT) {
 
     while !IsListEmpty(core::ptr::addr_of_mut!(List)) {
         Endpoint = (List.Flink as usize).wrapping_sub(
-            core::ptr::addr_of_mut!((*(core::ptr::null_mut::<USBPORT_ENDPOINT>())).DispatchLink) as usize,
+            core::mem::offset_of!(USBPORT_ENDPOINT, DispatchLink),
         ) as *mut USBPORT_ENDPOINT as PUSBPORT_ENDPOINT;
 
         RemoveEntryList(List.Flink as PLIST_ENTRY);
@@ -2782,8 +2780,7 @@ pub unsafe extern "system" fn USBPORT_FlushMapTransfers(FdoDevice: PDEVICE_OBJEC
 
         Transfer = (((*MapTransferList).Flink as ULONG_PTR)
             .wrapping_sub(
-                core::ptr::addr_of_mut!((*(core::ptr::null_mut::<USBPORT_TRANSFER>())).TransferLink)
-                    as ULONG_PTR,
+                core::mem::offset_of!(USBPORT_TRANSFER, TransferLink) as ULONG_PTR,
             )) as *mut USBPORT_TRANSFER as PUSBPORT_TRANSFER;
 
         RemoveHeadList(MapTransferList);

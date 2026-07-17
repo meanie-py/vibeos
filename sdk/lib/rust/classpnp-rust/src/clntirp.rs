@@ -80,7 +80,7 @@ pub unsafe extern "C" fn DequeueDeferredClientIrp(Fdo: PDEVICE_OBJECT) -> PIRP {
         if listEntry.is_null() {
             irp = core::ptr::null_mut();
         } else {
-            let offset = (&raw mut (*core::ptr::null_mut::<IRP>()).Tail.Overlay.__bindgen_anon_2.ListEntry) as *const u8 as usize;
+            let offset = core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
             irp = (listEntry as *const u8).offset(-(offset as isize)) as PIRP;
             debug_assert!((*irp).Type == 6);
             InitializeListHead(&raw mut (*irp).Tail.Overlay.__bindgen_anon_2.ListEntry);

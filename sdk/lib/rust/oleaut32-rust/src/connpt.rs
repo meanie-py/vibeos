@@ -41,15 +41,14 @@ pub struct EnumConnectionsImpl {
 pub type PEnumConnectionsImpl = *mut EnumConnectionsImpl;
 unsafe extern "C" fn impl_from_IConnectionPoint(iface: *mut IConnectionPoint) -> *mut ConnectionPointImpl {
     (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<ConnectionPointImpl>()).IConnectionPoint_iface) as ULONG_PTR
+        core::mem::offset_of!(ConnectionPointImpl, IConnectionPoint_iface) as ULONG_PTR
     ) as *mut ConnectionPointImpl
 }
 unsafe extern "C" fn impl_from_IEnumConnections(
     iface: *mut IEnumConnections,
 ) -> *mut EnumConnectionsImpl {
     return (iface as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!((*core::ptr::null_mut::<EnumConnectionsImpl>()).IEnumConnections_iface)
-            as ULONG_PTR,
+        core::mem::offset_of!(EnumConnectionsImpl, IEnumConnections_iface) as ULONG_PTR,
     ) as *mut EnumConnectionsImpl;
 }
 unsafe extern "C" fn ConnectionPointImpl_Destroy(Obj: *mut ConnectionPointImpl) {

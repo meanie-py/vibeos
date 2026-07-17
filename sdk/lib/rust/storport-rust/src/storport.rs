@@ -1025,9 +1025,7 @@ pub unsafe extern "system" fn StorPortGetBusData(
     }
 
     MiniportExtension = (DeviceExtension as ULONG_PTR).wrapping_sub(
-        core::ptr::addr_of_mut!(
-            (*core::ptr::null_mut::<MINIPORT_DEVICE_EXTENSION>()).HwDeviceExtension
-        ) as ULONG_PTR,
+        core::mem::offset_of!(MINIPORT_DEVICE_EXTENSION, HwDeviceExtension) as ULONG_PTR,
     ) as *mut MINIPORT_DEVICE_EXTENSION as PMINIPORT_DEVICE_EXTENSION;
 
     if DbgPrint(
@@ -1933,9 +1931,7 @@ pub unsafe extern "system" fn StorPortSetBusDataByOffset(
     }
 
     MiniportExtension = (DeviceExtension as usize).wrapping_sub(
-        core::ptr::addr_of_mut!(
-            (*core::ptr::null_mut::<MINIPORT_DEVICE_EXTENSION>()).HwDeviceExtension
-        ) as usize,
+        core::mem::offset_of!(MINIPORT_DEVICE_EXTENSION, HwDeviceExtension),
     ) as *mut MINIPORT_DEVICE_EXTENSION;
 
     if DbgPrint(

@@ -35,7 +35,12 @@ extern "C" {
 }
 // FreeFontSupport is FASTCALL (text.h: VOID FASTCALL FreeFontSupport(VOID)) —
 // the freetype.rs export is `@FreeFontSupport@0`, so declare it fastcall.
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn FreeFontSupport();
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn FreeFontSupport();
 }
 

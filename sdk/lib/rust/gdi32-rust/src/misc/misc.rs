@@ -945,8 +945,9 @@ pub unsafe extern "C" fn GdiGetHandleUserData(
     TRUE
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn GdiGetLDC(hdc: HDC) -> PLDC {
+pub unsafe fn GdiGetLDC(hdc: HDC) -> PLDC {
     /* Get the DC attribute */
     let pdcattr: PDC_ATTR = GdiGetDcAttr(hdc);
     if pdcattr.is_null() {
@@ -956,9 +957,11 @@ pub unsafe extern "fastcall" fn GdiGetLDC(hdc: HDC) -> PLDC {
     /* Return the LDC pointer */
     (*dcattr_f!(pdcattr, pvLDC)) as PLDC
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn GdiSetLDC(hdc: HDC, pvLDC: PVOID) -> BOOL {
+pub unsafe fn GdiSetLDC(hdc: HDC, pvLDC: PVOID) -> BOOL {
     /* Get the DC attribute */
     let pdcattr: PDC_ATTR = GdiGetDcAttr(hdc);
     if pdcattr.is_null() {
@@ -968,6 +971,7 @@ pub unsafe extern "fastcall" fn GdiSetLDC(hdc: HDC, pvLDC: PVOID) -> BOOL {
     /* Set the LDC pointer */
     (*dcattr_f!(pdcattr, pvLDC)) = pvLDC;
     TRUE
+}
 }
 
 #[no_mangle]
@@ -1019,8 +1023,9 @@ pub unsafe extern "system" fn GdiSetLastError(dwErrCode: DWORD) {
     (*NtCurrentTeb()).LastErrorValue = dwErrCode as ULONG;
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn hGetPEBHandle(Type: HANDLECACHETYPE, cr: COLORREF) -> HGDIOBJ {
+pub unsafe fn hGetPEBHandle(Type: HANDLECACHETYPE, cr: COLORREF) -> HGDIOBJ {
     let Number: INT;
     let Offset: INT;
     let MaxNum: INT;
@@ -1082,6 +1087,7 @@ pub unsafe extern "fastcall" fn hGetPEBHandle(Type: HANDLECACHETYPE, cr: COLORRE
     }
     InterlockedExchangePointer(core::ptr::addr_of_mut!((*GdiHandleCache).ulLock) as *mut PVOID, Lock);
     Handle
+}
 }
 
 /*
