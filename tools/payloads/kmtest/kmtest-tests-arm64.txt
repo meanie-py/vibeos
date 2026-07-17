@@ -65,16 +65,16 @@ KeEvent
 KeFloatPointState
 KeGuardedMutex
 KeIrql
-# QUARANTINED 2026-07-16 (re-triaged after the task #10 SEH-RESUME fix cleared ExResource+KeDpc):
-# NOT cleared. KeMutex over-recurses a mutant to SignalState==MINLONG; the next
-# KeWaitForSingleObject correctly ExRaiseStatus(STATUS_MUTANT_LIMIT_EXCEEDED=0xC0000191), which
-# the driver's native __try must catch. amd64 catches it; arm64 escapes -> BUGCHECK 0x1E
-# P1=0xC0000191 at RtlRaiseStatus+0x44. The RESUME fix (RtlpRestoreContextInternal) cleared the
-# SHALLOW raises (ExResource/KeDpc) but NOT this one, because the raise here originates INSIDE the
-# large KeWaitForSingleObject frame: RtlDispatchException's RtlVirtualUnwind mis-walks that frame's
-# .xdata and never reaches the driver __except (the residual half of §9.69 — the arm64 unwinder
-# xdata-decoder, distinct from the resume path). Shared with i386 KeMutex (same 0xC0000191).
-#KeMutex
+# UN-QUARANTINED 2026-07-17 (§9.93): fixed. KeWaitForSingleObject raises MUTANT_LIMIT via the Rust
+# `ExRaiseStatus(-> !)`; because it's noreturn, LLVM makes the `bl RtlRaiseStatus` the function's LAST
+# instruction, so the return address == KeWaitForSingleObject's end == KiExitDispatcher's ENTRY. The
+# arm64 RtlDispatchException looked that up directly and mis-attributed the frame to KiExitDispatcher,
+# corrupting the walk before it reached the driver __except. Fixed by decrementing ControlPc by 1 for
+# non-first (return-address) frames in RtlDispatchException + RtlUnwindEx (rtl-except arm64 except.rs) —
+# the Windows/Wine/libunwind convention. General fix: any exception through a function ending in a
+# noreturn call (ExRaiseStatus/KeBugCheck/panic) was mis-walked. Also validated: the SEH machinery
+# itself is good (SehPocDeepRun + KmSafeCopySelfTest PASS).
+KeMutex
 KeSpinLock
 KeTimer
 MmMdl
@@ -102,10 +102,11 @@ ObHandle
 ObQuery
 ObReference
 ObSecurity
-# QUARANTINED 2026-07-10 (amd64 sweep 6): BUGCHECK 0x1E — AV in memcpy+0x40, caller
-# in the symbolic-link path (ob-rust candidate: NtCreateSymbolicLinkObject/reparse
-# buffer copy with bad length/pointer). Triage owed.
-#ObSymbolicLink
+# UN-QUARANTINED 2026-07-17 (§9.93): the memcpy+0x40 capture is now caught. arm64
+# fault_tolerant_copy routes through KmProtectedCopyMemory (native-SEH C shim) like amd64 — the
+# arm64 kernel-mode HARDWARE-fault SEH path is validated (KmSafeCopySelfTest catches an unmapped-VA
+# fault after the .xdata save_next decoder fix). Same fix that cleared this on amd64 (2026-07-12).
+ObSymbolicLink
 ObType
 ObTypes
 PsNotify
@@ -132,12 +133,12 @@ RtlSplayTreeKM
 RtlStackKM
 RtlStrSafeKM
 RtlUnicodeStringKM
-# QUARANTINED 2026-07-16 (re-triaged after the task #10 SEH-RESUME fix): NOT cleared — same
-# KeWaitForSingleObject-frame unwind cluster as KeMutex (the quest doc already noted SeInheritance
-# "surfaces one frame later in KeWaitForSingleObject"). The raise originates inside the wait frame,
-# so RtlVirtualUnwind mis-walks its .xdata and the driver __except is never reached (residual half
-# of §9.69: the arm64 unwinder xdata-decoder, NOT the resume path the fix addressed). Re-open
-# together with KeMutex when the decoder is fixed.
+# QUARANTINED 2026-07-17 (§9.93): the SEH 0x1E escape IS fixed (ControlPc-1, like KeMutex — the
+# software raise is now caught), but with it fixed the test progresses further and hits a SEPARATE,
+# DEEPER bug: BUGCHECK 0xC2 (BAD_POOL_CALLER) in the SeInheritance token-inheritance path — a
+# genuine pool-misuse bug unmasked by the SEH fix, not the SEH cluster. Poisons the rest of the run
+# (unreapable), so it stays quarantined until the 0xC2 is triaged (repro with SPECIALPOOL / GDB on
+# the ExFreePool caller in the Se inherit path). Owed.
 #SeInheritance
 SeLogonSession
 SeQueryInfoToken
@@ -157,19 +158,19 @@ ZwCreateSection
 # section → fastfat path → untranslated stub. arm64-only because arm64 boots the FAT32 ramdisk
 # (x86 boot FS differs). Fix = translate the specific fastfat fn (rustconv single-fn), not task #10.
 #ZwMapViewOfSection
-# QUARANTINED 2026-07-11 (amd64 sweep 10): BUGCHECK 0x1E — AV in memcpy+0x40 (same PC
-# as ObSymbolicLink's crash): NtWaitForMultipleObjects handle-array capture with hostile
-# params — the C capture relies on SEH probing (dead under DUMMY_PSEH). Triage owed.
-#ZwWaitForMultipleObjects
+# UN-QUARANTINED 2026-07-17 (§9.93): NtWaitForMultipleObjects handle-array capture now goes through
+# the fault-tolerant KmProtectedCopyMemory on arm64 (validated HW-fault SEH). Same fix as amd64.
+ZwWaitForMultipleObjects
 RtlCaptureContextKM
 FileAttributes
 FindFile
 HidPDescription
 IoDeviceObject
-# QUARANTINED 2026-07-11 (amd64 sweep 11): BUGCHECK 0x1E — AV in memcpy+0x40 (3rd of
-# this face, w/ ObSymbolicLink + ZwWaitForMultipleObjects): unprobed user-buffer copy on
-# the Io read/write path. Common root candidate w/ the other two. Triage owed.
-#IoReadWrite
+# UN-QUARANTINED 2026-07-17 (§9.93): IoReadWrite_drv catches its own fast-I/O buffer fault via
+# native SEH (kmt_enable_native_seh, amd64/arm64). With the arm64 HW-fault SEH path now validated,
+# the driver's __except catches the deliberate AV instead of BUGCHECKing. May still report the
+# known assertion-failure debt (task #8) — that's an OK (non-crash) result, not a quarantine.
+IoReadWrite
 # QUARANTINED 2026-07-11 (amd64 sweep 12): BUGCHECK 0x1000 (PFN_LIST_CORRUPT-class,
 # P1=0x401) — MmMapLockedPagesSpecifyCache PTE/PFN accounting in the Rust MDL-map path.
 # Triage owed.

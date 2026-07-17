@@ -140,7 +140,14 @@ fn main() {
         // arm64: kernel-mode software-raise SEH oracle (see ntoskrnl-cargo/build.rs).
         // ex-rust calls SehPocRun() on aarch64 now, so the SMP kernel link needs the
         // symbol too. kmsafecopy.c stays OFF until task #10 (§9.69).
-        "aarch64" => c_shims.push("ntoskrnl/seh_poc.c"),
+        "aarch64" => {
+            c_shims.push("ntoskrnl/seh_poc.c");
+            // kmsafecopy.c: fault-tolerant-copy self-test. Now that the arm64 xdata
+            // save_next decoder is fixed (task #10 / §9.69), the hardware-fault unwind
+            // through the memcpy/CRT-shim chain should work; KmSafeCopySelfTest
+            // (ex-rust/init.rs) is the boot oracle — [KMSAFECOPY] PASS validates it.
+            c_shims.push("ntoskrnl/kmsafecopy.c");
+        }
         _ => {}
     }
     // WS1 cmake-off printf batch (2026-06-21): the C-variadic printf shells (Rust

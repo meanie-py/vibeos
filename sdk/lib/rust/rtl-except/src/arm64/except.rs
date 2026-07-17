@@ -344,11 +344,30 @@ pub unsafe extern "system" fn RtlDispatchException(
          * the function whose scope table it's searching, not the original fault
          * PC. (The old code used (*Context).Pc here, so every frame above the
          * faulting one looked up scopes with the wrong RVA and no __except ever
-         * matched — the bug that made user-mode SEH silently fall through.) */
-        let FrameControlPc = UnwindContext.Pc;
+         * matched — the bug that made user-mode SEH silently fall through.)
+         *
+         * For UNWOUND frames (every frame after the first), UnwindContext.Pc is a
+         * RETURN address that points to the instruction AFTER the call. If that
+         * call is the LAST instruction of its function — the norm for a *noreturn*
+         * call (ExRaiseStatus `-> !`, KeBugCheck, panic): the arm64 backend emits
+         * no trailing trap and functions pack tight — then the return address ==
+         * function end == the NEXT function's entry. Looking it up directly
+         * mis-attributes the frame to the next function and corrupts the whole
+         * walk (KeMutex: KeWaitForSingleObject's tail `bl RtlRaiseStatus` returns
+         * to KiExitDispatcher's entry, so the walk decodes KiExitDispatcher from
+         * offset 0 and dies). Decrement by 1 for non-first frames so the lookup
+         * lands inside the calling function. Matches the Windows/Wine/libunwind
+         * "return address is in the previous instruction" convention. §9.93. */
+        let is_first_frame = Iterations == 1;
+        let LookupPc = if is_first_frame {
+            UnwindContext.Pc
+        } else {
+            UnwindContext.Pc.wrapping_sub(1)
+        };
+        let FrameControlPc = LookupPc;
 
         /* Look up the function entry for current PC */
-        let FunctionEntry = RtlLookupFunctionEntry(UnwindContext.Pc, &mut ImageBase, null_mut());
+        let FunctionEntry = RtlLookupFunctionEntry(LookupPc, &mut ImageBase, null_mut());
         if FunctionEntry.is_null() {
             /* Leaf function: PC = LR, done if LR is 0 */
             if UnwindContext.__bindgen_anon_1.X[30] == 0 {
@@ -359,11 +378,14 @@ pub unsafe extern "system" fn RtlDispatchException(
             continue;
         }
 
-        /* Virtual unwind to find handler */
+        /* Virtual unwind to find handler. Pass LookupPc (decremented on non-first
+         * frames) as the ControlPc so the decoder's epilog-position math also
+         * lands inside the calling function — the register-restore itself reads
+         * UnwindContext's sp/regs, which are untouched by the -1. */
         let ExceptionRoutine = RtlVirtualUnwind(
             UNW_FLAG_EHANDLER,
             ImageBase,
-            UnwindContext.Pc,
+            LookupPc,
             FunctionEntry,
             &mut UnwindContext,
             &mut DispatcherContext.HandlerData,
@@ -602,7 +624,18 @@ pub unsafe extern "system" fn RtlUnwindEx(
         Iterations += 1;
         i < 200
     } {
-        let FunctionEntry = RtlLookupFunctionEntry(UnwindContext.Pc, &mut ImageBase, null_mut());
+        /* Non-first frames carry a RETURN address; decrement by 1 for lookup so a
+         * noreturn call at a function's end doesn't mis-attribute to the next
+         * function (see the matching note in RtlDispatchException; §9.93). The
+         * unwind phase must agree with the dispatch phase or it would run the
+         * wrong __finally set / unwind to the wrong target frame. */
+        let is_first_frame = Iterations == 1;
+        let LookupPc = if is_first_frame {
+            UnwindContext.Pc
+        } else {
+            UnwindContext.Pc.wrapping_sub(1)
+        };
+        let FunctionEntry = RtlLookupFunctionEntry(LookupPc, &mut ImageBase, null_mut());
         if FunctionEntry.is_null() {
             /* Leaf function */
             if UnwindContext.__bindgen_anon_1.X[30] == 0 {
@@ -613,12 +646,12 @@ pub unsafe extern "system" fn RtlUnwindEx(
             continue;
         }
 
-        DispatcherContext.ControlPc = UnwindContext.Pc as ULONG_PTR;
+        DispatcherContext.ControlPc = LookupPc as ULONG_PTR;
 
         let ExceptionRoutine = RtlVirtualUnwind(
             UNW_FLAG_UHANDLER,
             ImageBase,
-            UnwindContext.Pc,
+            LookupPc,
             FunctionEntry,
             &mut UnwindContext,
             &mut DispatcherContext.HandlerData,
