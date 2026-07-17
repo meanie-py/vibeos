@@ -74,8 +74,14 @@ const PCR_MAJOR_VERSION: ULONG = 1;
 const PCR_MINOR_VERSION: ULONG = 1;
 const PRCB_MAJOR_VERSION: USHORT = 1;
 const PRCB_MINOR_VERSION: USHORT = 1;
-const PRCB_BUILD_UNIPROCESSOR: USHORT = 1;
-const PRCB_BUILD_DEBUG: USHORT = 2;
+// Canonical Windows values (ke.h): DEBUG=1, UNIPROCESSOR=2. These were swapped
+// here, which was masked on UP (both bits set → BuildType==3 either way, and the
+// HAL's UP HalpBuildType is also 3) but unmasked the instant SMP sets DEBUG-only:
+// the kernel published BuildType=2 while the SMP HAL's HalpBuildType=DEBUG=1, so
+// halinit.rs:178's build-type check bugchecked 0x79 MISMATCHED_HAL(2,2,1). The
+// HAL, the ntkrnl-sys bindgen headers, and the amd64 kernel all use DEBUG=1/UP=2.
+const PRCB_BUILD_UNIPROCESSOR: USHORT = 2;
+const PRCB_BUILD_DEBUG: USHORT = 1;
 const HIGH_PRIORITY: i8 = 31;
 const MAXCHAR: i8 = 127;
 const EFLAGS_ID: ULONG = 0x200000;
