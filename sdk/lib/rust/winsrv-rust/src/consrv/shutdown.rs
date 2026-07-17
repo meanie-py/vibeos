@@ -1,23 +1,12 @@
-use winsrv_sys::nt::*;
-use super::condrv::text::*;
-use super::condrv::conoutput::*;
-use super::condrv::coninput::*;
-use super::condrv::console::*;
-use super::console::*;
-use super::handle::*;
-use super::lineinput::*;
-use super::history::*;
-use super::init::*;
 use winsrv_sys::winsrv::*;
-use winsrv_sys::consts::*;
 // Disambiguate winsrv_sys::winsrv:: (bindgen) vs sibling Rust impl.
 use super::console::ConSrvConsoleCtrlEventTimeout;
 
 
 pub(crate) unsafe fn NotifyConsoleProcessForShutdown(
-    CsrProcess: PCSR_PROCESS,
+    _CsrProcess: PCSR_PROCESS,
     ProcessData: PCONSOLE_PROCESS_DATA,
-    Flags: ULONG,
+    _Flags: ULONG,
 ) {
     ConSrvConsoleCtrlEventTimeout(
         CTRL_LOGOFF_EVENT,
@@ -27,8 +16,8 @@ pub(crate) unsafe fn NotifyConsoleProcessForShutdown(
 }
 
 pub(crate) unsafe fn NotifyGenericProcessForShutdown(
-    CsrProcess: PCSR_PROCESS,
-    Flags: ULONG,
+    _CsrProcess: PCSR_PROCESS,
+    _Flags: ULONG,
 ) -> BOOL {
     1
 }

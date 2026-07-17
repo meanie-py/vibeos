@@ -1,17 +1,7 @@
-use winsrv_sys::nt::*;
-use super::condrv::text::*;
-use super::condrv::conoutput::*;
-use super::condrv::coninput::*;
-use super::condrv::console::*;
-use super::console::*;
-use super::handle::*;
 use super::{GetConsoleInputBufferMode, GetType};
 use super::term::*;
-use super::history::*;
-use super::init::*;
-use super::popup::{POPUP_WINDOW, PPOPUP_WINDOW, _POPUP_WINDOW};
+use super::popup::PPOPUP_WINDOW;
 use winsrv_sys::winsrv::*;
-use winsrv_sys::consts::*;
 
 // Forward declarations for functions from other modules.
 // Term* macros are provided by super::term::* (imported above);

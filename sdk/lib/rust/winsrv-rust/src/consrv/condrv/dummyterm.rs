@@ -1,75 +1,74 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
-use winsrv_sys::consts::*;
 
 unsafe extern "system" fn DummyInitTerminal(
-    This: PTERMINAL,
-    Console: PCONSOLE,
+    _This: PTERMINAL,
+    _Console: PCONSOLE,
 ) -> NTSTATUS {
     STATUS_SUCCESS
 }
 
-unsafe extern "system" fn DummyDeinitTerminal(This: PTERMINAL) {
+unsafe extern "system" fn DummyDeinitTerminal(_This: PTERMINAL) {
 }
 
 unsafe extern "system" fn DummyReadStream(
-    This: PTERMINAL,
-    Unicode: BOOLEAN,
-    Buffer: PVOID,
-    ReadControl: PCONSOLE_READCONSOLE_CONTROL,
-    Parameter: PVOID,
-    NumCharsToRead: ULONG,
-    NumCharsRead: PULONG,
+    _This: PTERMINAL,
+    _Unicode: BOOLEAN,
+    _Buffer: PVOID,
+    _ReadControl: PCONSOLE_READCONSOLE_CONTROL,
+    _Parameter: PVOID,
+    _NumCharsToRead: ULONG,
+    _NumCharsRead: PULONG,
 ) -> NTSTATUS {
     STATUS_PENDING
 }
 
 unsafe extern "system" fn DummyWriteStream(
-    This: PTERMINAL,
-    Buff: PTEXTMODE_SCREEN_BUFFER,
-    Buffer: PWCHAR,
-    Length: DWORD,
-    Attrib: BOOL,
+    _This: PTERMINAL,
+    _Buff: PTEXTMODE_SCREEN_BUFFER,
+    _Buffer: PWCHAR,
+    _Length: DWORD,
+    _Attrib: BOOL,
 ) -> NTSTATUS {
     STATUS_PENDING
 }
 
 unsafe extern "system" fn DummyDrawRegion(
-    This: PTERMINAL,
-    Region: *mut SMALL_RECT,
+    _This: PTERMINAL,
+    _Region: *mut SMALL_RECT,
 ) {
 }
 
 unsafe extern "system" fn DummySetCursorInfo(
-    This: PTERMINAL,
-    ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
+    _This: PTERMINAL,
+    _ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
 ) -> BOOL {
     1
 }
 
 unsafe extern "system" fn DummySetScreenInfo(
-    This: PTERMINAL,
-    ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
-    OldCursorX: SHORT,
-    OldCursorY: SHORT,
+    _This: PTERMINAL,
+    _ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
+    _OldCursorX: SHORT,
+    _OldCursorY: SHORT,
 ) -> BOOL {
     1
 }
 
-unsafe extern "system" fn DummyResizeTerminal(This: PTERMINAL) {
+unsafe extern "system" fn DummyResizeTerminal(_This: PTERMINAL) {
 }
 
-unsafe extern "system" fn DummySetActiveScreenBuffer(This: PTERMINAL) {
+unsafe extern "system" fn DummySetActiveScreenBuffer(_This: PTERMINAL) {
 }
 
 unsafe extern "system" fn DummyReleaseScreenBuffer(
-    This: PTERMINAL,
-    ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
+    _This: PTERMINAL,
+    _ScreenBuffer: PCONSOLE_SCREEN_BUFFER,
 ) {
 }
 
 unsafe extern "system" fn DummyGetLargestConsoleWindowSize(
-    This: PTERMINAL,
+    _This: PTERMINAL,
     pSize: PCOORD,
 ) {
     if pSize.is_null() {
@@ -80,23 +79,23 @@ unsafe extern "system" fn DummyGetLargestConsoleWindowSize(
 }
 
 unsafe extern "system" fn DummySetPalette(
-    This: PTERMINAL,
-    PaletteHandle: HPALETTE,
-    PaletteUsage: UINT,
+    _This: PTERMINAL,
+    _PaletteHandle: HPALETTE,
+    _PaletteUsage: UINT,
 ) -> BOOL {
     1
 }
 
 unsafe extern "system" fn DummySetCodePage(
-    This: PTERMINAL,
-    CodePage: UINT,
+    _This: PTERMINAL,
+    _CodePage: UINT,
 ) -> BOOL {
     1
 }
 
 unsafe extern "system" fn DummyShowMouseCursor(
-    This: PTERMINAL,
-    Show: BOOL,
+    _This: PTERMINAL,
+    _Show: BOOL,
 ) -> INT {
     0
 }

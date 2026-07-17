@@ -1,17 +1,8 @@
 use winsrv_sys::nt::*;
 use super::condrv::text::*;
-use super::condrv::conoutput::*;
-use super::condrv::coninput::*;
-use super::condrv::console::*;
-use super::console::*;
-use super::handle::*;
-use super::{GetConsoleInputBufferMode, GetType};
-use super::lineinput::*;
-use super::history::*;
-use super::init::*;
+use super::GetType;
 use super::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
-use winsrv_sys::consts::*;
 
 // popup.h:15 — typedef struct _POPUP_WINDOW (not included by bindgen
 // since popup.h isn't pulled by alias.c, the bindgen TU). Hand-written

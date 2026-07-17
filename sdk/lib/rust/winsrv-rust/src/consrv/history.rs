@@ -1,14 +1,6 @@
 use winsrv_sys::nt::*;
-use super::condrv::text::*;
-use super::condrv::conoutput::*;
-use super::condrv::coninput::*;
-use super::condrv::console::*;
-use super::console::*;
-use super::handle::*;
-use super::{GetConsoleInputBufferMode, GetType};
-use super::lineinput::*;
-use super::init::*;
-use super::popup::{POPUP_WINDOW, PPOPUP_WINDOW, _POPUP_WINDOW};
+use super::GetType;
+use super::popup::PPOPUP_WINDOW;
 use super::popup::CreatePopupWindow;
 use super::{ConsoleAllocHeap, ConsoleFreeHeap};
 use winsrv_sys::winsrv::*;
@@ -640,7 +632,7 @@ pub unsafe extern "system" fn SrvSetConsoleNumberOfCommands(
 #[no_mangle]
 pub unsafe extern "system" fn SrvGetConsoleHistory(
     ApiMessage: *mut _CSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
     let HistoryInfoRequest = core::ptr::addr_of_mut!((*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.HistoryInfoRequest);
@@ -667,7 +659,7 @@ pub unsafe extern "system" fn SrvGetConsoleHistory(
 #[no_mangle]
 pub unsafe extern "system" fn SrvSetConsoleHistory(
     ApiMessage: *mut _CSR_API_MESSAGE,
-    ReplyCode: PCSR_REPLY_CODE,
+    _ReplyCode: PCSR_REPLY_CODE,
 ) -> NTSTATUS {
     let ProcessData = ConsoleGetPerProcessData((*CsrGetClientThread()).Process);
     let HistoryInfoRequest = core::ptr::addr_of_mut!((*(ApiMessage as *mut _CONSOLE_API_MESSAGE)).Data.HistoryInfoRequest);

@@ -1,11 +1,10 @@
-use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
 use super::helpers::*;
-use super::super::input::{ConioProcessKey, ConioEffectiveCursorSize};
+use super::super::input::ConioEffectiveCursorSize;
 use super::super::super::coninput::ConioProcessInputEvent;
 use super::super::super::condrv::text::{ConioRectWidth, ConioRectHeight, ConioIsRectEmpty, ConioCoordToPointer};
-use super::super::super::{wcslen, wcscat, wcschr, wcscpy, wcscmp};
+use super::super::super::{wcslen, wcscat};
 
 const IS_WHITESPACE: fn(u16) -> bool = |c| c == 0 || c == b' ' as u16 || c == b'\t' as u16;
 
@@ -25,7 +24,7 @@ pub unsafe fn CopyBlock(Buffer: PTEXTMODE_SCREEN_BUFFER, Selection: PSMALL_RECT)
     let InlineCopyMode = (GetKeyState(VK_SHIFT as i32) & KEY_PRESSED as i16) != 0;
 
     let mut ptr: PCHAR_INFO;
-    let mut data: LPWSTR;
+    let data: LPWSTR;
     let mut dstPos: LPWSTR;
     let selWidth: ULONG;
     let selHeight: ULONG;
@@ -100,7 +99,7 @@ pub unsafe fn CopyBlock(Buffer: PTEXTMODE_SCREEN_BUFFER, Selection: PSMALL_RECT)
 
 pub unsafe fn CopyLines(Buffer: PTEXTMODE_SCREEN_BUFFER, Begin: PCOORD, End: PCOORD) {
     let mut ptr: PCHAR_INFO;
-    let mut data: LPWSTR;
+    let data: LPWSTR;
     let mut dstPos: LPWSTR;
     let mut NumChars: ULONG;
     let size: ULONG;
@@ -250,7 +249,7 @@ pub unsafe extern "system" fn GuiCopyFromTextModeBuffer(
 #[no_mangle]
 pub unsafe extern "system" fn GuiPasteToTextModeBuffer(
     Buffer: PTEXTMODE_SCREEN_BUFFER,
-    GuiData: PGUI_CONSOLE_DATA,
+    _GuiData: PGUI_CONSOLE_DATA,
 ) {
     let Console = (*Buffer).Header.Console as PCONSRV_CONSOLE;
 
@@ -351,9 +350,9 @@ pub unsafe extern "system" fn GuiPaintTextModeBuffer(
     rcFramebuffer: PRECT,
 ) {
     let Console = (*Buffer).Header.Console as PCONSRV_CONSOLE;
-    let mut TopLine: ULONG;
+    let TopLine: ULONG;
     let mut BottomLine: ULONG;
-    let mut LeftColumn: ULONG;
+    let LeftColumn: ULONG;
     let mut RightColumn: ULONG;
     let mut LastAttribute: WORD;
     let mut Attribute: WORD;

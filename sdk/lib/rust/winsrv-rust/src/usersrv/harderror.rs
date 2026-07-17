@@ -1,8 +1,7 @@
 use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::consts::*;
-use winsrv_sys::{w, RTL_CONSTANT_STRING};
-use core::ffi::c_void;
+use winsrv_sys::RTL_CONSTANT_STRING;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -256,7 +255,7 @@ unsafe fn UserpFreeStringParameters(
     Parameters: PULONG_PTR,
     Message: PHARDERROR_MSG,
 ) {
-    let mut nParam: u32;
+    let _nParam: u32;
 
     for nParam in 0..(*Message).NumberOfParameters {
         if (((*Message).UnicodeStringParameterMask & (1 << nParam)) != 0) && (*Parameters.add(nParam as usize) != 0) {
@@ -269,15 +268,15 @@ unsafe fn UserpGetClientFileName(
     ClientFileNameU: PUNICODE_STRING,
     hProcess: HANDLE,
 ) -> NTSTATUS {
-    let mut ModuleListHead: PLIST_ENTRY;
+    let ModuleListHead: PLIST_ENTRY;
     let mut Entry: PLIST_ENTRY = core::ptr::null_mut();
-    let mut Module: PLDR_DATA_TABLE_ENTRY;
+    let Module: PLDR_DATA_TABLE_ENTRY;
     let mut Ldr: PPEB_LDR_DATA = core::ptr::null_mut();
     let mut ClientBasicInfo: PROCESS_BASIC_INFORMATION = core::mem::zeroed();
     let mut ModuleData: LDR_DATA_TABLE_ENTRY = core::mem::zeroed();
     let mut ClientDllBase: PVOID = core::ptr::null_mut();
     let mut Status: NTSTATUS;
-    let mut Peb: PPEB;
+    let Peb: PPEB;
 
     RtlInitEmptyUnicodeString(ClientFileNameU, core::ptr::null_mut(), 0);
 
@@ -947,16 +946,16 @@ unsafe fn UserpShowInformationBalloon(
     Type: u32,
     Message: PHARDERROR_MSG,
 ) -> i32 {
-    let mut ShellErrorMode: u32;
-    let mut hWndTaskman: HWND;
+    let ShellErrorMode: u32;
+    let hWndTaskman: HWND;
     let mut CopyData: COPYDATASTRUCT = core::mem::zeroed();
-    let mut pdata: PBALLOON_HARD_ERROR_DATA;
+    let pdata: PBALLOON_HARD_ERROR_DATA;
     let mut dwSize: u32;
-    let mut cbTextLen: u32;
-    let mut cbTitleLen: u32;
-    let mut pText: *mut u16;
-    let mut pCaption: *mut u16;
-    let mut ret: BOOL;
+    let cbTextLen: u32;
+    let cbTitleLen: u32;
+    let pText: *mut u16;
+    let pCaption: *mut u16;
+    let ret: BOOL;
     let mut dwResult: DWORD_PTR;
 
     ShellErrorMode = GetRegInt(
@@ -1094,10 +1093,10 @@ unsafe fn UserpLogHardError(
 
 #[no_mangle]
 pub unsafe extern "system" fn UserServerHardError(
-    ThreadData: PCSR_THREAD,
+    _ThreadData: PCSR_THREAD,
     Message: PHARDERROR_MSG,
 ) {
-    let mut ErrorMode: u32;
+    let ErrorMode: u32;
     let mut dwType: u32 = 0;
     let mut Timeout: u32 = INFINITE;
     let mut TextU: _UNICODE_STRING = core::mem::zeroed();
@@ -1207,7 +1206,7 @@ pub unsafe extern "system" fn UserServerHardError(
 
 #[no_mangle]
 pub unsafe extern "system" fn UserInitHardErrorsCache() {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let mut CurrentUserLCID: LCID = 0;
 
     Status = NtQueryDefaultLocale(1u8, core::ptr::addr_of_mut!(CurrentUserLCID));

@@ -1,15 +1,4 @@
-use winsrv_sys::nt::*;
-use super::super::condrv::text::*;
-use super::super::condrv::conoutput::*;
-use super::super::condrv::coninput::*;
-use super::super::condrv::console::*;
-use super::super::console::*;
-use super::super::handle::*;
-use super::super::lineinput::*;
-use super::super::history::*;
-use super::super::init::*;
 use winsrv_sys::winsrv::*;
-use winsrv_sys::consts::*;
 
 #[repr(C)]
 struct interval {
