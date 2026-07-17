@@ -63,9 +63,9 @@ unsafe fn _InsertElementSkiplistWithInformation(
     pUpdate: *mut *mut SKIPLIST_NODE,
     dwDistance: *mut DWORD,
 ) -> BOOL {
-    let mut chNewLevel: i8;
-    let mut i: i8;
-    let mut pNode: *mut SKIPLIST_NODE;
+    let chNewLevel: i8;
+    let _i: i8;
+    let pNode: *mut SKIPLIST_NODE;
 
     chNewLevel = _GetRandomLevel();
 

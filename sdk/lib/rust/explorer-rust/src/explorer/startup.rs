@@ -1,10 +1,8 @@
-use core::ffi::c_void;
 use explorer_sys::*;
 use explorer_sys::com::*;
 use explorer_sys::externs::*;
 use explorer_sys::globals::*;
 use winsrv_sys::consts::*;
-use winsrv_sys::w;
 use winsrv_sys::winsrv::*;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
@@ -406,7 +404,7 @@ unsafe fn AutoStartupApplications(nCSIDL_Folder: i32) -> u8 {
     let hResult: HRESULT;
     let hFind: HANDLE;
     let mut FoundData: WIN32_FIND_DATAW = core::mem::zeroed();
-    let mut cchPathLen: usize;
+    let cchPathLen: usize;
 
     const SHGFP_TYPE_CURRENT: u32 = 0;
     const UNICODE_NULL: u16 = 0;

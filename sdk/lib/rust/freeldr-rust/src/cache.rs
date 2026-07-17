@@ -145,8 +145,8 @@ pub unsafe extern "C" fn CacheReadDiskSectors(
         TRACE(
             b"1 - RtlCopyMemory(0x%x, 0x%x, %d)\n\0".as_ptr() as PCHAR,
             Buffer,
-            ((*CacheBlock).BlockData as ULONG_PTR + (SectorOffsetInStartBlock * CacheManagerDrive.BytesPerSector) as ULONG_PTR),
-            (CopyLengthInStartBlock * CacheManagerDrive.BytesPerSector),
+            (*CacheBlock).BlockData as ULONG_PTR + (SectorOffsetInStartBlock * CacheManagerDrive.BytesPerSector) as ULONG_PTR ,
+            CopyLengthInStartBlock * CacheManagerDrive.BytesPerSector ,
         );
 
         Buffer = (Buffer as ULONG_PTR + (CopyLengthInStartBlock * CacheManagerDrive.BytesPerSector) as ULONG_PTR) as PVOID;

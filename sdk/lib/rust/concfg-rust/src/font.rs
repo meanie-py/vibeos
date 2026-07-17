@@ -1,4 +1,3 @@
-use winsrv_sys::nt::*;
 use winsrv_sys::winsrv::*;
 use core::ffi::c_void;
 
@@ -763,7 +762,7 @@ pub unsafe extern "C" fn IsValidConsoleFont(FaceName: PCWSTR, CodePage: UINT) ->
 
 #[no_mangle]
 pub unsafe extern "C" fn InitTTFontCache() {
-    let lResult: LONG;
+    let _lResult: LONG;
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut dwIndex: DWORD;
     let mut dwType: DWORD = 0;
@@ -771,8 +770,8 @@ pub unsafe extern "C" fn InitTTFontCache() {
     let mut cchValueName: DWORD;
     let mut szValue: [WCHAR; LF_FACESIZE as usize] = [0; LF_FACESIZE as usize];
     let mut cbValue: DWORD;
-    let CodePage: UINT;
-    let FontEntry: PTT_FONT_ENTRY;
+    let _CodePage: UINT;
+    let _FontEntry: PTT_FONT_ENTRY;
     let mut pszNext: PWCHAR;
 
     if TTFontCache.Next != core::ptr::null_mut() {

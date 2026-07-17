@@ -1,22 +1,19 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{
-    ExAllocatePool, ExFreePool, _KWAIT_REASON_Executive, IO_STACK_LOCATION, _IO_STATUS_BLOCK,
+    _KWAIT_REASON_Executive, IO_STACK_LOCATION, _IO_STATUS_BLOCK,
     IoAttachDeviceToDeviceStackSafe, IoBuildSynchronousFsdRequest, IoCreateDevice, IoDeleteDevice,
     IoForwardIrpSynchronously, IoGetAttachedDeviceReference, KEVENT,
-    KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES,
-    PCM_RESOURCE_LIST, PDEVICE_OBJECT, _DEVICE_OBJECT, PDRIVER_OBJECT, PIO_STACK_LOCATION, PIRP,
-    PWSTR, BUS_QUERY_ID_TYPE, ZwClose, ZwOpenKey, ZwQueryValueKey, ZwSetValueKey,
+    KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent,
+    PCM_RESOURCE_LIST, PDEVICE_OBJECT, PDRIVER_OBJECT, PIO_STACK_LOCATION, PIRP,
+    PWSTR, BUS_QUERY_ID_TYPE,
     _DEVICE_RELATION_TYPE_BusRelations, _DEVICE_RELATION_TYPE_RemovalRelations,
 };
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation};
 use crate::shared::{DEVICE_EXTENSION, _DEVICE_EXTENSION};
-use core::ffi::c_void;
 
 extern "C" {
     fn DbgPrint(format: *const i8, ...) -> i32;
@@ -47,11 +44,11 @@ unsafe fn GetDeviceId(
     IdType: BUS_QUERY_ID_TYPE,
     DeviceId: *mut PWSTR,
 ) -> NTSTATUS {
-    let mut IrpStack: PIO_STACK_LOCATION;
+    let IrpStack: PIO_STACK_LOCATION;
     let mut IoStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut TargetObject: PDEVICE_OBJECT;
+    let TargetObject: PDEVICE_OBJECT;
     let mut Event: KEVENT = core::mem::zeroed();
-    let mut Irp: PIRP;
+    let Irp: PIRP;
     let mut Status: NTSTATUS;
 
     // PAGED_CODE();
@@ -416,8 +413,8 @@ unsafe fn ProcessorSetFriendlyName(DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT
 }
 unsafe fn ProcessorStartDevice(
     DeviceObject: PDEVICE_OBJECT,
-    ResourceList: PCM_RESOURCE_LIST,
-    ResourceListTranslated: PCM_RESOURCE_LIST,
+    _ResourceList: PCM_RESOURCE_LIST,
+    _ResourceListTranslated: PCM_RESOURCE_LIST,
 ) -> NTSTATUS {
     ProcessorSetFriendlyName(DeviceObject);
     return STATUS_SUCCESS;
@@ -430,7 +427,7 @@ pub unsafe extern "system" fn ProcessorPnp(
 ) -> NTSTATUS {
     let mut DeviceExtension: *mut _DEVICE_EXTENSION = core::ptr::null_mut();
     let mut IrpSp: PIO_STACK_LOCATION = core::ptr::null_mut();
-    let mut Information: usize = 0;
+    let Information: usize = 0;
     let mut Status: NTSTATUS = STATUS_NOT_SUPPORTED;
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);

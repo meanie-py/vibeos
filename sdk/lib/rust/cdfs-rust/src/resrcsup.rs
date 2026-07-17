@@ -1,9 +1,6 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
-use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExAcquireSharedStarveExclusive, ExReleaseResourceLite, FS_FILTER_CALLBACK_DATA, PFILE_OBJECT, PFS_FILTER_CALLBACK_DATA, PIRP};
-use core::ffi::c_void;
+use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExAcquireSharedStarveExclusive, ExReleaseResourceLite, FS_FILTER_CALLBACK_DATA, PFILE_OBJECT};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{FCB, IRP_CONTEXT};
 use ntkrnl_sys::ddk::{FILE_OBJECT, IRP};

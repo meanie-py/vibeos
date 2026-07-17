@@ -721,7 +721,7 @@ pub unsafe extern "C" fn ScmCanonDriverImagePath(dwStartType: DWORD, lpServiceNa
     const HEAP_ZERO_MEMORY: DWORD = 0x00000008;
     const SERVICE_BOOT_START: DWORD = 0x00000000;
 
-    let mut Result: DWORD;
+    let Result: DWORD;
     let ServiceNameLen: usize;
     let mut NtServiceName: _UNICODE_STRING = core::mem::zeroed();
     let mut RelativeName: *mut wchar_t = core::ptr::null_mut();
@@ -1210,7 +1210,7 @@ pub unsafe extern "system" fn RControlService(
 pub unsafe extern "system" fn RDeleteService(hService: SC_RPC_HANDLE) -> DWORD {
     let hSvc: PSERVICE_HANDLE;
     let lpService: PSERVICE;
-    let mut dwError: DWORD;
+    let dwError: DWORD;
 
     if ScmShutdown != 0 {
         return ERROR_SHUTDOWN_IN_PROGRESS;
@@ -1719,7 +1719,7 @@ pub unsafe extern "system" fn RUnlockServiceDatabase(Lock: LPSC_RPC_LOCK) -> DWO
 
 #[no_mangle]
 pub unsafe extern "system" fn RNotifyBootConfigStatus(
-    lpMachineName: SVCCTL_HANDLEW,
+    _lpMachineName: SVCCTL_HANDLEW,
     BootAcceptable: DWORD,
 ) -> DWORD {
     if BootAcceptable != 0 {
@@ -1734,7 +1734,7 @@ pub unsafe extern "system" fn RI_ScSetServiceBitsW(
     hServiceStatus: RPC_SERVICE_STATUS_HANDLE,
     dwServiceBits: DWORD,
     bSetBitsOn: core::ffi::c_int,
-    bUpdateImmediately: core::ffi::c_int,
+    _bUpdateImmediately: core::ffi::c_int,
     lpString: *mut wchar_t,
 ) -> DWORD {
     let pService: PSERVICE;
@@ -1815,9 +1815,9 @@ pub unsafe extern "system" fn RChangeServiceConfigW(
 
     let mut dwError: DWORD = ERROR_SUCCESS;
     let hSvc: PSERVICE_HANDLE;
-    let mut lpService: PSERVICE;
+    let lpService: PSERVICE;
     let mut hServiceKey: HKEY = core::ptr::null_mut();
-    let mut lpDisplayNameW: LPWSTR;
+    let lpDisplayNameW: LPWSTR;
     let mut lpImagePathW: LPWSTR;
     let mut lpClearTextPassword: LPWSTR = core::ptr::null_mut();
 
@@ -3054,7 +3054,7 @@ pub unsafe extern "system" fn RStartServiceW(
 
 #[no_mangle]
 pub unsafe extern "system" fn RGetServiceDisplayNameW(
-    hSCManager: SC_RPC_HANDLE,
+    _hSCManager: SC_RPC_HANDLE,
     lpServiceName: LPCWSTR,
     lpDisplayName: LPWSTR,
     lpcchBuffer: *mut DWORD,
@@ -3094,7 +3094,7 @@ pub unsafe extern "system" fn RGetServiceDisplayNameW(
 
 #[no_mangle]
 pub unsafe extern "system" fn RGetServiceKeyNameW(
-    hSCManager: SC_RPC_HANDLE,
+    _hSCManager: SC_RPC_HANDLE,
     lpDisplayName: LPCWSTR,
     lpServiceName: LPWSTR,
     lpcchBuffer: *mut DWORD,
@@ -3160,7 +3160,7 @@ pub unsafe extern "system" fn RChangeServiceConfigA(
     lpLoadOrderGroup: LPSTR,
     lpdwTagId: LPDWORD,
     lpDependencies: LPBYTE,
-    dwDependSize: DWORD,
+    _dwDependSize: DWORD,
     lpServiceStartName: LPSTR,
     lpPassword: LPBYTE,
     dwPwSize: DWORD,
@@ -3316,7 +3316,7 @@ pub unsafe extern "system" fn RCreateServiceA(
     lpLoadOrderGroup: LPSTR,
     lpdwTagId: LPDWORD,
     lpDependencies: LPBYTE,
-    dwDependSize: DWORD,
+    _dwDependSize: DWORD,
     lpServiceStartName: LPSTR,
     lpPassword: LPBYTE,
     dwPwSize: DWORD,
@@ -4163,7 +4163,7 @@ pub unsafe extern "system" fn RStartServiceA(
 
 #[no_mangle]
 pub unsafe extern "system" fn RGetServiceDisplayNameA(
-    hSCManager: SC_RPC_HANDLE,
+    _hSCManager: SC_RPC_HANDLE,
     lpServiceName: LPCSTR,
     lpDisplayName: LPSTR,
     lpcchBuffer: LPBOUNDED_DWORD_4K,
@@ -4240,7 +4240,7 @@ pub unsafe extern "system" fn RGetServiceDisplayNameA(
 
 #[no_mangle]
 pub unsafe extern "system" fn RGetServiceKeyNameA(
-    hSCManager: SC_RPC_HANDLE,
+    _hSCManager: SC_RPC_HANDLE,
     lpDisplayName: LPCSTR,
     lpServiceName: LPSTR,
     lpcchBuffer: LPBOUNDED_DWORD_4K,
@@ -4625,7 +4625,7 @@ pub unsafe extern "system" fn RChangeServiceConfig2A(
 ) -> DWORD {
     let mut InfoW: SC_RPC_CONFIG_INFOW = core::mem::zeroed();
     let dwRet: DWORD;
-    let mut dwLength: DWORD;
+    let dwLength: DWORD;
     let mut ptr: PVOID = core::ptr::null_mut();
 
     if (Info.dwInfoLevel < SERVICE_CONFIG_DESCRIPTION)
@@ -4651,7 +4651,7 @@ pub unsafe extern "system" fn RChangeServiceConfig2A(
             lpServiceDescriptionW = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                (dwLength as usize + core::mem::size_of::<SERVICE_DESCRIPTIONW>()),
+                dwLength as usize + core::mem::size_of::<SERVICE_DESCRIPTIONW>(),
             ) as LPSERVICE_DESCRIPTIONW;
             if lpServiceDescriptionW.is_null() {
                 return ERROR_NOT_ENOUGH_MEMORY;
@@ -6066,50 +6066,50 @@ pub unsafe extern "system" fn REnumServicesStatusExW(
     dwError
 }
 #[no_mangle]
-pub unsafe extern "system" fn RSendTSMessage(BindingHandle: handle_t) -> DWORD {
+pub unsafe extern "system" fn RSendTSMessage(_BindingHandle: handle_t) -> DWORD {
     ERROR_CALL_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RCreateServiceWOW64A(
-    BindingHandle: handle_t,
-    lpServiceName: LPSTR,
-    lpDisplayName: LPSTR,
-    dwDesiredAccess: DWORD,
-    dwServiceType: DWORD,
-    dwStartType: DWORD,
-    dwErrorControl: DWORD,
-    lpBinaryPathName: LPSTR,
-    lpLoadOrderGroup: LPSTR,
-    lpdwTagId: LPDWORD,
-    lpDependencies: LPBYTE,
-    dwDependSize: DWORD,
-    lpServiceStartName: LPSTR,
-    lpPassword: LPBYTE,
-    dwPwSize: DWORD,
-    lpServiceHandle: LPSC_RPC_HANDLE,
+    _BindingHandle: handle_t,
+    _lpServiceName: LPSTR,
+    _lpDisplayName: LPSTR,
+    _dwDesiredAccess: DWORD,
+    _dwServiceType: DWORD,
+    _dwStartType: DWORD,
+    _dwErrorControl: DWORD,
+    _lpBinaryPathName: LPSTR,
+    _lpLoadOrderGroup: LPSTR,
+    _lpdwTagId: LPDWORD,
+    _lpDependencies: LPBYTE,
+    _dwDependSize: DWORD,
+    _lpServiceStartName: LPSTR,
+    _lpPassword: LPBYTE,
+    _dwPwSize: DWORD,
+    _lpServiceHandle: LPSC_RPC_HANDLE,
 ) -> DWORD {
     ERROR_CALL_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RCreateServiceWOW64W(
-    BindingHandle: handle_t,
-    lpServiceName: LPWSTR,
-    lpDisplayName: LPWSTR,
-    dwDesiredAccess: DWORD,
-    dwServiceType: DWORD,
-    dwStartType: DWORD,
-    dwErrorControl: DWORD,
-    lpBinaryPathName: LPWSTR,
-    lpLoadOrderGroup: LPWSTR,
-    lpdwTagId: LPDWORD,
-    lpDependencies: LPBYTE,
-    dwDependSize: DWORD,
-    lpServiceStartName: LPWSTR,
-    lpPassword: LPBYTE,
-    dwPwSize: DWORD,
-    lpServiceHandle: LPSC_RPC_HANDLE,
+    _BindingHandle: handle_t,
+    _lpServiceName: LPWSTR,
+    _lpDisplayName: LPWSTR,
+    _dwDesiredAccess: DWORD,
+    _dwServiceType: DWORD,
+    _dwStartType: DWORD,
+    _dwErrorControl: DWORD,
+    _lpBinaryPathName: LPWSTR,
+    _lpLoadOrderGroup: LPWSTR,
+    _lpdwTagId: LPDWORD,
+    _lpDependencies: LPBYTE,
+    _dwDependSize: DWORD,
+    _lpServiceStartName: LPWSTR,
+    _lpPassword: LPBYTE,
+    _dwPwSize: DWORD,
+    _lpServiceHandle: LPSC_RPC_HANDLE,
 ) -> DWORD {
     ERROR_CALL_NOT_IMPLEMENTED
 }
@@ -6155,46 +6155,46 @@ pub unsafe extern "system" fn RI_ScQueryServiceTagInfo(
 }
 #[no_mangle]
 pub unsafe extern "system" fn RNotifyServiceStatusChange(
-    hService: SC_RPC_HANDLE,
-    NotifyParams: SC_RPC_NOTIFY_PARAMS,
-    pClientProcessGuid: *mut GUID,
-    pSCMProcessGuid: *mut GUID,
-    pfCreateRemoteQueue: PBOOL,
-    phNotify: LPSC_NOTIFY_RPC_HANDLE,
+    _hService: SC_RPC_HANDLE,
+    _NotifyParams: SC_RPC_NOTIFY_PARAMS,
+    _pClientProcessGuid: *mut GUID,
+    _pSCMProcessGuid: *mut GUID,
+    _pfCreateRemoteQueue: PBOOL,
+    _phNotify: LPSC_NOTIFY_RPC_HANDLE,
 ) -> DWORD {
     ERROR_CALL_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RGetNotifyResults(
-    hNotify: SC_NOTIFY_RPC_HANDLE,
-    ppNotifyParams: *mut PSC_RPC_NOTIFY_PARAMS_LIST,
+    _hNotify: SC_NOTIFY_RPC_HANDLE,
+    _ppNotifyParams: *mut PSC_RPC_NOTIFY_PARAMS_LIST,
 ) -> DWORD {
     ERROR_CALL_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RCloseNotifyHandle(
-    phNotify: LPSC_NOTIFY_RPC_HANDLE,
-    pfApcFired: PBOOL,
+    _phNotify: LPSC_NOTIFY_RPC_HANDLE,
+    _pfApcFired: PBOOL,
 ) -> DWORD {
     ERROR_CALL_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RControlServiceExA(
-    hService: SC_RPC_HANDLE,
-    dwControl: DWORD,
-    dwInfoLevel: DWORD,
+    _hService: SC_RPC_HANDLE,
+    _dwControl: DWORD,
+    _dwInfoLevel: DWORD,
 ) -> DWORD {
     ERROR_CALL_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RControlServiceExW(
-    hService: SC_RPC_HANDLE,
-    dwControl: DWORD,
-    dwInfoLevel: DWORD,
+    _hService: SC_RPC_HANDLE,
+    _dwControl: DWORD,
+    _dwInfoLevel: DWORD,
 ) -> DWORD {
     ERROR_CALL_NOT_IMPLEMENTED
 }
@@ -6238,21 +6238,21 @@ pub unsafe extern "system" fn RI_ScSendPnPMessage(
 
     /* Check if the control code is acceptable to the service */
     match dwControl {
-        SERVICE_CONTROL_DEVICEEVENT => {}
+        _SERVICE_CONTROL_DEVICEEVENT => {}
 
-        SERVICE_CONTROL_HARDWAREPROFILECHANGE => {
+        _SERVICE_CONTROL_HARDWAREPROFILECHANGE => {
             if (dwControlsAccepted & SERVICE_ACCEPT_HARDWAREPROFILECHANGE) == 0 {
                 return ERROR_INVALID_SERVICE_CONTROL;
             }
         }
 
-        SERVICE_CONTROL_POWEREVENT => {
+        _SERVICE_CONTROL_POWEREVENT => {
             if (dwControlsAccepted & SERVICE_ACCEPT_POWEREVENT) == 0 {
                 return ERROR_INVALID_SERVICE_CONTROL;
             }
         }
 
-        SERVICE_CONTROL_SESSIONCHANGE => {
+        _SERVICE_CONTROL_SESSIONCHANGE => {
             if (dwControlsAccepted & SERVICE_ACCEPT_SESSIONCHANGE) == 0 {
                 return ERROR_INVALID_SERVICE_CONTROL;
             }
@@ -6343,12 +6343,12 @@ pub unsafe extern "system" fn RI_ScValidatePnPService(
 }
 #[no_mangle]
 pub unsafe extern "system" fn ROpenServiceStatusHandle(
-    BindingHandle: handle_t,
+    _BindingHandle: handle_t,
 ) -> DWORD {
     ERROR_CALL_NOT_IMPLEMENTED
 }
 #[no_mangle]
-pub unsafe extern "system" fn RFunction55(BindingHandle: handle_t) -> DWORD {
+pub unsafe extern "system" fn RFunction55(_BindingHandle: handle_t) -> DWORD {
     ERROR_CALL_NOT_IMPLEMENTED
 }
 #[no_mangle]
@@ -6368,7 +6368,7 @@ pub unsafe extern "system" fn SC_RPC_LOCK_rundown(mut Lock: SC_RPC_LOCK) {
     RUnlockServiceDatabase(&mut Lock);
 }
 #[no_mangle]
-pub unsafe extern "system" fn SC_NOTIFY_RPC_HANDLE_rundown(hNotify: SC_NOTIFY_RPC_HANDLE) {
+pub unsafe extern "system" fn SC_NOTIFY_RPC_HANDLE_rundown(_hNotify: SC_NOTIFY_RPC_HANDLE) {
 }
 
 

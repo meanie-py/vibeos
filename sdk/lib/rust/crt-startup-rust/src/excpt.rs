@@ -13,6 +13,7 @@ pub static mut __mingw_oldexcpt_handler: LPTOP_LEVEL_EXCEPTION_FILTER = None;
 
 const GCC_MAGIC: DWORD = (b'G' as DWORD) << 16 | (b'C' as DWORD) << 8 | b'C' as DWORD | (1 << 29);
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn _gnu_exception_handler(
     exception_data: *mut EXCEPTION_POINTERS,
@@ -95,6 +96,7 @@ pub unsafe extern "system" fn _gnu_exception_handler(
 }
 
 #[inline]
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn handle_fpe(reset_fpu: bool, action: &mut LONG) {
     let old = signal(SIGFPE, sig_dfl());
     if old == sig_ign() {
@@ -184,6 +186,7 @@ mod win64 {
         1
     }
 
+    #[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
     #[no_mangle]
     pub unsafe extern "C" fn __mingw_SEH_error_handler(
         ExceptionRecord: *mut EXCEPTION_RECORD,
@@ -248,6 +251,7 @@ mod win64 {
     }
 
     #[inline]
+    #[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
     unsafe fn seh_fpe(reset_fpu: bool, action: &mut i32) {
         let old = signal(SIGFPE, sig_dfl());
         if old == sig_ign() {

@@ -11,7 +11,7 @@ use crate::ffi::*;
 
 
 unsafe fn PeLdrpFetchAddressOfSecurityCookie(BaseAddress: PVOID, SizeOfImage: ULONG) -> PVOID {
-    let mut ConfigDir: PIMAGE_LOAD_CONFIG_DIRECTORY;
+    let ConfigDir: PIMAGE_LOAD_CONFIG_DIRECTORY;
     let mut DirSize: ULONG = 0;
     let mut Cookie: PULONG_PTR = core::ptr::null_mut();
 
@@ -100,10 +100,10 @@ unsafe fn PeLdrpBindImportName(
     DirectoryPath: PCSTR,
     Parent: PLIST_ENTRY,
 ) -> u8 {
-    let mut Ordinal: u32;
-    let mut NameTable: *mut u32;
-    let mut FunctionTable: *mut u32;
-    let mut OrdinalTable: *mut u16;
+    let Ordinal: u32;
+    let NameTable: *mut u32;
+    let FunctionTable: *mut u32;
+    let OrdinalTable: *mut u16;
     let mut High: i32;
     let mut Low: i32;
     let mut Middle: i32 = 0;
@@ -111,7 +111,7 @@ unsafe fn PeLdrpBindImportName(
     let Hint: u32;
     let ImportData: PIMAGE_IMPORT_BY_NAME;
     let mut ExportName: *mut i8;
-    let ForwarderName: *mut i8;
+    let _ForwarderName: *mut i8;
     let mut Success: u8;
 
     if DllBase.is_null() {
@@ -455,7 +455,7 @@ pub unsafe extern "C" fn PeLdrInitializeModuleList() -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "C" fn PeLdrInitSecurityCookie(LdrEntry: PLDR_DATA_TABLE_ENTRY) -> PVOID {
-    let mut Cookie: PULONG_PTR;
+    let Cookie: PULONG_PTR;
     let mut NewCookie: ULONG_PTR;
 
     Cookie = PeLdrpFetchAddressOfSecurityCookie(
@@ -492,7 +492,7 @@ pub unsafe extern "C" fn PeLdrCheckForLoadedDll(
     LoadedEntry: *mut PLDR_DATA_TABLE_ENTRY,
 ) -> u8 {
     let mut ModuleEntry: PLIST_ENTRY;
-    let mut DataTableEntry: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+    let _DataTableEntry: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
 
     TRACE!(b"PeLdrCheckForLoadedDll: DllName %s\n\0".as_ptr() as *const i8, DllName);
 
@@ -531,7 +531,7 @@ pub unsafe extern "C" fn PeLdrScanImportDescriptorTable(
     ScanDTE: PLDR_DATA_TABLE_ENTRY,
 ) -> BOOLEAN {
 
-    let mut DataTableEntry: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+    let DataTableEntry: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
     let mut ImportTable: PIMAGE_IMPORT_DESCRIPTOR;
     let mut ImportTableSize: u32 = 0;
     let mut ImportName: PCH;
@@ -626,7 +626,7 @@ pub unsafe extern "C" fn PeLdrAllocateDataTableEntry(
 ) -> BOOLEAN {
     crate::frldr::dbgcon(b'a'); crate::frldr::dbgcon(b'1');
     let BasePA = VaToPa(BaseVA);
-    let mut BaseDllNameBuffer: PWSTR;
+    let BaseDllNameBuffer: PWSTR;
     let mut Buffer: PWSTR;
     let mut DataTableEntry: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
     let NtHeaders: PIMAGE_NT_HEADERS;
@@ -789,7 +789,7 @@ pub unsafe extern "C" fn PeLdrLoadImageEx(
     let mut SectionHeader: PIMAGE_SECTION_HEADER;
     let mut VirtualSize: ULONG;
     let mut SizeOfRawData: ULONG;
-    let mut NumberOfSections: ULONG;
+    let NumberOfSections: ULONG;
     let mut Status: ARC_STATUS;
     let mut Position: LARGE_INTEGER = core::mem::zeroed();
     let mut i: ULONG;

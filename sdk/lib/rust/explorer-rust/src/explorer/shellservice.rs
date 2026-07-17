@@ -1,8 +1,6 @@
-use core::ffi::c_void;
 use explorer_sys::*;
 use explorer_sys::com::*;
 use explorer_sys::externs::*;
-use explorer_sys::globals::*;
 use winsrv_sys::consts::*;
 use winsrv_sys::w;
 use winsrv_sys::winsrv::*;
@@ -19,7 +17,7 @@ unsafe extern "system" fn InitializeAllCallback(pItem: *mut core::ffi::c_void, p
     );
     SUCCEEDED(*phr) as i32
 }
-unsafe extern "system" fn ShutdownAllCallback(pItem: *mut core::ffi::c_void, pData: *mut core::ffi::c_void) -> i32 {
+unsafe extern "system" fn ShutdownAllCallback(pItem: *mut core::ffi::c_void, _pData: *mut core::ffi::c_void) -> i32 {
     let pOct = pItem as *mut IOleCommandTarget;
     TRACE!(b"Shutting down SSO %p\n\0".as_ptr() as PCHAR, pOct);
     (*pOct).Exec(
@@ -31,7 +29,7 @@ unsafe extern "system" fn ShutdownAllCallback(pItem: *mut core::ffi::c_void, pDa
     );
     1
 }
-unsafe extern "system" fn DeleteAllEnumCallback(pItem: *mut core::ffi::c_void, pData: *mut core::ffi::c_void) -> i32 {
+unsafe extern "system" fn DeleteAllEnumCallback(pItem: *mut core::ffi::c_void, _pData: *mut core::ffi::c_void) -> i32 {
     let pOct = pItem as *mut IOleCommandTarget;
     TRACE!("Releasing SSO %p\n", pOct);
     (*pOct).Release();
@@ -46,7 +44,7 @@ pub unsafe extern "C" fn InitShellServices(phdpa: *mut HDPA) -> HRESULT {
     let mut value: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut type_: u32 = 0;
     let mut ret: i32;
-    let mut hdpa: HDPA;
+    let hdpa: HDPA;
     let mut hr: HRESULT = S_OK;
     let mut count: i32 = 0;
 

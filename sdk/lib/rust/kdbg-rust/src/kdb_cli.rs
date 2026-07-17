@@ -1147,7 +1147,7 @@ pub unsafe extern "C" fn KdbpCmdRegs(
         crate::kdbp_print!(b"\n\0");
 
         crate::kdbp_print!(b"CR2  0x%08x\n\0", Cr2);
-        crate::kdbp_print!(b"CR3  0x%08x  Pagedir-Base 0x%08x %s%s\n\0", Cr3, (Cr3 & 0xfffff000),
+        crate::kdbp_print!(b"CR3  0x%08x  Pagedir-Base 0x%08x %s%s\n\0", Cr3, Cr3 & 0xfffff000 ,
             if (Cr3 & (1 << 3)) != 0 { b" PWT\0".as_ptr() as PSTR } else { b"\0".as_ptr() as PSTR },
             if (Cr3 & (1 << 4)) != 0 { b" PCD\0".as_ptr() as PSTR } else { b"\0".as_ptr() as PSTR }
         );

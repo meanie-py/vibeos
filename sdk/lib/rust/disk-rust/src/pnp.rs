@@ -164,8 +164,8 @@ const MAX_SECTORS_PER_VERIFY: ULONG = 0x0100;
 const TRUE: BOOLEAN = 1;
 const FALSE: BOOLEAN = 0;
 const STATUS_SUCCESS: NTSTATUS = 0;
-const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = (0xC000009Au32 as i32);
-const STATUS_UNSUCCESSFUL: NTSTATUS = (0xC0000001u32 as i32);
+const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009Au32 as i32 ;
+const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as i32 ;
 const STATUS_PENDING: NTSTATUS = 0x00000103;
 const Executive: KWAIT_REASON = 0;
 const SynchronizationEvent: EVENT_TYPE = 0x01;
@@ -644,7 +644,7 @@ pub unsafe extern "C" fn DiskCreateSymbolicLinks(
 
         status = RtlStringCchPrintfW(
             wideSourceName.as_mut_ptr(),
-            (core::mem::size_of::<[u16; 64]>() / core::mem::size_of::<u16>() - 1),
+            core::mem::size_of::<[u16; 64]>() / core::mem::size_of::<u16>() - 1 ,
             fmt1_ptr,
             (*(*commonExtension).PartitionZeroExtension).DeviceNumber,
         );
@@ -680,7 +680,7 @@ pub unsafe extern "C" fn DiskCreateSymbolicLinks(
 
         status = RtlStringCchPrintfW(
             wideSourceName.as_mut_ptr(),
-            (core::mem::size_of::<[u16; 64]>() / core::mem::size_of::<u16>() - 1),
+            core::mem::size_of::<[u16; 64]>() / core::mem::size_of::<u16>() - 1 ,
             fmt2_ptr,
             (*(*commonExtension).PartitionZeroExtension).DeviceNumber,
         );

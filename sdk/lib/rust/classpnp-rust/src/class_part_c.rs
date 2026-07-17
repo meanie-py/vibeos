@@ -1179,13 +1179,13 @@ pub unsafe extern "C" fn ClasspBuildRequestEx(
 
     transferBlocks = ((*currentIrpStack).Parameters.Read.Length >> (*FdoExtension).SectorShift) as USHORT;
 
-    (*cdb).CDB10.as_mut().LogicalBlockByte0 = ((&logicalBlockAddress as *const ULONG as *const FOUR_BYTE).cast::<u8>().offset(3).read());
-    (*cdb).CDB10.as_mut().LogicalBlockByte1 = ((&logicalBlockAddress as *const ULONG as *const FOUR_BYTE).cast::<u8>().offset(2).read());
-    (*cdb).CDB10.as_mut().LogicalBlockByte2 = ((&logicalBlockAddress as *const ULONG as *const FOUR_BYTE).cast::<u8>().offset(1).read());
-    (*cdb).CDB10.as_mut().LogicalBlockByte3 = ((&logicalBlockAddress as *const ULONG as *const FOUR_BYTE).cast::<u8>().offset(0).read());
+    (*cdb).CDB10.as_mut().LogicalBlockByte0 = (&logicalBlockAddress as *const ULONG as *const FOUR_BYTE).cast::<u8>().offset(3).read();
+    (*cdb).CDB10.as_mut().LogicalBlockByte1 = (&logicalBlockAddress as *const ULONG as *const FOUR_BYTE).cast::<u8>().offset(2).read();
+    (*cdb).CDB10.as_mut().LogicalBlockByte2 = (&logicalBlockAddress as *const ULONG as *const FOUR_BYTE).cast::<u8>().offset(1).read();
+    (*cdb).CDB10.as_mut().LogicalBlockByte3 = (&logicalBlockAddress as *const ULONG as *const FOUR_BYTE).cast::<u8>().offset(0).read();
 
-    (*cdb).CDB10.as_mut().TransferBlocksMsb = ((&transferBlocks as *const USHORT as *const FOUR_BYTE).cast::<u8>().offset(1).read());
-    (*cdb).CDB10.as_mut().TransferBlocksLsb = ((&transferBlocks as *const USHORT as *const FOUR_BYTE).cast::<u8>().offset(0).read());
+    (*cdb).CDB10.as_mut().TransferBlocksMsb = (&transferBlocks as *const USHORT as *const FOUR_BYTE).cast::<u8>().offset(1).read();
+    (*cdb).CDB10.as_mut().TransferBlocksLsb = (&transferBlocks as *const USHORT as *const FOUR_BYTE).cast::<u8>().offset(0).read();
 
     if (*currentIrpStack).MajorFunction == IRP_MJ_READ {
         TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_RW, b"ClassBuildRequest: Read Command\n\0".as_ptr() as PCHAR);

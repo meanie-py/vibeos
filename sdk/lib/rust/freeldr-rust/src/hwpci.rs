@@ -147,7 +147,7 @@ pub unsafe extern "C" fn PcFindPciBios(BusData: PPCI_REGISTRY_INFO) -> BOOLEAN {
 }
 
 unsafe fn DetectPciIrqRoutingTable(BusKey: PCONFIGURATION_COMPONENT_DATA) {
-    let mut PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
+    let PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;
     let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
     let Table: PPCI_IRQ_ROUTING_TABLE;
     let mut TableKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
@@ -171,14 +171,14 @@ unsafe fn DetectPciIrqRoutingTable(BusKey: PCONFIGURATION_COMPONENT_DATA) {
 
         PartialDescriptor = (*PartialResourceList).PartialDescriptors.as_mut_ptr().add(0);
         (*PartialDescriptor).Type = CmResourceTypeBusNumber;
-        (*PartialDescriptor).ShareDisposition = ((CmResourceShareDeviceExclusive) as u8);
+        (*PartialDescriptor).ShareDisposition = (CmResourceShareDeviceExclusive) as u8 ;
         (*PartialDescriptor).u.BusNumber.Start = 0;
         (*PartialDescriptor).u.BusNumber.Length = 1;
 
         PartialDescriptor = (*PartialResourceList).PartialDescriptors.as_mut_ptr().add(1);
         (*PartialDescriptor).Type = CmResourceTypeDeviceSpecific;
-        (*PartialDescriptor).ShareDisposition = ((CmResourceShareUndetermined) as u8);
-        (*PartialDescriptor).u.DeviceSpecificData.DataSize = (((*Table).TableSize) as u32);
+        (*PartialDescriptor).ShareDisposition = (CmResourceShareUndetermined) as u8 ;
+        (*PartialDescriptor).u.DeviceSpecificData.DataSize = ((*Table).TableSize) as u32 ;
 
         RtlCopyMemory(
             (*PartialResourceList).PartialDescriptors.as_mut_ptr().add(2) as *mut core::ffi::c_void,
@@ -219,7 +219,7 @@ pub unsafe extern "C" fn DetectPciBios(SystemKey: PCONFIGURATION_COMPONENT_DATA,
             return;
         }
 
-        RtlZeroMemory(PartialResourceList as *mut VOID, ((Size) as usize));
+        RtlZeroMemory(PartialResourceList as *mut VOID, (Size) as usize );
 
         FldrCreateComponentKey(
             SystemKey,
@@ -249,14 +249,14 @@ pub unsafe extern "C" fn DetectPciBios(SystemKey: PCONFIGURATION_COMPONENT_DATA,
                     return;
                 }
 
-                RtlZeroMemory(PartialResourceList as *mut VOID, ((Size) as usize));
+                RtlZeroMemory(PartialResourceList as *mut VOID, (Size) as usize );
                 (*PartialResourceList).Version = 1;
                 (*PartialResourceList).Revision = 1;
                 (*PartialResourceList).Count = 1;
 
                 PartialDescriptor = (*PartialResourceList).PartialDescriptors.as_mut_ptr().add(0);
                 (*PartialDescriptor).Type = CmResourceTypeDeviceSpecific;
-                (*PartialDescriptor).ShareDisposition = ((CmResourceShareUndetermined) as u8);
+                (*PartialDescriptor).ShareDisposition = (CmResourceShareUndetermined) as u8 ;
                 (*PartialDescriptor).u.DeviceSpecificData.DataSize = core::mem::size_of::<PCI_REGISTRY_INFO>() as ULONG;
 
                 RtlCopyMemory(
@@ -273,7 +273,7 @@ pub unsafe extern "C" fn DetectPciBios(SystemKey: PCONFIGURATION_COMPONENT_DATA,
                     return;
                 }
 
-                RtlZeroMemory(PartialResourceList as *mut VOID, ((Size) as usize));
+                RtlZeroMemory(PartialResourceList as *mut VOID, (Size) as usize );
             }
 
             FldrCreateComponentKey(

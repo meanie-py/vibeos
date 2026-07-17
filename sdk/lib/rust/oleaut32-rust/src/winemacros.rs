@@ -135,11 +135,11 @@ pub fn FITS_AS_I4(x: u64) -> bool { x >> 32 == 0 }
 #[inline]
 pub unsafe fn V_TYPE(v: *mut VARIANT) -> VARTYPE { (*v).n1.n2.vt & VT_TYPEMASK }
 #[inline]
-pub unsafe fn V_ISBYREF(v: *mut VARIANT) -> bool { (((*v).n1.n2.vt & VT_BYREF) != 0) }
+pub unsafe fn V_ISBYREF(v: *mut VARIANT) -> bool { ((*v).n1.n2.vt & VT_BYREF) != 0 }
 #[inline]
-pub unsafe fn V_ISARRAY(v: *mut VARIANT) -> bool { (((*v).n1.n2.vt & VT_ARRAY) != 0) }
+pub unsafe fn V_ISARRAY(v: *mut VARIANT) -> bool { ((*v).n1.n2.vt & VT_ARRAY) != 0 }
 #[inline]
-pub unsafe fn V_ISVECTOR(v: *mut VARIANT) -> bool { (((*v).n1.n2.vt & VT_VECTOR) != 0) }
+pub unsafe fn V_ISVECTOR(v: *mut VARIANT) -> bool { ((*v).n1.n2.vt & VT_VECTOR) != 0 }
 #[inline]
 pub unsafe fn V_EXTRA_TYPE(v: *mut VARIANT) -> VARTYPE {
     (*v).n1.n2.vt & !VT_TYPEMASK

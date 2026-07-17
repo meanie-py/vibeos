@@ -924,8 +924,7 @@ pub unsafe extern "system" fn IKsReferenceClock_fnAddRef(iface: *mut IKsReferenc
 }
 #[no_mangle]
 pub unsafe extern "system" fn IKsReferenceClock_fnRelease(iface: *mut IKsReferenceClock) -> ULONG {
-    let This: *mut IKsPinImpl = core::mem::transmute(
-        (iface as usize).wrapping_sub(
+    let This: *mut IKsPinImpl = core::ptr::with_exposed_provenance_mut::<IKsPinImpl>((iface as usize).wrapping_sub(
             core::mem::offset_of!(IKsPinImpl, lpVtblReferenceClock),
         )
     );
@@ -1049,8 +1048,7 @@ pub unsafe extern "system" fn IKsReferenceClock_fnGetState(
     let mut Property: KSPROPERTY = core::mem::zeroed();
     let mut BytesReturned: ULONG = 0;
 
-    let This = core::mem::transmute::<usize, *mut IKsPinImpl>(
-        (iface as usize).wrapping_sub(
+    let This = core::ptr::with_exposed_provenance_mut::<IKsPinImpl>((iface as usize).wrapping_sub(
             core::mem::offset_of!(IKsPinImpl, lpVtblReferenceClock),
         ),
     );
@@ -1486,13 +1484,11 @@ pub unsafe extern "system" fn KsStreamPointerAdvanceOffsetsAndUnlock(
 pub unsafe extern "system" fn KsStreamPointerDelete(
     StreamPointer: PKSSTREAM_POINTER,
 ) {
-    let Pointer: PKSISTREAM_POINTER = core::mem::transmute(
-        (StreamPointer as usize)
+    let Pointer: PKSISTREAM_POINTER = core::ptr::with_exposed_provenance_mut::<_KSISTREAM_POINTER>((StreamPointer as usize)
             .wrapping_sub(core::mem::offset_of!(KSISTREAM_POINTER, StreamPointer))
     );
     DbgBreakPoint();
-    let This: *mut IKsPinImpl = core::mem::transmute(
-        ((*Pointer).StreamPointer.Pin as usize)
+    let This: *mut IKsPinImpl = core::ptr::with_exposed_provenance_mut::<IKsPinImpl>(((*Pointer).StreamPointer.Pin as usize)
             .wrapping_sub(core::mem::offset_of!(IKsPinImpl, Pin))
     );
     let mut Last: PKSISTREAM_POINTER = core::ptr::null_mut();

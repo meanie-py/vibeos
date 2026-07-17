@@ -24,7 +24,6 @@ pub mod pointer;
 pub mod screen;
 pub mod surface;
 
-use core::panic::PanicInfo;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

@@ -1,12 +1,9 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 
-use core::ffi::c_void;
 
 use crate::parser_h::{
     HID_COLLECTION, PHID_COLLECTION,
-    HID_REPORT, PHID_REPORT, _HID_REPORT,
+    HID_REPORT, PHID_REPORT,
     HID_REPORT_ITEM,
 };
 
@@ -86,8 +83,8 @@ pub unsafe extern "C" fn HidParser_CalculateContextSize(Collection: *mut HID_COL
 
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_StoreCollection(
-    mut Collection: PHID_COLLECTION,
-    mut CollectionContext: PHID_COLLECTION_CONTEXT,
+    Collection: PHID_COLLECTION,
+    CollectionContext: PHID_COLLECTION_CONTEXT,
     mut CurrentOffset: u32,
 ) -> u32 {
     let mut Index: u32 = 0;
@@ -196,7 +193,7 @@ pub unsafe extern "C" fn HidParser_BuildCollectionContext(
     ContextSize: u32,
 ) -> i32 {
     let CollectionContext: *mut HID_COLLECTION_CONTEXT;
-    let mut CollectionSize: u32;
+    let CollectionSize: u32;
 
     CollectionContext = Context as *mut HID_COLLECTION_CONTEXT;
     (*CollectionContext).Size = ContextSize;
@@ -218,9 +215,9 @@ pub unsafe extern "C" fn HidParser_BuildCollectionContext(
 }
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_SearchReportInCollection(
-    mut CollectionContext: PHID_COLLECTION_CONTEXT,
-    mut Collection: PHID_COLLECTION,
-    mut ReportType: UCHAR,
+    CollectionContext: PHID_COLLECTION_CONTEXT,
+    Collection: PHID_COLLECTION,
+    ReportType: UCHAR,
 ) -> PHID_REPORT {
     let mut Index: ULONG = 0;
     let mut Report: PHID_REPORT = core::ptr::null_mut::<HID_REPORT>();
@@ -252,10 +249,10 @@ pub unsafe extern "C" fn HidParser_SearchReportInCollection(
 }
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_GetReportInCollection(
-    mut Context: PVOID,
-    mut ReportType: UCHAR,
+    Context: PVOID,
+    ReportType: UCHAR,
 ) -> PHID_REPORT {
-    let mut CollectionContext: PHID_COLLECTION_CONTEXT = Context as PHID_COLLECTION_CONTEXT;
+    let CollectionContext: PHID_COLLECTION_CONTEXT = Context as PHID_COLLECTION_CONTEXT;
     return HidParser_SearchReportInCollection(
         CollectionContext,
         &raw mut (*CollectionContext).__anon_0.RawData as PHID_COLLECTION,
@@ -266,7 +263,7 @@ pub unsafe extern "C" fn HidParser_GetReportInCollection(
 pub unsafe extern "C" fn HidParser_GetCollectionFromContext(
     Context: PVOID,
 ) -> PHID_COLLECTION {
-    let mut CollectionContext: PHID_COLLECTION_CONTEXT = Context as PHID_COLLECTION_CONTEXT;
+    let CollectionContext: PHID_COLLECTION_CONTEXT = Context as PHID_COLLECTION_CONTEXT;
     // return root collection
     return &raw mut (*CollectionContext).__anon_0.RawData as *mut u8 as PHID_COLLECTION;
 }

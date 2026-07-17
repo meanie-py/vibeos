@@ -12,7 +12,6 @@ use explorer_sys::globals::*;
 use explorer_sys::server::{interlocked_decrement, interlocked_increment};
 use explorer_sys::MAKEINTRESOURCEW;
 use crate::explorer::util::{FindSubMenu, GetAdvancedBool, GetCurrentLoggedOnUserName, LoadPopupMenu};
-use winsrv_sys::consts::*;
 use winsrv_sys::w;
 use winsrv_sys::winsrv::*;
 

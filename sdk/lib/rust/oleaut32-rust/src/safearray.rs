@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 // Local extern decls removed (CC_MISMATCH sweep): memset/memcpy/CoTaskMemAlloc
 // come from the prelude with the real prototypes; SysStringByteLen /

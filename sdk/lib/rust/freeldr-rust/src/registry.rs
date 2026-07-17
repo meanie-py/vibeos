@@ -225,8 +225,8 @@ unsafe fn RegInitializeHive(
     ChunkBase: PVOID,
     LoadAlternate: BOOLEAN,
 ) -> BOOLEAN {
-    let mut Status: NTSTATUS;
-    let mut CmStatusCode: CM_CHECK_REGISTRY_STATUS;
+    let Status: NTSTATUS;
+    let CmStatusCode: CM_CHECK_REGISTRY_STATUS;
 
     Status = HvInitialize(
         GET_HHIVE(CmHive),
@@ -273,7 +273,7 @@ unsafe fn RegLoadHiveLog(
     let LogDataVirtual: *mut core::ffi::c_void;
     let LogDataPhysical: *mut core::ffi::c_void;
 
-    RtlStringCbCopyA((LogPath.as_mut_ptr() as *mut i8), core::mem::size_of_val(&LogPath), DirectoryPath);
+    RtlStringCbCopyA(LogPath.as_mut_ptr() as *mut i8 , core::mem::size_of_val(&LogPath), DirectoryPath);
     RtlStringCbCatA(LogPath.as_mut_ptr(), core::mem::size_of_val(&LogPath), LogName);
 
     Status = ArcOpen(LogPath.as_ptr() as PCSTR, OpenReadOnly, &mut LogId);
@@ -343,23 +343,23 @@ unsafe fn RegRecoverHeaderHive(
     const HFILE_TYPE_PRIMARY: u32 = 0;
     const HSECTOR_SIZE: u32 = 512;
 
-    RtlStringCbCopyA((FullLogFileName.as_mut_ptr() as *mut i8), core::mem::size_of_val(&FullLogFileName), LogName);
-    RtlStringCbCatA(FullLogFileName.as_mut_ptr(), core::mem::size_of_val(&FullLogFileName), (b".LOG\0".as_ptr() as *const i8));
-    Success = RegLoadHiveLog(DirectoryPath, 0, (FullLogFileName.as_ptr() as *const i8), &mut LogData);
+    RtlStringCbCopyA(FullLogFileName.as_mut_ptr() as *mut i8 , core::mem::size_of_val(&FullLogFileName), LogName);
+    RtlStringCbCatA(FullLogFileName.as_mut_ptr(), core::mem::size_of_val(&FullLogFileName), b".LOG\0".as_ptr() as *const i8 );
+    Success = RegLoadHiveLog(DirectoryPath, 0, FullLogFileName.as_ptr() as *const i8 , &mut LogData);
     if Success == 0 {
-        ERR((b"Failed to read the hive log\n\0".as_ptr() as *const i8));
+        ERR(b"Failed to read the hive log\n\0".as_ptr() as *const i8 );
         return 0u8;
     }
 
     LogData = VaToPa(LogData);
     LogBaseBlock = GET_HBASE_BLOCK(LogData);
     if HvpVerifyHiveHeader(LogBaseBlock, HFILE_TYPE_LOG) == 0 {
-        ERR((b"The hive log has corrupt base block\n\0".as_ptr() as *const i8));
+        ERR(b"The hive log has corrupt base block\n\0".as_ptr() as *const i8 );
         return 0u8;
     }
 
     HiveBaseBlock = GET_HBASE_BLOCK(ChunkBase);
-    WARN((b"Recovering the hive base block...\n\0".as_ptr() as *const i8));
+    WARN(b"Recovering the hive base block...\n\0".as_ptr() as *const i8 );
     RtlCopyMemory(
         HiveBaseBlock as *mut core::ffi::c_void,
         LogBaseBlock as *const core::ffi::c_void,
@@ -378,24 +378,24 @@ unsafe fn RegRecoverDataHive(
     let StorageLength: u32;
     let mut BlockIndex: u32;
     let mut LogIndex: u32;
-    let BlockPtr: *mut u8;
-    let BlockDest: *mut u8;
+    let _BlockPtr: *mut u8;
+    let _BlockDest: *mut u8;
     let mut FullLogFileName: [u8; 260] = [0; 260];
     let mut LogData: *mut core::ffi::c_void = core::ptr::null_mut();
     let LogDataPhysical: *mut u8;
     let HiveBaseBlock: PHBASE_BLOCK;
 
-    RtlStringCbCopyA((FullLogFileName.as_mut_ptr() as *mut i8), 260, LogName);
-    RtlStringCbCatA(FullLogFileName.as_mut_ptr(), 260, (b".LOG\0".as_ptr() as *const i8));
-    Success = RegLoadHiveLog(DirectoryPath, 4096, (FullLogFileName.as_ptr() as *const i8), &mut LogData);
+    RtlStringCbCopyA(FullLogFileName.as_mut_ptr() as *mut i8 , 260, LogName);
+    RtlStringCbCatA(FullLogFileName.as_mut_ptr(), 260, b".LOG\0".as_ptr() as *const i8 );
+    Success = RegLoadHiveLog(DirectoryPath, 4096, FullLogFileName.as_ptr() as *const i8 , &mut LogData);
     if Success == 0 {
-        ERR((b"Failed to read the hive log\n\0".as_ptr() as *const i8));
+        ERR(b"Failed to read the hive log\n\0".as_ptr() as *const i8 );
         return 0u8;
     }
 
     LogDataPhysical = VaToPa(LogData) as *mut u8;
     if *(LogDataPhysical as *const u32) != 0x64697274 {
-        ERR((b"The hive log dirty signature could not be found\n\0".as_ptr() as *const i8));
+        ERR(b"The hive log dirty signature could not be found\n\0".as_ptr() as *const i8 );
         return 0u8;
     }
 
@@ -432,7 +432,7 @@ pub unsafe extern "C" fn RegImportBinaryHive(
     let mut Success: BOOLEAN;
     let KeyNode: PCM_KEY_NODE;
 
-    TRACE((b"RegImportBinaryHive(%p, 0x%lx)\n\0".as_ptr() as *const i8), (ChunkBase) as usize, (ChunkSize) as usize);
+    TRACE(b"RegImportBinaryHive(%p, 0x%lx)\n\0".as_ptr() as *const i8 , (ChunkBase) as usize, (ChunkSize) as usize);
 
     (*(ChunkBase as PHBASE_BLOCK)).BootRecover = HBOOT_NO_BOOT_RECOVER;
 
@@ -443,19 +443,19 @@ pub unsafe extern "C" fn RegImportBinaryHive(
         CmSystemHive = core::ptr::null_mut();
 
         if RegRecoverHeaderHive(ChunkBase, SearchPath, b"SYSTEM\0".as_ptr() as PCSTR) == 0 {
-            ERR((b"Failed to recover the hive header block\n\0".as_ptr() as *const i8));
+            ERR(b"Failed to recover the hive header block\n\0".as_ptr() as *const i8 );
             return 0u8;
         }
 
         if RegRecoverDataHive(ChunkBase, SearchPath, b"SYSTEM\0".as_ptr() as PCSTR) == 0 {
-            ERR((b"Failed to recover the hive data\n\0".as_ptr() as *const i8));
+            ERR(b"Failed to recover the hive data\n\0".as_ptr() as *const i8 );
             return 0u8;
         }
 
         CmSystemHive = FrLdrTempAlloc(core::mem::size_of::<CMHIVE>(), 0x65766948u32) as PCMHIVE;
         Success = RegInitializeHive(CmSystemHive, ChunkBase, LoadAlternate);
         if Success == 0 {
-            ERR((b"Corrupted hive (despite recovery) %p\n\0".as_ptr() as *const i8), (ChunkBase) as usize);
+            ERR(b"Corrupted hive (despite recovery) %p\n\0".as_ptr() as *const i8 , (ChunkBase) as usize);
             FrLdrTempFree(CmSystemHive as PVOID, 0x65766948u32);
             return 0u8;
         }
@@ -548,7 +548,7 @@ unsafe fn RegEnumKey(
     let Hive = GET_HHIVE_FROM_HKEY(Key);
     let KeyNode: PCM_KEY_NODE;
     let SubKeyNode: PCM_KEY_NODE;
-    let mut CellIndex: HCELL_INDEX;
+    let CellIndex: HCELL_INDEX;
     let NameLength: USHORT;
 
     TRACE(
@@ -590,7 +590,7 @@ unsafe fn RegEnumKey(
         core::ptr::copy_nonoverlapping(
             skn_name,
             Name as *mut u8,
-            min(*NameSize, (skn_namelen as u32)) as usize,
+            min(*NameSize, skn_namelen as u32 ) as usize,
         );
     }
 
@@ -620,7 +620,7 @@ pub unsafe extern "C" fn RegOpenKey(
 ) -> i32 {
     let mut RemainingPath: _UNICODE_STRING = core::mem::zeroed();
     let mut SubKeyName: _UNICODE_STRING = core::mem::zeroed();
-    let mut CurrentControlSet: _UNICODE_STRING = RTL_CONSTANT_STRING(w!("CurrentControlSet").as_ptr() as *const u16);
+    let CurrentControlSet: _UNICODE_STRING = RTL_CONSTANT_STRING(w!("CurrentControlSet").as_ptr() as *const u16);
     let Hive: PHHIVE = if ParentKey != core::ptr::null_mut() {
         GET_HHIVE_FROM_HKEY(ParentKey)
     } else {
@@ -716,7 +716,7 @@ unsafe fn RepGetValueData(
     DataSize: *mut u32)
 {
     let mut DataLength: u32 = 0;
-    let mut DataCell: PCELL_DATA;
+    let DataCell: PCELL_DATA;
 
     if !Type.is_null() {
         *Type = (*ValueCell).Type;
@@ -796,7 +796,7 @@ pub unsafe extern "C" fn RegEnumValue(
     let NameLength: u16;
 
     TRACE(
-        (b"RegEnumValue(%p, %lu, %S, %p, %p, %p, %p (%lu))\n\0".as_ptr() as *const i8), (Key) as usize, (Index) as usize, (ValueName) as usize, (NameSize) as usize, (Type) as usize, (Data) as usize, (DataSize) as usize, (if !DataSize.is_null() { *DataSize } else { 0 }) as usize,
+        b"RegEnumValue(%p, %lu, %S, %p, %p, %p, %p (%lu))\n\0".as_ptr() as *const i8 , (Key) as usize, (Index) as usize, (ValueName) as usize, (NameSize) as usize, (Type) as usize, (Data) as usize, (DataSize) as usize, (if !DataSize.is_null() { *DataSize } else { 0 }) as usize,
     );
 
     KeyNode = GET_CM_KEY_NODE(Hive, Key);
@@ -807,7 +807,7 @@ pub unsafe extern "C" fn RegEnumValue(
         || (VlList == HCELL_NIL)
         || (Index >= VlCount)
     {
-        ERR((b"RegEnumValue: index invalid\n\0".as_ptr() as *const i8));
+        ERR(b"RegEnumValue: index invalid\n\0".as_ptr() as *const i8 );
         HvReleaseCell(Hive, HKEY_TO_HCI(Key));
         return ERROR_NO_MORE_ITEMS;
     }
@@ -838,7 +838,7 @@ pub unsafe extern "C" fn RegEnumValue(
         RtlCopyMemory(
             ValueName as *mut core::ffi::c_void,
             vc_name2,
-            min(*NameSize, (vc_namelen2 as u32)) as usize,
+            min(*NameSize, vc_namelen2 as u32 ) as usize,
         );
     }
 
@@ -855,7 +855,7 @@ pub unsafe extern "C" fn RegEnumValue(
     HvReleaseCell(Hive, HKEY_TO_HCI(Key));
 
     TRACE(
-        (b"RegEnumValue done -> %u, '%.*S'\n\0".as_ptr() as *const i8), (*NameSize) as usize, (*NameSize) as usize, (ValueName) as usize,
+        b"RegEnumValue done -> %u, '%.*S'\n\0".as_ptr() as *const i8 , (*NameSize) as usize, (*NameSize) as usize, (ValueName) as usize,
     );
     return ERROR_SUCCESS;
 }

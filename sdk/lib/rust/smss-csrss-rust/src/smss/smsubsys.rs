@@ -220,9 +220,9 @@ pub unsafe extern "system" fn SmpLoadSubSystem(
     Flags: ULONG,
 ) -> NTSTATUS {
     let mut Subsystem: PSMP_SUBSYSTEM;
-    let mut NewSubsystem: PSMP_SUBSYSTEM;
+    let NewSubsystem: PSMP_SUBSYSTEM;
     let mut KnownSubsystem: PSMP_SUBSYSTEM = core::ptr::null_mut();
-    let mut SubSysProcessId: HANDLE;
+    let SubSysProcessId: HANDLE;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut SbApiMsg: SB_API_MSG = core::mem::zeroed();
     let mut ProcessInformation: RTL_USER_PROCESS_INFORMATION = core::mem::zeroed();

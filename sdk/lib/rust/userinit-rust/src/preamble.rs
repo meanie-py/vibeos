@@ -7,7 +7,6 @@
 
 #![allow(non_snake_case)]
 
-use core::ffi::c_void;
 use winsrv_sys::winsrv::*;
 use winsrv_sys::w;
 

@@ -1481,6 +1481,7 @@ unsafe extern "fastcall" fn IntGetWindowProc(pWnd: PWND, Ansi: BOOL) -> WNDPROC 
     IntGetWindowProc_impl(pWnd, Ansi)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntGetWindowProc_impl(pWnd: PWND, Ansi: BOOL) -> WNDPROC {
     let mut i: INT;
     let Class: PCLS;
@@ -1542,6 +1543,7 @@ unsafe fn IntGetWindowProc_impl(pWnd: PWND, Ansi: BOOL) -> WNDPROC {
     }
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntSetWindowProc(pWnd: PWND, mut NewWndProc: WNDPROC, mut Ansi: i32) -> WNDPROC {
     let mut i: i32;
     let CallProc: PCALLPROCDATA;
@@ -2695,6 +2697,7 @@ unsafe fn IntFixWindowCoordinates_impl(
 }
 
 fastcall_fn! {
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 unsafe fn IntCreateWindow(
     Cs: *mut CREATESTRUCTW,

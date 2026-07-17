@@ -1,10 +1,5 @@
-use core::ffi::c_void;
 use explorer_sys::*;
-use explorer_sys::com::*;
 use explorer_sys::externs::*;
-use explorer_sys::globals::*;
-use winsrv_sys::consts::*;
-use winsrv_sys::w;
 use winsrv_sys::winsrv::*;
 
 // Dialog procs are CALLBACK (stdcall) — extern "system". DialogBoxW is a C
@@ -14,7 +9,7 @@ pub unsafe extern "system" fn CustomizeNotifyIconsProc(
     hwnd: HWND,
     Message: u32,
     wParam: WPARAM,
-    lParam: LPARAM,
+    _lParam: LPARAM,
 ) -> INT_PTR {
     match Message {
         WM_INITDIALOG => {

@@ -203,7 +203,7 @@ fn FileMonikerImpl_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT {
     let mut dwbuffer: DWORD = 0;
     let mut bytesA: DWORD = 0;
     let bytesW: DWORD;
-    let mut len: DWORD;
+    let len: DWORD;
 
     TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char, iface, pStm);
 
@@ -731,7 +731,7 @@ fn FileMonikerImpl_ComposeWith(
     fOnlyIfNotGeneric: BOOL,
     ppmkComposite: *mut *mut IMoniker,
 ) -> HRESULT {
-    let mut res: HRESULT;
+    let res: HRESULT;
     let mut str1: LPOLESTR = core::ptr::null_mut();
     let mut str2: LPOLESTR = core::ptr::null_mut();
     let mut strDec1: *mut LPOLESTR = core::ptr::null_mut();
@@ -743,7 +743,7 @@ fn FileMonikerImpl_ComposeWith(
     let mut i: c_int;
     let mut j: c_int;
     let mut lastIdx1: c_int;
-    let mut lastIdx2: c_int;
+    let lastIdx2: c_int;
     let mut mkSys: DWORD = 0;
 
     TRACE!(b"(%p,%p,%d,%p)\n\0".as_ptr() as *const c_char, iface, pmkRight, fOnlyIfNotGeneric,

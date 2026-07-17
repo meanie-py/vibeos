@@ -1,5 +1,4 @@
 use winsrv_sys::winsrv::*;
-use core::ffi::c_void;
 use crate::types::*;
 use crate::preamble::*;
 
@@ -490,7 +489,7 @@ unsafe fn SetUserWallpaper() {
 
     Size = core::mem::size_of_val(&szWallpaper) as DWORD;
 
-    let mut WallpaperName: [u16; 10] = [
+    let WallpaperName: [u16; 10] = [
         b'W' as u16, b'a' as u16, b'l' as u16, b'l' as u16, b'p' as u16,
         b'a' as u16, b'p' as u16, b'e' as u16, b'r' as u16, 0,
     ];
@@ -725,12 +724,12 @@ unsafe fn EnablePrivilege(lpszPrivilegeName: LPCWSTR, bEnablePrivilege: BOOL) ->
 #[no_mangle]
 pub unsafe extern "system" fn wWinMain(
     hInst: HINSTANCE,
-    hPrevInstance: HINSTANCE,
-    lpszCmdLine: LPWSTR,
-    nCmdShow: i32,
+    _hPrevInstance: HINSTANCE,
+    _lpszCmdLine: LPWSTR,
+    _nCmdShow: i32,
 ) -> i32 {
 
-    let mut bIsLiveCD: BOOL;
+    let bIsLiveCD: BOOL;
     let mut Success: BOOL = 1;
     let mut State: STATE = core::mem::zeroed();
 

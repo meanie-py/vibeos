@@ -1,14 +1,12 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{FSRTL_ADVANCED_FCB_HEADER};
-use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::types::{CD_MCB_ENTRY, DIRENT, DIRENT_ENUM_CONTEXT, FCB, FCB_INDEX, FILE_ID, IRP_CONTEXT, PIRP_CONTEXT, VCB};
+use crate::types::{CD_MCB_ENTRY, DIRENT, DIRENT_ENUM_CONTEXT, FCB, FCB_INDEX, FILE_ID, IRP_CONTEXT, VCB};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FlagOn};
-use crate::glue::{CDFS_BUG_CHECK_ALLOCSUP, CD_ATTRIBUTE_MULTI, CDFS_NTC_FCB_DATA, CdPagedPool, Fcb, IrpContext, Vcb, STATUS_DISK_CORRUPT_ERROR};
+use crate::glue::{CDFS_BUG_CHECK_ALLOCSUP, CD_ATTRIBUTE_MULTI, CDFS_NTC_FCB_DATA, CdPagedPool, Fcb, IrpContext, STATUS_DISK_CORRUPT_ERROR};
 
 // _CdFreePool((PVOID*)(x)) — real symbol provided by the cdfs glue/strucsup layer.
 extern "C" {
@@ -207,7 +205,7 @@ pub unsafe extern "C" fn CdTruncateAllocation(
     Fcb: *mut FCB,
     StartingFileOffset: i64,
 ) {
-    let mut McbEntryOffset: u32;
+    let McbEntryOffset: u32;
 
     PAGED_CODE();
 
@@ -290,10 +288,10 @@ pub unsafe extern "C" fn CdDiskOffsetFromMcbEntry(
     DiskOffset: *mut i64,
     ByteCount: *mut u32,
 ) {
-    let mut ExtentOffset: i64;
+    let ExtentOffset: i64;
     let mut CurrentDiskOffset: i64;
     let mut CurrentExtentOffset: i64;
-    let mut LocalByteCount: i64;
+    let LocalByteCount: i64;
 
     // PAGED_CODE();
     // UNREFERENCED_PARAMETER( IrpContext );

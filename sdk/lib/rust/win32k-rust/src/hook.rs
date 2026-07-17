@@ -1899,6 +1899,7 @@ pub unsafe extern "C" fn IntUnhookWindowsHook(HookId: INT, pfnFilterProc: HOOKPR
     IntUnhookWindowsHook_impl(HookId, pfnFilterProc)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntUnhookWindowsHook_impl(HookId: INT, pfnFilterProc: HOOKPROC) -> BOOL {
     let mut Hook: PHOOK;
     let pLastHead: PLIST_ENTRY;

@@ -27,6 +27,7 @@ static mut PspLoadImageNotifyRoutine: [EX_CALLBACK; PSP_MAX_LOAD_IMAGE_NOTIFY] =
 #[no_mangle]
 static mut PspLegoNotifyRoutine: PLEGO_NOTIFY_ROUTINE = None;
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn PsSetCreateProcessNotifyRoutine(
     NotifyRoutine: PCREATE_PROCESS_NOTIFY_ROUTINE,
@@ -109,6 +110,7 @@ pub unsafe extern "system" fn PsSetLegoNotifyRoutine(LegoNotifyRoutine: PVOID) -
     { core::mem::offset_of!(_KTHREAD, __bindgen_anon_7.__bindgen_anon_5.LegoData) as ULONG }
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn PsRemoveLoadImageNotifyRoutine(
     NotifyRoutine: PLOAD_IMAGE_NOTIFY_ROUTINE,
@@ -182,6 +184,7 @@ pub unsafe extern "system" fn PsSetLoadImageNotifyRoutine(
     STATUS_INSUFFICIENT_RESOURCES
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn PsRemoveCreateThreadNotifyRoutine(
     NotifyRoutine: PCREATE_THREAD_NOTIFY_ROUTINE,

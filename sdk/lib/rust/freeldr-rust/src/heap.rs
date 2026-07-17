@@ -66,7 +66,7 @@ pub unsafe extern "C" fn FrLdrHeapCreate(
     MaximumSize: usize,
     MemoryType: TYPE_OF_MEMORY,
 ) -> PVOID {
-    let mut Heap: PHEAP;
+    let Heap: PHEAP;
     let mut Block: PHEAP_BLOCK;
     let mut Remaining: usize;
     let mut PreviousSize: u16;
@@ -104,7 +104,7 @@ pub unsafe extern "C" fn FrLdrHeapCreate(
         (*(*Block).Data.as_mut_ptr()).Flink = (Block.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as isize + (*Block).Size as isize + 1) as u32;
         (*(*Block).Data.as_mut_ptr()).Blink = (Block.offset_from(core::ptr::addr_of_mut!((*Heap).Blocks)) as isize - 1 - PreviousSize as isize) as u32;
 
-        Remaining -= ((*Block).Size as usize + 1);
+        Remaining -= (*Block).Size as usize + 1 ;
 
         PreviousSize = (*Block).Size;
         Block = Block.offset((*Block).Size as isize + 1);
@@ -271,8 +271,8 @@ unsafe fn FrLdrHeapRemoveFreeList(
     Heap: PHEAP,
     Block: PHEAP_BLOCK)
 {
-    let mut Previous: PHEAP_BLOCK;
-    let mut Next: PHEAP_BLOCK;
+    let Previous: PHEAP_BLOCK;
+    let Next: PHEAP_BLOCK;
 
     Next = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*(*Block).Data.as_mut_ptr()).Flink as isize);
     Previous = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*(*Block).Data.as_mut_ptr()).Blink as isize);
@@ -285,7 +285,7 @@ unsafe fn FrLdrHeapInsertFreeList(
     Heap: *mut HEAP,
     FreeBlock: *mut HEAP_BLOCK)
 {
-    let mut ListHead: *mut HEAP_BLOCK;
+    let ListHead: *mut HEAP_BLOCK;
     let mut NextBlock: *mut HEAP_BLOCK;
 
     ListHead = core::ptr::addr_of_mut!((*Heap).Blocks).offset((*Heap).TerminatingBlock as isize);
@@ -312,8 +312,8 @@ pub unsafe extern "C" fn FrLdrHeapAllocateEx(
     let mut Block: PHEAP_BLOCK;
     let mut NextBlock: PHEAP_BLOCK;
     let mut BlockSize: USHORT;
-    let mut Remaining: USHORT;
-    let mut ByteSize = ByteSize;
+    let Remaining: USHORT;
+    let ByteSize = ByteSize;
     let mut Tag = Tag;
 
     #[cfg(all(debug_assertions, not(any(target_arch = "arm", target_arch = "aarch64"))))]
@@ -440,7 +440,7 @@ pub unsafe extern "C" fn FrLdrHeapFreeEx(
 {
     let Heap = HeapHandle as PHEAP;
     let mut Block: PHEAP_BLOCK;
-    let mut PrevBlock: PHEAP_BLOCK;
+    let PrevBlock: PHEAP_BLOCK;
     let mut NextBlock: PHEAP_BLOCK;
     #[cfg(all(debug_assertions, not(any(target_arch = "arm", target_arch = "aarch64"))))]
     let Time = __rdtsc();
@@ -616,7 +616,7 @@ pub unsafe extern "C" fn FrLdrHeapDump(label: u8) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn MmInitializeHeap(PageLookupTable: PVOID) {
+pub unsafe extern "C" fn MmInitializeHeap(_PageLookupTable: PVOID) {
     TRACE(b"MmInitializeHeap()\n\0".as_ptr() as PCHAR);
 
     FrLdrDefaultHeap = FrLdrHeapCreate(DEFAULT_HEAP_SIZE, LoaderOsloaderHeap);
@@ -658,7 +658,7 @@ pub unsafe extern "C" fn MmInitializeHeap(PageLookupTable: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn ExAllocatePoolWithTag(
-    PoolType: POOL_TYPE,
+    _PoolType: POOL_TYPE,
     NumberOfBytes: SIZE_T,
     Tag: ULONG) -> PVOID
 {
@@ -667,7 +667,7 @@ pub unsafe extern "system" fn ExAllocatePoolWithTag(
 
 #[no_mangle]
 pub unsafe extern "system" fn ExAllocatePool(
-    PoolType: POOL_TYPE,
+    _PoolType: POOL_TYPE,
     NumberOfBytes: SIZE_T) -> PVOID
 {
     return FrLdrHeapAllocateEx(FrLdrDefaultHeap, NumberOfBytes, 0);
@@ -690,7 +690,7 @@ pub unsafe extern "system" fn ExFreePoolWithTag(
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlAllocateHeap(
-    HeapHandle: PVOID,
+    _HeapHandle: PVOID,
     Flags: ULONG,
     Size: SIZE_T) -> PVOID
 {
@@ -705,8 +705,8 @@ pub unsafe extern "system" fn RtlAllocateHeap(
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlFreeHeap(
-    HeapHandle: PVOID,
-    Flags: ULONG,
+    _HeapHandle: PVOID,
+    _Flags: ULONG,
     HeapBase: PVOID) -> BOOLEAN
 {
     FrLdrHeapFreeEx(FrLdrDefaultHeap, HeapBase, 0x206C7452u32);

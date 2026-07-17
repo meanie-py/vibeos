@@ -38,7 +38,7 @@ unsafe fn BiosSetVideoFont8x16() {
     Int386(0x10, &mut Regs, &mut Regs);
 }
 
-unsafe fn VideoSetTextCursorPosition(X: ULONG, Y: ULONG) {
+unsafe fn VideoSetTextCursorPosition(_X: ULONG, _Y: ULONG) {
 }
 
 unsafe fn VideoGetTextCursorPositionX() -> ULONG {
@@ -76,8 +76,8 @@ pub unsafe extern "C" fn BiosIsVesaSupported() -> USHORT {
     (*SvgaInfo).Signature[3] = b'2';
 
     Regs.w.ax = 0x4F00;
-    Regs.w.es = ((BIOSCALLBUFSEGMENT) as u16);
-    Regs.w.di = ((BIOSCALLBUFOFFSET) as u16);
+    Regs.w.es = (BIOSCALLBUFSEGMENT) as u16 ;
+    Regs.w.di = (BIOSCALLBUFOFFSET) as u16 ;
     Int386(0x10, &mut Regs as *mut REGS, &mut Regs as *mut REGS);
 
     TRACE(b"AL = 0x%x\n\0".as_ptr() as PCHAR, (Regs.b.al) as usize);
@@ -150,8 +150,8 @@ pub unsafe extern "C" fn BiosVesaReadEdid() -> u8 {
     Regs.b.bl = 1;
     Regs.w.cx = 0;
     Regs.w.dx = 0;
-    Regs.w.es = ((BIOSCALLBUFSEGMENT) as u16);
-    Regs.w.di = ((BIOSCALLBUFOFFSET) as u16);
+    Regs.w.es = (BIOSCALLBUFSEGMENT) as u16 ;
+    Regs.w.di = (BIOSCALLBUFOFFSET) as u16 ;
     Int386(0x10, &mut Regs, &mut Regs);
 
     TRACE(b"AL = 0x%x\n\0".as_ptr() as PCHAR, (Regs.b.al) as usize);

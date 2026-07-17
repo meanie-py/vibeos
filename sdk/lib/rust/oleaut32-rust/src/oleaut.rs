@@ -334,7 +334,7 @@ pub unsafe extern "system" fn SysFreeString(str: BSTR) {
 
 #[no_mangle]
 pub unsafe extern "system" fn SysAllocStringLen(str: *const OLECHAR, len: u32) -> BSTR {
-    let mut bstr: *mut bstr_t;
+    let bstr: *mut bstr_t;
     let size: DWORD;
 
     if len >= ((u32::MAX - core::mem::size_of::<WCHAR>() as u32 - core::mem::size_of::<DWORD>() as u32) / core::mem::size_of::<WCHAR>() as u32) {
@@ -406,7 +406,7 @@ pub unsafe extern "system" fn SysAllocStringByteLen(str_: LPCSTR, len: u32) -> *
     } else {
         memset((*bstr).u.ptr.as_mut_ptr() as *mut core::ffi::c_void, 0, (len + 1) as usize);
     }
-    *(*bstr).u.str.as_mut_ptr().add(((len as usize + core::mem::size_of::<u16>() - 1) / core::mem::size_of::<u16>())) = 0;
+    *(*bstr).u.str.as_mut_ptr().add((len as usize + core::mem::size_of::<u16>() - 1) / core::mem::size_of::<u16>() ) = 0;
 
     (*bstr).u.str.as_mut_ptr()
 }
@@ -463,7 +463,7 @@ pub unsafe extern "system" fn RegisterActiveObject(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RevokeActiveObject(xregister: DWORD, reserved: LPVOID) -> HRESULT {
+pub unsafe extern "system" fn RevokeActiveObject(xregister: DWORD, _reserved: LPVOID) -> HRESULT {
 
     let mut runobtable: LPRUNNINGOBJECTTABLE = core::ptr::null_mut();
     let mut ret: HRESULT;
@@ -483,7 +483,7 @@ pub unsafe extern "system" fn RevokeActiveObject(xregister: DWORD, reserved: LPV
 #[no_mangle]
 pub unsafe extern "system" fn GetActiveObject(
     rcid: *const GUID,
-    preserved: LPVOID,
+    _preserved: LPVOID,
     ppunk: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
 
@@ -970,7 +970,7 @@ pub unsafe extern "system" fn DllUnregisterServer() -> HRESULT {
 
 #[no_mangle]
 pub unsafe extern "system" fn OleIconToCursor(
-    hinstExe: HINSTANCE,
+    _hinstExe: HINSTANCE,
     hIcon: HICON,
 ) -> HCURSOR {
     

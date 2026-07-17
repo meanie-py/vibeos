@@ -113,10 +113,10 @@ pub unsafe extern "system" fn LdrpSnapIAT(
     let mut NtHeader: PIMAGE_NT_HEADERS;
     let mut SectionHeader: PIMAGE_SECTION_HEADER;
     let ExportDirectory: PIMAGE_EXPORT_DIRECTORY;
-    let mut ImportName: LPSTR;
+    let ImportName: LPSTR;
     let mut ForwarderChain: ULONG;
     let mut i: ULONG;
-    let mut Rva: ULONG;
+    let Rva: ULONG;
     let mut OldProtect: ULONG = 0;
     let mut IatSize: ULONG = 0;
     let mut ExportSize: ULONG = 0;
@@ -712,12 +712,12 @@ pub unsafe extern "system" fn LdrpSnapThunk(
     DllName: LPSTR,
 ) -> NTSTATUS {
 
-    let mut IsOrdinal: BOOLEAN;
+    let IsOrdinal: BOOLEAN;
     let mut Ordinal: USHORT = 0;
     let mut OriginalOrdinal: ULONG = 0;
-    let mut AddressOfData: PIMAGE_IMPORT_BY_NAME;
-    let mut NameTable: PULONG;
-    let mut OrdinalTable: PUSHORT;
+    let AddressOfData: PIMAGE_IMPORT_BY_NAME;
+    let NameTable: PULONG;
+    let OrdinalTable: PUSHORT;
     let mut ImportName: LPSTR = core::ptr::null_mut();
     let mut DotPosition: LPSTR;
     let mut Hint: USHORT = 0;

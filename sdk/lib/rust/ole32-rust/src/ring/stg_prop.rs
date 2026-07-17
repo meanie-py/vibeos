@@ -160,7 +160,7 @@ unsafe fn IPropertyStorage_fnQueryInterface(
     riid: *const IID,
     ppvObject: *mut *mut c_void,
 ) -> HRESULT {
-    let This = impl_from_IPropertyStorage(iface);
+    let _This = impl_from_IPropertyStorage(iface);
 
     TRACE!(
         b"(%p, %s, %p)\n\0".as_ptr() as LPCSTR,
@@ -3460,13 +3460,13 @@ pub unsafe extern "system" fn StgConvertPropertyToVariant(
 /// rustconv dropped it entirely; restored here so the Rust TU covers the whole C TU.
 #[no_mangle]
 pub unsafe extern "system" fn StgConvertVariantToProperty(
-    pvar: *const PROPVARIANT,
-    CodePage: USHORT,
-    pprop: *mut SERIALIZEDPROPERTYVALUE,
-    pcb: *mut ULONG,
-    pid: PROPID,
-    fReserved: BOOLEAN,
-    pcIndirect: *mut ULONG,
+    _pvar: *const PROPVARIANT,
+    _CodePage: USHORT,
+    _pprop: *mut SERIALIZEDPROPERTYVALUE,
+    _pcb: *mut ULONG,
+    _pid: PROPID,
+    _fReserved: BOOLEAN,
+    _pcIndirect: *mut ULONG,
 ) -> *mut SERIALIZEDPROPERTYVALUE {
     FIXME!(
         b"%p,%d,%p,%p,%d,%d,%p\n\0".as_ptr() as LPCSTR,
@@ -3486,7 +3486,7 @@ pub unsafe extern "system" fn StgConvertVariantToProperty(
 pub unsafe extern "system" fn StgCreatePropStg(
     unk: *mut IUnknown,
     fmt: *const FMTID,
-    clsid: *const CLSID,
+    _clsid: *const CLSID,
     flags: DWORD,
     reserved: DWORD,
     prop_stg: *mut *mut IPropertyStorage,

@@ -28,16 +28,16 @@ extern "C" {
 #[no_mangle]
 pub unsafe extern "system" fn KeInitializeEvent(
     Event: PRKEVENT,
-    Type: EVENT_TYPE,
-    State: BOOLEAN,
+    _Type: EVENT_TYPE,
+    _State: BOOLEAN,
 ) {
     core::ptr::write_bytes(Event, 0, 1);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KeSetTimeIncrement(
-    MaxIncrement: ULONG,
-    MinIncrement: ULONG,
+    _MaxIncrement: ULONG,
+    _MinIncrement: ULONG,
 ) {
 }
 
@@ -98,7 +98,7 @@ unsafe fn IopCopyPartitionRecord(
     PartitionTableEntry: PPARTITION_TABLE_ENTRY,
     PartitionEntry: *mut PARTITION_INFORMATION,
 ) -> BOOLEAN {
-    let mut IsRecognized: BOOLEAN;
+    let IsRecognized: BOOLEAN;
 
     IsRecognized = 1u8;
     if IsRecognized == 0 && ReturnRecognizedPartitions != 0 {
@@ -221,12 +221,12 @@ pub unsafe extern "C" fn IoReadPartitionTable(
     PartitionBuffer: *mut PDRIVE_LAYOUT_INFORMATION,
 ) -> NTSTATUS {
 
-    let mut Status: NTSTATUS;
-    let mut MasterBootRecord: PMASTER_BOOT_RECORD;
-    let mut Partitions: PDRIVE_LAYOUT_INFORMATION;
+    let Status: NTSTATUS;
+    let MasterBootRecord: PMASTER_BOOT_RECORD;
+    let Partitions: PDRIVE_LAYOUT_INFORMATION;
     let mut NbPartitions: ULONG;
     let mut i: ULONG;
-    let mut Size: ULONG;
+    let Size: ULONG;
 
     *PartitionBuffer = core::ptr::null_mut();
 

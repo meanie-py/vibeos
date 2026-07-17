@@ -667,7 +667,7 @@ pub unsafe extern "system" fn CreateAntiMoniker(ppmk: *mut *mut IMoniker) -> HRE
 
 #[no_mangle]
 pub unsafe extern "system" fn AntiMoniker_CreateInstance(
-    iface: *mut IClassFactory,
+    _iface: *mut IClassFactory,
     pUnk: *mut IUnknown,
     riid: REFIID,
     ppv: *mut LPVOID,

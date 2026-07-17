@@ -28,7 +28,7 @@ pub unsafe extern "C" fn Rs232PortInitialize(
     mut ComPort: ULONG,
     mut BaudRate: ULONG,
 ) -> BOOLEAN {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let mut Address: PUCHAR = core::ptr::null_mut();
 
     if (Rs232ComPort != 0) && (Rs232ComPort == ComPort) {

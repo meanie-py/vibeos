@@ -1,5 +1,4 @@
 use winsrv_sys::winsrv::*;
-use core::ffi::c_void;
 use crate::types::*;
 use crate::types::hInstance;
 use crate::preamble::*;
@@ -431,9 +430,9 @@ unsafe fn CreateKeyboardLayoutList(
     let mut KeyName: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut dwIndex: DWORD = 0;
     let mut dwSize: DWORD;
-    let iIndex: INT;
+    let _iIndex: INT;
     let mut lError: LONG;
-    let ulLayoutId: ULONG;
+    let _ulLayoutId: ULONG;
 
     if GetKeyboardLayoutNameW(szCurrentLayoutId.as_mut_ptr()) == 0 {
         wcscpy(szCurrentLayoutId.as_mut_ptr(), L_00000409());

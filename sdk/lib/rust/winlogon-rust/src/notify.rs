@@ -214,7 +214,7 @@ unsafe fn DeleteNotification(Notification: PNOTIFICATION_ITEM) {
 unsafe fn AddSfcNotification() {
     let NotificationDll: PNOTIFICATION_ITEM;
     let hModule: HMODULE;
-    let mut dwError: DWORD;
+    let dwError: DWORD;
     let mut szSfcPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
     static SFC_DLL: [u16; 38] = [

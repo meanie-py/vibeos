@@ -1,10 +1,8 @@
-use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{FILE_FS_ATTRIBUTE_INFORMATION, FILE_FS_DEVICE_INFORMATION, FILE_FS_SIZE_INFORMATION, FILE_FS_VOLUME_INFORMATION, IoGetCurrentIrpStackLocation, PFILE_FS_ATTRIBUTE_INFORMATION, PFILE_FS_DEVICE_INFORMATION, PFILE_FS_SIZE_INFORMATION, PFILE_FS_VOLUME_INFORMATION, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER};
 use ntkrnl_sys::ddk::{_FSINFOCLASS_FileFsAttributeInformation as FileFsAttributeInformation, _FSINFOCLASS_FileFsDeviceInformation as FileFsDeviceInformation, _FSINFOCLASS_FileFsSizeInformation as FileFsSizeInformation, _FSINFOCLASS_FileFsVolumeInformation as FileFsVolumeInformation};
-use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{FCB, IRP_CONTEXT, PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB};
 use ntkrnl_sys::ddk::{FSRTL_ADVANCED_FCB_HEADER, PFILE_OBJECT};
@@ -141,7 +139,7 @@ pub unsafe extern "C" fn CdQueryFsVolumeInfo(
     Buffer: PFILE_FS_VOLUME_INFORMATION,
     Length: PULONG,
 ) -> NTSTATUS {
-    let mut BytesToCopy: u32;
+    let BytesToCopy: u32;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     PAGED_CODE();

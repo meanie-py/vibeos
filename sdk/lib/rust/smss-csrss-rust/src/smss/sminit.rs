@@ -553,12 +553,12 @@ unsafe extern "system" fn SmpFindRegistryValue(
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpConfigureProtectionMode(
-    ValueName: PWSTR,
-    ValueType: u32,
+    _ValueName: PWSTR,
+    _ValueType: u32,
     ValueData: *mut core::ffi::c_void,
     ValueLength: u32,
-    Context: *mut core::ffi::c_void,
-    EntryContext: *mut core::ffi::c_void,
+    _Context: *mut core::ffi::c_void,
+    _EntryContext: *mut core::ffi::c_void,
 ) -> NTSTATUS {
     if ValueLength as usize == core::mem::size_of::<u32>() {
         SmpProtectionMode = *(ValueData as *mut u32);
@@ -572,12 +572,12 @@ pub unsafe extern "system" fn SmpConfigureProtectionMode(
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpConfigureAllowProtectedRenames(
-    ValueName: PWSTR,
-    ValueType: ULONG,
+    _ValueName: PWSTR,
+    _ValueType: ULONG,
     ValueData: PVOID,
     ValueLength: ULONG,
-    Context: PVOID,
-    EntryContext: PVOID,
+    _Context: PVOID,
+    _EntryContext: PVOID,
 ) -> NTSTATUS {
     if ValueLength as usize == core::mem::size_of::<ULONG>() {
         SmpAllowProtectedRenames = *(ValueData as *mut ULONG);
@@ -590,12 +590,12 @@ pub unsafe extern "system" fn SmpConfigureAllowProtectedRenames(
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpConfigureObjectDirectories(
-    ValueName: PWSTR,
-    ValueType: u32,
+    _ValueName: PWSTR,
+    _ValueType: u32,
     ValueData: *mut core::ffi::c_void,
-    ValueLength: u32,
-    Context: *mut core::ffi::c_void,
-    EntryContext: *mut core::ffi::c_void,
+    _ValueLength: u32,
+    _Context: *mut core::ffi::c_void,
+    _EntryContext: *mut core::ffi::c_void,
 ) -> i32 {
     let mut SecDescriptor: PISECURITY_DESCRIPTOR;
     let mut Status: i32;
@@ -641,11 +641,11 @@ pub unsafe extern "system" fn SmpConfigureObjectDirectories(
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpConfigureMemoryMgmt(
-    ValueName: PWSTR,
-    ValueType: u32,
+    _ValueName: PWSTR,
+    _ValueType: u32,
     ValueData: *mut core::ffi::c_void,
-    ValueLength: u32,
-    Context: *mut core::ffi::c_void,
+    _ValueLength: u32,
+    _Context: *mut core::ffi::c_void,
     EntryContext: *mut core::ffi::c_void,
 ) -> i32 {
     SmpSaveRegistryValue(
@@ -658,11 +658,11 @@ pub unsafe extern "system" fn SmpConfigureMemoryMgmt(
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpConfigureFileRenames(
-    ValueName: PWSTR,
-    ValueType: u32,
+    _ValueName: PWSTR,
+    _ValueType: u32,
     ValueData: *mut core::ffi::c_void,
-    ValueLength: u32,
-    Context: *mut core::ffi::c_void,
+    _ValueLength: u32,
+    _Context: *mut core::ffi::c_void,
     EntryContext: *mut core::ffi::c_void,
 ) -> i32 {
     static mut Canary: *mut u16 = core::ptr::null_mut();
@@ -686,11 +686,11 @@ pub unsafe extern "system" fn SmpConfigureFileRenames(
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpConfigureExcludeKnownDlls(
-    ValueName: PWSTR,
+    _ValueName: PWSTR,
     ValueType: ULONG,
     ValueData: PVOID,
-    ValueLength: ULONG,
-    Context: PVOID,
+    _ValueLength: ULONG,
+    _Context: PVOID,
     EntryContext: PVOID,
 ) -> NTSTATUS {
     let mut DllName: PWCHAR;
@@ -720,10 +720,10 @@ pub unsafe extern "system" fn SmpConfigureExcludeKnownDlls(
 #[no_mangle]
 pub unsafe extern "system" fn SmpConfigureDosDevices(
     ValueName: PWSTR,
-    ValueType: ULONG,
+    _ValueType: ULONG,
     ValueData: PVOID,
-    ValueLength: ULONG,
-    Context: PVOID,
+    _ValueLength: ULONG,
+    _Context: PVOID,
     EntryContext: PVOID,
 ) -> NTSTATUS {
     SmpSaveRegistryValue(
@@ -763,10 +763,10 @@ pub unsafe extern "system" fn SmpInitializeKnownDllPath(
 #[no_mangle]
 pub unsafe extern "system" fn SmpConfigureKnownDlls(
     ValueName: PWSTR,
-    ValueType: u32,
+    _ValueType: u32,
     ValueData: *mut core::ffi::c_void,
     ValueLength: u32,
-    Context: *mut core::ffi::c_void,
+    _Context: *mut core::ffi::c_void,
     EntryContext: *mut core::ffi::c_void,
 ) -> i32 {
     if _wcsicmp(
@@ -792,11 +792,11 @@ pub unsafe extern "system" fn SmpConfigureKnownDlls(
 #[no_mangle]
 pub unsafe extern "system" fn SmpConfigureEnvironment(
     ValueName: PWSTR,
-    ValueType: ULONG,
+    _ValueType: ULONG,
     ValueData: PVOID,
     ValueLength: ULONG,
-    Context: PVOID,
-    EntryContext: PVOID,
+    _Context: PVOID,
+    _EntryContext: PVOID,
 ) -> NTSTATUS {
     let mut ValueString: _UNICODE_STRING = core::mem::zeroed();
     let mut DataString: _UNICODE_STRING = core::mem::zeroed();
@@ -835,8 +835,8 @@ pub unsafe extern "system" fn SmpConfigureSubSystems(
     ValueName: PWSTR,
     ValueType: u32,
     ValueData: *mut core::ffi::c_void,
-    ValueLength: u32,
-    Context: *mut core::ffi::c_void,
+    _ValueLength: u32,
+    _Context: *mut core::ffi::c_void,
     EntryContext: *mut core::ffi::c_void,
 ) -> i32 {
     let mut RegEntry: PSMP_REGISTRY_VALUE;
@@ -1566,7 +1566,7 @@ pub unsafe extern "system" fn SmpInitializeDosDevices() -> NTSTATUS {
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpProcessModuleImports(
-    Unused: *mut core::ffi::c_void,
+    _Unused: *mut core::ffi::c_void,
     ImportName: PCHAR,
 ) {
     let mut Length: ULONG = 0;
@@ -1854,7 +1854,7 @@ unsafe extern "system" fn SmpInitializeKnownDllsInternal(
 
 #[no_mangle]
 pub unsafe extern "system" fn SmpInitializeKnownDlls() -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
     let mut RegEntry: PSMP_REGISTRY_VALUE;
     let mut KnownDllsName: _UNICODE_STRING = core::mem::zeroed();
     let Head: PLIST_ENTRY;

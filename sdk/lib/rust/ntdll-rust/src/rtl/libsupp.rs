@@ -340,18 +340,18 @@ pub unsafe extern "system" fn RtlpAllocateMemory(Bytes: UINT, Tag: ULONG) -> PVO
     RtlAllocateHeap(rtl_get_process_heap(), 0, Bytes as SIZE_T)
 }
 #[no_mangle]
-pub unsafe extern "system" fn RtlpFreeMemory(Mem: PVOID, Tag: ULONG) {
+pub unsafe extern "system" fn RtlpFreeMemory(Mem: PVOID, _Tag: ULONG) {
 
     RtlFreeHeap(rtl_get_process_heap(), 0, Mem);
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "fastcall" fn CHECK_PAGED_CODE_RTL(file: *mut i8, line: i32) {
+pub unsafe extern "fastcall" fn CHECK_PAGED_CODE_RTL(_file: *mut i8, _line: i32) {
 }
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn CHECK_PAGED_CODE_RTL(file: *mut i8, line: i32) {
+pub unsafe extern "C" fn CHECK_PAGED_CODE_RTL(_file: *mut i8, _line: i32) {
 }
 
 
@@ -377,24 +377,24 @@ pub unsafe extern "system" fn RtlpSetHeapParameters(Parameters: PRTL_HEAP_PARAME
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlpHandleDpcStackException(
-    RegistrationFrame: PEXCEPTION_REGISTRATION_RECORD,
-    RegistrationFrameEnd: ULONG_PTR,
-    StackLow: PULONG_PTR,
-    StackHigh: PULONG_PTR,
+    _RegistrationFrame: PEXCEPTION_REGISTRATION_RECORD,
+    _RegistrationFrameEnd: ULONG_PTR,
+    _StackLow: PULONG_PTR,
+    _StackHigh: PULONG_PTR,
 ) -> BOOLEAN {
     0u8
 }
 #[no_mangle]
 pub unsafe extern "system" fn RtlpCheckLogException(
-    ExceptionRecord: PEXCEPTION_RECORD,
-    ContextRecord: PCONTEXT,
-    ContextData: PVOID,
-    Size: ULONG,
+    _ExceptionRecord: PEXCEPTION_RECORD,
+    _ContextRecord: PCONTEXT,
+    _ContextData: PVOID,
+    _Size: ULONG,
 ) {
 }
 #[no_mangle]
 pub unsafe extern "system" fn RtlpCaptureStackLimits(
-    Ebp: ULONG_PTR,
+    _Ebp: ULONG_PTR,
     StackBegin: *mut ULONG_PTR,
     StackEnd: *mut ULONG_PTR,
 ) -> BOOLEAN {
@@ -637,7 +637,7 @@ pub unsafe extern "system" fn RtlImageNtHeaderEx(
     Size: ULONG64,
     OutHeaders: *mut PIMAGE_NT_HEADERS,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     if !OutHeaders.is_null() {
         *OutHeaders = core::ptr::null_mut();
@@ -659,7 +659,7 @@ pub unsafe extern "C" fn find_entry(
     want_dir: i32,
 ) -> NTSTATUS {
     let mut size: ULONG = 0;
-    let mut root: *mut core::ffi::c_void;
+    let root: *mut core::ffi::c_void;
     let mut resdirptr: *mut IMAGE_RESOURCE_DIRECTORY;
     let mut list: [USHORT; 9] = [0; 9];
     let mut i: i32;
@@ -1007,9 +1007,9 @@ pub unsafe extern "system" fn RtlDosApplyFileIsolationRedirection_Ustr(
     StaticString: PUNICODE_STRING,
     DynamicString: PUNICODE_STRING,
     NewName: *mut PUNICODE_STRING,
-    NewFlags: *mut u32,
-    FileNameSize: PSIZE_T,
-    RequiredLength: PSIZE_T,
+    _NewFlags: *mut u32,
+    _FileNameSize: PSIZE_T,
+    _RequiredLength: PSIZE_T,
 ) -> i32 {
 
     let mut Status: i32;
@@ -1209,7 +1209,7 @@ pub unsafe extern "system" fn LdrpApplyFileNameRedirection(
 
     *RedirectedDll = 0u8;
 
-    let PrevNewName = *NewName;
+    let _PrevNewName = *NewName;
     let mut ApisetName: _UNICODE_STRING = core::mem::zeroed();
     let mut Status: i32 = STATUS_SUCCESS;
 
@@ -1307,24 +1307,24 @@ pub unsafe extern "system" fn LdrpApplyFileNameRedirection(
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlWow64EnableFsRedirection(
-    Wow64FsEnableRedirection: BOOLEAN,
+    _Wow64FsEnableRedirection: BOOLEAN,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlWow64EnableFsRedirectionEx(
-    Wow64FsEnableRedirection: PVOID,
-    OldFsRedirectionLevel: *mut PVOID,
+    _Wow64FsEnableRedirection: PVOID,
+    _OldFsRedirectionLevel: *mut PVOID,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlComputeImportTableHash(
-    FileHandle: HANDLE,
-    Hash: PCHAR,
-    ImportTableHashSize: ULONG,
+    _FileHandle: HANDLE,
+    _Hash: PCHAR,
+    _ImportTableHashSize: ULONG,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }

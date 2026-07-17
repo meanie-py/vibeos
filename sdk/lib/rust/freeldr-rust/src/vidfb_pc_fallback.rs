@@ -96,7 +96,6 @@ pub unsafe extern "C" fn VidFbInitializeVideo(
 // CountNumberOfBits(R|G|B|Reserved) — pure; faithful (popcount).
 #[no_mangle]
 #[inline(never)]
-#[no_mangle]
 pub unsafe extern "C" fn PixelBitmasksToBpp(
     RedMask: ULONG,
     GreenMask: ULONG,

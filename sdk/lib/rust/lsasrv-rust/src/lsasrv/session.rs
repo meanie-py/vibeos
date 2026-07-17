@@ -78,7 +78,7 @@ pub unsafe extern "C" fn LsapSetLogonSessionData(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let Session: PLSAP_LOGON_SESSION;
-    let mut Length: ULONG;
+    let Length: ULONG;
 
     // TRACE("LsapSetLogonSessionData(%p)\n", LogonId);
     TRACE!(b"LsapSetLogonSessionData(%p)\n\0".as_ptr() as *const u8 as *const i8, LogonId);
@@ -273,31 +273,31 @@ pub unsafe extern "system" fn LsapDeleteLogonSession(LogonId: PLUID) -> NTSTATUS
 }
 #[no_mangle]
 pub unsafe extern "system" fn LsapAddCredential(
-    LogonId: PLUID,
-    AuthenticationPackage: ULONG,
-    PrimaryKeyValue: PLSA_STRING,
-    Credential: PLSA_STRING,
+    _LogonId: PLUID,
+    _AuthenticationPackage: ULONG,
+    _PrimaryKeyValue: PLSA_STRING,
+    _Credential: PLSA_STRING,
 ) -> NTSTATUS {
     STATUS_SUCCESS
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn LsapGetCredentials(
-    LogonId: PLUID,
-    AuthenticationPackage: ULONG,
-    QueryContext: PULONG,
-    RetrieveAllCredentials: BOOLEAN,
-    PrimaryKeyValue: PLSA_STRING,
-    PrimaryKeyLength: PULONG,
-    Credentials: PLSA_STRING,
+    _LogonId: PLUID,
+    _AuthenticationPackage: ULONG,
+    _QueryContext: PULONG,
+    _RetrieveAllCredentials: BOOLEAN,
+    _PrimaryKeyValue: PLSA_STRING,
+    _PrimaryKeyLength: PULONG,
+    _Credentials: PLSA_STRING,
 ) -> NTSTATUS {
     STATUS_SUCCESS
 }
 #[no_mangle]
 pub unsafe extern "system" fn LsapDeleteCredential(
-    LogonId: PLUID,
-    AuthenticationPackage: u32,
-    PrimaryKeyValue: PLSA_STRING,
+    _LogonId: PLUID,
+    _AuthenticationPackage: u32,
+    _PrimaryKeyValue: PLSA_STRING,
 ) -> NTSTATUS {
     STATUS_SUCCESS
 }
@@ -314,9 +314,9 @@ pub unsafe extern "C" fn LsapEnumLogonSessions(RequestMsg: PLSA_API_MSG) -> NTST
     let mut ProcessHandle: HANDLE = core::ptr::null_mut();
     let mut SessionEntry: PLIST_ENTRY;
     let mut CurrentSession: PLSAP_LOGON_SESSION;
-    let mut SessionList: PLUID;
+    let SessionList: PLUID;
     let mut i: ULONG;
-    let mut Length: ULONG;
+    let Length: ULONG;
     let mut MemSize: SIZE_T;
     let mut ClientBaseAddress: PVOID = core::ptr::null_mut();
     let mut Status: NTSTATUS;

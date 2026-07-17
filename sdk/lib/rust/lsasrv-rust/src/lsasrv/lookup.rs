@@ -109,7 +109,7 @@ pub unsafe extern "C" fn LsapCreateSid(
         return 0u8;
     }
 
-    let mut SidEntry = RtlAllocateHeap(
+    let SidEntry = RtlAllocateHeap(
         RtlGetProcessHeap(),
         HEAP_ZERO_MEMORY as ULONG,
         core::mem::size_of::<WELL_KNOWN_SID>() as SIZE_T,
@@ -1348,7 +1348,7 @@ unsafe fn LsapLookupIsolatedAccountNames(
     let mut RelativeIds: _SAMPR_ULONG_ARRAY = _SAMPR_ULONG_ARRAY { Count: 0, Element: core::ptr::null_mut() };
     let mut Use: _SAMPR_ULONG_ARRAY = _SAMPR_ULONG_ARRAY { Count: 0, Element: core::ptr::null_mut() };
     let mut DomainIndex: u32 = 0;
-    let mut i: u32;
+    let _i: u32;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     if (*__wine_dbch___default).flags as i32 & (1 << __WINE_DBCL_TRACE as i32) != 0 {
@@ -1575,7 +1575,7 @@ unsafe fn LsapLookupBuiltinNames(
     };
     let mut DomainIndex: u32 = 0;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let result = 'main: {
+    let _result = 'main: {
         Status = SamrConnect(
             core::ptr::null_mut::<u16>(),
             &mut ServerHandle,
@@ -1852,16 +1852,16 @@ pub unsafe extern "C" fn LsapLookupNames(
     Names: *mut _RPC_UNICODE_STRING,
     ReferencedDomains: *mut *mut _LSAPR_REFERENCED_DOMAIN_LIST,
     TranslatedSids: *mut _LSAPR_TRANSLATED_SIDS_EX2,
-    LookupLevel: LSAP_LOOKUP_LEVEL,
+    _LookupLevel: LSAP_LOOKUP_LEVEL,
     MappedCount: *mut u32,
-    LookupOptions: u32,
-    ClientRevision: u32,
+    _LookupOptions: u32,
+    _ClientRevision: u32,
 ) -> i32 {
     let mut DomainsBuffer: *mut _LSAPR_REFERENCED_DOMAIN_LIST = core::ptr::null_mut();
     let mut SidsBuffer: *mut _LSAPR_TRANSLATED_SID_EX2 = core::ptr::null_mut();
     let mut DomainNames: *mut _RPC_UNICODE_STRING = core::ptr::null_mut();
     let mut AccountNames: *mut _RPC_UNICODE_STRING = core::ptr::null_mut();
-    let mut SidsBufferLength: usize;
+    let SidsBufferLength: usize;
     let mut i: u32;
     let mut Mapped: u32 = 0u32;
     let mut Status: i32 = STATUS_SUCCESS;
@@ -2118,7 +2118,7 @@ unsafe fn LsapLookupWellKnownSids(
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut sid_string: LPWSTR = core::ptr::null_mut();
     let mut domain_index: ULONG = 0;
-    let mut i: ULONG;
+    let _i: ULONG;
 
     for i in 0..(*SidEnumBuffer).Entries {
         if (*NamesBuffer.offset(i as isize)).Use as u32 != SidTypeUnknown as u32 {
@@ -2506,10 +2506,10 @@ pub unsafe extern "C" fn LsapLookupSids(
     SidEnumBuffer: PLSAPR_SID_ENUM_BUFFER,
     ReferencedDomains: *mut PLSAPR_REFERENCED_DOMAIN_LIST,
     TranslatedNames: PLSAPR_TRANSLATED_NAMES_EX,
-    LookupLevel: LSAP_LOOKUP_LEVEL,
+    _LookupLevel: LSAP_LOOKUP_LEVEL,
     MappedCount: *mut DWORD,
-    LookupOptions: DWORD,
-    ClientRevision: DWORD,
+    _LookupOptions: DWORD,
+    _ClientRevision: DWORD,
 ) -> NTSTATUS {
     let mut DomainsBuffer: PLSAPR_REFERENCED_DOMAIN_LIST = core::ptr::null_mut();
     let mut NamesBuffer: PLSAPR_TRANSLATED_NAME_EX = core::ptr::null_mut();

@@ -1,11 +1,7 @@
-use core::ffi::c_void;
 use explorer_sys::*;
 use explorer_sys::com::*;
-use explorer_sys::externs::*;
 use explorer_sys::globals::*;
-use explorer_sys::types::*;
 use winsrv_sys::consts::*;
-use winsrv_sys::w;
 use winsrv_sys::winsrv::*;
 
 // _SHCreateDesktop / _SHDesktopMessageLoop are our own Rust (rshell.rs);
@@ -158,7 +154,7 @@ pub unsafe extern "C" fn CDesktopThread_Destroy(this: *mut CDesktopThread) {
 #[no_mangle]
 pub unsafe extern "C" fn CDesktopThread_DesktopThreadProc(this: *mut CDesktopThread) -> u32 {
     let mut pSdt: *mut IShellDesktopTray = core::ptr::null_mut();
-    let mut hDesktop: *mut core::ffi::c_void;
+    let hDesktop: *mut core::ffi::c_void;
     let hRet: i32;
     let mut dwResult: u32 = 1;
 

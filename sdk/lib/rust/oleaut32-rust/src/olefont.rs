@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use core::ffi::c_void;
 
 extern "system" {
     fn CreateFontIndirectW(lplf: *mut LOGFONTW) -> HFONT;
@@ -135,7 +134,7 @@ pub struct IClassFactoryImpl {
     pub ref_: LONG,
 }
 unsafe extern "C" fn get_dc() -> HDC {
-    let mut hdc: HDC;
+    let hdc: HDC;
     EnterCriticalSection(core::ptr::addr_of_mut!(OLEFontImpl_csHFONTLIST));
     if olefont_hdc.is_null() {
         olefont_hdc = CreateCompatibleDC(core::ptr::null_mut());
@@ -260,7 +259,7 @@ unsafe extern "C" fn dec_ext_ref(hfont: HFONT) -> HRESULT {
     hr
 }
 unsafe extern "C" fn strdupW(str: *const WCHAR) -> *mut WCHAR {
-    let mut ret: *mut WCHAR;
+    let ret: *mut WCHAR;
     let size: DWORD = ((lstrlenW(str as LPCWSTR) + 1) as usize * core::mem::size_of::<WCHAR>()) as DWORD;
 
     ret = HeapAlloc(GetProcessHeap(), 0, size as SIZE_T) as *mut WCHAR;
@@ -315,8 +314,8 @@ pub unsafe extern "system" fn OleCreateFontIndirect(
     riid: *const IID,
     ppvObj: *mut LPVOID,
 ) -> HRESULT {
-    let mut newFont: *mut OLEFontImpl;
-    let mut hr: HRESULT;
+    let newFont: *mut OLEFontImpl;
+    let hr: HRESULT;
     let mut fd: FONTDESC = core::mem::zeroed();
 
     TRACE!(
@@ -658,7 +657,7 @@ unsafe extern "system" fn font_enum_proc(
 }
 unsafe extern "C" fn realize_font(This: *mut OLEFontImpl) {
     let mut logFont: LOGFONTW = core::mem::zeroed();
-    let mut fontHeight: INT;
+    let fontHeight: INT;
     let mut text_face: [WCHAR; 32] = [0; 32];
     let hdc: HDC = get_dc();
     let mut old_font: HFONT;
@@ -1157,7 +1156,7 @@ fn OLEFontImpl_Clone(
     ppfont: *mut *mut IFont,
 ) -> HRESULT {
     let this: *mut OLEFontImpl = impl_from_IFont(iface);
-    let mut newObject: *mut OLEFontImpl;
+    let newObject: *mut OLEFontImpl;
 
     TRACE!(b"(%p)->(%p)\n\0".as_ptr() as *const i8, this, ppfont);
 
@@ -1220,9 +1219,9 @@ fn OLEFontImpl_IsEqual(
 ) -> HRESULT {
     let left: *mut OLEFontImpl = impl_from_IFont(iface);
     let right: *mut OLEFontImpl = impl_from_IFont(pFontOther);
-    let mut ret: INT;
-    let mut left_len: INT;
-    let mut right_len: INT;
+    let ret: INT;
+    let left_len: INT;
+    let right_len: INT;
 
     if pFontOther.is_null() {
         return E_POINTER;
@@ -1298,8 +1297,8 @@ fn OLEFontImpl_QueryTextMetrics(
     iface: *mut IFont,
     ptm: *mut TEXTMETRICOLE,
 ) -> HRESULT {
-    let mut hdcRef: HDC;
-    let mut hOldFont: HFONT;
+    let hdcRef: HDC;
+    let hOldFont: HFONT;
     let mut hNewFont: HFONT = core::ptr::null_mut();
 
     hdcRef = GetDC(core::ptr::null_mut());
@@ -1316,7 +1315,7 @@ fn OLEFontImpl_AddRefHfont(
     iface: *mut IFont,
     hfont: HFONT
 ) -> HRESULT {
-    let this: *mut OLEFontImpl = impl_from_IFont(iface);
+    let _this: *mut OLEFontImpl = impl_from_IFont(iface);
 
     TRACE!(b"(%p)->(%p)\n\0".as_ptr() as *const i8, this, hfont);
 
@@ -1332,7 +1331,7 @@ fn OLEFontImpl_ReleaseHfont(
     iface: *mut IFont,
     hfont: HFONT
 ) -> HRESULT {
-    let this: *mut OLEFontImpl = impl_from_IFont(iface);
+    let _this: *mut OLEFontImpl = impl_from_IFont(iface);
 
     TRACE!(b"(%p)->(%p)\n\0".as_ptr() as *const i8, this, hfont);
 
@@ -1448,7 +1447,7 @@ fn OLEFontImpl_GetTypeInfo(
     let mut tl: *mut ITypeLib = core::ptr::null_mut();
     let mut hres: HRESULT;
 
-    let this = impl_from_IDispatch(iface);
+    let _this = impl_from_IDispatch(iface);
     TRACE!(
         b"(%p, iTInfo=%d, lcid=%04x, %p)\n\0".as_ptr() as *const i8,
         this,
@@ -1499,7 +1498,7 @@ fn OLEFontImpl_GetIDsOfNames(
     let mut pTInfo: *mut ITypeInfo = core::ptr::null_mut();
     let mut hres: HRESULT;
 
-    let this = impl_from_IDispatch(iface);
+    let _this = impl_from_IDispatch(iface);
 
     TRACE!(
         b"(%p,%s,%p,cNames=%d,lcid=%04x,%p)\n\0".as_ptr() as *const i8,
@@ -2927,7 +2926,7 @@ fn SFCF_QueryInterface(
     riid: *const IID,
     obj: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
-    let This: *mut IClassFactoryImpl = impl_from_IClassFactory(iface);
+    let _This: *mut IClassFactoryImpl = impl_from_IClassFactory(iface);
 
     TRACE!(
         b"(%p)->(%s, %p)\n\0".as_ptr() as *const i8,
@@ -2979,7 +2978,7 @@ fn SFCF_CreateInstance(
 }
 stdmethod! {
 fn SFCF_LockServer(iface: LPCLASSFACTORY, dolock: BOOL) -> HRESULT {
-    let This: *mut IClassFactoryImpl = impl_from_IClassFactory(iface as *mut IClassFactory);
+    let _This: *mut IClassFactoryImpl = impl_from_IClassFactory(iface as *mut IClassFactory);
     FIXME!(b"(%p)->(%d),stub!\n\0".as_ptr() as *const i8, This, dolock);
     return S_OK;
 }

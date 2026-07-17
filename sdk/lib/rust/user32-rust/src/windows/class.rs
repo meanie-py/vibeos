@@ -784,6 +784,7 @@ unsafe extern "C" fn IntGetClsWndProc(pWnd: PWND, Class: PCLS, Ansi: i32) -> DWO
     IntGetClsWndProc_impl(pWnd, Class, Ansi)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntGetClsWndProc_impl(pWnd: PWND, Class: PCLS, Ansi: i32) -> DWORD_PTR {
     let mut i: i32;
     let gcpd: DWORD_PTR;
@@ -853,6 +854,7 @@ unsafe extern "C" fn IntGetWndProc(pWnd: PWND, Ansi: i32) -> WNDPROC {
     IntGetWndProc_impl(pWnd, Ansi)
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe fn IntGetWndProc_impl(pWnd: PWND, Ansi: i32) -> WNDPROC {
     let mut i: i32;
     let gcpd: WNDPROC;

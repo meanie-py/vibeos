@@ -452,7 +452,7 @@ pub unsafe extern "C" fn UiUpdateProgressBar(
     Percentage: ULONG,
     ProgressText: PCSTR,
 ) {
-    let mut TotalProgress: ULONG;
+    let TotalProgress: ULONG;
 
     if UiProgressBar.Show == 0 {
         return;

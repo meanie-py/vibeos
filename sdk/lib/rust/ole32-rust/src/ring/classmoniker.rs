@@ -815,7 +815,7 @@ pub unsafe extern "system" fn CreateClassMoniker(
 
 #[no_mangle]
 pub unsafe extern "C" fn ClassMoniker_CreateFromDisplayName(
-    pbc: *mut IBindCtx,
+    _pbc: *mut IBindCtx,
     szDisplayName: LPCOLESTR,
     pchEaten: LPDWORD,
     ppmk: *mut *mut IMoniker,
@@ -921,7 +921,7 @@ pub unsafe extern "C" fn ClassMoniker_CreateFromDisplayName(
 
 #[no_mangle]
 pub unsafe extern "system" fn ClassMoniker_CreateInstance(
-    iface: *mut IClassFactory,
+    _iface: *mut IClassFactory,
     pUnk: *mut IUnknown,
     riid: REFIID,
     ppv: *mut LPVOID,

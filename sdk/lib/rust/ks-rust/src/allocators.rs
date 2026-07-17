@@ -251,8 +251,7 @@ pub unsafe extern "system" fn IKsAllocator_fnDeviceIoControl(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let This: PALLOCATOR = core::mem::transmute(
-        (iface as usize)
+    let This: PALLOCATOR = core::ptr::with_exposed_provenance_mut::<ALLOCATOR>((iface as usize)
             .wrapping_sub(core::mem::offset_of!(ALLOCATOR, lpVtbl))
     );
     let IoStack = IoGetCurrentIrpStackLocation(Irp);
@@ -353,8 +352,7 @@ pub unsafe extern "system" fn IKsAllocator_fnAllocateFrame(
     OutFrame: *mut PVOID,
 ) -> NTSTATUS {
     let mut Frame: PVOID = core::ptr::null_mut();
-    let This: PALLOCATOR = core::mem::transmute(
-        (iface as usize)
+    let This: PALLOCATOR = core::ptr::with_exposed_provenance_mut::<ALLOCATOR>((iface as usize)
             .wrapping_sub(core::mem::size_of::<IKsAllocatorVtbl>()),
     );
 

@@ -87,10 +87,79 @@ lane a tested one-line `offset_of!` diff rather than landing it yourself.
 4. **Tier 1 (noise)** — subagent fan-out over COLD crates, cluster-integrated + gated by you.
 5. As hot lanes land, fold their crates into the Tier-1 sweep.
 
+## Progress log
+
+- **2026-07-16 — Tier-3 (timebombs) LANDED** (`5125e242d40` on master): deref_nullptr
+  128 sites → `offset_of!`; unsupported_calling_conventions 164 sites (fastcall/stdcall,
+  per-arch ABI preserved via a `fastcall_fn!` dual-emit macro); bindgen
+  unnecessary_transmutes 345 sites → casts, **fixed at the generator** (`fix_transmutes`
+  in all 5 postprocess_bindgen.py + standalone for usb/acpica) so regen stays clean.
+  All three classes now **0 on i386/amd64/arm64**. Gate ×3 green.
+- **2026-07-16 — Tier-2b (fn-ptr comparisons) + Tier-1 (cargo-fix noise sweep) batched.**
+  T2b: 65 sites / 34 fns annotated `#[allow(unpredictable_function_pointer_comparisons)]`
+  with a greppable `FNPTR-CMP(audited)` tag (all verified intentional NT callback/sentinel
+  identity compares mirroring the C). T1: central `cargo fix` over ~80 cold crates, 3
+  targets (~5k noise warnings). Also fixed a real swallowed-error bug found by triage
+  (lsasrv `LsapLogonUser`, see below).
+
+## Owed follow-ups
+
+- **FNPTR-CMP re-architecture (user-requested).** The 34 `#[allow(unpredictable_function_pointer_comparisons)]`
+  suppressions are the interim treatment. The idiomatic endpoint is
+  `core::ptr::fn_addr_eq` (stable 1.85), which removes the lint *without* suppression.
+  It doesn't fit the Option-wrapped / sentinel-value (`SIG_IGN`=`1 as fn`) / transmute
+  forms ergonomically today. A future pass: `grep -rn 'FNPTR-CMP'` finds all 34 sites;
+  convert the clean `fn == fn` ones to `fn_addr_eq`, keep scoped allows only for the
+  sentinel/transmute oddballs.
+- **Upstream ReactOS-C bugs faithfully preserved by translation** (found during
+  unused_assignments triage, NOT translation-introduced — tracked here, not fixed in
+  this lane): `pcix-rust/enumr.rs:1575`, `pcix-rust/init.rs:367`, `pcix-rust/utils.rs:714`
+  (unchecked status / computed-but-unused / hardcoded wrong return status — each matches
+  the C original, incl. a commented-out `//if (!NT_SUCCESS(Status)) break;` in init.c:752).
+
 ## Lane rules
 
-- **Per-cluster commits, each gated ×3** — never one giant workspace-wide diff. Localized
-  conflicts, revertible steps, and the smoke harness stays a usable signal.
+- **Batch big, gate once** (2026-07-16 user directive, overrides the old per-cluster rule):
+  roll mechanical work up into big commits and run ONE `vibeos-cli gate` at the end — at
+  thousands of commits/month nobody reads commit-level history, and per-cluster gating
+  serializes the fleet on the host CPU-lease pool. Validate cheaply as you go
+  (`cargo check` per crate × 3 targets). Auto-push on ×3-green still applies.
+- **cargo-fix `--broken-code` hazard (central-integration duty):** a workspace `cargo fix`
+  mis-handles macro/cfg-blind cases — it removes imports/renames params used only inside
+  macro invocations (e.g. `RTL_CONSTANT_STRING!(...)`), over-qualifies enum paths with
+  unimported modules (`types::types_arch::X`), strips `mut` off a binding reassigned only
+  under *another arch's* cfg arm (`let mut OldOffset` in freeldr i386 code), removes a
+  `pub use win64::{…}` re-export the crate needs (crt-startup amd64), and drops a
+  `use winsrv_sys::nt::*;` glob that on i386 is the *only* source of `SetWindowLongPtrW`
+  (bindgen_i386 has just the 32-bit `SetWindowLongW`).
+- **The oracle is the 3-arch `-k0` gate BUILD, not `cargo check` (2026-07-16, learned the
+  hard way — a batch landed a green-looking commit that failed the gate build on i386+amd64).**
+  `cargo check -p X` on the *default* target sees only ONE arch's cfg, so it green-lights
+  edits that break a different arch's gated arm. Worse: crates that "don't build standalone"
+  under `cargo check` (freeldr/uefildr/winsrv/kdgdb/netstack) are **not** exempt — they build
+  fine in the gate via `reactos-link` (a build.rs-driven `cargo build -p X --target …`), so
+  EXCLUDING them from validation hides exactly the cfg-blind botches. Do NOT trust "excluded
+  standalone failure" as a reason to skip a crate. The good news: the cargo-fix noise class
+  (drop `mut` / remove import / remove parens) can only fail by *not compiling* — so a
+  `bash ../tools/canon-run.sh ninja -k0 livecd` on each x86 arch (+ the gate's arm64) is a
+  **complete** oracle. Recipe when a batch breaks the gate: run `ninja -k0 livecd` per broken
+  arch to enumerate the FULL casualty set in one pass (don't whack-a-mole one error at a
+  time), then for each broken file either surgically restore the one botched line (`let mut`,
+  the re-export) or, if the botch is dense/cfg-fragile (winsrv's whole console frontend),
+  revert the *entire crate* to the pre-batch parent — `git checkout <parent> -- <crate>/`.
+  **`<parent>` is `HEAD~1` once the batch is committed, NOT `HEAD`** (a `git checkout HEAD`
+  restores the committed botch and no-ops).
+- **Two per-arch gate checks a single-arch `cargo check` misses entirely (2026-07-16):**
+  (1) **the lint baseline-diff runs PER ARCH** — `check amd64` reads `bindgen_amd64.rs`,
+  whose line numbers differ from `bindgen_arm64.rs`, so a line-shift re-baseline verified only
+  on arm64 can still fail `lint:amd64`. Re-baseline / verify on the SAME arch mix the gate runs
+  (or just run `vibeos-cli check` for each arch). (2) **`committed_drift`**: cargo fix will
+  happily "clean up" a committed **generated fallback** — an `unused_parens` removal in
+  `winreg-stub/data/winreg_s.amd64.rs` (a widl-generated RPC server stub) byte-diverged it from
+  regeneration → `lint:amd64` DRIFT. Generated/committed-fallback files (`*_s.<arch>.rs` RPC
+  stubs, `cflags/*.flags`, `*.rc.res`, `bugcodes.h`, `ks*.inc`) must NEVER be hand- or
+  cargo-fix-edited; revert any the sweep touched to `HEAD~1`. Detector: `python3
+  tools/check_committed_drift.py --arch <a>` (13-14 artifacts, byte-compare vs cmake regen).
 - **Never suppress to green.** Removing a real warning by fixing it ✅; re-adding a blanket
   `#![allow]` to silence it ❌. If a warning is a genuine false-positive, `#[allow(...)]` it
   **per-item with a `// reason`**, never crate-root.

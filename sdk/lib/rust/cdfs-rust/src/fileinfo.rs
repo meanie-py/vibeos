@@ -160,9 +160,9 @@ pub unsafe extern "C" fn CdCommonQueryInfo(
     let initial_length: u32 = (*IrpSp).Parameters.QueryFile.Length;
     let mut Length: u32 = initial_length;
     let FileInformationClass: u32 = (*IrpSp).Parameters.QueryFile.FileInformationClass;
-    let mut Buffer: *mut FILE_ALL_INFORMATION = (*Irp).AssociatedIrp.SystemBuffer as *mut _;
+    let Buffer: *mut FILE_ALL_INFORMATION = (*Irp).AssociatedIrp.SystemBuffer as *mut _;
 
-    let mut TypeOfOpen: u32;
+    let TypeOfOpen: u32;
     let mut Fcb: PFCB = core::ptr::null_mut();
     let mut Ccb: PCCB = core::ptr::null_mut();
 
@@ -432,7 +432,7 @@ pub unsafe extern "system" fn CdFastQueryBasicInfo(
     DeviceObject: PDEVICE_OBJECT,
 ) -> i32 {
     let mut Result: i32 = 0;
-    let mut TypeOfOpen: u32;
+    let TypeOfOpen: u32;
     let mut Fcb: PFCB = core::ptr::null_mut();
 
     UNREFERENCED_PARAMETER(DeviceObject as *mut core::ffi::c_void);
@@ -473,7 +473,7 @@ pub unsafe extern "system" fn CdFastQueryStdInfo(
     wait: u8,
     buffer: PFILE_STANDARD_INFORMATION,
     io_status: PIO_STATUS_BLOCK,
-    device_object: PDEVICE_OBJECT,
+    _device_object: PDEVICE_OBJECT,
 ) -> u8 {
     let mut result: u8 = 0;
     let mut fcb: PFCB = core::ptr::null_mut();

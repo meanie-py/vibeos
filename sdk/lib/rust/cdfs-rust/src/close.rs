@@ -1,8 +1,5 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{IoGetCurrentIrpStackLocation, PDEVICE_OBJECT, PIRP};
-use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{FCB, IRP_CONTEXT, IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS, IRP_CONTEXT_LITE, PCCB, PFCB, PIRP_CONTEXT, PIRP_CONTEXT_LITE, PVCB, THREAD_CONTEXT, TYPE_OF_OPEN, VCB, _TYPE_OF_OPEN_UnopenedFileObject as UnopenedFileObject, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _VCB_CONDITION_VcbMountInProgress as VcbMountInProgress, _VCB_CONDITION_VcbMounted as VcbMounted};
 use ntkrnl_sys::ddk::{IO_WORKITEM, PFILE_OBJECT, WORK_QUEUE_ITEM, WORK_QUEUE_TYPE};
@@ -607,8 +604,8 @@ pub unsafe extern "C" fn CdCommonClose(
     mut IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let mut TypeOfOpen: TYPE_OF_OPEN;
-    let mut Vcb: PVCB;
+    let TypeOfOpen: TYPE_OF_OPEN;
+    let Vcb: PVCB;
     let mut Fcb: PFCB = core::ptr::null_mut();
     let mut Ccb: PCCB = core::ptr::null_mut();
     let mut UserReference: u32 = 0;
