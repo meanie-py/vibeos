@@ -11,7 +11,6 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 // dbgprint macros ex uses (dbg_print/dbg_print_ex/kdbp_print/rtl_string_cb_printf_a/
 // swprintf/wstr), re-exported so `crate::<macro>!` sites resolve unchanged.

@@ -11,7 +11,6 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 pub mod global_barrier;
 pub mod events;

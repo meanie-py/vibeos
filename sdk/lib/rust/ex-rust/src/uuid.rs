@@ -386,7 +386,7 @@ pub unsafe extern "system" fn ExUuidCreate(Uuid: *mut UUID) -> NTSTATUS {
             Time.QuadPart = ExpUuidCachedValues.Time as i64;
 
             core::ptr::copy_nonoverlapping(
-                ExpUuidCachedValues.GuidInit.as_ptr(),
+                (*(&raw const ExpUuidCachedValues)).GuidInit.as_ptr(),
                 (*Uuid).Data4.as_mut_ptr(),
                 8,
             );
@@ -502,7 +502,7 @@ pub unsafe extern "system" fn NtAllocateUuids(
             *Sequence = IntSequence;
 
             core::ptr::copy_nonoverlapping(
-                ExpUuidCachedValues.NodeId().as_ptr(),
+                (*(&raw const ExpUuidCachedValues)).NodeId().as_ptr(),
                 Seed,
                 SEED_BUFFER_SIZE,
             );
@@ -546,7 +546,7 @@ pub unsafe extern "system" fn NtSetUuidSeed(Seed: *const u8) -> NTSTATUS {
             ProbeForRead(Seed as PVOID, SEED_BUFFER_SIZE, core::mem::align_of::<u8>());
             core::ptr::copy_nonoverlapping(
                 Seed,
-                ExpUuidCachedValues.NodeId_mut().as_mut_ptr(),
+                (*(&raw mut ExpUuidCachedValues)).NodeId_mut().as_mut_ptr(),
                 SEED_BUFFER_SIZE,
             );
 

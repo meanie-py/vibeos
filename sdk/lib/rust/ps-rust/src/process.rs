@@ -358,14 +358,14 @@ pub unsafe extern "system" fn PsChangeQuantumTable(
     }
 
     if PspQuantumTypeFromMask(priority_separation) == PSP_VARIABLE_QUANTUMS {
-        quantum_table = PspVariableQuantums.as_mut_ptr();
+        quantum_table = (*(&raw mut PspVariableQuantums)).as_mut_ptr();
     } else if PspQuantumTypeFromMask(priority_separation) == PSP_FIXED_QUANTUMS {
-        quantum_table = PspFixedQuantums.as_mut_ptr();
+        quantum_table = (*(&raw mut PspFixedQuantums)).as_mut_ptr();
     } else {
         quantum_table = if MmIsThisAnNtAsSystem() != 0 {
-            PspFixedQuantums.as_mut_ptr()
+            (*(&raw mut PspFixedQuantums)).as_mut_ptr()
         } else {
-            PspVariableQuantums.as_mut_ptr()
+            (*(&raw mut PspVariableQuantums)).as_mut_ptr()
         };
     }
 
@@ -376,7 +376,7 @@ pub unsafe extern "system" fn PsChangeQuantumTable(
         quantum_table = quantum_table.add(if MmIsThisAnNtAsSystem() != 0 { 3 } else { 0 });
     }
 
-    if quantum_table == PspFixedQuantums.as_mut_ptr().add(3) {
+    if quantum_table == (*(&raw mut PspFixedQuantums)).as_mut_ptr().add(3) {
         PspUseJobSchedulingClasses = 1u8;
     } else {
         PspUseJobSchedulingClasses = 0u8;
@@ -384,8 +384,8 @@ pub unsafe extern "system" fn PsChangeQuantumTable(
 
     core::ptr::copy_nonoverlapping(
         quantum_table as *const u8,
-        PspForegroundQuantum.as_mut_ptr() as *mut u8,
-        core::mem::size_of_val(&PspForegroundQuantum),
+        (*(&raw mut PspForegroundQuantum)).as_mut_ptr() as *mut u8,
+        core::mem::size_of_val(&*(&raw const PspForegroundQuantum)),
     );
 
     if immediate != 0 {

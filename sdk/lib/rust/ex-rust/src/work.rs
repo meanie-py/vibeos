@@ -351,8 +351,8 @@ unsafe extern "system" fn ExpWorkerThreadBalanceManager(Context: PVOID) {
     Timeout.QuadPart = ((-1i32 as i64) * (10000000i64)) as i64;
 
     WaitEvents[0] = &mut Timer as *mut KTIMER as PVOID;
-    WaitEvents[1] = &mut ExpThreadSetManagerEvent as *mut KEVENT as PVOID;
-    WaitEvents[2] = &mut ExpThreadSetManagerShutdownEvent as *mut KEVENT as PVOID;
+    WaitEvents[1] = &raw mut ExpThreadSetManagerEvent as *mut KEVENT as PVOID;
+    WaitEvents[2] = &raw mut ExpThreadSetManagerShutdownEvent as *mut KEVENT as PVOID;
 
     loop {
         KeSetTimer(&mut Timer, Timeout, core::ptr::null_mut());
@@ -387,11 +387,11 @@ unsafe extern "system" fn ExpWorkerThreadBalanceManager(Context: PVOID) {
         }
 
         if ExpDebuggerWork == WinKdWorkerStart {
-            core::ptr::write_bytes(&mut ExpDebuggerWorkItem as *mut WORK_QUEUE_ITEM as *mut u8, 0, core::mem::size_of::<WORK_QUEUE_ITEM>());
+            core::ptr::write_bytes(&raw mut ExpDebuggerWorkItem as *mut WORK_QUEUE_ITEM as *mut u8, 0, core::mem::size_of::<WORK_QUEUE_ITEM>());
             ExpDebuggerWorkItem.WorkerRoutine = Some(abi_cast!(ExpDebuggerWorker));
             ExpDebuggerWorkItem.Parameter = core::ptr::null_mut();
             ExpDebuggerWork = WinKdWorkerInitialized;
-            ExQueueWorkItem(&mut ExpDebuggerWorkItem, DelayedWorkQueue);
+            ExQueueWorkItem(&raw mut ExpDebuggerWorkItem, DelayedWorkQueue);
         }
     }
 }
@@ -406,8 +406,8 @@ pub unsafe extern "system" fn ExpInitializeWorkerThreads() {
     let mut i: ULONG;
     let mut Status: NTSTATUS;
 
-    ExInitializeFastMutex(&mut ExpWorkerSwapinMutex);
-    InitializeListHead(&mut ExpWorkerListHead);
+    ExInitializeFastMutex(&raw mut ExpWorkerSwapinMutex);
+    InitializeListHead(&raw mut ExpWorkerListHead);
     ExpWorkersCanSwap = 1u8;
 
     DelayedThreads = EX_DELAYED_WORK_THREADS;
@@ -430,8 +430,8 @@ pub unsafe extern "system" fn ExpInitializeWorkerThreads() {
 
     ExWorkerQueue[CriticalWorkQueue as usize].Info.set_MakeThreadsAsNecessary(1);
 
-    KeInitializeEvent(&mut ExpThreadSetManagerEvent, _EVENT_TYPE_SynchronizationEvent, 0u8);
-    KeInitializeEvent(&mut ExpThreadSetManagerShutdownEvent, _EVENT_TYPE_NotificationEvent, 0u8);
+    KeInitializeEvent(&raw mut ExpThreadSetManagerEvent, _EVENT_TYPE_SynchronizationEvent, 0u8);
+    KeInitializeEvent(&raw mut ExpThreadSetManagerShutdownEvent, _EVENT_TYPE_NotificationEvent, 0u8);
 
     for i in 0..CriticalThreads {
         ExpCreateWorkerThread(CriticalWorkQueue, 0u8);
@@ -500,7 +500,7 @@ pub unsafe extern "system" fn ExSwapinWorkerThreads(AllowSwap: BOOLEAN) {
 
     KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, 0u8);
 
-    ExAcquireFastMutex(&mut ExpWorkerSwapinMutex);
+    ExAcquireFastMutex(&raw mut ExpWorkerSwapinMutex);
 
     ExpWorkersCanSwap = AllowSwap;
 
@@ -533,7 +533,7 @@ pub unsafe extern "system" fn ExSwapinWorkerThreads(AllowSwap: BOOLEAN) {
         Thread = PsGetNextProcessThread(Process, Thread);
     }
 
-    ExReleaseFastMutex(&mut ExpWorkerSwapinMutex);
+    ExReleaseFastMutex(&raw mut ExpWorkerSwapinMutex);
 }
 
 #[no_mangle]
@@ -563,7 +563,7 @@ pub unsafe extern "system" fn ExQueueWorkItem(
         && ((*WorkQueue).WorkerQueue.CurrentCount < (*WorkQueue).WorkerQueue.MaximumCount)
         && ((*WorkQueue).DynamicThreadCount < 16)
     {
-        KeSetEvent(&mut ExpThreadSetManagerEvent as *mut KEVENT as PVOID, 0, 0u8);
+        KeSetEvent(&raw mut ExpThreadSetManagerEvent as *mut KEVENT as PVOID, 0, 0u8);
     }
 }
 

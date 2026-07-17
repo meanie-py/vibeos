@@ -13,7 +13,6 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 #![allow(unused_imports)]
-#![allow(static_mut_refs)]
 
 // dbg_print! macro + the dbgprint runtime module (IntoSlot / rust_dbg_print_cstr),
 // re-exported so ps's `crate::dbg_print!` / `crate::dbgprint::…` sites resolve.

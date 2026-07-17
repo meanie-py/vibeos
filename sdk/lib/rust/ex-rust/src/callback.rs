@@ -366,10 +366,10 @@ pub unsafe extern "system" fn ExpInitializeCallbacks() -> BOOLEAN {
     );
 
     let mut i = 0;
-    while !(*ExpInitializeCallback.get_unchecked(i)).CallbackObject.is_null() {
+    while !(*(*(&raw const ExpInitializeCallback)).get_unchecked(i)).CallbackObject.is_null() {
         RtlInitUnicodeString(
             core::ptr::addr_of_mut!(CallbackName),
-            (*ExpInitializeCallback.get_unchecked(i)).Name,
+            (*(*(&raw const ExpInitializeCallback)).get_unchecked(i)).Name,
         );
 
         InitializeObjectAttributes(
@@ -381,7 +381,7 @@ pub unsafe extern "system" fn ExpInitializeCallbacks() -> BOOLEAN {
         );
 
         let Status = ExCreateCallback(
-            (*ExpInitializeCallback.get_unchecked(i)).CallbackObject,
+            (*(*(&raw const ExpInitializeCallback)).get_unchecked(i)).CallbackObject,
             core::ptr::addr_of_mut!(ObjectAttributes),
             1u8,
             1u8,

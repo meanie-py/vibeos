@@ -65,7 +65,7 @@ pub unsafe extern "system" fn PsConvertToGuiThread() -> NTSTATUS {
         return STATUS_INVALID_PARAMETER;
     }
 
-    if PspW32ProcessCallout.is_none() {
+    if (*(&raw const PspW32ProcessCallout)).is_none() {
         return STATUS_ACCESS_DENIED;
     }
 

@@ -97,7 +97,7 @@ pub unsafe extern "system" fn ExpInitializeEventImplementation() -> BOOLEAN {
         &mut Name,
         &mut ObjectTypeInitializer,
         core::ptr::null_mut(),
-        &mut ExEventObjectType,
+        &raw mut ExEventObjectType,
     );
     if Status < 0 {
         return 0u8;
