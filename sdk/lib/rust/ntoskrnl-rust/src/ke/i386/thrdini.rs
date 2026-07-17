@@ -13,7 +13,7 @@ use ntkrnl_sys::ddk::{
     PKSYSTEM_ROUTINE, PKSTART_ROUTINE, PULONGLONG,
     HalClearSoftwareInterrupt, HalRequestSoftwareInterrupt,
     KeContextToTrapFrame, KeSetGdtSelector,
-    KiAcquirePrcbLock, KiQuantumEnd, KiRetireDpcList, KiSwapContext, KeBugCheck,
+    KiAcquirePrcbLock, KiReleasePrcbLock, KiQuantumEnd, KiRetireDpcList, KiSwapContext, KeBugCheck,
     _KWAIT_REASON_WrDispatchInt,
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
@@ -300,7 +300,27 @@ pub unsafe extern "C" fn KiIdleLoop() -> ! {
         }
 
         if !(*Prcb).NextThread.is_null() {
+            // UP keeps the C shape: sti before the (lock-free) consume.
+            // SMP MUST NOT (§9.56 — mirror amd64 stubs.rs KiIdleLoop): consume
+            // NextThread UNDER THE PRCB LOCK, WITH INTERRUPTS DISABLED, re-check,
+            // promote, rq_inflight_unmark, release, THEN sti. The idle thread is
+            // never queued ready here (no KxQueueReadyThread — that's what
+            // releases the lock in the KiDispatchInterrupt path below), so the
+            // lock MUST be released explicitly before the swap. A lock-free
+            // consume let KiDeferredReadyThread's standby-DISPLACEMENT (which
+            // runs under this lock and re-defers a NextThread it reads) race the
+            // idle promote → a RUNNING thread set DeferredReady → double-link
+            // tear. This path was inert until i386 Phase C (AP now schedules).
+            #[cfg(not(feature = "smp"))]
             _enable();
+
+            #[cfg(feature = "smp")]
+            KiAcquirePrcbLock(Prcb);
+            #[cfg(feature = "smp")]
+            if (*Prcb).NextThread.is_null() {
+                KiReleasePrcbLock(Prcb);
+                continue;
+            }
 
             OldThread = (*Prcb).CurrentThread;
             NewThread = (*Prcb).NextThread;
@@ -310,14 +330,42 @@ pub unsafe extern "C" fn KiIdleLoop() -> ! {
 
             (*NewThread).State = Running;
 
+            // i386 Phase C visibility: one-shot per-CPU "scheduling live" marker,
+            // fired when a non-boot CPU promotes its first real thread off idle.
             #[cfg(feature = "smp")]
-            KfRaiseIrql(0x0Cu8);
+            {
+                use core::sync::atomic::{AtomicBool, Ordering};
+                static CPU_SCHED_LIVE: [AtomicBool; 32] = {
+                    const F: AtomicBool = AtomicBool::new(false);
+                    [F; 32]
+                };
+                let n = (*Prcb).Number as usize;
+                if n != 0 && n < 32 && !CPU_SCHED_LIVE[n].swap(true, Ordering::Relaxed) {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"[SMP] CPU%u scheduling live\n\0".as_ptr() as *const i8,
+                        n as u32,
+                    );
+                }
+            }
+
+            #[cfg(feature = "smp")]
+            ntkrnl_sys::inline::ke::rq_inflight_unmark(NewThread as *mut _KTHREAD);
+            #[cfg(feature = "smp")]
+            KiReleasePrcbLock(Prcb);
+            #[cfg(feature = "smp")]
+            _enable();
+
+            #[cfg(feature = "smp")]
+            KfRaiseIrql(0x0Cu8); // SYNCH_LEVEL (preserve existing i386 value)
 
             KiSwapContext(APC_LEVEL, OldThread);
 
             #[cfg(feature = "smp")]
             KeLowerIrql(DISPATCH_LEVEL);
         } else {
+            // NOTE: no KiTbLazyIdleEnter/Exit on i386 — lazy-TLB idle coherence
+            // is the separate i386 TLB-shootdown parity item, not required for
+            // "AP schedules". Remote shootdowns are not yet deferred on i386.
             ((*Prcb).PowerState.IdleFunction.unwrap())(core::ptr::addr_of_mut!((*Prcb).PowerState));
         }
     }

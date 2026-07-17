@@ -898,9 +898,17 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     ExInitPoolLookasidePointers();
 
     if Cpu != 0 {
-        if HalInitSystem(ExpInitializationPhase, LoaderBlock) == 0 {
-            KeBugCheck(0x61);
-        }
+        // i386 SMP (M5 Phase C): the AP must NOT call HalInitSystem. On i386 that
+        // re-runs GLOBAL Phase-1 HAL init (HalpInitBusHandlers → contiguous-memory
+        // alloc → MmMapIoSpace → KeFlushEntireTb), which broadcasts a TLB-flush
+        // IPI to P0 — but P0 is spin-waiting in KeStartAllProcessors' handshake
+        // (LoaderBlock->Prcb != 0) with IPIs unserviced → hard deadlock (GDB:
+        // AP@KiIpiSendPacket ⇄ P0@YieldProcessor). The AP's per-CPU HAL is already
+        // done by HalInitializeProcessor (KiSystemStartup). amd64/arm64 APs never
+        // reach ExpInitializeExecutive (ReactOS's i386 AP path was an unimplemented
+        // FIXME), so skipping HalInitSystem here is a no-op there. Gate on the
+        // explicit Cpu arg — reliable, unlike a PRCB field read across the
+        // hal_ddk/ddk bindgen boundary (that read returns a stale 0 on the AP).
         return;
     }
 
