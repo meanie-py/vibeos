@@ -26,7 +26,12 @@ extern "system" {
     fn SetLastError(dwErrCode: DWORD);
 }
 
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn GdiGetLDC(hdc: HDC) -> PLDC;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn GdiGetLDC(hdc: HDC) -> PLDC;
 }
 

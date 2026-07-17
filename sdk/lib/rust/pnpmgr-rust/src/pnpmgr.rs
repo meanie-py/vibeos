@@ -80,7 +80,12 @@ extern "C" {
     fn PiPerformSyncDeviceAction(DeviceObject: PDEVICE_OBJECT, Action: ULONG) -> NTSTATUS;
     fn IopSynchronousCall( DeviceObject: PDEVICE_OBJECT, IoStackLocation: PIO_STACK_LOCATION, Information: PVOID, ) -> NTSTATUS;
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn IopGetDeviceNode(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn IopGetDeviceNode(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
 }
 // `IopGetBusTypeGuidIndex_c` deleted 2026-05-06 — Rust impl below replaces it.

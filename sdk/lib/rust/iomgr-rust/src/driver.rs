@@ -159,7 +159,12 @@ extern "system" {
 extern "C" {
     fn KeLowerIrql(NewIrql: KIRQL);
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
 }
 
@@ -1038,8 +1043,9 @@ unsafe fn IopInitializeBuiltinDriver(BootLdrEntry: PLDR_DATA_TABLE_ENTRY) -> BOO
     deviceAdded
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IopInitializeBootDrivers() {
+pub unsafe fn IopInitializeBootDrivers() {
     let mut ListHead: PLIST_ENTRY;
     let mut NextEntry: PLIST_ENTRY;
     let mut NextEntry2: PLIST_ENTRY;
@@ -1174,9 +1180,11 @@ pub unsafe extern "fastcall" fn IopInitializeBootDrivers() {
         core::ptr::null_mut(),
     );
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IopInitializeSystemDrivers() {
+pub unsafe fn IopInitializeSystemDrivers() {
     #[inline(never)]
     unsafe fn sd_trace(s: &[u8]) {
         crate::dbg_print!(b"%s\0", s.as_ptr() as *const i8);
@@ -1295,6 +1303,7 @@ pub unsafe extern "fastcall" fn IopInitializeSystemDrivers() {
     );
 
     ARM64_UART_TRACE!("[SYSDRV] IopInitializeSystemDrivers complete\r\n");
+}
 }
 
 unsafe extern "system" fn IopUnloadDriver(

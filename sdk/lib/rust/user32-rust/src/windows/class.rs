@@ -46,12 +46,28 @@ extern "system" {
 }
 
 // user32-internal FASTCALL helper (user32p.h).
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn TestWindowProcess(pWnd: PWND) -> BOOL;                     // user32p.h
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn TestWindowProcess(pWnd: PWND) -> BOOL;                     // user32p.h
 }
 
 // ntdll activation-context APIs (not in crate::internal; resolve via importlib).
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn RtlActivateActivationContextUnsafeFast(
+        Frame: *mut RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED,
+        Context: PVOID,
+    ) -> PVOID;
+    fn RtlDeactivateActivationContextUnsafeFast(
+        Frame: *mut RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED,
+    ) -> PVOID;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn RtlActivateActivationContextUnsafeFast(
         Frame: *mut RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED,
         Context: PVOID,
@@ -448,8 +464,9 @@ unsafe fn ClassNameToVersion_impl(
 }
 
 // VersionRegisterClass — FASTCALL, declared in regcontrol.h → cross-TU export.
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn VersionRegisterClass(
+pub unsafe fn VersionRegisterClass(
     mut pszClass: PCWSTR,
     lpLibFileName: LPCWSTR,
     Contex: HANDLE,
@@ -509,6 +526,7 @@ pub unsafe extern "fastcall" fn VersionRegisterClass(
     }
     RtlDeactivateActivationContextUnsafeFast(&mut Frame);
     Ret
+}
 }
 
 #[no_mangle]

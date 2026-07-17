@@ -262,7 +262,7 @@ pub const SAM_SERVER_CONNECT: u32 = 0x00000001;
 pub const SAM_SERVER_LOOKUP_DOMAIN: u32 = 0x00000020;
 pub const DOMAIN_GET_ALIAS_MEMBERSHIP: u32 = 0x00000080;
 pub const ACCOUNT_VIEW: u32 = 1; // ntlsa.h
-extern "stdcall" {
+extern "system" {
     pub fn SamIFree_SAMPR_ULONG_ARRAY(ptr: *mut SAMPR_ULONG_ARRAY);
 }
 
@@ -302,7 +302,7 @@ pub use samsrv_sys::{
     SAMPR_RETURNED_USTRING_ARRAY,
 };
 // SamIFree_SAMPR_RETURNED_USTRING_ARRAY is a samsrv.dll export (not in sam_c.h).
-extern "stdcall" {
+extern "system" {
     pub fn SamIFree_SAMPR_RETURNED_USTRING_ARRAY(
         ptr: *mut samsrv_sys::SAMPR_RETURNED_USTRING_ARRAY,
     );

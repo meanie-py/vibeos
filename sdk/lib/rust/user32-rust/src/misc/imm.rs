@@ -46,7 +46,12 @@ const FALSE: BOOL = 0;
 const TRUE: BOOL = 1;
 
 // ── ValidateHandle is `PVOID FASTCALL` (user32p.h) → @Name@N on i386.
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn ValidateHandle(hObject: HANDLE, ObjType: UINT) -> *mut core::ffi::c_void;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn ValidateHandle(hObject: HANDLE, ObjType: UINT) -> *mut core::ffi::c_void;
 }
 
@@ -1353,7 +1358,8 @@ unsafe extern "system" fn User32ImeMenuItemSelected(hwndTarget: HWND) {
     IMM_FN!(ImmReleaseContext)(hwndTarget, hIMC);
 }
 
-unsafe extern "fastcall" fn ImeWnd_OnImeSystem(pimeui: PIMEUI, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+fastcall_fn! {
+unsafe fn ImeWnd_OnImeSystem(pimeui: PIMEUI, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
     let mut ret: LRESULT = 0;
     let pIC: LPINPUTCONTEXTDX;
     let hIMC: HIMC = (*pimeui).hIMC;
@@ -1504,6 +1510,7 @@ unsafe extern "fastcall" fn ImeWnd_OnImeSystem(pimeui: PIMEUI, wParam: WPARAM, l
     }
 
     ret
+}
 }
 
 unsafe fn ImeWnd_OnImeSetContext(pimeui: PIMEUI, wParam: WPARAM, lParam: LPARAM) -> LRESULT {

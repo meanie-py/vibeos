@@ -106,7 +106,14 @@ extern "C" {
 }
 
 // ── FASTCALL gdi32-private helpers ─────────────────────────────────────────────
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn GdiGetLDC(hdc: HDC) -> PLDC; // misc.rs
+    fn LoadTheSpoolerDrv() -> BOOL; // misc.rs
+    fn HEAP_strdupA2W(ppszW: *mut PWSTR, lpszA: PCSTR) -> NTSTATUS; // heap.rs
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn GdiGetLDC(hdc: HDC) -> PLDC; // misc.rs
     fn LoadTheSpoolerDrv() -> BOOL; // misc.rs
     fn HEAP_strdupA2W(ppszW: *mut PWSTR, lpszA: PCSTR) -> NTSTATUS; // heap.rs
@@ -169,8 +176,9 @@ static WSZ_DISPLAY: [WCHAR; 8] = [
     0,
 ];
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IntCreateDICW(
+pub unsafe fn IntCreateDICW(
     lpwszDriver: LPCWSTR,
     lpwszDevice: LPCWSTR,
     lpwszOutput: LPCWSTR,
@@ -244,6 +252,7 @@ pub unsafe extern "fastcall" fn IntCreateDICW(
 
     // #if 0 block (LDC allocation for non-DC handles) is disabled in C.
     hdc
+}
 }
 
 /*

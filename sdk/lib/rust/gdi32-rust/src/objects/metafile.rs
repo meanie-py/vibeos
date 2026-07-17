@@ -39,7 +39,12 @@ const GDITAG_TYPE_EMF: DWORD = 0x5845_464D; // 'XEFM' — EnhMetaFile
 const GDITAG_TYPE_MFP: DWORD = 0x5F50_464D; // '_PFM' — MetaFile Picture
 
 // ── Cross-file fns ───────────────────────────────────────────────────────────────
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn GdiGetLDC(hdc: HDC) -> PLDC; // gdi32-private (misc.rs)
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn GdiGetLDC(hdc: HDC) -> PLDC; // gdi32-private (misc.rs)
 }
 

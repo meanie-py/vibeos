@@ -54,7 +54,12 @@ unsafe fn IsEqualGUID(guid1: LPCGUID, guid2: LPCGUID) -> BOOLEAN {
         0u8
     }
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn IopGetDeviceNode(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn IopGetDeviceNode(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_NODE;
 }
 

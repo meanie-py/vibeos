@@ -18,7 +18,13 @@ struct SaReal {
 //
 // EnumNamesA/EnumNamesW: `BOOL FASTCALL` in user32p.h (defined misc/winsta.c) — on
 // i386 FASTCALL is `@Name@N`, so they must be `extern "fastcall"` (NOT "system").
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn EnumNamesA(WindowStation: HWINSTA, EnumFunc: DESKTOPENUMPROCA, Context: LPARAM, Desktops: BOOL) -> BOOL;
+    fn EnumNamesW(WindowStation: HWINSTA, EnumFunc: DESKTOPENUMPROCW, Context: LPARAM, Desktops: BOOL) -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn EnumNamesA(WindowStation: HWINSTA, EnumFunc: DESKTOPENUMPROCA, Context: LPARAM, Desktops: BOOL) -> BOOL;
     fn EnumNamesW(WindowStation: HWINSTA, EnumFunc: DESKTOPENUMPROCW, Context: LPARAM, Desktops: BOOL) -> BOOL;
 }

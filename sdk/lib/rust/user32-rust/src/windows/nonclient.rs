@@ -47,7 +47,14 @@ extern "C" {
 }
 
 // user32-internal FASTCALL helpers (C side, same DLL).
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn BeginIfHookedUserApiHook() -> BOOL;
+    fn EndUserApiHook() -> BOOL;
+    fn IsInsideUserApiHook() -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn BeginIfHookedUserApiHook() -> BOOL;
     fn EndUserApiHook() -> BOOL;
     fn IsInsideUserApiHook() -> BOOL;

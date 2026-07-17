@@ -18,7 +18,12 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn IofCompleteRequest(Irp: PIRP, PriorityBoost: i8);
 }
 

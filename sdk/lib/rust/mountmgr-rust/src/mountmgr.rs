@@ -22,7 +22,14 @@ extern "C" {
     static GUID_DEVICE_INTERFACE_REMOVAL: GUID;
     fn memcmp( s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize, ) -> i32;
 }
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn InterlockedExchange(Target: *mut i32, Value: i32) -> i32;
+    fn InterlockedIncrement(Addend: *mut i32) -> i32;
+    fn InterlockedDecrement(Addend: *mut i32) -> i32;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn InterlockedExchange(Target: *mut i32, Value: i32) -> i32;
     fn InterlockedIncrement(Addend: *mut i32) -> i32;
     fn InterlockedDecrement(Addend: *mut i32) -> i32;

@@ -60,8 +60,9 @@ extern "C" {
     fn GdiGetHandleUserData(hGdiObj: HGDIOBJ, ObjectType: DWORD, UserData: *mut PVOID) -> BOOL;
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn IntCreateColorSpaceW(
+pub unsafe fn IntCreateColorSpaceW(
     lplcpw: LPLOGCOLORSPACEW,
     _Ascii: BOOL,
 ) -> HCOLORSPACE {
@@ -82,6 +83,7 @@ pub unsafe extern "fastcall" fn IntCreateColorSpaceW(
     );
 
     NtGdiCreateColorSpace(&mut lcpeexw) as HCOLORSPACE
+}
 }
 
 /*

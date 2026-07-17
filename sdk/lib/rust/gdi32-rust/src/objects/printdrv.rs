@@ -155,7 +155,12 @@ extern "C" {
 }
 
 // misc.rs FASTCALL helper.
+#[cfg(target_arch = "x86")]
 extern "fastcall" {
+    fn GdiGetLDC(hdc: HDC) -> PLDC;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
     fn GdiGetLDC(hdc: HDC) -> PLDC;
 }
 
@@ -168,7 +173,8 @@ unsafe fn clear_cspins() {
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
-unsafe extern "fastcall" fn IntEndPage(hdc: HDC, Form: BOOL) -> INT {
+fastcall_fn! {
+unsafe fn IntEndPage(hdc: HDC, Form: BOOL) -> INT {
     let pldc: PLDC;
     let mut Ret: INT = SP_ERROR;
     let hType: usize = GDI_HANDLE_GET_TYPE(hdc as HGDIOBJ);
@@ -235,16 +241,20 @@ unsafe extern "fastcall" fn IntEndPage(hdc: HDC, Form: BOOL) -> INT {
     }
     Ret
 }
+}
 
 /* FUNCTIONS *****************************************************************/
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn AbortPrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
+pub unsafe fn AbortPrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
     (fpAbortPrinter.unwrap())(hPrinter)
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn DocumentEventEx(
+pub unsafe fn DocumentEventEx(
     _pvUMPDev: PVOID,
     hPrinter: HANDLE,
     hdc: HDC,
@@ -256,19 +266,25 @@ pub unsafe extern "fastcall" fn DocumentEventEx(
 ) -> INT {
     (fpDocumentEvent.unwrap())(hPrinter, hdc, iEsc, cbIn, pvIn, cbOut, pvOut)
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn EndDocPrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
+pub unsafe fn EndDocPrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
     (fpEndDocPrinter.unwrap())(hPrinter)
 }
-
-#[no_mangle]
-pub unsafe extern "fastcall" fn EndPagePrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
-    (fpEndPagePrinter.unwrap())(hPrinter)
 }
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn LoadTheSpoolerDrv() -> BOOL {
+pub unsafe fn EndPagePrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
+    (fpEndPagePrinter.unwrap())(hPrinter)
+}
+}
+
+fastcall_fn! {
+#[no_mangle]
+pub unsafe fn LoadTheSpoolerDrv() -> BOOL {
     let mut hModWinSpoolDrv: HMODULE;
 
     if ghSpooler.is_null() {
@@ -400,6 +416,7 @@ pub unsafe extern "fastcall" fn LoadTheSpoolerDrv() -> BOOL {
 
     (!ghSpooler.is_null()) as BOOL
 }
+}
 
 /*
   Note from msdn:
@@ -414,8 +431,9 @@ pub unsafe extern "fastcall" fn LoadTheSpoolerDrv() -> BOOL {
    6. To end the print job, call EndDocPrinter.
 
  */
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn StartDocPrinterWEx(
+pub unsafe fn StartDocPrinterWEx(
     _pvUMPDev: PVOID,
     hPrinter: HANDLE,
     Level: DWORD,
@@ -423,10 +441,13 @@ pub unsafe extern "fastcall" fn StartDocPrinterWEx(
 ) -> DWORD {
     (fpStartDocPrinterW.unwrap())(hPrinter, Level, pDocInfo)
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn StartPagePrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
+pub unsafe fn StartPagePrinterEx(_pvUMPDev: PVOID, hPrinter: HANDLE) -> BOOL {
     (fpStartPagePrinter.unwrap())(hPrinter)
+}
 }
 
 /* SYSCALLS ******************************************************************/

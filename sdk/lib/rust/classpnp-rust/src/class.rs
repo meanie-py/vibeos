@@ -123,7 +123,7 @@ extern "C" {
     fn WPP_CLEANUP(DriverObject: PDRIVER_OBJECT);
     fn IsEqualGUID(Guid1: *const GUID, Guid2: *const GUID) -> BOOLEAN;
     fn IoAdjustPagingPathCount(Count: *mut i32, Increment: BOOLEAN);
-    fn PoRegisterPowerSettingCallback(DeviceObject: PDEVICE_OBJECT, SettingGuid: *const GUID, Callback: unsafe extern "stdcall" fn(*const GUID, PVOID, ULONG, PVOID) -> NTSTATUS, Context: PVOID, Handle: *mut PVOID) -> NTSTATUS;
+    fn PoRegisterPowerSettingCallback(DeviceObject: PDEVICE_OBJECT, SettingGuid: *const GUID, Callback: unsafe extern "system" fn(*const GUID, PVOID, ULONG, PVOID) -> NTSTATUS, Context: PVOID, Handle: *mut PVOID) -> NTSTATUS;
     fn SET_FLAG(Flags: *mut ULONG, Flag: ULONG);
     fn LongToPtr(l: LONG) -> PVOID;
     fn RtlEqualMemory(Source1: *const c_void, Source2: *const c_void, Length: usize) -> BOOLEAN;

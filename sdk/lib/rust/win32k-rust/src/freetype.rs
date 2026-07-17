@@ -4020,8 +4020,9 @@ unsafe fn IntGetFontLocalizedName(
 }
 
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn FontFamilyFillInfo(
+pub unsafe fn FontFamilyFillInfo(
     Info: PFONTFAMILYINFO,
     mut FaceName: LPCWSTR,
     mut FullName: LPCWSTR,
@@ -4208,9 +4209,11 @@ pub unsafe extern "fastcall" fn FontFamilyFillInfo(
     }
     (*Info).NewTextMetricEx.ntmFontSig = fs;
 }
+}
 
+fastcall_fn! {
 #[no_mangle]
-pub unsafe extern "fastcall" fn GetFontFamilyInfoForList(
+pub unsafe fn GetFontFamilyInfoForList(
     LogFont: *const LOGFONTW,
     Info: PFONTFAMILYINFO,
     NominalName: LPCWSTR,
@@ -4283,6 +4286,7 @@ pub unsafe extern "fastcall" fn GetFontFamilyInfoForList(
     *pCount = Count;
 
     1u8
+}
 }
 
 #[cfg(target_arch = "x86")]
